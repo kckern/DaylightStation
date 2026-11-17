@@ -2,8 +2,8 @@
  * Nutribot direct input
  * @module nutribot/application/services/NutribotDirectInput
  *
- * The direct-input routes (`/upc`, `/image`, `/pinhole`, and `/text` in its
- * earlier shape) log food and can call paid models on a plain HTTP request.
+ * The direct-input routes (`/upc`, `/image`, and `/text` in its earlier
+ * shape) log food and can call paid models on a plain HTTP request.
  * This decides who may use them, for which user, and counts each use against
  * the user's Nutribot day, the same day the quick inputs count against.
  *
@@ -19,7 +19,7 @@
  *             navigation; a custom header does not.
  *
  *   unbound   Anyone, on a route the household has opened to callers that
- *             cannot send a header (a barcode app, a webhook service), and
+ *             cannot send a header (a barcode app), and
  *             only for the users listed for that route. Off unless set:
  *             `direct_input.allow_unbound.<route>: [<username>, ...]` in the
  *             nutribot app config. With no user named the first listed is
@@ -32,8 +32,8 @@ import { QuickInputIntake, boundUsers, isBoundDevice } from '../../../../../../_
 
 const BOT = 'nutribot';
 
-/** The direct-input routes, and the operation each runs. `/pinhole` is `/image` under a public path. */
-export const DIRECT_ROUTES = Object.freeze({ upc: 'upc', image: 'image', pinhole: 'image', text: 'text' });
+/** The direct-input routes, and the operation each runs. */
+export const DIRECT_ROUTES = Object.freeze({ upc: 'upc', image: 'image', text: 'text' });
 
 const REFUSED = Object.freeze({ allowed: false, status: 403, reason: 'device_not_allowed' });
 const names = (value) => (Array.isArray(value) ? value.filter((name) => typeof name === 'string' && name) : []);
@@ -79,7 +79,7 @@ export class NutribotDirectInput {
   /**
    * Whether this request may use the route, and for which user.
    * @param {Object} request
-   * @param {string} request.route - 'upc' | 'image' | 'pinhole' | 'text'
+   * @param {string} request.route - 'upc' | 'image' | 'text'
    * @param {string|null} request.deviceId - The `X-Daylight-Device` value, if sent
    * @param {boolean} request.hasAppHeader - Whether the request carries the app's header at all
    * @param {string|null} request.sessionUser - The signed-in user, if the request carries a valid session

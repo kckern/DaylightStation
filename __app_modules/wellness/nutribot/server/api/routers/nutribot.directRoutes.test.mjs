@@ -1,6 +1,6 @@
 /**
- * The direct-input routes behind their guard: /upc, /image, /pinhole and the
- * earlier shape of /text. Each real caller's request is reproduced as the
+ * The direct-input routes behind their guard: /upc, /image and the earlier
+ * shape of /text. Each real caller's request is reproduced as the
  * caller sends it (see the runbooks named beside each), and each kind of
  * stranger is refused. The use cases behind the routes are fakes; the guard,
  * the handlers, the access rules, the ledger and the router are real.
@@ -98,24 +98,11 @@ describe('GET /upc as the barcode app sends it (runbooks/binary-eye-nutribot-upc
   });
 });
 
-describe('GET /pinhole as the webhook service sends it (runbooks/ifttt-nutribot-image-upload.md)', () => {
-  const IMG = 'https://images.example/photos/lunch.jpg';
-  const webhook = (app, query = `img_url=${encodeURIComponent(IMG)}`) => request(app)
-    .get(`${BASE}/pinhole?${query}`).set('Content-Type', 'application/json');
-
-  it('logs the image for the user the open route lists', async () => {
+describe('the retired IFTTT image route (2026-11-17)', () => {
+  it('GET /pinhole is gone: 404 even with the old setting still in place, and nothing is logged', async () => {
     const { app, calls } = build({ unbound: { pinhole: ['user_1'] } });
-    const res = await webhook(app);
-    expect(res.status).toBe(200);
-    expect(res.body).toMatchObject({ ok: true, result: { success: true, itemCount: 3 } });
-    expect(calls.image).toEqual([{ userId: 'user_1', conversationId: 'telegram:b9_c1', imageData: { url: IMG }, messageId: null }]);
-  });
-
-  it('is refused when the household has not opened the route, and opening /pinhole does not open /image', async () => {
-    expect((await webhook(build().app)).status).toBe(403);
-    const { app, calls } = build({ unbound: { pinhole: ['user_1'] } });
-    const res = await request(app).get(`${BASE}/image?img_url=${encodeURIComponent(IMG)}`);
-    expect(res.status).toBe(403);
+    const res = await request(app).get(`${BASE}/pinhole?img_url=${encodeURIComponent('https://images.example/a.jpg')}`);
+    expect(res.status).toBe(404);
     expect(calls.image).toHaveLength(0);
   });
 });
@@ -198,7 +185,6 @@ describe('every direct-input route refuses a stranger', () => {
   const requests = {
     upc: (app) => request(app).post(`${BASE}/upc`).send({ upc: '749826002019', user: 'user_1' }),
     image: (app) => request(app).post(`${BASE}/image`).send({ img_url: 'https://images.example/a.jpg', user: 'user_1' }),
-    pinhole: (app) => request(app).get(`${BASE}/pinhole?img_url=https%3A%2F%2Fimages.example%2Fa.jpg&user=user_1`),
     text: (app) => request(app).post(`${BASE}/text`).send({ text: 'an apple', user: 'user_1' }),
   };
 
@@ -214,7 +200,7 @@ describe('every direct-input route refuses a stranger', () => {
     });
 
     it(`${route}: a request or preflight from another origin, even from a bound device or on an open route`, async () => {
-      const { app, calls } = build({ unbound: { upc: ['user_1'], image: ['user_1'], pinhole: ['user_1'], text: ['user_1'] } });
+      const { app, calls } = build({ unbound: { upc: ['user_1'], image: ['user_1'], text: ['user_1'] } });
       const crossOrigin = await send(app).set(DEVICE).set('Origin', 'https://elsewhere.example');
       expect(crossOrigin.status).toBe(403);
       expect(crossOrigin.body.error).toBe('cross_origin');

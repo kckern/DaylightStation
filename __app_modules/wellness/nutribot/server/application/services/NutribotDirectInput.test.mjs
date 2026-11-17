@@ -79,7 +79,6 @@ describe('who may use a Nutribot direct-input route', () => {
     expect(ask(direct, { requestedUser: 'user_3' })).toEqual({ allowed: false, status: 403, reason: 'device_not_allowed' });
     // Opened for /upc only.
     expect(ask(direct, { route: 'text' })).toEqual({ allowed: false, status: 403, reason: 'device_not_allowed' });
-    expect(ask(direct, { route: 'pinhole' })).toEqual({ allowed: false, status: 403, reason: 'device_not_allowed' });
   });
 
   it('a malformed open-route setting opens nothing', () => {
@@ -111,7 +110,6 @@ describe('running a direct input', () => {
     const { direct, calls } = build();
     expect(await run(direct)).toEqual({ kind: 'accepted', result: { success: true, name: 'upc' } });
     expect(calls.upc).toEqual([{ upc: '016000275287' }]);
-    expect((await run(direct, { route: 'pinhole', command: { imageData: { url: 'https://images.example/a.jpg' } } })).result.name).toBe('image');
     expect((await run(direct, { route: 'image', command: {} })).result.name).toBe('image');
     expect((await run(direct, { route: 'text', command: { text: 'an apple' } })).result.name).toBe('text');
   });

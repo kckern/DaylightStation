@@ -566,7 +566,6 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     // own small body parsers. __docs/reference/nutrition/README.md.
     '/api/v1/nutribot/upc',
     '/api/v1/nutribot/image',
-    '/api/v1/nutribot/pinhole',
   ]);
   app.use(selfGuarded(cors()));
   app.use(selfGuarded(express.json({ limit: '50mb' })));

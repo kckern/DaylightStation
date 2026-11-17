@@ -2,9 +2,9 @@
  * Guard for the direct-input routes.
  * @module nutribot/handlers/directInputGuard
  *
- * `/upc`, `/image`, `/pinhole` and the earlier shape of `/text` log food and
- * can call paid models on a plain HTTP request, by any method. Each is
- * mounted behind this guard:
+ * `/upc`, `/image` and the earlier shape of `/text` log food and can call
+ * paid models on a plain HTTP request, by any method. Each is mounted behind
+ * this guard:
  *
  *   before   From the headers alone, ahead of any body parser: a request from
  *            another web origin or another site is refused, and so is a body
@@ -48,7 +48,7 @@ export function refuseForToday(res, { limit, retryAfterSeconds }) {
 /**
  * @param {Object|null} access - NutribotDirectInput; null refuses every request
  * @param {Object} options
- * @param {string} options.route - 'upc' | 'image' | 'pinhole' | 'text'
+ * @param {string} options.route - 'upc' | 'image' | 'text'
  * @param {Object} [options.logger]
  * @returns {{preflight: Function, before: Function, after: Function}}
  */

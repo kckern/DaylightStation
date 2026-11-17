@@ -92,9 +92,6 @@ export function createNutribotRouter(nutribotApi, options = {}) {
     upc: directUPCHandler(nutribotApi, handlerOpts),
     image: directImageHandler(nutribotApi, handlerOpts),
     text: directTextHandler(nutribotApi, handlerOpts),
-    // Pinhole endpoint - public access for IFTTT/external integrations.
-    // Uses same handler as /image, but with dedicated Cloudflare Access bypass.
-    pinhole: directImageHandler(nutribotApi, handlerOpts),
   };
   for (const [route, handler] of Object.entries(directHandlers)) {
     const guard = directInputGuard(directInput, { route, logger });

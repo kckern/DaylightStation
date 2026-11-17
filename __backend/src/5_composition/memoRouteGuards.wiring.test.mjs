@@ -13,7 +13,6 @@ const QUICK_INPUT_PATHS = [
   '/api/v1/journalist/voice',
   '/api/v1/nutribot/image',
   '/api/v1/nutribot/photo',
-  '/api/v1/nutribot/pinhole',
   '/api/v1/nutribot/text',
   '/api/v1/nutribot/upc',
   '/api/v1/nutribot/voice',

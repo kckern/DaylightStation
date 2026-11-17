@@ -124,8 +124,8 @@ export function createNutribotApiRouter(config) {
     logger,
   });
 
-  // The direct-input routes (/upc, /image, /pinhole, /text in its earlier
-  // shape): who may use them and for whom, counted against the same day.
+  // The direct-input routes (/upc, /image, /text in its earlier shape): who
+  // may use them and for whom, counted against the same day.
   const directInput = new NutribotDirectInput({
     ledger: quickInputs.ledger,
     deviceConfig: (deviceKey) => configService?.getDeviceConfig?.(deviceKey),
