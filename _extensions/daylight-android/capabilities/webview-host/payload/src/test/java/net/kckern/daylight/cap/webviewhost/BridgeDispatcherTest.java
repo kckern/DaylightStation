@@ -62,6 +62,16 @@ public class BridgeDispatcherTest {
         assertEquals(java.util.Arrays.asList("back reload"), calls);
     }
 
+    @Test public void thePageCannotReachTheDebugToolsOrChangeASetting() {
+        // The bridge is a fixed list. Running a script or a command, reading the screen or
+        // the log, and writing a setting (debug.execEnabled above all) are not on it.
+        for (String method : new String[] { "eval", "debugEval", "debug.eval", "exec", "debug.exec", "html", "screenshot", "logcat",
+                "fps", "speak", "sound", "settings", "setSetting", "set", "getSetting", "unlock", "lockdown", "payload", "update" }) {
+            assertEquals(method, "", bridge.call(TOKEN, method, "{\"key\":\"debug.execEnabled\",\"value\":true}"));
+        }
+        assertTrue(calls.isEmpty());
+    }
+
     @Test public void aBadVolumeStreamFallsBackToMusic() {
         bridge.call(TOKEN, "volume", "loud");
         assertEquals(java.util.Arrays.asList("volume 3"), calls);

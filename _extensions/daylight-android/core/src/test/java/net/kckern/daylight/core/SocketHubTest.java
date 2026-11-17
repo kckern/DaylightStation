@@ -32,6 +32,14 @@ public class SocketHubTest {
         hub.opened(client);
     }
 
+    @Test public void theRegisteredMessageTypesCanBeListed() {
+        SocketHub h = new SocketHub("test", new StatusBoard());
+        assertTrue(h.types().isEmpty());
+        h.on("midi", (message, reply) -> { });
+        h.on("panic", (message, reply) -> { });
+        assertEquals(new java.util.TreeSet<>(java.util.Arrays.asList("midi", "panic")), h.types());
+    }
+
     @Test public void greetsANewClient() throws Exception {
         hub.awaitDelivered(2000);
         assertEquals("ready", client.last().getString("type"));

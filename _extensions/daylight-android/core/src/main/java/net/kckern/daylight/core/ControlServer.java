@@ -184,7 +184,9 @@ public final class ControlServer extends NanoWSD {
     private static Response respond(Router.Response r) {
         Response.IStatus status = Response.Status.lookup(r.status);
         if (status == null) status = Response.Status.INTERNAL_ERROR;
-        return newFixedLengthResponse(status, r.contentType, new ByteArrayInputStream(r.body), r.body.length);
+        Response response = newFixedLengthResponse(status, r.contentType, new ByteArrayInputStream(r.body), r.body.length);
+        for (Map.Entry<String, String> h : r.headers.entrySet()) response.addHeader(h.getKey(), h.getValue());
+        return response;
     }
 
     private final class HubSocket extends WebSocket implements SocketHub.Client {

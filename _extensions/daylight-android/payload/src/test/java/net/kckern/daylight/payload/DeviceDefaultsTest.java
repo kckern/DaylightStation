@@ -74,4 +74,29 @@ public class DeviceDefaultsTest {
         String start = defaults.getString("webview.startUrl");
         assertTrue("webview.startUrl must be empty or https", start.isEmpty() || start.startsWith("https://"));
     }
+
+    /**
+     * The debug tools answer to the device token on the HTTP control API and nowhere else.
+     * A socket client can send only the registered message types, so none of them may be
+     * a way to run a script, run a command, read the screen or write a setting. Exec
+     * starts switched off on every device.
+     */
+    @Test public void noSocketMessageReachesTheDebugToolsOrTheSettings() throws Exception {
+        CoreRuntime core = TestCore.create(tmp.newFolder());
+        for (String entry : DeviceConfig.CAPABILITY_ENTRIES) {
+            core.add((Capability) Class.forName(entry).getDeclaredConstructor().newInstance());
+        }
+        core.prepare(new JSONObject(DeviceConfig.DEFAULTS_JSON));
+        for (String type : core.socket().types()) {
+            String t = type.toLowerCase(java.util.Locale.ROOT);
+            for (String forbidden : new String[] { "debug", "eval", "exec", "shell", "setting", "screenshot", "html", "logcat", "unlock" }) {
+                assertFalse("socket message type '" + type + "'", t.contains(forbidden));
+            }
+        }
+        if (java.util.Arrays.asList(DeviceConfig.CAPABILITY_ENTRIES)
+                .contains("net.kckern.daylight.cap.debugtools.DebugToolsCapability")) {
+            assertEquals("debug.execEnabled must start false", Boolean.FALSE, core.settings().get("debug.execEnabled"));
+            assertEquals(501, TestCore.call(core, "POST", "/debug/exec", null, "{\"cmd\":\"id\"}").getInt("_status"));
+        }
+    }
 }

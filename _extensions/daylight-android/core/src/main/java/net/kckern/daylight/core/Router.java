@@ -34,11 +34,25 @@ public final class Router {
         public final int status;
         public final String contentType;
         public final byte[] body;
+        /** Extra response headers. Empty unless a handler added one. */
+        public final Map<String, String> headers;
 
         public Response(int status, String contentType, byte[] body) {
+            this(status, contentType, body, java.util.Collections.emptyMap());
+        }
+
+        private Response(int status, String contentType, byte[] body, Map<String, String> headers) {
             this.status = status;
             this.contentType = contentType;
             this.body = body;
+            this.headers = headers;
+        }
+
+        /** This response with one more header. For a body that is not JSON and so has no field to say it in. */
+        public Response withHeader(String name, String value) {
+            Map<String, String> h = new LinkedHashMap<>(headers);
+            h.put(name, value);
+            return new Response(status, contentType, body, java.util.Collections.unmodifiableMap(h));
         }
 
         public static Response json(int status, JSONObject body) {

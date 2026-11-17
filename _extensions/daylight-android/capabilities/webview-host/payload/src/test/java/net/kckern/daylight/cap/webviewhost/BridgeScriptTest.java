@@ -18,6 +18,13 @@ public class BridgeScriptTest {
         assertTrue("installing twice must be harmless", js.contains("if(window.daylight)return;"));
     }
 
+    @Test public void theShimOffersThePageNothingBeyondTheContract() {
+        String js = BridgeScript.shim("tok-123", "p3-kiosk", "piano");
+        for (String absent : new String[] { "eval", "exec", "setting", "screenshot", "logcat", "html:", "unlock" }) {
+            assertFalse("the page bridge must not offer " + absent, js.toLowerCase(java.util.Locale.ROOT).contains(absent));
+        }
+    }
+
     @Test public void valuesAreQuotedAsJavaScriptStrings() {
         String js = BridgeScript.shim("t", "v\"1", "d\\x");
         assertTrue(js.contains("\"v\\\"1\""));

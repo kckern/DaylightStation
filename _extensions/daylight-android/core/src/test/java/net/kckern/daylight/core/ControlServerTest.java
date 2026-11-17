@@ -26,6 +26,9 @@ public class ControlServerTest {
         router.route("POST", "/echo", req -> Router.Response.json(200, new JSONObject().put("body", req.body)));
         router.route("PUT", "/echo", req -> Router.Response.json(200, new JSONObject().put("body", req.body)));
         router.route("DELETE", "/echo", req -> Router.Response.json(200, new JSONObject().put("body", req.body == null ? JSONObject.NULL : req.body)));
+        router.route("GET", "/png", req -> new Router.Response(200, "image/png", PNG).withHeader("X-Daylight-Note", "own lines"));
+        router.route("GET", "/late", req -> Router.Response.error(408, "timeout", "message", "the page did not answer"));
+        router.route("GET", "/big", req -> Router.Response.error(413, "result_too_large", "message", "too large"));
         router.route("POST", "/length", req -> Router.Response.json(200, new JSONObject().put("length", req.body.length())));
         hub = new SocketHub("test", new StatusBoard());
         server = new ControlServer(0, router, auth, hub);
@@ -65,6 +68,30 @@ public class ControlServerTest {
         String[] r = http("POST", base + "/echo", TOKEN, "{\"a\":1}");
         assertEquals("200", r[0]);
         assertEquals("{\"a\":1}", new JSONObject(r[1]).getString("body"));
+    }
+
+    /** Every byte value, so a text decode anywhere on the way would show. */
+    private static final byte[] PNG = new byte[256 + 8];
+    static {
+        byte[] signature = { (byte) 0x89, 'P', 'N', 'G', 0x0d, 0x0a, 0x1a, 0x0a };
+        System.arraycopy(signature, 0, PNG, 0, 8);
+        for (int i = 0; i < 256; i++) PNG[8 + i] = (byte) i;
+    }
+
+    @Test public void aBinaryResponseArrivesByteForByteWithItsTypeAndHeaders() throws Exception {
+        HttpURLConnection c = (HttpURLConnection) new URL(base + "/png").openConnection();
+        c.setRequestProperty("X-Daylight-Token", TOKEN);
+        assertEquals(200, c.getResponseCode());
+        assertEquals("image/png", c.getContentType());
+        assertEquals("own lines", c.getHeaderField("X-Daylight-Note"));
+        try (InputStream in = c.getInputStream()) { assertArrayEquals(PNG, in.readAllBytes()); }
+    }
+
+    @Test public void status408And413ReachTheWireAsThemselves() throws Exception {
+        String[] late = http("GET", base + "/late", TOKEN, null);
+        assertEquals("408", late[0]);
+        assertEquals("timeout", new JSONObject(late[1]).getString("error"));
+        assertEquals("413", http("GET", base + "/big", TOKEN, null)[0]);
     }
 
     @Test public void answers404ForAnUnknownRoute() throws Exception {

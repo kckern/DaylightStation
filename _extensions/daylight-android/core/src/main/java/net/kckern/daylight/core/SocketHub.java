@@ -129,6 +129,9 @@ public final class SocketHub {
         }
     }
 
+    /** The message types a client may send, sorted. Everything else is answered unknown_type. */
+    public java.util.Set<String> types() { return new java.util.TreeSet<>(handlers.keySet()); }
+
     public int clients() { return clients.size(); }
 
     /**
