@@ -11,7 +11,7 @@ import { gratitudeLog } from './gratitudeLog.js';
 import './GratitudeProgram.scss';
 const IDLE_THRESHOLDS=[45_000,120_000,300_000];
 // Phases in which the answer box is open and a draft may be saved.
-const ANSWER_PHASES=new Set(['draft','not-started','retry']);
+const ANSWER_PHASES=new Set(['draft','not-started','retry','follow-up']);
 
 export default function GratitudeProgram({learnerId,gratitudeGrant,today,onExit}){
   const api=useGratitudeApi({learnerId,grant:gratitudeGrant});
@@ -29,6 +29,8 @@ export default function GratitudeProgram({learnerId,gratitudeGrant,today,onExit}
   const open=useCallback(async()=>{setBusy(true);try{apply(await api.open(today));}finally{if(live.current)setBusy(false);}},[api,today,apply]);
   useEffect(()=>{live.current=true;gratitudeLog.mounted({learnerId});if(gratitudeGrant&&today)open();return()=>{live.current=false;gratitudeLog.unmounted({learnerId});};},[open,gratitudeGrant,today,learnerId]);
   useInputStall(view?.phase??'start',ms=>{gratitudeLog.stall({ms});if(ms>=5*60_000)onExit?.();},{enabled:Boolean(gratitudeGrant),thresholds:IDLE_THRESHOLDS});
+  // Once per follow-up attempt; the question and the child's words stay out of the log.
+  useEffect(()=>{if(view?.phase==='follow-up')gratitudeLog.followUpShown({promptId:'gratitude-follow-up'});},[view?.phase,view?.attemptId]);
   const remaining=view?.retryAt?Math.max(0,Date.parse(view.retryAt)-(now-clockOffset.current)):0;
   useEffect(()=>{if(view?.phase!=='cooldown')return;const timer=setInterval(()=>setNow(Date.now()),1000);return()=>clearInterval(timer);},[view?.phase]);
   useEffect(()=>{if(view?.phase==='cooldown'&&remaining===0&&expiryCheck.current!==view.retryAt){expiryCheck.current=view.retryAt;open();}},[view?.phase,view?.retryAt,remaining,open]);
@@ -58,6 +60,10 @@ export default function GratitudeProgram({learnerId,gratitudeGrant,today,onExit}
     {view&&['draft','not-started','retry'].includes(view.phase)&&<>
       {view.reason==='unclear'&&<p role="status">Please make your gratitude a little clearer and try again.</p>}
       <ReflectionResponse key={`${view.studyDay}:${view.attemptId??'new'}`} prompt={view.prompt} initial={view.draft?.text??''} initialAudioRef={view.draft?.audioRef??null} initialVia={view.draft?.via??null} initialEdited={view.draft?.edited??false} busy={busy} onDraft={saveDraft} onTake={take} onRetryTake={view.draft?.takeId?retryTake:undefined} onSubmit={submit} submitLabel="Submit" events={gratitudeLog} focusOnOpen={false} focusAfterTake={false} transcribingLabel="Writing down what you said…" afterTakeHint="Check your words, then tap Submit."/>
+    </>}
+    {view?.phase==='follow-up'&&view.followUp&&<>
+      <p className="gratitude-program__first">You said: “{view.followUp.firstText}”</p>
+      <ReflectionResponse key={`${view.studyDay}:follow-up:${view.attemptId}`} prompt={{id:'gratitude-follow-up',text:view.followUp.question,required:true}} initial={view.draft?.text??''} initialAudioRef={view.draft?.audioRef??null} initialVia={view.draft?.via??null} initialEdited={view.draft?.edited??false} busy={busy} onDraft={saveDraft} onTake={take} onRetryTake={view.draft?.takeId?retryTake:undefined} onSubmit={answer=>submit({...answer,followUpOf:view.attemptId})} submitLabel="Submit" events={gratitudeLog} focusOnOpen={false} focusAfterTake={false} transcribingLabel="Writing down what you said…" afterTakeHint="Check your words, then tap Submit."/>
     </>}
     {view?.phase==='cooldown'&&<div className="gratitude-program__message" role="status"><h2>Take a little break</h2><p>{view.reason==='repetition'?'You already used that gratitude topic recently. Think of something different.':'Please take some time to think of something you are grateful for.'}</p><p>Try again in {Math.max(1,Math.ceil(remaining/60000))} minutes.</p></div>}
     {['pending','assessing'].includes(view?.phase)&&<div className="gratitude-program__message"><p role="status">Your answer is saved and waiting to be processed.</p><TouchButton disabled={busy} onClick={retry}>Try saved answer again</TouchButton></div>}

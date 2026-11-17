@@ -56,3 +56,28 @@ it('says the recording is being written down, then what to do next', async () =>
   expect(screen.getByText('Check your words, then tap Submit.')).toBeVisible();
   expect(document.activeElement).not.toBe(box);
 });
+const followUp={...initial,phase:'follow-up',attemptId:'a1',followUp:{question:'What about your mom are you grateful for today?',firstText:"I'm grateful for my mom"}};
+it('asks the follow-up with the first answer shown and sends the answer as a follow-up',async()=>{
+  api.open.mockResolvedValue({ok:true,data:initial});
+  api.submit.mockReset().mockResolvedValueOnce({ok:true,data:followUp}).mockResolvedValueOnce({ok:true,data:{...initial,phase:'completed',subject:'Mom making pancakes'}});
+  render(<GratitudeProgram learnerId="child" gratitudeGrant="grant" today="2026-11-16" onExit={()=>{}}/>);
+  fireEvent.change(await screen.findByRole('textbox'),{target:{value:"I'm grateful for my mom"}});
+  fireEvent.click(screen.getByRole('button',{name:/Submit/}));
+  expect(await screen.findByText('What about your mom are you grateful for today?')).toBeVisible();
+  expect(screen.getByText(/I'm grateful for my mom/)).toBeVisible();
+  expect(screen.queryByText(/a little clearer/)).toBeNull();
+  const box=screen.getByRole('textbox');expect(box).toHaveValue('');expect(document.activeElement).not.toBe(box);
+  expect(log.followUpShown).toHaveBeenCalledWith({promptId:'gratitude-follow-up'});
+  fireEvent.change(box,{target:{value:'She made me pancakes'}});
+  fireEvent.click(screen.getByRole('button',{name:/Submit/}));
+  expect(await screen.findByText('Mom making pancakes',{exact:true})).toBeVisible();
+  expect(api.submit.mock.calls[1][1]).toMatchObject({text:'She made me pancakes',followUpOf:'a1'});
+  expect(api.submit.mock.calls[1][1].attemptId).not.toBe(api.submit.mock.calls[0][1].attemptId);
+});
+it('saves drafts while answering the follow-up',async()=>{
+  api.open.mockResolvedValue({ok:true,data:followUp});api.draft.mockReset().mockResolvedValue({ok:true,data:followUp});
+  render(<GratitudeProgram learnerId="child" gratitudeGrant="grant" today="2026-11-16" onExit={()=>{}}/>);
+  const box=await screen.findByRole('textbox');
+  fireEvent.change(box,{target:{value:'pan'}});fireEvent.blur(box);
+  await waitFor(()=>expect(api.draft).toHaveBeenCalled());
+});
