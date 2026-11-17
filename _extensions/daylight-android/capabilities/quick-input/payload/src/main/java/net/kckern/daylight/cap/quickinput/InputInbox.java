@@ -94,6 +94,26 @@ final class InputInbox {
         return added;
     }
 
+    /** A .part file in the inputs inbox older than this belongs to a screen that is gone (CaptureFiles.STALE_MS). */
+    static final long STALE_PART_MS = 30 * 60_000L;
+
+    /**
+     * Removes .part files of the text and photo screens that nobody is writing any more.
+     * Only ever called for the inputs inbox: a recording that was cut off is not removed
+     * by age, it is recovered. @return how many were removed
+     */
+    static int sweepParts(File inputsInbox, long nowMs) {
+        File[] files = inputsInbox.listFiles();
+        if (files == null) return 0;
+        int removed = 0;
+        for (File f : files) {
+            if (!f.isFile() || !f.getName().endsWith(".part")) continue;
+            if (nowMs - f.lastModified() <= STALE_PART_MS) continue;
+            if (f.delete()) removed++;
+        }
+        return removed;
+    }
+
     /** How many recordings sit in the cut-off directory: kept, and not playable. */
     static int cutOffKept(File cutOffDir) {
         File[] files = cutOffDir.listFiles();

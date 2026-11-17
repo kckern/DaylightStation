@@ -505,6 +505,37 @@ test('the text screen is not exported', () => {
     [`activity ${TEXT} is exported=true, expected exported=false`]);
 });
 
+test('the photo screen is not exported, and its provider is closed with grants for the capture path only', () => {
+  const SCREEN = 'net.kckern.daylight.cap.quickinput.shell.PhotoCaptureActivity';
+  const PROVIDER = 'net.kckern.daylight.cap.quickinput.shell.InputFileProvider';
+  const grant = (attr, value) => ['              E: grant-uri-permission (line=11)', `                A: ${NS}:${attr}(0x0101016a)="${value}" (Raw: "${value}")`];
+  const provider = (exported, blanket, ...grants) => [...component('provider', PROVIDER, exported, null),
+    ...(blanket == null ? [] : [`            A: ${NS}:grantUriPermissions(0x0101001b)=${blanket}`]), ...grants.flat()];
+  assert.deepEqual(componentAttributeFailures(tree(component('activity', SCREEN, 'false', null), provider('false', 'false', grant('pathPrefix', '/capture/')))), []);
+  assert.deepEqual(componentAttributeFailures(tree(component('activity', SCREEN, 'true', null))),
+    [`activity ${SCREEN} is exported=true, expected exported=false`]);
+  assert.deepEqual(componentAttributeFailures(tree(provider('true', 'false', grant('pathPrefix', '/capture/')))),
+    [`provider ${PROVIDER} is exported=true, expected exported=false`]);
+  assert.deepEqual(componentAttributeFailures(tree(provider('false', 'true', grant('pathPrefix', '/capture/')))),
+    [`provider ${PROVIDER} declares android:grantUriPermissions="true": access could be granted to any path it serves`]);
+  assert.deepEqual(componentAttributeFailures(tree(provider('false', 'false'))),
+    [`provider ${PROVIDER} must allow grants for the path prefix /capture/ and for nothing else`]);
+  assert.deepEqual(componentAttributeFailures(tree(provider('false', 'false', grant('pathPrefix', '/')))),
+    [`provider ${PROVIDER} must allow grants for the path prefix /capture/ and for nothing else`]);
+  assert.deepEqual(componentAttributeFailures(tree(provider('false', 'false', grant('pathPrefix', '/capture/'), grant('pathPattern', '.*')))),
+    [`provider ${PROVIDER} must allow grants for the path prefix /capture/ and for nothing else`]);
+});
+
+test('a provider with no grant path in its row allows no grants at all', () => {
+  const ANCHOR = 'net.kckern.daylight.cap.micbridge.shell.MicAnchorProvider';
+  assert.deepEqual(componentAttributeFailures(tree(component('provider', ANCHOR, 'false', null))), []);
+  assert.deepEqual(componentAttributeFailures(tree([...component('provider', ANCHOR, 'false', null), `            A: ${NS}:grantUriPermissions(0x0101001b)=true`])),
+    [`provider ${ANCHOR} declares android:grantUriPermissions="true": access could be granted to any path it serves`]);
+  assert.deepEqual(componentAttributeFailures(tree([...component('provider', ANCHOR, 'false', null),
+    '              E: grant-uri-permission (line=11)', `                A: ${NS}:pathPrefix(0x0101016a)="/x/" (Raw: "/x/")`])),
+    [`provider ${ANCHOR} allows URI grants and its row names no path for them`]);
+});
+
 test('every build excludes its data from backup and device transfer', () => {
   assert.deepEqual(backupFailures(phoneTree(GOOD_APP)), []);
   assert.match(backupFailures(phoneTree({ ...GOOD_APP, allowBackup: 'true' }))[0], /allowBackup/);

@@ -60,4 +60,52 @@ public class CaptureFilesTest {
         assertTrue("a finished input is never swept: it is the queue's", finished.exists());
         assertEquals(0, CaptureFiles.sweep(new File(inbox, "absent"), now));
     }
+    // ── the photo screen's file, and what the provider serves ────────────────
+
+    @Test public void aCaptureIsWrittenByTheCameraUnderANameOfItsOwn() {
+        assertEquals("1700000000000-ab12cd34.meal-photo.raw.part", CaptureFiles.rawName("1700000000000-ab12cd34", "meal-photo"));
+        assertEquals("1700000000000-ab12cd34.meal-photo.jpg.part", CaptureFiles.encodedName("1700000000000-ab12cd34", "meal-photo"));
+        assertEquals("1700000000000-ab12cd34", CaptureFiles.idOf("1700000000000-ab12cd34.meal-photo.raw.part"));
+        assertEquals("meal-photo", CaptureFiles.destOf("1700000000000-ab12cd34.meal-photo.raw.part"));
+        assertNull(CaptureFiles.idOf("1700000000000-ab12cd34.meal-photo.jpg"));
+        assertNull(CaptureFiles.destOf("anything else"));
+    }
+
+    /** The provider gives a camera app one thing: the file of a capture under way, by its exact name. */
+    @Test public void theProviderServesTheFileOfACaptureAndNothingElse() {
+        String name = "1700000000000-ab12cd34.meal-photo.raw.part";
+        assertEquals(name, CaptureFiles.served(java.util.Arrays.asList("capture", name)));
+        String[][] refused = {
+                { name },                                                   // no directory
+                { "capture" },
+                { "capture", name, "extra" },
+                { "other", name },
+                { "capture", "1700000000000-ab12cd34.meal-photo.jpg" },      // a finished photo
+                { "capture", "1700000000000-ab12cd34.journal-note.txt" },    // typed text
+                { "capture", "1700000000000-ab12cd34.journal-note.txt.part" },
+                { "capture", "1700000000000-ab12cd34.meal-photo.jpg.part" }, // the encoded photo
+                { "capture", "1700000000000-ab12cd34.ogg" },
+                { "capture", ".." },
+                { "capture", "../../payloads/state/link-key" },
+                { "capture", "..%2f..%2fshell.log" },
+                { "capture", "1700000000000-ab12cd34.Meal.raw.part" },
+                { "capture", "abc.meal-photo.raw.part" },
+                { "capture", "1700000000000-ab12cd34.meal-photo.raw.part/x" },
+                { "capture", "" },
+        };
+        for (String[] path : refused) assertNull(java.util.Arrays.toString(path), CaptureFiles.served(java.util.Arrays.asList(path)));
+        assertNull(CaptureFiles.served(null));
+        assertNull(CaptureFiles.served(java.util.Collections.<String>emptyList()));
+    }
+
+    @Test public void theProvidersPathIsTheOneTheManifestGrants() {
+        assertEquals("/capture/1700000000000-ab12cd34.meal-photo.raw.part", CaptureFiles.uriPath("1700000000000-ab12cd34.meal-photo.raw.part"));
+        assertEquals(".inputs", CaptureFiles.AUTHORITY_SUFFIX);
+    }
+
+    /** A camera writes its picture. Reading alone, or a mode nobody knows, is not what the file is for. */
+    @Test public void aCaptureFileIsOpenedForWriting() {
+        for (String mode : new String[] { "w", "wt", "wa", "rw", "rwt" }) assertTrue(mode, CaptureFiles.modeAllowed(mode));
+        for (String mode : new String[] { "r", "", null, "x", "rx", "wrt?" }) assertFalse(String.valueOf(mode), CaptureFiles.modeAllowed(mode));
+    }
 }

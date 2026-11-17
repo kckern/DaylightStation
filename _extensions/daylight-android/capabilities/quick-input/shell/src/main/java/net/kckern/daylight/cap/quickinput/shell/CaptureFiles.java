@@ -29,7 +29,53 @@ final class CaptureFiles {
     /** "<start ms>-<8 hex>", as MemoFiles.newId makes it. */
     static final Pattern ID = Pattern.compile("[0-9]{10,16}-[0-9a-f]{8}");
 
+    /** What the camera writes: "<id>.<dest>.raw.part". Never queued; it still holds the camera's EXIF. */
+    static final String RAW = ".raw";
+    private static final Pattern RAW_NAME = Pattern.compile("([0-9]{10,16}-[0-9a-f]{8})\\.([a-z][a-z0-9-]{0,31})\\.raw\\.part");
+    /** The provider's authority is the application id and this (the manifest's "${applicationId}.inputs"). */
+    static final String AUTHORITY_SUFFIX = ".inputs";
+    /** The one directory of the provider's URIs, and the only path the manifest lets a grant be made for. */
+    static final String URI_DIR = "capture";
+
     private CaptureFiles() { }
+
+    /** The file the camera writes a capture to. */
+    static String rawName(String id, String dest) { return id + "." + dest + RAW + PART; }
+
+    /** The file the scaled photo is written to before it is renamed to "<id>.<dest>.jpg". */
+    static String encodedName(String id, String dest) { return name(id, dest, PHOTO) + PART; }
+
+    /** The id in a capture file's name, or null when it is not one. */
+    static String idOf(String rawName) {
+        java.util.regex.Matcher m = rawName == null ? null : RAW_NAME.matcher(rawName);
+        return m != null && m.matches() ? m.group(1) : null;
+    }
+
+    /** The destination's id in a capture file's name, or null when it is not one. */
+    static String destOf(String rawName) {
+        java.util.regex.Matcher m = rawName == null ? null : RAW_NAME.matcher(rawName);
+        return m != null && m.matches() ? m.group(2) : null;
+    }
+
+    /** "/capture/<name>": the path of the URI the camera app is given for a capture file. */
+    static String uriPath(String rawName) { return "/" + URI_DIR + "/" + rawName; }
+
+    /**
+     * What the provider serves for a URI's path segments: the name of a capture file, or
+     * null. Exactly "capture/<id>.<dest>.raw.part": no other directory, no other kind of
+     * file (a finished photo, typed text, a recording), nothing with a separator or a
+     * relative part in it.
+     */
+    static String served(java.util.List<String> pathSegments) {
+        if (pathSegments == null || pathSegments.size() != 2 || !URI_DIR.equals(pathSegments.get(0))) return null;
+        String name = pathSegments.get(1);
+        return idOf(name) == null ? null : name;
+    }
+
+    /** A capture file is opened to be written. A mode that only reads, or one nobody knows, is refused. */
+    static boolean modeAllowed(String mode) {
+        return "w".equals(mode) || "wt".equals(mode) || "wa".equals(mode) || "rw".equals(mode) || "rwt".equals(mode);
+    }
 
     /** "<id>.<dest><suffix>": what a finished input is called. */
     static String name(String id, String dest, String suffix) { return id + "." + dest + suffix; }

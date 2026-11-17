@@ -292,6 +292,12 @@ export const EXPECTED_COMPONENTS = {
   // The text screen sends what is typed on it, so only this app can open it: the payload
   // on a keyed input link.
   'activity net.kckern.daylight.cap.quickinput.shell.TextInputActivity': { exported: false, permission: null },
+  // Opening the photo screen opens the camera, so only this app can: the payload on a
+  // keyed input link.
+  'activity net.kckern.daylight.cap.quickinput.shell.PhotoCaptureActivity': { exported: false, permission: null },
+  // The camera app reaches the one file of a capture through a grant the photo screen
+  // makes; the provider itself is closed, and grants are limited to /capture/.
+  'provider net.kckern.daylight.cap.quickinput.shell.InputFileProvider': { exported: false, permission: null, grantsOnly: '/capture/' },
   'service net.kckern.daylight.cap.quickinput.shell.MemoRecorderService': { exported: false, permission: null, foregroundServiceType: ['microphone'] },
 };
 
@@ -388,7 +394,8 @@ export function backupFailures(xmltree) {
 
 export function componentAttributeFailures(xmltree, table = EXPECTED_COMPONENTS) {
   const failures = [];
-  for (const n of parseXmlTree(xmltree)) {
+  const nodes = parseXmlTree(xmltree);
+  for (const n of nodes) {
     if (!COMPONENT_KINDS.includes(n.name) || !n.attrs.name) continue;
     const key = `${n.name} ${n.attrs.name}`;
     const want = table[key];
@@ -400,6 +407,21 @@ export function componentAttributeFailures(xmltree, table = EXPECTED_COMPONENTS)
     const permission = n.attrs.permission ?? null;
     if (permission !== want.permission) {
       failures.push(`${key} is guarded by ${permission ?? 'no permission'}, expected ${want.permission ?? 'no permission'}`);
+    }
+    // A provider that is not exported can still hand out access to what it serves, one
+    // URI at a time. A row says for which path prefix that may be done (`grantsOnly`);
+    // a provider whose row names none allows no grants at all.
+    if (n.name === 'provider') {
+      const grants = nodes.filter((g) => g.name === 'grant-uri-permission' && g.parent === n);
+      if (n.attrs.grantUriPermissions === 'true') {
+        failures.push(`${key} declares android:grantUriPermissions="true": access could be granted to any path it serves`);
+      } else if (want.grantsOnly) {
+        const only = grants.length === 1 && grants[0].attrs.pathPrefix === want.grantsOnly
+          && grants[0].attrs.path === undefined && grants[0].attrs.pathPattern === undefined;
+        if (!only) failures.push(`${key} must allow grants for the path prefix ${want.grantsOnly} and for nothing else`);
+      } else if (grants.length) {
+        failures.push(`${key} allows URI grants and its row names no path for them`);
+      }
     }
     // A foreground type is what lets a service hold the microphone or keep playing with
     // the app out of sight: each service has exactly the types its row gives it.

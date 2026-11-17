@@ -286,6 +286,8 @@ public final class QuickInputCapability implements Capability {
         InputQueue q = requireQueue();
         long now = clock.getAsLong();
         recoverCutOff();
+        int swept = InputInbox.sweepParts(inputsInbox, now);
+        if (swept > 0) core.shell().note("INPUT", swept + " unfinished capture(s) removed");
         scan(q);
         UploadPump.Pass pass = pump.drain(now);
         blocked = pass.blocked;

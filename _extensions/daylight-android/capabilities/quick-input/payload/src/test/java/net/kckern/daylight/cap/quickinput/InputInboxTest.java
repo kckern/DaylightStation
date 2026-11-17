@@ -191,4 +191,25 @@ public class InputInboxTest {
         assertEquals(0, InputInbox.scan(inbox, q));
         assertEquals(3, inbox.listFiles().length);
     }
+    /**
+     * A capture whose screen was killed leaves a .part file: a photo as the camera wrote
+     * it, with where it was taken in it. It is removed once it is plainly nobody's, at a
+     * pass of the queue, so it does not wait for the next time a screen is opened.
+     */
+    @Test public void aStalePartFileInTheInputsInboxIsRemovedAndNothingElseIs() throws Exception {
+        File inbox = tmp.newFolder("inputs");
+        long now = 1_700_000_000_000L;
+        File fresh = file(inbox, "1700000000000-ab12cd34.meal-photo.raw.part", 10);
+        File stale = file(inbox, "1690000000000-ab12cd34.meal-photo.raw.part", 10);
+        File finished = file(inbox, "1690000000000-ab12cd35.meal-photo.jpg", 10);
+        assertTrue(fresh.setLastModified(now - 60_000));
+        assertTrue(stale.setLastModified(now - InputInbox.STALE_PART_MS - 1));
+        assertTrue(finished.setLastModified(1L));
+        assertEquals(1, InputInbox.sweepParts(inbox, now));
+        assertTrue(fresh.exists());
+        assertFalse(stale.exists());
+        assertTrue(finished.exists());
+        assertEquals(0, InputInbox.sweepParts(new File(inbox, "absent"), now));
+        assertEquals("the same age the screens use (CaptureFiles.STALE_MS)", 30 * 60_000L, InputInbox.STALE_PART_MS);
+    }
 }

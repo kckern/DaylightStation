@@ -578,4 +578,17 @@ public class QuickInputCapabilityTest {
         assertEquals("No inputs to discard", memoLink().handle("discard", NO_QUERY).getString("message"));
         try { inputLink().handle("erase", NO_QUERY); fail("accepted input/erase"); } catch (IllegalArgumentException expected) { }
     }
+    @Test public void aPassOfTheQueueRemovesACaptureLeftBehindAndNeverARecording() throws Exception {
+        TestCore.get(core, "/input/queue");
+        now = 1_700_000_000_000L;
+        File leftBehind = input("1690000000000-ab12cd34.meal-photo.raw.part", 500);
+        assertTrue(leftBehind.setLastModified(now - InputInbox.STALE_PART_MS - 1));
+        File recording = new File(inbox, "1690000000000-ab12cd35.ogg.part");
+        Files.write(recording.toPath(), new byte[500]);
+        assertTrue(recording.setLastModified(1L));
+        cap.pumpOnce();
+        assertFalse(leftBehind.exists());
+        assertTrue("a recording that was cut off is the recorder's to recover, however old", recording.exists());
+        assertTrue(uploads.isEmpty());
+    }
 }
