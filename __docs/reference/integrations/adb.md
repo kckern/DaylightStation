@@ -106,7 +106,7 @@ one to the other is a change to that one field (and `volume.provider`).
 
 ```yaml
 devices:
-  piano-tablet:
+  {device-id}:
     type: tablet
     content_control:
       provider: daylight-android     # or: fully-kiosk
@@ -135,10 +135,15 @@ device id, and the token is read from the entry that matches the device:
 
 ```yaml
 # household auth file "daylight-android"
-piano-tablet:
+{device-id}:
   host: {device-address}
   token: {control-api-token}
 ```
+
+That file is the only source of the token. A `token:` written into
+devices.yml is ignored, and each consumer that meets one logs a warning naming
+the device (`deviceFactory.inlineTokenIgnored`,
+`arcade.kiosk.inline_token_ignored`, `device.excursion.inline_token_ignored`).
 
 The token is sent as the `X-Daylight-Token` request header. It is never put in
 a URL and never logged; request logs carry the route and the names of body and
@@ -163,10 +168,10 @@ shorter, because the app confirms what Fully could only acknowledge:
 
 | Operation | Fully Kiosk | Android kiosk app |
 |-----------|-------------|-------------------|
-| `load` | `loadURL` is acknowledged on receipt; the adapter polls `currentUrl` to verify, or defers that with `verifyAsync` | `POST /kiosk/load` answers after the page's main frame has finished, so a plain load is `verified: true`. With `verifyAsync` the load is sent with `wait:false`, returns on the acknowledgement as `verified: 'async'`, and the outcome is read in the background from `lastLoad` in `GET /kiosk/status`, matched on the `loadId` the acknowledgement returned (on the URL, with a `daylightandroid.load.async-verify-url-fallback` warning, when it returned none), and logged (`daylightandroid.load.async-verified` / `async-unverified` / `async-verify-failed`). Only an unreachable device is retried |
+| `load` | `loadURL` is acknowledged on receipt; the adapter polls `currentUrl` to verify, or defers that with `verifyAsync` | `POST /kiosk/load` answers after the page's main frame has finished, so a plain load is `verified: true`. With `verifyAsync` the load is sent with `wait:false`, returns on the acknowledgement as `verified: 'async'`, and the outcome is read in the background from `lastLoad` in `GET /kiosk/status`, bounded to 30 s, stopped as soon as a newer load replaces it (`daylightandroid.load.async-superseded`, debug), matched on the `loadId` the acknowledgement returned (on the URL, with a `daylightandroid.load.async-verify-url-fallback` warning, when it returned none), and logged (`daylightandroid.load.async-verified` / `async-unverified` / `async-verify-failed`). Only an unreachable device is retried |
 | `prepareForContent` | screen on, foreground-and-poll, disable Fully's motion and acoustic detection, ADB mic check, ADB force-restart when the mic is blocked, relaunch companion apps, camera probe | `POST /screen {on:true}`, `POST /kiosk/foreground`, then for the `full` profile on a device with the `mic-bridge` capability a mic check and bridge restart, then the same ADB camera probe |
 | `healAudioBridge` | force-stop and relaunch each companion app | restart the in-app mic bridge when another process holds the mic, or when forced; `companions` is always empty |
-| `reboot` | ADB when configured, else Fully's `rebootDevice` | `POST /device/reboot`; ADB when the app cannot reboot the device (it needs device owner) or does not answer |
+| `reboot` | ADB when configured, else Fully's `rebootDevice` | `POST /device/reboot`; a drop or timeout after the request went out counts as the reboot. ADB when the app cannot reboot the device (it needs device owner) or the request never reached it |
 | Volume read | parsed out of `deviceInfo` | `GET /volume`, which also reports the hardware index and its maximum |
 
 **Result codes.** `DaylightAndroidRestClient` returns `{ ok: true, data }` or
@@ -197,7 +202,10 @@ directly, and each picks its client from the same `provider` field:
 The single-device `KioskAdapter` in the home-control capability (system `kiosk`
 app config) speaks Fully's protocol only and is not built when that config
 names another provider. It and the tasker adapter call through the system
-`HttpClient` the composition root passes in.
+`HttpClient` the composition root passes in. That legacy adapter puts the
+kiosk password in the request URL, which the HTTP client logs; it is dormant
+(no `kiosk` app config names a host) and should move onto
+`FullyKioskRestClient` before it is ever configured.
 
 Log events from these adapters are prefixed `daylightandroid.` (for example
 `daylightandroid.rest.response`, `daylightandroid.load.failed`,

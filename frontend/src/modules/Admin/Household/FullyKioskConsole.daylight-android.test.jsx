@@ -48,7 +48,7 @@ const daylightSettings = {
   settings: [
     { key: 'debug.execEnabled', value: false, type: 'boolean', editable: true, sensitive: false },
     { key: 'webview.loadTimeoutSec', value: 20, type: 'number', editable: true, sensitive: false },
-    { key: 'webview.startUrl', value: 'https://station.test/piano', type: 'string', editable: true, sensitive: false },
+    { key: 'webview.userAgentSuffix', value: 'https://station.test/piano', type: 'string', editable: true, sensitive: false },
   ],
 };
 
@@ -116,10 +116,10 @@ describe('kiosk console for a device on the Android kiosk app', () => {
     fireEvent.click(screen.getByText(/^Kiosk settings \(/));
     await screen.findByPlaceholderText('Search settings');
 
-    const stringRow = screen.getByText('webview.startUrl').closest('tr');
+    const stringRow = screen.getByText('webview.userAgentSuffix').closest('tr');
     fireEvent.change(within(stringRow).getByRole('textbox'), { target: { value: 'https://station.test/home' } });
     fireEvent.click(within(stringRow).getByRole('button', { name: 'Save' }));
-    await waitFor(() => expect(api.updateSetting).toHaveBeenCalledWith('tablet', 'webview.startUrl', 'https://station.test/home'));
+    await waitFor(() => expect(api.updateSetting).toHaveBeenCalledWith('tablet', 'webview.userAgentSuffix', 'https://station.test/home'));
 
     const numberRow = screen.getByText('webview.loadTimeoutSec').closest('tr');
     fireEvent.change(within(numberRow).getByRole('textbox'), { target: { value: '100000' } });

@@ -233,11 +233,14 @@ its own way to put it there. Each device gets the driver for its
 | Provider | Driver | Arm | Disarm |
 |---|---|---|---|
 | `fully-kiosk` | `FullyKioskArcadeGameOverlay` | settings `webOverlayGravity`, `webOverlayUrl` | `webOverlayUrl` set empty |
-| `daylight-android` | `DaylightAndroidArcadeGameOverlay` | `POST /kiosk/overlay {url, gravity}` | `POST /kiosk/overlay {text: ""}` |
+| `daylight-android` | `DaylightAndroidArcadeGameOverlay` | `POST /kiosk/overlay {url, gravity}` | `POST /kiosk/overlay {url: ""}` |
 
 Both check that the page resolves before arming and refuse to arm when it does
-not. The Android kiosk app has one overlay, so disarming there also clears a
-text message put up from the Admin console. The kiosk client for each device
+not. On the Android kiosk app the web overlay and the text message are
+separate layers: the film counts as armed when the answer says the web layer
+is showing, and disarming clears that layer only, so a message put up from the
+Admin console stays. A declared device with no usable kiosk address is left
+unmetered (`arcade.kiosk.unconfigured`) and the rest carry on. The kiosk client for each device
 is chosen in `__app_modules/games/arcade/server/composition/kioskClients.mjs`.
 
 Startup clears any overlay on a device with no open session, so a process that

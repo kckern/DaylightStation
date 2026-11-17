@@ -138,7 +138,7 @@ Fully. The exported functions keep the same names and signatures on both.
 
 | `fkb.js` export | On Fully | On the Android kiosk app |
 |-----------------|----------|--------------------------|
-| `isFKBAvailable()` | a `fully` object with a control method | a `daylight` object with `launch`, `screen` or `setBackMode` |
+| `isFKBAvailable()` | a `fully` object with a control method (see below) | a `daylight` object with a control method (see below) |
 | `launchApp(pkg)` | `fully.startApplication(pkg)` | `daylight.launch('{"package":pkg}')` |
 | `startApplication(pkg, activity)` | `fully.startApplication(pkg, activity)` | `daylight.launch('{"package":pkg,"activity":activity}')` |
 | `launchAndroidTarget(target)`, `launchIntent(...)` | `fully.startIntent(uri)` | `daylight.launch('{"intent":uri}')`, with the same encoded intent URI |
@@ -160,8 +160,21 @@ A `daylight` call answers `false` when the app did not accept the request, and
 `fkb.js` returns `false` for it and logs `fkb.<call>.rejected`. Fully's calls
 answer nothing, so on Fully a `true` still means "attempted".
 
-Every `fkb.<call>.unavailable` warning carries `bridge: 'daylight' | 'fully' |
-'absent'`, which says which bridge the page found.
+Every `fkb.<call>.unavailable` warning that carried `bridge: 'present' |
+'absent'` still does, with the same values, and all of them carry
+`bridgeKind: 'fully' | 'daylight' | null`, which says which bridge the page
+found.
+
+**What counts as a bridge.** A name on `window` is not enough. `fully` (or
+`FullyKiosk`) qualifies only if it has one of `turnScreenOff`, `turnScreenOn`,
+`startApplication`, `startIntent` or `bind`; `restartApp()` and `reboot()` are
+then called on that object if it has them, and an object carrying only those
+two does not qualify. `daylight` qualifies if it has one of `launch`,
+`screen`, `setBackMode`, `restartApp` or `reboot`.
+
+`restartApp()` and `reboot()` never throw. A caller that reports a throwing
+bridge itself passes `{ onError }`; the piano jank prompt does, and logs
+`piano.jank-reboot.reboot-failed` as it always has.
 
 ---
 

@@ -30,6 +30,12 @@ export function createHomeAutomationAdapters(config) {
   // Android kiosk app, `daylight-android`) is driven through the device
   // adapters selected by `content_control.provider` in devices.yml, so this
   // adapter is not built for it.
+  //
+  // Known weakness of this legacy path, left as it is while the path is
+  // dormant: KioskAdapter sends the kiosk password as a query parameter, and
+  // the system HttpClient logs request URLs. Before a `kiosk` app config is
+  // ever given a host, move this adapter onto FullyKioskRestClient, which
+  // owns the authenticated URL and keeps it out of logs.
   let kioskAdapter = null;
   const kioskProvider = config.kiosk?.provider || 'fully-kiosk';
   if (config.kiosk?.host && kioskProvider !== 'fully-kiosk') {

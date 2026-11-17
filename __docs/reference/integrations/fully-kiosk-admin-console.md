@@ -92,11 +92,21 @@ What differs for these devices:
 - **Settings.** The list shows the app's own setting keys, which are dotted
   (for example `webview.startUrl`). The app declares a type for each one
   (`STRING`, `BOOLEAN` or `INTEGER`) and rejects unknown keys and wrong types
-  itself, so every listed setting is editable; the backend checks only that
-  the key is listed and the value has the declared type. An integer is edited
-  as a number with no range limit. Credential-like keys stay
+  itself, so a listed setting is editable; the backend checks only that the
+  key is listed and the value has the declared type. An integer is edited as
+  a number with no range limit. A few are listed and never editable from the
+  console, because changing them widens what the device will do or who may
+  drive it: every `debug.*`, `control.*` and `lockdown.*` setting, and
+  `webview.bridgeOrigins` and `webview.startUrl`. A write to one is refused
+  with the same error as a Fully setting off the whitelist, before it reaches
+  the device. Credential-like keys stay
   masked and read-only. The curated whitelist above still applies to Fully
   devices, whose settings carry no types.
+- **Restart and reboot.** The app answers and then goes away, and the
+  connection can drop first. For `restart-app` and `reboot`, a drop or timeout
+  after the request went out is reported as sent; a connection that was never
+  made is still an error. When the device cannot reboot itself, the message
+  carries the device's reason (for example "device owner required").
 - **Errors.** Gateway failures carry `DAYLIGHT_ANDROID_*` codes
   (`_TIMEOUT` 504, `_UNREACHABLE` / `_AUTH_REJECTED` / `_COMMAND_REJECTED` /
   `_INVALID_RESPONSE` 502, `_CONFIGURATION_ERROR` 503, `_UNSUPPORTED` 501),
