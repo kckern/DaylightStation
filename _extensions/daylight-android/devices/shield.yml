@@ -7,6 +7,8 @@ control: { port: 8780, lifelinePort: 8781 }
 shell: { versionCode: 4, versionName: "0.2-helpers" }
 # microphone: the mic stream. location: Bluetooth discovery from a service needs it on Android 11.
 foregroundServiceTypes: [microphone, location]
+# No `accessibility`: nothing listed here uses the accessibility service (gamepad
+# pairing, the mic stream and the lease loop do not), and update.autoConfirm stays off.
 capabilities:
   - debug-tools
   - bluetooth-controls
@@ -14,8 +16,14 @@ capabilities:
   - lease-gate
 defaults:
   debug.execEnabled: false
+  heartbeat.enabled: true
+  # Where heartbeats and log lines are shipped. Household-specific: resolved from
+  # `placeholders:` in the private tokens file when this device's payload is built.
+  heartbeat.logStoreUrl: "{log_store_insert_url}"
   # The Bluetooth panel pairs and connects game controllers.
   bluetooth.mode: gamepad
   # 8765 is audio-bridge's port. While both apps are installed (the rollout) the new
   # stream listens here, on loopback only; the page's bridge URL moves with the switch.
   mic.port: 8782
+  # No lease defaults: with lease.endpoint empty the loop is unprovisioned and idle,
+  # the state supervision-guard was left in. The credential is a secret setting.

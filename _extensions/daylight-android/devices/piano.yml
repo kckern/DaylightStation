@@ -18,19 +18,31 @@ permissions:
 capabilities:
   - debug-tools
   - accessibility
-  - synth
+  - synth              # before midi-bridge: a key press reaches sound first
   - midi-bridge
   - bluetooth-controls
   - audio-guard
 defaults:
   debug.execEnabled: false
-  # The speaker's identity is household-specific: both resolve from `placeholders:`
-  # in the private tokens file when this device's payload is built.
-  speaker.mac: "{piano_speaker_mac}"
-  speaker.name: "{piano_speaker_name}"
+  # Keeps today's log store identity so existing queries and the backend supervisor
+  # still match. It becomes daylight-piano at the tablet's cutover.
+  logstore.app: piano-bridge
+  heartbeat.enabled: true
+  # Where heartbeats and log lines are shipped. Household-specific: resolved from
+  # `placeholders:` in the private tokens file when this device's payload is built.
+  heartbeat.logStoreUrl: "{log_store_insert_url}"
+  # heartbeat.deviceId is not set: empty means this file's `id`. The old bridge's
+  # heartbeat identity is a per-device override, replayed at the cutover if it differs.
+  # The app turns its own accessibility service on (needs WRITE_SECURE_SETTINGS over ADB).
+  accessibility.selfEnable: true
+  # The app confirms its own update dialog through accessibility. Its own package only.
+  update.autoConfirm: true
   # The instrument's MIDI router, and addresses the link must never connect to.
   midi.targetMac: "{piano_midi_mac}"
   midi.targetName: "{piano_midi_name}"
   midi.blocklistMacs: "{piano_midi_blocklist}"
+  # The speaker's identity.
+  speaker.mac: "{piano_speaker_mac}"
+  speaker.name: "{piano_speaker_name}"
   # The Bluetooth panel manages the instrument and speaker links above.
   bluetooth.mode: roles

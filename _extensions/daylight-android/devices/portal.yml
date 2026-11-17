@@ -1,4 +1,4 @@
-# Facebook Portal panel (Android 9). Helpers only; the kiosk arrives in phase 3.
+# Facebook Portal panel (Android 9, API 28). Helpers only; the kiosk arrives in phase 3.
 id: portal
 package: net.kckern.daylight.portal
 android: { minSdk: 26, targetSdk: 28 }
@@ -13,6 +13,15 @@ capabilities:
   - presence
 defaults:
   debug.execEnabled: false
+  heartbeat.enabled: true
+  # Where heartbeats and log lines are shipped. Household-specific: resolved from
+  # `placeholders:` in the private tokens file when this device's payload is built.
+  heartbeat.logStoreUrl: "{log_store_insert_url}"
+  # The Portal confirms its own update dialog through accessibility, as portal-keys did.
+  update.autoConfirm: true
+  keys.consumeVolume: true
+  keys.screenToggleEnabled: false
+  keys.doublePressMs: 450
   # Where the Portal reports Bluetooth presence. Household-specific, so it is not in this
   # file. Empty means not configured: the capability logs that once and sends nothing.
   # To compile it in, add `portal_presence_endpoint` under `placeholders:` in the private
@@ -20,3 +29,4 @@ defaults:
   # `settings set presence.endpoint`. The token is a secret setting, set on the device
   # with `settings set presence.token`, never compiled in.
   presence.endpoint: ""
+  presence.heartbeatMs: 60000
