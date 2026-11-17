@@ -81,18 +81,18 @@ public class NotificationsCapabilityTest {
         assertEquals("forbidden", r.getString("error"));
         assertFalse(r.getBoolean("ok"));
         assertTrue(seen.isEmpty());
-        assertEquals(403, link("daylight://action/lights-off?k=" + key.replace(key.charAt(0), 'x')).getInt("_status"));
+        assertEquals(403, link("daylight://action/lights-off#k=" + key.replace(key.charAt(0), 'x')).getInt("_status"));
         assertTrue(seen.isEmpty());
-        assertEquals(200, link("daylight://action/lights-off?k=" + key).getInt("_status"));
+        assertEquals(200, link("daylight://action/lights-off#k=" + key).getInt("_status"));
         assertEquals("[action lights-off {}]", seen.toString());
     }
 
     @Test public void theHandlerIsToldWhetherTheLinkCarriedThisInstallsKey() throws Exception {
         link("daylight://open?path=/media");
-        link("daylight://open?path=/media&k=" + key);
-        link("daylight://open?path=/media&k=" + key.replace(key.charAt(0), 'x'));
+        link("daylight://open?path=/media#k=" + key);
+        link("daylight://open?path=/media#k=" + key.replace(key.charAt(0), 'x'));
         link("https://kiosk.example/media");
-        link("daylight://action/lights-off?k=" + key);
+        link("daylight://action/lights-off#k=" + key);
         assertEquals("[false, true, false, false, true]", keyedSeen.toString());
         assertEquals("the key itself is never handed on", -1, seen.toString().indexOf(key));
     }
@@ -100,7 +100,7 @@ public class NotificationsCapabilityTest {
     @Test public void aKindNoCapabilityOwnsIsAMessageNotAnError() throws Exception {
         // A media link starts playback, so it is refused without this install's key.
         assertEquals(403, link("daylight://media/play?id=plex:1").getInt("_status"));
-        JSONObject r = link("daylight://media/play?id=plex:1&k=" + key);
+        JSONObject r = link("daylight://media/play?id=plex:1#k=" + key);
         assertEquals(200, r.getInt("_status"));
         assertEquals("toast", r.getString("effect"));
         assertEquals("Not available on this device", r.getString("message"));
@@ -115,14 +115,14 @@ public class NotificationsCapabilityTest {
     }
 
     @Test public void aLinkThatNamesSomethingUnknownIsRefused() throws Exception {
-        JSONObject r = link("daylight://action/nope?k=" + key);
+        JSONObject r = link("daylight://action/nope#k=" + key);
         assertEquals(400, r.getInt("_status"));
         assertEquals("bad_link", r.getString("error"));
         assertFalse(r.getBoolean("ok"));
     }
 
     @Test public void aHandlerThatBreaksIsAnAnswerNotACrash() throws Exception {
-        JSONObject r = link("daylight://action/boom?k=" + key);
+        JSONObject r = link("daylight://action/boom#k=" + key);
         assertEquals(500, r.getInt("_status"));
         assertEquals("failed", r.getString("error"));
     }
@@ -146,8 +146,8 @@ public class NotificationsCapabilityTest {
 
     @Test public void everyRefusalIsLoggedWithoutTheLink() throws Exception {
         FakeShell shell = (FakeShell) core.shell();
-        link("daylight://action/lights-off?k=wrong-key-wrong-key-wrong-key-wrong");
-        link("https://evil.example/steal?k=" + key);
+        link("daylight://action/lights-off#k=wrong-key-wrong-key-wrong-key-wrong");
+        link("https://evil.example/steal#k=" + key);
         String notes = shell.notes.toString();
         assertTrue(notes, notes.contains("LINK refused"));
         assertFalse(notes, notes.contains("evil.example"));
@@ -211,5 +211,34 @@ public class NotificationsCapabilityTest {
             next.stop();
         }
         assertFalse(port.ready());
+    }
+
+    // ── the key rotates at every payload start ───────────────────────────────
+
+    @Test public void theKeyRotatesAtEachStartSoALinkSeenOnceStopsWorking() throws Exception {
+        final long[] now = { 1_000_000 };
+        cap.clock = () -> now[0];
+        String before = key;
+        cap.start();
+        String after = core.services().find(LinkKeySource.class).installKey();
+        assertNotEquals(before, after);
+        assertEquals(200, link("daylight://action/lights-off#k=" + after).getInt("_status"));
+        // The tap that woke the app carries the key of the run before: it is honoured for a moment.
+        assertEquals(200, link("daylight://action/lights-off#k=" + before).getInt("_status"));
+        now[0] += NotificationsCapability.PREVIOUS_KEY_MS + 1;
+        assertEquals("after that the old key is no key", 403, link("daylight://action/lights-off#k=" + before).getInt("_status"));
+        assertEquals(200, link("daylight://action/lights-off#k=" + after).getInt("_status"));
+        // And a key from two starts ago never works.
+        cap.stop();
+        cap.start();
+        assertEquals(403, link("daylight://action/lights-off#k=" + before).getInt("_status"));
+        assertEquals("the one before this start still does, for its moment", 200, link("daylight://action/lights-off#k=" + after).getInt("_status"));
+    }
+
+    @Test public void aKeyInTheQueryIsRefusedAndNeverLogged() throws Exception {
+        FakeShell shell = (FakeShell) core.shell();
+        assertEquals(403, link("daylight://action/lights-off?k=" + key).getInt("_status"));
+        assertTrue(seen.isEmpty());
+        assertFalse(shell.notes.toString(), shell.notes.toString().contains(key));
     }
 }

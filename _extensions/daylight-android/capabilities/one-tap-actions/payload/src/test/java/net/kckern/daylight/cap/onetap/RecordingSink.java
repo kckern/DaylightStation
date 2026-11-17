@@ -28,8 +28,23 @@ final class RecordingSink implements SurfaceSink {
         cache = tileCache;
     }
 
+    final List<String> refreshed = new ArrayList<>();
+    final List<String> disabled = new ArrayList<>();
+    /** The shortcut ids the launcher holds as pinned. */
+    List<String> pinnedIds = new ArrayList<>();
+
+    @Override public List<String> pinnedIds() { return pinnedIds; }
+
+    @Override public void refreshPinned(SurfacePlan.Pins pins, SurfacePlan.Linker linker) {
+        refreshed.clear();
+        disabled.clear();
+        for (Map.Entry<String, Action> e : pins.update.entrySet()) refreshed.add(e.getKey() + " " + linker.uri(e.getValue()));
+        disabled.addAll(pins.disable);
+    }
+
     @Override public void pin(Action action, String uri) {
         if (!pinSupported) throw new UnsupportedException("this launcher does not pin shortcuts");
         pinned = action.id + " " + uri;
+        pinnedIds.add(SurfacePlan.pinId(action));
     }
 }

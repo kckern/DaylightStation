@@ -56,6 +56,12 @@ public final class NotificationsCapability implements Capability, LinkKeySource,
     private CoreContext core;
     private Backend backend;
     private volatile String key;
+    /** The key of the run before, honoured until previousUntilMs: the tap that woke the app carries it. */
+    private volatile String previousKey = "";
+    private volatile long previousUntilMs;
+    /** How long after a start a link under the previous key is still honoured. */
+    static final long PREVIOUS_KEY_MS = 60_000L;
+    java.util.function.LongSupplier clock = System::currentTimeMillis;
     private volatile NoticeSink sink;
 
     public NotificationsCapability() { }
@@ -125,7 +131,16 @@ public final class NotificationsCapability implements Capability, LinkKeySource,
      * payload too. Nothing here can fail on a bad setting.
      */
     @Override public void start() {
-        installKey();
+        // A new key for every run. This capability starts before the ones that build
+        // links (one-tap-actions, widgets, voice-memo), so every surface and notice they
+        // publish at start carries it. A cold start is itself caused by a tap on a link
+        // built under the key before, so that one is honoured for a minute more.
+        synchronized (this) {
+            LinkKey.Rotation r = LinkKey.rotate(keyFile());
+            key = r.current;
+            previousKey = r.previous;
+            previousUntilMs = clock.getAsLong() + PREVIOUS_KEY_MS;
+        }
         port.attach(onLink);
         // A device that refuses a channel must not take the whole payload down with it.
         try {
@@ -186,11 +201,20 @@ public final class NotificationsCapability implements Capability, LinkKeySource,
         String k = key;
         if (k == null) {
             synchronized (this) {
-                if (key == null) key = LinkKey.loadOrCreate(new File(PayloadState.dir(core.shell().payloadDir()), "link-key"));
+                if (key == null) key = LinkKey.loadOrCreate(keyFile());
                 k = key;
             }
         }
         return k;
+    }
+
+    private File keyFile() { return new File(PayloadState.dir(core.shell().payloadDir()), "link-key"); }
+
+    /** Whether the link carries the key in force, or within a minute of a start the one before it. */
+    private boolean keyed(DeepLink link) {
+        if (link.presentsKey(installKey())) return true;
+        String before = previousKey;
+        return !before.isEmpty() && clock.getAsLong() < previousUntilMs && link.presentsKey(before);
     }
 
     Outcome handle(String uri) {
@@ -201,7 +225,8 @@ public final class NotificationsCapability implements Capability, LinkKeySource,
             } catch (IllegalArgumentException malformed) {
                 return refuse(400, "bad_link", malformed.getMessage(), "That link cannot be opened here");
             }
-            if (!link.authorized(installKey())) {
+            boolean keyed = keyed(link);
+            if (link.needsKey() && !keyed) {
                 return refuse(403, "forbidden", "a " + link.kind + " link without this install's key",
                         "That link is not allowed");
             }
@@ -211,7 +236,7 @@ public final class NotificationsCapability implements Capability, LinkKeySource,
             }
             if (owner == null) return new Outcome(200, LinkEffect.toast("Not available on this device"));
             try {
-                JSONObject effect = owner.handle(link.arg, link.handlerQuery(), link.presentsKey(installKey()));
+                JSONObject effect = owner.handle(link.arg, link.handlerQuery(), keyed);
                 return new Outcome(200, effect == null ? LinkEffect.none() : effect);
             } catch (IllegalArgumentException unknown) {
                 // The handler's reason is its own fixed text about its own configuration.

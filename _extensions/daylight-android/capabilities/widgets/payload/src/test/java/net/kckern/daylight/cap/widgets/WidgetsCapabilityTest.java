@@ -46,7 +46,7 @@ public class WidgetsCapabilityTest {
         core.services().provide(ActionList.class, () -> {
             try {
                 return new JSONArray().put(new JSONObject().put("id", "memo").put("label", label).put("icon", "mic")
-                        .put("uri", "daylight://action/memo?k=" + KEY));
+                        .put("uri", "daylight://action/memo#k=" + KEY));
             } catch (Exception e) {
                 throw new AssertionError(e);
             }
@@ -58,7 +58,7 @@ public class WidgetsCapabilityTest {
         JSONObject r = TestCore.call(core, "POST", "/widgets/refresh", null, "{}");
         assertEquals(200, r.getInt("_status"));
         assertEquals("New memo", applied.get("widget.1.label"));
-        assertEquals("daylight://action/memo?k=" + KEY, applied.get("widget.1.uri"));
+        assertEquals("daylight://action/memo#k=" + KEY, applied.get("widget.1.uri"));
         assertEquals("memo", r.getJSONArray("slots").getJSONObject(0).getString("id"));
         assertFalse(r.toString().contains(KEY));
     }

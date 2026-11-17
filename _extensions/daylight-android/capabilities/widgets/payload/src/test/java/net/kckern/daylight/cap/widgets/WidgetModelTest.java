@@ -11,8 +11,8 @@ import java.util.Map;
 
 public class WidgetModelTest {
     private static JSONArray actions() throws Exception {
-        return new JSONArray("[{\"id\":\"memo\",\"label\":\"New memo\",\"icon\":\"mic\",\"uri\":\"daylight://action/memo?k=K\"},"
-                + "{\"id\":\"feed\",\"label\":\"Feed\",\"icon\":\"open\",\"uri\":\"daylight://action/feed?k=K\"},"
+        return new JSONArray("[{\"id\":\"memo\",\"label\":\"New memo\",\"icon\":\"mic\",\"uri\":\"daylight://action/memo#k=K\"},"
+                + "{\"id\":\"feed\",\"label\":\"Feed\",\"icon\":\"open\",\"uri\":\"daylight://action/feed#k=K\"},"
                 + "{\"id\":\"a3\",\"label\":\"Three\",\"uri\":\"daylight://action/a3\"},{\"id\":\"a4\",\"label\":\"Four\",\"uri\":\"daylight://action/a4\"},"
                 + "{\"id\":\"a5\",\"label\":\"Five\",\"uri\":\"daylight://action/a5\"}]");
     }
@@ -21,7 +21,7 @@ public class WidgetModelTest {
         Map<String, String> cache = WidgetModel.cache(actions(), "feed, memo");
         assertEquals("Feed", cache.get("widget.1.label"));
         assertEquals("open", cache.get("widget.1.icon"));
-        assertEquals("daylight://action/feed?k=K", cache.get("widget.1.uri"));
+        assertEquals("daylight://action/feed#k=K", cache.get("widget.1.uri"));
         assertEquals("New memo", cache.get("widget.2.label"));
         assertEquals("", cache.get("widget.3.uri"));
         assertEquals("", cache.get("widget.4.label"));

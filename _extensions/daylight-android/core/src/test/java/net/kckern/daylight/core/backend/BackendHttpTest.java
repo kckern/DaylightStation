@@ -124,9 +124,9 @@ public class BackendHttpTest {
 
     @Test public void anUploadThatWasSentAndNeverAnsweredIsATimeout() throws Exception {
         // Accepts, reads everything and says nothing: the intake, still transcribing.
-        final java.net.ServerSocket quiet = new java.net.ServerSocket(0, 1, java.net.InetAddress.getByName("127.0.0.1"));
+        final java.net.ServerSocket mute = new java.net.ServerSocket(0, 1, java.net.InetAddress.getByName("127.0.0.1"));
         Thread t = new Thread(() -> {
-            try (java.net.Socket s = quiet.accept()) {
+            try (java.net.Socket s = mute.accept()) {
                 java.io.InputStream in = s.getInputStream();
                 byte[] buf = new byte[4096];
                 while (in.read(buf) >= 0) { /* keep reading until the client gives up */ }
@@ -135,13 +135,13 @@ public class BackendHttpTest {
         t.setDaemon(true);
         t.start();
         try {
-            new BackendHttp(() -> "fleet:phone", 2000, 300).postFile("http://127.0.0.1:" + quiet.getLocalPort() + "/m", "audio/ogg",
+            new BackendHttp(() -> "fleet:phone", 2000, 300).postFile("http://127.0.0.1:" + mute.getLocalPort() + "/m", "audio/ogg",
                     memo(), Collections.<String, String>emptyMap());
             fail("answered");
         } catch (java.net.SocketTimeoutException expected) {
             // The body arrived, so the backend may have the memo: this one counts.
         } finally {
-            quiet.close();
+            mute.close();
         }
     }
 

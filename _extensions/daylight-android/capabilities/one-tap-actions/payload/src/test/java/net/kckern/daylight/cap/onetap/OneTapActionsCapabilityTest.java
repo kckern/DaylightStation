@@ -110,7 +110,7 @@ public class OneTapActionsCapabilityTest {
         JSONObject first = core.services().find(ActionList.class).actions().getJSONObject(0);
         assertEquals("feed", first.getString("id"));
         assertEquals("Feed", first.getString("label"));
-        assertEquals("daylight://action/feed?k=" + KEY, first.getString("uri"));
+        assertEquals("daylight://action/feed#k=" + KEY, first.getString("uri"));
     }
 
     @Test public void anOpenActionIsHandedToTheCapabilityThatOpensViews() throws Exception {

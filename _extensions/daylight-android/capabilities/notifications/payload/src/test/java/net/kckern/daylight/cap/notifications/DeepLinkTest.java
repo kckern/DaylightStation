@@ -34,16 +34,16 @@ public class DeepLinkTest {
         DeepLink bare = parse("daylight://action/lights-off");
         assertTrue(bare.needsKey());
         assertFalse(bare.authorized(KEY));
-        assertFalse(parse("daylight://action/lights-off?k=wrong").authorized(KEY));
-        assertTrue(parse("daylight://action/lights-off?k=" + KEY).authorized(KEY));
-        assertTrue(parse("daylight://memo/new?k=" + KEY).authorized(KEY));
+        assertFalse(parse("daylight://action/lights-off#k=wrong").authorized(KEY));
+        assertTrue(parse("daylight://action/lights-off#k=" + KEY).authorized(KEY));
+        assertTrue(parse("daylight://memo/new#k=" + KEY).authorized(KEY));
         assertFalse("no key on this install means nothing keyed is allowed",
-                parse("daylight://memo/new?k=").authorized(""));
-        assertFalse(parse("daylight://memo/new?k=short").authorized("short"));
+                parse("daylight://memo/new#k=").authorized(""));
+        assertFalse(parse("daylight://memo/new#k=short").authorized("short"));
     }
 
     @Test public void theKeyNeverTravelsOnToTheHandler() {
-        DeepLink l = parse("daylight://action/lights-off?k=" + KEY + "&dim=1");
+        DeepLink l = parse("daylight://action/lights-off?dim=1#k=" + KEY);
         assertEquals("lights-off", l.arg);
         assertEquals("1", l.handlerQuery().get("dim"));
         assertFalse(l.handlerQuery().containsKey("k"));
@@ -61,7 +61,7 @@ public class DeepLinkTest {
     @Test public void aRefusalNeverRepeatsWhatTheLinkSaid() {
         // The reason goes into a log that leaves the device; a link can hold a key or anything a stranger typed.
         try {
-            parse("daylight://s3cr3t-kind/x?k=" + KEY);
+            parse("daylight://s3cr3t-kind/x#k=" + KEY);
             fail("accepted");
         } catch (IllegalArgumentException e) {
             assertFalse(e.getMessage(), e.getMessage().contains("s3cr3t"));
@@ -100,8 +100,8 @@ public class DeepLinkTest {
         DeepLink bare = parse("daylight://media/play?id=plex:123");
         assertTrue(bare.needsKey());
         assertFalse(bare.authorized(KEY));
-        assertFalse(parse("daylight://media/play?id=plex:123&k=wrong").authorized(KEY));
-        DeepLink keyed = parse("daylight://media/play?id=plex:123&k=" + KEY);
+        assertFalse(parse("daylight://media/play?id=plex:123#k=wrong").authorized(KEY));
+        DeepLink keyed = parse("daylight://media/play?id=plex:123#k=" + KEY);
         assertTrue(keyed.authorized(KEY));
         assertFalse("the key is not handed on to the handler", keyed.handlerQuery().containsKey("k"));
         assertEquals("plex:123", keyed.handlerQuery().get("id"));
@@ -119,9 +119,34 @@ public class DeepLinkTest {
 
     @Test public void anOpenLinkMayCarryTheKeyAndIsThenKnownToBeTheAppsOwn() {
         assertFalse(parse("daylight://open?path=/feed").presentsKey(KEY));
-        assertFalse(parse("daylight://open?path=/feed&k=wrong").presentsKey(KEY));
-        assertTrue(parse("daylight://open?path=/feed&k=" + KEY).presentsKey(KEY));
-        assertFalse("no key on this install", parse("daylight://open?path=/feed&k=").presentsKey(""));
-        assertFalse("a web link never carries it", parse("https://kiosk.example/feed?k=" + KEY).presentsKey(KEY));
+        assertFalse(parse("daylight://open?path=/feed#k=wrong").presentsKey(KEY));
+        assertTrue(parse("daylight://open?path=/feed#k=" + KEY).presentsKey(KEY));
+        assertFalse("no key on this install", parse("daylight://open?path=/feed#k=").presentsKey(""));
+        assertFalse("a web link never carries it", parse("https://kiosk.example/feed#k=" + KEY).presentsKey(KEY));
+    }
+
+    // ── where the key travels ────────────────────────────────────────────────
+
+    /**
+     * Android writes "START ... dat=daylight://action/x?k=..." to the system log for a
+     * link it starts: everything but the fragment. So the key is carried in the fragment,
+     * and a key anywhere else is not a key.
+     */
+    @Test public void theKeyIsReadFromTheFragmentAndNowhereElse() {
+        assertTrue(parse("daylight://action/lights-off#k=" + KEY).authorized(KEY));
+        assertTrue(parse("daylight://media/play?id=plex:1#k=" + KEY).authorized(KEY));
+        assertFalse("in the query it would be in the log", parse("daylight://action/lights-off?k=" + KEY).authorized(KEY));
+        assertFalse(parse("daylight://action/lights-off?k=" + KEY).presentsKey(KEY));
+        assertFalse("the fragment must be the key and nothing else", parse("daylight://action/lights-off#x=1&k=" + KEY).authorized(KEY));
+        assertFalse(parse("daylight://action/lights-off#" + KEY).authorized(KEY));
+        assertFalse("a key in the query is not handed on either", parse("daylight://action/x?k=" + KEY + "#k=" + KEY).handlerQuery().containsKey("k"));
+    }
+
+    @Test public void aLinkIsGivenItsKeyInTheFragment() {
+        assertEquals("daylight://memo/queue#k=" + KEY, DeepLink.withKey("daylight://memo/queue", KEY));
+        assertEquals("daylight://media/play?id=plex:1#k=" + KEY, DeepLink.withKey("daylight://media/play?id=plex:1", KEY));
+        assertEquals("a fragment already there is replaced", "daylight://memo/queue#k=" + KEY, DeepLink.withKey("daylight://memo/queue#k=old", KEY));
+        assertEquals("no key, no change", "daylight://memo/queue", DeepLink.withKey("daylight://memo/queue", ""));
+        assertFalse("what the system logs holds no key", DeepLink.withKey("daylight://memo/queue", KEY).split("#")[0].contains(KEY));
     }
 }

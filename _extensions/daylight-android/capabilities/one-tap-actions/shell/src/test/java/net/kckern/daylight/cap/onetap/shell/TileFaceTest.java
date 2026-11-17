@@ -6,11 +6,11 @@ import org.junit.Test;
 
 public class TileFaceTest {
     @Test public void anAssignedSlotShowsItsActionAndCanBeTapped() {
-        TileFace f = TileFace.of(1, "New memo", "mic", "daylight://action/memo?k=abc");
+        TileFace f = TileFace.of(1, "New memo", "mic", "daylight://action/memo#k=abc");
         assertEquals("New memo", f.label);
         assertEquals("ic_action_mic", f.iconName);
         assertTrue(f.available);
-        assertEquals("daylight://action/memo?k=abc", f.link);
+        assertEquals("daylight://action/memo#k=abc", f.link);
     }
 
     @Test public void anUnassignedSlotSaysWhichSlotItIsAndCannotBeTapped() {

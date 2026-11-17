@@ -80,5 +80,31 @@ final class SurfacePlan {
         return new SurfacePlan(shortcuts, tiles, cache);
     }
 
+    /** A pinned shortcut has an id of its own, apart from the launcher shortcut of the same action. */
+    static final String PIN_PREFIX = "pin-";
+
+    static String pinId(Action action) { return PIN_PREFIX + action.id; }
+
+    /** What to do with the shortcuts the launcher holds as pinned. */
+    static final class Pins {
+        /** Shortcut id to the action it launches: rewritten with a link under the current key. */
+        final Map<String, Action> update = new LinkedHashMap<>();
+        /** Shortcut ids whose action is gone: nothing they could launch would be honoured. */
+        final List<String> disable = new ArrayList<>();
+    }
+
+    /**
+     * A pinned shortcut is found by its shortcut id ("pin-<action>", or the action's own
+     * id when it was pinned from the long-press menu) and given the action of that name.
+     */
+    static Pins pins(ActionCatalog catalog, List<String> pinnedIds) {
+        Pins pins = new Pins();
+        for (String id : pinnedIds) {
+            Action a = catalog.find(id.startsWith(PIN_PREFIX) ? id.substring(PIN_PREFIX.length()) : id);
+            if (a == null) pins.disable.add(id); else pins.update.put(id, a);
+        }
+        return pins;
+    }
+
     private static String clip(String id) { return id.length() > 32 ? id.substring(0, 32) : id; }
 }

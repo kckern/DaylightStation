@@ -73,7 +73,7 @@ final class Notice {
                 throw new IllegalArgumentException("a notice opens only this app's own links");
             }
             if (parsed.needsKey() && !parsed.authorized(installKey) && installKey != null && installKey.length() >= 32) {
-                link += (link.indexOf('?') >= 0 ? "&" : "?") + "k=" + installKey;
+                link = DeepLink.withKey(link, installKey);
             }
         }
         return link;

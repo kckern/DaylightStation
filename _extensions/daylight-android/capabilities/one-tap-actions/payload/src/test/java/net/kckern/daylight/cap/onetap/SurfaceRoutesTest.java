@@ -49,9 +49,9 @@ public class SurfaceRoutesTest {
         core.settings().set("actions.tiles", "memo");
         cap.start();
         assertEquals("[memo, feed]", sink.published.toString());
-        assertEquals("daylight://action/memo?k=" + KEY, sink.publishedUris.get(0));
+        assertEquals("daylight://action/memo#k=" + KEY, sink.publishedUris.get(0));
         assertEquals("New memo", sink.cache.get("tile.1.label"));
-        assertEquals("daylight://action/memo?k=" + KEY, sink.cache.get("tile.1.uri"));
+        assertEquals("daylight://action/memo#k=" + KEY, sink.cache.get("tile.1.uri"));
         assertTrue("other surfaces are told", events.contains(ActionList.PUBLISHED));
     }
 
@@ -71,7 +71,7 @@ public class SurfaceRoutesTest {
     @Test public void pinAsksTheLauncherForOneAction() throws Exception {
         JSONObject r = post("/actions/pin", "{\"id\":\"memo\"}");
         assertEquals(200, r.getInt("_status"));
-        assertEquals("memo daylight://action/memo?k=" + KEY, sink.pinned);
+        assertEquals("memo daylight://action/memo#k=" + KEY, sink.pinned);
         assertFalse(r.toString().contains(KEY));
         assertEquals(400, post("/actions/pin", "{\"id\":\"nope\"}").getInt("_status"));
     }
@@ -137,5 +137,13 @@ public class SurfaceRoutesTest {
         plain.stop();
         plain.stop();
         assertEquals(0, FakeContext.liveThreads(OneTapActionsCapability.WORKER));
+    }
+
+    @Test public void publishingRewritesThePinnedShortcutsWithTheCurrentKey() throws Exception {
+        post("/actions/pin", "{\"id\":\"memo\"}");
+        sink.pinnedIds.add("pin-removed");
+        assertEquals(200, post("/actions/publish", null).getInt("_status"));
+        assertEquals(java.util.Collections.singletonList("pin-memo daylight://action/memo#k=" + KEY), sink.refreshed);
+        assertEquals(java.util.Collections.singletonList("pin-removed"), sink.disabled);
     }
 }

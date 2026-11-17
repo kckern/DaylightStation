@@ -49,13 +49,34 @@ final class AndroidSurfaces implements SurfaceSink {
     @Override public void pin(Action action, String uri) {
         ShortcutManager m = manager();
         if (m == null || !m.isRequestPinShortcutSupported()) throw new UnsupportedException("this launcher does not pin shortcuts");
-        if (!m.requestPinShortcut(info(action, uri), null)) throw new UnsupportedException("the launcher refused the pin request");
+        if (!m.requestPinShortcut(info(action, uri, SurfacePlan.pinId(action)), null)) {
+            throw new UnsupportedException("the launcher refused the pin request");
+        }
     }
 
-    private ShortcutInfo info(Action a, String uri) {
+    @Override public List<String> pinnedIds() {
+        List<String> out = new ArrayList<>();
+        ShortcutManager m = manager();
+        if (m == null) return out;
+        for (ShortcutInfo s : m.getPinnedShortcuts()) out.add(s.getId());
+        return out;
+    }
+
+    @Override public void refreshPinned(SurfacePlan.Pins pins, SurfacePlan.Linker linker) {
+        ShortcutManager m = manager();
+        if (m == null) return;
+        List<ShortcutInfo> infos = new ArrayList<>();
+        for (Map.Entry<String, Action> e : pins.update.entrySet()) infos.add(info(e.getValue(), linker.uri(e.getValue()), e.getKey()));
+        if (!infos.isEmpty()) m.updateShortcuts(infos);
+        if (!pins.disable.isEmpty()) m.disableShortcuts(pins.disable, "This action is no longer set up");
+    }
+
+    private ShortcutInfo info(Action a, String uri) { return info(a, uri, a.id); }
+
+    private ShortcutInfo info(Action a, String uri, String shortcutId) {
         // A VIEW of a daylight:// link, limited to this package: it resolves to the link activity.
         Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse(uri)).setPackage(context.getPackageName());
-        return new ShortcutInfo.Builder(context, a.id)
+        return new ShortcutInfo.Builder(context, shortcutId)
                 .setShortLabel(a.label)
                 .setLongLabel(a.label)
                 .setIcon(Icon.createWithResource(context, iconResource(a.icon)))

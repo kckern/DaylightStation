@@ -15,7 +15,7 @@ public class SurfacePlanTest {
             "feed|Feed|open|bookmark:feed", "call|Call|open|bookmark:call", "lights|Lights off|bolt|api:/api/v1/x"));
 
     private static SurfacePlan plan(String shortcuts, String tiles, int max) {
-        return SurfacePlan.of(CATALOG, shortcuts, tiles, max, a -> "daylight://action/" + a.id + "?k=KEY");
+        return SurfacePlan.of(CATALOG, shortcuts, tiles, max, a -> "daylight://action/" + a.id + "#k=KEY");
     }
 
     private static String message(String shortcuts, String tiles) {
@@ -44,7 +44,7 @@ public class SurfacePlanTest {
         Map<String, String> cache = plan("", "memo,,lights", 4).tileCache;
         assertEquals("New memo", cache.get("tile.1.label"));
         assertEquals("mic", cache.get("tile.1.icon"));
-        assertEquals("daylight://action/memo?k=KEY", cache.get("tile.1.uri"));
+        assertEquals("daylight://action/memo#k=KEY", cache.get("tile.1.uri"));
         assertEquals("an unassigned slot is cleared, not left stale", "", cache.get("tile.2.uri"));
         assertEquals("Lights off", cache.get("tile.3.label"));
         assertEquals("", cache.get("tile.4.uri"));
@@ -79,5 +79,26 @@ public class SurfacePlanTest {
         List<String> out = new ArrayList<>();
         for (ActionCatalog.Action a : p.shortcuts) out.add(a.id);
         return out.toString();
+    }
+
+    // ── pinned shortcuts across a key rotation ───────────────────────────────
+
+    @Test public void aPinnedShortcutHasItsOwnId() {
+        assertEquals("pin-memo", SurfacePlan.pinId(CATALOG.find("memo")));
+    }
+
+    /**
+     * The launcher keeps a pinned shortcut's intent. When the key rotates each one is
+     * rewritten with a link under the new key, found by its shortcut id; one whose
+     * action is gone is disabled, since nothing it could launch would be honoured.
+     */
+    @Test public void everyPinnedShortcutIsRewrittenForItsActionAndOneWithoutAnActionIsDisabled() {
+        String known = CATALOG.all().get(0).id;
+        SurfacePlan.Pins pins = SurfacePlan.pins(CATALOG, java.util.Arrays.asList("pin-" + known, known, "pin-gone", "gone", "someone-elses"));
+        assertEquals(new java.util.HashSet<>(java.util.Arrays.asList("pin-" + known, known)), pins.update.keySet());
+        assertEquals(known, pins.update.get("pin-" + known).id);
+        assertEquals("pinned from the long-press menu, under the action's own id", known, pins.update.get(known).id);
+        assertEquals(java.util.Arrays.asList("pin-gone", "gone", "someone-elses"), pins.disable);
+        assertTrue(SurfacePlan.pins(CATALOG, java.util.Collections.<String>emptyList()).update.isEmpty());
     }
 }

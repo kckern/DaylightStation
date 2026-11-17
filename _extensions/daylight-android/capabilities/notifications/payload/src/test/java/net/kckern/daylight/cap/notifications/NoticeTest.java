@@ -58,10 +58,10 @@ public class NoticeTest {
 
     /** The app posts the notice itself, so a tap on it may carry the install key. */
     @Test public void aLinkThatNeedsTheKeyIsGivenIt() {
-        assertEquals("daylight://memo/queue?k=" + KEY, notice("x", "uploads", "t", "", "daylight://memo/queue").uri);
-        assertEquals("daylight://action/x?dim=1&k=" + KEY, notice("x", "uploads", "t", "", "daylight://action/x?dim=1").uri);
-        assertEquals("a link that already carries it is left alone", "daylight://memo/new?k=" + KEY,
-                notice("x", "uploads", "t", "", "daylight://memo/new?k=" + KEY).uri);
+        assertEquals("daylight://memo/queue#k=" + KEY, notice("x", "uploads", "t", "", "daylight://memo/queue").uri);
+        assertEquals("daylight://action/x?dim=1#k=" + KEY, notice("x", "uploads", "t", "", "daylight://action/x?dim=1").uri);
+        assertEquals("a link that already carries it is left alone", "daylight://memo/new#k=" + KEY,
+                notice("x", "uploads", "t", "", "daylight://memo/new#k=" + KEY).uri);
         assertEquals("a page link needs none", "daylight://bookmark/feed", notice("x", "uploads", "t", "", "daylight://bookmark/feed").uri);
         assertEquals("with no key yet the link is posted as it is, and a tap is refused", "daylight://memo/queue",
                 Notice.of("x", "uploads", "t", "", "daylight://memo/queue", "").uri);

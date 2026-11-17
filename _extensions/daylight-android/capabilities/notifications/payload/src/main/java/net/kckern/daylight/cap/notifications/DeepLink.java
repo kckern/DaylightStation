@@ -17,7 +17,7 @@ import java.util.Set;
 /**
  * A parsed link. Pure: no Android types. Two forms are links:
  *
- *   daylight://<kind>[/<arg>][?<query>]     kind: open, bookmark, action, memo, media
+ *   daylight://<kind>[/<arg>][?<query>][#k=<key>]     kind: open, bookmark, action, memo, media
  *   http(s)://<an allowed origin>/<path>    read as daylight://open for that path
  *
  * Everything else is refused, and so is a web link on any other origin. Every link
@@ -48,16 +48,32 @@ public final class DeepLink {
         return true;
     }
     private static final String KEY_PARAM = "k";
+    /**
+     * The install key travels in the fragment: "#k=<key>". Android writes the links it
+     * starts to the system log ("START ... dat=daylight://action/x?..."), scheme, path
+     * and query, and leaves the fragment out. A key in the query is not read as one.
+     */
+    private static final String KEY_FRAGMENT = KEY_PARAM + "=";
+
+    /** The link with this key as its fragment, replacing any fragment it had. Unchanged for an empty key. */
+    public static String withKey(String link, String key) {
+        if (key == null || key.isEmpty()) return link;
+        int hash = link.indexOf('#');
+        return (hash < 0 ? link : link.substring(0, hash)) + "#" + KEY_FRAGMENT + key;
+    }
 
     public final String kind;
     /** The path after the kind, without the leading slash. Empty when absent. */
     public final String arg;
     public final Map<String, String> query;
+    /** What the fragment presented as a key, or null. */
+    private final String presentedKey;
 
-    private DeepLink(String kind, String arg, Map<String, String> query) {
+    private DeepLink(String kind, String arg, Map<String, String> query, String presentedKey) {
         this.kind = kind;
         this.arg = arg;
         this.query = Collections.unmodifiableMap(query);
+        this.presentedKey = presentedKey;
     }
 
     /** @param webOrigins the origins ("scheme://host[:port]") whose web links may open in the app */
@@ -90,7 +106,10 @@ public final class DeepLink {
                 query.put(decode(name), decode(value));
             }
         }
-        return new DeepLink(kind, arg, query);
+        String fragment = u.getRawFragment();
+        String presented = fragment != null && fragment.startsWith(KEY_FRAGMENT) && fragment.indexOf('&') < 0
+                ? fragment.substring(KEY_FRAGMENT.length()) : null;
+        return new DeepLink(kind, arg, query, presented);
     }
 
     /** A web link is an open link for its path, and only on an origin the app was told about. */
@@ -110,7 +129,7 @@ public final class DeepLink {
         Map<String, String> query = new LinkedHashMap<>();
         // Kept as written. The capability that opens pages checks the path's shape itself.
         query.put("path", path);
-        return new DeepLink("open", "", query);
+        return new DeepLink("open", "", query, null);
     }
 
     public boolean needsKey() { return KEYED.contains(kind); }
@@ -124,7 +143,7 @@ public final class DeepLink {
      * that does is one of the app's own; one that does not can come from anywhere.
      */
     public boolean presentsKey(String installKey) {
-        String presented = query.get(KEY_PARAM);
+        String presented = presentedKey;
         if (installKey == null || installKey.length() < 32 || presented == null) return false;
         return MessageDigest.isEqual(installKey.getBytes(StandardCharsets.UTF_8), presented.getBytes(StandardCharsets.UTF_8));
     }

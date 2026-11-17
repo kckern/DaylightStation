@@ -13,6 +13,12 @@ interface SurfaceSink {
     /** Replace the dynamic shortcuts and write the tile cache. */
     void publish(List<Action> shortcuts, SurfacePlan.Linker linker, Map<String, String> tileCache);
 
-    /** Ask the launcher to pin one action. Throw UnsupportedException when it cannot. */
+    /** The ids of the shortcuts the launcher holds as pinned. */
+    List<String> pinnedIds();
+
+    /** Rewrite the pinned shortcuts in the plan with their current links, and disable the ones it says to. */
+    void refreshPinned(SurfacePlan.Pins pins, SurfacePlan.Linker linker);
+
+    /** Ask the launcher to pin one action, under SurfacePlan.pinId. Throw UnsupportedException when it cannot. */
     void pin(Action action, String uri);
 }

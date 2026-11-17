@@ -36,4 +36,15 @@ public class LinkKeyTest {
         String key = LinkKey.loadOrCreate(new File(notADirectory, "link-key"));
         assertTrue(key.matches("[0-9a-f]{32}"));
     }
+
+    @Test public void rotatingMakesANewKeyAndRemembersTheOneBefore() throws Exception {
+        File f = new File(tmp.newFolder(), "state/link-key");
+        String first = LinkKey.loadOrCreate(f);
+        LinkKey.Rotation r = LinkKey.rotate(f);
+        assertEquals(first, r.previous);
+        assertTrue(r.current.matches("[0-9a-f]{32}"));
+        assertNotEquals(first, r.current);
+        assertEquals("the new key is the stored one", r.current, LinkKey.loadOrCreate(f));
+        assertEquals("", LinkKey.rotate(new File(tmp.newFolder(), "fresh")).previous);
+    }
 }

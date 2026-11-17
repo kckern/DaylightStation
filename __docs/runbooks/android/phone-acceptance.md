@@ -25,12 +25,15 @@ adb shell run-as net.kckern.daylight.phone cat files/payloads/state/memo-queue.j
 adb shell run-as net.kckern.daylight.phone ls -l files/memos/inbox
 ```
 
-The install key is needed to send a keyed link from adb. It is in
-`files/payloads/state/link-key`; read it with `run-as` into a shell variable and do
-not paste it anywhere:
+The link key is needed to send a keyed link from adb. It is in
+`files/payloads/state/link-key` and is replaced every time the payload starts, so
+read it again after a force-stop or a restart. Read it with `run-as` (a debug
+build) into a shell variable and do not paste it anywhere. It goes in the link's
+fragment:
 
 ```bash
 K=$(adb shell run-as net.kckern.daylight.phone cat files/payloads/state/link-key)
+adb shell am start -a android.intent.action.VIEW -d "'daylight://memo/queue#k=$K'"
 ```
 
 ## A. Install and first run
@@ -43,6 +46,8 @@ K=$(adb shell run-as net.kckern.daylight.phone cat files/payloads/state/link-key
    `--bypass-low-target-sdk-block`.
 3. Open Daylight from the launcher. The site's start page loads. The launcher lists
    the app once, and the phone does not offer it as a home app.
+   `adb shell am start -n net.kckern.daylight.phone/net.kckern.daylight.shell.MainActivity`
+   is refused: the setup activity is not exported.
 4. `files/shell.log` has a `CONTROL control.bind is none: no control server` line.
    `adb shell run-as net.kckern.daylight.phone sh -c 'cat /proc/net/tcp /proc/net/tcp6'`
    (or `ss -ltn` where the phone has it) shows no listening socket of the app.
@@ -62,11 +67,34 @@ K=$(adb shell run-as net.kckern.daylight.phone cat files/payloads/state/link-key
    a message, no navigation, and a `LINK refused` line in the shell log.
 3. `daylight://action/memo`, `daylight://memo/new` and
    `daylight://media/play?id=plex:1` with no key: each refused with a message.
-4. Back from a page steps through the page history and then leaves the app.
+4. `daylight://open?path=/media` (a bookmarked page) opens; `daylight://open?path=/admin`
+   and `daylight://open?path=/media?tab=1` with no key are refused; the same two
+   with `#k=$K` open.
+5. The key in the query is not a key: `daylight://action/memo?k=$K` is refused.
+6. After each of the above, `adb logcat -d | grep 'dat=daylight'` shows no line
+   that holds the key.
+7. Force-stop the app, read the key again: it differs from `$K`. A link with the
+   old key works within a minute of the start and is refused after it.
+8. Back from a page steps through the page history and then leaves the app.
+
+## B2. The lock screen, the microphone and the camera
+
+1. Open the app, lock the phone, wake it: the lock screen shows, and the site is
+   not visible until the phone is unlocked.
+2. From another app or adb, with the phone locked, send
+   `daylight://bookmark/call`: nothing of the site shows over the lock screen.
+3. Unlocked, send `daylight://bookmark/call` from adb: the call page opens and
+   the microphone and camera are not in use (no indicator in the status bar);
+   the shell log has "media request not granted".
+4. The app's permissions in the system settings list the microphone and
+   notifications and no camera; "Display over other apps" does not list the app.
 
 ## C. One-tap surfaces, warm and cold
 
 1. Long-press the app icon: New memo, Media, Feed, Call. Each does its thing.
+   Drag one to the home screen (a pinned shortcut), force-stop the app, and tap
+   it: it works on the cold start and again a few minutes later, after the key
+   has been replaced.
 2. Add the "Daylight 1" tile. It reads "New memo". Tap it unlocked, and from the
    lock screen (it asks for the unlock first).
 3. Add the "Daylight actions" widget. Four buttons, each works.
@@ -78,7 +106,7 @@ K=$(adb shell run-as net.kckern.daylight.phone cat files/payloads/state/link-key
 
 Pick the content id of a music track and of an album from the Media page.
 
-1. `adb shell am start -a android.intent.action.VIEW -d "daylight://media/play?id=<track id>&k=$K"`:
+1. `adb shell am start -a android.intent.action.VIEW -d "'daylight://media/play?id=<track id>#k=$K'"`:
    audio plays within eight seconds; a media notification appears; nothing visible
    stays on top of the screen afterwards.
 2. Lock-screen controls work. A headset button pauses and resumes. Unplugging

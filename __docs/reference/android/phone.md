@@ -139,13 +139,13 @@ Two forms are links:
 
 | Link | Meaning | Needs the install key |
 |---|---|---|
-| `daylight://open?path=/media` | Open that page of the site in the app | no, when the path is exactly a configured bookmark's; yes for any other page |
+| `daylight://open?path=/media[#k=<key>]` | Open that page of the site in the app | no, when the path is exactly a configured bookmark's; yes for any other page |
 | `daylight://bookmark/<id>` | Open a configured bookmark | no |
-| `daylight://action/<id>?k=<key>` | Run a one-tap action | yes |
-| `daylight://memo/new?k=<key>` | Open the recorder and start a voice memo; while one is being recorded, stop and save it | yes |
-| `daylight://memo/queue?k=<key>` | Try every waiting and parked memo again, and say how many there are | yes |
-| `daylight://memo/discard?k=<key>` | Throw away the memos that could not be sent. Asks first; a second tap within twenty seconds deletes | yes |
-| `daylight://media/play?id=<contentId>&k=<key>` | Play that household item natively | yes |
+| `daylight://action/<id>#k=<key>` | Run a one-tap action | yes |
+| `daylight://memo/new#k=<key>` | Open the recorder and start a voice memo; while one is being recorded, stop and save it | yes |
+| `daylight://memo/queue#k=<key>` | Try every waiting and parked memo again, and say how many there are | yes |
+| `daylight://memo/discard#k=<key>` | Throw away the memos that could not be sent. Asks first; a second tap within twenty seconds deletes | yes |
+| `daylight://media/play?id=<contentId>#k=<key>` | Play that household item natively | yes |
 | `https://<the site>/<path>` | The same as `daylight://open` for that path, without a key | no key can be given; only a bookmarked path opens |
 
 The rule: a link kind needs the install key unless all it does is show a page of
@@ -180,10 +180,10 @@ the phone can send it anything. What happens to a link:
    port, plain http for an https site or a `user@` form is refused. `intent:`,
    `file:`, `content:`, `javascript:`, `data:` and unknown `daylight://` kinds are
    refused.
-3. **The install key.** A link that changes something (`action`, `memo`, `media`) must carry
-   `?k=<key>`. The key is 32 hex characters made on the phone at first start and
-   kept beside the settings overrides. The app's own surfaces add it. It is never
-   returned by a route, shown by `GET /settings` or written to a log.
+3. **The link key.** A link that changes something (`action`, `memo`, `media`)
+   must carry `#k=<key>`: the key is the link's fragment and nothing else is
+   read as one. The app's own surfaces add it. It is never returned by a route,
+   shown by `GET /settings` or written to a log. See "The link key" below.
 4. **The handler** of the link's kind gets the argument and the query without the
    key. A page link's path must pass `Backend.pagePath`: plain path segments with no
    percent escapes and no `.` or `..` segment, an optional query and fragment, and
@@ -202,6 +202,48 @@ the rest are counted.
 
 `POST /link {"uri": "..."}` on the control API runs the same steps for the CLI. It
 answers 200 with the effect, 400 `bad_link`, 403 `forbidden` or 500 `failed`.
+
+### The link key
+
+32 hex characters, made on the phone and kept in the app's private storage
+(`files/payloads/state/link-key`).
+
+- **It travels in the fragment.** When Android starts a link it writes a line to
+  the system log, `START ... dat=daylight://action/<id>?...`, with the scheme,
+  path and query of a `daylight://` link and without its fragment. A key in the
+  query would be in that log; a key in the fragment is not. A `k` in the query
+  is not a key and is refused where one is needed.
+- **It is replaced at every payload start.** `notifications` starts before the
+  capabilities that build links, and each of them builds its links again at
+  start: the launcher shortcuts and the tile cache (`one-tap-actions`), the
+  widget (`widgets`), and the memo notices when they are next posted. A link
+  seen once, in a log or over a shoulder, stops working at the next start.
+- **The key before is honoured for one minute after a start.** A cold start is
+  caused by a tap on a tile, a shortcut or the widget, and that tap carries the
+  key of the run before, which is the only key those surfaces had. After the
+  minute it is refused.
+- **Pinned shortcuts.** The launcher keeps a pinned shortcut's intent, key
+  included. A shortcut pinned by `POST /actions/pin` has an id of its own
+  (`pin-<action id>`). At each start and each publish, every pinned shortcut is
+  found by its shortcut id and rewritten with a link under the key in force
+  (`ShortcutManager.updateShortcuts`); one whose action no longer exists is
+  disabled. So the key in the launcher is never older than the run the app is
+  in, and a pinned shortcut keeps working across rotations. Android does not
+  tell an activity which shortcut started it, so the shortcut id alone cannot
+  stand in for a key in the intent: any app could send the same id.
+- A notice that was posted before a restart carries the key of that run. The
+  memo queue posts its notice again after a start when there is still something
+  to say; a tap on an older one is refused with "That link is not allowed".
+
+Nothing logs a link: the link activity logs that an intent was ignored or that
+the payload failed, by class name; a refusal logs one of a few fixed sentences;
+the tile logs its slot number.
+
+Unproven on a phone: that the launcher accepts `updateShortcuts` for pinned
+shortcuts at the rate of once per start, and that the system log line leaves the
+fragment out on the owner's Android version (check with
+`adb logcat -d | grep 'dat=daylight'` after tapping a tile: no line may hold the
+key).
 
 ### https links of the household site
 
@@ -657,8 +699,8 @@ transport: household pushes keep arriving through the Home Assistant relay.
 | "Voice memos are not set up: identity not configured. N voice memos are kept on this phone." | `daylight_uploads` | `voice-memo` |
 
 A notice is a count and a state. A tap opens a `daylight://` link through the link
-activity, with the install key added by `notifications` where the link's kind
-needs it. A capability posts through `LocalNotices` (`core/spi`); a state is
+activity, with the link key added by `notifications` where the link's kind
+needs it. A notice may carry one action button, which opens such a link too. A capability posts through `LocalNotices` (`core/spi`); a state is
 posted once, and the notice is removed when nothing is left to say.
 
 `POST_NOTIFICATIONS` is asked for in the app, once, on Android 13 and later: the

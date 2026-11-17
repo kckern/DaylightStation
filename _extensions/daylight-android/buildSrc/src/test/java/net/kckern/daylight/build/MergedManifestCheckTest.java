@@ -149,8 +149,8 @@ public class MergedManifestCheckTest {
         assertEquals(String.valueOf(main), 1, main.size());
         assertTrue(main.get(0), main.get(0).contains(MAIN) && main.get(0).contains("exported"));
         // Exported by having a filter and not saying.
-        List<String> silent = phone(PERMISSIONS, APP, COMPONENTS + "<service android:name=\"com.example.Lib\"><intent-filter><action android:name=\"x\" /></intent-filter></service>");
-        assertTrue(String.valueOf(silent), silent.toString().contains("com.example.Lib"));
+        List<String> unstated = phone(PERMISSIONS, APP, COMPONENTS + "<service android:name=\"com.example.Lib\"><intent-filter><action android:name=\"x\" /></intent-filter></service>");
+        assertTrue(String.valueOf(unstated), unstated.toString().contains("com.example.Lib"));
         List<String> gone = phone(PERMISSIONS, APP, COMPONENTS.replace("<receiver android:name=\"" + BOOT + "\" android:exported=\"true\" />", ""));
         assertTrue(String.valueOf(gone), gone.toString().contains(BOOT));
     }

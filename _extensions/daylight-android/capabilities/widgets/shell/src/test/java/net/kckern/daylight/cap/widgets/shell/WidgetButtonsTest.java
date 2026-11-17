@@ -10,11 +10,11 @@ public class WidgetButtonsTest {
     @Test public void oneButtonPerAssignedSlotInOrder() {
         List<WidgetButtons.Button> b = WidgetButtons.of(
                 new String[] { "New memo", "", "Feed", "" },
-                new String[] { "daylight://action/memo?k=a", "", "daylight://action/feed?k=a", "" });
+                new String[] { "daylight://action/memo#k=a", "", "daylight://action/feed#k=a", "" });
         assertEquals(2, b.size());
         assertEquals(1, b.get(0).slot);
         assertEquals("New memo", b.get(0).label);
-        assertEquals("daylight://action/memo?k=a", b.get(0).link);
+        assertEquals("daylight://action/memo#k=a", b.get(0).link);
         assertEquals(3, b.get(1).slot);
     }
 

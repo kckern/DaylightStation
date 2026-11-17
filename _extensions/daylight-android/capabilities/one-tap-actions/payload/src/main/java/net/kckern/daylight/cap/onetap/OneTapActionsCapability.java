@@ -36,7 +36,7 @@ import java.util.concurrent.TimeoutException;
 /**
  * One-tap actions. The list is settings (actions.1 to actions.12); every surface
  * (launcher shortcuts, pinned shortcuts, tiles, and the widget through ActionList) is
- * built from it and launches the same keyed link, daylight://action/<id>?k=<key>.
+ * built from it and launches the same keyed link, daylight://action/<id>#k=<key>.
  *
  * Running an action takes its id and nothing else. An API action sends an empty POST to
  * the path in its settings line; no part of a link, an intent or a request body reaches
@@ -187,8 +187,8 @@ public final class OneTapActionsCapability implements Capability, ActionList {
     /** The link every surface launches. Keyed, because running an action changes something. */
     private String uri(Action a) {
         LinkKeySource keys = core.services().find(LinkKeySource.class);
-        String key = keys == null ? "" : keys.installKey();
-        return "daylight://action/" + a.id + (key == null || key.isEmpty() ? "" : "?k=" + key);
+        String link = "daylight://action/" + a.id;
+        return keys == null ? link : keys.keyed(link);
     }
 
     private boolean memoIsStandIn(Action a) { return a.kind == Kind.MEMO && handlerFor("memo") == null; }
@@ -274,6 +274,13 @@ public final class OneTapActionsCapability implements Capability, ActionList {
         SurfacePlan plan = SurfacePlan.usable(catalog(problems), (String) core.settings().get(SHORTCUTS),
                 (String) core.settings().get(TILES), s.maxShortcuts(), this::uri, problems);
         s.publish(plan.shortcuts, this::uri, plan.tileCache);
+        // The launcher keeps a pinned shortcut's intent, key and all. Each is rewritten
+        // under the key now in force, so none outlives the run it was written in.
+        try {
+            s.refreshPinned(SurfacePlan.pins(catalog(null), s.pinnedIds()), this::uri);
+        } catch (RuntimeException launcher) {
+            core.shell().note("ACTION", "could not refresh the pinned shortcuts: " + launcher.getClass().getSimpleName());
+        }
         // The widget (another capability) redraws from the same list.
         core.events().publish(ActionList.PUBLISHED, new JSONObject());
         return plan;

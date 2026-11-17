@@ -53,7 +53,7 @@ public class LocalNoticesTest {
         assertEquals(1, channelsMade);
         notices().post("memo-queue", LocalNotices.UPLOADS, "Voice memos", "2 voice memos waiting to upload", "daylight://memo/queue");
         String key = core.services().find(LinkKeySource.class).installKey();
-        assertEquals("daylight_uploads Voice memos: 2 voice memos waiting to upload -> daylight://memo/queue?k=" + key, posted.get(0));
+        assertEquals("daylight_uploads Voice memos: 2 voice memos waiting to upload -> daylight://memo/queue#k=" + key, posted.get(0));
     }
 
     @Test public void cancelUsesTheSameAndroidIdThePostDid() {
