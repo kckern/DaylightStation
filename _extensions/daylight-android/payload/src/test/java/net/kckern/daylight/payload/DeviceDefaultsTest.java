@@ -48,7 +48,10 @@ public class DeviceDefaultsTest {
         core.prepare(defaults);
         for (java.util.Iterator<String> it = defaults.keys(); it.hasNext(); ) {
             String key = it.next();
-            assertEquals(key, String.valueOf(defaults.get(key)), String.valueOf(core.settings().get(key)));
+            // The key only: a default can be a resolved private value, and a failure
+            // message that printed both sides would put it in the build log.
+            assertTrue("the compiled default is not the value in effect for " + key,
+                    String.valueOf(defaults.get(key)).equals(String.valueOf(core.settings().get(key))));
         }
         // Decided for every device: heartbeats on, and a log store to send them to.
         assertEquals(Boolean.TRUE, core.settings().get("heartbeat.enabled"));

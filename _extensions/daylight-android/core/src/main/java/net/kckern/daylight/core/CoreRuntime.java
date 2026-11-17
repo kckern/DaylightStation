@@ -111,8 +111,8 @@ public final class CoreRuntime implements CoreContext {
             JSONObject w = d == null ? null : d.wifiLink.compact();
             if (w != null) o.put("wifi", w);
         });
-        // The piano bridge re-read thresholds on every config reload. Reads are live now;
-        // only the timer period needs a restart.
+        // The piano bridge re-read thresholds on every config reload. Reads are live now,
+        // and the heartbeat restarts its own timer when its period or its switch changes.
         settings.onChange(key -> {
             CoreServices d = device;
             if (d == null) return;
@@ -187,6 +187,7 @@ public final class CoreRuntime implements CoreContext {
         updateInstaller = null;
         if (d != null) { try { d.stop(); } catch (Throwable ignored) { } }
         socket.stop();
+        LogEvents.shutdown(config);
     }
 
     private void registerCoreRoutes() {

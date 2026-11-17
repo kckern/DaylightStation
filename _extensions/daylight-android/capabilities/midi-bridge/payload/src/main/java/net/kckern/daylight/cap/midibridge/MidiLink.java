@@ -96,6 +96,7 @@ public class MidiLink {
 
     /** The connector half of the old startBleMidi(). */
     public synchronized void start() {
+        stopped = false;
         if (loopback == null) loopback = new Loopback(this);
         midiManager = (MidiManager) ctx.getSystemService(Context.MIDI_SERVICE);
         if (midiManager == null) {
@@ -117,10 +118,19 @@ public class MidiLink {
         }
     }
 
-    public synchronized void stop() {
-        if (bleConnector != null) { bleConnector.stop(); bleConnector = null; }
-        if (midiPortExec != null) { midiPortExec.shutdownNow(); midiPortExec = null; }
-        closeMidi();
+    /** Set by stop(). A force-reset ladder that is running sees it and takes no further step. */
+    private volatile boolean stopped;
+
+    public void stop() {
+        stopped = true;
+        // Before taking the lock: the reset thread may need it to finish.
+        Loopback lb = loopback;
+        if (lb != null) lb.stop();
+        synchronized (this) {
+            if (bleConnector != null) { bleConnector.stop(); bleConnector = null; }
+            if (midiPortExec != null) { midiPortExec.shutdownNow(); midiPortExec = null; }
+            closeMidi();
+        }
     }
 
     /** After a midi.* setting change: the MIDI half of the old reloadConfigAndReconnect(). */
@@ -296,12 +306,15 @@ public class MidiLink {
         org.json.JSONArray steps = new org.json.JSONArray();
         try {
             CrashLog.note("RESET", "force-reset requested");
+            if (stopped) return o.put("error", "stopped").put("steps", steps);
             // L1: forget + reconnect the BLE device (drops both ports, re-opens fresh).
             steps.put(step("L1 BLE reconnect", () -> {
                 if (bleConnector != null) { bleConnector.forget(); sleepMs(1200); bleConnector.connectNow(); }
                 waitConnected(12000);
             }));
             if (verifyEcho()) { o.put("fixed", true).put("recoveredAt", "L1").put("steps", steps); return finishReset(o); }
+            // The radio is not bounced for a link that is being torn down.
+            if (stopped) return o.put("error", "stopped").put("steps", steps);
 
             // L2: bounce the tablet's Bluetooth radio (BLUETOOTH_ADMIN). The nuclear
             // option for a stack-level zombie the connector alone can't clear.
@@ -360,10 +373,17 @@ public class MidiLink {
         }
         return o;
     }
-    private void sleepMs(long ms) { try { Thread.sleep(ms); } catch (InterruptedException ignored) {} }
+    /**
+     * An interrupt ends the wait and stays set, so every later wait in the ladder ends
+     * at once too. Steps already begun still finish: Bluetooth that was switched off
+     * is switched on again, only without the settling time.
+     */
+    private void sleepMs(long ms) {
+        try { Thread.sleep(ms); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
+    }
     private void waitConnected(long budgetMs) {
         long end = System.currentTimeMillis() + budgetMs;
-        while (System.currentTimeMillis() < end) {
+        while (System.currentTimeMillis() < end && !stopped && !Thread.currentThread().isInterrupted()) {
             org.json.JSONObject st = bleConnector == null ? null : bleConnector.status();
             if (st != null && "CONNECTED".equals(st.optString("state"))) return;
             sleepMs(500);

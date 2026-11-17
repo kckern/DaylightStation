@@ -5,13 +5,9 @@ import org.json.JSONObject;
 
 import java.io.IOException;
 import java.util.Map;
-import java.util.Set;
 import java.util.Timer;
 import java.util.TimerTask;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.RejectedExecutionException;
 
 /**
  * The one WebSocket channel of a device, on the control port. JSON text frames
@@ -23,6 +19,12 @@ public final class SocketHub {
         void send(String text) throws IOException;
         void ping() throws IOException;
         void close();
+        /**
+         * Cut the connection without writing to it. Called for a client that is not
+         * reading, where close() (which sends a close frame) would block like any other
+         * write. A transport that can close its socket outright overrides this.
+         */
+        default void abort() { close(); }
     }
 
     public interface Reply {
@@ -33,21 +35,91 @@ public final class SocketHub {
 
     public interface Handler { void handle(JSONObject message, Reply reply) throws Exception; }
 
+    /**
+     * Frames one client may have waiting. A client that reads keeps its queue near
+     * empty; one that has stopped reading reaches this within minutes on status frames
+     * alone, and is then closed.
+     */
+    static final int MAX_QUEUED = 512;
+
+    private static final Object PING = new Object();
+
     private final String deviceId;
     private final StatusBoard status;
     private final Map<String, Handler> handlers = new ConcurrentHashMap<>();
-    private final Set<Client> clients = ConcurrentHashMap.newKeySet();
-    private final ExecutorService sender = Executors.newSingleThreadExecutor(r -> {
-        Thread t = new Thread(r, "Daylight-ws-send");
-        t.setDaemon(true);
-        return t;
-    });
+    /** Every client with its own queue and its own sending thread. */
+    private final Map<Client, Outbox> clients = new ConcurrentHashMap<>();
     private Timer timer;
     private int ticks;
 
     public SocketHub(String deviceId, StatusBoard status) {
         this.deviceId = deviceId;
         this.status = status;
+    }
+
+    /**
+     * One client's outgoing frames. A socket write blocks for as long as the peer does
+     * not read, and a write cannot be given a timeout, so no caller of broadcast (the
+     * MIDI thread, the one-second tick) ever writes to a socket itself: it appends
+     * here and returns. The client's own thread sends in the order frames were
+     * appended, one at a time and at once, so a note waits only for the thread hand-off.
+     */
+    private final class Outbox implements Runnable {
+        final Client client;
+        private final java.util.ArrayDeque<Object> queue = new java.util.ArrayDeque<>();
+        private boolean sending, closed;
+
+        Outbox(Client client) { this.client = client; }
+
+        /** False when the queue is full: the caller closes the client. */
+        synchronized boolean offer(Object frame) {
+            if (closed) return true;
+            if (queue.size() >= MAX_QUEUED) return false;
+            queue.add(frame);
+            notifyAll();
+            return true;
+        }
+
+        synchronized void close() {
+            closed = true;
+            queue.clear();
+            notifyAll();
+        }
+
+        /** True while a frame is waiting or being written. */
+        synchronized boolean backlogged() { return sending || !queue.isEmpty(); }
+
+        synchronized boolean awaitIdle(long deadlineMs) throws InterruptedException {
+            while (!closed && (sending || !queue.isEmpty())) {
+                long left = deadlineMs - System.currentTimeMillis();
+                if (left <= 0) return false;
+                wait(left);
+            }
+            return true;
+        }
+
+        @Override public void run() {
+            while (true) {
+                Object frame;
+                synchronized (this) {
+                    sending = false;
+                    notifyAll();
+                    while (queue.isEmpty() && !closed) {
+                        try { wait(); } catch (InterruptedException e) { return; }
+                    }
+                    if (closed) return;
+                    frame = queue.poll();
+                    sending = true;
+                }
+                try {
+                    if (frame == PING) client.ping(); else client.send((String) frame);
+                } catch (Throwable failed) {
+                    // IOException from a dead socket; anything else from a broken transport.
+                    drop(client, false);
+                    return;
+                }
+            }
+        }
     }
 
     /** One capability per message type. */
@@ -59,36 +131,68 @@ public final class SocketHub {
 
     public int clients() { return clients.size(); }
 
-    /** Sends on the caller's thread. Use for live notes, where a thread hop is latency. */
+    /**
+     * Queues the frame for every client and returns; it never writes to a socket.
+     * Each client receives its frames in the order they were broadcast. A client whose
+     * queue is full has stopped reading and is closed.
+     */
     public void broadcast(String text) {
         if (text == null) return;
-        for (Client c : clients) {
-            try { c.send(text); } catch (IOException e) { clients.remove(c); }
+        for (Outbox o : clients.values()) enqueue(o, text);
+    }
+
+    /** The same as broadcast, which no longer does socket I/O on the caller's thread. */
+    public void broadcastAsync(final String text) { broadcast(text); }
+
+    private void enqueue(Outbox o, Object frame) {
+        if (!o.offer(frame)) drop(o.client, true);
+    }
+
+    /**
+     * Forget a client. `stuck` is a client that is not reading: a polite close would
+     * queue behind the write that is already blocked, so its connection is cut.
+     */
+    private void drop(Client c, boolean stuck) {
+        Outbox o = clients.remove(c);
+        if (o == null) return;
+        o.close();
+        if (stuck) {
+            try { c.abort(); } catch (Throwable ignored) { }
         }
     }
 
-    /** Sends from the hub's own thread. Use from the main thread, where socket I/O is fatal. */
-    public void broadcastAsync(final String text) {
-        try { sender.execute(() -> broadcast(text)); } catch (RejectedExecutionException stopped) { }
+    /** Waits until every queued frame has been written. For tests, which read what a client received. */
+    public boolean awaitDelivered(long timeoutMs) throws InterruptedException {
+        long deadline = System.currentTimeMillis() + timeoutMs;
+        for (Outbox o : clients.values()) {
+            if (!o.awaitIdle(deadline)) return false;
+        }
+        return true;
     }
 
     // --- called by the transport ---
 
     public void opened(Client c) {
-        clients.add(c);
+        Outbox o = new Outbox(c);
+        clients.put(c, o);
+        Thread t = new Thread(o, "Daylight-ws-out");
+        t.setDaemon(true);
+        t.start();
         try {
-            c.send(new JSONObject().put("type", "ready").put("device", deviceId).toString());
-        } catch (IOException | JSONException e) {
-            clients.remove(c);
+            enqueue(o, new JSONObject().put("type", "ready").put("device", deviceId).toString());
+        } catch (JSONException e) {
+            drop(c, false);
         }
     }
 
-    public void closed(Client c) { clients.remove(c); }
+    public void closed(Client c) { drop(c, false); }
 
     public void message(final Client c, String text) {
         final Reply reply = new Reply() {
             @Override public void send(JSONObject message) {
-                try { c.send(message.toString()); } catch (IOException e) { clients.remove(c); }
+                // Through the client's queue, so an answer keeps its place among broadcasts.
+                Outbox o = clients.get(c);
+                if (o != null) enqueue(o, message.toString());
             }
             @Override public void error(String code, String message) {
                 try {
@@ -140,23 +244,24 @@ public final class SocketHub {
             } catch (JSONException ignored) { }
         }
         if (++ticks % 3 == 0) {
-            for (Client c : clients) {
-                try { c.ping(); } catch (IOException e) { clients.remove(c); }
-            }
+            for (Outbox o : clients.values()) enqueue(o, PING);
         }
     }
 
     /** The listener cannot release the port while a socket is open. */
     public void closeClients() {
-        for (Client c : clients) {
-            try { c.close(); } catch (Throwable ignored) { }
+        for (Outbox o : new java.util.ArrayList<>(clients.values())) {
+            clients.remove(o.client);
+            boolean stuck = o.backlogged();
+            o.close();
+            try {
+                if (stuck) o.client.abort(); else o.client.close();
+            } catch (Throwable ignored) { }
         }
-        clients.clear();
     }
 
     public synchronized void stop() {
         if (timer != null) { timer.cancel(); timer = null; }
         closeClients();
-        sender.shutdownNow();
     }
 }

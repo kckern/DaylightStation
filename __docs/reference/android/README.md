@@ -134,7 +134,7 @@ Served by the payload on `control.port`. All responses are JSON.
 | POST | `/payload/rollback` | Answers `{result}` |
 | POST | `/update` | JSON body `{"url": ..., "sha256": ...}` (`sha256` optional); downloads the APK, checks it, and hands it to the system installer; answers `{state, bytes, sha256Verified, confirming}` |
 | GET | `/update` | `state` (`idle`, `downloading`, `awaiting_confirmation`, `failed`) and `lastError` |
-| GET, POST | `/beat` | The heartbeat's state; `POST` sends one now and returns its body |
+| GET, POST | `/beat` | The heartbeat's state; `POST` sends one now and returns its body. The body's `logEventsDropped` counts one-off log events the device gave up on because the log store was not taking them (at most 200 wait at a time; the oldest goes first) |
 | GET | `/wifi` | The Wi-Fi link: current sample, recent samples, thresholds. `?fresh=1` samples first |
 | GET | `/log` | Recent in-memory events |
 | GET | `/crashlog` | The on-disk lifecycle and crash record |
@@ -229,6 +229,13 @@ hub. The upgrade needs the token, in the `X-Daylight-Token` header or as a `toke
 query parameter, and is refused with 401 before the connection is upgraded.
 Messages are JSON text frames keyed by `type`; one capability owns each inbound
 type, and a type registered twice stops the payload from starting.
+
+Each client has its own queue of outgoing frames and its own sending thread, so
+the thread that produces a frame (the MIDI thread for a note, the one-second
+timer for `status`) never waits on a socket. A client gets its frames in the order
+they were produced, each one sent as soon as the one before it is written. A
+client that stops reading while frames keep coming fills its queue (512 frames)
+and is disconnected; the others are not affected.
 
 | Message | Direction | Owner |
 |---|---|---|
@@ -349,8 +356,8 @@ Settings the core declares on every device:
 
 | Key | Type | Fallback | Meaning |
 |-----|------|----------|---------|
-| `heartbeat.enabled` | boolean | true | Send the outbound heartbeat |
-| `heartbeat.intervalMs` | integer | 60000 | Its period; 10 seconds is the minimum |
+| `heartbeat.enabled` | boolean | true | Send the outbound heartbeat. Applies at once when changed |
+| `heartbeat.intervalMs` | integer | 60000 | Its period; 10 seconds is the minimum. Applies at once when changed |
 | `heartbeat.deviceId` | string | empty | The device name in shipped lines; empty means the device id |
 | `heartbeat.logStoreUrl` | string | empty | The log store's insert URL; empty ships nothing |
 | `heartbeat.backendUrl` | string | empty | A second place the heartbeat is posted; empty for none |
@@ -567,7 +574,9 @@ release is sent on the WebSocket as
 
 (`interactive` is whether the panel is lit, `ts` epoch ms) and, with
 `keys.consumeVolume` on, is kept from Android so the system volume does not move
-under the page. Other keys pass through untouched and are noted in `GET /log`.
+under the page. Other keys pass through untouched. They are counted
+(`otherKeysSeen` in `/status`) and not recorded: `GET /log` holds volume keys
+only, so what is typed on an attached keyboard is never in it.
 With `keys.screenToggleEnabled` on, any volume key wakes a dark panel and two
 volume-down presses within `keys.doublePressMs` sleep it; that needs the
 `screen-power` capability (phase 3), and until then the attempt is logged as
@@ -577,13 +586,13 @@ volume-down presses within `keys.doublePressMs` sleep it; that needs the
 |---|---|---|---|
 | `keys.consumeVolume` | boolean | true | Keep volume keys from Android. Set false to give hardware volume back |
 | `keys.screenToggleEnabled` | boolean | false | Wake on any volume key, sleep on a double volume-down |
-| `keys.doublePressMs` | integer | 450 | The double-press window, used within 150 to 2000 |
+| `keys.doublePressMs` | integer | 450 | The double-press window; 150 to 2000, anything else is refused when set |
 
 `POST /accessibility/silence-beep` removes, now, any other enabled accessibility
 service whose component name contains `KeyEvent` (the vendor service that beeps on
 volume keys). The same pass runs at each start and whenever the list of enabled
 services changes. This app's own service is never removed. `/status` carries
-`keysSeen` and `displayOn`.
+`keysSeen`, `otherKeysSeen` and `displayOn`.
 
 ### `audio-guard`
 

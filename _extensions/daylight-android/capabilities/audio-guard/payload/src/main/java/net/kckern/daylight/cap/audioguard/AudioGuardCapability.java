@@ -22,6 +22,12 @@ public final class AudioGuardCapability implements Capability {
     private volatile AudioGuardHost host;
     private volatile AdapterCycler adapterCycler;
     private volatile boolean applying;
+    /** The Bluetooth off-and-on cycle in flight, kept so stop() can end it. */
+    private volatile Thread btCycle;
+    static final long STOP_JOIN_MS = 3000;
+
+    /** Test seam: a cycler over a fake adapter, with no Android context. */
+    void useCyclerForTest(AdapterCycler cycler) { adapterCycler = cycler; }
 
     @Override public String name() { return "audio-guard"; }
 
@@ -66,14 +72,17 @@ public final class AudioGuardCapability implements Capability {
             final int settleMs = Math.max(0, Math.min(30000, Replies.intParam(req, "settleMs", 5000)));
             if (cycler.isRunning()) return Replies.json(Replies.err("busy"));
             Diag.log(TAG, "/speaker/bt-cycle settleMs=" + settleMs + " from " + req.remote);
-            new Thread(() -> {
+            Thread t = new Thread(() -> {
                 LogEvents.emit("bridge.bt-cycle.start", "info", new JSONObject());
                 AdapterCycler.Result result = cycler.run(settleMs);
                 JSONObject d = new JSONObject();
                 try { d.put("ok", result.ok).put("error", result.error == null ? JSONObject.NULL : result.error).put("tookMs", result.tookMs); }
                 catch (JSONException ignored) { }
                 LogEvents.emit("bridge.bt-cycle.done", result.ok ? "info" : "error", d);
-            }, "PianoBridge-bt-cycle").start();
+            }, "PianoBridge-bt-cycle");
+            t.setDaemon(true);
+            btCycle = t;
+            t.start();
             return Replies.json(Replies.ok().put("action", "bt_cycle").put("settleMs", settleMs));
         });
         r.route("POST", "/audio-guard/bootstrap", req -> {
@@ -145,6 +154,15 @@ public final class AudioGuardCapability implements Capability {
     }
 
     @Override public void stop() {
+        // A cycle in flight is interrupted and waited for. The cycler asks for Bluetooth
+        // to be switched on again on its way out, so an interrupt never leaves it off.
+        Thread t = btCycle;
+        btCycle = null;
+        adapterCycler = null;
+        if (t != null && t.isAlive()) {
+            t.interrupt();
+            try { t.join(STOP_JOIN_MS); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
+        }
         AudioGuardHost h = host;
         host = null;
         if (h != null) h.stop();

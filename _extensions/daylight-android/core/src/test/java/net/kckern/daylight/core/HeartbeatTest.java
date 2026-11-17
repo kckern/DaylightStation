@@ -70,4 +70,46 @@ public class HeartbeatTest {
         // 2026-08-23T04:00:00.000Z exactly
         assertEquals("2026-08-23T04:00:00.000Z", Heartbeat.iso(1787457600000L));
     }
+
+    // ── settings that apply while it runs ───────────────────────────────────
+
+    @Test public void thePeriodAndTheSwitchApplyWithoutARestart() throws Exception {
+        java.io.File dir = java.nio.file.Files.createTempDirectory("hb-live").toFile();
+        CoreRuntime core = net.kckern.daylight.core.testing.TestCore.create(dir);
+        core.prepare(new org.json.JSONObject("{}"));
+        Heartbeat hb = new Heartbeat(core, core.config());
+        try {
+            hb.updateConfig(core.config());
+            assertEquals("a setting change before start does not start it", -1, hb.periodMs());
+            hb.start();
+            assertEquals(60_000, hb.periodMs());
+
+            core.settings().set("heartbeat.intervalMs", 20_000);
+            hb.updateConfig(core.config());
+            assertEquals(20_000, hb.periodMs());
+
+            core.settings().set("heartbeat.enabled", false);
+            hb.updateConfig(core.config());
+            assertEquals("switched off while running", -1, hb.periodMs());
+
+            core.settings().set("heartbeat.enabled", true);
+            hb.updateConfig(core.config());
+            assertEquals(20_000, hb.periodMs());
+
+            hb.stop();
+            core.settings().set("heartbeat.intervalMs", 30_000);
+            hb.updateConfig(core.config());
+            assertEquals("a setting change after stop does not restart it", -1, hb.periodMs());
+        } finally {
+            hb.stop();
+        }
+    }
+
+    @Test public void theBeatReportsHowManyEventsTheQueueDropped() throws Exception {
+        java.io.File dir = java.nio.file.Files.createTempDirectory("hb-drop").toFile();
+        CoreRuntime core = net.kckern.daylight.core.testing.TestCore.create(dir);
+        core.prepare(new org.json.JSONObject("{}"));
+        JSONObject body = new Heartbeat(core, core.config()).buildBody();
+        assertEquals(LogEvents.dropped(), body.getLong("logEventsDropped"));
+    }
 }

@@ -6,6 +6,7 @@ import android.os.Looper;
 
 import net.kckern.daylight.core.Capability;
 import net.kckern.daylight.core.CoreContext;
+import net.kckern.daylight.core.MainThread;
 import net.kckern.daylight.core.Replies;
 import net.kckern.daylight.core.StatusBoard;
 
@@ -28,6 +29,8 @@ public final class VolumeKeysCapability implements Capability {
         core.status().add(StatusBoard.Surface.STATUS, name(), o -> {
             VolumeKeys k = keys;
             o.put("keysSeen", k == null ? 0 : k.keysSeen());
+            // How many other keys passed the filter. Which keys they were is not kept anywhere.
+            o.put("otherKeysSeen", k == null ? 0 : k.otherKeysSeen());
             if (k != null) o.put("displayOn", k.isPanelLit());
         });
     }
@@ -57,8 +60,13 @@ public final class VolumeKeysCapability implements Capability {
         VolumeBeepGuard g = beepGuard;
         beepGuard = null;
         if (g != null) g.stop();
-        VolumeKeys k = keys;
+        final VolumeKeys k = keys;
         keys = null;
-        if (k != null) k.stop();
+        if (k != null) {
+            k.stop();
+            // Posted like the add, so it cannot run before it: the filter is gone, and
+            // with it the service's request for key events.
+            MainThread.post(() -> core.accessibility().removeKeyFilter(k));
+        }
     }
 }

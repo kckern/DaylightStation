@@ -33,13 +33,32 @@ import javax.net.ssl.HttpsURLConnection;
 final class LeaseLoop {
     private static final String TAG = "SupervisionGuard";
 
-    private final Handler handler = new Handler(Looper.getMainLooper());
-    private final ExecutorService network = Executors.newSingleThreadExecutor();
+    /**
+     * Everything the loop needs from Android and the network: a clock, a place to run
+     * its ticks, a wake lock and the lease request. The real one is {@link Device}; a
+     * JVM test drives the loop through a fake, where time moves when the test says so.
+     */
+    interface Platform {
+        /** Milliseconds that only move forward (SystemClock.elapsedRealtime). */
+        long nowMs();
+        void post(Runnable r);
+        void postDelayed(Runnable r, long delayMs);
+        void cancelPosted();
+        /** Run off the tick's thread. Throws RejectedExecutionException once shut down. */
+        void network(Runnable r);
+        void shutdownNetwork();
+        void holdAwake(long timeoutMs);
+        void releaseAwake();
+        boolean awakeHeld();
+        /** The lease request. Null for any failure: the existing lease then expires locally. */
+        JSONObject fetch(String endpoint, String credential, String target, boolean ready, boolean blocked, long epoch, long revision);
+    }
+
+    private final Platform platform;
     private final LeaseOrder order;
     private final LeaseDeadline lease;
     private final Supplier<PackageGate> gate;
     private final String endpoint, credential, target;
-    private final PowerManager.WakeLock awake;
     /** Whether this device can have a device owner at all (android.software.device_admin). */
     private final boolean deviceAdminFeature;
     private volatile boolean ready = false, blocked = true;
@@ -47,17 +66,22 @@ final class LeaseLoop {
     private volatile boolean stopped = false;
 
     LeaseLoop(Context ctx, LeaseOrder order, Supplier<PackageGate> gate, String endpoint, String credential, String target) {
+        this(new Device(ctx), order, gate, endpoint, credential, target, ctx.getPackageName(),
+                ctx.getPackageManager().hasSystemFeature(PackageManager.FEATURE_DEVICE_ADMIN));
+    }
+
+    LeaseLoop(Platform platform, LeaseOrder order, Supplier<PackageGate> gate, String endpoint, String credential, String target,
+              String ownPackage, boolean deviceAdminFeature) {
+        this.platform = platform;
         this.order = order;
         this.lease = order.load();
         this.gate = gate;
-        boolean valid = validConfig(endpoint, credential, target, ctx.getPackageName());
+        boolean valid = validConfig(endpoint, credential, target, ownPackage);
         if (!valid) Log.w(TAG, "Local enforcement not provisioned");
         this.endpoint = valid ? endpoint : null;
         this.credential = valid ? credential : null;
         this.target = valid ? target : null;
-        this.awake = ctx.getSystemService(PowerManager.class).newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "Daylight:supervision-lease");
-        this.awake.setReferenceCounted(false);
-        this.deviceAdminFeature = ctx.getPackageManager().hasSystemFeature(PackageManager.FEATURE_DEVICE_ADMIN);
+        this.deviceAdminFeature = deviceAdminFeature;
     }
 
     static boolean validConfig(String endpoint, String credential, String target, String ownPackage) {
@@ -88,16 +112,24 @@ final class LeaseLoop {
 
     void start() {
         enforce(true);
-        handler.post(tick);
-        handler.post(poll);
+        platform.post(tick);
+        platform.post(poll);
     }
 
+    /**
+     * After this the package is blocked and stays blocked: `stopped` is set before the
+     * last enforce, and enforce turns every later request to unblock into a block. A
+     * lease answer that was already on its way to the tick thread therefore cannot
+     * reopen the gate of a loop that has stopped. The wake lock is released whatever
+     * the gate's state.
+     */
     void stop() {
         stopped = true;
-        handler.removeCallbacksAndMessages(null);
+        platform.cancelPosted();
         lease.revoke();
         enforce(true);
-        network.shutdownNow();
+        platform.shutdownNetwork();
+        if (platform.awakeHeld()) platform.releaseAwake();
     }
 
     JSONObject status() throws Exception {
@@ -107,7 +139,7 @@ final class LeaseLoop {
                 .put("configured", target != null)
                 .put("ready", ready)
                 .put("blocked", blocked)
-                .put("leaseBlocked", lease.blocked(SystemClock.elapsedRealtime()))
+                .put("leaseBlocked", lease.blocked(platform.nowMs()))
                 .put("epoch", lease.epoch())
                 .put("revision", lease.revision())
                 .put("enforcement", g == null ? "unavailable" : "package-gate")
@@ -116,27 +148,33 @@ final class LeaseLoop {
     }
 
     private synchronized void enforce(boolean desired) {
-        PackageGate g = gate.get();
-        if (target == null || g == null || !g.ready()) { ready = false; blocked = true; return; }
+        // A stopped loop only ever blocks.
+        if (stopped) desired = true;
         try {
-            boolean actual = g.isHidden(target);
-            if (actual != desired && !g.setHidden(target, desired)) throw new SecurityException();
-            blocked = g.isHidden(target);
-            ready = blocked == desired;
-            if (!ready) lease.revoke();
-        } catch (Exception error) {
-            ready = false;
-            lease.revoke();
-            Log.w(TAG, "Package restriction unverified");
+            PackageGate g = gate.get();
+            if (target == null || g == null || !g.ready()) { ready = false; blocked = true; return; }
+            try {
+                boolean actual = g.isHidden(target);
+                if (actual != desired && !g.setHidden(target, desired)) throw new SecurityException();
+                blocked = g.isHidden(target);
+                ready = blocked == desired;
+                if (!ready) lease.revoke();
+            } catch (Exception error) {
+                ready = false;
+                lease.revoke();
+                Log.w(TAG, "Package restriction unverified");
+            }
+        } finally {
+            // On every path, the one with no usable gate included: a block needs no wake lock.
+            if (desired && platform.awakeHeld()) platform.releaseAwake();
         }
-        if (desired && awake.isHeld()) awake.release();
     }
 
     private final Runnable tick = new Runnable() {
         public void run() {
             if (stopped) return;
-            enforce(lease.blocked(SystemClock.elapsedRealtime()));
-            handler.postDelayed(this, 100);
+            enforce(lease.blocked(platform.nowMs()));
+            platform.postDelayed(this, 100);
         }
     };
 
@@ -145,23 +183,24 @@ final class LeaseLoop {
             if (stopped) return;
             if (!fetching && endpoint != null) {
                 fetching = true;
-                final long started = SystemClock.elapsedRealtime();
+                final long started = platform.nowMs();
                 final boolean localReady = ready, localBlocked = blocked;
                 final long epoch = lease.epoch(), revision = lease.revision();
                 try {
-                    network.execute(() -> {
-                        final JSONObject result = fetch(localReady, localBlocked, epoch, revision);
-                        handler.post(() -> accept(started, result));
+                    platform.network(() -> {
+                        final JSONObject result = platform.fetch(endpoint, credential, target, localReady, localBlocked, epoch, revision);
+                        platform.post(() -> accept(started, result));
                     });
                 } catch (java.util.concurrent.RejectedExecutionException shuttingDown) {
                     return;
                 }
             }
-            handler.postDelayed(this, 1000);
+            platform.postDelayed(this, 1000);
         }
     };
 
-    private JSONObject fetch(boolean localReady, boolean localBlocked, long epoch, long revision) {
+    private static JSONObject fetch(String endpoint, String credential, String target,
+                                    boolean localReady, boolean localBlocked, long epoch, long revision) {
         HttpsURLConnection connection = null;
         try {
             connection = (HttpsURLConnection) new URL(endpoint).openConnection();
@@ -191,11 +230,11 @@ final class LeaseLoop {
         if (stopped || result == null) return;
         try {
             if (result.getInt("protocol") != 1) throw new IllegalArgumentException();
-            lease.accept(started, SystemClock.elapsedRealtime(), result.getLong("epoch"), result.getLong("commandRevision"),
+            lease.accept(started, platform.nowMs(), result.getLong("epoch"), result.getLong("commandRevision"),
                     result.getBoolean("blockedCommand"), result.getBoolean("allowed"), result.getLong("leaseMs"));
             if (!order.save(lease)) lease.revoke();
-            if (!lease.blocked(SystemClock.elapsedRealtime())) awake.acquire(6000);
-            enforce(lease.blocked(SystemClock.elapsedRealtime()));
+            if (!stopped && !lease.blocked(platform.nowMs())) platform.holdAwake(6000);
+            enforce(lease.blocked(platform.nowMs()));
         } catch (Exception error) {
             lease.revoke();
             enforce(true);
@@ -211,6 +250,31 @@ final class LeaseLoop {
                 out.write(bytes, 0, length);
             }
             return out.toString("UTF-8");
+        }
+    }
+
+    /** The real platform: the main looper, one network thread, a partial wake lock, HTTPS. */
+    private static final class Device implements Platform {
+        private final Handler handler = new Handler(Looper.getMainLooper());
+        private final ExecutorService network = Executors.newSingleThreadExecutor();
+        private final PowerManager.WakeLock awake;
+
+        Device(Context ctx) {
+            awake = ctx.getSystemService(PowerManager.class).newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "Daylight:supervision-lease");
+            awake.setReferenceCounted(false);
+        }
+
+        @Override public long nowMs() { return SystemClock.elapsedRealtime(); }
+        @Override public void post(Runnable r) { handler.post(r); }
+        @Override public void postDelayed(Runnable r, long delayMs) { handler.postDelayed(r, delayMs); }
+        @Override public void cancelPosted() { handler.removeCallbacksAndMessages(null); }
+        @Override public void network(Runnable r) { network.execute(r); }
+        @Override public void shutdownNetwork() { network.shutdownNow(); }
+        @Override public void holdAwake(long timeoutMs) { awake.acquire(timeoutMs); }
+        @Override public void releaseAwake() { awake.release(); }
+        @Override public boolean awakeHeld() { return awake.isHeld(); }
+        @Override public JSONObject fetch(String endpoint, String credential, String target, boolean ready, boolean blocked, long epoch, long revision) {
+            return LeaseLoop.fetch(endpoint, credential, target, ready, blocked, epoch, revision);
         }
     }
 }

@@ -56,4 +56,41 @@ public class AudioGuardCapabilityTest {
         capability.stop();
         capability.stop();
     }
+
+    private static Thread cycleThread() {
+        for (Thread t : Thread.getAllStackTraces().keySet()) {
+            if (t.isAlive() && "PianoBridge-bt-cycle".equals(t.getName())) return t;
+        }
+        return null;
+    }
+
+    @Test(timeout = 15000) public void stopEndsABluetoothCycleInFlightAndBluetoothIsAskedBackOn() throws Exception {
+        CoreRuntime core = TestCore.create(tmp.newFolder());
+        AudioGuardCapability capability = new AudioGuardCapability();
+        capability.register(core);
+        final java.util.concurrent.atomic.AtomicBoolean on = new java.util.concurrent.atomic.AtomicBoolean(true);
+        final java.util.concurrent.atomic.AtomicInteger enables = new java.util.concurrent.atomic.AtomicInteger();
+        capability.useCyclerForTest(new AdapterCycler(new AdapterCycler.Ops() {
+            @Override public boolean isEnabled() { return on.get(); }
+            @Override public boolean enable() { enables.incrementAndGet(); on.set(true); return true; }
+            @Override public boolean disable() { on.set(false); return true; }
+        }, new AdapterCycler.Clock() {
+            @Override public long now() { return System.currentTimeMillis(); }
+            @Override public void sleep(long ms) throws InterruptedException { Thread.sleep(ms); }
+        }));
+
+        java.util.Map<String, String> query = new java.util.HashMap<>();
+        query.put("settleMs", "30000");                 // the cycle would sit with Bluetooth off for 30 s
+        assertTrue(TestCore.call(core, "POST", "/speaker/bt-cycle", query, null).getBoolean("ok"));
+        long deadline = System.currentTimeMillis() + 3000;
+        while (on.get() && System.currentTimeMillis() < deadline) Thread.sleep(10);
+        assertFalse("the cycle switched Bluetooth off", on.get());
+
+        capability.stop();
+        assertNull("the cycle's thread ended with the capability", cycleThread());
+        assertTrue("Bluetooth was not left off", on.get());
+        assertEquals(1, enables.get());
+        capability.stop();
+        assertEquals("no_bluetooth", TestCore.post(core, "/speaker/bt-cycle").getString("error"));
+    }
 }

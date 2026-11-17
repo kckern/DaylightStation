@@ -200,5 +200,12 @@ public final class ControlServer extends NanoWSD {
         @Override public void close() {
             try { close(WebSocketFrame.CloseCode.GoingAway, "payload swap", false); } catch (IOException ignored) { }
         }
+        /**
+         * Closing the request's input stream closes the socket under it, which ends a
+         * write that is blocked on a peer that does not read. No frame is written.
+         */
+        @Override public void abort() {
+            try { getHandshakeRequest().getInputStream().close(); } catch (Throwable ignored) { }
+        }
     }
 }

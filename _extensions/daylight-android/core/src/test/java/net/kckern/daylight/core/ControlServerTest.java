@@ -16,6 +16,7 @@ import java.nio.charset.StandardCharsets;
 public class ControlServerTest {
     private static final String TOKEN = "0123456789abcdef0123456789abcdef";
     private ControlServer server;
+    private SocketHub hub;
     private String base;
 
     @Before public void setUp() throws Exception {
@@ -26,7 +27,8 @@ public class ControlServerTest {
         router.route("PUT", "/echo", req -> Router.Response.json(200, new JSONObject().put("body", req.body)));
         router.route("DELETE", "/echo", req -> Router.Response.json(200, new JSONObject().put("body", req.body == null ? JSONObject.NULL : req.body)));
         router.route("POST", "/length", req -> Router.Response.json(200, new JSONObject().put("length", req.body.length())));
-        server = new ControlServer(0, router, auth, new SocketHub("test", new StatusBoard()));
+        hub = new SocketHub("test", new StatusBoard());
+        server = new ControlServer(0, router, auth, hub);
         server.start(0, true);
         base = "http://127.0.0.1:" + server.getListeningPort();
     }
@@ -218,6 +220,42 @@ public class ControlServerTest {
             assertTrue(System.currentTimeMillis() - began < 8500);
         } finally {
             started.stop();
+        }
+    }
+
+    /**
+     * A real socket whose peer completes the WebSocket handshake and then never reads.
+     * Its receive window fills, the server's write to it blocks, and the hub must go on
+     * serving everyone else and then cut it off.
+     */
+    @Test(timeout = 30000) public void aSocketPeerThatNeverReadsIsCutOffWithoutBlockingBroadcasts() throws Exception {
+        try (java.net.Socket peer = new java.net.Socket()) {
+            peer.setReceiveBufferSize(4096);
+            peer.connect(new java.net.InetSocketAddress("127.0.0.1", server.getListeningPort()));
+            String req = "GET /?token=" + TOKEN + " HTTP/1.1\r\nHost: 127.0.0.1\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n"
+                    + "Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nSec-WebSocket-Version: 13\r\n\r\n";
+            peer.getOutputStream().write(req.getBytes(StandardCharsets.US_ASCII));
+            long deadline = System.currentTimeMillis() + 5000;
+            while (hub.clients() == 0 && System.currentTimeMillis() < deadline) Thread.sleep(10);
+            assertEquals(1, hub.clients());
+
+            // 64 KiB a frame: a few of them fill the socket buffers, the rest fill the queue.
+            StringBuilder big = new StringBuilder("{\"type\":\"status\",\"pad\":\"");
+            for (int i = 0; i < 65536; i++) big.append('x');
+            String frame = big.append("\"}").toString();
+            long slowest = 0;
+            for (int i = 0; i < SocketHub.MAX_QUEUED + 200 && hub.clients() > 0; i++) {
+                long t0 = System.nanoTime();
+                hub.broadcast(frame);
+                slowest = Math.max(slowest, System.nanoTime() - t0);
+            }
+            assertTrue("a broadcast never waits for the peer (slowest " + slowest / 1_000_000 + " ms)", slowest < 500_000_000L);
+            deadline = System.currentTimeMillis() + 5000;
+            while (hub.clients() > 0 && System.currentTimeMillis() < deadline) Thread.sleep(10);
+            assertEquals("the peer that stopped reading is gone", 0, hub.clients());
+
+            // The server is still answering.
+            assertEquals("200", http("GET", base + "/status", TOKEN, null)[0]);
         }
     }
 }

@@ -238,11 +238,7 @@ public final class Loopback {
                     + " (escalation " + episodeEscalations + ")");
             CrashLog.note("LOOP", "ZOMBIE survived " + episodeKicks + " BLE reconnects — auto force-reset #"
                     + episodeEscalations + " (L1+L2 ladder)");
-            Thread t = new Thread(() -> {
-                try { core.forceResetLink(); } catch (Throwable e) { Log.e(TAG, "auto force-reset failed", e); }
-            }, "PianoBridge-AutoReset");
-            t.setDaemon(true);
-            t.start();
+            startAutoReset();
             return;
         }
         episodeKicks++;
@@ -251,6 +247,34 @@ public final class Loopback {
         CrashLog.note("LOOP", "ZOMBIE link (" + consecutiveMisses + " unanswered probes) — forcing BLE reconnect (kick " + episodeKicks + ")");
         if (ble != null) ble.connectNow();
     }
+
+    /** The escalation's own thread, kept so stop() can end it. */
+    private volatile Thread autoReset;
+
+    /** Runs the link's force-reset ladder on its own thread: it takes up to a minute. */
+    void startAutoReset() {
+        Thread t = new Thread(() -> {
+            try { core.forceResetLink(); } catch (Throwable e) { Log.e(TAG, "auto force-reset failed", e); }
+        }, "PianoBridge-AutoReset");
+        t.setDaemon(true);
+        autoReset = t;
+        t.start();
+    }
+
+    /**
+     * Called when the link stops. A reset in flight is interrupted and waited for,
+     * briefly: left alone it would go on toggling Bluetooth for a payload that is
+     * gone, and keep that payload's classes loaded.
+     */
+    void stop() {
+        Thread t = autoReset;
+        autoReset = null;
+        if (t == null || t == Thread.currentThread()) return;
+        t.interrupt();
+        try { t.join(STOP_JOIN_MS); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
+    }
+
+    static final long STOP_JOIN_MS = 2000;
 
     /** Expire probes past the window so a dead link shows as misses, not pending forever. */
     public void reap() {

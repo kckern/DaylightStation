@@ -40,10 +40,13 @@ public class SynthCapabilityTest {
         Client client = new Client();
         core.socket().opened(client);
         core.socket().message(client, "{\"type\":\"preset.load\",\"spec\":{\"id\":\"grand\"}}");
+        core.socket().awaitDelivered(2000);
         assertEquals("no_engine", client.last().getString("code"));
         core.socket().message(client, "{\"type\":\"preset.load\"}");
+        core.socket().awaitDelivered(2000);
         assertEquals("no_spec", client.last().getString("code"));
         core.socket().message(client, "{\"type\":\"param.set\"}");
+        core.socket().awaitDelivered(2000);
         assertEquals("no_path", client.last().getString("code"));
     }
 
@@ -53,9 +56,11 @@ public class SynthCapabilityTest {
         assertEquals("panic", TestCore.post(core, "/panic").getString("action"));
         Client client = new Client();
         core.socket().opened(client);
+        core.socket().awaitDelivered(2000);
         int before = client.sent.size();
         core.socket().message(client, "{\"type\":\"note.on\",\"note\":60,\"velocity\":90}");
         core.socket().message(client, "{\"type\":\"engine.start\"}");
+        core.socket().awaitDelivered(2000);
         assertEquals("no error frames", before, client.sent.size());
     }
 

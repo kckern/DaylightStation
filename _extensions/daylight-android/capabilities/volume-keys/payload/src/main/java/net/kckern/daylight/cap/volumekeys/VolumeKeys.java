@@ -15,6 +15,10 @@ import net.kckern.daylight.core.Json;
 import net.kckern.daylight.core.spi.InputLock;
 import net.kckern.daylight.core.spi.ScreenPower;
 
+import java.util.concurrent.Executor;
+import java.util.function.BooleanSupplier;
+import java.util.function.LongSupplier;
+
 /**
  * The volume-key filter, from portal-keys' PortalKeysService. Only short presses
  * reach it: the Portal's firmware claims long presses before accessibility sees them
@@ -28,24 +32,42 @@ final class VolumeKeys implements AccessibilityHub.KeyFilter {
     private final KeysConfig config;
     private final PowerManager powerManager;
     private final DisplayManager displayManager;
+    /** Is the panel lit, and what time is it. Replaced in JVM tests, which have no display. */
+    private final BooleanSupplier panelLit;
+    private final LongSupplier clock;
     /** Screen power is I/O and must never run on the input-dispatch thread. */
     private HandlerThread workerThread;
-    private volatile Handler worker;
+    private volatile Executor worker;
     /** Timestamp of the last distinct VOLUME_DOWN press, for double-press detection. */
     private long lastVolDownAt = 0;
     private volatile int keysSeen = 0;
+    private volatile int otherKeysSeen = 0;
 
     VolumeKeys(Context ctx, CoreContext core, KeysConfig config) {
         this.core = core;
         this.config = config;
         this.powerManager = (PowerManager) ctx.getSystemService(Context.POWER_SERVICE);
         this.displayManager = (DisplayManager) ctx.getSystemService(Context.DISPLAY_SERVICE);
+        this.panelLit = this::isPanelLit;
+        this.clock = System::currentTimeMillis;
+    }
+
+    /** Test seam: the panel's state, the clock and the worker are given, and there is no Android behind them. */
+    VolumeKeys(CoreContext core, KeysConfig config, BooleanSupplier panelLit, LongSupplier clock, Executor worker) {
+        this.core = core;
+        this.config = config;
+        this.powerManager = null;
+        this.displayManager = null;
+        this.panelLit = panelLit;
+        this.clock = clock;
+        this.worker = worker;
     }
 
     void start() {
         workerThread = new HandlerThread("portalkeys-worker");
         workerThread.start();
-        worker = new Handler(workerThread.getLooper());
+        final Handler handler = new Handler(workerThread.getLooper());
+        worker = handler::post;
     }
 
     void stop() {
@@ -54,6 +76,8 @@ final class VolumeKeys implements AccessibilityHub.KeyFilter {
     }
 
     int keysSeen() { return keysSeen; }
+    /** Keys other than the volume keys that passed through. Counted, never recorded. */
+    int otherKeysSeen() { return otherKeysSeen; }
 
     /**
      * Is the panel lit? Display.getState(), not PowerManager.isInteractive(): on the
@@ -64,29 +88,35 @@ final class VolumeKeys implements AccessibilityHub.KeyFilter {
      * service is unavailable.
      */
     boolean isPanelLit() {
+        Integer state = null;
         if (displayManager != null) {
             Display display = displayManager.getDisplay(Display.DEFAULT_DISPLAY);
-            if (display != null) return display.getState() == Display.STATE_ON;
+            if (display != null) state = display.getState();
         }
-        return powerManager != null && powerManager.isInteractive();
+        return panelLit(state, powerManager != null && powerManager.isInteractive());
+    }
+
+    /** The display's own state when there is one; the power manager's word only without it. */
+    static boolean panelLit(Integer displayState, boolean interactive) {
+        return displayState != null ? displayState == Display.STATE_ON : interactive;
     }
 
     @Override
     public boolean onKeyEvent(KeyEvent event) {
-        int code = event.getKeyCode();
-        boolean down = event.getAction() == KeyEvent.ACTION_DOWN;
-        boolean interactive = isPanelLit();
-        String name = KeyEvent.keyCodeToString(code);
+        return onKey(event.getKeyCode(), event.getAction() == KeyEvent.ACTION_DOWN, event.getRepeatCount());
+    }
 
+    /** The filter itself, on plain values: a KeyEvent cannot be built in a JVM test. */
+    boolean onKey(int code, boolean down, int repeatCount) {
         boolean isVolume = code == KeyEvent.KEYCODE_VOLUME_UP || code == KeyEvent.KEYCODE_VOLUME_DOWN;
         if (!isVolume) {
-            // Observe ordinary HID delivery without consuming it. GET /log then proves
-            // Android dispatched a USB keyboard key to accessibility, while returning
-            // false keeps the normal path from Android to the page.
-            core.log().add("hid-pass " + name + " " + (down ? "down" : "up")
-                    + " deviceId=" + event.getDeviceId() + " scanCode=" + event.getScanCode());
+            // Passed through untouched and counted, nothing more. The event log is served
+            // by GET /log, and with a keyboard attached every key typed would be in it.
+            otherKeysSeen++;
             return false;
         }
+        boolean interactive = panelLit.getAsBoolean();
+        String name = code == KeyEvent.KEYCODE_VOLUME_UP ? "KEYCODE_VOLUME_UP" : "KEYCODE_VOLUME_DOWN";
 
         keysSeen++;
         // Shutdown is enforced below the browser: it must also suppress the
@@ -110,8 +140,8 @@ final class VolumeKeys implements AccessibilityHub.KeyFilter {
 
         // Display is ON: double-press VOLUME_DOWN sleeps it. repeatCount==0 filters out
         // auto-repeat, so only distinct presses count.
-        if (code == KeyEvent.KEYCODE_VOLUME_DOWN && down && event.getRepeatCount() == 0) {
-            long now = System.currentTimeMillis();
+        if (code == KeyEvent.KEYCODE_VOLUME_DOWN && down && repeatCount == 0) {
+            long now = clock.getAsLong();
             if (lastVolDownAt > 0 && (now - lastVolDownAt) <= config.doublePressMs()) {
                 lastVolDownAt = 0; // consume the pair so a third press does not re-fire
                 if (config.screenToggleEnabled()) {
@@ -142,16 +172,16 @@ final class VolumeKeys implements AccessibilityHub.KeyFilter {
         core.log().add("key " + keyName + " " + action + " interactive=" + interactive);
         Log.i(TAG, "key code=" + keyName + " action=" + action + " interactive=" + interactive);
         // onKeyEvent runs on the service's main thread; a socket write there kills the process.
-        core.socket().broadcastAsync(keyFrame(keyName, action, interactive, System.currentTimeMillis()));
+        core.socket().broadcastAsync(keyFrame(keyName, action, interactive, clock.getAsLong()));
     }
 
     private void sleepDisplay() { screen(false); }
     private void wakeDisplay() { screen(true); }
 
     private void screen(final boolean on) {
-        Handler w = worker;
+        Executor w = worker;
         if (w == null) return;
-        w.post(() -> {
+        w.execute(() -> {
             ScreenPower power = core.services().find(ScreenPower.class);
             if (power == null) {
                 // Until phase 3's screen-power exists, nothing here can switch the panel.

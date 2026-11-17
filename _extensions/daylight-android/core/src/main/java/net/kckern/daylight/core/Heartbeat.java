@@ -64,12 +64,40 @@ public final class Heartbeat {
         this.cfg = cfg;
     }
 
-    public void updateConfig(CoreConfig c) { this.cfg = c; }
+    /** True between start() and stop(), whether or not the timer runs (heartbeat.enabled may be false). */
+    private boolean started;
+    /** The running timer's period, or -1 when none runs. */
+    private long runningEveryMs = -1;
+
+    /**
+     * Called when a heartbeat.* setting changes. heartbeat.enabled and
+     * heartbeat.intervalMs take effect here, with no restart: the timer is stopped,
+     * started, or restarted on the new period. Everything else is read at each beat.
+     */
+    public synchronized void updateConfig(CoreConfig c) {
+        this.cfg = c;
+        if (!started) return;
+        boolean want = c.heartbeatEnabled();
+        if (want == (timer != null) && (!want || everyMs(c) == runningEveryMs)) return;
+        cancelTimer();
+        startTimer();
+    }
+
+    private static long everyMs(CoreConfig c) { return Math.max(10_000L, c.heartbeatIntervalMs()); }
+
+    /** The running timer's period in ms, or -1 when the heartbeat is not running. */
+    synchronized long periodMs() { return runningEveryMs; }
 
     public synchronized void start() {
+        started = true;
+        startTimer();
+    }
+
+    private void startTimer() {
         if (timer != null) return;
         if (!cfg.heartbeatEnabled()) { Log.i(TAG, "heartbeat disabled"); return; }
-        long every = Math.max(10_000L, cfg.heartbeatIntervalMs());
+        long every = everyMs(cfg);
+        runningEveryMs = every;
         timer = new Timer("PianoBridge-beat", true);
         timer.scheduleAtFixedRate(new TimerTask() {
             @Override public void run() {
@@ -80,7 +108,13 @@ public final class Heartbeat {
     }
 
     public synchronized void stop() {
+        started = false;
+        cancelTimer();
+    }
+
+    private void cancelTimer() {
         if (timer != null) { timer.cancel(); timer = null; }
+        runningEveryMs = -1;
     }
 
     /** Build and send one beat now (also used by the control plane's POST /beat). */
@@ -186,6 +220,8 @@ public final class Heartbeat {
             // What the capabilities have to say, under the field names they always used.
             core.status().collect(StatusBoard.Surface.HEARTBEAT, o);
 
+            // One-off events the bounded queue dropped because the log store was not taking them.
+            o.put("logEventsDropped", LogEvents.dropped());
             o.put("beatFailures", new JSONObject()
                     .put("logStore", logStoreFailures.get())
                     .put("backend", backendFailures.get()));

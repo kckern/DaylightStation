@@ -42,9 +42,17 @@ public class NoteStreamCompatibilityTest {
             "{\"note\":127,\"t\":1800000000999,\"velocity\":127,\"type\":\"note.on\"}",  // buildNote("note.on", 127, 127, 1800000000999)
     };
 
+    /** Frames arrive on the hub's sending thread; `seen`, when set, records each one's arrival. */
     private static final class Client implements SocketHub.Client {
-        final List<String> sent = new ArrayList<>();
-        @Override public void send(String text) { sent.add(text); }
+        final List<String> sent = new java.util.concurrent.CopyOnWriteArrayList<>();
+        volatile List<String> seen;
+        @Override public void send(String text) {
+            sent.add(text);
+            List<String> log = seen;
+            if (log != null) {
+                try { log.add("page." + new JSONObject(text).getString("type").substring(5)); } catch (Exception ignored) { }
+            }
+        }
         @Override public void ping() { }
         @Override public void close() { }
     }
@@ -52,13 +60,14 @@ public class NoteStreamCompatibilityTest {
     private CoreRuntime core;
     private Client client;
     private MidiReceiver receiver;
-    private final List<String> order = new ArrayList<>();
+    private final List<String> order = java.util.Collections.synchronizedList(new ArrayList<>());
 
     @Before public void setUp() throws Exception {
         core = TestCore.create(tmp.newFolder());
         MidiConfig.declare(core.settings());
         client = new Client();
         core.socket().opened(client);
+        core.socket().awaitDelivered(2000);
         client.sent.clear();   // drop the hub's "ready" frame
         core.notes().subscribe(new NoteListener() {
             @Override public void noteOn(int note, int velocity, long epochMs) { order.add("bus.on " + note + " " + velocity + " seen-frames=" + client.sent.size()); }
@@ -87,11 +96,14 @@ public class NoteStreamCompatibilityTest {
         long before = System.currentTimeMillis();
         midi(0x90, 60, 90);
         long after = System.currentTimeMillis();
+        core.socket().awaitDelivered(2000);
         assertEquals(1, client.sent.size());
+        core.socket().awaitDelivered(2000);
         JSONObject frame = new JSONObject(client.sent.get(0));
         long t = frame.getLong("t");
         assertTrue("t is the event's epoch ms", t >= before && t <= after);
         // Byte for byte what the old builder gives for this note at this time.
+        core.socket().awaitDelivered(2000);
         assertEquals(OLD_FRAMES[0].replace("1800000000086", String.valueOf(t)), client.sent.get(0));
         assertEquals(4, frame.length());
     }
@@ -99,7 +111,9 @@ public class NoteStreamCompatibilityTest {
     @Test public void aKeyReleaseBecomesTheOldNoteOffFrameWithNoVelocity() throws Exception {
         midi(0x80, 60, 64);
         midi(0x90, 60, 0);   // note-on with velocity 0 is a release
+        core.socket().awaitDelivered(2000);
         assertEquals(2, client.sent.size());
+        core.socket().awaitDelivered(2000);
         for (String sent : client.sent) {
             JSONObject frame = new JSONObject(sent);
             assertEquals(OLD_FRAMES[1].replace("1800000000086", String.valueOf(frame.getLong("t"))), sent);
@@ -109,28 +123,42 @@ public class NoteStreamCompatibilityTest {
     }
 
     @Test public void subscribersHearANoteBeforeThePageDoes() throws Exception {
+        // The page's frames leave on the hub's sending thread, so what is compared is the
+        // order of arrival: the bus is told on the MIDI thread before the frame is queued.
+        client.seen = order;
         midi(0x90, 60, 90, 0x80, 60, 0);
-        assertEquals(java.util.Arrays.asList("bus.on 60 90 seen-frames=0", "bus.off 60 seen-frames=1"), order);
+        core.socket().awaitDelivered(2000);
         assertEquals(2, client.sent.size());
+        assertTrue(order.toString(), order.indexOf("bus.on 60 90 seen-frames=0") == 0);
+        assertTrue(order.toString(), order.indexOf("page.on") > 0);
+        int busOff = -1;
+        for (int i = 0; i < order.size(); i++) if (order.get(i).startsWith("bus.off 60")) busOff = i;
+        assertTrue(order.toString(), busOff > 0 && busOff < order.indexOf("page.off"));
+        assertTrue("the page gets on before off", order.indexOf("page.on") < order.indexOf("page.off"));
     }
 
     @Test public void runningStatusTheEchoProbeAndControlChangesBehaveAsBefore() throws Exception {
         // Three note-ons under one status byte, as the instrument sends them.
         midi(0x90, 60, 100, 62, 100, 64, 100);
+        core.socket().awaitDelivered(2000);
         assertEquals(3, client.sent.size());
+        core.socket().awaitDelivered(2000);
         assertEquals(64, new JSONObject(client.sent.get(2)).getInt("note"));
+        core.socket().awaitDelivered(2000);
         client.sent.clear();
         order.clear();
 
         // The loopback probe note coming back is swallowed: no frame, nothing on the bus.
         midi(0x90, Loopback.PROBE_NOTE, 1);
         midi(0x80, Loopback.PROBE_NOTE, 0);
+        core.socket().awaitDelivered(2000);
         assertTrue(client.sent.isEmpty());
         assertTrue(order.isEmpty());
 
         // A control change goes to subscribers (the synth) and is not sent to the page.
         midi(0xB0, 64, 127);
         assertEquals(java.util.Collections.singletonList("bus.cc 64 127"), order);
+        core.socket().awaitDelivered(2000);
         assertTrue(client.sent.isEmpty());
     }
 }

@@ -7,6 +7,7 @@ import android.view.accessibility.AccessibilityEvent;
 
 import net.kckern.daylight.api.AccessibilityDelegate;
 import net.kckern.daylight.api.AccessibilityHost;
+import net.kckern.daylight.api.DelegateSlot;
 import net.kckern.daylight.api.ShellComponents;
 
 /**
@@ -17,9 +18,10 @@ public class DaylightAccessibilityService extends AccessibilityService implement
     public static final String COMPONENT = "accessibility";
     private static final String SHELL_SERVICE = "net.kckern.daylight.shell.ShellService";
 
-    private volatile AccessibilityDelegate delegate;
+    private final DelegateSlot<AccessibilityDelegate> delegate = new DelegateSlot<>();
 
-    @Override public void setDelegate(AccessibilityDelegate d) { delegate = d; }
+    @Override public void setDelegate(AccessibilityDelegate d) { delegate.set(d); }
+    @Override public boolean clearDelegate(AccessibilityDelegate expected) { return delegate.clear(expected); }
 
     @Override
     protected void onServiceConnected() {
@@ -34,7 +36,7 @@ public class DaylightAccessibilityService extends AccessibilityService implement
 
     @Override
     protected boolean onKeyEvent(KeyEvent event) {
-        AccessibilityDelegate d = delegate;
+        AccessibilityDelegate d = delegate.get();
         try {
             return d != null && d.onKeyEvent(event);
         } catch (Throwable t) {
@@ -44,7 +46,7 @@ public class DaylightAccessibilityService extends AccessibilityService implement
 
     @Override
     public void onAccessibilityEvent(AccessibilityEvent event) {
-        AccessibilityDelegate d = delegate;
+        AccessibilityDelegate d = delegate.get();
         if (d == null) return;
         try { d.onAccessibilityEvent(event); } catch (Throwable ignored) { }
     }
@@ -53,14 +55,14 @@ public class DaylightAccessibilityService extends AccessibilityService implement
 
     @Override
     public boolean onUnbind(Intent intent) {
-        delegate = null;
+        delegate.set(null);
         ShellComponents.publish(COMPONENT, null);
         return super.onUnbind(intent);
     }
 
     @Override
     public void onDestroy() {
-        delegate = null;
+        delegate.set(null);
         ShellComponents.publish(COMPONENT, null);
         super.onDestroy();
     }
