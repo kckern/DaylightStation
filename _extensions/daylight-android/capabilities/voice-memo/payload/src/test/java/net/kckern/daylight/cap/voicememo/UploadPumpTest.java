@@ -123,6 +123,16 @@ public class UploadPumpTest {
         assertEquals(1, pass.lost);
     }
 
+    /** Whatever the sender throws, the memo must not be left marked as out: nothing else would ever be sent. */
+    @Test public void aSenderThatThrowsCountsAsAFailedAttemptAndTheQueueGoesOn() throws Exception {
+        MemoQueue q = queueWith("1000-a");
+        UploadPump broken = new UploadPump(q, memo -> { throw new IllegalStateException("broke"); }, () -> true);
+        assertEquals(0, broken.drain(5000).uploaded);
+        assertEquals(1, q.describe().getJSONArray("memos").getJSONObject(0).getInt("attempts"));
+        assertEquals("QUEUED", q.describe().getJSONArray("memos").getJSONObject(0).getString("state"));
+        assertEquals(1, pump(q, ok()).drain(q.nextAttemptAtMs()).uploaded);
+    }
+
     /** A swapped-out payload inside a long upload must leave the queue and the audio to its successor. */
     @Test public void aPumpStoppedWhileUploadingTouchesNothingAfterwards() throws Exception {
         final MemoQueue q = queueWith("1000-a", "2000-a");

@@ -63,7 +63,13 @@ final class UploadPump {
         while (!stopped && (memo = queue.claim(nowMs)) != null) {
             File file = new File(memo.file);
             long bytes = file.length();
-            Result result = sender.upload(memo);
+            Result result;
+            try {
+                result = sender.upload(memo);
+            } catch (RuntimeException broke) {
+                // The memo is marked as out. Left that way, nothing else would ever be sent.
+                result = new Result(Outcome.RETRY, "failed: " + broke.getClass().getSimpleName());
+            }
             if (stopped) return pass;
             switch (result.outcome) {
                 case UPLOADED:
