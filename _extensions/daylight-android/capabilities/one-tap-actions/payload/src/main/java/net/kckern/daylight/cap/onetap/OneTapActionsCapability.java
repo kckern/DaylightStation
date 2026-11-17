@@ -53,6 +53,8 @@ public final class OneTapActionsCapability implements Capability, ActionList {
     private static final String MEMO_FALLBACK = "actions.memoFallbackPath";
     private static final String SHORTCUTS = "actions.shortcuts";
     private static final String TILES = "actions.tiles";
+    /** What "On my way" (location:share) answers, and all it does. */
+    static final String LOCATION_NOT_BUILT = "Location sharing is not built yet";
 
     private CoreContext core;
     private Backend backend;
@@ -117,7 +119,7 @@ public final class OneTapActionsCapability implements Capability, ActionList {
             for (Action a : catalog.all()) {
                 JSONObject o = new JSONObject().put("id", a.id).put("label", a.label).put("icon", a.icon)
                         .put("kind", a.kind.name().toLowerCase(java.util.Locale.ROOT)).put("target", a.value);
-                if (memoIsStandIn(a)) o.put("placeholder", true);
+                if (memoIsStandIn(a) || a.kind == Kind.LOCATION) o.put("placeholder", true);
                 out.put(o);
             }
             return Router.Response.json(200, Replies.ok().put("actions", out).put("problems", new JSONArray(problems)));
@@ -310,6 +312,12 @@ public final class OneTapActionsCapability implements Capability, ActionList {
             String outcome = callApi(a);
             core.shell().note("ACTION", a.id + " " + outcome);
             return LinkEffect.toast(a.label + ": " + outcome);
+        }
+        if (a.kind == Kind.LOCATION) {
+            // PLACEHOLDER: location sharing is not built. No permission is declared for it,
+            // nothing is sent and nothing is kept; the tap only says so.
+            core.shell().note("ACTION", a.id + " is a placeholder");
+            return LinkEffect.toast(LOCATION_NOT_BUILT);
         }
         if (memoIsStandIn(a)) {
             // STAND-IN: capturing comes with the quick-input capability. Without it the

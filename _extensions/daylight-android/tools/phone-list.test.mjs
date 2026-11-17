@@ -117,6 +117,15 @@ test('the memo button is called Journal and is a voice input for the journal', (
   assert.equal(Object.values(phone.defaults).some((v) => /New memo/.test(String(v))), false);
 });
 
+test('"On my way" is a placeholder action and the phone asks for no location permission for it', () => {
+  assert.equal(phone.defaults['actions.8'], 'omw|On my way|bolt|location:share');
+  const names = new Set([...permissionsFor(phone, capabilities).map((p) => p.name), ...(phone.permissions || [])]);
+  for (const p of ['ACCESS_FINE_LOCATION', 'ACCESS_COARSE_LOCATION', 'ACCESS_BACKGROUND_LOCATION', 'FOREGROUND_SERVICE_LOCATION']) {
+    assert.equal(names.has(`android.permission.${p}`), false, p);
+  }
+  assert.equal(Object.values(EXPECTED_COMPONENTS).some((row) => (row.foregroundServiceType || []).includes('location')), false);
+});
+
 test('playing with no window adds one service of media-service, not exported, and no permission', () => {
   assert.deepEqual(capabilities['media-service'].exported, ['net.kckern.daylight.cap.mediaservice.shell.DaylightMediaService']);
   assert.deepEqual(capabilities['media-service'].permissions, ['android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK',

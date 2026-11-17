@@ -117,6 +117,21 @@ public class ActionCatalogTest {
         }
     }
 
+    // ── the location placeholder ─────────────────────────────────────────────
+
+    @Test public void locationShareIsAnActionRunByThisCapability() {
+        Action omw = ActionCatalog.parse(Arrays.asList("omw|On my way|bolt|location:share")).find("omw");
+        assertEquals(Kind.LOCATION, omw.kind);
+        assertEquals("share", omw.value);
+        assertNull("no link handler performs it", omw.linkKind());
+    }
+
+    @Test public void locationTakesShareAndNothingElse() {
+        for (String bad : new String[] { "location:", "location:track", "location:share:extra", "location:/api/v1/where", "location:Share" }) {
+            assertTrue(bad, message("x|X|bolt|" + bad).contains("location: only 'share' is supported"));
+        }
+    }
+
     /** The earlier name keeps working: memo:new is a voice input for the journal, through the memo link. */
     @Test public void memoNewIsStillAnActionAndStillTheMemoLink() {
         Action memo = ActionCatalog.parse(Arrays.asList("memo|Journal|mic|memo:new")).find("memo");

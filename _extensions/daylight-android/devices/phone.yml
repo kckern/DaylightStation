@@ -54,7 +54,7 @@ defaults:
   # One-tap actions, defined once here and shown as launcher shortcuts, tiles and the
   # widget. Each is "id|label|icon|target"; a target is input:<voice|text|photo>:<destination id>,
   # open:/page, bookmark:<id>, media:<content id> or api:/api/... (an empty POST to that
-  # path). memo:new still means input:voice:journal.
+  # path) or location:share. memo:new still means input:voice:journal.
   # A voice action opens the recorder; tapped again while a recording is under way, it
   # stops and saves it. A text action opens a field with Send; a photo action opens the
   # camera. Each needs this install's link key, which only the app's own surfaces have.
@@ -65,6 +65,10 @@ defaults:
   actions.5: "meal-note|Meal note|note|input:text:meal-note"
   actions.6: "media|Media|play|bookmark:media"
   actions.7: "call|Call|open|bookmark:call"
+  # PLACEHOLDER: "On my way". A tap says location sharing is not built yet and does
+  # nothing else; the phone asks for no location permission. On no surface by default:
+  # add its id to a list below (or a one-action button) to place it.
+  actions.8: "omw|On my way|bolt|location:share"
   # Launcher (long-press) shortcuts, in order, and the action of each quick-settings
   # slot ("Daylight 1" to "Daylight 4"; an empty entry leaves a slot unassigned).
   actions.shortcuts: "journal,meal,meal-photo,journal-note"

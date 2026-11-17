@@ -279,6 +279,46 @@ public class OneTapActionsCapabilityTest {
         assertTrue(TestCore.get(core, "/actions").getJSONArray("actions").getJSONObject(2).getBoolean("placeholder"));
     }
 
+    // ── the location placeholder ─────────────────────────────────────────────
+
+    /** "On my way" says it is not built yet and does nothing else: no request, no handler, no file. */
+    @Test public void onMyWayOnlySaysItIsNotBuiltYet() throws Exception {
+        core.services().provide(LinkHandler.class, handler("input"));
+        core.services().provide(LinkHandler.class, handler("media"));
+        core.settings().set("actions.3", "omw|On my way|bolt|location:share");
+        File state = core.shell().payloadDir();
+        String[] before = state.list();
+        JSONObject byLink = actionLink().handle("omw", Collections.singletonMap("lat", "1"));
+        assertEquals("toast", byLink.getString("effect"));
+        assertEquals(OneTapActionsCapability.LOCATION_NOT_BUILT, byLink.getString("message"));
+        assertEquals("Location sharing is not built yet", OneTapActionsCapability.LOCATION_NOT_BUILT);
+        JSONObject byRoute = run("omw");
+        assertEquals(OneTapActionsCapability.LOCATION_NOT_BUILT, byRoute.getString("message"));
+        assertTrue("nothing was sent", posted.isEmpty());
+        assertTrue("no link handler ran", handled.isEmpty());
+        assertArrayEquals("nothing was written", before, state.list());
+    }
+
+    @Test public void onMyWayIsListedAsAPlaceholderAndOnEverySurfaceList() throws Exception {
+        core.settings().set("actions.3", "omw|On my way|bolt|location:share");
+        JSONObject listed = TestCore.get(core, "/actions").getJSONArray("actions").getJSONObject(2);
+        assertEquals("omw", listed.getString("id"));
+        assertEquals("location", listed.getString("kind"));
+        assertTrue(listed.getBoolean("placeholder"));
+        // Tiles, shortcuts and the one-action button's chooser read ActionList: it is there, keyed.
+        boolean found = false;
+        org.json.JSONArray surfaces = core.services().find(ActionList.class).actions();
+        for (int i = 0; i < surfaces.length(); i++) {
+            JSONObject a = surfaces.getJSONObject(i);
+            if (!"omw".equals(a.getString("id"))) continue;
+            found = true;
+            assertEquals("daylight://action/omw#k=" + KEY, a.getString("uri"));
+            assertEquals("", a.getString("direct"));
+        }
+        assertTrue(found);
+        assertNull(core.services().find(ActionList.class).mediaContentId("omw"));
+    }
+
     @Test public void aMalformedInputActionIsRefusedWhenItIsSet() {
         for (String bad : new String[] { "x|X|mic|input:video:journal", "x|X|mic|input:voice:/api/v1/x" }) {
             try { core.settings().set("actions.4", bad); fail("accepted " + bad); }

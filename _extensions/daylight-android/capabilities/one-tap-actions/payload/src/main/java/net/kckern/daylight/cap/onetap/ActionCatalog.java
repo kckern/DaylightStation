@@ -20,12 +20,14 @@ import java.util.regex.Pattern;
  *   input:<kind>:<dest> a quick input (voice, text or photo) to a configured destination
  *   media:<contentId>   play natively
  *   api:/api/...        an empty POST to that backend path, and a message with the outcome
+ *   location:share      "On my way": a reserved slot. It says the feature is not built yet
+ *                       and does nothing else (no permission, no request, no state)
  *
  * An action exists only as one of these lines in the device's settings. Nothing that
  * arrives in a link, an intent or from a page can add one or change what one does.
  */
 final class ActionCatalog {
-    enum Kind { OPEN, BOOKMARK, MEMO, INPUT, MEDIA, API }
+    enum Kind { OPEN, BOOKMARK, MEMO, INPUT, MEDIA, API, LOCATION }
 
     static final class Action {
         final String id;
@@ -43,7 +45,7 @@ final class ActionCatalog {
             this.value = value;
         }
 
-        /** The link kind of the capability that performs this action, or null for an API call. */
+        /** The link kind of the capability that performs this action, or null for one this capability runs (api:, location:). */
         String linkKind() {
             switch (kind) {
                 case OPEN: return "open";
@@ -179,6 +181,9 @@ final class ActionCatalog {
             case "media":
                 if (!CONTENT_ID.matcher(rest).matches()) throw new IllegalArgumentException("media: needs a content id such as plex:12345");
                 return new Action(id, label, icon, Kind.MEDIA, rest);
+            case "location":
+                if (!"share".equals(rest)) throw new IllegalArgumentException("location: only 'share' is supported");
+                return new Action(id, label, icon, Kind.LOCATION, rest);
             case "api":
                 if (!rest.startsWith("/api/")) throw new IllegalArgumentException("api: path must start with /api/");
                 if (!API_PATH.matcher(rest).matches() || rest.contains("/../") || rest.contains("/./") || rest.endsWith("/..") || rest.endsWith("/.")) {
@@ -186,7 +191,7 @@ final class ActionCatalog {
                 }
                 return new Action(id, label, icon, Kind.API, rest);
             default:
-                throw new IllegalArgumentException("unknown target; use open:, bookmark:, memo:, input:, media: or api:");
+                throw new IllegalArgumentException("unknown target; use open:, bookmark:, memo:, input:, media:, api: or location:");
         }
     }
 }

@@ -318,9 +318,10 @@ characters.
 | `memo:new` | The earlier name of `input:voice:journal`. Still accepted |
 | `media:<contentId>` | Plays that household item natively (`media-service`) |
 | `api:/api/...` | Sends an empty `POST` to that backend path and shows the outcome |
+| `location:share` | A placeholder. A tap shows "Location sharing is not built yet" and does nothing else; `GET /actions` marks it `placeholder: true`. See "On my way" below |
 
 The phone's actions: Journal, Meal (both by voice), Meal photo, Journal note,
-Meal note, Media, Call. The first four are its launcher shortcuts and its four
+Meal note, Media, Call, On my way. The first four are its launcher shortcuts and its four
 tiles; the widget has Journal, Meal, Meal photo and Media. Two icon names were
 added for them, `camera` and `note`, beside `bolt`, `mic`, `open`, `play` and
 `star`.
@@ -350,6 +351,25 @@ as the action's id and its outcome.
 | POST | `/actions/run` `{id}` | The action's effect |
 | POST | `/actions/publish` | Rebuilds the shortcuts and the tile cache: `{shortcuts, tiles, problems}`. Call it after changing `actions.*` |
 | POST | `/actions/pin` `{id}` | Asks the launcher to pin one action; 501 with the reason when it cannot |
+
+### "On my way" (a placeholder)
+
+`actions.8: "omw|On my way|bolt|location:share"`. The owner asked for the slot
+now and the feature later. The action is listed everywhere an action can be placed
+(the action list, the long-press and tile lists if its id is added to them, the
+one-action button's chooser, and the car list), and a tap answers "Location
+sharing is not built yet" and nothing more: no permission is declared for it, no
+request is sent, nothing is written. It is keyed like every action link. It is on
+no launcher shortcut, tile or four-button widget by default; the car list has it
+(see `car-actions`).
+
+What the real feature needs, none of which is built: a location permission (fine
+location, and the foreground-service location type for sharing that runs while the
+phone is in a pocket), a foreground service that shares for a fixed time and then
+stops on its own, a backend endpoint that takes the position and decides who sees
+it, and a decision about who that is. Each of those changes the phone's exact
+permission list, which is why none of it is declared for a button that does
+nothing.
 
 ### The surfaces
 

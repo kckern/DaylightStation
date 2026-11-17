@@ -115,7 +115,7 @@ adb shell am start -a android.intent.action.VIEW -d "'daylight://input/queue#k=$
    shows and the next tap works.
 
 5. Add a "Daylight button" widget (one cell). The chooser opens and lists Journal,
-   Meal, Meal photo, Journal note, Meal note, Media, Call. Pick Journal: the
+   Meal, Meal photo, Journal note, Meal note, Media, Call, On my way. Pick Journal: the
    button shows a microphone and "Journal", and a tap opens the recorder. Record
    whether the launcher offered the widget at one cell and what it looks like.
 6. Back out of the chooser without picking: no widget is placed.
@@ -128,7 +128,10 @@ adb shell am start -a android.intent.action.VIEW -d "'daylight://input/queue#k=$
    `adb shell am start -n net.kckern.daylight.phone/net.kckern.daylight.cap.widgets.shell.ButtonWidgetConfigActivity --ei appWidgetId 99999`
    closes at once (`adb logcat -s Daylight-Widget` says the widget is not a
    Daylight button), and the same with no id.
-10. Uninstalled-payload state: after `adb shell pm clear net.kckern.daylight.phone`
+10. "On my way": add a one-action button and pick On my way. A tap shows "Location
+    sharing is not built yet" and nothing else happens: no permission prompt, and
+    Settings > Apps > Daylight > Permissions lists no location permission.
+11. Uninstalled-payload state: after `adb shell pm clear net.kckern.daylight.phone`
     add a button before opening the app. The chooser says it has no actions yet;
     after the app has been opened once, adding a button lists them.
 
