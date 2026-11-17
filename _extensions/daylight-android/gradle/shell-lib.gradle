@@ -1,0 +1,18 @@
+// Applied by capabilities/*/shell. A shell half holds what must be in the installed
+// APK: manifest entries, resources, native code, classes Android instantiates by name.
+// It may use shell-api (ShellComponents) and nothing from core or a payload.
+apply plugin: 'com.android.library'
+
+android {
+    compileSdk 33
+    defaultConfig { minSdk 26 }
+    buildFeatures { buildConfig false }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_11
+        targetCompatibility JavaVersion.VERSION_11
+    }
+}
+
+dependencies {
+    implementation project(':shell-api')
+}

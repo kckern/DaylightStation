@@ -26,6 +26,7 @@ public final class CoreRuntime implements CoreContext {
     private final EventLog log = new EventLog();
     private final Auth auth;
     private final SocketHub socket;
+    private final AccessibilityHub accessibility = new AccessibilityHub();
     private boolean prepared;
 
     public CoreRuntime(ShellServices shell, String deviceId, String payloadVersion, File stateDir) {
@@ -49,6 +50,7 @@ public final class CoreRuntime implements CoreContext {
     @Override public NoteBus notes() { return notes; }
     @Override public EventLog log() { return log; }
     @Override public SocketHub socket() { return socket; }
+    @Override public AccessibilityHub accessibility() { return accessibility; }
     public Auth auth() { return auth; }
 
     /** Called by the payload entry class when the shell binds or unbinds a component. */
@@ -62,6 +64,7 @@ public final class CoreRuntime implements CoreContext {
         registerCoreRoutes();
         for (Capability c : capabilities) c.register(this);
         settings.applyDefaults(defaults);
+        components.watch(AccessibilityHub.COMPONENT, accessibility::bind);
         prepared = true;
     }
 
@@ -84,6 +87,7 @@ public final class CoreRuntime implements CoreContext {
     }
 
     public void stop() {
+        accessibility.bind(null);
         for (int i = started.size() - 1; i >= 0; i--) {
             try { started.get(i).stop(); } catch (Throwable ignored) { }
         }
@@ -138,6 +142,7 @@ public final class CoreRuntime implements CoreContext {
                 .put("uptimeMs", System.currentTimeMillis() - startedAtMs)
                 .put("capabilities", names())
                 .put("wsClients", socket.clients())
+                .put("a11yBound", accessibility.isBound())
                 .put("payload", payload));
     }
 }

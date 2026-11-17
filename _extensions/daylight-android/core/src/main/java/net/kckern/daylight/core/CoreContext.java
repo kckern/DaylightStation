@@ -24,4 +24,7 @@ public interface CoreContext {
 
     /** The WebSocket channel on the control port. */
     SocketHub socket();
+
+    /** The APK's one accessibility service, when the device has the `accessibility` capability. */
+    AccessibilityHub accessibility();
 }
