@@ -8,7 +8,10 @@ routes (which the phone registers and serves to nobody), settings and the fleet 
 `__docs/reference/android/kiosk.md`.
 
 **None of this has run on a phone.** The build passes its unit tests, lint and the
-build verifier. Nothing has been installed. Every statement below about what
+build verifier. Nothing has been installed. A security review of the build was
+answered before any install; what it changed is in "The lock screen, the
+microphone and the camera", "The link key", "Who may connect", "The exact list"
+and the `voice-memo` section. Every statement below about what
 Android does (cold starts, tiles, the launcher, link handling) is from the
 platform's documentation and is unproven until the on-device checklist is run.
 "Unproven on a phone" below marks the places where that matters most.
@@ -709,10 +712,14 @@ never asked at install, and a "no" is not asked again. Recording does not depend
 on the answer. `GET /notify/status` gives `{permission, channels}`.
 
 How a relayed push can open a view: a push whose tap target is a household https
-URL opens in the app once the host is turned on under "Open by default"; a
-`daylight://open?path=...` or `daylight://bookmark/<id>` link needs no key. A push
-cannot run an action, start a memo or start playback: those need the install key,
-which never leaves the phone. Which field of the Home Assistant companion app
+URL opens in the app once the host is turned on under "Open by default", and a
+`daylight://bookmark/<id>` link needs no key. Without the key such a link opens
+a bookmarked page only: the https URL's path, or the `path` of a
+`daylight://open` link, must be exactly a configured bookmark's. A push that
+should open any other page needs that page added as a bookmark (`bookmarks.1` to
+`bookmarks.8`). A push cannot run an action, start a memo or start playback:
+those need the link key, which never leaves the phone and changes at every
+start. Which field of the Home Assistant companion app
 carries a tap target is not confirmed, and no producer sets one.
 
 ## What the phone does not have

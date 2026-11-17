@@ -347,7 +347,7 @@ missing provider is a normal state.
 | `InputLock` | `lockdown` | `volume-keys`: while the lock is active a volume key does nothing |
 | `PageOpener` | `webview-host` | `bookmarks`: show a URL in the app's page, now or in the window that attaches next |
 | `LinkHandler` (one per link kind) | `bookmarks` (`open`, `bookmark`), `one-tap-actions` (`action`) | `notifications`: hands a checked link to the handler of its kind |
-| `LinkKeySource` | `notifications` | `one-tap-actions`: the install key for the links its surfaces launch |
+| `LinkKeySource` | `notifications` | `one-tap-actions`: the link key for the links its surfaces launch (carried in the fragment, replaced at every payload start) |
 | `ActionList` | `one-tap-actions` | `widgets`: the actions and their keyed links, in process only |
 | `PackageGate` | `lockdown` | `lease-gate`: a closed package is kept from the front, and hidden as well where this app is device owner |
 | `KioskSurface` | `webview-host` | `lockdown`, `screen-power`, `app-launcher` and `debug-tools`: the kiosk window, its page, evaluate and capture |
@@ -593,9 +593,9 @@ build of that device and names the placeholder, never a value.
 | `bookmarks` | phone | Named pages of the site; the `open` and `bookmark` link kinds | `bookmarks.1` to `bookmarks.8` |
 | `one-tap-actions` | phone | Actions as launcher shortcuts, pinned shortcuts and quick-settings tiles | `actions.*` |
 | `widgets` | phone | A home-screen widget of up to four actions | `widgets.actions` |
-| `media-service` | phone | Native audio playback of household media: browse tree, stream resolution, progress reports; a Media3 library session in the shell half | `media.roots`, `media.recentLimit`, `media.pageSize` |
+| `media-service` | phone | Native audio playback of household media: browse tree, stream resolution, progress reports; a Media3 library session in the shell half | `media.roots`, `media.recentLimit`, `media.pageSize`, `media.controllerPins` |
 | `android-auto` | phone | Declares the media library service to Android Auto. Declarations only, no payload | none |
-| `voice-memo` | phone | Records a voice memo and uploads it to the Journalist from a queue kept on disk | none (`identity.user` must be set) |
+| `voice-memo` | phone | Records a voice memo and uploads it to the Journalist from a queue kept on disk | none (`identity.user` must be set and `identity.device` must be `fleet:<key>`) |
 
 The phone's capabilities are described in `__docs/reference/android/phone.md`.
 
