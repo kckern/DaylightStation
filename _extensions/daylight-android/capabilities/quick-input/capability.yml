@@ -1,0 +1,16 @@
+# Voice memos for the Journalist. The shell half records (a microphone foreground
+# service, started only by a tap on this phone); this payload queues each recording on
+# disk and uploads it when the network is up, and keeps the audio until the backend has
+# answered 200 for it. Owns the link kind daylight://memo/<new|queue>.
+entry: net.kckern.daylight.cap.quickinput.QuickInputCapability
+permissions:
+  - android.permission.RECORD_AUDIO
+  - android.permission.FOREGROUND_SERVICE_MICROPHONE
+  # To try the queue only when a network is up, and again when one returns.
+  - android.permission.ACCESS_NETWORK_STATE
+# A memo link is keyed and arrives through the link activity.
+requires:
+  - notifications
+# The queue's notices go through the notifications capability.
+startsAfter:
+  - notifications

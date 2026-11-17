@@ -109,7 +109,7 @@ public class DeviceDefaultsTest {
 
     /**
      * Without a recorder in the build a memo action is a stand-in that opens a page. A
-     * device that lists voice-memo has the recorder, so none of its actions is one.
+     * device that lists quick-input has the recorder, so none of its actions is one.
      */
     @Test public void aMemoActionIsTheRecorderWhereTheDeviceHasOne() throws Exception {
         java.util.List<String> entries = java.util.Arrays.asList(DeviceConfig.CAPABILITY_ENTRIES);
@@ -117,7 +117,7 @@ public class DeviceDefaultsTest {
         CoreRuntime core = TestCore.create(tmp.newFolder());
         for (String entry : entries) core.add((Capability) Class.forName(entry).getDeclaredConstructor().newInstance());
         core.prepare(new JSONObject(DeviceConfig.DEFAULTS_JSON));
-        boolean recorder = entries.contains("net.kckern.daylight.cap.voicememo.VoiceMemoCapability");
+        boolean recorder = entries.contains("net.kckern.daylight.cap.quickinput.QuickInputCapability");
         org.json.JSONArray actions = TestCore.get(core, "/actions").getJSONArray("actions");
         int memos = 0;
         for (int i = 0; i < actions.length(); i++) {
@@ -277,7 +277,7 @@ public class DeviceDefaultsTest {
         String[][] lists = { { "bookmarks.BookmarksCapability", "/bookmarks" }, { "onetap.OneTapActionsCapability", "/actions" },
                 { "widgets.WidgetsCapability", "/widgets" }, { "mediaservice.MediaServiceCapability", "/media/status" },
                 // A device that records memos is built with the user they are sent for.
-                { "voicememo.VoiceMemoCapability", "/memo/queue" } };
+                { "voicememo.QuickInputCapability", "/memo/queue" } };
         for (String[] row : lists) {
             if (!entries.contains("net.kckern.daylight.cap." + row[0])) continue;
             JSONObject answer = TestCore.get(core, row[1]);

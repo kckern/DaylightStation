@@ -423,8 +423,8 @@ test('a car declaration without the media service it points at fails', () => {
 });
 
 test('the recorder and its screen are not exported, and the recorder is a microphone foreground service', () => {
-  const REC = 'net.kckern.daylight.cap.voicememo.shell.MemoRecorderService';
-  const SCREEN = 'net.kckern.daylight.cap.voicememo.shell.RecordActivity';
+  const REC = 'net.kckern.daylight.cap.quickinput.shell.MemoRecorderService';
+  const SCREEN = 'net.kckern.daylight.cap.quickinput.shell.RecordActivity';
   assert.deepEqual(componentAttributeFailures(tree(typed('service', REC, 'false', null, '0x00000080'), component('activity', SCREEN, 'false', null))), []);
   assert.deepEqual(componentAttributeFailures(tree(typed('service', REC, 'true', null, '0x00000080'))),
     [`service ${REC} is exported=true, expected exported=false`]);

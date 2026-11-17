@@ -132,7 +132,7 @@ public final class NotificationsCapability implements Capability, LinkKeySource,
      */
     @Override public void start() {
         // A new key for every run. This capability starts before the ones that build
-        // links (one-tap-actions, widgets, voice-memo), so every surface and notice they
+        // links (one-tap-actions, widgets, quick-input), so every surface and notice they
         // publish at start carries it. A cold start is itself caused by a tap on a link
         // built under the key before, so that one is honoured for a minute more.
         synchronized (this) {

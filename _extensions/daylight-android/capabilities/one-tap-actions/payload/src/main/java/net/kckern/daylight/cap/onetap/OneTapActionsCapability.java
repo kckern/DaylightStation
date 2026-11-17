@@ -76,7 +76,7 @@ public final class OneTapActionsCapability implements Capability, ActionList {
         core.settings().declare(SHORTCUTS, SettingsRegistry.Type.STRING, "", value -> SurfacePlan.listProblem((String) value, SLOTS));
         core.settings().declare(TILES, SettingsRegistry.Type.STRING, "",
                 value -> SurfacePlan.listProblem((String) value, SurfacePlan.TILE_SLOTS));
-        // STAND-IN until the voice-memo capability exists: with no recorder in the build a
+        // STAND-IN until the quick-input capability exists: with no recorder in the build a
         // memo action opens this page of the site in the app instead of recording.
         core.settings().declare(MEMO_FALLBACK, SettingsRegistry.Type.STRING, "/", value -> {
             try { Backend.pagePath((String) value); return null; }
@@ -209,7 +209,7 @@ public final class OneTapActionsCapability implements Capability, ActionList {
             return LinkEffect.toast(a.label + ": " + outcome);
         }
         if (memoIsStandIn(a)) {
-            // STAND-IN: recording comes with the voice-memo capability. Until then the
+            // STAND-IN: recording comes with the quick-input capability. Until then the
             // action opens the app at actions.memoFallbackPath.
             LinkHandler open = handlerFor("open");
             if (open == null) return LinkEffect.toast(a.label + ": not available on this device");

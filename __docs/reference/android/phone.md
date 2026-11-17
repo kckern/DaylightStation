@@ -11,7 +11,7 @@ routes (which the phone registers and serves to nobody), settings and the fleet 
 build verifier. Nothing has been installed. A security review of the build was
 answered before any install; what it changed is in "The lock screen, the
 microphone and the camera", "The link key", "Who may connect", "The exact list"
-and the `voice-memo` section. Every statement below about what
+and the `quick-input` section. Every statement below about what
 Android does (cold starts, tiles, the launcher, link handling) is from the
 platform's documentation and is unproven until the on-device checklist is run.
 "Unproven on a phone" below marks the places where that matters most.
@@ -19,7 +19,7 @@ platform's documentation and is unproven until the on-device checklist is run.
 What the phone build has: the site's mobile web views (`webview-host`), links
 (`notifications`), `bookmarks`, `one-tap-actions`, `widgets`, native audio playback
 (`media-service`) with Android Auto (`android-auto`), voice memos for the Journalist
-(`voice-memo`) and the app's own local notifications. What it does not have is
+(`quick-input`) and the app's own local notifications. What it does not have is
 under "What the phone does not have".
 
 ## What makes it a phone and not a kiosk
@@ -302,7 +302,7 @@ characters.
 |---|---|
 | `open:/path` | Opens that page of the site in the app |
 | `bookmark:<id>` | Opens a bookmark |
-| `memo:new` | Opens the recorder and starts a voice memo; tapped again while one is being recorded, stops and saves it. In a build with no `voice-memo` it is a stand-in that opens the app at `actions.memoFallbackPath` and `GET /actions` marks it `placeholder: true`; a per-device test fails a phone build where that is so |
+| `memo:new` | Opens the recorder and starts a voice memo; tapped again while one is being recorded, stops and saves it. In a build with no `quick-input` it is a stand-in that opens the app at `actions.memoFallbackPath` and `GET /actions` marks it `placeholder: true`; a per-device test fails a phone build where that is so |
 | `media:<contentId>` | Plays that household item natively (`media-service`) |
 | `api:/api/...` | Sends an empty `POST` to that backend path and shows the outcome |
 
@@ -321,7 +321,7 @@ as the action's id and its outcome.
 |---|---|
 | `actions.shortcuts` | Ids of the launcher shortcuts, in order. Empty: the first actions |
 | `actions.tiles` | Ids by quick-settings slot; an empty entry leaves a slot unassigned (`memo,,lights`) |
-| `actions.memoFallbackPath` | The page a memo action opens in a build without `voice-memo` |
+| `actions.memoFallbackPath` | The page a memo action opens in a build without `quick-input` |
 
 | Method | Route | Answer |
 |---|---|---|
@@ -525,7 +525,7 @@ Sources: `https://developer.android.com/training/cars/testing`,
 `https://developer.android.com/training/cars/testing/dhu`,
 `https://developer.android.com/training/cars/media/auto`.
 
-## `voice-memo`
+## `quick-input`
 
 A memo is recorded on the phone and sent to the Journalist, which transcribes it,
 saves a journal entry and answers in the owner's Telegram conversation with the
@@ -694,12 +694,12 @@ transport: household pushes keep arriving through the Home Assistant relay.
 |---|---|---|
 | Playback | Media3's own | The media session. Exempt from the notification permission |
 | "Recording a voice memo", with Stop | `daylight_recording` (low) | The recorder service; a foreground-service notification |
-| "N voice memos waiting to upload" | `daylight_uploads` (low) | `voice-memo`, after a pass that left memos waiting |
-| "N voice memos could not be sent. Tap to try again.", with a Discard action | `daylight_uploads` | `voice-memo`, when memos are parked |
-| "This phone is not allowed to send memos yet. ..." | `daylight_uploads` | `voice-memo`, after a 403 `device_not_allowed`; removed by the first accepted memo |
-| "The daily allowance for voice memos is used up. Sending resumes at about <day and time>. ..." | `daylight_uploads` | `voice-memo`, after a 429 |
-| "N recordings were cut off and cannot be played. They are kept on this phone and not sent." | `daylight_uploads` | `voice-memo`, while `memos/cutoff/` holds any |
-| "Voice memos are not set up: identity not configured. N voice memos are kept on this phone." | `daylight_uploads` | `voice-memo` |
+| "N voice memos waiting to upload" | `daylight_uploads` (low) | `quick-input`, after a pass that left memos waiting |
+| "N voice memos could not be sent. Tap to try again.", with a Discard action | `daylight_uploads` | `quick-input`, when memos are parked |
+| "This phone is not allowed to send memos yet. ..." | `daylight_uploads` | `quick-input`, after a 403 `device_not_allowed`; removed by the first accepted memo |
+| "The daily allowance for voice memos is used up. Sending resumes at about <day and time>. ..." | `daylight_uploads` | `quick-input`, after a 429 |
+| "N recordings were cut off and cannot be played. They are kept on this phone and not sent." | `daylight_uploads` | `quick-input`, while `memos/cutoff/` holds any |
+| "Voice memos are not set up: identity not configured. N voice memos are kept on this phone." | `daylight_uploads` | `quick-input` |
 
 A notice is a count and a state. A tap opens a `daylight://` link through the link
 activity, with the link key added by `notifications` where the link's kind
@@ -765,11 +765,11 @@ Twelve:
 | `WAKE_LOCK` | base | Playback and uploads with the screen off |
 | `POST_NOTIFICATIONS` | base | The service's and the app's own notifications |
 | `REQUEST_IGNORE_BATTERY_OPTIMIZATIONS` | base | Declared; the phone build has no screen that asks for it (the setup activity is not reachable) |
-| `ACCESS_WIFI_STATE`, `ACCESS_NETWORK_STATE` | base, `webview-host`, `media-service`, `voice-memo` | Reload and upload when a network returns |
-| `RECORD_AUDIO` | `webview-host`, `voice-memo` | Voice memos. No page is given it (`webview.allowMic` is false) |
+| `ACCESS_WIFI_STATE`, `ACCESS_NETWORK_STATE` | base, `webview-host`, `media-service`, `quick-input` | Reload and upload when a network returns |
+| `RECORD_AUDIO` | `webview-host`, `quick-input` | Voice memos. No page is given it (`webview.allowMic` is false) |
 | `MODIFY_AUDIO_SETTINGS` | `webview-host` | Page audio |
 | `FOREGROUND_SERVICE_MEDIA_PLAYBACK` | `media-service` | The media library service |
-| `FOREGROUND_SERVICE_MICROPHONE` | `voice-memo` | The recorder service |
+| `FOREGROUND_SERVICE_MICROPHONE` | `quick-input` | The recorder service |
 
 Not in the phone's APK, though a kiosk has them: `SYSTEM_ALERT_WINDOW`, `CAMERA`,
 `REQUEST_INSTALL_PACKAGES`, `WRITE_SECURE_SETTINGS`. Turning the page camera on
