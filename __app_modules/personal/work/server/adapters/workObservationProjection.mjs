@@ -164,6 +164,8 @@ function normalizeEvents({
         id: eventId,
         username,
         ref,
+        containerRef: makeRef(provider,accountId,'container',containerId),
+        assigneeIds: assignees,
         type: row.action,
         occurredAt,
         observedAt: asOf,

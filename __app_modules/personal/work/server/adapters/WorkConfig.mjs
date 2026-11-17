@@ -24,7 +24,7 @@ export function resolveWorkPolicy({configuration={},username,timezone}){
  try{
   const base=configuration?.work;
   if(!base||base.enabled!==true)return inert('disabled');
-  if(typeof username!=='string'||!/^[A-Za-z0-9_-]{1,128}$/.test(username)||!plain(base.users)||!Object.hasOwn(base.users,username))return inert('unknown_work_user');
+  if(typeof username!=='string'||!/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(username)||!plain(base.users)||!Object.hasOwn(base.users,username))return inert('unknown_work_user');
   if(!moment.tz.zone(timezone))return inert('invalid_work_timezone');
   const {users,...shared}=base,override=users[username];
   if(!plain(override)||Object.hasOwn(override,'users'))return inert('invalid_work_config');

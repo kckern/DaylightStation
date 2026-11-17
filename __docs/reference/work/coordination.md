@@ -28,3 +28,12 @@ Todoist open tasks/projects are cursor-paginated; completed history uses the cur
 Optional composition-supplied scope binds an observation to its configured logical account. Older snapshots without that binding remain unavailable for automatic decisions. Only one harvested account of each provider type is supported per user by the current upstream storage/auth connection; conflicting same-type account configuration is rejected. One account can still fill multiple domain roles.
 
 Read adapters filter account, container and any configured assignee scope. Unknown source timestamps stay null. Events include actual occurrence identity; two completions of a recurring task are distinct. Older history without account provenance is not silently attributed to a newly configured account and is reported as unknown coverage. Source events outside the last 90 days are not included in the Work read context. No read adapter exposes command capability in this increment.
+
+
+## Durable relevance and links
+
+Work keeps canonical transactions in `work/events.jsonl` under each user, with a checksum chain and optimistic revisions. `work/state.yml` is a generated projection, not an editable replacement for provider state or the KB. Reads create no directory or lock. Writes require the exact configured Linux host/environment and a pipe-held kernel lease; a second writer or a lost lease cannot continue mutations.
+
+A durable envelope is replayed exactly once after a projection failure. Authorized recovery preserves incomplete tail bytes before repairing; a complete valid envelope missing only its newline is retained. Complete corrupt records and missing canonical history block writes. Edited generated projections are backed up and rebuilt from the canonical log; user-editable KB files are not touched by this recovery.
+
+Read context joins explicitly scoped provider facts, stable links and the local relevance overlay. Refresh does not reactivate paused/retired work. Missing or old sources can supply clearly unavailable prior context, but cannot authorize an automatic action. Observations newer than an explicit as-of are excluded. Links require a verified authored principal and bind the canonical provider reference; a repeated confirmation is idempotent and cannot silently replace its relation to a broader outcome.

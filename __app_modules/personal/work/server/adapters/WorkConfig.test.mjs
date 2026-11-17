@@ -49,3 +49,6 @@ it('rejects multiple harvested accounts of one provider for the same user instea
  const c=base();c.work.providers.second={...c.work.providers.personal,accountId:'second-account'};
  expect(resolve(c)).toMatchObject({enabled:false,reason:'ambiguous_provider_account'});
 });
+it('accepts an enrolled dotted username supported by the existing KB user namespace',()=>{
+ const c=base();c.work.users['sample.user']={};expect(resolve(c,'sample.user').enabled).toBe(true);
+});
