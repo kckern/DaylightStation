@@ -1,6 +1,11 @@
 # Copy into household supervision/config.yml only after the rollout drill.
 # Secrets belong in household auth/supervision.yml, never in this document.
 enabled: false
+# Which backend may write the ledger (see reference/supervision/parental-stop.md).
+# Omit for the prod container (DAYLIGHT_ENV docker on Linux).
+# writer:
+#   writer_env: docker
+#   writer_host: <hostname>
 credentials_auth_ref: supervision
 scope_id: child-public
 garage_device_id: garage-tv

@@ -1,5 +1,6 @@
 export {createSupervisionModule} from './composition.mjs';
 export {JsonSupervisionRepository} from './adapters/JsonSupervisionRepository.mjs';
+export {createLedgerWriterGate,DEFAULT_WRITER_ENV} from './adapters/LedgerWriterGate.mjs';
 export {StateGatesSupervisionPort} from './adapters/StateGatesSupervisionPort.mjs';
 export {AccessDenied,requireAdult} from '../shared/contracts.mjs';
 

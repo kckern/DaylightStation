@@ -26,12 +26,41 @@ the first device state has been written.
 The lock is `#system/utils/exclusiveFileLock.mjs`, a `flock(2)` lock on
 `<ledger>.lock` that the kernel drops when its holder dies. On Linux it is held
 by a `flock(1)` child; on macOS, which ships no `flock(1)`, by an `O_EXLOCK`
-descriptor the backend keeps open. Another holder fails with
-`SUPERVISION_WRITER_CONFLICT`; no usable lock (for example `flock(1)` missing on
-Linux, or an unsupported platform) fails with `SUPERVISION_WRITER_LOCK_FAILED`.
-Neither ever falls back to writing unlocked. The legacy shutdown incident
-ledger (`YamlShutdownDatastore.incidentRepository()`) uses the same repository
-and lock.
+descriptor the backend keeps open (a held lock is retried for about 50 ms,
+because a child forked by another thread can carry a just-closed descriptor for
+microseconds). Another holder fails with `SUPERVISION_WRITER_CONFLICT`; no
+usable lock (for example `flock(1)` missing on Linux, or an unsupported
+platform) fails with `SUPERVISION_WRITER_LOCK_FAILED`, and the error message
+carries the reason. Neither ever falls back to writing unlocked. The legacy
+shutdown incident ledger (`YamlShutdownDatastore.incidentRepository()`) uses
+the same repository and lock.
+
+**The lock is per machine.** `flock(2)` excludes processes on one kernel only,
+and the data tree is shared between machines through Dropbox, so a laptop
+backend and the prod container would each hold "the" lock and both write. A
+writer gate (`LedgerWriterGate.mjs`) therefore decides which backend may open
+either ledger at all, before any directory, lock or write, using the same
+`writer_env`/`writer_host` shape as the lifelog and work writer authorities:
+
+```yaml
+# supervision config (ledger: supervision/current.json)
+# shutdown/config.yml (ledger: shutdown/enforcement-incidents.json)
+writer:
+  writer_env: docker      # DAYLIGHT_ENV of the one writer
+  writer_host: <hostname> # optional; omit for the prod container
+```
+
+With no `writer` block the writer is the prod container: `DAYLIGHT_ENV` unset
+or `docker` (`docker/entrypoint.sh` exports `docker`) on Linux, any hostname,
+since a container's hostname is its id and changes on every deploy. Prod needs
+no new configuration. A configured writer may run on any platform. Every other
+backend fails closed with `SUPERVISION_WRITER_HOST_REFUSED`, whose message names
+the configured writer and the refused backend's env, host and platform: the
+supervision runtime aborts initialization instead of disabling a retained Stop,
+and the shutdown incident reporter records nothing. The read-only bootstrap
+probe is not gated, so a never-configured installation stays in legacy mode on
+any host. To move the writer (for example to test on a laptop), set the block on
+both ledgers' configs; prod is then refused until it is removed.
 
 See `__docs/configuration/supervision.yml` for the configuration template. The actual inventory includes Garage (`garage-tv`), school Portal (`portal`), piano tablet (`yellow-room-tablet`) and arcade/media Shield (`livingroom-tv`). This is reviewed inventory, not a claim that every consumer has passed live acceptance. Deploy only through the activity-aware rollout gate and record the parent-operated drill, including per-device ACKs and real actuator observations. A persistent idle latch alone is not an active human; recent verified parent intervention/release still protects against deployment.
 

@@ -1497,7 +1497,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     if(!profile || (profile.household_id??householdId)!==householdId)throw new AccessDenied('PARENT_AUTHENTICATION_REQUIRED');
     return {id:userId,roles:[...(profile.roles??[]),...(profile.type==='owner'?['owner']:[]),...((profile.roles??[]).includes('parent')?['guardian']:[])],authenticatedBy:'household-auth'};
   };
-  const parentalSupervision=await createSupervisionRuntime({notificationService:notificationStack.notificationService,configService,householdId,stateGatesModule,principal:supervisionStateGatesPrincipal,modePrincipal:householdPresenceStateGatesPrincipal,httpClient:axios,
+  const parentalSupervision=await createSupervisionRuntime({environment:process.env.DAYLIGHT_ENV||'docker',hostId:hostname(),platform:process.platform,notificationService:notificationStack.notificationService,configService,householdId,stateGatesModule,principal:supervisionStateGatesPrincipal,modePrincipal:householdPresenceStateGatesPrincipal,httpClient:axios,
     clock:{now:()=>Date.now()},logger:rootLogger.child({module:'supervision'}),getHaGateway:()=>supervisionHaGateway,getIdentity:()=>supervisionIdentity,
     gamesCatalog:dataService.household.read('gaming/retroarch/catalog'),
     getLearners:()=> (configService.getHouseholdUsers(householdId)??[]).map(value=>typeof value==='string'?value:value.username??value.userId??value.id).filter(Boolean).map(id=>({id,label:userService.getProfile(id)?.display_name??userService.getProfile(id)?.name??id})),
@@ -2991,7 +2991,7 @@ const { readingSessions, readingSessionInterceptor } = await createSchoolReading
     },
   } : null;
   const shutdownDatastore=new YamlShutdownDatastore({configService});
-  const shutdownIncidentRepository=parentalSupervision.enabled?null:shutdownDatastore.incidentRepository();
+  const shutdownIncidentRepository=parentalSupervision.enabled?null:shutdownDatastore.incidentRepository({writer:shutdownConfig.writer,environment:process.env.DAYLIGHT_ENV||'docker',hostId:hostname(),platform:process.platform});
   const shutdownIncidentReporter=shutdownIncidentRepository?new EnforcementIncidentReporter({repository:shutdownIncidentRepository,logger:rootLogger.child({module:'shutdown-incidents'}),notifyIncident:createEnforcementIncidentNotifier({notificationService:notificationStack.notificationService,recipientId:shutdownConfig.enforcement_alerts?.recipient_id,resolveRecipient:()=>configService.getHeadOfHousehold?.(householdId)})}):null;
   const shutdownService = new ShutdownService({
     incidentReporter:shutdownIncidentReporter,portalDeviceId:shutdownConfig.portal_keys?.device_id??'portal',

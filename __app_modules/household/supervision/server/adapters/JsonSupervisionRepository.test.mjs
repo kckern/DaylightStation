@@ -37,3 +37,17 @@ it('closes the repository when the lock is lost after it was taken',async()=>{
  lose();
  await expect(repository.read()).rejects.toThrow('Supervision repository closed');
 });
+
+it('puts the lock failure reason in the message, since boot prints only message and stack',async()=>{
+ const path=await ledgerPath();
+ const repository=new JsonSupervisionRepository({path,acquireLock:async()=>{throw Object.assign(new Error('flock(1) is not installed'),{code:'FILE_LOCK_FAILED'});}});
+ await expect(repository.read()).rejects.toThrow('Supervision writer lock unavailable: flock(1) is not installed');
+ await repository.close();
+});
+
+it('does not write when the lock is lost while the transaction runs',async()=>{
+ const path=await ledgerPath();let lose;
+ const repository=new JsonSupervisionRepository({path,acquireLock:async()=>({release:async()=>{},onLost:callback=>{lose=callback;}})});
+ await expect(repository.transaction(state=>{state.epoch=1;lose();})).rejects.toThrow(/closed|lost/);
+ await expect(access(path)).rejects.toMatchObject({code:'ENOENT'});
+});

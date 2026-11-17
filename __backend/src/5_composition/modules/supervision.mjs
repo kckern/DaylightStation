@@ -3,12 +3,14 @@ import {PortalKeysLockdownAdapter} from '#adapters/devices/PortalKeysLockdownAda
 import {createArcadeSupervisionConsumers} from '../../../../__app_modules/games/arcade/server/supervision-runtime.mjs';
 import {createTrustedParentalScanner} from '../../../../__app_modules/wellness/fitness/server/supervision-runtime.mjs';
 import {randomUUID} from 'node:crypto';
-import {EnforcementIncidentReporter,createSupervisionModule,createDisabledSupervisionRouter,JsonSupervisionRepository,StateGatesSupervisionPort,HaStopActuator,KioskSessionAuthority,BrowserStopConsumer,validateConsumerManifest,readLegacyStops,AccessDenied,ApprovalWorkflow,createApprovalTokenPrimitives,HaApprovalNotifier,ApprovalCallbackAuthority,ApprovalModeProducer,validateApprovalModeConfig,EffectiveEnforcement,ActivityCatalog,NativeLeaseConsumer,NativeLeaseAuthority,NativeLeaseCredentials,EligibilitySnapshot} from '../../../../__app_modules/household/supervision/server/index.mjs';
+import {createLedgerWriterGate,EnforcementIncidentReporter,createSupervisionModule,createDisabledSupervisionRouter,JsonSupervisionRepository,StateGatesSupervisionPort,HaStopActuator,KioskSessionAuthority,BrowserStopConsumer,validateConsumerManifest,readLegacyStops,AccessDenied,ApprovalWorkflow,createApprovalTokenPrimitives,HaApprovalNotifier,ApprovalCallbackAuthority,ApprovalModeProducer,validateApprovalModeConfig,EffectiveEnforcement,ActivityCatalog,NativeLeaseConsumer,NativeLeaseAuthority,NativeLeaseCredentials,EligibilitySnapshot} from '../../../../__app_modules/household/supervision/server/index.mjs';
 /** Explicit configured registry; persisted authority survives config removal. */
 export async function createSupervisionRuntime(options){
   const {configService,householdId,clock={now:()=>Date.now()},logger,makeId=randomUUID}=options;
-  const repository=options.repository??new JsonSupervisionRepository({path:configService.getHouseholdPath('supervision/current.json',householdId)});
   const requested=options.configuration??configService?.getHouseholdAppConfig(householdId,'supervision');
+  // Only the configured writer host opens the ledger (the lock is per machine; the data tree is shared).
+  const writerGate=createLedgerWriterGate({ledger:'The supervision ledger',writer:requested?.writer,environment:options.environment,hostId:options.hostId,platform:options.platform});
+  const repository=options.repository??new JsonSupervisionRepository({path:configService.getHouseholdPath('supervision/current.json',householdId),writerGate});
   if(!requested?.enabled && repository.hasPersistedState && !await repository.hasPersistedState()){
     await repository.close?.();return {enabled:false,router:createDisabledSupervisionRouter(),dispose(){}};
   }
