@@ -1,26 +1,34 @@
 # A templated list of household actions in Android Auto (projection: the phone draws
 # templates the car shows). The list is the setting car.actions, ids of configured
 # one-tap actions; a tap runs the action in process through the action list, the same
-# path a keyed action link takes. The shell half holds the car app service, its session
+# path a keyed action link takes. A voice input on the list records a memo through the
+# car's microphone, on a tap, into the same queue as a memo recorded on the phone. The shell half holds the car app service, its session
 # and screens, and the Car App Library; only a device that lists this capability gets
 # the library.
 entry: net.kckern.daylight.cap.caractions.CarActionsCapability
-permissions: []
+# The car's microphone (CarAudioRecord). Already in the phone's list through quick-input.
+permissions:
+  - android.permission.RECORD_AUDIO
 exported:
   # Bound by Android Auto. No permission exists that only it holds, so the service
   # checks the binding host itself: Android Auto's package, owned by the binding uid,
   # signed with the certificate pinned in car.hostPins (SignerPins, as the media
   # service holds controllers to media.controllerPins). With no pin it serves nothing.
   - net.kckern.daylight.cap.caractions.shell.DaylightCarAppService
-# Merged in from the Car App Library; neither is exported (rows in EXPECTED_COMPONENTS).
+# Merged in from the Car App Library (app, and app-projected for the car's microphone);
+# none is exported (rows in EXPECTED_COMPONENTS). The metadata holder is also disabled.
 libraryComponents:
   - activity androidx.car.app.CarAppPermissionActivity
   - receiver androidx.car.app.notification.CarAppNotificationBroadcastReceiver
+  - service androidx.car.app.CarAppMetadataHolderService
 # The actions it lists and runs are one-tap actions; the car metadata file is
 # android-auto's, which this capability's shell half replaces with one that also
 # declares templates.
+# A voice entry records through the car's microphone into quick-input's inbox, with
+# its recorder's rules and file names; RECORD_AUDIO is quick-input's permission.
 requires:
   - one-tap-actions
   - android-auto
+  - quick-input
 startsAfter:
   - one-tap-actions

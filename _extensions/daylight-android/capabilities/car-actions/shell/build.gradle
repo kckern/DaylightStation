@@ -16,6 +16,13 @@ dependencies {
     // Plugin for every device. Only a device that lists car-actions gets it: the shell
     // adds a capability's shell half to that device's flavor alone.
     implementation 'androidx.car.app:app:1.3.0-rc01'
+    // The projected (Android Auto) half of the library. CarAudioRecord.create loads
+    // androidx.car.app.media.ProjectedCarAudioRecord by name from here; without it the
+    // car's microphone cannot be opened on a phone.
+    implementation 'androidx.car.app:app-projected:1.3.0-rc01'
+    // A memo recorded in the car is the phone recorder's memo: the same state machine,
+    // file names, inbox and cut-off recovery (RecorderMachine, MemoFiles, MemoRecovery).
+    implementation project(':capabilities:quick-input:shell')
     // Real org.json for JVM tests; android.jar ships stubs that return defaults.
     testImplementation 'org.json:json:20231013'
 }

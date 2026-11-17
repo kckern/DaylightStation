@@ -55,6 +55,21 @@ public class CarListTest {
         assertTrue(problems.get(4), problems.get(4).contains("camera"));
     }
 
+    /** A voice memo is wanted in the car: it records through the car's microphone. */
+    @Test public void aVoiceInputIsAnEntryThatRecordsForItsDestination() throws Exception {
+        action("journal", "Journal", "input", "voice:journal");
+        action("memo", "Memo", "memo", "new");
+        action("meal", "Meal", "input", "voice:meal");
+        List<String> problems = new ArrayList<>();
+        List<CarList.Entry> list = usable("journal,memo,meal", problems);
+        assertTrue(problems.toString(), problems.isEmpty());
+        assertEquals(CarList.VOICE, list.get(0).kind);
+        assertEquals("journal", list.get(0).dest);
+        assertEquals("memo:new is a voice input for the journal", "journal", list.get(1).dest);
+        assertEquals("meal", list.get(2).dest);
+        assertNull(CarList.settingProblem("journal,memo", lookup));
+    }
+
     @Test public void anUnknownIdABadIdAndADuplicateAreProblemsNotExceptions() throws Exception {
         action("omw", "On my way", "location", "share");
         List<String> problems = new ArrayList<>();

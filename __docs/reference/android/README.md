@@ -595,7 +595,7 @@ build of that device and names the placeholder, never a value.
 | `widgets` | phone | A home-screen widget of up to four actions | `widgets.actions` |
 | `media-service` | phone | Native audio playback of household media: browse tree, stream resolution, progress reports; a Media3 library session in the shell half | `media.roots`, `media.recentLimit`, `media.pageSize`, `media.controllerPins` |
 | `android-auto` | phone | Declares the media library service to Android Auto. Declarations only, no payload | none |
-| `car-actions` | phone | A templated list of household actions in Android Auto (Car App Library 1.3.0-rc01, phone flavor only); the car host is held to a pinned certificate | `car.actions`, `car.hostPins` |
+| `car-actions` | phone | A templated list of household actions in Android Auto (Car App Library 1.3.0-rc01, phone flavor only), with a voice memo recorded through the car's microphone into the quick-input queue; the car host is held to a pinned certificate | `car.actions`, `car.hostPins` |
 | `quick-input` | phone | Captures a recording, typed text or a photo and uploads it to a configured destination (the Journalist, Nutribot) from a queue kept on disk | `input.dest.1` to `input.dest.8` (`identity.user` must be set and `identity.device` must be `fleet:<key>`) |
 
 The phone's capabilities are described in `__docs/reference/android/phone.md`.

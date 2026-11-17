@@ -10,7 +10,7 @@ abis: []
 # all. Its installed components (the link activity, the tiles, the widget) reach the
 # payload in-process. Debugging is over adb: logcat, and run-as for its files.
 control: { port: 8780, lifelinePort: 8781, bind: none }
-shell: { versionCode: 30, versionName: "0.1-phone" }
+shell: { versionCode: 31, versionName: "0.1-phone" }
 # The household site's host, so an https link to it (in a relayed push, say) can open in
 # the app. Private: resolved from `placeholders:` when this device's manifest is built.
 appLinks: { host: "{phone_link_host}" }
@@ -85,9 +85,10 @@ defaults:
   # to add here. See "Who may connect" in __docs/reference/android/phone.md.
   media.controllerPins: ""
   # The car screen's list in Android Auto (car-actions): ids of the actions above, at most
-  # six. A household call (api:) and "On my way" can be listed; a web page, media, text and
-  # photo cannot. A tap runs the action in process; nothing on it records.
-  car.actions: "omw"
+  # six. A household call (api:), "On my way" and a voice input can be listed; a web page,
+  # media, text and photo cannot. A tap runs the action in process; a tap on a voice input
+  # records through the car's microphone into the same queue as the phone's recorder.
+  car.actions: "journal,omw"
   # The car host that may bind the car screen: Android Auto's package and the SHA-256 of
   # its signing certificate, "package=sha256". Empty: none, so the first connection is
   # refused and logged with the entry to add here (see "Who may bind the car screen" in

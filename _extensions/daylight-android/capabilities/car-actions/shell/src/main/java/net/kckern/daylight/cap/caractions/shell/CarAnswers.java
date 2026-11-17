@@ -1,5 +1,7 @@
 package net.kckern.daylight.cap.caractions.shell;
 
+import net.kckern.daylight.cap.quickinput.shell.MemoFiles;
+
 import org.json.JSONArray;
 import org.json.JSONObject;
 
@@ -15,6 +17,8 @@ final class CarAnswers {
     static final int MAX_LABEL = 25;
     /** An entry the screen runs through the payload. */
     static final String RUN = "run";
+    /** An entry that records a voice memo through the car's microphone. */
+    static final String VOICE = "voice";
     /** A row that does nothing when tapped ("Daylight is starting"). */
     static final String NONE = "none";
     static final String STARTING = "Daylight is starting";
@@ -24,11 +28,19 @@ final class CarAnswers {
         final String id;
         final String label;
         final String kind;
+        /** A voice entry's destination id; null for any other entry, or one that is not an id. */
+        final String dest;
+        /** Why a voice entry cannot record now ("" when it can), as the payload says it. */
+        final String why;
 
-        Entry(String id, String label, String kind) {
+        Entry(String id, String label, String kind) { this(id, label, kind, null, ""); }
+
+        Entry(String id, String label, String kind, String dest, String why) {
             this.id = id;
             this.label = label;
             this.kind = kind;
+            this.dest = dest;
+            this.why = why;
         }
     }
 
@@ -45,7 +57,11 @@ final class CarAnswers {
                 if (e == null || e.optString("id", "").isEmpty()) continue;
                 String label = e.optString("label", e.optString("id"));
                 if (label.length() > MAX_LABEL) label = label.substring(0, MAX_LABEL);
-                out.add(new Entry(e.getString("id"), label, e.optString("kind", RUN)));
+                String kind = e.optString("kind", RUN);
+                String dest = VOICE.equals(kind) ? MemoFiles.dest(e.optString("dest", "")) : null;
+                String why = e.optString("why", "");
+                if (why.length() > 80) why = why.substring(0, 80);
+                out.add(new Entry(e.getString("id"), label, kind, dest, why));
             }
         } catch (Exception broken) {
             return new ArrayList<>();

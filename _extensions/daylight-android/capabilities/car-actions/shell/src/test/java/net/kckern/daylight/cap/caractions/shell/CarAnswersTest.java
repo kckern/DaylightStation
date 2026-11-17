@@ -37,6 +37,20 @@ public class CarAnswersTest {
                 CarAnswers.entries("{\"entries\":[{\"label\":\"x\"},{\"id\":\"b\",\"label\":\"B\",\"kind\":\"run\"}]}").size() == 1);
     }
 
+    @Test public void aVoiceEntryCarriesItsDestinationAndWhyItCannotRecord() throws Exception {
+        String answer = new JSONObject().put("entries", new JSONArray()
+                .put(new JSONObject().put("id", "journal").put("label", "Journal").put("kind", "voice").put("dest", "journal").put("why", ""))
+                .put(new JSONObject().put("id", "meal").put("label", "Meal").put("kind", "voice").put("dest", "Not A Dest").put("why", ""))
+                .put(new JSONObject().put("id", "j2").put("label", "Journal").put("kind", "voice").put("dest", "journal")
+                        .put("why", "Daylight is not set up for quick inputs"))).toString();
+        List<CarAnswers.Entry> rows = CarAnswers.entries(answer);
+        assertEquals(CarAnswers.VOICE, rows.get(0).kind);
+        assertEquals("journal", rows.get(0).dest);
+        assertEquals("", rows.get(0).why);
+        assertNull("a destination that is not an id is no destination: the entry cannot record", rows.get(1).dest);
+        assertEquals("Daylight is not set up for quick inputs", rows.get(2).why);
+    }
+
     @Test public void theStartingFallbackIsOneRowThatDoesNothing() {
         List<CarAnswers.Entry> rows = CarAnswers.starting();
         assertEquals(1, rows.size());

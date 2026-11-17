@@ -20,18 +20,20 @@ import java.util.Locale;
  *
  * The payload is told of a new one over the "inputs" PayloadPort; when no payload is
  * loaded it finds the file at its next scan.
+ *
+ * Public for the car screen's recorder (car-actions), which writes to the same inbox.
  */
-final class MemoFiles {
+public final class MemoFiles {
     /** Under the app's files directory (InputInbox.DIR in the payload). */
-    static final String INBOX = "memos/inbox";
+    public static final String INBOX = "memos/inbox";
     /** The PayloadPort the payload's capability serves (QuickInputCapability.PORT). */
-    static final String PORT = "inputs";
+    public static final String PORT = "inputs";
     /** The one request that port takes from the recorder. */
-    static final String RECORDED = "{\"op\":\"recorded\"}";
+    public static final String RECORDED = "{\"op\":\"recorded\"}";
     /** Recordings that were cut off and cannot be played are kept here (InputInbox.CUT_OFF_DIR in the payload). */
-    static final String CUT_OFF = "memos/cutoff";
-    static final String OGG = ".ogg";
-    static final String M4A = ".m4a";
+    public static final String CUT_OFF = "memos/cutoff";
+    public static final String OGG = ".ogg";
+    public static final String M4A = ".m4a";
     private static final String PART = ".part";
     /** The extra the record screen and the recorder are started with: the destination's id. */
     static final String EXTRA_DEST = "dest";
@@ -44,12 +46,12 @@ final class MemoFiles {
     private MemoFiles() { }
 
     /** "<start ms>-<8 hex>": unique on this phone, and what the backend accepts as a memo id. */
-    static String newId(long startMs, long random) {
+    public static String newId(long startMs, long random) {
         return startMs + "-" + String.format(Locale.ROOT, "%08x", random & 0xffffffffL);
     }
 
     /** What arrived in an intent as a destination: its id, or null when it is not one. Never a path. */
-    static String dest(String raw) { return raw != null && DEST.matcher(raw).matches() ? raw : null; }
+    public static String dest(String raw) { return raw != null && DEST.matcher(raw).matches() ? raw : null; }
 
     /** What arrived in an intent as a label: 1 to 25 characters with no control character, or null. */
     static String label(String raw) {
@@ -60,13 +62,13 @@ final class MemoFiles {
     }
 
     /** "<id>.<dest>": what a recording for a destination is called; the id alone when it has none. */
-    static String stem(String id, String dest) { return dest == null ? id : id + "." + dest; }
+    public static String stem(String id, String dest) { return dest == null ? id : id + "." + dest; }
 
     /** The file a recording, or one segment of it, is written to. */
-    static File part(File inbox, String stem, String suffix) { return new File(inbox, stem + suffix + PART); }
+    public static File part(File inbox, String stem, String suffix) { return new File(inbox, stem + suffix + PART); }
 
     /** "<memo id>-<nn>": the id of one segment, and what its part file is called. */
-    static String segmentId(String memoId, int index) {
+    public static String segmentId(String memoId, int index) {
         return memoId + "-" + String.format(Locale.ROOT, "%02d", index);
     }
 
@@ -74,7 +76,7 @@ final class MemoFiles {
      * Renames a whole segment to "<memo id>-<nn>@<start ms>.m4a": the payload reads the
      * segment's own start time from the name. Null when that cannot be done.
      */
-    static File finishSegment(File part, long segmentStartMs) {
+    public static File finishSegment(File part, long segmentStartMs) {
         String path = part.getPath();
         if (!path.endsWith(M4A + PART) || !part.isFile()) return null;
         File done = new File(path.substring(0, path.length() - (M4A + PART).length()) + "@" + segmentStartMs + M4A);
@@ -82,7 +84,7 @@ final class MemoFiles {
     }
 
     /** Renames a whole recording to its final name. Null when that cannot be done. */
-    static File finish(File part) {
+    public static File finish(File part) {
         String path = part.getPath();
         if (!path.endsWith(PART) || !part.isFile()) return null;
         File done = new File(path.substring(0, path.length() - PART.length()));

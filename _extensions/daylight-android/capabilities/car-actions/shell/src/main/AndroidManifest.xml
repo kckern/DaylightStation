@@ -1,5 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- A voice entry records through the car's microphone (CarAudioRecord). quick-input
+         declares the same permission for the phone's recorder: the APK's list is unchanged. -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+
     <application>
         <!-- The car screen. Exported: Android Auto binds it, and no permission exists that
              only Android Auto holds. The service serves one host: Android Auto's package,

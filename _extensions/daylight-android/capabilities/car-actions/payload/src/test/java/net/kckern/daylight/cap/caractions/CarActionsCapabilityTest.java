@@ -51,6 +51,7 @@ public class CarActionsCapabilityTest {
         action("omw", "On my way", "location", "share");
         action("lights", "Lights off", "api", "/api/v1/home/scenes/all-off");
         action("media", "Media", "bookmark", "media");
+        action("journal", "Journal", "input", "voice:journal");
         core = TestCore.create(tmp.newFolder());
         core.services().provide(ActionList.class, list);
         cap = new CarActionsCapability();
@@ -119,6 +120,28 @@ public class CarActionsCapabilityTest {
         assertTrue(ran.isEmpty());
         JSONObject unknown = new JSONObject(call(new JSONObject().put("op", "dance")));
         assertFalse(unknown.getBoolean("ok"));
+    }
+
+    /** A voice entry is recorded by the car screen itself: the port lists it and never runs it. */
+    @Test public void aVoiceEntryIsListedWithItsDestinationAndIsNotRunThroughThePort() throws Exception {
+        core.settings().set("identity.user", "example-user");
+        core.settings().set(CarActionsCapability.ACTIONS, "journal,omw");
+        cap.start();
+        JSONObject journal = new JSONObject(call(new JSONObject().put("op", "list"))).getJSONArray("entries").getJSONObject(0);
+        assertEquals("voice", journal.getString("kind"));
+        assertEquals("journal", journal.getString("dest"));
+        assertEquals("", journal.getString("why"));
+        JSONObject answer = new JSONObject(call(new JSONObject().put("op", "run").put("id", "journal")));
+        assertFalse(answer.getBoolean("ok"));
+        assertTrue(ran.isEmpty());
+    }
+
+    @Test public void withNoUserAVoiceEntrySaysTheAppIsNotSetUp() throws Exception {
+        core.settings().set(CarActionsCapability.ACTIONS, "journal");
+        cap.start();
+        JSONObject journal = new JSONObject(call(new JSONObject().put("op", "list"))).getJSONArray("entries").getJSONObject(0);
+        assertEquals(CarActionsCapability.NOT_SET_UP, journal.getString("why"));
+        assertEquals("Daylight is not set up for quick inputs", CarActionsCapability.NOT_SET_UP);
     }
 
     @Test public void theHostPinsAreHandedToTheInstalledServiceAtStartAndWhenTheyChange() throws Exception {

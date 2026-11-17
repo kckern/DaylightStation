@@ -299,8 +299,9 @@ category built on Car App Library 1.3.0-rc01. Record the result either way.
    Any other package or reason is a finding: record it and do not pin it. Copy the
    entry into `car.hostPins` under `defaults:` in `devices/phone.yml` (a digest is a
    public value), bump `shell.versionCode`, rebuild, run the verifier, install.
-3. Reconnect. The list reads "On my way". Tap it: a car toast "Location sharing is
-   not built yet", and nothing else (no permission prompt on the phone).
+3. Reconnect. The list reads "Journal" and "On my way". Tap On my way: a car toast
+   "Location sharing is not built yet", and nothing else (no permission prompt on
+   the phone).
 4. Cold: quit the head unit, `adb shell am force-stop net.kckern.daylight.phone`,
    start the head unit and open the car list. Expected: the list, or one row
    "Daylight is starting" that is replaced by the list within two minutes.
@@ -309,6 +310,34 @@ category built on Car App Library 1.3.0-rc01. Record the result either way.
    only after a tap.
 6. While driving (the head unit's "driving" state, if the version offers it), the
    list stays usable: rows only, no text field.
+
+### E3. A voice memo from the car
+
+Unproven until this runs: everything about the car's microphone (Car API level 5
+for an IOT app on this library, what the PCM is, the encoder's file).
+
+1. First grant the microphone on the phone: record one memo with the phone's
+   Journal tile and allow the prompt.
+2. On the head unit, tap "Journal" in the car list. The car's screen reads
+   "Journal", "Starting", then "Recording 0:01" counting up, with one Stop action.
+   Record whether the clock moves every second or less often. The Desktop Head Unit
+   takes its microphone from the workstation; record which one it used.
+3. Speak for about ten seconds, tap Stop. A car toast "Saved for Journal"; the list
+   is back. `adb shell run-as net.kckern.daylight.phone ls -l files/memos/inbox`
+   shows the memo (or the queue already took it); `adb logcat -s Daylight-Car` has
+   "car memo began, OGG_OPUS" (or MP4_SEGMENTS) and "ended after <n> s, kept", and
+   no words. It arrives in the Journalist like a memo recorded on the phone.
+4. Lock the phone and record again from the head unit: it records and arrives.
+5. A tap on Journal and Stop within a second: "Not saved: too short or nothing was
+   heard", and nothing is queued.
+6. Back out of the recording screen while recording: it is saved.
+7. Disconnect the head unit while recording: the memo is saved or, if the process
+   was killed, recovered at the next start (an Ogg file becomes a memo).
+8. Revoke the microphone in the phone's settings and tap Journal: a car toast "Allow
+   the microphone on the phone first", and nothing records.
+9. Opening, refreshing or reconnecting the list never starts a recording: the shell
+   log and logcat have no "car memo began" without a tap.
+10. Leave one running for thirty minutes (once): it stops by itself and is saved.
 
 ## F. Voice inputs (the recorder)
 

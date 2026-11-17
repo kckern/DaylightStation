@@ -327,6 +327,8 @@ export const EXPECTED_COMPONENTS = {
   // Merged in by the Car App Library (androidx.car.app:app); neither is exported.
   'activity androidx.car.app.CarAppPermissionActivity': { exported: false, permission: null },
   'receiver androidx.car.app.notification.CarAppNotificationBroadcastReceiver': { exported: false, permission: null },
+  // Merged in by app-projected, which the car's microphone needs; disabled and not exported.
+  'service androidx.car.app.CarAppMetadataHolderService': { exported: false, permission: null },
 };
 
 /** The bits of android:foregroundServiceType, as aapt2 prints the attribute's mask. */

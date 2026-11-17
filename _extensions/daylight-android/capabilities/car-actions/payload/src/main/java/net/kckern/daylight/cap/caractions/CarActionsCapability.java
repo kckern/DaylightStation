@@ -10,6 +10,7 @@ import net.kckern.daylight.core.CoreContext;
 import net.kckern.daylight.core.Replies;
 import net.kckern.daylight.core.Router;
 import net.kckern.daylight.core.SettingsRegistry;
+import net.kckern.daylight.core.backend.Backend;
 import net.kckern.daylight.core.spi.ActionList;
 
 import org.json.JSONArray;
@@ -25,6 +26,10 @@ import java.util.List;
  * through ActionList.run, the path a keyed action link takes; no link and no key is
  * built for it, and an action that is not on the car list is not run from the car.
  *
+ * A voice entry (input:voice:<destination>) is not run here: the car screen records
+ * it through the car's microphone, on a tap, into the quick-input inbox, and tells
+ * the quick-input capability over its own "inputs" port.
+ *
  * Which car host may bind the screen is the setting car.hostPins, written into the
  * surface cache for the installed service: it may be bound before any payload loads.
  */
@@ -38,6 +43,7 @@ public final class CarActionsCapability implements Capability {
     static final String ANDROID_AUTO = "com.google.android.projection.gearhead";
 
     static final String NOT_ON_LIST = "That is not on the car list";
+    static final String NOT_SET_UP = "Daylight is not set up for quick inputs";
 
     /** Where the host pins go; the surface cache unless a test sets it. */
     interface PinCache { void write(String json); }
@@ -54,6 +60,8 @@ public final class CarActionsCapability implements Capability {
 
     @Override public void register(final CoreContext core) {
         this.core = core;
+        // A voice entry records for the user quick inputs are sent for (identity.user).
+        Backend.from(core);
         core.settings().declare(ACTIONS, SettingsRegistry.Type.STRING, "",
                 value -> CarList.settingProblem((String) value, lookup()));
         core.settings().declare(HOST_PINS, SettingsRegistry.Type.STRING, "", value -> hostPinProblem((String) value));
@@ -113,9 +121,11 @@ public final class CarActionsCapability implements Capability {
         CarList.Entry entry = null;
         for (CarList.Entry e : entries(new ArrayList<String>())) if (e.id.equals(id)) entry = e;
         ActionList actions = core.services().find(ActionList.class);
-        if (entry == null || actions == null || !CarList.RUN.equals(entry.kind)) {
-            return new JSONObject().put("ok", false).put("message", NOT_ON_LIST);
+        if (entry != null && CarList.VOICE.equals(entry.kind)) {
+            // Recorded by the car screen on a tap; nothing is recorded from here.
+            return new JSONObject().put("ok", false).put("message", "Record it from the car screen");
         }
+        if (entry == null || actions == null) return new JSONObject().put("ok", false).put("message", NOT_ON_LIST);
         core.shell().note("CAR", entry.id + " run");
         JSONObject effect = actions.run(entry.id);
         String message = effect.optString("message", "");
@@ -136,8 +146,19 @@ public final class CarActionsCapability implements Capability {
         return CarList.usable((String) core.settings().get(ACTIONS), lookup(), problems);
     }
 
-    private static JSONObject entry(CarList.Entry e) throws Exception {
-        return new JSONObject().put("id", e.id).put("label", e.label).put("icon", e.icon).put("kind", e.kind);
+    /**
+     * One entry for the car screen. A voice entry carries its destination and why it
+     * cannot record now ("" when it can): the car screen records it itself, into the
+     * quick-input inbox, and the queue sends it for identity.user.
+     */
+    private JSONObject entry(CarList.Entry e) throws Exception {
+        JSONObject o = new JSONObject().put("id", e.id).put("label", e.label).put("icon", e.icon).put("kind", e.kind);
+        if (CarList.VOICE.equals(e.kind)) {
+            String user;
+            try { user = Backend.from(core).user(); } catch (RuntimeException notDeclared) { user = ""; }
+            o.put("dest", e.dest).put("why", user == null || user.isEmpty() ? NOT_SET_UP : "");
+        }
+        return o;
     }
 
     // ── the host pins ────────────────────────────────────────────────────────

@@ -852,7 +852,8 @@ library (1.4.0 or later), which needs compileSdk 34 for every device and is the
 owner's decision.
 
 **The list.** The setting `car.actions` is a comma list of ids of configured
-one-tap actions, at most six. The phone's is `omw` ("On my way"). Usable in a car:
+one-tap actions, at most six. The phone's is `journal,omw` (the Journal voice memo
+and "On my way"). Usable in a car:
 
 | Kind | In the car |
 |---|---|
@@ -861,7 +862,7 @@ one-tap actions, at most six. The phone's is `omw` ("On my way"). Usable in a ca
 | `open:`, `bookmark:` | No: a web page is no use while driving |
 | `media:` | No: household media plays through Daylight's media app in the car |
 | `input:text:`, `input:photo:` | No: they need the phone's keyboard or camera |
-| `input:voice:`, `memo:new` | No in this build (see the voice memo below once it lands) |
+| `input:voice:<dest>`, `memo:new` | Yes: a tap records a voice memo through the car's microphone (below) |
 
 An id that is not an action, a kind the car cannot show, a duplicate or a seventh
 entry is left out and reported in `GET /car/actions` `problems` and in the shell
@@ -925,6 +926,60 @@ The package name and the digest are public values. Copy the entry into
 `car.hostPins` in `devices/phone.yml`, bump the phone's `shell.versionCode`,
 rebuild, verify and install (see the acceptance runbook, E2).
 
+### A voice memo in the car
+
+A car-list entry whose action is `input:voice:<destination>` (or `memo:new`, the
+journal) records through the car's microphone and feeds the same quick-input queue,
+to the same destination, as a memo recorded on the phone.
+
+What the library offers, read from its classes (1.3.0-rc01 and
+`androidx.car.app:app-projected` 1.3.0-rc01, which this capability adds because
+`CarAudioRecord.create` loads `ProjectedCarAudioRecord` from it by name):
+`androidx.car.app.media.CarAudioRecord`, annotated `@RequiresCarApi(5)` and
+`RECORD_AUDIO`; `AUDIO_CONTENT_SAMPLING_RATE = 16000`, `AUDIO_CONTENT_MIME =
+"audio/l16"` (16-bit linear PCM), `AUDIO_CONTENT_BUFFER_SIZE = 512`. It opens the
+car's microphone through `AppManager.openMicrophone` and reads a pipe from Android
+Auto. Mono and little-endian byte order are from Android's documentation, not from
+the classes.
+
+- **Who can start it.** Only a tap on the entry in the car list (or the phone's own
+  recorder on the phone). Drawing, refreshing or reconnecting the car screen starts
+  nothing (`CarMemo`, tested); no page, link or other app reaches it. Refused, with
+  a car toast saying why: a car below Car API level 5 ("This car cannot record for
+  Daylight"), the phone without the microphone permission ("Allow the microphone on
+  the phone first", granted on the phone, through the phone recorder's prompt),
+  `identity.user` empty ("Daylight is not set up for quick inputs"), or a recording
+  already under way.
+- **The screen.** A `MessageTemplate` titled with the entry's label: "Starting", then
+  a clock ("Recording 1:05") redrawn each second, and one Stop action. Tap targets
+  only, no text entry. Stop, backing out, the car disconnecting, an error or thirty
+  minutes ends it and saves it; under a second is discarded (the phone recorder's
+  `RecorderMachine`, shared). The outcome is a car toast: "Saved for Journal".
+- **The file.** The PCM is encoded on the phone: Ogg/Opus (`MediaCodec` and
+  `MediaMuxer`'s Ogg output, Android 10 and later, when the phone has an Opus
+  encoder), else AAC in MP4 as five-minute segments, as the phone recorder does below
+  Android 10. Written as `<id>.<dest>.ogg.part` in `files/memos/inbox` (the
+  recorder's `MemoFiles` names), renamed when whole; the payload is told over the
+  `inputs` port, or finds it at its next scan. Uploads follow the intake contract
+  unchanged (`/api/v1/journalist/voice` for the journal).
+- **Cut off.** A recording whose process died is recovered the way the phone's is
+  (`MemoRecovery`): an Ogg file becomes a memo, an MP4 segment is kept aside. The car
+  recording under way is named to `MemoRecovery` (`carLive`), so neither recorder's
+  recovery touches the other's file.
+- **Memory.** The thread that reads the car's microphone also feeds the encoder and
+  writes the file, so a stalled encoder or disk holds the reading back rather than
+  growing a buffer; a write the encoder cannot take within about two seconds ends the
+  recording, and it is saved.
+- **Logs.** The format, the length in seconds and whether it was kept. Never what was
+  said.
+
+**Unproven until it runs in a car:** that Android Auto opens the car's microphone for
+an IOT app at Car API level 5 on this library; the byte order and channel count of
+what arrives; that the platform's Opus encoder and Ogg writer produce a file the
+Journalist accepts and that a cut-off Ogg file from `MediaMuxer` plays to where it
+stops; whether a recording keeps going with the phone locked and the app not in
+front on the phone; how often Android Auto lets a template redraw (the clock).
+
 **Metadata.** `android-auto` owns the `com.google.android.gms.car.application`
 meta-data. `car-actions`' shell half depends on `android-auto`'s and has its own
 `res/xml/automotive_app_desc.xml` with `<uses name="media"/>` and
@@ -932,8 +987,9 @@ meta-data. `car-actions`' shell half depends on `android-auto`'s and has its own
 build with `car-actions` declares both (checked in the built APK) and one without
 it declares media alone. The service has the IOT category and
 `androidx.car.app.minCarApiLevel` 1 (a list, a message, a toast). The library adds
-two components, `CarAppPermissionActivity` and `CarAppNotificationBroadcastReceiver`,
-neither exported, and a `<queries>` entry for Android Auto's connection provider,
+three components, `CarAppPermissionActivity`, `CarAppNotificationBroadcastReceiver`
+and (from `app-projected`) `CarAppMetadataHolderService`, none exported and the last
+disabled, and a `<queries>` entry for Android Auto's connection provider,
 which is not a component of this app. The verifier fails a build with a car app
 service that does not list `car-actions`, and one that lists it without the service.
 
@@ -1349,7 +1405,7 @@ Twelve:
 | `POST_NOTIFICATIONS` | base | The service's and the app's own notifications |
 | `REQUEST_IGNORE_BATTERY_OPTIMIZATIONS` | base | Declared; the phone build has no screen that asks for it (the setup activity is not reachable) |
 | `ACCESS_WIFI_STATE`, `ACCESS_NETWORK_STATE` | base, `webview-host`, `media-service`, `quick-input` | Reload and upload when a network returns |
-| `RECORD_AUDIO` | `webview-host`, `quick-input` | Voice inputs. No page is given it (`webview.allowMic` is false) |
+| `RECORD_AUDIO` | `webview-host`, `quick-input`, `car-actions` | Voice inputs, on the phone and through the car's microphone. No page is given it (`webview.allowMic` is false) |
 | `MODIFY_AUDIO_SETTINGS` | `webview-host` | Page audio |
 | `FOREGROUND_SERVICE_MEDIA_PLAYBACK` | `media-service` | The media library service |
 | `FOREGROUND_SERVICE_MICROPHONE` | `quick-input` | The recorder service |
@@ -1432,15 +1488,16 @@ What another app on the phone can reach, and what stands in the way.
 | `PlayActivity`, `RecordActivity`, `TextInputActivity`, `PhotoCaptureActivity`, `MemoRecorderService` | Not exported | Started by this app only, by the payload on a keyed link |
 | `PlayActionService` (`media-service`) | Not exported | Started by this app's own widget buttons (an immutable `PendingIntent`) and tiles. Reads one action id; the payload decides what it plays |
 | `InputFileProvider` (`quick-input`) | Not exported | Reached by the camera app through a grant for the one file of a capture, made by the photo screen and withdrawn when the camera returns. Grants are limited to `/capture/` in the manifest, and the provider serves a capture file's exact name and nothing else |
-| `CarAppPermissionActivity`, `CarAppNotificationBroadcastReceiver` (Car App Library) | Not exported | Merged in by the library; named in `car-actions`' `libraryComponents:` and the verifier's table |
+| `CarAppPermissionActivity`, `CarAppNotificationBroadcastReceiver`, `CarAppMetadataHolderService` (Car App Library) | Not exported (the last also disabled) | Merged in by the library; named in `car-actions`' `libraryComponents:` and the verifier's table |
 | `ShellService`, `InstallReceiver` | Not exported | |
 
 Ten components are exported: `LinkActivity`, `KioskActivity`, the four tile
 services (which the system alone can bind), `DaylightMediaService`,
 `DaylightCarAppService`, `ButtonWidgetConfigActivity` and `BootReceiver`. An
 eleventh, or one of these no longer exported, fails the build. The car screen added
-three components (its service and the library's two closed ones) and no
-permission; the list is still twelve. The quick inputs added three components (two
+four components (its service and the library's three closed ones) and no
+permission to the list: it declares `RECORD_AUDIO` for the car's microphone, which
+`quick-input` already brings, so the list is still twelve. The quick inputs added three components (two
 activities and a provider) and none of them is exported. The one-action button
 added two: its provider, which is not exported, and its chooser, which is. It
 added no permission. Playing with no window added one, the play service, which is

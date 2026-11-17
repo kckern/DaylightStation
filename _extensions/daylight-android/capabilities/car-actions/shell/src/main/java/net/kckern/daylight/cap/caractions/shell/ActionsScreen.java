@@ -27,7 +27,8 @@ import java.util.concurrent.atomic.AtomicBoolean;
 /**
  * The car list: a ListTemplate of the payload's car entries, tap targets only. A tap
  * runs the entry off the main thread through the payload and shows its message as a
- * car toast. Drawing the screen, a refresh and the car connecting run nothing: only a
+ * car toast; a tap on a voice entry starts a recording and opens the car's recording
+ * screen (RecordScreen). Drawing the screen, a refresh and the car connecting run nothing: only a
  * row's own click does.
  *
  * Cold start: with no payload yet, the list is one row, "Daylight is starting", and
@@ -76,6 +77,7 @@ final class ActionsScreen extends Screen {
         for (final CarAnswers.Entry e : current) {
             Row.Builder row = new Row.Builder().setTitle(e.label);
             if (CarAnswers.RUN.equals(e.kind)) row.setOnClickListener(() -> run(e));
+            if (CarAnswers.VOICE.equals(e.kind)) row.setOnClickListener(() -> record(e));
             items.addItem(row.build());
         }
         return template.setSingleList(items.build()).build();
@@ -126,6 +128,29 @@ final class ActionsScreen extends Screen {
         }, "Daylight-car-wait");
         waiter.setDaemon(true);
         waiter.start();
+    }
+
+    /**
+     * A voice entry's click: the one place a car recording starts. It is refused, with
+     * the reason as a car toast, when the car is older than Car API level 5, the phone
+     * has not been given the microphone, the payload says the entry cannot record, or a
+     * recording is already under way.
+     */
+    private void record(final CarAnswers.Entry e) {
+        if (!service.servesHost()) return;
+        String why = e.dest == null ? "This entry has no destination" : e.why;
+        String refused = CarMemo.refusal(getCarContext().getCarAppApiLevel(), CarRecorder.micGranted(getCarContext()), why,
+                CarRecorder.busy());
+        if (refused != null) {
+            CarToast.makeText(getCarContext(), refused, CarToast.LENGTH_LONG).show();
+            return;
+        }
+        RecordScreen screen = new RecordScreen(getCarContext(), service, e.label, e.dest);
+        if (!screen.begin()) {
+            CarToast.makeText(getCarContext(), CarMemo.BUSY, CarToast.LENGTH_LONG).show();
+            return;
+        }
+        getScreenManager().push(screen);
     }
 
     /** A row's click: the one place an action runs from the car. */

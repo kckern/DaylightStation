@@ -127,18 +127,23 @@ test('"On my way" is a placeholder action and the phone asks for no location per
   assert.equal(Object.values(EXPECTED_COMPONENTS).some((row) => (row.foregroundServiceType || []).includes('location')), false);
 });
 
-test('the car screen added one exported service, two closed components of the library, and no permission', () => {
+test('the car screen added one exported service, three closed components of the library, and no permission to the list', () => {
   assert.deepEqual(capabilities['car-actions'].exported, ['net.kckern.daylight.cap.caractions.shell.DaylightCarAppService']);
-  assert.deepEqual(capabilities['car-actions'].permissions, []);
+  // The car's microphone: the permission quick-input already brings, so the twelve stay twelve.
+  assert.deepEqual(capabilities['car-actions'].permissions, ['android.permission.RECORD_AUDIO']);
+  assert.ok(capabilities['quick-input'].permissions.includes('android.permission.RECORD_AUDIO'));
   const own = Object.entries(EXPECTED_COMPONENTS).filter(([key]) => key.includes('.cap.caractions.') || key.includes(' androidx.car.app.'));
   assert.deepEqual(own.map(([key, row]) => `${key} exported=${row.exported} permission=${row.permission}`).sort(), [
     'activity androidx.car.app.CarAppPermissionActivity exported=false permission=null',
     'receiver androidx.car.app.notification.CarAppNotificationBroadcastReceiver exported=false permission=null',
+    'service androidx.car.app.CarAppMetadataHolderService exported=false permission=null',
     'service net.kckern.daylight.cap.caractions.shell.DaylightCarAppService exported=true permission=null',
   ]);
   // Android Auto's own host is pinned on the first connection; nothing is pinned in the file.
   assert.equal(phone.defaults['car.hostPins'], '');
-  assert.equal(phone.defaults['car.actions'], 'omw');
+  // The journal voice memo (recorded through the car's microphone) and "On my way".
+  assert.equal(phone.defaults['car.actions'], 'journal,omw');
+  assert.ok(capabilities['car-actions'].requires.includes('quick-input'));
 });
 
 test('playing with no window adds one service of media-service, not exported, and no permission', () => {

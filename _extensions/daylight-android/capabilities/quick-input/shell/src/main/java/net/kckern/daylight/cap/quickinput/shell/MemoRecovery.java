@@ -19,7 +19,7 @@ import java.io.File;
  *   an empty file   Nothing was captured. Removed.
  *
  * Whether a recording is under way is known to the installed recorder alone, which
- * names it here (live). The payload asks for a recovery at each of its passes; the
+ * names it here (live), and so does the car screen's recorder (carLive). The payload asks for a recovery at each of its passes; the
  * recorder runs one before it starts a recording.
  */
 public final class MemoRecovery {
@@ -28,6 +28,8 @@ public final class MemoRecovery {
     private static final String PART = ".part";
 
     private static volatile String liveId;
+    /** The car screen's recording under way (car-actions), which writes to the same inbox. */
+    private static volatile String carLiveId;
 
     private MemoRecovery() { }
 
@@ -42,6 +44,17 @@ public final class MemoRecovery {
     /** The recorder's: the id of the recording under way, or null when none is. */
     static void live(String memoId) { liveId = memoId; }
 
+    /**
+     * The car screen's recorder's: the id of its recording under way, or null when none
+     * is. Every recovery leaves that file alone too, whoever runs it.
+     */
+    public static void carLive(String memoId) { carLiveId = memoId; }
+
+    /** For the car screen's recorder, before it starts: recover under this app's files directory. */
+    public static Found recoverBeforeCar(File filesDir) {
+        return recover(new File(filesDir, MemoFiles.INBOX), new File(filesDir, MemoFiles.CUT_OFF), liveId);
+    }
+
     /** For the payload: recover under this app's files directory, leaving the recording under way alone. */
     public static Found recoverNow(File filesDir) {
         return recover(new File(filesDir, MemoFiles.INBOX), new File(filesDir, MemoFiles.CUT_OFF), liveId);
@@ -52,12 +65,14 @@ public final class MemoRecovery {
      */
     static Found recover(File inbox, File cutOffDir, String live) {
         Found found = new Found();
+        String car = carLiveId;
         File[] files = inbox.listFiles();
         if (files == null) return found;
         for (File f : files) {
             String name = f.getName();
             if (!f.isFile() || !name.endsWith(PART)) continue;
             if (live != null && name.startsWith(live)) continue;
+            if (car != null && name.startsWith(car)) continue;
             if (f.length() == 0) { f.delete(); continue; }
             String whole = name.substring(0, name.length() - PART.length());
             if (whole.endsWith(MemoFiles.OGG) && f.length() >= MIN_OGG_BYTES) {
