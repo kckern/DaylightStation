@@ -95,9 +95,14 @@ public final class OneTapActionsCapability implements Capability, ActionList {
         core.router().route("GET", "/actions", req -> {
             List<String> problems = new ArrayList<>();
             JSONArray out = new JSONArray();
-            for (Action a : catalog(problems).all()) {
+            ActionCatalog catalog = catalog(problems);
+            // What the surface lists cannot place is a problem of the configuration too,
+            // whether or not anything has been published. No link is built for this.
+            SurfacePlan.usable(catalog, (String) core.settings().get(SHORTCUTS), (String) core.settings().get(TILES),
+                    SLOTS, a -> "", problems);
+            for (Action a : catalog.all()) {
                 JSONObject o = new JSONObject().put("id", a.id).put("label", a.label).put("icon", a.icon)
-                        .put("kind", a.kind.name().toLowerCase(java.util.Locale.ROOT));
+                        .put("kind", a.kind.name().toLowerCase(java.util.Locale.ROOT)).put("target", a.value);
                 if (memoIsStandIn(a)) o.put("placeholder", true);
                 out.put(o);
             }

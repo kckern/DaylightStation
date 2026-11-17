@@ -151,4 +151,36 @@ public class DeviceDefaultsTest {
             assertEquals("a kiosk is operated over the LAN", "lan", DeviceConfig.CONTROL_BIND);
         }
     }
+
+    /**
+     * Bookmarks, actions and the lists that place actions on surfaces are settings lines
+     * that refer to each other by id. A capability leaves out what it cannot use and
+     * says so at run time; for a device file that is a mistake, and it fails here.
+     */
+    @Test public void theCompiledBookmarksActionsAndSurfaceListsHaveNoProblems() throws Exception {
+        CoreRuntime core = TestCore.create(tmp.newFolder());
+        java.util.List<String> entries = java.util.Arrays.asList(DeviceConfig.CAPABILITY_ENTRIES);
+        for (String entry : entries) core.add((Capability) Class.forName(entry).getDeclaredConstructor().newInstance());
+        core.prepare(new JSONObject(DeviceConfig.DEFAULTS_JSON));
+        String[][] lists = { { "bookmarks.BookmarksCapability", "/bookmarks" }, { "onetap.OneTapActionsCapability", "/actions" },
+                { "widgets.WidgetsCapability", "/widgets" } };
+        for (String[] row : lists) {
+            if (!entries.contains("net.kckern.daylight.cap." + row[0])) continue;
+            JSONObject answer = TestCore.get(core, row[1]);
+            assertEquals(row[1], 200, answer.getInt("_status"));
+            assertEquals(row[1] + " problems: " + answer.getJSONArray("problems"), 0, answer.getJSONArray("problems").length());
+        }
+        if (entries.contains("net.kckern.daylight.cap.onetap.OneTapActionsCapability")) {
+            // An action that opens a bookmark names one that exists.
+            org.json.JSONArray actions = TestCore.get(core, "/actions").getJSONArray("actions");
+            for (int i = 0; i < actions.length(); i++) {
+                JSONObject a = actions.getJSONObject(i);
+                if (!"bookmark".equals(a.getString("kind"))) continue;
+                boolean found = false;
+                org.json.JSONArray bookmarks = TestCore.get(core, "/bookmarks").getJSONArray("bookmarks");
+                for (int j = 0; j < bookmarks.length(); j++) found |= bookmarks.getJSONObject(j).getString("id").equals(a.getString("target"));
+                assertTrue("action " + a.getString("id") + " names a bookmark that is not configured", found);
+            }
+        }
+    }
 }

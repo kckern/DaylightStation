@@ -42,6 +42,10 @@ defaults:
   actions.2: "media|Media|play|bookmark:media"
   actions.3: "feed|Feed|open|bookmark:feed"
   actions.4: "call|Call|open|bookmark:call"
+  # Launcher (long-press) shortcuts, in order, and the action of each quick-settings
+  # slot ("Daylight 1" to "Daylight 4"; an empty entry leaves a slot unassigned).
+  actions.shortcuts: "memo,media,feed,call"
+  actions.tiles: "memo"
   # A web link opens in the app only on the backend's own origin or one listed here.
   # This is the host the link activity is offered for (appLinks above).
   links.origins: "https://{phone_link_host}"

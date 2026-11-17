@@ -91,6 +91,16 @@ public class SurfaceRoutesTest {
         assertTrue(post("/actions/publish", "{}").getJSONArray("problems").getString(0).contains("nope"));
     }
 
+    @Test public void theActionListSaysWhatASurfaceListCannotPlaceEvenBeforeAnythingIsPublished() throws Exception {
+        core.settings().set("actions.tiles", "memo,nope");
+        JSONObject list = TestCore.get(core, "/actions");
+        assertEquals(1, list.getJSONArray("problems").length());
+        assertTrue(list.getJSONArray("problems").getString(0).contains("actions.tiles names unknown action 'nope'"));
+        assertEquals("the bookmark an action opens is listed, so a device file can be checked", "new",
+                list.getJSONArray("actions").getJSONObject(0).getString("target"));
+        assertEquals(0, sink.publishes);
+    }
+
     @Test public void aSurfaceListOfTheWrongShapeIsRefusedWhenItIsSet() {
         try { core.settings().set("actions.tiles", "a,b,c,d,e"); fail("accepted five tiles"); }
         catch (RuntimeException expected) { assertTrue(expected.getMessage(), expected.getMessage().contains("at most 4")); }

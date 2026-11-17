@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application>
+        <!-- Four quick-settings slots. Which action a slot runs is the setting actions.tiles.
+             Exported because the system binds them; BIND_QUICK_SETTINGS_TILE means only the
+             system can. A slot takes no input from its caller: it reads the app's own
+             surface cache and launches the link it finds there. -->
+        <service android:name="net.kckern.daylight.cap.onetap.shell.ActionTileService$Tile1"
+            android:exported="true" android:label="Daylight 1" android:icon="@drawable/ic_action_bolt"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter><action android:name="android.service.quicksettings.action.QS_TILE" /></intent-filter>
+        </service>
+        <service android:name="net.kckern.daylight.cap.onetap.shell.ActionTileService$Tile2"
+            android:exported="true" android:label="Daylight 2" android:icon="@drawable/ic_action_bolt"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter><action android:name="android.service.quicksettings.action.QS_TILE" /></intent-filter>
+        </service>
+        <service android:name="net.kckern.daylight.cap.onetap.shell.ActionTileService$Tile3"
+            android:exported="true" android:label="Daylight 3" android:icon="@drawable/ic_action_bolt"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter><action android:name="android.service.quicksettings.action.QS_TILE" /></intent-filter>
+        </service>
+        <service android:name="net.kckern.daylight.cap.onetap.shell.ActionTileService$Tile4"
+            android:exported="true" android:label="Daylight 4" android:icon="@drawable/ic_action_bolt"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter><action android:name="android.service.quicksettings.action.QS_TILE" /></intent-filter>
+        </service>
+    </application>
+</manifest>
