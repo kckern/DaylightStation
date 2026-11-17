@@ -235,6 +235,11 @@ final class KioskSession implements KioskController, KioskSurface {
                     if (ev.getRepeatCount() == 0) emit("key", new JSONObject().put("code", d.code).put("action", d.action));
                     return true;
                 case BACK_EVENT: emit("back", new JSONObject()); return true;
+                case HISTORY:
+                    // Not a kiosk: Back leaves the app once the page history is used up.
+                    if (web != null && web.canGoBack()) web.goBack();
+                    else if (activity != null) activity.moveTaskToBack(true);
+                    return true;
                 case RELOAD:
                     if (web != null) {
                         String target = reloadTarget();

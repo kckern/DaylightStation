@@ -100,6 +100,9 @@ public class DeviceDefaultsTest {
         }
     }
 
+    /** The devices that replace Fully. A new kiosk is added here; every other device is held to the phone's rules. */
+    private static final java.util.Set<String> KIOSKS = new java.util.HashSet<>(java.util.Arrays.asList("piano", "portal", "shield"));
+
     /** The control API contract's routes: the core's, and each capability's kiosk table. */
     private static final String[] CORE_ROUTES = { "GET /status", "GET /capabilities", "GET /settings", "POST /settings",
             "DELETE /settings", "GET /payload", "POST /payload", "POST /payload/rollback", "POST /update", "GET /update" };
@@ -130,12 +133,22 @@ public class DeviceDefaultsTest {
             if (!entries.contains("net.kckern.daylight.cap." + row[0])) continue;
             for (int i = 1; i < row.length; i++) assertTrue("missing " + row[i], routes.contains(row[i]));
         }
-        if (entries.contains("net.kckern.daylight.cap.webviewhost.WebViewHostCapability")) {
+        boolean kiosk = KIOSKS.contains(DeviceConfig.DEVICE_ID);
+        if (entries.contains("net.kckern.daylight.cap.webviewhost.WebViewHostCapability") && kiosk) {
             // A kiosk replaces Fully only with all six kiosk capabilities.
             for (String needed : new String[] { "lockdown.LockdownCapability", "screenpower.ScreenPowerCapability",
                     "volume.VolumeCapability", "applauncher.AppLauncherCapability", "debugtools.DebugToolsCapability" }) {
                 assertTrue("a kiosk device must list " + needed, entries.contains("net.kckern.daylight.cap." + needed));
             }
+        }
+        if (!kiosk) {
+            // Any other device (the phone) is somebody's own: it must never hold the screen
+            // or be offered as the home app, which is what listing lockdown does, and its
+            // control API must not listen on whatever network it joins.
+            assertFalse("only a kiosk may list lockdown", entries.contains("net.kckern.daylight.cap.lockdown.LockdownCapability"));
+            assertEquals("a device that is not a kiosk binds its control API to loopback", "loopback", DeviceConfig.CONTROL_BIND);
+        } else {
+            assertEquals("a kiosk is operated over the LAN", "lan", DeviceConfig.CONTROL_BIND);
         }
     }
 }

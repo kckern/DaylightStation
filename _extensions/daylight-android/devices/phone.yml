@@ -1,0 +1,29 @@
+# The owner's phone. Sideloaded. Not a kiosk: no lockdown, so it is never offered as the
+# home app. Reaches the backend over the always-on VPN at the address the kiosks use.
+# Nothing here has run on a phone yet.
+id: phone
+package: net.kckern.daylight.phone
+android: { minSdk: 26, targetSdk: 33 }
+abis: []
+# bind: loopback. A phone joins networks outside the house, so its control API and its
+# lifeline listen on the loopback address only. The fleet CLI reaches it through
+# `adb forward tcp:8780 tcp:8780` (and 8781 for the lifeline) with host 127.0.0.1.
+control: { port: 8780, lifelinePort: 8781, bind: loopback }
+shell: { versionCode: 1, versionName: "0.1-phone" }
+capabilities:
+  - webview-host
+  - app-launcher
+  - volume
+  - debug-tools
+defaults:
+  # The household site as the phone reaches it: a full https URL, resolved from
+  # `placeholders:` in the private tokens file when the payload is built.
+  webview.startUrl: "{phone_start_url}"
+  # Back steps through the page history and then leaves the app, as in any phone app.
+  webview.backButton: "history"
+  debug.execEnabled: false
+  # Decided for every device: heartbeats on, shipped to the household log store. On the
+  # phone they are the only view of the app from outside it, since its control API is
+  # loopback only. They go out over the VPN and are dropped when it is down.
+  heartbeat.enabled: true
+  heartbeat.logStoreUrl: "{log_store_insert_url}"

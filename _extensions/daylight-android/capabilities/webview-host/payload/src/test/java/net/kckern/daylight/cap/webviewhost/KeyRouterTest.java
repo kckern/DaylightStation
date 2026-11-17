@@ -23,6 +23,12 @@ public class KeyRouterTest {
         assertEquals(Kind.RELOAD, KeyRouter.route(KeyRouter.BACK, false, "reload", NONE).kind);
     }
 
+    @Test public void backInHistoryModeStepsBackThroughThePageHistoryOnRelease() {
+        assertEquals(KeyRouter.Kind.CONSUME, KeyRouter.route(KeyRouter.BACK, true, "history", NONE).kind);
+        assertEquals(KeyRouter.Kind.HISTORY, KeyRouter.route(KeyRouter.BACK, false, "history", NONE).kind);
+        assertTrue(KeyRouter.validBackMode("history"));
+    }
+
     @Test public void backInIgnoreModeIsSwallowed() {
         assertEquals(Kind.CONSUME, KeyRouter.route(KeyRouter.BACK, true, "ignore", NONE).kind);
         assertEquals(Kind.CONSUME, KeyRouter.route(KeyRouter.BACK, false, "ignore", NONE).kind);

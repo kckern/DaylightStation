@@ -13,7 +13,7 @@ import java.util.Set;
 final class KeyRouter {
     static final int BACK = 4, VOLUME_UP = 24, VOLUME_DOWN = 25, VOLUME_MUTE = 164;
 
-    enum Kind { PASS, CONSUME, PAGE_KEY, BACK_EVENT, RELOAD }
+    enum Kind { PASS, CONSUME, PAGE_KEY, BACK_EVENT, RELOAD, HISTORY }
 
     static final class Decision {
         final Kind kind;
@@ -57,7 +57,11 @@ final class KeyRouter {
     }
 
     /** What webview.backButton may be. The setting is declared with this list, so no other value is stored. */
-    static final String[] BACK_MODES = { "page", "reload", "ignore" };
+    /**
+     * "history" is for a device that is not a kiosk (the phone): Back steps back through
+     * the page history and, at its start, puts the app behind the previous one.
+     */
+    static final String[] BACK_MODES = { "page", "reload", "ignore", "history" };
 
     static boolean validBackMode(String mode) {
         return java.util.Arrays.asList(BACK_MODES).contains(mode);
@@ -66,6 +70,7 @@ final class KeyRouter {
     static Decision route(int keyCode, boolean down, String backMode, Set<String> intercept) {
         if (keyCode == BACK) {
             if ("ignore".equals(backMode) || down) return new Decision(Kind.CONSUME, "Back", down ? "down" : "up");
+            if ("history".equals(backMode)) return new Decision(Kind.HISTORY, "Back", "up");
             return new Decision("reload".equals(backMode) ? Kind.RELOAD : Kind.BACK_EVENT, "Back", "up");
         }
         String name = name(keyCode);

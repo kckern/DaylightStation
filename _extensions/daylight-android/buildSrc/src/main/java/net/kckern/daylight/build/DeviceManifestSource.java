@@ -33,7 +33,10 @@ public final class DeviceManifestSource {
                 s.append("            tools:node=\"merge\" />\n");
             }
             if (kiosk) {
-                s.append("        <activity android:name=\"net.kckern.daylight.shell.MainActivity\" tools:node=\"merge\">\n");
+                s.append("        <activity android:name=\"net.kckern.daylight.shell.MainActivity\"\n");
+                // Stated again here: at target 31 and above lint reads this fragment on its
+                // own and refuses an activity with an intent-filter element and no exported.
+                s.append("            android:exported=\"true\" tools:node=\"merge\">\n");
                 s.append("            <intent-filter tools:node=\"removeAll\" />\n");
                 s.append("        </activity>\n");
             }
@@ -41,7 +44,8 @@ public final class DeviceManifestSource {
             // beside the launcher filter webview-host's shell half declares on the same Activity.
             // Being a candidate is all this does: the device's home app is chosen on the device.
             if (kiosk && d.capabilities.contains(LOCKDOWN_CAPABILITY)) {
-                s.append("        <activity android:name=\"").append(KIOSK_ACTIVITY).append("\" tools:node=\"merge\">\n");
+                s.append("        <activity android:name=\"").append(KIOSK_ACTIVITY).append("\"\n");
+                s.append("            android:exported=\"true\" tools:node=\"merge\">\n");
                 s.append("            <intent-filter>\n");
                 s.append("                <action android:name=\"android.intent.action.MAIN\" />\n");
                 s.append("                <category android:name=\"android.intent.category.HOME\" />\n");
