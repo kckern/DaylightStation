@@ -26,6 +26,8 @@ import {
  * @property {string} messageId
  * @property {string} senderId
  * @property {string} senderName
+ * @property {boolean} [userMessageSaved] - The entry is already in the journal
+ *   (saveUserMessage was called); execute only answers it
  * @property {Date} [timestamp] - When the entry was made, if that was not now
  *   (a memo recorded earlier and uploaded later). Left out, the entry is
  *   stamped with the time it is processed, as it always has been.
@@ -70,11 +72,35 @@ export class ProcessTextEntry {
   }
 
   /**
+   * Save the user's entry to the journal: the first step of execute(), on its
+   * own for a caller that must have the entry stored before anything is sent
+   * (SubmitVoiceMemo, which then calls execute with `userMessageSaved`).
+   * @param {ProcessTextEntryInput} input
+   */
+  async saveUserMessage({ chatId, text, messageId, senderId, senderName, timestamp }) {
+    const userMessage = ConversationMessage.createUserMessage({
+      messageId,
+      chatId,
+      timestamp: timestamp ? formatLocalTimestamp(timestamp) : nowTs24(),
+      senderId,
+      senderName,
+      text,
+    });
+
+    if (this.#journalEntryRepository) {
+      // The repository stamps the stored entry itself. It is told a time
+      // only when the entry was not made now.
+      if (timestamp) await this.#journalEntryRepository.saveMessage?.(userMessage, { at: timestamp });
+      else await this.#journalEntryRepository.saveMessage?.(userMessage);
+    }
+  }
+
+  /**
    * Execute the use case
    * @param {ProcessTextEntryInput} input
    */
   async execute(input) {
-    const { chatId, text, messageId, senderId, senderName, responseContext, timestamp } = input;
+    const { chatId, text, messageId, senderId, senderName, responseContext, timestamp, userMessageSaved = false } = input;
 
     this.#logger.debug?.('textEntry.process.start', { chatId, textLength: text.length, hasResponseContext: !!responseContext });
 
@@ -90,21 +116,9 @@ export class ProcessTextEntry {
     }
 
     try {
-      // 1. Save message to history
-      const userMessage = ConversationMessage.createUserMessage({
-        messageId,
-        chatId,
-        timestamp: timestamp ? formatLocalTimestamp(timestamp) : nowTs24(),
-        senderId,
-        senderName,
-        text,
-      });
-
-      if (this.#journalEntryRepository) {
-        // The repository stamps the stored entry itself. It is told a time
-        // only when the entry was not made now.
-        if (timestamp) await this.#journalEntryRepository.saveMessage?.(userMessage, { at: timestamp });
-        else await this.#journalEntryRepository.saveMessage?.(userMessage);
+      // 1. Save message to history (unless the caller already has)
+      if (!userMessageSaved) {
+        await this.saveUserMessage({ chatId, text, messageId, senderId, senderName, timestamp });
       }
 
       // 2. Load conversation history

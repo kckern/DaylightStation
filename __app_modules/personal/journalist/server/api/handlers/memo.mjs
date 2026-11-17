@@ -123,8 +123,9 @@ export function journalistMemoRoute(journalistApi, options = {}) {
       });
       return res.status(200).json({ ok: true, memoId, duplicate: false, transcriptionLength: result.transcriptionLength });
     }
-    if (result.kind === 'duplicate') {
-      logger.info?.('journalist.memo.duplicate', { memoId, username, bytes, durationMs });
+    if (result.kind === 'duplicate' || result.kind === 'resumed') {
+      // `resumed`: already journaled; this call sent replies an earlier attempt did not.
+      logger.info?.('journalist.memo.duplicate', { memoId, username, bytes, durationMs, resumed: result.kind === 'resumed' });
       return res.status(200).json({ ok: true, memoId, duplicate: true });
     }
     logger.info?.('journalist.memo.rejected', { reason: 'empty_transcription', status: 422, memoId, username });

@@ -60,6 +60,14 @@ test('a duplicate answers 200 with duplicate true', async () => {
   assert.equal(events(seen, 'journalist.memo.duplicate').length, 1);
 });
 
+test('a retry that finished the replies answers like a duplicate', async () => {
+  const { app, seen } = harness({ result: { kind: 'resumed', memoId: 'm1' } });
+  const res = await post(app);
+  assert.equal(res.status, 200);
+  assert.deepEqual(res.body, { ok: true, memoId: 'm1', duplicate: true });
+  assert.equal(events(seen, 'journalist.memo.duplicate')[0].data.resumed, true);
+});
+
 test('content type parameters are dropped before the audio is handed on', async () => {
   const { app, seen } = harness();
   const res = await post(app, { type: 'Audio/MP4; codecs="mp4a.40.2"' });

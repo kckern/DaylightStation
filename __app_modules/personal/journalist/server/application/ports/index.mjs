@@ -5,3 +5,4 @@
 
 export { IJournalEntryRepository } from "./IJournalEntryRepository.mjs";
 export { IMessageQueueRepository } from "./IMessageQueueRepository.mjs";
+export { IMemoLedgerStore } from "./IMemoLedgerStore.mjs";

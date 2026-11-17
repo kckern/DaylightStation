@@ -3,11 +3,16 @@
  * @module journalist/application/usecases/SubmitVoiceMemo
  *
  * Audio recorded away from the chat (the phone app) enters the journal through
- * the same use case a Telegram voice message does. ProcessVoiceEntry accepts
- * the audio as a `{ buffer, mimeType }` pair in place of a Telegram file id, so
- * transcription, the transcript echo, the journal entry and the follow-up
- * question are all the existing path. This use case adds only the memo's
- * identity: one memo id is journaled once.
+ * the steps a Telegram voice message takes: ProcessVoiceEntry transcribes the
+ * audio (it accepts a `{ buffer, mimeType }` pair in place of a Telegram file
+ * id) and echoes the transcript, ProcessTextEntry saves the entry and asks the
+ * follow-up question.
+ *
+ * The order differs from a Telegram voice message in one way. A memo comes
+ * from a client that retries, so its entry is saved as soon as the transcript
+ * exists, before anything is sent, and each reply is noted in the memo ledger
+ * when it has gone out. A retry then finds the saved entry, does not
+ * transcribe again, and sends only the replies that never went.
  */
 
 /** The journal id a memo's entry is saved under. */
@@ -34,18 +39,24 @@ export function recordedTime(recordedAt, nowMs) {
 
 export class SubmitVoiceMemo {
   #processVoiceEntry;
+  #processTextEntry;
   #journalEntryRepository;
+  #memoLedger;
   #clock;
   #logger;
-  // Uploads being processed right now, so a retry that arrives before the
-  // first attempt has reached the journal joins it and does not start a second.
+  // Uploads being processed right now, so a retry that arrives while the
+  // first attempt is still running joins it and does not start a second.
   #inFlight = new Map();
 
-  constructor({ processVoiceEntry, journalEntryRepository, clock = Date.now, logger = {} } = {}) {
+  constructor({ processVoiceEntry, processTextEntry, journalEntryRepository, memoLedger, clock = Date.now, logger = {} } = {}) {
     if (!processVoiceEntry) throw new Error('processVoiceEntry is required');
+    if (!processTextEntry) throw new Error('processTextEntry is required');
     if (!journalEntryRepository?.findById) throw new Error('journalEntryRepository is required');
+    if (!memoLedger) throw new Error('memoLedger is required');
     this.#processVoiceEntry = processVoiceEntry;
+    this.#processTextEntry = processTextEntry;
     this.#journalEntryRepository = journalEntryRepository;
+    this.#memoLedger = memoLedger;
     this.#clock = clock;
     this.#logger = logger;
   }
@@ -60,39 +71,77 @@ export class SubmitVoiceMemo {
    * @param {number|null} [input.recordedAt] - Epoch ms the recording started
    * @returns {Promise<{kind: 'accepted', memoId: string, transcriptionLength: number}
    *   | {kind: 'duplicate', memoId: string}
+   *   | {kind: 'resumed', memoId: string}
    *   | {kind: 'empty_transcription', memoId: string}>}
+   *   `resumed`: the entry was already journaled and this call sent the
+   *   replies an earlier attempt did not.
    */
-  async execute({ conversationId, username, memoId, audioBuffer, mimeType, recordedAt = null }) {
-    const key = `${conversationId}|${memoId}`;
+  async execute(input) {
+    const key = `${input.username}|${input.memoId}`;
     const running = this.#inFlight.get(key);
     if (running) return running;
 
-    const work = this.#run({ conversationId, username, memoId, audioBuffer, mimeType, recordedAt })
-      .finally(() => this.#inFlight.delete(key));
+    const work = this.#run(input).finally(() => this.#inFlight.delete(key));
     this.#inFlight.set(key, work);
     return work;
   }
 
-  async #run({ conversationId, username, memoId, audioBuffer, mimeType, recordedAt }) {
+  async #run({ conversationId, username, memoId, audioBuffer, mimeType, recordedAt = null }) {
     const messageId = memoMessageId(memoId);
+    const entry = { chatId: conversationId, messageId, senderId: username, senderName: username };
 
-    // The journal is the record of what was accepted. It survives a restart,
-    // and it already holds a memo whose reply failed after the entry was saved.
-    if (await this.#journalEntryRepository.findById(messageId, conversationId)) {
+    const record = this.#memoLedger.record(username, memoId);
+    if (record?.outcome === 'empty') return { kind: 'empty_transcription', memoId };
+
+    // The journal is the record of what was accepted; the ledger says whether
+    // the replies went out. An entry with no ledger record is a finished memo.
+    const journaled = await this.#journalEntryRepository.findById(messageId, conversationId);
+    if (journaled && (!record || (record.echoSent && record.followUpSent))) {
       return { kind: 'duplicate', memoId };
     }
 
-    const result = await this.#processVoiceEntry.execute({
-      chatId: conversationId,
-      voiceFileId: { buffer: audioBuffer, mimeType },
-      messageId,
-      senderId: username,
-      senderName: username,
-      ...this.#entryTime({ username, memoId, recordedAt }),
-    });
+    // Which replies have gone out. Only a journaled memo can have sent any.
+    const sent = journaled ? record : {};
+    let text;
+    if (journaled) {
+      text = String(journaled.content ?? journaled.text ?? '');
+    } else {
+      this.#memoLedger.mark(username, memoId, { saved: false });
+      text = await this.#processVoiceEntry.transcribe({
+        chatId: conversationId,
+        voiceFileId: { buffer: audioBuffer, mimeType },
+      });
 
-    if (result?.success === false) return { kind: 'empty_transcription', memoId };
-    return { kind: 'accepted', memoId, transcriptionLength: String(result?.transcription ?? '').length };
+      if (!text || text.trim().length === 0) {
+        // Noted first, so a retry of the same silence is not transcribed again.
+        this.#memoLedger.mark(username, memoId, { outcome: 'empty' });
+        try {
+          await this.#processVoiceEntry.sendNotUnderstood({ chatId: conversationId });
+        } catch (error) {
+          this.#logger.warn?.('journalist.memo.apologyFailed', { memoId, username, error: error?.message });
+        }
+        return { kind: 'empty_transcription', memoId };
+      }
+
+      await this.#processTextEntry.saveUserMessage({
+        ...entry, text, ...this.#entryTime({ username, memoId, recordedAt }),
+      });
+      this.#memoLedger.mark(username, memoId, { saved: true, echoSent: false, followUpSent: false });
+    }
+
+    if (!sent.echoSent) {
+      await this.#processVoiceEntry.sendTranscription({ chatId: conversationId, transcription: text });
+      this.#memoLedger.mark(username, memoId, { echoSent: true });
+    }
+
+    if (!sent.followUpSent) {
+      await this.#processTextEntry.execute({ ...entry, text, userMessageSaved: true });
+      this.#memoLedger.mark(username, memoId, { followUpSent: true });
+    }
+
+    return journaled
+      ? { kind: 'resumed', memoId }
+      : { kind: 'accepted', memoId, transcriptionLength: text.length };
   }
 
   /** The entry's time when the memo was recorded earlier; nothing when it is now. */

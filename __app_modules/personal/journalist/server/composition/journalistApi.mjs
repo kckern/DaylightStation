@@ -8,6 +8,7 @@ import { createJournalistRouter } from "../api/journalist.mjs";
 import { createJournalistServices } from "../../../../../__backend/src/5_composition/bootstrap.mjs";
 import { JournalistApiService } from "../application/JournalistApiService.mjs";
 import { SubmitVoiceMemo } from "../application/usecases/SubmitVoiceMemo.mjs";
+import { MemoLedger } from "../application/services/MemoLedger.mjs";
 import { DefaultPrincipalResolver } from '#apps/common/context/DefaultPrincipalResolver.mjs';
 import { InMemoryRequestDeduplicationStore } from '#adapters/http/InMemoryRequestDeduplicationStore.mjs';
 
@@ -65,13 +66,18 @@ export function createJournalistApiRouter(config) {
     },
   };
   // A memo takes the Telegram voice path: it needs that path's AI gateway and
-  // a journal to record the memo in. Without either the route answers 503.
+  // a journal and a ledger to record the memo in. Without them the route answers 503.
   const container = journalistServices.journalistContainer;
   const memoJournal = container.getJournalEntryRepository?.() || null;
-  const submitVoiceMemo = aiGatewayAvailable && memoJournal?.findById
+  const memoLedger = journalistServices.memoLedgerStore
+    ? new MemoLedger({ store: journalistServices.memoLedgerStore })
+    : null;
+  const submitVoiceMemo = aiGatewayAvailable && memoJournal?.findById && memoLedger
     ? new SubmitVoiceMemo({
         processVoiceEntry: container.getProcessVoiceEntry(),
+        processTextEntry: container.getProcessTextEntry(),
         journalEntryRepository: memoJournal,
+        memoLedger,
         logger,
       })
     : null;

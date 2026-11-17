@@ -12,13 +12,15 @@ import { createJournalistRouter } from './journalist.mjs';
 import { JournalistApiService } from '../application/JournalistApiService.mjs';
 import { JournalistContainer } from '../application/JournalistContainer.mjs';
 import { SubmitVoiceMemo } from '../application/usecases/SubmitVoiceMemo.mjs';
+import { MemoLedger } from '../application/services/MemoLedger.mjs';
+import { YamlMemoLedgerStore } from '../adapters/persistence/YamlMemoLedgerStore.mjs';
 import { YamlJournalEntryRepository } from '../adapters/persistence/YamlJournalEntryRepository.mjs';
 
 const CHAT = 'telegram:b1_c2';
 const TRANSCRIPT = 'Bought the tickets today.';
 const nullLogger = { debug() {}, info() {}, warn() {}, error() {} };
 
-function build({ transcript = TRANSCRIPT, failReplies = 0 } = {}) {
+function build({ transcript = TRANSCRIPT, failReplies = 0, failEchoes = 0 } = {}) {
   const files = new Map();
   const dataService = {
     user: {
@@ -26,13 +28,17 @@ function build({ transcript = TRANSCRIPT, failReplies = 0 } = {}) {
       write: (relativePath, data, username) => { files.set(`${username}/${relativePath}`, structuredClone(data)); return true; },
     },
   };
-  const telegram = { transcribed: [], sent: [], repliesToFail: failReplies };
+  const telegram = { transcribed: [], sent: [], repliesToFail: failReplies, echoesToFail: failEchoes };
   const messagingGateway = {
     transcribeVoice: async (file) => { telegram.transcribed.push(file); return transcript; },
     sendMessage: async (chatId, text, options = {}) => {
       // The transcript echo goes out with no choices; the follow-up carries them.
       if (options.choices && telegram.repliesToFail > 0) {
         telegram.repliesToFail -= 1;
+        throw new Error('telegram is down');
+      }
+      if (!options.choices && telegram.echoesToFail > 0) {
+        telegram.echoesToFail -= 1;
         throw new Error('telegram is down');
       }
       telegram.sent.push({ chatId, text });
@@ -56,7 +62,10 @@ function build({ transcript = TRANSCRIPT, failReplies = 0 } = {}) {
     initiatePrompt: {}, generateMorningDebrief: {}, sendMorningDebrief: {},
     submitVoiceMemo: new SubmitVoiceMemo({
       processVoiceEntry: container.getProcessVoiceEntry(),
+      processTextEntry: container.getProcessTextEntry(),
       journalEntryRepository: journal,
+      memoLedger: new MemoLedger({ store: new YamlMemoLedgerStore({ dataService, logger: nullLogger }) }),
+      logger: nullLogger,
     }),
     principalResolver: { resolve: (explicit) => explicit || 'user_1' },
     resolveConversationId: (username) => {
@@ -110,17 +119,40 @@ test('uploading the same memo twice leaves one journal entry and one reply', asy
   assert.equal(telegram.sent.length, 2);
 });
 
-test('a retry after the reply failed does not journal the memo again', async () => {
+test('a retry after the follow-up failed sends it once, without a second transcription or echo', async () => {
   const { app, telegram, userEntries } = build({ failReplies: 1 });
   const first = await upload(app);
   assert.equal(first.status, 500);
   assert.equal(userEntries().length, 1);
+  assert.equal(telegram.sent.length, 1);
 
   const retry = await upload(app);
   assert.equal(retry.status, 200);
   assert.equal(retry.body.duplicate, true);
   assert.equal(userEntries().length, 1);
   assert.equal(telegram.transcribed.length, 1);
+  assert.equal(telegram.sent.length, 2);
+  assert.match(telegram.sent[1].text, /Where to\?/);
+
+  const third = await upload(app);
+  assert.equal(third.body.duplicate, true);
+  assert.equal(telegram.sent.length, 2);
+});
+
+test('while the chat cannot be reached, retries cost one transcription in all', async () => {
+  const { app, telegram, userEntries } = build({ failEchoes: 5 });
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    assert.equal((await upload(app)).status, 500);
+  }
+  // The entry was journaled on the first attempt, before anything was sent.
+  assert.equal(userEntries().length, 1);
+  assert.equal(telegram.sent.length, 0);
+
+  const done = await upload(app);
+  assert.equal(done.status, 200);
+  assert.equal(telegram.transcribed.length, 1);
+  assert.equal(userEntries().length, 1);
+  assert.equal(telegram.sent.length, 2);
 });
 
 test('two different memos are two entries', async () => {

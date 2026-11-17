@@ -1,5 +1,6 @@
 import { YamlJournalEntryRepository } from "./adapters/persistence/YamlJournalEntryRepository.mjs";
 import { YamlMessageQueueRepository } from "./adapters/persistence/YamlMessageQueueRepository.mjs";
+import { YamlMemoLedgerStore } from "./adapters/persistence/YamlMemoLedgerStore.mjs";
 import { JournalistConfigProjection, DebriefRepository, LoggingAIGateway, DataServiceJournalistInteractionLogStore } from "./adapters/index.mjs";
 import { JournalistContainer } from "./application/JournalistContainer.mjs";
 
@@ -61,9 +62,13 @@ export function createJournalistServices(config, { createLifelogAggregator }) {
     logger
   });
 
+  // Voice memo ledger (YAML persistence): what each uploaded memo got done
+  const memoLedgerStore = new YamlMemoLedgerStore({ dataService, logger });
+
   return {
     journalEntryRepository,
     messageQueueRepository,
+    memoLedgerStore,
     journalistContainer
   };
 }

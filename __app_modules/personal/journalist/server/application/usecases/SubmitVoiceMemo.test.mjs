@@ -1,38 +1,59 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { SubmitVoiceMemo } from './SubmitVoiceMemo.mjs';
+import { MemoLedger } from '../services/MemoLedger.mjs';
 
 const CHAT = 'telegram:b1_c2';
 const NOW = Date.UTC(2026, 10, 18, 20, 0, 0);
 const MINUTE = 60 * 1000;
 const DAY = 24 * 60 * MINUTE;
+const TRANSCRIPT = 'Bought the tickets today.';
+
+/** A ledger store that keeps its data in this process, shared across "restarts". */
+function memoryStore(files = new Map()) {
+  return {
+    files,
+    read: (username) => (files.has(username) ? structuredClone(files.get(username)) : null),
+    write: (username, data) => { files.set(username, structuredClone(data)); return true; },
+  };
+}
 
 /**
- * A journal that stores what the fake voice path saves, the way ProcessTextEntry
- * saves the user's message under the messageId it is given.
+ * The voice and text use cases as step-recording fakes over one journal map.
+ * `fail` names steps that throw, each a number of times.
  */
-function build({ transcription = 'Bought the tickets today.', failAfterSave = false, failBeforeSave = false } = {}) {
-  const calls = { voice: [] };
-  const journal = new Map();
+function build({ transcription = TRANSCRIPT, fail = {}, journal = new Map(), store = memoryStore() } = {}) {
+  const steps = [];
   const events = [];
+  const failures = { ...fail };
+  const step = (name, input) => {
+    steps.push({ name, input });
+    if (failures[name] > 0) { failures[name] -= 1; throw new Error(`${name} failed`); }
+  };
   const useCase = new SubmitVoiceMemo({
     clock: () => NOW,
     logger: { info: (event, data) => events.push({ event, data }) },
-    processVoiceEntry: {
-      execute: async (input) => {
-        calls.voice.push(input);
-        if (failBeforeSave) throw new Error('transcriber down');
-        if (!transcription.trim()) return { success: false, error: 'Empty transcription' };
-        journal.set(`${input.chatId}|${input.messageId}`, { id: input.messageId });
-        if (failAfterSave) throw new Error('gateway down');
-        return { success: true, transcription, source: 'voice' };
-      },
-    },
+    memoLedger: new MemoLedger({ store, clock: () => NOW }),
     journalEntryRepository: {
       findById: async (id, chatId) => journal.get(`${chatId}|${id}`) || null,
     },
+    processVoiceEntry: {
+      transcribe: async (input) => { step('transcribe', input); return transcription; },
+      sendTranscription: async (input) => { step('echo', input); },
+      sendNotUnderstood: async (input) => { step('apology', input); },
+    },
+    processTextEntry: {
+      saveUserMessage: async (input) => {
+        step('save', input);
+        journal.set(`${input.chatId}|${input.messageId}`, { id: input.messageId, content: input.text });
+      },
+      execute: async (input) => { step('followUp', input); return { success: true }; },
+    },
   });
-  return { useCase, calls, journal, events };
+  const names = () => steps.map((s) => s.name);
+  const count = (name) => steps.filter((s) => s.name === name).length;
+  const first = (name) => steps.find((s) => s.name === name)?.input;
+  return { useCase, steps, names, count, first, events, journal, store };
 }
 
 const memo = (over = {}) => ({
@@ -40,101 +61,159 @@ const memo = (over = {}) => ({
   audioBuffer: Buffer.from('aac'), mimeType: 'audio/mp4', ...over,
 });
 
-test('a memo joins the voice path as a buffer, with no Telegram file id', async () => {
-  const { useCase, calls } = build();
+test('a memo is transcribed, saved, echoed and then answered, in that order', async () => {
+  const { useCase, names, first } = build();
   const result = await useCase.execute(memo());
   assert.deepEqual(result, { kind: 'accepted', memoId: '1700000000000', transcriptionLength: 25 });
-  assert.equal(calls.voice.length, 1);
-  const sent = calls.voice[0];
-  assert.equal(sent.chatId, CHAT);
-  assert.equal(sent.messageId, 'memo:1700000000000');
-  assert.equal(sent.senderId, 'user_1');
-  assert.equal(sent.senderName, 'user_1');
-  assert.ok(Buffer.isBuffer(sent.voiceFileId.buffer));
-  assert.equal(sent.voiceFileId.mimeType, 'audio/mp4');
-  assert.equal(sent.responseContext, undefined);
+  assert.deepEqual(names(), ['transcribe', 'save', 'echo', 'followUp']);
+
+  const heard = first('transcribe');
+  assert.equal(heard.chatId, CHAT);
+  assert.ok(Buffer.isBuffer(heard.voiceFileId.buffer));
+  assert.equal(heard.voiceFileId.mimeType, 'audio/mp4');
+
+  const saved = first('save');
+  assert.equal(saved.messageId, 'memo:1700000000000');
+  assert.equal(saved.text, TRANSCRIPT);
+  assert.equal(saved.senderId, 'user_1');
+  assert.equal(saved.senderName, 'user_1');
+
+  assert.equal(first('echo').transcription, TRANSCRIPT);
+  const followUp = first('followUp');
+  assert.equal(followUp.messageId, 'memo:1700000000000');
+  assert.equal(followUp.userMessageSaved, true);
+  assert.equal(followUp.responseContext, undefined);
 });
 
 test('the same memo id is journaled once', async () => {
-  const { useCase, calls, journal } = build();
+  const { useCase, count, journal } = build();
   await useCase.execute(memo());
   assert.deepEqual(await useCase.execute(memo()), { kind: 'duplicate', memoId: '1700000000000' });
-  assert.equal(calls.voice.length, 1);
+  assert.equal(count('transcribe'), 1);
+  assert.equal(count('echo'), 1);
+  assert.equal(count('followUp'), 1);
   assert.equal(journal.size, 1);
 });
 
-test('a memo already in the journal is a duplicate for a fresh process', async () => {
+test('a finished memo is a duplicate for a fresh process', async () => {
   const first = build();
   await first.useCase.execute(memo());
-  // A restarted backend: new use case, same journal on disk.
-  const restarted = new SubmitVoiceMemo({
-    processVoiceEntry: { execute: async () => { throw new Error('must not run'); } },
-    journalEntryRepository: { findById: async (id, chatId) => first.journal.get(`${chatId}|${id}`) || null },
-  });
-  assert.deepEqual(await restarted.execute(memo()), { kind: 'duplicate', memoId: '1700000000000' });
+  const restarted = build({ journal: first.journal, store: first.store });
+  assert.deepEqual(await restarted.useCase.execute(memo()), { kind: 'duplicate', memoId: '1700000000000' });
+  assert.deepEqual(restarted.names(), []);
+});
+
+test('a journaled memo with no record left is a duplicate, and nothing is sent', async () => {
+  const first = build();
+  await first.useCase.execute(memo());
+  const later = build({ journal: first.journal });
+  assert.deepEqual(await later.useCase.execute(memo()), { kind: 'duplicate', memoId: '1700000000000' });
+  assert.deepEqual(later.names(), []);
 });
 
 test('two uploads of one memo at the same moment run once', async () => {
-  const { useCase, calls } = build();
+  const { useCase, count } = build();
   const [a, b] = await Promise.all([useCase.execute(memo()), useCase.execute(memo())]);
   assert.equal(a.kind, 'accepted');
   assert.equal(b.kind, 'accepted');
-  assert.equal(calls.voice.length, 1);
+  assert.equal(count('transcribe'), 1);
 });
 
-test('the same id from another conversation is a different memo', async () => {
-  const { useCase, calls } = build();
+test('the same id from another user is a different memo', async () => {
+  const { useCase, count } = build();
   await useCase.execute(memo());
   const other = await useCase.execute(memo({ conversationId: 'telegram:b1_c9', username: 'user_2' }));
   assert.equal(other.kind, 'accepted');
-  assert.equal(calls.voice.length, 2);
+  assert.equal(count('transcribe'), 2);
 });
 
-test('a memo that failed before it was journaled runs again on the retry', async () => {
-  const { useCase, calls } = build({ failBeforeSave: true });
-  await assert.rejects(useCase.execute(memo()), /transcriber down/);
-  await assert.rejects(useCase.execute(memo()), /transcriber down/);
-  assert.equal(calls.voice.length, 2);
+test('a memo whose transcription failed is transcribed again on the retry', async () => {
+  const { useCase, count } = build({ fail: { transcribe: 1 } });
+  await assert.rejects(useCase.execute(memo()), /transcribe failed/);
+  assert.equal((await useCase.execute(memo())).kind, 'accepted');
+  assert.equal(count('transcribe'), 2);
+  assert.equal(count('save'), 1);
 });
 
-test('a memo that failed after it was journaled is a duplicate on the retry', async () => {
-  const { useCase, calls, journal } = build({ failAfterSave: true });
-  await assert.rejects(useCase.execute(memo()), /gateway down/);
-  assert.deepEqual(await useCase.execute(memo()), { kind: 'duplicate', memoId: '1700000000000' });
-  assert.equal(calls.voice.length, 1);
+test('an echo that keeps failing never costs a second transcription', async () => {
+  const { useCase, count, journal } = build({ fail: { echo: 3 } });
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    await assert.rejects(useCase.execute(memo()), /echo failed/);
+  }
+  const done = await useCase.execute(memo());
+  assert.deepEqual(done, { kind: 'resumed', memoId: '1700000000000' });
+  assert.equal(count('transcribe'), 1);
+  assert.equal(count('save'), 1);
+  assert.equal(count('echo'), 4);
+  assert.equal(count('followUp'), 1);
   assert.equal(journal.size, 1);
 });
 
-test('audio with nothing intelligible is reported, not journaled', async () => {
-  const { useCase, journal } = build({ transcription: '   ' });
+test('a retry after the follow-up failed sends the follow-up once and the echo not again', async () => {
+  const { useCase, count, steps } = build({ fail: { followUp: 1 } });
+  await assert.rejects(useCase.execute(memo()), /followUp failed/);
+  assert.deepEqual(await useCase.execute(memo()), { kind: 'resumed', memoId: '1700000000000' });
+  assert.equal(count('transcribe'), 1);
+  assert.equal(count('echo'), 1);
+  assert.equal(count('followUp'), 2);
+  // The retry answers from the saved entry's words.
+  assert.equal(steps.at(-1).input.text, TRANSCRIPT);
+  assert.deepEqual(await useCase.execute(memo()), { kind: 'duplicate', memoId: '1700000000000' });
+  assert.equal(count('followUp'), 2);
+});
+
+test('a retry in a fresh process finishes the replies from the saved entry', async () => {
+  const first = build({ fail: { echo: 1 } });
+  await assert.rejects(first.useCase.execute(memo()), /echo failed/);
+  const restarted = build({ journal: first.journal, store: first.store });
+  assert.deepEqual(await restarted.useCase.execute(memo()), { kind: 'resumed', memoId: '1700000000000' });
+  assert.deepEqual(restarted.names(), ['echo', 'followUp']);
+});
+
+test('audio with nothing intelligible is reported, not journaled, and not transcribed twice', async () => {
+  const { useCase, count, journal, names } = build({ transcription: '   ' });
   assert.deepEqual(await useCase.execute(memo()), { kind: 'empty_transcription', memoId: '1700000000000' });
+  assert.deepEqual(names(), ['transcribe', 'apology']);
   assert.equal(journal.size, 0);
+  assert.deepEqual(await useCase.execute(memo()), { kind: 'empty_transcription', memoId: '1700000000000' });
+  assert.equal(count('transcribe'), 1);
+  assert.equal(count('apology'), 1);
+});
+
+test('an apology that cannot be sent does not fail the memo', async () => {
+  const { useCase } = build({ transcription: '', fail: { apology: 1 } });
+  assert.equal((await useCase.execute(memo())).kind, 'empty_transcription');
 });
 
 test('the collaborators are required', () => {
-  assert.throws(() => new SubmitVoiceMemo({ journalEntryRepository: { findById() {} } }), /processVoiceEntry/);
-  assert.throws(() => new SubmitVoiceMemo({ processVoiceEntry: { execute() {} } }), /journalEntryRepository/);
+  const all = {
+    processVoiceEntry: {}, processTextEntry: {}, memoLedger: {},
+    journalEntryRepository: { findById() {} },
+  };
+  for (const name of Object.keys(all)) {
+    assert.throws(() => new SubmitVoiceMemo({ ...all, [name]: undefined }), new RegExp(name));
+  }
 });
 
-test('a memo recorded earlier is journaled at the time it was recorded', async () => {
-  const { useCase, calls, events } = build();
+test('a memo recorded earlier is saved at the time it was recorded', async () => {
+  const { useCase, first, events } = build();
   const recordedAt = NOW - 2 * DAY;
   await useCase.execute(memo({ recordedAt }));
-  assert.ok(calls.voice[0].timestamp instanceof Date);
-  assert.equal(calls.voice[0].timestamp.getTime(), recordedAt);
+  assert.ok(first('save').timestamp instanceof Date);
+  assert.equal(first('save').timestamp.getTime(), recordedAt);
   assert.equal(events.length, 0);
 });
 
 test('a phone clock a few minutes ahead is believed', async () => {
-  const { useCase, calls } = build();
+  const { useCase, first } = build();
   await useCase.execute(memo({ recordedAt: NOW + 4 * MINUTE }));
-  assert.equal(calls.voice[0].timestamp.getTime(), NOW + 4 * MINUTE);
+  assert.equal(first('save').timestamp.getTime(), NOW + 4 * MINUTE);
 });
 
-test('a memo with no recorded time is journaled now, with nothing passed on', async () => {
-  const { useCase, calls, events } = build();
+test('a memo with no recorded time is saved now, with no time passed on', async () => {
+  const { useCase, first, events } = build();
   await useCase.execute(memo());
-  assert.equal('timestamp' in calls.voice[0], false);
+  assert.equal('timestamp' in first('save'), false);
   assert.equal(events.length, 0);
 });
 
@@ -147,9 +226,9 @@ test('a recorded time that cannot be right is ignored and said so', async () => 
     [-5, 'not_a_time'],
   ];
   for (const [recordedAt, reason] of cases) {
-    const { useCase, calls, events } = build();
+    const { useCase, first, events } = build();
     await useCase.execute(memo({ recordedAt }));
-    assert.equal('timestamp' in calls.voice[0], false, String(recordedAt));
+    assert.equal('timestamp' in first('save'), false, String(recordedAt));
     assert.deepEqual(events, [{ event: 'journalist.memo.recordedAtIgnored', data: { memoId: '1700000000000', username: 'user_1', reason } }]);
   }
 });
