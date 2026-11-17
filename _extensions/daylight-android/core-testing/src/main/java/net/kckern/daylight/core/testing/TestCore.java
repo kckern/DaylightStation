@@ -18,6 +18,20 @@ public final class TestCore {
         return new CoreRuntime(new FakeShell(dir), "test", "p-test", new File(dir, "state"));
     }
 
+    /**
+     * A runtime whose shell has an Android context: a capability's start() then runs
+     * past its "no context" return. Work posted to the main thread runs at once, on the
+     * caller's thread, until {@link #releaseMainThread()}.
+     */
+    public static CoreRuntime createWithContext(File dir, FakeContext context) {
+        FakeShell shell = new FakeShell(dir);
+        shell.context = context;
+        net.kckern.daylight.core.MainThread.runInlineForTest(true);
+        return new CoreRuntime(shell, "test", "p-test", new File(dir, "state"));
+    }
+
+    public static void releaseMainThread() { net.kckern.daylight.core.MainThread.runInlineForTest(false); }
+
     /** Dispatches with the test token. The HTTP status is added to the body as "_status". */
     public static JSONObject call(CoreRuntime core, String method, String path,
                                   Map<String, String> query, String body) throws Exception {

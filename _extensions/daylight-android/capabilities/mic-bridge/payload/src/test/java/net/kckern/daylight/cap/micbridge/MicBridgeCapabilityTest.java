@@ -152,4 +152,36 @@ public class MicBridgeCapabilityTest {
             mic.stop();
         }
     }
+
+    // ── a real start, over a fake Android context ───────────────────────────
+
+    @Test(timeout = 20000) public void aRealStartBindsTheStreamSocketAndStopReleasesIt() throws Exception {
+        java.io.File dir = tmp.newFolder();
+        net.kckern.daylight.core.testing.FakeContext ctx = new net.kckern.daylight.core.testing.FakeContext(dir);
+        CoreRuntime core = TestCore.createWithContext(dir, ctx);
+        try {
+            MicBridgeCapability mic = new MicBridgeCapability();
+            core.add(mic);
+            core.prepare(new JSONObject());
+            int port = freePort();
+            core.settings().set("mic.port", port);
+
+            mic.start();                                   // the real start(): past the "no context" return
+            JSONObject up = TestCore.get(core, "/mic/status");
+            assertTrue("the stream socket is listening", up.getBoolean("running"));
+            assertEquals(port, up.getInt("port"));
+            assertFalse("and holds the port", portIsFree(port));
+
+            mic.stop();
+            long deadline = System.currentTimeMillis() + 3000;
+            while (!portIsFree(port) && System.currentTimeMillis() < deadline) Thread.sleep(20);
+            assertTrue("stop released the port", portIsFree(port));
+            assertFalse(TestCore.get(core, "/mic/status").getBoolean("running"));
+            assertFalse("a restart after stop has nothing to restart", TestCore.post(core, "/mic/restart").getBoolean("ok"));
+            assertTrue(portIsFree(port));
+            mic.stop();
+        } finally {
+            TestCore.releaseMainThread();
+        }
+    }
 }

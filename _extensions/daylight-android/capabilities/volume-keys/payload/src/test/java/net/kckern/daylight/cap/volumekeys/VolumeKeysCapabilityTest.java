@@ -66,4 +66,32 @@ public class VolumeKeysCapabilityTest {
         keys.stop();
         keys.stop();
     }
+
+    // ── a real start, over a fake Android context ───────────────────────────
+
+    @Test public void aRealStartAddsTheKeyFilterAndStopRemovesIt() throws Exception {
+        java.io.File dir = tmp.newFolder();
+        net.kckern.daylight.core.testing.FakeContext ctx = new net.kckern.daylight.core.testing.FakeContext(dir);
+        CoreRuntime core = TestCore.createWithContext(dir, ctx);
+        try {
+            VolumeKeysCapability keys = new VolumeKeysCapability();
+            core.add(keys);
+            core.prepare(new JSONObject());
+            assertEquals(0, core.accessibility().keyFilterCount());
+
+            keys.start();
+            assertEquals("the volume-key filter is registered with the accessibility hub", 1, core.accessibility().keyFilterCount());
+            JSONObject status = core.status().collect(StatusBoard.Surface.STATUS, new JSONObject());
+            assertTrue("the filter reports the panel's state once it exists", status.has("displayOn"));
+
+            keys.stop();
+            assertEquals("stop took the filter out again", 0, core.accessibility().keyFilterCount());
+            assertFalse(core.status().collect(StatusBoard.Surface.STATUS, new JSONObject()).has("displayOn"));
+            assertEquals("beep guard unavailable", TestCore.post(core, "/accessibility/silence-beep").getString("error"));
+            keys.stop();
+            assertEquals(0, core.accessibility().keyFilterCount());
+        } finally {
+            TestCore.releaseMainThread();
+        }
+    }
 }

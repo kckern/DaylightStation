@@ -18,7 +18,14 @@ public final class MainThread {
 
     private static Handler handler() { return new Handler(Looper.getMainLooper()); }
 
-    public static void post(Runnable r) { handler().post(r); }
+    /** Test seam: android.jar's Handler does nothing on the JVM, so posted work would never run. */
+    private static volatile boolean inline;
+    public static void runInlineForTest(boolean on) { inline = on; }
+
+    public static void post(Runnable r) {
+        if (inline) { r.run(); return; }
+        handler().post(r);
+    }
 
     public static void postDelayed(Runnable r, long delayMs) { handler().postDelayed(r, delayMs); }
 

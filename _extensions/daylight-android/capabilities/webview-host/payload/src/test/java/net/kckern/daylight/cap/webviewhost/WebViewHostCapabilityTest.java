@@ -197,4 +197,49 @@ public class WebViewHostCapabilityTest {
         assertEquals(400, post("/kiosk/overlay", "{\"text\":5}").getInt("_status"));
         assertEquals(400, post("/kiosk/overlay", "not json").getInt("_status"));
     }
+
+    // ── a real start, over a fake Android context ───────────────────────────
+
+    /** A kiosk Activity as the shell would publish it. */
+    private static final class FakeHost implements net.kckern.daylight.api.KioskHost {
+        final java.util.List<Object> attached = new java.util.ArrayList<>();
+        @Override public Object activity() { return null; }
+        @Override public void attach(net.kckern.daylight.api.KioskController controller) { attached.add(controller); }
+        @Override public boolean resumed() { return false; }
+    }
+
+    /**
+     * What a JVM test can see of a real start: the event subscription and the offer of
+     * the session to the Activity. The Activity completing the attach builds a WebView,
+     * which needs a device, so the detach on stop is on the on-device list.
+     */
+    @Test public void aRealStartSubscribesAndOffersItsSessionToTheActivityAndStopEndsBoth() throws Exception {
+        java.io.File dir = tmp.newFolder();
+        net.kckern.daylight.core.testing.FakeContext ctx = new net.kckern.daylight.core.testing.FakeContext(dir);
+        net.kckern.daylight.core.testing.FakeShell shell = new net.kckern.daylight.core.testing.FakeShell(dir);
+        shell.context = ctx;
+        FakeHost activity = new FakeHost();
+        shell.components.put(net.kckern.daylight.api.KioskHost.COMPONENT, activity);   // the Activity outlives a payload swap
+        net.kckern.daylight.core.CoreRuntime real = new net.kckern.daylight.core.CoreRuntime(shell, "test", "p-test", new java.io.File(dir, "state"));
+        WebViewHostCapability kiosk = new WebViewHostCapability();
+        real.add(kiosk);
+        real.prepare(new JSONObject());
+        assertEquals(0, real.events().subscribers());
+
+        kiosk.start();
+        assertEquals("subscribed to screen, network and key events", 1, real.events().subscribers());
+        assertEquals("attached its session to the Activity that was already there", 1, activity.attached.size());
+        assertNotNull(activity.attached.get(0));
+
+        kiosk.stop();
+        assertEquals("unsubscribed", 0, real.events().subscribers());
+        kiosk.stop();
+        assertEquals(0, real.events().subscribers());
+
+        // An Activity that appears after stop is not handed a stopped payload's session.
+        FakeHost late = new FakeHost();
+        real.onShellComponent(net.kckern.daylight.api.KioskHost.COMPONENT, late);
+        assertTrue(late.attached.isEmpty());
+        assertEquals(0, real.events().subscribers());
+    }
 }

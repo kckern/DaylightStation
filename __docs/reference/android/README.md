@@ -889,6 +889,40 @@ ledger: per device, the old app's list, `added` (permission and reason) and
 devices: `piano` has the old set exactly, `portal` adds two and `shield` adds
 eight, all of them shared core features.
 
+## Not covered by JVM tests
+
+The build's tests run on the JVM against `android.jar`, whose classes do nothing
+there: a `Handler` never runs what is posted to it, a `HandlerThread` has no
+looper, and there is no Bluetooth adapter, MIDI service, audio service or window
+manager. Each capability has a test that starts it for real over a fake context
+(`FakeContext` in `core-testing`, which records receiver registrations and answers
+`getSystemService`) and checks that `stop()` gives back what `start()` took. How
+much that shows differs by capability:
+
+| Capability | What the JVM test starts and sees released | What it cannot see |
+|---|---|---|
+| `mic-bridge` | The stream socket bound and freed; overlapping restarts; a microphone opened late or held at stop (with a fake `AudioRecord`) | The overlay window, and capture from a real microphone |
+| `volume-keys` | The key filter added to and removed from the accessibility hub; the filter's decisions | The beep guard's content observer, real key events |
+| `hid-input` | Both broadcast receivers registered and unregistered | USB reads, the permission dialog on screen, Bluetooth |
+| `lease-gate` | The loop over a fake platform: blocked at start, wake lock held and released, nothing running after stop | The real wake lock, the HTTPS request, a real package gate |
+| `webview-host` | The event subscription and the offer of the session to the Activity | Everything past the Activity completing the attach: the WebView, its detach on stop, the network callback |
+| `audio-guard` | The connector and guard built and dropped, the guard's volume receiver registered and unregistered, the bt-cycle thread ended | The connector's own receivers and profile proxy, which it sets up on a Handler thread |
+| `presence` | The reporter built and dropped; the HTTP report with its token header | Its receiver and profile proxies, which need a Bluetooth adapter |
+| `midi-bridge` | The link built and dropped; the force-reset thread ended | The connector, which needs the MIDI service |
+
+These classes have no behavioral test on the JVM and were not restructured to get
+one. They are the on-device acceptance list:
+
+- `MidiLink` and `BleMidiConnector`: scan, connect, reconnect after a drop, the
+  retry timer, the force-reset ladder against a real radio.
+- `A2dpConnector`: connect, reconnect, the sweep, its receivers on its own thread.
+- `AudioGuardHost`: the audio device callback, the guard's reconcile on its thread.
+- `SynthHost` and the native engine: presets, the output gate, the stream reopening.
+- `RoleBluetoothPort` and `GamepadBluetoothPort`: pairing, the pairing dialog, scans.
+- `KioskSession` past the attach: the WebView, page load recovery, overlays.
+- `OwnUpdateConfirmation` and `UsbPermissionAutomator` against the real dialogs
+  (their rules are tested; the tap is not).
+
 ## Known limits
 
 - The Portal's swipe-up Control Center is not dismissed: portal-keys' dismissal was

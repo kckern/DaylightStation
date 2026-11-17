@@ -66,4 +66,36 @@ public class HidInputCapabilityTest {
         // A report that arrives after stop() is sent once and must not throw.
         stream.publish(new HidKeyEvent(5, "down", "b", "KeyB", 0, false, false, false, false, false));
     }
+
+    // ── a real start, over a fake Android context ───────────────────────────
+
+    @Test public void aRealStartRegistersItsReceiversAndStopUnregistersEveryOne() throws Exception {
+        java.io.File dir = tmp.newFolder();
+        net.kckern.daylight.core.testing.FakeContext ctx = new net.kckern.daylight.core.testing.FakeContext(dir);
+        CoreRuntime core = TestCore.createWithContext(dir, ctx);
+        try {
+            HidInputCapability hid = new HidInputCapability();
+            core.add(hid);
+            core.prepare(new JSONObject());
+
+            hid.start();
+            assertEquals("one receiver for USB attach and permission, one for Bluetooth", 2, ctx.receivers.size());
+            // The parts exist now. What they answer with no USB or Bluetooth service behind
+            // them is not this test's subject; that they are no longer "unavailable" is.
+            assertNotEquals("USB HID unavailable", TestCore.get(core, "/usb-hid").optString("error"));
+            assertNotEquals("Bluetooth unavailable", TestCore.get(core, "/hid/bluetooth").optString("error"));
+            assertNotEquals("Input probe unavailable", TestCore.get(core, "/input").optString("error"));
+
+            hid.stop();
+            assertTrue("every receiver was unregistered: " + ctx.receivers, ctx.receivers.isEmpty());
+            assertEquals(2, ctx.registered);
+            assertEquals("USB HID unavailable", TestCore.get(core, "/usb-hid").getString("error"));
+            assertEquals("Bluetooth unavailable", TestCore.get(core, "/hid/bluetooth").getString("error"));
+            assertEquals("Input probe unavailable", TestCore.get(core, "/input").getString("error"));
+            hid.stop();
+            assertTrue(ctx.receivers.isEmpty());
+        } finally {
+            TestCore.releaseMainThread();
+        }
+    }
 }

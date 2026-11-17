@@ -237,4 +237,47 @@ public class LeaseLoopBehaviorTest {
         l.stop();
         assertFalse(platform.awake);
     }
+
+    // ── the capability: a real start over a fake Android context ────────────
+
+    @Test public void theCapabilityStartsTheLoopBlockedAndStopReleasesWhatItHeld() throws Exception {
+        File dir = tmp.newFolder();
+        net.kckern.daylight.core.testing.FakeContext ctx = new net.kckern.daylight.core.testing.FakeContext(dir);
+        net.kckern.daylight.core.CoreRuntime core = net.kckern.daylight.core.testing.TestCore.createWithContext(dir, ctx);
+        try {
+            core.services().provide(PackageGate.class, gate);
+            LeaseGateCapability cap = new LeaseGateCapability();
+            core.add(cap);
+            core.prepare(new JSONObject());
+            core.settings().set("lease.endpoint", ENDPOINT);
+            core.settings().set("lease.credential", CREDENTIAL);
+            core.settings().set("lease.packageName", TARGET);
+            cap.usePlatformForTest(platform);
+            gate.hidden = false;
+
+            cap.start();
+            assertTrue("the package is hidden as soon as the loop exists", gate.hidden);
+            JSONObject status = net.kckern.daylight.core.testing.TestCore.get(core, "/lease");
+            assertTrue(status.getBoolean("configured"));
+            assertEquals("package-gate", status.getString("enforcement"));
+            platform.advance(0);
+            assertEquals("its first lease request is on its way", 1, platform.requests.size());
+            platform.answer = grant(1, 1, 5000);
+            platform.completeRequest();
+            assertFalse(gate.hidden);
+            assertTrue("a running lease holds the wake lock", platform.awake);
+
+            cap.stop();
+            assertTrue("stop hid the package again", gate.hidden);
+            assertFalse("released the wake lock", platform.awake);
+            assertTrue("shut its network thread down", platform.networkDown);
+            platform.advance(10_000);
+            assertEquals("and left no tick or poll behind", 0, platform.fetches - 1);
+            assertEquals("unavailable", net.kckern.daylight.core.testing.TestCore.get(core, "/lease").getString("enforcement"));
+            cap.stop();
+            assertTrue(gate.hidden);
+        } finally {
+            net.kckern.daylight.core.testing.TestCore.releaseMainThread();
+        }
+    }
 }

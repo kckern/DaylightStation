@@ -23,6 +23,9 @@ public final class LeaseGateCapability implements Capability {
     private final LeaseDeadline lease = new LeaseDeadline();
     private CoreContext core;
     private volatile LeaseLoop loop;
+    /** Test seam: the loop's platform. Null means the real one, built from the context. */
+    private volatile LeaseLoop.Platform platformForTest;
+    void usePlatformForTest(LeaseLoop.Platform p) { platformForTest = p; }
 
     @Override public String name() { return "lease-gate"; }
 
@@ -54,10 +57,16 @@ public final class LeaseGateCapability implements Capability {
         // JVM tests boot every capability with no Android context: nothing to enforce.
         if (ctx == null) return;
         LeaseOrder order = new LeaseOrder(new File(core.shell().payloadDir(), "state/lease-order.json"));
-        LeaseLoop l = new LeaseLoop(ctx, order, () -> core.services().find(PackageGate.class),
-                (String) core.settings().get("lease.endpoint"),
-                (String) core.settings().get("lease.credential"),
-                (String) core.settings().get("lease.packageName"));
+        LeaseLoop.Platform given = platformForTest;
+        LeaseLoop l = given == null
+                ? new LeaseLoop(ctx, order, () -> core.services().find(PackageGate.class),
+                        (String) core.settings().get("lease.endpoint"),
+                        (String) core.settings().get("lease.credential"),
+                        (String) core.settings().get("lease.packageName"))
+                : new LeaseLoop(given, order, () -> core.services().find(PackageGate.class),
+                        (String) core.settings().get("lease.endpoint"),
+                        (String) core.settings().get("lease.credential"),
+                        (String) core.settings().get("lease.packageName"), ctx.getPackageName(), true);
         l.start();
         loop = l;
     }

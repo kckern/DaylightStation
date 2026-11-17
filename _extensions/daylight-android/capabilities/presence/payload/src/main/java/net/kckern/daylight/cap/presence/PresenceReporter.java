@@ -224,7 +224,8 @@ public class PresenceReporter {
                 + "}";
     }
 
-    private void report() {
+    /** Package-private so a JVM test can send one report to a local server. */
+    void report() {
         final String endpoint = config.gateEndpoint();
         final String payload = buildPayload();
         lastPayload = payload;

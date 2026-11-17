@@ -21,6 +21,9 @@ public final class EventBus {
 
     public void unsubscribe(Listener l) { listeners.remove(l); }
 
+    /** How many listeners are subscribed. */
+    public int subscribers() { return listeners.size(); }
+
     public void publish(String topic, JSONObject detail) {
         for (Listener l : listeners) {
             try { l.onEvent(topic, detail); } catch (Throwable ignored) { }

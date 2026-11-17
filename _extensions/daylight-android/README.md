@@ -120,7 +120,12 @@ access can read the device's control token and the stored settings, secret ones
 (`presence.token`, `lease.credential`) included. ADB is enabled on these devices
 by design, so ADB access to a device is to be treated as access to its token.
 
-Tests: `./gradlew build` runs the Java unit tests of every module. The payload
+Tests: `./gradlew build` runs the Java unit tests of every module. A capability's
+test starts it for real over `FakeContext` (`core-testing`): build the runtime
+with `TestCore.createWithContext(dir, context)`, call `start()`, assert what was
+taken (`context.receivers`, a bound port, a key filter), call `stop()` and assert
+it was all given back, then `stop()` again. What the JVM cannot show is listed in
+the reference under "Not covered by JVM tests". The payload
 module's tests run once per device, against that device's generated configuration:
 `./gradlew :payload:testPianoDebugUnitTest :payload:testPortalDebugUnitTest
 :payload:testShieldDebugUnitTest`. Each boots the device's real capabilities with

@@ -120,4 +120,34 @@ public class MidiBridgeCapabilityTest {
         assertFalse(status.getJSONObject("midiWrite").getBoolean("open"));
         assertTrue(status.getJSONObject("midiWrite").isNull("lastError"));
     }
+
+    // ── a real start, over a fake Android context ───────────────────────────
+
+    /**
+     * The JVM has no MIDI service, so a real start builds the link and stops where a
+     * device without one would, before any connector exists. The connector's own
+     * threads, scans and ports are on the on-device list.
+     */
+    @Test public void aRealStartWithNoMidiServiceBuildsTheLinkAndStopDropsIt() throws Exception {
+        java.io.File dir = tmp.newFolder();
+        net.kckern.daylight.core.testing.FakeContext ctx = new net.kckern.daylight.core.testing.FakeContext(dir);
+        CoreRuntime core = TestCore.createWithContext(dir, ctx);
+        try {
+            MidiBridgeCapability midi = new MidiBridgeCapability();
+            core.add(midi);
+            core.prepare(new JSONObject());
+            JSONObject before = TestCore.post(core, "/loopback");
+            midi.start();
+            JSONObject running = TestCore.post(core, "/loopback");
+            assertNotEquals("the loopback route has a link to ask now", before.toString(), running.toString());
+            assertEquals("write_port_closed", running.getString("reason"));
+            assertTrue(ctx.receivers.isEmpty());
+            midi.stop();
+            assertEquals("and has none again after stop", before.toString(), TestCore.post(core, "/loopback").toString());
+            assertEquals(0, net.kckern.daylight.core.testing.FakeContext.liveThreads("PianoBridge-AutoReset"));
+            midi.stop();
+        } finally {
+            TestCore.releaseMainThread();
+        }
+    }
 }

@@ -1,8 +1,6 @@
 package net.kckern.daylight.cap.volumekeys;
 
 import android.content.Context;
-import android.os.Handler;
-import android.os.Looper;
 
 import net.kckern.daylight.core.Capability;
 import net.kckern.daylight.core.CoreContext;
@@ -44,7 +42,7 @@ public final class VolumeKeysCapability implements Capability {
         k.start();
         // start() runs on a worker thread; the hub updates the accessibility service's
         // info when a filter is added, and that belongs on the main thread.
-        new Handler(Looper.getMainLooper()).post(() -> core.accessibility().addKeyFilter(k));
+        MainThread.post(() -> core.accessibility().addKeyFilter(k));
         keys = k;
         try {
             VolumeBeepGuard g = new VolumeBeepGuard(ctx, core.shell());

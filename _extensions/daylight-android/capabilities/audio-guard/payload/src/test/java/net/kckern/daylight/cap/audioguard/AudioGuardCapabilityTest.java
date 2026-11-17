@@ -93,4 +93,37 @@ public class AudioGuardCapabilityTest {
         capability.stop();
         assertEquals("no_bluetooth", TestCore.post(core, "/speaker/bt-cycle").getString("error"));
     }
+
+    // ── a real start, over a fake Android context ───────────────────────────
+
+    /**
+     * What the JVM can see of a real start: the speaker connector and the guard exist
+     * and the routes answer from them, and stop takes both away with no receiver left
+     * registered. The connector registers its receivers and opens its profile proxy on
+     * a Handler thread, which does not run on the JVM; that part is on the on-device list.
+     */
+    @Test public void aRealStartBuildsTheConnectorAndTheGuardAndStopTakesBothAway() throws Exception {
+        java.io.File dir = tmp.newFolder();
+        net.kckern.daylight.core.testing.FakeContext ctx = new net.kckern.daylight.core.testing.FakeContext(dir);
+        CoreRuntime core = TestCore.createWithContext(dir, ctx);
+        try {
+            AudioGuardCapability capability = new AudioGuardCapability();
+            core.add(capability);
+            core.prepare(new JSONObject("{}"));
+            capability.start();
+            assertTrue("the role sees a connector", core.services().find(BluetoothRole.class).present());
+            assertEquals("the guard's volume receiver is registered", 1, ctx.receivers.size());
+            assertNotEquals("no_a2dp", TestCore.get(core, "/speaker").optString("error"));
+            assertNotEquals("no_guard", core.status().collect(StatusBoard.Surface.FRAME, new JSONObject()).getString("speakerReason"));
+
+            capability.stop();
+            assertFalse(core.services().find(BluetoothRole.class).present());
+            assertEquals("no_a2dp", TestCore.get(core, "/speaker").getString("error"));
+            assertEquals("no_guard", core.status().collect(StatusBoard.Surface.FRAME, new JSONObject()).getString("speakerReason"));
+            assertTrue("no receiver is left registered: " + ctx.receivers, ctx.receivers.isEmpty());
+            capability.stop();
+        } finally {
+            TestCore.releaseMainThread();
+        }
+    }
 }

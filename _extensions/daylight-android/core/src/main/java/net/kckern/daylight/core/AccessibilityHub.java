@@ -70,6 +70,9 @@ public final class AccessibilityHub implements AccessibilityDelegate {
 
     public boolean isBound() { return bound != null; }
 
+    /** How many key filters are registered. */
+    public int keyFilterCount() { return keyFilters.size(); }
+
     /** The live service, for gestures and window content, or null. */
     public AccessibilityService service() {
         Object b = bound;

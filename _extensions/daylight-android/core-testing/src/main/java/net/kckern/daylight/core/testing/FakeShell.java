@@ -20,7 +20,9 @@ public final class FakeShell implements ShellServices {
 
     public FakeShell(File dir) { this.dir = dir; }
 
-    @Override public Object context() { return null; }
+    /** Null by default, as in most JVM tests. Set a FakeContext to start a capability for real. */
+    public Object context;
+    @Override public Object context() { return context; }
     @Override public String deviceId() { return "test"; }
     @Override public int shellVersionCode() { return 7; }
     @Override public String controlToken() { return TOKEN; }
