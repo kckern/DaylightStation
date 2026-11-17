@@ -97,6 +97,50 @@ public class KioskSettingsGuardTest {
         return new KioskSettingsGuard(() -> p, () -> lastUpdateAtMs, fkb, notes, () -> nowMs);
     }
 
+    @Test public void authorityRevokedDuringReadPreventsAllDriftWrites() {
+        boolean[] allowed={true};
+        FakeFkb fkb=new FakeFkb() {
+            @Override public Map<String,String> listSettings() {
+                Map<String,String> result=super.listSettings(); allowed[0]=false; return result;
+            }
+        };
+        fkb.live=healthy(); fkb.live.put("kioskMode","false");
+        KioskSettingsGuard g=new KioskSettingsGuard(() -> params(true,true,0,0), () -> 0L,
+                fkb,new FakeNotes(),() -> 1000000L,(key,value) -> {},() -> allowed[0]);
+        g.tick();
+        assertEquals(1,fkb.reads);
+        assertTrue("revoked authority must prevent post-read repairs",fkb.writes.isEmpty());
+    }
+
+    @Test public void maintenanceOrExpiryBetweenWritesPreventsNextRepair() {
+        boolean[] allowed={true};
+        FakeFkb fkb=new FakeFkb() {
+            @Override public boolean setBoolean(String key,String value) {
+                boolean result=super.setBoolean(key,value); allowed[0]=false; return result;
+            }
+            @Override public boolean setString(String key,String value) {
+                boolean result=super.setString(key,value); allowed[0]=false; return result;
+            }
+        };
+        fkb.live=healthy(); fkb.live.put("kioskMode","false"); fkb.live.put("reloadPageFailure","0");
+        KioskSettingsGuard g=new KioskSettingsGuard(() -> params(true,true,0,0), () -> 0L,
+                fkb,new FakeNotes(),() -> 1000000L,(key,value) -> {},() -> allowed[0]);
+        KioskSettingsGuard.Pass pass=g.runPass(false);
+        assertEquals("only the write before revocation may execute",1,fkb.writes.size());
+        assertEquals(2,pass.drifted.size());
+        assertEquals(1,pass.repaired.size());
+        assertEquals(Verdict.SAFETY_HOLD,pass.verdict);
+    }
+
+    @Test public void unknownAuthorityStillAllowsPassiveDriftObservation() {
+        FakeFkb fkb=new FakeFkb(); fkb.live=healthy(); fkb.live.put("kioskMode","false");
+        KioskSettingsGuard g=new KioskSettingsGuard(() -> params(true,true,0,0), () -> 0L,
+                fkb,new FakeNotes(),() -> 1000000L,(key,value) -> {},() -> false);
+        KioskSettingsGuard.Pass pass=g.runPass(false);
+        assertEquals(1,fkb.reads); assertEquals(1,pass.drifted.size()); assertTrue(fkb.writes.isEmpty());
+        assertEquals(Verdict.SAFETY_HOLD,pass.verdict);
+    }
+
     // --- the happy path ---------------------------------------------------
 
     @Test

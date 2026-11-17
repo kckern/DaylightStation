@@ -91,8 +91,9 @@ public final class PayloadLoader {
         java.util.LinkedHashSet<String> candidates=new java.util.LinkedHashSet<>();
         // Keep durable pointers intact while selecting a compatible fallback. A legacy
         // payload must never start merely because it was current/previous before upgrade.
-        if (store.shouldRollBack(now)) candidates.add(store.previous());
-        candidates.add(store.current());
+        // Quarantine the crashing current for this entire boot. An incompatible
+        // previous must fall through to baked, never back into the known crash loop.
+        if (!store.shouldRollBack(now)) candidates.add(store.current());
         candidates.add(store.previous());
         for (String jar:candidates) {
             if (jar!=null && tryBoot(jar, now)) return;

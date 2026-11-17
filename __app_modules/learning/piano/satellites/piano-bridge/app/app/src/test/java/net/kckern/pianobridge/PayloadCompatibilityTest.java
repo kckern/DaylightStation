@@ -51,6 +51,16 @@ public class PayloadCompatibilityTest {
         assertEquals(Collections.singletonList("managed.jar"),started);
         assertEquals("unknown.jar",store.current()); assertEquals("managed.jar",store.previous());
     }
+    @Test public void crashLoopingCurrentIsSkippedWhenPreviousIsIncompatible() throws Exception {
+        PayloadLoader l=loader("managed.jar","old.jar");
+        long now=System.currentTimeMillis();
+        for (int i=0;i<3;i++) store.recordBoot("managed.jar",now);
+        assertTrue(store.shouldRollBack(now));
+        l.boot();
+        assertEquals(Collections.singletonList(PayloadLoader.BAKED_NAME),started);
+        assertEquals("managed.jar",store.current());
+        assertEquals("old.jar",store.previous());
+    }
     @Test public void unknownBakedCandidateFailsClosed() throws Exception {
         PayloadLoader l=loader("old.jar","unknown.jar"); versions.put(PayloadLoader.BAKED_NAME,"unknown"); l.boot();
         assertTrue(started.isEmpty()); assertNull(l.active());

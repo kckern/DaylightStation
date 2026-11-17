@@ -61,6 +61,8 @@ public final class KioskSettingsGuard {
         NO_PASSWORD,
         /** FKB did not answer — state unknown. */
         UNREACHABLE,
+        /** Native run authority or maintenance withheld writes; passive read still ran. */
+        SAFETY_HOLD,
         /** FKB answered but refused fkbPassword ({"status":"Error"}): the guard is blind. */
         AUTH_FAILED,
         /** Read succeeded, nothing had drifted. */
@@ -236,6 +238,7 @@ public final class KioskSettingsGuard {
                 Map<String, String> p = new LinkedHashMap<>();
                 p.put("key", key);
                 p.put("value", value);
+                if (!service.recoveryAllowed()) return false;
                 int code = FkbRest.command(held[0], cmd, p);
                 return code >= 200 && code < 400;
             }
@@ -269,6 +272,13 @@ public final class KioskSettingsGuard {
     /** Test wiring with a config store, so persistence round-trips are assertable. */
     KioskSettingsGuard(Supplier<Params> params, LongSupplier lastUpdateRequestAtMs,
                        Fkb fkb, Notes notes, LongSupplier clock, ConfigWriter configWriter) {
+        this(params, lastUpdateRequestAtMs, fkb, notes, clock, configWriter, () -> true);
+    }
+
+    KioskSettingsGuard(Supplier<Params> params, LongSupplier lastUpdateRequestAtMs,
+                       Fkb fkb, Notes notes, LongSupplier clock, ConfigWriter configWriter,
+                       BooleanSupplier recallAllowed) {
+        this.recallAllowed = recallAllowed;
         this.configHolder = null;
         this.configWriter = configWriter;
         this.params = params;
@@ -485,7 +495,6 @@ public final class KioskSettingsGuard {
      * reads, writes and result bookkeeping.
      */
     synchronized Pass runPass(boolean force) {
-        if (!recallAllowed.getAsBoolean()) return refuse(Verdict.DISARMED);
         Params p = params.get();
         long now = clock.getAsLong();
         lastCheckAtMs = now;
@@ -527,11 +536,20 @@ public final class KioskSettingsGuard {
         List<String> drifted = new ArrayList<>();
         List<String> repaired = new ArrayList<>();
         List<String> detail = new ArrayList<>();
+        boolean safetyHeld = false;
         for (KioskSettings.Drift d : drifts) {
             drifted.add(d.key);
+            // listSettings and every preceding setter can block. Do not reuse the
+            // authority state from before those calls for the next mutation.
+            if (!recallAllowed.getAsBoolean()) {
+                safetyHeld = true;
+                detail.add(d.key + " [SAFETY HOLD]");
+                continue;
+            }
             boolean ok = d.type == KioskSettings.Type.BOOL
                     ? fkb.setBoolean(d.key, d.desired)
                     : fkb.setString(d.key, d.desired);
+            if (!ok && !recallAllowed.getAsBoolean()) safetyHeld = true;
             detail.add(d.key + " " + d.live + "→" + d.desired + (ok ? "" : " [WRITE FAILED]"));
             if (ok) {
                 repaired.add(d.key);
@@ -541,9 +559,10 @@ public final class KioskSettingsGuard {
         lastRepair = String.join(", ", detail);
         // This line is the whole point of the feature: it is how a kiosk found
         // switched off becomes visible after the fact.
-        notes.note("KIOSKSET", "drift repaired: " + lastRepair);
-        Log.w(TAG, "drift repaired: " + lastRepair);
-        return record(Verdict.REPAIRED, drifted, repaired);
+        String outcome = safetyHeld ? "drift repair held: " : "drift repaired: ";
+        notes.note("KIOSKSET", outcome + lastRepair);
+        Log.w(TAG, outcome + lastRepair);
+        return record(safetyHeld ? Verdict.SAFETY_HOLD : Verdict.REPAIRED, drifted, repaired);
     }
 
     /** A pass that stopped at a gate — no read, no write, nothing found. */

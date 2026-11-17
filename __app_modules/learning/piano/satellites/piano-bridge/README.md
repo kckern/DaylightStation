@@ -9,7 +9,8 @@ A full APK is required for `PianoAdminReceiver`; a payload swap cannot add it.
 `p38-managed-candidate` refuses shells older than 32. The shell rejects legacy or
 unknown payload identities before `start`, including persisted current/rollback
 candidates. Boot selects a compatible previous or distinct baked p38 asset without
-rewriting current/previous pointers or deleting old data. Explicit updates still
+rewriting current/previous pointers or deleting old data. A crash-looping current
+is excluded for the entire boot even if the previous payload is incompatible. Explicit updates still
 require SHA-256 verification. The exact p38 identity is a compatibility declaration,
 **not authenticity of arbitrary bytes**; extending the reviewed allowlist for a
 future payload requires another shell build. An incompatible explicit rollback
@@ -67,7 +68,11 @@ this owner's lock-task list and status-bar restriction for at most 15 minutes;
 `durationMs=0` revokes it and reapplies policy. The maintenance deadline is committed
 in app-private preferences against elapsed realtime and boot count: it survives
 process recreation on the same boot and expires on reboot. In-process deadlines
-also use elapsed realtime. Expiry is reconciled by the foreground monitor, which
+also use elapsed realtime. Settings repair rechecks native authority and maintenance
+before each write, including after blocking reads; withheld repairs report `SAFETY_HOLD`
+while retaining passive drift observations. Startup accessibility enablement likewise
+checks native authority before each secure-setting write without suppressing reads
+or passive service binding. Expiry is reconciled by the foreground monitor, which
 checks policy at startup and every 30 seconds. Legacy disarm/rearm aliases use the
 same managed window and a 15-minute cap. JVM tests exercise escape, expiration,
 readback and refusal, but this candidate cannot conduct a physical escape drill

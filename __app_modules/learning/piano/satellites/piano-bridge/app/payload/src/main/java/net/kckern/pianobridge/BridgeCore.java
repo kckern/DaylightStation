@@ -321,6 +321,10 @@ public class BridgeCore {
         Log.i(TAG, "engineStop");
     }
 
+    JSONObject enableStartupAccessibility(String component, SettingsControl.AccessibilitySettings settings) {
+        return SettingsControl.enableAccessibilityService(settings, component, this::nativeRunAllowed);
+    }
+
     // --- BLE-MIDI input via BleMidiConnector ---
 
     /**
@@ -345,7 +349,7 @@ public class BridgeCore {
             // The a11y service is shell-owned (manifest-declared); name it by string so
             // the payload has no compile-time dependency on the shell class.
             String comp = new ComponentName(ctx, "net.kckern.pianobridge.PianoTouchService").flattenToString();
-            org.json.JSONObject r = SettingsControl.enableAccessibilityService(ctx, comp);
+            org.json.JSONObject r = enableStartupAccessibility(comp, SettingsControl.accessibilitySettings(ctx));
             Log.i(TAG, "enableAccessibilityService " + comp + " -> " + r);
         }
 
