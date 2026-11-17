@@ -1,10 +1,10 @@
-# Facebook Portal panel (Android 9, API 28). Helpers, the kiosk window, lockdown (built in, off until the home app is switched), screen power and volume.
+# Facebook Portal panel (Android 9, API 28). Helpers, the kiosk window, lockdown (built in, off until the home app is switched), screen power, volume and the app launcher.
 id: portal
 package: net.kckern.daylight.portal
 android: { minSdk: 26, targetSdk: 28 }
 abis: []
 control: { port: 8780, lifelinePort: 8781 }
-shell: { versionCode: 11, versionName: "0.3-kiosk" }
+shell: { versionCode: 12, versionName: "0.3-kiosk" }
 capabilities:
   - webview-host
   - debug-tools
@@ -12,6 +12,7 @@ capabilities:
   - lockdown
   - screen-power
   - volume
+  - app-launcher
   - volume-keys
   - hid-input
   - presence
@@ -24,6 +25,8 @@ defaults:
   # 6) the app is installed beside Fully, and an armed watcher would recall itself over
   # Fully. The allowlist stays empty: it is read from Fully at this device's cutover.
   lockdown.enabled: false
+  # launcher.allowed is not set: nothing may be launched from this kiosk. Anything Fully
+  # allows today is read from Fully at this device's cutover.
   # The swipe-up Control Center cannot be kept from opening; the app pushes it back down
   # (portal-keys did). Left alone during an unlock window.
   lockdown.dismissControlCenter: true

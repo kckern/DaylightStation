@@ -1,10 +1,10 @@
-# NVIDIA Shield TV (Android 11). Helpers, the kiosk window, lockdown (built in, off until the home app is switched), screen power and volume.
+# NVIDIA Shield TV (Android 11). Helpers, the kiosk window, lockdown (built in, off until the home app is switched), screen power, volume and the app launcher.
 id: shield
 package: net.kckern.daylight.shield
 android: { minSdk: 30, targetSdk: 33 }
 abis: []
 control: { port: 8780, lifelinePort: 8781 }
-shell: { versionCode: 10, versionName: "0.3-kiosk" }
+shell: { versionCode: 11, versionName: "0.3-kiosk" }
 # microphone: the mic stream. location: Bluetooth discovery from a service needs it on Android 11.
 foregroundServiceTypes: [microphone, location]
 # `accessibility`: the lockdown watcher reads what is in front through it, and it is this
@@ -17,6 +17,7 @@ capabilities:
   - lockdown
   - screen-power
   - volume
+  - app-launcher
   - bluetooth-controls
   - mic-bridge
   - lease-gate
@@ -29,6 +30,9 @@ defaults:
   # 6) the app is installed beside Fully, and an armed watcher would recall itself over
   # Fully. The allowlist stays empty: it is read from Fully at this device's cutover.
   lockdown.enabled: false
+  # What the page and POST /launch may start: the arcade emulator the media menu launches
+  # today. Anything else Fully allows is read from Fully at this device's cutover.
+  launcher.allowed: "com.retroarch.aarch64"
   debug.execEnabled: false
   heartbeat.enabled: true
   # Where heartbeats and log lines are shipped. Household-specific: resolved from
