@@ -421,28 +421,21 @@ export default function PianoVideoPlayer({ lecture, source, onBack, isSequential
   const seekMedia = ctrl.seek;
   useLayoutEffect(() => {
     if (!mediaEl) return undefined;
-    const work = { target: null, inFlightTarget: null, queue: null };
+    const work = { inFlightTarget: null, queue: null };
     const isCurrent = () => seekWorkRef.current === work
       && playerRef.current?.getMediaElement?.() === mediaEl;
     work.queue = createSeekIntentQueue({
       seek: ({ target }) => {
         if (!isCurrent()) return;
-        work.target = target;
         work.inFlightTarget = target;
         seekMedia(target);
       },
-      setTimer: (expire, ms) => setTimeout(() => {
-        work.target = null;
-        work.inFlightTarget = null;
-        expire();
-      }, ms),
     });
     seekWorkRef.current = work;
     work.queue.reset(work);
     const onSeeked = () => {
       if (!isCurrent() || work.inFlightTarget === null
         || Math.abs(mediaEl.currentTime - work.inFlightTarget) > 1) return;
-      work.target = null;
       work.inFlightTarget = null;
       work.queue.complete({ mediaKey: work });
     };
@@ -459,8 +452,7 @@ export default function PianoVideoPlayer({ lecture, source, onBack, isSequential
     if (!work) return;
     // Pending relative skips start at the latest intent, preserving +30,+30
     // while decoding is slow; completion/timeout releases that cursor.
-    if (work.target === null && target === ctrl.getCurrentTime()) return;
-    work.target = target;
+    if (work.queue.getTarget() === null && target === ctrl.getCurrentTime()) return;
     work.queue.request({ mediaKey: work, target });
   }, [ctrl.getCurrentTime]);
 
@@ -482,7 +474,7 @@ export default function PianoVideoPlayer({ lecture, source, onBack, isSequential
       getLogger().child({ component: 'piano-video-player' }).sampled('piano.video.skip-dropped', { contentId, delta }, { maxPerMinute: 10, aggregate: true });
       return;
     }
-    const cur = seekWorkRef.current?.target ?? (ctrl.getCurrentTime() || 0);
+    const cur = seekWorkRef.current?.queue.getTarget() ?? (ctrl.getCurrentTime() || 0);
     requestSeek(skipTarget({ current: cur, delta: admitted, duration, isSequential, furthestWatched: furthestWatchedRef.current }));
   }, [ctrl, duration, isSequential, contentId, requestSeek]);
 

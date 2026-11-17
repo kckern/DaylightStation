@@ -588,7 +588,9 @@ The video player admits skips through the existing 700 ms burst governor (at
 most 60 seconds forward per burst), then sends them through one seek in flight
 plus one latest target. Restart and scrub requests share that queue. A matching
 `seeked` event releases the latest target; after five seconds without completion,
-the queue discards pending work. Leaving the player or changing its content or
+the queue discards pending work. Relative controls also check that deadline
+before reading the queued target, so a delayed timer cannot retain an expired
+cursor. Leaving the player or changing its content or
 media element clears the queue. Backward seeking and sequential lesson limits
 continue to apply. The queue does not grant watched credit.
 

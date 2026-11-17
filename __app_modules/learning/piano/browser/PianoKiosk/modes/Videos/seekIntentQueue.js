@@ -19,6 +19,9 @@ export function createSeekIntentQueue({
     inFlight = null;
     pending = null;
   };
+  const expire = () => {
+    if (inFlight && now() - startedAt >= timeoutMs) clear();
+  };
   const start = (intent) => {
     inFlight = intent;
     startedAt = now();
@@ -30,9 +33,15 @@ export function createSeekIntentQueue({
     try { seek(intent); } catch (error) { clear(); throw error; }
   };
   return {
+    // Read before calculating a relative target: the timer may be delayed by
+    // the same busy event loop that delivered this next control press.
+    getTarget() {
+      expire();
+      return pending?.target ?? inFlight?.target ?? null;
+    },
     request(intent) {
       if (disposed || intent.mediaKey !== mediaKey || !Number.isFinite(intent.target)) return;
-      if (inFlight && now() - startedAt >= timeoutMs) clear();
+      expire();
       if (inFlight) pending = intent;
       else start(intent);
     },
