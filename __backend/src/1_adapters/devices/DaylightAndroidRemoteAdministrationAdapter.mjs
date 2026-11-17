@@ -222,7 +222,7 @@ function normalizeSummary(data) {
     manufacturer: first(data, 'manufacturer'),
     model: first(data, 'model'),
     androidVersion: first(data, 'androidVersion'),
-    appVersion: first(data, 'payloadVersion'),
+    appVersion: first(data, 'appVersion', 'payloadVersion'),
     licensed: null,
     currentUrl: first(data, 'currentUrl'),
     startUrl: first(data, 'startUrl'),

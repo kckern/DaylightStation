@@ -293,6 +293,15 @@ describe('DaylightAndroidRemoteAdministrationAdapter', () => {
       expect(status.details).toMatchObject({ ready: true, rendererAlive: true, payloadVersion: '1.4.0', sdkInt: 29 });
     });
 
+    it('prefers the shell appVersion over the payload version', async () => {
+      const { adapter } = build({
+        ...table,
+        'GET /status': json({ device: 'piano-tablet', appVersion: '2.1.0', payloadVersion: '1.4.0' }),
+      });
+      const status = await adapter.readStatus('tablet');
+      expect(status.summary.appVersion).toBe('2.1.0');
+    });
+
     it('still answers when only the kiosk status route does', async () => {
       const { adapter } = build({
         'GET /kiosk/status': table['GET /kiosk/status'],

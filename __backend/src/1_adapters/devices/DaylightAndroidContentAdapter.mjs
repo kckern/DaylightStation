@@ -9,7 +9,9 @@
  * Where it differs from the Fully adapter, it is because the app can answer
  * questions Fully cannot:
  *   - `POST /kiosk/load` answers after the page's main frame has finished, so
- *     there is no acknowledge-then-poll verification.
+ *     a plain load needs no verification. A caller that cannot wait passes
+ *     `verifyAsync`: the load is sent with `wait:false`, returns on the
+ *     acknowledgement, and the outcome is read from `lastLoad` afterwards.
  *   - `POST /kiosk/foreground` answers after the app has checked it is in
  *     front, so there is no foreground polling loop.
  *   - The helpers Fully needed as companion apps live inside the app, so there
@@ -35,6 +37,9 @@ const MIC_CAPABILITY = 'mic-bridge';
  */
 const LOAD_REQUEST_TIMEOUT_MS = 30_000;
 const MAX_LOAD_ATTEMPTS = 3;
+/** Async verification: poll `lastLoad` for a little longer than the device waits. */
+const VERIFY_POLL_MS = 500;
+const VERIFY_MAX_POLLS = 50;
 const MAX_CAMERA_ATTEMPTS = 3;
 const CAMERA_RETRY_MS = 2000;
 
@@ -210,17 +215,23 @@ export class DaylightAndroidContentAdapter extends IContentControl {
   /**
    * Load a content URL on the device.
    *
-   * The device answers once the page's main frame has finished loading, so a
-   * success is a confirmed load. Only an unreachable device is retried (1s,
-   * then 2s): a refusal or a failed page load would fail the same way again.
+   * By default the device answers once the page's main frame has finished
+   * loading, so a success is a confirmed load (`verified: true`). Only an
+   * unreachable device is retried (1s, then 2s): a refusal or a failed page
+   * load would fail the same way again.
    *
    * @param {string} path - Path to load
    * @param {Object} [query] - Query parameters
-   * @param {Object} [_options] - Accepted for interface parity. `verifyAsync`
-   *   has no effect here: there is no separate verification step to defer.
+   * @param {Object} [options]
+   * @param {boolean} [options.verifyAsync=false] - When true, send the load
+   *   with `wait:false`, return `ok` as soon as the device acknowledges it
+   *   (`verified: 'async'`), and check the outcome in the background, where it
+   *   is only logged. Used on the wake-and-load path, where the playback
+   *   watchdog is the authoritative confirmation and the caller must not sit
+   *   through a page load.
    * @returns {Promise<Object>}
    */
-  async load(path, query = {}, _options = {}) {
+  async load(path, query = {}, { verifyAsync = false } = {}) {
     const startTime = Date.now();
     this.#metrics.loads++;
 
@@ -232,7 +243,35 @@ export class DaylightAndroidContentAdapter extends IContentControl {
     let attempts = 0;
     for (let attempt = 1; attempt <= MAX_LOAD_ATTEMPTS; attempt++) {
       attempts = attempt;
-      const result = await this.#post('/kiosk/load', { url: fullUrl }, { timeout: LOAD_REQUEST_TIMEOUT_MS });
+      const result = verifyAsync
+        ? await this.#post('/kiosk/load', { url: fullUrl, wait: false })
+        : await this.#post('/kiosk/load', { url: fullUrl }, { timeout: LOAD_REQUEST_TIMEOUT_MS });
+      if (result.ok && verifyAsync) {
+        this.#logger.info?.('daylightandroid.load.acknowledged', {
+          fullUrl, attempt, loadTimeMs: Date.now() - startTime,
+        });
+        // Fire-and-forget: the outcome is logged, never returned. Flat shape so
+        // dashboards can filter on verified/currentUrl; unverified is a warn so
+        // a kiosk that keeps failing its loads stays visible.
+        this.#verifyLastLoad(fullUrl).then(
+          (verification) => {
+            const isVerified = verification?.verified === true;
+            this.#logger[isVerified ? 'info' : 'warn']?.(
+              isVerified ? 'daylightandroid.load.async-verified' : 'daylightandroid.load.async-unverified',
+              {
+                fullUrl,
+                verified: isVerified,
+                currentUrl: verification?.currentUrl,
+                reason: verification?.reason,
+              },
+            );
+          },
+          (err) => {
+            this.#logger.warn?.('daylightandroid.load.async-verify-failed', { fullUrl, error: err?.message });
+          },
+        );
+        return { ok: true, url: fullUrl, attempt, verified: 'async', loadTimeMs: Date.now() - startTime };
+      }
       if (result.ok) {
         const loadTimeMs = Date.now() - startTime;
         this.#logger.info?.('daylightandroid.load.success', {
@@ -299,8 +338,10 @@ export class DaylightAndroidContentAdapter extends IContentControl {
    * Get content control status.
    *
    * `ready` is the app's own word on whether its WebView can take a load. The
-   * app version lives on a different route and is read alongside; a failure
-   * there leaves `appVersion` undefined and does not affect the rest.
+   * app version (the shell's version name, or the payload version when the
+   * shell reports none) lives on the core `/status` route and is read
+   * alongside; a failure there leaves `appVersion` undefined and does not
+   * affect the rest.
    * @returns {Promise<Object>}
    */
   async getStatus() {
@@ -318,7 +359,7 @@ export class DaylightAndroidContentAdapter extends IContentControl {
         provider: PROVIDER,
         currentUrl: kiosk.data?.currentUrl,
         screenOn: kiosk.data?.screenOn,
-        appVersion: core.ok ? core.data?.payloadVersion : undefined,
+        appVersion: core.ok ? (core.data?.appVersion ?? core.data?.payloadVersion) : undefined,
       };
     } catch (error) {
       return { ready: false, provider: PROVIDER, error: error.message };
@@ -376,6 +417,49 @@ export class DaylightAndroidContentAdapter extends IContentControl {
   #post(route, body = {}, options) {
     this.#metrics.lastRequestAt = nowTs24();
     return this.#restClient.post(route, body, options);
+  }
+
+  /**
+   * After a `wait:false` load, read the outcome from `lastLoad` in
+   * `/kiosk/status`.
+   *
+   * Returns:
+   *   { verified: true, currentUrl }           - lastLoad reports this URL loaded
+   *   { verified: false, currentUrl, reason }  - it failed, or never showed up
+   *
+   * @private
+   * @param {string} expectedUrl - URL passed to /kiosk/load
+   * @returns {Promise<{verified: boolean, currentUrl?: string, reason?: string}>}
+   */
+  async #verifyLastLoad(expectedUrl) {
+    const normalize = (url) => {
+      if (typeof url !== 'string') return null;
+      let normalized = url.trim();
+      try {
+        // Decode so queue=plex%3A1 and queue=plex:1 compare equal.
+        normalized = decodeURIComponent(normalized);
+      } catch {
+        // Malformed encoding: compare as given.
+      }
+      return normalized.replace(/\/$/, '').toLowerCase();
+    };
+    const target = normalize(expectedUrl);
+    let currentUrl;
+
+    for (let poll = 1; poll <= VERIFY_MAX_POLLS; poll++) {
+      const status = await this.#get('/kiosk/status');
+      if (status.ok) {
+        currentUrl = status.data?.currentUrl;
+        const lastLoad = status.data?.lastLoad;
+        if (lastLoad && typeof lastLoad.ok === 'boolean' && normalize(lastLoad.url) === target) {
+          return lastLoad.ok
+            ? { verified: true, currentUrl }
+            : { verified: false, currentUrl, reason: lastLoad.error || 'load failed' };
+        }
+      }
+      if (poll < VERIFY_MAX_POLLS) await this.#sleep(VERIFY_POLL_MS);
+    }
+    return { verified: false, currentUrl, reason: 'lastLoad never reported this URL' };
   }
 
   /**

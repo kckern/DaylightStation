@@ -93,10 +93,118 @@ describe('DaylightAndroidContentAdapter', () => {
       expect(rest.calls[0].options.timeout).toBeGreaterThan(20_000);
     });
 
-    it('waits for the device confirmation even when verifyAsync is asked for', async () => {
-      const { adapter } = makeAdapter();
-      const result = await adapter.load('/piano', {}, { verifyAsync: true });
-      expect(result).toMatchObject({ ok: true, verified: true });
+    it('without verifyAsync sends no wait flag and waits for the page', async () => {
+      const { adapter, rest } = makeAdapter();
+      await adapter.load('/piano');
+      expect(rest.calls[0].body).not.toHaveProperty('wait');
+      expect(routes(rest)).toEqual(['POST /kiosk/load']);
+    });
+
+    describe('verifyAsync', () => {
+      const URL_ = 'https://daylight.test/piano?queue=plex%3A1';
+      const accepted = { 'POST /kiosk/load': ({ body }) => ok({ accepted: true, url: body.url }) };
+
+      it('sends wait:false and returns on the acknowledgement', async () => {
+        const { adapter, rest } = makeAdapter({
+          ...accepted,
+          'GET /kiosk/status': ok({ lastLoad: { url: URL_, ok: true, atMs: 5 } }),
+        });
+
+        const result = await adapter.load('/piano', { queue: 'plex:1' }, { verifyAsync: true });
+
+        expect(rest.calls[0]).toMatchObject({ method: 'POST', route: '/kiosk/load', body: { url: URL_, wait: false } });
+        // No long page-load timeout: the client's default applies.
+        expect(rest.calls[0].options?.timeout ?? 10_000).toBeLessThanOrEqual(10_000);
+        expect(result).toMatchObject({ ok: true, url: URL_, attempt: 1, verified: 'async' });
+        expect(typeof result.loadTimeMs).toBe('number');
+      });
+
+      it('logs async-verified once lastLoad reports the URL loaded', async () => {
+        let polls = 0;
+        const { adapter, logger, sleep } = makeAdapter({
+          ...accepted,
+          'GET /kiosk/status': () => (++polls < 3
+            ? ok({ currentUrl: 'https://daylight.test/old', lastLoad: { url: 'https://daylight.test/old', ok: true, atMs: 1 } })
+            // Reported decoded and with a trailing slash difference: still the same page.
+            : ok({ currentUrl: 'https://daylight.test/piano?queue=plex:1', lastLoad: { url: 'https://daylight.test/piano?queue=plex:1', ok: true, atMs: 9 } })),
+        });
+
+        await adapter.load('/piano', { queue: 'plex:1' }, { verifyAsync: true });
+
+        await vi.waitFor(() => expect(logger.info).toHaveBeenCalledWith('daylightandroid.load.async-verified', {
+          fullUrl: URL_,
+          verified: true,
+          currentUrl: 'https://daylight.test/piano?queue=plex:1',
+          reason: undefined,
+        }));
+        expect(polls).toBe(3);
+        expect(sleep).toHaveBeenCalledWith(500);
+        expect(logger.warn).not.toHaveBeenCalledWith('daylightandroid.load.async-unverified', expect.anything());
+      });
+
+      it('logs async-unverified with the device error when the page failed to load', async () => {
+        const { adapter, logger } = makeAdapter({
+          ...accepted,
+          'GET /kiosk/status': ok({ currentUrl: 'about:blank', lastLoad: { url: URL_, ok: false, error: 'net::ERR_CONNECTION_REFUSED', atMs: 9 } }),
+        });
+
+        const result = await adapter.load('/piano', { queue: 'plex:1' }, { verifyAsync: true });
+
+        expect(result.ok).toBe(true);
+        await vi.waitFor(() => expect(logger.warn).toHaveBeenCalledWith('daylightandroid.load.async-unverified', {
+          fullUrl: URL_,
+          verified: false,
+          currentUrl: 'about:blank',
+          reason: 'net::ERR_CONNECTION_REFUSED',
+        }));
+      });
+
+      it('logs async-unverified when lastLoad never reports the URL', async () => {
+        let polls = 0;
+        const { adapter, logger } = makeAdapter({
+          ...accepted,
+          'GET /kiosk/status': () => { polls++; return ok({ currentUrl: 'https://daylight.test/old', lastLoad: { url: 'https://daylight.test/old', ok: true } }); },
+        });
+
+        await adapter.load('/piano', { queue: 'plex:1' }, { verifyAsync: true });
+
+        await vi.waitFor(() => expect(logger.warn).toHaveBeenCalledWith('daylightandroid.load.async-unverified', {
+          fullUrl: URL_,
+          verified: false,
+          currentUrl: 'https://daylight.test/old',
+          reason: 'lastLoad never reported this URL',
+        }));
+        expect(polls).toBe(50);
+      });
+
+      it('keeps polling through a status read that fails', async () => {
+        let polls = 0;
+        const { adapter, logger } = makeAdapter({
+          ...accepted,
+          'GET /kiosk/status': () => (++polls < 2 ? fail('TIMEOUT', 'timeout') : ok({ lastLoad: { url: URL_, ok: true } })),
+        });
+        await adapter.load('/piano', { queue: 'plex:1' }, { verifyAsync: true });
+        await vi.waitFor(() => expect(logger.info).toHaveBeenCalledWith('daylightandroid.load.async-verified', expect.any(Object)));
+      });
+
+      it('logs async-verify-failed when the verification itself throws', async () => {
+        const { adapter, rest, logger } = makeAdapter(accepted);
+        rest.get.mockRejectedValue(new Error('boom'));
+
+        const result = await adapter.load('/piano', { queue: 'plex:1' }, { verifyAsync: true });
+
+        expect(result.ok).toBe(true);
+        await vi.waitFor(() => expect(logger.warn).toHaveBeenCalledWith('daylightandroid.load.async-verify-failed', {
+          fullUrl: URL_, error: 'boom',
+        }));
+      });
+
+      it('a refused acknowledgement fails the load and starts no verification', async () => {
+        const { adapter, rest } = makeAdapter({ 'POST /kiosk/load': fail('COMMAND_REJECTED', 'Command was rejected: bad_request') });
+        const result = await adapter.load('/piano', {}, { verifyAsync: true });
+        expect(result).toMatchObject({ ok: false, error: 'Command was rejected: bad_request', attempts: 1 });
+        expect(routes(rest)).toEqual(['POST /kiosk/load']);
+      });
     });
 
     it('reports a load the device refused without retrying', async () => {
@@ -181,7 +289,7 @@ describe('DaylightAndroidContentAdapter', () => {
     it('reports the fields callers read, under their existing names', async () => {
       const { adapter } = makeAdapter({
         'GET /kiosk/status': ok({ ready: true, currentUrl: 'https://daylight.test/piano', screenOn: true, foreground: 'net.example.kiosk' }),
-        'GET /status': ok({ device: 'piano-tablet', payloadVersion: '1.4.0', shellVersionCode: 7 }),
+        'GET /status': ok({ device: 'piano-tablet', appVersion: '2.1.0', payloadVersion: '1.4.0', shellVersionCode: 7 }),
       });
 
       await expect(adapter.getStatus()).resolves.toEqual({
@@ -189,8 +297,16 @@ describe('DaylightAndroidContentAdapter', () => {
         provider: 'daylight-android',
         currentUrl: 'https://daylight.test/piano',
         screenOn: true,
-        appVersion: '1.4.0',
+        appVersion: '2.1.0',
       });
+    });
+
+    it('falls back to the payload version when the shell reports no appVersion', async () => {
+      const { adapter } = makeAdapter({
+        'GET /kiosk/status': ok({ ready: true }),
+        'GET /status': ok({ payloadVersion: '1.4.0' }),
+      });
+      await expect(adapter.getStatus()).resolves.toMatchObject({ appVersion: '1.4.0' });
     });
 
     it('still reports status when the version read fails', async () => {
