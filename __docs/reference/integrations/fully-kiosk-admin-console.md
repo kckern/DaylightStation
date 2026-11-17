@@ -1,7 +1,9 @@
 # Fully Kiosk Admin Console
 
 The Admin app provides a server-proxied control surface for every registered
-device whose `content_control.provider` is `fully-kiosk`:
+device whose `content_control.provider` is `fully-kiosk`, and for devices on
+the DaylightStation Android kiosk app (`daylight-android`, see
+[below](#devices-on-the-android-kiosk-app)):
 
 ```text
 /admin/household/devices/{deviceId}/fully-kiosk
@@ -61,6 +63,37 @@ from current household configuration for every request.
   file/APK management, and credential editing are outside this surface.
 - Live automated verification is read-only. Commands that affect a physical
   device require an operator to use the console.
+
+## Devices on the Android kiosk app
+
+A device whose `content_control.provider` is `daylight-android` uses the same
+console page and the same Admin API path (the `fully-kiosk` path segment is
+historical). Its entry on the device page reads **Kiosk Console**. The backend
+looks up the device's provider on every request and sends the call to
+`DaylightAndroidRemoteAdministrationAdapter`; every other device id goes to the
+Fully adapter, so a fleet can hold both providers at once and Fully devices
+behave as before.
+
+What differs for these devices:
+
+- **Actions.** The action names are the same. `screensaver-start` and
+  `screensaver-stop` are refused with `INVALID_ACTION`, since the app has no
+  screensaver. `maintenance-enable` unlocks the kiosk for a fixed window, after
+  which the app relocks itself; `maintenance-disable` locks it.
+- **Status.** The summary uses the same field names. Fields the app does not
+  report (storage, orientation, licence, screensaver state) are empty.
+- **Settings.** The list shows the app's own setting keys, which are dotted
+  (for example `webview.startUrl`). The editable set in the console is curated
+  for Fully's setting names, so these keys are read-only there.
+- **Errors.** Gateway failures carry `DAYLIGHT_ANDROID_*` codes
+  (`_TIMEOUT` 504, `_UNREACHABLE` / `_AUTH_REJECTED` / `_COMMAND_REJECTED` /
+  `_INVALID_RESPONSE` 502, `_CONFIGURATION_ERROR` 503, `_UNSUPPORTED` 501),
+  beside the `FKB_*` codes Fully devices return.
+- **Credentials.** The per-device token stays server-side, is sent only as a
+  request header, and is never logged.
+
+Device configuration is described in
+[ADB integration](./adb.md#the-daylight-android-provider).
 
 The in-page JavaScript bridge is a separate integration described in
 [Fully Kiosk JavaScript API](./fully-kiosk-js.md). The Admin console uses the

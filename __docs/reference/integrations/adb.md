@@ -98,6 +98,99 @@ Without a `fallback` block, the device uses the raw FullyKiosk adapter with no r
 3. Wraps in `ResilientContentAdapter` with the same ADB adapter (for connection-error recovery)
 4. If no fallback: creates raw `FullyKioskContentAdapter` (no ADB)
 
+### The `daylight-android` provider
+
+A kiosk device runs either Fully Kiosk Browser or the DaylightStation Android
+kiosk app. `content_control.provider` says which, and switching a device from
+one to the other is a change to that one field (and `volume.provider`).
+
+```yaml
+devices:
+  piano-tablet:
+    type: tablet
+    content_control:
+      provider: daylight-android     # or: fully-kiosk
+      host: {device-address}
+      port: {control-port}           # the app's control API port
+      auth_ref: daylight-android     # household auth file, see below
+      fallback:                      # optional
+        provider: adb
+        host: {device-address}
+        port: {adb-port}
+    volume:
+      provider: daylight-android
+```
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `provider` | Yes | `daylight-android` |
+| `host` | Yes | Device address on the LAN |
+| `port` | No | Control API port; the client falls back to the app's default |
+| `auth_ref` | Yes | Name of the household auth file holding the token |
+| `maintenance_ms` | No | How long the Admin console's "maintenance on" leaves the kiosk unlocked before it relocks itself (default 15 minutes) |
+| `fallback` | No | An `adb` block. Used for the camera probe and as the reboot fallback only |
+
+**Token.** The household auth file named by `auth_ref` holds one entry per
+device id, and the token is read from the entry that matches the device:
+
+```yaml
+# household auth file "daylight-android"
+piano-tablet:
+  host: {device-address}
+  token: {control-api-token}
+```
+
+The token is sent as the `X-Daylight-Token` request header. It is never put in
+a URL and never logged; request logs carry the route and the names of body and
+query fields, not their values. A device with no entry in the file is built
+with an empty token and logs `deviceFactory.noAuthToken`; every request to it
+then fails as `AUTH_REJECTED`.
+
+**What the factory builds.** `ConfigDeviceBlueprintFactory` creates a
+`DaylightAndroidContentAdapter`, and a `DaylightAndroidVolumeAdapter` when the
+`volume:` block names the provider. The volume adapter reuses the content
+control address and token, so `volume.provider: daylight-android` is refused on
+a device whose content control is another provider. An `adb` fallback is handed
+to the content adapter directly. `ResilientContentAdapter` is not used: it
+recovers by relaunching Fully's activity, and the Android kiosk app restarts
+itself through its own control API.
+
+**How it differs from the Fully adapter.** The public methods and the result
+fields are the same (`load`, `loadStartUrl`, `getStatus`, `prepareForContent`,
+`screenOn`, `screenOff`, `reboot`, `healAudioBridge`, `getMetrics`;
+`getStatus().provider` is `daylight-android`). The behaviour behind them is
+shorter, because the app confirms what Fully could only acknowledge:
+
+| Operation | Fully Kiosk | Android kiosk app |
+|-----------|-------------|-------------------|
+| `load` | `loadURL` is acknowledged on receipt; the adapter polls `currentUrl` to verify, or defers that with `verifyAsync` | `POST /kiosk/load` answers after the page's main frame has finished. A success is `verified: true`; `verifyAsync` has no effect. Only an unreachable device is retried |
+| `prepareForContent` | screen on, foreground-and-poll, disable Fully's motion and acoustic detection, ADB mic check, ADB force-restart when the mic is blocked, relaunch companion apps, camera probe | `POST /screen {on:true}`, `POST /kiosk/foreground`, then for the `full` profile on a device with the `mic-bridge` capability a mic check and bridge restart, then the same ADB camera probe |
+| `healAudioBridge` | force-stop and relaunch each companion app | restart the in-app mic bridge when another process holds the mic, or when forced; `companions` is always empty |
+| `reboot` | ADB when configured, else Fully's `rebootDevice` | `POST /device/reboot`; ADB when the app cannot reboot the device (it needs device owner) or does not answer |
+| Volume read | parsed out of `deviceInfo` | `GET /volume`, which also reports the hardware index and its maximum |
+
+**Result codes.** `DaylightAndroidRestClient` returns `{ ok: true, data }` or
+`{ ok: false, code, error }`, the shape the Fully client returns:
+
+| Condition | `code` |
+|-----------|--------|
+| HTTP 401 | `AUTH_REJECTED` |
+| HTTP 501 | `UNSUPPORTED` |
+| Other HTTP 4xx, or a body with `ok: false` | `COMMAND_REJECTED` |
+| HTTP 5xx | `HTTP_ERROR` |
+| Timeout | `TIMEOUT` |
+| Connection refused, no route | `UNREACHABLE` |
+| Not JSON where JSON was expected | `INVALID_RESPONSE` |
+
+Log events from these adapters are prefixed `daylightandroid.` (for example
+`daylightandroid.rest.response`, `daylightandroid.load.failed`,
+`daylightandroid.prepareForContent.micRestarted`).
+
+The Admin console for these devices is described in
+[Fully Kiosk Admin Console](./fully-kiosk-admin-console.md#devices-on-the-android-kiosk-app),
+and the in-page bridge in
+[Fully Kiosk JavaScript API](./fully-kiosk-js.md#the-windowdaylight-bridge).
+
 ---
 
 ## Backend Files
@@ -108,6 +201,10 @@ Without a `fallback` block, the device uses the raw FullyKiosk adapter with no r
 | `__backend/src/1_adapters/devices/ResilientContentAdapter.mjs` | Wraps primary + ADB; triggers recovery on connection errors |
 | `__backend/src/1_adapters/devices/FullyKioskContentAdapter.mjs` | Primary content control via FKB REST API |
 | `__backend/src/3_applications/devices/services/DeviceFactory.mjs` | Reads config, wires adapters together |
+| `__backend/src/1_adapters/devices/DaylightAndroidRestClient.mjs` | Control API client for the Android kiosk app (token header, result codes) |
+| `__backend/src/1_adapters/devices/DaylightAndroidContentAdapter.mjs` | Content control via the Android kiosk app |
+| `__backend/src/1_adapters/devices/DaylightAndroidVolumeAdapter.mjs` | Stream volume via the Android kiosk app |
+| `__backend/src/5_composition/modules/ConfigDeviceBlueprintFactory.mjs` | Selects the adapters for a device from its `provider` fields |
 
 ### AdbAdapter API
 

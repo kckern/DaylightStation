@@ -127,6 +127,39 @@ Result: Daylight loads on boot. After any launched app exits, FKB fires `onResum
 
 ---
 
+## The `window.daylight` bridge
+
+The DaylightStation Android kiosk app injects `window.daylight` instead of
+`fully`. Page code does not call either object directly: it goes through
+`frontend/src/lib/fkb.js`, which uses `window.daylight` when it is present and
+`window.fully` otherwise. When both exist, `daylight` wins, and a call the
+daylight bridge lacks is reported as unavailable; it does not fall through to
+Fully. The exported functions keep the same names and signatures on both.
+
+| `fkb.js` export | On Fully | On the Android kiosk app |
+|-----------------|----------|--------------------------|
+| `isFKBAvailable()` | a `fully` object with a control method | a `daylight` object with `launch`, `screen` or `setBackMode` |
+| `launchApp(pkg)` | `fully.startApplication(pkg)` | `daylight.launch('{"package":pkg}')` |
+| `startApplication(pkg, activity)` | `fully.startApplication(pkg, activity)` | `daylight.launch('{"package":pkg,"activity":activity}')` |
+| `launchAndroidTarget(target)`, `launchIntent(...)` | `fully.startIntent(uri)` | `daylight.launch('{"intent":uri}')`, with the same encoded intent URI |
+| `screenOff()` / `screenOn()` | `fully.turnScreenOff()` / `turnScreenOn()` | `daylight.screen(false)` / `daylight.screen(true)` |
+| `onResume(fn)`, `scheduleDismissAfterLaunch(fn)` | `fully.bind('onResume', ...)` | `daylight:resume` event on `window` |
+| `bindBackButton()` | `fully.bind('onBackButton', ...)` | `daylight.setBackMode('page')`, then the `daylight:back` event |
+
+The app reports lifecycle changes as DOM `CustomEvent`s on `window`:
+`daylight:resume` (`detail: { awayMs, from }`), `daylight:pause`,
+`daylight:back`, `daylight:screen`, `daylight:key` and `daylight:network`.
+`fkb.js` listens for the first and third.
+
+A `daylight` call answers `false` when the app did not accept the request, and
+`fkb.js` returns `false` for it and logs `fkb.<call>.rejected`. Fully's calls
+answer nothing, so on Fully a `true` still means "attempted".
+
+Every `fkb.<call>.unavailable` warning carries `bridge: 'daylight' | 'fully' |
+'absent'`, which says which bridge the page found.
+
+---
+
 ## Notes
 
 - The `fully` object is only present when the page is loaded inside FKB. Guard all calls with `typeof fully !== "undefined"` if the same code runs in a desktop browser.

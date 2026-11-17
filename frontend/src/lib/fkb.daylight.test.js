@@ -338,7 +338,7 @@ describe('fkb with no bridge', () => {
     expect(warned('fkb.intent.unavailable')).toEqual([{ packageName: PKG, bridge: 'absent' }]);
     expect(warned('fkb.screenOff.unavailable')).toEqual([{ bridge: 'absent' }]);
     expect(warned('fkb.screenOn.unavailable')).toEqual([{ bridge: 'absent' }]);
-    // Event binding stays silent off-kiosk, as before: an ordinary browser has
+    // Event binding logs nothing off-kiosk, as before: an ordinary browser has
     // no bridge and startup must not warn about that on every page load.
     expect(warned('fkb.bind.unavailable')).toEqual([]);
     expect(listeners.filter(([type]) => type.startsWith('daylight:'))).toEqual([]);
