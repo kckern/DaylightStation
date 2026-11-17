@@ -48,7 +48,8 @@ export function deriveGratitudeState(events = [], { now = null } = {}) {
         if (event.verdict === 'uncertain') {
           state.phase = 'retry'; state.reason = 'unclear';
           // After a follow-up the retry box holds both answers, so the child edits the whole thing.
-          if (state.submitted?.followUpOf && state.assessText !== state.submitted.text) state.draft = { ...state.draft, text: state.assessText, takeId: null };
+          // A spoken follow-up's recording holds only the second answer, so the joined text counts as edited.
+          if (state.submitted?.followUpOf && state.assessText !== state.submitted.text) state.draft = { ...state.draft, text: state.assessText, takeId: null, edited: true };
         }
         break;
       case 'refused': state.phase = 'cooldown'; state.retryAt = event.retryAt; state.reason = event.reason; break;
