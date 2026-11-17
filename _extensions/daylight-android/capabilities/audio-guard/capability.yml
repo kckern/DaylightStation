@@ -1,0 +1,8 @@
+# Fail-closed audio routing for a device whose sound must leave by one Bluetooth
+# speaker: clamps the built-in speaker, holds the A2DP volume floor, keeps the
+# speaker connected, closes the synth's output gate when the route is wrong.
+entry: net.kckern.daylight.cap.audioguard.AudioGuardCapability
+permissions:
+  - android.permission.BLUETOOTH
+  - android.permission.BLUETOOTH_ADMIN
+  - android.permission.MODIFY_AUDIO_SETTINGS
