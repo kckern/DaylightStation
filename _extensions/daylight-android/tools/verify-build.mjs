@@ -7,6 +7,7 @@
 //   node tools/verify-build.mjs piano --legacy   (also compare with tools/legacy-permissions.yml)
 import { execFileSync } from 'node:child_process';
 import { existsSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parse } from 'yaml';
@@ -98,7 +99,7 @@ if (device.capabilities.includes('synth')) {
   for (const abi of device.abis || []) {
     let lib = null;
     try { lib = execFileSync('unzip', ['-p', apk, `lib/${abi}/libpianobridge.so`], { maxBuffer: 512 * 1024 * 1024 }); } catch { /* reported below */ }
-    const failure = synthLibraryFailure(lib);
+    const failure = synthLibraryFailure(lib, homedir());
     if (failure) failures.push(`${abi}: ${failure}`);
     for (const dep of ['liboboe.so', 'libc++_shared.so']) {
       check(entries.includes(`lib/${abi}/${dep}`), `${abi}: the synth needs ${dep} in the APK`);

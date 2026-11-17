@@ -28,7 +28,12 @@ android {
             cmake {
                 cppFlags '-std=c++17'
                 // Oboe's prefab package is built against c++_shared; the STL must match.
-                arguments '-DANDROID_STL=c++_shared', "-DSFIZZ_DIR=${sfizzDir}"
+                // CMakeLists.txt builds every variant optimized, whatever build type the
+                // Android plugin asks for.
+                arguments '-DANDROID_STL=c++_shared', "-DSFIZZ_DIR=${sfizzDir}",
+                        // Prefixes CMakeLists.txt maps out of __FILE__ strings and debug info.
+                        "-DDAYLIGHT_ROOT=${rootProject.projectDir}",
+                        "-DDAYLIGHT_GRADLE_HOME=${gradle.gradleUserHomeDir}"
             }
         }
     }

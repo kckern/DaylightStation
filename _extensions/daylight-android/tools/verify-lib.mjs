@@ -37,18 +37,32 @@ export function bakedPayloadFailure(bakedJarBytes, shaFileText) {
 }
 
 /**
- * Is this libpianobridge.so the real synth? Three things a library built without
- * the sampler cannot show: the JNI exports under the class name the APK's
- * PianoEngine has, strings that exist only in sfizz's own code, and a size no
- * engine-less build reaches (that one is a few tens of kilobytes).
+ * Is this libpianobridge.so the real synth, built the way it ships? What a wrong
+ * library cannot show:
+ * - the JNI exports under the class name the APK's PianoEngine has;
+ * - the log line SfizzEngine.cpp compiles only with HAVE_SFIZZ defined, which also
+ *   makes it call into sfizz, so the library cannot link without the sampler (sfizz's
+ *   own "[sfizz]" messages are debug output and are gone from an optimized build);
+ * - a size between the two bounds below. Measured, stripped: the optimized library is
+ *   about 0.9 MB (armeabi-v7a) and 1.3 MB (arm64-v8a); CMake's unoptimized Debug build
+ *   is 2.4 MB and 4.2 MB; a build without the sampler is a few tens of kilobytes;
+ * - no path under the build machine's home directory (`homeDir`, when given).
  * Returns null when it is, otherwise the failure message.
  */
-export function synthLibraryFailure(bytes) {
+export const SYNTH_SFIZZ_MARKER = 'SfizzEngine created (sfizz vendored)';
+export const SYNTH_LIBRARY_MIN_BYTES = 512 * 1024;
+export const SYNTH_LIBRARY_MAX_BYTES = 2 * 1024 * 1024;
+
+export function synthLibraryFailure(bytes, homeDir) {
   if (!bytes || bytes.length === 0) return 'the synth library is missing';
   if (!bytes.includes('Java_net_kckern_daylight_cap_synth_shell_PianoEngine_nativeLoadPreset')) {
     return 'the synth library has no JNI exports for net.kckern.daylight.cap.synth.shell.PianoEngine';
   }
-  if (!bytes.includes('[sfizz]')) return 'sfizz is not linked into the synth library: it would make no sound';
-  if (bytes.length < 1024 * 1024) return `the synth library is too small to hold the sampler (${bytes.length} bytes)`;
+  if (!bytes.includes(SYNTH_SFIZZ_MARKER)) return 'sfizz is not linked into the synth library: it would make no sound';
+  if (bytes.length < SYNTH_LIBRARY_MIN_BYTES) return `the synth library is too small to hold the sampler (${bytes.length} bytes)`;
+  if (bytes.length > SYNTH_LIBRARY_MAX_BYTES) {
+    return `the synth library is ${bytes.length} bytes, the size of an unoptimized or unstripped build (limit ${SYNTH_LIBRARY_MAX_BYTES})`;
+  }
+  if (homeDir && bytes.includes(homeDir)) return 'the synth library names source paths on the build machine';
   return null;
 }

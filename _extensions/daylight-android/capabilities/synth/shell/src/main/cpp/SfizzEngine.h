@@ -1,8 +1,7 @@
 // SfizzEngine.h — SFZ-sampler engine backed by sfizz.
 //
-// STATUS: UNBUILT SCAFFOLD. Real sfizz calls are compiled only when HAVE_SFIZZ
-// is defined (i.e. after vendoring sfizz and enabling it in CMakeLists.txt).
-// Otherwise this engine renders silence and logs once.
+// Built and shipped. CMakeLists.txt requires the vendored sfizz tree and defines
+// HAVE_SFIZZ, so the sfizz calls are always compiled in.
 #pragma once
 
 #include "Engine.h"

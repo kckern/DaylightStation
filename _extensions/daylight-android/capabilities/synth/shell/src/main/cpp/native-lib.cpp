@@ -1,8 +1,8 @@
 // native-lib.cpp — JNI bindings mapping PianoEngine.java natives onto the
 // VoiceHost + OboeOutput bundle.
 //
-// STATUS: UNBUILT SCAFFOLD. Self-consistent; compiles once Oboe is found.
-// sfizz/dexed render silence until vendored (HAVE_SFIZZ / HAVE_DEXED).
+// Built and shipped with sfizz linked in (HAVE_SFIZZ is always defined by this
+// build). The Dexed engine is compiled out until its sources are vendored.
 //
 // The Java side passes an opaque `long handle` that is a pointer to a NativeBundle
 // allocated in nativeInit() and freed in nativeRelease().

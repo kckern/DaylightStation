@@ -42,6 +42,8 @@ public final class Loopback {
     static final int PROBE_CHANNEL = 15;   // 0-based: MIDI channel 16
     static final int PROBE_VELOCITY = 1;
     static final long WINDOW_MS = 1500;
+    /** Why a probe was not sent: sendMidi refuses only when the write port is closed or just failed. */
+    static final String REASON_WRITE_PORT_CLOSED = "write_port_closed";
 
     private final MidiLink core;
     /** Probes in flight, keyed by sequence; value = send time. */
@@ -102,7 +104,11 @@ public final class Loopback {
         boolean sent = core.sendMidi(on) && core.sendMidi(off);
         try {
             o.put("ok", true).put("probe", id).put("sent", sent).put("writeOpen", core.isMidiWriteOpen());
-            if (!sent) { pending.remove(id); consecutiveMisses++; o.put("error", "write port refused the probe"); }
+            if (!sent) {
+                pending.remove(id);
+                consecutiveMisses++;
+                o.put("error", "write port refused the probe").put("reason", REASON_WRITE_PORT_CLOSED);
+            }
         } catch (Exception ignored) { }
         return o;
     }
@@ -113,6 +119,17 @@ public final class Loopback {
      */
     public JSONObject probeAndWait() {
         JSONObject o = probe();
+        if (!o.optBoolean("sent")) {
+            // Nothing was written, so there is no echo to wait for. probe() already took the
+            // probe out of the pending set and counted the miss; reading "not pending" as an
+            // echo here is how a closed write port used to answer echoed:true.
+            try {
+                o.put("echoed", false);
+                o.put("rttMs", JSONObject.NULL);
+                o.put("verdict", "NOT SENT: the MIDI write port is closed, so nothing reached the piano");
+            } catch (Exception ignored) { }
+            return o;
+        }
         long id = o.optLong("probe");
         long deadline = System.currentTimeMillis() + WINDOW_MS;
         while (pending.containsKey(id) && System.currentTimeMillis() < deadline) {

@@ -1,4 +1,9 @@
-// SfizzEngine.cpp — see header. Silent fallback when HAVE_SFIZZ is undefined.
+// SfizzEngine.cpp — see header.
+//
+// This build always defines HAVE_SFIZZ: CMakeLists.txt stops when the vendored
+// sfizz tree is missing. The #else branches below are what the piano-bridge source
+// carried for a build without sfizz; they are not compiled here and are kept only
+// so the file stays comparable with its origin.
 #include "SfizzEngine.h"
 
 #include <android/log.h>

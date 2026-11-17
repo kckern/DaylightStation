@@ -195,6 +195,12 @@ public final class MidiBridgeCapability implements Capability {
         int vel = Math.max(1, Math.min(127, Replies.intParam(req, "velocity", 127)));
         int ms = Math.max(50, Math.min(5000, Replies.intParam(req, "ms", 700)));
         boolean vOk = l.sendMidi(new byte[] { (byte) 0xB0, 0x07, 0x7F });
+        if (!vOk) {
+            // No write port: nothing to play and nothing to verify.
+            Diag.log(TAG, "/tone " + req.remote + " refused: write port closed");
+            return Replies.json(Replies.err(Loopback.REASON_WRITE_PORT_CLOSED)
+                    .put("note", note).put("velocity", vel).put("ms", ms).put("sent", false).put("echoed", false));
+        }
         boolean onOk = l.sendMidi(new byte[] { (byte) 0x90, (byte) note, (byte) vel });
         try { Thread.sleep(ms); } catch (InterruptedException ignored) { }
         boolean offOk = l.sendMidi(new byte[] { (byte) 0x80, (byte) note, 0 });

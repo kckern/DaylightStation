@@ -7,10 +7,12 @@ import android.util.Log;
  * (VoiceHost + OboeOutput, see src/main/cpp). All audio work happens in C++;
  * this class only marshals calls across the JNI boundary.
  *
- * The native methods are implemented in native-lib.cpp. When sfizz/dexed are
- * not yet vendored (HAVE_SFIZZ / HAVE_DEXED undefined), the native engines
- * render SILENCE rather than failing — so these calls always succeed and the
- * control/transport plumbing can be exercised end-to-end before the DSP exists.
+ * The native methods are implemented in native-lib.cpp. The library is always built
+ * with sfizz linked in: the build stops when the vendored sfizz tree is missing, and
+ * tools/verify-build.mjs refuses an APK whose library lacks it. A preset that names
+ * the "sfizz" engine therefore either loads and sounds or reports the failure.
+ * The Dexed engine is still compiled out (HAVE_DEXED undefined): a preset that names
+ * "dexed" loads and renders nothing.
  */
 public final class PianoEngine {
 

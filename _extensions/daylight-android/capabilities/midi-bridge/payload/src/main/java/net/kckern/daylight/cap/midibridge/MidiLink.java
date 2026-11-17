@@ -316,9 +316,7 @@ public class MidiLink {
                 if (bleConnector != null) bleConnector.connectNow();
                 waitConnected(15000);
             }));
-            boolean fixed = verifyEcho();
-            o.put("fixed", fixed).put("recoveredAt", fixed ? "L2" : JSONObject.NULL).put("steps", steps);
-            if (!fixed) o.put("verdict", "STILL DOWN after radio bounce — likely physical (JamCorder/USB/piano power)");
+            resetVerdict(o, verifyEcho(), "L2").put("steps", steps);
             return finishReset(o);
         } catch (Throwable t) {
             try { o.put("error", t.getClass().getSimpleName() + ": " + t.getMessage()).put("steps", steps); } catch (Exception ignored) {}
@@ -344,7 +342,24 @@ public class MidiLink {
         catch (Exception e) { try { s.put("step", name).put("error", e.getMessage()); } catch (Exception ignored) {} }
         return s;
     }
-    private boolean verifyEcho() { return loopback != null && loopback.probeAndWait().optBoolean("echoed"); }
+    boolean verifyEcho() { return loopback != null && loopback.probeAndWait().optBoolean("echoed"); }
+
+    /** The last rung's verdict. */
+    org.json.JSONObject resetVerdict(boolean fixed, String rung) throws org.json.JSONException {
+        return resetVerdict(new org.json.JSONObject(), fixed, rung);
+    }
+
+    private org.json.JSONObject resetVerdict(org.json.JSONObject o, boolean fixed, String rung) throws org.json.JSONException {
+        o.put("fixed", fixed).put("recoveredAt", fixed ? rung : JSONObject.NULL);
+        if (!fixed && !midiWriteOpen) {
+            // No probe could be written, so the echo check says nothing about the piano.
+            o.put("reason", Loopback.REASON_WRITE_PORT_CLOSED);
+            o.put("verdict", "STILL DOWN: the MIDI write port did not open after the reset");
+        } else if (!fixed) {
+            o.put("verdict", "STILL DOWN after radio bounce — likely physical (JamCorder/USB/piano power)");
+        }
+        return o;
+    }
     private void sleepMs(long ms) { try { Thread.sleep(ms); } catch (InterruptedException ignored) {} }
     private void waitConnected(long budgetMs) {
         long end = System.currentTimeMillis() + budgetMs;
