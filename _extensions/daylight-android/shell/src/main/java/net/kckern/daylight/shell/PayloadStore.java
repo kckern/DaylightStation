@@ -176,14 +176,26 @@ public final class PayloadStore {
 
     // ── plumbing ────────────────────────────────────────────────────────────
 
-    String recoveryReason() { return readPointer("last-recovery"); }
+    synchronized String recoveryReason() {
+        String pending = readPointer("recovery-pending");
+        return pending != null ? pending : readPointer("last-recovery");
+    }
     boolean recoveryPending() { return new File(dir, "recovery-pending").exists(); }
     synchronized void recordRecovery(String reason) throws IOException {
         writePointer("recovery-pending", reason);
-        writePointer("last-recovery", reason);
+    }
+
+    /** Recovery starts from the APK and must not retain a route back to a fenced payload. */
+    synchronized void selectBakedForRecovery(String jar) throws IOException {
+        if (!jar.startsWith(BAKED_PREFIX) || !new File(dir, jar).isFile()) {
+            throw new IOException("missing baked recovery payload: " + jar);
+        }
+        Files.deleteIfExists(new File(dir, "previous").toPath());
+        writePointer("current", jar);
     }
     synchronized void finishRecovery() throws IOException {
-        Files.deleteIfExists(new File(dir, "recovery-pending").toPath());
+        Files.move(new File(dir, "recovery-pending").toPath(), new File(dir, "last-recovery").toPath(),
+                java.nio.file.StandardCopyOption.REPLACE_EXISTING, java.nio.file.StandardCopyOption.ATOMIC_MOVE);
     }
 
     private File bootsFile(String jar) { return new File(dir, BOOTS_PREFIX + jar); }

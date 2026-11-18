@@ -138,7 +138,7 @@ public final class PayloadLoader {
             String name = bakedName();
             try {
                 extractBaked(name);
-                store.activate(name);
+                store.selectBakedForRecovery(name);
                 store.recordShellStamp(shellStamp);
                 store.recordBoot(name, now);
                 bootsThisPayload = store.recentBoots(name, now);

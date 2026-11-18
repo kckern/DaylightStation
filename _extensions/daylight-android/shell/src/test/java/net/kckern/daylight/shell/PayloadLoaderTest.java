@@ -123,6 +123,38 @@ public class PayloadLoaderTest {
         assertEquals(BAKED_V1, recovered.activeJar());
         assertEquals(reason, recovered.status().getString("recoveryReason"));
         assertFalse(recovered.store().recoveryPending());
+        assertNull(recovered.store().previous());
+        assertNull(h.last("p-hang.jar"));
+        recovered.shutdown();
+        h.jar(BAKED_V1, "throw");
+        PayloadLoader subsequent = booted("1");
+        assertNull(subsequent.active());
+        assertNull(h.last("p-hang.jar"));
+    }
+
+    @Test public void interruptedRecoveryDiscardsStalePreviousAndPreservesLatestReason() throws Exception {
+        h.jar("p-fenced.jar", "good:fenced");
+        h.jar(BAKED_V1, "good:baked");
+        existing("1", "p-fenced.jar", BAKED_V1);
+        // Disk state after the pending marker was renamed, before completion.
+        h.jar("last-recovery", "older diagnostic");
+        h.jar("recovery-pending", "latest diagnostic");
+        PayloadStore store = new PayloadStore(h.dir);
+        assertEquals("latest diagnostic", store.recoveryReason());
+
+        h.baked = "throw";
+        PayloadLoader failedRecovery = booted("1");
+        assertNull(failedRecovery.active());
+        assertNull(store.previous());
+        assertTrue(store.recoveryPending());
+        assertEquals("latest diagnostic", failedRecovery.status().getString("recoveryReason"));
+
+        h.baked = "good:baked";
+        PayloadLoader recovered = booted("1");
+        assertEquals(BAKED_V1, recovered.activeJar());
+        assertFalse(store.recoveryPending());
+        assertEquals("latest diagnostic", new PayloadStore(h.dir).recoveryReason());
+        assertNull(h.last("p-fenced.jar"));
     }
 
     @Test public void failedStartKeepsExclusiveListenerUntilStopReturns() throws Exception {
