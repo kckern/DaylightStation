@@ -9,6 +9,7 @@ function setup() {
   moveFoods:vi.fn(async()=>({committed:true,undoToken:'meal-token',movedCount:1})),
   suggestMealGroups:vi.fn(async()=>({committed:false,groups:[]})),
   processNutritionInput:vi.fn(async()=>({committed:true})),
+  processDayInput:vi.fn(async()=>({committed:true,outcome:'committed',kind:'moved'})),
   runNutritionOperation:vi.fn(async(_u,_id,_payload,action)=>action()),
  };
  const app=express();app.use(createHealthRouter({healthOperations,logger:{info(){},warn(){},error(){},debug(){}}}));return {app,healthOperations};
@@ -34,5 +35,66 @@ describe('meal command HTTP adapter',()=>{
   const {app,healthOperations:ops}=setup();const input={type:'voice',content:'audio',date:'2026-09-06',bucket:'evening',selectedIds:['a'],clarification:'a',operationId:'capture'};
   expect((await request(app).post('/nutrition/input').send(input)).status).toBe(200);expect(ops.runNutritionOperation.mock.calls[0][2]).toMatchObject({selectedIds:['a'],clarification:'a'});expect(ops.processNutritionInput).toHaveBeenCalledWith(expect.objectContaining({selectedIds:['a'],clarification:'a'}));
   expect((await request(app).post('/nutrition/input').send({...input,selectedIds:['../bad']})).status).toBe(400);
+ });
+ describe('day input',()=>{
+  const body={type:'text',content:'move that',date:'2026-09-06',operationId:'day',resolved:{toDate:'2026-09-01'}};
+  const post=(app,sent)=>request(app).post('/nutrition/day-input').send(sent);
+  it('routes day input through an idempotent operation and validates it',async()=>{
+   const {app,healthOperations:ops}=setup();
+   const response=await post(app,body);
+   expect(response.status).toBe(200);expect(response.body.kind).toBe('moved');
+   expect(ops.runNutritionOperation.mock.calls[0][1]).toBe('day');
+   expect(ops.runNutritionOperation.mock.calls[0][2]).toEqual({operation:'day-input',type:'text',content:'move that',date:'2026-09-06',resolved:{toDate:'2026-09-01'}});
+   expect(ops.processDayInput).toHaveBeenCalledWith({userId:'u',type:'text',content:'move that',date:'2026-09-06',operationId:'day',resolved:{toDate:'2026-09-01'}});
+   ops.processDayInput.mockClear();
+   for(const bad of [{type:'image'},{date:'bad'},{content:'  '},{type:'voice',content:'not a recording'}]) expect((await post(app,{...body,...bad})).status).toBe(400);
+   expect(ops.processDayInput).not.toHaveBeenCalled();
+  });
+  it('requires a valid operation ID',async()=>{
+   const {app,healthOperations:ops}=setup();const {operationId:_omit,...withoutId}=body;
+   expect((await post(app,withoutId)).status).toBe(400);
+   expect((await post(app,{...body,operationId:'not valid!'})).status).toBe(400);
+   expect((await post(app,{...body,operationId:7})).status).toBe(400);
+   expect(ops.runNutritionOperation).not.toHaveBeenCalled();
+  });
+  it('does not take today from the client',async()=>{
+   const {app,healthOperations:ops}=setup();
+   await post(app,{...body,today:'2099-01-01'});
+   expect(ops.processDayInput.mock.calls[0][0]).not.toHaveProperty('today');
+   expect(ops.runNutritionOperation.mock.calls[0][2]).not.toHaveProperty('today');
+  });
+  it('accepts only string foodId and toDate as a clarification',async()=>{
+   const {app,healthOperations:ops}=setup();
+   for(const resolved of [null,[],'a',{toDate:7},{foodId:null},{foodId:''},{foodId:'a',extra:'b'}]) expect((await post(app,{...body,resolved})).status).toBe(400);
+   expect(ops.processDayInput).not.toHaveBeenCalled();
+   const {resolved:_omit,...plain}=body;
+   expect((await post(app,plain)).status).toBe(200);expect(ops.processDayInput.mock.calls[0][0].resolved).toEqual({});
+  });
+  it('fingerprints a retry the same way whatever order its clarification keys arrive in',async()=>{
+   const {app,healthOperations:ops}=setup();
+   await post(app,{...body,resolved:{foodId:'a',toDate:'2026-09-01'}});await post(app,{...body,resolved:{toDate:'2026-09-01',foodId:'a'}});
+   const [first,second]=ops.runNutritionOperation.mock.calls.map(call=>JSON.stringify(call[2]));
+   expect(second).toBe(first);
+  });
+  it('keeps the transcription failure and its saved recording',async()=>{
+   const {app,healthOperations:ops}=setup();ops.processDayInput.mockRejectedValue(Object.assign(new Error('Could not hear that correction'),{status:502,code:'TRANSCRIBE_FAILED',audioRef:'va_1'}));
+   const response=await post(app,{...body,type:'voice',content:'data:audio/webm;base64,AAAA'});
+   expect(response.status).toBe(502);expect(response.body).toEqual({error:'Could not hear that correction',code:'TRANSCRIBE_FAILED',audioRef:'va_1'});
+  });
+  it('passes on its own refusals',async()=>{
+   const {app,healthOperations:ops}=setup();
+   ops.processDayInput.mockRejectedValueOnce(Object.assign(new Error('This entry changed. Reload before saving.'),{status:409}));
+   expect((await post(app,body)).status).toBe(409);
+   ops.processDayInput.mockRejectedValueOnce(Object.assign(new Error('Day input is unavailable right now'),{status:503,code:'DAY_INPUT_UNAVAILABLE'}));
+   expect((await post(app,body)).body.code).toBe('DAY_INPUT_UNAVAILABLE');
+  });
+  it('does not repeat an upstream provider status or message',async()=>{
+   const {app,healthOperations:ops}=setup();
+   for(const status of [401,429,500,502,503]){
+    ops.processDayInput.mockRejectedValueOnce(Object.assign(new Error('Provider said no'),{status,code:'provider_code'}));
+    const response=await post(app,body);
+    expect(response.status).toBe(500);expect(JSON.stringify(response.body)).not.toContain('rovider');
+   }
+  });
  });
 });

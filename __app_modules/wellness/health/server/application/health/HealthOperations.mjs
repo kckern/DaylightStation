@@ -567,6 +567,8 @@ export class HealthOperations {
     return this.nutritionInput.process({ type, content, userId, bucket, date, audioRef, ...(operationId ? { operationId } : {}), ...(selectedIds !== undefined ? { selectedIds } : {}), ...(clarification !== undefined ? { clarification } : {}), ...(expectedVersions !== undefined ? { expectedVersions } : {}) });
   }
 
+  processDayInput(input) { return this.nutritionInput.processDayInput({ ...input, today: this.today() }); }
+
   runNutritionOperation(userId, operationId, payload, action) {
     return this.nutritionItems?.runOperation ? this.nutritionItems.runOperation(userId, operationId, payload, action) : action();
   }

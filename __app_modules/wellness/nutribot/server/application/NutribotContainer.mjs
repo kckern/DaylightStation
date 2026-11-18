@@ -540,6 +540,10 @@ export class NutribotContainer {
     return this.#getNutritionCapture().getFoodLogReview();
   }
 
+  getDecisionGateway() {
+    return this.#options.decisionGateway || null;
+  }
+
   getGenerateDailyReport() {
     if (!this.#generateDailyReport) {
       this.#generateDailyReport = new GenerateDailyReport({

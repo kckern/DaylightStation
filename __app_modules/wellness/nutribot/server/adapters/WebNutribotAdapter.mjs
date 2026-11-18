@@ -12,6 +12,8 @@
  *   - createStatusIndicator(text)   → returns { messageId, finish(), cancel() }
  */
 
+const dayInputUnavailable = () => Object.assign(new Error('Day input is unavailable right now'), { status: 503, code: 'DAY_INPUT_UNAVAILABLE' });
+
 export class WebNutribotAdapter {
   #inputRouter;
   #foodLogStore;
@@ -20,6 +22,7 @@ export class WebNutribotAdapter {
   #mealInstructions;
   #entryRevisions;
   #dishRevisions;
+  #dayInstructions;
   #transcribeVoice;
 
   /**
@@ -42,6 +45,7 @@ export class WebNutribotAdapter {
     this.#mealInstructions = config.mealInstructions || null;
     this.#entryRevisions = config.entryRevisions || null;
     this.#dishRevisions = config.dishRevisions || null;
+    this.#dayInstructions = config.dayInstructions || null;
     this.#transcribeVoice = config.transcribeVoice || null;
     this.#foodLogStore = config.foodLogStore || null;
     this.#voiceMemoStore = config.voiceMemoStore || null;
@@ -158,6 +162,8 @@ export class WebNutribotAdapter {
     if (this.#mealInstructions && date && bucket && ['text', 'voice'].includes(type)) {
       event.payload.interpretText = text => this.#mealInstructions.execute(userId, { ...input, text });
     }
+    // A day-level capture has already been judged to be new food.
+    if (input.plainCapture) event.payload.interpretText = async () => null;
 
     // Map input type to router event type and payload shape
     let routerType = type;
@@ -418,6 +424,24 @@ export class WebNutribotAdapter {
     if (!this.#dishRevisions) throw Object.assign(new Error('Dish revision is unavailable'), { status: 503 });
     const instruction = await this.#correctionText(userId, audio, input.instruction);
     return this.#dishRevisions.revise(userId, { ...input, instruction });
+  }
+
+  /** One day-level instruction: new food, or a change to what is logged. */
+  async processDayInput({ userId, type, content, date, today, operationId, resolved }) {
+    if (!this.#dayInstructions?.available) throw dayInputUnavailable();
+    const text = await this.#correctionText(userId, type === 'voice' ? content : null, content);
+    return this.#dayInstructions.execute(userId, { text, date, today, operationId, resolved,
+      captureFoods: capture => this.#captureDayFoods(userId, capture) });
+  }
+
+  /** The parser's provider errors carry the provider's status, which is not ours to report. */
+  async #captureDayFoods(userId, { text, date, operationId }) {
+    try {
+      return await this.process({ type: 'text', content: text, userId, date, operationId, plainCapture: true });
+    } catch (error) {
+      this.#getLogger().warn?.('web-nutribot.day_input.capture_failed', { userId, date, error: error.message });
+      throw dayInputUnavailable();
+    }
   }
 
   async #correctionText(userId, audio, typed) {

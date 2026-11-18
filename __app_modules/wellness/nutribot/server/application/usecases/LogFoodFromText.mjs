@@ -286,8 +286,11 @@ export class LogFoodFromText {
       if (foodItems.length === 0) {
         this.#logger.debug?.('logText.noFood', { conversationId, text });
 
-        // Try revision fallback
-        const fallbackResult = await this.#tryRevisionFallback(userId, conversationId, text, statusMsgId, existingMessageId, messaging);
+        // Try revision fallback. A caller with its own interpreter has already
+        // decided what these words are, as it has for revision mode above.
+        const fallbackResult = input.interpretText
+          ? { handled: false }
+          : await this.#tryRevisionFallback(userId, conversationId, text, statusMsgId, existingMessageId, messaging);
 
         if (fallbackResult.handled) {
           if (existingMessageId && statusMsgId !== existingMessageId) {

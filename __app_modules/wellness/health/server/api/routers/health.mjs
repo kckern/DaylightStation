@@ -42,6 +42,17 @@ const OBSERVATION_ID_PATTERN = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0
 // safe-characters allowlist rather than a shape: no slash, dot, whitespace or null byte
 // can reach a datastore lookup. Existence is then checked by the lookup itself.
 const ENTRY_UUID_PATTERN = /^[A-Za-z0-9_-]{1,64}$/;
+const OPERATION_ID_PATTERN = /^[A-Za-z0-9_-]{1,128}$/;
+const DAY_INPUT_CLARIFICATION_KEYS = ['foodId', 'toDate'];
+/** A clarification in one fixed key order, or null when its shape is wrong. */
+const dayInputClarification = (resolved = {}) => {
+  if (!resolved || typeof resolved !== 'object' || Array.isArray(resolved)) return null;
+  const valid = Object.entries(resolved).every(([key, value]) => DAY_INPUT_CLARIFICATION_KEYS.includes(key) && typeof value === 'string' && value);
+  return valid ? Object.fromEntries(DAY_INPUT_CLARIFICATION_KEYS.filter(key => resolved[key]).map(key => [key, resolved[key]])) : null;
+};
+/** Day input's own refusals. Any other status came from somewhere upstream. */
+const isDayInputRefusal = ({ status, code }) => [400, 404, 409, 422].includes(status)
+  || (status === 502 && code === 'TRANSCRIBE_FAILED') || (status === 503 && code === 'DAY_INPUT_UNAVAILABLE');
 
 // Food-icon slugs are manifest KEYS, checked at the HTTP boundary before the
 // value reaches the store at all. Same allowlist IconManifestStore enforces
@@ -1540,6 +1551,32 @@ export function createHealthRouter(config) {
         logger.error?.('health.nutrition.input.error', { type, error: err.message });
         if (err.status) return res.status(err.status).json({ error: err.message, code: err.code });
         return sendInternalError(res, { error: err.message });
+      }
+    }));
+
+    /**
+     * POST /health/nutrition/day-input
+     * One day-level instruction: logs new food or changes what is logged.
+     * The server supplies today; retries repeat `operationId` with the same body.
+     */
+    router.post('/nutrition/day-input', asyncHandler(async (req, res) => {
+      const userId = getDefaultUsername(req);
+      const { type, content, date, operationId } = req.body || {};
+      if (!['text', 'voice'].includes(type) || typeof content !== 'string' || !content.trim()
+        || (type === 'voice' && !content.startsWith('data:'))) return res.status(400).json({ error: 'Text or a recording is required' });
+      if (!isISODate(date)) return res.status(400).json({ error: 'A valid date is required' });
+      if (typeof operationId !== 'string' || !OPERATION_ID_PATTERN.test(operationId)) return res.status(400).json({ error: 'A valid operation ID is required' });
+      const resolved = dayInputClarification(req.body.resolved);
+      if (!resolved) return res.status(400).json({ error: 'Invalid clarification' });
+      try {
+        const result = await runNutritionOperation(userId, operationId, { operation: 'day-input', type, content, date, resolved },
+          () => healthOperations.processDayInput({ userId, type, content, date, resolved, operationId }));
+        logger.info?.('health.day_input.complete', { userId, date, operationId, kind: result.kind, outcome: result.outcome });
+        return res.json(result);
+      } catch (err) {
+        logger.warn?.('health.day_input.failed', { userId, date, operationId, status: err.status, code: err.code, error: err.message });
+        if (isDayInputRefusal(err)) return res.status(err.status).json({ error: err.message, code: err.code, ...(err.audioRef ? { audioRef: err.audioRef } : {}) });
+        return sendInternalError(res, { error: 'Could not process that. Please try again.' });
       }
     }));
 

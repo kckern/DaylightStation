@@ -46,6 +46,15 @@ destination after the server's today is rejected with 400; a `today` sent by the
 client is ignored. The response adds `toDate`, `toMeal`, `movedCount`, and one
 `undoToken` that `meal-undo` accepts.
 
+`POST /api/v1/health/nutrition/day-input` carries one day-level instruction. It
+accepts `type` (`text` or `voice`), `content` (the words, or a recording as a data
+URL), `date`, a required `operationId`, and optionally `resolved`, the answer to a
+clarification, holding only `foodId` and `toDate` strings. New food is logged
+without the meal interpreter or revision flow; anything else goes through the
+commands above. The server supplies today. A failed transcription returns 502 with
+`audioRef`; a provider failure returns 503 `DAY_INPUT_UNAVAILABLE`, never the
+provider's own status.
+
 `POST /api/v1/health/nutrition/meal-suggestions` accepts `date`, `bucket`, and
 `selectedIds`. It is read-only and returns proposals with expected versions for
 explicit atomic application via `action: "groups"`.
