@@ -211,3 +211,55 @@ describe('ZoneProfileStore wearer and session boundaries', () => {
     expect(sync(low).currentZoneId).not.toBe('fire');
   });
 });
+
+describe('adult startup and administrator approval', () => {
+  let store;
+  beforeEach(() => { vi.useFakeTimers(); vi.setSystemTime(new Date('2026-11-18T18:45:50Z')); store = new ZoneProfileStore(); });
+  afterEach(() => vi.useRealTimers());
+  const read = (hr, extra = {}) => {
+    store.syncFromUsers([user(hr, { zoneReadingDeviceId: 'strap-a', zoneReadingAt: Date.now(), ...extra })]);
+    return store.getProfile('rider-a');
+  };
+
+  it('lets a known adult earn above Cool from the first accepted reading', () => {
+    expect(read(150, { birthyear: 1980 })).toMatchObject({ zoneTrusted: true, currentZoneId: 'warm' });
+  });
+  it('uses explicit non-learner membership when birthyear is unavailable', () => {
+    expect(read(150, { schoolLearner: false })).toMatchObject({ zoneTrusted: true, currentZoneId: 'warm' });
+  });
+  it('keeps a known child gated even when they are not enrolled in school', () => {
+    expect(read(150, { birthyear: 2015, schoolLearner: false })).toMatchObject({ zoneTrusted: false, currentZoneId: null });
+  });
+  it('does not establish adult trust on a rejected startup packet', () => {
+    expect(read(150, { birthyear: 1980, zoneReadingEligible: false })).toMatchObject({ zoneTrusted: false, currentZoneId: null });
+    expect(read(150, { birthyear: 1980 })).toMatchObject({ zoneTrusted: true, currentZoneId: 'warm' });
+  });
+  it('recognizes explicit adult and kid guest assignments', () => {
+    expect(read(150, { zoneAgeClass: 'kid' }).zoneTrusted).toBe(false);
+    expect(read(150, { zoneAgeClass: 'adult' }).zoneTrusted).toBe(true);
+  });
+  it('allows an admin to approve a child above Cool without fabricating a Fire crossing', () => {
+    const profile = read(195, { birthyear: 2015 });
+    expect(store.approveTrust('rider-a', { adminId: 'parent', deviceId: 'strap-a', trustRevision: profile.trustRevision })).toEqual({ ok: true });
+    expect(read(195, { birthyear: 2015 })).toMatchObject({ zoneTrusted: true, currentZoneId: 'fire', zoneEntry: { resumed: true } });
+    store.resetZoneState('rider-a', 'wearer-change');
+    expect(read(195, { birthyear: 2015 }).zoneTrusted).toBe(false);
+  });
+  it('refuses a late admin grant after a wearer reset even on the same strap', () => {
+    const profile = read(195);
+    store.resetZoneState('rider-a', 'wearer-change'); read(195);
+    expect(store.approveTrust('rider-a', { adminId: 'parent', deviceId: 'strap-a', trustRevision: profile.trustRevision }).ok).toBe(false);
+    expect(read(195).zoneTrusted).toBe(false);
+  });
+  it('refuses a late admin grant after a session reset', () => {
+    const profile = read(195);
+    store.clear(); read(195);
+    expect(store.approveTrust('rider-a', { adminId: 'parent', deviceId: 'strap-a', trustRevision: profile.trustRevision }).ok).toBe(false);
+  });
+  it('refuses grants with a different strap or missing admin', () => {
+    const profile = read(195);
+    expect(store.approveTrust('rider-a', { adminId: 'parent', deviceId: 'other', trustRevision: profile.trustRevision }).ok).toBe(false);
+    expect(store.approveTrust('rider-a', { deviceId: 'strap-a', trustRevision: profile.trustRevision }).ok).toBe(false);
+    expect(read(195).zoneTrusted).toBe(false);
+  });
+});

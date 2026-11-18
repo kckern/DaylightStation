@@ -1,0 +1,28 @@
+.zone-trust-warning {
+  position: fixed;
+  z-index: 2200;
+  top: 1rem;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(44rem, calc(100vw - 2rem));
+  max-height: 45vh;
+  overflow-y: auto;
+  box-sizing: border-box;
+  padding: 1rem;
+  border: 2px solid #ffcc66;
+  border-radius: .75rem;
+  background: #291d09;
+  color: #fff2d2;
+  box-shadow: 0 4px 24px #000a;
+  font-size: 1.1rem;
+  > p { margin: .4rem 0; }
+  &__rider {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: .6rem;
+    padding-top: .6rem;
+    span { flex: 1 1 16rem; }
+    button { min-height: 44px; padding: .5rem .8rem; font: inherit; }
+  }
+}

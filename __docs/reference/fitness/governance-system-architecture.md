@@ -75,7 +75,7 @@ WebSocket message arrives
     │       │
     │       ├──▶ ZoneProfileStore.syncFromUsers(allUsers)
     │       │       Derives: raw zone from HR + zone thresholds
-    │       │       Requires: accepted real Cool baseline for each wearer,
+    │       │       Requires: accepted adult reading; kids/unknown riders need Cool or admin approval,
     │       │                 or recent same-strap evidence (resume: <= 60 min after a dropout, <= 30 min after a reload)
     │       │       Applies: upward confirmation (2 samples >= 1s),
     │       │                hysteresis (5s cooldown, 3s stability)
@@ -505,7 +505,8 @@ Before the store (DeviceManager slew gate, hrPlausibility.createHrSlewGate):
   A packet with no reading clears the baseline.
 
 For each HR update:
-  0. Untrusted → no committed zone until an accepted real Cool reading, or a
+  0. Adults establish trust on their first accepted reading, even above Cool.
+     Kids/unknown riders need an accepted Cool reading, admin approval, or a
      resume from recent trusted evidence (below)
   1. Derive rawZoneId from HR + validated personal zone thresholds
      No accepted reading → preserve trusted committed zone, commit nothing
@@ -589,6 +590,25 @@ For each HR update:
   Either way the rider is untrusted for about a second, until a plausible
   reading on the same strap arrives, which is well inside governance grace.
   A strap now worn by another rider gets nothing from the old wearer's evidence.
+- **Adult startup and admin remediation.** Adults do not need a Cool baseline.
+  A known birthyear (18 or older) takes precedence over school membership;
+  without a birthyear, explicit non-learner membership or an adult guest
+  assignment identifies an adult. Kid guest assignments keep the Cool rule.
+  All riders still require accepted packets; rejected startup packets cannot
+  earn rings. `ZoneTrustWarning` stays visible across fitness views while a
+  live rider is untrusted, naming the rider, saying rings and Fire celebrations
+  are paused, and explaining the personal Active threshold or packet acceptance
+  wait. **Admin unlock** uses `IdentityProvider.registerAdmin` and approves the
+  selected rider, including kids, without requiring Cool. The approval is bound
+  to session, wearer revision and strap: cancellation, handover, reset or a
+  delayed fingerprint from an old session cannot approve a replacement wearer.
+  Approval establishes a baseline rather than fabricating a Fire crossing;
+  subsequent genuine crossings use the normal ceremony checks. Logs record
+  `fitness.zone_trust.admin_approved` with the admin, rider and strap.
+- **Recorded chart totals.** Ring chart segments use saved cumulative totals,
+  including legitimate flat spans. Zone colours never manufacture awards or
+  rewrite segment slopes; untrusted zero totals stay flat rather than forming
+  sawtooth rises and resets. Dropout gaps remain horizontal.
 - **What the sidebar card shows while untrusted.** Trust gates *earned* state
   only. Every card shows its display record (see "The display record"), which
   reads the printed BPM whether or not the rider is trusted; with no ladder at
@@ -616,8 +636,9 @@ For each HR update:
   rings work exactly as before; the profile carries
   `zoneReadingSimulated: true` and the entry `simulated: true`, and no Fire
   ceremony comes of it.
-- A new session, or a first attach with no evidence, still requires an
-  accepted Cool. That is the only case suppression exists for: a strap still
+- For kids and riders of unknown age, a new session or first attach with no
+  evidence requires accepted Cool or an admin fingerprint approval. This protects
+  against a strap still
   emitting a previous day's Fire.
 - Shared synchronization carries **each user's own selected sample's** startup
   acceptance flag and respects its originating strap. Lowest-HR arbitration

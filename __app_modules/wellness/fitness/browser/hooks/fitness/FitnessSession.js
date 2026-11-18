@@ -576,11 +576,24 @@ export class FitnessSession {
     }
   }
 
+  /** Approve the current wearer after an admin fingerprint; no stale grants. */
+  approveZoneTrust({ sessionId, userId, deviceId, trustRevision, adminId } = {}) {
+    if (!sessionId || sessionId !== this.sessionId || this.endTime) {
+      return { ok: false, reason: 'session-changed' };
+    }
+    const result = this.zoneProfileStore?.approveTrust(userId, { deviceId, trustRevision, adminId });
+    if (!result?.ok) return result || { ok: false, reason: 'rider-gone' };
+    this._syncPresentZoneProfiles(userId);
+    this._userZoneProfilesCache = null;
+    return result;
+  }
+
   _syncZoneProfiles(allUsers) {
     if (!this.zoneProfileStore) return false;
     try {
       const changed = this.zoneProfileStore.syncFromUsers(allUsers.map(user => ({
         ...user,
+        zoneAgeClass: this.userManager.assignmentLedger?.get(user.currentData?.heartRateDeviceId)?.metadata?.ageClass,
         // Every shared sync carries each rider's OWN acceptance state. A rider
         // cannot acquire startup trust through somebody else's accepted packet.
         zoneReadingEligible: this._zoneReadingEligible.get(user.id) === true,

@@ -310,11 +310,10 @@ export const buildBeatsSeries = (rosterEntry, getSeries, timebase = {}, options 
  * @param {Object} [options] - Additional options
  * @param {boolean} [options.isCurrentlyActive] - Whether user is currently active according to roster (for immediate gap extension on rejoin)
  * @param {number} [options.currentTick] - Current tick index for extending gap to present
- * @param {Array} [options.zoneConfig] - Zone configuration array for ring rate lookup
  * @returns {Object[]} Array of segment objects
  */
 export const buildSegments = (beats = [], zones = [], active = [], options = {}) => {
-  const { isCurrentlyActive, currentTick, zoneConfig, intervalMs = 5000 } = options;
+  const { isCurrentlyActive, currentTick, intervalMs = 5000 } = options;
   const segments = [];
   let current = null;
   let lastZone = null;
@@ -461,93 +460,11 @@ export const buildSegments = (beats = [], zones = [], active = [], options = {})
   // PERMANENT DROPOUT: User never rejoined — no trailing grey line.
   // The colored line ends at the dropout point; avatar renders there.
 
-  // POST-PROCESS: Enforce zone-based slopes to fix sawtooth pattern
-  // Blue zones (ringRate=0) should be flat, non-blue zones should have slope
-  return enforceZoneSlopes(segments, zoneConfig);
+  // Recorded totals are authoritative: a zone can be active while awards are
+  // withheld, and a posted award can arrive after a zone change. Inferring gains
+  // from zone rates fabricates rings and breaks continuity at color boundaries.
+  return segments;
 };
-
-/**
- * Enforce that segment slopes match zone ring rates.
- * Eliminates sawtooth pattern by interpolating based on zone, not raw data.
- *
- * Rules:
- * - Blue zones (ringRate=0): Always flat (horizontal line)
- * - Non-blue zones: Always sloped (rings being earned)
- * - Gap segments: Unchanged (already flat + dashed)
- *
- * @param {Object[]} segments - Raw segments from buildSegments
- * @param {Array} [zoneConfig] - Zone configuration for ring rates
- * @returns {Object[]} Segments with enforced slopes
- */
-function enforceZoneSlopes(segments, zoneConfig = []) {
-  // First pass: apply slope enforcement to each segment
-  const processed = segments.map(segment => {
-    // Gap segments (dropout) stay unchanged - already flat
-    if (segment.isGap) return segment;
-
-    // Need at least 2 points to check for flat segments
-    if (!segment.points || segment.points.length < 2) return segment;
-
-    const ringRate = getZoneRingRate(segment.zone, zoneConfig);
-
-    if (ringRate === 0) {
-      // Blue zone: enforce flat by using start value for all points
-      // This ensures no accidental slopes in blue segments
-      const startValue = segment.points[0]?.v ?? 0;
-      return {
-        ...segment,
-        points: segment.points.map(p => ({ ...p, v: startValue }))
-      };
-    }
-
-    // Non-blue zone: check if segment is flat when it shouldn't be
-    const startValue = segment.points[0]?.v ?? 0;
-    const endValue = segment.points[segment.points.length - 1]?.v ?? startValue;
-
-    if (startValue === endValue && segment.points.length > 1) {
-      // Flat segment in non-blue zone - create interpolated slope
-      // This fixes the sawtooth where recorded values are [5, 5] but zone earns rings
-      const tickCount = segment.points.length - 1;
-      const expectedGain = ringRate * tickCount;
-
-      return {
-        ...segment,
-        points: segment.points.map((p, idx) => ({
-          ...p,
-          v: startValue + (expectedGain * (idx / tickCount))
-        })),
-        _interpolated: true // Mark for debugging
-      };
-    }
-
-    // Segment already has slope - return as-is
-    return segment;
-  });
-
-  // Second pass: ensure continuity between adjacent segments
-  // When interpolation modifies a segment's end value, the next segment's
-  // continuity point (first point) may have the OLD value, creating a gap.
-  // Fix by updating continuity points to match the previous segment's end.
-  for (let i = 1; i < processed.length; i++) {
-    const prev = processed[i - 1];
-    const curr = processed[i];
-
-    // Skip if either segment is a gap (gaps have special continuity handling)
-    if (curr.isGap || prev.isGap) continue;
-    if (!prev.points?.length || !curr.points?.length) continue;
-
-    const prevLast = prev.points[prev.points.length - 1];
-    const currFirst = curr.points[0];
-
-    // If segments share the same tick (continuity point) but different values,
-    // update the current segment's first point to match the previous end
-    if (currFirst.i === prevLast.i && currFirst.v !== prevLast.v) {
-      curr.points[0] = { ...currFirst, v: prevLast.v };
-    }
-  }
-
-  return processed;
-}
 
 /**
  * Build live edge data for real-time chart updates.
