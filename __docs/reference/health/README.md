@@ -497,19 +497,23 @@ not the current hour. The resolved bucket is stored on each entry.
   controls that already take the pointer — portion and kcal sliders, macro badges,
   confirm/delete, the dish triangle (`DRAG_DEAD_ZONE`). Mouse/pen start after 6 px of
   travel, touch after a 300 ms hold; a plain click still opens the editor. A dish
-  carries its ingredients (the backend cascades `mealTime`); an ingredient never
+  carries its ingredients; an ingredient never
   drags on its own. Rows are not draggable while "Select foods" is picking.
 - **A whole meal:** drag the meal's header onto another meal, or ⋯ → "Move all to".
-  Every top-level entry moves, one PUT each.
-- The move is optimistic (the row wears its new meal until the day reloads with it),
-  highlights briefly, and offers one Undo that restores every row it moved, using the
-  versions the move returned. A failure part-way keeps what moved and puts the rest
-  back. Logs: `entry.move`, `meal.move`, `*.undo`, `entry.move.failed`.
+  Every top-level entry moves.
+- Each gesture is one atomic `POST /nutrition/foods-move`: every row moves or none do.
+  Foods already in the destination meal are left out, and a gesture with nothing left
+  to move sends nothing.
+- The move is optimistic (the row wears its new meal until the day reloads with it)
+  and highlights briefly. A failure puts every row back. Success offers one Undo through
+  `POST /nutrition/meal-undo`; a failed Undo leaves the foods moved, keeps the offer, and
+  retries under the same operation ID. Logs: `entry.move`, `meal.move`, `*.undo`,
+  `entry.move.failed`, `entry.move.undo-failed`.
 
 ### Moving food to another day
 
-Same rows, different `date` (the meal is kept; a dish's PUT cascades `date` to its
-ingredients). Three routes, one command (`useMealMoves().moveToDay`, `mealDrag.jsx`):
+Same rows, different `date` (the meal is kept; a dish moves with its ingredients).
+Three routes, one command (`useMealMoves().moveToDay`, `mealDrag.jsx`):
 
 - **Drag:** while a food or a meal header is being dragged, the week ending today
   docks at the right edge (`DayDropDock`, `MoveDayControl.jsx`; fixed-position, only
@@ -519,8 +523,8 @@ ingredients). Three routes, one command (`useMealMoves().moveToDay`, `mealDrag.j
   its ingredients is ticked; a partly-ticked dish is skipped with a note.
 - **Meal ⋯ menu:** "Move all to day" moves the whole meal.
 
-The rows leave the viewed day at once (`gone`), each PUT follows, a failure brings back
-the rows it did not reach, and one Undo sends the moved rows home. Logs:
+The rows leave the viewed day at once (`gone`) and one `foods-move` follows. A failure
+brings every row back, and one server Undo sends them home. Logs:
 `entry.move-day`, `entry.move-day.undo`, `entry.move-day.failed`. Day choices live in
 `moveDays.js`.
 
@@ -621,8 +625,8 @@ Toast rules:
 - **One Undo at a time.** A move, an AI meal change and a delete can each hold an
   Undo; the newest supersedes and *retires* the older ones, so dismissing it never
   brings back a stale Undo for something else.
-- A move that half-failed shows its error and the Undo for the part that moved
-  side by side.
+- A failed Undo shows its error and the Undo offer side by side, so it can be tried
+  again.
 
 The toast region portals into the app's `.ds-root` (where the theme's `--ds-*`
 colours are set), not `<body>`.

@@ -7,6 +7,7 @@ vi.mock("../../../../../frontend/src/lib/api.mjs", () => ({ DaylightAPI: (...a) 
 
 import { LogTable } from "./LogTable.jsx";
 import { isDragDeadZone, useMealMoves, MOVED_HIGHLIGHT_MS } from "./mealDrag.jsx";
+import { HealthOperationsProvider, useHealthOperations } from "../operations/HealthOperationsProvider.jsx";
 
 const wrapper = ({ children }) => <MantineProvider>{children}</MantineProvider>;
 
@@ -149,77 +150,95 @@ describe('dragging a row to another meal', () => {
 describe('useMealMoves', () => {
   beforeEach(() => { apiMock.mockReset(); });
 
-  const eggs = { uuid: 'eggs', name: 'Eggs', mealTime: 'morning', version: 3 };
+  const eggs = { uuid: 'eggs', name: 'Eggs', date: '2026-09-28', mealTime: 'morning', version: 3 };
+  const moved = { committed: true, undoToken: 'meal-token' };
+  const a = { uuid: 'a', name: 'A', date: '2026-09-28', mealTime: 'night', version: 1 };
+  const b = { uuid: 'b', name: 'B', date: '2026-09-28', mealTime: 'night', version: 1 };
 
-  it('places the row in its new meal at once, sends the move, and offers Undo', async () => {
-    apiMock.mockResolvedValue({ versions: { eggs: 4 } });
+  it('places the row at once, sends one command, and Undo uses its token', async () => {
+    apiMock.mockResolvedValue(moved);
     const reload = vi.fn();
     const { result } = renderHook(({ day }) => useMealMoves(day), { initialProps: { day: { items: [eggs], reload } } });
     await act(async () => { await result.current.move(eggs, 'evening', 'morning'); });
     expect(result.current.items[0].mealTime).toBe('evening');
-    expect(result.current.recentIds.has('eggs')).toBe(true);
-    const [path, body, method] = apiMock.mock.calls[0];
-    expect(path).toBe('api/v1/health/nutrilist/eggs');
-    expect(method).toBe('PUT');
-    expect(body).toMatchObject({ mealTime: 'evening', expectedVersion: 3 });
+    expect(apiMock.mock.calls[0]).toEqual(['api/v1/health/nutrition/foods-move', expect.objectContaining({ date: '2026-09-28', selectedIds: ['eggs'], toMeal: 'evening', expectedVersions: { eggs: 3 } }), 'POST']);
     expect(reload).toHaveBeenCalled();
     expect(result.current.undo.label).toBe('Moved Eggs to Dinner');
-
-    apiMock.mockResolvedValue({ versions: { eggs: 5 } });
     await act(async () => { await result.current.undo.run(); });
-    const [, undoBody] = apiMock.mock.calls[1];
-    // The undo carries the version the move produced, not the stale one.
-    expect(undoBody).toMatchObject({ mealTime: 'morning', expectedVersion: 4 });
+    expect(apiMock.mock.calls[1]).toEqual(['api/v1/health/nutrition/meal-undo', expect.objectContaining({ undoToken: 'meal-token' }), 'POST']);
     expect(result.current.undo).toBeNull();
-  });
-
-  it('a failed move puts the row back and says why', async () => {
-    apiMock.mockRejectedValue(Object.assign(new Error('boom'), { status: 500 }));
-    const { result } = renderHook(() => useMealMoves({ items: [eggs], reload: () => {} }));
-    await act(async () => { await result.current.move(eggs, 'evening', 'morning'); });
     expect(result.current.items[0].mealTime).toBe('morning');
-    expect(result.current.error).toMatch(/^Couldn't move Eggs/);
+  });
+  it('a failed move puts every row back and offers no Undo', async () => {
+    apiMock.mockRejectedValue(Object.assign(new Error('boom'), { status: 500 }));
+    const { result } = renderHook(() => useMealMoves({ items: [a, b], reload: () => {} }));
+    await act(async () => { await result.current.moveMeal([a, b], 'evening', 'night'); });
+    expect(result.current.items.map(row => row.mealTime)).toEqual(['night', 'night']);
+    expect(result.current.error).toMatch(/^Couldn't move 2 foods/);
     expect(result.current.undo).toBeNull();
   });
-
-  it('a dish carries its ingredients along', async () => {
-    apiMock.mockResolvedValue({ versions: {} });
-    const dish = { uuid: 'g', kind: 'group', name: 'Salad', mealTime: 'morning', children: [{ uuid: 'c', parentId: 'g', mealTime: 'morning' }] };
-    const items = [{ uuid: 'g', kind: 'group', name: 'Salad', mealTime: 'morning' }, { uuid: 'c', parentId: 'g', mealTime: 'morning' }];
-    const { result } = renderHook(() => useMealMoves({ items, reload: () => {} }));
+  it('a dish sends its parts\' versions', async () => {
+    apiMock.mockResolvedValue(moved);
+    const dish = { uuid: 'g', kind: 'group', name: 'Salad', date: '2026-09-28', mealTime: 'morning', children: [{ uuid: 'c', parentId: 'g', mealTime: 'morning' }] };
+    const { result } = renderHook(() => useMealMoves({ items: [{ ...dish, children: undefined }, dish.children[0]], reload: () => {} }));
     await act(async () => { await result.current.move(dish, 'night', 'morning'); });
     expect(result.current.items.map(row => row.mealTime)).toEqual(['night', 'night']);
+    expect(apiMock.mock.calls[0][1].selectedIds).toEqual(['g']);
     expect(apiMock.mock.calls[0][1].expectedVersions).toEqual({ g: 1, c: 1 });
   });
-
-  it('a whole meal moves as one action with one Undo that moves it all back', async () => {
-    apiMock.mockImplementation(async path => ({ versions: { [path.split('/').pop()]: 9 } }));
-    const a = { uuid: 'a', name: 'A', mealTime: 'night', version: 1 };
-    const b = { uuid: 'b', name: 'B', mealTime: 'night', version: 1 };
-    const { result } = renderHook(() => useMealMoves({ items: [a, b], reload: () => {} }));
-    await act(async () => { await result.current.moveMeal([a, b], 'evening', 'night'); });
-    expect(result.current.items.map(row => row.mealTime)).toEqual(['evening', 'evening']);
-    expect(result.current.undo.label).toBe('Moved 2 foods from Snacks to Dinner');
-    await act(async () => { await result.current.undo.run(); });
-    const undoCalls = apiMock.mock.calls.slice(2);
-    expect(undoCalls.map(([, body]) => [body.mealTime, body.expectedVersion])).toEqual([['night', 9], ['night', 9]]);
+  it('a dish part linked by the short id moves, and comes back, with its dish', async () => {
+    const header = { uuid: 'g-uuid', id: 'g1', kind: 'group', name: 'Salad', date: '2026-09-28', mealTime: 'morning' };
+    const part = { uuid: 'c', parentId: 'g1', mealTime: 'morning', date: '2026-09-28' };
+    let fail;
+    apiMock.mockReturnValue(new Promise((_, reject) => { fail = reject; }));
+    const { result } = renderHook(() => useMealMoves({ items: [header, part], reload: () => {} }));
+    let pending;
+    act(() => { pending = result.current.move({ ...header, children: [part] }, 'night', 'morning'); });
+    expect(result.current.items.map(row => row.mealTime)).toEqual(['night', 'night']);
+    await act(async () => { fail(new Error('boom')); await pending; });
+    expect(result.current.items.map(row => row.mealTime)).toEqual(['morning', 'morning']);
   });
-
-  it('a meal move that fails midway keeps what moved and puts back the rest', async () => {
-    apiMock.mockResolvedValueOnce({ versions: { a: 2 } }).mockRejectedValueOnce(new Error('conflict'));
-    const a = { uuid: 'a', name: 'A', mealTime: 'night' };
-    const b = { uuid: 'b', name: 'B', mealTime: 'night' };
-    const { result } = renderHook(() => useMealMoves({ items: [a, b], reload: () => {} }));
-    await act(async () => { await result.current.moveMeal([a, b], 'evening', 'night'); });
-    expect(result.current.items.map(row => row.mealTime)).toEqual(['evening', 'night']);
-    expect(result.current.error).toMatch(/^Couldn't move 1 of 2 foods/);
+  it('foods from several meals move together with a truthful label', async () => {
+    apiMock.mockResolvedValue(moved);
+    const { result } = renderHook(() => useMealMoves({ items: [a, { ...b, mealTime: 'morning' }], reload: () => {} }));
+    await act(async () => { await result.current.moveMeal([a, { ...b, mealTime: 'morning' }], 'evening', null); });
+    expect(result.current.undo.label).toBe('Moved 2 foods to Dinner');
+  });
+  it('a drop on the meal the food is already in sends nothing and reports nothing', async () => {
+    const reload = vi.fn();
+    const { result } = renderHook(() => useMealMoves({ items: [eggs], reload }));
+    await act(async () => { await result.current.move(eggs, 'morning', 'morning'); });
+    expect(apiMock).not.toHaveBeenCalled();
+    expect(result.current.error).toBeNull();
+    expect(result.current.undo).toBeNull();
+    expect(result.current.recentIds.has('eggs')).toBe(false);
+  });
+  it('only the foods not yet in that meal are sent and counted', async () => {
+    apiMock.mockResolvedValue(moved);
+    const already = { ...b, mealTime: 'evening' };
+    const { result } = renderHook(() => useMealMoves({ items: [a, already], reload: () => {} }));
+    await act(async () => { await result.current.moveMeal([a, already], 'evening', null); });
+    expect(apiMock.mock.calls[0][1]).toMatchObject({ selectedIds: ['a'], expectedVersions: { a: 1 } });
     expect(result.current.undo.label).toBe('Moved A to Dinner');
   });
-
+  it('a failed Undo keeps the move, says so, and can be tried again as the same operation', async () => {
+    apiMock.mockResolvedValueOnce(moved).mockRejectedValueOnce(new Error('offline')).mockResolvedValueOnce({ committed: true });
+    const { result } = renderHook(() => useMealMoves({ items: [eggs], reload: () => {} }));
+    await act(async () => { await result.current.move(eggs, 'evening', 'morning'); });
+    await act(async () => { await result.current.undo.run(); });
+    expect(result.current.error).toMatch(/^Couldn't undo that move/);
+    expect(result.current.items[0].mealTime).toBe('evening');
+    expect(result.current.undo.label).toBe('Moved Eggs to Dinner');
+    await act(async () => { await result.current.undo.run(); });
+    expect(apiMock.mock.calls[2][1].operationId).toBe(apiMock.mock.calls[1][1].operationId);
+    expect(result.current.undo).toBeNull();
+    expect(result.current.error).toBeNull();
+    expect(result.current.items[0].mealTime).toBe('morning');
+  });
   it('the highlight fades after its moment', async () => {
     vi.useFakeTimers();
     try {
-      apiMock.mockResolvedValue({ versions: {} });
+      apiMock.mockResolvedValue(moved);
       const { result } = renderHook(() => useMealMoves({ items: [eggs], reload: () => {} }));
       await act(async () => { await result.current.move(eggs, 'evening', 'morning'); });
       expect(result.current.recentIds.has('eggs')).toBe(true);
@@ -229,46 +248,90 @@ describe('useMealMoves', () => {
   });
 });
 
-
 describe('useMealMoves — moving to another day', () => {
   const eggs = { uuid: 'eggs', name: 'Eggs', date: '2026-09-28', mealTime: 'morning', version: 1 };
   const toast = { uuid: 'toast', name: 'Toast', date: '2026-09-28', mealTime: 'morning', version: 1 };
-  beforeEach(() => { apiMock.mockReset(); apiMock.mockImplementation(async () => ({ versions: {} })); });
+  beforeEach(() => { apiMock.mockReset(); apiMock.mockResolvedValue({ committed: true, undoToken: 'meal-token' }); });
 
-  it('hides the rows at once, PUTs the new date one by one, and reloads', async () => {
+  it('hides the rows at once and sends one command', async () => {
     const reload = vi.fn();
     const { result } = renderHook(({ day }) => useMealMoves(day), { initialProps: { day: { items: [eggs, toast], reload } } });
-    await act(async () => { await result.current.moveToDay([eggs, toast], '2020-01-15', 'morning'); });
-    const puts = apiMock.mock.calls.filter(call => call[2] === 'PUT');
-    expect(puts.map(call => [call[0], call[1].date])).toEqual([
-      ['api/v1/health/nutrilist/eggs', '2020-01-15'], ['api/v1/health/nutrilist/toast', '2020-01-15'],
-    ]);
+    await act(async () => { await result.current.moveToDay([eggs, toast], '2020-01-15'); });
+    expect(apiMock).toHaveBeenCalledTimes(1);
+    expect(apiMock.mock.calls[0][1]).toMatchObject({ selectedIds: ['eggs', 'toast'], toDate: '2020-01-15' });
     expect(result.current.items).toEqual([]);
     expect(reload).toHaveBeenCalled();
     expect(result.current.undo.label).toBe('Moved 2 foods to Wed, Jan 15');
   });
-
-  it('a row that is already on that day is left alone', async () => {
+  it('a row already on that day is left alone', async () => {
     const { result } = renderHook(() => useMealMoves({ items: [eggs], reload: vi.fn() }));
-    await act(async () => { await result.current.moveToDay([eggs], '2026-09-28', 'morning'); });
+    await act(async () => { await result.current.moveToDay([eggs], '2026-09-28'); });
     expect(apiMock).not.toHaveBeenCalled();
   });
-
-  it('Undo sends the rows back to the day they came from', async () => {
+  it('only the rows not yet on that day are sent', async () => {
+    const there = { ...toast, date: '2020-01-15' };
+    const { result } = renderHook(() => useMealMoves({ items: [eggs, there], reload: vi.fn() }));
+    await act(async () => { await result.current.moveToDay([there, eggs], '2020-01-15'); });
+    expect(apiMock.mock.calls[0][1]).toMatchObject({ date: '2026-09-28', selectedIds: ['eggs'], expectedVersions: { eggs: 1 } });
+  });
+  it('Undo brings the rows back', async () => {
     const { result } = renderHook(() => useMealMoves({ items: [eggs], reload: vi.fn() }));
-    await act(async () => { await result.current.moveToDay([eggs], '2020-01-15', 'morning'); });
-    apiMock.mockClear();
+    await act(async () => { await result.current.moveToDay([eggs], '2020-01-15'); });
     await act(async () => { await result.current.undo.run(); });
-    expect(apiMock.mock.calls.filter(call => call[2] === 'PUT').map(call => call[1].date)).toEqual(['2026-09-28']);
+    expect(apiMock.mock.calls[1][0]).toBe('api/v1/health/nutrition/meal-undo');
+    expect(result.current.items).toEqual([eggs]);
     expect(result.current.undo).toBeNull();
   });
-
-  it('a failed PUT brings the row back and says so', async () => {
+  it('a dish part linked by the short id leaves and returns with its dish', async () => {
+    const header = { uuid: 'g-uuid', id: 'g1', kind: 'group', name: 'Salad', date: '2026-09-28', mealTime: 'morning' };
+    const part = { uuid: 'c', parentId: 'g1', date: '2026-09-28', mealTime: 'morning' };
+    const { result } = renderHook(() => useMealMoves({ items: [header, part], reload: vi.fn() }));
+    await act(async () => { await result.current.moveToDay([{ ...header, children: [part] }], '2020-01-15'); });
+    expect(result.current.items).toEqual([]);
+    await act(async () => { await result.current.undo.run(); });
+    expect(result.current.items).toEqual([header, part]);
+  });
+  it('a failure brings the row back and says so', async () => {
     apiMock.mockRejectedValue(new Error('boom'));
     const { result } = renderHook(() => useMealMoves({ items: [eggs], reload: vi.fn() }));
-    await act(async () => { await result.current.moveToDay([eggs], '2020-01-15', 'morning'); });
+    await act(async () => { await result.current.moveToDay([eggs], '2020-01-15'); });
     expect(result.current.items).toEqual([eggs]);
     expect(result.current.error).toMatch(/Couldn't move Eggs/);
+  });
+});
+
+describe('useMealMoves — inside a Health session', () => {
+  const FROM = '2026-09-28', TO = '2020-01-15';
+  const eggs = { uuid: 'eggs', name: 'Eggs', date: FROM, mealTime: 'morning', version: 1 };
+  const session = ({ children }) => <HealthOperationsProvider userId="u">{children}</HealthOperationsProvider>;
+  const render = () => renderHook(() => ({ moves: useMealMoves({ items: [eggs], reload: vi.fn() }), ops: useHealthOperations() }), { wrapper: session });
+  const shown = (ops, date, rows) => ops.reconciliation.reconcile({ date, rows }).rows.map(row => [row.uuid, row.version]);
+  const movedReply = { committed: true, date: FROM, bucket: null, undoToken: 'meal-token', toDate: TO, items: [{ ...eggs, date: TO, version: 2 }], affectedIds: ['eggs'], affectedDates: [FROM, TO] };
+  const undoReply = { committed: true, date: FROM, bucket: null, undoToken: null, items: [{ ...eggs, version: 3 }], affectedIds: ['eggs'], affectedDates: [TO, FROM] };
+  beforeEach(() => { apiMock.mockReset(); });
+
+  it('a day move shows on both days, and Undo puts both back', async () => {
+    apiMock.mockResolvedValueOnce(movedReply).mockResolvedValueOnce(undoReply);
+    const { result } = render();
+    await act(async () => { await result.current.moves.moveToDay([eggs], TO); });
+    expect(shown(result.current.ops, FROM, [eggs])).toEqual([]);
+    expect(shown(result.current.ops, TO, [])).toEqual([['eggs', 2]]);
+    await act(async () => { await result.current.moves.undo.run(); });
+    expect(shown(result.current.ops, FROM, [eggs])).toEqual([['eggs', 3]]);
+    expect(shown(result.current.ops, TO, [{ ...eggs, date: TO, version: 2 }])).toEqual([]);
+    expect(result.current.moves.undo).toBeNull();
+  });
+  it('a failed Undo can be run again', async () => {
+    apiMock.mockResolvedValueOnce(movedReply).mockRejectedValueOnce(new Error('offline')).mockResolvedValueOnce(undoReply);
+    const { result } = render();
+    await act(async () => { await result.current.moves.moveToDay([eggs], TO); });
+    await act(async () => { await result.current.moves.undo.run(); });
+    expect(result.current.moves.error).toMatch(/^Couldn't undo that move/);
+    expect(result.current.moves.undo).not.toBeNull();
+    await act(async () => { await result.current.moves.undo.run(); });
+    expect(apiMock).toHaveBeenCalledTimes(3);
+    expect(result.current.moves.error).toBeNull();
+    expect(result.current.moves.undo).toBeNull();
   });
 });
 

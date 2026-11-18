@@ -9,8 +9,8 @@ export function useFoodMutation(rows = []) {
     parentId ||= body.parentOperationId;
     if (body.parentOperationId) { const { parentOperationId, ...payload } = body; body = payload; }
     const item = path.match(/\/nutrilist\/([^/?]+)(?:\/(revise|revise-dish))?$/);
-    const capture = path.endsWith('/nutrition/input');
-    const command = /\/nutrition\/(meal-command|restore|meal-undo)$/.test(path);
+    const capture = /\/nutrition\/(input|day-input)$/.test(path);
+    const command = /\/nutrition\/(meal-command|restore|meal-undo|foods-move)$/.test(path);
     if (!session || method === 'GET' || (!item && !command && !capture)) {
       const result = await DaylightAPI(path, body, method);
       await onResult?.(result, null);
@@ -38,13 +38,5 @@ export function useFoodMutation(rows = []) {
     return session.execute(id, onResult);
   };
   dispatch.withContinuation = (path, body, method, apply) => dispatch(path, body, method, undefined, apply);
-  dispatch.withReservation = async (members, action) => {
-    if (!session) return action(dispatch);
-    const targetIds = foodOperationScope({ action: 'edit', rows: members, selectedIds: members.map(row => row.uuid ?? row.id) });
-    const id = crypto.randomUUID();
-    if (!session.store.begin({ id, kind: 'batch', targetIds, date: members[0]?.date }).ok) throw new Error('An affected food is already saving. Wait for it to finish.');
-    try { return await action((path, body, method) => dispatch(path, body, method, id)); }
-    finally { session.store.discard(id); }
-  };
   return dispatch;
 }
