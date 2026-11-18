@@ -20,7 +20,6 @@ import net.kckern.daylight.core.MainThread;
 import net.kckern.daylight.core.Replies;
 import net.kckern.daylight.core.Requests;
 import net.kckern.daylight.core.Router;
-import net.kckern.daylight.core.SettingsControl;
 import net.kckern.daylight.core.SettingsRegistry;
 import net.kckern.daylight.core.SettingsRegistry.Type;
 import net.kckern.daylight.core.UnsupportedException;
@@ -664,7 +663,7 @@ public final class LockdownCapability implements Capability, LockdownControl {
         if (c == null || a11y.bound() || !bool("lockdown.selfEnableAccessibility")) return;
         try {
             if (c.checkSelfPermission("android.permission.WRITE_SECURE_SETTINGS") != PackageManager.PERMISSION_GRANTED) return;
-            JSONObject result = SettingsControl.enableAccessibilityService(c, ownPackage + "/" + AccessibilityHub.SERVICE_CLASS);
+            JSONObject result = AccessibilityHub.enableOwnService(c, core);
             if (RecallDecision.shouldNote(++selfEnableAttempts)) note("accessibility service unbound; re-enable: " + result);
         } catch (Exception e) {
             note("could not re-enable the accessibility service: " + e.getMessage());

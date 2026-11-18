@@ -12,8 +12,10 @@ final class CoreServices {
     final WifiLink wifiLink;
     final OwnUpdateConfirmation updateConfirmation;
     private final CoreConfig cfg;
+    private final CoreContext core;
 
     CoreServices(CoreRuntime core, CoreConfig cfg) {
+        this.core = core;
         this.ctx = (Context) core.shell().context();
         this.heartbeat = new Heartbeat(core, cfg);
         this.wifiLink = new WifiLink(ctx, cfg);
@@ -27,9 +29,7 @@ final class CoreServices {
         // The piano bridge enabled its own accessibility service on every start
         // (WRITE_SECURE_SETTINGS, granted once over ADB). Same here, when the device asks for it.
         if (cfg.accessibilitySelfEnable()) {
-            String component = new android.content.ComponentName(ctx, AccessibilityHub.SERVICE_CLASS).flattenToString();
-            Diag.log("Daylight-Core", "enableAccessibilityService " + component + " -> "
-                    + SettingsControl.enableAccessibilityService(ctx, component));
+            Diag.log("Daylight-Core", "enableAccessibilityService -> " + AccessibilityHub.enableOwnService(ctx, core));
         }
         heartbeat.start();
         wifiLink.start();

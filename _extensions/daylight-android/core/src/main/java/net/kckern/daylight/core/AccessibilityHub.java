@@ -2,13 +2,17 @@ package net.kckern.daylight.core;
 
 import android.accessibilityservice.AccessibilityService;
 import android.accessibilityservice.AccessibilityServiceInfo;
+import android.content.ComponentName;
+import android.content.Context;
 import android.view.KeyEvent;
 import android.view.accessibility.AccessibilityEvent;
 
 import net.kckern.daylight.api.AccessibilityDelegate;
 import net.kckern.daylight.api.AccessibilityHost;
+import org.json.JSONObject;
 
 import java.util.List;
+import java.util.function.BooleanSupplier;
 import java.util.concurrent.CopyOnWriteArrayList;
 
 /** Holds the shell's accessibility service for this payload and shares it between capabilities. */
@@ -16,6 +20,24 @@ public final class AccessibilityHub implements AccessibilityDelegate {
     public static final String COMPONENT = "accessibility";
     /** The class the `accessibility` capability declares, for enabling it by name. */
     public static final String SERVICE_CLASS = "net.kckern.daylight.cap.accessibility.shell.DaylightAccessibilityService";
+
+    /** The piano bridge requires native permission immediately before each secure-settings write.
+     * Its shell currently reports unknown, which keeps the service in its existing state. */
+    public static JSONObject enableOwnService(Context context, CoreContext core) {
+        String component = new ComponentName(context, SERVICE_CLASS).flattenToString();
+        return SettingsControl.enableAccessibilityService(SettingsControl.accessibilitySettings(context), component,
+                () -> accessibilityWriteAllowed(core));
+    }
+
+    static boolean accessibilityWriteAllowed(CoreContext core) {
+        if (!"piano".equals(core.deviceId())) return true;
+        try {
+            Object authority = core.shell().component("native-run-authority");
+            return authority instanceof BooleanSupplier && ((BooleanSupplier) authority).getAsBoolean();
+        } catch (RuntimeException | LinkageError unavailable) {
+            return false;
+        }
+    }
 
     public interface KeyFilter { boolean onKeyEvent(KeyEvent event); }
     public interface EventListener { void onAccessibilityEvent(AccessibilityEvent event); }

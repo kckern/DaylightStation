@@ -5,12 +5,32 @@ import static org.junit.Assert.*;
 import net.kckern.daylight.api.AccessibilityDelegate;
 import net.kckern.daylight.api.AccessibilityHost;
 
+import net.kckern.daylight.core.testing.FakeShell;
+import org.junit.Rule;
 import org.junit.Test;
+import org.junit.rules.TemporaryFolder;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.BooleanSupplier;
 
 import java.util.ArrayList;
 import java.util.List;
 
 public class AccessibilityHubTest {
+    @Rule public TemporaryFolder tmp = new TemporaryFolder();
+
+    @Test public void pianoRequiresFreshAuthorityForEachAccessibilityWrite() {
+        FakeShell shell = new FakeShell(tmp.getRoot());
+        CoreRuntime piano = new CoreRuntime(shell, "piano", "test", tmp.getRoot());
+        assertFalse(AccessibilityHub.accessibilityWriteAllowed(piano));
+        AtomicBoolean allowed = new AtomicBoolean(true);
+        shell.components.put("native-run-authority", (BooleanSupplier) allowed::get);
+        assertTrue(AccessibilityHub.accessibilityWriteAllowed(piano));
+        allowed.set(false);
+        assertFalse(AccessibilityHub.accessibilityWriteAllowed(piano));
+        CoreRuntime portal = new CoreRuntime(shell, "portal", "test", tmp.getRoot());
+        assertTrue(AccessibilityHub.accessibilityWriteAllowed(portal));
+    }
+
     private static final class FakeHost implements AccessibilityHost {
         AccessibilityDelegate delegate;
         @Override public void setDelegate(AccessibilityDelegate d) { delegate = d; }

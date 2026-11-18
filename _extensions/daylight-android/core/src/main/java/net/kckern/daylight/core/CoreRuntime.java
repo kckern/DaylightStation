@@ -306,8 +306,7 @@ public final class CoreRuntime implements CoreContext {
         router.route("POST", "/accessibility/enable", req -> {
             CoreServices d = device;
             if (d == null) return Replies.json(Replies.err("not_ready"));
-            String component = new android.content.ComponentName(d.ctx, AccessibilityHub.SERVICE_CLASS).flattenToString();
-            return Replies.json(SettingsControl.enableAccessibilityService(d.ctx, component).put("component", component));
+            return Replies.json(AccessibilityHub.enableOwnService(d.ctx, this));
         });
         router.route("GET", "/log", req -> Replies.json(Replies.ok()
                 .put("log", Diag.recent())
