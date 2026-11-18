@@ -11,8 +11,9 @@ import { __clearPianoListCache } from './usePianoList.js';
 // the live keyboard are irrelevant here — except the label, which the activity-strip
 // integration test (below) needs to confirm the tile wall still renders.
 let activityResponse;
+let karaokeResponse = { items: [] };
 const schoolGate = vi.hoisted(() => ({ status: 'ready', state: 'complete', unlocked: true }));
-vi.mock('../../../../../frontend/src/lib/api.mjs', () => ({ DaylightAPI: vi.fn(() => Promise.resolve(activityResponse)) }));
+vi.mock('../../../../../frontend/src/lib/api.mjs', () => ({ DaylightAPI: vi.fn((path) => Promise.resolve(String(path).includes('capabilityId=piano.karaoke') ? karaokeResponse : activityResponse)) }));
 vi.mock('./PianoConfig.jsx', () => ({
   usePianoKioskConfig: () => ({
     pianoId: 'test-piano',
@@ -139,5 +140,31 @@ describe('PianoMenu (activity strip)', () => {
     render(createElement(MemoryRouter, null, createElement(PianoMenu)));
     await waitFor(() => expect(screen.getByAltText('Course B')).toBeTruthy());
     expect(screen.getByText('Courses')).toBeTruthy();
+  });
+});
+
+
+describe('PianoMenu household karaoke policy', () => {
+  beforeEach(() => {
+    karaokeResponse = { items: [] };
+    Object.assign(schoolGate, { status: 'ready', state: 'complete', unlocked: true });
+  });
+  it('keeps karaoke disabled even when the selected player has finished school', async () => {
+    render(createElement(MemoryRouter, null, createElement(PianoMenu)));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Karaoke' }).disabled).toBe(true));
+    expect(screen.getByRole('button', { name: 'Karaoke' }).title).toMatch(/everyone.*schoolwork/i);
+    expect(screen.getByRole('button', { name: 'Exercises' }).disabled).toBe(false);
+    expect(screen.getByRole('button', { name: 'Playalong' }).disabled).toBe(false);
+  });
+  it('enables karaoke when the shared school entitlement is granted', async () => {
+    const now = Date.now();
+    karaokeResponse = { items: [{
+      capabilityId: 'piano.karaoke', subject: { kind: 'learner', id: 'another-child' },
+      period: { kind: 'interval', id: 'school-day:2026-11-18', startsAt: now - 1000, endsAt: now + 60000 },
+      decision: 'granted', basisState: 'satisfied', degraded: false, validFrom: now - 1000, validUntil: now + 60000,
+    }] };
+    render(createElement(MemoryRouter, null, createElement(PianoMenu)));
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Karaoke' }).disabled).toBe(false));
+    karaokeResponse = { items: [] };
   });
 });

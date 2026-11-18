@@ -1,3 +1,4 @@
+import useKaraokeSchoolAccess, { KARAOKE_SCHOOL_MESSAGE } from '../../useKaraokeSchoolAccess.js';
 import { Karaoke } from '../Karaoke/Karaoke.jsx';
 
 /**
@@ -7,6 +8,15 @@ import { Karaoke } from '../Karaoke/Karaoke.jsx';
  * chrome (no keyboard/staff/circle-of-fifths). Lives at /piano/singalong.
  */
 export function Singalong() {
+  const access = useKaraokeSchoolAccess();
+  if (!access.unlocked) {
+    return (
+      <section className="piano-mode__placeholder" role="status">
+        {access.status === 'error' && <p>Unable to check schoolwork right now.</p>}
+        <p>{KARAOKE_SCHOOL_MESSAGE}</p>
+      </section>
+    );
+  }
   return <Karaoke />;
 }
 

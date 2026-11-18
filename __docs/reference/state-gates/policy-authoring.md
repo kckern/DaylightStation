@@ -383,3 +383,51 @@ If a new candidate is invalid and an active graph exists, the active graph and c
 decisions are retained. If no valid graph has ever existed, queries return
 `POLICY_UNAVAILABLE`. Administrative policy diagnostics report the candidate digest,
 check time, and structured errors.
+
+
+## Household karaoke
+
+The PianoKiosk consumer expects `piano.karaoke`. Add the following sections to a
+copy of the current policy, preserving all existing definitions and increasing
+`policy_revision`. Use the actual School-enrolled learner IDs in the subject set;
+this two-child example requires both children, regardless of the selected piano
+profile. Keep `exactly` equal to the number of members when enrollment changes.
+
+```yaml
+subject_sets:
+  school.enrolled-learners:
+    kind: learner
+    members: [child_a, child_b]
+
+gates:
+  school.all-learners-complete:
+    schema_version: 1
+    subject_kinds: [learner]
+    period_kinds: [interval]
+    expression:
+      count:
+        over: school.enrolled-learners
+        as: learner
+        where:
+          claim:
+            type: school.day.complete
+            publisher: school
+            subject: $learner
+            period: $period
+        threshold: { exactly: 2 }
+    progress:
+      basis_node_id: school.all-learners-complete/expression
+    reason_labels:
+      THRESHOLD_NOT_MET: Everyone must finish schoolwork before karaoke.
+      COUNT_UNRESOLVED: Waiting for schoolwork status for every learner.
+
+entitlements:
+  piano.karaoke:
+    gate: school.all-learners-complete
+    failure_posture: fail_closed
+```
+
+A missing household karaoke policy leaves karaoke locked. School remains the
+completion authority; this rule does not infer completion from local piano
+history. The piano route rejects `not_applicable` as well as degraded grants.
+See [consumer behavior](integration-and-operations.md#household-karaoke-school-gate).

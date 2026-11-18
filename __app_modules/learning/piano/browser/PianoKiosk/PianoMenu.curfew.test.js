@@ -31,6 +31,8 @@ vi.mock('./PianoUserContext.jsx', () => ({ usePianoUser: () => ({ setCurrentUser
 vi.mock('./PianoMidiContext.jsx', () => ({
   usePianoMidi: () => ({ pressNote: () => {}, releaseNote: () => {} }),
 }));
+// Curfew behavior is independent of the shared karaoke school gate.
+vi.mock('./useKaraokeSchoolAccess.js', () => ({ default: () => ({ status: 'ready', unlocked: true }) }));
 vi.mock('./LiveKeyboard.jsx', () => ({ default: () => null }));
 vi.mock('../../../../../frontend/src/lib/logging/Logger.js', () => ({
   default: () => ({ child: () => ({ info() {}, debug() {}, warn() {}, error() {} }) }),

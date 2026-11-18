@@ -14,6 +14,8 @@ The first production slice is active:
   study-day rollover; an indeterminate School result retracts completion evidence
   so `piano.games` remains denied with `degraded: true`;
 - the fail-closed `piano.games` entitlement controls PianoKiosk Games;
+- the household-authored `piano.karaoke` entitlement controls the home Karaoke tile
+  and the entire Singalong route, including direct song URLs and active playback;
 - Fitness publishes roster-wide `fitness.weekly.rings` after startup, session writes,
   session finalization/deletion, five-minute reconciliation, and weekly rollover; and
 - `AgendaStatusBoard` reads the active `fitness.weekly-rings` progress count.
@@ -398,3 +400,35 @@ The Games lock pauses game selection, but the highest-key change-player command
 remains available. The lock screen explains that command and the two-second
 lowest/highest-key hold that returns to free play. Returning to free play retains
 the selected profile; changing profiles uses the player picker.
+
+
+### Household karaoke school gate
+
+Karaoke consumes `piano.karaoke`, independently of the selected player. Author
+its rule in the household policy (see [policy authoring](policy-authoring.md#household-karaoke)):
+a count across the enrolled School learner set must equal that set's size. The
+rule uses School's existing `school.day.complete` evidence, so both completed
+work and a legitimate `no_work_today` satisfy it. A personal Games entitlement,
+adult/guest profile, or purchased Games pass does not unlock karaoke.
+
+The home tile remains visible and disabled with “Everyone must finish schoolwork
+first.” A protected song route explains that karaoke opens when everyone finishes
+schoolwork and does not mount the media browser/player until granted. Revocation
+unmounts playback. The hook refetches on State Gates invalidations, every 15 seconds,
+and on visibility recovery. Failed reads, missing/indeterminate/degraded decisions,
+`not_applicable` and expired evidence stay closed. A local expiration timer closes
+a cached grant at its validity/period boundary even if the network read hangs.
+Lessons, exercises and Playalong do not consume this entitlement.
+
+The policy uses `learner`/`interval` instances because School publishes the
+`school-day:YYYY-MM-DD` intervals on learners. Every such instance evaluates the
+same household count. Consumers query these instances without a `subjectId` and
+only accept a current study-day interval whose decision is granted and satisfied.
+No household/interval instance is invented: the engine enumerates interval
+instances from evidence, so a household gate over learner evidence would need a
+separate household period seed.
+
+Keep the policy's `school.enrolled-learners` members and its `exactly` threshold
+in sync when School enrollment changes; increase the policy revision and activate
+the candidate. Household candidates replace the installed graph, so preserve its
+existing gates/claims/entitlements when authoring this policy.

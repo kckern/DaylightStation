@@ -11,6 +11,7 @@ import LiveKeyboard from './LiveKeyboard.jsx';
 import { balancedColumns } from './tileGridLayout.js';
 import usePianoCurfew from './usePianoCurfew.js';
 import useSchoolGameAccess from './useSchoolGameAccess.js';
+import useKaraokeSchoolAccess from './useKaraokeSchoolAccess.js';
 import { canBuyPass, canEnterLock } from './earlyPass.js';
 import usePianoLessonGate, { PENDING_CAPTION } from './usePianoLessonGate.js';
 import TodaysLessonGate from './TodaysLessonGate.jsx';
@@ -51,6 +52,7 @@ export function PianoMenu() {
   const gameAccess = useSchoolGameAccess(currentUser, {
     schoolLearner: (users || []).find((u) => u.id === currentUser)?.schoolLearner,
   });
+  const karaokeAccess = useKaraokeSchoolAccess();
   const kb = config?.keyboard || { startNote: 21, endNote: 108 };
   const logger = useMemo(() => getLogger().child({ component: 'piano-menu' }), []);
   const cols = balancedColumns(PIANO_MODES.length); // 10 → 5
@@ -123,12 +125,15 @@ export function PianoMenu() {
               const lockReachable = m.id === 'games' && !gamesOff && !gameAccess.unlocked && canEnterLock(gameAccess);
               const passOffer = lockReachable && canBuyPass(gameAccess);
               const schoolLocked = m.id === 'games' && !gamesOff && !gameAccess.unlocked && !lockReachable;
+              const karaokeLocked = m.id === 'singalong' && !karaokeAccess.unlocked;
               const videosLocked = m.id === 'videos' && videosCapped;
-              const disabled = m.disabled || gamesOffTile || schoolLocked || videosLocked || curfew || pending;
+              const disabled = m.disabled || gamesOffTile || schoolLocked || karaokeLocked || videosLocked || curfew || pending;
               // The count is the whole message. "Videos are locked" invites an
               // argument; "2 of 2 lessons today" is a fact the child can check
               // against the discs on the wall panel, which is the same number.
-              const blurb = gamesOffTile
+              const blurb = karaokeLocked
+                ? 'Everyone must finish schoolwork first'
+                : gamesOffTile
                 ? 'Not part of your piano'
                 : videosLocked
                 ? `${lessonGate.videos?.completedToday ?? '?'} of ${lessonGate.videos?.cap ?? '?'} lessons today`

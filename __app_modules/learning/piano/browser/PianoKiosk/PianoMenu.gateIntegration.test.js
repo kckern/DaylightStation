@@ -51,6 +51,8 @@ vi.mock('./PianoMidiContext.jsx', () => ({
   usePianoMidi: () => ({ pressNote: () => {}, releaseNote: () => {} }),
 }));
 vi.mock('./LiveKeyboard.jsx', () => ({ default: () => null }));
+// This suite isolates the lesson gate; household karaoke is covered separately.
+vi.mock('./useKaraokeSchoolAccess.js', () => ({ default: () => ({ status: 'ready', unlocked: true }) }));
 vi.mock('./useSchoolGameAccess.js', () => ({
   default: () => ({ status: 'ready', state: 'complete', unlocked: true }),
 }));
