@@ -3,7 +3,9 @@ package net.kckern.daylight.cap.quickinput;
 import net.kckern.daylight.core.backend.Backend;
 import net.kckern.daylight.core.backend.Http;
 
+import org.json.JSONException;
 import org.json.JSONObject;
+import org.json.JSONTokener;
 
 import java.io.File;
 import java.io.IOException;
@@ -11,9 +13,7 @@ import java.net.SocketTimeoutException;
 import java.net.URLEncoder;
 import java.util.Arrays;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.Map;
-import java.util.Set;
 import java.util.regex.Pattern;
 
 /**
@@ -30,8 +30,8 @@ import java.util.regex.Pattern;
  * The route is the destination's, looked up when the input is sent: a path under
  * /api/v1/ on the configured backend (Destinations), never an address.
  *
- *   200 with {duplicate: true|false}        accepted: the audio may be deleted
- *   400, 413, 415, 422                      refused for good: park
+ *   200 with a matching receipt            accepted: the capture may be deleted
+ *   400, 413, 415, 422 with intake error    refused for good: park
  *   403 {ok:false, error:device_not_allowed}  this phone is not bound to the user yet:
  *                                           try again with backoff, never counted, and say so
  *   429                                     the daily allowance is used up: nothing is sent
@@ -62,12 +62,7 @@ final class InputUploader implements UploadPump.Sender {
     static final long MAX_BYTES = Destinations.Kind.VOICE.maxBytes;
     /** What the intake takes as X-Daylight-Device from this app. */
     private static final Pattern DEVICE = Pattern.compile("fleet:[A-Za-z0-9._-]{1,96}");
-    /** The error codes the intake answers with. A body with one of them, and ok:false, is the intake's own. */
-    private static final Set<String> INTAKE_ERRORS = new HashSet<>(Arrays.asList(
-            "user_required", "invalid_input_id", "invalid_memo_id", "unusable_input", "empty_body", "unreadable_body", "unknown_user", "too_large",
-            "unsupported_media_type", "empty_transcription", "processing_failed", "unavailable",
-            "device_not_allowed", "cross_origin", "daily_limit"));
-    private static final Pattern ERROR_CODE = Pattern.compile("[a-z_]{1,40}");
+    private static final String LEGACY_MEMO_ROUTE = "/api/v1/journalist/memo";
     static final long MIN_WAIT_MS = 60_000L;
     static final long MAX_WAIT_MS = 24 * 3_600_000L;
     /** A 429 that names no time. */
@@ -172,13 +167,16 @@ final class InputUploader implements UploadPump.Sender {
         }
         int s = reply.status;
         if (s == 200) {
-            // The audio is deleted on this answer, so it has to be the intake's own. Some
-            // other network's sign-in page answers 200 as well.
-            return accepted(reply.body) ? new Result(Outcome.UPLOADED, "") : new Result(Outcome.RETRY_UNCOUNTED, "unexpected answer");
+            // Only a receipt for this capture permits the pump to delete its file.
+            return accepted(reply.body, memo.id, LEGACY_MEMO_ROUTE.equals(dest.route))
+                    ? new Result(Outcome.UPLOADED, "")
+                    : new Result(Outcome.RETRY_UNCOUNTED, "unexpected answer");
         }
-        String code = intakeError(reply.body);
+        String code = intakeError(s, reply.body);
         String detail = "HTTP " + s + (code == null ? "" : " " + code);
-        if (s == 400 || s == 413 || s == 415 || s == 422) return new Result(Outcome.REJECTED, "HTTP " + s + errorCode(reply.body));
+        if (code != null && (s == 400 || s == 413 || s == 415 || s == 422)) {
+            return new Result(Outcome.REJECTED, detail);
+        }
         if (s == 403 && "device_not_allowed".equals(code)) return new Result(Outcome.NOT_ALLOWED, detail);
         if (s == 429) return new Result(Outcome.WAIT, detail, waitMs(reply));
         // The intake's own word (404 unknown_user, 403 cross_origin, 500 processing_failed) counts.
@@ -208,32 +206,65 @@ final class InputUploader implements UploadPump.Sender {
         return Math.max(MIN_WAIT_MS, Math.min(seconds * 1000L, MAX_WAIT_MS));
     }
 
-    private static boolean accepted(String body) {
+    private static boolean accepted(String body, String expectedId, boolean legacyMemoRoute) {
         try {
-            return new JSONObject(body).opt("duplicate") instanceof Boolean;
-        } catch (Exception notJson) {
+            JSONObject receipt = responseObject(body);
+            Object id = receipt.opt("inputId");
+            if (legacyMemoRoute && !receipt.has("inputId")) id = receipt.opt("memoId");
+            return Boolean.TRUE.equals(receipt.opt("ok"))
+                    && receipt.opt("duplicate") instanceof Boolean
+                    && expectedId.equals(id);
+        } catch (JSONException notJson) {
             return false;
         }
     }
 
-    /** The error code when the body is the intake's own refusal ({ok:false, error:<known code>}); null otherwise. */
-    private static String intakeError(String body) {
+    /** The intake's own refusal, identified by the documented status and error code. */
+    private static String intakeError(int status, String body) {
         try {
-            JSONObject o = new JSONObject(body);
-            Object code = o.opt("error");
-            return Boolean.FALSE.equals(o.opt("ok")) && code instanceof String && INTAKE_ERRORS.contains(code) ? (String) code : null;
-        } catch (Exception notJson) {
+            JSONObject response = responseObject(body);
+            if (!Boolean.FALSE.equals(response.opt("ok"))) return null;
+            Object error = response.opt("error");
+            if (!(error instanceof String)) return null;
+            String code = (String) error;
+            switch (code) {
+                case "user_required":
+                case "invalid_input_id":
+                case "invalid_memo_id":
+                case "empty_body":
+                case "unreadable_body":
+                    return status == 400 ? code : null;
+                case "device_not_allowed":
+                case "cross_origin":
+                    return status == 403 ? code : null;
+                case "unknown_user":
+                    return status == 404 ? code : null;
+                case "too_large":
+                    return status == 413 ? code : null;
+                case "unsupported_media_type":
+                    return status == 415 ? code : null;
+                case "empty_transcription":
+                case "unusable_input":
+                    return status == 422 ? code : null;
+                case "daily_limit":
+                    return status == 429 ? code : null;
+                case "processing_failed":
+                    return status == 500 ? code : null;
+                case "unavailable":
+                    return status == 503 ? code : null;
+                default:
+                    return null;
+            }
+        } catch (JSONException notJson) {
             return null;
         }
     }
 
-    /** " <code>" when the body is {error: "<code>"}; otherwise nothing. For the reason a parked memo shows. */
-    private static String errorCode(String body) {
-        try {
-            Object code = new JSONObject(body).opt("error");
-            return code instanceof String && ERROR_CODE.matcher((String) code).matches() ? " " + code : "";
-        } catch (Exception notJson) {
-            return "";
-        }
+    private static JSONObject responseObject(String body) throws JSONException {
+        if (body == null) throw new JSONException("Missing response body");
+        JSONTokener parser = new JSONTokener(body);
+        JSONObject object = new JSONObject(parser);
+        if (parser.nextClean() != 0) throw new JSONException("Unexpected data after response object");
+        return object;
     }
 }

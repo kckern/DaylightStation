@@ -71,7 +71,10 @@ public class QuickInputCapabilityTest {
             urls.add(url);
             types.add(contentType);
             if (answer != null) return new Reply(status, answer);
-            return new Reply(status, status == 200 ? "{\"ok\":true,\"duplicate\":false}" : "{\"ok\":false,\"error\":\"processing_failed\"}");
+            String id = JSONObject.quote(headers.get("X-Daylight-Input-Id"));
+            return new Reply(status, status == 200
+                    ? "{\"ok\":true,\"inputId\":" + id + ",\"duplicate\":false}"
+                    : "{\"ok\":false,\"inputId\":" + id + ",\"error\":\"processing_failed\"}");
         }
     };
 

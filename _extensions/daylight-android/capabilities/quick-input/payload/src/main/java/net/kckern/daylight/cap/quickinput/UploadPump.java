@@ -9,7 +9,7 @@ import java.io.File;
  * One pass over the queue: everything that is due, one memo at a time. No threads
  * and no clock of its own, so it runs in JVM tests.
  *
- * The audio of a memo is deleted in one place, here, after the backend accepted it.
+ * The capture file is deleted here after the sender validates a receipt for its queue entry.
  */
 final class UploadPump {
     interface Sender { Result upload(InputQueue.Entry memo); }

@@ -25,7 +25,8 @@ public class InputUploaderTest {
     private CoreRuntime core;
     private Backend backend;
     private int status = 200;
-    private String body = "{\"ok\":true,\"duplicate\":false}";
+    private static final String CAPTURE_ID = "1700000000000-ab12cd34";
+    private String body = receipt("inputId", false);
     private IOException failure;
     private Map<String, String> replyHeaders;
     private String seenUrl;
@@ -71,8 +72,75 @@ public class InputUploaderTest {
     }
 
     @Test public void aDuplicateAnswerIsAsGoodAsTheFirst() throws Exception {
-        body = "{\"ok\":true,\"duplicate\":true}";
+        body = receipt("inputId", true);
         assertEquals(Outcome.UPLOADED, upload().outcome);
+    }
+
+
+    private static String receipt(String idField, boolean duplicate) {
+        return "{\"ok\":true,\"" + idField + "\":\"" + CAPTURE_ID + "\",\"duplicate\":" + duplicate + "}";
+    }
+
+    @Test public void onlyMatchingCanonicalReceiptsRemoveFreshAndRecoveredCaptures() throws Exception {
+        Object[][] responses = {
+                { receipt("inputId", false), true },
+                { receipt("inputId", true), true },
+                { receipt("inputId", false).replace(CAPTURE_ID, "another-input"), false },
+                { receipt("inputId", false).replace("\"ok\":true", "\"ok\":false"), false },
+                { receipt("inputId", false).replace("\"ok\":true", "\"ok\":\"true\""), false },
+                { receipt("inputId", false).replace("\"duplicate\":false", "\"duplicate\":\"false\""), false },
+                { receipt("inputId", false).replace("\"" + CAPTURE_ID + "\"", "123"), false },
+                { "{\"duplicate\":false}", false },
+                { "{\"ok\":true,\"inputId\":\"" + CAPTURE_ID + "\"}", false },
+                { "<html>Sign in</html>", false },
+                { receipt("inputId", false) + "unexpected", false },
+                { receipt("memoId", false), false },
+        };
+        for (boolean recovered : new boolean[] { false, true }) {
+            for (Object[] response : responses) {
+                body = (String) response[0];
+                assertQueueReceipt(new InputUploader(backend, http), recovered, (Boolean) response[1]);
+            }
+        }
+    }
+
+    @Test public void onlyTheJournalistMemoAliasCanAcknowledgeWithMemoId() throws Exception {
+        InputUploader alias = new InputUploader(backend, http, () -> Destinations.usable(
+                java.util.Collections.singletonList("journal|Journal|voice|/api/v1/journalist/memo"), null));
+        body = receipt("memoId", true);
+        assertQueueReceipt(alias, true, true);
+        body = receipt("memoId", true).replace(CAPTURE_ID, "another-input");
+        assertQueueReceipt(alias, false, false);
+
+        InputUploader otherMemoRoute = new InputUploader(backend, http, () -> Destinations.usable(
+                java.util.Collections.singletonList("journal|Journal|voice|/api/v1/other/memo"), null));
+        body = receipt("memoId", true);
+        assertQueueReceipt(otherMemoRoute, false, false);
+    }
+
+    private void assertQueueReceipt(InputUploader uploader, boolean recovered, boolean accepted) throws Exception {
+        InputQueue.Entry capture = memo();
+        File state = new File(tmp.newFolder(), "queue.json");
+        InputQueue queue = new InputQueue(state);
+        queue.add(capture.id, capture.file, capture.recordedAtMs);
+        long now = capture.recordedAtMs + 1000;
+        if (recovered) {
+            assertTrue(new UploadPump(queue, uploader, () -> false).drain(now).offline);
+            queue.close();
+            queue = new InputQueue(state);
+        }
+
+        UploadPump.Pass pass = new UploadPump(queue, uploader, () -> true).drain(now);
+        assertEquals(body, accepted ? 1 : 0, pass.uploaded);
+        assertEquals(body, accepted ? 0 : 1, queue.waiting());
+        assertEquals(body, 0, queue.parked());
+        File source = new File(capture.file);
+        assertEquals(body, !accepted, source.exists());
+        if (!accepted) {
+            assertArrayEquals(new byte[64], Files.readAllBytes(source.toPath()));
+            assertTrue(queue.nextAttemptAtMs() > now);
+            assertEquals(0, queue.describe().getJSONArray("inputs").getJSONObject(0).getInt("attempts"));
+        }
     }
 
     /** The table of the intake's answers and what the queue does with each. */
@@ -84,7 +152,8 @@ public class InputUploaderTest {
                 { 400, "{\"ok\":false,\"error\":\"empty_body\"}", Outcome.REJECTED, "HTTP 400 empty_body" },
                 { 400, "{\"ok\":false,\"error\":\"unreadable_body\"}", Outcome.REJECTED, "HTTP 400 unreadable_body" },
                 { 413, "{\"ok\":false,\"error\":\"too_large\"}", Outcome.REJECTED, "HTTP 413 too_large" },
-                { 413, "<html>Request Entity Too Large</html>", Outcome.REJECTED, "HTTP 413" },
+                { 413, "<html>Request Entity Too Large</html>", Outcome.RETRY_UNCOUNTED, "HTTP 413" },
+                { 413, "{\"ok\":false,\"error\":\"empty_body\"}", Outcome.RETRY_UNCOUNTED, "HTTP 413" },
                 { 415, "{\"ok\":false,\"error\":\"unsupported_media_type\"}", Outcome.REJECTED, "HTTP 415 unsupported_media_type" },
                 // Answered again on a retry, without transcribing: it never changes.
                 { 422, "{\"ok\":false,\"error\":\"empty_transcription\"}", Outcome.REJECTED, "HTTP 422 empty_transcription" },
@@ -112,7 +181,7 @@ public class InputUploaderTest {
      * machine's. None of them says anything about the memo, so none counts toward parking.
      */
     @Test public void anAnswerThatIsNotTheIntakesOwnIsTriedAgainAndNeverCounts() throws Exception {
-        for (int other : new int[] { 301, 302, 401, 403, 404, 408, 500, 502, 503, 504 }) {
+        for (int other : new int[] { 301, 302, 400, 401, 403, 404, 408, 413, 415, 422, 500, 502, 503, 504 }) {
             for (String notTheIntake : new String[] { "<html>gateway</html>", "", "{\"error\":\"unknown_user\"}",
                     "{\"ok\":false,\"error\":\"something_else\"}", "{\"ok\":true,\"error\":\"unknown_user\"}" }) {
                 status = other;
@@ -269,8 +338,8 @@ public class InputUploaderTest {
     /** The whole answer table of the contract, for every kind: the queue's action does not depend on what was captured. */
     @Test public void theAnswerTableIsTheSameForEveryKind() throws Exception {
         Object[][] answers = {
-                { 200, "{\"ok\":true,\"inputId\":\"x\",\"duplicate\":false}", Outcome.UPLOADED },
-                { 200, "{\"ok\":true,\"inputId\":\"x\",\"duplicate\":true}", Outcome.UPLOADED },
+                { 200, receipt("inputId", false), Outcome.UPLOADED },
+                { 200, receipt("inputId", true), Outcome.UPLOADED },
                 { 200, "{\"ok\":true,\"inputId\":\"x\"}", Outcome.RETRY_UNCOUNTED },
                 { 400, "{\"ok\":false,\"error\":\"invalid_input_id\"}", Outcome.REJECTED },
                 { 400, "{\"ok\":false,\"error\":\"empty_body\"}", Outcome.REJECTED },
