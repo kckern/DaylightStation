@@ -21,6 +21,12 @@ export const DS_TOKENS = Object.freeze({
     info:    '#58a6ff',
     live:    '#ff6b6b',
   }),
+  controls: Object.freeze({
+    'control-compact-height': '36px',
+    'control-touch-target': '44px',
+    'control-compact-radius': '9px',
+    'focus-width': '3px',
+  }),
   motion: Object.freeze({
     fast:   '120ms',
     base:   '200ms',
@@ -48,6 +54,9 @@ export function dsCssVars(pack = null) {
   }
   for (const [name, hex] of Object.entries(DS_TOKENS.status)) {
     vars[`--ds-${name}`] = hex;
+  }
+  for (const [name, value] of Object.entries(DS_TOKENS.controls)) {
+    vars[`--ds-${name}`] = value;
   }
   vars['--ds-motion-fast'] = DS_TOKENS.motion.fast;
   vars['--ds-motion-base'] = DS_TOKENS.motion.base;

@@ -7,7 +7,7 @@ import { useState } from 'react';
 import {
   AppThemeProvider, AppChrome, Sheet, DismissStackProvider,
   LoadingState, ErrorState, EmptyState, SectionCard, StatCard,
-  DateStepper, AskAffordance,
+  DateStepper, AskAffordance, Button, Select,
 } from '../../lib/ui/index.js';
 
 const Dot = () => (
@@ -35,6 +35,14 @@ export default function DsGallery() {
           footer={<AskAffordance onActivate={() => setSheetOpen(true)} />}
         >
           <div style={{ display: 'grid', gap: '0.75rem' }} data-testid="gallery-grid">
+            <SectionCard title="Controls">
+              <label>Density <Select density="compact" defaultValue="comfortable">
+                <option value="comfortable">Comfortable</option>
+                <option value="compact">Compact</option>
+              </Select></label>
+              <Button density="compact" onClick={() => setSheetOpen(true)}>Open sheet</Button>
+              <Button density="compact" busy>Saving</Button>
+            </SectionCard>
             <SectionCard title="States">
               <LoadingState label="demo" />
               <ErrorState error={new Error('Example failure')} onRetry={() => {}} />
@@ -50,7 +58,6 @@ export default function DsGallery() {
             <SectionCard title="Date">
               <DateStepper date={date} onChange={setDate} max="2026-09-02" />
             </SectionCard>
-            <button onClick={() => setSheetOpen(true)}>Open sheet</button>
           </div>
           <Sheet open={sheetOpen} onClose={() => setSheetOpen(false)} title="Example sheet">
             <p>Sheet body content.</p>

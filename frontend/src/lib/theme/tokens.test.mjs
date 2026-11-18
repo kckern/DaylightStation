@@ -27,6 +27,17 @@ describe('DS token contract', () => {
     expect(vars['--ds-motion-base']).toBe('200ms');
   });
 
+  it('shares compact control geometry across theme packs', () => {
+    for (const pack of [PACKS.health, PACKS.home]) {
+      expect(dsCssVars(pack)).toMatchObject({
+        '--ds-control-compact-height': '36px',
+        '--ds-control-touch-target': '44px',
+        '--ds-control-compact-radius': '9px',
+        '--ds-focus-width': '3px',
+      });
+    }
+  });
+
   it('a surface with no pack still gets the base accent', () => {
     expect(dsCssVars()['--ds-accent']).toBe(DS_TOKENS.accent);
   });
