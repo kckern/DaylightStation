@@ -4,9 +4,17 @@ import { IPianoMidiBridge } from "../../application/bridge/ports/IPianoMidiBridg
 const DEFAULT_BACKOFF_BASE_MS = 1000;
 const DEFAULT_BACKOFF_MAX_MS = 30000;
 
-/** Transport adapter for the piano-bridge APK WebSocket and config endpoint. */
+/**
+ * Transport adapter for the bridge's note WebSocket, and on the old piano-bridge
+ * APK its config endpoint.
+ *
+ * `headers` go on the WebSocket upgrade: the DaylightStation Android app's
+ * control port refuses an upgrade without its token header. `suppressRelay`
+ * false skips the old APK's `/config` relay, which that app does not have
+ * (composition/bridge-endpoint.mjs).
+ */
 export class PianoMidiBridgeAdapter extends IPianoMidiBridge {
-  #bridgeUrl; #logger; #WebSocketImpl; #fetchImpl;
+  #bridgeUrl; #logger; #WebSocketImpl; #fetchImpl; #headers; #suppressRelay; #relaySkipLogged = false;
   #backoffBaseMs; #backoffMaxMs; #backoff; #ws; #stopped; #onNoteOn;
 
   constructor({
@@ -16,6 +24,8 @@ export class PianoMidiBridgeAdapter extends IPianoMidiBridge {
     fetchImpl = globalThis.fetch,
     backoffBaseMs = DEFAULT_BACKOFF_BASE_MS,
     backoffMaxMs = DEFAULT_BACKOFF_MAX_MS,
+    headers = {},
+    suppressRelay = true,
   } = {}) {
     super();
     if (!bridgeUrl) throw new Error('PianoMidiBridgeAdapter requires bridgeUrl');
@@ -30,6 +40,8 @@ export class PianoMidiBridgeAdapter extends IPianoMidiBridge {
     this.#ws = null;
     this.#stopped = false;
     this.#onNoteOn = null;
+    this.#headers = { ...headers };
+    this.#suppressRelay = suppressRelay !== false;
   }
 
   start(onNoteOn) {
@@ -49,7 +61,9 @@ export class PianoMidiBridgeAdapter extends IPianoMidiBridge {
     if (this.#stopped) return;
     let ws;
     try {
-      ws = new this.#WebSocketImpl(this.#bridgeUrl);
+      ws = Object.keys(this.#headers).length
+        ? new this.#WebSocketImpl(this.#bridgeUrl, { headers: this.#headers })
+        : new this.#WebSocketImpl(this.#bridgeUrl);
     } catch (err) {
       this.#logger.warn?.('piano-midi-wake.ws.error', { error: String(err?.message ?? err) });
       this.#scheduleReconnect();
@@ -84,6 +98,13 @@ export class PianoMidiBridgeAdapter extends IPianoMidiBridge {
   }
 
   async suppressWakeUntil(deadlineMs) {
+    if (!this.#suppressRelay) {
+      if (!this.#relaySkipLogged) {
+        this.#relaySkipLogged = true;
+        this.#logger.info?.('piano-midi-wake.suppress-relay-unsupported', { reason: 'bridge has no wake-suppress setting' });
+      }
+      return;
+    }
     const httpBase = this.#bridgeUrl.replace(/^ws(s?):\/\//i, 'http$1://').replace(/\/+$/, '');
     const url = `${httpBase}/config`;
     try {

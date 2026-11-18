@@ -334,7 +334,7 @@ curl -s http://{tablet}:8770/status      # ble.state CONNECTED, outVerified true
 
 | Layer | Where | Covers |
 |---|---|---|
-| Bridge supervisor | DS backend, prod container only (`PianoBridgeSupervisorService`, config `piano.bridge_supervisor`) | Everything, force-stop included. Relaunches through FKB `startApplication` after two failed 30 s checks (backoff 1, 2, 5, 10, 30 min). Pushes if still down after 5 min, and pushes "back" when it recovers. |
+| Bridge supervisor | DS backend, prod container only (`PianoBridgeSupervisorService`, config `piano.bridge_supervisor`) | Everything, force-stop included. Relaunches through FKB `startApplication` after two failed 30 s checks (backoff 1, 2, 5, 10, 30 min). Pushes if still down after 5 min, and pushes "back" when it recovers. With `piano.bridge_provider: daylight-android` it watches the DaylightStation Android app instead and relaunches through that app's lifeline (`__docs/reference/integrations/adb.md`, "The piano bridge on the Android kiosk app"). |
 | FKB `appToRunOnStart` | FKB setting, set 2026-09-30 | Reboots, even with the backend down. FKB launches the bridge in the background when FKB starts. |
 | Keep-alive alarm (shell v31) | `ShellKeepAlive` | Kills and crash loops, every 5 min. Not force-stop. |
 | Crash restart alarm (shell v31) | `PianoBridgeService` crash handler | An uncaught exception, 3 s later. |

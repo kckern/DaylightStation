@@ -57,3 +57,17 @@ test('unreachable bridge reports speaker null', async () => {
   });
   assert.equal((await probe.readHealth()).speaker, null);
 });
+
+test('the configured headers go on every request (the Android app needs its token header)', async () => {
+  const seen = [];
+  const probe = new PianoBridgeHealthProbeAdapter({
+    bridgeUrl: 'http://tablet:8780',
+    headers: { 'X-Daylight-Token': 'tok' },
+    fetchImpl: async (url, init) => { seen.push([url, init.headers?.['X-Daylight-Token']]); return ok({ ok: true, ble: { state: 'CONNECTED' }, outVerified: true, speaker: { connected: true } }); },
+  });
+  const health = await probe.readHealth();
+  assert.deepEqual(seen, [['http://tablet:8780/status', 'tok']]);
+  assert.equal(health.ble, 'CONNECTED');
+  assert.equal(health.outVerified, true);
+  assert.equal(health.speaker, true);
+});

@@ -62,3 +62,20 @@ test('probeEndpoints: "POST only" means present, 404 means missing, network erro
   const down = new PianoBridgeSpeakerActionsAdapter({ bridgeUrl: 'http://tablet:8770', fetchImpl: async () => { throw new Error('ECONNREFUSED'); } });
   assert.deepEqual(await down.probeEndpoints(), { present: null });
 });
+
+test('the configured headers go on every request (the Android app needs its token header)', async () => {
+  const seen = [];
+  const a = new PianoBridgeSpeakerActionsAdapter({
+    bridgeUrl: 'http://tablet:8780',
+    headers: { 'X-Daylight-Token': 'tok' },
+    fetchImpl: async (url, init) => { seen.push(init.headers?.['X-Daylight-Token']); return res(init.method === 'GET' ? 405 : 200); },
+  });
+  await a.a2dpReconnect();
+  await a.probeEndpoints();
+  assert.deepEqual(seen, ['tok', 'tok', 'tok']);
+});
+
+test('a 405 to the GET probe means the POST route exists (the Android app answers method_not_allowed)', async () => {
+  const a = new PianoBridgeSpeakerActionsAdapter({ bridgeUrl: 'http://tablet:8780', fetchImpl: async () => res(405, { ok: false }) });
+  assert.deepEqual(await a.probeEndpoints(), { present: true });
+});

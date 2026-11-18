@@ -201,6 +201,33 @@ directly, and each picks its client from the same `provider` field:
 | Arcade metering, enforcement and supervision ([Arcade game sessions](../gaming/arcade-game-sessions.md)) | `FullyKioskRestClient` | `DaylightAndroidArcadeKioskClient`: foreground from `GET /lockdown`, return to the kiosk with `POST /kiosk/foreground`, announcements with `POST /speak`, and the countdown film through the web overlay (`POST /kiosk/overlay {url, gravity}`, driven by `DaylightAndroidArcadeGameOverlay`) |
 | Excursion guard ([Android app launch](../content/android-app-launch.md#excursion-guard)) | `AndroidForegroundProbe` over the ADB fallback | `DaylightAndroidForegroundProbe`: package and activity from `GET /lockdown`, `POST /kiosk/foreground`; no ADB needed |
 | Admin console ([Fully Kiosk Admin Console](./fully-kiosk-admin-console.md#devices-on-the-android-kiosk-app)) | `FullyKioskRemoteAdministrationAdapter` | `DaylightAndroidRemoteAdministrationAdapter` |
+| Piano screen authority (`piano.screen_power_sync`) | through `deviceService` → the content adapter | the same path: it follows `content_control.provider` with no setting of its own |
+| Piano bridge supervisor and MIDI wake (`piano.bridge_supervisor`, `piano.midi_wake`) | the old piano-bridge APK on its own port, unauthenticated; relaunch through `launch-app` | only when the piano app config sets `bridge_provider: daylight-android` (see below) |
+
+**The piano bridge on the Android kiosk app.** The piano tablet's MIDI bridge is
+a separate APK under Fully and a capability inside the app on this provider. The
+piano app config picks which one the backend talks to with one top-level key:
+
+```yaml
+# piano app config
+bridge_provider: daylight-android   # default: piano-bridge
+```
+
+With `daylight-android`, the bridge supervisor's health probe (`GET /status`),
+its speaker actions (`POST /speaker/reconnect`, `/speaker/bt-cycle`) and the MIDI
+wake's note socket go to the tablet's control port, with the token header from
+the auth file; the supervisor's relaunch becomes `POST /restart` on the app's
+lifeline port (`content_control.lifeline_port`, default the control port plus
+one), which restarts the payload even while the control port is down. The
+address, port and token come from the tablet's `content_control` block, so
+`bridge_provider: daylight-android` is refused, with an error naming
+`provider-mismatch`, while that block still says `fully-kiosk`. The MIDI wake's
+relay of a wake-suppress deadline into the old APK's `/config` has no
+counterpart on the app; it is skipped and logged once
+(`piano-midi-wake.suppress-relay-unsupported`), and a manual screen-off hold is
+kept by the screen authority's reconcile. Setting the key back, or removing it,
+returns both to the old bridge. `bridge_url` and `bridge_supervisor.package` are
+used only by `piano-bridge`.
 
 The single-device `KioskAdapter` in the home-control capability (system `kiosk`
 app config) speaks Fully's protocol only and is not built when that config
