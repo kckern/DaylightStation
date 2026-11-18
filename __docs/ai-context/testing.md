@@ -156,6 +156,25 @@ Registry: `data/system/testdata.yml`
    - Unit test? → `tests/unit/suite/`
    - API test? → `tests/integration/suite/`
    - E2E? → `tests/runtime/suite/`
+5. **Refusing a large upload before reading it?** Use
+   `tests/_lib/refusedUpload.mjs`, not supertest's `.send(bigBuffer)`. A route
+   that answers early can leave the uploading client with EPIPE or ECONNRESET,
+   depending on the OS's socket buffers (it failed every run on macOS). The
+   helper stops writing once the response arrives and records, server side,
+   whether the body was read, complete or parsed when the response went out;
+   assert `refusedStatus` and
+   `refusal: {bodyRead: false, bodyComplete: false, bodyParsed: false}`. It
+   refuses bodies under 8 MB, which can arrive whole before any read.
+6. **supertest must be 7.3 or later.** supertest 6 listened on the dual-stack
+   wildcard (`app.listen(0)`, bound to `::`) and then connected to
+   `127.0.0.1:<port>`. macOS lets another socket bind `127.0.0.1` on that same
+   port and routes the request to it, so with parallel suites a test could
+   occasionally get another server's answer (seen as `expected 404 to be 200`).
+   7.3 listens on `127.0.0.1` itself, so the second bind is refused. This holds
+   for every runner (vitest, jest, node:test) because it lives in the package,
+   not a setup file. `tests/unit/tooling/supertestLoopback.test.mjs` forces the
+   collision with a worker-thread imposter and fails, naming the fix, if an
+   older supertest is installed: run `npm install` at the repo root.
 
 ## Isolated Fitness styled acceptance
 
