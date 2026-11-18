@@ -452,6 +452,11 @@ In the page, through `dd eval`.
       `recovery.rendererUnresponsiveSec` the renderer is ended and the page
       returns. On the Portal record whether that callback exists at all.
 
+When `acc --active` exercises screen sleep and wake, it restores the original
+screen state and reads it back before reporting PASS. A restoration failure
+returns exit status 1, including after Ctrl-C. A successful interrupted
+restoration returns 130.
+
 ## Stage 8. Self-update, reboot, payload push, rollback, bad payload
 
 Lockdown is off throughout this stage. **Never reboot a device with lockdown on
@@ -469,6 +474,12 @@ until every line of this stage is marked ok on that device.**
 - [ ] **Reboot survival, lockdown off.** Reboot the device. With no ADB and no touch:
       `dd lifeline status` answers, then `dd status`. Fully is the home app and
       shows as before. Record how long each took.
+- [ ] **Shield microphone capture.** With `acc --only reboot --reboot`, require
+      `reboot.survives` to pass and complete the `reboot.mic-capture` manual
+      check after each reboot. Without touching the Shield after boot, verify
+      that a Home Line call or approved recording consumer receives PCM audio
+      frames and have a person confirm audible speech. Record both observations
+      in the private sitting notes.
 - [ ] **What survives a reboot on this device.** Record: does ADB over WiFi come
       back (`adb connect {device-address}:5555`)? On the Portal it does not. Then
       the lifeline and `dd update` are the whole way back in, and both were just
@@ -555,12 +566,12 @@ until every line of this stage is marked ok on that device.**
 
 ### Shield
 
-- [ ] **Microphone first.** Before anything else on this device:
-      `dd get /mic/status` reads `running: true`, `lastError: null`. Open the
-      page's call screen: `streaming: true`, `clients: 1`, and audio is heard at
-      the other end. This is the risk the design names; if the microphone is
-      withheld, stop here and record `lastError` and `lastErrorDetail`.
-- [ ] After a reboot, the same check again, with no one touching the device.
+- [ ] **Microphone first.** Use `acc --only mic.status` for a read-only
+      service check during coexistence. After hand-over, run
+      `acc --only mic.capture` and follow its manual instructions. Verify
+      that a Home Line call or approved recording consumer receives PCM audio
+      frames and have a person confirm audible speech.
+- [ ] After each reboot, complete `reboot.mic-capture` as described in stage 8.
 - [ ] **A call.** A full video call in both directions, five minutes long.
 - [ ] **Remote keys.** D-pad, select, back, play/pause arrive in the page as
       `keydown` and navigate the menu as under Fully.

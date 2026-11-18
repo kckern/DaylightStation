@@ -53,16 +53,27 @@ below means restarting the prod container, as in a deploy.
 | 1 | Backups: audio-bridge state, supervision-guard provisioning if any, `fkb get`, `fkb get kioskAppWhitelist`, HOME resolution, the accessibility list; `adb -s <serial> shell pm list features` (confirm no `device_admin`) | saved | nothing changed |
 | 2 | Install (stage 2), home-candidate check; grants (stage 3) including `SYSTEM_ALERT_WINDOW` and `ACCESS_FINE_LOCATION` | unchanged HOME | `adb -s <serial> uninstall net.kckern.daylight.shield` |
 | 3 | Whitelist this app in Fully (stage 4); start the Activity | page shows | restore the whitelist |
-| 4 | **Microphone first.** Stop audio-bridge (`adb -s <serial> shell am force-stop net.kckern.audiobridge`); `dd settings set mic.enabled true`; open the call page | `acc --only mic` PASS (read-only) with `lastError: null` and `heldByOther: false` | `dd settings set mic.enabled false`; start audio-bridge. **Stop the sitting** and record `lastError`, `lastErrorDetail` |
-| 5 | A Home Line call from a phone, five minutes, both ways | heard and seen both ways | as step 4 |
+| 4 | **Microphone first.** Stop audio-bridge (`adb -s <serial> shell am force-stop net.kckern.audiobridge`); `dd settings set mic.enabled true`; open the call page | `acc --only mic.status` reports a running service; `acc --only mic.capture` gives the manual capture instructions for step 5 | `dd settings set mic.enabled false`; start audio-bridge. **Stop the sitting** and record `lastError`, `lastErrorDetail` |
+| 5 | A Home Line call from a phone, five minutes, both ways | the consumer receives PCM audio frames from the Shield and a person confirms audible speech; audio and video work both ways | as step 4 |
 | 6 | `acc --active --launch com.retroarch.aarch64` (after the call; opens the emulator and returns) | no FAIL; `launch.app` sees the emulator in front and the kiosk returns | `dd foreground` |
-| 7 | Stage 8 proofs: `dd update <apk-url> <sha256>` twice (confirm on the TV each time); `acc --only reboot --reboot --reboot-wait 600` three times, power-cycling by hand when it says so (ADB check after each); `acc --only payload.bad,crash --restart --kill --serve-bad-payload {laptop-address}:{port}` | lifeline back 3 of 3; the mic comes back after each reboot with no one touching it (`acc --only mic`) | stop; Fully and audio-bridge run the Shield |
+| 7 | Stage 8 proofs: `dd update <apk-url> <sha256>` twice (confirm on the TV each time); `acc --only reboot --reboot --reboot-wait 600` three times, power-cycling by hand when it says so (ADB check after each); `acc --only payload.bad,crash --restart --kill --serve-bad-payload {laptop-address}:{port}` | `reboot.survives` PASS 3 of 3; complete the `reboot.mic-capture` proof below after each reboot | stop; Fully and audio-bridge run the Shield |
 | 8 | Backend: `{backend-id}` `content_control.provider: daylight-android`, `auth_ref: daylight-android`, volume provider; **restart the backend** | the admin console and a play from the menu reach the app; `prepareForContent` logs no mic restart loop | back to `fully-kiosk`, restart the backend |
 | 9 | Home and lockdown: `launcher.allowed` and `lockdown.allowedApps` from step 1; `dd lockdown home on`; `adb -s <serial> shell cmd package set-home-activity net.kckern.daylight.shield/net.kckern.daylight.cap.lockdown.shell.KioskHome`; force-stop Fully; `dd settings set lockdown.enabled true` | `locked: true`, `mode: app`, `homeIsKiosk: true` | stage 11 |
 | 10 | `acc --active --launch com.retroarch.aarch64`; then the MANUAL lines: Home, Recents, the assistant button, the remote's D-pad, select, back and play/pause against the `fkb.keyCapture` audit, controller pairing from the Controllers screen | no FAIL; each escape recalled | stage 11 |
 | 11 | Only with the lease provisioned: `dd settings set lease.endpoint …`, `lease.packageName …`, `lease.credential …`, then `lease.enabled true` | `acc --only lease` reads `configured true, ready true`; no lease: the game is recalled; with a lease: it runs | `dd settings set lease.enabled false` |
-| 12 | `acc --only reboot --reboot --reboot-wait 600` with lockdown on (power-cycle by hand); `acc --only logstore --log-store {log-store-url}` | PASS; page shows; mic running | stage 11 |
+| 12 | `acc --only reboot --reboot --reboot-wait 600` with lockdown on (power-cycle by hand); `acc --only logstore --log-store {log-store-url}` | `reboot.survives` PASS; complete the `reboot.mic-capture` proof below with lockdown on | stage 11 |
 | 13 | The next day: make it permanent (stage 10 step 12). In `devices/shield.yml`: `cutover: done`, `lockdown.enabled` and `lockdown.required` `true`, `mic.enabled` `true`, and `lease.enabled` `true` only if the lease was provisioned at step 11 | `required: true`; `node --test tools/roadmap-capabilities.test.mjs` passes | an update with `required: false`, confirmed on the TV |
+
+### Microphone capture after each reboot
+
+Wait for `reboot.survives` to pass. With no one touching the Shield after it
+boots, start a Home Line call from another device or use an approved recording
+consumer. Verify the consumer receives PCM audio frames from the Shield and
+have someone confirm audible speech. Record both observations in the private
+sitting notes before proceeding. The runner reports `reboot.mic-capture` as
+MANUAL when the service reports healthy. A disabled or unhealthy service fails
+the check. A status response, a connected client, a stream header or a zero exit
+code does not satisfy the capture proof.
 
 ## The soak: two weeks
 
@@ -70,7 +81,7 @@ Starts the day step 13 is done. Fully and audio-bridge stay installed and stoppe
 
 Watched daily, read-only:
 
-- `acc --only core,mic,kiosk.status,lockdown.status --log-store {log-store-url} --log-window 24h`: no FAIL.
+- `acc --only core,mic.status,kiosk.status,lockdown.status --log-store {log-store-url} --log-window 24h`: no FAIL.
 - The log store under `daylight-shield`: no `capture_denied`, no mic restart loop
   in the backend (`daylightandroid.prepareForContent.micRestarted`).
 - Calls, the media menu, the arcade (launch, the countdown overlay, return).

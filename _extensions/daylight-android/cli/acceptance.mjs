@@ -6,7 +6,7 @@
 //
 // Prints one line per check: PASS, FAIL, MANUAL (a person has to do it; the line says
 // what to do and what to look for) or SKIP (an option it needs was not given). Exits 1
-// when any line is FAIL.
+// when any line is FAIL, including a failed restoration after interruption.
 //
 // The host is never assumed. It comes from --host, else from the device's entry in the
 // private tokens file ($DAYLIGHT_ANDROID_TOKENS, else $DAYLIGHT_BASE_PATH/data/household/auth/
@@ -336,11 +336,18 @@ export function buildChecks(deviceFile, opts = {}) {
   }, kiosk, active('shows a message over the page for a moment'));
 
   // ── screen, volume, launch, lockdown ──
-  add('screen.sleep-wake', 'the screen goes off and comes back on, read back from the display', async ({ api, sleep, restorer }) => {
+  add('screen.sleep-wake', 'the screen goes off and comes back on, read back from the display', async ({ api, cleanupApi, sleep, restorer, isInterrupted }) => {
     const k = await api.control('GET', '/kiosk/status');
     if (!ok(k) || typeof k.json.screenOn !== 'boolean') return fail(`could not read the screen state first: ${why(k)}`);
     const was = k.json.screenOn;
-    const restore = restorer(`screen ${was ? 'on' : 'off'}`, () => api.control('POST', '/screen', { body: { on: was }, timeoutMs: 20000 }));
+    const restore = restorer(`screen ${was ? 'on' : 'off'}`, async () => {
+      const r = await cleanupApi.control('POST', '/screen', { body: { on: was }, timeoutMs: 20000 });
+      if (!ok(r)) throw new Error(`POST /screen ${why(r)}`);
+      const back = await cleanupApi.control('GET', '/kiosk/status');
+      if (!ok(back) || back.json?.screenOn !== was) {
+        throw new Error(`screen read-back: ${why(back)} screenOn=${back.json?.screenOn}, expected ${was}`);
+      }
+    });
     try {
       const off = await api.control('POST', '/screen', { body: { on: false }, timeoutMs: 20000 });
       if (!ok(off) || off.json.screenOn !== false) return fail(`off: ${why(off)} screenOn=${off.json?.screenOn}`);
@@ -350,7 +357,7 @@ export function buildChecks(deviceFile, opts = {}) {
       const on = await api.control('POST', '/screen', { body: { on: true }, timeoutMs: 20000 });
       return ok(on) && on.json.screenOn === true ? pass(`off, API answered while dark, on; left ${was ? 'on' : 'off'} as found`) : fail(`on: ${why(on)} screenOn=${on.json?.screenOn}`);
     } finally {
-      await restore();
+      if (!isInterrupted()) await restore();
     }
   }, has('screen-power') && kiosk, active('turns the screen off for about two seconds, then puts it back as it was'));
   add('screen.brightness', 'brightness is set and read back', async ({ api, opts: o }) => {
@@ -466,17 +473,25 @@ export function buildChecks(deviceFile, opts = {}) {
     const r = await api.control('GET', '/bluetooth');
     return ok(r) ? pass(short(r.json.mode ?? r.json.devices?.length ?? 'answered')) : fail(`/bluetooth ${why(r)}`);
   }, has('bluetooth-controls'));
-  add('mic.status', 'the microphone stream runs with nothing holding the mic', async ({ api }) => {
+  const micCheck = async (api, { capture = false, afterReboot = false } = {}) => {
     const { status, error } = await readStatus(api);
     if (error) return fail(error);
     const r = await api.control('GET', '/mic/status');
-    if (!ok(r)) return fail(`/mic/status ${why(r)}`);
+    if (!ok(r) || !r.json) return fail(`/mic/status ${why(r)}`);
     const m = r.json;
-    if (!switchActive(status, 'mic.enabled')) return pass('mic.enabled is not active (coexistence)');
-    return m.running === true && !m.lastError && m.heldByOther !== true
-      ? pass(`running, streaming ${m.streaming}, clients ${m.clients}`)
-      : fail(`running ${m.running}, heldByOther ${m.heldByOther}, lastError ${m.lastError} ${short(m.lastErrorDetail || '')}`);
-  }, has('mic-bridge'));
+    if (!switchActive(status, 'mic.enabled')) {
+      return capture ? fail('mic.enabled is not active') : pass('mic.enabled is not active (coexistence)');
+    }
+    if (m.running !== true || m.lastError || m.heldByOther === true) {
+      return fail(`running ${m.running}, heldByOther ${m.heldByOther}, lastError ${m.lastError} ${short(m.lastErrorDetail || '')}`);
+    }
+    const evidence = `running, streaming ${m.streaming}, clients ${m.clients}`;
+    return capture ? manual(`${evidence}. ${afterReboot ? 'Without touching the Shield after reboot, start' : 'Start'} a Home Line call or approved recording. Verify the consumer receives PCM audio frames and have a person confirm audible speech.`) : pass(evidence);
+  };
+  const mic = has('mic-bridge');
+  add('mic.status', 'GET /mic/status answers; when enabled the mic service reports healthy', ({ api }) => micCheck(api), mic);
+  add('mic.capture', 'manual proof that the call or recording consumer receives audible microphone audio', ({ api }) => micCheck(api, { capture: true }), mic,
+    optIn((o) => o.only?.includes('mic.capture'), 'select --only mic.capture to check capture after microphone hand-over'));
   add('lease.status', 'GET /lease answers', async ({ api }) => {
     const r = await api.control('GET', '/lease');
     return ok(r) ? pass(`configured ${r.json.configured}, ready ${r.json.ready}, enforcement ${r.json.enforcement}`) : fail(`/lease ${why(r)}`);
@@ -505,13 +520,18 @@ export function buildChecks(deviceFile, opts = {}) {
     }
     return fail('the payload did not report a restart within 60 s');
   }, kiosk, { flag: 'restart', effect: 'restarts the payload: MIDI, synth, page and mic drop for a few seconds' });
-  add('crash.kill', "killing the app's process: it comes back by itself", async ({ api, sleep, pollMs, opts: o, state, restorer }) => {
+  add('crash.kill', "killing the app's process: it comes back by itself", async ({ api, sleep, pollMs, opts: o, state, restorer, cleanupApi, isInterrupted }) => {
     const info = await api.control('GET', '/debug/info');
     if (!ok(info)) return fail(`/debug/info ${why(info)}`);
     const prior = settingOn(state, 'debug.execEnabled');
-    let restored = null;
     const restore = prior ? async () => {} : restorer('debug.execEnabled false', async () => {
-      restored = await api.control('POST', '/settings', { body: { key: 'debug.execEnabled', value: false } });
+      const r = await cleanupApi.control('POST', '/settings', { body: { key: 'debug.execEnabled', value: false } });
+      if (!ok(r)) throw new Error(`POST /settings ${why(r)}`);
+      const settings = await cleanupApi.control('GET', '/settings');
+      const exec = Array.isArray(settings.json?.settings) && settings.json.settings.find((setting) => setting?.key === 'debug.execEnabled');
+      if (!ok(settings) || (exec?.value !== false && exec?.value !== 'false')) {
+        throw new Error(`debug.execEnabled read-back: ${why(settings)} expected false`);
+      }
     });
     let result;
     try {
@@ -523,9 +543,8 @@ export function buildChecks(deviceFile, opts = {}) {
       await api.control('POST', '/debug/exec', { body: { cmd: 'kill -9 $PPID' }, timeoutMs: 10000 });
       result = await waitBack(api, { sleep, pollMs, waitMs: (o['reboot-wait'] ?? 300) * 1000, before: info.json.elapsedRealtimeMs, rebooted: false });
     } finally {
-      await restore();
+      if (!isInterrupted()) await restore();
     }
-    if (restored && !ok(restored)) return fail(`${result.evidence}; debug.execEnabled could not be put back to false: ${why(restored)}`);
     return result.ok ? pass(result.evidence) : fail(result.evidence);
   }, debug, optIn((o) => o.kill, 'pass --kill (turns debug.execEnabled on for the check and puts back the value it had)'));
   add('payload.bad', 'a payload that cannot start is rolled back and the lifeline stays up', async ({ api, sleep, pollMs, opts: o, badPayload }) => {
@@ -555,7 +574,7 @@ export function buildChecks(deviceFile, opts = {}) {
     return fail(`no rollback seen within 120 s (lifeline missed ${lifelineMisses} polls)`);
   }, true, optIn((o) => o['bad-payload-url'] || o['serve-bad-payload'],
     'pass --bad-payload-url and --bad-payload-sha256, or --serve-bad-payload <addr:port>'));
-  add('reboot.survives', 'after a reboot the lifeline and the control API answer with no ADB and no touch', async ({ api, sleep, pollMs, opts: o, out }) => {
+  add('reboot.survives', 'after a reboot the lifeline and the control API answer with no ADB and no touch', async ({ api, sleep, pollMs, opts: o, out, state }) => {
     const info = await api.control('GET', '/debug/info');
     if (!ok(info)) return fail(`/debug/info ${why(info)}`);
     const r = has('screen-power') ? await api.control('POST', '/device/reboot') : { status: 501 };
@@ -565,10 +584,18 @@ export function buildChecks(deviceFile, opts = {}) {
       return fail(`/device/reboot ${why(r)}`);
     }
     const result = await waitBack(api, { sleep, pollMs, waitMs: (o['reboot-wait'] ?? 300) * 1000, before: info.json.elapsedRealtimeMs, rebooted: true });
-    if (!result.ok || !kiosk) return result.ok ? pass(result.evidence) : fail(result.evidence);
+    if (!result.ok) return fail(result.evidence);
+    state.rebootObserved = true;
+    if (!kiosk) return pass(result.evidence);
     const k = await api.control('GET', '/kiosk/status');
     return ok(k) && k.json.ready ? pass(`${result.evidence}; page ready`) : fail(`${result.evidence}; page not ready: ${why(k)}`);
   }, debug, optIn((o) => o.reboot, 'pass --reboot (stage 8 of the cutover runbook first)'));
+
+  add('reboot.mic-capture', 'manual proof that the consumer receives audible microphone audio after a verified reboot', ({ api, opts: o, state }) => {
+    if (!o.reboot) return skip('pass --reboot and select --only reboot to verify the reboot first');
+    if (!state.rebootObserved) return fail('no reboot verified; select --only reboot and require reboot.survives first');
+    return micCheck(api, { capture: true, afterReboot: true });
+  }, mic && debug);
 
   // ── log store ──
   add('logstore.events', "the device's events are in the log store under its context.app", async ({ state, opts: o, fetchImpl }) => {
@@ -709,34 +736,72 @@ export async function runAcceptance({ deviceFile, host, token, opts, deps = {} }
   // before exiting, so a run stopped halfway does not leave exec on or the screen dark.
   const signals = deps.signals ?? process;
   const exit = deps.exit ?? ((code) => process.exit(code));
-  const pending = new Map();
-  let nextRestore = 0;
+  const pending = new Set();
+  let interrupt = null;
+  let write = null;
   const restorer = (what, undo) => {
-    const key = nextRestore += 1;
-    pending.set(key, { what, undo });
-    return async () => {
-      if (!pending.has(key)) return;
-      pending.delete(key);
-      await undo();
+    let attempt;
+    const restore = () => {
+      if (!pending.has(entry)) return;
+      attempt ??= (async () => {
+        try {
+          await undo();
+          pending.delete(entry);
+        } catch (e) {
+          throw new Error(`restore ${what}: ${e?.message || e}`);
+        } finally {
+          attempt = null;
+        }
+      })();
+      return attempt;
     };
+    const entry = { what, restore };
+    pending.add(entry);
+    return restore;
   };
-  const onInterrupt = async () => {
-    const left = [...pending.values()].reverse();
-    pending.clear();
-    for (const { what, undo } of left) {
-      try { await undo(); out(`interrupted: put back ${what}`); } catch (e) { out(`interrupted: could not put back ${what}: ${e?.message || e}`); }
+  const finishInterrupt = async () => {
+    // The last write may still be applying. Let it finish before undoing it.
+    await write;
+    let code = 130;
+    for (const { what, restore } of [...pending].reverse()) {
+      try {
+        await restore();
+        out(`interrupted: put back ${what}`);
+      } catch (e) {
+        code = 1;
+        out(`interrupted: could not put back ${what}: ${e?.message || e}`);
+      }
     }
-    exit(130);
+    exit(code);
+    return code;
   };
-  const sleep = deps.sleep ?? ((ms) => new Promise((r) => setTimeout(r, ms)));
+  const onInterrupt = () => { interrupt ??= finishInterrupt(); };
+  const delay = deps.sleep ?? ((ms) => new Promise((r) => setTimeout(r, ms)));
+  const sleep = async (ms) => {
+    await delay(ms);
+    if (interrupt) throw new Error('interrupted');
+  };
   const pollMs = deps.pollMs ?? 2000;
-  const api = deviceApi({ host, ports: deviceFile.control, token, fetchImpl });
+  const cleanupApi = deviceApi({ host, ports: deviceFile.control, token, fetchImpl });
+  const api = {
+    ...cleanupApi,
+    async control(method, path, options) {
+      if (interrupt) throw new Error('interrupted');
+      if (method === 'GET') return cleanupApi.control(method, path, options);
+      write = cleanupApi.control(method, path, options);
+      try {
+        return await write;
+      } finally {
+        write = null;
+      }
+    },
+  };
   const availableChecks = buildChecks(deviceFile, opts);
   const checks = availableChecks.filter((c) => selected(c.id, opts));
   const state = {};
   const counts = { PASS: 0, FAIL: 0, MANUAL: 0, SKIP: 0 };
   let badPayload = null;
-  const context = { api, state, opts, sleep, pollMs, out, fetchImpl, restorer };
+  const context = { api, state, opts, sleep, pollMs, out, fetchImpl, restorer, cleanupApi, isInterrupted: () => interrupt !== null };
   const preflightChecks = new Map(availableChecks
     .filter((check) => check.id === 'core.status' || check.id === 'core.auth')
     .map((check) => [check.id, check]));
@@ -770,24 +835,26 @@ export async function runAcceptance({ deviceFile, host, token, opts, deps = {} }
   try {
     // Settings feed the switch-aware checks even when the settings check is skipped.
     if (!checks.some((c) => c.id === 'settings.resolved')) {
-      const r = await api.control('GET', '/settings');
+      const r = await cleanupApi.control('GET', '/settings');
       const settings = r.json?.settings;
       if (ok(r) && Array.isArray(settings) && settings.every((setting) => typeof setting?.key === 'string')) {
         state.settings = Object.fromEntries(settings.map((setting) => [setting.key, setting.value]));
       }
     }
     if (!checks.some((c) => c.id === 'lockdown.status') && deviceFile.capabilities?.includes('lockdown')) {
-      const r = await api.control('GET', '/lockdown');
+      const r = await cleanupApi.control('GET', '/lockdown');
       if (ok(r)) state.lockdown = r.json;
     }
     out(`acceptance: ${deviceFile.id} (${checks.length} checks)`);
     for (const check of checks) {
+      if (interrupt) break;
       let result;
       try {
         result = await runCheck(check);
       } catch (e) {
         result = fail(`check threw: ${e?.message || e}`);
       }
+      if (interrupt) break;
       counts[result.status] += 1;
       out(`${result.status.padEnd(6)} ${check.id.padEnd(20)} ${result.evidence}`);
     }
@@ -795,6 +862,7 @@ export async function runAcceptance({ deviceFile, host, token, opts, deps = {} }
     signals.off('SIGINT', onInterrupt);
     await badPayload?.close?.();
   }
+  if (interrupt) return interrupt;
   out(`${counts.PASS} pass, ${counts.FAIL} fail, ${counts.MANUAL} manual, ${counts.SKIP} skip`);
   return counts.FAIL > 0 ? 1 : 0;
 }

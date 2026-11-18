@@ -102,7 +102,14 @@ async function fakeDevice({ id = 'portal', capabilities, faults = {}, settings =
       case 'POST /kiosk/renderer/reset': return json(res, 200, { ok: true, rendererAlive: true });
       case 'POST /kiosk/restart': json(res, 200, { ok: true, restarting: true }); setTimeout(() => { s.startedAt = Date.now(); }, 20); return undefined;
       case 'POST /kiosk/overlay': return json(res, 200, { ok: true, shown: !!body.text, kind: body.text ? 'text' : 'none', text: { shown: !!body.text } });
-      case 'POST /screen': if (!(faults.screenStuckOn && body.on === false)) s.screenOn = body.on; return json(res, 200, { ok: true, screenOn: s.screenOn });
+      case 'POST /screen':
+        s.screenWrites = (s.screenWrites ?? 0) + 1;
+        if (s.screenWrites === faults.restoreAt) {
+          if (faults.restoreStatus) return json(res, faults.restoreStatus, { ok: false });
+          if (faults.restoreWrongState) return json(res, 200, { ok: true, screenOn: body.on });
+        }
+        if (!(faults.screenStuckOn && body.on === false)) s.screenOn = body.on;
+        return json(res, 200, { ok: true, screenOn: s.screenOn });
       case 'POST /screen/brightness': return json(res, 200, { ok: true, level: body.level });
       case 'POST /device/reboot':
         if (faults.noReboot) return json(res, 501, { ok: false, error: 'unsupported', reason: 'device owner required' });
@@ -125,7 +132,7 @@ async function fakeDevice({ id = 'portal', capabilities, faults = {}, settings =
       case 'POST /loopback': return json(res, 200, { ok: true, echoed: true, rttMs: faults.slowEcho ? 90 : 31 });
       case 'GET /speaker': return json(res, 200, { ok: true, speaker: { connected: true }, guard: { state: 'ok' } });
       case 'GET /bluetooth': return json(res, 200, { ok: true, mode: 'roles' });
-      case 'GET /mic/status': return json(res, 200, { ok: true, running: true, streaming: false, clients: 0, heldByOther: false, lastError: null });
+      case 'GET /mic/status': return json(res, 200, { ok: true, running: true, streaming: false, clients: 0, heldByOther: false, lastError: null, ...faults.micStatus });
       case 'GET /lease': return json(res, 200, { ok: true, configured: false, ready: false, enforcement: 'block-and-recall' });
       case 'GET /presence': case 'GET /usb-hid': case 'GET /input': return json(res, 200, { ok: true });
       default: return json(res, 404, { ok: false, error: 'unknown_route' });
@@ -523,6 +530,60 @@ test('the screen check restores the state it found', async () => {
     assert.equal(dev.state.screenOn, false, 'it was dark before, so it is dark after');
   } finally { await dev.close(); }
 });
+
+for (const [label, faults, evidence] of [
+  ['HTTP 500', { restoreStatus: 500 }, /HTTP 500/],
+  ['wrong read-back despite HTTP 200', { restoreWrongState: true }, /read.back.*screenOn=true/],
+]) {
+  test(`screen restoration fails on ${label}`, async () => {
+    const dev = await fakeDevice({ faults: { restoreAt: 3, ...faults } });
+    dev.state.screenOn = false;
+    try {
+      const r = await run(dev, ['--only', 'screen.sleep-wake', '--active']);
+      assert.equal(r.code, 1, r.text);
+      assert.match(r.line('screen.sleep-wake'), /^FAIL .*restore/);
+      assert.match(r.text, evidence);
+    } finally { await dev.close(); }
+  });
+}
+
+test('an interrupted run reports failed screen restoration and does not wake the display again', async () => {
+  const dev = await fakeDevice({ faults: { restoreAt: 2, restoreStatus: 500 } });
+  const signals = new EventEmitter();
+  const exits = [];
+  try {
+    const r = await run(dev, ['--only', 'screen.sleep-wake', '--active'], {
+      signals,
+      exit: (code) => exits.push(code),
+      sleep: async () => signals.emit('SIGINT'),
+    });
+    assert.equal(r.code, 1, r.text);
+    assert.deepEqual(exits, [1]);
+    assert.match(r.text, /interrupted: could not put back screen on: .*HTTP 500/);
+    assert.doesNotMatch(r.text, /interrupted: put back screen on|PASS\s+screen.sleep-wake/);
+    assert.equal(dev.state.screenWrites, 2);
+    assert.equal(signals.listenerCount('SIGINT'), 0);
+  } finally { await dev.close(); }
+});
+
+for (const [label, enabled, micStatus, verdict] of [
+  ['capture disabled', false, { running: false }, 'FAIL'],
+  ['zero audio frames', true, { clients: 0, streaming: false }, 'MANUAL'],
+  ['a connected client with header only', true, { clients: 1, streaming: false }, 'MANUAL'],
+  ['server reporting streaming', true, { clients: 1, streaming: true }, 'MANUAL'],
+]) {
+  test(`Shield reboot capture with ${label} yields ${verdict}`, async () => {
+    const dev = await fakeDevice({ id: 'shield', faults: { micStatus }, settings: { 'mic.enabled': enabled } });
+    try {
+      const r = await run(dev, ['--only', 'reboot', '--reboot', '--reboot-wait', '5']);
+      assert.match(r.line('reboot.survives'), /^PASS/);
+      assert.match(r.line('reboot.mic-capture'), new RegExp(`^${verdict}`));
+      assert.equal(r.code, verdict === 'FAIL' ? 1 : 0, r.text);
+      if (verdict === 'MANUAL') assert.match(r.line('reboot.mic-capture'), /PCM.*audible speech/);
+      assert.equal(dev.state.calls.filter((call) => call === 'GET /mic/status').length, 1);
+    } finally { await dev.close(); }
+  });
+}
 
 test('an origin guard that lets a foreign URL load fails and puts the start URL back', async () => {
   const dev = await fakeDevice({ faults: { originOpen: true } });
