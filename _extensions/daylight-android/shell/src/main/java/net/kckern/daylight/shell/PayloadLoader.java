@@ -16,6 +16,9 @@ import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.file.Files;
 import java.nio.file.StandardCopyOption;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -78,6 +81,10 @@ public final class PayloadLoader {
     private final Fetcher fetcher;
     private final String shellStamp;
     private final long startDeadlineMs;
+    private final long stopDeadlineMs;
+    private final AtomicBoolean restartPending = new AtomicBoolean();
+    private final Set<File> fencedStores;
+    private static final Set<File> PROCESS_FENCES = ConcurrentHashMap.newKeySet();
     private final ExecutorService exec = Executors.newSingleThreadExecutor(r -> {
         Thread t = new Thread(r, "Daylight-payload"); t.setDaemon(true); return t;
     });
@@ -94,11 +101,11 @@ public final class PayloadLoader {
 
     public PayloadLoader(final Context ctx, ShellServices shell, int shellVersionCode) {
         this(new File(ctx.getFilesDir(), "payloads"), shell, dexSource(ctx), assetPayload(ctx), PayloadLoader::download,
-                String.valueOf(shellVersionCode), START_DEADLINE_MS);
+                String.valueOf(shellVersionCode), START_DEADLINE_MS, 5_000L, PROCESS_FENCES);
     }
 
     PayloadLoader(File dir, ShellServices shell, PayloadSource source, BakedPayload baked, Fetcher fetcher,
-                  String shellStamp, long startDeadlineMs) {
+                  String shellStamp, long startDeadlineMs, long stopDeadlineMs, Set<File> fencedStores) {
         this.store = new PayloadStore(dir);
         this.shell = shell;
         this.source = source;
@@ -106,6 +113,8 @@ public final class PayloadLoader {
         this.fetcher = fetcher;
         this.shellStamp = shellStamp.replaceAll("[^A-Za-z0-9._-]", "");
         this.startDeadlineMs = startDeadlineMs;
+        this.stopDeadlineMs = stopDeadlineMs;
+        this.fencedStores = fencedStores;
     }
 
     public PayloadStore store() { return store; }
@@ -121,10 +130,28 @@ public final class PayloadLoader {
      * Queue the boot: pick the payload for this process and start it. Returns at
      * once, so the service's main thread is never held by a payload's start().
      */
-    public Future<?> boot() { return submit(this::bootNow); }
+    public Future<?> boot() { return submit(() -> { if (active == null) bootNow(); }); }
 
     private void bootNow() {
         long now = System.currentTimeMillis();
+        if (store.recoveryPending()) {
+            String name = bakedName();
+            try {
+                extractBaked(name);
+                store.activate(name);
+                store.recordShellStamp(shellStamp);
+                store.recordBoot(name, now);
+                bootsThisPayload = store.recentBoots(name, now);
+                if (bootsThisPayload > PayloadStore.CRASH_LIMIT) {
+                    lastError = "baked recovery crash limit reached";
+                } else if (start(name)) {
+                    store.finishRecovery();
+                }
+            } catch (Exception e) {
+                lastError = "baked recovery failed: " + e.getMessage();
+            }
+            return;
+        }
         if (!shellStamp.equals(store.shellStamp())) {
             adoptBaked();
         } else {
@@ -188,15 +215,25 @@ public final class PayloadLoader {
     public void shutdown() {
         closed = true;
         exec.shutdownNow();
-        try { exec.awaitTermination(2, TimeUnit.SECONDS); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
-        unloadActive();
+        try {
+            if (!exec.awaitTermination(stopDeadlineMs, TimeUnit.MILLISECONDS)) {
+                fence("loader worker still running during shutdown");
+                return;
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            fence("interrupted awaiting loader shutdown");
+            return;
+        }
         String jar = activeJar;
-        if (jar != null) store.markCleanStop(jar);
+        if (!unloadActive()) return;
+        if (jar != null && !fencedStores.contains(store.dir())) store.markCleanStop(jar);
     }
 
     // ── swap / rollback / restart: each only queues work ────────────────────
 
     public String requestSwap(final String url, String sha256) {
+        if (fencedStores.contains(store.dir())) return "refused: process recovery required";
         if (url == null || url.isEmpty()) return "refused: no url";
         if (sha256 == null || !SHA256.matcher(sha256.trim()).matches()) return "refused: sha256 must be 64 hex characters";
         final String sha = sha256.trim().toLowerCase(java.util.Locale.ROOT);
@@ -206,16 +243,24 @@ public final class PayloadLoader {
 
     /** Stop and start the current payload in place, with no fetch. For a payload that stopped answering. */
     public String requestRestart() {
+        if (fencedStores.contains(store.dir())) return "refused: process recovery required";
         String cur = store.current();
         if (cur == null) return "refused: no current payload";
+        if (closed) return "refused: loader is shut down";
+        if (!restartPending.compareAndSet(false, true)) return "accepted: restart already pending";
         if (submit(() -> {
-            // Read the pointer when the restart runs: an operation queued ahead of it may have moved it.
-            String now = store.current();
-            if (now == null) return;
-            unloadActive();
-            shell.note("PAYLOAD", "manual restart of " + now);
-            startOrFallBack(now);
-        }) == null) return "refused: loader is shut down";
+            try {
+                String now = store.current();
+                if (now == null || !unloadActive()) return;
+                shell.note("PAYLOAD", "manual restart of " + now);
+                startOrFallBack(now);
+            } finally {
+                restartPending.set(false);
+            }
+        }) == null) {
+            restartPending.set(false);
+            return "refused: loader is shut down";
+        }
         return "accepted: restarting " + cur;
     }
 
@@ -226,8 +271,9 @@ public final class PayloadLoader {
      * on the worker thread, so no running payload can write it back.
      */
     public String requestSettingsReset() {
+        if (fencedStores.contains(store.dir())) return "refused: process recovery required";
         if (submit(() -> {
-            unloadActive();
+            if (!unloadActive()) return;
             File dir = shell.payloadDir();
             boolean gone = net.kckern.daylight.api.PayloadState.deleteSettingsOverrides(dir == null ? store.dir() : dir);
             shell.note("PAYLOAD", "settings reset: overrides " + (gone ? "deleted" : "could NOT be deleted"));
@@ -243,6 +289,7 @@ public final class PayloadLoader {
     }
 
     public String requestRollback() {
+        if (fencedStores.contains(store.dir())) return "refused: process recovery required";
         String prev = store.previous();
         if (prev == null) return "refused: no previous payload";
         if (submit(this::rollbackNow) == null) return "refused: loader is shut down";
@@ -272,7 +319,7 @@ public final class PayloadLoader {
                 shell.note("PAYLOAD", "shut down before " + name + " was activated");
                 return;
             }
-            unloadActive();
+            if (!unloadActive()) return;
             store.activate(name);
             store.recordBoot(name, System.currentTimeMillis());
             if (startOrFallBack(name)) shell.note("PAYLOAD", "ACTIVE " + name + " v=" + safeVersion());
@@ -288,7 +335,7 @@ public final class PayloadLoader {
 
     private void rollbackNow() {
         try {
-            unloadActive();
+            if (!unloadActive()) return;
             String to = store.rollback();
             shell.note("PAYLOAD", "manual rollback -> " + to);
             if (to != null) startOrFallBack(to);
@@ -316,6 +363,8 @@ public final class PayloadLoader {
             o.put("crashLimit", PayloadStore.CRASH_LIMIT);
             o.put("crashWindowMs", PayloadStore.CRASH_WINDOW_MS);
             o.put("startDeadlineMs", startDeadlineMs);
+            o.put("stopDeadlineMs", stopDeadlineMs);
+            o.put("recoveryReason", orNull(store.recoveryReason()));
             o.put("lastFailed", orNull(lastFailed));
             o.put("lastError", orNull(lastError));
             o.put("entryClass", ENTRY_CLASS);
@@ -349,9 +398,10 @@ public final class PayloadLoader {
 
     /** Queue work on the worker thread. Null when the loader is shut down. */
     private Future<?> submit(Runnable work) {
+        if (closed) return null;
         try {
             return exec.submit(() -> {
-                try { work.run(); } catch (Throwable t) { Log.e(TAG, "loader operation failed", t); }
+                try { if (!closed && !fencedStores.contains(store.dir())) work.run(); } catch (Throwable t) { Log.e(TAG, "loader operation failed", t); }
             });
         } catch (RejectedExecutionException shutDown) {
             return null;
@@ -372,12 +422,12 @@ public final class PayloadLoader {
     private boolean startOrFallBack(String jar) {
         if (start(jar)) return true;
         // A shutdown is not a failed payload: leave the pointers as they are.
-        if (closed) return false;
+        if (closed || fencedStores.contains(store.dir())) return false;
         String to = null;
         try { to = store.rollback(); } catch (Exception e) { Log.e(TAG, "rollback after failed start also failed", e); }
         if (to != null && !to.equals(jar)) {
             shell.note("PAYLOAD", jar + " failed to start -> rollback to " + to + " (" + lastError + ")");
-            if (start(to)) return false;
+            if (start(to) || fencedStores.contains(store.dir())) return false;
         }
         String name = ensureBakedFile();
         if (name != null && !name.equals(jar) && !name.equals(to)) {
@@ -399,7 +449,7 @@ public final class PayloadLoader {
      * payload cannot be loaded, throws, or does not return in time.
      */
     private boolean start(final String jar) {
-        if (closed) return false;
+        if (closed || fencedStores.contains(store.dir())) return false;
         starting = jar;
         try {
             final Payload p;
@@ -409,14 +459,7 @@ public final class PayloadLoader {
                 return failed(jar, t.getClass().getSimpleName() + ": " + t.getMessage(), t);
             }
             final FutureTask<Void> task = new FutureTask<>(() -> { p.start(shell); return null; });
-            final boolean[] abandoned = { false };
-            Thread runner = new Thread(() -> {
-                task.run();
-                // A start() that returns after it was given up on must not leave a payload running.
-                boolean stop;
-                synchronized (abandoned) { stop = abandoned[0]; }
-                if (stop) stopSafely(p);
-            }, "Daylight-payload-start");
+            Thread runner = new Thread(task, "Daylight-payload-start");
             runner.setDaemon(true);
             startingPayload = p;
             runner.start();
@@ -436,13 +479,8 @@ public final class PayloadLoader {
             if (problem == null && closed) problem = "loader shut down during start()";
             if (problem != null) {
                 startingPayload = null;
-                synchronized (abandoned) { abandoned[0] = true; }
                 runner.interrupt();
-                // Release what the payload holds so far (its port, its threads). stop() gets its
-                // own thread: a payload stuck in start() may be stuck in stop() too.
-                Thread stopper = new Thread(() -> stopSafely(p), "Daylight-payload-stop");
-                stopper.setDaemon(true);
-                stopper.start();
+                stopBounded(p, jar, runner);
                 return failed(jar, problem, cause);
             }
             // active is set before startingPayload is cleared, so a component published
@@ -468,16 +506,45 @@ public final class PayloadLoader {
         return false;
     }
 
-    private static void stopSafely(Payload p) {
-        try { p.stop(); } catch (Throwable t) { Log.w(TAG, "payload stop threw", t); }
+    private boolean stopBounded(Payload payload, String jar, Thread starter) {
+        FutureTask<Void> cleanup = new FutureTask<>(() -> {
+            // A late start can acquire resources again. Stop once start has actually exited.
+            if (starter != null) starter.join();
+            payload.stop();
+            return null;
+        });
+        Thread stopper = new Thread(cleanup, "Daylight-payload-stop");
+        stopper.setDaemon(true);
+        stopper.start();
+        String recoveryReason;
+        try {
+            cleanup.get(stopDeadlineMs, TimeUnit.MILLISECONDS);
+            return true;
+        } catch (TimeoutException e) {
+            recoveryReason = jar + " cleanup exceeded " + stopDeadlineMs + " ms";
+        } catch (ExecutionException e) {
+            recoveryReason = jar + " cleanup failed: " + e.getCause();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            recoveryReason = jar + " cleanup interrupted";
+        }
+        fence(recoveryReason);
+        return false;
     }
 
-    private void unloadActive() {
+    private void fence(String recoveryReason) {
+        if (!fencedStores.add(store.dir())) return;
+        try { store.recordRecovery(recoveryReason); }
+        catch (Exception e) { lastError = "could not record recovery: " + e.getMessage(); }
+        shell.note("PAYLOAD", recoveryReason);
+    }
+
+    private boolean unloadActive() {
         Payload p = active;
-        if (p == null) return;
-        stopSafely(p);
+        String jar = activeJar;
         active = null;
-        // activeJar is kept until the next start so shutdown() can clear its crash counter.
+        activeJar = null;
+        return p == null || stopBounded(p, jar, null);
     }
 
     /** The baked jar's name once it is on disk, extracting it when absent. Null when the APK has none. */

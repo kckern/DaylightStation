@@ -176,6 +176,16 @@ public final class PayloadStore {
 
     // ── plumbing ────────────────────────────────────────────────────────────
 
+    String recoveryReason() { return readPointer("last-recovery"); }
+    boolean recoveryPending() { return new File(dir, "recovery-pending").exists(); }
+    synchronized void recordRecovery(String reason) throws IOException {
+        writePointer("recovery-pending", reason);
+        writePointer("last-recovery", reason);
+    }
+    synchronized void finishRecovery() throws IOException {
+        Files.deleteIfExists(new File(dir, "recovery-pending").toPath());
+    }
+
     private File bootsFile(String jar) { return new File(dir, BOOTS_PREFIX + jar); }
 
     private List<Long> boots(String jar) {

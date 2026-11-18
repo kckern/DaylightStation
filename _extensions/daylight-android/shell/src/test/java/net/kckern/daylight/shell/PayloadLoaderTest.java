@@ -62,6 +62,7 @@ public class PayloadLoaderTest {
         assertTrue("boot() must not run start() on the caller's thread",
                 TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - began) < LoaderHarness.DEADLINE_MS);
         loader.awaitIdle(WAIT_MS);
+        h.last("p-hang.jar").release.countDown();
     }
 
     @Test public void aPayloadWhoseStartThrowsIsRolledBackToThePrevious() throws Exception {
@@ -76,7 +77,7 @@ public class PayloadLoaderTest {
         assertEquals(1, h.last("p-bad.jar").starts.get());
     }
 
-    @Test public void aPayloadThatHangsInStartIsRolledBackAndTheLifelineStaysAnswerable() throws Exception {
+    @Test public void aHungStartLeavesTheLifelineAnswerableAndFencesFallback() throws Exception {
         h.jar("p-good.jar", "good:1");
         h.jar("p-hang.jar", "hang");
         existing("1", "p-good.jar", "p-hang.jar");
@@ -102,32 +103,80 @@ public class PayloadLoaderTest {
                 TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - began) < LoaderHarness.DEADLINE_MS);
 
         loader.awaitIdle(WAIT_MS);
-        assertEquals("p-good.jar", loader.activeJar());
-        assertEquals("p-good.jar", loader.store().current());
-        assertEquals("p-hang.jar", loader.status().getString("lastFailed"));
-        assertTrue(h.shell.notes.toString(), h.shell.notes.toString().contains("did not return within"));
-        // The queued restart ran after the rollback, on the payload that works.
-        assertTrue(h.shell.notes.toString().contains("manual restart of p-good.jar"));
-
-        // When the stuck start() finally returns, that payload is stopped, never left running.
-        deadline = System.currentTimeMillis() + WAIT_MS;
-        while (hung.stops.get() == 0 && System.currentTimeMillis() < deadline) Thread.sleep(5);
-        assertEquals("stop() is called once when the deadline passes", 1, hung.stops.get());
-        int stopsBefore = hung.stops.get();
+        assertNull(loader.active());
+        assertNull(h.last("p-good.jar"));
+        assertTrue(loader.status().getString("recoveryReason").contains("cleanup exceeded"));
+        assertTrue(loader.requestRestart().startsWith("refused:"));
         hung.release.countDown();
-        deadline = System.currentTimeMillis() + WAIT_MS;
-        while (hung.stops.get() == stopsBefore && System.currentTimeMillis() < deadline) Thread.sleep(5);
-        assertTrue(hung.stops.get() > stopsBefore);
-        assertEquals("p-good.jar", loader.activeJar());
     }
 
-    @Test public void aHangingPayloadWithNoPreviousFallsBackToTheBakedPayload() throws Exception {
+    @Test public void aNewProcessConsumesPendingRecoveryUsingTheBakedAsset() throws Exception {
         h.jar("p-hang.jar", "hang");
         existing("1", "p-hang.jar");
-        PayloadLoader loader = booted("1");
-        assertEquals(BAKED_V1, loader.activeJar());
-        assertEquals(BAKED_V1, loader.store().current());
+        PayloadLoader stuck = booted("1");
         h.last("p-hang.jar").release.countDown();
+        assertNull(booted("1").active());
+        String reason = stuck.status().getString("recoveryReason");
+
+        h = new LoaderHarness(h.dir);
+        PayloadLoader recovered = booted("1");
+        assertEquals(BAKED_V1, recovered.activeJar());
+        assertEquals(reason, recovered.status().getString("recoveryReason"));
+        assertFalse(recovered.store().recoveryPending());
+    }
+
+    @Test public void failedStartKeepsExclusiveListenerUntilStopReturns() throws Exception {
+        exerciseExclusiveStop(false);
+    }
+
+    @Test public void stalledStopFencesQueuedRestartsAndReportsOneRecovery() throws Exception {
+        exerciseExclusiveStop(true);
+    }
+
+    private void exerciseExclusiveStop(boolean stall) throws Exception {
+        java.util.concurrent.CountDownLatch stopping = new java.util.concurrent.CountDownLatch(1);
+        java.util.concurrent.CountDownLatch release = new java.util.concurrent.CountDownLatch(1);
+        java.util.concurrent.atomic.AtomicInteger owners = new java.util.concurrent.atomic.AtomicInteger();
+        java.util.concurrent.atomic.AtomicInteger maxOwners = new java.util.concurrent.atomic.AtomicInteger();
+        h.jar("p-good.jar", "good");
+        h.jar("p-bad.jar", "throw");
+        existing("1", "p-good.jar", "p-bad.jar");
+        PayloadLoader loader = new PayloadLoader(h.dir, h.shell, jar -> new net.kckern.daylight.api.Payload() {
+            @Override public void start(net.kckern.daylight.api.ShellServices shell) {
+                maxOwners.accumulateAndGet(owners.incrementAndGet(), Math::max);
+                if (jar.getName().equals("p-bad.jar")) throw new IllegalStateException("failed after bind");
+            }
+            @Override public void stop() {
+                stopping.countDown();
+                try { release.await(); } catch (InterruptedException e) { throw new AssertionError(e); }
+                owners.decrementAndGet();
+            }
+            @Override public String version() { return "fixture"; }
+            @Override public void onShellComponent(String name, Object instance) { }        }, dst -> {}, (url, dst) -> {}, "1", WAIT_MS, stall ? 250 : WAIT_MS, h.processFences);
+        java.util.concurrent.Future<?> boot = loader.boot();
+        try {
+            assertTrue(stopping.await(WAIT_MS, TimeUnit.MILLISECONDS));
+            assertNull(loader.active());
+            assertEquals(1, owners.get());
+            if (stall) {
+                assertTrue(loader.requestRestart().startsWith("accepted:"));
+                assertEquals("accepted: restart already pending", loader.requestRestart());
+                boot.get(WAIT_MS, TimeUnit.MILLISECONDS);
+                loader.awaitIdle(WAIT_MS);
+                assertNull(loader.active());
+                assertTrue(loader.status().getString("recoveryReason").contains("cleanup exceeded"));
+                assertEquals(1, h.shell.notes.stream().filter(n -> n.contains("cleanup exceeded")).count());
+            }
+        } finally {
+            release.countDown();
+        }
+        boot.get(WAIT_MS, TimeUnit.MILLISECONDS);
+        assertEquals(1, maxOwners.get());
+        if (!stall) {
+            assertEquals("p-good.jar", loader.activeJar());
+            loader.shutdown();
+            assertEquals(0, owners.get());
+        }
     }
 
     @Test public void whenCurrentAndPreviousBothFailTheBakedPayloadRuns() throws Exception {
@@ -357,10 +406,10 @@ public class PayloadLoaderTest {
         h.jar("p-hang.jar", "hang");
         existing("1", "p-good.jar", "p-hang.jar");
         PayloadLoader loader = booted("1");
-        assertEquals("p-good.jar", loader.activeJar());
+        assertNull(loader.active());
         loader.onShellComponent("kiosk-activity", "activity-1");
         assertTrue(h.last("p-hang.jar").components.isEmpty());
-        assertEquals(java.util.Arrays.asList("kiosk-activity=activity-1"), h.last("p-good.jar").components);
+        assertNull(h.last("p-good.jar"));
         h.last("p-hang.jar").release.countDown();
     }
 

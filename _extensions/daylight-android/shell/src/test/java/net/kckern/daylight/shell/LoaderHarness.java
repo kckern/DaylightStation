@@ -84,6 +84,7 @@ final class LoaderHarness {
         @Override public void note(String kind, String message) { notes.add(kind + " " + message); }
     }
 
+    final java.util.Set<File> processFences = java.util.concurrent.ConcurrentHashMap.newKeySet();
     final File dir;
     final Shell shell = new Shell();
     /** Every payload instance the loader opened, in order. */
@@ -113,7 +114,7 @@ final class LoaderHarness {
                     if (body == null) throw new java.io.IOException("404 " + url);
                     Files.write(dst.toPath(), body.getBytes(StandardCharsets.UTF_8));
                 },
-                shellStamp, deadlineMs);
+                shellStamp, deadlineMs, DEADLINE_MS, processFences);
     }
 
     /** Put a fake jar in the store directory. */
