@@ -33,3 +33,8 @@ it('the tick area reaches left only, leaving a dish triangle its whole target', 
 it('foods being picked keep the row cursor on portions and artwork', () => {
   expect(css).toMatch(/\.health-meal-selection-row :is\(\.health-portion, \.health-numeric-control, \.health-row-artwork\) \{ cursor: inherit; \}/);
 });
+it('the capture toast wraps at phone width and gives fingers 44 px', () => {
+  expect(rule('.health-capture-actions')).toContain('flex-wrap: wrap');
+  const coarse = css.split('@media (pointer: coarse)').slice(1).join(' ');
+  expect(coarse).toMatch(/\.health-capture-actions \.mantine-Button-root[^{]*\{[^}]*min-height: 44px/);
+});

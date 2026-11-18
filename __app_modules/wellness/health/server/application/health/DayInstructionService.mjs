@@ -4,6 +4,7 @@ import { MEAL_BUCKETS } from '../../../portable/contracts/health/mealBuckets.mjs
 import { NUTRIENT_KEYS, foodGrams } from '../../../portable/contracts/health/foodQuantity.mjs';
 import { isCountedRow } from '../../../portable/contracts/nutrition/countedRows.mjs';
 import { isReconstructedRow } from '../../../portable/contracts/nutrition/reconstruction.mjs';
+import { SHARED_LOG_IDS } from '../../../portable/contracts/nutrition/sharedLogIds.mjs';
 import { dayName } from './DayInstructionReader.mjs';
 import { dishOf, indexByLinkId } from './MealFoodCommands.mjs';
 
@@ -14,8 +15,6 @@ const isFood = row => row.kind !== 'group';
 const isMeal = meal => MEAL_BUCKETS.some(bucket => bucket.id === meal);
 const mealLabel = id => MEAL_BUCKETS.find(bucket => bucket.id === id)?.label || id;
 const QUANTITY = ['grams', 'amount', 'unit'];
-// Every food added this way shares one of these IDs, so the ID alone does not identify one act.
-const SHARED_LOG_IDS = new Set(['QUICKADD', 'MANUAL', 'SAVEDMEAL', 'TEMPLATE', 'COPY']);
 const AMENDABLE = ['name', 'color', ...QUANTITY, ...NUTRIENT_KEYS];
 // What a resumed capture needs. The full reply can carry photos, which do not belong in the ledger.
 const CAPTURE_FIELDS = ['committed', 'outcome', 'message', 'logId', 'items', 'entryIds', 'date', 'mealTime', 'affectedIds', 'affectedDates', 'undoToken', 'instructionText'];

@@ -1,13 +1,13 @@
 import { useState } from 'react';
 import { Button, Menu } from '@mantine/core';
 import { useDayDropTarget, useMealDragActive } from "./mealDrag.jsx";
-import { dayLabel, recentDays } from "./moveDays.js";
+import { addDaysISO, dayLabel, recentDays } from "./moveDays.js";
 import { BUCKETS } from "./mealBuckets.js";
 
 // The selection bar's menus: full-height items under a finger (health.scss).
 const MENU_CLASSES = { item: 'health-move-menu__item' };
 
-function useMoveInFlight(onMove) {
+export function useMoveInFlight(onMove) {
   const [busy, setBusy] = useState(false);
   const pick = async target => { setBusy(true); try { await onMove(target); } finally { setBusy(false); } };
   return [busy, pick];
@@ -41,6 +41,22 @@ export function MoveDayControl({ date, today, count, onMove, disabled = false })
     </Menu.Target>
     <Menu.Dropdown><MoveDayItems date={date} today={today} onPick={pick} /></Menu.Dropdown>
   </Menu>;
+}
+
+/**
+ * After a capture: one tap to the most likely other day, or pick any day. The
+ * toast owns `busy`, because its Undo and Dismiss wait for the move too.
+ */
+export function CaptureDayActions({ date, today, onMove, busy = false, disabled = false }) {
+  const quick = date === today ? addDaysISO(today, -1) : today;
+  return <>
+    <Button size="compact-xs" variant="light" loading={busy} disabled={disabled} onClick={() => onMove(quick)}>Move to {dayLabel(quick, today)}</Button>
+    {/* Above the toast layer (350), which Mantine's default of 300 sits under. */}
+    <Menu position="top-start" zIndex={400} disabled={busy || disabled} classNames={MENU_CLASSES}>
+      <Menu.Target><Button size="compact-xs" variant="subtle" disabled={busy || disabled}>Other day…</Button></Menu.Target>
+      <Menu.Dropdown><MoveDayItems date={date} today={today} onPick={onMove} /></Menu.Dropdown>
+    </Menu>
+  </>;
 }
 
 /** Selection mode: move every ticked food into one meal. */

@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import { Button } from '@mantine/core';
 import { ToastRegion, Toast } from '@/lib/ui';
 import { PortionDraftAlert } from "./PortionDraftAlert.jsx";
+import { CaptureDayActions, useMoveInFlight } from "./MoveDayControl.jsx";
 
 // Pure information ("Moved to Lunch", "copied to today") retires on its own.
 // Anything carrying an action stays until it is used or dismissed.
@@ -33,6 +34,22 @@ function useNewestUndo(candidates) {
 }
 
 /**
+ * A meal change and its Undo. A fresh capture also carries `offer`: the fix for
+ * food that landed on the wrong day. One action runs at a time, because a move
+ * retires the capture's Undo and an Undo removes the foods being moved.
+ */
+function MealUndoToast({ mealUndo, today, onMoveCapture, onUndoMeal, onDismissMealUndo, undoBusy }) {
+  const [moving, moveCapture] = useMoveInFlight(onMoveCapture);
+  return <Toast message={mealUndo.label}>
+    <span className="health-capture-actions">
+      {mealUndo.offer ? <CaptureDayActions date={mealUndo.offer.date} today={today} onMove={moveCapture} busy={moving} disabled={undoBusy} /> : null}
+      <Button size="compact-xs" aria-label="Undo meal change" loading={undoBusy} disabled={moving} onClick={onUndoMeal}>Undo</Button>
+      <Button size="compact-xs" variant="subtle" disabled={undoBusy || moving} onClick={onDismissMealUndo}>Dismiss</Button>
+    </span>
+  </Toast>;
+}
+
+/**
  * The Today view's post-action feedback, floating under the header instead of
  * stacked above the meals (where each arrival pushed the whole day down). The
  * view still owns every piece of state; this only decides how it is shown.
@@ -41,7 +58,7 @@ export function TodayToasts({
   captureNotice, captureRetry, retryBusy, onRetryCapture, onDismissCapture,
   orphanRetry, onRetryOrphan, onDismissOrphan,
   moves, mealUndo, onUndoMeal, onDismissMealUndo, undoDelete, onUndoDelete, onDismissUndoDelete, undoBusy,
-  strandedPortion,
+  strandedPortion, today, onMoveCapture,
 }) {
   const newestUndo = useNewestUndo([
     moves.undo && { key: `move:${moves.undo.label}`, clear: moves.undo.dismiss },
@@ -68,10 +85,8 @@ export function TodayToasts({
       <Button size="compact-xs" aria-label="Undo move" onClick={moves.undo.run}>Undo</Button>
       <Button size="compact-xs" variant="subtle" onClick={moves.undo.dismiss}>Dismiss</Button>
     </Toast> : null}
-    {kind === 'meal' ? <Toast message={mealUndo.label}>
-      <Button size="compact-xs" aria-label="Undo meal change" loading={undoBusy} onClick={onUndoMeal}>Undo</Button>
-      <Button size="compact-xs" variant="subtle" disabled={undoBusy} onClick={onDismissMealUndo}>Dismiss</Button>
-    </Toast> : null}
+    {kind === 'meal' ? <MealUndoToast key={mealUndo.token} mealUndo={mealUndo} today={today} onMoveCapture={onMoveCapture}
+      onUndoMeal={onUndoMeal} onDismissMealUndo={onDismissMealUndo} undoBusy={undoBusy} /> : null}
     {kind === 'delete' ? <Toast message={`${undoDelete.label} deleted.`}>
       <Button size="compact-xs" loading={undoBusy} onClick={onUndoDelete}>Undo</Button>
       <Button size="compact-xs" variant="subtle" disabled={undoBusy} onClick={onDismissUndoDelete}>Dismiss</Button>

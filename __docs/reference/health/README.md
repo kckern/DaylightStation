@@ -532,6 +532,17 @@ Three routes, one command (`useMealMoves().moveToDay`, `mealDrag.jsx`):
   "Already in Breakfast" or "Already on <day>". Each meal's mic and group commands see
   only that meal's ticks, and a command in one meal leaves the other meals' ticks.
 - **Meal ⋯ menu:** "Move all to day" moves the whole meal.
+- **Capture toast:** food just logged by voice or photo gets a toast saying where it
+  landed ("Added 3 foods to Today, Lunch") with **Move to Yesterday** (**Move to Today**
+  when it landed on an earlier day), **Other day…** and Undo. The rows are looked up on
+  the viewed day at the tap, by the capture's log ID plus the exact IDs it returned; a
+  shared log ID (`QUICKADD` and the others in `sharedLogIds.mjs`) counts only through
+  those exact IDs, so earlier foods are never caught. Dishes go whole, and a dish that
+  also holds food from elsewhere stays behind. After a move only the move's Undo is
+  offered, because the capture's Undo stops working once its rows change. A refused or
+  failed move keeps the toast and its Undo. Food on a day not being viewed is left alone
+  and the toast says which day it is on. Meal instructions, amends and captures with no
+  food get no offer. Logs: `capture.move-day`, `capture.move-day.result`.
 
 The rows leave the viewed day at once (`gone`) and one `foods-move` follows. A failure
 brings every row back, and one server Undo sends them home. Logs:

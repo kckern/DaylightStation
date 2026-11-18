@@ -3,6 +3,7 @@ import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { PortionContext, usePortionDraft } from "./usePortionDraft.js";
 import { nutrientSummary } from "../../portable/contracts/nutrition/countedRows.mjs";
+import { SHARED_LOG_IDS } from "../../portable/contracts/nutrition/sharedLogIds.mjs";
 import { useSearchParams } from 'react-router-dom';
 import { isISODate } from "../../portable/contracts/health/isoDate.mjs";
 import { ActionIcon, Button, Menu } from '@mantine/core';
@@ -24,7 +25,8 @@ import { useAfterFirstPaint } from "./useAfterFirstPaint.js";
 import { useIsWideViewport } from "./layout.js";
 import { LogTable } from "./LogTable.jsx";
 import { MealAddRow } from "./MealAddRow.jsx";
-import { useMealMoves, mealEntries } from "./mealDrag.jsx";
+import { useMealMoves, mealEntries, MoveResult } from "./mealDrag.jsx";
+import { dayLabel } from "./moveDays.js";
 import { MoveDayItems } from "./MoveDayControl.jsx";
 import { NeedsReviewSection } from "./NeedsReviewSection.jsx";
 import { DayClosePill } from "./DayClosePill.jsx";
@@ -43,6 +45,18 @@ import { CustomFoodSheet } from "../capture/CustomFoodSheet.jsx";
 
 const logger = createAppLogger('health').child('today');
 const IntakeBurnChart = lazy(() => import("../progress/IntakeBurnChart.jsx").then(module => ({ default: module.IntakeBurnChart })));
+
+/**
+ * What a capture added, as it stands on the day now. A log ID shared with earlier
+ * foods proves nothing, so only the IDs the capture returned count then. A dish
+ * goes whole; one that also holds food from elsewhere stays out of the move.
+ */
+function captureEntries(items, { logId, ids = [] }) {
+  const exact = new Set(ids);
+  const ownLogId = SHARED_LOG_IDS.has(logId) ? null : logId;
+  const captured = row => exact.has(String(entryId(row))) || Boolean(ownLogId && row.logId === ownLogId);
+  return mealEntries(items).filter(entry => captured(entry) || (entry.children?.length && entry.children.every(captured)));
+}
 
 export function TodayView({ active = true, sidebarTarget, followUpTarget = null, onSetupGoals, onCoachTap }) {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -279,6 +293,40 @@ export function TodayView({ active = true, sidebarTarget, followUpTarget = null,
   // saying "log this for lunch" must not silently land the entry under
   // Breakfast with no explanation. Reuse the existing captureNotice banner
   // rather than inventing a second notice mechanism.
+  // New food says where it landed and offers the wrong-day fix. A meal instruction
+  // or amend has no log ID, and is not new food.
+  const captureUndo = (result, targetDate) => {
+    const undo = { token: result.undoToken, label: 'Meal updated' };
+    const rows = result.items || [];
+    const foods = rows.filter(row => row.kind !== 'group');
+    const ids = [...new Set([...(result.entryIds || []), ...(result.affectedIds || []), ...rows.map(entryId)].filter(Boolean).map(String))];
+    if (!result.logId || !foods.length || (SHARED_LOG_IDS.has(result.logId) && !ids.length)) return undo;
+    const landed = foods[0].date || result.date || targetDate;
+    const what = foods.length === 1 ? entryLabel(foods[0]) : `${foods.length} foods`;
+    const meal = result.mealTime ? `, ${bucketLabel(result.mealTime)}` : '';
+    return { ...undo, label: `Added ${what} to ${dayLabel(landed, todayISO())}${meal}`, offer: { logId: result.logId, ids, date: landed } };
+  };
+  // The capture's Undo stops working once its rows change, so it retires only
+  // after a real move. Anything else leaves the toast for another try.
+  const moveCapture = async iso => {
+    const { token, offer } = mealUndo || {};
+    if (!offer) return;
+    const today = todayISO();
+    const say = message => { setCaptureRetry(null); setCaptureNotice(message); };
+    const entries = captureEntries(movedDay.items, offer);
+    logger.info('capture.move-day', { logId: offer.logId, count: entries.length, from: offer.date, to: iso });
+    if (!entries.length) {
+      const loading = day.loading || day.revalidating;
+      say(offer.date !== date ? `Those foods are on ${dayLabel(offer.date, today)}. Open that day to move them.`
+        : loading ? 'Those foods are still loading. Try again in a moment.' : 'Those foods are no longer on this day.');
+      return;
+    }
+    const outcome = await moves.moveToDay(entries, iso);
+    logger.info('capture.move-day.result', { logId: offer.logId, outcome, to: iso });
+    if (outcome === MoveResult.MOVED) setMealUndo(current => (current?.token === token ? null : current));
+    else if (outcome === MoveResult.UNCHANGED) say(`Those foods are already on ${dayLabel(iso, today)}.`);
+  };
+
   const handleCaptureResult = (result, bucket = null, targetDate = date, context = {}) => {
     // Offer the retry BEFORE the message is rendered, so the sentence that
     // says the recording is saved arrives with the button that uses it.
@@ -292,7 +340,7 @@ export function TodayView({ active = true, sidebarTarget, followUpTarget = null,
     if (result?.committed) {
       day.reload(); pendingReview.reload();
       setCaptureNotice(result?.moved ? `Moved to ${bucketLabel(result.mealTime)}` : null);
-      if (result.undoToken) { setMealUndo({token:result.undoToken,label:'Meal updated'}); mealUndoOperation.current=null; }
+      if (result.undoToken) { setMealUndo(captureUndo(result, targetDate)); mealUndoOperation.current=null; }
       return;
     }
     if (result?.clarification) { setCaptureNotice(null); return; }
@@ -470,7 +518,7 @@ export function TodayView({ active = true, sidebarTarget, followUpTarget = null,
         orphanRetry={orphanRetry} onRetryOrphan={retryOrphanedRecording} onDismissOrphan={() => setOrphanRetry(null)}
         moves={moves} mealUndo={mealUndo} onUndoMeal={undoMealChange} onDismissMealUndo={() => setMealUndo(null)}
         undoDelete={undoDelete} onUndoDelete={undoDeletedEntry} onDismissUndoDelete={() => setUndoDelete(null)} undoBusy={undoBusy}
-        strandedPortion={strandedPortion ? portionControl : null} />
+        strandedPortion={strandedPortion ? portionControl : null} today={todayISO()} onMoveCapture={moveCapture} />
       <ConfirmDialog open={Boolean(pendingDelete)} title={pendingDelete ? `Delete ${entryLabel(pendingDelete)}?` : ''}
         body={pendingDelete ? deleteConfirmBody(pendingDelete) : ''} busy={deleteBusy} error={deleteError}
         onConfirm={confirmDelete} onCancel={() => { setPendingDelete(null); setDeleteError(null); }} />

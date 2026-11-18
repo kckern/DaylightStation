@@ -717,10 +717,13 @@ $health-aside-gap: 1.5rem;
 .health-meal-selection-tick { display: flex; flex: none; align-items: center; justify-content: center; cursor: pointer;
   input { margin: 0; accent-color: var(--ds-info); }
 }
+// The capture toast's four actions wrap onto a second line on a phone.
+.health-capture-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 0.25rem; min-width: 0; }
 // These cells are plain text while picking foods, and a tap on them ticks the row.
 .health-meal-selection-row :is(.health-portion, .health-numeric-control, .health-row-artwork) { cursor: inherit; }
 @media (pointer: coarse) {
   .health-selection-bar__actions, .health-selection-bar__actions .mantine-Button-root, .health-move-menu__item { min-height: 44px; }
+  .health-capture-actions .mantine-Button-root { min-width: 44px; min-height: 44px; }
   // A full 44 px target taking 28 px of the row: the rest reaches into the page's
   // side padding, never rightward over a dish's expand triangle.
   .health-meal-selection-tick { position: relative; z-index: 1; width: 44px; height: 44px; margin-left: -16px; }
