@@ -95,3 +95,15 @@ test('the old bridge keeps its read-merge-write relay', async () => {
   await a.suppressWakeUntil(123);
   assert.deepEqual(calls, [['http://tablet:8770/config', 'GET'], ['http://tablet:8770/config', 'POST']]);
 });
+
+test('the Android app: the setting relay has a timeout and reports a failure to onRelayFailed', async () => {
+  const signals = [];
+  let failed = 0;
+  const a = new PianoMidiBridgeAdapter({
+    bridgeUrl: 'ws://tablet:8780/', relay: 'setting', logger: noLog, now: () => 0, onRelayFailed: () => { failed += 1; },
+    fetchImpl: async (url, init) => { signals.push(init.signal instanceof AbortSignal); throw new Error('timeout'); },
+  });
+  await a.suppressWakeUntil(60_000);
+  assert.deepEqual(signals, [true]);
+  assert.equal(failed, 1);
+});

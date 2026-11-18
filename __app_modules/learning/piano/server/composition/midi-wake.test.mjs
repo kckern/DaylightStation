@@ -1,8 +1,9 @@
 import { test, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { createPianoMidiWake, _resetForTests } from './midi-wake.mjs';
+import { getPianoWakeHoldSync, _resetForTests as resetHoldSync } from './wake-hold-sync.mjs';
 
-afterEach(() => _resetForTests());
+afterEach(() => { _resetForTests(); resetHoldSync(); });
 
 const TOKEN = 'w'.repeat(40);
 function setup(piano, contentControl) {
@@ -36,8 +37,9 @@ test('default: the old bridge URL, unchanged', () => {
 test('bridge_provider daylight-android: the control port socket with the token header, relaying through the setting', () => {
   const s = setup({ bridge_provider: 'daylight-android', midi_wake: wake }, android);
   assert.ok(createPianoMidiWake(s.args).pianoMidiWakeService);
-  assert.deepEqual({ ...s.opts(), logger: undefined }, {
-    bridgeUrl: 'ws://tablet.invalid:8780/', headers: { 'X-Daylight-Token': TOKEN }, relay: 'setting', logger: undefined,
+  assert.equal(typeof s.opts().onRelayFailed, 'function');
+  assert.deepEqual({ ...s.opts(), logger: undefined, onRelayFailed: undefined }, {
+    bridgeUrl: 'ws://tablet.invalid:8780/', headers: { 'X-Daylight-Token': TOKEN }, relay: 'setting', logger: undefined, onRelayFailed: undefined,
   });
   assert.ok(!JSON.stringify(s.logs).includes(TOKEN));
   assert.equal(s.logs.find((l) => l.event === 'piano-midi-wake.created').data.provider, 'daylight-android');
@@ -97,4 +99,17 @@ test('piano-bridge: the same hold still goes to the old APK by read-merge-write 
   ]);
   assert.match(h.requests[1].body, /targetMac: kept/);
   assert.match(h.requests[1].body, new RegExp(`fkbWakeSuppressUntilEpochMs: ${h.NOW + 60_000}`));
+});
+
+test('a failed relay arms the shared wake-hold sync the supervisor reconciles', () => {
+  const s = setup({ bridge_provider: 'daylight-android', midi_wake: wake }, android);
+  createPianoMidiWake(s.args);
+  const armed = [];
+  const endpoint = { provider: 'daylight-android', httpBase: 'http://tablet.invalid:8780', headers: {} };
+  // The supervisor gets the same instance; give it a recorder before the relay fails.
+  resetHoldSync();
+  const sync = getPianoWakeHoldSync({ endpoint, deviceId: 'yellow-room-tablet', getScreenOverrideService: s.args.getScreenOverrideService, factory: () => ({ relayFailed: () => armed.push(1) }) });
+  s.opts().onRelayFailed();
+  assert.ok(sync);
+  assert.deepEqual(armed, [1]);
 });

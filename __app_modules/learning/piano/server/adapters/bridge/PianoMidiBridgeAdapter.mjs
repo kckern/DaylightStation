@@ -6,6 +6,7 @@ const DEFAULT_BACKOFF_MAX_MS = 30000;
 const SUPPRESS_SETTING = 'power.wakeSuppressUntilSec';
 /** The setting is a 32-bit integer on the device. */
 const SUPPRESS_MAX_SEC = 2147483647;
+const RELAY_TIMEOUT_MS = 10_000;
 
 /**
  * Transport adapter for the bridge's note WebSocket, and on the old piano-bridge
@@ -22,7 +23,7 @@ const SUPPRESS_MAX_SEC = 2147483647;
  * See composition/bridge-endpoint.mjs.
  */
 export class PianoMidiBridgeAdapter extends IPianoMidiBridge {
-  #bridgeUrl; #logger; #WebSocketImpl; #fetchImpl; #headers; #relay; #now;
+  #bridgeUrl; #logger; #WebSocketImpl; #fetchImpl; #headers; #relay; #now; #onRelayFailed;
   #backoffBaseMs; #backoffMaxMs; #backoff; #ws; #stopped; #onNoteOn;
 
   constructor({
@@ -35,6 +36,7 @@ export class PianoMidiBridgeAdapter extends IPianoMidiBridge {
     headers = {},
     relay = 'config',
     now = () => Date.now(),
+    onRelayFailed = null,
   } = {}) {
     super();
     if (!bridgeUrl) throw new Error('PianoMidiBridgeAdapter requires bridgeUrl');
@@ -53,6 +55,7 @@ export class PianoMidiBridgeAdapter extends IPianoMidiBridge {
     if (relay !== 'config' && relay !== 'setting') throw new Error(`PianoMidiBridgeAdapter relay must be config or setting, not ${relay}`);
     this.#relay = relay;
     this.#now = now;
+    this.#onRelayFailed = typeof onRelayFailed === 'function' ? onRelayFailed : null;
   }
 
   start(onNoteOn) {
@@ -145,16 +148,19 @@ export class PianoMidiBridgeAdapter extends IPianoMidiBridge {
         method: 'POST',
         headers: { ...this.#headers, 'Content-Type': 'application/json' },
         body: JSON.stringify({ key: SUPPRESS_SETTING, value }),
+        signal: AbortSignal.timeout(RELAY_TIMEOUT_MS),
       });
       if (!response?.ok) {
         let error = null;
         try { error = (await response.json())?.error ?? null; } catch { /* not JSON */ }
         this.#logger.warn?.('piano-midi-wake.suppress-relay-failed', { status: response?.status ?? null, error, value });
+        this.#onRelayFailed?.();
         return;
       }
       this.#logger.info?.('piano-midi-wake.suppress-relayed', { setting: SUPPRESS_SETTING, value });
     } catch (err) {
       this.#logger.warn?.('piano-midi-wake.suppress-relay-failed', { error: String(err?.message ?? err), value });
+      this.#onRelayFailed?.();
     }
   }
 }

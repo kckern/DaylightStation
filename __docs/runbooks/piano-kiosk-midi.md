@@ -532,7 +532,9 @@ device's own note wake, so a key press in the meantime does not light the panel.
 | `daylight-android` | the app's `screen-power` note wake, `power.wakeSuppressUntilSec` (epoch seconds) | `POST /settings` for that one key on the control port, with the token header |
 
 Waking the panel on purpose clears the hold: the old APK gets the current time, the
-app gets `0`. Check it on the app with `dd settings get power.wakeSuppressUntilSec`
+app gets `0`. A hold lasts at most 24 hours. On the app, a hold left behind by a
+backend restart or a failed relay is re-synced by the bridge supervisor on its next
+reachable check (`piano-wake-hold.resynced`). Check it on the app with `dd settings get power.wakeSuppressUntilSec`
 and in the log store with `piano-midi-wake.suppress-relayed` /
 `suppress-relay-failed`.
 

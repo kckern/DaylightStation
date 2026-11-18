@@ -45,6 +45,7 @@ import { createSpeakerReadinessCheck } from "../adapters/bridge/speakerReadiness
 import { createLogStoreQuery, logStoreBaseFromSinkUrl } from "../adapters/bridge/logStoreQuery.mjs";
 import { composePianoSpeakerPush } from "../domain/bridge/pianoSpeakerPush.mjs";
 import { PianoBridgeLifelineRestartAdapter } from "../adapters/bridge/PianoBridgeLifelineRestartAdapter.mjs";
+import { getPianoWakeHoldSync, _resetForTests as resetWakeHoldSync } from "./wake-hold-sync.mjs";
 import { resolvePianoBridgeEndpoint, DAYLIGHT_ANDROID } from "./bridge-endpoint.mjs";
 
 const DEFAULT_PACKAGE = 'net.kckern.pianobridge';
@@ -78,6 +79,7 @@ export function createPianoBridgeSupervisor({
   probeFactory = (options) => new PianoBridgeHealthProbeAdapter(options),
   scheduler = new NodeApplicationScheduler(),
   restartFactory = (options) => new PianoBridgeLifelineRestartAdapter(options),
+  wakeHoldSync = undefined,
 } = {}) {
   if (instance) {
     logger.warn?.('piano-bridge.supervisor.already-created');
@@ -168,6 +170,10 @@ export function createPianoBridgeSupervisor({
     };
   }
 
+  // On the Android app, the note-wake hold is re-synced after boot and after a failed relay.
+  const holdSync = wakeHoldSync !== undefined ? wakeHoldSync
+    : getPianoWakeHoldSync({ endpoint, deviceId, getScreenOverrideService, logger });
+
   const service = new PianoBridgeSupervisorService({
     probe: probeFactory({ bridgeUrl: httpBase, headers }),
     relaunch,
@@ -184,12 +190,13 @@ export function createPianoBridgeSupervisor({
     oneWayAlertAfterMs: cfg.one_way_alert_after_ms,
     speaker,
     logModule: PIANO_BRIDGE_SUPERVISOR_LOG_MODULE,
+    afterReachable: holdSync ? () => holdSync.reconcile() : null,
   });
   service.start();
   instance = service;
   logger.info?.('piano-bridge.supervisor.created', {
     deviceId, provider: endpoint.provider, bridgeUrl: httpBase, pkg: endpoint.provider === DAYLIGHT_ANDROID ? null : pkg, notifyService, powerEntity, speakerRecovery: !!speaker, plugEntity, screenHold: !!speaker?.holdScreen,
-    readiness: !!speaker?.checkReady, weeklySummary: !!speaker?.queryLogs,
+    readiness: !!speaker?.checkReady, weeklySummary: !!speaker?.queryLogs, wakeHoldSync: !!holdSync,
   });
   return { pianoBridgeSupervisor: service };
 }
@@ -198,4 +205,5 @@ export function createPianoBridgeSupervisor({
 export function _resetForTests() {
   if (instance) { try { instance.stop(); } catch { /* ignore */ } }
   instance = null;
+  resetWakeHoldSync();
 }

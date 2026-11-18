@@ -34,6 +34,8 @@ export class PianoBridgeHealthProbeAdapter extends IPianoBridgeHealthProbe {
     try {
       status = await this.#getJson('/status');
     } catch (err) {
+      // A wrong or missing token is a configuration fault, not a bridge that is down.
+      if (err?.unauthorized) return { reachable: false, unauthorized: true, ble: null, outVerified: null, speaker: null, error: 'unauthorized' };
       return { reachable: false, ble: null, outVerified: null, speaker: null, error: String(err?.message ?? err) };
     }
     // Payloads since p19 put the echo verdict on /status; older ones only on /loopback.
@@ -61,6 +63,7 @@ export class PianoBridgeHealthProbeAdapter extends IPianoBridgeHealthProbe {
       headers: this.#headers,
       signal: AbortSignal.timeout(this.#timeoutMs),
     });
+    if (res?.status === 401) throw Object.assign(new Error('unauthorized'), { unauthorized: true });
     if (!res?.ok) throw new Error(`HTTP ${res?.status ?? 'error'} from ${path}`);
     return res.json();
   }

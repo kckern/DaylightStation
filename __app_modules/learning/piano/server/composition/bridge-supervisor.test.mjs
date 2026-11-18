@@ -232,3 +232,14 @@ test('piano-bridge stays the default: the old bridge URL, no headers, launch-app
   assert.deepEqual(probeOpts, { bridgeUrl: 'http://tablet:8770', headers: {} });
   assert.equal(d.logs.find((l) => l.event === 'piano-bridge.supervisor.created').data.provider, 'piano-bridge');
 });
+
+test('daylight-android: each reachable tick lets the wake-hold sync reconcile', async () => {
+  const d = androidDeps({ contentControl: androidControl });
+  let reconciles = 0;
+  d.args.probeFactory = () => ({ readHealth: async () => ({ reachable: true, ble: 'CONNECTED', outVerified: true, speaker: true }) });
+  d.args.wakeHoldSync = { reconcile: async () => { reconciles += 1; return { checked: false }; } };
+  const { pianoBridgeSupervisor } = createPianoBridgeSupervisor(d.args);
+  await pianoBridgeSupervisor.tick();
+  await pianoBridgeSupervisor.tick();
+  assert.equal(reconciles, 2);
+});

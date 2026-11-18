@@ -228,7 +228,18 @@ app gets `POST /settings {key: "power.wakeSuppressUntilSec", value}`, the
 deadline in epoch seconds rounded up (0 clears it when the panel is woken on
 purpose). Each relay logs `piano-midi-wake.suppress-relayed`, or
 `piano-midi-wake.suppress-relay-failed` with the status; the screen authority's
-reconcile still holds the screen off either way. Setting the key back, or removing it,
+reconcile still holds the screen off either way. The relay times out after
+10 s. A hold lasts at most 24 hours (`DeviceScreenControlService`), and only a
+hold on the piano tablet itself touches its note wake.
+
+The backend's override is held in memory, so after a backend restart, or a
+relay that failed, the tablet could keep a deadline nothing clears. The bridge
+supervisor re-syncs it on its first reachable check after boot and on the first
+one after a failed relay (`PianoWakeHoldSyncAdapter`): it reads the setting and
+writes the backend's `off` deadline, or 0 when the backend holds nothing and the
+tablet still holds a future deadline. Each re-sync is tried once
+(`piano-wake-hold.resynced`, or `piano-wake-hold.resync-failed`). A 401 from the
+tablet is reported as `unauthorized`, apart from an unreachable bridge. Setting the key back, or removing it,
 returns both to the old bridge. `bridge_url` and `bridge_supervisor.package` are
 used only by `piano-bridge`.
 

@@ -12,6 +12,7 @@
 import { PianoMidiWakeService } from "../application/services/PianoMidiWakeService.mjs";
 import { PianoMidiBridgeAdapter } from "../adapters/bridge/PianoMidiBridgeAdapter.mjs";
 import { resolvePianoBridgeEndpoint, PIANO_BRIDGE } from "./bridge-endpoint.mjs";
+import { getPianoWakeHoldSync } from "./wake-hold-sync.mjs";
 
 
 /** @type {PianoMidiWakeService | null} */
@@ -77,7 +78,11 @@ export function createPianoMidiWake({
     deviceId,
     bridge: bridgeFactory(endpoint.provider === PIANO_BRIDGE
       ? { bridgeUrl, logger }
-      : { bridgeUrl: endpoint.wsUrl, headers: endpoint.headers, relay: 'setting', logger }),
+      : {
+        bridgeUrl: endpoint.wsUrl, headers: endpoint.headers, relay: 'setting', logger,
+        // A relay that did not arrive is re-synced on the supervisor's next reachable tick.
+        onRelayFailed: () => getPianoWakeHoldSync({ endpoint, deviceId, getScreenOverrideService, logger })?.relayFailed(),
+      }),
     cooldownMs: cfg.cooldown_ms ?? cfg.cooldownMs,
     screenOverride: getScreenOverrideService(),
   });

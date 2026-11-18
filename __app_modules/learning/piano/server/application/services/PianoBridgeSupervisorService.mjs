@@ -49,6 +49,7 @@ export class PianoBridgeSupervisorService {
   #probe; #relaunch; #readPianoPower; #notify; #compose;
   #scheduler; #clock; #logger;
   #deviceId; #location; #timezone;
+  #afterReachable;
   #intervalMs; #downConfirmChecks; #alertAfterMs; #oneWayAlertAfterMs; #relaunchBackoffMs;
   #timer = null;
   #ticking = false;
@@ -90,6 +91,7 @@ export class PianoBridgeSupervisorService {
    * @param {string} opts.deviceId
    * @param {string} [opts.location]
    * @param {string} [opts.timezone]
+   * @param {(health:Object) => Promise<void>} [opts.afterReachable] - runs after each reachable check
    */
   constructor({
     probe, relaunch, readPianoPower = null, notify = null, compose,
@@ -102,6 +104,7 @@ export class PianoBridgeSupervisorService {
     relaunchBackoffMs = DEFAULT_RELAUNCH_BACKOFF_MS,
     speaker = null,
     logModule = DEFAULT_LOG_MODULE,
+    afterReachable = null,
   } = {}) {
     if (typeof probe?.readHealth !== 'function') throw new Error('PianoBridgeSupervisorService requires probe');
     if (typeof relaunch !== 'function') throw new Error('PianoBridgeSupervisorService requires relaunch');
@@ -126,6 +129,7 @@ export class PianoBridgeSupervisorService {
     this.#relaunchBackoffMs = relaunchBackoffMs.length ? relaunchBackoffMs : DEFAULT_RELAUNCH_BACKOFF_MS;
     this.#speaker = speaker;
     this.#logModule = logModule;
+    this.#afterReachable = typeof afterReachable === 'function' ? afterReachable : null;
   }
 
   start() {
@@ -157,8 +161,16 @@ export class PianoBridgeSupervisorService {
     try {
       const health = await this.#probe.readHealth();
       this.#ticks += 1;
-      if (health?.reachable) await this.#onReachable(health);
-      else await this.#onUnreachable(health);
+      if (health?.reachable) {
+        await this.#onReachable(health);
+        // Work that needs the device up, such as re-syncing the note-wake hold. Its
+        // failure is its own; it never stops a tick.
+        if (this.#afterReachable) {
+          try { await this.#afterReachable(health); } catch (err) {
+            this.#logger.warn?.('piano-bridge.supervisor.after-reachable-failed', { deviceId: this.#deviceId, error: String(err?.message ?? err) });
+          }
+        }
+      } else await this.#onUnreachable(health);
       if (this.#speaker) {
         await this.#checkSpeaker(health);
         await this.#checkReadiness();

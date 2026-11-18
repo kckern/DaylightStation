@@ -71,3 +71,11 @@ test('the configured headers go on every request (the Android app needs its toke
   assert.equal(health.outVerified, true);
   assert.equal(health.speaker, true);
 });
+
+test('a 401 is reported as unauthorized, distinct from an unreachable bridge', async () => {
+  const probe = new PianoBridgeHealthProbeAdapter({ bridgeUrl: 'http://tablet:8780', fetchImpl: async () => ({ ok: false, status: 401, json: async () => ({}) }) });
+  const health = await probe.readHealth();
+  assert.equal(health.reachable, false);
+  assert.equal(health.error, 'unauthorized');
+  assert.equal(health.unauthorized, true);
+});
