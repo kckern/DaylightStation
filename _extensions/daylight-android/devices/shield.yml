@@ -8,7 +8,7 @@ control: { port: 8780, lifelinePort: 8781 }
 # `done`, set at the runbook's make-it-permanent step together with lockdown.required and
 # the coexistence switches. tools/roadmap-capabilities.test.mjs checks the file against it.
 cutover: before
-shell: { versionCode: 35, versionName: "0.3-kiosk" }
+shell: { versionCode: 36, versionName: "0.3-kiosk" }
 # microphone: the mic stream. location: Bluetooth discovery from a service needs it on Android 11.
 foregroundServiceTypes: [microphone, location]
 # `accessibility`: the lockdown watcher reads what is in front through it, and it is this

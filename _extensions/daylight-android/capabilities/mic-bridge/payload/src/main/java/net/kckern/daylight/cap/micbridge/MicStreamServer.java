@@ -28,6 +28,13 @@ import java.util.concurrent.TimeUnit;
  * Bluetooth), and the socket binds to loopback only.
  */
 final class MicStreamServer {
+    /**
+     * How long stop() waits for the WebSocket server's selector thread. The library's
+     * stop() is stop(0), which joins that thread with no bound; a client leaving at the
+     * same moment could then hold stop(), and with it the capability's lock, for good.
+     */
+    static final int WS_STOP_TIMEOUT_MS = 2000;
+
 
     private static final String TAG = "AudioBridge";
 
@@ -106,7 +113,7 @@ final class MicStreamServer {
     synchronized void stop() {
         shutDown = true;
         if (wsServer == null) return;
-        try { wsServer.stop(); } catch (InterruptedException e) { Log.w(TAG, "Interrupted while stopping WebSocket server", e); }
+        try { wsServer.stop(WS_STOP_TIMEOUT_MS); } catch (InterruptedException e) { Log.w(TAG, "Interrupted while stopping WebSocket server", e); }
         // A client that was cut off by stop() may not get its close callback: release the microphone here.
         wsServer.stopCapture();
         wsServer = null;

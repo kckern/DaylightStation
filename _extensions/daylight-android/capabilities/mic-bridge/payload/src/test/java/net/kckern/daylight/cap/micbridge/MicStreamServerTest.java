@@ -228,12 +228,22 @@ public class MicStreamServerTest {
             s.start(port);
             CountDownLatch gotAudio = new CountDownLatch(1);
             final WebSocketClient client = audioClient(port, gotAudio);
-            assertTrue(client.connectBlocking(5, TimeUnit.SECONDS));
-            assertTrue(gotAudio.await(5, TimeUnit.SECONDS));
+            assertTrue("round " + round + ": the client connected", client.connectBlocking(5, TimeUnit.SECONDS));
+            assertTrue("round " + round + ": the client got audio", gotAudio.await(5, TimeUnit.SECONDS));
             Thread leaver = new Thread(client::close);
             leaver.start();
-            s.stop();                      // the test's timeout is the assertion
+            long t0 = System.nanoTime();
+            s.stop();
+            long ms = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - t0);
+            // stop() bounds the WebSocket server's own stop; a client leaving at that moment
+            // must not hold it past that bound plus the capture thread's shutdown.
+            assertTrue("round " + round + ": stop() took " + ms + " ms with a client leaving at the same moment",
+                    ms < MicStreamServer.WS_STOP_TIMEOUT_MS + 3000);
             leaver.join(2000);
         }
+    }
+
+    @Test public void theWebSocketServerStopIsBounded() {
+        assertEquals(2000, MicStreamServer.WS_STOP_TIMEOUT_MS);
     }
 }
