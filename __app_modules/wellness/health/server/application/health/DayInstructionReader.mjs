@@ -31,17 +31,16 @@ export class DayInstructionReader {
 
   async read({ text, date, today, foods, latest }) {
     const intentOptions = {
-      add: 'It reports food eaten that is not on the list yet',
+      add: 'It reports food eaten that still needs logging, including food it says was forgotten or also eaten, even if a similar food is already listed',
       move: 'It says listed food belongs on another day or in another meal',
       change: 'It corrects what a listed food actually was or how much of it there was',
       other: 'It asks for something this cannot do, such as deleting food, or it is a question',
     };
     const targetOptions = {
-      latest: 'The most recent capture, with words like "that", "those" or "it"; see `latest_capture`',
-      whole_day: 'Everything on this day',
+      latest: 'The most recent capture: `said` points with "that", "these", "those" or "it" instead of naming a listed food, even if it goes on to name a meal, a day, or what the food really was; see `latest_capture`',
+      whole_day: 'Everything on this day, with words like "all of this", "everything" or "the whole day"; "all of this" means the whole day even though "this" is a pointing word',
       meal: 'Everything in one meal',
       named: 'Particular foods or a kind of food, such as "the drinks"',
-      unclear: 'It cannot be told which food is meant',
     };
     const fromMealOptions = { ...meals(), none: 'No meal is named as the one the food is leaving' };
     const toMealOptions = { same: 'No meal change was asked for', ...meals() };
@@ -52,7 +51,7 @@ export class DayInstructionReader {
     }
     const { answers } = await this.#gateway.evaluate({ said: text, viewed_day: dayName(date, today), foods_on_this_day: foods, latest_capture: latest }, {
       intent: choice('What does `said` ask for, given `foods_on_this_day` on `viewed_day`?', intentOptions),
-      target: choice('Which of `foods_on_this_day` on `viewed_day` does `said` refer to?', targetOptions),
+      target: choice('Which of `foods_on_this_day` on `viewed_day` does `said` refer to? A pointing word such as "that" means `latest_capture`, even when `latest_capture` looks nothing like what `said` says the food really was. "All of this" and "everything" mean the whole day instead.', targetOptions),
       fromMeal: choice('Which meal does `said` say the food is being moved out of?', fromMealOptions),
       toMeal: choice('According to `said`, which meal should the food it mentions move to?', toMealOptions),
       toDay: choice('According to `said`, which day should the food it mentions move to?', toDayOptions),

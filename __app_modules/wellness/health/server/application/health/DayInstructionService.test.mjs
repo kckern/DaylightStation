@@ -216,6 +216,11 @@ describe('DayInstructionService', () => {
       expect(h.reader.matchFoods).not.toHaveBeenCalled();
       expect(h.entryRevisions.propose).not.toHaveBeenCalled();
     });
+    it('asks which food to change when a named food matches nothing', async () => {
+      const h = harness(plan({ intent: 'change', target: 'named' }));
+      expect((await h.run('the soup was only half a cup')).clarification).toMatchObject({ kind: 'food' });
+      expect(h.entryRevisions.propose).not.toHaveBeenCalled();
+    });
     it('says so when no food on the day can be changed', async () => {
       const h = harness(plan({ intent: 'change' }), { dayRows: [{ uuid: 'loose', name: 'Loose', date, version: 1 }] });
       expect(await h.run('that was whole milk')).toMatchObject({ committed: false, outcome: 'no-change' });

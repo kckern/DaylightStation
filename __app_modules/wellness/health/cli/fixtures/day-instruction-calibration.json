@@ -1,0 +1,19 @@
+[
+  {"id":"move-that","text":"actually move that to yesterday","intent":"move","target":"latest","toDay":"2026-11-17","toMeal":"same"},
+  {"id":"all-yesterday","text":"all of this was yesterday","intent":"move","target":"whole_day","toDay":"2026-11-17","toMeal":"same"},
+  {"id":"drinks","text":"move the drinks to snacks","intent":"move","target":"named","toDay":"same","toMeal":"night"},
+  {"id":"lunch-dinner","text":"lunch was really dinner","intent":"move","target":"meal","fromMeal":"afternoon","toDay":"same","toMeal":"evening"},
+  {"id":"monday","text":"that was Monday's breakfast","intent":"move","target":"latest","toDay":"2026-11-16","toMeal":"morning"},
+  {"id":"older","text":"these were from last month","intent":"move","target":"latest","toDay":"older","toMeal":"same"},
+  {"id":"milk","text":"that was actually whole milk","intent":"change","target":"latest"},
+  {"id":"amount","text":"the rice was only half a cup","intent":"change","target":"named"},
+  {"id":"dump","text":"I had oatmeal for breakfast, a turkey sandwich at lunch and salmon for dinner","intent":"add","compound":false},
+  {"id":"single","text":"a banana","intent":"add"},
+  {"id":"also","text":"I also had two cookies","intent":"add"},
+  {"id":"forgot","text":"I forgot the coffee this morning","intent":"add"},
+  {"id":"both","text":"add a banana and move the eggs to lunch","compound":true},
+  {"id":"delete","text":"delete the eggs","intent":"other"},
+  {"id":"breakfast-lunch","text":"move breakfast to lunch","intent":"move","target":"meal","fromMeal":"morning","toDay":"same","toMeal":"afternoon"},
+  {"id":"two-places","text":"move the rice to lunch and the coffee to dinner","compound":true},
+  {"id":"same-place","text":"move the rice and the coffee to dinner","compound":false}
+]

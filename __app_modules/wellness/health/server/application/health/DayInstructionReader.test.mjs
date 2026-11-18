@@ -32,7 +32,7 @@ const badYesNos = [
 ];
 const malformed = [
   ...badChoices({ valid: 'move', offList: ['delete'] }).map(([label, bad]) => ['intent', label, bad]),
-  ...badChoices({ valid: 'latest', offList: ['everything'] }).map(([label, bad]) => ['target', label, bad]),
+  ...badChoices({ valid: 'latest', offList: ['everything', 'unclear'] }).map(([label, bad]) => ['target', label, bad]),
   ...badChoices({ valid: 'morning', offList: ['same'] }).map(([label, bad]) => ['fromMeal', label, bad]),
   ...badChoices({ valid: 'same', offList: ['none'] }).map(([label, bad]) => ['toMeal', label, bad]),
   ...badChoices({ valid: 'same', offList: ['2026-11-18', '2026-11-11'] }).map(([label, bad]) => ['toDay', label, bad]),
@@ -56,11 +56,12 @@ describe('DayInstructionReader', () => {
     expect(options).not.toContain('2026-11-11');
     expect(options).toEqual(expect.arrayContaining(['same', 'older']));
   });
-  it('lets the model abstain and say no meal was named', async () => {
-    const g = gateway({ ...validRead, intent: pick('other'), target: pick('unclear'), fromMeal: pick('none') });
+  it('lets the model decline the request and say no meal was named, but always pick a target', async () => {
+    const g = gateway({ ...validRead, intent: pick('other'), target: pick('named'), fromMeal: pick('none') });
     const plan = await reader(g).read(readInput);
-    expect(plan).toMatchObject({ intent: 'other', target: 'unclear', fromMeal: 'none' });
+    expect(plan).toMatchObject({ intent: 'other', target: 'named', fromMeal: 'none' });
     const questions = g.evaluate.mock.calls[0][1];
+    expect(Object.keys(questions.target.options).sort()).toEqual(['latest', 'meal', 'named', 'whole_day']);
     expect(Object.keys(questions.fromMeal.options).sort()).toEqual(['afternoon', 'evening', 'morning', 'night', 'none']);
     expect(Object.keys(questions.toMeal.options)).toContain('same');
   });
