@@ -321,6 +321,106 @@ describe('useMealMoves — inside a Health session', () => {
     expect(shown(result.current.ops, TO, [{ ...eggs, date: TO, version: 2 }])).toEqual([]);
     expect(result.current.moves.undo).toBeNull();
   });
+  const failure = status => Object.assign(new Error(`HTTP ${status}`), { status });
+  const operations = result => [...result.current.ops.snapshot.operations.values()];
+
+  it.each([[400], [409]])('a %i refusal puts the row back and leaves the food free', async status => {
+    apiMock.mockRejectedValueOnce(failure(status)).mockResolvedValueOnce(movedReply);
+    const { result } = render();
+    await act(async () => { await result.current.moves.move(eggs, 'evening', 'morning'); });
+    expect(result.current.moves.items[0].mealTime).toBe('morning');
+    expect(result.current.moves.error).toMatch(/^Couldn't move Eggs/);
+    expect(result.current.ops.store.isReserved(['eggs'])).toBe(false);
+    expect(operations(result)).toEqual([]);
+    await act(async () => { await result.current.moves.move(eggs, 'evening', 'morning'); });
+    expect(apiMock).toHaveBeenCalledTimes(2);
+    expect(result.current.moves.undo).not.toBeNull();
+  });
+  it.each([['a server error', failure(500)], ['a lost connection', new Error('offline')]])('%s keeps the food reserved, since the move may have happened', async (_label, error) => {
+    apiMock.mockRejectedValueOnce(error);
+    const { result } = render();
+    await act(async () => { await result.current.moves.move(eggs, 'evening', 'morning'); });
+    expect(result.current.moves.items[0].mealTime).toBe('morning');
+    expect(result.current.ops.store.isReserved(['eggs'])).toBe(true);
+  });
+  it('a refused Undo keeps its offer and leaves the food free', async () => {
+    apiMock.mockResolvedValueOnce(movedReply).mockRejectedValueOnce(failure(409));
+    const { result } = render();
+    await act(async () => { await result.current.moves.moveToDay([eggs], TO); });
+    await act(async () => { await result.current.moves.undo.run(); });
+    expect(result.current.moves.undo).not.toBeNull();
+    expect(result.current.ops.store.isReserved(['eggs'])).toBe(false);
+  });
+  it('dragging a food whose Undo is unresolved keeps the Undo and changes nothing', async () => {
+    apiMock.mockResolvedValueOnce(movedReply).mockRejectedValueOnce(new Error('offline'));
+    const { result } = render();
+    await act(async () => { await result.current.moves.moveToDay([eggs], TO); });
+    await act(async () => { await result.current.moves.undo.run(); });
+    const offer = result.current.moves.undo.label;
+    await act(async () => { await result.current.moves.move(eggs, 'night', 'morning'); });
+    expect(apiMock).toHaveBeenCalledTimes(2);
+    expect(result.current.moves.undo.label).toBe(offer);
+    expect(result.current.moves.items).toEqual([]);
+    expect(result.current.moves.error).toMatch(/^Can't move Eggs yet/);
+  });
+  it('dragging during a move in flight leaves that move on screen', async () => {
+    let finish;
+    apiMock.mockReturnValueOnce(new Promise(resolve => { finish = resolve; }));
+    const { result } = render();
+    let first;
+    act(() => { first = result.current.moves.move(eggs, 'evening', 'morning'); });
+    await act(async () => { await result.current.moves.move(eggs, 'night', 'morning'); });
+    expect(apiMock).toHaveBeenCalledTimes(1);
+    expect(result.current.moves.items[0].mealTime).toBe('evening');
+    expect(result.current.moves.error).toMatch(/^Can't move Eggs yet/);
+    await act(async () => { finish({ ...movedReply, toDate: null, toMeal: 'evening', items: [{ ...eggs, mealTime: 'evening', version: 2 }], affectedDates: [FROM] }); await first; });
+    expect(result.current.moves.items[0].mealTime).toBe('evening');
+    expect(result.current.moves.undo.label).toBe('Moved Eggs to Dinner');
+  });
+  it('a dropped day move during a move in flight does not hide the row', async () => {
+    let finish;
+    apiMock.mockReturnValueOnce(new Promise(resolve => { finish = resolve; }));
+    const { result } = render();
+    let first;
+    act(() => { first = result.current.moves.move(eggs, 'evening', 'morning'); });
+    await act(async () => { await result.current.moves.moveToDay([eggs], TO); });
+    expect(result.current.moves.items).toHaveLength(1);
+    await act(async () => { finish(movedReply); await first; });
+  });
+  it('retrying a move from the status row offers Undo and clears the old error', async () => {
+    apiMock.mockRejectedValueOnce(failure(500)).mockResolvedValueOnce(movedReply);
+    const { result } = render();
+    await act(async () => { await result.current.moves.moveToDay([eggs], TO); });
+    expect(result.current.moves.undo).toBeNull();
+    const [failed] = operations(result);
+    await act(async () => { await result.current.ops.retry(failed.id); });
+    expect(result.current.moves.error).toBeNull();
+    expect(result.current.moves.undo.label).toBe('Moved Eggs to Wed, Jan 15');
+    expect(result.current.ops.store.isReserved(['eggs'])).toBe(false);
+  });
+  it('retrying an Undo from the status row closes the offer', async () => {
+    apiMock.mockResolvedValueOnce(movedReply).mockRejectedValueOnce(failure(500)).mockResolvedValueOnce(undoReply);
+    const { result } = render();
+    await act(async () => { await result.current.moves.moveToDay([eggs], TO); });
+    await act(async () => { await result.current.moves.undo.run(); });
+    const failed = operations(result).find(op => op.request.path.endsWith('meal-undo'));
+    await act(async () => { await result.current.ops.retry(failed.id); });
+    expect(result.current.moves.undo).toBeNull();
+    expect(result.current.moves.error).toBeNull();
+    expect(result.current.moves.items).toEqual([eggs]);
+  });
+  it('a dish sends the version of a part sitting in another meal, linked by either id', async () => {
+    const header = { uuid: 'g-uuid', id: 'g1', kind: 'group', name: 'Salad', date: FROM, mealTime: 'morning', version: 2 };
+    const near = { uuid: 'near', parentId: 'g-uuid', date: FROM, mealTime: 'morning', version: 3 };
+    const far = { uuid: 'far', parentId: 'g1', date: FROM, mealTime: 'night', version: 4 };
+    apiMock.mockResolvedValueOnce({ committed: true, undoToken: 'meal-token', affectedDates: [FROM], affectedIds: ['g-uuid', 'near', 'far'],
+      items: [header, near, far].map(row => ({ ...row, mealTime: 'evening', version: row.version + 1 })) });
+    const { result } = renderHook(() => useMealMoves({ items: [header, near, far], reload: vi.fn() }), { wrapper: session });
+    // The section only knows its own meal, so the far part is not in `children`.
+    await act(async () => { await result.current.move({ ...header, children: [near] }, 'evening', 'morning'); });
+    expect(apiMock.mock.calls[0][1]).toMatchObject({ selectedIds: ['g-uuid'], expectedVersions: { 'g-uuid': 2, near: 3, far: 4 } });
+    expect(result.current.items.map(row => row.mealTime)).toEqual(['evening', 'evening', 'evening']);
+  });
   it('a failed Undo can be run again', async () => {
     apiMock.mockResolvedValueOnce(movedReply).mockRejectedValueOnce(new Error('offline')).mockResolvedValueOnce(undoReply);
     const { result } = render();

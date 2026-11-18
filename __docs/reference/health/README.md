@@ -505,7 +505,8 @@ not the current hour. The resolved bucket is stored on each entry.
   Foods already in the destination meal are left out, and a gesture with nothing left
   to move sends nothing.
 - The move is optimistic (the row wears its new meal until the day reloads with it)
-  and highlights briefly. A failure puts every row back. Success offers one Undo through
+  and highlights briefly. A failure puts every row back, and a food busy with an earlier
+  change is refused before anything moves. Success offers one Undo through
   `POST /nutrition/meal-undo`; a failed Undo leaves the foods moved, keeps the offer, and
   retries under the same operation ID. Logs: `entry.move`, `meal.move`, `*.undo`,
   `entry.move.failed`, `entry.move.undo-failed`.

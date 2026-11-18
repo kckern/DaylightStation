@@ -147,6 +147,76 @@ describe('moveFoods', () => {
   });
 });
 
+describe('moveFoods with broken dish links', () => {
+  const row = async (uuid, day = date) => (await rows(day)).find(item => item.uuid === uuid);
+  const undo = (undoToken, operationId = 'undo-1') => commands.undo('u', { undoToken, operationId });
+
+  it('moves a food whose dish is gone, clears the link, and Undo restores it exactly', async () => {
+    await store.saveMany([food('lost', { parentId: 'gone' })]);
+    const { undoToken } = await move({ selectedIds: ['lost'], toMeal: 'night' });
+    expect(await row('lost')).toMatchObject({ mealTime: 'night', parentId: null });
+    await undo(undoToken);
+    expect(await row('lost')).toMatchObject({ mealTime: 'evening', parentId: 'gone' });
+  });
+  it('moves a food linked to a dish in another meal as a loose food', async () => {
+    await store.saveMany([food('split', { mealTime: 'morning', parentId: 'dish' })]);
+    const { undoToken } = await move({ selectedIds: ['split'], toDate: '2026-09-05' });
+    expect(await row('split', '2026-09-05')).toMatchObject({ mealTime: 'morning', parentId: null });
+    expect(await row('dish')).toMatchObject({ mealTime: 'evening' });
+    await undo(undoToken);
+    expect(await row('split')).toMatchObject({ mealTime: 'morning', parentId: 'dish', date });
+  });
+  it('treats a link to a row that is not a dish as broken', async () => {
+    await store.saveMany([food('hanger', { parentId: 'c' })]);
+    await move({ selectedIds: ['hanger'], toMeal: 'night' });
+    expect(await row('hanger')).toMatchObject({ mealTime: 'night', parentId: null });
+  });
+  it('still refuses a real part alone, and a dish selected with its part', async () => {
+    await expect(move({ selectedIds: ['part'], toMeal: 'night' })).rejects.toMatchObject({ status: 400 });
+    await expect(move({ operationId: 'move-2', selectedIds: ['dish', 'part'], toMeal: 'night' })).rejects.toMatchObject({ status: 400 });
+  });
+  it.each([['its uuid', 'dish'], ['its short id', 'dish-short']])('a dish brings back a part in another meal linked by %s, and Undo splits it again', async (_label, parentId) => {
+    await store.update('u', 'dish', { id: 'dish-short' });
+    await store.saveMany([food('split', { mealTime: 'morning', parentId })]);
+    const { undoToken, movedCount } = await move({ selectedIds: ['dish'], toMeal: 'night' });
+    expect(movedCount).toBe(1);
+    expect(await row('split')).toMatchObject({ mealTime: 'night', parentId });
+    expect(await row('part')).toMatchObject({ mealTime: 'night', parentId: 'dish' });
+    await undo(undoToken);
+    expect(await row('split')).toMatchObject({ mealTime: 'morning', parentId });
+    expect(await row('dish')).toMatchObject({ mealTime: 'evening' });
+  });
+  it('a day move makes a split dish whole in the dish\'s meal', async () => {
+    await store.saveMany([food('split', { mealTime: 'morning', parentId: 'dish' })]);
+    const { undoToken } = await move({ selectedIds: ['dish'], toDate: '2026-09-05' });
+    expect(await row('split', '2026-09-05')).toMatchObject({ mealTime: 'evening', parentId: 'dish' });
+    await undo(undoToken);
+    expect(await row('split')).toMatchObject({ mealTime: 'morning', parentId: 'dish', date });
+  });
+  it('keeps the link when a split part is selected together with its dish', async () => {
+    await store.saveMany([food('split', { mealTime: 'morning', parentId: 'dish' })]);
+    await move({ selectedIds: ['dish', 'split'], toMeal: 'night' });
+    expect(await row('split')).toMatchObject({ mealTime: 'night', parentId: 'dish' });
+  });
+  it('a dish already in the meal still moves when that reunites a split part', async () => {
+    await store.saveMany([food('split', { mealTime: 'morning', parentId: 'dish' })]);
+    await expect(move({ selectedIds: ['dish'], toMeal: 'evening' })).resolves.toMatchObject({ movedCount: 1 });
+    expect(await row('split')).toMatchObject({ mealTime: 'evening', parentId: 'dish' });
+  });
+  it('requires the version of every row a dish carries', async () => {
+    await store.saveMany([food('split', { mealTime: 'morning', parentId: 'dish' })]);
+    const { split, ...others } = await versions();
+    await expect(move({ selectedIds: ['dish'], toMeal: 'night', expectedVersions: others })).rejects.toMatchObject({ status: 409 });
+  });
+  it('Undo allows a link that was already broken but refuses new breakage', async () => {
+    await store.saveMany([food('lost', { parentId: 'gone' })]);
+    const { undoToken } = await move({ selectedIds: ['dish', 'lost'], toMeal: 'night' });
+    await store.saveMany([food('late', { mealTime: 'night', parentId: 'dish' })]);
+    await expect(undo(undoToken)).rejects.toMatchObject({ status: 409 });
+    expect(await row('dish')).toMatchObject({ mealTime: 'night' });
+  });
+});
+
 describe('dish membership', () => {
   it('removes an omitted part that is linked by its dish\'s short ID', async () => {
     await seedShortLinkDish();

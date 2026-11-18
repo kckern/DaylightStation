@@ -147,8 +147,9 @@ export function useMealDropTarget(bucket) {
   };
 }
 
-/** Each row followed by its dish parts (`children`, attached by groupRows). */
-const withParts = rows => rows.flatMap(row => [row, ...(row.children || [])]);
+const MOVE_PATH = 'api/v1/health/nutrition/foods-move';
+const UNDO_PATH = 'api/v1/health/nutrition/meal-undo';
+const isDefiniteRefusal = err => err?.status === 400 || err?.status === 409;
 
 // A moved row (and a dish's children) wear their new meal from the drop until
 // the day reloads with it, so the row never snaps back in between.
@@ -208,34 +209,64 @@ export function useMealMoves(day) {
     timers.current.add(timer);
   };
 
-  const moveCommand = (rows, destination) => foodAPI('api/v1/health/nutrition/foods-move', {
+  // Every row a move carries: the entries, their parts, and any row of the day
+  // linked to them. A section only knows its own meal, so a dish's `children`
+  // can miss a part stranded in another one.
+  const withParts = rows => {
+    const dayParts = new Map(groupRows(day.items).map(({ row, children }) => [String(entryId(row)), children]));
+    const all = new Map();
+    for (const row of rows) {
+      for (const item of [row, ...(row.children || []), ...(dayParts.get(String(entryId(row))) || [])]) all.set(String(entryId(item)), item);
+    }
+    return [...all.values()];
+  };
+  const moveBody = (rows, carried, destination) => ({
     date: rows[0].date ?? rows[0].createdAt?.slice(0, 10),
     selectedIds: rows.map(row => String(entryId(row))),
-    expectedVersions: Object.fromEntries(withParts(rows).map(row => [String(entryId(row)), row.version ?? 1])),
+    expectedVersions: Object.fromEntries(carried.map(row => [String(entryId(row)), row.version ?? 1])),
     ...destination, operationId: crypto.randomUUID(),
-  }, 'POST');
+  });
   const whatMoved = rows => (rows.length === 1 ? entryLabel(rows[0]) : `${rows.length} foods`);
   // The Undo's operation ID is fixed with the offer, so trying a failed Undo
   // again resumes that one operation instead of being refused as a second one.
   const offerUndo = (result, ids, rows, place) => setUndo({ token: result.undoToken, operationId: crypto.randomUUID(), ids, rows, ...place });
+  // Checked before anything changes on screen: a food busy with an earlier change
+  // keeps that change's placement and its Undo offer.
+  const refuseMove = (rows, body) => {
+    const refusal = foodAPI.refusal(MOVE_PATH, body, 'POST');
+    if (!refusal) return false;
+    setError(`Can't move ${whatMoved(rows)} yet. ${refusal}`);
+    logger.info('entry.move.blocked', { count: rows.length, reason: refusal });
+    return true;
+  };
+  // The server said no, so nothing happened and the foods are free. After any
+  // other failure the outcome is unknown and the reservation stays for Retry.
+  const releaseIfRefused = (err, operationId) => { if (isDefiniteRefusal(err)) foodAPI.release(operationId); };
 
   // One command per gesture: every row moves, or none do. The server refuses a
   // move that changes nothing, so rows already in that meal stay out of it.
+  // Success is handled in the continuation so a Retry from the status row gets it too.
   const send = useCallback(async (requested, to, from) => {
     const rows = requested.filter(row => row.mealTime !== to);
     if (!rows.length) return;
-    const ids = withParts(rows).map(row => String(entryId(row)));
+    const carried = withParts(rows);
+    const ids = carried.map(row => String(entryId(row)));
+    const body = moveBody(rows, carried, { toMeal: to });
+    if (refuseMove(rows, body)) return;
     setError(null);
     setMoves(previous => { const next = new Map(previous); ids.forEach(id => next.set(id, { to })); return next; });
     rows.forEach(row => highlight(String(entryId(row))));
     try {
-      const result = await moveCommand(rows, { toMeal: to });
-      logger.info(rows.length > 1 ? 'meal.move' : 'entry.move', { uuid: rows.length === 1 ? String(entryId(rows[0])) : undefined, count: rows.length, from, to });
-      offerUndo(result, ids, rows, { from, to });
+      await foodAPI.withContinuation(MOVE_PATH, body, 'POST', result => {
+        logger.info(rows.length > 1 ? 'meal.move' : 'entry.move', { uuid: rows.length === 1 ? String(entryId(rows[0])) : undefined, count: rows.length, from, to });
+        setError(null);
+        offerUndo(result, ids, rows, { from, to });
+      });
     } catch (err) {
       setMoves(previous => { const next = new Map(previous); ids.forEach(id => next.delete(id)); return next; });
+      releaseIfRefused(err, body.operationId);
       setError(`Couldn't move ${whatMoved(rows)}: ${entryError(err)}`);
-      logger.warn('entry.move.failed', { count: rows.length, from, to, error: err.message });
+      logger.warn('entry.move.failed', { count: rows.length, from, to, status: err.status, error: err.message });
       setUndo(null);
     } finally { day.reload?.(); }
   }, [day]);
@@ -246,17 +277,23 @@ export function useMealMoves(day) {
     const rows = requested.filter(row => row.date && row.date !== toDate);
     if (!rows.length) return;
     const fromDate = rows[0].date;
-    const ids = withParts(rows).map(row => String(entryId(row)));
+    const carried = withParts(rows);
+    const ids = carried.map(row => String(entryId(row)));
+    const body = moveBody(rows, carried, { toDate });
+    if (refuseMove(rows, body)) return;
     setError(null);
     setGone(previous => new Set([...previous, ...ids]));
     try {
-      const result = await moveCommand(rows, { toDate });
-      logger.info('entry.move-day', { count: rows.length, from: fromDate, to: toDate });
-      offerUndo(result, ids, rows, { day: { from: fromDate, to: toDate } });
+      await foodAPI.withContinuation(MOVE_PATH, body, 'POST', result => {
+        logger.info('entry.move-day', { count: rows.length, from: fromDate, to: toDate });
+        setError(null);
+        offerUndo(result, ids, rows, { day: { from: fromDate, to: toDate } });
+      });
     } catch (err) {
       setGone(previous => { const next = new Set(previous); ids.forEach(id => next.delete(id)); return next; });
+      releaseIfRefused(err, body.operationId);
       setError(`Couldn't move ${whatMoved(rows)} to ${dayLabel(toDate, localTodayISO())}: ${entryError(err)}`);
-      logger.warn('entry.move-day.failed', { count: rows.length, from: fromDate, to: toDate, error: err.message });
+      logger.warn('entry.move-day.failed', { count: rows.length, from: fromDate, to: toDate, status: err.status, error: err.message });
       setUndo(null);
     } finally { day.reload?.(); }
   }, [day]);
@@ -265,17 +302,27 @@ export function useMealMoves(day) {
   const runUndo = async () => {
     const current = undo;
     if (!current) return;
+    const body = { undoToken: current.token, operationId: current.operationId };
+    const refusal = foodAPI.refusal(UNDO_PATH, body, 'POST');
+    if (refusal) {
+      setError(`Can't undo that move yet. ${refusal}`);
+      logger.info('entry.move.undo-blocked', { count: current.rows.length, reason: refusal });
+      return;
+    }
     setError(null);
     try {
-      await foodAPI('api/v1/health/nutrition/meal-undo', { undoToken: current.token, operationId: current.operationId }, 'POST');
-      setMoves(previous => { const next = new Map(previous); current.ids.forEach(id => next.delete(id)); return next; });
-      setGone(previous => { const next = new Set(previous); current.ids.forEach(id => next.delete(id)); return next; });
-      const event = current.day ? 'entry.move-day.undo' : current.rows.length > 1 ? 'meal.move.undo' : 'entry.move.undo';
-      logger.info(event, { count: current.rows.length });
-      setUndo(null);
+      await foodAPI.withContinuation(UNDO_PATH, body, 'POST', () => {
+        setMoves(previous => { const next = new Map(previous); current.ids.forEach(id => next.delete(id)); return next; });
+        setGone(previous => { const next = new Set(previous); current.ids.forEach(id => next.delete(id)); return next; });
+        const event = current.day ? 'entry.move-day.undo' : current.rows.length > 1 ? 'meal.move.undo' : 'entry.move.undo';
+        logger.info(event, { count: current.rows.length });
+        setError(null);
+        setUndo(offer => (offer?.operationId === current.operationId ? null : offer));
+      });
     } catch (err) {
+      releaseIfRefused(err, current.operationId);
       setError(`Couldn't undo that move: ${entryError(err)}`);
-      logger.warn('entry.move.undo-failed', { count: current.rows.length, error: err.message });
+      logger.warn('entry.move.undo-failed', { count: current.rows.length, status: err.status, error: err.message });
     } finally { day.reload?.(); }
   };
 

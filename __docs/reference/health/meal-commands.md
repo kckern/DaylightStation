@@ -41,8 +41,14 @@ Undo tokens, including capture responses recovered after an interrupted request.
 
 `POST /api/v1/health/nutrition/foods-move` accepts `date`, `selectedIds`,
 `expectedVersions`, `operationId`, and a destination `toDate`, `toMeal`, or both.
-All selected foods move or none do, and a selected dish brings its parts. A
-destination after the server's today is rejected with 400; a `today` sent by the
+All selected foods move or none do. `expectedVersions` covers every row the move
+carries. A selected dish brings every row linked to it that day, by either of its
+IDs, including a part stranded in another meal, which rejoins the dish. A food counts
+as a dish part only when its `parentId` resolves to a group on the same day and in
+the same meal; selecting such a part alone is a 400. Any other link is broken: the
+food may move on its own and the move clears its `parentId`. Undo restores the exact
+earlier rows, broken links included. The audit lists those rows in `brokenLinkIds`,
+so Undo accepts only them and still refuses new breakage. A destination after the server's today is rejected with 400; a `today` sent by the
 client is ignored. The response adds `toDate`, `toMeal`, `movedCount`, and one
 `undoToken` that `meal-undo` accepts.
 
@@ -163,8 +169,11 @@ The browser tracks operations separately from their affected foods. A group,
 membership change, or bulk move reserves its complete dependency set before
 sending; a command intersecting another pending operation cannot partially
 acquire targets. Independent groups may save concurrently, including in the
-same meal. Bulk moves still report partial network success accurately and offer
-Undo for the rows that reached their destination.
+same meal. A food move is one atomic command. It is checked against these
+reservations before the screen changes, so a refused gesture leaves the earlier
+change and its Undo offer alone. A 400 or 409 frees the foods at once, because
+nothing happened. After a network error or 5xx the outcome is unknown, so the
+foods stay reserved until Retry or Dismiss, and a successful Retry still offers Undo.
 
 Contextual captures may supply `expectedVersions` from the submitted day.
 `MealInstructionService` forwards those versions to the final meal command; it

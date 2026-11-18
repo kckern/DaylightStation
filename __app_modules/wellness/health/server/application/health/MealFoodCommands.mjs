@@ -13,6 +13,15 @@ export const indexByLinkId = rows => {
   return index;
 };
 const canonicalId = (byLinkId, id) => { const row = byLinkId.get(id); return row ? idOf(row) : id; };
+/**
+ * The dish a row is really part of: its link resolves to a group in the row's own
+ * meal. Callers pass one day's rows, so the date already matches. Any other link
+ * is broken, and the row stands on its own.
+ */
+const dishOf = (row, byLinkId) => {
+  const parent = row.parentId ? byLinkId.get(row.parentId) : null;
+  return parent && parent !== row && parent.kind === 'group' && mealRowBucket(parent) === mealRowBucket(row) ? parent : null;
+};
 const fail = (message, status = 400) => { throw Object.assign(new Error(message), { status }); };
 const operationPattern = /^[A-Za-z0-9_-]{1,128}$/;
 const FOOD_COLORS = ['green', 'yellow', 'orange'];
@@ -194,19 +203,35 @@ export class MealFoodCommands {
     });
   }
 
-  /** Every row a move must carry: each selected top-level food plus its dish parts. */
-  #withParts(rows, selectedIds) {
+  /**
+   * What a move changes on each row, by ID. A selected food with a broken link
+   * moves loose and loses the link; a selected dish brings every row linked to it
+   * that day, so a part stranded in another meal rejoins it.
+   */
+  #planMove(rows, selectedIds, destination, toMeal) {
     const byId = new Map(rows.map(row => [idOf(row), row]));
     const byLinkId = indexByLinkId(rows);
-    const moved = new Map();
-    for (const id of selectedIds) {
+    const selected = selectedIds.map(id => {
       const row = byId.get(id);
       if (!row) fail('Selected food is outside this day');
-      if (row.parentId) fail('Move the whole dish, not one of its parts');
-      moved.set(id, row);
-      for (const child of rows) if (byLinkId.get(child.parentId) === row) moved.set(idOf(child), child);
+      if (dishOf(row, byLinkId)) fail('Move the whole dish, not one of its parts');
+      return row;
+    });
+    const plan = new Map(selected.map(row => [idOf(row), { row, changes: { ...destination, ...(row.parentId ? { parentId: null } : {}) } }]));
+    const reunites = new Set();
+    for (const header of selected) {
+      const meal = toMeal ?? mealRowBucket(header);
+      for (const part of rows) {
+        if (part === header || !part.parentId || byLinkId.get(part.parentId) !== header) continue;
+        const strayed = mealRowBucket(part) !== meal;
+        if (strayed) reunites.add(header);
+        plan.set(idOf(part), { row: part, changes: { ...destination, ...(strayed ? { mealTime: meal } : {}),
+          // Only a dish can hold parts; a link to anything else is dropped.
+          ...(header.kind === 'group' ? {} : { parentId: null }) } });
+      }
     }
-    return [...moved.values()];
+    const brokenLinkIds = [...plan.values()].filter(({ row }) => row.parentId && !dishOf(row, byLinkId)).map(({ row }) => idOf(row));
+    return { selected, plan, reunites, brokenLinkIds };
   }
 
   /** Move foods to another day and/or meal: all of them or none, with one Undo. */
@@ -220,17 +245,16 @@ export class MealFoodCommands {
     if (toMeal && !isMeal(toMeal)) fail('Invalid meal');
     return this.store.runOperation(userId, operationId, { operation: 'foods-move', date, selectedIds, expectedVersions, toDate, toMeal }, async () => {
       const rows = await this.store.findByDate(userId, date);
-      const moving = this.#withParts(rows, selectedIds);
-      for (const row of moving) if (expectedVersions[idOf(row)] !== (row.version ?? 1)) fail('This entry changed. Reload before saving.', 409);
+      const destination = { ...(toDate ? { date: toDate } : {}), ...(toMeal ? { mealTime: toMeal } : {}) };
+      const { selected, plan, reunites, brokenLinkIds } = this.#planMove(rows, selectedIds, destination, toMeal);
+      for (const { row } of plan.values()) if (expectedVersions[idOf(row)] !== (row.version ?? 1)) fail('This entry changed. Reload before saving.', 409);
       const dayChanges = Boolean(toDate) && toDate !== date;
-      const movedCount = rows.filter(row => selectedIds.includes(idOf(row))
-        && (dayChanges || (toMeal && mealRowBucket(row) !== toMeal))).length;
+      const movedCount = dayChanges || toMeal ? selected.filter(row => dayChanges || mealRowBucket(row) !== toMeal || reunites.has(row)).length : 0;
       if (!movedCount) fail('These foods are already there');
-      const updates = moving.map(row => ({ id: idOf(row), expectedVersion: row.version ?? 1,
-        changes: { ...(toDate ? { date: toDate } : {}), ...(toMeal ? { mealTime: toMeal } : {}) } }));
+      const updates = [...plan.values()].map(({ row, changes }) => ({ id: idOf(row), expectedVersion: row.version ?? 1, changes }));
       const undoToken = `meal-${uuidv5(`${userId}:${operationId}`, uuidv5.URL)}`;
       const result = await this.store.mutateEntries(userId, { updates,
-        audit: { id: undoToken, fingerprint: fingerprint(input), type: 'meal-command', date, bucket: null },
+        audit: { id: undoToken, fingerprint: fingerprint(input), type: 'meal-command', date, bucket: null, brokenLinkIds },
         resultMeta: { committed: true, date, bucket: null, undoToken, toDate, toMeal, movedCount },
         validate: ({ after }) => this.validateGraph(after, new Set(updates.map(update => update.id))),
       });
@@ -272,11 +296,12 @@ export class MealFoodCommands {
   /**
    * Check dish links across `rows`, or only those touching `touchedIds` when
    * given. A part naming a touched ID stays in scope even when that dish is
-   * gone, which is what an Undo that deletes a dish looks like.
+   * gone, which is what an Undo that deletes a dish looks like. `allowedBroken`
+   * names rows an Undo is putting back with the broken link they already had.
    */
-  validateGraph(rows, touchedIds = null) {
+  validateGraph(rows, touchedIds = null, allowedBroken = new Set()) {
     const byId = indexByLinkId(rows);
-    for (const row of rows) if (row.parentId) {
+    for (const row of rows) if (row.parentId && !allowedBroken.has(idOf(row))) {
       const parent = byId.get(row.parentId);
       if (touchedIds && !touchedIds.has(idOf(row)) && !touchedIds.has(row.parentId) && !(parent && touchedIds.has(idOf(parent)))) continue;
       if (!parent || parent.kind !== 'group' || parent.parentId || row.kind === 'group' || parent.date !== row.date || mealRowBucket(parent) !== mealRowBucket(row)) fail('Invalid group membership', 409);
@@ -290,7 +315,7 @@ export class MealFoodCommands {
       if (!record || record.type !== 'meal-command') fail('Undo not found', 404);
       const result = await this.store.mutateEntries(userId, { restoreAudit: undoToken,
         resultMeta: { committed: true, date: record.date, bucket: record.bucket, undoToken: null },
-        validate: ({ after }) => this.validateGraph(after, new Set([...record.result.affectedIds, ...[...record.before, ...record.after].flatMap(linkIds)])),
+        validate: ({ after }) => this.validateGraph(after, new Set([...record.result.affectedIds, ...[...record.before, ...record.after].flatMap(linkIds)]), new Set(record.brokenLinkIds || [])),
       });
       this.logger.info?.('health.meal.undo', { userId, operationId, affectedIds: result.affectedIds });
       return result;
