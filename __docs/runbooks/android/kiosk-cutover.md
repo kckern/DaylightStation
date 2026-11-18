@@ -598,7 +598,8 @@ the device and time to spare. Stage 8 is complete on this device.
        `ownerRefused` with the reason): a locked Portal with no network and no PIN
        would have no exit. The Shield has no touch screen and gets none.
 3. [ ] Point the backend at the new app: `provider: daylight-android` for this
-       device, and reload the backend's config. The admin console's actions now
+       device, and restart the backend (the device adapters are built at
+       start; a config reload does not switch them). The admin console's actions now
        go to this app.
 4. [ ] **Hand the hardware over, one part at a time.** For each coexistence switch
        of this device: stop the old helper's use of that part, turn the switch on,
@@ -739,8 +740,9 @@ rollback that skips one leaves two apps holding one device.
        was started before; it too was force-stopped and will not start at boot
        until opened), and check its own status route. Portal:
        `pkctl resume-policy` and `pkctl kiosk-verify`.
-8. [ ] Point the backend back: `provider: fully-kiosk` for this device, and reload
-       the backend's config.
+8. [ ] Point the backend back: `provider: fully-kiosk` for this device, and
+       restart the backend (a config reload does not switch the adapters). On the
+       piano tablet also remove `bridge_provider` and see `piano-cutover.md`.
 9. [ ] Stop this app so it holds nothing the old apps need:
        `adb -s <serial> shell am force-stop <package>`.
        A force-stopped app stays stopped across reboots until it is opened. If

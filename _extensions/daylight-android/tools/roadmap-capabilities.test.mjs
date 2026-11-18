@@ -27,6 +27,9 @@ const SWITCHES = {
   piano: ['midi.enabled', 'speaker.enabled'],
   shield: ['mic.enabled', 'lease.enabled'],
 };
+// Switches that need no further decision once the device is cut over. The Shield's lease
+// loop runs only once it has been provisioned, which the owner decides separately.
+const ON_WHEN_DONE = { ...SWITCHES, shield: ['mic.enabled'] };
 
 for (const [id, want] of Object.entries(ROADMAP)) {
   test(`${id}: declares exactly the capabilities its roadmap phase names`, () => {
@@ -42,7 +45,7 @@ for (const [id, want] of Object.entries(ROADMAP)) {
     const armed = cutover === 'done';
     assert.equal(defaults['lockdown.enabled'], armed);
     assert.equal(defaults['lockdown.required'] ?? false, armed);
-    for (const key of SWITCHES[id]) assert.equal(defaults[key], armed, key);
+    for (const key of armed ? ON_WHEN_DONE[id] : SWITCHES[id]) assert.equal(defaults[key], armed, key);
   });
 
   test(`${id}: no address, MAC or token is written into the device file`, () => {
