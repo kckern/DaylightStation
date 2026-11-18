@@ -155,3 +155,30 @@ test('a Portal failure that keeps repeating warns once, and again when it change
  code='ok';await service.reconcile(3000);code='CAPABILITY_UNAVAILABLE';await service.reconcile(3001);
  assert.equal(warns.length,3,'a failure after a recovery is a new failure');
 });
+
+test('a failed incident report logs the error code and message',async()=>{
+ const f=fakes(),warnings=[];
+ const failure=Object.assign(Error('The shutdown incident ledger is written only by writer_env=docker'),{code:'SUPERVISION_WRITER_HOST_REFUSED'});
+ const service=new ShutdownService({repo:f.repo,notifier:f.notifier,getPolicy:policy,portal:{setLockdown:async({locked})=>({ok:true,blocked:locked})},incidentReporter:{observe:async()=>{throw failure;}},logger:{warn:(event,data)=>warnings.push([event,data])}});
+ await service.activate({now:1000});
+ assert.deepEqual(warnings.find(([event])=>event==='shutdown.incident.reporting_failed'),['shutdown.incident.reporting_failed',{error:'INCIDENT_REPORTING_UNAVAILABLE',code:'SUPERVISION_WRITER_HOST_REFUSED',message:failure.message}]);
+});
+
+test('a backend that is not the incident writer reports not-writer instead of failing every Portal job',async()=>{
+ const f=fakes(),warnings=[];
+ const service=new ShutdownService({repo:f.repo,notifier:f.notifier,getPolicy:policy,portal:{setLockdown:async({locked})=>({ok:true,blocked:locked})},incidentReporter:null,incidentReporting:'not-writer',logger:{warn:(event,data)=>warnings.push([event,data])}});
+ await service.activate({now:1000});
+ const {enforcement}=await service.status('school:portal',1000);
+ assert.equal(enforcement.incidentReporting,'not-writer');
+ assert.equal(enforcement.incidentReportingError,null);
+ assert.equal((await service.diagnostics(1000)).enforcement.incidentReporting,'not-writer');
+ assert.deepEqual(warnings.filter(([event])=>event==='shutdown.incident.reporting_failed'),[]);
+});
+
+test('incident reporting reads active with a reporter and unavailable without one',async()=>{
+ const f=fakes();
+ const withReporter=new ShutdownService({repo:f.repo,notifier:f.notifier,getPolicy:policy,incidentReporter:{observe:async()=>{}},logger:{warn(){}}});
+ assert.equal((await withReporter.status(null,1000)).enforcement.incidentReporting,'active');
+ const without=new ShutdownService({repo:f.repo,notifier:f.notifier,getPolicy:policy,logger:{warn(){}}});
+ assert.equal((await without.status(null,1000)).enforcement.incidentReporting,'unavailable');
+});

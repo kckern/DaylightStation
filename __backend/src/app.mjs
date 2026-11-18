@@ -152,8 +152,8 @@ import { createPianoMidiWake } from "../../__app_modules/learning/piano/server/c
 import { createPianoBridgeSupervisor, PIANO_BRIDGE_SUPERVISOR_LOG_MODULE } from "../../__app_modules/learning/piano/server/composition/bridge-supervisor.mjs";
 import { createStateGatesModule } from '#composition/modules/stateGates.mjs';
 import {randomUUID as supervisionCommandId} from 'node:crypto';
-import {createSupervisionRuntime,createDoNowSupervisionAuthority,createEnforcementIncidentNotifier} from '#composition/modules/supervision.mjs';
-import {AccessDenied,EnforcementIncidentReporter} from '../../__app_modules/household/supervision/server/index.mjs';
+import {createSupervisionRuntime,createDoNowSupervisionAuthority,createEnforcementIncidentNotifier,createShutdownIncidentReporting} from '#composition/modules/supervision.mjs';
+import {AccessDenied} from '../../__app_modules/household/supervision/server/index.mjs';
 import { KioskFrictionTracker } from '#apps/devices/services/KioskFrictionTracker.mjs';
 
 // AI router import
@@ -1501,7 +1501,10 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     if(!profile || (profile.household_id??householdId)!==householdId)throw new AccessDenied('PARENT_AUTHENTICATION_REQUIRED');
     return {id:userId,roles:[...(profile.roles??[]),...(profile.type==='owner'?['owner']:[]),...((profile.roles??[]).includes('parent')?['guardian']:[])],authenticatedBy:'household-auth'};
   };
-  const parentalSupervision=await createSupervisionRuntime({notificationService:notificationStack.notificationService,configService,householdId,stateGatesModule,principal:supervisionStateGatesPrincipal,modePrincipal:householdPresenceStateGatesPrincipal,httpClient:axios,
+  // Which backend may write the supervision ledgers (LedgerWriterGate): DAYLIGHT_ENV
+  // raw, so an unset value never passes for the prod container.
+  const ledgerWriterRuntime={environment:process.env.DAYLIGHT_ENV,hostId:hostname(),platform:process.platform,isDocker};
+  const parentalSupervision=await createSupervisionRuntime({...ledgerWriterRuntime,notificationService:notificationStack.notificationService,configService,householdId,stateGatesModule,principal:supervisionStateGatesPrincipal,modePrincipal:householdPresenceStateGatesPrincipal,httpClient:axios,
     clock:{now:()=>Date.now()},logger:rootLogger.child({module:'supervision'}),getHaGateway:()=>supervisionHaGateway,getIdentity:()=>supervisionIdentity,
     gamesCatalog:dataService.household.read('gaming/retroarch/catalog'),
     getLearners:()=> (configService.getHouseholdUsers(householdId)??[]).map(value=>typeof value==='string'?value:value.username??value.userId??value.id).filter(Boolean).map(id=>({id,label:userService.getProfile(id)?.display_name??userService.getProfile(id)?.name??id})),
@@ -2993,10 +2996,12 @@ const { readingSessions, readingSessionInterceptor } = await createSchoolReading
     },
   } : null;
   const shutdownDatastore=new YamlShutdownDatastore({configService});
-  const shutdownIncidentRepository=parentalSupervision.enabled?null:shutdownDatastore.incidentRepository();
-  const shutdownIncidentReporter=shutdownIncidentRepository?new EnforcementIncidentReporter({repository:shutdownIncidentRepository,logger:rootLogger.child({module:'shutdown-incidents'}),notifyIncident:createEnforcementIncidentNotifier({notificationService:notificationStack.notificationService,recipientId:shutdownConfig.enforcement_alerts?.recipient_id,resolveRecipient:()=>configService.getHeadOfHousehold?.(householdId)})}):null;
+  // Gated before anything opens the ledger: a dev backend sharing the data tree is not its writer.
+  const shutdownIncidents=createShutdownIncidentReporting({datastore:shutdownDatastore,shutdownConfig,supervisionEnabled:parentalSupervision.enabled,gateOptions:ledgerWriterRuntime,logger:rootLogger.child({module:'shutdown-incidents'}),notifyIncident:createEnforcementIncidentNotifier({notificationService:notificationStack.notificationService,recipientId:shutdownConfig.enforcement_alerts?.recipient_id,resolveRecipient:()=>configService.getHeadOfHousehold?.(householdId)})});
+  const shutdownIncidentRepository=shutdownIncidents.repository;
+  const shutdownIncidentReporter=shutdownIncidents.reporter;
   const shutdownService = new ShutdownService({
-    incidentReporter:shutdownIncidentReporter,portalDeviceId:shutdownConfig.portal_keys?.device_id??'portal',
+    incidentReporter:shutdownIncidentReporter,incidentReporting:shutdownIncidents.status,portalDeviceId:shutdownConfig.portal_keys?.device_id??'portal',
     supervision:parentalSupervision.enabled?{
       activate:async({readerId,tagUid})=>parentalSupervision.service.stop({actor:{id:`nfc:${readerId??'configured-reader'}`,roles:['guardian'],authenticatedBy:'configured-nfc-trigger'},scopeId:parentalSupervision.configuration.scope_id??'child-public',source:'nfc',idempotencyKey:supervisionCommandId()}),
       status:async target=>{const deviceId=parentalSupervision.configuration.legacy_targets?.[target]??target.split(':').at(-1);const state=await parentalSupervision.service.status({deviceId});return {locked:state.active,lockedUntil:null,persistent:true,epoch:state.epoch};},

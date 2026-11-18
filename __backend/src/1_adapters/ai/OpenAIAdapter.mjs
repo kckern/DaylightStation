@@ -12,6 +12,8 @@ import { estimateCostUsd, estimateTranscriptionCostUsd } from './aiPricing.mjs';
 import { createScopedView, usageAttribution } from './usageAttribution.mjs';
 import { isQuotaExhausted } from '#system/utils/retryTransient.mjs';
 
+import { redactJsonExcerpt } from './jsonExcerpt.mjs';
+
 const OPENAI_API_BASE = 'https://api.openai.com/v1';
 
 /**
@@ -523,7 +525,7 @@ export class OpenAIAdapter extends IAIGateway {
       return JSON.parse(jsonString);
     } catch (directError) {
       this.logger.debug?.('openai.json.attemptRepair', {
-        error: directError.message,
+        error: redactJsonExcerpt(directError.message),
         position: directError.message.match(/position (\d+)/)?.[1],
       });
 
@@ -532,7 +534,7 @@ export class OpenAIAdapter extends IAIGateway {
         const repaired = this.#repairJSON(jsonString);
         const parsed = JSON.parse(repaired);
         this.logger.info?.('openai.json.repairSucceeded', {
-          originalError: directError.message,
+          originalError: redactJsonExcerpt(directError.message),
         });
         return parsed;
       } catch (repairError) {
@@ -540,7 +542,8 @@ export class OpenAIAdapter extends IAIGateway {
         const error = new Error(`JSON parse failed: ${directError.message}`);
         error.originalError = directError;
         error.repairError = repairError;
-        error.sample = jsonString.substring(0, 200);
+        // Only the size: model output can echo a user's words.
+        error.sampleLength = jsonString.length;
         throw error;
       }
     }
@@ -587,22 +590,22 @@ export class OpenAIAdapter extends IAIGateway {
         this.logger.warn?.('openai.json.parseError', {
           attempt,
           maxAttempts: maxParseAttempts,
-          error: parseError.message,
-          sample: parseError.sample,
+          error: redactJsonExcerpt(parseError.message),
+          sampleLength: parseError.sampleLength ?? null,
         });
 
         if (isLastAttempt) {
           this.logger.error?.('openai.json.exhausted', {
             attempts: maxParseAttempts,
-            originalError: parseError.originalError?.message,
-            repairError: parseError.repairError?.message,
+            originalError: redactJsonExcerpt(parseError.originalError?.message),
+            repairError: redactJsonExcerpt(parseError.repairError?.message),
           });
 
           throw new InfrastructureError('Failed to parse JSON response after all attempts', {
             code: 'INVALID_JSON_RESPONSE',
             service: 'OpenAI',
             attempts: maxParseAttempts,
-            details: parseError.message,
+            details: redactJsonExcerpt(parseError.message),
           });
         }
 

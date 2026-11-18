@@ -1182,6 +1182,61 @@ describe('SchoolApp — Gratitude authorization from the real keypad hook', () =
       expect(recordCompletion).not.toHaveBeenCalled();
     } finally { transport.mockRestore(); }
   });
+
+  // A refresh (or a WebView reload of the Portal) starts a new page: the claim
+  // comes back from localStorage only after the roster loads, while the
+  // Gratitude launch comes back from sessionStorage on the first render. The
+  // identity-change reset must not judge the restored launch against the
+  // not-yet-loaded identity, or the child lands on the code pad.
+  it('a reload restores the saved launch to the cooldown instead of the code pad', async () => {
+    const service = { open: vi.fn(async () => ({ learnerId: 'kid1', studyDay: today, today, serverNow: '2026-11-16T18:00:00Z', phase: 'cooldown', reason: 'nonsense', retryAt: '2026-11-16T18:30:00Z', draft: null, prompt: { id: 'gratitude', text: 'What are you grateful for today?', required: true } })) };
+    const transport = serveGratitude(service);
+    const oldUrl = window.location.pathname + window.location.search;
+    window.history.replaceState({}, '', '/screens/portal/gratitude');
+    localStorage.setItem('school:user', 'kid1');
+    sessionStorage.setItem('school:gratitude-launch:/screens/portal', JSON.stringify({ mountRequestId: 'before-reload', learnerId: 'kid1', gratitudeGrant: signedGrant, today }));
+    try {
+      render(<SchoolApp mode="locked" />);
+      expect(await screen.findByText('Take a little break')).toBeInTheDocument();
+      expect(screen.queryByTestId('selfservice-keypad')).toBeNull();
+      expect(service.open).toHaveBeenCalledWith('kid1', today);
+      expect(window.location.pathname).toBe('/screens/portal/gratitude');
+    } finally { transport.mockRestore(); window.history.replaceState({}, '', oldUrl); }
+  });
+
+  it('a reload after the claim lapsed still ends the saved launch at the code pad', async () => {
+    const service = { open: vi.fn() };
+    const transport = serveGratitude(service);
+    const oldUrl = window.location.pathname + window.location.search;
+    window.history.replaceState({}, '', '/screens/portal/gratitude');
+    sessionStorage.setItem('school:gratitude-launch:/screens/portal', JSON.stringify({ mountRequestId: 'before-reload', learnerId: 'kid1', gratitudeGrant: signedGrant, today }));
+    try {
+      render(<SchoolApp mode="locked" />);
+      expect(await screen.findByTestId('selfservice-keypad')).toBeInTheDocument();
+      await waitFor(() => expect(sessionStorage.getItem('school:gratitude-launch:/screens/portal')).toBeNull());
+      expect(service.open).not.toHaveBeenCalled();
+    } finally { transport.mockRestore(); window.history.replaceState({}, '', oldUrl); }
+  });
+
+  // A failed roster fetch leaves no claimed learner, so the restored launch
+  // ends like a lapsed claim does. The claim itself is kept for the next load.
+  it('a reload whose roster fetch fails ends the saved launch but keeps the claim', async () => {
+    const roster = schoolApi.roster.getMockImplementation();
+    schoolApi.roster.mockResolvedValue({ ok: false, status: 503, data: null });
+    const service = { open: vi.fn() };
+    const transport = serveGratitude(service);
+    const oldUrl = window.location.pathname + window.location.search;
+    window.history.replaceState({}, '', '/screens/portal/gratitude');
+    localStorage.setItem('school:user', 'kid1');
+    sessionStorage.setItem('school:gratitude-launch:/screens/portal', JSON.stringify({ mountRequestId: 'before-reload', learnerId: 'kid1', gratitudeGrant: signedGrant, today }));
+    try {
+      render(<SchoolApp mode="locked" />);
+      expect(await screen.findByTestId('selfservice-keypad')).toBeInTheDocument();
+      await waitFor(() => expect(sessionStorage.getItem('school:gratitude-launch:/screens/portal')).toBeNull());
+      expect(localStorage.getItem('school:user')).toBe('kid1');
+      expect(service.open).not.toHaveBeenCalled();
+    } finally { transport.mockRestore(); schoolApi.roster.mockImplementation(roster); window.history.replaceState({}, '', oldUrl); }
+  });
 });
 
 it('does not confirm a bank launch that resolves after SchoolApp unmounts', async () => {

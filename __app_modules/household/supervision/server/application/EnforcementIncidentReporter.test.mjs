@@ -67,22 +67,24 @@ it('retains pending legacy incident metadata across disk reopen without changing
  let repository;
  try{
   await datastore.save(new ShutdownState({locked_at:new Date(1000).toISOString(),locked_until:new Date(1801000).toISOString(),targets:['school:portal'],source:{}}));
-  const before=await readFile(datastore.path(),'utf8');repository=datastore.incidentRepository();
+  // This test is the ledger's writer; LedgerWriterGate refuses every other host.
+  const asWriter={writer:{writer_env:'incident-test'},environment:'incident-test'};
+  const before=await readFile(datastore.path(),'utf8');repository=datastore.incidentRepository(asWriter);
   let now=1000;const row={deviceId:'portal',capability:'portal-keys',commandRevision:1000,acknowledged:false,desiredBlocked:true};
   let reporter=new EnforcementIncidentReporter({repository,monotonicNow:()=>now,notifyIncident:async()=>({accepted:false,delivered:false})});
   await reporter.observe({health:[row],nowMs:now});now=6000;await reporter.observe({health:[row],nowMs:now});await repository.close();
-  repository=datastore.incidentRepository();const alerts=[];reporter=new EnforcementIncidentReporter({repository,notifyIncident:async event=>{alerts.push(event);return {accepted:true,delivered:null};}});
+  repository=datastore.incidentRepository(asWriter);const alerts=[];reporter=new EnforcementIncidentReporter({repository,notifyIncident:async event=>{alerts.push(event);return {accepted:true,delivered:null};}});
   await reporter.observe({health:[{...row,acknowledged:true,blocked:true,lastContactAt:7000}],nowMs:7000});
   expect(alerts.map(event=>event.type)).toEqual(['enforcement-unverified','enforcement-restored']);
   expect((await reporter.incidents())[0]).toMatchObject({status:'recovered',alert:{status:'accepted'},recovery:{status:'accepted'}});
   // A later outage/recovery keeps the same Stop revision but a new durable identity.
-  await repository.close();repository=datastore.incidentRepository();
+  await repository.close();repository=datastore.incidentRepository(asWriter);
   const later=[];let accept=false;
   const options=()=>({repository,monotonicNow:()=>now,notifyIncident:async event=>{later.push(event);return {accepted:accept,delivered:null};}});
   reporter=new EnforcementIncidentReporter(options());
   now=9000;await reporter.observe({health:[row],nowMs:now});
   now=14000;await reporter.observe({health:[row],nowMs:now});
-  await repository.close();repository=datastore.incidentRepository();
+  await repository.close();repository=datastore.incidentRepository(asWriter);
   reporter=new EnforcementIncidentReporter(options());accept=true;
   now=16000;await reporter.observe({health:[row],nowMs:now});
   expect(later).toHaveLength(2);expect(later[0].incidentId).toBe(later[1].incidentId);
@@ -160,4 +162,15 @@ it('retries a later episode with the same durable notification identity across r
  expect(attempts).toHaveLength(4);
  expect(attempts[2].incidentId).toBe(attempts[3].incidentId);
  expect(attempts[2].incidentId).not.toBe(attempts[0].incidentId);
+});
+it('the shutdown incident ledger refuses a backend that is not its writer, unconfigured, before any lock',async()=>{
+ const {mkdtemp,rm,access}=await import('node:fs/promises');const {tmpdir}=await import('node:os');const {join}=await import('node:path');
+ const {YamlShutdownDatastore}=await import('../../../../../__backend/src/1_adapters/persistence/yaml/YamlShutdownDatastore.mjs');
+ const dir=await mkdtemp(join(tmpdir(),'enforcement-incidents-'));
+ try{
+  const repository=new YamlShutdownDatastore({configService:{getHouseholdPath:()=>dir}}).incidentRepository({environment:'laptop-dev',hostId:'laptop',platform:'darwin'});
+  await expect(repository.transaction(state=>state)).rejects.toMatchObject({code:'SUPERVISION_WRITER_HOST_REFUSED',message:expect.stringMatching(/shutdown incident ledger is written only by writer_env=docker on linux/)});
+  await expect(access(join(dir,'enforcement-incidents.json.lock'))).rejects.toMatchObject({code:'ENOENT'});
+  await repository.close();
+ }finally{await rm(dir,{recursive:true,force:true});}
 });

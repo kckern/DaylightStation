@@ -3,6 +3,7 @@ import { FilesystemProgramAudio } from '../adapters/audio/FilesystemProgramAudio
 import { GratitudeService } from '../application/gratitude/GratitudeService.mjs';
 import { GratitudeJudge } from '../application/gratitude/GratitudeJudge.mjs';
 import { GratitudeTopicExtractor } from '../application/gratitude/GratitudeTopicExtractor.mjs';
+import { GratitudeFollowUpWriter } from '../application/gratitude/GratitudeFollowUpWriter.mjs';
 import { captureProgramTake } from '../application/shared/captureProgramTake.mjs';
 import { gratitudeConfigOf } from '../domain/gratitude.mjs';
 import { createSchoolGratitudeRouter } from '../api/schoolGratitude.mjs';
@@ -13,6 +14,7 @@ export function createGratitudeRuntime({configService,store,assignments,grants,t
   const bounded=(work,message)=>scheduler.withDeadline(work,{milliseconds:30_000,errorFactory:()=>new Error(message)});
   const service=new GratitudeService({store,assignments,grants,timezone,householdSchedule,clock,logger,config,
     judge:new GratitudeJudge({decisionGateway,scheduler,logger,config:config.judge}),extractor:new GratitudeTopicExtractor({aiGateway,scheduler,logger,config:config.extractor}),
+    followUpWriter:new GratitudeFollowUpWriter({aiGateway,scheduler,logger,config:config.followUp}),
     captureTake:args=>{
       if(args.savedAudioRef){
         const saved=audio.read(args.learnerId,args.savedAudioRef.split('/')[1]);
