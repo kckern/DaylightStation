@@ -1,9 +1,11 @@
 # Shield cutover: one sitting
 
 **Nothing in this runbook has been run.** It is the Shield's path through
-`kiosk-cutover.md` (the long form, stages 0 to 11) as one supervised sitting,
-with the acceptance runner doing the checking. The way back from any step is
-that file's first section, with the microphone rollback order below.
+[kiosk cutover runbook](kiosk-cutover.md) as one supervised sitting, with the
+acceptance runner doing the checking. Start with the
+[kiosk recovery instructions](kiosk-cutover.md#if-the-kiosk-is-dark-or-unreachable)
+when the screen or control API is unavailable. Follow the
+[Shield microphone rollback](#microphone-rollback) before restarting audio-bridge.
 
 What is special about the Shield: Android 11 (API 30), no
 `android.software.device_admin` feature, so no device admin and no device owner
@@ -55,21 +57,21 @@ below means restarting the prod container, as in a deploy.
 
 | # | Do | Go when | No-go: rollback |
 |---|---|---|---|
-| 1 | Backups: audio-bridge state, supervision-guard provisioning if any, `fkb get`, `fkb get kioskAppWhitelist`, HOME resolution, the accessibility list; `adb -s <serial> shell pm list features` (confirm no `device_admin`) | saved | nothing changed |
+| 1 | Backups: audio-bridge state and its working launch method (launcher activity or service, exact component and command) in the private sitting notes, supervision-guard provisioning if any, `fkb get`, `fkb get kioskAppWhitelist`, HOME resolution, the accessibility list; `adb -s <serial> shell pm list features` (confirm no `device_admin`) | saved, including the command to bring audio-bridge back | nothing changed |
 | 2 | Install (stage 2), home-candidate check; grants (stage 3) including `SYSTEM_ALERT_WINDOW` and `ACCESS_FINE_LOCATION` | unchanged HOME | `adb -s <serial> uninstall net.kckern.daylight.shield` |
 | 3 | Whitelist this app in Fully (stage 4); start the Activity | page shows | restore the whitelist |
-| 4 | **Microphone first.** Follow the handover below | `dd get /mic/status` shows `running: true`, `port: 8765` and no error. `acc --only mic.capture` gives the manual capture gate for step 5 | follow microphone rollback below and stop the sitting |
-| 5 | Run both consumer checks below with audio-bridge stopped | a five-minute Home Line call with audible speech both ways and a playable Weekly Review recording, each with PCM evidence | as step 4 |
+| 4 | **Microphone first.** Follow the [handover](#microphone-handover) | `dd get /mic/status` shows `running: true`, `port: 8765` and no error. `acc --only mic.capture` gives the manual capture gate for step 5 | follow [microphone rollback](#microphone-rollback) and stop the sitting |
+| 5 | Run both [consumer checks](#microphone-capture-at-handover-and-after-each-cold-boot) with audio-bridge stopped | a five-minute Home Line call with audible speech both ways and a playable Weekly Review recording, each with PCM evidence | as step 4 |
 | 6 | `acc --active --launch com.retroarch.aarch64` (after the call; opens the emulator and returns) | no FAIL; `launch.app` sees the emulator in front and the kiosk returns | `dd foreground` |
-| 7 | Stage 8 proofs: `dd update <apk-url> <sha256>` twice (confirm on the TV each time); `acc --only reboot --reboot --reboot-wait 600` three times, power-cycling by hand when it says so (ADB check after each); `acc --only payload.bad,crash --restart --kill --serve-bad-payload {laptop-address}:{port}` | `reboot.survives` PASS 3 of 3; complete the `reboot.mic-capture` proof below after each reboot | stop; Fully and audio-bridge run the Shield |
-| 8 | Backend: `{backend-id}` `content_control.provider: daylight-android`, `auth_ref: daylight-android`, volume provider; **restart the backend** | the admin console and a play from the menu reach the app; `prepareForContent` logs no mic restart loop | back to `fully-kiosk`, restart the backend |
-| 9 | Home and lockdown: `launcher.allowed` and `lockdown.allowedApps` from step 1; `dd lockdown home on`; `adb -s <serial> shell cmd package set-home-activity net.kckern.daylight.shield/net.kckern.daylight.cap.lockdown.shell.KioskHome`; force-stop Fully; `dd settings set lockdown.enabled true` | `locked: true`, `mode: app`, `homeIsKiosk: true` | stage 11 |
-| 10 | `acc --active --launch com.retroarch.aarch64`; then the MANUAL lines: Home, Recents, the assistant button, the remote's D-pad, select, back and play/pause against the `fkb.keyCapture` audit, controller pairing from the Controllers screen | no FAIL; each escape recalled | stage 11 |
+| 7 | Stage 8 proofs: `dd update <apk-url> <sha256>` twice (confirm on the TV each time); `acc --only reboot --reboot --reboot-wait 600` three times, power-cycling by hand when it says so (ADB check after each); `acc --only payload.bad,crash --restart --kill --serve-bad-payload {laptop-address}:{port}` | `reboot.survives` PASS 3 of 3; complete the [capture proof](#microphone-capture-at-handover-and-after-each-cold-boot) before proceeding after each reboot | stop the sitting and follow [microphone rollback](#microphone-rollback). Fully is still HOME |
+| 8 | Backend: `{backend-id}` `content_control.provider: daylight-android`, `auth_ref: daylight-android`, volume provider; **restart the backend** | the admin console and a play from the menu reach the app; `prepareForContent` logs no mic restart loop | restore `fully-kiosk` and restart the backend. If ending the sitting, use [rollback to Fully](#rollback-to-fully) |
+| 9 | Home and lockdown: `launcher.allowed` and `lockdown.allowedApps` from step 1; `dd lockdown home on`; `adb -s <serial> shell cmd package set-home-activity net.kckern.daylight.shield/net.kckern.daylight.cap.lockdown.shell.KioskHome`; force-stop Fully; `dd settings set lockdown.enabled true` | `locked: true`, `mode: app`, `homeIsKiosk: true` | [rollback to Fully](#rollback-to-fully) |
+| 10 | `acc --active --launch com.retroarch.aarch64`; then the MANUAL lines: Home, Recents, the assistant button, the remote's D-pad, select, back and play/pause against the `fkb.keyCapture` audit, controller pairing from the Controllers screen | no FAIL; each escape recalled | [rollback to Fully](#rollback-to-fully) |
 | 11 | Only with the lease provisioned: `dd settings set lease.endpoint …`, `lease.packageName …`, `lease.credential …`, then `lease.enabled true` | `acc --only lease` reads `configured true, ready true`; no lease: the game is recalled; with a lease: it runs | `dd settings set lease.enabled false` |
-| 12 | `acc --only reboot --reboot --reboot-wait 600` with lockdown on (power-cycle by hand); `acc --only logstore --log-store {log-store-url}` | `reboot.survives` PASS; complete the `reboot.mic-capture` proof below with lockdown on | stage 11 |
-| 13 | The next day: make it permanent (stage 10 step 12). In `devices/shield.yml`: `cutover: done`, `lockdown.enabled` and `lockdown.required` `true`, `mic.enabled` `true`, and `lease.enabled` `true` only if the lease was provisioned at step 11 | `required: true`; `node --test tools/roadmap-capabilities.test.mjs` passes | an update with `required: false`, confirmed on the TV |
+| 12 | `acc --only reboot --reboot --reboot-wait 600` with lockdown on (power-cycle by hand); `acc --only logstore --log-store {log-store-url}` | `reboot.survives` PASS; complete the [capture proof](#microphone-capture-at-handover-and-after-each-cold-boot) with lockdown on | [rollback to Fully](#rollback-to-fully) |
+| 13 | The next day: make it permanent (stage 10 step 12). In `devices/shield.yml`: `cutover: done`, `lockdown.enabled` and `lockdown.required` `true`, `mic.enabled` `true`, and `lease.enabled` `true` only if the lease was provisioned at step 11 | `required: true`; `node --test tools/roadmap-capabilities.test.mjs` passes | confirm an update with `required: false` on the TV, then follow [rollback to Fully](#rollback-to-fully) |
 
-### Microphone handover and rollback
+### Microphone handover
 
 1. During coexistence, confirm `mic.enabled` is false in `dd status` and
    `dd get /mic/status` shows `running: false` and `port: 8765`. If a previous
@@ -81,13 +83,24 @@ below means restarting the prod container, as in a deploy.
    Enable the new listener with `dd settings set mic.enabled true`, then read
    `dd get /mic/status`. If it fails, record `lastError` and `lastErrorDetail`
    privately. A port conflict appears as `bind_failed`.
-3. For rollback, set `dd settings set mic.enabled false` and verify
-   `dd get /mic/status` reports `running: false` before starting audio-bridge.
-   If the control API is unavailable, force-stop `net.kckern.daylight.shield`
-   over ADB and verify that process has exited before restarting the legacy
-   helper. Start audio-bridge using its saved launch method from step 1 of the
-   sitting. Verify legacy capture through the same loopback URL and continue
-   with stage 11 if the kiosk or backend was switched.
+
+### Microphone rollback
+
+1. Run `dd settings set mic.enabled false`. Verify `dd settings get mic.enabled`
+   reports false and `dd get /mic/status` reports `running: false`. If either
+   check is unavailable or fails, run `adb -s <serial> shell am force-stop net.kckern.daylight.shield`.
+   Verify that `adb -s <serial> shell pidof net.kckern.daylight.shield` returns no
+   process ID. Keep the new app stopped while audio-bridge owns the port.
+2. Start audio-bridge using the working launch command saved in sitting step 1.
+   Verify that it serves capture through the same loopback URL.
+
+### Rollback to Fully
+
+Follow [stage 11](kiosk-cutover.md#stage-11-rollback-to-fully) for a full rollback.
+Use step 1 of [microphone rollback](#microphone-rollback) at stage 11 step 3 to
+release the shared port. Use step 2 at stage 11 step 7 to restore audio-bridge.
+If the control API is unavailable, use the ADB recovery path and restore Fully's
+HOME as described in the [kiosk recovery instructions](kiosk-cutover.md#if-the-kiosk-is-dark-or-unreachable).
 
 ### Microphone capture at handover and after each cold boot
 
