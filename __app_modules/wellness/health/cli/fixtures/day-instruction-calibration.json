@@ -15,6 +15,7 @@
   {"id":"delete","text":"delete the eggs","intent":"other"},
   {"id":"breakfast-lunch","text":"move breakfast to lunch","intent":"move","target":"meal","fromMeal":"morning","toDay":"same","toMeal":"afternoon"},
   {"id":"everything-breakfast","text":"move everything from breakfast to lunch","intent":"move","target":"meal","fromMeal":"morning","toDay":"same","toMeal":"afternoon"},
+  {"id":"everything-dinner","text":"move everything to dinner","intent":"move","target":"whole_day","fromMeal":"none","toDay":"same","toMeal":"evening"},
   {"id":"two-places","text":"move the rice to lunch and the coffee to dinner","compound":true},
   {"id":"same-place","text":"move the rice and the coffee to dinner","compound":false}
 ]
