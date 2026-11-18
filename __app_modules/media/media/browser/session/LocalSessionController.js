@@ -84,7 +84,7 @@ export function createLocalSessionController({
   ownerInstanceId = `local-owner:${defaultUuid()}`,
   nowFn = () => new Date(),
   clearPersisted = () => {},
-  fetchImpl = undefined, // container expansion; defaults to globalThis.fetch
+  fetchImpl = undefined, // optional container expansion transport
   // Screen session controls on this session (sleep timer, end of queue,
   // countdown, stop after this one): `{ resolveContinuation, storage,
   // countdownSeconds }` overrides for tests; see localSessionControls.js.

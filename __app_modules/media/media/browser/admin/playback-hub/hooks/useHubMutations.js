@@ -1,3 +1,4 @@
+import { daylightApiResponse } from '../../../../../../../frontend/src/lib/api.mjs';
 import { useCallback, useMemo } from 'react';
 import getLogger from "../../../../../../../frontend/src/lib/logging/Logger.js";
 import { runWithFeedback } from "../../../../../../../frontend/src/modules/Admin/shared/feedback.js";
@@ -36,10 +37,9 @@ export function useHubMutations({ revalidate } = {}) {
   );
 
   const sendCommandRaw = useCallback(async function inner(body, _attempt = 0) {
-    const r = await fetch('/api/v1/playback-hub/command', {
+    const r = await daylightApiResponse('/api/v1/playback-hub/command', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
+      data: body,
     });
     const result = await r.json();
 
@@ -79,12 +79,11 @@ export function useHubMutations({ revalidate } = {}) {
   }, [logger, sendCommandRaw]);
 
   const updateDeviceRaw = useCallback(async (color, patch) => {
-    const r = await fetch(
+    const r = await daylightApiResponse(
       `/api/v1/playback-hub/devices/${encodeURIComponent(color)}`,
       {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(patch),
+        data: patch,
       },
     );
     const result = await r.json();
@@ -115,10 +114,9 @@ export function useHubMutations({ revalidate } = {}) {
     const url = isUpdate
       ? `/api/v1/playback-hub/scheduled/${encodeURIComponent(fire.id)}`
       : `/api/v1/playback-hub/scheduled`;
-    const r = await fetch(url, {
+    const r = await daylightApiResponse(url, {
       method: isUpdate ? 'PUT' : 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(fire),
+      data: fire,
     });
     const result = await r.json();
     if (!r.ok) {
@@ -148,7 +146,7 @@ export function useHubMutations({ revalidate } = {}) {
   }, [logger, saveFireRaw, revalidate]);
 
   const deleteFireRaw = useCallback(async (id) => {
-    const r = await fetch(
+    const r = await daylightApiResponse(
       `/api/v1/playback-hub/scheduled/${encodeURIComponent(id)}`,
       { method: 'DELETE' },
     );
@@ -181,7 +179,7 @@ export function useHubMutations({ revalidate } = {}) {
 
   const verifyAudio = useCallback(async (color) => {
     try {
-      const r = await fetch(
+      const r = await daylightApiResponse(
         `/api/v1/playback-hub/verify/${encodeURIComponent(color)}`
       );
       const body = await r.json().catch(() => ({}));
@@ -203,7 +201,7 @@ export function useHubMutations({ revalidate } = {}) {
   const fixSlot = useCallback(async (color) => {
     logger.info('fix.request', { color });
     try {
-      const r = await fetch(`/api/v1/playback-hub/fix/${encodeURIComponent(color)}`, { method: 'POST' });
+      const r = await daylightApiResponse(`/api/v1/playback-hub/fix/${encodeURIComponent(color)}`, { method: 'POST' });
       const body = await r.json().catch(() => ({}));
       logger.info('fix.response', { color, status: r.status, code: body?.code, result: body?.result });
       if (!r.ok && !body?.result) {

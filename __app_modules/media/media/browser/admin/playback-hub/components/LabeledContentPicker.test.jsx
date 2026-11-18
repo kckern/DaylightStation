@@ -16,7 +16,7 @@ vi.mock("../../../../../../../frontend/src/lib/logging/singleton.js", () => {
   return { getChildLogger: () => logger, getDaylightLogger: () => logger, default: () => logger };
 });
 
-import { titleCache } from "../../../../../../../__capabilities/content-catalog/browser/picker-controller.mjs";
+import { clearTitleCache, rememberTitle } from "../../../../../../../__capabilities/content-catalog/browser/lib/useContentTitle.js";
 import { LabeledContentPicker } from "./LabeledContentPicker.jsx";
 import ContentCombobox from "../../../../../../../__capabilities/content-catalog/browser/picker.mjs";
 
@@ -50,15 +50,15 @@ function renderPicker(props = {}) {
 
 describe('LabeledContentPicker (collapsed onto unified ContentCombobox)', () => {
   beforeEach(() => {
-    titleCache.clear();
+    clearTitleCache();
     clearCache();
     // No SSE in tests — the hook's search transport falls back to batch fetch.
     vi.stubGlobal('EventSource', undefined);
     fetchMock = vi.fn((url) => {
-      if (String(url).startsWith('/api/v1/info/')) {
+      if (new URL(url, location.origin).pathname.startsWith('/api/v1/info/')) {
         return jsonResponse({ title: 'Solo Piano' });
       }
-      if (String(url).startsWith('/api/v1/siblings/')) {
+      if (new URL(url, location.origin).pathname.startsWith('/api/v1/siblings/')) {
         return jsonResponse(SIBLINGS_RESPONSE);
       }
       return jsonResponse({ items: [] });
@@ -83,9 +83,9 @@ describe('LabeledContentPicker (collapsed onto unified ContentCombobox)', () => 
     });
 
     // The /info fetch is the combobox's own resolution path.
-    const infoCalls = fetchMock.mock.calls.filter(([url]) => String(url).startsWith('/api/v1/info/'));
+    const infoCalls = fetchMock.mock.calls.filter(([url]) => new URL(url, location.origin).pathname.startsWith('/api/v1/info/'));
     expect(infoCalls).toHaveLength(1);
-    expect(infoCalls[0][0]).toBe('/api/v1/info/plex/670208');
+    expect(new URL(infoCalls[0][0], location.origin).pathname).toBe('/api/v1/info/plex/670208');
 
     // Audit C6: no duplicate title line above the input.
     expect(screen.getAllByTestId('combobox-resolved-title')).toHaveLength(1);
@@ -93,12 +93,12 @@ describe('LabeledContentPicker (collapsed onto unified ContentCombobox)', () => 
   });
 
   it('renders a cached title immediately without fetching /info', () => {
-    titleCache.set('plex:670208', 'Cached Title');
+    rememberTitle('plex:670208', 'Cached Title');
 
     renderPicker({ value: 'plex:670208' });
 
     expect(screen.getByTestId('combobox-resolved-title')).toHaveTextContent('Cached Title');
-    const infoCalls = fetchMock.mock.calls.filter(([url]) => String(url).startsWith('/api/v1/info/'));
+    const infoCalls = fetchMock.mock.calls.filter(([url]) => new URL(url, location.origin).pathname.startsWith('/api/v1/info/'));
     expect(infoCalls).toHaveLength(0);
   });
 

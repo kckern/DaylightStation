@@ -2,7 +2,7 @@
 // fetch and EventSource are fully stubbed; no test touches the network.
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { renderHook, act, waitFor } from '@testing-library/react';
-import { clearCache, getCacheEntry, setCacheEntry } from "../lib/siblingsCache.js";
+import { clearCache, getCacheEntry, loadSiblings, setCacheEntry } from "../lib/siblingsCache.js";
 
 // Hoisted so tests (Task 5: search.settled / search.source_error /
 // search.retry_after_source_error) can assert on calls — vi.hoisted runs
@@ -37,7 +37,8 @@ vi.mock("../../../../frontend/src/lib/appRegistry.js", () => ({
 // `import()` resolves instantly (keeps the app-results test deterministic).
 import "../../../../frontend/src/lib/appRegistry.js";
 
-import { useContentCombobox, titleCache, Modes } from "./useContentCombobox.js";
+import { clearTitleCache } from "../lib/useContentTitle.js";
+import { useContentCombobox, Modes } from "./useContentCombobox.js";
 import { notifyWarning } from "./notify.js";
 
 class MockEventSource {
@@ -86,12 +87,15 @@ async function openBrowse(result) {
 describe('useContentCombobox', () => {
   beforeEach(() => {
     clearCache();
-    titleCache.clear();
+    clearTitleCache();
     MockEventSource.instances = [];
     // Default: no SSE — forces the batch fallback path (supportsSSE() false).
     vi.stubGlobal('EventSource', undefined);
     fetchMock = vi.fn(() => jsonResponse({ items: [] }));
-    vi.stubGlobal('fetch', fetchMock);
+    vi.stubGlobal('fetch', (url, options) => {
+      const { pathname, search } = new URL(url, location.origin);
+      return fetchMock(pathname + search, options);
+    });
     notifyWarning.mockClear();
     mockLog.debug.mockClear(); mockLog.info.mockClear();
     mockLog.warn.mockClear(); mockLog.error.mockClear();
@@ -506,11 +510,11 @@ describe('useContentCombobox', () => {
 
   it('resolvedTitle fetches /info once and reuses the module cache on a second mount', async () => {
     fetchMock.mockImplementation((url) => (
-      url.startsWith('/api/v1/info/plex/777')
+      new URL(url, location.origin).pathname === '/api/v1/info/plex/777'
         ? jsonResponse({ title: 'Solo Piano' })
         : jsonResponse({ items: [] })
     ));
-    const infoCalls = () => fetchMock.mock.calls.filter(([u]) => u.startsWith('/api/v1/info/')).length;
+    const infoCalls = () => fetchMock.mock.calls.filter(([u]) => new URL(u, location.origin).pathname.startsWith('/api/v1/info/')).length;
 
     const first = setup({ value: 'plex:777' });
     await waitFor(() => expect(first.result.current.resolvedTitle).toBe('Solo Piano'));
@@ -522,7 +526,7 @@ describe('useContentCombobox', () => {
     expect(infoCalls()).toBe(1); // cache hit — no second /info fetch
   });
 
-  it('applyBrowseData builds the FULL sanitized ancestor trail when the siblings response carries ancestors', async () => {
+  it('opening during an Admin preload shares the metadata source request and preserves the full sanitized ancestor trail', async () => {
     const RESPONSE_WITH_ANCESTORS = {
       items: [
         { id: 'plex:642196', title: 'Ep 32', source: 'plex', type: 'episode' },
@@ -540,13 +544,19 @@ describe('useContentCombobox', () => {
         { id: 'plex:700', title: 'Season 8', source: 'plex', localId: '700', type: 'season' },
       ],
     };
-    fetchMock.mockImplementation((url) => (
-      url.startsWith('/api/v1/siblings/plex/642197') ? jsonResponse(RESPONSE_WITH_ANCESTORS) : jsonResponse({ items: [] })
-    ));
-    const { result } = setup({ value: 'plex:642197' });
+    let finishPreload;
+    const pending = new Promise(resolve => { finishPreload = resolve; });
+    fetchMock.mockImplementation(url => url.startsWith('/api/v1/siblings/') ? pending : jsonResponse({}));
+    const { result } = setup({ value: 'legacy:642197' });
+    const preload = loadSiblings('legacy:642197', 'plex');
+    await act(async () => {
+      const opening = result.current.openWithSiblings();
+      finishPreload(await jsonResponse(RESPONSE_WITH_ANCESTORS));
+      await Promise.all([preload, opening]);
+    });
 
-    await openBrowse(result);
-
+    const siblingPaths = fetchMock.mock.calls.map(([url]) => url).filter(url => url.includes('/siblings/'));
+    expect(siblingPaths).toEqual(['/api/v1/siblings/plex/642197']);
     expect(result.current.state.mode).toBe('browse');
     // Junk library + duplicate removed; full chain root-first with usable localId/source.
     expect(result.current.state.browse.breadcrumbs).toEqual([

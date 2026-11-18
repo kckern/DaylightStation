@@ -1,3 +1,4 @@
+import { browserPreference } from './browserPreference.js';
 import {readRequestContextHeaders} from './requestContextHeaders.mjs';
 import getLogger from './logging/Logger.js';
 import { getDeviceId } from './deviceIdentity.js';
@@ -28,11 +29,31 @@ export const buildHeaders = (token, withContentType = true) => ({
 
 // In dev mode, Vite proxy handles forwarding to backend (see vite.config.js)
 // In production, frontend and backend are served from same origin
-const getBaseUrl = () => window.location.origin;
+const getBaseUrl = () => globalThis.window?.location?.origin || '';
 const getWsBaseUrl = () => {
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     return `${protocol}//${window.location.host}`;
 };
+
+const apiToken = browserPreference('ds_token', null);
+
+function jsonRequest(path, { method = 'GET', data, signal } = {}) {
+    const route = path.replace(/^\/|\/$/g, '');
+    const url = `${getBaseUrl()}/${route}`;
+    const options = {
+        method,
+        headers: buildHeaders(apiToken.read()),
+        signal,
+        ...(data === undefined ? {} : { body: JSON.stringify(data) }),
+    };
+    return { url, options };
+}
+
+/** Same-origin JSON request for consumers that interpret HTTP status and body together. */
+export async function daylightApiResponse(path, init) {
+    const { url, options } = jsonRequest(path, init);
+    return fetch(url, options);
+}
 
 export const DaylightAPI = async (path, data = {}, method = 'GET', requestOptions = {}) => {
 
@@ -41,25 +62,14 @@ export const DaylightAPI = async (path, data = {}, method = 'GET', requestOption
         method = 'POST';
     }
     
-   // console.log("DaylightAPI called with path:", path, "data:", data, "method:", method);
-    //remove leading and trailing slashes
-    path = path.replace(/^\/|\/$/g,'');
-    const baseUrl = getBaseUrl();
-
-    const token = localStorage.getItem('ds_token');
-    const options = {
+    const { url, options } = jsonRequest(path, {
         method,
-        headers: buildHeaders(token),
+        data: method === 'GET' ? undefined : data,
         signal: requestOptions.signal,
-    };
-
-    if (method !== 'GET') {
-        options.body = JSON.stringify(data);
-    }
-
+    });
     let response;
     try {
-        response = await fetch(`${baseUrl}/${path}`, options);
+        response = await fetch(url, options);
     } catch (err) {
         if (err?.name === 'AbortError') throw err;
         getLogger().warn('api.network.error', { path, error: err?.message });

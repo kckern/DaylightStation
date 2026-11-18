@@ -1,11 +1,5 @@
-// frontend/src/modules/Media/house/houseApi.js
-// The house contracts (tech doc §2.5 screens, §2.6 routines, §2.7 started
-// by, §4.10 start status) as plain calls. Not DaylightAPI: a 409 from the
-// screen registry carries what the person must see next (`suggestion`,
-// `heldBy`, the `routines` a rename or retire touches), and DaylightAPI
-// truncates error bodies to 300 characters inside a message string. This
-// keeps the whole body on the error.
-import getDeviceId from "../../../../../frontend/src/lib/deviceIdentity.js";
+// Registry refusals carry the full list of routines affected by a rename or retirement.
+import { daylightApiResponse } from '../../../../../frontend/src/lib/api.mjs';
 
 export class HouseApiError extends Error {
   constructor(message, { status = null, code = null, details = {}, transient = false } = {}) {
@@ -31,25 +25,10 @@ export function deviceIdForScreen(screenId) {
   return screenId.startsWith('fleet:') ? screenId.slice('fleet:'.length) : screenId;
 }
 
-function headers() {
-  const out = { 'Content-Type': 'application/json' };
-  try {
-    const token = globalThis.localStorage?.getItem?.('ds_token');
-    if (token) out.Authorization = `Bearer ${token}`;
-  } catch { /* storage refused */ }
-  try { out['X-Daylight-Device'] = getDeviceId(); } catch { /* no window */ }
-  return out;
-}
-
 async function call(path, { method = 'GET', body } = {}) {
-  const base = typeof window !== 'undefined' ? window.location.origin : '';
   let response;
   try {
-    response = await fetch(`${base}/${path}`, {
-      method,
-      headers: headers(),
-      ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
-    });
+    response = await daylightApiResponse(path, { method, data: body });
   } catch (error) {
     throw new HouseApiError(`Network error: ${error?.message ?? 'request failed'}`, { transient: true });
   }

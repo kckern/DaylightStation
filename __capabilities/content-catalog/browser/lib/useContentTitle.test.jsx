@@ -1,11 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook, waitFor } from '@testing-library/react';
-import { useContentTitle } from "./useContentTitle.js";
-import { titleCache } from "../utils/titleCache.js";
+import { useContentTitle, clearTitleCache, rememberTitle } from "./useContentTitle.js";
 
 describe('useContentTitle', () => {
   beforeEach(() => {
-    titleCache.clear();
+    clearTitleCache();
     vi.restoreAllMocks();
   });
 
@@ -17,7 +16,7 @@ describe('useContentTitle', () => {
   });
 
   it('returns cached title synchronously when present', () => {
-    titleCache.set('plex:42', 'Cached Title');
+    rememberTitle('plex:42', 'Cached Title');
     const fetchSpy = vi.spyOn(globalThis, 'fetch');
     const { result } = renderHook(() => useContentTitle('plex:42'));
     expect(result.current).toBe('Cached Title');
@@ -32,7 +31,9 @@ describe('useContentTitle', () => {
     const { result } = renderHook(() => useContentTitle('plex:99'));
     expect(result.current).toBeNull();
     await waitFor(() => expect(result.current).toBe('Fetched Title'));
-    expect(titleCache.get('plex:99')).toBe('Fetched Title');
+    const second = renderHook(() => useContentTitle('plex:99'));
+    expect(second.result.current).toBe('Fetched Title');
+    expect(globalThis.fetch).toHaveBeenCalledTimes(1);
   });
 
   it('fails soft (returns null) on fetch error', async () => {

@@ -40,7 +40,7 @@ describe('useHubConfig', () => {
 
     expect(result.current.config).toEqual(fakeConfig);
     expect(result.current.error).toBeNull();
-    expect(global.fetch).toHaveBeenCalledWith('/api/v1/playback-hub/config');
+    expect(global.fetch).toHaveBeenCalledWith(`${location.origin}/api/v1/playback-hub/config`, expect.objectContaining({ method: 'GET', signal: expect.any(AbortSignal) }));
   });
 
   it('sets error on HTTP 500 response', async () => {
@@ -120,6 +120,25 @@ describe('useHubConfig', () => {
 
     expect(result.current.config.devices[0].position).toBe(2);
     expect(global.fetch).toHaveBeenCalledTimes(2);
+  });
+
+  it('ignores an older read after revalidation and cancels outstanding work on unmount', async () => {
+    let resolveOld;
+    global.fetch = vi.fn()
+      .mockImplementationOnce(() => new Promise(resolve => { resolveOld = resolve; }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ config: { v: 2 } })))
+      .mockImplementation(() => new Promise(() => {}));
+    const { result, unmount } = renderHook(() => useHubConfig());
+    const refresh = result.current.revalidate;
+    await act(async () => { await refresh(); });
+    expect(global.fetch.mock.calls[0][1].signal.aborted).toBe(true);
+    await act(async () => { resolveOld(new Response(JSON.stringify({ config: { v: 1 } }))); });
+    expect(result.current.config).toEqual({ v: 2 });
+    act(() => { void refresh(); });
+    unmount();
+    expect(global.fetch.mock.calls[2][1].signal.aborted).toBe(true);
+    await refresh();
+    expect(global.fetch).toHaveBeenCalledTimes(3);
   });
 
   it('revalidate sets loading=true mid-flight', async () => {

@@ -6,8 +6,7 @@
 // produced a doubled title line (2026-07-09 audit, C6). The file stays as a
 // re-export so the three PlaybackHub call sites (TransportRow,
 // ScheduledFiresSection, SchedulesSection) and their test mocks keyed on this
-// path don't churn. PlaybackHub summary rows still resolve titles through
-// hooks/useContentTitle.js + utils/titleCache.js, which remain in use.
+// path don't churn. Summary rows use the same catalog title resolver as the picker.
 import ContentCombobox from "../../../../../../../__capabilities/content-catalog/browser/picker.mjs";
 
 export const LabeledContentPicker = ContentCombobox;

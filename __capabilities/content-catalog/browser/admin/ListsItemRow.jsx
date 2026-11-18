@@ -13,7 +13,7 @@ import { useDraggable, useDroppable } from '@dnd-kit/core';
 import { CSS } from '@dnd-kit/utilities';
 import ConfigIndicators from "./ConfigIndicators.jsx";
 import ProgressDisplay from "./ProgressDisplay.jsx";
-import { getCacheEntry, setCacheEntry } from "../lib/siblingsCache.js";
+import { hasCacheEntry, loadSiblings } from "../lib/siblingsCache.js";
 import { useListsContext } from "./ListsContext.js";
 import { isContentIdLike } from "../lib/contentSearchLogic.js";
 import ContentCombobox from "../combobox/ContentCombobox.jsx";
@@ -22,7 +22,6 @@ import { ShimmerAvatar } from "./ShimmerAvatar.jsx";
 import {
   ContentValueCard, contentInfoFromPick, fetchContentMetadata,
 } from "./ContentDisplays.jsx";
-import { normalizeListSource } from "./contentDisplaysUtils.jsx";
 import { ItemDetailsDrawer } from "./ItemDetailsDrawer.jsx";
 import { AppParamPicker } from "./AppParamPicker.jsx";
 import { ActionChipSelect } from "./ActionChipSelect.jsx";
@@ -41,78 +40,12 @@ function adminLog(component) {
   return component ? _adminLog.child({ component }) : _adminLog;
 }
 
-/**
- * Fetch siblings data for an item. Returns processed data ready for state.
- * This is the core fetch logic extracted for use by both preload and direct calls.
- */
-async function doFetchSiblings(contentId, contentInfo) {
-  const match = contentId.match(/^([^:]+):\s*(.+)$/);
-  if (!match) {
-    adminLog('doFetchSiblings').debug('skip', { contentId, reason: 'no_match' });
-    return null;
-  }
-
-  const source = contentInfo?.source || normalizeListSource(match[1].trim());
-  const localId = match[2].trim();
-  const response = await fetch(`/api/v1/siblings/${source}/${encodeURIComponent(localId)}`);
-  if (!response.ok) return null;
-
-  const data = await response.json();
-  const browseItems = (data.items || []).map(item => ({
-    value: item.id,
-    title: item.title,
-    source: item.source,
-    type: item.type || item.itemType,
-    thumbnail: item.thumbnail,
-    grandparent: item.grandparentTitle,
-    parent: item.parentTitle,
-    library: item.libraryTitle,
-    itemCount: item.childCount ?? null,
-    itemIndex: item.itemIndex ?? null,
-    number: item.number ?? null,
-    isContainer: item.isContainer || item.itemType === 'container'
-  }));
-
-  const currentParent = data.parent ? {
-    id: data.parent.id,
-    title: data.parent.title,
-    source: data.parent.source,
-    thumbnail: data.parent.thumbnail,
-    parentKey: data.parent.parentId ?? null,
-    libraryId: data.parent.libraryId ?? null
-  } : null;
-
-  return {
-    browseItems,
-    currentParent,
-    pagination: data.pagination || null,
-    referenceIndex: data.referenceIndex ?? -1
-  };
-}
-
-/**
- * Preload siblings for an item into the cache.
- * Skips if already cached or pending. Returns the promise for optional awaiting.
- */
 async function preloadSiblings(contentId, contentInfo) {
-  if (!contentId || !contentInfo || contentInfo.unresolved) return null;
-
-  // Skip if already cached or pending
-  const existing = getCacheEntry(contentId);
-  if (existing) return existing.promise;
-
-  // Mark as pending immediately to prevent duplicate requests
-  const promise = doFetchSiblings(contentId, contentInfo);
-  setCacheEntry(contentId, { status: 'pending', data: null, promise });
-
+  if (!contentId || !contentInfo || contentInfo.unresolved || hasCacheEntry(contentId)) return;
   try {
-    const data = await promise;
-    setCacheEntry(contentId, { status: 'loaded', data, promise: null });
-    return data;
+    await loadSiblings(contentId, contentInfo.source);
   } catch (err) {
     adminLog('preloadSiblings').error('preload_siblings.error', { contentId, error: err.message });
-    setCacheEntry(contentId, { status: 'error', data: null, promise: null });
-    return null;
   }
 }
 

@@ -2,7 +2,7 @@
 // restarts sends an HTML page; that page used to become the error message
 // every ErrorState printed.
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { DaylightAPI } from './api.mjs';
+import { DaylightAPI, daylightApiResponse } from './api.mjs';
 
 const response = ({ status = 200, statusText = 'OK', body = '', json } = {}) => ({
   ok: status >= 200 && status < 300,
@@ -64,6 +64,25 @@ describe('DaylightAPI failures', () => {
   it('caps a long plain-text body', async () => {
     fetchMock.mockResolvedValue(response({ status: 500, statusText: 'Internal Server Error', body: 'x'.repeat(5000) }));
     expect((await failure()).message.length).toBeLessThan(400);
+  });
+
+  it('refuses invalid request bodies before fetch without claiming a transient failure', async () => {
+    const data = { value: 1n };
+    const error = await DaylightAPI('api/v1/example', data, 'POST').catch(err => err);
+    expect(error).toBeInstanceOf(TypeError);
+    expect(error.transient).toBeUndefined();
+    await expect(daylightApiResponse('api/v1/example', { method: 'POST', data })).rejects.toThrow();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('sends a cookie-authenticated request when local storage is unavailable', async () => {
+    vi.stubGlobal('localStorage', { getItem() { throw new DOMException('Denied', 'SecurityError'); } });
+    const reply = response({ status: 409 });
+    fetchMock.mockResolvedValue(reply);
+    expect(await daylightApiResponse('/api/v1/example')).toBe(reply);
+    const { headers } = fetchMock.mock.calls[0][1];
+    expect(headers.Authorization).toBeUndefined();
+    expect(headers['X-Daylight-Device']).toBeTruthy();
   });
 
   it('a dropped connection is transient', async () => {

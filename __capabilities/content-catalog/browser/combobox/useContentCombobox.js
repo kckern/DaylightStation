@@ -8,15 +8,22 @@
 //   S5 — doBatchSearch lists `searchParams` in its deps, so a prop change
 //        reaches the batch fallback URL (the standalone had a stale closure).
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
+import { DaylightAPI } from '../../../../frontend/src/lib/api.mjs';
 import { useDebouncedCallback } from '@mantine/hooks';
 import { useStreamingSearch } from "../../../../frontend/src/hooks/useStreamingSearch.js";
 import { getChildLogger } from "../../../../frontend/src/lib/logging/singleton.js";
-import { isContentIdLike, parseSourcePrefix, isDirectSourceIdQuery } from "../lib/contentSearchLogic.js";
-import { getCacheEntry, setCacheEntry } from "../lib/siblingsCache.js";
+import { normalizeListSource, splitContentId, isContentIdLike, parseSourcePrefix, isDirectSourceIdQuery } from "../lib/contentSearchLogic.js";
+import { getCacheEntry, loadSiblings, toBrowseItem } from "../lib/siblingsCache.js";
 import { reducer, initialState, closeDecision, decideCommit, isContainer, Modes, RENDER_CAP } from "./comboboxMachine.js";
 import { sanitizeBreadcrumbs } from "../lib/breadcrumbs.js";
 import { notifyWarning } from "./notify.js";
 import { loadKnownSources, isKnownSource } from "../lib/knownSources.js";
+
+import { rememberTitle, useContentTitle } from "../lib/useContentTitle.js";
+
+function expandContainer(source, localId) {
+  return DaylightAPI(`/api/v1/list/${encodeURIComponent(source)}/${encodeURIComponent(localId)}/expand`);
+}
 
 const SEARCH_STREAM_ENDPOINT = '/api/v1/content/query/search/stream';
 const SEARCH_BATCH_ENDPOINT = '/api/v1/content/query/search';
@@ -26,7 +33,6 @@ const SEARCH_BATCH_ENDPOINT = '/api/v1/content/query/search';
 const BATCH_TAKE = 20;
 const SEARCH_DEBOUNCE_MS = 300;
 const PAGE_SIZE = 21;
-const TITLE_CACHE_MAX = 500;
 
 // Identity of a search run: the query text AND the scope params it ran under.
 // Every once-per-search guard in this hook keys on this pair rather than on
@@ -40,57 +46,12 @@ function supportsSSE() {
   return typeof EventSource !== 'undefined';
 }
 
-function normalizeListSource(source) {
-  return source === 'list' ? 'menu' : source;
-}
-
-/** Split `source:localId`, tolerating the legacy `source: localId` spacing. */
-function splitContentId(contentId) {
-  if (typeof contentId !== 'string') return null;
-  const colonIndex = contentId.indexOf(':');
-  if (colonIndex === -1) return null;
-  return {
-    source: normalizeListSource(contentId.slice(0, colonIndex).trim()),
-    localId: contentId.slice(colonIndex + 1).trim(),
-  };
-}
-
 const normalizeValue = (v) => v?.replace(/:\s+/g, ':');
 
 // F13: `word:` / `word-word:` followed by only optional whitespace — a source
 // prefix whose term is empty. Distinct from parseSourcePrefix (which returns
 // null both here AND for plain no-colon text), so we detect it explicitly.
 const isBareSourcePrefix = (t) => typeof t === 'string' && /^[\w-]+:\s*$/.test(t);
-
-// Process-lifetime cache of contentId -> human title so the resolved-title
-// line renders instantly for items we've already seen. Exported for tests.
-export const titleCache = new Map();
-
-function rememberTitle(contentId, title) {
-  if (!contentId || !title) return;
-  if (titleCache.size > TITLE_CACHE_MAX) titleCache.clear();
-  titleCache.set(contentId, title);
-}
-
-// Map a raw /siblings API item into the shared cache shape (same mapping as
-// ListsItemRow's doFetchSiblings, plus `id` so machine items are uniform).
-function toBrowseItem(item) {
-  return {
-    id: item.id,
-    value: item.id,
-    title: item.title,
-    source: item.source,
-    type: item.type || item.itemType,
-    thumbnail: item.thumbnail,
-    grandparent: item.grandparentTitle,
-    parent: item.parentTitle,
-    library: item.libraryTitle,
-    itemCount: item.childCount ?? null,
-    itemIndex: item.itemIndex ?? null,
-    number: item.number ?? null,
-    isContainer: item.isContainer || item.itemType === 'container',
-  };
-}
 
 // Cache entries written by ListsItemRow's preloader key items on `value`.
 const ensureId = (item) => (item.id != null ? item : { ...item, id: item.value });
@@ -115,39 +76,6 @@ function ancestorToCrumb(crumb, fallbackSource) {
     source: crumb.source || fallbackSource,
     localId: crumb.localId ?? crumb.id?.split(':').slice(1).join(':'),
     type: crumb.type ?? null,
-  };
-}
-
-/**
- * Fetch siblings of a content id and shape the result for the shared
- * siblingsCache ({browseItems, currentParent, pagination, referenceIndex}).
- */
-async function fetchSiblingsData(contentId) {
-  const parsed = splitContentId(contentId);
-  if (!parsed) return null;
-  const { source, localId } = parsed;
-  const response = await fetch(`/api/v1/siblings/${source}/${encodeURIComponent(localId)}`);
-  if (!response.ok) throw new Error(`Browse failed: ${response.status}`);
-  const data = await response.json();
-  return {
-    browseItems: (data.items || []).map(toBrowseItem),
-    // Keyed on `data.parent` truthy for parity with ListsItemRow's
-    // doFetchSiblings — the cache is shared with legacy code until Task 13.
-    currentParent: data.parent
-      ? {
-          id: data.parent.id,
-          title: data.parent.title,
-          source: data.parent.source || source,
-          thumbnail: data.parent.thumbnail,
-          parentKey: data.parent.parentId ?? null,
-          libraryId: data.parent.libraryId ?? null,
-        }
-      : null,
-    pagination: data.pagination || null,
-    referenceIndex: data.referenceIndex ?? -1,
-    // Root-first ancestor chain for the breadcrumb trail (optional; adapters
-    // that can't build one omit it → the single-parent crumb fallback applies).
-    ancestors: Array.isArray(data.ancestors) ? data.ancestors : null,
   };
 }
 
@@ -279,11 +207,9 @@ export function useContentCombobox({
     log.info('batch_search.start', { text, params: effectiveParams || null });
     setBatchLoading(true);
     try {
-      const response = await fetch(
+      const data = await DaylightAPI(
         `${SEARCH_BATCH_ENDPOINT}?text=${encodeURIComponent(text)}&take=${BATCH_TAKE}${effectiveParams ? '&' + effectiveParams : ''}`
       );
-      if (!response.ok) throw new Error('Search failed');
-      const data = await response.json();
       log.info('batch_search.done', { text, resultCount: (data.items || []).length });
       setBatchResults(data.items || []);
     } catch (err) {
@@ -471,27 +397,10 @@ export function useContentCombobox({
       applyBrowseData(contentId, cached.data);
       return;
     }
-    if (cached?.status === 'pending' && cached.promise) {
-      log.debug('load_siblings.cache_pending', { contentId });
-      dispatch({ type: 'BROWSE_LOADING' });
-      try {
-        const data = await cached.promise;
-        if (stillWanted()) applyBrowseData(contentId, data);
-      } catch (err) {
-        log.error('load_siblings.error', { contentId, from: 'cache_pending', error: err.message });
-        if (stillWanted()) dispatch({ type: 'BROWSE_LOADING', loading: false });
-      }
-      return;
-    }
-
-    // Cache miss — fetch and populate the shared cache.
-    log.info('load_siblings.start', { contentId });
+    log.info(cached?.promise ? 'load_siblings.cache_pending' : 'load_siblings.start', { contentId });
     dispatch({ type: 'BROWSE_LOADING' });
-    const promise = fetchSiblingsData(contentId);
-    setCacheEntry(contentId, { status: 'pending', data: null, promise });
     try {
-      const data = await promise;
-      setCacheEntry(contentId, { status: 'loaded', data, promise: null });
+      const data = await loadSiblings(contentId);
       log.info('load_siblings.done', {
         contentId,
         itemCount: data?.browseItems?.length ?? 0,
@@ -500,7 +409,6 @@ export function useContentCombobox({
       });
       if (stillWanted()) applyBrowseData(contentId, data);
     } catch (err) {
-      setCacheEntry(contentId, { status: 'error', data: null, promise: null });
       log.error('load_siblings.error', { contentId, error: err.message });
       if (stillWanted()) dispatch({ type: 'BROWSE_LOADING', loading: false });
     }
@@ -521,9 +429,7 @@ export function useContentCombobox({
     });
     dispatch({ type: 'BROWSE_LOADING' });
     try {
-      const response = await fetch(`/api/v1/list/${source}/${encodeURIComponent(localId)}/expand`);
-      if (!response.ok) throw new Error(`Browse failed: ${response.status}`);
-      const data = await response.json();
+      const data = await expandContainer(source, localId);
       const crumb = { id: item.id, title: item.title, source, localId };
       log.info('browse_container.done', { source, localId, itemCount: (data.items || []).length });
       if (browseTokenRef.current !== token) return;
@@ -563,9 +469,7 @@ export function useContentCombobox({
     });
     dispatch({ type: 'BROWSE_LOADING' });
     try {
-      const response = await fetch(`/api/v1/list/${parent.source}/${encodeURIComponent(parent.localId)}/expand`);
-      if (!response.ok) throw new Error(`Browse failed: ${response.status}`);
-      const data = await response.json();
+      const data = await expandContainer(parent.source, parent.localId);
       const items = (data.items || []).map(ensureId);
       const referenceIndex = items.findIndex((i) => i.id === popped.id);
       log.info('go_back.done', { parentId: parent.id, itemCount: items.length });
@@ -605,9 +509,7 @@ export function useContentCombobox({
     });
     dispatch({ type: 'BROWSE_LOADING' });
     try {
-      const response = await fetch(`/api/v1/list/${target.source}/${encodeURIComponent(target.localId)}/expand`);
-      if (!response.ok) throw new Error(`Browse failed: ${response.status}`);
-      const data = await response.json();
+      const data = await expandContainer(target.source, target.localId);
       const items = (data.items || []).map(ensureId);
       const referenceIndex = childCrumb ? items.findIndex((i) => i.id === childCrumb.id) : -1;
       log.info('go_to_crumb.done', { index, targetId: target.id, itemCount: items.length });
@@ -662,11 +564,9 @@ export function useContentCombobox({
     const token = ++browseTokenRef.current; // invalidate overlapping browse responses
     paginationOwnerRef.current = contentId; // still the siblings level
     try {
-      const response = await fetch(
+      const data = await DaylightAPI(
         `/api/v1/siblings/${parsed.source}/${encodeURIComponent(parsed.localId)}?offset=${offset}&limit=${limit}`
       );
-      if (!response.ok) return false;
-      const data = await response.json();
       if (browseTokenRef.current !== token) return false;
       dispatch({ type: 'PAGINATED', direction, items: (data.items || []).map(toBrowseItem) });
       return true;
@@ -882,32 +782,7 @@ export function useContentCombobox({
   }, [selectContainers, select, drill, cancelPendingSearch, log, allowFreeform, retainQueryOnEscape]);
 
   // ── 6. Title resolution for the committed value ──
-  const [resolvedTitle, setResolvedTitle] = useState(() => (
-    isContentIdLike(value) && titleCache.has(value) ? titleCache.get(value) : null
-  ));
-  useEffect(() => {
-    if (!isContentIdLike(value)) {
-      setResolvedTitle(null);
-      return undefined;
-    }
-    if (titleCache.has(value)) {
-      setResolvedTitle(titleCache.get(value));
-      return undefined;
-    }
-    setResolvedTitle(null);
-    const parsed = splitContentId(value);
-    if (!parsed) return undefined;
-    let cancelled = false;
-    fetch(`/api/v1/info/${parsed.source}/${encodeURIComponent(parsed.localId)}`)
-      .then((r) => (r.ok ? r.json() : null))
-      .then((info) => {
-        if (cancelled || !info?.title) return;
-        rememberTitle(value, info.title);
-        setResolvedTitle(info.title);
-      })
-      .catch(() => {});
-    return () => { cancelled = true; };
-  }, [value]);
+  const resolvedTitle = useContentTitle(isContentIdLike(value) ? value : null);
 
   const normalizedStreamState = streamState ?? {
     query: queryRef.current,

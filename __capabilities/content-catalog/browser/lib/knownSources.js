@@ -1,3 +1,5 @@
+import { DaylightAPI } from '../../../../frontend/src/lib/api.mjs';
+
 /**
  * Known content-source prefixes, for validating a hand-typed content id.
  *
@@ -28,15 +30,15 @@ export function loadKnownSources() {
 
   inflight = (async () => {
     try {
-      const [sourcesRes, aliasesRes] = await Promise.all([
-        fetch('/api/v1/content/sources'),
-        fetch('/api/v1/content/aliases')
+      const [sources, aliases] = await Promise.all([
+        DaylightAPI('/api/v1/content/sources'),
+        DaylightAPI('/api/v1/content/aliases').catch(error => {
+          // An unwired resolver returns 501. Network and decoding failures
+          // leave validation unknown so a typed source is never mislabelled.
+          if (error.status >= 300) return {};
+          throw error;
+        }),
       ]);
-      if (!sourcesRes.ok) return null;
-
-      const sources = await sourcesRes.json();
-      // Aliases are optional — the endpoint 501s when no resolver is wired.
-      const aliases = aliasesRes.ok ? await aliasesRes.json() : {};
 
       const all = [
         ...(sources.sources || []),
