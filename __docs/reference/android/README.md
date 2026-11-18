@@ -1079,6 +1079,38 @@ For someone coming from `cli/fkb.cli.mjs`:
 What the CLI cannot do: OS-level globals that only ADB's shell user may change
 (`settings put global ...`), since `exec` runs as the app.
 
+### The acceptance runner
+
+`node cli/daylight-acceptance.cli.mjs <device> [options]` runs the roadmap's
+per-device acceptance list over the control API and prints one line per check:
+`PASS` or `FAIL` with what it saw, `MANUAL` with what a person has to do and what
+to look for, `SKIP` with the option the check needs. It exits 1 when any line is
+`FAIL`. `--list` prints the checks and contacts nothing.
+
+The host comes from `--host`, else the device's entry in the private tokens file;
+there is no default. The token comes from that file only, travels as the header,
+and is filtered out of every printed line.
+
+| Group | What it does to the device |
+|---|---|
+| `core`, `routes`, `settings`, `lifeline`, `payload` | Reads only. `core.auth` sends a wrong token on both ports. `routes.inventory` compares `GET /capabilities` with the routes the device file's capabilities serve |
+| `kiosk` | Reloads the page, loads the start URL without waiting, tries a foreign origin (refused), foregrounds, resets the renderer, shows and clears an overlay |
+| `screen`, `volume`, `launch`, `lockdown` | Screen off then on; brightness only with `--brightness`; writes the media volume back unchanged; launches an absent package (refused), and with `--launch <package>` a real one, then returns |
+| `debug` | Screenshot, `eval` of `6*7`, HTML, fps (`--fps-baseline`), logcat, exec (refused while `debug.execEnabled` is false), `/log` |
+| `midi`, `speaker`, `bluetooth`, `mic`, `lease`, `presence`, `hid` | Each helper's status. With its coexistence switch off the line says so; `midi.loopback` probes the instrument (`--rtt-baseline`) |
+| `crash.restart` | `POST /kiosk/restart`, then waits for a lower `uptimeMs` |
+| `crash.kill` (`--kill`) | Turns `debug.execEnabled` on, kills the app's process, waits for it to come back without a reboot, resets the setting |
+| `payload.bad` (`--bad-payload-url` with `--bad-payload-sha256`, or `--serve-bad-payload <addr:port>`) | Pushes a file that is not a payload and expects `lastFailed`, the previous payload active, and the lifeline answering throughout |
+| `reboot.survives` (`--reboot`) | `POST /device/reboot`, or asks for a power-cycle where the device has no reboot; passes when `elapsedRealtimeMs` falls and both ports answer within `--reboot-wait` |
+| `logstore.events` (`--log-store <url>`) | One read-only LogsQL query for the device's `context.app` (`logstore.app`, else `daylight-<id>`) over `--log-window` |
+| `escape`, `keys`, `touch`, `network`, `mic.call`, `synth.audible`, `bluetooth.pairing`, `sound` | `MANUAL` lines |
+
+`--only` and `--skip` take check ids or group names. The cutover runbooks
+(`__docs/runbooks/android/{portal,piano,shield}-cutover.md`) say which options to
+pass at each step. Tests run it against a fake control server
+(`cli/acceptance.test.mjs`), including a test that keeps its route table in step
+with the routes the capability sources register.
+
 ## Checking a build
 
 `node _extensions/daylight-android/tools/verify-build.mjs <device>` compares a built
