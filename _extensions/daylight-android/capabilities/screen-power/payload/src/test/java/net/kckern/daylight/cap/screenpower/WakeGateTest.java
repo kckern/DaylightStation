@@ -42,4 +42,29 @@ public class WakeGateTest {
         assertTrue("asking did not use up the wake", g.allow(108_000, 600, 8_000, "", ""));
         assertFalse("no cooldown, nothing to wait out", g.cooling(108_001, 0));
     }
+
+    // The backend's manual screen-off hold: power.wakeSuppressUntilSec, epoch seconds.
+    @Test public void suppressedUntilTMeansNoWakeBeforeTAndAWakeAfter() {
+        WakeGate g = new WakeGate();
+        long t = 1_800_000_000L;                                              // suppressed until T (seconds)
+        assertFalse(g.allow(t * 1000 - 1, 600, 8_000, "", "", t));            // a note just before T
+        assertFalse(g.allow(t * 1000 - 60_000, 600, 8_000, "", "", t));       // a minute before T
+        assertTrue(g.allow(t * 1000, 600, 8_000, "", "", t));                 // at T: wakes
+        assertTrue(new WakeGate().allow(t * 1000 + 5_000, 600, 8_000, "", "", t));  // after T: wakes
+    }
+
+    @Test public void aSuppressedNoteDoesNotUseUpTheCooldown() {
+        WakeGate g = new WakeGate();
+        long t = 1_800_000_000L;
+        assertFalse(g.allow(t * 1000 - 100, 600, 8_000, "", "", t));
+        assertFalse("nothing was claimed while suppressed", g.cooling(t * 1000 + 1, 8_000));
+        assertTrue(g.allow(t * 1000 + 1, 600, 8_000, "", "", t));
+    }
+
+    @Test public void zeroOrAPastDeadlineSuppressesNothing() {
+        assertFalse(WakeGate.suppressed(1_000, 0));
+        assertFalse(WakeGate.suppressed(5_000_000, 4_999));                   // T already passed
+        assertTrue(WakeGate.suppressed(4_998_999, 4_999));
+        assertTrue(new WakeGate().allow(1_000, 600, 0, "", "", 0));
+    }
 }

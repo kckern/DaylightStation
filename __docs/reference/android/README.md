@@ -521,6 +521,7 @@ declare none.
 | `screen-power` | `power.wakeCooldownMs` | INTEGER | 8000 | 0 to 3600000 |
 | `screen-power` | `power.noWakeStart` | STRING | empty | `HH:mm` |
 | `screen-power` | `power.noWakeEnd` | STRING | empty | `HH:mm` |
+| `screen-power` | `power.wakeSuppressUntilSec` | INTEGER | 0 | 0 to 2147483647 |
 | `app-launcher` | `launcher.allowed` | STRING | empty |  |
 | `app-launcher` | `launcher.confirmMs` | INTEGER | 3000 | 0 to 30000 |
 | `debug-tools` | `debug.execEnabled` | BOOLEAN | false |  |

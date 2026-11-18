@@ -14,6 +14,17 @@ final class WakeGate {
      * @param start,end   "HH:mm" daily window in which nothing wakes; blank or malformed = no window
      */
     boolean allow(long nowMs, int minuteOfDay, long cooldownMs, String start, String end) {
+        return allow(nowMs, minuteOfDay, cooldownMs, start, end, 0);
+    }
+
+    /**
+     * The same, also refusing every wake before {@code suppressUntilSec} (epoch seconds;
+     * 0 = none). That deadline is the backend's manual screen-off hold, relayed as the
+     * setting {@code power.wakeSuppressUntilSec}: the piano-bridge APK's
+     * {@code fkbWakeSuppressUntilEpochMs}. A suppressed note claims no cooldown.
+     */
+    boolean allow(long nowMs, int minuteOfDay, long cooldownMs, String start, String end, long suppressUntilSec) {
+        if (suppressed(nowMs, suppressUntilSec)) return false;
         if (inWindow(minuteOfDay, parseHhmm(start), parseHhmm(end))) return false;
         long last = lastWakeAt.get();
         if (nowMs - last < cooldownMs) return false;
@@ -23,6 +34,11 @@ final class WakeGate {
     /** True while a wake is too recent for another. One read, no claim: the check a note-on makes first. */
     boolean cooling(long nowMs, long cooldownMs) {
         return nowMs - lastWakeAt.get() < cooldownMs;
+    }
+
+    /** True while {@code nowMs} is before the deadline {@code untilSec} (epoch seconds); 0 means none. */
+    static boolean suppressed(long nowMs, long untilSec) {
+        return untilSec > 0 && nowMs < untilSec * 1000L;
     }
 
     static boolean inWindow(int minute, int start, int end) {

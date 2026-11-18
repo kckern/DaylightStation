@@ -70,6 +70,7 @@ public final class ScreenPowerCapability implements Capability, ScreenControl, S
     // Read on the MIDI thread for every note-on, so they are kept here and not looked up there.
     private volatile int cooldownMs = 8000;
     private volatile String noWakeStart = "", noWakeEnd = "";
+    private volatile long wakeSuppressUntilSec = 0;
 
     /** A played note wakes a dark display. On the MIDI thread: one comparison while a wake is recent. */
     private final NoteListener onNote = new NoteListener() {
@@ -105,6 +106,10 @@ public final class ScreenPowerCapability implements Capability, ScreenControl, S
         s.declare("power.wakeCooldownMs", Type.INTEGER, 8000, SettingsRegistry.range(0, 3_600_000));
         s.declare("power.noWakeStart", Type.STRING, "");
         s.declare("power.noWakeEnd", Type.STRING, "");
+        // The backend's manual screen-off hold: no note wakes the display before this
+        // deadline, in epoch seconds (0 = none). Seconds, because settings are 32-bit
+        // integers; the range ends in January 2038.
+        s.declare("power.wakeSuppressUntilSec", Type.INTEGER, 0, SettingsRegistry.range(0, Integer.MAX_VALUE));
         s.onChange(key -> {
             if (running && "power.keepScreenOn".equals(key)) applyKeepScreenOn();
             if (key.startsWith("power.")) readWakeSettings();
@@ -150,6 +155,7 @@ public final class ScreenPowerCapability implements Capability, ScreenControl, S
         cooldownMs = integer("power.wakeCooldownMs");
         noWakeStart = str("power.noWakeStart");
         noWakeEnd = str("power.noWakeEnd");
+        wakeSuppressUntilSec = integer("power.wakeSuppressUntilSec");
     }
 
     /** Only a device owner can reboot the device. The Shield can never be one. */
@@ -357,7 +363,7 @@ public final class ScreenPowerCapability implements Capability, ScreenControl, S
         if (gate.cooling(now, cooldown)) return;
         Calendar c = Calendar.getInstance();
         int minute = c.get(Calendar.HOUR_OF_DAY) * 60 + c.get(Calendar.MINUTE);
-        if (!gate.allow(now, minute, cooldown, noWakeStart, noWakeEnd)) return;
+        if (!gate.allow(now, minute, cooldown, noWakeStart, noWakeEnd, wakeSuppressUntilSec)) return;
         ExecutorService w = worker();
         if (w == null) return;
         try { w.execute(() -> { if (!isOn()) setOn(true, 0); }); } catch (Exception ignored) { }

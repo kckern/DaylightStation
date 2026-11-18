@@ -63,6 +63,7 @@ public class ScreenPowerCapabilityTest {
         assertEquals(8000, core.settings().get("power.wakeCooldownMs"));
         assertEquals("", core.settings().get("power.noWakeStart"));
         assertEquals("", core.settings().get("power.noWakeEnd"));
+        assertEquals(0, core.settings().get("power.wakeSuppressUntilSec"));
         for (String route : new String[] { "POST /screen", "POST /screen/brightness", "POST /device/reboot" }) {
             assertTrue("missing " + route, core.router().routes().contains(route));
         }
@@ -129,7 +130,8 @@ public class ScreenPowerCapabilityTest {
 
     @Test public void theVerifyAndCooldownSettingsHaveRanges() throws Exception {
         for (String bad : new String[] { "{\"key\":\"power.screenVerifyMs\",\"value\":-1}",
-                "{\"key\":\"power.screenVerifyMs\",\"value\":60001}", "{\"key\":\"power.wakeCooldownMs\",\"value\":-5}" }) {
+                "{\"key\":\"power.screenVerifyMs\",\"value\":60001}", "{\"key\":\"power.wakeCooldownMs\",\"value\":-5}",
+                "{\"key\":\"power.wakeSuppressUntilSec\",\"value\":-1}" }) {
             assertEquals(bad, 400, post("/settings", bad).getInt("_status"));
         }
     }
@@ -236,5 +238,12 @@ public class ScreenPowerCapabilityTest {
         assertEquals("nothing start() took after the stop is left behind: " + ctx.receivers, 0, ctx.receivers.size());
         core.services().find(ScreenControl.class).poke();        // stopped: does nothing
         assertEquals(0, FakeContext.liveThreads("daylight-screen"));
+    }
+
+    @Test public void theWakeSuppressDeadlineIsAWholeNumberOfEpochSeconds() throws Exception {
+        assertEquals(200, post("/settings", "{\"key\":\"power.wakeSuppressUntilSec\",\"value\":1800000000}").getInt("_status"));
+        assertEquals(1_800_000_000, core.settings().get("power.wakeSuppressUntilSec"));
+        assertEquals(200, post("/settings", "{\"key\":\"power.wakeSuppressUntilSec\",\"value\":0}").getInt("_status"));
+        assertEquals(400, post("/settings", "{\"key\":\"power.wakeSuppressUntilSec\",\"value\":\"soon\"}").getInt("_status"));
     }
 }

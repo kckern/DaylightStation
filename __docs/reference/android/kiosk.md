@@ -510,6 +510,7 @@ the Portal only after ownership is transferred.
 | `power.screenVerifyMs` | 3000 | How long `/screen` waits for the display to change |
 | `power.wakeCooldownMs` | 8000 | Least time between two wakes by a played note |
 | `power.noWakeStart`, `power.noWakeEnd` | empty | `HH:mm` local window in which a played note wakes nothing |
+| `power.wakeSuppressUntilSec` | 0 | Epoch seconds before which a played note wakes nothing; 0 = no hold. The backend sets it for a manual screen-off hold and clears it with 0 when the panel is woken on purpose (the piano-bridge APK's `fkbWakeSuppressUntilEpochMs`). Seconds, because settings are 32-bit integers; the range ends in January 2038. A note refused by it uses up no cooldown |
 
 One-time grant: `adb shell appops set <package> WRITE_SETTINGS allow` (brightness).
 
