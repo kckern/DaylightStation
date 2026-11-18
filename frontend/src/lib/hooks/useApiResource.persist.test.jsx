@@ -133,6 +133,19 @@ describe('useApiResource persistence', () => {
     expect(result.current.loading).toBe(false);
   });
 
+  it('does not let a fresh reader join a request from a detached registration', async () => {
+    const path = 'api/v1/health/weight';
+    const pending = deferred();
+    await attachApiResourcePersistence({ store: memoryStore(), prefixes: PREFIXES });
+    apiMock.mockReturnValueOnce(pending.promise).mockResolvedValue({ current: true });
+    const old = renderHook(() => useApiResource(path));
+    old.unmount();
+    detachApiResourcePersistence();
+    const next = renderHook(() => useApiResource(path));
+    await act(async () => pending.resolve({ current: false }));
+    expect(next.result.current.data).toEqual({ current: true });
+  });
+
   it('an owner that could not be read is never taken for a first visit', async () => {
     // The disk is slow this time: nothing restored, owner unknown.
     const store = memoryStore({ owner: 'first-user', entries: [{ path: 'api/v1/health/weight', value: ['first-user'] }] });

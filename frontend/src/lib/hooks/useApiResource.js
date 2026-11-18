@@ -229,17 +229,18 @@ const networkStarts = new WeakMap();
 export const nextApiResourceEvent = () => ++resourceEvent;
 export const apiResourceReadToken = value => value && typeof value === 'object' ? networkStarts.get(value) ?? -1 : -1;
 const JOIN_WINDOW_MS = 3000;
-const inFlight = new Map(); // path -> { request, issuedAt }
+const inFlight = new Map(); // path -> { request, issuedAt, scope }
 
 function sharedRequest(path, { join = true } = {}) {
   const current = inFlight.get(path);
-  if (join && current && Date.now() - current.issuedAt < JOIN_WINDOW_MS) return current.request;
+  const scope = registrationFor(path);
+  if (join && current && current.scope === scope && Date.now() - current.issuedAt < JOIN_WINDOW_MS) return current.request;
   const issuedEvent = nextApiResourceEvent();
   const request = new Promise(resolve => resolve(DaylightAPI(path))).then(result => {
     if (result && typeof result === 'object') networkStarts.set(result, issuedEvent);
     return result;
   });
-  inFlight.set(path, { request, issuedAt: Date.now() });
+  inFlight.set(path, { request, issuedAt: Date.now(), scope });
   const settle = () => { if (inFlight.get(path)?.request === request) inFlight.delete(path); };
   request.then(settle, settle);
   return request;
