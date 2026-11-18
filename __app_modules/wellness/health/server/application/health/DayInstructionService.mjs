@@ -14,6 +14,8 @@ const isFood = row => row.kind !== 'group';
 const isMeal = meal => MEAL_BUCKETS.some(bucket => bucket.id === meal);
 const mealLabel = id => MEAL_BUCKETS.find(bucket => bucket.id === id)?.label || id;
 const QUANTITY = ['grams', 'amount', 'unit'];
+// Every food added this way shares one of these IDs, so the ID alone does not identify one act.
+const SHARED_LOG_IDS = new Set(['QUICKADD', 'MANUAL', 'SAVEDMEAL', 'TEMPLATE', 'COPY']);
 const AMENDABLE = ['name', 'color', ...QUANTITY, ...NUTRIENT_KEYS];
 // What a resumed capture needs. The full reply can carry photos, which do not belong in the ledger.
 const CAPTURE_FIELDS = ['committed', 'outcome', 'message', 'logId', 'items', 'entryIds', 'date', 'mealTime', 'affectedIds', 'affectedDates', 'undoToken'];
@@ -161,7 +163,10 @@ export class DayInstructionService {
     const foods = rows.filter(isFood);
     const candidates = foods.length ? foods : rows;
     const newest = candidates.reduce((best, row) => (String(row.createdAt || '') >= String(best.createdAt || '') ? row : best));
-    return newest.logId ? rows.filter(row => row.logId === newest.logId) : [newest];
+    if (!newest.logId) return [newest];
+    if (!SHARED_LOG_IDS.has(newest.logId)) return rows.filter(row => row.logId === newest.logId);
+    if (!newest.createdAt) return [newest];
+    return rows.filter(row => row.logId === newest.logId && row.createdAt === newest.createdAt);
   }
   /** Top-level foods of the latest capture. A part stands for its whole dish. */
   #latestDishes(rows, tops) {

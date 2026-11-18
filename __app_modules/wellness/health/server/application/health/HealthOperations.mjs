@@ -521,6 +521,7 @@ export class HealthOperations {
       id: ids.get(row.uuid || row.id), uuid: ids.get(row.uuid || row.id), version: 1,
       userId: username, date, mealTime, parentId: row.parentId ? ids.get(row.parentId) || null : null,
       copiedFrom: row.uuid || row.id, logId: 'COPY', log_uuid: 'COPY',
+      createdAt: undefined, // A copy is logged now, not when its source was.
       settled: true, settledBy: 'user', settledAt: nowTs24(),
     }));
     await this.nutritionItems.saveMany(rows);

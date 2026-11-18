@@ -29,6 +29,7 @@ import { isCountedRow } from '../../../../portable/contracts/nutrition/countedRo
 import { isReconstructedRow } from '../../../../portable/contracts/nutrition/reconstruction.mjs';
 import { INutriListDatastore } from "../../../application/nutrition/ports/INutriListDatastore.mjs";
 import { shortIdFromUuid } from '#system/utils/id.mjs';
+import { nowTs24 } from '#system/utils/time.mjs';
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
 
 const ARCHIVE_RETENTION_DAYS = 30;
@@ -656,6 +657,9 @@ export class YamlNutriListDatastore extends INutriListDatastore {
     // Load existing items
     let items = this.#readFile(filePath);
 
+    // One save is one act, so its rows share one time.
+    const savedAt = nowTs24();
+
     // Transform new items
     const transformedItems = newItems.map(item => {
       const baseUuid = item.uuid || item.id || uuidv4();
@@ -692,7 +696,7 @@ export class YamlNutriListDatastore extends INutriListDatastore {
         mealTime: item.mealTime ?? null,
         logId: item.logId || item.log_uuid || item.logUuid,
         log_uuid: item.log_uuid || item.logUuid,
-        ...(item.createdAt ? { createdAt: item.createdAt } : {}),
+        createdAt: item.createdAt || savedAt,
         userId: item.userId,
         kind: item.kind || 'item',
         parentId: item.parentId ?? null,

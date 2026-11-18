@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { loadYaml, saveYamlToPathAtomic } from '#system/utils/FileIO.mjs';
 import { sha256Text } from '#system/utils/sha256.mjs';
 import { YamlNutriListDatastore } from '../../adapters/persistence/yaml/YamlNutriListDatastore.mjs';
 import { DayInstructionService } from './DayInstructionService.mjs';
@@ -465,9 +466,15 @@ describe('DayInstructionService', () => {
     });
     describe('saveMany-shaped rows, which carry no capture time', () => {
       const saved = (uuid, logId, extra) => ({ uuid, userId: 'u', name: uuid, date, mealTime: 'afternoon', grams: 100, unit: 'g', amount: 100, calories: 50, logId, ...extra });
+      // Rows written before the ledger kept a time for every save.
+      const dropTimes = () => {
+        const file = path.join(root, 'lifelog/nutrition/nutrilist');
+        saveYamlToPathAtomic(`${file}.yml`, loadYaml(file).map(({ createdAt: _createdAt, ...row }) => row));
+      };
       it('"that" means the last capture in ledger order', async () => {
         await store.saveMany([saved('eggs', 'first', { mealTime: 'morning' })]);
         await store.saveMany([saved('tea', 'second'), saved('milk', 'second')]);
+        dropTimes();
         expect((await store.findByDate('u', date)).map(row => row.uuid)).toEqual(['eggs', 'tea', 'milk']);
         const h = stack(plan({ toDay: yesterday }));
         await h.run('move that to yesterday');
@@ -480,14 +487,80 @@ describe('DayInstructionService', () => {
         await store.saveMany([saved('a', 'second'), saved('b', 'second'), saved('c', 'second')]);
         const grouped = await commands.execute('u', { action: 'group', name: 'Soup', date, bucket: 'afternoon', operationId: 'grp', selectedIds: ['a', 'b'], expectedVersions: { a: 1, b: 1 } });
         const header = grouped.items.find(row => row.kind === 'group');
+        dropTimes();
         await stack(plan({ toDay: yesterday })).run('move that to yesterday');
         expect(await ids(yesterday)).toEqual(['a', 'b', 'c', header.uuid].sort());
       });
       it('a capture with a time beats older rows without one', async () => {
-        await store.saveMany([saved('new', 'second', { createdAt: '2026-11-18 12:00:00' })]);
         await store.saveMany([saved('legacy', 'first')]);
+        dropTimes();
+        await store.saveMany([saved('new', 'second', { createdAt: '2026-11-18 12:00:00' })]);
         await stack(plan({ toDay: yesterday })).run('move that to yesterday');
         expect(await ids(yesterday)).toEqual(['new']);
+      });
+      it('takes only the last row of unstamped foods under a shared log ID', async () => {
+        await store.saveMany([saved('bar', undefined, { log_uuid: 'QUICKADD' })]);
+        await store.saveMany([saved('apple', undefined, { log_uuid: 'QUICKADD' })]);
+        dropTimes();
+        await stack(plan({ toDay: yesterday })).run('move that to yesterday');
+        expect(await ids(yesterday)).toEqual(['apple']);
+      });
+
+      describe('foods added outside the parser', () => {
+        const at = time => vi.setSystemTime(new Date(`2026-11-18T${time}:00Z`));
+        const quickAdd = (uuid, extra) => store.saveMany([saved(uuid, undefined, { log_uuid: 'QUICKADD', ...extra })]);
+        const moveThat = () => stack(plan({ toDay: yesterday })).run('move that to yesterday');
+        beforeEach(() => { vi.useFakeTimers({ toFake: ['Date'] }); at('20:00'); });
+        afterEach(() => vi.useRealTimers());
+        it('a quick-add after a capture is what "that" means', async () => {
+          await store.saveMany([saved('tea', 'cap', { createdAt: '2026-11-18 12:00:00' })]);
+          at('20:05');
+          await quickAdd('bar');
+          await moveThat();
+          expect(await ids(yesterday)).toEqual(['bar']);
+          expect(await ids(date)).toEqual(['tea']);
+        });
+        it('two quick-adds stay separate acts', async () => {
+          await quickAdd('bar');
+          at('20:05');
+          await quickAdd('apple');
+          await moveThat();
+          expect(await ids(yesterday)).toEqual(['apple']);
+          expect(await ids(date)).toEqual(['bar']);
+        });
+        it('a copy of an older food counts from when it was copied', async () => {
+          await store.saveMany([saved('old', 'past', { date: yesterday, createdAt: '2026-11-17 09:00:00' })]);
+          await store.saveMany([saved('tea', 'cap', { createdAt: '2026-11-18 12:00:00' })]);
+          at('20:05');
+          await new HealthOperations({ nutritionItems: store }).copyNutritionItems('u', { entryIds: ['old'], date, mealTime: 'afternoon', operationId: 'copy' });
+          const copy = (await store.findByDate('u', date)).find(row => row.copiedFrom === 'old');
+          expect(copy.createdAt).toBe('2026-11-18 12:05:00');
+          await moveThat();
+          expect(await ids(date)).toEqual(['tea']);
+          expect(await ids(yesterday)).toEqual([copy.uuid, 'old'].sort());
+        });
+        it('foods saved together under a shared ID move together', async () => {
+          await quickAdd('bar');
+          at('20:05');
+          await store.saveMany([saved('rice', undefined, { log_uuid: 'SAVEDMEAL' }), saved('beans', undefined, { log_uuid: 'SAVEDMEAL' })]);
+          await moveThat();
+          expect(await ids(yesterday)).toEqual(['beans', 'rice']);
+        });
+        it('the foods of one parsed capture move together', async () => {
+          await quickAdd('bar');
+          at('20:05');
+          await capture('parsed', '2026-11-18 12:05:00', [food('eggs'), food('toast'), food('jam')]);
+          await moveThat();
+          expect(await ids(yesterday)).toEqual(['eggs', 'jam', 'toast']);
+          expect(await ids(date)).toEqual(['bar']);
+        });
+        it('one parsed capture stays whole even if only some rows have a time', async () => {
+          await store.saveMany([saved('eggs', 'parsed'), saved('toast', 'parsed')]);
+          dropTimes();
+          await store.saveMany([saved('jam', 'parsed')]);
+          await moveThat();
+          expect(await ids(yesterday)).toEqual(['eggs', 'jam', 'toast']);
+        });
       });
     });
     describe('corrections on the ledger', () => {

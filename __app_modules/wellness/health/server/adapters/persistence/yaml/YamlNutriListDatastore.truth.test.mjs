@@ -153,7 +153,14 @@ describe('nutrition ledger truth', () => {
     expect((await store.findByDate('u', '2020-01-01')).map(item => item.uuid)).toEqual(['first', 'second', 'third']);
     expect(await store.findByUuid('u', 'second')).toMatchObject({ date: '2020-01-01', createdAt: '2020-01-03 08:00:00' });
     expect(await store.findByDate('u', '2020-01-03')).toEqual([]);
-    expect(await store.findByUuid('u', 'first')).not.toHaveProperty('createdAt');
+    expect((await store.findByUuid('u', 'first')).createdAt).toMatch(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/);
+  });
+
+  it('gives every row of one save the same time', async () => {
+    await store.saveMany([row({ uuid: 'one' }), row({ uuid: 'two' })]);
+    const [one, two] = await store.findByDate('u', '2020-01-01');
+    expect(one.createdAt).toBeTruthy();
+    expect(two.createdAt).toBe(one.createdAt);
   });
 
   describe('revisedFields', () => {
