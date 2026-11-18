@@ -10,20 +10,22 @@ import { nowTs24 } from '#system/utils/index.mjs';
 // Source icon mapping - uses generic category names
 // Vendor sources are mapped via SOURCE_CATEGORY_MAP
 const SOURCE_ICONS = {
-  activity: '🏋️',    // was: strava
+  activity: '🏋️',
+  // was: strava
   fitness: '🏃',
   weight: '⚖️',
   events: '📆',
-  code: '💻',         // was: github
+  code: '💻',
+  // was: github
   checkins: '📍',
-  social: '💬',       // was: reddit
+  social: '💬' // was: reddit
 };
 
 // Maps vendor source names to generic category keys
 const SOURCE_CATEGORY_MAP = {
   strava: 'activity',
   github: 'code',
-  reddit: 'social',
+  reddit: 'social'
 };
 
 /**
@@ -47,6 +49,7 @@ export class SendMorningDebrief {
   #logger;
   #followUpSource;
   #clock;
+  #workCompanion;
 
   /**
    * @param {Object} deps
@@ -57,6 +60,7 @@ export class SendMorningDebrief {
    */
   constructor(deps) {
     this.#followUpSource = deps.followUpSource;
+    this.#workCompanion = deps.workCompanion ?? null;
     this.#clock = deps.clock ?? Date.now;
     this.#messagingGateway = deps.messagingGateway;
     this.#conversationStateStore = deps.conversationStateStore;
@@ -74,7 +78,7 @@ export class SendMorningDebrief {
       return responseContext;
     }
     return {
-      sendMessage: (text, options) => this.#messagingGateway.sendMessage(conversationId, text, options),
+      sendMessage: (text, options) => this.#messagingGateway.sendMessage(conversationId, text, options)
     };
   }
 
@@ -88,61 +92,127 @@ export class SendMorningDebrief {
    * @returns {Object} Result with message ID
    */
   async execute(input) {
-    const { conversationId, responseContext } = input;
-    let debrief={...input.debrief};
-    let knowledgeDelivery=null;
-    const username=input.username??debrief.username;
-
+    const {
+      conversationId,
+      responseContext
+    } = input;
+    let debrief = {
+      ...input.debrief
+    };
+    let knowledgeDelivery = null,
+      workDelivery = null,
+      summaryForArchive = null;
+    const username = input.username ?? debrief.username;
     this.#logger.info?.('debrief.send.start', {
       conversationId,
       success: debrief.success,
       date: debrief.date,
-      hasResponseContext: !!responseContext,
+      hasResponseContext: !!responseContext
     });
-
     const messaging = this.#getMessaging(responseContext, conversationId);
-
     try {
       // Handle fallback case (insufficient data or error)
       if (!debrief.success) {
         const message = debrief.fallbackPrompt;
         const result = await messaging.sendMessage(message);
-
         this.#logger.info?.('debrief.sent-fallback', {
           conversationId,
           reason: debrief.reason,
-          messageId: result.messageId,
+          messageId: result.messageId
         });
-
         return {
           success: true,
           messageId: result.messageId,
-          fallback: true,
+          fallback: true
         };
       }
-
-      if(debrief.knowledgeSelection?.mode==='knowledge'){
-        const selection=debrief.knowledgeSelection;
-        const facts=debrief.knowledgeFacts??'Recorded daily activity.';
-        try{
-          if(!this.#followUpSource)throw Error('Knowledge delivery unavailable');
-          knowledgeDelivery=await this.#followUpSource.prepareDelivery({username,conversationId,selectionId:selection.selectionId,askDate:debrief.askDate??selection.askDate,channel:'morning',questionIds:selection.questions.map(q=>q.id),asOf:this.#clock()});
-          if(!knowledgeDelivery.sendAllowed)return {success:true,suppressed:true,reason:'already_prepared'};
-          debrief.summary=[facts,knowledgeDelivery.questions.map(q=>'• '+q.text).join('\n')].filter(Boolean).join('\n\n');
-        }catch{
+      if (debrief.knowledgeSelection?.mode === 'knowledge') {
+        const selection = debrief.knowledgeSelection;
+        const facts = debrief.knowledgeFacts ?? 'Recorded daily activity.';
+        try {
+          if (!this.#followUpSource) throw Error('Knowledge delivery unavailable');
+          knowledgeDelivery = await this.#followUpSource.prepareDelivery({
+            username,
+            conversationId,
+            selectionId: selection.selectionId,
+            askDate: debrief.askDate ?? selection.askDate,
+            channel: 'morning',
+            questionIds: selection.questions.map(q => q.id),
+            asOf: this.#clock()
+          });
+          if (!knowledgeDelivery.sendAllowed) {
+            if (knowledgeDelivery.status === 'attention_denied') {
+              knowledgeDelivery = null;
+              debrief = {
+                ...debrief,
+                summary: facts,
+                headline: null,
+                knowledgeSelection: null
+              };
+            } else return {
+              success: true,
+              suppressed: true,
+              reason: 'already_prepared'
+            };
+          }
+          if (knowledgeDelivery) debrief.summary = [facts, knowledgeDelivery.questions.map(q => '• ' + q.text).join('\n')].filter(Boolean).join('\n\n');
+        } catch {
           this.#logger.warn?.('debrief.knowledge.prepare-failed');
-          debrief={...debrief,summary:facts,knowledgeSelection:null};
+          debrief = {
+            ...debrief,
+            summary: facts,
+            knowledgeSelection: null
+          };
         }
       }
-
-      if(debrief.knowledgeControl?.selectionId&&this.#followUpSource){
-        const count=((debrief.summary??'')+' '+(debrief.headline??'')).match(/[?？]/g)?.length??0;
-        try{
-          knowledgeDelivery=await this.#followUpSource.prepareDelivery({username,conversationId,selectionId:debrief.knowledgeControl.selectionId,askDate:debrief.askDate,channel:'morning',questionIds:Array.from({length:count},(_,i)=>'legacy.'+i),asOf:this.#clock()});
-          if(!knowledgeDelivery.sendAllowed)return {success:true,suppressed:true,reason:'already_prepared'};
-        }catch{this.#logger.warn?.('debrief.knowledge.control-prepare-failed');}
+      if (debrief.knowledgeControl?.selectionId && this.#followUpSource) {
+        const count = ((debrief.summary ?? '') + ' ' + (debrief.headline ?? '')).match(/[?？]/g)?.length ?? 0;
+        try {
+          knowledgeDelivery = await this.#followUpSource.prepareDelivery({
+            username,
+            conversationId,
+            selectionId: debrief.knowledgeControl.selectionId,
+            askDate: debrief.askDate,
+            channel: 'morning',
+            questionIds: Array.from({
+              length: count
+            }, (_, i) => 'legacy.' + i),
+            asOf: this.#clock()
+          });
+          if (!knowledgeDelivery.sendAllowed) {
+            if (knowledgeDelivery.status === 'attention_denied') {
+              knowledgeDelivery = null;
+              debrief = {
+                ...debrief,
+                summary: debrief.knowledgeFacts ?? 'Recorded daily activity.',
+                headline: null,
+                knowledgeControl: null
+              };
+            } else return {
+              success: true,
+              suppressed: true,
+              reason: 'already_prepared'
+            };
+          }
+        } catch {
+          this.#logger.warn?.('debrief.knowledge.control-prepare-failed');
+        }
       }
-
+      summaryForArchive = debrief.summary;
+      if (this.#workCompanion && debrief.workOffer && debrief.knowledgeSelection?.mode === 'knowledge' && !debrief.knowledgeControl && knowledgeDelivery?.sendAllowed && knowledgeDelivery.questions.length < 2) {
+        try {
+          workDelivery = await this.#workCompanion.prepareForMorning({
+            username,
+            offerId: debrief.workOffer.id,
+            askDate: debrief.askDate,
+            asOf: this.#clock()
+          });
+          if (workDelivery) debrief.summary += `\n\n${workDelivery.text}`;
+        } catch {
+          this.#logger.warn?.('debrief.work.prepare-failed');
+          workDelivery = null;
+        }
+      }
       // Build full message: an engaging headline (provocative question or teaser)
       // over a subordinate date line, then the styled summary.
       const dateObj = new Date(debrief.date + 'T00:00:00');
@@ -151,28 +221,37 @@ export class SendMorningDebrief {
 
       // Build main 3-button keyboard
       const keyboard = this.#buildMainKeyboard();
-      if(debrief.knowledgeSelection?.mode==='knowledge'){
-        for(const button of keyboard.inline_keyboard.flat())if(button.callback_data==='debrief:ask')button.text='💬 '+Math.min(5,Math.max(0,debrief.knowledgeSelection.queuedCount??0))+' more';
+      if (debrief.knowledgeSelection?.mode === 'knowledge') {
+        for (const button of keyboard.inline_keyboard.flat()) if (button.callback_data === 'debrief:ask') button.text = '💬 ' + Math.min(5, Math.max(0, debrief.knowledgeSelection.queuedCount ?? 0)) + ' more';
         keyboard.inline_keyboard.unshift(...knowledgeDelivery.choices);
       }
-
+      if (workDelivery) keyboard.inline_keyboard.unshift(...workDelivery.choices);
       // Send message with keyboard
       // Note: TelegramAdapter expects camelCase 'parseMode' and 'choices'/'inline' for keyboards
       const result = await messaging.sendMessage(message, {
         parseMode: 'HTML',
         inline: true,
-        choices: keyboard.inline_keyboard,
+        choices: keyboard.inline_keyboard
       });
 
       // Validate result before proceeding
       if (!result || !result.messageId) {
         throw new Error('Failed to send message - no message ID returned');
       }
-
-      if(knowledgeDelivery){
-        await this.#followUpSource.recordDelivery({username,deliveryId:knowledgeDelivery.deliveryId,botMessageId:result.messageId,asOf:this.#clock()});
+      if (knowledgeDelivery) {
+        await this.#followUpSource.recordDelivery({
+          username,
+          deliveryId: knowledgeDelivery.deliveryId,
+          botMessageId: result.messageId,
+          asOf: this.#clock()
+        });
       }
-
+      if (workDelivery) await this.#workCompanion.recordDelivery({
+        username,
+        decisionId: workDelivery.decisionId,
+        botMessageId: result.messageId,
+        asOf: this.#clock()
+      });
       // Save to journal history
       if (this.#journalEntryRepository) {
         await this.#journalEntryRepository.saveMessage({
@@ -181,27 +260,37 @@ export class SendMorningDebrief {
           role: 'assistant',
           content: message,
           senderId: 'bot',
-          senderName: 'Journalist',
+          senderName: 'Journalist'
         });
       }
 
       // Store debrief state for later retrieval (including lifelog for source dumps)
       if (!this.#conversationStateStore) {
-        this.#logger.warn?.('debrief.send.no-state-store', { conversationId });
+        this.#logger.warn?.('debrief.send.no-state-store', {
+          conversationId
+        });
       } else {
         await this.#conversationStateStore.set(conversationId, {
           activeFlow: 'morning_debrief',
           debrief: {
             date: debrief.date,
-            ...(debrief.knowledgeSelection?{knowledgeSelection:debrief.knowledgeSelection,askDate:debrief.askDate,username}:{}),
-            ...(debrief.knowledgeControl?{knowledgeControl:debrief.knowledgeControl,askDate:debrief.askDate,username}:{}),
+            ...(debrief.knowledgeSelection ? {
+              knowledgeSelection: debrief.knowledgeSelection,
+              askDate: debrief.askDate,
+              username
+            } : {}),
+            ...(debrief.knowledgeControl ? {
+              knowledgeControl: debrief.knowledgeControl,
+              askDate: debrief.askDate,
+              username
+            } : {}),
             summary: debrief.summary,
             questions: debrief.questions,
             categories: debrief.categories,
             sources: debrief.lifelog?._meta?.sources || [],
-            summaries: debrief.lifelog?.summaries || [],
+            summaries: debrief.lifelog?.summaries || []
           },
-          messageId: result.messageId,
+          messageId: result.messageId
         });
       }
 
@@ -212,42 +301,58 @@ export class SendMorningDebrief {
             date: debrief.date,
             timestamp: nowTs24(),
             headline: debrief.headline || null,
-            summary: debrief.summary,
+            summary: summaryForArchive ?? debrief.summary,
             categories: debrief.categories,
             sources: debrief.lifelog?._meta?.sources || [],
-            summaries: debrief.lifelog?.summaries || {}, // Save source summaries for Details view
-          },...(username?[username]:[]));
+            summaries: debrief.lifelog?.summaries || {} // Save source summaries for Details view
+          }, ...(username ? [username] : []));
         } catch (error) {
           // Log but don't fail the whole operation
           this.#logger.error?.('debrief.persist-error', {
             date: debrief.date,
-            error: error.message,
+            error: error.message
           });
         }
       }
-
       this.#logger.info?.('debrief.sent', {
         conversationId,
         date: debrief.date,
         messageId: result.messageId,
-        sources: debrief.lifelog?._meta?.sources?.length || 0,
+        sources: debrief.lifelog?._meta?.sources?.length || 0
       });
-
       return {
         success: true,
         messageId: result.messageId,
-        fallback: false,
+        fallback: false
       };
     } catch (error) {
-      if(knowledgeDelivery){
-        try{await this.#followUpSource.recordDeliveryFailure({username,deliveryId:knowledgeDelivery.deliveryId,uncertain:true,asOf:this.#clock()});}catch{this.#logger.warn?.('debrief.knowledge.quarantine-failed');}
+      if (workDelivery) try {
+        await this.#workCompanion.recordDeliveryFailure({
+          username,
+          decisionId: workDelivery.decisionId,
+          uncertain: true,
+          asOf: this.#clock()
+        });
+      } catch {
+        this.#logger.warn?.('debrief.work.quarantine-failed');
+      }
+      if (knowledgeDelivery) {
+        try {
+          await this.#followUpSource.recordDeliveryFailure({
+            username,
+            deliveryId: knowledgeDelivery.deliveryId,
+            uncertain: true,
+            asOf: this.#clock()
+          });
+        } catch {
+          this.#logger.warn?.('debrief.knowledge.quarantine-failed');
+        }
       }
       this.#logger.error?.('debrief.send.failed', {
         conversationId,
         error: error.message,
-        stack: error.stack,
+        stack: error.stack
       });
-
       throw error;
     }
   }
@@ -256,10 +361,7 @@ export class SendMorningDebrief {
    * Escape HTML entities for Telegram HTML parse mode.
    */
   static escapeHtml(text) {
-    return String(text)
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;');
+    return String(text).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   }
 
   /**
@@ -277,23 +379,26 @@ export class SendMorningDebrief {
    */
   static buildHeader(headline, dateObj) {
     const trimmed = headline && String(headline).trim();
-
     if (!trimmed) {
       const formattedDate = dateObj.toLocaleDateString('en-US', {
         weekday: 'short',
         day: 'numeric',
         month: 'short',
-        year: 'numeric',
+        year: 'numeric'
       });
       return `📅 <b>Yesterday</b> (${formattedDate})`;
     }
-
     const emoji = trimmed.endsWith('?') ? '💬' : '💭';
-    const weekday = dateObj.toLocaleDateString('en-US', { weekday: 'short' });
-    const day = dateObj.toLocaleDateString('en-US', { day: 'numeric' });
-    const month = dateObj.toLocaleDateString('en-US', { month: 'short' });
+    const weekday = dateObj.toLocaleDateString('en-US', {
+      weekday: 'short'
+    });
+    const day = dateObj.toLocaleDateString('en-US', {
+      day: 'numeric'
+    });
+    const month = dateObj.toLocaleDateString('en-US', {
+      month: 'short'
+    });
     const dateLabel = `${weekday} · ${day} ${month} · yesterday`;
-
     return `${emoji} <b>${SendMorningDebrief.escapeHtml(trimmed)}</b>\n<i>${dateLabel}</i>`;
   }
 
@@ -310,10 +415,7 @@ export class SendMorningDebrief {
     if (!text) return '';
 
     // Escape HTML entities first (but preserve emoji)
-    let styled = text
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;');
+    let styled = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
     // Bold the time-of-day headers
     styled = styled.replace(/^(🌅 Morning)$/gm, '<b>$1</b>');
@@ -330,7 +432,6 @@ export class SendMorningDebrief {
     const result = [];
     let section = 'facts'; // facts → commentary → questions
     let blockLines = [];
-
     const flushBlock = () => {
       if (blockLines.length === 0) return;
       const content = blockLines.join('\n').trim();
@@ -339,11 +440,9 @@ export class SendMorningDebrief {
       }
       blockLines = [];
     };
-
     for (const line of lines) {
       const trimmed = line.trim();
       const lower = trimmed.toLowerCase();
-
       if (section === 'facts') {
         // Commentary starts at first long prose line (not a bullet or header)
         if (trimmed.length > 40 && !trimmed.startsWith('•') && !trimmed.startsWith('<b>')) {
@@ -372,7 +471,6 @@ export class SendMorningDebrief {
         blockLines.push(line);
       }
     }
-
     flushBlock();
     return result.join('\n');
   }
@@ -382,13 +480,16 @@ export class SendMorningDebrief {
    */
   #buildMainKeyboard() {
     return {
-      inline_keyboard: [
-        [
-          { text: '📊 Details', callback_data: 'debrief:details' },
-          { text: '💬 Ask', callback_data: 'debrief:ask' },
-          { text: '✅ OK', callback_data: 'debrief:accept' },
-        ],
-      ],
+      inline_keyboard: [[{
+        text: '📊 Details',
+        callback_data: 'debrief:details'
+      }, {
+        text: '💬 Ask',
+        callback_data: 'debrief:ask'
+      }, {
+        text: '✅ OK',
+        callback_data: 'debrief:accept'
+      }]]
     };
   }
 
@@ -401,32 +502,26 @@ export class SendMorningDebrief {
     const keyboard = [];
 
     // Normalize sources - handle both string array and object array formats
-    const sourceNames = sources
-      .map((s) => (typeof s === 'string' ? s : s?.source))
-      .filter(Boolean);
+    const sourceNames = sources.map(s => typeof s === 'string' ? s : s?.source).filter(Boolean);
 
     // Build rows of 3 buttons each with callback data
     for (let i = 0; i < sourceNames.length; i += 3) {
-      const row = sourceNames.slice(i, i + 3).map((source) => ({
+      const row = sourceNames.slice(i, i + 3).map(source => ({
         text: `${getSourceIcon(source)} ${source}`,
-        callback_data: `debrief:source:${source}`,
+        callback_data: `debrief:source:${source}`
       }));
       keyboard.push(row);
     }
 
     // Add back button
-    keyboard.push([
-      {
-        text: '← Back',
-        callback_data: 'debrief:back',
-      },
-    ]);
-
+    keyboard.push([{
+      text: '← Back',
+      callback_data: 'debrief:back'
+    }]);
     return {
-      inline_keyboard: keyboard,
+      inline_keyboard: keyboard
     };
   }
 }
-
 export { SOURCE_ICONS, SOURCE_CATEGORY_MAP, getSourceIcon };
 export default SendMorningDebrief;

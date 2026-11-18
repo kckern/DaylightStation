@@ -1,3 +1,8 @@
+import moment from 'moment-timezone';
+import { WorkFlows } from './application/WorkFlows.mjs';
+import { SelectWorkFlow } from './application/SelectWorkFlow.mjs';
+import { WorkWorkflowRanker } from './adapters/WorkWorkflowRanker.mjs';
+import { workflowRegistry } from './domain/workflows/workflowRegistry.mjs';
 import { AttentionBudget } from './application/AttentionBudget.mjs';
 import { KnowledgeAttentionHistory } from './adapters/KnowledgeAttentionHistory.mjs';
 import { WorkCommands } from './application/WorkCommands.mjs';
@@ -107,7 +112,8 @@ export function createWorkRuntime(options = {}) {
   let stopped = false,
     commandService = null,
     decisionService = null,
-    conversationService = null;
+    conversationService = null,
+    flowService = null;
   const stores = new Map(),
     authorities = new Map();
   const canWrite = username => {
@@ -232,11 +238,70 @@ export function createWorkRuntime(options = {}) {
     },
     verifySource: input => conversationService?.verifySource(input) ?? Promise.resolve(false),
     verifyConfirmation: input => decisionService?.verifyConfirmation(input) ?? Promise.resolve(false),
+    linkCandidates: typeof options.knowledgeLinkCandidates === 'function' ? input => options.knowledgeLinkCandidates(input) : null,
+    renderInvitation: input => flowService.renderInvitation(input),
+    identityForUser: username => options.identityForUser?.(username),
+    morningGate: input => options.knowledgeAttentionGate?.(input) ?? Promise.resolve({
+      mode: 'legacy',
+      reason: 'unavailable',
+      questionCount: 2
+    }),
+    refresh: input => refresh(input.username),
+    attentionContext: async ({
+      username,
+      state,
+      context,
+      asOf,
+      explicitRequest = false
+    }) => {
+      const linked = [...new Set(context.links.map(l => l.kbObjectId))];
+      const knowledgeEligibility = linked.length ? (await options.knowledgeAttentionEligibility?.({
+        username,
+        kbObjectIds: linked,
+        asOf
+      })) ?? {} : {};
+      const excludeIds = explicitRequest ? [] : Object.entries(state.reviewPreferences ?? {}).filter(([, p]) => p.state === 'dismissed' || p.until > asOf).map(([id]) => id);
+      const pendingReview = (await options.pendingKnowledgeReview?.({
+        username,
+        asOf,
+        max: 5,
+        excludeIds
+      })) ?? {
+        available: false,
+        ids: [],
+        count: 0,
+        revision: 'unavailable'
+      };
+      const sources = Object.values(state.sources ?? {}).filter(s => s.kind === 'journal' && s.valid && s.at <= asOf && asOf - s.at <= 30 * 86400000).sort((a, b) => b.at - a.at).slice(0, 100),
+        groundedReferences = [];
+      if (sources.length && options.journalEvidence) {
+        const evidence = await options.journalEvidence.readByRefs({
+          username,
+          refs: sources.map(s => s.ref)
+        });
+        for (const source of sources) {
+          const row = evidence.find(e => e.ref === source.ref && e.verified && !e.previewOnly && e.sourceHash === source.sourceHash);
+          if (row) for (const observed of source.observations ?? []) groundedReferences.push({
+            ref: observed.ref,
+            at: source.at,
+            evidenceRef: source.ref,
+            verified: true
+          });
+        }
+      }
+      return {
+        knowledgeEligibility,
+        pendingReview,
+        groundedReferences
+      };
+    },
     renderFlow: input => {
+      if (workflowRegistry.get(input.flowState.flowType)) return flowService.renderFlow(input);
       if (!conversationService) throw workError('WORK_UNAVAILABLE');
       return conversationService.renderFlow(input);
     },
     applyFlowChoice: input => {
+      if (workflowRegistry.get(input.flowState.flowType)) return flowService.applyFlowChoice(input);
       if (!conversationService) throw workError('WORK_UNAVAILABLE');
       return conversationService.applyFlowChoice(input);
     }
@@ -281,7 +346,12 @@ export function createWorkRuntime(options = {}) {
     clock
   });
   const attention = {
-    reserve: input => canWrite(input.username) ? track(attentionService.reserve(input)) : Promise.resolve({
+    history: input => attentionService.history(input),
+    reserve: input => input.owner === 'knowledge' && (!policy(input.username).enabled || !policy(input.username).writer.write) ? Promise.resolve({
+      allowed: true,
+      reservationId: null,
+      reason: 'standalone_knowledge'
+    }) : canWrite(input.username) ? track(attentionService.reserve(input)) : Promise.resolve({
       allowed: false,
       reservationId: null,
       reason: 'work_write_disabled'
@@ -410,6 +480,33 @@ export function createWorkRuntime(options = {}) {
     recordFailure: input => track(decisionService.recordFailure(input)),
     reply: input => track(decisionService.reply(input))
   };
+  const selector = new SelectWorkFlow({
+    state,
+    context,
+    budget: attentionService,
+    ranker: new WorkWorkflowRanker({
+      gateway: options.gateway,
+      budget: budgetService,
+      resolvePolicy: policy,
+      clock
+    }),
+    resolvePolicy: policy,
+    userTimezone: timezone,
+    clock,
+    logger
+  });
+  flowService = new WorkFlows({
+    state,
+    selector,
+    decisions: decisionService,
+    context,
+    budget: attentionService,
+    verifyPrincipal: p => principal.verify(p),
+    verifyDecisionClaim: input => decisionService.verifyFlowClaim(input),
+    resolvePolicy: policy,
+    userTimezone: timezone,
+    clock
+  });
   if (options.journalEvidence) {
     const offlineGateway = {
       scoped() {
@@ -477,9 +574,78 @@ export function createWorkRuntime(options = {}) {
     sourceForEntry: input => conversationService.sourceForEntry(input),
     onEntrySaved: input => track(conversationService.onEntrySaved(input)),
     handleCallback: input => track(conversationService.handleCallback(input)),
+    deliverWeeklyReview: input => track((async () => {
+      const p = policy(input.username);
+      if (!p.enabled) return {
+        handled: false
+      };
+      if (!canWrite(input.username) || !p.proactive || typeof options.send !== 'function') return {
+        handled: true,
+        status: 'disabled'
+      };
+      const askDate = moment.tz(clock(), timezone(input.username)).format('YYYY-MM-DD');
+      const selected = await flowService.selectForMorning({
+        ...input,
+        askDate,
+        remainingUnits: 2,
+        flowType: 'knowledge_review'
+      });
+      if (!selected.offer) return {
+        handled: true,
+        status: 'empty'
+      };
+      const page = await flowService.prepareForMorning({
+        ...input,
+        offerId: selected.offer.id,
+        askDate
+      });
+      if (!page) return {
+        handled: true,
+        status: 'empty'
+      };
+      try {
+        if (!canWrite(input.username) || !policy(input.username).proactive) throw workError('WORK_SEND_REVOKED');
+        const receipt = await options.send({
+          username: input.username,
+          text: page.text,
+          choices: page.choices,
+          parseMode: null
+        });
+        if (!receipt?.messageId) throw workError('WORK_DELIVERY_UNACKNOWLEDGED');
+        await flowService.recordDelivery({
+          username: input.username,
+          decisionId: page.decisionId,
+          botMessageId: receipt.messageId,
+          asOf: clock()
+        });
+        return {
+          handled: true,
+          status: 'sent'
+        };
+      } catch (error) {
+        await flowService.recordFailure({
+          username: input.username,
+          decisionId: page.decisionId,
+          uncertain: true,
+          asOf: clock()
+        });
+        throw error;
+      }
+    })()),
+    selectForMorning: input => canWrite(input.username) ? track(flowService.selectForMorning(input)) : Promise.resolve({
+      offer: null
+    }),
+    prepareForMorning: input => canWrite(input.username) ? track(flowService.prepareForMorning(input)) : Promise.resolve(null),
+    recordDelivery: input => track(flowService.recordDelivery(input)),
+    recordFailure: input => track(flowService.recordFailure(input)),
     open: input => track((async () => {
       const p = principal.verify(input.principal);
       if (p && canWrite(p.username)) await refresh(p.username);
+      if (workflowRegistry.get(input.flow)) return flowService.open({
+        principal: input.principal,
+        flowType: input.flow,
+        asOf: input.asOf
+      });
       return conversationService.open(input);
     })())
   } : null;

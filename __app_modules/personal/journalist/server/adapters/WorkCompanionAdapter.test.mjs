@@ -1,10 +1,11 @@
 import { it, expect, vi } from 'vitest';
 import { WorkCompanionAdapter } from './WorkCompanionAdapter.mjs';
-function setup() {
+function setup(knowledgeCompanion = null) {
   const trusted = new WeakSet();
-  const actor = username => {
+  const actor = (username, fields = {}) => {
     const p = Object.freeze({
-      username
+      username,
+      ...fields
     });
     trusted.add(p);
     return p;
@@ -50,6 +51,7 @@ function setup() {
     send,
     adapter: new WorkCompanionAdapter({
       runtime,
+      knowledgeCompanion,
       send,
       clock: () => 1000
     }),
@@ -177,4 +179,55 @@ it('acknowledges a confirmed callback through its local response context', async
   });
   expect(responseContext.sendMessage).toHaveBeenCalledTimes(1);
   expect(x.send).not.toHaveBeenCalled();
+});
+it('sends a plain informational Work page without pretending it contains a decision to ACK', async () => {
+  const x = setup();
+  x.runtime.conversation.open = async () => ({
+    decisionId: null,
+    text: 'Send Create task <title>.',
+    choices: []
+  });
+  expect((await x.adapter.open({
+    principal: x.actor('sample'),
+    flow: 'create_task'
+  })).status).toBe('sent');
+  expect(x.decisions.recordDelivery).not.toHaveBeenCalled();
+});
+it('passes the independently supplied KB principal to private review and never substitutes Work identity', async () => {
+  const openReview = vi.fn(async () => ({
+      status: 'sent'
+    })),
+    x = setup({
+      openReview
+    }),
+    p = x.actor('sample', {
+      conversationId: 'private'
+    }),
+    kb = Object.freeze({
+      username: 'sample',
+      conversationId: 'private'
+    });
+  x.runtime.conversation.handleCallback.mockResolvedValue({
+    handled: true,
+    status: 'knowledge_review',
+    username: 'sample',
+    knowledgeReviewIds: ['one']
+  });
+  expect((await x.adapter.handleCallback({
+    principal: p,
+    knowledgePrincipal: kb,
+    callbackData: 'w1:opaque',
+    botMessageId: '99'
+  })).status).toBe('sent');
+  expect(openReview).toHaveBeenCalledWith(expect.objectContaining({
+    principal: kb,
+    ids: ['one']
+  }));
+  openReview.mockClear();
+  expect((await x.adapter.handleCallback({
+    principal: p,
+    callbackData: 'w1:opaque',
+    botMessageId: '99'
+  })).status).toBe('deferred');
+  expect(openReview).not.toHaveBeenCalled();
 });

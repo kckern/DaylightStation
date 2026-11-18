@@ -217,3 +217,23 @@ it('rechecks actual date and configuration after awaited cross-owner history bef
   };
   expect((await new AttentionBudget(y.options).reserve(request(y, 'revoked'))).allowed).toBe(false);
 });
+it('holds in-flight capacity across midnight and records an unreleased acknowledged delivery on its actual local day', async () => {
+  const x = setup();
+  x.advance(Date.parse('2026-11-18T07:59:59Z') - x.now());
+  const a = await x.budget.reserve(request(x, 'in-flight', 2));
+  x.advance(2000);
+  expect((await x.budget.reserve(request(x, 'another-sender'))).reason).toBe('daily_budget');
+  await x.budget.acknowledge({
+    username: 'sample',
+    reservationId: a.reservationId,
+    botMessageId: '42',
+    deliveredAt: x.now()
+  });
+  expect((await x.state.read({
+    username: 'sample'
+  })).attention[a.reservationId]).toMatchObject({
+    status: 'delivered',
+    day: '2026-11-18'
+  });
+  expect((await x.budget.reserve(request(x, 'third'))).allowed).toBe(false);
+});

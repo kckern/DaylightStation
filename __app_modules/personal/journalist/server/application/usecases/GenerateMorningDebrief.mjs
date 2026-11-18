@@ -10,12 +10,11 @@
  */
 
 import moment from 'moment-timezone';
-import {presentKnowledgeQuestions,knowledgeQuestionPrompt} from '../../domain/services/KnowledgeQuestionPresentation.mjs';
+import { presentKnowledgeQuestions, knowledgeQuestionPrompt } from '../../domain/services/KnowledgeQuestionPresentation.mjs';
 
 // Hedging/speculation words banned from the headline — a deduction must commit.
 // Stateless (no /g flag) so .test() is safe to reuse.
-const HEDGE_PATTERN =
-  /\b(seems?|seemed|looks like|sounds like|appears?|apparently|probably|likely|maybe|perhaps|must have|i think|(?:it )?feels like)\b/i;
+const HEDGE_PATTERN = /\b(seems?|seemed|looks like|sounds like|appears?|apparently|probably|likely|maybe|perhaps|must have|i think|(?:it )?feels like)\b/i;
 
 /**
  * Generate morning debrief for a user
@@ -29,6 +28,7 @@ export class GenerateMorningDebrief {
   #followUpSource;
   #clock;
   #timezone;
+  #workCompanion;
 
   /**
    * @param {Object} deps
@@ -41,10 +41,10 @@ export class GenerateMorningDebrief {
   constructor(deps) {
     if (!deps.lifelogAggregator) throw new Error('lifelogAggregator is required');
     if (!deps.aiGateway) throw new Error('aiGateway is required');
-
     this.#followUpSource = deps.followUpSource;
+    this.#workCompanion = deps.workCompanion ?? null;
     this.#clock = deps.clock ?? Date.now;
-    this.#timezone = deps.userTimezone ?? (()=>'UTC');
+    this.#timezone = deps.userTimezone ?? (() => 'UTC');
     this.#lifelogAggregator = deps.lifelogAggregator;
     this.#aiGateway = deps.aiGateway;
     this.#debriefRepository = deps.debriefRepository;
@@ -61,70 +61,118 @@ export class GenerateMorningDebrief {
    * @returns {Object} Generated debrief with summary and questions
    */
   async execute(input) {
-    const { username, date, conversationId } = input;
+    const {
+      username,
+      date,
+      conversationId
+    } = input;
     const startTime = Date.now();
-
-    this.#logger.info?.('debrief.generate.start', { username, date });
-
+    this.#logger.info?.('debrief.generate.start', {
+      username,
+      date
+    });
     try {
       // Step 1: Aggregate lifelog data
       const lifelog = await this.#lifelogAggregator.aggregate(username, date);
-
-      let knowledgeSelection,knowledgeControl;
-      const asOf=input.asOf??this.#clock();
-      const askDate=input.askDate??moment.tz(asOf,this.#timezone(username)).format('YYYY-MM-DD');
-      if(this.#followUpSource){
-        try{
-          const selected=await this.#followUpSource.selectForMorning({username,askDate,asOf,max:2});
-          if(selected?.mode==='knowledge')knowledgeSelection=selected;
-          else if(selected?.mode==='legacy'&&selected.reason==='control'&&selected.selectionId)knowledgeControl=selected;
-        }catch{this.#logger.warn?.('debrief.knowledge.unavailable');}
+      let knowledgeSelection, knowledgeControl;
+      const asOf = input.asOf ?? this.#clock();
+      const askDate = input.askDate ?? moment.tz(asOf, this.#timezone(username)).format('YYYY-MM-DD');
+      if (this.#followUpSource) {
+        try {
+          const selected = await this.#followUpSource.selectForMorning({
+            username,
+            askDate,
+            asOf,
+            max: 2
+          });
+          if (selected?.mode === 'knowledge') knowledgeSelection = selected;else if (selected?.mode === 'legacy' && selected.reason === 'control' && selected.selectionId) knowledgeControl = selected;
+        } catch {
+          this.#logger.warn?.('debrief.knowledge.unavailable');
+        }
+      }
+      let workOffer = null;
+      if (this.#workCompanion && knowledgeSelection?.mode === 'knowledge' && knowledgeSelection.questions.length < 2) {
+        try {
+          workOffer = (await this.#workCompanion.selectForMorning({
+            username,
+            askDate,
+            asOf,
+            remainingUnits: 2 - knowledgeSelection.questions.length
+          }))?.offer ?? null;
+        } catch {
+          this.#logger.warn?.('debrief.work.unavailable');
+        }
       }
       // Step 1.5: Check if debrief already exists for this date
       if (this.#debriefRepository) {
-        const existingDebrief = await this.#debriefRepository.getDebriefByDate(lifelog._meta.date,username);
+        const existingDebrief = await this.#debriefRepository.getDebriefByDate(lifelog._meta.date, username);
         if (existingDebrief) {
           this.#logger.info?.('debrief.found-existing', {
             username,
-            date: lifelog._meta.date,
+            date: lifelog._meta.date
           });
-
           return {
             success: true,
             username,
             date: existingDebrief.date,
-            ...this.#presentKnowledge({summary:existingDebrief.summary,headline:existingDebrief.headline||null},lifelog,knowledgeSelection),
-            ...(knowledgeSelection?{knowledgeSelection,askDate,username}:{}),
-            ...(knowledgeControl?{knowledgeControl,askDate,username}:{}),
+            ...this.#presentKnowledge({
+              summary: existingDebrief.summary,
+              headline: existingDebrief.headline || null
+            }, lifelog, knowledgeSelection),
+            ...(knowledgeSelection ? {
+              knowledgeSelection,
+              askDate,
+              username
+            } : {}),
+            ...(workOffer ? {
+              workOffer
+            } : {}),
+            ...(knowledgeControl ? {
+              knowledgeControl,
+              askDate,
+              username
+            } : {}),
             lifelog: {
               _meta: {
                 date: existingDebrief.date,
-                sources: existingDebrief.summaries?.map((s) => s.source) || [],
-                hasEnoughData: true,
+                sources: existingDebrief.summaries?.map(s => s.source) || [],
+                hasEnoughData: true
               },
-              summaries: existingDebrief.summaries || [],
-            },
+              summaries: existingDebrief.summaries || []
+            }
           };
         }
       }
 
       // Step 2: Check if we have enough data
       if (!lifelog._meta.hasEnoughData && knowledgeSelection) {
-        return {success:true,date:lifelog._meta.date,lifelog,knowledgeSelection,askDate,username,...this.#presentKnowledge({summary:'',headline:null},lifelog,knowledgeSelection)};
+        return {
+          success: true,
+          date: lifelog._meta.date,
+          lifelog,
+          knowledgeSelection,
+          askDate,
+          username,
+          ...(workOffer ? {
+            workOffer
+          } : {}),
+          ...this.#presentKnowledge({
+            summary: '',
+            headline: null
+          }, lifelog, knowledgeSelection)
+        };
       }
       if (!lifelog._meta.hasEnoughData) {
         this.#logger.info?.('debrief.insufficient-data', {
           username,
           date: lifelog._meta.date,
-          availableSources: lifelog._meta.availableSourceCount,
+          availableSources: lifelog._meta.availableSourceCount
         });
-
         return {
           success: false,
           reason: 'insufficient_data',
-          fallbackPrompt:
-            "Good morning! I don't have much data from yesterday. How was your day? What stood out to you?",
-          availableSources: lifelog._meta.availableSourceCount,
+          fallbackPrompt: "Good morning! I don't have much data from yesterday. How was your day? What stood out to you?",
+          availableSources: lifelog._meta.availableSourceCount
         };
       }
 
@@ -135,38 +183,47 @@ export class GenerateMorningDebrief {
       const recentOutput = await this.#loadRecentOutput(username);
 
       // Step 3: Generate AI summary (+ adaptive headline)
-      const { summary, headline } = await this.#generateSummary(
-        lifelog,
-        username,
-        conversationContext,
-        recentOutput,
-        knowledgeSelection,
-      );
-
+      const {
+        summary,
+        headline
+      } = await this.#generateSummary(lifelog, username, conversationContext, recentOutput, knowledgeSelection);
       const duration = Date.now() - startTime;
       this.#logger.info?.('debrief.generate.complete', {
         username,
         date: lifelog._meta.date,
         duration,
         hasConversationContext: conversationContext.length > 0,
-        hasHeadline: !!headline,
+        hasHeadline: !!headline
       });
-
       return {
         success: true,
         username,
         date: lifelog._meta.date,
-        ...this.#presentKnowledge({summary,headline},lifelog,knowledgeSelection,conversationContext),
-        ...(knowledgeSelection?{knowledgeSelection,askDate,username}:{}),
-            ...(knowledgeControl?{knowledgeControl,askDate,username}:{}),
-        lifelog, // Include for reference
+        ...this.#presentKnowledge({
+          summary,
+          headline
+        }, lifelog, knowledgeSelection, conversationContext),
+        ...(knowledgeSelection ? {
+          knowledgeSelection,
+          askDate,
+          username
+        } : {}),
+        ...(workOffer ? {
+          workOffer
+        } : {}),
+        ...(knowledgeControl ? {
+          knowledgeControl,
+          askDate,
+          username
+        } : {}),
+        lifelog // Include for reference
       };
     } catch (error) {
       this.#logger.error?.('debrief.generate.failed', {
         username,
         date,
         error: error.message,
-        stack: error.stack,
+        stack: error.stack
       });
 
       // Fallback to generic prompt on error
@@ -174,15 +231,19 @@ export class GenerateMorningDebrief {
         success: false,
         reason: 'error',
         error: error.message,
-        fallbackPrompt: 'Good morning! How was yesterday? Anything interesting happen?',
+        fallbackPrompt: 'Good morning! How was yesterday? Anything interesting happen?'
       };
     }
   }
-
-  #presentKnowledge(parsed,lifelog,selection,context=[]){
-    if(!selection)return parsed;
-    const fallback=this.#generateFallbackSummary(lifelog);
-    return presentKnowledgeQuestions({...parsed,selection,fallbackFacts:fallback.includes('?')?'Recorded sources: '+(lifelog._meta.sources??[]).join(', ')+'.':fallback,grounding:this.#buildDataPrompt(lifelog)+'\n'+context.map(row=>row.content).join('\n')});
+  #presentKnowledge(parsed, lifelog, selection, context = []) {
+    if (!selection) return parsed;
+    const fallback = this.#generateFallbackSummary(lifelog);
+    return presentKnowledgeQuestions({
+      ...parsed,
+      selection,
+      fallbackFacts: fallback.includes('?') ? 'Recorded sources: ' + (lifelog._meta.sources ?? []).join(', ') + '.' : fallback,
+      grounding: this.#buildDataPrompt(lifelog) + '\n' + context.map(row => row.content).join('\n')
+    });
   }
 
   /**
@@ -193,27 +254,24 @@ export class GenerateMorningDebrief {
    */
   async #loadConversationContext(conversationId) {
     if (!this.#journalEntryRepository || !conversationId) return [];
-
     try {
       const recent = await this.#journalEntryRepository.findRecent(conversationId, 3);
       // Only user messages — these are the insights the debrief should absorb
-      const userMessages = recent
-        .filter(msg => msg.senderId !== 'bot' && msg.role !== 'assistant')
-        .map(msg => ({
-          content: msg.content || msg.text,
-          timestamp: msg.timestamp,
-        }))
-        .filter(msg => msg.content && msg.content.length > 10); // Skip button taps / short callbacks
+      const userMessages = recent.filter(msg => msg.senderId !== 'bot' && msg.role !== 'assistant').map(msg => ({
+        content: msg.content || msg.text,
+        timestamp: msg.timestamp
+      })).filter(msg => msg.content && msg.content.length > 10); // Skip button taps / short callbacks
 
       this.#logger.debug?.('debrief.conversation-context', {
         conversationId,
         totalRecent: recent.length,
-        userMessages: userMessages.length,
+        userMessages: userMessages.length
       });
-
       return userMessages;
     } catch (err) {
-      this.#logger.warn?.('debrief.conversation-context.failed', { error: err.message });
+      this.#logger.warn?.('debrief.conversation-context.failed', {
+        error: err.message
+      });
       return [];
     }
   }
@@ -226,21 +284,21 @@ export class GenerateMorningDebrief {
    * @returns {Promise<{headlines: string[], questions: string[]}>}
    */
   async #loadRecentOutput(username) {
-    const empty = { headlines: [], questions: [] };
+    const empty = {
+      headlines: [],
+      questions: []
+    };
     if (!this.#debriefRepository?.getRecentDebriefs) return empty;
     try {
       const recent = (await this.#debriefRepository.getRecentDebriefs(username, 7)) || [];
       return {
-        headlines: recent.map((d) => d.headline).filter(Boolean),
-        questions: recent.flatMap((d) =>
-          String(d.summary || '')
-            .split('\n')
-            .map((l) => l.trim())
-            .filter((l) => l.startsWith('•') && l.endsWith('?')),
-        ),
+        headlines: recent.map(d => d.headline).filter(Boolean),
+        questions: recent.flatMap(d => String(d.summary || '').split('\n').map(l => l.trim()).filter(l => l.startsWith('•') && l.endsWith('?')))
       };
     } catch (err) {
-      this.#logger.warn?.('debrief.recent-output.failed', { error: err.message });
+      this.#logger.warn?.('debrief.recent-output.failed', {
+        error: err.message
+      });
       return empty;
     }
   }
@@ -248,7 +306,10 @@ export class GenerateMorningDebrief {
   /**
    * Generate natural language summary using AI
    */
-  async #generateSummary(lifelog, username, conversationContext = [], recentOutput = { headlines: [], questions: [] }, knowledgeSelection) {
+  async #generateSummary(lifelog, username, conversationContext = [], recentOutput = {
+    headlines: [],
+    questions: []
+  }, knowledgeSelection) {
     const systemPrompt = `You produce a compact morning data roundup from yesterday's logged data. Telegram message — no markdown headers.
 
 FORMAT — a one-line hook, then three sections, separated by blank lines:
@@ -330,7 +391,6 @@ RULES:
 
 RECENT DEBRIEFS:
 You may receive the hooks and questions you sent on recent days. They are what the user is tired of. Do NOT reuse their sentence shapes, openers, verbs or question templates. If today's draft resembles any of them, rewrite it.`;
-
     const dataPrompt = this.#buildDataPrompt(lifelog);
 
     // Build conversation context section
@@ -342,53 +402,46 @@ You may receive the hooks and questions you sent on recent days. They are what t
       });
       contextSection = `\n\nRECENT USER MESSAGES (context they've already shared):\n${contextLines.join('\n')}`;
     }
-
     if (recentOutput.headlines.length || recentOutput.questions.length) {
-      contextSection += `\n\nRECENT DEBRIEFS (shapes to avoid):\nHooks:\n${recentOutput.headlines
-        .map((h) => `- ${h}`)
-        .join('\n')}\nQuestions:\n${recentOutput.questions.join('\n')}`;
+      contextSection += `\n\nRECENT DEBRIEFS (shapes to avoid):\nHooks:\n${recentOutput.headlines.map(h => `- ${h}`).join('\n')}\nQuestions:\n${recentOutput.questions.join('\n')}`;
     }
-
     try {
-      const response = await this.#aiGateway.chat(
-        [
-          { role: 'system', content: systemPrompt+knowledgeQuestionPrompt(knowledgeSelection) },
-          {
-            role: 'user',
-            content: `Here's the data from ${lifelog._meta.date}:\n\n${dataPrompt}${contextSection}\n\nProduce the morning roundup: HOOK line first, then facts, commentary, questions.`,
-          },
-        ],
-        {
-          temperature: 0.6,
-          maxTokens: 800,
-        },
-      );
-
+      const response = await this.#aiGateway.chat([{
+        role: 'system',
+        content: systemPrompt + knowledgeQuestionPrompt(knowledgeSelection)
+      }, {
+        role: 'user',
+        content: `Here's the data from ${lifelog._meta.date}:\n\n${dataPrompt}${contextSection}\n\nProduce the morning roundup: HOOK line first, then facts, commentary, questions.`
+      }], {
+        temperature: 0.6,
+        maxTokens: 800
+      });
       this.#logger.info?.('debrief.summary-generated', {
         username,
         date: lifelog._meta.date,
-        length: response.length,
+        length: response.length
       });
-
       const parsed = GenerateMorningDebrief.parseHeadline(response);
 
       // Hedge guard: a deduction must commit. If the model slipped a hedge word
       // into the headline, attempt one focused rewrite; if that still hedges,
       // drop the headline so the send layer falls back to the date header.
-      if (knowledgeSelection?.mode==='knowledge' && parsed.headline && GenerateMorningDebrief.containsHedge(parsed.headline)) parsed.headline=null;
+      if (knowledgeSelection?.mode === 'knowledge' && parsed.headline && GenerateMorningDebrief.containsHedge(parsed.headline)) parsed.headline = null;
       if (!knowledgeSelection && parsed.headline && GenerateMorningDebrief.containsHedge(parsed.headline)) {
         parsed.headline = await this.#deHedgeHeadline(parsed.headline);
       }
-
       return parsed;
     } catch (error) {
       this.#logger.error?.('debrief.ai-summary-failed', {
         username,
-        error: error.message,
+        error: error.message
       });
 
       // Fallback to template summary (no headline — send layer falls back to date header)
-      return { summary: this.#generateFallbackSummary(lifelog), headline: null };
+      return {
+        summary: this.#generateFallbackSummary(lifelog),
+        headline: null
+      };
     }
   }
 
@@ -410,29 +463,32 @@ You may receive the hooks and questions you sent on recent days. They are what t
    */
   async #deHedgeHeadline(headline) {
     try {
-      const rewritten = await this.#aiGateway.chat(
-        [
-          {
-            role: 'system',
-            content:
-              'Rewrite the line as a flat, committed assertion with ZERO hedging. Remove any of: seems, seemed, looks like, sounds like, appears, apparently, probably, likely, maybe, perhaps, must have, I think, feels like. Keep it specific and tight, one line. If it is a question, keep it a question. Return ONLY the rewritten line — no quotes, no preamble.',
-          },
-          { role: 'user', content: headline },
-        ],
-        { temperature: 0.3, maxTokens: 60 },
-      );
-
+      const rewritten = await this.#aiGateway.chat([{
+        role: 'system',
+        content: 'Rewrite the line as a flat, committed assertion with ZERO hedging. Remove any of: seems, seemed, looks like, sounds like, appears, apparently, probably, likely, maybe, perhaps, must have, I think, feels like. Keep it specific and tight, one line. If it is a question, keep it a question. Return ONLY the rewritten line — no quotes, no preamble.'
+      }, {
+        role: 'user',
+        content: headline
+      }], {
+        temperature: 0.3,
+        maxTokens: 60
+      });
       const cleaned = (rewritten || '').trim().replace(/^["']+|["']+$/g, '').split('\n')[0].trim();
-
       if (!cleaned || GenerateMorningDebrief.containsHedge(cleaned)) {
-        this.#logger.warn?.('debrief.headline.hedge-unresolved', { headline });
+        this.#logger.warn?.('debrief.headline.hedge-unresolved', {
+          headline
+        });
         return null;
       }
-
-      this.#logger.info?.('debrief.headline.de-hedged', { before: headline, after: cleaned });
+      this.#logger.info?.('debrief.headline.de-hedged', {
+        before: headline,
+        after: cleaned
+      });
       return cleaned;
     } catch (err) {
-      this.#logger.warn?.('debrief.headline.de-hedge-failed', { error: err.message });
+      this.#logger.warn?.('debrief.headline.de-hedge-failed', {
+        error: err.message
+      });
       return null;
     }
   }
@@ -452,19 +508,22 @@ You may receive the hooks and questions you sent on recent days. They are what t
     // Locate the first non-empty line.
     let i = 0;
     while (i < lines.length && lines[i].trim() === '') i++;
-
     const match = lines[i]?.match(/^HOOK:\s*(.*)$/i);
     if (!match) {
-      return { summary: text, headline: null };
+      return {
+        summary: text,
+        headline: null
+      };
     }
-
     const headline = match[1].trim();
 
     // Drop the hook line and any blank lines that followed it.
     lines.splice(0, i + 1);
     while (lines.length && lines[0].trim() === '') lines.shift();
-
-    return { summary: lines.join('\n'), headline: headline || null };
+    return {
+      summary: lines.join('\n'),
+      headline: headline || null
+    };
   }
 
   /**
@@ -488,32 +547,17 @@ Categories: ${lifelog._meta?.categories?.join(', ') || 'none'}`;
    */
   #generateFallbackSummary(lifelog) {
     const parts = [];
-
     if (lifelog.events?.length > 0) {
-      parts.push(
-        `had ${lifelog.events.length} calendar event${lifelog.events.length > 1 ? 's' : ''}`,
-      );
+      parts.push(`had ${lifelog.events.length} calendar event${lifelog.events.length > 1 ? 's' : ''}`);
     }
-
     if (lifelog.fitness?.activities?.length > 0) {
-      parts.push(
-        `worked out ${lifelog.fitness.activities.length} time${lifelog.fitness.activities.length > 1 ? 's' : ''}`,
-      );
+      parts.push(`worked out ${lifelog.fitness.activities.length} time${lifelog.fitness.activities.length > 1 ? 's' : ''}`);
     }
-
     if (lifelog.media?.movies?.length > 0) {
-      parts.push(
-        `watched ${lifelog.media.movies.length} movie${lifelog.media.movies.length > 1 ? 's' : ''}`,
-      );
+      parts.push(`watched ${lifelog.media.movies.length} movie${lifelog.media.movies.length > 1 ? 's' : ''}`);
     }
-
-    const summary =
-      parts.length > 0
-        ? `Good morning! Yesterday you ${parts.join(', ')}.`
-        : `Good morning! How was your day yesterday?`;
-
+    const summary = parts.length > 0 ? `Good morning! Yesterday you ${parts.join(', ')}.` : `Good morning! How was your day yesterday?`;
     return summary;
   }
 }
-
 export default GenerateMorningDebrief;

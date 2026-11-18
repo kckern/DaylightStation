@@ -8,6 +8,12 @@ export function assertWorkUser(username) {
 }
 export const stableWorkJson = value => JSON.stringify(value, (_key, v) => v && typeof v === 'object' && !Array.isArray(v) ? Object.fromEntries(Object.entries(v).sort(([a], [b]) => a.localeCompare(b))) : v);
 export const workHash = value => createHash('sha256').update(stableWorkJson(value)).digest('hex');
+export const workRelevanceVersion = r => workHash({
+  state: r?.state ?? 'unconfirmed',
+  confirmedAt: r?.confirmedAt ?? null,
+  reviewAt: r?.reviewAt ?? null,
+  snoozedUntil: r?.snoozedUntil ?? null
+});
 export const accountKey = ({
   provider,
   accountId
@@ -24,6 +30,7 @@ export function emptyWorkState() {
     calls: {},
     sources: {},
     attention: {},
+    reviewPreferences: {},
     offers: {}
   };
 }
@@ -36,7 +43,37 @@ export function applyWorkEvents(before, events, {
   if (!Array.isArray(events) || events.length < 1 || events.length > 1000) throw workError('INVALID_WORK_EVENT');
   for (const event of events) {
     if (!event || typeof event.type !== 'string') throw workError('INVALID_WORK_EVENT');
-    if (event.type === 'workflow.selected') {
+    if (event.type === 'workflow.link_candidate') {
+      const r = state.offers?.[event.offerId],
+        c = event.candidate;
+      if (!r || r.offer.flowType !== 'create_link' || r.status === 'resolved' || !finite(event.at) || !c || !/^loop\.[a-z0-9][a-z0-9-]{0,95}$/.test(c.id ?? '') || typeof c.title !== 'string' || c.title.length > 2000 || !Array.isArray(c.basisRefs) || !c.basisRefs.length || c.basisRefs.length > 5 || c.basisRefs.some(ref => typeof ref !== 'string' || !ref || ref.length > 2048) || typeof c.revision !== 'string' || c.revision.length > 256 || !Number.isSafeInteger(c.cursor) || c.cursor < 0) throw workError('INVALID_WORKFLOW_LINK');
+      r.linkCandidate = structuredClone(c);
+    } else if (['workflow.prepared', 'workflow.responded'].includes(event.type)) {
+      const r = state.offers?.[event.offerId];
+      if (!r || !finite(event.at)) throw workError('INVALID_WORKFLOW_EVENT');
+      if (event.type === 'workflow.prepared') {
+        if (r.status !== 'selected' || r.decisionId || typeof event.decisionId !== 'string' || typeof event.reservationId !== 'string') throw workError('INVALID_WORKFLOW_EVENT');
+        r.status = 'prepared';
+        r.decisionId = event.decisionId;
+        r.reservationId = event.reservationId;
+      } else {
+        if (r.status === 'resolved' || !['review', 'later', 'dismiss', 'keep_active', 'snooze', 'retire', 'refresh', 'link'].includes(event.action)) throw workError('INVALID_WORKFLOW_EVENT');
+        r.status = event.resolved ? 'resolved' : 'processing';
+        r.response = {
+          action: event.action,
+          at: event.at
+        };
+        if (r.offer.flowType === 'knowledge_review' && ['later', 'dismiss'].includes(event.action)) {
+          if (event.action === 'later' && (!finite(event.reviewUntil) || event.reviewUntil <= event.at || event.reviewUntil > event.at + 31 * 86400000)) throw workError('INVALID_WORKFLOW_EVENT');
+          state.reviewPreferences ??= {};
+          for (const id of r.offer.evidenceRefs) state.reviewPreferences[id] = {
+            state: event.action === 'dismiss' ? 'dismissed' : 'snoozed',
+            until: event.reviewUntil ?? null,
+            at: event.at
+          };
+        }
+      }
+    } else if (event.type === 'workflow.selected') {
       const r = event.record,
         o = r?.offer;
       if (!o || o.username !== username || !/^offer\.[a-f0-9]{64}$/.test(o.id ?? '') || !['reconcile', 'reactivate', 'housekeeping', 'wrap_up', 'coverage_repair', 'create_link', 'knowledge_review'].includes(o.flowType) || typeof o.domainId !== 'string' || typeof o.policyRevision !== 'string' || !finite(o.eligibleAt) || !finite(o.expiresAt) || o.questionUnits !== 1 || !Array.isArray(o.evidenceRefs) || o.evidenceRefs.length > 5 || o.evidenceRefs.some(ref => typeof ref !== 'string' || !ref || ref.length > 2048) || o.requiresConfirmation !== true || o.expectedVersion !== null && (typeof o.expectedVersion !== 'string' || !o.expectedVersion || o.expectedVersion.length > 256) || o.kbObjectId !== null && typeof o.kbObjectId !== 'string' || typeof o.reason !== 'string' || !o.reason || o.reason.length > 128 || !/^([a-f0-9]{64})$/.test(r.relevanceVersion ?? '') || r.status !== 'selected') throw workError('INVALID_WORKFLOW_OFFER');
@@ -56,6 +93,11 @@ export function applyWorkEvents(before, events, {
       if (event.type === 'attention.sent') {
         if (r.status !== 'prepared' || !/^\d+$/.test(event.botMessageId ?? '') || event.at < r.createdAt || event.at >= r.expiresAt) throw workError('INVALID_ATTENTION_EVENT');
         r.status = 'delivered';
+        if (event.day !== undefined) {
+          if (!/^\d{4}-\d{2}-\d{2}$/.test(event.day)) throw workError('INVALID_ATTENTION_EVENT');
+          r.reservedDay = r.day;
+          r.day = event.day;
+        }
         r.deliveredAt = event.at;
         r.botMessageId = event.botMessageId;
       } else if (event.type === 'attention.failed') {
@@ -63,7 +105,7 @@ export function applyWorkEvents(before, events, {
         r.status = event.uncertain ? 'quarantined' : 'cancelled';
         r.failedAt = event.at;
       } else {
-        if (r.status !== 'delivered' || r.response || !['keep_active', 'snooze', 'retire', 'review', 'later', 'dismiss', 'cancel'].includes(event.action)) throw workError('INVALID_ATTENTION_EVENT');
+        if (r.status !== 'delivered' || r.response || !['keep_active', 'snooze', 'retire', 'review', 'later', 'dismiss', 'cancel', 'refresh'].includes(event.action)) throw workError('INVALID_ATTENTION_EVENT');
         r.response = {
           action: event.action,
           at: event.at

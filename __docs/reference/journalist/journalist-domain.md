@@ -134,3 +134,21 @@ invalidate an old trusted receipt without making the corrected text trusted.
 Debrief storage, interviews and Details reads are scoped by the requested user.
 A reply to two questions counts one engagement without marking both loops answered;
 old Ask controls are bound to their delivered local day and explain expiry.
+
+## Optional Work companion
+
+Journalist renders Work's bounded task and maintenance controls through a
+request-local companion port. Routine entry persistence and KB source verification
+stay independent. The morning generator attaches one optional offer as metadata;
+the sender prepares it only after the KB count/experiment arm is known. Two KB
+questions leave no Work slot. Shared-cap denial sends facts rather than adding a
+replacement question. A Work invitation is excluded from the archived base
+summary so a cached/control-date debrief cannot replay it.
+
+`Review work` (`/work_review`), `Review suggestions` (`/suggestions`) and
+`Link work` (`/link_work`) open user-requested flows. Typed labels approve nothing.
+Opaque Work callbacks are routed before legacy handlers. The callback request's
+independent KB principal is forwarded unchanged only when private review is
+requested; Work never creates that principal. No new autonomous delivery job is
+introduced. Preparation, transport ACK and both owners' receipts remain separate;
+unknown delivery is quarantined and does not automatically resend.

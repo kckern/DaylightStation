@@ -173,6 +173,19 @@ export function createKnowledgeRuntime(options = {}) {
       throw error;
     }
   }
+  async function deliverReview(username) {
+    if (typeof options.reviewInvitations === 'function') {
+      const handled = await options.reviewInvitations({
+        username,
+        asOf: clock()
+      });
+      if (handled?.handled) return handled;
+    }
+    return deliver(username, await questions.prepareWeeklyReview({
+      username,
+      asOf: clock()
+    }));
+  }
   const entry = new KnowledgeEntryScheduler({
     enabled: true,
     store,
@@ -220,10 +233,7 @@ export function createKnowledgeRuntime(options = {}) {
             asOf: clock()
           });
           if (result.status === 'completed' && !stopped) ready.add(username);
-        } else await deliver(username, await questions.prepareWeeklyReview({
-          username,
-          asOf: clock()
-        }));
+        } else await deliverReview(username);
       } catch (error) {
         logger?.warn?.('lifelog.knowledge.scheduled-failed', {
           reason: error.code ?? 'run_failed'
@@ -249,6 +259,28 @@ export function createKnowledgeRuntime(options = {}) {
     })
   };
   const workBridge = {
+    linkCandidates: input => !stopped && ready.has(input.username) ? providerBridge.linkCandidates(input) : Promise.resolve({
+      available: false,
+      items: [],
+      revision: 'unavailable',
+      nextCursor: null
+    }),
+    attentionGate: input => !stopped && ready.has(input.username) ? providerBridge.attentionGate(input) : Promise.resolve({
+      mode: 'legacy',
+      reason: 'unavailable',
+      questionCount: 2
+    }),
+    attentionEligibility: input => !stopped && ready.has(input.username) ? providerBridge.attentionEligibility(input) : Promise.resolve({}),
+    pendingReview: input => !stopped && ready.has(input.username) ? providerBridge.pendingReview(input) : Promise.resolve({
+      available: false,
+      ids: [],
+      count: 0,
+      revision: 'unavailable'
+    }),
+    openReview: input => providerBridge.openReview({
+      ...input,
+      principal: requireActive(input.principal)
+    }),
     attentionHistory: input => attentionHistory.read(input),
     applyProviderEvent: input => !stopped && ready.has(input.username) ? providerBridge.applyProviderEvent(input) : Promise.resolve({
       applied: false,
@@ -315,6 +347,10 @@ export function createKnowledgeRuntime(options = {}) {
         asOf
       });
     },
+    openReview: async input => questions.openReview({
+      ...input,
+      principal: requireActive(input.principal)
+    }),
     nextQuiz: async input => questions.nextQuiz({
       ...input,
       principal: requireActive(input.principal)
@@ -417,10 +453,7 @@ export function createKnowledgeRuntime(options = {}) {
             await entry.restore({
               username
             });
-            if (local.isoWeekday() === 1 && local.hour() >= 5) await deliver(username, await questions.prepareWeeklyReview({
-              username,
-              asOf: clock()
-            }));
+            if (local.isoWeekday() === 1 && local.hour() >= 5) await deliverReview(username);
           } catch (error) {
             ready.delete(username);
             logger?.warn?.('lifelog.knowledge.start-failed', {

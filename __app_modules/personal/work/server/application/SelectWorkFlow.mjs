@@ -1,5 +1,5 @@
 import { selectOpportunities } from '../domain/workflows/eligibility.mjs';
-import { workHash, workError } from '../domain/workState.mjs';
+import { workHash, workRelevanceVersion, workError } from '../domain/workState.mjs';
 import { keyOf } from '../domain/workModel.mjs';
 /** Selection is separate from delivery, and can never dispatch a provider command. */
 export class SelectWorkFlow {
@@ -81,6 +81,7 @@ export class SelectWorkFlow {
       },
       first = selectOpportunities(input),
       excludedReasons = [...new Set(first.excluded.map(e => e.reason))];
+    if (conversationContext.flowType) first.eligible = first.eligible.filter(o => o.flowType === conversationContext.flowType);
     this.#logger?.debug?.('work.workflow.excluded', {
       reasons: excludedReasons
     });
@@ -137,9 +138,7 @@ export class SelectWorkFlow {
     const existing = fresh.state.offers?.[offer.id],
       record = existing ?? {
         offer,
-        relevanceVersion: workHash(offer.ref ? fresh.state.relevance[keyOf(offer.ref)] ?? {
-          state: 'unconfirmed'
-        } : null),
+        relevanceVersion: offer.ref ? workRelevanceVersion(fresh.state.relevance[keyOf(offer.ref)]) : workHash(null),
         status: 'selected'
       };
     if (!existing) try {

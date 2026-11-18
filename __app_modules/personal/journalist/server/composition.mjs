@@ -1,12 +1,13 @@
-import {WorkCompanionAdapter} from './adapters/WorkCompanionAdapter.mjs';
+import { WorkCompanionAdapter } from './adapters/WorkCompanionAdapter.mjs';
 import path from 'node:path';
-import {KnowledgeFollowUpAdapter} from './adapters/KnowledgeFollowUpAdapter.mjs';
+import { KnowledgeFollowUpAdapter } from './adapters/KnowledgeFollowUpAdapter.mjs';
 import { YamlJournalEntryRepository } from "./adapters/persistence/YamlJournalEntryRepository.mjs";
 import { YamlMessageQueueRepository } from "./adapters/persistence/YamlMessageQueueRepository.mjs";
 import { JournalistConfigProjection, DebriefRepository, LoggingAIGateway, DataServiceJournalistInteractionLogStore } from "./adapters/index.mjs";
 import { JournalistContainer } from "./application/JournalistContainer.mjs";
-
-export function createJournalistServices(config, { createLifelogAggregator }) {
+export function createJournalistServices(config, {
+  createLifelogAggregator
+}) {
   const {
     dataService,
     configService,
@@ -18,7 +19,12 @@ export function createJournalistServices(config, { createLifelogAggregator }) {
     pause,
     logger = console
   } = config;
-  const lifelogAggregator = createLifelogAggregator({ dataService, logger,workActivityReader:config.workRuntime?.activities,userTimezone:config.userTimezone });
+  const lifelogAggregator = createLifelogAggregator({
+    dataService,
+    logger,
+    workActivityReader: config.workRuntime?.activities,
+    userTimezone: config.userTimezone
+  });
 
   // Journal entry repository (YAML persistence)
   const journalEntryRepository = new YamlJournalEntryRepository({
@@ -36,26 +42,37 @@ export function createJournalistServices(config, { createLifelogAggregator }) {
   });
 
   // Get journalist config from config service
-  const journalistConfig = new JournalistConfigProjection({ configService }).read();
+  const journalistConfig = new JournalistConfigProjection({
+    configService
+  }).read();
 
   // Debrief repository (YAML persistence)
   const debriefRepository = new DebriefRepository({
     dataDir: journalistConfig.dataDir,
-    userPathFor:configService.getUserDir?(username=>path.join(configService.getUserDir(username),'lifelog','journalist')):undefined,
+    userPathFor: configService.getUserDir ? username => path.join(configService.getUserDir(username), 'lifelog', 'journalist') : undefined,
     username: journalistConfig.username,
     logger
   });
-
-  const work=config.workRuntime?.conversation?new WorkCompanionAdapter({runtime:config.workRuntime,send:config.workSend??config.knowledgeSend,clock:config.clock??Date.now}):null;
-  const knowledge=config.knowledgeRuntime?.companion?new KnowledgeFollowUpAdapter({runtime:config.knowledgeRuntime,conversationStateStore,send:config.knowledgeSend,clock:config.clock??Date.now}):null;
+  const knowledge = config.knowledgeRuntime?.companion ? new KnowledgeFollowUpAdapter({
+    runtime: config.knowledgeRuntime,
+    conversationStateStore,
+    send: config.knowledgeSend,
+    clock: config.clock ?? Date.now
+  }) : null;
+  const work = config.workRuntime?.conversation ? new WorkCompanionAdapter({
+    runtime: config.workRuntime,
+    knowledgeCompanion: knowledge,
+    send: config.workSend ?? config.knowledgeSend,
+    clock: config.clock ?? Date.now
+  }) : null;
 
   // Create journalist container with all dependencies
   const journalistContainer = new JournalistContainer(journalistConfig, {
-    knowledgeCompanion:knowledge,
-    workCompanion:work,
-    followUpSource:knowledge,
-    clock:config.clock,
-    userTimezone:config.userTimezone,
+    knowledgeCompanion: knowledge,
+    workCompanion: work,
+    followUpSource: knowledge,
+    clock: config.clock,
+    userTimezone: config.userTimezone,
     messagingGateway: telegramAdapter,
     aiGateway,
     journalEntryRepository,
@@ -65,14 +82,15 @@ export function createJournalistServices(config, { createLifelogAggregator }) {
     userResolver,
     lifelogAggregator,
     debriefRepository,
-    loggingAIGatewayFactory: (deps) => new LoggingAIGateway({
+    loggingAIGatewayFactory: deps => new LoggingAIGateway({
       ...deps,
-      interactionLogStore: new DataServiceJournalistInteractionLogStore({ dataService }),
+      interactionLogStore: new DataServiceJournalistInteractionLogStore({
+        dataService
+      })
     }),
     pause,
     logger
   });
-
   return {
     journalEntryRepository,
     messageQueueRepository,

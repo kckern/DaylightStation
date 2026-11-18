@@ -314,3 +314,20 @@ message was sent and the prepared selection cannot send again. Known failure
 releases capacity; uncertain failure quarantines it. KB-only callers retain the
 existing question, cooldown and quiz policies. The public attention-history port
 returns counts and receipt metadata without evidence or object content.
+
+### Bounded review invitations and explicit Work links
+
+When an enrolled Work integration handles the existing weekly schedule, pending
+proposals become one bounded invitation. A current private KB principal opens up
+to five owner-validated review controls only after opt-in; those user-requested
+controls are excluded from unsolicited attention accounting. Repeated opt-in
+receipts reuse their selection and cannot send another batch. Proposal revision
+tracks semantic proposal/evidence/user-edit state rather than unrelated receipt
+bookkeeping. Current retractions and owner policy are checked again on review.
+
+Public Work eligibility returns only allowed/blocked metadata. Explicit link
+selection returns at most three normal grounded commitments to the matching
+configured private destination, with evidence references but no source excerpts.
+Sensitive/never and unsupported/retracted entries are excluded. Confirming a
+Work relationship does not edit the KB; existing typed-link completion rules
+remain authoritative for any later provider observation.

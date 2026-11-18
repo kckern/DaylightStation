@@ -28,6 +28,7 @@ export class WorkDecisions {
   #id;
   #tokens;
   #grants = new WeakMap();
+  #flowGrants = new WeakMap();
   constructor({
     state,
     commands,
@@ -129,6 +130,53 @@ export class WorkDecisions {
       options = rendered.options;
       more = rendered.more === true;
     }
+    return this.#savePage({
+      p,
+      commandId,
+      flowState,
+      text,
+      options,
+      more,
+      policy,
+      asOf
+    });
+  }
+  async prepareInvitation({
+    username,
+    offerId,
+    asOf = this.#clock()
+  }) {
+    const policy = this.#policy(username);
+    if (!policy.enabled || !policy.proactive || typeof this.#context.renderInvitation !== 'function') throw workError('WORK_INVITATION_DENIED');
+    const rendered = await this.#context.renderInvitation({
+      username,
+      offerId,
+      asOf
+    });
+    const p = rendered.identity,
+      flowState = rendered.flowState;
+    if (!p || p.username !== username || !/^\d+$/.test(p.senderId ?? '') || typeof p.conversationId !== 'string' || !validateWorkFlowState(flowState) || flowState.policyRevision !== policy.revision) throw workError('WORK_INVITATION_DENIED');
+    return this.#savePage({
+      p,
+      commandId: null,
+      flowState,
+      text: rendered.text,
+      options: rendered.options,
+      more: false,
+      policy,
+      asOf
+    });
+  }
+  async #savePage({
+    p,
+    commandId,
+    flowState,
+    text,
+    options,
+    more,
+    policy,
+    asOf
+  }) {
     if (typeof text !== 'string' || !text || text.length > 3500 || !Array.isArray(options) || !options.length || options.length > 6 || options.filter(choice => choice.action === 'choose').length > 3) throw workError('INVALID_WORK_PAGE');
     const choices = [],
       rows = [];
@@ -228,6 +276,21 @@ export class WorkDecisions {
       d = state.decisions[confirmationId];
     return state.health.available && d?.status === 'claimed' && d.commandId === command.id && d.claimed.tokenHash === grant.tokenHash && d.policyRevision === this.#policy(p.username).revision && asOf < d.expiresAt;
   }
+  async verifyFlowClaim({
+    principal,
+    flowState,
+    choice,
+    asOf = this.#clock()
+  }) {
+    const p = this.#verify(principal),
+      grant = p && this.#flowGrants.get(principal);
+    if (!grant || p.kind !== 'callback' || grant.flowHash !== workHash(flowState) || grant.choiceHash !== workHash(choice)) return false;
+    const state = await this.#state.read({
+        username: p.username
+      }),
+      d = state.decisions[grant.decisionId];
+    return !!(state.health.available && d?.status === 'claimed' && d.claimed.tokenHash === grant.tokenHash && d.policyRevision === this.#policy(p.username).revision && asOf < d.expiresAt);
+  }
   async reply({
     principal,
     token,
@@ -301,6 +364,12 @@ export class WorkDecisions {
           status: 'denied',
           reason: 'flow_unavailable'
         };else {
+          this.#flowGrants.set(principal, {
+            decisionId: decision.id,
+            flowHash: workHash(decision.flowState),
+            choiceHash: workHash(choice),
+            tokenHash: hash
+          });
           const response = await this.#context.applyFlowChoice({
             principal,
             flowState: decision.flowState,
@@ -310,6 +379,12 @@ export class WorkDecisions {
           page = response?.page ?? null;
           result = {
             status: response?.status ?? 'selected',
+            ...(response?.knowledgeReviewIds ? {
+              knowledgeReviewIds: response.knowledgeReviewIds
+            } : {}),
+            ...(response?.username ? {
+              username: response.username
+            } : {}),
             ...(page ? {
               decisionId: page.decisionId
             } : {})
@@ -336,7 +411,10 @@ export class WorkDecisions {
         reason: 'decision_boundary_failed'
       };
     } finally {
-      if (principal && typeof principal === 'object') this.#grants.delete(principal);
+      if (principal && typeof principal === 'object') {
+        this.#grants.delete(principal);
+        this.#flowGrants.delete(principal);
+      }
     }
   }
 }

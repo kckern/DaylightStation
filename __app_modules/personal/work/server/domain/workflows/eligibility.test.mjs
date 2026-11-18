@@ -172,7 +172,7 @@ it('offers coverage repair without asserting a cached task open or completed', (
 });
 it('two delivered ignored housekeeping invitations mature after 36h into 30 quiet days', () => {
   const x = optIn(input());
-  x.history.records = [8, 2].map(days => ({
+  x.history.records = [16, 8].map(days => ({
     id: 'sent-' + days,
     channel: 'housekeeping',
     flowType: 'housekeeping',
@@ -263,5 +263,47 @@ it('turns owner-approved pending reviews into one bounded invitation without exp
     evidenceRefs: ['proposal.one', 'proposal.two']
   });
   x.context.pendingReview.available = false;
+  expect(selectOpportunities(x).eligible).toHaveLength(0);
+});
+it('excludes recent acknowledged items before ranking and chooses a different eligible legacy item', () => {
+  const x = optIn(input());
+  x.policy.attention.maxProactiveUnitsPerDay = 2;
+  x.policy.attention.maxHousekeepingPer7Days = 1;
+  x.policy.attention.itemCooldownDays = 30;
+  x.context.items.push(item({
+    ref: {
+      ...ref,
+      id: 'another'
+    }
+  }));
+  x.history.records = [{
+    id: 'previous',
+    day: '2026-11-09',
+    channel: 'housekeeping',
+    flowType: 'housekeeping',
+    refKey,
+    questionUnits: 1,
+    status: 'delivered',
+    deliveredAt: AS_OF - 8 * 86400000,
+    response: {
+      action: 'later'
+    }
+  }];
+  const r = selectOpportunities(x);
+  expect(r.eligible.map(o => o.ref.id)).toEqual(['another']);
+});
+it('an exhausted shared daily budget produces no candidates for model ranking', () => {
+  const x = optIn(input());
+  x.policy.attention.maxProactiveUnitsPerDay = 2;
+  x.policy.attention.maxHousekeepingPer7Days = 1;
+  x.policy.attention.itemCooldownDays = 30;
+  x.history.records = [{
+    id: 'kb',
+    day: '2026-11-17',
+    channel: 'morning',
+    questionUnits: 2,
+    status: 'delivered',
+    deliveredAt: AS_OF - 1
+  }];
   expect(selectOpportunities(x).eligible).toHaveLength(0);
 });

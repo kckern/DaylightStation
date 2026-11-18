@@ -145,7 +145,6 @@ export class JournalistContainer {
     }
     return this.#messagingGateway;
   }
-
   getAIGateway() {
     if (!this.#aiGateway) {
       throw new Error('aiGateway not configured');
@@ -157,14 +156,13 @@ export class JournalistContainer {
         this.#wrappedAIGateway = this.#loggingAIGatewayFactory({
           aiGateway: this.#aiGateway,
           username: this.#config.username || 'unknown',
-          logger: this.#logger,
+          logger: this.#logger
         });
       } else {
         // Fallback: use unwrapped gateway if no factory provided
         this.#wrappedAIGateway = this.#aiGateway;
       }
     }
-
     return this.#wrappedAIGateway;
   }
 
@@ -177,34 +175,32 @@ export class JournalistContainer {
   #aiFor(feature) {
     if (!this.#featureAIGateways.has(feature)) {
       if (!this.#aiGateway) throw new Error('aiGateway not configured');
-      const view = scopedGateway(this.#aiGateway, { feature });
-      this.#featureAIGateways.set(feature, this.#loggingAIGatewayFactory
-        ? this.#loggingAIGatewayFactory({ aiGateway: view, username: this.#config.username || 'unknown', logger: this.#logger })
-        : view);
+      const view = scopedGateway(this.#aiGateway, {
+        feature
+      });
+      this.#featureAIGateways.set(feature, this.#loggingAIGatewayFactory ? this.#loggingAIGatewayFactory({
+        aiGateway: view,
+        username: this.#config.username || 'unknown',
+        logger: this.#logger
+      }) : view);
     }
     return this.#featureAIGateways.get(feature);
   }
-
   getJournalEntryRepository() {
     return this.#journalEntryRepository;
   }
-
   getMessageQueueRepository() {
     return this.#messageQueueRepository;
   }
-
   getConversationStateStore() {
     return this.#conversationStateStore;
   }
-
   getQuizRepository() {
     return this.#quizRepository;
   }
-
   getUserResolver() {
     return this.#userResolver;
   }
-
   getDebriefRepository() {
     if (!this.#debriefRepository) {
       throw new Error('debriefRepository not configured - must be injected via constructor');
@@ -214,38 +210,43 @@ export class JournalistContainer {
 
   // ==================== Use Case Getters ====================
 
-  getWorkCompanion(){return this.#options.workCompanion??null;}
-  getKnowledgeCompanion(){return this.#options.knowledgeCompanion??null;}
-
+  getWorkCompanion() {
+    return this.#options.workCompanion ?? null;
+  }
+  getKnowledgeCompanion() {
+    return this.#options.knowledgeCompanion ?? null;
+  }
   getProcessTextEntry() {
     if (!this.#processTextEntry) {
       this.#processTextEntry = new ProcessTextEntry({
         messagingGateway: this.getMessagingGateway(),
-        aiGateway: this.#aiGateway?this.#aiFor('text-entry'):{chat:async()=>{throw new Error('AI_UNAVAILABLE');}},
-        knowledgeCompanion:this.#options.knowledgeCompanion,
-        workCompanion:this.#options.workCompanion,
-        clock:this.#options.clock,
+        aiGateway: this.#aiGateway ? this.#aiFor('text-entry') : {
+          chat: async () => {
+            throw new Error('AI_UNAVAILABLE');
+          }
+        },
+        knowledgeCompanion: this.#options.knowledgeCompanion,
+        workCompanion: this.#options.workCompanion,
+        clock: this.#options.clock,
         journalEntryRepository: this.#journalEntryRepository,
         messageQueueRepository: this.#messageQueueRepository,
         conversationStateStore: this.#conversationStateStore,
-        logger: this.#logger,
+        logger: this.#logger
       });
     }
     return this.#processTextEntry;
   }
-
   getProcessVoiceEntry() {
     if (!this.#processVoiceEntry) {
       this.#processVoiceEntry = new ProcessVoiceEntry({
         messagingGateway: this.getMessagingGateway(),
         processTextEntry: this.getProcessTextEntry(),
         pause: this.#pause,
-        logger: this.#logger,
+        logger: this.#logger
       });
     }
     return this.#processVoiceEntry;
   }
-
   getInitiateJournalPrompt() {
     if (!this.#initiateJournalPrompt) {
       this.#initiateJournalPrompt = new InitiateJournalPrompt({
@@ -253,22 +254,20 @@ export class JournalistContainer {
         aiGateway: this.#aiFor('journal-prompt'),
         journalEntryRepository: this.#journalEntryRepository,
         messageQueueRepository: this.#messageQueueRepository,
-        logger: this.#logger,
+        logger: this.#logger
       });
     }
     return this.#initiateJournalPrompt;
   }
-
   getGenerateMultipleChoices() {
     if (!this.#generateMultipleChoices) {
       this.#generateMultipleChoices = new GenerateMultipleChoices({
         aiGateway: this.#aiFor('multiple-choice'),
-        logger: this.#logger,
+        logger: this.#logger
       });
     }
     return this.#generateMultipleChoices;
   }
-
   getHandleCallbackResponse() {
     if (!this.#handleCallbackResponse) {
       this.#handleCallbackResponse = new HandleCallbackResponse({
@@ -277,7 +276,7 @@ export class JournalistContainer {
         handleQuizAnswer: this.getHandleQuizAnswer(),
         processTextEntry: this.getProcessTextEntry(),
         initiateJournalPrompt: this.getInitiateJournalPrompt(),
-        logger: this.#logger,
+        logger: this.#logger
       });
     }
     return this.#handleCallbackResponse;
@@ -291,23 +290,21 @@ export class JournalistContainer {
         messagingGateway: this.getMessagingGateway(),
         quizRepository: this.#quizRepository,
         messageQueueRepository: this.#messageQueueRepository,
-        logger: this.#logger,
+        logger: this.#logger
       });
     }
     return this.#sendQuizQuestion;
   }
-
   getRecordQuizAnswer() {
     if (!this.#recordQuizAnswer) {
       this.#recordQuizAnswer = new RecordQuizAnswer({
         quizRepository: this.#quizRepository,
         messageQueueRepository: this.#messageQueueRepository,
-        logger: this.#logger,
+        logger: this.#logger
       });
     }
     return this.#recordQuizAnswer;
   }
-
   getAdvanceToNextQuizQuestion() {
     if (!this.#advanceToNextQuizQuestion) {
       this.#advanceToNextQuizQuestion = new AdvanceToNextQuizQuestion({
@@ -315,19 +312,18 @@ export class JournalistContainer {
         messageQueueRepository: this.#messageQueueRepository,
         journalEntryRepository: this.#journalEntryRepository,
         initiateJournalPrompt: this.getInitiateJournalPrompt(),
-        logger: this.#logger,
+        logger: this.#logger
       });
     }
     return this.#advanceToNextQuizQuestion;
   }
-
   getHandleQuizAnswer() {
     if (!this.#handleQuizAnswer) {
       this.#handleQuizAnswer = new HandleQuizAnswer({
         recordQuizAnswer: this.getRecordQuizAnswer(),
         advanceToNextQuizQuestion: this.getAdvanceToNextQuizQuestion(),
         messageQueueRepository: this.#messageQueueRepository,
-        logger: this.#logger,
+        logger: this.#logger
       });
     }
     return this.#handleQuizAnswer;
@@ -343,28 +339,26 @@ export class JournalistContainer {
         journalEntryRepository: this.#journalEntryRepository,
         messageQueueRepository: this.#messageQueueRepository,
         debriefRepository: this.getDebriefRepository(),
-        logger: this.#logger,
+        logger: this.#logger
       });
     }
     return this.#generateTherapistAnalysis;
   }
-
   getReviewJournalEntries() {
     if (!this.#reviewJournalEntries) {
       this.#reviewJournalEntries = new ReviewJournalEntries({
         messagingGateway: this.getMessagingGateway(),
         journalEntryRepository: this.#journalEntryRepository,
-        logger: this.#logger,
+        logger: this.#logger
       });
     }
     return this.#reviewJournalEntries;
   }
-
   getExportJournalMarkdown() {
     if (!this.#exportJournalMarkdown) {
       this.#exportJournalMarkdown = new ExportJournalMarkdown({
         journalEntryRepository: this.#journalEntryRepository,
-        logger: this.#logger,
+        logger: this.#logger
       });
     }
     return this.#exportJournalMarkdown;
@@ -380,12 +374,11 @@ export class JournalistContainer {
         generateMorningDebrief: this.getGenerateMorningDebrief(),
         sendMorningDebrief: this.getSendMorningDebrief(),
         messagingGateway: this.getMessagingGateway(),
-        logger: this.#logger,
+        logger: this.#logger
       });
     }
     return this.#handleSlashCommand;
   }
-
   getHandleSpecialStart() {
     if (!this.#handleSpecialStart) {
       this.#handleSpecialStart = new HandleSpecialStart({
@@ -395,7 +388,7 @@ export class JournalistContainer {
         conversationStateStore: this.#conversationStateStore,
         initiateJournalPrompt: this.getInitiateJournalPrompt(),
         initiateDebriefInterview: this.getInitiateDebriefInterview(),
-        logger: this.#logger,
+        logger: this.#logger
       });
     }
     return this.#handleSpecialStart;
@@ -407,7 +400,6 @@ export class JournalistContainer {
     if (!this.#lifelogAggregator) throw new Error('lifelogAggregator not configured');
     return this.#lifelogAggregator;
   }
-
   getGenerateMorningDebrief() {
     if (!this.#generateMorningDebrief) {
       this.#generateMorningDebrief = new GenerateMorningDebrief({
@@ -415,41 +407,40 @@ export class JournalistContainer {
         aiGateway: this.#aiFor('morning-debrief'),
         debriefRepository: this.getDebriefRepository(),
         journalEntryRepository: this.#journalEntryRepository,
-        followUpSource:this.#options.followUpSource,
-        clock:this.#options.clock,
-        userTimezone:this.#options.userTimezone,
-        logger: this.#logger,
+        followUpSource: this.#options.followUpSource,
+        workCompanion: this.#options.workCompanion,
+        clock: this.#options.clock,
+        userTimezone: this.#options.userTimezone,
+        logger: this.#logger
       });
     }
     return this.#generateMorningDebrief;
   }
-
   getSendMorningDebrief() {
     if (!this.#sendMorningDebrief) {
       this.#sendMorningDebrief = new SendMorningDebrief({
         messagingGateway: this.getMessagingGateway(),
         conversationStateStore: this.#conversationStateStore,
         debriefRepository: this.getDebriefRepository(),
-        followUpSource:this.#options.followUpSource,
-        clock:this.#options.clock,
-        userTimezone:this.#options.userTimezone,
-        logger: this.#logger,
+        followUpSource: this.#options.followUpSource,
+        workCompanion: this.#options.workCompanion,
+        clock: this.#options.clock,
+        userTimezone: this.#options.userTimezone,
+        logger: this.#logger
       });
     }
     return this.#sendMorningDebrief;
   }
-
   getHandleCategorySelection() {
     if (!this.#handleCategorySelection) {
       this.#handleCategorySelection = new HandleCategorySelection({
         messagingGateway: this.getMessagingGateway(),
         conversationStateStore: this.#conversationStateStore,
-        logger: this.#logger,
+        logger: this.#logger
       });
     }
     return this.#handleCategorySelection;
   }
-
   getHandleDebriefResponse() {
     if (!this.#handleDebriefResponse) {
       this.#handleDebriefResponse = new HandleDebriefResponse({
@@ -458,23 +449,21 @@ export class JournalistContainer {
         debriefRepository: this.getDebriefRepository(),
         journalEntryRepository: this.#journalEntryRepository,
         userResolver: this.getUserResolver(),
-        logger: this.#logger,
+        logger: this.#logger
       });
     }
     return this.#handleDebriefResponse;
   }
-
   getHandleSourceSelection() {
     if (!this.#handleSourceSelection) {
       this.#handleSourceSelection = new HandleSourceSelection({
         messagingGateway: this.getMessagingGateway(),
         conversationStateStore: this.#conversationStateStore,
-        logger: this.#logger,
+        logger: this.#logger
       });
     }
     return this.#handleSourceSelection;
   }
-
   getInitiateDebriefInterview() {
     if (!this.#initiateDebriefInterview) {
       this.#initiateDebriefInterview = new InitiateDebriefInterview({
@@ -485,7 +474,7 @@ export class JournalistContainer {
         debriefRepository: this.getDebriefRepository(),
         conversationStateStore: this.#conversationStateStore,
         userResolver: this.getUserResolver(),
-        logger: this.#logger,
+        logger: this.#logger
       });
     }
     return this.#initiateDebriefInterview;
@@ -497,7 +486,9 @@ export class JournalistContainer {
    * Initialize the container
    */
   async initialize() {
-    this.#logger.info?.('container.initialize', { app: 'journalist' });
+    this.#logger.info?.('container.initialize', {
+      app: 'journalist'
+    });
     // Future: Initialize connections, load caches, etc.
   }
 
@@ -505,9 +496,10 @@ export class JournalistContainer {
    * Shutdown the container
    */
   async shutdown() {
-    this.#logger.info?.('container.shutdown', { app: 'journalist' });
+    this.#logger.info?.('container.shutdown', {
+      app: 'journalist'
+    });
     // Future: Close connections, flush caches, etc.
   }
 }
-
 export default JournalistContainer;

@@ -4,14 +4,17 @@ export class WorkCompanionAdapter extends IWorkCompanion {
   #runtime;
   #send;
   #clock;
+  #knowledge;
   constructor({
     runtime,
+    knowledgeCompanion = null,
     send,
     clock = Date.now
   }) {
     super();
     if (!runtime?.conversation || !runtime?.decisions || !runtime?.principal) throw new TypeError('Work runtime required');
     this.#runtime = runtime;
+    this.#knowledge = knowledgeCompanion;
     this.#send = send;
     this.#clock = clock;
   }
@@ -23,6 +26,20 @@ export class WorkCompanionAdapter extends IWorkCompanion {
   }
   onEntrySaved(input) {
     return this.#runtime.conversation.onEntrySaved(input);
+  }
+  selectForMorning(input) {
+    return this.#runtime.conversation.selectForMorning?.(input) ?? Promise.resolve({
+      offer: null
+    });
+  }
+  prepareForMorning(input) {
+    return this.#runtime.conversation.prepareForMorning?.(input) ?? Promise.resolve(null);
+  }
+  recordDelivery(input) {
+    return this.#runtime.conversation.recordDelivery(input);
+  }
+  recordDeliveryFailure(input) {
+    return this.#runtime.conversation.recordFailure(input);
   }
   async #deliver({
     principal,
@@ -58,7 +75,7 @@ export class WorkCompanionAdapter extends IWorkCompanion {
         parseMode: null
       });
       if (!receipt?.messageId) throw new Error('WORK_DELIVERY_UNACKNOWLEDGED');
-      await this.#runtime.decisions.recordDelivery({
+      if (page.decisionId) await (this.#runtime.conversation.recordDelivery ?? this.#runtime.decisions.recordDelivery.bind(this.#runtime.decisions))({
         username: p.username,
         decisionId: page.decisionId,
         botMessageId: String(receipt.messageId),
@@ -71,7 +88,7 @@ export class WorkCompanionAdapter extends IWorkCompanion {
       };
     } catch (error) {
       try {
-        await this.#runtime.decisions.recordFailure({
+        if (page.decisionId) await (this.#runtime.conversation.recordFailure ?? this.#runtime.decisions.recordFailure.bind(this.#runtime.decisions))({
           username: p.username,
           decisionId: page.decisionId,
           uncertain: true,
@@ -101,6 +118,7 @@ export class WorkCompanionAdapter extends IWorkCompanion {
   async handleCallback({
     principal,
     callbackData,
+    knowledgePrincipal = null,
     botMessageId,
     responseContext
   }) {
@@ -113,6 +131,22 @@ export class WorkCompanionAdapter extends IWorkCompanion {
       botMessageId,
       asOf: this.#clock()
     });
+    if (result.status === 'knowledge_review') {
+      const p = this.#runtime.principal.verify(principal);
+      if (!p || !knowledgePrincipal || knowledgePrincipal.username !== p.username || knowledgePrincipal.conversationId !== p.conversationId || !this.#knowledge?.openReview) return {
+        handled: true,
+        status: 'deferred',
+        reason: 'knowledge_identity_unavailable'
+      };
+      return {
+        handled: true,
+        ...(await this.#knowledge.openReview({
+          principal: knowledgePrincipal,
+          ids: result.knowledgeReviewIds,
+          responseContext
+        }))
+      };
+    }
     if (result.page) {
       const delivery = await this.#deliver({
         principal,

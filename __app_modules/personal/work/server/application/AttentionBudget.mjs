@@ -108,7 +108,7 @@ export class AttentionBudget {
       });
       if (history.available === false) return denied('history_unavailable');
       const eligible = attentionEligibility({
-        records: mergeAttentionHistory(Object.values(state.attention ?? {}), history),
+        records: mergeAttentionHistory(Object.values(state.attention ?? {}).filter(r => !same.some(old => old.id === r.id && old.status === 'prepared')), history),
         policy: current.attention,
         day,
         asOf: now,
@@ -205,9 +205,10 @@ export class AttentionBudget {
         if (row.botMessageId !== String(botMessageId)) throw workError('ATTENTION_ACK_MISMATCH');
         return null;
       }
-      if (row.status !== 'prepared' || row.day !== day || deliveredAt >= row.expiresAt || deliveredAt < row.createdAt) throw workError('ATTENTION_NOT_PENDING');
+      if (row.status !== 'prepared' || deliveredAt >= row.expiresAt || deliveredAt < row.createdAt) throw workError('ATTENTION_NOT_PENDING');
       return {
         type: 'attention.sent',
+        day,
         reservationId,
         botMessageId: String(botMessageId),
         at: deliveredAt
@@ -233,7 +234,7 @@ export class AttentionBudget {
     action,
     asOf = this.#clock()
   }) {
-    if (!['keep_active', 'snooze', 'retire', 'review', 'later', 'dismiss', 'cancel'].includes(action)) throw workError('INVALID_ATTENTION_RESPONSE');
+    if (!['keep_active', 'snooze', 'retire', 'review', 'later', 'dismiss', 'cancel', 'refresh'].includes(action)) throw workError('INVALID_ATTENTION_RESPONSE');
     return this.#change(username, reservationId, 'respond', asOf, row => {
       if (row.response) {
         if (row.response.action !== action) throw workError('ATTENTION_RESPONSE_CONFLICT');

@@ -18,7 +18,7 @@ Work references include provider, account, object kind and opaque string ID. Nev
 
 ## Implementation status
 
-The context/backfill increment supplies per-user configuration, read-only provider context, durable links/relevance, and explicit quiet historical import jobs. The two-way increment adds guarded provider commands, journal interpretation and bound Telegram decisions. Proactive attention and housekeeping remain a separate increment. Starting the runtime does not extract journal history. The server has no operator import endpoint; the CLI constructs the separate job capability.
+The context/backfill increment supplies per-user configuration, read-only provider context, durable links/relevance, and explicit quiet historical import jobs. The two-way increment adds guarded provider commands, journal interpretation and bound Telegram decisions. Budgeted attention and Telegram housekeeping are implemented behind the separate proactive flag. Source installation does not activate them. Starting the runtime does not extract journal history. The server has no operator import endpoint; the CLI constructs the separate job capability.
 
 
 ## Provider collection and completeness
@@ -272,3 +272,48 @@ preparation revalidates that exact offer before reserving capacity. Owner-approv
 KB review proposals form one invitation, with at most five IDs and no proposal
 content in the unsolicited message. Provider mutation still uses the separate
 command confirmation path.
+
+## Telegram maintenance and linking
+
+`Review work` or `/work_review` opens an explicitly requested cleanup session,
+three items per page. A bound selection opens `Keep active`, `Revisit in30 days`
+and `Stop tracking`. These change only local relevance. Snooze uses thirty local
+calendar days, preserving local time across DST. Refreshes, imports and new links
+cannot silently erase a pause or retirement. Old controls reject after a native
+version, configuration, relevance or expiry change.
+
+Unsolicited processing starts with one invitation (`Review`, `Later`, `Dismiss`),
+not a backlog list. First-fourteen-day KB control dates and unavailable KB paths
+add no Work question. The existing morning exchange reserves KB units first;
+only one remaining unit can hold a Work invitation. Existing weekly KB delivery
+can delegate to one `Review N suggestions?` invitation rather than an unsolicited
+batch. Its opted-in private controls need the actual independently attested KB
+principal; a Work identity cannot substitute for it. Work keeps Later/Dismiss
+preferences locally and does not delete or accept KB proposals.
+
+`Link work` or `/link_work` first selects a task, then a grounded normal KB
+commitment, then `Same commitment`, `A step toward it` or `Context only`.
+The KB owner supplies at most three current choices per page and excludes
+sensitive/never, retracted and unsupported evidence. Both owners must map to the
+same configured private destination. Relationship confirmation creates only the
+local typed link. A later real completion may resolve a same-commitment loop only
+through the KB owner's existing source/pin/current-state checks; a step or context
+relationship never closes the broader outcome.
+
+The callback executor keeps a temporary claim capability for the exact delivered
+decision and choice. Caller-supplied flow state, a copied principal or a plain
+keyboard label grants no mutation authority. Server invitation preparation uses
+only configured destination and recorded eligible offer/reservation; it cannot
+prepare provider commands or create authored user evidence.
+
+Stale-source repair checks available observations without asserting that an item
+is open or done. User intent fingerprints exclude exposure bookkeeping, so
+recording an ACK does not invalidate its own controls or make an item active.
+Acknowledged item cooldown and shared capacity are checked before optional paid
+ranking. In-flight capacity carries over midnight until ACK/failure/expiry; an
+unreleased ACK records its actual local delivery day, while a released old
+preparation cannot revive.
+
+All production flags remain opt-in. Synthetic tests are not live commissioning:
+select domains/windows and verify a bounded acknowledged invitation plus local
+snooze/retirement before enabling broader proactive delivery.

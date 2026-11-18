@@ -31,6 +31,36 @@ export class KnowledgeWorkBridge {
       unansweredInvitations: []
     });
   }
+  linkCandidates(input) {
+    return this.#questions?.linkCandidates?.(input) ?? Promise.resolve({
+      available: false,
+      items: [],
+      revision: 'unavailable',
+      nextCursor: null
+    });
+  }
+  attentionGate(input) {
+    return this.#questions?.attentionGate?.(input) ?? Promise.resolve({
+      mode: 'legacy',
+      questionCount: 2,
+      reason: 'unavailable'
+    });
+  }
+  attentionEligibility(input) {
+    return this.#questions?.attentionEligibility?.(input) ?? Promise.resolve({});
+  }
+  pendingReview(input) {
+    return this.#questions?.pendingReview?.(input) ?? Promise.resolve({
+      available: false,
+      ids: [],
+      count: 0,
+      revision: 'unavailable'
+    });
+  }
+  openReview(input) {
+    if (!this.#questions?.openReview) throw new Error('KNOWLEDGE_UNAVAILABLE');
+    return this.#questions.openReview(input);
+  }
   async applyProviderEvent({
     username,
     event,

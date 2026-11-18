@@ -1,6 +1,7 @@
+import { attentionEligibility } from '../attentionPolicy.mjs';
 import moment from 'moment-timezone';
 import { keyOf } from '../workModel.mjs';
-import { workHash } from '../workState.mjs';
+import { workHash, workRelevanceVersion } from '../workState.mjs';
 const instant = (value, now) => Number.isFinite(value) && value >= 0 && value <= now;
 const same = (a, b) => a && b && keyOf(a) === keyOf(b);
 const DAY = 86400000;
@@ -123,7 +124,7 @@ export function selectOpportunities({
       reason = newest === null ? 'unknown_source_dates' : 'stale_relevance';
       eligibleAt = newest === null ? asOf : newest + attention.staleRelevanceDays * DAY;
     }
-    const relevanceVersion = workHash(r),
+    const relevanceVersion = workRelevanceVersion(r),
       id = 'offer.' + workHash([policy.username, day, flowType, item.ref, item.version, policy.revision, relevanceVersion]);
     const offer = {
       id,
@@ -141,6 +142,20 @@ export function selectOpportunities({
       expectedVersion: item.version,
       policyRevision: policy.revision
     };
+    const capacity = attentionEligibility({
+      records,
+      policy: attention,
+      day,
+      asOf,
+      channel: flowType === 'housekeeping' ? 'housekeeping' : 'review',
+      questionUnits: 1,
+      refKey: key,
+      flowType
+    });
+    if (!explicitRequest && !capacity.allowed) {
+      drop(key, capacity.reason);
+      continue;
+    }
     candidates.push({
       offer,
       recentAt,
@@ -148,7 +163,15 @@ export function selectOpportunities({
     });
   }
   const review = context.pendingReview;
-  if (review?.available === true && (explicitRequest || review.due === true) && Array.isArray(review.ids) && review.ids.length && typeof review.revision === 'string') {
+  if ((explicitRequest || attentionEligibility({
+    records,
+    policy: attention,
+    day,
+    asOf,
+    channel: 'review',
+    questionUnits: 1,
+    flowType: 'knowledge_review'
+  }).allowed) && review?.available === true && (explicitRequest || review.due === true) && Array.isArray(review.ids) && review.ids.length && typeof review.revision === 'string') {
     const ids = review.ids.slice(0, 5);
     const id = 'offer.' + workHash([policy.username, day, 'knowledge_review', ids, review.revision, policy.revision]);
     candidates.push({

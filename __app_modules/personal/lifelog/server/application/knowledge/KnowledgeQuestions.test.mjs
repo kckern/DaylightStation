@@ -939,3 +939,216 @@ it('quarantines the shared reservation on uncertain KB send failure', async () =
   }));
   expect((await prepared(d)).sendAllowed).toBe(false);
 });
+function pendingReviewFixture() {
+  const objects = {},
+    pendingReviews = [];
+  for (let n = 0; n < 5; n++) {
+    const id = 'person.sample' + n;
+    objects[id] = {
+      ...loop({
+        id,
+        kind: 'person',
+        title: 'Sample' + n,
+        status: 'candidate'
+      }),
+      names: ['Sample' + n],
+      aliases: []
+    };
+    pendingReviews.push({
+      id: 'review-' + n,
+      reason: 'person_confirmation',
+      createdAt: AS_OF,
+      proposal: {
+        id: 'review-' + n,
+        op: 'propose_entity',
+        target: id,
+        evidenceRef: 'journalist:msg:source-1',
+        quote: 'Sample' + n,
+        fields: {
+          kind: 'person',
+          name: 'Sample' + n
+        }
+      }
+    });
+  }
+  const d = setup({
+    objects,
+    state: {
+      pendingReviews
+    }
+  });
+  d.sources.readByRefs.mockResolvedValue([evidence({
+    content: 'I met Sample0 Sample1 Sample2 Sample3 Sample4.'
+  })]);
+  return d;
+}
+it('publishes only bounded eligible review IDs and requires an independently verified KB principal to open controls', async () => {
+  const d = pendingReviewFixture(),
+    pending = await d.service.pendingReview({
+      username: 'sample',
+      asOf: AS_OF,
+      max: 5
+    });
+  expect(pending.ids).toHaveLength(5);
+  expect(JSON.stringify(pending)).not.toContain('Sample0');
+  expect((await d.store.read({
+    username: 'sample'
+  })).state.deliveries).toBeUndefined();
+  await expect(d.service.openReview({
+    principal: {
+      username: 'sample',
+      authored: true
+    },
+    ids: pending.ids,
+    asOf: AS_OF
+  })).rejects.toThrow();
+  const p = d.principal('w1:bound-optin');
+  const delivery = await d.service.openReview({
+    principal: p,
+    ids: pending.ids,
+    asOf: AS_OF
+  });
+  expect(delivery.questions).toHaveLength(5);
+  expect(delivery.sendAllowed).toBe(true);
+  expect((await d.store.read({
+    username: 'sample'
+  })).objects['person.sample0'].status).toBe('candidate');
+});
+it('keeps review revision semantic across unrelated receipts and honors revocations plus local exclusions', async () => {
+  const d = pendingReviewFixture(),
+    first = await d.service.pendingReview({
+      username: 'sample',
+      asOf: AS_OF,
+      max: 5
+    });
+  const s = await d.store.read({
+    username: 'sample'
+  });
+  s.revision++;
+  s.state.unrelated = 'bookkeeping';
+  d.store.users.set('sample', s);
+  expect((await d.service.pendingReview({
+    username: 'sample',
+    asOf: AS_OF,
+    max: 5
+  })).revision).toBe(first.revision);
+  expect((await d.service.pendingReview({
+    username: 'sample',
+    asOf: AS_OF,
+    max: 5,
+    excludeIds: first.ids
+  })).ids).toHaveLength(0);
+  s.state.invalidatedRefs = ['journalist:msg:source-1'];
+  d.store.users.set('sample', s);
+  expect((await d.service.pendingReview({
+    username: 'sample',
+    asOf: AS_OF,
+    max: 5
+  })).ids).toHaveLength(0);
+});
+it('exposes a strict linked Work eligibility mask with no private KB content', async () => {
+  const d = setup({
+    objects: {
+      'loop.private': loop({
+        id: 'loop.private',
+        ask_policy: 'never'
+      })
+    }
+  });
+  const mask = await d.service.attentionEligibility({
+    username: 'sample',
+    kbObjectIds: ['loop.private', 'loop.missing'],
+    asOf: AS_OF
+  });
+  expect(mask['loop.private'].allowed).toBe(false);
+  expect(mask['loop.missing'].allowed).toBe(false);
+  expect(JSON.stringify(mask)).not.toContain('Sample reply');
+});
+it('an opted-in review receipt cannot prepare and send the same private suggestions twice', async () => {
+  const d = pendingReviewFixture(),
+    pending = await d.service.pendingReview({
+      username: 'sample',
+      asOf: AS_OF
+    }),
+    p = d.principal('w1:review-once');
+  const first = await d.service.openReview({
+    principal: p,
+    ids: pending.ids,
+    asOf: AS_OF
+  });
+  await d.service.recordDelivery({
+    username: 'sample',
+    deliveryId: first.deliveryId,
+    botMessageId: '99',
+    asOf: AS_OF
+  });
+  expect((await d.service.openReview({
+    principal: p,
+    ids: pending.ids,
+    asOf: AS_OF
+  })).sendAllowed).toBe(false);
+});
+it('keeps the five private review controls after opt-in outside unsolicited attention history', async () => {
+  const d = pendingReviewFixture(),
+    pending = await d.service.pendingReview({
+      username: 'sample',
+      asOf: AS_OF
+    }),
+    delivery = await d.service.openReview({
+      principal: d.principal('w1:opt-in'),
+      ids: pending.ids,
+      asOf: AS_OF
+    });
+  await d.service.recordDelivery({
+    username: 'sample',
+    deliveryId: delivery.deliveryId,
+    botMessageId: '99',
+    asOf: AS_OF
+  });
+  expect((await d.service.attentionHistory({
+    username: 'sample',
+    asOf: AS_OF
+  })).deliveries).toHaveLength(0);
+});
+it('returns only normal, grounded link choices to the configured private destination', async () => {
+  const object = loop({
+      evidence: [{
+        ref: 'journalist:msg:source-1',
+        date: '2026-11-02',
+        quote: 'I will contact Sample on Monday',
+        source: 'user'
+      }]
+    }),
+    d = setup({
+      objects: {
+        [object.id]: object,
+        'loop.secret': loop({
+          id: 'loop.secret',
+          sensitivity: 'sensitive'
+        }),
+        'loop.never': loop({
+          id: 'loop.never',
+          ask_policy: 'never'
+        })
+      }
+    }),
+    input = {
+      username: 'sample',
+      senderId: '101',
+      conversationId: 'telegram:b42_c101',
+      asOf: AS_OF,
+      max: 3,
+      cursor: 0
+    };
+  const result = await d.service.linkCandidates(input);
+  expect(result.items).toHaveLength(1);
+  expect(result.items[0]).toMatchObject({
+    id: object.id,
+    basisRefs: ['journalist:msg:source-1']
+  });
+  expect(JSON.stringify(result)).not.toContain('I will contact');
+  expect((await d.service.linkCandidates({
+    ...input,
+    conversationId: 'other'
+  })).items).toHaveLength(0);
+});

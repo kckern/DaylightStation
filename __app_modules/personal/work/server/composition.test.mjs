@@ -455,3 +455,41 @@ it('exposes a scoped attention budget backed by the public KB history reader', a
     });
   }
 });
+it('keeps KB-only attention behavior for an unenrolled or read-only user without granting an unrecorded Work invitation', async () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'work-attention-role-')),
+    runtime = createWorkRuntime({
+      configuration: configuration(),
+      environment: 'test',
+      hostId: 'fixture-host',
+      rootForUser: u => path.join(tmp, u),
+      userTimezone: () => 'America/Los_Angeles',
+      readCurrent: async () => current(),
+      readHistory: async () => ({}),
+      clock: () => AS_OF
+    });
+  try {
+    const input = {
+      username: 'sample',
+      decisionId: 'kb-one',
+      channel: 'morning',
+      flowType: 'morning',
+      questionUnits: 1,
+      expiresAt: AS_OF + 86400000
+    };
+    expect(await runtime.attention.reserve({
+      ...input,
+      owner: 'knowledge'
+    })).toMatchObject({
+      allowed: true,
+      reservationId: null
+    });
+    expect((await runtime.attention.reserve(input)).allowed).toBe(false);
+    expect(fs.readdirSync(tmp)).toHaveLength(0);
+  } finally {
+    await runtime.dispose();
+    fs.rmSync(tmp, {
+      recursive: true,
+      force: true
+    });
+  }
+});
