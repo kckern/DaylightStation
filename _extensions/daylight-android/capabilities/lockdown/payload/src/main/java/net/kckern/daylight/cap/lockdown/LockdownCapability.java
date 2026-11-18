@@ -355,6 +355,9 @@ public final class LockdownCapability implements Capability, LockdownControl {
             LockdownCommand command = LockdownCommand.parse(req.body, System.currentTimeMillis());
             synchronized (inputGuard) {
                 if (!inputReady()) return Router.Response.error(409, "input_unavailable", "message", "volume-key suppression is unavailable");
+                if (inputLock.alreadyStored(command)) {
+                    return Router.Response.json(200, inputLockJson(Replies.ok()));
+                }
                 InputLockState next = InputLockState.parse(inputLock.toJson());
                 if (!next.apply(command)) {
                     return Router.Response.error(409, "stale_revision", "message", "stale or conflicting input lock revision");
@@ -362,6 +365,7 @@ public final class LockdownCapability implements Capability, LockdownControl {
                 if (!write(inputFile, next.toJson())) {
                     return Router.Response.error(500, "internal", "message", "the input lock could not be stored");
                 }
+                next.markStored();
                 inputLock = next;
                 note("input lock " + (command.locked ? "set" : "cleared") + " revision=" + next.revision());
                 return Router.Response.json(200, inputLockJson(Replies.ok()));

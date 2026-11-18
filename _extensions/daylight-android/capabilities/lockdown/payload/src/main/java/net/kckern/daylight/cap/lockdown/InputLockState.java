@@ -12,6 +12,7 @@ final class InputLockState {
     /** 0 = not locked; Long.MAX_VALUE = locked until released. */
     private long until;
     private long revision;
+    private boolean durable;
 
     /** No stored state is unlocked. A stored state that cannot be read is locked until released. */
     static InputLockState parse(String json) {
@@ -24,6 +25,7 @@ final class InputLockState {
             if (until < 0 || revision < 0) throw new IllegalArgumentException();
             s.until = until;
             s.revision = revision;
+            s.durable = true;
         } catch (Exception e) {
             s.until = Long.MAX_VALUE;
             s.revision = 0;         // so any well-formed release can clear it
@@ -42,9 +44,16 @@ final class InputLockState {
 
     synchronized long until() { return until; }
 
+    synchronized boolean alreadyStored(LockdownCommand command) {
+        return durable && until == command.deadline() && revision == (command.revision == null ? 0 : command.revision);
+    }
+
+    synchronized void markStored() { durable = true; }
+
     /** False when the command is stale or conflicts with what is stored; nothing changes then. */
     synchronized boolean apply(LockdownCommand command) {
         if (!command.canApply(revision, until)) return false;
+        durable = false;
         until = command.deadline();
         if (command.revision != null) revision = command.revision;
         return true;

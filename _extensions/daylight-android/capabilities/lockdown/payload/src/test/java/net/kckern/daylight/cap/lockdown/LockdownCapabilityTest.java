@@ -628,6 +628,36 @@ public class LockdownCapabilityTest {
         assertEquals(4, again.services().find(InputLock.class).revision());
     }
 
+    @Test public void identicalDurableCommandsAckWithoutAnotherWriteOrLog() throws Exception {
+        File dir = tmp.newFolder();
+        startForReal(new FakeContext(dir), dir);
+        cap.useSuppressionReadyForTest(() -> true);
+        final String release = "{\"locked\":false}";
+        File file = new File(dir, "state/input-lock.json");
+        File part = new File(dir, "state/input-lock.json.part");
+        assertFalse(file.exists());
+        assertTrue(part.mkdirs());
+        assertEquals(500, call("POST", "/lockdown/input", release).getInt("_status"));
+        assertTrue(part.delete());
+        assertEquals(200, call("POST", "/lockdown/input", release).getInt("_status"));
+        assertTrue(file.isFile());
+        assertTrue(part.mkdir()); // every further write attempt would fail
+        for (int i = 0; i < 3; i++) {
+            JSONObject ack = call("POST", "/lockdown/input", release);
+            assertEquals(200, ack.getInt("_status"));
+            assertFalse(ack.getBoolean("inputLocked"));
+            assertEquals(0, ack.getLong("revision"));
+        }
+        assertEquals(1, ((FakeShell)core.shell()).notes.stream().filter(n -> n.contains("input lock cleared")).count());
+        cap.useSuppressionReadyForTest(() -> false);
+        assertEquals(409, call("POST", "/lockdown/input", release).getInt("_status"));
+
+        startForReal(new FakeContext(dir), dir);
+        cap.useSuppressionReadyForTest(() -> true);
+        assertEquals(200, call("POST", "/lockdown/input", release).getInt("_status"));
+        assertEquals(0, ((FakeShell)core.shell()).notes.stream().filter(n -> n.contains("input lock cleared")).count());
+    }
+
     // ── the pairing dialog ────────────────────────────────────────────────────
 
     @Test public void aGrantedPairingDialogIsReportedInStatus() throws Exception {

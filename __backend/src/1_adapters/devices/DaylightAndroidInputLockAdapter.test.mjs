@@ -63,8 +63,16 @@ describe('Portal input lock selection at startup', () => {
     httpClient.get.mockResolvedValue({data:{ok:true,inputLock:{inputReady:true,inputLocked:false,revision:12}}});
     expect(await actuator.probe()).toEqual({capabilities:['portal-keys'],locked:false,commandRevision:12});
   });
-  it('restores the legacy PUT after switching back', async () => {
-    const {actuator,fetchFn,httpClient} = fixture('fully-kiosk');
+  it('reports unsupported providers unavailable without contacting either actuator', async () => {
+    const {actuator,fetchFn,httpClient} = fixture('unsupported-provider');
+    expect(await actuator.stop({commandRevision:11})).toMatchObject({ok:false,code:'CAPABILITY_UNAVAILABLE'});
+    expect((await actuator.probe()).capabilities).toEqual([]);
+    expect(fetchFn).not.toHaveBeenCalled();
+    expect(httpClient.get).not.toHaveBeenCalled();
+    expect(httpClient.post).not.toHaveBeenCalled();
+  });
+  it.each(['fully-kiosk',undefined])('uses the legacy PUT with provider %s', async provider => {
+    const {actuator,fetchFn,httpClient} = fixture(provider);
     fetchFn.mockImplementation(async (_,options) => {
       expect(options.method).toBe('PUT');
       const {locked,revision} = JSON.parse(options.body);

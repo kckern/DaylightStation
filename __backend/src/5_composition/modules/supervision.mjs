@@ -16,6 +16,7 @@ export function createPortalInputLock({configService, householdId, deviceId, por
       : null;
     return new DaylightAndroidInputLockAdapter(client);
   }
+  if (control?.provider != null && control.provider !== 'fully-kiosk') return new DaylightAndroidInputLockAdapter(null);
   const auth = portalKeys?.auth_ref && configService.getHouseholdAuth?.(portalKeys.auth_ref, householdId);
   return new PortalKeysLockdownAdapter({baseUrl:portalKeys?.base_url, token:typeof auth === 'string' ? auth : auth?.token, fetchFn, logger});
 }
