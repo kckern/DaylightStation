@@ -126,7 +126,7 @@ An input id is processed once per user per route.
 - Two uploads of one input that overlap share one run.
 - Ledger records are dropped after 35 days.
 
-The phone clears a queued capture after an HTTP 200 receipt with JSON `ok: true`, a boolean `duplicate`, and a string `inputId` equal to the submitted ID. On `/api/v1/journalist/memo` it also accepts a matching `memoId` when `inputId` is absent. Both first-time and duplicate receipts use this check, including after offline queue recovery.
+The phone clears a queued capture after an HTTP 200 receipt with JSON `ok: true`, a boolean `duplicate`, and a string `inputId` equal to the submitted ID. On `/api/v1/journalist/memo` it also accepts a matching `memoId` when `inputId` is absent. Both first-time and duplicate receipts use this check, including after offline queue recovery. The receipt must be one complete JSON object with unique member names.
 
 An unexpected receipt leaves the original bytes queued and retries with backoff without counting toward the parking limit. A permanent intake rejection parks the capture with its bytes intact when the status and JSON error match the documented refusal and `ok` is boolean false. The backend does not store the uploaded bytes for retry.
 

@@ -5,7 +5,6 @@ import net.kckern.daylight.core.backend.Http;
 
 import org.json.JSONException;
 import org.json.JSONObject;
-import org.json.JSONTokener;
 
 import java.io.File;
 import java.io.IOException;
@@ -208,7 +207,7 @@ final class InputUploader implements UploadPump.Sender {
 
     private static boolean accepted(String body, String expectedId, boolean legacyMemoRoute) {
         try {
-            JSONObject receipt = responseObject(body);
+            JSONObject receipt = IntakeJson.parse(body);
             Object id = receipt.opt("inputId");
             if (legacyMemoRoute && !receipt.has("inputId")) id = receipt.opt("memoId");
             return Boolean.TRUE.equals(receipt.opt("ok"))
@@ -222,7 +221,7 @@ final class InputUploader implements UploadPump.Sender {
     /** The intake's own refusal, identified by the documented status and error code. */
     private static String intakeError(int status, String body) {
         try {
-            JSONObject response = responseObject(body);
+            JSONObject response = IntakeJson.parse(body);
             if (!Boolean.FALSE.equals(response.opt("ok"))) return null;
             Object error = response.opt("error");
             if (!(error instanceof String)) return null;
@@ -260,11 +259,4 @@ final class InputUploader implements UploadPump.Sender {
         }
     }
 
-    private static JSONObject responseObject(String body) throws JSONException {
-        if (body == null) throw new JSONException("Missing response body");
-        JSONTokener parser = new JSONTokener(body);
-        JSONObject object = new JSONObject(parser);
-        if (parser.nextClean() != 0) throw new JSONException("Unexpected data after response object");
-        return object;
-    }
 }

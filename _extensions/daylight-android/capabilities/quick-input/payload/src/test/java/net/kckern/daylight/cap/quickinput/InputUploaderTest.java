@@ -104,6 +104,31 @@ public class InputUploaderTest {
         }
     }
 
+
+    @Test public void onlyStrictUnambiguousJsonReceiptsRemoveCaptures() throws Exception {
+        String valid = receipt("inputId", false);
+        body = " \t\r\n" + valid.replace("\"inputId\"", "\"input\\u0049d\"")
+                .replace("}", ",\"extra\":[true,false,null,{},[1,-2.3e+4],\"quoted \\\"value\\\"\"]}") + "\n";
+        assertQueueReceipt(new InputUploader(backend, http), false, true);
+
+        for (String malformed : new String[] {
+                valid.replace("\"ok\"", "ok"),
+                valid.replace('"', '\''),
+                valid.replace("\"ok\":true", "\"ok\":TRUE"),
+                valid.replace("\"ok\":true", "\"ok\":/*comment*/true"),
+                valid + " /*comment*/",
+                valid + "\u0000",
+                valid.replace("}", ",}"),
+                valid.replace("}", ",\"extra\":01}"),
+                valid.replace("}", ",\"extra\":\"bad\\q\"}"),
+                valid.replace("}", ",\"extra\":\"bad\nline\"}"),
+                valid.replace("}", ",\"input\\u0049d\":\"" + CAPTURE_ID + "\"}"),
+        }) {
+            body = malformed;
+            assertQueueReceipt(new InputUploader(backend, http), true, false);
+        }
+    }
+
     @Test public void onlyTheJournalistMemoAliasCanAcknowledgeWithMemoId() throws Exception {
         InputUploader alias = new InputUploader(backend, http, () -> Destinations.usable(
                 java.util.Collections.singletonList("journal|Journal|voice|/api/v1/journalist/memo"), null));
