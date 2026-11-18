@@ -1,5 +1,6 @@
 // studentPanelModel.js — pure derivation logic for StudentPanel.jsx, split
 // out so Fast Refresh can hot-reload the panel component on its own.
+import { bankScoreLabel } from "../progress/scoreLabel.js";
 
 /** Pure model: which report leads, today's metric, the done flip, last activity. */
 export function derivePanelModel(reports) {
@@ -32,5 +33,5 @@ export function deriveLatestScore(results, bankTitles) {
     }
   }
   if (!best) return null;
-  return { label: bankTitles?.get(best.bankId) ?? best.bankId, pct: best.pct };
+  return { label: bankTitles?.get(best.bankId) ?? bankScoreLabel(best.bankId), pct: best.pct };
 }

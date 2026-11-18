@@ -18,7 +18,7 @@ import { planBands } from "./shelfLayout.js";
 const EXPAND_CAP = 24;
 
 function KindShelf({ shelf }) {
-  const { kindId, verb, icon, token, Tile, items, onOpen, wide, cap } = shelf;
+  const { kindId, verb, icon, token, Tile, items, onOpen, wide, fill, cap } = shelf;
   const [expanded, setExpanded] = useState(false);
 
   const expandLimit = kindId === 'decks' ? EXPAND_CAP : items.length;
@@ -27,7 +27,7 @@ function KindShelf({ shelf }) {
 
   return (
     <section
-      className={`school-shelf school-shelf--${kindId} ${wide ? 'is-wide' : 'is-narrow'} ${expanded ? 'is-expanded' : ''}`}
+      className={`school-shelf school-shelf--${kindId} ${wide ? 'is-wide' : fill ? 'is-fill' : 'is-narrow'} ${expanded ? 'is-expanded' : ''}`}
     >
       <header className="school-shelf__head">
         <span className="school-shelf__icon" style={{ color: `var(--kind-${token})` }}><Icon name={icon} /></span>

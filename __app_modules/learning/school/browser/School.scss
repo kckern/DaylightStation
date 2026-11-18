@@ -1000,15 +1000,16 @@
   &__actions { display: flex; flex-wrap: wrap; gap: 0.55rem; }
   &__actions button {
     min-height: 48px; padding: 0 1rem; border: none; border-radius: 10px;
-    background: var(--school-accent); color: var(--school-accent-ink); font-weight: 800; cursor: pointer;
+    background: var(--school-accent); color: var(--school-accent-ink); font-size: 1rem; font-weight: 800; cursor: pointer;
     &:disabled { opacity: 0.4; cursor: default; }
   }
 
   &__recent h3 { margin: 0 0 0.45rem; font-size: 1rem; }
   &__score-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 260px), 1fr)); gap: 0.5rem; }
   &__score {
-    display: grid; grid-template-columns: 1fr auto; gap: 0.2rem 0.6rem;
+    display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 0.2rem 0.6rem;
     padding: 0.65rem 0.75rem; border-radius: 9px; background: var(--school-surface);
+    strong { min-width: 0; overflow-wrap: anywhere; }
   }
   &__score-learner, &__score-when { color: var(--school-muted); font-size: 0.82rem; }
   &__score-value { font-weight: 800; }
@@ -1445,6 +1446,15 @@
   // App / deck shelves: a fixed-width column of banners / cards.
   &--apps.is-narrow, &--decks.is-narrow { width: 320px; }
   &--apps &__grid, &--decks &__grid { grid-template-columns: 1fr; }
+  // With no posters in the band, the list takes the width: cards side by side.
+  &--apps.is-fill, &--decks.is-fill { flex: 1 1 320px; }
+  &--apps.is-fill &__grid, &--decks.is-fill &__grid {
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr));
+  }
+  &--apps.is-fill .school-tile--app { grid-column: auto; }
+  // Room for the deck's stacked edges, which hang 6px right and 8px below the
+  // card; at full width they would otherwise give the shelves a sideways scroll.
+  &--decks.is-fill &__grid { padding: 0 6px 8px 0; }
 }
 
 
@@ -1524,12 +1534,12 @@
     .school-tile__app-icon { flex: 0 0 auto; font-size: 1.6rem; line-height: 1; }
     .school-tile__app-body { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 0.15rem; }
     .school-tile__app-label {
-      font-size: 1.05rem; font-weight: 800; text-transform: uppercase; letter-spacing: 0.03em;
-      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+      font-size: 1.05rem; line-height: 1.2; font-weight: 800; text-transform: uppercase; letter-spacing: 0.03em;
+      overflow-wrap: anywhere;
     }
     .school-tile__app-blurb {
-      color: var(--school-muted); font-size: 0.9rem;
-      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+      color: var(--school-muted); font-size: 0.9rem; line-height: 1.25;
+      overflow-wrap: anywhere;
     }
     .school-tile__app-open { flex: 0 0 auto; color: var(--school-muted); font-weight: 700; font-size: 0.9rem; }
   }
