@@ -210,7 +210,7 @@ export class MealFoodCommands {
     if (!Array.isArray(selectedIds) || !selectedIds.length || selectedIds.some(id => typeof id !== 'string') || new Set(selectedIds).size !== selectedIds.length) fail('Explicit unique selected food IDs are required');
     if (!expectedVersions || typeof expectedVersions !== 'object' || Array.isArray(expectedVersions)) fail('Expected versions are required');
     if (!toDate && !toMeal) fail('A destination day or meal is required');
-    if (toDate && (!isISODate(toDate) || (today && toDate > today))) fail('Food cannot move to that day');
+    if (toDate && (!isISODate(toDate) || !isISODate(today) || toDate > today)) fail('Food cannot move to that day');
     if (toMeal && !isMeal(toMeal)) fail('Invalid meal');
     return this.store.runOperation(userId, operationId, { operation: 'foods-move', date, selectedIds, expectedVersions, toDate, toMeal }, async () => {
       const rows = await this.store.findByDate(userId, date);

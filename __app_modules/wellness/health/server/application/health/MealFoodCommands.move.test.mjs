@@ -54,6 +54,17 @@ describe('moveFoods', () => {
     expect(await rows('2026-09-05')).toEqual([]);
     expect(await rows(date)).toEqual(before);
   });
+  it('refuses a day move unless a valid today is supplied', async () => {
+    const before = await rows(date);
+    for (const missing of [undefined, null, '', 'tomorrow', '2026-02-31']) {
+      await expect(move({ toDate: '2026-09-05', today: missing })).rejects.toMatchObject({ status: 400 });
+    }
+    expect(await rows('2026-09-05')).toEqual([]);
+    expect(await rows(date)).toEqual(before);
+  });
+  it('does not need today for a move within the day', async () => {
+    await expect(move({ toMeal: 'night', today: undefined })).resolves.toMatchObject({ committed: true });
+  });
   it('refuses a future day and an empty destination', async () => {
     await expect(move({ toDate: '2026-09-08' })).rejects.toMatchObject({ status: 400 });
     await expect(move({})).rejects.toMatchObject({ status: 400 });
