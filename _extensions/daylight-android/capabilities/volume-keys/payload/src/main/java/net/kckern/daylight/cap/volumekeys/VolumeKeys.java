@@ -25,7 +25,7 @@ import java.util.function.LongSupplier;
  * (holding volume-down opened the power menu and delivered no key events), and
  * volume-up with volume-down is Android's accessibility shortcut.
  */
-final class VolumeKeys implements AccessibilityHub.KeyFilter {
+final class VolumeKeys implements AccessibilityHub.InputLockFilter {
     static final String TAG = "PORTALKEYS";
 
     private final CoreContext core;

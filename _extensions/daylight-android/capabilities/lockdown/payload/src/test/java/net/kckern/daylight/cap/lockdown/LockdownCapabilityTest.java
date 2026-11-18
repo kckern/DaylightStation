@@ -600,6 +600,9 @@ public class LockdownCapabilityTest {
         startForReal(new FakeContext(dir), dir);
         InputLock lock = core.services().find(InputLock.class);
         assertFalse(lock.active());
+        assertFalse(call("GET", "/lockdown", null).getJSONObject("inputLock").getBoolean("inputReady"));
+        assertEquals(409, call("POST", "/lockdown/input", "{\"locked\":true,\"revision\":4}").getInt("_status"));
+        cap.useSuppressionReadyForTest(() -> true);
         JSONObject r = call("POST", "/lockdown/input", "{\"locked\":true,\"revision\":4}");
         assertEquals(200, r.getInt("_status"));
         assertTrue(r.getBoolean("inputLocked"));
@@ -610,6 +613,11 @@ public class LockdownCapabilityTest {
         assertEquals(400, call("POST", "/lockdown/input", "{}").getInt("_status"));
         assertEquals(400, call("POST", "/lockdown/input", "{\"locked\":\"false\"}").getInt("_status"));
         assertTrue("a malformed command releases nothing", lock.active());
+        File part = new File(dir, "state/input-lock.json.part");
+        assertTrue(part.mkdir());
+        assertEquals(500, call("POST", "/lockdown/input", "{\"locked\":false,\"revision\":5}").getInt("_status"));
+        assertTrue(lock.active());
+        assertEquals(4, lock.revision());
 
         cap.stop();
         cap = new LockdownCapability();

@@ -92,6 +92,20 @@ public final class AccessibilityHub implements AccessibilityDelegate {
 
     public boolean isBound() { return bound != null; }
 
+    /** A filter which consumes the volume keys while the server input lock is active. */
+    public interface InputLockFilter extends KeyFilter { }
+
+    public boolean inputSuppressionReady() {
+        AccessibilityService service = service();
+        if (service == null || !keyFilters.stream().anyMatch(InputLockFilter.class::isInstance)) return false;
+        try {
+            AccessibilityServiceInfo info = infoAccess.get(service);
+            return info != null && (info.flags & AccessibilityServiceInfo.FLAG_REQUEST_FILTER_KEY_EVENTS) != 0;
+        } catch (RuntimeException unavailable) {
+            return false;
+        }
+    }
+
     /** How many key filters are registered. */
     public int keyFilterCount() { return keyFilters.size(); }
 

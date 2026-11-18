@@ -1,9 +1,25 @@
 import {CallHomeAssistantService} from '../../../../__capabilities/home-control/server/application/CallHomeAssistantService.mjs';
+import {DaylightAndroidRestClient} from '#adapters/devices/DaylightAndroidRestClient.mjs';
+import {DaylightAndroidInputLockAdapter} from '#adapters/devices/DaylightAndroidInputLockAdapter.mjs';
 import {PortalKeysLockdownAdapter} from '#adapters/devices/PortalKeysLockdownAdapter.mjs';
 import {createArcadeSupervisionConsumers} from '../../../../__app_modules/games/arcade/server/supervision-runtime.mjs';
 import {createTrustedParentalScanner} from '../../../../__app_modules/wellness/fitness/server/supervision-runtime.mjs';
 import {randomUUID} from 'node:crypto';
 import {createLedgerWriterGate,createRefusedSupervisionRuntime,EnforcementIncidentReporter,createSupervisionModule,createDisabledSupervisionRouter,JsonSupervisionRepository,StateGatesSupervisionPort,HaStopActuator,KioskSessionAuthority,BrowserStopConsumer,validateConsumerManifest,readLegacyStops,AccessDenied,ApprovalWorkflow,createApprovalTokenPrimitives,HaApprovalNotifier,ApprovalCallbackAuthority,ApprovalModeProducer,validateApprovalModeConfig,EffectiveEnforcement,ActivityCatalog,NativeLeaseConsumer,NativeLeaseAuthority,NativeLeaseCredentials,EligibilitySnapshot} from '../../../../__app_modules/household/supervision/server/index.mjs';
+/** Select the input actuator once, from the same device entry as kiosk control. */
+export function createPortalInputLock({configService, householdId, deviceId, portalKeys, httpClient, fetchFn, logger}) {
+  const control = configService.getDeviceConfig?.(deviceId, householdId)?.content_control;
+  if (control?.provider === 'daylight-android') {
+    const token = control.auth_ref && configService.getHouseholdAuth?.(control.auth_ref, householdId)?.[deviceId]?.token;
+    const client = token && control.host && httpClient
+      ? new DaylightAndroidRestClient({host:control.host, port:control.port, token}, {httpClient, logger})
+      : null;
+    return new DaylightAndroidInputLockAdapter(client);
+  }
+  const auth = portalKeys?.auth_ref && configService.getHouseholdAuth?.(portalKeys.auth_ref, householdId);
+  return new PortalKeysLockdownAdapter({baseUrl:portalKeys?.base_url, token:typeof auth === 'string' ? auth : auth?.token, fetchFn, logger});
+}
+
 /** Explicit configured registry; persisted authority survives config removal. */
 export async function createSupervisionRuntime(options){
   const {configService,householdId,clock={now:()=>Date.now()},logger,makeId=randomUUID}=options;
@@ -51,10 +67,9 @@ export async function createSupervisionRuntime(options){
   const configuredConsumers=()=>{
     const native=createArcadeSupervisionConsumers({configuration,devicesConfig:configService.getHouseholdDevices(householdId),configService,httpClient:options.httpClient,logger,clock,householdId,gamesCatalog:options.gamesCatalog});
     for(const device of configuration.devices){
-      if(device.portal_keys){
-        const auth=configService.getHouseholdAuth?.(device.portal_keys.auth_ref,householdId);
-        const adapter=new PortalKeysLockdownAdapter({baseUrl:device.portal_keys.base_url,token:typeof auth==='string'?auth:auth?.token,logger});
-        native.push({deviceId:device.id,capability:'portal-keys',capabilities:['portal-keys'],stop:input=>adapter.stop(input),release:input=>adapter.release(input)});
+      if(device.portal_keys || device.required_capabilities?.includes('portal-keys')){
+        const adapter=createPortalInputLock({configService,householdId,deviceId:device.id,portalKeys:device.portal_keys,httpClient:options.httpClient,logger});
+        native.push({deviceId:device.id,capability:'portal-keys',capabilities:['portal-keys'],stop:input=>adapter.stop(input),release:input=>adapter.release(input),probe:()=>adapter.probe()});
       }
       if(device.ha_stop){
         const gateway={callService:(...args)=>options.getHaGateway?.()?.callService(...args)??Promise.resolve({ok:false}),getState:(...args)=>options.getHaGateway?.()?.getState(...args)??Promise.resolve(null)};

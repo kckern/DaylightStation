@@ -152,7 +152,7 @@ import { createPianoMidiWake } from "../../__app_modules/learning/piano/server/c
 import { createPianoBridgeSupervisor, PIANO_BRIDGE_SUPERVISOR_LOG_MODULE } from "../../__app_modules/learning/piano/server/composition/bridge-supervisor.mjs";
 import { createStateGatesModule } from '#composition/modules/stateGates.mjs';
 import {randomUUID as supervisionCommandId} from 'node:crypto';
-import {createSupervisionRuntime,createDoNowSupervisionAuthority,createEnforcementIncidentNotifier,createShutdownIncidentReporting} from '#composition/modules/supervision.mjs';
+import {createPortalInputLock,createSupervisionRuntime,createDoNowSupervisionAuthority,createEnforcementIncidentNotifier,createShutdownIncidentReporting} from '#composition/modules/supervision.mjs';
 import {AccessDenied} from '../../__app_modules/household/supervision/server/index.mjs';
 import { KioskFrictionTracker } from '#apps/devices/services/KioskFrictionTracker.mjs';
 
@@ -2983,7 +2983,6 @@ const { readingSessions, readingSessionInterceptor } = await createSchoolReading
   // Shared public-kiosk shutdown is deliberately server-owned: NFC writes one
   // hand-editable state file and both kiosks observe its read-only projection.
   const { YamlShutdownDatastore } = await import('#adapters/persistence/yaml/YamlShutdownDatastore.mjs');
-  const { PortalKeysLockdownAdapter } = await import('#adapters/devices/PortalKeysLockdownAdapter.mjs');
   const { ShutdownService } = await import('#apps/shutdown/ShutdownService.mjs');
   const { createShutdownRouter } = await import('#api/v1/routers/shutdown.mjs');
   // Reload the small policy document on each safety check. That makes an NFC
@@ -2997,11 +2996,9 @@ const { readingSessions, readingSessionInterceptor } = await createSchoolReading
     return configService.getHouseholdAppConfig?.(householdId, 'shutdown') || {};
   };
   const shutdownConfig = readShutdownConfig();
-  const portalAuth = shutdownConfig.portal_keys?.auth_ref
-    ? configService.getHouseholdAuth?.(shutdownConfig.portal_keys.auth_ref, householdId) : null;
-  const portal = new PortalKeysLockdownAdapter({
-    baseUrl: shutdownConfig.portal_keys?.base_url,
-    token: typeof portalAuth === 'string' ? portalAuth : portalAuth?.token,
+  const portal = createPortalInputLock({
+    configService, householdId, deviceId:shutdownConfig.portal_keys?.device_id ?? 'portal',
+    portalKeys:shutdownConfig.portal_keys, httpClient:axios,
     logger: rootLogger.child({ module: 'shutdown-portal' }),
   });
   const getShutdownPolicy = () => {

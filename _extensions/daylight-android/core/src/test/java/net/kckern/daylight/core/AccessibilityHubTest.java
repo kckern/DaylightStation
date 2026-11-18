@@ -145,6 +145,20 @@ public class AccessibilityHubTest {
         return hub;
     }
 
+    @Test public void inputSuppressionNeedsItsOwnFilterAndABoundServiceRequestingKeys() {
+        AccessibilityHub hub = hubOverFakeInfo();
+        FakeService service = new FakeService();
+        hub.bind(service);
+        hub.addKeyFilter(event -> false);
+        assertFalse(hub.inputSuppressionReady());
+        hub.addKeyFilter((AccessibilityHub.InputLockFilter) event -> true);
+        assertTrue(hub.inputSuppressionReady());
+        service.info.flags = 0;
+        assertFalse(hub.inputSuppressionReady());
+        hub.bind(null);
+        assertFalse(hub.inputSuppressionReady());
+    }
+
     @Test public void theServiceAsksForKeysOnlyWhileAFilterIsRegistered() {
         FakeService service = new FakeService();
         service.info.flags = 0x40;

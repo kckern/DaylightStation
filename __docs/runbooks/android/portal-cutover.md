@@ -105,6 +105,15 @@ sitting at that step; its **rollback** leaves the Portal as it was before it.
 
 Record the two transfer results and firmware build in the long form's Record table.
 
+After the provider change and backend restart, verify a Portal stop, retry and
+release through supervision. Confirm the returned input state and command
+revision, and check that volume presses are suppressed while stopped. The
+shutdown reconciler uses the same provider for timed stops. If rolling back,
+restore the Fully provider and restart the backend before verifying the legacy
+PUT. When a historical helper payload is restored, only the shell on
+`:8771` is authoritative for lockdown. Transfer on `:8773` is unavailable
+until the approved p10 payload is active again.
+
 ## The soak: two weeks
 
 Starts the day step 18 is done. Fully and portal-keys stay installed and stopped.

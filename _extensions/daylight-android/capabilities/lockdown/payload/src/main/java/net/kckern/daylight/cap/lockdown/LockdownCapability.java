@@ -76,6 +76,9 @@ public final class LockdownCapability implements Capability, LockdownControl {
     private final Set<String> blocked = ConcurrentHashMap.newKeySet();
     private final Object lockGuard = new Object();
     private LockState lockState = new LockState();                 // guarded by lockGuard
+    private final Object inputGuard = new Object();
+    private java.util.function.BooleanSupplier suppressionReady;
+    void useSuppressionReadyForTest(java.util.function.BooleanSupplier ready) { suppressionReady = ready; }
     private volatile InputLockState inputLock = new InputLockState();
 
     private volatile ForegroundTrail trail;
@@ -190,6 +193,7 @@ public final class LockdownCapability implements Capability, LockdownControl {
 
     @Override public void register(CoreContext core) {
         this.core = core;
+        suppressionReady = core.accessibility()::inputSuppressionReady;
         this.a11y = new A11yFace(core.accessibility());
         SettingsRegistry s = core.settings();
         s.declare("lockdown.enabled", Type.BOOLEAN, true);
@@ -349,25 +353,28 @@ public final class LockdownCapability implements Capability, LockdownControl {
         // PUT /lockdown. While it is active the volume keys do nothing (volume-keys asks).
         router.route("POST", "/lockdown/input", req -> {
             LockdownCommand command = LockdownCommand.parse(req.body, System.currentTimeMillis());
-            InputLockState state = inputLock;
-            synchronized (state) {
-                if (!state.apply(command)) {
+            synchronized (inputGuard) {
+                if (!inputReady()) return Router.Response.error(409, "input_unavailable", "message", "volume-key suppression is unavailable");
+                InputLockState next = InputLockState.parse(inputLock.toJson());
+                if (!next.apply(command)) {
                     return Router.Response.error(409, "stale_revision", "message", "stale or conflicting input lock revision");
                 }
-                // Stored before it is acknowledged: the caller treats the answer as the lock holding.
-                if (!write(inputFile, state.toJson())) {
+                if (!write(inputFile, next.toJson())) {
                     return Router.Response.error(500, "internal", "message", "the input lock could not be stored");
                 }
+                inputLock = next;
+                note("input lock " + (command.locked ? "set" : "cleared") + " revision=" + next.revision());
+                return Router.Response.json(200, inputLockJson(Replies.ok()));
             }
-            note("input lock " + (command.locked ? "set" : "cleared") + " revision=" + state.revision());
-            return Router.Response.json(200, inputLockJson(Replies.ok()));
         });
     }
+
+    private boolean inputReady() { return running && inputFile != null && suppressionReady.getAsBoolean(); }
 
     private JSONObject inputLockJson(JSONObject o) throws Exception {
         InputLockState state = inputLock;
         long until = state.until();
-        return o.put("inputLocked", state.active(System.currentTimeMillis()))
+        return o.put("inputReady", inputReady()).put("inputLocked", state.active(System.currentTimeMillis()))
                 .put("revision", state.revision())
                 .put("lockedUntil", until > 0 && until != Long.MAX_VALUE ? (Object) until : JSONObject.NULL);
     }
