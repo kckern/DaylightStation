@@ -198,7 +198,7 @@
 
   @include bp.tablet-up {
     // Desktop: left rail spanning all rows
-    grid-template-columns: 200px minmax(0, 1fr);
+    grid-template-columns: 200px 1fr;
     grid-template-rows: auto 1fr auto;
     grid-template-areas: "nav header" "nav main" "nav footer";
 

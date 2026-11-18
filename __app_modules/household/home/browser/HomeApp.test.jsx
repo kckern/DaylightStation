@@ -122,6 +122,17 @@ describe('HomeApp — Today', () => {
     expect(apiMock).toHaveBeenCalledWith('api/v1/home-dashboard/timeline?range=today');
   });
 
+  it('restores Rooms after choosing it and reopening the dashboard', async () => {
+    routeApi();
+    const first = render(<HomeApp />);
+    await lanesShown();
+    openView('Rooms');
+    first.unmount();
+    render(<HomeApp />);
+    expect(screen.getByRole('button', { name: 'Rooms' })).toHaveAttribute('aria-current', 'page');
+    await waitFor(() => expect(document.querySelectorAll('.home-room__row').length).toBeGreaterThan(0));
+  });
+
   it('offers exactly Today, Mosaic, Rooms and Cameras', async () => {
     routeApi();
     render(<HomeApp />);

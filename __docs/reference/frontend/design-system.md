@@ -9,7 +9,7 @@ Admin, Health, Media, Feed, Home, Life and Auto share browser layout and interac
 | Open a destination or select a local view | `AppChrome` accepts tabs with an optional `href`. A destination renders a router link. A local view calls `onTabChange(id)`. The app owns selection and reload behavior. | Life routes and Home views |
 | Compose a grouped editor | Supply header and navigation to `AppFrame`. Its `mainRef` points to the primary scroll region. | Admin |
 | Return to a view at its previous position | `useViewScroll({mainRef, viewKey, owner, ready})` restores the position after the view is ready and clears it when the owner changes. | Health Today |
-| Choose content while editing a list | Use the content catalog's picker. The app supplies the selection action. Media phone search consumes its controller and rows. | Admin list editor and Media search |
+| Choose content without losing an unsaved form | Bind the catalog combobox to the draft’s content ID. On selection, update that field and keep the editor mounted. The editor owns Save and Cancel. | [Admin list item editor](../../../__capabilities/content-catalog/browser/admin/ListsItemEditor.jsx) |
 | Keep playback alive while browsing | `PlaybackFrame` places controls, overlays and the engine alongside routed children. Route-specific main landmarks and scrolling remain inside the content. | Feed reader and Media canvas |
 | Poll while a screen is in use | `useVisibleRefresh({active, intervalMs, reload})` releases its timer when the document is hidden and refreshes on return. | Home entities |
 | Label a native field in a mobile sheet | Associate a native label with the input. Use the shared `.ds-input` geometry and a compact `Button` for submission. | Auto fuel, maintenance and journey editors |
@@ -130,7 +130,9 @@ it.
 
 ## Primitives
 
-Everything below is exported from `frontend/src/lib/ui/index.js`. New webapp
+For a content picker or search combo, use `ContentCombobox` from the catalog capability. Its `value` and `onChange` bind the selected content ID to the editor. The controller and result rows are also available for Media’s full-screen search. [Public picker export](../../../__capabilities/content-catalog/browser/picker.mjs) · [Admin form example](../../../__capabilities/content-catalog/browser/admin/ListsItemEditor.jsx)
+
+The primitives in the table are exported from `frontend/src/lib/ui/index.js`. New webapp
 UI is built from these, not from raw Mantine or hand-rolled equivalents.
 
 | Primitive | For | Don't use it when |
