@@ -1,0 +1,8 @@
+# Named pages of the household site that open in the app's web view. Settings
+# bookmarks.1 to bookmarks.8, each "id|label|icon|path". Owns the link kinds
+# daylight://open?path=... and daylight://bookmark/<id>.
+entry: net.kckern.daylight.cap.bookmarks.BookmarksCapability
+permissions: []
+# The page is webview-host's; this capability only says which URL to show in it.
+requires:
+  - webview-host

@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- One cell. targetCellWidth and targetCellHeight are read from Android 12; before it the
+     40dp minimum gives one cell on a usual grid. configure names the chooser, which the
+     launcher opens when the button is placed; "reconfigurable" (Android 9 and later) lets
+     the owner open it again from the widget's menu. updatePeriodMillis 0: the payload
+     pushes an update whenever the actions change. -->
+<appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
+    android:minWidth="40dp"
+    android:minHeight="40dp"
+    android:targetCellWidth="1"
+    android:targetCellHeight="1"
+    android:updatePeriodMillis="0"
+    android:initialLayout="@layout/widget_button"
+    android:configure="net.kckern.daylight.cap.widgets.shell.ButtonWidgetConfigActivity"
+    android:widgetFeatures="reconfigurable"
+    android:resizeMode="none"
+    android:widgetCategory="home_screen" />

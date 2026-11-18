@@ -1,0 +1,107 @@
+// For every device: d8 the device's payload classes (payload + core + its
+// capabilities) into <id>-<version>.jar, write its sha256, and bake a copy
+// into that device's shell APK so a fresh install has a payload to run.
+//
+// shell-api, NanoHTTPD and org.json are compileOnly on the payload side, so
+// their classes are not in these directories and are not dexed.
+
+def catalog = rootProject.ext.catalog
+def payloadVersion = rootProject.ext.payloadVersion
+
+def sdkDir = {
+    def props = new Properties()
+    def lp = new File(rootDir, 'local.properties')
+    if (lp.exists()) lp.withInputStream { props.load(it) }
+    def d = props.getProperty('sdk.dir') ?: System.getenv('ANDROID_HOME') ?: System.getenv('ANDROID_SDK_ROOT')
+    if (d == null) throw new GradleException('sdk.dir not set in local.properties and no ANDROID_HOME')
+    file(d)
+}()
+
+def buildToolsDir = {
+    // Order by numeric components, so 9.0.0 sorts below 33.0.2. A plain string sort gets that wrong.
+    def parts = { String name -> name.split(/[^0-9]+/).findAll { it }.collect { it as Integer } }
+    def versions = new File(sdkDir, 'build-tools').listFiles()?.findAll { it.isDirectory() }?.collect { it.name }?.sort { a, b ->
+        def x = parts(a), y = parts(b)
+        for (int i = 0; i < Math.max(x.size(), y.size()); i++) {
+            def c = (x[i] ?: 0) <=> (y[i] ?: 0)
+            if (c != 0) return c
+        }
+        a <=> b
+    }
+    if (!versions) throw new GradleException("no build-tools under ${sdkDir}")
+    new File(sdkDir, "build-tools/${versions.last()}")
+}()
+
+gradle.projectsEvaluated {
+    def payloadProject = project(':payload')
+    def shellProject = project(':shell')
+
+    catalog.devices().each { d ->
+        def cap = d.id.capitalize()
+        // module path -> the javac variant directory holding its classes
+        def modules = [(':payload'): "${d.id}Debug", (':core'): 'debug']
+        d.capabilities.each { name ->
+            if (catalog.capability(name).hasPayload) modules[":capabilities:${name}:payload".toString()] = 'debug'
+        }
+
+        def outDir = new File(payloadProject.buildDir, "payload/${d.id}")
+        def jar = new File(outDir, "${d.id}-${payloadVersion}.jar")
+        def sha = new File(jar.absolutePath + '.sha256')
+
+        def dex = payloadProject.tasks.create("payloadDex${cap}", Exec) {
+            group = 'payload'
+            description = "d8 the ${d.id} payload into a loadable jar"
+            modules.each { path, variant -> dependsOn "${path}:compile${variant.capitalize()}JavaWithJavac" }
+            outputs.file jar
+            outputs.upToDateWhen { false }
+            // Resolve the class list at execution time. At configuration time the
+            // compile has not run, so a class added since the last build would be missing.
+            doFirst {
+                outDir.mkdirs()
+                def classes = modules.collectMany { path, variant ->
+                    fileTree(new File(project(path).buildDir, "intermediates/javac/${variant}/classes"))
+                            .matching { include '**/*.class' }.files.collect { it.absolutePath }
+                }
+                if (classes.isEmpty()) throw new GradleException("no payload classes for ${d.id}")
+                commandLine([new File(buildToolsDir, 'd8').absolutePath,
+                             '--min-api', "${d.minSdk}",
+                             '--lib', new File(sdkDir, 'platforms/android-33/android.jar').absolutePath,
+                             '--output', jar.absolutePath] + classes)
+            }
+        }
+
+        def shaTask = payloadProject.tasks.create("payloadSha${cap}") {
+            dependsOn dex
+            // Same rule as the bake below: with no input the .sha256 goes stale after a payload change.
+            inputs.file jar
+            outputs.file sha
+            doLast {
+                def md = java.security.MessageDigest.getInstance('SHA-256')
+                jar.withInputStream { input -> def b = new byte[65536]; int n; while ((n = input.read(b)) > 0) md.update(b, 0, n) }
+                sha.text = md.digest().collect { String.format('%02x', it) }.join() + '\n'
+            }
+        }
+
+        payloadProject.tasks.create("payload${cap}") {
+            group = 'payload'
+            description = "Build the ${d.id} payload jar and its sha256"
+            dependsOn shaTask
+        }
+
+        // The shell extracts assets/payload-baked.jar on a fresh install and after a shell update.
+        // The dex jar is this task's input: without it the task has outputs only, Gradle
+        // reports it UP-TO-DATE after a payload change, and the APK keeps the old payload.
+        def bakedDir = new File(shellProject.buildDir, "generated/baked/${d.id}")
+        def bake = shellProject.tasks.create("bakePayload${cap}", Copy) {
+            // The sha task too, so the .sha256 beside the jar always describes the baked payload.
+            dependsOn dex, shaTask
+            from jar
+            into bakedDir
+            rename { 'payload-baked.jar' }
+        }
+        // Lint reads the asset directories too, so it needs the same dependency as the merge.
+        shellProject.tasks.matching {
+            it.name ==~ "merge${cap}(Debug|Release)Assets" || it.name ==~ /(?i).*lint.*${cap}(Debug|Release).*/
+        }.all { it.dependsOn bake }
+    }
+}

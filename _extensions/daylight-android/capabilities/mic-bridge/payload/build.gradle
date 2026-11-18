@@ -1,0 +1,11 @@
+apply from: rootProject.file('gradle/payload-lib.gradle')
+
+android {
+    namespace 'net.kckern.daylight.cap.micbridge'
+}
+
+dependencies {
+    implementation project(':core')
+    compileOnly project(':capabilities:mic-bridge:shell')
+    testImplementation project(':capabilities:mic-bridge:shell')
+}

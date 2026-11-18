@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application>
+        <!-- Tells Android Auto this app is a media app. It then binds the media library
+             service that the media-service capability declares; nothing is declared here
+             that another app can start or bind. -->
+        <meta-data
+            android:name="com.google.android.gms.car.application"
+            android:resource="@xml/automotive_app_desc" />
+        <!-- The one-colour mark shown on media cards in the car. -->
+        <meta-data
+            android:name="androidx.car.app.TintableAttributionIcon"
+            android:resource="@drawable/ic_daylight_attribution" />
+    </application>
+</manifest>

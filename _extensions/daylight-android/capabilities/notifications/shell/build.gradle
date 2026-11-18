@@ -1,0 +1,11 @@
+apply from: rootProject.file('gradle/shell-lib.gradle')
+
+android {
+    namespace 'net.kckern.daylight.cap.notifications.shell'
+}
+
+dependencies {
+    implementation project(':shell-kit')
+    // Real org.json for JVM tests; android.jar ships stubs that return defaults.
+    testImplementation 'org.json:json:20231013'
+}

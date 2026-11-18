@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The Android TV home-row banner (320x180). A vector, so no image file is in the repo:
+     a dark card with a sun over a horizon. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="320dp"
+    android:height="180dp"
+    android:viewportWidth="320"
+    android:viewportHeight="180">
+    <path android:fillColor="#15181D" android:pathData="M0,0h320v180h-320z" />
+    <path android:fillColor="#F2B441" android:pathData="M160,128a46,46 0 1,1 0.1,0z" />
+    <path android:fillColor="#15181D" android:pathData="M0,104h320v76h-320z" />
+    <path android:fillColor="#F2B441" android:pathData="M72,112h176v6h-176z" />
+    <path android:fillColor="#8A6A2A" android:pathData="M96,128h128v5h-128z" />
+    <path android:fillColor="#4A3A1C" android:pathData="M120,143h80v4h-80z" />
+</vector>

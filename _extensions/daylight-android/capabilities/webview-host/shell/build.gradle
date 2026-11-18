@@ -1,0 +1,11 @@
+apply from: rootProject.file('gradle/shell-lib.gradle')
+
+android {
+    namespace 'net.kckern.daylight.cap.webviewhost.shell'
+}
+
+dependencies {
+    // A payload cannot carry a library: only its own classes are dexed. The shell
+    // ships androidx.webkit and the payload half compiles against it.
+    api 'androidx.webkit:webkit:1.6.1'
+}

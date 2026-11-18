@@ -1,0 +1,5 @@
+apply from: rootProject.file('gradle/shell-lib.gradle')
+
+android {
+    namespace 'net.kckern.daylight.cap.hidinput.shell'
+}

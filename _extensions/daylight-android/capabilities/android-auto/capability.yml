@@ -1,0 +1,7 @@
+# Makes the phone's media library service visible to Android Auto. Declarations only:
+# browsing and playback are media-service, and there is no payload half. The app is
+# sideloaded, so Android Auto lists it only after its developer setting for apps from
+# unknown sources is turned on.
+permissions: []
+requires:
+  - media-service

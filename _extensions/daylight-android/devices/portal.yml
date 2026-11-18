@@ -1,0 +1,76 @@
+# Facebook Portal panel (Android 9, API 28). Helpers, the kiosk window, lockdown (built in, off until the home app is switched), screen power, volume and the app launcher.
+id: portal
+package: net.kckern.daylight.portal
+android: { minSdk: 26, targetSdk: 28 }
+abis: []
+control: { port: 8780, lifelinePort: 8781 }
+# Where this device is in its cutover: `before` (installed beside Fully, nothing armed) or
+# `done`, set at the runbook's make-it-permanent step together with lockdown.required and
+# the coexistence switches. tools/roadmap-capabilities.test.mjs checks the file against it.
+cutover: before
+shell: { versionCode: 36, versionName: "0.3-kiosk" }
+capabilities:
+  - webview-host
+  - debug-tools
+  - accessibility
+  - lockdown
+  - screen-power
+  - volume
+  - app-launcher
+  - volume-keys
+  - hid-input
+  - presence
+defaults:
+  # The kiosk's start page: this device's full https URL. Household-specific, so it is
+  # resolved from `placeholders:` in the private tokens file when the payload is built.
+  # https only: a page gets the microphone and camera in a secure context alone.
+  webview.startUrl: "{portal_start_url}"
+  # A household screen: it shows over a swipe keyguard after a wake, and its page may be
+  # given the microphone and the camera (each also needs the Android permission, granted
+  # once over ADB). All three are off unless a device file turns them on.
+  webview.showWhenLocked: true
+  webview.allowMic: true
+  webview.allowCamera: true
+  # Lockdown is built in and off. Until this device's home app is switched (phases 4 to
+  # 6) the app is installed beside Fully, and an armed watcher would recall itself over
+  # Fully. The allowlist stays empty: it is read from Fully at this device's cutover.
+  lockdown.enabled: false
+  # launcher.allowed is not set: nothing may be launched from this kiosk. Anything Fully
+  # allows today is read from Fully at this device's cutover.
+  # The swipe-up Control Center cannot be kept from opening; the app pushes it back down
+  # (portal-keys did). Left alone during an unlock window.
+  lockdown.dismissControlCenter: true
+  # Owner mode applies only once this app is device owner. Today portal-keys is; ownership
+  # is to be transferred to this app. Until then these two do nothing and the mode is app.
+  # The restrictions (safe boot, factory reset, add user, apps control) and the hidden
+  # packages are the ones portal-keys applies today. The package that provides the
+  # WebView is never hidden, whatever this list says.
+  lockdown.ownerRestrictions: true
+  lockdown.ownerHidePackages: "org.chromium.chrome,com.android.chrome,com.facebook.alohaapps.controlcenter,com.android.systemui"
+  debug.execEnabled: false
+  # Coexistence switches. This app is installed beside the old helper app(s) before the
+  # device is switched over, and two apps cannot hold the same hardware. Each switch
+  # below is off, so installing takes nothing from the helper that runs the device
+  # today. They are turned on at this device's cutover (`settings set <key> true`, applied
+  # at once, reported in GET /status under "switches"), after the old helper is stopped,
+  # and turned off again in a rollback. See __docs/runbooks/android/kiosk-cutover.md.
+  hid.enabled: false           # the USB keyboard claim (portal-keys holds it)
+  volumeKeys.enabled: false    # the volume-key filter and the beep guard (portal-keys)
+  presence.enabled: false      # Bluetooth presence reports (portal-keys sends them)
+  heartbeat.enabled: true
+  # Where heartbeats and log lines are shipped. Household-specific: resolved from
+  # `placeholders:` in the private tokens file when this device's payload is built.
+  heartbeat.logStoreUrl: "{log_store_insert_url}"
+  # The Portal confirms its own update dialog through accessibility, as portal-keys did.
+  update.autoConfirm: true
+  keys.consumeVolume: true
+  keys.screenToggleEnabled: false
+  keys.doublePressMs: 450
+  # Where the Portal reports Bluetooth presence. Household-specific, so it is not in this
+  # file. Empty means not configured: the capability logs that once and sends nothing.
+  # To compile it in, add `portal_presence_endpoint` under `placeholders:` in the private
+  # tokens file and set this to "{portal_presence_endpoint}"; or set it on the device with
+  # `settings set presence.endpoint`. The token is a secret setting, set on the device
+  # with `settings set presence.token`, never compiled in.
+  presence.endpoint: ""
+  presence.heartbeatMs: 60000

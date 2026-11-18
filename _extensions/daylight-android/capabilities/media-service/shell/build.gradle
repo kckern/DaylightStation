@@ -1,0 +1,21 @@
+apply from: rootProject.file('gradle/shell-lib.gradle')
+
+android {
+    namespace 'net.kckern.daylight.cap.mediaservice.shell'
+
+    // Media3 marks parts of its API @UnstableApi and ships a lint check that fails the
+    // build when they are used without an opt-in. The library session's callbacks
+    // (onSetMediaItems among them) are such parts in this version.
+    lint { disable 'UnsafeOptInUsageError' }
+}
+
+dependencies {
+    implementation project(':shell-kit')
+    // 1.1.1 is the newest Media3 whose AAR metadata accepts compileSdk 33
+    // (minCompileSdk=33; 1.2.x needs 34, 1.5.x needs 35). Do not raise it without
+    // raising compileSdk and the Android Gradle Plugin for every device.
+    implementation 'androidx.media3:media3-session:1.1.1'
+    implementation 'androidx.media3:media3-exoplayer:1.1.1'
+    // Real org.json for JVM tests; android.jar ships stubs that return defaults.
+    testImplementation 'org.json:json:20231013'
+}

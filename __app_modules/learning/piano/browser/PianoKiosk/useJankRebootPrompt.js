@@ -18,7 +18,12 @@ async function readNativeStatus() {
 function requestReboot() {
   let failure;
   const accepted = kioskReboot({ onError: error => { failure = error; } });
-  if (!accepted) throw failure ?? new Error('Reboot unavailable');
+  if (failure) throw failure;
+  if (!accepted) {
+    getLogger().child({ component: 'piano-jank-reboot' }).error('piano.jank-reboot.no-fully', {});
+    return false;
+  }
+  return true;
 }
 function readStored(key) {
   try { return window.localStorage?.getItem(key); } catch { return null; }
@@ -142,7 +147,8 @@ export function useJankRebootPrompt({
       if (accepted === false) throw new Error('Reboot rejected');
       show({ status: 'requested' });
       getLogger().child({ component: 'piano-jank-reboot' }).warn('piano.jank-reboot.requested', {});
-    } catch {
+    } catch (error) {
+      getLogger().child({ component: 'piano-jank-reboot' }).error('piano.jank-reboot.reboot-failed', { error: error?.message });
       request.current = null;
       try { window.localStorage.removeItem(RECOVERY_KEY); } catch { /* failure stays visible */ }
       show({ status: 'failed' });

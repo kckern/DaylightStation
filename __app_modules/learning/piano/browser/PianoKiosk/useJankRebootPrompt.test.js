@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach, vi } from 'vitest';
-import { renderHook, act } from '@testing-library/react';
+import { renderHook, act, cleanup } from '@testing-library/react';
 
 const log = { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn(), sampled: vi.fn() };
 vi.mock('../../../../../frontend/src/lib/logging/Logger.js', () => ({
@@ -9,62 +9,65 @@ vi.mock('../../../../../frontend/src/lib/logging/Logger.js', () => ({
 import { useJankRebootPrompt } from './useJankRebootPrompt.js';
 
 afterEach(() => {
+  cleanup();
+  localStorage.clear();
   delete global.fully;
   delete global.daylight;
   Object.values(log).forEach(fn => fn.mockClear());
 });
 
-const reboot = () => {
-  const { result, unmount } = renderHook(() => useJankRebootPrompt());
-  act(() => result.current.onReboot());
+const readStatus = async () => ({ nativeRecoveryAllowed: true, bootCount: 1, deviceId: "test-device" });
+const reboot = async () => {
+  const { result, unmount } = renderHook(() => useJankRebootPrompt({ readStatus }));
+  await act(async () => { await result.current.onReboot(); });
   unmount();
 };
 
 describe('useJankRebootPrompt reboot action', () => {
-  it('reboots through the Fully bridge', () => {
+  it('reboots through the Fully bridge', async () => {
     global.fully = { turnScreenOff: vi.fn(), reboot: vi.fn() };
-    reboot();
+    await reboot();
     expect(global.fully.reboot).toHaveBeenCalledTimes(1);
     expect(log.error).not.toHaveBeenCalled();
   });
 
-  it('reboots through the daylight bridge when the page runs in the Android kiosk app', () => {
+  it('reboots through the daylight bridge when the page runs in the Android kiosk app', async () => {
     global.daylight = { reboot: vi.fn(() => true), screen: vi.fn() };
-    reboot();
+    await reboot();
     expect(global.daylight.reboot).toHaveBeenCalledTimes(1);
     expect(log.error).not.toHaveBeenCalled();
   });
 
-  it('prefers an injected reboot action', () => {
+  it('prefers an injected reboot action', async () => {
     global.fully = { turnScreenOff: vi.fn(), reboot: vi.fn() };
     const injected = vi.fn();
-    const { result } = renderHook(() => useJankRebootPrompt({ reboot: injected }));
-    act(() => result.current.onReboot());
+    const { result } = renderHook(() => useJankRebootPrompt({ readStatus, reboot: injected }));
+    await act(async () => { await result.current.onReboot(); });
     expect(injected).toHaveBeenCalledTimes(1);
     expect(global.fully.reboot).not.toHaveBeenCalled();
   });
 
-  it('logs reboot-failed, as it always did, when fully.reboot throws', () => {
+  it('logs reboot-failed, as it always did, when fully.reboot throws', async () => {
     global.fully = { turnScreenOff: vi.fn(), reboot: vi.fn(() => { throw new Error('no device admin'); }) };
-    reboot();
+    await reboot();
     expect(log.error).toHaveBeenCalledWith('piano.jank-reboot.reboot-failed', { error: 'no device admin' });
     expect(log.error).not.toHaveBeenCalledWith('piano.jank-reboot.no-fully', expect.anything());
   });
 
-  it('logs reboot-failed when an injected reboot action throws', () => {
-    const { result } = renderHook(() => useJankRebootPrompt({ reboot: () => { throw new Error('injected'); } }));
-    act(() => result.current.onReboot());
+  it('logs reboot-failed when an injected reboot action throws', async () => {
+    const { result } = renderHook(() => useJankRebootPrompt({ readStatus, reboot: () => { throw new Error('injected'); } }));
+    await act(async () => { await result.current.onReboot(); });
     expect(log.error).toHaveBeenCalledWith('piano.jank-reboot.reboot-failed', { error: 'injected' });
   });
 
-  it('logs no-fully when the bridge is there and has no reboot', () => {
+  it('logs no-fully when the bridge is there and has no reboot', async () => {
     global.fully = { turnScreenOff: vi.fn() };
-    reboot();
+    await reboot();
     expect(log.error).toHaveBeenCalledWith('piano.jank-reboot.no-fully', {});
   });
 
-  it('logs that it cannot reboot when no bridge can', () => {
-    reboot();
+  it('logs that it cannot reboot when no bridge can', async () => {
+    await reboot();
     expect(log.error).toHaveBeenCalledWith('piano.jank-reboot.no-fully', {});
   });
 });

@@ -1,0 +1,4 @@
+# The APK's one accessibility service. Shell half only: the payload side is
+# core's AccessibilityHub. Listed by devices whose capabilities need key events,
+# window content or gestures.
+permissions: []

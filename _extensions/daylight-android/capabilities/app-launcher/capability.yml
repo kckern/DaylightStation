@@ -1,0 +1,6 @@
+# Starts another app or intent from the kiosk, within launcher.allowed, and tells
+# lockdown to let it stay in front until it leaves.
+entry: net.kckern.daylight.cap.applauncher.AppLauncherCapability
+permissions:
+  # At target 30 (the Shield) other packages are invisible to resolveActivity without this.
+  - android.permission.QUERY_ALL_PACKAGES

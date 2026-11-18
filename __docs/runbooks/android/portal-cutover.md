@@ -1,0 +1,103 @@
+# Portal cutover: one sitting
+
+**Nothing in this runbook has been run.** It is the Portal's path through
+`kiosk-cutover.md` (the long form, stages 0 to 11) as one supervised sitting,
+with the acceptance runner doing the checking. Where a step says "stage N", the
+long form has the detail; the way back from any step is that file's first
+section, "If the kiosk is dark or unreachable".
+
+What is special about the Portal: Android 9 (API 28), and the old helper
+`net.kckern.portalkeys` is **device owner**. Ownership moves to this app with
+`DevicePolicyManager.transferOwnership`, built into both apps and never run on
+this firmware.
+
+**A USB cable to the Portal is required for the whole sitting.** ADB over WiFi
+does not survive a Portal reboot, and the rollback (stage 11) needs ADB: the home
+preference, force-stops and the accessibility list. After every reboot (steps 9,
+14 and 16), reconnect over USB and run `adb -s <usb-serial> tcpip 5555`, then
+`adb connect {device-address}:5555`. Without the cable, stop before step 9.
+The home switch itself needs no ADB on this device: as owner, this app sets the
+persistent home preference (`dd lockdown owner resume`), which survives reboots.
+
+## Placeholders
+
+| Placeholder | Meaning |
+|---|---|
+| `dd` | `node cli/daylight-device.cli.mjs portal` |
+| `acc` | `node cli/daylight-acceptance.cli.mjs portal` |
+| `pkctl` | `node _extensions/portal-keys/pkctl.mjs`, pointed at the Portal |
+| `fkb` | `node cli/fkb.cli.mjs`, pointed at the Portal |
+| `<serial>` | `{device-address}:5555`; `<usb-serial>` is the cable's serial from `adb devices` |
+| `{log-store-url}` | the log store's base URL (`CLAUDE.local.md`) |
+| `{laptop-address}:{port}` | this machine's LAN address and a free port, for `--serve-bad-payload` |
+| `<pk-receiver>` | `net.kckern.portalkeys/net.kckern.portalkeys.PortalAdminReceiver` |
+
+Set `DAYLIGHT_ANDROID_TOKENS` to the private tokens file before `dd` or `acc`.
+
+**What `acc` does to the device.** A plain `acc` only reads (GETs, plus one LogsQL
+query with `--log-store`). `--active` also reloads the page, loads the start URL,
+tries a foreign URL (refused), foregrounds the kiosk, resets the renderer, shows a
+message for a moment, turns the screen off for about two seconds and back, writes
+the volume back at its level, runs `6*7` in the page and `id` through exec
+(refused while exec is off). `--restart` restarts the payload (page and helpers
+drop for a few seconds). `--kill`, `--reboot` and the bad-payload options do what
+they name. Each SKIP line says which flag it needs.
+
+**Backend changes take a restart.** The device adapters are built once when the
+backend starts; a config reload does not switch them. Every "restart the backend"
+below means restarting the prod container, as in a deploy.
+
+## Before the sitting (no device contact)
+
+- [ ] The seams branch is deployed (backend adapters); the Portal's backend entry
+      still says `provider: fully-kiosk`.
+- [ ] `./gradlew build --rerun-tasks`; `node tools/verify-build.mjs portal --legacy`: one `✓` line.
+- [ ] `acc --list` prints the checks. `node --test` of `_extensions/daylight-android/cli/*.test.mjs` passes.
+- [ ] The owner has decided: the exit PIN; what to do if a transfer is refused
+      (cut over in `app` mode, or stop); whether to install portal-keys shell 34 first.
+
+## The sitting
+
+Mark each line `ok <time>`, or write what was seen. A **no-go** line stops the
+sitting at that step; its **rollback** leaves the Portal as it was before it.
+
+| # | Do | Go when | No-go: rollback |
+|---|---|---|---|
+| 1 | Connect the USB cable. Stage 1 backups: `pkctl config`, `pkctl hid status` (the USB allowlist), `fkb get > {private-notes}/fully-portal.json`, `fkb get kioskAppWhitelist`, HOME resolution, `adb -s <serial> shell settings get secure enabled_accessibility_services`, `adb -s <serial> shell dumpsys device_policy \| head -40` | all saved outside the repo | nothing changed |
+| 2 | `pkctl shell` reads versionCode 34; `pkctl status` reads payload `p9-owner-transfer` or later. If the payload is older: `pkctl payload <jar-url> <sha256>` (no tap). If the shell is older and the way back is wanted: `adb -s <usb-serial> install -r` portal-keys shell 34 | both read as required | `pkctl rollback` |
+| 3 | Install this app (stage 2) and run the home-candidate check | HOME resolution and candidate list unchanged | `adb -s <serial> uninstall net.kckern.daylight.portal` |
+| 4 | Stage 3 grants; the keep-alive broadcast (stage 4) | `dd lifeline status` answers | `adb -s <serial> shell am force-stop net.kckern.daylight.portal`; revoke |
+| 5 | `acc` (read-only) | no FAIL except the page checks: lock task allows only Fully, so `kiosk.status` may fail here | force-stop the app |
+| 6 | **Transfer out (rehearsal).** `pkctl transfer-owner`. **From here to step 8 the Portal is unlocked:** portal-keys has released lock task, the status bar, its restrictions and its hidden packages, and this app applies nothing. Someone stays at the Portal and nobody else uses it | `transferred: true`; `dd lockdown`: `deviceOwner: true`, `mode: app`, `ownerHold` set; Fully still home | **First read who is owner**, even if the call timed out: `dd lockdown` (`deviceOwner`) and `adb -s <serial> shell dumpsys device_policy \| head -40`. Still portal-keys: `pkctl resume-policy`, `pkctl kiosk-verify`; the owner's decision says whether to continue in `app` mode. Already this app: go to step 8 |
+| 7 | Start the kiosk Activity (stage 4). `acc --active` (reloads, foregrounds and briefly darkens the page, as above) | no FAIL; MANUAL lines read "lockdown is off" | `dd settings reset` anything changed |
+| 8 | **Transfer back (rehearsal).** `dd settings set lockdown.ownerTransferTarget <pk-receiver>`; `dd lockdown owner transfer <pk-receiver>`; `dd settings reset lockdown.ownerTransferTarget`; `pkctl resume-policy`; `pkctl kiosk-verify` | portal-keys is owner, its kiosk verifies, Fully pinned again | **Refused:** this app stays owner. With lockdown off, `dd lockdown owner resume` only lifts the hold; it pins nothing, so Fully stays unpinned and the Portal unlocked. The ways out: (a) continue the cutover on this app (steps 9 to 15 lock the Portal under this app's owner policy); (b) leave the Portal on Fully without owner authority (no lock task), accepted by the owner; (c) a factory reset and the original provisioning of portal-keys, the only way to give it ownership back |
+| 9 | Stage 8 proofs. `dd update <apk-url> <sha256>` twice with a bumped versionCode; then `acc --only reboot --reboot` three times. After each reboot: USB, `adb -s <usb-serial> tcpip 5555` | lifeline back 3 of 3 | stop here; Fully runs the Portal |
+| 10 | `acc --only payload.bad,crash --restart --kill --serve-bad-payload {laptop-address}:{port}` (pushes a file that is not a payload; restarts the payload; kills the app's process with exec turned on and put back) | `payload.bad` and `crash.*` PASS | `dd payload rollback` |
+| 11 | Stage 10 steps 1 and 2: `lockdown.allowedApps` and `launcher.allowed` from step 1's whitelist; `dd settings set lockdown.exitPin <pin>`. Backend: `provider: daylight-android` and `volume.provider: daylight-android` for the Portal, then **restart the backend** | `dd lockdown` shows the lists, no `allowedAppsError`; after the restart the admin console reaches the app | backend back to `fully-kiosk`, restart the backend |
+| 12 | Hand the hardware over, one switch at a time: `hid.enabled`, `volumeKeys.enabled`, `presence.enabled` (stop portal-keys' use of each first) | `dd status` each `active: true`, and the part works (a USB key, a volume key, a presence report) | `dd settings set <key> false`; restart portal-keys |
+| 13 | Transfer out for good: `pkctl transfer-owner`. `dd lockdown home on`. Force-stop Fully and portal-keys: `adb -s <serial> shell am force-stop de.ozerov.fully`, the same for `net.kckern.portalkeys` | `homeAlias: enabled` | stage 11 |
+| 14 | `dd settings set lockdown.enabled true`; `dd lockdown owner resume` (applies owner policy: lock task, the persistent home preference, restrictions) | `dd lockdown`: `locked: true`, `mode: owner`, `lockTaskActive: true`, `homeIsKiosk: true`; Home shows the kiosk | stage 11 |
+| 15 | `acc --active`, then walk every MANUAL line: Home, Recents, status bar, Control Center swipe, power menu, volume keys, double volume-down, touch and the seven-tap PIN prompt, five minutes without WiFi | no FAIL; each escape recalled within about 2 s | stage 11 |
+| 16 | Only now: `acc --only reboot --reboot` with lockdown on, no touch. Then USB and `tcpip 5555` again | PASS; page shows; `locked: true` | first section of `kiosk-cutover.md` (lifeline `owner-release`) |
+| 17 | After an hour: `acc --only logstore --log-store {log-store-url}` | events under `context.app:"daylight-portal"` | n/a |
+| 18 | The next day: stage 10 step 12. In `devices/portal.yml`: `cutover: done`, `lockdown.enabled` and `lockdown.required` `true`, the switches `true`, the allowlists as defaults. Bump versionCode; `dd update` | `dd lockdown` reads `required: true`; `node --test tools/roadmap-capabilities.test.mjs` passes | `dd update` with a build that says `required: false` |
+
+Record the two transfer results and firmware build in the long form's Record table.
+
+## The soak: two weeks
+
+Starts the day step 18 is done. Fully and portal-keys stay installed and stopped.
+
+Watched, once a day (a minute each), read-only:
+
+- `acc --only core,lockdown.status,kiosk.status --log-store {log-store-url} --log-window 24h`:
+  no FAIL; `recallsSinceBoot` small and each `lastRecall` explainable.
+- The log store: heartbeats under `daylight-portal` with no gap over 10 minutes
+  (`context.app:"daylight-portal" AND _time:24h | stats by (_msg) count()`).
+- Household reports: the school page, volume keys, the USB keyboard, the screen
+  waking.
+
+The soak restarts on any rollback to Fully, or any recovery that needed the
+lifeline or ADB. After 14 days with neither, the Portal is done; when the piano
+tablet and the Shield are also done, phase 8 (cleanup) may start. Its deletion
+list and order are in the phases 4 to 6 plan (ops docs).

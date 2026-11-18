@@ -23,6 +23,7 @@ keep:
   - frontend/public/apple-touch-icon.png
   - _extensions/audio-bridge/app/gradle/wrapper/gradle-wrapper.jar
   - __app_modules/learning/piano/satellites/piano-bridge/app/gradle/wrapper/gradle-wrapper.jar
+  - _extensions/daylight-android/gradle/wrapper/gradle-wrapper.jar
   - frontend/src/lib/audio/speex_aec.js
   # Globs (not exact files) on purpose: these two trees are tiny synthetic stubs
   # (1x1 images, 8-byte "mp4" text) whose names are the test's own contract.
