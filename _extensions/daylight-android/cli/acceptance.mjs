@@ -532,8 +532,9 @@ export function buildChecks(deviceFile, opts = {}) {
       return fail(`could not read debug.execEnabled before changing it: ${why(before)}`);
     }
     const wasEnabled = prior === true || prior === 'true';
+    const waitMs = (o['reboot-wait'] ?? 300) * 1000;
     const restore = wasEnabled ? async () => {} : restorer('debug.execEnabled false', async () => {
-      const deadline = performance.now() + Math.min(o['reboot-wait'] ?? 30, 30) * 1000;
+      const deadline = performance.now() + waitMs;
       let problem;
       while (performance.now() < deadline) {
         const timeout = () => ({ timeoutMs: Math.max(1, Math.min(5000, Math.ceil(deadline - performance.now()))) });
@@ -563,7 +564,7 @@ export function buildChecks(deviceFile, opts = {}) {
       }
       // The shell that runs the command is a child of the app's process.
       await api.control('POST', '/debug/exec', { body: { cmd: 'kill -9 $PPID' }, timeoutMs: 10000 });
-      result = await waitBack(api, { sleep, pollMs, waitMs: (o['reboot-wait'] ?? 300) * 1000, before: info.json.elapsedRealtimeMs, rebooted: false });
+      result = await waitBack(api, { sleep, pollMs, waitMs, before: info.json.elapsedRealtimeMs, rebooted: false });
     } finally {
       if (!isInterrupted()) await restore();
     }

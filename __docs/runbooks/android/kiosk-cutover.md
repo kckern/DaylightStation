@@ -457,8 +457,8 @@ screen state and reads it back before reporting PASS. A restoration failure
 returns exit status 1, including after Ctrl-C. A successful interrupted
 restoration returns 130. If Ctrl-C arrives while `acc --kill` is restarting
 the app, the runner retries temporary control API failures while restoring
-`debug.execEnabled` and verifies the saved value. The retry window is up to
-30 seconds, or the selected `--reboot-wait` when that is shorter.
+`debug.execEnabled` and verifies the saved value. Cleanup can wait up to
+the full `--reboot-wait` interval, which defaults to 300 seconds.
 
 ## Stage 8. Self-update, reboot, payload push, rollback, bad payload
 

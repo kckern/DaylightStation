@@ -27,9 +27,9 @@ async function fakeDevice({ id = 'portal', capabilities, faults = {}, settings =
     settings: { 'debug.execEnabled': false, 'logstore.app': '', 'webview.startUrl': 'https://kiosk.invalid/', ...settings },
   };
   const routes = [...CORE_ROUTES, ...caps.flatMap((c) => CAPABILITY_ROUTES[c] || [])].filter((r) => !(faults.missingRoute === r));
-  const goAway = (ms, reboot) => {
+  const goAway = (ms, reboot, schedule = setTimeout) => {
     s.down = true;
-    setTimeout(() => {
+    schedule(() => {
       s.down = faults.neverBack === true;
       s.startedAt = Date.now();
       if (reboot) s.bootAt = Date.now();
@@ -128,7 +128,7 @@ async function fakeDevice({ id = 'portal', capabilities, faults = {}, settings =
       case 'POST /debug/exec':
         if (!s.settings['debug.execEnabled']) return json(res, 501, { ok: false, error: 'unsupported', reason: 'debug.execEnabled is false' });
         if (body.cmd === 'kill -9 $PPID') {
-          goAway(faults.killDowntime ?? 60, false);
+          goAway(faults.killDowntime ?? 60, false, faults.scheduleKillRecovery);
           faults.onKill?.();
           req.socket.destroy();
           return undefined;
@@ -412,6 +412,37 @@ test('interrupting while --kill has taken the process down restores exec after i
     assert.equal(signals.listenerCount('SIGINT'), 0);
   } finally { await dev.close(); }
 });
+
+for (const [args, budget, verdict] of [
+  [[], 45_000, 130],
+  [['--reboot-wait', '60'], 45_000, 130],
+  [['--reboot-wait', '40'], 40_000, 1],
+]) {
+  test(`interrupted kill cleanup honors the ${args[1] ?? 'default'} recovery budget`, async (t) => {
+    let now = 0;
+    let recover;
+    t.mock.method(performance, 'now', () => now);
+    const signals = new EventEmitter();
+    const dev = await fakeDevice({ faults: {
+      scheduleKillRecovery: (callback) => { recover = callback; },
+      onKill: () => signals.emit('SIGINT'),
+    } });
+    try {
+      const r = await run(dev, ['--only', 'crash.kill', '--kill', ...args], {
+        signals,
+        exit: () => {},
+        pollMs: 5000,
+        sleep: async (ms) => {
+          now += ms;
+          if (now >= 45_000) recover?.();
+        },
+      });
+      assert.equal(r.code, verdict, r.text);
+      assert.equal(now, budget);
+      assert.equal(dev.state.settings['debug.execEnabled'], verdict === 1);
+    } finally { await dev.close(); }
+  });
+}
 
 test('a bad payload is rolled back with the lifeline answering throughout', async () => {
   const dev = await fakeDevice();
