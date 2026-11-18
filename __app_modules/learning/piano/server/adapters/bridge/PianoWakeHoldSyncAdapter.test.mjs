@@ -74,3 +74,24 @@ test('a failed resync is logged, not thrown, and is not retried in a loop', asyn
   assert.equal(errors[0][0], 'piano-wake-hold.resync-failed');
   assert.equal((await sync.reconcile()).checked, false);
 });
+
+test('a hold relayed while the GET is in flight is written, not overwritten with the value from before it', async () => {
+  let override = null;
+  const posted = [];
+  const fetchImpl = async (url, init = {}) => {
+    if (init.method === 'GET') {
+      // A manual hold arrives while the device is being read.
+      override = { state: 'off', until: NOW + 30 * 60_000 };
+      return { ok: true, status: 200, json: async () => ({ ok: true, settings: [{ key: 'power.wakeSuppressUntilSec', value: Math.ceil(NOW / 1000) + 600 }] }) };
+    }
+    posted.push(JSON.parse(init.body).value);
+    return { ok: true, status: 200, json: async () => ({ ok: true }) };
+  };
+  const sync = new PianoWakeHoldSyncAdapter({
+    baseUrl: 'http://tablet.invalid:8780', deviceId: 'yellow-room-tablet', overrides: { get: () => override },
+    now: () => NOW, fetchImpl, logger: noLog,
+  });
+  await sync.reconcile();
+  assert.deepEqual(posted, [Math.ceil((NOW + 30 * 60_000) / 1000)]);
+});
+

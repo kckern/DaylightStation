@@ -41,12 +41,13 @@ export class PianoWakeHoldSyncAdapter {
   async reconcile() {
     if (!this.#pending) return { checked: false };
     this.#pending = false;
-    const override = this.#overrides.get(this.#deviceId);
-    const want = override?.state === 'off' ? Math.ceil(override.until / 1000) : 0;
     try {
       const read = await this.#fetchImpl(`${this.#baseUrl}/settings`, { method: 'GET', headers: this.#headers, signal: AbortSignal.timeout(this.#timeoutMs) });
       if (!read?.ok) return this.#failed(`read HTTP ${read?.status ?? 'error'}`);
       const has = Number((await read.json())?.settings?.find((s) => s.key === SETTING)?.value ?? 0);
+      // Read the backend's hold only now: one relayed while the GET was in flight must win.
+      const override = this.#overrides.get(this.#deviceId);
+      const want = override?.state === 'off' ? Math.ceil(override.until / 1000) : 0;
       const holding = has * 1000 > this.#now();
       const agrees = want > 0 ? has === want : !holding;
       if (agrees) {
