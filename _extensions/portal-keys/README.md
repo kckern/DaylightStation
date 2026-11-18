@@ -248,9 +248,20 @@ APK → `app/app/build/outputs/apk/debug/app-debug.apk`. **Bump `versionCode` on
 `install -r` rejects a lower one.
 
 The same build creates the configured payload jar and `.sha256`, then bakes that
-jar into the APK as the recovery payload. Routine development currently builds
-`p9-owner-transfer.jar`; shell version 32 and later support this payload, and shell 34 bakes it
-as its recovery image.
+jar into the APK as the recovery payload. Shell 36 builds
+`p10-ordered-owner-transfer.jar`. An APK replacement preserves the active payload
+pointer. Use `pkctl payload <jar-url> <sha256>` to activate the approved jar and
+`pkctl payload` to check its active version.
+
+Run the shell and payload tests with the same Gradle 7.5.1 distribution:
+
+```bash
+$GRADLE :app:testDebugUnitTest :payload:testDebugUnitTest :app:assembleDebug --no-daemon
+bash verify-cutover-apk.sh app/build/outputs/apk/debug/app-debug.apk <android-build-tools-dir>
+```
+
+Use the [Portal cutover runbook](../../__docs/runbooks/android/portal-cutover.md)
+to record the approved artifact digests and compare the signer with the installed APK.
 
 ## Persistent shell and zero-tap payloads
 
@@ -447,7 +458,7 @@ requires explicit authorization and a backup. The upstream connection driver
 expects a network ADB address; enable authorized TCP ADB from USB first rather
 than passing the USB serial to its reconnect loop.
 
-## Handing device ownership to DaylightStation Android (p9, shell 34)
+## Handing device ownership to DaylightStation Android
 
 Portal Keys can give its device-owner role to the DaylightStation Android app
 without a factory reset, using `DevicePolicyManager.transferOwnership` (Android
@@ -525,8 +536,8 @@ re-applies the full kiosk policy on its next tick.
 
 ### Ownership coming back to this app
 
-Shell 34 adds `<support-transfer-ownership />` to `res/xml/device_admin.xml`
-and implements `PortalAdminReceiver.onTransferOwnershipComplete`. The framework
+The cutover shell declares `<support-transfer-ownership />` in
+`res/xml/device_admin.xml` and implements `PortalAdminReceiver.onTransferOwnershipComplete`. The framework
 checks that tag on the **receiving** admin, so it matters only when the new app
 transfers ownership back here. The receiver sets the same hold and writes an
 `OWNER` line to the shell log; it applies no policy. Run `resume-policy` to
@@ -536,11 +547,11 @@ start enforcement again.
 
 | Change | Half | How it gets onto the device |
 |---|---|---|
-| `/owner/transfer`, `/owner/resume-policy`, `OwnerTransfer`, the release steps and the hold in `KioskPolicy`/`HomeWatchdog` | payload `p9-owner-transfer` | Zero-tap payload swap: `pkctl payload <jar-url> <sha256>` (see [Zero-tap payload upgrade](#zero-tap-payload-upgrade)). No Android confirmation. |
-| `<support-transfer-ownership />`, `onTransferOwnershipComplete` | persistent shell, `versionCode 34` | Full APK replacement: `adb install -r`, or `pkctl update <apk-url>`, which needs the Package Installer confirmation on the panel (one tap, or the accessibility service approving its own update dialog). |
+| `/owner/transfer`, `/owner/resume-policy`, `OwnerTransfer`, the release steps and the hold in `KioskPolicy`/`HomeWatchdog` | payload `p10-ordered-owner-transfer` | Zero-tap payload swap: `pkctl payload <jar-url> <sha256>` (see [Zero-tap payload upgrade](#zero-tap-payload-upgrade)). No Android confirmation. |
+| `<support-transfer-ownership />`, `onTransferOwnershipComplete` | persistent shell, `versionCode 36` | Full APK replacement: `adb install -r`, or `pkctl update <apk-url>`, which needs the Package Installer confirmation on the panel (one tap, or the accessibility service approving its own update dialog). |
 
-The outgoing transfer needs only the payload. The shell half is needed only for
-a transfer back to this app. Lock task and the hidden SystemUI can get in the
+Use the verified shell and payload together for the rehearsal. Lock task and
+the hidden SystemUI can get in the
 way of the installer dialog, so prefer ADB for the shell on a locked panel.
 
 ## Keyboard transports measured on this Portal
@@ -734,14 +745,16 @@ for POST; a PUT body goes to a temp file named in `content`. Every authenticated
 
 **Shell 35 is installed (2026-11-17) and `shutdown/config.yml` points at `:8771`.**
 Shell APKs must be signed with the key that signed the installed app (the laptop's
-debug key, SHA-256 `3663e947…0fb4`). The payload also serves the same legacy
-contract, `PUT :8773/lockdown` (`LockdownRoute`), writing the `lockdownUntil`
-preference the shell's key filter reads; it carried the live lock before shell 35
-and remains a fallback (payload `p7.1-lockdown-route` = `04ed630a44` plus that route).
-Verified after install: a 15 s lock on `:8771` read `lockdownActive: true` and
-cleared at its deadline. Verify a lock after any shell change with a short
-deadline: `PUT /lockdown {"locked":true,"lockedUntil":<now+15s>}` must answer
-`lockdownActive: true`, then read false after the deadline.
+debug key, SHA-256 `3663e947…0fb4`). Shell 36 and its paired payload serve ordered
+protocol 2 on both `PUT :8771/lockdown` and `PUT :8773/lockdown`. Once an ordered
+revision is recorded, the shell uses its ordered deadline for key suppression,
+including when an older payload is restored.
+
+Verify a lock after any shell change with an approved short Stop issued by the
+safety service on the existing provider path. The response must include
+`lockdownProtocolVersion: 2`, the matching `lockdownRevision`, and
+`lockdownActive: true`. Confirm it clears at the deadline. The safety service
+owns the ordered revisions.
 
 The complete, tracked YAML template is
 [`__docs/configuration/public-kiosk-shutdown.yml`](../../__docs/configuration/public-kiosk-shutdown.yml).

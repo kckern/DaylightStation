@@ -23,10 +23,15 @@ public class PortalBridgeService extends Service {
     PayloadLoader loader(){return loader;}
     int versionCode(){try{return getPackageManager().getPackageInfo(getPackageName(),0).versionCode;}catch(Exception e){return -1;}}
     private final class Shell implements ShellServices{
+        private final Config config = new Config(PortalBridgeService.this);
+
+        @Override public LockdownReply applyLockdown(String token, String body) {
+            return config.lockdownReply(token, body, System.currentTimeMillis());
+        }
+
         public Object context(){return PortalBridgeService.this;} public Object accessibilityService(){return PortalKeysService.current();}
         public String pageSafetySnapshot() {
             try {
-                Config config=new Config(PortalBridgeService.this);
                 android.hardware.display.DisplayManager manager=getSystemService(android.hardware.display.DisplayManager.class);
                 android.view.Display display=manager==null?null:manager.getDisplay(android.view.Display.DEFAULT_DISPLAY);
                 return config.pageSafetySnapshot(display==null?null:display.getState(),System.currentTimeMillis());

@@ -54,7 +54,28 @@ below means restarting the prod container, as in a deploy.
 - [ ] `./gradlew build --rerun-tasks`; `node tools/verify-build.mjs portal --legacy`: one `✓` line.
 - [ ] `acc --list` prints the checks. `node --test` of `_extensions/daylight-android/cli/*.test.mjs` passes.
 - [ ] The owner has decided: the exit PIN; what to do if a transfer is refused
-      (cut over in `app` mode, or stop); whether to install portal-keys shell 34 first.
+      (cut over in `app` mode, or stop); whether to approve the legacy helper
+      upgrade and the transfer rehearsal.
+- [ ] Build and test the legacy Portal Keys helper following its README. Record
+      the exact approved APK and payload SHA-256 digests and signer certificate
+      fingerprint in the private sitting record. The candidate is shell
+      `versionCode 36` with payload `p10-ordered-owner-transfer`. Run
+      `bash verify-cutover-apk.sh <helper-apk> <android-build-tools-dir>` from
+      `_extensions/portal-keys/app` on that APK. Confirm the standalone payload
+      digest matches the baked payload digest. The checks cover receiving
+      `support-transfer-ownership`, the protocol 2 lockdown revision ACK, and
+      the payload's outgoing transfer operation. The JVM tests exercise stale
+      release rejection before and after a payload rollback.
+
+At the USB sitting, record the installed helper version and pull its base APK
+using `adb -s <usb-serial> shell pm path net.kckern.portalkeys` and
+`adb -s <usb-serial> pull <installed-base-apk-path> <private-installed-apk>`.
+Repeat the packaging check with `<private-installed-apk>` as the third
+argument to verify certificate continuity. Confirm both printed artifact
+digests equal the approved values and that the approved versionCode exceeds the
+installed version before the first replacement. If the approved shell is
+already installed, verify the installed APK digest and signer against the
+approved record. Stop on any mismatch or when the installed version is newer.
 
 ## The sitting
 
@@ -64,13 +85,13 @@ sitting at that step; its **rollback** leaves the Portal as it was before it.
 | # | Do | Go when | No-go: rollback |
 |---|---|---|---|
 | 1 | Connect the USB cable. Stage 1 backups: `pkctl config`, `pkctl hid status` (the USB allowlist), `fkb get > {private-notes}/fully-portal.json`, `fkb get kioskAppWhitelist`, HOME resolution, `adb -s <serial> shell settings get secure enabled_accessibility_services`, `adb -s <serial> shell dumpsys device_policy \| head -40` | all saved outside the repo | nothing changed |
-| 2 | `pkctl shell` reads versionCode 34; `pkctl status` reads payload `p9-owner-transfer` or later. If the payload is older: `pkctl payload <jar-url> <sha256>` (no tap). If the shell is older and the way back is wanted: `adb -s <usb-serial> install -r` portal-keys shell 34 | both read as required | `pkctl rollback` |
+| 2 | With the owner's approval and after the digest and signer checks above, run `adb -s <usb-serial> install -r <helper-apk>` if needed. An APK upgrade preserves the active payload. Activate the approved bytes with `pkctl payload <jar-url> <approved-payload-sha256>` and record the result. On a repeat sitting, the prior verified activation can be reused if the active file and payload version still match the recorded result. | `pkctl shell` reports versionCode 36. `pkctl payload` reports `activeVersion: p10-ordered-owner-transfer` and the active file from the digest-verified swap. Verify the protocol 2 ACK on the existing safety path with the approved short Stop check from the helper README. | Stop the rehearsal. If the payload swap caused a regression, `pkctl rollback` and confirm the helper is still owner and serving lockdown. Keep the installed shell and preserve the private evidence. |
 | 3 | Install this app (stage 2) and run the home-candidate check | HOME resolution and candidate list unchanged | `adb -s <serial> uninstall net.kckern.daylight.portal` |
 | 4 | Stage 3 grants; the keep-alive broadcast (stage 4) | `dd lifeline status` answers | `adb -s <serial> shell am force-stop net.kckern.daylight.portal`; revoke |
 | 5 | `acc` (read-only) | no FAIL except the page checks: lock task allows only Fully, so `kiosk.status` may fail here | force-stop the app |
 | 6 | **Transfer out (rehearsal).** `pkctl transfer-owner`. **From here to step 8 the Portal is unlocked:** portal-keys has released lock task, the status bar, its restrictions and its hidden packages, and this app applies nothing. Someone stays at the Portal and nobody else uses it | `transferred: true`; `dd lockdown`: `deviceOwner: true`, `mode: app`, `ownerHold` set; Fully still home | **First read who is owner**, even if the call timed out: `dd lockdown` (`deviceOwner`) and `adb -s <serial> shell dumpsys device_policy \| head -40`. Still portal-keys: `pkctl resume-policy`, `pkctl kiosk-verify`; the owner's decision says whether to continue in `app` mode. Already this app: go to step 8 |
 | 7 | Start the kiosk Activity (stage 4). `acc --active` (reloads, foregrounds and briefly darkens the page, as above) | no FAIL; MANUAL lines read "lockdown is off" | `dd settings reset` anything changed |
-| 8 | **Transfer back (rehearsal).** `dd settings set lockdown.ownerTransferTarget <pk-receiver>`; `dd lockdown owner transfer <pk-receiver>`; `dd settings reset lockdown.ownerTransferTarget`; `pkctl resume-policy`; `pkctl kiosk-verify` | portal-keys is owner, its kiosk verifies, Fully pinned again | **Refused:** this app stays owner. With lockdown off, `dd lockdown owner resume` only lifts the hold; it pins nothing, so Fully stays unpinned and the Portal unlocked. The ways out: (a) continue the cutover on this app (steps 9 to 15 lock the Portal under this app's owner policy); (b) leave the Portal on Fully without owner authority (no lock task), accepted by the owner; (c) a factory reset and the original provisioning of portal-keys, the only way to give it ownership back |
+| 8 | **Transfer back (rehearsal).** `dd settings set lockdown.ownerTransferTarget <pk-receiver>`; `dd lockdown owner transfer <pk-receiver>`; `dd settings reset lockdown.ownerTransferTarget`; `pkctl resume-policy`; `pkctl kiosk-verify` | portal-keys is owner, its kiosk verifies, Fully pinned again | **Refused:** this app stays owner. With lockdown off, `dd lockdown owner resume` only lifts the hold; it pins nothing, so Fully stays unpinned and the Portal unlocked. The ways out: (a) continue the cutover on this app (steps 9 to 15 lock the Portal under this app's owner policy); (b) leave the Portal on Fully without owner authority (no lock task), accepted by the owner |
 | 9 | Stage 8 proofs. `dd update <apk-url> <sha256>` twice with a bumped versionCode; then `acc --only reboot --reboot` three times. After each reboot: USB, `adb -s <usb-serial> tcpip 5555` | lifeline back 3 of 3 | stop here; Fully runs the Portal |
 | 10 | `acc --only payload.bad,crash --restart --kill --serve-bad-payload {laptop-address}:{port}` (pushes a file that is not a payload; restarts the payload; kills the app's process with exec turned on and put back) | `payload.bad` and `crash.*` PASS | `dd payload rollback` |
 | 11 | Stage 10 steps 1 and 2: `lockdown.allowedApps` and `launcher.allowed` from step 1's whitelist; `dd settings set lockdown.exitPin <pin>`. Backend: `provider: daylight-android` and `volume.provider: daylight-android` for the Portal, then **restart the backend** | `dd lockdown` shows the lists, no `allowedAppsError`; after the restart the admin console reaches the app | backend back to `fully-kiosk`, restart the backend |

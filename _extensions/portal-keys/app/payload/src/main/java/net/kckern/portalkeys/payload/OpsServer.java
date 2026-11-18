@@ -57,13 +57,25 @@ final class OpsServer extends NanoHTTPD{
             throw new IllegalArgumentException("bounded JSON required");
         return length;
     }
-    /** Legacy public-kiosk lockdown (see LockdownRoute); authenticated by its own token, not the admin one. */
+    /** Keep the fallback listener on the shell's ordered authority when available. */
     private Response lockdown(IHTTPSession x) throws Exception {
         if (x.getMethod()!=Method.PUT) return json(Response.Status.METHOD_NOT_ALLOWED,new JSONObject().put("ok",false).put("error","PUT required"));
-        android.content.SharedPreferences prefs=context.getSharedPreferences(LockdownRoute.PREFS,Context.MODE_PRIVATE);
         String body=LockdownRoute.readBody(x.getHeaders(),x.getInputStream());
+        String token=x.getHeaders().get("x-lockdown-token");
+        if (shell.shellVersionCode() >= 36) {
+            try {
+                ShellServices.LockdownReply reply = shell.applyLockdown(token, body);
+                Response response = newFixedLengthResponse(Response.Status.lookup(reply.status), "application/json", reply.body);
+                response.addHeader("Access-Control-Allow-Origin", "*");
+                return response;
+            } catch (IllegalStateException failed) {
+                return json(Response.Status.INTERNAL_ERROR,
+                    new JSONObject().put("ok", false).put("error", "lockdown persistence failed"));
+            }
+        }
+        android.content.SharedPreferences prefs=context.getSharedPreferences(LockdownRoute.PREFS,Context.MODE_PRIVATE);
         long now=System.currentTimeMillis();
-        LockdownRoute.Decision decision=LockdownRoute.decide(prefs.getString(LockdownRoute.TOKEN,""),x.getHeaders().get("x-lockdown-token"),body,now);
+        LockdownRoute.Decision decision=LockdownRoute.decide(prefs.getString(LockdownRoute.TOKEN,""),token,body,now);
         if (decision.status!=200) return json(decision.status==401?Response.Status.UNAUTHORIZED:Response.Status.BAD_REQUEST,new JSONObject().put("ok",false).put("error",decision.error));
         prefs.edit().putLong(LockdownRoute.UNTIL,decision.until).commit();
         long until=prefs.getLong(LockdownRoute.UNTIL,0);

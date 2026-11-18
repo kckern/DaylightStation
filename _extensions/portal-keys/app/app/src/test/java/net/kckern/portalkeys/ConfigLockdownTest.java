@@ -61,6 +61,50 @@ public class ConfigLockdownTest {
     assertFalse(restarted.applyLockdown(LockdownCommand.parse("{\"locked\":false}",1000)));
     assertTrue(restarted.lockdownActive());
   }
+  @Test public void olderPayloadCannotClearAnOrderedStopByWritingTheLegacyPreference() throws Exception {
+    Preferences storage=new Preferences();
+    SharedPreferences prefs=storage.open();
+    Config config=new Config(prefs);
+    assertTrue(config.applyLockdown(LockdownCommand.parse("{\"locked\":true,\"revision\":4}",1000)));
+    prefs.edit().putLong("lockdownUntil",0).commit();
+    Config restarted=new Config(storage.open());
+    assertTrue(restarted.lockdownActive());
+    org.json.JSONObject ack=new org.json.JSONObject(restarted.toJsonRedacted());
+    assertEquals(2,ack.getInt("lockdownProtocolVersion"));
+    assertEquals(4,ack.getLong("lockdownRevision"));
+    assertTrue(ack.getBoolean("lockdownActive"));
+  }
+  @Test public void retainsAShell35StopWhenItsPayloadIsRolledBack() {
+    Preferences storage = new Preferences();
+    SharedPreferences prefs = storage.open();
+    prefs.edit().putLong("lockdownRevision", 7).putLong("lockdownUntil", Long.MAX_VALUE).commit();
+    new Config(prefs);
+    prefs.edit().putLong("lockdownUntil", 0).commit();
+    Config restarted = new Config(storage.open());
+    assertEquals(7, restarted.lockdownRevision());
+    assertTrue(restarted.lockdownActive());
+  }
+
+  @Test public void bothListenersUseOneOrderedAcknowledgementAuthority() throws Exception {
+    Preferences storage = new Preferences();
+    SharedPreferences prefs = storage.open();
+    prefs.edit().putString("lockdownToken", "test-token").commit();
+    Config shell = new Config(prefs);
+    Config payloadBridge = new Config(prefs);
+    net.kckern.portalkeys.api.ShellServices.LockdownReply stop =
+        payloadBridge.lockdownReply("test-token", "{\"locked\":true,\"revision\":8}", 1000);
+    assertEquals(200, stop.status);
+    org.json.JSONObject ack = new org.json.JSONObject(stop.body);
+    assertEquals(2, ack.getInt("lockdownProtocolVersion"));
+    assertEquals(8, ack.getLong("lockdownRevision"));
+    assertTrue(ack.getBoolean("lockdownActive"));
+    assertEquals(409, shell.lockdownReply("test-token", "{\"locked\":false,\"revision\":7}", 1000).status);
+    assertEquals(409, payloadBridge.lockdownReply("test-token", "{\"locked\":false}", 1000).status);
+    assertEquals(401, payloadBridge.lockdownReply("wrong", "{\"locked\":false,\"revision\":9}", 1000).status);
+    assertTrue(shell.lockdownActive());
+    assertEquals(200, shell.lockdownReply("test-token", "{\"locked\":false,\"revision\":9}", 1000).status);
+    assertFalse(payloadBridge.lockdownActive());
+  }
   @Test public void failedPersistenceCannotAcknowledgeStop() {
     Preferences storage=new Preferences();storage.commitSucceeds=false;Config config=new Config(storage.open());
     try{config.applyLockdown(LockdownCommand.parse("{\"locked\":true,\"revision\":2}",1000));fail("acknowledged failed disk write");}

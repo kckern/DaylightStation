@@ -144,10 +144,11 @@ been made on this firmware.** Until it has been made in both directions, with
 lockdown off, this device is cut over in `app` mode and the old helper keeps
 ownership.
 
-The old helper must be at shell `versionCode` 34 with payload `p9-owner-transfer`
-or later (its README, "Handing device ownership"). Its payload half carries the
-outgoing transfer and is pushed with no tap; its shell half is needed only for the
-way back, and replacing it needs a tap on the panel or ADB.
+Follow the [Portal cutover prerequisites](portal-cutover.md#before-the-sitting-no-device-contact)
+for legacy shell 36 and payload `p10-ordered-owner-transfer`. Record the approved
+APK and payload digests, verify the APK signer against the installed helper,
+and verify protocol 2 and both ownership transfer capabilities before the
+rehearsal.
 
 Rehearsal, with lockdown off on both apps' sides and someone at the panel:
 

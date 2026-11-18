@@ -5,7 +5,7 @@ import net.kckern.portalkeys.api.Payload;
 import net.kckern.portalkeys.api.ShellServices;
 
 public final class Main implements Payload {
-    static final String VERSION = "p9-page-evidence-disabled";
+    static final String VERSION = "p10-ordered-owner-transfer";
     private OpsServer ops;
     private HidBridgeServer hidBridge;
     private UsbHidController usbHid;
