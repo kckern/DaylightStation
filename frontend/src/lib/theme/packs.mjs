@@ -4,6 +4,17 @@
 // decision (spec: anti-slop Tier 3). The base contract owns everything else.
 
 export const PACKS = Object.freeze({
+  admin: Object.freeze({
+    name: 'admin',
+    character: 'Compact technical workspace with blue selection and elevated, bordered editors.',
+    primaryColor: 'blue',
+    accent: '#4A7BF7',
+    colors: Object.freeze({
+      background: '#0C0E14', surface: '#12141C', surfaceAlt: '#1A1D28', border: '#2A2E3D',
+      textHigh: '#E8EAF0', textMid: '#8B90A0', textLow: '#555A6E',
+    }),
+    status: Object.freeze({ success: '#34D399', warning: '#FBBF24', danger: '#F87171', info: '#60A5FA' }),
+  }),
   health: Object.freeze({
     name: 'health',
     character: 'Quiet clinical focus: the daily log is the screen; numbers '

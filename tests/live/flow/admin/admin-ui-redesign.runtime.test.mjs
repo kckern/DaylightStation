@@ -68,7 +68,7 @@ test.describe('Admin UI Redesign Verification', () => {
       timeout: 30000
     });
 
-    const header = sharedPage.locator('.mantine-AppShell-header');
+    const header = sharedPage.locator('.admin-layout > header');
     const headerText = await header.textContent();
     expect(headerText).toContain('/');
     expect(headerText).toContain('System');

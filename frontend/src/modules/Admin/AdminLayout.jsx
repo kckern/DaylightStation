@@ -1,6 +1,6 @@
 import React from 'react';
-import { Outlet } from 'react-router-dom';
-import { AppShell } from '@mantine/core';
+import { Outlet, useLocation } from 'react-router-dom';
+import { AppFrame } from '../../lib/ui/AppFrame.jsx';
 import { useDisclosure } from '@mantine/hooks';
 import AdminNav from './AdminNav.jsx';
 import AdminHeader from './AdminHeader.jsx';
@@ -8,30 +8,19 @@ import { UnsavedGuardProvider } from './shared/UnsavedGuardContext.jsx';
 import './Admin.scss';
 
 function AdminLayout() {
-  const [opened, { toggle }] = useDisclosure();
+  const [opened, { toggle, close }] = useDisclosure();
+  const { pathname } = useLocation();
+  React.useEffect(close, [pathname, close]);
 
   return (
     <UnsavedGuardProvider>
-      <AppShell
-        className="admin-layout"
-        header={{ height: 48 }}
-        navbar={{ width: 260, breakpoint: 'sm', collapsed: { mobile: !opened } }}
-        padding={0}
+      <AppFrame
+        className={opened ? 'admin-layout admin-layout--menu-open' : 'admin-layout'}
+        header={<AdminHeader opened={opened} toggle={toggle} />}
+        navigation={<AdminNav />}
       >
-        <AppShell.Header>
-          <AdminHeader opened={opened} toggle={toggle} />
-        </AppShell.Header>
-
-        <AppShell.Navbar>
-          <AdminNav />
-        </AppShell.Navbar>
-
-        <AppShell.Main>
-          <div className="admin-content">
-            <Outlet />
-          </div>
-        </AppShell.Main>
-      </AppShell>
+        <div className="admin-content"><Outlet /></div>
+      </AppFrame>
     </UnsavedGuardProvider>
   );
 }

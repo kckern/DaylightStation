@@ -35,10 +35,10 @@ const logger = createAppLogger('life');
 // see PLAN_LINKS below — so this list matches the four things that used to be
 // directly clickable from the root of the old navbar (Now / Log / Plan / Coach).
 const TABS = [
-  { id: 'now', label: 'Now', icon: <IconDashboard size={20} /> },
-  { id: 'log', label: 'Log', icon: <IconTimeline size={20} /> },
-  { id: 'plan', label: 'Plan', icon: <IconTarget size={20} /> },
-  { id: 'coach', label: 'Coach', icon: <IconMessageCircle size={20} /> },
+  { id: 'now', href: '/life/now', label: 'Now', icon: <IconDashboard size={20} /> },
+  { id: 'log', href: '/life/log', label: 'Log', icon: <IconTimeline size={20} /> },
+  { id: 'plan', href: '/life/plan', label: 'Plan', icon: <IconTarget size={20} /> },
+  { id: 'coach', href: '/life/coach', label: 'Coach', icon: <IconMessageCircle size={20} /> },
 ];
 
 // The old navbar's nested "Plan" NavLink group, ported to an in-view secondary
@@ -156,7 +156,6 @@ function LifeAppShell() {
         title="Life"
         tabs={TABS}
         activeTab={activeTab}
-        onTabChange={(id) => navigate(`/life/${id}`)}
         headerActions={headerActions}
       >
         <div className="life-app-root">

@@ -54,7 +54,7 @@ function AdminHeader({ opened, toggle }) {
   return (
     <Group h="100%" px="md" justify="space-between">
       <Group gap="sm">
-        <Burger opened={opened} onClick={toggle} hiddenFrom="sm" size="sm" />
+        <Burger aria-label="Toggle admin navigation" aria-expanded={opened} opened={opened} onClick={toggle} hiddenFrom="sm" size="sm" />
         <Box style={{ display: 'flex', alignItems: 'center' }}>
           {breadcrumbs}
         </Box>

@@ -1,3 +1,4 @@
+import { PlaybackFrame } from '@/lib/ui/AppFrame.jsx';
 import { lazy, Suspense, useState, useEffect, useRef } from 'react';
 import { Routes, Route, NavLink, Navigate, Outlet, useParams, useLocation, useNavigate } from 'react-router-dom';
 import { MantineProvider } from '@mantine/core';
@@ -127,8 +128,27 @@ function FeedLayout() {
   }, [navigate]);
 
   return (
-    <div
+    <PlaybackFrame
       className="feed-app"
+      controls={showMiniBar && !sheetOpen && (
+        <FeedPlayerMiniBar
+          item={activeMedia.item}
+          playback={playback}
+          onOpen={() => setSheetOpen(true)}
+          onClose={stop}
+        />
+      )}
+      overlays={<FeedPlayerSheet
+        open={sheetOpen && !!activeMedia}
+        onClose={() => setSheetOpen(false)}
+        item={activeMedia?.item}
+        playback={playback}
+      />}
+      player={<PersistentPlayer
+        ref={playerRef}
+        contentId={activeMedia?.contentId || null}
+        onEnd={stop}
+      />}
       data-density={density}
       data-reading-theme={readingPreferences.theme}
       style={{
@@ -181,26 +201,7 @@ function FeedLayout() {
           </FeedErrorBoundary>
         ) : <div className="feed-placeholder" role="status">Restoring your reading workspace…</div>}
       </div>
-      {showMiniBar && !sheetOpen && (
-        <FeedPlayerMiniBar
-          item={activeMedia.item}
-          playback={playback}
-          onOpen={() => setSheetOpen(true)}
-          onClose={stop}
-        />
-      )}
-      <FeedPlayerSheet
-        open={sheetOpen && !!activeMedia}
-        onClose={() => setSheetOpen(false)}
-        item={activeMedia?.item}
-        playback={playback}
-      />
-      <PersistentPlayer
-        ref={playerRef}
-        contentId={activeMedia?.contentId || null}
-        onEnd={stop}
-      />
-    </div>
+    </PlaybackFrame>
   );
 }
 

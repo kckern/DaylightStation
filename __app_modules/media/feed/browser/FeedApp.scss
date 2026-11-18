@@ -50,10 +50,6 @@
   --feed-reading-ink: #e9ecef;
   --feed-reading-link: #74c0fc;
 
-  height: 100vh;
-  height: 100dvh; // dynamic viewport unit avoids mobile chrome/keyboard clipping (F-24)
-  display: flex;
-  flex-direction: column;
   background: var(--feed-canvas);
   color: var(--feed-text-1);
   font-family: var(--feed-font-ui);

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useVisibleRefresh } from '@/lib/hooks/useVisibleRefresh.js';
 import { useApiResource } from '@/lib/hooks/useApiResource.js';
 import { DaylightAPI } from '@/lib/api.mjs';
 import homeLogger from '../homeLogger.js';
@@ -21,14 +22,7 @@ export function useHomeEntities({ refreshMs = REFRESH_MS } = {}) {
   // entityId -> { expected: stateClass, until: ms } for toggles not yet confirmed
   const [pending, setPending] = useState({});
 
-  useEffect(() => {
-    const id = setInterval(() => {
-      if (document.visibilityState === 'visible') reload();
-    }, refreshMs);
-    const onVisible = () => { if (document.visibilityState === 'visible') reload(); };
-    document.addEventListener('visibilitychange', onVisible);
-    return () => { clearInterval(id); document.removeEventListener('visibilitychange', onVisible); };
-  }, [reload, refreshMs]);
+  useVisibleRefresh({ intervalMs: refreshMs, reload });
 
   // A reading retires a guess only when it agrees with it; a guess that the
   // platform never confirms expires, and the real state shows.

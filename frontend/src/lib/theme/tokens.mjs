@@ -52,7 +52,7 @@ export function dsCssVars(pack = null) {
   for (const [role, hex] of Object.entries(colors)) {
     vars[`--ds-${role.replace(/([A-Z])/g, '-$1').toLowerCase()}`] = hex;
   }
-  for (const [name, hex] of Object.entries(DS_TOKENS.status)) {
+  for (const [name, hex] of Object.entries({ ...DS_TOKENS.status, ...pack?.status })) {
     vars[`--ds-${name}`] = hex;
   }
   for (const [name, value] of Object.entries(DS_TOKENS.controls)) {

@@ -214,12 +214,14 @@
     padding-bottom: env(safe-area-inset-bottom);
 
     @include bp.tablet-up {
+      overflow-y: auto; min-height: 0;
       flex-direction: column; justify-content: flex-start;
       gap: 0.25rem; padding: 0.75rem 0.5rem;
       border-top: none; border-right: 1px solid var(--ds-border);
     }
   }
   &__tab {
+    background: transparent; border: 0; font: inherit; cursor: pointer;
     display: flex; flex-direction: column; align-items: center; gap: 0.15rem;
     padding: 0.5rem 0.75rem; min-width: 64px;
     color: var(--ds-text-mid); cursor: pointer; border-radius: 9px;
@@ -255,4 +257,11 @@
   &:focus-visible { outline: 2px solid var(--ds-accent, var(--ds-info)); outline-offset: 2px; }
   &__placeholder { flex: 1; text-align: left; }
   &__kbd { font-size: 0.7rem; color: var(--ds-text-low); border: 1px solid var(--ds-border); border-radius: 4px; padding: 0 0.3rem; }
+}
+
+.ds-playback-frame {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  height: 100dvh;
 }

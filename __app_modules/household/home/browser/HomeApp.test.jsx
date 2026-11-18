@@ -100,7 +100,7 @@ function routeApi({ entities = entitiesPayload, cameras = { cameras: [] } } = {}
   });
 }
 
-const openView = (name) => fireEvent.click(screen.getByRole('link', { name }));
+const openView = (name) => fireEvent.click(screen.getByRole('button', { name }));
 const STATUS = 'The house is drawing 505 W, with 2 lights on and a door open in the office.';
 const statusLines = () => [...document.querySelectorAll('.home-today__now')].map((el) => plain(el.textContent));
 const laneLabels = () => [...document.querySelectorAll('.home-lane__label')].map((el) => el.textContent);
@@ -138,7 +138,7 @@ describe('HomeApp — Today', () => {
     if (opens === 'Today') await lanesShown();
     if (opens === 'Mosaic') await waitFor(() => expect(document.querySelectorAll('.home-square').length).toBeGreaterThan(0));
     if (opens === 'Rooms') await waitFor(() => expect(document.querySelectorAll('.home-room__row').length).toBeGreaterThan(0));
-    expect(screen.getByRole('link', { name: opens }).getAttribute('aria-current')).toBe('page');
+    expect(screen.getByRole('button', { name: opens }).getAttribute('aria-current')).toBe('page');
   });
 
   it('shows ErrorState with a working retry when Home Assistant cannot be read', async () => {

@@ -13,6 +13,7 @@ export function createAppTheme(pack) {
   const base = {
     primaryColor: pack?.primaryColor || 'blue',
     colors: {
+      ...pack?.colorRamps,
       background: ramp(colors.background),
       surface:    ramp(colors.surface),
       surfaceAlt: ramp(colors.surfaceAlt),
@@ -21,7 +22,7 @@ export function createAppTheme(pack) {
       textMid:    ramp(colors.textMid),
       textLow:    ramp(colors.textLow),
     },
-    other: { ...DS_TOKENS.status, accent: pack?.accent || null },
+    other: { ...DS_TOKENS.status, ...pack?.status, accent: pack?.accent || null },
     components: {
       Button: { defaultProps: { size: 'md' } },
       ActionIcon: { defaultProps: { size: 'lg', variant: 'subtle' } },

@@ -1,0 +1,33 @@
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { renderHook } from '@testing-library/react';
+import { useVisibleRefresh } from './useVisibleRefresh.js';
+
+describe('useVisibleRefresh', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
+
+  it('refreshes once on foreground, suspends hidden work and releases its timer', () => {
+    vi.useFakeTimers();
+    const visibility = vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible');
+    const reload = vi.fn();
+    const hook = renderHook(({ active }) => useVisibleRefresh({ active, reload, intervalMs: 100 }), {
+      initialProps: { active: true },
+    });
+    vi.advanceTimersByTime(100);
+    expect(reload).toHaveBeenCalledTimes(1);
+    visibility.mockReturnValue('hidden');
+    document.dispatchEvent(new Event('visibilitychange'));
+    vi.advanceTimersByTime(500);
+    expect(reload).toHaveBeenCalledTimes(1);
+    visibility.mockReturnValue('visible');
+    document.dispatchEvent(new Event('visibilitychange'));
+    expect(reload).toHaveBeenCalledTimes(2);
+    hook.rerender({ active: false });
+    vi.advanceTimersByTime(500);
+    expect(reload).toHaveBeenCalledTimes(2);
+    hook.unmount();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+});

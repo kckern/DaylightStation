@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { DS_TOKENS, dsCssVars, dsRootCss } from './tokens.mjs';
 import { installRootTokens } from './installRootTokens.js';
+import { ADMIN_PACK } from '../../modules/Admin/adminTheme.js';
 import { PACKS } from './packs.mjs';
 import { createAppTheme } from './createAppTheme.js';
 
@@ -81,4 +82,12 @@ describe('DS token contract', () => {
     expect(theme.colors.surface).toHaveLength(10);
     expect(theme.other.success).toBe(DS_TOKENS.status.success);
   });
+});
+
+it('supplies the Admin palette to CSS and keeps both semantic and branded Mantine ramps', () => {
+  const theme = createAppTheme(ADMIN_PACK);
+  expect(dsCssVars(PACKS.admin)['--ds-border']).toBe('#2A2E3D');
+  expect(theme.colors.border[0]).toBe('#2A2E3D');
+  expect(theme.colors['ds-blue'][4]).toBe('#4A7BF7');
+  expect(theme.components.Portal.defaultProps.target).toBe('#admin-portals');
 });

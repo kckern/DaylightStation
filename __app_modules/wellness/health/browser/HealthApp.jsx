@@ -99,12 +99,12 @@ const HealthShell = ({ userId }) => {
   const activeTab = tabForPath(location.pathname);
   // Unexpected page movement, per 1 s burst (ui.layout-shift).
   useLayoutShiftLog({ route: location.pathname, tab: activeTab });
-  const shellRef = useRef(null);
+  const mainRef = useRef(null);
   const scrollPositions = useRef(new Map());
   const visitedToday = useRef(false);
   if (activeTab === 'today') visitedToday.current = true;
   useLayoutEffect(() => {
-    const main = shellRef.current?.querySelector('.ds-chrome__main');
+    const main = mainRef.current;
     if (main) main.scrollTop = scrollPositions.current.get(activeTab) || 0;
   }, [activeTab]);
 
@@ -112,16 +112,15 @@ const HealthShell = ({ userId }) => {
     <AppThemeProvider pack="health">
       <AgentConversationProvider conversation={conversation}>
         <DismissStackProvider>
-          <div ref={shellRef} style={{ height: '100%' }} onScrollCapture={event => {
-            if (event.target.matches('.ds-chrome__main')) scrollPositions.current.set(activeTab, event.target.scrollTop);
+          <div style={{ height: '100%' }} onScrollCapture={event => {
+            if (event.target === mainRef.current) scrollPositions.current.set(activeTab, event.target.scrollTop);
           }}>
-          <AppChrome title="Health" tabs={TABS} activeTab={activeTab}
+          <AppChrome title="Health" mainRef={mainRef} tabs={TABS.map(tab => ({ ...tab, href: TAB_PATH[tab.id] + location.search }))} activeTab={activeTab}
             sidebarRef={setSidebarTarget} sidebarActive={activeTab === 'today'}
             headerActions={[
               <span key="follow-ups" ref={setFollowUpTarget} className="health-followups-slot" />,
               <ActionIcon key="settings" aria-label="Health settings" variant="subtle" onClick={() => navigate('/health/settings')}><Icon d="M4 5h12M4 10h12M4 15h12M7 3v4M13 8v4M9 13v4" /></ActionIcon>,
-            ]}
-            onTabChange={(id) => navigate(`${TAB_PATH[id] || '/health'}${location.search}`)}>
+             ]}>
             {/* Keep the logging session (drafts, pending requests, retry bytes)
                 alive between tabs; hidden views do not poll or acquire media. */}
             {visitedToday.current ? <div hidden={activeTab !== 'today'}>

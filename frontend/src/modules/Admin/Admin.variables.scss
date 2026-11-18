@@ -1,39 +1,25 @@
-// DaylightStation Admin — Admin's own palette
-// Mission Control aesthetic: deep blue-black backgrounds, blue accent, monospace technical feel
-//
-// NOT the shared design system. The shared --ds-* contract lives in
-// lib/theme/tokens.mjs and is on :root for every page (installRootTokens).
-// This sheet loads only with Admin, and its :root rules come after the
-// contract's, so on Admin pages Admin's values win. Nothing outside Admin may
-// depend on a name defined only here: other apps do not load this file.
-
-:root {
+// Legacy aliases used by Admin editors and their portaled controls.
+.admin-theme {
   // Background layers (darkest → lightest)
-  --ds-bg-base:       #0C0E14;
-  --ds-bg-surface:    #12141C;
-  --ds-bg-elevated:   #1A1D28;
+  --ds-bg-base:       var(--ds-background);
+  --ds-bg-surface:    var(--ds-surface);
+  --ds-bg-elevated:   var(--ds-surface-alt);
   --ds-bg-overlay:    #222636;
 
   // Borders
-  --ds-border:        #2A2E3D;
-  --ds-border-focus:  #4A7BF7;
+  --ds-border-focus:  var(--ds-accent);
 
   // Text
-  --ds-text-primary:   #E8EAF0;
-  --ds-text-secondary: #8B90A0;
-  --ds-text-muted:     #555A6E;
+  --ds-text-primary:   var(--ds-text-high);
+  --ds-text-secondary: var(--ds-text-mid);
+  --ds-text-muted:     var(--ds-text-low);
 
   // Accent
-  --ds-accent:         #4A7BF7;
   --ds-accent-glow:    rgba(74, 123, 247, 0.15);
   --ds-accent-hover:   #5D8AFF;
   --ds-accent-subtle:  rgba(74, 123, 247, 0.08);
 
   // Semantic
-  --ds-success:    #34D399;
-  --ds-warning:    #FBBF24;
-  --ds-danger:     #F87171;
-  --ds-info:       #60A5FA;
 
   // Typography
   --ds-font-body:  'IBM Plex Sans', -apple-system, sans-serif;
@@ -86,7 +72,7 @@
 
 // Reduced motion support
 @media (prefers-reduced-motion: reduce) {
-  :root {
+  .admin-theme {
     --ds-transition-fast: 0ms;
     --ds-transition-base: 0ms;
     --ds-transition-slow: 0ms;

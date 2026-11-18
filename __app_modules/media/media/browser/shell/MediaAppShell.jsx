@@ -2,6 +2,7 @@
 // The shell: persistent dock (top), primary nav (rail on tablet+/tabs on
 // mobile), and a canvas showing exactly one view. Playback chrome (mini
 // player, dispatch tray) docks between canvas and tab bar on mobile.
+import { PlaybackFrame } from '@/lib/ui/AppFrame.jsx';
 import React, { useCallback, useState } from 'react';
 import { NavProvider, useNav } from "./NavProvider.jsx";
 import { DismissStackProvider } from "./DismissStackProvider.jsx";
@@ -62,33 +63,38 @@ function ShellInner() {
   return (
     <SearchLauncherContext.Provider value={searchLauncher}>
     <DismissStackProvider onBaseDismiss={baseDismiss}>
-      <div className="media-shell" data-testid="media-shell">
-        <Dock onOpenSearch={() => setSearchOpen(true)} />
+      <PlaybackFrame className="media-shell" data-testid="media-shell"
+        header={<Dock onOpenSearch={() => setSearchOpen(true)} />}
+        controls={<>
+          <ReconnectingNote />
+          <LocalPlaybackOutcomes />
+          <RemoteScreenProblems />
+          {/* Outcome notices float over the canvas: a zero-height anchor sits
+              directly above the mini player (or tab bar), so a row appearing
+              never takes page space or moves anything, and never covers the
+              handle's controls. Only the row's own buttons take pointer input. */}
+          <div className="media-outcome-anchor" data-testid="media-outcome-anchor">
+            <DispatchProgressTray />
+          </div>
+          <ScreenHandle />
+          <MiniPlayer />
+          {queueKeptCount != null && (
+            <div className="np-queue-kept" data-testid="np-queue-kept" role="status">
+              Queue kept: {queueKeptCount} item{queueKeptCount === 1 ? '' : 's'}
+            </div>
+          )}
+        </>}
+        navigation={<TabBar />}
+        overlays={<>
+          <PlaybackQualityHost />
+          {searchOpen && <SearchMode addTo={searchAddTo} onClose={() => { setSearchOpen(false); setSearchAddTo(null); }} />}
+        </>}
+      >
         <div className="media-shell-body">
           <NavRail />
           <Canvas />
         </div>
-        <ReconnectingNote />
-        <LocalPlaybackOutcomes />
-        <RemoteScreenProblems />
-        {/* Outcome notices float over the canvas: a zero-height anchor sits
-            directly above the mini player (or tab bar), so a row appearing
-            never takes page space or moves anything, and never covers the
-            handle's controls. Only the row's own buttons take pointer input. */}
-        <div className="media-outcome-anchor" data-testid="media-outcome-anchor">
-          <DispatchProgressTray />
-        </div>
-        <ScreenHandle />
-        <MiniPlayer />
-        {queueKeptCount != null && (
-          <div className="np-queue-kept" data-testid="np-queue-kept" role="status">
-            Queue kept: {queueKeptCount} item{queueKeptCount === 1 ? '' : 's'}
-          </div>
-        )}
-        <TabBar />
-        <PlaybackQualityHost />
-        {searchOpen && <SearchMode addTo={searchAddTo} onClose={() => { setSearchOpen(false); setSearchAddTo(null); }} />}
-      </div>
+      </PlaybackFrame>
     </DismissStackProvider>
     </SearchLauncherContext.Provider>
   );
