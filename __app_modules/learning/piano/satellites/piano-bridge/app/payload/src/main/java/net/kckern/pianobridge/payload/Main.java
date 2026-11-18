@@ -16,7 +16,7 @@ import net.kckern.pianobridge.api.ShellServices;
 public final class Main implements Payload {
 
     private static final String TAG = "PianoBridge";
-    private static final String VERSION = "p37-fkb-volume-lock";
+    private static final String VERSION = "p37a-gatt-link";
 
     private BridgeCore core;
 
