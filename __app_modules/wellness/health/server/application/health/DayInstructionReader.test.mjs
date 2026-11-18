@@ -69,13 +69,13 @@ describe('DayInstructionReader', () => {
     await reader(g).read(readInput);
     for (const question of Object.values(g.evaluate.mock.calls[0][1])) expect(question.instructions).toContain('`said`');
   });
-  it('counts a list of eaten foods as one action in the compound question', async () => {
+  it('counts several eaten foods, or several foods sent to one place, as one request', async () => {
     const g = gateway(validRead);
     await reader(g).read(readInput);
-    expect(g.evaluate.mock.calls[0][1].compound.instructions).toContain('Listing several foods that were eaten counts as one action.');
+    expect(g.evaluate.mock.calls[0][1].compound.instructions).toBe('Does `said` ask for two or more separate changes, such as moving one food and correcting another, moving foods to different places, or logging a new food and also changing a logged one? Reporting several foods eaten, even at different meals, is one request, and so is sending several foods to the same place.');
   });
-  it.each(malformed)('rejects a malformed %s answer: %s', async (id, _label, bad) => {
-    await expect(reader(gateway({ ...validRead, [id]: bad })).read(readInput)).rejects.toThrow('Invalid decision answer');
+  it.each(malformed)('rejects a malformed %s answer, naming the question: %s', async (id, _label, bad) => {
+    await expect(reader(gateway({ ...validRead, [id]: bad })).read(readInput)).rejects.toThrow(new Error(`Invalid decision answer: ${id}`));
   });
   it('treats exactly 0.5 as yes', async () => {
     const plan = await reader(gateway({ ...validRead, compound: yes(0.5) })).read(readInput);
@@ -90,7 +90,7 @@ describe('DayInstructionReader', () => {
     expect(ids).toEqual(['tea']);
   });
   it.each(badYesNos)('rejects a food match answer that is %s, even after a clear yes', async (_label, bad) => {
-    await expect(reader(gateway({ food_0: yes(0.9), food_1: bad })).matchFoods({ text: 'the eggs', foods: twoFoods })).rejects.toThrow('Invalid decision answer');
+    await expect(reader(gateway({ food_0: yes(0.9), food_1: bad })).matchFoods({ text: 'the eggs', foods: twoFoods })).rejects.toThrow(new Error('Invalid decision answer: food_1'));
   });
 
   it('assigns meals, leaving a food alone when no meal was said or implied', async () => {
@@ -99,7 +99,7 @@ describe('DayInstructionReader', () => {
     expect(placed).toEqual({ e: 'morning' });
   });
   it.each(badChoices({ valid: 'morning', offList: ['same', 'none'] }))('rejects a meal answer that is %s, even after a valid one', async (_label, bad) => {
-    await expect(reader(gateway({ meal_0: pick('morning'), meal_1: bad })).assignMeals({ text: 'eggs and a cookie', foods: twoFoods })).rejects.toThrow('Invalid decision answer');
+    await expect(reader(gateway({ meal_0: pick('morning'), meal_1: bad })).assignMeals({ text: 'eggs and a cookie', foods: twoFoods })).rejects.toThrow(new Error('Invalid decision answer: meal_1'));
   });
 
   it('makes no gateway call when there are no foods', async () => {

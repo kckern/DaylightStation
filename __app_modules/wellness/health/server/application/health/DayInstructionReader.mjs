@@ -12,12 +12,14 @@ const meals = () => Object.fromEntries(MEAL_BUCKETS.map(bucket => [bucket.id, bu
 const foodState = foods => Object.fromEntries(foods.map((food, index) => [`food_${index}`, food.description || food.name]));
 
 // A malformed answer must stop here: acting on it could move the wrong rows.
-const picked = (answer, options) => {
-  if (answer?.type !== 'choice' || typeof answer.choice !== 'string' || !Object.hasOwn(options, answer.choice)) throw new Error('Invalid decision answer');
+const picked = (answers, id, options) => {
+  const answer = answers[id];
+  if (answer?.type !== 'choice' || typeof answer.choice !== 'string' || !Object.hasOwn(options, answer.choice)) throw new Error(`Invalid decision answer: ${id}`);
   return answer.choice;
 };
-const isYes = answer => {
-  if (answer?.type !== 'yesNo' || !Number.isFinite(answer.probability) || answer.probability < 0 || answer.probability > 1) throw new Error('Invalid decision answer');
+const isYes = (answers, id) => {
+  const answer = answers[id];
+  if (answer?.type !== 'yesNo' || !Number.isFinite(answer.probability) || answer.probability < 0 || answer.probability > 1) throw new Error(`Invalid decision answer: ${id}`);
   return answer.probability >= 0.5;
 };
 
@@ -54,15 +56,15 @@ export class DayInstructionReader {
       fromMeal: choice('Which meal does `said` say the food is being moved out of?', fromMealOptions),
       toMeal: choice('According to `said`, which meal should the food it mentions move to?', toMealOptions),
       toDay: choice('According to `said`, which day should the food it mentions move to?', toDayOptions),
-      compound: yesNo('Does `said` ask for two or more different actions, such as moving one food and correcting another, or logging a new food and also changing a logged one? Listing several foods that were eaten counts as one action.'),
+      compound: yesNo('Does `said` ask for two or more separate changes, such as moving one food and correcting another, moving foods to different places, or logging a new food and also changing a logged one? Reporting several foods eaten, even at different meals, is one request, and so is sending several foods to the same place.'),
     });
     return {
-      intent: picked(answers.intent, intentOptions),
-      target: picked(answers.target, targetOptions),
-      fromMeal: picked(answers.fromMeal, fromMealOptions),
-      toMeal: picked(answers.toMeal, toMealOptions),
-      toDay: picked(answers.toDay, toDayOptions),
-      compound: isYes(answers.compound),
+      intent: picked(answers, 'intent', intentOptions),
+      target: picked(answers, 'target', targetOptions),
+      fromMeal: picked(answers, 'fromMeal', fromMealOptions),
+      toMeal: picked(answers, 'toMeal', toMealOptions),
+      toDay: picked(answers, 'toDay', toDayOptions),
+      compound: isYes(answers, 'compound'),
     };
   }
 
@@ -70,7 +72,7 @@ export class DayInstructionReader {
     if (!foods.length) return [];
     const questions = Object.fromEntries(foods.map((_food, index) => [`food_${index}`, yesNo(`Does \`said\` refer to \`food_${index}\`?`)]));
     const { answers } = await this.#gateway.evaluate({ said: text, ...foodState(foods) }, questions);
-    return foods.filter((_food, index) => isYes(answers[`food_${index}`])).map(food => food.id);
+    return foods.filter((_food, index) => isYes(answers, `food_${index}`)).map(food => food.id);
   }
 
   async assignMeals({ text, foods }) {
@@ -79,7 +81,7 @@ export class DayInstructionReader {
     const questions = Object.fromEntries(foods.map((_food, index) => [`meal_${index}`, choice(`According to \`said\`, at which meal was \`food_${index}\` eaten?`, options)]));
     const { answers } = await this.#gateway.evaluate({ said: text, ...foodState(foods) }, questions);
     return Object.fromEntries(foods.flatMap((food, index) => {
-      const meal = picked(answers[`meal_${index}`], options);
+      const meal = picked(answers, `meal_${index}`, options);
       return meal === 'unsaid' ? [] : [[food.id, meal]];
     }));
   }
