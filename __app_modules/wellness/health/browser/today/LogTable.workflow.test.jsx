@@ -354,3 +354,24 @@ it('ticking keeps the meal toolbar the same shape',()=>{
  tick('Tomatoes');tick('Beef broth');
  expect(group().style.visibility).toBe('');
 });
+it('a move finishing after selection closed leaves a later day change alone',async()=>{
+ let top=150;
+ const rect=vi.spyOn(Element.prototype,'getBoundingClientRect').mockImplementation(()=>({top,left:0}));
+ let finish;const onMoveMeal=vi.fn(()=>new Promise(resolve=>{finish=resolve;}));
+ const view=props=><div className="ds-chrome__main">{shell({onMoveMeal,...props})}</div>;
+ const {container,rerender}=render(view());
+ const scroller=container.querySelector('.ds-chrome__main');
+ startSelecting();tick('Eggs');tick('Tomatoes');
+ await moveTwoToSnacks();
+ await waitFor(()=>expect(onMoveMeal).toHaveBeenCalled());
+ fireEvent.click(screen.getAllByRole('button',{name:'Done selecting'})[0]);
+ await act(async()=>{finish('moved');});
+ startSelecting();
+ scroller.scrollTop=300;top=100;
+ document.activeElement?.blur?.();
+ rerender(view({date:'2026-09-05'}));
+ expect(box('Eggs')).toBeNull();
+ expect(scroller.scrollTop).toBe(300);
+ expect(document.activeElement).toBe(document.body);
+ rect.mockRestore();
+});

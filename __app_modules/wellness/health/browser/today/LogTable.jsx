@@ -294,21 +294,29 @@ export function LogTable({
     return next;
   };
   // Closing removes the bar above the log, so the scroller gives that height back
-  // and the foods stay put. Focus inside the bar would be lost with it.
+  // and the foods stay put. Focus inside the bar would be lost with it. Only a
+  // close of the open bar on this day is recorded: a late move can call this
+  // after selection ended, and a day change resets the page by itself.
   const closing = useRef(null);
+  const selectingNow = useRef(selecting);
+  selectingNow.current = selecting;
   const closeSelection = () => {
-    const active = document.activeElement;
-    closing.current = {
-      top: logRef.current?.getBoundingClientRect().top ?? 0,
-      refocus: !active || active === document.body || Boolean(barRef.current?.contains(active)),
-    };
+    if (selectingNow.current) {
+      const active = document.activeElement;
+      closing.current = {
+        date: viewedDate.current,
+        top: logRef.current?.getBoundingClientRect().top ?? 0,
+        refocus: !active || active === document.body || Boolean(barRef.current?.contains(active)),
+      };
+    }
     setSelection([]); setSelecting(false);
   };
   useLayoutEffect(() => {
+    if (selecting) return;
     const closed = closing.current;
     const log = logRef.current;
-    if (selecting || !closed || !log) return;
     closing.current = null;
+    if (!closed || !log || closed.date !== date) return;
     const scroller = log.closest(`.${CHROME_SCROLL_CLASS}`);
     if (scroller) scroller.scrollTop += log.getBoundingClientRect().top - closed.top;
     if (!closed.refocus) return;
@@ -316,7 +324,7 @@ export function LogTable({
     if (target === log) log.setAttribute('tabindex', '-1');
     target.focus({ preventScroll: true });
   }, [selecting]);
-  useEffect(() => { setSelecting(false); setSelection([]); }, [date]);
+  useEffect(() => { closing.current = null; setSelecting(false); setSelection([]); }, [date]);
   // Ticks follow the day's foods. A move hides its rows until it settles, and they
   // return if it fails, so nothing is forgotten while one is running.
   useEffect(() => {

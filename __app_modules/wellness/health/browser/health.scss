@@ -696,10 +696,12 @@ $health-aside-gap: 1.5rem;
   &__chip--over { border-style: solid; border-color: var(--ds-accent); background: color-mix(in srgb, var(--ds-accent) 12%, transparent); }
 }
 // "Select foods": one bar over the day's meals. `.ds-chrome__main` is the scroll
-// region and the app header sits outside it, so top: 0 is directly under the
-// header. One status line and one unwrapped action line keep its height constant.
+// region, with the app header outside it. Browsers stop a sticky box at the
+// scroller's padding edge, so the offset cancels that 0.75rem top padding (the same
+// at every width) and the bar meets the header with no strip for foods to show
+// through. One status line and one unwrapped action line keep its height constant.
 .health-selection-bar {
-  position: sticky; top: 0; z-index: 20;
+  position: sticky; top: -0.75rem; z-index: 20;
   display: grid; gap: 2px; margin-bottom: 0.5rem; padding: 0.3rem 0;
   background: var(--ds-background); border-bottom: 1px solid var(--ds-border);
 }
@@ -715,10 +717,13 @@ $health-aside-gap: 1.5rem;
 .health-meal-selection-tick { display: flex; flex: none; align-items: center; justify-content: center; cursor: pointer;
   input { margin: 0; accent-color: var(--ds-info); }
 }
+// These cells are plain text while picking foods, and a tap on them ticks the row.
+.health-meal-selection-row :is(.health-portion, .health-numeric-control, .health-row-artwork) { cursor: inherit; }
 @media (pointer: coarse) {
   .health-selection-bar__actions, .health-selection-bar__actions .mantine-Button-root, .health-move-menu__item { min-height: 44px; }
-  // A full 44 px target that takes only 24 px of the row's narrow phone tracks.
-  .health-meal-selection-tick { position: relative; z-index: 1; width: 44px; height: 44px; margin-inline: -10px; }
+  // A full 44 px target taking 28 px of the row: the rest reaches into the page's
+  // side padding, never rightward over a dish's expand triangle.
+  .health-meal-selection-tick { position: relative; z-index: 1; width: 44px; height: 44px; margin-left: -16px; }
   .health-meal-selection-tick input { width: 18px; height: 18px; }
 }
 // A meal entry gliding to its new place after a reorder (sectionOrder.js,
