@@ -170,6 +170,12 @@
     background-color var(--ds-transition-fast),
     border-color var(--ds-transition-fast);
 
+  // Links fill the scroll rail, so keep the complete focus ring inside its clip.
+  &:focus-visible {
+    outline: var(--ds-focus-width) solid var(--ds-accent);
+    outline-offset: calc(-1 * var(--ds-focus-width));
+  }
+
   &:hover {
     background-color: var(--ds-bg-elevated) !important;
   }

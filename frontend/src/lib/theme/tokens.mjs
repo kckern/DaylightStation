@@ -36,7 +36,7 @@ export const DS_TOKENS = Object.freeze({
   // The accent a surface gets when no pack names one (kiosk screens, auth,
   // anything outside an AppThemeProvider). Packs override it.
   accent: '#4a7bf7',
-  // Mirrors frontend/src/styles/_breakpoints.scss — change both together.
+  // Regenerate the Sass projection with node frontend/scripts/generate-browser-breakpoints.mjs.
   breakpoints: Object.freeze({ md: 768, lg: 1200 }),
 });
 

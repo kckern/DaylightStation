@@ -26,8 +26,7 @@ Admin, Health, Media, Feed, Home, Life and Auto share browser layout and interac
 Seven semantic color roles: `background`, `surface`, `surfaceAlt`, `border`,
 `textHigh`, `textMid`, `textLow`. Five status colors: `success`, `warning`,
 `danger`, `info`, `live`. Motion tokens: `fast` (120ms), `base` (200ms),
-`reveal` (300ms), and a shared `easing` curve. Breakpoints (`md`, `lg`) mirror
-`frontend/src/styles/_breakpoints.scss` — the two are kept in sync by hand.
+`reveal` (300ms), and a shared `easing` curve. The `md` and `lg` breakpoints drive JavaScript and Sass. After editing them in `tokens.mjs`, run `node frontend/scripts/generate-browser-breakpoints.mjs` to update the checked-in Sass variables.
 
 The contract reaches consumers through Mantine, scoped CSS or the document root.
 

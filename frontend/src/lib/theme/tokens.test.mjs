@@ -1,3 +1,5 @@
+import { fileURLToPath } from 'node:url';
+import * as sass from 'sass';
 import { describe, it, expect } from 'vitest';
 import { DS_TOKENS, dsCssVars, dsRootCss } from './tokens.mjs';
 import { installRootTokens } from './installRootTokens.js';
@@ -96,4 +98,19 @@ it('exposes the Feed reading chrome colors through the shared semantic roles', (
   expect(dsCssVars(PACKS.feed)).toMatchObject({
     '--ds-background': '#0f1113', '--ds-surface': '#17191c', '--ds-text-high': '#f1f3f5',
   });
+});
+
+it('compiles the shared Sass mixins at the JavaScript breakpoint boundaries', () => {
+  const { md, lg } = DS_TOKENS.breakpoints;
+  const { css } = sass.compileString(`
+    @use 'breakpoints' as bp;
+    @include bp.mobile-only { .mobile { display: block } }
+    @include bp.tablet-up { .tablet { display: block } }
+    @include bp.desktop-up { .desktop { display: block } }
+    @include bp.tablet-only { .middle { display: block } }
+  `, { loadPaths: [fileURLToPath(new URL('../../styles/', import.meta.url))] });
+  expect(css).toContain(`(max-width: ${md - 1}px)`);
+  expect(css).toContain(`(min-width: ${md}px)`);
+  expect(css).toContain(`(min-width: ${lg}px)`);
+  expect(css).toContain(`(min-width: ${md}px) and (max-width: ${lg - 1}px)`);
 });
