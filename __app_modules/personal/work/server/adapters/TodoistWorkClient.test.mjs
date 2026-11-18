@@ -139,3 +139,32 @@ describe('Todoist v1 transport', () => {
     expect(x.httpClient.requestRaw).toHaveBeenCalledTimes(2);
   });
 });
+it('checks a synchronous send guard after awaited credentials before mutation HTTP', async () => {
+  let allowed = true;
+  const httpClient = {
+    requestRaw: vi.fn(async () => ({
+      ok: true,
+      status: 200,
+      data: {}
+    }))
+  };
+  const client = new TodoistWorkClient({
+    httpClient,
+    getUserAuth: async () => {
+      allowed = false;
+      return {
+        api_key: 'fixture',
+        workspace_id: 'workspace'
+      };
+    },
+    clock: () => 1000,
+    canSend: () => allowed
+  });
+  await expect(client.request({
+    username: 'sample',
+    operation: 'complete',
+    ref,
+    payload: {}
+  })).rejects.toThrow();
+  expect(httpClient.requestRaw).not.toHaveBeenCalled();
+});

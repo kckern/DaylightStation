@@ -496,3 +496,35 @@ it('names the actual configured transition instead of labeling acceptance as rev
   expect(page.choices[0][0].text).toBe('Move to accepted');
   expect(page.text).toContain('accepted');
 });
+it('presents a separately named Archive task confirmation', async () => {
+  const x = await setup(),
+    s = await x.state.read({
+      username: 'sample'
+    });
+  const record = s.commands[x.commandId];
+  // The existing finite command event validates the supported operation.
+  const command = {
+    ...record.command,
+    id: 'command.' + 'f'.repeat(64),
+    operation: 'archive_task'
+  };
+  await x.state.transact({
+    username: 'sample',
+    id: 'archive-fixture',
+    expectedRevision: s.revision,
+    asOf: AS_OF,
+    events: [{
+      type: 'command.queued',
+      record: {
+        ...record,
+        command
+      }
+    }]
+  });
+  const page = await x.decisions.prepare({
+    principal: x.principal,
+    commandId: command.id,
+    asOf: AS_OF
+  });
+  expect(page.choices[0][0].text).toBe('Archive task');
+});

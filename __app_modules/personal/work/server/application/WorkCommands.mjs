@@ -137,13 +137,19 @@ export class WorkCommands {
         id: intent.operation === 'create_task' ? domain.containerId : domain.creationParentId
       } : intent.ref;
     const found = [...context.items, ...context.containers].find(item => keyOf(item.ref) === keyOf(target));
-    if (!found&&!(intent.operation==='create_container'&&target.id===domain.creationParentId)) throw workError('WORK_REF_NOT_AVAILABLE');
+    const stored = intent.operation === 'reopen' ? await this.#state.read({
+      username
+    }) : null;
+    const knownCompleted = intent.operation === 'reopen' && ((context.events ?? []).some(e => e.type === 'completed' && keyOf(e.ref) === keyOf(target)) || Object.values(stored.commands).some(r => r.status === 'applied' && r.command.operation === 'complete' && keyOf(r.command.ref) === keyOf(target)));
+    if (!found && !knownCompleted && !(intent.operation === 'create_container' && target.id === domain.creationParentId)) throw workError('WORK_REF_NOT_AVAILABLE');
     const item = await provider.getItem({
       username,
       ref: target,
       asOf
     });
     if (!item || keyOf(item.ref) !== keyOf(target)) throw workError('WORK_REF_NOT_AVAILABLE');
+    const expected = intent.expectedVersion ?? (target.kind === 'task' ? found?.version : null);
+    if (expected && item.version !== expected || intent.mode === 'auto' && (!expected || expected !== found?.version || context.items.filter(row => row.title === item.title).length !== 1) || intent.expectedOccurrenceId !== undefined && intent.expectedOccurrenceId !== (item.due?.occurrenceId ?? null)) throw workError('WORK_SELECTION_CHANGED');
     const links = context.links.filter(link => keyOf(link.workRef) === keyOf(item.ref) && link.relation === 'same_commitment');
     const planned = planCommand({
       intent,
@@ -162,7 +168,10 @@ export class WorkCommands {
       intent: structuredClone(intent),
       sourceActorReceipt: actor.receiptId,
       destination: structuredClone(target),
-      display:{title:item.title,destinationTitle:create?item.title:context.containers.find(row=>row.ref.id===domain.containerId&&row.ref.provider===binding.type&&row.ref.accountId===binding.accountId)?.title??intent.domainId},
+      display: {
+        title: item.title,
+        destinationTitle: create ? item.title : context.containers.find(row => row.ref.id === domain.containerId && row.ref.provider === binding.type && row.ref.accountId === binding.accountId)?.title ?? context.containers.find(row => row.ref.id === domain.containerId && row.ref.provider === binding.type && row.ref.accountId === binding.accountId)?.name ?? intent.domainId
+      },
       recurring: item.due?.recurring === true,
       expectedOccurrenceId: item.due?.occurrenceId ?? null,
       result: null
@@ -214,11 +223,14 @@ export class WorkCommands {
       ...result,
       observation: observed
     };
-    await this.#change(username, `finish:${record.command.id}:${reconciled ? 'reconciled' : 'dispatch'}:${workHash(safe)}`, asOf, state => {
+    await this.#change(username, `finish:${record.command.id}:${reconciled ? 'reconciled' : 'dispatch'}:${workHash(safe)}${reconciled ? ':' + asOf : ''}`, asOf, state => {
       const current = state.commands[record.command.id];
       if (terminal.has(current.status)) return [];
       return [{
         type: 'command.finished',
+        ...(reconciled ? {
+          reconciledAt: asOf
+        } : {}),
         commandId: record.command.id,
         result: safe
       }, ...(observed && !state.activities[observed.id] ? [{

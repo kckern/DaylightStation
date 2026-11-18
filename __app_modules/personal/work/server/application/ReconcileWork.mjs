@@ -14,6 +14,7 @@ export class ReconcileWork {
   }
   async observe({
     username,
+    provider: explicitProvider,
     snapshot,
     events = [],
     asOf
@@ -34,7 +35,7 @@ export class ReconcileWork {
     if (!policy.enabled || snapshot?.coverage?.complete !== true || !Number.isFinite(asOf) || !Number.isFinite(snapshot.observedAt) || snapshot.observedAt > asOf || asOf - snapshot.observedAt > policy.limits.snapshotMaxAgeHours * 3600000 || !Array.isArray(snapshot.items) || !Array.isArray(snapshot.containers) || !Array.isArray(events)) return empty('incomplete_or_invalid_snapshot');
     const scope = snapshot.coverage.scope;
     if (!scope || typeof scope.accountId !== 'string' || !Array.isArray(scope.containerIds) || scope.containerIds.length === 0) return empty('unscoped_snapshot');
-    const bindings = Object.values(policy.providers).filter(p => p.accountId === scope.accountId && p.operations.includes('read'));
+    const bindings = Object.values(policy.providers).filter(p => p.accountId === scope.accountId && (!explicitProvider || p.type === explicitProvider) && p.operations.includes('read'));
     const types = [...new Set(bindings.map(p => p.type))];
     if (types.length !== 1) return empty('ambiguous_provider');
     const provider = types[0],

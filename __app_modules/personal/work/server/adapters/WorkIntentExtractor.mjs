@@ -20,7 +20,7 @@ const schema = {
         required: ['operation', 'domainId', 'title', 'quote'],
         properties: {
           operation: {
-            enum: ['complete', 'reopen', 'progress', 'create_task', 'update_task', 'delete_task', 'create_container', 'rename_container', 'archive_container']
+            enum: ['complete', 'reopen', 'progress', 'create_task', 'update_task', 'delete_task', 'archive_task', 'create_container', 'rename_container', 'archive_container']
           },
           domainId: {
             anyOf: [string(128), {

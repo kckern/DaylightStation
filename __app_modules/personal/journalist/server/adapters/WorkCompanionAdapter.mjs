@@ -127,7 +127,7 @@ export class WorkCompanionAdapter extends IWorkCompanion {
     }
     const p = this.#runtime.principal.verify(principal);
     if (p) {
-      const text = {
+      const text = result.manualResolution ?? {
         applied: 'The change is confirmed.',
         already_applied: 'This choice was already processed.',
         cancelled: 'Cancelled.',

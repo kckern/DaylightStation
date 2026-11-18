@@ -15,7 +15,7 @@ const id = value => {
 };
 const at = value => {
   if (value == null || value === '') return null;
-  const result = typeof value === 'number' ? value : /^\d{10,13}$/.test(value) ? Number(value) : typeof value === 'string' && /^\d{4}-\d{2}-\d{2}T.*(?:Z|[+-]\d{2}:\d{2})$/.test(value) ? moment.parseZone(value,moment.ISO_8601,true).valueOf() : null;
+  const result = typeof value === 'number' ? value : /^\d{10,13}$/.test(value) ? Number(value) : typeof value === 'string' && /^\d{4}-\d{2}-\d{2}T.*(?:Z|[+-]\d{2}:\d{2})$/.test(value) ? moment.parseZone(value, moment.ISO_8601, true).valueOf() : null;
   return Number.isFinite(result) && result >= 0 ? result : null;
 };
 const makeRef = (provider, accountId, kind, value) => validateWorkRef({
@@ -125,7 +125,20 @@ export function normalizeItem({
   return validateWorkItem({
     ...source,
     observedAt,
-    version: hash({...source,...(provider==='todoist'?{completedCount:row.completed_count??null,deleted:row.is_deleted??false,priority:row.priority??null,labels:row.labels??[]}:{archived:row.archived??false,priority:row.priority??null,customFields:row.custom_fields??[],parent:row.parent??null})})
+    version: hash({
+      ...source,
+      ...(provider === 'todoist' ? {
+        completedCount: row.completed_count ?? null,
+        deleted: row.is_deleted ?? false,
+        priority: row.priority ?? null,
+        labels: row.labels ?? []
+      } : {
+        archived: row.archived ?? false,
+        priority: row.priority ?? null,
+        customFields: row.custom_fields ?? [],
+        parent: row.parent ?? null
+      })
+    })
   });
 }
 function normalizeEvents({
@@ -164,10 +177,10 @@ function normalizeEvents({
         id: eventId,
         username,
         ref,
-        containerRef: makeRef(provider,accountId,'container',containerId),
+        containerRef: makeRef(provider, accountId, 'container', containerId),
         assigneeIds: assignees,
         type: row.action,
-        title:typeof (row.content??row.name)==='string'?(row.content??row.name).slice(0,2000):null,
+        title: typeof (row.content ?? row.name) === 'string' ? (row.content ?? row.name).slice(0, 2000) : null,
         occurredAt,
         observedAt: asOf,
         providerVersion: row.providerVersion ?? hash(row),
@@ -244,15 +257,17 @@ export async function readWorkSnapshot({
     })).filter(item => scopeAllows(domains, item.containerRef?.id, item.assigneeIds, scope));
     const identities = new Map();
     for (const item of projectedItems) {
-      const key = keyOf(item.ref), previous = identities.get(key);
+      const key = keyOf(item.ref),
+        previous = identities.get(key);
       if (previous && previous.version !== item.version) return empty('inconsistent_snapshot');
       identities.set(key, item);
     }
-    const items = [...identities.values()].sort((a,b)=>keyOf(a.ref).localeCompare(keyOf(b.ref)));
+    const items = [...identities.values()].sort((a, b) => keyOf(a.ref).localeCompare(keyOf(b.ref)));
     const containers = (raw.containers ?? []).filter(row => compiledScope.containerIds.includes(String(row.id))).map(row => ({
       ref: makeRef(provider, accountId, 'container', row.id),
       nativeKind: row.nativeKind ?? (provider === 'todoist' ? 'project' : 'list'),
       name: row.name ?? null,
+      title: row.name ?? null,
       statuses: row.statuses ?? [],
       parentId: row.parentId ?? row.parent_id ?? row.folder?.id ?? null,
       createdAt: at(row.createdAt ?? row.added_at),

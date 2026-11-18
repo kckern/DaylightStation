@@ -260,9 +260,17 @@ export class ClickUpWorkProvider extends IWorkProvider {
         asOf
       });
       if (prepared.failure) return prepared.failure;
-      if(['transition','complete','reopen'].includes(command.operation)){
-        const latest=await this.#live({username,ref,asOf,route});if(latest.failure)return latest.failure;
-        if(latest.item.version!==before.item.version)return result('conflict','version_changed',{ref});
+      if (['transition', 'complete', 'reopen'].includes(command.operation)) {
+        const latest = await this.#live({
+          username,
+          ref,
+          asOf,
+          route
+        });
+        if (latest.failure) return latest.failure;
+        if (latest.item.version !== before.item.version) return result('conflict', 'version_changed', {
+          ref
+        });
       }
       const current = this.#route(username, command);
       if (!current || current.policy.revision !== route.policy.revision || !(await this.#verify({
@@ -274,6 +282,11 @@ export class ClickUpWorkProvider extends IWorkProvider {
       const response = await this.#client.request({
         username,
         operation: command.operation,
+        authorizeSend: now => this.#verify({
+          username,
+          command,
+          asOf: now
+        }),
         ref: command.ref,
         payload: prepared.payload
       });
@@ -314,7 +327,7 @@ export class ClickUpWorkProvider extends IWorkProvider {
         ref: createdRef ?? ref
       });
       if (create) {
-        if (after.item.title !== command.payload.title || command.operation === 'create_container' && after.row.folder?.id !== route.domain.creationParentId || command.operation==='create_task'&&(command.payload.description!==undefined&&after.item.description!==command.payload.description||command.payload.assigneeIds&&stableWorkJson([...after.item.assigneeIds].sort())!==stableWorkJson([...command.payload.assigneeIds].sort()))) return result('conflict', 'create_readback_conflict', {
+        if (after.item.title !== command.payload.title || command.operation === 'create_container' && after.row.folder?.id !== route.domain.creationParentId || command.operation === 'create_task' && (command.payload.description !== undefined && after.item.description !== command.payload.description || command.payload.assigneeIds && stableWorkJson([...after.item.assigneeIds].sort()) !== stableWorkJson([...command.payload.assigneeIds].sort()))) return result('conflict', 'create_readback_conflict', {
           ref: createdRef
         });
         return result('applied', null, {

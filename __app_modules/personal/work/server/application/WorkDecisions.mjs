@@ -11,6 +11,7 @@ const labels = {
   transition: 'Move to review',
   create_task: 'Create task',
   update_task: 'Update task',
+  archive_task: 'Archive task',
   delete_task: 'Delete task',
   create_container: 'Create project',
   rename_container: 'Rename project',
@@ -106,7 +107,7 @@ export class WorkDecisions {
       if (provider.type === 'clickup' && cmd.operation.endsWith('_container')) label = label.replace('project', 'List');
       const title = cmd.operation.startsWith('create_') ? cmd.payload.title : record.display?.title ?? record.intent.title ?? cmd.ref?.id;
       const destination = record.display?.destinationTitle ?? cmd.domainId;
-      const changes = [...(cmd.operation === 'rename_container' || cmd.operation === 'update_task' && cmd.payload.title ? [`new name: “${cmd.payload.title}”`] : []), ...(cmd.payload.description !== undefined ? [`description: ${cmd.payload.description.slice(0, 500)}`] : []), ...(cmd.payload.dueDate ? [`due: ${cmd.payload.dueDate}`] : []), ...(cmd.operation === 'transition' ? [`status: ${domain.transitions?.[cmd.payload.transition] ?? 'unavailable'}`] : [])];
+      const changes = [...(cmd.payload.assigneeId ? [`assigned to: ${cmd.payload.assigneeId}`] : cmd.payload.assigneeIds ? [`assigned to: ${cmd.payload.assigneeIds.join(', ')}`] : []), ...(cmd.operation === 'rename_container' || cmd.operation === 'update_task' && cmd.payload.title ? [`new name: “${cmd.payload.title}”`] : []), ...(cmd.payload.description !== undefined ? [`description: ${cmd.payload.description.slice(0, 500)}`] : []), ...(cmd.payload.dueDate ? [`due: ${cmd.payload.dueDate}`] : []), ...(cmd.operation === 'transition' ? [`status: ${domain.transitions?.[cmd.payload.transition] ?? 'unavailable'}`] : [])];
       text = `${label} “${title}” in ${destination}${changes.length ? '\n' + changes.join('\n') : ''}?`;
       options = [{
         text: label,
@@ -290,6 +291,9 @@ export class WorkDecisions {
         });
         result = {
           status: remote.outcome,
+          ...(remote.outcome === 'uncertain' && (command.operation.startsWith('create_') || command.operation === 'delete_task') ? {
+            manualResolution: `Inspect ${claimed.commands[decision.commandId].display?.destinationTitle ?? command.domainId} for “${command.payload.title ?? claimed.commands[decision.commandId].display?.title ?? command.ref?.id}” before making another ${command.operation.startsWith('create_') ? 'creation' : 'deletion'} request. The previous result is uncertain and will not be retried automatically.`
+          } : {}),
           result: remote
         };
       } else {

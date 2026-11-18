@@ -223,3 +223,25 @@ it('recognizes board check-in as progress before a model can reinterpret it as a
   expect(x.calls).not.toHaveBeenCalled();
   expect(x.budget.reserve).not.toHaveBeenCalled();
 });
+it('accepts a grounded explicit task archive intent', async () => {
+  const x = setup();
+  x.calls.mockResolvedValue({
+    intents: [{
+      operation: 'archive_task',
+      domainId: 'personal',
+      title: 'Contact Sample',
+      quote: 'Archive task Contact Sample'
+    }]
+  });
+  const result = await x.extractor.extract({
+    entry: {
+      ...entry,
+      content: 'Archive task Contact Sample'
+    },
+    context: {
+      items: [item()]
+    },
+    asOf: AS_OF
+  });
+  expect(result.intents[0].operation).toBe('archive_task');
+});

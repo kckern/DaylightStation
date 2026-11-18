@@ -1,15 +1,15 @@
-import {WorkCommands} from './application/WorkCommands.mjs';
-import {WorkDecisions} from './application/WorkDecisions.mjs';
-import {WorkConversation} from './application/WorkConversation.mjs';
-import {WorkCallBudget} from './application/WorkCallBudget.mjs';
-import {WorkActivities} from './application/WorkActivities.mjs';
-import {ReconcileWork} from './application/ReconcileWork.mjs';
-import {TodoistWorkClient} from './adapters/TodoistWorkClient.mjs';
-import {ClickUpWorkClient} from './adapters/ClickUpWorkClient.mjs';
-import {WorkIntentExtractor} from './adapters/WorkIntentExtractor.mjs';
-import {YamlWorkActivityStore} from './adapters/YamlWorkActivityStore.mjs';
-import {createWorkCallbackTokens} from './adapters/WorkCallbackTokens.mjs';
-import {canonicalWorkEvent} from './domain/workCommands.mjs';
+import { WorkCommands } from './application/WorkCommands.mjs';
+import { WorkDecisions } from './application/WorkDecisions.mjs';
+import { WorkConversation } from './application/WorkConversation.mjs';
+import { WorkCallBudget } from './application/WorkCallBudget.mjs';
+import { WorkActivities } from './application/WorkActivities.mjs';
+import { ReconcileWork } from './application/ReconcileWork.mjs';
+import { TodoistWorkClient } from './adapters/TodoistWorkClient.mjs';
+import { ClickUpWorkClient } from './adapters/ClickUpWorkClient.mjs';
+import { WorkIntentExtractor } from './adapters/WorkIntentExtractor.mjs';
+import { YamlWorkActivityStore } from './adapters/YamlWorkActivityStore.mjs';
+import { createWorkCallbackTokens } from './adapters/WorkCallbackTokens.mjs';
+import { canonicalWorkEvent } from './domain/workCommands.mjs';
 import os from 'node:os';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
@@ -70,7 +70,11 @@ const inert = reason => ({
   context: null,
   backfill: null,
   principal: null,
-  commands:null,activities:null,conversation:null,decisions:null,callBudget:null,
+  commands: null,
+  activities: null,
+  conversation: null,
+  decisions: null,
+  callBudget: null,
   start: async () => ({
     status: 'disabled',
     reason
@@ -97,8 +101,12 @@ export function createWorkRuntime(options = {}) {
   });
   const usernames = () => Object.keys(document()?.work?.users ?? {}).filter(username => policy(username).enabled);
   if (!usernames().length || typeof options.readCurrent !== 'function' || typeof options.readHistory !== 'function' || typeof options.rootForUser !== 'function' && !options.dataDir) return inert('invalid_runtime_dependencies');
-  let stopped = false,commandService=null,decisionService=null,conversationService=null;
-  const stores = new Map(),authorities=new Map();
+  let stopped = false,
+    commandService = null,
+    decisionService = null,
+    conversationService = null;
+  const stores = new Map(),
+    authorities = new Map();
   const canWrite = username => {
     const p = policy(username);
     return !stopped && p.enabled && p.writer.write && p.writer.writer_env === environment && p.writer.writer_host === hostId && process.platform === 'linux';
@@ -131,7 +139,7 @@ export function createWorkRuntime(options = {}) {
         },
         close: () => actual.close()
       };
-      authorities.set(username,authority);
+      authorities.set(username, authority);
       stores.set(username, new JsonlWorkState({
         rootForUser,
         authority,
@@ -151,10 +159,11 @@ export function createWorkRuntime(options = {}) {
     readHealth: options.readHealth
   });
   const providers = new Map();
-  const scopedAuth=(service,username)=>{
-    const p=policy(username),bindings=p.enabled?Object.values(p.providers).filter(binding=>binding.type===service):[];
-    if(!bindings.length)return null;
-    return bindings[0].authScope==='household'?options.getHouseholdAuth?.(service):options.getUserAuth?.(service,username);
+  const scopedAuth = (service, username) => {
+    const p = policy(username),
+      bindings = p.enabled ? Object.values(p.providers).filter(binding => binding.type === service) : [];
+    if (!bindings.length) return null;
+    return bindings[0].authScope === 'household' ? options.getHouseholdAuth?.(service) : options.getUserAuth?.(service, username);
   };
   const ensureProviders = () => {
     for (const username of usernames()) for (const binding of Object.values(policy(username).providers)) {
@@ -169,8 +178,15 @@ export function createWorkRuntime(options = {}) {
           loadCurrent: (u, p) => source.current(u, p),
           loadHistory: (u, p) => source.history(u, p),
           resolvePolicy: policy,
-          client:options.httpClient&&(options.getUserAuth||options.getHouseholdAuth)?new (binding.type==='todoist'?TodoistWorkClient:ClickUpWorkClient)({httpClient:options.httpClient,getUserAuth:scopedAuth,clock}):null,
-          verifyDispatch:input=>canWrite(input.username)&&commandService?commandService.verifyDispatch(input):false
+          client: options.httpClient && (options.getUserAuth || options.getHouseholdAuth) ? new (binding.type === 'todoist' ? TodoistWorkClient : ClickUpWorkClient)({
+            httpClient: options.httpClient,
+            getUserAuth: scopedAuth,
+            clock,
+            canSend: ({
+              username
+            }) => canWrite(username)
+          }) : null,
+          verifyDispatch: input => canWrite(input.username) && commandService ? commandService.verifyDispatch(input) : false
         }));
       }
     }
@@ -196,15 +212,31 @@ export function createWorkRuntime(options = {}) {
       return reader.execute(input);
     },
     confirmLink: async input => {
-      ensureProviders();const p=principal.verify(input.principal);if(!p)throw workError('WORK_PRINCIPAL_REQUIRED');
-      const current=await state.read({username:p.username});
-      return reader.confirmLink({...input,expectedRevision:input.expectedRevision??current.revision});
+      ensureProviders();
+      const p = principal.verify(input.principal);
+      if (!p) throw workError('WORK_PRINCIPAL_REQUIRED');
+      const current = await state.read({
+        username: p.username
+      });
+      return reader.confirmLink({
+        ...input,
+        expectedRevision: input.expectedRevision ?? current.revision
+      });
     },
-    getItem:input=>{ensureProviders();return providers.get(accountKey(input.ref))?.getItem(input)??Promise.resolve(null);},
-    verifySource:input=>conversationService?.verifySource(input)??Promise.resolve(false),
-    verifyConfirmation:input=>decisionService?.verifyConfirmation(input)??Promise.resolve(false),
-    renderFlow:input=>{if(!conversationService)throw workError('WORK_UNAVAILABLE');return conversationService.renderFlow(input);},
-    applyFlowChoice:input=>{if(!conversationService)throw workError('WORK_UNAVAILABLE');return conversationService.applyFlowChoice(input);}
+    getItem: input => {
+      ensureProviders();
+      return providers.get(accountKey(input.ref))?.getItem(input) ?? Promise.resolve(null);
+    },
+    verifySource: input => conversationService?.verifySource(input) ?? Promise.resolve(false),
+    verifyConfirmation: input => decisionService?.verifyConfirmation(input) ?? Promise.resolve(false),
+    renderFlow: input => {
+      if (!conversationService) throw workError('WORK_UNAVAILABLE');
+      return conversationService.renderFlow(input);
+    },
+    applyFlowChoice: input => {
+      if (!conversationService) throw workError('WORK_UNAVAILABLE');
+      return conversationService.applyFlowChoice(input);
+    }
   };
   const backfill = options.knowledgeBridge?.openJob ? new WorkBackfillJob({
     resolvePolicy: policy,
@@ -231,45 +263,205 @@ export function createWorkRuntime(options = {}) {
     promise.finally(() => active.delete(promise)).catch(() => {});
     return promise;
   };
-  const budgetService=new WorkCallBudget({state,resolvePolicy:policy,clock});
-  const callBudget={reserve:input=>canWrite(input.username)?budgetService.reserve(input):Promise.resolve({allowed:input.scope==='knowledge-extraction',receiptId:input.receiptId,reason:input.scope==='knowledge-extraction'?'standalone_knowledge':'work_write_disabled'})};
-  const hasActivityRoot=typeof options.activityRootForUser==='function'||!!options.dataDir;
-  const activityStore=hasActivityRoot?new YamlWorkActivityStore({rootForUser:username=>options.activityRootForUser?.(username)??path.join(options.dataDir,'users',username,'lifelog'),userTimezone:timezone,assertWriter:async username=>{getStore(username);await authorities.get(username).assertWriter({root:rootForUser(username)});const current=await state.read({username});if(!canWrite(username)||!current.health.available)throw workError('WORK_WRITE_DENIED');}}):null;
-  const activityService=activityStore?new WorkActivities({state,activityStore,knowledgeBridge:options.knowledgeBridge?.applyProviderEvent?options.knowledgeBridge:null,clock,logger}):null;
-  const activities=activityService?{
-    read:input=>policy(input.username).enabled?activityStore.read(input):Promise.resolve([]),
-    flush:input=>canWrite(input.username)?track(activityService.flush(input)):Promise.resolve({projected:0,pending:0}),
-    async verifyProviderEvent({username,event,links,asOf}){
-      if(!canWrite(username))return {valid:false,closureAllowed:false};const current=await state.read({username}),stored=current.activities[event?.id];
-      const normalized=canonicalWorkEvent(event,{username,policy:policy(username),asOf});
-      const stable=value=>{const {observedAt,...rest}=value;return rest;};
-      const valid=!!(current.health.available&&stored?.projected&&normalized&&workHash(stable(stored.event))===workHash(stable(event))&&Array.isArray(links)&&links.every(link=>current.links[link.id]&&workHash(current.links[link.id])===workHash(link)));
-      if(!valid)return {valid:false,closureAllowed:false};
-      const relevance=current.relevance[keyOf(event.ref)],snapshots=Object.values(current.snapshots),item=snapshots.flatMap(s=>s.items).find(row=>keyOf(row.ref)===keyOf(event.ref));
-      const reopened=snapshots.flatMap(s=>s.events).some(row=>keyOf(row.ref)===keyOf(event.ref)&&row.type==='reopened'&&row.occurredAt>event.occurredAt);
-      return {valid:true,closureAllowed:!['paused','retired'].includes(relevance?.state)&&item?.status?.category!=='paused'&&!reopened};
-    }
-  }:null;
-  commandService=new WorkCommands({state,providers,context,resolvePolicy:policy,verifyPrincipal:p=>principal.verify(p),clock,logger});
-  const commands={
-    propose:input=>track(commandService.propose(input)),
-    execute:input=>track((async()=>{const result=await commandService.execute(input);const p=principal.verify(input.principal);if(p&&canWrite(p.username))await activities?.flush({username:p.username,asOf:clock()});return result;})()),
-    reconcile:input=>track(commandService.reconcile(input))
+  const budgetService = new WorkCallBudget({
+    state,
+    resolvePolicy: policy,
+    clock
+  });
+  const callBudget = {
+    reserve: input => canWrite(input.username) ? budgetService.reserve(input) : Promise.resolve({
+      allowed: input.scope === 'knowledge-extraction',
+      receiptId: input.receiptId,
+      reason: input.scope === 'knowledge-extraction' ? 'standalone_knowledge' : 'work_write_disabled'
+    })
   };
-  decisionService=new WorkDecisions({state,commands,context,resolvePolicy:policy,verifyPrincipal:p=>principal.verify(p),clock,nextId:options.nextId??randomUUID,tokens:createWorkCallbackTokens()});
-  const decisions={prepare:input=>track(decisionService.prepare(input)),recordDelivery:input=>track(decisionService.recordDelivery(input)),recordFailure:input=>track(decisionService.recordFailure(input)),reply:input=>track(decisionService.reply(input))};
-  if(options.journalEvidence){
-    const offlineGateway={scoped(){return this;},async chatStructured(){throw workError('WORK_AI_UNAVAILABLE');}};
-    const extractor=new WorkIntentExtractor({gateway:options.gateway??offlineGateway,budget:budgetService,resolvePolicy:policy,clock});
-    conversationService=new WorkConversation({state,context,commands,decisions,principalAuthority:principal,evidence:options.journalEvidence,intentExtractor:extractor,resolvePolicy:policy,scheduler:{after:(delay,work)=>scheduler.after(delay,()=>track(Promise.resolve().then(work)))},clock,logger,
-      deliver:async({principal:p,page})=>{
-        if(!canWrite(p.username)||!principal.verify(p)||typeof options.send!=='function')throw workError('WORK_DELIVERY_UNAVAILABLE');
-        try{const receipt=await options.send({username:p.username,text:page.text,choices:page.choices,parseMode:null});if(!receipt?.messageId)throw workError('WORK_DELIVERY_UNACKNOWLEDGED');await decisions.recordDelivery({username:p.username,decisionId:page.decisionId,botMessageId:String(receipt.messageId),asOf:clock()});}
-        catch(error){try{await decisions.recordFailure({username:p.username,decisionId:page.decisionId,uncertain:true,asOf:clock()});}catch{}throw error;}
-      }});
+  const hasActivityRoot = typeof options.activityRootForUser === 'function' || !!options.dataDir;
+  const activityStore = hasActivityRoot ? new YamlWorkActivityStore({
+    rootForUser: username => options.activityRootForUser?.(username) ?? path.join(options.dataDir, 'users', username, 'lifelog'),
+    userTimezone: timezone,
+    assertWriter: async username => {
+      getStore(username);
+      await authorities.get(username).assertWriter({
+        root: rootForUser(username)
+      });
+      const current = await state.read({
+        username
+      });
+      if (!canWrite(username) || !current.health.available) throw workError('WORK_WRITE_DENIED');
+    }
+  }) : null;
+  const activityService = activityStore ? new WorkActivities({
+    state,
+    activityStore,
+    knowledgeBridge: options.knowledgeBridge?.applyProviderEvent ? options.knowledgeBridge : null,
+    clock,
+    logger
+  }) : null;
+  const activities = activityService ? {
+    read: input => policy(input.username).enabled ? activityStore.read(input) : Promise.resolve([]),
+    flush: input => canWrite(input.username) ? track(activityService.flush(input)) : Promise.resolve({
+      projected: 0,
+      pending: 0
+    }),
+    async verifyProviderEvent({
+      username,
+      event,
+      links,
+      asOf
+    }) {
+      if (!canWrite(username)) return {
+        valid: false,
+        closureAllowed: false
+      };
+      const current = await state.read({
+          username
+        }),
+        stored = current.activities[event?.id];
+      const normalized = canonicalWorkEvent(event, {
+        username,
+        policy: policy(username),
+        asOf
+      });
+      const stable = value => {
+        const {
+          observedAt,
+          ...rest
+        } = value;
+        return rest;
+      };
+      const valid = !!(current.health.available && stored?.projected && normalized && workHash(stable(stored.event)) === workHash(stable(event)) && Array.isArray(links) && links.every(link => current.links[link.id] && workHash(current.links[link.id]) === workHash(link)));
+      if (!valid) return {
+        valid: false,
+        closureAllowed: false
+      };
+      const relevance = current.relevance[keyOf(event.ref)],
+        snapshots = Object.values(current.snapshots),
+        item = snapshots.flatMap(s => s.items).find(row => keyOf(row.ref) === keyOf(event.ref));
+      const reopened = snapshots.flatMap(s => s.events).some(row => keyOf(row.ref) === keyOf(event.ref) && row.type === 'reopened' && row.occurredAt > event.occurredAt);
+      const newerOpen = item && item.observedAt > event.occurredAt && item.status?.category !== 'done';
+      return {
+        valid: true,
+        closureAllowed: !['paused', 'retired'].includes(relevance?.state) && item?.status?.category !== 'paused' && !newerOpen && !reopened
+      };
+    }
+  } : null;
+  commandService = new WorkCommands({
+    state,
+    providers,
+    context,
+    resolvePolicy: policy,
+    verifyPrincipal: p => principal.verify(p),
+    clock,
+    logger
+  });
+  const commands = {
+    propose: input => track(commandService.propose(input)),
+    execute: input => track((async () => {
+      const result = await commandService.execute(input);
+      const p = principal.verify(input.principal);
+      if (p && canWrite(p.username)) await activities?.flush({
+        username: p.username,
+        asOf: clock()
+      });
+      return result;
+    })()),
+    reconcile: input => track(commandService.reconcile(input))
+  };
+  decisionService = new WorkDecisions({
+    state,
+    commands,
+    context,
+    resolvePolicy: policy,
+    verifyPrincipal: p => principal.verify(p),
+    clock,
+    nextId: options.nextId ?? randomUUID,
+    tokens: createWorkCallbackTokens()
+  });
+  const decisions = {
+    prepare: input => track(decisionService.prepare(input)),
+    recordDelivery: input => track(decisionService.recordDelivery(input)),
+    recordFailure: input => track(decisionService.recordFailure(input)),
+    reply: input => track(decisionService.reply(input))
+  };
+  if (options.journalEvidence) {
+    const offlineGateway = {
+      scoped() {
+        return this;
+      },
+      async chatStructured() {
+        throw workError('WORK_AI_UNAVAILABLE');
+      }
+    };
+    const extractor = new WorkIntentExtractor({
+      gateway: options.gateway ?? offlineGateway,
+      budget: budgetService,
+      resolvePolicy: policy,
+      clock
+    });
+    conversationService = new WorkConversation({
+      state,
+      context,
+      commands,
+      decisions,
+      principalAuthority: principal,
+      evidence: options.journalEvidence,
+      intentExtractor: extractor,
+      resolvePolicy: policy,
+      scheduler: {
+        after: (delay, work) => scheduler.after(delay, () => track(Promise.resolve().then(work)))
+      },
+      clock,
+      logger,
+      deliver: async ({
+        principal: p,
+        page
+      }) => {
+        if (!canWrite(p.username) || !principal.verify(p) || typeof options.send !== 'function') throw workError('WORK_DELIVERY_UNAVAILABLE');
+        try {
+          const receipt = await options.send({
+            username: p.username,
+            text: page.text,
+            choices: page.choices,
+            parseMode: null
+          });
+          if (!receipt?.messageId) throw workError('WORK_DELIVERY_UNACKNOWLEDGED');
+          await decisions.recordDelivery({
+            username: p.username,
+            decisionId: page.decisionId,
+            botMessageId: String(receipt.messageId),
+            asOf: clock()
+          });
+        } catch (error) {
+          try {
+            await decisions.recordFailure({
+              username: p.username,
+              decisionId: page.decisionId,
+              uncertain: true,
+              asOf: clock()
+            });
+          } catch {}
+          throw error;
+        }
+      }
+    });
   }
-  const conversation=conversationService?{capturePrincipal:input=>conversationService.capturePrincipal(input),sourceForEntry:input=>conversationService.sourceForEntry(input),onEntrySaved:input=>track(conversationService.onEntrySaved(input)),handleCallback:input=>track(conversationService.handleCallback(input)),open:input=>track(conversationService.open(input))}:null;
-  const reconciliation=new ReconcileWork({state,providers,resolvePolicy:policy,userTimezone:timezone});
+  const conversation = conversationService ? {
+    capturePrincipal: input => conversationService.capturePrincipal(input),
+    sourceForEntry: input => conversationService.sourceForEntry(input),
+    onEntrySaved: input => track(conversationService.onEntrySaved(input)),
+    handleCallback: input => track(conversationService.handleCallback(input)),
+    open: input => track((async () => {
+      const p = principal.verify(input.principal);
+      if (p && canWrite(p.username)) await refresh(p.username);
+      return conversationService.open(input);
+    })())
+  } : null;
+  const reconciliation = new ReconcileWork({
+    state,
+    providers,
+    resolvePolicy: policy,
+    userTimezone: timezone
+  });
   const refresh = username => {
     if (stopped || !canWrite(username)) return Promise.resolve();
     if (refreshing.has(username)) return refreshing.get(username);
@@ -305,9 +497,31 @@ export function createWorkRuntime(options = {}) {
         if (stopped || !current.health.available) continue;
         const digest = semanticSnapshot(snapshot),
           old = current.snapshots[key];
-        if(!old||semanticSnapshot(old)!==digest||!current.baselines?.[key])await reconciliation.observe({username,snapshot,events:snapshot.events,asOf});
+        if (!old || semanticSnapshot(old) !== digest || !current.baselines?.[key]) await reconciliation.observe({
+          username,
+          provider: binding.type,
+          snapshot,
+          events: snapshot.events,
+          asOf
+        });
       }
-      if(canWrite(username))await activities?.flush({username,asOf:clock()});
+      if (canWrite(username)) {
+        const pending = await state.read({
+          username
+        });
+        for (const record of Object.values(pending.commands).filter(r => r.status === 'uncertain' && r.command.ref && !['delete_task'].includes(r.command.operation)).sort((a, b) => (a.lastReconciledAt ?? 0) - (b.lastReconciledAt ?? 0) || a.command.createdAt - b.command.createdAt).slice(0, 5)) {
+          if (!canWrite(username)) break;
+          await commandService.reconcile({
+            username,
+            commandId: record.command.id,
+            asOf: clock()
+          });
+        }
+        await activities?.flush({
+          username,
+          asOf: clock()
+        });
+      }
     }).catch(error => {
       logger?.warn?.('work.refresh.failed', {
         username,
@@ -330,7 +544,12 @@ export function createWorkRuntime(options = {}) {
   return {
     context,
     principal,
-    backfill,commands,decisions,conversation,activities,callBudget,
+    backfill,
+    commands,
+    decisions,
+    conversation,
+    activities,
+    callBudget,
     start() {
       if (stopped) return Promise.resolve({
         status: 'stopped'
@@ -346,9 +565,17 @@ export function createWorkRuntime(options = {}) {
           });
           if (stopped) break;
           await refresh(username);
-          const recovered=await state.read({username});
-          for(const record of Object.values(recovered.commands))if(['dispatching','uncertain'].includes(record.status))await commandService.reconcile({username,commandId:record.command.id,asOf:clock()});
-          await conversationService?.restore({username});
+          const recovered = await state.read({
+            username
+          });
+          for (const record of Object.values(recovered.commands)) if (['dispatching', 'uncertain'].includes(record.status)) await commandService.reconcile({
+            username,
+            commandId: record.command.id,
+            asOf: clock()
+          });
+          await conversationService?.restore({
+            username
+          });
           schedule(username);
         }
         return {

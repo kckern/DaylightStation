@@ -634,3 +634,40 @@ it('quarantines a provider result that claims success for a different reference'
     username: 'sample'
   })).activities)).toHaveLength(0);
 });
+it('durably advances read-only reconciliation time so bounded refreshes can rotate unresolved targets', async () => {
+  const x = await setup();
+  const unknown = {
+    outcome: 'uncertain',
+    ref,
+    item: null,
+    observation: null,
+    reason: 'not_verified',
+    retryAfter: null
+  };
+  x.provider.execute.mockResolvedValue(unknown);
+  x.provider.reconcile.mockResolvedValue(unknown);
+  const proposed = await x.service.propose({
+    principal: x.principal,
+    intent: x.intent,
+    asOf: AS_OF
+  });
+  await x.service.execute({
+    principal: x.principal,
+    commandId: proposed.command.id,
+    asOf: AS_OF
+  });
+  await x.service.reconcile({
+    username: 'sample',
+    commandId: proposed.command.id,
+    asOf: AS_OF + 1000
+  });
+  await x.service.reconcile({
+    username: 'sample',
+    commandId: proposed.command.id,
+    asOf: AS_OF + 2000
+  });
+  expect((await x.store.read({
+    username: 'sample'
+  })).commands[proposed.command.id].lastReconciledAt).toBe(AS_OF + 2000);
+  expect(x.provider.execute).toHaveBeenCalledTimes(1);
+});

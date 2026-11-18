@@ -58,21 +58,25 @@ export class ClickUpWorkClient {
   #http;
   #auth;
   #clock;
+  #canSend;
   constructor({
     httpClient,
     getUserAuth,
-    clock
+    clock,
+    canSend = () => true
   }) {
     if (typeof httpClient?.requestRaw !== 'function' || typeof getUserAuth !== 'function' || typeof clock !== 'function') throw new TypeError('ClickUp work transport dependencies required');
     this.#http = httpClient;
     this.#auth = getUserAuth;
     this.#clock = clock;
+    this.#canSend = canSend;
   }
   async request({
     username,
     operation,
     ref,
-    payload
+    payload,
+    authorizeSend = async () => true
   }) {
     const request = clickUpRequest({
       operation,
@@ -86,6 +90,9 @@ export class ClickUpWorkClient {
       Authorization: auth.api_key,
       'Content-Type': 'application/json'
     };
+    if (request.method !== 'GET' && (!(await authorizeSend(this.#clock())) || this.#canSend({
+      username
+    }) !== true)) throw new Error('WORK_SEND_REVOKED');
     const response = await this.#http.requestRaw(request.method, `https://api.clickup.com/api/v2${request.path}`, {
       headers,
       ...(['POST', 'PUT'].includes(request.method) ? {

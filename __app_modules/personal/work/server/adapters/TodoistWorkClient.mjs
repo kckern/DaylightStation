@@ -56,21 +56,25 @@ export class TodoistWorkClient {
   #http;
   #auth;
   #clock;
+  #canSend;
   constructor({
     httpClient,
     getUserAuth,
-    clock
+    clock,
+    canSend = () => true
   }) {
     if (typeof httpClient?.requestRaw !== 'function' || typeof getUserAuth !== 'function' || typeof clock !== 'function') throw new TypeError('Todoist work transport dependencies required');
     this.#http = httpClient;
     this.#auth = getUserAuth;
     this.#clock = clock;
+    this.#canSend = canSend;
   }
   async request({
     username,
     operation,
     ref,
-    payload
+    payload,
+    authorizeSend = async () => true
   }) {
     const request = todoistRequest({
       operation,
@@ -80,6 +84,9 @@ export class TodoistWorkClient {
     if (typeof username !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(username)) fail();
     const auth = await this.#auth('todoist', username);
     if (!text(auth?.api_key)) throw new Error('TODOIST_AUTH_UNAVAILABLE');
+    if (request.method !== 'GET' && (!(await authorizeSend(this.#clock())) || this.#canSend({
+      username
+    }) !== true)) throw new Error('WORK_SEND_REVOKED');
     const response = await this.#http.requestRaw(request.method, `https://api.todoist.com/api/v1${request.path}`, {
       ...(request.method === 'POST' ? {
         body: request.body

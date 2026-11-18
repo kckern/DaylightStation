@@ -205,3 +205,22 @@ Project parents. ClickUp List archive is unsupported; archive never means delete
 Flags in the example remain off. Source installation alone enables no provider
 writes or proactive messages. Commission destinations and transition mappings
 with reversible samples before enabling `providerWrites`.
+
+Automatic authority also binds the exact saved statement, its original verified
+principal receipt and the task version/occurrence observed at journal save time.
+A subsequent harvest cannot silently retarget the next recurring occurrence.
+Direct replies and immediate retractions suspend pending automatic action.
+
+Creation keyboard controls first request a titled “Create task/project <title>”
+message. Destination selection and named confirmation follow that authored
+request. Assignee-filtered task creation shows the configured assignment before
+confirmation; multiple allowed assignments are separately bound choices.
+
+Known-target uncertain commands receive at most five rotating read-only
+reconciliations per successful refresh or explicit Work opening. This never
+repeats the provider mutation. Unknown creation/deletion results remain manual:
+the response names the destination to inspect before another request.
+Reopen lookup can use scoped completion history or a durable applied command
+when a completed task no longer appears in the open-task snapshot.
+A newer native open observation prevents a delayed completion from closing the
+KB loop, while its original completion remains attributed lifelog history.

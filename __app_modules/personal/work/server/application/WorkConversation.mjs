@@ -112,7 +112,8 @@ export class WorkConversation {
       }),
       source = state.sources?.[receipt];
     if (!state.health.available || !source?.valid || source.username !== p.username || source.senderId !== p.senderId || source.conversationId !== p.conversationId || source.authRevision !== p.sourceRevision || asOf - source.observedAt > 86400000) return false;
-    if (source.kind === 'interactive') return true;
+    if (source.kind === 'interactive') return intent?.mode !== 'auto';
+    if (intent?.mode === 'auto' && (p.kind !== 'text' || p.edited || p.receiptId !== source.principalReceipt || !(source.observations ?? []).some(o => keyOf(o.ref) === keyOf(intent.ref) && o.version === intent.expectedVersion && o.occurrenceId === (intent.expectedOccurrenceId ?? null)))) return false;
     if (intent?.mode === 'auto' && typeof intent.title === 'string') {
       const later = Object.values(state.sources).filter(row => row.kind === 'journal' && row.valid && row.conversationId === source.conversationId && (row.ordinal ?? 0) > (source.ordinal ?? 0));
       if (later.length) {
@@ -120,14 +121,15 @@ export class WorkConversation {
           username: p.username,
           refs: later.map(row => row.ref)
         });
-        if (rows.some(row => row.content.toLowerCase().includes(intent.title.toLowerCase()))) return false;
+        if (later.some(row => row.replyToMessageId === source.messageId)) return false;
+        if (rows.some(row => row.content.toLowerCase().includes(intent.title.toLowerCase()) || /\b(?:actually|correction|retract|didn.t|haven.t|not yet|was wrong|never mind)\b/i.test(row.content) && (row.replyToMessageId === source.messageId || row.at - source.at <= 15 * 60000))) return false;
       }
     }
     const rows = await this.#evidence.readByRefs({
       username: p.username,
       refs: [source.ref]
     });
-    return rows.length === 1 && rows[0].verified && !rows[0].previewOnly && rows[0].sourceHash === source.sourceHash && rows[0].senderId === p.senderId && rows[0].conversationId === p.conversationId;
+    return rows.length === 1 && (intent?.mode !== 'auto' || intent.statement === rows[0].content) && rows[0].verified && !rows[0].previewOnly && rows[0].sourceHash === source.sourceHash && rows[0].senderId === p.senderId && rows[0].conversationId === p.conversationId;
   }
   async onEntrySaved({
     principal,
@@ -148,6 +150,15 @@ export class WorkConversation {
       handled: false
     };
     const explicit = /^(?:please\s+)?(?:add|create|rename|delete|archive|reopen|mark|update)\b/i.test(row.content.trim()) && /\b(?:task|project|todo|to-do|list|done|complete)\b/i.test(row.content);
+    const atEntry = await this.#context.execute({
+      username: p.username,
+      asOf
+    });
+    const observations = atEntry.coverage.complete ? atEntry.items.filter(item => row.content.toLowerCase().includes(item.title.toLowerCase())).map(item => ({
+      ref: item.ref,
+      version: item.version,
+      occurrenceId: item.due?.occurrenceId ?? null
+    })) : [];
     const id = 'source.' + workHash([p.username, row.ref, row.sourceHash]);
     const source = {
       id,
@@ -155,11 +166,13 @@ export class WorkConversation {
       kind: 'journal',
       ref: row.ref,
       sourceHash: row.sourceHash,
+      observations,
       senderId: p.senderId,
       conversationId: p.conversationId,
       messageId: p.messageId,
       authRevision: p.sourceRevision,
       principalReceipt: p.receiptId,
+      replyToMessageId: p.replyToMessageId ?? null,
       at: row.at,
       observedAt: asOf,
       deadline: explicit ? asOf : asOf + 900000,
@@ -347,7 +360,7 @@ export class WorkConversation {
             authored: true,
             edited: source.edited
           };
-          const candidates = raw.operation.endsWith('_container') ? context.containers : context.items;
+          const candidates = raw.operation === 'reopen' ? (await this.#candidates(p, source, raw, 'match')).map(row => row.item) : raw.operation.endsWith('_container') ? context.containers : context.items;
           const matched = matchWorkIntent({
             intent,
             items: candidates,
@@ -417,14 +430,44 @@ export class WorkConversation {
             ref,
             asOf: this.#clock()
           });
-        if (item) choices.push({
-          item,
-          domainId
-        });
+        if (item) {
+          const assignees = operation === 'create_task' && domain.assigneeIds?.length ? domain.assigneeIds : [null];
+          for (const assigneeId of assignees) choices.push({
+            item,
+            domainId,
+            assigneeId
+          });
+        }
       }
     } else {
-      const rows = intent?.operation?.endsWith('_container') ? context.containers : context.items;
-      for (const item of rows) {
+      let rows = intent?.operation?.endsWith('_container') ? context.containers : context.items;
+      if (intent?.operation === 'reopen') {
+        const state = await this.#state.read({
+          username: principal.username
+        });
+        const refs = [...rows.map(row => row.ref), ...(context.events ?? []).filter(e => e.type === 'completed').map(e => e.ref), ...Object.values(state.commands).filter(r => r.status === 'applied' && r.command.operation === 'complete').map(r => r.command.ref)];
+        rows = [];
+        const seen = new Set();
+        for (const ref of refs) {
+          if (!ref || seen.has(keyOf(ref))) continue;
+          seen.add(keyOf(ref));
+          const live = await this.#context.getItem?.({
+            username: principal.username,
+            ref,
+            asOf: this.#clock()
+          });
+          if (live?.status?.category === 'done') rows.push(live);
+        }
+      }
+      for (let item of rows) {
+        if (item.ref.kind === 'container') {
+          item = await this.#context.getItem?.({
+            username: principal.username,
+            ref: item.ref,
+            asOf: this.#clock()
+          });
+          if (!item) continue;
+        }
         if (intent && item.title.toLowerCase() !== intent.title.toLowerCase()) continue;
         for (const [domainId, domain] of this.#domains(policy, item.ref, intent?.domainId)) {
           const scoped = item.ref.kind === 'container' ? item.ref.id === domain.containerId : item.containerRef?.id === domain.containerId;
@@ -508,14 +551,16 @@ export class WorkConversation {
       more = candidates.length > flowState.pageCursor + 3;
     const options = page.map(({
       item,
-      domainId
+      domainId,
+      assigneeId
     }) => ({
       text: 'This one',
       action: 'choose',
       value: {
         ref: item.ref,
         domainId,
-        expectedVersion: item.version
+        expectedVersion: item.version,
+        assigneeId: assigneeId ?? null
       }
     }));
     if (more) options.push({
@@ -536,8 +581,9 @@ export class WorkConversation {
     return {
       text: 'Choose work:\n' + page.map(({
         item,
-        domainId
-      }, index) => `${index + 1}. ${item.title} (${domainId})`).join('\n'),
+        domainId,
+        assigneeId
+      }, index) => `${index + 1}. ${item.title} (${domainId})${assigneeId ? ' — assigned to ' + assigneeId : ''}`).join('\n'),
       options,
       more
     };
@@ -572,6 +618,22 @@ export class WorkConversation {
         dueDate: raw.dueDate
       } : {})
     };
+    if (operation === 'create_task' && domain.assigneeIds?.length) {
+      const assigneeId = raw.assigneeId ?? (domain.assigneeIds.length === 1 ? domain.assigneeIds[0] : null);
+      if (!domain.assigneeIds.includes(assigneeId)) return {
+        status: 'denied',
+        reason: 'assignee_selection_required'
+      };
+      const binding = policy.providers[domain.provider];
+      payload = {
+        ...payload,
+        ...(binding.type === 'todoist' ? {
+          assigneeId
+        } : {
+          assigneeIds: [assigneeId]
+        })
+      };
+    }
     if (operation === 'create_container') payload = {
       title: raw.title,
       parentId: domain.creationParentId
@@ -595,6 +657,11 @@ export class WorkConversation {
       refs: [source.ref]
     }) : [];
     const statement = rows[0]?.content ?? raw.quote ?? '';
+    const observation = automatic ? (source.observations ?? []).find(o => keyOf(o.ref) === keyOf(item.ref)) : null;
+    if (automatic && (!observation || observation.version !== item.version)) return {
+      status: 'denied',
+      reason: 'source_observation_changed'
+    };
     const proposed = await this.#commands.propose({
       principal,
       intent: {
@@ -605,6 +672,8 @@ export class WorkConversation {
         sourceReceipt: source.id,
         statement,
         title: item.title,
+        expectedVersion: observation?.version ?? item.version,
+        expectedOccurrenceId: observation?.occurrenceId ?? item.due?.occurrenceId ?? null,
         mode: automatic ? 'auto' : 'manual'
       },
       asOf
@@ -685,8 +754,17 @@ export class WorkConversation {
       status: 'cancelled'
     };
     const candidates = await this.#candidates(principal, source, intent, flowState.flowType),
-      selected = candidates.find(row => row.domainId === choice.value?.domainId && keyOf(row.item.ref) === keyOf(choice.value.ref));
+      selected = candidates.find(row => row.domainId === choice.value?.domainId && (row.assigneeId ?? null) === (choice.value?.assigneeId ?? null) && keyOf(row.item.ref) === keyOf(choice.value.ref));
     if (!selected || selected.item.version !== choice.value.expectedVersion) return {
+      status: 'denied',
+      reason: 'selection_changed'
+    };
+    const live = await this.#context.getItem?.({
+      username: p.username,
+      ref: selected.item.ref,
+      asOf
+    });
+    if (!live || live.version !== choice.value.expectedVersion) return {
       status: 'denied',
       reason: 'selection_changed'
     };
@@ -695,7 +773,10 @@ export class WorkConversation {
       title: selected.item.title,
       quote: ''
     };
-    return this.#submit(principal, source, raw, selected.item, asOf, false, selected.domainId);
+    return this.#submit(principal, source, {
+      ...raw,
+      assigneeId: selected.assigneeId ?? null
+    }, selected.item, asOf, false, selected.domainId);
   }
   async open({
     principal,
@@ -704,6 +785,12 @@ export class WorkConversation {
   }) {
     const p = !this.#closed && this.#principal.verify(principal);
     if (!p?.authored || !['tasks', 'projects', 'create_task', 'create_container'].includes(flow)) throw workError('WORK_PRINCIPAL_REQUIRED');
+    if (['create_task', 'create_container'].includes(flow)) return {
+      decisionId: null,
+      text: `Send “Create ${flow === 'create_task' ? 'task' : 'project'} <title>” with the title you want. Then choose and confirm its configured destination.`,
+      choices: [],
+      more: false
+    };
     const source = {
       id: 'source.' + workHash([p.username, p.receiptId, 'interactive']),
       username: p.username,

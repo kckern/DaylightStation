@@ -193,3 +193,22 @@ it('does not promote historical imports or malformed event attribution into acti
     asOf: AS_OF + 1000
   })).newEvents).toEqual([]);
 });
+it('accepts explicitly scoped provider types when logical account labels overlap', async () => {
+  const x = setup();
+  x.policy.providers.other = {
+    type: 'clickup',
+    accountId: 'personal',
+    operations: ['read']
+  };
+  x.policy.domains.other = {
+    provider: 'other',
+    containerId: 'other-list'
+  };
+  const result = await x.service.observe({
+    username: 'sample',
+    provider: 'todoist',
+    snapshot: snapshot(),
+    asOf: AS_OF
+  });
+  expect(result.coverage.complete).toBe(true);
+});

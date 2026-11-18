@@ -233,6 +233,11 @@ export class TodoistWorkProvider extends IWorkProvider {
       const response = await this.#client.request({
         username,
         operation: command.operation,
+        authorizeSend: now => this.#verify({
+          username,
+          command,
+          asOf: now
+        }),
         ref: command.ref,
         payload: command.payload
       });
@@ -271,11 +276,15 @@ export class TodoistWorkProvider extends IWorkProvider {
         route: readRoute
       });
       if (create) {
-        const taskFields=Object.fromEntries(Object.entries(command.payload).filter(([key])=>key!=='containerId'));
-        const valid = !after.failure && after.item.title === command.payload.title && (command.operation==='create_task'?this.#readback({...command,operation:'update_task',payload:taskFields},after):after.row.parent_id===route.domain.creationParentId);
+        const taskFields = Object.fromEntries(Object.entries(command.payload).filter(([key]) => key !== 'containerId'));
+        const valid = !after.failure && after.item.title === command.payload.title && (command.operation === 'create_task' ? this.#readback({
+          ...command,
+          operation: 'update_task',
+          payload: taskFields
+        }, after) : after.row.parent_id === route.domain.creationParentId);
         return valid ? result('applied', null, {
           ref: createdRef,
-          item: (createdRef??ref).kind==='container'?null:after.item
+          item: (createdRef ?? ref).kind === 'container' ? null : after.item
         }) : result('uncertain', 'create_not_verified', {
           ref: createdRef
         });
@@ -283,7 +292,7 @@ export class TodoistWorkProvider extends IWorkProvider {
       const recurringConfirmed = command.operation === 'complete' && before.item.due?.recurring && !after.failure && Number.isSafeInteger(before.row.completed_count) && after.row.completed_count === before.row.completed_count + 1;
       return recurringConfirmed || this.#readback(command, after) ? result('applied', null, {
         ref,
-        item: (createdRef??ref).kind==='container'?null:after.item
+        item: (createdRef ?? ref).kind === 'container' ? null : after.item
       }) : result('uncertain', 'mutation_not_verified', {
         ref
       });
@@ -308,7 +317,7 @@ export class TodoistWorkProvider extends IWorkProvider {
       });
       return this.#readback(command, live) ? result('already_applied', null, {
         ref: command.ref,
-        item: command.ref.kind==='container'?null:live.item
+        item: command.ref.kind === 'container' ? null : live.item
       }) : result('uncertain', 'mutation_not_verified', {
         ref: command.ref
       });
