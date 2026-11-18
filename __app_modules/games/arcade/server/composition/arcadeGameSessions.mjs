@@ -14,7 +14,7 @@
  * @module 5_composition/modules/arcadeGameSessions
  */
 
-import { FullyKioskRestClient } from '#adapters/devices/FullyKioskRestClient.mjs';
+import { createArcadeKioskClient } from './kioskClients.mjs';
 import { AdbAdapter } from '#adapters/devices/AdbAdapter.mjs';
 import { RetroArchArcadeGameObservationSource } from "../adapters/RetroArchArcadeGameObservationSource.mjs";
 import { RetroArchSessionLogReader } from "../adapters/RetroArchSessionLogReader.mjs";
@@ -25,6 +25,8 @@ import { resolveOverlayConfig } from "../domain/value-objects/OverlaySessionFiel
 import { FleetArcadeGameSessionAnnouncer } from "../adapters/eventbus/FleetArcadeGameSessionAnnouncer.mjs";
 import { CompositeArcadeGameSessionAnnouncer } from "../adapters/eventbus/CompositeArcadeGameSessionAnnouncer.mjs";
 import { FullyKioskArcadeGameOverlay } from "../adapters/devices/FullyKioskArcadeGameOverlay.mjs";
+import { DaylightAndroidArcadeGameOverlay } from "../adapters/devices/DaylightAndroidArcadeGameOverlay.mjs";
+import { DeviceRoutedArcadeGameOverlay } from "../adapters/devices/DeviceRoutedArcadeGameOverlay.mjs";
 import { OverlayArcadeGameSessionAnnouncer } from "../application/runtime/OverlayArcadeGameSessionAnnouncer.mjs";
 import { KioskArcadeGameTerminator } from "../adapters/devices/KioskArcadeGameTerminator.mjs";
 import { KioskArcadeGameSpeaker } from "../adapters/devices/KioskArcadeGameSpeaker.mjs";
@@ -162,25 +164,36 @@ export function createArcadeGameSessionTracking(config) {
   // source and the overlay driver.
   const kioskByDevice = new Map();
   for (const [deviceId, device] of polledDevices) {
-    const content = device.content_control || {};
-    const password = content.password
-      || (content.auth_ref ? configService?.getHouseholdAuth?.(content.auth_ref)?.password : null);
-    kioskByDevice.set(deviceId, new FullyKioskRestClient(
-      { host: content.host, port: content.port, password: password || '' },
-      { httpClient, logger },
-    ));
+    // Fully's REST client, or the Android kiosk app's, by the device's provider.
+    const client = createArcadeKioskClient({
+      deviceId, control: device.content_control || {}, configService, httpClient, logger,
+    });
+    if (client) kioskByDevice.set(deviceId, client);
   }
+  // A device with no client (already warned about as `arcade.kiosk.unconfigured`)
+  // is left unmetered. One mistyped device entry must not stop the others, or boot.
+  polledDevices = polledDevices.filter(([deviceId]) => kioskByDevice.has(deviceId));
 
   // The overlay is a SEPARATE declaration from observation: a device may be
   // metered without ever carrying a countdown. Only `arcade_session_overlay: true` devices
   // get a client here, so no code path can put a film on a screen that did not
   // ask for one.
+  //
+  // The film is a web page the kiosk renders over other apps: Fully's web
+  // overlay setting, or the Android kiosk app's web overlay route. Each device
+  // gets the driver for its own kiosk client.
   const overlayDevices = polledDevices.filter(([, d]) => d?.arcade_session_overlay === true).map(([id]) => id);
+  const overlayClients = (wanted) => new Map(overlayDevices
+    .filter((id) => (kioskByDevice.get(id)?.provider === 'daylight-android') === wanted)
+    .map((id) => [id, kioskByDevice.get(id)]));
+  const fullyOverlay = new FullyKioskArcadeGameOverlay({ clientsByDevice: overlayClients(false), httpClient, logger });
+  const daylightOverlay = new DaylightAndroidArcadeGameOverlay({ clientsByDevice: overlayClients(true), httpClient, logger });
   const overlayAnnouncer = (overlayDevices.length && daylightHost)
     ? new OverlayArcadeGameSessionAnnouncer({
-      overlay: new FullyKioskArcadeGameOverlay({
-        clientsByDevice: new Map(overlayDevices.map((id) => [id, kioskByDevice.get(id)])),
-        httpClient, logger,
+      overlay: new DeviceRoutedArcadeGameOverlay({
+        overlayByDevice: new Map(overlayDevices.map((id) => [
+          id, kioskByDevice.get(id)?.provider === 'daylight-android' ? daylightOverlay : fullyOverlay,
+        ])),
       }),
       buildUrl: (deviceId) => `${daylightHost}${overlayPath}?device=${encodeURIComponent(deviceId)}`,
       logger,

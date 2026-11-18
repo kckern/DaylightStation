@@ -14,6 +14,14 @@ import { aiMicrosSource, pickMicros } from "../../../../health/server/nutrition-
 import { confineIcon, iconVocabulary } from "../../../../health/server/nutrition-capture-values.mjs";
 
 /**
+ * What a log event may say about an image URL: the start of a web address.
+ * A `data:` URL is the image itself and is never logged.
+ */
+function loggableUrl(url) {
+  return typeof url === 'string' && /^https?:\/\//i.test(url) ? url.substring(0, 120) : undefined;
+}
+
+/**
  * Log food from image use case
  */
 export class LogFoodFromImage {
@@ -116,7 +124,8 @@ export class LogFoodFromImage {
       hasResponseContext: !!responseContext,
       hasImageUrl: !!imageData?.url,
       hasFileId: !!imageData?.fileId,
-      imageUrl: imageData?.url?.substring(0, 120),
+      imageBytes: Buffer.isBuffer(imageData?.buffer) ? imageData.buffer.length : undefined,
+      imageUrl: loggableUrl(imageData?.url),
     });
 
     const messaging = this.#getMessaging(responseContext, conversationId);
@@ -140,15 +149,20 @@ export class LogFoodFromImage {
         }
       }
 
-      // 1. Resolve image URL
-      let imageUrl = imageData.url;
-      if (imageData.fileId && messaging.getFileUrl) {
+      // 1. Resolve image URL. An image handed over as bytes (a quick input
+      // uploaded from the phone) has no URL and no file id: the bytes are the
+      // source for the chat photo, for the model and for the photo store.
+      const imageBuffer = Buffer.isBuffer(imageData.buffer) ? imageData.buffer : null;
+      let imageUrl = imageBuffer ? undefined : imageData.url;
+      if (!imageBuffer && imageData.fileId && messaging.getFileUrl) {
         imageUrl = await messaging.getFileUrl(imageData.fileId);
       }
 
       // 2. Download image to buffer for sendPhoto
       let photoSource;
-      if (imageUrl && imageUrl.startsWith('http')) {
+      if (imageBuffer) {
+        photoSource = imageBuffer;
+      } else if (imageUrl && imageUrl.startsWith('http')) {
         try {
           photoSource = await this.#imageDownloader.download(imageUrl);
         } catch (e) {
@@ -219,10 +233,10 @@ export class LogFoodFromImage {
       const prompt = this.#buildDetectionPrompt(portionBoost, userCaption);
       const response = await this.#aiGateway.chatWithImage(prompt, imageForAI, { maxTokens: 4096 });
 
+      // The model's answer describes the photo, so it is logged by its length only.
       this.#logger.info?.('logImage.aiResponse', {
         conversationId,
         responseLength: response?.length || 0,
-        responsePreview: response?.substring(0, 200),
       });
 
       // 6. Parse response into food items
@@ -231,14 +245,13 @@ export class LogFoodFromImage {
       if (foodItems.length === 0) {
         this.#logger.warn?.('logImage.noFoodDetected', {
           conversationId,
-          imageUrl: imageUrl?.substring(0, 120),
+          imageUrl: loggableUrl(imageUrl),
           aiResponseLength: response?.length || 0,
-          aiResponsePreview: response?.substring(0, 300),
         });
         await messaging.updateMessage(photoMsgId, {
           caption: "❓ I couldn't identify any food in this image. Could you describe what you're eating?",
         });
-        return { success: false, error: 'No food detected' };
+        return { success: false, code: 'NO_FOOD', error: 'No food detected' };
       }
 
       // 6b. Persist the captured photo and stamp its ref onto the produced
@@ -376,11 +389,14 @@ export class LogFoodFromImage {
         conversationId,
         error: error.message,
         stack: error.stack?.split('\n').slice(0, 5).join('\n'),
-        imageUrl: imageData?.url?.substring(0, 120),
+        imageUrl: loggableUrl(imageData?.url),
       });
 
+      // A retry fetches the image again by its file id or URL. An image that
+      // arrived as bytes has neither, so it is offered no Retry button.
+      const refetchable = Boolean(imageData?.fileId || imageData?.url);
       let retryStateWritten = false;
-      if (photoMsgId && this.#conversationStateStore) {
+      if (photoMsgId && this.#conversationStateStore && refetchable) {
         try {
           // Keyed to the failed photo's own message (a session), never the
           // root flow: an open revision must survive a failed photo.

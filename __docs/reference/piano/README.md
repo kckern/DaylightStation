@@ -317,7 +317,9 @@ A few components appear across many modes because they are the kiosk's visual vo
 Running unattended on a fixed appliance means the app has to manage its own environment and
 recover from the rough edges of an aging WebView.
 
-- **FKB interface.** A small wrapper around `window.fully` is the app's hand on the system:
+- **FKB interface.** A small wrapper (`frontend/src/lib/fkb.js`) around the kiosk's page
+  bridge, `window.fully` on Fully Kiosk or `window.daylight` on the DaylightStation Android
+  kiosk app, is the app's hand on the system:
   it can launch an Android target (such as the Bluetooth settings screen for re-pairing),
   react when FKB returns to the foreground after another app exits, and route the hardware
   back button through the app's own history. Every call is a no-op when the interface is

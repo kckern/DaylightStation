@@ -309,6 +309,17 @@ describe('LocalSessionController — queue ops', () => {
     expect(ci?.album).toBe('Past Masters');
   });
 
+  it('the container the item was played from survives LOAD_ITEM onto currentItem', () => {
+    const c = makeController();
+    c.queue.playNow(
+      { contentId: 'plex:1', format: 'audio', title: 'Track', containerTitle: 'Mix', containerContentId: 'plex:77' },
+      { clearRest: true },
+    );
+    const ci = c.getSnapshot().currentItem;
+    expect(ci?.containerContentId).toBe('plex:77');
+    expect(ci?.containerTitle).toBe('Mix');
+  });
+
   it('a non-music item gains no artist/album keys on currentItem', () => {
     const c = makeController();
     c.queue.playNow({ contentId: 'plex:9', format: 'video', title: 'A Show' }, { clearRest: true });

@@ -1,3 +1,4 @@
+import { reboot as kioskReboot } from '../../../../../frontend/src/lib/fkb.js';
 import { useState, useRef, useCallback, useEffect } from 'react';
 import getLogger from '../../../../../frontend/src/lib/logging/Logger.js';
 import { DEFAULT_BEAT_URL } from './useRenderWatchdog.js';
@@ -15,8 +16,9 @@ async function readNativeStatus() {
   return response.json();
 }
 function requestReboot() {
-  if (typeof window.fully?.reboot !== 'function') throw new Error('Reboot unavailable');
-  return window.fully.reboot();
+  let failure;
+  const accepted = kioskReboot({ onError: error => { failure = error; } });
+  if (!accepted) throw failure ?? new Error('Reboot unavailable');
 }
 function readStored(key) {
   try { return window.localStorage?.getItem(key); } catch { return null; }

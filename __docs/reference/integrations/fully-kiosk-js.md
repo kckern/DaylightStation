@@ -141,6 +141,91 @@ Result: Daylight loads on boot. After any launched app exits, FKB fires `onResum
 
 ---
 
+## The `window.daylight` bridge
+
+The DaylightStation Android kiosk app injects `window.daylight` instead of
+`fully`. Page code does not call either object directly: it goes through
+`frontend/src/lib/fkb.js`, which uses `window.daylight` when it is present and
+`window.fully` otherwise. When both exist, `daylight` wins, and a call the
+daylight bridge lacks is reported as unavailable; it does not fall through to
+Fully. The exported functions keep the same names and signatures on both.
+
+| `fkb.js` export | On Fully | On the Android kiosk app |
+|-----------------|----------|--------------------------|
+| `isFKBAvailable()` | a `fully` object with a control method (see below) | a `daylight` object with a control method (see below) |
+| `launchApp(pkg)` | `fully.startApplication(pkg)` | `daylight.launch('{"package":pkg}')` |
+| `startApplication(pkg, activity)` | `fully.startApplication(pkg, activity)` | `daylight.launch('{"package":pkg,"activity":activity}')` |
+| `launchAndroidTarget(target)`, `launchIntent(...)` | `fully.startIntent(uri)` | `daylight.launch('{"intent":uri}')`, with the same encoded intent URI |
+| `screenOff()` / `screenOn()` | `fully.turnScreenOff()` / `turnScreenOn()` | `daylight.screen(false)` / `daylight.screen(true)` |
+| `onResume(fn)`, `scheduleDismissAfterLaunch(fn)` | `fully.bind('onResume', ...)` | `daylight:resume` event on `window` |
+| `bindBackButton()` | `fully.bind('onBackButton', ...)` | `daylight.setBackMode('page')`, then the `daylight:back` event |
+| `restartApp()`, `canRestartApp()` | `fully.restartApp()` | `daylight.restartApp()` |
+| `reboot()` | `fully.reboot()` | `daylight.reboot()`, which answers `false` when the device cannot reboot itself |
+
+No module calls `window.fully` or `window.daylight` directly. The piano
+kiosk's render watchdog and jank prompt use `restartApp()` and `reboot()`.
+
+The app reports lifecycle changes as DOM `CustomEvent`s on `window`:
+`daylight:resume` (`detail: { awayMs, from }`), `daylight:pause`,
+`daylight:back`, `daylight:screen`, `daylight:key` and `daylight:network`.
+`fkb.js` listens for the first and third.
+
+A `daylight` call answers `false` when the app did not accept the request, and
+`fkb.js` returns `false` for it and logs `fkb.<call>.rejected`. Fully's calls
+answer nothing, so on Fully a `true` still means "attempted".
+
+Every `fkb.<call>.unavailable` warning that carried `bridge: 'present' |
+'absent'` still does, with the same values, and all of them carry
+`bridgeKind: 'fully' | 'daylight' | null`, which says which bridge the page
+found.
+
+The Android kiosk app injects `window.daylight` only where the device's
+WebView supports document-start script injection. Where it does not, the
+object is absent, every call here reports `bridge: 'absent'`, and the page
+runs as in an ordinary browser. The backend sees this as `bridge:
+'unavailable'` in the device's content status.
+
+**What counts as a bridge.** A name on `window` is not enough. `fully` (or
+`FullyKiosk`) qualifies only if it has one of `turnScreenOff`, `turnScreenOn`,
+`startApplication`, `startIntent` or `bind`; `restartApp()` and `reboot()` are
+then called on that object if it has them, and an object carrying only those
+two does not qualify. `daylight` qualifies if it has one of `launch`,
+`screen`, `setBackMode`, `restartApp` or `reboot`.
+
+`restartApp()` and `reboot()` never throw. A caller that reports a throwing
+bridge itself passes `{ onError }`; the piano jank prompt does, and logs
+`piano.jank-reboot.reboot-failed` as it always has.
+
+### Pinning media on the phone app
+
+The phone build of the Android app adds two members to `window.daylight`:
+`canPinMedia()` and `pinMedia(request)` (contract: `__docs/reference/android/phone.md`,
+"Page bridge on the phone: pinning media"). Kiosks, Fully and ordinary
+browsers never have them. The phone's bridge carries none of the kiosk members
+above, so these two read `window.daylight` directly instead of through the
+"what counts as a bridge" check.
+
+| `fkb.js` export | Answer |
+|---|---|
+| `canPinMedia()` | `true` only when `daylight.pinMedia` is a function and `daylight.canPinMedia()` returns exactly `true`. `false` when either member is missing, when it throws, or for any other answer. Does not log |
+| `pinMedia({contentId, label})` | Sends `{"contentId","label"}` as JSON text and answers `{accepted: true}` or `{accepted: false, reason}`. A missing member answers `reason: 'not_available'`; a throw, unparseable text or an answer of another shape answers `reason: 'failed'`. A JSON-text answer is parsed. A refusal without a one-word lower-case reason reads `failed`, and any other field the native side sends is dropped |
+
+The refusal reasons are `refused`, `not_top_frame`, `rate_limited`,
+`bad_request`, `invalid_content_id`, `invalid_label`, `not_available`,
+`launcher_cannot_pin`, `launcher_refused`, `limit_reached` (the phone already
+keeps 24 pinned media actions; one has to be removed from the home screen
+first) and `failed`; `fkb.js` passes each through unchanged.
+
+`accepted: true` means Android's own pin dialog is showing; whether the owner
+confirmed is never reported (the phone records the pin only once the owner
+confirms). Each call logs `fkb.pinMedia.result` with
+`accepted` and `reason` only, never the content id or the label (a thrown
+error's text is not logged either, since it could repeat them). Media's Now
+Playing is the one caller; see "Pinning to the home screen on the phone app" in
+`__docs/reference/media/media-app.md`.
+
+---
+
 ## Notes
 
 - The `fully` object is only present when the page is loaded inside FKB. Guard all calls with `typeof fully !== "undefined"` if the same code runs in a desktop browser.

@@ -74,6 +74,88 @@ Starting an interview preserves the delivered debrief, its message IDs and categ
 
 ---
 
+## Quick-input intake
+
+A recording or a typed note captured away from the chat (the phone app) enters the journal over HTTP. The routes, headers, answers, device binding, daily allowance and retry rules are the shared quick-input intake: [`__docs/reference/core/quick-input.md`](../core/quick-input.md). This section is what the Journalist does with an input.
+
+| Route | Input | What happens |
+|---|---|---|
+| `POST {app_host}/api/v1/journalist/voice` | audio | Transcribed, saved as a journal entry, the transcript echoed to the user's Journalist conversation, then the follow-up question sent there |
+| `POST {app_host}/api/v1/journalist/memo` | audio | The same intake as `/voice`, under the names it was built with |
+| `POST {app_host}/api/v1/journalist/text` | `text/plain` | Saved as a journal entry, then the follow-up question sent. No echo, as a Telegram text message gets none |
+
+The replies go to the user's Journalist conversation in Telegram; the HTTP answer only says what happened to the input.
+
+### Where an input joins the Telegram path
+
+A Telegram message reaches a use case through the Journalist's input router, which first looks for slash commands and open flows (a debrief interview, a quiz). A quick input is always a new entry, so it joins at the use cases:
+
+- **Voice** uses `ProcessVoiceEntry`'s steps: `transcribe` (the audio is handed over as `{ buffer, mimeType }`, which the Telegram adapter's `transcribeVoice` takes in place of a file id), `sendTranscription`, `sendNotUnderstood`.
+- **Voice and text** use `ProcessTextEntry.saveUserMessage` to save the entry and `ProcessTextEntry.execute` with `userMessageSaved` to send the follow-up question.
+
+The order differs from a Telegram message in one way. A quick input comes from a client that retries, so its entry is saved as soon as there is text to save, before anything is sent, and each reply is noted when it has gone out. A Telegram voice message keeps its own order (echo, then save): Telegram does not retry.
+
+The handlers are `journalVoiceHandler` and `journalTextHandler` in `application/services/journalInputs.mjs`; `journalQuickInputs.mjs` assembles them over one ledger.
+
+### One input, one entry
+
+- A recording's entry is saved under the journal id `memo:<input id>`, a note's under `note:<input id>`. The journal is the record of what was taken in; the ledger (`users/<username>/apps/journalist/memo_ledger.yml`) records which replies went out.
+- A retry that finds the entry does not transcribe again. It sends only the replies not yet noted, from the saved entry's text, and answers `duplicate: true`. An outage of the chat costs one transcription however many times the client retries, and the follow-up question is not lost.
+- A recording found empty gets the "couldn't understand" message in the chat once, and its retry answers `422 empty_transcription` without another transcription.
+- An entry that is in the journal with no ledger record (records are dropped after 35 days) is treated as finished.
+- `/voice` and `/memo` are one intake: an id sent to one is a duplicate on the other. A note and a recording with the same id are two inputs.
+- If a multi-part transcript echo failed part way, the retry sends all of its parts again.
+
+### When the entry is dated
+
+An input captured offline and uploaded later is journaled at the time it was captured: a believed `X-Daylight-Recorded-At` becomes the stored entry's timestamp, so the entry sorts and is found by date where it belongs. The Journalist's replies are stamped when they are sent.
+
+The entry time is an optional input to `ProcessVoiceEntry`, `ProcessTextEntry` and the journal repository's `saveMessage`. A Telegram message passes none and is stamped when it is processed, as before.
+
+### The `/memo` alias
+
+`/memo` answers and logs with the names it had before the routes were generalized, and is otherwise `/voice`:
+
+| | `/voice` | `/memo` |
+|---|---|---|
+| Id in answers | `inputId` and `memoId` | `memoId` |
+| Bad id | `400 invalid_input_id` | `400 invalid_memo_id` |
+| Daily limit of inputs in the 429 body | `limit: "inputs"` | `limit: "memos"` |
+| Log events | `quick_input.*` with `bot`, `kind`, `inputId` | `journalist.memo.*` with `memoId` |
+
+Both accept `X-Daylight-Input-Id` and `X-Daylight-Memo-Id`.
+
+### Config
+
+Device binding, on the device's entry in the household devices file:
+
+```yaml
+devices:
+  <device key>:
+    quick_input:
+      journalist: [<username>, ...]
+```
+
+`voice_memo: { users: [...] }` on the device still binds it for `/voice` and `/memo`, and for those only.
+
+Daily allowance, in the journalist app config (defaults shown). Recordings and notes count against the same day:
+
+```yaml
+quick_input:
+  daily_inputs: 60
+  daily_megabytes: 200
+```
+
+`voice_memo: { daily_memos, daily_megabytes }` still counts where `quick_input` sets no value.
+
+At the defaults one user's day is at most 60 inputs and 240 attempts: with no retries, 60 transcriptions and 120 chat requests if every input is a recording. The ceiling with retries is in the [shared page](../core/quick-input.md#daily-allowance-and-what-a-day-can-cost).
+
+### What is logged
+
+Neither the audio nor the words in an entry go to the log from anywhere on this path. The voice use case logs a recording as `{bytes, mimeType}` and a Telegram voice message as its file id; an AI reply that cannot be parsed is logged by its length. The text is stored in the journal and, as for every entry, in the Journalist's AI interaction file.
+
+---
+
 ## Boundary
 
 The domain does not:
@@ -81,7 +163,7 @@ The domain does not:
 - Talk to Telegram, the AI provider, or the YAML store directly — those are adapters, invoked from the application layer.
 - Read clocks or generate timestamps on its own — all time values are passed in as arguments from the application layer, so the domain stays deterministic and testable.
 - Know about user identity, authentication, or device routing — it works in terms of opaque chat IDs.
-- Decide *when* to initiate a session or *whom* to send to — scheduling and dispatch live in `3_applications/journalist/` (use cases, jobs, container).
+- Decide *when* to initiate a session or *whom* to send to — scheduling and dispatch live in the module's `application/` folder (use cases, container) and `__backend/src/3_applications/journalist/` (jobs).
 
 ---
 
@@ -95,7 +177,7 @@ Adjacent layers that depend on this domain:
 - **Persistence:** `__app_modules/personal/journalist/server/adapters/persistence/` (journal entries, message queues, quiz state)
 - **Messaging & AI gateways:** `__backend/src/1_adapters/messaging/`, `__backend/src/1_adapters/ai/`
 - **HTTP surface:** `__app_modules/personal/journalist/server/api/journalist.mjs` and its adjacent handlers
-
+- **Wiring:** `__app_modules/personal/journalist/server/composition/journalistApi.mjs`
 
 ## Optional knowledge follow-ups
 

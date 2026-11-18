@@ -10,6 +10,13 @@ export class IDeviceRemoteAdministrationGateway {
   async readSettings(_deviceId) { throw new Error('Not implemented'); }
   async executeAction(_deviceId, _action, _params) { throw new Error('Not implemented'); }
   async writeSetting(_deviceId, _key, _value) { throw new Error('Not implemented'); }
+  /**
+   * Settings as the device itself describes them: `[{ key, type, value }]`
+   * with `type` one of `string`, `boolean`, `integer`, `number`, or the device's own word
+   * for anything else. Null (the default) when the device's settings carry no
+   * types, in which case the application layer applies its curated whitelist.
+   */
+  async readTypedSettings(_deviceId) { return null; }
 }
 
 export default IDeviceRemoteAdministrationGateway;

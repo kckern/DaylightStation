@@ -358,7 +358,7 @@ curl -s http://{tablet}:8770/status      # ble.state CONNECTED, outVerified true
 
 | Layer | Where | Covers |
 |---|---|---|
-| Bridge supervisor | DS backend, prod container only (`PianoBridgeSupervisorService`, config `piano.bridge_supervisor`) | Everything, force-stop included. Relaunches through FKB `startApplication` after two failed 30 s checks (backoff 1, 2, 5, 10, 30 min). Pushes if still down after 5 min, and pushes "back" when it recovers. |
+| Bridge supervisor | DS backend, prod container only (`PianoBridgeSupervisorService`, config `piano.bridge_supervisor`) | Everything, force-stop included. Relaunches through FKB `startApplication` after two failed 30 s checks (backoff 1, 2, 5, 10, 30 min). Pushes if still down after 5 min, and pushes "back" when it recovers. With `piano.bridge_provider: daylight-android` it watches the DaylightStation Android app instead and relaunches through that app's lifeline (`__docs/reference/integrations/adb.md`, "The piano bridge on the Android kiosk app"). |
 | FKB `appToRunOnStart` | FKB setting, set 2026-09-30 | Reboots, even with the backend down. FKB launches the bridge in the background when FKB starts. |
 | Keep-alive alarm (shell v31) | `ShellKeepAlive` | Kills and crash loops, every 5 min. Not force-stop. |
 | Crash restart alarm (shell v31) | `PianoBridgeService` crash handler | An uncaught exception, 3 s later. |
@@ -542,6 +542,25 @@ On a stall the kiosk Player can also call `GET http://localhost:8770/wifi?fresh=
 `pbctl wifi`.
 
 ---
+
+## 7d. A played note wakes the screen through a manual off hold (both bridges)
+
+A grown-up turning the tablet's screen off for a while (`DeviceScreenControlService`,
+"screen off for N minutes") holds it two ways: the backend's screen override, which
+the screen authority enforces on each reconcile tick, and a deadline relayed to the
+device's own note wake, so a key press in the meantime does not light the panel.
+
+| Bridge (`piano.bridge_provider`) | The device's note wake | How the deadline gets there |
+|---|---|---|
+| `piano-bridge` (default) | the APK's `ScreenWaker`, `fkbWakeSuppressUntilEpochMs` (epoch ms) | GET `/config`, merge the key, POST the whole set back (a lone POST would erase `targetMac`) |
+| `daylight-android` | the app's `screen-power` note wake, `power.wakeSuppressUntilSec` (epoch seconds) | `POST /settings` for that one key on the control port, with the token header |
+
+Waking the panel on purpose clears the hold: the old APK gets the current time, the
+app gets `0`. A hold lasts at most 24 hours. On the app, a hold left behind by a
+backend restart or a failed relay is re-synced by the bridge supervisor on its next
+reachable check (`piano-wake-hold.resynced`). Check it on the app with `dd settings get power.wakeSuppressUntilSec`
+and in the log store with `piano-midi-wake.suppress-relayed` /
+`suppress-relay-failed`.
 
 ## 8. Still open
 

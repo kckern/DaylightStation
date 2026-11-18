@@ -149,3 +149,97 @@ test('the log module name is exported, so app.mjs and the log-store queries cann
   const mod = await import('./bridge-supervisor.mjs');
   assert.equal(mod.PIANO_BRIDGE_SUPERVISOR_LOG_MODULE, 'piano-bridge-supervisor');
 });
+
+// ── bridge_provider: daylight-android ──
+
+const TOKEN = 'k'.repeat(40);
+function androidDeps({ contentControl, auth = { 'yellow-room-tablet': { token: TOKEN } }, piano = {} } = {}) {
+  const made = { probe: null, speaker: null, restart: null, restarts: 0 };
+  const logs = [];
+  const log = (level) => (event, data) => logs.push({ level, event, data });
+  const args = {
+    configService: {
+      getHouseholdAppConfig: () => ({
+        bridge_provider: 'daylight-android',
+        bridge_supervisor: { enabled: true, device_id: 'yellow-room-tablet', bridge_url: 'ws://old-bridge:8770' },
+        speaker_recovery: { enabled: true },
+        ...piano,
+      }),
+      getHouseholdTimezone: () => 'America/Los_Angeles',
+      getDeviceConfig: (id) => (id === 'yellow-room-tablet' ? { content_control: contentControl } : null),
+      getHouseholdAuth: (ref) => (ref === 'daylight-android' ? auth : null),
+    },
+    remoteAdmin: { performAction: async () => { throw new Error('the old launch-app path must not be used'); } },
+    haGateway: { getState: async () => ({ state: 'on' }), callService: async () => {} },
+    logger: { debug: log('debug'), info: log('info'), warn: log('warn'), error: log('error') },
+    probeFactory: (o) => { made.probe = o; return { readHealth: async () => ({ reachable: false, error: 'down' }) }; },
+    speakerActionsFactory: (o) => { made.speaker = o; return { a2dpReconnect: async () => ({ ok: true }), bluetoothCycle: async () => ({ ok: true }), probeEndpoints: async () => ({ present: true }) }; },
+    restartFactory: (o) => { made.restart = o; return { restart: async () => { made.restarts += 1; return { ok: true }; } }; },
+    scheduler: { every: () => () => {} },
+  };
+  return { args, made, logs };
+}
+const androidControl = { provider: 'daylight-android', host: 'tablet.invalid', port: 8780, auth_ref: 'daylight-android' };
+
+test('daylight-android: probe, speaker actions and relaunch go to the control API and lifeline with the token header', async () => {
+  const d = androidDeps({ contentControl: androidControl });
+  const { pianoBridgeSupervisor } = createPianoBridgeSupervisor(d.args);
+  assert.ok(pianoBridgeSupervisor);
+  assert.deepEqual(d.made.probe, { bridgeUrl: 'http://tablet.invalid:8780', headers: { 'X-Daylight-Token': TOKEN } });
+  assert.deepEqual(d.made.speaker, { bridgeUrl: 'http://tablet.invalid:8780', headers: { 'X-Daylight-Token': TOKEN } });
+  assert.deepEqual(d.made.restart, { lifelineBase: 'http://tablet.invalid:8781', headers: { 'X-Daylight-Token': TOKEN } });
+  await pianoBridgeSupervisor.tick();
+  await pianoBridgeSupervisor.tick();
+  assert.equal(d.made.restarts, 1, 'an unreachable bridge is restarted through the lifeline, not launch-app');
+  const created = d.logs.find((l) => l.event === 'piano-bridge.supervisor.created').data;
+  assert.equal(created.provider, 'daylight-android');
+  assert.equal(created.bridgeUrl, 'http://tablet.invalid:8780');
+  assert.ok(!JSON.stringify(d.logs).includes(TOKEN), 'the token is never logged');
+});
+
+test('daylight-android: a lifeline_port in content_control is used', () => {
+  const d = androidDeps({ contentControl: { ...androidControl, lifeline_port: 9001 } });
+  createPianoBridgeSupervisor(d.args);
+  assert.equal(d.made.restart.lifelineBase, 'http://tablet.invalid:9001');
+});
+
+test('daylight-android while the tablet still says fully-kiosk: an error, and nothing starts', () => {
+  const d = androidDeps({ contentControl: { provider: 'fully-kiosk', host: 'tablet.invalid', port: 2323 } });
+  const { pianoBridgeSupervisor } = createPianoBridgeSupervisor(d.args);
+  assert.equal(pianoBridgeSupervisor, null);
+  assert.equal(d.logs.find((l) => l.event === 'piano-bridge.supervisor.provider-mismatch')?.level, 'error');
+  assert.equal(d.logs.find((l) => l.event === 'piano-bridge.supervisor.not-started')?.data.provider, 'daylight-android');
+});
+
+test('daylight-android with no token for the device: an error, and nothing starts', () => {
+  const d = androidDeps({ contentControl: androidControl, auth: { piano: { token: TOKEN } } });
+  const { pianoBridgeSupervisor } = createPianoBridgeSupervisor(d.args);
+  assert.equal(pianoBridgeSupervisor, null);
+  assert.equal(d.logs.find((l) => l.event === 'piano-bridge.supervisor.no-token')?.level, 'error');
+});
+
+test('an unknown bridge_provider is an error, not a fallback to the old bridge', () => {
+  const d = androidDeps({ contentControl: androidControl, piano: { bridge_provider: 'fully' } });
+  assert.equal(createPianoBridgeSupervisor(d.args).pianoBridgeSupervisor, null);
+  assert.ok(d.logs.some((l) => l.event === 'piano-bridge.supervisor.unknown-provider' && l.level === 'error'));
+});
+
+test('piano-bridge stays the default: the old bridge URL, no headers, launch-app', () => {
+  const d = deps(base);
+  let probeOpts;
+  d.args.probeFactory = (o) => { probeOpts = o; return { readHealth: async () => ({ reachable: true }) }; };
+  createPianoBridgeSupervisor(d.args);
+  assert.deepEqual(probeOpts, { bridgeUrl: 'http://tablet:8770', headers: {} });
+  assert.equal(d.logs.find((l) => l.event === 'piano-bridge.supervisor.created').data.provider, 'piano-bridge');
+});
+
+test('daylight-android: each reachable tick lets the wake-hold sync reconcile', async () => {
+  const d = androidDeps({ contentControl: androidControl });
+  let reconciles = 0;
+  d.args.probeFactory = () => ({ readHealth: async () => ({ reachable: true, ble: 'CONNECTED', outVerified: true, speaker: true }) });
+  d.args.wakeHoldSync = { reconcile: async () => { reconciles += 1; return { checked: false }; } };
+  const { pianoBridgeSupervisor } = createPianoBridgeSupervisor(d.args);
+  await pianoBridgeSupervisor.tick();
+  await pianoBridgeSupervisor.tick();
+  assert.equal(reconciles, 2);
+});

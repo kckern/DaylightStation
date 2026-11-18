@@ -20,6 +20,8 @@ import { SessionControlFrame } from "../controller/SessionControlFrame.jsx";
 import { DestinationLine } from "../cast/DestinationLine.jsx";
 import { SessionControlsPanel } from "./SessionControlsPanel.jsx";
 import { LineUpOffer } from "./LineUpOffer.jsx";
+import { AddToHomeScreenButton } from "./AddToHomeScreenButton.jsx";
+import { pinTarget } from "./homeScreenPin.js";
 import "./NowPlaying.scss";
 
 function useIsPhone() {
@@ -83,6 +85,9 @@ export function NowPlayingView() {
     .join(' — ');
   const containerTitle = currentEntry?.containerTitle ?? (trackContext || null);
   const positionLabel = queuePositionLabel(currentIndex, queueItems.length);
+  // Inside the phone app: pin the playlist/album/show this was played from,
+  // or the item itself when nothing contains it.
+  const homeScreenTarget = pinTarget(item, currentEntry);
   // Never surface a raw content id as a metadata line.
   const metaTitle = typeof item?.title === 'string' && item.title !== item.contentId
     ? item.title
@@ -190,6 +195,7 @@ export function NowPlayingView() {
           <SeekBar target="local" />
           <TransportBar target="local" />
           <ActiveQualityButton target="local" targetLabel="this device" />
+          <AddToHomeScreenButton target={homeScreenTarget} />
         </>
         )}
         {(item || snapshot?.queue?.items?.length > 0) && <SessionControlsPanel target="local" />}

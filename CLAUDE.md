@@ -248,6 +248,7 @@ git rev-parse HEAD > {env.ops_docs}/docs-last-updated.txt
 | Arcade consoles (adding a system: manifest, core, bezel geometry) | `__docs/reference/gaming/arcade-consoles.md` |
 | Arcade game sessions (metered arcade time: observation, budget, overlay) | `__docs/reference/gaming/arcade-game-sessions.md` |
 | Arcade save progress (battery vs state resume, launch card, autosave, Restart vs Erase, recovery, manual restore) | `__docs/reference/gaming/emulator-progress.md` |
+| Kiosk devices on the DaylightStation Android app (`content_control.provider: daylight-android`: devices.yml shape, per-device token, adapters vs Fully, arcade/excursion/admin consumers, `window.daylight` page bridge) | `__docs/reference/integrations/adb.md` (The `daylight-android` provider) |
 | Controller pairing (garage BT pads: guided steps from input.yml, D-Bus pair helper, bond/HID checks, reconnect, status badges) | `__docs/reference/gaming/controller-pairing.md` |
 | Living-room Controllers screen (home-menu Bluetooth gamepad manager on the Shield: status, Fix, Re-pair from scratch, PIN, audio-bridge `/bluetooth` API) | `__docs/reference/integrations/retroarch.md` (Controllers screen) |
 | Shield RetroArch savestate auto-load (off by default; per-game `resume` in catalog overrides; launch-time override files) | `__docs/reference/gaming/retroarch-game-overrides.md` |
@@ -265,6 +266,7 @@ git rev-parse HEAD > {env.ops_docs}/docs-last-updated.txt
 | OMR bubble-sheet reader (Chatsworth OMR-1100) | `__docs/reference/omr/README.md` |
 | Lifelog knowledge (verified loops, private reviews, question queue, default-off runtime) | `__docs/reference/lifelog/knowledge.md` |
 | Journalist domain (journaling bot) | `__docs/reference/journalist/journalist-domain.md` |
+| Quick-input intake (phone uploads to the Journalist and Nutribot: voice, text, photo routes; device binding, daily allowance, once-only processing, adding an intake to a bot) | `__docs/reference/core/quick-input.md` |
 | School / Portal homeschool | `__docs/reference/school/README.md` |
 | Teacher flows (what a grown-up can do, from which state) | `__docs/reference/school/teacher.md` |
 | School print documents (worksheets/quizzes + OMR card grading) | `__docs/reference/school/print-documents.md` |

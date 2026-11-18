@@ -21,7 +21,6 @@ Block all traffic unless:
 - Home IP (`{YOUR_HOME_IP}`)
 - Work VPN (`{WORK_VPN_RANGE}`)
 - Webhook source IPs (see [Webhook Source IPs](#webhook-source-ips))
-- Path ends with `/pinhole`
 
 ### Access Policies
 
@@ -29,7 +28,6 @@ Block all traffic unless:
 |-----|----------------|--------|
 | Main Site Protection | `*.example.com` | Home + Work IPs only |
 | Webhook Bypass | `.../*/webhook` | Webhook source IPs |
-| Pinhole Bypass | `.../*/pinhole` | Everyone |
 | Local API | `local.example.com` | Everyone (LAN-only by design) |
 
 ### Bot Webhook URLs
@@ -46,8 +44,9 @@ See `data/system/config/chatbots.yml` for bot configuration and secret tokens.
 
 | Endpoint | Purpose | Access |
 |----------|---------|--------|
-| `/api/v1/nutribot/pinhole` | IFTTT image upload | Public |
 | `/api/v1/nutribot/report` | Daily nutrition report | Requires auth |
+
+No route is open to everyone. The IFTTT image route `/api/v1/nutribot/pinhole` and its everyone-bypass were retired on 2026-11-17; the backend answers that path 404. A perimeter that still lets `/pinhole` through should drop that rule.
 
 ---
 
@@ -76,7 +75,7 @@ Internet → DNS → CDN/Proxy → Firewall → Access Control → Application
 
 Each layer adds protection but shouldn't be your only defense:
 - Firewall allows webhook IPs → Access Control still validates path
-- Access Control bypasses pinhole → Application still validates input
+- Access Control bypasses webhook paths → Application still validates the secret token
 
 If one layer fails, others still protect.
 
@@ -216,7 +215,6 @@ DEFAULT: BLOCK all traffic
 ALLOW: Home IP ({YOUR_HOME_IP})
 ALLOW: Work VPN ({WORK_VPN_RANGE})
 ALLOW: Webhook source IPs for webhook paths
-ALLOW: Paths ending in /pinhole
 ```
 
 #### Webhook Source IPs
@@ -236,7 +234,6 @@ Always check official documentation for current IP ranges.
 
 ```
 (ip.src ne {YOUR_HOME_IP} and not ip.src in {{WORK_VPN_RANGE}})
-  and not ends_with(http.request.uri.path, "/pinhole")
   and not ip.src in {{WEBHOOK_SOURCE_IPS}}
 ```
 
@@ -280,7 +277,6 @@ Request → Firewall (allows through) → Access Control → Application
 |--------------|---------------|----------------|
 | `*.example.com` | IP whitelist | Home, Work IPs only |
 | `/api/v1/*/webhook` | Webhook bypass | Webhook source IPs only |
-| `/api/v1/*/pinhole` | Public bypass | Everyone |
 
 #### Precedence
 
@@ -289,7 +285,6 @@ More specific paths take precedence over wildcards:
 ```
 *.example.com                              → Requires whitelisted IP
 app.example.com/api/v1/*/webhook           → Webhook source IPs bypass
-app.example.com/api/v1/nutribot/pinhole    → Everyone bypasses
 ```
 
 #### Example: Cloudflare Access
@@ -357,26 +352,16 @@ curl "https://api.telegram.org/bot$TOKEN/setWebhook" \
 
 ---
 
-### Pinhole Pattern
+### Public Endpoint Pattern
 
-For integrations like IFTTT that can't use authentication or have no static IPs.
+For an integration that can't authenticate and has no static IPs. None is in use today; prefer a caller that can send a device header or a signed request.
 
 #### Design Principles
 
-1. **Dedicated path** — Use `/pinhole` suffix (not `/webhook`)
-2. **Firewall bypass** — Allow all IPs to this specific path
-3. **Access bypass** — Skip authentication for this path
+1. **Dedicated path** — One exact path, not a wildcard suffix shared by other routes
+2. **Firewall bypass** — Allow all IPs to that path only
+3. **Access bypass** — Skip authentication for that path only
 4. **Application protection** — Rate limit, validate input, log everything
-
-#### Example: IFTTT Image Upload
-
-```
-IFTTT → https://app.example.com/api/v1/nutribot/pinhole?img_url=https://...
-                                    │
-                    Firewall: Allow (path ends with /pinhole)
-                    Access: Bypass (everyone policy)
-                    App: Validate input, log request, process image
-```
 
 #### Security Checklist for Public Endpoints
 
@@ -386,7 +371,7 @@ IFTTT → https://app.example.com/api/v1/nutribot/pinhole?img_url=https://...
 - [ ] Scope narrowly (only expose what's needed)
 
 ```javascript
-logger.info('pinhole.request', {
+logger.info('public.request', {
   ip: req.ip,
   userAgent: req.headers['user-agent'],
   imgDomain: new URL(imgUrl).hostname,
@@ -565,7 +550,7 @@ curl -X POST "https://api.cloudflare.com/client/v4/graphql" \
 
 #### Adding a Public Endpoint
 
-- [ ] **Firewall** — Add path to bypass list (e.g., `ends_with "/pinhole"`)
+- [ ] **Firewall** — Add the exact path to the bypass list
 - [ ] **Access Control** — Create "everyone bypass" policy for path
 - [ ] **Application** — Add route with input validation, logging, rate limiting
 - [ ] **Test** — Verify endpoint works from external source

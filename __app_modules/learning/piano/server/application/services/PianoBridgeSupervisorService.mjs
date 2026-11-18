@@ -49,6 +49,8 @@ export class PianoBridgeSupervisorService {
   #probe; #relaunch; #readPianoPower; #notify; #compose;
   #scheduler; #clock; #logger;
   #deviceId; #location; #timezone;
+  #afterReachable;
+  #unauthorized = false;   // the bridge answered 401: a credential fault, not an outage
   #intervalMs; #downConfirmChecks; #alertAfterMs; #oneWayAlertAfterMs; #relaunchBackoffMs;
   #timer = null;
   #ticking = false;
@@ -90,6 +92,7 @@ export class PianoBridgeSupervisorService {
    * @param {string} opts.deviceId
    * @param {string} [opts.location]
    * @param {string} [opts.timezone]
+   * @param {(health:Object) => Promise<void>} [opts.afterReachable] - runs after each reachable check
    */
   constructor({
     probe, relaunch, readPianoPower = null, notify = null, compose,
@@ -102,6 +105,7 @@ export class PianoBridgeSupervisorService {
     relaunchBackoffMs = DEFAULT_RELAUNCH_BACKOFF_MS,
     speaker = null,
     logModule = DEFAULT_LOG_MODULE,
+    afterReachable = null,
   } = {}) {
     if (typeof probe?.readHealth !== 'function') throw new Error('PianoBridgeSupervisorService requires probe');
     if (typeof relaunch !== 'function') throw new Error('PianoBridgeSupervisorService requires relaunch');
@@ -126,6 +130,7 @@ export class PianoBridgeSupervisorService {
     this.#relaunchBackoffMs = relaunchBackoffMs.length ? relaunchBackoffMs : DEFAULT_RELAUNCH_BACKOFF_MS;
     this.#speaker = speaker;
     this.#logModule = logModule;
+    this.#afterReachable = typeof afterReachable === 'function' ? afterReachable : null;
   }
 
   start() {
@@ -157,8 +162,22 @@ export class PianoBridgeSupervisorService {
     try {
       const health = await this.#probe.readHealth();
       this.#ticks += 1;
-      if (health?.reachable) await this.#onReachable(health);
-      else await this.#onUnreachable(health);
+      if (health?.unauthorized) {
+        this.#onUnauthorized();
+      } else if (health?.reachable) {
+        if (this.#unauthorized) {
+          this.#unauthorized = false;
+          this.#logger.info?.('piano-bridge.supervisor.authorized', { deviceId: this.#deviceId });
+        }
+        await this.#onReachable(health);
+        // Work that needs the device up, such as re-syncing the note-wake hold. Its
+        // failure is its own; it never stops a tick.
+        if (this.#afterReachable) {
+          try { await this.#afterReachable(health); } catch (err) {
+            this.#logger.warn?.('piano-bridge.supervisor.after-reachable-failed', { deviceId: this.#deviceId, error: String(err?.message ?? err) });
+          }
+        }
+      } else await this.#onUnreachable(health);
       if (this.#speaker) {
         await this.#checkSpeaker(health);
         await this.#checkReadiness();
@@ -167,6 +186,23 @@ export class PianoBridgeSupervisorService {
     } finally {
       this.#ticking = false;
     }
+  }
+
+  // ── refused ─────────────────────────────────────────────────────────────
+
+  /**
+   * The bridge answered, and refused the credential. A relaunch would be refused the
+   * same way and the bridge is not down, so neither runs; probing goes on, and the
+   * first probe that succeeds clears this. Logged once per episode, with no credential.
+   */
+  #onUnauthorized() {
+    this.#failedChecks = 0;
+    if (this.#unauthorized) return;
+    this.#unauthorized = true;
+    this.#logger.warn?.('piano-bridge.supervisor.unauthorized', {
+      deviceId: this.#deviceId,
+      hint: 'the bridge refused the configured credential; check its entry in the household auth file',
+    });
   }
 
   // ── down ────────────────────────────────────────────────────────────────

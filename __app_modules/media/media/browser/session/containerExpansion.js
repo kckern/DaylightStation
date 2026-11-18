@@ -67,7 +67,7 @@ function splitContentId(contentId) {
   return { source: contentId.slice(0, idx), localId: contentId.slice(idx + 1) };
 }
 
-function childToQueueInput(item, { containerTitle, inheritedFormat }) {
+function childToQueueInput(item, { containerTitle, containerContentId, inheritedFormat }) {
   const contentId = item?.play?.contentId ?? item?.id ?? null;
   if (typeof contentId !== 'string' || contentId.length === 0) return null;
   return {
@@ -78,6 +78,9 @@ function childToQueueInput(item, { containerTitle, inheritedFormat }) {
     format: formatForChild(item, inheritedFormat),
     // Preserved for display: which show/album this child came from.
     containerTitle: containerTitle ?? null,
+    // The container that was played (the root, never a nested season), so the
+    // phone's "Add to home screen" can pin the playlist rather than one track.
+    containerContentId: containerContentId ?? null,
     // The next-episode countdown recognises episodes (RQ-STEER-20).
     ...(typeOf(item) === 'episode' ? { type: 'episode' } : {}),
   };
@@ -102,6 +105,7 @@ export async function expandContainerInput(input, {
 } = {}) {
   const doFetch = fetchImpl ?? ((...args) => globalThis.fetch(...args));
   const containerTitle = input?.title ?? null;
+  const containerContentId = typeof input?.contentId === 'string' ? input.contentId : null;
   const inheritedFormat = input?.format ?? null;
   const inheritedQuality = normalizePlaybackQuality(input ?? {});
   const out = [];
@@ -130,7 +134,7 @@ export async function expandContainerInput(input, {
         }
         continue;
       }
-      const queueInput = childToQueueInput(child, { containerTitle, inheritedFormat });
+      const queueInput = childToQueueInput(child, { containerTitle, containerContentId, inheritedFormat });
       if (queueInput) out.push(queueInput.format === 'video' ? { ...queueInput, ...inheritedQuality } : queueInput);
     }
   };

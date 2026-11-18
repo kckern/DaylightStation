@@ -11,6 +11,8 @@
 
 import { PianoMidiWakeService } from "../application/services/PianoMidiWakeService.mjs";
 import { PianoMidiBridgeAdapter } from "../adapters/bridge/PianoMidiBridgeAdapter.mjs";
+import { resolvePianoBridgeEndpoint, PIANO_BRIDGE } from "./bridge-endpoint.mjs";
+import { getPianoWakeHoldSync } from "./wake-hold-sync.mjs";
 
 
 /** @type {PianoMidiWakeService | null} */
@@ -34,7 +36,8 @@ export function createPianoMidiWake({
     return { pianoMidiWakeService: instance };
   }
 
-  const cfg = configService?.getHouseholdAppConfig?.(householdId, 'piano')?.midi_wake;
+  const piano = configService?.getHouseholdAppConfig?.(householdId, 'piano') ?? {};
+  const cfg = piano.midi_wake;
   if (!cfg?.enabled) {
     logger.info?.('piano-midi-wake.disabled', { enabled: !!cfg?.enabled });
     return { pianoMidiWakeService: null };
@@ -47,7 +50,10 @@ export function createPianoMidiWake({
 
   const deviceId = cfg.device_id || cfg.deviceId;
   const bridgeUrl = cfg.bridge_url || cfg.bridgeUrl;
-  if (!deviceId || !bridgeUrl) {
+  // bridge_provider (top level of the piano config) picks the old piano-bridge APK or
+  // the DaylightStation Android app's control port; see composition/bridge-endpoint.mjs.
+  const usesOldBridge = (piano.bridge_provider || PIANO_BRIDGE) === PIANO_BRIDGE;
+  if (!deviceId || (usesOldBridge && !bridgeUrl)) {
     logger.warn?.('piano-midi-wake.skipped_missing_config', {
       deviceId: deviceId || null, bridgeUrl: bridgeUrl || null,
     });
@@ -60,17 +66,29 @@ export function createPianoMidiWake({
     return { pianoMidiWakeService: null };
   }
 
+  const endpoint = resolvePianoBridgeEndpoint({ piano, deviceId, bridgeUrl, configService, logger, event: 'piano-midi-wake' });
+  if (!endpoint) {
+    logger.error?.('piano-midi-wake.not-started', { deviceId, provider: piano.bridge_provider || PIANO_BRIDGE });
+    return { pianoMidiWakeService: null };
+  }
+
   const service = new PianoMidiWakeService({
     deviceService,
     logger,
     deviceId,
-    bridge: bridgeFactory({ bridgeUrl, logger }),
+    bridge: bridgeFactory(endpoint.provider === PIANO_BRIDGE
+      ? { bridgeUrl, logger }
+      : {
+        bridgeUrl: endpoint.wsUrl, headers: endpoint.headers, relay: 'setting', logger,
+        // A relay that did not arrive is re-synced on the supervisor's next reachable tick.
+        onRelayFailed: () => getPianoWakeHoldSync({ endpoint, deviceId, getScreenOverrideService, logger })?.relayFailed(),
+      }),
     cooldownMs: cfg.cooldown_ms ?? cfg.cooldownMs,
     screenOverride: getScreenOverrideService(),
   });
   service.start();
   instance = service;
-  logger.info?.('piano-midi-wake.created', { deviceId, bridgeUrl });
+  logger.info?.('piano-midi-wake.created', { deviceId, provider: endpoint.provider, bridgeUrl: endpoint.provider === PIANO_BRIDGE ? bridgeUrl : endpoint.wsUrl });
   return { pianoMidiWakeService: service };
 }
 

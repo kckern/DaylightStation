@@ -73,9 +73,10 @@ export class PianoMidiWakeService {
 
   /**
    * Mute MIDI-driven screen wakes until `deadlineMs` (epoch-ms). Skips this
-   * service's own FKB pokes AND relays the deadline to the piano-bridge APK's
-   * control plane so its on-device ScreenWaker is muted too (no APK rebuild —
-   * the APK reads fkbWakeSuppressUntilEpochMs in ScreenWaker.poke()).
+   * service's own FKB pokes AND relays the deadline to the device's own note
+   * wake, so it is muted too: the piano-bridge APK's fkbWakeSuppressUntilEpochMs
+   * (read in ScreenWaker.poke()), or on the DaylightStation Android app the
+   * setting power.wakeSuppressUntilSec (the bridge adapter's `relay`).
    * @param {number} deadlineMs
    */
   suppressWakeUntil(deadlineMs) {

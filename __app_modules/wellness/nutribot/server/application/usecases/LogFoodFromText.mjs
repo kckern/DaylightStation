@@ -134,7 +134,8 @@ export class LogFoodFromText {
       existingMessageId, responseContext,
     } = input;
 
-    this.#logger.info?.('logText.start', { conversationId, text, textLength: text.length, hasResponseContext: !!responseContext });
+    // What was typed or said is logged by its length only, here and below.
+    this.#logger.info?.('logText.start', { conversationId, textLength: text.length, hasResponseContext: !!responseContext });
 
     // Get messaging interface (prefers responseContext)
     const messaging = this.#getMessaging(responseContext, conversationId);
@@ -159,7 +160,7 @@ export class LogFoodFromText {
       // Skip generic AI call and status message creation — update original message in-place
       if (isRevisionMode && pendingLogUuid) {
         this.#logger.info?.('logText.revisionShortCircuit', {
-          conversationId, pendingLogUuid, originalMessageId, text,
+          conversationId, pendingLogUuid, originalMessageId, textLength: text.length,
         });
 
         const revisionResult = await this.#handleRevisionDirect({
@@ -242,10 +243,11 @@ export class LogFoodFromText {
       // it outranks the viewed day, which outranks the wall clock.
       const asOfDate = asOfDateForRevision || viewedDate || null;
       const prompt = this.#buildDetectionPrompt(text, portionBoost, asOfDate);
-      this.#logger.debug?.('logText.aiPrompt', { conversationId, text, asOfDate, asOfDateForRevision, viewedDate });
+      this.#logger.debug?.('logText.aiPrompt', { conversationId, textLength: text.length, asOfDate, asOfDateForRevision, viewedDate });
 
       const response = await this.#aiGateway.chat(prompt, { maxTokens: 4096 });
-      this.#logger.debug?.('logText.aiResponse', { conversationId, response: response?.substring?.(0, 500) });
+      // The model's answer can quote the input back, so it is logged by its length too.
+      this.#logger.debug?.('logText.aiResponse', { conversationId, responseLength: response?.length ?? 0 });
 
       // 3. Parse response into food items and date — same pin
       const { items: foodItems, date: aiDate, time: aiTime, mealTimeExplicit } = this.#parseFoodResponse(response, asOfDate);
@@ -284,7 +286,7 @@ export class LogFoodFromText {
       }
 
       if (foodItems.length === 0) {
-        this.#logger.debug?.('logText.noFood', { conversationId, text });
+        this.#logger.debug?.('logText.noFood', { conversationId, textLength: text.length });
 
         // Try revision fallback
         const fallbackResult = await this.#tryRevisionFallback(userId, conversationId, text, statusMsgId, existingMessageId, messaging);
@@ -307,7 +309,7 @@ export class LogFoodFromText {
             text: "❓ I couldn't identify any food from your description. Could you be more specific?",
           });
         }
-        return { success: false, error: 'No food detected' };
+        return { success: false, code: 'NO_FOOD', error: 'No food detected' };
       }
 
       // 4. Create NutriLog entity
@@ -841,7 +843,7 @@ Begin response with '{' character - output only valid JSON, no markdown.${portio
    * @param {Object} messaging - Messaging interface
    */
   async #tryRevisionFallback(userId, conversationId, text, statusMsgId, existingLogMessageId = null, messaging) {
-    this.#logger.debug?.('logText.revisionFallback.start', { conversationId, text });
+    this.#logger.debug?.('logText.revisionFallback.start', { conversationId, textLength: text.length });
 
     // Check conversation state for pending log UUID and originalMessageId
     let pendingLogUuid = null;
@@ -868,7 +870,7 @@ Begin response with '{' character - output only valid JSON, no markdown.${portio
       return { handled: false };
     }
 
-    this.#logger.info?.('logText.revisionFallback', { targetLogUuid: targetLog.id, userInput: text.substring(0, 50) });
+    this.#logger.info?.('logText.revisionFallback', { targetLogUuid: targetLog.id, textLength: text.length });
 
     // Build contextual text with original items
     const originalItems = (targetLog.items || [])

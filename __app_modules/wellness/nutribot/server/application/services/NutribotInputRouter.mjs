@@ -284,7 +284,7 @@ export class NutribotInputRouter extends BaseInputRouter {
           this.logger.info?.('nutribot.handleText.revisionRouted', {
             conversationId: event.conversationId,
             pendingLogUuid,
-            text: event.payload.text?.substring(0, 50),
+            textLength: event.payload.text?.length ?? 0,
           });
           const useCase = this.container.getProcessRevisionInput();
           const result = await useCase.execute({
@@ -363,6 +363,9 @@ export class NutribotInputRouter extends BaseInputRouter {
           // consults `url` when `fileId` is falsy, so Telegram's fileId-driven
           // resolution is unaffected.
           url: event.payload.imageUrl,
+          // Quick-input path: the image as bytes, uploaded from the phone. It
+          // has no file id or URL; LogFoodFromImage uses the bytes directly.
+          ...(Buffer.isBuffer(event.payload.imageBuffer) ? { buffer: event.payload.imageBuffer } : {}),
           caption: event.payload.text,
         },
         messageId: event.messageId,

@@ -171,7 +171,7 @@ export class LogFoodFromVoice {
         } else {
           await messaging.sendMessage("❓ I couldn't understand the voice message. Could you type what you ate?", {});
         }
-        return { success: false, error: 'Empty transcription' };
+        return { success: false, code: 'EMPTY_TRANSCRIPTION', error: 'Empty transcription' };
       }
 
       // Cancel transcription status - LogFoodFromText will show its own "Analyzing..." status

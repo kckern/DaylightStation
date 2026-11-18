@@ -17,6 +17,13 @@
  *     alert_after_ms: 300000
  *     one_way_alert_after_ms: 600000
  *
+ *   bridge_provider: piano-bridge          # top-level; default. `daylight-android` moves the
+ *                                          # probe, the speaker actions and the relaunch onto the
+ *                                          # tablet's DaylightStation Android control API (address,
+ *                                          # port and token from its devices.yml content_control),
+ *                                          # and the relaunch becomes the app's lifeline restart.
+ *                                          # See composition/bridge-endpoint.mjs.
+ *
  *   speaker_recovery:                      # top-level block, sibling of bridge_supervisor
  *     enabled: true
  *     plug_entity: switch....                # HA switch feeding the piano; unset = Bluetooth rungs only
@@ -37,6 +44,9 @@ import { createScreenHold } from "../adapters/bridge/screenHold.mjs";
 import { createSpeakerReadinessCheck } from "../adapters/bridge/speakerReadiness.mjs";
 import { createLogStoreQuery, logStoreBaseFromSinkUrl } from "../adapters/bridge/logStoreQuery.mjs";
 import { composePianoSpeakerPush } from "../domain/bridge/pianoSpeakerPush.mjs";
+import { PianoBridgeLifelineRestartAdapter } from "../adapters/bridge/PianoBridgeLifelineRestartAdapter.mjs";
+import { getPianoWakeHoldSync, _resetForTests as resetWakeHoldSync } from "./wake-hold-sync.mjs";
+import { resolvePianoBridgeEndpoint, DAYLIGHT_ANDROID } from "./bridge-endpoint.mjs";
 
 const DEFAULT_PACKAGE = 'net.kckern.pianobridge';
 
@@ -68,6 +78,8 @@ export function createPianoBridgeSupervisor({
   speakerActionsFactory = (options) => new PianoBridgeSpeakerActionsAdapter(options),
   probeFactory = (options) => new PianoBridgeHealthProbeAdapter(options),
   scheduler = new NodeApplicationScheduler(),
+  restartFactory = (options) => new PianoBridgeLifelineRestartAdapter(options),
+  wakeHoldSync = undefined,
 } = {}) {
   if (instance) {
     logger.warn?.('piano-bridge.supervisor.already-created');
@@ -84,14 +96,31 @@ export function createPianoBridgeSupervisor({
   const deviceId = cfg.device_id || piano.midi_wake?.device_id;
   const bridgeUrl = cfg.bridge_url || piano.midi_wake?.bridge_url;
   const pkg = cfg.package || DEFAULT_PACKAGE;
-  if (!deviceId || !bridgeUrl || typeof remoteAdmin?.performAction !== 'function') {
+  const endpoint = deviceId
+    ? resolvePianoBridgeEndpoint({ piano, deviceId, bridgeUrl, configService, logger, event: 'piano-bridge.supervisor' })
+    : null;
+  if (!deviceId || !endpoint || typeof remoteAdmin?.performAction !== 'function') {
     // A watcher that cannot start is itself the silent failure it exists to
     // prevent, so this is an error, not a warning.
     logger.error?.('piano-bridge.supervisor.not-started', {
       deviceId: deviceId || null, bridgeUrl: bridgeUrl || null, hasRemoteAdmin: !!remoteAdmin,
+      provider: piano.bridge_provider || 'piano-bridge',
     });
     return { pianoBridgeSupervisor: null };
   }
+  const { httpBase, headers } = endpoint;
+  // The old bridge is its own APK, started through the kiosk. On the Android app the
+  // bridge lives in the payload, and the shell's lifeline restarts the payload even
+  // when the control port is down.
+  const relaunch = endpoint.provider === DAYLIGHT_ANDROID
+    ? (() => {
+      const lifeline = restartFactory({ lifelineBase: endpoint.lifelineBase, headers });
+      return () => lifeline.restart();
+    })()
+    : async () => {
+      await remoteAdmin.performAction(deviceId, 'launch-app', { package: pkg });
+      return { ok: true };
+    };
 
   const powerEntity = cfg.piano_power_entity || piano.screen_power_sync?.piano_power_entity || null;
   const readPianoPower = powerEntity && haGateway?.getState
@@ -119,7 +148,7 @@ export function createPianoBridgeSupervisor({
       ? createScreenHold({ deviceService, overrides: getScreenOverrideService(), deviceId })
       : null;
     if (plugCycle && !holdScreen) logger.warn?.('piano.speaker.no-screen-hold', { deviceId });
-    const actions = speakerActionsFactory({ bridgeUrl });
+    const actions = speakerActionsFactory({ bridgeUrl: httpBase, headers });
     const sink = configService?.get?.('logging.remoteSink');
     // A disabled sink ships nothing: every week would read as quiet.
     const logStoreBase = sink?.enabled ? logStoreBaseFromSinkUrl(sink.url) : null;
@@ -141,12 +170,13 @@ export function createPianoBridgeSupervisor({
     };
   }
 
+  // On the Android app, the note-wake hold is re-synced after boot and after a failed relay.
+  const holdSync = wakeHoldSync !== undefined ? wakeHoldSync
+    : getPianoWakeHoldSync({ endpoint, deviceId, getScreenOverrideService, logger });
+
   const service = new PianoBridgeSupervisorService({
-    probe: probeFactory({ bridgeUrl }),
-    relaunch: async () => {
-      await remoteAdmin.performAction(deviceId, 'launch-app', { package: pkg });
-      return { ok: true };
-    },
+    probe: probeFactory({ bridgeUrl: httpBase, headers }),
+    relaunch,
     readPianoPower,
     notify,
     compose: composePianoBridgePush,
@@ -160,12 +190,13 @@ export function createPianoBridgeSupervisor({
     oneWayAlertAfterMs: cfg.one_way_alert_after_ms,
     speaker,
     logModule: PIANO_BRIDGE_SUPERVISOR_LOG_MODULE,
+    afterReachable: holdSync ? () => holdSync.reconcile() : null,
   });
   service.start();
   instance = service;
   logger.info?.('piano-bridge.supervisor.created', {
-    deviceId, bridgeUrl, pkg, notifyService, powerEntity, speakerRecovery: !!speaker, plugEntity, screenHold: !!speaker?.holdScreen,
-    readiness: !!speaker?.checkReady, weeklySummary: !!speaker?.queryLogs,
+    deviceId, provider: endpoint.provider, bridgeUrl: httpBase, pkg: endpoint.provider === DAYLIGHT_ANDROID ? null : pkg, notifyService, powerEntity, speakerRecovery: !!speaker, plugEntity, screenHold: !!speaker?.holdScreen,
+    readiness: !!speaker?.checkReady, weeklySummary: !!speaker?.queryLogs, wakeHoldSync: !!holdSync,
   });
   return { pianoBridgeSupervisor: service };
 }
@@ -174,4 +205,5 @@ export function createPianoBridgeSupervisor({
 export function _resetForTests() {
   if (instance) { try { instance.stop(); } catch { /* ignore */ } }
   instance = null;
+  resetWakeHoldSync();
 }
