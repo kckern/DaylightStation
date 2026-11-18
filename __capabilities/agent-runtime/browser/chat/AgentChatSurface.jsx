@@ -23,7 +23,7 @@ import { ToolCallAttribution } from "./ToolCallAttribution.jsx";
  * @param {'light'|'overlay'} [props.variant='light']
  * @param {object} [props.style]
  * @param {object} [props.mentions]  — optional mention-popover config:
- *   { fetchUrl: string, categories: Array<{key, label, icon}>, buildAttachment: fn }
+ *   { fetchUrl: string, loadSuggestions?: (url, { signal }) => Promise<object>, categories: Array<{key, label, icon}>, buildAttachment: fn }
  *   When present, wraps the composer in Unstable_TriggerPopoverRoot and
  *   fetches suggestions on mount. When absent, the bare composer renders.
  */
@@ -151,19 +151,23 @@ function ComposerPlain({ cancelOnEscape }) {
 
 // ── Composer with @-mention trigger popover ───────────────────────────────────
 
+async function fetchMentionData(url, { signal }) {
+  const response = await fetch(url, { signal });
+  return response.ok ? response.json() : null;
+}
+
 function ComposerWithMentions({ mentions, pendingMentionsRef, cancelOnEscape }) {
-  const { fetchUrl, categories, buildAttachment } = mentions;
-  const [mentionCategories, setMentionCategories] = useState([]);
+  const { fetchUrl, loadSuggestions = fetchMentionData, categories, buildAttachment } = mentions;
+  const [loaded, setLoaded] = useState(null);
 
   useEffect(() => {
     if (!fetchUrl) return;
-    let cancelled = false;
+    const controller = new AbortController();
 
     async function load() {
       try {
-        const res = await fetch(fetchUrl);
-        if (!res.ok || cancelled) return;
-        const data = await res.json();
+        const data = await loadSuggestions(fetchUrl, { signal: controller.signal });
+        if (!data || controller.signal.aborted) return;
         const suggestions = data.suggestions || [];
 
         // Group flat suggestions by `group` field; preserve display order
@@ -190,18 +194,18 @@ function ComposerWithMentions({ mentions, pendingMentionsRef, cancelOnEscape }) 
             })),
           }));
 
-        if (!cancelled) setMentionCategories(cats);
+        setLoaded({ url: fetchUrl, categories: cats });
       } catch {
         // Non-fatal — mention popover will be empty, chat still works.
       }
     }
 
     load();
-    return () => { cancelled = true; };
-  }, [fetchUrl, categories, buildAttachment]);
+    return () => controller.abort();
+  }, [fetchUrl, loadSuggestions, categories, buildAttachment]);
 
   const mention = unstable_useMentionAdapter({
-    categories: mentionCategories,
+    categories: loaded && loaded.url === fetchUrl ? loaded.categories : [],
     includeModelContextTools: false,
     onInserted: (item) => {
       if (item?.metadata) {

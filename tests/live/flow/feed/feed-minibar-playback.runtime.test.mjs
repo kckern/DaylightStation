@@ -92,14 +92,11 @@ test.describe('Feed Scroll – MiniBar playback', () => {
       expect(label, 'Toggle button should show Pause (= playing)').toBe('Pause');
     }).toPass({ timeout: 20000 });
 
-    // The PersistentPlayer should have created an audio/video element that is playing
-    await expect(async () => {
-      const isPlaying = await page.evaluate(() => {
-        const media = document.querySelector('audio, video');
-        return media && !media.paused && media.currentTime > 0;
-      });
-      expect(isPlaying, 'A media element should be actively playing').toBe(true);
-    }).toPass({ timeout: 15000 });
+    // Audio warm-up nodes may precede the active media element in the document.
+    const engine = await page.waitForFunction(() =>
+      Array.from(document.querySelectorAll('audio, video')).find(media => !media.paused && media.currentTime > 0),
+      undefined, { timeout: 15000 }
+    );
 
     // Progress should advance — wait for currentTime > 0 in the time display
     const timeDisplay = miniBar.locator('.feed-mini-bar-time');
@@ -122,9 +119,6 @@ test.describe('Feed Scroll – MiniBar playback', () => {
       expect(width, 'Progress bar should have advanced').toBeGreaterThan(0);
     }).toPass({ timeout: 15000 });
 
-    const engine = await page.evaluateHandle(() =>
-      Array.from(document.querySelectorAll('audio, video')).find(media => !media.paused && media.currentTime > 0)
-    );
     const position = await engine.evaluate(media => media.currentTime);
     await page.getByRole('link', { name: 'Search feed history' }).click();
     await page.setViewportSize({ width: 390, height: 850 });

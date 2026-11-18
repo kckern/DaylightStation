@@ -187,7 +187,8 @@ export function registerResourcePersistence({ store, prefixes, owner, timeoutMs 
     clearTimeout(scope.timer);
     scope.pending.clear();
     if (typeof window !== 'undefined') window.removeEventListener('pagehide', scope.flush);
-    if (!preserveMemory) resetReaders();
+    if (preserveMemory) invalidateApiResources(scope.matches);
+    else resetReaders();
   }
   // A newly attached store defines a new ownership boundary even when reads
   // started before any store existed for these URLs.

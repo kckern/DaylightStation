@@ -111,8 +111,9 @@ primary actions, no chrome to hunt through.
 contract's version of that section, rather than blending into it. It exists
 for a product that predates the shared contract, or whose art direction goes
 beyond the 7 semantic roles and `accent` — its own component defaults, extra
-color ramps, fonts, breakpoints. `__app_modules/Media/theme/mediaTheme.js` is the
-one pack using it today: `MEDIA_PACK.themeExtras` layers Media's full
+color ramps, fonts and breakpoints. Admin uses it for its editor defaults and
+scoped portals. In `__app_modules/media/media/browser/theme/mediaTheme.js`,
+`MEDIA_PACK.themeExtras` layers Media's full
 amber/dark Mantine theme (component defaultProps included) on top of the base,
 so Media's own `Button`/`Modal`/`Drawer` defaults are the sole authority,
 never silently blended with the base contract's generic ones. The Media pack

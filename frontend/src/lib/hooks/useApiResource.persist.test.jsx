@@ -121,6 +121,18 @@ describe('useApiResource persistence', () => {
     expect(next.records.get(path)).toEqual({ owner: 'bob' });
   });
 
+  it('continues a mounted read after detaching persistence', async () => {
+    const path = 'api/v1/health/day';
+    const pending = deferred();
+    await attachApiResourcePersistence({ store: memoryStore(), prefixes: PREFIXES });
+    apiMock.mockReturnValueOnce(pending.promise).mockResolvedValue({ current: true });
+    const { result } = renderHook(() => useApiResource(path, { swr: true }));
+    act(() => detachApiResourcePersistence());
+    await act(async () => pending.resolve({ current: false }));
+    expect(result.current.data).toEqual({ current: true });
+    expect(result.current.loading).toBe(false);
+  });
+
   it('an owner that could not be read is never taken for a first visit', async () => {
     // The disk is slow this time: nothing restored, owner unknown.
     const store = memoryStore({ owner: 'first-user', entries: [{ path: 'api/v1/health/weight', value: ['first-user'] }] });
