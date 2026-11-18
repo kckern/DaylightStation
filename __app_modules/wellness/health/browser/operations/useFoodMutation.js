@@ -14,7 +14,11 @@ export function useFoodMutation(rows = []) {
     const allRows = [...session.knownRows.values(), ...rows];
     const undoScope = session.undoScopes.get(body.undoToken);
     const selectedIds = body.action === 'groups' ? (body.groups || []).flatMap(group => group.selectedIds || []) : item ? [decodeURIComponent(item[1])] : body.selectedIds || body.entryIds || body.groups?.flatMap(group => group.selectedIds) || undoScope?.ids || [];
-    const targetIds = foodOperationScope({ action: body.action || (method === 'DELETE' || body.date || body.mealTime ? 'membership' : 'edit'), rows: allRows, selectedIds, groupId: body.groupId });
+    // A food move holds exactly the rows it carries: not the old dish of a loose
+    // food, and not a stranded part it leaves behind, which the reply never returns.
+    const targetIds = path.endsWith('/nutrition/foods-move')
+      ? foodOperationScope({ action: 'edit', rows: allRows.filter(row => Object.hasOwn(body.expectedVersions || {}, String(row.uuid ?? row.id))), selectedIds })
+      : foodOperationScope({ action: body.action || (method === 'DELETE' || body.date || body.mealTime ? 'membership' : 'edit'), rows: allRows, selectedIds, groupId: body.groupId });
     return { capture, allRows, undoScope, selectedIds, targetIds };
   };
   const dispatch = async (path, body = {}, method = 'GET', parentId = undefined, onResult = undefined) => {

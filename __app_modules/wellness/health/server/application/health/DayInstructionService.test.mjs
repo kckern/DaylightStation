@@ -471,6 +471,33 @@ describe('DayInstructionService', () => {
       expect(h.captureFoods).toHaveBeenCalledTimes(1);
       expect(await store.findByLogId('u', 'cap')).toHaveLength(3);
     });
+    describe('foods with broken dish links', () => {
+      const row = (uuid, extra) => ({ uuid, userId: 'u', name: uuid, date, mealTime: 'afternoon', grams: 100, unit: 'g', amount: 100, calories: 50, logId: 'old', createdAt: '2026-11-18T08:00:00Z', ...extra });
+      const moved = async uuid => (await store.findByDate('u', yesterday)).find(item => item.uuid === uuid);
+      const seed = () => store.saveMany([row('dish', { kind: 'group', calories: 0 }), row('part', { parentId: 'dish' }), row('split', { mealTime: 'morning', parentId: 'dish' }), row('lost', { parentId: 'gone' }), row('plain')]);
+
+      it('"move everything" includes them and keeps a real part with its dish', async () => {
+        await seed();
+        const result = await stack(plan({ target: 'whole_day', toDay: yesterday })).run('all of this was yesterday');
+        expect(result).toMatchObject({ committed: true, kind: 'moved', message: 'Moved 4 foods to Yesterday' });
+        expect(await ids(date)).toEqual([]);
+        expect(await moved('part')).toMatchObject({ parentId: 'dish' });
+        expect(await moved('split')).toMatchObject({ parentId: 'dish', mealTime: 'afternoon' });
+        expect(await moved('lost')).toMatchObject({ parentId: null });
+      });
+      it('a meal move includes a food whose dish sits in another meal', async () => {
+        await seed();
+        await stack(plan({ target: 'meal', fromMeal: 'morning', toDay: yesterday })).run('breakfast was yesterday');
+        expect(await ids(yesterday)).toEqual(['split']);
+        expect(await moved('split')).toMatchObject({ parentId: null, mealTime: 'morning' });
+      });
+      it('"move that" takes a newest food with a broken link on its own', async () => {
+        await seed();
+        await store.saveMany([row('fresh', { parentId: 'gone', logId: 'new', createdAt: '2026-11-18T12:00:00Z' })]);
+        await stack(plan({ toDay: yesterday })).run('move that to yesterday');
+        expect(await ids(yesterday)).toEqual(['fresh']);
+      });
+    });
     describe('saveMany-shaped rows, which carry no capture time', () => {
       const saved = (uuid, logId, extra) => ({ uuid, userId: 'u', name: uuid, date, mealTime: 'afternoon', grams: 100, unit: 'g', amount: 100, calories: 50, logId, ...extra });
       // Rows written before the ledger kept a time for every save.

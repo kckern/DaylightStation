@@ -151,15 +151,12 @@ const MOVE_PATH = 'api/v1/health/nutrition/foods-move';
 const UNDO_PATH = 'api/v1/health/nutrition/meal-undo';
 const isDefiniteRefusal = err => err?.status === 400 || err?.status === 409;
 
-// A moved row (and a dish's children) wear their new meal from the drop until
-// the day reloads with it, so the row never snaps back in between.
+// A moved row wears its new meal from the drop until the day reloads with it, so
+// it never snaps back in between. `moves` names every carried row, parts included.
 function applyMoves(items, moves) {
   if (!moves.size) return items;
   return items.map(row => {
-    const id = String(entryId(row));
-    const direct = moves.get(id);
-    const viaParent = row.parentId != null ? moves.get(String(row.parentId)) : null;
-    const move = direct || viaParent;
+    const move = moves.get(String(entryId(row)));
     return move && row.mealTime !== move.to ? { ...row, mealTime: move.to } : row;
   });
 }
@@ -197,7 +194,7 @@ export function useMealMoves(day) {
 
   const items = useMemo(() => {
     const moved = applyMoves(day.items, moves);
-    return gone.size ? moved.filter(row => !gone.has(String(entryId(row))) && !(row.parentId != null && gone.has(String(row.parentId)))) : moved;
+    return gone.size ? moved.filter(row => !gone.has(String(entryId(row)))) : moved;
   }, [day.items, moves, gone]);
 
   const highlight = id => {
@@ -210,13 +207,14 @@ export function useMealMoves(day) {
   };
 
   // Every row a move carries: the entries, their parts, and any row of the day
-  // linked to them. A section only knows its own meal, so a dish's `children`
-  // can miss a part stranded in another one.
+  // linked to a dish. A section only knows its own meal, so a dish's `children`
+  // can miss a part stranded in another one. A plain food carries only its own meal.
   const withParts = rows => {
     const dayParts = new Map(groupRows(day.items).map(({ row, children }) => [String(entryId(row)), children]));
     const all = new Map();
     for (const row of rows) {
-      for (const item of [row, ...(row.children || []), ...(dayParts.get(String(entryId(row))) || [])]) all.set(String(entryId(item)), item);
+      const linked = (dayParts.get(String(entryId(row))) || []).filter(part => row.kind === 'group' || (part.mealTime ?? null) === (row.mealTime ?? null));
+      for (const item of [row, ...(row.children || []), ...linked]) all.set(String(entryId(item)), item);
     }
     return [...all.values()];
   };

@@ -15,9 +15,11 @@ const food = (uuid, extra = {}) => ({ uuid, userId: 'u', name: uuid, date, mealT
 const header = extra => food('dish', { id: 'dish1', kind: 'group', calories: 0, protein: 0, ...extra });
 let root, store, commands;
 
+let dayReads;
 const send = async (route, body) => {
   if (route.endsWith('foods-move')) return commands.moveFoods('u', { ...body, today });
   if (route.endsWith('meal-undo')) return commands.undo('u', body);
+  dayReads += 1;
   return { items: await store.findByDate('u', new URL(route, 'http://x').searchParams.get('date')) };
 };
 const open = async () => {
@@ -29,6 +31,7 @@ const open = async () => {
 const saved = async uuid => (await store.findByDate('u', date)).find(row => row.uuid === uuid);
 
 beforeEach(() => {
+  dayReads = 0;
   root = fs.mkdtempSync(path.join(os.tmpdir(), 'broken-links-'));
   store = new YamlNutriListDatastore({ dataService: { user: { resolveDir: rel => path.join(root, rel) } }, logger: { info() {}, warn() {} } });
   commands = new MealFoodCommands({ nutritionItems: store });
@@ -62,6 +65,23 @@ describe('moving foods with broken dish links', () => {
     await act(async () => { await result.current.moves.moveToDay(meal('morning'), '2026-09-05'); });
     expect(result.current.moves.error).toBeNull();
     expect((await store.findByDate('u', '2026-09-05')).map(row => [row.uuid, row.parentId ?? null])).toEqual([['far', null]]);
+  });
+  it('a meal whose dish has a part stranded on another day moves, and Undo restores everything', async () => {
+    const previous = '2026-09-05';
+    await store.saveMany([header(), food('near', { parentId: 'dish' }), food('x'), food('other', { date: previous, parentId: 'dish' })]);
+    const { result, meal } = await open();
+    const [stranded] = await store.findByDate('u', previous);
+    result.current.ops.knownRows.set('other', stranded);
+    await act(async () => { await result.current.moves.moveMeal(meal('evening'), 'night', 'evening'); });
+    expect(result.current.moves.error).toBeNull();
+    expect(dayReads).toBe(0);
+    for (const uuid of ['dish', 'near', 'x']) expect((await saved(uuid)).mealTime).toBe('night');
+    expect(await store.findByDate('u', previous)).toEqual([stranded]);
+    expect(result.current.ops.reconciliation.reconcile({ date: previous, rows: [stranded] }).rows).toEqual([stranded]);
+    await act(async () => { await result.current.moves.undo.run(); });
+    expect(result.current.moves.error).toBeNull();
+    for (const uuid of ['dish', 'near', 'x']) expect((await saved(uuid)).mealTime).toBe('evening');
+    expect(await store.findByDate('u', previous)).toEqual([stranded]);
   });
   it('a stale version is refused without locking the food', async () => {
     await store.saveMany([food('a')]);

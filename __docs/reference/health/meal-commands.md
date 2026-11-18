@@ -46,9 +46,12 @@ carries. A selected dish brings every row linked to it that day, by either of it
 IDs, including a part stranded in another meal, which rejoins the dish. A food counts
 as a dish part only when its `parentId` resolves to a group on the same day and in
 the same meal; selecting such a part alone is a 400. Any other link is broken: the
-food may move on its own and the move clears its `parentId`. Undo restores the exact
-earlier rows, broken links included. The audit lists those rows in `brokenLinkIds`,
-so Undo accepts only them and still refuses new breakage. A destination after the server's today is rejected with 400; a `today` sent by the
+food may move on its own and the move clears its `parentId`. A plain food brings only
+rows linked to it in its own meal. A row left behind with an already broken link to a
+moved row, such as a part on another day, stays as it is. Undo restores the exact
+earlier rows, broken links included. The audit lists these rows in `brokenLinkIds`,
+so the move and Undo accept only them and still refuse new breakage. Day input uses
+the same rule to decide which foods are top-level. A destination after the server's today is rejected with 400; a `today` sent by the
 client is ignored. The response adds `toDate`, `toMeal`, `movedCount`, and one
 `undoToken` that `meal-undo` accepts.
 

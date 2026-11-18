@@ -87,12 +87,6 @@ describe('moveFoods', () => {
     await commands.undo('u', { undoToken: result.undoToken, operationId: 'undo-1' });
     expect(await rows('2026-09-05')).toEqual([]);
   });
-  it('still refuses a move that would split a dish', async () => {
-    await store.saveMany([food('far-part', { date: '2026-09-01', parentId: 'dish' })]);
-    const before = await rows(date);
-    await expect(move({ selectedIds: ['dish'], toMeal: 'night' })).rejects.toMatchObject({ status: 409 });
-    expect(await rows(date)).toEqual(before);
-  });
   it('carries a part linked by its dish\'s short ID, and Undo restores both', async () => {
     await seedShortLinkDish();
     const { undoToken } = await move({ selectedIds: ['short-dish'], toDate: '2026-09-05' });
@@ -207,6 +201,38 @@ describe('moveFoods with broken dish links', () => {
     await store.saveMany([food('split', { mealTime: 'morning', parentId: 'dish' })]);
     const { split, ...others } = await versions();
     await expect(move({ selectedIds: ['dish'], toMeal: 'night', expectedVersions: others })).rejects.toMatchObject({ status: 409 });
+  });
+  it('moves a dish with a part already stranded on another day, and Undo restores everything', async () => {
+    const previous = '2026-09-05';
+    await store.saveMany([food('other', { date: previous, parentId: 'dish' })]);
+    const stranded = await row('other', previous);
+    const { undoToken } = await move({ selectedIds: ['dish', 'a', 'c'], toMeal: 'night' });
+    expect((await rows(date)).filter(item => ['dish', 'part', 'a', 'c'].includes(item.uuid)).every(item => item.mealTime === 'night')).toBe(true);
+    expect(await row('other', previous)).toEqual(stranded);
+    await undo(undoToken);
+    expect((await rows(date)).filter(item => ['dish', 'part', 'a', 'c'].includes(item.uuid)).every(item => item.mealTime === 'evening')).toBe(true);
+    expect(await row('part')).toMatchObject({ parentId: 'dish' });
+    expect(await row('other', previous)).toEqual(stranded);
+  });
+  it('a stranded part does not excuse new breakage at Undo', async () => {
+    await store.saveMany([food('other', { date: '2026-09-05', parentId: 'dish' })]);
+    const { undoToken } = await move({ selectedIds: ['dish'], toMeal: 'night' });
+    await store.saveMany([food('late', { mealTime: 'night', parentId: 'dish' })]);
+    await expect(undo(undoToken)).rejects.toMatchObject({ status: 409 });
+  });
+  it('a food carries a row linked to it in its own meal and frees the link', async () => {
+    await store.saveMany([food('hanger', { parentId: 'c' })]);
+    await move({ selectedIds: ['c'], toMeal: 'night' });
+    expect(await row('hanger')).toMatchObject({ mealTime: 'night', parentId: null });
+  });
+  it('a food leaves behind a row in another meal that links to it, and Undo still works', async () => {
+    await store.saveMany([food('hanger', { mealTime: 'morning', parentId: 'c' })]);
+    const { undoToken, affectedIds } = await move({ selectedIds: ['c'], toMeal: 'night' });
+    expect(affectedIds).toEqual(['c']);
+    expect(await row('hanger')).toMatchObject({ mealTime: 'morning', parentId: 'c' });
+    await undo(undoToken);
+    expect(await row('c')).toMatchObject({ mealTime: 'evening' });
+    expect(await row('hanger')).toMatchObject({ mealTime: 'morning', parentId: 'c' });
   });
   it('Undo allows a link that was already broken but refuses new breakage', async () => {
     await store.saveMany([food('lost', { parentId: 'gone' })]);

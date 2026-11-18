@@ -46,7 +46,7 @@ it('reserves a moved dish and its parts, and names a refusal before anything is 
  const rows=[{uuid:'g',id:'g1',kind:'group',date:'2026-10-25'},{uuid:'c',parentId:'g1',date:'2026-10-25'},{uuid:'x',date:'2026-10-25'}];
  let finish;const send=vi.fn(()=>new Promise(resolve=>{finish=resolve;}));
  const {result}=renderHook(()=>({api:useFoodMutation(rows),session:useHealthOperations()}),{wrapper:session(send)});
- const move=(selectedIds,operationId)=>['api/v1/health/nutrition/foods-move',{date:'2026-10-25',selectedIds,expectedVersions:{},toMeal:'night',operationId},'POST'];
+ const move=(selectedIds,operationId)=>['api/v1/health/nutrition/foods-move',{date:'2026-10-25',selectedIds,expectedVersions:Object.fromEntries(selectedIds.flatMap(id=>id==='g'?['g','c']:[id]).map(id=>[id,1])),toMeal:'night',operationId},'POST'];
  expect(result.current.api.refusal(...move(['g'],'one'))).toBeNull();
  let request;
  act(()=>{request=result.current.api(...move(['g'],'one'));});
@@ -65,4 +65,16 @@ it('releases only an operation that a server definitely refused',async()=>{
  expect(result.current.session.store.isReserved(['a'])).toBe(true);
  act(()=>result.current.api.release('one'));
  expect(result.current.session.store.isReserved(['a'])).toBe(false);
+});
+
+it('reserves only the rows a food move carries',async()=>{
+ const rows=[{uuid:'old',kind:'group',date:'2026-10-24'},{uuid:'loose',parentId:'old',date:'2026-10-25'},{uuid:'gone-link',parentId:'missing',date:'2026-10-25'},
+  {uuid:'g',kind:'group',date:'2026-10-25'},{uuid:'c',parentId:'g',date:'2026-10-25'},{uuid:'far',parentId:'g',date:'2026-10-24'}];
+ let finish;const send=vi.fn(()=>new Promise(resolve=>{finish=resolve;}));
+ const {result}=renderHook(()=>({api:useFoodMutation(rows),session:useHealthOperations()}),{wrapper:session(send)});
+ let request;
+ act(()=>{request=result.current.api('api/v1/health/nutrition/foods-move',{date:'2026-10-25',selectedIds:['loose','gone-link','g'],expectedVersions:{loose:1,'gone-link':1,g:1,c:1},toMeal:'night',operationId:'one'},'POST');});
+ expect(result.current.session.snapshot.operations.get('one').targetIds).toEqual(['c','g','gone-link','loose']);
+ await act(async()=>{finish({committed:true,items:['loose','gone-link','g','c'].map(uuid=>({uuid,date:'2026-10-25',version:2}))});await request;});
+ expect(send).toHaveBeenCalledTimes(1);
 });

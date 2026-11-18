@@ -18,9 +18,14 @@ const canonicalId = (byLinkId, id) => { const row = byLinkId.get(id); return row
  * meal. Callers pass one day's rows, so the date already matches. Any other link
  * is broken, and the row stands on its own.
  */
-const dishOf = (row, byLinkId) => {
+export const dishOf = (row, byLinkId) => {
   const parent = row.parentId ? byLinkId.get(row.parentId) : null;
   return parent && parent !== row && parent.kind === 'group' && mealRowBucket(parent) === mealRowBucket(row) ? parent : null;
+};
+/** True when a row's link breaks a dish rule, read across the whole ledger. */
+const linkBroken = (row, byLinkId) => {
+  const parent = byLinkId.get(row.parentId);
+  return !parent || parent.kind !== 'group' || Boolean(parent.parentId) || row.kind === 'group' || parent.date !== row.date || mealRowBucket(parent) !== mealRowBucket(row);
 };
 const fail = (message, status = 400) => { throw Object.assign(new Error(message), { status }); };
 const operationPattern = /^[A-Za-z0-9_-]{1,128}$/;
@@ -206,7 +211,8 @@ export class MealFoodCommands {
   /**
    * What a move changes on each row, by ID. A selected food with a broken link
    * moves loose and loses the link; a selected dish brings every row linked to it
-   * that day, so a part stranded in another meal rejoins it.
+   * that day, so a part stranded in another meal rejoins it. A plain food brings
+   * only the rows linked to it in its own meal.
    */
   #planMove(rows, selectedIds, destination, toMeal) {
     const byId = new Map(rows.map(row => [idOf(row), row]));
@@ -223,6 +229,7 @@ export class MealFoodCommands {
       const meal = toMeal ?? mealRowBucket(header);
       for (const part of rows) {
         if (part === header || !part.parentId || byLinkId.get(part.parentId) !== header) continue;
+        if (header.kind !== 'group' && mealRowBucket(part) !== mealRowBucket(header)) continue;
         const strayed = mealRowBucket(part) !== meal;
         if (strayed) reunites.add(header);
         plan.set(idOf(part), { row: part, changes: { ...destination, ...(strayed ? { mealTime: meal } : {}),
@@ -253,10 +260,19 @@ export class MealFoodCommands {
       if (!movedCount) fail('These foods are already there');
       const updates = [...plan.values()].map(({ row, changes }) => ({ id: idOf(row), expectedVersion: row.version ?? 1, changes }));
       const undoToken = `meal-${uuidv5(`${userId}:${operationId}`, uuidv5.URL)}`;
-      const result = await this.store.mutateEntries(userId, { updates,
-        audit: { id: undoToken, fingerprint: fingerprint(input), type: 'meal-command', date, bucket: null, brokenLinkIds },
+      const audit = { id: undoToken, fingerprint: fingerprint(input), type: 'meal-command', date, bucket: null, brokenLinkIds };
+      const movedLinks = new Set([...plan.values()].flatMap(({ row }) => linkIds(row)));
+      const result = await this.store.mutateEntries(userId, { updates, audit,
         resultMeta: { committed: true, date, bucket: null, undoToken, toDate, toMeal, movedCount },
-        validate: ({ after }) => this.validateGraph(after, new Set(updates.map(update => update.id))),
+        validate: ({ before, after }) => {
+          // Rows left behind whose link to a moved row was already broken, such as
+          // a part on another day. Only the whole ledger shows them, so they join
+          // the audit here, before it is written, for Undo to accept them too.
+          const byLinkId = indexByLinkId(before);
+          const leftBroken = before.filter(row => row.parentId && !plan.has(idOf(row)) && movedLinks.has(row.parentId) && linkBroken(row, byLinkId)).map(idOf);
+          audit.brokenLinkIds = [...brokenLinkIds, ...leftBroken];
+          this.validateGraph(after, new Set(updates.map(update => update.id)), new Set(leftBroken));
+        },
       });
       this.logger.info?.('health.foods.move', { userId, operationId, date, toDate, toMeal, count: movedCount });
       return result;
@@ -304,7 +320,7 @@ export class MealFoodCommands {
     for (const row of rows) if (row.parentId && !allowedBroken.has(idOf(row))) {
       const parent = byId.get(row.parentId);
       if (touchedIds && !touchedIds.has(idOf(row)) && !touchedIds.has(row.parentId) && !(parent && touchedIds.has(idOf(parent)))) continue;
-      if (!parent || parent.kind !== 'group' || parent.parentId || row.kind === 'group' || parent.date !== row.date || mealRowBucket(parent) !== mealRowBucket(row)) fail('Invalid group membership', 409);
+      if (linkBroken(row, byId)) fail('Invalid group membership', 409);
     }
   }
 

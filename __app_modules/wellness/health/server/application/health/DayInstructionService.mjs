@@ -5,7 +5,7 @@ import { NUTRIENT_KEYS, foodGrams } from '../../../portable/contracts/health/foo
 import { isCountedRow } from '../../../portable/contracts/nutrition/countedRows.mjs';
 import { isReconstructedRow } from '../../../portable/contracts/nutrition/reconstruction.mjs';
 import { dayName } from './DayInstructionReader.mjs';
-import { indexByLinkId } from './MealFoodCommands.mjs';
+import { dishOf, indexByLinkId } from './MealFoodCommands.mjs';
 
 const fail = (message, status = 422, code = 'INVALID_DAY_INSTRUCTION') => { throw Object.assign(new Error(message), { status, code }); };
 const idOf = row => row.uuid || row.id;
@@ -180,10 +180,10 @@ export class DayInstructionService {
     return rows.filter(row => row.logId === newest.logId && row.createdAt === newest.createdAt);
   }
   /** Top-level foods of the latest capture. A part stands for its whole dish. */
-  #latestDishes(rows, tops) {
-    const byLinkId = indexByLinkId(rows);
+  #latestDishes(rows, tops, dayRows) {
+    const byLinkId = indexByLinkId(dayRows);
     const top = new Set(tops);
-    return [...new Set(this.#latestCapture(rows).map(row => (row.parentId ? byLinkId.get(row.parentId) : row)))].filter(row => top.has(row));
+    return [...new Set(this.#latestCapture(rows).map(row => dishOf(row, byLinkId) || row))].filter(row => top.has(row));
   }
   #inScope(rows, plan) {
     if (plan.target === 'latest') return this.#latestCapture(rows);
@@ -198,11 +198,13 @@ export class DayInstructionService {
 
   async #move(context, rows, dayRows, plan) {
     const { said, date, today, resolved, userId } = context;
-    const tops = rows.filter(row => !row.parentId);
+    // A food with a broken dish link stands alone, as it does on screen and in moveFoods.
+    const byLinkId = indexByLinkId(dayRows);
+    const tops = rows.filter(row => !dishOf(row, byLinkId));
     let targets;
     if (resolved.foodId) targets = [this.#resolvedFood(tops, resolved.foodId)];
     else {
-      const scoped = plan.target === 'latest' ? this.#latestDishes(rows, tops) : this.#inScope(tops, plan);
+      const scoped = plan.target === 'latest' ? this.#latestDishes(rows, tops, dayRows) : this.#inScope(tops, plan);
       if (plan.target === 'named' && scoped.length) {
         const foods = scoped.map(row => ({ id: idOf(row), name: nameOf(row),
           description: [row, ...partsOf(row, rows)].map(nameOf).join(', ') }));
