@@ -23,7 +23,8 @@ export function emptyWorkState() {
     baselines: {},
     calls: {},
     sources: {},
-    attention: {}
+    attention: {},
+    offers: {}
   };
 }
 const finite = value => typeof value === 'number' && Number.isFinite(value) && value >= 0;
@@ -35,7 +36,15 @@ export function applyWorkEvents(before, events, {
   if (!Array.isArray(events) || events.length < 1 || events.length > 1000) throw workError('INVALID_WORK_EVENT');
   for (const event of events) {
     if (!event || typeof event.type !== 'string') throw workError('INVALID_WORK_EVENT');
-    if (event.type === 'attention.reserved') {
+    if (event.type === 'workflow.selected') {
+      const r = event.record,
+        o = r?.offer;
+      if (!o || o.username !== username || !/^offer\.[a-f0-9]{64}$/.test(o.id ?? '') || !['reconcile', 'reactivate', 'housekeeping', 'wrap_up', 'coverage_repair', 'create_link', 'knowledge_review'].includes(o.flowType) || typeof o.domainId !== 'string' || typeof o.policyRevision !== 'string' || !finite(o.eligibleAt) || !finite(o.expiresAt) || o.questionUnits !== 1 || !Array.isArray(o.evidenceRefs) || o.evidenceRefs.length > 5 || o.evidenceRefs.some(ref => typeof ref !== 'string' || !ref || ref.length > 2048) || o.requiresConfirmation !== true || o.expectedVersion !== null && (typeof o.expectedVersion !== 'string' || !o.expectedVersion || o.expectedVersion.length > 256) || o.kbObjectId !== null && typeof o.kbObjectId !== 'string' || typeof o.reason !== 'string' || !o.reason || o.reason.length > 128 || !/^([a-f0-9]{64})$/.test(r.relevanceVersion ?? '') || r.status !== 'selected') throw workError('INVALID_WORKFLOW_OFFER');
+      if (o.ref !== null) validateWorkRef(o.ref);
+      state.offers ??= {};
+      if (state.offers[o.id] && stableWorkJson(state.offers[o.id]) !== stableWorkJson(r)) throw workError('WORKFLOW_OFFER_CONFLICT');
+      state.offers[o.id] = structuredClone(r);
+    } else if (event.type === 'attention.reserved') {
       const r = event.reservation;
       if (!r || r.username !== username || !/^attention\.[a-f0-9]{64}$/.test(r.id ?? '') || typeof r.decisionId !== 'string' || !r.decisionId || !/^\d{4}-\d{2}-\d{2}$/.test(r.day ?? '') || !['morning', 'housekeeping', 'review', 'direct_request', 'echo', 'quiz'].includes(r.channel) || typeof r.flowType !== 'string' || !Number.isInteger(r.questionUnits) || r.questionUnits < 1 || r.questionUnits > 5 || !finite(r.createdAt) || !finite(r.expiresAt) || r.expiresAt <= r.createdAt || r.expiresAt > r.createdAt + 86400000 || r.status !== 'prepared' || r.deliveredAt !== null || r.botMessageId !== null || r.response !== null) throw workError('INVALID_ATTENTION_EVENT');
       state.attention ??= {};

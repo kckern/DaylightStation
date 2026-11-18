@@ -248,3 +248,27 @@ echo acknowledgements and quiz processing do not spend proactive capacity.
 KB-only operation retains its existing behavior when no attention budget is
 injected. These receipt primitives add no autonomous delivery job; workflow
 selection and the morning integration consume them separately.
+
+## Quiet opportunity selection
+
+Opportunity selection runs deterministic relevance, scope, pause, snooze, KB
+policy and source-coverage gates before optional ranking. Fetching an old native
+in-progress task does not make it active. Unknown modification dates remain
+unknown. Legacy housekeeping requires both a configured local review window and
+an explicitly opted-in domain. Two acknowledged ignored housekeeping invitations
+maturing after36 hours quiet further unsolicited housekeeping for30 days; recent
+grounded work can still qualify for a useful follow-up.
+
+The static workflow registry permits only named local review actions. Optional
+Jev ranking receives at most five already eligible IDs and bounded reason codes,
+spends the shared live model budget, and cannot add candidates or operations.
+Failure uses the deterministic relevance/oldest-offer/ID order. After ranking,
+source, policy, relevance and owner history are checked again. Selection returns
+one opportunity; it never writes to a provider.
+
+Generating morning metadata does not reserve a question or count exposure. The
+selected offer is recorded with native version and local relevance fingerprint;
+preparation revalidates that exact offer before reserving capacity. Owner-approved
+KB review proposals form one invitation, with at most five IDs and no proposal
+content in the unsolicited message. Provider mutation still uses the separate
+command confirmation path.

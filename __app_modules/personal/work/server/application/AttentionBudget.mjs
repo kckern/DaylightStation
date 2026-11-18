@@ -28,6 +28,35 @@ export class AttentionBudget {
     if (!Number.isFinite(at) || !moment.tz.zone(timezone)) throw workError('INVALID_ATTENTION_TIME');
     return moment.tz(at, timezone).format('YYYY-MM-DD');
   }
+  async history({
+    username,
+    asOf = this.#clock()
+  }) {
+    const policy = this.#policy(username);
+    if (!policy.enabled) return {
+      available: false,
+      records: [],
+      unansweredInvitations: []
+    };
+    const state = await this.#state.read({
+      username
+    });
+    if (!state.health.available) return {
+      available: false,
+      records: [],
+      unansweredInvitations: []
+    };
+    const owner = await this.#history.read({
+      username,
+      askDate: this.#day(username, asOf),
+      asOf
+    });
+    return {
+      available: owner.available !== false,
+      records: mergeAttentionHistory(Object.values(state.attention ?? {}), owner),
+      unansweredInvitations: owner.unansweredInvitations ?? []
+    };
+  }
   async reserve({
     username,
     decisionId,

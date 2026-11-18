@@ -45,6 +45,7 @@ work:
     quietDays: 30
     staleRelevanceDays: 30
     offerExpiryHours: 24
-    reviewWindows: []
-    housekeepingDomains: []
+    reviewWindows: [] # ISO weekdays, local HH:mm; no overnight windows.
+    # reviewWindows: [{days: [1], start: "07:00", end: "09:00"}]
+    housekeepingDomains: [] # Explicit domain opt-in; connection alone never opts in.
     rankerEnabled: false
