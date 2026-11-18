@@ -1592,15 +1592,16 @@ export function createHealthRouter(config) {
         return res.json(result);
       } catch (err) {
         logger.warn?.('health.day_input.failed', { userId, date, operationId, status: err.status, code: err.code, error: err.message });
-        if (err.code === 'AUDIO_NOT_FOUND') return sendAudioNotFound(res);
-        // The retry names the saved recording, which is a different request body
-        // under the same ID. Nothing was committed, so the ID can be used again.
-        if (err.audioRef) {
+        // The retry changes how the recording is sent, which is a different request
+        // body under the same ID, so this attempt's record must not block it.
+        if (err.audioRef || err.code === 'AUDIO_NOT_FOUND') {
           try { healthOperations.clearFailedNutritionOperation(userId, operationId); }
           catch (clearError) { logger.warn?.('health.day_input.clear_failed', { userId, operationId, error: clearError.message }); }
         }
-        if (isDayInputRefusal(err)) return res.status(err.status).json({ error: err.message, code: err.code, ...(err.audioRef ? { audioRef: err.audioRef } : {}) });
-        return sendInternalError(res, { error: 'Could not process that. Please try again.' });
+        if (err.code === 'AUDIO_NOT_FOUND') return sendAudioNotFound(res);
+        const saved = err.audioRef ? { audioRef: err.audioRef } : {};
+        if (isDayInputRefusal(err)) return res.status(err.status).json({ error: err.message, code: err.code, ...saved });
+        return sendInternalError(res, { error: 'Could not process that. Please try again.', ...saved });
       }
     }));
 

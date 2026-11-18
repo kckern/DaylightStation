@@ -91,6 +91,39 @@ describe('day input on the real capture path', () => {
     expect(await items.findByDate('u', date)).toHaveLength(1);
   });
 
+  const httpApp = async () => {
+    const { default: express } = await import('express');
+    const { default: request } = await import('supertest');
+    const { createHealthRouter } = await import('../../../health/server/api/routers/health.mjs');
+    const { HealthOperations } = await import('../../../health/server/application/health/HealthOperations.mjs');
+    const healthOperations = new HealthOperations({ healthData: {}, nutritionItems: items, nutritionInput: adapter, today: () => date });
+    healthOperations.defaultUsername = () => 'u';
+    const app = express().use(express.json()).use(createHealthRouter({ healthOperations, logger: silent }));
+    return body => request(app).post('/nutrition/day-input').send({ type: 'voice', date, operationId: 'http-op', ...body });
+  };
+
+  it('lets a person record again under the same ID after a saved recording is gone', async () => {
+    const post = await httpApp();
+    expect((await post({ audioRef: 'va_missing' })).status).toBe(404);
+    const recorded = await post({ content: AUDIO });
+    expect(recorded.status).toBe(200);
+    expect(recorded.body).toMatchObject({ committed: true, kind: 'added' });
+  });
+
+  it('retries from the same recording when the parser fails after transcription', async () => {
+    const post = await httpApp();
+    chat.mockRejectedValueOnce(Object.assign(new Error('Provider said 429'), { status: 429 }));
+    const failed = await post({ content: AUDIO });
+    expect(failed.status).toBe(503);
+    expect(failed.body).toMatchObject({ code: 'DAY_INPUT_UNAVAILABLE' });
+    expect(failed.body.audioRef).toMatch(/^va_/);
+    const retried = await post({ audioRef: failed.body.audioRef });
+    expect(retried.status).toBe(200);
+    expect(retried.body).toMatchObject({ committed: true, kind: 'added' });
+    expect(audioFiles()).toHaveLength(1);
+    expect(await items.findByDate('u', date)).toHaveLength(1);
+  });
+
   it('does not pay the parser for a transcript too long to log', async () => {
     transcribeVoice.mockResolvedValue('a'.repeat(2001));
     const failure = await send({ type: 'voice', content: AUDIO }).catch(error => error);

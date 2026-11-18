@@ -117,6 +117,7 @@ describe('meal command HTTP adapter',()=>{
    const response=await post(app,{...rest,type:'voice',audioRef:'va_gone'});
    const capture=await request(app).post('/nutrition/input').send({type:'voice',audioRef:'va_gone'});
    expect(response.status).toBe(404);expect(response.status).toBe(capture.status);expect(response.body).toEqual(capture.body);
+   expect(ops.clearFailedNutritionOperation).toHaveBeenCalledWith('u','day');
   });
   it('frees the operation ID after a failure that kept a recording, so the retry can name it',async()=>{
    const {app,healthOperations:ops}=setup();ops.processDayInput.mockRejectedValue(Object.assign(new Error('Could not hear that correction'),{status:502,code:'TRANSCRIBE_FAILED',audioRef:'va_1'}));
@@ -124,6 +125,12 @@ describe('meal command HTTP adapter',()=>{
    expect(ops.clearFailedNutritionOperation).toHaveBeenCalledWith('u','day');
    ops.clearFailedNutritionOperation.mockImplementation(()=>{throw new Error('disk');});
    expect((await post(app,{...body,type:'voice',content:'data:audio/webm;base64,AAAA'})).status).toBe(502);
+  });
+  it('returns the saved recording with an unexpected failure, and nothing else of it',async()=>{
+   const {app,healthOperations:ops}=setup();ops.processDayInput.mockRejectedValue(Object.assign(new Error('Provider said no'),{status:429,audioRef:'va_1'}));
+   const response=await post(app,{...body,type:'voice',content:'data:audio/webm;base64,AAAA'});
+   expect(response.status).toBe(500);expect(response.body).toEqual({error:'Could not process that. Please try again.',audioRef:'va_1'});
+   expect(ops.clearFailedNutritionOperation).toHaveBeenCalledWith('u','day');
   });
   it('does not repeat an upstream provider status or message',async()=>{
    const {app,healthOperations:ops}=setup();

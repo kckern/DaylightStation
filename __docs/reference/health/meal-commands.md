@@ -57,6 +57,8 @@ A failed transcription returns 502 with `audioRef`. To retry, send `audioRef` in
 place of `content` with the same `operationId`; the saved recording is read back
 and no new one is written, and an unknown ref returns 404 `AUDIO_NOT_FOUND`. A voice
 retry first looks for finished work, so food already logged is not heard again.
+Any later failure of a voice request also returns its `audioRef`, and a 404 frees
+the `operationId` so a new recording can use it.
 Words over the food log's 2000-character limit are refused before the parser runs:
 400 `DAY_INPUT_TOO_LONG` when typed, 422 with `audioRef` when transcribed. A provider
 failure returns 503 `DAY_INPUT_UNAVAILABLE`, never the provider's own status. If a

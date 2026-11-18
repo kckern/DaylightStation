@@ -443,8 +443,14 @@ export class WebNutribotAdapter {
     if (String(heard.text).trim().length > FOOD_LOG_TEXT_MAX_LENGTH) {
       throw Object.assign(new Error(FOOD_LOG_TEXT_TOO_LONG_MESSAGE), { status: 422, code: 'DAY_INPUT_TOO_LONG', ...(heard.audioRef ? { audioRef: heard.audioRef } : {}) });
     }
-    return this.#dayInstructions.execute(userId, { text: heard.text, date, today, operationId, resolved,
-      captureFoods: capture => this.#captureDayFoods(userId, capture) });
+    try {
+      return await this.#dayInstructions.execute(userId, { text: heard.text, date, today, operationId, resolved,
+        captureFoods: capture => this.#captureDayFoods(userId, capture) });
+    } catch (error) {
+      // The recording is safe, so a retry can start from it instead of a new one.
+      if (heard.audioRef) error.audioRef = heard.audioRef;
+      throw error;
+    }
   }
 
   /** The words of a new recording, or of one already saved. A saved one is not written again. */

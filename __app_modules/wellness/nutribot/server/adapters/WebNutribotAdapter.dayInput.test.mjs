@@ -125,6 +125,27 @@ describe('WebNutribotAdapter day input', () => {
     expect(dayInstructions.execute.mock.calls[0][1].text).toBe('heard words');
   });
 
+  it('adds the saved recording to a later failure without changing the failure', async () => {
+    const voiceMemoStore = { save: vi.fn(async () => 'va_kept'), read: vi.fn(async () => ({ buffer: Buffer.from('a'), mimeType: 'audio/webm' })) };
+    const { adapter, dayInstructions } = setup({ voiceMemoStore });
+    const refusal = Object.assign(new Error('This entry changed.'), { status: 409, code: 'VERSION_CONFLICT' });
+    dayInstructions.execute.mockRejectedValue(refusal);
+    const input = { userId: 'u', type: 'voice', date: '2026-11-18', today: '2026-11-18', operationId: 'op' };
+    const failure = await adapter.processDayInput({ ...input, content: AUDIO }).catch(error => error);
+    expect(failure).toBe(refusal);
+    expect(failure).toMatchObject({ status: 409, code: 'VERSION_CONFLICT', audioRef: 'va_kept' });
+    delete refusal.audioRef;
+    expect(await adapter.processDayInput({ ...input, audioRef: 'va_older' }).catch(error => error.audioRef)).toBe('va_older');
+    expect(voiceMemoStore.save).toHaveBeenCalledTimes(1);
+  });
+
+  it('adds no recording to a typed instruction that fails', async () => {
+    const { adapter, dayInstructions } = setup();
+    dayInstructions.execute.mockRejectedValue(Object.assign(new Error('no'), { status: 409 }));
+    const failure = await adapter.processDayInput({ userId: 'u', type: 'text', content: 'eggs', date: '2026-11-18', today: '2026-11-18', operationId: 'op' }).catch(error => error);
+    expect(failure).not.toHaveProperty('audioRef');
+  });
+
   it('says so when a saved recording is gone', async () => {
     const { adapter, transcribeVoice } = setup({ voiceMemoStore: { read: vi.fn(async () => null) } });
     await expect(adapter.processDayInput({ userId: 'u', type: 'voice', audioRef: 'va_gone', date: '2026-11-18', today: '2026-11-18', operationId: 'op' })).rejects.toMatchObject({ code: 'AUDIO_NOT_FOUND' });
