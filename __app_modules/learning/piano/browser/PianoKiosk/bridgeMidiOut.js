@@ -34,6 +34,13 @@ let announced = false;
 /** Latest `outVerified` from the APK: the piano echoed our probe. null = unknown. */
 let lastVerified = null;
 
+export function pagePiano() {
+  return typeof window !== 'undefined' ? window.daylight?.piano : null;
+}
+
+let pageVerified = null;
+export function setPageVerified(value) { pageVerified = value; }
+
 function probe() {
   try {
     fetch(`${BRIDGE}/status`, { method: 'GET', signal: AbortSignal.timeout(2500) })
@@ -79,6 +86,7 @@ function ensureProbing() {
 
 /** True while the bridge answered /status within the freshness window. */
 export function bridgeOutUp() {
+  if (pagePiano()) return true;
   ensureProbing();
   return Date.now() - lastOkAt < FRESH_MS;
 }
@@ -94,6 +102,7 @@ export function bridgeOutUp() {
  * @returns {boolean|null} null until the first probe body is read.
  */
 export function bridgeOutVerified() {
+  if (pagePiano()) return pageVerified;
   ensureProbing();
   return lastVerified;
 }
@@ -111,6 +120,8 @@ export function bridgeOutVerified() {
  * bridge is not up so callers fall back to Web MIDI's timestamped send().
  */
 export function bridgeSendMidiAt(bytes, inMs) {
+  const piano = pagePiano();
+  if (piano) return piano.send(bytes, Math.min(30000, Math.max(0, Math.round(inMs || 0))));
   if (!bridgeOutUp()) return false;
   const hexStr = Array.from(bytes, (b) => (b & 0xff).toString(16).padStart(2, '0')).join(' ');
   const delay = Math.max(0, Math.round(inMs || 0));
@@ -126,6 +137,8 @@ export function bridgeSendMidiAt(bytes, inMs) {
 }
 
 export function bridgeSendMidi(bytes) {
+  const piano = pagePiano();
+  if (piano) return piano.send(bytes, 0);
   if (!bridgeOutUp()) return false;
   const hexStr = Array.from(bytes, (b) => (b & 0xff).toString(16).padStart(2, '0')).join(' ');
   try {

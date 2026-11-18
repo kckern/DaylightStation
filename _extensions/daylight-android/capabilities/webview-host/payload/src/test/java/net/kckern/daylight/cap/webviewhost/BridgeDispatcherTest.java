@@ -22,6 +22,7 @@ public class BridgeDispatcherTest {
 
     @Before public void setUp() {
         BridgeDispatcher.Actions actions = new BridgeDispatcher.Actions() {
+            @Override public String piano(String token, String method, String arg) { calls.add(method); return "ok"; }
             @Override public String capabilitiesJson() { calls.add("capabilities"); return "[\"webview-host\"]"; }
             @Override public boolean launch(String json) { calls.add("launch " + json); return json.contains("ok"); }
             @Override public boolean screen(boolean on) { calls.add("screen " + on); return true; }
@@ -53,6 +54,43 @@ public class BridgeDispatcherTest {
         assertTrue(calls.contains("screen false"));
         assertTrue(calls.contains("volume 3"));
         assertTrue(calls.contains("restartApp"));
+    }
+
+    @Test public void pianoRequiresTrustedTopFrameOnLessonPath() {
+        String top = bridge.open(KEY, "top");
+        String child = bridge.open(KEY, "frame");
+        for (String op : new String[]{"pianoSubscribe", "pianoRead", "pianoStatus", "pianoSend", "pianoUnsubscribe"}) {
+            url = "https://app.example.test/piano/lesson";
+            assertEquals("ok", bridge.call(top, op, ""));
+            assertEquals("", bridge.call(child, op, ""));
+            url = "https://app.example.test/pianola";
+            assertEquals("", bridge.call(top, op, ""));
+            url = "https://elsewhere.test/piano";
+            assertEquals("", bridge.call(top, op, ""));
+        }
+    }
+
+    @Test public void pianoQueueAndSchedulerPreserveLessonData() throws Exception {
+        int[] wakes = {0};
+        PianoPage page = new PianoPage("private-document-id", () -> wakes[0]++);
+        page.noteOn(62, 91, 1234, 9);
+        page.controlChange(64, 127, 0);
+        page.noteOff(62, 1240);
+        String drained = page.drain();
+        assertFalse(drained.contains("private-document-id"));
+        org.json.JSONArray frames = new org.json.JSONArray(drained);
+        assertEquals(3, frames.length());
+        assertEquals(1234, frames.getJSONObject(0).getLong("t"));
+        assertEquals(9, frames.getJSONObject(0).getInt("ch"));
+        assertEquals(64, frames.getJSONObject(1).getInt("controller"));
+        assertEquals("note.off", frames.getJSONObject(2).getString("type"));
+        assertEquals("[]", page.drain());
+        assertEquals(1, wakes[0]);
+        assertTrue(PianoPage.send((bytes, delay) -> {
+            assertArrayEquals(new byte[]{(byte)240, 65, (byte)247}, bytes);
+            assertEquals(120, delay);
+            return true;
+        }, "{\"bytes\":[240,65,247],\"inMs\":120}"));
     }
 
     @Test public void aWrongOrMissingTokenDoesNothing() {
@@ -118,7 +156,7 @@ public class BridgeDispatcherTest {
         for (java.lang.reflect.Method m : BridgeDispatcher.Actions.class.getDeclaredMethods()) actions.add(m.getName());
         assertEquals("the bridge does exactly what the contract lists",
                 new java.util.TreeSet<>(java.util.Arrays.asList("capabilitiesJson", "launch", "screen", "restartApp",
-                        "reboot", "setBackMode", "volumeJson", "canPinMedia", "pinMedia")), actions);
+                        "reboot", "setBackMode", "volumeJson", "canPinMedia", "pinMedia", "piano")), actions);
     }
 
     // ── tokens belong to a document ──────────────────────────────────────────

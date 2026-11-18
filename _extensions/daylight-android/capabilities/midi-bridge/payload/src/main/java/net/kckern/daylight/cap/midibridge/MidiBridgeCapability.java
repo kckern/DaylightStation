@@ -40,6 +40,10 @@ public final class MidiBridgeCapability implements Capability {
         // applied the moment it changes. Off while piano-bridge still holds the link.
         net.kckern.daylight.core.LiveSwitch.report(core, "midi.enabled", () -> link != null && config.bluetoothMidiEnabled());
 
+        core.services().provide(net.kckern.daylight.core.spi.PianoOutput.class, (bytes, delay) -> {
+            MidiLink l = link;
+            return l != null && config.bluetoothMidiEnabled() && l.scheduleMidi(bytes, delay);
+        });
         Router r = core.router();
         r.route("POST", "/connect", req -> {
             BleMidiConnector b = ble();
@@ -109,6 +113,13 @@ public final class MidiBridgeCapability implements Capability {
         });
 
         StatusBoard board = core.status();
+        board.add(StatusBoard.Surface.FRAME, name(), o -> {
+            MidiLink l = link;
+            o.put("midiInOpen", l != null && l.isMidiPortOpen());
+            o.put("midiWriteOpen", l != null && l.isMidiWriteOpen());
+            Loopback lb = loopback();
+            if (lb != null) o.put("outVerified", lb.snapshot().optBoolean("outVerified"));
+        });
         board.add(StatusBoard.Surface.STATUS, name(), o -> {
             MidiLink l = link;
             BleMidiConnector b = ble();

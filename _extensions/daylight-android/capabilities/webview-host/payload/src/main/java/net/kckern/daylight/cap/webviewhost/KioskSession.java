@@ -369,11 +369,48 @@ final class KioskSession implements KioskController, KioskSurface, net.kckern.da
                 + " navigation=" + navigation.origins());
     }
 
+    private PianoPage pianoPage;
+    private boolean midiStopped;
+
+    private synchronized void detachPiano() {
+        if (pianoPage != null) core.notes().unsubscribe(pianoPage);
+        pianoPage = null;
+    }
+
+    private synchronized String pianoCall(String token, String method, String arg) throws Exception {
+        net.kckern.daylight.core.spi.PianoOutput out = core.services().find(net.kckern.daylight.core.spi.PianoOutput.class);
+        if (midiStopped || !"piano".equals(core.deviceId()) || out == null || !origins.allows(mainUrl)
+                || !BridgeDispatcher.pianoPath(mainUrl) || !tokens.topFrame(token)) return "";
+        if ("pianoSubscribe".equals(method)) {
+            detachPiano();
+            pianoPage = new PianoPage(token, () -> ui.post(() -> {
+                if (web != null && !errorPage && origins.allows(mainUrl) && BridgeDispatcher.pianoPath(mainUrl))
+                    web.evaluateJavascript("window.dispatchEvent(new Event('daylight:midiready'))", null);
+            }));
+            core.notes().subscribe(pianoPage);
+            return "true";
+        }
+        if (pianoPage == null || !token.equals(pianoPage.token)) return "";
+        switch (method) {
+            case "pianoRead": return pianoPage.drain();
+            case "pianoUnsubscribe": detachPiano(); return "true";
+            case "pianoStatus":
+                JSONObject status = core.status().collect(net.kckern.daylight.core.StatusBoard.Surface.FRAME, new JSONObject());
+                JSONObject result = new JSONObject().put("type", "status");
+                for (String key : new String[]{"speakerOk", "outVerified", "midiInOpen", "midiWriteOpen"})
+                    if (status.opt(key) instanceof Boolean) result.put(key, status.getBoolean(key));
+                return result.toString();
+            case "pianoSend": return String.valueOf(PianoPage.send(out, arg));
+            default: return "";
+        }
+    }
+
     private String shim() {
         return BridgeScript.shim(sessionKey, core.payloadVersion(), core.deviceId(), WebViewHostCapability.pinMediaOffered(core));
     }
 
     private void destroyWebView() {
+        detachPiano();
         hideCustomView();
         if (web == null) return;
         WebView old = web;
@@ -500,7 +537,10 @@ final class KioskSession implements KioskController, KioskSurface, net.kckern.da
 
     private final class PageClient extends WebViewClient {
         @Override public void onPageStarted(WebView view, String url, Bitmap favicon) {
-            if (view != web || isLocalPage(url)) return;
+            if (view != web) return;
+            detachPiano();
+            mainUrl = url;
+            if (isLocalPage(url)) return;
             // The second line of the navigation rule: a main-frame load that got past
             // shouldOverrideUrlLoading (a redirect, a form post) is stopped here.
             if (!navigation.allows(url)) {
@@ -551,7 +591,10 @@ final class KioskSession implements KioskController, KioskSurface, net.kckern.da
 
         @Override public void doUpdateVisitedHistory(WebView view, String url, boolean isReload) {
             // Also fires for history.pushState, which onPageStarted does not see.
-            if (view == web && !isLocalPage(url)) mainUrl = url;
+            if (view == web) {
+                mainUrl = url;
+                if (!origins.allows(url) || !BridgeDispatcher.pianoPath(url)) detachPiano();
+            }
         }
 
         @Override public void onReceivedError(WebView view, WebResourceRequest request, WebResourceError error) {
@@ -715,6 +758,9 @@ final class KioskSession implements KioskController, KioskSurface, net.kckern.da
 
     /** What an accepted bridge call does. Reads answer inline; actions run on the bridge executor. */
     private final class PageActions implements BridgeDispatcher.Actions {
+        @Override public String piano(String token, String method, String arg) throws Exception {
+            return pianoCall(token, method, arg);
+        }
         @Override public String capabilitiesJson() { return new JSONArray(core.capabilityNames()).toString(); }
 
         @Override public boolean launch(String json) {
@@ -793,6 +839,7 @@ final class KioskSession implements KioskController, KioskSurface, net.kckern.da
 
     /** Called from the capability's stop(), on any thread. Does not wait for the main thread. */
     void shutdown() {
+        synchronized (this) { midiStopped = true; detachPiano(); }
         bridgeExec.shutdown();
         ui.post(() -> {
             overlayText = "";

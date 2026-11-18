@@ -16,7 +16,15 @@ public final class NoteBus {
     public void unsubscribe(NoteListener l) { listeners.remove(l); }
 
     public void noteOn(int note, int velocity, long epochMs) {
-        for (NoteListener l : listeners) { try { l.noteOn(note, velocity, epochMs); } catch (Throwable ignored) { } }
+        noteOn(note, velocity, epochMs, -1);
+    }
+
+    public void noteOn(int note, int velocity, long epochMs, int channel) {
+        for (NoteListener l : listeners) { try { l.noteOn(note, velocity, epochMs, channel); } catch (Throwable ignored) { } }
+    }
+
+    public void inputReset() {
+        for (NoteListener l : listeners) { try { l.inputReset(); } catch (Throwable ignored) { } }
     }
 
     public void noteOff(int note, long epochMs) {
@@ -24,6 +32,10 @@ public final class NoteBus {
     }
 
     public void controlChange(int controller, int value) {
-        for (NoteListener l : listeners) { try { l.controlChange(controller, value); } catch (Throwable ignored) { } }
+        controlChange(controller, value, -1);
+    }
+
+    public void controlChange(int controller, int value, int channel) {
+        for (NoteListener l : listeners) { try { l.controlChange(controller, value, channel); } catch (Throwable ignored) { } }
     }
 }

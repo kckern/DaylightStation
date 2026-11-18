@@ -33,7 +33,18 @@ final class BridgeScript {
                 + "var T=\"\";function t(){if(!T){try{T=n.open(" + JSONObject.quote(sessionKey)
                 + ",window.top===window?\"top\":\"frame\")||\"\";}catch(e){}}return T;}"
                 + "function c(m,a){try{return n.call(t(),m,a===undefined||a===null?\"\":String(a));}catch(e){return \"\";}}"
+                + "var piano=null;if(" + "piano".equals(deviceId)
+                + "&&window===window.top){"
+                + "piano=Object.freeze({subscribe:function(f){"
+                + "function read(){var frames=JSON.parse(c('pianoRead')||'[]');frames.forEach(f);}"
+                + "function status(){var s=c('pianoStatus');if(s)f(JSON.parse(s));}"
+                + "window.addEventListener('daylight:midiready',read);"
+                + "if(c('pianoSubscribe')!=='true'){window.removeEventListener('daylight:midiready',read);return null;}"
+                + "status();var timer=setInterval(status,1000);return function(){clearInterval(timer);"
+                + "window.removeEventListener('daylight:midiready',read);c('pianoUnsubscribe');};},"
+                + "send:function(bytes,inMs){return c('pianoSend',JSON.stringify({bytes:Array.from(bytes),inMs:inMs||0}))==='true';}});}"
                 + "window.daylight=Object.freeze({"
+                + ("piano".equals(deviceId) ? "get piano(){return /^\\/piano(?:\\/|$)/.test(location.pathname)?piano:null;}," : "")
                 + "version:" + JSONObject.quote(version) + ","
                 + "deviceId:" + JSONObject.quote(deviceId) + ","
                 + "capabilities:function(){return c(\"capabilities\")||\"[]\";},"

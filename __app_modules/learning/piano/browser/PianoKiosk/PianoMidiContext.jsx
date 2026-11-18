@@ -10,15 +10,14 @@ const PianoMidiContext = createContext(null);
  *
  * Note-IN is ADAPTIVE, bridge-first with a Web-MIDI fallback:
  *  - KIOSK (garage tablet): the native piano-bridge APK is the sole BLE-MIDI
- *    reader and broadcasts notes over WebSocket (usePianoBridgeNotes). Web MIDI
+ *    reader. Daylight uses its trusted page bridge and Fully uses the legacy WebSocket. Web MIDI
  *    input stays OFF (acquireInput:false) — a second Web MIDI input subscription
  *    would fight the APK for the one BLE connection, causing flapping/drops.
  *  - NON-KIOSK (e.g. a laptop with a MIDI keyboard): no bridge listens on
  *    ws://localhost:8770, so once it's deemed unavailable we flip
  *    acquireInput:true and read notes over Web MIDI directly.
  *
- * Web MIDI OUTPUT is always used for program/voice changes + studio playback,
- * regardless of which note-in path is active.
+ * Immediate and scheduled output use the selected bridge when available.
  */
 export function PianoMidiProvider({ children, preferredInputName }) {
   // Stable onNote that forwards to midi.feedNote. Created BEFORE the bridge so
@@ -63,7 +62,8 @@ export function PianoMidiProvider({ children, preferredInputName }) {
   //   out: 'up' | 'down'                  — real output-port liveness
   const inHealth = bridgeConnected ? 'bridge'
     : (bridge.unavailable && midi.status === 'connected') ? 'webmidi' : 'down';
-  const outHealth = midi.outputConnected ? 'up' : 'down';
+  const outputConnected = bridge.pageWriteOpen ?? midi.outputConnected;
+  const outHealth = outputConnected ? 'up' : 'down';
   const midiHealth = useMemo(() => ({
     in: inHealth,
     out: outHealth,
@@ -72,6 +72,8 @@ export function PianoMidiProvider({ children, preferredInputName }) {
 
   const value = useMemo(() => ({
     ...midi,
+    outputConnected,
+    outVerified: bridge.outVerified,
     bridgeLink: bridge.link,
     bridgeUnavailable: bridge.unavailable,
     speakerConnected: bridge.speakerConnected,
@@ -81,7 +83,7 @@ export function PianoMidiProvider({ children, preferredInputName }) {
     connected,
     status,
     midiHealth,
-  }), [midi, bridge.link, bridge.unavailable, bridge.speakerConnected, bridge.sendSysex,
+  }), [midi, outputConnected, bridge.outVerified, bridge.link, bridge.unavailable, bridge.speakerConnected, bridge.sendSysex,
     connected, status, midiHealth]);
   return <PianoMidiContext.Provider value={value}>{children}</PianoMidiContext.Provider>;
 }

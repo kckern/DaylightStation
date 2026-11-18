@@ -15,6 +15,7 @@ import java.util.function.Supplier;
 final class BridgeDispatcher {
     interface Actions {
         String capabilitiesJson();
+        default String piano(String token, String method, String arg) throws Exception { return ""; }
         boolean launch(String json);
         boolean screen(boolean on);
         void restartApp();
@@ -79,6 +80,10 @@ final class BridgeDispatcher {
         String a = arg == null ? "" : arg;
         try {
             switch (method) {
+                case "pianoSubscribe": case "pianoUnsubscribe": case "pianoRead":
+                case "pianoStatus": case "pianoSend":
+                    if (!tokens.topFrame(presentedToken) || !pianoPath(mainFrameUrl.get())) return "";
+                    return actions.piano(presentedToken, method, a);
                 case "capabilities": return actions.capabilitiesJson();
                 case "launch": return String.valueOf(actions.launch(a));
                 case "screen": return String.valueOf(actions.screen("true".equals(a)));
@@ -128,6 +133,13 @@ final class BridgeDispatcher {
         StringBuilder s = new StringBuilder("{\"accepted\":").append(accepted);
         if (reason != null) s.append(",\"reason\":").append(JSONObject.quote(reason));
         return s.append('}').toString();
+    }
+
+    static boolean pianoPath(String url) {
+        try {
+            String path = java.net.URI.create(url).getRawPath();
+            return "/piano".equals(path) || path.startsWith("/piano/");
+        } catch (RuntimeException malformed) { return false; }
     }
 
     private static int stream(String raw) {

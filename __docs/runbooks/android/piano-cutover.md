@@ -101,3 +101,7 @@ Watched daily, read-only:
 
 The soak restarts on any rollback, or any recovery that needed the lifeline or
 ADB. Fourteen clean days and the tablet is done; phase 8 waits for all three devices.
+
+### Lesson transport check during the approved piano sitting
+
+With the legacy bridge stopped, open a lesson on the trusted piano page. Play and release real keys and the sustain pedal. Confirm the lesson grades each note once. Play scheduled score notes, change instrument voice and apply a SysEx effect. Listen at the speaker and check the instrument echo verdict separately from accepted writes. Reconnect the instrument with a key previously held, then hold a new key manually. Confirm the old highlight clears and the new highlight lasts until release. Repeat after recreating the renderer. Record results in the private sitting log.

@@ -451,6 +451,7 @@ public class MidiLink {
     MidiReceiver receiverForTest() { return new PianoMidiReceiver(); }
 
     private synchronized void closeMidi() {
+        if (midiPortOpen) notes.inputReset();
         midiPortOpen = false;
         midiWriteOpen = false;
         try {
@@ -541,7 +542,7 @@ public class MidiLink {
                     } else {
                         // Subscribers first (the synth, so sound comes before anything else;
                         // from phase 3 also the screen wake and the touch pulse), then the page.
-                        notes.noteOn(note, vel, t);
+                        notes.noteOn(note, vel, t, status & 15);
                         socket.broadcast(MidiWire.buildNote("note.on", note, vel, t));
                     }
                     i = d + 2;
@@ -553,7 +554,7 @@ public class MidiLink {
                 } else if (type == 0xB0 && d + 1 < end) { // control change
                     int cc = data[d] & 0x7F;
                     int val = data[d + 1] & 0x7F;
-                    notes.controlChange(cc, val);
+                    notes.controlChange(cc, val, status & 15);
                     i = d + 2;
                 } else {
                     // Unhandled status (pitch bend, aftertouch, sysex, etc.) — skip 1.
