@@ -1,6 +1,7 @@
+#!/usr/bin/env node
 // Runs realistic phrases through the real decision gateway and scores how
 // DayInstructionReader reads them. Makes paid Jev calls; writes no food data.
-// Usage: DAYLIGHT_BASE_PATH=<content-base> node day-instruction-calibrate.mjs
+// Usage: DAYLIGHT_BASE_PATH=<content-base> node cli/day-instruction-calibrate.mjs
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -15,13 +16,26 @@ const TODAY = '2026-11-18';
 const FOODS = ['Oatmeal', 'Iced tea', 'Rice', 'Chicken', 'Whole wheat toast', 'Coffee'];
 const LATEST = ['Iced tea', 'Rice'];
 
-async function main() {
+// YAML parse errors quote the source, which here holds the API key, so the
+// original error must never surface.
+export function readJevApiKey(base) {
+  let apiKey;
+  try {
+    apiKey = yaml.load(fs.readFileSync(path.join(base, 'data/system/auth/jev.yml'), 'utf8'))?.api_key;
+  } catch {
+    apiKey = null;
+  }
+  if (typeof apiKey !== 'string' || !apiKey) throw new Error('Unreadable system/auth/jev.yml');
+  return apiKey;
+}
+
+export async function main() {
   const base = process.env.DAYLIGHT_BASE_PATH;
   if (!base) throw new Error('DAYLIGHT_BASE_PATH is required');
-  const auth = yaml.load(fs.readFileSync(path.join(base, 'data/system/auth/jev.yml'), 'utf8'));
+  const apiKey = readJevApiKey(base);
   const logger = { info() {}, warn() {}, error() {}, debug() {} };
   const aiUsageLedger = createAiUsageLedger({ dir: path.join(base, 'data/system/history/ai-usage'), source: 'day-instruction-calibration', logger });
-  const gateway = new JevAdapter({ apiKey: auth.api_key }, { httpClient: axios, logger, aiUsageLedger }).scoped({ app: 'health', feature: 'day-instruction-calibration' });
+  const gateway = new JevAdapter({ apiKey }, { httpClient: axios, logger, aiUsageLedger }).scoped({ app: 'health', feature: 'day-instruction-calibration' });
   const reader = new DayInstructionReader({ decisionGateway: gateway });
   const cases = JSON.parse(fs.readFileSync(fileURLToPath(new URL('./fixtures/day-instruction-calibration.json', import.meta.url)), 'utf8'));
 
@@ -45,7 +59,9 @@ async function main() {
   process.exitCode = wrong ? 1 : 0;
 }
 
-main().catch(error => {
-  process.stderr.write(`${error.message}\n`);
-  process.exitCode = 1;
-});
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) { runCliEntry(); }
+
+/** Stable command launcher entry. */
+export function runCliEntry() {
+  main().catch(error => { process.stderr.write(`${error.message}\n`); process.exitCode = 1; });
+}

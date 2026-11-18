@@ -201,7 +201,7 @@ describe('DayInstructionService', () => {
       expectNoWrites(h);
     });
     it.each([
-      ['an unclear target', { target: 'unclear', toDay: '2026-11-17' }],
+      ['an unrecognised target', { target: 'unrecognised', toDay: '2026-11-17' }],
       ['a meal target with no meal named', { target: 'meal', fromMeal: 'none', toDay: '2026-11-17' }],
     ])('asks which food for %s instead of moving everything', async (_label, extra) => {
       const h = harness(plan(extra));
@@ -210,8 +210,8 @@ describe('DayInstructionService', () => {
       await h.run('move it', { resolved: { foodId: 'eggs' } });
       expect(h.mealCommands.moveFoods.mock.calls[0][1].selectedIds).toEqual(['eggs']);
     });
-    it('asks which food to change when the target is unclear', async () => {
-      const h = harness(plan({ intent: 'change', target: 'unclear' }), { matched: ['milk'] });
+    it('asks which food to change when the target is unrecognised', async () => {
+      const h = harness(plan({ intent: 'change', target: 'unrecognised' }), { matched: ['milk'] });
       expect((await h.run('that was wrong')).clarification).toMatchObject({ kind: 'food' });
       expect(h.reader.matchFoods).not.toHaveBeenCalled();
       expect(h.entryRevisions.propose).not.toHaveBeenCalled();
@@ -219,7 +219,9 @@ describe('DayInstructionService', () => {
     it('asks which food to change when a named food matches nothing', async () => {
       const h = harness(plan({ intent: 'change', target: 'named' }));
       expect((await h.run('the soup was only half a cup')).clarification).toMatchObject({ kind: 'food' });
+      expect(h.reader.matchFoods).toHaveBeenCalled();
       expect(h.entryRevisions.propose).not.toHaveBeenCalled();
+      expect(h.mealCommands.execute).not.toHaveBeenCalled();
     });
     it('says so when no food on the day can be changed', async () => {
       const h = harness(plan({ intent: 'change' }), { dayRows: [{ uuid: 'loose', name: 'Loose', date, version: 1 }] });

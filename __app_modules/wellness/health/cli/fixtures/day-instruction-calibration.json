@@ -14,6 +14,7 @@
   {"id":"both","text":"add a banana and move the eggs to lunch","compound":true},
   {"id":"delete","text":"delete the eggs","intent":"other"},
   {"id":"breakfast-lunch","text":"move breakfast to lunch","intent":"move","target":"meal","fromMeal":"morning","toDay":"same","toMeal":"afternoon"},
+  {"id":"everything-breakfast","text":"move everything from breakfast to lunch","intent":"move","target":"meal","fromMeal":"morning","toDay":"same","toMeal":"afternoon"},
   {"id":"two-places","text":"move the rice to lunch and the coffee to dinner","compound":true},
   {"id":"same-place","text":"move the rice and the coffee to dinner","compound":false}
 ]

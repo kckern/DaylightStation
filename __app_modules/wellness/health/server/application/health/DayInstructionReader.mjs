@@ -38,7 +38,7 @@ export class DayInstructionReader {
     };
     const targetOptions = {
       latest: 'The most recent capture: `said` points with "that", "these", "those" or "it" instead of naming a listed food, even if it goes on to name a meal, a day, or what the food really was; see `latest_capture`',
-      whole_day: 'Everything on this day, with words like "all of this", "everything" or "the whole day"; "all of this" means the whole day even though "this" is a pointing word',
+      whole_day: 'Everything on this day, with words like "all of this", "everything" or "the whole day" when no meal is named; "all of this" then means the whole day even though "this" is a pointing word. "Everything from breakfast" or "all of lunch" means that meal instead',
       meal: 'Everything in one meal',
       named: 'Particular foods or a kind of food, such as "the drinks"',
     };
@@ -51,7 +51,7 @@ export class DayInstructionReader {
     }
     const { answers } = await this.#gateway.evaluate({ said: text, viewed_day: dayName(date, today), foods_on_this_day: foods, latest_capture: latest }, {
       intent: choice('What does `said` ask for, given `foods_on_this_day` on `viewed_day`?', intentOptions),
-      target: choice('Which of `foods_on_this_day` on `viewed_day` does `said` refer to? A pointing word such as "that" means `latest_capture`, even when `latest_capture` looks nothing like what `said` says the food really was. "All of this" and "everything" mean the whole day instead.', targetOptions),
+      target: choice('Which of `foods_on_this_day` on `viewed_day` does `said` refer to? A pointing word such as "that" means `latest_capture`, even when `latest_capture` looks nothing like what `said` says the food really was. "All of this" and "everything" mean the whole day only when no meal is named; "everything from breakfast" or "all of lunch" means that meal.', targetOptions),
       fromMeal: choice('Which meal does `said` say the food is being moved out of?', fromMealOptions),
       toMeal: choice('According to `said`, which meal should the food it mentions move to?', toMealOptions),
       toDay: choice('According to `said`, which day should the food it mentions move to?', toDayOptions),
