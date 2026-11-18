@@ -492,6 +492,7 @@ export function TodayView({ active = true, sidebarTarget, followUpTarget = null,
         onVoiceCapture={onVoiceCapture} onTextCapture={onTextCapture}
         onMealChanged={result=>handleCaptureResult(result)} captureTasks={[...capturePending.values()]}
         measuredByUuid={measuredByUuid} addedIds={addedIds} onMoveEntry={moves.move} onMoveMeal={moves.moveMeal} onMoveToDay={moves.moveToDay}
+        onNotice={message => { setCaptureRetry(null); setCaptureNotice(message); }}
         renderAddRow={(bucket, label, meal) => <MealAddRow bucket={bucket} label={label} date={date} active={active}
           onVoiceCapture={meal?.onVoiceCapture} selectedCount={meal?.selectedIds?.length || 0} busy={false} onOrphanedRetry={keepOrphanedRecording}
           onAdded={() => day.reload()} onSentencePending={text => beginSentencePending(bucket, text)} onPhotoCapture={onPhotoCapture} onOpenBarcode={openBarcode}

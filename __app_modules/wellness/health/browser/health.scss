@@ -695,10 +695,31 @@ $health-aside-gap: 1.5rem;
   &__chip { padding: 0.45rem 0.6rem; border-radius: 8px; border: 1px dashed var(--ds-border); font-size: 0.85rem; text-align: center; color: var(--ds-text-high); }
   &__chip--over { border-style: solid; border-color: var(--ds-accent); background: color-mix(in srgb, var(--ds-accent) 12%, transparent); }
 }
-.health-meal-move-day { display: flex; flex-wrap: wrap; align-items: center; gap: 0.6rem; padding: 0.25rem 0; }
-.health-meal-move-day__note { font-size: 0.75rem; color: var(--ds-text-low); }
+// "Select foods": one bar over the day's meals. `.ds-chrome__main` is the scroll
+// region and the app header sits outside it, so top: 0 is directly under the
+// header. One status line and one unwrapped action line keep its height constant.
+.health-selection-bar {
+  position: sticky; top: 0; z-index: 20;
+  display: grid; gap: 2px; margin-bottom: 0.5rem; padding: 0.3rem 0;
+  background: var(--ds-background); border-bottom: 1px solid var(--ds-border);
+}
+.health-selection-bar__status {
+  display: flex; gap: 0.5rem; min-width: 0; height: 1.1rem; line-height: 1.1rem; overflow: hidden;
+  font-size: 0.75rem; white-space: nowrap; color: var(--ds-text-mid);
+}
+.health-selection-bar__note { min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--ds-text-low); }
+.health-selection-bar__actions {
+  display: flex; flex-wrap: nowrap; align-items: center; gap: 0.5rem; min-width: 0; min-height: 26px;
+  .mantine-Button-root { flex: 0 1 auto; min-width: 0; }
+}
+.health-meal-selection-tick { display: flex; flex: none; align-items: center; justify-content: center; cursor: pointer;
+  input { margin: 0; accent-color: var(--ds-info); }
+}
 @media (pointer: coarse) {
-  .health-meal-move-day .mantine-Button-root, .health-move-menu__item { min-height: 44px; }
+  .health-selection-bar__actions, .health-selection-bar__actions .mantine-Button-root, .health-move-menu__item { min-height: 44px; }
+  // A full 44 px target that takes only 24 px of the row's narrow phone tracks.
+  .health-meal-selection-tick { position: relative; z-index: 1; width: 44px; height: 44px; margin-inline: -10px; }
+  .health-meal-selection-tick input { width: 18px; height: 18px; }
 }
 // A meal entry gliding to its new place after a reorder (sectionOrder.js,
 // FLIP): the inline translate is set by the hook, this class animates it home.

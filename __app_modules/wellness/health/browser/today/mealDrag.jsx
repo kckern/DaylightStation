@@ -147,6 +147,9 @@ export function useMealDropTarget(bucket) {
   };
 }
 
+/** How a move ended. Drag and the meal menu ignore it; the selection bar does not. */
+export const MoveResult = Object.freeze({ MOVED: 'moved', UNCHANGED: 'unchanged', NOT_MOVED: 'not-moved' });
+
 const MOVE_PATH = 'api/v1/health/nutrition/foods-move';
 const UNDO_PATH = 'api/v1/health/nutrition/meal-undo';
 const isDefiniteRefusal = err => err?.status === 400 || err?.status === 409;
@@ -164,8 +167,8 @@ function applyMoves(items, moves) {
 /**
  * Owns the move command: optimistic placement, one atomic `foods-move` per
  * gesture, a brief highlight on the moved rows, and one server Undo. Each move
- * resolves true when the foods are where they were sent, false when they are
- * not (it was refused or failed, and `error` says why).
+ * resolves to a MoveResult: MOVED; UNCHANGED when every food was already there,
+ * so nothing was sent; NOT_MOVED when it was refused or failed (`error` says why).
  */
 export function useMealMoves(day) {
   const foodAPI = useFoodMutation(day.items);
@@ -248,11 +251,11 @@ export function useMealMoves(day) {
   // Success is handled in the continuation so a Retry from the status row gets it too.
   const send = useCallback(async (requested, to, from) => {
     const rows = requested.filter(row => row.mealTime !== to);
-    if (!rows.length) return true;
+    if (!rows.length) return MoveResult.UNCHANGED;
     const carried = withParts(rows);
     const ids = carried.map(row => String(entryId(row)));
     const body = moveBody(rows, carried, { toMeal: to });
-    if (refuseMove(rows, body)) return false;
+    if (refuseMove(rows, body)) return MoveResult.NOT_MOVED;
     setError(null);
     setMoves(previous => { const next = new Map(previous); ids.forEach(id => next.set(id, { to })); return next; });
     rows.forEach(row => highlight(String(entryId(row))));
@@ -262,14 +265,14 @@ export function useMealMoves(day) {
         setError(null);
         offerUndo(result, ids, rows, { from, to });
       });
-      return true;
+      return MoveResult.MOVED;
     } catch (err) {
       setMoves(previous => { const next = new Map(previous); ids.forEach(id => next.delete(id)); return next; });
       releaseIfRefused(err, body.operationId);
       setError(`Couldn't move ${whatMoved(rows)}: ${entryError(err)}`);
       logger.warn('entry.move.failed', { count: rows.length, from, to, status: err.status, error: err.message });
       setUndo(null);
-      return false;
+      return MoveResult.NOT_MOVED;
     } finally { day.reload?.(); }
   }, [day]);
 
@@ -277,12 +280,12 @@ export function useMealMoves(day) {
   // day at once and come back if the command fails.
   const sendToDay = useCallback(async (requested, toDate) => {
     const rows = requested.filter(row => row.date && row.date !== toDate);
-    if (!rows.length) return true;
+    if (!rows.length) return MoveResult.UNCHANGED;
     const fromDate = rows[0].date;
     const carried = withParts(rows);
     const ids = carried.map(row => String(entryId(row)));
     const body = moveBody(rows, carried, { toDate });
-    if (refuseMove(rows, body)) return false;
+    if (refuseMove(rows, body)) return MoveResult.NOT_MOVED;
     setError(null);
     setGone(previous => new Set([...previous, ...ids]));
     try {
@@ -291,14 +294,14 @@ export function useMealMoves(day) {
         setError(null);
         offerUndo(result, ids, rows, { day: { from: fromDate, to: toDate } });
       });
-      return true;
+      return MoveResult.MOVED;
     } catch (err) {
       setGone(previous => { const next = new Set(previous); ids.forEach(id => next.delete(id)); return next; });
       releaseIfRefused(err, body.operationId);
       setError(`Couldn't move ${whatMoved(rows)} to ${dayLabel(toDate, localTodayISO())}: ${entryError(err)}`);
       logger.warn('entry.move-day.failed', { count: rows.length, from: fromDate, to: toDate, status: err.status, error: err.message });
       setUndo(null);
-      return false;
+      return MoveResult.NOT_MOVED;
     } finally { day.reload?.(); }
   }, [day]);
 

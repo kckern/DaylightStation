@@ -8,7 +8,6 @@
 .health-meal-tools, .health-meal-command-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; padding: 4px 0; }
 .health-meal-selection-row { display: flex; align-items: center; gap: 4px; }
 .health-meal-selection-row > .health-row-line { flex: 1; min-width: 0; }
-.health-meal-selection-row > input { flex: 0 0 auto; accent-color: var(--ds-info); }
 .health-meal-command-panel { padding: 8px; margin: 4px 0; border: 1px solid var(--ds-border, #39414c); border-radius: 6px; font-size: .8rem; }
 .health-meal-command-panel input[type=text] { color: inherit; background: transparent; border: 1px solid var(--ds-border, #39414c); border-radius: 4px; padding: 4px 6px; max-width: 100%; }
 .health-meal-command-panel label { display: flex; align-items: center; gap: 6px; margin: 4px 0; }

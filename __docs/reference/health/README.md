@@ -520,12 +520,17 @@ Three routes, one command (`useMealMoves().moveToDay`, `mealDrag.jsx`):
   docks at the right edge (`DayDropDock`, `MoveDayControl.jsx`; fixed-position, only
   exists during a drag, so it cannot shift the page). Drop on a day chip.
 - **Select foods:** selection spans every meal of the viewed day and ends when the day
-  changes. One bar above the meals offers "Move N to another day…" (recent days, or a
-  date picker for anything older) and "Move N to a meal…", each one atomic command. A
-  dish moves whole, so it counts only when every one of its ingredients is ticked; a
-  partly-ticked dish is skipped with a note. A move that is refused or fails keeps the
-  ticks for another try. Each meal's mic and group commands see only that meal's ticks,
-  and a command in one meal leaves the other meals' ticks in place.
+  changes; ticks on foods that have left the day are dropped. While selecting, a tap
+  anywhere on a food ticks it (a dish ticks all its parts, and shows as mixed when only
+  some are ticked). The row's editor, ⋯ menu, portion and number drags and dragging
+  itself are off until selection ends. A bar stays stuck under the app header for the
+  whole of selection mode, at one height, and offers "Move N to another day…" (recent
+  days, or a date picker for anything older) and "Move N to a meal…", each one atomic
+  command. A dish moves whole, so it counts only when every one of its ingredients is
+  ticked; a partly-ticked dish is skipped with a note. A move that is refused or fails
+  keeps the ticks, and choosing where the foods already are keeps them and says
+  "Already in Breakfast" or "Already on <day>". Each meal's mic and group commands see
+  only that meal's ticks, and a command in one meal leaves the other meals' ticks.
 - **Meal ⋯ menu:** "Move all to day" moves the whole meal.
 
 The rows leave the viewed day at once (`gone`) and one `foods-move` follows. A failure

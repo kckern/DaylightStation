@@ -20,6 +20,7 @@ export function MealFoodControls({ date, bucket, rows, selectedIds, selecting, o
   const running = useRef(false);
   const foods = rows.filter(row => row.kind !== 'group');
   const selectedFoods = foods.filter(row => selectedIds.includes(idOf(row)));
+  const canGroup = selectedFoods.length >= 2;
   const parents = rows.filter(row => row.kind === 'group');
   const allVersions = () => Object.fromEntries(rows.map(row => [idOf(row), row.version ?? 1]));
   const run = async action => {
@@ -45,8 +46,9 @@ export function MealFoodControls({ date, bucket, rows, selectedIds, selecting, o
   };
   return <>
     <div className="health-meal-tools">
-      <Button size="compact-xs" variant="subtle" onClick={()=>onSelectionMode(!selecting)} disabled={busy}>{selecting ? 'Done selecting' : 'Select foods'}</Button>
-      {selectedFoods.length >= 2 ? <Button size="compact-xs" variant="light" aria-label="Group selected foods" disabled={busy} onClick={()=>{setName('');setPanel('group');}}>Group ({selectedFoods.length})</Button> : null}
+      <Button size="compact-xs" variant="subtle" data-select-foods onClick={()=>onSelectionMode(!selecting)} disabled={busy}>{selecting ? 'Done selecting' : 'Select foods'}</Button>
+      {/* Holds its place while selecting, so ticking never rewraps this row. */}
+      {selecting || canGroup ? <Button size="compact-xs" variant="light" aria-label="Group selected foods" disabled={busy || !canGroup} style={canGroup ? undefined : { visibility: 'hidden' }} onClick={()=>{setName('');setPanel('group');}}>Group ({Math.max(selectedFoods.length, 2)})</Button> : null}
       {foods.length >= 2 ? <Button size="compact-xs" variant="subtle" onClick={suggest} loading={busy && panel !== 'group'}>Suggest groups</Button> : null}
       {parents.length ? <Button size="compact-xs" variant="subtle" disabled={busy} onClick={()=>{editGroup(idOf(parents[0]));setPanel('membership');}}>Edit groups</Button> : null}
       {extraActions}

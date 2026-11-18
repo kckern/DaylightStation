@@ -1,13 +1,14 @@
-import { useRef, useState } from 'react';
+import { useContext, useRef, useState } from 'react';
 import { Button, Group, NumberInput, Popover, UnstyledButton } from '@mantine/core';
 import { foodPortion, formatFoodPortion } from "../../portable/contracts/health/foodQuantity.mjs";
 import { numericFoodValue, numericFoodPatches } from "../../portable/contracts/health/foodNumericEdit.mjs";
-import { usePortionControl } from "./usePortionDraft.js";
+import { PortionsReadOnlyContext, usePortionControl } from "./usePortionDraft.js";
 import { entryId } from "./entryCommands.js";
 import { useDismissLayer } from "../../../../../frontend/src/lib/ui/dismiss/useDismissLayer.js";
 
 export function PortionControl({ row, field = 'portion', children, className }) {
   const control = usePortionControl(row);
+  const readOnly = useContext(PortionsReadOnlyContext);
   const gesture = useRef(null);
   const [open, setOpen] = useState(false);
   const [value, setValue] = useState('');
@@ -28,7 +29,7 @@ export function PortionControl({ row, field = 'portion', children, className }) 
     const baseline = own ? control.draft.row : row;
     try { numericFoodPatches(baseline, { field, value: numericFoodValue(baseline, field) }); } catch (error) { unavailable = error.message; }
   }
-  if (!control || unavailable) return <span className={classes} title={unavailable || undefined}>{display}</span>;
+  if (!control || unavailable || readOnly) return <span className={classes} title={readOnly ? undefined : unavailable || undefined}>{display}</span>;
   const begin = () => control.begin(row, field);
   const validInput = typeof value === 'number' && value >= minimum && !control.draft?.validationError;
   const submit = () => { if (!control.draft?.validationError) { setOpen(false); control.commit(); } };

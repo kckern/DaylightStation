@@ -528,6 +528,22 @@ describe('TodayView — scale observations', () => {
     expect(screen.getByRole('button', { name: 'Scan barcode to Breakfast' })).toBeTruthy();
   });
 
+  it('choosing the meal the ticked food is already in says so and keeps the tick', async () => {
+    const today = new Date();
+    const date = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+    const eggs = { uuid: 'eggs', name: 'Eggs', date, mealTime: 'morning', calories: 90, grams: 50, version: 1 };
+    const api = baseApi({});
+    apiMock.mockImplementation(async (path, ...rest) => (path.includes('health/day?') ? { items: [eggs], budget: BUDGET } : api(path, ...rest)));
+    r(<TodayView onSetupGoals={() => {}} onCoachTap={() => {}} />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Select foods' }));
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Select Eggs' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Move 1 selected to a meal' }));
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Breakfast' }));
+    expect(await screen.findByText('Already in Breakfast')).toBeTruthy();
+    expect(screen.getByRole('checkbox', { name: 'Select Eggs' }).checked).toBe(true);
+    expect(apiMock.mock.calls.some(([path]) => path.includes('foods-move'))).toBe(false);
+  });
+
   it('every meal renders its add row even when empty, and none grabs focus', async () => {
     apiMock.mockImplementation(baseApi({}));
     r(<TodayView onSetupGoals={() => {}} onCoachTap={() => {}} />);

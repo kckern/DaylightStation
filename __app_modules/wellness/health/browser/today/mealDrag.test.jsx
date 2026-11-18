@@ -217,13 +217,14 @@ describe('useMealMoves', () => {
     const { result } = renderHook(() => useMealMoves({ items: [eggs], reload: () => {} }));
     let outcome;
     await act(async () => { outcome = await result.current.moveMeal([eggs], 'morning', null); });
-    expect(outcome).toBe(true); // already there
+    expect(outcome).toBe('unchanged');
+    expect(result.current.error).toBeNull();
     apiMock.mockRejectedValueOnce(Object.assign(new Error('no'), { status: 409 }));
     await act(async () => { outcome = await result.current.moveMeal([eggs], 'evening', null); });
-    expect(outcome).toBe(false);
+    expect(outcome).toBe('not-moved');
     apiMock.mockResolvedValueOnce(moved);
     await act(async () => { outcome = await result.current.moveMeal([eggs], 'evening', null); });
-    expect(outcome).toBe(true);
+    expect(outcome).toBe('moved');
   });
   it('only the foods not yet in that meal are sent and counted', async () => {
     apiMock.mockResolvedValue(moved);
@@ -307,12 +308,12 @@ describe('useMealMoves — moving to another day', () => {
     const { result } = renderHook(() => useMealMoves({ items: [eggs], reload: vi.fn() }));
     let outcome;
     await act(async () => { outcome = await result.current.moveToDay([eggs], '2026-09-28'); });
-    expect(outcome).toBe(true); // already there
+    expect(outcome).toBe('unchanged');
     await act(async () => { outcome = await result.current.moveToDay([eggs], '2020-01-15'); });
-    expect(outcome).toBe(true);
+    expect(outcome).toBe('moved');
     apiMock.mockRejectedValueOnce(new Error('boom'));
     await act(async () => { outcome = await result.current.moveToDay([toast], '2020-01-15'); });
-    expect(outcome).toBe(false);
+    expect(outcome).toBe('not-moved');
   });
   it('a failure brings the row back and says so', async () => {
     apiMock.mockRejectedValue(new Error('boom'));
@@ -367,7 +368,7 @@ describe('useMealMoves — inside a Health session', () => {
     act(() => { first = result.current.moves.moveToDay([eggs], TO); });
     let outcome;
     await act(async () => { outcome = await result.current.moves.moveMeal([eggs], 'evening', null); });
-    expect(outcome).toBe(false);
+    expect(outcome).toBe('not-moved');
     expect(result.current.moves.error).toMatch(/^Can't move Eggs yet/);
     await act(async () => { finish(movedReply); await first; });
   });
