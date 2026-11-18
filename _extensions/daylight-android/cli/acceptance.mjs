@@ -486,7 +486,7 @@ export function buildChecks(deviceFile, opts = {}) {
       return fail(`running ${m.running}, heldByOther ${m.heldByOther}, lastError ${m.lastError} ${short(m.lastErrorDetail || '')}`);
     }
     const evidence = `running, streaming ${m.streaming}, clients ${m.clients}`;
-    return capture ? manual(`${evidence}. ${afterReboot ? 'Without touching the Shield after reboot, start' : 'Start'} a Home Line call or approved recording. Verify the consumer receives PCM audio frames and have a person confirm audible speech.`) : pass(evidence);
+    return capture ? manual(`${evidence}. ${afterReboot ? 'Without touching the Shield after reboot, start' : 'Start'} a Home Line call or approved recording. Verify the consumer receives PCM audio frames and have a person confirm audible speech. See the Shield cutover runbook for consumer-side evidence.`) : pass(evidence);
   };
   const mic = has('mic-bridge');
   add('mic.status', 'GET /mic/status answers; when enabled the mic service reports healthy', ({ api }) => micCheck(api), mic);
@@ -520,22 +520,44 @@ export function buildChecks(deviceFile, opts = {}) {
     }
     return fail('the payload did not report a restart within 60 s');
   }, kiosk, { flag: 'restart', effect: 'restarts the payload: MIDI, synth, page and mic drop for a few seconds' });
-  add('crash.kill', "killing the app's process: it comes back by itself", async ({ api, sleep, pollMs, opts: o, state, restorer, cleanupApi, isInterrupted }) => {
+  add('crash.kill', "killing the app's process: it comes back by itself", async ({ api, sleep, pollMs, opts: o, restorer, cleanupApi, cleanupDelay, isInterrupted }) => {
     const info = await api.control('GET', '/debug/info');
     if (!ok(info)) return fail(`/debug/info ${why(info)}`);
-    const prior = settingOn(state, 'debug.execEnabled');
-    const restore = prior ? async () => {} : restorer('debug.execEnabled false', async () => {
-      const r = await cleanupApi.control('POST', '/settings', { body: { key: 'debug.execEnabled', value: false } });
-      if (!ok(r)) throw new Error(`POST /settings ${why(r)}`);
-      const settings = await cleanupApi.control('GET', '/settings');
-      const exec = Array.isArray(settings.json?.settings) && settings.json.settings.find((setting) => setting?.key === 'debug.execEnabled');
-      if (!ok(settings) || (exec?.value !== false && exec?.value !== 'false')) {
-        throw new Error(`debug.execEnabled read-back: ${why(settings)} expected false`);
+    const execValue = (r) => Array.isArray(r.json?.settings)
+      ? r.json.settings.find((setting) => setting?.key === 'debug.execEnabled')?.value
+      : undefined;
+    const before = await api.control('GET', '/settings');
+    const prior = execValue(before);
+    if (!ok(before) || ![true, false, 'true', 'false'].includes(prior)) {
+      return fail(`could not read debug.execEnabled before changing it: ${why(before)}`);
+    }
+    const wasEnabled = prior === true || prior === 'true';
+    const restore = wasEnabled ? async () => {} : restorer('debug.execEnabled false', async () => {
+      const deadline = performance.now() + Math.min(o['reboot-wait'] ?? 30, 30) * 1000;
+      let problem;
+      while (performance.now() < deadline) {
+        const timeout = () => ({ timeoutMs: Math.max(1, Math.min(5000, Math.ceil(deadline - performance.now()))) });
+        const r = await cleanupApi.control('POST', '/settings', {
+          body: { key: 'debug.execEnabled', value: false }, ...timeout(),
+        });
+        if (ok(r)) {
+          const settings = await cleanupApi.control('GET', '/settings', timeout());
+          const value = execValue(settings);
+          if (ok(settings) && (value === false || value === 'false')) return;
+          problem = `debug.execEnabled read-back: ${why(settings)} expected false`;
+          if (!settings.error && settings.status < 500) break;
+        } else {
+          problem = `POST /settings ${why(r)}`;
+          if (!r.error && r.status < 500) break;
+        }
+        const remaining = deadline - performance.now();
+        if (remaining > 0) await cleanupDelay(Math.min(pollMs, remaining));
       }
+      throw new Error(problem);
     });
     let result;
     try {
-      if (!prior) {
+      if (!wasEnabled) {
         const s = await api.control('POST', '/settings', { body: { key: 'debug.execEnabled', value: true } });
         if (!ok(s)) return fail(`could not turn on debug.execEnabled: ${why(s)}`);
       }
@@ -801,7 +823,7 @@ export async function runAcceptance({ deviceFile, host, token, opts, deps = {} }
   const state = {};
   const counts = { PASS: 0, FAIL: 0, MANUAL: 0, SKIP: 0 };
   let badPayload = null;
-  const context = { api, state, opts, sleep, pollMs, out, fetchImpl, restorer, cleanupApi, isInterrupted: () => interrupt !== null };
+  const context = { api, state, opts, sleep, pollMs, out, fetchImpl, restorer, cleanupApi, cleanupDelay: delay, isInterrupted: () => interrupt !== null };
   const preflightChecks = new Map(availableChecks
     .filter((check) => check.id === 'core.status' || check.id === 'core.auth')
     .map((check) => [check.id, check]));

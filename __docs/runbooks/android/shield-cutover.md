@@ -66,14 +66,31 @@ below means restarting the prod container, as in a deploy.
 
 ### Microphone capture after each reboot
 
-Wait for `reboot.survives` to pass. With no one touching the Shield after it
-boots, start a Home Line call from another device or use an approved recording
-consumer. Verify the consumer receives PCM audio frames from the Shield and
-have someone confirm audible speech. Record both observations in the private
-sitting notes before proceeding. The runner reports `reboot.mic-capture` as
-MANUAL when the service reports healthy. A disabled or unhealthy service fails
-the check. A status response, a connected client, a stream header or a zero exit
-code does not satisfy the capture proof.
+Wait for `reboot.survives` to pass. With no one touching the Shield after boot,
+start a Home Line call from another device. Use the same consumer and listening
+checks for the initial hand-over in step 5.
+
+1. In the log store, find this Shield call's frontend events using
+   `context.component:"useNativeAudioBridge" AND _msg:"bridge-volume" AND _time:5m`.
+   Match the events to the call's timestamp and the Shield's kiosk session.
+   Speak near the Shield and require a fresh `maxLevel` greater than zero.
+   The worklet computes this level from decoded PCM playback samples. A format
+   header can initialize the worklet, but cannot produce a positive level.
+2. If frontend logs are unavailable and the Shield WebView inspector was enabled
+   for the approved sitting, open the consumer's WebView in Chrome via
+   `chrome://inspect/#devices`. Open **Network → WS** before the call opens
+   the mic connection. Select the socket whose port matches `GET /mic/status`
+   and open **Messages**. Require incoming **Binary Message** rows with a
+   nonzero even byte length after the `pcm_s16le` text format header.
+   Do not reload the Shield page or restart anything to make capture succeed.
+3. Have the person on the other end confirm they hear intelligible speech from
+   the Shield. Record the time, the positive level or binary message count and
+   byte lengths, and the listening result in the private sitting notes. Keep
+   the audio payload out of the notes and do not export the WebSocket capture.
+
+The runner reports `reboot.mic-capture` as MANUAL when the service reports
+healthy. A disabled or unhealthy service fails the check. Require both the
+consumer evidence and the listening result before proceeding.
 
 ## The soak: two weeks
 

@@ -127,7 +127,12 @@ async function fakeDevice({ id = 'portal', capabilities, faults = {}, settings =
       case 'GET /debug/logcat': res.writeHead(200, { 'Content-Type': 'text/plain' }); return res.end('a\nb\n');
       case 'POST /debug/exec':
         if (!s.settings['debug.execEnabled']) return json(res, 501, { ok: false, error: 'unsupported', reason: 'debug.execEnabled is false' });
-        if (body.cmd === 'kill -9 $PPID') { goAway(60, false); req.socket.destroy(); return undefined; }
+        if (body.cmd === 'kill -9 $PPID') {
+          goAway(faults.killDowntime ?? 60, false);
+          faults.onKill?.();
+          req.socket.destroy();
+          return undefined;
+        }
         return json(res, 200, { ok: true, exitCode: 0, stdout: 'uid=10123(u0_a123)' });
       case 'POST /loopback': return json(res, 200, { ok: true, echoed: true, rttMs: faults.slowEcho ? 90 : 31 });
       case 'GET /speaker': return json(res, 200, { ok: true, speaker: { connected: true }, guard: { state: 'ok' } });
@@ -386,6 +391,25 @@ test('an interrupt during --kill restores debug.execEnabled before exiting with 
     dev.state.down = true;
     await running;
     assert.equal(signals.listenerCount('SIGINT'), 0, 'the handler is removed after the run');
+  } finally { await dev.close(); }
+});
+
+test('interrupting while --kill has taken the process down restores exec after it returns', async () => {
+  const signals = new EventEmitter();
+  const exits = [];
+  const dev = await fakeDevice({ faults: {
+    killDowntime: 120,
+    onKill: () => signals.emit('SIGINT'),
+  } });
+  try {
+    const r = await run(dev, ['--only', 'crash.kill', '--kill', '--reboot-wait', '5'], {
+      signals, exit: (code) => exits.push(code),
+    });
+    assert.equal(r.code, 130, r.text);
+    assert.deepEqual(exits, [130]);
+    assert.equal(dev.state.settings['debug.execEnabled'], false);
+    assert.match(r.text, /interrupted: put back debug.execEnabled false/);
+    assert.equal(signals.listenerCount('SIGINT'), 0);
   } finally { await dev.close(); }
 });
 

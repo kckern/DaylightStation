@@ -455,7 +455,10 @@ In the page, through `dd eval`.
 When `acc --active` exercises screen sleep and wake, it restores the original
 screen state and reads it back before reporting PASS. A restoration failure
 returns exit status 1, including after Ctrl-C. A successful interrupted
-restoration returns 130.
+restoration returns 130. If Ctrl-C arrives while `acc --kill` is restarting
+the app, the runner retries temporary control API failures while restoring
+`debug.execEnabled` and verifies the saved value. The retry window is up to
+30 seconds, or the selected `--reboot-wait` when that is shorter.
 
 ## Stage 8. Self-update, reboot, payload push, rollback, bad payload
 
@@ -479,7 +482,7 @@ until every line of this stage is marked ok on that device.**
       check after each reboot. Without touching the Shield after boot, verify
       that a Home Line call or approved recording consumer receives PCM audio
       frames and have a person confirm audible speech. Record both observations
-      in the private sitting notes.
+      in the private sitting notes using the [Shield capture procedure](shield-cutover.md#microphone-capture-after-each-reboot).
 - [ ] **What survives a reboot on this device.** Record: does ADB over WiFi come
       back (`adb connect {device-address}:5555`)? On the Portal it does not. Then
       the lifeline and `dd update` are the whole way back in, and both were just
