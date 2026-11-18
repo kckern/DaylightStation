@@ -1,16 +1,24 @@
 # Webapp Design System
 
-The shared visual language for the top-level webapps (Health, Life, Auto, Home,
-and Media's chrome layer). One token contract, one primitives barrel, one
-per-app "pack" for art direction. The goal: every app looks distinct but is
-built from the same parts, so a fix or an improvement in one place lands
-everywhere.
+Admin, Health, Media, Feed, Home, Life and Auto share browser layout and interaction contracts. Theme packs supply app-specific art direction. Playback engines and feature workflows stay with their apps.
+
+## Find a pattern by task
+
+| Task | Start here | Example |
+| --- | --- | --- |
+| Open a destination or select a local view | `AppChrome` accepts tabs with an optional `href`. A destination renders a router link. A local view calls `onTabChange(id)`. The app owns selection and reload behavior. | Life routes and Home views |
+| Compose a grouped editor | Supply header and navigation to `AppFrame`. Its `mainRef` points to the primary scroll region. | Admin |
+| Return to a view at its previous position | `useViewScroll({mainRef, viewKey, owner, ready})` restores the position after the view is ready and clears it when the owner changes. | Health Today |
+| Choose content while editing a list | Use the content catalog's picker. The app supplies the selection action. Media phone search consumes its controller and rows. | Admin list editor and Media search |
+| Keep playback alive while browsing | `PlaybackFrame` places controls, overlays and the engine alongside routed children. Route-specific main landmarks and scrolling remain inside the content. | Feed reader and Media canvas |
+| Poll while a screen is in use | `useVisibleRefresh({active, intervalMs, reload})` releases its timer when the document is hidden and refreshes on return. | Home entities |
+| Label a native field in a mobile sheet | Associate a native label with the input. Use the shared `.ds-input` geometry and a compact `Button` for submission. | Auto fuel, maintenance and journey editors |
+| Remember a simple preference | `browserPreference(key, fallback, decode)` preserves the raw string format. The feature supplies migration and validation. | Home view, Admin preview screen and Feed playback settings |
 
 ## Token contract
 
-`frontend/src/lib/theme/tokens.mjs` is the only place raw color, motion, and
-breakpoint values are defined. Everything else — Mantine themes, plain SCSS,
-components — consumes them, never restates them.
+`frontend/src/lib/theme/tokens.mjs` defines the base roles, motion values and control geometry. App packs in
+`packs.mjs` override semantic roles for their surfaces.
 
 Seven semantic color roles: `background`, `surface`, `surfaceAlt`, `border`,
 `textHigh`, `textMid`, `textLow`. Five status colors: `success`, `warning`,
@@ -18,7 +26,7 @@ Seven semantic color roles: `background`, `surface`, `surfaceAlt`, `border`,
 `reveal` (300ms), and a shared `easing` curve. Breakpoints (`md`, `lg`) mirror
 `frontend/src/styles/_breakpoints.scss` — the two are kept in sync by hand.
 
-Two ways to consume the contract, both backed by the same values:
+The contract reaches consumers through Mantine, scoped CSS or the document root.
 
 - **Inside Mantine** (components, JSX using Mantine props): `createAppTheme.js`
   projects the token colors into Mantine's ramp shape, so a role reads as
@@ -49,13 +57,7 @@ it first:
   JetBrains Mono are there. A font only one module uses (ArtMode's
   Garamonds, the clock's Droid Sans Mono, School's Kongtext) stays with that
   module.
-- **`__app_modules/Admin/Admin.variables.scss` is Admin's own palette,** not part of
-  the design system. It is guaranteed only on Admin pages, where its later
-  `:root` rules override the contract. It also reaches a few other pages as a
-  side effect of which CSS chunks they happen to share, so it can seem to
-  work elsewhere. Nothing outside Admin may depend on a name defined only
-  there. A shared module that uses one of those names (the content combobox,
-  Auth) must carry a fallback value.
+- Admin's palette lives in its pack. `frontend/src/modules/Admin/Admin.variables.scss` defines scoped legacy aliases for editors. The provider encloses an Admin portal target so controls and dialogs inherit the same colors.
 
 Before route splitting, one 11 MB bundle loaded every app's CSS on every
 page. That hid these dependencies. Lib/ui, Life, Auto and Call had been
@@ -191,7 +193,7 @@ either case, a slower, superseded response can never clobber a fresher answer
 that already landed.
 
 **Persisting across page loads (opt-in, per app).**
-`attachApiResourcePersistence({ store, prefixes })` backs the `swr` cache
+`registerResourcePersistence({ store, prefixes })` returns a handle with `ready`, `setOwner`, and `dispose`. Independent consumers register disjoint path prefixes. Each registration backs the `swr` cache
 with a store: `createIdbResourceStore(name)` in
 `lib/hooks/persistentResourceStore.js`, which uses IndexedDB and is capped by
 entry count and total bytes.
@@ -202,15 +204,13 @@ entry count and total bytes.
   every 400 ms and again on `pagehide`.
 - **Restored entries are stale by definition.** Every reader revalidates
   them, and the prefetcher does not treat them as fresh.
-- **The disk copy belongs to one person.** `claimApiResourceOwner(id)`
-  records whose data it is. A different id drops everything that came from
-  disk, then refetches it.
+- **The disk copy belongs to one person.** Call the handle's `setOwner(id)` after server confirmation. Changing owners clears matching snapshots and revalidates mounted readers. Requests started for the previous owner cannot repopulate the new view. IndexedDB checks the persisted owner inside each write transaction.
 - **Failures degrade to a normal network load.** No IndexedDB, a blocked
   open, a quota error, or a load slower than `timeoutMs` all do this.
 - **Bump `RECORD_VERSION`** when a persisted payload shape changes
   incompatibly. Every old record is then ignored and pruned.
 
-Health is the first app to use this (`__app_modules/Health/healthCache.js`).
+Health is the first app to use this (`__app_modules/wellness/health/browser/healthCache.js`).
 
 The Health app's day view is the primitive's first consumer of the `swr`
 mode; see

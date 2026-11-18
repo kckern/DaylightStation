@@ -107,6 +107,20 @@ describe('useApiResource persistence', () => {
     expect(fresh.owner).toBe('first-user');
   });
 
+  it('refetches mounted readers when a different registration takes over the same path', async () => {
+    const path = 'api/v1/health/day';
+    const old = deferred();
+    const next = memoryStore({ owner: 'bob' });
+    await attachApiResourcePersistence({ store: memoryStore({ owner: 'amy' }), prefixes: PREFIXES });
+    apiMock.mockReturnValueOnce(old.promise).mockResolvedValue({ owner: 'bob' });
+    const { result } = renderHook(() => useApiResource(path, { swr: true }));
+    await act(async () => { await attachApiResourcePersistence({ store: next, prefixes: PREFIXES }); });
+    await act(async () => old.resolve({ owner: 'amy' }));
+    await waitFor(() => expect(result.current.data).toEqual({ owner: 'bob' }));
+    flushApiResourcePersistence();
+    expect(next.records.get(path)).toEqual({ owner: 'bob' });
+  });
+
   it('an owner that could not be read is never taken for a first visit', async () => {
     // The disk is slow this time: nothing restored, owner unknown.
     const store = memoryStore({ owner: 'first-user', entries: [{ path: 'api/v1/health/weight', value: ['first-user'] }] });

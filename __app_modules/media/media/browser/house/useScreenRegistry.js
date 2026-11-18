@@ -6,6 +6,7 @@
 // "unavailable" — names then come from devices.yml and the browsers' own
 // broadcasts, as before.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useVisibleRefresh } from '@/lib/hooks/useVisibleRefresh.js';
 import { houseApi as defaultApi, screenIdFor } from "./houseApi.js";
 import houseLog from "./houseLog.js";
 
@@ -14,13 +15,13 @@ export const REGISTRY_POLL_MS = 120_000;
 
 export function useScreenRegistry({ api = defaultApi, pollMs = REGISTRY_POLL_MS } = {}) {
   const [state, setState] = useState({ ...EMPTY, loaded: false, available: true, error: null });
-  const mounted = useRef(true);
-  useEffect(() => () => { mounted.current = false; }, []);
+  const latestRead = useRef(0);
 
   const refresh = useCallback(async () => {
+    const read = ++latestRead.current;
     try {
       const res = await api.listScreens();
-      if (!mounted.current) return;
+      if (read !== latestRead.current) return;
       const next = {
         screens: Array.isArray(res?.screens) ? res.screens : [],
         notSeenLately: Array.isArray(res?.notSeenLately) ? res.notSeenLately : [],
@@ -31,24 +32,19 @@ export function useScreenRegistry({ api = defaultApi, pollMs = REGISTRY_POLL_MS 
       houseLog.registryLoaded({ screens: next.screens.length, notSeenLately: next.notSeenLately.length, retired: next.retired.length });
       setState({ ...next, loaded: true, available: true, error: null });
     } catch (error) {
-      if (!mounted.current) return;
+      if (read !== latestRead.current) return;
       const unavailable = error?.status === 501 || error?.status === 404;
       houseLog.registryFailed({ status: error?.status ?? null, error: error?.message, unavailable });
       setState((prev) => ({ ...prev, loaded: true, available: !unavailable && prev.available, error: unavailable ? null : error }));
     }
   }, [api]);
 
-  useEffect(() => { refresh(); }, [refresh]);
-
   useEffect(() => {
-    const onVisibility = () => { if (document.visibilityState === 'visible') refresh(); };
-    document.addEventListener('visibilitychange', onVisibility);
-    const timer = pollMs > 0 ? setInterval(refresh, pollMs) : null;
-    return () => {
-      document.removeEventListener('visibilitychange', onVisibility);
-      if (timer) clearInterval(timer);
-    };
-  }, [refresh, pollMs]);
+    refresh();
+    return () => { latestRead.current++; };
+  }, [refresh]);
+
+  useVisibleRefresh({ intervalMs: pollMs, reload: refresh });
 
   const byId = useMemo(() => {
     const map = new Map();

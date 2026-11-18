@@ -11,7 +11,7 @@ function formatTime(s) {
   return `${m}:${sec.toString().padStart(2, '0')}`;
 }
 
-export default function FeedPlayerSheet({ open, onClose, item, playback }) {
+export default function FeedPlayerSheet({ open, onClose, item, playback, openerRef }) {
   const {
     speed, setSpeed, volume, setVolume, muted, toggleMute,
     pausedMedia, resumePaused,
@@ -68,8 +68,8 @@ export default function FeedPlayerSheet({ open, onClose, item, playback }) {
       else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
     };
     document.addEventListener('keydown', handler);
-    return () => { document.removeEventListener('keydown', handler); previousFocusRef.current?.focus?.(); };
-  }, [open, onClose]);
+    return () => { document.removeEventListener('keydown', handler); (openerRef?.current || previousFocusRef.current)?.focus?.({ preventScroll: true }); };
+  }, [open, onClose, openerRef]);
 
   // --- Seek scrubber ---
   const scrubberRef = useRef(null);

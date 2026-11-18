@@ -49,7 +49,7 @@ import "../shell/SessionControls.scss";
 // `addTo` ({ deviceId, name }) opens this search for ONE addition to that
 // screen's queue (STEER.1b/AC7, RQ-STEER-22): every pick is added there, the
 // aim is untouched, and the surface closes once the addition is sent.
-export function SearchMode({ onClose, addTo = null }) {
+export function SearchMode({ onClose, addTo = null, restoreSearchFocus }) {
   const [oneShotAction, setOneShotAction] = useState(null);
   const { scopes, currentScopeKey, currentScope, scopeError, resetScope } = useSearchContext();
   const { dispatch, dispatchLeafVerb, playContainerAsQueue, addToScreen } = useContentDispatch();
@@ -89,7 +89,11 @@ export function SearchMode({ onClose, addTo = null }) {
     mediaLog.searchModeExited({ reason });
     onClose?.();
     if (!opts.navigated) {
-      priorFocusRef.current?.focus?.({ preventScroll: true });
+      const previous = priorFocusRef.current;
+      previous?.focus?.({ preventScroll: true });
+      if (previous === document.body || document.activeElement !== previous) {
+        restoreSearchFocus?.();
+      }
       if (typeof window !== 'undefined' && window.scrollY !== priorScrollRef.current) {
         window.scrollTo?.({ top: priorScrollRef.current, behavior: 'instant' });
       }
@@ -109,7 +113,7 @@ export function SearchMode({ onClose, addTo = null }) {
     // left needing two backs. This fires a popstate too, but closedRef is
     // already set, so the listener below no-ops for it.
     window.history.back();
-  }, [onClose]);
+  }, [onClose, restoreSearchFocus]);
 
   // NavProvider's push, bound to replace this surface's marker entry — see
   // closeSurface. Handed to the ⋯ verb applier so "Open detail" gets the same

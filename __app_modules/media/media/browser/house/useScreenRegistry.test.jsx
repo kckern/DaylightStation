@@ -25,6 +25,16 @@ describe('useScreenRegistry', () => {
     expect(api.listScreens).toHaveBeenCalledTimes(2);
   });
 
+  it('keeps the newest screen list when an older request settles after StrictMode remount', async () => {
+    const pending = [];
+    const api = { listScreens: () => new Promise(resolve => pending.push(resolve)) };
+    render(<React.StrictMode><Probe api={api} /></React.StrictMode>);
+    expect(pending).toHaveLength(2);
+    await act(async () => pending[1]({ screens: [{ id: 'den', name: 'Current name' }] }));
+    await act(async () => pending[0]({ screens: [{ id: 'den', name: 'Old name' }] }));
+    expect(screen.getByTestId('probe')).toHaveTextContent('Current name|y');
+  });
+
   it('reports an unwired registry (501) as unavailable rather than broken', async () => {
     const api = { listScreens: vi.fn(async () => { throw new HouseApiError('no', { status: 501 }); }) };
     render(<Probe api={api} />);

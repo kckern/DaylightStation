@@ -15,7 +15,7 @@ export function AppThemeProvider({ pack = 'health', forceColorScheme, scopeId, c
   const theme = useMemo(() => createAppTheme(packDef), [packDef]);
   const vars = useMemo(() => dsCssVars(packDef), [packDef]);
   return (
-    <MantineProvider theme={theme} defaultColorScheme="dark" forceColorScheme={forceColorScheme}
+    <MantineProvider theme={theme} defaultColorScheme={packDef?.defaultColorScheme || 'dark'} forceColorScheme={forceColorScheme}
       cssVariablesSelector={scopeId ? `#${scopeId}` : undefined}
       getRootElement={scopeId ? () => rootRef.current : undefined}
     >

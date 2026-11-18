@@ -189,6 +189,9 @@ export function registerResourcePersistence({ store, prefixes, owner, timeoutMs 
     if (typeof window !== 'undefined') window.removeEventListener('pagehide', scope.flush);
     if (!preserveMemory) resetReaders();
   }
+  // A newly attached store defines a new ownership boundary even when reads
+  // started before any store existed for these URLs.
+  resetReaders();
   return { ready: restore(), setOwner, dispose, get owner() { return scope.owner; } };
 }
 
@@ -305,12 +308,12 @@ function pumpPrefetch() {
     prefetchInFlight.add(path);
     sharedRequest(path)
       .then(result => {
-        if (epoch !== prefetchEpoch || scope?.epoch !== ownerEpoch) return;
+        if (epoch !== prefetchEpoch || (registrationFor(path) !== scope || scope?.epoch !== ownerEpoch)) return;
         if (isNewestGeneration(path, generation)) { cacheSet(path, result); fetchedAt.set(path, Date.now()); }
         prefetchStats.completed += 1;
         onDone?.(null, path);
       })
-      .catch(err => { if (epoch !== prefetchEpoch || scope?.epoch !== ownerEpoch) return; prefetchStats.failed += 1; onDone?.(err, path); })
+      .catch(err => { if (epoch !== prefetchEpoch || (registrationFor(path) !== scope || scope?.epoch !== ownerEpoch)) return; prefetchStats.failed += 1; onDone?.(err, path); })
       .finally(() => { if (epoch !== prefetchEpoch) return; prefetchActive -= 1; prefetchInFlight.delete(path); pumpPrefetch();
         if (isPrefetchIdle() && prefetchOnIdle) { const onIdle = prefetchOnIdle; prefetchOnIdle = null; onIdle(getPrefetchStats()); } });
   }
@@ -455,7 +458,7 @@ export function useApiResource(path, { deps = [], enabled = true, label, logger 
     let live = true;
     const scope = registrationFor(path);
     const epoch = scope?.epoch;
-    const isCurrent = () => live && scope?.epoch === epoch;
+    const isCurrent = () => live && scope === registrationFor(path) && scope?.epoch === epoch;
 
     const { hit: cacheHit, value: cachedValue } = swr ? cacheGet(path) : { hit: false };
     if (cacheHit) {

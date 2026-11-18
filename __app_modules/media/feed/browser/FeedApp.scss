@@ -8,9 +8,9 @@
 
 .feed-app {
   // Surfaces (darkest → lightest)
-  --feed-canvas: #0f1113;
-  --feed-surface-1: #17191c;
-  --feed-surface-2: #1e2125;
+  --feed-canvas: var(--ds-background);
+  --feed-surface-1: var(--ds-surface);
+  --feed-surface-2: var(--ds-surface-alt);
   --feed-surface-3: #262a2f;
 
   // Borders
@@ -18,12 +18,12 @@
   --feed-border-strong: rgba(255, 255, 255, 0.16);
 
   // Text (primary → muted)
-  --feed-text-1: #f1f3f5;
-  --feed-text-2: #a9b1b9;
-  --feed-text-3: #71787f;
+  --feed-text-1: var(--ds-text-high);
+  --feed-text-2: var(--ds-text-mid);
+  --feed-text-3: var(--ds-text-low);
 
   // Accent — one blue family
-  --feed-accent: #4dabf7;
+  --feed-accent: var(--ds-accent);
   --feed-accent-strong: #74c0fc;
   --feed-accent-bg: rgba(77, 171, 247, 0.16);
 
@@ -39,14 +39,14 @@
   --feed-radius-sm: 4px;
   --feed-radius-md: 8px;
   --feed-radius-lg: 12px;
-  --feed-control: 36px;
+  --feed-control: var(--ds-control-compact-height);
 
   // Type
   --feed-font-ui: system-ui, -apple-system, 'Segoe UI', sans-serif;
   --feed-font-condensed: 'Roboto Condensed', 'Arial Narrow', system-ui, sans-serif;
 
   // Reading surface (article body card) — overridden per reading theme below.
-  --feed-reading-surface: #17191c;
+  --feed-reading-surface: var(--feed-surface-1);
   --feed-reading-ink: #e9ecef;
   --feed-reading-link: #74c0fc;
 

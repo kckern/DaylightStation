@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { DaylightAPI } from "../../../../../frontend/src/lib/api.mjs";
 
 function filterPlaybackSurfaces(rawDevices) {
@@ -13,21 +13,28 @@ export function useDevices() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
+  const latestRead = useRef(0);
   const load = useCallback(async () => {
+    const read = ++latestRead.current;
     setLoading(true);
     setError(null);
     try {
       const res = await DaylightAPI('api/v1/device/config');
+      if (read !== latestRead.current) return;
       setDevices(filterPlaybackSurfaces(res?.devices));
       setLoading(false);
     } catch (err) {
+      if (read !== latestRead.current) return;
       setError(err);
       setDevices([]);
       setLoading(false);
     }
   }, []);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    load();
+    return () => { latestRead.current++; };
+  }, [load]);
 
   return { devices, loading, error, refresh: load };
 }

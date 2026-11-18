@@ -24,6 +24,12 @@ import mediaLog from "../logging/mediaLog.js";
 import "./MediaShell.scss";
 
 function ShellInner() {
+  const searchInputRef = React.useRef(null);
+  const launcherRef = React.useRef(null);
+  const restoreSearchFocus = useCallback(() => {
+    const target = searchInputRef.current?.getClientRects().length ? searchInputRef.current : launcherRef.current;
+    target?.focus({ preventScroll: true });
+  }, []);
   const { pop, depth } = useNav();
   const [searchOpen, setSearchOpen] = useState(false);
   // Add to this queue: the one search, for one addition to one screen.
@@ -49,9 +55,9 @@ function ShellInner() {
       if (slashIsNotForSearch(e)) return;
       // Tablet/laptop: the dock's search field. Phone: its field is hidden, so
       // the same key opens the full-screen search instead (NF-DEV-03).
-      const input = document.querySelector('.media-dock .media-search-bar input');
+      const input = searchInputRef.current;
       if (input && input.getClientRects().length > 0) { e.preventDefault(); input.focus(); return; }
-      if (document.querySelector('[data-testid="media-search-launcher"]')?.getClientRects().length > 0) {
+      if (launcherRef.current?.getClientRects().length > 0) {
         e.preventDefault();
         setSearchOpen(true);
       }
@@ -64,7 +70,7 @@ function ShellInner() {
     <SearchLauncherContext.Provider value={searchLauncher}>
     <DismissStackProvider onBaseDismiss={baseDismiss}>
       <PlaybackFrame className="media-shell" data-testid="media-shell"
-        header={<Dock onOpenSearch={() => setSearchOpen(true)} />}
+        header={<Dock searchInputRef={searchInputRef} launcherRef={launcherRef} onOpenSearch={() => setSearchOpen(true)} />}
         controls={<>
           <ReconnectingNote />
           <LocalPlaybackOutcomes />
@@ -87,7 +93,7 @@ function ShellInner() {
         navigation={<TabBar />}
         overlays={<>
           <PlaybackQualityHost />
-          {searchOpen && <SearchMode addTo={searchAddTo} onClose={() => { setSearchOpen(false); setSearchAddTo(null); }} />}
+          {searchOpen && <SearchMode restoreSearchFocus={restoreSearchFocus} addTo={searchAddTo} onClose={() => { setSearchOpen(false); setSearchAddTo(null); }} />}
         </>}
       >
         <div className="media-shell-body">

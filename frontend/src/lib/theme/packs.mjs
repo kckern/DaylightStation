@@ -44,6 +44,17 @@ export const PACKS = Object.freeze({
     primaryColor: 'gray',
     accent: '#94a3b8',
   }),
+  feed: Object.freeze({
+    name: 'feed',
+    defaultColorScheme: 'light',
+    character: 'A quiet dark frame for reading. Article surfaces follow the reader’s chosen theme.',
+    primaryColor: 'blue',
+    accent: '#4dabf7',
+    colors: Object.freeze({
+      background: '#0f1113', surface: '#17191c', surfaceAlt: '#1e2125',
+      textHigh: '#f1f3f5', textMid: '#a9b1b9', textLow: '#71787f',
+    }),
+  }),
   media: Object.freeze({
     name: 'media',
     character: 'Amber-on-near-black theater chrome (product-owned; extends '

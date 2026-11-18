@@ -448,6 +448,12 @@ test('[STEER.1a/AC3] full local controls hide duplicate compact controls without
   await expect(page.getByTestId('media-mini-player')).not.toBeVisible();
   await page.getByTestId('now-playing-back').click();
   await expect(page.getByTestId('media-mini-player')).toBeVisible();
+  await page.setViewportSize(viewports.phone);
+  await page.getByTestId('app-tab-browse').click();
+  await page.getByTestId('app-tab-home').click();
+  const controls = await page.getByTestId('media-mini-player').boundingBox();
+  const navigation = await page.getByTestId('app-tabbar').boundingBox();
+  expect(controls.y + controls.height).toBeLessThanOrEqual(navigation.y + 1);
   await expect.poll(() => original.evaluate((el, position) => el.isConnected && !el.paused && el.currentTime > position + 0.25, before)).toBe(true);
 });
 

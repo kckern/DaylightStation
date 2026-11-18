@@ -1,7 +1,7 @@
 import { PlaybackFrame } from '@/lib/ui/AppFrame.jsx';
-import { lazy, Suspense, useState, useEffect, useRef } from 'react';
+import { lazy, Suspense, useCallback, useState, useEffect, useRef } from 'react';
 import { Routes, Route, NavLink, Navigate, Outlet, useParams, useLocation, useNavigate } from 'react-router-dom';
-import { MantineProvider } from '@mantine/core';
+import { AppThemeProvider } from '@/lib/ui/AppThemeProvider.jsx';
 import { Notifications } from '@mantine/notifications';
 import '@mantine/core/styles.css';
 import '@mantine/notifications/styles.css';
@@ -96,6 +96,9 @@ function FeedLayout() {
   const showMiniBar = !!activeMedia && !playerVisible;
   const [sheetOpen, setSheetOpen] = useState(false);
 
+  const playerOpenerRef = useRef(null);
+  const closePlayerSheet = useCallback(() => setSheetOpen(false), []);
+
   // Close sheet if media is cleared
   useEffect(() => {
     if (!activeMedia) setSheetOpen(false);
@@ -132,6 +135,7 @@ function FeedLayout() {
       className="feed-app"
       controls={showMiniBar && !sheetOpen && (
         <FeedPlayerMiniBar
+          openerRef={playerOpenerRef}
           item={activeMedia.item}
           playback={playback}
           onOpen={() => setSheetOpen(true)}
@@ -140,7 +144,8 @@ function FeedLayout() {
       )}
       overlays={<FeedPlayerSheet
         open={sheetOpen && !!activeMedia}
-        onClose={() => setSheetOpen(false)}
+        openerRef={playerOpenerRef}
+        onClose={closePlayerSheet}
         item={activeMedia?.item}
         playback={playback}
       />}
@@ -208,7 +213,7 @@ function FeedLayout() {
 const FeedApp = () => {
   useDocumentTitle('Feed');
   return (
-    <MantineProvider>
+    <AppThemeProvider pack="feed">
       <Notifications position="bottom-center" />
       <FeedWorkspaceProvider>
         <FeedPlayerProvider>
@@ -225,7 +230,7 @@ const FeedApp = () => {
           </Routes>
         </FeedPlayerProvider>
       </FeedWorkspaceProvider>
-    </MantineProvider>
+    </AppThemeProvider>
   );
 };
 

@@ -21,7 +21,7 @@ import { CastTargetChip } from "../cast/CastTargetChip.jsx";
 import { FirstUseCard } from "../identity/FirstUseCard.jsx";
 import { DestinationInteractionContext } from "../cast/destinationInteraction.js";
 
-export function Dock({ onOpenSearch }) {
+export function Dock({ onOpenSearch, searchInputRef, launcherRef }) {
   const [startFreshOpen, setStartFreshOpen] = useState(false);
   const openStartFresh = useCallback(() => setStartFreshOpen(true), []);
   // Set while the destination control is being used, so an open search stays open.
@@ -38,6 +38,7 @@ export function Dock({ onOpenSearch }) {
       </div>
       <button
         type="button"
+        ref={launcherRef}
         className="media-search-launcher"
         data-testid="media-search-launcher"
         onClick={() => onOpenSearch?.()}
@@ -53,7 +54,7 @@ export function Dock({ onOpenSearch }) {
           at 1200px before this fix). Mobile hides `.media-search-bar`
           directly by its own class (mobile-only rule below), not via a
           wrapper. */}
-      <MediaContentSearch />
+      <MediaContentSearch inputRef={searchInputRef} />
       <FleetIndicator />
       <SettingsMenu onResetSession={openStartFresh} />
       <StartFreshDialog open={startFreshOpen} onClose={() => setStartFreshOpen(false)} />

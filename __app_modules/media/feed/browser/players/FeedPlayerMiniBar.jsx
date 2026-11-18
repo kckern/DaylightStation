@@ -10,7 +10,7 @@ function formatTime(s) {
   return `${m}:${sec.toString().padStart(2, '0')}`;
 }
 
-export default function FeedPlayerMiniBar({ item, playback, onOpen, onClose }) {
+export default function FeedPlayerMiniBar({ item, playback, onOpen, onClose, openerRef }) {
   // All hooks must run before any early return (rules-of-hooks).
   const { speed, cycleSpeed, pausedMedia, resumePaused } = useFeedPlayer();
   const touchRef = useRef({ startY: 0 });
@@ -49,7 +49,7 @@ export default function FeedPlayerMiniBar({ item, playback, onOpen, onClose }) {
       onTouchStart={handleBarTouchStart}
       onTouchEnd={handleBarTouchEnd}
     >
-      <button type="button" className="feed-mini-bar-open" onClick={onOpen} aria-label={`Open player: ${item.title}`}>
+      <button ref={openerRef} type="button" className="feed-mini-bar-open" onClick={onOpen} aria-label={`Open player: ${item.title}`}>
         {thumb && (
           <img
             src={thumb}

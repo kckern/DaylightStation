@@ -14,7 +14,7 @@
 // inventing a separate chore.
 
 import { useState } from 'react';
-import { Sheet } from '@/lib/ui';
+import { Button, Sheet } from '@/lib/ui';
 import { autoApi } from "./useAutoApi.js";
 import autoLog from "./autoLog.js";
 
@@ -88,14 +88,14 @@ export default function FuelSheet({ vehicleId, initial = {}, onClose, onSaved })
 
         <label className="auto-field">
           <span>Date</span>
-          <input className="auto-input" type="date" value={form.date} onChange={set('date')} />
+          <input className="ds-input" type="date" value={form.date} onChange={set('date')} />
         </label>
 
         <label className="auto-field">
           <span>Odometer (mi)</span>
           {/* inputMode numeric so phones show the number pad, not a full keyboard */}
           <input
-            className="auto-input" type="number" inputMode="decimal" step="1"
+            className="ds-input" type="number" inputMode="decimal" step="1"
             value={form.odometerMi} onChange={set('odometerMi')} placeholder="from the dash"
           />
           <span className="auto-field__note">Optional, but it’s what makes mileage and mpg work.</span>
@@ -105,14 +105,14 @@ export default function FuelSheet({ vehicleId, initial = {}, onClose, onSaved })
           <label className="auto-field">
             <span>Gallons</span>
             <input
-              className="auto-input" type="number" inputMode="decimal" step="0.001"
+              className="ds-input" type="number" inputMode="decimal" step="0.001"
               value={form.volumeGal} onChange={set('volumeGal')} required
             />
           </label>
           <label className="auto-field">
             <span>Total ($)</span>
             <input
-              className="auto-input" type="number" inputMode="decimal" step="0.01"
+              className="ds-input" type="number" inputMode="decimal" step="0.01"
               value={form.priceTotal} onChange={set('priceTotal')}
             />
           </label>
@@ -132,10 +132,10 @@ export default function FuelSheet({ vehicleId, initial = {}, onClose, onSaved })
         {failure && <p className="auto-field__error">{failure.message}</p>}
 
         <div className="auto-sheet__actions">
-          <button type="button" className="auto-btn auto-btn--ghost" onClick={onClose}>Cancel</button>
-          <button type="submit" className="auto-btn auto-btn--primary" disabled={saving || !valid}>
+          <Button density="compact" variant="secondary" onClick={onClose}>Cancel</Button>
+          <Button type="submit" density="compact" busy={saving} disabled={!valid}>
             {saving ? 'Saving…' : 'Save'}
-          </button>
+          </Button>
         </div>
       </form>
     </Sheet>

@@ -31,27 +31,16 @@ const Icon = ({ d }) => (
   </svg>
 );
 const TABS = [
-  { id: 'today', label: 'Today', icon: <Icon d="M4 10h12M10 4v12" /> },
-  { id: 'progress', label: 'Progress', icon: <Icon d="M3 15l4-6 4 3 6-8" /> },
-  { id: 'health', label: 'Medical', icon: <Icon d="M10 17s-6-3.5-6-8a3.5 3.5 0 016-2.4A3.5 3.5 0 0116 9c0 4.5-6 8-6 8z" /> },
-  { id: 'coach', label: 'Coach', icon: <Icon d="M3 5h14v9H8l-4 3v-3H3z" /> },
+  { id: 'today', href: '/health', label: 'Today', icon: <Icon d="M4 10h12M10 4v12" /> },
+  { id: 'progress', href: '/health/progress', label: 'Progress', icon: <Icon d="M3 15l4-6 4 3 6-8" /> },
+  { id: 'health', href: '/health/medical', label: 'Medical', icon: <Icon d="M10 17s-6-3.5-6-8a3.5 3.5 0 016-2.4A3.5 3.5 0 0116 9c0 4.5-6 8-6 8z" /> },
+  { id: 'coach', href: '/health/coach', label: 'Coach', icon: <Icon d="M3 5h14v9H8l-4 3v-3H3z" /> },
 ];
 
-// A top-level tab's route, keyed by AppChrome's tab id. "today" is the bare
-// /health path (no trailing segment) — matches the index route below.
-const TAB_PATH = { today: '/health', progress: '/health/progress', health: '/health/medical', coach: '/health/coach' };
-
-// Which tab a pathname belongs to — the inverse of TAB_PATH. Any unrecognized
-// /health/* subpath (including the bare /health itself) falls through to
-// "today", matching the index route's <Navigate>-free default render.
 function tabForPath(pathname) {
-  if (pathname.startsWith('/health/settings')) return 'settings';
-  // The auditor is reached from Settings, so it keeps Settings' place in the chrome.
-  if (pathname.startsWith('/health/auditor')) return 'settings';
-  if (pathname.startsWith('/health/progress')) return 'progress';
-  if (pathname.startsWith('/health/medical')) return 'health';
-  if (pathname.startsWith('/health/coach')) return 'coach';
-  return 'today';
+  // The auditor opens from Settings, outside primary navigation.
+  if (pathname.startsWith('/health/settings') || pathname.startsWith('/health/auditor')) return 'settings';
+  return TABS.find(tab => pathname === tab.href || (tab.id !== 'today' && pathname.startsWith(tab.href + '/')))?.id || 'today';
 }
 
 // Start reading the disk cache while the bundle is still evaluating.
@@ -114,7 +103,7 @@ const HealthShell = ({ userId }) => {
     <AppThemeProvider pack="health">
       <AgentConversationProvider conversation={conversation}>
         <DismissStackProvider>
-          <AppChrome title="Health" mainRef={mainRef} tabs={TABS.map(tab => ({ ...tab, href: TAB_PATH[tab.id] + location.search }))} activeTab={activeTab}
+          <AppChrome title="Health" mainRef={mainRef} tabs={TABS.map(tab => ({ ...tab, href: tab.href + location.search }))} activeTab={activeTab}
             sidebarRef={setSidebarTarget} sidebarActive={activeTab === 'today'}
             headerActions={[
               <span key="follow-ups" ref={setFollowUpTarget} className="health-followups-slot" />,

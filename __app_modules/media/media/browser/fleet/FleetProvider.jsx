@@ -3,6 +3,7 @@
 // (refreshed when the tab regains focus), live state from device-state:*
 // broadcasts, staleness from WS connection status.
 import React, { createContext, useEffect, useMemo, useReducer, useRef, useState, useSyncExternalStore } from 'react';
+import { useVisibleRefresh } from '@/lib/hooks/useVisibleRefresh.js';
 import { subscribeTopic, subscribeTopicKind, onStatus, topics } from "../net/ws.js";
 import { useDevices } from "./useDevices.js";
 import { createFleetStore } from "./fleetStore.js";
@@ -141,25 +142,29 @@ export function FleetProvider({ children }) {
   }, [browserEntries]);
 
   useEffect(() => {
+    let previouslyConnected;
+    let reconnectPending = false;
     return onStatus((status) => {
       if (status && status.connected === false) {
+        if (previouslyConnected) reconnectPending = true;
+        previouslyConnected = false;
         setConnected(false);
         store.markAllStale({ exclude: id => id.startsWith('browser:') });
         mediaLog.wsDisconnected({});
       } else if (status && status.connected === true) {
+        previouslyConnected = true;
+        if (reconnectPending) {
+          reconnectPending = false;
+          refresh();
+          refreshRegistry();
+        }
         setConnected(true);
         mediaLog.wsConnected({});
       }
     });
-  }, [store]);
+  }, [store, refresh, refreshRegistry]);
 
-  useEffect(() => {
-    const onVisibility = () => {
-      if (document.visibilityState === 'visible') refresh();
-    };
-    document.addEventListener('visibilitychange', onVisibility);
-    return () => document.removeEventListener('visibilitychange', onVisibility);
-  }, [refresh]);
+  useVisibleRefresh({ reload: refresh });
 
   const fleetDevices = useMemo(() => {
     const configured = mergeCanonicalFleetState(devices, browserEntries);

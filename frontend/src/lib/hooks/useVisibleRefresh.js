@@ -9,7 +9,7 @@ export function useVisibleRefresh({ active = true, intervalMs, reload }) {
       clearInterval(timer);
       if (document.visibilityState !== 'visible') return;
       if (event) reload();
-      timer = setInterval(reload, intervalMs);
+      if (intervalMs > 0) timer = setInterval(reload, intervalMs);
     }
     synchronize();
     document.addEventListener('visibilitychange', synchronize);

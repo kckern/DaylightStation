@@ -91,3 +91,9 @@ it('supplies the Admin palette to CSS and keeps both semantic and branded Mantin
   expect(theme.colors['ds-blue'][4]).toBe('#4A7BF7');
   expect(theme.components.Portal.defaultProps.target).toBe('#admin-portals');
 });
+
+it('exposes the Feed reading chrome colors through the shared semantic roles', () => {
+  expect(dsCssVars(PACKS.feed)).toMatchObject({
+    '--ds-background': '#0f1113', '--ds-surface': '#17191c', '--ds-text-high': '#f1f3f5',
+  });
+});

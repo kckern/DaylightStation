@@ -2,6 +2,7 @@ import React, { useContext } from 'react';
 import { act, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+const refreshDevices = vi.fn();
 const playbackSubscribers = [];
 const playbackUnsubscribes = [];
 const deviceStateSubscribers = [];
@@ -12,7 +13,7 @@ vi.mock("./useDevices.js", () => ({
   // A configured (physical) device row for the liveness/re-render tests
   // below — round-0's browser test only ever asserted absence/shape of
   // browser rows via `some`/`find`/`filter`, unaffected by this extra entry.
-  useDevices: () => ({ devices: [{ id: 'tv-1', name: 'Living Room TV' }], loading: false, error: null, refresh: vi.fn() }),
+  useDevices: () => ({ devices: [{ id: 'tv-1', name: 'Living Room TV' }], loading: false, error: null, refresh: refreshDevices }),
 }));
 vi.mock("../identity/useClientIdentity.js", () => ({
   useClientIdentity: () => ({ clientId: 'observer-browser', displayName: 'Observer browser' }),
@@ -215,4 +216,15 @@ describe('FleetProvider configured-device liveness re-render', () => {
     expect(result.entries.find(([id]) => id === 'tv-1')[1].isStale).toBe(false);
     unmount();
   });
+});
+
+it('reloads the authoritative roster once after a connection is lost and recovered', () => {
+  refreshDevices.mockClear();
+  render(<FleetProvider><Probe /></FleetProvider>);
+  const notify = statusSubscribers.at(-1);
+  act(() => notify({ connected: true }));
+  expect(refreshDevices).not.toHaveBeenCalled();
+  act(() => { notify({ connected: false }); notify({ connected: false }); });
+  act(() => { notify({ connected: true }); notify({ connected: true }); });
+  expect(refreshDevices).toHaveBeenCalledTimes(1);
 });

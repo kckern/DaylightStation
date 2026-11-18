@@ -6,7 +6,10 @@ import {
 } from '@mantine/core';
 import { IconPlus, IconAlertCircle, IconDevices } from '@tabler/icons-react';
 import {EnforcementStatus} from '../../../../../__app_modules/household/supervision/browser/index.js';
+import { useApiResource } from '../../../lib/hooks/useApiResource.js';
 import { DaylightAPI } from '../../../lib/api.mjs';
+
+const DEVICES_PATH = '/api/v1/admin/household/devices';
 
 const DEVICE_TYPE_OPTIONS = [
   { value: 'shield-tv', label: 'Shield TV' },
@@ -27,51 +30,13 @@ function typeBadgeColor(type) {
 function DevicesIndex() {
   const navigate = useNavigate();
   const [shutdown,setShutdown]=useState(null),[enforcementNow,setEnforcementNow]=useState(()=>Date.now());
-  const [devices, setDevices] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
+  const { data, loading, error, reload } = useApiResource(DEVICES_PATH);
+  const devices = data?.devices || [];
 
   const [createModalOpen, setCreateModalOpen] = useState(false);
   const [createForm, setCreateForm] = useState({ id: '', type: 'shield-tv' });
   const [createErrors, setCreateErrors] = useState({});
   const [creating, setCreating] = useState(false);
-
-  const fetchDevices = async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const result = await DaylightAPI('/api/v1/admin/household/devices');
-      setDevices(result.devices || []);
-    } catch (err) {
-      setError(err);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    let cancelled = false;
-    async function load() {
-      setLoading(true);
-      setError(null);
-      try {
-        const result = await DaylightAPI('/api/v1/admin/household/devices');
-        if (!cancelled) {
-          setDevices(result.devices || []);
-        }
-      } catch (err) {
-        if (!cancelled) {
-          setError(err);
-        }
-      } finally {
-        if (!cancelled) {
-          setLoading(false);
-        }
-      }
-    }
-    load();
-    return () => { cancelled = true; };
-  }, []);
 
   useEffect(()=>{
     let disposed=false;
@@ -110,8 +75,8 @@ function DevicesIndex() {
         id: createForm.id.trim(),
         type: createForm.type
       };
-      await DaylightAPI('/api/v1/admin/household/devices', payload, 'POST');
-      await fetchDevices();
+      await DaylightAPI(DEVICES_PATH, payload, 'POST');
+      reload();
       setCreateModalOpen(false);
       setCreateForm({ id: '', type: 'shield-tv' });
       setCreateErrors({});

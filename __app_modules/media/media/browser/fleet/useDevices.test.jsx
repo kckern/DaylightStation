@@ -79,6 +79,17 @@ describe('useDevices', () => {
     expect(apiMock).toHaveBeenCalledTimes(2);
   });
 
+  it('ignores an older failure after reconnect loads a fresh roster', async () => {
+    let failFirst;
+    apiMock.mockReturnValueOnce(new Promise((_, reject) => { failFirst = reject; }))
+      .mockResolvedValueOnce({ devices: { screen: { fleet: true } } });
+    const { result } = renderHook(() => useDevices());
+    await act(async () => { await result.current.refresh(); });
+    await act(async () => { failFirst(new Error('offline')); });
+    expect(result.current.devices.map(device => device.id)).toEqual(['screen']);
+    expect(result.current.error).toBeNull();
+  });
+
   it('captures error and exposes empty device list', async () => {
     apiMock.mockRejectedValueOnce(new Error('boom'));
     const { result } = renderHook(() => useDevices());

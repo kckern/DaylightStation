@@ -78,7 +78,8 @@ function ListsIndex() {
 
   useEffect(() => {
     if (type) {
-      fetchLists(type);
+      // The hook exposes the error for the alert below.
+      fetchLists(type).catch(() => {});
     }
   }, [type, fetchLists]);
 
@@ -200,7 +201,7 @@ function ListsIndex() {
         </Box>
       ))}
 
-      {lists.length === 0 && !loading && (
+      {lists.length === 0 && !loading && !error && (
         <Center h="40vh">
           <Stack align="center">
             <IconList size={48} stroke={1} color="gray" />

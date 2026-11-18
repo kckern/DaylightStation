@@ -233,7 +233,7 @@ function NamePlaceSheet({ point, onClose, onSaved }) {
         <label className="auto-field">
           <span>What is it?</span>
           <input
-            className="auto-input"
+            className="ds-input"
             value={label}
             onChange={(e) => setLabel(e.target.value)}
             placeholder="Costco Gas"
@@ -242,7 +242,7 @@ function NamePlaceSheet({ point, onClose, onSaved }) {
         </label>
         <label className="auto-field">
           <span>Kind</span>
-          <select className="auto-input" value={kind} onChange={(e) => setKind(e.target.value)}>
+          <select className="ds-input" value={kind} onChange={(e) => setKind(e.target.value)}>
             {PLACE_KINDS.map((k) => <option key={k} value={k}>{k}</option>)}
           </select>
         </label>

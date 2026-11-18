@@ -1,5 +1,6 @@
 /* eslint-disable react-refresh/only-export-components -- provider and its required consumer hook form one context module */
 import { createContext, useContext, useReducer, useRef, useCallback, useEffect, useMemo } from 'react';
+import { browserPreference } from '@/lib/browserPreference.js';
 import getLogger from "../../../../../frontend/src/lib/logging/Logger.js";
 
 // Recreate child each call to pick up sessionLog context set by FeedApp
@@ -11,39 +12,21 @@ function log() { return getLogger().child({ module: 'feed-player' }); }
 
 export const SPEED_STEPS = [1, 1.25, 1.5, 1.75, 2];
 
-const LS_VOLUME = 'feedPlayer:volume';
-const LS_SPEED = 'feedPlayer:speed';
-
-// ---------------------------------------------------------------------------
-// localStorage helpers
-// ---------------------------------------------------------------------------
-
-function readFloat(key, fallback) {
-  try {
-    const raw = localStorage.getItem(key);
-    if (raw === null) return fallback;
-    const n = parseFloat(raw);
-    return Number.isFinite(n) ? n : fallback;
-  } catch {
-    return fallback;
-  }
+function decodeNumber(raw) {
+  const value = Number.parseFloat(raw);
+  return Number.isFinite(value) ? value : null;
 }
 
-function writeFloat(key, value) {
-  try {
-    localStorage.setItem(key, String(value));
-  } catch {
-    /* quota or private-mode — ignore */
-  }
-}
+const volumePreference = browserPreference('feedPlayer:volume', 1, decodeNumber);
+const speedPreference = browserPreference('feedPlayer:speed', 1, decodeNumber);
 
 // ---------------------------------------------------------------------------
 // Initial state
 // ---------------------------------------------------------------------------
 
 function buildInitialState() {
-  const volume = readFloat(LS_VOLUME, 1);
-  const speed = readFloat(LS_SPEED, 1);
+  const volume = volumePreference.read();
+  const speed = speedPreference.read();
   return {
     activeMedia: null,      // null | { item, contentId }
     pausedMedia: null,       // null | { item, contentId, position }
@@ -104,7 +87,7 @@ function feedPlayerReducer(state, action) {
 
     case 'SET_VOLUME': {
       const volume = Math.max(0, Math.min(1, action.payload));
-      writeFloat(LS_VOLUME, volume);
+      volumePreference.write(volume);
       return { ...state, volume, muted: false };
     }
 
@@ -117,14 +100,14 @@ function feedPlayerReducer(state, action) {
 
     case 'SET_SPEED': {
       const speed = action.payload;
-      writeFloat(LS_SPEED, speed);
+      speedPreference.write(speed);
       return { ...state, speed };
     }
 
     case 'CYCLE_SPEED': {
       const idx = SPEED_STEPS.indexOf(state.speed);
       const next = SPEED_STEPS[(idx + 1) % SPEED_STEPS.length];
-      writeFloat(LS_SPEED, next);
+      speedPreference.write(next);
       return { ...state, speed: next };
     }
 

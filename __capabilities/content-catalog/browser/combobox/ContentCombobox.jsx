@@ -113,6 +113,7 @@ function sentenceCase(value) {
 }
 
 export function ContentCombobox({
+  inputRef: suppliedInputRef,
   value,
   onChange,
   placeholder = 'Search content...',
@@ -162,7 +163,8 @@ export function ContentCombobox({
   const highlightIdx = state.highlight.idx;
   const normalizedValue = normalizeValue(value);
 
-  const inputRef = useRef(null);
+  const localInputRef = useRef(null);
+  const inputRef = suppliedInputRef || localInputRef;
   // More-actions menus have their own portal. Mark their pointer boundary
   // before focus can leave the input, so the input's blur does not mistake a
   // menu interaction for an outside dismissal.

@@ -55,6 +55,21 @@
   }
 }
 
+.ds-input {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: var(--ds-control-touch-target);
+  padding: 0.5rem 0.7rem;
+  border-radius: var(--ds-control-compact-radius);
+  border: 1px solid var(--ds-border);
+  background: var(--ds-surface-alt);
+  color: var(--ds-text-high);
+  font: inherit;
+  font-size: 16px; // hold at 16px so iOS doesn't zoom on focus
+
+  &:focus-visible { outline: var(--ds-focus-width) solid var(--ds-accent); outline-offset: 1px; }
+}
+
 .ds-sheet {
   position: fixed; inset: 0; z-index: 300;
 
@@ -183,9 +198,14 @@
 
   @include bp.tablet-up {
     // Desktop: left rail spanning all rows
-    grid-template-columns: 200px 1fr;
+    grid-template-columns: 200px minmax(0, 1fr);
     grid-template-rows: auto 1fr auto;
     grid-template-areas: "nav header" "nav main" "nav footer";
+
+    &:not(:has(> .ds-chrome__nav)) {
+      grid-template-columns: minmax(0, 1fr);
+      grid-template-areas: "header" "main" "footer";
+    }
   }
 
   &__header {

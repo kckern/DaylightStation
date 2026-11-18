@@ -265,6 +265,7 @@
   flex-direction: column;
   gap: 0.3rem;
   flex: 1;
+  min-width: 0;
 
   > span:first-child {
     font-size: 0.8rem;
@@ -280,20 +281,6 @@
 }
 
 .auto-field-row { display: flex; gap: 0.75rem; }
-
-.auto-input {
-  width: 100%;
-  min-height: 2.75rem;
-  padding: 0.5rem 0.7rem;
-  border-radius: 0.55rem;
-  border: 1px solid var(--ds-border);
-  background: var(--ds-surface-alt);
-  color: var(--ds-text-high);
-  font: inherit;
-  font-size: 16px; // hold at 16px so iOS doesn't zoom on focus
-
-  &:focus-visible { outline: 2px solid var(--ds-accent); outline-offset: 1px; }
-}
 
 // Action row inside a DS Sheet's form body (Cancel/Save, side by side).
 .auto-sheet__actions { display: flex; gap: 0.75rem; margin-top: 0.35rem; > * { flex: 1; } }

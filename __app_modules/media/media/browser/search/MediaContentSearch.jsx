@@ -42,7 +42,7 @@ import { ItemDestinationPicker } from "../actions/ItemDestinationPicker.jsx";
 import { useHouseholdResultActions } from "../household/useHouseholdResultActions.js";
 import "./Search.scss";
 
-export function MediaContentSearch() {
+export function MediaContentSearch({ inputRef }) {
   const [oneShotAction, setOneShotAction] = useState(null);
   const { scopes, currentScopeKey, currentScope, scopeError, resetScope } = useSearchContext();
   const { dispatch, dispatchLeafVerb, playContainerAsQueue } = useContentDispatch();
@@ -140,6 +140,7 @@ export function MediaContentSearch() {
         )}
         <div className="media-search-input-wrap">
           <ContentCombobox
+            inputRef={inputRef}
             value=""
             onChange={handleChange}
             onPlayAll={handlePlayAll}

@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import { Select } from '@mantine/core';
 import { Notifications } from '@mantine/notifications';
-import { Routes, Route, Navigate, useNavigate, useLocation, useParams } from 'react-router-dom';
+import { Routes, Route, Link, Navigate, useNavigate, useLocation, useParams } from 'react-router-dom';
 import {
   IconDashboard, IconTimeline, IconTarget, IconHeart, IconBrain, IconDiamond, IconShield,
   IconCalendarEvent, IconMessageCircle,
@@ -55,22 +55,19 @@ const PLAN_LINKS = [
   { path: '/life/plan/ceremonies', label: 'Ceremonies', icon: <IconCalendarEvent size={14} />, match: (p) => p.startsWith('/life/plan/ceremonies') },
 ];
 
-function PlanSecondaryNav({ pathname, navigate }) {
+function PlanSecondaryNav({ pathname }) {
   return (
     <nav className="life-plan-subnav" aria-label="Plan sections">
       {PLAN_LINKS.map((link) => (
-        <a
+        <Link
           key={link.path}
-          role="link"
-          tabIndex={0}
+          to={link.path}
           className={`life-plan-subnav__link${link.match(pathname) ? ' life-plan-subnav__link--active' : ''}`}
           aria-current={link.match(pathname) ? 'page' : undefined}
-          onClick={() => navigate(link.path)}
-          onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); navigate(link.path); } }}
         >
           {link.icon}
           <span>{link.label}</span>
-        </a>
+        </Link>
       ))}
     </nav>
   );
@@ -159,8 +156,8 @@ function LifeAppShell() {
         headerActions={headerActions}
       >
         <div className="life-app-root">
-          {activeTab === 'plan' && <PlanSecondaryNav pathname={location.pathname} navigate={navigate} />}
-          <Routes>
+          {activeTab === 'plan' && <PlanSecondaryNav pathname={location.pathname} />}
+          <Routes key={lifeUser?.username}>
             <Route index element={<Navigate to="now" />} />
             <Route path="now" element={<Dashboard />} />
             <Route path="log" element={<LogBrowser />} />
