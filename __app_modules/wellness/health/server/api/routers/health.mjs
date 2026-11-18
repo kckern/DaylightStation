@@ -699,7 +699,7 @@ export function createHealthRouter(config) {
   // ==========================================================================
 
   if (healthOperations.nutritionItemsAvailable) {
-    for (const [route, method] of [['meal-command', 'mealFoodCommand'], ['meal-undo', 'undoMealFoodCommand']]) {
+    for (const [route, method] of [['meal-command', 'mealFoodCommand'], ['meal-undo', 'undoMealFoodCommand'], ['foods-move', 'moveFoods']]) {
       router.post(`/nutrition/${route}`, asyncHandler(async (req, res) => {
         const userId = getDefaultUsername(req);
         try {

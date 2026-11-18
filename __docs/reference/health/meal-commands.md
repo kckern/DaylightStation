@@ -39,6 +39,13 @@ Undo of an addition removes only that command's new foods. Manual grouping and
 ungrouping never delete foods. Ordinary successful captures also receive durable
 Undo tokens, including capture responses recovered after an interrupted request.
 
+`POST /api/v1/health/nutrition/foods-move` accepts `date`, `selectedIds`,
+`expectedVersions`, `operationId`, and a destination `toDate`, `toMeal`, or both.
+All selected foods move or none do, and a selected dish brings its parts. A
+destination after the server's today is rejected with 400; a `today` sent by the
+client is ignored. The response adds `toDate`, `toMeal`, `movedCount`, and one
+`undoToken` that `meal-undo` accepts.
+
 `POST /api/v1/health/nutrition/meal-suggestions` accepts `date`, `bucket`, and
 `selectedIds`. It is read-only and returns proposals with expected versions for
 explicit atomic application via `action: "groups"`.

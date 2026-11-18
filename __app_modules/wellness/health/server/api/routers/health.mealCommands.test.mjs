@@ -6,6 +6,7 @@ function setup() {
  const healthOperations={ defaultUsername:()=> 'u',nutritionItemsAvailable:true,nutritionInputAvailable:true,
   mealFoodCommand:vi.fn(async()=>({committed:true,entryIds:['a'],undoToken:'meal-token'})),
   undoMealFoodCommand:vi.fn(async()=>({committed:true,entryIds:['a']})),
+  moveFoods:vi.fn(async()=>({committed:true,undoToken:'meal-token',movedCount:1})),
   suggestMealGroups:vi.fn(async()=>({committed:false,groups:[]})),
   processNutritionInput:vi.fn(async()=>({committed:true})),
   runNutritionOperation:vi.fn(async(_u,_id,_payload,action)=>action()),
@@ -13,6 +14,11 @@ function setup() {
  const app=express();app.use(createHealthRouter({healthOperations,logger:{info(){},warn(){},error(){},debug(){}}}));return {app,healthOperations};
 }
 describe('meal command HTTP adapter',()=>{
+ it('routes food moves through the server user',async()=>{
+  const {app,healthOperations:ops}=setup();const body={date:'2026-09-06',selectedIds:['a'],expectedVersions:{a:1},toDate:'2026-09-05',operationId:'move'};
+  const response=await request(app).post('/nutrition/foods-move').send(body);
+  expect(response.status).toBe(200);expect(response.body.undoToken).toBe('meal-token');expect(ops.moveFoods).toHaveBeenCalledWith('u',body);
+ });
  it('uses the server user and returns committed command and Undo responses',async()=>{
   const {app,healthOperations:ops}=setup(); const body={date:'2026-09-06',bucket:'evening',action:'group',selectedIds:['a','b'],operationId:'op',expectedVersions:{a:1,b:1},name:'Soup'};
   const response=await request(app).post('/nutrition/meal-command').send(body);expect(response.status).toBe(200);expect(response.body.undoToken).toBe('meal-token');expect(ops.mealFoodCommand).toHaveBeenCalledWith('u',body);

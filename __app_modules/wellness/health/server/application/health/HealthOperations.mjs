@@ -557,6 +557,7 @@ export class HealthOperations {
 
   mealFoodCommand(username, input) { return this.mealCommands.execute(username, input); }
   undoMealFoodCommand(username, input) { return this.mealCommands.undo(username, input); }
+  moveFoods(username, input) { return this.mealCommands.moveFoods(username, { ...input, today: this.today() }); }
   suggestMealGroups(input) { return this.nutritionInput.suggestMealGroups(input); }
   reviseNutritionEntry(input) { return this.nutritionInput.reviseEntry(input); }
   reviseNutritionDish(input) { return this.nutritionInput.reviseDish(input); }
