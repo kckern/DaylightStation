@@ -331,7 +331,15 @@ export class MealFoodCommands {
       if (!record || record.type !== 'meal-command') fail('Undo not found', 404);
       const result = await this.store.mutateEntries(userId, { restoreAudit: undoToken,
         resultMeta: { committed: true, date: record.date, bucket: record.bucket, undoToken: null },
-        validate: ({ after }) => this.validateGraph(after, new Set([...record.result.affectedIds, ...[...record.before, ...record.after].flatMap(linkIds)]), new Set(record.brokenLinkIds || [])),
+        validate: ({ before, after }) => {
+          // A recorded broken link is excused only if Undo restores that row or the
+          // link is still broken. A row repaired since then must not be split again.
+          const affected = new Set(record.result.affectedIds);
+          const byLinkId = indexByLinkId(before);
+          const stillBroken = id => before.some(row => idOf(row) === id && row.parentId && linkBroken(row, byLinkId));
+          const allowed = new Set((record.brokenLinkIds || []).filter(id => affected.has(id) || stillBroken(id)));
+          this.validateGraph(after, new Set([...record.result.affectedIds, ...[...record.before, ...record.after].flatMap(linkIds)]), allowed);
+        },
       });
       this.logger.info?.('health.meal.undo', { userId, operationId, affectedIds: result.affectedIds });
       return result;

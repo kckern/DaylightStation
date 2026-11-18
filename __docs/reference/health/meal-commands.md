@@ -50,7 +50,9 @@ food may move on its own and the move clears its `parentId`. A plain food brings
 rows linked to it in its own meal. A row left behind with an already broken link to a
 moved row, such as a part on another day, stays as it is. Undo restores the exact
 earlier rows, broken links included. The audit lists these rows in `brokenLinkIds`,
-so the move and Undo accept only them and still refuse new breakage. Day input uses
+and the move and Undo accept only them. Undo excuses a listed row only if it restores
+that row or the link is still broken; a row left behind that has since become a valid
+part makes Undo a 409, as does any other new breakage. Day input uses
 the same rule to decide which foods are top-level. A destination after the server's today is rejected with 400; a `today` sent by the
 client is ignored. The response adds `toDate`, `toMeal`, `movedCount`, and one
 `undoToken` that `meal-undo` accepts.

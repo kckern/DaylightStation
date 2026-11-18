@@ -220,6 +220,16 @@ describe('moveFoods with broken dish links', () => {
     await store.saveMany([food('late', { mealTime: 'night', parentId: 'dish' })]);
     await expect(undo(undoToken)).rejects.toMatchObject({ status: 409 });
   });
+  it('refuses an Undo that would split a dish a stranded part has since validly joined', async () => {
+    await store.saveMany([food('other', { date: '2026-09-05', parentId: 'dish' })]);
+    const { undoToken } = await move({ selectedIds: ['dish'], toMeal: 'night' });
+    await store.update('u', 'other', { date, mealTime: 'night' });
+    const before = await rows(date);
+    await expect(undo(undoToken)).rejects.toMatchObject({ status: 409 });
+    expect(await rows(date)).toEqual(before);
+    expect(await row('dish')).toMatchObject({ mealTime: 'night' });
+    expect(await row('other')).toMatchObject({ mealTime: 'night', parentId: 'dish' });
+  });
   it('a food carries a row linked to it in its own meal and frees the link', async () => {
     await store.saveMany([food('hanger', { parentId: 'c' })]);
     await move({ selectedIds: ['c'], toMeal: 'night' });
