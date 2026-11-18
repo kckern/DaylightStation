@@ -11,6 +11,7 @@ function setup() {
   processNutritionInput:vi.fn(async()=>({committed:true})),
   processDayInput:vi.fn(async()=>({committed:true,outcome:'committed',kind:'moved'})),
   runNutritionOperation:vi.fn(async(_u,_id,_payload,action)=>action()),
+  clearFailedNutritionOperation:vi.fn(()=>true),
  };
  const app=express();app.use(createHealthRouter({healthOperations,logger:{info(){},warn(){},error(){},debug(){}}}));return {app,healthOperations};
 }
@@ -47,7 +48,7 @@ describe('meal command HTTP adapter',()=>{
    expect(ops.runNutritionOperation.mock.calls[0][2]).toEqual({operation:'day-input',type:'text',content:'move that',date:'2026-09-06',resolved:{toDate:'2026-09-01'}});
    expect(ops.processDayInput).toHaveBeenCalledWith({userId:'u',type:'text',content:'move that',date:'2026-09-06',operationId:'day',resolved:{toDate:'2026-09-01'}});
    ops.processDayInput.mockClear();
-   for(const bad of [{type:'image'},{date:'bad'},{content:'  '},{type:'voice',content:'not a recording'}]) expect((await post(app,{...body,...bad})).status).toBe(400);
+   for(const bad of [{type:'image'},{date:'bad'},{content:'  '},{type:'voice',content:'not a recording'},{type:'voice',content:'data:audio/webm,AAAA'},{type:'voice',content:'data:audio/webm;base64,'},{type:'voice',content:'data:audio/webm;base64,A'},{type:'voice',content:'data:audio/webm;base64,$$$$'},{type:'voice',content:'data:audio/webm;base64'}]) expect((await post(app,{...body,...bad})).status).toBe(400);
    expect(ops.processDayInput).not.toHaveBeenCalled();
   });
   it('requires a valid operation ID',async()=>{
@@ -87,6 +88,42 @@ describe('meal command HTTP adapter',()=>{
    expect((await post(app,body)).status).toBe(409);
    ops.processDayInput.mockRejectedValueOnce(Object.assign(new Error('Day input is unavailable right now'),{status:503,code:'DAY_INPUT_UNAVAILABLE'}));
    expect((await post(app,body)).body.code).toBe('DAY_INPUT_UNAVAILABLE');
+  });
+  it('limits typed instructions to what a food log can hold',async()=>{
+   const {app,healthOperations:ops}=setup();
+   const tooLong=await post(app,{...body,content:'a'.repeat(2001)});
+   expect(tooLong.status).toBe(400);expect(tooLong.body).toEqual({error:'That is too long to log at once. Try it in two parts.',code:'DAY_INPUT_TOO_LONG'});
+   expect(ops.runNutritionOperation).not.toHaveBeenCalled();
+   expect((await post(app,{...body,content:`  ${'a'.repeat(2000)}  `})).status).toBe(200);
+  });
+  it('passes on an over-long transcript with its recording',async()=>{
+   const {app,healthOperations:ops}=setup();ops.processDayInput.mockRejectedValue(Object.assign(new Error('That is too long to log at once. Try it in two parts.'),{status:422,code:'DAY_INPUT_TOO_LONG',audioRef:'va_1'}));
+   const response=await post(app,{...body,type:'voice',content:'data:audio/webm;base64,AAAA'});
+   expect(response.status).toBe(422);expect(response.body).toMatchObject({code:'DAY_INPUT_TOO_LONG',audioRef:'va_1'});
+  });
+  it('takes a saved recording in place of content',async()=>{
+   const {app,healthOperations:ops}=setup();const {content:_omit,...rest}=body;
+   expect((await post(app,{...rest,type:'voice',audioRef:'va_saved'})).status).toBe(200);
+   expect(ops.runNutritionOperation.mock.calls[0][2]).toEqual({operation:'day-input',type:'voice',audioRef:'va_saved',date:'2026-09-06',resolved:{toDate:'2026-09-01'}});
+   expect(ops.processDayInput.mock.calls[0][0]).toMatchObject({type:'voice',audioRef:'va_saved'});
+   expect(ops.processDayInput.mock.calls[0][0]).not.toHaveProperty('content');
+   ops.processDayInput.mockClear();
+   for(const bad of [{...rest,type:'voice',audioRef:'../secret'},{...rest,type:'voice',audioRef:7},{...rest,type:'text',audioRef:'va_saved'},{...body,type:'voice',content:'data:audio/webm;base64,AAAA',audioRef:'va_saved'}]) expect((await post(app,bad)).status).toBe(400);
+   expect(ops.processDayInput).not.toHaveBeenCalled();
+  });
+  it('answers a missing recording as the capture route does',async()=>{
+   const {app,healthOperations:ops}=setup();const {content:_omit,...rest}=body;const gone=()=>Object.assign(new Error('That recording is no longer available'),{code:'AUDIO_NOT_FOUND'});
+   ops.processDayInput.mockRejectedValue(gone());ops.processNutritionInput.mockRejectedValue(gone());
+   const response=await post(app,{...rest,type:'voice',audioRef:'va_gone'});
+   const capture=await request(app).post('/nutrition/input').send({type:'voice',audioRef:'va_gone'});
+   expect(response.status).toBe(404);expect(response.status).toBe(capture.status);expect(response.body).toEqual(capture.body);
+  });
+  it('frees the operation ID after a failure that kept a recording, so the retry can name it',async()=>{
+   const {app,healthOperations:ops}=setup();ops.processDayInput.mockRejectedValue(Object.assign(new Error('Could not hear that correction'),{status:502,code:'TRANSCRIBE_FAILED',audioRef:'va_1'}));
+   await post(app,{...body,type:'voice',content:'data:audio/webm;base64,AAAA'});
+   expect(ops.clearFailedNutritionOperation).toHaveBeenCalledWith('u','day');
+   ops.clearFailedNutritionOperation.mockImplementation(()=>{throw new Error('disk');});
+   expect((await post(app,{...body,type:'voice',content:'data:audio/webm;base64,AAAA'})).status).toBe(502);
   });
   it('does not repeat an upstream provider status or message',async()=>{
    const {app,healthOperations:ops}=setup();

@@ -344,6 +344,7 @@ export class NutribotInputRouter extends BaseInputRouter {
         // the utterance names still wins — same precedence as the meal.
         asOfDate: event.payload.date || null,
         interpretText: event.payload.interpretText,
+        plainCapture: event.payload.plainCapture,
         responseContext: rc,
       }));
   }

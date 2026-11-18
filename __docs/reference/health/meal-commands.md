@@ -47,13 +47,20 @@ client is ignored. The response adds `toDate`, `toMeal`, `movedCount`, and one
 `undoToken` that `meal-undo` accepts.
 
 `POST /api/v1/health/nutrition/day-input` carries one day-level instruction. It
-accepts `type` (`text` or `voice`), `content` (the words, or a recording as a data
-URL), `date`, a required `operationId`, and optionally `resolved`, the answer to a
-clarification, holding only `foodId` and `toDate` strings. New food is logged
-without the meal interpreter or revision flow; anything else goes through the
-commands above. The server supplies today. A failed transcription returns 502 with
-`audioRef`; a provider failure returns 503 `DAY_INPUT_UNAVAILABLE`, never the
-provider's own status.
+accepts `type` (`text` or `voice`), `content` (the words, or a recording as a
+base64 data URL), `date`, a required `operationId`, and optionally `resolved`, the
+answer to a clarification, holding only `foodId` and `toDate` strings. New food is
+logged without the meal interpreter or revision flow; anything else goes through
+the commands above. The server supplies today.
+
+A failed transcription returns 502 with `audioRef`. To retry, send `audioRef` in
+place of `content` with the same `operationId`; the saved recording is read back
+and no new one is written, and an unknown ref returns 404 `AUDIO_NOT_FOUND`. A voice
+retry first looks for finished work, so food already logged is not heard again.
+Words over the food log's 2000-character limit are refused before the parser runs:
+400 `DAY_INPUT_TOO_LONG` when typed, 422 with `audioRef` when transcribed. A provider
+failure returns 503 `DAY_INPUT_UNAVAILABLE`, never the provider's own status. If a
+commit fails after the rows reached the ledger, the food counts as logged.
 
 `POST /api/v1/health/nutrition/meal-suggestions` accepts `date`, `bucket`, and
 `selectedIds`. It is read-only and returns proposals with expected versions for

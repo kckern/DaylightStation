@@ -13,6 +13,7 @@ import { asyncHandler } from '#system/http/middleware/index.mjs';
 import { createLocalFileResource, sendLocalFileResource } from '#system/http/streamFile.mjs';
 import { presentFoodCatalogEntry } from "../presenters/FoodCatalogPresenter.mjs";
 import { isISODate } from '../../../portable/contracts/health/isoDate.mjs';
+import { FOOD_LOG_TEXT_MAX_LENGTH, FOOD_LOG_TEXT_TOO_LONG_MESSAGE } from '../../../portable/contracts/nutrition/foodLogText.mjs';
 import { presentPendingNutritionLog } from "../presenters/PendingNutritionLogPresenter.mjs";
 
 // Same allowlist PhotoStore enforces internally (1_adapters/persistence/PhotoStore.mjs).
@@ -50,6 +51,17 @@ const dayInputClarification = (resolved = {}) => {
   const valid = Object.entries(resolved).every(([key, value]) => DAY_INPUT_CLARIFICATION_KEYS.includes(key) && typeof value === 'string' && value);
   return valid ? Object.fromEntries(DAY_INPUT_CLARIFICATION_KEYS.filter(key => resolved[key]).map(key => [key, resolved[key]])) : null;
 };
+/** A recording as the browser sends it: `data:<mime>[;params];base64,<bytes>`. */
+const isBase64DataUrl = value => {
+  const comma = value.indexOf(',');
+  if (!value.startsWith('data:') || comma === -1 || !value.slice(0, comma).endsWith(';base64')) return false;
+  const bytes = value.slice(comma + 1);
+  return bytes.length % 4 !== 1 && /^[A-Za-z0-9+/]+={0,2}$/.test(bytes);
+};
+const sendAudioNotFound = res => res.status(404).json({
+  error: 'That recording is no longer available — please record it again.',
+  code: 'AUDIO_NOT_FOUND',
+});
 /** Day input's own refusals. Any other status came from somewhere upstream. */
 const isDayInputRefusal = ({ status, code }) => [400, 404, 409, 422].includes(status)
   || (status === 502 && code === 'TRANSCRIBE_FAILED') || (status === 503 && code === 'DAY_INPUT_UNAVAILABLE');
@@ -1543,10 +1555,7 @@ export function createHealthRouter(config) {
         // and has an answer a person can act on. It is not a 500.
         if (err.code === 'AUDIO_NOT_FOUND') {
           logger.warn?.('health.nutrition.input.audio_missing', { audioRef });
-          return res.status(404).json({
-            error: "That recording is no longer available — please record it again.",
-            code: 'AUDIO_NOT_FOUND',
-          });
+          return sendAudioNotFound(res);
         }
         logger.error?.('health.nutrition.input.error', { type, error: err.message });
         if (err.status) return res.status(err.status).json({ error: err.message, code: err.code });
@@ -1557,24 +1566,39 @@ export function createHealthRouter(config) {
     /**
      * POST /health/nutrition/day-input
      * One day-level instruction: logs new food or changes what is logged.
+     * Voice sends a recording as `content`, or `audioRef` to retry a saved one.
      * The server supplies today; retries repeat `operationId` with the same body.
      */
     router.post('/nutrition/day-input', asyncHandler(async (req, res) => {
       const userId = getDefaultUsername(req);
       const { type, content, date, operationId } = req.body || {};
-      if (!['text', 'voice'].includes(type) || typeof content !== 'string' || !content.trim()
-        || (type === 'voice' && !content.startsWith('data:'))) return res.status(400).json({ error: 'Text or a recording is required' });
+      const audioRef = req.body?.audioRef ?? undefined;
+      const spoken = type === 'voice';
+      if (audioRef !== undefined && (!spoken || content != null || typeof audioRef !== 'string' || !AUDIO_REF_PATTERN.test(audioRef))) {
+        return res.status(400).json({ error: 'Invalid audioRef', code: 'AUDIO_REF_INVALID' });
+      }
+      const hasContent = typeof content === 'string' && (spoken ? isBase64DataUrl(content) : Boolean(content.trim()));
+      if (!['text', 'voice'].includes(type) || (audioRef === undefined && !hasContent)) return res.status(400).json({ error: 'Text or a recording is required' });
+      if (!spoken && content.trim().length > FOOD_LOG_TEXT_MAX_LENGTH) return res.status(400).json({ error: FOOD_LOG_TEXT_TOO_LONG_MESSAGE, code: 'DAY_INPUT_TOO_LONG' });
       if (!isISODate(date)) return res.status(400).json({ error: 'A valid date is required' });
       if (typeof operationId !== 'string' || !OPERATION_ID_PATTERN.test(operationId)) return res.status(400).json({ error: 'A valid operation ID is required' });
       const resolved = dayInputClarification(req.body.resolved);
       if (!resolved) return res.status(400).json({ error: 'Invalid clarification' });
+      const source = audioRef ? { audioRef } : { content };
       try {
-        const result = await runNutritionOperation(userId, operationId, { operation: 'day-input', type, content, date, resolved },
-          () => healthOperations.processDayInput({ userId, type, content, date, resolved, operationId }));
+        const result = await runNutritionOperation(userId, operationId, { operation: 'day-input', type, ...source, date, resolved },
+          () => healthOperations.processDayInput({ userId, type, ...source, date, resolved, operationId }));
         logger.info?.('health.day_input.complete', { userId, date, operationId, kind: result.kind, outcome: result.outcome });
         return res.json(result);
       } catch (err) {
         logger.warn?.('health.day_input.failed', { userId, date, operationId, status: err.status, code: err.code, error: err.message });
+        if (err.code === 'AUDIO_NOT_FOUND') return sendAudioNotFound(res);
+        // The retry names the saved recording, which is a different request body
+        // under the same ID. Nothing was committed, so the ID can be used again.
+        if (err.audioRef) {
+          try { healthOperations.clearFailedNutritionOperation(userId, operationId); }
+          catch (clearError) { logger.warn?.('health.day_input.clear_failed', { userId, operationId, error: clearError.message }); }
+        }
         if (isDayInputRefusal(err)) return res.status(err.status).json({ error: err.message, code: err.code, ...(err.audioRef ? { audioRef: err.audioRef } : {}) });
         return sendInternalError(res, { error: 'Could not process that. Please try again.' });
       }

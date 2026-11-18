@@ -37,7 +37,7 @@ function harness(reading, { matched = [], placements = {}, dayRows = rows, store
   const service = new DayInstructionService({ nutritionItems, reader, mealCommands, entryRevisions, logger });
   const captureFoods = vi.fn(async () => ({ committed: true, logId: 'new', mealTime: 'afternoon' }));
   const run = (text, extra) => service.execute('u', { text, date, today, operationId: 'op', captureFoods, ...extra });
-  return { run, mealCommands, entryRevisions, reader, captureFoods, logger, nutritionItems };
+  return { run, service, mealCommands, entryRevisions, reader, captureFoods, logger, nutritionItems };
 }
 const expectNoWrites = h => {
   expect(h.mealCommands.moveFoods).not.toHaveBeenCalled();
@@ -639,7 +639,7 @@ describe('DayInstructionService', () => {
       const h = stack(plan({ intent: 'add' }));
       h.captureFoods.mockImplementationOnce(async () => { await lunch(); return { committed: true, logId: 'cap', message: 'ok', photos: [{ imageSource: 'large' }], messages: ['hi'] }; });
       await h.run('soup');
-      expect(store.readOperationResult('u', child('capture'))).toEqual({ committed: true, logId: 'cap', message: 'ok' });
+      expect(store.readOperationResult('u', child('capture'))).toEqual({ committed: true, logId: 'cap', message: 'ok', instructionText: 'soup' });
     });
     it('keeps an Undo for the capture when placement fails', async () => {
       const h = stack(plan({ intent: 'add' }));
@@ -657,6 +657,61 @@ describe('DayInstructionService', () => {
       expect(result).toMatchObject({ committed: true, kind: 'added', message: 'Logged 3 foods' });
       expect(result.undoToken).toBeUndefined();
       expect(h.logger.warn).toHaveBeenCalledWith('health.day_instruction.capture_undo_failed', expect.objectContaining({ error: 'no undo' }));
+    });
+  });
+
+  describe('a capture whose commit failed after the food was written', () => {
+    const uncommitted = { committed: false, outcome: 'no-food', logId: 'new', message: 'Logged?' };
+    it('counts as logged, is placed, and is stored that way for a replay', async () => {
+      const h = harness(null, { dayRows: [] });
+      h.nutritionItems.findByDate.mockResolvedValue([]);
+      h.nutritionItems.findByLogId.mockResolvedValue(rows.slice(1));
+      h.captureFoods.mockResolvedValue(uncommitted);
+      let stored;
+      h.nutritionItems.runOperation = vi.fn(async (_user, _id, _payload, action) => { stored = await action(); return stored; });
+      const reply = await h.run('tea and milk');
+      expect(reply).toMatchObject({ committed: true, outcome: 'committed', kind: 'added', undoToken: 'meal-p', message: 'Logged 2 foods' });
+      expect(stored).toMatchObject({ committed: true, outcome: 'committed', logId: 'new', instructionText: 'tea and milk' });
+      expect(h.mealCommands.placeCapturedFoods).toHaveBeenCalled();
+    });
+    it('stays not logged when the ledger has no rows for it', async () => {
+      const h = harness(null, { dayRows: [] });
+      h.nutritionItems.findByLogId.mockResolvedValue([]);
+      h.captureFoods.mockResolvedValue(uncommitted);
+      expect(await h.run('tea')).toMatchObject({ committed: false, outcome: 'no-food' });
+      expect(h.mealCommands.placeCapturedFoods).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('resume', () => {
+    const child = step => sha256Text(`op:day:${step}`);
+    const service = h => ({ resume: () => h.service.resume('u', { date, today, operationId: 'op' }) });
+    it('finds nothing to return when no work was finished', async () => {
+      const h = harness(null, { stored: {} });
+      expect(await service(h).resume()).toBeNull();
+      expect(h.reader.assignMeals).not.toHaveBeenCalled();
+    });
+    it('continues a committed capture from its stored words', async () => {
+      const h = harness(null, { stored: { [child('capture')]: { committed: true, logId: 'new', instructionText: 'tea and milk' } }, placements: { tea: 'evening' } });
+      const reply = await service(h).resume();
+      expect(reply).toMatchObject({ committed: true, kind: 'added', instructionText: 'tea and milk', undoToken: 'meal-p' });
+      expect(h.reader.assignMeals).toHaveBeenCalledWith(expect.objectContaining({ text: 'tea and milk' }));
+      expect(h.captureFoods).not.toHaveBeenCalled();
+    });
+    it('needs the words again for a recovered capture that never stored them', async () => {
+      const h = harness(null, { stored: { [child('capture')]: { committed: true, items: rows.slice(1) } } });
+      expect(await service(h).resume()).toBeNull();
+    });
+    it('returns a finished move, with no words to report', async () => {
+      const h = harness(null, { stored: { [child('move')]: { committed: true, movedCount: 1, toDate: '2026-11-17', items: [rows[0]] } } });
+      const reply = await service(h).resume();
+      expect(reply).toMatchObject({ committed: true, kind: 'moved', message: 'Moved Eggs to Yesterday' });
+      expect(reply).not.toHaveProperty('instructionText');
+    });
+    it('reports the stored words with a finished placement', async () => {
+      const h = harness(null, { stored: { [child('capture')]: { committed: true, logId: 'new', instructionText: 'tea' }, [child('place')]: { committed: true, undoToken: 'meal-p', items: [rows[1]] } } });
+      expect(await service(h).resume()).toMatchObject({ kind: 'added', instructionText: 'tea', undoToken: 'meal-p' });
+      expect(h.mealCommands.placeCapturedFoods).not.toHaveBeenCalled();
     });
   });
 });

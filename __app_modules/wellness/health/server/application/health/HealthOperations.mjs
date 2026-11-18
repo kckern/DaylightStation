@@ -569,6 +569,10 @@ export class HealthOperations {
 
   processDayInput(input) { return this.nutritionInput.processDayInput({ ...input, today: this.today() }); }
 
+  clearFailedNutritionOperation(userId, operationId) {
+    return this.nutritionItems?.clearFailedOperation?.(userId, operationId);
+  }
+
   runNutritionOperation(userId, operationId, payload, action) {
     return this.nutritionItems?.runOperation ? this.nutritionItems.runOperation(userId, operationId, payload, action) : action();
   }

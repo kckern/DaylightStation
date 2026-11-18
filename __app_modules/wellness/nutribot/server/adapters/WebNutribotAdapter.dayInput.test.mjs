@@ -4,7 +4,7 @@ import { WebNutribotAdapter } from './WebNutribotAdapter.mjs';
 const AUDIO = 'data:audio/webm;base64,AAAA';
 const setup = (overrides = {}) => {
   const inputRouter = { handleText: vi.fn(async () => ({ ok: true, committed: true, logId: 'log', items: [], result: { nutrilogUuid: 'log' } })) };
-  const dayInstructions = { available: true, execute: vi.fn(async (_user, input) => input.captureFoods({ text: input.text, date: input.date, operationId: 'child' })) };
+  const dayInstructions = { available: true, resume: vi.fn(async () => null), execute: vi.fn(async (_user, input) => input.captureFoods({ text: input.text, date: input.date, operationId: 'child' })) };
   const transcribeVoice = vi.fn(async () => 'heard words');
   const logger = { warn: vi.fn(), error: vi.fn(), debug: vi.fn() };
   return { inputRouter, dayInstructions, transcribeVoice, logger, adapter: new WebNutribotAdapter({ inputRouter, dayInstructions, transcribeVoice, logger, ...overrides }) };
@@ -19,8 +19,8 @@ describe('WebNutribotAdapter day input', () => {
     expect(dayInstructions.execute.mock.calls[0][1]).toMatchObject({ text: 'heard words', date: '2026-11-18', today: '2026-11-18', operationId: 'op' });
     const { payload } = inputRouter.handleText.mock.calls[0][0];
     expect(payload).toMatchObject({ text: 'heard words', date: '2026-11-18', bucket: null, operationId: 'child' });
-    // Having an interpreter that answers null is what skips the revision flow.
-    expect(await payload.interpretText('x')).toBeNull();
+    expect(payload.plainCapture).toBe(true);
+    expect(payload.interpretText).toBeUndefined();
     expect(mealInstructions.execute).not.toHaveBeenCalled();
     expect(mealInstructions.replay).not.toHaveBeenCalled();
     expect(result).toMatchObject({ committed: true, logId: 'log' });
@@ -55,7 +55,7 @@ describe('WebNutribotAdapter day input', () => {
     expect(dayInstructions.execute).not.toHaveBeenCalled();
   });
 
-  it('keeps a capture out of an open revision, even when no food is found', async () => {
+  const revisionHarness = async (extra = {}) => {
     const { NutribotInputRouter } = await import('../application/services/NutribotInputRouter.mjs');
     const { LogFoodFromText } = await import('../application/usecases/LogFoodFromText.mjs');
     const conversationStateStore = { get: vi.fn(async () => ({ activeFlow: 'revision', flowState: { pendingLogUuid: 'open-log' } })) };
@@ -63,11 +63,72 @@ describe('WebNutribotAdapter day input', () => {
     const messaging = { sendMessage: vi.fn(async () => ({ messageId: 'm' })), updateMessage: vi.fn(async () => ({})), deleteMessage: vi.fn(async () => ({})) };
     const text = new LogFoodFromText({ messagingGateway: messaging, aiGateway: { chat }, conversationStateStore, logger: {} });
     const inputRouter = new NutribotInputRouter({ getLogFoodFromText: () => text }, { logger: {} });
-    const { adapter } = setup({ inputRouter });
+    return { chat, conversationStateStore, ...setup({ inputRouter, ...extra }) };
+  };
+
+  it('keeps a capture out of an open revision, even when no food is found', async () => {
+    const { adapter, chat, conversationStateStore } = await revisionHarness();
     const result = await adapter.processDayInput({ userId: 'u', type: 'text', content: 'two eggs', date: '2026-11-18', today: '2026-11-18', operationId: 'op' });
     expect(chat).toHaveBeenCalled();
     expect(result).toMatchObject({ committed: false, outcome: 'no-food' });
     expect(conversationStateStore.get).not.toHaveBeenCalled();
+  });
+
+  it('leaves the revision fallback in place for a capture launched from a meal', async () => {
+    const mealInstructions = { execute: vi.fn(async () => null), replay: vi.fn(async () => null) };
+    const { adapter, chat, conversationStateStore } = await revisionHarness({ mealInstructions });
+    await adapter.process({ userId: 'u', type: 'text', content: 'two eggs', date: '2026-11-18', bucket: 'evening', operationId: 'op' });
+    expect(mealInstructions.execute).toHaveBeenCalled();
+    expect(chat).toHaveBeenCalled();
+    expect(conversationStateStore.get).toHaveBeenCalledTimes(1);
+  });
+
+  it('reports a capture failure that is not a provider failure as what it is', async () => {
+    const { adapter, inputRouter } = setup();
+    const invalid = new Error('Invalid NutriLog');
+    inputRouter.handleText.mockRejectedValue(invalid);
+    await expect(adapter.processDayInput({ userId: 'u', type: 'text', content: 'eggs', date: '2026-11-18', today: '2026-11-18', operationId: 'op' })).rejects.toBe(invalid);
+  });
+
+  it('treats a network failure as the provider being unavailable', async () => {
+    const { adapter, inputRouter } = setup();
+    inputRouter.handleText.mockRejectedValue(Object.assign(new Error('socket hang up'), { code: 'ECONNRESET' }));
+    await expect(adapter.processDayInput({ userId: 'u', type: 'text', content: 'eggs', date: '2026-11-18', today: '2026-11-18', operationId: 'op' })).rejects.toMatchObject({ status: 503, code: 'DAY_INPUT_UNAVAILABLE' });
+  });
+
+  it('returns finished work before transcribing a voice retry', async () => {
+    const { adapter, dayInstructions, transcribeVoice } = setup();
+    dayInstructions.resume.mockResolvedValue({ committed: true, kind: 'added' });
+    const input = { userId: 'u', type: 'voice', content: AUDIO, date: '2026-11-18', today: '2026-11-18', operationId: 'op' };
+    expect(await adapter.processDayInput(input)).toEqual({ committed: true, kind: 'added' });
+    expect(dayInstructions.resume).toHaveBeenCalledWith('u', { date: '2026-11-18', today: '2026-11-18', operationId: 'op' });
+    expect(transcribeVoice).not.toHaveBeenCalled();
+    expect(dayInstructions.execute).not.toHaveBeenCalled();
+  });
+
+  it('stops an over-long transcript before capture and keeps the recording', async () => {
+    const voiceMemoStore = { save: vi.fn(async () => 'va_long') };
+    const { adapter, transcribeVoice, dayInstructions } = setup({ voiceMemoStore });
+    transcribeVoice.mockResolvedValue('a'.repeat(2001));
+    await expect(adapter.processDayInput({ userId: 'u', type: 'voice', content: AUDIO, date: '2026-11-18', today: '2026-11-18', operationId: 'op' })).rejects.toMatchObject({
+      status: 422, code: 'DAY_INPUT_TOO_LONG', audioRef: 'va_long', message: 'That is too long to log at once. Try it in two parts.' });
+    expect(dayInstructions.execute).not.toHaveBeenCalled();
+  });
+
+  it('retries a saved recording without writing a new one', async () => {
+    const voiceMemoStore = { save: vi.fn(), read: vi.fn(async () => ({ buffer: Buffer.from('a'), mimeType: 'audio/webm' })) };
+    const { adapter, transcribeVoice, dayInstructions } = setup({ voiceMemoStore });
+    await adapter.processDayInput({ userId: 'u', type: 'voice', audioRef: 'va_saved', date: '2026-11-18', today: '2026-11-18', operationId: 'op' });
+    expect(voiceMemoStore.read).toHaveBeenCalledWith('u', 'va_saved');
+    expect(voiceMemoStore.save).not.toHaveBeenCalled();
+    expect(transcribeVoice).toHaveBeenCalledWith(expect.objectContaining({ audioRef: 'va_saved', mimeType: 'audio/webm' }));
+    expect(dayInstructions.execute.mock.calls[0][1].text).toBe('heard words');
+  });
+
+  it('says so when a saved recording is gone', async () => {
+    const { adapter, transcribeVoice } = setup({ voiceMemoStore: { read: vi.fn(async () => null) } });
+    await expect(adapter.processDayInput({ userId: 'u', type: 'voice', audioRef: 'va_gone', date: '2026-11-18', today: '2026-11-18', operationId: 'op' })).rejects.toMatchObject({ code: 'AUDIO_NOT_FOUND' });
+    expect(transcribeVoice).not.toHaveBeenCalled();
   });
 
   it('logs food once through the real ledger, inside the route operation', async () => {

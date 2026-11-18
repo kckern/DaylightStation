@@ -18,7 +18,7 @@ const QUANTITY = ['grams', 'amount', 'unit'];
 const SHARED_LOG_IDS = new Set(['QUICKADD', 'MANUAL', 'SAVEDMEAL', 'TEMPLATE', 'COPY']);
 const AMENDABLE = ['name', 'color', ...QUANTITY, ...NUTRIENT_KEYS];
 // What a resumed capture needs. The full reply can carry photos, which do not belong in the ledger.
-const CAPTURE_FIELDS = ['committed', 'outcome', 'message', 'logId', 'items', 'entryIds', 'date', 'mealTime', 'affectedIds', 'affectedDates', 'undoToken'];
+const CAPTURE_FIELDS = ['committed', 'outcome', 'message', 'logId', 'items', 'entryIds', 'date', 'mealTime', 'affectedIds', 'affectedDates', 'undoToken', 'instructionText'];
 const versionsOf = rows => Object.fromEntries(rows.map(row => [idOf(row), row.version ?? 1]));
 /** A dish's parts, which may name it by either its uuid or its short ID. */
 const partsOf = (dish, rows) => {
@@ -99,10 +99,22 @@ export class DayInstructionService {
     return plan.intent === 'change' ? this.#change(context, rows, dayRows, plan) : this.#move(context, rows, dayRows, plan);
   }
 
+  /**
+   * The reply for work this operation already finished, without needing its words
+   * again: a voice retry calls this before paying to transcribe. Null means there
+   * is nothing to return, or the stored work does not hold the words to continue.
+   */
+  async resume(userId, { date, today, operationId }) {
+    if (!this.available || !operationId) return null;
+    return this.#replay({ userId, said: null, date, today, resolved: {}, operationId });
+  }
+
   /** The reply for a write this operation already committed, rebuilt from its stored result. */
   async #replay(context) {
-    const { userId, said, date, today } = context;
+    const { userId, date, today } = context;
     const stored = step => this.nutritionItems.readOperationResult?.(userId, this.#child(context, step));
+    const captured = await stored('capture');
+    const said = context.said || captured?.instructionText || null;
     const moved = await stored('move');
     if (moved) {
       const tops = (moved.items || []).filter(row => !row.parentId);
@@ -119,8 +131,7 @@ export class DayInstructionService {
     }
     // The food is logged, so the words must not be read again: they would now
     // be judged against a day that already holds it.
-    const captured = await stored('capture');
-    return captured?.committed ? this.#add(context, captured) : null;
+    return captured?.committed && said ? this.#add({ ...context, said }, captured) : null;
   }
 
   /**
@@ -148,7 +159,7 @@ export class DayInstructionService {
     }
     return null;
   }
-  #reply(said, body) { return { instructionText: said, ...body }; }
+  #reply(said, body) { return { ...(said ? { instructionText: said } : {}), ...body }; }
   #child(context, step) { return sha256Text(`${context.operationId}:day:${step}`); }
   #ask(said, kind, question, choices = []) { return this.#reply(said, { committed: false, outcome: 'clarification', clarification: { kind, question, choices } }); }
   #askFood(said, rows) {
@@ -271,13 +282,22 @@ export class DayInstructionService {
     const { said, date, userId, captureFoods } = context;
     return this.#childWrite(context, 'capture', operationId => {
       const run = async () => {
-        const captured = await captureFoods({ text: said, date, operationId });
-        return Object.fromEntries(CAPTURE_FIELDS.filter(key => captured?.[key] !== undefined).map(key => [key, captured[key]]));
+        const captured = await this.#settledCapture(userId, await captureFoods({ text: said, date, operationId }));
+        return { ...Object.fromEntries(CAPTURE_FIELDS.filter(key => captured?.[key] !== undefined).map(key => [key, captured[key]])), instructionText: said };
       };
       return this.nutritionItems.runOperation
         ? this.nutritionItems.runOperation(userId, operationId, { operation: 'day-capture', text: said, date }, run)
         : run();
     });
+  }
+
+  /** A commit can fail after the rows were written. The ledger says whether the food is logged. */
+  async #settledCapture(userId, captured) {
+    if (captured?.committed || !captured?.logId) return captured;
+    const rows = await this.nutritionItems.findByLogId(userId, captured.logId);
+    if (!rows.length) return captured;
+    this.logger.warn?.('health.day_instruction.capture_commit_incomplete', { userId, logId: captured.logId, rows: rows.length });
+    return { ...captured, committed: true, outcome: 'committed' };
   }
 
   // Everything below runs after the food is committed, so none of it may fail the request.

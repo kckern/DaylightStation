@@ -143,7 +143,7 @@ export class LogFoodFromText {
     let isRevisionMode = false;
     let pendingLogUuid = null;
     let originalMessageId = null;
-    if (this.#conversationStateStore && !input.interpretText) {
+    if (this.#conversationStateStore && !input.interpretText && !input.plainCapture) {
       const state = await this.#conversationStateStore.get(conversationId);
       if (state?.activeFlow === 'revision') {
         isRevisionMode = true;
@@ -286,9 +286,8 @@ export class LogFoodFromText {
       if (foodItems.length === 0) {
         this.#logger.debug?.('logText.noFood', { conversationId, text });
 
-        // Try revision fallback. A caller with its own interpreter has already
-        // decided what these words are, as it has for revision mode above.
-        const fallbackResult = input.interpretText
+        // Try revision fallback. A plain capture has already been judged to be new food.
+        const fallbackResult = input.plainCapture
           ? { handled: false }
           : await this.#tryRevisionFallback(userId, conversationId, text, statusMsgId, existingMessageId, messaging);
 

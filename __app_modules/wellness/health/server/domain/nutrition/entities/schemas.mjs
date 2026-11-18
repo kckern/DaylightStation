@@ -6,6 +6,7 @@
  */
 
 import { isShortId, isUuid } from '#domains/core/utils/id.mjs';
+import { FOOD_LOG_TEXT_MAX_LENGTH } from '../../../../portable/contracts/nutrition/foodLogText.mjs';
 
 // ==================== Enums ====================
 
@@ -315,8 +316,8 @@ export function validateNutriLog(log) {
   }
 
   // Text validation
-  if (log.text !== undefined && (typeof log.text !== 'string' || log.text.length > 2000)) {
-    errors.push('text must be a string up to 2000 characters');
+  if (log.text !== undefined && (typeof log.text !== 'string' || log.text.length > FOOD_LOG_TEXT_MAX_LENGTH)) {
+    errors.push(`text must be a string up to ${FOOD_LOG_TEXT_MAX_LENGTH} characters`);
   }
 
   // Meal validation

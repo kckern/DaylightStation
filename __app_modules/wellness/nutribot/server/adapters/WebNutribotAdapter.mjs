@@ -12,7 +12,14 @@
  *   - createStatusIndicator(text)   → returns { messageId, finish(), cancel() }
  */
 
+import { FOOD_LOG_TEXT_MAX_LENGTH, FOOD_LOG_TEXT_TOO_LONG_MESSAGE } from '../../../health/server/nutrition-capture-values.mjs';
+
 const dayInputUnavailable = () => Object.assign(new Error('Day input is unavailable right now'), { status: 503, code: 'DAY_INPUT_UNAVAILABLE' });
+const audioNotFound = () => Object.assign(new Error('That recording is no longer available'), { code: 'AUDIO_NOT_FOUND' });
+const NETWORK_CODES = new Set(['ECONNRESET', 'ECONNREFUSED', 'ECONNABORTED', 'ETIMEDOUT', 'ENOTFOUND', 'EAI_AGAIN']);
+/** Whether a failure came from the AI provider or the way to it, not from our own rules. */
+const isProviderFailure = error => Number.isInteger(error.status ?? error.response?.status)
+  || NETWORK_CODES.has(error.code) || NETWORK_CODES.has(error.cause?.code) || Boolean(error.message?.includes('fetch failed'));
 
 export class WebNutribotAdapter {
   #inputRouter;
@@ -156,14 +163,14 @@ export class WebNutribotAdapter {
       platform: 'web',
       platformUserId: userId,
       messageId: null,
-      payload: { bucket: bucket || null, date: date || null, ...(input.operationId ? { operationId: input.operationId } : {}) },
+      payload: { bucket: bucket || null, date: date || null, ...(input.operationId ? { operationId: input.operationId } : {}),
+        // A day-level capture has already been judged to be new food.
+        ...(input.plainCapture ? { plainCapture: true } : {}) },
     };
 
     if (this.#mealInstructions && date && bucket && ['text', 'voice'].includes(type)) {
       event.payload.interpretText = text => this.#mealInstructions.execute(userId, { ...input, text });
     }
-    // A day-level capture has already been judged to be new food.
-    if (input.plainCapture) event.payload.interpretText = async () => null;
 
     // Map input type to router event type and payload shape
     let routerType = type;
@@ -181,11 +188,7 @@ export class WebNutribotAdapter {
         // whole reason the bytes were written before the first attempt.
         if (retryAudioRef) {
           const stored = await this.#voiceMemoStore?.read(userId, retryAudioRef);
-          if (!stored) {
-            const err = new Error('That recording is no longer available');
-            err.code = 'AUDIO_NOT_FOUND';
-            throw err;
-          }
+          if (!stored) throw audioNotFound();
           event.payload.fileId = { buffer: stored.buffer, mimeType: stored.mimeType, audioRef: retryAudioRef };
           break;
         }
@@ -427,44 +430,70 @@ export class WebNutribotAdapter {
   }
 
   /** One day-level instruction: new food, or a change to what is logged. */
-  async processDayInput({ userId, type, content, date, today, operationId, resolved }) {
+  async processDayInput({ userId, type, content, audioRef, date, today, operationId, resolved }) {
     if (!this.#dayInstructions?.available) throw dayInputUnavailable();
-    const text = await this.#correctionText(userId, type === 'voice' ? content : null, content);
-    return this.#dayInstructions.execute(userId, { text, date, today, operationId, resolved,
+    const spoken = type === 'voice';
+    if (spoken) {
+      if (!this.#transcribeVoice) throw dayInputUnavailable();
+      // A retry may find its work already done, and then nothing needs hearing again.
+      const finished = await this.#dayInstructions.resume(userId, { date, today, operationId });
+      if (finished) return finished;
+    }
+    const heard = spoken ? await this.#hearRecording(userId, content, audioRef) : { text: content };
+    if (String(heard.text).trim().length > FOOD_LOG_TEXT_MAX_LENGTH) {
+      throw Object.assign(new Error(FOOD_LOG_TEXT_TOO_LONG_MESSAGE), { status: 422, code: 'DAY_INPUT_TOO_LONG', ...(heard.audioRef ? { audioRef: heard.audioRef } : {}) });
+    }
+    return this.#dayInstructions.execute(userId, { text: heard.text, date, today, operationId, resolved,
       captureFoods: capture => this.#captureDayFoods(userId, capture) });
   }
 
-  /** The parser's provider errors carry the provider's status, which is not ours to report. */
+  /** The words of a new recording, or of one already saved. A saved one is not written again. */
+  async #hearRecording(userId, content, savedRef) {
+    if (savedRef) {
+      const stored = await this.#voiceMemoStore?.read(userId, savedRef);
+      if (!stored) throw audioNotFound();
+      return { text: await this.#transcribe({ buffer: stored.buffer, mimeType: stored.mimeType, audioRef: savedRef }), audioRef: savedRef };
+    }
+    const { buffer, mimeType } = this.#decodeDataUrl(content, 'voice');
+    const audioRef = await this.#persistVoiceMemo(userId, buffer, mimeType);
+    return { text: await this.#transcribe({ buffer, mimeType, audioRef }), audioRef };
+  }
+
+  /** A provider's errors carry the provider's status, which is not ours to report. */
   async #captureDayFoods(userId, { text, date, operationId }) {
     try {
       return await this.process({ type: 'text', content: text, userId, date, operationId, plainCapture: true });
     } catch (error) {
       this.#getLogger().warn?.('web-nutribot.day_input.capture_failed', { userId, date, error: error.message });
-      throw dayInputUnavailable();
+      if (isProviderFailure(error)) throw dayInputUnavailable();
+      throw error;
     }
   }
 
   async #correctionText(userId, audio, typed) {
-    let instruction = typed;
-    if (audio) {
-      if (!this.#transcribeVoice) throw Object.assign(new Error('Voice corrections are unavailable'), { status: 503 });
-      const { buffer, mimeType } = this.#decodeDataUrl(audio, 'voice');
-      // PERSIST FIRST, TRANSCRIBE SECOND — the same order, and the same reason,
-      // as the capture path above: a Whisper failure must not also destroy the
-      // recording. The ref travels back so a failed transcription can be retried
-      // from the bytes instead of asking the person to say it again.
-      const audioRef = await this.#persistVoiceMemo(userId, buffer, mimeType);
-      try {
-        instruction = await this.#transcribeVoice({ buffer, mimeType, audioRef });
-      } catch (error) {
-        throw Object.assign(new Error('Could not hear that correction'),
-          { status: 502, code: 'TRANSCRIBE_FAILED', audioRef, cause: error });
-      }
-      if (!instruction || !String(instruction).trim()) {
-        throw Object.assign(new Error('That recording came back empty'), { status: 422, code: 'TRANSCRIBE_EMPTY', audioRef });
-      }
+    if (!audio) return typed;
+    if (!this.#transcribeVoice) throw Object.assign(new Error('Voice corrections are unavailable'), { status: 503 });
+    const { buffer, mimeType } = this.#decodeDataUrl(audio, 'voice');
+    // PERSIST FIRST, TRANSCRIBE SECOND — the same order, and the same reason,
+    // as the capture path above: a Whisper failure must not also destroy the
+    // recording. The ref travels back so a failed transcription can be retried
+    // from the bytes instead of asking the person to say it again.
+    const audioRef = await this.#persistVoiceMemo(userId, buffer, mimeType);
+    return this.#transcribe({ buffer, mimeType, audioRef });
+  }
+
+  async #transcribe({ buffer, mimeType, audioRef }) {
+    let words;
+    try {
+      words = await this.#transcribeVoice({ buffer, mimeType, audioRef });
+    } catch (error) {
+      throw Object.assign(new Error('Could not hear that correction'),
+        { status: 502, code: 'TRANSCRIBE_FAILED', audioRef, cause: error });
     }
-    return instruction;
+    if (!words || !String(words).trim()) {
+      throw Object.assign(new Error('That recording came back empty'), { status: 422, code: 'TRANSCRIBE_EMPTY', audioRef });
+    }
+    return words;
   }
 
   reviewPending(input) { return this.#inputRouter.reviewPending(input); }
