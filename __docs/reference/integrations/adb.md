@@ -241,7 +241,10 @@ tablet still holds a future deadline. The value of the backend's hold is read
 after the tablet's, so a hold relayed meanwhile wins. A re-sync that fails is
 tried again on the next reachable check until one succeeds
 (`piano-wake-hold.resynced`, or `piano-wake-hold.resync-failed` each time). A 401 from the
-tablet is reported as `unauthorized`, apart from an unreachable bridge. Setting the key back, or removing it,
+tablet is reported as `unauthorized`, apart from an unreachable bridge: the
+supervisor logs `piano-bridge.supervisor.unauthorized` once (no credential in it),
+skips the relaunch and the down alert, keeps probing, and logs
+`piano-bridge.supervisor.authorized` when a probe succeeds again. Setting the key back, or removing it,
 returns both to the old bridge. `bridge_url` and `bridge_supervisor.package` are
 used only by `piano-bridge`.
 
