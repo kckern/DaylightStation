@@ -41,6 +41,7 @@ export async function runPianoRepair({
     let bridge;
     try { bridge = await resetBridge(); }
     catch (error) { bridge = { ok: false, reason: 'request-failed', error: error?.message }; }
+    base.bridgeResult = bridge;
     if (!bridge.ok) return { ...base, ok: false, phase: 'bridge-reset', reason: bridge.reason, bridgeReset: 'failed', health: getSnapshot().health, elapsedMs: now() - startedAt };
     base.bridgeReset = 'succeeded';
   }

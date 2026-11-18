@@ -35,13 +35,23 @@ final class BridgeScript {
                 + "function c(m,a){try{return n.call(t(),m,a===undefined||a===null?\"\":String(a));}catch(e){return \"\";}}"
                 + "var piano=null;if(" + "piano".equals(deviceId)
                 + "&&window===window.top){"
+                + "var subscribed=null;"
                 + "piano=Object.freeze({subscribe:function(f){"
-                + "function read(){var frames=JSON.parse(c('pianoRead')||'[]');frames.forEach(f);}"
-                + "function status(){var s=c('pianoStatus');if(s)f(JSON.parse(s));}"
+                + "if(subscribed)subscribed();"
+                + "var active=true,timer;"
+                + "function read(){if(!active)return;var frames=JSON.parse(c('pianoRead')||'[]');frames.forEach(f);}"
+                + "function status(){if(!active)return;var s=c('pianoStatus');"
+                // Navigation may detach the new page's early subscription. Only the current
+                // listener can renew; a queued callback from a removed listener is inert.
+                + "if(!s){f({type:'status',midiInOpen:false,midiWriteOpen:false});T='';if(c('pianoSubscribe')!=='true')return;s=c('pianoStatus');}"
+                + "if(s)f(JSON.parse(s));}"
+                + "function stop(){if(!active)return;active=false;clearInterval(timer);"
+                + "window.removeEventListener('daylight:midiready',read);c('pianoUnsubscribe');subscribed=null;}"
                 + "window.addEventListener('daylight:midiready',read);"
-                + "if(c('pianoSubscribe')!=='true'){window.removeEventListener('daylight:midiready',read);return null;}"
-                + "status();var timer=setInterval(status,1000);return function(){clearInterval(timer);"
-                + "window.removeEventListener('daylight:midiready',read);c('pianoUnsubscribe');};},"
+                + "if(c('pianoSubscribe')!=='true'){T='';window.removeEventListener('daylight:midiready',read);return null;}"
+                + "subscribed=stop;timer=setInterval(status,1000);status();return stop;},"
+                + "startRepair:function(){return c('pianoRepair')==='true';},"
+                + "repairResult:function(){var r=c('pianoRepairResult');return r?JSON.parse(r):{fixed:false,reason:'unavailable'};},"
                 + "send:function(bytes,inMs){return c('pianoSend',JSON.stringify({bytes:Array.from(bytes),inMs:inMs||0}))==='true';}});}"
                 + "window.daylight=Object.freeze({"
                 + ("piano".equals(deviceId) ? "get piano(){return /^\\/piano(?:\\/|$)/.test(location.pathname)?piano:null;}," : "")

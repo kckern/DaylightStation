@@ -59,7 +59,7 @@ public class BridgeDispatcherTest {
     @Test public void pianoRequiresTrustedTopFrameOnLessonPath() {
         String top = bridge.open(KEY, "top");
         String child = bridge.open(KEY, "frame");
-        for (String op : new String[]{"pianoSubscribe", "pianoRead", "pianoStatus", "pianoSend", "pianoUnsubscribe"}) {
+        for (String op : new String[]{"pianoSubscribe", "pianoRead", "pianoStatus", "pianoSend", "pianoUnsubscribe", "pianoRepair", "pianoRepairResult"}) {
             url = "https://app.example.test/piano/lesson";
             assertEquals("ok", bridge.call(top, op, ""));
             assertEquals("", bridge.call(child, op, ""));
@@ -68,6 +68,29 @@ public class BridgeDispatcherTest {
             url = "https://elsewhere.test/piano";
             assertEquals("", bridge.call(top, op, ""));
         }
+    }
+
+    @Test public void pianoRepairReturnsOnlyTheOwnersInstrumentVerdict() throws Exception {
+        java.util.List<Runnable> jobs = new java.util.ArrayList<>();
+        PianoRepair repair = new PianoRepair();
+        net.kckern.daylight.core.spi.PianoOutput instrument = new net.kckern.daylight.core.spi.PianoOutput() {
+            @Override public boolean send(byte[] bytes, long delay) { return false; }
+            @Override public org.json.JSONObject repair() {
+                try { return new org.json.JSONObject().put("fixed", true).put("recoveredAt", "L2")
+                        .put("linkVerdict", "VERIFIED").put("privateDetail", "secret"); }
+                catch (Exception failure) { throw new AssertionError(failure); }
+            }
+        };
+        assertTrue(repair.start("new", instrument, jobs::add));
+        assertFalse(repair.start("other", instrument, jobs::add));
+        assertTrue(new org.json.JSONObject(repair.result("new")).getBoolean("pending"));
+        jobs.get(0).run();
+        assertEquals("", repair.result("old"));
+        org.json.JSONObject result = new org.json.JSONObject(repair.result("new"));
+        assertTrue(result.getBoolean("fixed"));
+        assertEquals("L2", result.getString("recoveredAt"));
+        assertEquals("VERIFIED", result.getString("linkVerdict"));
+        assertEquals(3, result.length());
     }
 
     @Test public void pianoQueueAndSchedulerPreserveLessonData() throws Exception {

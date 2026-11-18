@@ -81,7 +81,7 @@ final class BridgeDispatcher {
         try {
             switch (method) {
                 case "pianoSubscribe": case "pianoUnsubscribe": case "pianoRead":
-                case "pianoStatus": case "pianoSend":
+                case "pianoStatus": case "pianoSend": case "pianoRepair": case "pianoRepairResult":
                     if (!tokens.topFrame(presentedToken) || !pianoPath(mainFrameUrl.get())) return "";
                     return actions.piano(presentedToken, method, a);
                 case "capabilities": return actions.capabilitiesJson();

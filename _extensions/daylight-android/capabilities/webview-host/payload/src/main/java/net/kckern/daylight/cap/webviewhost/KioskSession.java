@@ -338,7 +338,7 @@ final class KioskSession implements KioskController, KioskSurface, net.kckern.da
             dispatcher = new BridgeDispatcher(tokens, origins, () -> mainUrl, new PageActions(), pinGate);
             // Visible to every frame of every page. It answers only to a token, and a
             // token is issued only for the key the document-start shim carries.
-            web.addJavascriptInterface(new NativeBridge(), BridgeScript.NATIVE_NAME);
+            web.addJavascriptInterface(new NativeBridge(dispatcher), BridgeScript.NATIVE_NAME);
         } else {
             dispatcher = null;
             if (!bridgeUnavailableNoted) {
@@ -371,6 +371,7 @@ final class KioskSession implements KioskController, KioskSurface, net.kckern.da
 
     private PianoPage pianoPage;
     private boolean midiStopped;
+    private final PianoRepair pianoRepair = new PianoRepair();
 
     private synchronized void detachPiano() {
         if (pianoPage != null) core.notes().unsubscribe(pianoPage);
@@ -400,6 +401,8 @@ final class KioskSession implements KioskController, KioskSurface, net.kckern.da
                 for (String key : new String[]{"speakerOk", "outVerified", "midiInOpen", "midiWriteOpen"})
                     if (status.opt(key) instanceof Boolean) result.put(key, status.getBoolean(key));
                 return result.toString();
+            case "pianoRepair": return String.valueOf(pianoRepair.start(token, out, bridgeExec));
+            case "pianoRepairResult": return pianoRepair.result(token);
             case "pianoSend": return String.valueOf(PianoPage.send(out, arg));
             default: return "";
         }
@@ -741,18 +744,21 @@ final class KioskSession implements KioskController, KioskSurface, net.kckern.da
 
     /** The object addJavascriptInterface exposes. Runs on the WebView's bridge thread. */
     private final class NativeBridge {
+        private final BridgeDispatcher owner;
+        NativeBridge(BridgeDispatcher owner) { this.owner = owner; }
+
         /**
          * The shim's first call: its key for a token that belongs to the calling document,
          * and whether that document is the top frame ("top") or a frame.
          */
         @JavascriptInterface public String open(String key, String frame) {
             BridgeDispatcher d = dispatcher;
-            return d == null ? "" : d.open(key, frame);
+            return d != owner ? "" : owner.open(key, frame);
         }
 
         @JavascriptInterface public String call(String token, String method, String arg) {
             BridgeDispatcher d = dispatcher;
-            return d == null ? "" : d.call(token, method, arg);
+            return d != owner ? "" : owner.call(token, method, arg);
         }
     }
 
@@ -839,7 +845,7 @@ final class KioskSession implements KioskController, KioskSurface, net.kckern.da
 
     /** Called from the capability's stop(), on any thread. Does not wait for the main thread. */
     void shutdown() {
-        synchronized (this) { midiStopped = true; detachPiano(); }
+        synchronized (this) { midiStopped = true; detachPiano(); pianoRepair.stop(); }
         bridgeExec.shutdown();
         ui.post(() -> {
             overlayText = "";
