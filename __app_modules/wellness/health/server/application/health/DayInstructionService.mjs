@@ -33,15 +33,32 @@ const loggedMessage = (rows, loggedDate, date, today) => {
   const what = !foods.length ? 'your food' : foods.length === 1 ? nameOf(foods[0]) : `${foods.length} foods`;
   return `Logged ${what}${loggedDate === date ? '' : ` to ${dayName(loggedDate, today)}`}`;
 };
+const FIELD_NAMES = { label: 'name', item: 'name', noom_color: 'color' };
+const fieldNames = fields => (fields || []).map(field => FIELD_NAMES[field] || field);
+/** Fields a person or the auditor settled. What a voice correction wrote stays open to the next one. */
+const pinsOf = row => {
+  const revised = new Set(fieldNames(row.revisedFields));
+  return new Set([...fieldNames(row.manualFields), ...fieldNames(row.cleanupFields)].filter(field => !revised.has(field)));
+};
 /** The part of a proposed correction that may be written to this row. */
-const amendmentFor = (row, proposal, pinned = []) => {
-  const held = AMENDABLE.filter(key => Object.hasOwn(proposal, key) && pinned.includes(key));
+const amendmentFor = (row, proposal) => {
+  const pins = pinsOf(row);
+  const proposed = key => Object.hasOwn(proposal, key);
+  const mass = foodGrams(row);
   // Grams, amount and unit describe one quantity, so they stay or go together.
-  const keepQuantity = foodGrams(row) !== null && !QUANTITY.some(key => held.includes(key));
-  const writable = key => Object.hasOwn(proposal, key) && !held.includes(key)
-    && (keepQuantity || !QUANTITY.includes(key))
+  const quantityPinned = QUANTITY.some(key => pins.has(key));
+  const quantityHeld = quantityPinned && QUANTITY.some(proposed);
+  const writesQuantity = mass !== null && !quantityPinned && QUANTITY.some(proposed);
+  // The proposal's nutrition describes its own mass, not the one being kept.
+  const factor = quantityHeld && mass > 0 && proposal.grams > 0 ? mass / proposal.grams : 1;
+  const writable = key => proposed(key) && !pins.has(key)
+    && (writesQuantity || !QUANTITY.includes(key))
     && !(proposal[key] === null && NUTRIENT_KEYS.includes(key) && row[key] != null);
-  return { held: held.length > 0, changes: Object.fromEntries(AMENDABLE.filter(writable).map(key => [key, proposal[key]])) };
+  const valueOf = key => (NUTRIENT_KEYS.includes(key) && typeof proposal[key] === 'number' ? proposal[key] * factor : proposal[key]);
+  const changes = Object.fromEntries(AMENDABLE.filter(writable).map(key => [key, valueOf(key)]));
+  // An amend scales every nutrient with the quantity, unless it is given the value to keep.
+  if (writesQuantity) for (const key of NUTRIENT_KEYS) if (pins.has(key) && Number.isFinite(row[key])) changes[key] = row[key];
+  return { changes, held: quantityHeld || AMENDABLE.some(key => proposed(key) && pins.has(key)) };
 };
 
 /** Carries out one day-level instruction. The gateway chooses; this validates and commits. */
@@ -104,14 +121,19 @@ export class DayInstructionService {
     return captured?.committed ? this.#add(context, captured) : null;
   }
 
-  /** Run one child write. A failed one gives its ID back, so a retry can use it. */
-  async #childWrite(context, step, write) {
+  /**
+   * Run one child write. A failed one gives its ID back, so a retry can use it.
+   * If an abandoned attempt was what blocked this write, try once more now.
+   */
+  async #childWrite(context, step, write, retried = false) {
     const { userId } = context;
     const id = this.#child(context, step);
     try { return await write(id); }
     catch (error) {
-      try { await this.nutritionItems.clearFailedOperation?.(userId, id); }
+      let cleared = false;
+      try { cleared = await this.nutritionItems.clearFailedOperation?.(userId, id); }
       catch (clearError) { this.logger.warn?.('health.day_instruction.clear_failed', { userId, step, error: clearError.message }); }
+      if (cleared && error.code === 'IDEMPOTENCY_CONFLICT' && !retried) return this.#childWrite(context, step, write, true);
       throw error;
     }
   }
@@ -133,7 +155,12 @@ export class DayInstructionService {
   }
   #latestCapture(rows) {
     if (!rows.length) return [];
-    const newest = rows.reduce((best, row) => (String(row.createdAt || '') > String(best.createdAt || '') ? row : best), rows[0]);
+    // Older rows have no capture time: the ledger keeps a day in the order it was
+    // written, so ties go to the later row. A dish header is added after its
+    // capture and says nothing about when the food was logged.
+    const foods = rows.filter(isFood);
+    const candidates = foods.length ? foods : rows;
+    const newest = candidates.reduce((best, row) => (String(row.createdAt || '') >= String(best.createdAt || '') ? row : best));
     return newest.logId ? rows.filter(row => row.logId === newest.logId) : [newest];
   }
   /** Top-level foods of the latest capture. A part stands for its whole dish. */
@@ -198,13 +225,13 @@ export class DayInstructionService {
       [target] = matches;
     }
     const id = idOf(target);
-    const { proposal, pinned } = await this.#propose(userId, id, said);
-    const { changes, held } = amendmentFor(target, proposal, pinned);
+    const { proposal } = await this.#propose(userId, id, said);
+    const { changes, held } = amendmentFor(target, proposal);
     if (!Object.keys(changes).length) return this.#reply(said, { committed: false, outcome: 'no-change', message: 'Those details were set by hand, so I left them.' });
     // The amend also checks the dish a part belongs to.
     const dish = target.parentId ? indexByLinkId(dayRows).get(target.parentId) : null;
     const result = await this.#childWrite(context, 'change', operationId => this.mealCommands.execute(userId, { action: 'amend', date, bucket: target.mealTime, selectedIds: [id],
-      expectedVersions: versionsOf([target, ...(dish ? [dish] : [])]), changes: { [id]: changes }, operationId }));
+      expectedVersions: versionsOf([target, ...(dish ? [dish] : [])]), changes: { [id]: changes }, operationId }, { voiceCorrection: true }));
     const renamed = changes.name && changes.name !== nameOf(target);
     const done = renamed ? `Changed ${nameOf(target)} to ${changes.name}` : `Updated ${nameOf(target)}`;
     return this.#reply(said, { ...result, outcome: 'committed', kind: 'changed', message: held ? `${done}. I kept the details you set by hand.` : done });

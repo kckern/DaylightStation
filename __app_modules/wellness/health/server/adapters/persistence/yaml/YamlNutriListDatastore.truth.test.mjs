@@ -146,6 +146,39 @@ describe('nutrition ledger truth', () => {
     expect(store.readOperationResult('u', 'op-lost')).toMatchObject({ committed: true, entryIds: ['food-a'] });
   });
 
+  it('keeps a capture time without letting it decide the day or the order within it', async () => {
+    await store.saveMany([row({ uuid: 'first' })]);
+    await store.saveMany([row({ uuid: 'second', createdAt: '2020-01-03 08:00:00' })]);
+    await store.saveMany([row({ uuid: 'third' })]);
+    expect((await store.findByDate('u', '2020-01-01')).map(item => item.uuid)).toEqual(['first', 'second', 'third']);
+    expect(await store.findByUuid('u', 'second')).toMatchObject({ date: '2020-01-01', createdAt: '2020-01-03 08:00:00' });
+    expect(await store.findByDate('u', '2020-01-03')).toEqual([]);
+    expect(await store.findByUuid('u', 'first')).not.toHaveProperty('createdAt');
+  });
+
+  describe('revisedFields', () => {
+    const edited = async () => (await store.findByUuid('u', 'food-a')).revisedFields;
+    const saved = async () => {
+      await store.saveMany([row()]);
+      await store.mutateEntries('u', { updates: [{ id: 'food-a', changes: { name: 'Voice', calories: 1, revisedFields: ['name', 'calories'], manualFields: ['name', 'calories'] } }] });
+    };
+    it('loses a field that a person then edits', async () => {
+      await saved();
+      await store.mutateEntries('u', { updates: [{ id: 'food-a', changes: { calories: 2, manualFields: ['name', 'calories'] } }] });
+      expect(await edited()).toEqual(['name']);
+    });
+    it('treats a label edit as an edit of the name', async () => {
+      await saved();
+      await store.mutateEntries('u', { updates: [{ id: 'food-a', changes: { label: 'Typed', manualFields: ['name', 'calories', 'label'] } }] });
+      expect(await edited()).toEqual(['calories']);
+    });
+    it('is untouched by a write that records no correction', async () => {
+      await saved();
+      await store.mutateEntries('u', { updates: [{ id: 'food-a', changes: { calories: 2 } }] });
+      expect(await edited()).toEqual(['name', 'calories']);
+    });
+  });
+
   describe('clearFailedOperation', () => {
     const operations = () => loadYaml(path.join(root, 'lifelog/nutrition/ledger-operations')) || {};
     it('frees an ID whose work failed before writing anything', async () => {

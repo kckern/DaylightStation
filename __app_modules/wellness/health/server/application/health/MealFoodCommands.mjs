@@ -37,7 +37,7 @@ function validateChanges(changes) {
   return changes;
 }
 
-function amendmentPatch(row, requested) {
+function amendmentPatch(row, requested, { voiceCorrection = false } = {}) {
   validateChanges(requested);
   let factor = null;
   let amountBased = false;
@@ -62,6 +62,8 @@ function amendmentPatch(row, requested) {
   const patch = { ...scaled, ...requested };
   const changed = Object.keys(patch).filter(key => JSON.stringify(patch[key]) !== JSON.stringify(row[key]));
   if (changed.length) patch.manualFields = [...new Set([...(row.manualFields || []), ...changed])];
+  // Still manual, so the auditor leaves them alone, but a later correction may replace them.
+  if (changed.length && voiceCorrection) patch.revisedFields = [...new Set([...(row.revisedFields || []), ...changed])];
   return patch;
 }
 
@@ -69,7 +71,8 @@ function amendmentPatch(row, requested) {
 export class MealFoodCommands {
   constructor({ nutritionItems, logger = {} }) { this.store = nutritionItems; this.logger = logger; }
 
-  async execute(userId, input) {
+  /** `options` comes from server code only; the HTTP body cannot reach it. */
+  async execute(userId, input, options = {}) {
     const { date, bucket, action, operationId, selectedIds, expectedVersions } = input;
     if (!operationPattern.test(operationId || '') || !isISODate(date) || !MEAL_BUCKETS.some(b => b.id === bucket)) fail('A valid operation ID, date and meal bucket are required');
     if (!Array.isArray(selectedIds) || selectedIds.some(id => typeof id !== 'string') || new Set(selectedIds).size !== selectedIds.length) fail('Explicit unique selected food IDs are required');
@@ -130,7 +133,7 @@ export class MealFoodCommands {
         selected.forEach(check);
         for (const [id, changes] of Object.entries(input.changes || {})) {
           if (!selectedIds.includes(id)) fail('Amendment exceeds selection');
-          const row = get(id); requireFood(row); update(row, amendmentPatch(row, changes));
+          const row = get(id); requireFood(row); update(row, amendmentPatch(row, changes, options));
         }
         if (input.additions !== undefined && !Array.isArray(input.additions)) fail('Invalid additions');
         const promoted = new Map();

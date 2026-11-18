@@ -324,7 +324,7 @@ export class FoodLogReview {
         audit: { id: operation.id, fingerprint: operation.hash, actor: 'user', reason: operation.action, at: new Date(this.#clock.now()).toISOString() },
       });
     } else if (['confirm', 'capture'].includes(operation.action)) {
-      await this.#items.saveMany(rows);
+      await this.#items.saveMany(rows.map(row => ({ ...row, createdAt: log.createdAt })));
     }
     if (['confirm', 'capture'].includes(operation.action) && log.status === 'pending') log = log.accept(new Date(this.#clock.now()));
     if (operation.action === 'discard') {

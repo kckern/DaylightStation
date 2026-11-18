@@ -27,6 +27,13 @@ async function fixture() {
   return { root, foodLogs, items, log, makeReview, review: makeReview(), logger };
 }
 describe('shared pending food review', () => {
+  it('carries the capture time onto new ledger rows without changing their day', async () => {
+    const f = await fixture();
+    await f.review.capture({ userId: 'alice', logUuid: f.log.id });
+    const [row] = await f.items.findByLogId('alice', f.log.id);
+    expect(f.log.createdAt).toBeTruthy();
+    expect(row).toMatchObject({ createdAt: f.log.createdAt, date: '2026-09-04' });
+  });
   it('keeps Telegram portion commands usable after Health restores a discarded entry', async () => {
     const f = await fixture();
     await f.review.capture({ userId: 'alice', logUuid: f.log.id });

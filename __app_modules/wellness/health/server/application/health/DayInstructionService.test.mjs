@@ -6,6 +6,7 @@ import { sha256Text } from '#system/utils/sha256.mjs';
 import { YamlNutriListDatastore } from '../../adapters/persistence/yaml/YamlNutriListDatastore.mjs';
 import { DayInstructionService } from './DayInstructionService.mjs';
 import { MealFoodCommands } from './MealFoodCommands.mjs';
+import { HealthOperations } from './HealthOperations.mjs';
 
 const date = '2026-11-18', today = date;
 const rows = [
@@ -273,9 +274,9 @@ describe('DayInstructionService', () => {
 
   describe('correcting a food', () => {
     const milk = extra => ({ ...rows[2], ...extra });
-    const change = (proposal, pinned, dayRows = [milk()]) => {
-      const h = harness(plan({ intent: 'change' }), { dayRows });
-      h.entryRevisions.propose.mockResolvedValue({ proposal, pinned });
+    const change = (proposal, manualFields = [], dayRows = [milk()]) => {
+      const h = harness(plan({ intent: 'change' }), { dayRows: dayRows.map(row => ({ ...row, manualFields })) });
+      h.entryRevisions.propose.mockResolvedValue({ proposal, pinned: ['ignored because the row decides'] });
       return h;
     };
     const sent = h => h.mealCommands.execute.mock.calls[0][1].changes.milk;
@@ -303,6 +304,43 @@ describe('DayInstructionService', () => {
       const h = change({ name: 'Whole Milk', protein: null, fat: null }, [], [milk({ protein: 8 })]);
       await h.run('that was whole milk');
       expect(sent(h)).toEqual({ name: 'Whole Milk', fat: null });
+    });
+    it('treats a hand-set label as a hand-set name', async () => {
+      const h = change({ name: 'Whole Milk', calories: 149 }, ['label']);
+      await h.run('that was whole milk');
+      expect(sent(h)).toEqual({ calories: 149 });
+    });
+    it('reads fields tidied by the auditor as pinned too', async () => {
+      const h = harness(plan({ intent: 'change' }), { dayRows: [milk({ cleanupFields: ['calories'] })] });
+      h.entryRevisions.propose.mockResolvedValue({ proposal: { name: 'Whole Milk', calories: 149 } });
+      await h.run('that was whole milk');
+      expect(sent(h)).toEqual({ name: 'Whole Milk' });
+    });
+    it('does not pin what an earlier voice correction wrote', async () => {
+      const h = harness(plan({ intent: 'change' }), { dayRows: [milk({ manualFields: ['name', 'calories'], revisedFields: ['name'] })] });
+      h.entryRevisions.propose.mockResolvedValue({ proposal: { name: 'Skim Milk', calories: 80 } });
+      await h.run('actually skim milk');
+      expect(sent(h)).toEqual({ name: 'Skim Milk' });
+    });
+    it('marks the amend as a voice correction outside the request body', async () => {
+      const h = change({ name: 'Whole Milk' });
+      await h.run('that was whole milk');
+      const [, body, options] = h.mealCommands.execute.mock.calls[0];
+      expect(options).toEqual({ voiceCorrection: true });
+      expect(body).not.toHaveProperty('voiceCorrection');
+    });
+    it('rescales proposed nutrition to a hand-set mass', async () => {
+      const h = change({ name: 'Cauliflower Rice', grams: 57, amount: 57, unit: 'g', calories: 14, protein: null, fat: 0.5 }, ['grams', 'fat'], [milk({ grams: 158, amount: 158, fat: 1 })]);
+      await h.run('that was cauliflower rice');
+      expect(Object.keys(sent(h)).sort()).toEqual(['calories', 'name', 'protein']);
+      expect(sent(h).calories).toBeCloseTo(14 * 158 / 57, 8);
+      expect(sent(h).calories).toBeCloseTo(38.8, 1);
+      expect(sent(h).protein).toBeNull();
+    });
+    it('does not rescale when the quantity was not held back', async () => {
+      const h = change({ name: 'Whole Milk', grams: 100, amount: 100, unit: 'g', calories: 60 });
+      await h.run('that was whole milk');
+      expect(sent(h).calories).toBe(60);
     });
     it('says "Updated" when the name stayed the same', async () => {
       const h = change({ name: 'Milk', calories: 149 }, []);
@@ -424,6 +462,91 @@ describe('DayInstructionService', () => {
       expect(await h.run('soup')).toMatchObject({ committed: true, kind: 'added', logId: 'cap', message: 'Logged 3 foods' });
       expect(h.captureFoods).toHaveBeenCalledTimes(1);
       expect(await store.findByLogId('u', 'cap')).toHaveLength(3);
+    });
+    describe('saveMany-shaped rows, which carry no capture time', () => {
+      const saved = (uuid, logId, extra) => ({ uuid, userId: 'u', name: uuid, date, mealTime: 'afternoon', grams: 100, unit: 'g', amount: 100, calories: 50, logId, ...extra });
+      it('"that" means the last capture in ledger order', async () => {
+        await store.saveMany([saved('eggs', 'first', { mealTime: 'morning' })]);
+        await store.saveMany([saved('tea', 'second'), saved('milk', 'second')]);
+        expect((await store.findByDate('u', date)).map(row => row.uuid)).toEqual(['eggs', 'tea', 'milk']);
+        const h = stack(plan({ toDay: yesterday }));
+        await h.run('move that to yesterday');
+        expect(h.reader.read.mock.calls[0][0].latest).toEqual(['tea', 'milk']);
+        expect(await ids(yesterday)).toEqual(['milk', 'tea']);
+        expect(await ids(date)).toEqual(['eggs']);
+      });
+      it('a dish header added later does not hide the rest of that capture', async () => {
+        await store.saveMany([saved('eggs', 'first')]);
+        await store.saveMany([saved('a', 'second'), saved('b', 'second'), saved('c', 'second')]);
+        const grouped = await commands.execute('u', { action: 'group', name: 'Soup', date, bucket: 'afternoon', operationId: 'grp', selectedIds: ['a', 'b'], expectedVersions: { a: 1, b: 1 } });
+        const header = grouped.items.find(row => row.kind === 'group');
+        await stack(plan({ toDay: yesterday })).run('move that to yesterday');
+        expect(await ids(yesterday)).toEqual(['a', 'b', 'c', header.uuid].sort());
+      });
+      it('a capture with a time beats older rows without one', async () => {
+        await store.saveMany([saved('new', 'second', { createdAt: '2026-11-18 12:00:00' })]);
+        await store.saveMany([saved('legacy', 'first')]);
+        await stack(plan({ toDay: yesterday })).run('move that to yesterday');
+        expect(await ids(yesterday)).toEqual(['new']);
+      });
+    });
+    describe('corrections on the ledger', () => {
+      const row = () => store.findByUuid('u', 'a');
+      const correction = (proposal, operationId) => {
+        const h = stack(plan({ intent: 'change' }), { proposal });
+        return h.run('that was something else', { operationId });
+      };
+      const saveFood = extra => store.saveMany([{ uuid: 'a', userId: 'u', name: 'Milk', date, mealTime: 'afternoon', grams: 100, unit: 'g', amount: 100, calories: 60, protein: 3, logId: 'l', ...extra }]);
+      it('keeps a hand-set nutrient when the quantity changes', async () => {
+        await saveFood({ protein: 9, manualFields: ['protein'] });
+        await correction({ name: 'Whole Milk', grams: 200, amount: 200, unit: 'g' }, 'one');
+        expect(await row()).toMatchObject({ grams: 200, protein: 9, calories: 120 });
+      });
+      it('applies a second voice correction and keeps both protected from the auditor', async () => {
+        await saveFood();
+        await correction({ name: 'Whole Milk', calories: 149 }, 'one');
+        expect(await row()).toMatchObject({ name: 'Whole Milk', calories: 149, revisedFields: expect.arrayContaining(['name', 'calories']), manualFields: expect.arrayContaining(['name', 'calories']) });
+        expect(await correction({ name: 'Skim Milk', calories: 83 }, 'two')).toMatchObject({ committed: true, message: 'Changed Whole Milk to Skim Milk' });
+        expect(await row()).toMatchObject({ name: 'Skim Milk', calories: 83, manualFields: expect.arrayContaining(['name', 'calories']) });
+      });
+      it('pins a field again after a hand edit through the meal amend', async () => {
+        await saveFood();
+        await correction({ name: 'Whole Milk', calories: 149 }, 'one');
+        await commands.execute('u', { action: 'amend', date, bucket: 'afternoon', operationId: 'hand', selectedIds: ['a'], expectedVersions: { a: 2 }, changes: { a: { calories: 100 } } });
+        expect((await row()).revisedFields).toEqual(['name']);
+        await correction({ name: 'Skim Milk', calories: 83 }, 'two');
+        expect(await row()).toMatchObject({ name: 'Skim Milk', calories: 100 });
+      });
+      it('pins a field again after a hand edit of the entry', async () => {
+        await saveFood();
+        await correction({ name: 'Whole Milk', calories: 149 }, 'one');
+        await new HealthOperations({ nutritionItems: store }).updateNutritionItem('u', 'a', { calories: 100 });
+        await correction({ name: 'Skim Milk', calories: 83 }, 'two');
+        expect(await row()).toMatchObject({ name: 'Skim Milk', calories: 100 });
+      });
+      it('Undo restores which fields a voice correction had set', async () => {
+        await saveFood();
+        await correction({ name: 'Whole Milk', calories: 149 }, 'one');
+        const before = await row();
+        const second = await correction({ name: 'Skim Milk', protein: 8 }, 'two');
+        expect((await row()).revisedFields).toContain('protein');
+        await commands.undo('u', { undoToken: second.undoToken, operationId: 'undo' });
+        expect(await row()).toMatchObject({ name: 'Whole Milk', revisedFields: before.revisedFields, manualFields: before.manualFields });
+      });
+    });
+    it('retries once when a stale pending record blocks a write', async () => {
+      await lunch();
+      await expect(store.runOperation('u', child('move'), { operation: 'older-attempt' }, async () => { throw new Error('crashed'); })).rejects.toThrow('crashed');
+      expect(await stack(plan({ toDay: yesterday })).run('move that to yesterday')).toMatchObject({ committed: true, kind: 'moved' });
+      expect(await ids(yesterday)).toEqual(['a', 'b', 'c']);
+    });
+    it('does not retry a conflict with a finished operation', async () => {
+      await lunch();
+      vi.spyOn(store, 'readOperationResult').mockReturnValue(null);
+      await store.runOperation('u', child('move'), { operation: 'finished' }, async () => ({ committed: true }));
+      const move = vi.spyOn(commands, 'moveFoods');
+      await expect(stack(plan({ toDay: yesterday })).run('move that to yesterday')).rejects.toMatchObject({ code: 'IDEMPOTENCY_CONFLICT' });
+      expect(move).toHaveBeenCalledTimes(1);
     });
     it('lets a capture that wrote nothing run again', async () => {
       const h = stack(plan({ intent: 'add' }));
