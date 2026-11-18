@@ -176,6 +176,71 @@ export class MealFoodCommands {
     });
   }
 
+  /** Every row a move must carry: each selected top-level food plus its dish parts. */
+  #withParts(rows, selectedIds) {
+    const byId = new Map(rows.map(row => [idOf(row), row]));
+    const moved = new Map();
+    for (const id of selectedIds) {
+      const row = byId.get(id);
+      if (!row) fail('Selected food is outside this day');
+      if (row.parentId) fail('Move the whole dish, not one of its parts');
+      moved.set(id, row);
+      for (const child of rows) if (child.parentId === id) moved.set(idOf(child), child);
+    }
+    return [...moved.values()];
+  }
+
+  /** Move foods to another day and/or meal: all of them or none, with one Undo. */
+  async moveFoods(userId, input) {
+    const { operationId, date, selectedIds, expectedVersions, toDate = null, toMeal = null, today } = input;
+    if (!operationPattern.test(operationId || '') || !isISODate(date)) fail('A valid operation ID and date are required');
+    if (!Array.isArray(selectedIds) || !selectedIds.length || selectedIds.some(id => typeof id !== 'string') || new Set(selectedIds).size !== selectedIds.length) fail('Explicit unique selected food IDs are required');
+    if (!expectedVersions || typeof expectedVersions !== 'object' || Array.isArray(expectedVersions)) fail('Expected versions are required');
+    if (!toDate && !toMeal) fail('A destination day or meal is required');
+    if (toDate && (!isISODate(toDate) || (today && toDate > today))) fail('Food cannot move to that day');
+    if (toMeal && !MEAL_BUCKETS.some(bucket => bucket.id === toMeal)) fail('Invalid meal');
+    return this.store.runOperation(userId, operationId, { operation: 'foods-move', date, selectedIds, expectedVersions, toDate, toMeal }, async () => {
+      const rows = await this.store.findByDate(userId, date);
+      const moving = this.#withParts(rows, selectedIds);
+      for (const row of moving) if (expectedVersions[idOf(row)] !== (row.version ?? 1)) fail('This entry changed. Reload before saving.', 409);
+      const updates = moving.map(row => ({ id: idOf(row), expectedVersion: row.version ?? 1,
+        changes: { ...(toDate ? { date: toDate } : {}), ...(toMeal ? { mealTime: toMeal } : {}) } }));
+      const undoToken = `meal-${uuidv5(`${userId}:${operationId}`, uuidv5.URL)}`;
+      const result = await this.store.mutateEntries(userId, { updates,
+        audit: { id: undoToken, fingerprint: fingerprint(input), type: 'meal-command', date, bucket: null },
+        resultMeta: { committed: true, date, bucket: null, undoToken, toDate, toMeal, movedCount: selectedIds.length },
+        validate: ({ after }) => this.validateGraph(after),
+      });
+      this.logger.info?.('health.foods.move', { userId, operationId, date, toDate, toMeal, count: selectedIds.length });
+      return result;
+    });
+  }
+
+  /**
+   * Spread a fresh capture across meals. Undo removes the capture, because to
+   * the person this was one act of logging. Every row is stamped so each joins
+   * the audit, including rows already in the right meal.
+   */
+  async placeCapturedFoods(userId, { operationId, logId, placements = {} }) {
+    if (!operationPattern.test(operationId || '') || !logId) fail('A valid operation ID and capture are required');
+    return this.store.runOperation(userId, operationId, { operation: 'capture-place', logId, placements }, async () => {
+      const rows = await this.store.findByLogId(userId, logId);
+      if (!rows.length) fail('Capture not found', 404);
+      const mealOf = row => placements[row.parentId] || placements[idOf(row)] || row.mealTime || null;
+      if (Object.values(placements).some(meal => !MEAL_BUCKETS.some(bucket => bucket.id === meal))) fail('Invalid meal');
+      const updates = rows.map(row => ({ id: idOf(row), expectedVersion: row.version ?? 1, changes: { mealTime: mealOf(row), placedBy: operationId } }));
+      const undoToken = `meal-${uuidv5(`${userId}:${operationId}`, uuidv5.URL)}`;
+      const date = rows[0].date;
+      const result = await this.store.mutateEntries(userId, { updates, auditCreated: true,
+        audit: { id: undoToken, fingerprint: fingerprint({ logId, placements }), type: 'meal-command', date, bucket: null },
+        resultMeta: { committed: true, date, bucket: null, undoToken },
+        validate: ({ after }) => this.validateGraph(after),
+      });
+      this.logger.info?.('health.capture.placed', { userId, operationId, logId, count: rows.length });
+      return result;
+    });
+  }
+
   validateGraph(rows) {
     const byId = new Map(rows.map(row => [idOf(row), row]));
     for (const row of rows) if (row.parentId) {

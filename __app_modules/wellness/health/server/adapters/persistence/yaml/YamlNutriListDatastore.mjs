@@ -263,7 +263,7 @@ export class YamlNutriListDatastore extends INutriListDatastore {
   }
 
   /** One validated mutation across active/archive rows and their summaries. */
-  async mutateEntries(userId, { updates = [], deleteIds = [], creates = [], audit = null, validate = null, dryRun = false, restoreAudit = null, allowFoodCreates = false, resultMeta = null } = {}) {
+  async mutateEntries(userId, { updates = [], deleteIds = [], creates = [], audit = null, validate = null, dryRun = false, restoreAudit = null, allowFoodCreates = false, resultMeta = null, auditCreated = false } = {}) {
     const documents = this.#documents(userId);
     const all = [...documents.values()].flat();
     const auditRecords = audit ? (loadYaml(this.#cleanupAuditPath(userId)) || {}) : null;
@@ -390,7 +390,7 @@ export class YamlNutriListDatastore extends INutriListDatastore {
     }
     if (audit) {
       auditRecords[audit.id] = { ...audit, userId,
-        before: all.filter(row => affectedIds.has(row.uuid || row.id)),
+        before: auditCreated ? [] : all.filter(row => affectedIds.has(row.uuid || row.id)),
         after: finalRows.filter(row => affectedIds.has(row.uuid || row.id)),
         result };
       writes.set(this.#cleanupAuditPath(userId), auditRecords);
