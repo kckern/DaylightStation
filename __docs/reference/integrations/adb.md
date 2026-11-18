@@ -221,11 +221,14 @@ lifeline port (`content_control.lifeline_port`, default the control port plus
 one), which restarts the payload even while the control port is down. The
 address, port and token come from the tablet's `content_control` block, so
 `bridge_provider: daylight-android` is refused, with an error naming
-`provider-mismatch`, while that block still says `fully-kiosk`. The MIDI wake's
-relay of a wake-suppress deadline into the old APK's `/config` has no
-counterpart on the app; it is skipped and logged once
-(`piano-midi-wake.suppress-relay-unsupported`), and a manual screen-off hold is
-kept by the screen authority's reconcile. Setting the key back, or removing it,
+`provider-mismatch`, while that block still says `fully-kiosk`. A manual screen-off hold
+reaches the app's own note wake the way it reached the old APK: the old APK
+got `fkbWakeSuppressUntilEpochMs` by a read-merge-write of its `/config`; the
+app gets `POST /settings {key: "power.wakeSuppressUntilSec", value}`, the
+deadline in epoch seconds rounded up (0 clears it when the panel is woken on
+purpose). Each relay logs `piano-midi-wake.suppress-relayed`, or
+`piano-midi-wake.suppress-relay-failed` with the status; the screen authority's
+reconcile still holds the screen off either way. Setting the key back, or removing it,
 returns both to the old bridge. `bridge_url` and `bridge_supervisor.package` are
 used only by `piano-bridge`.
 

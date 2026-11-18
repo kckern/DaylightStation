@@ -519,6 +519,23 @@ On a stall the kiosk Player can also call `GET http://localhost:8770/wifi?fresh=
 
 ---
 
+## 7d. A played note wakes the screen through a manual off hold (both bridges)
+
+A grown-up turning the tablet's screen off for a while (`DeviceScreenControlService`,
+"screen off for N minutes") holds it two ways: the backend's screen override, which
+the screen authority enforces on each reconcile tick, and a deadline relayed to the
+device's own note wake, so a key press in the meantime does not light the panel.
+
+| Bridge (`piano.bridge_provider`) | The device's note wake | How the deadline gets there |
+|---|---|---|
+| `piano-bridge` (default) | the APK's `ScreenWaker`, `fkbWakeSuppressUntilEpochMs` (epoch ms) | GET `/config`, merge the key, POST the whole set back (a lone POST would erase `targetMac`) |
+| `daylight-android` | the app's `screen-power` note wake, `power.wakeSuppressUntilSec` (epoch seconds) | `POST /settings` for that one key on the control port, with the token header |
+
+Waking the panel on purpose clears the hold: the old APK gets the current time, the
+app gets `0`. Check it on the app with `dd settings get power.wakeSuppressUntilSec`
+and in the log store with `piano-midi-wake.suppress-relayed` /
+`suppress-relay-failed`.
+
 ## 8. Still open
 
 - ~~**Nothing alerts.**~~ Closed 2026-09-30 by the backend bridge supervisor (§7a). It

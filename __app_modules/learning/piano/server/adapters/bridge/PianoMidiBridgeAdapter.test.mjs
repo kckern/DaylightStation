@@ -28,7 +28,7 @@ test('the old bridge: the socket opens with no options and a note.on wakes', () 
 test('the Android app: the upgrade carries the token header, and its note.on wakes the same way', () => {
   const { FakeWs, made } = fakeWs();
   const a = new PianoMidiBridgeAdapter({
-    bridgeUrl: 'ws://tablet:8780/', headers: { 'X-Daylight-Token': 'tok' }, suppressRelay: false,
+    bridgeUrl: 'ws://tablet:8780/', headers: { 'X-Daylight-Token': 'tok' }, relay: 'setting',
     WebSocketImpl: FakeWs, logger: noLog, fetchImpl: async () => ({}),
   });
   let woke = 0;
@@ -39,18 +39,51 @@ test('the Android app: the upgrade carries the token header, and its note.on wak
   a.stop();
 });
 
-test('with the relay off, suppressing a wake sends nothing to the device and says so once', async () => {
+test('the Android app: a suppress deadline is set as power.wakeSuppressUntilSec through POST /settings', async () => {
   const calls = [];
-  const logs = [];
   const a = new PianoMidiBridgeAdapter({
-    bridgeUrl: 'ws://tablet:8780/', suppressRelay: false,
-    logger: { ...noLog, info: (e) => logs.push(e) },
-    fetchImpl: async (...args) => { calls.push(args); return { ok: true, json: async () => ({ values: {} }) }; },
+    bridgeUrl: 'ws://tablet:8780/', headers: { 'X-Daylight-Token': 'tok' }, relay: 'setting',
+    logger: noLog, now: () => 1_800_000_000_000,
+    fetchImpl: async (url, init) => { calls.push({ url, init }); return { ok: true, status: 200, json: async () => ({ ok: true }) }; },
   });
-  await a.suppressWakeUntil(Date.now() + 60_000);
-  await a.suppressWakeUntil(Date.now() + 60_000);
-  assert.equal(calls.length, 0);
-  assert.deepEqual(logs, ['piano-midi-wake.suppress-relay-unsupported']);
+  await a.suppressWakeUntil(1_800_000_000_000 + 30 * 60_000 + 1);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].url, 'http://tablet:8780/settings');
+  assert.equal(calls[0].init.method, 'POST');
+  assert.equal(calls[0].init.headers['X-Daylight-Token'], 'tok');
+  assert.equal(calls[0].init.headers['Content-Type'], 'application/json');
+  // Rounded up to the next whole second, so the hold never ends early.
+  assert.deepEqual(JSON.parse(calls[0].init.body), { key: 'power.wakeSuppressUntilSec', value: 1_800_001_801 });
+});
+
+test('the Android app: a deadline now or past clears the hold with 0, and one past 2038 is held at the maximum', async () => {
+  const bodies = [];
+  const a = new PianoMidiBridgeAdapter({
+    bridgeUrl: 'ws://tablet:8780/', relay: 'setting', logger: noLog, now: () => 5_000_000,
+    fetchImpl: async (url, init) => { bodies.push(JSON.parse(init.body)); return { ok: true, status: 200, json: async () => ({ ok: true }) }; },
+  });
+  await a.suppressWakeUntil(5_000_000);
+  await a.suppressWakeUntil(1);
+  await a.suppressWakeUntil(9e15);
+  assert.deepEqual(bodies.map((b) => b.value), [0, 0, 2147483647]);
+});
+
+test('the Android app: a refused or failed relay is logged, never thrown', async () => {
+  const warns = [];
+  const logger = { ...noLog, warn: (e, d) => warns.push([e, d]) };
+  const refused = new PianoMidiBridgeAdapter({
+    bridgeUrl: 'ws://tablet:8780/', relay: 'setting', logger, now: () => 0,
+    fetchImpl: async () => ({ ok: false, status: 404, json: async () => ({ ok: false, error: 'unknown_setting' }) }),
+  });
+  await refused.suppressWakeUntil(60_000);
+  const down = new PianoMidiBridgeAdapter({
+    bridgeUrl: 'ws://tablet:8780/', relay: 'setting', logger, now: () => 0,
+    fetchImpl: async () => { throw new Error('ECONNREFUSED'); },
+  });
+  await down.suppressWakeUntil(60_000);
+  assert.deepEqual(warns.map((w) => w[0]), ['piano-midi-wake.suppress-relay-failed', 'piano-midi-wake.suppress-relay-failed']);
+  assert.equal(warns[0][1].status, 404);
+  assert.match(warns[1][1].error, /ECONNREFUSED/);
 });
 
 test('the old bridge keeps its read-merge-write relay', async () => {

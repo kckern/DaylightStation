@@ -77,7 +77,7 @@ export function createPianoMidiWake({
     deviceId,
     bridge: bridgeFactory(endpoint.provider === PIANO_BRIDGE
       ? { bridgeUrl, logger }
-      : { bridgeUrl: endpoint.wsUrl, headers: endpoint.headers, suppressRelay: false, logger }),
+      : { bridgeUrl: endpoint.wsUrl, headers: endpoint.headers, relay: 'setting', logger }),
     cooldownMs: cfg.cooldown_ms ?? cfg.cooldownMs,
     screenOverride: getScreenOverrideService(),
   });
