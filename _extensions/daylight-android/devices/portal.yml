@@ -4,6 +4,10 @@ package: net.kckern.daylight.portal
 android: { minSdk: 26, targetSdk: 28 }
 abis: []
 control: { port: 8780, lifelinePort: 8781 }
+# Where this device is in its cutover: `before` (installed beside Fully, nothing armed) or
+# `done`, set at the runbook's make-it-permanent step together with lockdown.required and
+# the coexistence switches. tools/roadmap-capabilities.test.mjs checks the file against it.
+cutover: before
 shell: { versionCode: 36, versionName: "0.3-kiosk" }
 capabilities:
   - webview-host

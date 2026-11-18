@@ -33,11 +33,16 @@ for (const [id, want] of Object.entries(ROADMAP)) {
     assert.deepEqual([...load(id).file.capabilities].sort(), [...want].sort());
   });
 
-  test(`${id}: installing arms nothing before the cutover (lockdown and every coexistence switch off)`, () => {
-    const { defaults } = load(id).file;
-    assert.equal(defaults['lockdown.enabled'], false);
-    assert.equal(defaults['lockdown.required'] ?? false, false);
-    for (const key of SWITCHES[id]) assert.equal(defaults[key], false, key);
+  // `cutover:` in the device file says where the device is: `before` (installed beside
+  // Fully, nothing armed) or `done` (the runbook's make-it-permanent step). The test
+  // follows the marker, so making a device permanent is one edit, not a broken test.
+  test(`${id}: lockdown and the coexistence switches match the device's cutover marker`, () => {
+    const { cutover, defaults } = load(id).file;
+    assert.ok(['before', 'done'].includes(cutover), `cutover must be before or done, not ${cutover}`);
+    const armed = cutover === 'done';
+    assert.equal(defaults['lockdown.enabled'], armed);
+    assert.equal(defaults['lockdown.required'] ?? false, armed);
+    for (const key of SWITCHES[id]) assert.equal(defaults[key], armed, key);
   });
 
   test(`${id}: no address, MAC or token is written into the device file`, () => {

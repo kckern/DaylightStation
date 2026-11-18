@@ -4,6 +4,10 @@ package: net.kckern.daylight.shield
 android: { minSdk: 30, targetSdk: 33 }
 abis: []
 control: { port: 8780, lifelinePort: 8781 }
+# Where this device is in its cutover: `before` (installed beside Fully, nothing armed) or
+# `done`, set at the runbook's make-it-permanent step together with lockdown.required and
+# the coexistence switches. tools/roadmap-capabilities.test.mjs checks the file against it.
+cutover: before
 shell: { versionCode: 35, versionName: "0.3-kiosk" }
 # microphone: the mic stream. location: Bluetooth discovery from a service needs it on Android 11.
 foregroundServiceTypes: [microphone, location]
