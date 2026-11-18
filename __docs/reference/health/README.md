@@ -519,9 +519,13 @@ Three routes, one command (`useMealMoves().moveToDay`, `mealDrag.jsx`):
 - **Drag:** while a food or a meal header is being dragged, the week ending today
   docks at the right edge (`DayDropDock`, `MoveDayControl.jsx`; fixed-position, only
   exists during a drag, so it cannot shift the page). Drop on a day chip.
-- **Select foods:** tick foods, then "Move N to another day…" (recent days, or a date
-  picker for anything older). A dish moves whole, so it counts only when every one of
-  its ingredients is ticked; a partly-ticked dish is skipped with a note.
+- **Select foods:** selection spans every meal of the viewed day and ends when the day
+  changes. One bar above the meals offers "Move N to another day…" (recent days, or a
+  date picker for anything older) and "Move N to a meal…", each one atomic command. A
+  dish moves whole, so it counts only when every one of its ingredients is ticked; a
+  partly-ticked dish is skipped with a note. A move that is refused or fails keeps the
+  ticks for another try. Each meal's mic and group commands see only that meal's ticks,
+  and a command in one meal leaves the other meals' ticks in place.
 - **Meal ⋯ menu:** "Move all to day" moves the whole meal.
 
 The rows leave the viewed day at once (`gone`) and one `foods-move` follows. A failure

@@ -2,6 +2,16 @@ import { useState } from 'react';
 import { Button, Menu } from '@mantine/core';
 import { useDayDropTarget, useMealDragActive } from "./mealDrag.jsx";
 import { dayLabel, recentDays } from "./moveDays.js";
+import { BUCKETS } from "./mealBuckets.js";
+
+// The selection bar's menus: full-height items under a finger (health.scss).
+const MENU_CLASSES = { item: 'health-move-menu__item' };
+
+function useMoveInFlight(onMove) {
+  const [busy, setBusy] = useState(false);
+  const pick = async target => { setBusy(true); try { await onMove(target); } finally { setBusy(false); } };
+  return [busy, pick];
+}
 
 /** The day choices as menu items, plus a date picker for anything older. */
 export function MoveDayItems({ date, today, onPick }) {
@@ -19,18 +29,30 @@ export function MoveDayItems({ date, today, onPick }) {
 
 /**
  * Selection mode: once foods are ticked, this moves them all to another day in
- * one step. Shown beside the meal's own selection controls.
+ * one step. `disabled` while the bar's other move is running.
  */
-export function MoveDayControl({ date, today, count, onMove }) {
-  const [busy, setBusy] = useState(false);
-  const pick = async iso => { setBusy(true); try { await onMove(iso); } finally { setBusy(false); } };
-  return <Menu position="bottom-start" disabled={busy}>
+export function MoveDayControl({ date, today, count, onMove, disabled = false }) {
+  const [busy, pick] = useMoveInFlight(onMove);
+  return <Menu position="bottom-start" disabled={busy || disabled} classNames={MENU_CLASSES}>
     <Menu.Target>
-      <Button size="compact-xs" variant="light" loading={busy} aria-label={`Move ${count} selected to another day`}>
+      <Button size="compact-xs" variant="light" loading={busy} disabled={disabled && !busy} aria-label={`Move ${count} selected to another day`}>
         Move {count} to another day…
       </Button>
     </Menu.Target>
     <Menu.Dropdown><MoveDayItems date={date} today={today} onPick={pick} /></Menu.Dropdown>
+  </Menu>;
+}
+
+/** Selection mode: move every ticked food into one meal. */
+export function MoveMealControl({ count, onMove, disabled = false }) {
+  const [busy, pick] = useMoveInFlight(onMove);
+  return <Menu position="bottom-start" disabled={busy || disabled} classNames={MENU_CLASSES}>
+    <Menu.Target>
+      <Button size="compact-xs" variant="light" loading={busy} disabled={disabled && !busy} aria-label={`Move ${count} selected to a meal`}>
+        Move {count} to a meal…
+      </Button>
+    </Menu.Target>
+    <Menu.Dropdown>{BUCKETS.map(bucket => <Menu.Item key={bucket.id} onClick={() => pick(bucket.id)}>{bucket.label}</Menu.Item>)}</Menu.Dropdown>
   </Menu>;
 }
 

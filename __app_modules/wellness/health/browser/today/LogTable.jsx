@@ -1,6 +1,6 @@
 import { useHealthOperations } from "../operations/HealthOperationsProvider.jsx";
 import { FoodOperationStatus } from "../operations/FoodOperationStatus.jsx";
-import { useLayoutEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Button, NativeSelect } from '@mantine/core';
 import { LoadingState } from '@/lib/ui';
 import { sumCounted } from "../../portable/contracts/nutrition/countedRows.mjs";
@@ -11,7 +11,7 @@ import { EntryRow } from "./EntryRow.jsx";
 import { groupRows, sortEntriesByCalories, calorieShares, dayCalorieScale } from "./groupRows.js";
 import { MealFoodControls } from "./MealFoodControls.jsx";
 import { MealFastToggle } from "./MealFastToggle.jsx";
-import { MoveDayControl, DayDropDock } from "./MoveDayControl.jsx";
+import { MoveDayControl, MoveMealControl, DayDropDock } from "./MoveDayControl.jsx";
 import { CaptureProgress } from "./CaptureProgress.jsx";
 import { usePortionControl } from "./usePortionDraft.js";
 import { useFrozenOrder, useFlipMoves } from "./sectionOrder.js";
@@ -33,40 +33,21 @@ const kcal = (rows) => Math.round(sumCounted(rows, 'calories'));
 function Section({
   label, rows, renderAddRow = null, onRowTap, onConfirm, onRequestDelete, headerAction, coldLoading, pending,
   measuredByUuid, addedIds = null, kcalScale = null, date, bucket, onVoiceCapture, onTextCapture, onChanged, captureTasks = [], externalClarification, onClearClarification,
-  fasted = false, onFastChanged = null, onMoveToDay = null,
+  fasted = false, onFastChanged = null, selecting = false, setSelecting = () => {}, selection = [], setSelection = () => {},
 }) {
-  const [selecting, setSelecting] = useState(false);
-  const [selection, setSelection] = useState([]);
   const [localClarification, setClarification] = useState(null);
   const clarification = externalClarification === undefined ? localClarification : externalClarification;
   const operations = useHealthOperations();
   const sentenceOperations = [...(operations?.snapshot.operations.values() || [])].filter(op => !operations?.snapshot.operations.get(op.parentId)?.resumable).filter(op => (op.kind === 'sentence' || (['mutation', 'quickadd'].includes(op.kind) && op.error)) && op.date === date && op.bucket === bucket);
   const [clarifying, setClarifying] = useState(false);
   const [clarifyError, setClarifyError] = useState(null);
+  // The day's selection spans meals; this meal's voice and commands get only its own foods.
   const selectedIds = selection.filter(id => rows.some(row => (row.uuid || row.id) === id));
   const captured = result => {
     if (externalClarification !== undefined) return result;
     if (result?.clarification) setClarification({...result.clarification, instructionText:result.instructionText || result.clarification.instructionText, selectedIds:[...selectedIds]});
     else setClarification(null);
     return result;
-  };
-  // The ticked foods as the entries a move acts on: a dish moves whole, so it
-  // counts only when every one of its ingredients is ticked.
-  const pickedEntries = () => {
-    const picked = [];
-    let partial = 0;
-    for (const { row, children } of groupRows(rows)) {
-      if (!children.length) { if (selectedIds.includes(row.uuid ?? row.id)) picked.push(row); continue; }
-      const ticked = children.filter(child => selectedIds.includes(child.uuid ?? child.id)).length;
-      if (ticked === children.length) picked.push({ ...row, children });
-      else partial += ticked;
-    }
-    return { picked, partial };
-  };
-  const moveSelected = async (toDate) => {
-    const { picked } = pickedEntries();
-    if (picked.length) await onMoveToDay(picked, toDate, bucket);
-    setSelection([]); setSelecting(false);
   };
   const renderRow = rowProps => {
     const id = rowProps.row.uuid || rowProps.row.id;
@@ -150,14 +131,11 @@ function Section({
       {bucket && rows.length && onChanged ? <MealFoodControls date={date} bucket={bucket} rows={rows} selectedIds={selectedIds} selecting={selecting}
         extraActions={headerAction}
         onSelectionMode={value=>{setSelecting(value);if(!value)setSelection([]);}}
-        onChanged={result=>{setSelection([]);setSelecting(false);onChanged(result);}}/> : null}
-      {selecting && selectedIds.length && bucket && onMoveToDay ? (() => {
-        const { picked, partial } = pickedEntries();
-        return <div className="health-meal-move-day">
-          {picked.length ? <MoveDayControl date={date} today={localTodayISO()} count={picked.length} onMove={moveSelected} /> : null}
-          {partial ? <span className="health-meal-move-day__note">Tick every ingredient to move a dish.</span> : null}
-        </div>;
-      })() : null}
+        onChanged={result=>{
+          // A command here settles this meal's ticks; other meals keep theirs.
+          const rest=selection.filter(id=>!selectedIds.includes(id));
+          setSelection(rest);if(!rest.length)setSelecting(false);onChanged(result);
+        }}/> : null}
       {clarification ? <div className="health-meal-command-panel"><span>{clarification.question}</span>
         <div className="health-meal-command-actions">{clarification.choices.map(choice=><Button key={choice.id} size="compact-xs" disabled={clarifying} onClick={async()=>{
           setClarifying(true);setClarifyError(null);
@@ -250,6 +228,34 @@ function DishAddRow({ dishName, candidates, busy, error, onAdd }) {
   </div>;
 }
 
+/**
+ * The ticked foods, across every meal, ready for one move. A dish counts only
+ * when every ingredient is ticked. The ticks stay when a move does not happen,
+ * so it can be tried again.
+ */
+function DaySelectionBar({ byBucket, date, selection, onMoveToDay, onMoveMeal, onDone }) {
+  const [moving, setMoving] = useState(false);
+  const picked = [];
+  let partial = 0;
+  for (const bucket of BUCKETS) for (const { row, children } of groupRows(byBucket.get(bucket.id) || [])) {
+    if (!children.length) { if (selection.includes(row.uuid ?? row.id)) picked.push(row); continue; }
+    const ticked = children.filter(child => selection.includes(child.uuid ?? child.id)).length;
+    if (ticked === children.length) picked.push({ ...row, children }); else partial += ticked;
+  }
+  if (!picked.length && !partial) return null;
+  const finish = async move => {
+    setMoving(true);
+    try { if (await move() !== false) onDone(date); } finally { setMoving(false); }
+  };
+  return <div className="health-log__wide health-meal-move-day">
+    {picked.length && onMoveToDay ? <MoveDayControl date={date} today={localTodayISO()} count={picked.length} disabled={moving}
+      onMove={iso => finish(() => onMoveToDay(picked, iso))} /> : null}
+    {picked.length && onMoveMeal ? <MoveMealControl count={picked.length} disabled={moving}
+      onMove={meal => finish(() => onMoveMeal(picked, meal, null))} /> : null}
+    {partial ? <span className="health-meal-move-day__note">Tick every ingredient to move a dish.</span> : null}
+  </div>;
+}
+
 export function LogTable({
   byBucket, date, sessions = [], exerciseAvailable = false, onRowTap, onConfirm, onRequestDelete,
   bucketHeaderAction, coldLoading = false, capturePendingBucket = null, capturePendingBuckets = [],
@@ -257,6 +263,17 @@ export function LogTable({
   renderAddRow = null, addedIds = null, onMoveEntry = null, onMoveMeal = null, onMoveToDay = null,
   fastedMeals = [], onMealFastChanged = null,
 }) {
+  // "Select foods" spans the viewed day's meals and ends with that day.
+  const [selecting, setSelecting] = useState(false);
+  const [selection, setSelection] = useState([]);
+  const viewedDate = useRef(date);
+  viewedDate.current = date;
+  useEffect(() => { setSelecting(false); setSelection([]); }, [date]);
+  // A move can finish after the person has gone to another day and started there.
+  const selectionMoved = movedFrom => {
+    if (movedFrom !== viewedDate.current) return;
+    setSelection([]); setSelecting(false);
+  };
   // All four meals always render: an empty one is its header and add row, so
   // any meal can be added to in place without a separate "add to" control.
   const orphans = byBucket.get(null) || [];
@@ -295,7 +312,8 @@ export function LogTable({
           headerAction={bucketHeaderAction ? bucketHeaderAction(b.id, rows, b.label) : null}
           coldLoading={coldLoading} pending={capturePendingBucket === b.id || capturePendingBuckets.includes(b.id)}
           measuredByUuid={measuredByUuid} addedIds={addedIds} kcalScale={kcalScale} renderAddRow={renderAddRow}
-          fasted={fastedMeals.includes(b.id)} onFastChanged={onMealFastChanged} onMoveToDay={onMoveToDay} />
+          fasted={fastedMeals.includes(b.id)} onFastChanged={onMealFastChanged}
+          selecting={selecting} setSelecting={setSelecting} selection={selection} setSelection={setSelection} />
       </div>
     );
   };
@@ -306,6 +324,8 @@ export function LogTable({
   const showExercise = exerciseAvailable || sessions.length > 0;
   const log = (
     <div className="health-log" ref={logRef}>
+      {selecting ? <DaySelectionBar byBucket={byBucket} date={date} selection={selection}
+        onMoveToDay={onMoveToDay} onMoveMeal={onMoveMeal} onDone={selectionMoved} /> : null}
       {[EARLY_COLUMN, LATE_COLUMN].map((ids, index) => (
         <div key={index} className="health-log__column">
           {ids.map(id => BUCKETS.find(b => b.id === id)).map(renderBucket)}

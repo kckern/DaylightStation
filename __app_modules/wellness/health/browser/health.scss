@@ -695,8 +695,11 @@ $health-aside-gap: 1.5rem;
   &__chip { padding: 0.45rem 0.6rem; border-radius: 8px; border: 1px dashed var(--ds-border); font-size: 0.85rem; text-align: center; color: var(--ds-text-high); }
   &__chip--over { border-style: solid; border-color: var(--ds-accent); background: color-mix(in srgb, var(--ds-accent) 12%, transparent); }
 }
-.health-meal-move-day { display: flex; align-items: center; gap: 0.6rem; padding: 0.25rem 0; }
+.health-meal-move-day { display: flex; flex-wrap: wrap; align-items: center; gap: 0.6rem; padding: 0.25rem 0; }
 .health-meal-move-day__note { font-size: 0.75rem; color: var(--ds-text-low); }
+@media (pointer: coarse) {
+  .health-meal-move-day .mantine-Button-root, .health-move-menu__item { min-height: 44px; }
+}
 // A meal entry gliding to its new place after a reorder (sectionOrder.js,
 // FLIP): the inline translate is set by the hook, this class animates it home.
 .health-flip-moving {

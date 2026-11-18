@@ -213,6 +213,18 @@ describe('useMealMoves', () => {
     expect(result.current.undo).toBeNull();
     expect(result.current.recentIds.has('eggs')).toBe(false);
   });
+  it('says whether the foods ended up where they were sent', async () => {
+    const { result } = renderHook(() => useMealMoves({ items: [eggs], reload: () => {} }));
+    let outcome;
+    await act(async () => { outcome = await result.current.moveMeal([eggs], 'morning', null); });
+    expect(outcome).toBe(true); // already there
+    apiMock.mockRejectedValueOnce(Object.assign(new Error('no'), { status: 409 }));
+    await act(async () => { outcome = await result.current.moveMeal([eggs], 'evening', null); });
+    expect(outcome).toBe(false);
+    apiMock.mockResolvedValueOnce(moved);
+    await act(async () => { outcome = await result.current.moveMeal([eggs], 'evening', null); });
+    expect(outcome).toBe(true);
+  });
   it('only the foods not yet in that meal are sent and counted', async () => {
     apiMock.mockResolvedValue(moved);
     const already = { ...b, mealTime: 'evening' };
@@ -291,6 +303,17 @@ describe('useMealMoves — moving to another day', () => {
     await act(async () => { await result.current.undo.run(); });
     expect(result.current.items).toEqual([header, part]);
   });
+  it('says whether the foods reached that day', async () => {
+    const { result } = renderHook(() => useMealMoves({ items: [eggs], reload: vi.fn() }));
+    let outcome;
+    await act(async () => { outcome = await result.current.moveToDay([eggs], '2026-09-28'); });
+    expect(outcome).toBe(true); // already there
+    await act(async () => { outcome = await result.current.moveToDay([eggs], '2020-01-15'); });
+    expect(outcome).toBe(true);
+    apiMock.mockRejectedValueOnce(new Error('boom'));
+    await act(async () => { outcome = await result.current.moveToDay([toast], '2020-01-15'); });
+    expect(outcome).toBe(false);
+  });
   it('a failure brings the row back and says so', async () => {
     apiMock.mockRejectedValue(new Error('boom'));
     const { result } = renderHook(() => useMealMoves({ items: [eggs], reload: vi.fn() }));
@@ -335,6 +358,18 @@ describe('useMealMoves — inside a Health session', () => {
     await act(async () => { await result.current.moves.move(eggs, 'evening', 'morning'); });
     expect(apiMock).toHaveBeenCalledTimes(2);
     expect(result.current.moves.undo).not.toBeNull();
+  });
+  it('a move stopped by an earlier unfinished change reports that it did not happen', async () => {
+    let finish;
+    apiMock.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));
+    const { result } = render();
+    let first;
+    act(() => { first = result.current.moves.moveToDay([eggs], TO); });
+    let outcome;
+    await act(async () => { outcome = await result.current.moves.moveMeal([eggs], 'evening', null); });
+    expect(outcome).toBe(false);
+    expect(result.current.moves.error).toMatch(/^Can't move Eggs yet/);
+    await act(async () => { finish(movedReply); await first; });
   });
   it.each([['a server error', failure(500)], ['a lost connection', new Error('offline')]])('%s keeps the food reserved, since the move may have happened', async (_label, error) => {
     apiMock.mockRejectedValueOnce(error);
