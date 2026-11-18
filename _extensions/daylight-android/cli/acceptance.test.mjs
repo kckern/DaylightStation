@@ -19,7 +19,7 @@ async function fakeDevice({ id = 'portal', capabilities, faults = {}, settings =
   const file = loadDeviceFile(id);
   const caps = capabilities ?? file.capabilities;
   const s = {
-    screenOn: true, startedAt: Date.now(), bootAt: Date.now() - 3_600_000, down: false, loadSeq: 0,
+    screenOn: true, startedAt: Date.now() - 60_000, bootAt: Date.now() - 3_600_000, down: false, loadSeq: 0,
     lastLoad: { loadId: 'l0', ok: true }, volume: { level: 40, index: 6, maxIndex: 15 },
     payload: { active: 'p-abc.jar', current: 'p-abc.jar', previous: 'baked.jar', lastFailed: null },
     front: 'net.kckern.daylight.portal', calls: [],
@@ -48,7 +48,7 @@ async function fakeDevice({ id = 'portal', capabilities, faults = {}, settings =
     const body = req.method === 'POST' ? await read(req) : {};
     switch (key) {
       case 'GET /status': return json(res, 200, {
-        ok: true, device: id, capabilities: faults.extraCap ? [...caps, 'synth'] : caps, payloadVersion: 'p3-kiosk', shellVersionCode: 34,
+        ok: !faults.unhealthy, device: faults.missingId ? undefined : (faults.deviceId ?? id), capabilities: faults.extraCap ? [...caps, 'synth'] : caps, payloadVersion: 'p3-kiosk', shellVersionCode: 34,
         appVersion: '0.3-kiosk', uptimeMs: Date.now() - s.startedAt, settingsProblem: null,
         ...(faults.noClock ? {} : { nowMs: Date.now() + (faults.skewMs ?? 0) }),
         switches: Object.fromEntries(['hid.enabled', 'midi.enabled', 'speaker.enabled', 'mic.enabled']
@@ -227,6 +227,60 @@ test('the page bridge being unavailable fails kiosk.status', async () => {
     assert.match(r.line('kiosk.status'), /^FAIL .*bridge unavailable/);
   } finally { await dev.close(); }
 });
+
+const disruptiveChecks = [
+  ['reboot.survives', '--reboot', ['POST /device/reboot']],
+  ['crash.kill', '--kill', ['POST /settings', 'POST /debug/exec', 'POST /settings']],
+  ['crash.restart', '--restart', ['POST /kiosk/restart']],
+];
+
+for (const [check, flag, expectedWrites] of disruptiveChecks) {
+  for (const [name, faults, evidence] of [
+    ['wrong identity', { deviceId: 'other-device' }, /device 'other-device', expected 'portal'/],
+    ['missing identity', { missingId: true }, /missing device ID.*portal/],
+  ]) {
+    test(`${flag} refuses ${name} when core.status is filtered out`, async () => {
+      const dev = await fakeDevice({ faults });
+      try {
+        const { code: exitCode, ...result } = await run(dev, ['--only', check, flag]);
+        const writes = dev.state.calls.filter((call) => !call.startsWith('GET '));
+        assert.equal(writes.length, 0, writes.join(', '));
+        assert.equal(exitCode, 1, result.text);
+        assert.match(result.line(check), /^FAIL /);
+        assert.match(result.text, evidence);
+      } finally { await dev.close(); }
+    });
+  }
+
+  test(`${flag} with matching identity only writes for the selected check`, async () => {
+    const dev = await fakeDevice();
+    try {
+      const result = await run(dev, ['--only', check, ...disruptiveChecks.map(([, option]) => option)]);
+      assert.equal(result.code, 0, result.text);
+      assert.deepEqual(dev.state.calls.filter((call) => !call.startsWith('GET ')), expectedWrites);
+      assert.match(result.line(check), /^PASS /);
+    } finally { await dev.close(); }
+  });
+}
+
+for (const [name, faults, evidence] of [
+  ['capability mismatch', { extraCap: true }, /extra \[synth\]/],
+  ['unhealthy status', { unhealthy: true }, /\/status HTTP 200/],
+  ['unreachable status', { statusDown: true }, /\/status no answer/],
+  ['authentication failure', { noAuth: true }, /no token 200/],
+]) {
+  test(`active checks make no writes on ${name} and still report selected diagnostics`, async () => {
+    const dev = await fakeDevice({ faults });
+    try {
+      const result = await run(dev, ['--only', 'kiosk.reload,routes.inventory', '--active']);
+      assert.deepEqual(dev.state.calls.filter((call) => !call.startsWith('GET ')), []);
+      assert.equal(result.code, 1, result.text);
+      assert.match(result.line('kiosk.reload'), /^FAIL /);
+      assert.match(result.text, evidence);
+      assert.match(result.line('routes.inventory'), /^PASS /);
+    } finally { await dev.close(); }
+  });
+}
 
 test('--reboot waits for the device to come back and reports how long the lifeline and the API took', async () => {
   const dev = await fakeDevice();

@@ -194,10 +194,10 @@ export function buildChecks(deviceFile, opts = {}) {
   const id = deviceFile.id;
   const has = (c) => caps.has(c);
   const checks = [];
-  // `needs` gates a check that changes the device: {flag, effect}. Without the flag it is
-  // SKIP, naming the flag and what it would do.
+  // `needs` identifies device writes and describes which options arm the check.
   const add = (checkId, title, run, when = true, needs = null) => { if (when) checks.push({ id: checkId, title, run, needs }); };
   const active = (effect) => ({ flag: 'active', effect });
+  const optIn = (armed, skipEvidence) => ({ armed, skipEvidence });
 
   // ── core ──
   // Read-only: three GETs. The control port and the lifeline answer 401 before any route
@@ -211,12 +211,17 @@ export function buildChecks(deviceFile, opts = {}) {
   });
   add('core.status', 'GET /status names this device and exactly its capabilities', async ({ api, state }) => {
     const r = await api.control('GET', '/status');
-    if (!ok(r)) return fail(`/status ${why(r)}`);
+    if (!ok(r) || r.json?.ok !== true) return fail(`/status ${why(r)}`);
     state.status = r.json;
-    const live = [...(r.json.capabilities || [])].sort();
+    const live = Array.isArray(r.json.capabilities) ? [...r.json.capabilities].sort() : [];
     const want = [...caps].sort();
     const problems = [];
-    if (r.json.device && r.json.device !== id) problems.push(`device '${r.json.device}', expected '${id}'`);
+    if (r.json.device === undefined || r.json.device === null || r.json.device === '') {
+      problems.push(`missing device ID, expected '${id}'`);
+    } else if (r.json.device !== id) {
+      problems.push(`device '${short(r.json.device)}', expected '${id}'`);
+    }
+    if (!Array.isArray(r.json.capabilities)) problems.push('missing or invalid capabilities');
     if (JSON.stringify(live) !== JSON.stringify(want)) {
       problems.push(`capabilities differ: missing [${want.filter((c) => !live.includes(c))}] extra [${live.filter((c) => !want.includes(c))}]`);
     }
@@ -345,10 +350,12 @@ export function buildChecks(deviceFile, opts = {}) {
     }
   }, has('screen-power') && kiosk, active('turns the screen off for about two seconds, then puts it back as it was'));
   add('screen.brightness', 'brightness is set and read back', async ({ api, opts: o }) => {
-    if (o.brightness === undefined) return skip('pass --brightness <0-255> to set the level this device should keep');
     const r = await api.control('POST', '/screen/brightness', { body: { level: o.brightness } });
     return ok(r) && r.json.level === o.brightness ? pass(`level ${r.json.level}`) : fail(`/screen/brightness ${why(r)} level=${r.json?.level}`);
-  }, has('screen-power'), active('sets the brightness to --brightness'));
+  }, has('screen-power'), {
+    ...active('sets the brightness to --brightness'),
+    ...optIn((o) => o.brightness !== undefined, 'pass --brightness <0-255> to set the level this device should keep'),
+  });
   add('volume.read-write', 'the media volume is read, written back unchanged and read back', async ({ api }) => {
     const before = await api.control('GET', '/volume?stream=3');
     if (!ok(before)) return fail(`GET /volume ${why(before)}`);
@@ -365,7 +372,6 @@ export function buildChecks(deviceFile, opts = {}) {
     return r.json?.ok === false && ['not_installed', 'not_allowed'].includes(r.json.error) ? pass(r.json.error) : fail(`expected not_installed or not_allowed, got ${why(r)}`);
   }, has('app-launcher'), active('asks to launch a package that is not installed (refused)'));
   add('launch.app', 'the given app opens, is seen in front, and the kiosk comes back', async ({ api, opts: o, sleep }) => {
-    if (!o.launch) return skip('pass --launch <package> (an app in launcher.allowed)');
     const r = await api.control('POST', '/launch', { body: { package: o.launch }, timeoutMs: 20000 });
     if (!ok(r) || r.json.launched !== true) return fail(`/launch ${why(r)}`);
     await sleep(3000);
@@ -374,7 +380,8 @@ export function buildChecks(deviceFile, opts = {}) {
     const back = await api.control('POST', '/kiosk/foreground', { timeoutMs: 40000 });
     if (front !== o.launch) return fail(`after launch the front was ${front}`);
     return ok(back) && back.json.kioskInForeground ? pass(`${r.json.component} in front, kiosk back`) : fail(`returning: ${why(back)}`);
-  }, has('app-launcher') && has('lockdown') && kiosk);
+  }, has('app-launcher') && has('lockdown') && kiosk,
+  optIn((o) => o.launch, 'pass --launch <package> (an app in launcher.allowed)'));
   add('lockdown.status', 'GET /lockdown reports the lock state and mode', async ({ api, state }) => {
     const r = await api.control('GET', '/lockdown');
     if (!ok(r) || typeof r.json.locked !== 'boolean') return fail(`/lockdown ${why(r)}`);
@@ -495,7 +502,6 @@ export function buildChecks(deviceFile, opts = {}) {
     return fail('the payload did not report a restart within 60 s');
   }, kiosk, { flag: 'restart', effect: 'restarts the payload: MIDI, synth, page and mic drop for a few seconds' });
   add('crash.kill', "killing the app's process: it comes back by itself", async ({ api, sleep, pollMs, opts: o, state, restorer }) => {
-    if (!o.kill) return skip('pass --kill (turns debug.execEnabled on for the check and puts back the value it had)');
     const info = await api.control('GET', '/debug/info');
     if (!ok(info)) return fail(`/debug/info ${why(info)}`);
     const prior = settingOn(state, 'debug.execEnabled');
@@ -517,10 +523,9 @@ export function buildChecks(deviceFile, opts = {}) {
     }
     if (restored && !ok(restored)) return fail(`${result.evidence}; debug.execEnabled could not be put back to false: ${why(restored)}`);
     return result.ok ? pass(result.evidence) : fail(result.evidence);
-  }, debug);
+  }, debug, optIn((o) => o.kill, 'pass --kill (turns debug.execEnabled on for the check and puts back the value it had)'));
   add('payload.bad', 'a payload that cannot start is rolled back and the lifeline stays up', async ({ api, sleep, pollMs, opts: o, badPayload }) => {
-    const source = badPayload || (o['bad-payload-url'] ? { url: o['bad-payload-url'], sha256: o['bad-payload-sha256'] } : null);
-    if (!source) return skip('pass --bad-payload-url and --bad-payload-sha256, or --serve-bad-payload <addr:port>');
+    const source = badPayload || { url: o['bad-payload-url'], sha256: o['bad-payload-sha256'] };
     const before = await api.control('GET', '/payload');
     if (!ok(before)) return fail(`/payload ${why(before)}`);
     const r = await api.control('POST', '/payload', { body: { url: source.url, sha256: source.sha256 }, timeoutMs: 60000 });
@@ -544,9 +549,9 @@ export function buildChecks(deviceFile, opts = {}) {
       }
     }
     return fail(`no rollback seen within 120 s (lifeline missed ${lifelineMisses} polls)`);
-  });
+  }, true, optIn((o) => o['bad-payload-url'] || o['serve-bad-payload'],
+    'pass --bad-payload-url and --bad-payload-sha256, or --serve-bad-payload <addr:port>'));
   add('reboot.survives', 'after a reboot the lifeline and the control API answer with no ADB and no touch', async ({ api, sleep, pollMs, opts: o, out }) => {
-    if (!o.reboot) return skip('pass --reboot (stage 8 of the cutover runbook first)');
     const info = await api.control('GET', '/debug/info');
     if (!ok(info)) return fail(`/debug/info ${why(info)}`);
     const r = has('screen-power') ? await api.control('POST', '/device/reboot') : { status: 501 };
@@ -559,7 +564,7 @@ export function buildChecks(deviceFile, opts = {}) {
     if (!result.ok || !kiosk) return result.ok ? pass(result.evidence) : fail(result.evidence);
     const k = await api.control('GET', '/kiosk/status');
     return ok(k) && k.json.ready ? pass(`${result.evidence}; page ready`) : fail(`${result.evidence}; page not ready: ${why(k)}`);
-  }, debug);
+  }, debug, optIn((o) => o.reboot, 'pass --reboot (stage 8 of the cutover runbook first)'));
 
   // ── log store ──
   add('logstore.events', "the device's events are in the log store under its context.app", async ({ state, opts: o, fetchImpl }) => {
@@ -723,13 +728,11 @@ export async function runAcceptance({ deviceFile, host, token, opts, deps = {} }
   const sleep = deps.sleep ?? ((ms) => new Promise((r) => setTimeout(r, ms)));
   const pollMs = deps.pollMs ?? 2000;
   const api = deviceApi({ host, ports: deviceFile.control, token, fetchImpl });
-  const checks = buildChecks(deviceFile, opts).filter((c) => selected(c.id, opts));
+  const availableChecks = buildChecks(deviceFile, opts);
+  const checks = availableChecks.filter((c) => selected(c.id, opts));
   const state = {};
   const counts = { PASS: 0, FAIL: 0, MANUAL: 0, SKIP: 0 };
   let badPayload = null;
-  if (opts['serve-bad-payload'] && checks.some((c) => c.id === 'payload.bad')) {
-    badPayload = await (deps.serveBadPayload ?? serveBadPayload)(opts['serve-bad-payload']);
-  }
   // Settings feed the switch-aware checks; read them first even when that check is not selected.
   if (!checks.some((c) => c.id === 'settings.resolved')) {
     const r = await api.control('GET', '/settings');
@@ -740,13 +743,41 @@ export async function runAcceptance({ deviceFile, host, token, opts, deps = {} }
     if (ok(r)) state.lockdown = r.json;
   }
   out(`acceptance: ${deviceFile.id} (${checks.length} checks)`);
+  const context = { api, state, opts, sleep, pollMs, out, fetchImpl, restorer };
+  const preflightChecks = new Map(availableChecks
+    .filter((check) => check.id === 'core.status' || check.id === 'core.auth')
+    .map((check) => [check.id, check]));
+  const preflightResults = new Map();
+  const runPreflightCheck = async (id) => {
+    if (!preflightResults.has(id)) {
+      preflightResults.set(id, await preflightChecks.get(id).run(context));
+    }
+    return preflightResults.get(id);
+  };
+
+  async function runCheck(check) {
+    if (preflightChecks.has(check.id)) return runPreflightCheck(check.id);
+    const needs = check.needs;
+    if (needs) {
+      if (needs.flag && !opts[needs.flag]) return skip(`pass --${needs.flag}: ${needs.effect}`);
+      if (needs.armed && !needs.armed(opts)) return skip(needs.skipEvidence);
+      // Reuse the core diagnostics, even if --only or --skip hid their output.
+      for (const id of ['core.status', 'core.auth']) {
+        const result = await runPreflightCheck(id);
+        if (result.status !== 'PASS') return fail(`preflight ${id}: ${result.evidence}`);
+      }
+      if (check.id === 'payload.bad' && opts['serve-bad-payload']) {
+        badPayload = await (deps.serveBadPayload ?? serveBadPayload)(opts['serve-bad-payload']);
+      }
+    }
+    return check.run({ ...context, badPayload });
+  }
+
   try {
     for (const check of checks) {
       let result;
       try {
-        result = check.needs && !opts[check.needs.flag]
-          ? skip(`pass --${check.needs.flag}: ${check.needs.effect}`)
-          : await check.run({ api, state, opts, sleep, pollMs, out, fetchImpl, badPayload, restorer });
+        result = await runCheck(check);
       } catch (e) {
         result = fail(`check threw: ${e?.message || e}`);
       }
@@ -807,7 +838,7 @@ export async function main(argv, deps = {}) {
     const unmatched = unmatchedOnly(deviceFile, opts);
     if (unmatched.length) throw new Error(unmatched.map((sel) => `--only ${sel} selects no check for ${deviceFile.id}`).join('; '));
     for (const c of buildChecks(deviceFile, opts).filter((x) => selected(x.id, opts))) {
-      console.log(`${c.id.padEnd(20)} ${c.title}${c.needs ? ` [--${c.needs.flag}]` : ''}`);
+      console.log(`${c.id.padEnd(20)} ${c.title}${c.needs?.flag ? ` [--${c.needs.flag}]` : ''}`);
     }
     return 0;
   }
