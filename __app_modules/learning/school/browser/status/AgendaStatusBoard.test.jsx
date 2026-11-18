@@ -77,6 +77,34 @@ describe('AgendaStatusBoard model', () => {
     expect(owed).toMatchObject({ total: 2, done: 1 });
   });
 
+  // 2026-11-17: an elective science course (Mammals) drew a counted disc only on
+  // the days the child opened one of its sheets, so the board's "X of Y" grew
+  // and shrank with optional work while the term grid never counted it.
+  it('draws elective work as a supplemental disc outside the counts', () => {
+    const entries = [
+      { unitId: 'math.1', subject: 'math', elective: false },
+      { unitId: 'mammals.1', subject: 'science', elective: true },
+      { unitId: 'mammals.2', subject: 'science', elective: true },
+    ];
+    const sections = [
+      { subject: 'math', obligation: { state: 'served' }, servedWork: [{ unitId: 'math.1' }] },
+      { subject: 'science', obligation: { state: 'excused', reason: 'elective_only' }, servedWork: [{ unitId: 'mammals.1' }] },
+    ];
+    const passed = summarize(sections, [
+      { unitId: 'math.1', subject: 'math', outcome: { result: 'passed' } },
+      { unitId: 'mammals.1', subject: 'science', outcome: { result: 'passed' } },
+    ], entries);
+    expect(passed).toMatchObject({ total: 1, done: 1 });
+    expect(passed.segments.map((s) => [s.unitId, s.state, Boolean(s.supplemental)])).toEqual([
+      ['math.1', 'passed', false], ['mammals.1', 'passed', true],
+    ]);
+    // A started elective sheet is shown, but it is not work left today.
+    const started = summarize([{ subject: 'math', obligation: { state: 'obligated' }, next: { unitId: 'math.1' } }, sections[1]],
+      [{ unitId: 'mammals.2', subject: 'science', state: 'issued', outcome: null }], entries);
+    expect(started).toMatchObject({ total: 1, done: 0 });
+    expect(started.segments.find((s) => s.unitId === 'mammals.2')).toMatchObject({ state: 'in-progress', supplemental: true });
+  });
+
   it('lets the server day verdict decide done, in both directions, and ignores an unknown one', () => {
     const partly = { total: 3, done: 2, segments: [] };
     expect(withServerVerdict(partly, { state: 'complete' }).serverDone).toBe(true);

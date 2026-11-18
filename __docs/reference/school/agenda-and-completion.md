@@ -436,6 +436,16 @@ was refused; only `NotAllowedError` re-arms it for the next tap) /
 `.unlock_threw`. The bank door logs `economy.bank.door-opened` and
 `economy.bank.door-open-failed`.
 
+## Electives on the status board
+
+A disc whose plan entry is `elective: true` (`entries[].elective`) is drawn
+supplemental: it keeps its own state (passed, amber, grey) but sits after the
+required discs and outside `total` / `done`. The server never lets an elective
+obligate or serve a day, so counting it made the board's "X of Y" include an
+optional course only on the days a child had opened one of its sheets, while
+the term grid, the day-complete gate and coins never counted it. An unstarted
+elective offer still draws nothing, because its section is excused.
+
 ## Physical education on the status board
 
 Available `fitnessActivity` with `hasActivity: true` adds one supplemental

@@ -343,14 +343,23 @@ export function summarize(sections, sessions, entries = [], readingActivity = nu
     const icon = segment.icon ?? iconName(fromEntries.get(segment.unitId)?.icon)
       ?? servedByAssignment.get(segment.unitId)?.icon ?? null;
     if (icon && !segment.icon) segment = { ...segment, icon };
+    // ELECTIVE work is shown, never counted (2026-11-17). The server never lets
+    // an elective obligate or serve a day, so counting its disc made "X of Y"
+    // grow only on the days a child opened an optional sheet — an elective
+    // science course read as part of the day some days and not others.
+    if (fromEntries.get(segment.unitId)?.elective === true) segment = { ...segment, supplemental: true };
     const programId = fromEntries.get(segment.unitId)?.program;
     if (programId === 'book-log' || programId === 'story-time') {
       return { ...segment, programId, label: programId === 'book-log' ? 'Reading' : 'Story time' };
     }
     return segment;
   });
-  const total = segments.length;
-  const done = segments.filter((segment) => segment.state === 'passed').length;
+  // Required discs first, so the pins read the same set every day and the
+  // optional ones trail after them, like reading and fitness below.
+  segments.sort((a, b) => Number(Boolean(a.supplemental)) - Number(Boolean(b.supplemental)));
+  const counted = segments.filter((segment) => !segment.supplemental);
+  const total = counted.length;
+  const done = counted.filter((segment) => segment.state === 'passed').length;
   const requiredReadingDone = segments.some((segment) => segment.programId === 'book-log' && segment.state === 'passed');
   if (readingActivity?.status === 'ok' && readingActivity.hasActivity === true
     && readingActivity.studyDay && !requiredReadingDone) {
