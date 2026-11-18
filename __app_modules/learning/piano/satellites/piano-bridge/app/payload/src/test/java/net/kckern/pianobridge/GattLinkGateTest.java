@@ -42,4 +42,16 @@ public class GattLinkGateTest {
     @Test public void aGoodReading_clearsTheMisses() {
         assertEquals(0, GattLinkGate.nextMisses(true, 1));
     }
+
+    @Test public void aFirstRetryUsesTheConfiguredDelay() {
+        assertEquals(3_000L, GattLinkGate.retryDelayMs(3_000L, 0));
+    }
+
+    @Test public void repeatedOpensWithNoLink_backOffToAMinute() {
+        // The JamCorder is unpowered whenever the piano plug is off; do not hammer the radio.
+        assertEquals(6_000L, GattLinkGate.retryDelayMs(3_000L, 1));
+        assertEquals(12_000L, GattLinkGate.retryDelayMs(3_000L, 2));
+        assertEquals(60_000L, GattLinkGate.retryDelayMs(3_000L, 5));
+        assertEquals(60_000L, GattLinkGate.retryDelayMs(3_000L, 500));
+    }
 }

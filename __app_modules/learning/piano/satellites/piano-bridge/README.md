@@ -126,6 +126,12 @@ maintenance expiry, Stop during a game, process recreation, reboot, and restorat
 on the physical device. Record platform readback and observed behavior separately.
 
 
+> **Payload p37a (`p37a-gatt-link`, 2026-11-18) is on the tablet.** It is p37 plus the GATT
+> connection check, built from git tag `piano-bridge-p37a` because `main` carries the p38
+> candidate, which this tablet's shell 31 cannot run. `ble.state` reaches `CONNECTED` only with
+> a real GATT link, and `/status` adds `ble.gattConnected`. See
+> `__docs/runbooks/piano-kiosk-midi.md` §4a.
+>
 > **Payload p37 (`p37-fkb-volume-lock`, 2026-11-13)** also holds FKB `disableVolumeButtons`
 > off: its revert-to-remembered-volume put the piano at 0/15 and fought the floor.
 >

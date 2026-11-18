@@ -695,7 +695,7 @@ public class BridgeCore {
             // L1: forget + reconnect the BLE device (drops both ports, re-opens fresh).
             steps.put(step("L1 BLE reconnect", () -> {
                 if (bleConnector != null) { bleConnector.forget(); sleepMs(1200); bleConnector.connectNow(); }
-                waitConnected(12000);
+                waitConnected(LINK_WAIT_MS);
             }));
             if (verifyEcho()) { o.put("fixed", true).put("recoveredAt", "L1").put("steps", steps); return finishReset(o); }
 
@@ -710,7 +710,7 @@ public class BridgeCore {
                     sleepMs(6000);
                 }
                 if (bleConnector != null) bleConnector.connectNow();
-                waitConnected(15000);
+                waitConnected(LINK_WAIT_MS);
             }));
             boolean fixed = verifyEcho();
             o.put("fixed", fixed).put("recoveredAt", fixed ? "L2" : JSONObject.NULL).put("steps", steps);
@@ -742,6 +742,9 @@ public class BridgeCore {
     }
     private boolean verifyEcho() { return loopback != null && loopback.probeAndWait().optBoolean("echoed"); }
     private void sleepMs(long ms) { try { Thread.sleep(ms); } catch (InterruptedException ignored) {} }
+    /** CONNECTED now waits for the real link, which can take the whole confirm window. */
+    private static final long LINK_WAIT_MS = GattLinkGate.CONFIRM_TIMEOUT_MS + 5_000L;
+
     private void waitConnected(long budgetMs) {
         long end = System.currentTimeMillis() + budgetMs;
         while (System.currentTimeMillis() < end) {

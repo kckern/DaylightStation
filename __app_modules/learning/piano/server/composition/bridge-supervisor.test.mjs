@@ -1,6 +1,6 @@
 import { test, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { createPianoBridgeSupervisor, _resetForTests } from "./bridge-supervisor.mjs";
+import { createPianoBridgeSupervisor, linkRepairTimings, _resetForTests } from "./bridge-supervisor.mjs";
 
 afterEach(() => _resetForTests());
 
@@ -157,6 +157,7 @@ test('link repair reads the configured JamCorder and reboots through remote admi
   globalThis.fetch = async (url) => {
     fetched.push(String(url));
     if (String(url).includes('/select/logsql/query')) return { ok: true, text: async () => '' };
+    if (String(url).endsWith('/info')) return { ok: true, json: async () => ({ power: { interactive: false } }) };
     return { ok: true, json: async () => ({ clients: [] }) };
   };
   try {
@@ -166,7 +167,7 @@ test('link repair reads the configured JamCorder and reboots through remote admi
           midi_wake: { device_id: 'yellow-room-tablet', bridge_url: 'ws://t:8770' },
           screen_power_sync: { piano_power_entity: 'binary_sensor.piano_power' },
           effects: { jamcorder: { web: 'http://jam' } },
-          bridge_supervisor: { enabled: true, link_repair: { hold_ms: 0 } },
+          bridge_supervisor: { enabled: true, link_repair: { hold_ms: 60000, power_on_settle_ms: 0 } },
         }),
         get: (key) => (key === 'logging.remoteSink' ? { enabled: true, url: 'http://logs:9428/insert/jsonline' } : undefined),
       },
@@ -175,8 +176,14 @@ test('link repair reads the configured JamCorder and reboots through remote admi
       probeFactory: () => ({ readHealth: async () => ({ reachable: true, ble: 'CONNECTED', outVerified: false }) }),
       logger: logger(), scheduler,
     });
-    await pianoBridgeSupervisor.tick();
-    await pianoBridgeSupervisor.tick();
+    const realNow = Date.now;
+    let offset = 0;
+    Date.now = () => realNow() + offset;
+    try {
+      await pianoBridgeSupervisor.tick();
+      offset = 61_000;
+      await pianoBridgeSupervisor.tick();
+    } finally { Date.now = realNow; }
     assert.ok(fetched.includes('http://jam/api/bluetooth/state/get'));
     assert.deepEqual(actions, [['yellow-room-tablet', 'reboot']]);
   } finally {
@@ -206,3 +213,9 @@ for (const [name, patch] of [
     assert.equal(log.logs.find((l) => l.event === 'piano-bridge.supervisor.created').data.linkRepair, false);
   });
 }
+
+test('nonsense link repair numbers fall back to safe values', () => {
+  assert.deepEqual(linkRepairTimings({ hold_ms: '3m', min_reboot_gap_ms: 5, max_reboots_per_day: 0, reboot_grace_ms: -1, power_on_settle_ms: 'x' }), {
+    holdMs: 180_000, minRebootGapMs: 600_000, maxRebootsPerDay: 1, rebootGraceMs: 120_000, powerOnSettleMs: 300_000,
+  });
+});

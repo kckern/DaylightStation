@@ -52,7 +52,11 @@ const DEFAULT_LINK_HOLD_MS = 3 * 60_000;
 const DEFAULT_MIN_REBOOT_GAP_MS = HOUR_MS;
 const DEFAULT_MAX_REBOOTS_PER_DAY = 3;
 const DEFAULT_REBOOT_GRACE_MS = 5 * 60_000;
+const DEFAULT_POWER_ON_SETTLE_MS = 5 * 60_000;
+const DEFAULT_RETRY_AFTER_FAILURE_MS = 5 * 60_000;
 const LOG_MATCH_WINDOW_MS = 60_000;
+// IDLE is an operator's /forget; NO_BLUETOOTH and NO_LOCATION are not cured by a reboot.
+const LINK_REPAIR_BLE_STATES = new Set(['CONNECTED', 'CONNECTING', 'SCANNING', 'FAILED']);
 
 export class PianoBridgeSupervisorService {
   #probe; #relaunch; #readPianoPower; #notify; #compose;
@@ -75,9 +79,16 @@ export class PianoBridgeSupervisorService {
   #linkRepair = null;
   #linkMissingSince = null;
   #linkToldReasons = new Set();
-  #linkRebootedAt = null;      // last reboot from this process; the log store lags it
+  #linkLoggedReasons = new Set();
+  #linkReboots = [];           // this process's reboots; the log store can lag or lose them
+  #linkRebootsSinceEcho = 0;
   #linkAwaitingEcho = false;
+  #linkRebootSeen = false;     // the bridge actually went away after the reboot request
+  #linkRetryAt = 0;
   #rebootGraceUntil = 0;
+  #lastPianoPower = null;
+  #pianoOnAt = null;
+  #recoveredPushAt = null;     // one "back" card per tick, whichever alarm it answers
   // speaker episode
   #speaker = null;
   #speakerEpisode = initialSpeakerEpisode();
@@ -152,6 +163,8 @@ export class PianoBridgeSupervisorService {
       minRebootGapMs: DEFAULT_MIN_REBOOT_GAP_MS,
       maxRebootsPerDay: DEFAULT_MAX_REBOOTS_PER_DAY,
       rebootGraceMs: DEFAULT_REBOOT_GRACE_MS,
+      powerOnSettleMs: DEFAULT_POWER_ON_SETTLE_MS,
+      retryAfterFailureMs: DEFAULT_RETRY_AFTER_FAILURE_MS,
       ...Object.fromEntries(Object.entries(linkRepair).filter(([, v]) => v !== undefined)),
     } : null;
     this.#logModule = logModule;
@@ -190,7 +203,8 @@ export class PianoBridgeSupervisorService {
       if (health?.reachable) await this.#onReachable(health);
       else await this.#onUnreachable(health);
       if (this.#speaker) {
-        await this.#checkSpeaker(health);
+        // A rebooting tablet has no speaker link; the ladder must not chase that.
+        if (this.#clock.now() >= this.#rebootGraceUntil) await this.#checkSpeaker(health);
         await this.#checkReadiness();
         await this.#checkWeekly();
       }
@@ -204,7 +218,10 @@ export class PianoBridgeSupervisorService {
   async #onUnreachable(health) {
     const now = this.#clock.now();
     // We rebooted the tablet: its bridge is supposed to be gone for a while.
-    if (now < this.#rebootGraceUntil) return;
+    if (now < this.#rebootGraceUntil) {
+      this.#linkRebootSeen = true;
+      return;
+    }
     this.#failedChecks += 1;
     if (this.#failedChecks < this.#downConfirmChecks) {
       this.#logger.warn?.('piano-bridge.supervisor.check-failed', {
@@ -276,7 +293,7 @@ export class PianoBridgeSupervisorService {
         this.#logger.info?.('piano-bridge.supervisor.one-way-cleared', {
           deviceId: this.#deviceId, downMs, alerted: this.#alertedOneWay,
         });
-        if (this.#alertedOneWay) await this.#push('recovered', { downMs });
+        if (this.#alertedOneWay && this.#recoveredPushAt !== now) await this.#push('recovered', { downMs });
         this.#oneWaySince = null;
         this.#alertedOneWay = false;
       }
@@ -310,13 +327,21 @@ export class PianoBridgeSupervisorService {
     const repair = this.#linkRepair;
     if (!repair) return;
     const deviceId = this.#deviceId;
+    const power = await this.#pianoPower();
+    if (power === 'on' && this.#lastPianoPower !== 'on') this.#pianoOnAt = now;
+    this.#lastPianoPower = power;
+    if (power === 'off') this.#resetLinkEpisode();
 
     if (health.outVerified !== false) {
       if (health.outVerified === true) await this.#onLinkEchoed(now);
       this.#linkMissingSince = null;
       return;
     }
-    if (await this.#pianoPower() !== 'on' || await this.#jamcorderClients() !== 0) {
+    await this.#checkRebootHappened(now);
+
+    const speakerRepairing = !!this.#speaker && speakerPublicState(this.#speakerEpisode) === 'recovering';
+    if (power !== 'on' || !LINK_REPAIR_BLE_STATES.has(health.ble) || speakerRepairing
+        || await this.#jamcorderClients() !== 0) {
       this.#linkMissingSince = null;
       return;
     }
@@ -325,6 +350,9 @@ export class PianoBridgeSupervisorService {
       this.#logger.warn?.('piano-bridge.supervisor.link-missing', { deviceId, ble: health.ble });
     }
     if (now - this.#linkMissingSince < repair.holdMs) return;
+    // Someone who just switched the piano on is very likely standing at it.
+    if (this.#pianoOnAt !== null && now - this.#pianoOnAt < repair.powerOnSettleMs) return;
+    if (now < this.#linkRetryAt) return;
 
     const blocked = await this.#linkRebootBlocker(now);
     if (blocked) {
@@ -332,26 +360,38 @@ export class PianoBridgeSupervisorService {
       return;
     }
 
-    // Logged first: this line is the reboot history a restarted backend reads back.
+    let error = null;
+    try {
+      const response = await repair.reboot();
+      if (response?.ok === false) error = response.error ?? 'reboot refused';
+    } catch (err) {
+      error = String(err?.message ?? err);
+    }
+    if (error !== null) {
+      this.#logger.error?.('piano-bridge.supervisor.link-reboot-failed', { deviceId, error });
+      this.#linkRetryAt = now + repair.retryAfterFailureMs;
+      await this.#onLinkRebootBlocked('reboot-failed', error);
+      return;
+    }
+    // Logged only once accepted: this line is the history a restarted backend reads back.
     this.#logger.warn?.('piano-bridge.supervisor.link-reboot', {
       deviceId, ble: health.ble, missingForMs: now - this.#linkMissingSince,
     });
-    this.#linkRebootedAt = now;
-    let result;
-    try {
-      const response = await repair.reboot();
-      result = response?.ok === false ? response : { ok: true };
-    } catch (err) {
-      result = { ok: false, error: String(err?.message ?? err) };
-    }
-    if (!result.ok) {
-      await this.#onLinkRebootBlocked('reboot-failed', result.error ?? null);
-      return;
-    }
+    this.#linkReboots.push(now);
+    this.#linkRebootsSinceEcho += 1;
     this.#linkMissingSince = null;
     this.#linkAwaitingEcho = true;
+    this.#linkRebootSeen = false;
     this.#oneWaySince = null;
     this.#rebootGraceUntil = now + repair.rebootGraceMs;
+  }
+
+  /** Fully Kiosk being unreachable also reads as an accepted reboot, so check it happened. */
+  async #checkRebootHappened(now) {
+    if (!this.#linkAwaitingEcho || this.#linkRebootSeen || now < this.#rebootGraceUntil) return;
+    this.#logger.error?.('piano-bridge.supervisor.link-reboot-unconfirmed', { deviceId: this.#deviceId });
+    this.#linkAwaitingEcho = false;
+    await this.#onLinkRebootBlocked('reboot-failed', 'bridge never went away');
   }
 
   async #jamcorderClients() {
@@ -365,35 +405,43 @@ export class PianoBridgeSupervisorService {
   /** @returns {Promise<string|null>} why the tablet must not be rebooted now */
   async #linkRebootBlocker(now) {
     const repair = this.#linkRepair;
+    let times;
+    try {
+      const rows = await repair.queryLogs(
+        `"piano-bridge.supervisor.link-reboot" AND _time:24h AND ${this.#logScope()}`,
+      );
+      times = rows.map((r) => Date.parse(r._time));
+    } catch {
+      return 'unknown';
+    }
+    if (times.some((at) => !Number.isFinite(at))) return 'unknown';
+    this.#linkReboots = this.#linkReboots.filter((at) => now - at < DAY_MS);
+    for (const own of this.#linkReboots) {
+      // The sink flushes late, so an own reboot may or may not be in the rows yet.
+      if (!times.some((at) => Math.abs(at - own) < LOG_MATCH_WINDOW_MS)) times.push(own);
+    }
+    if (times.length >= repair.maxRebootsPerDay
+        || this.#linkRebootsSinceEcho >= repair.maxRebootsPerDay) return 'cap';
+
     let idle;
     try {
       idle = await repair.checkKioskIdle();
     } catch {
       return 'unknown';
     }
-    if (!idle?.idle) return 'busy';
-    let times;
-    try {
-      const rows = await repair.queryLogs(
-        `"piano-bridge.supervisor.link-reboot" AND _time:24h AND ${this.#logScope()}`,
-      );
-      times = rows.map((r) => Date.parse(r._time)).filter(Number.isFinite);
-    } catch {
-      return 'unknown';
-    }
-    // The log sink flushes late, so our own last reboot may or may not be in the rows.
-    const own = this.#linkRebootedAt;
-    if (own !== null && !times.some((at) => Math.abs(at - own) < LOG_MATCH_WINDOW_MS)) times.push(own);
-    if (times.length >= repair.maxRebootsPerDay) return 'cap';
-    return times.some((at) => now - at < repair.minRebootGapMs) ? 'cap' : null;
+    if (!idle?.idle) return idle?.reason === 'no-telemetry' ? 'unknown' : 'busy';
+    return times.some((at) => now - at < repair.minRebootGapMs) ? 'gap' : null;
   }
 
   async #onLinkRebootBlocked(reason, error = null) {
-    if (this.#linkToldReasons.has(reason)) return;
-    this.#logger.warn?.('piano-bridge.supervisor.link-reboot-blocked', { deviceId: this.#deviceId, reason, error });
-    if (await this.#push('no-link', {
-      reason, since: new Date(this.#linkMissingSince).toISOString(),
-    })) this.#linkToldReasons.add(reason);
+    if (!this.#linkLoggedReasons.has(reason)) {
+      this.#linkLoggedReasons.add(reason);
+      this.#logger.warn?.('piano-bridge.supervisor.link-reboot-blocked', { deviceId: this.#deviceId, reason, error });
+    }
+    // A reboot still inside its gap is the repair working; nobody needs to act yet.
+    if (reason === 'gap' || this.#linkToldReasons.has(reason)) return;
+    const since = this.#linkMissingSince === null ? null : new Date(this.#linkMissingSince).toISOString();
+    if (await this.#push('no-link', { reason, since })) this.#linkToldReasons.add(reason);
   }
 
   async #onLinkEchoed(now) {
@@ -401,12 +449,19 @@ export class PianoBridgeSupervisorService {
     if (this.#linkAwaitingEcho || told) {
       this.#logger.info?.('piano-bridge.supervisor.link-repaired', {
         deviceId: this.#deviceId, rebooted: this.#linkAwaitingEcho, alerted: told,
-        afterRebootMs: this.#linkAwaitingEcho ? now - this.#linkRebootedAt : null,
+        afterRebootMs: this.#linkAwaitingEcho ? now - this.#linkReboots.at(-1) : null,
       });
     }
-    if (told) await this.#push('recovered', {});
+    if (told && await this.#push('recovered', {})) this.#recoveredPushAt = now;
+    this.#linkRebootsSinceEcho = 0;
+    this.#resetLinkEpisode();
+  }
+
+  #resetLinkEpisode() {
     this.#linkToldReasons.clear();
+    this.#linkLoggedReasons.clear();
     this.#linkAwaitingEcho = false;
+    this.#linkRetryAt = 0;
   }
 
   async #pianoPower() {

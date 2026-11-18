@@ -22,6 +22,7 @@
  *       min_reboot_gap_ms: 3600000
  *       max_reboots_per_day: 3
  *       reboot_grace_ms: 300000
+ *       power_on_settle_ms: 300000           # no reboot this soon after the piano turns on
  *
  *   speaker_recovery:                      # top-level block, sibling of bridge_supervisor
  *     enabled: true
@@ -42,7 +43,7 @@ import { createHaPlugCycle } from "../adapters/bridge/haPlugCycle.mjs";
 import { createScreenHold } from "../adapters/bridge/screenHold.mjs";
 import { createSpeakerReadinessCheck } from "../adapters/bridge/speakerReadiness.mjs";
 import { createLogStoreQuery, logStoreBaseFromSinkUrl } from "../adapters/bridge/logStoreQuery.mjs";
-import { createJamcorderClientReader, createPianoKioskIdleCheck } from "../adapters/bridge/pianoLinkRepairSignals.mjs";
+import { createJamcorderClientReader, createPianoKioskIdleCheck, createTabletScreenReader } from "../adapters/bridge/pianoLinkRepairSignals.mjs";
 import { composePianoSpeakerPush } from "../domain/bridge/pianoSpeakerPush.mjs";
 
 const DEFAULT_PACKAGE = 'net.kckern.pianobridge';
@@ -53,6 +54,21 @@ const DEFAULT_PACKAGE = 'net.kckern.pianobridge';
  * string, so a rename cannot silently break either.
  */
 export const PIANO_BRIDGE_SUPERVISOR_LOG_MODULE = 'piano-bridge-supervisor';
+
+/** A typo here must not remove the waits that protect a child's tablet. */
+export function linkRepairTimings(cfg = {}) {
+  const read = (value, fallback, floor) => {
+    if (typeof value !== 'number' || !Number.isFinite(value)) return fallback;
+    return Math.max(value, floor);
+  };
+  return {
+    holdMs: read(cfg.hold_ms, 180_000, 60_000),
+    minRebootGapMs: read(cfg.min_reboot_gap_ms, 3_600_000, 600_000),
+    maxRebootsPerDay: Math.floor(read(cfg.max_reboots_per_day, 3, 1)),
+    rebootGraceMs: read(cfg.reboot_grace_ms, 300_000, 120_000),
+    powerOnSettleMs: read(cfg.power_on_settle_ms, 300_000, 0),
+  };
+}
 
 /** @type {PianoBridgeSupervisorService | null} */
 let instance = null;
@@ -124,13 +140,12 @@ export function createPianoBridgeSupervisor({
   const linkRepair = linkCfg.enabled !== false && jamcorderUrl && queryLogs && readPianoPower
     ? {
       readJamcorderClients: createJamcorderClientReader({ baseUrl: jamcorderUrl }),
-      checkKioskIdle: createPianoKioskIdleCheck({ queryLogs }),
+      checkKioskIdle: createPianoKioskIdleCheck({
+        queryLogs, readScreenOn: createTabletScreenReader({ bridgeUrl }),
+      }),
       reboot: () => remoteAdmin.performAction(deviceId, 'reboot'),
       queryLogs,
-      holdMs: linkCfg.hold_ms,
-      minRebootGapMs: linkCfg.min_reboot_gap_ms,
-      maxRebootsPerDay: linkCfg.max_reboots_per_day,
-      rebootGraceMs: linkCfg.reboot_grace_ms,
+      ...linkRepairTimings(linkCfg),
     }
     : null;
   if (!linkRepair && linkCfg.enabled !== false) {
