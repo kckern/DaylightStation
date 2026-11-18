@@ -148,7 +148,7 @@ Served by the payload on `control.port`. Responses are JSON, except
 
 | Method | Path | Result |
 |--------|------|--------|
-| GET | `/status` | `device`, `payloadVersion`, `shellVersionCode`, `uptimeMs`, `capabilities`, and the shell's payload status |
+| GET | `/status` | `device`, `payloadVersion`, `shellVersionCode`, `uptimeMs`, `nowMs` (the device's wall clock, for measuring skew), `capabilities`, and the shell's payload status |
 | GET | `/capabilities` | Capability names and every registered route |
 | GET | `/settings` | Every declared setting: `key`, `type`, `value`, `default`, `overridden` |
 | POST | `/settings` | JSON body `{"key": ..., "value": ...}`; stores a runtime override |

@@ -4,7 +4,7 @@ package: net.kckern.daylight.portal
 android: { minSdk: 26, targetSdk: 28 }
 abis: []
 control: { port: 8780, lifelinePort: 8781 }
-shell: { versionCode: 35, versionName: "0.3-kiosk" }
+shell: { versionCode: 36, versionName: "0.3-kiosk" }
 capabilities:
   - webview-host
   - debug-tools

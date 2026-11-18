@@ -476,6 +476,8 @@ public final class CoreRuntime implements CoreContext {
                 .put("shellVersionCode", shell.shellVersionCode())
                 .put("appVersion", appVersion())
                 .put("uptimeMs", System.currentTimeMillis() - startedAtMs)
+                // The device's wall clock, so a caller can measure skew before relying on deadlines.
+                .put("nowMs", System.currentTimeMillis())
                 .put("capabilities", names())
                 .put("wsClients", socket.clients())
                 .put("a11yBound", accessibility.isBound())

@@ -67,6 +67,14 @@ public class CoreRuntimeTest {
         assertEquals("sample", s.getJSONArray("capabilities").getString(0));
     }
 
+    @Test public void statusCarriesTheDeviceWallClockSoACallerCanMeasureSkew() throws Exception {
+        long before = System.currentTimeMillis();
+        JSONObject s = call(runtime(new Sample(false), "{}"), "GET", "/status", Collections.emptyMap(), null);
+        long after = System.currentTimeMillis();
+        long now = s.getLong("nowMs");
+        assertTrue("nowMs " + now + " is the wall clock at the answer", now >= before && now <= after);
+    }
+
     @Test public void capabilitiesRouteListsRoutes() throws Exception {
         JSONObject c = call(runtime(new Sample(false), "{}"), "GET", "/capabilities", Collections.emptyMap(), null);
         JSONArray routes = c.getJSONArray("routes");
