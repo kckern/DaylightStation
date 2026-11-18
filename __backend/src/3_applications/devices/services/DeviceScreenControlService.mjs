@@ -6,6 +6,14 @@ export class DeviceScreenControlService {
   }
 
 
+  /**
+   * The MIDI wake belongs to one device (the piano tablet). Only a hold on that
+   * device may mute or resume it; a hold on any other screen is that screen's own.
+   */
+  #isWakeDevice(deviceId) {
+    return !!this.#midiWake && this.#midiWake.deviceId === deviceId;
+  }
+
   override(deviceId) { return { override: this.#overrides?.get(deviceId) ?? null }; }
   async toggle(deviceId) {
     const device = this.#devices.get(deviceId); if (!device) return { kind: 'not_found' };
@@ -21,10 +29,10 @@ export class DeviceScreenControlService {
     const device = this.#devices.get(deviceId); if (!device) return { kind: 'not_found' };
     const minutes = requestedMinutes > 0 ? requestedMinutes
       : (state === 'off' ? this.#holdPolicy.offMinutes() : this.#holdPolicy.onMinutes());
-    if (state === 'off') {
-      if (this.#midiWake?.suppressWakeUntil) this.#midiWake.suppressWakeUntil(this.#nowMs() + minutes * 60_000);
-      else this.#overrides?.set(deviceId, 'off', minutes);
-    } else this.#overrides?.set(deviceId, 'on', minutes);
+    this.#overrides?.set(deviceId, state === 'off' ? 'off' : 'on', minutes);
+    if (state === 'off' && this.#isWakeDevice(deviceId) && this.#midiWake.suppressWakeUntil) {
+      this.#midiWake.suppressWakeUntil(this.#nowMs() + minutes * 60_000);
+    }
     this.#logger.info?.('device.router.screen.override', { deviceId, state, minutes });
     const result = await device.setScreen(state === 'on');
     return { kind: 'ok', body: { ok: true, override: this.#overrides?.get(deviceId) ?? null, result } };
@@ -34,7 +42,7 @@ export class DeviceScreenControlService {
   // authority reconcile re-darkens the panel every tick until it expires.
   clearOverride(deviceId) {
     const cleared = this.#overrides?.get(deviceId) ?? null;
-    if (cleared?.state === 'off' && this.#midiWake?.resumeWake) this.#midiWake.resumeWake();
+    if (cleared?.state === 'off' && this.#isWakeDevice(deviceId) && this.#midiWake.resumeWake) this.#midiWake.resumeWake();
     this.#overrides?.clear(deviceId);
     this.#logger.info?.('device.router.screen.override.cleared', { deviceId, cleared: cleared?.state ?? null });
     return { ok: true, cleared };
@@ -48,7 +56,7 @@ export class DeviceScreenControlService {
     const minutes = requestedMinutes > 0 ? requestedMinutes : 30;
     const until = this.#nowMs() + minutes * 60_000;
     this.#logger.info?.('device.router.suppressWake', { deviceId, minutes, until });
-    if (this.#midiWake?.suppressWakeUntil) {
+    if (this.#isWakeDevice(deviceId) && this.#midiWake.suppressWakeUntil) {
       this.#midiWake.suppressWakeUntil(until); return { ok: true, until, relayed: true };
     }
     return { ok: true, until, relayed: false };
