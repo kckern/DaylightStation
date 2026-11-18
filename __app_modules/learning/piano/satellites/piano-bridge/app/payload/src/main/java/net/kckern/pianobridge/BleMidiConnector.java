@@ -3,6 +3,7 @@ package net.kckern.pianobridge;
 import android.bluetooth.BluetoothAdapter;
 import android.bluetooth.BluetoothDevice;
 import android.bluetooth.BluetoothManager;
+import android.bluetooth.BluetoothProfile;
 import android.bluetooth.le.BluetoothLeScanner;
 import android.bluetooth.le.ScanCallback;
 import android.bluetooth.le.ScanFilter;
@@ -74,6 +75,7 @@ public class BleMidiConnector {
     private final Handler callbackHandler = new Handler(Looper.getMainLooper());
 
     private MidiManager midiManager;
+    private BluetoothManager bluetoothManager;
     private BluetoothAdapter adapter;
     private BluetoothLeScanner scanner;
 
@@ -92,6 +94,7 @@ public class BleMidiConnector {
     private boolean pairingPaused = false;
     private long connectGeneration;
     private long openRequest;
+    private int gattMisses;
     private ScanCallback activeScan;
 
     public BleMidiConnector(Context ctx, DeviceConfig cfg, Listener listener) {
@@ -109,8 +112,8 @@ public class BleMidiConnector {
             if (stopped) return;
             running = true;
             midiManager = (MidiManager) ctx.getSystemService(Context.MIDI_SERVICE);
-            BluetoothManager bm = (BluetoothManager) ctx.getSystemService(Context.BLUETOOTH_SERVICE);
-            adapter = bm != null ? bm.getAdapter() : BluetoothAdapter.getDefaultAdapter();
+            bluetoothManager = (BluetoothManager) ctx.getSystemService(Context.BLUETOOTH_SERVICE);
+            adapter = bluetoothManager != null ? bluetoothManager.getAdapter() : BluetoothAdapter.getDefaultAdapter();
             if (midiManager != null) {
                 midiManager.registerDeviceCallback(deviceWatcher, handler);
             }
@@ -239,7 +242,9 @@ public class BleMidiConnector {
             Diag.log(TAG, "direct connect attempt → " + targetMac);
             openTarget(direct, /*scanOnFail=*/true);
             handler.postDelayed(() -> {
-                if (running && !suspended && generation == connectGeneration && state == State.CONNECTING) {
+                // An opened device is already waiting on its GATT link; a scan would only disturb it.
+                if (running && !suspended && generation == connectGeneration && state == State.CONNECTING
+                        && openDevice == null) {
                     Diag.log(TAG, "direct connect still pending — falling back to scan");
                     startScan(targetMac);
                 }
@@ -383,15 +388,68 @@ public class BleMidiConnector {
                 openDevice = device;
                 connectedName = name;
                 connectedMac = mac;
-                connectedSince = SystemClock.elapsedRealtime();
-                setState(State.CONNECTED, null);
-                Log.i(TAG, "BLE-MIDI connected: " + name + " (" + mac + ")");
-                listener.onMidiDeviceOpened(device, name, mac);
+                confirmLink(dev, device, name, mac, generation, request, SystemClock.elapsedRealtime());
                 })) closeLateDevice(device);
             }, callbackHandler);
         } catch (SecurityException e) {
             setState(State.FAILED, "connect permission denied");
             scheduleRetry();
+        }
+    }
+
+    /** CONNECTED is earned here: the opened device must have a real GATT link behind it. */
+    private void confirmLink(BluetoothDevice dev, MidiDevice device, String name, String mac,
+                             long generation, long request, long startedAt) {
+        if (!running || stopped || suspended || generation != connectGeneration
+                || request != openRequest || openDevice != device) return;
+        long elapsed = SystemClock.elapsedRealtime() - startedAt;
+        switch (GattLinkGate.opening(isGattConnected(dev), elapsed)) {
+            case CONFIRMED:
+                connectedSince = SystemClock.elapsedRealtime();
+                gattMisses = 0;
+                setState(State.CONNECTED, null);
+                Log.i(TAG, "BLE-MIDI connected: " + name + " (" + mac + ") gatt after " + elapsed + "ms");
+                listener.onMidiDeviceOpened(device, name, mac);
+                handler.postDelayed(() -> watchLink(dev, device, generation), GattLinkGate.WATCH_INTERVAL_MS);
+                break;
+            case NO_LINK:
+                dropLink("opened but no Bluetooth link");
+                break;
+            default:
+                handler.postDelayed(() -> confirmLink(dev, device, name, mac, generation, request, startedAt),
+                        GattLinkGate.CONFIRM_POLL_MS);
+        }
+    }
+
+    /** A link can vanish without MidiManager ever reporting the device removed. */
+    private void watchLink(BluetoothDevice dev, MidiDevice device, long generation) {
+        if (!running || stopped || suspended || generation != connectGeneration
+                || openDevice != device || state != State.CONNECTED) return;
+        gattMisses = GattLinkGate.nextMisses(isGattConnected(dev), gattMisses);
+        if (GattLinkGate.linkLost(gattMisses)) {
+            dropLink("Bluetooth link lost");
+            return;
+        }
+        handler.postDelayed(() -> watchLink(dev, device, generation), GattLinkGate.WATCH_INTERVAL_MS);
+    }
+
+    private void dropLink(String reason) {
+        Log.w(TAG, reason + " — reconnecting");
+        reconnects++;
+        closeDevice();
+        listener.onMidiDeviceClosed();
+        setState(State.FAILED, reason);
+        scheduleRetry();
+    }
+
+    private boolean isGattConnected(BluetoothDevice dev) {
+        if (bluetoothManager == null || dev == null) return false;
+        try {
+            return bluetoothManager.getConnectionState(dev, BluetoothProfile.GATT)
+                    == BluetoothProfile.STATE_CONNECTED;
+        } catch (RuntimeException e) {
+            Log.w(TAG, "GATT state unavailable", e);
+            return false;
         }
     }
 
@@ -503,11 +561,19 @@ public class BleMidiConnector {
             o.put("connectedSeconds", connectedSince == 0 ? 0
                     : (SystemClock.elapsedRealtime() - connectedSince) / 1000);
             o.put("reconnects", reconnects);
+            o.put("gattConnected", targetGattConnected());
             o.put("lastError", lastError == null ? JSONObject.NULL : lastError);
             o.put("bluetoothOn", adapter != null && adapter.isEnabled());
             o.put("locationOn", isLocationEnabled());
         } catch (JSONException ignored) { }
         return o;
+    }
+
+    private boolean targetGattConnected() {
+        String mac = cfg.targetMac();
+        if (adapter == null || mac.isEmpty()) return false;
+        try { return isGattConnected(adapter.getRemoteDevice(mac)); }
+        catch (IllegalArgumentException e) { return false; }
     }
 
     public Handler handler() { return handler; }
