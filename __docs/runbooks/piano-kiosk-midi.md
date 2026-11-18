@@ -134,6 +134,29 @@ of which were the problem.
 
 ---
 
+## 4a. Phantom connection: `CONNECTED` with no client (2026-11-18)
+
+**Tell:** `/status` says `ble.state: CONNECTED`, the loopback never echoes, and the
+JamCorder's `/api/bluetooth/state/get` shows `"clients": []`. MIDI is dead in **both**
+directions. `ble.in` and `ble.out` stay flat while `usb.in` climbs.
+
+`CONNECTED` only means `openBluetoothDevice` returned a device object. If the JamCorder loses
+power (it is on the piano's smart plug), the bridge can reach `CONNECTED` with nothing there,
+and that stops its retries. Later reopens return in about 10 ms with no GATT connection.
+
+**Cure: reboot the tablet.** Check `piano-kiosk-idle.sh` first, then send FKB
+`rebootDevice`. The link came back about a minute later on 2026-11-18.
+
+**These did not work:** the §4 sequence (including `/reset`, which still answered
+`fixed:true`), `/forget` + `/connect`, and a JamCorder reboot. The likely mechanism is a stale
+device held by Android's MIDI service, which is not proven.
+
+`ZOMBIE` with `data.speaker:false` is normally just the piano being off. Do not count those
+hours as an outage. `/scan` returned 0 devices even with MIDI healthy, so do not use it as
+evidence.
+
+---
+
 ## 5. Reading the history
 
 ### Short hardware smoke test
@@ -263,6 +286,7 @@ named, in every heartbeat. Nothing alerts on it.
 | 2026-08-22 | Web MIDI output handle went zombie; watchdog guarded on conditions that were false | `resetLink()` auto-escalation |
 | 2026-08-23 | Same, one layer down — sends moved to the APK bridge path | `forceResetLink` (L2 radio bounce) |
 | 2026-08-26 | **Chromium's Web MIDI wedging the shared Android GATT queue** | quiesce browser → L2 → reload (§4) |
+| 2026-11-18 | **Phantom `CONNECTED` after the JamCorder lost plug power** (§4a) | Tablet reboot |
 
 **2026-08-26 timeline.** Last `VERIFIED` beat `2026-08-25T17:49:28Z` (RTT 38ms);
 `ZOMBIE` from `17:51:30` **on the same unbroken GATT connection** (`bleUptimeS` kept
