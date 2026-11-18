@@ -1319,7 +1319,7 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
         {section === 'rubiks-cube' && !active && (
           <LocalMountCommit requestId={cubeLaunch?.mountRequestId} confirm={confirmLocalMount}>
             <SchoolActivityHost activityId="rubiks-cube" renderProps={{
-  userId: cubeLaunch?.learnerId === currentUser?.id ? cubeLaunch.learnerId : null,
+  userId: cubeLaunch && cubeLaunch.learnerId === currentUser?.id ? cubeLaunch.learnerId : null,
   courseId: cubeLaunch?.courseId ?? 'beginner-v1',
   cubeGrant: cubeLaunch?.cubeGrant ?? null,
   onExit: goHome

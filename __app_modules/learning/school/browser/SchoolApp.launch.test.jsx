@@ -1232,6 +1232,17 @@ describe('School surface activity lifetime', () => {
     expect(screen.getByTestId('cube-stub')).toBeInTheDocument();
   });
 
+  it('opens the cube from its URL with no learner chosen', async () => {
+    const oldUrl = window.location.href;
+    window.history.replaceState({}, '', '/app/school/rubiks-cube');
+    try {
+      render(<SchoolApp mode="open" />);
+      expect(await screen.findByTestId('cube-stub')).toBeInTheDocument();
+    } finally {
+      window.history.replaceState({}, '', oldUrl);
+    }
+  });
+
   it('discards a pending tracked deck after its learner changes', async () => {
     const roster = schoolApi.roster.getMockImplementation();
     schoolApi.roster.mockResolvedValue({ok:true,status:200,data:[{id:'kid1',name:'Alpha'},{id:'kid2',name:'Beta'}]});

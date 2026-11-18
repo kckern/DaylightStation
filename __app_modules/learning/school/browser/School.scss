@@ -3013,13 +3013,16 @@
   &__rail {
     position: relative;
     flex: 0 0 auto; min-width: 0;
+    // Centred, not stretched: the nameplate hangs from the rail's foot, so a
+    // rail taller than the face would pull the name away from it on a big screen.
+    align-self: center;
     display: flex; flex-direction: column; align-items: center;
     padding-bottom: clamp(0.7rem, 1.6vh, 1.05rem);
 
     // Bigger than it was (13vh → 15vh, 7rem → 8rem): the face is WHO, and on
     // a board of four it is the one thing a child finds their own row by.
     .piano-avatar {
-      width: clamp(4rem, 14vh, 7.5rem); height: clamp(4rem, 14vh, 7.5rem);
+      width: clamp(4rem, 14vh, 9.5rem); height: clamp(4rem, 14vh, 9.5rem);
       font-size: clamp(1.3rem, 4.3vh, 2.2rem);
     }
   }
@@ -3053,7 +3056,7 @@
     bottom: clamp(0.7rem, 1.6vh, 1.05rem);
     transform: translate(-50%, 50%);
     z-index: 1;
-    max-width: calc(clamp(4rem, 14vh, 7.5rem) + 0.8rem);
+    max-width: calc(clamp(4rem, 14vh, 9.5rem) + 0.8rem);
     padding: 0.18em 0.6em;
     border-radius: 999px;
     background: var(--school-surface);
