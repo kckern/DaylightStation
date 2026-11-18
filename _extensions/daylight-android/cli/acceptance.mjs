@@ -211,7 +211,11 @@ export function buildChecks(deviceFile, opts = {}) {
   });
   add('core.status', 'GET /status names this device and exactly its capabilities', async ({ api, state }) => {
     const r = await api.control('GET', '/status');
-    if (!ok(r) || r.json?.ok !== true) return fail(`/status ${why(r)}`);
+    if (r.error || !(r.status >= 200 && r.status < 300)) return fail(`/status ${why(r)}`);
+    if (r.json?.ok !== true) {
+      const problem = r.json?.ok === false ? 'reported ok=false' : 'missing or invalid ok flag';
+      return fail(`/status ${why(r)} (${problem})`);
+    }
     state.status = r.json;
     const live = Array.isArray(r.json.capabilities) ? [...r.json.capabilities].sort() : [];
     const want = [...caps].sort();
@@ -724,7 +728,6 @@ export async function runAcceptance({ deviceFile, host, token, opts, deps = {} }
     }
     exit(130);
   };
-  signals.on('SIGINT', onInterrupt);
   const sleep = deps.sleep ?? ((ms) => new Promise((r) => setTimeout(r, ms)));
   const pollMs = deps.pollMs ?? 2000;
   const api = deviceApi({ host, ports: deviceFile.control, token, fetchImpl });
@@ -733,16 +736,6 @@ export async function runAcceptance({ deviceFile, host, token, opts, deps = {} }
   const state = {};
   const counts = { PASS: 0, FAIL: 0, MANUAL: 0, SKIP: 0 };
   let badPayload = null;
-  // Settings feed the switch-aware checks; read them first even when that check is not selected.
-  if (!checks.some((c) => c.id === 'settings.resolved')) {
-    const r = await api.control('GET', '/settings');
-    if (ok(r)) state.settings = Object.fromEntries((r.json.settings || []).map((s) => [s.key, s.value]));
-  }
-  if (!checks.some((c) => c.id === 'lockdown.status') && deviceFile.capabilities?.includes('lockdown')) {
-    const r = await api.control('GET', '/lockdown');
-    if (ok(r)) state.lockdown = r.json;
-  }
-  out(`acceptance: ${deviceFile.id} (${checks.length} checks)`);
   const context = { api, state, opts, sleep, pollMs, out, fetchImpl, restorer };
   const preflightChecks = new Map(availableChecks
     .filter((check) => check.id === 'core.status' || check.id === 'core.auth')
@@ -773,7 +766,21 @@ export async function runAcceptance({ deviceFile, host, token, opts, deps = {} }
     return check.run({ ...context, badPayload });
   }
 
+  signals.on('SIGINT', onInterrupt);
   try {
+    // Settings feed the switch-aware checks even when the settings check is skipped.
+    if (!checks.some((c) => c.id === 'settings.resolved')) {
+      const r = await api.control('GET', '/settings');
+      const settings = r.json?.settings;
+      if (ok(r) && Array.isArray(settings) && settings.every((setting) => typeof setting?.key === 'string')) {
+        state.settings = Object.fromEntries(settings.map((setting) => [setting.key, setting.value]));
+      }
+    }
+    if (!checks.some((c) => c.id === 'lockdown.status') && deviceFile.capabilities?.includes('lockdown')) {
+      const r = await api.control('GET', '/lockdown');
+      if (ok(r)) state.lockdown = r.json;
+    }
+    out(`acceptance: ${deviceFile.id} (${checks.length} checks)`);
     for (const check of checks) {
       let result;
       try {

@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { EventEmitter } from 'node:events';
 import { createServer } from 'node:http';
 import { readdirSync, readFileSync, existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -56,11 +57,14 @@ async function fakeDevice({ id = 'portal', capabilities, faults = {}, settings =
         ble: { state: s.settings['midi.enabled'] ? 'CONNECTED' : null }, outVerified: !!s.settings['midi.enabled'],
       });
       case 'GET /capabilities': return json(res, 200, { ok: true, capabilities: caps, routes });
-      case 'GET /settings': return json(res, 200, {
-        ok: true,
-        settings: Object.entries({ ...s.settings, ...(faults.unresolved ? { 'heartbeat.logStoreUrl': '{log_store_insert_url}' } : {}) })
-          .map(([k, v]) => ({ key: k, value: v })),
-      });
+      case 'GET /settings':
+        if (faults.nonJsonSettings) { res.writeHead(200); return res.end('not JSON'); }
+        return json(res, 200, {
+          ok: true,
+          settings: faults.objectSettings ? {} : Object.entries({
+            ...s.settings, ...(faults.unresolved ? { 'heartbeat.logStoreUrl': '{log_store_insert_url}' } : {}),
+          }).map(([k, v]) => ({ key: k, value: v })),
+        });
       case 'POST /settings': s.settings[body.key] = body.value; return json(res, 200, { ok: true, key: body.key, value: body.value });
       case 'DELETE /settings': { const k = new URL(req.url, 'http://x').searchParams.get('key'); s.settings[k] = false; return json(res, 200, { ok: true, key: k }); }
       case 'GET /debug/info': return json(res, 200, { ok: true, device: id, model: 'Fake', sdkInt: 28, elapsedRealtimeMs: Date.now() - s.bootAt });
@@ -263,9 +267,36 @@ for (const [check, flag, expectedWrites] of disruptiveChecks) {
   });
 }
 
+for (const [name, fault] of [['non-JSON', 'nonJsonSettings'], ['a settings object', 'objectSettings']]) {
+  test(`filtered reboot reports a wrong device ID when /settings returns ${name}`, async () => {
+    const dev = await fakeDevice({ faults: { deviceId: 'other-device', [fault]: true } });
+    const signals = new EventEmitter();
+    const existing = () => {};
+    signals.on('SIGINT', existing);
+    try {
+      const result = await run(dev, ['--only', 'reboot.survives', '--reboot'], { signals });
+      assert.equal(result.code, 1, result.text);
+      assert.match(result.line('reboot.survives'), /^FAIL .*device 'other-device', expected 'portal'/);
+      assert.deepEqual(dev.state.calls.filter((call) => !call.startsWith('GET ')), []);
+      assert.deepEqual(signals.listeners('SIGINT'), [existing]);
+    } finally { await dev.close(); }
+  });
+}
+
+test('the SIGINT listener is removed if initialization output throws', async () => {
+  const dev = await fakeDevice();
+  const signals = new EventEmitter();
+  try {
+    await assert.rejects(run(dev, ['--only', 'core.status'], {
+      signals, out: () => { throw new Error('broken output'); },
+    }), /broken output/);
+    assert.equal(signals.listenerCount('SIGINT'), 0);
+  } finally { await dev.close(); }
+});
+
 for (const [name, faults, evidence] of [
   ['capability mismatch', { extraCap: true }, /extra \[synth\]/],
-  ['unhealthy status', { unhealthy: true }, /\/status HTTP 200/],
+  ['unhealthy status', { unhealthy: true }, /\/status HTTP 200.*ok=false/],
   ['unreachable status', { statusDown: true }, /\/status no answer/],
   ['authentication failure', { noAuth: true }, /no token 200/],
 ]) {
@@ -331,7 +362,6 @@ test('--kill on a device that already had exec on leaves it on', async () => {
 });
 
 test('an interrupt during --kill restores debug.execEnabled before exiting with 130', async () => {
-  const { EventEmitter } = await import('node:events');
   const dev = await fakeDevice({ faults: { neverBack: true } });
   const signals = new EventEmitter();
   const exits = [];
