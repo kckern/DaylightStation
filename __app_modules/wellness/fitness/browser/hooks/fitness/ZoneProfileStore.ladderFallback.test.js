@@ -84,6 +84,9 @@ describe('ZoneProfileStore — a degenerate ladder never commits a zone', () => 
     store.syncFromUsers([rider(GOOD, 80)]);
     settle();
     confirmUp(store, GOOD, 185);
+    // Fire is held 5s (FIRE_UPWARD_CONFIRM_MS), not touched.
+    vi.setSystemTime(Date.now() + 4000);
+    store.syncFromUsers([rider(GOOD, 185)]);
     expect(zoneOf(store)).toBe('fire');
   });
 

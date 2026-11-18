@@ -1,7 +1,17 @@
-import React from 'react';
+import React, { useEffect, useLayoutEffect, useRef } from 'react';
 import PropTypes from 'prop-types';
 import "./CircularUserAvatar.scss";
 import GovernanceStartBadge from "./GovernanceStartBadge.jsx";
+import getLogger from '@/lib/logging/Logger.js';
+import {
+  angleForProgress, lapDirection, ringArcs, easeInOut, easeOut, RING_TWEEN_MS, RING_LAP_MS
+} from './zoneRingMotion.js';
+
+let _logger;
+function logger() {
+  if (!_logger) _logger = getLogger().child({ component: 'circular-user-avatar' });
+  return _logger;
+}
 
 const GAUGE_RADIUS = 47;
 const GAUGE_CIRCUMFERENCE = 2 * Math.PI * GAUGE_RADIUS;
@@ -9,6 +19,20 @@ const GAUGE_CIRCUMFERENCE = 2 * Math.PI * GAUGE_RADIUS;
 const clamp = (value, min, max) => {
   if (typeof value !== 'number' || Number.isNaN(value)) return null;
   return Math.min(Math.max(value, min), max);
+};
+
+// Paint one arc of the ring: [start, end] degrees clockwise from 3 o'clock.
+const paintArc = (el, arc, color) => {
+  if (!el) return;
+  const length = arc ? ((arc[1] - arc[0]) / 360) * GAUGE_CIRCUMFERENCE : 0;
+  if (!(length > 0.01)) {
+    el.style.visibility = 'hidden';
+    return;
+  }
+  el.style.visibility = 'visible';
+  el.style.strokeDasharray = `${length} ${GAUGE_CIRCUMFERENCE}`;
+  el.style.strokeDashoffset = `${(-arc[0] / 360) * GAUGE_CIRCUMFERENCE}`;
+  if (color !== undefined) el.style.stroke = color || '';
 };
 
 const formatSize = (size) => {
@@ -46,19 +70,104 @@ const CircularUserAvatar = ({
   statusBadge = null,
   weakSignal = false
 }) => {
-  const isFireZone = zoneId === 'fire';
+  const isFireZone = String(zoneId || '').toLowerCase() === 'fire';
   //if fire, showIndicator is false
   if (isFireZone) {
     showIndicator = false;
   }
   const hasActiveHr = Number.isFinite(heartRate) && heartRate > 0;
   const normalizedProgress = clamp(progress, 0, 1);
-  const indicatorAngle = normalizedProgress !== null
-    ? 180 + normalizedProgress * 180
-    : null;
-  const strokeDashoffset = normalizedProgress !== null
-    ? GAUGE_CIRCUMFERENCE * (1 - indicatorAngle / 360)
-    : GAUGE_CIRCUMFERENCE;
+  const targetAngle = normalizedProgress !== null ? angleForProgress(normalizedProgress) : null;
+
+  // The ring is animated here, frame by frame, straight onto the SVG: a zone
+  // crossing laps the ring (zoneRingMotion.js), which two CSS transitions on
+  // independent properties cannot draw.
+  const currentArcRef = useRef(null);
+  const previousArcRef = useRef(null);
+  const orbitRef = useRef(null);
+  const motion = useRef({
+    angle: null, zoneId: null, color: null, prevColor: null, lap: 0,
+    from: 0, to: 0, startedAt: 0, duration: 0, frame: 0
+  });
+
+  const paint = () => {
+    const m = motion.current;
+    if (m.angle === null) {
+      paintArc(currentArcRef.current, null);
+      paintArc(previousArcRef.current, null);
+      return;
+    }
+    const { current, previous } = ringArcs(m.angle, m.lap);
+    paintArc(currentArcRef.current, current);
+    paintArc(previousArcRef.current, previous, m.prevColor || 'rgba(255, 255, 255, 0.4)');
+    orbitRef.current?.style.setProperty('--indicator-angle', `${m.angle}deg`);
+  };
+
+  const land = () => {
+    const m = motion.current;
+    if (m.frame) cancelAnimationFrame(m.frame);
+    m.frame = 0;
+    m.angle = m.to - 360 * m.lap;
+    m.lap = 0;
+  };
+
+  const tween = (to, duration, ease = easeInOut) => {
+    const m = motion.current;
+    if (m.frame) cancelAnimationFrame(m.frame);
+    m.from = m.angle;
+    m.to = to;
+    m.duration = Math.max(1, duration);
+    m.startedAt = 0;
+    const step = (ts) => {
+      if (!m.startedAt) m.startedAt = ts;
+      const t = Math.min(1, (ts - m.startedAt) / m.duration);
+      m.angle = m.from + (m.to - m.from) * ease(t);
+      if (t >= 1) land();
+      else m.frame = requestAnimationFrame(step);
+      paint();
+    };
+    m.frame = requestAnimationFrame(step);
+  };
+
+  const zoneKey = zoneId ? String(zoneId).toLowerCase() : null;
+  useLayoutEffect(() => {
+    const m = motion.current;
+    if (targetAngle === null || m.angle === null) {
+      if (m.frame) cancelAnimationFrame(m.frame);
+      Object.assign(m, { angle: targetAngle, zoneId: zoneKey, color: zoneColor, lap: 0, frame: 0 });
+      paint();
+      return;
+    }
+    if (zoneKey !== m.zoneId) {
+      if (m.lap) {
+        // A lap cut short by another crossing carries on from where the dot IS
+        // (folded to one turn), never from where it was headed: the arcs either
+        // side of it already wear the two colours the new lap starts from.
+        if (m.frame) cancelAnimationFrame(m.frame);
+        m.frame = 0;
+        m.angle = ((m.angle % 360) + 360) % 360;
+        m.lap = 0;
+      }
+      const dir = lapDirection(m.zoneId, zoneKey);
+      if (dir > 0 && m.angle < 180) m.angle += 360;
+      if (dir) logger().debug('zone-ring.lap', { name, from: m.zoneId, to: zoneKey, direction: dir > 0 ? 'up' : 'down' });
+      Object.assign(m, { prevColor: m.color, zoneId: zoneKey, color: zoneColor, lap: dir });
+      tween(targetAngle + 360 * dir, dir ? RING_LAP_MS : RING_TWEEN_MS, dir ? easeOut : easeInOut);
+      return;
+    }
+    m.color = zoneColor;
+    const to = targetAngle + 360 * m.lap;
+    // A new reading mid-lap moves the lap's end, not its pace: restarting the
+    // tween there would stall the dot at the bottom of the quick sweep.
+    if (m.frame && m.lap) m.to = to;
+    else if (m.frame ? to !== m.to : to !== m.angle) tween(to, RING_TWEEN_MS);
+  }, [targetAngle, zoneKey, zoneColor]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Repaint after every render: the gauge remounts when HR returns.
+  useLayoutEffect(paint);
+  useEffect(() => () => {
+    if (motion.current.frame) cancelAnimationFrame(motion.current.frame);
+  }, []);
 
   const rootStyle = {
     ...style,
@@ -141,24 +250,26 @@ const CircularUserAvatar = ({
             r={GAUGE_RADIUS}
           />
           <circle
+            ref={previousArcRef}
+            className="gauge-arc gauge-arc-progress gauge-arc-previous"
+            cx="50"
+            cy="50"
+            r={GAUGE_RADIUS}
+          />
+          <circle
+            ref={currentArcRef}
             className="gauge-arc gauge-arc-progress"
             cx="50"
             cy="50"
             r={GAUGE_RADIUS}
-            style={{
-              strokeDasharray: GAUGE_CIRCUMFERENCE,
-              strokeDashoffset
-            }}
           />
         </svg>
       )}
 
-      {showIndicator && indicatorAngle !== null && (
-        <div
-          className="zone-progress-indicator"
-          style={{ '--indicator-angle': `${indicatorAngle}deg` }}
-          aria-hidden="true"
-        />
+      {showIndicator && targetAngle !== null && (
+        <div ref={orbitRef} className="zone-progress-orbit" aria-hidden="true">
+          <div className="zone-progress-indicator" />
+        </div>
       )}
 
       <div className="avatar-core">

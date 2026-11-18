@@ -470,11 +470,13 @@ const FitnessUsersList = ({ onRequestGuestAssignment }) => {
   }, [onRequestGuestAssignment, getDisplayName]);
 
   // The zone the card shows and the list groups by, with its bar: ONE display
-  // record (lib/displayZone.js) built from the BPM this card prints, on the
-  // rider's validated ladder (the zone profile's), so colour, badge, bar and
-  // Fire treatment always agree with the number. The committed (earned) zone
-  // is only what a reading gap holds; governance keeps reading it directly.
-  // An unidentified strap reads on the household ladder.
+  // record (lib/displayZone.js): the committed zone, with a bar measured from
+  // the BPM this card prints on the rider's validated ladder (the zone
+  // profile's), so colour, badge, bar and Fire treatment always agree. With no
+  // profile (a guest, an unmatched strap) the roster's zone — itself the
+  // store's committed zone — is judged on the household ladder; a rider with a
+  // personal ladder always has a profile, so the two cannot be mixed in
+  // practice. An unidentified strap reads on the household ladder.
   const getCardDisplay = (device, heartRate) => {
     if (device.type !== 'heart_rate') return null;
     const deviceKey = String(device.deviceId);

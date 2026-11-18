@@ -386,7 +386,7 @@ one answers a different question; none is redundant with another (see
 | # | Mechanism | Where | Value | Source | What it stops |
 |---|-----------|-------|-------|--------|---------------|
 | 0 | Slew gate | `hrPlausibility.js` (DeviceManager) | ≥25 BPM jump within 2s is held for one packet | code (`HR_SLEW_MAX_DELTA_BPM`, `HR_SLEW_WINDOW_MS`) | single corrupt packets (e.g. 204 BPM) |
-| 1a | Upward confirmation | `ZoneProfileStore#applyHysteresis` | 2 separate samples spanning ≥1s | code (`UPWARD_CONFIRM_SAMPLES`, `UPWARD_CONFIRM_MS`) | one packet claiming a higher zone |
+| 1a | Upward confirmation | `ZoneProfileStore#applyHysteresis` | 2 separate samples spanning ≥1s; **Fire: 2 spanning ≥2s with one reading above the floor, or 3 spanning ≥5s** | code (`UPWARD_CONFIRM_*`, `FIRE_QUICK_CONFIRM_*`, `FIRE_UPWARD_CONFIRM_*`) | one packet claiming a higher zone; touching the Fire floor for a moment |
 | 1b | **Exit margin** (Schmitt trigger) | `ZoneProfileStore#applyHysteresis` | stay in the committed zone until HR < zone floor − **5 BPM** | code (`EXIT_MARGIN_BPM`) — not configurable | HR drifting ±1–3 BPM around a floor |
 | 1c | Commit cooldown | `ZoneProfileStore#applyHysteresis` | a change within **5s** of the last commit… | code (`HYSTERESIS_COOLDOWN_MS`) | rapid back-and-forth toggling |
 | 1d | Stability hold | `ZoneProfileStore#applyHysteresis` | …must hold steady **3s** before it commits | code (`HYSTERESIS_STABILITY_MS`) | (with 1c) noisy toggling |
@@ -399,17 +399,28 @@ one answers a different question; none is redundant with another (see
 
 Things to know when reading the table:
 
-- **Layer 1 governs; display does not wait for it.** Governance, challenges and
-  TreasureBox read the *committed* zone. Everything a rider *sees* about their
-  zone reads the **display record** instead (next section), so a rider at 122
-  BPM held in Active by the exit margin (floor 125) shows the lower zone's
-  colour and bar while still counting as Active (`governance-history.md`,
-  Era 12).
+- **Layer 1 governs, and the display shows its zone.** Governance, challenges,
+  TreasureBox, the garage zone LEDs and the Fire ceremony read the *committed*
+  zone, and so does the zone a rider *sees* (the **display record**, next
+  section), so card, ring and room agree (the LEDs follow the same commit
+  after their own ~1s debounce). Only the progress bar is live.
 - **The exit margin is per zone floor, for every downgrade.** It is measured
   from the floor of the zone the rider is *committed to*: Hot → Warm, Warm →
   Active and Active → Cool all need HR 5 BPM under the floor being left. A drop
   past that line still goes through the cooldown/stability rules (1c/1d).
-  Entering a zone has no margin: the floor itself counts, after 1a.
+  Entering a zone has no margin: the floor itself counts, after 1a. Fire must
+  be **reached**, not touched (owner, 2026-11-17: a rider sat at exactly 160 on
+  a 160 floor for ~3s and got the full ceremony; his real Fire that day went
+  161, 162, 162...). It commits after 2s at or above the floor with a reading
+  above it (~3s to red with the LED debounce), or after 5s at or above it
+  regardless (someone parked on the line). A pure hold could not separate the
+  two stints without ~6s to red, which the owner ruled too long; the peak can.
+  The transition log carries `rawPeakHr`. The replay is pinned in
+  `ZoneProfileStore.fireHold.test.js`. A rider resuming after a strap dropout
+  lands on the current reading's zone at once, except Fire when the evidence
+  was below it: they start from the evidence zone and Fire earns its hold
+  (`commitPath: 'resume-below-fire'`). A kiosk reload with no evidence
+  (`restored: 'no-evidence'`) still resumes whatever zone it reads.
 - **Unlocking is never damped** (Layer 2 below). Only the way down has grace.
 - Logs: `zoneprofilestore.exit_margin_suppressed` (sampled, 3/min),
   `fitness.zone_state.transition` with `commitPath`,
@@ -428,20 +439,42 @@ One record per rider, `displayZoneRecord` (`lib/displayZone.js`), drives the
 card colour, zone badge and heading, the card's progress bar, the sidebar
 footer and fullscreen avatar rings and gauges, the Fire treatment, the sidebar
 sort/grouping, and the zone colour and progress on governance overlay chips.
-It is built from **the BPM the surface prints** (rounded, as printed) on the
-rider's **validated ladder** (`ZoneProfileStore.getDisplayLadder`, the same
-thresholds the committed zone uses), so colour, bar and number can never
-disagree. Before it, colour came from the committed zone and the bar from
-`UserManager`'s raw snapshot on the unvalidated `user.zoneConfig`: inside the
-exit margin or an upward confirmation a card showed one zone's colour over
-another band's bar (2026-11-13).
+
+- **The zone is the committed zone** (Layer 1), whenever the rider has one on
+  the ladder. A rider hovering on a line does not flip colour on every packet,
+  and the ring turns red with the same commit that turns the garage red (the
+  LEDs add a ~1s debounce) (owner, 2026-11-17: "a little bit of stickiness").
+- **The bar is live**: the BPM the surface prints (rounded, as printed) on the
+  rider's **validated ladder** (`ZoneProfileStore.getDisplayLadder`), measured on
+  the committed zone's band. A reading past the band pins it: full while a climb
+  waits for its confirmation, empty while a drop is held by the exit margin.
+  Never another zone's band under this zone's colour — the bug of 2026-11-13,
+  when colour came from the committed zone and the bar from `UserManager`'s raw
+  snapshot.
+- **Nothing committed yet** (or a committed zone not on the ladder): the zone of
+  the printed BPM, as before.
 
 | Field | Meaning |
 |-------|---------|
-| `zoneId`, `zoneName`, `zoneColor` | zone of the printed BPM |
-| `progress`, `showBar` | position in that zone's band (Cool: the 5+ BPM run-up to Active) |
+| `zoneId`, `zoneName`, `zoneColor` | the committed zone (the printed BPM's zone when nothing is committed) |
+| `progress`, `showBar` | position of the printed BPM in that zone's band, pinned to 0/1 outside it (Cool: the 5+ BPM run-up to Active) |
 | `max` | Fire: full, pulsing bar |
 | `live` | `false` when there is no reading: the committed zone is held, with no bar (Fire keeps its full bar) |
+
+#### The avatar ring
+
+`CircularUserAvatar` draws the record as a ring: the bottom half always in the
+zone colour, the top half the meter (9 o'clock empty → 3 o'clock full), a white
+dot at its tip. A zone change is a **lap, never a reversal** (owner,
+2026-11-17): up a zone the dot carries on clockwise from 3 o'clock down through
+6 to 9, repainting the bottom in the new colour behind it, then climbs to the
+new progress; down a zone it runs counter-clockwise through 9, 6 and 3 in the
+lower colour. A reading mid-lap moves where the lap lands, not its pace; a
+second crossing mid-lap turns back from where the dot is. The bottom half is a brief in-between (~200ms of a 380ms
+fast-out lap). Into Fire there is no lap: the dot goes away, the ring fills red
+and the sunbeams start. The motion is pure (`components/zoneRingMotion.js`:
+unwrapped angle, arcs per angle) and run frame by frame onto the SVG; the
+component logs `zone-ring.lap` (debug).
 
 Where it is built: `FitnessContext` (`userVitalsMap[*].display`, rebuilt in
 `getUserVitals` when the merged BPM differs; `resolveDisplayZone({ profileId,
@@ -453,10 +486,10 @@ surfaces only).
 
 What does **not** read it: the GovernanceEngine, challenge evaluation,
 TreasureBox, the roster `zoneMap`, Fire ceremonies and `userVitalsMap[*].zoneId`
-— all earned state. Whether a rider is *listed* as missing on the overlay is the
-engine's decision; only that chip's colour and progress follow the BPM. So a
-card can turn Warm while governance still counts the rider Hot (inside the
-margin): the warning, if any, comes from the overlay, never from the card.
+— all earned state, read from the committed zone directly. Whether a rider is
+*listed* as missing on the overlay is the engine's decision; the chip's colour
+and progress come from the record. The warning, if any, comes from the
+overlay, never from the card.
 
 ### Layer 1: ZoneProfileStore (Zone Jitter Prevention)
 
@@ -480,7 +513,9 @@ For each HR update:
   2a. If rawZone is a downgrade and HR >= committedZoneMin - 5 BPM
       → suppress (exit margin, Schmitt trigger)
   2b. If rawZone is an UPGRADE → wait until it has held for 2 separate
-      samples spanning >= 1000ms (UPWARD_CONFIRM_SAMPLES / _MS)
+      samples spanning >= 1000ms (UPWARD_CONFIRM_SAMPLES / _MS); into Fire,
+      2 samples spanning >= 2000ms with a reading above the Fire floor
+      (FIRE_QUICK_CONFIRM_*), or 3 spanning >= 5000ms (FIRE_UPWARD_CONFIRM_*)
   3. If timeSinceLastCommit > 5000ms → commit (confirmed climb, or a drop at once)
   4. If rawZoneStableDuration >= 3000ms → commit (stable long enough)
   5. Else → suppress change, keep showing committedZoneId
@@ -635,7 +670,9 @@ never is. Three stages, each able only to say no:
    the rider **climbed** in from the zone just below Fire (`path: 'climb'`) —
    so the ceremony lands with the garage lights going red, which wait the same
    1s (zone-LED debounce) after the same commit (owner ruling 2026-11-13; it
-   was 5s and read as late). A crossing that **jumped** in from further down
+   was 5s and read as late). The commit itself now needs Fire reached (1a: 2s
+   with a reading above the line, or 5s on it), so a touch of the line lights
+   neither the room nor the ceremony. A crossing that **jumped** in from further down
    keeps `FIRE_CEREMONY_JUMP_SUSTAIN_MS` (5s) and `_JUMP_MIN_SAMPLES` (3)
    (`path: 'jump'`): every false ceremony on record was a corrupt 204 packet on
    a rider in Warm or Cool. Readings are distinct

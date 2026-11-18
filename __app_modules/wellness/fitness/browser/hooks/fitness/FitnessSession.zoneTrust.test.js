@@ -111,10 +111,12 @@ describe('FitnessSession — implausible spikes and returning riders', () => {
     feed('strap-a1', 'rider-a', [90, 90, 90, 90], 1000);
     feed('strap-a1', 'rider-a', [150, 160, 165, 170, 175, 180, 184, 186, 188, 188, 188, 188, 188, 188], 1000);
     feed('strap-a1', 'rider-a', [190, 191], 1000);
+    expect(session.getZoneProfile('rider-a').currentZoneId).toBe('hot'); // Fire is reached in 2s, not touched
+    feed('strap-a1', 'rider-a', [192], 1000);
     expect(session.getZoneProfile('rider-a').currentZoneId).toBe('fire');
     expect(toasts).toEqual([]); // committed, not yet held FIRE_CEREMONY_SUSTAIN_MS
-    feed('strap-a1', 'rider-a', [192, 193, 193, 193, 193], 1000);
-    expect(toasts).toEqual([expect.objectContaining({ userId: 'rider-a', heartRate: 191, fireThreshold: 190, path: 'climb' })]);
+    feed('strap-a1', 'rider-a', [193, 193, 193, 193], 1000);
+    expect(toasts).toEqual([expect.objectContaining({ userId: 'rider-a', heartRate: 192, fireThreshold: 190, path: 'climb' })]);
   });
 
   // Rider C, strap strap-c1, 23:49:57Z: trusted at Hot, 16s of radio silence, a

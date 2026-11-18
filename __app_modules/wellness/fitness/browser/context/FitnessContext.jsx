@@ -2558,7 +2558,7 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
   }, [zoneProfileLookup, zoneConfig]);
 
   // Reaching Fire is called out by name. Driven off the STABILIZED zone, so
-  // ZoneProfileStore's hysteresis (2-sample upward confirm / 5s cooldown / 3s
+  // ZoneProfileStore's hysteresis (2-sample upward confirm, Fire reached not touched / 5s cooldown / 3s
   // stability / 5bpm exit margin) is what keeps this from chattering at the
   // line; the tracker then requires Fire HELD (1s and 2 readings from Hot, so
   // it lands with the garage lights; 5s and 3 for a jump from further down —

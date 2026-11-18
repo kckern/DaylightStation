@@ -16,18 +16,41 @@ describe('displayZoneRecord', () => {
     });
   });
 
-  it('ignores a committed zone held by the exit margin while there is a reading', () => {
-    // Committed Hot (floor 140), HR 137: Warm, 85% of the Warm band.
-    const r = displayZoneRecord({ heartRate: 137, ladder: LADDER, committedZoneId: 'hot', committedZoneColor: 'orange' });
-    expect(r.zoneId).toBe('warm');
-    expect(r.zoneColor).toBe('yellow');
-    expect(r.progress).toBeCloseTo(0.85, 5);
+  it('a drop held by the exit margin keeps the committed zone, bar empty', () => {
+    // Committed Hot (floor 140), HR 137: still Hot until the store lets go.
+    expect(displayZoneRecord({ heartRate: 137, ladder: LADDER, committedZoneId: 'hot', committedZoneColor: 'orange' })).toEqual({
+      zoneId: 'hot', zoneName: 'Hot', zoneColor: 'orange', progress: 0, showBar: true, max: false, live: true,
+    });
   });
 
-  it('shows a crossing at once, before the store confirms it', () => {
-    const r = displayZoneRecord({ heartRate: 141, ladder: LADDER, committedZoneId: 'warm' });
+  it('a climb waits for the commit with the bar full', () => {
+    expect(displayZoneRecord({ heartRate: 141, ladder: LADDER, committedZoneId: 'warm' })).toMatchObject({
+      zoneId: 'warm', zoneColor: 'yellow', progress: 1, showBar: true, max: false,
+    });
+  });
+
+  it('the bar is live inside the committed zone', () => {
+    const r = displayZoneRecord({ heartRate: 150, ladder: LADDER, committedZoneId: 'Hot' });
+    expect(r.zoneId).toBe('hot');
+    expect(r.progress).toBeCloseTo(0.5, 5);
+  });
+
+  it('Fire touched but not held is not shown as Fire', () => {
+    expect(displayZoneRecord({ heartRate: 160, ladder: LADDER, committedZoneId: 'hot' })).toMatchObject({ zoneId: 'hot', progress: 1, max: false });
+  });
+
+  it('a committed Fire under the Fire floor stays Fire until the store drops it', () => {
+    expect(displayZoneRecord({ heartRate: 157, ladder: LADDER, committedZoneId: 'fire' })).toMatchObject({ zoneId: 'fire', progress: 1, showBar: true, max: true });
+  });
+
+  it('nothing committed yet: the zone the BPM is in, at once', () => {
+    const r = displayZoneRecord({ heartRate: 141, ladder: LADDER });
     expect(r.zoneId).toBe('hot');
     expect(r.progress).toBeCloseTo(0.05, 5);
+  });
+
+  it('a committed zone not on the ladder is ignored', () => {
+    expect(displayZoneRecord({ heartRate: 130, ladder: LADDER, committedZoneId: 'turbo' }).zoneId).toBe('warm');
   });
 
   it('reads the BPM as printed: 159.6 shows "160" and is Fire', () => {
@@ -37,10 +60,6 @@ describe('displayZoneRecord', () => {
 
   it('Fire is a full, max bar', () => {
     expect(displayZoneRecord({ heartRate: 171, ladder: LADDER })).toMatchObject({ zoneId: 'fire', progress: 1, showBar: true, max: true });
-  });
-
-  it('a committed Fire under the Fire floor is not shown as Fire', () => {
-    expect(displayZoneRecord({ heartRate: 157, ladder: LADDER, committedZoneId: 'fire' })).toMatchObject({ zoneId: 'hot', max: false });
   });
 
   it('uses the validated ladder over the fallback', () => {

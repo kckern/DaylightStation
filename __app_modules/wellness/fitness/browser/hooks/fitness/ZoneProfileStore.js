@@ -54,6 +54,21 @@ const EXIT_MARGIN_BPM = 5;
 // false-fire-ceremonies-recurring.md). A real climb pays about 1s.
 export const UPWARD_CONFIRM_SAMPLES = 2;
 export const UPWARD_CONFIRM_MS = 1000;
+// Fire must be REACHED, not touched. On 2026-11-17 a rider sat at exactly 160
+// on a 160 floor for ~3s (160, 160, 160, then 159); the 1s confirm committed
+// Fire, the garage went red and the ceremony played. His real Fire that day
+// went 161, 162, 162... What tells them apart is the peak, not the length (a
+// pure hold short enough to feel quick lets the touch through; owner: 6s to
+// red is too long). So Fire commits on whichever comes first:
+//   QUICK: held FIRE_QUICK_CONFIRM_MS with a reading ABOVE the floor (~3s to red)
+//   HELD:  held FIRE_UPWARD_CONFIRM_MS at all — someone parked on the line
+// The commit is what the LEDs, the ceremony and the avatar ring all follow, so
+// they wait together.
+export const FIRE_ZONE_ID = 'fire';
+export const FIRE_QUICK_CONFIRM_SAMPLES = 2;
+export const FIRE_QUICK_CONFIRM_MS = 2000;
+export const FIRE_UPWARD_CONFIRM_SAMPLES = 3;
+export const FIRE_UPWARD_CONFIRM_MS = 5000;
 // A rider whose reading was lost resumes their zone without a fresh Cool when
 // this store holds confirmed evidence for them from the same strap, at most
 // this old. A new session never has evidence, so a strap still emitting a
@@ -395,9 +410,15 @@ export class ZoneProfileStore {
     }
     const zoneTrusted = this._trustedUsers.has(userId);
     const previousZone = this._hysteresis.get(userId)?.committedZoneId ?? null;
+    // A resume lands on the CURRENT reading's zone at once — except Fire, which
+    // must still be held: a rider whose evidence was below Fire starts from that
+    // zone and climbs through the normal Fire hold.
+    const resumeFloorZoneId = resumed && rawZoneId === FIRE_ZONE_ID && resumed.evidence?.zoneId !== FIRE_ZONE_ID
+      ? (resumed.evidence?.zoneId ?? null)
+      : null;
     const stabilized = this.#applyHysteresis(
       userId, zoneTrusted ? rawZoneId : null, committedLadder || [],
-      zoneTrusted && eligible ? heartRate : null, sampleAt
+      zoneTrusted && eligible ? heartRate : null, sampleAt, resumeFloorZoneId
     );
     // Keep raw display/progress available before trust, without publishing it as
     // earned state. Only an accepted reading can justify a newly committed zone.
@@ -450,6 +471,7 @@ export class ZoneProfileStore {
         commitPath: stabilized.commitPath ?? null,
         rawSamples: stabilized.rawSamples ?? null,
         rawStableMs: stabilized.rawStableMs ?? null,
+        rawPeakHr: stabilized.rawPeakHr ?? null,
         zoneEntry: this._zoneEntries.get(userId) || null
       });
     }
@@ -639,6 +661,8 @@ export class ZoneProfileStore {
    * - First accepted Cool baseline (or resumed zone): instant
    * - Upward move: needs UPWARD_CONFIRM_SAMPLES separate samples in the higher
    *   zone spanning UPWARD_CONFIRM_MS — one corrupt packet cannot commit it
+   *   (Fire: FIRE_QUICK_CONFIRM_* with a reading above the floor, else
+   *   FIRE_UPWARD_CONFIRM_SAMPLES spanning FIRE_UPWARD_CONFIRM_MS)
    * - Downward move after a quiet HYSTERESIS_COOLDOWN_MS: instant
    * - Rapid toggling (second change within HYSTERESIS_COOLDOWN_MS): require
    *   the new zone to be stable for HYSTERESIS_STABILITY_MS before committing
@@ -648,7 +672,7 @@ export class ZoneProfileStore {
    * @param {Array} zoneConfig - normalized zone config for name/color lookup
    * @returns {{ zoneId: string|null, zoneName: string|null, zoneColor: string|null, rawZoneId: string|null, rawZoneName: string|null, rawZoneColor: string|null }}
    */
-  #applyHysteresis(userId, rawZoneId, zoneConfig, heartRate, sampleAt = null) {
+  #applyHysteresis(userId, rawZoneId, zoneConfig, heartRate, sampleAt = null, seedZoneId = null) {
     const ts = now();
     const lookupZone = (id) => {
       if (!id) return { zoneId: null, zoneName: null, zoneColor: null };
@@ -689,12 +713,29 @@ export class ZoneProfileStore {
     // whatever we have, no delay. Both entries into trust already passed
     // their own plausibility rule.
     if (!state) {
+      // Resumed straight into Fire from evidence below it: commit the evidence
+      // zone and let Fire earn its hold (FIRE_UPWARD_CONFIRM_MS) like any climb.
+      if (seedZoneId && seedZoneId !== rawZoneId && getZoneRank(seedZoneId) >= 0
+          && getZoneRank(seedZoneId) < getZoneRank(rawZoneId)) {
+        this._hysteresis.set(userId, {
+          committedZoneId: seedZoneId,
+          // Not a zone change (the rider already had this zone): no cooldown.
+          lastCommitTs: ts - HYSTERESIS_COOLDOWN_MS - 1,
+          rawZoneId,
+          rawZoneStableSince: ts,
+          rawSamples: 1,
+          rawPeakHr: heartRate,
+          lastSampleAt: sampleAt
+        });
+        return { ...lookupZone(seedZoneId), ...lookupRawZone(rawZoneId), commitPath: 'resume-below-fire', rawSamples: 1, rawStableMs: 0 };
+      }
       this._hysteresis.set(userId, {
         committedZoneId: rawZoneId,
         lastCommitTs: ts,
         rawZoneId,
         rawZoneStableSince: ts,
         rawSamples: 1,
+        rawPeakHr: heartRate,
         lastSampleAt: sampleAt
       });
       return { ...lookupZone(rawZoneId), ...lookupRawZone(rawZoneId), commitPath: 'instant-first', rawSamples: 1, rawStableMs: 0 };
@@ -707,8 +748,10 @@ export class ZoneProfileStore {
       state.rawZoneId = rawZoneId;
       state.rawZoneStableSince = ts;
       state.rawSamples = 1;
+      state.rawPeakHr = heartRate;
     } else if (isNewSample) {
       state.rawSamples = (state.rawSamples || 0) + 1;
+      state.rawPeakHr = Math.max(state.rawPeakHr ?? heartRate, heartRate);
     }
 
     // Raw zone matches committed — no change needed
@@ -731,6 +774,7 @@ export class ZoneProfileStore {
           state.rawZoneId = state.committedZoneId;
           state.rawZoneStableSince = ts;
           state.rawSamples = 1;
+          state.rawPeakHr = heartRate;
           return { ...lookupZone(state.committedZoneId), ...lookupRawZone(rawZoneId) };
         }
       }
@@ -740,7 +784,7 @@ export class ZoneProfileStore {
     const timeSinceLastCommit = ts - state.lastCommitTs;
     const rawStableDuration = ts - state.rawZoneStableSince;
     const upward = rawRank > committedRank;
-    const trace = { rawSamples: state.rawSamples, rawStableMs: rawStableDuration };
+    const trace = { rawSamples: state.rawSamples, rawStableMs: rawStableDuration, rawPeakHr: state.rawPeakHr ?? null };
     const commit = (commitPath) => {
       state.committedZoneId = rawZoneId;
       state.lastCommitTs = ts;
@@ -748,7 +792,17 @@ export class ZoneProfileStore {
     };
 
     // An upward move is a claim of effort; one packet is not evidence of it.
-    if (upward && !(state.rawSamples >= UPWARD_CONFIRM_SAMPLES && rawStableDuration >= UPWARD_CONFIRM_MS)) {
+    const held = (samples, ms) => state.rawSamples >= samples && rawStableDuration >= ms;
+    let confirmed;
+    if (rawZoneId === FIRE_ZONE_ID) {
+      const fireMin = getZoneMinThreshold(FIRE_ZONE_ID);
+      const reachedAbove = fireMin !== null && Math.round(state.rawPeakHr ?? 0) > fireMin;
+      confirmed = (reachedAbove && held(FIRE_QUICK_CONFIRM_SAMPLES, FIRE_QUICK_CONFIRM_MS))
+        || held(FIRE_UPWARD_CONFIRM_SAMPLES, FIRE_UPWARD_CONFIRM_MS);
+    } else {
+      confirmed = held(UPWARD_CONFIRM_SAMPLES, UPWARD_CONFIRM_MS);
+    }
+    if (upward && !confirmed) {
       return { ...lookupZone(state.committedZoneId), ...lookupRawZone(rawZoneId), commitPath: 'pending-upward', ...trace };
     }
 

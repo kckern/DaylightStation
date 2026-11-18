@@ -116,26 +116,36 @@
       stroke: rgba(0, 0, 0, 0.85);
     }
 
+    // Arc lengths and the dot's angle are animated frame by frame from
+    // CircularUserAvatar.jsx (a zone crossing laps the ring) — no CSS
+    // transition on either, or the two would fight.
     .gauge-arc-progress {
       stroke: var(--vital-ring-color, rgba(255, 255, 255, 0.4));
-      transition: stroke-dashoffset 0.3s ease-in-out;
     }
+  }
+
+  // The dot rides an orbit the size of the avatar, turned to the meter's angle,
+  // so its radius follows the avatar box even when the size is a percentage
+  // (the sidebar passes size="100%"; a translateX percentage would measure
+  // the 10px dot instead and park it at the centre).
+  .zone-progress-orbit {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    z-index: 5;
+    transform: rotate(var(--indicator-angle, 180deg));
   }
 
   .zone-progress-indicator {
     position: absolute;
     top: 50%;
-    left: 50%;
+    left: calc(100% + var(--vital-ring-width, 6px) * 0.35);
     width: 10px;
     height: 10px;
     border-radius: 50%;
     background: #fff;
     box-shadow: 0 0 10px rgba(255, 255, 255, 0.85);
-    pointer-events: none;
-    z-index: 5;
-    transform-origin: center;
-    transform: translate(-50%, -50%) rotate(var(--indicator-angle, 180deg)) translateX(calc(var(--vital-avatar-size, 76px) * 0.5 + var(--vital-ring-width, 6px) * 0.35));
-    transition: transform 0.3s ease-in-out;
+    transform: translate(-50%, -50%);
   }
 
   // 5B: Fire zone visual enhancements
@@ -201,11 +211,14 @@
     100% { transform: translate(-50%, -50%) rotate(360deg); }
   }
 
+  // The flicker carries each beam's placement (--beam-place) in its transform:
+  // a bare scaleY() here REPLACED the placement, and every beam collapsed to
+  // the centre behind the avatar once its stagger delay ran out.
   @keyframes flicker-beam {
-    0%, 100% { opacity: 0.6; transform: scaleY(1); }
-    25% { opacity: 0.9; transform: scaleY(1.1); }
-    50% { opacity: 0.5; transform: scaleY(0.95); }
-    75% { opacity: 0.85; transform: scaleY(1.05); }
+    0%, 100% { opacity: 0.6; transform: var(--beam-place) scaleY(1); }
+    25% { opacity: 0.9; transform: var(--beam-place) scaleY(1.1); }
+    50% { opacity: 0.5; transform: var(--beam-place) scaleY(0.95); }
+    75% { opacity: 0.85; transform: var(--beam-place) scaleY(1.05); }
   }
 
   .fire-sunbeams {
@@ -219,31 +232,31 @@
     z-index: 0;
     animation: spin-sunbeams 8s linear infinite;
 
+    // A triangle pointing outward, sized in percentages of the beam box
+    // (1.8x the avatar) so it works when the avatar size is a percentage too:
+    // its base sits 0.55 avatar from the centre, it reaches 0.5 avatar out.
     .sunbeam {
       position: absolute;
-      top: 50%;
+      bottom: 50%;
       left: 50%;
-      width: 0;
-      height: 0;
-      // Triangular sunbeam using borders
-      border-left: 8px solid transparent;
-      border-right: 8px solid transparent;
-      border-bottom: calc(var(--vital-avatar-size, 76px) * 0.5) solid;
-      border-bottom-color: rgba(239, 68, 68, 0.7);
-      transform-origin: center bottom;
-      transform: 
-        translate(-50%, -100%)
-        rotate(calc(var(--beam-index) * 30deg))
-        translateY(calc(var(--vital-avatar-size, 76px) * -0.55));
+      width: 11.7%;
+      height: 27.8%;
+      margin-left: -5.85%;
+      background: rgba(239, 68, 68, 0.7);
+      clip-path: polygon(50% 0, 100% 100%, 0 100%);
+      transform-origin: 50% 100%;
+      --beam-place: rotate(calc(var(--beam-index) * 30deg)) translateY(-110%);
+      transform: var(--beam-place);
       animation: flicker-beam 0.8s ease-in-out infinite;
       animation-delay: calc(var(--beam-index) * 0.1s);
       filter: blur(1px);
 
       &:nth-child(odd) {
-        border-left-width: 6px;
-        border-right-width: 6px;
-        border-bottom-width: calc(var(--vital-avatar-size, 76px) * 0.4);
-        border-bottom-color: rgba(251, 146, 60, 0.6);
+        width: 8.8%;
+        height: 22.2%;
+        margin-left: -4.4%;
+        background: rgba(251, 146, 60, 0.6);
+        --beam-place: rotate(calc(var(--beam-index) * 30deg)) translateY(-137.5%);
       }
     }
   }

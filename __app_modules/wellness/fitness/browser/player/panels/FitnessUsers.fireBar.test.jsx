@@ -56,32 +56,31 @@ describe('FitnessUsers zone bar on Fire', () => {
     expect(fill(container)).toBe('40%'); // 128 on the 120→140 Warm band
   });
 
-  it('a committed zone held by the exit margin does not colour the card: colour and bar agree with the BPM', async () => {
-    // Committed Hot (floor 140), now at 137: the card is Warm with a Warm-band
-    // bar — not Hot over a "nearly at Fire"-looking bar (2026-11-13 report).
+  it('a drop held by the exit margin keeps the committed zone, its bar empty', async () => {
+    // Committed Hot (floor 140), now at 137: still Hot (the garage lights are
+    // too) until the store lets go; the bar is measured on Hot, so it is empty
+    // rather than a Warm-band bar under a Hot colour (2026-11-13 report).
     testState.context = context('hot', 137);
     const { container } = render(<FitnessUsersList />);
     await waitFor(() => expect(container.querySelector('.zone-progress-bar')).toBeTruthy());
-    expect(card(container).className).toMatch(/zone-warm/);
-    expect(card(container).className).not.toMatch(/zone-hot/);
-    expect(fill(container)).toBe('85%');
+    expect(card(container).className).toMatch(/zone-hot/);
+    expect(fill(container)).toBe('0%');
   });
 
-  it('an upward crossing still awaiting confirmation shows the new zone and its fresh bar', async () => {
-    // Committed Warm; the BPM just reached Hot (142).
+  it('an upward crossing still awaiting confirmation keeps the zone, its bar full', async () => {
+    // Committed Warm; the BPM just reached Hot (142). Hot shows once confirmed.
     testState.context = context('warm', 142);
     const { container } = render(<FitnessUsersList />);
     await waitFor(() => expect(container.querySelector('.zone-progress-bar')).toBeTruthy());
-    expect(card(container).className).toMatch(/zone-hot/);
-    expect(fill(container)).toBe('10%');
+    expect(card(container).className).toMatch(/zone-warm/);
+    expect(fill(container)).toBe('100%');
   });
 
-  it('just below the Fire floor, a committed Fire is not shown as Fire', async () => {
+  it('a committed Fire just below the Fire floor stays Fire until the store drops it', async () => {
     testState.context = context('fire', 157);
     const { container } = render(<FitnessUsersList />);
     await waitFor(() => expect(container.querySelector('.zone-progress-bar')).toBeTruthy());
-    expect(container.querySelector('.zone-progress-bar--max')).toBeNull();
-    expect(card(container).className).toMatch(/zone-hot/);
-    expect(fill(container)).toBe('85%');
+    expect(container.querySelector('.zone-progress-bar--max')).not.toBeNull();
+    expect(card(container).className).toMatch(/zone-fire/);
   });
 });

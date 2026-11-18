@@ -49,9 +49,9 @@ describe('FitnessUsers strap identity and earned zone', () => {
     expect(container.querySelector('.fitness-device').classList.contains(zoneId ? `zone-${zoneId}` : 'zone-fire')).toBe(true);
   });
 
-  it('shows the zone of the BPM it prints, on the rider\'s validated ladder, over a lagging committed zone', async () => {
-    // Committed Active (anti-flap) while the card prints 141: on the rider's
-    // own ladder (Hot from 140) the card, badge and bar all say Hot.
+  it('measures the bar on the rider\'s validated ladder, in the committed zone', async () => {
+    // Committed Hot while the card prints 141: on the rider's own ladder (Hot
+    // from 140) the card, badge and bar all say Hot, 5% into the band.
     const ladder = [
       { id: 'cool', name: 'Cool', min: 0, color: 'blue' },
       { id: 'active', name: 'Active', min: 100, color: 'green' },
@@ -60,7 +60,7 @@ describe('FitnessUsers strap identity and earned zone', () => {
       { id: 'fire', name: 'Fire', min: 160, color: 'red' },
     ];
     testState.context = { ...context({ name: 'Rider A', zoneId: 'warm', rawZoneId: 'fire' }),
-      zoneProfiles: [{ id: 'rider-a', name: 'Rider A', zoneTrusted: true, currentZoneId: 'active', zoneConfig: ladder }] };
+      zoneProfiles: [{ id: 'rider-a', name: 'Rider A', zoneTrusted: true, currentZoneId: 'hot', zoneConfig: ladder }] };
     const { container } = render(<FitnessUsersList />);
     await waitFor(() => expect(container.querySelector('.fitness-device.zone-hot')).toBeTruthy());
     expect(container.querySelector('.device-value').textContent).toBe('141');

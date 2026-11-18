@@ -2,15 +2,24 @@ import { deriveZoneProgressSnapshot } from "../hooks/fitness/types.js";
 
 // THE zone a rider SEES: card colour, zone badge, progress bar, avatar ring and
 // the Fire treatment all come from this one record, so they can never disagree
-// with each other or with the BPM printed beside them.
+// with each other.
 //
-// It is built from the heart rate on screen, on the ladder ZoneProfileStore
-// validated for that rider (its committed ladder) — not from the committed
-// zone. The committed zone carries the anti-flap rules (exit margin, upward
-// confirmation, cooldown) and stays the authority for governance, challenges
-// and TreasureBox; it lags the reading on purpose. Pairing a committed colour
-// with a live progress bar is what showed an orange card with a "nearly at
-// Hot" bar for a rider who had just slipped back into Warm (2026-11-13).
+// The ZONE is the committed one — the zone ZoneProfileStore settled on with its
+// anti-flap rules (upward confirmation, Fire reached not touched, exit margin, cooldown).
+// The garage LEDs, governance and the Fire ceremony follow the same commit, so
+// the ring turns red exactly when the room does, and a rider hovering on a line
+// does not flip colour (and lap the ring) on every packet. Owner, 2026-11-17:
+// "a little bit of stickiness".
+//
+// The BAR is live: the heart rate on screen, measured on that zone's band of
+// the ladder ZoneProfileStore validated for the rider. A reading past the band
+// pins it — full while a climb waits to be confirmed, empty while a drop is
+// held by the exit margin. (Measuring a live zone's bar under a committed colour
+// is what showed an orange card with a "nearly at Hot" bar for a rider back in
+// Warm, 2026-11-13.)
+//
+// No committed zone on the ladder (nothing settled yet) → the zone the BPM is
+// in, as before.
 //
 // No live reading (a strap gap inside the HR-loss grace) → the committed zone
 // the store is holding, with no bar: there is no number to measure progress
@@ -43,7 +52,26 @@ export function displayZoneRecord({
   if (bpm && zones) {
     const snap = deriveZoneProgressSnapshot({ zoneConfig: zones, heartRate: bpm });
     if (snap?.currentZoneId) {
-      const zoneId = String(snap.currentZoneId).toLowerCase();
+      const liveId = String(snap.currentZoneId).toLowerCase();
+      const sequence = Array.isArray(snap.zoneSequence) ? snap.zoneSequence : [];
+      const rankOf = (id) => sequence.findIndex((z) => String(z?.id || '').toLowerCase() === id);
+      const held = committedZoneId ? String(committedZoneId).toLowerCase() : null;
+      const heldRank = held ? rankOf(held) : -1;
+      const liveRank = rankOf(liveId);
+      if (heldRank >= 0 && liveRank >= 0 && heldRank !== liveRank) {
+        const zone = sequence[heldRank];
+        const max = held === 'fire';
+        return {
+          zoneId: held,
+          zoneName: zone?.name || committedZoneName || held,
+          zoneColor: zone?.color || committedZoneColor || null,
+          progress: max || liveRank > heldRank ? 1 : 0,
+          showBar: true,
+          max,
+          live: true,
+        };
+      }
+      const zoneId = liveId;
       const max = zoneId === 'fire';
       return {
         zoneId,
