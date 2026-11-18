@@ -11,6 +11,16 @@ export function dayName(iso, today) {
 const meals = () => Object.fromEntries(MEAL_BUCKETS.map(bucket => [bucket.id, bucket.label]));
 const foodState = foods => Object.fromEntries(foods.map((food, index) => [`food_${index}`, food.description || food.name]));
 
+// A malformed answer must stop here: acting on it could move the wrong rows.
+const picked = (answer, options) => {
+  if (answer?.type !== 'choice' || typeof answer.choice !== 'string' || !Object.hasOwn(options, answer.choice)) throw new Error('Invalid decision answer');
+  return answer.choice;
+};
+const isYes = answer => {
+  if (answer?.type !== 'yesNo' || !Number.isFinite(answer.probability) || answer.probability < 0 || answer.probability > 1) throw new Error('Invalid decision answer');
+  return answer.probability >= 0.5;
+};
+
 /** Typed readings of one utterance. Answers are options, never free text. */
 export class DayInstructionReader {
   #gateway;
@@ -18,37 +28,49 @@ export class DayInstructionReader {
   get available() { return Boolean(this.#gateway); }
 
   async read({ text, date, today, foods, latest }) {
-    const dayOptions = { same: 'No day change was asked for', older: 'A specific day older than every listed day' };
+    const intentOptions = {
+      add: 'It reports food eaten that is not on the list yet',
+      move: 'It says listed food belongs on another day or in another meal',
+      change: 'It corrects what a listed food actually was or how much of it there was',
+      other: 'It asks for something this cannot do, such as deleting food, or it is a question',
+    };
+    const targetOptions = {
+      latest: 'The most recent capture, with words like "that", "those" or "it"; see `latest_capture`',
+      whole_day: 'Everything on this day',
+      meal: 'Everything in one meal',
+      named: 'Particular foods or a kind of food, such as "the drinks"',
+      unclear: 'It cannot be told which food is meant',
+    };
+    const fromMealOptions = { ...meals(), none: 'No meal is named as the one the food is leaving' };
+    const toMealOptions = { same: 'No meal change was asked for', ...meals() };
+    const toDayOptions = { same: 'No day change was asked for', older: 'A specific day older than every listed day' };
     for (let index = 0; index < 7; index += 1) {
       const iso = addDaysISO(today, -index);
-      if (iso !== date) dayOptions[iso] = `${dayName(iso, today)} (${at(iso).toLocaleDateString('en-US', { weekday: 'long', timeZone: 'UTC' })}, ${iso})`;
+      if (iso !== date) toDayOptions[iso] = `${dayName(iso, today)} (${at(iso).toLocaleDateString('en-US', { weekday: 'long', timeZone: 'UTC' })}, ${iso})`;
     }
     const { answers } = await this.#gateway.evaluate({ said: text, viewed_day: dayName(date, today), foods_on_this_day: foods, latest_capture: latest }, {
-      intent: choice('What does `said` ask for, given `foods_on_this_day`?', {
-        add: 'It reports food eaten that is not on the list yet',
-        move: 'It says listed food belongs on another day or in another meal',
-        change: 'It corrects what a listed food actually was or how much of it there was',
-      }),
-      target: choice('Which listed food does `said` refer to?', {
-        latest: 'The most recent capture, with words like "that", "those" or "it"; see `latest_capture`',
-        whole_day: 'Everything on this day',
-        meal: 'Everything in one meal',
-        named: 'Particular foods or a kind of food, such as "the drinks"',
-      }),
-      fromMeal: choice('If `said` refers to one whole meal, which meal?', meals()),
-      toMeal: choice('Which meal should the food go to?', { same: 'No meal change was asked for', ...meals() }),
-      toDay: choice('Which day should the food go to?', dayOptions),
-      compound: yesNo('Does `said` ask for two or more separate corrections to logged food?'),
+      intent: choice('What does `said` ask for, given `foods_on_this_day` on `viewed_day`?', intentOptions),
+      target: choice('Which of `foods_on_this_day` on `viewed_day` does `said` refer to?', targetOptions),
+      fromMeal: choice('Which meal does `said` say the food is being moved out of?', fromMealOptions),
+      toMeal: choice('According to `said`, which meal should the food it mentions move to?', toMealOptions),
+      toDay: choice('According to `said`, which day should the food it mentions move to?', toDayOptions),
+      compound: yesNo('Does `said` ask for two or more different actions, such as moving one food and correcting another, or logging a new food and also changing a logged one? Listing several foods that were eaten counts as one action.'),
     });
-    return { intent: answers.intent.choice, target: answers.target.choice, fromMeal: answers.fromMeal.choice,
-      toMeal: answers.toMeal.choice, toDay: answers.toDay.choice, compound: answers.compound.probability >= 0.5 };
+    return {
+      intent: picked(answers.intent, intentOptions),
+      target: picked(answers.target, targetOptions),
+      fromMeal: picked(answers.fromMeal, fromMealOptions),
+      toMeal: picked(answers.toMeal, toMealOptions),
+      toDay: picked(answers.toDay, toDayOptions),
+      compound: isYes(answers.compound),
+    };
   }
 
   async matchFoods({ text, foods }) {
     if (!foods.length) return [];
     const questions = Object.fromEntries(foods.map((_food, index) => [`food_${index}`, yesNo(`Does \`said\` refer to \`food_${index}\`?`)]));
     const { answers } = await this.#gateway.evaluate({ said: text, ...foodState(foods) }, questions);
-    return foods.filter((_food, index) => answers[`food_${index}`].probability >= 0.5).map(food => food.id);
+    return foods.filter((_food, index) => isYes(answers[`food_${index}`])).map(food => food.id);
   }
 
   async assignMeals({ text, foods }) {
@@ -57,7 +79,7 @@ export class DayInstructionReader {
     const questions = Object.fromEntries(foods.map((_food, index) => [`meal_${index}`, choice(`According to \`said\`, at which meal was \`food_${index}\` eaten?`, options)]));
     const { answers } = await this.#gateway.evaluate({ said: text, ...foodState(foods) }, questions);
     return Object.fromEntries(foods.flatMap((food, index) => {
-      const meal = answers[`meal_${index}`].choice;
+      const meal = picked(answers[`meal_${index}`], options);
       return meal === 'unsaid' ? [] : [[food.id, meal]];
     }));
   }
