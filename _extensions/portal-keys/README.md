@@ -362,7 +362,13 @@ use event sequence numbers for duplicate suppression when needed.
 The receiver handles `home-lost/restored`, `policy-lost/restored`,
 `fkb-lost/restored`, and `heartbeat` events. Heartbeats carry `checkedAt` and
 `fkbCheckedAt` so an independent server detects either checking thread stopping,
-as well as a dead APK. The deployed Home Assistant receiver
+as well as a dead APK. The receiver must judge that freshness on the Portal's
+own clock (`at − checkedAt`, `at − fkbCheckedAt`), never against its own `now()`:
+the two clocks differ by a few hundred ms, and a `0 <= now − checkedAt` test
+rejected every heartbeat whose check landed in that window — runs of three made
+false 15-second silences and paged the phone ~30 times a day (2026-11-15..17).
+Arrival proves liveness; a loose bound on `at` against the receiver's clock only
+catches a device clock gone badly wrong. The deployed Home Assistant receiver
 notifies the parent's phone on breach and recovery; an independent five-second
 check alerts after fifteen seconds without a recent check report. Configure
 its webhook ID through HA secrets, and keep the URL in the household's private
