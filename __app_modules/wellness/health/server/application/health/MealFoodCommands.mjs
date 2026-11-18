@@ -7,7 +7,7 @@ import { NUTRIENT_KEYS, foodGrams, scaleFoodPortion } from '../../../portable/co
 const idOf = row => row.uuid || row.id;
 const linkIds = row => [row.uuid, row.id].filter(Boolean);
 /** A dish part may name its dish by either ID. A uuid always wins over another row's short ID. */
-const indexByLinkId = rows => {
+export const indexByLinkId = rows => {
   const index = new Map(rows.filter(row => row.uuid).map(row => [row.uuid, row]));
   for (const row of rows) if (row.id && !index.has(row.id)) index.set(row.id, row);
   return index;
