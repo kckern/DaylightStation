@@ -1,4 +1,9 @@
-import { describe, it, expect, vi } from 'vitest';
+import { afterEach, beforeEach, describe, it, expect, vi } from 'vitest';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { sha256Text } from '#system/utils/sha256.mjs';
+import { YamlNutriListDatastore } from '../../adapters/persistence/yaml/YamlNutriListDatastore.mjs';
 import { DayInstructionService } from './DayInstructionService.mjs';
 import { MealFoodCommands } from './MealFoodCommands.mjs';
 
@@ -6,7 +11,7 @@ const date = '2026-11-18', today = date;
 const rows = [
   { uuid: 'eggs', name: 'Eggs', date, mealTime: 'morning', logId: 'old', createdAt: '2026-11-18T08:00:00Z', version: 1 },
   { uuid: 'tea', name: 'Iced tea', date, mealTime: 'afternoon', logId: 'new', createdAt: '2026-11-18T12:00:00Z', version: 2 },
-  { uuid: 'milk', name: 'Milk', date, mealTime: 'afternoon', logId: 'new', createdAt: '2026-11-18T12:00:00Z', version: 1 },
+  { uuid: 'milk', name: 'Milk', grams: 200, amount: 200, unit: 'g', date, mealTime: 'afternoon', logId: 'new', createdAt: '2026-11-18T12:00:00Z', version: 1 },
 ];
 // Parts name their dish by its short ID, one of the two links the ledger allows.
 const dishRows = [
@@ -84,7 +89,7 @@ describe('DayInstructionService', () => {
     expect(h.entryRevisions.propose).toHaveBeenCalledWith('u', { entryUuid: 'milk', instruction: 'that was actually whole milk' });
     const command = h.mealCommands.execute.mock.calls[0][1];
     expect(command).toMatchObject({ action: 'amend', date, bucket: 'afternoon', selectedIds: ['milk'] });
-    expect(command.changes.milk).toEqual({ name: 'Whole Milk', grams: 240, amount: 240, unit: 'g', calories: 149 });
+    expect(command.changes.milk).toEqual({ name: 'Whole Milk', color: 'yellow', grams: 240, amount: 240, unit: 'g', calories: 149 });
     expect(result).toMatchObject({ kind: 'changed', message: 'Changed Milk to Whole Milk', undoToken: 'meal-a' });
   });
   it('a dump is captured, then placed across meals', async () => {
@@ -161,7 +166,7 @@ describe('DayInstructionService', () => {
       await first.run('whole milk');
       const stored = { [childId(first.mealCommands.execute)]: { committed: true, undoToken: 'meal-a', items: [{ uuid: 'milk', name: 'Whole Milk' }] } };
       const again = harness(plan({ intent: 'change' }), { stored });
-      expect(await again.run('whole milk')).toMatchObject({ outcome: 'committed', kind: 'changed', undoToken: 'meal-a', message: 'Changed to Whole Milk' });
+      expect(await again.run('whole milk')).toMatchObject({ outcome: 'committed', kind: 'changed', undoToken: 'meal-a', message: 'Updated Whole Milk' });
       expect(again.entryRevisions.propose).not.toHaveBeenCalled();
       expectNoWrites(again);
     });
@@ -263,6 +268,192 @@ describe('DayInstructionService', () => {
       expect(mutateEntries.mock.calls[0][1].updates.map(update => update.id)).toEqual(['dish-uuid', 'rice', 'beans', 'old-part']);
       await decide(plan({ intent: 'change', target: 'named' }), ['rice']).execute('u', { text: 'that was brown rice', date, today, operationId: 'change' });
       expect(mutateEntries.mock.calls[1][1].updates.map(update => update.id)).toEqual(['rice']);
+    });
+  });
+
+  describe('correcting a food', () => {
+    const milk = extra => ({ ...rows[2], ...extra });
+    const change = (proposal, pinned, dayRows = [milk()]) => {
+      const h = harness(plan({ intent: 'change' }), { dayRows });
+      h.entryRevisions.propose.mockResolvedValue({ proposal, pinned });
+      return h;
+    };
+    const sent = h => h.mealCommands.execute.mock.calls[0][1].changes.milk;
+    it('leaves the quantity alone on a food with no gram mass', async () => {
+      const h = change({ name: 'Whole Milk', grams: 240, amount: 240, unit: 'g', calories: 149 }, [], [milk({ grams: null, amount: 1, unit: 'cup' })]);
+      await h.run('that was whole milk');
+      expect(sent(h)).toEqual({ name: 'Whole Milk', calories: 149 });
+    });
+    it('holds back hand-set fields and says so', async () => {
+      const h = change({ name: 'Whole Milk', calories: 149 }, ['calories']);
+      expect((await h.run('that was whole milk')).message).toBe('Changed Milk to Whole Milk. I kept the details you set by hand.');
+      expect(sent(h)).toEqual({ name: 'Whole Milk' });
+    });
+    it('treats the quantity as one thing when any part of it was set by hand', async () => {
+      const h = change({ name: 'Whole Milk', grams: 240, amount: 240, unit: 'g' }, ['grams']);
+      await h.run('that was whole milk');
+      expect(sent(h)).toEqual({ name: 'Whole Milk' });
+    });
+    it('writes nothing when every proposed field was set by hand', async () => {
+      const h = change({ name: 'Whole Milk' }, ['name']);
+      expect(await h.run('that was whole milk')).toMatchObject({ committed: false, outcome: 'no-change', message: 'Those details were set by hand, so I left them.' });
+      expectNoWrites(h);
+    });
+    it('never replaces a known nutrient with an unknown one', async () => {
+      const h = change({ name: 'Whole Milk', protein: null, fat: null }, [], [milk({ protein: 8 })]);
+      await h.run('that was whole milk');
+      expect(sent(h)).toEqual({ name: 'Whole Milk', fat: null });
+    });
+    it('says "Updated" when the name stayed the same', async () => {
+      const h = change({ name: 'Milk', calories: 149 }, []);
+      expect((await h.run('that was more milk')).message).toBe('Updated Milk');
+    });
+    it('passes on a refused correction', async () => {
+      const h = change({ name: 'x' }, []);
+      h.entryRevisions.propose.mockRejectedValue(Object.assign(new Error('Too long'), { status: 422, code: 'INVALID_REVISION' }));
+      await expect(h.run('that was milk')).rejects.toMatchObject({ status: 422, code: 'INVALID_REVISION', message: 'Too long' });
+    });
+    it.each([[new Error('socket hang up')], [Object.assign(new Error('Upstream'), { status: 429 })]])('answers 503 when the revision fails upstream', async error => {
+      const h = change({ name: 'x' }, []);
+      h.entryRevisions.propose.mockRejectedValue(error);
+      await expect(h.run('that was milk')).rejects.toMatchObject({ status: 503, code: 'DAY_INPUT_UNAVAILABLE' });
+      expect(h.logger.warn).toHaveBeenCalledWith('health.day_instruction.revision_failed', expect.objectContaining({ error: error.message }));
+      expectNoWrites(h);
+    });
+  });
+
+  describe('after food is logged', () => {
+    it('still reports it when the logged rows cannot be read back', async () => {
+      const h = harness(plan({ intent: 'add' }));
+      h.nutritionItems.findByLogId.mockRejectedValue(new Error('disk'));
+      h.captureFoods.mockResolvedValue({ committed: true, logId: 'new', items: [{ uuid: 'eggs', name: 'Eggs', logId: 'new' }] });
+      expect(await h.run('eggs')).toMatchObject({ committed: true, outcome: 'committed', kind: 'added', logId: 'new', message: 'Logged Eggs' });
+      expect(h.logger.warn).toHaveBeenCalledWith('health.day_instruction.logged_read_failed', expect.objectContaining({ error: 'disk' }));
+    });
+    it('finds the capture through its items when no log ID is returned', async () => {
+      const h = harness(plan({ intent: 'add' }));
+      h.captureFoods.mockResolvedValue({ committed: true, items: [{ uuid: 'eggs', name: 'Eggs', logId: 'from-item' }] });
+      expect((await h.run('eggs')).logId).toBe('from-item');
+      expect(h.mealCommands.placeCapturedFoods.mock.calls[0][1].logId).toBe('from-item');
+    });
+    it('does not count foods it cannot see', async () => {
+      const h = harness(plan({ intent: 'add' }));
+      h.captureFoods.mockResolvedValue({ committed: true });
+      expect(await h.run('eggs')).toMatchObject({ committed: true, kind: 'added', message: 'Logged your food' });
+      expect(h.mealCommands.placeCapturedFoods).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('answering a question', () => {
+    it.each([['a day with food', rows], ['an empty day', []]])('never logs the words as food on %s', async (_label, dayRows) => {
+      const h = harness(plan({ intent: 'add' }), { dayRows });
+      expect(await h.run('two weeks ago', { resolved: { toDate: '2026-11-04' } })).toMatchObject({ committed: false, outcome: 'no-change', message: 'Please say that again.' });
+      expectNoWrites(h);
+    });
+  });
+
+  describe('against the real ledger', () => {
+    let root, store, commands;
+    const yesterday = '2026-11-17';
+    const food = (uuid, extra) => ({ uuid, label: uuid, grams: 100, unit: 'g', amount: 100, calories: 50, ...extra });
+    const capture = (id, createdAt, items, time = 'afternoon') => store.syncFromLog({ id, userId: 'u', isAccepted: true, status: 'accepted', createdAt, meal: { date, time }, items });
+    const lunch = () => capture('cap', '2026-11-18T12:00:00Z', [food('a'), food('b'), food('c')]);
+    const child = step => sha256Text(`outer:day:${step}`);
+    const ids = async day => (await store.findByDate('u', day)).map(row => row.uuid).sort();
+    const stack = (reading, { matched = [], placements = {}, proposal = { name: 'Oat Milk', color: 'green' } } = {}) => {
+      const reader = { available: true, read: vi.fn(async () => reading), matchFoods: vi.fn(async () => matched), assignMeals: vi.fn(async () => placements) };
+      const entryRevisions = { propose: vi.fn(async () => ({ proposal, pinned: [] })) };
+      const logger = { info: vi.fn(), warn: vi.fn() };
+      const captureFoods = vi.fn(async () => { await lunch(); return { committed: true, logId: 'cap' }; });
+      const service = new DayInstructionService({ nutritionItems: store, reader, mealCommands: commands, entryRevisions, logger });
+      return { reader, entryRevisions, logger, captureFoods, run: (text, extra) => service.execute('u', { text, date, today, operationId: 'outer', captureFoods, ...extra }) };
+    };
+    beforeEach(() => {
+      root = fs.mkdtempSync(path.join(os.tmpdir(), 'day-instruction-'));
+      store = new YamlNutriListDatastore({ dataService: { user: { resolveDir: rel => path.join(root, rel) } }, logger: { info() {}, warn() {} } });
+      commands = new MealFoodCommands({ nutritionItems: store });
+    });
+    afterEach(() => fs.rmSync(root, { recursive: true, force: true }));
+
+    it('"move that" carries a dish and a loose food from the latest capture', async () => {
+      await capture('old', '2026-11-18T08:00:00Z', [food('breakfast')], 'morning');
+      await lunch();
+      const grouped = await commands.execute('u', { action: 'group', name: 'Soup', date, bucket: 'afternoon', operationId: 'grp', selectedIds: ['a', 'b'], expectedVersions: { a: 1, b: 1 } });
+      const header = grouped.items.find(row => row.kind === 'group');
+      expect(header.createdAt).toBeUndefined();
+      expect(header.logId).toBeUndefined();
+      const result = await stack(plan({ toDay: yesterday })).run('move that to yesterday');
+      expect(result.message).toBe('Moved 2 foods to Yesterday');
+      expect(await ids(date)).toEqual(['breakfast']);
+      expect(await ids(yesterday)).toEqual(['a', 'b', 'c', header.uuid].sort());
+    });
+    it('a move that failed on a stale version can be retried under the same operation', async () => {
+      await lunch();
+      const h = stack(plan({ toDay: yesterday }));
+      h.reader.read.mockImplementationOnce(async () => { await store.update('u', 'a', { calories: 51 }); return plan({ toDay: yesterday }); });
+      await expect(h.run('move that to yesterday')).rejects.toMatchObject({ status: 409 });
+      expect(store.readOperationResult('u', child('move'))).toBeNull();
+      expect(await h.run('move that to yesterday')).toMatchObject({ committed: true, kind: 'moved' });
+      expect(await ids(yesterday)).toEqual(['a', 'b', 'c']);
+    });
+    it('a change that failed on a stale version can be retried under the same operation', async () => {
+      await capture('one', '2026-11-18T12:00:00Z', [food('a')]);
+      const h = stack(plan({ intent: 'change' }));
+      h.entryRevisions.propose.mockImplementationOnce(async () => { await store.update('u', 'a', { calories: 51 }); return { proposal: { name: 'Oat Milk' }, pinned: [] }; });
+      await expect(h.run('that was oat milk')).rejects.toMatchObject({ status: 409 });
+      expect(await h.run('that was oat milk')).toMatchObject({ committed: true, kind: 'changed' });
+    });
+    it('a correction changes the colour with the food', async () => {
+      await capture('one', '2026-11-18T12:00:00Z', [food('a', { color: 'orange' })]);
+      await stack(plan({ intent: 'change' })).run('that was oat milk');
+      expect(await store.findByUuid('u', 'a')).toMatchObject({ name: 'Oat Milk', color: 'green', version: 2 });
+    });
+    it('resumes at placement when the capture finished and placement never ran', async () => {
+      await store.runOperation('u', child('capture'), { operation: 'day-capture', text: 'soup', date }, async () => { await lunch(); return { committed: true, logId: 'cap' }; });
+      const h = stack(plan({ intent: 'change' }), { placements: { a: 'night' } });
+      expect(await h.run('soup')).toMatchObject({ committed: true, kind: 'added', logId: 'cap', message: 'Logged 3 foods', undoToken: expect.stringMatching(/^meal-/) });
+      expect(h.reader.read).not.toHaveBeenCalled();
+      expect(h.captureFoods).not.toHaveBeenCalled();
+      expect(await ids(date)).toEqual(['a', 'b', 'c']);
+      expect(await store.findByUuid('u', 'a')).toMatchObject({ mealTime: 'night' });
+    });
+    it('does not capture twice when the reply to a committed capture was lost', async () => {
+      const h = stack(plan({ intent: 'add' }));
+      h.captureFoods.mockImplementationOnce(async () => { await lunch(); throw new Error('connection lost'); });
+      await expect(h.run('soup')).rejects.toThrow('connection lost');
+      expect(await h.run('soup')).toMatchObject({ committed: true, kind: 'added', logId: 'cap', message: 'Logged 3 foods' });
+      expect(h.captureFoods).toHaveBeenCalledTimes(1);
+      expect(await store.findByLogId('u', 'cap')).toHaveLength(3);
+    });
+    it('lets a capture that wrote nothing run again', async () => {
+      const h = stack(plan({ intent: 'add' }));
+      h.captureFoods.mockImplementationOnce(async () => { throw new Error('parser down'); });
+      await expect(h.run('soup')).rejects.toThrow('parser down');
+      expect(await h.run('soup')).toMatchObject({ committed: true, kind: 'added' });
+      expect(h.captureFoods).toHaveBeenCalledTimes(2);
+    });
+    it('stores only the fields a resumed capture needs', async () => {
+      const h = stack(plan({ intent: 'add' }));
+      h.captureFoods.mockImplementationOnce(async () => { await lunch(); return { committed: true, logId: 'cap', message: 'ok', photos: [{ imageSource: 'large' }], messages: ['hi'] }; });
+      await h.run('soup');
+      expect(store.readOperationResult('u', child('capture'))).toEqual({ committed: true, logId: 'cap', message: 'ok' });
+    });
+    it('keeps an Undo for the capture when placement fails', async () => {
+      const h = stack(plan({ intent: 'add' }));
+      vi.spyOn(commands, 'placeCapturedFoods').mockRejectedValue(new Error('no placement'));
+      const result = await h.run('soup');
+      expect(result).toMatchObject({ committed: true, kind: 'added', undoToken: expect.stringMatching(/^meal-/) });
+      await commands.undo('u', { undoToken: result.undoToken, operationId: 'undo' });
+      expect(await ids(date)).toEqual([]);
+    });
+    it('still reports the food when that Undo cannot be recorded either', async () => {
+      const h = stack(plan({ intent: 'add' }));
+      vi.spyOn(commands, 'placeCapturedFoods').mockRejectedValue(new Error('no placement'));
+      vi.spyOn(store, 'recordCaptureUndo').mockRejectedValue(new Error('no undo'));
+      const result = await h.run('soup');
+      expect(result).toMatchObject({ committed: true, kind: 'added', message: 'Logged 3 foods' });
+      expect(result.undoToken).toBeUndefined();
+      expect(h.logger.warn).toHaveBeenCalledWith('health.day_instruction.capture_undo_failed', expect.objectContaining({ error: 'no undo' }));
     });
   });
 });

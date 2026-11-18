@@ -15,7 +15,8 @@ export const indexByLinkId = rows => {
 const canonicalId = (byLinkId, id) => { const row = byLinkId.get(id); return row ? idOf(row) : id; };
 const fail = (message, status = 400) => { throw Object.assign(new Error(message), { status }); };
 const operationPattern = /^[A-Za-z0-9_-]{1,128}$/;
-const fields = new Set(['name', 'grams', 'amount', 'unit', ...NUTRIENT_KEYS]);
+const FOOD_COLORS = ['green', 'yellow', 'orange'];
+const fields = new Set(['name', 'color', 'grams', 'amount', 'unit', ...NUTRIENT_KEYS]);
 const fingerprint = value => sha256Text(JSON.stringify(value));
 const isMeal = meal => MEAL_BUCKETS.some(bucket => bucket.id === meal);
 const isPlainObject = value => value !== null && typeof value === 'object'
@@ -29,6 +30,8 @@ function validateChanges(changes) {
     if (!fields.has(key)) fail(`Unsupported food field: ${key}`);
     if (key === 'name' || key === 'unit') {
       if (typeof value !== 'string' || !value.trim() || value.length > 250) fail(`Invalid ${key}`);
+    } else if (key === 'color') {
+      if (!FOOD_COLORS.includes(value)) fail('Invalid color');
     } else if (value !== null && (typeof value !== 'number' || !Number.isFinite(value) || value < 0)) fail(`Invalid ${key}`);
   }
   return changes;

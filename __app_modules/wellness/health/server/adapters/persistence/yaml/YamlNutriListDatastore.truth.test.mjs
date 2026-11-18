@@ -140,4 +140,42 @@ describe('nutrition ledger truth', () => {
     expect(result).toMatchObject({ committed: true, entryIds: ['food-a'] });
     expect(await store.findByDate('u', '2020-01-01')).toHaveLength(1);
   });
+
+  it('reads back a committed capture whose response was lost', async () => {
+    await expect(store.runOperation('u', 'op-lost', { text: 'food' }, async () => { await store.saveMany([row()]); throw new Error('lost'); })).rejects.toThrow('lost');
+    expect(store.readOperationResult('u', 'op-lost')).toMatchObject({ committed: true, entryIds: ['food-a'] });
+  });
+
+  describe('clearFailedOperation', () => {
+    const operations = () => loadYaml(path.join(root, 'lifelog/nutrition/ledger-operations')) || {};
+    it('frees an ID whose work failed before writing anything', async () => {
+      await expect(store.runOperation('u', 'op-a', { n: 1 }, async () => { throw new Error('stale'); })).rejects.toThrow('stale');
+      expect(store.clearFailedOperation('u', 'op-a')).toBe(true);
+      expect(operations()['op-a']).toBeUndefined();
+      expect(await store.runOperation('u', 'op-a', { n: 2 }, async () => ({ committed: true }))).toEqual({ committed: true });
+    });
+    it('keeps an operation that finished', async () => {
+      await store.runOperation('u', 'op-a', { n: 1 }, async () => ({ committed: true }));
+      expect(store.clearFailedOperation('u', 'op-a')).toBe(false);
+      expect(store.readOperationResult('u', 'op-a')).toEqual({ committed: true });
+    });
+    it('keeps a failed operation that had already written food', async () => {
+      await expect(store.runOperation('u', 'op-a', { n: 1 }, async () => { await store.saveMany([row()]); throw new Error('lost'); })).rejects.toThrow('lost');
+      expect(store.clearFailedOperation('u', 'op-a')).toBe(false);
+      expect(operations()['op-a'].items).toHaveLength(1);
+    });
+    it('keeps a failed operation that had already committed a mutation', async () => {
+      await store.saveMany([row()]);
+      await expect(store.runOperation('u', 'op-a', { n: 1 }, async () => {
+        await store.mutateEntries('u', { updates: [{ id: 'food-a', changes: { calories: 1 } }], resultMeta: { committed: true } });
+        throw new Error('lost');
+      })).rejects.toThrow('lost');
+      expect(store.clearFailedOperation('u', 'op-a')).toBe(false);
+      expect(store.readOperationResult('u', 'op-a')).toMatchObject({ committed: true });
+    });
+    it('does nothing for an unknown ID and refuses a malformed one', () => {
+      expect(store.clearFailedOperation('u', 'missing')).toBe(false);
+      expect(() => store.clearFailedOperation('u', '../x')).toThrow('Invalid operation ID');
+    });
+  });
 });

@@ -85,6 +85,11 @@ describe('reversible meal commands',()=>{
   await store.saveMany([food('changed-new')]);const second=await store.recordCaptureUndo('u',{operationId:'capture-changed',entryIds:['changed-new']});
   await store.update('u','changed-new',{calories:999});await expect(commands.undo('u',{...second,operationId:'undo-changed'})).rejects.toMatchObject({status:409});
  });
+ it('amends a food colour and refuses one that does not exist',async()=>{
+  await execute('amend',{selectedIds:['a'],changes:{a:{color:'green'}}});
+  expect(await store.findByUuid('u','a')).toMatchObject({color:'green',manualFields:expect.arrayContaining(['color'])});
+  await expect(execute('amend',{operationId:'bad-colour',selectedIds:['b'],changes:{b:{color:'purple'}}})).rejects.toMatchObject({status:400});
+ });
  it('scales quantity-only amendments precisely and protects corrected fields from cleanup',async()=>{
   await store.update('u','a',{grams:300,amount:300,calories:90,protein:7.12345,fiber:0.12345,settled:false});
   const before=await store.findByUuid('u','a');

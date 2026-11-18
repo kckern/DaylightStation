@@ -34,6 +34,11 @@ import { InfrastructureError } from '#system/utils/errors/index.mjs';
 const ARCHIVE_RETENTION_DAYS = 30;
 const NOOM_EMOJI = { green: '🟢', yellow: '🟡', orange: '🟠' };
 const operationContext = new AsyncLocalStorage();
+/** The ledger committed a capture before its response could be recorded. */
+const recoveredCapture = operation => (operation?.items?.length
+  ? { committed: true, logged: true, item: operation.items[0], items: operation.items,
+    entryIds: operation.items.map(row => row.uuid || row.id), date: operation.items[0].date, mealTime: operation.items[0].mealTime }
+  : null);
 const inFlightOperations = new Map();
 
 function dehydrateNutriListItem(log, item) {
@@ -167,7 +172,27 @@ export class YamlNutriListDatastore extends INutriListDatastore {
     }
     this.#recover(userId);
     const operation = (loadYaml(this.#operationsPath(userId)) || {})[operationId];
-    return operation?.result || operation?.mutationResult || null;
+    return operation?.result || operation?.mutationResult || recoveredCapture(operation);
+  }
+
+  /**
+   * Free the ID of an operation that failed before committing anything, so a
+   * retry with fresh input is not refused as a reused ID. Anything that reached
+   * the ledger keeps its record, because that record is what a retry recovers.
+   * @returns {boolean} whether a record was removed
+   */
+  clearFailedOperation(userId, operationId) {
+    if (typeof operationId !== 'string' || !/^[A-Za-z0-9_-]{1,128}$/.test(operationId)) {
+      throw Object.assign(new Error('Invalid operation ID'), { status: 400 });
+    }
+    this.#recover(userId);
+    if (inFlightOperations.has(`${this.#operationsPath(userId)}:${operationId}`)) return false;
+    const operations = loadYaml(this.#operationsPath(userId)) || {};
+    const operation = operations[operationId];
+    if (!operation?.pending || operation.result || operation.mutationResult || operation.items?.length) return false;
+    delete operations[operationId];
+    this.#writeFile(this.#operationsPath(userId), operations);
+    return true;
   }
 
   async runOperation(userId, id, payload, action) {
@@ -182,12 +207,8 @@ export class YamlNutriListDatastore extends INutriListDatastore {
     if (inFlightOperations.has(key)) return inFlightOperations.get(key);
     if (prior?.result) return prior.result;
     if (prior?.mutationResult) return prior.mutationResult;
-    if (prior?.items?.length) {
-      // The ledger committed before the response could be recorded. Recover
-      // the committed outcome rather than calling the parser a second time.
-      return { committed: true, logged: true, item: prior.items[0], items: prior.items,
-        entryIds: prior.items.map(row => row.uuid || row.id), date: prior.items[0].date, mealTime: prior.items[0].mealTime };
-    }
+    // Recover the committed outcome rather than calling the parser a second time.
+    if (recoveredCapture(prior)) return recoveredCapture(prior);
     operations[id] = { fingerprint, pending: true };
     this.#writeFile(this.#operationsPath(userId), operations);
     const promise = operationContext.run({ userId, id, fingerprint, operation: payload.operation }, async () => {
