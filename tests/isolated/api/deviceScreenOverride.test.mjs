@@ -65,7 +65,7 @@ describe('device screen override routes', () => {
   it('POST override off drives the screen off and relays to midi-wake suppress', async () => {
     const device = makeDevice(true);
     const relayed = [];
-    const pianoMidiWakeService = { suppressWakeUntil: (until) => { relayed.push(until); override.set('yellow-room-tablet', 'off', 30); } };
+    const pianoMidiWakeService = { deviceId: 'yellow-room-tablet', suppressWakeUntil: (until) => { relayed.push(until); override.set('yellow-room-tablet', 'off', 30); } };
     const app = makeApp({ device, screenOverrideService: override, pianoMidiWakeService, piano: { screensaver: { offCooldownMinutes: 30 } } });
     const res = await request(app).post('/device/yellow-room-tablet/screen/override').send({ state: 'off' });
     expect(res.status).toBe(200);
@@ -77,7 +77,7 @@ describe('device screen override routes', () => {
   it('DELETE override releases an off window and resumes midi-wake', async () => {
     override.set('yellow-room-tablet', 'off', 30);
     let resumed = 0;
-    const pianoMidiWakeService = { suppressWakeUntil() {}, resumeWake: () => { resumed += 1; } };
+    const pianoMidiWakeService = { deviceId: 'yellow-room-tablet', suppressWakeUntil() {}, resumeWake: () => { resumed += 1; } };
     const app = makeApp({ device: makeDevice(false), screenOverrideService: override, pianoMidiWakeService });
     const res = await request(app).delete('/device/yellow-room-tablet/screen/override');
     expect(res.status).toBe(200);
@@ -89,7 +89,7 @@ describe('device screen override routes', () => {
   it('DELETE override clears an on window without touching midi-wake', async () => {
     override.set('yellow-room-tablet', 'on', 10);
     let resumed = 0;
-    const pianoMidiWakeService = { suppressWakeUntil() {}, resumeWake: () => { resumed += 1; } };
+    const pianoMidiWakeService = { deviceId: 'yellow-room-tablet', suppressWakeUntil() {}, resumeWake: () => { resumed += 1; } };
     const app = makeApp({ device: makeDevice(true), screenOverrideService: override, pianoMidiWakeService });
     const res = await request(app).delete('/device/yellow-room-tablet/screen/override');
     expect(res.body.cleared?.state).toBe('on');

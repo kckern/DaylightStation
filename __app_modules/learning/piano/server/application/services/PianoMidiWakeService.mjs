@@ -108,6 +108,9 @@ export class PianoMidiWakeService {
     this.#lastRelay = Promise.resolve(this.#bridge.suppressWakeUntil(this.#clock.now()));
   }
 
+  /** The device this wake belongs to; only a hold on it may mute or resume the wake. */
+  get deviceId() { return this.#deviceId; }
+
   /** Test seam: await the in-flight APK config relay. */
   _relayDone() { return this.#lastRelay ?? Promise.resolve(); }
 
