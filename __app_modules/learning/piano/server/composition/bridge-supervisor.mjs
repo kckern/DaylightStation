@@ -16,6 +16,12 @@
  *     interval_ms: 30000
  *     alert_after_ms: 300000
  *     one_way_alert_after_ms: 600000
+ *     jamcorder_url: http://...              # defaults to effects.jamcorder.web
+ *     link_repair:                           # on unless enabled: false
+ *       hold_ms: 180000                      # no echo + no JamCorder client this long
+ *       min_reboot_gap_ms: 3600000
+ *       max_reboots_per_day: 3
+ *       reboot_grace_ms: 300000
  *
  *   speaker_recovery:                      # top-level block, sibling of bridge_supervisor
  *     enabled: true
@@ -36,6 +42,7 @@ import { createHaPlugCycle } from "../adapters/bridge/haPlugCycle.mjs";
 import { createScreenHold } from "../adapters/bridge/screenHold.mjs";
 import { createSpeakerReadinessCheck } from "../adapters/bridge/speakerReadiness.mjs";
 import { createLogStoreQuery, logStoreBaseFromSinkUrl } from "../adapters/bridge/logStoreQuery.mjs";
+import { createJamcorderClientReader, createPianoKioskIdleCheck } from "../adapters/bridge/pianoLinkRepairSignals.mjs";
 import { composePianoSpeakerPush } from "../domain/bridge/pianoSpeakerPush.mjs";
 
 const DEFAULT_PACKAGE = 'net.kckern.pianobridge';
@@ -106,6 +113,32 @@ export function createPianoBridgeSupervisor({
     ? (push) => haGateway.callService('notify', notifyService, push)
     : null;
 
+  const sink = configService?.get?.('logging.remoteSink');
+  // A disabled sink ships nothing: every read of it would come back empty.
+  const logStoreBase = sink?.enabled ? logStoreBaseFromSinkUrl(sink.url) : null;
+  const queryLogs = logStoreBase ? createLogStoreQuery({ baseUrl: logStoreBase }) : null;
+
+  const linkCfg = cfg.link_repair ?? {};
+  const jamcorderUrl = cfg.jamcorder_url || piano.effects?.jamcorder?.web || null;
+  // Every input is required: without one the repair would be guessing about a child's tablet.
+  const linkRepair = linkCfg.enabled !== false && jamcorderUrl && queryLogs && readPianoPower
+    ? {
+      readJamcorderClients: createJamcorderClientReader({ baseUrl: jamcorderUrl }),
+      checkKioskIdle: createPianoKioskIdleCheck({ queryLogs }),
+      reboot: () => remoteAdmin.performAction(deviceId, 'reboot'),
+      queryLogs,
+      holdMs: linkCfg.hold_ms,
+      minRebootGapMs: linkCfg.min_reboot_gap_ms,
+      maxRebootsPerDay: linkCfg.max_reboots_per_day,
+      rebootGraceMs: linkCfg.reboot_grace_ms,
+    }
+    : null;
+  if (!linkRepair && linkCfg.enabled !== false) {
+    logger.warn?.('piano-bridge.supervisor.link-repair-unavailable', {
+      jamcorderUrl, logStore: !!queryLogs, pianoPower: !!readPianoPower,
+    });
+  }
+
   const speakerCfg = piano.speaker_recovery;
   let speaker = null;
   let plugEntity = null;
@@ -120,13 +153,10 @@ export function createPianoBridgeSupervisor({
       : null;
     if (plugCycle && !holdScreen) logger.warn?.('piano.speaker.no-screen-hold', { deviceId });
     const actions = speakerActionsFactory({ bridgeUrl });
-    const sink = configService?.get?.('logging.remoteSink');
-    // A disabled sink ships nothing: every week would read as quiet.
-    const logStoreBase = sink?.enabled ? logStoreBaseFromSinkUrl(sink.url) : null;
     speaker = {
       actions,
       checkReady: createSpeakerReadinessCheck({ actions, haGateway, plugEntity }),
-      queryLogs: logStoreBase ? createLogStoreQuery({ baseUrl: logStoreBase }) : null,
+      queryLogs,
       plugCycle,
       holdScreen,
       publish: typeof eventBus?.broadcast === 'function'
@@ -159,13 +189,14 @@ export function createPianoBridgeSupervisor({
     alertAfterMs: cfg.alert_after_ms,
     oneWayAlertAfterMs: cfg.one_way_alert_after_ms,
     speaker,
+    linkRepair,
     logModule: PIANO_BRIDGE_SUPERVISOR_LOG_MODULE,
   });
   service.start();
   instance = service;
   logger.info?.('piano-bridge.supervisor.created', {
     deviceId, bridgeUrl, pkg, notifyService, powerEntity, speakerRecovery: !!speaker, plugEntity, screenHold: !!speaker?.holdScreen,
-    readiness: !!speaker?.checkReady, weeklySummary: !!speaker?.queryLogs,
+    readiness: !!speaker?.checkReady, weeklySummary: !!speaker?.queryLogs, linkRepair: !!linkRepair,
   });
   return { pianoBridgeSupervisor: service };
 }

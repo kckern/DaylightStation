@@ -149,3 +149,60 @@ test('the log module name is exported, so app.mjs and the log-store queries cann
   const mod = await import('./bridge-supervisor.mjs');
   assert.equal(mod.PIANO_BRIDGE_SUPERVISOR_LOG_MODULE, 'piano-bridge-supervisor');
 });
+
+test('link repair reads the configured JamCorder and reboots through remote admin', async () => {
+  const actions = [];
+  const fetched = [];
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async (url) => {
+    fetched.push(String(url));
+    if (String(url).includes('/select/logsql/query')) return { ok: true, text: async () => '' };
+    return { ok: true, json: async () => ({ clients: [] }) };
+  };
+  try {
+    const { pianoBridgeSupervisor } = createPianoBridgeSupervisor({
+      configService: {
+        ...configService({
+          midi_wake: { device_id: 'yellow-room-tablet', bridge_url: 'ws://t:8770' },
+          screen_power_sync: { piano_power_entity: 'binary_sensor.piano_power' },
+          effects: { jamcorder: { web: 'http://jam' } },
+          bridge_supervisor: { enabled: true, link_repair: { hold_ms: 0 } },
+        }),
+        get: (key) => (key === 'logging.remoteSink' ? { enabled: true, url: 'http://logs:9428/insert/jsonline' } : undefined),
+      },
+      remoteAdmin: { performAction: async (...a) => { actions.push(a); return { accepted: true }; } },
+      haGateway: { getState: async () => ({ state: 'on' }), callService: async () => {} },
+      probeFactory: () => ({ readHealth: async () => ({ reachable: true, ble: 'CONNECTED', outVerified: false }) }),
+      logger: logger(), scheduler,
+    });
+    await pianoBridgeSupervisor.tick();
+    await pianoBridgeSupervisor.tick();
+    assert.ok(fetched.includes('http://jam/api/bluetooth/state/get'));
+    assert.deepEqual(actions, [['yellow-room-tablet', 'reboot']]);
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+});
+
+for (const [name, patch] of [
+  ['is switched off', { bridge_supervisor: { enabled: true, link_repair: { enabled: false } }, effects: { jamcorder: { web: 'http://jam' } } }],
+  ['has no JamCorder address', { bridge_supervisor: { enabled: true } }],
+]) {
+  test(`link repair stays out of the way when it ${name}`, async () => {
+    const actions = [];
+    const log = logger();
+    const { pianoBridgeSupervisor } = createPianoBridgeSupervisor({
+      configService: {
+        ...configService({ midi_wake: { device_id: 'd', bridge_url: 'ws://t:8770' }, screen_power_sync: { piano_power_entity: 'p' }, ...patch }),
+        get: () => ({ enabled: true, url: 'http://logs:9428/insert' }),
+      },
+      remoteAdmin: { performAction: async (...a) => { actions.push(a); return {}; } },
+      haGateway: { getState: async () => ({ state: 'on' }), callService: async () => {} },
+      probeFactory: () => ({ readHealth: async () => ({ reachable: true, outVerified: false }) }),
+      logger: log, scheduler,
+    });
+    await pianoBridgeSupervisor.tick();
+    assert.deepEqual(actions, []);
+    assert.equal(log.logs.find((l) => l.event === 'piano-bridge.supervisor.created').data.linkRepair, false);
+  });
+}
