@@ -2,6 +2,7 @@ import { beforeEach, afterEach, describe, it, expect } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import yaml from 'js-yaml';
 import { YamlNutriListDatastore } from '../../adapters/persistence/yaml/YamlNutriListDatastore.mjs';
 import { MealFoodCommands } from './MealFoodCommands.mjs';
 
@@ -11,6 +12,8 @@ const food = (uuid, extra = {}) => ({ uuid, userId: 'u', name: uuid, date, mealT
 let root, store, commands;
 const rows = day => store.findByDate('u', day);
 const versions = async () => Object.fromEntries((await rows(date)).map(row => [row.uuid, row.version ?? 1]));
+const dayTotal = day => yaml.load(fs.readFileSync(path.join(root, 'lifelog/nutrition/nutriday.yml'), 'utf8'))[day]?.calories ?? 0;
+const orphan = () => food('orphan', { date: '2026-08-01', logId: 'log-other', parentId: 'gone' });
 const move = async extra => commands.moveFoods('u', { operationId: 'move-1', date, today, selectedIds: ['a', 'b'], expectedVersions: await versions(), ...extra });
 
 beforeEach(async () => {
@@ -42,12 +45,79 @@ describe('moveFoods', () => {
     await expect(move({ operationId: 'move-2', selectedIds: ['part'], toMeal: 'morning' })).rejects.toMatchObject({ status: 400 });
   });
   it('changes nothing when any version is stale', async () => {
+    const before = await rows(date);
     await expect(move({ expectedVersions: { a: 9, b: 1 }, toDate: '2026-09-05' })).rejects.toMatchObject({ status: 409 });
     expect(await rows('2026-09-05')).toEqual([]);
+    expect(await rows(date)).toEqual(before);
   });
   it('refuses a future day and an empty destination', async () => {
     await expect(move({ toDate: '2026-09-08' })).rejects.toMatchObject({ status: 400 });
     await expect(move({})).rejects.toMatchObject({ status: 400 });
+  });
+  it('counts only the selected foods that actually change', async () => {
+    const result = await move({ toMeal: 'evening' });
+    expect(result.movedCount).toBe(1);
+    expect(result.affectedIds).toEqual(['b']);
+  });
+  it('refuses a move that changes nothing, so no Undo is issued', async () => {
+    const before = await rows(date);
+    await expect(move({ selectedIds: ['a'], toMeal: 'evening' })).rejects.toMatchObject({ status: 400, message: 'These foods are already there' });
+    await expect(move({ operationId: 'move-2', selectedIds: ['a'], toDate: date })).rejects.toMatchObject({ status: 400 });
+    expect(await rows(date)).toEqual(before);
+  });
+  it('is not blocked by a bad dish row elsewhere in the ledger, in the move or its Undo', async () => {
+    await store.saveMany([orphan()]);
+    const result = await move({ toDate: '2026-09-05' });
+    expect((await rows('2026-09-05')).map(row => row.uuid).sort()).toEqual(['a', 'b']);
+    await commands.undo('u', { undoToken: result.undoToken, operationId: 'undo-1' });
+    expect(await rows('2026-09-05')).toEqual([]);
+  });
+  it('still refuses a move that would split a dish', async () => {
+    await store.saveMany([food('far-part', { date: '2026-09-01', parentId: 'dish' })]);
+    const before = await rows(date);
+    await expect(move({ selectedIds: ['dish'], toMeal: 'night' })).rejects.toMatchObject({ status: 409 });
+    expect(await rows(date)).toEqual(before);
+  });
+  it('applies once when the same request is replayed after commit', async () => {
+    const input = { operationId: 'move-1', date, today, selectedIds: ['a', 'b'], expectedVersions: await versions(), toDate: '2026-09-05' };
+    const first = await commands.moveFoods('u', input);
+    expect(await commands.moveFoods('u', input)).toEqual(first);
+    expect((await rows('2026-09-05')).map(row => [row.uuid, row.version]).sort()).toEqual([['a', 2], ['b', 2]]);
+  });
+  it('refuses Undo after a moved food was edited', async () => {
+    const { undoToken } = await move({ toDate: '2026-09-05' });
+    await store.update('u', 'a', { name: 'edited' });
+    await expect(commands.undo('u', { undoToken, operationId: 'undo-1' })).rejects.toMatchObject({ status: 409 });
+    const moved = await rows('2026-09-05');
+    expect(moved.map(row => row.uuid).sort()).toEqual(['a', 'b']);
+    expect(moved.find(row => row.uuid === 'a').name).toBe('edited');
+  });
+  it('moves a dish across days and Undo brings all of it back', async () => {
+    const { undoToken, movedCount } = await move({ selectedIds: ['dish'], toDate: '2026-09-05' });
+    expect(movedCount).toBe(1);
+    expect((await rows('2026-09-05')).map(row => row.uuid).sort()).toEqual(['dish', 'part']);
+    await commands.undo('u', { undoToken, operationId: 'undo-1' });
+    expect(await rows('2026-09-05')).toEqual([]);
+    expect((await rows(date)).find(row => row.uuid === 'part')).toMatchObject({ parentId: 'dish', date });
+  });
+  it('moves an archived food and Undo returns it to its day', async () => {
+    const archived = '2026-08-20';
+    const file = path.join(root, 'lifelog/nutrition/archives/nutrilist/2026-08.yml');
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, yaml.dump([food('old', { date: archived, version: 1 })]));
+    const { undoToken } = await commands.moveFoods('u', { operationId: 'move-old', date: archived, today, selectedIds: ['old'], expectedVersions: { old: 1 }, toDate: '2026-09-05' });
+    expect(await rows(archived)).toEqual([]);
+    expect((await rows('2026-09-05')).map(row => row.uuid)).toEqual(['old']);
+    expect(yaml.load(fs.readFileSync(file, 'utf8'))).toEqual([]);
+    await commands.undo('u', { undoToken, operationId: 'undo-old' });
+    expect((await rows(archived)).map(row => row.uuid)).toEqual(['old']);
+    expect(await rows('2026-09-05')).toEqual([]);
+  });
+  it('keeps both days\' totals right after a move and after Undo', async () => {
+    const { undoToken } = await move({ toDate: '2026-09-05' });
+    expect([dayTotal(date), dayTotal('2026-09-05')]).toEqual([40, 40]);
+    await commands.undo('u', { undoToken, operationId: 'undo-1' });
+    expect([dayTotal(date), dayTotal('2026-09-05')]).toEqual([80, 0]);
   });
 });
 
@@ -62,5 +132,27 @@ describe('placeCapturedFoods', () => {
   it('moves dish parts with their dish', async () => {
     await commands.placeCapturedFoods('u', { operationId: 'place-2', logId: 'log-1', placements: { dish: 'afternoon' } });
     expect((await rows(date)).find(row => row.uuid === 'part').mealTime).toBe('afternoon');
+  });
+  it('refuses a capture that changed after it was logged', async () => {
+    await store.update('u', 'a', { name: 'edited' });
+    const before = await rows(date);
+    await expect(commands.placeCapturedFoods('u', { operationId: 'place-3', logId: 'log-1', placements: { b: 'night' } })).rejects.toMatchObject({ status: 409 });
+    expect(await rows(date)).toEqual(before);
+  });
+  it('is not blocked by a bad dish row elsewhere in the ledger, in the placement or its Undo', async () => {
+    await store.saveMany([orphan()]);
+    const { undoToken } = await commands.placeCapturedFoods('u', { operationId: 'place-4', logId: 'log-1', placements: { a: 'morning' } });
+    expect((await rows(date)).find(row => row.uuid === 'a').mealTime).toBe('morning');
+    await commands.undo('u', { undoToken, operationId: 'undo-4' });
+    expect(await rows(date)).toEqual([]);
+  });
+  it.each([[null], [['a']], ['morning'], [{ a: 'brunch' }]])('refuses malformed placements %j before using the operation ID', async placements => {
+    await expect(commands.placeCapturedFoods('u', { operationId: 'place-5', logId: 'log-1', placements })).rejects.toMatchObject({ status: 400 });
+    await expect(commands.placeCapturedFoods('u', { operationId: 'place-5', logId: 'log-1', placements: { a: 'morning' } })).resolves.toMatchObject({ committed: true });
+  });
+  it.each([['an unknown food', 'nope'], ['a dish part', 'part']])('refuses a placement for %s', async (_label, id) => {
+    const before = await rows(date);
+    await expect(commands.placeCapturedFoods('u', { operationId: 'place-6', logId: 'log-1', placements: { [id]: 'morning' } })).rejects.toMatchObject({ status: 400 });
+    expect(await rows(date)).toEqual(before);
   });
 });
