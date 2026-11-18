@@ -63,7 +63,7 @@ test('it checks once after boot, then only after a failed relay, and retries tha
   assert.equal((await sync.reconcile()).checked, false, 'retried once, not every tick');
 });
 
-test('a failed resync is logged, not thrown, and is not retried in a loop', async () => {
+test('a failed resync is logged, not thrown, and is tried again on the next tick', async () => {
   const errors = [];
   const dev = device(Math.ceil(NOW / 1000) + 600, { failPost: true });
   const sync = new PianoWakeHoldSyncAdapter({
@@ -72,7 +72,7 @@ test('a failed resync is logged, not thrown, and is not retried in a loop', asyn
   });
   assert.deepEqual(await sync.reconcile(), { checked: true, wrote: null, error: 'HTTP 500' });
   assert.equal(errors[0][0], 'piano-wake-hold.resync-failed');
-  assert.equal((await sync.reconcile()).checked, false);
+  assert.equal((await sync.reconcile()).checked, true, 'retried on the next reachable tick');
 });
 
 test('a hold relayed while the GET is in flight is written, not overwritten with the value from before it', async () => {
@@ -95,3 +95,19 @@ test('a hold relayed while the GET is in flight is written, not overwritten with
   assert.deepEqual(posted, [Math.ceil((NOW + 30 * 60_000) / 1000)]);
 });
 
+test('a failed re-sync is tried again on the next reachable tick', async () => {
+  let fail = true;
+  const dev = device(Math.ceil(NOW / 1000) + 600);
+  const fetchImpl = async (url, init = {}) => {
+    if (fail) { fail = false; throw new Error('ECONNRESET'); }
+    return dev.fetchImpl(url, init);
+  };
+  const sync = new PianoWakeHoldSyncAdapter({
+    baseUrl: 'http://tablet.invalid:8780', deviceId: 'yellow-room-tablet', overrides: { get: () => null },
+    now: () => NOW, fetchImpl, logger: noLog,
+  });
+  assert.equal((await sync.reconcile()).error, 'ECONNRESET');
+  assert.deepEqual(await sync.reconcile(), { checked: true, wrote: 0 });
+  assert.equal(dev.state.value, 0);
+  assert.equal((await sync.reconcile()).checked, false, 'once it has succeeded there is nothing left to do');
+});

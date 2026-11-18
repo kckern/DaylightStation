@@ -11,8 +11,8 @@ const SETTING = 'power.wakeSuppressUntilSec';
  * - A relay that failed left the tablet with the old value.
  *
  * `reconcile()` runs on the bridge supervisor's reachable ticks. It acts on the first
- * one after boot, and on the first one after `relayFailed()`; each such check is made
- * once (a check that fails is logged and not repeated every tick). It reads the
+ * one after boot, and on the first one after `relayFailed()`. A check that fails is
+ * logged and tried again on the next reachable tick, until one succeeds. It reads the
  * device's value and writes the backend's: the `off` override's deadline, or 0 when
  * the backend holds nothing and the tablet still holds a future deadline.
  */
@@ -69,6 +69,8 @@ export class PianoWakeHoldSyncAdapter {
   }
 
   #failed(error) {
+    // Try again on the next reachable tick: the tablet may still hold a stale deadline.
+    this.#pending = true;
     this.#logger.error?.('piano-wake-hold.resync-failed', { deviceId: this.#deviceId, error });
     return { checked: true, wrote: null, error };
   }
