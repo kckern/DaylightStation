@@ -6,8 +6,13 @@ import { NUTRIENT_KEYS, foodGrams, scaleFoodPortion } from '../../../portable/co
 
 const idOf = row => row.uuid || row.id;
 const linkIds = row => [row.uuid, row.id].filter(Boolean);
-/** A dish part may name its dish by either ID, so look rows up under both. */
-const indexByLinkId = rows => new Map(rows.flatMap(row => linkIds(row).map(id => [id, row])));
+/** A dish part may name its dish by either ID. A uuid always wins over another row's short ID. */
+const indexByLinkId = rows => {
+  const index = new Map(rows.filter(row => row.uuid).map(row => [row.uuid, row]));
+  for (const row of rows) if (row.id && !index.has(row.id)) index.set(row.id, row);
+  return index;
+};
+const canonicalId = (byLinkId, id) => { const row = byLinkId.get(id); return row ? idOf(row) : id; };
 const fail = (message, status = 400) => { throw Object.assign(new Error(message), { status }); };
 const operationPattern = /^[A-Za-z0-9_-]{1,128}$/;
 const fields = new Set(['name', 'grams', 'amount', 'unit', ...NUTRIENT_KEYS]);
@@ -70,6 +75,7 @@ export class MealFoodCommands {
     return this.store.runOperation(userId, operationId, { operation: 'meal-command', ...input }, async () => {
       const rows = await this.store.findByDate(userId, date);
       const byId = new Map(rows.map(row => [idOf(row), row]));
+      const byLinkId = indexByLinkId(rows);
       const get = id => {
         const row = byId.get(id);
         if (!row || mealRowBucket(row) !== bucket) fail('Selected food is outside this meal');
@@ -113,7 +119,7 @@ export class MealFoodCommands {
         if (parent.kind !== 'group' || parent.parentId) fail('Invalid group');
         selected.forEach(requireFood);
         const desired = new Set(action === 'ungroup' ? [] : selectedIds);
-        for (const row of rows.filter(row => row.parentId === idOf(parent))) { get(idOf(row)); update(row, { parentId: desired.has(idOf(row)) ? idOf(parent) : null }); }
+        for (const row of rows.filter(row => byLinkId.get(row.parentId) === parent)) { get(idOf(row)); update(row, { parentId: desired.has(idOf(row)) ? idOf(parent) : null }); }
         for (const row of selected) if (desired.has(idOf(row))) update(row, { parentId: idOf(parent) });
         if (!desired.size) deleteIds.push(idOf(parent));
         else update(parent, input.name === undefined ? {} : validateChanges({ name: input.name }));
@@ -154,13 +160,13 @@ export class MealFoodCommands {
       // Retire headers made empty by reassignment or removal. Foods are deleted
       // only by an amend's explicit removals above.
       const oldParents = new Set([...updates.values()].map(u => byId.get(u.id)?.parentId)
-        .concat(deleteIds.map(id => byId.get(id)?.parentId)).filter(Boolean));
+        .concat(deleteIds.map(id => byId.get(id)?.parentId)).filter(Boolean).map(id => canonicalId(byLinkId, id)));
       for (const parentId of oldParents) {
         const parent = get(parentId); check(parent);
         const remaining = rows.some(row => {
           if (deleteIds.includes(idOf(row))) return false;
           const changes = updates.get(idOf(row))?.changes;
-          return (changes && Object.hasOwn(changes, 'parentId') ? changes.parentId : row.parentId) === parentId;
+          return byLinkId.get(changes && Object.hasOwn(changes, 'parentId') ? changes.parentId : row.parentId) === parent;
         }) || creates.some(row => row.parentId === parentId);
         if (!remaining && !deleteIds.includes(parentId)) deleteIds.push(parentId);
       }
@@ -185,13 +191,14 @@ export class MealFoodCommands {
   /** Every row a move must carry: each selected top-level food plus its dish parts. */
   #withParts(rows, selectedIds) {
     const byId = new Map(rows.map(row => [idOf(row), row]));
+    const byLinkId = indexByLinkId(rows);
     const moved = new Map();
     for (const id of selectedIds) {
       const row = byId.get(id);
       if (!row) fail('Selected food is outside this day');
       if (row.parentId) fail('Move the whole dish, not one of its parts');
       moved.set(id, row);
-      for (const child of rows) if (child.parentId && linkIds(row).includes(child.parentId)) moved.set(idOf(child), child);
+      for (const child of rows) if (byLinkId.get(child.parentId) === row) moved.set(idOf(child), child);
     }
     return [...moved.values()];
   }
@@ -242,8 +249,7 @@ export class MealFoodCommands {
       const topLevelIds = new Set(rows.filter(row => !row.parentId).map(idOf));
       if (Object.keys(placements).some(id => !topLevelIds.has(id))) fail('Placed food is not a top-level food of this capture');
       const byLinkId = indexByLinkId(rows);
-      const dishIdOf = row => { const dish = byLinkId.get(row.parentId); return dish ? idOf(dish) : row.parentId; };
-      const mealOf = row => placements[dishIdOf(row)] || placements[idOf(row)] || row.mealTime || null;
+      const mealOf = row => placements[canonicalId(byLinkId, row.parentId)] || placements[idOf(row)] || row.mealTime || null;
       const updates = rows.map(row => ({ id: idOf(row), expectedVersion: row.version ?? 1, changes: { mealTime: mealOf(row), placedBy: operationId } }));
       const undoToken = `meal-${uuidv5(`${userId}:${operationId}`, uuidv5.URL)}`;
       const date = rows[0].date;

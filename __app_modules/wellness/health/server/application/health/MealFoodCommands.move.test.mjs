@@ -15,6 +15,9 @@ const versions = async () => Object.fromEntries((await rows(date)).map(row => [r
 const dayTotal = day => yaml.load(fs.readFileSync(path.join(root, 'lifelog/nutrition/nutriday.yml'), 'utf8'))[day]?.calories ?? 0;
 const orphan = () => food('orphan', { date: '2026-08-01', logId: 'log-other', parentId: 'gone' });
 const seedShortLinkDish = () => store.saveMany([food('short-dish', { id: 'shortdish', kind: 'group', calories: 0, protein: 0 }), food('short-part', { parentId: 'shortdish' })]);
+const seedHeaderWithBorrowedId = () => store.saveMany([food('borrower', { id: 'dish', kind: 'group', calories: 0, protein: 0 })]);
+const membership = async (groupId, selectedIds) => commands.execute('u', { action: 'membership', operationId: 'member-1', date, bucket: 'evening', groupId, selectedIds, expectedVersions: await versions() });
+const parentOf = async uuid => (await rows(date)).find(row => row.uuid === uuid).parentId ?? null;
 const move = async extra => commands.moveFoods('u', { operationId: 'move-1', date, today, selectedIds: ['a', 'b'], expectedVersions: await versions(), ...extra });
 
 beforeEach(async () => {
@@ -133,6 +136,21 @@ describe('moveFoods', () => {
   });
 });
 
+describe('dish membership', () => {
+  it('removes an omitted part that is linked by its dish\'s short ID', async () => {
+    await seedShortLinkDish();
+    await membership('short-dish', ['a']);
+    expect(await parentOf('short-part')).toBeNull();
+    expect(await parentOf('a')).toBe('short-dish');
+  });
+  it('leaves another dish\'s part alone when a header\'s id equals that dish\'s uuid', async () => {
+    await seedHeaderWithBorrowedId();
+    await membership('borrower', ['a']);
+    expect(await parentOf('part')).toBe('dish');
+    expect(await parentOf('a')).toBe('borrower');
+  });
+});
+
 describe('placeCapturedFoods', () => {
   it('spreads one capture across meals, and Undo removes the whole capture', async () => {
     const result = await commands.placeCapturedFoods('u', { operationId: 'place-1', logId: 'log-1', placements: { a: 'morning', b: 'night' } });
@@ -149,6 +167,12 @@ describe('placeCapturedFoods', () => {
     await seedShortLinkDish();
     await commands.placeCapturedFoods('u', { operationId: 'place-7', logId: 'log-1', placements: { 'short-dish': 'afternoon' } });
     expect((await rows(date)).filter(row => row.uuid.startsWith('short-')).map(row => row.mealTime)).toEqual(['afternoon', 'afternoon']);
+  });
+  it('keeps a part with the dish whose uuid it names when another header has that id', async () => {
+    await seedHeaderWithBorrowedId();
+    await commands.placeCapturedFoods('u', { operationId: 'place-10', logId: 'log-1', placements: { dish: 'night' } });
+    const placed = Object.fromEntries((await rows(date)).map(row => [row.uuid, row.mealTime]));
+    expect(placed).toMatchObject({ dish: 'night', part: 'night', borrower: 'evening' });
   });
   it('refuses a placement keyed by a part linked through a short ID', async () => {
     await seedShortLinkDish();
