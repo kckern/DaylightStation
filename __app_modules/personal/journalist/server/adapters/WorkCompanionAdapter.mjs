@@ -32,6 +32,11 @@ export class WorkCompanionAdapter extends IWorkCompanion {
       offer: null
     });
   }
+  dispatchDelivery(input) {
+    return this.#runtime.conversation.dispatchDelivery?.(input) ?? Promise.resolve({
+      allowed: false
+    });
+  }
   prepareForMorning(input) {
     return this.#runtime.conversation.prepareForMorning?.(input) ?? Promise.resolve(null);
   }
@@ -101,9 +106,14 @@ export class WorkCompanionAdapter extends IWorkCompanion {
   async open({
     principal,
     flow,
+    knowledgePrincipal = null,
     responseContext
   }) {
     if (!this.#runtime.principal.verify(principal)) throw new Error('WORK_PRINCIPAL_REQUIRED');
+    this.#runtime.conversation.bindKnowledgePrincipal?.({
+      principal,
+      knowledgePrincipal
+    });
     const page = await this.#runtime.conversation.open({
       principal,
       flow,
@@ -125,6 +135,10 @@ export class WorkCompanionAdapter extends IWorkCompanion {
     if (!callbackData?.startsWith('w1:')) return {
       handled: false
     };
+    this.#runtime.conversation.bindKnowledgePrincipal?.({
+      principal,
+      knowledgePrincipal
+    });
     const result = await this.#runtime.conversation.handleCallback({
       principal,
       callbackData,
@@ -133,19 +147,27 @@ export class WorkCompanionAdapter extends IWorkCompanion {
     });
     if (result.status === 'knowledge_review') {
       const p = this.#runtime.principal.verify(principal);
-      if (!p || !knowledgePrincipal || knowledgePrincipal.username !== p.username || knowledgePrincipal.conversationId !== p.conversationId || !this.#knowledge?.openReview) return {
+      if (!p || p.kind !== 'callback' || !knowledgePrincipal || ['username', 'senderId', 'conversationId', 'kind', 'messageId', 'receiptId', 'callbackData'].some(k => knowledgePrincipal[k] !== p[k]) || !this.#knowledge?.openReview) return {
         handled: true,
         status: 'deferred',
         reason: 'knowledge_identity_unavailable'
       };
-      return {
-        handled: true,
-        ...(await this.#knowledge.openReview({
-          principal: knowledgePrincipal,
-          ids: result.knowledgeReviewIds,
-          responseContext
-        }))
-      };
+      try {
+        return {
+          handled: true,
+          ...(await this.#knowledge.openReview({
+            principal: knowledgePrincipal,
+            ids: result.knowledgeReviewIds,
+            responseContext
+          }))
+        };
+      } catch {
+        return {
+          handled: true,
+          status: 'deferred',
+          reason: 'knowledge_review_unavailable'
+        };
+      }
     }
     if (result.page) {
       const delivery = await this.#deliver({

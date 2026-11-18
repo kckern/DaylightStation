@@ -1,3 +1,4 @@
+import { groundedWorkMentions } from './domain/workIntent.mjs';
 import moment from 'moment-timezone';
 import { WorkFlows } from './application/WorkFlows.mjs';
 import { SelectWorkFlow } from './application/SelectWorkFlow.mjs';
@@ -90,6 +91,48 @@ const inert = reason => ({
   dispose: async () => {}
 });
 
+// Disabled writers still read existing accounting; they never acquire a writer lease.
+function retainedAttention(options) {
+  const store = new JsonlWorkState({
+    rootForUser: options.rootForUser ?? (username => path.join(options.dataDir, 'users', username, 'work')),
+    authority: {
+      assertWriter: async () => {
+        throw workError('WORK_WRITE_DENIED');
+      }
+    },
+    clock: options.clock ?? Date.now
+  });
+  return {
+    reserve: async input => {
+      if (input.owner !== 'knowledge') return {
+        allowed: false,
+        reason: 'work_disabled',
+        reservationId: null
+      };
+      try {
+        const now = (options.clock ?? Date.now)(),
+          timezone = options.userTimezone?.(input.username);
+        if (!moment.tz.zone(timezone)) throw workError('INVALID_ATTENTION_TIME');
+        const day = moment.tz(now, timezone).format('YYYY-MM-DD');
+        const snapshot = await store.read({
+          username: input.username
+        });
+        const occupied = Object.values(snapshot.attention ?? {}).some(r => r.status === 'dispatching' || ['prepared', 'quarantined'].includes(r.status) && r.expiresAt > now || ['delivered', 'responded'].includes(r.status) && r.day === day);
+        return {
+          allowed: snapshot.health.available && !occupied,
+          reason: occupied ? 'retained_work_capacity' : 'standalone_knowledge',
+          reservationId: null
+        };
+      } catch {
+        return {
+          allowed: false,
+          reason: 'accounting_unavailable',
+          reservationId: null
+        };
+      }
+    }
+  };
+}
 /** Composition grants reads and local coordination only; commands arrive separately. */
 export function createWorkRuntime(options = {}) {
   const {
@@ -100,7 +143,11 @@ export function createWorkRuntime(options = {}) {
     hostId = os.hostname()
   } = options;
   const document = () => typeof configuration === 'function' ? configuration() : configuration;
-  if (document()?.work?.enabled !== true) return inert('disabled');
+  if (document()?.work?.enabled !== true) {
+    const result = inert('disabled');
+    if (document()?.work && (options.rootForUser || options.dataDir)) result.attention = retainedAttention(options);
+    return result;
+  }
   const timezone = options.userTimezone ?? (() => null);
   const policy = username => resolveWorkPolicy({
     configuration: document(),
@@ -108,7 +155,11 @@ export function createWorkRuntime(options = {}) {
     timezone: timezone(username)
   });
   const usernames = () => Object.keys(document()?.work?.users ?? {}).filter(username => policy(username).enabled);
-  if (!usernames().length || typeof options.readCurrent !== 'function' || typeof options.readHistory !== 'function' || typeof options.rootForUser !== 'function' && !options.dataDir) return inert('invalid_runtime_dependencies');
+  if (!usernames().length) return {
+    ...inert('unenrolled'),
+    attention: options.rootForUser || options.dataDir ? retainedAttention(options) : null
+  };
+  if (typeof options.readCurrent !== 'function' || typeof options.readHistory !== 'function' || typeof options.rootForUser !== 'function' && !options.dataDir) return inert('invalid_runtime_dependencies');
   let stopped = false,
     commandService = null,
     decisionService = null,
@@ -238,7 +289,10 @@ export function createWorkRuntime(options = {}) {
     },
     verifySource: input => conversationService?.verifySource(input) ?? Promise.resolve(false),
     verifyConfirmation: input => decisionService?.verifyConfirmation(input) ?? Promise.resolve(false),
-    linkCandidates: typeof options.knowledgeLinkCandidates === 'function' ? input => options.knowledgeLinkCandidates(input) : null,
+    linkCandidates: typeof options.knowledgeLinkCandidates === 'function' ? input => options.knowledgeLinkCandidates({
+      ...input,
+      principal: knowledgePrincipals.get(input.principal)
+    }) : null,
     renderInvitation: input => flowService.renderInvitation(input),
     identityForUser: username => options.identityForUser?.(username),
     morningGate: input => options.knowledgeAttentionGate?.(input) ?? Promise.resolve({
@@ -281,12 +335,17 @@ export function createWorkRuntime(options = {}) {
         });
         for (const source of sources) {
           const row = evidence.find(e => e.ref === source.ref && e.verified && !e.previewOnly && e.sourceHash === source.sourceHash);
-          if (row) for (const observed of source.observations ?? []) groundedReferences.push({
-            ref: observed.ref,
-            at: source.at,
-            evidenceRef: source.ref,
-            verified: true
-          });
+          if (row && source.status === 'processed') for (const observed of source.observations ?? []) {
+            const item = context.items.find(i => keyOf(i.ref) === keyOf(observed.ref));
+            const intent = item && source.intents?.find(i => i.target?.title === item.title || i.targetText === item.title || i.title === item.title);
+            if (!item || !intent || !groundedWorkMentions(row.content, context.items).some(i => keyOf(i.ref) === keyOf(item.ref)) || !groundedWorkMentions(intent.quote, context.items).some(i => keyOf(i.ref) === keyOf(item.ref))) continue;
+            groundedReferences.push({
+              ref: observed.ref,
+              at: source.at,
+              evidenceRef: source.ref,
+              verified: true
+            });
+          }
         }
       }
       return {
@@ -345,16 +404,17 @@ export function createWorkRuntime(options = {}) {
     resolvePolicy: policy,
     clock
   });
+  const retained = retainedAttention(options);
+  const knowledgePrincipals = new WeakMap();
   const attention = {
     history: input => attentionService.history(input),
-    reserve: input => input.owner === 'knowledge' && (!policy(input.username).enabled || !policy(input.username).writer.write) ? Promise.resolve({
-      allowed: true,
-      reservationId: null,
-      reason: 'standalone_knowledge'
-    }) : canWrite(input.username) ? track(attentionService.reserve(input)) : Promise.resolve({
+    reserve: input => input.owner === 'knowledge' && (!policy(input.username).enabled || !policy(input.username).writer.write) ? retained.reserve(input) : canWrite(input.username) ? track(attentionService.reserve(input)) : Promise.resolve({
       allowed: false,
       reservationId: null,
       reason: 'work_write_disabled'
+    }),
+    dispatch: input => canWrite(input.username) ? track(attentionService.dispatch(input)) : Promise.resolve({
+      allowed: false
     }),
     acknowledge: input => track(attentionService.acknowledge(input)),
     fail: input => track(attentionService.fail(input)),
@@ -570,15 +630,30 @@ export function createWorkRuntime(options = {}) {
     });
   }
   const conversation = conversationService ? {
+    bindKnowledgePrincipal: ({
+      principal: work,
+      knowledgePrincipal: knowledge
+    }) => {
+      const p = principal.verify(work);
+      if (!p || !knowledge || ['username', 'senderId', 'conversationId', 'kind', 'messageId', 'receiptId', 'callbackData'].some(k => p[k] !== knowledge[k])) return false;
+      knowledgePrincipals.set(work, knowledge);
+      return true;
+    },
     capturePrincipal: input => conversationService.capturePrincipal(input),
     sourceForEntry: input => conversationService.sourceForEntry(input),
     onEntrySaved: input => track(conversationService.onEntrySaved(input)),
     handleCallback: input => track(conversationService.handleCallback(input)),
     deliverWeeklyReview: input => track((async () => {
       const p = policy(input.username);
-      if (!p.enabled) return {
-        handled: false
-      };
+      if (!p.enabled) {
+        const accounting = await retained.reserve({
+          owner: 'knowledge',
+          username: input.username
+        });
+        return {
+          handled: !accounting.allowed
+        };
+      }
       if (!canWrite(input.username) || !p.proactive || typeof options.send !== 'function') return {
         handled: true,
         status: 'disabled'
@@ -604,7 +679,10 @@ export function createWorkRuntime(options = {}) {
         status: 'empty'
       };
       try {
-        if (!canWrite(input.username) || !policy(input.username).proactive) throw workError('WORK_SEND_REVOKED');
+        if (!canWrite(input.username) || !(await flowService.dispatchDelivery({
+          username: input.username,
+          decisionId: page.decisionId
+        })).allowed) throw workError('WORK_SEND_REVOKED');
         const receipt = await options.send({
           username: input.username,
           text: page.text,
@@ -636,6 +714,9 @@ export function createWorkRuntime(options = {}) {
       offer: null
     }),
     prepareForMorning: input => canWrite(input.username) ? track(flowService.prepareForMorning(input)) : Promise.resolve(null),
+    dispatchDelivery: input => canWrite(input.username) ? track(flowService.dispatchDelivery(input)) : Promise.resolve({
+      allowed: false
+    }),
     recordDelivery: input => track(flowService.recordDelivery(input)),
     recordFailure: input => track(flowService.recordFailure(input)),
     open: input => track((async () => {

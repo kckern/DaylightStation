@@ -121,7 +121,7 @@ export class WorkFlows {
       askDate,
       asOf: this.#clock()
     });
-    return gate?.mode === 'knowledge' && gate.askDate === askDate && gate.questionCount < 2 ? gate : null;
+    return gate?.mode === 'knowledge' && gate.askDate === askDate && gate.questionCount < Math.min(2, gate.maxQuestionUnits ?? 2) ? gate : null;
   }
   async selectForMorning({
     username,
@@ -243,6 +243,41 @@ export class WorkFlows {
         knowledgeReviewIds: offer.evidenceRefs.slice(0, 5)
       } : {})
     };
+  }
+  async dispatchDelivery({
+    username,
+    decisionId
+  }) {
+    const state = await this.#state.read({
+      username
+    });
+    const record = Object.values(state.offers ?? {}).find(r => r.decisionId === decisionId);
+    const askDate = moment.tz(this.#clock(), this.#timezone(username)).format('YYYY-MM-DD');
+    if (!record || !(await this.#gate(username, askDate)) || !(await this.#check(username, record.offer.id))) return {
+      allowed: false
+    };
+    const identity = this.#context.identityForUser?.(username),
+      decision = state.decisions[decisionId];
+    if (!identity || decision?.senderId !== String(identity.senderId) || decision?.conversationId !== identity.conversationId) return {
+      allowed: false
+    };
+    const grant = await this.#budget.dispatch({
+      username,
+      reservationId: record.reservationId
+    });
+    const currentIdentity = this.#context.identityForUser?.(username);
+    if (!currentIdentity || decision.senderId !== String(currentIdentity.senderId) || decision.conversationId !== currentIdentity.conversationId) {
+      if (grant.allowed) await this.#budget.fail({
+        username,
+        reservationId: record.reservationId,
+        uncertain: false,
+        asOf: this.#clock()
+      });
+      return {
+        allowed: false
+      };
+    }
+    return grant;
   }
   async recordDelivery({
     username,
@@ -447,6 +482,7 @@ export class WorkFlows {
         };
       }
       const page = await this.#context.linkCandidates({
+        principal,
         username: p.username,
         senderId: p.senderId,
         conversationId: p.conversationId,
@@ -520,6 +556,7 @@ export class WorkFlows {
       record = state.offers?.[offerId],
       offer = record?.offer;
     if (!offer || record.status === 'resolved' || offer.policyRevision !== this.#policy(username).revision || offer.expiresAt <= this.#clock()) return null;
+    if (!record.explicitRequest && offer.ref && context.links.some(l => same(l.workRef, offer.ref) && context.knowledgeEligibility?.[l.kbObjectId]?.allowed !== true)) return null;
     if (!offer.ref) {
       if (offer.flowType !== 'knowledge_review' || context.pendingReview?.available !== true || context.pendingReview.revision !== offer.expectedVersion || !offer.evidenceRefs.every(id => context.pendingReview.ids.includes(id))) return null;
       return {
@@ -592,7 +629,7 @@ export class WorkFlows {
       const policy = this.#policy(p.username),
         domains = Object.entries(policy.domains).filter(([, d]) => {
           const b = policy.providers[d.provider];
-          return b.type === live.ref.provider && b.accountId === live.ref.accountId && d.containerId === live.containerRef.id;
+          return b.type === live.ref.provider && b.accountId === live.ref.accountId && b.operations?.includes('read') && d.containerId === live.containerRef.id && (!d.assigneeIds || d.assigneeIds.some(id => live.assigneeIds.includes(id)));
         });
       if (domains.length !== 1) return denied('ambiguous_domain');
       const id = 'offer.' + workHash([p.username, flowState.offerId, live.ref, live.version, choice.value.relevanceVersion]),
@@ -653,6 +690,7 @@ export class WorkFlows {
       if (choice.action !== 'choose') return denied('link_selection_required');
       const cursor = flowState.step === 'link_relation' ? record.linkCandidate?.cursor : choice.value?.cursor;
       const page = await this.#context.linkCandidates({
+        principal,
         username: p.username,
         senderId: p.senderId,
         conversationId: p.conversationId,
@@ -738,6 +776,17 @@ export class WorkFlows {
         type: 'relevance.changed',
         ref: offer.ref,
         relevance: next
+      };
+    }
+    if (offer.ref && ['later', 'dismiss'].includes(action)) {
+      const old = checked.state.relevance[keyOf(offer.ref)] ?? quiet(offer.ref);
+      changed = {
+        type: 'relevance.changed',
+        ref: offer.ref,
+        relevance: {
+          ...old,
+          invitationUntil: moment.tz(this.#clock(), this.#timezone(p.username)).add(30, 'days').valueOf()
+        }
       };
     }
     await this.#respond(p.username, record, action, changed);

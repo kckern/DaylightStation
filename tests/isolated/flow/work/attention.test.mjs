@@ -387,6 +387,7 @@ import { memoryStore, evidenceSource, nextId, evidence as knowledgeEvidence } fr
 import { loop } from '../../../../__app_modules/personal/lifelog/server/domain/knowledge/fixtures.testHelpers.mjs';
 import { createKnowledgeCallbackTokens } from '../../../../__app_modules/personal/lifelog/server/adapters/knowledge/KnowledgeCallbackTokens.mjs';
 import { GenerateMorningDebrief } from '../../../../__app_modules/personal/journalist/server/application/usecases/GenerateMorningDebrief.mjs';
+import { createKnowledgePrincipalAuthority } from '../../../../__app_modules/personal/lifelog/server/adapters/knowledge/KnowledgePrincipalAuthority.mjs';
 import { SendMorningDebrief } from '../../../../__app_modules/personal/journalist/server/application/usecases/SendMorningDebrief.mjs';
 import { WorkCompanionAdapter } from '../../../../__app_modules/personal/journalist/server/adapters/WorkCompanionAdapter.mjs';
 async function combined() {
@@ -418,12 +419,21 @@ async function combined() {
       }
     }),
     sources = evidenceSource([]),
+    knowledgeAuthority = createKnowledgePrincipalAuthority({
+      identityForSender: () => ({
+        username: 'sample',
+        senderId: '101',
+        conversationId: 'telegram:b42_c101'
+      }),
+      webhookSecret: 'secret',
+      clock: () => AS_OF
+    }),
     questions = new KnowledgeQuestions({
       enabled: true,
       store,
       evidence: sources,
       tokens: createKnowledgeCallbackTokens(),
-      verifyPrincipal: () => null,
+      verifyPrincipal: knowledgeAuthority.verify,
       identityForUser: () => ({
         username: 'sample',
         senderId: '101',
@@ -444,6 +454,7 @@ async function combined() {
   const source = {
       selectForMorning: i => questions.selectForMorning(i),
       prepareDelivery: i => questions.prepareDelivery(i),
+      dispatchDelivery: i => questions.dispatchDelivery(i),
       recordDelivery: i => questions.recordDelivery(i),
       recordDeliveryFailure: i => questions.recordDeliveryFailure(i)
     },
@@ -510,6 +521,7 @@ async function combined() {
     store,
     sources,
     questions,
+    knowledgeAuthority,
     send,
     archive,
     sender,
@@ -574,8 +586,32 @@ it('binds a real scoped task to a grounded KB commitment only through the explic
       asOf: AS_OF
     });
     const token = page.choices.flat().find(b => b.text === label).callback_data;
+    const principal = x.principal(token, messageId);
+    const knowledgePrincipal = x.knowledgeAuthority.attest({
+      webhookSecret: 'secret',
+      event: {
+        platform: 'telegram',
+        platformUserId: '101',
+        conversationId: principal.conversationId,
+        type: principal.kind,
+        messageId,
+        metadata: {
+          senderId: '101',
+          chatId: '101',
+          chatType: 'private'
+        },
+        payload: {
+          callbackData: token,
+          callbackId: principal.receiptId.split(':callback:')[1]
+        }
+      }
+    });
+    x.runtime.conversation.bindKnowledgePrincipal({
+      principal,
+      knowledgePrincipal
+    });
     return x.runtime.conversation.handleCallback({
-      principal: x.principal(token, messageId),
+      principal,
       callbackData: token,
       botMessageId: messageId,
       asOf: AS_OF
@@ -598,4 +634,84 @@ it('binds a real scoped task to a grounded KB commitment only through the explic
     username: 'sample'
   })).objects['loop.application-reply'].status).toBe('open');
   expect(x.writes).toHaveLength(0);
+});
+it('retains existing Work accounting across read-only and disabled runtime restarts', async () => {
+  const x = await setup({
+    proactive: true,
+    items: 1
+  });
+  x.setPending(['review-only']);
+  await x.runtime.conversation.deliverWeeklyReview({
+    username: 'sample',
+    asOf: x.now()
+  });
+  expect(x.sent).toHaveLength(1);
+  x.config.work.write = false;
+  const req = {
+    owner: 'knowledge',
+    username: 'sample',
+    decisionId: 'new-kb',
+    channel: 'morning',
+    flowType: 'morning',
+    questionUnits: 2,
+    expiresAt: x.now() + 86400000
+  };
+  expect((await x.runtime.attention.reserve(req)).allowed).toBe(false);
+  x.config.work.enabled = false;
+  const restarted = createWorkRuntime({
+    configuration: x.config,
+    rootForUser: username => path.join(x.root, username, 'work'),
+    userTimezone: () => 'America/Los_Angeles',
+    clock: x.now
+  });
+  expect((await restarted.attention.reserve(req)).allowed).toBe(false);
+  await restarted.dispose();
+});
+it('a genuine weekly Review can resume its read-only handoff on another tap without a second invitation', async () => {
+  const x = await setup({
+    proactive: true,
+    items: 1
+  });
+  x.setPending(['review-1']);
+  await x.runtime.conversation.deliverWeeklyReview({
+    username: 'sample',
+    asOf: x.now()
+  });
+  const token = x.sent[0].choices[0][0].callback_data;
+  const tap = () => x.runtime.conversation.handleCallback({
+    principal: x.principal(token, '301'),
+    callbackData: token,
+    botMessageId: '301',
+    asOf: x.now()
+  });
+  expect((await tap()).status).toBe('knowledge_review');
+  expect((await tap()).status).toBe('knowledge_review');
+  const other = x.sent[0].choices.flat().find(b => b.text === 'Later').callback_data;
+  expect((await x.runtime.conversation.handleCallback({
+    principal: x.principal(other, '301'),
+    callbackData: other,
+    botMessageId: '301',
+    asOf: x.now()
+  })).status).not.toBe('knowledge_review');
+  x.setPending(['review-2']);
+  await x.runtime.conversation.deliverWeeklyReview({
+    username: 'sample',
+    asOf: x.now()
+  });
+  expect(x.sent).toHaveLength(1);
+});
+it('a morning prepared on one day cannot reach transport on another day', async () => {
+  const x = await combined();
+  const prepare = x.questions.prepareDelivery.bind(x.questions);
+  x.questions.prepareDelivery = async input => {
+    const d = await prepare(input);
+    x.advance(86400000);
+    return d;
+  };
+  await expect(x.sender.execute({
+    username: 'sample',
+    conversationId: 'telegram:b42_c101',
+    debrief: x.debrief
+  })).rejects.toThrow('KNOWLEDGE_DISPATCH_DENIED');
+  expect(x.send).not.toHaveBeenCalled();
 });

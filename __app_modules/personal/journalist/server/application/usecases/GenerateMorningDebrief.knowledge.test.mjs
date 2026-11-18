@@ -198,3 +198,18 @@ it.each(['control', 'unavailable', 'two'])('adds no Work opportunity for %s know
   await run(d);
   expect(work.selectForMorning).not.toHaveBeenCalled();
 });
+it('retains independent activity facts on control days for a denied or failed question reservation', async () => {
+  const d = setup({
+    selected: {
+      mode: 'legacy',
+      reason: 'control',
+      selectionId: 'control',
+      askDate: '2026-11-03',
+      questions: []
+    },
+    raw: 'HOOK: How was it?\nFirst?\nSecond?\nThird?'
+  });
+  const result = await run(d);
+  expect(result.knowledgeFacts).toBeTruthy();
+  expect(result.knowledgeFacts).not.toContain('?');
+});

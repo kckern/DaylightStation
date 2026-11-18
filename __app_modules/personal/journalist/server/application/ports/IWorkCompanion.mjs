@@ -6,6 +6,9 @@ export class IWorkCompanion {
   async prepareForMorning(_input) {
     throw new Error('Not implemented');
   }
+  async dispatchDelivery(_input) {
+    throw new Error('Not implemented');
+  }
   async recordDelivery(_input) {
     throw new Error('Not implemented');
   }

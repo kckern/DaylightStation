@@ -1,5 +1,5 @@
 import { it, expect } from 'vitest';
-import { matchWorkIntent } from './workIntent.mjs';
+import { matchWorkIntent, groundedWorkMentions } from './workIntent.mjs';
 import { item, ref } from '../../../../../tests/_lib/work/stateHarness.mjs';
 const policy = {
   enabled: true,
@@ -141,4 +141,29 @@ it('matches a requested project-container rename by scoped identity while requir
     mode: 'clarify',
     matches: [container]
   });
+});
+it('grounds whole unique native titles rather than substrings or duplicate titles', () => {
+  expect(groundedWorkMentions('I ate brunch', [{
+    title: 'Run',
+    ref: {
+      id: 'one'
+    }
+  }])).toHaveLength(0);
+  expect(groundedWorkMentions('I finished Run', [{
+    title: 'Run',
+    ref: {
+      id: 'one'
+    }
+  }, {
+    title: 'Run',
+    ref: {
+      id: 'two'
+    }
+  }])).toHaveLength(0);
+  expect(groundedWorkMentions('I finished Run', [{
+    title: 'Run',
+    ref: {
+      id: 'one'
+    }
+  }])).toHaveLength(1);
 });

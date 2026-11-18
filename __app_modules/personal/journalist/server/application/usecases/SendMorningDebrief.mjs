@@ -101,7 +101,10 @@ export class SendMorningDebrief {
     };
     let knowledgeDelivery = null,
       workDelivery = null,
-      summaryForArchive = null;
+      summaryForArchive = null,
+      knowledgeAcknowledged = false,
+      workAcknowledged = false,
+      dispatched = false;
     const username = input.username ?? debrief.username;
     this.#logger.info?.('debrief.send.start', {
       conversationId,
@@ -128,7 +131,7 @@ export class SendMorningDebrief {
       }
       if (debrief.knowledgeSelection?.mode === 'knowledge') {
         const selection = debrief.knowledgeSelection;
-        const facts = debrief.knowledgeFacts ?? 'Recorded daily activity.';
+        const facts = debrief.knowledgeFacts ?? SendMorningDebrief.factsOnly(debrief.summary);
         try {
           if (!this.#followUpSource) throw Error('Knowledge delivery unavailable');
           knowledgeDelivery = await this.#followUpSource.prepareDelivery({
@@ -184,7 +187,7 @@ export class SendMorningDebrief {
               knowledgeDelivery = null;
               debrief = {
                 ...debrief,
-                summary: debrief.knowledgeFacts ?? 'Recorded daily activity.',
+                summary: debrief.knowledgeFacts ?? SendMorningDebrief.factsOnly(debrief.summary),
                 headline: null,
                 knowledgeControl: null
               };
@@ -196,6 +199,13 @@ export class SendMorningDebrief {
           }
         } catch {
           this.#logger.warn?.('debrief.knowledge.control-prepare-failed');
+          knowledgeDelivery = null;
+          debrief = {
+            ...debrief,
+            summary: debrief.knowledgeFacts ?? SendMorningDebrief.factsOnly(debrief.summary),
+            headline: null,
+            knowledgeControl: null
+          };
         }
       }
       summaryForArchive = debrief.summary;
@@ -228,6 +238,17 @@ export class SendMorningDebrief {
       if (workDelivery) keyboard.inline_keyboard.unshift(...workDelivery.choices);
       // Send message with keyboard
       // Note: TelegramAdapter expects camelCase 'parseMode' and 'choices'/'inline' for keyboards
+      if (knowledgeDelivery && this.#followUpSource.dispatchDelivery && !(await this.#followUpSource.dispatchDelivery({
+        username,
+        deliveryId: knowledgeDelivery.deliveryId,
+        asOf: this.#clock()
+      })).allowed) throw Error('KNOWLEDGE_DISPATCH_DENIED');
+      if (workDelivery && this.#workCompanion.dispatchDelivery && !(await this.#workCompanion.dispatchDelivery({
+        username,
+        decisionId: workDelivery.decisionId,
+        asOf: this.#clock()
+      })).allowed) throw Error('WORK_DISPATCH_DENIED');
+      dispatched = true;
       const result = await messaging.sendMessage(message, {
         parseMode: 'HTML',
         inline: true,
@@ -246,12 +267,14 @@ export class SendMorningDebrief {
           asOf: this.#clock()
         });
       }
+      knowledgeAcknowledged = !!knowledgeDelivery;
       if (workDelivery) await this.#workCompanion.recordDelivery({
         username,
         decisionId: workDelivery.decisionId,
         botMessageId: result.messageId,
         asOf: this.#clock()
       });
+      workAcknowledged = !!workDelivery;
       // Save to journal history
       if (this.#journalEntryRepository) {
         await this.#journalEntryRepository.saveMessage({
@@ -326,22 +349,22 @@ export class SendMorningDebrief {
         fallback: false
       };
     } catch (error) {
-      if (workDelivery) try {
+      if (workDelivery && !workAcknowledged) try {
         await this.#workCompanion.recordDeliveryFailure({
           username,
           decisionId: workDelivery.decisionId,
-          uncertain: true,
+          uncertain: dispatched,
           asOf: this.#clock()
         });
       } catch {
         this.#logger.warn?.('debrief.work.quarantine-failed');
       }
-      if (knowledgeDelivery) {
+      if (knowledgeDelivery && !knowledgeAcknowledged) {
         try {
           await this.#followUpSource.recordDeliveryFailure({
             username,
             deliveryId: knowledgeDelivery.deliveryId,
-            uncertain: true,
+            uncertain: dispatched,
             asOf: this.#clock()
           });
         } catch {
@@ -355,6 +378,10 @@ export class SendMorningDebrief {
       });
       throw error;
     }
+  }
+  static factsOnly(summary = '') {
+    const facts = summary.split(/\n/).filter(line => !/[?？]/.test(line)).join('\n').trim();
+    return facts || 'Recorded daily activity.';
   }
 
   /**

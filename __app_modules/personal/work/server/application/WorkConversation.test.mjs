@@ -347,3 +347,33 @@ it('turns board check-in into a confirmed semantic transition and never a comple
   }));
   expect(x.commands.execute).not.toHaveBeenCalled();
 });
+it.each(['substring', 'duplicate'])('does not save ambiguous %s observations as current involvement', async mode => {
+  const x = setup();
+  x.setDto({
+    ...x.getDto(),
+    content: mode === 'substring' ? 'I ate brunch' : 'I finished Run'
+  });
+  x.context.execute = async () => ({
+    coverage: {
+      complete: true
+    },
+    items: mode === 'substring' ? [item({
+      title: 'Run'
+    })] : [item({
+      title: 'Run'
+    }), item({
+      title: 'Run',
+      ref: {
+        ...ref,
+        id: 'other'
+      }
+    })],
+    containers: [],
+    links: []
+  });
+  await x.save();
+  const snapshot = await x.state.read({
+    username: 'sample'
+  });
+  expect(Object.values(snapshot.sources)[0].observations).toHaveLength(0);
+});

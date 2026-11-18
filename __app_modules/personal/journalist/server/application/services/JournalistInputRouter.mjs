@@ -161,6 +161,7 @@ export class JournalistInputRouter {
     };
     if (this.#workCompanion && context.workPrincipal && Object.hasOwn(workFlows, text)) return this.#workCompanion.open({
       principal: context.workPrincipal,
+      knowledgePrincipal: context.knowledgePrincipal,
       flow: workFlows[text],
       responseContext: context.responseContext
     });
@@ -322,6 +323,7 @@ export class JournalistInputRouter {
     };
     if (this.#workCompanion && context.workPrincipal && Object.hasOwn(workFlows, command)) return this.#workCompanion.open({
       principal: context.workPrincipal,
+      knowledgePrincipal: context.knowledgePrincipal,
       flow: workFlows[command],
       responseContext: context.responseContext
     });

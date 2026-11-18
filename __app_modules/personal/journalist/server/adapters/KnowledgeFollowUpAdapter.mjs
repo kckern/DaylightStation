@@ -46,6 +46,9 @@ export class KnowledgeFollowUpAdapter extends IKnowledgeCompanion {
   selectForMorning(input) {
     return this.#runtime.followUps.selectForMorning(input);
   }
+  dispatchDelivery(input) {
+    return this.#runtime.followUps.dispatchDelivery(input);
+  }
   prepareDelivery(input) {
     return this.#runtime.followUps.prepareDelivery(input);
   }

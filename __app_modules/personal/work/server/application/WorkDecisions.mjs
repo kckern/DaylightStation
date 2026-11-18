@@ -315,6 +315,10 @@ export class WorkDecisions {
         asOf
       });
       if (choice.denied) return denied(choice.denied);
+      if (decision.status === 'resolved' && decision.claimed?.tokenHash === hash && decision.result?.status === 'knowledge_review') return {
+        handled: true,
+        ...decision.result
+      };
       if (decision.status === 'resolved') return {
         handled: true,
         status: 'already_applied',

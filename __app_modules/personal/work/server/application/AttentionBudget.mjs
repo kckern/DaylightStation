@@ -94,7 +94,7 @@ export class AttentionBudget {
       const same = Object.values(state.attention ?? {}).filter(r => r.decisionId === decisionId);
       const previous = same.find(r => r.id === id);
       if (previous) return denied(previous.status === 'prepared' && previous.expiresAt > now ? 'already_reserved' : previous.status, id);
-      if (same.some(r => ['quarantined', 'delivered', 'responded'].includes(r.status))) return denied('already_reserved', same[0].id);
+      if (same.some(r => ['prepared', 'dispatching', 'quarantined', 'delivered', 'responded'].includes(r.status))) return denied('already_reserved', same[0].id);
       const manual = ['direct_request', 'echo', 'quiz'].includes(channel);
       const history = manual ? {
         available: true,
@@ -107,9 +107,13 @@ export class AttentionBudget {
         asOf: now
       });
       if (history.available === false) return denied('history_unavailable');
+      if (!manual && channel !== 'morning' && (history.unansweredInvitations?.length || Object.values(state.attention ?? {}).some(r => r.channel !== 'morning' && !r.response && (['dispatching', 'quarantined'].includes(r.status) || r.expiresAt > now && ['prepared', 'delivered'].includes(r.status))))) return denied('pending_invitation');
       const eligible = attentionEligibility({
-        records: mergeAttentionHistory(Object.values(state.attention ?? {}).filter(r => !same.some(old => old.id === r.id && old.status === 'prepared')), history),
-        policy: current.attention,
+        records: mergeAttentionHistory(Object.values(state.attention ?? {}), history),
+        policy: {
+          ...current.attention,
+          maxProactiveUnitsPerDay: Math.min(current.attention.maxProactiveUnitsPerDay ?? 2, history.maxQuestionUnits ?? 2)
+        },
         day,
         asOf: now,
         channel,
@@ -165,6 +169,64 @@ export class AttentionBudget {
     }
     return denied('contention');
   }
+  async dispatch({
+    username,
+    reservationId
+  }) {
+    let allowed = false,
+      dispatchRevision,
+      dispatchExpiresAt;
+    const now = this.#clock();
+    const history = await this.#history.read({
+      username,
+      askDate: this.#day(username, now),
+      asOf: now
+    });
+    if (history.available === false) return {
+      allowed: false
+    };
+    const result = await this.#change(username, reservationId, 'dispatch', now, (row, state) => {
+      allowed = false;
+      const policy = this.#policy(username);
+      if (row.status !== 'prepared' || row.expiresAt <= now || row.day !== this.#day(username, this.#clock()) || row.expiresAt <= this.#clock() || !policy.enabled || row.policyRevision !== policy.revision) return null;
+      const records = mergeAttentionHistory(Object.values(state.attention ?? {}), history).filter(r => r.id !== reservationId);
+      if (!attentionEligibility({
+        records,
+        policy: {
+          ...policy.attention,
+          maxProactiveUnitsPerDay: Math.min(2, policy.attention.maxProactiveUnitsPerDay ?? 2, history.maxQuestionUnits ?? 2)
+        },
+        day: row.day,
+        asOf: now,
+        channel: row.channel,
+        flowType: row.flowType,
+        questionUnits: row.questionUnits,
+        refKey: row.refKey
+      }).allowed) return null;
+      allowed = true;
+      dispatchRevision = policy.revision;
+      dispatchExpiresAt = row.expiresAt;
+      return {
+        type: 'attention.dispatching',
+        reservationId,
+        at: now
+      };
+    });
+    if (allowed && result.applied && (this.#day(username, this.#clock()) !== this.#day(username, now) || dispatchExpiresAt <= this.#clock() || !this.#policy(username).enabled || this.#policy(username).revision !== dispatchRevision)) {
+      await this.fail({
+        username,
+        reservationId,
+        uncertain: false,
+        asOf: this.#clock()
+      });
+      return {
+        allowed: false
+      };
+    }
+    return {
+      allowed: allowed && result.applied === true
+    };
+  }
   async #change(username, reservationId, kind, at, build) {
     assertWorkUser(username);
     for (let n = 0; n < 8; n++) {
@@ -174,7 +236,7 @@ export class AttentionBudget {
       if (!state.health.available) throw workError('WORK_STATE_UNAVAILABLE');
       const row = state.attention?.[reservationId];
       if (!row) throw workError('ATTENTION_UNKNOWN');
-      const event = build(row);
+      const event = build(row, state);
       if (!event) return {
         applied: false
       };
@@ -205,7 +267,7 @@ export class AttentionBudget {
         if (row.botMessageId !== String(botMessageId)) throw workError('ATTENTION_ACK_MISMATCH');
         return null;
       }
-      if (row.status !== 'prepared' || deliveredAt >= row.expiresAt || deliveredAt < row.createdAt) throw workError('ATTENTION_NOT_PENDING');
+      if (!['prepared', 'dispatching'].includes(row.status) || row.status !== 'dispatching' && deliveredAt >= row.expiresAt || deliveredAt < row.createdAt) throw workError('ATTENTION_NOT_PENDING');
       return {
         type: 'attention.sent',
         day,
@@ -221,7 +283,7 @@ export class AttentionBudget {
     uncertain,
     asOf = this.#clock()
   }) {
-    return this.#change(username, reservationId, 'fail', asOf, row => row.status !== 'prepared' ? null : {
+    return this.#change(username, reservationId, 'fail', asOf, row => !['prepared', 'dispatching'].includes(row.status) ? null : {
       type: 'attention.failed',
       reservationId,
       uncertain: uncertain === true,

@@ -118,7 +118,7 @@ export class GenerateMorningDebrief {
             ...this.#presentKnowledge({
               summary: existingDebrief.summary,
               headline: existingDebrief.headline || null
-            }, lifelog, knowledgeSelection),
+            }, lifelog, knowledgeSelection ?? knowledgeControl),
             ...(knowledgeSelection ? {
               knowledgeSelection,
               askDate,
@@ -159,7 +159,7 @@ export class GenerateMorningDebrief {
           ...this.#presentKnowledge({
             summary: '',
             headline: null
-          }, lifelog, knowledgeSelection)
+          }, lifelog, knowledgeSelection ?? knowledgeControl)
         };
       }
       if (!lifelog._meta.hasEnoughData) {
@@ -202,7 +202,7 @@ export class GenerateMorningDebrief {
         ...this.#presentKnowledge({
           summary,
           headline
-        }, lifelog, knowledgeSelection, conversationContext),
+        }, lifelog, knowledgeSelection ?? knowledgeControl, conversationContext),
         ...(knowledgeSelection ? {
           knowledgeSelection,
           askDate,
@@ -237,6 +237,13 @@ export class GenerateMorningDebrief {
   }
   #presentKnowledge(parsed, lifelog, selection, context = []) {
     if (!selection) return parsed;
+    if (selection.mode === 'legacy' && selection.reason === 'control') {
+      const facts = this.#generateFallbackSummary(lifelog);
+      return {
+        ...parsed,
+        knowledgeFacts: facts.includes('?') ? 'Recorded sources: ' + (lifelog._meta.sources ?? []).join(', ') + '.' : facts
+      };
+    }
     const fallback = this.#generateFallbackSummary(lifelog);
     return presentKnowledgeQuestions({
       ...parsed,

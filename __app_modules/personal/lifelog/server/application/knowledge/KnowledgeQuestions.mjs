@@ -41,6 +41,7 @@ export class KnowledgeQuestions {
   #id;
   #activation;
   #attention;
+  #reviewGrants = new WeakMap();
   constructor({
     enabled = false,
     store,
@@ -270,6 +271,7 @@ export class KnowledgeQuestions {
     });
   }
   async linkCandidates({
+    principal,
     username,
     senderId,
     conversationId,
@@ -284,7 +286,8 @@ export class KnowledgeQuestions {
         revision: 'unavailable',
         nextCursor: null
       };
-    if (!identity || String(identity.senderId) !== String(senderId) || identity.conversationId !== conversationId || !Number.isSafeInteger(cursor) || cursor < 0) return empty;
+    const actor = this.#verify(principal);
+    if (!actor?.authored || actor.username !== username || actor.senderId !== String(senderId) || actor.conversationId !== conversationId || !identity || String(identity.senderId) !== String(senderId) || identity.conversationId !== conversationId || !Number.isSafeInteger(cursor) || cursor < 0) return empty;
     await this.#refreshRevocations(username);
     const snapshot = await this.#store.read({
       username
@@ -322,6 +325,13 @@ export class KnowledgeQuestions {
       nextCursor: cursor + scanned < candidates.length ? cursor + scanned : null
     };
   }
+  async #allowance(username, askDate) {
+    const snapshot = await this.#store.read({
+      username
+    });
+    if (!snapshot.health.available) return 0;
+    return snapshot.state.backoff?.until > askDate ? [0, 6].includes(new Date(askDate + 'T12:00:00Z').getUTCDay()) ? 1 : 0 : 2;
+  }
   async attentionGate({
     username,
     askDate,
@@ -334,6 +344,7 @@ export class KnowledgeQuestions {
       max: 2
     });
     return {
+      maxQuestionUnits: await this.#allowance(username, askDate),
       mode: selected.mode,
       reason: selected.reason,
       questionCount: selected.questions?.length ?? 2,
@@ -346,6 +357,7 @@ export class KnowledgeQuestions {
     kbObjectIds,
     asOf
   }) {
+    await this.#refreshRevocations(username);
     const snapshot = await this.#store.read({
         username
       }),
@@ -376,7 +388,8 @@ export class KnowledgeQuestions {
     username,
     asOf,
     max = 5,
-    excludeIds = []
+    excludeIds = [],
+    onlyIds = null
   }) {
     if (!this.#enabled) return {
       available: false,
@@ -396,7 +409,7 @@ export class KnowledgeQuestions {
       revision: 'unavailable',
       due: false
     };
-    const candidates = (snapshot.state.pendingReviews ?? []).filter(r => ['person_confirmation', 'alias_confirmation', 'sensitive'].includes(r.reason) && !excludeIds.includes(r.id) && !snapshot.state.invalidatedRefs?.includes(r.proposal.evidenceRef)).sort((a, b) => a.createdAt - b.createdAt || a.id.localeCompare(b.id)).slice(0, 100);
+    const candidates = (snapshot.state.pendingReviews ?? []).filter(r => ['person_confirmation', 'alias_confirmation', 'sensitive'].includes(r.reason) && (!onlyIds || onlyIds.includes(r.id)) && !excludeIds.includes(r.id) && !snapshot.state.invalidatedRefs?.includes(r.proposal.evidenceRef)).sort((a, b) => a.createdAt - b.createdAt || a.id.localeCompare(b.id)).slice(0, 100);
     const evidence = await this.#evidence.readByRefs({
         username,
         refs: [...new Set(candidates.map(r => r.proposal.evidenceRef))],
@@ -438,11 +451,12 @@ export class KnowledgeQuestions {
     const pending = await this.pendingReview({
       username: p.username,
       asOf,
-      max: 5
+      max: 5,
+      onlyIds: ids
     });
     if (!pending.available || ids.some(id => !pending.ids.includes(id))) fail('KNOWLEDGE_REVIEW_CHANGED');
     const askDate = this.#date(p.username, asOf),
-      requestId = knowledgeRevision(JSON.stringify([p.receiptId, ids]));
+      requestId = knowledgeRevision(JSON.stringify([p.kind === 'callback' ? [p.callbackData, p.messageId] : p.receiptId, ids]));
     let selectionId = this.#id();
     await mutateKnowledge({
       store: this.#store,
@@ -483,6 +497,12 @@ export class KnowledgeQuestions {
         });
       }
     });
+    const reviewGrant = {};
+    this.#reviewGrants.set(reviewGrant, {
+      principal,
+      username: p.username,
+      selectionId
+    });
     return this.prepareDelivery({
       username: p.username,
       conversationId: p.conversationId,
@@ -491,7 +511,7 @@ export class KnowledgeQuestions {
       channel: 'review',
       questionIds: ids.map(id => 'review:' + id),
       asOf,
-      explicitRequest: true
+      reviewGrant
     });
   }
   async prepareWeeklyReview({
@@ -571,8 +591,10 @@ export class KnowledgeQuestions {
     channel,
     questionIds = [],
     asOf,
-    explicitRequest = false
+    reviewGrant = null
   }) {
+    const grant = reviewGrant && this.#reviewGrants.get(reviewGrant);
+    const explicitRequest = !!(grant && this.#principal(grant.principal).username === username && grant.selectionId === selectionId);
     if (!this.#enabled) fail('KNOWLEDGE_DISABLED');
     await this.#refreshRevocations(username);
     if (this.#date(username, asOf) !== askDate) fail('KNOWLEDGE_ASK_DATE_MISMATCH');
@@ -618,6 +640,15 @@ export class KnowledgeQuestions {
       };
       attentionReservationId = grant.reservationId ?? null;
     }
+    const preparationSnapshot = await this.#store.read({
+      username
+    });
+    const reviewRows = preparationSnapshot.state.selections?.[selectionId]?.questions?.filter(q => q.scope === 'review') ?? [];
+    const reviewEvidence = reviewRows.length ? await this.#evidence.readByRefs({
+      username,
+      refs: [...new Set(reviewRows.map(q => preparationSnapshot.state.pendingReviews?.find(r => r.id === q.proposalId)?.proposal.evidenceRef).filter(Boolean))],
+      preview: false
+    }) : [];
     let output;
     try {
       await mutateKnowledge({
@@ -656,6 +687,22 @@ export class KnowledgeQuestions {
           } else {
             if (questionIds.some(id => !selection.questions.some(q => q.id === id))) fail('KNOWLEDGE_QUESTION_MISMATCH');
             questions = selection.questions.filter(q => questionIds.includes(q.id)).map(q => {
+              if (q.scope === 'review') {
+                try {
+                  reviewKnowledge({
+                    snapshot,
+                    reviewId: q.proposalId,
+                    action: 'confirm',
+                    evidence: reviewEvidence,
+                    asOf,
+                    timezone: this.#timezone(username),
+                    receiptId: 'prepare:' + q.proposalId
+                  });
+                  return q;
+                } catch {
+                  return null;
+                }
+              }
               if (q.scope && q.scope !== 'loop') return q;
               const object = snapshot.objects[q.objectId];
               if (!object || !['open', 'waiting', 'stale'].includes(object.status) || !['normal', 'user_initiated'].includes(object.ask_policy)) return null;
@@ -952,6 +999,31 @@ export class KnowledgeQuestions {
       asOf
     });
   }
+  async dispatchDelivery({
+    username,
+    deliveryId,
+    asOf
+  }) {
+    const snapshot = await this.#store.read({
+      username
+    });
+    const d = snapshot.state.deliveries?.[deliveryId];
+    if (!this.#fresh(snapshot, asOf) || !d || d.status !== 'prepared' || d.askDate !== this.#date(username, asOf) || d.createdAt + DAY <= asOf) return {
+      allowed: false
+    };
+    if (!d.explicitRequest && ['morning', 'review'].includes(d.channel)) {
+      const allowance = await this.#allowance(username, d.askDate);
+      if (d.questions.length > allowance) return {
+        allowed: false
+      };
+    }
+    return d.attentionReservationId && this.#attention?.dispatch ? this.#attention.dispatch({
+      username,
+      reservationId: d.attentionReservationId
+    }) : {
+      allowed: true
+    };
+  }
   async attentionHistory({
     username,
     asOf
@@ -972,6 +1044,7 @@ export class KnowledgeQuestions {
     for (const d of Object.values(snapshot.state.deliveries ?? {})) {
       if (!['morning', 'review'].includes(d.channel) || d.explicitRequest === true) continue;
       covered.add(d.id);
+      if (d.status === 'delivered' && asOf - d.deliveredAt > 31 * DAY || ['cancelled', 'expired'].includes(d.status)) continue;
       const row = {
         id: 'kb:' + d.id,
         reservationId: d.attentionReservationId ?? null,
@@ -991,7 +1064,7 @@ export class KnowledgeQuestions {
     }
     const groups = new Map();
     for (const ask of snapshot.asks) {
-      if (!['morning', 'review'].includes(ask.channel) || covered.has(ask.deliveryId) || !ask.botMessageId || !Number.isFinite(ask.deliveredAt)) continue;
+      if (asOf - ask.deliveredAt > 31 * DAY || !['morning', 'review'].includes(ask.channel) || covered.has(ask.deliveryId) || !ask.botMessageId || !Number.isFinite(ask.deliveredAt)) continue;
       const id = 'kb:' + (ask.deliveryId ?? 'ask:' + ask.id),
         old = groups.get(id);
       if (old) old.questionUnits++;else groups.set(id, {
@@ -1007,6 +1080,7 @@ export class KnowledgeQuestions {
     }
     return {
       available: true,
+      maxQuestionUnits: await this.#allowance(username, this.#date(username, asOf)),
       deliveries: [...deliveries, ...groups.values()],
       reservations,
       unansweredInvitations

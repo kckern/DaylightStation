@@ -12,7 +12,8 @@ export const workRelevanceVersion = r => workHash({
   state: r?.state ?? 'unconfirmed',
   confirmedAt: r?.confirmedAt ?? null,
   reviewAt: r?.reviewAt ?? null,
-  snoozedUntil: r?.snoozedUntil ?? null
+  snoozedUntil: r?.snoozedUntil ?? null,
+  invitationUntil: r?.invitationUntil ?? null
 });
 export const accountKey = ({
   provider,
@@ -87,11 +88,15 @@ export function applyWorkEvents(before, events, {
       state.attention ??= {};
       if (state.attention[r.id] && stableWorkJson(state.attention[r.id]) !== stableWorkJson(r)) throw workError('ATTENTION_CONFLICT');
       state.attention[r.id] = structuredClone(r);
-    } else if (['attention.sent', 'attention.failed', 'attention.responded'].includes(event.type)) {
+    } else if (['attention.dispatching', 'attention.sent', 'attention.failed', 'attention.responded'].includes(event.type)) {
       const r = state.attention?.[event.reservationId];
       if (!r || !finite(event.at)) throw workError('INVALID_ATTENTION_EVENT');
-      if (event.type === 'attention.sent') {
-        if (r.status !== 'prepared' || !/^\d+$/.test(event.botMessageId ?? '') || event.at < r.createdAt || event.at >= r.expiresAt) throw workError('INVALID_ATTENTION_EVENT');
+      if (event.type === 'attention.dispatching') {
+        if (r.status !== 'prepared' || event.at >= r.expiresAt) throw workError('INVALID_ATTENTION_EVENT');
+        r.status = 'dispatching';
+        r.dispatchedAt = event.at;
+      } else if (event.type === 'attention.sent') {
+        if (!['prepared', 'dispatching'].includes(r.status) || !/^\d+$/.test(event.botMessageId ?? '') || event.at < r.createdAt || r.status !== 'dispatching' && event.at >= r.expiresAt) throw workError('INVALID_ATTENTION_EVENT');
         r.status = 'delivered';
         if (event.day !== undefined) {
           if (!/^\d{4}-\d{2}-\d{2}$/.test(event.day)) throw workError('INVALID_ATTENTION_EVENT');
@@ -101,7 +106,7 @@ export function applyWorkEvents(before, events, {
         r.deliveredAt = event.at;
         r.botMessageId = event.botMessageId;
       } else if (event.type === 'attention.failed') {
-        if (r.status !== 'prepared' || typeof event.uncertain !== 'boolean') throw workError('INVALID_ATTENTION_EVENT');
+        if (!['prepared', 'dispatching'].includes(r.status) || typeof event.uncertain !== 'boolean') throw workError('INVALID_ATTENTION_EVENT');
         r.status = event.uncertain ? 'quarantined' : 'cancelled';
         r.failedAt = event.at;
       } else {
@@ -115,7 +120,7 @@ export function applyWorkEvents(before, events, {
       validateWorkRef(event.ref);
       const r = event.relevance,
         key = keyOf(event.ref);
-      if (!r || r.key !== key || !['unconfirmed', 'active', 'paused', 'retired'].includes(r.state) || !['confirmedAt', 'reviewAt', 'snoozedUntil', 'lastOfferedAt'].every(k => instant(r[k])) || !Number.isSafeInteger(r.ignoredOffers) || r.ignoredOffers < 0) throw workError('INVALID_WORK_EVENT');
+      if (!r || r.key !== key || !['unconfirmed', 'active', 'paused', 'retired'].includes(r.state) || !['confirmedAt', 'reviewAt', 'snoozedUntil', 'lastOfferedAt'].every(k => instant(r[k])) || !Number.isSafeInteger(r.ignoredOffers) || r.ignoredOffers < 0 || Object.hasOwn(r, 'invitationUntil') && !instant(r.invitationUntil)) throw workError('INVALID_WORK_EVENT');
       state.relevance[key] = structuredClone(r);
     } else if (event.type === 'snapshot.observed') {
       const s = event.snapshot,

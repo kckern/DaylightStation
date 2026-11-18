@@ -46,3 +46,14 @@ export function matchWorkIntent({
     mode: auto ? 'auto' : 'clarify'
   };
 }
+
+/** Journal mentions must name one whole native title within the scoped view. */
+export function groundedWorkMentions(statement, items) {
+  const text = String(statement ?? '').normalize('NFC');
+  return items.filter(item => {
+    const title = normalized(item.title);
+    if (!title || items.filter(other => normalized(other.title) === title).length !== 1) return false;
+    const escaped = title.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    return new RegExp('(?:^|[^\\p{L}\\p{N}])' + escaped + '(?=$|[^\\p{L}\\p{N}])', 'iu').test(text);
+  });
+}

@@ -457,3 +457,100 @@ it('links a chosen task only after a grounded KB choice and an explicit relation
   }));
   expect(x.commands.execute).not.toHaveBeenCalled();
 });
+it('Later on confirmed current work suppresses the same native item after refresh and the next day', async () => {
+  const x = await setup();
+  await commit(x.state, 'active', [relevance('active')]);
+  const selected = await x.flow.selectForMorning({
+    username: 'sample',
+    askDate: '2026-11-17',
+    remainingUnits: 1
+  });
+  const page = await x.flow.prepareForMorning({
+    username: 'sample',
+    offerId: selected.offer.id,
+    askDate: '2026-11-17'
+  });
+  await x.flow.recordDelivery({
+    username: 'sample',
+    decisionId: page.decisionId,
+    botMessageId: '300',
+    asOf: x.now()
+  });
+  await x.tap(page, 'Later');
+  x.advance(86400000);
+  const gate = x.context.morningGate;
+  x.context.morningGate = async () => ({
+    ...(await gate()),
+    askDate: '2026-11-18'
+  });
+  expect((await x.flow.selectForMorning({
+    username: 'sample',
+    askDate: '2026-11-18',
+    remainingUnits: 1
+  })).offer).toBe(null);
+});
+it('withdrawn linked owner eligibility cannot expose the native title on Review', async () => {
+  const x = await setup();
+  const execute = x.context.execute;
+  x.context.execute = async () => ({
+    ...(await execute()),
+    links: [{
+      workRef: x.rows[0].ref,
+      kbObjectId: 'loop.private'
+    }],
+    knowledgeEligibility: {
+      'loop.private': {
+        allowed: true
+      }
+    }
+  });
+  const selected = await x.flow.selectForMorning({
+    username: 'sample',
+    askDate: '2026-11-17',
+    remainingUnits: 1
+  });
+  const page = await x.flow.prepareForMorning({
+    username: 'sample',
+    offerId: selected.offer.id,
+    askDate: '2026-11-17'
+  });
+  await x.flow.recordDelivery({
+    username: 'sample',
+    decisionId: page.decisionId,
+    botMessageId: '300',
+    asOf: x.now()
+  });
+  x.context.execute = async () => ({
+    ...(await execute()),
+    links: [{
+      workRef: x.rows[0].ref,
+      kbObjectId: 'loop.private'
+    }],
+    knowledgeEligibility: {
+      'loop.private': {
+        allowed: false
+      }
+    }
+  });
+  const result = await x.tap(page, 'Review');
+  expect(result.page).toBeUndefined();
+  expect(result.status).toBe('denied');
+});
+it('manual review routes a task to its single assignee-scoped domain', async () => {
+  const x = await setup();
+  x.policy.domains.personal.assigneeIds = ['a'];
+  x.policy.domains.other = {
+    ...x.policy.domains.personal,
+    assigneeIds: ['b']
+  };
+  x.rows[0].assigneeIds = ['a'];
+  const page = await x.flow.open({
+    principal: x.principal(),
+    flowType: 'housekeeping',
+    asOf: x.now()
+  });
+  await x.deliver(page);
+  const result = await x.tap(page, 'This one');
+  expect(result.status).toBe('page');
+  expect(result.page.text).toContain('personal');
+});

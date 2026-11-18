@@ -252,3 +252,24 @@ it('a shared-cap denial keeps an ordinary facts debrief without substituting a W
   expect(d.send.mock.calls[0][1]).not.toContain('?');
   expect(work.prepareForMorning).not.toHaveBeenCalled();
 });
+it('preserves control facts and drops every question if control preparation fails', async () => {
+  const x = setup({
+    failPrepare: true
+  });
+  delete x.debrief.knowledgeSelection;
+  x.debrief.knowledgeControl = {
+    selectionId: 'control'
+  };
+  x.debrief.summary = 'Meeting.\n\n• First?\n• Second?\n• Third?';
+  x.debrief.headline = 'Fourth?';
+  await run(x);
+  expect(x.send.mock.calls[0][1]).toContain('Meeting.');
+  expect(x.send.mock.calls[0][1]).not.toContain('?');
+});
+it('does not revoke acknowledged controls if later conversation persistence fails', async () => {
+  const x = setup();
+  x.state.set.mockRejectedValue(Error('archive unavailable'));
+  await expect(run(x)).rejects.toThrow('archive unavailable');
+  expect(x.source.recordDelivery).toHaveBeenCalled();
+  expect(x.source.recordDeliveryFailure).not.toHaveBeenCalled();
+});

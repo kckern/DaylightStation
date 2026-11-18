@@ -1,4 +1,4 @@
-import { matchWorkIntent } from '../domain/workIntent.mjs';
+import { matchWorkIntent, groundedWorkMentions } from '../domain/workIntent.mjs';
 import { keyOf } from '../domain/workModel.mjs';
 import { workHash, workError } from '../domain/workState.mjs';
 /** Verified saved journal input and explicit Work flows; never scans old backlog on boot. */
@@ -154,7 +154,7 @@ export class WorkConversation {
       username: p.username,
       asOf
     });
-    const observations = atEntry.coverage.complete ? atEntry.items.filter(item => row.content.toLowerCase().includes(item.title.toLowerCase())).map(item => ({
+    const observations = atEntry.coverage.complete ? groundedWorkMentions(row.content, atEntry.items).map(item => ({
       ref: item.ref,
       version: item.version,
       occurrenceId: item.due?.occurrenceId ?? null

@@ -233,7 +233,7 @@ two unsolicited question units. Housekeeping also has a rolling seven-day limit
 of one acknowledged item and a thirty-day item cooldown. Prepared and uncertain
 sends hold capacity; only provider-acknowledged messages count as exposure.
 
-The Work canonical log uses `attention.reserved`, `attention.sent`,
+The Work canonical log uses `attention.reserved`, `attention.dispatching`, `attention.sent`,
 `attention.failed` and `attention.responded`, separate from callback decisions.
 The KB receipt and Work reservation carry a common reservation ID. Public KB
 history supplies accounting metadata only, including questions sent before Work
@@ -317,3 +317,24 @@ preparation cannot revive.
 All production flags remain opt-in. Synthetic tests are not live commissioning:
 select domains/windows and verify a bounded acknowledged invitation plus local
 snooze/retirement before enabling broader proactive delivery.
+
+Dispatch rechecks the current local date, expiry, configured destination, owner
+quiet allowance and policy revision, then claims the reservation once in the
+canonical log. A dispatch that may have reached transport is never replaced at
+midnight or replayed after restart. Switching Work off or read-only retains
+accounting for today's existing exposures and unsettled sends; it does not grant
+standalone KB extra capacity. Unknown in-flight dispatches require settlement
+before their capacity can be reused.
+
+Later and Dismiss on a native-item invitation suppress that item's unsolicited
+invitations for thirty local calendar days without changing provider state or
+its active relevance. An explicit private review remains available. A weekly
+KB invitation cannot immediately advance to another batch after Later/Dismiss.
+The read-only Review handoff can resume with the same bound control after a
+temporary owner/identity failure; owner preparation and sends remain idempotent.
+
+Private KB link choices require the independently attested KB principal from the
+same Telegram input. A matching serialized username/chat is insufficient. The
+unsolicited-budget exemption is issued privately by the authenticated KB review
+route; public preparation cannot request it with a boolean. Linked owner policy
+and review evidence are checked again before presenting content.

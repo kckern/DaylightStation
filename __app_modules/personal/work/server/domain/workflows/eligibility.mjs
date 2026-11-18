@@ -81,6 +81,10 @@ export function selectOpportunities({
       drop(key, 'knowledge_policy');
       continue;
     }
+    if (!explicitRequest && r.invitationUntil > asOf) {
+      drop(key, 'invitation_suppressed');
+      continue;
+    }
     const grounded = (context.groundedReferences ?? []).filter(g => g.verified === true && same(g.ref, item.ref) && instant(g.at, asOf) && asOf - g.at < attention.staleRelevanceDays * DAY);
     const confirmed = r.state === 'active' && instant(r.confirmedAt, asOf) && asOf - r.confirmedAt < attention.staleRelevanceDays * DAY;
     const recentAt = Math.max(confirmed ? r.confirmedAt : 0, ...grounded.map(g => g.at), 0),

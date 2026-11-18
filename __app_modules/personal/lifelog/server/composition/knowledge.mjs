@@ -147,6 +147,11 @@ export function createKnowledgeRuntime(options = {}) {
   async function deliver(username, delivery) {
     if (!delivery?.sendAllowed || stopped) return null;
     try {
+      if (!(await questions.dispatchDelivery({
+        username,
+        deliveryId: delivery.deliveryId,
+        asOf: clock()
+      })).allowed) return null;
       const receipt = await send({
         username,
         text: delivery.questions.map(q => q.text).join('\n\n'),
@@ -410,6 +415,7 @@ export function createKnowledgeRuntime(options = {}) {
       if (!ready.has(input.username) || stopped) throw Error('KNOWLEDGE_UNAVAILABLE');
       return questions.prepareDelivery(input);
     },
+    dispatchDelivery: input => questions.dispatchDelivery(input),
     recordDelivery: input => questions.recordDelivery(input),
     recordDeliveryFailure: input => questions.recordDeliveryFailure(input)
   };

@@ -201,11 +201,15 @@ it('passes the independently supplied KB principal to private review and never s
       openReview
     }),
     p = x.actor('sample', {
-      conversationId: 'private'
+      conversationId: 'private',
+      senderId: '101',
+      kind: 'callback',
+      messageId: '99',
+      receiptId: 'callback:a',
+      callbackData: 'w1:opaque'
     }),
     kb = Object.freeze({
-      username: 'sample',
-      conversationId: 'private'
+      ...p
     });
   x.runtime.conversation.handleCallback.mockResolvedValue({
     handled: true,
@@ -227,6 +231,37 @@ it('passes the independently supplied KB principal to private review and never s
   expect((await x.adapter.handleCallback({
     principal: p,
     callbackData: 'w1:opaque',
+    botMessageId: '99'
+  })).status).toBe('deferred');
+  expect(openReview).not.toHaveBeenCalled();
+});
+it('refuses a genuine KB principal from an unrelated interaction before opening private review', async () => {
+  const openReview = vi.fn();
+  const x = setup({
+    openReview
+  });
+  const p = x.actor('sample', {
+    kind: 'callback',
+    senderId: '101',
+    conversationId: 'private',
+    messageId: '99',
+    receiptId: 'callback:a',
+    callbackData: 'w1:opaque'
+  });
+  const kb = {
+    ...p,
+    kind: 'text',
+    receiptId: 'message:older',
+    callbackData: null
+  };
+  x.runtime.conversation.handleCallback.mockResolvedValue({
+    status: 'knowledge_review',
+    knowledgeReviewIds: ['one']
+  });
+  expect((await x.adapter.handleCallback({
+    principal: p,
+    knowledgePrincipal: kb,
+    callbackData: p.callbackData,
     botMessageId: '99'
   })).status).toBe('deferred');
   expect(openReview).not.toHaveBeenCalled();

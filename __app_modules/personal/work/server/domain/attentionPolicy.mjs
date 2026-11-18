@@ -1,4 +1,4 @@
-const pending = (r, now) => ['prepared', 'quarantined'].includes(r.status) && r.expiresAt > now;
+const pending = (r, now) => r.status === 'dispatching' || ['prepared', 'quarantined'].includes(r.status) && r.expiresAt > now;
 const acknowledged = r => Number.isFinite(r.deliveredAt) && ['delivered', 'responded'].includes(r.status);
 /** Coalesce the same delivery across the Work reservation and KB receipt stores. */
 export function mergeAttentionHistory(records, history = {}) {
@@ -47,6 +47,7 @@ export function attentionEligibility({
   });
   if (['direct_request', 'echo', 'quiz'].includes(channel) || questionUnits === 0) return result(true, null);
   if (exposedUnits + reservedUnits + questionUnits > Math.min(2, policy.maxProactiveUnitsPerDay ?? 2)) return result(false, 'daily_budget');
+  if (flowType === 'knowledge_review' && records.some(r => r.flowType === 'knowledge_review' && acknowledged(r) && asOf - r.deliveredAt < 7 * 86400000)) return result(false, 'weekly_review');
   if (channel === 'housekeeping' || flowType === 'housekeeping') {
     const housekeeping = records.filter(r => r.channel === 'housekeeping' || r.flowType === 'housekeeping');
     if (housekeeping.some(r => pending(r, asOf))) return result(false, 'pending_housekeeping');

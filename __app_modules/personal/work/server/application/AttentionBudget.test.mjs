@@ -124,27 +124,16 @@ it('known failure releases capacity, successful ACK holds rolling weekly/item li
   x.advance(86400000);
   expect((await x.budget.reserve(request(x, 'later', 1, 'housekeeping'))).reason).toBe('weekly_housekeeping');
 });
-it('re-reserves at actual local midnight and rejects late ACK of a superseded preparation', async () => {
+it('keeps an undispatched logical preparation fenced at midnight until its owner cancels it', async () => {
   const x = setup();
   x.advance(Date.parse('2026-11-18T07:59:59Z') - x.now());
   const a = await x.budget.reserve(request(x, 'midnight'));
   x.advance(2000);
-  const b = await x.budget.reserve(request(x, 'midnight'));
-  expect(b.allowed).toBe(true);
-  expect(b.reservationId).not.toBe(a.reservationId);
-  await expect(x.budget.acknowledge({
-    username: 'sample',
-    reservationId: a.reservationId,
-    botMessageId: '42',
-    deliveredAt: x.now()
-  })).rejects.toThrow();
-  await x.budget.acknowledge({
-    username: 'sample',
-    reservationId: b.reservationId,
-    botMessageId: '42',
-    deliveredAt: x.now()
-  });
   expect((await x.budget.reserve(request(x, 'midnight'))).allowed).toBe(false);
+  expect((await x.budget.dispatch({
+    username: 'sample',
+    reservationId: a.reservationId
+  })).allowed).toBe(false);
 });
 it('a lost ACK transaction retains capacity and never grants a repeat send', async () => {
   const x = setup(),
@@ -236,4 +225,88 @@ it('holds in-flight capacity across midnight and records an unreleased acknowled
     day: '2026-11-18'
   });
   expect((await x.budget.reserve(request(x, 'third'))).allowed).toBe(false);
+});
+it('fences an in-flight logical send across midnight and restart with one dispatch claim', async () => {
+  const x = setup();
+  x.advance(Date.parse('2026-11-18T07:59:59Z') - x.now());
+  const first = await x.budget.reserve(request(x, 'midnight-send', 1));
+  expect(await x.budget.dispatch({
+    username: 'sample',
+    reservationId: first.reservationId
+  })).toMatchObject({
+    allowed: true
+  });
+  x.advance(2000);
+  expect((await new AttentionBudget(x.options).reserve(request(x, 'midnight-send', 1))).allowed).toBe(false);
+  expect((await x.budget.dispatch({
+    username: 'sample',
+    reservationId: first.reservationId
+  })).allowed).toBe(false);
+  await expect(x.budget.acknowledge({
+    username: 'sample',
+    reservationId: first.reservationId,
+    botMessageId: '99',
+    deliveredAt: x.now()
+  })).resolves.toBeDefined();
+});
+it('reserves only one concurrent Work invitation while allowing an ordinary KB question', async () => {
+  const x = setup();
+  const args = id => ({
+    ...request(x, id, 1, 'review'),
+    flowType: 'reconcile'
+  });
+  const grants = await Promise.all([x.budget.reserve(args('a')), x.budget.reserve(args('b'))]);
+  expect(grants.filter(g => g.allowed)).toHaveLength(1);
+  expect((await x.budget.reserve(request(x, 'kb', 1))).allowed).toBe(true);
+});
+it('does not dispatch a prepared grant after its day or policy changes', async () => {
+  const x = setup();
+  const r = await x.budget.reserve(request(x, 'revoked'));
+  x.policy.revision = 'new';
+  expect((await x.budget.dispatch({
+    username: 'sample',
+    reservationId: r.reservationId
+  })).allowed).toBe(false);
+});
+it('issues exactly one transport claim under concurrent dispatchers', async () => {
+  const x = setup();
+  const grant = await x.budget.reserve(request(x, 'dispatch-race'));
+  const results = await Promise.all([x.budget.dispatch({
+    username: 'sample',
+    reservationId: grant.reservationId
+  }), x.budget.dispatch({
+    username: 'sample',
+    reservationId: grant.reservationId
+  })]);
+  expect(results.filter(r => r.allowed)).toHaveLength(1);
+});
+it('rechecks a reduced owner allowance against already exposed units at dispatch', async () => {
+  const x = setup();
+  x.existing.deliveries = [{
+    id: 'kb:spent',
+    day: '2026-11-17',
+    channel: 'morning',
+    status: 'delivered',
+    questionUnits: 1,
+    deliveredAt: x.now() - 1
+  }];
+  const grant = await x.budget.reserve(request(x, 'backoff-change'));
+  x.existing.maxQuestionUnits = 1;
+  expect((await x.budget.dispatch({
+    username: 'sample',
+    reservationId: grant.reservationId
+  })).allowed).toBe(false);
+});
+it('rechecks actual day after an awaited owner history read at dispatch', async () => {
+  const x = setup();
+  x.advance(Date.parse('2026-11-18T07:59:59Z') - x.now());
+  const grant = await x.budget.reserve(request(x, 'slow-dispatch'));
+  x.options.history.read = async () => {
+    x.advance(2000);
+    return x.existing;
+  };
+  expect((await x.budget.dispatch({
+    username: 'sample',
+    reservationId: grant.reservationId
+  })).allowed).toBe(false);
 });

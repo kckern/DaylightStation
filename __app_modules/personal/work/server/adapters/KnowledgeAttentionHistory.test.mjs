@@ -64,3 +64,25 @@ it('rejects malformed accounting rows instead of treating NaN units as available
     asOf: 1
   })).available).toBe(false);
 });
+it('accepts a historical overage without disabling unrelated dates', async () => {
+  const h = new KnowledgeAttentionHistory({
+    readHistory: async () => ({
+      available: true,
+      deliveries: [{
+        id: 'old',
+        day: '2020-01-01',
+        channel: 'morning',
+        status: 'delivered',
+        questionUnits: 6,
+        deliveredAt: 1
+      }],
+      reservations: [],
+      unansweredInvitations: []
+    })
+  });
+  expect((await h.read({
+    username: 'sample',
+    askDate: '2026-11-17',
+    asOf: 2
+  })).available).toBe(true);
+});

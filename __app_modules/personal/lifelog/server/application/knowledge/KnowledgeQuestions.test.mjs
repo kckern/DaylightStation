@@ -939,10 +939,10 @@ it('quarantines the shared reservation on uncertain KB send failure', async () =
   }));
   expect((await prepared(d)).sendAllowed).toBe(false);
 });
-function pendingReviewFixture() {
+function pendingReviewFixture(count = 5) {
   const objects = {},
     pendingReviews = [];
-  for (let n = 0; n < 5; n++) {
+  for (let n = 0; n < count; n++) {
     const id = 'person.sample' + n;
     objects[id] = {
       ...loop({
@@ -978,7 +978,9 @@ function pendingReviewFixture() {
     }
   });
   d.sources.readByRefs.mockResolvedValue([evidence({
-    content: 'I met Sample0 Sample1 Sample2 Sample3 Sample4.'
+    content: 'I met ' + Array.from({
+      length: count
+    }, (_, n) => 'Sample' + n).join(' ') + '.'
   })]);
   return d;
 }
@@ -1140,6 +1142,9 @@ it('returns only normal, grounded link choices to the configured private destina
       max: 3,
       cursor: 0
     };
+  input.principal = d.principal(null, {
+    type: 'text'
+  });
   const result = await d.service.linkCandidates(input);
   expect(result.items).toHaveLength(1);
   expect(result.items[0]).toMatchObject({
@@ -1151,4 +1156,86 @@ it('returns only normal, grounded link choices to the configured private destina
     ...input,
     conversationId: 'other'
   })).items).toHaveLength(0);
+});
+it('caller explicitRequest cannot bypass a spent shared budget', async () => {
+  const reserve = vi.fn(async () => ({
+    allowed: false,
+    reason: 'daily_budget'
+  }));
+  const d = setup({
+    attentionBudget: {
+      reserve
+    }
+  });
+  const selection = await d.service.selectForMorning({
+    username: 'sample',
+    askDate: '2026-11-03',
+    asOf: AS_OF
+  });
+  const result = await d.service.prepareDelivery({
+    username: 'sample',
+    conversationId: 'telegram:b42_c101',
+    selectionId: selection.selectionId,
+    askDate: '2026-11-03',
+    channel: 'morning',
+    questionIds: selection.questions.map(q => q.id),
+    asOf: AS_OF,
+    explicitRequest: true
+  });
+  expect(result.sendAllowed).toBe(false);
+  expect(reserve).toHaveBeenCalled();
+});
+it('opens exactly the owner-eligible filtered review IDs rather than the first unfiltered batch', async () => {
+  const d = pendingReviewFixture(6);
+  const selected = await d.service.pendingReview({
+    username: 'sample',
+    asOf: AS_OF,
+    max: 1,
+    excludeIds: ['review-0', 'review-1', 'review-2', 'review-3', 'review-4']
+  });
+  expect(selected.ids).toEqual(['review-5']);
+  await expect(d.service.openReview({
+    principal: d.principal('w1:review'),
+    ids: selected.ids,
+    asOf: AS_OF
+  })).resolves.toMatchObject({
+    sendAllowed: true
+  });
+});
+it('requires attested owner authority before exposing private link candidates', async () => {
+  const d = setup();
+  expect((await d.service.linkCandidates({
+    username: 'sample',
+    senderId: '101',
+    conversationId: 'telegram:b42_c101',
+    asOf: AS_OF
+  })).available).toBe(false);
+});
+it('owner backoff reports zero weekday and one weekend total allowance independently of selected rows', async () => {
+  const d = setup({
+    state: {
+      backoff: {
+        until: '2026-11-20'
+      }
+    }
+  });
+  expect(await d.service.attentionGate({
+    username: 'sample',
+    askDate: '2026-11-03',
+    asOf: AS_OF
+  })).toMatchObject({
+    maxQuestionUnits: 0
+  });
+});
+it('withdrawn review evidence is revalidated after an opt-in selection and before presentation', async () => {
+  const d = pendingReviewFixture();
+  const original = d.sources.readByRefs.getMockImplementation();
+  let calls = 0;
+  d.sources.readByRefs.mockImplementation(async (...args) => ++calls === 1 ? original(...args) : []);
+  const result = await d.service.openReview({
+    principal: d.principal('w1:review'),
+    ids: ['review-0'],
+    asOf: AS_OF
+  });
+  expect(result.questions).toHaveLength(0);
 });
