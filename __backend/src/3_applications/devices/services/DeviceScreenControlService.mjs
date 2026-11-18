@@ -1,3 +1,10 @@
+/**
+ * The longest a manual screen hold may last. The router passes any positive number
+ * through; a hold relayed to a device outlives a backend restart there, so it is bounded.
+ */
+export const MAX_HOLD_MINUTES = 24 * 60;
+const clampMinutes = (minutes) => Math.min(minutes, MAX_HOLD_MINUTES);
+
 export class DeviceScreenControlService {
   #devices; #holdPolicy; #overrides; #midiWake; #logger; #nowMs;
   constructor({ devices, holdPolicy, screenOverrides = null, midiWake = null, logger = console, nowMs = Date.now }) {
@@ -27,8 +34,8 @@ export class DeviceScreenControlService {
   }
   async setOverride(deviceId, state, requestedMinutes) {
     const device = this.#devices.get(deviceId); if (!device) return { kind: 'not_found' };
-    const minutes = requestedMinutes > 0 ? requestedMinutes
-      : (state === 'off' ? this.#holdPolicy.offMinutes() : this.#holdPolicy.onMinutes());
+    const minutes = clampMinutes(requestedMinutes > 0 ? requestedMinutes
+      : (state === 'off' ? this.#holdPolicy.offMinutes() : this.#holdPolicy.onMinutes()));
     this.#overrides?.set(deviceId, state === 'off' ? 'off' : 'on', minutes);
     if (state === 'off' && this.#isWakeDevice(deviceId) && this.#midiWake.suppressWakeUntil) {
       this.#midiWake.suppressWakeUntil(this.#nowMs() + minutes * 60_000);
@@ -53,7 +60,7 @@ export class DeviceScreenControlService {
     return { kind: 'ok', result: await device.setScreen(state === 'on') };
   }
   suppressWake(deviceId, requestedMinutes) {
-    const minutes = requestedMinutes > 0 ? requestedMinutes : 30;
+    const minutes = clampMinutes(requestedMinutes > 0 ? requestedMinutes : 30);
     const until = this.#nowMs() + minutes * 60_000;
     this.#logger.info?.('device.router.suppressWake', { deviceId, minutes, until });
     if (this.#isWakeDevice(deviceId) && this.#midiWake.suppressWakeUntil) {
