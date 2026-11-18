@@ -5,7 +5,7 @@ const apiMock = vi.fn();
 vi.mock('../api.mjs', () => ({ DaylightAPI: (...args) => apiMock(...args) }));
 
 import {
-  useApiResource, resetApiResourceCache, peekApiResource, attachApiResourcePersistence,
+  registerResourcePersistence, primeApiResource, useApiResource, resetApiResourceCache, peekApiResource, attachApiResourcePersistence,
   detachApiResourcePersistence, claimApiResourceOwner, flushApiResourcePersistence, isApiResourceFresh, prefetchApiResources,
 } from './useApiResource.js';
 
@@ -192,4 +192,30 @@ describe('useApiResource in-flight dedupe', () => {
     const b = renderHook(() => useApiResource('x'));
     await waitFor(() => expect(b.result.current.data).toEqual({ n: 2 }));
   });
+});
+
+
+it('isolates live registrations and rejects a previous owner response after switching', async () => {
+  const a = registerResourcePersistence({ store: memoryStore(), prefixes: ['scoped/a/'] });
+  const b = registerResourcePersistence({ store: memoryStore(), prefixes: ['scoped/b/'] });
+  try {
+    await Promise.all([a.ready, b.ready]);
+    a.setOwner('alice');
+    b.setOwner('bob');
+    expect(() => registerResourcePersistence({ store: memoryStore(), prefixes: ['scoped/a/day'] })).toThrow(/overlap/i);
+    primeApiResource('scoped/b/list', { keep: true });
+    const old = deferred();
+    apiMock.mockReset().mockReturnValueOnce(old.promise).mockResolvedValueOnce({ owner: 'carol' });
+    const reader = renderHook(() => useApiResource('scoped/a/list', { swr: true }));
+    act(() => a.setOwner('carol'));
+    await waitFor(() => expect(reader.result.current.data).toEqual({ owner: 'carol' }));
+    await act(async () => old.resolve({ owner: 'alice' }));
+    expect(peekApiResource('scoped/a/list')).toEqual({ owner: 'carol' });
+    reader.unmount();
+    a.dispose();
+    expect(peekApiResource('scoped/b/list')).toEqual({ keep: true });
+  } finally {
+    a.dispose();
+    b.dispose();
+  }
 });

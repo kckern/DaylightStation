@@ -41,3 +41,11 @@ describe('AppThemeProvider forceColorScheme', () => {
     expect(screen.getByTestId('scheme').textContent).toBe('dark');
   });
 });
+
+it('isolates Mantine variables and scheme on an explicitly scoped app root', () => {
+  const {container} = render(<AppThemeProvider pack="admin" scopeId="admin-theme" forceColorScheme="dark">
+    <span>Editor</span>
+  </AppThemeProvider>);
+  expect(container.querySelector('#admin-theme')?.dataset.mantineColorScheme).toBe('dark');
+  expect(container.querySelector('style[data-mantine-styles]')?.textContent).toContain('#admin-theme');
+});

@@ -54,7 +54,7 @@ function AdminApp() {
   }, [logger]);
 
   return (
-    <AppThemeProvider pack={ADMIN_PACK} className="admin-theme" forceColorScheme="dark">
+    <AppThemeProvider pack={ADMIN_PACK} className="admin-theme" scopeId="admin-theme" forceColorScheme="dark">
       <div id="admin-portals" />
       <Notifications position="bottom-right" autoClose={3000} />
       <div className="App admin-app">

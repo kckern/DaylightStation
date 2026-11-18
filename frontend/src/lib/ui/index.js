@@ -1,3 +1,4 @@
+export { useViewScroll } from './useViewScroll.js';
 export { AppFrame, PlaybackFrame } from './AppFrame.jsx';
 export { AppThemeProvider } from './AppThemeProvider.jsx';
 export { AppChrome, CHROME_SCROLL_CLASS } from './AppChrome.jsx';

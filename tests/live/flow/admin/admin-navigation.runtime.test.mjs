@@ -168,3 +168,16 @@ test.describe('Admin Navigation Smoke Test', () => {
     expect(errors, `${errors.length} pages rendered blank`).toHaveLength(0);
   });
 });
+
+for (const width of [390, 1440]) {
+  test(`the last navigation item is visible on keyboard focus at ${width}px`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 850 });
+    await page.goto(`${BASE_URL}/admin`);
+    if (width === 390) await page.getByRole('button', { name: 'Toggle admin navigation' }).click();
+    const lastLink = page.getByRole('link', { name: 'Notifications', exact: true });
+    await lastLink.focus();
+    await expect(lastLink).toBeInViewport({ ratio: 1 });
+    await lastLink.press('Enter');
+    await expect(page).toHaveURL(/\/admin\/system\/notifications$/);
+  });
+}

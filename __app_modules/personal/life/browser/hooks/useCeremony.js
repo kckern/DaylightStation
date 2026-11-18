@@ -1,4 +1,5 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { DaylightAPI } from '@/lib/api.mjs';
 import getLogger from "../../../../../frontend/src/lib/logging/Logger.js";
 import { useLifeUsername } from "./useLifeUser.js";
 
@@ -10,22 +11,12 @@ function logger() {
 
 const API_BASE = '/api/v1/life/plan';
 
-/**
- * Build a structured error from a failed fetch Response.
- * Returns { status, code, message } so consumers can key off the
- * backend's error contract (e.g. code === 'NO_PLAN') instead of a raw string.
- */
-async function parseErrorResponse(res) {
-  let body = {};
-  try {
-    body = await res.json();
-  } catch {
-    // Non-JSON body (proxy error page, etc.) — fall through to defaults
-  }
+function ceremonyError(error) {
+  if (!error.status) return { message: error.message };
   return {
-    status: res.status,
-    code: body.code,
-    message: body.error || `Request failed (HTTP ${res.status})`,
+    status: error.status,
+    code: error.body?.code,
+    message: error.body?.error || `Request failed (HTTP ${error.status})`,
   };
 }
 
@@ -54,29 +45,35 @@ export function useCeremony(type, username) {
   const user = username || ctxUsername;
   const qs = user ? `?username=${encodeURIComponent(user)}` : '';
 
-  const fetchContent = useCallback(async () => {
+  const session = useRef(null);
+  const path = `${API_BASE}/ceremony/${type}`;
+  useEffect(() => {
+    const controller = new AbortController();
+    const current = { submitting: false };
+    session.current = current;
+    setContent(null);
+    setResponses({});
+    setStep(0);
+    setCompleted(false);
+    setSubmitting(false);
+    setSubmitError(null);
     setLoading(true);
     setError(null);
-    try {
-      const res = await fetch(`${API_BASE}/ceremony/${type}${qs}`);
-      if (!res.ok) {
-        const errInfo = await parseErrorResponse(res);
-        setError(errInfo);
-        logger().error('ceremony-load-error', { type, ...errInfo });
-        return;
-      }
-      const data = await res.json();
+    DaylightAPI(path + qs, {}, 'GET', { signal: controller.signal }).then(data => {
+      if (session.current !== current) return;
       setContent(data);
       logger().info('ceremony-loaded', { type, periodId: data.periodId });
-    } catch (err) {
-      setError({ message: err.message });
-      logger().error('ceremony-load-error', { type, error: err.message });
-    } finally {
-      setLoading(false);
-    }
-  }, [type, qs]);
-
-  useEffect(() => { fetchContent(); }, [fetchContent]);
+    }).catch(err => {
+      if (session.current !== current) return;
+      const info = ceremonyError(err);
+      setError(info);
+      logger().error('ceremony-load-error', { type, ...info });
+    }).finally(() => { if (session.current === current) setLoading(false); });
+    return () => {
+      session.current = null;
+      controller.abort();
+    };
+  }, [path, type, qs]);
 
   const setResponse = useCallback((key, value) => {
     setResponses(prev => ({ ...prev, [key]: value }));
@@ -86,29 +83,27 @@ export function useCeremony(type, username) {
   const prevStep = useCallback(() => setStep(s => Math.max(0, s - 1)), []);
 
   const submit = useCallback(async () => {
+    const current = session.current;
+    if (!current || current.submitting || current.completed) return;
+    current.submitting = true;
     setSubmitting(true);
     setSubmitError(null);
     try {
-      const res = await fetch(`${API_BASE}/ceremony/${type}/complete${qs}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(responses),
-      });
-      if (!res.ok) {
-        const errInfo = await parseErrorResponse(res);
-        setSubmitError(errInfo);
-        logger().error('ceremony-submit-error', { type, ...errInfo });
-        return;
-      }
+      await DaylightAPI(`${path}/complete${qs}`, responses, 'POST');
+      if (session.current !== current) return;
+      current.completed = true;
       setCompleted(true);
       logger().info('ceremony-completed', { type });
     } catch (err) {
-      setSubmitError({ message: err.message });
-      logger().error('ceremony-submit-error', { type, error: err.message });
+      if (session.current !== current) return;
+      const info = ceremonyError(err);
+      setSubmitError(info);
+      logger().error('ceremony-submit-error', { type, ...info });
     } finally {
-      setSubmitting(false);
+      current.submitting = false;
+      if (session.current === current) setSubmitting(false);
     }
-  }, [type, qs, responses]);
+  }, [path, type, qs, responses]);
 
   return {
     content, loading, error, submitError,

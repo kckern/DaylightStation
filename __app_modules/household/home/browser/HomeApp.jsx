@@ -1,3 +1,4 @@
+import { browserPreference } from '@/lib/browserPreference.js';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { ActionIcon } from '@mantine/core';
 import { IconDoor, IconLayoutGrid, IconTimeline, IconVideo } from '@tabler/icons-react';
@@ -28,17 +29,10 @@ const VIEW_KEY = 'home.view';
 // Views that lived under the old tab ids open where their content went.
 const LEGACY_VIEWS = { now: 'today', browse: 'mosaic', power: 'today', type: 'mosaic', room: 'rooms', state: 'mosaic' };
 
-// The last view is a per-viewer convenience; storage may be unavailable.
-function readSavedView() {
-  try {
-    const saved = window.localStorage.getItem(VIEW_KEY);
-    const view = LEGACY_VIEWS[saved] || saved;
-    return TABS.some((t) => t.id === view) ? view : 'today';
-  } catch { return 'today'; }
-}
-function saveView(view) {
-  try { window.localStorage.setItem(VIEW_KEY, view); } catch { /* storage unavailable */ }
-}
+const viewPreference = browserPreference(VIEW_KEY, 'today', saved => {
+  const view = LEGACY_VIEWS[saved] || saved;
+  return TABS.some(tab => tab.id === view) ? view : 'today';
+});
 
 const FullscreenIcon = () => (
   <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
@@ -115,7 +109,7 @@ function HouseViews({ view }) {
 
 function HomeApp() {
   useDocumentTitle('Home');
-  const [view, setView] = useState(readSavedView);
+  const [view, setView] = useState(viewPreference.read);
 
   useEffect(() => {
     logger.info('home.mount', { view });
@@ -127,7 +121,7 @@ function HomeApp() {
   const changeView = (next) => {
     logger.debug('home.view.change', { from: view, to: next });
     setView(next);
-    saveView(next);
+    viewPreference.write(next);
   };
 
   return (

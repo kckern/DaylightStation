@@ -10,6 +10,7 @@ import '@mantine/core/styles.css';
 import {
   AppThemeProvider, AppChrome, DismissStackProvider, LoadingState, ErrorState,
 } from '@/lib/ui';
+import { useViewScroll } from '@/lib/ui/useViewScroll.js';
 import { useHotkey } from '@/lib/hooks/useHotkey.js';
 import useDocumentTitle from "../../../../frontend/src/hooks/useDocumentTitle.js";
 import CoachChat from "./CoachChat/index.jsx";
@@ -80,6 +81,11 @@ const HealthGate = () => {
     : <AppThemeProvider pack="health">{context.error ? <ErrorState error={context.error} onRetry={context.reload} label="Health" /> : <LoadingState label="Health" />}</AppThemeProvider>;
 };
 
+function RouteReady({ route, onReady }) {
+  useLayoutEffect(() => { onReady(route); }, [route, onReady]);
+  return null;
+}
+
 const HealthShell = ({ userId }) => {
   useDocumentTitle('Health');
   const navigate = useNavigate();
@@ -100,21 +106,14 @@ const HealthShell = ({ userId }) => {
   // Unexpected page movement, per 1 s burst (ui.layout-shift).
   useLayoutShiftLog({ route: location.pathname, tab: activeTab });
   const mainRef = useRef(null);
-  const scrollPositions = useRef(new Map());
+  const [readyPath, setReadyPath] = useState(null);
+  useViewScroll({ mainRef, viewKey: activeTab, owner: userId, ready: readyPath === location.pathname });
   const visitedToday = useRef(false);
   if (activeTab === 'today') visitedToday.current = true;
-  useLayoutEffect(() => {
-    const main = mainRef.current;
-    if (main) main.scrollTop = scrollPositions.current.get(activeTab) || 0;
-  }, [activeTab]);
-
   return (
     <AppThemeProvider pack="health">
       <AgentConversationProvider conversation={conversation}>
         <DismissStackProvider>
-          <div style={{ height: '100%' }} onScrollCapture={event => {
-            if (event.target === mainRef.current) scrollPositions.current.set(activeTab, event.target.scrollTop);
-          }}>
           <AppChrome title="Health" mainRef={mainRef} tabs={TABS.map(tab => ({ ...tab, href: TAB_PATH[tab.id] + location.search }))} activeTab={activeTab}
             sidebarRef={setSidebarTarget} sidebarActive={activeTab === 'today'}
             headerActions={[
@@ -139,9 +138,8 @@ const HealthShell = ({ userId }) => {
               <Route path="coach" element={<CoachChat userId={userId} conversation={conversation} style={{ height: '100%' }} />} />
               {/* Unknown subpath — render Today rather than 404ing the tab shell. */}
               <Route path="*" element={<Navigate to="/health" replace />} />
-            </Routes></Suspense>
+            </Routes><RouteReady route={location.pathname} onReady={setReadyPath} /></Suspense>
           </AppChrome>
-          </div>
           <ChatOverlay open={overlayOpen} onClose={() => setOverlayOpen(false)} userId={userId}>
             <CoachChat userId={userId} conversation={conversation} variant="overlay" />
           </ChatOverlay>

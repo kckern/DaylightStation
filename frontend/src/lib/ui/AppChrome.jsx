@@ -19,7 +19,7 @@ export function AppChrome({ title, tabs = [], activeTab, onTabChange, headerActi
         <h1 className="ds-chrome__title">{title}</h1>
         {actions.length ? <div className="ds-chrome__actions">{actions}</div> : null}
       </>}
-      navigation={tabs.map(tab => {
+      navigation={tabs.length > 0 && tabs.map(tab => {
         const active = tab.id === activeTab;
         const props = {
           className: `ds-chrome__tab${active ? ' ds-chrome__tab--active' : ''}`,

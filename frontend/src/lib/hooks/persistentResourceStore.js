@@ -72,12 +72,23 @@ export function createIdbResourceStore(name, { maxEntries = 150, maxBytes = 8 * 
     } catch { /* degrade to uncached */ }
   };
 
+  // The owner check and mutation share a transaction. A delayed write from an
+  // earlier page cannot overwrite (or delete) another person's snapshot.
+  function writeForOwner(owner, mutate) {
+    return write([STORE, META], tx => {
+      const request = tx.objectStore(META).get('owner');
+      request.onsuccess = () => {
+        if ((request.result ?? null) === owner) mutate(tx.objectStore(STORE));
+      };
+    });
+  }
+
   return {
     /** `{ owner, entries: [{ path, value }] }` newest first, or null on failure. */
     async load() {
       try {
         const db = await open();
-        const tx = db.transaction([STORE, META], 'readonly');
+        const tx = db.transaction([STORE, META], 'readwrite');
         const [records, owner] = await Promise.all([
           requestDone(tx.objectStore(STORE).getAll()),
           requestDone(tx.objectStore(META).get('owner')),
@@ -89,18 +100,29 @@ export function createIdbResourceStore(name, { maxEntries = 150, maxBytes = 8 * 
           const fits = record.v === RECORD_VERSION && kept.length < maxEntries && bytes + (record.bytes || 0) <= maxBytes;
           if (fits) { kept.push(record); bytes += record.bytes || 0; } else dropped.push(record.path);
         }
-        if (dropped.length) write([STORE], tx2 => { for (const path of dropped) tx2.objectStore(STORE).delete(path); });
+        for (const path of dropped) tx.objectStore(STORE).delete(path);
+        await transactionDone(tx);
         return { owner: owner ?? null, entries: kept.map(({ path, value }) => ({ path, value })) };
       } catch { return null; }
     },
-    put(path, value, bytes) {
-      return write([STORE], tx => tx.objectStore(STORE).put({ path, value, bytes, at: Date.now(), v: RECORD_VERSION }));
+    put(path, value, bytes, owner = null) {
+      return writeForOwner(owner, records => records.put({ path, value, bytes, at: Date.now(), v: RECORD_VERSION }));
     },
-    remove(path) {
-      return write([STORE], tx => tx.objectStore(STORE).delete(path));
+    remove(path, owner = null) {
+      return writeForOwner(owner, records => records.delete(path));
     },
     clear() {
       return write([STORE], tx => tx.objectStore(STORE).clear());
+    },
+    claimOwner(owner) {
+      return write([STORE, META], tx => {
+        const meta = tx.objectStore(META);
+        const current = meta.get('owner');
+        current.onsuccess = () => {
+          if (current.result && current.result !== owner) tx.objectStore(STORE).clear();
+          meta.put(owner, 'owner');
+        };
+      });
     },
     setOwner(owner) {
       return write([META], tx => tx.objectStore(META).put(owner, 'owner'));

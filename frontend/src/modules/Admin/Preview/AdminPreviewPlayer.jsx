@@ -1,3 +1,4 @@
+import { browserPreference } from '../../../lib/browserPreference.js';
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { NativeSelect } from '@mantine/core';
 import { DaylightAPI, DaylightMediaPath } from '../../../lib/api.mjs';
@@ -13,14 +14,7 @@ function logger() {
   return _logger;
 }
 
-const STORAGE_KEY = 'daylight.adminPreview.screenId';
-
-function readStoredScreenId() {
-  try { return window.localStorage.getItem(STORAGE_KEY) || null; } catch { return null; }
-}
-function writeStoredScreenId(id) {
-  try { window.localStorage.setItem(STORAGE_KEY, id); } catch { /* private mode — selection just won't persist */ }
-}
+const screenPreference = browserPreference('daylight.adminPreview.screenId', null, id => id || null);
 
 export default function AdminPreviewPlayer({ contentId, action, volume, playbackRate, shuffle, onClose }) {
   const isQueue = action === 'Queue';
@@ -33,7 +27,7 @@ export default function AdminPreviewPlayer({ contentId, action, volume, playback
   // in rem, so the ONLY thing that makes the preview match the kiosk is laying
   // out in the same number of CSS px the kiosk has.
   const { screens } = usePreviewScreens();
-  const [screenId, setScreenId] = useState(readStoredScreenId);
+  const [screenId, setScreenId] = useState(screenPreference.read);
 
   const activeScreen = useMemo(
     () => screens.find((s) => s.id === screenId) || screens[0] || FALLBACK_SCREEN,
@@ -72,7 +66,7 @@ export default function AdminPreviewPlayer({ contentId, action, volume, playback
     const id = event.currentTarget.value;
     logger().debug('screen-changed', { screenId: id });
     setScreenId(id);
-    writeStoredScreenId(id);
+    screenPreference.write(id);
   }, []);
 
   // Fetch queue items on mount for Queue mode
