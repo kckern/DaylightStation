@@ -79,6 +79,7 @@ public final class SettingsControl {
                                                  java.util.function.BooleanSupplier runAllowed) {
         JSONObject o = new JSONObject();
         try {
+            o.put("component", component);
             String cur = settings.enabledServices();
             boolean present = false;
             if (cur != null && !cur.isEmpty()) {
@@ -88,12 +89,14 @@ public final class SettingsControl {
                 String next = (cur == null || cur.isEmpty()) ? component : cur + ":" + component;
                 if (!runAllowed.getAsBoolean())
                     return o.put("ok",false).put("error","native_safety_unavailable_or_stopped");
-                settings.writeEnabledServices(next);
+                if (!settings.writeEnabledServices(next))
+                    return o.put("ok", false).put("error", "enabled_services_write_rejected");
             }
             if (!runAllowed.getAsBoolean())
                 return o.put("ok",false).put("error","native_safety_unavailable_or_stopped");
-            settings.writeAccessibilityEnabled();
-            o.put("ok", true).put("component", component).put("wasAlreadyEnabled", present);
+            if (!settings.writeAccessibilityEnabled())
+                return o.put("ok", false).put("error", "accessibility_enabled_write_rejected");
+            o.put("ok", true).put("wasAlreadyEnabled", present);
         } catch (Exception e) {
             try { o.put("ok", false).put("component", component).put("error", String.valueOf(e.getMessage())); } catch (Exception ignored) { }
         }

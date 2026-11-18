@@ -4,7 +4,7 @@ move	__app_modules/learning/piano/satellites/piano-bridge/app/payload/src/main/j
 adapt	__app_modules/learning/piano/satellites/piano-bridge/app/payload/src/main/java/net/kckern/pianobridge/CrashLog.java	_extensions/daylight-android/core/src/main/java/net/kckern/daylight/core/CrashLog.java
 move	__app_modules/learning/piano/satellites/piano-bridge/app/payload/src/main/java/net/kckern/pianobridge/ProcStats.java	_extensions/daylight-android/core/src/main/java/net/kckern/daylight/core/ProcStats.java
 adapt	__app_modules/learning/piano/satellites/piano-bridge/app/payload/src/main/java/net/kckern/pianobridge/DeviceProbe.java	_extensions/daylight-android/core/src/main/java/net/kckern/daylight/core/DeviceProbe.java
-move	__app_modules/learning/piano/satellites/piano-bridge/app/payload/src/main/java/net/kckern/pianobridge/SettingsControl.java	_extensions/daylight-android/core/src/main/java/net/kckern/daylight/core/SettingsControl.java
+adapt	__app_modules/learning/piano/satellites/piano-bridge/app/payload/src/main/java/net/kckern/pianobridge/SettingsControl.java	_extensions/daylight-android/core/src/main/java/net/kckern/daylight/core/SettingsControl.java
 move	__app_modules/learning/piano/satellites/piano-bridge/app/payload/src/main/java/net/kckern/pianobridge/WifiLinkPolicy.java	_extensions/daylight-android/core/src/main/java/net/kckern/daylight/core/WifiLinkPolicy.java
 move	_extensions/portal-keys/app/app/src/main/java/net/kckern/portalkeys/EventLog.java	_extensions/daylight-android/core/src/main/java/net/kckern/daylight/core/EventLog.java
 move	_extensions/portal-keys/app/app/src/main/java/net/kckern/portalkeys/Json.java	_extensions/daylight-android/core/src/main/java/net/kckern/daylight/core/Json.java
