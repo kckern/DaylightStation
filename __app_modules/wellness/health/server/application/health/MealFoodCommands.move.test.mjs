@@ -14,6 +14,7 @@ const rows = day => store.findByDate('u', day);
 const versions = async () => Object.fromEntries((await rows(date)).map(row => [row.uuid, row.version ?? 1]));
 const dayTotal = day => yaml.load(fs.readFileSync(path.join(root, 'lifelog/nutrition/nutriday.yml'), 'utf8'))[day]?.calories ?? 0;
 const orphan = () => food('orphan', { date: '2026-08-01', logId: 'log-other', parentId: 'gone' });
+const seedShortLinkDish = () => store.saveMany([food('short-dish', { id: 'shortdish', kind: 'group', calories: 0, protein: 0 }), food('short-part', { parentId: 'shortdish' })]);
 const move = async extra => commands.moveFoods('u', { operationId: 'move-1', date, today, selectedIds: ['a', 'b'], expectedVersions: await versions(), ...extra });
 
 beforeEach(async () => {
@@ -78,6 +79,17 @@ describe('moveFoods', () => {
     await expect(move({ selectedIds: ['dish'], toMeal: 'night' })).rejects.toMatchObject({ status: 409 });
     expect(await rows(date)).toEqual(before);
   });
+  it('carries a part linked by its dish\'s short ID, and Undo restores both', async () => {
+    await seedShortLinkDish();
+    const { undoToken } = await move({ selectedIds: ['short-dish'], toDate: '2026-09-05' });
+    expect((await rows('2026-09-05')).map(row => row.uuid).sort()).toEqual(['short-dish', 'short-part']);
+    await commands.undo('u', { undoToken, operationId: 'undo-1' });
+    expect(await rows('2026-09-05')).toEqual([]);
+    expect((await rows(date)).filter(row => row.uuid.startsWith('short-')).map(row => row.date)).toEqual([date, date]);
+  });
+  it('still fails a touched part whose dish is missing', () => {
+    expect(() => commands.validateGraph([{ uuid: 'x', parentId: 'gone' }], new Set(['x']))).toThrow('Invalid group membership');
+  });
   it('applies once when the same request is replayed after commit', async () => {
     const input = { operationId: 'move-1', date, today, selectedIds: ['a', 'b'], expectedVersions: await versions(), toDate: '2026-09-05' };
     const first = await commands.moveFoods('u', input);
@@ -132,6 +144,22 @@ describe('placeCapturedFoods', () => {
   it('moves dish parts with their dish', async () => {
     await commands.placeCapturedFoods('u', { operationId: 'place-2', logId: 'log-1', placements: { dish: 'afternoon' } });
     expect((await rows(date)).find(row => row.uuid === 'part').mealTime).toBe('afternoon');
+  });
+  it('moves a part linked by its dish\'s short ID with the dish', async () => {
+    await seedShortLinkDish();
+    await commands.placeCapturedFoods('u', { operationId: 'place-7', logId: 'log-1', placements: { 'short-dish': 'afternoon' } });
+    expect((await rows(date)).filter(row => row.uuid.startsWith('short-')).map(row => row.mealTime)).toEqual(['afternoon', 'afternoon']);
+  });
+  it('refuses a placement keyed by a part linked through a short ID', async () => {
+    await seedShortLinkDish();
+    await expect(commands.placeCapturedFoods('u', { operationId: 'place-8', logId: 'log-1', placements: { 'short-part': 'morning' } })).rejects.toMatchObject({ status: 400 });
+  });
+  it.each([['its ID', 'dish'], ['its short ID', 'shortdish']])('refuses an Undo that would delete a dish linked by %s from a part outside the capture', async (_label, parentId) => {
+    await seedShortLinkDish();
+    await store.saveMany([food('stray', { logId: 'log-other', parentId })]);
+    const { undoToken } = await commands.placeCapturedFoods('u', { operationId: 'place-9', logId: 'log-1', placements: { a: 'morning' } });
+    await expect(commands.undo('u', { undoToken, operationId: 'undo-9' })).rejects.toMatchObject({ status: 409 });
+    expect((await rows(date)).some(row => row.uuid === 'a')).toBe(true);
   });
   it('refuses a capture that changed after it was logged', async () => {
     await store.update('u', 'a', { name: 'edited' });

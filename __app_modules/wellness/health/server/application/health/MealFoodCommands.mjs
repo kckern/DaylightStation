@@ -5,6 +5,9 @@ import { MEAL_BUCKETS } from '../../../portable/contracts/health/mealBuckets.mjs
 import { NUTRIENT_KEYS, foodGrams, scaleFoodPortion } from '../../../portable/contracts/health/foodQuantity.mjs';
 
 const idOf = row => row.uuid || row.id;
+const linkIds = row => [row.uuid, row.id].filter(Boolean);
+/** A dish part may name its dish by either ID, so look rows up under both. */
+const indexByLinkId = rows => new Map(rows.flatMap(row => linkIds(row).map(id => [id, row])));
 const fail = (message, status = 400) => { throw Object.assign(new Error(message), { status }); };
 const operationPattern = /^[A-Za-z0-9_-]{1,128}$/;
 const fields = new Set(['name', 'grams', 'amount', 'unit', ...NUTRIENT_KEYS]);
@@ -188,7 +191,7 @@ export class MealFoodCommands {
       if (!row) fail('Selected food is outside this day');
       if (row.parentId) fail('Move the whole dish, not one of its parts');
       moved.set(id, row);
-      for (const child of rows) if (child.parentId === id) moved.set(idOf(child), child);
+      for (const child of rows) if (child.parentId && linkIds(row).includes(child.parentId)) moved.set(idOf(child), child);
     }
     return [...moved.values()];
   }
@@ -238,7 +241,9 @@ export class MealFoodCommands {
       if (rows.some(row => (row.version ?? 1) !== 1)) fail('This capture changed. Reload before placing it.', 409);
       const topLevelIds = new Set(rows.filter(row => !row.parentId).map(idOf));
       if (Object.keys(placements).some(id => !topLevelIds.has(id))) fail('Placed food is not a top-level food of this capture');
-      const mealOf = row => placements[row.parentId] || placements[idOf(row)] || row.mealTime || null;
+      const byLinkId = indexByLinkId(rows);
+      const dishIdOf = row => { const dish = byLinkId.get(row.parentId); return dish ? idOf(dish) : row.parentId; };
+      const mealOf = row => placements[dishIdOf(row)] || placements[idOf(row)] || row.mealTime || null;
       const updates = rows.map(row => ({ id: idOf(row), expectedVersion: row.version ?? 1, changes: { mealTime: mealOf(row), placedBy: operationId } }));
       const undoToken = `meal-${uuidv5(`${userId}:${operationId}`, uuidv5.URL)}`;
       const date = rows[0].date;
@@ -252,11 +257,16 @@ export class MealFoodCommands {
     });
   }
 
-  /** Check dish links across `rows`, or only those touching `touchedIds` when given. */
+  /**
+   * Check dish links across `rows`, or only those touching `touchedIds` when
+   * given. A part naming a touched ID stays in scope even when that dish is
+   * gone, which is what an Undo that deletes a dish looks like.
+   */
   validateGraph(rows, touchedIds = null) {
-    const byId = new Map(rows.map(row => [idOf(row), row]));
-    for (const row of rows) if (row.parentId && (!touchedIds || touchedIds.has(idOf(row)) || touchedIds.has(row.parentId))) {
+    const byId = indexByLinkId(rows);
+    for (const row of rows) if (row.parentId) {
       const parent = byId.get(row.parentId);
+      if (touchedIds && !touchedIds.has(idOf(row)) && !touchedIds.has(row.parentId) && !(parent && touchedIds.has(idOf(parent)))) continue;
       if (!parent || parent.kind !== 'group' || parent.parentId || row.kind === 'group' || parent.date !== row.date || mealRowBucket(parent) !== mealRowBucket(row)) fail('Invalid group membership', 409);
     }
   }
@@ -268,7 +278,7 @@ export class MealFoodCommands {
       if (!record || record.type !== 'meal-command') fail('Undo not found', 404);
       const result = await this.store.mutateEntries(userId, { restoreAudit: undoToken,
         resultMeta: { committed: true, date: record.date, bucket: record.bucket, undoToken: null },
-        validate: ({ after }) => this.validateGraph(after, new Set(record.result.affectedIds)),
+        validate: ({ after }) => this.validateGraph(after, new Set([...record.result.affectedIds, ...[...record.before, ...record.after].flatMap(linkIds)])),
       });
       this.logger.info?.('health.meal.undo', { userId, operationId, affectedIds: result.affectedIds });
       return result;
