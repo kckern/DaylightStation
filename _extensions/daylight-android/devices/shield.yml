@@ -58,8 +58,8 @@ defaults:
   heartbeat.logStoreUrl: "{log_store_insert_url}"
   # The Bluetooth panel pairs and connects game controllers.
   bluetooth.mode: gamepad
-  # 8765 is audio-bridge's port. While both apps are installed (the rollout) the new
-  # stream listens here, on loopback only; the page's bridge URL moves with the switch.
-  mic.port: 8782
+  # Share audio-bridge's loopback port so both consumers keep their existing URL.
+  # Only the old helper listens during coexistence. Stop it before enabling this stream.
+  mic.port: 8765
   # No lease defaults: with lease.endpoint empty the loop is unprovisioned and idle,
   # the state supervision-guard was left in. The credential is a secret setting.

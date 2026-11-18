@@ -9,6 +9,7 @@ import org.junit.Test;
 
 import java.net.ServerSocket;
 import java.net.URI;
+import java.nio.ByteBuffer;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
@@ -171,16 +172,29 @@ public class MicStreamServerTest {
         };
     }
 
-    @Test(timeout = 20000) public void aClientIsStreamedToAndStopReleasesTheMicrophone() throws Exception {
+    @Test(timeout = 20000) public void legacyClientGetsFormatThenPcmAndStopReleasesTheMicrophone() throws Exception {
         int port = freePort();
         final FakeRecord record = new FakeRecord();
         server = new MicStreamServer(null);
         server.useRecordFactoryForTest(bufferSize -> record);
         server.start(port);
+        List<Object> messages = new CopyOnWriteArrayList<>();
         CountDownLatch gotAudio = new CountDownLatch(1);
-        WebSocketClient client = audioClient(port, gotAudio);
+        WebSocketClient client = new WebSocketClient(new URI("ws://localhost:" + port)) {
+            @Override public void onOpen(ServerHandshake h) { }
+            @Override public void onMessage(String message) { messages.add(message); }
+            @Override public void onMessage(ByteBuffer bytes) {
+                messages.add(bytes.remaining());
+                gotAudio.countDown();
+            }
+            @Override public void onClose(int code, String reason, boolean remote) { }
+            @Override public void onError(Exception ex) { }
+        };
         assertTrue(client.connectBlocking(5, TimeUnit.SECONDS));
         assertTrue("PCM frames reach the client", gotAudio.await(5, TimeUnit.SECONDS));
+        assertEquals("{\"sampleRate\":48000,\"channels\":1,\"format\":\"pcm_s16le\"}", messages.get(0));
+        int pcmBytes = (Integer) messages.get(1);
+        assertTrue("a frame contains complete 16-bit samples", pcmBytes > 0 && pcmBytes % 2 == 0);
         assertTrue(server.streaming());
         assertNull(server.errorCode());
 

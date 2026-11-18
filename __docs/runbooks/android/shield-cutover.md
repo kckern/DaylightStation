@@ -3,7 +3,7 @@
 **Nothing in this runbook has been run.** It is the Shield's path through
 `kiosk-cutover.md` (the long form, stages 0 to 11) as one supervised sitting,
 with the acceptance runner doing the checking. The way back from any step is
-that file's first section.
+that file's first section, with the microphone rollback order below.
 
 What is special about the Shield: Android 11 (API 30), no
 `android.software.device_admin` feature, so no device admin and no device owner
@@ -40,6 +40,11 @@ below means restarting the prod container, as in a deploy.
 ## Before the sitting (no device contact)
 
 - [ ] The seams branch is deployed; the Shield's backend entry still says `provider: fully-kiosk`.
+- [ ] In the private household hardware `devices.yml`, check that the Shield's
+      `input.audio_bridge.url` is a loopback WebSocket on port 8765. Weekly Review
+      uses the same port. Keep the existing URL through handover and rollback.
+      Confirm the Home Line and Weekly Review pages are on the origin of the
+      Shield's configured kiosk start URL.
 - [ ] The private tokens file has the `shield` entry and an alias entry under
       `{backend-id}` (`shield: &shield ...`, `{backend-id}: *shield`).
 - [ ] `./gradlew build --rerun-tasks`; `node tools/verify-build.mjs shield --legacy`.
@@ -53,8 +58,8 @@ below means restarting the prod container, as in a deploy.
 | 1 | Backups: audio-bridge state, supervision-guard provisioning if any, `fkb get`, `fkb get kioskAppWhitelist`, HOME resolution, the accessibility list; `adb -s <serial> shell pm list features` (confirm no `device_admin`) | saved | nothing changed |
 | 2 | Install (stage 2), home-candidate check; grants (stage 3) including `SYSTEM_ALERT_WINDOW` and `ACCESS_FINE_LOCATION` | unchanged HOME | `adb -s <serial> uninstall net.kckern.daylight.shield` |
 | 3 | Whitelist this app in Fully (stage 4); start the Activity | page shows | restore the whitelist |
-| 4 | **Microphone first.** Stop audio-bridge (`adb -s <serial> shell am force-stop net.kckern.audiobridge`); `dd settings set mic.enabled true`; open the call page | `acc --only mic.status` reports a running service; `acc --only mic.capture` gives the manual capture instructions for step 5 | `dd settings set mic.enabled false`; start audio-bridge. **Stop the sitting** and record `lastError`, `lastErrorDetail` |
-| 5 | A Home Line call from a phone, five minutes, both ways | the consumer receives PCM audio frames from the Shield and a person confirms audible speech; audio and video work both ways | as step 4 |
+| 4 | **Microphone first.** Follow the handover below | `dd get /mic/status` shows `running: true`, `port: 8765` and no error. `acc --only mic.capture` gives the manual capture gate for step 5 | follow microphone rollback below and stop the sitting |
+| 5 | Run both consumer checks below with audio-bridge stopped | a five-minute Home Line call with audible speech both ways and a playable Weekly Review recording, each with PCM evidence | as step 4 |
 | 6 | `acc --active --launch com.retroarch.aarch64` (after the call; opens the emulator and returns) | no FAIL; `launch.app` sees the emulator in front and the kiosk returns | `dd foreground` |
 | 7 | Stage 8 proofs: `dd update <apk-url> <sha256>` twice (confirm on the TV each time); `acc --only reboot --reboot --reboot-wait 600` three times, power-cycling by hand when it says so (ADB check after each); `acc --only payload.bad,crash --restart --kill --serve-bad-payload {laptop-address}:{port}` | `reboot.survives` PASS 3 of 3; complete the `reboot.mic-capture` proof below after each reboot | stop; Fully and audio-bridge run the Shield |
 | 8 | Backend: `{backend-id}` `content_control.provider: daylight-android`, `auth_ref: daylight-android`, volume provider; **restart the backend** | the admin console and a play from the menu reach the app; `prepareForContent` logs no mic restart loop | back to `fully-kiosk`, restart the backend |
@@ -64,33 +69,57 @@ below means restarting the prod container, as in a deploy.
 | 12 | `acc --only reboot --reboot --reboot-wait 600` with lockdown on (power-cycle by hand); `acc --only logstore --log-store {log-store-url}` | `reboot.survives` PASS; complete the `reboot.mic-capture` proof below with lockdown on | stage 11 |
 | 13 | The next day: make it permanent (stage 10 step 12). In `devices/shield.yml`: `cutover: done`, `lockdown.enabled` and `lockdown.required` `true`, `mic.enabled` `true`, and `lease.enabled` `true` only if the lease was provisioned at step 11 | `required: true`; `node --test tools/roadmap-capabilities.test.mjs` passes | an update with `required: false`, confirmed on the TV |
 
-### Microphone capture after each reboot
+### Microphone handover and rollback
 
-Wait for `reboot.survives` to pass. With no one touching the Shield after boot,
-start a Home Line call from another device. Use the same consumer and listening
-checks for the initial hand-over in step 5.
+1. During coexistence, confirm `mic.enabled` is false in `dd status` and
+   `dd get /mic/status` shows `running: false` and `port: 8765`. If a previous
+   install retained a different port, run `dd settings set mic.port 8765` while
+   the switch is off and read it back. The legacy app still owns the listener.
+2. End any call or recording. Stop audio-bridge with
+   `adb -s <serial> shell am force-stop net.kckern.audiobridge`. Confirm its
+   process has exited with `adb -s <serial> shell pidof net.kckern.audiobridge`.
+   Enable the new listener with `dd settings set mic.enabled true`, then read
+   `dd get /mic/status`. If it fails, record `lastError` and `lastErrorDetail`
+   privately. A port conflict appears as `bind_failed`.
+3. For rollback, set `dd settings set mic.enabled false` and verify
+   `dd get /mic/status` reports `running: false` before starting audio-bridge.
+   If the control API is unavailable, force-stop `net.kckern.daylight.shield`
+   over ADB and verify that process has exited before restarting the legacy
+   helper. Start audio-bridge using its saved launch method from step 1 of the
+   sitting. Verify legacy capture through the same loopback URL and continue
+   with stage 11 if the kiosk or backend was switched.
 
-1. In the log store, find this Shield call's frontend events using
-   `context.component:"useNativeAudioBridge" AND _msg:"bridge-volume" AND _time:5m`.
-   Match the events to the call's timestamp and the Shield's kiosk session.
-   Speak near the Shield and require a fresh `maxLevel` greater than zero.
-   The worklet computes this level from decoded PCM playback samples. A format
-   header can initialize the worklet, but cannot produce a positive level.
-2. If frontend logs are unavailable and the Shield WebView inspector was enabled
-   for the approved sitting, open the consumer's WebView in Chrome via
-   `chrome://inspect/#devices`. Open **Network → WS** before the call opens
-   the mic connection. Select the socket whose port matches `GET /mic/status`
-   and open **Messages**. Require incoming **Binary Message** rows with a
-   nonzero even byte length after the `pcm_s16le` text format header.
-   Do not reload the Shield page or restart anything to make capture succeed.
-3. Have the person on the other end confirm they hear intelligible speech from
-   the Shield. Record the time, the positive level or binary message count and
-   byte lengths, and the listening result in the private sitting notes. Keep
-   the audio payload out of the notes and do not export the WebSocket capture.
+### Microphone capture at handover and after each cold boot
 
-The runner reports `reboot.mic-capture` as MANUAL when the service reports
-healthy. A disabled or unhealthy service fails the check. Require both the
-consumer evidence and the listening result before proceeding.
+For step 5, use `acc --only mic.capture`. After each cold boot, wait for
+`reboot.survives` to pass and follow its `reboot.mic-capture` manual gate.
+Confirm audio-bridge's process is still stopped. Use both consumers below after
+each boot without a microphone restart or a preparatory page reload.
+
+- Start a Home Line call from another device. Keep audio and video working in
+  both directions for five minutes and confirm audible speech at both ends.
+  For PCM evidence, match the Shield session and call timestamp to frontend
+  events using `context.component:"useNativeAudioBridge" AND _msg:"bridge-volume" AND _time:5m`.
+  Speak near the Shield and require a fresh `maxLevel` greater than zero.
+- After ending the call, record spoken words in Weekly Review on the Shield.
+  Match `recorder.bridge-acquired` and `recorder.first-audible-frame` from
+  `weekly-review-recorder` to the same recording session. The first event
+  identifies the bridge path and the second shows that audio reached the
+  recorder. Play the resulting recording and confirm intelligible speech.
+
+If frontend logs are unavailable and the Shield WebView inspector was enabled
+for the approved sitting, open the consumer's WebView in Chrome via
+`chrome://inspect/#devices`. Open **Network → WS** before starting the call or
+recording. Select the socket on port 8765 and open **Messages**. Require incoming
+**Binary Message** rows with nonzero even byte lengths after the `pcm_s16le`
+text format header in each consumer. The listening and playback checks still
+apply.
+
+Record timestamps, PCM evidence and the listening and playback results in the
+private sitting notes. Save only evidence metadata and listening results.
+The runner reports the capture gate as MANUAL when the service reports healthy.
+A disabled or unhealthy service fails the check. Complete both consumer checks
+before proceeding.
 
 ## The soak: two weeks
 

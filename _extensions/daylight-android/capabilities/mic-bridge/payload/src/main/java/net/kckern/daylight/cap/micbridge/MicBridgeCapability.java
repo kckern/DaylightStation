@@ -102,7 +102,7 @@ public final class MicBridgeCapability implements Capability {
 
     @Override public void register(CoreContext core) {
         this.core = core;
-        // audio-bridge's port. A device that still runs audio-bridge beside this app sets another.
+        // audio-bridge's port. mic.enabled stays off until the legacy listener stops.
         core.settings().declare("mic.port", SettingsRegistry.Type.INTEGER, 8765, SettingsRegistry.range(1024, 65535));
         // The stream must not be asked to listen where the control API or the lifeline
         // does: whichever bound second would fail, and the lifeline is the way back in.

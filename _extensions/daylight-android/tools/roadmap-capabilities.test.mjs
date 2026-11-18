@@ -56,6 +56,10 @@ for (const [id, want] of Object.entries(ROADMAP)) {
   });
 }
 
+test('shield: the microphone uses the legacy consumer port through cutover and rollback', () => {
+  assert.equal(load('shield').file.defaults['mic.port'], 8765);
+});
+
 test('shield: the page may launch the emulator the media menu starts today', () => {
   assert.match(load('shield').file.defaults['launcher.allowed'], /(^|,)com\.retroarch\.aarch64(,|$)/);
 });

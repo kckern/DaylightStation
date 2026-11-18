@@ -189,32 +189,44 @@ public class MicBridgeCapabilityTest {
 
     // ── mic.enabled: installed beside audio-bridge, which streams the microphone ─
 
-    @Test(timeout = 20000) public void withTheSwitchOffNoStreamSocketIsBoundUntilItIsTurnedOn() throws Exception {
+    @Test(timeout = 20000) public void theLiveSwitchHandsOverTheLegacyPortAndGivesItBack() throws Exception {
         java.io.File dir = tmp.newFolder();
         net.kckern.daylight.core.testing.FakeContext ctx = new net.kckern.daylight.core.testing.FakeContext(dir);
         CoreRuntime core = TestCore.createWithContext(dir, ctx);
+        MicBridgeCapability mic = new MicBridgeCapability();
+        int port = freePort();
         try {
-            MicBridgeCapability mic = new MicBridgeCapability();
             core.add(mic);
-            int port = freePort();
-            core.prepare(new JSONObject("{\"mic.enabled\":false,\"mic.port\":" + port + "}"));   // the Shield's device file
-
+            core.prepare(new JSONObject().put("mic.enabled", false).put("mic.port", port));
             mic.start();
-            assertFalse(TestCore.get(core, "/mic/status").getBoolean("running"));
-            assertTrue("the port is left alone", portIsFree(port));
-            assertFalse(TestCore.get(core, "/status").getJSONObject("switches").getJSONObject("mic.enabled").getBoolean("active"));
+            assertTrue("the legacy listener can bind while mic.enabled is false", portIsFree(port));
+
+            try (java.net.ServerSocket legacy = new java.net.ServerSocket(port, 1, java.net.InetAddress.getLoopbackAddress())) {
+                JSONObject disabled = TestCore.get(core, "/mic/status");
+                assertEquals(port, disabled.getInt("port"));
+                assertFalse(disabled.getBoolean("running"));
+                assertTrue(disabled.isNull("lastError"));
+
+                core.settings().set("mic.enabled", true);
+                JSONObject occupied = TestCore.get(core, "/mic/status");
+                assertFalse(occupied.getBoolean("running"));
+                assertEquals("bind_failed", occupied.getString("lastError"));
+                assertFalse(occupied.getString("lastErrorDetail").isEmpty());
+                core.settings().set("mic.enabled", false);
+            }
 
             core.settings().set("mic.enabled", true);
-            assertTrue(TestCore.get(core, "/mic/status").getBoolean("running"));
+            JSONObject up = TestCore.get(core, "/mic/status");
+            assertEquals(port, up.getInt("port"));
+            assertTrue(up.getBoolean("running"));
+            assertTrue(up.isNull("lastError"));
             assertFalse(portIsFree(port));
 
             core.settings().set("mic.enabled", false);
-            long deadline = System.currentTimeMillis() + 3000;
-            while (!portIsFree(port) && System.currentTimeMillis() < deadline) Thread.sleep(20);
-            assertTrue("turning it off gives the port back", portIsFree(port));
             assertFalse(TestCore.get(core, "/mic/status").getBoolean("running"));
-            mic.stop();
+            assertTrue("rollback releases the port before the legacy listener starts", portIsFree(port));
         } finally {
+            mic.stop();
             TestCore.releaseMainThread();
         }
     }

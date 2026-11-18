@@ -902,7 +902,7 @@ Behavior that changed in the port, for whoever switches a device over.
 | Presence report field `version` | portal-keys' version name | This app's version name |
 | Presence with no endpoint | Not logged | Logged once per start |
 | Shield `/bluetooth` | No token; `Content-Type` checked | Token needed; `Content-Type` not checked |
-| Shield microphone socket | Every interface, port 8765 | Loopback only; port `mic.port` (8782 while both apps are installed) |
+| Shield microphone socket | Every interface, port 8765 | Loopback only on port 8765 at handover. The new listener stays disabled during coexistence. |
 | Shield microphone health | Read from the system log over ADB | `GET /mic/status` |
 | Shield lease loop | Its own app, device-protected storage, started before unlock | Inside this app, started with the payload; ordering kept under the payload directory |
 | Shield lease acknowledgement with no package gate | Acknowledged the state the app enforced | While nothing provides a package gate the loop acknowledges `capabilityReady: false, blocked: true`, whatever the lease says |
