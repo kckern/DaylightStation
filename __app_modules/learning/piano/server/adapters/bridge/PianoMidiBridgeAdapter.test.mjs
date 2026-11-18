@@ -11,11 +11,11 @@ function fakeWs() {
   }
   return { FakeWs, made };
 }
-const quiet = { info() {}, warn() {}, debug() {}, error() {} };
+const noLog = { info() {}, warn() {}, debug() {}, error() {} };
 
 test('the old bridge: the socket opens with no options and a note.on wakes', () => {
   const { FakeWs, made } = fakeWs();
-  const a = new PianoMidiBridgeAdapter({ bridgeUrl: 'ws://tablet:8770', WebSocketImpl: FakeWs, logger: quiet, fetchImpl: async () => ({}) });
+  const a = new PianoMidiBridgeAdapter({ bridgeUrl: 'ws://tablet:8770', WebSocketImpl: FakeWs, logger: noLog, fetchImpl: async () => ({}) });
   let woke = 0;
   a.start(() => { woke += 1; });
   assert.equal(made[0].url, 'ws://tablet:8770');
@@ -29,7 +29,7 @@ test('the Android app: the upgrade carries the token header, and its note.on wak
   const { FakeWs, made } = fakeWs();
   const a = new PianoMidiBridgeAdapter({
     bridgeUrl: 'ws://tablet:8780/', headers: { 'X-Daylight-Token': 'tok' }, suppressRelay: false,
-    WebSocketImpl: FakeWs, logger: quiet, fetchImpl: async () => ({}),
+    WebSocketImpl: FakeWs, logger: noLog, fetchImpl: async () => ({}),
   });
   let woke = 0;
   a.start(() => { woke += 1; });
@@ -44,7 +44,7 @@ test('with the relay off, suppressing a wake sends nothing to the device and say
   const logs = [];
   const a = new PianoMidiBridgeAdapter({
     bridgeUrl: 'ws://tablet:8780/', suppressRelay: false,
-    logger: { ...quiet, info: (e) => logs.push(e) },
+    logger: { ...noLog, info: (e) => logs.push(e) },
     fetchImpl: async (...args) => { calls.push(args); return { ok: true, json: async () => ({ values: {} }) }; },
   });
   await a.suppressWakeUntil(Date.now() + 60_000);
@@ -56,7 +56,7 @@ test('with the relay off, suppressing a wake sends nothing to the device and say
 test('the old bridge keeps its read-merge-write relay', async () => {
   const calls = [];
   const a = new PianoMidiBridgeAdapter({
-    bridgeUrl: 'ws://tablet:8770', logger: quiet,
+    bridgeUrl: 'ws://tablet:8770', logger: noLog,
     fetchImpl: async (url, init) => { calls.push([url, init.method]); return { ok: true, json: async () => ({ values: { targetMac: 'x' } }) }; },
   });
   await a.suppressWakeUntil(123);

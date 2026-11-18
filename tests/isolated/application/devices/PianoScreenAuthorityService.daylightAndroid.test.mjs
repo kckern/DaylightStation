@@ -11,7 +11,7 @@ import { DaylightAndroidContentAdapter } from '#adapters/devices/DaylightAndroid
 
 const POLL_MS = 3000;
 const OFF_DEBOUNCE_MS = 15000;
-const quiet = () => ({ debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() });
+const noLog = () => ({ debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() });
 
 /** A control API whose display follows POST /screen, unless `stuck` holds it. */
 function makeTablet({ screenOn = true, stuck = null } = {}) {
@@ -33,8 +33,8 @@ function makeTablet({ screenOn = true, stuck = null } = {}) {
     }),
     delete: vi.fn(),
   };
-  const adapter = new DaylightAndroidContentAdapter({ host: 'tablet.test', port: 8780, token: 'tok' }, { restClient: rest, logger: quiet() });
-  const device = new Device({ id: 'yellow-room-tablet', type: 'android-tablet' }, { contentControl: adapter }, { logger: quiet() });
+  const adapter = new DaylightAndroidContentAdapter({ host: 'tablet.test', port: 8780, token: 'tok' }, { restClient: rest, logger: noLog() });
+  const device = new Device({ id: 'yellow-room-tablet', type: 'android-tablet' }, { contentControl: adapter }, { logger: noLog() });
   return { state, device };
 }
 
@@ -43,7 +43,7 @@ function makeService(device, power) {
   const svc = new PianoScreenAuthorityService({
     haGateway: gateway,
     deviceService: { get: vi.fn().mockReturnValue(device) },
-    logger: quiet(),
+    logger: noLog(),
     clock: { now: () => Date.now() },
     deviceId: 'yellow-room-tablet',
     pianoPowerEntity: 'binary_sensor.piano_power',
