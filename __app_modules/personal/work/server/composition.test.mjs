@@ -359,4 +359,99 @@ describe('Work runtime composition', () => {
     }
   });
 });
-it('allows the legacy KB cap on a read-only Work host but never grants an unrecorded Work model attempt',async()=>{const tmp=fs.mkdtempSync(path.join(os.tmpdir(),'work-budget-role-'));const runtime=createWorkRuntime({configuration:configuration(),environment:'test',hostId:'fixture-host',rootForUser:u=>path.join(tmp,u),userTimezone:()=> 'America/Los_Angeles',readCurrent:async()=>current(),readHistory:async()=>({}),clock:()=>AS_OF});try{expect((await runtime.callBudget.reserve({username:'sample',scope:'journal-intent',receiptId:'attempt',asOf:AS_OF})).allowed).toBe(false);expect((await runtime.callBudget.reserve({username:'sample',scope:'knowledge-extraction',receiptId:'attempt',asOf:AS_OF})).allowed).toBe(true);expect(fs.readdirSync(tmp)).toEqual([]);}finally{await runtime.dispose();fs.rmSync(tmp,{recursive:true,force:true});}});
+it('allows the legacy KB cap on a read-only Work host but never grants an unrecorded Work model attempt', async () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'work-budget-role-'));
+  const runtime = createWorkRuntime({
+    configuration: configuration(),
+    environment: 'test',
+    hostId: 'fixture-host',
+    rootForUser: u => path.join(tmp, u),
+    userTimezone: () => 'America/Los_Angeles',
+    readCurrent: async () => current(),
+    readHistory: async () => ({}),
+    clock: () => AS_OF
+  });
+  try {
+    expect((await runtime.callBudget.reserve({
+      username: 'sample',
+      scope: 'journal-intent',
+      receiptId: 'attempt',
+      asOf: AS_OF
+    })).allowed).toBe(false);
+    expect((await runtime.callBudget.reserve({
+      username: 'sample',
+      scope: 'knowledge-extraction',
+      receiptId: 'attempt',
+      asOf: AS_OF
+    })).allowed).toBe(true);
+    expect(fs.readdirSync(tmp)).toEqual([]);
+  } finally {
+    await runtime.dispose();
+    fs.rmSync(tmp, {
+      recursive: true,
+      force: true
+    });
+  }
+});
+it('exposes a scoped attention budget backed by the public KB history reader', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'work-attention-runtime-'));
+  const c = configuration();
+  Object.assign(c.work, {
+    write: true,
+    writer_env: 'fixture-prod',
+    writer_host: 'fixture-writer'
+  });
+  const readKnowledgeAttentionHistory = vi.fn(async () => ({
+    available: true,
+    deliveries: [{
+      id: 'kb:prior',
+      day: '2026-11-17',
+      channel: 'morning',
+      status: 'delivered',
+      questionUnits: 2,
+      deliveredAt: AS_OF - 1
+    }],
+    reservations: [],
+    unansweredInvitations: []
+  }));
+  const runtime = createWorkRuntime({
+    configuration: c,
+    environment: 'fixture-prod',
+    hostId: 'fixture-writer',
+    rootForUser: u => path.join(root, u, 'work'),
+    userTimezone: () => 'America/Los_Angeles',
+    clock: () => AS_OF,
+    readCurrent: async () => current(),
+    readHistory: async () => ({}),
+    readKnowledgeAttentionHistory,
+    logger: {
+      warn() {},
+      info() {},
+      debug() {}
+    }
+  });
+  try {
+    await runtime.start();
+    expect(runtime.attention).toBeTruthy();
+    expect(await runtime.attention.reserve({
+      username: 'sample',
+      decisionId: 'offer',
+      channel: 'housekeeping',
+      flowType: 'housekeeping',
+      questionUnits: 1,
+      refKey: 'one',
+      asOf: AS_OF,
+      expiresAt: AS_OF + 86400000
+    })).toMatchObject({
+      allowed: false,
+      reason: 'daily_budget'
+    });
+    expect(readKnowledgeAttentionHistory).toHaveBeenCalled();
+  } finally {
+    await runtime.dispose();
+    fs.rmSync(root, {
+      recursive: true,
+      force: true
+    });
+  }
+});

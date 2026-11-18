@@ -1,46 +1,385 @@
 // @vitest-environment node
-import {describe,it,expect,beforeEach,afterEach} from 'vitest';
-import fs from 'node:fs';import path from 'node:path';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import fs from 'node:fs';
+import path from 'node:path';
 import * as FileIO from '#system/utils/FileIO.mjs';
-import {harness,commit,relevance,refKey,snapshot} from '../../../../../tests/_lib/work/stateHarness.mjs';
-import {AS_OF} from '../../../../../tests/_lib/work/observations.mjs';
-let h;beforeEach(()=>{h=harness();});afterEach(async()=>{await h.close();});
-describe('durable Work transactions and generated projection',()=>{
- it('reads an absent state without making directories or a lease',async()=>{const store=h.make();expect((await store.read({username:'sample'})).health.available).toBe(true);expect(fs.existsSync(h.rootForUser('sample'))).toBe(false);});
- it('replays a transaction id once but rejects changed contents under the same id',async()=>{const store=h.make(),initial=await store.read({username:'sample'}),tx={username:'sample',id:'pause-sample',expectedRevision:initial.revision,events:[relevance()],asOf:AS_OF};expect((await store.transact(tx)).applied).toBe(true);expect((await store.transact(tx)).applied).toBe(false);expect((await store.read({username:'sample'})).relevance[refKey].state).toBe('paused');await expect(store.transact({...tx,events:[relevance('active')]})).rejects.toMatchObject({code:'WORK_TRANSACTION_CONFLICT'});expect(fs.readFileSync(path.join(h.rootForUser('sample'),'events.jsonl'),'utf8').trim().split('\n')).toHaveLength(1);});
- it('uses optimistic revision and never reactivates relevance through snapshot refresh',async()=>{const store=h.make(),old=await store.read({username:'sample'});await commit(store,'pause',[relevance()]);await expect(store.transact({username:'sample',id:'stale',expectedRevision:old.revision,events:[relevance('active')],asOf:AS_OF})).rejects.toMatchObject({code:'STALE_WORK_REVISION'});await commit(store,'refresh',[{type:'snapshot.observed',provider:'todoist',accountId:'personal',snapshot:snapshot()}]);expect((await store.read({username:'sample'})).relevance[refKey].state).toBe('paused');});
- it('keeps users with identical item ids isolated and refuses path-shaped usernames',async()=>{const store=h.make();await commit(store,'same-id',[relevance('active')],'sample');await commit(store,'same-id',[relevance('retired')],'other');expect((await store.read({username:'sample'})).relevance[refKey].state).toBe('active');expect((await store.read({username:'other'})).relevance[refKey].state).toBe('retired');await expect(store.read({username:'../outside'})).rejects.toMatchObject({code:'INVALID_WORK_USER'});});
- it('recovers exactly once when durable append succeeded but projection failed',async()=>{let fail=true;const store=h.make({io:{...FileIO,saveYamlToPathAtomic:(...args)=>{if(fail)throw new Error('injected projection failure');return FileIO.saveYamlToPathAtomic(...args);}}});await expect(commit(store,'pause',[relevance()])).rejects.toThrow('injected projection failure');expect((await store.read({username:'sample'})).health).toMatchObject({available:false,recovering:true});fail=false;await store.recover({username:'sample'});expect((await store.read({username:'sample'})).relevance[refKey].state).toBe('paused');expect((await commit(store,'pause',[relevance()])).applied).toBe(false);});
- it('repairs only an incomplete final envelope while preserving the discarded bytes',async()=>{const store=h.make();await commit(store,'pause',[relevance()]);const file=path.join(h.rootForUser('sample'),'events.jsonl');fs.appendFileSync(file,'{"schema":"work-state/v1","id":"unfinished');const bytes=fs.readFileSync(file);expect((await store.read({username:'sample'})).health.available).toBe(false);expect(fs.readFileSync(file)).toEqual(bytes);const recovered=await store.recover({username:'sample'});expect(recovered.repairedBytes).toBeGreaterThan(0);expect((await store.read({username:'sample'})).relevance[refKey].state).toBe('paused');const repairs=fs.readdirSync(path.join(h.rootForUser('sample'),'repairs'));expect(repairs.length).toBeGreaterThan(0);expect(repairs.some(name=>fs.readFileSync(path.join(h.rootForUser('sample'),'repairs',name),'utf8').includes('unfinished'))).toBe(true);});
- it('does not discard checksum-invalid complete records, even at the end',async()=>{const store=h.make();await commit(store,'pause',[relevance()]);const file=path.join(h.rootForUser('sample'),'events.jsonl'),lines=fs.readFileSync(file,'utf8').trim().split('\n'),record=JSON.parse(lines[0]);record.events[0].relevance.state='active';fs.writeFileSync(file,JSON.stringify(record)+'\n');const bytes=fs.readFileSync(file);expect((await store.read({username:'sample'})).health.available).toBe(false);await expect(store.recover({username:'sample'})).rejects.toMatchObject({code:'WORK_LEDGER_CORRUPT'});expect(fs.readFileSync(file)).toEqual(bytes);});
- it('detects missing canonical history instead of adopting a generated YAML projection',async()=>{const store=h.make();await commit(store,'pause',[relevance()]);fs.unlinkSync(path.join(h.rootForUser('sample'),'events.jsonl'));expect((await store.read({username:'sample'})).health).toMatchObject({available:false,reason:'WORK_LEDGER_MISSING'});await expect(store.recover({username:'sample'})).rejects.toMatchObject({code:'WORK_LEDGER_MISSING'});});
- it('cannot mutate after close and rejects unsupported event types without appending',async()=>{const store=h.make();await expect(commit(store,'bad',[{type:'model.do_anything'}])).rejects.toMatchObject({code:'INVALID_WORK_EVENT'});expect(fs.existsSync(path.join(h.rootForUser('sample'),'events.jsonl'))).toBe(false);await store.close();await expect(commit(store,'late',[relevance()])).rejects.toMatchObject({code:'WORK_CLOSED'});});
+import { harness, commit, relevance, refKey, snapshot } from '../../../../../tests/_lib/work/stateHarness.mjs';
+import { AS_OF } from '../../../../../tests/_lib/work/observations.mjs';
+let h;
+beforeEach(() => {
+  h = harness();
 });
-it('retains a complete valid final envelope whose newline was torn',async()=>{
- const store=h.make();await commit(store,'pause',[relevance()]);const file=path.join(h.rootForUser('sample'),'events.jsonl');fs.writeFileSync(file,fs.readFileSync(file,'utf8').trimEnd());
- expect((await store.read({username:'sample'})).health.available).toBe(false);await store.recover({username:'sample'});expect((await store.read({username:'sample'})).relevance[refKey].state).toBe('paused');expect(fs.readFileSync(file,'utf8').trim().split('\n')).toHaveLength(1);
+afterEach(async () => {
+  await h.close();
 });
-it('does not alter a structurally invalid complete tail even when its checksum is valid',async()=>{
- const {workHash}=await import('../domain/workState.mjs');const store=h.make();await commit(store,'pause',[relevance()]);const file=path.join(h.rootForUser('sample'),'events.jsonl'),record=JSON.parse(fs.readFileSync(file,'utf8').trim());record.id=42;delete record.checksum;record.checksum=workHash(record);fs.writeFileSync(file,JSON.stringify(record));const before=fs.readFileSync(file);
- await expect(store.recover({username:'sample'})).rejects.toMatchObject({code:'WORK_LEDGER_CORRUPT'});expect(fs.readFileSync(file)).toEqual(before);
+describe('durable Work transactions and generated projection', () => {
+  it('reads an absent state without making directories or a lease', async () => {
+    const store = h.make();
+    expect((await store.read({
+      username: 'sample'
+    })).health.available).toBe(true);
+    expect(fs.existsSync(h.rootForUser('sample'))).toBe(false);
+  });
+  it('replays a transaction id once but rejects changed contents under the same id', async () => {
+    const store = h.make(),
+      initial = await store.read({
+        username: 'sample'
+      }),
+      tx = {
+        username: 'sample',
+        id: 'pause-sample',
+        expectedRevision: initial.revision,
+        events: [relevance()],
+        asOf: AS_OF
+      };
+    expect((await store.transact(tx)).applied).toBe(true);
+    expect((await store.transact(tx)).applied).toBe(false);
+    expect((await store.read({
+      username: 'sample'
+    })).relevance[refKey].state).toBe('paused');
+    await expect(store.transact({
+      ...tx,
+      events: [relevance('active')]
+    })).rejects.toMatchObject({
+      code: 'WORK_TRANSACTION_CONFLICT'
+    });
+    expect(fs.readFileSync(path.join(h.rootForUser('sample'), 'events.jsonl'), 'utf8').trim().split('\n')).toHaveLength(1);
+  });
+  it('uses optimistic revision and never reactivates relevance through snapshot refresh', async () => {
+    const store = h.make(),
+      old = await store.read({
+        username: 'sample'
+      });
+    await commit(store, 'pause', [relevance()]);
+    await expect(store.transact({
+      username: 'sample',
+      id: 'stale',
+      expectedRevision: old.revision,
+      events: [relevance('active')],
+      asOf: AS_OF
+    })).rejects.toMatchObject({
+      code: 'STALE_WORK_REVISION'
+    });
+    await commit(store, 'refresh', [{
+      type: 'snapshot.observed',
+      provider: 'todoist',
+      accountId: 'personal',
+      snapshot: snapshot()
+    }]);
+    expect((await store.read({
+      username: 'sample'
+    })).relevance[refKey].state).toBe('paused');
+  });
+  it('keeps users with identical item ids isolated and refuses path-shaped usernames', async () => {
+    const store = h.make();
+    await commit(store, 'same-id', [relevance('active')], 'sample');
+    await commit(store, 'same-id', [relevance('retired')], 'other');
+    expect((await store.read({
+      username: 'sample'
+    })).relevance[refKey].state).toBe('active');
+    expect((await store.read({
+      username: 'other'
+    })).relevance[refKey].state).toBe('retired');
+    await expect(store.read({
+      username: '../outside'
+    })).rejects.toMatchObject({
+      code: 'INVALID_WORK_USER'
+    });
+  });
+  it('recovers exactly once when durable append succeeded but projection failed', async () => {
+    let fail = true;
+    const store = h.make({
+      io: {
+        ...FileIO,
+        saveYamlToPathAtomic: (...args) => {
+          if (fail) throw new Error('injected projection failure');
+          return FileIO.saveYamlToPathAtomic(...args);
+        }
+      }
+    });
+    await expect(commit(store, 'pause', [relevance()])).rejects.toThrow('injected projection failure');
+    expect((await store.read({
+      username: 'sample'
+    })).health).toMatchObject({
+      available: false,
+      recovering: true
+    });
+    fail = false;
+    await store.recover({
+      username: 'sample'
+    });
+    expect((await store.read({
+      username: 'sample'
+    })).relevance[refKey].state).toBe('paused');
+    expect((await commit(store, 'pause', [relevance()])).applied).toBe(false);
+  });
+  it('repairs only an incomplete final envelope while preserving the discarded bytes', async () => {
+    const store = h.make();
+    await commit(store, 'pause', [relevance()]);
+    const file = path.join(h.rootForUser('sample'), 'events.jsonl');
+    fs.appendFileSync(file, '{"schema":"work-state/v1","id":"unfinished');
+    const bytes = fs.readFileSync(file);
+    expect((await store.read({
+      username: 'sample'
+    })).health.available).toBe(false);
+    expect(fs.readFileSync(file)).toEqual(bytes);
+    const recovered = await store.recover({
+      username: 'sample'
+    });
+    expect(recovered.repairedBytes).toBeGreaterThan(0);
+    expect((await store.read({
+      username: 'sample'
+    })).relevance[refKey].state).toBe('paused');
+    const repairs = fs.readdirSync(path.join(h.rootForUser('sample'), 'repairs'));
+    expect(repairs.length).toBeGreaterThan(0);
+    expect(repairs.some(name => fs.readFileSync(path.join(h.rootForUser('sample'), 'repairs', name), 'utf8').includes('unfinished'))).toBe(true);
+  });
+  it('does not discard checksum-invalid complete records, even at the end', async () => {
+    const store = h.make();
+    await commit(store, 'pause', [relevance()]);
+    const file = path.join(h.rootForUser('sample'), 'events.jsonl'),
+      lines = fs.readFileSync(file, 'utf8').trim().split('\n'),
+      record = JSON.parse(lines[0]);
+    record.events[0].relevance.state = 'active';
+    fs.writeFileSync(file, JSON.stringify(record) + '\n');
+    const bytes = fs.readFileSync(file);
+    expect((await store.read({
+      username: 'sample'
+    })).health.available).toBe(false);
+    await expect(store.recover({
+      username: 'sample'
+    })).rejects.toMatchObject({
+      code: 'WORK_LEDGER_CORRUPT'
+    });
+    expect(fs.readFileSync(file)).toEqual(bytes);
+  });
+  it('detects missing canonical history instead of adopting a generated YAML projection', async () => {
+    const store = h.make();
+    await commit(store, 'pause', [relevance()]);
+    fs.unlinkSync(path.join(h.rootForUser('sample'), 'events.jsonl'));
+    expect((await store.read({
+      username: 'sample'
+    })).health).toMatchObject({
+      available: false,
+      reason: 'WORK_LEDGER_MISSING'
+    });
+    await expect(store.recover({
+      username: 'sample'
+    })).rejects.toMatchObject({
+      code: 'WORK_LEDGER_MISSING'
+    });
+  });
+  it('cannot mutate after close and rejects unsupported event types without appending', async () => {
+    const store = h.make();
+    await expect(commit(store, 'bad', [{
+      type: 'model.do_anything'
+    }])).rejects.toMatchObject({
+      code: 'INVALID_WORK_EVENT'
+    });
+    expect(fs.existsSync(path.join(h.rootForUser('sample'), 'events.jsonl'))).toBe(false);
+    await store.close();
+    await expect(commit(store, 'late', [relevance()])).rejects.toMatchObject({
+      code: 'WORK_CLOSED'
+    });
+  });
 });
-it.each(['before_append','after_append','after_projection'])('recovers the actual durable state after a %s failure',async point=>{
- let fail=true;const store=h.make({io:{...FileIO,appendTextFile:(...args)=>{if(fail&&point==='before_append')throw new Error('injected boundary');FileIO.appendTextFile(...args);if(fail&&point==='after_append')throw new Error('injected boundary');},saveYamlToPathAtomic:(...args)=>{FileIO.saveYamlToPathAtomic(...args);if(fail&&point==='after_projection')throw new Error('injected boundary');}}});
- await expect(commit(store,'pause',[relevance()])).rejects.toThrow('injected boundary');fail=false;await store.recover({username:'sample'});const result=await commit(store,'pause',[relevance()]);expect(result.applied).toBe(point==='before_append');expect((await store.read({username:'sample'})).relevance[refKey].state).toBe('paused');
+it('retains a complete valid final envelope whose newline was torn', async () => {
+  const store = h.make();
+  await commit(store, 'pause', [relevance()]);
+  const file = path.join(h.rootForUser('sample'), 'events.jsonl');
+  fs.writeFileSync(file, fs.readFileSync(file, 'utf8').trimEnd());
+  expect((await store.read({
+    username: 'sample'
+  })).health.available).toBe(false);
+  await store.recover({
+    username: 'sample'
+  });
+  expect((await store.read({
+    username: 'sample'
+  })).relevance[refKey].state).toBe('paused');
+  expect(fs.readFileSync(file, 'utf8').trim().split('\n')).toHaveLength(1);
 });
-it('serializes concurrent stale revisions rather than losing one relevance decision',async()=>{
- const store=h.make(),initial=await store.read({username:'sample'}),base={username:'sample',expectedRevision:initial.revision,asOf:AS_OF};
- const results=await Promise.allSettled([store.transact({...base,id:'pause',events:[relevance('paused')]}),store.transact({...base,id:'activate',events:[relevance('active')]})]);
- expect(results.filter(r=>r.status==='fulfilled')).toHaveLength(1);expect(results.find(r=>r.status==='rejected').reason.code).toBe('STALE_WORK_REVISION');expect((await store.read({username:'sample'})).relevance[refKey].state).toBe('paused');
+it('does not alter a structurally invalid complete tail even when its checksum is valid', async () => {
+  const {
+    workHash
+  } = await import('../domain/workState.mjs');
+  const store = h.make();
+  await commit(store, 'pause', [relevance()]);
+  const file = path.join(h.rootForUser('sample'), 'events.jsonl'),
+    record = JSON.parse(fs.readFileSync(file, 'utf8').trim());
+  record.id = 42;
+  delete record.checksum;
+  record.checksum = workHash(record);
+  fs.writeFileSync(file, JSON.stringify(record));
+  const before = fs.readFileSync(file);
+  await expect(store.recover({
+    username: 'sample'
+  })).rejects.toMatchObject({
+    code: 'WORK_LEDGER_CORRUPT'
+  });
+  expect(fs.readFileSync(file)).toEqual(before);
 });
-it.runIf(process.platform==='linux')('prevents a second actual store writer from mutating the same root',async()=>{
- const first=h.make(),second=h.make();await commit(first,'pause',[relevance()]);await expect(commit(second,'activate',[relevance('active')])).rejects.toMatchObject({code:'WORK_WRITER_BUSY'});await first.close();await commit(second,'activate',[relevance('active')]);expect((await second.read({username:'sample'})).relevance[refKey].state).toBe('active');
+it.each(['before_append', 'after_append', 'after_projection'])('recovers the actual durable state after a %s failure', async point => {
+  let fail = true;
+  const store = h.make({
+    io: {
+      ...FileIO,
+      appendTextFile: (...args) => {
+        if (fail && point === 'before_append') throw new Error('injected boundary');
+        FileIO.appendTextFile(...args);
+        if (fail && point === 'after_append') throw new Error('injected boundary');
+      },
+      saveYamlToPathAtomic: (...args) => {
+        FileIO.saveYamlToPathAtomic(...args);
+        if (fail && point === 'after_projection') throw new Error('injected boundary');
+      }
+    }
+  });
+  await expect(commit(store, 'pause', [relevance()])).rejects.toThrow('injected boundary');
+  fail = false;
+  await store.recover({
+    username: 'sample'
+  });
+  const result = await commit(store, 'pause', [relevance()]);
+  expect(result.applied).toBe(point === 'before_append');
+  expect((await store.read({
+    username: 'sample'
+  })).relevance[refKey].state).toBe('paused');
 });
-it('backs up an edited generated projection and retains canonical relevance',async()=>{
- const store=h.make();await commit(store,'pause',[relevance()]);const file=path.join(h.rootForUser('sample'),'state.yml');const original=FileIO.readTextFromPath(file);fs.writeFileSync(file,original.replace('state: paused','state: active'));const changed=fs.readFileSync(file);
- expect((await store.read({username:'sample'})).health.available).toBe(false);await store.recover({username:'sample'});expect((await store.read({username:'sample'})).relevance[refKey].state).toBe('paused');expect(fs.readdirSync(path.join(h.rootForUser('sample'),'repairs')).some(name=>fs.readFileSync(path.join(h.rootForUser('sample'),'repairs',name)).equals(changed))).toBe(true);
+it('serializes concurrent stale revisions rather than losing one relevance decision', async () => {
+  const store = h.make(),
+    initial = await store.read({
+      username: 'sample'
+    }),
+    base = {
+      username: 'sample',
+      expectedRevision: initial.revision,
+      asOf: AS_OF
+    };
+  const results = await Promise.allSettled([store.transact({
+    ...base,
+    id: 'pause',
+    events: [relevance('paused')]
+  }), store.transact({
+    ...base,
+    id: 'activate',
+    events: [relevance('active')]
+  })]);
+  expect(results.filter(r => r.status === 'fulfilled')).toHaveLength(1);
+  expect(results.find(r => r.status === 'rejected').reason.code).toBe('STALE_WORK_REVISION');
+  expect((await store.read({
+    username: 'sample'
+  })).relevance[refKey].state).toBe('paused');
 });
-it('preserves exact UTF8 tail bytes while truncating at a verified complete boundary',async()=>{
- const store=h.make();await commit(store,'pause',[relevance()]);const file=path.join(h.rootForUser('sample'),'events.jsonl'),tail=Buffer.concat([Buffer.from('{"text":"unfinished '),Buffer.from('🌅').subarray(0,2)]);fs.appendFileSync(file,tail);await store.recover({username:'sample'});expect((await store.read({username:'sample'})).health.available).toBe(true);expect(fs.readdirSync(path.join(h.rootForUser('sample'),'repairs')).some(name=>fs.readFileSync(path.join(h.rootForUser('sample'),'repairs',name)).equals(tail))).toBe(true);
+it.runIf(process.platform === 'linux')('prevents a second actual store writer from mutating the same root', async () => {
+  const first = h.make(),
+    second = h.make();
+  await commit(first, 'pause', [relevance()]);
+  await expect(commit(second, 'activate', [relevance('active')])).rejects.toMatchObject({
+    code: 'WORK_WRITER_BUSY'
+  });
+  await first.close();
+  await commit(second, 'activate', [relevance('active')]);
+  expect((await second.read({
+    username: 'sample'
+  })).relevance[refKey].state).toBe('active');
 });
-it('rejects command results without a durable dispatch reservation',async()=>{const store=h.make();await expect(commit(store,'unreserved-result',[{type:'command.finished',commandId:'unknown',result:{outcome:'applied',ref:null,item:null,observation:null,reason:null,retryAfter:null}}])).rejects.toMatchObject({code:'INVALID_WORK_COMMAND_TRANSITION'});expect(fs.existsSync(path.join(h.rootForUser('sample'),'events.jsonl'))).toBe(false);});
+it('backs up an edited generated projection and retains canonical relevance', async () => {
+  const store = h.make();
+  await commit(store, 'pause', [relevance()]);
+  const file = path.join(h.rootForUser('sample'), 'state.yml');
+  const original = FileIO.readTextFromPath(file);
+  fs.writeFileSync(file, original.replace('state: paused', 'state: active'));
+  const changed = fs.readFileSync(file);
+  expect((await store.read({
+    username: 'sample'
+  })).health.available).toBe(false);
+  await store.recover({
+    username: 'sample'
+  });
+  expect((await store.read({
+    username: 'sample'
+  })).relevance[refKey].state).toBe('paused');
+  expect(fs.readdirSync(path.join(h.rootForUser('sample'), 'repairs')).some(name => fs.readFileSync(path.join(h.rootForUser('sample'), 'repairs', name)).equals(changed))).toBe(true);
+});
+it('preserves exact UTF8 tail bytes while truncating at a verified complete boundary', async () => {
+  const store = h.make();
+  await commit(store, 'pause', [relevance()]);
+  const file = path.join(h.rootForUser('sample'), 'events.jsonl'),
+    tail = Buffer.concat([Buffer.from('{"text":"unfinished '), Buffer.from('🌅').subarray(0, 2)]);
+  fs.appendFileSync(file, tail);
+  await store.recover({
+    username: 'sample'
+  });
+  expect((await store.read({
+    username: 'sample'
+  })).health.available).toBe(true);
+  expect(fs.readdirSync(path.join(h.rootForUser('sample'), 'repairs')).some(name => fs.readFileSync(path.join(h.rootForUser('sample'), 'repairs', name)).equals(tail))).toBe(true);
+});
+it('rejects command results without a durable dispatch reservation', async () => {
+  const store = h.make();
+  await expect(commit(store, 'unreserved-result', [{
+    type: 'command.finished',
+    commandId: 'unknown',
+    result: {
+      outcome: 'applied',
+      ref: null,
+      item: null,
+      observation: null,
+      reason: null,
+      retryAfter: null
+    }
+  }])).rejects.toMatchObject({
+    code: 'INVALID_WORK_COMMAND_TRANSITION'
+  });
+  expect(fs.existsSync(path.join(h.rootForUser('sample'), 'events.jsonl'))).toBe(false);
+});
+it('replays canonical attention preparation and ACK through a fresh actual store', async () => {
+  const store = h.make(),
+    at = Date.now(),
+    id = 'attention.' + 'a'.repeat(64);
+  await commit(store, 'attention-prepare', [{
+    type: 'attention.reserved',
+    reservation: {
+      id,
+      username: 'sample',
+      decisionId: 'one',
+      day: '2026-11-17',
+      channel: 'morning',
+      flowType: 'morning',
+      questionUnits: 1,
+      refKey: null,
+      policyRevision: 'one',
+      createdAt: at,
+      expiresAt: at + 86400000,
+      status: 'prepared',
+      deliveredAt: null,
+      botMessageId: null,
+      response: null
+    }
+  }]);
+  const current = await store.read({
+    username: 'sample'
+  });
+  await store.transact({
+    username: 'sample',
+    id: 'attention-ack',
+    expectedRevision: current.revision,
+    events: [{
+      type: 'attention.sent',
+      reservationId: id,
+      botMessageId: '42',
+      at
+    }],
+    asOf: at
+  });
+  await store.close();
+  const recovered = h.make();
+  expect((await recovered.read({
+    username: 'sample'
+  })).attention[id]).toMatchObject({
+    status: 'delivered',
+    botMessageId: '42',
+    deliveredAt: at
+  });
+});

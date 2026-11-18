@@ -303,3 +303,14 @@ evidence. The guarded Work bridge can close an allowed one-to-one
 rechecked. Completing an `action_for` or `context_for` task leaves its parent
 outcome open. Provider observations cannot create authored evidence or relax
 pins, sensitivity or asking policy. See [Work coordination](../work/coordination.md).
+
+### Shared Work attention receipts
+
+Knowledge question delivery accepts an optional shared attention budget. It
+reserves capacity before preparing unsolicited morning/review controls and
+correlates both owner receipts through a reservation ID. Actual KB ACK persists
+before Work ACK; if the latter fails, public delivery history still proves the
+message was sent and the prepared selection cannot send again. Known failure
+releases capacity; uncertain failure quarantines it. KB-only callers retain the
+existing question, cooldown and quiz policies. The public attention-history port
+returns counts and receipt metadata without evidence or object content.

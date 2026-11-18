@@ -1,3 +1,5 @@
+import { AttentionBudget } from './application/AttentionBudget.mjs';
+import { KnowledgeAttentionHistory } from './adapters/KnowledgeAttentionHistory.mjs';
 import { WorkCommands } from './application/WorkCommands.mjs';
 import { WorkDecisions } from './application/WorkDecisions.mjs';
 import { WorkConversation } from './application/WorkConversation.mjs';
@@ -75,6 +77,7 @@ const inert = reason => ({
   conversation: null,
   decisions: null,
   callBudget: null,
+  attention: null,
   start: async () => ({
     status: 'disabled',
     reason
@@ -262,6 +265,30 @@ export function createWorkRuntime(options = {}) {
     active.add(promise);
     promise.finally(() => active.delete(promise)).catch(() => {});
     return promise;
+  };
+  const attentionService = new AttentionBudget({
+    state,
+    history: new KnowledgeAttentionHistory({
+      readHistory: options.readKnowledgeAttentionHistory ?? (async () => ({
+        available: false,
+        deliveries: [],
+        reservations: [],
+        unansweredInvitations: []
+      }))
+    }),
+    userTimezone: timezone,
+    resolvePolicy: policy,
+    clock
+  });
+  const attention = {
+    reserve: input => canWrite(input.username) ? track(attentionService.reserve(input)) : Promise.resolve({
+      allowed: false,
+      reservationId: null,
+      reason: 'work_write_disabled'
+    }),
+    acknowledge: input => track(attentionService.acknowledge(input)),
+    fail: input => track(attentionService.fail(input)),
+    respond: input => track(attentionService.respond(input))
   };
   const budgetService = new WorkCallBudget({
     state,
@@ -550,6 +577,7 @@ export function createWorkRuntime(options = {}) {
     conversation,
     activities,
     callBudget,
+    attention,
     start() {
       if (stopped) return Promise.resolve({
         status: 'stopped'

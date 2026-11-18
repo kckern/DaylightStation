@@ -22,7 +22,8 @@ export function emptyWorkState() {
     decisions: {},
     baselines: {},
     calls: {},
-    sources: {}
+    sources: {},
+    attention: {}
   };
 }
 const finite = value => typeof value === 'number' && Number.isFinite(value) && value >= 0;
@@ -34,7 +35,32 @@ export function applyWorkEvents(before, events, {
   if (!Array.isArray(events) || events.length < 1 || events.length > 1000) throw workError('INVALID_WORK_EVENT');
   for (const event of events) {
     if (!event || typeof event.type !== 'string') throw workError('INVALID_WORK_EVENT');
-    if (event.type === 'relevance.changed') {
+    if (event.type === 'attention.reserved') {
+      const r = event.reservation;
+      if (!r || r.username !== username || !/^attention\.[a-f0-9]{64}$/.test(r.id ?? '') || typeof r.decisionId !== 'string' || !r.decisionId || !/^\d{4}-\d{2}-\d{2}$/.test(r.day ?? '') || !['morning', 'housekeeping', 'review', 'direct_request', 'echo', 'quiz'].includes(r.channel) || typeof r.flowType !== 'string' || !Number.isInteger(r.questionUnits) || r.questionUnits < 1 || r.questionUnits > 5 || !finite(r.createdAt) || !finite(r.expiresAt) || r.expiresAt <= r.createdAt || r.expiresAt > r.createdAt + 86400000 || r.status !== 'prepared' || r.deliveredAt !== null || r.botMessageId !== null || r.response !== null) throw workError('INVALID_ATTENTION_EVENT');
+      state.attention ??= {};
+      if (state.attention[r.id] && stableWorkJson(state.attention[r.id]) !== stableWorkJson(r)) throw workError('ATTENTION_CONFLICT');
+      state.attention[r.id] = structuredClone(r);
+    } else if (['attention.sent', 'attention.failed', 'attention.responded'].includes(event.type)) {
+      const r = state.attention?.[event.reservationId];
+      if (!r || !finite(event.at)) throw workError('INVALID_ATTENTION_EVENT');
+      if (event.type === 'attention.sent') {
+        if (r.status !== 'prepared' || !/^\d+$/.test(event.botMessageId ?? '') || event.at < r.createdAt || event.at >= r.expiresAt) throw workError('INVALID_ATTENTION_EVENT');
+        r.status = 'delivered';
+        r.deliveredAt = event.at;
+        r.botMessageId = event.botMessageId;
+      } else if (event.type === 'attention.failed') {
+        if (r.status !== 'prepared' || typeof event.uncertain !== 'boolean') throw workError('INVALID_ATTENTION_EVENT');
+        r.status = event.uncertain ? 'quarantined' : 'cancelled';
+        r.failedAt = event.at;
+      } else {
+        if (r.status !== 'delivered' || r.response || !['keep_active', 'snooze', 'retire', 'review', 'later', 'dismiss', 'cancel'].includes(event.action)) throw workError('INVALID_ATTENTION_EVENT');
+        r.response = {
+          action: event.action,
+          at: event.at
+        };
+      }
+    } else if (event.type === 'relevance.changed') {
       validateWorkRef(event.ref);
       const r = event.relevance,
         key = keyOf(event.ref);

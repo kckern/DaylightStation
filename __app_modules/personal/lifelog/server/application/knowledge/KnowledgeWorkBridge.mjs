@@ -7,18 +7,29 @@ export class KnowledgeWorkBridge {
   #evidence;
   #verify;
   #timezone;
+  #questions;
   constructor({
     backfill,
+    questions = null,
     store,
     evidence,
     verifyProviderEvent = async () => null,
     userTimezone
   }) {
     this.#backfill = backfill;
+    this.#questions = questions;
     this.#store = store;
     this.#evidence = evidence;
     this.#verify = verifyProviderEvent;
     this.#timezone = userTimezone;
+  }
+  attentionHistory(input) {
+    return this.#questions?.attentionHistory?.(input) ?? Promise.resolve({
+      available: false,
+      deliveries: [],
+      reservations: [],
+      unansweredInvitations: []
+    });
   }
   async applyProviderEvent({
     username,
@@ -36,7 +47,7 @@ export class KnowledgeWorkBridge {
       applied: false,
       reason: 'policy_blocked'
     };
-    if (event?.username !== username || event.type !== 'completed' || !['provider','journal'].includes(event.origin) || event.occurredAtEstimated === true || !Number.isFinite(event.occurredAt) || event.occurredAt > asOf) return {
+    if (event?.username !== username || event.type !== 'completed' || !['provider', 'journal'].includes(event.origin) || event.occurredAtEstimated === true || !Number.isFinite(event.occurredAt) || event.occurredAt > asOf) return {
       applied: false,
       reason: 'invalid_event'
     };

@@ -224,3 +224,27 @@ Reopen lookup can use scoped completion history or a durable applied command
 when a completed task no longer appears in the open-task snapshot.
 A newer native open observation prevents a delayed completion from closing the
 KB loop, while its original completion remains attributed lifelog history.
+
+## Shared attention reservations
+
+An optional shared attention budget combines acknowledged KB morning questions
+and review invitations with Work opportunities. Each user-local day has at most
+two unsolicited question units. Housekeeping also has a rolling seven-day limit
+of one acknowledged item and a thirty-day item cooldown. Prepared and uncertain
+sends hold capacity; only provider-acknowledged messages count as exposure.
+
+The Work canonical log uses `attention.reserved`, `attention.sent`,
+`attention.failed` and `attention.responded`, separate from callback decisions.
+The KB receipt and Work reservation carry a common reservation ID. Public KB
+history supplies accounting metadata only, including questions sent before Work
+was enabled. It exposes no journal excerpts or KB object content.
+
+The budget uses the current configured local date, including repeated DST hours.
+Crossing midnight requires a new day-bound reservation before send; a late ACK
+cannot revive the old preparation. Unknown delivery remains quarantined, and
+repeating the same decision does not grant a repeat send. Explicit user requests,
+echo acknowledgements and quiz processing do not spend proactive capacity.
+
+KB-only operation retains its existing behavior when no attention budget is
+injected. These receipt primitives add no autonomous delivery job; workflow
+selection and the morning integration consume them separately.

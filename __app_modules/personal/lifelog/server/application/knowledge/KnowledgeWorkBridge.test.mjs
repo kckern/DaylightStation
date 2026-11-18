@@ -284,4 +284,37 @@ it('commits the closure through the real owner lease/ledger and preserves author
     });
   }
 });
-it('accepts a journal-origin remote observation only through the same verified Work authority',async()=>{const x=closure();expect((await x.bridge.applyProviderEvent({username:'sample',event:{...nativeEvent,origin:'journal'},links:[x.link],asOf:at})).applied).toBe(true);});
+it('accepts a journal-origin remote observation only through the same verified Work authority', async () => {
+  const x = closure();
+  expect((await x.bridge.applyProviderEvent({
+    username: 'sample',
+    event: {
+      ...nativeEvent,
+      origin: 'journal'
+    },
+    links: [x.link],
+    asOf: at
+  })).applied).toBe(true);
+});
+it('exposes only the injected owner attention history function', async () => {
+  const questions = {
+    attentionHistory: vi.fn(async () => ({
+      available: true,
+      deliveries: [],
+      reservations: [],
+      unansweredInvitations: []
+    }))
+  };
+  const bridge = new KnowledgeWorkBridge({
+    questions
+  });
+  const input = {
+    username: 'sample',
+    askDate: '2026-11-17',
+    asOf: 1
+  };
+  expect(await bridge.attentionHistory(input)).toMatchObject({
+    available: true
+  });
+  expect(questions.attentionHistory).toHaveBeenCalledWith(input);
+});
