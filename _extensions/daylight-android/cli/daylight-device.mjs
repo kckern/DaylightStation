@@ -560,7 +560,15 @@ export async function main(argv) {
   const known = /^[a-z][a-z0-9]*$/.test(name) && existsSync(deviceFile);
   const unreachable = known ? noControlApi(name, parse(readFileSync(deviceFile, 'utf8')).control) : null;
   if (unreachable) throw new Error(unreachable);
-  const device = resolveDevice(parse(readFileSync(tokensPath(), 'utf8')), name);
+  let fleet;
+  try {
+    fleet = parse(readFileSync(tokensPath(), 'utf8'));
+  } catch (e) {
+    // A YAML error quotes the lines around the fault, which can hold a token: pass on the line only.
+    if (e?.code === 'ENOENT' || !e?.linePos) throw new Error(e?.code === 'ENOENT' ? 'the tokens file does not exist' : 'tokens file could not be read');
+    throw new Error(`tokens file is not valid YAML (line ${e.linePos[0].line})`);
+  }
+  const device = resolveDevice(fleet, name);
   const ports = parse(readFileSync(deviceFile, 'utf8')).control;
   const clean = redactor(device.token);
   try {

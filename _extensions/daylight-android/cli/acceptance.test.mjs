@@ -40,6 +40,7 @@ async function fakeDevice({ id = 'portal', capabilities, faults = {}, settings =
   const control = createServer(async (req, res) => {
     if (s.down) { req.socket.destroy(); return; }
     const key = `${req.method} ${req.url.split('?')[0]}`;
+    if (faults.statusDown && key === 'GET /status') { req.socket.destroy(); return; }
     s.calls.push(key);
     if (faults.noAuth !== true && req.headers['x-daylight-token'] !== TOKEN) {
       return json(res, 401, { ok: false, error: 'unauthorized', echo: faults.echoToken ? TOKEN : undefined });
@@ -49,7 +50,9 @@ async function fakeDevice({ id = 'portal', capabilities, faults = {}, settings =
       case 'GET /status': return json(res, 200, {
         ok: true, device: id, capabilities: faults.extraCap ? [...caps, 'synth'] : caps, payloadVersion: 'p3-kiosk', shellVersionCode: 34,
         appVersion: '0.3-kiosk', uptimeMs: Date.now() - s.startedAt, settingsProblem: null,
-        switches: { 'hid.enabled': { setting: false, active: false } },
+        ...(faults.noClock ? {} : { nowMs: Date.now() + (faults.skewMs ?? 0) }),
+        switches: Object.fromEntries(['hid.enabled', 'midi.enabled', 'speaker.enabled', 'mic.enabled']
+          .map((k) => [k, { setting: !!s.settings[k], active: !!s.settings[k] && !faults.switchInactive }])),
         ble: { state: s.settings['midi.enabled'] ? 'CONNECTED' : null }, outVerified: !!s.settings['midi.enabled'],
       });
       case 'GET /capabilities': return json(res, 200, { ok: true, capabilities: caps, routes });
@@ -63,6 +66,13 @@ async function fakeDevice({ id = 'portal', capabilities, faults = {}, settings =
       case 'GET /debug/info': return json(res, 200, { ok: true, device: id, model: 'Fake', sdkInt: 28, elapsedRealtimeMs: Date.now() - s.bootAt });
       case 'GET /payload': return json(res, 200, { ok: true, ...s.payload });
       case 'POST /payload':
+        if (faults.rollbackAfterLifelineRead) {
+          // The loader has failed the bad payload and is still swapping the old one back in:
+          // the next lifeline read sees lastFailed with the bad one active, and the rollback
+          // finishes right after it.
+          s.payload.lastFailed = 'p-bad.jar'; s.payload.active = 'p-bad.jar'; s.rollbackPending = true;
+          return json(res, 200, { ok: true, result: 'swap requested' });
+        }
         setTimeout(() => {
           s.payload.lastFailed = 'p-bad.jar';
           if (faults.badPayloadSticks) s.payload.active = 'p-bad.jar';
@@ -81,7 +91,9 @@ async function fakeDevice({ id = 'portal', capabilities, faults = {}, settings =
         setTimeout(() => { s.lastLoad = { loadId, ok: true }; }, 30);
         return json(res, 200, { ok: true, accepted: true, loadId });
       }
-      case 'POST /kiosk/load': return json(res, 400, { ok: false, error: 'bad_request', message: 'origin_not_allowed: https://www.example.org' });
+      case 'POST /kiosk/load':
+        if (faults.originOpen) return json(res, 200, { ok: true, loaded: true, url: body.url });
+        return json(res, 400, { ok: false, error: 'bad_request', message: 'origin_not_allowed: https://www.example.org' });
       case 'POST /kiosk/foreground': s.front = 'net.kckern.daylight.portal'; return json(res, 200, { ok: true, kioskInForeground: true, foreground: s.front });
       case 'POST /kiosk/renderer/reset': return json(res, 200, { ok: true, rendererAlive: true });
       case 'POST /kiosk/restart': json(res, 200, { ok: true, restarting: true }); setTimeout(() => { s.startedAt = Date.now(); }, 20); return undefined;
@@ -118,7 +130,11 @@ async function fakeDevice({ id = 'portal', capabilities, faults = {}, settings =
   const lifeline = createServer((req, res) => {
     if (s.down) { req.socket.destroy(); return; }
     if (req.headers['x-daylight-token'] !== TOKEN) return json(res, 401, { ok: false, error: 'unauthorized' });
-    if (req.url === '/status') return json(res, 200, { ok: true, shell: true, versionCode: 34, device: id, payload: s.payload });
+    if (req.url === '/status') {
+      const body = { ok: true, shell: true, versionCode: 34, device: id, payload: { ...s.payload } };
+      if (s.rollbackPending) { s.rollbackPending = false; s.payload.active = 'p-abc.jar'; }
+      return json(res, 200, body);
+    }
     return json(res, 404, { ok: false });
   });
   await Promise.all([control, lifeline].map((srv) => new Promise((r) => srv.listen(0, '127.0.0.1', r))));
@@ -146,10 +162,10 @@ async function run(dev, argv = [], extra = {}) {
   return { code, lines, line, text: lines.join('\n') };
 }
 
-test('a healthy portal passes every automatic check and lists the escape attempts as MANUAL', async () => {
+test('a healthy portal with --active --restart passes every automatic check and lists the escape attempts as MANUAL', async () => {
   const dev = await fakeDevice({ id: 'portal' });
   try {
-    const r = await run(dev);
+    const r = await run(dev, ['--active', '--restart']);
     assert.equal(r.code, 0, r.text);
     assert.doesNotMatch(r.text, /^FAIL/m);
     for (const id of ['core.auth', 'core.status', 'routes.inventory', 'settings.resolved', 'lifeline.status', 'kiosk.load-async',
@@ -198,7 +214,7 @@ test('a missing route, an extra capability and an unresolved placeholder each fa
 test('a screen that will not go off fails sleep-and-wake and is turned back on', async () => {
   const dev = await fakeDevice({ faults: { screenStuckOn: true } });
   try {
-    const r = await run(dev, ['--only', 'screen']);
+    const r = await run(dev, ['--only', 'screen', '--active']);
     assert.match(r.line('screen.sleep-wake'), /^FAIL .*screenOn=true/);
     assert.equal(dev.state.screenOn, true);
   } finally { await dev.close(); }
@@ -247,6 +263,38 @@ test('--kill turns exec on for the check, sees the process come back without a r
     assert.equal(r.code, 0, r.text);
     assert.match(r.line('crash.kill'), /^PASS process back after ~\d+ s, no reboot/);
     assert.equal(dev.state.settings['debug.execEnabled'], false);
+    assert.ok(!dev.state.calls.includes('DELETE /settings'), 'restored by writing the prior value, not by a reset');
+  } finally { await dev.close(); }
+});
+
+test('--kill on a device that already had exec on leaves it on', async () => {
+  const dev = await fakeDevice({ settings: { 'debug.execEnabled': true } });
+  try {
+    const r = await run(dev, ['--only', 'crash.kill', '--kill']);
+    assert.equal(r.code, 0, r.text);
+    assert.equal(dev.state.settings['debug.execEnabled'], true);
+  } finally { await dev.close(); }
+});
+
+test('an interrupt during --kill restores debug.execEnabled before exiting with 130', async () => {
+  const { EventEmitter } = await import('node:events');
+  const dev = await fakeDevice({ faults: { neverBack: true } });
+  const signals = new EventEmitter();
+  const exits = [];
+  try {
+    const running = run(dev, ['--only', 'crash.kill', '--kill', '--reboot-wait', '5'], {
+      signals, exit: (code) => exits.push(code),
+    });
+    await new Promise((r) => setTimeout(r, 150));
+    assert.equal(dev.state.settings['debug.execEnabled'], true, 'on while the check runs');
+    dev.state.down = false;   // the device answers again, so the restore can reach it
+    signals.emit('SIGINT');
+    await new Promise((r) => setTimeout(r, 150));
+    assert.deepEqual(exits, [130]);
+    assert.equal(dev.state.settings['debug.execEnabled'], false);
+    dev.state.down = true;
+    await running;
+    assert.equal(signals.listenerCount('SIGINT'), 0, 'the handler is removed after the run');
   } finally { await dev.close(); }
 });
 
@@ -256,6 +304,15 @@ test('a bad payload is rolled back with the lifeline answering throughout', asyn
     const r = await run(dev, ['--only', 'payload.bad', '--bad-payload-url', 'http://192.0.2.1/x.jar', '--bad-payload-sha256', 'a'.repeat(64)]);
     assert.equal(r.code, 0, r.text);
     assert.match(r.line('payload.bad'), /^PASS lastFailed p-bad.jar, active p-abc.jar, lifeline missed 0 polls/);
+  } finally { await dev.close(); }
+});
+
+test('a rollback still finishing when the lifeline is first read is not a false fail', async () => {
+  const dev = await fakeDevice({ faults: { rollbackAfterLifelineRead: true } });
+  try {
+    const r = await run(dev, ['--only', 'payload.bad', '--bad-payload-url', 'http://192.0.2.1/x.jar', '--bad-payload-sha256', 'a'.repeat(64)]);
+    assert.equal(r.code, 0, r.text);
+    assert.match(r.line('payload.bad'), /^PASS .*active p-abc.jar/);
   } finally { await dev.close(); }
 });
 
@@ -318,12 +375,12 @@ test('piano: MIDI and speaker read as handed over or not, and a slow echo fails 
   const off = await fakeDevice({ id: 'piano' });
   try {
     const r = await run(off, ['--only', 'midi,speaker']);
-    assert.match(r.line('midi.status'), /^PASS midi.enabled is off/);
+    assert.match(r.line('midi.status'), /^PASS midi.enabled is not active/);
     assert.match(r.line('midi.loopback'), /^SKIP/);
   } finally { await off.close(); }
   const on = await fakeDevice({ id: 'piano', settings: { 'midi.enabled': true, 'speaker.enabled': true }, faults: { slowEcho: true } });
   try {
-    const r = await run(on, ['--only', 'midi,speaker', '--rtt-baseline', '40']);
+    const r = await run(on, ['--only', 'midi,speaker', '--rtt-baseline', '40', '--active']);
     assert.match(r.line('midi.status'), /^PASS CONNECTED, output verified/);
     assert.match(r.line('midi.loopback'), /^FAIL round trip 90 ms, more than 10% above the baseline 40/);
     assert.match(r.line('speaker.status'), /^PASS connected/);
@@ -341,16 +398,126 @@ test('piano: a frame rate more than 10% under the baseline fails', async () => {
 test('shield: --launch opens the app, sees it in front and returns; the remote and call are MANUAL', async () => {
   const dev = await fakeDevice({ id: 'shield' });
   try {
-    const r = await run(dev, ['--launch', 'com.retroarch.aarch64', '--skip', 'crash']);
+    const r = await run(dev, ['--active', '--launch', 'com.retroarch.aarch64', '--skip', 'crash']);
     assert.equal(r.code, 0, r.text);
     assert.match(r.line('launch.app'), /^PASS com.retroarch.aarch64\/.Main in front, kiosk back/);
-    assert.match(r.line('mic.status'), /^PASS mic.enabled is off/);
+    assert.match(r.line('mic.status'), /^PASS mic.enabled is not active/);
     assert.match(r.line('keys.remote'), /^MANUAL/);
     assert.match(r.line('mic.call'), /^MANUAL/);
     assert.match(r.line('escape.assistant'), /^MANUAL/);
     assert.equal(r.line('escape.control-center'), '');
     assert.equal(r.line('touch.page'), '');
   } finally { await dev.close(); }
+});
+
+test('a plain run changes nothing: only GETs reach the device, and only the read-only query reaches the log store', async () => {
+  for (const id of ['portal', 'piano', 'shield']) {
+    const dev = await fakeDevice({ id, settings: { 'midi.enabled': true } });
+    const storeCalls = [];
+    const store = createServer((req, res) => { storeCalls.push(`${req.method} ${req.url}`); req.resume(); req.on('end', () => res.end('{"_msg":"x"}\n')); });
+    await new Promise((r) => store.listen(0, '127.0.0.1', r));
+    try {
+      const r = await run(dev, ['--log-store', `http://127.0.0.1:${store.address().port}`]);
+      const writes = dev.state.calls.filter((c) => !c.startsWith('GET '));
+      assert.deepEqual(writes, [], `${id}: ${writes.join(', ')}`);
+      assert.deepEqual(storeCalls, ['POST /select/logsql/query']);
+      assert.match(r.line('kiosk.reload'), /^SKIP pass --active: reloads the page/);
+      assert.match(r.line('crash.restart'), /^SKIP pass --restart: restarts the payload/);
+      assert.match(r.line('debug.exec'), /^SKIP pass --active/);
+      if (id === 'piano') assert.match(r.line('midi.loopback'), /^SKIP pass --active: sends a probe note/);
+      assert.equal(r.code, 0, r.text);
+    } finally { await dev.close(); await new Promise((res) => store.close(res)); }
+  }
+});
+
+test('the screen check restores the state it found', async () => {
+  const dev = await fakeDevice();
+  dev.state.screenOn = false;
+  try {
+    const r = await run(dev, ['--only', 'screen.sleep-wake', '--active']);
+    assert.match(r.line('screen.sleep-wake'), /^PASS/);
+    assert.equal(dev.state.screenOn, false, 'it was dark before, so it is dark after');
+  } finally { await dev.close(); }
+});
+
+test('an origin guard that lets a foreign URL load fails and puts the start URL back', async () => {
+  const dev = await fakeDevice({ faults: { originOpen: true } });
+  try {
+    const r = await run(dev, ['--only', 'kiosk.origin-guard', '--active']);
+    assert.match(r.line('kiosk.origin-guard'), /^FAIL/);
+    assert.ok(dev.state.calls.includes('POST /kiosk/load-start'));
+  } finally { await dev.close(); }
+});
+
+test('switch-aware checks read /status switches, and fail when /status cannot be read', async () => {
+  const stored = await fakeDevice({ id: 'piano', settings: { 'midi.enabled': true }, faults: { switchInactive: true } });
+  try {
+    const r = await run(stored, ['--only', 'midi.status']);
+    assert.match(r.line('midi.status'), /^PASS midi.enabled is not active/);
+  } finally { await stored.close(); }
+  const down = await fakeDevice({ id: 'piano', faults: { statusDown: true } });
+  try {
+    const r = await run(down, ['--only', 'midi.status,speaker.status']);
+    assert.match(r.line('midi.status'), /^FAIL \/status/);
+    assert.match(r.line('speaker.status'), /^FAIL \/status/);
+  } finally { await down.close(); }
+});
+
+test('an --only entry that selects nothing is an error, not a vacuous pass', async () => {
+  const dev = await fakeDevice({ id: 'shield' });
+  try {
+    const r = await run(dev, ['--only', 'core.status,hid']);
+    assert.equal(r.code, 1);
+    assert.match(r.text, /--only hid selects no check for shield/);
+    assert.equal(dev.state.calls.length, 0, 'nothing was sent');
+  } finally { await dev.close(); }
+});
+
+test('the bad-payload server listens only on the address it is given', async () => {
+  const served = await serveBadPayload('127.0.0.1:0');
+  try { assert.equal(served.boundAddress, '127.0.0.1'); } finally { await served.close(); }
+});
+
+test('a malformed tokens file is reported by line, never by quoting it', async () => {
+  const { mkdtempSync, writeFileSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const { spawnSync } = await import('node:child_process');
+  const dir = mkdtempSync(join(tmpdir(), 'acc-tokens-'));
+  const secret = 'S3cr3t'.repeat(8);
+  const file = join(dir, 'tokens.yml');
+  writeFileSync(file, `portal:\n  host: 192.0.2.10\n  token: ${secret}\n  bad: [unclosed\n`);
+  const repo = join(HERE, '..', '..', '..');
+  for (const cli of ['cli/daylight-acceptance.cli.mjs', 'cli/daylight-device.cli.mjs']) {
+    const args = cli.includes('acceptance') ? [join(repo, cli), 'portal'] : [join(repo, cli), 'portal', 'status'];
+    const r = spawnSync(process.execPath, args, { env: { ...process.env, DAYLIGHT_ANDROID_TOKENS: file }, encoding: 'utf8' });
+    assert.equal(r.status, 1, cli);
+    assert.ok(!r.stderr.includes(secret) && !r.stdout.includes(secret), `${cli} printed the token`);
+    assert.match(r.stderr, /tokens file is not valid YAML \(line \d+\)/, cli);
+  }
+});
+
+test('--host that overrides the tokens file says where the token is going', async () => {
+  const lines = [];
+  const orig = console.log;
+  console.log = (l) => lines.push(l);
+  try {
+    await main(['portal', '--host', '127.0.0.1', '--only', 'core.status'], {
+      fleet: { portal: { host: '192.0.2.10', token: TOKEN } },
+      fetchImpl: async () => { throw new Error('ECONNREFUSED'); },
+      out: (l) => lines.push(l),
+    });
+  } finally { console.log = orig; }
+  assert.ok(lines.some((l) => /token goes to 127\.0\.0\.1 \(--host\), not the tokens file's host/.test(l)), lines.join('\n'));
+});
+
+test('the device clock is within 60 s of this machine, or the check fails', async () => {
+  for (const [faults, want] of [[{}, /^PASS skew -?\d+ ms/], [{ skewMs: 120_000 }, /^FAIL .*skew 1\d{5} ms, more than 60 s/], [{ noClock: true }, /^FAIL .*no nowMs/]]) {
+    const dev = await fakeDevice({ faults });
+    try {
+      const r = await run(dev, ['--only', 'core.clock']);
+      assert.match(r.line('core.clock'), want, JSON.stringify(faults));
+    } finally { await dev.close(); }
+  }
 });
 
 test('selection: a group name selects its checks, --skip removes them', () => {
@@ -366,7 +533,8 @@ test('options: numbers are bounded, a bad payload URL needs its hash, nothing ha
   assert.throws(() => parseOptions(['portal', '--frobnicate']), /unknown option/);
   assert.equal(parseOptions(['portal']).host, undefined);
   assert.throws(() => resolveTarget('portal', {}, { portal: { token: TOKEN } }), /no host for 'portal': pass --host/);
-  assert.deepEqual(resolveTarget('portal', { host: '192.0.2.5' }, { portal: { token: TOKEN } }), { host: '192.0.2.5', token: TOKEN });
+  assert.deepEqual(resolveTarget('portal', { host: '192.0.2.5' }, { portal: { token: TOKEN } }), { host: '192.0.2.5', token: TOKEN, overridden: true });
+  assert.equal(resolveTarget('portal', {}, { portal: { host: '192.0.2.5', token: TOKEN } }).overridden, false);
   assert.throws(() => resolveTarget('portal', { host: '192.0.2.5' }, { portal: {} }), /no token/);
 });
 
@@ -390,6 +558,29 @@ test('each kiosk device file builds checks for its own helpers only', () => {
   assert.ok(ids('piano').includes('midi.loopback') && !ids('piano').includes('mic.status'));
   assert.ok(ids('shield').includes('lease.status') && !ids('shield').includes('hid.status'));
   assert.ok(ids('portal').includes('keys.volume') && !ids('portal').includes('speaker.status'));
+});
+
+const PHONE_ONLY = ['android-auto', 'bookmarks', 'car-actions', 'media-service', 'notifications', 'one-tap-actions', 'quick-input', 'widgets'];
+
+test('CORE_ROUTES matches the routes the core sources register', () => {
+  const dir = join(HERE, '..', 'core', 'src', 'main');
+  const walk = (d) => readdirSync(d, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walk(join(d, e.name)) : [join(d, e.name)]));
+  const found = new Set();
+  for (const f of walk(dir).filter((p) => p.endsWith('.java'))) {
+    for (const m of readFileSync(f, 'utf8').matchAll(/route\("(GET|POST|DELETE)",\s*"(\/[A-Za-z0-9/_.-]*)"/g)) found.add(`${m[1]} ${m[2]}`);
+  }
+  assert.deepEqual([...found].sort(), [...CORE_ROUTES].sort());
+});
+
+test('every capability that serves routes is in CAPABILITY_ROUTES, unless it is phone-only', () => {
+  const root = join(HERE, '..', 'capabilities');
+  const walk = (d) => readdirSync(d, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walk(join(d, e.name)) : [join(d, e.name)]));
+  for (const cap of readdirSync(root)) {
+    const main = join(root, cap, 'payload', 'src', 'main');
+    if (!existsSync(main)) continue;
+    const serves = walk(main).some((f) => f.endsWith('.java') && /route\("(GET|POST|DELETE)"/.test(readFileSync(f, 'utf8')));
+    if (serves && !PHONE_ONLY.includes(cap)) assert.ok(cap in CAPABILITY_ROUTES, `${cap} serves routes but is not in CAPABILITY_ROUTES`);
+  }
 });
 
 test('CAPABILITY_ROUTES matches the routes the capability sources register', () => {

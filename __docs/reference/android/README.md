@@ -1086,31 +1086,46 @@ What the CLI cannot do: OS-level globals that only ADB's shell user may change
 per-device acceptance list over the control API and prints one line per check:
 `PASS` or `FAIL` with what it saw, `MANUAL` with what a person has to do and what
 to look for, `SKIP` with the option the check needs. It exits 1 when any line is
-`FAIL`. `--list` prints the checks and contacts nothing.
+`FAIL`, and when an `--only` entry selects no check of the device. `--list`
+prints the checks (each gated one with its flag) and contacts nothing.
+
+**A plain run only reads.** With no flags every request is a GET, plus one
+read-only LogsQL query with `--log-store`. The wrong-token probe in `core.auth`
+is a GET too; the control port and the lifeline answer 401 before any route and
+neither logs nor rate-limits a refusal. Everything that changes the device needs
+a flag, and its SKIP line says what the flag would do:
+
+| Flag | Checks it runs, and what they do to the device |
+|---|---|
+| `--active` | `kiosk.reload`, `kiosk.load-async` (loads the start URL), `kiosk.origin-guard` (asks for a foreign URL; refused when the guard works, the start URL is loaded back if not), `kiosk.foreground`, `kiosk.renderer-reset`, `kiosk.overlay` (a message for a moment), `screen.sleep-wake` (off about two seconds, then back as it was found), `screen.brightness` (with `--brightness`), `volume.read-write` (writes the level it read), `launch.absent` (refused), `debug.eval` (`6*7` in the page), `debug.exec` (`id`, refused while exec is off), `midi.loopback` (a probe note to the instrument) |
+| `--restart` | `crash.restart`: restarts the payload; MIDI, synth, page and mic drop for a few seconds |
+| `--launch <package>` | `launch.app`: opens that app, then brings the kiosk back |
+| `--kill` | `crash.kill`: turns `debug.execEnabled` on, kills the app's process, waits for it to come back, and puts the setting back to the value it had |
+| `--bad-payload-url` with `--bad-payload-sha256`, or `--serve-bad-payload <addr:port>` | `payload.bad`: pushes a file that is not a payload; expects the previous payload active and the lifeline answering throughout. `--serve-bad-payload` listens on that one address only |
+| `--reboot` | `reboot.survives`: `POST /device/reboot`, or asks for a power-cycle where the device has no reboot |
+
+The read-only checks: `core.*` (including `core.clock`, which fails above 60 s
+of skew between the device's `nowMs` and this machine), `routes.inventory`,
+`settings.resolved` (keys only, never values), `lifeline.status`,
+`payload.status`, `kiosk.status`, `lockdown.status`, `debug.screenshot`,
+`debug.html`, `debug.fps` (`--fps-baseline`), `debug.logcat`, `debug.log`, each
+helper's status (a coexistence switch counts as handed over only when `GET
+/status` reports it `active`; the check fails when `/status` cannot be read), and
+`logstore.events` (`--log-store <url>`, `--log-window`).
+
+A check that changes something puts it back in a `finally`, and an interrupt
+(Ctrl-C) puts back whatever is pending before exiting with 130.
 
 The host comes from `--host`, else the device's entry in the private tokens file;
-there is no default. The token comes from that file only, travels as the header,
-and is filtered out of every printed line.
+there is no default, and an `--host` that differs from the file says so on the
+first line. The token comes from that file only, travels as the header, and is
+filtered out of every printed line. A tokens file that is not valid YAML is
+reported by line number only: the parser's own message quotes the file.
 
-| Group | What it does to the device |
-|---|---|
-| `core`, `routes`, `settings`, `lifeline`, `payload` | Reads only. `core.auth` sends a wrong token on both ports. `routes.inventory` compares `GET /capabilities` with the routes the device file's capabilities serve |
-| `kiosk` | Reloads the page, loads the start URL without waiting, tries a foreign origin (refused), foregrounds, resets the renderer, shows and clears an overlay |
-| `screen`, `volume`, `launch`, `lockdown` | Screen off then on; brightness only with `--brightness`; writes the media volume back unchanged; launches an absent package (refused), and with `--launch <package>` a real one, then returns |
-| `debug` | Screenshot, `eval` of `6*7`, HTML, fps (`--fps-baseline`), logcat, exec (refused while `debug.execEnabled` is false), `/log` |
-| `midi`, `speaker`, `bluetooth`, `mic`, `lease`, `presence`, `hid` | Each helper's status. With its coexistence switch off the line says so; `midi.loopback` probes the instrument (`--rtt-baseline`) |
-| `crash.restart` | `POST /kiosk/restart`, then waits for a lower `uptimeMs` |
-| `crash.kill` (`--kill`) | Turns `debug.execEnabled` on, kills the app's process, waits for it to come back without a reboot, resets the setting |
-| `payload.bad` (`--bad-payload-url` with `--bad-payload-sha256`, or `--serve-bad-payload <addr:port>`) | Pushes a file that is not a payload and expects `lastFailed`, the previous payload active, and the lifeline answering throughout |
-| `reboot.survives` (`--reboot`) | `POST /device/reboot`, or asks for a power-cycle where the device has no reboot; passes when `elapsedRealtimeMs` falls and both ports answer within `--reboot-wait` |
-| `logstore.events` (`--log-store <url>`) | One read-only LogsQL query for the device's `context.app` (`logstore.app`, else `daylight-<id>`) over `--log-window` |
-| `escape`, `keys`, `touch`, `network`, `mic.call`, `synth.audible`, `bluetooth.pairing`, `sound` | `MANUAL` lines |
-
-`--only` and `--skip` take check ids or group names. The cutover runbooks
-(`__docs/runbooks/android/{portal,piano,shield}-cutover.md`) say which options to
-pass at each step. Tests run it against a fake control server
-(`cli/acceptance.test.mjs`), including a test that keeps its route table in step
-with the routes the capability sources register.
+The cutover runbooks (`__docs/runbooks/android/{portal,piano,shield}-cutover.md`)
+say which flags each step passes. Tests run it against a fake control server
+(`cli/acceptance.test.mjs`), including tests that keep its route tables in step
+with the routes the core and capability sources register.
 
 ## Checking a build
 

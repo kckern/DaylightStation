@@ -26,12 +26,17 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 
 const USAGE = `usage: daylight-acceptance <device> [options]
 
-Runs the acceptance list against one device over its control API.
+Runs the acceptance list against one device over its control API. Without
+--active, --restart, --launch, --kill, --reboot or a bad payload option it only
+reads: every request is a GET (a wrong-token GET included), plus one read-only
+LogsQL query with --log-store.
 
   --host <address>                 the device's address (default: its entry in the private tokens file)
   --only <ids>                     comma-separated check ids or groups (core, kiosk, screen, ...)
   --skip <ids>                     the same, left out
   --list                           print the checks and exit; contacts nothing
+  --active                         also run the checks that change the device's state (each SKIP line says what)
+  --restart                        also restart the payload (MIDI, synth, page and mic drop for a few seconds)
   --brightness <0-255>             set the brightness to this and read it back
   --launch <package>               launch this app, see it in front, return to the kiosk
   --fps-baseline <n>               fail when the live page's frame rate is more than 10% below n
@@ -89,7 +94,7 @@ const ABSENT_PACKAGE = 'com.example.absent';
 
 const VALUED = ['host', 'only', 'skip', 'brightness', 'launch', 'fps-baseline', 'rtt-baseline', 'bad-payload-url',
   'bad-payload-sha256', 'serve-bad-payload', 'reboot-wait', 'log-store', 'log-window'];
-const FLAGS = ['list', 'kill', 'reboot'];
+const FLAGS = ['list', 'kill', 'reboot', 'active', 'restart'];
 
 export function parseOptions(argv) {
   const [device, ...rest] = argv;
@@ -189,9 +194,14 @@ export function buildChecks(deviceFile, opts = {}) {
   const id = deviceFile.id;
   const has = (c) => caps.has(c);
   const checks = [];
-  const add = (checkId, title, run, when = true) => { if (when) checks.push({ id: checkId, title, run }); };
+  // `needs` gates a check that changes the device: {flag, effect}. Without the flag it is
+  // SKIP, naming the flag and what it would do.
+  const add = (checkId, title, run, when = true, needs = null) => { if (when) checks.push({ id: checkId, title, run, needs }); };
+  const active = (effect) => ({ flag: 'active', effect });
 
   // ── core ──
+  // Read-only: three GETs. The control port and the lifeline answer 401 before any route
+  // runs and neither logs nor rate-limits a refusal (Router, ControlServer, ShellServer).
   add('core.auth', 'a missing or wrong token is refused on both ports', async ({ api }) => {
     const none = await api.control('GET', '/status', { withToken: false });
     const wrong = await api.control('GET', '/status', { tokenValue: 'wrong-token-'.padEnd(40, 'x') });
@@ -214,6 +224,15 @@ export function buildChecks(deviceFile, opts = {}) {
     const switches = Object.entries(r.json.switches || {}).map(([k, v]) => `${k}=${v?.active ? 'active' : 'off'}`).join(' ');
     const evidence = `payload ${r.json.payloadVersion}, shell ${r.json.shellVersionCode}, app ${r.json.appVersion}${switches ? `, switches ${switches}` : ''}`;
     return problems.length ? fail(`${problems.join('; ')} (${evidence})`) : pass(evidence);
+  });
+  add('core.clock', "the device's clock is within 60 s of this machine's", async ({ api }) => {
+    const t0 = Date.now();
+    const r = await api.control('GET', '/status');
+    const t1 = Date.now();
+    if (!ok(r)) return fail(`/status ${why(r)}`);
+    if (typeof r.json.nowMs !== 'number') return fail('/status has no nowMs (a build older than the clock field)');
+    const skew = Math.round(r.json.nowMs - (t0 + t1) / 2);
+    return Math.abs(skew) > 60_000 ? fail(`skew ${skew} ms, more than 60 s: holds and deadlines will be off by that much`) : pass(`skew ${skew} ms`);
   });
   add('core.info', 'GET /debug/info answers with the model and SDK level', async ({ api, state }) => {
     const r = await api.control('GET', '/debug/info');
@@ -272,7 +291,7 @@ export function buildChecks(deviceFile, opts = {}) {
   add('kiosk.reload', 'POST /kiosk/reload waits for the page and reports the load time', async ({ api }) => {
     const r = await api.control('POST', '/kiosk/reload', { timeoutMs: 40000 });
     return ok(r) && r.json.loaded === true ? pass(`loaded in ${r.json.loadTimeMs} ms`) : fail(`/kiosk/reload ${why(r)}`);
-  }, kiosk);
+  }, kiosk, active('reloads the page'));
   add('kiosk.load-async', 'POST /kiosk/load-start without waiting, then lastLoad carries its loadId', async ({ api, sleep, pollMs }) => {
     const r = await api.control('POST', '/kiosk/load-start', { body: { wait: false } });
     if (!ok(r) || !r.json.loadId) return fail(`/kiosk/load-start ${why(r)}`);
@@ -283,46 +302,53 @@ export function buildChecks(deviceFile, opts = {}) {
       if (last?.loadId === r.json.loadId) return last.ok ? pass(`loadId matched, ok`) : fail(`loadId matched, load failed: ${short(last.error)}`);
     }
     return fail(`lastLoad never carried loadId ${r.json.loadId} within 30 s`);
-  }, kiosk);
+  }, kiosk, active('loads the start URL'));
   add('kiosk.origin-guard', 'a URL outside the allowed origins is refused', async ({ api }) => {
     const r = await api.control('POST', '/kiosk/load', { body: { url: FOREIGN_URL } });
     const text = `${r.json?.error || ''} ${r.json?.message || ''}`;
-    return r.status === 400 && /origin_not_allowed/.test(text) ? pass('400 origin_not_allowed') : fail(`expected 400 origin_not_allowed, got ${why(r)}`);
-  }, kiosk);
+    if (r.status === 400 && /origin_not_allowed/.test(text)) return pass('400 origin_not_allowed');
+    const back = await api.control('POST', '/kiosk/load-start', { timeoutMs: 40000 });
+    return fail(`expected 400 origin_not_allowed, got ${why(r)}; start URL loaded back: ${ok(back) ? 'yes' : why(back)}`);
+  }, kiosk, active('asks the kiosk to load a foreign URL (refused when the guard works; the start URL is loaded back if not)'));
   add('kiosk.foreground', 'POST /kiosk/foreground puts the kiosk in front', async ({ api }) => {
     const r = await api.control('POST', '/kiosk/foreground', { timeoutMs: 40000 });
     return ok(r) && r.json.kioskInForeground === true ? pass(`foreground ${r.json.foreground}`) : fail(`/kiosk/foreground ${why(r)}`);
-  }, kiosk);
+  }, kiosk, active('brings the kiosk to the front'));
   add('kiosk.renderer-reset', 'POST /kiosk/renderer/reset brings a new renderer back', async ({ api }) => {
     const r = await api.control('POST', '/kiosk/renderer/reset', { timeoutMs: 40000 });
     return ok(r) && r.json.rendererAlive === true ? pass('rendererAlive') : fail(`/kiosk/renderer/reset ${why(r)}`);
-  }, kiosk);
+  }, kiosk, active('restarts the page renderer'));
   add('kiosk.overlay', 'an overlay message shows and clears', async ({ api }) => {
     const on = await api.control('POST', '/kiosk/overlay', { body: { text: 'acceptance check' } });
     const off = await api.control('POST', '/kiosk/overlay', { body: { text: '' } });
     if (!ok(on) || on.json.shown !== true) return fail(`showing: ${why(on)} shown=${on.json?.shown}`);
     const textShown = off.json?.text?.shown ?? off.json?.shown;
     return ok(off) && textShown === false ? pass('shown, then cleared') : fail(`clearing: ${why(off)} text.shown=${textShown}`);
-  }, kiosk);
+  }, kiosk, active('shows a message over the page for a moment'));
 
   // ── screen, volume, launch, lockdown ──
-  add('screen.sleep-wake', 'the screen goes off and comes back on, read back from the display', async ({ api, sleep }) => {
-    const off = await api.control('POST', '/screen', { body: { on: false }, timeoutMs: 20000 });
-    if (!ok(off) || off.json.screenOn !== false) {
-      await api.control('POST', '/screen', { body: { on: true }, timeoutMs: 20000 });
-      return fail(`off: ${why(off)} screenOn=${off.json?.screenOn}`);
+  add('screen.sleep-wake', 'the screen goes off and comes back on, read back from the display', async ({ api, sleep, restorer }) => {
+    const k = await api.control('GET', '/kiosk/status');
+    if (!ok(k) || typeof k.json.screenOn !== 'boolean') return fail(`could not read the screen state first: ${why(k)}`);
+    const was = k.json.screenOn;
+    const restore = restorer(`screen ${was ? 'on' : 'off'}`, () => api.control('POST', '/screen', { body: { on: was }, timeoutMs: 20000 }));
+    try {
+      const off = await api.control('POST', '/screen', { body: { on: false }, timeoutMs: 20000 });
+      if (!ok(off) || off.json.screenOn !== false) return fail(`off: ${why(off)} screenOn=${off.json?.screenOn}`);
+      await sleep(2000);
+      const still = await api.control('GET', '/status');
+      if (!ok(still)) return fail(`control API did not answer with the screen off: ${why(still)}`);
+      const on = await api.control('POST', '/screen', { body: { on: true }, timeoutMs: 20000 });
+      return ok(on) && on.json.screenOn === true ? pass(`off, API answered while dark, on; left ${was ? 'on' : 'off'} as found`) : fail(`on: ${why(on)} screenOn=${on.json?.screenOn}`);
+    } finally {
+      await restore();
     }
-    await sleep(2000);
-    const still = await api.control('GET', '/status');
-    const on = await api.control('POST', '/screen', { body: { on: true }, timeoutMs: 20000 });
-    if (!ok(still)) return fail(`control API did not answer with the screen off: ${why(still)}`);
-    return ok(on) && on.json.screenOn === true ? pass('off, API answered while dark, on') : fail(`on: ${why(on)} screenOn=${on.json?.screenOn}`);
-  }, has('screen-power'));
+  }, has('screen-power') && kiosk, active('turns the screen off for about two seconds, then puts it back as it was'));
   add('screen.brightness', 'brightness is set and read back', async ({ api, opts: o }) => {
     if (o.brightness === undefined) return skip('pass --brightness <0-255> to set the level this device should keep');
     const r = await api.control('POST', '/screen/brightness', { body: { level: o.brightness } });
     return ok(r) && r.json.level === o.brightness ? pass(`level ${r.json.level}`) : fail(`/screen/brightness ${why(r)} level=${r.json?.level}`);
-  }, has('screen-power'));
+  }, has('screen-power'), active('sets the brightness to --brightness'));
   add('volume.read-write', 'the media volume is read, written back unchanged and read back', async ({ api }) => {
     const before = await api.control('GET', '/volume?stream=3');
     if (!ok(before)) return fail(`GET /volume ${why(before)}`);
@@ -333,11 +359,11 @@ export function buildChecks(deviceFile, opts = {}) {
       return pass(`level ${before.json.level}, index ${index}/${before.json.maxIndex}${r.json?.error ? ' (held by the audio guard)' : ''}`);
     }
     return fail(`POST /volume ${why(r)}, index ${index} vs ${before.json.index}`);
-  }, has('volume'));
+  }, has('volume'), active('writes the media volume back at the level it reads'));
   add('launch.absent', 'launching an app that is not installed is refused by name', async ({ api }) => {
     const r = await api.control('POST', '/launch', { body: { package: ABSENT_PACKAGE } });
     return r.json?.ok === false && ['not_installed', 'not_allowed'].includes(r.json.error) ? pass(r.json.error) : fail(`expected not_installed or not_allowed, got ${why(r)}`);
-  }, has('app-launcher'));
+  }, has('app-launcher'), active('asks to launch a package that is not installed (refused)'));
   add('launch.app', 'the given app opens, is seen in front, and the kiosk comes back', async ({ api, opts: o, sleep }) => {
     if (!o.launch) return skip('pass --launch <package> (an app in launcher.allowed)');
     const r = await api.control('POST', '/launch', { body: { package: o.launch }, timeoutMs: 20000 });
@@ -367,7 +393,7 @@ export function buildChecks(deviceFile, opts = {}) {
   add('debug.eval', 'POST /debug/eval runs in the live page', async ({ api }) => {
     const r = await api.control('POST', '/debug/eval', { body: { js: '6*7' }, timeoutMs: 30000 });
     return ok(r) && Number(r.json.result) === 42 ? pass('6*7 = 42') : fail(`/debug/eval ${why(r)} result=${short(r.json?.result)}`);
-  }, debug && kiosk);
+  }, debug && kiosk, active('runs 6*7 in the live page'));
   add('debug.html', 'GET /debug/html returns the document', async ({ api }) => {
     const r = await api.control('GET', '/debug/html', { timeoutMs: 30000 });
     return ok(r) && typeof r.json.html === 'string' && r.json.html.includes('<') ? pass(`${r.json.html.length} characters`) : fail(`/debug/html ${why(r)}`);
@@ -389,44 +415,53 @@ export function buildChecks(deviceFile, opts = {}) {
     const r = await api.control('POST', '/debug/exec', { body: { cmd: 'id' }, timeoutMs: 30000 });
     if (r.status === 501) return pass('refused: debug.execEnabled is false');
     return ok(r) && r.json.exitCode === 0 ? pass(`ran as ${short(String(r.json.stdout || '').trim())}`) : fail(`/debug/exec ${why(r)}`);
-  }, debug);
+  }, debug, active('runs `id` as the app, or is refused while debug.execEnabled is false'));
   add('debug.log', 'GET /log answers', async ({ api }) => {
     const r = await api.control('GET', '/log');
     return !r.error && r.status === 200 ? pass(`${(r.text || '').length} characters`) : fail(`/log ${why(r)}`);
   });
 
   // ── device helpers ──
-  const switchOn = (state, key) => state.settings?.[key] === true || state.settings?.[key] === 'true';
-  add('midi.status', 'the MIDI link is connected and its output verified by echo', async ({ api, state }) => {
-    const r = await api.control('GET', '/status');
-    if (!ok(r)) return fail(`/status ${why(r)}`);
-    if (!switchOn(state, 'midi.enabled')) return pass(`midi.enabled is off (coexistence); ble ${short(r.json.ble?.state ?? r.json.ble)}`);
-    const ble = r.json.ble?.state;
-    return ble === 'CONNECTED' && r.json.outVerified === true ? pass('CONNECTED, output verified') : fail(`ble ${ble}, outVerified ${r.json.outVerified}`);
+  // A coexistence switch counts as handed over only when /status reports it active.
+  const switchActive = (status, key) => status?.switches?.[key]?.active === true;
+  const readStatus = async (api) => { const r = await api.control('GET', '/status'); return ok(r) ? { status: r.json } : { error: `/status ${why(r)}` }; };
+  const settingOn = (state, key) => state.settings?.[key] === true || state.settings?.[key] === 'true';
+  add('midi.status', 'the MIDI link is connected and its output verified by echo', async ({ api }) => {
+    const { status, error } = await readStatus(api);
+    if (error) return fail(error);
+    if (!switchActive(status, 'midi.enabled')) return pass(`midi.enabled is not active (coexistence); ble ${short(status.ble?.state ?? status.ble)}`);
+    const ble = status.ble?.state;
+    return ble === 'CONNECTED' && status.outVerified === true ? pass('CONNECTED, output verified') : fail(`ble ${ble}, outVerified ${status.outVerified}`);
   }, has('midi-bridge'));
-  add('midi.loopback', 'a loopback probe echoes back from the instrument', async ({ api, state, opts: o }) => {
-    if (!switchOn(state, 'midi.enabled')) return skip('midi.enabled is off; turn it on at the hand-over step');
+  add('midi.loopback', 'a loopback probe echoes back from the instrument', async ({ api, opts: o }) => {
+    const { status, error } = await readStatus(api);
+    if (error) return fail(error);
+    if (!switchActive(status, 'midi.enabled')) return skip('midi.enabled is not active; turn it on at the hand-over step');
     const r = await api.control('POST', '/loopback', { timeoutMs: 20000 });
     if (!ok(r) || r.json.echoed !== true) return fail(`/loopback ${why(r)} echoed=${r.json?.echoed}`);
     const base = o['rtt-baseline'];
     if (base !== undefined && r.json.rttMs > base * 1.1) return fail(`round trip ${r.json.rttMs} ms, more than 10% above the baseline ${base}`);
     return pass(`round trip ${r.json.rttMs} ms${base !== undefined ? ` (baseline ${base})` : ''}`);
-  }, has('midi-bridge'));
-  add('speaker.status', 'GET /speaker answers; the speaker is connected once handed over', async ({ api, state }) => {
+  }, has('midi-bridge'), active('sends a probe note to the instrument'));
+  add('speaker.status', 'GET /speaker answers; the speaker is connected once handed over', async ({ api }) => {
+    const { status, error } = await readStatus(api);
+    if (error) return fail(error);
     const r = await api.control('GET', '/speaker');
     if (!ok(r)) return fail(`/speaker ${why(r)}`);
-    if (!switchOn(state, 'speaker.enabled')) return pass('speaker.enabled is off (coexistence)');
+    if (!switchActive(status, 'speaker.enabled')) return pass('speaker.enabled is not active (coexistence)');
     return r.json.speaker?.connected === true ? pass(`connected, guard ${short(r.json.guard?.state ?? r.json.guard?.reason ?? '')}`) : fail(`speaker ${short(r.json.speaker)}`);
   }, has('audio-guard'));
   add('bluetooth.status', 'GET /bluetooth answers', async ({ api }) => {
     const r = await api.control('GET', '/bluetooth');
     return ok(r) ? pass(short(r.json.mode ?? r.json.devices?.length ?? 'answered')) : fail(`/bluetooth ${why(r)}`);
   }, has('bluetooth-controls'));
-  add('mic.status', 'the microphone stream runs with nothing holding the mic', async ({ api, state }) => {
+  add('mic.status', 'the microphone stream runs with nothing holding the mic', async ({ api }) => {
+    const { status, error } = await readStatus(api);
+    if (error) return fail(error);
     const r = await api.control('GET', '/mic/status');
     if (!ok(r)) return fail(`/mic/status ${why(r)}`);
     const m = r.json;
-    if (!switchOn(state, 'mic.enabled')) return pass('mic.enabled is off (coexistence)');
+    if (!switchActive(status, 'mic.enabled')) return pass('mic.enabled is not active (coexistence)');
     return m.running === true && !m.lastError && m.heldByOther !== true
       ? pass(`running, streaming ${m.streaming}, clients ${m.clients}`)
       : fail(`running ${m.running}, heldByOther ${m.heldByOther}, lastError ${m.lastError} ${short(m.lastErrorDetail || '')}`);
@@ -458,23 +493,29 @@ export function buildChecks(deviceFile, opts = {}) {
       if (ok(s) && s.json.uptimeMs < before.json.uptimeMs) return pass(`back after ~${Math.round((Date.now() - t0) / 1000)} s`);
     }
     return fail('the payload did not report a restart within 60 s');
-  }, kiosk);
-  add('crash.kill', "killing the app's process: it comes back by itself", async ({ api, sleep, pollMs, opts: o, state }) => {
-    if (!o.kill) return skip('pass --kill (needs debug.execEnabled; turned on for the check and reset after)');
+  }, kiosk, { flag: 'restart', effect: 'restarts the payload: MIDI, synth, page and mic drop for a few seconds' });
+  add('crash.kill', "killing the app's process: it comes back by itself", async ({ api, sleep, pollMs, opts: o, state, restorer }) => {
+    if (!o.kill) return skip('pass --kill (turns debug.execEnabled on for the check and puts back the value it had)');
     const info = await api.control('GET', '/debug/info');
     if (!ok(info)) return fail(`/debug/info ${why(info)}`);
-    const turnedOn = !switchOn(state, 'debug.execEnabled');
-    if (turnedOn) {
-      const s = await api.control('POST', '/settings', { body: { key: 'debug.execEnabled', value: true } });
-      if (!ok(s)) return fail(`could not turn on debug.execEnabled: ${why(s)}`);
+    const prior = settingOn(state, 'debug.execEnabled');
+    let restored = null;
+    const restore = prior ? async () => {} : restorer('debug.execEnabled false', async () => {
+      restored = await api.control('POST', '/settings', { body: { key: 'debug.execEnabled', value: false } });
+    });
+    let result;
+    try {
+      if (!prior) {
+        const s = await api.control('POST', '/settings', { body: { key: 'debug.execEnabled', value: true } });
+        if (!ok(s)) return fail(`could not turn on debug.execEnabled: ${why(s)}`);
+      }
+      // The shell that runs the command is a child of the app's process.
+      await api.control('POST', '/debug/exec', { body: { cmd: 'kill -9 $PPID' }, timeoutMs: 10000 });
+      result = await waitBack(api, { sleep, pollMs, waitMs: (o['reboot-wait'] ?? 300) * 1000, before: info.json.elapsedRealtimeMs, rebooted: false });
+    } finally {
+      await restore();
     }
-    // The shell that runs the command is a child of the app's process.
-    await api.control('POST', '/debug/exec', { body: { cmd: 'kill -9 $PPID' }, timeoutMs: 10000 });
-    const result = await waitBack(api, { sleep, pollMs, waitMs: (o['reboot-wait'] ?? 300) * 1000, before: info.json.elapsedRealtimeMs, rebooted: false });
-    if (turnedOn) {
-      const reset = await api.control('DELETE', '/settings?key=debug.execEnabled');
-      if (!ok(reset)) return fail(`${result.evidence}; debug.execEnabled is still on: ${why(reset)}`);
-    }
+    if (restored && !ok(restored)) return fail(`${result.evidence}; debug.execEnabled could not be put back to false: ${why(restored)}`);
     return result.ok ? pass(result.evidence) : fail(result.evidence);
   }, debug);
   add('payload.bad', 'a payload that cannot start is rolled back and the lifeline stays up', async ({ api, sleep, pollMs, opts: o, badPayload }) => {
@@ -493,8 +534,12 @@ export function buildChecks(deviceFile, opts = {}) {
       if (p.lastFailed && p.lastFailed !== before.json.lastFailed) {
         const control = await api.control('GET', '/status');
         if (!ok(control)) continue;
-        const back = p.active === before.json.active;
-        const evidence = `lastFailed ${p.lastFailed}, active ${p.active}, lifeline missed ${lifelineMisses} polls`;
+        // The rollback may have finished between the two reads: read the lifeline again.
+        const again = await api.lifeline('GET', '/status');
+        if (!ok(again)) { lifelineMisses += 1; continue; }
+        const now = again.json.payload || {};
+        const back = now.active === before.json.active;
+        const evidence = `lastFailed ${now.lastFailed}, active ${now.active}, lifeline missed ${lifelineMisses} polls`;
         return back && lifelineMisses === 0 ? pass(evidence) : fail(evidence);
       }
     }
@@ -557,7 +602,7 @@ export function buildChecks(deviceFile, opts = {}) {
     "Run: dd eval 'window.__seen=[];addEventListener(\"daylight:key\",e=>__seen.push(e.detail));1'. Press volume up, then down. Run: dd eval '__seen'. Look for: two daylight:key events, the system volume not moved, no beep.",
   ), has('volume-keys'));
   add('keys.sleep-wake', 'the double volume-down sleep and wake gesture', async ({ state }) => manual(
-    `Press volume-down twice quickly: the screen goes off. Press again: it comes on.${switchOn(state, 'keys.screenToggleEnabled') ? '' : ' [keys.screenToggleEnabled is off: set it first if the gesture is wanted]'}`,
+    `Press volume-down twice quickly: the screen goes off. Press again: it comes on.${settingOn(state, 'keys.screenToggleEnabled') ? '' : ' [keys.screenToggleEnabled is off: set it first if the gesture is wanted]'}`,
   ), has('volume-keys'));
   add('touch.page', 'touch works on the page and the exit gesture raises the PIN prompt', async () => manual(
     'Tap through the page: buttons respond. Seven quick taps top-left: the PIN prompt (only with lockdown.exitPin set).',
@@ -607,6 +652,13 @@ async function waitBack(api, { sleep, pollMs, waitMs, before, rebooted }) {
   return { ok: false, evidence: wentAway ? `did not answer again within ${Math.round(waitMs / 1000)} s` : `never went away within ${Math.round(waitMs / 1000)} s` };
 }
 
+/** --only entries that select no check of this device: a typo must not pass by selecting nothing. */
+export function unmatchedOnly(deviceFile, opts) {
+  if (!opts.only) return [];
+  const ids = buildChecks(deviceFile, opts).map((c) => c.id);
+  return opts.only.filter((sel) => !ids.some((id) => id === sel || id.startsWith(`${sel}.`)));
+}
+
 /** True when a check id is selected by --only / --skip (a group name selects every check in it). */
 export function selected(checkId, opts) {
   const match = (sel) => sel.some((s) => checkId === s || checkId.startsWith(`${s}.`));
@@ -624,9 +676,10 @@ export async function serveBadPayload(spec, listen = createServer) {
     if (req.url === '/bad-payload.jar') { res.writeHead(200, { 'Content-Type': 'application/java-archive' }); res.end(bytes); return; }
     res.writeHead(404); res.end();
   });
-  await new Promise((resolve, reject) => { server.once('error', reject); server.listen(Number(portText), resolve); });
-  const port = server.address().port;
-  return { url: `http://${address}:${port}/bad-payload.jar`, sha256, close: () => new Promise((r) => server.close(r)) };
+  // Bound to that one address, not every interface.
+  await new Promise((resolve, reject) => { server.once('error', reject); server.listen(Number(portText), address, resolve); });
+  const { port, address: boundAddress } = server.address();
+  return { url: `http://${address}:${port}/bad-payload.jar`, sha256, boundAddress, close: () => new Promise((r) => server.close(r)) };
 }
 
 /**
@@ -638,6 +691,35 @@ export async function runAcceptance({ deviceFile, host, token, opts, deps = {} }
   const clean = (text) => (token ? String(text).split(token).join('[token]') : String(text));
   const print = deps.out ?? ((line) => console.log(line));
   const out = (line) => print(clean(line));
+  const unmatched = unmatchedOnly(deviceFile, opts);
+  if (unmatched.length) {
+    for (const sel of unmatched) out(`✗ --only ${sel} selects no check for ${deviceFile.id}`);
+    return 1;
+  }
+  // State a check changed and has not put back yet. An interrupt (Ctrl-C) puts it back
+  // before exiting, so a run stopped halfway does not leave exec on or the screen dark.
+  const signals = deps.signals ?? process;
+  const exit = deps.exit ?? ((code) => process.exit(code));
+  const pending = new Map();
+  let nextRestore = 0;
+  const restorer = (what, undo) => {
+    const key = nextRestore += 1;
+    pending.set(key, { what, undo });
+    return async () => {
+      if (!pending.has(key)) return;
+      pending.delete(key);
+      await undo();
+    };
+  };
+  const onInterrupt = async () => {
+    const left = [...pending.values()].reverse();
+    pending.clear();
+    for (const { what, undo } of left) {
+      try { await undo(); out(`interrupted: put back ${what}`); } catch (e) { out(`interrupted: could not put back ${what}: ${e?.message || e}`); }
+    }
+    exit(130);
+  };
+  signals.on('SIGINT', onInterrupt);
   const sleep = deps.sleep ?? ((ms) => new Promise((r) => setTimeout(r, ms)));
   const pollMs = deps.pollMs ?? 2000;
   const api = deviceApi({ host, ports: deviceFile.control, token, fetchImpl });
@@ -662,7 +744,9 @@ export async function runAcceptance({ deviceFile, host, token, opts, deps = {} }
     for (const check of checks) {
       let result;
       try {
-        result = await check.run({ api, state, opts, sleep, pollMs, out, fetchImpl, badPayload });
+        result = check.needs && !opts[check.needs.flag]
+          ? skip(`pass --${check.needs.flag}: ${check.needs.effect}`)
+          : await check.run({ api, state, opts, sleep, pollMs, out, fetchImpl, badPayload, restorer });
       } catch (e) {
         result = fail(`check threw: ${e?.message || e}`);
       }
@@ -670,6 +754,7 @@ export async function runAcceptance({ deviceFile, host, token, opts, deps = {} }
       out(`${result.status.padEnd(6)} ${check.id.padEnd(20)} ${result.evidence}`);
     }
   } finally {
+    signals.off('SIGINT', onInterrupt);
     await badPayload?.close?.();
   }
   out(`${counts.PASS} pass, ${counts.FAIL} fail, ${counts.MANUAL} manual, ${counts.SKIP} skip`);
@@ -697,18 +782,38 @@ export function resolveTarget(name, opts, fleet) {
   if (!entry?.token) throw new Error(`no token for '${name}' in the private tokens file`);
   const host = opts.host || entry.host;
   if (!host) throw new Error(`no host for '${name}': pass --host or add host to its entry in the private tokens file`);
-  return { host: String(host), token: String(entry.token) };
+  const overridden = !!opts.host && String(opts.host) !== String(entry.host ?? '');
+  return { host: String(host), token: String(entry.token), overridden };
+}
+
+/**
+ * The private tokens file, parsed. A YAML error message quotes the lines around the
+ * fault, and those can hold a token, so only the line number is passed on.
+ */
+export function readTokensFile(path, read = (p) => readFileSync(p, 'utf8')) {
+  const text = read(path);
+  try {
+    return parse(text);
+  } catch (e) {
+    const line = e?.linePos?.[0]?.line;
+    throw new Error(`tokens file is not valid YAML${line ? ` (line ${line})` : ''}`);
+  }
 }
 
 export async function main(argv, deps = {}) {
   const opts = parseOptions(argv);
   const deviceFile = loadDeviceFile(opts.device, deps.devicesDir);
   if (opts.list) {
-    for (const c of buildChecks(deviceFile, opts).filter((x) => selected(x.id, opts))) console.log(`${c.id.padEnd(20)} ${c.title}`);
+    const unmatched = unmatchedOnly(deviceFile, opts);
+    if (unmatched.length) throw new Error(unmatched.map((sel) => `--only ${sel} selects no check for ${deviceFile.id}`).join('; '));
+    for (const c of buildChecks(deviceFile, opts).filter((x) => selected(x.id, opts))) {
+      console.log(`${c.id.padEnd(20)} ${c.title}${c.needs ? ` [--${c.needs.flag}]` : ''}`);
+    }
     return 0;
   }
-  const fleet = deps.fleet ?? parse(readFileSync(tokensPath(), 'utf8'));
-  const { host, token } = resolveTarget(opts.device, opts, fleet);
+  const fleet = deps.fleet ?? readTokensFile(tokensPath());
+  const { host, token, overridden } = resolveTarget(opts.device, opts, fleet);
+  if (overridden) (deps.out ?? ((line) => console.log(line)))(`the token goes to ${host} (--host), not the tokens file's host`);
   return runAcceptance({ deviceFile, host, token, opts, deps });
 }
 
