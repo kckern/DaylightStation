@@ -1,17 +1,12 @@
 import { useEffect, useLayoutEffect } from 'react';
 import { ActionIcon, FocusTrap } from '@mantine/core';
 import { useDismissLayer } from './dismiss/useDismissLayer.js';
+import { UiIcon } from './UiIcon.jsx';
 import './ds.scss';
 
 // A dialog can be replaced in the same commit (entry -> coach). Transfer its
 // return target before the detached button in the old dialog loses focus.
 let pendingFocusReturn = null;
-
-const CloseIcon = () => (
-  <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-    <path d="M3 3l10 10M13 3L3 13" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-  </svg>
-);
 
 /**
  * The house overlay: bottom sheet on mobile; on desktop a centered dialog by
@@ -51,7 +46,7 @@ export function Sheet({ open, onClose, title, children, placement = 'center' }) 
       <FocusTrap active={open}><div className="ds-sheet__panel" tabIndex={-1}>
         <header className="ds-sheet__header">
           <h3 className="ds-sheet__title">{title}</h3>
-          <ActionIcon onClick={onClose} aria-label="Close"><CloseIcon /></ActionIcon>
+          <ActionIcon onClick={onClose} aria-label="Close"><UiIcon name="close" /></ActionIcon>
         </header>
         <div className="ds-sheet__body">{children}</div>
       </div></FocusTrap>

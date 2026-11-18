@@ -10,11 +10,12 @@
 //
 // Plus the stop guard for TransportBar: stopping a slideshow with music
 // behind asks whether to keep the music playing.
+import { UiIcon } from '../../../../../frontend/src/lib/ui/UiIcon.jsx';
 import React, { useCallback, useContext, useMemo, useState, useSyncExternalStore } from 'react';
 import { Button, Group, Menu, Modal, Text } from '@mantine/core';
 import {
   IconBadgeCc, IconCheck, IconLanguage, IconMusic, IconPlayerPauseFilled, IconPlayerPlayFilled,
-  IconPlayerSkipForwardFilled, IconPlayerStopFilled, IconX,
+  IconPlayerSkipForwardFilled, IconPlayerStopFilled,
 } from '@tabler/icons-react';
 import { isSlideshowItem, SUBTITLES_OFF } from '@shared-contracts/media/playerFeatures.mjs';
 import { useSessionController } from "../controller/useSessionController.js";
@@ -170,7 +171,7 @@ export function PlayerFeatureControls({ target, snapshot: snapshotOverride = nul
         <div className="pf-row pf-brief" data-testid="pf-brief" role="status">
           <Text size="sm" className="pf-brief-label">{`Showing ${f.brief.label}`}{f.brief.remainingSeconds != null ? ` · ${f.brief.remainingSeconds}s` : ''}</Text>
           {f.closeBrief && (
-            <Button size="sm" variant="default" leftSection={<IconX size={16} />} data-testid="pf-brief-close"
+            <Button size="sm" variant="default" leftSection={<UiIcon name="close" />} data-testid="pf-brief-close"
               onClick={() => run('brief', 'close', () => f.closeBrief())}>Close</Button>
           )}
         </div>

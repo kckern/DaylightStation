@@ -1,3 +1,4 @@
+import { UiIcon } from '../../../../frontend/src/lib/ui/UiIcon.jsx';
 import React, { useEffect, useState, useMemo, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
@@ -5,7 +6,7 @@ import {
   ActionIcon, Menu, Text, Collapse, Button, Box
 } from '@mantine/core';
 import {
-  IconSearch, IconArrowLeft, IconAlertCircle,
+  IconArrowLeft, IconAlertCircle,
   IconTrash, IconDotsVertical, IconPlus, IconSettings
 } from '@tabler/icons-react';
 import {
@@ -490,7 +491,7 @@ function ListsFolder() {
         <Group>
           <TextInput
             placeholder="Search items..."
-            leftSection={<IconSearch size={16} />}
+            leftSection={<UiIcon name="search" />}
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             className="lists-folder-search"
@@ -608,7 +609,7 @@ function ListsFolder() {
       {flatItems.length === 0 && !filteredItems && !loading && (
         <Center h="40vh">
           <Stack align="center">
-            <IconSearch size={48} stroke={1} color="gray" />
+            <UiIcon name="search" size={48} stroke={1} color="gray" />
             <Title order={4} c="dimmed">
               {searchQuery ? 'No matching items' : 'No items yet'}
             </Title>

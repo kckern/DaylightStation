@@ -11,8 +11,8 @@
 // tablet-up-gated in MediaShell.scss); the fleet signal mobile still needs
 // moved to a badge on the Devices tab (PrimaryNav.jsx) instead. The settings
 // gear is the one control both layouts keep, so it renders once, unscoped.
+import { UiIcon } from '../../../../../frontend/src/lib/ui/UiIcon.jsx';
 import React, { useState, useCallback, useMemo } from 'react';
-import { IconSearch } from '@tabler/icons-react';
 import { MediaContentSearch } from "../search/MediaContentSearch.jsx";
 import { FleetIndicator } from "./FleetIndicator.jsx";
 import { SettingsMenu } from "./SettingsMenu.jsx";
@@ -43,7 +43,7 @@ export function Dock({ onOpenSearch, searchInputRef, launcherRef }) {
         data-testid="media-search-launcher"
         onClick={() => onOpenSearch?.()}
       >
-        <IconSearch size={18} aria-hidden="true" />
+        <UiIcon name="search" size={18} />
         <span>Search media…</span>
       </button>
       {/* No wrapper div: MediaContentSearch's own root, `.media-search-bar`,

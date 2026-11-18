@@ -4,10 +4,11 @@
 // verification surface. Dev-only route; lazy-loaded so it never rides in
 // the main bundle.
 import { useState } from 'react';
+import { TextInput } from '@mantine/core';
 import {
   AppThemeProvider, AppChrome, Sheet, DismissStackProvider,
   LoadingState, ErrorState, EmptyState, SectionCard, StatCard,
-  DateStepper, AskAffordance, Button, Select,
+  DateStepper, AskAffordance, Button, Select, UiIcon,
 } from '../../lib/ui/index.js';
 
 const Dot = () => (
@@ -19,6 +20,8 @@ const Dot = () => (
 export default function DsGallery() {
   const [tab, setTab] = useState('one');
   const [sheetOpen, setSheetOpen] = useState(false);
+  const [filter, setFilter] = useState('');
+  const [filterTouched, setFilterTouched] = useState(false);
   const [date, setDate] = useState('2026-09-01');
 
   return (
@@ -36,6 +39,11 @@ export default function DsGallery() {
         >
           <div style={{ display: 'grid', gap: '0.75rem' }} data-testid="gallery-grid">
             <SectionCard title="Controls">
+              <TextInput label="Search term" description="Use at least two characters."
+                leftSection={<UiIcon name="search" />} value={filter}
+                onChange={event => setFilter(event.currentTarget.value)}
+                onBlur={() => setFilterTouched(true)}
+                error={filterTouched && filter.trim().length === 1 ? 'Enter another character.' : undefined} />
               <label>Density <Select density="compact" defaultValue="comfortable">
                 <option value="comfortable">Comfortable</option>
                 <option value="compact">Compact</option>

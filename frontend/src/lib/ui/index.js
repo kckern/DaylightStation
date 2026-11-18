@@ -15,3 +15,4 @@ export { TouchButton } from './TouchButton.jsx';
 export { ToastRegion, Toast } from './Toast.jsx';
 export { Button } from './Button.jsx';
 export { Select } from './Select.jsx';
+export { UiIcon } from './UiIcon.jsx';

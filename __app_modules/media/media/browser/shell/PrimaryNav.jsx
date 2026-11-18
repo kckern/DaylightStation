@@ -2,9 +2,10 @@
 // Primary navigation. Mobile: bottom tab bar. Tablet+: left rail (icons,
 // labels at desktop width). Both are the same three destinations; ownership
 // comes from NavProvider so nested controls never lose their primary area.
+import { UiIcon } from '../../../../../frontend/src/lib/ui/UiIcon.jsx';
 import React from 'react';
 import { UnstyledButton } from '@mantine/core';
-import { IconHome, IconLayoutGrid, IconDevices, IconSearch } from '@tabler/icons-react';
+import { IconHome, IconLayoutGrid, IconDevices } from '@tabler/icons-react';
 import { useNav } from "./NavProvider.jsx";
 import { useSearchLauncher } from "./SearchLauncherContext.js";
 
@@ -48,7 +49,7 @@ export function TabBar() {
           tab bar carries a Search action as well (RELY.12a). Not a destination. */}
       {launcher?.openSearch && (
         <UnstyledButton data-testid="app-tab-search" className="media-nav-item" onClick={() => launcher.openSearch()}>
-          <span className="media-nav-icon-wrap"><IconSearch size={22} stroke={1.6} aria-hidden /></span>
+          <span className="media-nav-icon-wrap"><UiIcon name="search" size={22} stroke={1.6} /></span>
           <span className="media-nav-label">Search</span>
         </UnstyledButton>
       )}
