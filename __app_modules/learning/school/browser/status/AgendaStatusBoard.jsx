@@ -140,6 +140,8 @@ function labelForSegment(segment) {
     : segment.state === 'needs-retry' ? 'try again'
       : segment.state === 'in-progress' ? 'in progress'
         : 'not done';
+  // An unfinished elective is optional, never "not done" in the day's sense.
+  const optional = segment.elective && segment.state !== 'passed' ? 'optional, ' : '';
   const extra = segment.extraCount > 0
     ? `, ${segment.extraCount} extra ${segment.extraCount === 1 ? 'item' : 'items'} completed`
     : '';
@@ -153,7 +155,7 @@ function labelForSegment(segment) {
   const activity = counts
     .filter(([count]) => Number.isInteger(count) && count > 0)
     .map(([count, one, many]) => `${count} ${count === 1 ? one : many}`).join(', ');
-  return `${segment.label}: ${state}${extra}${activity ? `, ${activity}` : ''}`;
+  return `${segment.label}: ${optional}${state}${extra}${activity ? `, ${activity}` : ''}`;
 }
 
 /**
@@ -217,6 +219,8 @@ function Pins({ segments, onOpen = null }) {
                 // `data-done` kept alongside `data-state` for anything still
                 // selecting on the boolean; the tri-state is the one to read.
                 data-done={segment.state === 'passed' ? 'true' : 'false'}
+                // Elective work: shown, never counted, so it must not look owed.
+                data-elective={segment.elective ? 'true' : undefined}
               >
                 <Disc segment={segment} onOpen={onOpen} />
                 {segment.extraCount > 0 && (
@@ -960,6 +964,10 @@ export default function AgendaStatusBoard({ kids = NO_KIDS, day, onOpenSegment =
                 // prints TODAY's agenda, not that day's.
                 <RestDayStatus restDay={summary.restDay} pinned={Boolean(day)}
                   title={summary.dayOff?.label ? dayOffTitle(summary.dayOff) : null} />
+              ) : summary?.segments.length > 0 ? (
+                // Only optional work on the board (an elective sheet on a day
+                // nothing is owed): the discs are real, the plan is not empty.
+                <span className="school-status-board__status school-status-board__status--none">Nothing owed today</span>
               ) : (
                 <span className="school-status-board__status school-status-board__status--none">No plan to show</span>
               )}

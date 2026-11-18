@@ -831,7 +831,9 @@ export function agendaDocument({
         // Catch-up work is offered exactly like today's; only this says which
         // is which. See `agenda.mjs`'s `catchUp`.
         // A Saturday catch-up also names the weekdays it stands in for.
-        rail: catchUpRail(section),
+        // An ELECTIVE lesson never counts toward the day, so its card says so;
+        // printed bare it read exactly like owed work (2026-11-17).
+        rail: catchUpRail(section) ?? (next.elective === true ? 'Optional' : null),
         // The unit is pulled OUT of the breadcrumb and set directly above the
         // lesson title, where it reads as that lesson's parent rather than as
         // the tail of a course path. The breadcrumb keeps subject > course and

@@ -88,6 +88,16 @@ describe('agendaDocument lesson cards', () => {
     expect(lessonCard(build([odd])).rail).toBe('Catch-up · Fri');
   });
 
+  it('rails an elective lesson Optional, and a catch-up keeps its own rail', () => {
+    // An elective never counts toward the day; printed bare it read as owed.
+    const elective = section({ next: { unitId: 'u1', title: 'Giraffes', elective: true } });
+    expect(lessonCard(build([elective])).rail).toBe('Optional');
+    const required = section({ next: { unitId: 'u1', title: 'Rhythm', elective: false } });
+    expect(lessonCard(build([required]))).not.toHaveProperty('rail');
+    const both = section({ catchUp: true, next: { unitId: 'u1', title: 'Giraffes', elective: true } });
+    expect(lessonCard(build([both])).rail).toBe('Catch-up');
+  });
+
   it('leaves on-schedule work unrailed', () => {
     // Absent, not empty: the renderer treats any non-blank string as a rail, so
     // an always-present field would put a bar on every card.

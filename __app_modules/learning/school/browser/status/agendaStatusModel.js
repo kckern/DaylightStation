@@ -347,7 +347,7 @@ export function summarize(sections, sessions, entries = [], readingActivity = nu
     // an elective obligate or serve a day, so counting its disc made "X of Y"
     // grow only on the days a child opened an optional sheet — an elective
     // science course read as part of the day some days and not others.
-    if (fromEntries.get(segment.unitId)?.elective === true) segment = { ...segment, supplemental: true };
+    if (fromEntries.get(segment.unitId)?.elective === true) segment = { ...segment, supplemental: true, elective: true };
     const programId = fromEntries.get(segment.unitId)?.program;
     if (programId === 'book-log' || programId === 'story-time') {
       return { ...segment, programId, label: programId === 'book-log' ? 'Reading' : 'Story time' };

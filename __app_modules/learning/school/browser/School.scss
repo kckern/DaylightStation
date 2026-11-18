@@ -3148,6 +3148,25 @@
       border: 0.12rem dashed var(--school-board-ink);
       opacity: 0.8;
     }
+    // ELECTIVE work is optional and outside the day's count (2026-11-17), so
+    // an unfinished one is never a filled disc: a dashed ring with the icon
+    // in full ink, amber once started so a child can still see it is begun.
+    // Solid colours only — the ring, not translucency, says "optional".
+    &[data-elective='true']:not([data-state='passed']) {
+      background: transparent;
+      color: var(--school-board-ink);
+      border: 0.18rem dashed var(--school-board-ink);
+    }
+    &[data-elective='true'][data-state='in-progress'],
+    &[data-elective='true'][data-state='needs-retry'] {
+      color: var(--school-board-retry);
+      border-color: var(--school-board-retry);
+    }
+    // A finished elective keeps the done fill and gains the dashed edge, so
+    // it still reads as a bonus beside the required discs.
+    &[data-elective='true'][data-state='passed'] {
+      border: 0.18rem dashed var(--school-board-ink);
+    }
 
     // In flight: a disc-shaped hole with a shimmer crossing it. The panel used
     // to render NOTHING until the slowest learner's plan returned — up to a
