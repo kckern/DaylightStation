@@ -524,6 +524,13 @@ describe('DayInstructionService', () => {
         await correction({ name: 'Skim Milk', calories: 83 }, 'two');
         expect(await row()).toMatchObject({ name: 'Skim Milk', calories: 100 });
       });
+      it('pins a field again after a numeric edit of the entry', async () => {
+        await saveFood();
+        await correction({ name: 'Whole Milk', calories: 149 }, 'one');
+        await new HealthOperations({ nutritionItems: store }).updateNutritionItem('u', 'a', { numericEdit: { field: 'calories', value: 100 } });
+        await correction({ name: 'Skim Milk', calories: 83 }, 'two');
+        expect(await row()).toMatchObject({ name: 'Skim Milk', calories: 100 });
+      });
       it('Undo restores which fields a voice correction had set', async () => {
         await saveFood();
         await correction({ name: 'Whole Milk', calories: 149 }, 'one');
