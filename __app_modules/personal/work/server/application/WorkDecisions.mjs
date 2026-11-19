@@ -5,6 +5,7 @@ const denied = reason => ({
   status: 'denied',
   reason
 });
+const SESSION_GRANT_MS = 5 * 60000;
 const labels = {
   complete: 'Complete task',
   reopen: 'Reopen task',
@@ -29,6 +30,9 @@ export class WorkDecisions {
   #tokens;
   #grants = new WeakMap();
   #flowGrants = new WeakMap();
+  // Web/system grants live in memory only, keyed by confirmationId: a restart forces a fresh tap.
+  #sessionGrants = new Map();
+  #logger;
   constructor({
     state,
     commands,
@@ -37,7 +41,8 @@ export class WorkDecisions {
     verifyPrincipal,
     clock,
     nextId,
-    tokens
+    tokens,
+    logger = null
   }) {
     if (!state?.read || !state?.transact || !commands?.execute || typeof resolvePolicy !== 'function' || typeof verifyPrincipal !== 'function' || typeof clock !== 'function' || typeof nextId !== 'function' || !tokens?.mint || !tokens?.hash) throw new TypeError('Work decision dependencies required');
     this.#state = state;
@@ -48,6 +53,7 @@ export class WorkDecisions {
     this.#clock = clock;
     this.#id = nextId;
     this.#tokens = tokens;
+    this.#logger = logger;
   }
   async #change(username, id, asOf, build) {
     for (let n = 0; n < 8; n++) {
@@ -87,7 +93,8 @@ export class WorkDecisions {
     asOf = this.#clock()
   }) {
     const p = this.#verify(principal);
-    if (!p?.authored) throw workError('WORK_PRINCIPAL_REQUIRED');
+    // Telegram decision pages only; web and system principals confirm through confirmWeb/confirmSystem.
+    if (!p?.authored || p.platform === 'web' || p.platform === 'system') throw workError('WORK_PRINCIPAL_REQUIRED');
     if (commandId === null === (flowState === null)) throw workError('INVALID_WORK_DECISION');
     const policy = this.#policy(p.username);
     if (!policy.enabled) throw workError('WORK_DISABLED');
@@ -261,14 +268,95 @@ export class WorkDecisions {
       }];
     });
   }
+  async #grantFor({
+    principal,
+    platform,
+    commandId,
+    expectedVersion,
+    asOf
+  }) {
+    const p = this.#verify(principal);
+    if (!p || p.platform !== platform || (platform === 'web' ? p.authored !== true : p.authored !== false)) throw workError('WORK_PRINCIPAL_REQUIRED');
+    if (!Number.isFinite(asOf) || typeof commandId !== 'string' || typeof expectedVersion !== 'string' || !expectedVersion) throw workError('INVALID_WORK_CONFIRMATION');
+    const policy = this.#policy(p.username);
+    if (!policy.enabled) throw workError('WORK_DISABLED');
+    const state = await this.#state.read({
+      username: p.username
+    });
+    if (!state.health.available) throw workError('WORK_STATE_UNAVAILABLE');
+    const record = state.commands[commandId];
+    if (!record || record.command.username !== p.username || record.status !== 'queued' || record.sourcePlatform !== platform || record.policyRevision !== policy.revision) throw workError('WORK_COMMAND_UNAVAILABLE');
+    if (platform === 'system' && record.command.operation !== 'complete') throw workError('WORK_SYSTEM_OPERATION_DENIED');
+    if (record.command.expectedVersion !== expectedVersion) throw workError('WORK_SELECTION_CHANGED');
+    for (const [id, grant] of this.#sessionGrants) if (grant.expiresAt <= asOf) this.#sessionGrants.delete(id);
+    const confirmationId = `confirm.${platform}.${this.#id()}`;
+    this.#sessionGrants.set(confirmationId, {
+      platform,
+      username: p.username,
+      job: p.job ?? null,
+      commandId,
+      commandHash: workHash(record.command),
+      expectedVersion,
+      expiresAt: asOf + SESSION_GRANT_MS
+    });
+    this.#logger?.info?.('work.confirmation.granted', {
+      platform,
+      operation: record.command.operation
+    });
+    return {
+      confirmationId
+    };
+  }
+  /** The owner's tap in their own login session confirms one queued web command, once, for 5 minutes. */
+  confirmWeb({
+    principal,
+    commandId,
+    expectedVersion,
+    asOf = this.#clock()
+  }) {
+    return this.#grantFor({
+      principal,
+      platform: 'web',
+      commandId,
+      expectedVersion,
+      asOf
+    });
+  }
+  /** An unattended job's grant: only ever for `complete`, same single-use 5-minute binding. */
+  confirmSystem({
+    principal,
+    commandId,
+    expectedVersion,
+    asOf = this.#clock()
+  }) {
+    return this.#grantFor({
+      principal,
+      platform: 'system',
+      commandId,
+      expectedVersion,
+      asOf
+    });
+  }
   async verifyConfirmation({
     principal,
     command,
     confirmationId,
     asOf = this.#clock()
   }) {
-    const p = this.#verify(principal),
-      grant = p && this.#grants.get(principal);
+    const p = this.#verify(principal);
+    if (p?.platform === 'web' || p?.platform === 'system') {
+      const grant = typeof confirmationId === 'string' ? this.#sessionGrants.get(confirmationId) : null;
+      if (!grant || grant.platform !== p.platform || grant.username !== p.username || grant.job !== (p.job ?? null) || !command || command.id !== grant.commandId || command.username !== p.username || command.expectedVersion !== grant.expectedVersion || workHash(command) !== grant.commandHash || p.platform === 'system' && command.operation !== 'complete') return false;
+      // Single use: consumed by the first matching check, whether or not it is in time.
+      this.#sessionGrants.delete(confirmationId);
+      if (!Number.isFinite(asOf) || asOf >= grant.expiresAt) return false;
+      const state = await this.#state.read({
+          username: p.username
+        }),
+        record = state.commands[command.id];
+      return state.health.available && record?.status === 'queued' && record.sourcePlatform === p.platform && workHash(record.command) === grant.commandHash && record.policyRevision === this.#policy(p.username).revision;
+    }
+    const grant = p && this.#grants.get(principal);
     if (!grant || grant.decisionId !== confirmationId || grant.commandHash !== workHash(command)) return false;
     const state = await this.#state.read({
         username: p.username

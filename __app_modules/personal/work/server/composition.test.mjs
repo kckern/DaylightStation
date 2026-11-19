@@ -135,6 +135,66 @@ describe('Work runtime composition', () => {
       });
       expect(runtime.principal.verify(principal).username).toBe('sample');
       expect(runtime.backfill).toBeNull();
+      // No isActiveSession supplied: web principals are never produced (fail closed).
+      expect(runtime.principal.web({
+        session: {
+          username: 'sample',
+          sid: 'sid-1'
+        },
+        requestId: 'req-1'
+      })).toBeNull();
+      const job = runtime.principal.system({
+        username: 'sample',
+        job: 'triage-overnight'
+      });
+      expect(runtime.principal.verify(job)).toBe(job);
+      expect(runtime.principal.system({
+        username: 'unknown',
+        job: 'triage-overnight'
+      })).toBeNull();
+      expect(typeof runtime.decisions.confirmWeb).toBe('function');
+      expect(typeof runtime.decisions.confirmSystem).toBe('function');
+    } finally {
+      await runtime.dispose();
+      fs.rmSync(tmp, {
+        recursive: true,
+        force: true
+      });
+    }
+  });
+  it('captures web principals only for a live session bound to an enrolled user', async () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'work-runtime-'));
+    const live = new Set(['sid-1']);
+    const runtime = createWorkRuntime({
+      configuration: configuration(),
+      environment: 'test',
+      hostId: 'fixture-host',
+      rootForUser: username => path.join(tmp, username),
+      userTimezone: () => 'America/Los_Angeles',
+      readCurrent: async () => current(),
+      readHistory: async () => ({}),
+      identityForSender: () => null,
+      isActiveSession: (sid, username) => live.has(sid) && username === 'sample',
+      clock: () => AS_OF
+    });
+    try {
+      const input = (username, sid = 'sid-1') => ({
+        session: {
+          username,
+          sid
+        },
+        requestId: 'req-1'
+      });
+      const web = runtime.principal.web(input('sample'));
+      expect(web).toMatchObject({
+        platform: 'web',
+        username: 'sample',
+        sessionId: 'sid-1'
+      });
+      expect(runtime.principal.web(input('other'))).toBeNull();
+      expect(runtime.principal.web(input('sample', 'sid-2'))).toBeNull();
+      live.delete('sid-1');
+      expect(runtime.principal.verify(web)).toBeNull();
     } finally {
       await runtime.dispose();
       fs.rmSync(tmp, {

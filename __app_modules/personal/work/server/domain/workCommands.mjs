@@ -13,7 +13,8 @@ export function planCommand({
   asOf
 }) {
   try {
-    if (!principal?.authored || typeof principal.username !== 'string' || !Number.isFinite(asOf) || !intent || typeof intent.sourceReceipt !== 'string' || !intent.sourceReceipt || !WORK_OPERATIONS.includes(intent.operation) || intent.operation === 'read' || typeof intent.payload !== 'object' || !intent.payload || Array.isArray(intent.payload)) return {
+    // A system principal is not authored; WorkCommands has already limited it to `complete`.
+    if (!(principal?.authored || principal?.platform === 'system' && principal.authored === false) || typeof principal.username !== 'string' || !Number.isFinite(asOf) || !intent || typeof intent.sourceReceipt !== 'string' || !intent.sourceReceipt || !WORK_OPERATIONS.includes(intent.operation) || intent.operation === 'read' || typeof intent.payload !== 'object' || !intent.payload || Array.isArray(intent.payload)) return {
       denied: 'invalid_command_intent'
     };
     const route = routeWork({

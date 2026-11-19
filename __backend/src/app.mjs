@@ -3487,6 +3487,8 @@ const { readingSessions, readingSessionInterceptor } = await createSchoolReading
     getUserAuth:(service,username)=>configService.getUserAuth(service,username),getHouseholdAuth:service=>configService.getHouseholdAuth(service,householdId),send:knowledgeSend,
     knowledgeBridge:{applyProviderEvent:input=>knowledgeRuntime?.workBridge?knowledgeRuntime.workBridge.applyProviderEvent(input):Promise.resolve({applied:false,reason:knowledgeRuntime?'kb_disabled':'kb_starting',pending:!knowledgeRuntime})},
     harvesterService:harvesterServices.harvesterService,webhookSecret:systemBots.journalist?.telegram?.secret_token||'',
+    // Web principals (triage): the login session must be live AND belong to the user it claims.
+    isActiveSession:(sid,username)=>Boolean(sid)&&authSessionStore.list().some(row=>row.id===sid&&row.username===username),
     identityForSender:senderId=>{const username=userIdentityService.resolveUsername('telegram',senderId);if(!username)return null;try{return workIdentityForUser(username);}catch{return null;}},
     logger:rootLogger.child({app:'work',module:'coordination'}),
   });

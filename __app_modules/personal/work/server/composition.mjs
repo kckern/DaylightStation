@@ -258,7 +258,18 @@ export function createWorkRuntime(options = {}) {
       return identity && policy(identity.username).enabled ? identity : null;
     },
     webhookSecret: options.webhookSecret,
-    clock
+    clock,
+    // Without isActiveSession the authority never produces web principals (fail closed).
+    isActiveSession: typeof options.isActiveSession === 'function' ? (sid, username) => !stopped && options.isActiveSession(sid, username) === true : null,
+    isEnrolled: username => {
+      if (stopped) return false;
+      try {
+        return policy(username).enabled === true;
+      } catch {
+        return false;
+      }
+    },
+    logger
   });
   const reader = new ReadWorkContext({
     state,
@@ -532,13 +543,16 @@ export function createWorkRuntime(options = {}) {
     verifyPrincipal: p => principal.verify(p),
     clock,
     nextId: options.nextId ?? randomUUID,
-    tokens: createWorkCallbackTokens()
+    tokens: createWorkCallbackTokens(),
+    logger
   });
   const decisions = {
     prepare: input => track(decisionService.prepare(input)),
     recordDelivery: input => track(decisionService.recordDelivery(input)),
     recordFailure: input => track(decisionService.recordFailure(input)),
-    reply: input => track(decisionService.reply(input))
+    reply: input => track(decisionService.reply(input)),
+    confirmWeb: input => track(decisionService.confirmWeb(input)),
+    confirmSystem: input => track(decisionService.confirmSystem(input))
   };
   const selector = new SelectWorkFlow({
     state,
