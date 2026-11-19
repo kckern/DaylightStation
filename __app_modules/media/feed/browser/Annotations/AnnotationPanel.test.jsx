@@ -56,6 +56,24 @@ describe('AnnotationPanel', () => {
     }), 'POST'));
   });
 
+  test('shows online results with blocked storage and retains an offline draft on queue refusal', async () => {
+    vi.stubGlobal('localStorage', undefined);
+    try {
+      render(<AnnotationPanel item={{ id: 'one' }} />);
+      expect(await screen.findByText('Remember')).toBeInTheDocument();
+      const draft = screen.getByRole('textbox', { name: 'Add a note' });
+      fireEvent.change(draft, { target: { value: 'Draft' } });
+      apiMock.mockRejectedValue(new TypeError('Failed to fetch'));
+      fireEvent.click(screen.getByRole('button', { name: 'Save note' }));
+      expect(await screen.findByRole('alert')).toHaveTextContent('could not be saved on this device');
+      expect(draft).toHaveValue('Draft');
+      expect(screen.getAllByRole('article')).toHaveLength(1);
+      fireEvent.click(screen.getByRole('button', { name: 'Delete' }));
+      await waitFor(() => expect(apiMock).toHaveBeenCalledWith('/api/v1/feed/annotations/note-1', {}, 'DELETE'));
+      expect(screen.getByText('Remember')).toBeInTheDocument();
+    } finally { vi.unstubAllGlobals(); }
+  });
+
   test('keeps notes available and queues creation when the browser is offline', async () => {
     Object.defineProperty(navigator, 'onLine', { configurable: true, value: false });
     apiMock.mockRejectedValue(new TypeError('Failed to fetch'));

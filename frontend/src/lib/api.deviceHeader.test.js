@@ -4,6 +4,7 @@
 // backend log could say which of the house's screens made a request.
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { DaylightAPI, DaylightAPIText, DaylightStatusCheck } from './api.mjs';
+import { getUser } from './auth.js';
 import { getDeviceId, _resetDeviceIdForTests } from './deviceIdentity.js';
 
 const HEADER = 'X-Daylight-Device';
@@ -85,6 +86,29 @@ describe('DaylightAPI sends X-Daylight-Device', () => {
       [new URL('/api/v1/legacy-health', window.location.origin).href, expectedOptions],
       [finalUrl, expectedOptions],
     ]);
+  });
+
+  it('can read text and status without a stored token when storage is blocked', async () => {
+    vi.stubGlobal('localStorage', undefined);
+    expect(getUser()).toBeNull();
+    await expect(DaylightAPIText('/document')).resolves.toBe('{"ok":true}');
+    await expect(DaylightStatusCheck('/status')).resolves.toBe(200);
+    for (const [, { headers }] of fetchMock.mock.calls) {
+      expect(headers.Authorization).toBeUndefined();
+      expect(headers[HEADER]).toBeTruthy();
+    }
+  });
+
+  it('uses the returned status after a redirected write or external redirect', async () => {
+    const finalUrl = new URL('/status', window.location.origin).href;
+    fetchMock.mockResolvedValueOnce({ redirected: true, url: finalUrl, status: 201 });
+    await expect(DaylightStatusCheck('/submit', { name: 'x' }, 'POST')).resolves.toBe(201);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock.mock.calls[0][1].body).toBe('{"name":"x"}');
+
+    fetchMock.mockResolvedValueOnce({ redirected: true, url: 'https://external.invalid/document', status: 200 });
+    await expect(DaylightStatusCheck('/external')).resolves.toBe(200);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
   it('sends the same id on every call, so a run of requests is one device', async () => {

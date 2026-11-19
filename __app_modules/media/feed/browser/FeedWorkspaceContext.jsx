@@ -3,7 +3,8 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useRef, use
 import { notifications } from '@mantine/notifications';
 import { DaylightAPI } from "../../../../frontend/src/lib/api.mjs";
 import getLogger from "../../../../frontend/src/lib/logging/Logger.js";
-import { offlineStorageUser } from "./offline/feedOfflineStore.js";
+import { createBrowserMutationQueue } from "../../../../frontend/src/lib/browserMutationQueue.js";
+import { feedQueueOwner } from "./offline/feedOfflineStore.js";
 
 const FeedWorkspaceContext = createContext(null);
 const log = getLogger().child({ app: 'feed', module: 'workspace' });
@@ -13,38 +14,18 @@ const lastVisit = mode => browserPreference(`feed:last-visit:${mode}`, null);
 const PENDING_PREFIX = 'feed:pending-mutations:';
 const DEFAULT_READING_PREFERENCES = Object.freeze({ theme: 'dark', density: 'comfortable', fontScale: 1, lineHeight: 1.65, measure: 72, sessionBudget: 0 });
 
-function queueOwner() {
-  try {
-    return offlineStorageUser();
-  } catch {
-    // Reading identity can itself fail when storage access is disabled.
-    return null;
-  }
-}
+const actions = new Set(['read', 'unread', 'save', 'unsave', 'archive', 'unarchive']);
+const itemMutations = createBrowserMutationQueue({
+  prefix: PENDING_PREFIX,
+  getOwner: feedQueueOwner,
+  idOf: row => row.id,
+  valid: row => row?.id && actions.has(row.action) && Array.isArray(row.itemIds),
+});
 
 function loadReadingPreferences() {
   const stored = storedPreferences.read();
   const density = storedDensity.read();
   return { ...DEFAULT_READING_PREFERENCES, ...stored, ...(density ? { density } : {}) };
-}
-
-function pendingKey(user) {
-  return `${PENDING_PREFIX}${user}`;
-}
-
-function readPendingMutations(user) {
-  const stored = JSON.parse(localStorage.getItem(pendingKey(user)) || '[]');
-  if (!Array.isArray(stored)) return [];
-  const actions = new Set(['read', 'unread', 'save', 'unsave', 'archive', 'unarchive']);
-  return stored.filter(entry => entry?.id && actions.has(entry.action) && Array.isArray(entry.itemIds));
-}
-
-function loadPendingMutations(user) {
-  try {
-    return user ? readPendingMutations(user) : [];
-  } catch {
-    return [];
-  }
 }
 
 function updateItemState(item, state) {
@@ -75,12 +56,11 @@ function mutationId() {
 }
 
 export function FeedWorkspaceProvider({ children }) {
-  const userScopeRef = useRef(queueOwner());
+  const userScopeRef = useRef(feedQueueOwner());
   const snapshotsRef = useRef(new Map());
   const checkpointsRef = useRef({});
-  const pendingRef = useRef(loadPendingMutations(userScopeRef.current));
-  const flushRef = useRef(false);
-  const acknowledgedRef = useRef(new Set());
+  const pendingRef = useRef(itemMutations.snapshot(userScopeRef.current));
+  const activeReplayOwner = useRef(null);
   const [readingPreferences, setReadingPreferencesState] = useState(loadReadingPreferences);
   const readingPreferencesRef = useRef(readingPreferences);
   const [checkpoints, setCheckpoints] = useState({});
@@ -127,60 +107,42 @@ export function FeedWorkspaceProvider({ children }) {
     return workspace;
   }, []);
 
-  const commitPending = useCallback(update => {
-    const owner = userScopeRef.current;
-    if (!owner || owner !== queueOwner()) throw new Error('Offline account is unavailable.');
-    // Read and persist before publishing. A rejected storage operation leaves
-    // the previous durable queue and its in-memory view intact.
-    const next = update(readPendingMutations(owner));
-    localStorage.setItem(pendingKey(owner), JSON.stringify(next));
+  const publishPending = useCallback(next => {
     pendingRef.current = next;
     setPendingMutations(next);
-    return next;
   }, []);
 
   const synchronizeUserScope = useCallback(() => {
-    const currentUser = queueOwner();
+    const currentUser = feedQueueOwner();
     if (currentUser === userScopeRef.current) return currentUser;
     userScopeRef.current = currentUser;
-    acknowledgedRef.current.clear();
-    const next = loadPendingMutations(currentUser);
+    const next = itemMutations.snapshot(currentUser);
     pendingRef.current = next;
     setPendingMutations(next);
-    flushRef.current = false;
     return currentUser;
   }, []);
 
   const flushPendingMutations = useCallback(async () => {
-    synchronizeUserScope();
-    if (flushRef.current || !pendingRef.current.length || (typeof navigator !== 'undefined' && navigator.onLine === false)) return;
-    const userScope = userScopeRef.current;
-    flushRef.current = true;
-    let completed = 0;
+    const owner = synchronizeUserScope();
+    if (!owner || activeReplayOwner.current === owner || navigator.onLine === false) return;
+    activeReplayOwner.current = owner;
     try {
-      for (const operation of [...pendingRef.current]) {
-        try {
-          if (!acknowledgedRef.current.has(operation.id)) {
-            await DaylightAPI('/api/v1/feed/items/state', { itemIds: operation.itemIds, action: operation.action }, 'PATCH');
-            if (queueOwner() !== userScope) break;
-            acknowledgedRef.current.add(operation.id);
-          }
-          commitPending(current => current.filter(entry => entry.id !== operation.id));
-          acknowledgedRef.current.delete(operation.id);
-          completed += 1;
-        } catch (error) {
-          if (!isNetworkFailure(error)) log.warn('feed.offline_replay.failed', { operationId: operation.id, error: error.message });
-          break;
-        }
-      }
-      if (completed) {
+      const completed = await itemMutations.flush(owner, operation =>
+        DaylightAPI('/api/v1/feed/items/state', { itemIds: operation.itemIds, action: operation.action }, 'PATCH'), {
+        onDequeue: publishPending,
+        onError(error, operation) {
+          if (!isNetworkFailure(error)) log.warn('feed.offline_replay.failed', { operationId: operation?.id, error: error.message });
+        },
+      });
+      if (completed && owner === feedQueueOwner()) {
+        publishPending(itemMutations.snapshot(owner));
         await refreshSummary();
         notifications.show({ title: 'Offline changes synchronized', message: `${completed} queued change${completed === 1 ? '' : 's'} saved.` });
       }
     } finally {
-      flushRef.current = false;
+      if (activeReplayOwner.current === owner) activeReplayOwner.current = null;
     }
-  }, [commitPending, refreshSummary, synchronizeUserScope]);
+  }, [publishPending, refreshSummary, synchronizeUserScope]);
 
   useEffect(() => {
     let active = true;
@@ -284,11 +246,7 @@ export function FeedWorkspaceProvider({ children }) {
     const queueOffline = () => {
       const operation = { id: mutationId(), itemIds: items.map(item => item.id), action, createdAt: now };
       try {
-        if (!owner || owner !== queueOwner()) throw new Error('Offline account is unavailable.');
-        commitPending(current => {
-          if (current.length >= 500) throw new Error('The offline queue is full.');
-          return [...current, operation];
-        });
+        publishPending(itemMutations.enqueue(owner, operation));
       } catch (error) {
         onApply?.(items.map(item => updateItemState(item, previous.get(item.id))));
         notifications.show({ color: 'red', title: 'Change not saved', message: 'The offline change could not be stored. Try again when connected.' });
@@ -331,7 +289,7 @@ export function FeedWorkspaceProvider({ children }) {
       log.warn('feed.state.mutation_failed', { action, count: items.length, error: error.message });
       throw error;
     }
-  }, [commitPending, flushPendingMutations, refreshSummary, synchronizeUserScope]);
+  }, [publishPending, flushPendingMutations, refreshSummary, synchronizeUserScope]);
 
   const retrySync = useCallback(async () => {
     try {

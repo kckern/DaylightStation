@@ -1,6 +1,6 @@
 import React from 'react';
 import {it,expect,vi,afterEach} from 'vitest';
-import {render,screen,cleanup} from '@testing-library/react';
+import {act,fireEvent,render,screen,cleanup} from '@testing-library/react';
 import {MantineProvider} from '@mantine/core';
 import {MemoryRouter} from 'react-router-dom';
 import express from 'express';
@@ -20,4 +20,32 @@ it('renders actual legacy admin diagnostics with consumer evidence and top-level
  expect(await screen.findByText(/portal.*Buttons: unverified/i)).toBeTruthy();
  expect(screen.getByText('Incident reporting unavailable')).toBeTruthy();expect(screen.getByText('Timed Stop requested')).toBeTruthy();
  expect(api).toHaveBeenCalledWith('/api/v1/admin/household/shutdown/status');
+});
+
+it('refreshes enforcement on foreground return and ignores a superseded diagnostic read', async () => {
+  vi.useFakeTimers();
+  const visibility = vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('hidden');
+  const pending = [];
+  api.mockImplementation(path => path.endsWith('/shutdown/status')
+    ? new Promise(resolve => pending.push(resolve))
+    : Promise.resolve({ devices: [] }));
+  try {
+    const view = render(<MantineProvider><MemoryRouter><DevicesIndex /></MemoryRouter></MantineProvider>);
+    await act(async () => vi.advanceTimersByTime(4000));
+    expect(pending).toHaveLength(0);
+    visibility.mockReturnValue('visible');
+    fireEvent(document, new Event('visibilitychange'));
+    expect(pending).toHaveLength(1);
+    await act(async () => vi.advanceTimersByTime(2000));
+    expect(pending).toHaveLength(2);
+    await act(async () => pending[1]({ mode: 'legacy', locked: true }));
+    await act(async () => pending[0]({ mode: 'legacy', locked: false }));
+    expect(screen.getByText('Timed Stop requested')).toBeVisible();
+    view.unmount();
+    await act(async () => vi.advanceTimersByTime(4000));
+    expect(pending).toHaveLength(2);
+  } finally {
+    visibility.mockRestore();
+    vi.useRealTimers();
+  }
 });

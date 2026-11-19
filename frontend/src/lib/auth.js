@@ -15,9 +15,9 @@ export function clearToken() {
 }
 
 export function getUser() {
-  const token = getToken();
-  if (!token) return null;
   try {
+    const token = getToken();
+    if (!token) return null;
     const payload = JSON.parse(atob(token.split('.')[1]));
     return payload;
   } catch {

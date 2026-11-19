@@ -1,4 +1,4 @@
-import { browserPreference } from './browserPreference.js';
+import { getToken } from './auth.js';
 import {readRequestContextHeaders} from './requestContextHeaders.mjs';
 import getLogger from './logging/Logger.js';
 import { getDeviceId } from './deviceIdentity.js';
@@ -35,13 +35,16 @@ const getWsBaseUrl = () => {
     return `${protocol}//${window.location.host}`;
 };
 
-const apiToken = browserPreference('ds_token', null);
+function requestToken() {
+    try { return getToken(); }
+    catch { return null; } // Same-origin requests can still authenticate with cookies.
+}
 
 function prepareApiRequest(path, { method = 'GET', data, signal, ifMatch, withContentType = true } = {}) {
     const route = path.replace(/^\/|\/$/g, '');
     const url = `${getBaseUrl()}/${route}`;
     const multipart = typeof FormData !== 'undefined' && data instanceof FormData;
-    const headers = buildHeaders(apiToken.read(), withContentType && !multipart);
+    const headers = buildHeaders(requestToken(), withContentType && !multipart);
     if (ifMatch != null) headers['If-Match'] = ifMatch;
     const options = {
         method,
@@ -138,12 +141,7 @@ const errorBodyDetail = (text) => {
  * @returns {Promise<string>} the response body as text
  */
 export const DaylightAPIText = async (path) => {
-    path = path.replace(/^\/|\/$/g, '');
-    const baseUrl = getBaseUrl();
-    const token = localStorage.getItem('ds_token');
-    const response = await fetch(`${baseUrl}/${path}`, {
-        headers: buildHeaders(token, false),
-    });
+    const response = await daylightApiResponse(path, { withContentType: false });
     if (!response.ok) {
         throw new Error(`HTTP ${response.status}: ${response.statusText}`);
     }
@@ -201,24 +199,20 @@ export const DaylightWebsocketSubscribe = (path, callback) => {
 
 
 export const DaylightStatusCheck = async (path, data = {}, method = 'GET') => {
-    //remove leading and trailing slashes
-    path = path.replace(/^\/|\/$/g, '');
-    const baseUrl = getBaseUrl();
-    //same as DaylightAPI but only returns the status code
-    const token = localStorage.getItem('ds_token');
-    const options = {
+    const { url, options } = prepareApiRequest(path, {
         method,
-        headers: buildHeaders(token),
-    };
-    if (method !== 'GET') {
-        options.body = JSON.stringify(data);
-    }
-    let response = await fetch(`${baseUrl}/${path}`, options);
-    while (response.redirected) {
+        data: method === 'GET' ? undefined : data,
+    });
+    let response = await fetch(url, options);
+    // A fetch response already carries the final status after a redirect. Keep
+    // the legacy GET recheck inside this origin. Writes must execute only once.
+    const checked = new Set([url]);
+    while (method === 'GET' && response.redirected && !checked.has(response.url)
+        && new URL(response.url).origin === getBaseUrl()) {
+        checked.add(response.url);
         response = await fetch(response.url, options);
     }
-    const status = response.status;
-    return status;
+    return response.status;
 };
 
 export const DaylightMediaPath = (path) => {

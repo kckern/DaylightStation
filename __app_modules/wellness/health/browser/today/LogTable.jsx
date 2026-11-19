@@ -2,6 +2,7 @@ import { useHealthOperations } from "../operations/HealthOperationsProvider.jsx"
 import { FoodOperationStatus } from "../operations/FoodOperationStatus.jsx";
 import { useLayoutEffect, useRef, useState } from 'react';
 import { Button, NativeSelect } from '@mantine/core';
+import { browserPreference } from '@/lib/browserPreference.js';
 import { LoadingState } from '@/lib/ui';
 import { sumCounted } from "../../portable/contracts/nutrition/countedRows.mjs";
 import { MacroBadges } from "./MacroBadges.jsx";
@@ -27,6 +28,11 @@ import "./mealWorkflow.scss";
 // each gram of food exactly once; `sumCounted` says so once, for everyone.
 // A typed sentence parses faster than a photo or a recording.
 const SENTENCE_ESTIMATE_MS = 6000;
+
+const collapsedDishes = browserPreference('health:collapsed-dishes', [], raw => {
+  const parsed = JSON.parse(raw);
+  return Array.isArray(parsed) ? parsed : [];
+}, () => sessionStorage);
 
 const kcal = (rows) => Math.round(sumCounted(rows, 'calories'));
 
@@ -80,10 +86,7 @@ function Section({
     return <div key={id} className="health-meal-selection-row" data-entry-key={props.entryKey}><input type="checkbox" aria-label={`Select ${props.row.name || props.row.label || props.row.item}`}
       checked={ids.every(id=>selectedIds.includes(id))} onChange={e=>setSelection(prev=>e.target.checked?[...new Set([...prev,...ids])]:prev.filter(id=>!ids.includes(id)))}/><EntryRow {...props}/></div>;
   };
-  const [collapsed, setCollapsed] = useState(() => {
-    try { return new Set(JSON.parse(sessionStorage.getItem('health:collapsed-dishes') || '[]')); }
-    catch { return new Set(); }
-  });
+  const [collapsed, setCollapsed] = useState(() => new Set(collapsedDishes.read()));
   // Heaviest first, and each calorie cell carries its share of the meal's
   // largest entry (an ingredient: of its dish) for the inline bar.
   // While a portion/numeric drag (or its save) is live, the order holds still
@@ -118,17 +121,17 @@ function Section({
   // Add/remove an ingredient in place — only in a real meal, not while picking foods.
   const dish = useDishMembership({ date, bucket, rows, onChanged });
   const dishEditable = Boolean(bucket && onChanged && !selecting);
-  const toggle = (key) => setCollapsed((prev) => {
-    const next = new Set(prev);
-    if (next.has(key)) next.delete(key); else next.add(key);
-    try {
-      // Other meal sections may have changed since this section mounted.
-      const stored = new Set(JSON.parse(sessionStorage.getItem('health:collapsed-dishes') || '[]'));
-      if (next.has(key)) stored.add(key); else stored.delete(key);
-      sessionStorage.setItem('health:collapsed-dishes', JSON.stringify([...stored]));
-    } catch { /* Storage is optional. */ }
-    return next;
-  });
+  const toggle = (key, shouldCollapse) => {
+    // Merge only this key; other meal sections can write after this section mounts.
+    const stored = new Set(collapsedDishes.read());
+    if (shouldCollapse) stored.add(key); else stored.delete(key);
+    collapsedDishes.write(JSON.stringify([...stored]));
+    setCollapsed(prev => {
+      const next = new Set(prev);
+      if (shouldCollapse) next.add(key); else next.delete(key);
+      return next;
+    });
+  };
 
   return (
     <section className={['health-meal', drop.dragging && 'health-meal--drop-candidate', drop.over && 'health-meal--drop-over'].filter(Boolean).join(' ')}
@@ -204,7 +207,7 @@ function Section({
                 whatever opens next (EntryEditSheet's group mode needs the
                 full child list to scale/move/delete them together). */}
             {renderRow({ row:{...row,children},densityRow:{kind:'group',children},onTap:onRowTap,onConfirm,onRequestDelete,onChanged,measured,kcalShare:entryShares[entryIndex],
-              isGroup:true,expanded:isOpen,onToggle:()=>toggle(key),rollupKcal:rollup.calories })}
+              isGroup:true,expanded:isOpen,onToggle:()=>toggle(key, isOpen),rollupKcal:rollup.calories })}
             {isOpen ? children.map((c,index)=>renderRow({row:c,onTap:onRowTap,onConfirm,onRequestDelete,onChanged,child:true,lastChild:index===children.length-1 && !dishEditable,kcalShare:childShares[index],
               measured:measuredByUuid?.get(c.uuid) ?? measuredByUuid?.get(c.id) ?? null})) : null}
             {isOpen && dishEditable ? <DishAddRow dishName={row.name || row.item || row.label} candidates={dishOptions(rows, key)}

@@ -45,6 +45,31 @@ describe('PriorityList', () => {
     wrap(<PriorityList priorities={items} />);
     expect(screen.getByText('Name your purpose')).toBeInTheDocument();
   });
+  it('preserves sibling and other member dismissals written since mounting', () => {
+    const key = 'life.priorities.dismissed';
+    const today = new Date().toISOString().slice(0, 10);
+    wrap(<PriorityList priorities={items} />);
+    const sibling = `alice:${today}:plan_gap:Name your purpose`;
+    const otherMember = `bob:${today}:ceremony_due:Set your intention`;
+    localStorage.setItem(key, JSON.stringify([sibling, otherMember]));
+    fireEvent.click(screen.getByLabelText('Dismiss Set your intention'));
+    expect(new Set(JSON.parse(localStorage.getItem(key)))).toEqual(new Set([sibling, otherMember, `alice:${today}:ceremony_due:Set your intention`]));
+    expect(screen.queryByText('Name your purpose')).not.toBeInTheDocument();
+  });
+  it('retains valid dismissals alongside malformed entries', () => {
+    const today = new Date().toISOString().slice(0, 10);
+    localStorage.setItem('life.priorities.dismissed', JSON.stringify([null, `alice:${today}:plan_gap:Name your purpose`]));
+    wrap(<PriorityList priorities={items} />);
+    expect(screen.queryByText('Name your purpose')).not.toBeInTheDocument();
+  });
+  it('keeps both dismissals for the mounted view when storage is blocked', () => {
+    vi.stubGlobal('localStorage', undefined);
+    try {
+      wrap(<PriorityList priorities={items} />);
+      for (const item of items) fireEvent.click(screen.getByLabelText('Dismiss ' + item.title));
+      expect(screen.getByText(/caught up/)).toBeInTheDocument();
+    } finally { vi.unstubAllGlobals(); }
+  });
   it('prunes dismissed entries from a prior day so a stable-titled daily card (e.g. ceremony_due) is not hidden forever', () => {
     const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
     localStorage.setItem('life.priorities.dismissed', JSON.stringify([`alice:${yesterday}:ceremony_due:Set your intention`]));

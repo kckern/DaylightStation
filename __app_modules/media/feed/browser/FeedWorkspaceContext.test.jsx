@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, test, vi } from 'vitest';
 import { useState } from 'react';
 import { notifications } from '@mantine/notifications';
@@ -176,6 +176,30 @@ describe('FeedWorkspaceProvider reading preferences', () => {
     await waitFor(() => expect(screen.getByLabelText('failure')).not.toBeEmptyDOMElement());
     expect(screen.getByLabelText('saved')).toHaveTextContent('false');
     expect(localStorage.getItem(key)).toBe(existing);
+  });
+
+  test('finishes local cleanup after an account switch without sending the same change twice', async () => {
+    const key = 'feed:pending-mutations:alice';
+    const first = { id: 'first', itemIds: ['first'], action: 'save' };
+    const second = { id: 'second', itemIds: ['second'], action: 'read' };
+    localStorage.setItem('ds_token', tokenFor('alice'));
+    localStorage.setItem(key, JSON.stringify([first]));
+    let release;
+    apiMock.mockImplementation((path, data) => {
+      if (path.endsWith('/items/state') && data.itemIds[0] === 'first') return new Promise(resolve => { release = resolve; });
+      return Promise.resolve({});
+    });
+    render(<FeedWorkspaceProvider><MutationProbe /></FeedWorkspaceProvider>);
+    await waitFor(() => expect(release).toBeTypeOf('function'));
+    localStorage.setItem(key, JSON.stringify([first, second]));
+    localStorage.setItem('ds_token', tokenFor('bob'));
+    await act(async () => { release({}); });
+    expect(JSON.parse(localStorage.getItem(key))).toEqual([first, second]);
+    expect(localStorage.getItem('feed:pending-mutations:bob')).toBeNull();
+    localStorage.setItem('ds_token', tokenFor('alice'));
+    fireEvent(window, new Event('online'));
+    await waitFor(() => expect(JSON.parse(localStorage.getItem(key))).toEqual([]));
+    expect(apiMock.mock.calls.filter(([path]) => path.endsWith('/items/state')).map(([, data]) => data.itemIds[0])).toEqual(['first', 'second']);
   });
 
   test('never loads or replays another account’s pending mutations', async () => {

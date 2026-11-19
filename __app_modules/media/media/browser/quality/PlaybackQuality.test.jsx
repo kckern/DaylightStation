@@ -26,6 +26,20 @@ beforeEach(() => sessionStorage.clear());
 afterEach(cleanup);
 
 describe('MediaApp item quality overrides', () => {
+  it('restores normalized overrides for this tab and drops only invalid items', () => {
+    const key = 'media-app.quality-overrides.v1';
+    sessionStorage.setItem(key, JSON.stringify({
+      'plex:42': { maxVideoResolution: '720p', adaptive: 'false' },
+      'plex:43': { maxResolution: 'invalid' },
+    }));
+    wrap(<Selected />);
+    const quality = { maxResolution: '720', adaptive: false };
+    expect(JSON.parse(screen.getByTestId('saved-quality').textContent)).toEqual(quality);
+    expect(screen.getByTestId('other-quality')).toHaveTextContent('{}');
+    expect(JSON.parse(sessionStorage.getItem(key))).toEqual({ 'plex:42': quality });
+    expect(localStorage.getItem(key)).toBeNull();
+  });
+
   it('sets explicit quality on one selected item without starting playback', async () => {
     wrap(<Selected />);
     fireEvent.click(screen.getByRole('button', { name: /quality/i }));

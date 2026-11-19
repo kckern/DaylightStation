@@ -1,10 +1,12 @@
+import { getToken } from '../../../../../frontend/src/lib/auth.js';
+
 const DB_NAME = 'daylight-feed-offline-v1';
 const STORE = 'editions';
 const MAX_EDITIONS = 100;
 let dbPromise = null;
 
 function userScope() {
-  const token = localStorage.getItem('ds_token');
+  const token = getToken();
   if (!token) return 'household';
   try {
     const encoded = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
@@ -85,4 +87,10 @@ export async function removeOfflineEdition(id) {
 
 export function offlineStorageUser() {
   return userScope();
+}
+
+// A blocked identity read cannot establish whose offline changes would be stored.
+export function feedQueueOwner() {
+  try { return offlineStorageUser(); }
+  catch { return null; }
 }

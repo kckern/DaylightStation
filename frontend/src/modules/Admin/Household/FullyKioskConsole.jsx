@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useVisibleRefresh } from '../../../lib/hooks/useVisibleRefresh.js';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
   Accordion,
@@ -226,11 +227,7 @@ function FullyKioskConsole() {
     refreshScreenshot();
   }, [refreshSettings, refreshScreenshot, refreshStatus]);
 
-  useEffect(() => {
-    if (!autoScreenshot) return undefined;
-    const timer = window.setInterval(refreshScreenshot, 5000);
-    return () => window.clearInterval(timer);
-  }, [autoScreenshot, refreshScreenshot]);
+  useVisibleRefresh({ active: autoScreenshot, intervalMs: 5000, reload: refreshScreenshot });
 
   useEffect(() => () => {
     mountedRef.current = false;

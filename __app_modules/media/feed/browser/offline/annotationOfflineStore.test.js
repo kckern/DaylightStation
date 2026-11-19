@@ -43,6 +43,39 @@ describe('annotationOfflineStore', () => {
     expect(queuedAnnotationCount()).toBe(0);
   });
 
+  test('sends an operation appended while a previous send is pending', async () => {
+    queueAnnotationMutation({ queueId: 'first', method: 'POST', path: '/first' });
+    let release;
+    const send = vi.fn().mockImplementationOnce(() => new Promise(resolve => { release = resolve; })).mockResolvedValue({});
+    const flush = flushAnnotationMutations(send);
+    queueAnnotationMutation({ queueId: 'second', method: 'PATCH', path: '/second' });
+    release();
+    expect(await flush).toBe(2);
+    expect(send.mock.calls.map(([path]) => path)).toEqual(['/first', '/second']);
+    expect(queuedAnnotationCount()).toBe(0);
+  });
+
+  test('retries local cleanup without resending an acknowledged create', async () => {
+    queueAnnotationMutation({ queueId: 'cleanup', method: 'POST', path: '/notes' });
+    const send = vi.fn().mockResolvedValue({});
+    const write = vi.spyOn(localStorage, 'setItem').mockImplementation(() => { throw new Error('quota'); });
+    try {
+      expect(await flushAnnotationMutations(send)).toBe(0);
+      expect(queuedAnnotationCount()).toBe(1);
+    } finally { write.mockRestore(); }
+    expect(await flushAnnotationMutations(send)).toBe(1);
+    expect(send).toHaveBeenCalledTimes(1);
+  });
+
+  test('rejects a full or unreadable queue without replacing its contents', () => {
+    const key = 'feed:annotation-queue:household';
+    for (const raw of [JSON.stringify(Array.from({ length: 500 }, (_, i) => ({ queueId: String(i) }))), 'corrupt']) {
+      localStorage.setItem(key, raw);
+      expect(() => queueAnnotationMutation({ queueId: 'new' })).toThrow();
+      expect(localStorage.getItem(key)).toBe(raw);
+    }
+  });
+
   test('does not write a completed replay into a different account queue', async () => {
     const tokenFor = username => `header.${btoa(JSON.stringify({ sub: username })).replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_')}.signature`;
     localStorage.setItem('ds_token', tokenFor('alice'));

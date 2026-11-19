@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Stack, Text, SimpleGrid, Card, Badge, Button, Group, Modal,
@@ -6,6 +6,7 @@ import {
 } from '@mantine/core';
 import { IconPlus, IconAlertCircle } from '@tabler/icons-react';
 import {EnforcementStatus} from '../../../../../__app_modules/household/supervision/browser/index.js';
+import { useVisibleRefresh } from '../../../lib/hooks/useVisibleRefresh.js';
 import { useApiResource } from '../../../lib/hooks/useApiResource.js';
 import { DaylightAPI } from '../../../lib/api.mjs';
 
@@ -40,16 +41,24 @@ function DevicesIndex() {
   const [createErrors, setCreateErrors] = useState({});
   const [creating, setCreating] = useState(false);
 
-  useEffect(()=>{
-    let disposed=false;
-    const refresh=async()=>{
+  const latestStatusRead = useRef(0);
+  const refreshEnforcement = useCallback(async () => {
+    const read = ++latestStatusRead.current;
+    setEnforcementNow(Date.now());
+    try {
+      const status = await DaylightAPI('/api/v1/admin/household/shutdown/status');
+      if (read !== latestStatusRead.current) return;
+      setShutdown(status);
       setEnforcementNow(Date.now());
-      try{const status=await DaylightAPI('/api/v1/admin/household/shutdown/status');if(!disposed){setShutdown(status);setEnforcementNow(Date.now());}}
-      catch{if(!disposed)setShutdown(null);}
-    };
-    void refresh();const timer=setInterval(()=>void refresh(),2000);
-    return()=>{disposed=true;clearInterval(timer);};
-  },[]);
+    } catch {
+      if (read === latestStatusRead.current) setShutdown(null);
+    }
+  }, []);
+  useEffect(() => {
+    if (document.visibilityState === 'visible') refreshEnforcement();
+    return () => { latestStatusRead.current++; };
+  }, [refreshEnforcement]);
+  useVisibleRefresh({ intervalMs: 2000, reload: refreshEnforcement });
 
   const handleCreateFormChange = (field, value) => {
     setCreateForm(prev => ({ ...prev, [field]: value }));

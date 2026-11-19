@@ -17,7 +17,7 @@
 // than a pack `font` field, since AppThemeProvider/createAppTheme don't yet
 // read one and a single scoped rule is the smaller, reversible change.
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import '@mantine/core/styles.css';
 import { ActionIcon } from '@mantine/core';
 import {
@@ -102,6 +102,7 @@ const TABS = [
 ];
 
 function AutoAppShell() {
+  const garageFocus = useRef(null);
   const [tab, setTab] = useState('overview');
   const [vehicleId, setVehicleId] = useState(null);
   const [includeShuffles, setIncludeShuffles] = useState(false);
@@ -146,110 +147,101 @@ function AutoAppShell() {
     service.reload();
   };
 
+  let garageContent;
   if (vehicles.loading) {
-    return <div className="auto-app"><LoadingState label="garage" /></div>;
+    garageContent = <LoadingState label="garage" />;
+  } else if (vehicles.error) {
+    garageContent = <ErrorState error={vehicles.error} onRetry={vehicles.reload} label="Garage" />;
+  } else if (!vehicles.data?.vehicles?.length) {
+    garageContent = <EmptyState
+      title="No vehicles yet"
+      hint="A vehicle appears here once the in-car device uploads a trip, or once records are added under household/automotive/."
+    />;
+  } else if (!vehicleId) {
+    garageContent = <Garage vehicles={vehicles.data.vehicles} restoreFocus={garageFocus}
+      onPick={(id) => { setVehicleId(id); autoLog.debug('garage.picked', { vehicleId: id }); }} />;
   }
-  if (vehicles.error) {
-    return <div className="auto-app"><ErrorState error={vehicles.error} onRetry={vehicles.reload} label="Garage" /></div>;
-  }
-  if (!vehicles.data?.vehicles?.length) {
-    return (
-      <div className="auto-app">
-        <EmptyState
-          title="No vehicles yet"
-          hint="A vehicle appears here once the in-car device uploads a trip, or once records are added under household/automotive/."
-        />
-      </div>
-    );
-  }
-
-  if (!vehicleId) {
-    return (
-      <Garage
-        vehicles={vehicles.data.vehicles}
-        onPick={(id) => { setVehicleId(id); autoLog.debug('garage.picked', { vehicleId: id }); }}
-      />
-    );
-  }
+  if (garageContent) return <AppChrome title="Garage">{garageContent}</AppChrome>;
 
   const headerActions = vehicles.data.vehicles.length > 1
     ? [(
-      <ActionIcon key="back" aria-label="Back to garage" variant="subtle" onClick={() => setVehicleId(null)}>
+      <ActionIcon key="back" aria-label="Back to garage" variant="subtle" autoFocus onClick={() => {
+        garageFocus.current = vehicleId;
+        setVehicleId(null);
+      }}>
         <BackIcon />
       </ActionIcon>
     )]
     : undefined;
 
   return (
-    <div className="auto-app">
-      <AppChrome
-        title={vehicleLabel}
-        tabs={TABS}
-        activeTab={tab}
-        onTabChange={(id) => { setTab(id); autoLog.debug('tab.changed', { tab: id }); }}
-        headerActions={headerActions}
-      >
-        {tab === 'overview' && (
-          <OverviewPanel
-            overview={overview.data}
-            loading={overview.loading}
-            error={overview.error}
-            onReload={overview.reload}
-            onGoTo={setTab}
-            vehicleDescription={describeVehicle(overview.data?.vehicle)}
-          />
-        )}
-        {tab === 'drives' && (
-          <DrivesPanel
-            vehicleId={vehicleId}
-            journeys={journeys.data?.journeys}
-            hidden={journeys.data?.hidden || 0}
-            fuelLogs={fuel.data?.logs}
-            loading={journeys.loading}
-            error={journeys.error}
-            onReload={journeys.reload}
-            onFuelLogged={() => { fuel.reload(); overview.reload(); }}
-            includeShuffles={includeShuffles}
-            onToggleShuffles={() => setIncludeShuffles((v) => !v)}
-          />
-        )}
-        {tab === 'fuel' && (
-          <FuelPanel
-            vehicleId={vehicleId}
-            fuel={fuel.data}
-            loading={fuel.loading}
-            error={fuel.error}
-            onReload={() => { fuel.reload(); reloadAll(); }}
-          />
-        )}
-        {tab === 'service' && (
-          <ServicePanel
-            vehicleId={vehicleId}
-            service={service.data}
-            reminders={overview.data?.reminders}
-            serviceTypes={serviceTypes.data?.types}
-            loading={service.loading}
-            error={service.error}
-            onReload={() => { service.reload(); reloadAll(); }}
-          />
-        )}
-        {tab === 'glove' && (
-          <GlovePanel
-            documents={documents.data}
-            reminders={overview.data?.reminders}
-            loading={documents.loading}
-            error={documents.error}
-            onReload={documents.reload}
-          />
-        )}
-      </AppChrome>
-    </div>
+    <AppChrome
+      title={vehicleLabel}
+      tabs={TABS}
+      activeTab={tab}
+      onTabChange={(id) => { setTab(id); autoLog.debug('tab.changed', { tab: id }); }}
+      headerActions={headerActions}
+    >
+      {tab === 'overview' && (
+        <OverviewPanel
+          overview={overview.data}
+          loading={overview.loading}
+          error={overview.error}
+          onReload={overview.reload}
+          onGoTo={setTab}
+          vehicleDescription={describeVehicle(overview.data?.vehicle)}
+        />
+      )}
+      {tab === 'drives' && (
+        <DrivesPanel
+          vehicleId={vehicleId}
+          journeys={journeys.data?.journeys}
+          hidden={journeys.data?.hidden || 0}
+          fuelLogs={fuel.data?.logs}
+          loading={journeys.loading}
+          error={journeys.error}
+          onReload={journeys.reload}
+          onFuelLogged={() => { fuel.reload(); overview.reload(); }}
+          includeShuffles={includeShuffles}
+          onToggleShuffles={() => setIncludeShuffles((v) => !v)}
+        />
+      )}
+      {tab === 'fuel' && (
+        <FuelPanel
+          vehicleId={vehicleId}
+          fuel={fuel.data}
+          loading={fuel.loading}
+          error={fuel.error}
+          onReload={() => { fuel.reload(); reloadAll(); }}
+        />
+      )}
+      {tab === 'service' && (
+        <ServicePanel
+          vehicleId={vehicleId}
+          service={service.data}
+          reminders={overview.data?.reminders}
+          serviceTypes={serviceTypes.data?.types}
+          loading={service.loading}
+          error={service.error}
+          onReload={() => { service.reload(); reloadAll(); }}
+        />
+      )}
+      {tab === 'glove' && (
+        <GlovePanel
+          documents={documents.data}
+          reminders={overview.data?.reminders}
+          loading={documents.loading}
+          error={documents.error}
+          onReload={documents.reload}
+        />
+      )}
+    </AppChrome>
   );
 }
 
 export default function AutoApp() {
   return (
-    <AppThemeProvider pack="auto">
+    <AppThemeProvider pack="auto" className="auto-app">
       <DismissStackProvider>
         <AutoAppShell />
       </DismissStackProvider>
@@ -264,26 +256,25 @@ export default function AutoApp() {
  * through a list of one. The structure exists regardless, which is what makes
  * adding a second car — or keeping a sold one — additive rather than a rewrite.
  */
-function Garage({ vehicles, onPick }) {
+function Garage({ vehicles, onPick, restoreFocus }) {
   return (
-    <div className="auto-app">
-      <header className="auto-header">
-        <h1 className="auto-header__title">Garage</h1>
-      </header>
-      <main className="auto-main">
-        <ul className="auto-list">
-          {vehicles.map((vehicle) => (
-            <li key={vehicle.id} className="auto-doc">
-              <button type="button" className="auto-doc__link auto-garage__pick" onClick={() => onPick(vehicle.id)}>
-                <span className="auto-doc__label">{vehicle.label || vehicle.id}</span>
-                {describeVehicle(vehicle) && (
-                  <span className="auto-doc__kind">{describeVehicle(vehicle)}</span>
-                )}
-              </button>
-            </li>
-          ))}
-        </ul>
-      </main>
-    </div>
+    <ul className="auto-list">
+      {vehicles.map((vehicle) => (
+        <li key={vehicle.id} className="auto-doc">
+          <button type="button" className="auto-doc__link auto-garage__pick" onClick={() => onPick(vehicle.id)}
+            ref={button => {
+              if (button && restoreFocus.current === vehicle.id) {
+                button.focus();
+                restoreFocus.current = null;
+              }
+            }}>
+            <span className="auto-doc__label">{vehicle.label || vehicle.id}</span>
+            {describeVehicle(vehicle) && (
+              <span className="auto-doc__kind">{describeVehicle(vehicle)}</span>
+            )}
+          </button>
+        </li>
+      ))}
+    </ul>
   );
 }

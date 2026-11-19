@@ -289,6 +289,12 @@ describe('FullyKioskConsole', () => {
     vi.useFakeTimers();
 
     fireEvent.click(screen.getByRole('switch', { name: 'Every 5s' }));
+    const visibility = vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('hidden');
+    fireEvent(document, new Event('visibilitychange'));
+    await act(async () => { vi.advanceTimersByTime(10_000); });
+    expect(api.screenshot).toHaveBeenCalledTimes(1);
+    visibility.mockReturnValue('visible');
+    fireEvent(document, new Event('visibilitychange'));
     await act(async () => { vi.advanceTimersByTime(5000); });
     expect(api.screenshot).toHaveBeenCalledTimes(2);
     const signal = api.screenshot.mock.calls[1][1].signal;

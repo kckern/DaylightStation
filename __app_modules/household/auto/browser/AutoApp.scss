@@ -12,42 +12,9 @@
 // this file keeps only what's genuinely app-specific: the dense card/list/
 // form layouts a garage screen actually needs.
 
-// Four branches (vehicles.loading / vehicles.error / no-vehicles / the
-// multi-vehicle Garage picker) render OUTSIDE AppChrome — this wrapper is
-// their only source of DS background/text tokens, so it still needs to look
-// like a real page root, not just carry the typeface. AppChrome-wrapped
-// branches get the identical tokens from .ds-chrome, so this is idempotent
-// where the two are nested. .auto-main (flex: 1) also relies on this being
-// a flex column, same as before the migration.
 .auto-app {
-  display: flex;
-  flex-direction: column;
-  min-height: 100vh;
-  min-height: 100dvh; // dvh: mobile browser chrome shrinks/grows as you scroll
-  background: var(--ds-background);
-  color: var(--ds-text-high);
   font-family: 'Roboto Condensed', system-ui, sans-serif;
-  font-size: 16px; // never below 16px on inputs — iOS zooms the viewport otherwise
-}
-
-// Garage (vehicle picker) header — the only screen still using a hand-rolled
-// header; the vehicle-selected view's header/tabs come from AppChrome.
-.auto-header {
-  position: sticky;
-  top: 0;
-  z-index: 5;
-  padding: 0.85rem 1rem;
-  padding-top: max(0.85rem, env(safe-area-inset-top));
-  background: color-mix(in srgb, var(--ds-background) 92%, transparent);
-  backdrop-filter: blur(8px);
-  border-bottom: 1px solid var(--ds-border);
-
-  &__title {
-    margin: 0;
-    font-size: 1.35rem;
-    font-weight: 700;
-    letter-spacing: 0.01em;
-  }
+  font-size: 16px;
 }
 
 .auto-garage__pick {
@@ -61,11 +28,6 @@
   // Label above the year/make/model line, reversing the document ordering.
   flex-direction: column-reverse;
   align-items: flex-start;
-}
-
-.auto-main {
-  flex: 1;
-  padding: 1rem;
 }
 
 .auto-panel { display: flex; flex-direction: column; gap: 0.85rem; }
@@ -289,13 +251,6 @@
 
 // Tablet and up: content stops running full-bleed.
 @media (min-width: 48rem) {
-  .auto-main {
-    max-width: 46rem;
-    margin: 0 auto;
-    width: 100%;
-    padding-bottom: 2rem;
-  }
-
   .auto-app .ds-chrome__main {
     max-width: 46rem;
     margin: 0 auto;
@@ -305,7 +260,6 @@
 
 // Desktop: two columns, so the overview stops being a long scroll.
 @media (min-width: 72rem) {
-  .auto-main { max-width: 64rem; }
   .auto-app .ds-chrome__main { max-width: 64rem; }
 
   .auto-panel {

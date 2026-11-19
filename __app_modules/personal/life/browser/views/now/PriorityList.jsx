@@ -1,11 +1,15 @@
 import { useState } from 'react';
+import { browserPreference } from '@/lib/browserPreference.js';
 import { Stack, Paper, Group, Text, Badge, ThemeIcon, ActionIcon } from '@mantine/core';
 import { IconX } from '@tabler/icons-react';
 import { useNavigate } from 'react-router-dom';
 import { priorityTypeMeta } from "../../theme/semantics.js";
 import { useLifeUsername } from "../../hooks/useLifeUser.js";
 
-const DISMISS_KEY = 'life.priorities.dismissed';
+const dismissalPreference = browserPreference('life.priorities.dismissed', [], raw => {
+  const parsed = JSON.parse(raw);
+  return Array.isArray(parsed) ? parsed : [];
+});
 
 function todayStr() {
   return new Date().toISOString().slice(0, 10);
@@ -17,15 +21,10 @@ function todayStr() {
  * persisting the pruned set so localStorage doesn't grow unbounded.
  */
 function loadDismissed(today) {
-  try {
-    const raw = JSON.parse(localStorage.getItem(DISMISS_KEY) || '[]');
-    const pruned = raw.filter((k) => k.split(':')[1] === today);
-    if (pruned.length !== raw.length) {
-      try { localStorage.setItem(DISMISS_KEY, JSON.stringify(pruned)); }
-      catch { /* ignore quota/private-mode errors */ }
-    }
-    return new Set(pruned);
-  } catch { return new Set(); }
+  const stored = dismissalPreference.read();
+  const current = stored.filter(key => typeof key === 'string' && key.split(':')[1] === today);
+  if (current.length !== stored.length) dismissalPreference.write(JSON.stringify(current));
+  return new Set(current);
 }
 
 function routeFor(item) {
@@ -49,10 +48,13 @@ export function PriorityList({ priorities = [] }) {
   const [dismissed, setDismissed] = useState(() => loadDismissed(today));
 
   const dismiss = (item) => {
-    const next = new Set(dismissed); next.add(keyOf(item));
+    const next = loadDismissed(today);
+    for (const key of dismissed) {
+      if (key.split(':')[1] === today) next.add(key);
+    }
+    next.add(keyOf(item));
     setDismissed(next);
-    try { localStorage.setItem(DISMISS_KEY, JSON.stringify([...next])); }
-    catch { /* ignore quota/private-mode errors */ }
+    dismissalPreference.write(JSON.stringify([...next]));
   };
 
   const visible = priorities.filter((p) => !dismissed.has(keyOf(p))).slice(0, 5);
