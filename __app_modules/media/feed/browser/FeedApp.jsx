@@ -1,7 +1,8 @@
 import { Select } from '@/lib/ui/Select.jsx';
 import { PlaybackFrame } from '@/lib/ui/AppFrame.jsx';
+import { useHotkey } from '@/lib/hooks/useHotkey.js';
 import { lazy, Suspense, useCallback, useState, useEffect, useRef } from 'react';
-import { Routes, Route, NavLink, Navigate, Outlet, useParams, useLocation, useNavigate } from 'react-router-dom';
+import { Routes, Route, NavLink, Navigate, Outlet, useParams, useLocation, useMatch, useNavigate } from 'react-router-dom';
 import { AppThemeProvider } from '@/lib/ui/AppThemeProvider.jsx';
 import { Notifications } from '@mantine/notifications';
 import '@mantine/core/styles.css';
@@ -23,6 +24,7 @@ const Headlines = lazy(() => import("./Headlines/Headlines.jsx"));
 const Scroll = lazy(() => import("./Scroll/Scroll.jsx"));
 const Reader = lazy(() => import("./Reader/Reader.jsx"));
 const FeedSearch = lazy(() => import("./Search/FeedSearch.jsx"));
+const SEARCH_PATH = '/feed/search';
 
 const log = getLogger().child({ app: 'feed', module: 'feed-app', sessionLog: true });
 
@@ -91,6 +93,7 @@ function FeedLayout() {
   const navigate = useNavigate();
   const isScroll = location.pathname.startsWith('/feed/scroll');
   const isHeadlines = location.pathname.startsWith('/feed/headlines');
+  const isSearch = Boolean(useMatch(SEARCH_PATH));
   const currentHeadlinePage = isHeadlines ? location.pathname.split('/').filter(Boolean)[2] : '';
   const { density, setDensity, readingPreferences, setReadingPreference, summary, retrySync, pendingMutations, workspaceReady, refreshSummary, refreshWorkspace, sourcePreferences, setSourcePreference } = useFeedWorkspace();
 
@@ -116,16 +119,10 @@ function FeedLayout() {
     }
   }, [showMiniBar, activeMedia, playerVisible]);
 
-  useEffect(() => {
-    const onKeyDown = event => {
-      if (event.key !== '/' || event.metaKey || event.ctrlKey || event.altKey) return;
-      if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement || event.target instanceof HTMLSelectElement || event.target?.isContentEditable) return;
-      event.preventDefault();
-      navigate('/feed/search');
-    };
-    document.addEventListener('keydown', onKeyDown);
-    return () => document.removeEventListener('keydown', onKeyDown);
-  }, [navigate]);
+  useHotkey('/', () => {
+    if (isSearch) return false;
+    navigate(SEARCH_PATH);
+  });
 
   return (
     <PlaybackFrame
@@ -179,7 +176,7 @@ function FeedLayout() {
             </Select>
           </label>
         )}
-        <NavLink to="/feed/search" aria-label="Search feed history" className={({ isActive }) => `feed-tabs__icon ${isActive ? 'active' : ''}`}>Search</NavLink>
+        <NavLink to={SEARCH_PATH} aria-label="Search feed history" className={({ isActive }) => `feed-tabs__icon ${isActive ? 'active' : ''}`}>Search</NavLink>
         <button className="feed-density-toggle" onClick={() => setDensity(density === 'compact' ? 'comfortable' : 'compact')} aria-label={`Use ${density === 'compact' ? 'comfortable' : 'compact'} density`}>
           {density === 'compact' ? 'Comfort' : 'Compact'}
         </button>

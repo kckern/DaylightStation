@@ -96,3 +96,27 @@ test('Health activates one coach shortcut across tab and household changes', asy
     expect(await shortcutMatches()).toBe(0);
   }
 });
+
+test('Health Coach yields Mod+K to its composer and restores the shortcut opener', async ({ page }) => {
+  await page.route('**/health/context', route => route.fulfill({ json: { userId: 'alice' } }));
+  await page.goto('/health/coach');
+  const main = page.getByRole('main');
+  const composer = main.getByPlaceholder(/^Ask…/);
+  const coach = page.getByRole('dialog', { name: 'Health Coach', exact: true });
+  await composer.focus();
+  await page.keyboard.press('Control+k');
+  await expect(composer).toBeFocused();
+  await expect(coach).toHaveCount(0);
+
+  const opener = page.getByRole('link', { name: 'Coach', exact: true });
+  await opener.focus();
+  await page.keyboard.press('Control+k');
+  await expect(coach).toBeVisible();
+  const close = coach.getByRole('button', { name: 'Close', exact: true });
+  await close.focus();
+  await page.keyboard.press('Control+k');
+  await expect(close).toBeFocused();
+  await page.keyboard.press('Escape');
+  await expect(coach).toHaveCount(0);
+  await expect(opener).toBeFocused();
+});

@@ -3,6 +3,7 @@
 // mobile), and a canvas showing exactly one view. Playback chrome (mini
 // player, dispatch tray) docks between canvas and tab bar on mobile.
 import { PlaybackFrame } from '@/lib/ui/AppFrame.jsx';
+import { useHotkey } from '@/lib/hooks/useHotkey.js';
 import React, { useCallback, useState } from 'react';
 import { NavProvider, useNav } from "./NavProvider.jsx";
 import { DismissStackProvider } from "./DismissStackProvider.jsx";
@@ -18,7 +19,6 @@ import { LocalPlaybackOutcomes } from "./LocalPlaybackOutcomes.jsx";
 import { RemoteScreenProblems } from "./RemoteScreenProblems.jsx";
 import { LocalStopFeedbackProvider, useLocalStopFeedbackCount } from "./LocalStopFeedbackContext.jsx";
 import { SearchLauncherContext } from "./SearchLauncherContext.js";
-import { slashIsNotForSearch } from "./searchShortcut.js";
 import { PlaybackQualityHost } from "../quality/PlaybackQualityProvider.jsx";
 import mediaLog from "../logging/mediaLog.js";
 import "./MediaShell.scss";
@@ -49,22 +49,14 @@ function ShellInner() {
     if (depth > 1) pop();
   }, [depth, pop]);
 
-  // `/` focuses search from anywhere (unless already typing somewhere).
-  React.useEffect(() => {
-    const onKey = (e) => {
-      if (slashIsNotForSearch(e)) return;
-      // Tablet/laptop: the dock's search field. Phone: its field is hidden, so
-      // the same key opens the full-screen search instead (NF-DEV-03).
-      const input = searchInputRef.current;
-      if (input && input.getClientRects().length > 0) { e.preventDefault(); input.focus(); return; }
-      if (launcherRef.current?.getClientRects().length > 0) {
-        e.preventDefault();
-        setSearchOpen(true);
-      }
-    };
-    document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
-  }, []);
+  useHotkey('/', () => {
+    if (searchOpen) return false;
+    // Desktop uses the dock input. On phones the launcher opens a sheet.
+    const input = searchInputRef.current;
+    if (input?.getClientRects().length) input.focus();
+    else if (launcherRef.current?.getClientRects().length) searchLauncher.openSearch();
+    else return false;
+  });
 
   return (
     <SearchLauncherContext.Provider value={searchLauncher}>

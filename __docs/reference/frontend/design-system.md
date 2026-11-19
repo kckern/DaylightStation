@@ -7,6 +7,7 @@ Admin, Health, Media, Feed, Home, Life and Auto share browser layout and interac
 | Task | Start here | Example |
 | --- | --- | --- |
 | Open a destination or select a local view | `AppChrome` accepts tabs with an optional `href`. A destination renders a router link. A local view calls `onTabChange(id)`. The app owns selection and reload behavior. | Life routes and Home views |
+| Open a feature from a keyboard shortcut | `useHotkey(combo, handler)` binds the shortcut for the mounted owner. Launch shortcuts yield to editable fields and focused modal dialogs. The app chooses the destination or control. Return `false` when there is nothing to open. | [Feed search](../../../__app_modules/media/feed/browser/FeedApp.jsx) · [Media search](../../../__app_modules/media/media/browser/shell/MediaAppShell.jsx) · Health Coach |
 | Compose a grouped editor | Supply header and navigation to `AppFrame`. Its `mainRef` points to the primary scroll region. | Admin |
 | Return to a view at its previous position | `useViewScroll({mainRef, viewKey, owner, ready})` restores the position after the view is ready and clears it when the owner changes. | Health Today |
 | Choose content without losing an unsaved form | Bind the catalog combobox to the draft’s content ID. On selection, update that field and keep the editor mounted. The editor owns Save and Cancel. | [Admin list item editor](../../../__capabilities/content-catalog/browser/admin/ListsItemEditor.jsx) |
