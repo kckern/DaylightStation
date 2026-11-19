@@ -349,6 +349,33 @@ pays twice is two rules. Per-learner overrides live under `users.<id>`:
 `thresholds` / `disabled`. Optional `effective: {from, to}` scopes a rule to dates.
 A line's silver is `round(count × silver × multiplier)` for the whole line.
 
+**Makeup penalty.** School work made up later in the week (School
+[makeup work](../school/makeup-work.md), taxonomy D14) still counts: the day
+reads served or met, and Green Week is kept, gem included. Silver can be
+charged for each made-up day an earned line relies on:
+
+```yaml
+makeup:            # top level, household-wide
+  percent: 25      # or: silver: 1
+rules:
+  - id: green-week
+    kind: week-met
+    reward: { silver: 5, gems: 1 }
+    makeup: { percent: 0 }   # a rule's own block replaces the household one; percent 0 exempts it
+```
+
+- **Per-day rules** (`section-day`, `day-met`) lose P% of that day's pay, or N
+  silver, for each made-up day.
+- **Weekly rules** (`section-week`, `week-met`) lose P% of the week's silver,
+  or N silver, for each made-up day.
+
+The deduction never goes below zero and never takes gems. A penalised line
+carries `makeup: {days, deducted}` and a note such as `Made up 2026-11-11: -2
+silver`. Without a `makeup` block there is no penalty. Day and section facts
+are made-up days when they carry `timeliness: makeup`. A whole-document save
+(`PUT .../earn-rules`) keeps the current block unless the new document names
+`makeup` itself (`null` clears it).
+
 ### Windows and statuses
 
 - **School week** Monday → Sunday; **ring award week** Monday 04:00 → Saturday 12:00

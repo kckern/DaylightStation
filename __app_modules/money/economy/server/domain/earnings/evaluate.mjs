@@ -48,6 +48,49 @@ function price(rule, count) {
 
 const paid = (amount) => amount.silver > 0 || amount.gems > 0;
 
+/**
+ * MAKEUP PENALTY (School makeup, taxonomy D14). Work made up later in the
+ * week still counts (the day reads served/met, Green Week is kept), but each
+ * made-up day an earned line relies on costs silver, as configured on the
+ * rule or household-wide (`earn-rules.yml → makeup`, `normalizeMakeupPenalty`).
+ *
+ *   per-day lines (section-day, day-met): P% of that day's pay, or N silver
+ *   weekly lines (section-week, week-met): P% of the week's silver, or N
+ *   silver, once per made-up day
+ *
+ * Never below zero, never takes gems. The line keeps its ref, so a payout
+ * already made for it is not re-made; the deduction lands before settlement.
+ */
+const MAKEUP_DAY_KINDS = new Set(['section-day', 'day-met']);
+const MAKEUP_WEEK_KINDS = new Set(['section-week', 'week-met']);
+
+function madeUpDays(rule, facts) {
+  const inRule = (f) => inEffect(rule.effective, f.day) && f.timeliness === 'makeup';
+  if (rule.kind === 'section-day' || rule.kind === 'section-week') {
+    return facts.sectionDays.filter((f) => f.subject === rule.match.subject && f.state === 'served' && inRule(f)).map((f) => f.day);
+  }
+  if (rule.kind === 'day-met') return facts.days.filter((f) => f.state === 'met' && inRule(f)).map((f) => f.day);
+  if (rule.kind === 'week-met') return facts.days.filter((f) => f.state === 'met' && f.greenWeek !== false && inRule(f)).map((f) => f.day);
+  return [];
+}
+
+function withMakeupPenalty(line, rule, penalty, facts) {
+  if (!penalty || line.status !== 'earned' || !(MAKEUP_DAY_KINDS.has(rule.kind) || MAKEUP_WEEK_KINDS.has(rule.kind))) return line;
+  const days = [...new Set(madeUpDays(rule, facts))].sort();
+  if (!days.length) return line;
+  const unit = MAKEUP_DAY_KINDS.has(rule.kind) ? price(rule, 1).silver : line.amount.silver;
+  const perDay = penalty.percent != null ? Math.round((unit * penalty.percent) / 100) : penalty.silver;
+  const deducted = Math.min(line.amount.silver, perDay * days.length);
+  if (deducted <= 0) return { ...line, makeup: { days, deducted: 0 } };
+  const note = `Made up ${days.join(', ')}: -${deducted} silver`;
+  return {
+    ...line,
+    amount: { ...line.amount, silver: line.amount.silver - deducted },
+    makeup: { days, deducted },
+    note: [line.note, note].filter(Boolean).join('; '),
+  };
+}
+
 function sectionDay(rule, facts, ctx) {
   const matched = facts.sectionDays.filter((f) => f.subject === rule.match.subject && inEffect(rule.effective, f.day)).sort(byDay);
   const served = matched.filter((f) => f.state === 'served');
@@ -475,7 +518,8 @@ export function evaluateEarnings({ ruleset, learnerId, facts, standings = null, 
       weekOver: today != null && schoolDates != null && schoolDates.to < today,
       ref: (occurrence) => earningRef({ learnerId, ruleId: rule.id, period: occurrence }),
     };
-    lines.push({ ...base, ...EVALUATORS[rule.kind](rule, f, ctx) });
+    const penalty = rule.makeup !== undefined ? rule.makeup : (ruleset.makeup ?? null);
+    lines.push(withMakeupPenalty({ ...base, ...EVALUATORS[rule.kind](rule, f, ctx) }, rule, penalty, f));
   }
   const sum = (status) => lines.filter((l) => l.status === status)
     .reduce((t, l) => ({ silver: t.silver + l.amount.silver, gems: t.gems + l.amount.gems }), { silver: 0, gems: 0 });

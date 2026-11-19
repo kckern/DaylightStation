@@ -85,6 +85,10 @@ missed Wednesday no longer ends Green Week at once. The week stays pending
 until the work is made up (earned) or the deadline passes (lost, as before). A
 section-week line that is still recoverable reads `Can still make up: <days>`.
 Weekly payout refs stay `on-time`, so a week can never be paid twice.
+Made-up work can cost coins. Set the household `makeup` block in
+`economy/earn-rules.yml` to `{percent}` or `{silver}`, and override it per
+rule. Gems are never taken. See
+[Earn rules](../economy/economy.md#earn-rules).
 
 ## The makeup sheet
 

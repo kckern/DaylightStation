@@ -45,3 +45,52 @@ describe('Section week with makeup', () => {
     expect(line(evaluate(mathWeek, { sectionDays }, '2026-11-14'), 'math')).toMatchObject({ status: 'pending', note: 'Can still make up: 2026-11-11' });
   });
 });
+
+describe('makeup coin penalty (earn-rules makeup)', () => {
+  const rs = (makeup, rules) => validateRuleset({ revision: 1, currency: 'silver', makeup, rules, users: {} });
+  const greenWeekRule = { id: 'green-week', kind: 'week-met', reward: { silver: 5, gems: 1 } };
+  const greenDayRule = { id: 'green-day', kind: 'day-met', reward: { silver: 2 } };
+  const madeUpWed = days.map((d) => (d === '2026-11-11' ? weekday(d, 'met', { timeliness: 'makeup' }) : weekday(d, 'met')));
+
+  it('percent takes that share of the week once per made-up day, and keeps the gem', () => {
+    const out = evaluate(rs({ percent: 40 }, [greenWeekRule]), { days: madeUpWed }, '2026-11-15');
+    expect(line(out, 'green-week')).toMatchObject({
+      status: 'earned', amount: { silver: 3, gems: 1 }, makeup: { days: ['2026-11-11'], deducted: 2 },
+    });
+    expect(line(out, 'green-week').note).toBe('Made up 2026-11-11: -2 silver');
+  });
+
+  it('a per-day rule loses part of the made-up day only', () => {
+    const out = evaluate(rs({ percent: 50 }, [greenDayRule]), { days: madeUpWed }, '2026-11-15');
+    expect(line(out, 'green-day').amount.silver).toBe(9); // 5 days x 2, less half of one day
+  });
+
+  it('a flat penalty never goes below zero', () => {
+    const out = evaluate(rs({ silver: 3 }, [greenDayRule]), { days: madeUpWed }, '2026-11-15');
+    expect(line(out, 'green-day').amount.silver).toBe(7);
+    const twoMadeUp = madeUpWed.map((d) => (d.day === '2026-11-12' ? { ...d, timeliness: 'makeup' } : d));
+    const week = evaluate(rs({ silver: 4 }, [greenWeekRule]), { days: twoMadeUp }, '2026-11-15');
+    expect(line(week, 'green-week').amount).toEqual({ silver: 0, gems: 1 });
+  });
+
+  it("a rule's own makeup replaces the household one; percent 0 exempts it", () => {
+    const out = evaluate(rs({ percent: 50 }, [{ ...greenWeekRule, makeup: { percent: 0 } }]), { days: madeUpWed }, '2026-11-15');
+    expect(line(out, 'green-week').amount).toEqual({ silver: 5, gems: 1 });
+  });
+
+  it('a section rule counts only its own subject made up', () => {
+    const sectionDays = days.map((d) => (d === '2026-11-11' ? sec(d, 'served', { timeliness: 'makeup' }) : sec(d, 'served')));
+    const out = evaluate(rs({ silver: 2 }, [{ id: 'math', kind: 'section-week', match: { subject: 'math' }, reward: 5 }]), { sectionDays }, '2026-11-15');
+    expect(line(out, 'math').amount.silver).toBe(3);
+  });
+
+  it('no makeup config, no penalty', () => {
+    const out = evaluate(rs(undefined, [greenWeekRule]), { days: madeUpWed }, '2026-11-15');
+    expect(line(out, 'green-week').amount).toEqual({ silver: 5, gems: 1 });
+  });
+
+  it('rejects a malformed block', () => {
+    expect(() => rs({ percent: 150 }, [greenWeekRule])).toThrow(/percent/);
+    expect(() => rs({ percent: 10, silver: 1 }, [greenWeekRule])).toThrow(/exactly one/);
+  });
+});
