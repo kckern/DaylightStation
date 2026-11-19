@@ -1237,6 +1237,11 @@ final class KioskSession implements KioskController, KioskSurface, net.kckern.da
             final String loadId = loads.newLoadId();
             ui.post(() -> {
                 if (web != null) {
+                    // A new phone launch gets its own page history and releases old capture tracks.
+                    if ("history".equals(backMode)) {
+                        destroyWebView();
+                        buildWebView();
+                    }
                     if (fromOutside) trust.loadedFromOutside(); else trust.loadedByApp();
                     load(url, loadId);
                 } else {

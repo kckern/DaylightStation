@@ -123,7 +123,11 @@ public final class DeviceManifestSource {
                 // The window is a phone app's, not a kiosk's: no lock task, and no entry in
                 // a TV launcher. Its filters are replaced by the one a phone launcher reads.
                 s.append("        <activity android:name=\"").append(KIOSK_ACTIVITY).append("\"\n");
-                s.append("            android:exported=\"true\" tools:node=\"merge\" tools:remove=\"android:lockTaskMode\">\n");
+                s.append("            android:exported=\"true\" tools:node=\"merge\" tools:remove=\"android:lockTaskMode\"");
+                if (d.capabilities.contains("widgets")) {
+                    s.append(" android:taskAffinity=\"").append(d.packageName).append(".service\"");
+                }
+                s.append(">\n");
                 s.append("            <intent-filter tools:node=\"removeAll\" />\n");
                 if (d.capabilities.contains("widgets")) {
                     s.append("        </activity>\n");
