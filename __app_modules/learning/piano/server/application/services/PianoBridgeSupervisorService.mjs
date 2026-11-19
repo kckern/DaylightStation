@@ -317,7 +317,8 @@ export class PianoBridgeSupervisorService {
     await this.#checkOneWay(health, now);
 
     if (this.#ticks % HEARTBEAT_EVERY_TICKS === 0) {
-      this.#logger.info?.('piano-bridge.supervisor.healthy', {
+      const healthy = health.ble === 'CONNECTED' && health.outVerified === true;
+      this.#logger.info?.(healthy ? 'piano-bridge.supervisor.healthy' : 'piano-bridge.supervisor.reachable', {
         deviceId: this.#deviceId, ble: health.ble, outVerified: health.outVerified,
       });
     }

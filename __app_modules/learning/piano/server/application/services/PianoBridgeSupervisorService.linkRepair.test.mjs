@@ -381,3 +381,13 @@ for (const lost of [DOWN, { ...DOWN, unauthorized: true }]) {
     assert.equal(r.reboots.length, 1);
   });
 }
+
+test('heartbeat distinguishes a reachable control plane from a verified MIDI link', async () => {
+  const r = rig({ clients: 1 });
+  for (const health of [{ ...ECHO, ble: 'FAILED' }, { ...ECHO, outVerified: null }, ECHO]) {
+    r.state.health = health;
+    await r.step(20);
+  }
+  assert.equal(r.events('piano-bridge.supervisor.reachable').length, 2);
+  assert.equal(r.events('piano-bridge.supervisor.healthy').length, 1);
+});
