@@ -322,12 +322,14 @@ function observeTimed(attempt, input) {
  * the cursor arrived, are down at the same moment.
  */
 function observeConcurrentHeld(attempt, input, held, index, current, baseline) {
-  if (attempt.heldRebaseline) {
-    return ignored({ ...attempt, heldRebaseline: false, heldLast: [...held] }, 'held_rebaselined', { time: input.time });
-  }
   const carried = [...(baseline ?? [])];
   const previous = new Set([...(attempt.heldLast ?? []), ...carried]);
-  const pressed = [...held].filter((midi) => !previous.has(midi));
+  // A lost note-off leaves the key in the held set, so a changed note-on time is
+  // the only sign of a re-strike.
+  const stamps = Object.fromEntries([...held].map((midi) => [midi, input.held instanceof Map ? input.held.get(midi)?.timestamp : undefined])
+    .filter(([, stamp]) => stamp !== undefined));
+  const restruck = (midi) => stamps[midi] !== undefined && attempt.heldStamps?.[midi] !== undefined && stamps[midi] !== attempt.heldStamps[midi];
+  const pressed = [...held].filter((midi) => !previous.has(midi) || restruck(midi));
   const owed = new Set(current.notes.filter((note) => !attempt.hits[note.id]).map((note) => note.midi));
   const fresh = {};
   for (const [midi, pressedAt] of Object.entries(attempt.heldFresh ?? {})) {
@@ -345,6 +347,7 @@ function observeConcurrentHeld(attempt, input, held, index, current, baseline) {
     musicalInput: attempt.musicalInput || pressed.length > 0,
     wrong: [...attempt.wrong, ...wrong],
     heldLast: [...new Set([...held, ...carried])],
+    heldStamps: stamps,
     heldFresh: fresh,
   };
   const multiPart = new Set(current.notes.map((note) => note.part).filter(Boolean)).size > 1;

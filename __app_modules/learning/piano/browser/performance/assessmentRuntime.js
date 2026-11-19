@@ -13,6 +13,8 @@ import {
  * renderer, HTTP client, or persistence policy; surfaces decide what terminal
  * results are authorized to save.
  */
+const heldPitches = (held) => [...(held instanceof Map ? held.keys() : held)];
+
 export function createAssessmentRuntime({ attempt, createAttempt, subscribeMidi, now = () => performance.now(), tickMs = 50, snapshotMs = 50, onEvent, onTerminal } = {}) {
   const factory = createAttempt || (() => createAssessmentAttempt(attempt));
   let state = attempt?.expectation ? attempt : factory();
@@ -52,6 +54,10 @@ export function createAssessmentRuntime({ attempt, createAttempt, subscribeMidi,
   const observe = (event) => {
     if (disposed) return { attempt: state, event: { type: 'ignored', reason: 'disposed' }, events: [] };
     if (state.paused) return { attempt: state, event: { type: 'ignored', reason: 'paused' }, events: [] };
+    if (Number(state.resumingUntil) > now()) {
+      // Keys that go down during the get-ready count are not answers.
+      if (event?.held) state = { ...state, heldLast: heldPitches(event.held) };
+    }
     if (Number(state.resumingUntil) > now()) return { attempt: state, event: { type: 'ignored', reason: 'resume_countdown' }, events: [] };
     const result = observeAssessment(state, event);
     publish(result.attempt, result.events || [result.event]);
@@ -84,7 +90,7 @@ export function createAssessmentRuntime({ attempt, createAttempt, subscribeMidi,
     publish({ ...state, paused: true, pausedAt: now() }, [], { immediate: true });
     return state;
   };
-  const resume = ({ delayMs = 0 } = {}) => {
+  const resume = ({ delayMs = 0, held = null } = {}) => {
     if (disposed || !['prepared', 'running'].includes(state.status) || !state.paused) return state;
     const resumedAt = now();
     if (state.status === 'prepared') {
@@ -97,7 +103,7 @@ export function createAssessmentRuntime({ attempt, createAttempt, subscribeMidi,
     publish({
       ...rest,
       paused: false,
-      heldRebaseline: true,
+      ...(held ? { heldLast: heldPitches(held), heldFresh: {} } : {}),
       startedAt: Number.isFinite(rest.startedAt) ? rest.startedAt + shiftMs : rest.startedAt,
       lastOnsetAt: Number.isFinite(rest.lastOnsetAt) ? rest.lastOnsetAt + shiftMs : rest.lastOnsetAt,
       pausedDurationMs: (rest.pausedDurationMs ?? 0) + shiftMs,

@@ -218,8 +218,13 @@ export function wrongEventState(event) {
 
 /** A lifted finger answers nothing, so it must not take the after-wrong hint away. */
 export function nextLastWrong(previous, event) {
-  if (event?.type === 'ignored' && ['held_released', 'held_rebaselined'].includes(event.reason)) return previous;
+  if (event?.type === 'ignored' && event.reason === 'held_released') return previous;
   return wrongEventState(event);
+}
+
+/** Identifies the held keys and each key's latest strike, so a re-strike is observed. */
+export function heldSignatureOf(activeNotes) {
+  return [...activeNotes].map(([midi, note]) => `${midi}:${note?.timestamp ?? ''}`).sort().join(',');
 }
 
 /** The first held observation of an armed run: the chord, with other down keys set aside. */
@@ -676,7 +681,7 @@ export default function ExerciseRun({ instance, score, requirement = null, pract
     if (!runtime || pauseStateRef.current === paused) return;
     pauseStateRef.current = paused;
     if (paused) runtime.pause();
-    else runtime.resume({ delayMs: resumeDelayMs });
+    else runtime.resume({ delayMs: resumeDelayMs, held: activeNotesRef.current });
   }, [paused, resumeDelayMs, runtime]);
 
   const timed = snapshot.matcher === 'timed';
@@ -1230,7 +1235,7 @@ export default function ExerciseRun({ instance, score, requirement = null, pract
         // they lift a finger nothing told them about. The attempt begins from
         // the intentional reach. Once running, the matcher's normal rules
         // apply to the whole held set, extras included.
-        lastHeldObservedRef.current = heldKey;
+        lastHeldObservedRef.current = snapshot.matcher === 'held' ? heldKey : heldSignatureOf(activeNotesRef.current);
         runtime.observe(armingHeldObservation(activeNotesRef.current, armingPitches, armedAt));
       } else {
         // EVERY new onset in this commit, not only the one that armed.
@@ -1251,8 +1256,9 @@ export default function ExerciseRun({ instance, score, requirement = null, pract
     }
     if (snapshot.status !== 'running') return;
     if (snapshot.matcher === 'held' || (snapshot.matcher === 'cursor' && snapshot.policy?.requireConcurrentOnset === true)) {
-      if (lastHeldObservedRef.current === heldKey) return;
-      lastHeldObservedRef.current = heldKey;
+      const observedHeld = snapshot.matcher === 'held' ? heldKey : heldSignatureOf(activeNotes);
+      if (lastHeldObservedRef.current === observedHeld) return;
+      lastHeldObservedRef.current = observedHeld;
       runtime.observe({ held: activeNotes, time, clock: 'date-now' });
       return;
     }

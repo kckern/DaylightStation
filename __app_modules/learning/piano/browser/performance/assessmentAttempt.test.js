@@ -561,12 +561,12 @@ describe('concurrent-onset held matching', () => {
     expect(observeAssessment(lifted.attempt, { held: held(48), time: 300 }).attempt.cursor).toBe(0);
   });
 
-  it('re-baselines on the first observe after resume', () => {
-    const first = play(start([both('a', 60, 48), right('b', 62)]), [[60, 48]]);
-    const resumed = observeAssessment({ ...first, heldRebaseline: true }, { held: held(60, 48, 70), time: 20 });
-    expect(resumed.attempt.wrong).toEqual([]);
-    expect(resumed.attempt.heldRebaseline).toBe(false);
-    expect(observeAssessment(resumed.attempt, { held: held(60, 48), time: 30 }).attempt.wrong).toEqual([]);
+  it('treats a re-strike with a new note timestamp as a new press', () => {
+    const stamped = (stamp) => new Map([[60, { timestamp: stamp }]]);
+    const first = observeAssessment(start([right('a', 60), right('b', 60)]), { held: stamped(1), time: 10 });
+    expect(first.attempt.cursor).toBe(1);
+    expect(observeAssessment(first.attempt, { held: stamped(1), time: 20 }).attempt.status).toBe('running');
+    expect(observeAssessment(first.attempt, { held: stamped(2), time: 20 }).attempt.status).toBe('completed');
   });
 
   it('reports wrong presses before a hit in the same observation', () => {

@@ -1,7 +1,7 @@
 import { act, fireEvent, render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import LearnCoach from './LearnCoach.jsx';
-import { createCoachPlan } from '../../../../../../../shared/music/learnCoach.mjs';
+import { applyCoachEvent, createCoachPlan, projectCoach } from '../../../../../../../shared/music/learnCoach.mjs';
 
 const h = vi.hoisted(() => ({ lab: null }));
 vi.mock('../../PianoUserContext.jsx', () => ({ usePianoUser: () => ({ currentUser: 'guest' }) }));
@@ -80,6 +80,40 @@ describe('Silver in LearnCoach', () => {
     expect(screen.getByRole('button', { name: /Practice bars/ }).className).toContain('is-primary');
     fireEvent.click(button('Come back to this later'));
     await act(async () => {});
+    expect(onPassageChange).toHaveBeenCalledWith('b');
+  });
+
+  const fakeCoach = (plan, state, dayKey, extra = {}) => ({ profileId: 'guest', loaded: true, saveStatus: 'guest', state, projection: projectCoach({ plan, state, dayKey }),
+    record: vi.fn(), selectTask: vi.fn(), setAside: vi.fn(() => new Promise(() => {})), retry: vi.fn(), recoveryData: vi.fn(), ...extra });
+  const apply = (state, plan, task, result, dayKey = '2026-11-18') => applyCoachEvent(state, { id: result.assessmentId, type: 'outcome', task, result }, { plan, now: `${dayKey}T12:00:00Z`, dayKey });
+  const timed = (id) => ({ ...clean(id), criteria: { completeness: 1, cleanliness: 1, placement: 1 } });
+
+  it('does not announce Silver until the policy is met', async () => {
+    const plan = createCoachPlan({ scoreId: 'score', fingerprint: 'fp', segments: [seg('a', 0, 3)], tempoMap: [], certification: { silver: { checkPasses: 2 } } });
+    render(<LearnCoach score={{ id: 'score', musicXml: '<x />' }} plan={plan} segment={plan.segments[0]} onBack={vi.fn()} />);
+    startCheck();
+    await finish(clean('one'));
+    expect(screen.queryByRole('heading', { name: 'Silver!' })).toBeNull();
+    expect(screen.getByText('1 of 2 passing takes for Silver.')).toBeInTheDocument();
+    expect(button('Play again').className).toContain('is-primary');
+  });
+
+  it('opens a selected review instead of the certified screen', () => {
+    const plan = planOf([seg('a', 0, 3)]); const gold = plan.tasks.find((t) => t.skill === 'mastery');
+    let state = apply(apply(undefined, plan, gold, timed('g1')), plan, gold, timed('g2'));
+    const review = projectCoach({ plan, state, dayKey: '2026-11-19' }).review;
+    state = applyCoachEvent(state, { id: 'pick', type: 'selection', task: review }, { plan, now: 'x', dayKey: '2026-11-19' });
+    render(<LearnCoach score={{ id: 'score', musicXml: '<x />' }} plan={plan} segment={plan.segments[0]} coach={fakeCoach(plan, state, '2026-11-19')} onBack={vi.fn()} />);
+    expect(screen.queryByRole('heading', { name: 'You have this one' })).toBeNull();
+    expect(screen.getByRole('heading', { name: 'Play at score tempo' })).toBeInTheDocument();
+  });
+
+  it('leaves for the next passage without waiting for the save', () => {
+    const plan = planOf([seg('a', 0, 3), seg('b', 4, 7)]); const check = plan.tasks.find((t) => t.skill === 'silver');
+    const state = apply(apply(undefined, plan, check, messy('m1')), plan, check, messy('m2'));
+    const onPassageChange = vi.fn();
+    render(<LearnCoach score={{ id: 'score', musicXml: '<x />' }} plan={plan} segment={plan.segments[0]} coach={fakeCoach(plan, state, '2026-11-18')} onBack={vi.fn()} onPassageChange={onPassageChange} />);
+    fireEvent.click(button('Come back to this later'));
     expect(onPassageChange).toHaveBeenCalledWith('b');
   });
 });

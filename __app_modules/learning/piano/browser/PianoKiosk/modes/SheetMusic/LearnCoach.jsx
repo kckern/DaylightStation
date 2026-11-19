@@ -78,7 +78,12 @@ function CoachSession({ score, plan, segment, coach, tempo = EMPTY, feedback, on
     coach.record(run, raw);
   };
   const operational = () => finish({ status: 'error', validity: 'invalid', error: 'music-unavailable', diagnostics: {} });
-  const message = result ? coachFeedback(result.raw, result.task) : null;
+  const baseMessage = result ? coachFeedback(result.raw, result.task) : null;
+  const checkPassed = baseMessage?.reason === 'silver';
+  const silverJustEarned = checkPassed && (Boolean(certification.silver) || (result.task.required ?? 1) <= 1);
+  const passedTakes = projected?.skills.find((skill) => skill.key === result?.task.key)?.successes ?? 0;
+  const message = checkPassed && !silverJustEarned
+    ? { title: 'Good take', detail: `${passedTakes} of ${result.task.required} passing takes for Silver.`, reason: 'check-progress' } : baseMessage;
   const earned = result && (projected?.skills.find((skill) => skill.key === result.task.key)?.ready || (result.task.mastery && projected?.mastered));
   const after = result && isGoldWork(result.task) ? goldDrill ?? goldNext ?? next : next;
   const recovery = after?.depth > 0 && after.key !== result?.task.key;
@@ -100,16 +105,15 @@ function CoachSession({ score, plan, segment, coach, tempo = EMPTY, feedback, on
   const goForGold = goldHere ? () => { setSelected(goldHere); setResult(null); setView('prepare'); }
     : nextGoldId && nextGoldId !== segment.id && onPassageChange ? () => onPassageChange(nextGoldId) : null;
   const canSetAside = coach.projection.canSetAside?.[segment.id] === true;
-  const comeBackLater = async () => {
+  const comeBackLater = () => {
     const target = coach.projection.afterSetAside?.[segment.id];
-    await coach.setAside(silverTask ?? task);
+    coach.setAside(silverTask ?? task);
     if (target && onPassageChange) onPassageChange(target); else onBack?.();
   };
   const nextPassageButton = (primary) => nextPassage && onPassageChange
     ? <button className={primary ? 'is-primary' : ''} onClick={() => onPassageChange(nextPassage.id)}>Next passage: {passageName(nextPassage)}</button> : null;
   const laterButton = canSetAside ? <button onClick={comeBackLater}>Come back to this later</button> : null;
-  const silverJustEarned = message?.reason === 'silver';
-  const showCertified = view === 'prepare' && !selected && Boolean(certification.silver);
+  const showCertified = view === 'prepare' && !selected && Boolean(certification.silver) && !goldDrill?.review;
   const skillList = (track, name) => {
     const skills = projected?.skills.filter((skill) => (track === 'silver' ? skill.track === 'silver' : skill.track !== 'silver')) ?? [];
     return skills.length ? <div className="piano-learn-coach__track"><h3>{track === 'silver' ? 'Silver' : 'Gold'}</h3>
@@ -171,7 +175,7 @@ function CoachSession({ score, plan, segment, coach, tempo = EMPTY, feedback, on
             : certification.silver && !isGoldWork(result.task) ? nextPassageButton(true)
               : after && after.key !== result.task.key
                 ? <button className="is-primary" onClick={() => start(after)}>Next: {after.label}</button> : null}
-          <button className={recovery || earned || silverJustEarned ? '' : 'is-primary'} onClick={() => start(result.task)}>{result.task.assist === 'none' && !silverJustEarned ? 'Try again' : 'Play again'}</button>
+          <button className={recovery || earned || silverJustEarned ? '' : 'is-primary'} onClick={() => start(result.task)}>{result.task.assist === 'none' && !checkPassed ? 'Try again' : 'Play again'}</button>
           {laterButton}
           <button onClick={() => setView('custom')}>Change practice</button>
           <button onClick={onBack}>Finish for now</button>

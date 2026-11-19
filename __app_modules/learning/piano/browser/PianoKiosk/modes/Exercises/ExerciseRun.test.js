@@ -72,7 +72,8 @@ describe('hands-together input helpers', () => {
   });
 
   it('hands over only the armed chord and marks other down keys as baseline', async () => {
-    const { armingHeldObservation } = await import('./ExerciseRun.jsx');
+    const { armingHeldObservation, heldSignatureOf } = await import('./ExerciseRun.jsx');
+    expect(heldSignatureOf(new Map([[60, { timestamp: 1 }]]))).not.toBe(heldSignatureOf(new Map([[60, { timestamp: 2 }]])));
     const observed = armingHeldObservation(new Map([[60, {}], [48, {}], [72, {}]]), new Set([60, 48]), 5);
     expect([...observed.held.keys()].sort()).toEqual([48, 60]);
     expect(observed).toMatchObject({ baseline: [72], time: 5, clock: 'date-now' });

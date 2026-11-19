@@ -129,16 +129,21 @@ describe('assessment runtime', () => {
     expect(runtime.getSnapshot().status).toBe('completed');
   });
 
-  it('asks the held matcher to re-baseline after a running attempt resumes', () => {
+  it('resumes hands-together grading from the keys down at resume', () => {
     let now = 0;
+    const held = (...midi) => new Map(midi.map((value) => [value, {}]));
     const attempt = createAssessmentAttempt({
-      expectation: compileAssessmentExpectation({ source: { kind: 'chart', id: 'resume' }, events: [{ id: 'a', notes: [{ midi: 60, part: 'rh' }] }] }),
+      matcher: 'cursor', requirement: { policy: { requireConcurrentOnset: true } },
+      expectation: compileAssessmentExpectation({ source: { kind: 'chart', id: 'resume' }, events: [
+        { id: 'a', notes: [{ midi: 60, part: 'rh' }] }, { id: 'b', notes: [{ midi: 62, part: 'rh' }] }] }),
     });
     const runtime = createAssessmentRuntime({ attempt, now: () => now, tickMs: 0 });
     runtime.start();
     runtime.pause();
-    now = 100; runtime.resume();
-    expect(runtime.getSnapshot().heldRebaseline).toBe(true);
+    now = 100; runtime.resume({ delayMs: 500, held: held(70) });
+    now = 200; runtime.observe({ held: held(70, 71), time: 200 });
+    now = 700; runtime.observe({ held: held(70, 71, 60), time: 700 });
+    expect(runtime.getSnapshot()).toMatchObject({ wrong: [], cursor: 1 });
   });
 
   it('can pause and resume before the first note without starting the attempt', () => {
