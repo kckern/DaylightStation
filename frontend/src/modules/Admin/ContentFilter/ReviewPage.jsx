@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { Anchor, Badge, Button, Group, Stack, Text } from '@mantine/core';
 import { DaylightAPI } from '../../../lib/api.mjs';
+import { useVisibleRefresh } from '../../../lib/hooks/useVisibleRefresh.js';
 import { useApiResource } from '../../../lib/hooks/useApiResource.js';
 import { previewStore } from '../../../../../__app_modules/media/media/browser/content-filter/adminWorkspace.mjs';
 import { LoadingState, ErrorState, SectionCard, createAppLogger } from '../../../lib/ui/index.js';
@@ -70,11 +71,7 @@ export function ReviewPage() {
   const notMatched = data?.match === 'unmatched';
   const station = useReviewStation({ ratingKey, data, reload, selected, select, runBusy: running || notMatched });
   const { redoOpen } = useReviewKeys(station.handlers, { enabled: Boolean(data?.rows) });
-  useEffect(() => {
-    if (!waiting) return undefined;
-    const id = setInterval(() => reload(), POLL_MS);
-    return () => clearInterval(id);
-  }, [waiting, reload]);
+  useVisibleRefresh({ active: Boolean(waiting), intervalMs: POLL_MS, reload });
 
   // Rows in a queued/running send-back carry its step ("Sent back: refine").
   const sentBack = useMemo(() => {

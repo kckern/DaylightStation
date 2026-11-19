@@ -40,7 +40,8 @@ it('preserves the nested dated menu and UID after return refresh fails and retri
  const registry=createParticipantBrowserRegistry([{consumer:{id:'neutral',version:1},outputSchema:'neutral/v1',render:({clear})=><button onClick={clear}>Close activity</button>}]);
  render(<MenuNavigationProvider><ScreenOverlayProvider><AgendaMenuHost contentId="agenda:s/weeks" fetcher={fetcher} participantClient={client} participantRegistry={registry}/></ScreenOverlayProvider></MenuNavigationProvider>);
  fireEvent.click(await screen.findByText('Week')); fireEvent.click(await screen.findByText('Activity')); fireEvent.click(await screen.findByRole('button',{name:'Start'})); fireEvent.click(await screen.findByText('Close activity'));
- const retry=await screen.findByRole('button',{name:'Retry'}); expect(document.activeElement).toBe(retry);
+ const retry=await screen.findByRole('button',{name:'Retry'});
+ await waitFor(()=>expect(document.activeElement).toBe(retry));
  new GamepadAdapter(getActionBus())._emit({action:'select',key:'Enter'});
  const updated=await screen.findByText('Activity updated');
  await waitFor(()=>expect(updated.closest('.menu-item').classList.contains('active')).toBe(true));

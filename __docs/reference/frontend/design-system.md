@@ -10,7 +10,7 @@ Admin, Health, Media, Feed, Home, Life and Auto share browser layout and interac
 | Compose a grouped editor | Supply header and navigation to `AppFrame`. Its `mainRef` points to the primary scroll region. | Admin |
 | Return to a view at its previous position | `useViewScroll({mainRef, viewKey, owner, ready})` restores the position after the view is ready and clears it when the owner changes. | Health Today |
 | Choose content without losing an unsaved form | Bind the catalog combobox to the draft’s content ID. On selection, update that field and keep the editor mounted. The editor owns Save and Cancel. | [Admin list item editor](../../../__capabilities/content-catalog/browser/admin/ListsItemEditor.jsx) |
-| Keep playback alive while browsing | `PlaybackFrame` places controls, overlays and the engine alongside routed children. Route-specific main landmarks and scrolling remain inside the content. | Feed reader and Media canvas |
+| Keep playback alive while browsing | `PlaybackFrame` places controls, overlays and the engine alongside routed children. Each app supplies one main landmark. Feed passes its scrolling element to its routes through Outlet context. | Feed reader and Media canvas |
 | Read server data | Use `useApiResource(path)` when a component observes a JSON resource. Use `DaylightAPI` for an imperative JSON operation. | [Catalog title lookup](../../../__capabilities/content-catalog/browser/lib/useContentTitle.js) |
 | Interpret a command response | Use `daylightApiResponse(path, { method, data, signal })` when the feature needs the original HTTP status and body. The shared client supplies request headers. The feature interprets partial successes and controls retries. | [Playback Hub commands](../../../__app_modules/media/media/browser/admin/playback-hub/hooks/useHubMutations.js) · [Screen registry conflicts](../../../__app_modules/media/media/browser/house/houseApi.js) |
 | Save a versioned document | Pass the current revision in `ifMatch` and read `ETag` from the response headers after a successful write. Keep the edited document and conflict errors with the feature. | [Agenda editor client](../../../__app_modules/household/agenda/browser/admin/agendaClient.js) |
@@ -22,7 +22,20 @@ Admin, Health, Media, Feed, Home, Life and Auto share browser layout and interac
 | Show an action icon | Use `UiIcon` for search and close. Set the accessible name on the surrounding control. Decorative symbols stay out of its spoken name. | [Shared sheet](../../../frontend/src/lib/ui/Sheet.jsx) · [Media search launcher](../../../__app_modules/media/media/browser/shell/Dock.jsx) |
 | Show a field error | Give a Mantine input a label, description and field-specific error. The gallery demonstrates an error that clears after a correction. | [Controls gallery](../../../frontend/src/dev/DsGallery/DsGallery.jsx) |
 | Offer one or several choices | Use Mantine `Radio.Group` for mutually exclusive choices, a labelled `Checkbox` for a boolean, and `Chip.Group multiple` for a set. The feature owns the values. A `Menu` exposes actions such as resetting the set. | [Collection filters in the gallery](../../../frontend/src/dev/DsGallery/DsGallery.jsx) |
-| Remember a simple preference | `browserPreference(key, fallback, decode)` preserves the raw string format. The feature supplies migration and validation. | Home view, Admin preview screen and Feed playback settings |
+| Remember a simple preference | `browserPreference(key, fallback, decode)` preserves the raw string format. The feature supplies migration and validation. Call `clear()` when removing a stored override returns selection to its default owner. | Home view, Life member, Admin preview screen and Feed playback settings |
+
+## Reviewing a shared pattern
+
+Apply these questions during discovery, design, diff review, integration testing and final review. Record the caller and evidence for each answer. Keep an unverified finding open until someone checks the relevant behavior.
+
+| Principle | Review question |
+| --- | --- |
+| DRY | Which callers repeat a decision that must change together? |
+| Appropriate abstraction | Which current callers use the contract, and which differences do they need to retain? |
+| Encapsulation | Can a caller use the public interface without knowing an internal DOM selector, storage representation or timer? |
+| Single source of truth | Who owns the current route, draft, preference or server value, including when an older response arrives late? |
+| Separation of concerns | Can layout change without interrupting playback, writing a draft or duplicating a subscription? |
+| YAGNI | Which current workflow or acceptance case requires each new option, layer or dependency? |
 
 ## Token contract
 

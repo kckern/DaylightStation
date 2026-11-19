@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, test, vi } from 'vitest';
 import { useState } from 'react';
+import { notifications } from '@mantine/notifications';
 import { FeedWorkspaceProvider, useFeedWorkspace } from "./FeedWorkspaceContext.jsx";
 
 const { apiMock } = vi.hoisted(() => ({ apiMock: vi.fn() }));
@@ -22,12 +23,14 @@ function PreferenceProbe() {
 
 function MutationProbe() {
   const { mutateItems, pendingMutations } = useFeedWorkspace();
+  const [error, setError] = useState('');
   const [item, setItem] = useState({ id: 'one', state: { isRead: false, isSaved: false, isArchived: false } });
   return (
     <>
       <output aria-label="saved">{String(item.state.isSaved)}</output>
+      <output aria-label="failure">{error}</output>
       <output aria-label="pending">{pendingMutations}</output>
-      <button onClick={() => mutateItems([item], 'save', { onApply: updated => setItem(updated[0]) })}>Save item</button>
+      <button onClick={() => mutateItems([item], 'save', { onApply: updated => setItem(updated[0]) }).catch(err => setError(err.message))}>Save item</button>
     </>
   );
 }
@@ -103,12 +106,76 @@ describe('FeedWorkspaceProvider reading preferences', () => {
     expect(apiMock).not.toHaveBeenCalledWith('/api/v1/feed/items/state', expect.anything(), 'PATCH');
   });
 
+  test('rejects a full offline write and restores the previous item and queue', async () => {
+    Object.defineProperty(navigator, 'onLine', { configurable: true, value: false });
+    const key = 'feed:pending-mutations:household';
+    const existing = JSON.stringify([{ id: 'older', itemIds: ['other'], action: 'read' }]);
+    localStorage.setItem(key, existing);
+    const set = vi.spyOn(localStorage, 'setItem').mockImplementation(() => { throw new DOMException('Full', 'QuotaExceededError'); });
+    notifications.show.mockClear();
+    try {
+      render(<FeedWorkspaceProvider><MutationProbe /></FeedWorkspaceProvider>);
+      fireEvent.click(screen.getByRole('button', { name: 'Save item' }));
+      await waitFor(() => expect(screen.getByLabelText('failure')).not.toBeEmptyDOMElement());
+      expect(screen.getByLabelText('saved')).toHaveTextContent('false');
+      expect(screen.getByLabelText('pending')).toHaveTextContent('1');
+      expect(localStorage.getItem(key)).toBe(existing);
+      expect(notifications.show).toHaveBeenCalledWith(expect.objectContaining({ title: 'Change not saved' }));
+      expect(notifications.show).not.toHaveBeenCalledWith(expect.objectContaining({ title: 'Saved offline' }));
+    } finally {
+      set.mockRestore();
+    }
+  });
+
+  test('opens the workspace with blocked storage and refuses an unscoped offline queue', async () => {
+    Object.defineProperty(navigator, 'onLine', { configurable: true, value: false });
+    vi.stubGlobal('localStorage', undefined);
+    try {
+      render(<FeedWorkspaceProvider><MutationProbe /></FeedWorkspaceProvider>);
+      fireEvent.click(screen.getByRole('button', { name: 'Save item' }));
+      await waitFor(() => expect(screen.getByLabelText('failure')).not.toBeEmptyDOMElement());
+      expect(screen.getByLabelText('saved')).toHaveTextContent('false');
+      expect(screen.getByLabelText('pending')).toHaveTextContent('0');
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   test('replays durable offline mutations when connectivity is available', async () => {
     localStorage.setItem('feed:pending-mutations:household', JSON.stringify([{ id: 'queued-1', itemIds: ['one'], action: 'save', createdAt: '2026-08-24T10:00:00.000Z' }]));
     render(<FeedWorkspaceProvider><MutationProbe /></FeedWorkspaceProvider>);
 
     await waitFor(() => expect(JSON.parse(localStorage.getItem('feed:pending-mutations:household'))).toEqual([]));
     expect(apiMock).toHaveBeenCalledWith('/api/v1/feed/items/state', { itemIds: ['one'], action: 'save' }, 'PATCH');
+  });
+
+  test('retries a failed queue removal without replaying an acknowledged action twice', async () => {
+    const key = 'feed:pending-mutations:household';
+    const existing = JSON.stringify([{ id: 'acked', itemIds: ['one'], action: 'save' }]);
+    localStorage.setItem(key, existing);
+    const set = vi.spyOn(localStorage, 'setItem').mockImplementation(() => { throw new DOMException('Full', 'QuotaExceededError'); });
+    try {
+      render(<FeedWorkspaceProvider><MutationProbe /></FeedWorkspaceProvider>);
+      await waitFor(() => expect(set).toHaveBeenCalledWith(key, '[]'));
+      expect(localStorage.getItem(key)).toBe(existing);
+    } finally {
+      set.mockRestore();
+    }
+    fireEvent(window, new Event('online'));
+    await waitFor(() => expect(screen.getByLabelText('pending')).toHaveTextContent('0'));
+    expect(apiMock.mock.calls.filter(([path]) => path === '/api/v1/feed/items/state')).toHaveLength(1);
+  });
+
+  test('preserves the oldest pending change when the queue reaches its size limit', async () => {
+    Object.defineProperty(navigator, 'onLine', { configurable: true, value: false });
+    const key = 'feed:pending-mutations:household';
+    const existing = JSON.stringify(Array.from({ length: 500 }, (_, index) => ({ id: String(index), itemIds: ['other'], action: 'read' })));
+    localStorage.setItem(key, existing);
+    render(<FeedWorkspaceProvider><MutationProbe /></FeedWorkspaceProvider>);
+    fireEvent.click(screen.getByRole('button', { name: 'Save item' }));
+    await waitFor(() => expect(screen.getByLabelText('failure')).not.toBeEmptyDOMElement());
+    expect(screen.getByLabelText('saved')).toHaveTextContent('false');
+    expect(localStorage.getItem(key)).toBe(existing);
   });
 
   test('never loads or replays another account’s pending mutations', async () => {

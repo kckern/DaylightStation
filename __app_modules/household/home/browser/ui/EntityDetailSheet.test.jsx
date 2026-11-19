@@ -110,7 +110,7 @@ describe('EntityDetailSheet history', () => {
     await waitFor(() => expect(document.querySelectorAll('video')).toHaveLength(1));
     expect(document.querySelector('video').getAttribute('src')).toContain('/api/v1/camera/porch-cam/clips/file?name=');
     // 17:00 UTC is 02:00 on the 29th in the history's zone: that day is the one asked for.
-    expect(apiMock).toHaveBeenCalledWith('api/v1/camera/porch-cam/clips?day=2026-10-29');
+    expect(apiMock).toHaveBeenCalledWith('api/v1/camera/porch-cam/clips?day=2026-10-29', {}, 'GET', { signal: expect.any(AbortSignal) });
   });
 
   it('an events history with no camera adds nothing', async () => {

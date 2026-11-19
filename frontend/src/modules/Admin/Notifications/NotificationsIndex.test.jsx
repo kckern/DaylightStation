@@ -16,6 +16,29 @@ beforeEach(() => {
 });
 
 describe('NotificationsIndex', () => {
+  it('keeps the ledger available while retrying settings', async () => {
+    api.mockRejectedValueOnce(new Error('Unavailable'));
+    wrap(<NotificationsIndex />);
+    expect(await screen.findByText('Notification settings failed to load')).toBeInTheDocument();
+    expect(await screen.findByText('kckern')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    expect(await screen.findByDisplayValue('21:00')).toBeInTheDocument();
+  });
+
+  it('preserves the settings draft through a failed ledger refresh and retry', async () => {
+    wrap(<NotificationsIndex />);
+    await screen.findByText('kckern');
+    fireEvent.change(screen.getByLabelText('Start'), { target: { value: '20:00' } });
+    api.mockRejectedValueOnce(new Error('Unavailable'));
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh' }));
+    expect(await screen.findByText('Recent activity failed to load')).toBeInTheDocument();
+    api.mockResolvedValueOnce({ events: [{ at: 3, username: 'recovered', category: 'test' }] });
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    expect(await screen.findByText('recovered')).toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByRole('alert')).toBeNull());
+    expect(screen.getByDisplayValue('20:00')).toBeInTheDocument();
+  });
+
   it('renders quiet hours, cooldowns, and the ledger', async () => {
     wrap(<NotificationsIndex />);
     expect(await screen.findByDisplayValue('21:00')).toBeInTheDocument();

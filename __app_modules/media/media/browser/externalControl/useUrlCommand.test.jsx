@@ -44,6 +44,20 @@ describe('useUrlCommand', () => {
     expect(ctl2.queue.playNow).not.toHaveBeenCalled();
   });
 
+  it('runs a queue command once during the mount when dedupe storage is unavailable', () => {
+    const controller = makeController();
+    vi.stubGlobal('localStorage', undefined);
+    try {
+      const { rerender } = renderHook(({ query }) => useUrlCommand(controller, query), {
+        initialProps: { query: '?queue=plex:42' }, wrapper: React.StrictMode,
+      });
+      rerender({ query: '?queue=plex:42&view=browse' });
+      expect(controller.queue.add).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it('rejects remote-dispatch params silently (device=...)', () => {
     const ctl = makeController();
     renderHook(() => useUrlCommand(ctl, '?play=plex:1&device=livingroom-tv'));

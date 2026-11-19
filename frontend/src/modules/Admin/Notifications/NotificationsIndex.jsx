@@ -1,5 +1,7 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState } from 'react';
 import { Stack, Paper, Title, Group, Switch, TextInput, Table, Button, Badge, NumberInput, Text, Loader } from '@mantine/core';
+import { useApiResource } from '../../../lib/hooks/useApiResource.js';
+import { ErrorState } from '../../../lib/ui/states.jsx';
 import { DaylightAPI } from '../../../lib/api.mjs';
 
 /**
@@ -14,21 +16,24 @@ import { DaylightAPI } from '../../../lib/api.mjs';
  * — see frontend/src/lib/api.mjs — not (path, method, data).
  */
 export function NotificationsIndex() {
-  const [config, setConfig] = useState(null);
-  const [events, setEvents] = useState([]);
+  const settings = useApiResource('/api/v1/admin/notifications');
+  const ledger = useApiResource('/api/v1/admin/notifications/ledger?limit=50');
+
+  return (
+    <Stack gap="md" p="md">
+      <Title order={3}>Notifications</Title>
+      {settings.error && <ErrorState label="Notification settings" error={settings.error} onRetry={settings.reload} />}
+      {settings.loading && <Loader />}
+      {settings.data && <NotificationSettings initial={settings.data} />}
+      <ActivityLedger ledger={ledger} />
+    </Stack>
+  );
+}
+
+function NotificationSettings({ initial }) {
+  const [config, setConfig] = useState(() => ({ quiet_hours: initial.quiet_hours, cooldowns: initial.cooldowns }));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
-
-  const loadConfig = useCallback(async () => {
-    const c = await DaylightAPI('/api/v1/admin/notifications');
-    setConfig({ quiet_hours: c.quiet_hours, cooldowns: c.cooldowns });
-  }, []);
-  const loadLedger = useCallback(async () => {
-    const r = await DaylightAPI('/api/v1/admin/notifications/ledger?limit=50');
-    setEvents(r.events || []);
-  }, []);
-
-  useEffect(() => { loadConfig(); loadLedger(); }, [loadConfig, loadLedger]);
 
   const save = async () => {
     setSaving(true); setError(null);
@@ -39,14 +44,12 @@ export function NotificationsIndex() {
     finally { setSaving(false); }
   };
 
-  if (!config) return <Loader />;
   const qh = config.quiet_hours;
   const setQh = (patch) => setConfig((c) => ({ ...c, quiet_hours: { ...c.quiet_hours, ...patch } }));
   const setCooldown = (k, v) => setConfig((c) => ({ ...c, cooldowns: { ...c.cooldowns, [k]: v } }));
 
   return (
-    <Stack gap="md" p="md">
-      <Title order={3}>Notifications</Title>
+    <>
       {error && <Text c="red">{error}</Text>}
 
       <Paper p="md" withBorder>
@@ -75,27 +78,35 @@ export function NotificationsIndex() {
       </Paper>
 
       <Group><Button onClick={save} loading={saving}>Save</Button></Group>
+    </>
+  );
+}
 
-      <Paper p="md" withBorder>
-        <Group justify="space-between" mb="sm"><Title order={5}>Recent activity</Title>
-          <Button size="xs" variant="light" onClick={loadLedger}>Refresh</Button></Group>
-        <Table>
-          <Table.Thead><Table.Tr><Table.Th>When</Table.Th><Table.Th>User</Table.Th><Table.Th>Category</Table.Th><Table.Th>Result</Table.Th></Table.Tr></Table.Thead>
-          <Table.Tbody>
-            {events.map((e, i) => (
-              <Table.Tr key={i}>
-                <Table.Td>{new Date(e.at).toLocaleString()}</Table.Td>
-                <Table.Td>{e.username || '—'}</Table.Td>
-                <Table.Td>{e.category}</Table.Td>
-                <Table.Td>{e.suppressed
-                  ? <Badge color="gray" variant="light">suppressed · {e.reason}</Badge>
-                  : <Badge color="green" variant="light">sent</Badge>}</Table.Td>
-              </Table.Tr>
-            ))}
-          </Table.Tbody>
-        </Table>
-      </Paper>
-    </Stack>
+function ActivityLedger({ ledger }) {
+  const events = ledger.data?.events || [];
+  return (
+    <Paper p="md" withBorder>
+      <Group justify="space-between" mb="sm"><Title order={5}>Recent activity</Title>
+        {!ledger.error && <Button size="xs" variant="light" onClick={ledger.reload} disabled={ledger.loading}>Refresh</Button>}
+      </Group>
+      {ledger.error && <ErrorState label="Recent activity" error={ledger.error} onRetry={ledger.reload} />}
+      {ledger.loading && <Loader />}
+      <Table>
+        <Table.Thead><Table.Tr><Table.Th>When</Table.Th><Table.Th>User</Table.Th><Table.Th>Category</Table.Th><Table.Th>Result</Table.Th></Table.Tr></Table.Thead>
+        <Table.Tbody>
+          {events.map((e, i) => (
+            <Table.Tr key={i}>
+              <Table.Td>{new Date(e.at).toLocaleString()}</Table.Td>
+              <Table.Td>{e.username || '—'}</Table.Td>
+              <Table.Td>{e.category}</Table.Td>
+              <Table.Td>{e.suppressed
+                ? <Badge color="gray" variant="light">suppressed · {e.reason}</Badge>
+                : <Badge color="green" variant="light">sent</Badge>}</Table.Td>
+            </Table.Tr>
+          ))}
+        </Table.Tbody>
+      </Table>
+    </Paper>
   );
 }
 

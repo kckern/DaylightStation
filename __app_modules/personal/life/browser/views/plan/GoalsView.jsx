@@ -6,7 +6,7 @@ import {
 import { useGoals } from "../../hooks/useLifePlan.js";
 import { GoalProgressBar } from "../../widgets/GoalProgressBar.jsx";
 import { goalStateColor } from "../../theme/semantics.js";
-import { LifePage, LoadingState } from "../../components/index.js";
+import { LifePage, LoadingState, ErrorState } from "../../components/index.js";
 import { formatDate } from "../../lib/format.js";
 
 const STATE_GROUPS = [
@@ -40,7 +40,7 @@ function GoalCard({ goal, onClick }) {
 }
 
 export function GoalsView({ username, onGoalClick }) {
-  const { goals, loading, createGoal } = useGoals(username);
+  const { goals, loading, error, refetch, createGoal } = useGoals(username);
 
   const [opened, setOpened] = useState(false);
   const [name, setName] = useState('');
@@ -115,6 +115,15 @@ export function GoalsView({ username, onGoalClick }) {
   if (loading) return <LoadingState />;
 
   const headerActions = <Button onClick={() => setOpened(true)}>Add goal</Button>;
+
+  if (error) {
+    return (
+      <LifePage title="Goals" actions={headerActions}>
+        <ErrorState label="Goals" error={error} onRetry={refetch} />
+        {addModal}
+      </LifePage>
+    );
+  }
 
   if (goals.length === 0) {
     return (

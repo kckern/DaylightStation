@@ -1,8 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { DaylightAPI } from "../../../../../frontend/src/lib/api.mjs";
+import { useVisibleRefresh } from "@/lib/hooks/useVisibleRefresh.js";
 import { useFeedWorkspace } from "../FeedWorkspaceContext.jsx";
 import "../FeedShared.scss";
+
+const resultKey = item => item.stateKey || item.id;
 
 export default function FeedSearch() {
   const [params, setParams] = useSearchParams();
@@ -19,6 +22,8 @@ export default function FeedSearch() {
   const { mutateItems, applyPendingMutations } = useFeedWorkspace();
   const inputRef = useRef(null);
   const requestRef = useRef(null);
+  const hasAppendedPage = useRef(false);
+  const writes = useRef({ pending: 0, generation: 0 });
 
   useEffect(() => { inputRef.current?.focus(); }, []);
   useEffect(() => {
@@ -27,26 +32,56 @@ export default function FeedSearch() {
     setSource(current.get('source') || '');
   }, [requestKey]);
 
-  const runSearch = useCallback(async ({ append = false, cursor = null } = {}) => {
-    if (!append) requestRef.current?.abort();
+  const runSearch = useCallback(async ({ append = false, cursor = null, refresh = false } = {}) => {
+    if (refresh && requestRef.current) return;
+    requestRef.current?.abort();
+    const writeGeneration = writes.current.generation;
     const controller = new AbortController();
     requestRef.current = controller;
-    if (append) setLoadingMore(true); else setLoading(true);
-    setError(null);
+    if (!refresh) {
+      if (append) setLoadingMore(true);
+      else {
+        setLoading(true);
+        hasAppendedPage.current = false;
+      }
+      setError(null);
+    }
     const api = new URLSearchParams(requestKey);
     api.set('limit', '30');
     if (cursor) api.set('cursor', cursor); else api.delete('cursor');
     try {
       const result = await DaylightAPI(`/api/v1/feed/search?${api}`, {}, 'GET', { signal: controller.signal });
-      const incoming = applyPendingMutations(result.items || []);
-      setItems(current => append ? [...current, ...incoming.filter(item => !current.some(existing => existing.stateKey === item.stateKey))] : incoming);
-      setNextCursor(result.nextCursor || null);
+      if (controller.signal.aborted) return;
+      // A poll overlapping an optimistic action can still report index
+      // progress. A later poll can apply authoritative state after settlement.
+      const overlappedWrite = writes.current.pending > 0 || writeGeneration !== writes.current.generation;
+      if (!refresh || !overlappedWrite) {
+        const incoming = applyPendingMutations(result.items || []);
+        if (append) {
+          hasAppendedPage.current = true;
+          setItems(current => {
+            const existing = new Set(current.map(resultKey));
+            return [...current, ...incoming.filter(item => !existing.has(resultKey(item)))];
+          });
+        } else if (refresh && hasAppendedPage.current) {
+          // Page one can update rows already displayed without moving the
+          // reader or replacing the continuation supplied by their last page.
+          const refreshed = new Map(incoming.map(item => [resultKey(item), item]));
+          setItems(current => current.map(item => refreshed.get(resultKey(item)) || item));
+        } else {
+          setItems(incoming);
+        }
+        if (!refresh || !hasAppendedPage.current) setNextCursor(result.nextCursor || null);
+      }
       setTotal(result.total || 0);
       setCoverage(result.coverage || null);
     } catch (err) {
-      if (err.name !== 'AbortError') setError('Search could not be completed.');
+      if (!refresh && !controller.signal.aborted && err.name !== 'AbortError') setError('Search could not be completed.');
     } finally {
-      if (!controller.signal.aborted) { setLoading(false); setLoadingMore(false); }
+      if (requestRef.current === controller) {
+        requestRef.current = null;
+        if (!refresh && !controller.signal.aborted) { setLoading(false); setLoadingMore(false); }
+      }
     }
   }, [applyPendingMutations, requestKey]);
 
@@ -55,11 +90,8 @@ export default function FeedSearch() {
     return () => requestRef.current?.abort();
   }, [runSearch]);
 
-  useEffect(() => {
-    if (coverage?.status !== 'running') return undefined;
-    const timer = setTimeout(() => runSearch(), 2_000);
-    return () => clearTimeout(timer);
-  }, [coverage?.indexed, coverage?.status, runSearch]);
+  const refreshCoverage = useCallback(() => runSearch({ refresh: true }), [runSearch]);
+  useVisibleRefresh({ active: coverage?.status === 'running' && !error, intervalMs: 2000, reload: refreshCoverage });
 
   const submit = event => {
     event.preventDefault();
@@ -69,6 +101,15 @@ export default function FeedSearch() {
     setParams(next);
   };
   const replace = updated => setItems(current => current.map(item => updated.find(value => value.id === item.id) || item));
+  const actOnItem = async (item, action) => {
+    writes.current.pending++;
+    try {
+      await mutateItems([item], action, { onApply: replace }).catch(() => {});
+    } finally {
+      writes.current.pending--;
+      writes.current.generation++;
+    }
+  };
   const setFilter = (key, value) => {
     const next = new URLSearchParams(params);
     if (value) next.set(key, value); else next.delete(key);
@@ -105,9 +146,9 @@ export default function FeedSearch() {
             <h2>{item.url ? <a href={item.url} target="_blank" rel="noreferrer">{item.title}</a> : item.title}</h2>
             {item.summary && <p>{item.summary}</p>}
             <div className="feed-item-actions">
-              <button aria-pressed={!!item.state?.isSaved} onClick={() => mutateItems([item], item.state?.isSaved ? 'unsave' : 'save', { onApply: replace })}>{item.state?.isSaved ? 'Saved' : 'Save'}</button>
-              <button onClick={() => mutateItems([item], item.state?.isArchived ? 'unarchive' : 'archive', { onApply: replace })}>{item.state?.isArchived ? 'Restore' : 'Archive'}</button>
-              <button onClick={() => mutateItems([item], item.state?.isRead ? 'unread' : 'read', { onApply: replace })}>{item.state?.isRead ? 'Mark unread' : 'Mark read'}</button>
+              <button aria-pressed={!!item.state?.isSaved} onClick={() => actOnItem(item, item.state?.isSaved ? 'unsave' : 'save')}>{item.state?.isSaved ? 'Saved' : 'Save'}</button>
+              <button onClick={() => actOnItem(item, item.state?.isArchived ? 'unarchive' : 'archive')}>{item.state?.isArchived ? 'Restore' : 'Archive'}</button>
+              <button onClick={() => actOnItem(item, item.state?.isRead ? 'unread' : 'read')}>{item.state?.isRead ? 'Mark unread' : 'Mark read'}</button>
             </div>
           </article>
         ))}

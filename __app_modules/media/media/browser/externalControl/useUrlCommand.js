@@ -5,11 +5,13 @@ import { normalizePlaybackQuality, PLAYBACK_QUALITY_KEYS } from '@shared-contrac
 // via a persisted dedupe token. Nav params (?view=…) are a separate
 // namespace handled by NavProvider — see lib/urlParams.js.
 import { useEffect, useRef } from 'react';
+import { browserPreference } from "@/lib/browserPreference.js";
 import { STORAGE_KEYS } from "../constants.js";
 import { PLAYBACK_PARAM_KEYS, NAV_PARAM_KEYS, readPlaybackParams } from "../lib/urlParams.js";
 import mediaLog from "../logging/mediaLog.js";
 
 export const URL_TOKEN_KEY = STORAGE_KEYS.URL_COMMAND_TOKEN;
+const lastCommand = browserPreference(URL_TOKEN_KEY, null);
 
 // The dedupe token covers ONLY the playback namespace. Nav params share the
 // URL and change as the user navigates (?play=X → ?play=X&view=fleet), so a
@@ -67,13 +69,14 @@ export function useUrlCommand(controller, searchString = typeof window !== 'unde
     if (!cmd) return;
 
     const token = tokenFor(searchString);
-    const last = localStorage.getItem(URL_TOKEN_KEY);
+    const last = lastCommand.read();
     if (last === token) {
       mediaLog.urlCommandIgnored({ reason: 'dedupe', token });
       appliedRef.current = true;
       return;
     }
 
+    appliedRef.current = true;
     for (const k of cmd.unknownKeys) {
       mediaLog.urlCommandIgnored({ reason: 'unknown-key', key: k });
     }
@@ -92,8 +95,7 @@ export function useUrlCommand(controller, searchString = typeof window !== 'unde
       mediaLog.urlCommandProcessed({ param: 'queue', value: cmd.queue });
     }
 
-    try { localStorage.setItem(URL_TOKEN_KEY, token); } catch { /* ignore */ }
-    appliedRef.current = true;
+    lastCommand.write(token);
   }, [controller, searchString]);
 }
 

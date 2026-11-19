@@ -1,4 +1,5 @@
 import { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import { browserPreference } from '@/lib/browserPreference.js';
 import getLogger from "../../../../../frontend/src/lib/logging/Logger.js";
 import { DaylightAPI } from "../../../../../frontend/src/lib/api.mjs";
 
@@ -9,7 +10,7 @@ function logger() {
 }
 
 /** localStorage key holding the manually-selected household username. */
-const STORAGE_KEY = 'life.username';
+const memberPreference = browserPreference('life.username', null, username => username || null);
 
 /**
  * Context carrying the backend-resolved life user ({ username, displayName }).
@@ -21,16 +22,6 @@ export const LifeUserContext = createContext(null);
 /** Resolved user from the nearest provider, or null outside one / before load. */
 export function useLifeUsername() {
   return useContext(LifeUserContext)?.username || null;
-}
-
-/** Read the stored username selection, tolerating environments without localStorage. */
-function readStoredUsername() {
-  try {
-    if (typeof localStorage === 'undefined') return null;
-    return localStorage.getItem(STORAGE_KEY) || null;
-  } catch {
-    return null;
-  }
 }
 
 /**
@@ -46,7 +37,7 @@ function readStoredUsername() {
  *   setUsername: (username: string|null) => void, loading: boolean, error: string|null }}
  */
 export function useLifeUser() {
-  const [selected, setSelected] = useState(readStoredUsername);
+  const [selected, setSelected] = useState(memberPreference.read);
   const [user, setUser] = useState(null);
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -97,14 +88,8 @@ export function useLifeUser() {
 
   // Persist + apply a new user selection; the resolve effect refetches /user.
   const setUsername = useCallback((username) => {
-    try {
-      if (typeof localStorage !== 'undefined') {
-        if (username) localStorage.setItem(STORAGE_KEY, username);
-        else localStorage.removeItem(STORAGE_KEY);
-      }
-    } catch {
-      // Storage unavailable (private mode, etc.) — selection still applies for the session.
-    }
+    if (username) memberPreference.write(username);
+    else memberPreference.clear();
     setSelected(username || null);
     logger().info('life.user.switched', { username });
   }, []);

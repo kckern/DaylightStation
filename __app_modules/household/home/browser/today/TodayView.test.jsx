@@ -110,7 +110,7 @@ describe('TodayView', () => {
     route();
     view();
     fireEvent.click(await screen.findByRole('button', { name: 'Doorbell: 2 rings, open details' }));
-    await waitFor(() => expect(apiMock).toHaveBeenCalledWith(`api/v1/camera/porch-cam/clips?day=${DAY}`));
+    await waitFor(() => expect(apiMock).toHaveBeenCalledWith(`api/v1/camera/porch-cam/clips?day=${DAY}`, {}, 'GET', { signal: expect.any(AbortSignal) }));
     expect(await screen.findByText('No recording near this ring')).toBeTruthy();
     const videos = document.querySelectorAll('video');
     expect(videos).toHaveLength(1);

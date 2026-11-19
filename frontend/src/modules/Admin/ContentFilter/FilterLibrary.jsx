@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Accordion, Badge, Button, Group, Select, SimpleGrid, Stack, Text, TextInput } from '@mantine/core';
+import { browserPreference } from '../../../lib/browserPreference.js';
+import { useVisibleRefresh } from '../../../lib/hooks/useVisibleRefresh.js';
 import { DaylightAPI } from '../../../lib/api.mjs';
 import { useApiResource } from '../../../lib/hooks/useApiResource.js';
 import { LoadingState, ErrorState, EmptyState, SectionCard, createAppLogger } from '../../../lib/ui/index.js';
@@ -31,16 +33,10 @@ export const SECTIONS = [
 /** Films the library cannot match to Plex (no key, stale key, another year, several Plex films). */
 export const UNMATCHED_SECTION = { id: 'unmatched', label: 'Not matched to Plex' };
 const isUnmatched = (f) => f.match === 'unmatched';
-const OPEN_KEY = 'cf-library-open';
-const defaultOpen = () => SECTIONS.filter((x) => x.open).map((x) => x.id);
-function loadOpen() {
-  try {
-    const v = JSON.parse(localStorage.getItem(OPEN_KEY));
-    if (Array.isArray(v)) return v;
-  } catch { /* storage unavailable or corrupt: defaults */ }
-  return defaultOpen();
-}
-function saveOpen(v) { try { localStorage.setItem(OPEN_KEY, JSON.stringify(v)); } catch { /* ignore */ } }
+const openSectionsPreference = browserPreference('cf-library-open', SECTIONS.filter(section => section.open).map(section => section.id), raw => {
+  const value = JSON.parse(raw);
+  return Array.isArray(value) ? value : null;
+});
 
 export function runText(job, worker = null) {
   if (!job) return null;
@@ -66,11 +62,7 @@ export function FilterLibrary() {
     if (data?.meta) logger.debug('library.loaded', { total: data.meta.total, verified: data.meta.verified ?? null, unmatched: data.meta.unmatched ?? null });
   }, [data]);
 
-  useEffect(() => {
-    if (!anyActive) return undefined;
-    const id = setInterval(() => reload(), POLL_MS);
-    return () => clearInterval(id);
-  }, [anyActive, reload]);
+  useVisibleRefresh({ active: anyActive, intervalMs: POLL_MS, reload });
 
   const make = useCallback(async (film) => {
     setBusy(film.ratingKey); setNotice(null);
@@ -84,8 +76,8 @@ export function FilterLibrary() {
     } finally { setBusy(null); }
   }, [reload]);
 
-  const [openSections, setOpenSections] = useState(loadOpen);
-  const onToggle = useCallback((v) => { setOpenSections(v); saveOpen(v); }, []);
+  const [openSections, setOpenSections] = useState(openSectionsPreference.read);
+  const onToggle = useCallback((v) => { setOpenSections(v); openSectionsPreference.write(JSON.stringify(v)); }, []);
 
   const needle = q.trim().toLowerCase();
   const shown = useMemo(

@@ -1,5 +1,6 @@
-import { useState, useEffect, useLayoutEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useLayoutEffect, useCallback, useMemo, useRef } from 'react';
 import { useParams, useNavigate, useSearchParams, useLocation, useOutletContext } from 'react-router-dom';
+import { browserPreference } from "@/lib/browserPreference.js";
 import { renderFeedCard } from "./cards/index.jsx";
 import DetailView from "./detail/DetailView.jsx";
 import DetailModal from "./detail/DetailModal.jsx";
@@ -165,6 +166,7 @@ export default function Scroll() {
   const focusSource = searchParams.get('focus');
   const filterParam = searchParams.get('filter') || '';
   const sessionStorageKey = `feed:scroll:session:${focusSource || 'all'}:${filterParam || 'all'}`;
+  const storedSessionId = useMemo(() => browserPreference(sessionStorageKey, null, undefined, () => sessionStorage), [sessionStorageKey]);
   const observerRef = useRef(null);
   const sentinelRef = useRef(null);
   const containerRef = useRef(null);
@@ -265,7 +267,7 @@ export default function Scroll() {
         } catch (resumeError) {
           if (controller.signal.aborted) throw resumeError;
           if (!String(resumeError.message).startsWith('HTTP 404:')) throw resumeError;
-          sessionStorage.removeItem(sessionStorageKey);
+          storedSessionId.clear();
           result = await DaylightAPI('/api/v1/feed/scroll/sessions', {
             focus: focusSource || null,
             filter: filterParam || null,
@@ -281,7 +283,7 @@ export default function Scroll() {
       }
       if (result.sessionId) {
         setSessionId(result.sessionId);
-        sessionStorage.setItem(sessionStorageKey, result.sessionId);
+        storedSessionId.write(result.sessionId);
       }
       feedLog.timing('scroll-fetch', { durationMs: Math.round(performance.now() - fetchStart), append, cursor, count: (result.items || []).length });
 
@@ -337,7 +339,7 @@ export default function Scroll() {
       setLoadingMore(false);
       appendLockRef.current = false;
     }
-  }, [applyPendingMutations, effectiveBudget, filterParam, focusSource, searchParams, sessionId, sessionStorageKey]);
+  }, [applyPendingMutations, effectiveBudget, filterParam, focusSource, searchParams, sessionId, storedSessionId]);
 
   useEffect(() => () => listAbortRef.current?.abort(), []);
   useEffect(() => { markVisited('scroll', visitStarted.current); }, [markVisited]);
@@ -401,7 +403,7 @@ export default function Scroll() {
 
   // Initial load + reset/refetch whenever the ?filter= identity changes. (F-11)
   useEffect(() => {
-    const storedSession = sessionStorage.getItem(sessionStorageKey);
+    const storedSession = storedSessionId.read();
     setSessionId(storedSession);
     setItems([]);
     setHasMore(true);
@@ -819,7 +821,7 @@ export default function Scroll() {
             <p>You’ve reached the end of the current source pool.</p>
             <div className="scroll-end__actions">
               <button className="scroll-load-more" onClick={() => {
-                sessionStorage.removeItem(sessionStorageKey);
+                storedSessionId.clear();
                 setSessionId(null);
                 fetchItems(false, null);
               }}>Refresh sources</button>

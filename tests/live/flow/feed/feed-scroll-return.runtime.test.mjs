@@ -104,3 +104,39 @@ test('Reader, Headlines and Search each render inside the Feed main landmark', a
     await expect(main).toHaveCount(1);
   }
 });
+
+for (const failure of ['blocked read', 'expired session and quota']) {
+  test('Scroll loads and paginates in memory with ' + failure, async ({ page }) => {
+    const release = await fixture(page);
+    release();
+    const requests = [];
+    await page.addInitScript(mode => {
+      const key = 'feed:scroll:session:all:all';
+      if (mode !== 'blocked read') sessionStorage.setItem(key, 'expired');
+      for (const method of ['getItem', 'setItem', 'removeItem']) {
+        const original = Storage.prototype[method];
+        Storage.prototype[method] = function (name, ...args) {
+          if (this === sessionStorage && name === key && (mode === 'blocked read' || method !== 'getItem')) {
+            throw new DOMException('Unavailable', 'QuotaExceededError');
+          }
+          return original.call(this, name, ...args);
+        };
+      }
+    }, failure);
+    await page.route('**/api/v1/feed/scroll/sessions**', route => {
+      const path = new URL(route.request().url()).pathname;
+      requests.push([route.request().method(), path]);
+      if (path.endsWith('/expired')) return route.fulfill({ status: 404, json: {} });
+      const first = route.request().method() === 'POST';
+      return route.fulfill({ json: { items: [items[first ? 0 : 1]], sessionId: 'in-memory', hasMore: first } });
+    });
+    await page.goto('/feed/scroll');
+    const main = page.getByRole('main');
+    await expect(main.getByRole('button', { name: 'Open: Fixture article 0' })).toBeVisible();
+    await main.evaluate(el => { el.scrollTop = el.scrollHeight; });
+    await expect(main.getByRole('button', { name: 'Open: Fixture article 1' })).toBeVisible();
+    expect(requests.filter(([method]) => method === 'POST')).toHaveLength(1);
+    expect(requests).toContainEqual(['GET', '/api/v1/feed/scroll/sessions/in-memory']);
+    if (failure !== 'blocked read') expect(requests).toContainEqual(['GET', '/api/v1/feed/scroll/sessions/expired']);
+  });
+}

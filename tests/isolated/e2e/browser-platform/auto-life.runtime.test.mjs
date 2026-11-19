@@ -87,3 +87,23 @@ test('Life discards a previous member’s late plan and deduplicates recipient n
   await expect(plan).toBeVisible();
   await expect(switcher).toHaveValue('BOB');
 });
+
+test('Life distinguishes unavailable goals from a successful empty list and retries the read', async ({ page }) => {
+  await page.routeWebSocket('**/*', () => {});
+  const member = { username: 'amy', displayName: 'Amy' };
+  await page.route('**/api/**/life/users', route => route.fulfill({ json: { users: [member] } }));
+  await page.route('**/api/**/life/user*', route => {
+    if (new URL(route.request().url()).pathname.endsWith('/users')) return route.fallback();
+    return route.fulfill({ json: member });
+  });
+  let recovered = false;
+  await page.route('**/api/**/life/plan/goals*', route => recovered
+    ? route.fulfill({ json: { goals: [] } })
+    : route.fulfill({ status: 503, json: { message: 'Goals temporarily unavailable' } }));
+  await page.goto('/life/plan/goals');
+  await expect(page.getByRole('alert')).toContainText('Goals');
+  await expect(page.getByText(/No goals yet/)).toHaveCount(0);
+  recovered = true;
+  await page.getByRole('button', { name: 'Retry' }).click();
+  await expect(page.getByText(/No goals yet/)).toBeVisible();
+});

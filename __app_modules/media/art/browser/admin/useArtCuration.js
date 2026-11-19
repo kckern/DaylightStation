@@ -21,6 +21,8 @@ export function useArtCuration(filters = {}) {
   const [works, setWorks] = useState([]);
   const [index, setIndex] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const requestId = useRef(0);
   const [autoAdvance, setAutoAdvance] = useState(false);
   const undoStack = useRef([]);   // [{ id, prevMeta }]
   const worksRef = useRef([]);    // mirror of works for synchronous reads in callbacks
@@ -33,23 +35,32 @@ export function useArtCuration(filters = {}) {
   }, []);
 
   const load = useCallback(async () => {
+    const id = ++requestId.current;
+    setError(null);
     setLoading(true);
     try {
       // Load the whole filtered pool so the grid is a real gallery, not the first
       // page. The backend caps pageSize, so this requests "all" up to that cap.
       const res = await DaylightAPI(`${WORKS_PATH}${qs({ ...filters, pageSize: 2000 })}`);
+      if (id !== requestId.current) return;
       applyWorks(res.works || []);
       setIndex(0);
       logger.info('art.library.loaded', { total: res.total ?? 0 });
     } catch (err) {
+      if (id !== requestId.current) return;
+      applyWorks([]);
+      setError(err);
       logger.error('art.library.load-failed', { error: err.message });
     } finally {
-      setLoading(false);
+      if (id === requestId.current) setLoading(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filterKey, logger, applyWorks]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    load();
+    return () => { requestId.current += 1; };
+  }, [load]);
 
   const focused = works[index] || null;
 
@@ -105,7 +116,7 @@ export function useArtCuration(filters = {}) {
   }, [patchWork, logger]);
 
   return {
-    works, focused, index, loading, autoAdvance,
+    works, focused, index, loading, error, autoAdvance,
     setAutoAdvance, next, prev, goto, mutate, undo, reload: load,
   };
 }

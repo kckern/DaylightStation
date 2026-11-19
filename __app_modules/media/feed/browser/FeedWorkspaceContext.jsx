@@ -13,12 +13,12 @@ const lastVisit = mode => browserPreference(`feed:last-visit:${mode}`, null);
 const PENDING_PREFIX = 'feed:pending-mutations:';
 const DEFAULT_READING_PREFERENCES = Object.freeze({ theme: 'dark', density: 'comfortable', fontScale: 1, lineHeight: 1.65, measure: 72, sessionBudget: 0 });
 
-function loadJson(key, fallback) {
+function queueOwner() {
   try {
-    const parsed = JSON.parse(localStorage.getItem(key) || 'null');
-    return parsed ?? fallback;
+    return offlineStorageUser();
   } catch {
-    return fallback;
+    // Reading identity can itself fail when storage access is disabled.
+    return null;
   }
 }
 
@@ -28,15 +28,23 @@ function loadReadingPreferences() {
   return { ...DEFAULT_READING_PREFERENCES, ...stored, ...(density ? { density } : {}) };
 }
 
-function pendingKey(user = offlineStorageUser()) {
+function pendingKey(user) {
   return `${PENDING_PREFIX}${user}`;
 }
 
-function loadPendingMutations(user = offlineStorageUser()) {
-  const stored = loadJson(pendingKey(user), []);
+function readPendingMutations(user) {
+  const stored = JSON.parse(localStorage.getItem(pendingKey(user)) || '[]');
   if (!Array.isArray(stored)) return [];
   const actions = new Set(['read', 'unread', 'save', 'unsave', 'archive', 'unarchive']);
-  return stored.slice(0, 500).filter(entry => entry?.id && actions.has(entry.action) && Array.isArray(entry.itemIds));
+  return stored.filter(entry => entry?.id && actions.has(entry.action) && Array.isArray(entry.itemIds));
+}
+
+function loadPendingMutations(user) {
+  try {
+    return user ? readPendingMutations(user) : [];
+  } catch {
+    return [];
+  }
 }
 
 function updateItemState(item, state) {
@@ -67,11 +75,12 @@ function mutationId() {
 }
 
 export function FeedWorkspaceProvider({ children }) {
-  const userScopeRef = useRef(offlineStorageUser());
+  const userScopeRef = useRef(queueOwner());
   const snapshotsRef = useRef(new Map());
   const checkpointsRef = useRef({});
   const pendingRef = useRef(loadPendingMutations(userScopeRef.current));
   const flushRef = useRef(false);
+  const acknowledgedRef = useRef(new Set());
   const [readingPreferences, setReadingPreferencesState] = useState(loadReadingPreferences);
   const readingPreferencesRef = useRef(readingPreferences);
   const [checkpoints, setCheckpoints] = useState({});
@@ -118,18 +127,23 @@ export function FeedWorkspaceProvider({ children }) {
     return workspace;
   }, []);
 
-  const commitPending = useCallback((value) => {
-    const next = typeof value === 'function' ? value(pendingRef.current) : value;
+  const commitPending = useCallback(update => {
+    const owner = userScopeRef.current;
+    if (!owner || owner !== queueOwner()) throw new Error('Offline account is unavailable.');
+    // Read and persist before publishing. A rejected storage operation leaves
+    // the previous durable queue and its in-memory view intact.
+    const next = update(readPendingMutations(owner));
+    localStorage.setItem(pendingKey(owner), JSON.stringify(next));
     pendingRef.current = next;
     setPendingMutations(next);
-    localStorage.setItem(pendingKey(userScopeRef.current), JSON.stringify(next));
     return next;
   }, []);
 
   const synchronizeUserScope = useCallback(() => {
-    const currentUser = offlineStorageUser();
+    const currentUser = queueOwner();
     if (currentUser === userScopeRef.current) return currentUser;
     userScopeRef.current = currentUser;
+    acknowledgedRef.current.clear();
     const next = loadPendingMutations(currentUser);
     pendingRef.current = next;
     setPendingMutations(next);
@@ -146,9 +160,13 @@ export function FeedWorkspaceProvider({ children }) {
     try {
       for (const operation of [...pendingRef.current]) {
         try {
-          await DaylightAPI('/api/v1/feed/items/state', { itemIds: operation.itemIds, action: operation.action }, 'PATCH');
-          if (offlineStorageUser() !== userScope) break;
+          if (!acknowledgedRef.current.has(operation.id)) {
+            await DaylightAPI('/api/v1/feed/items/state', { itemIds: operation.itemIds, action: operation.action }, 'PATCH');
+            if (queueOwner() !== userScope) break;
+            acknowledgedRef.current.add(operation.id);
+          }
           commitPending(current => current.filter(entry => entry.id !== operation.id));
+          acknowledgedRef.current.delete(operation.id);
           completed += 1;
         } catch (error) {
           if (!isNetworkFailure(error)) log.warn('feed.offline_replay.failed', { operationId: operation.id, error: error.message });
@@ -257,7 +275,7 @@ export function FeedWorkspaceProvider({ children }) {
 
   const mutateItems = useCallback(async (items, action, { onApply } = {}) => {
     if (!items.length) return null;
-    synchronizeUserScope();
+    const owner = synchronizeUserScope();
     const previous = new Map(items.map(item => [item.id, item.state]));
     const now = new Date().toISOString();
     const optimistic = items.map(item => applyAction(item, action, { now }));
@@ -265,7 +283,17 @@ export function FeedWorkspaceProvider({ children }) {
 
     const queueOffline = () => {
       const operation = { id: mutationId(), itemIds: items.map(item => item.id), action, createdAt: now };
-      commitPending(current => [...current, operation].slice(-500));
+      try {
+        if (!owner || owner !== queueOwner()) throw new Error('Offline account is unavailable.');
+        commitPending(current => {
+          if (current.length >= 500) throw new Error('The offline queue is full.');
+          return [...current, operation];
+        });
+      } catch (error) {
+        onApply?.(items.map(item => updateItemState(item, previous.get(item.id))));
+        notifications.show({ color: 'red', title: 'Change not saved', message: 'The offline change could not be stored. Try again when connected.' });
+        throw error;
+      }
       const queued = optimistic.map(item => updateItemState(item, { ...item.state, syncStatus: 'pending' }));
       onApply?.(queued);
       notifications.show({ title: 'Saved offline', message: 'This change will synchronize when the connection returns.' });
@@ -288,7 +316,7 @@ export function FeedWorkspaceProvider({ children }) {
         message: (
           <span>
             {result.items?.some(item => item.state?.syncStatus === 'pending') ? 'Saved locally; source sync will retry. ' : 'Change saved. '}
-            {inverse && <button type="button" className="feed-toast-undo" onClick={() => mutateItems(optimistic, inverse, { onApply })}>Undo</button>}
+            {inverse && <button type="button" className="feed-toast-undo" onClick={() => mutateItems(optimistic, inverse, { onApply }).catch(() => {})}>Undo</button>}
           </span>
         ),
         autoClose: 5000,

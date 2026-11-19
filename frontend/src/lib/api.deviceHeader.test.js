@@ -70,6 +70,23 @@ describe('DaylightAPI sends X-Daylight-Device', () => {
     }
   });
 
+  it('returns the final status after following a same-origin redirect with the device identity', async () => {
+    const finalUrl = new URL('/api/v1/health', window.location.origin).href;
+    fetchMock.mockResolvedValueOnce({ redirected: true, url: finalUrl, status: 200 });
+    fetchMock.mockResolvedValueOnce({ redirected: false, status: 503 });
+
+    await expect(DaylightStatusCheck('/api/v1/legacy-health/')).resolves.toBe(503);
+
+    const expectedOptions = expect.objectContaining({
+      method: 'GET',
+      headers: expect.objectContaining({ [HEADER]: getDeviceId() }),
+    });
+    expect(fetchMock.mock.calls).toEqual([
+      [new URL('/api/v1/legacy-health', window.location.origin).href, expectedOptions],
+      [finalUrl, expectedOptions],
+    ]);
+  });
+
   it('sends the same id on every call, so a run of requests is one device', async () => {
     await DaylightAPI('api/v1/one');
     await DaylightAPI('api/v1/two');
