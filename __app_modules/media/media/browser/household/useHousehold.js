@@ -15,7 +15,7 @@ import {
   HOUSEHOLD_PATHS, addFavourite, removeFavourite, removeFromHouseholdList,
   restoreToHouseholdList, markWatched as postWatched, refreshHouseholdViews,
 } from "./householdApi.js";
-import { createScreenNamer } from "./householdModel.js";
+import { createScreenNamer, resolveHouseholdEntry } from "./householdModel.js";
 
 export const HOUSEHOLD_UNDO_MS = 10_000;
 
@@ -52,14 +52,7 @@ export function useFavourites() {
 export function useHouseholdEntry(contentId) {
   const carryOn = useApiResource(HOUSEHOLD_PATHS.carryOn, { swr: true, label: 'media-carry-on', logger: householdResourceLogger });
   const recent = useApiResource(HOUSEHOLD_PATHS.recent, { swr: true, label: 'media-recent', logger: householdResourceLogger });
-  return useMemo(() => {
-    if (!contentId) return null;
-    for (const list of [carryOn.data?.items, recent.data?.items]) {
-      const found = Array.isArray(list) ? list.find(entry => entry?.contentId === contentId) : null;
-      if (found) return found;
-    }
-    return null;
-  }, [contentId, carryOn.data, recent.data]);
+  return resolveHouseholdEntry(contentId, carryOn, recent);
 }
 
 /** `nameFor(deviceId)` from GET /api/v1/media/screens; this device is "this device". */

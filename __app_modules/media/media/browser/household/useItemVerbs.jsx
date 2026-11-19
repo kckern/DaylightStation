@@ -16,19 +16,14 @@ import { isContainer } from "../../../../../__capabilities/content-catalog/brows
 import { ItemDestinationPicker } from "../actions/ItemDestinationPicker.jsx";
 import mediaLog from "../logging/mediaLog.js";
 import { HOUSEHOLD_PATHS } from "./householdApi.js";
-import { resumePlan } from "./householdModel.js";
+import { resolveHouseholdEntry, resumePlan } from "./householdModel.js";
 import { useHouseholdActions, useScreenNamer } from "./useHousehold.js";
 import { SpotChooser } from "./SpotChooser.jsx";
 
 /** The household entry (spots) for an item, from whatever the start page already loaded. */
-export function householdEntryFor(contentId) {
-  if (!contentId) return null;
-  for (const path of [HOUSEHOLD_PATHS.carryOn, HOUSEHOLD_PATHS.recent]) {
-    const items = peekApiResource(path)?.items;
-    const found = Array.isArray(items) ? items.find(entry => entry?.contentId === contentId) : null;
-    if (found) return found;
-  }
-  return null;
+function householdEntryFor(contentId) {
+  const cached = path => ({ data: peekApiResource(path) });
+  return resolveHouseholdEntry(contentId, cached(HOUSEHOLD_PATHS.carryOn), cached(HOUSEHOLD_PATHS.recent)).entry;
 }
 
 export function isCollection(item) {
@@ -44,7 +39,7 @@ export function useItemVerbs() {
   const [choice, setChoice] = useState(null);
 
   const playLeaf = useCallback((item, entry) => {
-    const plan = resumePlan(entry ?? householdEntryFor(item.id));
+    const plan = resumePlan(entry === undefined ? householdEntryFor(item.id) : entry);
     if (plan.kind === 'choose') {
       mediaLog.spotChoiceShown({ contentId: item.id, spots: plan.spots.length });
       setChoice({ item, spots: plan.spots });

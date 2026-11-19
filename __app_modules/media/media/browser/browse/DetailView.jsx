@@ -14,7 +14,7 @@ import Skeleton from '@/lib/ui/Skeleton.jsx';
 import { isContainer } from "../../../../../__capabilities/content-catalog/browser/combobox-state.mjs";
 import { ItemDestinationPicker } from "../actions/ItemDestinationPicker.jsx";
 import { DestinationLine } from "../cast/DestinationLine.jsx";
-import { useItemVerbs, householdEntryFor } from "../household/useItemVerbs.jsx";
+import { useItemVerbs } from "../household/useItemVerbs.jsx";
 import { useFavourites, useHouseholdEntry } from "../household/useHousehold.js";
 import { spotsSummary, formatLeft, whereLine } from "../household/householdModel.js";
 import { IconHeart, IconHeartFilled, IconEye, IconEyeOff } from '@tabler/icons-react';
@@ -30,7 +30,7 @@ export function DetailView({ contentId }) {
   const { pop, backDestination } = useNav();
   const { run, overlays, nameFor } = useItemVerbs();
   const favourites = useFavourites();
-  const loadedEntry = useHouseholdEntry(contentId);
+  const { entry, pending: pendingResume } = useHouseholdEntry(contentId);
   // PLAY.5a/AC3: pressing and holding Play Next offers "At the very front".
   const { startingOnFor } = useStartingOn();
   const startingOn = startingOnFor(contentId);
@@ -63,7 +63,6 @@ export function DetailView({ contentId }) {
   const collection = isContainer(detailItem);
   // How far anyone has got, per screen (FIND.8a / PLAY.4a), when the
   // household lists already know this item.
-  const entry = loadedEntry ?? householdEntryFor(contentId);
   const progress = entry && !entry.finished
     ? (spotsSummary(entry, nameFor)
       ?? [formatLeft(entry.playhead, entry.duration), whereLine(entry, nameFor)].filter(Boolean).join(' · '))
@@ -90,6 +89,7 @@ export function DetailView({ contentId }) {
         <Button
           data-testid="detail-play-now"
           leftSection={<IconPlayerPlayFilled size={18} />}
+          loading={!collection && pendingResume}
           onClick={() => (collection ? dispatchLeafVerb('playNow', contentId, detailItem) : run('playNow', detailItem, { entry }))}
         >
           Play Now

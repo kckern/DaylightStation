@@ -513,6 +513,12 @@ library's) are merged: newest record's fields, every screen's newest spot.
   recent/carry-on request at 8 s. On a miss the fields are `null` and the
   entry is still returned.
 
+Item details use a carry-on match first and fall back to recent after the
+preferred read settles. Play Now waits for an unresolved cold lookup. A
+settled miss or failure lets the normal playback resolver check the item's
+saved position. The spot chooser belongs to the current detail item and
+closes when the item changes.
+
 `PlayLedgerRow`:
 
 ```json

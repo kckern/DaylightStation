@@ -98,6 +98,18 @@ export function differingSpots(entry) {
   return out;
 }
 
+/** Find an item in priority order, waiting for a higher-priority cold read. */
+export function resolveHouseholdEntry(contentId, ...resources) {
+  if (contentId) {
+    for (const { data, loading = false } of resources) {
+      const items = data?.items;
+      const entry = Array.isArray(items) ? items.find(item => item?.contentId === contentId) : null;
+      if (entry || loading) return { entry: entry ?? null, pending: !entry };
+    }
+  }
+  return { entry: null, pending: false };
+}
+
 /**
  * How a Play should start (PLAY.4a): continue from the one saved spot, ask
  * when screens hold different spots, start from the beginning when none.
