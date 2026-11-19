@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback, useEffect } from 'react';
+import { useState, useRef, useCallback, useEffect, useLayoutEffect } from 'react';
 import { useDismissLayer } from '@/lib/ui/dismiss/useDismissLayer.js';
 import { formatAge, proxyIcon, proxyImage, colorFromLabel } from "../cards/utils.js";
 import { renderSection } from "./sections/index.jsx";
@@ -8,7 +8,8 @@ import AnnotationPanel from "../../Annotations/AnnotationPanel.jsx";
 import OfflineEditionButton from "../../offline/OfflineEditionButton.jsx";
 import "./DetailView.scss";
 
-export default function DetailView({ inModal = false, item, sections, ogImage, ogDescription, loading, error, onRetry, onBack, onNext, onPrev, onPlay, activeMedia, playback, onNavigateToItem, onStateAction }) {
+export default function DetailView({ renderDialog, focusOnEntry = false, item, sections, ogImage, ogDescription, loading, error, onRetry, onBack, onNext, onPrev, onPlay, activeMedia, playback, onNavigateToItem, onStateAction }) {
+  const inModal = Boolean(renderDialog);
   const usesDismissStack = useDismissLayer(!inModal, onBack);
   const sourceName = item.meta?.sourceName || item.source || '';
   const iconUrl = proxyIcon(item.meta?.sourceIcon);
@@ -27,12 +28,21 @@ export default function DetailView({ inModal = false, item, sections, ogImage, o
   const [imageLoaded, setImageLoaded] = useState(false);
   const [imagePhase, setImagePhase] = useState('original'); // original → proxy → hidden
   const contentRef = useRef(null);
+  const backRef = useRef(null);
   const dirRef = useRef(0); // -1 = prev, 1 = next
   const titleAreaRef = useRef(null);
   const stickyRef = useRef(null);
   const stickyInitRef = useRef(true);
   const heroLoadStartRef = useRef(performance.now());
   const [stickyVisible, setStickyVisible] = useState(false);
+
+  useLayoutEffect(() => {
+    if (!focusOnEntry) return;
+    const focused = document.activeElement;
+    if (focused === document.body || !focused?.getClientRects().length) {
+      backRef.current?.focus({ preventScroll: true });
+    }
+  }, [focusOnEntry]);
 
   // Reset image state when hero image changes
   useEffect(() => {
@@ -114,15 +124,25 @@ export default function DetailView({ inModal = false, item, sections, ogImage, o
   }, []);
 
   useEffect(() => {
-    const handleKeyDown = (e) => {
-      if (e.defaultPrevented) return;
-      if (!inModal && !usesDismissStack && e.key === 'Escape') onBack();
-      if (e.key === 'ArrowLeft' && onPrev) navigateWithAnimation(-1, onPrev);
-      if (e.key === 'ArrowRight' && onNext) navigateWithAnimation(1, onNext);
+    if (inModal || usesDismissStack) return undefined;
+    const handleEscape = event => {
+      if (event.key === 'Escape' && !event.defaultPrevented) onBack();
     };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [inModal, usesDismissStack, onBack, onNext, onPrev, navigateWithAnimation]);
+    window.addEventListener('keydown', handleEscape);
+    return () => window.removeEventListener('keydown', handleEscape);
+  }, [inModal, usesDismissStack, onBack]);
+
+  const handleArticleArrows = event => {
+    const { key, target, currentTarget } = event;
+    if (event.defaultPrevented || event.nativeEvent.isComposing || event.altKey || event.ctrlKey || event.metaKey) return;
+    if (key !== 'ArrowLeft' && key !== 'ArrowRight') return;
+    if (!currentTarget.contains(target) || target.isContentEditable ||
+      target.closest?.('input, textarea, select, [role="textbox"], [role="slider"]')) return;
+    const changeArticle = key === 'ArrowLeft' ? onPrev : onNext;
+    if (!changeArticle) return;
+    event.preventDefault();
+    navigateWithAnimation(key === 'ArrowLeft' ? -1 : 1, changeArticle);
+  };
 
   const touchRef = useRef(null);
 
@@ -145,9 +165,9 @@ export default function DetailView({ inModal = false, item, sections, ogImage, o
     if (dx > 0 && onPrev) { feedLog.nav('detail swipe prev', { dx }); navigateWithAnimation(-1, onPrev); }
   }, [onNext, onPrev, navigateWithAnimation]);
 
-  return (
-    <div className="detail-view" onTouchStart={handleTouchStart} onTouchEnd={handleTouchEnd}>
-      <button className="detail-close" onClick={onBack} aria-label="Back to feed" data-autofocus={inModal || undefined}>
+  const article = (
+    <div className="detail-view" onKeyDown={inModal ? undefined : handleArticleArrows} onTouchStart={handleTouchStart} onTouchEnd={handleTouchEnd}>
+      <button ref={backRef} className="detail-close" onClick={onBack} aria-label="Back to feed" data-autofocus={inModal || undefined}>
         <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
           <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z" />
         </svg>
@@ -294,6 +314,7 @@ export default function DetailView({ inModal = false, item, sections, ogImage, o
       </div>
     </div>
   );
+  return renderDialog ? renderDialog(article, handleArticleArrows) : article;
 }
 
 function YouTubeHero({ item, heroImage, sections, loading, onPlay: _onPlay }) {

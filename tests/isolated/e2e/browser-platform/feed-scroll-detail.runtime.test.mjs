@@ -158,6 +158,23 @@ test('Feed keeps an invalid link error after the previous item’s offline looku
   await expect(alert).toContainText(invalidLink);
 });
 
+test('Feed opens a compact article ready for arrow navigation from its keyboard entry', async ({ page }) => {
+  const next = { ...article, id: 'reddit:next-detail', title: 'Next Feed item' };
+  await page.route('**/scroll/sessions', route => route.fulfill({
+    json: { items: [article, next], sessionId: 'two-articles', hasMore: false },
+  }));
+  await page.route('**/feed/detail/*', route => route.fulfill({ json: { sections } }));
+  await page.goto('/feed/scroll');
+
+  await page.getByRole('button', { name: `Open: ${article.title}` }).press('Enter');
+  await expect(page).toHaveURL(scrollPath(article.id));
+  await page.keyboard.press('ArrowRight');
+  await expect(page).toHaveURL(scrollPath(next.id));
+  await expect(page.getByRole('button', { name: 'Back to feed' }).first()).toBeFocused();
+  await page.keyboard.press('ArrowLeft');
+  await expect(page).toHaveURL(scrollPath(article.id));
+});
+
 test('Feed desktop detail contains Tab and returns focus to the opening card after navigation', async ({ page }) => {
   const first = { ...article, id: 'reddit:previous-detail', title: 'Previous Feed item' };
   const third = { ...article, id: 'reddit:next-detail', title: 'Next Feed item' };
@@ -185,13 +202,13 @@ test('Feed desktop detail contains Tab and returns focus to the opening card aft
   await page.keyboard.press('Shift+Tab');
   await expect(next).toBeFocused();
 
-  await page.keyboard.press('Enter');
+  await page.keyboard.press('ArrowRight');
   await expect(page).toHaveURL(scrollPath(third.id));
   const lastDialog = page.getByRole('dialog', { name: third.title });
   await expect.poll(() => lastDialog.evaluate(element => element.contains(document.activeElement))).toBe(true);
   const previous = lastDialog.getByRole('button', { name: 'Previous item' });
   await previous.focus();
-  await page.keyboard.press('Enter');
+  await page.keyboard.press('ArrowLeft');
   await expect(page).toHaveURL(scrollPath(article.id));
   await expect(dialog.getByRole('button', { name: 'Previous item' })).toBeFocused();
 

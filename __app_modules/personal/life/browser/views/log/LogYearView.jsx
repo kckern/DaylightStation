@@ -1,18 +1,17 @@
 import { Title, Paper, Group, Badge, SimpleGrid } from '@mantine/core';
-import { useLifelog } from "../../hooks/useLifelog.js";
+import { useLogActivity } from './shared/useLogActivity.js';
 import { ActivityHeatmap } from "./shared/ActivityHeatmap.jsx";
 import { LifePage, LoadingState, ErrorState } from "../../components/index.js";
 
 /**
  * Year view with full-year heatmap and quarterly summary cards.
  */
-export function LogYearView({ username, at }) {
-  const { data, loading, error, refetch } = useLifelog({ scope: 'year', username, at });
+export function LogYearView({ username, at, categories }) {
+  const { days, loading, error, refetch } = useLogActivity({ scope: 'year', username, at, categories });
 
   if (loading) return <LoadingState />;
   if (error) return <ErrorState error={error} onRetry={refetch} />;
 
-  const days = data?.days || {};
   const dates = Object.keys(days).sort();
 
   // Group by quarter

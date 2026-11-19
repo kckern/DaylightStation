@@ -25,10 +25,10 @@ function ChecklistRow({ done, label, onClick }) {
 export function Dashboard() {
   const logger = useMemo(() => getLogger().child({ component: 'life-dashboard' }), []);
   const navigate = useNavigate();
-  const { data: priorityData, loading: pLoading } = useAlignment('priorities');
-  const { data: dashData, loading: dLoading } = useAlignment('dashboard');
+  const priorityRead = useAlignment('priorities');
+  const summaryRead = useAlignment('dashboard');
   const { isEmpty: planIsEmpty, loading: planLoading, error: planError, refetch: refetchPlan } = useLifePlan();
-  const dashboard = dashData?.dashboard;
+  const dashboard = summaryRead.data?.dashboard;
   const stage = dashboard?.stage;
   const completeness = dashboard?.completeness;
 
@@ -38,25 +38,23 @@ export function Dashboard() {
   }, [logger]);
 
   useEffect(() => {
-    if (!pLoading && !dLoading && !planLoading) {
-      const dashboard = dashData?.dashboard;
+    if (!priorityRead.loading && !summaryRead.loading && !planLoading
+      && !priorityRead.error && !summaryRead.error && !planError) {
       logger.info('life.dashboard.loaded', {
         goalCount: dashboard?.goalProgress?.length || 0,
         beliefCount: dashboard?.beliefConfidence?.length || 0,
         hasDrift: !!dashboard?.valueDrift,
-        priorityCount: priorityData?.priorities?.length || 0,
+        priorityCount: priorityRead.data?.priorities?.length || 0,
         planEmpty: planIsEmpty,
       });
     }
-  }, [pLoading, dLoading, planLoading, planIsEmpty, dashData, priorityData, logger]);
+  }, [priorityRead.loading, priorityRead.error, priorityRead.data, summaryRead.loading, summaryRead.error, dashboard, planLoading, planError, planIsEmpty, logger]);
 
-  if (pLoading || dLoading || planLoading) {
+  if (planLoading) {
     return <LoadingState />;
   }
 
   if (planError) return <ErrorState label="Life plan" error={planError} onRetry={refetchPlan} />;
-
-  const priorities = priorityData?.priorities || [];
 
   return (
     <Stack gap="md">
@@ -95,10 +93,14 @@ export function Dashboard() {
       <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="md">
         <Paper p="md" withBorder>
           <Title order={5} mb="sm">Priorities</Title>
-          <PriorityList priorities={priorities} />
+          {priorityRead.loading ? <LoadingState label="priorities" rows={2} /> : priorityRead.error ? (
+            <ErrorState label="Priorities" error={priorityRead.error} onRetry={priorityRead.refetch} />
+          ) : <PriorityList priorities={priorityRead.data?.priorities ?? []} />}
         </Paper>
 
         <Stack gap="md">
+          {summaryRead.loading && <LoadingState label="dashboard summary" rows={2} />}
+          {summaryRead.error && <ErrorState label="Dashboard summary" error={summaryRead.error} onRetry={summaryRead.refetch} />}
           {dashboard?.valueDrift && (
             <Paper p="md" withBorder>
               <DriftGauge

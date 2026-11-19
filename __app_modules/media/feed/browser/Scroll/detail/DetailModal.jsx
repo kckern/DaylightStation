@@ -34,9 +34,10 @@ export default function DetailModal({ item, sections, ogImage, ogDescription, lo
     return () => document.removeEventListener('keydown', handleEscape);
   }, [usesDismissStack, onBack]);
 
-  return (
+  const renderDialog = (article, onKeyDown) => (
     <div
       ref={ref}
+      onKeyDown={onKeyDown}
       className="detail-modal-scrim"
       onClick={event => { if (event.target === event.currentTarget) onBack(); }}
       role="dialog"
@@ -45,24 +46,7 @@ export default function DetailModal({ item, sections, ogImage, ogDescription, lo
       tabIndex={-1}
     >
       <div className="detail-modal-panel">
-        <DetailView
-          inModal
-          item={item}
-          sections={sections}
-          ogImage={ogImage}
-          ogDescription={ogDescription}
-          loading={loading}
-          error={error}
-          onRetry={onRetry}
-          onBack={onBack}
-          onNext={onNext}
-          onPrev={onPrev}
-          onPlay={onPlay}
-          activeMedia={activeMedia}
-          playback={playback}
-          onNavigateToItem={onNavigateToItem}
-          onStateAction={onStateAction}
-        />
+        {article}
       </div>
       {onPrev && (
         <button
@@ -85,5 +69,26 @@ export default function DetailModal({ item, sections, ogImage, ogDescription, lo
         </button>
       )}
     </div>
+  );
+
+  return (
+    <DetailView
+      renderDialog={renderDialog}
+      item={item}
+      sections={sections}
+      ogImage={ogImage}
+      ogDescription={ogDescription}
+      loading={loading}
+      error={error}
+      onRetry={onRetry}
+      onBack={onBack}
+      onNext={onNext}
+      onPrev={onPrev}
+      onPlay={onPlay}
+      activeMedia={activeMedia}
+      playback={playback}
+      onNavigateToItem={onNavigateToItem}
+      onStateAction={onStateAction}
+    />
   );
 }

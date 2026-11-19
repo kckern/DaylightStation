@@ -1,5 +1,5 @@
 import { Title, Paper, Group, Badge, SimpleGrid } from '@mantine/core';
-import { useLifelog } from "../../hooks/useLifelog.js";
+import { useLogActivity } from './shared/useLogActivity.js';
 import { ActivityHeatmap } from "./shared/ActivityHeatmap.jsx";
 import { LifePage, LoadingState, ErrorState } from "../../components/index.js";
 import { formatDate } from "../../lib/format.js";
@@ -7,13 +7,12 @@ import { formatDate } from "../../lib/format.js";
 /**
  * Season (90-day) view with heatmap and monthly summary cards.
  */
-export function LogSeasonView({ username, at }) {
-  const { data, loading, error, refetch } = useLifelog({ scope: 'season', username, at });
+export function LogSeasonView({ username, at, categories }) {
+  const { days, loading, error, refetch } = useLogActivity({ scope: 'season', username, at, categories });
 
   if (loading) return <LoadingState />;
   if (error) return <ErrorState error={error} onRetry={refetch} />;
 
-  const days = data?.days || {};
   const dates = Object.keys(days).sort();
 
   // Group by month

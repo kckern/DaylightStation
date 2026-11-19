@@ -146,6 +146,61 @@ test('Feed article playback survives Escape dismissing the player sheet before t
   await expect.poll(clock).toBeGreaterThan(returned);
 });
 
+test('Feed article arrows respect editing and the expanded player before navigating articles', async ({ page }) => {
+  const next = { ...item, id: 'plex:43', contentId: 'plex:43', title: 'Next article fixture' };
+  await page.routeWebSocket('**/ws', () => {});
+  await page.route('**/api/v1/feed/scroll/sessions', route => route.fulfill({
+    json: { items: [item, next], sessionId: 'fixture', hasMore: false },
+  }));
+  await page.goto('/feed/scroll');
+  await page.getByRole('button', { name: 'Play', exact: true }).first().click();
+  const clock = await originalClock(page);
+  await page.getByRole('button', { name: `Open: ${item.title}` }).press('Enter');
+  const articleUrl = page.url();
+  const heading = page.getByRole('heading', { name: item.title, exact: true });
+  await expect(heading).toBeVisible();
+
+  const note = page.getByRole('textbox', { name: 'Add a note' });
+  await note.fill('Draft note');
+  await note.evaluate(input => input.setSelectionRange(4, 4));
+  await page.keyboard.press('ArrowLeft');
+  expect(await note.evaluate(input => input.selectionStart)).toBe(3);
+  await page.keyboard.press('ArrowRight');
+  expect(await note.evaluate(input => input.selectionStart)).toBe(4);
+  const settleArticleMotion = () => page.locator('.detail-content').evaluate(async content => {
+    await Promise.allSettled(content.getAnimations().map(animation => animation.finished));
+    await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+  });
+  await settleArticleMotion();
+  await expect(note).toBeFocused();
+  await expect(page).toHaveURL(articleUrl);
+  await expect(note).toHaveValue('Draft note');
+
+  await page.getByRole('button', { name: /Open player/ }).click();
+  const sheet = page.getByRole('dialog', { name: item.title });
+  const seek = sheet.getByRole('slider', { name: 'Playback position' });
+  const beforeSeek = await clock();
+  await seek.press('ArrowRight');
+  await expect.poll(clock).toBeGreaterThan(beforeSeek + 3);
+  const afterSeek = await clock();
+  await seek.press('ArrowLeft');
+  await expect.poll(clock).toBeLessThan(afterSeek - 3);
+  await sheet.getByRole('button', { name: 'Close player' }).press('ArrowRight');
+  await settleArticleMotion();
+  await expect(page).toHaveURL(articleUrl);
+  await expect(sheet).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(sheet).toBeHidden();
+
+  await page.getByRole('button', { name: 'Back to feed' }).first().press('ArrowRight');
+  await expect(page.getByRole('heading', { name: next.title, exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Back to feed' }).first().press('ArrowLeft');
+  await expect(page).toHaveURL(articleUrl);
+  const returned = await clock();
+  expect(returned).toBeGreaterThan(0);
+  await expect.poll(clock).toBeGreaterThan(returned);
+});
+
 test('Feed Scroll leaves J/K focus with the expanded player until dismissal', async ({ page }) => {
   const { dialog, opener } = await openFixtureSheet(page);
   const close = dialog.getByRole('button', { name: 'Close player' });

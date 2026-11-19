@@ -1,17 +1,16 @@
 import { Title, Paper, Group, Badge, SimpleGrid } from '@mantine/core';
-import { useLifelog } from "../../hooks/useLifelog.js";
+import { useLogActivity } from './shared/useLogActivity.js';
 import { LifePage, LoadingState, ErrorState } from "../../components/index.js";
 
 /**
  * Decade view showing year-by-year summary cards.
  */
-export function LogDecadeView({ username, at }) {
-  const { data, loading, error, refetch } = useLifelog({ scope: 'decade', username, at });
+export function LogDecadeView({ username, at, categories }) {
+  const { days, loading, error, refetch } = useLogActivity({ scope: 'decade', username, at, categories });
 
   if (loading) return <LoadingState />;
   if (error) return <ErrorState error={error} onRetry={refetch} />;
 
-  const days = data?.days || {};
   const dates = Object.keys(days).sort();
 
   // Group by year

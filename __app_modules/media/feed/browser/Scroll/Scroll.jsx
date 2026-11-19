@@ -862,6 +862,7 @@ export default function Scroll() {
       )}
       {selectedItem && !isDesktop && (
         <DetailView
+          focusOnEntry={!wasOnDetail.current}
           item={selectedItem}
           sections={detailData?.sections || []}
           ogImage={detailData?.ogImage || null}

@@ -6,7 +6,7 @@ import { useDismissLayer } from '@/lib/ui/dismiss/useDismissLayer.js';
 import DetailModal from "./DetailModal.jsx";
 
 vi.mock("./DetailView.jsx", () => ({
-  default: () => <><button>First action</button><button>Last action</button></>,
+  default: ({ renderDialog }) => renderDialog(<><button>First action</button><button>Last action</button></>),
 }));
 
 describe('DetailModal', () => {

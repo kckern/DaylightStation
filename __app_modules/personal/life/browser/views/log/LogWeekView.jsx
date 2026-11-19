@@ -1,5 +1,5 @@
 import { Stack, Text, Paper, Group, Badge } from '@mantine/core';
-import { useLifelog } from "../../hooks/useLifelog.js";
+import { useLogActivity } from './shared/useLogActivity.js';
 import { ActivityHeatmap } from "./shared/ActivityHeatmap.jsx";
 import { SourceIcon } from "./shared/SourceIcon.jsx";
 import { LifePage, LoadingState, ErrorState } from "../../components/index.js";
@@ -8,13 +8,12 @@ import { formatDate } from "../../lib/format.js";
 /**
  * Week view showing a heatmap and per-day summary cards.
  */
-export function LogWeekView({ username, at }) {
-  const { data, loading, error, refetch } = useLifelog({ scope: 'week', username, at });
+export function LogWeekView({ username, at, categories }) {
+  const { days, loading, error, refetch } = useLogActivity({ scope: 'week', username, at, categories });
 
   if (loading) return <LoadingState />;
   if (error) return <ErrorState error={error} onRetry={refetch} />;
 
-  const days = data?.days || {};
   const sortedDates = Object.keys(days).sort().reverse();
 
   return (
