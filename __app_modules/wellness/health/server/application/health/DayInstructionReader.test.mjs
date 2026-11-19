@@ -56,6 +56,28 @@ describe('DayInstructionReader', () => {
     expect(options).not.toContain('2026-11-11');
     expect(options).toEqual(expect.arrayContaining(['same', 'older']));
   });
+  it('offers the viewed day as a destination when the latest capture is on another day', async () => {
+    const g = gateway(validRead);
+    await reader(g).read({ ...readInput, latestDate: '2026-11-17' });
+    const options = Object.keys(g.evaluate.mock.calls[0][1].toDay.options);
+    expect(options).toEqual(expect.arrayContaining(['2026-11-18', '2026-11-17']));
+    expect(options).not.toContain('2026-11-11');
+  });
+  it('accepts the viewed day as an answer only when it was offered', async () => {
+    const answers = { ...validRead, toDay: pick('2026-11-18') };
+    expect((await reader(gateway(answers)).read({ ...readInput, latestDate: '2026-11-17' })).toDay).toBe('2026-11-18');
+    await expect(reader(gateway(answers)).read({ ...readInput, latestDate: '2026-11-18' })).rejects.toThrow('Invalid decision answer: toDay');
+  });
+  it('offers a viewed day older than the seven days when the latest capture is elsewhere', async () => {
+    const g = gateway(validRead);
+    await reader(g).read({ ...readInput, date: '2026-11-01', latestDate: '2026-11-17' });
+    expect(g.evaluate.mock.calls[0][1].toDay.options['2026-11-01']).toContain('Sun, Nov 1');
+  });
+  it('reads a day with no foods, showing the latest capture from elsewhere', async () => {
+    const g = gateway(validRead);
+    await reader(g).read({ ...readInput, foods: [], latest: ['Pizza'], latestDate: '2026-11-17' });
+    expect(g.evaluate.mock.calls[0][0]).toMatchObject({ foods_on_this_day: [], latest_capture: ['Pizza'] });
+  });
   it('lets the model decline the request and say no meal was named, but always pick a target', async () => {
     const g = gateway({ ...validRead, intent: pick('other'), target: pick('named'), fromMeal: pick('none') });
     const plan = await reader(g).read(readInput);

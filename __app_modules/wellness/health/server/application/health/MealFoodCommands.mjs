@@ -147,7 +147,9 @@ export class MealFoodCommands {
         selected.forEach(check);
         for (const [id, changes] of Object.entries(input.changes || {})) {
           if (!selectedIds.includes(id)) fail('Amendment exceeds selection');
-          const row = get(id); requireFood(row); update(row, amendmentPatch(row, changes, options));
+          // Only a dish holds parts, so a stray link to this food does not make it one.
+          const row = get(id); if (row.kind === 'group') fail('Groups cannot be nested');
+          update(row, amendmentPatch(row, changes, options));
         }
         if (input.additions !== undefined && !Array.isArray(input.additions)) fail('Invalid additions');
         const promoted = new Map();
@@ -179,8 +181,11 @@ export class MealFoodCommands {
       }
       // Retire headers made empty by reassignment or removal. Foods are deleted
       // only by an amend's explicit removals above.
-      const oldParents = new Set([...updates.values()].map(u => byId.get(u.id)?.parentId)
-        .concat(deleteIds.map(id => byId.get(id)?.parentId)).filter(Boolean).map(id => canonicalId(byLinkId, id)));
+      // An amend leaves links alone, so only a real dish of an amended food matters:
+      // a broken link names a parent that has nothing to do with this change.
+      const relinked = [...updates.values()].map(u => byId.get(u.id)).filter(row => row && (action !== 'amend' || dishOf(row, byLinkId)));
+      const oldParents = new Set([...relinked, ...deleteIds.map(id => byId.get(id))].map(row => row?.parentId)
+        .filter(Boolean).map(id => canonicalId(byLinkId, id)));
       for (const parentId of oldParents) {
         const parent = get(parentId); check(parent);
         const remaining = rows.some(row => {
@@ -191,16 +196,24 @@ export class MealFoodCommands {
         if (!remaining && !deleteIds.includes(parentId)) deleteIds.push(parentId);
       }
       const undoToken = `meal-${uuidv5(`${userId}:${operationId}`, uuidv5.URL)}`;
+      const audit = { id: undoToken, fingerprint: fingerprint(input), type: 'meal-command', date, bucket };
       const result = await this.store.mutateEntries(userId, {
         updates: [...updates.values()].filter(u => !deleteIds.includes(u.id)), creates, deleteIds, allowFoodCreates: action === 'amend',
-        audit: { id: undoToken, fingerprint: fingerprint(input), type: 'meal-command', date, bucket },
+        audit,
         resultMeta: { committed: true, date, bucket, undoToken },
         validate: ({ before, after }) => {
           for (const id of checked) {
             const raw = before.find(row => idOf(row) === id);
             if (!raw || (raw.version ?? 1) !== expectedVersions[id]) fail('This meal changed. Reload before saving.', 409);
           }
-          this.validateGraph(after);
+          if (action !== 'amend') { this.validateGraph(after); return; }
+          // An amend answers only for the rows it touches. Links that were already
+          // broken stay as they are, and join the audit so Undo accepts them too.
+          const touched = new Set([...updates.keys(), ...deleteIds, ...creates.map(idOf)]);
+          const links = new Set(before.filter(row => touched.has(idOf(row))).flatMap(linkIds));
+          const beforeByLink = indexByLinkId(before);
+          audit.brokenLinkIds = before.filter(row => row.parentId && (touched.has(idOf(row)) || links.has(row.parentId)) && linkBroken(row, beforeByLink)).map(idOf);
+          this.validateGraph(after, new Set([...touched, ...links]), new Set(audit.brokenLinkIds));
         },
       });
       this.logger.info?.('health.meal.command', { userId, action, operationId, affectedIds: result.affectedIds });

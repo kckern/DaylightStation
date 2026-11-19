@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Runs realistic phrases through the real decision gateway and scores how
 // DayInstructionReader reads them. Makes paid Jev calls; writes no food data.
-// Usage: DAYLIGHT_BASE_PATH=<content-base> node cli/day-instruction-calibrate.mjs
+// Usage: DAYLIGHT_BASE_PATH=<content-base> node cli/day-instruction-calibrate.mjs [--only id,id]
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -29,6 +29,20 @@ export function readJevApiKey(base) {
   return apiKey;
 }
 
+/** What the reader is given for one case. A case may describe its own day. */
+export const readingInput = item => ({ text: item.text, date: TODAY, today: TODAY, foods: item.foods ?? FOODS, latest: item.latest ?? LATEST });
+
+/** Every case, or those named by `--only`, which costs one paid call each. */
+export function selectCases(cases, args) {
+  const flag = args.indexOf('--only');
+  if (flag === -1) return cases;
+  const ids = (args[flag + 1] || '').split(',').filter(Boolean);
+  if (!ids.length) throw new Error('--only needs case IDs');
+  const unknown = ids.find(id => !cases.some(item => item.id === id));
+  if (unknown) throw new Error(`Unknown calibration case: ${unknown}`);
+  return cases.filter(item => ids.includes(item.id));
+}
+
 export async function main() {
   const base = process.env.DAYLIGHT_BASE_PATH;
   if (!base) throw new Error('DAYLIGHT_BASE_PATH is required');
@@ -37,13 +51,13 @@ export async function main() {
   const aiUsageLedger = createAiUsageLedger({ dir: path.join(base, 'data/system/history/ai-usage'), source: 'day-instruction-calibration', logger });
   const gateway = new JevAdapter({ apiKey }, { httpClient: axios, logger, aiUsageLedger }).scoped({ app: 'health', feature: 'day-instruction-calibration' });
   const reader = new DayInstructionReader({ decisionGateway: gateway });
-  const cases = JSON.parse(fs.readFileSync(fileURLToPath(new URL('./fixtures/day-instruction-calibration.json', import.meta.url)), 'utf8'));
+  const cases = selectCases(JSON.parse(fs.readFileSync(fileURLToPath(new URL('./fixtures/day-instruction-calibration.json', import.meta.url)), 'utf8')), process.argv.slice(2));
 
   let wrong = 0;
   for (const item of cases) {
     let detail;
     try {
-      const plan = await reader.read({ text: item.text, date: TODAY, today: TODAY, foods: FOODS, latest: LATEST });
+      const plan = await reader.read(readingInput(item));
       detail = FIELDS
         .filter(key => item[key] !== undefined && item[key] !== plan[key])
         .map(key => `${key}=${plan[key]} (expected ${item[key]})`)

@@ -17,9 +17,12 @@
   preserve their serving unit while scaling known grams too; validated explicit nutrient
   overrides then take precedence. Changed and scaled fields are marked as manual
   corrections so automatic cleanup cannot overwrite them. Undo restores those
-  protection fields along with the original values.
+  protection fields along with the original values. A food with a broken dish link
+  (a part stranded in another meal, or a `parentId` that names no dish) can be amended:
+  its link stays as it is and the row it names is not checked. An amend checks dish
+  links only around the rows it touches, so a broken row elsewhere does not block it.
 
-Versions must include every affected existing food and group parent. Selection
+Versions must include every affected existing food and the dish of any real part. Selection
 must resolve within the user's requested day and meal. Membership changes cannot
 nest groups or move foods across meals. Group parents store zero nutrients;
 children contribute exactly once. Stored daily totals sum original finite
@@ -125,18 +128,47 @@ Answers are options, never free text, and a malformed answer stops the request w
 | `target` | `latest` (the most recent capture), `whole_day`, `meal`, `named`. There is no `unclear` option |
 | `fromMeal` | Each meal, or `none` |
 | `toMeal` | `same`, or each meal |
-| `toDay` | `same`, `older`, or one of the seven days ending today, leaving out the day being viewed |
+| `toDay` | `same`, `older`, or one of the seven days ending today, leaving out the day being viewed. When the latest capture is on another day, the viewed day is offered too, so "move that to today" can bring it here |
 | `compound` | Yes or no: does this ask for two or more separate changes? |
 
 A compound request changes nothing and asks for one change at a time. Reporting several
 foods is one request, and so is sending several foods to one place. `other` also
-changes nothing. A day with no counted food skips the reading and treats the words as
-new food. `named` targets, and corrections with several candidates, get one more
+changes nothing. `named` targets, and corrections with several candidates, get one more
 yes-or-no question per candidate food.
+
+The words are read even when the viewed day has no counted food, with
+`foods_on_this_day` empty, because they may correct food logged elsewhere. New food is
+the usual answer there. If the gateway is unavailable the request is a 503, as on any
+other day.
 
 The server then checks every target against the day's rows. Weight-derived estimates
 and rows that are not counted are never targets. Top-level foods follow the same dish
 rule as `foods-move`, so a broken-link row stands alone.
+
+#### What "that" means
+
+`latest` is the most recent capture, which may be on another day: "I had pizza last
+night" files the food on Yesterday while Today stays on screen, and "that was actually a
+calzone" then means the pizza.
+
+- **Where it looks.** The viewed day, and today back through six days.
+- **Which capture wins.** The newest `createdAt` among counted foods. Reconstructed rows
+  and rows that are not counted are left out. A tie stays on the viewed day.
+- **Rows with no time.** On the viewed day they keep ledger order, the last row being the
+  latest. A capture on another day beats them only if it was made on a later date than
+  the viewed day.
+- **What one capture is.** Rows sharing a `logId`, or under a shared ID such as `QUICKADD`
+  the rows that also share a `createdAt`. A part moves with its whole dish.
+- **Where the work happens.** A move takes that day as its source, and a correction
+  amends the row on its own date and meal. The food keeps its `createdAt`, so a second
+  "move that" follows it.
+- **What the reply says.** It names the day when that is not the viewed day: "Moved Pizza
+  from Yesterday to Today", "Changed Pizza to Calzone for Yesterday".
+
+On an empty viewed day, a move or correction that points at the latest capture acts on
+it. One that names foods, a meal or the whole day has nothing to act on there, so it asks,
+offering the latest capture's foods labelled with their day. With no food in the seven
+days it changes nothing and says so.
 
 #### Acting, and when it asks
 
@@ -149,8 +181,9 @@ way back. It asks only when it cannot identify the food or the destination:
   or names neither a day nor a meal.
 
 The browser answers by sending the same words with `resolved` under a new
-`operationId`, and the server reads them again. A `foodId` that is not an eligible food
-on that day is a 422. An answer to words that now read as new food changes nothing.
+`operationId`, and the server reads them again. A `foodId` must be an eligible food on the
+viewed day or on the latest capture's day, and the work happens on the day that holds it.
+Any other `foodId` is a 422. An answer to words that now read as new food changes nothing.
 
 Moves go through `foods-move`, and corrections through `meal-command`'s `amend` for
 that food's meal, so each has that command's Undo.
@@ -176,7 +209,7 @@ food counts as logged.
 
 #### Corrections and pinned fields
 
-A correction applies to one food. A revision proposal is cut down to the fields that
+A correction applies to one food, which may be a food with a broken dish link. A revision proposal is cut down to the fields that
 may be written. Fields in `manualFields` or `cleanupFields` are pinned, unless they are
 also in `revisedFields`.
 
@@ -201,7 +234,7 @@ own edit takes the fields it changes off `revisedFields`, which pins them again.
 | 422 | `DAY_INPUT_TOO_LONG` | Transcribed words are over the limit, with `audioRef` |
 | 422 | `TRANSCRIBE_EMPTY` | The recording held no words, with `audioRef` |
 | 422 | `INVALID_DAY_INSTRUCTION` | No words to act on, or an answer naming a food not on the day |
-| 502 | `TRANSCRIBE_FAILED` | Transcription failed, with `audioRef` |
+| 502 | `TRANSCRIBE_FAILED` | Transcription failed, with `audioRef`. The message is "Could not hear that recording", since the words may be new food |
 | 503 | `DAY_INPUT_UNAVAILABLE` | The gateway, or a provider behind the capture or correction, failed or is not configured. The provider's own status is never passed on |
 
 Other malformed requests are a plain 400. Refusals from `foods-move` and `amend` keep
@@ -217,11 +250,16 @@ committed nothing, so the changed request body is accepted.
 intended. It runs each phrase in
 `__app_modules/wellness/health/cli/fixtures/day-instruction-calibration.json` through
 `DayInstructionReader` against a fixed list of foods, and prints `ok` or `MISS` per
-phrase and a total. It exits non-zero on any miss.
+phrase and a total. It exits non-zero on any miss. A phrase may set its own `foods` and
+`latest`, which is how the empty-day cases are written.
 
 ```sh
 DAYLIGHT_BASE_PATH=<content-base> node cli/day-instruction-calibrate.mjs
+DAYLIGHT_BASE_PATH=<content-base> node cli/day-instruction-calibrate.mjs --only empty-dump,empty-correct
 ```
+
+`--only` runs the named phrases, for trying a wording change cheaply. Only a full run
+counts toward the bar.
 
 It makes **paid** Jev gateway calls, one per phrase, recorded in the AI usage ledger
 under the feature `day-instruction-calibration`. It writes no food data.

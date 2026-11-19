@@ -552,6 +552,10 @@ which day. The request contract, the gateway questions and the correction rules 
   under the same ID, so nothing is recorded twice. The upload stays in memory, and if the
   saved copy has gone (`AUDIO_NOT_FOUND`) it is sent instead, under that ID. A 503 affects
   only this bar.
+- **"That" follows the food.** It means the most recent capture, even one filed on
+  another day, and the reply names that day. The words are read on an empty day too, so
+  a correction there is not logged as food. See
+  [What "that" means](meal-commands.md#what-that-means).
 - **Results.** Added food gets the capture toast with its day buttons. A move or change
   gets the service's sentence and an Undo through `POST /nutrition/meal-undo`, and a move
   retires capture toasts for the food it took. The capture toast names a meal only when

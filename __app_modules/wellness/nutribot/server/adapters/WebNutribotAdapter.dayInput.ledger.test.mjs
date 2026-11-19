@@ -17,10 +17,14 @@ import { createNutritionWebDependencies } from '../../../health/server/compositi
 const silent = { debug() {}, info() {}, warn() {}, error() {}, child() { return silent; } };
 const date = '2026-11-18';
 const AUDIO = `data:audio/webm;base64,${Buffer.from('spoken').toString('base64')}`;
+// The words are read as new food, and no meal is named for it.
+const READING = { intent: 'add', target: 'latest', fromMeal: 'none', toMeal: 'same', toDay: 'same' };
+const readAsNewFood = async (_state, questions) => ({ answers: Object.fromEntries(Object.keys(questions).map(id => [id,
+  id === 'compound' ? { type: 'yesNo', probability: 0 } : { type: 'choice', choice: READING[id] ?? 'unsaid' }])) });
 const PARSED = JSON.stringify({ date, items: [{ name: 'Eggs', grams: 100, calories: 140, protein: 12, carbs: 1, fat: 10, noom_color: 'yellow', icon: 'default' }] });
 
 describe('day input on the real capture path', () => {
-  let root, items, chat, transcribeVoice, adapter, container;
+  let root, items, chat, transcribeVoice, adapter, container, evaluate;
   const audioFiles = () => { const dir = path.join(root, 'u', 'lifelog/nutrition/audio'); return fs.existsSync(dir) ? fs.readdirSync(dir) : []; };
   const send = extra => adapter.processDayInput({ userId: 'u', type: 'text', content: 'eggs', date, today: date, operationId: 'op', resolved: {}, ...extra });
 
@@ -33,8 +37,9 @@ describe('day input on the real capture path', () => {
     transcribeVoice = vi.fn(async () => 'eggs');
     const messagingGateway = { sendMessage: vi.fn(async () => ({ messageId: 'm' })), updateMessage: vi.fn(async () => ({})), deleteMessage: vi.fn(async () => ({})), transcribeVoice };
     const config = new Proxy({ getUserTimezone: () => 'UTC' }, { get: (target, key) => (key in target ? target[key] : key === 'then' ? undefined : () => undefined) });
+    evaluate = vi.fn(readAsNewFood);
     container = new NutribotContainer(config, { messagingGateway, aiGateway: { chat }, foodLogStore, nutriListStore: items, logger: silent,
-      decisionGateway: { evaluate: vi.fn(async () => { throw new Error('no reading in this test'); }) } });
+      decisionGateway: { evaluate } });
     adapter = new WebNutribotAdapter(createNutritionWebDependencies({
       applicationInputRouter: new NutribotInputRouter(container, { logger: silent }), aiGatewayAvailable: true, logger: silent, dataService,
       nutribotServices: { nutribotContainer: container, nutriListStore: items, foodLogStore },
@@ -48,7 +53,9 @@ describe('day input on the real capture path', () => {
     expect(reply).toMatchObject({ committed: true, outcome: 'committed', kind: 'added', message: 'Logged Eggs' });
     expect(reply.undoToken).toMatch(/^meal-/);
     expect(items.readOperationResult('u', sha256Text('op:day:capture'))).toMatchObject({ committed: true, outcome: 'committed', instructionText: 'eggs' });
+    const readings = evaluate.mock.calls.length;
     expect(await send()).toMatchObject({ committed: true, kind: 'added', undoToken: reply.undoToken });
+    expect(evaluate).toHaveBeenCalledTimes(readings);
     expect(chat).toHaveBeenCalledTimes(1);
     expect((await items.findByDate('u', date)).map(row => row.name || row.label)).toEqual(['Eggs']);
   });

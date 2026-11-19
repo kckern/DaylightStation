@@ -15,6 +15,8 @@
 import { FOOD_LOG_TEXT_MAX_LENGTH, FOOD_LOG_TEXT_TOO_LONG_MESSAGE } from '../../../health/server/nutrition-capture-values.mjs';
 
 const dayInputUnavailable = () => Object.assign(new Error('Day input is unavailable right now'), { status: 503, code: 'DAY_INPUT_UNAVAILABLE' });
+// A day recording may be new food, so it is not called a correction.
+const DAY_INPUT_NOT_HEARD = 'Could not hear that recording';
 const audioNotFound = () => Object.assign(new Error('That recording is no longer available'), { code: 'AUDIO_NOT_FOUND' });
 const NETWORK_CODES = new Set(['ECONNRESET', 'ECONNREFUSED', 'ECONNABORTED', 'ETIMEDOUT', 'ENOTFOUND', 'EAI_AGAIN']);
 /** Whether a failure came from the AI provider or the way to it, not from our own rules. */
@@ -458,11 +460,11 @@ export class WebNutribotAdapter {
     if (savedRef) {
       const stored = await this.#voiceMemoStore?.read(userId, savedRef);
       if (!stored) throw audioNotFound();
-      return { text: await this.#transcribe({ buffer: stored.buffer, mimeType: stored.mimeType, audioRef: savedRef }), audioRef: savedRef };
+      return { text: await this.#transcribe({ buffer: stored.buffer, mimeType: stored.mimeType, audioRef: savedRef, failure: DAY_INPUT_NOT_HEARD }), audioRef: savedRef };
     }
     const { buffer, mimeType } = this.#decodeDataUrl(content, 'voice');
     const audioRef = await this.#persistVoiceMemo(userId, buffer, mimeType);
-    return { text: await this.#transcribe({ buffer, mimeType, audioRef }), audioRef };
+    return { text: await this.#transcribe({ buffer, mimeType, audioRef, failure: DAY_INPUT_NOT_HEARD }), audioRef };
   }
 
   /** A provider's errors carry the provider's status, which is not ours to report. */
@@ -488,12 +490,12 @@ export class WebNutribotAdapter {
     return this.#transcribe({ buffer, mimeType, audioRef });
   }
 
-  async #transcribe({ buffer, mimeType, audioRef }) {
+  async #transcribe({ buffer, mimeType, audioRef, failure = 'Could not hear that correction' }) {
     let words;
     try {
       words = await this.#transcribeVoice({ buffer, mimeType, audioRef });
     } catch (error) {
-      throw Object.assign(new Error('Could not hear that correction'),
+      throw Object.assign(new Error(failure),
         { status: 502, code: 'TRANSCRIBE_FAILED', audioRef, cause: error });
     }
     if (!words || !String(words).trim()) {

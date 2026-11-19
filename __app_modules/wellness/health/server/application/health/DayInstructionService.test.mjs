@@ -8,6 +8,7 @@ import { YamlNutriListDatastore } from '../../adapters/persistence/yaml/YamlNutr
 import { DayInstructionService } from './DayInstructionService.mjs';
 import { MealFoodCommands } from './MealFoodCommands.mjs';
 import { HealthOperations } from './HealthOperations.mjs';
+import { RECONSTRUCTION_LOG_ID } from '../../../portable/contracts/nutrition/reconstruction.mjs';
 
 const date = '2026-11-18', today = date;
 const rows = [
@@ -30,7 +31,7 @@ function harness(reading, { matched = [], placements = {}, dayRows = rows, store
     execute: vi.fn(async () => ({ committed: true, undoToken: 'meal-a', affectedDates: [date], affectedIds: ['milk'], items: [] })),
   };
   const entryRevisions = { propose: vi.fn(async () => ({ proposal: { name: 'Whole Milk', icon: 'milk', color: 'yellow', grams: 240, amount: 240, unit: 'g', calories: 149 } })) };
-  const nutritionItems = { findByDate: vi.fn(async () => dayRows), findByLogId: vi.fn(async () => dayRows) };
+  const nutritionItems = { findByDate: vi.fn(async () => dayRows), findByDateRange: vi.fn(async () => dayRows), findByLogId: vi.fn(async () => dayRows) };
   if (stored) nutritionItems.readOperationResult = vi.fn((_user, id) => stored[id] || null);
   const reader = { available: true, read: vi.fn(async () => reading), matchFoods: vi.fn(async () => matched), assignMeals: vi.fn(async () => placements) };
   const logger = { info: vi.fn(), warn: vi.fn() };
@@ -269,7 +270,7 @@ describe('DayInstructionService', () => {
     });
     it('sends versions the real commands accept for a dish and for one of its parts', async () => {
       const mutateEntries = vi.fn(async (_user, { updates, resultMeta }) => ({ ...resultMeta, items: [], affectedIds: updates.map(update => update.id), affectedDates: [date] }));
-      const store = { findByDate: async () => dishRows, runOperation: (_user, _id, _payload, action) => action(), mutateEntries };
+      const store = { findByDate: async () => dishRows, findByDateRange: async () => dishRows, runOperation: (_user, _id, _payload, action) => action(), mutateEntries };
       const mealCommands = new MealFoodCommands({ nutritionItems: store });
       const decide = (reading, matched) => new DayInstructionService({ nutritionItems: store, mealCommands, entryRevisions: { propose: async () => ({ proposal: { name: 'Brown Rice' } }) },
         reader: { available: true, read: async () => reading, matchFoods: async () => matched } });
@@ -496,6 +497,231 @@ describe('DayInstructionService', () => {
         await store.saveMany([row('fresh', { parentId: 'gone', logId: 'new', createdAt: '2026-11-18T12:00:00Z' })]);
         await stack(plan({ toDay: yesterday })).run('move that to yesterday');
         expect(await ids(yesterday)).toEqual(['fresh']);
+      });
+    });
+    describe('the latest capture on another day', () => {
+      const monday = '2026-11-16';
+      const log = (day, id, createdAt, items, time = 'evening') => store.syncFromLog({ id, userId: 'u', isAccepted: true, status: 'accepted', createdAt, meal: { date: day, time }, items });
+      const oatmeal = () => log(date, 'breakfast', '2026-11-18 08:00:00', [food('oatmeal')], 'morning');
+      const pizza = () => log(yesterday, 'late', '2026-11-18 09:00:00', [food('pizza')]);
+      const calzone = { proposal: { name: 'Calzone', calories: 300 } };
+      const appendRaw = extra => { const file = path.join(root, 'lifelog/nutrition/nutrilist'); saveYamlToPathAtomic(`${file}.yml`, [...(loadYaml(file) || []), ...extra]); };
+      const raw = (uuid, day, extra) => ({ uuid, userId: 'u', name: uuid, date: day, mealTime: 'evening', grams: 100, unit: 'g', amount: 100, calories: 50, version: 1, ...extra });
+      const shown = h => h.reader.read.mock.calls[0][0];
+
+      it('a correction changes that food on its own day, and Undo restores it', async () => {
+        await oatmeal(); await pizza();
+        const h = stack(plan({ intent: 'change' }), { proposal: calzone.proposal });
+        const result = await h.run('that was actually a calzone');
+        expect(shown(h)).toMatchObject({ foods: ['oatmeal'], latest: ['pizza'], latestDate: yesterday });
+        expect(result).toMatchObject({ committed: true, kind: 'changed', message: 'Changed pizza to Calzone for Yesterday' });
+        expect(await store.findByUuid('u', 'pizza')).toMatchObject({ name: 'Calzone', date: yesterday, mealTime: 'evening' });
+        expect((await store.findByUuid('u', 'oatmeal')).version ?? 1).toBe(1);
+        await commands.undo('u', { undoToken: result.undoToken, operationId: 'undo' });
+        expect((await store.findByUuid('u', 'pizza')).calories).toBe(50);
+      });
+      it('"move that to today" brings it to the viewed day, with one Undo', async () => {
+        await oatmeal(); await pizza();
+        const result = await stack(plan({ toDay: date })).run('move that to today');
+        expect(result).toMatchObject({ kind: 'moved', message: 'Moved pizza from Yesterday to Today' });
+        expect(await ids(date)).toEqual(['oatmeal', 'pizza']);
+        expect(await ids(yesterday)).toEqual([]);
+        await commands.undo('u', { undoToken: result.undoToken, operationId: 'undo' });
+        expect(await ids(yesterday)).toEqual(['pizza']);
+      });
+      it('a change of meal stays on that day and names it', async () => {
+        await oatmeal(); await pizza();
+        expect((await stack(plan({ toMeal: 'night' })).run('that was a snack')).message).toBe('Moved pizza from Yesterday to Snacks');
+        expect(await store.findByUuid('u', 'pizza')).toMatchObject({ date: yesterday, mealTime: 'night' });
+      });
+      it('a day named as the one it is already on is no day change', async () => {
+        await oatmeal(); await pizza();
+        expect(await stack(plan({ toDay: yesterday })).run('that was yesterday')).toMatchObject({ committed: false, outcome: 'no-change' });
+      });
+      it('a second "move that" follows the food', async () => {
+        await oatmeal();
+        await log(date, 'late', '2026-11-18 09:00:00', [food('pizza')]);
+        await stack(plan({ toDay: yesterday })).run('move that to yesterday', { operationId: 'first' });
+        const second = await stack(plan({ toDay: monday })).run('move that to monday', { operationId: 'second' });
+        expect(second.message).toBe('Moved pizza from Yesterday to Mon, Nov 16');
+        expect(await ids(monday)).toEqual(['pizza']);
+        expect(await ids(date)).toEqual(['oatmeal']);
+      });
+      it('repeating the operation repeats the reply, day included', async () => {
+        await oatmeal(); await pizza();
+        const h = stack(plan({ intent: 'change' }), { proposal: calzone.proposal });
+        const first = await h.run('that was actually a calzone');
+        const again = await h.run('that was actually a calzone');
+        expect(again).toMatchObject({ kind: 'changed', undoToken: first.undoToken, message: 'Updated Calzone for Yesterday' });
+        expect(h.entryRevisions.propose).toHaveBeenCalledTimes(1);
+        const moved = stack(plan({ toDay: date }));
+        const reply = await moved.run('move that to today', { operationId: 'mv' });
+        expect((await moved.run('move that to today', { operationId: 'mv' })).message).toBe(reply.message);
+      });
+      it('ignores reconstructed and uncounted rows, however new', async () => {
+        await oatmeal();
+        appendRaw([raw('estimate', yesterday, { logId: RECONSTRUCTION_LOG_ID, log_uuid: RECONSTRUCTION_LOG_ID, createdAt: '2026-11-18 10:00:00' }),
+          raw('dropped', yesterday, { logId: 'd', status: 'rejected', createdAt: '2026-11-18 11:00:00' }),
+          raw('waiting', yesterday, { logId: 'w', status: 'pending', createdAt: '2026-11-18 12:00:00' })]);
+        const h = stack(plan({ toMeal: 'night' }));
+        await h.run('that was a snack');
+        expect(shown(h)).toMatchObject({ latest: ['oatmeal'], latestDate: date });
+        expect(await store.findByUuid('u', 'oatmeal')).toMatchObject({ mealTime: 'night' });
+      });
+      it('moves a dish whole, with the loose food of the same capture', async () => {
+        await oatmeal();
+        await log(yesterday, 'late', '2026-11-18 09:00:00', [food('a'), food('b'), food('c')]);
+        const grouped = await commands.execute('u', { action: 'group', name: 'Soup', date: yesterday, bucket: 'evening', operationId: 'grp', selectedIds: ['a', 'b'], expectedVersions: { a: 1, b: 1 } });
+        const header = grouped.items.find(row => row.kind === 'group');
+        const result = await stack(plan({ toDay: date })).run('move that to today');
+        expect(result.message).toBe('Moved 2 foods from Yesterday to Today');
+        expect(await ids(date)).toEqual(['a', 'b', 'c', header.uuid, 'oatmeal'].sort());
+        expect(await ids(yesterday)).toEqual([]);
+      });
+      it('groups foods saved together under a shared log ID on that day', async () => {
+        await oatmeal();
+        appendRaw([raw('rice', yesterday, { logId: 'SAVEDMEAL', createdAt: '2026-11-18 09:00:00' }), raw('beans', yesterday, { logId: 'SAVEDMEAL', createdAt: '2026-11-18 09:00:00' }),
+          raw('older', yesterday, { logId: 'SAVEDMEAL', createdAt: '2026-11-17 09:00:00' })]);
+        const h = stack(plan({ toDay: date }));
+        await h.run('move that to today');
+        expect(shown(h).latest).toEqual(['rice', 'beans']);
+        expect(await ids(yesterday)).toEqual(['older']);
+      });
+      it('a tie stays on the viewed day', async () => {
+        await log(date, 'here', '2026-11-18 09:00:00', [food('oatmeal')]);
+        await pizza();
+        const h = stack(plan({ toMeal: 'night' }));
+        await h.run('that was a snack');
+        expect(shown(h)).toMatchObject({ latest: ['oatmeal'], latestDate: date });
+      });
+      it('compares capture times written in either format', async () => {
+        await log(date, 'here', '2026-11-18T08:00:00Z', [food('oatmeal')]);
+        await pizza();
+        const h = stack(plan({ toMeal: 'night' }));
+        await h.run('that was a snack');
+        expect(shown(h)).toMatchObject({ latest: ['pizza'], latestDate: yesterday });
+      });
+      it('keeps ledger order for unstamped rows unless a capture was made after that day', async () => {
+        appendRaw([raw('first', yesterday, { logId: 'one' }), raw('second', yesterday, { logId: 'two' }), raw('sameDay', monday, { logId: 'm', createdAt: '2026-11-17 22:00:00' })]);
+        const kept = stack(plan({ toMeal: 'night' }));
+        await kept.run('that was a snack', { date: yesterday, operationId: 'kept' });
+        expect(shown(kept)).toMatchObject({ latest: ['second'], latestDate: yesterday });
+        appendRaw([raw('later', monday, { logId: 'n', createdAt: '2026-11-18 01:00:00' })]);
+        const newer = stack(plan({ toMeal: 'morning' }));
+        await newer.run('that was breakfast', { date: yesterday, operationId: 'newer' });
+        expect(shown(newer)).toMatchObject({ latest: ['later'], latestDate: monday });
+      });
+      it('looks back through six days and at the viewed day, no further', async () => {
+        await log('2026-11-11', 'old', '2026-11-18 09:00:00', [food('tooOld')]);
+        await log('2026-11-12', 'edge', '2026-11-12 09:00:00', [food('edge')]);
+        const h = stack(plan({ intent: 'change' }), { proposal: calzone.proposal });
+        await h.run('that was a calzone');
+        expect(shown(h)).toMatchObject({ latest: ['edge'], latestDate: '2026-11-12' });
+        const viewing = stack(plan({ toMeal: 'night' }));
+        await viewing.run('that was a snack', { date: '2026-11-11', operationId: 'viewing' });
+        expect(viewing.reader.read.mock.calls[0][0]).toMatchObject({ latest: ['tooOld'], latestDate: '2026-11-11' });
+      });
+    });
+    describe('a correction on a day with nothing logged', () => {
+      const log = (day, id, createdAt, items, time = 'evening') => store.syncFromLog({ id, userId: 'u', isAccepted: true, status: 'accepted', createdAt, meal: { date: day, time }, items });
+      const pizza = () => log(yesterday, 'late', '2026-11-18 09:00:00', [food('pizza'), food('salad')]);
+      it('still logs new food, after reading the words', async () => {
+        const h = stack(plan({ intent: 'add' }));
+        expect(await h.run('soup')).toMatchObject({ committed: true, kind: 'added' });
+        expect(h.reader.read.mock.calls[0][0]).toMatchObject({ foods: [], latest: [], latestDate: date });
+        expect(await ids(date)).toEqual(['a', 'b', 'c']);
+      });
+      it('a change uses the latest capture, wherever it is', async () => {
+        await log(yesterday, 'late', '2026-11-18 09:00:00', [food('pizza')]);
+        const h = stack(plan({ intent: 'change' }), { proposal: { name: 'Calzone' } });
+        expect(await h.run('that was a calzone')).toMatchObject({ kind: 'changed', message: 'Changed pizza to Calzone for Yesterday' });
+        expect(h.reader.read.mock.calls[0][0]).toMatchObject({ foods: [], latest: ['pizza'], latestDate: yesterday });
+        expect(h.captureFoods).not.toHaveBeenCalled();
+        expect(await ids(date)).toEqual([]);
+      });
+      it('a move uses the latest capture too', async () => {
+        await pizza();
+        expect((await stack(plan({ toDay: date })).run('move that to today')).message).toBe('Moved 2 foods from Yesterday to Today');
+        expect(await ids(date)).toEqual(['pizza', 'salad']);
+      });
+      it.each([['named', {}], ['whole_day', {}], ['meal', { fromMeal: 'evening' }]])('asks about the latest capture for a %s target, moving nothing', async (target, extra) => {
+        await pizza();
+        const h = stack(plan({ target, toDay: '2026-11-16', ...extra }));
+        const reply = await h.run('all of it was monday');
+        expect(reply).toMatchObject({ committed: false, outcome: 'clarification' });
+        expect(reply.clarification.choices).toEqual([{ id: 'pizza', label: 'pizza (Yesterday)' }, { id: 'salad', label: 'salad (Yesterday)' }]);
+        expect(await ids(yesterday)).toEqual(['pizza', 'salad']);
+      });
+      it('acts on the food chosen from another day', async () => {
+        await pizza();
+        const h = stack(plan({ intent: 'change', target: 'named' }), { proposal: { name: 'Calzone' } });
+        const asked = await h.run('the pizza was a calzone');
+        expect(asked.clarification.kind).toBe('food');
+        expect((await h.run('the pizza was a calzone', { operationId: 'answer', resolved: { foodId: 'pizza' } })).message).toBe('Changed pizza to Calzone for Yesterday');
+        expect(await store.findByUuid('u', 'pizza')).toMatchObject({ name: 'Calzone', date: yesterday });
+      });
+      it('says so when there is no food anywhere to correct', async () => {
+        const h = stack(plan({ intent: 'change' }));
+        expect(await h.run('that was whole milk')).toMatchObject({ committed: false, outcome: 'no-change' });
+        expect(h.captureFoods).not.toHaveBeenCalled();
+      });
+      it('answers 503 without logging anything when the words cannot be read', async () => {
+        const h = stack(plan({ intent: 'add' }));
+        h.reader.read.mockRejectedValue(new Error('gateway down'));
+        await expect(h.run('soup')).rejects.toMatchObject({ status: 503, code: 'DAY_INPUT_UNAVAILABLE' });
+        expect(h.captureFoods).not.toHaveBeenCalled();
+      });
+    });
+    describe('correcting a food with a broken dish link', () => {
+      const row = (uuid, extra) => ({ uuid, userId: 'u', name: uuid, date, mealTime: 'afternoon', grams: 100, unit: 'g', amount: 100, calories: 50, logId: 'old', createdAt: '2026-11-18 08:00:00', ...extra });
+      const correct = (uuid, extra) => stack(plan({ intent: 'change', target: 'named' }), { matched: [uuid], proposal: { name: 'Fixed' } }).run('that was something else', extra);
+      const seed = () => store.saveMany([row('dish', { kind: 'group', calories: 0, mealTime: 'morning' }), row('stranded', { parentId: 'dish' }), row('lost', { parentId: 'gone' }), row('loose', { parentId: 'plain' }), row('plain')]);
+      it.each([['a part stranded in another meal', 'stranded'], ['a food whose dish is gone', 'lost'], ['a food linked to something that is no dish', 'loose']])('changes %s, and Undo puts it back', async (_label, uuid) => {
+        await seed();
+        const before = await store.findByUuid('u', uuid);
+        const result = await correct(uuid);
+        expect(result).toMatchObject({ committed: true, kind: 'changed', message: `Changed ${uuid} to Fixed` });
+        expect(await store.findByUuid('u', uuid)).toMatchObject({ name: 'Fixed', parentId: before.parentId, version: 2 });
+        await commands.undo('u', { undoToken: result.undoToken, operationId: 'undo' });
+        expect(await store.findByUuid('u', uuid)).toMatchObject({ name: uuid, parentId: before.parentId });
+      });
+      it('does not ask for or check the unrelated parent', async () => {
+        await seed();
+        await store.update('u', 'dish', { calories: 1 });
+        expect(await correct('stranded')).toMatchObject({ committed: true });
+      });
+      it('a healthy food can be changed while broken rows exist, even one linking to it', async () => {
+        await seed();
+        const result = await correct('plain');
+        expect(result).toMatchObject({ committed: true, message: 'Changed plain to Fixed' });
+        expect(await store.findByUuid('u', 'loose')).toMatchObject({ parentId: 'plain', version: 1 });
+        await commands.undo('u', { undoToken: result.undoToken, operationId: 'undo' });
+        expect(await store.findByUuid('u', 'plain')).toMatchObject({ name: 'plain' });
+      });
+    });
+    describe('correcting a real dish part', () => {
+      const row = (uuid, extra) => ({ uuid, id: `${uuid}-short`, userId: 'u', name: uuid, date, mealTime: 'afternoon', grams: 100, unit: 'g', amount: 100, calories: 50, logId: 'old', createdAt: '2026-11-18 08:00:00', ...extra });
+      const seed = () => store.saveMany([row('dish', { kind: 'group', calories: 0 }), row('rice', { parentId: 'dish-short' }), row('beans', { parentId: 'dish' }), row('lost', { parentId: 'gone', mealTime: 'night' })]);
+      it('works through a short-ID link, with a broken row elsewhere, and undoes', async () => {
+        await seed();
+        const result = await stack(plan({ intent: 'change', target: 'named' }), { matched: ['rice'], proposal: { name: 'Brown Rice' } }).run('the rice was brown rice');
+        expect(await store.findByUuid('u', 'rice')).toMatchObject({ name: 'Brown Rice', parentId: 'dish-short' });
+        await commands.undo('u', { undoToken: result.undoToken, operationId: 'undo' });
+        expect(await store.findByUuid('u', 'rice')).toMatchObject({ name: 'rice' });
+      });
+      it('still requires the current version of its dish', async () => {
+        await seed();
+        await expect(commands.execute('u', { action: 'amend', date, bucket: 'afternoon', operationId: 'stale', selectedIds: ['rice'], expectedVersions: { rice: 1, dish: 9 }, changes: { rice: { name: 'x' } } })).rejects.toMatchObject({ status: 409 });
+        await expect(commands.execute('u', { action: 'amend', date, bucket: 'afternoon', operationId: 'none', selectedIds: ['rice'], expectedVersions: { rice: 1 }, changes: { rice: { name: 'x' } } })).rejects.toMatchObject({ status: 409 });
+      });
+      it('still refuses to amend a dish row itself', async () => {
+        await seed();
+        await expect(commands.execute('u', { action: 'amend', date, bucket: 'afternoon', operationId: 'dish', selectedIds: ['dish'], expectedVersions: { dish: 1 }, changes: { dish: { name: 'x' } } })).rejects.toMatchObject({ status: 400 });
+      });
+      it('still refuses to group a food whose link is broken', async () => {
+        await seed();
+        await store.saveMany([row('other', { mealTime: 'night' })]);
+        await expect(commands.execute('u', { action: 'group', name: 'New', date, bucket: 'night', operationId: 'grp', selectedIds: ['lost', 'other'], expectedVersions: { lost: 1, other: 1 } })).rejects.toMatchObject({ status: 400 });
       });
     });
     describe('saveMany-shaped rows, which carry no capture time', () => {

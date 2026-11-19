@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import yaml from 'js-yaml';
-import { readJevApiKey } from './day-instruction-calibrate.mjs';
+import { readJevApiKey, readingInput, selectCases } from './day-instruction-calibrate.mjs';
 
 const CANARY = 'synthetic-canary-value';
 const tempDirs = [];
@@ -42,5 +42,28 @@ describe('readJevApiKey', () => {
   it.each([['a missing file', null], ['a file with no key', 'other: value\n']])('gives the same error for %s', (_label, content) => {
     const base = content === null ? makeBase() : writeAuth(content);
     expect(() => readJevApiKey(base)).toThrow('Unreadable system/auth/jev.yml');
+  });
+});
+
+describe('calibration cases', () => {
+  const fixture = JSON.parse(fs.readFileSync(new URL('./fixtures/day-instruction-calibration.json', import.meta.url), 'utf8'));
+  it('uses the standard day unless a case sets its own foods and latest capture', () => {
+    expect(readingInput({ text: 'a banana' })).toMatchObject({ text: 'a banana', foods: expect.arrayContaining(['Oatmeal']), latest: ['Iced tea', 'Rice'] });
+    expect(readingInput({ text: 'a banana', foods: [], latest: ['Milk'] })).toMatchObject({ foods: [], latest: ['Milk'] });
+  });
+  it('covers an empty day: two dumps and a correction', () => {
+    expect(fixture).toHaveLength(22);
+    expect(fixture.slice(-3)).toEqual([
+      { id: 'empty-dump', text: 'eggs for breakfast and a burrito at lunch', foods: [], latest: [], intent: 'add' },
+      { id: 'empty-single', text: 'a banana', foods: [], latest: [], intent: 'add' },
+      { id: 'empty-correct', text: 'that was actually whole milk', foods: [], latest: ['Milk'], intent: 'change', target: 'latest' },
+    ]);
+  });
+  it('runs every case by default, or only the named ones', () => {
+    const cases = [{ id: 'a' }, { id: 'b' }, { id: 'c' }];
+    expect(selectCases(cases, [])).toEqual(cases);
+    expect(selectCases(cases, ['--only', 'c,a'])).toEqual([{ id: 'a' }, { id: 'c' }]);
+    expect(() => selectCases(cases, ['--only', 'z'])).toThrow('Unknown calibration case: z');
+    expect(() => selectCases(cases, ['--only'])).toThrow('--only needs case IDs');
   });
 });

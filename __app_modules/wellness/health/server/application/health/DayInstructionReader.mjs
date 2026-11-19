@@ -29,7 +29,8 @@ export class DayInstructionReader {
   constructor({ decisionGateway = null } = {}) { this.#gateway = decisionGateway?.isConfigured?.() === false ? null : decisionGateway; }
   get available() { return Boolean(this.#gateway); }
 
-  async read({ text, date, today, foods, latest }) {
+  /** `latestDate` is the day `latest` is on. When that is not the viewed day, the viewed day is a place the food can go. */
+  async read({ text, date, today, foods, latest, latestDate = date }) {
     const intentOptions = {
       add: 'It reports food eaten that still needs logging, including food it says was forgotten or also eaten, even if a similar food is already listed',
       move: 'It says listed food belongs on another day or in another meal',
@@ -45,9 +46,11 @@ export class DayInstructionReader {
     const fromMealOptions = { ...meals(), none: 'No meal is named as the one the food is leaving' };
     const toMealOptions = { same: 'No meal change was asked for', ...meals() };
     const toDayOptions = { same: 'No day change was asked for', older: 'A specific day older than every listed day' };
-    for (let index = 0; index < 7; index += 1) {
-      const iso = addDaysISO(today, -index);
-      if (iso !== date) toDayOptions[iso] = `${dayName(iso, today)} (${at(iso).toLocaleDateString('en-US', { weekday: 'long', timeZone: 'UTC' })}, ${iso})`;
+    const offerViewed = latestDate !== date;
+    const days = Array.from({ length: 7 }, (_day, index) => addDaysISO(today, -index));
+    if (offerViewed && !days.includes(date)) days.push(date);
+    for (const iso of days) {
+      if (iso !== date || offerViewed) toDayOptions[iso] = `${dayName(iso, today)} (${at(iso).toLocaleDateString('en-US', { weekday: 'long', timeZone: 'UTC' })}, ${iso})`;
     }
     const { answers } = await this.#gateway.evaluate({ said: text, viewed_day: dayName(date, today), foods_on_this_day: foods, latest_capture: latest }, {
       intent: choice('What does `said` ask for, given `foods_on_this_day` on `viewed_day`?', intentOptions),

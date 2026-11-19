@@ -17,5 +17,8 @@
   {"id":"everything-breakfast","text":"move everything from breakfast to lunch","intent":"move","target":"meal","fromMeal":"morning","toDay":"same","toMeal":"afternoon"},
   {"id":"everything-dinner","text":"move everything to dinner","intent":"move","target":"whole_day","fromMeal":"none","toDay":"same","toMeal":"evening"},
   {"id":"two-places","text":"move the rice to lunch and the coffee to dinner","compound":true},
-  {"id":"same-place","text":"move the rice and the coffee to dinner","compound":false}
+  {"id":"same-place","text":"move the rice and the coffee to dinner","compound":false},
+  {"id":"empty-dump","text":"eggs for breakfast and a burrito at lunch","foods":[],"latest":[],"intent":"add"},
+  {"id":"empty-single","text":"a banana","foods":[],"latest":[],"intent":"add"},
+  {"id":"empty-correct","text":"that was actually whole milk","foods":[],"latest":["Milk"],"intent":"change","target":"latest"}
 ]

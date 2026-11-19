@@ -55,6 +55,20 @@ describe('WebNutribotAdapter day input', () => {
     expect(dayInstructions.execute).not.toHaveBeenCalled();
   });
 
+  it('says it could not hear the recording, because a dump is not a correction', async () => {
+    const { adapter, transcribeVoice } = setup({ voiceMemoStore: { save: vi.fn(async () => 'va_saved') } });
+    transcribeVoice.mockRejectedValue(new Error('upstream'));
+    await expect(adapter.processDayInput({ userId: 'u', type: 'voice', content: AUDIO, date: '2026-11-18', today: '2026-11-18', operationId: 'op' }))
+      .rejects.toMatchObject({ message: 'Could not hear that recording', code: 'TRANSCRIBE_FAILED' });
+  });
+
+  it('keeps the correction wording on the correction path', async () => {
+    const { adapter, transcribeVoice } = setup({ voiceMemoStore: { save: vi.fn(async () => 'va_saved') }, entryRevisions: { propose: vi.fn() } });
+    transcribeVoice.mockRejectedValue(new Error('upstream'));
+    await expect(adapter.reviseEntry({ userId: 'u', entryUuid: 'a', audio: AUDIO }))
+      .rejects.toMatchObject({ message: 'Could not hear that correction', code: 'TRANSCRIBE_FAILED' });
+  });
+
   const revisionHarness = async (extra = {}) => {
     const { NutribotInputRouter } = await import('../application/services/NutribotInputRouter.mjs');
     const { LogFoodFromText } = await import('../application/usecases/LogFoodFromText.mjs');
@@ -166,7 +180,7 @@ describe('WebNutribotAdapter day input', () => {
         return { ok: true, committed: true, logId: 'log1', items: [row], mealTime: 'morning', result: { nutrilogUuid: 'log1' } };
       });
       const dayInstructions = new DayInstructionService({ nutritionItems: store, mealCommands: new MealFoodCommands({ nutritionItems: store }),
-        reader: { available: true, assignMeals: async () => ({ eggs: 'evening' }) }, logger: {} });
+        reader: { available: true, read: async () => ({ intent: 'add', target: 'latest', fromMeal: 'none', toMeal: 'same', toDay: 'same', compound: false }), assignMeals: async () => ({ eggs: 'evening' }) }, logger: {} });
       const adapter = new WebNutribotAdapter({ inputRouter: { handleText }, dayInstructions, logger: {} });
       const input = { userId: 'u', type: 'text', content: 'eggs at dinner', date: '2026-11-18', today: '2026-11-18', operationId: 'route-op', resolved: {} };
       const send = () => store.runOperation('u', 'route-op', { operation: 'day-input', type: 'text', content: input.content, date: input.date, resolved: {} }, () => adapter.processDayInput(input));
