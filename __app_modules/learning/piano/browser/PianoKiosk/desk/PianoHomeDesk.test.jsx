@@ -4,6 +4,7 @@ import PianoHomeDesk from './PianoHomeDesk.jsx';
 import { __clearPianoListCache } from '../usePianoList.js';
 
 const h = vi.hoisted(() => ({ desk: null, recent: null }));
+vi.mock('../PianoUserContext.jsx', () => ({ usePianoUser: () => ({ users: [{ id: 'kid', schoolLearner: true }, { id: 'sib', schoolLearner: true }, { id: 'parent', schoolLearner: false }] }) }));
 vi.mock('../../../../../../frontend/src/lib/logging/Logger.js', () => ({ default: () => ({ child: () => ({ info() {}, warn() {}, debug() {} }) }) }));
 vi.mock('../../../../../../frontend/src/lib/api.mjs', () => ({
   DaylightAPI: vi.fn(async (path) => (path.includes('desk') ? h.desk : h.recent)),
@@ -31,6 +32,13 @@ describe('PianoHomeDesk progress strip', () => {
     expect(screen.queryByRole('button', { name: /Idle/ })).toBeNull();
     expect(await screen.findByText('Jesu Joy')).toBeInTheDocument();
     expect(screen.getByText('11 of 173 lessons')).toBeInTheDocument();
+  });
+
+  it('shows only the children, never the parents', async () => {
+    h.recent.players.push({ userId: 'parent', name: 'Parent', courses: [course] });
+    mount();
+    await screen.findByRole('button', { name: 'Sib: Piano University' });
+    expect(screen.queryByRole('button', { name: /Parent/ })).toBeNull();
   });
 
   it('opens the child next passage or course', async () => {

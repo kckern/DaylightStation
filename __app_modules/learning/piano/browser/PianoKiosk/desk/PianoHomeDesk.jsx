@@ -3,6 +3,7 @@ import getLogger from '../../../../../../frontend/src/lib/logging/Logger.js';
 import { DaylightAPIText } from '../../../../../../frontend/src/lib/api.mjs';
 import ProfileAvatar from '../../../../../../frontend/src/lib/identity/ProfileAvatar.jsx';
 import usePianoList from '../usePianoList.js';
+import { usePianoUser } from '../PianoUserContext.jsx';
 import { titleFromScoreId } from '../modes/SheetMusic/scoreTitle.js';
 import { pieceCount, relativeTime, scoreHeading, stripCards } from './deskModel.js';
 import './PianoHomeDesk.scss';
@@ -57,15 +58,18 @@ function CourseCard({ card }) {
 }
 
 /**
- * The progress strip above the home menu: one card per child, showing the more
- * recent of their sheet-music piece and their video course. The strip keeps one
+ * The progress strip above the home menu: one card per child (school learners,
+ * not parents), showing their piece in progress or else their video course. The strip keeps one
  * height whether or not it has cards, so the menu below never moves.
  */
 export default function PianoHomeDesk({ disabled, onOpenPassage, onOpenCourse }) {
   const logger = useMemo(() => getLogger().child({ component: 'piano-desk' }), []);
   const { data: pieces } = usePianoList('api/v1/piano/activity/desk', players, { alwaysRevalidate: true });
   const { data: courses } = usePianoList('api/v1/piano/activity/recent', players);
-  const cards = stripCards({ pieces, courses });
+  // The strip is for the children; school learners are the roster's children.
+  const { users } = usePianoUser();
+  const children = new Set((users ?? []).filter((user) => user.schoolLearner === true).map((user) => user.id));
+  const cards = stripCards({ pieces, courses }).filter((card) => children.has(card.userId));
   useEffect(() => {
     logger.debug('piano.desk.view', { cards: cards.map((card) => `${card.userId}:${card.kind}`) });
   }, [logger, cards.map((card) => `${card.userId}:${card.kind}`).join(',')]); // eslint-disable-line react-hooks/exhaustive-deps
