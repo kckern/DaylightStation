@@ -2147,7 +2147,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
     },
   }), [config, layout.measures, layout.steps, layout.tempoEntries, parsed?.tempo, scoreMeta.category, scoreMeta.id, scoreMeta.learn, sections]);
   const coachPlan = useMemo(() => createCoachPlan({ scoreId: scoreMeta.id, fingerprint,
-    segments: learnPlan.segments, authoredLadder: learnPlan.authoredLadder, tempoMap: learnPlan.tempoMap }),
+    segments: learnPlan.segments, authoredLadder: learnPlan.authoredLadder, tempoMap: learnPlan.tempoMap, certification: learnPlan.certification }),
     [scoreMeta.id, fingerprint, learnPlan]);
   const coach = useLearnCoach({ plan: coachPlan, legacy: practice ?? {} });
   const coachedPassages = useMemo(() => coach.projection.segments.map((passage) => ({ ...passage,
