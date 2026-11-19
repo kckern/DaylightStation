@@ -1,0 +1,51 @@
+apply from: rootProject.file('gradle/payload-lib.gradle')
+
+def catalog = rootProject.ext.catalog
+
+android {
+    namespace 'net.kckern.daylight.payload'
+
+    flavorDimensions 'device'
+    productFlavors {
+        catalog.devices().each { d ->
+            create(d.id) { dimension 'device' }
+        }
+    }
+
+    // Each device variant compiles a DeviceConfig generated from its YAML. It is rendered
+    // when the task runs, so a missing placeholder fails the build of that one device
+    // and not every Gradle command.
+    libraryVariants.all { variant ->
+        def device = catalog.device(variant.flavorName)
+        def outDir = new File(buildDir, "generated/daylight/${variant.name}")
+        def gen = tasks.create("generate${variant.name.capitalize()}DeviceConfig") {
+            inputs.file rootProject.file("devices/${device.id}.yml")
+            inputs.property('payloadVersion', rootProject.ext.payloadVersion)
+            outputs.dir outDir
+            // Placeholder values live outside the project, so Gradle cannot track them.
+            outputs.upToDateWhen { false }
+            doLast {
+                def source = net.kckern.daylight.build.DeviceConfigSource.render(
+                        device, catalog, rootProject.ext.payloadVersion, rootProject.ext.placeholders)
+                def f = new File(outDir, 'net/kckern/daylight/generated/DeviceConfig.java')
+                f.parentFile.mkdirs()
+                f.setText(source, 'UTF-8')
+            }
+        }
+        variant.registerJavaGeneratingTask(gen, outDir)
+    }
+}
+
+dependencies {
+    implementation project(':core')
+    // The shell ships androidx.webkit for webview-host. The device tests load that
+    // capability's classes, and a compileOnly dependency of a module is not passed on.
+    testImplementation 'androidx.webkit:webkit:1.6.1'
+    catalog.devices().each { d ->
+        d.capabilities.each { name ->
+            if (catalog.capability(name).hasPayload) {
+                add("${d.id}Implementation", project(":capabilities:${name}:payload"))
+            }
+        }
+    }
+}

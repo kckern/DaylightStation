@@ -19,7 +19,7 @@ import {
   dirExists,
   listYamlFiles,
   loadYamlSafe,
-  saveYaml
+  saveYamlToPathAtomic
 } from '#system/utils/FileIO.mjs';
 import { getFileStats, resolveYamlPath } from '#system/utils/FileIO.mjs';
 
@@ -129,7 +129,7 @@ export class YamlFoodLogDatastore extends IFoodLogDatastore {
    */
   #writeFile(basePath, data) {
     ensureDir(path.dirname(basePath));
-    saveYaml(basePath, data);
+    saveYamlToPathAtomic(`${basePath}.yml`, data, { durable: true });
   }
 
   /**

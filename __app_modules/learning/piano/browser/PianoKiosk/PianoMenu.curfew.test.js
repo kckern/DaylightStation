@@ -7,7 +7,7 @@ import { __clearPianoListCache } from './usePianoList.js';
 
 // Curfew (config-driven, data/household/piano/config.yml → `curfew:`): inside
 // the window every door out of the home screen is shut — tiles and the
-// activity strip's course buttons — while the piano's own auto-enter-Studio
+// progress strip's course button — while the piano's own auto-enter-Studio
 // path (useAutoStudioEntry, wired in PianoApp, not here) is untouched.
 
 const navigate = vi.fn();
@@ -24,10 +24,12 @@ vi.mock('./PianoConfig.jsx', () => ({
   usePianoKioskConfig: () => ({
     pianoId: 'test-piano',
     basePath: '/piano',
-    config: { keyboard: { startNote: 21, endNote: 108 }, curfew: curfewConfig, timezone: householdTimezone },
+    config: { keyboard: { startNote: 21, endNote: 108 }, curfew: curfewConfig, timezone: householdTimezone, screensaver: { deviceId: 'piano-tablet' } },
   }),
 }));
-vi.mock('./PianoUserContext.jsx', () => ({ usePianoUser: () => ({ setCurrentUser: () => {} }) }));
+const kiosk = vi.hoisted(() => ({ id: 'piano-tablet' }));
+vi.mock('./kioskDeviceIdentity.js', () => ({ get KIOSK_DEVICE_ID() { return kiosk.id; } }));
+vi.mock('./PianoUserContext.jsx', () => ({ usePianoUser: () => ({ currentUser: 'guest', setCurrentUser: () => {} }) }));
 vi.mock('./PianoMidiContext.jsx', () => ({
   usePianoMidi: () => ({ pressNote: () => {}, releaseNote: () => {} }),
 }));
@@ -41,7 +43,7 @@ vi.mock('../../../../../frontend/src/lib/logging/Logger.js', () => ({
 const CURFEW = { enabled: true, start: '19:00', end: '06:00' };
 const ACTIVITY = {
   players: [{
-    userId: 'learner2', name: 'learner2', lastPlayedAt: '2026-08-21T10:00:00Z',
+    userId: 'guest', name: 'learner2', lastPlayedAt: '2026-08-21T10:00:00Z',
     courses: [{
       courseId: 'plex:11', courseTitle: 'Course B', thumbnail: '/img/b',
       completed: 13, total: 57, percent: 23, lastPlayedAt: '2026-08-21T10:00:00Z',
@@ -74,6 +76,16 @@ describe('PianoMenu under curfew', () => {
     expect(all.every((t) => t.className.includes('is-disabled'))).toBe(true);
   });
 
+  it('leaves an ordinary browser open during the curfew window', () => {
+    kiosk.id = null;
+    try {
+      atClock(20);
+      renderMenu();
+      expect(tiles().filter((t) => !t.disabled).length).toBeGreaterThan(2);
+      expect(screen.queryByText(/the piano is still on/i)).toBeNull();
+    } finally { kiosk.id = 'piano-tablet'; }
+  });
+
   it('leaves the tiles alive outside the window', () => {
     atClock(14);
     renderMenu();
@@ -100,13 +112,10 @@ describe('PianoMenu under curfew', () => {
     expect(screen.queryByText(/the piano is still on/i)).toBeNull();
   });
 
-  it('disables the activity strip’s course buttons', async () => {
+  it('disables the home desk course button', async () => {
     atClock(20);
     renderMenu();
-    await waitFor(() => expect(screen.getByAltText('Course B')).toBeTruthy());
-    const strip = document.querySelector('.piano-menu-activity');
-    expect(strip.className).toContain('is-disabled');
-    const course = document.querySelector('.piano-menu-activity__course');
+    const course = await screen.findByRole('button', { name: /Course B/ });
     expect(course.disabled).toBe(true);
     course.click();
     expect(navigate).not.toHaveBeenCalled();

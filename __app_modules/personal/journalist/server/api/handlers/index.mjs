@@ -6,3 +6,4 @@
 export { journalistJournalHandler } from "./journal.mjs";
 export { journalistTriggerHandler } from "./trigger.mjs";
 export { journalistMorningDebriefHandler } from "./morning.mjs";
+export { journalistMemoRoute, journalistMemoPreflight, MEMO_MAX_BYTES } from "./memo.mjs";

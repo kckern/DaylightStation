@@ -10,7 +10,7 @@ import { FoodIcon } from "./FoodIcon.jsx";
 import { reportArtworkFailure } from "./artworkLog.js";
 import { PortionControl } from "./PortionControl.jsx";
 import { entryId, entryError, isEntryConflict, updateEntry } from "./entryCommands.js";
-import { usePortionControl } from "./usePortionDraft.js";
+import { PortionsReadOnlyContext, usePortionControl } from "./usePortionDraft.js";
 import { PortionDraftAlert, portionAlertFor } from "./PortionDraftAlert.jsx";
 import { useRowPreview, logRowPreviewOpen } from "./RowPreview.jsx";
 import { useDraggableRow } from "./mealDrag.jsx";
@@ -30,9 +30,11 @@ const logger = createAppLogger('health').child('entry-row');
 // preview), and never from a click that bubbled up out of a portal (a menu or
 // popover dropdown is a React child but not a DOM child of the row).
 const OWN_CLICK = 'button, a, input, textarea, select, label, [role="menuitem"], [role="dialog"], .health-row-artwork, .health-row-revise';
-const rowTapTarget = event => event.currentTarget.contains(event.target) && !event.target.closest(OWN_CLICK);
+// While picking foods the artwork is part of the row, so a tap on it ticks too.
+const SELECTING_OWN_CLICK = OWN_CLICK.replace(', .health-row-artwork', '');
+const rowTapTarget = (event, selecting) => event.currentTarget.contains(event.target) && !event.target.closest(selecting ? SELECTING_OWN_CLICK : OWN_CLICK);
 
-export function EntryRow({ row, densityRow = row, onTap, onConfirm, onRequestDelete, isGroup = false, expanded = false, onToggle, rollupKcal, child = false, lastChild = false, measured = null, kcalShare = null, added = false, entryKey = undefined, dragBucket = null, onChanged = null }) {
+export function EntryRow({ row, densityRow = row, onTap, onConfirm, onRequestDelete, isGroup = false, expanded = false, onToggle, rollupKcal, child = false, lastChild = false, measured = null, kcalShare = null, added = false, entryKey = undefined, dragBucket = null, onChanged = null, selecting = false }) {
   const foodAPI = useFoodMutation([row]);
   const [error, setError] = useState(null);
   const [confirmation, setConfirmation] = useState(null);
@@ -51,7 +53,7 @@ export function EntryRow({ row, densityRow = row, onTap, onConfirm, onRequestDel
   // The magnifier card: held closed while a portion drag owns the pointer.
   const previewContent = useMemo(() => ({ row, isGroup, kcal: displayKcal }), [row, isGroup, displayKcal]);
   // The page's one preview card (RowPreviewProvider), at the cursor.
-  const preview = useRowPreview({ disabled: Boolean(portions?.draft || portions?.locked), onOpen: () => logRowPreviewOpen(row), content: previewContent });
+  const preview = useRowPreview({ disabled: Boolean(selecting || portions?.draft || portions?.locked), onOpen: () => logRowPreviewOpen(row), content: previewContent });
   // The row is its own drag handle (mealDrag.jsx): never an ingredient on its
   // own, never while a portion drag owns the pointer.
   const drag = useDraggableRow(row, child ? null : dragBucket, { disabled: Boolean(portions?.draft || portions?.locked) });
@@ -69,7 +71,9 @@ export function EntryRow({ row, densityRow = row, onTap, onConfirm, onRequestDel
     } finally { pending.current = false; }
   };
   const openDetails = () => { if (portions?.draft || portions?.locked) return; preview.close(); onTap(row); };
-  return <><div ref={drag.ref} {...drag.handlers} onClick={event => { if (rowTapTarget(event)) openDetails(); }} className={['health-row-line', saving && 'health-row-line--saving', unsettled && confirmation !== 'saved' && 'health-row-line--unsettled', child && 'health-row-line--child', lastChild && 'health-row-line--last-child', isGroup && 'health-row-line--group', added && 'health-row-line--added', reconstructed && 'health-row-line--reconstructed', drag.draggable && 'health-row-line--draggable', drag.dragging && 'health-row-line--dragging'].filter(Boolean).join(' ')} aria-busy={saving || row.provisional ? true : undefined} data-preview={preview.opened ? 'open' : undefined} data-entry-key={entryKey}>
+  // While picking foods a tap is a tick (`onTap` is the section's toggle), and
+  // the row's editing controls stand down so a tap or swipe cannot start one.
+  return <PortionsReadOnlyContext.Provider value={selecting}><div ref={drag.ref} {...drag.handlers} onClick={event => { if (!rowTapTarget(event, selecting)) return; if (selecting) onTap(row); else openDetails(); }} className={['health-row-line', saving && 'health-row-line--saving', unsettled && confirmation !== 'saved' && 'health-row-line--unsettled', child && 'health-row-line--child', lastChild && 'health-row-line--last-child', isGroup && 'health-row-line--group', added && 'health-row-line--added', reconstructed && 'health-row-line--reconstructed', drag.draggable && 'health-row-line--draggable', drag.dragging && 'health-row-line--dragging'].filter(Boolean).join(' ')} aria-busy={saving || row.provisional ? true : undefined} data-preview={preview.opened ? 'open' : undefined} data-entry-key={entryKey}>
     <div className="health-row__branch">
       {isGroup ? <UnstyledButton className="health-row__expand" aria-expanded={expanded}
         aria-label={`${expanded ? 'Collapse' : 'Expand'} ${name}`} onClick={onToggle}
@@ -82,10 +86,10 @@ export function EntryRow({ row, densityRow = row, onTap, onConfirm, onRequestDel
     </div>
     <div className={`health-row-identity health-row__identity health-row__visual health-density-${densityPlacement}`}>
       {densityPlacement === 'before' ? <DensityBadge row={densityRow} editRow={row} /> : null}
-      <span className="health-row-artwork" {...preview.targetProps} onClick={preview.onArtworkClick}>{row.photoRef && brokenPhoto !== row.photoRef ? <img className="health-row__thumb"
+      <span className="health-row-artwork" {...preview.targetProps} onClick={selecting ? undefined : preview.onArtworkClick}>{row.photoRef && brokenPhoto !== row.photoRef ? <img className="health-row__thumb"
         src={nutritionPhotoUrl(row.photoRef, { thumb: true })} alt="" loading="lazy" onError={() => { setBrokenPhoto(row.photoRef); reportArtworkFailure('photo', row.photoRef, { uuid: entryId(row), name, icon: row.icon || null }); }} /> : <FoodIcon icon={row.icon} pending={artworkPending(row)} />}</span>
-      <UnstyledButton className="health-row-name" disabled={Boolean(portions?.draft || portions?.locked)} onClick={() => { preview.close(); onTap(row); }} aria-label={`Edit ${name}`}
-        {...preview.targetProps} {...preview.focusProps}>
+      <UnstyledButton className="health-row-name" {...preview.targetProps} {...(selecting ? { component: 'span' } : {
+        disabled: Boolean(portions?.draft || portions?.locked), onClick: () => { preview.close(); onTap(row); }, 'aria-label': `Edit ${name}`, ...preview.focusProps })}>
       <span className="health-row__description"><span className="health-row__name">{name}</span>{' '}
         {measured ? <span className="health-row__scale" title={measured}> · Scale ✓</span> : null}
         {reconstructed ? <span className="health-row__estimate" title="Estimated from weight change, resting metabolism, steps and workouts. Not logged food."> · weight-derived estimate</span> : null}
@@ -105,7 +109,7 @@ export function EntryRow({ row, densityRow = row, onTap, onConfirm, onRequestDel
     <div className="health-row__action health-row__visual">
       {saving ? <span className="health-row__saving-status" role="status" aria-label={`Saving ${name}`} /> : null}
       {confirmation === 'saved' ? <span className="health-row__verified" role="status" aria-label={`${name} verified`} title="Verified">✓</span> : null}
-      <Menu position="bottom-end" withinPortal shadow="md" disabled={saving || Boolean(portions?.draft || portions?.locked)}>
+      {selecting ? null : <Menu position="bottom-end" withinPortal shadow="md" disabled={saving || Boolean(portions?.draft || portions?.locked)}>
         <Menu.Target>
           <UnstyledButton className="health-row__menu" aria-label={`Actions for ${name}`} title={saving ? 'Saving' : 'Actions'} disabled={saving || Boolean(portions?.draft || portions?.locked)}>
             {saving ? <svg className="health-row__saving-spinner" width="14" height="14" viewBox="0 0 14 14" aria-hidden="true" focusable="false"><circle cx="7" cy="7" r="5" fill="none" stroke="currentColor" strokeWidth="1.5" strokeDasharray="23 9" /></svg> : <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true" focusable="false">
@@ -119,13 +123,13 @@ export function EntryRow({ row, densityRow = row, onTap, onConfirm, onRequestDel
           <Menu.Item onClick={() => { logger.debug('row.menu', { action: 'revise', uuid: entryId(row) }); setRevising(true); }}>Revise</Menu.Item>
           {onRequestDelete ? <Menu.Item color="red" onClick={() => { logger.debug('row.menu', { action: 'remove', uuid: entryId(row) }); onRequestDelete(row); }}>Remove</Menu.Item> : null}
         </Menu.Dropdown>
-      </Menu>
+      </Menu>}
     </div>
     {error ? <span role="alert" className="health-row__error">{error}</span> : null}
     {portionAlertFor(portions, row) ? <PortionDraftAlert control={portions} className="health-portion-error health-portion-error--row" /> : null}
   </div>
   {revising ? <RowRevise row={row} isGroup={isGroup} onClose={() => setRevising(false)}
     onChanged={result => { onChanged ? onChanged(result) : onConfirm?.(row); }} onReload={() => onConfirm?.(row)} /> : null}
-  </>;
+  </PortionsReadOnlyContext.Provider>;
 }
 export default EntryRow;

@@ -781,12 +781,14 @@ export function useWebMidiBLE({ preferredInputName, acquireInput = true } = {}) 
   const scheduleNotes = useCallback((events, channel = 0) => {
     if (!events?.length) return false;
     if (bridgeOutUp()) {
+      let accepted = true;
       for (const e of events) {
         const status = e.type === 'note_off' ? 0x80 : 0x90;
-        bridgeSendMidiAt([status | (channel & 0x0f), e.note & 0x7f, (e.velocity ?? 0) & 0x7f], e.t ?? 0);
+        const bytes = [status | (channel & 0x0f), e.note & 0x7f, (e.velocity ?? 0) & 0x7f];
+        if (!bridgeSendMidiAt(bytes, e.t ?? 0)) accepted = false;
       }
-      logger().info('midi.out.schedule', { count: events.length, via: 'bridge' });
-      return true;
+      logger().info('midi.out.schedule', { count: events.length, via: 'bridge', accepted });
+      return accepted;
     }
     const out = outputRef.current;
     if (!out) {
@@ -812,7 +814,15 @@ export function useWebMidiBLE({ preferredInputName, acquireInput = true } = {}) 
   const feedNote = useCallback((type, note, velocity, t, channel) => {
     if (type === 'note_on') applyNoteOn(note, velocity, stampNote(t, 'bridge'), channel);
     else if (type === 'note_off') applyNoteOff(note, stampNote(t, 'bridge'));
-  }, [applyNoteOn, applyNoteOff]);
+    else if (type === 'control_change') {
+      if (Number.isInteger(channel)) emitRaw(new Uint8Array([0xb0 | channel, note, velocity]));
+      if (note === SUSTAIN_CONTROLLER) storeRef.current.sustain(isSustainDown(velocity));
+    }
+    else if (type === 'reset') {
+      for (const held of storeRef.current.getSnapshot().activeNotes.keys()) applyNoteOff(held, Date.now());
+      storeRef.current.sustain(false);
+    }
+  }, [applyNoteOn, applyNoteOff, emitRaw]);
 
   // Periodic cleanup of stale active notes / trim history (lost note-offs).
   useEffect(() => {

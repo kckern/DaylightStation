@@ -521,6 +521,7 @@ export class HealthOperations {
       id: ids.get(row.uuid || row.id), uuid: ids.get(row.uuid || row.id), version: 1,
       userId: username, date, mealTime, parentId: row.parentId ? ids.get(row.parentId) || null : null,
       copiedFrom: row.uuid || row.id, logId: 'COPY', log_uuid: 'COPY',
+      createdAt: undefined, // A copy is logged now, not when its source was.
       settled: true, settledBy: 'user', settledAt: nowTs24(),
     }));
     await this.nutritionItems.saveMany(rows);
@@ -557,12 +558,19 @@ export class HealthOperations {
 
   mealFoodCommand(username, input) { return this.mealCommands.execute(username, input); }
   undoMealFoodCommand(username, input) { return this.mealCommands.undo(username, input); }
+  moveFoods(username, input) { return this.mealCommands.moveFoods(username, { ...input, today: this.today() }); }
   suggestMealGroups(input) { return this.nutritionInput.suggestMealGroups(input); }
   reviseNutritionEntry(input) { return this.nutritionInput.reviseEntry(input); }
   reviseNutritionDish(input) { return this.nutritionInput.reviseDish(input); }
 
   processNutritionInput({ type, content, userId, bucket, date, audioRef, operationId, selectedIds, clarification, expectedVersions }) {
     return this.nutritionInput.process({ type, content, userId, bucket, date, audioRef, ...(operationId ? { operationId } : {}), ...(selectedIds !== undefined ? { selectedIds } : {}), ...(clarification !== undefined ? { clarification } : {}), ...(expectedVersions !== undefined ? { expectedVersions } : {}) });
+  }
+
+  processDayInput(input) { return this.nutritionInput.processDayInput({ ...input, today: this.today() }); }
+
+  clearFailedNutritionOperation(userId, operationId) {
+    return this.nutritionItems?.clearFailedOperation?.(userId, operationId);
   }
 
   runNutritionOperation(userId, operationId, payload, action) {

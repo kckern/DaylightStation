@@ -13,7 +13,7 @@ android {
         targetSdk 28
         testInstrumentationRunner "android.test.InstrumentationTestRunner"
         // BUMP on every build — install -r rejects a lower versionCode.
-        versionCode 35
+        versionCode 36
         versionName "1.2-no-qr"
     }
 

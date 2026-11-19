@@ -113,3 +113,14 @@ describe('resolveLearnPlan', () => {
     expect({}.sequential).toBeUndefined();
   });
 });
+
+describe('certification policy', () => {
+  it('resolves through the configuration layers without changing the plan revision', () => {
+    const base = resolveLearnPlan({ score: score() });
+    expect(base.certification.silver).toEqual({ stepPasses: 1, checkPasses: 1, cleanliness: 0.8, stallSeconds: 30 });
+    const tuned = resolveLearnPlan({ score: score(),
+      category: { certification: { silver: { stepPasses: 2 } } }, piece: { certification: { silver: { cleanliness: 0.9 } } } });
+    expect(tuned.certification.silver).toMatchObject({ stepPasses: 2, cleanliness: 0.9, checkPasses: 1 });
+    expect(tuned.revision).toBe(base.revision);
+  });
+});

@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- The text screen's field. An id lets Android keep the draft across a rebuild of the screen. -->
+    <item name="quick_input_text" type="id" />
+</resources>

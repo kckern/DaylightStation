@@ -1,0 +1,1653 @@
+# DaylightStation Android on the phone
+
+`devices/phone.yml` builds the owner's own phone app from the same codebase as the
+kiosks. This page covers what is different on the phone and the capabilities that
+exist only for it. The phone has no control API and no lifeline. Building, the
+routes (which the phone registers and serves to nobody), settings and the fleet CLI are in
+`__docs/reference/android/README.md`; the web view and its page bridge are in
+`__docs/reference/android/kiosk.md`.
+
+**None of this has run on a phone.** The build passes its unit tests, lint and the
+build verifier. Nothing has been installed. A security review of the build was
+answered before any install; what it changed is in "The lock screen, the
+microphone and the camera", "The link key", "Who may connect", "The exact list"
+and the `quick-input` section. The quick inputs (text, photo, more than one
+destination) were added after that review and have had none of their own. A later
+review of the car screen and of pinning media changed "Who may bind the car screen"
+(the binder gate) and "What a pin does" (recorded only on the owner's confirmation). Every statement below about what
+Android does (cold starts, tiles, the launcher, link handling) is from the
+platform's documentation and is unproven until the on-device checklist is run.
+"Unproven on a phone" below marks the places where that matters most.
+
+What the phone build has: the site's mobile web views (`webview-host`), links
+(`notifications`), `bookmarks`, `one-tap-actions` (with the "On my way"
+placeholder), `widgets` (a four-button widget and one-action buttons), native audio
+playback (`media-service`, with playing from a widget or tile with no window and
+pinning media from the site) with Android Auto (`android-auto`), a list of household
+actions and a voice memo in the car (`car-actions`), quick inputs for the
+Journalist and Nutribot (`quick-input`: a recording, typed text or a photo) and
+the app's own local notifications. What it does not have is
+under "What the phone does not have".
+
+## What makes it a phone and not a kiosk
+
+| | Kiosk (`piano`, `portal`, `shield`) | `phone` |
+|---|---|---|
+| `lockdown` | Listed | Not listed. The per-device payload test fails a device that is not a kiosk and lists it |
+| Home app | Can be made one: a disabled HOME alias comes with `lockdown` and is enabled at the cutover | Never offered: no HOME filter of any kind in the manifest |
+| Control API and lifeline | Listen on every interface (`control.bind: lan`) | Neither exists (`control.bind: none`). No port is opened and no control token is in the APK |
+| `debug-tools`, `app-launcher` | Listed | Not listed: both exist to be driven over the control API. The payload test fails a device that is not a kiosk and lists either |
+| Heartbeats and log shipping | On, to the household log store | Off (`heartbeat.enabled: false`, no log store URL). The test requires heartbeats of kiosks only |
+| Self-update and secure-settings permissions | `REQUEST_INSTALL_PACKAGES`, `WRITE_SECURE_SETTINGS` | Neither. They come from a kiosk build's generated manifest only |
+| Drawing over other apps, the page's camera | `SYSTEM_ALERT_WINDOW`, `CAMERA` (marked `kioskOnly` in `webview-host`'s `capability.yml`) | Neither: the phone's generated manifest removes them |
+| Lock task, TV launcher entry | `lockTaskMode="if_whitelisted"` and a `LEANBACK_LAUNCHER` category on the kiosk Activity | Neither: removed by the phone's generated manifest |
+| Setup activity (`MainActivity`) | Exported, startable by name over adb | Not exported |
+| Plain-http traffic | Allowed (LAN services) | Refused by the platform: `usesCleartextTraffic="false"`, and the build fails on an address setting that is not https |
+| Back button | `reload` | `history`: back through the page history, then out of the app |
+| Other apps on the device | None | Any. Every component another app can reach is described under "Exported components" |
+
+The phone reaches the backend over an always-on VPN at the address the kiosks use.
+The app holds no credential for it: the backend trusts that address. That is why
+the links the app accepts are checked as strictly as they are (see "Links").
+
+### No control API
+
+`control.bind: none`. The shell starts no lifeline and the payload starts no
+control server; a per-device test starts the payload and asserts that no socket is
+bound. The routes are still registered inside the payload, so a capability has one
+code path, and nothing can call them from outside the process.
+
+Why not loopback: a loopback socket can be opened by every app installed on the
+phone, the token that would guard it is compiled into the APK, and an APK is
+readable by other apps on the same phone. An app that read the token could then
+have run scripts in the page, launched apps and read the screen. The phone does
+not need remote control: its installed components (the link activity, the tiles,
+the widget) reach the payload in-process, through a `PayloadPort`, or read what
+the payload last wrote.
+
+A `none` build has no control token compiled in, and needs no token entry in the
+private file. The payload's router is handed a random token made up for that
+process, which nothing can present. A value of `control.bind` the app does not
+know is treated as `none`; the build accepts only `lan`, `loopback` and `none`.
+
+**Debugging a phone build is over adb.** `adb logcat` for the app's log lines
+(tags starting `Daylight`), and, because every build is debuggable,
+`adb shell run-as net.kckern.daylight.phone` for its files: the shell log is
+`files/shell.log`, the payload's state is under `files/payloads/state`. The fleet
+CLI cannot reach the phone. Settings on the phone are the ones compiled from
+`devices/phone.yml`; changing one means a rebuild and an install.
+
+No heartbeats are sent and nothing is shipped to the household log store:
+`heartbeat.enabled` is false and `heartbeat.logStoreUrl` is not set. A phone is
+somebody's own device, and it is not watched.
+
+### The lock screen, the microphone and the camera
+
+Three settings of `webview-host` are off in the code and on only where a device
+file says so. The kiosks set all three to true; `devices/phone.yml` sets all three
+to false, and a per-device test fails a device that is not a kiosk with any of them
+on, or a device file that leaves one unstated.
+
+| Setting | Phone | What it decides |
+|---|---|---|
+| `webview.showWhenLocked` | false | Whether the web view's window shows over the lock screen. The installed Activity does not show there until the payload tells it to. On the phone the site (admin, finance, health) is behind the lock |
+| `webview.allowMic` | false | Whether a page's `getUserMedia` audio request can be granted |
+| `webview.allowCamera` | false | The same for video |
+
+Keep-screen-on, immersive mode and lock task are asked for only by `screen-power`
+and `lockdown`, which the phone does not list (the same test fails a phone build
+that lists either). The Activity never turns the screen on and never dismisses the
+keyguard.
+
+When a build does allow capture, a request is granted only when all of these hold:
+
+1. The asking origin is the start URL's or one in `webview.bridgeOrigins`.
+2. The setting for that resource is true.
+3. The app holds the Android permission (`RECORD_AUDIO`, `CAMERA`). On the phone
+   the app holds `RECORD_AUDIO` after the first voice input, so this condition alone
+   protects nothing there. The phone build never holds `CAMERA`: a photo input is
+   taken by the system's camera app.
+4. The document was not opened by a link without the install key. The app
+   remembers how the document in the page got there. A link from another app or a
+   web page (`daylight://bookmark/call`, say) marks it; the mark stays through a
+   retry, a reload and a redirect the page makes by script, and is cleared by a
+   load the app started (the start page, a keyed link) or by a navigation the owner
+   started with a tap inside the page. A kiosk has no link activity and never sets
+   the mark.
+
+So with capture allowed, a page can start the microphone when the owner opened it
+from inside the app or from one of the app's own keyed surfaces, and cannot when
+another app or a web link opened it. With the phone's settings no page can.
+
+## Private values a phone build needs
+
+None of these is in the repo. All go in the private tokens file.
+
+| Where | Name | What |
+|---|---|---|
+| `placeholders:` | `phone_start_url` | The household site's full https URL as the phone reaches it. `webview.startUrl`; the backend's origin is taken from it |
+| `placeholders:` | `phone_link_host` | The site's host name only (lower case, no scheme, port or path). Used for the https link filter (`appLinks.host`) and for `links.origins` |
+| `placeholders:` | `phone_user` | The household user the phone acts for: 1 to 64 letters, digits, `.`, `_` or `-`. `identity.user`. A quick input's upload sends it, and sends nothing without it |
+
+The phone needs no top-level entry and no control token in that file. Two more
+settings exist with defaults that normally fit, and are set under `defaults:` in
+`devices/phone.yml` only when they do not: `identity.device` (sent as
+`X-Daylight-Device`; default `fleet:phone`) and `backend.baseUrl` (the backend's
+origin; default: the origin of the start URL). Giving the phone its own progress
+spot on the backend also needs a `phone` entry in the household's `devices.yml`,
+which is a data change and not part of the build.
+
+A build with a missing placeholder fails for that one device, naming the
+placeholder. Building a kiosk never needs the phone's values.
+
+## Links
+
+One activity, `LinkActivity` (declared by the `notifications` capability's shell
+half), receives every link the app is sent. Launcher shortcuts, tiles and the
+widget launch links too, so there is one path to test.
+
+Two forms are links:
+
+| Link | Meaning | Needs the install key |
+|---|---|---|
+| `daylight://open?path=/media[#k=<key>]` | Open that page of the site in the app | no, when the path is exactly a configured bookmark's; yes for any other page |
+| `daylight://bookmark/<id>` | Open a configured bookmark | no |
+| `daylight://action/<id>#k=<key>` | Run a one-tap action | yes |
+| `daylight://input/voice?to=<destination id>#k=<key>` | Open the recorder and start a recording for that destination; while one is being recorded, stop and save it | yes |
+| `daylight://input/text?to=<destination id>#k=<key>` | Open the text screen for that destination | yes |
+| `daylight://input/photo?to=<destination id>#k=<key>` | Open the system's camera app; the photo it takes is queued for that destination | yes |
+| `daylight://input/queue#k=<key>` | Try every waiting and parked input again, and say how many there are | yes |
+| `daylight://input/discard#k=<key>` | Throw away the inputs that could not be sent. Asks first; a second tap within twenty seconds deletes | yes |
+| `daylight://memo/new#k=<key>`, `memo/queue`, `memo/discard` | The earlier names of `input/voice?to=journal`, `input/queue` and `input/discard` | yes |
+| `daylight://media/play?id=<contentId>#k=<key>` | Play that household item natively | yes |
+| `https://<the site>/<path>` | The same as `daylight://open` for that path, without a key | no key can be given; only a bookmarked path opens |
+
+The rule: a link kind needs the install key unless all it does is show a page of
+the site. `open`, `bookmark` and an https link show a page; `action`, `input`,
+`memo` and `media` do something else (run an action, record, open the camera, send
+what is typed, start playback) and are refused with `403` without the key. A test
+fails a kind that is in neither list.
+
+An `input` link names a destination by its id (`to=`), and the id must be one of
+the configured destinations and take the link's kind; anything else is refused
+with `400` and nothing opens. A link can never name a route or an address.
+
+A page link without the key is held to less than one with it, because any app or
+web page can send it:
+
+- It opens only a page that is configured as a bookmark: the path must be exactly a
+  bookmark's path, with no query or fragment of the sender's. Any other path is
+  refused with `400`. That holds for an https link of the site too, so a relayed
+  push can open the bookmarked pages and no others.
+- The page it opens is given no microphone and no camera (see "The lock screen,
+  the microphone and the camera").
+
+The app's own surfaces send keyed links, and a one-tap action that opens a page
+runs inside the app, so neither limit applies to them.
+
+A link is untrusted input. The link activity is exported and browsable so that a
+pushed notification or a web page can open a view, which means any app or page on
+the phone can send it anything. What happens to a link:
+
+1. **The installed activity** reads the intent's action and its data URI as text,
+   and nothing else: no extras, no flags, no clip data. The action must be `VIEW`
+   and the text must start with `daylight://`, `https://` or `http://` and be at
+   most 4096 characters. Anything else ends there.
+2. **The payload** (`notifications`) parses it. A web link is accepted only when
+   its origin is the backend's own or one listed in `links.origins`; origins are
+   compared exactly, so a host that merely starts like the site's, a different
+   port, plain http for an https site or a `user@` form is refused. `intent:`,
+   `file:`, `content:`, `javascript:`, `data:` and unknown `daylight://` kinds are
+   refused.
+3. **The link key.** A link that changes something (`action`, `input`, `memo`, `media`)
+   must carry `#k=<key>`: the key is the link's fragment and nothing else is
+   read as one. The app's own surfaces add it. It is never returned by a route,
+   shown by `GET /settings` or written to a log. See "The link key" below.
+4. **The handler** of the link's kind gets the argument and the query without the
+   key. A page link's path must pass `Backend.pagePath`: plain path segments with no
+   percent escapes and no `.` or `..` segment, an optional query and fragment, and
+   a first segment that is never `api` in any case. A link can therefore never make
+   the app send a request to an API route, which matters because the backend trusts
+   the phone's address.
+5. **The answer** tells the activity to do one of three things: nothing, bring the
+   app's own window to the front, or show a short message. An answer cannot name an
+   activity, an intent or a URL. An effect an older installed shell does not know
+   does nothing.
+
+Every refusal is written to the shell log as `LINK refused: <reason>`. The reason
+is one of a few fixed sentences; the link itself, which can hold a key or a
+stranger's text, is never logged. At most three refusals a minute are written and
+the rest are counted.
+
+`POST /link {"uri": "..."}` on the control API runs the same steps for the CLI. It
+answers 200 with the effect, 400 `bad_link`, 403 `forbidden` or 500 `failed`.
+
+### The link key
+
+32 hex characters, made on the phone and kept in the app's private storage
+(`files/payloads/state/link-key`).
+
+- **It travels in the fragment.** When Android starts a link it writes a line to
+  the system log, `START ... dat=daylight://action/<id>?...`, with the scheme,
+  path and query of a `daylight://` link and without its fragment. A key in the
+  query would be in that log; a key in the fragment is not. A `k` in the query
+  is not a key and is refused where one is needed.
+- **It is replaced at every payload start.** `notifications` starts before the
+  capabilities that build links, and each of them builds its links again at
+  start: the launcher shortcuts and the tile cache (`one-tap-actions`), the
+  widget (`widgets`), and the quick-input notices when they are next posted. A link
+  seen once, in a log or over a shoulder, stops working at the next start.
+- **The key before is honoured for one minute after a start.** A cold start is
+  caused by a tap on a tile, a shortcut or the widget, and that tap carries the
+  key of the run before, which is the only key those surfaces had. After the
+  minute it is refused.
+- **Pinned shortcuts.** The launcher keeps a pinned shortcut's intent, key
+  included. A shortcut pinned by `POST /actions/pin` has an id of its own
+  (`pin-<action id>`). At each start and each publish, every pinned shortcut is
+  found by its shortcut id and rewritten with a link under the key in force
+  (`ShortcutManager.updateShortcuts`); one whose action no longer exists is
+  disabled. So the key in the launcher is never older than the run the app is
+  in, and a pinned shortcut keeps working across rotations. Android does not
+  tell an activity which shortcut started it, so the shortcut id alone cannot
+  stand in for a key in the intent: any app could send the same id.
+- A notice that was posted before a restart carries the key of that run. The
+  input queue posts its notice again after a start when there is still something
+  to say; a tap on an older one is refused with "That link is not allowed".
+
+Nothing logs a link: the link activity logs that an intent was ignored or that
+the payload failed, by class name; a refusal logs one of a few fixed sentences;
+the tile logs its slot number.
+
+Unproven on a phone: that the launcher accepts `updateShortcuts` for pinned
+shortcuts at the rate of once per start, and that the system log line leaves the
+fragment out on the owner's Android version (check with
+`adb logcat -d | grep 'dat=daylight'` after tapping a tile: no line may hold the
+key).
+
+### https links of the household site
+
+`appLinks: { host: "{phone_link_host}" }` in the device file adds an https filter
+for that one host to the link activity, in the generated device manifest. The
+filter is not `autoVerify`: the site publishes no Digital Asset Links file. On
+Android 12 and later the owner turns the host on once, in the system settings for
+the app under "Open by default". Until then such a link opens in the browser.
+Unproven on a phone: the exact steps, and what the Home Assistant companion app
+does with a household URL in a push.
+
+### Cold start
+
+Android can create the link activity in a process with no payload loaded. The
+activity is visible, so it is allowed to start the shell service. It then waits up
+to eight seconds on the `links` port for the payload to attach. If none does, it
+shows "Daylight is still starting. Try again in a moment." and leaves the service
+starting. A request that was handed to the payload is never sent twice. Unproven
+on a phone: how long a cold payload takes, so whether eight seconds is enough.
+
+When a link opens a page and no window is up, the URL is kept for up to a minute
+and the window the link activity then brings forward loads it in place of the
+start page.
+
+## `bookmarks`
+
+Named pages of the site. Settings `bookmarks.1` to `bookmarks.8`, each
+`id|label|icon|path`.
+
+| Part | Rule |
+|---|---|
+| `id` | `[a-z][a-z0-9-]*`, at most 32 characters, unique |
+| `label` | 1 to 40 characters |
+| `icon` | A short lower-case name, or empty |
+| `path` | A page of the site (the page-path rule under "Links") |
+
+A malformed line is refused when it is set, and as a device default it fails the
+build. A duplicate id is left out and reported; the payload still starts.
+
+| Method | Route | Answer |
+|---|---|---|
+| GET | `/bookmarks` | `{bookmarks: [{id, label, icon, path, uri}], problems: [...]}` |
+
+The phone has two, Media and Call. Feed was removed at the owner's word: its
+bookmark, its action and its place among the shortcuts and widget buttons.
+
+## `one-tap-actions`
+
+An action is defined once, as a settings line, and shown four ways. Settings
+`actions.1` to `actions.12`, each `id|label|icon|target`; the label is at most 25
+characters.
+
+| Target | Does |
+|---|---|
+| `open:/path` | Opens that page of the site in the app |
+| `bookmark:<id>` | Opens a bookmark |
+| `input:<kind>:<destination id>` | A quick input: `input:voice:journal` opens the recorder (tapped again while one is being recorded, it stops and saves it), `input:text:journal-note` opens the text screen, `input:photo:meal-photo` opens the camera. In a build with no `quick-input` it is a stand-in that opens the app at `actions.memoFallbackPath` and `GET /actions` marks it `placeholder: true`. A per-device test fails a phone build where that is so, or where an action names a destination that is not configured or does not take its kind |
+| `memo:new` | The earlier name of `input:voice:journal`. Still accepted |
+| `media:<contentId>` | Plays that household item natively (`media-service`) |
+| `api:/api/...` | Sends an empty `POST` to that backend path and shows the outcome |
+| `location:share` | A placeholder. A tap shows "Location sharing is not built yet" and does nothing else; `GET /actions` marks it `placeholder: true`. See "On my way" below |
+
+The phone's actions: Journal, Meal (both by voice), Meal photo, Journal note,
+Meal note, Media, Call, On my way. The first four are its launcher shortcuts and its four
+tiles; the widget has Journal, Meal, Meal photo and Media. Two icon names were
+added for them, `camera` and `note`, beside `bolt`, `mic`, `open`, `play` and
+`star`.
+
+An action exists as a settings line, or as a pinned media action (up to 24, made
+at the owner's media page through the page bridge's `pinMedia` and Android's pin
+dialog; see "Page bridge on the phone: pinning media"). Running one takes its id
+and nothing else: no part of a link, an intent or a request body reaches an `api:`
+action's method, path or body. The page bridge has no call that writes a setting,
+and the only action a page can add is a pinned one that plays a content id. With no control API on the phone, changing
+one means changing `devices/phone.yml` and installing the new build.
+
+An `api:` action is not queued. With the VPN down it answers "no connection" and
+nothing is sent later. A backend that takes more than eight seconds gets "sent, no
+answer yet"; the request is left to finish. Each run is written to the shell log
+as the action's id and its outcome.
+
+| Setting | Meaning |
+|---|---|
+| `actions.shortcuts` | Ids of the launcher shortcuts, in order. Empty: the first actions |
+| `actions.tiles` | Ids by quick-settings slot; an empty entry leaves a slot unassigned (`journal,,lights`) |
+| `actions.memoFallbackPath` | The page a memo or input action opens in a build without `quick-input` |
+
+| Method | Route | Answer |
+|---|---|---|
+| GET | `/actions` | `{actions: [{id, label, icon, kind, target, placeholder?}], problems: [...]}`. No links: a link carries the install key |
+| POST | `/actions/run` `{id}` | The action's effect |
+| POST | `/actions/publish` | Rebuilds the shortcuts and the tile cache: `{shortcuts, tiles, problems}`. Call it after changing `actions.*` |
+| POST | `/actions/pin` `{id}` | Asks the launcher to pin one action; 501 with the reason when it cannot |
+
+### "On my way" (a placeholder)
+
+`actions.8: "omw|On my way|bolt|location:share"`. The owner asked for the slot
+now and the feature later. The action is listed everywhere an action can be placed
+(the action list, the long-press and tile lists if its id is added to them, the
+one-action button's chooser, and the car list), and a tap answers "Location
+sharing is not built yet" and nothing more: no permission is declared for it, no
+request is sent, nothing is written. It is keyed like every action link. It is on
+no launcher shortcut, tile or four-button widget by default; the car list has it
+(see `car-actions`).
+
+What the real feature needs, none of which is built: a location permission (fine
+location, and the foreground-service location type for sharing that runs while the
+phone is in a pocket), a foreground service that shares for a fixed time and then
+stops on its own, a backend endpoint that takes the position and decides who sees
+it, and a decision about who that is. Each of those changes the phone's exact
+permission list, which is why none of it is declared for a button that does
+nothing.
+
+### The surfaces
+
+| Surface | Installed code | With no payload loaded |
+|---|---|---|
+| Launcher shortcuts (long-press) | None: the payload publishes them and the launcher holds them | They stay in the launcher and launch the link activity |
+| Pinned shortcuts | None | The same |
+| Quick-settings tiles | Four slots, "Daylight 1" to "Daylight 4" | A slot draws its last label from the surface cache; an unassigned slot is shown unavailable |
+| Home-screen widgets (four buttons; one-action buttons) | See `widgets` | Draw from the cache |
+
+A tile on a locked phone asks for the unlock before it launches its action. The
+tiles and the widgets never call the payload: they read the surface cache (a
+private preferences file the payload writes) and launch a link. A cached value that
+is not a `daylight://` link is treated as an unassigned slot. The one exception is a
+`media:` action, which a widget button and a tile start through the play service
+with no window (see "Playing with no window" under `media-service`).
+
+Unproven on a phone: whether `requestPinShortcut` works with no activity in
+front, the tile's launch on Android 14 and later (the code uses the
+`PendingIntent` overload by reflection there), and how the launcher rate-limits
+publishing.
+
+## `widgets`
+
+Two widgets, both drawn from the surface cache by installed code that never
+calls the payload.
+
+**"Daylight actions"**: up to four buttons bound to the same actions.
+`widgets.actions` lists the ids in order; empty means the first four. Without
+`one-tap-actions`, or before the payload has ever run, the widget has one button,
+"Daylight", that opens the app.
+
+**"Daylight button"**: one cell, one action. Placing it opens a chooser
+(`ButtonWidgetConfigActivity`) that lists every action by its label; a tap on one
+binds the button to that action. The button shows the action's label and icon,
+and a tap launches the action's keyed link, the same link every other surface
+launches. A `media:` action is the exception on both widgets: its button starts the
+play service with the action's id and plays with no window (see "Playing with no
+window").
+
+- The widget remembers an action id and nothing else, in a private preferences
+  file of the installed app (`daylight_buttons`, key `button.<widget id>.action`).
+  The label, the icon and the link are read from the surface cache each time the
+  button is drawn. Removing the widget removes its entry.
+- The payload writes every action under its own id (`action.ids`, and
+  `action.<id>.label`, `.icon`, `.uri`) at start and whenever the actions are
+  published, and asks the buttons to redraw. A button's link is therefore under
+  the key in force; a tap on a cold start carries the key of the run before,
+  which is honoured for a minute.
+- A button whose action no longer exists (the settings line was removed, or the
+  widget was never given one) shows "Not set", and a tap opens the chooser again.
+  The payload empties the cache fields of an action that is gone, so the button
+  cannot launch a stale link.
+- From Android 9 the widget's own menu offers the chooser again
+  (`widgetFeatures="reconfigurable"`).
+- Before the payload has ever run the chooser has nothing to list. It says
+  "Daylight has no actions to show yet. Open the app once, then add the button
+  again." and starts the shell service, so the list is there the next time.
+
+The chooser is exported, because the launcher starts it and no permission exists
+that only a launcher holds. What it does with an intent from anybody:
+
+1. It reads the widget id and nothing else.
+2. It asks Android which provider that widget belongs to, and goes on only when
+   the answer is this app's button provider. An id of another app's widget, of
+   the four-button widget, or of no widget ends there.
+3. It lists the action labels and stores the id the owner taps, for that widget.
+
+It runs no action, starts no capture and no playback, opens no page and returns
+nothing but the widget id. Another app that starts it can put the list of action
+labels in front of the owner, and a tap by the owner then rebinds that one
+button. It is not shown over the lock screen.
+
+| Method | Route | Answer |
+|---|---|---|
+| GET | `/widgets` | `{slots: [{id, label}], problems: [...]}` |
+| POST | `/widgets/refresh` | Writes the slots and every action, and asks the widgets to redraw |
+
+Both widgets are redrawn when the payload starts and whenever the actions are
+published.
+
+Unproven on a phone: that the launcher offers a one-cell widget with a
+configuration step, how it sizes `minWidth` 40dp before Android 12, and the look
+of the button on the owner's launcher (a dark tile, a white icon over a two-line
+label).
+
+## `media-service`
+
+Native audio playback of household media: lock-screen and headset controls, a media
+notification, and browsing from a car. Audio only. A video item is not played
+natively and answers "Could not start playback"; it plays in the web view.
+
+### Who does what
+
+| Piece | Installed (shell half) | Payload | With no payload loaded |
+|---|---|---|---|
+| `DaylightMediaService`, a Media3 `MediaLibraryService` | The ExoPlayer, the session, audio focus, "headphones unplugged", the media notification and the foreground state (type `mediaPlayback`) | What a browse level holds, which stream a media id resolves to, when progress is reported | Starts the shell service, which loads the payload. A browse of the root waits up to 4 s and then answers one tab, "Daylight is starting", with nothing under it; browsers of the root are told to ask again when a payload attaches (within two minutes). A play request fails. Nothing crashes and nothing runs on the main thread |
+| `PlayActivity` (not exported, no window) | Builds a media controller, sets one media id, plays, and stays up until playback started, failed or 8 s passed | Starts it, on a keyed `media` link | Not reached: the link activity already waited for the payload |
+| `PlayActionService` (not exported, foreground service of type `mediaPlayback`) | Started by a widget button or a tile with one action id. Enters the foreground at once with a "Starting playback" notice, asks the payload for the action's media id, plays it through a media controller, and lets go once the media service holds the foreground state | Answers `action` with the media id of a configured or pinned media action, or 404 | Starts the shell service and waits up to 8 s; with no payload it says "Could not start playback" |
+
+The installed service asks the payload through the `media` `PayloadPort`, in
+process, as JSON: `browse`, `resolve`, `event`, and, from the play service,
+`action`. It hands back media ids and nothing
+else. The same three are routes (`GET /media/browse`, `POST /media/resolve`,
+`POST /media/event`) and `GET /media/status` gives `{lastReportAtMs, lastError,
+reports, problems}`; on the phone nothing serves them to anyone.
+
+Media3 is pinned to 1.1.1, the newest version whose libraries build with
+compileSdk 33 and Android Gradle Plugin 7.4.2. A newer one needs a newer compileSdk
+for every device.
+
+### Only household media plays
+
+- A media id is `root`, `recent`, `catalog`, `c:<contentId>` (a container),
+  `m:<skip>|<contentId>` (a later page of it) or `p:<contentId>[|<parent>]` (an
+  item). Anything else is refused. An id is never a URL.
+- A content id is `<source>:<localId>`, checked before it becomes path segments of
+  a backend route: no relative or empty segment, no backslash, bar or control
+  character, and no segment the backend reads as a modifier (`shuffle`, `playable`,
+  `launchable`, `recent_on_top`, `expand`).
+- What plays is the `mediaUrl` in the backend's own answer for that id, and only
+  when it is on the backend's origin. A controller's own URI on an item is dropped.
+- A `media` link carries a content id and this install's key. Nothing else in the
+  link is read.
+
+### Playing with no window
+
+A `media:<contentId>` action tapped on a widget button (either widget) or a tile
+starts native playback without bringing the app to the front. Which path a tap
+takes is decided in one pure class, `DirectPlay` (`shell-api`), and tested:
+
+| Surface | Android 8 to 11 (API 26 to 30) | Android 12 and later (API 31 and up) |
+|---|---|---|
+| Widget button | Play service, no window | Play service, no window |
+| Quick-settings tile | Play service, no window | Play service; when Android refuses the start, the keyed link (the link activity, then the invisible play screen) |
+| Launcher shortcut, pinned shortcut | Keyed link and the invisible play screen | The same |
+| Any non-media action, or a build without `media-service` | Keyed link | Keyed link |
+
+How it is kept closed:
+
+- The play service (`PlayActionService`) is not exported, so only this app's own
+  immutable `PendingIntent`s and tiles reach it. Its intent carries one extra, an
+  action id, and that is the only thing it reads. A string that is not the shape
+  of an action id (`plex:1`, a URL, a link) is dropped.
+- The service hands the action id to the payload (`media` port, op `action`). The
+  payload looks the id up among the configured actions (and the pinned ones, see
+  "Page bridge on the phone: pinning media") and answers with the media id of that
+  action's content, after the content id rule; any other id answers 404 and nothing
+  plays. The media service then resolves that id through the backend as it does for
+  any controller. So a tap cannot name content, and nothing plays that the owner
+  did not set up and the backend did not answer for.
+- No key is involved: nothing outside the app can start the service. The surface
+  cache holds, per slot and per action, a `direct` field that is the action's own
+  id when it is a media action and empty otherwise; it never holds content.
+- Only the action id is written to the log (`play action <id>`).
+
+The service enters the foreground at once (Android stops a service started as a
+foreground service that does not), with a low-importance "Starting playback"
+notice. When the player starts, Media3 moves the media service itself into the
+foreground; once it has, the play service stops. If Android refuses the media
+service that start, Media3 1.1.1 catches the refusal itself and tells the
+service's listener; the play service then keeps its own foreground state for as
+long as the audio plays (`PlayStart`, tested). With no payload within eight
+seconds, or a refused action, or a player error, it says "Could not start
+playback" and stops; it gives up after fifteen seconds in all.
+
+What each platform statement rests on:
+
+| Statement | Source |
+|---|---|
+| From Android 12 an app that targets API 31 or higher cannot start a foreground service from the background except in listed cases, and gets `ForegroundServiceStartNotAllowedException` | Verified: Android's "Restrictions on starting a foreground service from the background" page, read 2026-11-17 |
+| "The user performs an action on a UI element related to your app ... a bubble, notification, widget, or activity" is one of those cases | Verified: the same page |
+| A quick-settings tile is not named among the cases | Verified: the same page (it lists none). Whether a tile tap gets the exemption anyway is unknown, hence the try and the fallback |
+| Before Android 12 a foreground-service start from the background is allowed (`startForegroundService` was added in Android 8 for that) | From memory, not re-read |
+| A launcher shortcut's intent starts an activity, never a service | From memory (`ShortcutInfo` takes activity intents) |
+| A service started as a foreground service must call `startForeground` within a few seconds | From memory |
+| Media3 1.1.1 catches the refusal of its own foreground start and calls `MediaSessionService.Listener.onForegroundServiceStartNotAllowedException` | Verified from the 1.1.1 bytecode on the build's classpath (`MediaSessionService.onUpdateNotificationInternal`) |
+| Starting the shell service and Media3's own foreground start, made while the play service is already in the foreground, are allowed | Unverified. If not, a cold tap can find no payload (it says so), and a warm tap plays with the play service holding the foreground state |
+
+Unproven on a phone: all of it, including whether the launcher sends a widget's
+`getForegroundService` intent the way the documentation describes. The
+acceptance runbook has the checks (D2).
+
+### Who may connect
+
+The library service is exported with no permission: a car, the system's media
+controls and Bluetooth reach it by binding it, and no permission exists that only
+they hold. Every app on the phone can therefore try to connect, and one that got
+in could browse the household library and recent titles and start playback.
+
+A package name proves nothing: Media3 1.1.1 takes it from what the caller sends.
+The uid is the caller's own, from Binder. Each connection is decided by
+`ControllerPolicy` from the two together:
+
+| Caller | Accepted when |
+|---|---|
+| This app | Its uid and its package name |
+| A system uid | The app id (uid modulo 100000) is below 10000, Android's first application uid: the system server (1000), Bluetooth (1002), the media server (1013), adb's shell (2000). Nothing a user installs runs there |
+| A platform-signed package | The caller's uid owns the package it names (`getPackagesForUid`) and that package is signed with the certificate the platform itself is signed with (`checkSignatures("android", ...)`). This is how the system UI's lock-screen and shade controls get in: it runs under an app uid |
+| A pinned package | The caller's uid owns the package it names and the SHA-256 of that package's signing certificate equals the pin for it in `media.controllerPins` |
+| Anything else | Refused: a forged name at another uid, a right name with the wrong certificate, a package with no pin, a caller Android cannot name (a legacy controller before Android 9) |
+
+No package is trusted by name and no certificate digest is compiled in.
+`media.controllerPins` is a setting: `package=sha256, package=sha256`, each digest
+64 hex characters (colons and upper case accepted). Its default, and the phone's
+value until the owner adds to it, is empty.
+
+**The first connection from a car is refused by design.** The refusal is logged
+with the package and the digest Android reports for its certificate, both public
+values:
+
+```
+Daylight-Media: refused media controller <package>: no pin for this package. To allow it, add <package>=<sha256> to media.controllerPins
+```
+
+The owner reads that line from `adb logcat -s Daylight-Media`, checks that the
+package is the one expected (Android Auto, the Google app for Assistant), adds the
+entry under `defaults:` in `devices/phone.yml`, rebuilds and installs. A digest is
+not private, so it may be written in the device file. The payload hands the pins
+to the installed service through the surface cache at each start, so a car that
+binds the service before a payload is loaded is held to the pins of the last run;
+a phone on which the payload has never run has none.
+
+Unproven on a phone: that a package binding the service is visible to the app
+(Android 11 and later make it so without a `queries` entry; if it is not, every
+third-party controller is refused as "not the caller's"), how each car and
+assistant app identifies itself, and that the system UI is platform-signed on the
+owner's phone (if it is not, its line appears in the log like any other and it is
+pinned the same way). Below Android 9 no third-party controller can be pinned.
+
+### Backend endpoints
+
+Read from the backend's code; the app has never called them.
+
+| Call | Used for | Fields read |
+|---|---|---|
+| `GET /api/v1/list/` | The `catalog` tab | `items[]`: `id`, `title` or `label`, `itemType` (`container`), `thumbnail` |
+| `GET /api/v1/list/<source>/<localId>?take=&skip=` | One page of a container | `total`; `items[]`: `id`, `title` or `label`, `itemType`, `play` (an object when the item has a stream), `artist`, `grandparentTitle`, `parentTitle`, `thumbnail`. The route sends no `metadata` object and turns a string of digits into a number |
+| `GET /api/v1/queue/<source>/<localId>` | Everything playable in a container | `items[]`: `contentId` or `id`, `title`, `mediaUrl`, `mediaType` (`audio` only), `duration` (seconds), `thumbnail`, `artist`, `album`, `parentTitle`, `grandparentTitle`, `listId`, `resumable`, `resumePosition` |
+| `GET /api/v1/play/<source>/<localId>` | One item | `id` or `assetId`, `mediaUrl`, `mediaType`, `title`, `duration`, `thumbnail`, `parentTitle`, `grandparentTitle`, `metadata.artist`, `metadata.album`, `resume_position` (seconds, only for a resumable item in progress). A container answers with its first playable item; the id in the answer then differs and the container is queued |
+| `GET /api/v1/media/household/recent?limit=` | The `recent` tab | `items[]`: `contentId`, `title`, `thumbnail`, `parentTitle`, `grandparentTitle`; an entry with no title is left out |
+| `GET /api/v1/content/query/search?text=&take=` | Voice search from a car | `items[]`: `id` (a content id, `<source>:<localId>`), `title`, `itemType` (`container` on a listable item), `mediaType`, `mediaUrl` (on a playable item), `metadata.type`, `subtitle`, `thumbnail`; `metadata.artist` is read when present (unverified that a source sets it). A 400 (validation), 501 (no query service) or 500 is a failure |
+| `POST /api/v1/play/log` | Progress | Sends `type` (the content's source), `assetId` (the content id), `seconds`, `percent`, `title`, `listId` (null when none): the web player's fields. Sent with `X-Daylight-Device` |
+
+Not confirmed from code, and handled so that being wrong plays nothing or reports
+nothing more than intended: that `resumePosition` on a queue item is seconds;
+that `type` set to a source other than `plex` or `files` is accepted by
+`play/log` (the web player sends `plex` for a track and `files` otherwise); the
+`type` values of recent entries (a recent video is listed and then refused at
+play). A Plex track is never resumable on the backend, so music starts at its
+beginning.
+
+- A Plex stream URL gets `session=daylight-<device id>` when it has none, as the
+  web player's does, so Plex sees one client.
+- Resume: the position the backend gives, for a single item. A Plex stream URL
+  that already carries `offset=` is not sought again by default. With an explicit
+  controller position, the selected play response is requested with
+  `resume=false` so Media3 can seek from the beginning of its stream.
+- Progress follows the web player: at most one report every 10 seconds while
+  playing and only past 10 seconds; one more when an item is paused, stopped or
+  replaced, unless it was a skim (under 10 seconds and under 90 percent); one at
+  each natural end at 100 percent with `naturalEnd: true`. The backend can also
+  infer completion from ordinary progress using household rules. A report that
+  fails is dropped and the next carries a later position.
+- The phone's own progress spot on the backend needs a `phone` entry in the
+  household's `devices.yml`. Without it reports are still saved, with no
+  per-screen spot.
+
+### Voice search in the car
+
+Android Auto's voice button and "play ... on Daylight" reach the library session's
+search callbacks. Only connected controllers can search, and every connection was
+admitted by `ControllerPolicy` (see "Who may connect").
+
+- `onSearch` hands the query to the payload (`media` port, op `search`) on the io
+  executor, never the main thread, then tells the car how many results there are;
+  `onGetSearchResult` asks again for the page the car wants (the payload keeps the
+  answer for a minute) and slices it.
+- Play-from-search: Media3 1.1.1 delivers it to `onSetMediaItems` as one item with
+  an empty media id and the words in its request metadata's search query (read
+  from the 1.1.1 bytecode: `MediaSessionLegacyStub.onPlayFromSearch`). The service
+  asks the payload to search, takes the item the payload names as `best` (the first
+  result; a container plays from its first item) and resolves it like any id. A
+  search with no result fails the request.
+- The payload cleans the query (control and format characters become spaces, runs
+  of spaces collapse), cuts it to 200 characters and sends it as one URL-encoded
+  parameter, `text`, never as a path. `take` is `media.pageSize`. An empty query
+  answers the recent list.
+- Results are mapped by the browse rules: a checked content id and a title, an
+  image only as an https URL on the backend, at most `media.pageSize` entries. A
+  container is browsable; an item is playable when it has a `mediaUrl` and its
+  media type is not plainly something the player cannot play (video, image, photo,
+  movie, episode, show, season, clip, a book). What plays is still the backend's
+  answer to the play and queue routes for that id.
+- The query is never written to a log or a note: the installed service logs
+  "search, <n> characters, <m> results" and "play from search, <n> characters".
+  The payload keeps it in memory for a minute as the key of the cached answer.
+
+Read from the backend's code (`__capabilities/content-catalog/server/api/content.mjs`,
+the router mounted at `/api/v1/content`; `ContentQueryService.search`; the `Item`,
+`PlayableItem` and `ListableItem` entities), never called by the app. Not sent:
+`mediaType` and `capability` (the route's `capability=playable` filter drops
+containers, and `mediaType` is handed to the adapters, which may not support it).
+**Unverified:** which `mediaType` values the household's sources give an audio
+track (the code's comments mention `track`); whether every source's search answers
+`itemType` on a playlist (a playlist without it is shown as a playable item when it
+has a `mediaUrl`, and left out otherwise); and that the ids it returns are accepted
+by the queue and play routes for every source (they are the same `source:localId`
+ids the list routes give). The backend's own request log line records the query
+text; that is the backend's log, not the phone's.
+
+Unproven in a car: all of it, including whether Android Auto routes the voice
+button to this app's search at all for a sideloaded app.
+
+### Browsing
+
+| Setting | Default | Meaning |
+|---|---|---|
+| `media.roots` | `Recent=recent;Browse=catalog` | The tabs: `Label=target;...`, at most four, a label at most 24 characters, a target `recent`, `catalog` or a container's content id |
+| `media.recentLimit` | 30 | Entries of the recent tab (1 to 100) |
+| `media.pageSize` | 50 | Entries of one level (10 to 200). A longer container ends with a browsable entry, "More (51 to 100 of 120)" |
+| `media.controllerPins` | empty | The apps that may connect beside this app and the system: `package=sha256, ...` (see "Who may connect") |
+
+A level is kept in memory for a minute and served from there; when the backend is
+out of reach the last answer is served, however old; a level never loaded fails
+(an empty shelf would read as an empty library). An image is given to a browser
+only when it is an https URL on the backend; anything else is left out, in the
+payload and again in the installed service.
+
+## Page bridge on the phone: pinning media
+
+The site's full-screen media view, inside the phone app, can ask the app to pin
+what is on screen (a playlist, an album, a track) as a one-tap action. This is the
+first page-bridge call that changes something on the phone at a page's request.
+The web side's "Add to home screen" control is built from this contract; nothing
+here has run on a phone.
+
+### Members
+
+Both exist on `window.daylight` only in a build that lists `media-service` (the
+phone). A kiosk's page has neither: a per-device test (`DeviceDefaultsTest`) fails a
+build where the members are offered without `media-service`, or on a kiosk. Like
+every member, they exist only where the bridge does (a WebView with document-start
+injection, a page of an allowed origin; see `kiosk.md`). Test for them before use:
+`typeof window.daylight?.pinMedia === "function"`.
+
+| Member | Takes | Returns |
+|---|---|---|
+| `daylight.canPinMedia()` | nothing | `true` or `false`. Read-only and not rate limited |
+| `daylight.pinMedia(request)` | an object, or its JSON text: `{"contentId": "<source>:<localId>", "label": "<text>"}` | an object `{accepted: boolean, reason?: string}` |
+
+`canPinMedia()` is `true` when all of these hold at the moment of the call: the
+calling document holds a bridge token (it is a document of an allowed origin that
+the shim was injected into), the main frame is on an allowed origin, the calling
+document is the top frame, and the launcher supports pinning shortcuts
+(`ShortcutManager.isRequestPinShortcutSupported`). It is `false` otherwise,
+including in a frame and on a launcher that cannot pin.
+
+`pinMedia` answers at once. `accepted: true` means the launcher took the request and
+Android's own "Add to home screen" dialog is showing. Nothing is recorded then: the
+pin is recorded only when the launcher confirms that the owner added the shortcut
+(see "What a pin does"), and that confirmation is not reported to the page. The web
+side says something like "Confirm on the dialog", never "Added".
+
+`accepted: false` comes with one `reason`:
+
+| `reason` | When |
+|---|---|
+| `refused` | No answer from the native side: the token is not this document's (an old document, a guessed token), the main frame is on another origin, or the bridge is gone. Built by the shim |
+| `not_top_frame` | The calling document is a frame, not the top frame |
+| `rate_limited` | A second request from the same document within five seconds of its last request that was let through (counted: `pinRequestsRefused` in the kiosk status; on the phone, nowhere outside the process); or a fourth accepted request within a minute in the app's process, whatever document or reload asks; or a fourth request while three dialogs are still open (asked, neither confirmed nor ten minutes old) |
+| `limit_reached` | 24 pinned media actions are kept already, counting the requests whose dialog is still open. No pin is pushed out for a new one; the owner removes a pinned media shortcut from the home screen first, which frees its slot. The web side shows "Too many home screen shortcuts; remove one first" |
+| `bad_request` | Not a JSON object, or `contentId` or `label` missing or not a string |
+| `invalid_content_id` | Fails the media service's content id rule: a URL, a source named like a URL scheme (`http`, `javascript`, `intent`, ...), an empty, `.` or `..` segment, a backslash, a bar or a control character, a modifier segment (`shuffle`, `playable`, `launchable`, `recent_on_top`, `expand`), or longer than 400 characters |
+| `invalid_label` | After trimming, empty or longer than 40 characters (counted as code points), or holding a control character, a format character (every bidi override and isolate, the direction marks, zero-width characters), a line or paragraph separator, a lone surrogate, a private-use or unassigned character |
+| `not_available` | The build has no `one-tap-actions`, or the app's surfaces are not running |
+| `launcher_cannot_pin` | The launcher does not support pinning shortcuts |
+| `launcher_refused` | The launcher refused the request (`requestPinShortcut` returned false or threw) |
+| `failed` | Anything else, including a content id whose derived action id is already a configured action's |
+
+The answer never holds anything else: no link, no install key, no action id and no
+list of what is pinned. The dispatcher builds it from `accepted` and a reason that
+must be one lower-case word; whatever else the native side holds is dropped.
+
+### What a pin does
+
+1. media-service checks the content id with the same code that guards every play
+   and browse request (`ContentId`), and the label (`PinRequest`).
+2. one-tap-actions makes an action for it: id `media-` and twelve hex digits of the
+   content id's SHA-256 (the same content is always the same action; the id does
+   not spell the content), the label, the icon `play`, target `media:<contentId>`.
+3. It asks the launcher to pin a shortcut with the id `pin-<action id>`, whose link
+   is `daylight://action/<action id>#k=<key>`, keyed like every action link. The
+   content id is never in a link from outside.
+4. The request carries a single-use token (16 random bytes, held in the payload's
+   memory for ten minutes) inside an immutable `PendingIntent` to the app's own
+   non-exported `PinResultReceiver`, passed as `requestPinShortcut`'s result intent.
+   `requestPinShortcut` returning true means only that the dialog was shown, so
+   nothing is recorded then.
+5. Android sends that intent once the owner has added the shortcut. The receiver
+   hands the token to the payload (`pins` port, in process), and only then is the
+   action recorded, in the app's private state
+   (`files/payloads/state/pinned-media.json`), newest last. A dismissed dialog never
+   sends it; a token that matches no request of the last ten minutes, or was used
+   already, records nothing. Pending requests are held in memory only.
+6. A shortcut the owner added that was not recorded (the app restarted while the
+   dialog was open, the confirmation came after ten minutes, or the receiver could not
+   reach the payload) stays pinned and is never disabled. At each publish it is
+   rewritten under the current key with the label the launcher shows, so a tap
+   reaches the app, which answers "This shortcut was not saved. Remove it and pin it
+   again from the Media page" and plays nothing: only a hash of the content is in its
+   id. It holds no slot in the list.
+7. At most 24 are kept, and each open dialog holds a slot until it is confirmed or
+   its ten minutes run out, so a confirmation is never refused for a full list. At
+   most three dialogs are open at once (a dismissed dialog sends nothing back, so it
+   stays open until it expires); a fourth request is refused with `rate_limited`
+   until one is confirmed or expires. A page asking while nobody answers therefore
+   holds at most three slots, and the rest stay free for real pins. A new
+   pin when the kept and held slots reach 24 is refused before the dialog
+   (`limit_reached`); nothing is pushed out and no shortcut is disabled for it.
+   Pinning the same content again renames it and makes it the newest. At every
+   publish, and before every request, an entry whose `pin-<id>` shortcut the launcher
+   no longer holds (`getPinnedShortcuts()`) is dropped, so removing a shortcut from
+   the home screen frees its slot.
+8. The surfaces are published again: the "Daylight button" chooser lists the
+   pinned action after the configured ones, and a button bound to it plays with no
+   window (the play service asks the payload for an action id, and the pinned
+   actions are among those it answers for). The pinned shortcut is rewritten under
+   each new key like any pinned shortcut.
+
+A pinned action is not a launcher (long-press) shortcut, a tile or one of the
+four-button widget's buttons unless a settings line names it. A configured action
+of the same id wins. A pinned action leaves the chooser when its shortcut is removed
+from the home screen (at the next publish).
+
+### Threat cases, each a test
+
+| Case | Outcome | Test |
+|---|---|---|
+| A page of another origin in the main frame | No answer (`refused`); nothing pinned | `BridgeDispatcherTest.threat_anotherOriginInTheMainFrame...` |
+| A frame (an iframe) | Of another origin: no key, no token, no answer. Of an allowed origin: `not_top_frame`, and `canPinMedia()` is false | `threat_anIframeCannotPin` |
+| A call after navigation with an old document's token | No answer | `threat_aCallAfterNavigationWithAnOldToken...` |
+| A hostile label (bidi override, control character, separator, too long) | `invalid_label` | `PinRequestTest.aHostileLabelIsRefused`, `MediaServiceCapabilityTest.aBadContentIdOrLabel...` |
+| A content id that is a URL, holds `..` or a modifier segment | `invalid_content_id` | `PinRequestTest.aContentIdThatIsAUrl...`, `ContentPathTest.aSourceThatIsAUrlSchemeIsRefused` |
+| A flood | One request per document per five seconds, and three accepted requests a minute in the whole process across documents and reloads; the rest `rate_limited`; one dialog | `threat_aFloodIsRefused...`, `theLimitIsPerDocument`, `SurfaceRoutesTest.atMostThreeRequestsAMinuteAreAcceptedInTheProcess` |
+| A page filling the list to push the owner's pins out | Nothing is recorded without the owner's confirmation in the launcher's dialog; at 24 a new pin is `limit_reached` and no shortcut is disabled | `SurfaceRoutesTest.aPinIsRecordedOnlyWhenTheLauncherConfirmsIt`, `aConfirmationTokenIsSingleUseBoundToItsRequestAndExpires`, `atTheLimitANewPinIsRefusedAndNoShortcutIsDisabled` |
+| The page trying to learn the key, a link or the pinned list | The answer is `{accepted, reason?}` only; an unexpected reason becomes `failed` | `threat_thePageCannotLearnTheKey...`, `MediaServiceCapabilityTest.theAnswerHoldsAcceptedAndAReason...`, `SurfaceRoutesTest.theAnswerNeverHoldsALink...` |
+| A kiosk build | No member at all | `DeviceDefaultsTest.onlyADeviceWithMediaServiceOffersThePageToPinMedia`, `BridgeScriptTest.withoutPinningTheShimHasNoPinMembers` |
+
+What is not covered: an allowed-origin frame can call its parent's
+`window.daylight.pinMedia` (same origin, so the browser allows it), and that call is
+the top frame's. Such a frame is the household site itself. Script in the top
+frame of the site can call `pinMedia` without the owner having tapped anything;
+the five-second and per-minute limits and Android's dialog are what stand between
+that and a pin, and only the owner's confirmation in that dialog records one.
+
+Unproven on a phone: that `requestPinShortcut` shows its dialog when called from
+the WebView's bridge thread, that the launcher accepts a shortcut id and a long
+label of this shape, and that the pinned shortcut survives the key rotation (the
+same mechanism as `POST /actions/pin`'s shortcuts).
+
+## `android-auto`
+
+Declarations only: a `com.google.android.gms.car.application` meta-data entry
+pointing at `automotive_app_desc.xml` (`<uses name="media"/>`; in a build that also
+lists `car-actions`, that capability's copy of the file replaces it and adds
+`<uses name="template"/>`) and a one-colour attribution icon. Browsing and playback are `media-service`, which the capability
+requires; the verifier fails a build that has the declaration without it, or has it
+without listing `android-auto`.
+
+The app is sideloaded, so Android Auto lists it only after a one-time developer
+setting on the phone:
+
+1. Open Android Auto's settings, scroll to "Version and permission info" and tap
+   it ten times; accept developer mode.
+2. In the three-dot menu open "Developer settings" and turn on the option for apps
+   from unknown sources. Its exact label is not confirmed.
+
+Testing without a car, with the Desktop Head Unit:
+
+1. In Android Studio's SDK Manager, SDK Tools, install "Android Auto Desktop Head
+   Unit Emulator". It lands in `<sdk>/extras/google/auto/`.
+2. On the phone, in Android Auto's three-dot menu, choose "Start head unit server".
+3. `adb forward tcp:5277 tcp:5277`, then run `desktop-head-unit` from that directory.
+
+Sources: `https://developer.android.com/training/cars/testing`,
+`https://developer.android.com/training/cars/testing/dhu`,
+`https://developer.android.com/training/cars/media/auto`.
+
+## `car-actions`
+
+A templated list of household actions in Android Auto. The car is projection: the
+phone draws Car App Library templates and the car shows them. Nothing here has run
+on a phone or in a car.
+
+**Library.** `androidx.car.app:app` 1.3.0-rc01, in this capability's shell half
+only, so only a device that lists `car-actions` gets it (the kiosk APKs contain no
+`androidx/car` classes). It is the newest version whose AAR metadata accepts
+compileSdk 33 (`minCompileSdk=33`; 1.2.0 needs 31, 1.4.0 and later need 34). It
+builds with the Android Gradle Plugin 7.4.2. Read from its classes: the IOT category
+constant (`CarAppService.CATEGORY_IOT_APP`, `androidx.car.app.category.IOT`) is
+already in this version; `ListTemplate`, `GridTemplate`, `MessageTemplate`,
+`PaneTemplate`, `CarToast` and `HostValidator` are there; Car API levels 1 to 6.
+
+**Unproven until it runs:** whether Android Auto lists a sideloaded IOT-category app
+built on 1.3.0-rc01, with the developer setting for unknown sources on. If it is not
+listed (the media app is, and the car list is not), record what Android Auto shows,
+and try in this order: confirm the unknown-sources setting is on; the head unit's
+own app list rather than the launcher row; `adb logcat | grep -i CarApp` for a
+refusal on the handshake. If it is still not listed, the remaining step is a newer
+library (1.4.0 or later), which needs compileSdk 34 for every device and is the
+owner's decision.
+
+**The list.** The setting `car.actions` is a comma list of ids of configured
+one-tap actions, at most six. The phone's is `journal,omw` (the Journal voice memo
+and "On my way"). Usable in a car:
+
+| Kind | In the car |
+|---|---|
+| `api:/api/...` | Yes: the household call runs and its outcome is a car toast |
+| `location:share` | Yes: the toast says location sharing is not built yet |
+| `open:`, `bookmark:` | No: a web page is no use while driving |
+| `media:` | No: household media plays through Daylight's media app in the car |
+| `input:text:`, `input:photo:` | No: they need the phone's keyboard or camera |
+| `input:voice:<dest>`, `memo:new` | Yes: a tap records a voice memo through the car's microphone (below) |
+
+An id that is not an action, a kind the car cannot show, a duplicate or a seventh
+entry is left out and reported in `GET /car/actions` `problems` and in the shell
+log at start; `start()` never throws for it. A value written by hand that names a
+known action the car cannot show is refused when it is written; a device file with
+any problem fails `DeviceDefaultsTest` at build time.
+
+**A tap.** The car screen asks the payload over the `car` PayloadPort, in process:
+`{op: list}` and `{op: run, id}`. A run takes an id on the car list, and only such an
+id (anything else answers "That is not on the car list"), and goes through
+`ActionList.run`, the path a keyed `daylight://action/<id>` link takes. No link is
+built and no key leaves the payload. The tap runs off the main thread; the answer is
+a car toast. Drawing the list, a refresh and the car connecting run nothing: only a
+row's own click does.
+
+**Cold start.** The service starts the shell service, as the media service does.
+With no payload yet the list is one row, "Daylight is starting"; when a payload
+attaches the screen asks again and redraws.
+
+| Method | Route | Answer |
+|---|---|---|
+| GET | `/car/actions` | `{actions: [{id, label, icon, kind}], problems: [...]}` |
+
+### Who may bind the car screen
+
+Android Auto binds an exported service, and no permission exists that only Android
+Auto holds, so any app on the phone can bind it too. The Car App Library's binder
+does not hold such a caller off on its own (read from the 1.3.0-rc01 classes):
+`CarAppService.onBind` is final and hands the same `CarAppBinder` to every client
+that binds with the same or no `SessionInfo`; the caller's uid is read only in
+`onHandshakeCompleted`; `getManager`, the app manager's `getTemplate` and a row's
+click check nobody. An app could bind, skip the handshake, ask for the app manager
+and the template, and press a row: run a household call, or open the car's
+microphone. Its own handshake could also overwrite a single stored decision.
+
+So the check sits at the binder boundary:
+
+- **`CarHostGateService`** is the exported service with the
+  `androidx.car.app.CarAppService` action and the IOT category. Its `onBind` returns a
+  `Binder` whose `onTransact` judges every transaction by the uid Binder reports for
+  that transaction (`CarGate`, then `CarHostPolicy`): the uid must own Android Auto's
+  package, `com.google.android.projection.gearhead` (the package the library's own
+  sample host list names), and that package's one signing certificate must be the
+  one pinned for it in `car.hostPins` (`package=sha256`, the same form as
+  `media.controllerPins`; only Android Auto's package is accepted in it), through the
+  same `SignerPins` code the media service's `ControllerPolicy` uses. A shared uid is
+  let through when Android Auto's package is among its packages and that package is
+  pinned. A platform-signed app, a system uid and any other pinned app are refused.
+- **A refused transaction** returns "unknown transaction" before the library reads a
+  byte of it, whatever its code: every car app call, the descriptor query
+  (`INTERFACE_TRANSACTION`) and a dump alike. Nothing is bound, created or stored for
+  it beyond its own uid's decision, and a refusal is logged at most once a minute per
+  uid.
+- **A transaction that is let through** goes to the library's binder in
+  `DaylightCarAppService`, which is not exported and has no intent filter. The gate
+  binds it in process on the first transaction let through, with an intent it builds
+  itself: the component and the session the binding names in its identifier
+  (Android 10 and later) or data path (`"<display type>/<session id>"`, what the
+  library's `SessionInfoIntentEncoder` writes there and `Intent.filterEquals`
+  compares), encoded again with the library's own encoder. A client's extras, which
+  Android does not compare between clients, are never passed on, so the first app to
+  bind cannot choose the session Android Auto gets. With no readable key the library's
+  default session applies. The gate unbinds when the clients do (`onUnbind`, which
+  Android also calls when the host dies), and binds again on the next let-through
+  call if Android hands the same gate binder back (it keeps a service's binder for an
+  intent while the service lives). The forward is a local
+  `Binder.transact` on the same binder thread, with the parcels as they came, so the
+  descriptor is the library's own (`androidx.car.app.ICarApp`) and the library still
+  reads the host's uid at its handshake.
+- **Checked on every call**, against what is installed and pinned now: an update,
+  removal or re-signing of Android Auto, or a changed pin, takes effect at the next
+  call. One uid's refusal never changes another's admission.
+- **Everything the car screen hands out comes from a gated call.** Every `ICarApp`
+  method (`onAppCreate`, `onAppStart`, `onAppResume`, `onAppPause`, `onAppStop`,
+  `onNewIntent`, `onConfigurationChanged`, `getManager`, `getAppInfo`,
+  `onHandshakeCompleted`, all one-way) passes the gate. The app manager is handed out
+  only in answer to `getManager`; the templates and their click listeners only by
+  the app manager; the microphone's callback and every other app-side binder only to
+  the `ICarHost` that the gated `onAppCreate` delivered. A refused caller can obtain
+  none of them.
+- **Two further checks stay behind the gate.** `DaylightCarAppService` records
+  `CarHostPolicy`'s decision per uid in `createHostValidator` (which the library calls
+  on the handshake's binder thread) and hands the library's validator that one host
+  and its pinned digest, or none; and the screens check `servesHost()` before drawing
+  or acting, against the decision for the uid the library settled on. The library's
+  validator alone would also accept a package holding
+  `android.car.permission.TEMPLATE_RENDERER`, which an app could define for itself.
+  `ALLOW_ALL_HOSTS_VALIDATOR` and the "allow every host in a debuggable build"
+  shortcut are not used.
+
+**Unproven until it runs:** that Android Auto accepts a car app whose
+`CarAppService` intent filter is on a class that is not a `CarAppService` subclass.
+All Android Auto can see of the app is the manifest entry (an exported service with
+that action and category, as before) and the binder protocol, which the gate
+forwards unchanged; it cannot see the class behind the binder. So it should, but no
+car has confirmed it.
+
+The pins reach the installed service through the surface cache (the payload writes
+`car.hostPins` there at start and when it changes), so a car that binds the
+service before the payload loads is held to them. With no pin Android Auto is
+refused too. The first connection is the pinning step: the refusal line is
+
+```
+refused car host com.google.android.projection.gearhead: no pin for this package. To allow it, add com.google.android.projection.gearhead=<sha256> to car.hostPins
+```
+
+The package name and the digest are public values. Copy the entry into
+`car.hostPins` in `devices/phone.yml`, bump the phone's `shell.versionCode`,
+rebuild, verify and install (see the acceptance runbook, E2).
+
+### A voice memo in the car
+
+A car-list entry whose action is `input:voice:<destination>` (or `memo:new`, the
+journal) records through the car's microphone and feeds the same quick-input queue,
+to the same destination, as a memo recorded on the phone.
+
+What the library offers, read from its classes (1.3.0-rc01 and
+`androidx.car.app:app-projected` 1.3.0-rc01, which this capability adds because
+`CarAudioRecord.create` loads `ProjectedCarAudioRecord` from it by name):
+`androidx.car.app.media.CarAudioRecord`, annotated `@RequiresCarApi(5)` and
+`RECORD_AUDIO`; `AUDIO_CONTENT_SAMPLING_RATE = 16000`, `AUDIO_CONTENT_MIME =
+"audio/l16"` (16-bit linear PCM), `AUDIO_CONTENT_BUFFER_SIZE = 512`. It opens the
+car's microphone through `AppManager.openMicrophone` and reads a pipe from Android
+Auto. Mono and little-endian byte order are from Android's documentation, not from
+the classes.
+
+- **Who can start it.** Only a tap on the entry in the car list (or the phone's own
+  recorder on the phone). Drawing, refreshing or reconnecting the car screen starts
+  nothing (`CarMemo`, tested); no page, link or other app reaches it. Refused, with
+  a car toast saying why: a car below Car API level 5 ("This car cannot record for
+  Daylight"), the phone without the microphone permission ("Allow the microphone on
+  the phone first", granted on the phone, through the phone recorder's prompt),
+  `identity.user` empty ("Daylight is not set up for quick inputs"), or a recording
+  already under way.
+- **The screen.** A `MessageTemplate` titled with the entry's label: "Starting", then
+  a clock ("Recording 1:05") redrawn each second, and one Stop action. Tap targets
+  only, no text entry. Stop, backing out, the car disconnecting, an error or thirty
+  minutes ends it and saves it; under a second is discarded (the phone recorder's
+  `RecorderMachine`, shared). The outcome is a car toast: "Saved for Journal".
+- **The file.** The PCM is encoded on the phone: Ogg/Opus (`MediaCodec` and
+  `MediaMuxer`'s Ogg output, Android 10 and later, when the phone has an Opus
+  encoder), else AAC in MP4 as five-minute segments, as the phone recorder does below
+  Android 10. Written as `<id>.<dest>.ogg.part` in `files/memos/inbox` (the
+  recorder's `MemoFiles` names), renamed when whole; the payload is told over the
+  `inputs` port, or finds it at its next scan. Uploads follow the intake contract
+  unchanged (`/api/v1/journalist/voice` for the journal).
+- **Cut off.** A recording whose process died is recovered the way the phone's is
+  (`MemoRecovery`): an Ogg file becomes a memo, an MP4 segment is kept aside. The car
+  recording under way is named to `MemoRecovery` (`carLive`), so neither recorder's
+  recovery touches the other's file.
+- **Memory.** The thread that reads the car's microphone also feeds the encoder and
+  writes the file, so a stalled encoder or disk holds the reading back rather than
+  growing a buffer; a write the encoder cannot take within about two seconds ends the
+  recording, and it is saved.
+- **Logs.** The format, the length in seconds and whether it was kept. Never what was
+  said.
+
+**Unproven until it runs in a car:** that Android Auto opens the car's microphone for
+an IOT app at Car API level 5 on this library; the byte order and channel count of
+what arrives; that the platform's Opus encoder and Ogg writer produce a file the
+Journalist accepts and that a cut-off Ogg file from `MediaMuxer` plays to where it
+stops; whether a recording keeps going with the phone locked and the app not in
+front on the phone; how often Android Auto lets a template redraw (the clock).
+
+**Metadata.** `android-auto` owns the `com.google.android.gms.car.application`
+meta-data. `car-actions`' shell half depends on `android-auto`'s and has its own
+`res/xml/automotive_app_desc.xml` with `<uses name="media"/>` and
+`<uses name="template"/>`; a library's resource wins over its dependency's, so a
+build with `car-actions` declares both (checked in the built APK) and one without
+it declares media alone. The service has the IOT category and
+`androidx.car.app.minCarApiLevel` 1 (a list, a message, a toast). The library adds
+three components, `CarAppPermissionActivity`, `CarAppNotificationBroadcastReceiver`
+and (from `app-projected`) `CarAppMetadataHolderService`, none exported and the last
+disabled, and a `<queries>` entry for Android Auto's connection provider,
+which is not a component of this app. The verifier fails a build with a car app
+service that does not list `car-actions`, and one that lists it without the service.
+
+## `quick-input`
+
+One capability for everything the owner sends to a household bot from the phone
+with one touch: a recording, typed text or a photo. It was `voice-memo`; the
+recorder, the queue on disk, the retry rules and the notices are the same code,
+now for three kinds and any number of destinations. Each bot answers in the
+owner's Telegram conversation as it does for a Telegram message of that kind;
+Telegram stays a full interface and this is another way in. A voice memo recorded
+in the car (`car-actions`) is written to the same inbox by the same rules and goes
+through the same queue.
+
+The contract with the backend is
+`ops:docs/superpowers/specs/2026-11-17-daylight-quick-input-intake-contract.md`.
+The backend's side was built in parallel on another branch; **no request has
+been sent to it from this app.**
+
+### Destinations
+
+A destination is a settings line, `input.dest.1` to `input.dest.8`, each
+`id|label|kind|route`:
+
+| Part | Rule |
+|---|---|
+| `id` | `[a-z][a-z0-9-]*`, at most 32 characters, unique. What an action, a link and a queued input name |
+| `label` | 1 to 25 characters, no control character. What a notice and a screen's title show |
+| `kind` | `voice`, `text` or `photo`. One destination takes one kind |
+| `route` | A path on the configured backend, under `/api/v1/`: plain segments of letters, digits, `.`, `_`, `~` and `-`, at most 200 characters, with no query, no fragment, no escape, no `.` or `..` segment and no trailing slash. Never an address |
+
+The first five slots default to the contract's table, so the phone's device file
+states none of them:
+
+| Destination id | Kind | Route | Label |
+|---|---|---|---|
+| `journal` | voice | `/api/v1/journalist/voice` | Journal |
+| `journal-note` | text | `/api/v1/journalist/text` | Journal note |
+| `meal` | voice | `/api/v1/nutribot/voice` | Meal |
+| `meal-note` | text | `/api/v1/nutribot/text` | Meal note |
+| `meal-photo` | photo | `/api/v1/nutribot/photo` | Meal photo |
+
+A line that breaks a rule is refused when it is set, and as a device default it
+fails the build (the per-device payload test applies the defaults). A line whose
+id is already used is left out and reported under `problems` in
+`GET /input/queue`, which the same test requires to be empty; the payload still
+starts. The route is where a request goes and nothing else decides it: a link
+or an action names a destination by its id, the queue remembers the id and not
+the route, and the route in force when the input is sent is the one used. An
+input whose destination has since been removed is parked with "unknown
+destination" and kept.
+
+### Who can start a capture
+
+A recording, the camera and the text screen start only from a tap on this
+phone: a tile, the widget, a launcher shortcut (each a keyed `action` link whose
+action is an `input:` line), or a keyed `input` link the app built itself.
+
+- The three screens and the recorder service are not exported, and the provider
+  that hands the camera app its file is not exported either. Nothing outside the
+  app can start one by name.
+- The link activity is exported, so an `input` or `memo` link can be sent by any
+  app or page; without this install's key it is refused before it reaches the
+  capability, and the capability's own handlers refuse it again if it ever got
+  that far.
+- A page of the site has no way to build a keyed link, and the page bridge has
+  no call that runs an action or starts a capture.
+- A car reaches the media library service, which takes media ids, and the car list
+  (`car-actions`), whose voice entry records through the car's microphone only on a
+  tap on that entry on the car's screen, into this same queue (see "A voice memo in
+  the car"). Both hold the car to a pinned certificate.
+- A page's own use of the microphone or camera (`getUserMedia`) is a separate
+  path, through the web view, and is off on the phone (`webview.allowMic` and
+  `webview.allowCamera` are false).
+
+With `identity.user` empty, or `identity.device` not `fleet:<key>`, no screen
+opens: the action answers "Quick inputs are not set up on this phone: identity
+not configured" (or "device identity not configured").
+
+### Voice
+
+A recording for a destination. The recorder is the one the voice memo had,
+unchanged but for one thing: it is told the destination's id and puts it in the
+file's name (`<id>.<destination>.ogg`), so a recording still goes where it was
+meant to after the process was killed. A recording with no destination in its
+name (one made by an earlier build) is the journal's.
+
+Tapping any voice button while a recording is under way stops and saves that
+recording, whichever destination the button is for; it does not start another.
+
+**A recording is filed at the time it started.** The upload carries
+`X-Daylight-Recorded-At`, the epoch milliseconds at which the recording began, as
+kept in the queue entry (it is the leading number of the input's id, and for a
+recording recovered after a cut-off it is the start of that recording). The
+backend uses that time when it is within the last 30 days and no more than five
+minutes ahead of its own clock; outside that window it uses the time it received
+the input. A memo recorded with no connection and uploaded hours later is
+therefore journaled when it was said. Text and photos carry the same header: the
+time Send was tapped, and the time the camera was opened.
+
+### Text
+
+`TextInputActivity`: a small dialog window titled with the destination's label,
+one multi-line field, Cancel and Send.
+
+- Nothing leaves the screen until Send. Cancel and the back button discard the
+  draft; a touch beside the window does nothing, so a draft is not lost to a
+  stray tap.
+- The intake's limit of 16,384 bytes is held as the text is typed, counted in
+  UTF-8 bytes (a Korean syllable is three, most emoji four). What does not fit is
+  not taken, and a character of several bytes is taken whole or not at all. A
+  line under the field says how much is left once under 2,048 bytes remain.
+- Send trims the space around the text. A draft with no character that shows is
+  not sent ("Nothing to send"): the intake would refuse it.
+- Send writes the text to `files/inputs/inbox/<id>.<destination>.txt` (to a
+  `.part` file, synced, then renamed) and tells the payload. From there it is in
+  the queue on disk: it survives the process being killed and is sent when the
+  backend can be reached. If the file cannot be written the draft stays in the
+  field and a message says nothing was sent.
+- The window is not shown over the lock screen, is kept out of the recents list,
+  and from Android 13 the system takes no recents picture of it; the field is
+  emptied before the window closes. `FLAG_SECURE` is not set, on purpose:
+  screenshots work.
+- A second input link while the screen is up changes nothing: the draft and its
+  destination stay.
+
+### Photo
+
+`PhotoCaptureActivity` has no window. Opening it opens the system's camera app
+(`MediaStore.ACTION_IMAGE_CAPTURE`), which writes the picture to a file of this
+app. When the camera returns, the photo is prepared and queued, a short message
+says where it is going, and nothing else is shown: there is no review step.
+
+**The app has no camera permission.** Android lets an app use the system camera
+through that intent without holding `CAMERA`, as long as the app does not
+declare it; an app that declares `CAMERA` must hold it or the intent is refused.
+The phone build does not declare it (`webview-host` marks it `kioskOnly`), so it
+is never asked for. In a build that does declare it the screen asks for it first
+(`CameraAsk`).
+
+**How the camera app gets the file.** `InputFileProvider` is a content provider
+that is not exported. The photo screen creates an empty file,
+`files/inputs/inbox/<id>.<destination>.raw.part`, and gives the camera app a
+grant for that one URI (`content://<package>.inputs/capture/<that name>`), which
+it withdraws when the camera returns. The manifest allows grants for `/capture/`
+only (`grantUriPermissions="false"` with one `grant-uri-permission` path prefix;
+the verifier fails a build where that is wider). The provider serves a name of
+exactly that shape, for writing, and nothing else: not a finished photo, not
+typed text, not a recording, not any other file of the app.
+
+**What is queued is never the camera's file.** Every capture is decoded and
+written again as a JPEG (`PhotoPlan`):
+
+| Step | What |
+|---|---|
+| Turn | The camera's EXIF orientation is applied to the pixels, since the tag itself does not survive |
+| Scale | The long edge is at most 2048 pixels; a smaller photo is not enlarged |
+| Encode | JPEG quality 85 |
+| Fit | If the file is over the intake's 15,728,640 bytes it is written again at quality 70, then at 1536 pixels, then at 1024 pixels and quality 60 |
+| Check | The written file's headers are read (`JpegCheck`): a file with an EXIF or XMP segment (APP1) or an IPTC segment (APP13) is refused and deleted |
+| Clean up | The camera's file is deleted whatever the outcome |
+
+Writing the pixels again is what removes the EXIF block, and with it the
+position the photo was taken at, the phone's model and the capture time. **A
+photo's position does not leave the phone**; the check after writing is there so
+that a change to the encoder cannot undo that without a failure.
+
+A cancelled capture (back, or a rejected photo in the camera's own review)
+leaves no file. A capture whose screen was killed leaves the camera's file,
+which is removed once it is thirty minutes old, at the next pass of the queue or
+the next time a capture screen opens. If Android ends the app's process while
+the camera is in front, the screen is rebuilt when the camera returns and the
+photo is still prepared.
+
+### The pieces
+
+| Piece | Installed (shell half) | Payload | With no payload loaded |
+|---|---|---|---|
+| `RecordActivity` (not exported) | Asks for the microphone, starts the recorder, shows a clock and "Stop and save" | Opens it, on a keyed `input/voice` link, after checking the destination and that `identity.user` and `identity.device` are usable | Not reached through a link: the link activity waited for the payload. From the recording's notification it works as always |
+| `MemoRecorderService` (not exported; foreground service of type `microphone`) | Records into `<files>/memos/inbox/`, to a file ending `.part` that is renamed when whole | Told over the `inputs` port | Recording does not need the payload. The file waits in the inbox for the payload's next scan |
+| `TextInputActivity` (not exported) | The field; writes `<files>/inputs/inbox/<id>.<destination>.txt` on Send | Opens it, on a keyed `input/text` link; told over the `inputs` port | As above: the file waits for the next scan |
+| `PhotoCaptureActivity` (not exported) and `InputFileProvider` (not exported) | Opens the camera app, prepares the photo, writes `<files>/inputs/inbox/<id>.<destination>.jpg` | Opens it, on a keyed `input/photo` link; told over the `inputs` port | As above |
+
+Text and photos have an inbox of their own because the recorder's recovery
+treats a `.part` file as a recording that was cut off, which is right for audio
+only. A capture screen an older installed app does not have answers "<label>:
+not available in the installed app" and nothing else happens.
+
+### Recording
+
+- What can start a recording is under "Who can start a capture" above.
+- The record screen's button, the notification's Stop, and the memo tile, widget
+  button or shortcut tapped again all stop and save. A second tap within 1.5
+  seconds of the start is taken as the same tap.
+- The screen acts on its intent once. When Android builds the screen again (the
+  phone is turned, the theme or the font size changes) it shows the recording
+  under way and does nothing else. Before, that rebuild was read as a second tap
+  and stopped the memo.
+- Hard cap: 30 minutes (and 24 MB), then it stops and saves.
+- A call, or another app taking audio focus, stops the recording and saves what
+  was said so far. So does an error from the recorder.
+- Discarded: a recording under one second, and an empty file.
+- A memo's id is `<start ms>-<8 hex>`. Files are in the app's private storage.
+
+**With notifications denied.** A foreground service's notification is then not
+shown in the shade, so there is no "Recording a voice memo" notice and no Stop
+action. The recording runs all the same. It is stopped from the record screen,
+or by tapping the memo tile, widget button or shortcut again; the record screen
+says so when notifications are off. The tile and the widget do not change their
+look while a memo is being recorded. Android's own list of running apps (the
+"active apps" entry in the shade on Android 13 and later) still names Daylight.
+
+### The container, and a recording that is cut off
+
+One recording is one memo, and a recording whose process is killed is still a
+memo. The container is chosen for that:
+
+| Android | Written as | When the app is killed mid-recording |
+|---|---|---|
+| 10 and later (API 29) | One Ogg/Opus file, `<id>.<destination>.ogg`, mono: 16 kHz at 32 kbit/s, and where the encoder refuses that, 48 kHz at 64 kbit/s. Sent as `audio/ogg` | Ogg is a stream of pages with its headers first, so the file plays up to where it stops. It becomes a finished memo, queued with its real start time, and is uploaded |
+| 8 and 9 (API 26 to 28) | MP4/AAC in five-minute segments (the recorder moves to the next file by size, `setNextOutputFile`), each a whole file `<id>-<nn>.<destination>@<segment start ms>.m4a`. Sent as `audio/mp4`, each segment a memo of its own with the id `<id>-<nn>` and its own start time | Every finished segment is already a memo. The segment being written has no index and cannot be played; it is kept aside. At most the last five minutes are lost |
+
+Why Ogg and not segments everywhere: the intake takes one body per memo id and
+allows 60 memos a user a day. A thirty-minute memo is one of the sixty as Ogg and
+six as five-minute segments. MP4 cannot be made to survive a kill at all (its
+index is written at the end), and Ogg/Opus is only written by `MediaRecorder`
+from Android 10, so the segments are the fallback and nothing more.
+
+Recovery is `MemoRecovery`, in the installed half, because only the recorder
+knows whether a recording is under way. It runs before each new recording and at
+each pass of the upload queue (at payload start, when a network comes up, and at
+least every fifteen minutes):
+
+- `<id>.<destination>.ogg.part` with no recorder writing it becomes
+  `<id>.<destination>.ogg` and is queued for that destination.
+- A cut-off `.m4a.part`, and an Ogg file under 4 KiB (headers and less than a
+  second), is moved to `<files>/memos/cutoff/` and kept. A notice says how many
+  recordings are kept there and that they are not sent.
+- **Nothing that holds audio is deleted.** Only an empty file is removed.
+
+Unproven on a phone: that a cut-off Ogg file from this phone's encoder is
+accepted and transcribed by the intake, that the recorder accepts 16 kHz Opus,
+and everything about the segment fallback, which needs a phone on Android 8 or 9.
+
+### The upload queue
+
+One queue for every kind, kept on disk
+(`files/payloads/state/input-queue.json`), so it survives the process being
+killed and a restart of the phone. Each entry remembers its destination's id,
+its kind, what it is sent as, when it was captured and its file. A queue file
+written before destinations (`memo-queue.json`) is carried over once and read as
+voice memos for the journal. A change that cannot be written (a full disk) is
+undone in memory and the pass fails; the next pass makes the same change again.
+
+```
+QUEUED ──► UPLOADING ──200──► gone (the captured file is deleted)
+  ▲            │ not sent, not the intake's answer, or an answer that may change: wait 5 s, 10 s ... 1 h
+  └────────────┘
+               │ 400, 413, 415, 422, or the 20th failure that counts
+               ▼
+            PARKED (the file is kept until it is sent or discarded)
+```
+
+One input is sent at a time, oldest first. Nothing is tried while Android
+reports no network; a network coming up wakes the queue.
+
+```
+POST <the destination's route>?user=<identity.user>
+Content-Type: audio/ogg | audio/mp4 | text/plain; charset=utf-8 | image/jpeg
+X-Daylight-Device: fleet:<key>     (identity.device; default fleet:phone)
+X-Daylight-Input-Id: <id>
+X-Daylight-Recorded-At: <epoch ms the input was captured>
+<the file, as it is>
+```
+
+| Kind | Sent as | Body | Not sent when over |
+|---|---|---|---|
+| voice | `audio/ogg` (Android 10 and later), `audio/mp4` (a segment, below it) | The recording | 26,214,400 bytes |
+| text | `text/plain; charset=utf-8` | The text as UTF-8, with no JSON around it | 16,384 bytes |
+| photo | `image/jpeg` | The re-encoded photo | 15,728,640 bytes |
+
+An id is `<epoch ms>-<8 hex>`; a segment of a recording is `<id>-<nn>`. Only
+`X-Daylight-Input-Id` is sent (the backend also accepts the earlier
+`X-Daylight-Memo-Id`). No `Origin` header is sent: the client is not a page, and
+the intake refuses a request that names one as `cross_origin`.
+
+Only what the intake itself said counts toward parking. An answer is the
+intake's own when its body is JSON with `ok: false` and one of the intake's error
+codes. A phone can be off its VPN for days; every failure in that time is the
+network's and none is counted. The table is the same for every kind and every
+destination:
+
+| What happened | The queue | Counts toward 20 |
+|---|---|---|
+| 200 with a boolean `duplicate` | Done. The file is deleted, and only then | |
+| 200 with anything else (a sign-in page of some network) | Tried again with backoff | no |
+| 400, 413, 415, 422 (`empty_transcription` and `unusable_input` are answered the same on a retry) | Parked at once with the status and the error code | |
+| 403 `device_not_allowed` | The owner has not bound this phone to the user for that destination's bot. Tried again with backoff, and one notice says "This phone is not allowed to send to <label> yet"; it goes with the first input that destination accepts. Other destinations are still tried in the same pass | no |
+| 429 (`daily_limit`) | **That destination** waits for the time the backend names: `retryAfterSeconds` in the body, else the `Retry-After` header, at least a minute and at most a day (fifteen minutes when neither is there). Nothing is sent to it earlier, by the timer or by a tap. The other destinations go on: a limit on one bot does not hold the other. One notice names each held destination and when sending to it resumes | no |
+| Any other answer that is the intake's own (404 `unknown_user`, 403 `cross_origin`, 500 `processing_failed`, 503 `unavailable`) | Tried again with backoff | yes |
+| Any other answer (a redirect, 401, a bare 403 or 404, a proxy's 502 or 504, a gateway page) | Tried again with backoff | no |
+| The body was sent and no answer came within 330 seconds | Tried again; the backend answers the same id as a duplicate | yes |
+| Not sent: no connection, a connect timeout to an address that is not reachable (the VPN is down), the link dropping part-way | Tried again with backoff | no |
+| The destination is not configured any more, or does not take the input's kind | Parked without a call: "unknown destination", "destination does not take <kind>" | |
+
+A hold is kept per destination id, and a device binding and a daily allowance
+are per bot on the backend. Two destinations of one bot (`journal` and
+`journal-note`) therefore each learn of a limit from their own first answer.
+
+After 20 counted failures an input is parked. A parked input keeps its file. A
+tap on its notice (`daylight://input/queue`) tries every waiting and parked
+input again. The notice's **Discard** action (`daylight://input/discard`, keyed)
+throws parked inputs away, files included, and asks twice: the first tap says
+how many would go and changes nothing, and a second tap within twenty seconds
+deletes. Only parked inputs are discarded; one that is still waiting never is.
+
+**With `identity.user` empty, or `identity.device` not `fleet:<key>`, nothing is
+sent and nothing is captured.** An input already kept stays on the phone, is not
+retried in a loop, and a notice says so. `identity.user` is a build-time
+placeholder (`phone_user`), and a per-device test fails a phone build without
+it. `identity.device` defaults to `fleet:phone`; the key is 1 to 96 letters,
+digits, `.`, `_` or `-`, and must be the one the household config binds to the
+user (`quick_input: { journalist: [...], nutribot: [...] }` on the device entry).
+
+| Method | Route | Answer |
+|---|---|---|
+| GET | `/input/queue` | `{waiting, parked, uploaded, lost, discarded, holds: {<destination id>: <until ms>}, inputs: [{id, kind, dest, state, attempts, lastError, ...}], blocked, notAllowed: [<destination id>], cutOffKept, destinations: [{id, label, kind}], problems}` |
+| POST | `/input/recorded` | Scans both inboxes |
+| POST | `/input/retry` | Makes every input due now (a daily-allowance wait still holds) |
+
+On the phone nothing serves these to anyone; the build's tests call them.
+
+Privacy: the shell log and logcat hold an input's id, its kind, its
+destination's id, its length and its size. Nothing that was said, typed or
+photographed, and no transcript, is read, kept or logged on the phone outside
+the one file that waits to be sent, and that file is deleted on the intake's
+200. A notice holds counts, a state and destination labels.
+
+## Local notifications
+
+The app posts its own notifications for things it owns. There is no push
+transport: household pushes keep arriving through the Home Assistant relay.
+
+| What | Channel | Posted by |
+|---|---|---|
+| Playback | Media3's own | The media session. Exempt from the notification permission |
+| "Recording a voice memo", with Stop | `daylight_recording` (low) | The recorder service; a foreground-service notification |
+| "N inputs waiting to upload (Journal 2, Meal photo 1)" | `daylight_uploads` (low) | `quick-input`, after a pass that left inputs waiting |
+| "N inputs could not be sent (Meal 1). Tap to try again.", with a Discard action | `daylight_uploads` | `quick-input`, when inputs are parked |
+| "This phone is not allowed to send to <label> yet. ..." | `daylight_uploads` | `quick-input`, after a 403 `device_not_allowed`; removed by the first input that destination accepts |
+| "The daily allowance for <label> is used up. Sending resumes at about <day and time>. ..." | `daylight_uploads` | `quick-input`, after a 429, for each destination held |
+| "N recordings were cut off and cannot be played. They are kept on this phone and not sent." | `daylight_uploads` | `quick-input`, while `memos/cutoff/` holds any |
+| "Quick inputs are not set up: identity not configured. N inputs are kept on this phone (Journal 1)." | `daylight_uploads` | `quick-input` |
+
+A notice is a count, a state and the label of a destination, never anything of
+what an input holds. A tap opens a `daylight://` link through the link
+activity, with the link key added by `notifications` where the link's kind
+needs it. A notice may carry one action button, which opens such a link too. A capability posts through `LocalNotices` (`core/spi`); a state is
+posted once, and the notice is removed when nothing is left to say.
+
+`POST_NOTIFICATIONS` is asked for in the app, once, on Android 13 and later: the
+record screen asks the first time a memo is made, beside the microphone. It is
+never asked at install, and a "no" is not asked again. Recording does not depend
+on the answer. `GET /notify/status` gives `{permission, channels}`.
+
+How a relayed push can open a view: a push whose tap target is a household https
+URL opens in the app once the host is turned on under "Open by default", and a
+`daylight://bookmark/<id>` link needs no key. Without the key such a link opens
+a bookmarked page only: the https URL's path, or the `path` of a
+`daylight://open` link, must be exactly a configured bookmark's. A push that
+should open any other page needs that page added as a bookmark (`bookmarks.1` to
+`bookmarks.8`). A push cannot run an action, start a recording, open the camera or the text screen, or start playback:
+those need the link key, which never leaves the phone and changes at every
+start. Which field of the Home Assistant companion app
+carries a tap target is not confirmed, and no producer sets one.
+
+## What the phone does not have
+
+- **No control API and no lifeline.** Nothing listens on any address. The fleet CLI
+  answers every command for `phone` with how it is debugged instead.
+- **No debug tools**: no `debug-tools`, no `app-launcher`, no remote script, shell
+  or screenshot.
+- **No heartbeats and no log shipping.** Nothing about what is played or captured
+  leaves the phone except the progress reports and the quick inputs' own uploads.
+- **No lockdown**, and it is never offered as the home app.
+- **No self-update** and no settings change at run time: a new build is installed.
+- **No playback resumption** after the media service is gone: a headset button does
+  not restart the last queue.
+- **No queue for progress reports or `api:` actions**: with no connection they are
+  dropped.
+
+Debugging: `adb logcat --pid=$(adb shell pidof -s net.kckern.daylight.phone)` (tags
+`Daylight`, `Daylight-Link`, `Daylight-Media`, `Daylight-Memo`, `Daylight-Input`,
+`Daylight-Action`, `Daylight-Car`), and
+`adb shell run-as net.kckern.daylight.phone` for `files/shell.log`,
+`files/payloads/state/`, `files/memos/inbox/` and `files/inputs/inbox/`.
+
+## The exact list
+
+A device with `control.bind: none` is held to an exact list of permissions and
+exported components. The build fails (`:shell:checkPhoneMergedManifest`, part of
+`./gradlew build`) and so does `tools/verify-build.mjs phone` when the phone's
+merged manifest or APK holds anything else, or lacks something on the list. The
+list is not written down once: it is the base shell's, plus what each listed
+capability declares in its `capability.yml` (`permissions:` without the entries
+marked `kioskOnly: true`, and `exported:`), plus `permissions:` in the device
+file.
+
+### Permissions
+
+Twelve:
+
+| Permission | From | Why |
+|---|---|---|
+| `INTERNET` | base | The site and the backend |
+| `FOREGROUND_SERVICE` | base | The shell service |
+| `RECEIVE_BOOT_COMPLETED` | base | Start after a restart |
+| `WAKE_LOCK` | base | Playback and uploads with the screen off |
+| `POST_NOTIFICATIONS` | base | The service's and the app's own notifications |
+| `REQUEST_IGNORE_BATTERY_OPTIMIZATIONS` | base | Declared; the phone build has no screen that asks for it (the setup activity is not reachable) |
+| `ACCESS_WIFI_STATE`, `ACCESS_NETWORK_STATE` | base, `webview-host`, `media-service`, `quick-input` | Reload and upload when a network returns |
+| `RECORD_AUDIO` | `webview-host`, `quick-input`, `car-actions` | Voice inputs, on the phone and through the car's microphone. No page is given it (`webview.allowMic` is false) |
+| `MODIFY_AUDIO_SETTINGS` | `webview-host` | Page audio |
+| `FOREGROUND_SERVICE_MEDIA_PLAYBACK` | `media-service` | The media library service |
+| `FOREGROUND_SERVICE_MICROPHONE` | `quick-input` | The recorder service |
+
+The text and photo inputs added no permission: the list is the same twelve as
+before them, and `tools/phone-list.test.mjs` writes it out. A photo is taken by
+the system's camera app, so there is no `CAMERA`; the photo is written to the
+app's own files, so there is no storage or media permission; and nothing asks
+for a location.
+
+Not in the phone's APK, though a kiosk has them: `SYSTEM_ALERT_WINDOW`, `CAMERA`,
+`REQUEST_INSTALL_PACKAGES`, `WRITE_SECURE_SETTINGS`. Turning the page camera on
+for the phone later means taking `kioskOnly` off `CAMERA` in `webview-host`'s
+`capability.yml` as well as setting `webview.allowCamera`; the photo screen would
+then have to ask for the permission before it opens the camera app, which it
+does (`CameraAsk`).
+
+### Application settings
+
+- `usesCleartextTraffic="false"`: the platform refuses a plain-http request from
+  the app. The build also fails when `webview.startUrl`, `backend.baseUrl`,
+  `heartbeat.logStoreUrl`, `heartbeat.backendUrl` or an entry of `links.origins`,
+  `webview.allowedOrigins` or `webview.bridgeOrigins` resolves to anything but
+  https for a `control.bind: none` device; the message names the setting and
+  never the value.
+- No backup and no transfer: `allowBackup="false"`, and
+  `fullBackupContent` and `dataExtractionRules` (Android 12 and later) both
+  exclude every domain, for cloud backup and for a transfer to a new phone. The
+  link key, the settings and a queued recording stay on the phone they were made
+  on. This holds for the kiosks too.
+- No `lockTaskMode` on any activity and no `LEANBACK_LAUNCHER` category.
+- No component declares `showWhenLocked`, `turnScreenOn` or `showOnLockScreen`:
+  the build and the verifier fail a personal build where one does.
+
+### Debug and release builds
+
+`./gradlew :shell:assemblePhoneDebug` builds the debuggable APK, signed with the
+Android debug key. A debuggable build lets `adb shell run-as` read the app's
+private data: the link key, the settings and queued memo audio. That needs ADB
+enabled on the phone, which it is not by default, and the owner's unlock to
+authorize the workstation. It is an accepted limit on the owner's own phone, and
+it is the reason the debugging notes on this page work at all.
+
+`./gradlew :shell:assemblePhoneRelease` builds a release APK that is not
+debuggable. It is signed only when the private tokens file names a keystore
+under `placeholders:`:
+
+```yaml
+placeholders:
+  phone_keystore: "{keystore-file}"          # a path relative to the private file's directory
+  phone_keystore_password: "{store-password}"
+  phone_key_alias: "{key-alias}"
+  phone_key_password: "{key-password}"
+```
+
+Without those four the release APK comes out as `shell-phone-release-unsigned.apk`
+and cannot be installed; the debug build is then the only installable one. The
+build creates no keystore, and none is ever committed. A signed release is
+checked with `node tools/verify-build.mjs phone --release`, which fails an APK
+that is debuggable or signed with the debug key. A release build cannot be
+installed over a debug build (the signatures differ): uninstall first, which
+removes any memo not yet uploaded. With a release build `run-as` does not work,
+so the `run-as` steps of the acceptance runbook need the debug build.
+
+## Exported components
+
+What another app on the phone can reach, and what stands in the way.
+
+| Component | Why it is exported | What protects it |
+|---|---|---|
+| `LinkActivity` | Links from notifications, pages and the app's own surfaces | The checks under "Links": origin, page path, install key, a fixed list of effects |
+| `ActionTileService$Tile1` to `$Tile4` | The system binds tiles | `BIND_QUICK_SETTINGS_TILE`: only the system can bind. They take no input from the caller |
+| `KioskActivity` (`webview-host`) | It is the launcher icon | It reads nothing from the intent that starts it. It shows nothing over the lock screen and has no lock task |
+| `MainActivity` (shell) | Not exported on the phone | Another app could otherwise start it to put the battery-exemption screen and permission prompts in front of the owner |
+| `BootReceiver` (shell) | Boot and package-replaced broadcasts, and the app's own keep-alive alarm | Whatever it is sent, all it ever does is start the shell service |
+| `DaylightMediaService` (`media-service`) | A car, the system's media controls and Bluetooth bind it | No permission exists that only they hold. `ControllerPolicy` accepts this app, a system uid, a platform-signed package and a package whose certificate is pinned, each checked against the caller's uid, per connection. A controller hands over media ids; what plays is the backend's answer |
+| `CarHostGateService` (`car-actions`) | Android Auto binds it | No permission exists that only Android Auto holds. Every transaction is judged by its own calling uid (`CarGate`): only Android Auto's package, owned by that uid and signed with the certificate pinned in `car.hostPins`, gets through to the library's binder; every other transaction is refused before the library reads it |
+| `DaylightCarAppService` (`car-actions`) | Not exported | The Car App Library's service; bound only by the gate, in process |
+| `ButtonWidgetConfigActivity` (`widgets`) | The launcher starts it when a one-action button is placed | No permission exists that only a launcher holds. It reads the widget id, uses it only when Android says that widget is this app's button, lists the action labels and stores the owner's choice. It runs nothing |
+| `ActionWidgetProvider`, `ButtonWidgetProvider` | Not exported | Reached by the system's widget host and by the app only |
+| `PlayActivity`, `RecordActivity`, `TextInputActivity`, `PhotoCaptureActivity`, `MemoRecorderService` | Not exported | Started by this app only, by the payload on a keyed link |
+| `PlayActionService` (`media-service`) | Not exported | Started by this app's own widget buttons (an immutable `PendingIntent`) and tiles. Reads one action id; the payload decides what it plays |
+| `InputFileProvider` (`quick-input`) | Not exported | Reached by the camera app through a grant for the one file of a capture, made by the photo screen and withdrawn when the camera returns. Grants are limited to `/capture/` in the manifest, and the provider serves a capture file's exact name and nothing else |
+| `PinResultReceiver` (`one-tap-actions`) | Not exported | Reached only through the immutable, one-shot `PendingIntent` the payload hands `requestPinShortcut`, which the system sends once the owner has pinned a media shortcut. It passes a single-use token to the payload and nothing else |
+| `CarAppPermissionActivity`, `CarAppNotificationBroadcastReceiver`, `CarAppMetadataHolderService` (Car App Library) | Not exported (the last also disabled) | Merged in by the library; named in `car-actions`' `libraryComponents:` and the verifier's table |
+| `ShellService`, `InstallReceiver` | Not exported | |
+
+Ten components are exported: `LinkActivity`, `KioskActivity`, the four tile
+services (which the system alone can bind), `DaylightMediaService`,
+`CarHostGateService`, `ButtonWidgetConfigActivity` and `BootReceiver`. An
+eleventh, or one of these no longer exported, fails the build. The car screen added
+five components (the exported gate, the closed car service behind it and the
+library's three closed ones) and no permission to the list: it declares `RECORD_AUDIO`
+for the car's microphone, which `quick-input` already brings, so the list is still
+twelve. The quick inputs added three components (two
+activities and a provider) and none of them is exported. The one-action button
+added two: its provider, which is not exported, and its chooser, which is. It
+added no permission. Playing with no window added one, the play service, which is
+not exported, and no permission (it is a `mediaPlayback` foreground service, and
+`FOREGROUND_SERVICE_MEDIA_PLAYBACK` was already declared). Recording a pin only on
+the owner's confirmation added one, its receiver, which is not exported. In all, 27
+components.
+
+## Not covered by JVM tests
+
+- Everything Android does with the manifest: whether the launcher lists the app
+  once, whether the phone ever offers it as a home app (the manifest has no HOME
+  filter; the verifier and a `buildSrc` test check that), link resolution, the
+  tile and widget hosts.
+- `LinkActivity`, `ActionTileService`, `ActionWidgetProvider`,
+  `ButtonWidgetProvider` and `ButtonWidgetConfigActivity` themselves. Their
+  decisions are in pure classes that are tested (`LinkRequest`, `LinkAnswer`,
+  `TileFace`, `WidgetButtons`, `ButtonFace`); the Android calls around them are
+  not: the widget host, the chooser's list, what Android answers for a widget id.
+- `AndroidSurfaces` and `AndroidWidgetSink` against a real launcher. On the JVM
+  they are started over a context with no shortcut service and no widget host,
+  which shows only that they do nothing and do not throw there.
+- `DaylightMediaService`, `LibraryCallback`, `PlaybackEvents`, `PlayActivity`,
+  `PlayActionService`: the Media3 player and session, audio focus, the media
+  notification, the foreground states, a car. Their decisions are in pure classes
+  that are tested (`ControllerPolicy`, `BrowseAnswer`, `TrackAnswer`,
+  `PayloadMedia`, `PlayStart`, `DirectPlay`).
+- `TextInputActivity`: the window, the keyboard, the field's filter as Android
+  calls it, what the recents screen shows. Its decisions are in `TextDraft` and
+  `CaptureFiles`, which are tested.
+- `PhotoCaptureActivity`, `InputFileProvider` and `AndroidPixels`: whether the
+  owner's camera app accepts the file it is handed and in which mode it opens
+  it, the grant and its withdrawal, the decoding, turning, scaling and encoding
+  of a real photo and the memory that takes, the rebuild of the screen after the
+  process was ended behind the camera. Their decisions are in `PhotoPlan`,
+  `JpegCheck`, `CameraAsk` and `CaptureFiles`, which are tested with made-up
+  files; no real photo has been through them.
+- `MemoRecorderService` and `RecordActivity`: the microphone, the encoder (Ogg/Opus,
+  and the MP4 segment rotation below Android 10), the foreground service, the
+  permission dialogs, a rebuild of the screen. Their decisions are in
+  `RecorderMachine`, `MemoFiles`, `MemoRecovery` and `PermissionAsk`, which are
+  tested; that a cut-off Ogg file plays has not been tried.
+- `CarHostGateService`, `DaylightCarAppService`, `ActionsScreen`, `RecordScreen`,
+  `CarRecorder` and `CarMemoWriter`: Android Auto binding the gate, the forward to
+  the library's binder, the templates on a head unit, the car's microphone, the
+  Opus or AAC encoder and the muxer. Their decisions are in `CarGate`,
+  `CarHostPolicy`, `GateLink`, `CarSessionKey`, `CarAnswers`, `CarMemo`, `CarList`
+  and `PayloadCar`, which are tested.
+- `PinResultReceiver` and the result intent of `requestPinShortcut`: whether a
+  launcher sends it, and sends it for an immutable `PendingIntent`. The decisions
+  (token, slots, limits, unrecorded shortcuts) are tested in `SurfaceRoutesTest`,
+  `PinnedMediaTest`, `SurfacePlanTest` and `PinConfirmationTest`.
+- `AndroidNotices`: a notification on a screen. On the JVM it runs over a context
+  with no notification service, which shows only that it does nothing there.
+- The backend's side of every media and quick-input request. The tests use a fake backend
+  built from the backend's code as read; no request has been sent.
+- That nothing listens on a real phone. The tests start the payload for the phone's
+  configuration and show no control socket is bound and the port stays free; the
+  shell's decision not to start a lifeline is one line that reads the same value
+  and is not exercised on the JVM.

@@ -70,12 +70,15 @@ Barcodes reach the backend through three paths:
 
 ```bash
 # POST with body
+# The caller names a household device bound for Nutribot (quick_input.nutribot
+# on its entry in the devices file) and a user that device is bound to.
 curl -X POST http://localhost:3111/api/v1/nutribot/upc \
+  -H "X-Daylight-Device: fleet:<device key>" \
   -H "Content-Type: application/json" \
   -d '{"user": "user_1", "upc": "749826002019"}'
 
 # Or query params
-curl "http://localhost:3111/api/v1/nutribot/upc?user=user_1&upc=749826002019"
+curl -H "X-Daylight-Device: fleet:<device key>" "http://localhost:3111/api/v1/nutribot/upc?user=user_1&upc=749826002019"
 ```
 
 ### Telegram Auto-Detection
@@ -335,5 +338,5 @@ mosquitto_pub -h localhost -t "daylight/scanner/barcode" \
   -m '{"barcode":"office:pause","timestamp":"2026-03-30T12:00:00Z","device":"symbol-scanner"}'
 
 # UPC food scanning still works via direct API
-curl "http://localhost:3111/api/v1/nutribot/upc?user=user_1&upc=749826002019"
+curl -H "X-Daylight-Device: fleet:<device key>" "http://localhost:3111/api/v1/nutribot/upc?user=user_1&upc=749826002019"
 ```

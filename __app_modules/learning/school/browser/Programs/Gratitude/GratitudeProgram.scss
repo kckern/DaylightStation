@@ -1,4 +1,8 @@
 .gratitude-program { min-height: 100%; padding: 1.5rem 2.5rem; background: var(--ds-background); color: var(--ds-text-high); }
 .gratitude-program__header { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
 .gratitude-program__message { max-width: 52rem; margin: 3rem auto; font-size: 1.6rem; line-height: 1.5; }
+.gratitude-program__first { color: var(--ds-text-mid); font-style: italic; margin: 0; }
 .gratitude-program__subject { font-size: 2.5rem; color: var(--ds-accent); }
+// Three classes so the round 56px shape wins over the house touch button's
+// min-height and padding in either density.
+.gratitude-program .gratitude-program__header .gratitude-program__close { display: inline-grid; place-items: center; inline-size: 3.5rem; block-size: 3.5rem; min-height: 0; padding: 0; border-radius: 999px; font-size: 1.75rem; color: var(--ds-text-high); }

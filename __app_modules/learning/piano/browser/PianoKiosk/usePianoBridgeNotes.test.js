@@ -42,6 +42,42 @@ describe('usePianoBridgeNotes', () => {
     Object.values(logSpy).forEach((fn) => fn.mockClear());
   });
 
+  it('routes a recreated lesson through the document bridge with legacy 8770 absent', async () => {
+    const { bridgeSendMidiAt, bridgeOutVerified } = await import('./bridgeMidiOut.js');
+    const listeners = new Set();
+    const send = vi.fn(() => true);
+    window.daylight = { piano: { send, subscribe(fn) {
+      listeners.add(fn);
+      return () => listeners.delete(fn);
+    } } };
+    const emit = (frame) => act(() => { for (const fn of listeners) fn(frame); });
+    const onNote = vi.fn();
+    try {
+      const first = renderHook(() => usePianoBridgeNotes({ onNote }));
+      emit({ type: 'note.on', note: 60, velocity: 90, t: 77, ch: 9 });
+      first.unmount();
+      expect(onNote).toHaveBeenLastCalledWith('reset');
+      expect(listeners.size).toBe(0);
+      onNote.mockClear();
+      const next = renderHook(() => usePianoBridgeNotes({ onNote }));
+      emit({ type: 'note.on', note: 61, velocity: 91, t: 78, ch: 0 });
+      expect(onNote).toHaveBeenCalledTimes(1);
+      expect(onNote).toHaveBeenCalledWith('note_on', 61, 91, 78, 0);
+      emit({ type: 'control.change', controller: 64, value: 127 });
+      expect(onNote).toHaveBeenLastCalledWith('control_change', 64, 127, undefined, undefined);
+      for (let i = 0; i < 3; i++) emit({ type: 'status', midiInOpen: true, speakerOk: false, outVerified: false });
+      expect(next.result.current.speakerConnected).toBe(false);
+      expect(bridgeSendMidiAt([240, 65, 247], 120)).toBe(true);
+      expect(send).toHaveBeenCalledWith([240, 65, 247], 120);
+      expect(bridgeOutVerified()).toBe(false);
+      emit({ type: 'status', midiInOpen: false, speakerOk: true, outVerified: true });
+      expect(onNote).toHaveBeenLastCalledWith('reset');
+      expect(bridgeOutVerified()).toBe(true);
+      expect(instances.length).toBe(0);
+      next.unmount();
+    } finally { delete window.daylight; }
+  });
+
   // A browser with no bridge on it (a laptop, not the kiosk tablet) retried
   // every 5s forever and logged `bridge.socket-error` at ERROR each time:
   // 1,018 rows an hour in production from about one open tab, which is enough

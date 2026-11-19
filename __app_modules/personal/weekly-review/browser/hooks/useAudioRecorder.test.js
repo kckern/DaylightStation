@@ -18,7 +18,7 @@ class FakeMediaRecorder {
 beforeEach(() => {
   FakeMediaRecorder.instances = [];
   global.MediaRecorder = FakeMediaRecorder;
-  global.crypto = { randomUUID: () => 'test-uuid' };
+  vi.stubGlobal('crypto', { randomUUID: () => 'test-uuid' });
   // Stub navigator.mediaDevices.getUserMedia to return a fake track-bearing stream.
   global.navigator.mediaDevices = {
     getUserMedia: vi.fn(async () => {
@@ -40,9 +40,45 @@ beforeEach(() => {
   global.cancelAnimationFrame = (id) => clearTimeout(id);
 });
 
-afterEach(() => { vi.restoreAllMocks(); });
+afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
 describe('useAudioRecorder', () => {
+  it('records the Shield bridge stream and forwards native PCM to the audio worklet', async () => {
+    let socket;
+    const stream = { getTracks: () => [], getAudioTracks: () => [] };
+    const postMessage = vi.fn();
+    vi.stubGlobal('WebSocket', class {
+      constructor(url) { this.url = url; socket = this; }
+      close() {}
+    });
+    vi.stubGlobal('AudioContext', class extends global.AudioContext {
+      audioWorklet = { addModule: vi.fn() };
+      createMediaStreamDestination() { return { stream }; }
+    });
+    vi.stubGlobal('AudioWorkletNode', class {
+      port = { postMessage };
+      connect() {}
+      disconnect() {}
+    });
+    const hook = renderHook(() => useAudioRecorder({ onChunk: vi.fn() }));
+    try {
+      await act(async () => {
+        const starting = hook.result.current.startRecording();
+        expect(socket.url).toBe('ws://localhost:8765');
+        await socket.onmessage({ data: '{"sampleRate":48000,"channels":1,"format":"pcm_s16le"}' });
+        await starting;
+      });
+      const pcm = Int16Array.of(-320, 0, 320).buffer;
+      socket.onmessage({ data: pcm });
+      expect(postMessage).toHaveBeenCalledWith(pcm, [pcm]);
+      expect(FakeMediaRecorder.instances[0].stream).toBe(stream);
+      expect(navigator.mediaDevices.getUserMedia).not.toHaveBeenCalled();
+    } finally {
+      hook.unmount();
+      vi.unstubAllGlobals();
+    }
+  });
+
   it('exposes firstAudibleFrameSeen=false until a level above threshold is observed', async () => {
     const { result } = renderHook(() => useAudioRecorder({ onChunk: () => {} }));
     expect(result.current.firstAudibleFrameSeen).toBe(false);

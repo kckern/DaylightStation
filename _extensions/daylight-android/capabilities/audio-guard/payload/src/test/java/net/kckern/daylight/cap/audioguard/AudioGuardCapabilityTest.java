@@ -1,0 +1,177 @@
+package net.kckern.daylight.cap.audioguard;
+
+import static org.junit.Assert.*;
+
+import net.kckern.daylight.core.CoreRuntime;
+import net.kckern.daylight.core.StatusBoard;
+import net.kckern.daylight.core.spi.BluetoothRole;
+import net.kckern.daylight.core.testing.TestCore;
+
+import org.json.JSONObject;
+import org.junit.Rule;
+import org.junit.Test;
+import org.junit.rules.TemporaryFolder;
+
+public class AudioGuardCapabilityTest {
+    @Rule public TemporaryFolder tmp = new TemporaryFolder();
+
+    private CoreRuntime registered() throws Exception {
+        CoreRuntime core = TestCore.create(tmp.newFolder());
+        new AudioGuardCapability().register(core);
+        return core;
+    }
+
+    @Test public void declaresTheSpeakerSettingsAndOffersTheAudioRole() throws Exception {
+        CoreRuntime core = registered();
+        assertEquals("", core.settings().get("speaker.mac"));
+        assertEquals(Boolean.TRUE, core.settings().get("speaker.enabled"));
+        BluetoothRole role = core.services().find(BluetoothRole.class);
+        assertEquals("audio", role.profile());
+        assertFalse("no connector before start", role.present());
+    }
+
+    @Test public void routesAnswerNotReadyBeforeStart() throws Exception {
+        CoreRuntime core = registered();
+        assertEquals("no_a2dp", TestCore.get(core, "/speaker").getString("error"));
+        assertEquals("no_a2dp", TestCore.post(core, "/speaker/reconnect").getString("error"));
+        assertEquals("not_ready", TestCore.post(core, "/audio-guard/volume-check").getString("error"));
+        assertEquals("not_ready", TestCore.post(core, "/audio-guard/override").getString("error"));
+        assertEquals(405, TestCore.get(core, "/speaker/reconnect").getInt("_status"));
+    }
+
+    @Test public void theStatusFrameSaysTheSpeakerIsNotOkUntilAGuardExists() throws Exception {
+        CoreRuntime core = registered();
+        JSONObject frame = core.status().collect(StatusBoard.Surface.FRAME, new JSONObject());
+        assertFalse(frame.getBoolean("speakerOk"));
+        assertEquals("no_guard", frame.getString("speakerReason"));
+    }
+
+    @Test public void aStartWithNoAndroidContextLeavesTheHostAbsentAndStopsTwice() throws Exception {
+        CoreRuntime core = TestCore.create(tmp.newFolder());
+        AudioGuardCapability capability = new AudioGuardCapability();
+        core.add(capability);
+        core.start(new JSONObject("{}"));
+        assertEquals("no_a2dp", TestCore.get(core, "/speaker").getString("error"));
+        assertTrue(TestCore.get(core, "/status").isNull("speaker"));
+        capability.stop();
+        capability.stop();
+    }
+
+    private static Thread cycleThread() {
+        for (Thread t : Thread.getAllStackTraces().keySet()) {
+            if (t.isAlive() && "PianoBridge-bt-cycle".equals(t.getName())) return t;
+        }
+        return null;
+    }
+
+    @Test(timeout = 15000) public void stopEndsABluetoothCycleInFlightAndBluetoothIsAskedBackOn() throws Exception {
+        CoreRuntime core = TestCore.create(tmp.newFolder());
+        AudioGuardCapability capability = new AudioGuardCapability();
+        capability.register(core);
+        final java.util.concurrent.atomic.AtomicBoolean on = new java.util.concurrent.atomic.AtomicBoolean(true);
+        final java.util.concurrent.atomic.AtomicInteger enables = new java.util.concurrent.atomic.AtomicInteger();
+        capability.useCyclerForTest(new AdapterCycler(new AdapterCycler.Ops() {
+            @Override public boolean isEnabled() { return on.get(); }
+            @Override public boolean enable() { enables.incrementAndGet(); on.set(true); return true; }
+            @Override public boolean disable() { on.set(false); return true; }
+        }, new AdapterCycler.Clock() {
+            @Override public long now() { return System.currentTimeMillis(); }
+            @Override public void sleep(long ms) throws InterruptedException { Thread.sleep(ms); }
+        }));
+
+        java.util.Map<String, String> query = new java.util.HashMap<>();
+        query.put("settleMs", "30000");                 // the cycle would sit with Bluetooth off for 30 s
+        assertTrue(TestCore.call(core, "POST", "/speaker/bt-cycle", query, null).getBoolean("ok"));
+        long deadline = System.currentTimeMillis() + 3000;
+        while (on.get() && System.currentTimeMillis() < deadline) Thread.sleep(10);
+        assertFalse("the cycle switched Bluetooth off", on.get());
+
+        capability.stop();
+        assertNull("the cycle's thread ended with the capability", cycleThread());
+        assertTrue("Bluetooth was not left off", on.get());
+        assertEquals(1, enables.get());
+        capability.stop();
+        assertEquals("no_bluetooth", TestCore.post(core, "/speaker/bt-cycle").getString("error"));
+    }
+
+    // ── a real start, over a fake Android context ───────────────────────────
+
+    /**
+     * What the JVM can see of a real start: the speaker connector and the guard exist
+     * and the routes answer from them, and stop takes both away with no receiver left
+     * registered. The connector registers its receivers and opens its profile proxy on
+     * a Handler thread, which does not run on the JVM; that part is on the on-device list.
+     */
+    @Test public void aRealStartBuildsTheConnectorAndTheGuardAndStopTakesBothAway() throws Exception {
+        java.io.File dir = tmp.newFolder();
+        net.kckern.daylight.core.testing.FakeContext ctx = new net.kckern.daylight.core.testing.FakeContext(dir);
+        CoreRuntime core = TestCore.createWithContext(dir, ctx);
+        try {
+            AudioGuardCapability capability = new AudioGuardCapability();
+            core.add(capability);
+            core.prepare(new JSONObject("{}"));
+            capability.start();
+            assertTrue("the role sees a connector", core.services().find(BluetoothRole.class).present());
+            assertEquals("the guard's volume receiver is registered", 1, ctx.receivers.size());
+            assertNotEquals("no_a2dp", TestCore.get(core, "/speaker").optString("error"));
+            assertNotEquals("no_guard", core.status().collect(StatusBoard.Surface.FRAME, new JSONObject()).getString("speakerReason"));
+
+            capability.stop();
+            assertFalse(core.services().find(BluetoothRole.class).present());
+            assertEquals("no_a2dp", TestCore.get(core, "/speaker").getString("error"));
+            assertEquals("no_guard", core.status().collect(StatusBoard.Surface.FRAME, new JSONObject()).getString("speakerReason"));
+            assertTrue("no receiver is left registered: " + ctx.receivers, ctx.receivers.isEmpty());
+            capability.stop();
+        } finally {
+            TestCore.releaseMainThread();
+        }
+    }
+
+    // ── speaker.enabled: installed beside piano-bridge, which drives the speaker ─
+
+    @Test public void withTheSwitchOffNeitherTheConnectorNorTheGuardExistsUntilItIsTurnedOn() throws Exception {
+        java.io.File dir = tmp.newFolder();
+        net.kckern.daylight.core.testing.FakeContext ctx = new net.kckern.daylight.core.testing.FakeContext(dir);
+        CoreRuntime core = TestCore.createWithContext(dir, ctx);
+        try {
+            AudioGuardCapability capability = new AudioGuardCapability();
+            core.add(capability);
+            core.prepare(new JSONObject("{\"speaker.enabled\":false}"));   // the piano's device file
+            capability.start();
+            assertFalse(core.services().find(BluetoothRole.class).present());
+            assertEquals("no_a2dp", TestCore.get(core, "/speaker").getString("error"));
+            assertTrue("the guard's volume receiver is not registered", ctx.receivers.isEmpty());
+            assertFalse(TestCore.get(core, "/status").getJSONObject("switches").getJSONObject("speaker.enabled").getBoolean("active"));
+
+            core.settings().set("speaker.enabled", true);
+            assertTrue(core.services().find(BluetoothRole.class).present());
+            assertEquals(1, ctx.receivers.size());
+
+            core.settings().set("speaker.enabled", false);
+            assertFalse(core.services().find(BluetoothRole.class).present());
+            assertTrue(ctx.receivers.isEmpty());
+            capability.stop();
+        } finally {
+            TestCore.releaseMainThread();
+        }
+    }
+
+    @Test public void thePanelsDisconnectIsItsOwnSettingAndLeavesTheSwitchAlone() throws Exception {
+        CoreRuntime core = TestCore.create(tmp.newFolder());
+        core.add(new AudioGuardCapability());
+        core.prepare(new JSONObject("{\"speaker.enabled\":false}"));
+        BluetoothRole role = core.services().find(BluetoothRole.class);
+        assertFalse("switch off: the role is not enabled", role.enabled());
+        role.assign("AA:BB:CC:DD:EE:FF", "Example speaker");
+        assertEquals("assigning a speaker in the panel does not turn the coexistence switch on",
+                Boolean.FALSE, core.settings().get("speaker.enabled"));
+        assertEquals(Boolean.TRUE, core.settings().get("speaker.connect"));
+
+        core.settings().set("speaker.enabled", true);
+        assertTrue(role.enabled());
+        role.disable();
+        assertEquals(Boolean.FALSE, core.settings().get("speaker.connect"));
+        assertEquals("the guard keeps its switch", Boolean.TRUE, core.settings().get("speaker.enabled"));
+        assertFalse(role.enabled());
+    }
+}

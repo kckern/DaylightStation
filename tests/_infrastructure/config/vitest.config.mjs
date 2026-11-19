@@ -117,6 +117,9 @@ export default {
     environment: path.resolve(__dirname, 'tests/_infrastructure/frontend-env.mjs'),
     // Loads @testing-library/jest-dom matchers so `expect(el).toBeInTheDocument()` works.
     setupFiles: [path.resolve(__dirname, 'frontend/src/test-setup.js')],
+    // Warns (never fails) when the gitignored flags and Solar icons were never
+    // generated in this checkout; see vitest.generatedAssets.mjs.
+    globalSetup: [path.resolve(__dirname, 'tests/_infrastructure/config/vitest.generatedAssets.mjs')],
     // `.claude/worktrees/` and `.worktrees/` hold isolated feature worktrees with
     // their own copies of every test file. A glob run would otherwise collect (and
     // re-run, often stale) those duplicates alongside the canonical suite — exclude

@@ -381,14 +381,17 @@ function DeviceDraft({ deviceId, initialDevice }) {
         onRevert={handleRevert}
         headerExtra={(
           <Group gap="xs">
-            {device.content_control?.provider === 'fully-kiosk' && (
+            {/* Both kiosk providers are administered through the same console
+                and the same backend route; the backend picks the gateway from
+                the device's provider. */}
+            {['fully-kiosk', 'daylight-android'].includes(device.content_control?.provider) && (
               <Button
                 variant="light"
                 size="sm"
                 leftSection={<IconDeviceDesktopCog size={14} />}
                 onClick={() => navigate(`/admin/household/devices/${deviceId}/fully-kiosk`)}
               >
-                Fully Kiosk Console
+                {device.content_control.provider === 'fully-kiosk' ? 'Fully Kiosk Console' : 'Kiosk Console'}
               </Button>
             )}
             <Button

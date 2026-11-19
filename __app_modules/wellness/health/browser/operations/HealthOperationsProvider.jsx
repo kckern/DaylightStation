@@ -102,14 +102,14 @@ function Session({ userId, children, send }) {
       running.current.set(id, promise);
       return promise;
     };
-    const submitSentence = ({ text, date, bucket, clarification }) => {
+    const submitSentence = ({ text, date, bucket, clarification, onResult }) => {
       const id = crypto.randomUUID();
       const day = peekApiResource(healthDayPath(date));
       const expectedVersions = Object.fromEntries((day?.items || []).map(row => [String(row.uuid ?? row.id), row.version ?? 1]));
       const body = { type: 'text', content: text, operationId: id, ...(clarification ? { clarification } : {}), ...(date ? { date } : {}), ...(bucket ? { bucket } : {}), ...(day?.items ? { expectedVersions } : {}) };
       const targetIds = clarification ? foodOperationScope({ action: 'edit', rows: [...knownRows.current.values()], selectedIds: [clarification] }) : [];
       if (!store.begin({ id, kind: 'sentence', date, bucket, targetIds, request: { path: 'api/v1/health/nutrition/input', method: 'POST', body } }).ok) return null;
-      execute(id).catch(() => {});
+      execute(id, onResult).catch(() => {});
       return id;
     };
     return { store, reconciliation, knownRows: knownRows.current, undoScopes: undoScopes.current, execute, submitSentence, retry: execute, isActive: () => Boolean(lease.current?.active) && !store.disposed };

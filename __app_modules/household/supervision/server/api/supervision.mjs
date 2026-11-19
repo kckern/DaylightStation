@@ -79,3 +79,5 @@ export function createSupervisionRouter({service,scopeId,authenticateParent,auth
 
 /** Only for installations with no configured or persisted supervision workflow. */
 export function createDisabledSupervisionRouter(){const router=express.Router();router.get('/bootstrap',(_req,res)=>res.set('Cache-Control','no-store').json({enabled:false}));return router;}
+/** Every supervision route on a backend that is not the ledger writer: loud, never a permit. */
+export function createRefusedSupervisionRouter({message,code='SUPERVISION_WRITER_HOST_REFUSED'}){const router=express.Router();router.use((_req,res)=>res.status(503).set('Cache-Control','no-store').json({error:message,code}));return router;}

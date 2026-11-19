@@ -12,6 +12,8 @@
 //   node pkctl.mjs fkbpw                  # push the Portal FKB password from private auth
 //   node pkctl.mjs lockdown-token <token> # provision the server-only shutdown token
 //   node pkctl.mjs watch                  # stream key events over the WebSocket
+//   node pkctl.mjs transfer-owner         # hand device ownership to DaylightStation Android
+//   node pkctl.mjs resume-policy          # re-arm kiosk policy after a failed transfer
 //
 // `status` leads with serviceBound because the dominant failure mode is the Android
 // accessibility grant being dropped — the app CANNOT re-grant itself. See README.
@@ -29,6 +31,8 @@ const SHELL_BASE = `http://${DEVICE}:8772`;
 const OPS_BASE = `http://${DEVICE}:8773`;
 const TOKEN_CACHE = process.env.PK_TOKEN_FILE || join(homedir(), '.config', 'daylight', 'portal-keys-token');
 const LEGACY_TOKEN_CACHE = '/tmp/portal_keys_admin_token';
+// The only component the device accepts for `transfer-owner` (OwnerTransfer.java).
+const OWNER_TRANSFER_TARGET = 'net.kckern.daylight.portal/net.kckern.daylight.cap.lockdown.shell.DaylightAdminReceiver';
 
 
 // Keyboard identities are hardware facts, so they live in the household device
@@ -327,6 +331,25 @@ const commands = {
     pretty({ ok, checks });
     if (!ok) process.exitCode = 1;
   },
+  // Hand device ownership to the DaylightStation Android app. The target is fixed
+  // here and checked again on the device; the route releases this app's kiosk
+  // policy first and does not put it back if the transfer fails.
+  async 'transfer-owner'() {
+    const out = await reqAt(OPS_BASE, '/owner/transfer', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ to: OWNER_TRANSFER_TARGET }),
+    });
+    pretty(out);
+    if (out?.ok !== true) process.exitCode = 1;
+  },
+  // Re-arm this app's kiosk policy after a failed transfer, or after ownership
+  // was transferred back to it. Nothing re-applies without this.
+  async 'resume-policy'() {
+    const out = await reqAt(OPS_BASE, '/owner/resume-policy', { method: 'POST' });
+    pretty(out);
+    if (out?.ok !== true) process.exitCode = 1;
+  },
   async 'enable-a11y'() { pretty(await reqAt(OPS_BASE, '/accessibility/enable')); },
   async status() {
     const s = await req('/status');
@@ -472,6 +495,8 @@ if (!name || name === 'help' || !commands[name]) {
   console.log('  rollback               roll back to the previous payload');
   console.log('  kiosk-verify           assert current native policy, Fully lock, and monitoring health');
   console.log('  kiosk-home             actual Home selection and watchdog readiness (:8773)');
+  console.log('  transfer-owner         release this app\'s kiosk policy, then hand device ownership to DaylightStation Android (:8773)');
+  console.log('  resume-policy          re-arm kiosk policy after a failed transfer or a transfer back (:8773)');
   console.log('  enable-a11y            self-repair the accessibility grant');
   console.log('  status                 serviceBound / keysSeen / display / config');
   console.log('  log                    recent key, screen-toggle and config events');

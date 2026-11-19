@@ -4,6 +4,7 @@
  * nested `perform` and `scoring.thresholds` groups; ignores non-object input.
  */
 import sha256 from 'crypto-js/sha256.js';
+import { CERTIFICATION_DEFAULTS, normalizeCertification } from '../../../../../../../shared/music/learnCoach.mjs';
 
 const DEFAULT_LADDER = [
   { id: 'right', label: 'Right hand', parts: ['rh'], mode: 'free', sets: 2, reps: 3, availability: 'sequential', consecutive: false, criteria: { completeness: 1 }, completes: 'rung', legacySeed: 'rh' },
@@ -26,6 +27,7 @@ export const SHEET_MUSIC_DEFAULTS = {
     passages: { targetMeasures: 4, minMeasures: 3, maxMeasures: 5 },
     tempo: { fallbackBpm: 90, minimumPercent: 15, maximumPercent: 100, adjustable: true },
     feedback: { successReturnMs: 900 },
+    certification: CERTIFICATION_DEFAULTS,
     ladder: DEFAULT_LADDER,
   },
 };
@@ -106,6 +108,8 @@ function normalizeLearn(rawLearn) {
     defaultHands: raw.defaultHands ?? SHEET_MUSIC_DEFAULTS.learn.defaultHands,
     roadmap: raw.roadmap !== false,
     feedback,
+    // Outside `behavior`: changing the policy must not invalidate earned progress.
+    certification: normalizeCertification(raw.certification),
     ...behavior,
     revision: sha256(JSON.stringify(behavior)).toString(),
     configFallback,

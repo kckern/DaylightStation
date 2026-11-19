@@ -9,21 +9,24 @@ const DEFAULT_TIMEOUT_MS = 5000;
  * that MIDI OUT works.
  */
 export class PianoBridgeHealthProbeAdapter extends IPianoBridgeHealthProbe {
-  #baseUrl; #fetchImpl; #timeoutMs;
+  #baseUrl; #fetchImpl; #timeoutMs; #headers;
 
   /**
    * @param {Object} opts
    * @param {string} opts.bridgeUrl - http(s):// or ws(s):// base of the bridge
    * @param {Function} [opts.fetchImpl]
    * @param {number} [opts.timeoutMs]
+   * @param {Object} [opts.headers] - sent on every request; the DaylightStation
+   *   Android app's control API needs its token header (see composition/bridge-endpoint.mjs)
    */
-  constructor({ bridgeUrl, fetchImpl = globalThis.fetch, timeoutMs = DEFAULT_TIMEOUT_MS } = {}) {
+  constructor({ bridgeUrl, fetchImpl = globalThis.fetch, timeoutMs = DEFAULT_TIMEOUT_MS, headers = {} } = {}) {
     super();
     if (!bridgeUrl) throw new Error('PianoBridgeHealthProbeAdapter requires bridgeUrl');
     if (typeof fetchImpl !== 'function') throw new Error('PianoBridgeHealthProbeAdapter requires fetchImpl');
     this.#baseUrl = bridgeUrl.replace(/^ws(s?):\/\//i, 'http$1://').replace(/\/+$/, '');
     this.#fetchImpl = fetchImpl;
     this.#timeoutMs = timeoutMs;
+    this.#headers = { ...headers };
   }
 
   async readHealth() {
@@ -31,6 +34,8 @@ export class PianoBridgeHealthProbeAdapter extends IPianoBridgeHealthProbe {
     try {
       status = await this.#getJson('/status');
     } catch (err) {
+      // A wrong or missing token is a configuration fault, not a bridge that is down.
+      if (err?.unauthorized) return { reachable: false, unauthorized: true, ble: null, outVerified: null, speaker: null, error: 'unauthorized' };
       return { reachable: false, ble: null, outVerified: null, speaker: null, error: String(err?.message ?? err) };
     }
     // Payloads since p19 put the echo verdict on /status; older ones only on /loopback.
@@ -55,8 +60,10 @@ export class PianoBridgeHealthProbeAdapter extends IPianoBridgeHealthProbe {
   async #getJson(path) {
     const res = await this.#fetchImpl(`${this.#baseUrl}${path}`, {
       method: 'GET',
+      headers: this.#headers,
       signal: AbortSignal.timeout(this.#timeoutMs),
     });
+    if (res?.status === 401) throw Object.assign(new Error('unauthorized'), { unauthorized: true });
     if (!res?.ok) throw new Error(`HTTP ${res?.status ?? 'error'} from ${path}`);
     return res.json();
   }

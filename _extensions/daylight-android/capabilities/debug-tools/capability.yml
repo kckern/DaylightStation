@@ -1,0 +1,8 @@
+# Remote diagnostics: device info, screenshot, eval, html, fps, exec, logcat, speak, sound.
+entry: net.kckern.daylight.cap.debugtools.DebugToolsCapability
+# READ_LOGS: other apps' lines in /debug/logcat. DUMP: dumpsys through /debug/exec.
+# Both are granted once over ADB; without them the routes still answer, with this
+# app's own lines and whatever dumpsys gives an ordinary app.
+permissions:
+  - android.permission.READ_LOGS
+  - android.permission.DUMP

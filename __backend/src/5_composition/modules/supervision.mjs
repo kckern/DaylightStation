@@ -1,17 +1,40 @@
 import {CallHomeAssistantService} from '../../../../__capabilities/home-control/server/application/CallHomeAssistantService.mjs';
+import {DaylightAndroidRestClient} from '#adapters/devices/DaylightAndroidRestClient.mjs';
+import {DaylightAndroidInputLockAdapter} from '#adapters/devices/DaylightAndroidInputLockAdapter.mjs';
 import {PortalKeysLockdownAdapter} from '#adapters/devices/PortalKeysLockdownAdapter.mjs';
 import {createArcadeSupervisionConsumers} from '../../../../__app_modules/games/arcade/server/supervision-runtime.mjs';
 import {createTrustedParentalScanner} from '../../../../__app_modules/wellness/fitness/server/supervision-runtime.mjs';
 import {randomUUID} from 'node:crypto';
-import {EnforcementIncidentReporter,createSupervisionModule,createDisabledSupervisionRouter,JsonSupervisionRepository,StateGatesSupervisionPort,HaStopActuator,KioskSessionAuthority,BrowserStopConsumer,validateConsumerManifest,readLegacyStops,AccessDenied,ApprovalWorkflow,createApprovalTokenPrimitives,HaApprovalNotifier,ApprovalCallbackAuthority,ApprovalModeProducer,validateApprovalModeConfig,EffectiveEnforcement,ActivityCatalog,NativeLeaseConsumer,NativeLeaseAuthority,NativeLeaseCredentials,EligibilitySnapshot} from '../../../../__app_modules/household/supervision/server/index.mjs';
+import {createLedgerWriterGate,createRefusedSupervisionRuntime,EnforcementIncidentReporter,createSupervisionModule,createDisabledSupervisionRouter,JsonSupervisionRepository,StateGatesSupervisionPort,HaStopActuator,KioskSessionAuthority,BrowserStopConsumer,validateConsumerManifest,readLegacyStops,AccessDenied,ApprovalWorkflow,createApprovalTokenPrimitives,HaApprovalNotifier,ApprovalCallbackAuthority,ApprovalModeProducer,validateApprovalModeConfig,EffectiveEnforcement,ActivityCatalog,NativeLeaseConsumer,NativeLeaseAuthority,NativeLeaseCredentials,EligibilitySnapshot} from '../../../../__app_modules/household/supervision/server/index.mjs';
+/** Select the input actuator once, from the same device entry as kiosk control. */
+export function createPortalInputLock({configService, householdId, deviceId, portalKeys, httpClient, fetchFn, logger}) {
+  const control = configService.getDeviceConfig?.(deviceId, householdId)?.content_control;
+  if (control?.provider === 'daylight-android') {
+    const token = control.auth_ref && configService.getHouseholdAuth?.(control.auth_ref, householdId)?.[deviceId]?.token;
+    const client = token && control.host && httpClient
+      ? new DaylightAndroidRestClient({host:control.host, port:control.port, token}, {httpClient, logger})
+      : null;
+    return new DaylightAndroidInputLockAdapter(client);
+  }
+  if (control?.provider != null && control.provider !== 'fully-kiosk') return new DaylightAndroidInputLockAdapter(null);
+  const auth = portalKeys?.auth_ref && configService.getHouseholdAuth?.(portalKeys.auth_ref, householdId);
+  return new PortalKeysLockdownAdapter({baseUrl:portalKeys?.base_url, token:typeof auth === 'string' ? auth : auth?.token, fetchFn, logger});
+}
+
 /** Explicit configured registry; persisted authority survives config removal. */
 export async function createSupervisionRuntime(options){
   const {configService,householdId,clock={now:()=>Date.now()},logger,makeId=randomUUID}=options;
-  const repository=options.repository??new JsonSupervisionRepository({path:configService.getHouseholdPath('supervision/current.json',householdId)});
   const requested=options.configuration??configService?.getHouseholdAppConfig(householdId,'supervision');
+  // Only the configured writer host opens the ledger (the lock is per machine; the data tree is shared).
+  const writerGate=createLedgerWriterGate({ledger:'The supervision ledger',writer:requested?.writer,...Object.fromEntries(['environment','hostId','platform','isDocker'].filter(key=>key in options).map(key=>[key,options[key]]))});
+  const repository=options.repository??new JsonSupervisionRepository({path:configService.getHouseholdPath('supervision/current.json',householdId),writerGate});
   if(!requested?.enabled && repository.hasPersistedState && !await repository.hasPersistedState()){
     await repository.close?.();return {enabled:false,router:createDisabledSupervisionRouter(),dispose(){}};
   }
+  // Not the writer (or a malformed writer block): refuse loudly instead of throwing
+  // out of createApp, which would exit the backend and every household feature.
+  // An injected repository is the caller's own ledger and is not gated here.
+  if(!options.repository && !writerGate.allowed){await repository.close?.();return createRefusedSupervisionRuntime({writerGate,configuration:requested,logger});}
   const persisted=await repository.read();
   const retained=persisted.configuration!=null || Object.keys(persisted.devices).length>0 || persisted.epoch>0 || persisted.outbox.length>0;
   if(!requested?.enabled && !retained){await repository.close?.();return {enabled:false,router:createDisabledSupervisionRouter(),dispose(){}};}
@@ -45,10 +68,9 @@ export async function createSupervisionRuntime(options){
   const configuredConsumers=()=>{
     const native=createArcadeSupervisionConsumers({configuration,devicesConfig:configService.getHouseholdDevices(householdId),configService,httpClient:options.httpClient,logger,clock,householdId,gamesCatalog:options.gamesCatalog});
     for(const device of configuration.devices){
-      if(device.portal_keys){
-        const auth=configService.getHouseholdAuth?.(device.portal_keys.auth_ref,householdId);
-        const adapter=new PortalKeysLockdownAdapter({baseUrl:device.portal_keys.base_url,token:typeof auth==='string'?auth:auth?.token,logger});
-        native.push({deviceId:device.id,capability:'portal-keys',capabilities:['portal-keys'],stop:input=>adapter.stop(input),release:input=>adapter.release(input)});
+      if(device.portal_keys || device.required_capabilities?.includes('portal-keys')){
+        const adapter=createPortalInputLock({configService,householdId,deviceId:device.id,portalKeys:device.portal_keys,httpClient:options.httpClient,logger});
+        native.push({deviceId:device.id,capability:'portal-keys',capabilities:['portal-keys'],stop:input=>adapter.stop(input),release:input=>adapter.release(input),probe:()=>adapter.probe()});
       }
       if(device.ha_stop){
         const gateway={callService:(...args)=>options.getHaGateway?.()?.callService(...args)??Promise.resolve({ok:false}),getState:(...args)=>options.getHaGateway?.()?.getState(...args)??Promise.resolve(null)};
@@ -147,4 +169,18 @@ export function createEnforcementIncidentNotifier({notificationService,recipient
     const push=results?.find(result=>result.channel==='push' && !result.suppressed);
     return {accepted:push?.accepted===true || push?.delivered===true,delivered:push?.delivered===true?true:push?.accepted===true?null:false,error:push?.error??(push?.accepted || push?.delivered?null:'PARENT_NOTIFICATION_UNDELIVERED')};
   };
+}
+
+/**
+ * The legacy shutdown incident reporter, when this backend may write its ledger.
+ * Another backend owning the ledger (LedgerWriterGate) is a normal state for a
+ * dev host sharing the data tree, so it is logged once and reported as
+ * 'not-writer' instead of failing every Portal job.
+ */
+export function createShutdownIncidentReporting({datastore,shutdownConfig={},supervisionEnabled,gateOptions={},logger,notifyIncident}){
+  if(supervisionEnabled)return {repository:null,reporter:null,status:null};
+  const writerGate=datastore.incidentWriterGate({writer:shutdownConfig.writer,...gateOptions});
+  if(!writerGate.allowed){logger?.info?.('shutdown.incidents.not_writer',{message:writerGate.message});return {repository:null,reporter:null,status:'not-writer'};}
+  const repository=datastore.incidentRepository({writerGate});
+  return {repository,reporter:new EnforcementIncidentReporter({repository,logger,notifyIncident}),status:'active'};
 }

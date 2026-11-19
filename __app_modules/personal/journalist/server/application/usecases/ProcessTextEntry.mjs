@@ -7,7 +7,7 @@
  */
 
 import { ConversationMessage } from "../../domain/entities/ConversationMessage.mjs";
-import { nowTs24 } from '#system/utils/time.mjs';
+import { nowTs24, formatLocalTimestamp } from '#system/utils/time.mjs';
 import {
   formatAsChat,
   truncateToLength,
@@ -26,6 +26,11 @@ import {
  * @property {string} messageId
  * @property {string} senderId
  * @property {string} senderName
+ * @property {boolean} [userMessageSaved] - The entry is already in the journal
+ *   (saveUserMessage was called); execute only answers it
+ * @property {Date} [timestamp] - When the entry was made, if that was not now
+ *   (a memo recorded earlier and uploaded later). Left out, the entry is
+ *   stamped with the time it is processed, as it always has been.
  */
 
 /**
@@ -73,11 +78,35 @@ export class ProcessTextEntry {
   }
 
   /**
+   * Save the user's entry to the journal: the first step of execute(), on its
+   * own for a caller that must have the entry stored before anything is sent
+   * (SubmitVoiceMemo, which then calls execute with `userMessageSaved`).
+   * @param {ProcessTextEntryInput} input
+   */
+  async saveUserMessage({ chatId, text, messageId, senderId, senderName, timestamp }) {
+    const userMessage = ConversationMessage.createUserMessage({
+      messageId,
+      chatId,
+      timestamp: timestamp ? formatLocalTimestamp(timestamp) : nowTs24(),
+      senderId,
+      senderName,
+      text,
+    });
+
+    if (this.#journalEntryRepository) {
+      // The repository stamps the stored entry itself. It is told a time
+      // only when the entry was not made now.
+      if (timestamp) await this.#journalEntryRepository.saveMessage?.(userMessage, { at: timestamp });
+      else await this.#journalEntryRepository.saveMessage?.(userMessage);
+    }
+  }
+
+  /**
    * Execute the use case
    * @param {ProcessTextEntryInput} input
    */
   async execute(input) {
-    const { chatId, text, messageId, senderId, senderName, responseContext } = input;
+    const { chatId, text, messageId, senderId, senderName, responseContext, timestamp, userMessageSaved = false } = input;
 
     this.#logger.debug?.('textEntry.process.start', { chatId, textLength: text.length, hasResponseContext: !!responseContext });
 
@@ -97,7 +126,7 @@ export class ProcessTextEntry {
       const userMessage = ConversationMessage.createUserMessage({
         messageId,
         chatId,
-        timestamp: nowTs24(),
+        timestamp: timestamp ? formatLocalTimestamp(timestamp) : nowTs24(),
         senderId,
         senderName,
         text,
@@ -110,8 +139,10 @@ export class ProcessTextEntry {
       const source=sameSource?(knowledgeSource??workSource):null;
       if(!sameSource)this.#logger.warn?.('journalist.provenance.mismatch');
       const receipt=source||input.journalEdit?{messageId:userMessage.messageId,chatId:userMessage.chatId,text:userMessage.text,timestamp:userMessage.timestamp,senderId:userMessage.senderId,senderName:userMessage.senderName,role:'user',...(source?{source}:{}),...(input.journalEdit?{edit:input.journalEdit}:{})}:userMessage;
-      if (this.#journalEntryRepository) {
-        savedMessage=await this.#journalEntryRepository.saveMessage?.(receipt);
+      if (!userMessageSaved && this.#journalEntryRepository) {
+        savedMessage = timestamp
+          ? await this.#journalEntryRepository.saveMessage?.(receipt, { at: timestamp })
+          : await this.#journalEntryRepository.saveMessage?.(receipt);
       }
       if(savedMessage?.ignoredEdit){await status?.cancel?.();return {success:true,ignoredEdit:true};}
       const suppressByPolicy=this.#knowledgeCompanion?.shouldSuppressFollowUp?.({principal:input.knowledgePrincipal,length:(savedMessage?.content??savedMessage?.text??text).length})===true;
@@ -248,7 +279,8 @@ export class ProcessTextEntry {
       // Parse JSON response - extract from markdown code blocks if needed
       const jsonMatch = response.match(/\{[\s\S]*\}/);
       if (!jsonMatch) {
-        this.#logger.warn?.('textEntry.conversational.noJsonFound', { response });
+        // The reply can quote the entry back, so only its size is logged.
+        this.#logger.warn?.('textEntry.conversational.noJsonFound', { responseLength: String(response ?? '').length });
         return null;
       }
 

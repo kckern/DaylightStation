@@ -1,0 +1,8 @@
+# Native synth host (sfizz SFZ sampler through Oboe). The shell half carries the
+# JNI class and the .so; the payload half takes presets and notes.
+entry: net.kckern.daylight.cap.synth.SynthCapability
+native: true
+permissions:
+  # Declared by the piano-bridge shell for sample assets. The synth reads the app's
+  # own external files dir, which needs no permission; kept so the set is unchanged.
+  - android.permission.READ_EXTERNAL_STORAGE

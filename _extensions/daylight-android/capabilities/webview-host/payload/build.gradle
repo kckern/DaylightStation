@@ -1,0 +1,13 @@
+apply from: rootProject.file('gradle/payload-lib.gradle')
+
+android {
+    namespace 'net.kckern.daylight.cap.webviewhost'
+}
+
+dependencies {
+    implementation project(':core')
+    // Shipped by this capability's shell half; resolved from the shell's class loader at run time.
+    compileOnly 'androidx.webkit:webkit:1.6.1'
+    // compileOnly is not on the unit-test classpath, and loading KioskSession needs these types.
+    testImplementation 'androidx.webkit:webkit:1.6.1'
+}

@@ -30,13 +30,13 @@ function CustomFoodForm({ upc, onClose, onCreated, bucketId, date }) {
       // The scan that reached this sheet was launched from a specific meal on
       // a specific day; both were previously dropped on this branch, so a
       // custom food always landed in the clock's meal on the server's today.
-      await DaylightAPI('api/v1/health/nutrition/catalog/quickadd', operationRequest(logRequest, {
+      const logged = await DaylightAPI('api/v1/health/nutrition/catalog/quickadd', operationRequest(logRequest, {
         catalogEntryId: entry.id,
         ...(bucketId ? { mealTime: bucketId } : {}),
         ...(date ? { date } : {}),
       }), 'POST');
       logger.info('custom.created', { name: form.name, upc, bucket: bucketId || undefined, date: date || undefined });
-      onCreated();
+      onCreated(logged);
     } catch (err) {
       logger.error('custom.failed', { error: err?.message });
       setError(err);

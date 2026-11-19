@@ -1,0 +1,29 @@
+.gradle/
+build/
+**/build/
+# The build logic's Java package is net.kckern.daylight.build; it is source, not output.
+!**/src/**/build/
+local.properties
+*.apk
+# Payload jars are build output. The Gradle wrapper is the only tracked jar.
+*.jar
+!gradle/wrapper/gradle-wrapper.jar
+# The repo root ignores *.yml. Device files and capability manifests are source.
+# Device files are re-included by shape, not by listing what to keep out: a device id
+# is [a-z][a-z0-9]*, so a tracked device file is that plus ".yml", and the template is
+# _example.yml. Anything else dropped in devices/ (a secrets file, a local override,
+# a copy with a suffix) stays ignored whatever it is called.
+devices/*
+!devices/[a-z]*.yml
+# A name with any character outside a-z and 0-9 before its ".yml" is not a device file.
+devices/*[!a-z0-9]*.yml
+!devices/_example.yml
+# A second net under the allowlist: a name of the right shape that says what it holds.
+devices/*secret*
+devices/*token*
+devices/*auth*
+!capabilities/*/capability.yml
+# The repo root ignores *.sh. The port script is source.
+!tools/*.sh
+# The permission ledger read by tools/verify-build.mjs --legacy.
+!tools/legacy-permissions.yml

@@ -1,12 +1,14 @@
 export {createSupervisionModule} from './composition.mjs';
 export {JsonSupervisionRepository} from './adapters/JsonSupervisionRepository.mjs';
+export {createLedgerWriterGate,DEFAULT_WRITER_ENV} from './adapters/LedgerWriterGate.mjs';
 export {StateGatesSupervisionPort} from './adapters/StateGatesSupervisionPort.mjs';
 export {AccessDenied,requireAdult} from '../shared/contracts.mjs';
 
 export {KioskSessionAuthority} from './adapters/KioskSessionAuthority.mjs';
 export {createSupervisedIngress} from './api/ingress.mjs';
 export {validateConsumerManifest} from './application/ConsumerManifest.mjs';
-export {createDisabledSupervisionRouter} from './api/supervision.mjs';
+export {createDisabledSupervisionRouter,createRefusedSupervisionRouter} from './api/supervision.mjs';
+export {createRefusedSupervisionRuntime} from './refusedRuntime.mjs';
 export {StopReconciler} from './application/StopReconciler.mjs';
 export {HaStopActuator} from './adapters/HaStopActuator.mjs';
 export {BrowserStopConsumer} from './adapters/BrowserStopConsumer.mjs';

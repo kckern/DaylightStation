@@ -216,6 +216,28 @@ export function wrongEventState(event) {
   return event?.type === 'wrong' ? { midi: event.midi, eventId: event.eventId } : null;
 }
 
+/** A lifted finger answers nothing, so it must not take the after-wrong hint away. */
+export function nextLastWrong(previous, event) {
+  if (event?.type === 'ignored' && event.reason === 'held_released') return previous;
+  return wrongEventState(event);
+}
+
+/** Identifies the held keys and each key's latest strike, so a re-strike is observed. */
+export function heldSignatureOf(activeNotes) {
+  return [...activeNotes].map(([midi, note]) => `${midi}:${note?.timestamp ?? ''}`).sort().join(',');
+}
+
+/** The first held observation of an armed run: the chord, with other down keys set aside. */
+export function armingHeldObservation(activeNotes, armingPitches, time) {
+  const keys = [...activeNotes];
+  return {
+    held: new Map(keys.filter(([midi]) => armingPitches.has(midi))),
+    baseline: keys.filter(([midi]) => !armingPitches.has(midi)).map(([midi]) => midi),
+    time,
+    clock: 'date-now',
+  };
+}
+
 /**
  * THE CURSOR A CHILD IS SHOWN, WHICH IS NEVER BEHIND THE ONE BEING GRADED.
  *
@@ -342,13 +364,15 @@ export function runPassed(result, { challenge = false, passScore = null } = {}) 
  * @param {'default'|'learn-lab'} [props.surface='default'] Host presentation.
  * @param {'timed'|'always'} [props.scoreCursorPolicy='timed'] Whether a score
  *   passage draws its position cursor only for clocked work or for every run.
- * @param {'always'|'after-wrong'} [props.keyboardHintPolicy='always'] Whether
+ * @param {number|null} [props.incompleteAfterMs] Free practice only: end the take
+ *   as incomplete after this long without a newly matched note.
+ * @param {'always'|'after-wrong'|'never'} [props.keyboardHintPolicy='always'] Whether
  *   the footer keyboard proactively names the target or reveals it as help.
  * @param {'host'|'local'} [props.failurePresentation='host'] Whether an
  *   `onFailed` consumer replaces the result screen or records it while the run
  *   retains its standard feedback and piano-driven retry.
  */
-export default function ExerciseRun({ instance, score, requirement = null, practiceRequirement = null, intent = 'practice', practiceMode = 'free', programId = null, stepId = null, drillProjection = null, framing = null, bare = false, hideHeading = false, ask = null, askTuple = null, tier = null, traceContext = null, surface = 'default', scoreCursorPolicy = 'timed', scoreLayoutPolicy = 'readable-system', keyboardHintPolicy = 'always', failurePresentation = 'host', clickGain, paused = false, resumeDelayMs = 1000, persistInterrupted = true, persistAssessment = true, startOnReady = false, onExit, onPassed, onFailed, onUnavailable }) {
+export default function ExerciseRun({ instance, score, requirement = null, practiceRequirement = null, intent = 'practice', practiceMode = 'free', programId = null, stepId = null, drillProjection = null, framing = null, bare = false, hideHeading = false, ask = null, askTuple = null, tier = null, traceContext = null, surface = 'default', scoreCursorPolicy = 'timed', scoreLayoutPolicy = 'readable-system', keyboardHintPolicy = 'always', incompleteAfterMs = null, failurePresentation = 'host', clickGain, paused = false, resumeDelayMs = 1000, persistInterrupted = true, persistAssessment = true, startOnReady = false, onExit, onPassed, onFailed, onUnavailable }) {
   const logger = useMemo(() => getLogger().child({ component: 'piano-exercise-run' }), []);
   const { currentUser } = usePianoUser();
   const { activeNotes } = usePianoMidiNotes();
@@ -419,6 +443,9 @@ export default function ExerciseRun({ instance, score, requirement = null, pract
   // reads. See stuckLadder.js for what the rungs are and why.
   const huntRef = useRef(NO_HUNT);
   const [huntHelp, setHuntHelp] = useState(null);
+  const hintsOffRef = useRef(false);
+  hintsOffRef.current = keyboardHintPolicy === 'never';
+  const [strayPress, setStrayPress] = useState(null);
   // One durable assessment identity per installed runtime. Hosts that grant a
   // stake after a real pass use this same id; retries get a fresh one, while a
   // repeated host delivery remains idempotent server-side.
@@ -574,10 +601,10 @@ export default function ExerciseRun({ instance, score, requirement = null, pract
           logger.warn('piano.exercise-input-integrity', { reason: event.reason, assessmentId: assessmentIdRef.current });
           setUnrunnable(event.reason);
         }
-        setLastWrong(wrongEventState(event));
+        setLastWrong((previous) => nextLastWrong(previous, event));
         // Fold this observation into the hunt BEFORE tracing it, so a rung and
         // the observation that earned it carry the same cursor.
-        if (huntingArmed(state?.matcher)) {
+        if (!hintsOffRef.current && huntingArmed(state?.matcher)) {
           const hunt = nextHuntState(huntRef.current, { type: event.type, cursor: state?.cursor ?? null });
           huntRef.current = hunt;
           if (hunt.changed) {
@@ -619,6 +646,7 @@ export default function ExerciseRun({ instance, score, requirement = null, pract
     // A retry starts owed nothing: the help a child earned on the last attempt
     // is not still on screen when they begin a fresh one.
     huntRef.current = NO_HUNT;
+    setStrayPress(null);
     setHuntHelp(null);
     traceEvent('piano.exercise-runtime-installed', {
       matcher: next.getSnapshot().matcher,
@@ -653,7 +681,7 @@ export default function ExerciseRun({ instance, score, requirement = null, pract
     if (!runtime || pauseStateRef.current === paused) return;
     pauseStateRef.current = paused;
     if (paused) runtime.pause();
-    else runtime.resume({ delayMs: resumeDelayMs });
+    else runtime.resume({ delayMs: resumeDelayMs, held: activeNotesRef.current });
   }, [paused, resumeDelayMs, runtime]);
 
   const timed = snapshot.matcher === 'timed';
@@ -900,6 +928,27 @@ export default function ExerciseRun({ instance, score, requirement = null, pract
     }, FREE_STALL_MS);
     return () => globalThis.clearTimeout(timer);
   }, [logger, noteOnTick, stallable, subject]);
+
+  // The Silver check's stall. Only a newly matched note restarts it, so pressing
+  // wrong keys cannot keep a take alive.
+  const matchedNotes = Object.keys(snapshot.hits ?? {}).length;
+  const incompleteArmed = Boolean(incompleteAfterMs) && !challenge && snapshot.mode === 'free' && !snapshot.paused
+    && snapshot.status === 'running' && snapshot.musicalInput === true;
+  useEffect(() => {
+    if (!incompleteArmed) return undefined;
+    const timer = globalThis.setTimeout(() => {
+      logger.info('piano.exercise-stalled', { id: subject?.id ?? null, matcher: 'cursor', stallMs: incompleteAfterMs, matched_notes: matchedNotes, ending: 'incomplete' });
+      runtimeRef.current?.finishIncomplete();
+    }, incompleteAfterMs);
+    return () => globalThis.clearTimeout(timer);
+  }, [incompleteAfterMs, incompleteArmed, logger, matchedNotes, subject]);
+  // A child who never finds the first note still gets an answer and a way forward.
+  const unarmedStray = Boolean(incompleteAfterMs) && !challenge && snapshot.status === 'prepared' && !snapshot.paused ? strayPress : null;
+  useEffect(() => {
+    if (!unarmedStray) return undefined;
+    const timer = globalThis.setTimeout(() => runtimeRef.current?.finishUnstarted(unarmedStray), incompleteAfterMs);
+    return () => globalThis.clearTimeout(timer);
+  }, [incompleteAfterMs, unarmedStray]);
 
   /**
    * The three states this run cannot leave on its own. Reported through an
@@ -1167,7 +1216,10 @@ export default function ExerciseRun({ instance, score, requirement = null, pract
       // A note this ask did not want is a child finding their hands, not a
       // wrong answer: it starts nothing and is never counted against them.
       const arming = onsets.find((midi) => armingPitches.has(midi));
-      if (arming === undefined) return;
+      if (arming === undefined) {
+        if (incompleteAfterMs) setStrayPress((first) => first ?? { midi: onsets[0], time });
+        return;
+      }
       // Start FIRST, observe second, so the note that armed the run is also its
       // first graded note — a free ask asks for eight notes, not nine.
       runtime.start({ leadInMs: 0, clock: 'date-now' });
@@ -1183,9 +1235,8 @@ export default function ExerciseRun({ instance, score, requirement = null, pract
         // they lift a finger nothing told them about. The attempt begins from
         // the intentional reach. Once running, the matcher's normal rules
         // apply to the whole held set, extras included.
-        lastHeldObservedRef.current = heldKey;
-        const reach = new Map([...activeNotesRef.current].filter(([midi]) => armingPitches.has(midi)));
-        runtime.observe({ held: reach, time: armedAt, clock: 'date-now' });
+        lastHeldObservedRef.current = snapshot.matcher === 'held' ? heldKey : heldSignatureOf(activeNotesRef.current);
+        runtime.observe(armingHeldObservation(activeNotesRef.current, armingPitches, armedAt));
       } else {
         // EVERY new onset in this commit, not only the one that armed.
         //
@@ -1205,8 +1256,9 @@ export default function ExerciseRun({ instance, score, requirement = null, pract
     }
     if (snapshot.status !== 'running') return;
     if (snapshot.matcher === 'held' || (snapshot.matcher === 'cursor' && snapshot.policy?.requireConcurrentOnset === true)) {
-      if (lastHeldObservedRef.current === heldKey) return;
-      lastHeldObservedRef.current = heldKey;
+      const observedHeld = snapshot.matcher === 'held' ? heldKey : heldSignatureOf(activeNotes);
+      if (lastHeldObservedRef.current === observedHeld) return;
+      lastHeldObservedRef.current = observedHeld;
       runtime.observe({ held: activeNotes, time, clock: 'date-now' });
       return;
     }
@@ -1344,7 +1396,7 @@ export default function ExerciseRun({ instance, score, requirement = null, pract
   // host explicitly keeps this panel and the run's piano-driven retry.
   const hostOwnsFailure = Boolean(onFailed) && failurePresentation !== 'local' && !passed;
   const currentEvent = askEvents[Math.min(visualCursor.index, askEvents.length - 1)] || askEvents[0];
-  const revealKeyboardTarget = keyboardHintPolicy !== 'after-wrong' || lastWrong !== null;
+  const revealKeyboardTarget = keyboardHintPolicy === 'always' || (keyboardHintPolicy === 'after-wrong' && lastWrong !== null);
   const targetNotes = new Map(((revealKeyboardTarget ? currentEvent?.notes : []) ?? []).map((note) => [note.midi, { velocity: 1 }]));
 
   /**

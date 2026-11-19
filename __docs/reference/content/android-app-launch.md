@@ -73,7 +73,16 @@ every 1.5 s (`AndroidForegroundProbe`):
 The guard runs only during an excursion. Other launches (Zoom, BYUtv, …)
 answer `guarded: false, reason: no-policy` and start nothing.
 
-**Limit:** the guard needs ADB. ADB-over-WiFi does not survive a Shield
+**Devices on the Android kiosk app** (`content_control.provider:
+daylight-android`) are probed through the app instead
+(`DaylightAndroidForegroundProbe`): `GET /lockdown` gives the package and
+activity in front and says whether that is the kiosk, and
+`POST /kiosk/foreground` brings the kiosk back. No ADB fallback is needed, and
+the same policies apply, down to the allowed screens. When the app does not
+know the activity in front, that poll counts as a failed probe, as an
+unreadable ADB answer does; the guard does not act on it.
+
+**Limit:** on a Fully device the guard needs ADB. ADB-over-WiFi does not survive a Shield
 reboot, so until ADB is reconnected the Settings gap during pairing is open
 (`device.excursion.ended reason=probe-failed`).
 

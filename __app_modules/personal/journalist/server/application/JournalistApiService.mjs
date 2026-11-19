@@ -1,15 +1,52 @@
 /** Semantic Journalist operations for the HTTP surface. */
 export class JournalistApiService {
   constructor({ exportJournal = null, initiatePrompt, generateMorningDebrief, sendMorningDebrief,
-    principalResolver, resolveConversationId, logger = console } = {}) {
+    submitVoiceMemo = null, memoDeviceUsers = null, principalResolver, resolveConversationId, logger = console } = {}) {
     Object.assign(this, { exportJournal, initiatePrompt, generateMorningDebrief, sendMorningDebrief,
-      principalResolver, resolveConversationId, logger });
+      submitVoiceMemo, memoDeviceUsers, principalResolver, resolveConversationId, logger });
   }
 
   canExportJournal() { return Boolean(this.exportJournal); }
   resolveUsername(explicit = null) { return this.principalResolver.resolve(explicit); }
   export(command) { return this.exportJournal.execute(command); }
   trigger(command) { return this.initiatePrompt.execute(command); }
+
+  canSubmitMemo() { return Boolean(this.submitVoiceMemo); }
+  submitMemo(command) { return this.submitVoiceMemo.execute(command); }
+  memoAdmission(question) { return this.submitVoiceMemo.admission(question); }
+
+  /**
+   * Whether the device a request names may send memos for `username`.
+   * `deviceId` is the `X-Daylight-Device` value. Only a registered household
+   * device (`fleet:<key>`) that lists the user qualifies; a browser id, an
+   * unknown key or a device with no list does not.
+   */
+  memoDeviceAllowed(deviceId, username) {
+    const match = /^fleet:([A-Za-z0-9._-]{1,96})$/.exec(String(deviceId ?? ''));
+    if (!match || !username || !this.memoDeviceUsers) return false;
+    try {
+      const users = this.memoDeviceUsers(match[1]);
+      return Array.isArray(users) && users.includes(username);
+    } catch (error) {
+      this.logger.warn?.('journalist.memo.deviceLookupFailed', { deviceId, error: error.message });
+      return false;
+    }
+  }
+
+  /**
+   * The Journalist conversation a memo for `username` is journaled in, or null
+   * when the user has none. A memo is personal, so there is no fallback to
+   * another user here.
+   */
+  memoConversationFor(username) {
+    if (!username) return null;
+    try {
+      return this.resolveConversationId(username) || null;
+    } catch (error) {
+      this.logger.warn?.('journalist.memo.identityResolutionFailed', { username, error: error.message });
+      return null;
+    }
+  }
 
   async morning({ requestedUsername = null, date = null } = {}) {
     const username = this.resolveUsername(requestedUsername);

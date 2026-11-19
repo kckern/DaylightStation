@@ -152,8 +152,8 @@ import { createPianoMidiWake } from "../../__app_modules/learning/piano/server/c
 import { createPianoBridgeSupervisor, PIANO_BRIDGE_SUPERVISOR_LOG_MODULE } from "../../__app_modules/learning/piano/server/composition/bridge-supervisor.mjs";
 import { createStateGatesModule } from '#composition/modules/stateGates.mjs';
 import {randomUUID as supervisionCommandId} from 'node:crypto';
-import {createSupervisionRuntime,createDoNowSupervisionAuthority,createEnforcementIncidentNotifier} from '#composition/modules/supervision.mjs';
-import {AccessDenied,EnforcementIncidentReporter} from '../../__app_modules/household/supervision/server/index.mjs';
+import {createPortalInputLock,createSupervisionRuntime,createDoNowSupervisionAuthority,createEnforcementIncidentNotifier,createShutdownIncidentReporting} from '#composition/modules/supervision.mjs';
+import {AccessDenied} from '../../__app_modules/household/supervision/server/index.mjs';
 import { KioskFrictionTracker } from '#apps/devices/services/KioskFrictionTracker.mjs';
 
 // AI router import
@@ -191,7 +191,7 @@ import { WakeScreenForBroadcast } from '#apps/devices/services/WakeScreenForBroa
 import { EventBusDeviceTransportGateway } from '#adapters/devices/EventBusDeviceTransportGateway.mjs';
 
 // HTTP middleware
-import { errorHandlerMiddleware, requestLoggerMiddleware, aiOriginMiddleware, withRequestContext } from "./0_system/http/middleware/index.mjs";
+import { errorHandlerMiddleware, requestLoggerMiddleware, aiOriginMiddleware, withRequestContext, exceptPaths } from "./0_system/http/middleware/index.mjs";
 import { runWithOrigin } from "./0_system/runtime/aiContext.mjs";
 import { scopedGateway } from '#apps/common/ports/IAIGateway.mjs';
 import { createDevProxy } from '#api/v1/middleware/createDevProxy.mjs';
@@ -218,6 +218,8 @@ import { ListConfigCodec } from "../../__capabilities/content-catalog/server/ada
 import { AdminImageFileStore } from '#adapters/admin/AdminImageFileStore.mjs';
 import { FetchAdminImageSource } from '#adapters/admin/FetchAdminImageSource.mjs';
 import { FullyKioskRemoteAdministrationAdapter } from '#adapters/devices/FullyKioskRemoteAdministrationAdapter.mjs';
+import { DaylightAndroidRemoteAdministrationAdapter } from '#adapters/devices/DaylightAndroidRemoteAdministrationAdapter.mjs';
+import { ProviderRoutedRemoteAdministrationGateway } from '#adapters/devices/ProviderRoutedRemoteAdministrationGateway.mjs';
 import { CameraEvents, LessonPositionReporter } from "#apps/events/RealtimePublications.mjs";
 
 import { createCameraRouter } from "../../__app_modules/household/camera/server/api/camera.mjs";
@@ -549,13 +551,33 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     res.setHeader('Cross-Origin-Embedder-Policy', 'credentialless');
     next();
   });
-  app.use(cors());
+  // Routes that guard themselves: each refuses a request from its headers
+  // before reading the body and answers no cross-origin preflight, so the
+  // app-wide CORS handler and body parsers step aside for them. Every other
+  // route gets all three exactly as before.
+  // These are the quick-input intakes (device binding, own origin, daily
+  // allowance): __docs/reference/core/quick-input.md.
+  const selfGuarded = exceptPaths([
+    '/api/v1/journalist/voice',
+    '/api/v1/journalist/memo',
+    '/api/v1/journalist/text',
+    '/api/v1/nutribot/voice',
+    '/api/v1/nutribot/text',
+    '/api/v1/nutribot/photo',
+    // The Nutribot direct-input routes log food and can call paid models on
+    // a plain request by any method. They sit behind a guard of their own
+    // (/text also answers the quick-input shape), and the router brings its
+    // own small body parsers. __docs/reference/nutrition/README.md.
+    '/api/v1/nutribot/upc',
+    '/api/v1/nutribot/image',
+  ]);
+  app.use(selfGuarded(cors()));
   // Strava webhooks carry 64-bit ids (object_id, owner_id) from 2027-06-01;
   // plain JSON.parse would round them to a different activity. Parsed here,
   // ahead of the general parser, which then skips the already-read body.
   app.use('/api/v1/fitness/provider/webhook', express.json({ reviver: stravaJsonReviver }));
-  app.use(express.json({ limit: '50mb' }));
-  app.use(express.urlencoded({ limit: '50mb', extended: true }));
+  app.use(selfGuarded(express.json({ limit: '50mb' })));
+  app.use(selfGuarded(express.urlencoded({ limit: '50mb', extended: true })));
   // AI usage origin (`http:METHOD /path`) for every ledger row a request
   // causes. After the body parsers on purpose: they finish on a stream event
   // outside any context opened before them.
@@ -1501,7 +1523,10 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     if(!profile || (profile.household_id??householdId)!==householdId)throw new AccessDenied('PARENT_AUTHENTICATION_REQUIRED');
     return {id:userId,roles:[...(profile.roles??[]),...(profile.type==='owner'?['owner']:[]),...((profile.roles??[]).includes('parent')?['guardian']:[])],authenticatedBy:'household-auth'};
   };
-  const parentalSupervision=await createSupervisionRuntime({notificationService:notificationStack.notificationService,configService,householdId,stateGatesModule,principal:supervisionStateGatesPrincipal,modePrincipal:householdPresenceStateGatesPrincipal,httpClient:axios,
+  // Which backend may write the supervision ledgers (LedgerWriterGate): DAYLIGHT_ENV
+  // raw, so an unset value never passes for the prod container.
+  const ledgerWriterRuntime={environment:process.env.DAYLIGHT_ENV,hostId:hostname(),platform:process.platform,isDocker};
+  const parentalSupervision=await createSupervisionRuntime({...ledgerWriterRuntime,notificationService:notificationStack.notificationService,configService,householdId,stateGatesModule,principal:supervisionStateGatesPrincipal,modePrincipal:householdPresenceStateGatesPrincipal,httpClient:axios,
     clock:{now:()=>Date.now()},logger:rootLogger.child({module:'supervision'}),getHaGateway:()=>supervisionHaGateway,getIdentity:()=>supervisionIdentity,
     gamesCatalog:dataService.household.read('gaming/retroarch/catalog'),
     getLearners:()=> (configService.getHouseholdUsers(householdId)??[]).map(value=>typeof value==='string'?value:value.username??value.userId??value.id).filter(Boolean).map(id=>({id,label:userService.getProfile(id)?.display_name??userService.getProfile(id)?.name??id})),
@@ -2374,6 +2399,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     // Config-driven HA adapter (use .has() to avoid NoOp)
     haGateway: householdAdapters?.has?.('home_automation') ? householdAdapters.get('home_automation') : null,
     kiosk: {
+      provider: kioskConfig.provider,
       host: kioskConfig.host || '',
       port: kioskConfig.port || 5000,
       password: kioskConfig.password || '',
@@ -2390,6 +2416,8 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       privateKey: remoteExecConfig.privateKey || remoteExecConfig.private_key || '',
       knownHostsPath: remoteExecConfig.knownHostsPath || remoteExecConfig.known_hosts_path || ''
     },
+    // The kiosk and tasker adapters cannot be built without an http client.
+    httpClient: new HttpClient({ logger: rootLogger.child({ module: 'home-automation' }) }),
     logger: rootLogger.child({ module: 'home-automation' })
   });
 
@@ -2511,6 +2539,10 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // caller gets an explicit 503 rather than a 404 that looks like a typo.
   v1Routers['arcade-bluetooth'] = createArcadeBluetoothRuntime({
     devicesConfig,
+    // For devices on the Android kiosk app, whose controller routes sit on the
+    // control port behind its token. Audio-bridge devices need neither.
+    configService,
+    httpClient: axios,
     logger: rootLogger.child({ module: 'arcade-bluetooth-api' }),
   });
 
@@ -2535,6 +2567,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // default (config `piano.screen_power_sync.enabled`); no-ops without HA/device.
   // Not a two-writer conflict with screen-presence: that device is not
   // presence-managed, and presence actuates HA input_booleans, not the backlight.
+  getScreenOverrideService({ configService, householdId });
   createPianoScreenPowerSync({
     getScreenOverrideService,
     haGateway: homeAutomationAdapters.haGateway,
@@ -2742,6 +2775,8 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     pianoMidiWakeService,
     kioskFrictionTracker,
     startStatusService: deviceStartStatusService,
+    // For the excursion guard's probe on devices running the Android kiosk app.
+    httpClient: axios,
     logger: rootLogger.child({ module: 'device-api' })
   }));
 
@@ -2949,7 +2984,6 @@ const { readingSessions, readingSessionInterceptor } = await createSchoolReading
   // Shared public-kiosk shutdown is deliberately server-owned: NFC writes one
   // hand-editable state file and both kiosks observe its read-only projection.
   const { YamlShutdownDatastore } = await import('#adapters/persistence/yaml/YamlShutdownDatastore.mjs');
-  const { PortalKeysLockdownAdapter } = await import('#adapters/devices/PortalKeysLockdownAdapter.mjs');
   const { ShutdownService } = await import('#apps/shutdown/ShutdownService.mjs');
   const { createShutdownRouter } = await import('#api/v1/routers/shutdown.mjs');
   // Reload the small policy document on each safety check. That makes an NFC
@@ -2963,11 +2997,9 @@ const { readingSessions, readingSessionInterceptor } = await createSchoolReading
     return configService.getHouseholdAppConfig?.(householdId, 'shutdown') || {};
   };
   const shutdownConfig = readShutdownConfig();
-  const portalAuth = shutdownConfig.portal_keys?.auth_ref
-    ? configService.getHouseholdAuth?.(shutdownConfig.portal_keys.auth_ref, householdId) : null;
-  const portal = new PortalKeysLockdownAdapter({
-    baseUrl: shutdownConfig.portal_keys?.base_url,
-    token: typeof portalAuth === 'string' ? portalAuth : portalAuth?.token,
+  const portal = createPortalInputLock({
+    configService, householdId, deviceId:shutdownConfig.portal_keys?.device_id ?? 'portal',
+    portalKeys:shutdownConfig.portal_keys, httpClient:axios,
     logger: rootLogger.child({ module: 'shutdown-portal' }),
   });
   const getShutdownPolicy = () => {
@@ -2993,10 +3025,12 @@ const { readingSessions, readingSessionInterceptor } = await createSchoolReading
     },
   } : null;
   const shutdownDatastore=new YamlShutdownDatastore({configService});
-  const shutdownIncidentRepository=parentalSupervision.enabled?null:shutdownDatastore.incidentRepository();
-  const shutdownIncidentReporter=shutdownIncidentRepository?new EnforcementIncidentReporter({repository:shutdownIncidentRepository,logger:rootLogger.child({module:'shutdown-incidents'}),notifyIncident:createEnforcementIncidentNotifier({notificationService:notificationStack.notificationService,recipientId:shutdownConfig.enforcement_alerts?.recipient_id,resolveRecipient:()=>configService.getHeadOfHousehold?.(householdId)})}):null;
+  // Gated before anything opens the ledger: a dev backend sharing the data tree is not its writer.
+  const shutdownIncidents=createShutdownIncidentReporting({datastore:shutdownDatastore,shutdownConfig,supervisionEnabled:parentalSupervision.enabled,gateOptions:ledgerWriterRuntime,logger:rootLogger.child({module:'shutdown-incidents'}),notifyIncident:createEnforcementIncidentNotifier({notificationService:notificationStack.notificationService,recipientId:shutdownConfig.enforcement_alerts?.recipient_id,resolveRecipient:()=>configService.getHeadOfHousehold?.(householdId)})});
+  const shutdownIncidentRepository=shutdownIncidents.repository;
+  const shutdownIncidentReporter=shutdownIncidents.reporter;
   const shutdownService = new ShutdownService({
-    incidentReporter:shutdownIncidentReporter,portalDeviceId:shutdownConfig.portal_keys?.device_id??'portal',
+    incidentReporter:shutdownIncidentReporter,incidentReporting:shutdownIncidents.status,portalDeviceId:shutdownConfig.portal_keys?.device_id??'portal',
     supervision:parentalSupervision.enabled?{
       activate:async({readerId,tagUid})=>parentalSupervision.service.stop({actor:{id:`nfc:${readerId??'configured-reader'}`,roles:['guardian'],authenticatedBy:'configured-nfc-trigger'},scopeId:parentalSupervision.configuration.scope_id??'child-public',source:'nfc',idempotencyKey:supervisionCommandId()}),
       status:async target=>{const deviceId=parentalSupervision.configuration.legacy_targets?.[target]??target.split(':').at(-1);const state=await parentalSupervision.service.status({deviceId});return {locked:state.active,lockedUntil:null,persistent:true,epoch:state.epoch};},
@@ -3386,6 +3420,7 @@ const { readingSessions, readingSessionInterceptor } = await createSchoolReading
     userResolver,
     userIdentityService,
     telegramIdentityAdapter,
+    configService,
     defaultMember: configService.getHeadOfHousehold(),
     botId: systemBots.nutribot?.telegram?.bot_id || '',
     secretToken: systemBots.nutribot?.telegram?.secret_token || '',
@@ -4221,11 +4256,25 @@ const { readingSessions, readingSessionInterceptor } = await createSchoolReading
     logger: adminApiLogger.child?.({ submodule: 'household' }) || adminApiLogger
   });
   const deviceRemoteAdministrationService = new DeviceRemoteAdministrationService({
-    gateway: new FullyKioskRemoteAdministrationAdapter({
+    // A fleet can hold both kiosk providers at once. Devices on the Android
+    // kiosk app go to its adapter; every other device id goes to the Fully
+    // adapter, which answers exactly as it did when it was the only gateway.
+    gateway: new ProviderRoutedRemoteAdministrationGateway({
       readDevices: () => adminConfigStore.readDevices(),
-      resolveAuth: authRef => configService.getHouseholdAuth(authRef),
-      httpClient: axios,
-      logger: adminApiLogger.child?.({ submodule: 'fully-kiosk-transport' }) || adminApiLogger,
+      gateways: {
+        'daylight-android': new DaylightAndroidRemoteAdministrationAdapter({
+          readDevices: () => adminConfigStore.readDevices(),
+          resolveAuth: authRef => configService.getHouseholdAuth(authRef),
+          httpClient: axios,
+          logger: adminApiLogger.child?.({ submodule: 'daylight-android-transport' }) || adminApiLogger,
+        }),
+      },
+      fallback: new FullyKioskRemoteAdministrationAdapter({
+        readDevices: () => adminConfigStore.readDevices(),
+        resolveAuth: authRef => configService.getHouseholdAuth(authRef),
+        httpClient: axios,
+        logger: adminApiLogger.child?.({ submodule: 'fully-kiosk-transport' }) || adminApiLogger,
+      }),
     }),
     logger: adminApiLogger.child?.({ submodule: 'device-remote' }) || adminApiLogger,
   });

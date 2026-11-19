@@ -1,22 +1,23 @@
 import { useHealthOperations } from "../operations/HealthOperationsProvider.jsx";
 import { FoodOperationStatus } from "../operations/FoodOperationStatus.jsx";
-import { useLayoutEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Button, NativeSelect } from '@mantine/core';
 import { browserPreference } from '@/lib/browserPreference.js';
-import { LoadingState } from '@/lib/ui';
+import { CHROME_SCROLL_CLASS, LoadingState } from '@/lib/ui';
 import { sumCounted } from "../../portable/contracts/nutrition/countedRows.mjs";
 import { MacroBadges } from "./MacroBadges.jsx";
 import { ExerciseSection } from "./ExerciseSection.jsx";
-import { BUCKETS, UNGROUPED, EARLY_COLUMN, LATE_COLUMN, localTodayISO } from "./mealBuckets.js";
+import { BUCKETS, UNGROUPED, EARLY_COLUMN, LATE_COLUMN, bucketLabel, localTodayISO } from "./mealBuckets.js";
 import { EntryRow } from "./EntryRow.jsx";
 import { groupRows, sortEntriesByCalories, calorieShares, dayCalorieScale } from "./groupRows.js";
 import { MealFoodControls } from "./MealFoodControls.jsx";
 import { MealFastToggle } from "./MealFastToggle.jsx";
-import { MoveDayControl, DayDropDock } from "./MoveDayControl.jsx";
+import { MoveDayControl, MoveMealControl, DayDropDock } from "./MoveDayControl.jsx";
 import { CaptureProgress } from "./CaptureProgress.jsx";
 import { usePortionControl } from "./usePortionDraft.js";
 import { useFrozenOrder, useFlipMoves } from "./sectionOrder.js";
-import { MealDragProvider, useMealDropTarget, useDraggableMeal } from "./mealDrag.jsx";
+import { MealDragProvider, MoveResult, useMealDropTarget, useDraggableMeal } from "./mealDrag.jsx";
+import { dayLabel } from "./moveDays.js";
 import { RowPreviewProvider } from "./RowPreview.jsx";
 import { useDishMembership, dishCandidates } from "./dishMembership.js";
 import "./mealWorkflow.scss";
@@ -28,6 +29,8 @@ import "./mealWorkflow.scss";
 // each gram of food exactly once; `sumCounted` says so once, for everyone.
 // A typed sentence parses faster than a photo or a recording.
 const SENTENCE_ESTIMATE_MS = 6000;
+const NO_IDS = new Set();
+const OWN_REPORTING = /\/nutrition\/(day-input|foods-move|meal-undo)$/;
 
 const collapsedDishes = browserPreference('health:collapsed-dishes', [], raw => {
   const parsed = JSON.parse(raw);
@@ -39,40 +42,23 @@ const kcal = (rows) => Math.round(sumCounted(rows, 'calories'));
 function Section({
   label, rows, renderAddRow = null, onRowTap, onConfirm, onRequestDelete, headerAction, coldLoading, pending,
   measuredByUuid, addedIds = null, kcalScale = null, date, bucket, onVoiceCapture, onTextCapture, onChanged, captureTasks = [], externalClarification, onClearClarification,
-  fasted = false, onFastChanged = null, onMoveToDay = null,
+  fasted = false, onFastChanged = null, selecting = false, onSelectionMode = () => {}, onMealCommandDone = () => {}, selection = [], setSelection = () => {},
 }) {
-  const [selecting, setSelecting] = useState(false);
-  const [selection, setSelection] = useState([]);
   const [localClarification, setClarification] = useState(null);
   const clarification = externalClarification === undefined ? localClarification : externalClarification;
   const operations = useHealthOperations();
-  const sentenceOperations = [...(operations?.snapshot.operations.values() || [])].filter(op => !operations?.snapshot.operations.get(op.parentId)?.resumable).filter(op => (op.kind === 'sentence' || (['mutation', 'quickadd'].includes(op.kind) && op.error)) && op.date === date && op.bucket === bucket);
+  // The day input, food moves and their Undos report through their own surfaces
+  // and the page's toasts (mealDrag.jsx), so none of them belong in a meal.
+  const sentenceOperations = [...(operations?.snapshot.operations.values() || [])].filter(op => !operations?.snapshot.operations.get(op.parentId)?.resumable && !OWN_REPORTING.test(op.request?.path || '')).filter(op => (op.kind === 'sentence' || (['mutation', 'quickadd'].includes(op.kind) && op.error)) && op.date === date && op.bucket === bucket);
   const [clarifying, setClarifying] = useState(false);
   const [clarifyError, setClarifyError] = useState(null);
+  // The day's selection spans meals; this meal's voice and commands get only its own foods.
   const selectedIds = selection.filter(id => rows.some(row => (row.uuid || row.id) === id));
   const captured = result => {
     if (externalClarification !== undefined) return result;
     if (result?.clarification) setClarification({...result.clarification, instructionText:result.instructionText || result.clarification.instructionText, selectedIds:[...selectedIds]});
     else setClarification(null);
     return result;
-  };
-  // The ticked foods as the entries a move acts on: a dish moves whole, so it
-  // counts only when every one of its ingredients is ticked.
-  const pickedEntries = () => {
-    const picked = [];
-    let partial = 0;
-    for (const { row, children } of groupRows(rows)) {
-      if (!children.length) { if (selectedIds.includes(row.uuid ?? row.id)) picked.push(row); continue; }
-      const ticked = children.filter(child => selectedIds.includes(child.uuid ?? child.id)).length;
-      if (ticked === children.length) picked.push({ ...row, children });
-      else partial += ticked;
-    }
-    return { picked, partial };
-  };
-  const moveSelected = async (toDate) => {
-    const { picked } = pickedEntries();
-    if (picked.length) await onMoveToDay(picked, toDate, bucket);
-    setSelection([]); setSelecting(false);
   };
   const renderRow = rowProps => {
     const id = rowProps.row.uuid || rowProps.row.id;
@@ -82,9 +68,15 @@ function Section({
     // Rows drag to other meals, except while picking foods for a command.
     const props = selecting ? shown : { ...shown, dragBucket: bucket };
     if (!selecting) return <EntryRow key={id} {...props}/>;
+    // A dish ticks through its parts; some of them ticked shows as mixed.
     const ids = props.isGroup ? props.row.children.map(row=>row.uuid || row.id) : [id];
-    return <div key={id} className="health-meal-selection-row" data-entry-key={props.entryKey}><input type="checkbox" aria-label={`Select ${props.row.name || props.row.label || props.row.item}`}
-      checked={ids.every(id=>selectedIds.includes(id))} onChange={e=>setSelection(prev=>e.target.checked?[...new Set([...prev,...ids])]:prev.filter(id=>!ids.includes(id)))}/><EntryRow {...props}/></div>;
+    const ticked = ids.filter(id=>selectedIds.includes(id)).length;
+    const all = ticked === ids.length;
+    const setTicked = on => setSelection(prev=>on?[...new Set([...prev,...ids])]:prev.filter(id=>!ids.includes(id)));
+    return <div key={id} className="health-meal-selection-row" data-entry-key={props.entryKey}>
+      <label className="health-meal-selection-tick"><input type="checkbox" aria-label={`Select ${props.row.name || props.row.label || props.row.item}`}
+        ref={node=>{ if (node) node.indeterminate = ticked > 0 && !all; }} checked={all} onChange={e=>setTicked(e.target.checked)}/></label>
+      <EntryRow {...props} selecting onTap={()=>setTicked(!all)}/></div>;
   };
   const [collapsed, setCollapsed] = useState(() => new Set(collapsedDishes.read()));
   // Heaviest first, and each calorie cell carries its share of the meal's
@@ -152,15 +144,8 @@ function Section({
       </header>
       {bucket && rows.length && onChanged ? <MealFoodControls date={date} bucket={bucket} rows={rows} selectedIds={selectedIds} selecting={selecting}
         extraActions={headerAction}
-        onSelectionMode={value=>{setSelecting(value);if(!value)setSelection([]);}}
-        onChanged={result=>{setSelection([]);setSelecting(false);onChanged(result);}}/> : null}
-      {selecting && selectedIds.length && bucket && onMoveToDay ? (() => {
-        const { picked, partial } = pickedEntries();
-        return <div className="health-meal-move-day">
-          {picked.length ? <MoveDayControl date={date} today={localTodayISO()} count={picked.length} onMove={moveSelected} /> : null}
-          {partial ? <span className="health-meal-move-day__note">Tick every ingredient to move a dish.</span> : null}
-        </div>;
-      })() : null}
+        onSelectionMode={on => onSelectionMode(on, sectionRef.current)}
+        onChanged={result=>{onMealCommandDone(selectedIds);onChanged(result);}}/> : null}
       {clarification ? <div className="health-meal-command-panel"><span>{clarification.question}</span>
         <div className="health-meal-command-actions">{clarification.choices.map(choice=><Button key={choice.id} size="compact-xs" disabled={clarifying} onClick={async()=>{
           setClarifying(true);setClarifyError(null);
@@ -212,6 +197,8 @@ function Section({
               measured:measuredByUuid?.get(c.uuid) ?? measuredByUuid?.get(c.id) ?? null})) : null}
             {isOpen && dishEditable ? <DishAddRow dishName={row.name || row.item || row.label} candidates={dishOptions(rows, key)}
               busy={dish.isBusy ? dish.isBusy(key) : dish.busy === key} error={dish.error?.groupId === key ? dish.error.message : null} onAdd={foodId=>dish.add(key,foodId)}/> : null}
+            {/* Holds the line's height while picking foods, so the rows below stay put. */}
+            {isOpen && selecting && bucket && onChanged ? <div className="health-row-line health-dish-add" aria-hidden="true" style={{ visibility: 'hidden' }} /> : null}
           </div>
         );
       })}
@@ -253,13 +240,166 @@ function DishAddRow({ dishName, candidates, busy, error, onAdd }) {
   </div>;
 }
 
+const SELECTION_ROOM = '--health-selection-room';
+
+/**
+ * The ticked foods, across every meal, ready for one move. It stays for all of
+ * selection mode at one height (health.scss), so ticks and server replies never
+ * move the log. A dish counts only when every ingredient is ticked. The ticks
+ * stay unless the foods actually moved.
+ */
+function DaySelectionBar({ barRef, byBucket, date, selection, moving, setMoving, onMoveToDay, onMoveMeal, onDone, onNotice }) {
+  const picked = [];
+  let partial = 0;
+  for (const bucket of BUCKETS) for (const { row, children } of groupRows(byBucket.get(bucket.id) || [])) {
+    if (!children.length) { if (selection.includes(row.uuid ?? row.id)) picked.push(row); continue; }
+    const ticked = children.filter(child => selection.includes(child.uuid ?? child.id)).length;
+    if (ticked === children.length) picked.push({ ...row, children }); else partial += ticked;
+  }
+  const today = localTodayISO();
+  const finish = async (move, alreadyThere) => {
+    setMoving(true);
+    try {
+      const result = await move();
+      if (result === MoveResult.UNCHANGED) onNotice?.(alreadyThere);
+      else if (result !== MoveResult.NOT_MOVED && result !== MoveResult.UNKNOWN) onDone(date);
+    } finally { setMoving(false); }
+  };
+  return <div ref={barRef} role="region" aria-label="Selected foods" className="health-selection-bar">
+    <div className="health-selection-bar__status" aria-live="polite">
+      {picked.length ? <span>{picked.length} selected</span> : null}
+      {partial ? <span className="health-selection-bar__note">Tick every ingredient to move a dish.</span> : null}
+      {!picked.length && !partial ? <span>Tick foods to move</span> : null}
+    </div>
+    <div className="health-selection-bar__actions">
+      {picked.length && onMoveToDay ? <MoveDayControl date={date} today={today} count={picked.length} disabled={moving}
+        onMove={iso => finish(() => onMoveToDay(picked, iso), `Already on ${dayLabel(iso, today)}`)} /> : null}
+      {picked.length && onMoveMeal ? <MoveMealControl count={picked.length} disabled={moving}
+        onMove={meal => finish(() => onMoveMeal(picked, meal, null), `Already in ${bucketLabel(meal)}`)} /> : null}
+    </div>
+  </div>;
+}
+
 export function LogTable({
   byBucket, date, sessions = [], exerciseAvailable = false, onRowTap, onConfirm, onRequestDelete,
   bucketHeaderAction, coldLoading = false, capturePendingBucket = null, capturePendingBuckets = [],
   measuredByUuid = null, onVoiceCapture, onTextCapture, onMealChanged, captureTasks = [], clarifications, onClearClarification,
   renderAddRow = null, addedIds = null, onMoveEntry = null, onMoveMeal = null, onMoveToDay = null,
-  fastedMeals = [], onMealFastChanged = null,
+  fastedMeals = [], onMealFastChanged = null, onNotice = null, hiddenIds = NO_IDS,
 }) {
+  // "Select foods" spans the viewed day's meals and ends with that day.
+  const [selecting, setSelecting] = useState(false);
+  const [selection, setSelectionState] = useState([]);
+  const [moving, setMoving] = useState(false);
+  const logRef = useRef(null);
+  const frameRef = useRef(null);
+  const barRef = useRef(null);
+  const viewedDate = useRef(date);
+  viewedDate.current = date;
+  // The ref is the current selection, so a command finishing can read what was
+  // ticked while it ran.
+  const latestSelection = useRef(selection);
+  const setSelection = change => {
+    const next = typeof change === 'function' ? change(latestSelection.current) : change;
+    latestSelection.current = next;
+    setSelectionState(next);
+    return next;
+  };
+  // The bar sits above the log, so opening it takes height and closing gives it
+  // back. The scroller absorbs the difference and the foods stay put. This code is
+  // the only thing correcting the position: the browser's scroll anchoring would
+  // otherwise make the same correction, so it is off for the change.
+  const scrollerOf = node => node?.closest(`.${CHROME_SCROLL_CLASS}`) || null;
+  const holdScrollAnchoring = () => {
+    const scroller = scrollerOf(logRef.current);
+    if (!scroller) return;
+    scroller.style.overflowAnchor = 'none';
+    requestAnimationFrame(() => requestAnimationFrame(() => { scroller.style.overflowAnchor = ''; }));
+  };
+  // Focus inside the bar would be lost with it. Only a close of the open bar on
+  // this day is recorded: a late move can call this after selection ended, and a
+  // day change resets the page by itself.
+  const closing = useRef(null);
+  const opening = useRef(null);
+  const selectingNow = useRef(selecting);
+  selectingNow.current = selecting;
+  const closeSelection = () => {
+    if (selectingNow.current) {
+      holdScrollAnchoring();
+      const active = document.activeElement;
+      closing.current = {
+        date: viewedDate.current,
+        top: logRef.current?.getBoundingClientRect().top ?? 0,
+        refocus: !active || active === document.body || Boolean(barRef.current?.contains(active)),
+      };
+    }
+    setSelection([]); setSelecting(false);
+  };
+  useLayoutEffect(() => {
+    if (selecting) {
+      const opened = opening.current;
+      opening.current = null;
+      const scroller = scrollerOf(opened?.anchor);
+      if (!scroller || !opened.anchor.isConnected) return;
+      const shift = opened.anchor.getBoundingClientRect().top - opened.top;
+      // A short day cannot scroll by the bar's height, so it gets the room while the bar
+      // is open. A page held at a minimum height absorbs some of that room, so what is
+      // still missing is measured again, until the room stops helping.
+      const missing = () => shift - Math.max(0, scroller.scrollHeight - scroller.clientHeight - scroller.scrollTop);
+      let room = 0;
+      for (let short = missing(), tries = 0; short > 0.5 && tries < 4; tries += 1) {
+        const before = scroller.scrollHeight;
+        room += Math.ceil(short);
+        frameRef.current?.style.setProperty(SELECTION_ROOM, `${room}px`);
+        const still = missing();
+        if (scroller.scrollHeight === before || still >= short) break;
+        short = still;
+      }
+      scroller.scrollTop += shift;
+      // The one exception to holding still: the bar must not land on the control just tapped.
+      const control = opened.anchor.querySelector('[data-select-foods]');
+      const covered = control && barRef.current ? barRef.current.getBoundingClientRect().bottom - control.getBoundingClientRect().top : 0;
+      if (covered > 0) scroller.scrollTop -= covered;
+      return;
+    }
+    frameRef.current?.style.removeProperty(SELECTION_ROOM);
+    const closed = closing.current;
+    const log = logRef.current;
+    closing.current = null;
+    if (!closed || !log || closed.date !== date) return;
+    const scroller = scrollerOf(log);
+    if (scroller) scroller.scrollTop += log.getBoundingClientRect().top - closed.top;
+    if (!closed.refocus) return;
+    const target = log.querySelector('[data-select-foods]') || log;
+    if (target === log) log.setAttribute('tabindex', '-1');
+    target.focus({ preventScroll: true });
+  }, [selecting]);
+  useEffect(() => { closing.current = null; setSelecting(false); setSelection([]); }, [date]);
+  // Ticks follow the day's foods. A move hides its rows until it settles, and they
+  // return if it fails, so nothing is forgotten while one is running, whichever
+  // control started it (`hiddenIds` covers moves from outside the selection bar).
+  useEffect(() => {
+    if (!selecting || moving || coldLoading) return;
+    const present = new Set([...byBucket.values()].flat().flatMap(row => [row.uuid, row.id]));
+    hiddenIds.forEach(id => present.add(id));
+    setSelection(previous => (previous.every(id => present.has(id)) ? previous : previous.filter(id => present.has(id))));
+    // No meal has foods, so no meal shows the control that ends selection.
+    if (!hiddenIds.size && !BUCKETS.some(bucket => byBucket.get(bucket.id)?.length)) closeSelection();
+  }, [byBucket, selecting, moving, coldLoading, hiddenIds]);
+  // A move can finish after the person has gone to another day and started there.
+  const selectionMoved = movedFrom => { if (movedFrom === viewedDate.current) closeSelection(); };
+  // A command in one meal settles that meal's ticks; other meals keep theirs.
+  const mealCommandDone = ids => {
+    if (!setSelection(previous => previous.filter(id => !ids.includes(id))).length) closeSelection();
+  };
+  const selectionMode = (on, anchor = null) => {
+    if (!on) { closeSelection(); return; }
+    if (!selectingNow.current && anchor) {
+      holdScrollAnchoring();
+      opening.current = { anchor, top: anchor.getBoundingClientRect().top };
+    }
+    setSelecting(true);
+  };
   // All four meals always render: an empty one is its header and add row, so
   // any meal can be added to in place without a separate "add to" control.
   const orphans = byBucket.get(null) || [];
@@ -267,7 +407,6 @@ export function LogTable({
   // stacks under the names. Measured from a real top-level row (the density
   // badge, its placement preference and the phone tracks all move it) and
   // shared as --health-name-inset, so an empty meal lines up too.
-  const logRef = useRef(null);
   useLayoutEffect(() => {
     const log = logRef.current;
     if (!log) return undefined;
@@ -298,7 +437,8 @@ export function LogTable({
           headerAction={bucketHeaderAction ? bucketHeaderAction(b.id, rows, b.label) : null}
           coldLoading={coldLoading} pending={capturePendingBucket === b.id || capturePendingBuckets.includes(b.id)}
           measuredByUuid={measuredByUuid} addedIds={addedIds} kcalScale={kcalScale} renderAddRow={renderAddRow}
-          fasted={fastedMeals.includes(b.id)} onFastChanged={onMealFastChanged} onMoveToDay={onMoveToDay} />
+          fasted={fastedMeals.includes(b.id)} onFastChanged={onMealFastChanged}
+          selecting={selecting} onSelectionMode={selectionMode} onMealCommandDone={mealCommandDone} selection={selection} setSelection={setSelection} />
       </div>
     );
   };
@@ -307,7 +447,11 @@ export function LogTable({
   // ("no workout yet today"), not an absence of data. Gating on length
   // alone made the header pop in and out as sessions changed.
   const showExercise = exerciseAvailable || sessions.length > 0;
-  const log = (
+  // The bar sits beside the grid, not in it: a sticky grid item can travel only
+  // within its own grid row, which here is exactly as tall as the bar.
+  const log = <div className="health-log-frame" ref={frameRef}>
+    {selecting ? <DaySelectionBar barRef={barRef} byBucket={byBucket} date={date} selection={selection} moving={moving} setMoving={setMoving}
+      onMoveToDay={onMoveToDay} onMoveMeal={onMoveMeal} onDone={selectionMoved} onNotice={onNotice} /> : null}
     <div className="health-log" ref={logRef}>
       {[EARLY_COLUMN, LATE_COLUMN].map((ids, index) => (
         <div key={index} className="health-log__column">
@@ -323,7 +467,7 @@ export function LogTable({
         </div>
       ) : null}
     </div>
-  );
+  </div>;
   // One preview card for the whole day, at the cursor (RowPreview.jsx).
   const withPreview = <RowPreviewProvider>{log}</RowPreviewProvider>;
   return onMoveEntry || onMoveMeal || onMoveToDay

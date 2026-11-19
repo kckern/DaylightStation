@@ -155,6 +155,26 @@ describe('Health AI spend is attributed health/<feature>', () => {
     expect(features()).toEqual(['health/meal-instruction', 'health/revision']);
   });
 
+  it('day-instruction: the web day input reads the real store and bills its decision model', async () => {
+    const { JevAdapter } = await import('#adapters/ai/JevAdapter.mjs');
+    const { createNutribotApiRouter } = await import("../../../__app_modules/wellness/nutribot/server/composition/nutribotApi.mjs");
+    const ledger = { record: vi.fn() };
+    const post = vi.fn(async () => ({ status: 400, data: { error: { message: 'refused by test' } } }));
+    const jev = new JevAdapter({ apiKey: 'test' }, { httpClient: { post }, logger: silent, aiUsageLedger: ledger });
+    const { health } = harness();
+    const findByDate = vi.fn(async () => [{ id: 'r1', uuid: 'r1', label: 'Oats', grams: 80, calories: 300, mealTime: 'morning', status: 'accepted' }]);
+    const nutriListStore = anything({ findByDate, findByDateRange: vi.fn(async () => []), readOperationResult: vi.fn(async () => null) });
+    const { webNutribotAdapter } = createNutribotApiRouter({
+      nutribotServices: { nutribotContainer: container(health, { decisionGateway: jev.scoped({ app: 'health' }) }), nutriListStore, foodLogStore: anything() },
+      logger: silent,
+    });
+    await expect(webNutribotAdapter.processDayInput({ userId: 'alice', type: 'text', content: 'move that to yesterday', date: '2026-09-25', today: '2026-09-25', operationId: 'day-op' }))
+      .rejects.toMatchObject({ status: 503, code: 'DAY_INPUT_UNAVAILABLE' });
+    expect(nutriListStore.readOperationResult).toHaveBeenCalled();
+    expect(findByDate).toHaveBeenCalledWith('alice', '2026-09-25');
+    expect(ledger.record.mock.calls.map(([row]) => `${row.app}/${row.feature}`)).toEqual(['health/day-instruction']);
+  });
+
   it('icon-pick: the nearest-icon chooser bills its decision model to icon-pick', async () => {
     const { JevAdapter } = await import('#adapters/ai/JevAdapter.mjs');
     const ledger = { record: vi.fn() };

@@ -3,9 +3,13 @@ import { BUCKETS } from "../today/mealBuckets.js";
 import { CaptureProgress } from '../today/CaptureProgress.jsx';
 import { normalizeFoodOperationResult } from './healthOperationResults.js';
 import { useHealthOperations } from './HealthOperationsProvider.jsx';
+// A transport error is for the logs. The person gets a sentence.
+const operationErrorText = error => (/^(HTTP \d|Unreadable response|Network error)|^\s*[{[<]/.test(error) ? 'That did not go through.' : error);
 export function FoodOperationStatus({ operation }) {
   const context = useHealthOperations();
   if (operation.phase === 'succeeded') {
+    // The day's toast already said where this food landed.
+    if (operation.reported) return null;
     const destination = operation.normalizedResult?.destination;
     const movedDate = destination?.date && destination.date !== operation.date;
     const movedMeal = destination?.bucket && destination.bucket !== operation.bucket;
@@ -16,7 +20,7 @@ export function FoodOperationStatus({ operation }) {
   const acknowledged = operation.response && normalizeFoodOperationResult(operation, operation.response).outcome === 'committed';
   const text = (operation.kind === 'sentence' ? operation.request?.body?.content : operation.label) || 'Food';
   if (operation.error) return <div role="alert" className="health-row__error">
-    <span>{text}: {operation.error}</span>
+    <span>{text}: {operationErrorText(operation.error)}</span>
     {operation.response?.clarification?.choices?.map(choice => <Button key={choice.id} size="compact-xs" onClick={() => {
       const id = context.submitSentence({ text, date: operation.date, bucket: operation.bucket, clarification: choice.id });
       if (id) context.store.discard(operation.id, { descendants: operation.resumable });

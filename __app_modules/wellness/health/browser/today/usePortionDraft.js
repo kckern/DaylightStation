@@ -10,6 +10,8 @@ import { createAppLogger } from "../../../../../frontend/src/lib/ui/createAppLog
 
 const logger = createAppLogger('health').child('portion');
 export const PortionContext = createContext(null);
+/** True inside a row being picked for a selection: its numbers show but do not edit. */
+export const PortionsReadOnlyContext = createContext(false);
 export const usePortionControl = row => {
   const control = useContext(PortionContext);
   return row && control?.forRow ? control.forRow(row) : control;

@@ -21,7 +21,7 @@ export function __clearPianoListCache() { cache.clear(); idbClear(); }
  * res.items). Returns { data, loading, error }. data is null while first-loading,
  * [] when empty or path is null.
  */
-export function usePianoList(path, select = (r) => r?.items ?? []) {
+export function usePianoList(path, select = (r) => r?.items ?? [], { alwaysRevalidate = false } = {}) {
   const cached = path ? cache.get(path) : null;
   const [data, setData] = useState(cached ? cached.items : (path ? null : []));
   const [error, setError] = useState(null);
@@ -31,7 +31,7 @@ export function usePianoList(path, select = (r) => r?.items ?? []) {
     let cancelled = false;
     const l1 = cache.get(path);
     if (l1) setData(l1.items); // paint whatever we already have, instantly
-    const l1Fresh = l1 && Date.now() - l1.at < TTL_MS;
+    const l1Fresh = !alwaysRevalidate && l1 && Date.now() - l1.at < TTL_MS;
 
     const revalidate = async (prevSig) => {
       try {
@@ -62,7 +62,7 @@ export function usePianoList(path, select = (r) => r?.items ?? []) {
         if (persisted?.items) {
           cache.set(path, persisted);
           setData(persisted.items);
-          if (Date.now() - (persisted.at || 0) < TTL_MS) return; // persisted copy is fresh
+          if (!alwaysRevalidate && Date.now() - (persisted.at || 0) < TTL_MS) return; // persisted copy is fresh
           await revalidate(persisted.sig);
           return;
         }

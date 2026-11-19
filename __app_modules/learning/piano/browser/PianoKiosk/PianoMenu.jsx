@@ -6,7 +6,8 @@ import { gamesDisabledFor } from './gameAccessPolicy.js';
 import { usePianoMidi } from './PianoMidiContext.jsx';
 import { usePianoUser } from './PianoUserContext.jsx';
 import PianoTile from './PianoTile.jsx';
-import PianoMenuActivity from './PianoMenuActivity.jsx';
+import PianoHomeDesk from './desk/PianoHomeDesk.jsx';
+import { KIOSK_DEVICE_ID } from './kioskDeviceIdentity.js';
 import LiveKeyboard from './LiveKeyboard.jsx';
 import { balancedColumns } from './tileGridLayout.js';
 import usePianoCurfew from './usePianoCurfew.js';
@@ -21,13 +22,13 @@ import { PIANO_MODES } from './pianoModes.js';
  * PianoMenu — the touch-first home screen for a piano. Tiles route to each mode.
  *
  * Under curfew (config.curfew, default 19:00–06:00) the whole menu goes dark:
- * every tile and every activity-strip card greys out and stops responding. The
+ * every tile and the progress strip grey out and stops responding. The
  * one thing still working is the piano — sitting down and playing auto-enters
  * Studio (useAutoStudioEntry in PianoApp), which is deliberately independent of
  * this menu, so evening free play is unaffected.
  *
  * While the active player still owes today's assigned School piano lesson, the
- * tiles and the activity strip are REPLACED by that one lesson
+ * tiles and the progress strip are REPLACED by that one lesson
  * (TodaysLessonGate) — not greyed out, which is curfew's look and would read as
  * "everything is closed" rather than "here is the one thing". It clears itself
  * when School says the day is discharged. Curfew outranks it.
@@ -56,7 +57,11 @@ export function PianoMenu() {
   const kb = config?.keyboard || { startNote: 21, endNote: 108 };
   const logger = useMemo(() => getLogger().child({ component: 'piano-menu' }), []);
   const cols = balancedColumns(PIANO_MODES.length); // 10 → 5
-  const curfew = usePianoCurfew(config?.curfew, config?.timezone);
+  // Curfew is for the piano's own tablet. A grown-up opening the page in an
+  // ordinary browser is not locked out for the night.
+  const onKiosk = Boolean(config?.screensaver?.deviceId) && KIOSK_DEVICE_ID === config.screensaver.deviceId;
+  const curfewWindow = usePianoCurfew(config?.curfew, config?.timezone);
+  const curfew = curfewWindow && onKiosk;
   // Curfew wins outright: after bedtime there is nothing to offer, so the
   // closed-for-the-night view stands rather than a launchable lesson card.
   const lessonGate = usePianoLessonGate(currentUser);
@@ -101,15 +106,18 @@ export function PianoMenu() {
           />
         ) : (
           <>
-          <PianoMenuActivity
+          <PianoHomeDesk
             disabled={curfew || pending}
-            onOpenCourse={(courseId, userId) => {
-              logger.info('piano.menu-activity.open-course', { courseId, userId });
-              // Tapping a player's card IS picking that player: their progress,
-              // their credit (owner-requested 2026-07-28 — supersedes the
-              // original no-switch design).
+            onOpenPassage={(userId, scoreId, passageId) => {
+              // Tapping a child's card IS picking that child: their progress,
+              // their credit (owner-requested 2026-07-28).
               if (userId) setCurrentUser(userId);
               if (curfew || pending) return; // the door the 2026-09-01 escape used
+              navigate(`${basePath}/sheetmusic/view/${scoreId}${passageId ? `?learnPassage=${encodeURIComponent(passageId)}` : ''}`);
+            }}
+            onOpenCourse={(userId, courseId) => {
+              if (userId) setCurrentUser(userId);
+              if (curfew || pending) return;
               navigate(`${basePath}/videos/${String(courseId).replace(/^plex:/, '')}`);
             }}
           />

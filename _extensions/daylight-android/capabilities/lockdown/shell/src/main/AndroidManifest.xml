@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <!-- Status-bar shield. Granted once: appops set <package> SYSTEM_ALERT_WINDOW allow -->
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+    <!-- Target 30 hides other packages from getActivityInfo and resolveActivity without this. Inert below API 30. -->
+    <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES" tools:ignore="QueryAllPackagesPermission" />
+
+    <!-- The HOME intent filter is not here. The device manifest adds it to the kiosk
+         Activity (declared by webview-host's shell half) in a build that lists lockdown.
+         The accessibility service is the accessibility capability's. -->
+    <application>
+        <!-- Device admin: enough for lockNow (screen off). The same receiver is the
+             device-owner component where a device has been provisioned, or where ownership
+             was transferred to this app. Exported because the system delivers its
+             broadcasts here; BIND_DEVICE_ADMIN is held by the system alone, so no other
+             app can send to it. -->
+        <receiver
+            android:name="net.kckern.daylight.cap.lockdown.shell.DaylightAdminReceiver"
+            android:permission="android.permission.BIND_DEVICE_ADMIN"
+            android:exported="true">
+            <meta-data android:name="android.app.device_admin" android:resource="@xml/daylight_device_admin" />
+            <intent-filter>
+                <action android:name="android.app.action.DEVICE_ADMIN_ENABLED" />
+            </intent-filter>
+        </receiver>
+
+        <!-- Android keeps this bound for a device-owner app, whatever its UI is doing.
+             Bound by the system only, under the same permission. -->
+        <service
+            android:name="net.kckern.daylight.cap.lockdown.shell.DaylightOwnerService"
+            android:permission="android.permission.BIND_DEVICE_ADMIN"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.app.action.DEVICE_ADMIN_SERVICE" />
+            </intent-filter>
+        </service>
+    </application>
+</manifest>

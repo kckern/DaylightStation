@@ -13,6 +13,7 @@ import java.util.concurrent.Executors;
 
 import fi.iki.elonen.NanoWSD;
 import fi.iki.elonen.NanoHTTPD.Method;
+import net.kckern.portalkeys.api.ShellServices.LockdownReply;
 
 /**
  * WebSocket + HTTP control plane, mirroring piano-bridge's ControlServer.
@@ -304,21 +305,19 @@ public class ControlServer extends NanoWSD {
         if (session.getMethod() != Method.PUT) {
             return json(Response.Status.METHOD_NOT_ALLOWED, "{\"error\":\"PUT required\"}");
         }
-        String expected = config.lockdownToken();
         String supplied = session.getHeaders().get("x-lockdown-token");
-        if (expected.isEmpty() || supplied == null || !MessageDigest.isEqual(
-                expected.getBytes(StandardCharsets.UTF_8), supplied.getBytes(StandardCharsets.UTF_8))) {
+        if (!config.acceptsLockdownToken(supplied)) {
             return json(Response.Status.UNAUTHORIZED, "{\"error\":\"unauthorized\"}");
         }
         Map<String, String> files = new java.util.HashMap<>();
         session.parseBody(files);
-        String body = RequestBody.of(files);
-        LockdownCommand command;
-        try { command=LockdownCommand.parse(body,System.currentTimeMillis()); }
-        catch (IllegalArgumentException invalid) { return json(Response.Status.BAD_REQUEST,"{\"error\":\"invalid lockdown command\"}"); }
-        if (!config.applyLockdown(command)) return json(Response.Status.CONFLICT,"{\"error\":\"stale or conflicting lockdown revision\"}");
-        eventLog.add("lockdown " + (command.locked ? "blocked" : "cleared") + " revision=" + config.lockdownRevision());
-        return json(config.toJsonRedacted());
+        LockdownReply reply =
+                config.lockdownReply(supplied, RequestBody.of(files), System.currentTimeMillis());
+        if (reply.status == 200) {
+            eventLog.add("lockdown " + (config.lockdownActive() ? "blocked" : "cleared")
+                    + " revision=" + config.lockdownRevision());
+        }
+        return json(Response.Status.lookup(reply.status), reply.body);
     }
 
     private Response json(String body) {

@@ -6,6 +6,18 @@ const apiMock = vi.fn();
 const departureState = vi.hoisted(()=>({departed:false}));
 // The latest props the BarcodeCapture stub received, so a test can drive a decode.
 const barcodeProps = vi.hoisted(() => ({ current: null }));
+const customFoodProps = vi.hoisted(() => ({ current: null }));
+const loggedEvents = vi.hoisted(() => []);
+vi.mock("../../../../../frontend/src/lib/ui/createAppLogger.js", async (importOriginal) => {
+  const actual = await importOriginal();
+  const watch = logger => new Proxy(logger, { get(target, key) {
+    if (key === 'info') return (event, data) => { loggedEvents.push([event, data]); return target.info(event, data); };
+    if (key === 'child') return (...args) => watch(target.child(...args));
+    const value = target[key];
+    return typeof value === 'function' ? value.bind(target) : value;
+  } });
+  return { ...actual, createAppLogger: (...args) => watch(actual.createAppLogger(...args)) };
+});
 vi.mock("../../../../../frontend/src/lib/api.mjs", () => ({ DaylightAPI: (...a) => apiMock(...a) }));
 
 // Bypass the real file-picker/FileReader and MediaRecorder plumbing — the
@@ -35,7 +47,7 @@ vi.mock("../capture/VoiceCapture.jsx", () => ({
   ),
 }));
 vi.mock("../capture/BarcodeCapture.jsx", () => ({ BarcodeCapture: (props) => { barcodeProps.current = props; return null; } }));
-vi.mock("../capture/CustomFoodSheet.jsx", () => ({ CustomFoodSheet: () => null }));
+vi.mock("../capture/CustomFoodSheet.jsx", () => ({ CustomFoodSheet: (props) => { customFoodProps.current = props; return null; } }));
 // Pin the capture-pending bucket target so the "which bucket does the
 // placeholder land in" tests are deterministic regardless of wall-clock
 // time — everything else in mealBuckets.js (BUCKETS, localTodayISO, …)
@@ -47,6 +59,8 @@ vi.mock("./mealBuckets.js", async (importOriginal) => {
 
 import { MemoryRouter } from 'react-router-dom';
 import { TodayView } from "./TodayView.jsx";
+import { localTodayISO } from "./mealBuckets.js";
+import { addDaysISO } from "./moveDays.js";
 import { resetApiResourceCache } from "../../../../../frontend/src/lib/hooks/useApiResource.js";
 
 function r(ui) { return render(<MemoryRouter><MantineProvider>{ui}</MantineProvider></MemoryRouter>); }
@@ -364,19 +378,19 @@ describe('TodayView — Task 4.2: per-meal capture buttons + the moved cue', () 
   });
 });
 
-describe('TodayView — capture lives only in the meal add rows', () => {
+describe('TodayView — capture lives in the meal add rows and the one day input', () => {
   beforeEach(() => { apiMock.mockReset(); resetApiResourceCache(); });
 
-  it('renders no page-level capture bar and no footer capture controls', async () => {
+  it('renders no other page-level capture bar and no footer capture controls', async () => {
     apiMock.mockImplementation(baseApi());
     r(<TodayView onSetupGoals={() => {}} onCoachTap={() => {}} />);
     await waitFor(() => screen.getByText('Lunch'));
     expect(screen.queryByRole('textbox', { name: 'Capture meal' })).toBeNull();
     expect(screen.queryByRole('button', { name: /^Quick add to/ })).toBeNull();
-    // No BARE (bucket-less) capture trigger exists anywhere — every mocked
-    // instance carries a `-{bucket}` suffix, i.e. came from a meal's add row.
+    // Every other mocked instance carries a `-{bucket}` suffix, i.e. came from
+    // a meal's add row. The day input's microphone is the only one without.
     expect(screen.queryByText('MockPhotoCapture')).toBeNull();
-    expect(screen.queryByText('MockVoiceCapture')).toBeNull();
+    expect(screen.getByText('MockVoiceCapture').closest('.health-day-input')).toBeTruthy();
     expect(document.querySelector('.health-footer__actions')).toBeFalsy();
   });
 });
@@ -528,6 +542,22 @@ describe('TodayView — scale observations', () => {
     expect(screen.getByRole('button', { name: 'Scan barcode to Breakfast' })).toBeTruthy();
   });
 
+  it('choosing the meal the ticked food is already in says so and keeps the tick', async () => {
+    const today = new Date();
+    const date = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+    const eggs = { uuid: 'eggs', name: 'Eggs', date, mealTime: 'morning', calories: 90, grams: 50, version: 1 };
+    const api = baseApi({});
+    apiMock.mockImplementation(async (path, ...rest) => (path.includes('health/day?') ? { items: [eggs], budget: BUDGET } : api(path, ...rest)));
+    r(<TodayView onSetupGoals={() => {}} onCoachTap={() => {}} />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Select foods' }));
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Select Eggs' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Move 1 selected to a meal' }));
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Breakfast' }));
+    expect(await screen.findByText('Already in Breakfast')).toBeTruthy();
+    expect(screen.getByRole('checkbox', { name: 'Select Eggs' }).checked).toBe(true);
+    expect(apiMock.mock.calls.some(([path]) => path.includes('foods-move'))).toBe(false);
+  });
+
   it('every meal renders its add row even when empty, and none grabs focus', async () => {
     apiMock.mockImplementation(baseApi({}));
     r(<TodayView onSetupGoals={() => {}} onCoachTap={() => {}} />);
@@ -579,9 +609,10 @@ describe('TodayView — saving a meal writes a template, and the picker is the o
     r(<TodayView onSetupGoals={() => {}} onCoachTap={() => {}} />);
     fireEvent.click(await screen.findByRole('button', { name: 'Breakfast actions' }));
     fireEvent.click(await screen.findByRole('menuitem', { name: 'Move all of Breakfast to Dinner' }));
-    await waitFor(() => expect(apiMock.mock.calls.some(([p, , m]) => p.includes('nutrilist/') && m === 'PUT')).toBe(true));
-    const puts = apiMock.mock.calls.filter(([p, , m]) => p.includes('nutrilist/') && m === 'PUT');
-    expect(puts.map(([, body]) => body.mealTime)).toEqual(ROWS.data.filter(row => row.mealTime === 'morning' && !row.parentId).map(() => 'evening'));
+    await waitFor(() => expect(apiMock.mock.calls.some(([p, , m]) => p.endsWith('nutrition/foods-move') && m === 'POST')).toBe(true));
+    const moves = apiMock.mock.calls.filter(([p]) => p.endsWith('nutrition/foods-move'));
+    expect(moves).toHaveLength(1);
+    expect(moves[0][1]).toMatchObject({ toMeal: 'evening', selectedIds: ROWS.data.filter(row => row.mealTime === 'morning' && !row.parentId).map(row => row.uuid) });
     expect(await screen.findByRole('button', { name: 'Undo move' })).toBeTruthy();
   });
 
@@ -779,4 +810,608 @@ it('keeps multiple sentence operations in the live Today provider independent',a
  await act(async()=>tasks[0].reject(new Error('eggs offline')));
  expect(screen.getByRole('button',{name:'Retry'})).toBeTruthy();
  expect(screen.getByRole('button',{name:'Edit Toast'}).disabled).toBe(false);
+});
+
+describe('TodayView — fixing the day from the capture toast', () => {
+  const today = localTodayISO();
+  const yesterday = addDaysISO(today, -1);
+  const row = (uuid, name, extra = {}) => ({ uuid, id: uuid, name, item: name, calories: 100, grams: 100, unit: 'g', amount: 100, color: 'green',
+    date: today, mealTime: 'morning', kind: 'item', version: 1, ...extra });
+  const earlier = row('old-1', 'Earlier shake', { logId: 'QUICKADD' });
+  const dish = row('dish', 'Burrito', { kind: 'group', logId: 'log-1', calories: 0 });
+  const part = row('part', 'Tortilla', { parentId: 'dish', logId: 'log-1' });
+  const eggs = row('eggs', 'Eggs', { logId: 'log-1' });
+  const capture = { committed: true, outcome: 'committed', undoToken: 'meal-capture', logId: 'log-1', mealTime: 'morning', date: today,
+    entryIds: ['dish', 'part', 'eggs'], items: [{ uuid: 'dish', kind: 'group', label: 'Burrito' }, { uuid: 'part', kind: 'item', label: 'Tortilla', parentId: 'dish' }, { uuid: 'eggs', kind: 'item', label: 'Eggs' }] };
+  const dayApi = ({ items = [earlier, dish, part, eggs], byDate = {}, input = capture, move } = {}) => async (path, body, method) => {
+    if (path.includes('health/day?')) {
+      const rows = byDate[path.split('date=')[1]] ?? items;
+      if (rows instanceof Error) throw rows;
+      return { items: rows, budget: BUDGET };
+    }
+    if (path.endsWith('nutrition/input')) return input;
+    if (path.endsWith('nutrition/foods-move')) return move ? move(body) : { committed: true, undoToken: 'meal-move', date: today, toDate: body.toDate, items: [] };
+    return baseApi()(path, body, method);
+  };
+  const moveCalls = () => apiMock.mock.calls.filter(([path]) => path.endsWith('nutrition/foods-move'));
+  const captureFood = async () => {
+    r(<TodayView onSetupGoals={() => {}} onCoachTap={() => {}} />);
+    await screen.findByText('Eggs', {}, { timeout: 3000 }).catch(() => null);
+    fireEvent.click(await screen.findByText('MockPhotoCapture-morning'));
+  };
+
+  beforeEach(() => { apiMock.mockReset(); resetApiResourceCache(); });
+
+  it('says where the food landed and moves that whole capture, leaving the Undo for the move', async () => {
+    apiMock.mockImplementation(dayApi());
+    await captureFood();
+    expect(await screen.findByText('Added 2 foods to Today, Breakfast')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Move to Yesterday' }));
+    await waitFor(() => expect(moveCalls()).toHaveLength(1));
+    expect(moveCalls()[0][1]).toMatchObject({ date: today, toDate: yesterday, selectedIds: ['dish', 'eggs'] });
+    expect(await screen.findByRole('button', { name: 'Undo move' })).toBeTruthy();
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Undo meal change' })).toBeNull());
+    expect(screen.queryByRole('button', { name: 'Move to Yesterday' })).toBeNull();
+  });
+
+  it('a refused move keeps the capture Undo and the day buttons', async () => {
+    apiMock.mockImplementation(dayApi({ move: () => { throw Object.assign(new Error('This entry changed.'), { status: 409 }); } }));
+    await captureFood();
+    fireEvent.click(await screen.findByRole('button', { name: 'Move to Yesterday' }));
+    await waitFor(() => expect(screen.getByRole('alert').textContent).toContain("Couldn't move 2 foods"));
+    expect(screen.getByRole('button', { name: 'Undo meal change' })).toBeTruthy();
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Move to Yesterday' }).disabled).toBe(false));
+  });
+
+  it('a shared log ID moves only the rows this capture returned', async () => {
+    const added = row('new-1', 'Protein shake', { logId: 'QUICKADD' });
+    apiMock.mockImplementation(dayApi({ items: [earlier, added],
+      input: { ...capture, logId: 'QUICKADD', entryIds: ['new-1'], items: [{ uuid: 'new-1', kind: 'item', label: 'Protein shake' }] } }));
+    await captureFood();
+    expect(await screen.findByText('Added Protein shake to Today, Breakfast')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Move to Yesterday' }));
+    await waitFor(() => expect(moveCalls()).toHaveLength(1));
+    expect(moveCalls()[0][1].selectedIds).toEqual(['new-1']);
+  });
+
+  it('a shared log ID with no exact rows gets no offer', async () => {
+    apiMock.mockImplementation(dayApi({ items: [earlier], input: { ...capture, logId: 'QUICKADD', entryIds: [], items: [{ kind: 'item', label: 'Protein shake' }] } }));
+    await captureFood();
+    expect(await screen.findByRole('button', { name: 'Undo meal change' })).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Move to Yesterday' })).toBeNull();
+  });
+
+  it('a meal instruction gets its Undo and no day offer', async () => {
+    apiMock.mockImplementation(dayApi({ input: { committed: true, undoToken: 'meal-amend', logId: null, bucket: 'morning', date: today, items: [eggs] } }));
+    await captureFood();
+    expect(await screen.findByText('Meal updated')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Move to Yesterday' })).toBeNull();
+  });
+
+  it('a capture that committed no food gets no offer', async () => {
+    apiMock.mockImplementation(dayApi({ input: { ...capture, entryIds: [], items: [{ uuid: 'dish', kind: 'group', label: 'Burrito' }] } }));
+    await captureFood();
+    expect(await screen.findByText('Meal updated')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Other day…' })).toBeNull();
+  });
+
+  describe('food filed on a day not being viewed', () => {
+    const there = extra => ({ ...extra, date: yesterday });
+    const elsewhere = [there(dish), there(part), there(eggs)];
+    const input = { ...capture, date: yesterday };
+
+    it('moves from that day and leaves the viewed day alone', async () => {
+      apiMock.mockImplementation(dayApi({ byDate: { [today]: [earlier], [yesterday]: elsewhere }, input }));
+      await captureFood();
+      expect(await screen.findByText('Added 2 foods to Yesterday, Breakfast')).toBeTruthy();
+      await screen.findByText('Earlier shake');
+      const reads = apiMock.mock.calls.filter(([path]) => path.includes('health/day?')).length;
+      fireEvent.click(screen.getByRole('button', { name: 'Move to Today' }));
+      await waitFor(() => expect(moveCalls()).toHaveLength(1));
+      expect(moveCalls()[0][1]).toMatchObject({ date: yesterday, toDate: today, selectedIds: ['dish', 'eggs'],
+        expectedVersions: { dish: 1, part: 1, eggs: 1 } });
+      expect(await screen.findByRole('button', { name: 'Undo move' })).toBeTruthy();
+      await waitFor(() => expect(screen.queryByRole('button', { name: 'Undo meal change' })).toBeNull());
+      expect(screen.getByText('Earlier shake')).toBeTruthy();
+      await waitFor(() => expect(apiMock.mock.calls.filter(([path]) => path.includes('health/day?')).length).toBeGreaterThan(reads + 1));
+    });
+
+    it('a day that will not load says so and keeps the offer', async () => {
+      apiMock.mockImplementation(dayApi({ byDate: { [today]: [earlier], [yesterday]: new Error('offline') }, input }));
+      await captureFood();
+      fireEvent.click(await screen.findByRole('button', { name: 'Move to Today' }));
+      expect(await screen.findByText("Couldn't load Yesterday. Try again.")).toBeTruthy();
+      expect(moveCalls()).toHaveLength(0);
+      expect(screen.getByRole('button', { name: 'Undo meal change' })).toBeTruthy();
+      expect(screen.getByRole('button', { name: 'Move to Today' })).toBeTruthy();
+    });
+
+    it('food no longer on that day is reported by name of the day', async () => {
+      apiMock.mockImplementation(dayApi({ byDate: { [today]: [earlier], [yesterday]: [] }, input }));
+      await captureFood();
+      fireEvent.click(await screen.findByRole('button', { name: 'Move to Today' }));
+      expect(await screen.findByText('Those foods are no longer on Yesterday.')).toBeTruthy();
+      expect(moveCalls()).toHaveLength(0);
+    });
+  });
+
+  it('says so when the food has left the viewed day', async () => {
+    apiMock.mockImplementation(dayApi({ items: [earlier] }));
+    await captureFood();
+    await screen.findByText('Added 2 foods to Today, Breakfast');
+    await waitFor(() => expect(apiMock.mock.calls.filter(([path]) => path.includes('health/day?')).length).toBeGreaterThan(1));
+    fireEvent.click(screen.getByRole('button', { name: 'Move to Yesterday' }));
+    expect(await screen.findByText('Those foods are no longer on this day.')).toBeTruthy();
+    expect(moveCalls()).toHaveLength(0);
+  });
+
+  it('asks for a moment while the day is still bringing the food in', async () => {
+    const respond = dayApi({ items: [earlier] });
+    let dayReads = 0;
+    apiMock.mockImplementation((path, body, method) => (path.includes('health/day?') && ++dayReads > 1 ? new Promise(() => {}) : respond(path, body, method)));
+    await captureFood();
+    await screen.findByText('Added 2 foods to Today, Breakfast');
+    await waitFor(() => expect(dayReads).toBeGreaterThan(1));
+    fireEvent.click(screen.getByRole('button', { name: 'Move to Yesterday' }));
+    expect(await screen.findByText('Those foods are still loading. Try again in a moment.')).toBeTruthy();
+    expect(moveCalls()).toHaveLength(0);
+  });
+
+  describe('dishes', () => {
+    const plate = row('plate', 'Plate', { kind: 'group', logId: 'log-0', calories: 0 });
+    const older = row('older', 'Older side', { parentId: 'plate', logId: 'log-0' });
+    const joined = row('joined', 'New side', { parentId: 'plate', logId: 'log-1' });
+    const onlyPart = { ...capture, entryIds: ['joined'], items: [{ uuid: 'joined', kind: 'item', label: 'New side' }] };
+
+    it('a captured part of an older dish stays, and the rest of the capture moves', async () => {
+      apiMock.mockImplementation(dayApi({ items: [plate, older, joined, eggs], input: { ...capture, entryIds: ['joined', 'eggs'],
+        items: [{ uuid: 'joined', kind: 'item', label: 'New side' }, { uuid: 'eggs', kind: 'item', label: 'Eggs' }] } }));
+      await captureFood();
+      fireEvent.click(await screen.findByRole('button', { name: 'Move to Yesterday' }));
+      await waitFor(() => expect(moveCalls()).toHaveLength(1));
+      expect(moveCalls()[0][1].selectedIds).toEqual(['eggs']);
+      expect(await screen.findByText("New side is part of a dish and can't move alone, so it stayed.")).toBeTruthy();
+    });
+
+    it('a retried partial move still says what stayed', async () => {
+      let sent = 0;
+      apiMock.mockImplementation(dayApi({ items: [plate, older, joined, eggs], input: { ...capture, entryIds: ['joined', 'eggs'],
+        items: [{ uuid: 'joined', kind: 'item', label: 'New side' }, { uuid: 'eggs', kind: 'item', label: 'Eggs' }] },
+        move: body => { if (++sent === 1) throw Object.assign(new Error('Bad gateway'), { status: 502 }); return { committed: true, undoToken: 'meal-move', date: today, toDate: body.toDate, items: [] }; } }));
+      await captureFood();
+      fireEvent.click(await screen.findByRole('button', { name: 'Move to Yesterday' }));
+      fireEvent.click(await screen.findByRole('button', { name: 'Retry moving 2 foods' }));
+      expect(await screen.findByText("New side is part of a dish and can't move alone, so it stayed.")).toBeTruthy();
+      expect(moveCalls()[1][1].operationId).toBe(moveCalls()[0][1].operationId);
+    });
+
+    it('when only that part was captured, nothing moves and it says why', async () => {
+      apiMock.mockImplementation(dayApi({ items: [plate, older, joined], input: { ...onlyPart, logId: 'QUICKADD' } }));
+      await captureFood();
+      fireEvent.click(await screen.findByRole('button', { name: 'Move to Yesterday' }));
+      expect(await screen.findByText("New side is part of a dish and can't move alone.")).toBeTruthy();
+      expect(moveCalls()).toHaveLength(0);
+      expect(screen.getByRole('button', { name: 'Undo meal change' })).toBeTruthy();
+    });
+
+    it('a captured dish that later took in food from another log does not carry it', async () => {
+      const stranger = row('stranger', 'Older cheese', { parentId: 'dish', logId: 'log-0' });
+      apiMock.mockImplementation(dayApi({ items: [dish, part, stranger] , input: { ...capture, entryIds: ['dish', 'part'],
+        items: [{ uuid: 'dish', kind: 'group', label: 'Burrito' }, { uuid: 'part', kind: 'item', label: 'Tortilla', parentId: 'dish' }] } }));
+      await captureFood();
+      fireEvent.click(await screen.findByRole('button', { name: 'Move to Yesterday' }));
+      expect(await screen.findByText("Tortilla is part of a dish and can't move alone.")).toBeTruthy();
+      expect(moveCalls()).toHaveLength(0);
+    });
+
+    it('parts regrouped under a new header move with it when all are from the capture', async () => {
+      const header = row('new-head', 'Breakfast plate', { kind: 'group', logId: 'MANUAL', calories: 0 });
+      const mine = row('mine', 'Tortilla', { parentId: 'new-head', logId: 'log-1' });
+      apiMock.mockImplementation(dayApi({ items: [header, mine], input: { ...capture, entryIds: ['mine'], items: [{ uuid: 'mine', kind: 'item', label: 'Tortilla' }] } }));
+      await captureFood();
+      fireEvent.click(await screen.findByRole('button', { name: 'Move to Yesterday' }));
+      await waitFor(() => expect(moveCalls()).toHaveLength(1));
+      expect(moveCalls()[0][1].selectedIds).toEqual(['new-head']);
+    });
+  });
+});
+
+// Every way new food reaches the day, each through the surface a person uses.
+describe('TodayView — the day fix after every kind of add', () => {
+  const today = localTodayISO();
+  const yesterday = addDaysISO(today, -1);
+  const row = (uuid, name, extra = {}) => ({ uuid, id: uuid, name, item: name, calories: 100, grams: 100, unit: 'g', amount: 100, color: 'green',
+    date: today, mealTime: 'morning', kind: 'item', version: 1, ...extra });
+  const parsed = { committed: true, outcome: 'committed', undoToken: 'meal-typed', logId: 'log-9', mealTime: 'morning', date: today,
+    entryIds: ['eggs'], items: [{ uuid: 'eggs', kind: 'item', label: 'Eggs' }] };
+  const eggs = row('eggs', 'Eggs', { logId: 'log-9' });
+  const earlierShake = row('old-shake', 'Earlier shake', { logId: 'QUICKADD' });
+  const shake = row('new-shake', 'Protein shake', { logId: 'QUICKADD' });
+  const api = ({ items = [earlierShake, eggs], routes = {} } = {}) => async (path, body, method) => {
+    const route = Object.keys(routes).find(key => path.includes(key));
+    if (route) return routes[route](body, path);
+    if (path.includes('health/day?')) return { items, budget: BUDGET };
+    if (path.includes('catalog/suggest') || path.includes('catalog/shortlist')) return { items: [{ id: 'cat-1', name: 'Protein shake', nutrients: { calories: 160 } }] };
+    if (path.endsWith('nutrition/input')) return parsed;
+    if (path.endsWith('nutrition/foods-move')) return { committed: true, undoToken: 'meal-move', date: today, toDate: body.toDate, items: [] };
+    return baseApi()(path, body, method);
+  };
+  const moved = () => apiMock.mock.calls.filter(([path]) => path.endsWith('nutrition/foods-move')).map(([, body]) => body);
+  const view = () => <TodayView onSetupGoals={() => {}} onCoachTap={() => {}} />;
+  const live = () => r(<HealthOperationsProvider userId="u">{view()}</HealthOperationsProvider>);
+  const typeSentence = async text => {
+    const input = await screen.findByRole('combobox', { name: 'Add to Breakfast' });
+    input.focus();
+    fireEvent.change(input, { target: { value: text } });
+    fireEvent.keyDown(input, { key: 'Enter' });
+  };
+  const pickSuggestion = async () => {
+    const input = await screen.findByRole('combobox', { name: 'Add to Breakfast' });
+    fireEvent.focus(input);
+    fireEvent.change(input, { target: { value: 'shake' } });
+    fireEvent.click(await screen.findByRole('option', { name: /Protein shake/ }));
+  };
+  const moveToYesterday = async expected => {
+    fireEvent.click(await screen.findByRole('button', { name: 'Move to Yesterday' }));
+    await waitFor(() => expect(moved()).toHaveLength(1));
+    expect(moved()[0]).toMatchObject({ toDate: yesterday, selectedIds: expected });
+    expect(await screen.findByRole('button', { name: 'Undo move' })).toBeTruthy();
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Move to Yesterday' })).toBeNull());
+  };
+  const quickAdded = { logged: true, committed: true, item: { ...shake } };
+  const offersLogged = () => loggedEvents.filter(([event]) => event === 'capture.offer');
+
+  beforeEach(() => { apiMock.mockReset(); resetApiResourceCache(); barcodeProps.current = null; customFoodProps.current = null; loggedEvents.length = 0; });
+
+  it('a voice capture reaches the toast, logs its offer and moves', async () => {
+    apiMock.mockImplementation(api());
+    r(view());
+    fireEvent.click(await screen.findByText('MockVoiceCapture-morning'));
+    expect(await screen.findByText('Added Eggs to Today, Breakfast')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Undo meal change' })).toBeTruthy();
+    expect(offersLogged()).toHaveLength(1);
+    await moveToYesterday(['eggs']);
+  });
+
+  it('in the live app, food filed on another day moves from there and its Undo works', async () => {
+    const there = row('eggs', 'Eggs', { logId: 'log-9', date: yesterday });
+    apiMock.mockImplementation(api({ items: [earlierShake], routes: {
+      [`health/day?date=${yesterday}`]: () => ({ items: [there], budget: BUDGET }),
+      'nutrition/input': () => ({ ...parsed, date: yesterday }),
+      'nutrition/meal-undo': () => ({ committed: true, date: yesterday, items: [there], affectedDates: [yesterday, today] }),
+    } }));
+    live();
+    await typeSentence('eggs yesterday');
+    fireEvent.click(await screen.findByRole('button', { name: 'Move to Today' }));
+    await waitFor(() => expect(moved()).toHaveLength(1));
+    expect(moved()[0]).toMatchObject({ date: yesterday, toDate: today, selectedIds: ['eggs'] });
+    fireEvent.click(await screen.findByRole('button', { name: 'Undo move' }));
+    await waitFor(() => expect(apiMock.mock.calls.some(([path, body]) => path.endsWith('nutrition/meal-undo') && body.undoToken === 'meal-move')).toBe(true));
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Undo move' })).toBeNull());
+    expect(screen.getByText('Earlier shake')).toBeTruthy();
+  });
+
+  it('a captured dish header whose parts are all from elsewhere says it cannot move alone', async () => {
+    const head = row('head', 'Plate', { kind: 'group', logId: 'log-9', calories: 0 });
+    const other = row('other', 'Older side', { parentId: 'head', logId: 'log-0' });
+    apiMock.mockImplementation(api({ items: [head, other], routes: { 'nutrition/input': () => ({ ...parsed, entryIds: ['head', 'lost'],
+      items: [{ uuid: 'head', kind: 'group', label: 'Plate' }, { uuid: 'lost', kind: 'item', label: 'Gone' }] }) } }));
+    r(view());
+    fireEvent.click(await screen.findByText('MockVoiceCapture-morning'));
+    fireEvent.click(await screen.findByRole('button', { name: 'Move to Yesterday' }));
+    expect(await screen.findByText("Plate is part of a dish and can't move alone.")).toBeTruthy();
+    expect(moved()).toHaveLength(0);
+  });
+
+  describe('a move whose outcome is unknown', () => {
+    const there = row('eggs', 'Eggs', { logId: 'log-9', date: yesterday });
+    const bad = () => Object.assign(new Error('Bad gateway'), { status: 502 });
+    const fromYesterday = move => api({ items: [earlierShake], routes: {
+      [`health/day?date=${yesterday}`]: () => ({ items: [there], budget: BUDGET }),
+      'nutrition/input': () => ({ ...parsed, date: yesterday }),
+      'nutrition/foods-move': move,
+    } });
+    const attempts = () => moved().map(body => body.operationId);
+
+    it('retries from the toast as the same operation and ends like any move', async () => {
+      let sent = 0;
+      apiMock.mockImplementation(fromYesterday(body => { if (++sent === 1) throw bad(); return { committed: true, undoToken: 'meal-move', date: yesterday, toDate: body.toDate, items: [] }; }));
+      live();
+      await typeSentence('eggs yesterday');
+      fireEvent.click(await screen.findByRole('button', { name: 'Move to Today' }));
+      fireEvent.click(await screen.findByRole('button', { name: 'Retry moving Eggs' }));
+      await waitFor(() => expect(attempts()).toHaveLength(2));
+      expect(attempts()[1]).toBe(attempts()[0]);
+      expect(await screen.findByRole('button', { name: 'Undo move' })).toBeTruthy();
+      await waitFor(() => expect(screen.queryByText('Added Eggs to Yesterday, Breakfast')).toBeNull());
+    });
+
+    it('a retry the server refuses gives the day buttons back', async () => {
+      let sent = 0;
+      apiMock.mockImplementation(fromYesterday(() => { if (++sent === 1) throw bad(); throw Object.assign(new Error('changed'), { status: 409 }); }));
+      live();
+      await typeSentence('eggs yesterday');
+      fireEvent.click(await screen.findByRole('button', { name: 'Move to Today' }));
+      fireEvent.click(await screen.findByRole('button', { name: 'Retry moving Eggs' }));
+      expect(await screen.findByRole('button', { name: 'Move to Today' })).toBeTruthy();
+      expect(screen.queryByRole('button', { name: 'Retry moving Eggs' })).toBeNull();
+    });
+  });
+
+  describe('a toast does not outlive its food', () => {
+    const lunchShake = row('new-shake', 'Protein shake', { logId: 'QUICKADD', mealTime: 'afternoon' });
+    const lunchAdded = { logged: true, committed: true, item: { ...lunchShake } };
+    const openBreakfast = async () => fireEvent.click(await screen.findByRole('button', { name: 'Breakfast actions' }));
+    // The toast is briefly absent while its Undo hands over, so wait for that to finish.
+    const staysGone = async text => {
+      await screen.findByRole('button', { name: 'Undo move' });
+      await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)); });
+      expect(screen.queryByText(text)).toBeNull();
+    };
+
+    it('moving the meal to another day from its menu retires the toast and leaves other food\'s offer', async () => {
+      apiMock.mockImplementation(api({ items: [eggs, lunchShake], routes: { 'catalog/quickadd': () => lunchAdded } }));
+      live();
+      await pickSuggestion();
+      await screen.findByText('Added Protein shake to Today, Lunch');
+      await typeSentence('two eggs');
+      await screen.findByText('Added Eggs to Today, Breakfast');
+      await openBreakfast();
+      fireEvent.click(await screen.findByRole('menuitem', { name: 'Yesterday' }));
+      await waitFor(() => expect(moved()).toHaveLength(1));
+      await staysGone('Added Eggs to Today, Breakfast');
+      expect(screen.getByText('Added Protein shake to Today, Lunch')).toBeTruthy();
+    });
+
+    it('a meal-only move keeps the day fix and stops naming the old meal', async () => {
+      apiMock.mockImplementation(api({ items: [eggs] }));
+      r(view());
+      fireEvent.click(await screen.findByText('MockVoiceCapture-morning'));
+      await screen.findByText('Added Eggs to Today, Breakfast');
+      await openBreakfast();
+      fireEvent.click(await screen.findByRole('menuitem', { name: 'Move all of Breakfast to Dinner' }));
+      expect(await screen.findByText('Added Eggs to Today')).toBeTruthy();
+      expect(screen.queryByText('Added Eggs to Today, Breakfast')).toBeNull();
+      expect(screen.queryByRole('button', { name: 'Undo meal change' })).toBeNull();
+      expect(await screen.findByRole('button', { name: 'Move to Yesterday', hidden: true })).toBeTruthy();
+    });
+
+    it('a toast Retry that lands the move retires the toast, with no error row in the meal', async () => {
+      let sent = 0;
+      apiMock.mockImplementation(api({ items: [eggs], routes: { 'nutrition/foods-move': body => {
+        if (++sent === 1) throw Object.assign(new Error('Bad gateway'), { status: 502 });
+        return { committed: true, undoToken: 'meal-move', date: today, toDate: body.toDate, items: [] };
+      } } }));
+      live();
+      await typeSentence('two eggs');
+      fireEvent.click(await screen.findByRole('button', { name: 'Move to Yesterday' }));
+      fireEvent.click(await screen.findByRole('button', { name: 'Retry moving Eggs' }));
+      expect(document.querySelector('.health-meal [role=alert]')).toBeNull();
+      await staysGone('Added Eggs to Today, Breakfast');
+      expect(moved()[1].operationId).toBe(moved()[0].operationId);
+    });
+  });
+
+  it('a photo capture logs its offer', async () => {
+    apiMock.mockImplementation(api());
+    r(view());
+    fireEvent.click(await screen.findByText('MockPhotoCapture-morning'));
+    await screen.findByText('Added Eggs to Today, Breakfast');
+    expect(offersLogged()).toHaveLength(1);
+  });
+
+  it('a voice retry reaches the toast and logs its offer', async () => {
+    let attempts = 0;
+    apiMock.mockImplementation(api({ routes: { 'nutrition/input': () => (++attempts === 1
+      ? { transcribeFailed: true, audioRef: 'va_saved', responseText: 'Recording saved. Try again.' } : parsed) } }));
+    r(view());
+    fireEvent.click(await screen.findByText('MockVoiceCapture-morning'));
+    fireEvent.click(await screen.findByRole('button', { name: 'Try again' }));
+    expect(await screen.findByText('Added Eggs to Today, Breakfast')).toBeTruthy();
+    expect(offersLogged()).toHaveLength(1);
+  });
+
+  it('moving one add keeps the other capture\'s day fix and drops only its Undo', async () => {
+    apiMock.mockImplementation(api({ items: [earlierShake, shake, eggs], routes: { 'catalog/quickadd': () => quickAdded } }));
+    live();
+    await typeSentence('two eggs');
+    await screen.findByRole('button', { name: 'Undo meal change' });
+    await pickSuggestion();
+    fireEvent.click(await screen.findByRole('button', { name: 'Move Protein shake to Yesterday' }));
+    expect(screen.getByRole('button', { name: 'Move Eggs to Yesterday' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Move Eggs to another day' })).toBeTruthy();
+    expect(await screen.findByRole('button', { name: 'Undo move' })).toBeTruthy();
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Undo meal change' })).toBeNull());
+    await screen.findByText('Added Eggs to Today, Breakfast');
+    fireEvent.click(await screen.findByRole('button', { name: 'Move to Yesterday' }));
+    await waitFor(() => expect(moved()).toHaveLength(2));
+    expect(moved()[1].selectedIds).toEqual(['eggs']);
+  });
+
+  it.each([
+    ['Trail mix', ['trail'], ['Added Eggs to Today, Breakfast', 'Added Protein shake to Today, Breakfast']],
+    ['Protein shake', ['new-shake'], ['Added Eggs to Today, Breakfast', 'Added Trail mix to Today, Breakfast']],
+    ['Eggs', ['eggs'], ['Added Trail mix to Today, Breakfast', 'Added Protein shake to Today, Breakfast']],
+  ])('moving %s leaves the other two foods\' offers', async (food, selectedIds, kept) => {
+    const trail = row('trail', 'Trail mix', { logId: 'QUICKADD' });
+    const catalog = { 'cat-1': shake, 'cat-2': trail };
+    apiMock.mockImplementation(api({ items: [shake, trail, eggs], routes: {
+      'catalog/suggest': () => ({ items: [{ id: 'cat-1', name: 'Protein shake', nutrients: { calories: 160 } }, { id: 'cat-2', name: 'Trail mix', nutrients: { calories: 200 } }] }),
+      'catalog/quickadd': body => ({ logged: true, committed: true, item: { ...catalog[body.catalogEntryId] } }),
+    } }));
+    live();
+    const input = await screen.findByRole('combobox', { name: 'Add to Breakfast' });
+    fireEvent.focus(input);
+    fireEvent.change(input, { target: { value: 'tr' } });
+    fireEvent.click(await screen.findByRole('option', { name: /Trail mix/ }));
+    await screen.findByText('Added Trail mix to Today, Breakfast');
+    await pickSuggestion();
+    await screen.findByText('Added Protein shake to Today, Breakfast');
+    await typeSentence('two eggs');
+    await screen.findByRole('button', { name: 'Undo meal change' });
+    fireEvent.click(screen.getByRole('button', { name: `Move ${food} to Yesterday` }));
+    await waitFor(() => expect(moved()).toHaveLength(1));
+    expect(moved()[0].selectedIds).toEqual(selectedIds);
+    await screen.findByRole('button', { name: 'Undo move' });
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)); });
+    for (const label of kept) expect(screen.getByText(label)).toBeTruthy();
+    expect(screen.queryByText(`Added ${food} to Today, Breakfast`)).toBeNull();
+  });
+
+  it('a later capture with an Undo leaves an unrelated offer in place', async () => {
+    apiMock.mockImplementation(api({ items: [earlierShake, shake, eggs], routes: { 'catalog/quickadd': () => quickAdded } }));
+    live();
+    await pickSuggestion();
+    await screen.findByText('Added Protein shake to Today, Breakfast');
+    await typeSentence('two eggs');
+    await screen.findByText('Added Eggs to Today, Breakfast');
+    expect(screen.getByText('Added Protein shake to Today, Breakfast')).toBeTruthy();
+  });
+
+  it('a later result for the same food replaces its offer', async () => {
+    const sameRow = { ...parsed, logId: 'QUICKADD', undoToken: 'meal-same', entryIds: ['new-shake'], items: [{ uuid: 'new-shake', kind: 'item', label: 'Shake again' }] };
+    apiMock.mockImplementation(api({ items: [shake], routes: { 'catalog/quickadd': () => quickAdded, 'nutrition/input': () => sameRow } }));
+    live();
+    await pickSuggestion();
+    await screen.findByText('Added Protein shake to Today, Breakfast');
+    await typeSentence('shake');
+    await screen.findByText('Added Shake again to Today, Breakfast');
+    await waitFor(() => expect(screen.queryByText('Added Protein shake to Today, Breakfast')).toBeNull());
+    expect(screen.getByRole('button', { name: 'Move to Yesterday' })).toBeTruthy();
+  });
+
+  it('dismissing a capture toast removes its offer too', async () => {
+    apiMock.mockImplementation(api());
+    r(view());
+    fireEvent.click(await screen.findByText('MockVoiceCapture-morning'));
+    await screen.findByText('Added Eggs to Today, Breakfast');
+    fireEvent.click(screen.getByRole('button', { name: 'Dismiss' }));
+    await waitFor(() => expect(screen.queryByText('Added Eggs to Today, Breakfast')).toBeNull());
+  });
+
+  it('a typed sentence in the live app gets the toast, its Undo and no second success line', async () => {
+    apiMock.mockImplementation(api({ routes: { 'nutrition/input': () => ({ ...parsed, mealTime: 'afternoon' }) } }));
+    live();
+    await typeSentence('two eggs');
+    expect(await screen.findByText('Added Eggs to Today, Lunch')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Undo meal change' })).toBeTruthy();
+    await waitFor(() => expect(screen.queryByText(/^Added to/)).toBeNull());
+    await moveToYesterday(['eggs']);
+  });
+
+  it('a typed sentence without the operations session gets the same toast', async () => {
+    apiMock.mockImplementation(api());
+    r(view());
+    await typeSentence('two eggs');
+    expect(await screen.findByText('Added Eggs to Today, Breakfast')).toBeTruthy();
+    await moveToYesterday(['eggs']);
+  });
+
+  it('a typed meal instruction gets no day offer', async () => {
+    apiMock.mockImplementation(api({ routes: { 'nutrition/input': () => ({ committed: true, undoToken: 'meal-amend', logId: null, items: [eggs] }) } }));
+    live();
+    await typeSentence('double the eggs');
+    await waitFor(() => expect(apiMock.mock.calls.some(([path]) => path.endsWith('nutrition/input'))).toBe(true));
+    await act(async () => {});
+    expect(screen.queryByRole('button', { name: 'Move to Yesterday' })).toBeNull();
+  });
+
+  it.each([['the live app', live], ['no operations session', () => r(view())]])('a picked suggestion in %s moves only its own row and shows no Undo', async (_name, mount) => {
+    apiMock.mockImplementation(api({ items: [earlierShake, shake], routes: { 'catalog/quickadd': () => quickAdded } }));
+    mount();
+    await pickSuggestion();
+    expect(await screen.findByText('Added Protein shake to Today, Breakfast')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Undo meal change' })).toBeNull();
+    await moveToYesterday(['new-shake']);
+  });
+
+  it('an add with no Undo of its own leaves an earlier capture Undo in place', async () => {
+    apiMock.mockImplementation(api({ items: [earlierShake, shake, eggs], routes: { 'catalog/quickadd': () => quickAdded } }));
+    live();
+    await typeSentence('two eggs');
+    expect(await screen.findByRole('button', { name: 'Undo meal change' })).toBeTruthy();
+    await pickSuggestion();
+    expect(await screen.findByText('Added Protein shake to Today, Breakfast')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Undo meal change' })).toBeTruthy();
+  });
+
+  it('a scanned barcode gets the toast and its Undo', async () => {
+    apiMock.mockImplementation(api({ routes: { 'nutrition/input': () => ({ ...parsed, moved: true, mealTime: 'afternoon', undoToken: 'meal-upc' }) } }));
+    r(view());
+    await waitFor(() => expect(barcodeProps.current).toBeTruthy());
+    await act(async () => { await barcodeProps.current.onDecode('037000338369', 'morning'); });
+    expect(await screen.findByText('Added Eggs to Today, Lunch')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Undo meal change' })).toBeTruthy();
+    expect(screen.queryByText('Moved to Lunch')).toBeNull();
+    await moveToYesterday(['eggs']);
+  });
+
+  it('a barcode held for review gets no offer', async () => {
+    apiMock.mockImplementation(api({ routes: { 'nutrition/input': () => ({ committed: false, outcome: 'needs-review', logId: 'held', message: 'Needs review' }) } }));
+    r(view());
+    await waitFor(() => expect(barcodeProps.current).toBeTruthy());
+    await act(async () => { await barcodeProps.current.onDecode('037000338369', 'morning'); });
+    expect(await screen.findByText('Needs review')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Move to Yesterday' })).toBeNull();
+  });
+
+  it('a food created for an unknown barcode gets the toast without an Undo', async () => {
+    apiMock.mockImplementation(api({ items: [earlierShake, shake] }));
+    r(view());
+    await waitFor(() => expect(customFoodProps.current).toBeTruthy());
+    await act(async () => { customFoodProps.current.onCreated(quickAdded); });
+    expect(await screen.findByText('Added Protein shake to Today, Breakfast')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Undo meal change' })).toBeNull();
+    await moveToYesterday(['new-shake']);
+  });
+
+  it('a logged saved meal moves whole, and earlier rows of the same kind stay', async () => {
+    const earlierMeal = row('old-meal', 'Earlier toast', { logId: 'TEMPLATE' });
+    const header = row('meal-head', 'Protein breakfast', { kind: 'group', logId: 'TEMPLATE', calories: 0 });
+    const toast = row('meal-toast', 'Toast', { parentId: 'meal-head', logId: 'TEMPLATE' });
+    const template = { id: 't2', name: 'Saved plate', status: 'active', source: 'manual', components: [{ name: 'Toast', calories: 100, role: 'core' }] };
+    apiMock.mockImplementation(api({ items: [earlierMeal, header, toast], routes: {
+      'nutrition/templates?': () => ({ templates: [template] }),
+      'templates/t2/instantiate': () => ({ committed: true, groupUuid: 'meal-head', items: [header, toast] }),
+    } }));
+    r(view());
+    fireEvent.click(await screen.findByRole('button', { name: 'Saved meals for Breakfast' }));
+    fireEvent.click(await screen.findByText('Saved plate'));
+    expect(await screen.findByText('Added Toast to Today, Breakfast')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Undo meal change' })).toBeNull();
+    await moveToYesterday(['meal-head']);
+  });
+
+  it('food confirmed from Needs Review is found by its log', async () => {
+    const pending = { id: 'held-log', version: 'v1', date: today, source: 'telegram', mealTime: 'morning', items: [{ id: 'held-1', label: 'Held shake', calories: 160 }] };
+    let confirmed = false;
+    const heldRow = row('held-row', 'Held shake', { logId: 'held-log' });
+    apiMock.mockImplementation(async (path, body, method) => {
+      if (path.endsWith('pending/held-log/review')) { confirmed = true; return { success: true, logUuid: 'held-log', status: 'accepted' }; }
+      if (path.includes('nutrition/pending')) return { pending: confirmed ? [] : [pending] };
+      if (path.includes('health/day?')) return { items: confirmed ? [heldRow] : [], budget: BUDGET };
+      return api()(path, body, method);
+    });
+    r(view());
+    fireEvent.click(await screen.findByRole('button', { name: /^Review food$/ }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Confirm food' }));
+    expect(await screen.findByText('Added Held shake to Today, Breakfast')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Undo meal change' })).toBeNull();
+    await waitFor(() => expect(document.querySelector('.health-row__name')?.textContent).toBe('Held shake'));
+    await moveToYesterday(['held-row']);
+  });
+
+  it('a meal copied to today is a plain notice with no day buttons', async () => {
+    const source = row('source', 'Oatmeal', { date: yesterday });
+    apiMock.mockImplementation(api({ items: [source], routes: { 'nutrition/copy': () => ({ committed: true, items: [row('copy-1', 'Oatmeal', { logId: 'COPY' })], affectedIds: ['copy-1'], affectedDates: [today] }) } }));
+    render(<MemoryRouter initialEntries={[`/?date=${yesterday}`]}><MantineProvider>{view()}</MantineProvider></MemoryRouter>);
+    fireEvent.click(await screen.findByRole('button', { name: 'Breakfast actions' }));
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Copy to today' }));
+    expect(await screen.findByText('Breakfast copied to today.')).toBeTruthy();
+    // The day input's own whole-day button is always on a day with food.
+    expect(screen.queryByRole('button', { name: /^Move(?! this day's food$)/, hidden: true })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Other day…', hidden: true })).toBeNull();
+    expect(offersLogged()).toHaveLength(0);
+  });
+
 });

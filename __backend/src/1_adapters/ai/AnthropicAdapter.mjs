@@ -10,6 +10,7 @@ import { IAIGateway } from '#apps/common/ports/IAIGateway.mjs';
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
 import { estimateCostUsd } from './aiPricing.mjs';
 import { createScopedView, usageAttribution } from './usageAttribution.mjs';
+import { redactJsonExcerpt } from './jsonExcerpt.mjs';
 
 const ANTHROPIC_API_BASE = 'https://api.anthropic.com/v1';
 const ANTHROPIC_VERSION = '2023-06-01';
@@ -369,7 +370,7 @@ export class AnthropicAdapter extends IAIGateway {
       return JSON.parse(jsonStr);
     } catch (directError) {
       this.logger.debug?.('anthropic.json.attemptRepair', {
-        error: directError.message,
+        error: redactJsonExcerpt(directError.message),
         position: directError.message.match(/position (\d+)/)?.[1],
       });
 
@@ -378,7 +379,7 @@ export class AnthropicAdapter extends IAIGateway {
         const repaired = this.#repairJSON(jsonStr);
         const parsed = JSON.parse(repaired);
         this.logger.info?.('anthropic.json.repairSucceeded', {
-          originalError: directError.message,
+          originalError: redactJsonExcerpt(directError.message),
         });
         return parsed;
       } catch (repairError) {
@@ -386,7 +387,7 @@ export class AnthropicAdapter extends IAIGateway {
         const error = new Error(`JSON parse failed: ${directError.message}`);
         error.originalError = directError;
         error.repairError = repairError;
-        error.sample = jsonStr.substring(0, 200);
+        error.sampleLength = jsonStr.length;
         throw error;
       }
     }
@@ -435,22 +436,22 @@ export class AnthropicAdapter extends IAIGateway {
         this.logger.warn?.('anthropic.json.parseError', {
           attempt,
           maxAttempts: maxParseAttempts,
-          error: parseError.message,
-          sample: parseError.sample,
+          error: redactJsonExcerpt(parseError.message),
+          sampleLength: parseError.sampleLength,
         });
 
         if (isLastAttempt) {
           this.logger.error?.('anthropic.json.exhausted', {
             attempts: maxParseAttempts,
-            originalError: parseError.originalError?.message,
-            repairError: parseError.repairError?.message,
+            originalError: redactJsonExcerpt(parseError.originalError?.message),
+            repairError: redactJsonExcerpt(parseError.repairError?.message),
           });
 
           throw new InfrastructureError('Failed to parse JSON response after all attempts', {
             code: 'INVALID_JSON_RESPONSE',
             service: 'Anthropic',
             attempts: maxParseAttempts,
-            details: parseError.message,
+            details: redactJsonExcerpt(parseError.message),
           });
         }
 

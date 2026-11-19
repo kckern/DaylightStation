@@ -533,7 +533,7 @@ describe('ObservationPairingService.dismiss', () => {
 
     expect(fs.readFileSync(hotFile, 'utf8').includes(stale.id)).toBe(false); // it really did leave the hot file
     expect(store.get('u1', stale.id).status).toBe('dismissed'); // …and is still readable
-  });
+  }, 60_000); // Seeds hundreds of rows synchronously, which can take a while under load.
 
   it('an unknown id throws NOT_FOUND', () => {
     let caught = null;

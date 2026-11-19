@@ -10,6 +10,8 @@
  * @module 5_composition/modules/pianoScreenPowerSync
  */
 
+import { getPianoWakeHoldSync } from './wake-hold-sync.mjs';
+import { resolvePianoBridgeEndpoint, DAYLIGHT_ANDROID } from './bridge-endpoint.mjs';
 import { PianoScreenAuthorityService } from '../application/services/PianoScreenAuthorityService.mjs';
 import { NodeApplicationScheduler } from '#adapters/scheduling/NodeApplicationScheduler.mjs';
 
@@ -34,7 +36,8 @@ export function createPianoScreenPowerSync({
     return { pianoScreenAuthorityService: instance };
   }
 
-  const cfg = configService?.getHouseholdAppConfig?.(householdId, 'piano')?.screen_power_sync;
+  const piano = configService?.getHouseholdAppConfig?.(householdId, 'piano');
+  const cfg = piano?.screen_power_sync;
   if (!cfg?.enabled) {
     logger.info?.('piano-screen-authority.disabled', { enabled: !!cfg?.enabled });
     return { pianoScreenAuthorityService: null };
@@ -64,7 +67,14 @@ export function createPianoScreenPowerSync({
     return { pianoScreenAuthorityService: null };
   }
 
+  let prepareWake = null;
+  if (piano.bridge_provider === DAYLIGHT_ANDROID) {
+    const endpoint = resolvePianoBridgeEndpoint({ piano, deviceId, configService, logger });
+    const sync = getPianoWakeHoldSync({ endpoint, deviceId, getScreenOverrideService, logger });
+    prepareWake = () => sync?.prepareWake() ?? false;
+  }
   const service = new PianoScreenAuthorityService({
+    prepareWake,
     haGateway,
     deviceService,
     logger,

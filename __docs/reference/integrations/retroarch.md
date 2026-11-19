@@ -204,6 +204,43 @@ device without `bluetooth_bridge` returns an explicit 503. The route must be lis
 in the v1 `routeMap` (`__backend/src/4_api/v1/routers/api.mjs`) — registering it in
 `v1Routers` alone 404s. Existing garage BlueZ pairing stays separate.
 
+**On a device running the DaylightStation Android kiosk app**
+(`content_control.provider: daylight-android`) the same `/bluetooth` routes are
+served by the kiosk app itself, on the device's control port and behind the
+control API token. There is no second port and no `url`:
+
+```yaml
+content_control:
+  provider: daylight-android
+  host: {device-address}
+  port: {control-port}
+  auth_ref: daylight-android     # token from the household auth file, per device id
+bluetooth_bridge:                # still the opt-in; a `url` here is ignored
+  pairing:
+    steps:
+      - "..."
+```
+
+The browser calls the same `/api/v1/arcade-bluetooth/:deviceId` paths, and the
+screen behaves the same. The backend picks the adapter per device:
+`AudioBridgeBluetoothAdapter` for a device that names a `bluetooth_bridge.url`,
+`DaylightAndroidBluetoothAdapter` for a `daylight-android` device. A house can
+hold both. What differs on the Android kiosk app:
+
+| From the device | Answer to the browser |
+|---|---|
+| success, HTTP 409, or a body `code: action_rejected` | as with the audio-bridge: 200/202, or 409 `bridge_rejected` |
+| HTTP 401 (token missing or wrong) | 502 `auth_rejected` |
+| HTTP 405 or 501 (the app does not have that action in gamepad mode) | 501 `unsupported` |
+| timeout / unreachable | 504 `timeout` / 502 `unreachable` |
+
+The token is sent only as the `X-Daylight-Token` header. Nothing the device
+says in a refusal is returned or logged, since it can quote a pairing PIN. A
+`daylight-android` device with no `bluetooth_bridge` block, no control address
+or no token entry answers 503 (`arcade.bluetooth.unconfigured`). `power` is not
+an action this screen sends on either kind of device.
+
+The rest of this section is about the audio-bridge app.
 Installation needs the original APK signing key and Bluetooth discovery permissions.
 Do not uninstall a working audio-bridge to work around a signing mismatch. Do not
 replace/restart it during a game or microphone call. See the audio-bridge module's

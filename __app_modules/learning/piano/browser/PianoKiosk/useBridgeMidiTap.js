@@ -1,3 +1,4 @@
+import { pianoToolResponse, inDaylightShell } from './pianoPageTools.js';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import getLogger from '../../../../../frontend/src/lib/logging/Logger.js';
 import { bridgeHostPlausible } from './bridgeHost.js';
@@ -20,7 +21,7 @@ export function useBridgeMidiTap({ enabled, intervalMs = 400, fetchImpl } = {}) 
 
   useEffect(() => {
     if (!enabled) { setState('off'); return undefined; }
-    if (!fetchImpl && !bridgeHostPlausible()) {
+    if (!inDaylightShell() && !fetchImpl && !bridgeHostPlausible()) {
       setState('unavailable');
       logger.info('piano.midi-tap.unavailable', { reason: 'no-bridge-host' });
       return undefined;
@@ -34,7 +35,8 @@ export function useBridgeMidiTap({ enabled, intervalMs = 400, fetchImpl } = {}) 
 
     const poll = async () => {
       try {
-        const res = await doFetch(TAP_URL, { cache: 'no-store' });
+        const res = await pianoToolResponse('midiTap', [], () => doFetch(TAP_URL, { cache: 'no-store' }));
+        if (res.ok === false) throw new Error('MIDI tap unavailable');
         const body = await res.json();
         if (stopped) return;
         const { total, lines } = newChunks(body?.tap, memo.current.total);

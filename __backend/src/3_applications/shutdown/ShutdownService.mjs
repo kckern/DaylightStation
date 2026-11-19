@@ -3,10 +3,12 @@ import { composeKioskShutdownPush } from '#domains/shutdown/shutdownPush.mjs';
 
 /** Owns activation plus periodic disk→websocket→Portal reconciliation. */
 export class ShutdownService {
-  #supervision; #repo; #notifier; #policy; #cue; #portal; #timezone; #logger; #scheduleEvery; #cancelSchedule = null; #signature = null; #portalSignature = null; #incidentReporter; #portalDeviceId; #health=null; #incidentReportingError=null; #portalJob=null; #clock;
-  constructor({ repo, notifier, getPolicy, cue = null, portal = null, timezone = null, scheduleEvery = null, supervision = null, incidentReporter = null, portalDeviceId = 'portal', clock = {now:()=>Date.now()}, logger = console } = {}) {
+  #supervision; #repo; #notifier; #policy; #cue; #portal; #timezone; #logger; #scheduleEvery; #cancelSchedule = null; #signature = null; #portalSignature = null; #incidentReporter; #portalDeviceId; #health=null; #incidentReportingError=null; #incidentReporting; #portalJob=null; #clock;
+  constructor({ repo, notifier, getPolicy, cue = null, portal = null, timezone = null, scheduleEvery = null, supervision = null, incidentReporter = null, incidentReporting = null, portalDeviceId = 'portal', clock = {now:()=>Date.now()}, logger = console } = {}) {
     if (!repo || !notifier?.publishState || !getPolicy) throw new Error('ShutdownService: repo, notifier, getPolicy required');
     this.#clock=clock;this.#supervision = supervision; this.#incidentReporter=incidentReporter;this.#portalDeviceId=portalDeviceId;
+    // 'not-writer' when another backend owns the incident ledger (LedgerWriterGate).
+    this.#incidentReporting=incidentReporting??(incidentReporter?'active':'unavailable');
     this.#repo = repo; this.#notifier = notifier; this.#policy = getPolicy; this.#cue = cue; this.#portal = portal; this.#timezone = timezone;
     this.#scheduleEvery = scheduleEvery; this.#logger = logger;
   }
@@ -40,7 +42,7 @@ export class ShutdownService {
     if(this.#supervision)return this.#supervision.status(target);
     const {state,invalid}=await this.#repo.read(),incidents=await this.#incidents();
     return {locked:invalid || (!!state && state.isActive(now) && (target===null || state.includes(target))),lockedUntil:state?.lockedUntil??null,invalid,
-      enforcement:{incidentReportingError:this.#incidentReportingError,consumers:[structuredClone(this.#health??{deviceId:this.#portalDeviceId,capability:'portal-keys',acknowledged:false,error:'ACKNOWLEDGEMENT_UNAVAILABLE'})],incidents}};
+      enforcement:{incidentReporting:this.#incidentReporting,incidentReportingError:this.#incidentReportingError,consumers:[structuredClone(this.#health??{deviceId:this.#portalDeviceId,capability:'portal-keys',acknowledged:false,error:'ACKNOWLEDGEMENT_UNAVAILABLE'})],incidents}};
   }
   async diagnostics(now=this.#clock.now()){
     if(this.#supervision)return this.#supervision.diagnostics();
@@ -89,7 +91,7 @@ export class ShutdownService {
     })().finally(()=>{if(this.#portalJob===job)this.#portalJob=null;});
     this.#portalJob=job;return job.promise;
   }
-  async #observe(nowMs){try{await this.#incidentReporter?.observe({health:[structuredClone(this.#health)],nowMs});this.#incidentReportingError=null;}catch{this.#incidentReportingError='INCIDENT_REPORTING_UNAVAILABLE';this.#logger.warn?.('shutdown.incident.reporting_failed',{error:this.#incidentReportingError});}}
+  async #observe(nowMs){try{await this.#incidentReporter?.observe({health:[structuredClone(this.#health)],nowMs});this.#incidentReportingError=null;}catch(error){this.#incidentReportingError='INCIDENT_REPORTING_UNAVAILABLE';this.#logger.warn?.('shutdown.incident.reporting_failed',{error:this.#incidentReportingError,code:error?.code??null,message:error?.message??String(error)});}}
   async #incidents(){try{return await this.#incidentReporter?.incidents?.()??[];}catch{this.#incidentReportingError='INCIDENT_REPORTING_UNAVAILABLE';return [];}}
   async reconcile(now = this.#clock.now()) {
     if (this.#supervision) return this.#supervision.reconcile();

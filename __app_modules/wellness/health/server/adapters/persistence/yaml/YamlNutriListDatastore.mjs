@@ -29,11 +29,35 @@ import { isCountedRow } from '../../../../portable/contracts/nutrition/countedRo
 import { isReconstructedRow } from '../../../../portable/contracts/nutrition/reconstruction.mjs';
 import { INutriListDatastore } from "../../../application/nutrition/ports/INutriListDatastore.mjs";
 import { shortIdFromUuid } from '#system/utils/id.mjs';
+import { nowTs24 } from '#system/utils/time.mjs';
 import { InfrastructureError } from '#system/utils/errors/index.mjs';
 
 const ARCHIVE_RETENTION_DAYS = 30;
 const NOOM_EMOJI = { green: '🟢', yellow: '🟡', orange: '🟠' };
 const operationContext = new AsyncLocalStorage();
+/**
+ * Newest day first. Rows of one day keep the order they were written in, which
+ * is the order the day view shows, so a capture time must not reorder them.
+ */
+const byDayDescending = (a, b) => (b.date || b.createdAt || '').localeCompare(a.date || a.createdAt || '');
+const FIELD_NAMES = { label: 'name', item: 'name' };
+/**
+ * `revisedFields` lists fields last set by a voice correction, which a later
+ * correction may replace. A write that records a person's edit (it sets
+ * `manualFields`) takes the fields it changed off that list, so they stay put.
+ */
+const withoutEditedRevisions = (original, changes, next) => {
+  if (!original.revisedFields?.length || !Object.hasOwn(changes, 'manualFields') || Object.hasOwn(changes, 'revisedFields')) return next;
+  const edited = new Set(Object.keys(changes)
+    .filter(key => JSON.stringify(changes[key]) !== JSON.stringify(original[key]))
+    .map(key => FIELD_NAMES[key] || key));
+  return { ...next, revisedFields: original.revisedFields.filter(field => !edited.has(FIELD_NAMES[field] || field)) };
+};
+/** The ledger committed a capture before its response could be recorded. */
+const recoveredCapture = operation => (operation?.items?.length
+  ? { committed: true, logged: true, item: operation.items[0], items: operation.items,
+    entryIds: operation.items.map(row => row.uuid || row.id), date: operation.items[0].date, mealTime: operation.items[0].mealTime }
+  : null);
 const inFlightOperations = new Map();
 
 function dehydrateNutriListItem(log, item) {
@@ -167,7 +191,27 @@ export class YamlNutriListDatastore extends INutriListDatastore {
     }
     this.#recover(userId);
     const operation = (loadYaml(this.#operationsPath(userId)) || {})[operationId];
-    return operation?.result || operation?.mutationResult || null;
+    return operation?.result || operation?.mutationResult || recoveredCapture(operation);
+  }
+
+  /**
+   * Free the ID of an operation that failed before committing anything, so a
+   * retry with fresh input is not refused as a reused ID. Anything that reached
+   * the ledger keeps its record, because that record is what a retry recovers.
+   * @returns {boolean} whether a record was removed
+   */
+  clearFailedOperation(userId, operationId) {
+    if (typeof operationId !== 'string' || !/^[A-Za-z0-9_-]{1,128}$/.test(operationId)) {
+      throw Object.assign(new Error('Invalid operation ID'), { status: 400 });
+    }
+    this.#recover(userId);
+    if (inFlightOperations.has(`${this.#operationsPath(userId)}:${operationId}`)) return false;
+    const operations = loadYaml(this.#operationsPath(userId)) || {};
+    const operation = operations[operationId];
+    if (!operation?.pending || operation.result || operation.mutationResult || operation.items?.length) return false;
+    delete operations[operationId];
+    this.#writeFile(this.#operationsPath(userId), operations);
+    return true;
   }
 
   async runOperation(userId, id, payload, action) {
@@ -182,12 +226,8 @@ export class YamlNutriListDatastore extends INutriListDatastore {
     if (inFlightOperations.has(key)) return inFlightOperations.get(key);
     if (prior?.result) return prior.result;
     if (prior?.mutationResult) return prior.mutationResult;
-    if (prior?.items?.length) {
-      // The ledger committed before the response could be recorded. Recover
-      // the committed outcome rather than calling the parser a second time.
-      return { committed: true, logged: true, item: prior.items[0], items: prior.items,
-        entryIds: prior.items.map(row => row.uuid || row.id), date: prior.items[0].date, mealTime: prior.items[0].mealTime };
-    }
+    // Recover the committed outcome rather than calling the parser a second time.
+    if (recoveredCapture(prior)) return recoveredCapture(prior);
     operations[id] = { fingerprint, pending: true };
     this.#writeFile(this.#operationsPath(userId), operations);
     const promise = operationContext.run({ userId, id, fingerprint, operation: payload.operation }, async () => {
@@ -263,7 +303,7 @@ export class YamlNutriListDatastore extends INutriListDatastore {
   }
 
   /** One validated mutation across active/archive rows and their summaries. */
-  async mutateEntries(userId, { updates = [], deleteIds = [], creates = [], audit = null, validate = null, dryRun = false, restoreAudit = null, allowFoodCreates = false, resultMeta = null } = {}) {
+  async mutateEntries(userId, { updates = [], deleteIds = [], creates = [], audit = null, validate = null, dryRun = false, restoreAudit = null, allowFoodCreates = false, resultMeta = null, auditCreated = false } = {}) {
     const documents = this.#documents(userId);
     const all = [...documents.values()].flat();
     const auditRecords = audit ? (loadYaml(this.#cleanupAuditPath(userId)) || {}) : null;
@@ -307,7 +347,7 @@ export class YamlNutriListDatastore extends INutriListDatastore {
       }
       if (changes.date != null && !isISODate(changes.date)) throw Object.assign(new Error('Invalid date'), { status: 400 });
       if (Object.entries(changes).every(([key, value]) => JSON.stringify(original[key]) === JSON.stringify(value))) continue;
-      const next = replacements.get(id) || { ...original, ...changes, version: (original.version ?? 1) + 1 };
+      const next = replacements.get(id) || withoutEditedRevisions(original, changes, { ...original, ...changes, version: (original.version ?? 1) + 1 });
       if (!replacements.has(id) && Object.hasOwn(changes, 'name')) Object.assign(next, { item: changes.name, label: changes.name });
       changed.set(original.uuid || original.id, next);
       affectedIds.add(original.uuid || original.id);
@@ -390,7 +430,7 @@ export class YamlNutriListDatastore extends INutriListDatastore {
     }
     if (audit) {
       auditRecords[audit.id] = { ...audit, userId,
-        before: all.filter(row => affectedIds.has(row.uuid || row.id)),
+        before: auditCreated ? [] : all.filter(row => affectedIds.has(row.uuid || row.id)),
         after: finalRows.filter(row => affectedIds.has(row.uuid || row.id)),
         result };
       writes.set(this.#cleanupAuditPath(userId), auditRecords);
@@ -575,11 +615,7 @@ export class YamlNutriListDatastore extends INutriListDatastore {
     }
 
     // Sort by date descending
-    items.sort((a, b) => {
-      const dateA = a.createdAt || a.date || '';
-      const dateB = b.createdAt || b.date || '';
-      return dateB.localeCompare(dateA);
-    });
+    items.sort(byDayDescending);
 
     // Save back
     this.#commitRows(nutriLog.userId, new Map([[filePath, items]]), [nutriLog.meal?.date]);
@@ -621,6 +657,9 @@ export class YamlNutriListDatastore extends INutriListDatastore {
     // Load existing items
     let items = this.#readFile(filePath);
 
+    // One save is one act, so its rows share one time.
+    const savedAt = nowTs24();
+
     // Transform new items
     const transformedItems = newItems.map(item => {
       const baseUuid = item.uuid || item.id || uuidv4();
@@ -657,6 +696,7 @@ export class YamlNutriListDatastore extends INutriListDatastore {
         mealTime: item.mealTime ?? null,
         logId: item.logId || item.log_uuid || item.logUuid,
         log_uuid: item.log_uuid || item.logUuid,
+        createdAt: item.createdAt || savedAt,
         userId: item.userId,
         kind: item.kind || 'item',
         parentId: item.parentId ?? null,
@@ -673,11 +713,7 @@ export class YamlNutriListDatastore extends INutriListDatastore {
     items.push(...transformedItems.filter(item => !existingIds.has(item.uuid) && !deleted[item.uuid]));
 
     // Sort by date descending
-    items.sort((a, b) => {
-      const dateA = a.createdAt || a.date || '';
-      const dateB = b.createdAt || b.date || '';
-      return dateB.localeCompare(dateA);
-    });
+    items.sort(byDayDescending);
 
     const affectedDates = [...new Set(transformedItems.map(i => i.date).filter(Boolean))];
     this.#commitRows(userId, new Map([[filePath, items]]), affectedDates);

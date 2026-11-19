@@ -113,6 +113,45 @@ const SETTING_SCHEMAS = Object.freeze({
   }])),
 });
 
+/**
+ * Value checks for a setting whose type the device declares. They only make
+ * the value the declared type; what the value means is the device's to judge.
+ */
+const TYPED_SETTING_NORMALIZERS = Object.freeze({
+  boolean: value => boolean(value, 'value'),
+  number: (value) => {
+    const number = typeof value === 'string' && value.trim() !== '' ? Number(value) : value;
+    if (typeof number !== 'number' || !Number.isFinite(number)) throw invalid('value must be a number', 'value');
+    return number;
+  },
+  // No range: what a sensible value is belongs to the device, which rejects
+  // one it does not accept.
+  integer: (value) => {
+    const number = typeof value === 'string' && value.trim() !== '' ? Number(value) : value;
+    if (!Number.isInteger(number)) throw invalid('value must be a whole number', 'value');
+    return number;
+  },
+  string: value => limitedText(value, 'value', { allowEmpty: true, max: 2048 }),
+});
+
+/**
+ * Settings of a self-describing device that are listed and never editable
+ * from the Admin console, whatever their type. Each one widens what the device
+ * will do or who may drive it: the debug switches (remote exec among them),
+ * the origins and start URL that receive the page bridge, the control API's
+ * own settings, and the lockdown policy. They are changed on the device.
+ */
+const PROTECTED_TYPED_SETTING_PREFIXES = Object.freeze(['debug.', 'control.', 'lockdown.']);
+const PROTECTED_TYPED_SETTING_KEYS = new Set(['webview.bridgeOrigins', 'webview.startUrl']);
+
+function isProtectedTypedSetting(key) {
+  return PROTECTED_TYPED_SETTING_KEYS.has(key)
+    || PROTECTED_TYPED_SETTING_PREFIXES.some(prefix => key.startsWith(prefix));
+}
+
+/** The console has one numeric control; an integer setting is shown as a number. */
+const consoleType = type => (type === 'integer' ? 'number' : type);
+
 const SENSITIVE_SETTING_KEYS = new Set([
   'wifiKey',
   'sebConfigKey',
@@ -196,11 +235,14 @@ export class DeviceRemoteAdministrationService {
   }
 
   async getStatus(deviceId) {
-    const result = await this.#gateway.readStatus(deviceId);
+    // `provider` rides through in the result so the console can word itself;
+    // `unsupportedActions` is the gateway saying which of the shared action
+    // names this kind of device has no equivalent for.
+    const { unsupportedActions = [], ...result } = (await this.#gateway.readStatus(deviceId)) ?? {};
     return {
       ok: true,
       ...result,
-      capabilities: { actions: Object.keys(ACTIONS) },
+      capabilities: { actions: Object.keys(ACTIONS).filter(action => !unsupportedActions.includes(action)) },
       fetchedAt: new Date().toISOString(),
     };
   }
@@ -209,7 +251,39 @@ export class DeviceRemoteAdministrationService {
     return this.#gateway.captureScreenshot(deviceId);
   }
 
+  /**
+   * Settings the device describes itself (key, type, value), or null when it
+   * does not, in which case the curated whitelist above decides what is
+   * editable.
+   */
+  async #typedSettings(deviceId) {
+    const typed = await this.#gateway.readTypedSettings?.(deviceId);
+    return Array.isArray(typed) ? typed : null;
+  }
+
   async getSettings(deviceId) {
+    const typed = await this.#typedSettings(deviceId);
+    if (typed) {
+      // A device that types its own settings rejects unknown keys and wrong
+      // types itself, so every setting it lists may be edited, except
+      // credential-like keys and types this console has no control for.
+      const settings = typed
+        .slice()
+        .sort((left, right) => left.key.localeCompare(right.key))
+        .map(({ key, type, value }) => {
+          const sensitive = isSensitiveSetting(key);
+          const editableType = Object.hasOwn(TYPED_SETTING_NORMALIZERS, type);
+          return {
+            key,
+            type: editableType ? consoleType(type) : displayType(value),
+            value: sensitive ? null : value,
+            editable: editableType && !sensitive && !isProtectedTypedSetting(key),
+            sensitive,
+          };
+        });
+      return { ok: true, settings, fetchedAt: new Date().toISOString() };
+    }
+
     const raw = await this.#gateway.readSettings(deviceId);
     const settings = Object.entries(raw || {})
       .sort(([left], [right]) => left.localeCompare(right))
@@ -253,11 +327,35 @@ export class DeviceRemoteAdministrationService {
   }
 
   async updateSetting(deviceId, key, value) {
-    const schema = SETTING_SCHEMAS[key];
-    if (!schema || isSensitiveSetting(key)) {
-      throw invalid(`Setting is not editable from the Admin console: ${key}`, 'key');
+    const notEditable = () => invalid(`Setting is not editable from the Admin console: ${key}`, 'key');
+    if (isSensitiveSetting(key)) throw notEditable();
+
+    // The curated checks come first and touch nothing but their arguments, as
+    // they always have: a bad key or value for a Fully device is refused
+    // before anything that reads the device list can fail.
+    let schema = SETTING_SCHEMAS[key] ?? null;
+    let normalized = schema ? schema.normalize(value) : undefined;
+
+    // Only then is the device asked whether it describes its own settings.
+    // For a key off the curated list, a failure that is not the gateway's own
+    // (an unreadable device list, say) leaves the answer the curated list
+    // already gave.
+    let typed;
+    try {
+      typed = await this.#typedSettings(deviceId);
+    } catch (error) {
+      if (schema || error?.name === 'DeviceRemoteGatewayError') throw error;
+      throw notEditable();
     }
-    const normalized = schema.normalize(value);
+    if (typed) {
+      const listed = typed.find(setting => setting.key === key);
+      const normalize = listed ? TYPED_SETTING_NORMALIZERS[listed.type] : null;
+      if (!listed || !normalize || isProtectedTypedSetting(key)) throw notEditable();
+      schema = { type: consoleType(listed.type), normalize };
+      normalized = normalize(value);
+    } else if (!schema) {
+      throw notEditable();
+    }
     const startedAt = Date.now();
     try {
       await this.#gateway.writeSetting(deviceId, key, normalized);

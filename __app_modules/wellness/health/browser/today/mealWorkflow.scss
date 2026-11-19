@@ -6,9 +6,57 @@
  to { background-position: 17px 0; } }
 @media (prefers-reduced-motion: reduce) { .health-capture-progress__track > span { animation: none; transition: none; } }
 .health-meal-tools, .health-meal-command-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; padding: 4px 0; }
+// Selecting adds a control here. The line scrolls rather than wraps, so opening
+// selection does not push the foods below it.
+// Zero width plus full minimum: its controls must not widen the meal (WebKit counts them).
+.health-meal-tools--selecting { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; width: 0; min-width: 100%; > * { flex: none; } }
 .health-meal-selection-row { display: flex; align-items: center; gap: 4px; }
 .health-meal-selection-row > .health-row-line { flex: 1; min-width: 0; }
-.health-meal-selection-row > input { flex: 0 0 auto; accent-color: var(--ds-info); }
 .health-meal-command-panel { padding: 8px; margin: 4px 0; border: 1px solid var(--ds-border, #39414c); border-radius: 6px; font-size: .8rem; }
 .health-meal-command-panel input[type=text] { color: inherit; background: transparent; border: 1px solid var(--ds-border, #39414c); border-radius: 4px; padding: 4px 6px; max-width: 100%; }
 .health-meal-command-panel label { display: flex; align-items: center; gap: 6px; margin: 4px 0; }
+
+// The day input is one row of constant height. What it has to say opens over the
+// page below it, so a question or an error never moves the meals.
+.health-day-input { position: relative; margin-block: 0.5rem; }
+.health-day-input__row { display: flex; align-items: center; gap: 0.4rem; min-width: 0; }
+.health-day-input__field { flex: 1 1 0; min-width: 0; }
+.health-day-input__field input { text-overflow: ellipsis; }
+.health-day-input__mic, .health-day-input__send, .health-day-input__move { flex: none; }
+.health-day-input__status { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+.health-day-input__overlay {
+  position: absolute; z-index: 30; top: calc(100% + 4px); inset-inline: 0;
+  display: grid; gap: 0.5rem; max-height: min(50vh, 20rem); overflow-y: auto; padding: 0.5rem;
+  font-size: 0.8rem; background: var(--ds-surface, #1f242b); border: 1px solid var(--ds-border, #39414c); border-radius: 6px;
+  box-shadow: 0 4px 16px rgb(0 0 0 / 30%);
+}
+.health-day-input__panel { display: grid; gap: 0.35rem; min-width: 0; overflow-wrap: anywhere; }
+.health-day-input__panel .health-capture-error { max-width: none; }
+.health-day-input__actions { display: flex; flex-wrap: wrap; align-items: center; gap: 0.35rem; min-width: 0; }
+.health-day-input__actions .mantine-Button-root { max-width: 100%; height: auto; min-height: 26px; }
+.health-day-input__actions .mantine-Button-label { white-space: normal; text-align: left; }
+.health-day-input__actions input[type=date] { max-width: 100%; color: inherit; background: transparent; border: 1px solid var(--ds-border, #39414c); border-radius: 4px; padding: 4px 6px; }
+
+.health-day-move { display: grid; gap: 0.5rem; }
+// A column, so a row always grows to fit a name that wraps.
+.health-day-move__list { display: flex; flex-direction: column; gap: 0.25rem; max-height: 50vh; overflow-y: auto; }
+.health-day-move__row { flex: none; display: flex; align-items: center; gap: 0.5rem; min-height: 32px; min-width: 0; padding-block: 0.3rem; line-height: 1.3; cursor: pointer; }
+.health-day-move__row input { flex: none; margin: 0; accent-color: var(--ds-info); }
+.health-day-move__name { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.health-day-move__meal { flex: none; font-size: 0.75rem; color: var(--ds-text-low); }
+.health-day-move__note { margin: 0; font-size: 0.8rem; color: var(--ds-text-mid); }
+
+// On a phone the move is its icon, so the field keeps the row's width.
+@media (max-width: 760px) { .health-day-input__move-text { display: none; } .health-day-input__move .mantine-Button-section { margin: 0; } }
+@media (max-width: 760px), (pointer: coarse) {
+  .health-day-input__field { --input-height: 44px; }
+  // Below 16px a phone zooms the page when the field takes focus.
+  .health-day-input__field input { min-height: 44px; font-size: 16px; }
+  .health-day-input__mic, .health-day-input__send, .health-day-input__move { min-width: 44px; min-height: 44px; }
+  .health-day-input__send, .health-day-input__move { padding-inline: 0.5rem; }
+  .health-day-input__actions .mantine-Button-root, .health-day-input__actions input[type=date],
+  .health-day-move .mantine-Button-root { min-width: 44px; min-height: 44px; }
+  .health-day-move__row { min-height: 44px; }
+  .health-day-move__row input { width: 18px; height: 18px; }
+}
+.health-day-input__waiting { margin: 0; color: var(--ds-text-mid); }

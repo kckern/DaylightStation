@@ -94,6 +94,14 @@ describe('PianoMenu driven by the real lesson gate', () => {
     expect(screen.getByText(PENDING_CAPTION)).toBeTruthy();
   });
 
+  it('stays shut before the roster has named a player', async () => {
+    currentUser = null;
+    renderMenu();
+    await flush();
+    expect(tiles().every((t) => t.disabled)).toBe(true);
+    expect(screen.getByText(PENDING_CAPTION)).toBeTruthy();
+  });
+
   it('opens when the read answers "nothing owed"', async () => {
     renderMenu();
     await flush();

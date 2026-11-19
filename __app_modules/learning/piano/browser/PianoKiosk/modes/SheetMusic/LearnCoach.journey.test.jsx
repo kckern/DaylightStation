@@ -42,7 +42,7 @@ beforeAll(async () => {
 },180000);
 afterAll(async()=>{await browser?.close();});
 async function open(viewport={width:1280,height:800}){
- const f=pianoCoachFixture(); const service=new PianoLearnCoachService(f);const page=await browser.newPage({viewport});const errors=[];page.on('pageerror',e=>errors.push(e.message));
+ const f=pianoCoachFixture(); f.pieceNotes=[]; const service=new PianoLearnCoachService({...f,pieceLog:{note:(entry)=>{f.pieceNotes.push(entry);return entry;}}});const page=await browser.newPage({viewport});const errors=[];page.on('pageerror',e=>errors.push(e.message));
  await page.exposeFunction('__request',async({url,body,method})=>{
   const [,user]=url.match(/users\/([^/]+)/)??[];
   if(f.offline && method==='POST')throw new Error('offline');
@@ -58,13 +58,51 @@ async function open(viewport={width:1280,height:800}){
  return{page,f,errors};
 }
 const click=async(page,name)=>{await page.getByRole('button',{name,exact:true}).click({timeout:30000});};
-async function prepareFull(page){await click(page,'Start learning');await click(page,'Try the full passage');await page.getByRole('button',{name:'Start practice',exact:true}).waitFor({state:'visible'});await page.waitForFunction(()=>!document.querySelector('.piano-learn-coach .is-primary')?.disabled);}
+async function prepareFull(page){await click(page,'Practice bars 1–2');await click(page,'Try the full passage');await page.getByRole('button',{name:'Start practice',exact:true}).waitFor({state:'visible'});await page.waitForFunction(()=>!document.querySelector('.piano-learn-coach .is-primary')?.disabled);}
 async function playFull(page){
  await click(page,'Start practice');await page.waitForFunction(()=>window.__logs.some(l=>l.event==='piano.exercise-countdown-started'));
  await page.evaluate(async()=>{const log=window.__logs.filter(l=>l.event==='piano.exercise-countdown-started').at(-1);const downbeat=log.at+log.data.countdownRemainingMs;for(let i=0;i<8;i++){await new Promise(r=>setTimeout(r,Math.max(0,downbeat+i*250-Date.now())));window.__hold([[60,48],[62,50],[64,52],[65,53]][i%4]);await new Promise(r=>setTimeout(r,75));window.__hold([]);}});
  await page.getByRole('heading',{name:'Nice work!'}).waitFor({timeout:15000});
 }
 describe('real Learn journey',()=>{
+
+ const runReady=async(page)=>{await page.locator('.piano-exercise-run').waitFor({timeout:15000});await page.waitForTimeout(800);};
+ const startSilverCheck=async(page)=>{await click(page,'Practice bars 1–2');await click(page,'Play it on your own');await page.getByRole('heading',{name:'Play it on your own'}).waitFor();
+  await page.waitForFunction(()=>[...document.querySelectorAll('button')].some(b=>b.textContent==='Start practice'&&!b.disabled));await page.screenshot({path:path.join(ARTIFACTS,'silver-prepare.png')});await click(page,'Start practice');
+  await runReady(page);};
+ const playFree=(page,frames)=>page.evaluate(async(list)=>{for(const frame of list){window.__hold(frame);await new Promise(r=>setTimeout(r,70));}},frames);
+ // Each position: right hand first, both down together, right lifts while left still holds, then all up.
+ const cleanTake=[[60,48],[62,50],[64,52],[65,53],[60,48],[62,50],[64,52],[65,53]].flatMap(([r,l])=>[[r],[r,l],[l],[]]);
+ it('certifies Silver from a clean hints-off take with hands held across each other',async()=>{
+  const{page,f,errors}=await open();try{
+   await startSilverCheck(page);await playFree(page,cleanTake);await page.getByRole('heading',{name:'Silver!'}).waitFor({timeout:15000});
+   await page.waitForFunction(()=>document.body.innerText.includes('Progress saved'));await page.screenshot({path:path.join(ARTIFACTS,'silver-earned.png')});
+   const attempt=[...f.attempts.values()][0];expect(attempt.diagnostics).toMatchObject({matched_notes:16,wrong_notes:0,missed_notes:0});expect(attempt.criteria.cleanliness).toBe(1);
+   const record=[...f.records.values()][0];expect(record.learnCoach.summary.silver).toBeGreaterThan(0);
+   // Back on the score the tile flips and, as this was the last passage, the whole piece is celebrated once.
+   await click(page,'Finish for now');await page.getByRole('status').filter({hasText:'Your whole piece is Silver!'}).waitFor();
+   expect(await page.locator('.piano-passage-rail__tile[data-state="silver"][data-flip="silver"]').count()).toBe(1);
+   expect(f.pieceNotes).toEqual([expect.objectContaining({userId:'learner4',scoreId:SCORE_ID,level:'silver',passages:1})]);
+   expect((await page.evaluate(()=>window.__logs)).filter(l=>l.event==='piano.learn.celebrate').map(l=>l.data)).toEqual([expect.objectContaining({scope:'piece',level:'silver'})]);
+   await page.screenshot({path:path.join(ARTIFACTS,'silver-landing.png')});
+   await page.getByRole('button',{name:'Go for Gold: bars 1–2'}).waitFor();
+   await page.evaluate(()=>window.__mount());await page.getByRole('button',{name:'Go for Gold: bars 1–2'}).waitFor();await page.waitForTimeout(400);
+   expect(await page.getByRole('status').filter({hasText:'Your whole piece is Silver!'}).count()).toBe(0);
+   // A tile only shows its bars. The rail button opens the passage.
+   await page.locator('.piano-passage-rail__tile[data-state="silver"]').first().click();expect(await page.locator('.piano-learn-selection-box').count()).toBeGreaterThan(0);
+   await click(page,'Practice bars 1–2');await page.getByRole('heading',{name:'You have this one'}).waitFor();await page.screenshot({path:path.join(ARTIFACTS,'silver-certified.png')});
+   expect(errors).toEqual([]);
+  }finally{await page.close();}
+ },90000);
+ it('offers a retry, then a drill and a way out, after missed Silver checks',async()=>{
+  const{page,errors}=await open();try{
+   await startSilverCheck(page);const miss=[[60,48],[],...[[62,50],[64,52],[65,53],[60,48],[62,50],[64,52],[65,53]].flatMap((pair)=>[[70],[],[71],[],pair,[]])];
+   await playFree(page,miss);await page.getByRole('heading',{name:'Almost on your own'}).waitFor({timeout:15000});await page.screenshot({path:path.join(ARTIFACTS,'silver-miss.png')});
+   await click(page,'Try again');await runReady(page);await playFree(page,miss);
+   await page.getByRole('button',{name:'Come back to this later'}).waitFor({timeout:15000});await page.screenshot({path:path.join(ARTIFACTS,'silver-second-miss.png')});
+   expect(await page.getByRole('button',{name:/^Practice /}).count()).toBeGreaterThan(0);expect(errors).toEqual([]);
+  }finally{await page.close();}
+ },90000);
  it('grades two-hand timed notes, saves each take once, earns skills and resumes after remount',async()=>{
   const{page,f,errors}=await open();try{
    await prepareFull(page);await page.screenshot({path:path.join(ARTIFACTS,'tablet-preparation.png')});
@@ -77,7 +115,7 @@ describe('real Learn journey',()=>{
    // The explicit repeat is the same task, and reuses the true MIDI input path.
    await page.evaluate(async()=>{const l=window.__logs.filter(l=>l.event==='piano.exercise-countdown-started').at(-1);for(let i=0;i<8;i++){await new Promise(r=>setTimeout(r,Math.max(0,l.at+l.data.countdownRemainingMs+i*250-Date.now())));window.__hold([[60,48],[62,50],[64,52],[65,53]][i%4]);await new Promise(r=>setTimeout(r,75));window.__hold([]);}});
    await page.getByText('Played at score tempo',{exact:true}).waitFor({timeout:15000});await page.waitForFunction(()=>document.body.innerText.includes('Progress saved'));expect(f.attempts.size).toBe(2);
-   await page.evaluate(()=>window.__mount());await page.getByRole('button',{name:'Continue learning',exact:true}).waitFor();await click(page,'Continue learning');
+   await page.evaluate(()=>window.__mount());await page.getByRole('button',{name:'Practice bars 1–2',exact:true}).waitFor();await click(page,'Practice bars 1–2');
    expect(await page.getByText('Played at score tempo',{exact:true}).count()).toBe(1);expect(await page.locator('.piano-exercise-run').count()).toBe(0);expect(errors).toEqual([]);
   }catch(error){fs.writeFileSync(path.join(ARTIFACTS,'failure.json'),JSON.stringify({errors,attempts:[...f.attempts.values()],text:await page.locator('body').innerText(),logs:await page.evaluate(()=>window.__logs)},null,2));await page.screenshot({path:path.join(ARTIFACTS,'failure.png'),fullPage:true});throw error;}finally{await page.close();}
  },90000);
@@ -94,7 +132,7 @@ describe('real Learn journey',()=>{
   }finally{await page.close();}
  },60000);
  it('demonstrates only the chosen hands without creating an assessment and returns to preparation',async()=>{
-  const{page,f,errors}=await open();try{await click(page,'Start learning');await click(page,'Listen');
+  const{page,f,errors}=await open();try{await click(page,'Practice bars 1–2');await click(page,'Listen');
    await page.getByRole('heading',{name:'Listen to this passage'}).waitFor();await page.getByRole('button',{name:'Start practice',exact:true}).waitFor({timeout:15000});
    const audio=await page.evaluate(()=>window.__audio);expect(audio.length).toBe(8);expect(audio.every(note=>note>=60)).toBe(true);expect(f.attempts.size).toBe(0);expect(errors).toEqual([]);
   }finally{await page.close();}
@@ -114,7 +152,7 @@ describe('real Learn journey',()=>{
   }finally{await page.close();}
  },60000);
  it('keeps keyboard focus and preparation usable on a narrow screen with reduced motion',async()=>{
-  const{page,errors}=await open({width:600,height:800});try{await page.emulateMedia({reducedMotion:'reduce'});await click(page,'Start learning');await page.getByRole('button',{name:'Start practice',exact:true}).waitFor();
+  const{page,errors}=await open({width:600,height:800});try{await page.emulateMedia({reducedMotion:'reduce'});await click(page,'Practice bars 1–2');await page.getByRole('button',{name:'Start practice',exact:true}).waitFor();
    await page.screenshot({path:path.join(ARTIFACTS,'narrow-preparation.png'),fullPage:true});
    const metrics=await page.locator('.piano-learn-coach button').evaluateAll(buttons=>buttons.filter(b=>b.offsetParent).map(b=>({height:b.getBoundingClientRect().height,right:b.getBoundingClientRect().right})));expect(metrics.every(m=>m.height>=64&&m.right<=600)).toBe(true);
    expect(await page.evaluate(()=>document.documentElement.scrollWidth)).toBeLessThanOrEqual(600);await page.getByRole('button',{name:'Start practice',exact:true}).focus();expect(await page.getByRole('button',{name:'Start practice',exact:true}).evaluate(e=>e===document.activeElement)).toBe(true);expect(errors).toEqual([]);

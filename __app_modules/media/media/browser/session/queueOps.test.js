@@ -298,6 +298,13 @@ describe('batch ops (playNowMany / playNextMany / addUpNextMany / addMany)', () 
     expect('containerTitle' in without.queue.items[0]).toBe(false);
   });
 
+  it('containerContentId is preserved onto queue items when present, absent otherwise', () => {
+    const withId = q.addMany(seed(), [{ contentId: 'c:x', containerContentId: 'c:album' }]);
+    expect(withId.queue.items[0].containerContentId).toBe('c:album');
+    const without = q.addMany(seed(), [{ contentId: 'c:y' }]);
+    expect('containerContentId' in without.queue.items[0]).toBe(false);
+  });
+
   it('artist/album from a real search result survive playNow onto the queue item AND currentItem', () => {
     // The full production path: a music track played straight from search
     // (no container). Regression guard for the whitelist that used to strip

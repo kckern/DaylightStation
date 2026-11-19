@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <!-- The base set every device gets. A capability adds its own in its shell/ half. -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+    <!-- Core additions shared by every device. -->
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <!-- REQUEST_INSTALL_PACKAGES (the app updating itself over the control API) and
+         WRITE_SECURE_SETTINGS (the app turning its own accessibility service on) are NOT
+         here. Only a kiosk needs them, and they come from the generated device manifest
+         of a build that is one: see DeviceManifestSource.KIOSK_BASE_PERMISSIONS. A
+         personal phone's APK asks for neither. -->
+
+    <!-- One shell runs on tablets and on TV boxes, so neither feature is required. -->
+    <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
+    <uses-feature android:name="android.software.leanback" android:required="false" />
+
+    <!-- usesCleartextTraffic: a kiosk fetches its payload and its update over plain HTTP on
+         the LAN and ships its heartbeats there. A device with control.bind none (the
+         phone) has it set to false by its generated device manifest.
+         Backup: nothing is backed up or transferred to another device (the two rule
+         files exclude every domain), on top of allowBackup="false". -->
+    <application
+        android:label="Daylight"
+        android:usesCleartextTraffic="true"
+        android:allowBackup="false"
+        android:fullBackupContent="@xml/daylight_backup_rules"
+        android:dataExtractionRules="@xml/daylight_data_extraction_rules"
+        tools:targetApi="s">
+
+        <activity android:name=".MainActivity" android:exported="true"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+                <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <service android:name=".ShellService" android:exported="false" />
+
+        <!-- Explicitly targeted by the payload's Updater. No intent filter on purpose. -->
+        <receiver android:name=".InstallReceiver" android:exported="false" />
+
+        <receiver android:name=".BootReceiver" android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+            </intent-filter>
+            <!-- Without this, a self-update leaves the device with nothing running. -->
+            <intent-filter>
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
+    </application>
+</manifest>

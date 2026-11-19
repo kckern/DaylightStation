@@ -1,0 +1,3 @@
+# Read and set a stream's volume as a percentage. No shell half: it needs no permission.
+entry: net.kckern.daylight.cap.volume.VolumeCapability
+permissions: []

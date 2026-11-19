@@ -1,3 +1,4 @@
+import { pianoToolResponse, inDaylightShell } from './pianoPageTools.js';
 // bridgeWifiProbe — the piano kiosk's answer to "what did the tablet's Wi-Fi
 // look like when the video stalled?".
 //
@@ -30,12 +31,12 @@ export async function fetchBridgeWifi({ fetchImpl = fetch, timeoutMs = LINK_PROB
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    const res = await fetchImpl(BRIDGE_WIFI_URL, { signal: controller.signal });
+    const res = await pianoToolResponse('wifi', [], () => fetchImpl(BRIDGE_WIFI_URL, { signal: controller.signal }));
     if (!res.ok) throw new Error(`bridge-wifi-http-${res.status}`);
     const body = await res.json();
     const recent = Array.isArray(body?.recent) ? body.recent.slice(-RECENT_KEEP) : [];
     return {
-      source: 'piano-bridge',
+      source: inDaylightShell() ? 'daylight-android' : 'piano-bridge',
       current: pick(body?.current),
       // Throughput trend just before the stall, oldest first.
       recentRxKbps: recent.map((s) => s?.rxKbps ?? null),
@@ -49,6 +50,6 @@ export async function fetchBridgeWifi({ fetchImpl = fetch, timeoutMs = LINK_PROB
 
 /** Register the bridge probe when a bridge could exist here. Returns unregister. */
 export function installBridgeWifiProbe({ plausible = bridgeHostPlausible, fetchImpl } = {}) {
-  if (!plausible()) return () => {};
+  if (!inDaylightShell() && !plausible()) return () => {};
   return registerPlaybackLinkProbe(() => fetchBridgeWifi({ fetchImpl }));
 }

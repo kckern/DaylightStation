@@ -422,6 +422,8 @@ $health-aside-gap: 1.5rem;
 // bar tracks, the week strip's seven cells) was tuned against a phone-width
 // column.
 .health-today { max-width: 1440px; margin-inline: auto; padding-bottom: 0.75rem; }
+// Room to scroll the last foods out from under the toasts (TodayToasts.jsx).
+.health-today::after { content: ''; display: block; height: var(--health-toast-clearance, 0px); }
 .health-history {
   border-bottom: 1px solid var(--ds-border);
   > summary { min-height: 44px; display: flex; align-items: center; cursor: pointer; color: var(--ds-text-mid); }
@@ -695,8 +697,48 @@ $health-aside-gap: 1.5rem;
   &__chip { padding: 0.45rem 0.6rem; border-radius: 8px; border: 1px dashed var(--ds-border); font-size: 0.85rem; text-align: center; color: var(--ds-text-high); }
   &__chip--over { border-style: solid; border-color: var(--ds-accent); background: color-mix(in srgb, var(--ds-accent) 12%, transparent); }
 }
-.health-meal-move-day { display: flex; align-items: center; gap: 0.6rem; padding: 0.25rem 0; }
-.health-meal-move-day__note { font-size: 0.75rem; color: var(--ds-text-low); }
+// "Select foods": one bar over the day's meals. `.ds-chrome__main` is the scroll
+// region, with the app header outside it. Browsers stop a sticky box at the
+// scroller's padding edge, so the offset cancels that 0.75rem top padding (the same
+// at every width) and the bar meets the header with no strip for foods to show
+// through. One status line and one unwrapped action line keep its height constant.
+// It reaches across the scroller's 1rem side padding, where the ticks sit on a phone.
+.health-selection-bar {
+  position: sticky; top: -0.75rem; z-index: 20;
+  display: grid; gap: 2px; margin-bottom: 0.5rem; margin-inline: -1rem; padding: 0.3rem 1rem; padding-inline: 1rem;
+  background: var(--ds-background); border-bottom: 1px solid var(--ds-border);
+}
+// Scroll room for a day too short to absorb the bar's height. Set only while it is open.
+.health-log-frame::after { content: ''; display: block; height: var(--health-selection-room, 0px); }
+.health-selection-bar__status {
+  display: flex; gap: 0.5rem; min-width: 0; height: 1.1rem; line-height: 1.1rem; overflow: hidden;
+  font-size: 0.75rem; white-space: nowrap; color: var(--ds-text-mid);
+}
+.health-selection-bar__note { min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--ds-text-low); }
+.health-selection-bar__actions {
+  display: flex; flex-wrap: nowrap; align-items: center; gap: 0.5rem; min-width: 0; min-height: 26px;
+  .mantine-Button-root { flex: 0 1 auto; min-width: 0; }
+}
+.health-meal-selection-tick { display: flex; flex: none; align-items: center; justify-content: center; cursor: pointer;
+  input { margin: 0; accent-color: var(--ds-info); }
+}
+// The capture toast's four actions wrap onto a second line on a phone.
+.health-capture-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 0.25rem; min-width: 0; }
+// A picked name is a plain span, so it centres itself in the row's height.
+.health-meal-selection-row .health-row-name { display: flex; align-items: center; }
+.health-meal-selection-row .health-row__description { display: block; }
+// These cells are plain text while picking foods, and a tap on them ticks the row.
+.health-meal-selection-row :is(.health-portion, .health-numeric-control, .health-row-artwork) { cursor: inherit; }
+@media (pointer: coarse) {
+  .health-selection-bar__actions, .health-selection-bar__actions .mantine-Button-root, .health-move-menu__item { min-height: 44px; }
+  .health-capture-actions .mantine-Button-root { min-width: 44px; min-height: 44px; }
+  .health-day-move__close { min-width: 44px; min-height: 44px; }
+  .health-move-date input { box-sizing: border-box; width: 100%; min-height: 44px; }
+  // A full 44 px target taking 28 px of the row: the rest reaches into the page's
+  // side padding, never rightward over a dish's expand triangle.
+  .health-meal-selection-tick { position: relative; z-index: 1; width: 44px; height: 44px; margin-left: -16px; }
+  .health-meal-selection-tick input { width: 18px; height: 18px; }
+}
 // A meal entry gliding to its new place after a reorder (sectionOrder.js,
 // FLIP): the inline translate is set by the hook, this class animates it home.
 .health-flip-moving {
@@ -729,6 +771,11 @@ $health-aside-gap: 1.5rem;
   .health-row__identity { gap: 0.25rem; }
   .health-row-line, .health-row-identity, .health-row-name, .health-portion,
   .health-row__menu, .health-row__expand, .health-density-badge { min-height: 44px; }
+  // Picking foods needs the name and its calories. The menu is already gone, and
+  // the numbers that remain cannot be edited here, so the name takes their room.
+  .health-meal-selection-row .health-row-line { grid-template-columns: 12px minmax(0, 1fr) auto; }
+  .health-meal-selection-row :is(.health-density-badge, .health-row__macros, .health-row__portion-cell, .health-row__action) { display: none; }
+  .health-meal-selection-row .health-row__kcal { grid-column: 3; min-width: 2.2rem; }
 }
 
 // A workout is a food row's shape (ExerciseSection.jsx): poster and name in

@@ -102,7 +102,9 @@ const open = (learnerId, status) => ({
  *   learner's verdict is outstanding. Never true for a guest.
  */
 export function usePianoLessonGate(learnerId) {
-  const guest = !learnerId || learnerId === 'guest';
+  // Only an actual guest skips the wait. No learner yet means the roster has not
+  // answered, which is not permission: the same ceiling bounds that wait.
+  const guest = learnerId === 'guest';
   const requestGeneration = useRef(0);
   // { learnerId, timer } — the ONE pending ceiling for that learner. A null
   // timer means their verdict has landed and no further ceiling is owed.
@@ -160,6 +162,7 @@ export function usePianoLessonGate(learnerId) {
         }, LOADING_CEILING_MS),
       };
     }
+    if (!learnerId) return;
     try {
       const result = await DaylightAPI(
         `api/v1/school/lifecycle/learners/${encodeURIComponent(learnerId)}/piano-lesson-gate`,

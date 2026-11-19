@@ -30,11 +30,18 @@
   &__demo { flex: 1; min-height: 0; }
   &__earlier summary { min-height: 64px; display: flex; align-items: center; cursor: pointer; }
   &__music { min-width: 0; overflow: auto; }
-  &__task { display: flex; flex-direction: column; align-items: stretch; gap: var(--sp-2); }
+  // One-screen panel: the main action is full width, the rest pair up.
+  &__task { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-content: start; gap: var(--sp-2); }
+  &__task > * { grid-column: 1 / -1; }
+  &__task > button:not(.is-primary) { grid-column: auto; }
   &__task h2 { font-size: 1.7rem; margin: 0; }
   &__task p { font-size: 1.15rem; line-height: 1.4; margin: 0; }
   &__skills { list-style: none; padding: 0; display: flex; flex-wrap: wrap; gap: var(--sp-2); color: var(--piano-muted); }
   &__skills li { padding: var(--sp-1); }
+  &__track h3 { margin: var(--sp-2) 0 0; font-size: 1.05rem; }
+  &__medal { padding: var(--sp-1) var(--sp-3); border-radius: var(--r-md); color: var(--piano-medal-ink); }
+  &__medal[data-level='silver'] { background: var(--piano-silver); }
+  &__medal[data-level='gold'] { background: var(--piano-gold); }
   &__skills [data-earned='true'], &__earned { color: var(--piano-accent); }
   &--running { padding: 0; }
   &--running .piano-learn-lab { flex: 1; min-height: 0; }
@@ -42,4 +49,3 @@
   @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none; transition: none; } }
 }
 
-.piano-learn-entry.piano-learn-coach { height: auto; flex-direction: row; flex-shrink: 0; }

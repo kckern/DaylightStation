@@ -26,10 +26,12 @@ const MicIcon = ({ active }) => (
  * `labelPrefix` names what the mic will do to its meal — a meal's add row
  * reads "Speak foods to Lunch", or "Speak changes to 2 selected to Lunch"
  * while foods are selected. Without one it reads "Log by voice to Lunch".
+ * With no meal, a `labelPrefix` is the whole label.
  * `className` lets the caller apply its own sizing class instead of the
- * meal-row default.
+ * meal-row default. `onError` receives problems (null when they clear) in place
+ * of the inline message, for a caller whose row must keep its height.
  */
-export function VoiceCapture({ active = true, onCapture, busy, bucket, mealLabel, labelPrefix, className, onHoldChange, onOrphanedRetry }) {
+export function VoiceCapture({ active = true, onCapture, busy, bucket, mealLabel, labelPrefix, className, onHoldChange, onOrphanedRetry, onError }) {
   const recRef = useRef(null);
   const [recording, setRecording] = useState(false);
   const [pending, setPending] = useState(false);
@@ -52,6 +54,10 @@ export function VoiceCapture({ active = true, onCapture, busy, bucket, mealLabel
   // Keep automatic meal sections mounted until capture or its retry is resolved.
   const held = acquiringMic || recording || pending || task.pending || Boolean(task.retry) || Boolean(error);
   useEffect(() => { holdCallback.current?.(held); }, [held]);
+  const problem = error || task.error || null;
+  const errorCallback = useRef(onError);
+  errorCallback.current = onError;
+  useEffect(() => { errorCallback.current?.(problem); }, [problem]);
 
   useEffect(() => {
     live.current = true;
@@ -122,7 +128,7 @@ export function VoiceCapture({ active = true, onCapture, busy, bucket, mealLabel
   };
 
   const idleLabel = labelPrefix
-    ? `${labelPrefix} to ${mealLabel}`
+    ? (mealLabel ? `${labelPrefix} to ${mealLabel}` : labelPrefix)
     : (mealLabel ? `Log by voice to ${mealLabel}` : 'Voice log');
   const activeLabel = mealLabel ? `Stop recording — ${mealLabel}` : 'Stop recording';
 
@@ -131,7 +137,7 @@ export function VoiceCapture({ active = true, onCapture, busy, bucket, mealLabel
       className={className || (mealLabel ? 'health-meal__capture-btn' : undefined)}
       color={recording ? 'red' : undefined} onClick={toggle}>
       <MicIcon active={recording} />
-    </ActionIcon>{error || task.error ? <span role="alert" className="health-capture-error">{error || task.error}</span> : null}
+    </ActionIcon>{problem && !onError ? <span role="alert" className="health-capture-error">{problem}</span> : null}
       {task.retry ? <Button size="compact-xs" disabled={task.pending} onClick={task.retry}>Retry recording</Button> : null}</>
   );
 }

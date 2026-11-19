@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <!-- Needed for a microphone foreground service from target 34; declared now so a
+         later target bump is a config change. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+
+    <application>
+        <!-- Not exported: started by this app only, when the payload has accepted a keyed
+             memo link, or from the recording's own notification. Opening it is what starts
+             a recording, so nothing outside this app may open it. -->
+        <activity
+            android:name="net.kckern.daylight.cap.quickinput.shell.RecordActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:label="Voice memo"
+            android:launchMode="singleTop"
+            android:taskAffinity=""
+            android:theme="@android:style/Theme.DeviceDefault.Dialog" />
+
+        <!-- Not exported: started by this app only, when the payload has accepted a keyed
+             input link. Typed text leaves it only on Send. Kept out of the recents list, and
+             not shown over the lock screen (it never asks to be). -->
+        <activity
+            android:name="net.kckern.daylight.cap.quickinput.shell.TextInputActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:label="Quick input"
+            android:launchMode="singleTop"
+            android:taskAffinity=""
+            android:theme="@android:style/Theme.DeviceDefault.Dialog"
+            android:windowSoftInputMode="stateVisible|adjustResize" />
+
+        <!-- Not exported: started by this app only, when the payload has accepted a keyed
+             input link. Opening it opens the system's camera app, so nothing outside this
+             app may open it. No window of its own; a change of orientation while the camera
+             is in front does not rebuild it. -->
+        <activity
+            android:name="net.kckern.daylight.cap.quickinput.shell.PhotoCaptureActivity"
+            android:exported="false"
+            android:configChanges="orientation|screenSize|screenLayout|keyboardHidden|uiMode"
+            android:excludeFromRecents="true"
+            android:label="Photo"
+            android:taskAffinity=""
+            android:theme="@android:style/Theme.Translucent.NoTitleBar" />
+
+        <!-- Not exported. Gives the camera app the one file a capture is written to, by a
+             grant the photo screen makes for that file alone; grants can be made for
+             /capture/ and for nothing else. See InputFileProvider and CaptureFiles.served. -->
+        <provider
+            android:name="net.kckern.daylight.cap.quickinput.shell.InputFileProvider"
+            android:authorities="${applicationId}.inputs"
+            android:exported="false"
+            android:grantUriPermissions="false">
+            <grant-uri-permission android:pathPrefix="/capture/" />
+        </provider>
+
+        <!-- Not exported: started and stopped by this app only. A foreground service of
+             type microphone, with a notification for as long as it records. -->
+        <service
+            android:name="net.kckern.daylight.cap.quickinput.shell.MemoRecorderService"
+            android:exported="false"
+            android:foregroundServiceType="microphone" />
+    </application>
+</manifest>

@@ -1,3 +1,4 @@
+import { inDaylightShell } from '../../../frontend/src/lib/daylightKiosk.js';
 import { useEffect } from 'react';
 import getLogger from '../../../frontend/src/lib/logging/Logger.js';
 
@@ -128,7 +129,12 @@ export function dispatchPortalHidMessage(message) {
 
 export function usePortalHidKeyboard({ enabled = true, port = DEFAULT_PORT } = {}) {
   useEffect(() => {
-    if (!enabled || typeof window === 'undefined' || !('WebSocket' in window)) return undefined;
+    if (!enabled || typeof window === 'undefined') return undefined;
+    if (inDaylightShell()) {
+      if (window.daylight?.deviceId !== 'portal') return undefined;
+      return window.daylight.portal?.subscribeKeyboard(dispatchPortalHidMessage);
+    }
+    if (!('WebSocket' in window)) return undefined;
     let ws;
     let timer;
     let stopped = false;

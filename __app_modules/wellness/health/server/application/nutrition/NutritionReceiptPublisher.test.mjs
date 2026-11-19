@@ -145,3 +145,14 @@ describe('NutritionReceiptPublisher', () => {
     expect(f.deps.surface.updateMessage.mock.lastCall[1].messageId).toBe('22');
   });
 });
+
+it('requires an acknowledged edit before using an unchanged receipt as delivery evidence', async () => {
+  const f = fixture();
+  await f.publisher.publish('alice');
+  const binding = { conversationId: 'telegram:alice', messageId: '22', caption: false, requireDelivery: true };
+  const first = await f.publisher.bind('alice', 'capture', binding);
+  expect(first.receipts[0].delivery).toBe('updated');
+  const second = await new NutritionReceiptPublisher(f.deps).bind('alice', 'capture', binding);
+  expect(second.receipts[0].delivery).toBe('unchanged');
+  expect(f.deps.surface.updateMessage).toHaveBeenCalledTimes(1);
+});

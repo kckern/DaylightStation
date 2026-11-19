@@ -4,6 +4,7 @@ import { describe, it, expect, vi } from 'vitest';
 import express from 'express';
 import request from 'supertest';
 import { createSchoolDebriefRouter } from "./schoolDebrief.mjs";
+import { postRefusedUpload } from "../../../../../tests/_lib/refusedUpload.mjs";
 
 const grants = { verify: (t, { learnerId, day }) => (t === 'good' && learnerId === 'test-learner' && day === '2026-10-21' ? { ok: true } : { ok: false, reason: 'day' }) };
 it('serves a collision-suffixed audio filename from the shared take store',async()=>{
@@ -76,10 +77,14 @@ describe('school debrief router', () => {
     expect((await request(a).get('/debrief/teacher/test-learner/audio/..%2Fx.webm')).status).toBe(404);
     expect(read).toHaveBeenCalledTimes(1);
   });
+  // The server answering before reading lets the client hit EPIPE mid-upload;
+  // postRefusedUpload proves the refusal from the server side when it does.
   it('refuses a bad grant before parsing a huge body (403, not 413)', async () => {
-    const { a } = app();
-    const r = await request(a).post('/debrief/test-learner/day/2026-10-21/take').set('X-School-Debrief-Grant', 'bad').set('Content-Type', 'audio/webm').send(Buffer.alloc(20 * 1024 * 1024));
-    expect(r.status).toBe(403);
+    const { a, service } = app();
+    const r = await postRefusedUpload(a, { path: '/debrief/test-learner/day/2026-10-21/take', headers: { 'X-School-Debrief-Grant': 'bad', 'Content-Type': 'audio/webm' }, size: 20 * 1024 * 1024 });
+    expect(r.refusedStatus).toBe(403);
+    expect(r.refusal).toMatchObject({ status: 403, bodyComplete: false, bodyParsed: false, bodyRead: false });
+    expect(service.take).not.toHaveBeenCalled();
   });
   it('answers malformed JSON with a JSON 400, and an oversize take with a JSON 413', async () => {
     const { a } = app();

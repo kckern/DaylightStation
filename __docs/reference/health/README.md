@@ -497,32 +497,244 @@ not the current hour. The resolved bucket is stored on each entry.
   controls that already take the pointer — portion and kcal sliders, macro badges,
   confirm/delete, the dish triangle (`DRAG_DEAD_ZONE`). Mouse/pen start after 6 px of
   travel, touch after a 300 ms hold; a plain click still opens the editor. A dish
-  carries its ingredients (the backend cascades `mealTime`); an ingredient never
-  drags on its own. Rows are not draggable while "Select foods" is picking.
+  carries its ingredients; an ingredient never drags on its own. Rows and meal headers
+  are not draggable while "Select foods" is picking.
 - **A whole meal:** drag the meal's header onto another meal, or ⋯ → "Move all to".
-  Every top-level entry moves, one PUT each.
-- The move is optimistic (the row wears its new meal until the day reloads with it),
-  highlights briefly, and offers one Undo that restores every row it moved, using the
-  versions the move returned. A failure part-way keeps what moved and puts the rest
-  back. Logs: `entry.move`, `meal.move`, `*.undo`, `entry.move.failed`.
+  Every top-level entry moves.
+- Each gesture is one atomic `POST /nutrition/foods-move`: every row moves or none do
+  ([server rules](meal-commands.md#moving-foods-foods-move)). Foods already in the
+  destination meal are left out, and a gesture with nothing left to move sends nothing.
+- The move is optimistic: the row wears its new meal until the day reloads with it, and
+  highlights briefly. A food that is still saving or busy with an earlier change is
+  refused before anything changes on screen.
+- A failure puts every row back and drops the highlight. **A refusal** (any 4xx except 408, 425 and 429) means
+  nothing happened, so the foods are free at once and the toast says why. **Any other
+  failure leaves the outcome unknown:** the foods stay reserved, and a toast offers **Try
+  again**, under the same operation ID, or **Dismiss**, which frees them. A Try again that
+  succeeds still offers Undo.
+- Success offers one Undo through `POST /nutrition/meal-undo`. A failed Undo leaves the
+  foods moved, says so on the Undo's toast, and retries under the same operation ID. Logs:
+  `entry.move`, `meal.move`, `*.undo`, `entry.move.blocked`, `entry.move.failed`,
+  `entry.move.undo-blocked`, `entry.move.undo-failed`, `entry.move.retried`,
+  `entry.move.retry-failed`, `entry.move.unresolved-dismissed`.
+- **One report per failure.** Moves and their Undos never appear in a meal's status rows,
+  and people never see a status line or a payload. The surface that started the action
+  reports it: the sheet, the capture toast or the Undo toast. Any move or Undo with an
+  unknown outcome that no surface is showing, because it was closed, dismissed or replaced,
+  falls to the page's toast (`moves.unresolved`), newest first, so the retry and the way to
+  free the foods are always reachable. A change that committed and only failed to refresh
+  offers **Try again** alone.
+
+### Day input (`DayInputBar.jsx`)
+
+One row directly above the meals logs a whole day or corrects it, by typing or by
+voice: "eggs for breakfast, burrito at lunch", "move the drinks to snacks", "that was
+whole milk". It posts to `POST /nutrition/day-input`. The server reads the words, acts on
+its best reading and returns one Undo, asking only when it cannot tell which food or
+which day. The request contract, the gateway questions and the correction rules are in
+[Day-level commands](meal-commands.md#day-level-commands).
+
+- **The day belongs to the request.** A request keeps the day it was made on, and so
+  does its question or error, which names that day if the page has moved on. A
+  recording belongs to the day it was started on.
+- **One at a time.** While a request runs the field is read-only and keeps focus, Send
+  shows its spinner, and a second send is ignored. A recording that ends while a request
+  runs, or while a question or failure is open, waits and says so on screen and in the
+  status region. It goes once the person has answered, cancelled, retried or dismissed,
+  so it never replaces either. Recordings still waiting when the bar unmounts are lost,
+  and `day-input.recording-dropped` logs how many.
+- **Operation IDs.** Every submission and every answer gets a new ID. Trying a failed
+  request again (**Try again**, or Send with the same words on the same day) reuses its
+  ID, so a request that did commit is replayed and not done twice. The last typed request
+  with an unknown outcome is remembered apart from the visible error, so this holds after
+  Dismiss. Different words get a new ID.
+- **Questions.** "Which food did you mean?" lists the candidates, and "Which day should
+  this go to?" offers a date field that stops at today. They open under the bar, are
+  announced through the bar's status region, and take focus unless the person has moved
+  elsewhere. An answer resends the same words with every answer so far: the text the
+  server reports, else the words that were sent. A recording with no reported words is
+  sent again. A day answer also sends back the foods the question named, so it
+  [cannot land on different ones](meal-commands.md#answering-which-day).
+- **Failures.** The server's sentence is shown and typed words stay in the field. A
+  refusal offers no retry, and neither do words over the length limit, typed or
+  transcribed. Any other failure carrying `audioRef` retries from the saved recording
+  under the same ID, so nothing is recorded twice. The upload stays in memory, and if the
+  saved copy has gone (`AUDIO_NOT_FOUND`) it is sent instead, under that ID. A 503 affects
+  only this bar.
+- **Focus after a request.** A request can take the focused control with it (an answered
+  question, a replaced **Try again**, a microphone busy with its recording). When it ends
+  with focus on nothing, focus goes to the error panel's first action (**Try again**, or
+  **Dismiss** after a refusal), else the microphone, else the field. Focus left in the
+  field stays there, and a press anywhere outside the bar during the request leaves focus
+  alone.
+- **No keyboard by surprise.** Wherever focus falls back to the field (`dayBarFallback`),
+  a touch screen (`(pointer: coarse)`) gets the microphone instead, or the bar itself
+  (`tabindex="-1"`) while the microphone is busy, because focusing a text field raises
+  the on-screen keyboard. Desktop keeps the field.
+- **"That" follows the food.** It means the viewed day's most recent capture, including
+  one made that day and filed on another day, and the reply names that day. The words are read on an empty day too, so
+  a correction there is not logged as food. See
+  [What "that" means](meal-commands.md#what-that-means).
+- **Results.** Added food gets the capture toast with its day buttons. A move or change
+  gets the service's sentence and an Undo through `POST /nutrition/meal-undo`, and a move
+  retires capture toasts for the food it took. The capture toast names a meal only when
+  every added food is in it. "No change" and "no food" are their own notice, which leaves
+  a meal recording's saved retry alone, and the words stay to be edited. Committed work
+  refreshes the viewed day and every other loaded Health day.
+- **Layout.** The bar is one row of constant height. Questions and errors open over the
+  page below it, and its requests never appear in a meal's status rows. On a phone, every
+  control, including the sheet's close button and date field, is at least 44 px and the
+  whole-day move shows as an icon.
+- **Move this day's food.** The button appears when the day has real food and opens a
+  sheet of its top-level rows, all ticked: each meal as the page groups it, then
+  Ungrouped, so a broken-link row is its own line and a dish is one line. Foods still
+  saving, rejected or pending rows and weight-derived estimates are left out.
+  - **Stranded parts:** a dish part sitting in another meal travels with its dish. While
+    the dish is ticked the part reads "Moves with <dish>" and cannot be unticked. With the
+    dish unticked the part stays unless it is ticked itself.
+  - **Results:** one atomic move with one Undo, and the sheet closes only after it. A
+    refusal shows its reason and keeps the choices. Foods already on that day say so. An
+    unknown outcome (`MoveResult.UNKNOWN`) locks the choices and offers **Try again**
+    under the same operation ID. A failed move leaves selection mode and its ticks alone.
+    The sheet alone reports its failures and sits above the toast layer. Closing it with a
+    move unresolved hands the retry to the page's toast. Closing it while a move is still
+    running hands that move over too: the sheet neither claims it nor owns its failure
+    (`ownsFailure` on `moveFromDay`), so an unknown outcome shows the page's toast with
+    **Try again** and a refusal shows its reason in the page's error toast. A late result
+    never closes a sheet opened since.
+  - **Keyboard:** Escape closes an open day menu first, then the sheet. Closing returns
+    focus to the button, or to the field if the button has gone with the food (the
+    microphone on a touch screen). Closing on
+    an unresolved move puts focus on the page toast's **Try again** as soon as it can be
+    pressed (`handedBackMove`), unless focus has gone elsewhere. When Try again replaces
+    the move control, focus goes to it. When a move ends with a note and the control that
+    was used is busy or gone, focus goes to the note.
+- Logs (`health` / `day-input`): `day-input.submit`, `.result`, `.clarification`,
+  `.failed`, `.recording-fallback`, `.recording-dropped`, `.move-day.open`, `.move-day.result`.
 
 ### Moving food to another day
 
-Same rows, different `date` (the meal is kept; a dish's PUT cascades `date` to its
-ingredients). Three routes, one command (`useMealMoves().moveToDay`, `mealDrag.jsx`):
+Same rows, different `date` (the meal is kept; a dish moves with its ingredients). Every
+route sends one atomic `foods-move` through `useMealMoves()` in `mealDrag.jsx`:
+`moveToDay` for the viewed day, `moveFromDay` when the caller supplies the options or the
+rows of another day.
 
 - **Drag:** while a food or a meal header is being dragged, the week ending today
   docks at the right edge (`DayDropDock`, `MoveDayControl.jsx`; fixed-position, only
   exists during a drag, so it cannot shift the page). Drop on a day chip.
-- **Select foods:** tick foods, then "Move N to another day…" (recent days, or a date
-  picker for anything older). A dish moves whole, so it counts only when every one of
-  its ingredients is ticked; a partly-ticked dish is skipped with a note.
+- **Select foods:** see below. It also moves the ticked foods to a meal.
 - **Meal ⋯ menu:** "Move all to day" moves the whole meal.
+- **Move this day's food:** the day input's [sheet](#day-input-dayinputbarjsx).
+- **Capture toast:** one tap after adding food. See [Capture toast](#capture-toast).
 
-The rows leave the viewed day at once (`gone`), each PUT follows, a failure brings back
-the rows it did not reach, and one Undo sends the moved rows home. Logs:
-`entry.move-day`, `entry.move-day.undo`, `entry.move-day.failed`. Day choices live in
-`moveDays.js`.
+Words in the day input ("move that to yesterday") reach the same server command without
+this hook.
+
+The rows leave the viewed day at once (`gone`), unless they are being moved from another
+day, and one `foods-move` follows. Every failure brings them back on screen. A refusal
+frees the foods and resolves `MoveResult.NOT_MOVED`. With no definite answer the move
+resolves `MoveResult.UNKNOWN` and the foods stay reserved. The capture toast and the sheet
+then offer **Try again**, and the other routes use the page's toast, all under the same
+operation ID, so a move that did commit is replayed and not done twice.
+Success offers one server Undo. Logs: `entry.move-day`, `entry.move-day.undo`,
+`entry.move-day.failed`. Day choices live in `moveDays.js`.
+
+#### Select foods
+
+"Select foods" in any meal turns on selection for every meal of the viewed day. It ends
+with **Done selecting**, after a successful move, or when the day changes. Ticks on foods
+that have left the day are dropped.
+
+- **Tap to tick:** a tap anywhere on a food ticks it, picture and name included. A dish
+  ticks all its parts, and shows as mixed when only some are ticked. The row's editor, ⋯
+  menu, portion and number edits and dragging are off until selection ends.
+- **The bar:** it stays stuck under the app header for the whole of selection mode, at one
+  height, so ticks and replies never move the log. It counts what is selected and offers
+  "Move N to another day…" (recent days, or a date picker for anything older) and "Move N
+  to a meal…", each one atomic command across all the meals. On touch its controls are at
+  least 44 px. It spans the page's side padding, so ticks scroll under it.
+- **Nothing jumps:** opening and closing the bar adjust the scroller by the bar's height,
+  so the tapped meal and its foods hold their place, from the top of the page too. A day
+  too short to scroll that far gets the missing room below the log
+  (`--health-selection-room` on `.health-log-frame`) while the bar is open, and loses it
+  when the bar closes, so no blank space stays behind. The one
+  exception is a control the bar would land on, which moves just clear of it. Scroll
+  anchoring is off for that moment so the two corrections never add up. Rows keep their
+  height: a dish's add line holds its space and the meal's tool line scrolls instead of
+  wrapping.
+- **On a phone:** a row is its picture, name and calories. The macros, portion and empty
+  menu track give their width to the name, and normal mode is unchanged. No preview card
+  opens while picking.
+- **Dishes:** a dish moves whole, so it counts only when every one of its ingredients is
+  ticked. A partly-ticked dish is skipped with a note.
+- **Outcomes:** a move that is refused, fails or has an unknown outcome keeps the ticks.
+  Choosing where the foods already are keeps them too and says "Already in Breakfast" or
+  "Already on <day>".
+- **Meal commands:** each meal's mic and group commands see only that meal's ticks, and a
+  command in one meal leaves the other meals' ticks.
+
+#### Capture toast
+
+Every add made from this page that puts new food on a day gets a toast saying where it
+landed ("Added 3 foods to Today, Lunch"), with **Move to Yesterday** (**Move to Today**
+when it landed on an earlier day) and **Other day…**. That covers voice, photo, a typed
+sentence, the day input, a barcode, a food created for an unknown barcode, a picked
+suggestion, a saved meal (template) and a Needs Review confirmation.
+
+- **No toast:** food that was not added from this page: the coach's `log_food`, Telegram
+  captures and entries the kitchen scale composes. A Telegram or scale capture waiting in
+  Needs Review does get one when it is confirmed here. Copy to today is a deliberate copy,
+  so it keeps its plain notice. Meal instructions, amends, and captures that put no food
+  on the day (no food found, barcode held for review or refused) get no offer either.
+- **Undo:** captures with a server Undo (voice, photo, sentence, day input, barcode) show
+  it beside the day buttons. Suggestions, created foods, saved meals and confirmations
+  have none, so no Undo button appears.
+- **Several at once:** one toast holds an Undo. When a newer action takes that Undo
+  over, the toast loses only the Undo and keeps its day buttons. A failure of that Undo
+  leaves with it: the page's toast reports the unconfirmed Undo once, and when its **Try
+  again** finishes, the day offer retires as well, because the food may be gone. Offers without an Undo
+  stay until used or dismissed. The newest two are kept, and a newer result about the
+  same food replaces its older offer. With two offers showing, each button's accessible
+  name includes the food ("Move Eggs to Yesterday").
+- **Finding the rows:** by the capture's log ID plus the exact IDs its result returned.
+  A shared log ID (`QUICKADD`, `TEMPLATE` and the others in `sharedLogIds.mjs`) counts
+  only through those exact IDs, so earlier foods are never caught.
+- **Cross-day moves:** food on the viewed day is read from the page. Food filed on another
+  day ("I had eggs yesterday") is fetched from that day and moved from there by
+  `moveFromDay`, which leaves the viewed day's rows alone.
+- **Dishes:** a dish moves only when every part is from this capture, so a move never
+  carries food from another log. A captured part of any other dish stays, and the toast
+  says it is part of a dish and can't move alone; the rest of the capture still moves.
+- **After the tap:** a move leaves only the move's Undo, because a capture's Undo stops
+  working once its rows change. A refused move keeps the toast and its day buttons, and
+  gives the server's reason (a refusal never says to try again when connected). A
+  day that will not load, or food no longer on it, is reported and the toast stays.
+- **Unknown outcome:** the food stays reserved, so the toast says it could not confirm the
+  move and swaps its day buttons for **Try again**, which resends the same operation ID. If
+  the first attempt had committed, the server replays it and the move finishes normally.
+  Dismissing the toast leaves the retry on the page's toast.
+- **Focus:** when a toast's action removes the focused button, focus goes to the next
+  action in that toast, then another toast, then the day bar's move button, then the
+  day bar's fallback (the field, or the microphone on a touch screen). Picking from
+  **Other day…** puts focus on the toast's **Move to …** button, which then behaves as if
+  it had been pressed. After a move from a meal's `⋯` menu, whether it finished or failed,
+  focus that was left on nothing goes to the same next action, such as **Undo** or **Try
+  again**. A **Try again** whose retry fails again gets focus back once it is no longer
+  busy, since the browser drops focus from a busy button. The date field in these menus
+  ignores a half-typed year. A meal's `⋯` menu items are 44 px tall on touch, like the
+  other move menus (`health-move-menu__item`).
+- **Room to scroll:** while toasts show, the page gains that much space at its end, so the
+  last foods can be scrolled clear of them. The space is added below everything and kept
+  until the view leaves it, so neither a toast arriving nor one leaving moves the page.
+- **Moves from anywhere:** every finished move reports its row IDs and destination
+  (`moves.undo.moved`), whether it came from the toast, a drag, a meal menu, selection
+  or the page's Try again toast. A move to another day retires any toast about those foods. A
+  move to another meal keeps the day buttons and drops the meal from the toast's text.
+  Toasts about other foods are untouched.
+- **One report:** the toast replaces the "Moved to Lunch" cue and the add row's "Added
+  to Lunch" line for the same add.
+- Logs: `capture.offer` (every path), `capture.move-day`, `capture.move-day.result`,
+  `capture.move-day.retry`, `capture.move-day.load_failed`.
 
 ### Calorie bars under each kcal figure
 
@@ -603,7 +815,7 @@ has one of three homes, chosen by what it is about:
 
 | Kind | Examples | Home |
 |---|---|---|
-| **Reaction to what you just did** | "Moved to Lunch", "Breakfast copied to today", a capture that found no food, Undo for a move / meal change / delete, a move that failed, a recording that didn't send | A **toast** (`TodayToasts.jsx` over `lib/ui` `Toast`): floats out of flow, just above the tab bar on a phone, bottom-right on desktop, never over the headline number. Hidden while the coach chat is open. |
+| **Reaction to what you just did** | "Moved to Lunch", "Breakfast copied to today", a capture that found no food, the [capture toast](#capture-toast) with **Move to …** and **Other day…**, the day input's replies, Undo for a move / meal change / delete, a move that failed, a recording that didn't send | A **toast** (`TodayToasts.jsx` over `lib/ui` `Toast`): floats out of flow, just above the tab bar on a phone, bottom-right on desktop, never over the headline number. Hidden while the coach chat is open. |
 | **Waiting on you, arrived on its own** | Nutrition-cleanup follow-up questions (15 s poll), unmatched kitchen-scale readings | The **follow-ups bell** (`FollowUpTray.jsx`) in the app header, next to settings. It takes no space on the page at all. The header slot is a fixed size (`followUpTarget`, portalled into from TodayView), and when something is waiting a red count floats over the bell, so an arrival moves nothing. Tapping the bell drops down a short list: each question by the food it is about (up to five, then "N more"), and "N scale readings to match". Picking an item opens a **sheet**. Questions come as a card deck (`cleanup/QuestionDeck.jsx`), opened on the question you picked: ONE compact card at a time, headed by the food, choices as big buttons (with the auditor's one-line reason), swipe / arrow keys / Back–Skip to move, answering moves on by itself, free text behind "Other answer…", "Leave as is" to dismiss. The sheet also holds any unclaimed scale readings. With nothing waiting, the bell is muted and its dropdown says "Nothing waiting". The dropdown has no focus trap: its aria-hider raced the sheet a pick opens and left the page, sheet included, `aria-hidden`. |
 | **About one entry** | A portion/number edit that failed or is invalid | **On that entry's row** (`PortionDraftAlert` in `EntryRow`). A dish cannot be collapsed while a draft is open, so a member's error cannot be hidden. Only a draft whose entry has left the day falls back to a toast. |
 
@@ -618,11 +830,12 @@ Toast rules:
 - **Anything with an action stays** until used or dismissed. Delete's confirmation
   promises "You can undo this straight after"; an Undo that expired while the phone
   was in a pocket breaks that promise.
-- **One Undo at a time.** A move, an AI meal change and a delete can each hold an
-  Undo; the newest supersedes and *retires* the older ones, so dismissing it never
-  brings back a stale Undo for something else.
-- A move that half-failed shows its error and the Undo for the part that moved
-  side by side.
+- **One Undo at a time.** A move, an AI meal change, a capture and a delete can each
+  hold an Undo; the newest supersedes and *retires* the older ones, so dismissing it never
+  brings back a stale Undo for something else. A capture toast that loses its Undo keeps
+  its day buttons.
+- A failed Undo shows its error and the Undo offer side by side, so it can be tried
+  again.
 
 The toast region portals into the app's `.ds-root` (where the theme's `--ds-*`
 colours are set), not `<body>`.
@@ -857,13 +1070,15 @@ credit (`est.` for a heart-rate estimate), every memo and the description.
 ## Capture funnels
 
 Four ways to get a food onto the log — type, speak, photograph, or scan a barcode — start
-from one of two places on Today.
+from one of two places on Today: the [day input](#day-input-dayinputbarjsx) above the
+meals, which takes words typed or spoken about the whole day, or a meal's own add row,
+which takes all four.
 
 All four meals always render; an empty meal is its header and its add row. Each meal's
-add row (`MealAddRow.jsx`) is the one capture surface for that meal: a slim inline
+add row (`MealAddRow.jsx`) is the capture surface for that meal: a slim inline
 "Add to {meal}…" field with voice, photo, barcode and saved-meal actions beside it (muted
 until the row is hovered or focused on a mouse; always full strength on touch). There is
-no page-level capture bar and no mic in the meal header. The add line's text starts where the food
+no mic in the meal header. The add line's text starts where the food
 names start (LogTable measures a top-level row's name and shares it as
 `--health-name-inset`, so an empty meal lines up too); its suggestion list keeps the
 meal's full width. Hovering a row's picture or name shows the food's preview card. There is ONE
@@ -1709,7 +1924,8 @@ uses (`nutritionInput.process({ type: 'text', content: description, userId })` �
 through the same auto-commit seam as every other transport: **the coach's entries are
 logged immediately as `accepted` + `settled: false`**, with no separate acceptance gate
 for this transport — it behaves exactly like a typed sentence submitted from the combobox.
-It returns
+Its entries get no capture toast or day buttons in Today; "move that to yesterday" in the
+day input corrects the latest one. It returns
 `{ status: 'logged', summary }` (`summary` is the parsed itemization's first response line,
 e.g. "🟡 2 eggs — 140 kcal"), which lets the model tell the user what landed; the user
 reviews or undoes it in the app.
@@ -1828,7 +2044,7 @@ such rows one at a time.
 
 ## API surface
 
-All under `/api/v1/health/`, from `__backend/src/4_api/v1/routers/health.mjs`:
+All under `/api/v1/health/`, from `__app_modules/wellness/health/server/api/routers/health.mjs`:
 
 | Endpoint | Purpose |
 |---|---|
@@ -1856,6 +2072,9 @@ All under `/api/v1/health/`, from `__backend/src/4_api/v1/routers/health.mjs`:
 | `POST /nutrition/templates/:id/dismiss` | refuse a proposal; its key is remembered forever |
 | `DELETE /nutrition/templates/:id` | remove a template |
 | `POST /nutrition/input` | unified capture entry point (`type: text\|image\|voice\|barcode`) |
+| `POST /nutrition/day-input` | one day-level instruction in words: log, move or correct food ([contract](meal-commands.md#day-input-day-input)) |
+| `POST /nutrition/foods-move` | move foods to another day and/or meal, all or none ([contract](meal-commands.md#moving-foods-foods-move)) |
+| `POST /nutrition/meal-command`, `POST /nutrition/meal-undo` | atomic meal commands and their durable Undo ([contract](meal-commands.md)) |
 | `POST /nutrition/callback` | resolve a capture's Undo/Edit/portion choice, or a scale-pending Accept/Discard |
 | `GET /nutrition/pending?date=` | pending NutriLogs from every capture surface for a date (Health's NEEDS REVIEW banner) |
 | `POST /nutrition/pending/:id/review` | save, confirm, or discard with `expectedVersion` and `operationId`; optional portion factor, item edits, date, meal, and nutrition-warning acknowledgement |

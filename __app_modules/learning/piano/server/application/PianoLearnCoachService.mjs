@@ -1,4 +1,4 @@
-import { applyCoachEvent, createCoachPlan, coachTaskKey, COACH_VERSION } from '#shared/music/learnCoach.mjs';
+import { applyCoachEvent, coachSummary, createCoachPlan, coachTaskKey, projectCoach, COACH_VERSION } from '#shared/music/learnCoach.mjs';
 
 const ID = /^[a-zA-Z0-9][a-zA-Z0-9_-]{0,127}$/;
 const SCORE = /^[a-z0-9-]{1,120}$/;
@@ -10,10 +10,24 @@ const fail = (message, status = 400) => { throw Object.assign(new Error(message)
 
 export class PianoLearnCoachService {
   #queues = new Map();
-  constructor({ datastore, receiptStore, attemptStore, clock, timezone, logger }) {
+  constructor({ datastore, receiptStore, attemptStore, clock, timezone, logger, pieceLog = null }) {
     if (!datastore || !receiptStore || !attemptStore || typeof clock !== 'function') throw new Error('Coaching persistence requires stores and clock');
     this.datastore = datastore;this.receiptStore = receiptStore;this.attemptStore = attemptStore;
-    this.clock = clock;this.timezone = timezone;this.logger = logger;
+    this.clock = clock;this.timezone = timezone;this.logger = logger;this.pieceLog = pieceLog;
+  }
+  /**
+   * The whole piece became all Silver or all Gold because of this one saved take.
+   * `before` and `after` share a plan and a legacy record, so legacy credit, a
+   * plan edit or a policy change can never be the cause.
+   */
+  #notePiece({ userId, plan, event, before, after, now }) {
+    if (event.type !== 'outcome') return;
+    for (const level of ['silver', 'gold']) {
+      const total = after.piece.total;
+      if (!(total > 0) || after.piece[level] !== total || before.piece[level] >= before.piece.total) continue;
+      this.logger?.info?.('piano.learn.piece-certified', { userId, scoreId: plan.scoreId, level, passages: total });
+      this.pieceLog?.note({ userId, scoreId: plan.scoreId, level, passages: total, fingerprint: plan.fingerprint, at: now });
+    }
   }
   async #serial(userId, scoreKey, operation) {
     const key = `${userId}/${scoreKey}`;
@@ -78,17 +92,36 @@ export class PianoLearnCoachService {
         || current.range.start < segment.inMeasure || current.range.end > segment.outMeasure || current.range.end < current.range.start
         || !Array.isArray(current.parts) || !current.parts.length || current.parts.some((part) => !segment.playableParts.includes(part))
         || !['free', 'metronome', 'cued'].includes(current.mode)
+        || (current.assist != null && current.assist !== 'none')
         || (current.mode !== 'free' && (!Number.isFinite(current.tempoPercent) || current.tempoPercent <= 0 || current.tempoPercent > 100))
         || !current.criteria || Object.values(current.criteria).some((n) => !Number.isFinite(n) || n < 0 || n > 1)) fail('Invalid coaching task');
       current = current.parent;
     }
     if (!task) fail('Missing coaching task');
   }
+  #logMastery({ userId, plan, event, before, after, state }) {
+    const passageId = event.task.passageId;
+    const base = { userId, scoreId: plan.scoreId, passageId };
+    if (event.type === 'set-aside') this.logger?.info?.('piano.learn.set-aside', base);
+    const entry = state.evidence.at(-1);
+    if (event.type === 'outcome' && event.task.assist === 'none' && entry?.id === event.id) {
+      this.logger?.info?.('piano.learn.silver-check', { ...base, passed: entry.passedCredits.includes(entry.task.key),
+        cleanliness: entry.result.criteria?.cleanliness ?? null });
+    }
+    for (const segment of after.segments) {
+      for (const level of ['silver', 'gold']) {
+        const earned = segment.certification[level];
+        if (earned && !before.certifications[segment.id]?.[level]) {
+          this.logger?.info?.('piano.learn.certified', { userId, scoreId: plan.scoreId, passageId: segment.id, level, provenance: earned.provenance });
+        }
+      }
+    }
+  }
   async record(userId, scoreKey, body) {
     return this.#serial(userId, scoreKey, async () => {
       this.#scope(userId, scoreKey);this.#recover(userId, scoreKey);
       const event = body?.event;
-      if (!ID.test(String(event?.id)) || event.profileId !== userId || !['selection', 'outcome'].includes(event.type)) fail('Invalid coaching event');
+      if (!ID.test(String(event?.id)) || event.profileId !== userId || !['selection', 'outcome', 'set-aside'].includes(event.type)) fail('Invalid coaching event');
       const plan = this.#plan(body.plan, scoreKey);
       const signature = JSON.stringify(canonical(body));
       const receipt = this.receiptStore.getReceipt(userId, scoreKey, event.id);
@@ -109,10 +142,18 @@ export class PianoLearnCoachService {
       if (!this.timezone) fail('Household timezone is unavailable; progress was not saved', 503);
       const at = this.clock();
       const dayKey = new Intl.DateTimeFormat('en-CA', { timeZone: this.timezone, year: 'numeric', month: '2-digit', day: '2-digit' }).format(at);
-      const state = applyCoachEvent(this.#state(record, plan), { ...event, result }, { plan, now: at.toISOString(), dayKey, legacy: record });
+      const now = at.toISOString();
+      const previous = this.#state(record, plan);
+      const before = projectCoach({ plan, state: previous, legacy: record, dayKey });
+      const applied = applyCoachEvent(previous, { ...event, result }, { plan, now, dayKey, legacy: record });
+      const after = projectCoach({ plan, state: applied, legacy: record, dayKey });
+      const state = { ...applied, summary: coachSummary(after, { now, state: applied }) };
+      this.#logMastery({ userId, plan, event, before, after, state });
       const acknowledged = { signature, revision: state.revision, fingerprint: plan.fingerprint, scoreId: plan.scoreId };
       this.receiptStore.savePending(userId, scoreKey, { id: event.id, stateAfter: state, receipt: acknowledged });
       this.#recover(userId, scoreKey);
+      // Only after the take is durably saved, and never on a replayed receipt.
+      this.#notePiece({ userId, plan, event, before, after, now });
       this.logger?.info?.('piano.learn.saved', { userId, scoreId: plan.scoreId, eventId: event.id, revision: state.revision });
       return this.#response(this.#scope(userId, scoreKey), plan);
     });

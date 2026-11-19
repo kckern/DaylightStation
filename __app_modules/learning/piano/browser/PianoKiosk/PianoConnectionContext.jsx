@@ -12,6 +12,7 @@ export const Ctx = createContext(null);
 const repairMessage = (result) => {
   if (result.ok) return 'Piano reconnected — settings restored.';
   if (result.reason === 'already-working') return 'Repair already in progress.';
+  if (result.phase === 'bridge-reset' && result.bridgeResult?.verdict) return result.bridgeResult.verdict;
   if (result.phase === 'bridge-reset') return result.reason === 'timeout' ? 'Piano bridge reset timed out.' : 'Piano bridge could not restore the connection.';
   if (result.phase === 'midi-reacquire') return 'Browser MIDI access could not be restored.';
   if (result.phase === 'health-wait') return result.health === 'input-only' || result.health === 'output-only' ? 'Piano is only partly connected.' : 'Piano did not reconnect in time.';

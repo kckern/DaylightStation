@@ -9,6 +9,7 @@ import { capturedFoodGrams, capturedNutrientProvenance } from '../../../../healt
 import { v4 as uuidv4 } from 'uuid';
 import { repairTruncatedJson } from "../lib/repairJson.mjs";
 import { deriveLogDate } from "../lib/deriveLogDate.mjs";
+import { captureCatalogMicros, enrichFoodCapture, finishQuickInputEnrichment } from "../services/enrichFoodCapture.mjs";
 import { createNutriLog, serializeNutriLog } from "../../../../health/server/nutrition-records.mjs";
 import { groupParsedItems } from "../../../../health/server/nutrition-capture-values.mjs";
 import { aiMicrosSource, pickMicros } from "../../../../health/server/nutrition-capture-values.mjs";
@@ -134,7 +135,8 @@ export class LogFoodFromText {
       existingMessageId, responseContext,
     } = input;
 
-    this.#logger.info?.('logText.start', { conversationId, text, textLength: text.length, hasResponseContext: !!responseContext });
+    // What was typed or said is logged by its length only, here and below.
+    this.#logger.info?.('logText.start', { conversationId, textLength: text.length, hasResponseContext: !!responseContext });
 
     // Get messaging interface (prefers responseContext)
     const messaging = this.#getMessaging(responseContext, conversationId);
@@ -143,7 +145,7 @@ export class LogFoodFromText {
     let isRevisionMode = false;
     let pendingLogUuid = null;
     let originalMessageId = null;
-    if (this.#conversationStateStore && !input.interpretText) {
+    if (this.#conversationStateStore && !input.interpretText && !input.plainCapture) {
       const state = await this.#conversationStateStore.get(conversationId);
       if (state?.activeFlow === 'revision') {
         isRevisionMode = true;
@@ -159,7 +161,7 @@ export class LogFoodFromText {
       // Skip generic AI call and status message creation — update original message in-place
       if (isRevisionMode && pendingLogUuid) {
         this.#logger.info?.('logText.revisionShortCircuit', {
-          conversationId, pendingLogUuid, originalMessageId, text,
+          conversationId, pendingLogUuid, originalMessageId, textLength: text.length,
         });
 
         const revisionResult = await this.#handleRevisionDirect({
@@ -242,10 +244,11 @@ export class LogFoodFromText {
       // it outranks the viewed day, which outranks the wall clock.
       const asOfDate = asOfDateForRevision || viewedDate || null;
       const prompt = this.#buildDetectionPrompt(text, portionBoost, asOfDate);
-      this.#logger.debug?.('logText.aiPrompt', { conversationId, text, asOfDate, asOfDateForRevision, viewedDate });
+      this.#logger.debug?.('logText.aiPrompt', { conversationId, textLength: text.length, asOfDate, asOfDateForRevision, viewedDate });
 
       const response = await this.#aiGateway.chat(prompt, { maxTokens: 4096 });
-      this.#logger.debug?.('logText.aiResponse', { conversationId, response: response?.substring?.(0, 500) });
+      // The model's answer can quote the input back, so it is logged by its length too.
+      this.#logger.debug?.('logText.aiResponse', { conversationId, responseLength: response?.length ?? 0 });
 
       // 3. Parse response into food items and date — same pin
       const { items: foodItems, date: aiDate, time: aiTime, mealTimeExplicit } = this.#parseFoodResponse(response, asOfDate);
@@ -284,10 +287,12 @@ export class LogFoodFromText {
       }
 
       if (foodItems.length === 0) {
-        this.#logger.debug?.('logText.noFood', { conversationId, text });
+        this.#logger.debug?.('logText.noFood', { conversationId, textLength: text.length });
 
-        // Try revision fallback
-        const fallbackResult = await this.#tryRevisionFallback(userId, conversationId, text, statusMsgId, existingMessageId, messaging);
+        // Try revision fallback. A plain capture has already been judged to be new food.
+        const fallbackResult = input.plainCapture
+          ? { handled: false }
+          : await this.#tryRevisionFallback(userId, conversationId, text, statusMsgId, existingMessageId, messaging);
 
         if (fallbackResult.handled) {
           if (existingMessageId && statusMsgId !== existingMessageId) {
@@ -307,12 +312,13 @@ export class LogFoodFromText {
             text: "❓ I couldn't identify any food from your description. Could you be more specific?",
           });
         }
-        return { success: false, error: 'No food detected' };
+        return { success: false, code: 'NO_FOOD', error: 'No food detected' };
       }
 
       // 4. Create NutriLog entity
       const timezone = this.#config?.getUserTimezone?.(userId) || 'America/Los_Angeles';
       const createTimestamp = new Date();
+      const quickInput = input.quickInput && { ...input.quickInput, catalogMicros: captureCatalogMicros(foodItems) };
       const nutriLog = createNutriLog({
         userId,
         conversationId,
@@ -320,72 +326,24 @@ export class LogFoodFromText {
         items: foodItems,
         meal: {
           date: logDate,
-          time: this.#getMealTimeFromHour(createTimestamp.getHours()),
+          time: (quickInput && ((mealTimeExplicit && aiTime) || quickInput.bucket)) || this.#getMealTimeFromHour(createTimestamp.getHours()),
         },
         metadata: {
+          ...(quickInput && { quickInput, messageId: statusMsgId ? String(statusMsgId) : undefined, messageKind: 'text' }),
           source: 'text',
           sourceText: text,
         },
         timezone,
         timestamp: createTimestamp,
-      });
+      }, quickInput ? { newId: () => quickInput.logId } : {});
 
       // 5. Save NutriLog
       if (this.#foodLogStore) {
         await this.#foodLogStore.save(nutriLog);
       }
 
-      // 5a-bis. Density guard (catalog-density fix, step 2). Runs BEFORE the
-      // catalog donation below, because a donation adds this very row to the
-      // history the guard compares against — judging a row against a median it
-      // has already moved is not a check. It never corrects a number: the row
-      // is logged exactly as parsed and lands UNSETTLED like every capture
-      // (NutribotInputRouter stamps `settled: false`), so a flagged item simply
-      // arrives on the pending-review surface with a reason attached.
-      let densityFindings = [];
-      if (this.#catalogService?.assessDensity) {
-        try {
-          const findings = await this.#catalogService.assessDensity(foodItems, userId);
-          densityFindings = findings;
-          if (findings.length) this.#logger.info?.('nutribot.density.findings', { logId: nutriLog.id, findings });
-        } catch (err) {
-          this.#logger.warn?.('nutribot.density.assess_failed', { conversationId, error: err.message });
-        }
-      }
-
-      // 5b. Record food items in catalog for quick-add
-      if (this.#catalogService) {
-        for (const item of foodItems) {
-          try {
-            await this.#catalogService.recordUsage({
-              foodId: item.foodId,
-              name: item.label,
-              calories: item.calories,
-              protein: item.protein,
-              carbs: item.carbs,
-              fat: item.fat,
-              // The MASS, and the id that makes this row's observation
-              // idempotent. Without these the catalog can only remember a
-              // total, which is the portion-multiple problem it just stopped
-              // having.
-              grams: item.grams,
-              unit: item.unit,
-              amount: item.amount,
-              logId: item.id,
-              // Spread, not four named fields: an unanswered micro is ABSENT
-              // on `item` (see the mapper), and naming it here would
-              // resurrect it as `undefined` -> a donated structural zero.
-              ...pickMicros(item),
-              // Only a provenanced row donates its micros at all —
-              // see FoodCatalogService.recordUsage.
-              microsSource: item.microsSource,
-              source: 'nutritionix',
-            }, userId);
-          } catch (err) {
-            this.#logger.warn?.('nutribot.catalog.record_failed', { name: item.label, error: err.message });
-          }
-        }
-      }
+      if (quickInput) return { success: true, nutrilogUuid: nutriLog.id, itemCount: foodItems.length };
+      const densityFindings = await enrichFoodCapture(nutriLog, foodItems, this.#catalogService, this.#logger);
 
       // Hand the existing status message to the receipt publisher. Drain any
       // in-flight animation first so it cannot clobber the committed receipt.
@@ -431,6 +389,10 @@ export class LogFoodFromText {
     } finally {
       await status?.release?.();
     }
+  }
+
+  finishQuickInput(log) {
+    return finishQuickInputEnrichment(log, this.#catalogService, this.#foodLogStore, this.#logger);
   }
 
   /**
@@ -841,7 +803,7 @@ Begin response with '{' character - output only valid JSON, no markdown.${portio
    * @param {Object} messaging - Messaging interface
    */
   async #tryRevisionFallback(userId, conversationId, text, statusMsgId, existingLogMessageId = null, messaging) {
-    this.#logger.debug?.('logText.revisionFallback.start', { conversationId, text });
+    this.#logger.debug?.('logText.revisionFallback.start', { conversationId, textLength: text.length });
 
     // Check conversation state for pending log UUID and originalMessageId
     let pendingLogUuid = null;
@@ -868,7 +830,7 @@ Begin response with '{' character - output only valid JSON, no markdown.${portio
       return { handled: false };
     }
 
-    this.#logger.info?.('logText.revisionFallback', { targetLogUuid: targetLog.id, userInput: text.substring(0, 50) });
+    this.#logger.info?.('logText.revisionFallback', { targetLogUuid: targetLog.id, textLength: text.length });
 
     // Build contextual text with original items
     const originalItems = (targetLog.items || [])

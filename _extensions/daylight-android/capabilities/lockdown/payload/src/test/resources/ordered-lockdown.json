@@ -1,0 +1,42 @@
+[
+  {
+    "action": "stop",
+    "request": {
+      "locked": true,
+      "lockedUntil": null,
+      "revision": 4
+    },
+    "daylight": {
+      "ok": true,
+      "inputReady": true,
+      "inputLocked": true,
+      "revision": 4,
+      "lockedUntil": null
+    },
+    "legacy": {
+      "lockdownProtocolVersion": 2,
+      "lockdownActive": true,
+      "lockdownRevision": 4
+    }
+  },
+  {
+    "action": "release",
+    "request": {
+      "locked": false,
+      "lockedUntil": null,
+      "revision": 5
+    },
+    "daylight": {
+      "ok": true,
+      "inputReady": true,
+      "inputLocked": false,
+      "revision": 5,
+      "lockedUntil": null
+    },
+    "legacy": {
+      "lockdownProtocolVersion": 2,
+      "lockdownActive": false,
+      "lockdownRevision": 5
+    }
+  }
+]

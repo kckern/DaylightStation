@@ -13,6 +13,7 @@ import { asyncHandler } from '#system/http/middleware/index.mjs';
 import { createLocalFileResource, sendLocalFileResource } from '#system/http/streamFile.mjs';
 import { presentFoodCatalogEntry } from "../presenters/FoodCatalogPresenter.mjs";
 import { isISODate } from '../../../portable/contracts/health/isoDate.mjs';
+import { FOOD_LOG_TEXT_MAX_LENGTH, FOOD_LOG_TEXT_TOO_LONG_MESSAGE } from '../../../portable/contracts/nutrition/foodLogText.mjs';
 import { presentPendingNutritionLog } from "../presenters/PendingNutritionLogPresenter.mjs";
 
 // Same allowlist PhotoStore enforces internally (1_adapters/persistence/PhotoStore.mjs).
@@ -42,6 +43,41 @@ const OBSERVATION_ID_PATTERN = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0
 // safe-characters allowlist rather than a shape: no slash, dot, whitespace or null byte
 // can reach a datastore lookup. Existence is then checked by the lookup itself.
 const ENTRY_UUID_PATTERN = /^[A-Za-z0-9_-]{1,64}$/;
+const OPERATION_ID_PATTERN = /^[A-Za-z0-9_-]{1,128}$/;
+const DAY_INPUT_CLARIFICATION_KEYS = ['foodId', 'toDate'];
+const DAY_INPUT_MAX_KEPT_FOODS = 200;
+/** The foods a day answer keeps, in one order however they were listed, or null when unusable. */
+const keptFoodIds = ids => (Array.isArray(ids) && ids.length > 0 && ids.length <= DAY_INPUT_MAX_KEPT_FOODS
+  && ids.every(id => typeof id === 'string' && ENTRY_UUID_PATTERN.test(id)) && new Set(ids).size === ids.length ? [...ids].sort() : null);
+/**
+ * A clarification in one fixed key order, or null when its shape is wrong. A day
+ * answer can name the foods the first reading chose (`foodIds`, from `fromDate`):
+ * those come as a pair, with `toDate`, and stand in for any single `foodId`.
+ */
+const dayInputClarification = (resolved = {}) => {
+  if (!resolved || typeof resolved !== 'object' || Array.isArray(resolved)) return null;
+  const { foodIds, fromDate, ...answers } = resolved;
+  const valid = Object.entries(answers).every(([key, value]) => DAY_INPUT_CLARIFICATION_KEYS.includes(key) && typeof value === 'string' && value);
+  if (!valid) return null;
+  const clean = Object.fromEntries(DAY_INPUT_CLARIFICATION_KEYS.filter(key => answers[key]).map(key => [key, answers[key]]));
+  if (foodIds === undefined && fromDate === undefined) return clean;
+  const kept = keptFoodIds(foodIds);
+  return kept && typeof fromDate === 'string' && isISODate(fromDate) && clean.toDate && !clean.foodId ? { ...clean, foodIds: kept, fromDate } : null;
+};
+/** A recording as the browser sends it: `data:<mime>[;params];base64,<bytes>`. */
+const isBase64DataUrl = value => {
+  const comma = value.indexOf(',');
+  if (!value.startsWith('data:') || comma === -1 || !value.slice(0, comma).endsWith(';base64')) return false;
+  const bytes = value.slice(comma + 1);
+  return bytes.length % 4 !== 1 && /^[A-Za-z0-9+/]+={0,2}$/.test(bytes);
+};
+const sendAudioNotFound = res => res.status(404).json({
+  error: 'That recording is no longer available — please record it again.',
+  code: 'AUDIO_NOT_FOUND',
+});
+/** Day input's own refusals. Any other status came from somewhere upstream. */
+const isDayInputRefusal = ({ status, code }) => [400, 404, 409, 422].includes(status)
+  || (status === 502 && code === 'TRANSCRIBE_FAILED') || (status === 503 && code === 'DAY_INPUT_UNAVAILABLE');
 
 // Food-icon slugs are manifest KEYS, checked at the HTTP boundary before the
 // value reaches the store at all. Same allowlist IconManifestStore enforces
@@ -699,7 +735,7 @@ export function createHealthRouter(config) {
   // ==========================================================================
 
   if (healthOperations.nutritionItemsAvailable) {
-    for (const [route, method] of [['meal-command', 'mealFoodCommand'], ['meal-undo', 'undoMealFoodCommand']]) {
+    for (const [route, method] of [['meal-command', 'mealFoodCommand'], ['meal-undo', 'undoMealFoodCommand'], ['foods-move', 'moveFoods']]) {
       router.post(`/nutrition/${route}`, asyncHandler(async (req, res) => {
         const userId = getDefaultUsername(req);
         try {
@@ -1532,14 +1568,53 @@ export function createHealthRouter(config) {
         // and has an answer a person can act on. It is not a 500.
         if (err.code === 'AUDIO_NOT_FOUND') {
           logger.warn?.('health.nutrition.input.audio_missing', { audioRef });
-          return res.status(404).json({
-            error: "That recording is no longer available — please record it again.",
-            code: 'AUDIO_NOT_FOUND',
-          });
+          return sendAudioNotFound(res);
         }
         logger.error?.('health.nutrition.input.error', { type, error: err.message });
         if (err.status) return res.status(err.status).json({ error: err.message, code: err.code });
         return sendInternalError(res, { error: err.message });
+      }
+    }));
+
+    /**
+     * POST /health/nutrition/day-input
+     * One day-level instruction: logs new food or changes what is logged.
+     * Voice sends a recording as `content`, or `audioRef` to retry a saved one.
+     * The server supplies today; retries repeat `operationId` with the same body.
+     */
+    router.post('/nutrition/day-input', asyncHandler(async (req, res) => {
+      const userId = getDefaultUsername(req);
+      const { type, content, date, operationId } = req.body || {};
+      const audioRef = req.body?.audioRef ?? undefined;
+      const spoken = type === 'voice';
+      if (audioRef !== undefined && (!spoken || content != null || typeof audioRef !== 'string' || !AUDIO_REF_PATTERN.test(audioRef))) {
+        return res.status(400).json({ error: 'Invalid audioRef', code: 'AUDIO_REF_INVALID' });
+      }
+      const hasContent = typeof content === 'string' && (spoken ? isBase64DataUrl(content) : Boolean(content.trim()));
+      if (!['text', 'voice'].includes(type) || (audioRef === undefined && !hasContent)) return res.status(400).json({ error: 'Text or a recording is required' });
+      if (!spoken && content.trim().length > FOOD_LOG_TEXT_MAX_LENGTH) return res.status(400).json({ error: FOOD_LOG_TEXT_TOO_LONG_MESSAGE, code: 'DAY_INPUT_TOO_LONG' });
+      if (!isISODate(date)) return res.status(400).json({ error: 'A valid date is required' });
+      if (typeof operationId !== 'string' || !OPERATION_ID_PATTERN.test(operationId)) return res.status(400).json({ error: 'A valid operation ID is required' });
+      const resolved = dayInputClarification(req.body.resolved);
+      if (!resolved) return res.status(400).json({ error: 'Invalid clarification' });
+      const source = audioRef ? { audioRef } : { content };
+      try {
+        const result = await runNutritionOperation(userId, operationId, { operation: 'day-input', type, ...source, date, resolved },
+          () => healthOperations.processDayInput({ userId, type, ...source, date, resolved, operationId }));
+        logger.info?.('health.day_input.complete', { userId, date, operationId, kind: result.kind, outcome: result.outcome });
+        return res.json(result);
+      } catch (err) {
+        logger.warn?.('health.day_input.failed', { userId, date, operationId, status: err.status, code: err.code, error: err.message });
+        // The retry changes how the recording is sent, which is a different request
+        // body under the same ID, so this attempt's record must not block it.
+        if (err.audioRef || err.code === 'AUDIO_NOT_FOUND') {
+          try { healthOperations.clearFailedNutritionOperation(userId, operationId); }
+          catch (clearError) { logger.warn?.('health.day_input.clear_failed', { userId, operationId, error: clearError.message }); }
+        }
+        if (err.code === 'AUDIO_NOT_FOUND') return sendAudioNotFound(res);
+        const saved = err.audioRef ? { audioRef: err.audioRef } : {};
+        if (isDayInputRefusal(err)) return res.status(err.status).json({ error: err.message, code: err.code, ...saved });
+        return sendInternalError(res, { error: 'Could not process that. Please try again.', ...saved });
       }
     }));
 

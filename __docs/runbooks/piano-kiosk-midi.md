@@ -140,9 +140,10 @@ of which were the problem.
 JamCorder's `/api/bluetooth/state/get` shows `"clients": []`. MIDI is dead in **both**
 directions. `ble.in` and `ble.out` stay flat while `usb.in` climbs.
 
-`CONNECTED` only means `openBluetoothDevice` returned a device object. If the JamCorder loses
-power (it is on the piano's smart plug), the bridge can reach `CONNECTED` with nothing there,
-and that stops its retries. Later reopens return in about 10 ms with no GATT connection.
+On older payloads `CONNECTED` only meant `openBluetoothDevice` returned a device object, so
+the bridge could reach it with no link and stop retrying. Later reopens returned in about
+10 ms with no GATT connection. What started the 2026-11-18 episode is unknown: it followed
+79 minutes with the piano plug off, but the JamCorder is not on that plug.
 
 **Cure: reboot the tablet.** Check `piano-kiosk-idle.sh` first, then send FKB
 `rebootDevice`. The link came back about a minute later on 2026-11-18.
@@ -150,6 +151,33 @@ and that stops its retries. Later reopens return in about 10 ms with no GATT con
 **These did not work:** the §4 sequence (including `/reset`, which still answered
 `fixed:true`), `/forget` + `/connect`, and a JamCorder reboot. The likely mechanism is a stale
 device held by Android's MIDI service, which is not proven.
+
+**Automatic repair.** `PianoBridgeSupervisorService` reboots the tablet when all of these hold:
+the piano has been on for 5 minutes, the echo is failing, the JamCorder reports no client for
+3 minutes, no speaker repair is running, and nobody is at the kiosk. "Nobody" means no game on
+screen, no kiosk event outside a known background list in 5 minutes, and, with the screen on,
+proof the page is still logging. It allows one reboot an hour and three a day, and stops after
+three reboots with no echo between them. If it cannot act it sends one "lost its connection"
+push per reason. Unknown evidence never causes a reboot.
+
+Config lives under `bridge_supervisor.link_repair` (`enabled`, `hold_ms`,
+`min_reboot_gap_ms`, `max_reboots_per_day`, `reboot_grace_ms`, `power_on_settle_ms`). The JamCorder address comes
+from `bridge_supervisor.jamcorder_url` or `effects.jamcorder.web`. That address is DHCP, so a
+stale value disables the repair rather than triggering it.
+
+```bash
+curl -s {env.log_store_url}/select/logsql/query \
+  -d 'query=_msg:~"piano-bridge.supervisor.link-" AND _time:7d' -d 'limit=50'
+```
+
+Events: `link-missing`, `link-reboot`, `link-reboot-failed`, `link-reboot-unconfirmed`,
+`link-reboot-blocked` (`reason`: `busy`, `unknown`, `gap`, `cap`, `reboot-failed`),
+`link-repaired`.
+
+**The bridge now tells the truth.** From payload `p37a-gatt-link`, `ble.state` reaches
+`CONNECTED` only when Android reports a GATT connection, and `/status` adds
+`ble.gattConnected`. An open with no link after 30 s, or a link missing for two 5 s checks,
+goes to `FAILED` and retries, backing off to one attempt a minute.
 
 `ZOMBIE` with `data.speaker:false` is normally just the piano being off. Do not count those
 hours as an outage. `/scan` returned 0 devices even with MIDI healthy, so do not use it as
@@ -286,7 +314,7 @@ named, in every heartbeat. Nothing alerts on it.
 | 2026-08-22 | Web MIDI output handle went zombie; watchdog guarded on conditions that were false | `resetLink()` auto-escalation |
 | 2026-08-23 | Same, one layer down — sends moved to the APK bridge path | `forceResetLink` (L2 radio bounce) |
 | 2026-08-26 | **Chromium's Web MIDI wedging the shared Android GATT queue** | quiesce browser → L2 → reload (§4) |
-| 2026-11-18 | **Phantom `CONNECTED` after the JamCorder lost plug power** (§4a) | Tablet reboot |
+| 2026-11-18 | **Phantom `CONNECTED` with no JamCorder client** (§4a), trigger unknown | Tablet reboot |
 
 **2026-08-26 timeline.** Last `VERIFIED` beat `2026-08-25T17:49:28Z` (RTT 38ms);
 `ZOMBIE` from `17:51:30` **on the same unbroken GATT connection** (`bleUptimeS` kept
@@ -358,7 +386,7 @@ curl -s http://{tablet}:8770/status      # ble.state CONNECTED, outVerified true
 
 | Layer | Where | Covers |
 |---|---|---|
-| Bridge supervisor | DS backend, prod container only (`PianoBridgeSupervisorService`, config `piano.bridge_supervisor`) | Everything, force-stop included. Relaunches through FKB `startApplication` after two failed 30 s checks (backoff 1, 2, 5, 10, 30 min). Pushes if still down after 5 min, and pushes "back" when it recovers. |
+| Bridge supervisor | DS backend, prod container only (`PianoBridgeSupervisorService`, config `piano.bridge_supervisor`) | Everything, force-stop included. Relaunches through FKB `startApplication` after two failed 30 s checks (backoff 1, 2, 5, 10, 30 min). Pushes if still down after 5 min, and pushes "back" when it recovers. With `piano.bridge_provider: daylight-android` it watches the DaylightStation Android app instead and relaunches through that app's lifeline (`__docs/reference/integrations/adb.md`, "The piano bridge on the Android kiosk app"). |
 | FKB `appToRunOnStart` | FKB setting, set 2026-09-30 | Reboots, even with the backend down. FKB launches the bridge in the background when FKB starts. |
 | Keep-alive alarm (shell v31) | `ShellKeepAlive` | Kills and crash loops, every 5 min. Not force-stop. |
 | Crash restart alarm (shell v31) | `PianoBridgeService` crash handler | An uncaught exception, 3 s later. |
@@ -542,6 +570,25 @@ On a stall the kiosk Player can also call `GET http://localhost:8770/wifi?fresh=
 `pbctl wifi`.
 
 ---
+
+## 7d. A played note wakes the screen through a manual off hold (both bridges)
+
+A grown-up turning the tablet's screen off for a while (`DeviceScreenControlService`,
+"screen off for N minutes") holds it two ways: the backend's screen override, which
+the screen authority enforces on each reconcile tick, and a deadline relayed to the
+device's own note wake, so a key press in the meantime does not light the panel.
+
+| Bridge (`piano.bridge_provider`) | The device's note wake | How the deadline gets there |
+|---|---|---|
+| `piano-bridge` (default) | the APK's `ScreenWaker`, `fkbWakeSuppressUntilEpochMs` (epoch ms) | GET `/config`, merge the key, POST the whole set back (a lone POST would erase `targetMac`) |
+| `daylight-android` | the app's `screen-power` note wake, `power.wakeSuppressUntilSec` (epoch seconds) | `POST /settings` for that one key on the control port, with the token header |
+
+Waking the panel on purpose clears the hold: the old APK gets the current time, the
+app gets `0`. A hold lasts at most 24 hours. On the app, a hold left behind by a
+backend restart or a failed relay is re-synced by the bridge supervisor on its next
+reachable check (`piano-wake-hold.resynced`). Check it on the app with `dd settings get power.wakeSuppressUntilSec`
+and in the log store with `piano-midi-wake.suppress-relayed` /
+`suppress-relay-failed`.
 
 ## 8. Still open
 

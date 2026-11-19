@@ -1,4 +1,5 @@
 import { useFoodMutation } from "../operations/useFoodMutation.js";
+import { useHealthOperations } from "../operations/HealthOperationsProvider.jsx";
 // Drag a food from one meal to another.
 //
 // The whole row is the handle, except the parts of it that already answer the
@@ -9,9 +10,9 @@ import { useFoodMutation } from "../operations/useFoodMutation.js";
 // travelled (mouse/pen) or after a long press (touch), and dnd-kit swallows
 // the click that ends a drag.
 //
-// A dish moves with its ingredients (the backend cascades mealTime to a
-// group's children). An ingredient row does not drag on its own: moving one
-// out would leave it parented to a dish in another meal.
+// A dish moves with its ingredients: the move command carries the whole dish.
+// An ingredient row does not drag on its own: moving one out would leave it
+// parented to a dish in another meal.
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import {
   DndContext, DragOverlay, PointerSensor, TouchSensor, pointerWithin,
@@ -19,8 +20,11 @@ import {
 } from '@dnd-kit/core';
 import { createAppLogger } from "../../../../../frontend/src/lib/ui/createAppLogger.js";
 import { FoodIcon } from "./FoodIcon.jsx";
-import { entryError, entryId, entryLabel, updateEntry } from "./entryCommands.js";
-import { bucketLabel } from "./mealBuckets.js";
+import { entryError, entryId, entryLabel, isEntryConflict } from "./entryCommands.js";
+import { BUCKETS, bucketLabel } from "./mealBuckets.js";
+import { isProvisionalRow } from "../healthResources.js";
+import { isCountedRow } from "../../portable/contracts/nutrition/countedRows.mjs";
+import { isReconstructedRow } from "../../portable/contracts/nutrition/reconstruction.mjs";
 import { groupRows } from "./groupRows.js";
 import { dayDropId, dayFromDropId, dayLabel } from "./moveDays.js";
 import { localTodayISO } from "./mealBuckets.js";
@@ -115,6 +119,21 @@ export function useDraggableRow(row, bucket, { disabled = false } = {}) {
 /** A meal's flat rows as its top-level entries, each dish carrying its ingredients. */
 export const mealEntries = rows => groupRows(rows || []).map(({ row, children }) => (children.length ? { ...row, children } : row));
 
+/**
+ * A whole day's top-level entries, as the page shows them: each meal grouped on
+ * its own, then Ungrouped. A part stranded in another meal is its own entry there.
+ * Only real food is offered: not a food still saving, a rejected or pending row, or
+ * a weight-derived estimate. A left-out dish takes its parts with it, since the
+ * server will not move a part without its dish.
+ */
+export const dayEntries = rows => {
+  const saved = (rows || []).filter(row => !isProvisionalRow(row));
+  const known = new Set(BUCKETS.map(bucket => bucket.id));
+  return [...BUCKETS.map(bucket => saved.filter(row => row.mealTime === bucket.id)),
+    saved.filter(row => !known.has(row.mealTime))].flatMap(mealEntries)
+    .filter(row => isCountedRow(row) && !isReconstructedRow(row));
+};
+
 /** A whole meal, dragged by its header onto another meal. `rows` are its top-level entries (dishes carry children). */
 export function useDraggableMeal(bucket, rows) {
   const context = useContext(MealDragContext);
@@ -147,30 +166,66 @@ export function useMealDropTarget(bucket) {
   };
 }
 
-// A moved row (and a dish's children) wear their new meal from the drop until
-// the day reloads with it, so the row never snaps back in between.
+/** How a move ended. Drag and the meal menu ignore it; the selection bar does not. */
+export const MoveResult = Object.freeze({ MOVED: 'moved', UNCHANGED: 'unchanged', NOT_MOVED: 'not-moved', UNKNOWN: 'unknown' });
+
+const MOVE_PATH = 'api/v1/health/nutrition/foods-move';
+const UNDO_PATH = 'api/v1/health/nutrition/meal-undo';
+// The server answered and said no. A timeout or rate limit says nothing about the outcome.
+export const isDefiniteRefusal = err => err?.status >= 400 && err.status < 500 && ![408, 425, 429].includes(err.status);
+/** The server's reason when it is a sentence for a person, never a status line or a payload. */
+export const refusalReason = err => [err?.body?.error, err?.body?.message]
+  .find(text => typeof text === 'string' && text.trim() && !/^\s*(HTTP\b|[{[<])/.test(text)) || null;
+/** "<what failed>: <why>". A refusal will not change with a better connection, so it gives the server's reason or none. */
+const failureText = (what, err) => {
+  if (isEntryConflict(err) || !isDefiniteRefusal(err)) return `${what}: ${entryError(err)}`;
+  const reason = refusalReason(err);
+  return reason ? `${what}: ${reason}` : `${what}.`;
+};
+export const unconfirmedMoveText = (what, place) => `We couldn't confirm moving ${what} to ${place}. Try again to finish it; nothing will move twice.`;
+const MOVE_COMMAND = /\/nutrition\/(foods-move|meal-undo)$/;
+/** What to say about a move or Undo that failed with no known outcome. */
+function unresolvedText(op) {
+  if (op.response) return 'That change went through, but the day did not refresh. Try again to refresh it.';
+  if (op.request.path.endsWith('/meal-undo')) return "We couldn't confirm that undo. Try again to finish it.";
+  const { selectedIds = [], toDate, toMeal } = op.request.body;
+  return unconfirmedMoveText(selectedIds.length === 1 ? op.label : `${selectedIds.length} foods`, toDate ? dayLabel(toDate, localTodayISO()) : bucketLabel(toMeal));
+}
+
+// A moved row wears its new meal from the drop until the day reloads with it, so
+// it never snaps back in between. `moves` names every carried row, parts included.
 function applyMoves(items, moves) {
   if (!moves.size) return items;
   return items.map(row => {
-    const id = String(entryId(row));
-    const direct = moves.get(id);
-    const viaParent = row.parentId != null ? moves.get(String(row.parentId)) : null;
-    const move = direct || viaParent;
+    const move = moves.get(String(entryId(row)));
     return move && row.mealTime !== move.to ? { ...row, mealTime: move.to } : row;
   });
 }
 
 /**
- * Owns the move command: optimistic placement, the PUT, a brief highlight on
- * the moved row, and one Undo.
+ * Owns the move command: optimistic placement, one atomic `foods-move` per
+ * gesture, a brief highlight on the moved rows, and one server Undo. Each move
+ * resolves to a MoveResult: MOVED; UNCHANGED when every food was already there,
+ * so nothing was sent; NOT_MOVED when it was refused or failed (`error` says why);
+ * UNKNOWN when a move to a day got no answer, so it may have happened.
+ *
+ * A failure is reported once. `errorHandled` means `error` already has a home: the
+ * surface that asked (`onRefused`), or `unresolved`. That list is every move or Undo
+ * with no known outcome, each still holding its foods, and it outlives any surface,
+ * so closing one never strands the foods.
  */
 export function useMealMoves(day) {
   const foodAPI = useFoodMutation(day.items);
   const [moves, setMoves] = useState(() => new Map()); // id -> { to }
   const [recent, setRecent] = useState(() => new Set());
-  const [undo, setUndo] = useState(null); // { rows, from, to } | { rows, day: { from, to } }
+  const [undo, setUndo] = useState(null); // { token, operationId, ids, rows, from, to } | { token, operationId, ids, rows, day: { from, to } }
   const [gone, setGone] = useState(() => new Set()); // ids sent to another day, hidden until the day reloads
-  const [error, setError] = useState(null);
+  const session = useHealthOperations();
+  const [failure, setFailure] = useState(null); // { text, operationId, owned }
+  const setError = (text, { operationId = null, owned = false } = {}) => setFailure(text ? { text, operationId, owned } : null);
+  // Commands this hook is waiting on. Their outcome is not known to be unknown yet.
+  const running = useRef(new Set());
+  const [retrying, setRetrying] = useState(() => new Set());
   const timers = useRef(new Set());
   useEffect(() => () => timers.current.forEach(clearTimeout), []);
 
@@ -193,7 +248,7 @@ export function useMealMoves(day) {
 
   const items = useMemo(() => {
     const moved = applyMoves(day.items, moves);
-    return gone.size ? moved.filter(row => !gone.has(String(entryId(row))) && !(row.parentId != null && gone.has(String(row.parentId)))) : moved;
+    return gone.size ? moved.filter(row => !gone.has(String(entryId(row)))) : moved;
   }, [day.items, moves, gone]);
 
   const highlight = id => {
@@ -205,99 +260,205 @@ export function useMealMoves(day) {
     timers.current.add(timer);
   };
 
-  // Moves one row or a whole meal. Rows go one PUT each (a dish's PUT carries
-  // its ingredients); a failure puts back the rows it did not reach.
-  const send = useCallback(async (rows, to, from, { isUndo = false } = {}) => {
-    try { return await foodAPI.withReservation(rows, async batchAPI => {
-    const ids = rows.map(row => String(entryId(row)));
+  // Every row a move carries: the entries, their parts, and any row of the day
+  // linked to a dish. A section only knows its own meal, so a dish's `children`
+  // can miss a part stranded in another one. A plain food carries only its own meal.
+  const withParts = (rows, dayRows = day.items) => {
+    const dayParts = new Map(groupRows(dayRows).map(({ row, children }) => [String(entryId(row)), children]));
+    const all = new Map();
+    for (const row of rows) {
+      const linked = (dayParts.get(String(entryId(row))) || []).filter(part => row.kind === 'group' || (part.mealTime ?? null) === (row.mealTime ?? null));
+      for (const item of [row, ...(row.children || []), ...linked]) all.set(String(entryId(item)), item);
+    }
+    return [...all.values()];
+  };
+  const moveBody = (rows, carried, destination) => ({
+    date: rows[0].date ?? rows[0].createdAt?.slice(0, 10),
+    selectedIds: rows.map(row => String(entryId(row))),
+    expectedVersions: Object.fromEntries(carried.map(row => [String(entryId(row)), row.version ?? 1])),
+    ...destination, operationId: crypto.randomUUID(),
+  });
+  const whatMoved = rows => (rows.length === 1 ? entryLabel(rows[0]) : `${rows.length} foods`);
+  // The Undo's operation ID is fixed with the offer, so trying a failed Undo
+  // again resumes that one operation instead of being refused as a second one.
+  const offerUndo = (result, carried, rows, place) => setUndo({ token: result.undoToken, operationId: crypto.randomUUID(),
+    ids: carried.map(row => String(entryId(row))), logIds: [...new Set(carried.map(row => row.logId).filter(Boolean))], rows, ...place });
+  // Checked before anything changes on screen: a food busy with an earlier change
+  // keeps that change's placement and its Undo offer.
+  const refuseMove = (rows, body, owned = false) => {
+    const refusal = foodAPI.refusal(MOVE_PATH, body, 'POST');
+    if (!refusal) return null;
+    const text = `Can't move ${whatMoved(rows)} yet. ${refusal}`;
+    setError(text, { owned });
+    logger.info('entry.move.blocked', { count: rows.length, reason: refusal });
+    return text;
+  };
+  // The server said no, so nothing happened and the foods are free. After any
+  // other failure the outcome is unknown and the reservation stays for Retry.
+  const releaseIfRefused = (err, operationId) => { if (isDefiniteRefusal(err)) foodAPI.release(operationId); };
+
+  // One command per gesture: every row moves, or none do. The server refuses a
+  // move that changes nothing, so rows already in that meal stay out of it.
+  // Success is handled in the continuation so a Retry from the toast gets it too.
+  const send = useCallback(async (requested, to, from) => {
+    const rows = requested.filter(row => row.mealTime !== to);
+    if (!rows.length) return MoveResult.UNCHANGED;
+    const carried = withParts(rows);
+    const ids = carried.map(row => String(entryId(row)));
+    const body = moveBody(rows, carried, { toMeal: to });
+    if (refuseMove(rows, body)) return MoveResult.NOT_MOVED;
     setError(null);
     setMoves(previous => { const next = new Map(previous); ids.forEach(id => next.set(id, { to })); return next; });
-    ids.forEach(highlight);
-    const moved = [];
+    rows.forEach(row => highlight(String(entryId(row))));
+    running.current.add(body.operationId);
     try {
-      for (const row of rows) {
-        const id = String(entryId(row));
-        const result = await updateEntry(row, { mealTime: to }, crypto.randomUUID(), batchAPI);
-        const versions = result?.versions || {};
-        moved.push({ ...row, mealTime: to, version: versions[id] ?? row.version,
-          children: row.children?.map(child => ({ ...child, mealTime: to, version: versions[String(entryId(child))] ?? child.version })) });
-      }
-      const event = rows.length > 1 ? 'meal.move' : 'entry.move';
-      logger.info(isUndo ? `${event}.undo` : event, { uuid: rows.length === 1 ? ids[0] : undefined, count: rows.length, from, to });
-      setUndo(isUndo ? null : { rows: moved, from, to });
+      await foodAPI.withContinuation(MOVE_PATH, body, 'POST', result => {
+        logger.info(rows.length > 1 ? 'meal.move' : 'entry.move', { uuid: rows.length === 1 ? String(entryId(rows[0])) : undefined, count: rows.length, from, to });
+        setError(null);
+        offerUndo(result, carried, rows, { from, to });
+      });
+      return MoveResult.MOVED;
     } catch (err) {
-      const reached = new Set(moved.map(row => String(entryId(row))));
-      setMoves(previous => { const next = new Map(previous); ids.filter(id => !reached.has(id)).forEach(id => next.delete(id)); return next; });
-      const what = rows.length === 1 ? entryLabel(rows[0]) : `${rows.length - moved.length} of ${rows.length} foods`;
-      setError(`Couldn't move ${what}: ${entryError(err)}`);
-      logger.warn('entry.move.failed', { count: rows.length, moved: moved.length, from, to, error: err.message });
-      setUndo(moved.length && !isUndo ? { rows: moved, from, to } : null);
-    } finally {
-      day.reload?.();
-    }
-
-    }); } catch (err) { setError(entryError(err)); }
+      setMoves(previous => { const next = new Map(previous); ids.forEach(id => next.delete(id)); return next; });
+      // The foods are back where they were, so nothing here was "just moved".
+      setRecent(previous => { const next = new Set(previous); rows.forEach(row => next.delete(String(entryId(row)))); return next; });
+      releaseIfRefused(err, body.operationId);
+      setError(failureText(`Couldn't move ${whatMoved(rows)}`, err), { operationId: body.operationId });
+      logger.warn('entry.move.failed', { count: rows.length, from, to, status: err.status, error: err.message });
+      setUndo(null);
+      return MoveResult.NOT_MOVED;
+    } finally { running.current.delete(body.operationId); day.reload?.(); }
   }, [day]);
 
-  // Moves rows to another DAY, same meal. The rows leave the viewed day at
-  // once and the PUTs follow one by one; a failure brings back the rows it did
-  // not reach. Undo sends the reached rows home.
-  const sendToDay = useCallback(async (rows, toDate, fromDate, { isUndo = false } = {}) => {
-    try { return await foodAPI.withReservation(rows, async batchAPI => {
-    const ids = rows.map(row => String(entryId(row)));
+  // The same command with a day as the destination. The rows leave the viewed
+  // day at once and come back if the command fails. `sourceRows` is the whole of
+  // another day when the foods are not on the viewed one, which then stays as it
+  // is. When the outcome is unknown the foods stay reserved, so `onRetryable` gets
+  // a retry of this same operation (its `operationId` says which); it gets null once
+  // there is nothing to retry. `onRefused` gets the sentence when the move definitely
+  // did not happen, and passing it means the caller reports the failure itself, for as
+  // long as `ownsFailure` says it is still there to do so.
+  const sendToDay = useCallback(async (requested, toDate, sourceRows = null, { onRetryable, onRefused, ownsFailure = () => true } = {}) => {
+    const rows = requested.filter(row => row.date && row.date !== toDate);
+    if (!rows.length) return MoveResult.UNCHANGED;
+    const fromDate = rows[0].date;
+    if (sourceRows) foodAPI.remember(sourceRows);
+    const carried = withParts(rows, sourceRows ?? day.items);
+    const ids = carried.map(row => String(entryId(row)));
+    const body = moveBody(rows, carried, { toDate });
+    const owned = () => Boolean(onRefused) && ownsFailure();
+    const blocked = refuseMove(rows, body, owned());
+    if (blocked) { onRefused?.(blocked); return MoveResult.NOT_MOVED; }
+    const attempt = async () => {
+      setError(null);
+      running.current.add(body.operationId);
+      if (!sourceRows) setGone(previous => new Set([...previous, ...ids]));
+      try {
+        await foodAPI.withContinuation(MOVE_PATH, body, 'POST', result => {
+          logger.info('entry.move-day', { count: rows.length, from: fromDate, to: toDate });
+          setError(null);
+          offerUndo(result, carried, rows, { day: { from: fromDate, to: toDate } });
+        });
+        onRetryable?.(null);
+        return MoveResult.MOVED;
+      } catch (err) {
+        setGone(previous => { const next = new Set(previous); ids.forEach(id => next.delete(id)); return next; });
+        releaseIfRefused(err, body.operationId);
+        const text = failureText(`Couldn't move ${whatMoved(rows)} to ${dayLabel(toDate, localTodayISO())}`, err);
+        setError(text, { operationId: body.operationId, owned: owned() });
+        logger.warn('entry.move-day.failed', { count: rows.length, from: fromDate, to: toDate, status: err.status, error: err.message });
+        setUndo(null);
+        if (!isDefiniteRefusal(err)) { onRetryable?.(attempt); return MoveResult.UNKNOWN; }
+        onRetryable?.(null);
+        onRefused?.(text);
+        return MoveResult.NOT_MOVED;
+      } finally { running.current.delete(body.operationId); day.reload?.(); }
+    };
+    attempt.operationId = body.operationId;
+    return attempt();
+  }, [day]);
+
+  // A failed Undo changes nothing, so the rows stay put and the offer stays open.
+  const runUndo = async () => {
+    const current = undo;
+    if (!current) return;
+    const body = { undoToken: current.token, operationId: current.operationId };
+    const refusal = foodAPI.refusal(UNDO_PATH, body, 'POST');
+    if (refusal) {
+      setError(`Can't undo that move yet. ${refusal}`);
+      logger.info('entry.move.undo-blocked', { count: current.rows.length, reason: refusal });
+      return;
+    }
     setError(null);
-    setGone(previous => new Set([...previous, ...ids]));
-    const moved = [];
+    running.current.add(current.operationId);
     try {
-      for (const row of rows) {
-        const id = String(entryId(row));
-        const result = await updateEntry(row, { date: toDate }, crypto.randomUUID(), batchAPI);
-        const versions = result?.versions || {};
-        moved.push({ ...row, date: toDate, version: versions[id] ?? row.version,
-          children: row.children?.map(child => ({ ...child, date: toDate, version: versions[String(entryId(child))] ?? child.version })) });
-      }
-      logger.info(isUndo ? 'entry.move-day.undo' : 'entry.move-day', { count: rows.length, from: fromDate, to: toDate });
-      setUndo(isUndo ? null : { rows: moved, day: { from: fromDate, to: toDate } });
+      await foodAPI.withContinuation(UNDO_PATH, body, 'POST', () => {
+        setMoves(previous => { const next = new Map(previous); current.ids.forEach(id => next.delete(id)); return next; });
+        setGone(previous => { const next = new Set(previous); current.ids.forEach(id => next.delete(id)); return next; });
+        const event = current.day ? 'entry.move-day.undo' : current.rows.length > 1 ? 'meal.move.undo' : 'entry.move.undo';
+        logger.info(event, { count: current.rows.length });
+        setError(null);
+        setUndo(offer => (offer?.operationId === current.operationId ? null : offer));
+      });
     } catch (err) {
-      const reached = new Set(moved.map(row => String(entryId(row))));
-      setGone(previous => { const next = new Set(previous); ids.filter(id => !reached.has(id)).forEach(id => next.delete(id)); return next; });
-      const what = rows.length === 1 ? entryLabel(rows[0]) : `${rows.length - moved.length} of ${rows.length} foods`;
-      setError(`Couldn't move ${what} to ${dayLabel(toDate, localTodayISO())}: ${entryError(err)}`);
-      logger.warn('entry.move-day.failed', { count: rows.length, moved: moved.length, from: fromDate, to: toDate, error: err.message });
-      setUndo(moved.length && !isUndo ? { rows: moved, day: { from: fromDate, to: toDate } } : null);
+      releaseIfRefused(err, current.operationId);
+      setError(failureText("Couldn't undo that move", err), { operationId: current.operationId });
+      logger.warn('entry.move.undo-failed', { count: current.rows.length, status: err.status, error: err.message });
+    } finally { running.current.delete(current.operationId); day.reload?.(); }
+  };
+
+  // The same operation again. Its continuation still finishes the move or Undo.
+  const retryUnresolved = async id => {
+    setRetrying(previous => new Set(previous).add(id));
+    try {
+      await session.retry(id);
+      logger.info('entry.move.retried', { operationId: id });
+    } catch (err) {
+      releaseIfRefused(err, id);
+      if (isDefiniteRefusal(err)) setError(failureText("Couldn't finish that move", err));
+      logger.warn('entry.move.retry-failed', { operationId: id, status: err.status, error: err.message });
     } finally {
+      setRetrying(previous => { const next = new Set(previous); next.delete(id); return next; });
       day.reload?.();
     }
-
-    }); } catch (err) { setError(entryError(err)); }
-  }, [day]);
+  };
+  // Lets go of the foods. The day reloads to show where they really are.
+  const dismissUnresolved = id => {
+    foodAPI.release(id);
+    setFailure(previous => (previous?.operationId === id ? null : previous));
+    logger.info('entry.move.unresolved-dismissed', { operationId: id });
+    day.reload?.();
+  };
+  const unresolved = [...(session?.snapshot.operations.values() || [])]
+    .filter(op => MOVE_COMMAND.test(op.request?.path || '') && !running.current.has(op.id)
+      && (['error', 'conflict'].includes(op.phase) || retrying.has(op.id)))
+    .map(op => ({ id: op.id, message: unresolvedText(op), busy: retrying.has(op.id),
+      retry: () => retryUnresolved(op.id), dismiss: op.response ? null : () => dismissUnresolved(op.id) }));
+  const failureHeld = Boolean(failure?.operationId && session?.snapshot.operations.has(failure.operationId));
 
   const undoLabel = () => {
     if (!undo) return null;
-    if (undo.day) {
-      const what = undo.rows.length === 1 ? entryLabel(undo.rows[0]) : `${undo.rows.length} foods`;
-      return `Moved ${what} to ${dayLabel(undo.day.to, localTodayISO())}`;
-    }
-    return undo.rows.length === 1 ? `Moved ${entryLabel(undo.rows[0])} to ${bucketLabel(undo.to)}`
-      : `Moved ${undo.rows.length} foods from ${bucketLabel(undo.from)} to ${bucketLabel(undo.to)}`;
+    if (undo.day) return `Moved ${whatMoved(undo.rows)} to ${dayLabel(undo.day.to, localTodayISO())}`;
+    if (undo.rows.length === 1) return `Moved ${entryLabel(undo.rows[0])} to ${bucketLabel(undo.to)}`;
+    return undo.from ? `Moved ${undo.rows.length} foods from ${bucketLabel(undo.from)} to ${bucketLabel(undo.to)}` : `Moved ${undo.rows.length} foods to ${bucketLabel(undo.to)}`;
   };
 
   return {
     items,
     recentIds: recent,
-    moveToDay: (rows, toDate, fromBucket) => {
-      const from = rows[0]?.date;
-      return rows.length && from && from !== toDate ? sendToDay(rows, toDate, from) : undefined;
-    },
+    // Foods hidden for a move to another day, which come back if it fails.
+    hiddenIds: gone,
+    moveToDay: (rows, toDate) => sendToDay(rows, toDate),
+    moveFromDay: (rows, toDate, sourceRows, options) => sendToDay(rows, toDate, sourceRows, options),
     move: (row, to, from) => send([row], to, from),
-    moveMeal: (rows, to, from) => (rows.length ? send(rows, to, from) : undefined),
-    undo: undo ? {
-      label: undoLabel(),
-      run: () => (undo.day ? sendToDay(undo.rows, undo.day.from, undo.day.to, { isUndo: true })
-        : send(undo.rows, undo.from, undo.to, { isUndo: true })),
-      dismiss: () => setUndo(null),
-    } : null,
-    error,
+    moveMeal: (rows, to, from) => send(rows, to, from),
+    // `moved` is what the finished move changed, however it was started or retried.
+    undo: undo ? { label: undoLabel(), run: runUndo, dismiss: () => setUndo(null), operationId: undo.operationId,
+      failure: failureHeld && failure.operationId === undo.operationId ? failure.text : null,
+      moved: { ids: undo.ids, logIds: undo.logIds, toDate: undo.day?.to ?? null, toMeal: undo.to ?? null } } : null,
+    error: failure?.text ?? null,
+    errorHandled: Boolean(failure?.owned) || failureHeld,
+    unresolved,
     clearError: () => setError(null),
   };
 }

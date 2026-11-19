@@ -1,0 +1,12 @@
+# Keeps the kiosk in front. App mode: HOME role, immersive, status-bar shield, foreground
+# watcher with recall. Owner mode adds lock task when this app is device owner; the mode
+# is picked at run time. The device-admin receiver is declared in shell/; the HOME filter
+# is added to the kiosk Activity by the device manifest of a build that lists this.
+# The accessibility service belongs to the `accessibility` capability.
+entry: net.kckern.daylight.cap.lockdown.LockdownCapability
+requires: [webview-host, accessibility]
+permissions:
+  # The status-bar shield. Granted once: appops set <package> SYSTEM_ALERT_WINDOW allow
+  - android.permission.SYSTEM_ALERT_WINDOW
+  # At target 30 other packages are invisible to getActivityInfo and resolveActivity without it.
+  - android.permission.QUERY_ALL_PACKAGES

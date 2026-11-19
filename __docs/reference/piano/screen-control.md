@@ -14,7 +14,12 @@ Who turns the piano tablet's backlight on and off, and how a manual hold works.
 
 ## Holds (`ScreenOverrideService`)
 
-A hold is `{state:'on'|'off', until}` per device, in memory on the backend.
+A hold is `{state:'on'|'off', until}` per device. The configured MIDI-wake tablet records its current screen decision atomically
+in household piano state before relaying a manual hold or release. The shared
+screen authority restores it before MIDI-wake startup. On the first migration
+an unexpired tablet deadline within the 24-hour limit can seed a missing
+decision. A saved release or expired hold takes precedence over an old tablet
+deadline, including after an offline release.
 
 - `GET  /api/v1/device/:id/screen/override` — read it (the browser polls every 15s).
 - `POST /api/v1/device/:id/screen/override {state}` — open one.

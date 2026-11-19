@@ -3,6 +3,7 @@ import { YamlPianoAttemptStore } from "../adapters/persistence/YamlPianoAttemptS
 import { DataServicePianoGameRepository } from "../adapters/game-platform/DataServicePianoGameRepository.mjs";
 import { createPianoAchievementProvider } from "../application/PianoAchievementProvider.mjs";
 import { createPianoRungLog } from "./rungLog.mjs";
+import { createPianoPieceLog } from "./pieceLog.mjs";
 
 /**
  * The piano's provider for the economy's achievement evidence
@@ -13,13 +14,14 @@ import { createPianoRungLog } from "./rungLog.mjs";
  */
 export function createPianoAchievementEvidence({
   configService, dataService, rootLogger = null,
-  rungLog = null, gameHistory = null, attemptStore = null,
+  rungLog = null, gameHistory = null, attemptStore = null, pieceLog = null,
 }) {
   const logger = rootLogger?.child?.({ module: 'piano-achievements' }) ?? rootLogger;
   return createPianoAchievementProvider({
     gameHistory: gameHistory ?? new DataServicePianoGameRepository({ dataService, configService }),
     attemptStore: attemptStore ?? new YamlPianoAttemptStore({ usersDir: join(configService.getDataDir(), 'users') }),
     rungLog: rungLog ?? createPianoRungLog({ dataService, logger }),
+    pieceLog: pieceLog ?? createPianoPieceLog({ configService, logger }),
     logger,
   });
 }

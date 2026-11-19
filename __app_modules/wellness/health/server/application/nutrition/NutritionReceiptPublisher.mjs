@@ -110,7 +110,8 @@ export class NutritionReceiptPublisher {
       if (options.expectedFingerprints?.[log.id] && options.expectedFingerprints[log.id] !== next) {
         throw Object.assign(new Error('Receipt changed since preview; preview again'), { status: 409 });
       }
-      const changed = saved.hash !== next || options.force === true;
+      const needsAcknowledgement = options.binding?.requireDelivery && saved.deliveredHash !== next;
+      const changed = saved.hash !== next || options.force === true || Boolean(needsAcknowledgement);
       const result = { logId: log.id, messageId: saved.binding.messageId, changed, fingerprint: next, ...rendered,
         delivery: state.unavailable[saved.binding.messageId] ? 'unavailable' : options.dryRun ? 'preview' : changed ? 'pending' : 'unchanged' };
       receipts.push(result);
@@ -121,6 +122,7 @@ export class NutritionReceiptPublisher {
       try {
         await d.surface.updateMessage(destination, saved.binding, rendered);
         saved.hash = next;
+        saved.deliveredHash = next;
         await save();
         result.delivery = 'updated';
         d.logger.info('nutrition.receipt.updated', { userId, logId: log.id, messageId: saved.binding.messageId, fingerprint: next });

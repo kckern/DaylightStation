@@ -8,6 +8,13 @@ vi.mock('../../PianoMidiContext.jsx', () => ({ usePianoMidi: () => ({ speakerCon
 
 import { ActivePianoProvider } from '../../PianoConfig.jsx';
 import { PianoUserProvider } from '../../PianoUserContext.jsx';
+
+// This roster is empty, so no player is ever named. The lesson gate would hold
+// that as pending; these tests are about the course screens behind it.
+vi.mock('../../usePianoLessonGate.js', async (importOriginal) => {
+  const actual = await importOriginal();
+  return { ...actual, default: (learnerId) => actual.default(learnerId ?? 'guest') };
+});
 import { __clearPianoListCache } from '../../usePianoList.js';
 import { Videos } from './Videos.jsx';
 

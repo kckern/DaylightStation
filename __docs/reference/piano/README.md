@@ -317,7 +317,9 @@ A few components appear across many modes because they are the kiosk's visual vo
 Running unattended on a fixed appliance means the app has to manage its own environment and
 recover from the rough edges of an aging WebView.
 
-- **FKB interface.** A small wrapper around `window.fully` is the app's hand on the system:
+- **FKB interface.** A small wrapper (`frontend/src/lib/fkb.js`) around the kiosk's page
+  bridge, `window.fully` on Fully Kiosk or `window.daylight` on the DaylightStation Android
+  kiosk app, is the app's hand on the system:
   it can launch an Android target (such as the Bluetooth settings screen for re-pairing),
   react when FKB returns to the foreground after another app exits, and route the hardware
   back button through the app's own history. Every call is a no-op when the interface is
@@ -330,8 +332,8 @@ recover from the rough edges of an aging WebView.
   guardrails. It is driven above the connect gate, so a tablet parked on the "connect your
   piano" screen (no MIDI connected) still sleeps after idle rather than staying lit forever.
 - **Curfew.** A configured evening window (`curfew:` in the piano config — off unless the
-  household sets it) greys the home menu out: every mode tile and every card in the
-  recent-activity strip dims and stops responding, so no one starts a course, a video,
+  household sets it) greys the home menu out on the piano's own tablet (an ordinary browser stays usable): every mode tile and every control on the
+  home desk stops responding, so no one starts a course, a video,
   karaoke or a game after hours. The piano itself is untouched — sitting down and playing
   still auto-enters Studio, and the menu's live keyboard stays playable — so evening
   practice works exactly as it does at noon; only screen-driven content closes. `start`

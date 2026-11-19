@@ -15,6 +15,7 @@ import { PianoScaleChallengePolicy } from "./application/PianoScaleChallengePoli
 import { BankChallengePolicy } from "./application/BankChallengePolicy.mjs";
 import { PianoLearningService } from "./application/PianoLearningService.mjs";
 import { PianoLearnCoachService } from './application/PianoLearnCoachService.mjs';
+import { createPianoPieceLog } from './composition/pieceLog.mjs';
 import { YamlPianoLearnCoachStore } from './adapters/persistence/YamlPianoLearnCoachStore.mjs';
 import { JudgeNoteBurst } from './application/JudgeNoteBurst.mjs';
 import { NodeAsyncScheduler } from '#adapters/scheduling/NodeAsyncScheduler.mjs';
@@ -83,6 +84,8 @@ export async function createPianoModule({configService, userService, rootLogger,
     receiptStore: new YamlPianoLearnCoachStore({ usersDir: join(configService.getDataDir(), 'users') }),
     attemptStore: pianoAttemptStore, clock: () => new Date(), timezone: configService.getTimezone?.() ?? null,
     logger: rootLogger.child({ module: 'piano-learn-coach' }),
+    // Dated whole-piece Silver/Gold, read by the gem economy's `piano-piece` milestone.
+    pieceLog: createPianoPieceLog({ configService, logger: rootLogger.child({ module: 'piano-learn-coach' }) }),
   });
   // Exercise bank: seeds at data/content/music/, instances computed on demand.
   const exerciseBank = new YamlExerciseBank({ contentDir: contentPath });
@@ -115,6 +118,7 @@ export async function createPianoModule({configService, userService, rootLogger,
     curriculumIndex: { getCurriculumIndex, mergeSeason },
     schoolAssignments: pianoSchoolAssignments,
     studioDatastore: pianoStudioDatastore,
+    timezone: configService.getTimezone?.() ?? null,
     fitnessPlayableService,
     userVideoProgressStore: contentServices.userVideoProgressStore,
     composerSongStore,

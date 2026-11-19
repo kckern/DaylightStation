@@ -1,0 +1,11 @@
+// The one contract between the installed shell and a hot-swappable payload.
+// Pure Java: no Android types appear in it, so both sides and JVM tests can use it.
+plugins { id 'java-library' }
+java {
+    sourceCompatibility = JavaVersion.VERSION_11
+    targetCompatibility = JavaVersion.VERSION_11
+}
+
+dependencies {
+    testImplementation 'junit:junit:4.13.2'
+}

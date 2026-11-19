@@ -1,0 +1,36 @@
+// Applied by every module whose classes end up in a payload dex (core, payload,
+// capabilities/*/payload). Such a module must NOT bundle shell-api, NanoHTTPD or
+// org.json: those resolve from the shell's class loader at run time.
+apply plugin: 'com.android.library'
+
+android {
+    compileSdk 33
+    defaultConfig { minSdk 26 }
+    buildFeatures { buildConfig false }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_11
+        targetCompatibility JavaVersion.VERSION_11
+    }
+    // A payload module has no manifest permissions of its own: its capability's shell half
+    // declares them, and tools/verify-build.mjs checks the APK's set against capability.yml.
+    // Lint sees only this module, so its MissingPermission check cannot pass here.
+    lint { disable 'MissingPermission' }
+    testOptions {
+        // android.jar stubs return defaults in JVM tests instead of throwing "Stub!".
+        unitTests.returnDefaultValues = true
+    }
+}
+
+dependencies {
+    compileOnly project(':shell-api')
+    compileOnly 'org.nanohttpd:nanohttpd-websocket:2.3.1'
+    // compileOnly dependencies are not on the unit-test classpath.
+    testImplementation project(':shell-api')
+    testImplementation 'org.nanohttpd:nanohttpd-websocket:2.3.1'
+    testImplementation 'junit:junit:4.13.2'
+    // Real org.json for JVM tests. android.jar ships stubs that return defaults,
+    // so JSON logic would pass against a no-op without this.
+    testImplementation 'org.json:json:20231013'
+    // FakeShell and TestCore. core-testing depends on core, so core itself is excluded.
+    if (project.path != ':core-testing') testImplementation project(':core-testing')
+}

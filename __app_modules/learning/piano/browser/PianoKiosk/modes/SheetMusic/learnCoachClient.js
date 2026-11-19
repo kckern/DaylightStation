@@ -9,7 +9,7 @@ const persistent = (scope) => Boolean(scope.profileId && scope.profileId !== 'gu
 /** Store the plan recipe once per scope, not duplicate task projections. */
 export function serializeCoachPlan(plan) {
   return { version: plan.version, scoreId: plan.scoreId, fingerprint: plan.fingerprint,
-    authoredLadder: plan.authoredLadder, tempoMap: plan.tempoMap, criteria: plan.criteria,
+    authoredLadder: plan.authoredLadder, tempoMap: plan.tempoMap, criteria: plan.criteria, certification: plan.certification,
     segments: plan.segments.map((segment) => ({ id: segment.id, inMeasure: segment.inMeasure, outMeasure: segment.outMeasure,
       printedMeasures: segment.printedMeasures, playableParts: segment.playableParts, label: segment.label,
       name: segment.name, authoredLadder: segment.authoredLadder,
@@ -38,7 +38,7 @@ export function createLearnCoachClient({ request, storage = null, onChange = () 
       try {
         const event = item?.body?.event;
         const recipe = item?.body?.plan;
-        if (!event?.id || !['selection', 'outcome'].includes(event.type) || event.profileId !== scope.profileId
+        if (!event?.id || !['selection', 'outcome', 'set-aside'].includes(event.type) || event.profileId !== scope.profileId
           || recipe?.scoreId !== scope.scoreId || recipe.fingerprint !== scope.fingerprint
           || (event.type === 'outcome' && (!item.evidence || item.evidence.attempt_id !== event.id))) throw new Error('Unreadable queued take');
         applyCoachEvent(null, event, { plan: createCoachPlan(recipe), ...context() });

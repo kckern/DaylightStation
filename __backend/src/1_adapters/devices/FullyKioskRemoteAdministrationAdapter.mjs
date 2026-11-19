@@ -1,5 +1,6 @@
 import { IDeviceRemoteAdministrationGateway } from '#apps/admin/ports/IDeviceRemoteAdministrationGateway.mjs';
 import { FullyKioskRestClient } from './FullyKioskRestClient.mjs';
+import { DeviceRemoteGatewayError } from './DeviceRemoteGatewayError.mjs';
 
 const ACTION_COMMANDS = Object.freeze({
   'screen-on': ['screenOn'],
@@ -26,13 +27,9 @@ const ACTION_COMMANDS = Object.freeze({
 
 const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 
-export class DeviceRemoteGatewayError extends Error {
-  constructor(message, code) {
-    super(message);
-    this.name = 'DeviceRemoteGatewayError';
-    this.code = code;
-  }
-}
+// Shared with the other remote-administration adapters; re-exported here
+// because this file is where existing importers find it.
+export { DeviceRemoteGatewayError };
 
 function fail(message, code) {
   throw new DeviceRemoteGatewayError(message, code);

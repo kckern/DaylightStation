@@ -1,0 +1,5 @@
+# Reports which bonded Bluetooth devices are connected, raw and undebounced, to a
+# backend endpoint that applies the household's rules.
+entry: net.kckern.daylight.cap.presence.PresenceCapability
+permissions:
+  - android.permission.BLUETOOTH

@@ -8,6 +8,8 @@ import { createBotWebhookHandler } from '#adapters/telegram/createBotWebhookHand
 import { createJournalistRouter } from "../api/journalist.mjs";
 import { createJournalistServices } from "../../../../../__backend/src/5_composition/bootstrap.mjs";
 import { JournalistApiService } from "../application/JournalistApiService.mjs";
+import { createJournalQuickInputs } from "../application/services/journalQuickInputs.mjs";
+import { quickInputLimits } from "../../../../../__capabilities/quick-input/server/public.mjs";
 import { DefaultPrincipalResolver } from '#apps/common/context/DefaultPrincipalResolver.mjs';
 import { InMemoryRequestDeduplicationStore } from '#adapters/http/InMemoryRequestDeduplicationStore.mjs';
 
@@ -74,6 +76,26 @@ export function createJournalistApiRouter(config) {
       throw error;
     },
   };
+  // Quick inputs (a recording, a typed note) join the steps a Telegram message
+  // of that kind takes. One ledger for both, kept in the user's Journalist folder.
+  const container = journalistServices.journalistContainer;
+  const journalConfig = configService?.getAppConfig?.('journalist') || {};
+  const resolveConversationId = (username) => telegramIdentityAdapter.resolve('journalist', { username }).conversationIdString;
+  const quickInputs = createJournalQuickInputs({
+    available: aiGatewayAvailable,
+    processVoiceEntry: aiGatewayAvailable ? container.getProcessVoiceEntry() : null,
+    processTextEntry: aiGatewayAvailable ? container.getProcessTextEntry() : null,
+    journalEntryRepository: container.getJournalEntryRepository?.() || null,
+    ledgerStore: journalistServices.memoLedgerStore || null,
+    // `quick_input: { daily_inputs, daily_megabytes }`; the earlier `voice_memo` keys still count.
+    limits: quickInputLimits(journalConfig.quick_input, journalConfig.voice_memo),
+    timezone: (username) => configService?.getHouseholdTimezone?.(configService?.getUserHouseholdId?.(username)),
+    // `quick_input.journalist` (and, for voice, the earlier `voice_memo.users`) on the device's entry.
+    deviceConfig: (deviceKey) => configService?.getDeviceConfig?.(deviceKey),
+    resolveConversationId,
+    logger,
+  });
+
   const journalistApi = new JournalistApiService({
     exportJournal: journalistServices.journalistContainer.getExportJournalMarkdown?.() || null,
     initiatePrompt: aiGatewayAvailable
@@ -85,11 +107,13 @@ export function createJournalistApiRouter(config) {
     sendMorningDebrief: aiGatewayAvailable
       ? journalistServices.journalistContainer.getSendMorningDebrief()
       : unavailableAiOperation,
+    submitVoiceMemo: quickInputs.submitVoiceMemo,
+    memoDeviceUsers: quickInputs.memoDeviceUsers,
     principalResolver: new DefaultPrincipalResolver({
       headOfHousehold: () => configService?.getHeadOfHousehold?.(),
       fallback: 'user_1',
     }),
-    resolveConversationId: (username) => telegramIdentityAdapter.resolve('journalist', { username }).conversationIdString,
+    resolveConversationId,
     logger,
   });
   return createJournalistRouter(journalistApi, {
@@ -98,6 +122,7 @@ export function createJournalistApiRouter(config) {
     secretToken,
     gateway,
     idempotencyStore,
+    quickInput: quickInputs.endpoints,
     logger
   });
 }
