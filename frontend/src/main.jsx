@@ -213,7 +213,7 @@ ReactDOM.createRoot(document.getElementById('root')).render(
       <SupervisedRoutes>
       <Routes>
         <Route element={<BrowserAppViewport />}>
-          <Route path="/" element={<AdminApp />} />
+          <Route path="/" element={<Navigate to="/admin" replace />} />
           <Route path="/admin/*" element={<AdminApp />} />
           <Route path="/home" element={<HomeApp />} />
           <Route path="/health" element={<HealthApp />} />
