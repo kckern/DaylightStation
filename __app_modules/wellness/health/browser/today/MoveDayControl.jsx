@@ -45,15 +45,18 @@ export function MoveDayControl({ date, today, count, onMove, disabled = false })
 
 /**
  * After a capture: one tap to the most likely other day, or pick any day. The
- * toast owns `busy`, because its Undo and Dismiss wait for the move too.
+ * toast owns `busy`, because its Undo and Dismiss wait for the move too. `food`
+ * names the buttons when another toast is offering the same ones.
  */
-export function CaptureDayActions({ date, today, onMove, busy = false, disabled = false }) {
+export function CaptureDayActions({ date, today, onMove, busy = false, disabled = false, food = null }) {
   const quick = date === today ? addDaysISO(today, -1) : today;
+  const quickDay = dayLabel(quick, today);
   return <>
-    <Button size="compact-xs" variant="light" loading={busy} disabled={disabled} onClick={() => onMove(quick)}>Move to {dayLabel(quick, today)}</Button>
+    <Button size="compact-xs" variant="light" loading={busy} disabled={disabled} aria-label={food ? `Move ${food} to ${quickDay}` : undefined}
+      onClick={() => onMove(quick)}>Move to {quickDay}</Button>
     {/* Above the toast layer (350), which Mantine's default of 300 sits under. */}
     <Menu position="top-start" zIndex={400} disabled={busy || disabled} classNames={MENU_CLASSES}>
-      <Menu.Target><Button size="compact-xs" variant="subtle" disabled={busy || disabled}>Other day…</Button></Menu.Target>
+      <Menu.Target><Button size="compact-xs" variant="subtle" disabled={busy || disabled} aria-label={food ? `Move ${food} to another day` : undefined}>Other day…</Button></Menu.Target>
       <Menu.Dropdown><MoveDayItems date={date} today={today} onPick={onMove} /></Menu.Dropdown>
     </Menu>
   </>;

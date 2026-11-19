@@ -107,13 +107,35 @@ describe('TodayToasts', () => {
   });
 
   it('an add with no Undo offers the day move beside any Undo already showing', async () => {
-    const onMoveAdded = vi.fn(); const onDismissAdded = vi.fn();
+    const onMoveOffer = vi.fn(); const shown = { token: null, label: 'Added Apple to Today', offer: { ids: ['a'], what: 'Apple', date: '2026-11-18' } };
     render(<MantineProvider><TodayToasts moves={noMoves} today="2026-11-18" onDismissMealUndo={() => {}} mealUndo={{ token: 'meal-1', label: 'Meal updated' }}
-      addedOffer={{ token: null, label: 'Added Apple to Today', offer: { ids: ['a'], date: '2026-11-18' } }} onMoveAdded={onMoveAdded} onDismissAdded={onDismissAdded} /></MantineProvider>);
+      dayOffers={[shown]} onMoveOffer={onMoveOffer} onDismissOffer={() => {}} /></MantineProvider>);
     expect(await screen.findByText('Added Apple to Today')).toBeTruthy();
     expect(screen.getAllByRole('button', { name: 'Undo meal change' })).toHaveLength(1);
     fireEvent.click(screen.getByRole('button', { name: 'Move to Yesterday' }));
-    expect(onMoveAdded).toHaveBeenCalledWith('2026-11-17');
+    expect(onMoveOffer).toHaveBeenCalledWith(shown, '2026-11-17');
+  });
+
+  it('two offers name their food on every button, keeping the short visible text', async () => {
+    const offer = (id, what) => ({ token: null, label: `Added ${what}`, offer: { ids: [id], what, date: '2026-11-18' } });
+    render(<MantineProvider><TodayToasts moves={noMoves} today="2026-11-18" dayOffers={[offer('a', 'Apple'), offer('b', 'Eggs')]}
+      onMoveOffer={() => {}} onDismissOffer={() => {}} /></MantineProvider>);
+    const move = await screen.findByRole('button', { name: 'Move Eggs to Yesterday' });
+    expect(move.textContent).toBe('Move to Yesterday');
+    expect(screen.getByRole('button', { name: 'Move Apple to another day' }).textContent).toBe('Other day…');
+    expect(screen.getByRole('button', { name: 'Dismiss Apple' })).toBeTruthy();
+  });
+
+  it('a superseded capture Undo is reported separately from a person dismissing it', async () => {
+    const onDismiss = vi.fn(); const onSupersede = vi.fn();
+    const moves = { ...noMoves, undo: null };
+    const toast = current => <MantineProvider><TodayToasts moves={current} today="2026-11-18" onDismissMealUndo={onDismiss} onSupersedeMealUndo={onSupersede}
+      mealUndo={{ token: 'meal-1', label: 'Added Eggs', offer: { ids: ['e'], what: 'Eggs', date: '2026-11-18' } }} /></MantineProvider>;
+    const view = render(toast(moves));
+    await screen.findByText('Added Eggs');
+    view.rerender(toast({ ...moves, undo: { label: 'Moved Apple', run: () => {}, dismiss: () => {} } }));
+    await waitFor(() => expect(onSupersede).toHaveBeenCalledTimes(1));
+    expect(onDismiss).not.toHaveBeenCalled();
   });
 
   it('an Undo in progress holds the day buttons', async () => {

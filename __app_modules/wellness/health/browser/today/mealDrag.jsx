@@ -214,8 +214,8 @@ export function useMealMoves(day) {
   // Every row a move carries: the entries, their parts, and any row of the day
   // linked to a dish. A section only knows its own meal, so a dish's `children`
   // can miss a part stranded in another one. A plain food carries only its own meal.
-  const withParts = rows => {
-    const dayParts = new Map(groupRows(day.items).map(({ row, children }) => [String(entryId(row)), children]));
+  const withParts = (rows, dayRows = day.items) => {
+    const dayParts = new Map(groupRows(dayRows).map(({ row, children }) => [String(entryId(row)), children]));
     const all = new Map();
     for (const row of rows) {
       const linked = (dayParts.get(String(entryId(row))) || []).filter(part => row.kind === 'group' || (part.mealTime ?? null) === (row.mealTime ?? null));
@@ -277,17 +277,18 @@ export function useMealMoves(day) {
   }, [day]);
 
   // The same command with a day as the destination. The rows leave the viewed
-  // day at once and come back if the command fails.
-  const sendToDay = useCallback(async (requested, toDate) => {
+  // day at once and come back if the command fails. `sourceRows` is the whole of
+  // another day when the foods are not on the viewed one, which then stays as it is.
+  const sendToDay = useCallback(async (requested, toDate, sourceRows = null) => {
     const rows = requested.filter(row => row.date && row.date !== toDate);
     if (!rows.length) return MoveResult.UNCHANGED;
     const fromDate = rows[0].date;
-    const carried = withParts(rows);
+    const carried = withParts(rows, sourceRows ?? day.items);
     const ids = carried.map(row => String(entryId(row)));
     const body = moveBody(rows, carried, { toDate });
     if (refuseMove(rows, body)) return MoveResult.NOT_MOVED;
     setError(null);
-    setGone(previous => new Set([...previous, ...ids]));
+    if (!sourceRows) setGone(previous => new Set([...previous, ...ids]));
     try {
       await foodAPI.withContinuation(MOVE_PATH, body, 'POST', result => {
         logger.info('entry.move-day', { count: rows.length, from: fromDate, to: toDate });
@@ -344,6 +345,7 @@ export function useMealMoves(day) {
     items,
     recentIds: recent,
     moveToDay: (rows, toDate) => sendToDay(rows, toDate),
+    moveFromDay: (rows, toDate, sourceRows) => sendToDay(rows, toDate, sourceRows),
     move: (row, to, from) => send([row], to, from),
     moveMeal: (rows, to, from) => send(rows, to, from),
     undo: undo ? { label: undoLabel(), run: runUndo, dismiss: () => setUndo(null) } : null,

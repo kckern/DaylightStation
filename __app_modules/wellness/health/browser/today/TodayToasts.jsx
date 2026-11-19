@@ -37,15 +37,17 @@ function useNewestUndo(candidates) {
  * A meal change and its Undo. A fresh capture also carries `offer`: the fix for
  * food that landed on the wrong day. One action runs at a time, because a move
  * retires the capture's Undo and an Undo removes the foods being moved. Food
- * added without a server Undo (`token` null) gets the day fix alone.
+ * added without a server Undo (`token` null), or whose Undo a newer action
+ * retired, gets the day fix alone.
  */
-function MealUndoToast({ mealUndo, today, onMoveCapture, onUndoMeal, onDismissMealUndo, undoBusy }) {
+function MealUndoToast({ mealUndo, today, onMoveCapture, onUndoMeal, onDismissMealUndo, undoBusy, named = false }) {
   const [moving, moveCapture] = useMoveInFlight(onMoveCapture);
+  const food = named ? mealUndo.offer?.what || 'food' : null;
   return <Toast message={mealUndo.label}>
     <span className="health-capture-actions">
-      {mealUndo.offer ? <CaptureDayActions date={mealUndo.offer.date} today={today} onMove={moveCapture} busy={moving} disabled={undoBusy} /> : null}
+      {mealUndo.offer ? <CaptureDayActions date={mealUndo.offer.date} today={today} onMove={moveCapture} busy={moving} disabled={undoBusy} food={food} /> : null}
       {mealUndo.token ? <Button size="compact-xs" aria-label="Undo meal change" loading={undoBusy} disabled={moving} onClick={onUndoMeal}>Undo</Button> : null}
-      <Button size="compact-xs" variant="subtle" disabled={undoBusy || moving} onClick={onDismissMealUndo}>Dismiss</Button>
+      <Button size="compact-xs" variant="subtle" disabled={undoBusy || moving} aria-label={food ? `Dismiss ${food}` : undefined} onClick={onDismissMealUndo}>Dismiss</Button>
     </span>
   </Toast>;
 }
@@ -59,14 +61,16 @@ export function TodayToasts({
   captureNotice, captureRetry, retryBusy, onRetryCapture, onDismissCapture,
   orphanRetry, onRetryOrphan, onDismissOrphan,
   moves, mealUndo, onUndoMeal, onDismissMealUndo, undoDelete, onUndoDelete, onDismissUndoDelete, undoBusy,
-  strandedPortion, today, onMoveCapture, addedOffer, onMoveAdded, onDismissAdded,
+  strandedPortion, today, onMoveCapture, onSupersedeMealUndo, dayOffers = [], onMoveOffer, onDismissOffer,
 }) {
   const newestUndo = useNewestUndo([
     moves.undo && { key: `move:${moves.undo.label}`, clear: moves.undo.dismiss },
-    mealUndo && { key: `meal:${mealUndo.token}`, clear: onDismissMealUndo },
+    // A newer action retires the Undo. What else the toast offers is the view's to keep.
+    mealUndo && { key: `meal:${mealUndo.token}`, clear: onSupersedeMealUndo ?? onDismissMealUndo },
     undoDelete && { key: `delete:${(undoDelete.entryIds || []).join(',')}`, clear: onDismissUndoDelete },
   ].filter(Boolean));
   const kind = newestUndo?.key.split(':')[0];
+  const named = dayOffers.length + (kind === 'meal' && mealUndo.offer ? 1 : 0) > 1;
 
   return <ToastRegion label="Food log notifications">
     {strandedPortion ? <Toast tone="error" message={<PortionDraftAlert control={strandedPortion} role={null} className="health-portion-error" />} /> : null}
@@ -87,9 +91,9 @@ export function TodayToasts({
       <Button size="compact-xs" variant="subtle" onClick={moves.undo.dismiss}>Dismiss</Button>
     </Toast> : null}
     {kind === 'meal' ? <MealUndoToast key={mealUndo.token} mealUndo={mealUndo} today={today} onMoveCapture={onMoveCapture}
-      onUndoMeal={onUndoMeal} onDismissMealUndo={onDismissMealUndo} undoBusy={undoBusy} /> : null}
-    {addedOffer ? <MealUndoToast key={addedOffer.offer.ids.join(',')} mealUndo={addedOffer} today={today} onMoveCapture={onMoveAdded}
-      onDismissMealUndo={onDismissAdded} undoBusy={false} /> : null}
+      onUndoMeal={onUndoMeal} onDismissMealUndo={onDismissMealUndo} undoBusy={undoBusy} named={named} /> : null}
+    {dayOffers.map(shown => <MealUndoToast key={shown.offer.ids.join(',') || shown.offer.logId} mealUndo={shown} today={today} named={named}
+      onMoveCapture={iso => onMoveOffer(shown, iso)} onDismissMealUndo={() => onDismissOffer(shown)} undoBusy={false} />)}
     {kind === 'delete' ? <Toast message={`${undoDelete.label} deleted.`}>
       <Button size="compact-xs" loading={undoBusy} onClick={onUndoDelete}>Undo</Button>
       <Button size="compact-xs" variant="subtle" disabled={undoBusy} onClick={onDismissUndoDelete}>Dismiss</Button>

@@ -276,6 +276,26 @@ describe('useMealMoves — moving to another day', () => {
     expect(reload).toHaveBeenCalled();
     expect(result.current.undo.label).toBe('Moved 2 foods to Wed, Jan 15');
   });
+  it('moves rows from a day not being viewed without touching the viewed day', async () => {
+    const reload = vi.fn();
+    const viewed = { ...toast, uuid: 'viewed', date: '2026-09-29' };
+    const dish = { uuid: 'dish', name: 'Burrito', kind: 'group', date: '2026-09-28', mealTime: 'morning', version: 3 };
+    const part = { uuid: 'part', name: 'Tortilla', parentId: 'dish', date: '2026-09-28', mealTime: 'morning', version: 2 };
+    const { result } = renderHook(() => useMealMoves({ items: [viewed], reload }));
+    await act(async () => { expect(await result.current.moveFromDay([{ ...dish, children: [] }], '2026-09-29', [dish, part])).toBe('moved'); });
+    expect(apiMock.mock.calls[0][1]).toMatchObject({ date: '2026-09-28', toDate: '2026-09-29', selectedIds: ['dish'], expectedVersions: { dish: 3, part: 2 } });
+    expect(result.current.items).toEqual([viewed]);
+    expect(reload).toHaveBeenCalled();
+    expect(result.current.undo.label).toBe('Moved Burrito to Tue, Sep 29');
+  });
+  it('a failed move from another day leaves the viewed day as it was', async () => {
+    apiMock.mockRejectedValue(Object.assign(new Error('changed'), { status: 409 }));
+    const viewed = { ...toast, date: '2026-09-29' };
+    const { result } = renderHook(() => useMealMoves({ items: [viewed], reload: vi.fn() }));
+    await act(async () => { expect(await result.current.moveFromDay([eggs], '2026-09-29', [eggs])).toBe('not-moved'); });
+    expect(result.current.items).toEqual([viewed]);
+    expect(result.current.error).toContain("Couldn't move Eggs");
+  });
   it('a row already on that day is left alone', async () => {
     const { result } = renderHook(() => useMealMoves({ items: [eggs], reload: vi.fn() }));
     await act(async () => { await result.current.moveToDay([eggs], '2026-09-28'); });

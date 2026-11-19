@@ -532,28 +532,39 @@ Three routes, one command (`useMealMoves().moveToDay`, `mealDrag.jsx`):
   "Already in Breakfast" or "Already on <day>". Each meal's mic and group commands see
   only that meal's ticks, and a command in one meal leaves the other meals' ticks.
 - **Meal ⋯ menu:** "Move all to day" moves the whole meal.
-- **Capture toast:** every add that puts new food on the day gets a toast saying where
-  it landed ("Added 3 foods to Today, Lunch") with **Move to Yesterday** (**Move to
-  Today** when it landed on an earlier day) and **Other day…**. That covers voice, photo,
-  a typed sentence, a barcode, a food created for an unknown barcode, a picked
-  suggestion, a saved meal (template), a Needs Review confirmation and Copy to today.
+- **Capture toast:** every add that puts new food on the day from this page gets a toast
+  saying where it landed ("Added 3 foods to Today, Lunch") with **Move to Yesterday**
+  (**Move to Today** when it landed on an earlier day) and **Other day…**. That covers
+  voice, photo, a typed sentence, a barcode, a food created for an unknown barcode, a
+  picked suggestion, a saved meal (template) and a Needs Review confirmation. Copy to
+  today is a deliberate copy, so it keeps its plain notice. The coach's `log_food` is
+  out of scope and gets no toast.
   - **Undo:** captures with a server Undo (voice, photo, sentence, barcode) show it
-    beside the day buttons. Suggestions, created foods, saved meals, confirmations and
-    copies have none, so no Undo button appears. Their toast has its own slot and leaves
-    any Undo already showing in place.
-  - **Finding the rows:** they are looked up on the viewed day at the tap, by the
-    capture's log ID plus the exact IDs its result returned. A shared log ID (`QUICKADD`,
-    `TEMPLATE` and the others in `sharedLogIds.mjs`) counts only through those exact IDs,
-    so earlier foods are never caught. Dishes go whole, and a dish that also holds food
-    from elsewhere stays behind.
+    beside the day buttons. Suggestions, created foods, saved meals and confirmations
+    have none, so no Undo button appears.
+  - **Several at once:** one toast holds an Undo. When a newer action takes that Undo
+    over, the toast loses only the Undo and keeps its day buttons. Offers without an Undo
+    stay until used or dismissed, the newest two are kept, and a later result replaces
+    one only when it is about the same food. With two offers showing, each button's
+    accessible name includes the food ("Move Eggs to Yesterday").
+  - **Finding the rows:** by the capture's log ID plus the exact IDs its result returned.
+    A shared log ID (`QUICKADD`, `TEMPLATE` and the others in `sharedLogIds.mjs`) counts
+    only through those exact IDs, so earlier foods are never caught. Food on the viewed
+    day is read from the page. Food filed on another day ("I had eggs yesterday") is
+    fetched from that day and moved from there by `moveFromDay`, which leaves the viewed
+    day's rows alone.
+  - **Dishes:** a dish moves only when every part is from this capture, so a move never
+    carries food from another log. A captured part of any other dish stays, and the toast
+    says it is part of a dish and can't move alone; the rest of the capture still moves.
   - **After the tap:** a move leaves only the move's Undo, because a capture's Undo stops
-    working once its rows change. A refused or failed move keeps the toast. Food on a day
-    not being viewed is left alone and the toast says which day it is on.
-  - **One report:** the toast replaces the "Moved to Lunch" cue, the add row's "Added to
-    Lunch" line and the "copied to today" notice for the same add.
+    working once its rows change. A refused or failed move keeps the toast. A day that
+    will not load, or food no longer on it, is reported and the toast stays.
+  - **One report:** the toast replaces the "Moved to Lunch" cue and the add row's "Added
+    to Lunch" line for the same add.
   - **No offer:** meal instructions, amends, and captures that put no food on the day
     (no food found, barcode held for review or refused).
-  - Logs: `capture.offer`, `capture.move-day`, `capture.move-day.result`.
+  - Logs: `capture.offer` (every path), `capture.move-day`, `capture.move-day.result`,
+    `capture.move-day.load_failed`.
 
 The rows leave the viewed day at once (`gone`) and one `foods-move` follows. A failure
 brings every row back, and one server Undo sends them home. Logs:
@@ -1745,7 +1756,8 @@ uses (`nutritionInput.process({ type: 'text', content: description, userId })` �
 through the same auto-commit seam as every other transport: **the coach's entries are
 logged immediately as `accepted` + `settled: false`**, with no separate acceptance gate
 for this transport — it behaves exactly like a typed sentence submitted from the combobox.
-It returns
+Its entries get no capture toast or
+day buttons in Today; "move that to yesterday" in the day input corrects one. It returns
 `{ status: 'logged', summary }` (`summary` is the parsed itemization's first response line,
 e.g. "🟡 2 eggs — 140 kcal"), which lets the model tell the user what landed; the user
 reviews or undoes it in the app.

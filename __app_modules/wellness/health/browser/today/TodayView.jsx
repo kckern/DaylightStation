@@ -12,7 +12,7 @@ import { DaylightAPI } from "../../../../../frontend/src/lib/api.mjs";
 import { createAppLogger } from "../../../../../frontend/src/lib/ui/createAppLogger.js";
 import { useApiResource } from "../../../../../frontend/src/lib/hooks/useApiResource.js";
 import { useHealthDay } from "./useHealthDay.js";
-import { pendingReviewPath, observationsPath } from "../healthResources.js";
+import { pendingReviewPath, observationsPath, healthDayPath } from "../healthResources.js";
 import { useHealthDayPrefetch } from "./useHealthDayPrefetch.js";
 import { useAddedRowHighlight } from "./addFlow.js";
 import { EquationStrip } from "./EquationStrip.jsx";
@@ -47,16 +47,50 @@ const logger = createAppLogger('health').child('today');
 const IntakeBurnChart = lazy(() => import("../progress/IntakeBurnChart.jsx").then(module => ({ default: module.IntakeBurnChart })));
 
 /**
- * What a capture added, as it stands on the day now. A log ID shared with earlier
+ * What a capture added, as it stands on a day now. A log ID shared with earlier
  * foods proves nothing, so only the IDs the capture returned count then. A dish
- * goes whole; one that also holds food from elsewhere stays out of the move.
+ * moves only when every part is from this capture, because the move carries them
+ * all; `blocked` is what was captured into a dish holding other food.
  */
 function captureEntries(items, { logId, ids = [] }) {
   const exact = new Set(ids);
   const ownLogId = SHARED_LOG_IDS.has(logId) ? null : logId;
   const captured = row => exact.has(String(entryId(row))) || Boolean(ownLogId && row.logId === ownLogId);
-  return mealEntries(items).filter(entry => captured(entry) || (entry.children?.length && entry.children.every(captured)));
+  const entries = [], blocked = [];
+  for (const entry of mealEntries(items)) {
+    const parts = entry.children || [];
+    if (parts.length ? parts.every(captured) : captured(entry)) entries.push(entry);
+    else {
+      const held = parts.filter(captured);
+      blocked.push(...(held.length || !captured(entry) ? held : [entry]));
+    }
+  }
+  return { entries, blocked };
 }
+
+// The capture toasts: at most one with an Undo, plus day offers without one. Offers
+// stay until used or dismissed, so only the newest few are kept on a phone's screen.
+const MAX_DAY_OFFERS = 2;
+const NO_CAPTURE_TOASTS = { undo: null, offers: [] };
+const sameFood = (a, b) => Boolean(a && b) && (a.ids.some(id => b.ids.includes(id))
+  || (a.logId === b.logId && Boolean(a.logId) && !SHARED_LOG_IDS.has(a.logId)));
+const withOffer = (offers, { label, offer }) => [{ token: null, label, offer },
+  ...offers.filter(shown => !sameFood(shown.offer, offer))].slice(0, MAX_DAY_OFFERS);
+/** A new result. An Undo it replaces leaves its day offer behind, unless it is for the same food. */
+function announceCapture(state, undo) {
+  if (!undo.token) {
+    if (!undo.offer || sameFood(state.undo?.offer, undo.offer)) return state;
+    return { ...state, offers: withOffer(state.offers, undo) };
+  }
+  const kept = state.undo?.offer && !sameFood(state.undo.offer, undo.offer) ? withOffer(state.offers, state.undo) : state.offers;
+  return { undo, offers: undo.offer ? kept.filter(shown => !sameFood(shown.offer, undo.offer)) : kept };
+}
+/** A newer action took over the one Undo slot. The food can still be moved. */
+const supersedeCaptureUndo = (state, moving) => ({ undo: null,
+  offers: state.undo?.offer && !moving.has(state.undo.offer) ? withOffer(state.offers, state.undo) : state.offers });
+const forgetFood = (state, offer) => ({ undo: sameFood(state.undo?.offer, offer) ? null : state.undo,
+  offers: state.offers.filter(shown => !sameFood(shown.offer, offer)) });
+const stayedInDish = rows => `${rows.length === 1 ? entryLabel(rows[0]) : `${rows.length} foods`} ${rows.length === 1 ? 'is' : 'are'} part of a dish and can't move alone`;
 
 export function TodayView({ active = true, sidebarTarget, followUpTarget = null, onSetupGoals, onCoachTap }) {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -82,10 +116,11 @@ export function TodayView({ active = true, sidebarTarget, followUpTarget = null,
   const settled = useAfterFirstPaint(!day.loading && !day.revalidating);
   // Warm ±7 days and each meal's shortlist once the viewed day is on screen.
   useHealthDayPrefetch(date, { enabled: active, ready: settled && !day.loading });
-  const [mealUndo, setMealUndo] = useState(null);
-  // Food added with no server Undo: the day fix alone. It has its own slot so it
-  // never retires a working Undo, which an undo slot's newest-wins rule would do.
-  const [addedOffer, setAddedOffer] = useState(null);
+  const [captureToasts, setCaptureToasts] = useState(NO_CAPTURE_TOASTS);
+  const mealUndo = captureToasts.undo;
+  const clearMealUndo = () => setCaptureToasts(state => ({ ...state, undo: null }));
+  // Offers on their way to another day: the move's own Undo must not keep them.
+  const movingOffers = useRef(new Set());
   // A failed voice send whose mic unmounted (the day changed): { run, label, busy, error }.
   const [orphanRetry, setOrphanRetry] = useState(null);
   const keepOrphanedRecording = (run, { mealLabel, date: recordedOn }) => setOrphanRetry({ run, label: recordedOn && recordedOn !== todayISO() ? `${mealLabel} recording from ${recordedOn}` : `${mealLabel} recording`, busy: false, error: null });
@@ -238,9 +273,9 @@ export function TodayView({ active = true, sidebarTarget, followUpTarget = null,
     const operation = prior || { id: crypto.randomUUID() };
     operation.pending = true; copyOperations.current.set(key, operation);
     try {
-      const copied = await DaylightAPI('api/v1/health/nutrition/copy', { entryIds, date: todayISO(), mealTime: bucketId, operationId: operation.id }, 'POST');
+      await DaylightAPI('api/v1/health/nutrition/copy', { entryIds, date: todayISO(), mealTime: bucketId, operationId: operation.id }, 'POST');
       logger.info('copy-to-today', { bucketId, count: rows.length });
-      if (!offerAddedFood(copied, todayISO(), { added: true, label: `${label} copied to today.` })) setCaptureNotice(`${label} copied to today.`);
+      setCaptureNotice(`${label} copied to today.`);
       copyOperations.current.delete(key);
       day.reload();
     } catch (err) {
@@ -299,7 +334,7 @@ export function TodayView({ active = true, sidebarTarget, followUpTarget = null,
   // New food says where it landed and offers the wrong-day fix. A capture is new
   // food when it has a log ID (a meal instruction or amend has none); `added` is
   // for routes that only ever add, whose results carry no parsed log.
-  const captureUndo = (result, targetDate, { added = Boolean(result.logId), label } = {}) => {
+  const captureUndo = (result, targetDate, { added = Boolean(result.logId) } = {}) => {
     const undo = { token: result.undoToken ?? null, label: 'Meal updated' };
     const rows = result.items || (result.item ? [result.item] : []);
     const foods = rows.filter(row => row.kind !== 'group');
@@ -310,43 +345,60 @@ export function TodayView({ active = true, sidebarTarget, followUpTarget = null,
     const what = foods.length === 1 ? entryLabel(foods[0]) : `${foods.length} foods`;
     const mealId = result.mealTime || result.bucket || foods[0].mealTime;
     const meal = mealId ? `, ${bucketLabel(mealId)}` : '';
-    return { ...undo, label: label || `Added ${what} to ${dayLabel(landed, todayISO())}${meal}`, offer: { logId: result.logId, ids, date: landed } };
+    return { ...undo, label: `Added ${what} to ${dayLabel(landed, todayISO())}${meal}`, offer: { logId: result.logId, ids, what, date: landed } };
   };
   const showAdded = undo => {
-    if (undo.token) { setMealUndo(undo); setAddedOffer(null); mealUndoOperation.current = null; }
-    else if (undo.offer) setAddedOffer(undo);
+    if (undo.token) mealUndoOperation.current = null;
+    if (undo.offer) logger.info('capture.offer', { logId: undo.offer.logId ?? null, count: undo.offer.ids.length, date: undo.offer.date, undo: Boolean(undo.token) });
+    setCaptureToasts(state => announceCapture(state, undo));
   };
   // For every add outside the capture flow. True when the toast now reports it.
   const offerAddedFood = (result, targetDate, options) => {
     if (result?.committed !== true) return false;
     const undo = captureUndo(result, targetDate, options);
     if (!undo.offer) return false;
-    logger.info('capture.offer', { logId: result.logId ?? null, count: undo.offer.ids.length, date: undo.offer.date, undo: Boolean(undo.token) });
     showAdded(undo);
     return true;
   };
   // A capture's Undo stops working once its rows change, so a toast retires only
-  // after a real move. Anything else leaves it for another try.
-  const moveOffered = async (shown, retire, iso) => {
+  // after a real move. Anything else leaves it for another try. Food filed on
+  // another day is read from that day and moved from there.
+  const moveOffered = async (shown, iso) => {
     const offer = shown?.offer;
     if (!offer) return;
     const today = todayISO();
     const say = message => { setCaptureRetry(null); setCaptureNotice(message); };
-    const entries = captureEntries(movedDay.items, offer);
-    logger.info('capture.move-day', { logId: offer.logId, count: entries.length, from: offer.date, to: iso });
+    const elsewhere = offer.date !== date;
+    const landedDay = dayLabel(offer.date, today);
+    let items = movedDay.items;
+    if (elsewhere) {
+      try {
+        const landed = await DaylightAPI(healthDayPath(offer.date));
+        items = landed?.items || landed?.data || [];
+      } catch (err) {
+        logger.warn('capture.move-day.load_failed', { date: offer.date, error: err?.message });
+        say(`Couldn't load ${landedDay}. Try again.`);
+        return;
+      }
+    }
+    const { entries, blocked } = captureEntries(items, offer);
+    logger.info('capture.move-day', { logId: offer.logId, count: entries.length, blocked: blocked.length, from: offer.date, to: iso });
     if (!entries.length) {
-      const loading = day.loading || day.revalidating;
-      say(offer.date !== date ? `Those foods are on ${dayLabel(offer.date, today)}. Open that day to move them.`
-        : loading ? 'Those foods are still loading. Try again in a moment.' : 'Those foods are no longer on this day.');
+      const loading = !elsewhere && (day.loading || day.revalidating);
+      say(blocked.length ? `${stayedInDish(blocked)}.` : loading ? 'Those foods are still loading. Try again in a moment.'
+        : `Those foods are no longer on ${elsewhere ? landedDay : 'this day'}.`);
       return;
     }
-    const outcome = await moves.moveToDay(entries, iso);
+    movingOffers.current.add(offer);
+    let outcome;
+    try { outcome = await (elsewhere ? moves.moveFromDay(entries, iso, items) : moves.moveToDay(entries, iso)); }
+    finally { movingOffers.current.delete(offer); }
     logger.info('capture.move-day.result', { logId: offer.logId, outcome, to: iso });
-    if (outcome === MoveResult.MOVED) retire();
-    else if (outcome === MoveResult.UNCHANGED) say(`Those foods are already on ${dayLabel(iso, today)}.`);
+    if (outcome === MoveResult.MOVED) {
+      setCaptureToasts(state => forgetFood(state, offer));
+      if (blocked.length) say(`${stayedInDish(blocked)}, so ${blocked.length === 1 ? 'it' : 'they'} stayed.`);
+    } else if (outcome === MoveResult.UNCHANGED) say(`Those foods are already on ${dayLabel(iso, today)}.`);
   };
-  const moveCapture = iso => moveOffered(mealUndo, () => setMealUndo(current => (current === mealUndo ? null : current)), iso);
-  const moveAdded = iso => moveOffered(addedOffer, () => setAddedOffer(current => (current === addedOffer ? null : current)), iso);
 
   const handleCaptureResult = (result, bucket = null, targetDate = date, context = {}) => {
     // Offer the retry BEFORE the message is rendered, so the sentence that
@@ -492,7 +544,7 @@ export function TodayView({ active = true, sidebarTarget, followUpTarget = null,
     if (undoPending.current || !mealUndo) return;
     undoPending.current = true; setUndoBusy(true);
     mealUndoOperation.current ??= crypto.randomUUID();
-    try { await foodAPI('api/v1/health/nutrition/meal-undo', { undoToken: mealUndo.token, operationId: mealUndoOperation.current }, 'POST'); setMealUndo(null); day.reload(); }
+    try { await foodAPI('api/v1/health/nutrition/meal-undo', { undoToken: mealUndo.token, operationId: mealUndoOperation.current }, 'POST'); clearMealUndo(); day.reload(); }
     catch (err) { setCaptureNotice(err.message || 'Undo failed. Try again.'); }
     finally { undoPending.current = false; setUndoBusy(false); }
   };
@@ -539,10 +591,12 @@ export function TodayView({ active = true, sidebarTarget, followUpTarget = null,
       <TodayToasts captureNotice={captureNotice} captureRetry={captureRetry} retryBusy={nutrition.busy}
         onRetryCapture={retryVoiceCapture} onDismissCapture={() => { setCaptureNotice(null); setCaptureRetry(null); }}
         orphanRetry={orphanRetry} onRetryOrphan={retryOrphanedRecording} onDismissOrphan={() => setOrphanRetry(null)}
-        moves={moves} mealUndo={mealUndo} onUndoMeal={undoMealChange} onDismissMealUndo={() => setMealUndo(null)}
+        moves={moves} mealUndo={mealUndo} onUndoMeal={undoMealChange} onDismissMealUndo={clearMealUndo}
+        onSupersedeMealUndo={() => setCaptureToasts(state => supersedeCaptureUndo(state, movingOffers.current))}
         undoDelete={undoDelete} onUndoDelete={undoDeletedEntry} onDismissUndoDelete={() => setUndoDelete(null)} undoBusy={undoBusy}
-        strandedPortion={strandedPortion ? portionControl : null} today={todayISO()} onMoveCapture={moveCapture}
-        addedOffer={addedOffer} onMoveAdded={moveAdded} onDismissAdded={() => setAddedOffer(null)} />
+        strandedPortion={strandedPortion ? portionControl : null} today={todayISO()} onMoveCapture={iso => moveOffered(mealUndo, iso)}
+        dayOffers={captureToasts.offers} onMoveOffer={moveOffered}
+        onDismissOffer={shown => setCaptureToasts(state => ({ ...state, offers: state.offers.filter(item => item.offer !== shown.offer) }))} />
       <ConfirmDialog open={Boolean(pendingDelete)} title={pendingDelete ? `Delete ${entryLabel(pendingDelete)}?` : ''}
         body={pendingDelete ? deleteConfirmBody(pendingDelete) : ''} busy={deleteBusy} error={deleteError}
         onConfirm={confirmDelete} onCancel={() => { setPendingDelete(null); setDeleteError(null); }} />
