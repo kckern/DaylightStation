@@ -4,6 +4,7 @@ import { useSearchParams } from 'react-router-dom';
 import { DaylightAPI } from "../../../../../frontend/src/lib/api.mjs";
 import getLogger from "../../../../../frontend/src/lib/logging/Logger.js";
 import { useFeedWorkspace } from "../FeedWorkspaceContext.jsx";
+import { useApiResource } from "../../../../../frontend/src/lib/hooks/useApiResource.js";
 import ReaderSidebar from "./ReaderSidebar.jsx";
 import ArticleRow from "./ArticleRow.jsx";
 import { useVirtualFeedWindow } from "../Scroll/hooks/useVirtualFeedWindow.js";
@@ -168,7 +169,8 @@ export default function Reader() {
   const initialCheckpoint = useRef(checkpoints.reader);
   const previousVisit = useRef(getLastVisit('reader'));
   const visitStarted = useRef(new Date().toISOString());
-  const [feeds, setFeeds] = useState([]);
+  const { data: feedsData, error: feedsReadError, reload: reloadFeeds } = useApiResource('/api/v1/feed/reader/feeds', { label: 'Feed subscriptions' });
+  const feeds = feedsData || [];
   const [articles, setArticles] = useState(() => applyPendingMutations(initialSnapshot.current?.articles || []));
   const [continuation, setContinuation] = useState(initialSnapshot.current?.continuation || null);
   const [exhausted, setExhausted] = useState(initialSnapshot.current?.exhausted || false);
@@ -179,7 +181,6 @@ export default function Reader() {
   const [loadingMore, setLoadingMore] = useState(false);
   const [streamError, setStreamError] = useState(null);
   const [offlineError, setOfflineError] = useState(null);
-  const [feedsError, setFeedsError] = useState(null);
   const [offlineItems, setOfflineItems] = useState([]);
   const [offlineLoading, setOfflineLoading] = useState(false);
   const [collapsedGroups, setCollapsedGroups] = useState(new Set());
@@ -236,24 +237,8 @@ export default function Reader() {
     return () => document.removeEventListener('keydown', onKeyDown);
   }, []);
 
-  // Load feeds for sidebar
-  const loadFeeds = useCallback(() => {
-    const controller = new AbortController();
-    setFeedsError(null);
-    DaylightAPI('/api/v1/feed/reader/feeds', {}, 'GET', { signal: controller.signal })
-      .then(f => { setFeeds(f || []); setFeedsError(null); })
-      .catch(err => {
-        if (err.name === 'AbortError') return;
-        log.warn('reader.feeds.failed', { error: err.message });
-        setFeedsError('Subscriptions are unavailable. The inbox can still be used.');
-      });
-    return controller;
-  }, []);
-
-  useEffect(() => {
-    const controller = loadFeeds();
-    return () => controller.abort();
-  }, [loadFeeds]);
+  const feedsError = feedsReadError ? 'Subscriptions are unavailable. The inbox can still be used.' : null;
+  const loadFeeds = reloadFeeds;
 
   // Fetch stream articles
   // Unfiltered: day-based primer (days=3)
