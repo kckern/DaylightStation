@@ -4,7 +4,7 @@ import { renderHook, waitFor, act } from '@testing-library/react';
 const apiMock = vi.fn();
 vi.mock('../api.mjs', () => ({ DaylightAPI: (...args) => apiMock(...args) }));
 
-import { useApiResource, resetApiResourceCache } from './useApiResource.js';
+import { useApiResource, resetApiResourceCache, peekApiResource, primeApiResource } from './useApiResource.js';
 
 // The swr cache is module-level (shared across every hook instance in the
 // process), so tests MUST reset it between cases or an earlier test's cached
@@ -16,6 +16,25 @@ describe('useApiResource swr mode', () => {
   beforeEach(() => {
     apiMock.mockReset();
     resetApiResourceCache();
+  });
+
+  it('does not let a pending read overwrite a newer snapshot after cache eviction', async () => {
+    const path = '/record';
+    let resolveOld;
+    apiMock.mockReturnValueOnce(new Promise(resolve => { resolveOld = resolve; }));
+    renderHook(() => useApiResource(path, { swr: true }));
+    const newer = renderHook(() => useApiResource(path, { swr: true }));
+    apiMock.mockResolvedValueOnce({ version: 2 });
+    act(() => newer.result.current.reload());
+    await waitFor(() => expect(peekApiResource(path)).toEqual({ version: 2 }));
+
+    for (let i = 0; i < 100; i++) primeApiResource(`/other/${i}`, {});
+    expect(peekApiResource(path)).toBeUndefined();
+    apiMock.mockResolvedValueOnce({ version: 3 });
+    renderHook(() => useApiResource(path, { swr: true }));
+    await waitFor(() => expect(peekApiResource(path)).toEqual({ version: 3 }));
+    await act(async () => { resolveOld({ version: 1 }); });
+    expect(peekApiResource(path)).toEqual({ version: 3 });
   });
 
   it('cold mount with swr behaves like a normal load: loading true -> data, and populates the cache', async () => {

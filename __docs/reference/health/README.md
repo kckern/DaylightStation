@@ -775,8 +775,10 @@ load. The context gate, the day, the budget headline, weight and the coach line
 therefore paint from the last visit on the first frame, and each one revalidates
 quietly. Restored entries are always treated as stale: every reader refetches them and
 the prefetcher does not skip them. The snapshots belong to one person. When the
-server's `/context` names a different user than the one recorded on disk, everything
-restored is dropped and refetched (`claimApiResourceOwner`). Measured on the LAN: a
+server's `/context` names a different user than the one recorded on disk,
+`healthCache.js` claims the new owner through the scoped registration and
+revalidates the affected readers. The confirmed context opens Health while
+that revalidation runs. Measured on the LAN: a
 warm reopen went from 4.2 s to 0.2 s until the day's rows appeared.
 
 **The day on screen goes first.** On opening, the coach line's `/dashboard`

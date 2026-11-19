@@ -1,6 +1,8 @@
 import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 import { TextInput, UnstyledButton, Loader, Button } from '@mantine/core';
+import { useDebouncedValue } from '@mantine/hooks';
 import { DaylightAPI } from "../../../../../frontend/src/lib/api.mjs";
+import { useApiResource } from "../../../../../frontend/src/lib/hooks/useApiResource.js";
 import { createAppLogger } from "../../../../../frontend/src/lib/ui/createAppLogger.js";
 import { operationRequest } from "../capture/operationRequest.js";
 import { FoodIcon } from "./FoodIcon.jsx";
@@ -29,7 +31,6 @@ function portionLabel(entry) {
   const serving = entry.serving;
   return serving?.amount > 0 && serving.unit ? `${Math.round(serving.amount)} ${serving.unit} · ` : '';
 }
-import { peekApiResource, primeApiResource } from "../../../../../frontend/src/lib/hooks/useApiResource.js";
 import { shortlistPath, showCommittedFoodRows, provisionalFoodRow, settleProvisionalRow } from "../healthResources.js";
 import { localTodayISO, currentMealBucketId } from "./mealBuckets.js";
 import { addedRowIds, trackAddFlow } from "./addFlow.js";
@@ -37,7 +38,7 @@ import { addedRowIds, trackAddFlow } from "./addFlow.js";
 import { useHealthOperations } from "../operations/HealthOperationsProvider.jsx";
 
 const logger = createAppLogger('health').child('add-combobox');
-
+const EMPTY_ITEMS = [];
 
 /** True when a committed sentence's rows were filed on a different day or meal than this row's. */
 export function landedElsewhere(result, { date = null, bucketId = null } = {}) {
@@ -74,12 +75,9 @@ export function AddCombobox({ bucketId, date = null, onDone, onFoodAdded = null,
   inline = false, label = null, focusRequest = 0, actions = null }) {
   const operations = useHealthOperations();
   const [text, setText] = useState('');
-  const [items, setItems] = useState([]);
   const [highlight, setHighlight] = useState(-1);
   const [phase, setPhase] = useState('typing'); // typing | parsing
   const [error, setError] = useState(null);
-  const debounceRef = useRef(null);
-  const ridRef = useRef(0); // guards against a slow older suggest response overwriting a newer one
   const submitting = useRef(false);
   const requestRef = useRef(null);
   const listId = useId();
@@ -92,6 +90,19 @@ export function AddCombobox({ bucketId, date = null, onDone, onFoodAdded = null,
   // draws its shortlist only while it is being used. Leaving the row closes
   // the list but keeps any typed text; coming back reopens it.
   const open = !inline || focused;
+  const query = text.trim();
+  const [debouncedQuery] = useDebouncedValue(query, 250);
+  const queryPath = query === debouncedQuery
+    ? `api/v1/health/nutrition/catalog/suggest?q=${encodeURIComponent(query)}${bucketId ? `&bucket=${encodeURIComponent(bucketId)}` : ''}`
+    : null;
+  const path = open ? (query ? queryPath : shortlistPath(bucketId)) : null;
+  // A warm bucket shortlist paints immediately. Typed results are only used
+  // for the current query and never retained in the persistent cache.
+  const { data: suggestions } = useApiResource(path, {
+    swr: !query, retryTransient: false, label: 'food suggestions', logger,
+  });
+  const items = suggestions?.items ?? EMPTY_ITEMS;
+  useLayoutEffect(() => { setHighlight(-1); }, [path, suggestions]);
   // Near the bottom of a phone screen (or above the keyboard) the overlay
   // popup would run off the visible area: flip it above the input then.
   const [placement, setPlacement] = useState('below');
@@ -104,9 +115,6 @@ export function AddCombobox({ bucketId, date = null, onDone, onFoodAdded = null,
     if (next && (next === inputRef.current || popupRef.current?.contains(next))) return;
     setFocused(false);
     setHighlight(-1);
-    // An empty row forgets its shortlist, so a refocus never flashes stale
-    // results (or a stale activedescendant) before the fresh fetch lands.
-    if (!text.trim()) setItems([]);
   };
   // The input is never disabled (disabling a focused field blurs it, and on a
   // phone that closes the keyboard between every add). If focus did end up
@@ -142,43 +150,6 @@ export function AddCombobox({ bucketId, date = null, onDone, onFoodAdded = null,
       document.removeEventListener('scroll', place, true);
     };
   }, [inline, open, items.length, text]);
-
-  // One effect for both lists. With text, it is the query path exactly as
-  // before (debounced). Without, it is the bucket-aware zero-keystroke list
-  // (PRD F8.1) — fired immediately, because there is no keystroke to wait for
-  // and a debounce here would just be latency between the tap and the
-  // suggestions. Both share the `rid` guard, so a slow open cannot overwrite a
-  // fast first keystroke, or vice versa.
-  useEffect(() => {
-    if (!open) return undefined;
-    const q = text.trim();
-    const path = q
-      ? `api/v1/health/nutrition/catalog/suggest?q=${encodeURIComponent(q)}${bucketId ? `&bucket=${encodeURIComponent(bucketId)}` : ''}`
-      : shortlistPath(bucketId);
-    // The shortlist is prefetched once the day is on screen, so opening a row
-    // paints it at once; the request below still refreshes it quietly.
-    const cached = q ? undefined : peekApiResource(path);
-    if (cached) { setItems(cached.items || []); setHighlight(-1); }
-    const fetchSuggestions = async () => {
-      const rid = ++ridRef.current;
-      try {
-        const res = await DaylightAPI(path);
-        if (!q) primeApiResource(path, res);
-        if (ridRef.current !== rid) return; // a newer keystroke's request already landed
-        const next = res?.items || [];
-        setItems(next);
-        setHighlight(-1);
-        if (!q) logger.debug('suggest.opened', { bucket: bucketId ?? null, count: next.length, fromCache: Boolean(cached) });
-      } catch (err) {
-        if (ridRef.current !== rid) return;
-        logger.warn('suggest.failed', { error: err?.message, typed: q.length > 0 });
-      }
-    };
-    if (!q) { fetchSuggestions(); return undefined; }
-    clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(fetchSuggestions, 250);
-    return () => clearTimeout(debounceRef.current);
-  }, [text, bucketId, open]);
 
   // The sheet unmounts on success. The inline row stays: clear it and forget
   // the operation id (the next add is a new intent even when the payload is

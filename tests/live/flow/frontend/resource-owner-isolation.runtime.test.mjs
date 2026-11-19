@@ -19,7 +19,11 @@ test('two tabs claiming an initially unowned store cannot relabel another userâ€
   }));
   const [alice, bob] = tabs;
   await alice.evaluate(async () => {
+    await window.store.put('legacy-unowned', 'unowned', 7);
     await window.store.claimOwner('alice');
+  });
+  expect(await alice.evaluate(() => window.store.load())).toEqual({ owner: 'alice', entries: [] });
+  await alice.evaluate(async () => {
     await window.store.put('day', 'private', 7, 'alice');
   });
   await bob.evaluate(() => window.store.claimOwner('bob'));

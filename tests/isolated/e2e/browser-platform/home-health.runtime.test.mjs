@@ -20,6 +20,35 @@ function house(state) {
   };
 }
 
+test('Health opens after the first confirmed context while its background revalidation waits', async ({ page }) => {
+  let contextReads = 0;
+  await page.route('**/health/context', route => {
+    if (++contextReads === 1) return route.fulfill({ json: { userId: 'alice' } });
+  });
+  await page.goto('/health');
+  await expect(page.getByRole('main')).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Today', exact: true })).toHaveAttribute('aria-current', 'page');
+  await expect.poll(() => contextReads).toBe(2);
+  await expect.poll(() => page.evaluate(async () => {
+    const db = await new Promise((resolve, reject) => {
+      const request = indexedDB.open('daylight-health-cache');
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+    try {
+      return await new Promise((resolve, reject) => {
+        const request = db.transaction('resources').objectStore('resources').get('api/v1/health/context');
+        request.onsuccess = () => resolve(request.result?.value?.userId ?? null);
+        request.onerror = () => reject(request.error);
+      });
+    } finally {
+      db.close();
+    }
+  })).toBe('alice');
+  await page.reload();
+  await expect(page.getByRole('main')).toBeVisible();
+});
+
 test('Home keeps a confirmed toggle when an older poll finishes', async ({ page }) => {
   let reads = 0;
   let pendingPoll;

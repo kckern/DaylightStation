@@ -15,7 +15,7 @@
 //   - `live` (per effect run) discards a response whose OWN component/effect
 //     run is no longer current — unmount, path change, or an overlapping
 //     older `reload()` on the SAME hook instance.
-//   - a per-path generation counter discards a response that is stale
+//   - a per-path generation token discards a response that is stale
 //     RELATIVE TO ANOTHER REQUEST for the same path, including one issued by
 //     a completely different mounted hook instance (e.g. two components
 //     showing the same day's data side by side). `live` alone can't see
@@ -37,18 +37,10 @@ const defaultLogger = createAppLogger('ds');
 const MAX_CACHE_ENTRIES = 100;
 const swrCache = new Map();
 
-// Per-path "who issued the request that should win" counter. Every request a
-// swr-enabled hook issues for a path claims the next number; a response only
-// gets to write the cache if its number is still the highest issued for that
-// path at the time it resolves — i.e. it's provably the most-recently-issued
-// request, regardless of which mounted component instance issued it or how
-// long each one took to come back. An entry is dropped only as a side effect
-// of swrCache's own LRU eviction (below), which only happens on a successful
-// cache write — a path that never writes the cache (every request for it
-// fails, or is always superseded before it can) keeps its counter here
-// indefinitely. That's a real, unbounded-in-theory growth path, just a slow
-// and low-severity one: it costs one Map entry per distinct never-succeeding
-// path, not per request.
+// A response can write to the cache while it holds the path's latest token.
+// Unique tokens prevent an older read from regaining ownership after eviction.
+// LRU eviction removes the corresponding token. A path that never writes to
+// the cache can retain one token until the cache is reset.
 const pathGenerations = new Map();
 const invalidationListeners = new Set();
 const patchListeners = new Set();
@@ -60,7 +52,7 @@ export function invalidateApiResources(matches = () => true) {
   for (const path of fetchedAt.keys()) if (matches(path)) fetchedAt.delete(path);
   for (const path of inFlight.keys()) if (matches(path)) inFlight.delete(path);
   // A prefetch can outlive a later request that replaced it in inFlight.
-  for (const path of prefetchInFlight) if (matches(path)) claimGeneration(path);
+  for (const path of prefetchInFlight.keys()) if (matches(path)) claimGeneration(path);
   for (const notify of invalidationListeners) notify(matches);
 }
 
@@ -86,7 +78,7 @@ function cacheSet(path, value, { persist = true } = {}) {
 }
 
 // ---- Persistence ------------------------------------------------------------
-// Opt-in, per app: attachApiResourcePersistence({ store, prefixes }) restores
+// Opt-in, per app: registerResourcePersistence({ store, prefixes }) restores
 // the paths under `prefixes` from disk into this cache (so a reopened page
 // paints its last-seen data on the first frame) and writes every later cache
 // write back, batched. Restored entries carry no fetchedAt: they are stale by
@@ -96,7 +88,6 @@ const PERSIST_FLUSH_MS = 400;
 const PERSIST_MAX_ENTRY_BYTES = 512 * 1024;
 const registrations = new Set();
 const ownerListeners = new Set();
-let legacyRegistration;
 
 function registrationFor(path) {
   for (const registration of registrations) if (registration.matches(path)) return registration;
@@ -104,7 +95,9 @@ function registrationFor(path) {
 
 function schedulePersist(path, value) {
   const scope = registrationFor(path);
-  if (!scope) return;
+  // The stored owner can support a warm read while the app verifies the
+  // current identity. That disk identity alone cannot authorize new writes.
+  if (!scope?.confirmed) return;
   scope.pending.set(path, value);
   if (!scope.timer) scope.timer = setTimeout(scope.flush, PERSIST_FLUSH_MS);
 }
@@ -118,7 +111,7 @@ export function registerResourcePersistence({ store, prefixes, owner, timeoutMs 
     throw new Error('Resource persistence registrations overlap');
   }
   const scope = {
-    store, prefixes: [...prefixes], pending: new Map(), epoch: 0, owner: undefined,
+    store, prefixes: [...prefixes], pending: new Map(), epoch: 0, owner: undefined, confirmed: false,
     matches: path => typeof path === 'string' && scope.prefixes.some(prefix => path.startsWith(prefix)),
     flush: () => {
       clearTimeout(scope.timer);
@@ -138,6 +131,8 @@ export function registerResourcePersistence({ store, prefixes, owner, timeoutMs 
 
   function resetReaders() {
     scope.epoch++;
+    clearTimeout(scope.timer);
+    scope.timer = null;
     scope.pending.clear();
     let dropped = false;
     for (const path of swrCache.keys()) {
@@ -148,18 +143,22 @@ export function registerResourcePersistence({ store, prefixes, owner, timeoutMs 
       pathGenerations.delete(path);
     }
     for (const path of inFlight.keys()) if (scope.matches(path)) inFlight.delete(path);
+    for (const path of prefetchInFlight.keys()) if (scope.matches(path)) prefetchInFlight.delete(path);
     prefetchQueue = prefetchQueue.filter(({ path }) => !scope.matches(path));
+    if (isPrefetchIdle()) prefetchOnIdle = null;
+    pumpPrefetch();
     for (const notify of ownerListeners) notify(scope.matches);
     return dropped;
   }
   function setOwner(next) {
-    if (!registrations.has(scope) || !next || scope.owner === next) return false;
-    const previous = scope.owner;
+    if (!registrations.has(scope) || !next) return false;
+    scope.confirmed = true;
+    if (scope.owner === next) return false;
     scope.owner = next;
-    const dropped = previous === null ? false : resetReaders();
+    const dropped = resetReaders();
     if (store.claimOwner) store.claimOwner(next);
     else {
-      if (previous !== null) store.clear();
+      store.clear();
       store.setOwner(next);
     }
     return dropped;
@@ -167,14 +166,22 @@ export function registerResourcePersistence({ store, prefixes, owner, timeoutMs 
   async function restore() {
     const epoch = scope.epoch;
     let timer;
+    let loaded;
     try {
-      const loaded = await Promise.race([store.load(), new Promise(resolve => {
+      loaded = await Promise.race([store.load(), new Promise(resolve => {
         timer = setTimeout(() => resolve(null), timeoutMs);
       })]);
+    } catch { /* use the network when storage fails */ }
+    finally { clearTimeout(timer); }
+    try {
       if (!registrations.has(scope) || epoch !== scope.epoch) return 0;
-      scope.owner = loaded ? loaded.owner ?? null : undefined;
-      if (owner && owner !== scope.owner) { setOwner(owner); return 0; }
-      if (!loaded) return 0;
+      scope.owner = loaded?.owner ?? null;
+      if (owner) {
+        const matchesDisk = owner === scope.owner;
+        setOwner(owner);
+        if (!matchesDisk) return 0;
+      }
+      if (!loaded?.owner) return 0;
       let restored = 0;
       for (const { path, value } of [...loaded.entries].reverse()) {
         if (!scope.matches(path) || swrCache.has(path)) continue;
@@ -183,15 +190,11 @@ export function registerResourcePersistence({ store, prefixes, owner, timeoutMs 
       }
       return restored;
     } catch { return 0; }
-    finally { clearTimeout(timer); }
   }
-  function dispose({ preserveMemory = false } = {}) {
+  function dispose() {
     if (!registrations.delete(scope)) return;
-    clearTimeout(scope.timer);
-    scope.pending.clear();
     if (typeof window !== 'undefined') window.removeEventListener('pagehide', scope.flush);
-    if (preserveMemory) invalidateApiResources(scope.matches);
-    else resetReaders();
+    resetReaders();
   }
   // A newly attached store defines a new ownership boundary even when reads
   // started before any store existed for these URLs.
@@ -199,19 +202,6 @@ export function registerResourcePersistence({ store, prefixes, owner, timeoutMs 
   return { ready: restore(), setOwner, dispose, get owner() { return scope.owner; } };
 }
 
-export function attachApiResourcePersistence(options) {
-  detachApiResourcePersistence();
-  legacyRegistration = registerResourcePersistence(options);
-  return legacyRegistration.ready;
-}
-
-export function detachApiResourcePersistence() {
-  legacyRegistration?.dispose({ preserveMemory: true });
-  legacyRegistration = undefined;
-}
-
-export function getApiResourceOwner() { return legacyRegistration?.owner; }
-export function claimApiResourceOwner(owner) { return legacyRegistration?.setOwner(owner) ?? false; }
 export function flushApiResourcePersistence() { for (const scope of registrations) scope.flush(); }
 
 // ---- In-flight dedupe --------------------------------------------------------
@@ -273,11 +263,11 @@ function requestWithRetry(path, { join, isCurrent, onRetry }) {
   return attempt(0, join);
 }
 
-// Claims the next generation number for `path` — call this once per issued
+// Claims a new generation token for `path` — call this once per issued
 // request, at issue time, and keep the returned number to check against
 // `isNewestGeneration` when that request resolves.
 function claimGeneration(path) {
-  const next = (pathGenerations.get(path) || 0) + 1;
+  const next = Symbol();
   pathGenerations.set(path, next);
   return next;
 }
@@ -296,32 +286,28 @@ const PREFETCH_CONCURRENCY = 2;
 const PREFETCH_FRESH_MS = 60_000;
 const fetchedAt = new Map();
 let prefetchQueue = [];
-let prefetchActive = 0;
-const prefetchInFlight = new Set();
-let prefetchEpoch = 0; // bumped by resetApiResourceCache so stale in-flight work can't hold slots
+const prefetchInFlight = new Map();
 // Cumulative since page load (or the last reset): what the prefetcher was
 // asked to warm, and how it went. Read by callers that report on it.
 const prefetchStats = { queued: 0, completed: 0, failed: 0 };
 let prefetchOnIdle = null; // the latest caller's "queue drained" callback
 
 function pumpPrefetch() {
-  while (prefetchActive < PREFETCH_CONCURRENCY && prefetchQueue.length) {
-    const { path, onDone } = prefetchQueue.shift();
+  while (prefetchInFlight.size < PREFETCH_CONCURRENCY && prefetchQueue.length) {
+    const task = prefetchQueue.shift();
+    const { path, onDone } = task;
     const generation = claimGeneration(path);
-    const epoch = prefetchEpoch;
-    const scope = registrationFor(path);
-    const ownerEpoch = scope?.epoch;
-    prefetchActive += 1;
-    prefetchInFlight.add(path);
+    prefetchInFlight.set(path, task);
+    const isCurrent = () => prefetchInFlight.get(path) === task;
     sharedRequest(path)
       .then(result => {
-        if (epoch !== prefetchEpoch || (registrationFor(path) !== scope || scope?.epoch !== ownerEpoch)) return;
+        if (!isCurrent()) return;
         if (isNewestGeneration(path, generation)) { cacheSet(path, result); fetchedAt.set(path, Date.now()); }
         prefetchStats.completed += 1;
         onDone?.(null, path);
       })
-      .catch(err => { if (epoch !== prefetchEpoch || (registrationFor(path) !== scope || scope?.epoch !== ownerEpoch)) return; prefetchStats.failed += 1; onDone?.(err, path); })
-      .finally(() => { if (epoch !== prefetchEpoch) return; prefetchActive -= 1; prefetchInFlight.delete(path); pumpPrefetch();
+      .catch(err => { if (!isCurrent()) return; prefetchStats.failed += 1; onDone?.(err, path); })
+      .finally(() => { if (!isCurrent()) return; prefetchInFlight.delete(path); pumpPrefetch();
         if (isPrefetchIdle() && prefetchOnIdle) { const onIdle = prefetchOnIdle; prefetchOnIdle = null; onIdle(getPrefetchStats()); } });
   }
 }
@@ -333,7 +319,7 @@ export function getPrefetchStats() {
 
 /** True when nothing is queued or in flight. */
 export function isPrefetchIdle() {
-  return prefetchActive === 0 && prefetchQueue.length === 0;
+  return prefetchInFlight.size === 0 && prefetchQueue.length === 0;
 }
 
 /** True when the swr cache holds a payload for `path` fetched recently. */
@@ -382,7 +368,7 @@ export function patchApiResource(path, update) {
  */
 export function prefetchApiResources(paths, { onDone, onIdle } = {}) {
   prefetchOnIdle = typeof onIdle === 'function' ? onIdle : null;
-  prefetchQueue = paths.filter(path => path && !isApiResourceFresh(path) && !prefetchInFlight.has(path)).map(path => ({ path, onDone }));
+  prefetchQueue = [...new Set(paths)].filter(path => path && !isApiResourceFresh(path) && !prefetchInFlight.has(path)).map(path => ({ path, onDone }));
   const accepted = prefetchQueue.length;
   prefetchStats.queued += accepted;
   pumpPrefetch();
@@ -399,7 +385,7 @@ export function prefetchApiResources(paths, { onDone, onIdle } = {}) {
 // deletes it from the persistent store; the no-argument reset clears MEMORY
 // only, so an attached store would restore those entries on the next attach.
 export function resetApiResourceCache(path) {
-  if (path === undefined) { swrCache.clear(); pathGenerations.clear(); fetchedAt.clear(); inFlight.clear(); for (const scope of registrations) scope.pending.clear(); prefetchQueue = []; prefetchActive = 0; prefetchInFlight.clear(); prefetchEpoch += 1; prefetchOnIdle = null; Object.assign(prefetchStats, { queued: 0, completed: 0, failed: 0 }); return; }
+  if (path === undefined) { swrCache.clear(); pathGenerations.clear(); fetchedAt.clear(); inFlight.clear(); for (const scope of registrations) scope.pending.clear(); prefetchQueue = []; prefetchInFlight.clear(); prefetchOnIdle = null; Object.assign(prefetchStats, { queued: 0, completed: 0, failed: 0 }); return; }
   swrCache.delete(path);
   pathGenerations.delete(path);
   fetchedAt.delete(path);

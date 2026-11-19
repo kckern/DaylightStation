@@ -6,7 +6,7 @@ const apiMock = vi.fn();
 vi.mock("../../../../../frontend/src/lib/api.mjs", () => ({ DaylightAPI: (...a) => apiMock(...a) }));
 
 import { AddCombobox, popupPlacement } from "./AddCombobox.jsx";
-import { resetApiResourceCache, primeApiResource, peekApiResource } from "../../../../../frontend/src/lib/hooks/useApiResource.js";
+import { resetApiResourceCache, primeApiResource, peekApiResource, registerResourcePersistence } from "../../../../../frontend/src/lib/hooks/useApiResource.js";
 import { shortlistPath, healthDayPath } from "../healthResources.js";
 import { noteVisibleRows, resetAddFlow } from "./addFlow.js";
 
@@ -230,6 +230,36 @@ describe('AddCombobox', () => {
 // ── Task 9.2: the list is there before the first keystroke (PRD U8.1/F8.1) ──
 describe('AddCombobox — zero-keystroke suggestions', () => {
   beforeEach(() => { apiMock.mockReset(); });
+
+  it('keeps a departing member’s pending shortlist out of the next member’s cache', async () => {
+    const pendingPath = shortlistPath('afternoon');
+    const registration = registerResourcePersistence({
+      store: {
+        load: async () => ({ owner: 'alice', entries: [] }),
+        claimOwner: vi.fn(),
+        put: vi.fn(),
+      },
+      prefixes: ['api/v1/health/nutrition/catalog/suggest'],
+    });
+    try {
+      await registration.ready;
+      let resolveOld;
+      apiMock.mockReturnValueOnce(new Promise(resolve => { resolveOld = resolve; }));
+      const first = r(<AddCombobox bucketId="afternoon" />);
+      expect(apiMock).toHaveBeenCalledWith(pendingPath);
+      first.unmount();
+      registration.setOwner('bob');
+      await act(async () => { resolveOld({ items: [{ id: 'old', name: 'Old member’s food' }] }); });
+      expect(peekApiResource(pendingPath)).toBeUndefined();
+
+      apiMock.mockResolvedValue(SUGGEST);
+      r(<AddCombobox bucketId="afternoon" />);
+      expect(screen.queryByText('Old member’s food')).toBeNull();
+      expect(await screen.findByText('Chicken breast')).toBeTruthy();
+    } finally {
+      registration.dispose();
+    }
+  });
 
   const OPEN = { items: [
     { id: 'oat', name: 'Oatmeal', favorite: false, icon: 'oatmeal', nutrients: { calories: 150 } },
@@ -682,7 +712,7 @@ it('does not restore failed quick-add text over the next submitted sentence',asy
  const input=screen.getByRole('combobox');input.focus();
  await waitFor(()=>screen.getByText('Chicken breast'));
  fireEvent.change(input,{target:{value:'chick'}});
- fireEvent.click(screen.getByText('Chicken breast'));
+ fireEvent.click(await screen.findByText('Chicken breast'));
  fireEvent.change(input,{target:{value:'toast'}});fireEvent.keyDown(input,{key:'Enter'});
  expect(input.value).toBe('');
  await act(async()=>rejectPick(new Error('pick offline')));

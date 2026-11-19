@@ -5,8 +5,8 @@ const apiMock = vi.fn();
 vi.mock('../api.mjs', () => ({ DaylightAPI: (...args) => apiMock(...args) }));
 
 import {
-  registerResourcePersistence, primeApiResource, useApiResource, resetApiResourceCache, peekApiResource, attachApiResourcePersistence,
-  detachApiResourcePersistence, claimApiResourceOwner, flushApiResourcePersistence, isApiResourceFresh, prefetchApiResources,
+  registerResourcePersistence, primeApiResource, useApiResource, resetApiResourceCache, peekApiResource,
+  flushApiResourcePersistence, isApiResourceFresh, prefetchApiResources,
 } from './useApiResource.js';
 
 const deferred = () => { let resolve; const promise = new Promise(r => { resolve = r; }); return { promise, resolve }; };
@@ -30,12 +30,20 @@ function memoryStore({ owner = null, entries = [] } = {}) {
 const PREFIXES = ['api/v1/health/'];
 
 describe('useApiResource persistence', () => {
-  beforeEach(() => { apiMock.mockReset(); resetApiResourceCache(); detachApiResourcePersistence(); });
-  afterEach(() => detachApiResourcePersistence());
+  const registrations = [];
+  function register(store, options) {
+    const registration = registerResourcePersistence({ store, prefixes: PREFIXES, ...options });
+    registrations.push(registration);
+    return registration;
+  }
+
+  beforeEach(() => { apiMock.mockReset(); resetApiResourceCache(); });
+  afterEach(() => { for (const registration of registrations.splice(0)) registration.dispose(); });
 
   it('a restored path paints on the first render and still revalidates', async () => {
     const store = memoryStore({ owner: 'first-user', entries: [{ path: 'api/v1/health/day?date=2026-09-25', value: { v: 'disk' } }] });
-    expect(await attachApiResourcePersistence({ store, prefixes: PREFIXES })).toBe(1);
+    const registration = register(store);
+    expect(await registration.ready).toBe(1);
     const network = deferred();
     apiMock.mockReturnValueOnce(network.promise);
     const { result } = renderHook(() => useApiResource('api/v1/health/day?date=2026-09-25', { swr: true }));
@@ -47,12 +55,19 @@ describe('useApiResource persistence', () => {
     await act(async () => { network.resolve({ v: 'network' }); });
     await waitFor(() => expect(result.current.data).toEqual({ v: 'network' }));
     flushApiResourcePersistence();
-    expect(store.records.get('api/v1/health/day?date=2026-09-25')).toEqual({ v: 'network' });
+    expect(store.put).not.toHaveBeenCalled();
+    expect(registration.setOwner('first-user')).toBe(false);
+    await act(async () => {
+      apiMock.mockResolvedValue({ v: 'confirmed' });
+      result.current.reload();
+    });
+    flushApiResourcePersistence();
+    expect(store.records.get('api/v1/health/day?date=2026-09-25')).toEqual({ v: 'confirmed' });
   });
 
   it('persists only paths under the prefixes, batched', async () => {
-    const store = memoryStore();
-    await attachApiResourcePersistence({ store, prefixes: PREFIXES });
+    const store = memoryStore({ owner: 'first-user' });
+    await register(store, { owner: 'first-user' }).ready;
     apiMock.mockImplementation(async path => ({ path }));
     renderHook(() => useApiResource('api/v1/health/weight', { swr: true }));
     renderHook(() => useApiResource('api/v1/fitness/sessions', { swr: true }));
@@ -65,9 +80,11 @@ describe('useApiResource persistence', () => {
 
   it('an unavailable or slow store restores nothing and the page loads normally', async () => {
     const broken = { ...memoryStore(), load: vi.fn(async () => null) };
-    expect(await attachApiResourcePersistence({ store: broken, prefixes: PREFIXES })).toBe(0);
+    const unavailable = register(broken);
+    expect(await unavailable.ready).toBe(0);
+    unavailable.dispose();
     const slow = { ...memoryStore(), load: vi.fn(() => new Promise(() => {})) };
-    expect(await attachApiResourcePersistence({ store: slow, prefixes: PREFIXES, timeoutMs: 10 })).toBe(0);
+    expect(await register(slow, { timeoutMs: 10 }).ready).toBe(0);
     apiMock.mockResolvedValue({ ok: 1 });
     const { result } = renderHook(() => useApiResource('api/v1/health/context', { swr: true }));
     expect(result.current.loading).toBe(true);
@@ -76,12 +93,13 @@ describe('useApiResource persistence', () => {
 
   it('a different owner drops what came from disk and refetches it', async () => {
     const store = memoryStore({ owner: 'first-user', entries: [{ path: 'api/v1/health/day?date=2026-09-25', value: { who: 'first-user' } }] });
-    await attachApiResourcePersistence({ store, prefixes: PREFIXES });
+    const registration = register(store);
+    await registration.ready;
     const network = deferred();
     apiMock.mockReturnValueOnce(network.promise).mockResolvedValue({ who: 'second-user' });
     const { result } = renderHook(() => useApiResource('api/v1/health/day?date=2026-09-25', { swr: true }));
     expect(result.current.data).toEqual({ who: 'first-user' });
-    act(() => { expect(claimApiResourceOwner('second-user')).toBe(true); });
+    act(() => { expect(registration.setOwner('second-user')).toBe(true); });
     // Off the screen at once, not just out of the cache.
     expect(result.current.data).toBeNull();
     expect(store.clear).toHaveBeenCalledTimes(1);
@@ -95,15 +113,16 @@ describe('useApiResource persistence', () => {
 
   it('the same owner, or a first claim, drops nothing', async () => {
     const store = memoryStore({ owner: 'first-user', entries: [{ path: 'api/v1/health/weight', value: [1] }] });
-    await attachApiResourcePersistence({ store, prefixes: PREFIXES });
-    expect(claimApiResourceOwner('first-user')).toBe(false);
+    const registration = register(store);
+    await registration.ready;
+    expect(registration.setOwner('first-user')).toBe(false);
     expect(peekApiResource('api/v1/health/weight')).toEqual([1]);
-    detachApiResourcePersistence();
-    resetApiResourceCache();
+    registration.dispose();
+    expect(peekApiResource('api/v1/health/weight')).toBeUndefined();
     const fresh = memoryStore();
-    await attachApiResourcePersistence({ store: fresh, prefixes: PREFIXES });
-    expect(claimApiResourceOwner('first-user')).toBe(false);
-    expect(fresh.clear).not.toHaveBeenCalled();
+    const firstVisit = register(fresh);
+    await firstVisit.ready;
+    expect(firstVisit.setOwner('first-user')).toBe(false);
     expect(fresh.owner).toBe('first-user');
   });
 
@@ -111,10 +130,14 @@ describe('useApiResource persistence', () => {
     const path = 'api/v1/health/day';
     const old = deferred();
     const next = memoryStore({ owner: 'bob' });
-    await attachApiResourcePersistence({ store: memoryStore({ owner: 'amy' }), prefixes: PREFIXES });
+    const previous = register(memoryStore({ owner: 'amy' }));
+    await previous.ready;
     apiMock.mockReturnValueOnce(old.promise).mockResolvedValue({ owner: 'bob' });
     const { result } = renderHook(() => useApiResource(path, { swr: true }));
-    await act(async () => { await attachApiResourcePersistence({ store: next, prefixes: PREFIXES }); });
+    await act(async () => {
+      previous.dispose();
+      await register(next, { owner: 'bob' }).ready;
+    });
     await act(async () => old.resolve({ owner: 'amy' }));
     await waitFor(() => expect(result.current.data).toEqual({ owner: 'bob' }));
     flushApiResourcePersistence();
@@ -124,10 +147,11 @@ describe('useApiResource persistence', () => {
   it('continues a mounted read after detaching persistence', async () => {
     const path = 'api/v1/health/day';
     const pending = deferred();
-    await attachApiResourcePersistence({ store: memoryStore(), prefixes: PREFIXES });
+    const registration = register(memoryStore());
+    await registration.ready;
     apiMock.mockReturnValueOnce(pending.promise).mockResolvedValue({ current: true });
     const { result } = renderHook(() => useApiResource(path, { swr: true }));
-    act(() => detachApiResourcePersistence());
+    act(() => registration.dispose());
     await act(async () => pending.resolve({ current: false }));
     expect(result.current.data).toEqual({ current: true });
     expect(result.current.loading).toBe(false);
@@ -136,11 +160,12 @@ describe('useApiResource persistence', () => {
   it('does not let a fresh reader join a request from a detached registration', async () => {
     const path = 'api/v1/health/weight';
     const pending = deferred();
-    await attachApiResourcePersistence({ store: memoryStore(), prefixes: PREFIXES });
+    const registration = register(memoryStore());
+    await registration.ready;
     apiMock.mockReturnValueOnce(pending.promise).mockResolvedValue({ current: true });
     const old = renderHook(() => useApiResource(path));
     old.unmount();
-    detachApiResourcePersistence();
+    registration.dispose();
     const next = renderHook(() => useApiResource(path));
     await act(async () => pending.resolve({ current: false }));
     expect(next.result.current.data).toEqual({ current: true });
@@ -150,8 +175,9 @@ describe('useApiResource persistence', () => {
     // The disk is slow this time: nothing restored, owner unknown.
     const store = memoryStore({ owner: 'first-user', entries: [{ path: 'api/v1/health/weight', value: ['first-user'] }] });
     store.load = vi.fn(() => new Promise(() => {}));
-    await attachApiResourcePersistence({ store, prefixes: PREFIXES, timeoutMs: 10 });
-    claimApiResourceOwner('second-user');
+    const registration = register(store, { timeoutMs: 10 });
+    await registration.ready;
+    registration.setOwner('second-user');
     // first-user's snapshots must not be relabelled as second-user's.
     expect(store.clear).toHaveBeenCalledTimes(1);
     expect(store.owner).toBe('second-user');
@@ -160,14 +186,14 @@ describe('useApiResource persistence', () => {
   it('with more on disk than memory holds, the NEWEST entries survive the restore', async () => {
     // load() returns newest first, as the IndexedDB store does.
     const entries = Array.from({ length: 101 }, (_, i) => ({ path: `api/v1/health/day?date=n${String(i).padStart(3, '0')}`, value: i }));
-    await attachApiResourcePersistence({ store: memoryStore({ owner: 'first-user', entries }), prefixes: PREFIXES });
+    await register(memoryStore({ owner: 'first-user', entries })).ready;
     expect(peekApiResource('api/v1/health/day?date=n000')).toBe(0);
     expect(peekApiResource('api/v1/health/day?date=n100')).toBeUndefined();
   });
 
   it('resetting a path deletes it from disk too', async () => {
     const store = memoryStore({ owner: 'first-user', entries: [{ path: 'api/v1/health/weight', value: [1] }] });
-    await attachApiResourcePersistence({ store, prefixes: PREFIXES });
+    await register(store, { owner: 'first-user' }).ready;
     resetApiResourceCache('api/v1/health/weight');
     flushApiResourcePersistence();
     expect(store.records.has('api/v1/health/weight')).toBe(false);
@@ -259,6 +285,50 @@ it('isolates live registrations and rejects a previous owner response after swit
   }
 });
 
+it('ignores unowned disk records and retires reads and writes issued before the first owner claim', async () => {
+  const path = 'first-claim/day';
+  const otherPath = 'first-claim/weight';
+  const store = memoryStore({ entries: [{ path, value: 'unowned disk entry' }] });
+  const handle = registerResourcePersistence({ store, prefixes: ['first-claim/'] });
+  const old = deferred();
+  const current = deferred();
+  try {
+    expect(await handle.ready).toBe(0);
+    expect(peekApiResource(path)).toBeUndefined();
+    apiMock.mockReset().mockReturnValueOnce(old.promise).mockReturnValueOnce(current.promise);
+    const reader = renderHook(() => useApiResource(path, { swr: true }));
+    primeApiResource(otherPath, 'unowned memory entry');
+    flushApiResourcePersistence();
+    expect(store.put).not.toHaveBeenCalled();
+
+    act(() => handle.setOwner('bob'));
+    expect(reader.result.current.data).toBeNull();
+    expect(peekApiResource(otherPath)).toBeUndefined();
+    await act(async () => { old.resolve('unowned network result'); });
+    expect(reader.result.current.data).toBeNull();
+    await act(async () => { current.resolve('current owner result'); });
+    expect(reader.result.current.data).toBe('current owner result');
+    flushApiResourcePersistence();
+    expect(store.put.mock.calls).toEqual([[path, 'current owner result', expect.any(Number), 'bob']]);
+  } finally {
+    handle.dispose();
+  }
+});
+
+it('retires an unscoped prefetch when a registration attaches and disposes before it completes', async () => {
+  const path = 'takeover/day';
+  const old = deferred();
+  const onDone = vi.fn();
+  apiMock.mockReset().mockReturnValueOnce(old.promise);
+  prefetchApiResources([path], { onDone });
+  const handle = registerResourcePersistence({ store: memoryStore({ owner: 'alice' }), prefixes: ['takeover/'] });
+  await handle.ready;
+  handle.dispose();
+  await act(async () => { old.resolve('old unscoped result'); });
+  expect(peekApiResource(path)).toBeUndefined();
+  expect(onDone).not.toHaveBeenCalled();
+});
+
 it('isolates out-of-order hydration, queued writes and disposal while the sibling reader stays mounted', async () => {
   const pathA = 'parallel/a/list';
   const pathB = 'parallel/b/list';
@@ -276,6 +346,7 @@ it('isolates out-of-order hydration, queued writes and disposal while the siblin
   const readers = [];
   try {
     expect(await b.ready).toBe(1);
+    b.setOwner('bob');
     const readerB = renderHook(() => useApiResource(pathB, { swr: true }));
     readers.push(readerB);
     expect(readerB.result.current.data).toBe('disk B');

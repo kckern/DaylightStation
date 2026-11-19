@@ -5,7 +5,7 @@ import { localDateISO } from "../portable/contracts/health/isoDate.mjs";
 import { useApiResource } from "../../../../frontend/src/lib/hooks/useApiResource.js";
 import { AgentConversationProvider, useAgentConversation } from "../../../../__capabilities/agent-runtime/browser/chat.mjs";
 import { refreshHealthResourcesWithDashboard } from "./healthResources.js";
-import { claimHealthCacheOwner, healthCacheHeldByOther, hydrateHealthCache, useHealthCacheHydrated } from "./healthCache.js";
+import { claimHealthCacheOwner, healthCacheHeldByOther, HEALTH_CONTEXT_PATH, hydrateHealthCache, useHealthCacheHydrated } from "./healthCache.js";
 import '@mantine/core/styles.css';
 import {
   AppThemeProvider, AppChrome, DismissStackProvider, LoadingState, ErrorState,
@@ -52,14 +52,14 @@ const HealthApp = () => (useHealthCacheHydrated() ? <HealthGate />
   : <AppThemeProvider pack="health"><LoadingState label="Health" /></AppThemeProvider>);
 
 const HealthGate = () => {
-  const context = useApiResource('api/v1/health/context', { swr: true });
-  const confirmedUserId = !context.revalidating && !context.loading && !context.error ? context.data?.userId : null;
+  const context = useApiResource(HEALTH_CONTEXT_PATH, { swr: true });
+  const confirmedContext = !context.revalidating && !context.loading && !context.error ? context.data : null;
   const [, setClaimedUserId] = useState(null);
   useEffect(() => {
-    if (!confirmedUserId) return;
-    claimHealthCacheOwner(confirmedUserId);
-    setClaimedUserId(confirmedUserId); // re-render once the cache is theirs
-  }, [confirmedUserId]);
+    if (!confirmedContext?.userId) return;
+    claimHealthCacheOwner(confirmedContext);
+    setClaimedUserId(confirmedContext.userId); // re-render once the cache is theirs
+  }, [confirmedContext]);
   // The server named someone other than whose snapshots the cache holds: do
   // not mount their shell on the other person's data; the claim above clears it.
   const heldByOther = healthCacheHeldByOther(context.data?.userId);

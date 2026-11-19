@@ -258,13 +258,15 @@ with a store: `createIdbResourceStore(name)` in
 `lib/hooks/persistentResourceStore.js`, which uses IndexedDB and is capped by
 entry count and total bytes.
 
-- **On attach**, the paths under `prefixes` are restored into memory. An app
-  awaits this before its first render, so its readers start on a cache hit.
-- **Every later cache write** is written back to disk in batches, at most
-  every 400 ms and again on `pagehide`.
+- **On registration**, owned snapshots under `prefixes` are restored into
+  memory. An app can await `ready` before its first read for a warm start.
+- **After confirming the owner**, cache updates are written to disk in
+  batches every 400 ms and on `pagehide`.
 - **Restored entries are stale by definition.** Every reader revalidates
   them, and the prefetcher does not treat them as fresh.
-- **The disk copy belongs to one person.** Call the handle's `setOwner(id)` after server confirmation. Changing owners clears matching snapshots and revalidates mounted readers. Requests started for the previous owner cannot repopulate the new view. IndexedDB checks the persisted owner inside each write transaction.
+- **The disk copy belongs to one person.** Call the handle's `setOwner(id)` after server confirmation, including when the restored owner matches. A first claim or a change of owner retires matching cached data, pending writes and prefetches, and revalidates mounted readers. IndexedDB checks the persisted owner inside each write transaction.
+- **Dispose the registration** to release its listeners, discard its pending
+  work and clear memory for just its prefixes.
 - **Failures degrade to a normal network load.** No IndexedDB, a blocked
   open, a quota error, or a load slower than `timeoutMs` all do this.
 - **Bump `RECORD_VERSION`** when a persisted payload shape changes

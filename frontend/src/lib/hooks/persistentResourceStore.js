@@ -1,4 +1,4 @@
-// IndexedDB backing for useApiResource's swr cache (attachApiResourcePersistence).
+// IndexedDB backing for scoped useApiResource persistence.
 //
 // One record per request path: { path, value, bytes, at, v }. A reopened page
 // restores these into memory before its first render, paints them, and
@@ -119,7 +119,7 @@ export function createIdbResourceStore(name, { maxEntries = 150, maxBytes = 8 * 
         const meta = tx.objectStore(META);
         const current = meta.get('owner');
         current.onsuccess = () => {
-          if (current.result && current.result !== owner) tx.objectStore(STORE).clear();
+          if (current.result !== owner) tx.objectStore(STORE).clear();
           meta.put(owner, 'owner');
         };
       });
