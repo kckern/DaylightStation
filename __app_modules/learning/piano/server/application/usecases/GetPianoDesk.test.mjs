@@ -64,9 +64,9 @@ test('uses saved passage ranges and parts, so one-hand pieces match Learn', () =
   assert.deepEqual(piece.next, { passageId: 'intro', skill: 'notes', label: 'Find the notes', start: 0, end: 3 });
 });
 
-test('reads a one-hand legacy plan from its rungs', () => {
-  const r = record({ learn: { segments: { 'm0-3': {} }, passages: { 'm0-3': { rungs: { together: { passCount: 6 } } } } } });
-  assert.equal(deskFor({ a: [{ scoreKey: KEY, record: r }] }).execute().players[0].piece.next.skill, 'silver');
+test('treats an older plan as two-handed, since its rungs cannot tell', () => {
+  const r = record({ learn: { segments: { 'm0-3': {} }, passages: { 'm0-3': { rungs: { 'test-out': { passCount: 0 } } } } } });
+  assert.equal(deskFor({ a: [{ scoreKey: KEY, record: r }] }).execute().players[0].piece.next.skill, 'right');
 });
 
 test('one player failing does not take the desk down', () => {

@@ -12,12 +12,6 @@ const DEFAULT_PARTS = ['rh', 'lh'];
 
 export const practiceKeyOfScore = (id) => String(id).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 120);
 
-/** A single-staff passage has no separate-hand rungs, which is visible in older records. */
-function legacyParts(progress) {
-  const rungs = Object.keys(progress?.rungs ?? {});
-  return rungs.length && !rungs.includes('right') && !rungs.includes('left') ? ['rh'] : DEFAULT_PARTS;
-}
-
 function passageRanges(record) {
   const saved = record?.learnCoach?.summary?.passages;
   if (Array.isArray(saved) && saved.length) {
@@ -30,10 +24,9 @@ function passageRanges(record) {
     const match = /^m(\d+)-(\d+)$/.exec(id);
     return match ? [{ id, inMeasure: Number(match[1]), outMeasure: Number(match[2]) }] : [];
   });
-  const progress = Object.values(record?.learn?.passages ?? {});
-  const parts = progress.some((item) => legacyParts(item) === DEFAULT_PARTS && Object.keys(item?.rungs ?? {}).length)
-    ? DEFAULT_PARTS : progress.length ? ['rh'] : DEFAULT_PARTS;
-  return planned.map((passage) => ({ ...passage, playableParts: parts })).sort((x, y) => x.inMeasure - y.inMeasure);
+  // Older records do not say which hands a passage has. Two hands is right for
+  // nearly the whole library, and the next save stores the real parts.
+  return planned.map((passage) => ({ ...passage, playableParts: DEFAULT_PARTS })).sort((x, y) => x.inMeasure - y.inMeasure);
 }
 
 function latestActivity(record) {
