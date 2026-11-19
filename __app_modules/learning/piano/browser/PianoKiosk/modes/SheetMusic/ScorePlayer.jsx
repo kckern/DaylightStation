@@ -37,6 +37,8 @@ import LearnPassageLayer from './LearnPassageLayer.jsx';
 import { segmentNavigationState } from './LearnSegmentRail.jsx';
 import PassageRail from './PassageRail.jsx';
 import PassageBoard from './PassageBoard.jsx';
+import ScorePager from './ScorePager.jsx';
+import useSystemPaging from './useSystemPaging.js';
 import { railModel } from './passageRail.js';
 import usePieceGemOffer from './usePieceGemOffer.js';
 import LearnLaunchpad from './LearnLaunchpad.jsx';
@@ -247,6 +249,10 @@ export default function ScorePlayer({ score: scoreMeta }) {
     if (autoplayMode) return autoplayMode;
     // A link to one passage is a link into Learn.
     if (searchParams.get('learnPassage') && VALID_MODES.includes('learn')) return 'learn';
+    // With the roadmap on, a score opens on its passages: the rail is the game,
+    // and a child who lands in Listen never sees it. Naming `sheetmusic.defaultMode`
+    // in the household config keeps the old order (where it was left, then that mode).
+    if (config?.sheetmusic?.learn?.roadmap !== false && !VALID_MODES.includes(config?.sheetmusic?.defaultMode)) return 'learn';
     const m = restored.mode;
     return VALID_MODES.includes(m) ? m : (VALID_MODES.includes(smCfg.defaultMode) ? smCfg.defaultMode : 'learn');
   });
@@ -415,6 +421,10 @@ export default function ScorePlayer({ score: scoreMeta }) {
   // exclusively to Listen.
   const roadmapLearn = mode === 'learn' && config?.sheetmusic?.learn?.roadmap !== false;
   const learnGate = mode === 'learn' && !roadmapLearn;
+  // The roadmap score is pages of whole systems, never a scrolling sheet, so it
+  // is always engraved wrapped. Listen, Polish and Perform keep their scroll.
+  const paged = roadmapLearn && flow === 'wrapped';
+  useEffect(() => { if (roadmapLearn && flow !== 'wrapped') setFlow('wrapped'); }, [roadmapLearn, flow]);
   // The audio plane's one predicate: who actually sends notes to the piano. Every
   // flush/panic guard reads THIS, never a literal mode check (wave-3 §0).
   const sendsAudio = mode === 'listen';
@@ -1175,7 +1185,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
   // the other flow (mid re-engrave — coordinates would be stale).
   useEffect(() => {
     if (mode === 'perform' || !current) return;
-    if (!layoutFresh) return;
+    if (!layoutFresh || paged) return;
     const el = scrollRef.current;
     const rdr = el?.querySelector('.musicxml-renderer');
     if (!el || !rdr) return;
@@ -1192,7 +1202,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
       // avoids a vertical micro-scroll on every step within a system.
       if (Math.abs(targetTop - el.scrollTop) > el.clientHeight * 0.18) tweenScrollTo(el, { top: targetTop });
     }
-  }, [step, flow, mode, current, layoutFresh]);
+  }, [step, flow, mode, current, layoutFresh, paged]);
   useEffect(() => () => cancelScrollTween(scrollRef.current), []);
 
   // Resume a rebuild-pause once the engraving matches the current flow/scale.
@@ -2306,6 +2316,15 @@ export default function ScorePlayer({ score: scoreMeta }) {
     return () => cancelAnimationFrame(frame);
   }, [learnSessionOpen, restoreLearnAnchor]);
 
+  // The passage numbers sit above the staff: ink a page cut must not run through.
+  const passageNumberInk = useMemo(() => (paged ? coachedPassages.map((passage) => {
+    const band = notationRangeBands(layout.measures, selectionStepBoxes, passage, measureRects)[0];
+    return band ? [Math.max(0, band.top - 58), band.top] : null;
+  }).filter(Boolean) : null), [paged, coachedPassages, layout.measures, selectionStepBoxes, measureRects]);
+  const paging = useSystemPaging({
+    enabled: paged, scrollRef, layout, measureRects, overlayInk: passageNumberInk,
+    onTurn: (turn) => logger.info('piano.learn.page.turn', { scoreId: scoreMeta.id, ...turn }),
+  });
   const railVisible = Boolean(roadmapLearn && practiceLoaded && (layout.measures?.length ?? 0) > 0 && !selectedPassage);
   const rail = useMemo(() => railModel({ segments: coachedPassages, projection: coach.projection, selectedId: railPassageId }),
     [coachedPassages, coach.projection, railPassageId]);
@@ -2315,6 +2334,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
     if (!passage) return;
     setRailPassageId(passageId); setPassageBoard(null);
     logger.info('piano.learn.rail.select', { scoreId: scoreMeta.id, passageId, source });
+    if (paged) { paging.showMeasures(passage.inMeasure, passage.outMeasure); return; }
     const el = scrollRef.current;
     const rdr = el?.querySelector('.musicxml-renderer');
     const band = notationRangeBands(layout.measures, selectionStepBoxes, passage, measureRects)[0];
@@ -2323,7 +2343,14 @@ export default function ScorePlayer({ score: scoreMeta }) {
     const rdrRect = rdr.getBoundingClientRect();
     if (flow === 'horizontal') tweenScrollTo(el, { left: rdrRect.left - elRect.left + el.scrollLeft + band.left - 48 }, { duration: 320 });
     else tweenScrollTo(el, { top: rdrRect.top - elRect.top + el.scrollTop + band.top - Math.max(48, el.clientHeight * 0.18) }, { duration: 320 });
-  }, [coachedPassages, logger, scoreMeta.id, layout.measures, selectionStepBoxes, measureRects, flow]);
+  }, [coachedPassages, logger, scoreMeta.id, layout.measures, selectionStepBoxes, measureRects, flow, paged, paging.showMeasures]);
+  // The score opens on, and after a drill turns to, the passage the rail's button names.
+  const railTargetId = rail.target?.passageId ?? null;
+  const pageCount = paging.page?.pages ?? 0;
+  useEffect(() => {
+    const passage = pageCount ? coachedPassages.find((item) => item.id === railTargetId) : null;
+    if (passage) paging.showMeasures(passage.inMeasure, passage.outMeasure);
+  }, [railTargetId, pageCount]); // eslint-disable-line react-hooks/exhaustive-deps
   const practiceRailPassage = useCallback(() => {
     if (!rail.target) return;
     logger.info('piano.learn.rail.practice', { scoreId: scoreMeta.id, passageId: rail.target.passageId, target: rail.target.kind });
@@ -2388,7 +2415,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
           <img className="piano-score-splash__img" src={scoreMeta.splashImage} alt="" decoding="async" />
         </div>
       )}
-      <div className={`piano-score-player__scroll piano-score-player__scroll--${flow}`} ref={scrollRef} onClick={onScoreClick}>
+      <div className={`piano-score-player__scroll piano-score-player__scroll--${flow}${paging.page ? ' piano-score-player__scroll--paged' : ''}`} ref={scrollRef} onClick={onScoreClick} style={paging.style} {...paging.handlers}>
         <MusicXmlRenderer score={parsed} musicXml={scoreMeta.musicXml} flow={flow} scale={scale} transpose={transpose} onLayout={onLayout} onReady={onReady} holdExtraction={running}>
           {mode !== 'perform' && layoutFresh && (
             /* container is the ELEMENT, not a ref: React commits layout effects
@@ -2510,11 +2537,12 @@ export default function ScorePlayer({ score: scoreMeta }) {
               labelPrefix="Selection"
               onArm={(edge) => setArmedSelectionEdge(edge)}
               onCommit={commitCustomEdge}
-              scrollRef={scrollRef}
+              scrollRef={paged ? undefined : scrollRef}
               scale={scale}
             />
           )}
         </MusicXmlRenderer>
+        <ScorePager page={paging.page} onPrev={paging.prev} onNext={paging.next} />
         <CountInOverlay active={countIn.active} beat={countIn.beat} />
         <SelectBanner edge={arming} rejects={armRejects} onCancel={onCancelArm} />
         <StuckPrompt open={stuckOpen && mode === 'learn' && !roadmapLearn} onPick={onStuckPick} onDismiss={onStuckDismiss} />

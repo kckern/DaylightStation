@@ -39,7 +39,7 @@ It spans the row and its cards share the width (up to 18rem each), so four child
 fit side by side at 1280px: the strip never scrolls and no card is cut off.
 Curfew applies only on the piano's own tablet (the client whose kiosk device id matches
 `screensaver.deviceId`); an ordinary browser stays usable. Curfew and a pending lesson
-check disable every card. An owed lesson replaces the strip and tiles with that lesson.
+check disable every card. An owed lesson replaces the strip and tiles with that lesson: one card that fills the body and is one button, showing the lesson's picture, its title and **Start**. It carries no description, course or unit line.
 
 Logs: `piano.desk.view`, `piano.desk.open-passage`, `piano.desk.open-course`, server
 `piano.desk.record_skipped`, `piano.desk.player_skipped`.

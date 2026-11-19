@@ -42,12 +42,14 @@ beforeEach(() => {
 });
 
 describe('TodaysLessonGate', () => {
-  it('names the lesson, its course and unit, and its blurb', () => {
-    mount();
-    expect(screen.getByText(/Lesson 5: Broken Chords/)).toBeInTheDocument();
-    expect(screen.getByText(/Hoffman Academy/)).toBeInTheDocument();
-    expect(screen.getByText(/Unit 3/)).toBeInTheDocument();
-    expect(screen.getByText(/Practice broken chords/)).toBeInTheDocument();
+  it('is the picture, the title and one start action, with nothing only to be read', () => {
+    const { container } = mount();
+    expect(screen.getByText('Lesson 5: Broken Chords')).toBeInTheDocument();
+    expect(screen.getAllByRole('button')).toHaveLength(1);
+    expect(container.querySelector('.piano-lesson-gate').textContent).toBe('Lesson 5: Broken ChordsStart');
+    expect(screen.queryByText(/Practice broken chords/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Hoffman Academy/)).not.toBeInTheDocument();
+    expect(container.querySelector('p')).toBeNull();
   });
 
   it('renders the still when there is one', () => {
@@ -63,7 +65,7 @@ describe('TodaysLessonGate', () => {
 
   it('renders with no unit (an unstructured course)', () => {
     mount({ unit: null });
-    expect(screen.getByText(/Hoffman Academy/)).toBeInTheDocument();
+    expect(startButton()).toBeInTheDocument();
   });
 
   // The tap happens on the tablet already showing the menu, so it navigates

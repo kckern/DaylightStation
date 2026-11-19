@@ -418,88 +418,62 @@
   }
 }
 
-// The one owed lesson, standing in for the whole tile wall. It is the ONLY
-// thing on the body, so it centres rather than tiling — a single card a child
-// walks up to and taps. Deliberately warmer and larger than a tile: the tile
-// wall is a menu of equals, this is the one thing to do right now.
+// The one owed lesson, standing in for the whole tile wall: its picture, its
+// name and one way in. It fills the body the wall filled.
 .piano-lesson-gate {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  text-align: center;
-  gap: var(--sp-2);
-  // Sized for a wall tablet a child walks up to: this REPLACES the tile wall,
-  // so it has to hold the screen the way the wall did, not float in it.
-  width: min(46rem, 100%);
-  padding: var(--sp-5) var(--sp-6, 3rem) var(--sp-5);
-  background: var(--piano-surface);
-  border: 1px solid var(--piano-border);
-  border-radius: var(--r-lg);
+  align-self: stretch; flex: 1 1 auto; min-height: 0;
+  display: flex; flex-direction: column; align-items: center; text-align: center; gap: var(--sp-2);
+  padding: var(--sp-3) 0 0;
+
+  // The challenge keeps its own column: the ask session is the action there.
+  &--challenge {
+    align-self: center; flex: 0 1 auto; width: min(46rem, 100%);
+    padding: var(--sp-5) var(--sp-6, 3rem) var(--sp-5);
+    background: var(--piano-surface); border: 1px solid var(--piano-border); border-radius: var(--r-lg);
+  }
+
+  // The whole card is the button: a child presses the picture.
+  &__start {
+    flex: 1 1 auto; min-height: 0; width: 100%; box-sizing: border-box; padding: var(--sp-3);
+    display: grid; grid-template-columns: minmax(0, auto) minmax(16rem, 1fr); align-items: stretch; gap: var(--sp-4, 16px);
+    font: inherit; color: var(--piano-fg); text-align: left; cursor: pointer;
+    background: var(--piano-surface); border: 2px solid var(--piano-border); border-bottom-width: 6px; border-radius: var(--r-lg);
+    transition: transform 0.12s ease, filter 0.12s ease;
+    &:active { transform: translateY(3px); border-bottom-width: 3px; filter: brightness(0.94); }
+  }
 
   &__thumb {
-    width: 20rem;
-    max-width: 100%;
-    aspect-ratio: 16 / 9;
-    object-fit: cover;
-    border-radius: var(--r-md);
-    margin-bottom: var(--sp-2);
+    height: 100%; min-height: 0; max-width: 100%; aspect-ratio: 16 / 9; object-fit: cover;
+    border-radius: var(--r-md); background: var(--piano-bg);
   }
 
-  // `--piano-accent-text`, not `--piano-accent`: this is accent used AS TEXT
-  // on a charcoal surface, which is the AA-safe pair.
-  &__eyebrow {
-    margin: 0;
-    font-size: 0.85rem;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-    color: var(--piano-accent-text);
-  }
-
-  &__context {
-    margin: 0;
-    font-size: 1rem;
-    color: var(--piano-muted);
-  }
+  &__side { min-width: 0; display: flex; flex-direction: column; gap: var(--sp-3); }
 
   &__title {
-    margin: 0;
-    font-size: 2.3rem;
-    line-height: 1.2;
+    margin: 0; font-size: 2.3rem; line-height: 1.15; font-weight: 800;
+    display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden;
   }
 
-  // The blurb is context, not instruction — clamped so a long Hoffman summary
-  // can never push the start button off a short kiosk screen.
-  &__description {
-    margin: 0;
-    font-size: 1rem;
-    color: var(--piano-muted);
-    display: -webkit-box;
-    -webkit-line-clamp: 3;
-    -webkit-box-orient: vertical;
-    overflow: hidden;
-  }
-
-  // The single action on the screen, so it takes the accent FILL rather than
-  // a tile's outline — nothing else here competes with it.
-  &__start {
-    margin-top: var(--sp-3);
-    padding: var(--sp-3) var(--sp-5);
-    font: inherit;
-    font-size: 1.4rem;
-    font-weight: 600;
-    color: var(--piano-accent-ink);
-    background: var(--piano-accent);
-    border: none;
+  // The one action on the screen takes the accent fill; nothing competes with it.
+  &__go {
+    flex: 1 1 auto; display: flex; align-items: center; justify-content: center; gap: 0.6rem; min-height: 6rem;
+    font-size: 2.2rem; font-weight: 800; color: var(--piano-accent-ink); background: var(--piano-accent);
     border-radius: var(--r-lg);
-    cursor: pointer;
-    transition: transform 0.12s ease, filter 0.12s ease;
+    svg { width: 2.2rem; height: 2.2rem; }
+  }
 
-    &:active { transform: scale(0.97); filter: brightness(0.92); }
+  // `--piano-accent-text`, not `--piano-accent`: accent used AS TEXT on charcoal.
+  &__eyebrow { margin: 0; font-size: 0.85rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--piano-accent-text); }
+  &__context { margin: 0; font-size: 1rem; color: var(--piano-muted); }
+  &__description {
+    margin: 0; font-size: 1rem; color: var(--piano-muted);
+    display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;
   }
 }
 
 @media (orientation: portrait) {
-  .piano-lesson-gate__thumb { width: 15rem; }
+  .piano-lesson-gate__start { grid-template-columns: minmax(0, 1fr); }
+  .piano-lesson-gate__thumb { height: auto; width: 100%; }
   .piano-lesson-gate__title { font-size: 1.9rem; }
 }
 
@@ -2399,6 +2373,34 @@
   -webkit-overflow-scrolling: touch; touch-action: pan-x pan-y;
 }
 .piano-score-player__scroll--wrapped { overflow-x: hidden; overflow-y: auto; }
+// Learn's score: pages of whole systems. Nothing scrolls; the engraving is moved
+// to the page and cut between systems, so no staff is ever sliced at an edge.
+.piano-score-player__scroll--paged {
+  position: relative; overflow: hidden; padding-top: 0; padding-bottom: 0;
+  touch-action: none; overscroll-behavior: none;
+  .musicxml-renderer {
+    // Moved left as well: the turner stands in the right margin, clear of the staff.
+    transform: translate(-0.875rem, var(--page-shift, 0px));
+    clip-path: inset(var(--page-top, 0px) 0 calc(100% - var(--page-bottom, 100%)) 0);
+  }
+}
+// The page turner, in the paper's right margin.
+.piano-score-pager {
+  position: absolute; z-index: 8; top: 0.5rem; bottom: 0.5rem; right: 0.25rem; width: 3rem;
+  display: flex; flex-direction: column; align-items: stretch; gap: 0.5rem;
+  &__turn {
+    flex: 1 1 0; min-height: 0; padding: 0; display: grid; place-items: center; cursor: pointer;
+    border: 2px solid var(--piano-border); border-bottom-width: 5px; border-radius: var(--r-md, 10px);
+    background: var(--piano-surface-2, #26262f); color: var(--piano-fg);
+    &:active:not(:disabled) { transform: translateY(2px); border-bottom-width: 3px; background: var(--piano-accent); color: var(--piano-accent-ink); }
+    &:disabled { background: var(--piano-surface-1, #1c1c23); color: var(--piano-border); cursor: default; }
+  }
+  &__pips {
+    flex: 0 0 auto; list-style: none; margin: 0; padding: 0.4rem 0; display: grid; justify-items: center; gap: 0.4rem;
+    li { width: 0.7rem; height: 0.7rem; border-radius: 50%; box-sizing: border-box; border: 2px solid var(--piano-surface-2, #26262f); }
+    li[aria-current='page'] { background: var(--piano-accent); border-color: var(--piano-accent); width: 1rem; height: 1rem; }
+  }
+}
 .piano-score-player__scroll--horizontal {
   overflow-x: auto; overflow-y: hidden;
   display: flex; align-items: center;

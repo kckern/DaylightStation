@@ -117,11 +117,12 @@ describe('PianoMenu with an owed lesson', () => {
     expect(document.querySelector('.piano-desk')).toBeNull();
   });
 
-  it('names the course and unit the lesson belongs to', () => {
+  // Arcade standard: the card is the lesson's picture, its title and Start.
+  it('carries the lesson title and one start action, and nothing only to be read', () => {
     gateState = GATED;
     renderMenu();
-    expect(screen.getByText(/Hoffman Academy/)).toBeTruthy();
-    expect(screen.getByText(/Unit 3/)).toBeTruthy();
+    expect(document.querySelector('.piano-lesson-gate').textContent).toBe('Lesson 5: Broken ChordsStart');
+    expect(screen.getByRole('button', { name: /start today.s lesson/i })).toBeTruthy();
   });
 
   it('restores the ordinary menu once the day is discharged', () => {

@@ -352,6 +352,57 @@ describe('ScorePlayer — guided Learn composition', () => {
   expect(screen.getByRole('button', { name: 'Listen' })).toBeInTheDocument();
   expect(h.learnLabProps.coachingTask.skill).toBe('right');
  });
+ it('opens a score on its passages when the roadmap is on, unless the household names a mode', () => {
+  const leftInListen = () => window.localStorage.setItem('daylight.piano.sm.files:mary.musicxml', JSON.stringify({ v: 1, mode: 'listen' }));
+  setup(); leftInListen();
+  const first = renderPlayer();
+  expect(screen.getByRole('navigation', { name: 'Passages in this piece' })).toBeInTheDocument();
+  first.unmount(); leftInListen();
+  h.config = { keyboard: { startNote: 21, endNote: 108 }, sheetmusic: { defaultMode: 'listen', learn: {} } };
+  renderPlayer();
+  expect(screen.queryByRole('navigation', { name: 'Passages in this piece' })).not.toBeInTheDocument();
+  window.localStorage.clear();
+ });
+ it('shows the Learn score as pages of whole systems, turned by button or swipe, and never scrolls it', () => {
+  setup();
+  // Two systems, one bar each.
+  h.layoutExtras = { ...h.layoutExtras,
+    events: [
+      { midi: 64, midis: [64, 52], onsetQuarter: 0, x: 100, top: 10, bottom: 200, system: 0 },
+      { midi: 62, midis: [62], onsetQuarter: 1, x: 160, top: 10, bottom: 200, system: 0 },
+      { midi: 60, midis: [60], onsetQuarter: 2, x: 100, top: 310, bottom: 500, system: 1 },
+      { midi: 62, midis: [62], onsetQuarter: 3, x: 160, top: 310, bottom: 500, system: 1 },
+    ],
+    staffBoxes: [
+      { system: 0, staff: 0, top: 10, left: 40, right: 300, lineSpacing: 10 }, { system: 0, staff: 1, top: 120, left: 40, right: 300, lineSpacing: 10 },
+      { system: 1, staff: 0, top: 310, left: 40, right: 300, lineSpacing: 10 }, { system: 1, staff: 1, top: 420, left: 40, right: 300, lineSpacing: 10 },
+    ],
+    measureBounds: [{ left: 80, right: 300, top: 10, bottom: 210 }, { left: 80, right: 300, top: 310, bottom: 510 }] };
+  renderPlayer();
+  const sheet = document.querySelector('.piano-score-player__scroll');
+  expect(sheet).toHaveClass('piano-score-player__scroll--paged');
+  const pips = () => screen.getByRole('list', { name: /^Page \d of 2$/ }).getAttribute('aria-label');
+  expect(pips()).toBe('Page 1 of 2');
+  expect(screen.getByRole('button', { name: 'Previous page' })).toBeDisabled();
+  expect(sheet.style.getPropertyValue('--page-top')).toBe('0px');
+  fireEvent.click(screen.getByRole('button', { name: 'Next page' }));
+  expect(pips()).toBe('Page 2 of 2');
+  expect(screen.getByRole('button', { name: 'Next page' })).toBeDisabled();
+  // The cut falls between the two systems, and the page is placed without scrolling.
+  expect(parseFloat(sheet.style.getPropertyValue('--page-top'))).toBeGreaterThan(220);
+  expect(parseFloat(sheet.style.getPropertyValue('--page-top'))).toBeLessThan(300);
+  expect(sheet.scrollTop).toBe(0);
+  // A downward swipe turns back, and is not also a tap on the passage under it.
+  fireEvent.pointerDown(sheet, { clientX: 200, clientY: 100 });
+  fireEvent.pointerUp(sheet, { clientX: 205, clientY: 220 });
+  fireEvent.click(document.querySelector('.piano-learn-passage-hitbox'));
+  expect(pips()).toBe('Page 1 of 2');
+  expect(h.learnLabProps).toBeNull();
+  // Listen keeps its scrolling sheet.
+  pickMode('Listen');
+  expect(document.querySelector('.piano-score-player__scroll')).not.toHaveClass('piano-score-player__scroll--paged');
+  expect(screen.queryByRole('button', { name: 'Next page' })).not.toBeInTheDocument();
+ });
 });
 
 // Mode switching now lives in the header crumb → ModeSheet (wave-2 B), not a

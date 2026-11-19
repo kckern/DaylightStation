@@ -79,6 +79,13 @@ the truth about what that job is:
 | **Polish** | Real-time scored runs, always whole-piece | Play + count-in · metronome (on by default, persisted) · hand toggles · settings. No looping. |
 | **Perform** | The music stand | Zero chrome; the left pedal turns pages |
 
+**Which mode a score opens in.** With Learn's roadmap on (`sheetmusic.learn.roadmap`,
+the default), a score opened from the library opens in **Learn**, so the passage rail
+is on screen from the first moment. A `?play=` launch opens the mode it names and a
+`learnPassage` link opens Learn. When the household names `sheetmusic.defaultMode`,
+or the roadmap is off, a score opens in the mode it was last left in on this device,
+then in `defaultMode` (`listen` unless configured).
+
 A practice **loop/range is Learn-only state**: leaving Learn for Listen or
 Polish clears it, and re-entering Learn re-derives a fresh one from practice
 history (see "Learn: landing and the state matrix" below) rather than
@@ -356,6 +363,18 @@ with `id`, `start`, `end`, `silver` and `gold`. Certification values are timesta
 Learn is a game played over the whole piece: turn every passage Silver, then go
 round again for Gold. The score stays the main thing on screen.
 
+**The score is pages of whole systems.** In Learn it never scrolls, so a staff is
+never sliced at the rail. A page holds as many whole systems as fit the window,
+centred in it; everything above and below the page is cut away between systems, in
+the widest strip that carries no ink (`systemPaging.js`, `useSystemPaging.js`). The
+**page turner** (`ScorePager`) stands in the paper's right margin: a tall up button, a
+tall down button and one pip per page, with no words. A swipe up or left turns
+forward, down or right turns back. The last page is always a full one, so it may
+repeat a system of the page before it. The score opens on the page that holds the
+passage the rail's button names, and turns to the next one when that changes after a
+drill. Learn always engraves wrapped. Listen, Polish and Perform keep their scrolling
+sheet and its cursor-following.
+
 **The rail** is one 64px row under the score:
 
 `[Practice bars 1–5] | passage tiles | 3/12`
@@ -374,7 +393,9 @@ round again for Gold. The score stays the main thing on screen.
   Invalid values use the default. `projectCoach` computes it (`segment.flower`,
   and `passageProgress().state === 'learning'`), so the home strip, the rail, the
   board and the drill agree.
-- **Tapping a tile selects it.** The score moves to those bars and boxes them. It
+- **Tapping a tile selects it.** The score turns to the page that holds those bars
+  whole and boxes them: the page it is on when they are already there, else a fixed
+  page that holds them all, else the page that starts at their first system. It
   does not open practice. Tapping a passage on the score itself still opens it.
 - **The button** opens the selected passage in Learn (`Practice bars 14–17`). With
   nothing selected it opens the recommended passage. When every passage is Silver
@@ -416,7 +437,8 @@ finished piece turns its tiles as a wave (`wave`).
 Logs (`piano-score-player`, `piano-passage-board`):
 `piano.learn.rail.select` (`passageId`, `source: rail|board`),
 `piano.learn.rail.practice` (`passageId`, `target: selected|next|gold|again`),
-`piano.learn.board.open`, `piano.learn.board.close`, `piano.learn.gem-offer`.
+`piano.learn.board.open`, `piano.learn.board.close`, `piano.learn.gem-offer`,
+`piano.learn.page.turn` (`from`, `to` as system indexes, `by: button|swipe|passage`).
 
 ### Piece log and the piece gems
 
@@ -1019,7 +1041,7 @@ pianos:
 Resolved (with defaults) by `sheetMusicConfig.resolveSheetMusicConfig`:
 ```yaml
 sheetmusic:
-  defaultMode: learn
+  defaultMode: listen   # optional; naming it turns off "open in Learn" (see Modes)
   perform: { advancePedalCC: 67, backPedalCC: 66 }
   scoring:
     silentMeasuresToStop: 4     # Polish auto-stop

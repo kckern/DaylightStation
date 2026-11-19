@@ -265,7 +265,8 @@ the gate is a render branch of that same route.
 Two surfaces read it, and the coverage is deliberately partial:
 
 - **The kiosk menu** — `gated` replaces the whole tile grid with `TodaysLessonGate`,
-  the one launcher a gated learner has.
+  the one launcher a gated learner has. The card is the lesson's picture, its title
+  and Start, all one button; the lesson's description is not shown.
 - **The Videos course grid** (`CourseGridRoute`) — a gated named learner is sent
   back to the menu with `<Navigate replace>` and the redirect is logged as
   `piano.videos.grid-redirected`. `replace` so the grid leaves no history entry to
