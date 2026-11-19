@@ -214,6 +214,12 @@ the reader changes scope or unmounts. A create or remove dialog should
 close when its write succeeds. If the roster GET then fails, let the
 resource show a Retry button that issues only the GET.
 
+Before a write completion patches shared data or invalidates related reads,
+check that its submitting session is still active. Health keeps its session
+above the tabs, so a save can update the day after tab navigation. A new
+session reads the committed server state. See the
+[Health operations provider](../../../__app_modules/wellness/health/browser/operations/HealthOperationsProvider.jsx).
+
 When an editor allows typing during a write, let the acknowledgement update
 the Revert baseline for the submitted draft. Keep edits made after submission
 in the current draft and leave the Unsaved indicator visible.

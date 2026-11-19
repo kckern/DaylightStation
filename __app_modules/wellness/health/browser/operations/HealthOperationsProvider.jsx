@@ -12,6 +12,7 @@ const Context = createContext(null);
 const EMPTY = { operations: new Map(), revision: 0 };
 const subscribeEmpty = () => () => {};
 const getEmpty = () => EMPTY;
+const alwaysActive = () => true;
 
 export function HealthOperationsProvider({ userId, children, send = DaylightAPI }) {
   // The keyed owner also disposes requests when the confirmed user changes.
@@ -116,6 +117,12 @@ function Session({ userId, children, send }) {
   }, [store, send, reconciliation, logger]);
   return <Context.Provider value={value}>{children}</Context.Provider>;
 }
+
+/** Check the submitting session before applying an async result to Health. */
+export function useHealthSessionGuard() {
+  return useContext(Context)?.isActive ?? alwaysActive;
+}
+
 export function useHealthOperations() {
   const context = useContext(Context);
   const snapshot = useSyncExternalStore(context?.store.subscribe || subscribeEmpty, context?.store.getSnapshot || getEmpty);

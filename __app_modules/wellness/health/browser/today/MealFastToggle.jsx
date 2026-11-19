@@ -4,6 +4,7 @@ import { IconCircleOff } from '@tabler/icons-react';
 import { DaylightAPI } from "../../../../../frontend/src/lib/api.mjs";
 import { createAppLogger } from "../../../../../frontend/src/lib/ui/createAppLogger.js";
 import { showDayStatus } from "../healthResources.js";
+import { useHealthSessionGuard } from '../operations/HealthOperationsProvider.jsx';
 
 /**
  * A meal's "didn't eat anything here" toggle: one small ⊘ icon beside the
@@ -13,6 +14,7 @@ import { showDayStatus } from "../healthResources.js";
  * it again undoes the skip.
  */
 export function MealFastToggle({ date, bucket, label, fasted = false, onChanged }) {
+  const isSessionActive = useHealthSessionGuard();
   const logger = useMemo(() => createAppLogger('health').child('meal-fast'), []);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
@@ -24,10 +26,12 @@ export function MealFastToggle({ date, bucket, label, fasted = false, onChanged 
     logger.info('meal-fast.set.start', { date, meal: bucket, fasted: next });
     try {
       const result = await DaylightAPI('api/v1/health/nutrition/meal-fast', { date, meal: bucket, fasted: next }, 'POST');
+      if (!isSessionActive()) return;
       showDayStatus(date, result);
       logger.info('meal-fast.set.success', { date, meal: bucket, fasted: next });
       onChanged?.();
     } catch (err) {
+      if (!isSessionActive()) return;
       logger.warn('meal-fast.set.failed', { date, meal: bucket, fasted: next, error: err?.message });
       setError('Could not save. Try again.');
     } finally {

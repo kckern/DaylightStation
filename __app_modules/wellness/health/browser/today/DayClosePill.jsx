@@ -5,6 +5,7 @@ import { sumCounted } from "../../portable/contracts/nutrition/countedRows.mjs";
 import { DaylightAPI } from "../../../../../frontend/src/lib/api.mjs";
 import { createAppLogger } from "../../../../../frontend/src/lib/ui/createAppLogger.js";
 import { showDayStatus } from "../healthResources.js";
+import { useHealthSessionGuard } from '../operations/HealthOperationsProvider.jsx';
 
 const logger = createAppLogger('health').child('day-close');
 
@@ -42,6 +43,7 @@ function errorSentence(err) {
  * @param {() => void} props.onChanged
  */
 export function DayClosePill({ date, dayStatus, items = [], onChanged }) {
+  const isSessionActive = useHealthSessionGuard();
   const [busy, setBusy] = useState(null); // 'done' | 'fasting' | 'reopen' | null
   const [error, setError] = useState(null);
   const [errorFor, setErrorFor] = useState(date);
@@ -62,12 +64,14 @@ export function DayClosePill({ date, dayStatus, items = [], onChanged }) {
     logger.info('day-status.set.start', { date, status: next });
     try {
       const result = await DaylightAPI('api/v1/health/nutrition/day-status', { date, status: next }, 'POST');
+      if (!isSessionActive()) return;
       // The server's answer is the truth: patch the cached day so the row (and
       // anything else reading it) updates now; the refetch follows.
       showDayStatus(date, result);
       logger.info('day-status.set.success', { date, status: result?.status ?? null });
       onChanged?.();
     } catch (err) {
+      if (!isSessionActive()) return;
       logger.warn('day-status.set.failed', { date, status: next, httpStatus: err?.status ?? null, error: err?.message });
       setError(errorSentence(err));
     } finally {

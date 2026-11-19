@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { act, render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { MantineProvider } from '@mantine/core';
 
 const apiMock = vi.fn();
@@ -8,6 +8,7 @@ const showDayStatus = vi.fn(() => true);
 vi.mock("../healthResources.js", () => ({ showDayStatus: (...a) => showDayStatus(...a) }));
 
 import { DayClosePill } from "./DayClosePill.jsx";
+import { HealthOperationsProvider } from '../operations/HealthOperationsProvider.jsx';
 
 const r = (ui) => render(<MantineProvider>{ui}</MantineProvider>);
 // Real row shape from GET /api/v1/health/day → data[] (counted rows carry calories)
@@ -73,6 +74,26 @@ describe('DayClosePill', () => {
     await waitFor(() => expect(onChanged).toHaveBeenCalled());
     expect(apiMock).toHaveBeenCalledWith('api/v1/health/nutrition/day-status', { date: '2026-09-16', status: 'done' }, 'POST');
     expect(showDayStatus).toHaveBeenCalledWith('2026-09-16', answer);
+  });
+
+  it.each(['bob', 'alice'])('ignores a departed session’s closure after Health opens as %s', async (nextOwner) => {
+    let complete;
+    apiMock.mockReturnValue(new Promise(resolve => { complete = resolve; }));
+    const onChanged = vi.fn();
+    const session = userId => (
+      <HealthOperationsProvider userId={userId}>
+        <DayClosePill date="2026-09-24" dayStatus={open()} onChanged={onChanged} />
+      </HealthOperationsProvider>
+    );
+    const view = r(session('alice'));
+    await choose('Done logging');
+    expect(apiMock).toHaveBeenCalledTimes(1);
+
+    view.rerender(<MantineProvider>{nextOwner === 'bob' ? session('bob') : null}</MantineProvider>);
+    if (nextOwner === 'alice') view.rerender(<MantineProvider>{session('alice')}</MantineProvider>);
+    await act(async () => { complete(open({ status: 'done' })); });
+    expect(showDayStatus).not.toHaveBeenCalled();
+    expect(onChanged).not.toHaveBeenCalled();
   });
 
   it('renders whatever the server says — a /fast from Telegram wins over the page', () => {

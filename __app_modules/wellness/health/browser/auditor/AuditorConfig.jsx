@@ -5,6 +5,7 @@ import { DaylightAPI } from "../../../../../frontend/src/lib/api.mjs";
 import { invalidateApiResources, patchApiResource } from "../../../../../frontend/src/lib/hooks/useApiResource.js";
 import getLogger from "../../../../../frontend/src/lib/logging/Logger.js";
 import { refreshHealthResources } from "../healthResources.js";
+import { useHealthSessionGuard } from '../operations/HealthOperationsProvider.jsx';
 import { cleanupPath } from "../cleanup/CleanupQuestions.jsx";
 import { settingsLogPath } from "./SettingsLog.jsx";
 import {
@@ -38,6 +39,7 @@ function parseCap(value, max) {
  * auditorFormat, and a kind it has no label for shows its key.
  */
 export function AuditorConfig({ resource, spend }) {
+  const isSessionActive = useHealthSessionGuard();
   const logger = useMemo(() => getLogger().child({ component: 'health-auditor' }), []);
   const [busy, setBusy] = useState(null);
   const [pending, setPending] = useState(null);
@@ -57,20 +59,24 @@ export function AuditorConfig({ resource, spend }) {
     setBusy(field); setPending(change); setError(null);
     try {
       const next = await DaylightAPI(`${cleanupPath}/settings`, { expectedSettingsVersion: settingsVersion ?? 0, ...change }, 'PATCH');
+      if (!isSessionActive()) return;
       // The PATCH answers with the new status: adopt it now, so the next edit carries the new settings version.
       if (!next || !patchApiResource(cleanupPath, () => next)) resource.reload();
       logger.info('health-auditor.settings.saved', { field, settingsVersion: next?.settingsVersion ?? null });
       if (field === 'enabled' || field === 'dryRun') refreshHealthResources();
       if (field === 'dailyCapUsd') spend?.reload?.();
     } catch (err) {
+      if (!isSessionActive()) return;
       const message = err.status === 409 ? 'Settings changed. Reload first.' : serverMessage(err);
       if (field === 'dailyCapUsd') setCap(capText(saved?.dailyCapUsd));
       resource.reload();
       setError(message);
       logger.warn('health-auditor.settings.failed', { field, status: err.status ?? null, error: message });
     } finally {
-      setBusy(null); setPending(null);
-      invalidateApiResources(path => path === settingsLogPath);
+      if (isSessionActive()) {
+        setBusy(null); setPending(null);
+        invalidateApiResources(path => path === settingsLogPath);
+      }
     }
   };
   const runNow = async () => {
@@ -78,11 +84,18 @@ export function AuditorConfig({ resource, spend }) {
     setBusy('run'); setError(null);
     try {
       await DaylightAPI(`${cleanupPath}/run`, {}, 'POST');
+      if (!isSessionActive()) return;
       logger.info('health-auditor.run-now', { dryRun: settings.dryRun });
     } catch (err) {
+      if (!isSessionActive()) return;
       setError(serverMessage(err));
       logger.warn('health-auditor.run-now.failed', { error: err.message });
-    } finally { setBusy(null); resource.reload(); }
+    } finally {
+      if (isSessionActive()) {
+        setBusy(null);
+        resource.reload();
+      }
+    }
   };
   const options = resource.data?.options || {};
   const maxCap = Number.isFinite(options.maxDailyCapUsd) ? options.maxDailyCapUsd : 0;

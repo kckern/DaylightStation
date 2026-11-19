@@ -256,3 +256,167 @@ test('Health Coach yields Mod+K to its composer and restores the shortcut opener
   await expect(coach).toHaveCount(0);
   await expect(opener).toBeFocused();
 });
+
+const healthStatusDate = '2026-09-24';
+const healthStatusPath = `/health?date=${healthStatusDate}`;
+const openDayStatus = { today: healthStatusDate, status: null, minCalories: 1800, fastedMeals: [] };
+
+const dayClose = {
+  name: 'day-close',
+  endpoint: '**/health/nutrition/day-status',
+  before: 'Close day. Close this day',
+  after: 'Logging done. Change',
+  click: async page => {
+    await page.getByRole('button', { name: 'Close day. Close this day', exact: true }).click();
+    await page.getByRole('menuitem', { name: 'Done logging', exact: true }).click();
+  },
+  body: { date: healthStatusDate, status: 'done' },
+  result: { ...openDayStatus, status: 'done' },
+};
+const mealSkip = {
+  name: 'meal-skip',
+  endpoint: '**/health/nutrition/meal-fast',
+  before: "Skipped Breakfast — didn't eat anything",
+  after: 'Undo skipped Breakfast',
+  click: page => page.getByRole('button', { name: "Skipped Breakfast — didn't eat anything", exact: true }).click(),
+  body: { date: healthStatusDate, meal: 'morning', fasted: true },
+  result: { ...openDayStatus, fastedMeals: ['morning'] },
+};
+
+async function finishHealthWrite(page, route, json) {
+  const received = page.waitForResponse(response => response.request() === route.request());
+  await route.fulfill({ json });
+  expect(await (await received).finished()).toBeNull();
+  await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+}
+
+const navigateHealthOwnership = (page, path) => page.evaluate(path => {
+  history.pushState({}, '', path);
+  dispatchEvent(new PopStateEvent('popstate'));
+}, path);
+
+async function holdHealthStatusWrite(page, action) {
+  let owner = 'alice';
+  let holdDayReads = false;
+  const heldReads = [];
+  const writes = [];
+  await page.route('**/health/context', route => route.fulfill({ json: { userId: owner } }));
+  await page.route('**/health/day?date=*', route => {
+    const date = new URL(route.request().url()).searchParams.get('date');
+    const json = {
+      items: [{ uuid: owner, mealTime: 'evening', name: `${owner} dinner`, grams: 100, calories: 100, date }],
+      budget: { budget: 2000, food: 100, remaining: 1900, exercise: 0, macros: {}, sessions: [] },
+      dayStatus: openDayStatus,
+    };
+    if (date === healthStatusDate && holdDayReads) {
+      heldReads.push({ route, json });
+      return;
+    }
+    return route.fulfill({ json });
+  });
+  await page.route(action.endpoint, route => { writes.push({ owner, route }); });
+
+  await page.goto(healthStatusPath);
+  await expect(page.getByRole('button', { name: 'Edit alice dinner', exact: true })).toBeVisible();
+  await action.click(page);
+  await expect.poll(() => writes.length).toBe(1);
+
+  return {
+    switchToBob() { owner = 'bob'; },
+    async resumeReads() {
+      holdDayReads = false;
+      await Promise.all(heldReads.splice(0).map(({ route, json }) => route.fulfill({ json })));
+    },
+    async finish() {
+      // Keep a refetch from masking a stale response patch before we inspect it.
+      holdDayReads = true;
+      await finishHealthWrite(page, writes[0].route, action.result);
+      expect(writes.map(({ owner, route }) => [owner, route.request().method(), route.request().postDataJSON()]))
+        .toEqual([['alice', 'POST', action.body]]);
+    },
+  };
+}
+
+for (const action of [dayClose, mealSkip]) {
+  test(`Health keeps a late ${action.name} response out of a different user's same date`, async ({ page }) => {
+    const write = await holdHealthStatusWrite(page, action);
+    await navigateHealthOwnership(page, '/home');
+    await expect(page.getByRole('button', { name: 'Rooms', exact: true })).toBeVisible();
+    write.switchToBob();
+    await navigateHealthOwnership(page, healthStatusPath);
+    const bobDinner = page.getByRole('button', { name: 'Edit bob dinner', exact: true });
+    const unchanged = page.getByRole('button', { name: action.before, exact: true });
+    await expect(bobDinner).toBeVisible();
+    await expect(unchanged).toBeVisible();
+
+    await write.finish();
+    const changed = page.getByRole('button', { name: action.after, exact: true });
+    expect(await changed.count(), `Bob must not show "${action.after}" after Alice's response`).toBe(0);
+    await write.resumeReads();
+    await expect(unchanged).toBeVisible();
+    await expect(bobDinner).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Edit alice dinner', exact: true })).toHaveCount(0);
+  });
+}
+
+test('Health applies a pending day-close response across tabs for the same user', async ({ page }) => {
+  const write = await holdHealthStatusWrite(page, dayClose);
+  const progress = page.getByRole('link', { name: 'Progress', exact: true });
+  await progress.click();
+  await expect(progress).toHaveAttribute('aria-current', 'page');
+
+  await write.finish();
+  await page.getByRole('link', { name: 'Today', exact: true }).click();
+  await expect(page.getByRole('button', { name: dayClose.after, exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Edit alice dinner', exact: true })).toBeVisible();
+});
+
+test('Health keeps a late auditor settings response out of a different user’s settings', async ({ page }) => {
+  const auditorPath = '/health/auditor';
+  const cleanupStatus = (settingsVersion, enabled, telegram) => ({
+    settingsVersion, settings: { enabled, telegram, dryRun: false, dailyCapUsd: null },
+    options: { minGapMinutes: [0] }, questions: [], runs: [],
+  });
+  const alice = cleanupStatus(3, false, false);
+  const bob = cleanupStatus(7, false, true);
+  let owner = 'alice';
+  let holdReads = false;
+  const heldReads = [];
+  const writes = [];
+
+  await page.route('**/health/context', route => route.fulfill({ json: { userId: owner } }));
+  await page.route('**/health/nutrition/cleanup', route => {
+    if (holdReads) {
+      heldReads.push(route);
+      return;
+    }
+    return route.fulfill({ json: owner === 'alice' ? alice : bob });
+  });
+  await page.route('**/health/nutrition/cleanup/journal**', route => route.fulfill({ json: { rows: [], total: 0 } }));
+  await page.route('**/health/nutrition/cleanup/history**', route => route.fulfill({ json: { records: [], total: 0 } }));
+  await page.route('**/health/nutrition/cleanup/settings', route => { writes.push({ owner, route }); });
+
+  await page.goto(auditorPath);
+  const automatic = page.getByLabel('Automatic cleanup', { exact: true });
+  const telegram = page.getByLabel('Also show questions in Telegram', { exact: true });
+  await expect(automatic).not.toBeChecked();
+  await expect(telegram).not.toBeChecked();
+  await page.getByText('Automatic cleanup', { exact: true }).click();
+  await expect.poll(() => writes.length).toBe(1);
+
+  await navigateHealthOwnership(page, '/home');
+  await expect(page.getByRole('button', { name: 'Rooms', exact: true })).toBeVisible();
+  owner = 'bob';
+  await navigateHealthOwnership(page, auditorPath);
+  await expect(telegram).toBeChecked();
+  await expect(automatic).not.toBeChecked();
+
+  holdReads = true;
+  await finishHealthWrite(page, writes[0].route, cleanupStatus(4, true, false));
+  expect(await automatic.isChecked(), 'Bob’s Automatic cleanup setting changed after Alice’s response').toBe(false);
+  expect(await telegram.isChecked(), 'Bob’s Telegram setting changed after Alice’s response').toBe(true);
+  holdReads = false;
+  await Promise.all(heldReads.map(route => route.fulfill({ json: bob })));
+  expect(writes.map(({ owner, route }) => [owner, route.request().method(), route.request().postDataJSON()]))
+    .toEqual([['alice', 'PATCH', { expectedSettingsVersion: 3, enabled: true }]]);
+});
