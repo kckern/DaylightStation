@@ -9,6 +9,9 @@
 // A task entry's `inverse` must carry { ref, expectedVersion, payload: { domainId, dueDate? } }
 // where expectedVersion is the item version AFTER the logged action. Provider
 // specifics (e.g. a reopen status) are filled in by the work layer, never here.
+// An update_task inverse may also carry payload.priorDue {date, at, recurring}. The work
+// layer sets a date only, so undo restores the prior DATE; a time of day (`at`) and a
+// recurrence cannot be restored and are reported as `partial: ['time'|'recurrence']`.
 import { MAILBOX_SCOPE_MISSING } from '../ports/IMailbox.mjs';
 
 const CONFLICT_CODES = new Set(['WORK_SELECTION_CHANGED']);
@@ -59,8 +62,11 @@ export function createUndoAction({ store, mailbox, work, clock = () => Date.now(
     if (inv.action === 'reopen') return viaWork({ entry, principal, operation: 'reopen', payload: {} });
     if (inv.action === 'update_task') {
       // No prior due date -> an explicit clear, never an undefined field.
-      const dueDate = inv.payload?.dueDate ?? null;
-      return viaWork({ entry, principal, operation: 'update_task', payload: { dueDate } });
+      const prior = inv.payload?.priorDue ?? null;
+      const dueDate = inv.payload?.dueDate ?? prior?.date ?? null;
+      const r = await viaWork({ entry, principal, operation: 'update_task', payload: { dueDate } });
+      const lost = [...(Number.isFinite(prior?.at) ? ['time'] : []), ...(prior?.recurring === true ? ['recurrence'] : [])];
+      return r.outcome === 'undone' && lost.length ? { ...r, partial: lost } : r;
     }
     return { outcome: 'not_undoable' };
   };
@@ -93,7 +99,7 @@ export function createUndoAction({ store, mailbox, work, clock = () => Date.now(
         result = { outcome: 'undone', warning: 'log_not_marked' };
         logger?.error?.('triage.undo.log_not_marked', { username, entryId, error: err?.message });
       }
-      log('triage.undo.applied', { username, entryId, action: entry.inverse.action, warning: result.warning });
+      log('triage.undo.applied', { username, entryId, action: entry.inverse.action, warning: result.warning, partial: result.partial });
     } else if (result.outcome === 'conflict') {
       log('triage.undo.conflict', { username, entryId });
     } else if (result.outcome === 'failed') {

@@ -5,6 +5,7 @@ import { createRunTriagePass } from './application/RunTriagePass.mjs';
 import { GmailMailbox } from './adapters/GmailMailbox.mjs';
 import { createTriageSession } from './application/TriageSession.mjs';
 import { createUndoAction } from './application/UndoAction.mjs';
+import { createUserLock } from './application/userLock.mjs';
 
 /**
  * Triage runtime: the pass, the owner's session service and the router.
@@ -16,7 +17,7 @@ import { createUndoAction } from './application/UndoAction.mjs';
 export function createTriageRuntime(deps = {}) {
   const {
     configuration, defaultUsername, isKnownUser, dataService = null, createMailClient = null, work = null,
-    decisionGateway = null, aiGateway = null, agentsScheduler = null, ownerName, userTimezone = () => null,
+    decisionGateway = null, aiGateway = null, agentsScheduler = null, ownerName, userTimezone = () => null, answerWaitMs,
     clock = () => Date.now(), logger,
   } = deps;
   const mailbox = deps.mailbox ?? (typeof createMailClient === 'function'
@@ -24,15 +25,18 @@ export function createTriageRuntime(deps = {}) {
     : null);
   const resolvePolicy = (username) => resolveTriagePolicy({ configuration: configuration?.(), username });
   const store = dataService ? createYamlTriageStore({ dataService, clock, logger }) : null;
+  // One per-user lock shared by the pass and the owner's answers.
+  const lock = createUserLock({ after: (ms, fn) => { const t = setTimeout(fn, ms); return () => clearTimeout(t); } });
   const pass = store ? createRunTriagePass({
     mailbox, work, store, decisionGateway, aiGateway, resolvePolicy,
-    ownerName: typeof ownerName === 'function' ? ownerName : () => '', clock, logger,
+    ownerName: typeof ownerName === 'function' ? ownerName : () => '', clock, logger, lock,
   }) : null;
   const ownerNameFn = typeof ownerName === 'function' ? ownerName : () => '';
   const undoAction = store ? createUndoAction({ store, mailbox, work, clock, logger }) : null;
   const session = store ? createTriageSession({
     store, mailbox, work, aiGateway, resolvePolicy, undoAction, ownerName: ownerNameFn,
-    userTimezone: typeof userTimezone === 'function' ? userTimezone : () => null, clock, logger,
+    userTimezone: typeof userTimezone === 'function' ? userTimezone : () => null, clock, logger, lock,
+    ...(Number.isFinite(answerWaitMs) ? { answerWaitMs } : {}),
   }) : null;
   const enrolledUsers = () => Object.keys(configuration?.()?.triage?.users ?? {})
     .filter((u) => { const p = resolvePolicy(u); return p.enrolled && p.mode !== 'off'; });

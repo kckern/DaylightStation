@@ -9,17 +9,22 @@
 // - A permission rejection from the mailbox stops every later mailbox write in the pass.
 // - A failed, denied or conflicting pre-do turns the item into a card; it is not retried.
 // - An item already carded or logged at the same version is not looked at again.
+// - The pass holds the user's lock (shared with the owner's answers) for its whole run, and
+//   every queue write merges against a fresh read: a card the stored queue no longer has
+//   as 'open' keeps its stored answer state, so a pass never resurrects an answered card.
 import { itemFromMail, itemFromWork, cardIdFor } from '../domain/triageItem.mjs';
 import { emailGuardrails, todoAutoClose } from '../domain/guardrails.mjs';
 import { MAILBOX_SCOPE_MISSING, MAILBOX_NOT_FOUND } from '../ports/IMailbox.mjs';
 import { classifyEmail } from './classifyEmail.mjs';
 import { classifyTodo } from './classifyTodo.mjs';
 import { draftReply as defaultDraftReply } from './draftReply.mjs';
+import { createUserLock } from './userLock.mjs';
 
 const DAY_MS = 86400000;
 const LOG_LOOKBACK_DAYS = 90;
 const OPEN = new Set(['open', 'in_progress', 'paused']);
 const SYSTEM_JOB = 'triage-overnight';
+const ANSWER_FIELDS = ['answer', 'answeredAt', 'applyingAt', 'logEntryId', 'draftId', 'draftBody', 'step', 'skippedAt'];
 
 const seenKey = (itemId, version) => `${itemId}@${version}`;
 const isScope = (err) => err?.code === MAILBOX_SCOPE_MISSING;
@@ -41,6 +46,7 @@ export function createRunTriagePass({
   mailbox = null, work = null, store, decisionGateway = null, aiGateway = null,
   resolvePolicy, ownerName = () => '', draftReply = defaultDraftReply,
   clock = () => Date.now(), nextId = () => globalThis.crypto.randomUUID(), logger = null,
+  lock = createUserLock(),
 }) {
   if (!store || typeof resolvePolicy !== 'function') throw new TypeError('RunTriagePass requires store and resolvePolicy');
   const running = new Map();
@@ -357,8 +363,28 @@ export function createRunTriagePass({
 
     let cards = [...kept, ...fresh];
     const strip = (list) => list.map(({ regenerate, ...c }) => c);
+    const firstBuiltAt = Number.isFinite(queue.firstBuiltAt) ? queue.firstBuiltAt : asOf;
+    // Every write merges against what is stored now: a card no longer 'open' there keeps
+    // its stored answer state, and a skip mark is kept. Returns the merged list.
+    const writeMerged = async (list) => {
+      const stored = await store.readQueue(username);
+      const byId = new Map(stored.cards.map((c) => [c.cardId, c]));
+      // Transient fields (regenerate) stay in memory and are stripped only from what is written.
+      const merged = list.map((c) => {
+        const s = byId.get(c.cardId);
+        if (!s) return c;
+        if (s.status !== 'open') {
+          const out = { ...c, status: s.status };
+          for (const k of ANSWER_FIELDS) { if (k in s) out[k] = s[k]; else delete out[k]; }
+          return out;
+        }
+        return Number.isFinite(s.skippedAt) ? { ...c, skippedAt: s.skippedAt } : c;
+      });
+      await store.writeQueue(username, { passId, builtAt: asOf, firstBuiltAt, cards: strip(merged), mailbox: ctx.mailbox, preDone: ctx.preDone });
+      return merged;
+    };
     // Checkpoint: the cards are durable before drafts and dry-run log entries are written.
-    await store.writeQueue(username, { passId, builtAt: asOf, cards: strip(cards), mailbox: ctx.mailbox, preDone: ctx.preDone });
+    cards = await writeMerged(cards);
     for (const entry of pendingDryRun) await ctx.appendLog(entry);
 
     // Drafts for open reply cards that lack one (including ones a crash or failure left
@@ -371,7 +397,7 @@ export function createRunTriagePass({
         cards[i] = next;
         drafts[how] += 1;
         try {
-          await store.writeQueue(username, { passId, builtAt: asOf, cards: strip(cards), mailbox: ctx.mailbox, preDone: ctx.preDone });
+          cards = await writeMerged(cards);
         } catch (err) {
           logger?.error?.('triage.pass.draft_not_recorded', { username, passId, itemId: next.itemId, draftId: next.draftId, error: err?.message });
         }
@@ -379,8 +405,7 @@ export function createRunTriagePass({
       };
       cards[i] = await draftFor({ username, card: c, policy, ctx, passId, persist });
     }
-    cards = strip(cards);
-    await store.writeQueue(username, { passId, builtAt: asOf, cards, mailbox: ctx.mailbox, preDone: ctx.preDone });
+    cards = strip(await writeMerged(cards));
 
     const open = cards.filter((c) => c.status === 'open');
     const queued = {
@@ -415,13 +440,17 @@ export function createRunTriagePass({
         logger?.info?.('triage.pass.skipped', { username, trigger, reason: 'already_running' });
         return Promise.resolve({ skipped: 'already_running' });
       }
-      const at = Number.isFinite(asOf) ? asOf : clock();
       const p = (async () => {
+        // Waits for an answer in flight; answers wait (bounded) for the pass.
+        const release = await lock.acquire(username, { kind: 'pass' });
         try {
-          return await execute({ username, trigger, asOf: at, policy });
+          // The run time is taken once the lock is held.
+          return await execute({ username, trigger, asOf: Number.isFinite(asOf) ? asOf : clock(), policy });
         } catch (err) {
           logger?.error?.('triage.pass.failed', { username, trigger, error: err?.message, code: err?.code ?? null });
           throw err;
+        } finally {
+          release();
         }
       })().finally(() => running.delete(username));
       running.set(username, p);

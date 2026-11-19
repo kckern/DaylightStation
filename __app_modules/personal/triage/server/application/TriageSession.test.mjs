@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { createTriageSession, dueDateFor } from './TriageSession.mjs';
+import { createUserLock } from './userLock.mjs';
 import { MAILBOX_SCOPE_MISSING, MAILBOX_NOT_FOUND } from '../ports/IMailbox.mjs';
 
 const NOW = Date.parse('2026-11-19T17:00:00Z'); // Thursday
@@ -302,7 +303,7 @@ describe('answer: todo', () => {
   it('push from 2026-11-19 -> dueDate 2026-12-01, inverse restores the prior due date', async () => {
     const { store, work } = await run('push');
     expect(work.commands.propose.mock.calls[0][0].intent).toMatchObject({ operation: 'update_task', payload: { dueDate: '2026-12-01' } });
-    expect(store.entries[0].inverse).toEqual({ action: 'update_task', ref: taskRef('t1'), payload: { domainId: 'home', dueDate: '2026-11-10' }, expectedVersion: 'w2' });
+    expect(store.entries[0].inverse).toEqual({ action: 'update_task', ref: taskRef('t1'), payload: { domainId: 'home', dueDate: '2026-11-10', priorDue: { date: '2026-11-10', at: null, recurring: false } }, expectedVersion: 'w2' });
   });
 
   it('do_week -> the coming Friday', async () => {
@@ -427,5 +428,151 @@ describe('dueDateFor', () => {
     expect(dueDateFor('do_week', at('2026-11-16T17:00:00Z'), TZ)).toBe('2026-11-20');
     expect(dueDateFor('do_week', at('2026-11-20T17:00:00Z'), TZ)).toBe('2026-11-20');
     expect(dueDateFor('do_week', at('2026-11-22T17:00:00Z'), TZ)).toBe('2026-11-22');
+  });
+});
+
+describe('applying: actions the version check cannot guard (fix round 1)', () => {
+  const replyCard = () => emailCard('m1', { step: 'reply', draftId: 'd1', draftBody: 'hi' });
+
+  it('a queue write failure after send: the retry finds the log entry and does not send again', async () => {
+    const store = memoryStore({ passId: 'p', builtAt: NOW, cards: [replyCard()] });
+    const realWrite = store.writeQueue.getMockImplementation();
+    store.writeQueue.mockImplementation(async (u, next) => {
+      if (next.cards.some((c) => c.status === 'answered')) throw new Error('disk full');
+      return realWrite(u, next);
+    });
+    const mailbox = fakeMailbox({ m1: { version: 'v1' } });
+    const s = make({ store, mailbox });
+    await expect(s.answer({ username: 'sample', cardId: 'card.m1', choice: 'send', auth: AUTH })).rejects.toThrow('disk full');
+    expect(store.queue.cards[0]).toMatchObject({ status: 'applying', answer: { choice: 'send' } });
+    expect((await s.session({ username: 'sample' })).cards[0]).toMatchObject({ cardId: 'card.m1', applying: true });
+
+    store.writeQueue.mockImplementation(realWrite);
+    const again = await s.answer({ username: 'sample', cardId: 'card.m1', choice: 'send', auth: AUTH });
+    expect(again.outcome).toBe('applied');
+    expect(mailbox.sendDraft).toHaveBeenCalledTimes(1);
+    expect(store.queue.cards[0]).toMatchObject({ status: 'answered', logEntryId: store.entries[0].id });
+    expect(store.queue.cards[0]).not.toHaveProperty('applyingAt');
+  });
+
+  it('a send that may have gone out stays applying; a retry is answer_in_doubt and never re-sends', async () => {
+    const store = memoryStore({ passId: 'p', builtAt: NOW, cards: [replyCard()] });
+    const mailbox = fakeMailbox({ m1: { version: 'v1' } });
+    mailbox.sendDraft.mockRejectedValueOnce(new Error('socket hang up'));
+    const s = make({ store, mailbox });
+    const out = await s.answer({ username: 'sample', cardId: 'card.m1', choice: 'send', auth: AUTH });
+    expect(out).toMatchObject({ outcome: 'failed', inDoubt: true });
+    expect(store.queue.cards[0].status).toBe('applying');
+    await expect(s.answer({ username: 'sample', cardId: 'card.m1', choice: 'send', auth: AUTH })).rejects.toMatchObject({ code: 'TRIAGE_ANSWER_IN_DOUBT' });
+    expect(mailbox.sendDraft).toHaveBeenCalledTimes(1);
+  });
+
+  it('a send that surely did not go out returns the card to open', async () => {
+    const store = memoryStore({ passId: 'p', builtAt: NOW, cards: [replyCard()] });
+    const mailbox = fakeMailbox({ m1: { version: 'v1' } });
+    mailbox.sendDraft.mockRejectedValueOnce(Object.assign(new Error('x'), { code: MAILBOX_SCOPE_MISSING }));
+    const out = await make({ store, mailbox }).answer({ username: 'sample', cardId: 'card.m1', choice: 'send', auth: AUTH });
+    expect(out).toMatchObject({ outcome: 'failed', reason: 'mailbox_permission_missing' });
+    expect(store.queue.cards[0].status).toBe('open');
+    expect(store.queue.cards[0]).not.toHaveProperty('applyingAt');
+    expect(store.queue.cards[0]).not.toHaveProperty('answer');
+  });
+
+  it('an uncertain create_task (shrink) stays applying', async () => {
+    const store = memoryStore({ passId: 'p', builtAt: NOW, cards: [todoCard('t1')] });
+    const work = fakeWork({ items: { t1: workItem('t1') }, execute: async () => ({ outcome: 'uncertain', reason: 'timeout' }) });
+    const out = await make({ store, work }).answer({ username: 'sample', cardId: 'card.t1', choice: 'shrink', text: 'Call', auth: AUTH });
+    expect(out).toMatchObject({ outcome: 'failed', inDoubt: true });
+    expect(store.queue.cards[0].status).toBe('applying');
+  });
+
+  it('the card is marked applying before the send happens', async () => {
+    const store = memoryStore({ passId: 'p', builtAt: NOW, cards: [replyCard()] });
+    const mailbox = fakeMailbox({ m1: { version: 'v1' } });
+    let statusAtSend = null;
+    mailbox.sendDraft.mockImplementation(async () => { statusAtSend = store.queue.cards[0].status; return { messageId: 'x' }; });
+    await make({ store, mailbox }).answer({ username: 'sample', cardId: 'card.m1', choice: 'send', auth: AUTH });
+    expect(statusAtSend).toBe('applying');
+  });
+});
+
+describe('interpreted answers (fix round 1)', () => {
+  it('an interpreted send is never executed', async () => {
+    const store = memoryStore({ passId: 'p', builtAt: NOW, cards: [emailCard('m1', { step: 'reply', draftId: 'd1', draftBody: 'hi' })] });
+    const mailbox = fakeMailbox({ m1: { version: 'v1' } });
+    const out = await make({ store, mailbox, interpret: async () => ({ choice: 'send' }) })
+      .answer({ username: 'sample', cardId: 'card.m1', text: 'send it', auth: AUTH });
+    expect(out).toMatchObject({ outcome: 'skipped', interpreted: 'send' });
+    expect(mailbox.sendDraft).not.toHaveBeenCalled();
+    expect(store.queue.cards[0].status).toBe('open');
+  });
+
+  it('an interpreted draft edit updates the draft and does not send', async () => {
+    const store = memoryStore({ passId: 'p', builtAt: NOW, cards: [emailCard('m1', { step: 'reply', draftId: 'd1', draftBody: 'hi' })] });
+    const mailbox = fakeMailbox({ m1: { version: 'v1' } });
+    const out = await make({ store, mailbox, interpret: async () => ({ draftEdit: 'hi, at noon' }) })
+      .answer({ username: 'sample', cardId: 'card.m1', text: 'send it but say noon', auth: AUTH });
+    expect(out.outcome).toBe('draft_updated');
+    expect(mailbox.updateDraft).toHaveBeenCalledWith('sample', 'd1', { body: 'hi, at noon' });
+    expect(mailbox.sendDraft).not.toHaveBeenCalled();
+  });
+
+  it('an interpreted shrink keeps the owner\'s words (or the extracted title) as the new step', async () => {
+    for (const [read, title] of [[{ choice: 'shrink', stepTitle: 'Call the plumber' }, 'Call the plumber'], [{ choice: 'shrink' }, 'just call the plumber']]) {
+      const store = memoryStore({ passId: 'p', builtAt: NOW, cards: [todoCard('t1')] });
+      const work = fakeWork({ items: { t1: workItem('t1') } });
+      const out = await make({ store, work, interpret: async () => read })
+        .answer({ username: 'sample', cardId: 'card.t1', text: 'just call the plumber', auth: AUTH });
+      expect(out.outcome).toBe('applied');
+      expect(work.commands.propose.mock.calls[0][0].intent.payload.title).toBe(title);
+    }
+  });
+
+  it('an interpreted archive is applied', async () => {
+    const store = memoryStore({ passId: 'p', builtAt: NOW, cards: [emailCard('m1')] });
+    const mailbox = fakeMailbox({ m1: { version: 'v1' } });
+    await make({ store, mailbox, interpret: async () => ({ choice: 'archive' }) }).answer({ username: 'sample', cardId: 'card.m1', text: 'bin', auth: AUTH });
+    expect(mailbox.archive).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('shared lock (fix round 1)', () => {
+  it('an answer waiting longer than answerWaitMs for a running pass -> TRIAGE_BUSY holder pass, nothing done', async () => {
+    const lock = createUserLock({ after: (ms, fn) => { const t = setTimeout(fn, ms); return () => clearTimeout(t); } });
+    const release = await lock.acquire('sample', { kind: 'pass' });
+    const store = memoryStore({ passId: 'p', builtAt: NOW, cards: [emailCard('m1')] });
+    const mailbox = fakeMailbox({ m1: { version: 'v1' } });
+    const s = make({ store, mailbox, lock, answerWaitMs: 20 });
+    await expect(s.answer({ username: 'sample', cardId: 'card.m1', choice: 'archive', auth: AUTH })).rejects.toMatchObject({ code: 'TRIAGE_BUSY', holder: 'pass' });
+    expect(mailbox.getMessage).not.toHaveBeenCalled();
+    release();
+    // The lock is usable again once the pass is done.
+    expect((await s.answer({ username: 'sample', cardId: 'card.m1', choice: 'archive', auth: AUTH })).outcome).toBe('applied');
+  });
+
+  it('an answer waits for a short pass instead of failing', async () => {
+    const lock = createUserLock({ after: (ms, fn) => { const t = setTimeout(fn, ms); return () => clearTimeout(t); } });
+    const release = await lock.acquire('sample', { kind: 'pass' });
+    const store = memoryStore({ passId: 'p', builtAt: NOW, cards: [emailCard('m1')] });
+    const mailbox = fakeMailbox({ m1: { version: 'v1' } });
+    const pending = make({ store, mailbox, lock, answerWaitMs: 5000 }).answer({ username: 'sample', cardId: 'card.m1', choice: 'archive', auth: AUTH });
+    await new Promise((r) => setTimeout(r, 10));
+    expect(mailbox.getMessage).not.toHaveBeenCalled();
+    release();
+    expect((await pending).outcome).toBe('applied');
+  });
+});
+
+describe('done counter (fix round 1)', () => {
+  it('counts answers since the queue was first built, not reset by a later pass', async () => {
+    const cards = [emailCard('a', { status: 'answered', answeredAt: NOW - 5000 }), emailCard('b')];
+    const store = memoryStore({ passId: 'p2', builtAt: NOW - 1000, firstBuiltAt: NOW - 9000, cards });
+    expect((await make({ store }).session({ username: 'sample' })).done).toBe(1);
+  });
+  it('counts answers since the recap was acknowledged', async () => {
+    const cards = [emailCard('a', { status: 'answered', answeredAt: NOW - 5000 }), emailCard('b', { status: 'answered', answeredAt: NOW - 500 })];
+    const store = memoryStore({ passId: 'p2', builtAt: NOW - 100, firstBuiltAt: NOW - 9000, cards });
+    await store.writeState('sample', { recapSeenAt: NOW - 1000 });
+    expect((await make({ store }).session({ username: 'sample' })).done).toBe(1);
   });
 });

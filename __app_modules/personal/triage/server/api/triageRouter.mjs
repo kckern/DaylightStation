@@ -3,7 +3,10 @@ import { sendInternalError } from '#api/utils/internalError.mjs';
 import { requireOwnerSession } from './requireOwnerSession.mjs';
 export { requireOwnerSession };
 
-const ERROR_STATUS = { TRIAGE_CARD_NOT_FOUND: [404, 'card_not_found'], TRIAGE_CARD_NOT_OPEN: [409, 'card_not_open'], TRIAGE_INVALID_ANSWER: [400, 'invalid_answer'] };
+const ERROR_STATUS = {
+  TRIAGE_CARD_NOT_FOUND: [404, 'card_not_found'], TRIAGE_CARD_NOT_OPEN: [409, 'card_not_open'],
+  TRIAGE_INVALID_ANSWER: [400, 'invalid_answer'], TRIAGE_ANSWER_IN_DOUBT: [409, 'answer_in_doubt'],
+};
 const requestId = () => `req.${globalThis.crypto.randomUUID()}`;
 
 /**
@@ -47,6 +50,8 @@ export function createTriageRouter({ resolvePolicy, defaultUsername, isKnownUser
     try {
       res.json(await fn(req));
     } catch (err) {
+      // An answer that waited too long for the user's lock (normally a running pass).
+      if (err?.code === 'TRIAGE_BUSY') return res.status(409).json({ error: err.holder === 'answer' ? 'busy' : 'pass_running' });
       const mapped = ERROR_STATUS[err?.code];
       if (mapped) return res.status(mapped[0]).json({ error: mapped[1], ...(err.status ? { status: err.status } : {}) });
       logger?.error?.(`triage.${name}.failed`, { username: req.triageUsername, error: err?.message, code: err?.code ?? null });

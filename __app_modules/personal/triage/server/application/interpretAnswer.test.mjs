@@ -57,4 +57,18 @@ describe('interpretAnswer', () => {
     expect(await interpretAnswer({ aiGateway: ai, card: card(), text: '   ' })).toEqual({ unclear: true });
     expect(ai.chatStructured).not.toHaveBeenCalled();
   });
+
+  it('a draft edit wins over a send choice ("send it but say noon")', async () => {
+    const reply = card({ step: 'reply', draftBody: 'Sure.' });
+    const ai = gateway({ choice: 'send', draftEdit: 'Sure, at noon.' });
+    expect(await interpretAnswer({ aiGateway: ai, card: reply, text: 'send it but say noon' })).toEqual({ draftEdit: 'Sure, at noon.' });
+    expect(ai.chatStructured.mock.calls[0][0][0].content).toMatch(/ANY change to the draft/);
+  });
+
+  it('shrink carries the step title the model extracted', async () => {
+    const todo = { kind: 'todo', step: 'todo', choices: [{ key: 'shrink', label: 'Smaller step' }, { key: 'drop', label: 'Drop' }], display: { title: 'Fix house' } };
+    const ai = gateway({ choice: 'shrink', stepTitle: 'Call the plumber' });
+    expect(await interpretAnswer({ aiGateway: ai, card: todo, text: 'just call the plumber first' })).toEqual({ choice: 'shrink', stepTitle: 'Call the plumber' });
+    expect(ai.chatStructured.mock.calls[0][0][0].content).toMatch(/stepTitle/);
+  });
 });

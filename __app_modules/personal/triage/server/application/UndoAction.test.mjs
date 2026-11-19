@@ -57,6 +57,20 @@ describe('UndoAction', () => {
     await s.undo.undo({ username: 'kc', entryId: 'e1', principal });
     expect(s.work.commands.propose.mock.calls[0][0].intent).toMatchObject({ operation: 'update_task', payload: { dueDate: '2026-11-01' } });
   });
+  it('update_task restores the prior date and reports a lost time and recurrence as partial', async () => {
+    const priorDue = { date: '2026-11-01', at: Date.parse('2026-11-01T17:00:00Z'), recurring: true };
+    const s = setup([entry({ action: 'update_task', inverse: { action: 'update_task', ref: { id: 't' }, payload: { domainId: 'd', dueDate: '2026-11-01', priorDue } } })]); await s.ready;
+    const r = await s.undo.undo({ username: 'kc', entryId: 'e1', principal });
+    expect(r).toMatchObject({ outcome: 'undone', partial: ['time', 'recurrence'] });
+    expect(s.work.commands.propose.mock.calls[0][0].intent.payload).toEqual({ dueDate: '2026-11-01' });
+  });
+  it('update_task with a date-only prior due is a full restore', async () => {
+    const priorDue = { date: '2026-11-01', at: null, recurring: false };
+    const s = setup([entry({ action: 'update_task', inverse: { action: 'update_task', ref: { id: 't' }, payload: { domainId: 'd', dueDate: '2026-11-01', priorDue } } })]); await s.ready;
+    const r = await s.undo.undo({ username: 'kc', entryId: 'e1', principal });
+    expect(r.outcome).toBe('undone');
+    expect(r).not.toHaveProperty('partial');
+  });
   it('clears the due date explicitly when there was none, and passes expectedVersion', async () => {
     const s = setup([entry({ action: 'update_task', inverse: { action: 'update_task', ref: { id: 't' }, expectedVersion: 'v9', payload: { domainId: 'd' } } })]); await s.ready;
     await s.undo.undo({ username: 'kc', entryId: 'e1', principal });

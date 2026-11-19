@@ -10,12 +10,17 @@
 //   (propose -> confirmWeb -> execute).
 // - Every answered card writes an owner log entry (with an inverse where one exists), so
 //   the pass never re-cards the item at the version it was answered at.
-// - Answers for one user run one at a time (an in-process chain per username). A pass
-//   running at the same moment is not locked out: the version check is the guard.
+// - Answers and the pass share one per-user lock: an answer waits (up to answerWaitMs,
+//   then 409 pass_running) for a running pass, and a pass waits for an answer in flight.
+// - An action the version check cannot guard (send, create a task) is preceded by marking
+//   the card 'applying'. A later answer to an 'applying' card never re-executes: it finds
+//   the owner log entry for the card (-> answered) or reports `answer_in_doubt`.
+// - An interpreted (free-text or voice) answer never sends a reply; the owner taps Send.
 import moment from 'moment-timezone';
 import { MAILBOX_SCOPE_MISSING, MAILBOX_NOT_FOUND } from '../ports/IMailbox.mjs';
 import { draftReply as defaultDraftReply } from './draftReply.mjs';
 import { interpretAnswer as defaultInterpret, cardChoices } from './interpretAnswer.mjs';
+import { createUserLock } from './userLock.mjs';
 
 const DAY_MS = 86400000;
 const RECAP_DEFAULT_DAYS = 7;
@@ -26,6 +31,10 @@ const TITLE_MAX = 500;
 const DRAFT_EDIT_MAX = 20000;
 const STEP_ORDER = ['urgent', 'recap', 'unsure', 'reply', 'todo'];
 const RECAP_CHOICES = Object.freeze([{ key: 'ok', label: 'Got it' }]);
+// Choices whose effect does not change the item's version, so the version check cannot
+// stop a repeat: they go through the 'applying' state.
+const UNGUARDED = new Set(['send', 'task', 'shrink']);
+const ANSWER_WAIT_MS = 30000;
 
 const fail = (code, message) => Object.assign(new Error(message ?? code), { code });
 const replySubject = (s) => (/^re:/i.test(String(s ?? '').trim()) ? String(s).trim() : `Re: ${String(s ?? '').trim()}`);
@@ -46,27 +55,40 @@ export function createTriageSession({
   store, mailbox = null, work = null, aiGateway = null, resolvePolicy, undoAction = null,
   interpret = defaultInterpret, draftReply = defaultDraftReply, ownerName = () => '',
   userTimezone = () => null, clock = () => Date.now(), nextId = () => globalThis.crypto.randomUUID(), logger = null,
+  lock = createUserLock(), answerWaitMs = ANSWER_WAIT_MS,
 }) {
   if (!store || typeof resolvePolicy !== 'function') throw new TypeError('TriageSession requires store and resolvePolicy');
 
-  const chains = new Map();
-  const serialize = (username, fn) => {
-    const run = (chains.get(username) ?? Promise.resolve()).then(fn, fn);
-    const tail = run.catch(() => {});
-    chains.set(username, tail);
-    tail.then(() => { if (chains.get(username) === tail) chains.delete(username); });
-    return run;
+  // Shared with the pass (composition passes the same lock to both).
+  const exclusive = async (username, fn) => {
+    let release;
+    try {
+      release = await lock.acquire(username, { kind: 'answer', timeoutMs: answerWaitMs });
+    } catch (err) {
+      if (err?.code !== 'TRIAGE_BUSY') throw err;
+      logger?.info?.('triage.card.busy', { username, holder: err.holder ?? null });
+      throw Object.assign(fail('TRIAGE_BUSY'), { holder: err.holder ?? null });
+    }
+    try {
+      return await fn();
+    } finally {
+      release();
+    }
   };
 
-  const served = (card) => ({ ...card, choices: cardChoices(card), source: card.display?.source ?? null });
+  const served = (card) => ({
+    ...card, choices: cardChoices(card), source: card.display?.source ?? null,
+    ...(card.status === 'applying' ? { applying: true } : {}),
+  });
 
-  // Re-read the queue right before writing so a pass that wrote in between keeps its cards.
-  async function patchCard(username, cardId, patch) {
+  // Re-read the queue right before writing and patch only this card. `remove` drops fields.
+  async function patchCard(username, cardId, patch, remove = []) {
     const q = await store.readQueue(username);
     let next = null;
     const cards = q.cards.map((c) => {
       if (c.cardId !== cardId) return c;
       next = { ...c, ...patch };
+      for (const k of remove) delete next[k];
       return next;
     });
     if (!next) return null;
@@ -91,8 +113,8 @@ export function createTriageSession({
   }
 
   // --- recap -------------------------------------------------------------
-  async function recapCard(username, asOf) {
-    const state = (typeof store.readState === 'function' ? await store.readState(username) : null) ?? {};
+  const readState = async (username) => (typeof store.readState === 'function' ? await store.readState(username) : null) ?? {};
+  async function recapCard(username, asOf, state) {
     const since = Number.isFinite(state.recapSeenAt) ? state.recapSeenAt : asOf - RECAP_DEFAULT_DAYS * DAY_MS;
     const rows = (await store.readLog(username, { sinceMs: since }))
       .filter((e) => e.at > since && e.actor === 'system' && e.dryRun !== true);
@@ -144,6 +166,7 @@ export function createTriageSession({
     }
     const principal = (await work.principal?.web?.(auth)) ?? null;
     if (!principal) return { outcome: 'failed', reason: 'principal_unavailable' };
+    let executing = false;
     try {
       const proposed = await work.commands.propose({ principal, intent, asOf });
       if (proposed?.outcome === 'denied') return { outcome: 'failed', reason: proposed.reason ?? 'denied' };
@@ -151,13 +174,16 @@ export function createTriageSession({
       const { confirmationId } = await work.decisions.confirmWeb({
         principal, commandId: proposed.command.id, expectedVersion: proposed.command.expectedVersion, asOf,
       });
+      executing = true;
       const r = await work.commands.execute({ principal, commandId: proposed.command.id, confirmationId, asOf });
       if (r?.outcome === 'applied' || r?.outcome === 'already_applied') return { outcome: 'applied', result: r };
       if (r?.outcome === 'conflict') return { outcome: 'conflict' };
-      return { outcome: 'failed', reason: r?.reason ?? r?.outcome ?? 'failed' };
+      // 'uncertain' may have landed.
+      return { outcome: 'failed', reason: r?.reason ?? r?.outcome ?? 'failed', ...(r?.outcome === 'uncertain' ? { inDoubt: true } : {}) };
     } catch (err) {
       if (!create && CONFLICT_WORK.has(err?.code)) return { outcome: 'conflict' };
-      return { outcome: 'failed', reason: err?.code ?? err?.message ?? 'error' };
+      // A throw once execute started may have landed.
+      return { outcome: 'failed', reason: err?.code ?? err?.message ?? 'error', ...(executing ? { inDoubt: true } : {}) };
     }
   }
 
@@ -229,13 +255,20 @@ export function createTriageSession({
     if (choice === 'send') {
       const body = draftBody ?? card.draftBody;
       if (!body && !card.draftId) return { outcome: 'failed', reason: 'no_draft' };
+      let draftId;
       try {
-        const draftId = await ensureDraft(username, card, body, { update: draftBody !== undefined });
-        await mailbox.sendDraft(username, draftId);
-        return { outcome: 'applied', log: { action: 'send', inverse: null }, patch: { draftId, ...(body ? { draftBody: body } : {}) } };
+        draftId = await ensureDraft(username, card, body, { update: draftBody !== undefined });
       } catch (err) {
-        return mailFailure(err);
+        return mailFailure(err); // nothing sent
       }
+      try {
+        await mailbox.sendDraft(username, draftId);
+      } catch (err) {
+        // A permission rejection or a vanished draft did not send; anything else may have.
+        const sure = err?.code === MAILBOX_SCOPE_MISSING || err?.code === MAILBOX_NOT_FOUND;
+        return { ...mailFailure(err), ...(sure ? {} : { inDoubt: true }), patch: { draftId } };
+      }
+      return { outcome: 'applied', log: { action: 'send', inverse: null }, patch: { draftId, ...(body ? { draftBody: body } : {}) } };
     }
     if (choice === 'task') {
       const domainId = policy.taskDomain ?? 'personal';
@@ -267,13 +300,19 @@ export function createTriageSession({
         inverse: { action: 'reopen', ref: card.ref, payload: { domainId }, expectedVersion: v } } };
     }
     if (choice === 'push' || choice === 'do_week') {
-      const dueDate = dueDateFor(choice, asOf, userTimezone(username));
-      const prior = current?.due?.date ?? null;
+      const tz = userTimezone(username);
+      const dueDate = dueDateFor(choice, asOf, tz);
+      // The work layer sets a date only: undo restores the prior date (a timed due keeps its
+      // day, not its time; a recurrence is not restored). The full prior due is kept.
+      const d = current?.due ?? null;
+      const zone = tz && moment.tz.zone(tz) ? tz : 'UTC';
+      const prior = d?.date ?? (Number.isFinite(d?.at) ? moment.tz(d.at, zone).format('YYYY-MM-DD') : null);
+      const priorDue = d ? { date: d.date ?? null, at: Number.isFinite(d.at) ? d.at : null, recurring: d.recurring === true } : null;
       const r = await viaWork({ auth, asOf, intent: { operation: 'update_task', domainId, ref: card.ref, payload: { dueDate }, expectedVersion: card.itemVersion } });
       if (r.outcome !== 'applied') return r;
       const v = postVersion(r);
       return { outcome: 'applied', log: { action: 'update_task', itemVersion: v ?? undefined,
-        inverse: { action: 'update_task', ref: card.ref, payload: { domainId, dueDate: prior }, expectedVersion: v } } };
+        inverse: { action: 'update_task', ref: card.ref, payload: { domainId, dueDate: prior, priorDue }, expectedVersion: v } } };
     }
     if (choice === 'shrink') {
       const title = String(text ?? '').trim().slice(0, TITLE_MAX);
@@ -303,6 +342,7 @@ export function createTriageSession({
     const queue = await store.readQueue(username);
     const card = queue.cards.find((c) => c.cardId === cardId);
     if (!card) throw fail('TRIAGE_CARD_NOT_FOUND');
+    if (card.status === 'applying') return resolveApplying(username, card);
     if (card.status !== 'open') throw Object.assign(fail('TRIAGE_CARD_NOT_OPEN'), { status: card.status });
 
     const keys = new Set(cardChoices(card).map((c) => c.key));
@@ -320,9 +360,13 @@ export function createTriageSession({
     if (choice !== undefined && choice !== null && !keys.has(choice)) throw fail('TRIAGE_INVALID_ANSWER', `choice ${choice} not offered`);
     if (!choice && typeof text === 'string' && text.trim()) {
       const read = await interpret({ aiGateway, card, text, logger });
-      if (read?.choice && keys.has(read.choice)) {
+      if (read?.choice === 'send') {
+        // Sending is irreversible: an interpreted answer never sends. The owner taps Send.
+        return done('skipped', { interpreted: 'send' });
+      } else if (read?.choice && keys.has(read.choice)) {
         choice = read.choice;
-        text = undefined;
+        // A smaller next step keeps the owner's words (the model's short title if it gave one).
+        text = choice === 'shrink' ? (read.stepTitle ?? text) : undefined;
       } else if (read?.draftEdit && reply) {
         draftBody = read.draftEdit;
       } else {
@@ -355,16 +399,31 @@ export function createTriageSession({
     }
     if (!check.ok) return done('failed', { reason: check.reason });
 
+    // The version check cannot stop a repeat of these: mark the card first (a failed write
+    // here means nothing was done).
+    const unguarded = UNGUARDED.has(choice);
+    if (unguarded) await patchCard(username, cardId, { status: 'applying', applyingAt: asOf, answer: { choice } });
+
     const r = card.kind === 'email'
       ? await applyEmail({ username, card, choice, draftBody, current: check.current, auth, asOf, policy })
       : await applyTodo({ username, card, choice, text, current: check.current, auth, asOf });
+
+    if (unguarded && r.outcome !== 'applied') {
+      if (r.inDoubt) {
+        // It may have happened: leave the card 'applying' for the owner, never retry.
+        if (r.patch) await patchCard(username, cardId, r.patch).catch(() => {});
+        logger?.warn?.('triage.card.in_doubt', { username, cardId, kind: card.kind, choice, reason: r.reason });
+        return done('failed', { reason: r.reason, inDoubt: true }, { ...card, ...(r.patch ?? {}), status: 'applying' });
+      }
+      await patchCard(username, cardId, { status: 'open', ...(r.patch ?? {}) }, ['applyingAt', 'answer']);
+    }
 
     if (r.outcome === 'conflict') {
       const next = await patchCard(username, cardId, { status: 'conflict', answeredAt: asOf, answer: { choice } });
       logger?.info?.('triage.card.conflict', { username, cardId, kind: card.kind, choice });
       return done('conflict', {}, next ?? card);
     }
-    if (r.outcome === 'failed') return done('failed', { reason: r.reason });
+    if (r.outcome === 'failed') return done('failed', { reason: r.reason }, { ...card, ...(r.patch ?? {}) });
     if (r.outcome === 'draft_updated') {
       const next = await patchCard(username, cardId, r.patch);
       return done('draft_updated', {}, next ?? card);
@@ -372,8 +431,23 @@ export function createTriageSession({
     const entry = await ownerLog(username, card, { ...r.log, choice, asOf });
     const next = await patchCard(username, cardId, {
       ...(r.patch ?? {}), status: 'answered', answeredAt: asOf, answer: { choice }, logEntryId: entry.id,
-    });
+    }, ['applyingAt']);
     return done('applied', { entryId: entry.id }, next ?? card);
+  }
+
+  // A card left 'applying' (the effect ran, or may have, but the card was not marked
+  // answered). Never re-executed: the owner log decides.
+  async function resolveApplying(username, card) {
+    const since = Number.isFinite(card.applyingAt) ? card.applyingAt : 0;
+    const hit = (await store.readLog(username, { sinceMs: since }))
+      .find((e) => e.cardId === card.cardId && e.actor === 'owner');
+    if (!hit) {
+      logger?.warn?.('triage.card.in_doubt', { username, cardId: card.cardId, kind: card.kind, choice: card.answer?.choice ?? null });
+      throw Object.assign(fail('TRIAGE_ANSWER_IN_DOUBT'), { status: 'applying' });
+    }
+    const next = await patchCard(username, card.cardId, { status: 'answered', answeredAt: hit.at, logEntryId: hit.id }, ['applyingAt']);
+    logger?.info?.('triage.card.answered', { username, cardId: card.cardId, kind: card.kind, choice: card.answer?.choice ?? null, outcome: 'applied', recovered: true });
+    return { outcome: 'applied', entryId: hit.id, card: served(next ?? card) };
   }
 
   return {
@@ -397,7 +471,7 @@ export function createTriageSession({
     async session({ username }) {
       const asOf = clock();
       const q = await store.readQueue(username);
-      const open = q.cards.filter((c) => c.status === 'open');
+      const open = q.cards.filter((c) => c.status === 'open' || c.status === 'applying');
       const order = (a, b) => (a.skippedAt ?? -1) - (b.skippedAt ?? -1) || (a.createdAt ?? 0) - (b.createdAt ?? 0);
       const isUrgent = (c) => c.kind === 'email' && c.step === 'reply' && c.urgent === true;
       const groups = {
@@ -407,7 +481,8 @@ export function createTriageSession({
         reply: open.filter((c) => c.step === 'reply' && !isUrgent(c)),
         todo: open.filter((c) => c.step === 'todo'),
       };
-      const recap = await recapCard(username, asOf);
+      const state = await readState(username);
+      const recap = await recapCard(username, asOf, state);
       const cards = [];
       const steps = [];
       for (const id of STEP_ORDER) {
@@ -416,15 +491,17 @@ export function createTriageSession({
         steps.push({ id, count: list.length });
         cards.push(...list);
       }
-      const since = q.builtAt ?? 0;
+      // Answers since the owner acknowledged the recap, else since the queue was first built;
+      // a later pass does not reset it.
+      const since = Number.isFinite(state.recapSeenAt) ? state.recapSeenAt : (q.firstBuiltAt ?? q.builtAt ?? 0);
       const done = q.cards.filter((c) => (c.status === 'answered' || c.status === 'conflict') && (c.answeredAt ?? 0) >= since).length;
       logger?.info?.('triage.session.served', { username, total: cards.length + done, done, steps: steps.map((s) => `${s.id}:${s.count}`).join(',') });
       return { steps, cards, total: cards.length + done, done };
     },
 
-    answer: (input) => serialize(input.username, () => answerOne(input)),
+    answer: (input) => exclusive(input.username, () => answerOne(input)),
 
-    skip: ({ username, cardId }) => serialize(username, async () => {
+    skip: ({ username, cardId }) => exclusive(username, async () => {
       const q = await store.readQueue(username);
       const card = q.cards.find((c) => c.cardId === cardId);
       if (!card) throw fail('TRIAGE_CARD_NOT_FOUND');

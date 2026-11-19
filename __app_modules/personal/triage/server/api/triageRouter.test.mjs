@@ -216,3 +216,21 @@ describe('session routes', () => {
     expect((await request(appAs(rt, null)).post('/t/log/log.1/undo?username=sample')).status).toBe(401);
   });
 });
+
+describe('session route conflicts (fix round 1)', () => {
+  it('maps a busy lock to 409 pass_running and an in-doubt card to 409 answer_in_doubt', async () => {
+    const answer = vi.fn()
+      .mockRejectedValueOnce(Object.assign(new Error('busy'), { code: 'TRIAGE_BUSY', holder: 'pass' }))
+      .mockRejectedValueOnce(Object.assign(new Error('doubt'), { code: 'TRIAGE_ANSWER_IN_DOUBT', status: 'applying' }));
+    const { createTriageRouter } = await import('./triageRouter.mjs');
+    const router = createTriageRouter({
+      resolvePolicy: () => ({ enrolled: true, mode: 'live' }), defaultUsername: 'sample', isKnownUser: () => true,
+      session: { answer }, logger: null,
+    });
+    const a = express().use((req, _r, n) => { req.user = { sub: 'sample', sid: 's1' }; n(); }).use('/t', router);
+    const busy = await request(a).post('/t/cards/c/answer').send({ choice: 'send' });
+    expect([busy.status, busy.body.error]).toEqual([409, 'pass_running']);
+    const doubt = await request(a).post('/t/cards/c/answer').send({ choice: 'send' });
+    expect([doubt.status, doubt.body.error]).toEqual([409, 'answer_in_doubt']);
+  });
+});
