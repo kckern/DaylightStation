@@ -24,6 +24,8 @@
  * @property {boolean} hasAttachments
  * @property {boolean} automated           Bulk/list/noreply/auto-submitted.
  * @property {boolean} ownerRepliedInThread
+ * @property {string|null} url             Link to the message in the provider's web client.
+ * @property {string|null} sourceName      Display name of the mailbox source (supplied by the adapter).
  *
  * @typedef {Object} MailboxCapabilities
  * @property {boolean} read

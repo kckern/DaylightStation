@@ -586,6 +586,8 @@ describe('context.actionableItems', () => {
       expect(view.items[0].domainId).toBe('personal');
       expect(view.items[0].item.ref.kind).toBe('task');
       expect(view.items[0].operations.sort()).toEqual(['complete', 'update_task']);
+      expect(typeof view.items[0].source).toBe('string');
+      expect(view.items[0].source.length).toBeGreaterThan(0);
     } finally {
       await runtime.dispose();
       fs.rmSync(tmp, { recursive: true, force: true });

@@ -3521,6 +3521,7 @@ const { readingSessions, readingSessionInterceptor } = await createSchoolReading
     decisionGateway: scopedGateway(decisionGateway, { app: 'life', feature: 'triage' }),
     aiGateway: scopedGateway(sharedAiGateway, { app: 'life', feature: 'triage' }),
     ownerName: (username) => { const p = configService.getUserProfile(username); return p?.display_name || p?.name || username; },
+    userTimezone: workTimezone,
     // The schedule is registered below, once agentsServices.scheduler exists.
     agentsScheduler: null, clock: Date.now,
     logger: rootLogger.child({ app: 'triage' }),

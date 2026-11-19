@@ -1,6 +1,6 @@
 // Pure per-user triage policy. No I/O. An invalid config disables only that user.
 const MODES = new Set(['off', 'dryRun', 'live']);
-const DEFAULTS = { mode: 'dryRun', inboxWindowDays: 14, inboxMax: 200, autoArchiveConfidence: 0.92, overdueDays: 60, schedule: '0 5 * * *' };
+const DEFAULTS = { mode: 'dryRun', inboxWindowDays: 14, inboxMax: 200, autoArchiveConfidence: 0.92, overdueDays: 60, schedule: '0 5 * * *', taskDomain: 'personal' };
 const MIN_AUTO_ARCHIVE_CONFIDENCE = 0.8;
 
 const disabled = () => ({ enrolled: false, ...DEFAULTS, mode: 'off' });
@@ -19,8 +19,9 @@ export function resolveTriagePolicy({ configuration, username } = {}) {
     && posInt(merged.inboxWindowDays) && posInt(merged.inboxMax) && posInt(merged.overdueDays)
     && typeof merged.autoArchiveConfidence === 'number'
     && merged.autoArchiveConfidence >= MIN_AUTO_ARCHIVE_CONFIDENCE && merged.autoArchiveConfidence <= 1
-    && typeof merged.schedule === 'string' && merged.schedule.trim() !== '';
+    && typeof merged.schedule === 'string' && merged.schedule.trim() !== ''
+    && typeof merged.taskDomain === 'string' && merged.taskDomain.trim() !== '';
   if (!valid) return disabled();
-  const { mode, inboxWindowDays, inboxMax, autoArchiveConfidence, overdueDays, schedule } = merged;
-  return { enrolled: true, mode, inboxWindowDays, inboxMax, autoArchiveConfidence, overdueDays, schedule };
+  const { mode, inboxWindowDays, inboxMax, autoArchiveConfidence, overdueDays, schedule, taskDomain } = merged;
+  return { enrolled: true, mode, inboxWindowDays, inboxMax, autoArchiveConfidence, overdueDays, schedule, taskDomain };
 }

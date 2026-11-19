@@ -8,5 +8,6 @@ triage:
     autoArchiveConfidence: 0.92   # must be >= 0.8 or the user is disabled
     overdueDays: 60
     schedule: "0 5 * * *"
+    taskDomain: personal    # work domain an email "Make a todo" answer creates its task in
   users:
     sample: {}              # explicit opt-in; scalar overrides merge over defaults

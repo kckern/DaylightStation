@@ -19,6 +19,13 @@ describe('resolveTriagePolicy', () => {
     const p = resolveTriagePolicy({ configuration: { triage: base }, username: 'sample' });
     expect(p).toMatchObject({ enrolled: true, mode: 'dryRun', inboxWindowDays: 14, inboxMax: 200, overdueDays: 60, schedule: '0 5 * * *' });
   });
+  it('defaults taskDomain to personal and accepts an override', () => {
+    expect(resolveTriagePolicy({ configuration: { triage: base }, username: 'sample' }).taskDomain).toBe('personal');
+    const cfg = { triage: { ...base, users: { sample: { taskDomain: 'home' } } } };
+    expect(resolveTriagePolicy({ configuration: cfg, username: 'sample' }).taskDomain).toBe('home');
+    const bad = { triage: { ...base, users: { sample: { taskDomain: '' } } } };
+    expect(resolveTriagePolicy({ configuration: bad, username: 'sample' }).enrolled).toBe(false);
+  });
   it('merges per-user scalars over defaults', () => {
     const p = resolveTriagePolicy({ configuration: { triage: { ...base, users: { sample: { mode: 'live' } } } }, username: 'sample' });
     expect(p.enrolled).toBe(true);

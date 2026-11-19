@@ -179,9 +179,10 @@ only means the owner taps again. Telegram grants are unchanged.
 
 Callers outside Work that need to act on items (the triage pass) read them with
 `context.actionableItems({ username, asOf })`. It returns
-`{ items: [{ item, domainId, operations }], coverage }`: the same items
+`{ items: [{ item, domainId, source, operations }], coverage }`: the same items
 `context.execute` returns, each with the first configured domain that holds it
-(the conversation path's rule) and the write operations a command could use on
+(the conversation path's rule), a display name for where it lives (`source`: its
+container's title, else the domain id) and the write operations a command could use on
 it now (provider capability, the domain's route, and this host being the
 writer; empty otherwise). Items in no domain are left out. It is read-only.
 

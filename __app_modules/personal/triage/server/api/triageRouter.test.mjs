@@ -135,3 +135,84 @@ describe('triage schedule with nobody enrolled', () => {
     expect(warn).toHaveBeenCalledWith('triage.schedule.empty', expect.objectContaining({ schedules: 0 }));
   });
 });
+
+describe('session routes', () => {
+  const ENROLLED = { triage: { enabled: true, defaults: { mode: 'live' }, users: { sample: {} } } };
+  const NOW = Date.parse('2026-11-19T17:00:00Z');
+  const card = {
+    cardId: 'card.x', passId: 'p', createdAt: NOW, itemId: 'item.x', kind: 'email',
+    ref: { provider: 'mx', accountId: 'sample', kind: 'message', id: 'm1' }, itemVersion: 'v1', step: 'unsure', urgent: false,
+    choices: [{ key: 'archive', label: 'Archive' }, { key: 'keep', label: 'Keep' }], suggested: 'archive', confidence: 0.5,
+    why: 'Unsure', preDo: null, status: 'open', display: { title: 'Hello', from: { name: 'P', address: 'p@example.com' }, snippet: 's' },
+  };
+  const build = () => {
+    const files = new Map([['sample/apps/triage/queue', { passId: 'p', builtAt: NOW - 1000, mailbox: 'ok', preDone: { archived: 2, closed: 0 }, cards: [card] }]]);
+    const mailbox = {
+      capabilities: () => ({ read: true, modify: true, compose: true, send: true }),
+      getMessage: vi.fn(async () => ({ version: 'v1', labels: ['INBOX'] })), archive: vi.fn(async () => ({ version: 'v2' })),
+    };
+    const rt = createTriageRuntime({
+      configuration: () => ENROLLED, defaultUsername: 'sample', isKnownUser: u => ['head', 'sample'].includes(u),
+      dataService: { user: {
+        readStrict: async (p, u) => structuredClone(files.get(`${u}/${p}`) ?? null),
+        writeAtomic: async (p, d, u) => { files.set(`${u}/${p}`, structuredClone(d)); return true; },
+      } },
+      mailbox, work: null, clock: () => NOW, logger: null,
+    });
+    return { rt, files, mailbox };
+  };
+  const appAs = (rt, user) => express()
+    .use((req, _res, next) => { if (user) req.user = user; next(); })
+    .use('/t', rt.router);
+
+  it('POST /cards/x/answer without a login -> 401 login_required', async () => {
+    const { rt, mailbox } = build();
+    const res = await request(appAs(rt, null)).post('/t/cards/card.x/answer?username=sample').send({ choice: 'archive' });
+    expect(res.status).toBe(401);
+    expect(res.body.error).toBe('login_required');
+    expect(mailbox.archive).not.toHaveBeenCalled();
+  });
+  it('a session for another user -> 403 session_user_mismatch', async () => {
+    const { rt } = build();
+    const res = await request(appAs(rt, { sub: 'head', sid: 's1' })).post('/t/cards/card.x/answer?username=sample').send({ choice: 'archive' });
+    expect(res.status).toBe(403);
+    expect(res.body.error).toBe('session_user_mismatch');
+  });
+  it('GET /session and /log need a login; /summary does not', async () => {
+    const { rt } = build();
+    expect((await request(appAs(rt, null)).get('/t/session?username=sample')).status).toBe(401);
+    expect((await request(appAs(rt, null)).get('/t/log?username=sample')).status).toBe(401);
+    const sum = await request(appAs(rt, null)).get('/t/summary?username=sample');
+    expect(sum.status).toBe(200);
+    expect(sum.body).toMatchObject({ enrolled: true, mode: 'live', mailbox: 'ok', preDone: { archived: 2, closed: 0 }, open: { unsure: 1, reply: 0, todo: 0 } });
+  });
+  it('serves the session and applies an answer with a login', async () => {
+    const { rt, files, mailbox } = build();
+    const a = appAs(rt, { sub: 'sample', sid: 's1' });
+    const ses = await request(a).get('/t/session');
+    expect(ses.status).toBe(200);
+    expect(ses.body.cards.map(c => c.cardId)).toEqual(['card.x']);
+    const res = await request(a).post('/t/cards/card.x/answer').send({ choice: 'archive' });
+    expect(res.status).toBe(200);
+    expect(res.body.outcome).toBe('applied');
+    expect(mailbox.archive).toHaveBeenCalledWith('sample', 'm1');
+    expect(files.get('sample/apps/triage/queue').cards[0].status).toBe('answered');
+    const log = await request(a).get('/t/log?sinceDays=7');
+    expect(log.body.entries).toEqual([expect.objectContaining({ actor: 'owner', action: 'archive', undoable: true })]);
+  });
+  it('404s an unknown card, 409s an answered one, 400s a bad choice', async () => {
+    const { rt } = build();
+    const a = appAs(rt, { sub: 'sample', sid: 's1' });
+    expect((await request(a).post('/t/cards/nope/answer').send({ choice: 'archive' })).status).toBe(404);
+    expect((await request(a).post('/t/cards/card.x/answer').send({ choice: 'task' })).status).toBe(400);
+    await request(a).post('/t/cards/card.x/answer').send({ choice: 'keep' });
+    expect((await request(a).post('/t/cards/card.x/answer').send({ choice: 'keep' })).status).toBe(409);
+  });
+  it('skip leaves the card open; undo needs a login', async () => {
+    const { rt, files } = build();
+    const a = appAs(rt, { sub: 'sample', sid: 's1' });
+    expect((await request(a).post('/t/cards/card.x/skip')).status).toBe(200);
+    expect(files.get('sample/apps/triage/queue').cards[0].status).toBe('open');
+    expect((await request(appAs(rt, null)).post('/t/log/log.1/undo?username=sample')).status).toBe(401);
+  });
+});

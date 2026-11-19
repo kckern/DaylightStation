@@ -25,14 +25,16 @@ const seenKey = (itemId, version) => `${itemId}@${version}`;
 const isScope = (err) => err?.code === MAILBOX_SCOPE_MISSING;
 const replySubject = (s) => (/^re:/i.test(String(s ?? '').trim()) ? String(s).trim() : `Re: ${String(s ?? '').trim()}`);
 
-function display(item) {
+// `source` is a display name supplied by the adapter side (mailbox name, work container title).
+function display(item, source = null) {
   const f = item.facts ?? {};
   if (item.kind === 'email') {
     return { title: f.subject ?? '', from: { name: f.from?.name ?? '', address: f.from?.address ?? '' },
-      snippet: f.snippet ?? '', at: Number.isFinite(f.receivedAt) ? f.receivedAt : null, threadId: f.threadId ?? null };
+      snippet: f.snippet ?? '', at: Number.isFinite(f.receivedAt) ? f.receivedAt : null, threadId: f.threadId ?? null,
+      url: f.url ?? null, source: f.sourceName ?? null };
   }
   return { title: f.title ?? '', snippet: typeof f.description === 'string' ? f.description.slice(0, 280) : '',
-    due: f.due ?? null, at: Number.isFinite(f.modifiedAt) ? f.modifiedAt : (f.createdAt ?? null), url: f.url ?? null };
+    due: f.due ?? null, at: Number.isFinite(f.modifiedAt) ? f.modifiedAt : (f.createdAt ?? null), url: f.url ?? null, source };
 }
 
 export function createRunTriagePass({
@@ -69,7 +71,7 @@ export function createRunTriagePass({
       const rows = (view?.items ?? []).filter((r) => OPEN.has(r?.item?.status?.category));
       return {
         complete: view?.coverage?.complete === true,
-        rows: rows.map((r) => ({ item: itemFromWork(r.item), domainId: r.domainId, operations: new Set(r.operations ?? []) })),
+        rows: rows.map((r) => ({ item: itemFromWork(r.item), domainId: r.domainId, operations: new Set(r.operations ?? []), source: r.source ?? null })),
       };
     } catch (err) {
       logger?.warn?.('triage.pass.todos_unavailable', { username, error: err?.message, code: err?.code ?? null });
@@ -259,7 +261,8 @@ export function createRunTriagePass({
       appendLog: async ({ item, action, inverse, dryRun, uncertain }) => {
         const entry = {
           id: `log.${nextId()}`, at: asOf, actor: 'system', passId, itemId: item.id, kind: item.kind, ref: item.ref,
-          itemVersion: item.version, action, inverse, dryRun, undoneAt: null, ...(uncertain ? { uncertain: true } : {}),
+          itemVersion: item.version, action, inverse, dryRun, undoneAt: null, title: display(item).title,
+          ...(uncertain ? { uncertain: true } : {}),
         };
         try {
           await store.appendLog(username, entry);
@@ -305,13 +308,13 @@ export function createRunTriagePass({
     }
 
     const fresh = [];
-    const toCard = (item, proposal, extra = {}) => {
+    const toCard = (item, proposal, { source = null, ...extra } = {}) => {
       const card = {
         cardId: cardIdFor(item.id, item.version), passId, createdAt: asOf,
         itemId: item.id, kind: item.kind, ref: item.ref, itemVersion: item.version,
         step: proposal.step, urgent: proposal.urgent === true, choices: proposal.choices, suggested: proposal.suggested,
         confidence: proposal.confidence, why: proposal.why, preDo: null, status: 'open',
-        display: display(item), ...extra,
+        display: display(item, source), ...extra,
       };
       // A re-carded item keeps the draft it already has (never a second mailbox draft).
       const prev = previous.get(item.id);
@@ -349,13 +352,13 @@ export function createRunTriagePass({
           blocker: closeBlocker(item, todos, autoClose, closing) });
       }
       if (!card) continue;
-      fresh.push(toCard(item, card, { domainId: row.domainId }));
+      fresh.push(toCard(item, card, { domainId: row.domainId, source: row.source }));
     }
 
     let cards = [...kept, ...fresh];
     const strip = (list) => list.map(({ regenerate, ...c }) => c);
     // Checkpoint: the cards are durable before drafts and dry-run log entries are written.
-    await store.writeQueue(username, { passId, builtAt: asOf, cards: strip(cards) });
+    await store.writeQueue(username, { passId, builtAt: asOf, cards: strip(cards), mailbox: ctx.mailbox, preDone: ctx.preDone });
     for (const entry of pendingDryRun) await ctx.appendLog(entry);
 
     // Drafts for open reply cards that lack one (including ones a crash or failure left
@@ -368,7 +371,7 @@ export function createRunTriagePass({
         cards[i] = next;
         drafts[how] += 1;
         try {
-          await store.writeQueue(username, { passId, builtAt: asOf, cards: strip(cards) });
+          await store.writeQueue(username, { passId, builtAt: asOf, cards: strip(cards), mailbox: ctx.mailbox, preDone: ctx.preDone });
         } catch (err) {
           logger?.error?.('triage.pass.draft_not_recorded', { username, passId, itemId: next.itemId, draftId: next.draftId, error: err?.message });
         }
@@ -377,7 +380,7 @@ export function createRunTriagePass({
       cards[i] = await draftFor({ username, card: c, policy, ctx, passId, persist });
     }
     cards = strip(cards);
-    await store.writeQueue(username, { passId, builtAt: asOf, cards });
+    await store.writeQueue(username, { passId, builtAt: asOf, cards, mailbox: ctx.mailbox, preDone: ctx.preDone });
 
     const open = cards.filter((c) => c.status === 'open');
     const queued = {

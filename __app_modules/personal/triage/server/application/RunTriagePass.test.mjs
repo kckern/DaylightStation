@@ -60,7 +60,7 @@ function setup({ mode = 'live', messages = [], todos = [], answers = {}, caps, w
   const decisionGateway = { evaluate: evaluateFn };
   const work = workDisabled ? { context: null, principal: null, commands: null, decisions: null } : {
     context: { actionableItems: vi.fn(async () => ({
-      items: structuredClone(state.todos).map((item) => ({ item, domainId: 'home', operations: ALL_OPS })),
+      items: structuredClone(state.todos).map((item) => ({ item, domainId: 'home', operations: ALL_OPS, source: 'Home list' })),
       coverage: { complete: state.coverageComplete, reason: null },
     })) },
     principal: { system: vi.fn(({ username, job }) => ({ platform: 'system', kind: 'job', job, username, authored: false })) },
@@ -94,7 +94,7 @@ describe('RunTriagePass', () => {
     expect(r.mailbox).toBe('ok');
     const [e] = await s.log();
     expect(e).toMatchObject({ actor: 'system', action: 'archive', dryRun: false, undoneAt: null,
-      inverse: { action: 'unarchive', ref: { id: 'm1' } } });
+      inverse: { action: 'unarchive', ref: { id: 'm1' } }, title: 'Weekly newsletter m1' });
     expect(await s.queue()).toEqual([]);
   });
 
@@ -129,6 +129,8 @@ describe('RunTriagePass', () => {
     expect(s.mailbox.archive).toHaveBeenCalledTimes(1);
     expect(r.mailbox).toBe('reconnect_needed');
     expect(r.preDone.archived).toBe(0);
+    // The summary route reads the pass's mailbox status and pre-done counts from the queue.
+    expect(await s.store.readQueue('kc')).toMatchObject({ mailbox: 'reconnect_needed', preDone: { archived: 0, closed: 0 } });
     const cards = await s.queue();
     expect(cards.map((c) => c.itemId).sort()).toEqual(['m1', 'm2', 'm3'].map((id) => refId(msg(id).ref)).sort());
     expect(await s.log()).toEqual([]);
@@ -197,6 +199,10 @@ describe('RunTriagePass', () => {
       inverse: { action: 'reopen', ref: { id: 't1' }, payload: { domainId: 'home' }, expectedVersion: 'w2' } });
     // A Jev "drop" at high confidence is still only a card: only guardrail auto-close is pre-done.
     expect((await s.queue()).map((c) => c.itemId).sort()).toEqual([refId(task('t2').ref), refId(task('t3').ref)].sort());
+    // The card carries the work side's display name for its source, not a top-level field.
+    const [c] = await s.queue();
+    expect(c.display.source).toBe('Home list');
+    expect(c).not.toHaveProperty('source');
   });
 
   it('a denied, failed or throwing complete leaves the item as a card, never retried in the pass', async () => {

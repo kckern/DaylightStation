@@ -73,6 +73,12 @@ describe('GmailMailbox', () => {
     expect((await make(g).getMessage('u', 'm1')).ownerRepliedInThread).toBe(true);
   });
 
+  it('supplies a web link and a display name for the source', async () => {
+    const m = await make(fake({ messages: { m1: msg() } })).getMessage('u', 'm1');
+    expect(m.url).toBe('https://mail.google.com/mail/#all/m1');
+    expect(m.sourceName).toBe('Gmail');
+  });
+
   it('archive removes INBOX', async () => {
     const g = fake();
     const r = await make(g).archive('u', 'm1');

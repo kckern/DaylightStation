@@ -151,6 +151,8 @@ export class GmailMailbox {
       hasAttachments,
       automated,
       ownerRepliedInThread: ownerReplied,
+      url: `https://mail.google.com/mail/#all/${encodeURIComponent(msg.id)}`,
+      sourceName: 'Gmail',
     };
   }
 

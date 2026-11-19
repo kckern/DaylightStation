@@ -1,6 +1,7 @@
 // Per-user triage state: the card queue and a monthly action log. Persisted through
 // the injected dataService.user (no direct filesystem access).
 const QUEUE = 'apps/triage/queue';
+const STATE = 'apps/triage/state';
 const monthKey = (ms) => new Date(ms).toISOString().slice(0, 7);
 const LOOKBACK_MONTHS = 24;
 
@@ -58,6 +59,14 @@ export function createYamlTriageStore({ dataService, clock = () => Date.now(), l
     },
     async writeQueue(u, queue) {
       await write(QUEUE, queue, u);
+    },
+    /** Small per-user session state (e.g. recapSeenAt). Missing -> null. */
+    async readState(u) {
+      const s = await read(STATE, u);
+      return s && typeof s === 'object' && !Array.isArray(s) ? s : null;
+    },
+    async writeState(u, state) {
+      await write(STATE, state, u);
     },
     appendLog(u, entry) {
       return exclusive(u, async () => {

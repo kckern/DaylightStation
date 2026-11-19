@@ -304,7 +304,7 @@ export function createWorkRuntime(options = {}) {
         expectedRevision: input.expectedRevision ?? current.revision
       });
     },
-    /** Read-only: each in-scope item with its domain and the write operations a command could use on it now. */
+    /** Read-only: each in-scope item with its domain, a display `source` (container title) and the write operations a command could use on it now. */
     actionableItems: async ({
       username,
       asOf
@@ -336,9 +336,12 @@ export function createWorkRuntime(options = {}) {
           }))?.capabilities({
             username
           }) ?? {} : {};
+        const container = result.containers?.find(c => item.containerRef && c.ref?.id === item.containerRef.id && c.ref?.provider === item.containerRef.provider && c.ref?.accountId === item.containerRef.accountId);
         items.push({
           item,
           domainId,
+          // Display name for the item's source: its container's title, else the domain id.
+          source: container?.title ?? container?.name ?? domainId,
           operations: WORK_OPERATIONS.filter(op => op !== 'read' && caps[op] === true && !routeWork({
             policy: p,
             domainId,

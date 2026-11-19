@@ -3,9 +3,11 @@ import { resolveTriagePolicy } from './domain/triagePolicy.mjs';
 import { createYamlTriageStore } from './adapters/YamlTriageStore.mjs';
 import { createRunTriagePass } from './application/RunTriagePass.mjs';
 import { GmailMailbox } from './adapters/GmailMailbox.mjs';
+import { createTriageSession } from './application/TriageSession.mjs';
+import { createUndoAction } from './application/UndoAction.mjs';
 
 /**
- * Triage runtime. `session` is a placeholder a later task fills in.
+ * Triage runtime: the pass, the owner's session service and the router.
  * `configuration` is a function returning the household `triage` app config.
  * The schedule is registered with `registerSchedule(scheduler)` (or at start when
  * `agentsScheduler` is passed), since the host scheduler may be built after this runtime.
@@ -14,7 +16,8 @@ import { GmailMailbox } from './adapters/GmailMailbox.mjs';
 export function createTriageRuntime(deps = {}) {
   const {
     configuration, defaultUsername, isKnownUser, dataService = null, createMailClient = null, work = null,
-    decisionGateway = null, aiGateway = null, agentsScheduler = null, ownerName, clock = () => Date.now(), logger,
+    decisionGateway = null, aiGateway = null, agentsScheduler = null, ownerName, userTimezone = () => null,
+    clock = () => Date.now(), logger,
   } = deps;
   const mailbox = deps.mailbox ?? (typeof createMailClient === 'function'
     ? new GmailMailbox({ createClient: createMailClient, logger: logger?.child?.({ module: 'mailbox' }) ?? logger })
@@ -25,11 +28,17 @@ export function createTriageRuntime(deps = {}) {
     mailbox, work, store, decisionGateway, aiGateway, resolvePolicy,
     ownerName: typeof ownerName === 'function' ? ownerName : () => '', clock, logger,
   }) : null;
+  const ownerNameFn = typeof ownerName === 'function' ? ownerName : () => '';
+  const undoAction = store ? createUndoAction({ store, mailbox, work, clock, logger }) : null;
+  const session = store ? createTriageSession({
+    store, mailbox, work, aiGateway, resolvePolicy, undoAction, ownerName: ownerNameFn,
+    userTimezone: typeof userTimezone === 'function' ? userTimezone : () => null, clock, logger,
+  }) : null;
   const enrolledUsers = () => Object.keys(configuration?.()?.triage?.users ?? {})
     .filter((u) => { const p = resolvePolicy(u); return p.enrolled && p.mode !== 'off'; });
 
   const router = createTriageRouter({
-    resolvePolicy, defaultUsername, isKnownUser, logger,
+    resolvePolicy, defaultUsername, isKnownUser, logger, session,
     runPass: pass ? (input) => pass.run(input) : null,
   });
 
@@ -62,7 +71,7 @@ export function createTriageRuntime(deps = {}) {
   return {
     router,
     pass,
-    session: null,
+    session,
     registerSchedule,
     async start() {
       if (agentsScheduler) registerSchedule(agentsScheduler);
