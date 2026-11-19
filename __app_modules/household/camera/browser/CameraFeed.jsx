@@ -11,7 +11,10 @@ import useDetections from "./useDetections.js";
 export default function CameraFeed({ cameraId, onError, renderHeader }) {
   const [viewportOpen, setViewportOpen] = useState(false);
   const detections = useDetections(cameraId);
-  const openViewport = useCallback(() => setViewportOpen(true), []);
+  const openViewport = useCallback((event) => {
+    event?.currentTarget?.focus({ preventScroll: true });
+    setViewportOpen(true);
+  }, []);
 
   return (
     <>

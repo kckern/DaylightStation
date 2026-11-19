@@ -54,7 +54,6 @@ export default function FeedPlayer({ playerData, onError, aspectRatio = '16 / 9'
   const videoRef = useRef(null);
   const audioRef = useRef(null);
   const progressRef = useRef(null);
-  const wrapperRef = useRef(null);
   const [playing, setPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
@@ -92,14 +91,7 @@ export default function FeedPlayer({ playerData, onError, aspectRatio = '16 / 9'
     cycleSpeed,
     setVolume,
     toggleMute,
-    registerPlayerEl,
   } = useFeedPlayer();
-
-  // Register wrapper element for IntersectionObserver visibility tracking
-  useEffect(() => {
-    registerPlayerEl(wrapperRef.current);
-    return () => registerPlayerEl(null);
-  }, [registerPlayerEl]);
 
   // Apply volume to non-split video element
   useEffect(() => {
@@ -185,7 +177,6 @@ export default function FeedPlayer({ playerData, onError, aspectRatio = '16 / 9'
 
   return (
     <div
-      ref={wrapperRef}
       className="feed-player"
       style={{ position: 'relative', aspectRatio, background: '#000', overflow: 'hidden' }}
       onMouseMove={showControls}

@@ -3,27 +3,33 @@ import { silentWave } from '../../../_fixtures/media/silentWave.mjs';
 
 test.use({ serviceWorkers: 'block', viewport: { width: 390, height: 850 } });
 
-test('Feed inline playback holds its progress display while the same decoder keeps playing', async ({ page }) => {
-  const item = {
-    id: 'youtube:fixture', title: 'Inline playback fixture', source: 'youtube',
-    contentType: 'youtube', meta: { videoId: 'fixture' },
-  };
+const item = {
+  id: 'youtube:fixture', title: 'Inline playback fixture', source: 'youtube',
+  contentType: 'youtube', meta: { videoId: 'fixture' }, published: '2026-07-01T12:00:00Z',
+};
+const song = {
+  id: 'plex:42', contentId: 'plex:42', title: 'Persistent audio fixture', type: 'track',
+  source: 'plex', image: '/icon-192.png', meta: { playable: true, duration: 16 },
+};
+
+async function installPlaybackFixture(page, items = [item]) {
   const clip = silentWave(16);
-  await page.addInitScript(() => {
-    window.fixtureVisibility = 'visible';
-    Object.defineProperty(document, 'visibilityState', { get: () => window.fixtureVisibility });
-  });
   await page.routeWebSocket('**/ws', () => {});
   await page.route('**/api/**', route => {
     const path = new URL(route.request().url()).pathname;
     if (path.endsWith('/supervision/bootstrap')) return route.fulfill({ json: { enabled: false } });
-    if (path.endsWith('/scroll/sessions')) return route.fulfill({ json: { items: [item], sessionId: 'fixture', hasMore: false } });
+    if (path.endsWith('/scroll/sessions')) return route.fulfill({ json: { items, sessionId: 'fixture', hasMore: false } });
+    if (path.endsWith('/reader/feeds')) return route.fulfill({ json: [] });
+    if (path.endsWith('/reader/stream')) return route.fulfill({ json: { items: [item], exhausted: true } });
+    if (decodeURIComponent(path).endsWith('/play/plex:42')) return route.fulfill({ json: {
+      ...song, format: 'audio', mediaType: 'audio', duration: 16, mediaUrl: '/fixture-persistent.wav',
+    } });
     if (path.includes('/feed/detail/')) return route.fulfill({ json: {
       sections: [{ type: 'player', data: { provider: 'youtube', url: '/fixture-inline.wav', embedFallback: '/fixture-fallback' } }],
     } });
     return route.fulfill({ json: {} });
   });
-  await page.route('**/fixture-inline.wav', route => {
+  await page.route(/\/fixture-(inline|persistent)\.wav$/, route => {
     const range = /^bytes=(\d+)-(\d*)$/.exec(route.request().headers().range || '');
     if (!range) return route.fulfill({ contentType: 'audio/wav', body: clip });
     const first = Number(range[1]);
@@ -36,6 +42,14 @@ test('Feed inline playback holds its progress display while the same decoder kee
     });
   });
 
+}
+
+test('Feed inline playback holds its progress display while the same decoder keeps playing', async ({ page }) => {
+  await page.addInitScript(() => {
+    window.fixtureVisibility = 'visible';
+    Object.defineProperty(document, 'visibilityState', { get: () => window.fixtureVisibility });
+  });
+  await installPlaybackFixture(page);
   await page.goto('/feed/scroll');
   await page.getByRole('button', { name: `Open: ${item.title}` }).click();
   await page.getByRole('button', { name: 'Play video', exact: true }).click();
@@ -62,4 +76,60 @@ test('Feed inline playback holds its progress display while the same decoder kee
   });
   await expect.poll(width).toBeGreaterThan(frozen + 0.5);
   await expect.poll(clock).toBeGreaterThan(hiddenStart + 0.5);
+});
+
+async function startPersistentAudio(page) {
+  await installPlaybackFixture(page, [song, item]);
+  await page.goto('/feed/scroll');
+  await page.getByRole('button', { name: 'Play', exact: true }).first().click();
+  return page.waitForFunction(() => [...document.querySelectorAll('audio,video')].find(media =>
+    media.currentSrc.endsWith('/fixture-persistent.wav') && !media.paused && media.currentTime > 0));
+}
+
+test('Feed Scroll keeps the original audio controls when a different article plays inline', async ({ page }) => {
+  const original = await startPersistentAudio(page);
+  const mini = page.getByRole('button', { name: /Open player/ });
+  await expect(mini).toBeVisible();
+  await page.getByRole('button', { name: `Open: ${item.title}` }).click();
+  await page.getByRole('button', { name: 'Play video', exact: true }).click();
+  const inline = page.locator('.feed-player video');
+  await expect.poll(() => inline.evaluate(video => video.currentTime)).toBeGreaterThan(0.2);
+
+  await expect(mini).toBeVisible();
+  const position = () => original.evaluate(audio => audio.isConnected ? audio.currentTime : -1);
+  const before = await position();
+  await expect.poll(position).toBeGreaterThan(before);
+  await mini.click();
+  const sheet = page.getByRole('dialog', { name: song.title });
+  await sheet.getByRole('button', { name: 'Pause', exact: true }).click();
+  await expect.poll(() => original.evaluate(audio => audio.isConnected && audio.paused)).toBe(true);
+  const pausedAt = await position();
+  await sheet.getByRole('button', { name: 'Play', exact: true }).click();
+  await expect.poll(position).toBeGreaterThan(pausedAt);
+  await page.keyboard.press('Escape');
+  await expect(mini).toBeFocused();
+  await expect(inline).toBeVisible();
+});
+
+test('Feed Reader preempts persistent audio without publishing controls for its inline decoder', async ({ page }) => {
+  const token = 'header.' + Buffer.from(JSON.stringify({ sub: 'reader-fixture' })).toString('base64url') + '.signature';
+  await page.addInitScript(value => localStorage.setItem('ds_token', value), token);
+  const original = await startPersistentAudio(page);
+  const mini = page.getByRole('button', { name: /Open player/ });
+  await expect(mini).toBeVisible();
+  const readerRequest = page.waitForRequest(request =>
+    new URL(request.url()).pathname.endsWith('/reader/stream') && request.headers().authorization === `Bearer ${token}`);
+  await page.getByRole('link', { name: 'Reader', exact: true }).click();
+  await readerRequest;
+  const row = page.getByRole('button', { name: new RegExp(item.title) });
+  await row.click();
+  const inline = page.locator('.feed-player video');
+  await expect.poll(() => inline.evaluate(video => video.currentTime)).toBeGreaterThan(0.2);
+  await expect.poll(() => original.evaluate(audio => audio.isConnected)).toBe(false);
+  await expect(mini).toHaveCount(0);
+
+  await row.click();
+  await expect(inline).toHaveCount(0);
+  await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+  await expect(mini).toHaveCount(0);
 });

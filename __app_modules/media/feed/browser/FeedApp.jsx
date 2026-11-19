@@ -102,9 +102,9 @@ function FeedLayout() {
   const currentHeadlinePage = isHeadlines ? location.pathname.split('/').filter(Boolean)[2] : '';
   const { density, setDensity, readingPreferences, setReadingPreference, summary, retrySync, pendingMutations, workspaceReady, refreshSummary, refreshWorkspace, sourcePreferences, setSourcePreference } = useFeedWorkspace();
 
-  const { activeMedia, playerVisible, playerRef, stop, speed, volume } = useFeedPlayer();
+  const { activeMedia, playerRef, stop, speed, volume } = useFeedPlayer();
   const playback = usePlaybackObserver(playerRef, !!activeMedia);
-  const showMiniBar = !!activeMedia && !playerVisible;
+  const showMiniBar = Boolean(activeMedia);
   const [sheetOpen, setSheetOpen] = useState(false);
 
   const playerOpenerRef = useRef(null);
@@ -119,10 +119,10 @@ function FeedLayout() {
   const prevMiniBarRef = useRef(showMiniBar);
   useEffect(() => {
     if (showMiniBar !== prevMiniBarRef.current) {
-      log.info('feed-layout.miniBar', { visible: showMiniBar, hasMedia: !!activeMedia, playerVisible });
+      log.info('feed-layout.miniBar', { visible: showMiniBar, hasMedia: !!activeMedia });
       prevMiniBarRef.current = showMiniBar;
     }
-  }, [showMiniBar, activeMedia, playerVisible]);
+  }, [showMiniBar, activeMedia]);
 
   useHotkey('/', () => {
     if (isSearch) return false;

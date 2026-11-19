@@ -50,7 +50,9 @@ const patchListeners = new Set();
 export function invalidateApiResources(matches = () => true) {
   // Cached-but-unmounted entries (prefetched neighbours) become stale too:
   // they keep painting instantly, and the next prefetch pass refreshes them.
-  for (const path of fetchedAt.keys()) if (matches(path)) fetchedAt.delete(path);
+  for (const [path, entry] of swrCache) {
+    if (entry.fetchedAt != null && matches(path)) entry.fetchedAt = null;
+  }
   for (const path of inFlight.keys()) if (matches(path)) inFlight.delete(path);
   // A prefetch can outlive a later request that replaced it in inFlight.
   for (const path of prefetchInFlight.keys()) if (matches(path)) claimGeneration(path);
@@ -63,18 +65,18 @@ export function pollApiResources(matches = () => true) {
 }
 
 function cacheGet(path) {
-  if (!swrCache.has(path)) return { hit: false };
-  const value = swrCache.get(path);
+  const entry = swrCache.get(path);
+  if (!entry) return { hit: false };
   // Touch for recency: delete+set moves this key to the end of Map's
   // insertion-ordered iteration, which is what the LRU eviction below reads.
   swrCache.delete(path);
-  swrCache.set(path, value);
-  return { hit: true, value };
+  swrCache.set(path, entry);
+  return { hit: true, value: entry.value };
 }
 
-function cacheSet(path, value, { persist = true } = {}) {
+function cacheSet(path, value, { persist = true, fetchedAt = Date.now() } = {}) {
   swrCache.delete(path);
-  swrCache.set(path, value);
+  swrCache.set(path, { value, fetchedAt });
   if (persist) schedulePersist(path, value);
   if (swrCache.size > MAX_CACHE_ENTRIES) {
     const oldestKey = swrCache.keys().next().value;
@@ -145,7 +147,6 @@ export function registerResourcePersistence({ store, prefixes, owner, timeoutMs 
       if (!scope.matches(path)) continue;
       dropped = true;
       swrCache.delete(path);
-      fetchedAt.delete(path);
       pathGenerations.delete(path);
     }
     for (const path of inFlight.keys()) if (scope.matches(path)) inFlight.delete(path);
@@ -191,7 +192,7 @@ export function registerResourcePersistence({ store, prefixes, owner, timeoutMs 
       let restored = 0;
       for (const { path, value } of [...loaded.entries].reverse()) {
         if (!scope.matches(path) || swrCache.has(path)) continue;
-        cacheSet(path, value, { persist: false });
+        cacheSet(path, value, { persist: false, fetchedAt: null });
         restored++;
       }
       return restored;
@@ -295,7 +296,6 @@ function isNewestGeneration(path, generation) {
 // cache if no newer request for that path was issued meanwhile.
 const PREFETCH_CONCURRENCY = 2;
 const PREFETCH_FRESH_MS = 60_000;
-const fetchedAt = new Map();
 let prefetchBatch = null;
 const prefetchInFlight = new Map();
 // Cumulative since page load (or the last reset): what the prefetcher was
@@ -326,7 +326,7 @@ function pumpPrefetch() {
     sharedRequest(path)
       .then(result => {
         if (!isCurrent()) return;
-        if (isNewestGeneration(path, generation)) { cacheSet(path, result); fetchedAt.set(path, Date.now()); }
+        if (isNewestGeneration(path, generation)) cacheSet(path, result);
         prefetchStats.completed += 1;
         if (!signal?.aborted) onDone?.(null, path);
       })
@@ -356,18 +356,18 @@ export function isPrefetchIdle() {
 
 /** True when the swr cache holds a payload for `path` fetched recently. */
 export function isApiResourceFresh(path, maxAgeMs = PREFETCH_FRESH_MS) {
-  return swrCache.has(path) && Date.now() - (fetchedAt.get(path) || 0) < maxAgeMs;
+  const fetchedAt = swrCache.get(path)?.fetchedAt;
+  return fetchedAt != null && Date.now() - fetchedAt < maxAgeMs;
 }
 
 /** The cached payload for `path`, or undefined. Does not touch recency. */
 export function peekApiResource(path) {
-  return swrCache.get(path);
+  return swrCache.get(path)?.value;
 }
 
 /** Write a payload fetched outside the hook (same freshness bookkeeping). */
 export function primeApiResource(path, value) {
   cacheSet(path, value);
-  fetchedAt.set(path, Date.now());
 }
 
 /**
@@ -383,14 +383,13 @@ export function primeApiResource(path, value) {
  * `update(undefined)` can publish the first value using the same read guards.
  */
 export function patchApiResource(path, update, { create = false } = {}) {
-  const cached = swrCache.has(path);
+  const cached = swrCache.get(path);
   if (!cached && !create) return false;
-  const next = update(swrCache.get(path));
+  const next = update(cached?.value);
   if (next === undefined) return false;
   inFlight.delete(path);
   claimGeneration(path);
-  cacheSet(path, next);
-  if (!cached) fetchedAt.set(path, Date.now());
+  cacheSet(path, next, { fetchedAt: cached?.fetchedAt });
   for (const notify of patchListeners) notify(path, next);
   return true;
 }
@@ -428,7 +427,6 @@ export function resetApiResourceCache(path) {
   if (path === undefined) {
     swrCache.clear();
     pathGenerations.clear();
-    fetchedAt.clear();
     inFlight.clear();
     for (const scope of registrations) scope.pending.clear();
     discardPrefetchBatch();
@@ -438,7 +436,6 @@ export function resetApiResourceCache(path) {
   }
   swrCache.delete(path);
   pathGenerations.delete(path);
-  fetchedAt.delete(path);
   schedulePersist(path, undefined);
 }
 
@@ -603,7 +600,7 @@ export function useApiResource(path, {
         //     last win the cache, even if it was issued first (i.e. is
         //     actually the staler answer).
         if (!isCurrent()) return;
-        if (swr && isNewestGeneration(path, myGeneration)) { cacheSet(path, result); fetchedAt.set(path, Date.now()); }
+        if (swr && isNewestGeneration(path, myGeneration)) cacheSet(path, result);
         setData(result);
         setResultPath(path);
         setLoading(false);
@@ -637,7 +634,7 @@ export function useApiResource(path, {
   // flash a day flip used to show before the effect copied the cache over.
   const matches = resultPath === path;
   if (!matches && swr && enabled && path && swrCache.has(path)) {
-    return { data: swrCache.get(path), resourceKey: path, loading: false, error: null, revalidating: true, reload, refresh, poll };
+    return { data: peekApiResource(path), resourceKey: path, loading: false, error: null, revalidating: true, reload, refresh, poll };
   }
   return { data: matches ? data : null, resourceKey: path,
     loading: matches ? loading : Boolean(enabled && path),

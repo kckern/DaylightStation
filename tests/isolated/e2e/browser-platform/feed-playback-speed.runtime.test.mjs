@@ -55,12 +55,14 @@ test('Feed restores the saved speed and volume and retains a speed change on the
   });
   await page.goto('/feed/scroll');
   await playTrack(page, '41');
-  await expect.poll(() => playingSettings(page, '41')).toEqual({ speed: 1.5, volume: 0.65 });
+  // Native media backends may quantize the volume readback.
+  const volume = expect.closeTo(0.65, 4);
+  await expect.poll(() => playingSettings(page, '41')).toEqual({ speed: 1.5, volume });
   await page.getByRole('button', { name: 'Playback speed 1.5x' }).click();
   await expect(page.getByRole('button', { name: 'Playback speed 1.75x' })).toBeVisible();
-  await expect.poll(() => playingSettings(page, '41')).toEqual({ speed: 1.75, volume: 0.65 });
+  await expect.poll(() => playingSettings(page, '41')).toEqual({ speed: 1.75, volume });
   await playTrack(page, '42');
-  await expect.poll(() => playingSettings(page, '42')).toEqual({ speed: 1.75, volume: 0.65 });
+  await expect.poll(() => playingSettings(page, '42')).toEqual({ speed: 1.75, volume });
 
   const original = await page.locator('audio[src$="feed-speed-42.wav"]').elementHandle();
   await page.setViewportSize({ width: 1440, height: 850 });
@@ -70,7 +72,7 @@ test('Feed restores the saved speed and volume and retains a speed change on the
   await dialog.getByRole('button', { name: 'Mute', exact: true }).click();
   await expect.poll(() => original.evaluate(audio => audio.isConnected && audio.volume)).toBe(0);
   await dialog.getByRole('button', { name: 'Unmute', exact: true }).click();
-  await expect.poll(() => original.evaluate(audio => audio.isConnected && audio.volume)).toBe(0.65);
+  await expect.poll(() => original.evaluate(audio => audio.isConnected && audio.volume)).toBeCloseTo(0.65, 4);
 });
 
 test('Feed uses playable defaults for malformed speed and out-of-range volume', async ({ page }) => {

@@ -64,7 +64,7 @@ function CameraCard({ camId }) {
           aria-label={`Fullscreen ${camId}`}
           variant="subtle"
           size="sm"
-          onClick={() => openViewportRef.current()}
+          onClick={event => openViewportRef.current(event)}
         >
           <FullscreenIcon />
         </ActionIcon>

@@ -4,7 +4,7 @@ import { renderHook, waitFor, act } from '@testing-library/react';
 const apiMock = vi.fn();
 vi.mock('../api.mjs', () => ({ DaylightAPI: (...args) => apiMock(...args) }));
 
-import { useApiResource, resetApiResourceCache, peekApiResource, primeApiResource } from './useApiResource.js';
+import { useApiResource, resetApiResourceCache, peekApiResource, primeApiResource, invalidateApiResources } from './useApiResource.js';
 
 // The swr cache is module-level (shared across every hook instance in the
 // process), so tests MUST reset it between cases or an earlier test's cached
@@ -16,6 +16,16 @@ describe('useApiResource swr mode', () => {
   beforeEach(() => {
     apiMock.mockReset();
     resetApiResourceCache();
+  });
+
+  it('bounds invalidation to retained snapshots after cache eviction', () => {
+    for (let day = 0; day < 160; day++) primeApiResource(`/day/${day}`, { day });
+    expect(peekApiResource('/day/59')).toBeUndefined();
+    expect(peekApiResource('/day/60')).toEqual({ day: 60 });
+
+    const reachable = [];
+    invalidateApiResources(path => { reachable.push(path); return false; });
+    expect(reachable).toEqual(Array.from({ length: 100 }, (_, i) => `/day/${i + 60}`));
   });
 
   it('does not let a pending read overwrite a newer snapshot after cache eviction', async () => {

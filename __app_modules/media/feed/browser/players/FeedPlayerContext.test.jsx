@@ -24,3 +24,24 @@ it.each([
   act(() => result.current.resumePaused());
   expect(result.current.activeMedia).toMatchObject({ contentId: 'first', position: null });
 });
+
+it('parks the original persistent source and its position when Reader claims inline playback', () => {
+  const { result } = renderHook(useFeedPlayer, { wrapper: FeedPlayerProvider });
+  const original = { title: 'Persistent audio' };
+  act(() => result.current.play(original, 'audio'));
+  result.current.playerRef.current = {
+    getMountedContentId: () => 'audio',
+    getNowPlaying: () => ({ item: {} }),
+    getContentTime: () => 5,
+    getCurrentTime: () => 5,
+    getDuration: () => 30,
+  };
+
+  act(() => result.current.play({ title: 'Reader video' }));
+  expect(result.current.activeMedia).toBeNull();
+  expect(result.current.pausedMedia).toEqual({ item: original, contentId: 'audio', position: 5 });
+
+  act(() => result.current.resumePaused());
+  expect(result.current.activeMedia).toEqual({ item: original, contentId: 'audio', position: 5 });
+  expect(result.current.pausedMedia).toBeNull();
+});

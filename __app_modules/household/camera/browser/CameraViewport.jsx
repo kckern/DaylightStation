@@ -1,7 +1,10 @@
 // frontend/src/modules/CameraFeed/CameraViewport.jsx
 import { useRef, useState, useEffect, useMemo, useCallback } from 'react';
+import { useFocusTrap } from '@mantine/hooks';
 import usePanZoom from "./usePanZoom.js";
 import { UiIcon } from '../../../../frontend/src/lib/ui/UiIcon.jsx';
+import { useDismissLayer } from '../../../../frontend/src/lib/ui/dismiss/useDismissLayer.js';
+import { useOverlayFocusReturn } from '../../../../frontend/src/lib/ui/dismiss/useOverlayFocusReturn.js';
 import CameraControls from "./CameraControls.jsx";
 import { getChildLogger } from "../../../../frontend/src/lib/logging/singleton.js";
 import useSnapshotFetch from "./useSnapshotFetch.js";
@@ -20,6 +23,10 @@ import "./CameraViewport.scss";
  */
 export default function CameraViewport({ cameraId, mode, snapshotSrc: externalSnapshotSrc, detections = [], onClose }) {
   const logger = useMemo(() => getChildLogger({ component: 'CameraViewport', cameraId }), [cameraId]);
+  const trap = useFocusTrap();
+  const stackHandlesEscape = useDismissLayer(true, onClose);
+  useOverlayFocusReturn(true);
+  const cameraLabel = cameraId.replace(/-/g, ' ');
   const containerRef = useRef(null);
   const mediaRef = useRef(null);
   const [contentDims, setContentDims] = useState({ w: 7680, h: 2160 }); // default panoramic
@@ -91,14 +98,15 @@ export default function CameraViewport({ cameraId, mode, snapshotSrc: externalSn
     return () => clearTimeout(zoomTimer.current);
   }, [zoom]);
 
-  // Esc to close
+  // Standalone camera consumers keep native Escape dismissal without a stack.
   useEffect(() => {
+    if (stackHandlesEscape) return undefined;
     const handleKey = (e) => {
-      if (e.key === 'Escape') onClose();
+      if (e.key === 'Escape' && !e.defaultPrevented) onClose();
     };
     window.addEventListener('keydown', handleKey);
     return () => window.removeEventListener('keydown', handleKey);
-  }, [onClose]);
+  }, [onClose, stackHandlesEscape]);
 
   // Lock body scroll while viewport is open
   useEffect(() => {
@@ -177,12 +185,12 @@ export default function CameraViewport({ cameraId, mode, snapshotSrc: externalSn
   };
 
   return (
-    <div className="camera-viewport" onMouseMove={onMouseMove}>
+    <div ref={trap} className="camera-viewport" role="dialog" aria-modal="true" aria-label={`Camera: ${cameraLabel}`} onMouseMove={onMouseMove}>
       {/* Top bar */}
       <div className="camera-viewport__top-bar">
         <div className="camera-viewport__title">
           <span className="camera-viewport__status-dot" />
-          <span>{cameraId.replace(/-/g, ' ')}</span>
+          <span>{cameraLabel}</span>
           {mode === 'live' && <span className="camera-viewport__live-badge">LIVE</span>}
         </div>
         {activeDetections.length > 0 && (
@@ -197,7 +205,7 @@ export default function CameraViewport({ cameraId, mode, snapshotSrc: externalSn
       </div>
 
       {/* Close button */}
-      <button type="button" className="camera-viewport__close" aria-label="Close camera" onClick={onClose}><UiIcon name="close" /></button>
+      <button type="button" className="camera-viewport__close" aria-label="Close camera" onClick={onClose} data-autofocus><UiIcon name="close" /></button>
 
       {/* Zoom indicator */}
       <div className={`camera-viewport__zoom-indicator ${showZoom ? 'visible' : ''}`}>
@@ -239,6 +247,7 @@ export default function CameraViewport({ cameraId, mode, snapshotSrc: externalSn
               <video
                 ref={liveVideoRef}
                 className={`camera-viewport__live-video ${liveReady ? 'ready' : ''}`}
+                tabIndex={-1}
                 muted
                 autoPlay
                 playsInline

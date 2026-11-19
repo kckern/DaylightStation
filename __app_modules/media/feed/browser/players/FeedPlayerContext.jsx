@@ -1,5 +1,5 @@
 /* eslint-disable react-refresh/only-export-components -- provider and its required consumer hook form one context module */
-import { createContext, useContext, useReducer, useRef, useCallback, useEffect, useMemo } from 'react';
+import { createContext, useContext, useReducer, useRef, useCallback, useMemo } from 'react';
 import { browserPreference } from '@/lib/browserPreference.js';
 import getLogger from "../../../../../frontend/src/lib/logging/Logger.js";
 
@@ -41,7 +41,6 @@ function buildInitialState() {
     speed,                   // playback rate
     muted: false,
     preMuteVolume: volume,
-    playerVisible: false,
   };
 }
 
@@ -82,7 +81,8 @@ function feedPlayerReducer(state, action) {
         : state.pausedMedia;
       return {
         ...state,
-        activeMedia: { item, contentId },
+        // Reader inline playback parks the previous source without claiming the persistent renderer.
+        activeMedia: contentId ? { item, contentId } : null,
         pausedMedia,
       };
     }
@@ -132,13 +132,6 @@ function feedPlayerReducer(state, action) {
       return { ...state, speed: next };
     }
 
-    case 'SET_PLAYER_VISIBLE': {
-      const visible = !!action.payload;
-      if (visible === state.playerVisible) return state; // no-op guard
-      log().info('player.visibility', { visible });
-      return { ...state, playerVisible: visible };
-    }
-
     default:
       return state;
   }
@@ -157,8 +150,6 @@ const FeedPlayerContext = createContext(null);
 export function FeedPlayerProvider({ children }) {
   const [state, dispatch] = useReducer(feedPlayerReducer, undefined, buildInitialState);
   const playerRef = useRef(null);
-  const observerRef = useRef(null);
-  const observedElRef = useRef(null);
 
   // ---- actions ----
 
@@ -192,45 +183,6 @@ export function FeedPlayerProvider({ children }) {
     dispatch({ type: 'CYCLE_SPEED' });
   }, []);
 
-  const setPlayerVisible = useCallback((visible) => {
-    dispatch({ type: 'SET_PLAYER_VISIBLE', payload: visible });
-  }, []);
-
-  // ---- IntersectionObserver for inline player visibility ----
-
-  const registerPlayerEl = useCallback((domElement) => {
-    // Tear down previous observer if element changed
-    if (observerRef.current) {
-      observerRef.current.disconnect();
-      observerRef.current = null;
-    }
-    observedElRef.current = domElement;
-
-    if (!domElement) {
-      dispatch({ type: 'SET_PLAYER_VISIBLE', payload: false });
-      return;
-    }
-
-    const io = new IntersectionObserver(
-      ([entry]) => {
-        dispatch({ type: 'SET_PLAYER_VISIBLE', payload: entry.isIntersecting });
-      },
-      { threshold: 0.5 }
-    );
-    io.observe(domElement);
-    observerRef.current = io;
-  }, []);
-
-  // Cleanup observer on unmount
-  useEffect(() => {
-    return () => {
-      if (observerRef.current) {
-        observerRef.current.disconnect();
-        observerRef.current = null;
-      }
-    };
-  }, []);
-
   // Memoize context value to prevent unnecessary consumer re-renders.
   // Without this, every provider render creates a new object reference,
   // triggering all consumers (Scroll, FeedLayout, etc.) to re-render.
@@ -244,13 +196,11 @@ export function FeedPlayerProvider({ children }) {
     toggleMute,
     setSpeed,
     cycleSpeed,
-    setPlayerVisible,
-    registerPlayerEl,
     dispatch,
   }), [
     state,
     play, stop, resumePaused, setVolume, toggleMute,
-    setSpeed, cycleSpeed, setPlayerVisible, registerPlayerEl,
+    setSpeed, cycleSpeed,
   ]);
 
   return (

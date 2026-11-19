@@ -140,12 +140,23 @@ it('does not publish after the initiating plan changes while its save is pending
  await waitFor(()=>expect(screen.getByRole('button',{name:'Publish'})).not.toBeDisabled());fireEvent.click(screen.getByRole('button',{name:'Publish'}));fireEvent.click(screen.getByRole('link',{name:'Other week'}));await waitFor(()=>expect(screen.getByLabelText('Title').value).toBe('Other'));await act(async()=>finish({document:plan,etag:'"saved"'}));
  await waitFor(()=>expect(screen.getByLabelText('Title').value).toBe('Other'));expect(client.transition).not.toHaveBeenCalled();
 });
-it('rereads the directory when refreshing snapshots and retains the refreshed ETag',async()=>{
+it('keeps the refreshed directory revision when the retired initial read returns late',async()=>{
  const saved={...structuredClone(plan),participants:[{id:'v',person:{kind:'guest',id:'v'},display:{name:'Old',avatar:null}}]};
- const people=vi.fn().mockResolvedValueOnce({document:{people:[{person:{kind:'guest',id:'v'},display:{name:'Old',avatar:null},active:true}]},etag:'"0"'}).mockResolvedValueOnce({document:{people:[{person:{kind:'guest',id:'v'},display:{name:'New',avatar:null},active:true}]},etag:'"1"'});
+ const initialDirectory = Promise.withResolvers();
+ const people=vi.fn().mockReturnValueOnce(initialDirectory.promise).mockResolvedValueOnce({document:{people:[{person:{kind:'guest',id:'v'},display:{name:'New',avatar:null},active:true}]},etag:'"1"'});
  const client={plan:async()=>({document:saved,etag:'"one"'}),planningContext:async()=>({document:{thisWeek:'2026-11-16',nextWeek:'2026-11-23'}}),people,describe:async()=>({document:null}),createGuest:vi.fn(async({id,name})=>({document:{person:{kind:'guest',id},display:{name,avatar:null},active:true},etag:'"2"'}))};
  render(<MantineProvider><MemoryRouter future={{v7_startTransition:true,v7_relativeSplatPath:true}} initialEntries={['/admin/content/agendas/s/plans/p']}><Routes><Route path="/admin/content/agendas/:seriesId/plans/:planId" element={<AgendaPlanEditor client={client} editors={{}}/>}/></Routes></MemoryRouter></MantineProvider>);
- await screen.findByText('Old');fireEvent.click(screen.getByRole('button',{name:'Refresh display snapshots'}));await screen.findByText('New');expect(people).toHaveBeenCalledTimes(2);fireEvent.change(screen.getByLabelText('Named guest name'),{target:{value:'Visitor'}});fireEvent.click(screen.getByRole('button',{name:'Add named guest'}));await waitFor(()=>expect(client.createGuest).toHaveBeenCalledWith(expect.objectContaining({name:'Visitor'}),'"1"'));
+ await screen.findByText('Old');
+ fireEvent.click(screen.getByRole('button',{name:'Refresh display snapshots'}));
+ await screen.findByText('New');
+ expect(people).toHaveBeenCalledTimes(2);
+ await act(async () => {
+   initialDirectory.resolve({document:{people:[{person:{kind:'guest',id:'v'},display:{name:'Old',avatar:null},active:true}]},etag:'"0"'});
+ });
+ fireEvent.change(screen.getByLabelText('Named guest name'),{target:{value:'Visitor'}});
+ fireEvent.click(screen.getByRole('button',{name:'Add named guest'}));
+ await waitFor(()=>expect(client.createGuest).toHaveBeenCalledWith(expect.objectContaining({name:'Visitor'}),'"1"'));
+ expect(people.mock.calls[0][0]?.signal?.aborted).toBe(true);
 });
 it('keeps the buffer when a snapshot refresh fails or finishes after an edit',async()=>{
  let finish;const delayed=new Promise(resolve=>{finish=resolve;});const people=vi.fn().mockResolvedValueOnce({document:{people:[]},etag:'"0"'}).mockRejectedValueOnce(new Error('Directory down')).mockReturnValueOnce(delayed);

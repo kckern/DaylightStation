@@ -28,7 +28,7 @@ export function createAgendaClient(fetcher) {
     createPlan:(id,input)=>request(`${seriesPath(id)}/plans`,{method:'POST',body:input}),
     savePlan:(id,planId,plan,etag)=>request(planPath(id,planId),{method:'PUT',body:{plan},etag}),
     transition:(id,planId,action,etag)=>request(`${planPath(id,planId)}/${encode(action)}`,{method:'POST',body:{},etag}),
-    people:()=>request('/api/v1/admin/people?includeArchived=true'),
+    people:({ signal } = {})=>request('/api/v1/admin/people?includeArchived=true', { signal }),
     createGuest:(guest,etag)=>request('/api/v1/admin/people/guests',{method:'POST',body:guest,etag}),
     updateGuest:(id,guest,etag)=>request(`/api/v1/admin/people/guests/${encode(id)}`,{method:'PUT',body:guest,etag}),
     archiveGuest:(id,etag)=>request(`/api/v1/admin/people/guests/${encode(id)}/archive`,{method:'POST',body:{},etag}),

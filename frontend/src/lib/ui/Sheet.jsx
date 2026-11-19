@@ -1,12 +1,9 @@
 import { useEffect, useLayoutEffect, useRef } from 'react';
 import { ActionIcon, FocusTrap } from '@mantine/core';
 import { useDismissLayer } from './dismiss/useDismissLayer.js';
+import { useOverlayFocusReturn } from './dismiss/useOverlayFocusReturn.js';
 import { UiIcon } from './UiIcon.jsx';
 import './ds.scss';
-
-// A dialog can be replaced in the same commit (entry -> coach). Transfer its
-// return target before the detached button in the old dialog loses focus.
-let pendingFocusReturn = null;
 
 /**
  * The house overlay: bottom sheet on mobile; on desktop a centered dialog by
@@ -17,23 +14,7 @@ let pendingFocusReturn = null;
 export function Sheet({ open, onClose, title, children, placement = 'center' }) {
   const sheetRef = useRef(null);
   useDismissLayer(open, onClose);
-  // Also handle sheets mounted already open and removed on close. A hook
-  // listening only for opened -> false misses that common lifecycle.
-  useLayoutEffect(() => {
-    if (!open) return undefined;
-    const opener = pendingFocusReturn?.opener?.isConnected
-      ? pendingFocusReturn.opener : document.activeElement;
-    pendingFocusReturn = null;
-    return () => {
-      const request = { opener };
-      pendingFocusReturn = request;
-      queueMicrotask(() => {
-        if (pendingFocusReturn !== request) return;
-        pendingFocusReturn = null;
-        if (opener?.isConnected) opener.focus?.({ preventScroll: true });
-      });
-    };
-  }, [open]);
+  useOverlayFocusReturn(open);
 
   useLayoutEffect(() => {
     const viewport = window.visualViewport;
