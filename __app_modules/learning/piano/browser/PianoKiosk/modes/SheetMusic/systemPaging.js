@@ -1,8 +1,8 @@
-// systemPaging.js — the Learn score as pages of whole systems.
+// systemPaging.js — the score as pages of whole systems.
 //
-// The Learn score never scrolls: a window shorter than the piece would always
-// slice a staff at its edge. It shows as many whole systems as fit and turns to
-// the next ones. Everything here is plain geometry in the engraving's own
+// The score never scrolls, in any mode: a window shorter than the piece would
+// always slice a staff at its edge. It shows as many whole systems as fit and
+// turns to the next ones. Everything here is plain geometry in the engraving's own
 // coordinates, so it can be tested without a browser.
 
 /** One entry per engraved system, top to bottom, from the measure rectangles. */
@@ -70,16 +70,40 @@ export function systemCuts(systems = [], height = 0, ink = []) {
     cuts.push(best ? (best[0] + best[1]) / 2 : (from + to) / 2);
   }
   cuts.push(Math.max(cuts[cuts.length - 1], height > 0 ? Math.min(height, last) : last));
+  // What each system really takes between its cuts. A page is fitted to its ink,
+  // not to the white paper around it, so the window holds as many systems as it can.
+  if (merged.length) {
+    cuts.ink = systems.map((system, i) => {
+      let { top, bottom } = system;
+      for (const [a, b] of merged) {
+        if (b <= cuts[i] || a >= cuts[i + 1]) continue;
+        top = Math.min(top, Math.max(a, cuts[i]));
+        bottom = Math.max(bottom, Math.min(b, cuts[i + 1]));
+      }
+      return [top, bottom];
+    });
+  }
   return cuts;
 }
 
 const count = (cuts) => Math.max(0, cuts.length - 1);
 
+// Paper kept clear above and below the ink of a page.
+const MARGIN = 10;
+
+/** What systems `start`..`end - 1` need of the window: their ink and a margin, or cut to cut when no ink was measured. */
+function extent(cuts, start, end) {
+  const ink = cuts.ink;
+  if (!ink) return [cuts[start], cuts[end]];
+  return [Math.max(cuts[start], ink[start][0] - MARGIN), Math.min(cuts[end], ink[end - 1][1] + MARGIN)];
+}
+const height = (cuts, start, end) => { const [top, bottom] = extent(cuts, start, end); return bottom - top; };
+
 /** The first system after the window that starts at `start`. Always at least one system. */
 export function windowEnd(cuts, start, viewport) {
   const total = count(cuts);
   let end = Math.min(total, start + 1);
-  while (end < total && cuts[end + 1] - cuts[start] <= viewport) end++;
+  while (end < total && height(cuts, start, end + 1) <= viewport) end++;
   return end;
 }
 
@@ -87,7 +111,7 @@ export function windowEnd(cuts, start, viewport) {
 export function lastStart(cuts, viewport) {
   const total = count(cuts);
   let start = Math.max(0, total - 1);
-  while (start > 0 && cuts[total] - cuts[start - 1] <= viewport) start--;
+  while (start > 0 && height(cuts, start - 1, total) <= viewport) start--;
   return start;
 }
 
@@ -112,7 +136,8 @@ export function pageAt(cuts, start, viewport) {
   const top = cuts[from];
   const bottom = cuts[end];
   // Centred in the window; a system taller than the window starts at its top.
-  const shift = Math.round(Math.max(0, (viewport - (bottom - top)) / 2) - top);
+  const [inkTop, inkBottom] = extent(cuts, from, end);
+  const shift = Math.round(Math.max(0, (viewport - (inkBottom - inkTop)) / 2) - inkTop);
   const stops = pageStops(cuts, viewport);
   let index = 0;
   stops.forEach((stop, i) => { if (stop <= from) index = i; });
@@ -125,7 +150,7 @@ export function nextStart(cuts, start, viewport) {
 
 export function prevStart(cuts, start, viewport) {
   let from = Math.max(0, start - 1);
-  while (from > 0 && cuts[start] - cuts[from - 1] <= viewport) from--;
+  while (from > 0 && height(cuts, from - 1, start) <= viewport) from--;
   return from;
 }
 
@@ -142,4 +167,34 @@ export function startForSystems(cuts, viewport, current, first, last) {
   return Math.min(first, lastStart(cuts, viewport));
 }
 
-export default { engravedSystems, systemCuts, pageAt, pageStops, nextStart, prevStart, startForSystems, windowEnd, lastStart };
+/**
+ * The page that keeps the cursor's system on screen. A system that is off the
+ * page goes to its top. While the music runs (`ahead`), reaching the last system
+ * on the page with more to come turns as well: that system moves to the top, so
+ * the cursor never leaves the screen and the next systems can be read before
+ * they are needed, as a page-turner would do it.
+ */
+export function startForCursor(cuts, viewport, current, system, { ahead = false } = {}) {
+  const total = count(cuts);
+  if (!total || !(system >= 0) || system >= total) return current;
+  const final = lastStart(cuts, viewport);
+  const from = Math.min(Math.max(0, current), final);
+  const end = windowEnd(cuts, from, viewport);
+  if (system < from || system >= end) return Math.min(system, final);
+  if (ahead && system === end - 1 && system > from && end < total) {
+    // Only when the turn brings a new system into view; otherwise it would take
+    // the played system away and show nothing for it.
+    const to = Math.min(system, final);
+    if (windowEnd(cuts, to, viewport) > end) return to;
+  }
+  return from;
+}
+
+/** The tallest single system: what the window must hold to show one whole. */
+export function tallestSystem(cuts) {
+  let tallest = 0;
+  for (let i = 0; i < count(cuts); i++) tallest = Math.max(tallest, height(cuts, i, i + 1));
+  return tallest;
+}
+
+export default { engravedSystems, systemCuts, pageAt, pageStops, nextStart, prevStart, startForSystems, startForCursor, tallestSystem, windowEnd, lastStart };

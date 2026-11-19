@@ -6,7 +6,6 @@ const base = {
   mode: 'learn',
   running: false, onToggleRun: vi.fn(), onReset: vi.fn(),
   step: 0, total: 40,
-  flow: 'wrapped', onToggleFlow: vi.fn(),
   scale: 1, onScale: vi.fn(),
   parts: [{ staff: 0, label: 'RH' }, { staff: 1, label: 'LH' }],
   activeParts: { 0: true, 1: true }, onCyclePart: vi.fn(),

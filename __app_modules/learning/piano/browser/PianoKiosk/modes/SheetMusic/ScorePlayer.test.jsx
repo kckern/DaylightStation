@@ -205,7 +205,7 @@ vi.mock("../../../../../../../__capabilities/music-notation/browser/renderers/Mu
       // re-engrave — both force one), always with FRESH array references so tests
       // exercise the new-identity path. `transpose` is echoed in the payload
       // because the real renderer publishes it (it is what tells the consumer the
-      // engraved KEY is current, audit H2).
+      // engraved KEY is current, audit H2); `scale` likewise, for a size change.
       useEffect(() => {
         const publish = () => {
           const extra = h.layoutExtras || {};
@@ -213,7 +213,7 @@ vi.mock("../../../../../../../__capabilities/music-notation/browser/renderers/Mu
           const steps = extra.steps || deriveSteps(events);
           const notes = (extra.notes || deriveNotes(steps)).map((n) => ({ ...n }));
           onLayout?.({
-            width: 800, height: 400, tempoEntries: [], flow: 'wrapped', transpose,
+            width: 800, height: 400, tempoEntries: [], flow: 'wrapped', scale, transpose,
             staffBoxes: [
               { system: 0, staff: 0, top: 10, left: 40, right: 300, lineSpacing: 10 },
               { system: 0, staff: 1, top: 120, left: 40, right: 300, lineSpacing: 10 },
@@ -398,10 +398,11 @@ describe('ScorePlayer — guided Learn composition', () => {
   fireEvent.click(document.querySelector('.piano-learn-passage-hitbox'));
   expect(pips()).toBe('Page 1 of 2');
   expect(h.learnLabProps).toBeNull();
-  // Listen keeps its scrolling sheet.
+  // Listen is the same paged sheet with the same turner.
   pickMode('Listen');
-  expect(document.querySelector('.piano-score-player__scroll')).not.toHaveClass('piano-score-player__scroll--paged');
-  expect(screen.queryByRole('button', { name: 'Next page' })).not.toBeInTheDocument();
+  expect(document.querySelector('.piano-score-player__scroll')).toHaveClass('piano-score-player__scroll--paged');
+  expect(screen.getByRole('button', { name: 'Next page' })).toBeInTheDocument();
+  expect(document.querySelector('.piano-score-player__scroll').scrollTop).toBe(0);
  });
 });
 
@@ -415,6 +416,32 @@ const pickMode = (label) => {
   act(() => { h.crumbs[h.crumbs.length - 1]?.onClick?.(); });
   act(() => { screen.getByText(label).click(); });
 };
+
+// Three systems of one bar each, two notes to a bar, in a 650px window: systems
+// 1 and 2 fit together, as do 2 and 3, so the piece is two pages.
+const THREE_SYSTEMS = (() => {
+  const tops = [10, 310, 610];
+  const events = tops.flatMap((top, system) => [100, 160].map((x, i) => (
+    { midi: 60 + system * 2 + i, midis: [60 + system * 2 + i], onsetQuarter: system * 2 + i, x, top, bottom: top + 190, system })));
+  return {
+    height: 900,
+    events,
+    steps: events.map((e, i) => ({ onsetQuarter: e.onsetQuarter, measure: Math.floor(i / 2), notes: [{ midi: e.midi, staff: 0, x: e.x, top: e.top, bottom: e.bottom, width: 8 }] })),
+    measures: tops.map((_, index) => ({ index, number: index + 1, firstStep: index * 2, lastStep: index * 2 + 1 })),
+    measureBounds: tops.map((top) => ({ left: 80, right: 300, top, bottom: top + 200 })),
+    staffBoxes: tops.flatMap((top, system) => [
+      { system, staff: 0, top, left: 40, right: 300, lineSpacing: 10 }, { system, staff: 1, top: top + 110, left: 40, right: 300, lineSpacing: 10 }]),
+  };
+})();
+const windowHeight = (px) => {
+  Object.defineProperty(HTMLElement.prototype, 'clientHeight', { configurable: true, get() { return px; } });
+  return { mockRestore: () => { delete HTMLElement.prototype.clientHeight; } };
+};
+const pageLabel = () => screen.getByRole('list', { name: /^Page \d of \d$/ }).getAttribute('aria-label');
+const sheet = () => document.querySelector('.piano-score-player__scroll');
+// Where the cursor band is drawn: its step's x (less half its width) and its system's top.
+const cursorAt = () => document.querySelector('.piano-score-cursor').style.transform.replace('translate3d', '').replace(/px/g, '');
+const AT = ['(91, 10, 0)', '(151, 10, 0)', '(91, 310, 0)', '(151, 310, 0)', '(91, 610, 0)', '(151, 610, 0)'];
 
 // ── Armed endpoint picking (wave-3 F) ────────────────────────────────────────
 // The loop cluster is LoopGroup's four buttons, rendered ONLY in Learn: tap
@@ -1118,20 +1145,36 @@ describe('ScorePlayer — stale-layout overlay guard (Task 9)', () => {
 });
 
 describe('ScorePlayer — Perform mode pedal page-turn', () => {
-  it('turns one page per pedal press (rising edge), not per CC message', async () => {
-    const scrollBy = vi.fn();
-    Element.prototype.scrollBy = scrollBy;
+  it('turns one whole page per pedal press (rising edge), not per CC message, and never scrolls', async () => {
+    const height = windowHeight(650);
+    h.layoutExtras = THREE_SYSTEMS;
     renderPlayer();
     pickMode('Perform');
     await act(async () => {});
-    const cc66 = (v) => act(() => { h.rawCb?.({ data: [0xb0, 66, v] }); });
+    const cc = (n, v) => act(() => { h.rawCb?.({ data: [0xb0, n, v] }); });
+    // Perform shows the same pages and the same turner as every other mode.
+    expect(sheet()).toHaveClass('piano-score-player__scroll--paged');
+    expect(pageLabel()).toBe('Page 1 of 2');
 
-    cc66(127); // press
-    cc66(127); // continuous pedal streams repeats while held
-    cc66(96);  // still held
-    cc66(0);   // release
-    cc66(127); // second press
-    expect(scrollBy).toHaveBeenCalledTimes(2);
+    cc(67, 127); // advancePedalCC: press
+    expect(pageLabel()).toBe('Page 2 of 2');
+    cc(67, 127); // a continuous pedal streams repeats while held
+    cc(67, 96);  // still held
+    cc(67, 0);   // release
+    cc(66, 127); // backPedalCC
+    expect(pageLabel()).toBe('Page 1 of 2');
+    cc(66, 0);
+    cc(66, 127); // already on the first page: nothing to turn back to
+    expect(pageLabel()).toBe('Page 1 of 2');
+    expect(sheet().scrollTop).toBe(0);
+    // The turner's own buttons and a tap work here too: lower half forward.
+    fireEvent.click(screen.getByRole('button', { name: 'Next page' }));
+    expect(pageLabel()).toBe('Page 2 of 2');
+    act(() => { fireEvent.click(sheet(), { clientX: 200, clientY: -5 }); }); // above the middle: back
+    expect(pageLabel()).toBe('Page 1 of 2');
+    act(() => { fireEvent.click(sheet(), { clientX: 200, clientY: 5 }); }); // below it: forward
+    expect(pageLabel()).toBe('Page 2 of 2');
+    height.mockRestore();
   });
 
   // Wave-3 I: Perform drops the page readout entirely — the bar renders NOTHING
@@ -1153,7 +1196,8 @@ describe('ScorePlayer — Polish mode (transport-driven)', () => {
     vi.stubGlobal('cancelAnimationFrame', (id) => clearTimeout(id));
     vi.setSystemTime(0);
   });
-  afterEach(() => { cleanup(); vi.useRealTimers(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
+  const cleanups = [];
+  afterEach(() => { cleanup(); vi.useRealTimers(); vi.restoreAllMocks(); vi.unstubAllGlobals(); cleanups.splice(0).forEach((fn) => fn()); });
 
   // h.events onsets are 0,1,2,3 quarters; report a tempo map with a mid-piece
   // change so the timeline is: q0@60=1000ms/q, then q2@120=500ms/q.
@@ -1176,6 +1220,78 @@ describe('ScorePlayer — Polish mode (transport-driven)', () => {
     // '1 / 4' at 2550ms elapsed is itself the proof the mid-piece 120bpm change
     // applied: at the written 60bpm the 4th onset wouldn't be due until 3000ms.
     expect(screen.getByText('1 / 4')).toBeTruthy();
+  });
+
+  // The page turns for the cursor, and a turn is view state only: the cursor's
+  // timing, the count-in and the click scheduler are exactly what they are
+  // without one.
+  it('turns the page ahead of the cursor during a run without moving the run\'s timing', async () => {
+    cleanups.push(windowHeight(650).mockRestore);
+    h.layoutExtras = { ...THREE_SYSTEMS, tempoEntries: [{ onsetQuarter: 0, bpm: 60 }] };
+    renderPlayer();
+    pickMode('Polish');
+    await act(async () => {});
+    expect(sheet()).toHaveClass('piano-score-player__scroll--paged');
+    expect(pageLabel()).toBe('Page 1 of 2');
+    // Stopped, a tap on the last system showing seeks there and leaves the page be.
+    act(() => { fireEvent.click(sheet(), { clientX: 100, clientY: 400 }); });
+    expect(cursorAt()).toBe(AT[2]);
+    expect(pageLabel()).toBe('Page 1 of 2');
+    act(() => { fireEvent.click(screen.getByRole('button', { name: /restart/i })); });
+    expect(cursorAt()).toBe(AT[0]);
+
+    screen.getByRole('button', { name: 'Play' }).click();
+    await act(async () => {});
+    expect(document.querySelector('.piano-score-countin')).not.toBeNull();
+    act(() => vi.advanceTimersByTime(4100)); // the 4-beat count-in @60
+    expect(document.querySelector('.piano-score-countin')).toBeNull();
+    const clickStarts = h.clickSched.start.mock.calls.length;
+    act(() => vi.advanceTimersByTime(1050));
+    expect(cursorAt()).toBe(AT[1]);
+    expect(pageLabel()).toBe('Page 1 of 2'); // still on the first system
+    act(() => vi.advanceTimersByTime(1000));
+    // The cursor reached the last system showing: that system moves to the top,
+    // the next one comes into view, and the cursor is still on the page.
+    expect(cursorAt()).toBe(AT[2]);
+    expect(pageLabel()).toBe('Page 2 of 2');
+    expect(sheet()).toHaveClass('piano-score-player__scroll--turning');
+    // While it slides, the cut covers both pages; then it is the new page alone.
+    expect(sheet().style.getPropertyValue('--page-top')).toBe('0px');
+    act(() => vi.advanceTimersByTime(1000));
+    expect(cursorAt()).toBe(AT[3]); // on time, one second after the turn
+    expect(sheet()).not.toHaveClass('piano-score-player__scroll--turning');
+    expect(parseFloat(sheet().style.getPropertyValue('--page-top'))).toBeGreaterThan(220);
+    act(() => vi.advanceTimersByTime(1000));
+    expect(cursorAt()).toBe(AT[4]); // the last system was already showing
+    expect(pageLabel()).toBe('Page 2 of 2');
+    // The turn started no second click grid and no second count-in.
+    expect(h.clickSched.start.mock.calls.length).toBe(clickStarts);
+    expect(h.clickSched.stop).not.toHaveBeenCalled();
+    expect(document.querySelector('.piano-score-countin')).toBeNull();
+    expect(sheet().scrollTop).toBe(0);
+    // The run ends and the cursor goes home: the page goes back with it.
+    act(() => vi.advanceTimersByTime(1100));
+    expect(cursorAt()).toBe(AT[0]);
+    expect(pageLabel()).toBe('Page 1 of 2');
+  });
+
+  it('follows the cursor in Listen, and a page turned by hand holds until the cursor moves', async () => {
+    cleanups.push(windowHeight(650).mockRestore);
+    h.layoutExtras = { ...THREE_SYSTEMS, tempoEntries: [{ onsetQuarter: 0, bpm: 60 }] };
+    renderPlayer();
+    pickMode('Listen');
+    await act(async () => {});
+    fireEvent.click(screen.getByRole('button', { name: 'Next page' }));
+    expect(pageLabel()).toBe('Page 2 of 2');
+    // Play from the top: the page comes back to the cursor (no count-in in Listen).
+    screen.getByRole('button', { name: 'Play' }).click();
+    await act(async () => {});
+    act(() => vi.advanceTimersByTime(1050));
+    expect(cursorAt()).toBe(AT[1]);
+    expect(pageLabel()).toBe('Page 1 of 2');
+    act(() => vi.advanceTimersByTime(1000));
+    expect(cursorAt()).toBe(AT[2]);
+    expect(pageLabel()).toBe('Page 2 of 2');
   });
 
   it('Play starts a count-in before the transport moves, then advances (J1)', async () => {
@@ -2277,17 +2393,17 @@ describe('ScorePlayer — Polish tempo tiers (wave-3 H)', () => {
     await pressPlay();
     act(() => vi.advanceTimersByTime(COUNT_IN_MS)); // running, step 0, nothing graded
 
-    // Flow change → pauseForRebuild. The stub keeps reporting flow 'wrapped', so
-    // the layout stays stale and the resume waits (same lever as the H5/M3 tests).
+    // Size change → pauseForRebuild. The stub holds its publish, so the layout
+    // stays stale and the resume waits (same lever as the H5/M3 tests).
+    h.holdLayout = true;
     fireEvent.click(screen.getByRole('button', { name: /view options/i }));
-    await act(async () => { fireEvent.click(screen.getByRole('button', { name: /^across$/i })); });
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: '200%' })); });
     expect(screen.queryByRole('button', { name: 'Pause' })).toBeNull(); // paused for the re-engrave
     // Close the View sheet before touching Tempo: its zoom ladder carries its own
     // '125%' step, which would make the tempo pick ambiguous.
     act(() => { fireEvent.click(screen.getByRole('button', { name: /view options/i })); });
     pickTempo('125%'); // the gap the void check cannot see
-    act(() => { fireEvent.click(screen.getByRole('button', { name: /view options/i })); });
-    await act(async () => { fireEvent.click(screen.getByRole('button', { name: /down the page/i })); }); // layout lands → resume
+    await act(async () => { h.releaseLayout(); }); // layout lands → resume
 
     play(60);
     act(() => vi.advanceTimersByTime(700)); // 125% → 640ms steps
@@ -3071,14 +3187,15 @@ describe('ScorePlayer — rebuild-pause resume (H5/M3)', () => {
     act(() => vi.advanceTimersByTime(1100)); // one step in
     expect(screen.getByTestId('score-position')).toHaveTextContent('2 / 4');
 
-    // Flow change → pause. The stub keeps reporting flow 'wrapped', so the layout
-    // is stale (mid re-engrave) and the resume must WAIT.
+    // Size change → pause. The stub holds its publish, so the layout is stale
+    // (mid re-engrave) and the resume must WAIT.
+    h.holdLayout = true;
     fireEvent.click(screen.getByRole('button', { name: /view options/i }));
-    await act(async () => { fireEvent.click(screen.getByRole('button', { name: /^across$/i })); });
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: '125%' })); });
     expect(screen.queryByRole('button', { name: 'Pause' })).toBeNull(); // paused for the re-engrave
 
     // Layout catches up → the run picks up where it was, unaided.
-    await act(async () => { fireEvent.click(screen.getByRole('button', { name: /down the page/i })); });
+    await act(async () => { h.releaseLayout(); });
     expect(screen.getByRole('button', { name: 'Pause' })).toBeInTheDocument();
     expect(screen.getByTestId('score-position')).toHaveTextContent('2 / 4'); // not back at the top
   });
@@ -3130,15 +3247,16 @@ describe('ScorePlayer — rebuild-pause resume (H5/M3)', () => {
     act(() => vi.advanceTimersByTime(1100)); // one step in, so Restart is enabled
     expect(screen.getByRole('button', { name: 'Pause' })).toBeInTheDocument();
 
-    // Flow change → pause + a pending resume. The stub keeps reporting flow
-    // 'wrapped', so the layout stays stale and the resume is held pending.
+    // Size change → pause + a pending resume. The stub holds its publish, so the
+    // layout stays stale and the resume is held pending.
+    h.holdLayout = true;
     fireEvent.click(screen.getByRole('button', { name: /view options/i }));
-    await act(async () => { fireEvent.click(screen.getByRole('button', { name: /^across$/i })); });
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: '125%' })); });
     // The user takes explicit control while the re-engrave is still in flight.
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: /restart/i })); });
     h.sendNoteAt.mockClear();
-    // Layout catches up (flow back to what the stub reports) → layoutFresh again.
-    await act(async () => { fireEvent.click(screen.getByRole('button', { name: /down the page/i })); });
+    // Layout catches up → layoutFresh again.
+    await act(async () => { h.releaseLayout(); });
     act(() => vi.advanceTimersByTime(1000));
     expect(screen.getByRole('button', { name: 'Play' })).toBeInTheDocument(); // still stopped
     expect(h.sendNoteAt).not.toHaveBeenCalled();                              // and silent

@@ -1,6 +1,5 @@
 import TransportSheet from '../../transport/TransportSheet.jsx';
 import StepGrid from '../../transport/StepGrid.jsx';
-import TransportButton from '../../transport/TransportButton.jsx';
 import ToggleSwitch from '../../transport/ToggleSwitch.jsx';
 import { nearestStep } from '../../transport/tempoSteps.js';
 
@@ -17,14 +16,13 @@ import { nearestStep } from '../../transport/tempoSteps.js';
  * @param {object} p
  * @param {boolean} p.open
  * @param {() => void} p.onClose
- * @param {'wrapped'|'horizontal'} p.flow
- * @param {() => void} p.onToggleFlow  - binary toggle; the rows call it only on change
  * @param {number} p.scale
+ * @param {number} [p.maxScale] - the largest size at which a whole system still fits the window; larger steps are disabled in place
  * @param {(v:number) => void} p.onScale
  * @param {boolean} p.keyboardVisible
  * @param {() => void} p.onToggleKeyboard
  */
-const SIZE_STEPS = [
+export const SIZE_STEPS = [
   { label: '75%', value: 0.75 },
   { label: '100%', value: 1 },
   { label: '125%', value: 1.25 },
@@ -32,30 +30,14 @@ const SIZE_STEPS = [
   { label: '200%', value: 2 },
 ];
 
-export default function ViewSheet({ open, onClose, flow, onToggleFlow, scale, onScale, keyboardVisible, onToggleKeyboard }) {
+export default function ViewSheet({ open, onClose, scale, maxScale = Infinity, onScale, keyboardVisible, onToggleKeyboard }) {
   const sizeIdx = nearestStep(SIZE_STEPS, scale);
   return (
     <TransportSheet open={open} title="View" onClose={onClose}>
-      <div className="piano-score-view-row" role="group" aria-label="Layout">
-        <span className="piano-score-view-row__label">Layout</span>
-        <TransportButton
-          icon="layout-down"
-          label="Down the page"
-          on={flow === 'wrapped'}
-          onPress={() => { if (flow !== 'wrapped') onToggleFlow?.(); }}
-        />
-        <TransportButton
-          icon="layout-across"
-          label="Across"
-          on={flow === 'horizontal'}
-          onPress={() => { if (flow !== 'horizontal') onToggleFlow?.(); }}
-        />
-      </div>
-
       <div className="piano-score-view-row" role="group" aria-label="Size">
         <span className="piano-score-view-row__label">Size</span>
         <StepGrid
-          steps={SIZE_STEPS.map((s) => ({ label: s.label }))}
+          steps={SIZE_STEPS.map((s) => ({ label: s.label, disabled: s.value > maxScale }))}
           activeIndex={sizeIdx}
           onPick={(i) => onScale?.(SIZE_STEPS[i].value)}
           ariaLabel="Size"

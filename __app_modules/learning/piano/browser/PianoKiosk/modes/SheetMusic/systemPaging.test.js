@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { engravedSystems, systemCuts, pageAt, pageStops, nextStart, prevStart, startForSystems } from './systemPaging.js';
+import { engravedSystems, systemCuts, pageAt, pageStops, nextStart, prevStart, startForSystems, startForCursor, tallestSystem } from './systemPaging.js';
 
 // Nine systems, 250px apart, each 200px of staff: the shape of the Jesu score.
 const rects = Array.from({ length: 9 }, (_, system) => [0, 1, 2, 3].map(() => ({ left: 0, right: 10, top: 60 + system * 250, bottom: 260 + system * 250, system }))).flat();
@@ -63,6 +63,59 @@ describe('systemPaging', () => {
     expect(startForSystems(cuts, 622, 0, 1, 2)).toBe(1);
     // The last systems: the last full page.
     expect(startForSystems(cuts, 622, 0, 8, 8)).toBe(7);
+  });
+
+  it('keeps the cursor on the page, and turns ahead of it while the music runs', () => {
+    // On the page, not running: the page stays, even on its last system.
+    expect(startForCursor(cuts, 622, 0, 0)).toBe(0);
+    expect(startForCursor(cuts, 622, 0, 1)).toBe(0);
+    // Running: reaching the last system on the page moves it to the top, so the
+    // cursor stays on screen and the next system is readable before it is needed.
+    expect(startForCursor(cuts, 622, 0, 0, { ahead: true })).toBe(0);
+    expect(startForCursor(cuts, 622, 0, 1, { ahead: true })).toBe(1);
+    expect(pageAt(cuts, 1, 622)).toMatchObject({ start: 1, end: 3 });
+    // Three to a page: two systems are played before it turns.
+    expect(startForCursor(cuts, 800, 0, 1, { ahead: true })).toBe(0);
+    expect(startForCursor(cuts, 800, 0, 2, { ahead: true })).toBe(2);
+    // The end of the piece is already showing: nothing to turn to.
+    expect(startForCursor(cuts, 622, 7, 8, { ahead: true })).toBe(7);
+    // The last page is a full one, so the cursor's system is not always its first.
+    expect(startForCursor(cuts, 622, 6, 7, { ahead: true })).toBe(7);
+    // Off the page (a restart, a page turned by hand, a loop that wraps): go to it.
+    expect(startForCursor(cuts, 622, 4, 0)).toBe(0);
+    expect(startForCursor(cuts, 622, 0, 5)).toBe(5);
+    expect(startForCursor(cuts, 622, 0, 8)).toBe(7);
+    // One system to a page: it turns as the cursor crosses to the next system.
+    expect(startForCursor(cuts, 300, 2, 2, { ahead: true })).toBe(2);
+    expect(startForCursor(cuts, 300, 2, 3, { ahead: true })).toBe(3);
+    // A turn that would show nothing new waits: system 2 is too tall to join system 1.
+    const uneven = [0, 250, 500, 1000, 1250];
+    expect(startForCursor(uneven, 520, 0, 1, { ahead: true })).toBe(0);
+    expect(startForCursor(uneven, 520, 0, 2, { ahead: true })).toBe(2);
+    // No such system: stay.
+    expect(startForCursor(cuts, 622, 2, -1)).toBe(2);
+    expect(startForCursor([], 622, 0, 0)).toBe(0);
+  });
+
+  it('fits a page to its ink, not to the white paper between systems', () => {
+    // Each system's ink is 200px of the 285 between its cuts.
+    const ink = systems.map((system) => [system.top, system.bottom]);
+    const inked = systemCuts(systems, 2320, ink);
+    expect(inked.ink[1]).toEqual([310, 510]);
+    // Two systems are 450px of ink and a 10px margin each side: they fit a 479px
+    // window that cut to cut (535px) would give to one system alone.
+    expect(pageAt(cuts, 0, 479)).toMatchObject({ start: 0, end: 1 });
+    const page = pageAt(inked, 0, 479);
+    expect(page).toMatchObject({ start: 0, end: 2, top: inked[0], bottom: inked[2] });
+    // The ink, with its margin, is centred: 60 (the top of the paper) to 520.
+    expect(page.shift).toBe(Math.round((479 - 460) / 2) - 60);
+    expect(pageStops(inked, 479)).toEqual([0, 2, 4, 6, 7]);
+    expect(tallestSystem(inked)).toBe(220);
+  });
+
+  it('measures the tallest system, cut to cut', () => {
+    expect(tallestSystem(cuts)).toBe(285);
+    expect(tallestSystem([])).toBe(0);
   });
 
   it('is empty for a score with no systems', () => {

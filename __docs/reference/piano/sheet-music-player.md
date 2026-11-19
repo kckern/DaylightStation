@@ -42,8 +42,9 @@ remains presentation-only.
   modal sheets**, not popovers: tapping the button opens a centered modal
   sheet with its own scrim, a direct-pick ladder of steps, and a close
   affordance — one tap commits and dismisses, so there's no separate "confirm"
-  step. The **View** menu is the same sheet shell — layout, size, and
-  keyboard-visibility controls only, no metadata list; keyboard visibility is
+  step. The **View** menu is the same sheet shell — size and
+  keyboard-visibility controls only, no metadata list and no layout choice (see
+  "The page" below); keyboard visibility is
   a switch (`ToggleSwitch` — a real `role="switch"` track, not a checkbox);
   size is a discrete tap-commit stepper, so the score repaints once per step.
   **Volume** opens the same volume sheet every player in the kiosk uses —
@@ -77,7 +78,7 @@ the truth about what that job is:
 | **Listen** | Pure playback — a jukebox that performs the score | Restart/Play · metronome (session-local, off by default) · hand toggles · Key/Tempo/View/Volume. No looping. |
 | **Learn** | Open passage roadmap with a config-defined hand/timing ladder | Score roadmap plus passage ladder; a selected rung opens a dedicated `ExerciseRun` |
 | **Polish** | Real-time scored runs, always whole-piece | Play + count-in · metronome (on by default, persisted) · hand toggles · settings. No looping. |
-| **Perform** | The music stand | Zero chrome; the left pedal turns pages |
+| **Perform** | The music stand | No transport bar; the pedals, the page turner, a swipe or a tap turn pages |
 
 **Which mode a score opens in.** With Learn's roadmap on (`sheetmusic.learn.roadmap`,
 the default), a score opened from the library opens in **Learn**, so the passage rail
@@ -139,6 +140,59 @@ drop-shadow — a fixed color, independent of mode or the current-step ink, so
 "hit" always reads the same regardless of what's playing. It reads as ink
 rather than as the kiosk's accent green, which keeps the page looking engraved
 instead of lit up like a game.
+
+## The page: whole systems in every mode
+
+The score never scrolls, in Listen, Learn, Polish or Perform. A window shorter
+than the piece would always slice a staff at its edge, so the score is shown as
+**pages of whole systems** (`systemPaging.js`, `useSystemPaging.js`).
+
+- **What a page holds.** As many whole systems as fit the window, fitted to their
+  ink (with a 10px margin) and centred. Everything above and below the page is cut
+  away between systems, in the widest strip that carries no ink, so a page never
+  shows a sliver of its neighbour. The last page is always a full one, so it may
+  repeat a system of the page before it.
+- **The page turner** (`ScorePager`) stands in the paper's right margin in every
+  mode: a tall up button, a tall down button and one pip per page, with no words.
+  A swipe up or left turns forward, down or right turns back.
+- **The page follows the cursor** (Listen, Polish, and Learn's direct practice).
+  A cursor that is off the page is turned to, with its system at the top. While
+  the music runs the page also turns **ahead** of the cursor, like a page-turner
+  at a music stand: when the cursor reaches the last system showing and more
+  follow, that system slides to the top and the next ones come into view, so they
+  can be read before they are needed and the cursor never leaves the screen. A
+  turn that would bring nothing new into view waits. With one system to a page the
+  turn comes as the cursor crosses to the next system. Stopped, a tap on the last
+  system seeks there and the page stays.
+- **A page turned by hand** stays until the cursor next moves, so the piece can be
+  browsed while stopped; while it plays, the page returns to the cursor on its
+  next note.
+- **A turn is view state only.** It moves and clips the engraving and touches no
+  clock: the transport, the count-in, the metronome grid and its click lead, and
+  Polish's grading all run exactly as they do without one. The slide of a cursor
+  turn is a 260ms transform of the already-painted notation (no repaint per
+  frame; none at all under `prefers-reduced-motion`); for that moment the cut is
+  the union of both pages. Turns by button, swipe, pedal, tap or passage are
+  immediate.
+- **Size.** The View sheet's size steps re-engrave and re-page. A size at which a
+  single system is taller than the window cannot show a whole system, so the
+  largest size is the largest at which one still fits, read off the engraving on
+  screen: larger steps are disabled in place, and a size that stops fitting
+  (the keyboard switched on) steps down to it (`score.size.fit`, with `from`
+  and `to`).
+- **Many pages.** Past twelve pages the pips give way to one track with a marker.
+- **No "Across" layout.** The one-line layout could only be read by scrolling and
+  cut bars at both edges of the screen, so the layout choice is retired and the
+  score is always engraved down the page. It was a per-visit toggle and was never
+  saved, so no stored choice is lost.
+- **Before the systems are known** (the moment between the first paint and the
+  geometry walk) the sheet is not yet paged.
+
+Logs: `score.page.turn` (`mode`, `from`, `to` as system indexes,
+`by: button|swipe|passage|cursor|pedal|tap`).
+
+Scanned page-image scores (`ScoreViewer`) are a different viewer and still
+scroll their page images.
 
 ## Listen
 
@@ -363,17 +417,10 @@ with `id`, `start`, `end`, `silver` and `gold`. Certification values are timesta
 Learn is a game played over the whole piece: turn every passage Silver, then go
 round again for Gold. The score stays the main thing on screen.
 
-**The score is pages of whole systems.** In Learn it never scrolls, so a staff is
-never sliced at the rail. A page holds as many whole systems as fit the window,
-centred in it; everything above and below the page is cut away between systems, in
-the widest strip that carries no ink (`systemPaging.js`, `useSystemPaging.js`). The
-**page turner** (`ScorePager`) stands in the paper's right margin: a tall up button, a
-tall down button and one pip per page, with no words. A swipe up or left turns
-forward, down or right turns back. The last page is always a full one, so it may
-repeat a system of the page before it. The score opens on the page that holds the
-passage the rail's button names, and turns to the next one when that changes after a
-drill. Learn always engraves wrapped. Listen, Polish and Perform keep their scrolling
-sheet and its cursor-following.
+**The score is pages of whole systems** (see [The page](#the-page-whole-systems-in-every-mode)),
+so a staff is never sliced at the rail. The score opens on the page that holds the
+passage the rail's button names, and turns to the next one when that changes after
+a drill or when Learn is entered from another mode.
 
 **The rail** is one 64px row under the score:
 
@@ -437,8 +484,8 @@ finished piece turns its tiles as a wave (`wave`).
 Logs (`piano-score-player`, `piano-passage-board`):
 `piano.learn.rail.select` (`passageId`, `source: rail|board`),
 `piano.learn.rail.practice` (`passageId`, `target: selected|next|gold|again`),
-`piano.learn.board.open`, `piano.learn.board.close`, `piano.learn.gem-offer`,
-`piano.learn.page.turn` (`from`, `to` as system indexes, `by: button|swipe|passage`).
+`piano.learn.board.open`, `piano.learn.board.close`, `piano.learn.gem-offer`.
+A page turn logs `score.page.turn` (see [The page](#the-page-whole-systems-in-every-mode)).
 
 ### Piece log and the piece gems
 
@@ -728,10 +775,9 @@ score (≥48px touch targets, replacing the older bracket-only markers as the
 range's visual boundary — the range tint band stays). A press that barely
 moves is a tap (arms the edge, same as the bar button); a press that moves is
 a drag, tracked sub-measure under the finger and committed to the nearest
-whole measure on release. Dragging near the top or bottom edge of the score's
-scroll container auto-scrolls, so a range can be dragged across a page without
-lifting the finger; the drag never hijacks the page scroll itself (pointer
-capture is scoped to the handle alone). Section starts render as snap markers
+whole measure on release. A drag stays on the page it started on (the score does
+not scroll); a range that runs past the page is set by turning the page and
+tapping the other end. Section starts render as snap markers
 while an endpoint is being armed or dragged, and rehearsal sections in the
 Loop sheet still offer a one-tap "loop this section" shortcut.
 
@@ -829,7 +875,7 @@ mixed-tempo run can't quietly overwrite a real personal best.
 **"Whole piece" means started at the top and played through**, at one tempo on
 one pair of hands. A run that begins from a tap-seek into the middle, or whose
 tempo or hands changed anywhere along the way — including while it was paused
-or waiting on a zoom/flow/key re-engrave — reaches the end of the piece but
+or waiting on a zoom/key re-engrave — reaches the end of the piece but
 banks nothing; the summary still shows its score. Pausing itself is fine:
 picking the same run back up at the same tempo on the same hands is still one
 whole-piece run. Because a best only ever improves, an inflated one would be
@@ -838,12 +884,13 @@ its reason in the log.
 
 ## Perform
 
-Zero chrome, by design — nothing on screen but the engraved page. The left
-pedal turns pages forward, the other back (config-driven CC numbers, rising-
-edge detected so a held pedal doesn't repeat-page); a tap can also scroll the
-page into view. There is no page indicator and no other control surface —
-mode-switching still works through the header's mode crumb, the one thing
-that's never hidden.
+Nothing on screen but the page and its turner: no transport bar, no cursor, no
+keyboard. The pedals turn one whole page: `advancePedalCC` forward and
+`backPedalCC` back (config-driven CC numbers, rising-edge detected so a held or
+continuous pedal turns once). The page turner's buttons and a swipe work as in
+every mode, and a tap on the lower half of the page turns forward, on the upper
+half back. Mode-switching still works through the header's mode crumb. Logs:
+`score.perform.pageturn` (`dir: fwd|back`, `by: pedal|tap`).
 
 ## Key transpose (Listen · Learn · Polish)
 
@@ -1140,7 +1187,8 @@ during an active run so the judge and falling highway cannot jump timelines.
 | `RangeHandleLayer.jsx` | draggable in/out range handles on the score (tap-to-arm or drag) |
 | `../../transport/LoopGroup.jsx` | shared mark-in/mark-out/toggle/clear loop cluster (also used by the video chrome) |
 | `../../transport/ToggleSwitch.jsx` | shared switch primitive (View sheet's keyboard row) |
-| `ViewSheet.jsx` | layout/size/keyboard-visibility sheet (controls only, no metadata) |
+| `ViewSheet.jsx` | size/keyboard-visibility sheet (controls only, no metadata) |
+| `systemPaging.js` / `useSystemPaging.js` / `ScorePager.jsx` | the score as pages of whole systems: the cuts, the page that follows the cursor, and the turner |
 | `../../transport/` | shared transport primitives: the button, sheet shell, direct-pick step ladder, and the Key/Tempo/Volume sheets themselves |
 | `../../icons/Icon.jsx` | shared inline-SVG icon set for all chrome buttons |
 | `nearestEvent.js` | tap→note mapping used for cursor seek |

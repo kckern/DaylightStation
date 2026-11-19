@@ -6,7 +6,7 @@ import './Transport.scss';
  * generalized). Replaces the per-surface `nearestStep` hand-rolls; hosts map
  * values→index and compose rows for larger grids (KeySheet).
  *
- * @param {Array<{label: string, sub?: import('react').ReactNode}>} steps
+ * @param {Array<{label: string, sub?: import('react').ReactNode, disabled?: boolean}>} steps - a step may be disabled in place
  * @param {number} activeIndex
  * @param {(i: number) => void} onPick
  * @param {string} ariaLabel
@@ -27,7 +27,7 @@ export default function StepGrid({ steps, activeIndex, onPick, ariaLabel, disabl
           type="button"
           className={`piano-stepgrid__step${i === activeIndex ? ' is-on' : ''}${meter && activeIndex >= 0 && i <= activeIndex ? ' is-lit' : ''}`}
           aria-pressed={i === activeIndex}
-          disabled={disabled}
+          disabled={disabled || Boolean(s.disabled)}
           onClick={() => onPick(i)}
         >
           {meter && <span className="piano-stepgrid__bar" aria-hidden style={{ '--level': i / last }} />}

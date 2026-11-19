@@ -255,7 +255,7 @@ describe('ScorePlayer — stall budget follows the EFFECTIVE tempo', () => {
 });
 
 // ── Task 5: the controls users press must leave a trace ───────────────────────
-// Restart, tap-to-seek and Perform's tap-scroll emitted NOTHING, so a three-day
+// Restart, tap-to-seek and Perform's tap emitted NOTHING, so a three-day
 // field log could not say whether a mode was used or abandoned; and a loop change
 // emitted a bare score.focus.set that could not be attributed (audit T1). The
 // origins are wave-3 F's now: 'auto' | 'handle-tap' | 'drag' | 'drill' | 'restore'.
@@ -297,11 +297,11 @@ describe('ScorePlayer — control telemetry (Task 5)', () => {
     expect(emitted('score.seek.tap')).toEqual([{ from: 0, to: 1, mode: 'learn' }]);
   });
 
-  it('emits score.perform.tapscroll instead of a seek in Perform', () => {
+  it('emits score.perform.pageturn instead of a seek for a tap in Perform', () => {
     renderPlayer();
     pickMode('Perform');
     tapScore(160);
-    expect(emitted('score.perform.tapscroll')).toEqual([{ axis: 'y' }]);
+    expect(emitted('score.perform.pageturn')).toEqual([{ dir: 'fwd', by: 'tap' }]);
     expect(emitted('score.seek.tap')).toEqual([]);
   });
 

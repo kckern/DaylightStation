@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { cancelScrollTween } from './scrollTween.js';
-import { engravedSystems, systemCuts, pageAt, nextStart, prevStart, startForSystems } from './systemPaging.js';
+import { engravedSystems, systemCuts, pageAt, nextStart, prevStart, startForSystems, startForCursor, tallestSystem, windowEnd } from './systemPaging.js';
 
+const NO_INK = [];
 // A drag this long, mostly along one axis, turns the page.
 const SWIPE_PX = 48;
+// How long a turn made for the cursor takes to slide (matches the stylesheet).
+export const GLIDE_MS = 260;
 
 /** Vertical strips of the engraving that carry ink, in the renderer's coordinates. */
 function measureInk(container) {
@@ -21,9 +23,15 @@ function measureInk(container) {
 }
 
 /**
- * The Learn score as pages of whole systems (see systemPaging.js). The scroll
- * container stops scrolling; the engraving is moved and cut so that only the
+ * The score as pages of whole systems (see systemPaging.js), in every mode. The
+ * container never scrolls; the engraving is moved and cut so that only the
  * systems of the current page show.
+ *
+ * A turn is view state only: it moves and clips the engraving and touches no
+ * transport, click or grading clock. A turn made for the cursor slides (the
+ * system being read moves to the top, so the eye can follow it); for that
+ * moment the cut is the union of both pages, and the slide is a transform, which
+ * costs no repaint of the notation. Every other turn is immediate.
  *
  * @param {boolean} p.enabled
  * @param {{current: HTMLElement|null}} p.scrollRef - the score's container
@@ -35,14 +43,19 @@ function measureInk(container) {
 export default function useSystemPaging({ enabled, scrollRef, layout, measureRects, overlayInk, onTurn }) {
   const [start, setStart] = useState(0);
   const [viewport, setViewport] = useState(0);
-  const [ink, setInk] = useState([]);
+  // The ink strips, with the engraving they were measured on.
+  const [inked, setInked] = useState({ layout: null, ink: [] });
+  const inkCurrent = inked.layout === layout;
+  const ink = inkCurrent ? inked.ink : NO_INK;
+  // While a cursor turn slides: the strip that both pages cover.
+  const [glide, setGlide] = useState(null);
+  const glideTimer = useRef(null);
   const systems = useMemo(() => (enabled ? engravedSystems(measureRects) : []), [enabled, measureRects]);
 
   useLayoutEffect(() => {
     const el = scrollRef.current;
     if (!enabled || !el) return undefined;
     // A page is placed by moving the engraving, never by scrolling the container.
-    cancelScrollTween(el);
     el.scrollTop = 0; el.scrollLeft = 0;
     const read = () => setViewport(el.clientHeight);
     read();
@@ -56,7 +69,7 @@ export default function useSystemPaging({ enabled, scrollRef, layout, measureRec
 
   useLayoutEffect(() => {
     if (!enabled) return;
-    setInk(measureInk(scrollRef.current));
+    setInked({ layout, ink: measureInk(scrollRef.current) });
   }, [enabled, scrollRef, layout]);
 
   const cuts = useMemo(() => systemCuts(systems, layout?.height ?? 0, overlayInk ? [...ink, ...overlayInk] : ink), [systems, layout?.height, ink, overlayInk]);
@@ -68,9 +81,19 @@ export default function useSystemPaging({ enabled, scrollRef, layout, measureRec
     if (c.length < 2) return;
     const to = pick(c, from, v);
     if (to === from) return;
+    clearTimeout(glideTimer.current);
+    // Slide only a turn that follows the cursor onto the next systems. A jump
+    // (a restart, a wrap, a page turned back) would drag the whole piece past.
+    const follows = by === 'cursor' && to > from && to <= windowEnd(c, from, v);
+    if (follows) {
+      const a = pageAt(c, from, v); const b = pageAt(c, to, v);
+      setGlide({ top: Math.min(a.top, b.top), bottom: Math.max(a.bottom, b.bottom) });
+      glideTimer.current = setTimeout(() => setGlide(null), GLIDE_MS + 40);
+    } else setGlide(null);
     setStart(to);
     notify?.({ from, to, by });
   }, []);
+  useEffect(() => () => clearTimeout(glideTimer.current), []);
   const next = useCallback((by = 'button') => turnTo(nextStart, by), [turnTo]);
   const prev = useCallback((by = 'button') => turnTo(prevStart, by), [turnTo]);
   /** Turn to the page that holds measures `inMeasure`..`outMeasure`. */
@@ -82,9 +105,22 @@ export default function useSystemPaging({ enabled, scrollRef, layout, measureRec
     turnTo((c, from, v) => startForSystems(c, v, from, first, last), 'passage');
   }, [systems, turnTo]);
 
+  /**
+   * Keep the cursor's measure on the page. With `ahead` (the music is running)
+   * the page turns as the cursor reaches its last system: see `startForCursor`.
+   */
+  const followMeasure = useCallback((measure, { ahead = false } = {}) => {
+    const system = systems.findIndex((item) => item.firstMeasure <= measure && item.lastMeasure >= measure);
+    if (system < 0) return;
+    turnTo((c, from, v) => startForCursor(c, v, from, system, { ahead }), 'cursor');
+  }, [systems, turnTo]);
+  // The tallest system of this engraving, once its ink and the window are both
+  // measured: what the window must hold to show one system whole.
+  const tallest = inkCurrent && viewport > 0 && cuts.length > 1 ? tallestSystem(cuts) : null;
+
   // A swipe turns the page, and the tap it would otherwise end as is dropped.
   const press = useRef(null);
-  const swipedAt = useRef(0);
+  const swipedAt = useRef(-Infinity);
   const onPointerDown = useCallback((event) => { press.current = { x: event.clientX, y: event.clientY }; }, []);
   const onPointerUp = useCallback((event) => {
     const from = press.current; press.current = null;
@@ -99,17 +135,19 @@ export default function useSystemPaging({ enabled, scrollRef, layout, measureRec
   const onPointerCancel = useCallback(() => { press.current = null; }, []);
   const onClickCapture = useCallback((event) => {
     if (performance.now() - swipedAt.current > 400) return;
-    swipedAt.current = 0;
+    swipedAt.current = -Infinity;
     event.stopPropagation(); event.preventDefault();
   }, []);
 
   useEffect(() => { if (!enabled) setStart(0); }, [enabled]);
 
-  if (!enabled || !page) return { page: null, style: undefined, handlers: null, next, prev, showMeasures };
+  if (!enabled || !page) return { page: null, style: undefined, handlers: null, turning: false, tallest, viewport, next, prev, showMeasures, followMeasure };
+  const cut = glide || page;
   return {
     page,
-    style: { '--page-shift': `${page.shift}px`, '--page-top': `${page.top}px`, '--page-bottom': `${page.bottom}px` },
+    style: { '--page-shift': `${page.shift}px`, '--page-top': `${cut.top}px`, '--page-bottom': `${cut.bottom}px` },
     handlers: { onPointerDown, onPointerUp, onPointerCancel, onClickCapture },
-    next, prev, showMeasures,
+    turning: Boolean(glide), tallest, viewport,
+    next, prev, showMeasures, followMeasure,
   };
 }
