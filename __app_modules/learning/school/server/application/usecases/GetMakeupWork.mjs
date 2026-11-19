@@ -15,6 +15,28 @@ import { DEFAULT_MAKEUP_POLICY, makeupDeadline } from "../../domain/makeup.mjs";
 
 const EMPTY = Object.freeze({ deadline: null, items: Object.freeze([]) });
 
+/**
+ * Whether doing the missed section's work TODAY can earn its credit. A missed
+ * lesson always can (a `continueToday` code opens the next one, and the extra
+ * pass is spare). A missed PROGRAM cannot on a day that owes that same program:
+ * a program reports done once a day, so today's sitting is today's own. Such a
+ * section is left off the sheet until a day that does not owe it (Saturday),
+ * rather than sending a child to do work that credits nothing. Without a
+ * ledger to read, the section is listed (the old, permissive answer).
+ */
+function possibleToday(section, todayRow) {
+  const ledger = section?.ledger;
+  if (!ledger || typeof ledger !== 'object') return true;
+  const done = new Set(ledger.programsDone ?? []);
+  const lackingLesson = ledger.needsLesson === true && (ledger.lessons ?? 0) < 1;
+  const lackingPrograms = (ledger.needsPrograms ?? []).filter((key) => !done.has(key));
+  if (lackingLesson || !lackingPrograms.length) return true;
+  const today = (todayRow?.sections ?? []).find((s) => s?.subject === section.subject)?.ledger;
+  if (!today || today.asked !== true) return true;
+  const owedToday = new Set(today.needsPrograms ?? []);
+  return lackingPrograms.every((key) => !owedToday.has(key));
+}
+
 export class GetMakeupWork {
   #termVerdicts; #policy; #logger;
 
@@ -52,9 +74,11 @@ export class GetMakeupWork {
     const days = (Array.isArray(term?.days) ? term.days : [])
       .filter((row) => row?.makeupOpen === true && typeof row.studyDay === 'string')
       .sort((a, b) => a.studyDay.localeCompare(b.studyDay));
+    const todayRow = (Array.isArray(term?.days) ? term.days : []).find((row) => row?.studyDay === term?.today) ?? null;
     const items = days.flatMap((row) => (Array.isArray(row.sections) ? row.sections : [])
       .filter((section) => section?.state === 'obligated'
-        && typeof section.subject === 'string' && section.subject && allowed(section.subject))
+        && typeof section.subject === 'string' && section.subject && allowed(section.subject)
+        && possibleToday(section, todayRow))
       .map((section) => ({ day: row.studyDay, subject: section.subject })));
     if (!items.length) return EMPTY;
     // Every open day shares its week's deadline; the earliest is the honest one

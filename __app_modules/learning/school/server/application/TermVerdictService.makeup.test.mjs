@@ -50,7 +50,7 @@ describe('TermVerdictService makeup', () => {
     const out = await service.read('kid', { detail: true });
     const wed = out.days.find((d) => d.studyDay === WED);
     expect(wed).toMatchObject({ state: 'met', timeliness: 'makeup', makeup: [{ subject: 'math', servedOn: THU }], makeupOpen: false });
-    expect(wed.sections.find((s) => s.subject === 'math')).toEqual({ subject: 'math', state: 'served', reason: null, makeup: { servedOn: THU } });
+    expect(wed.sections.find((s) => s.subject === 'math')).toMatchObject({ subject: 'math', state: 'served', reason: null, makeup: { servedOn: THU } });
     expect(out.days.find((d) => d.studyDay === THU).timeliness).toBe('on-time');
   });
 

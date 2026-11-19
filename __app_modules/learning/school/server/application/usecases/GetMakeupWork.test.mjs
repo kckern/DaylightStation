@@ -63,3 +63,24 @@ describe('GetMakeupWork', () => {
     expect(out).toEqual({ deadline: null, items: [] });
   });
 });
+
+describe('GetMakeupWork — only work that can earn credit today', () => {
+  const cards = (extra) => ({ asked: true, lessons: 0, programsDone: [], needsLesson: false, needsPrograms: ['flashcards'], ...extra });
+  const missedCards = { subject: 'language', state: 'obligated', ledger: cards() };
+  const read = (todayLedger) => ({ read: vi.fn(async () => ({
+    today: THU,
+    days: [day(WED, true, [missedCards]), day(THU, false, [{ subject: 'language', state: 'served', ledger: todayLedger }])],
+  })) });
+
+  it('leaves off a missed program that today also owes', async () => {
+    const out = await new GetMakeupWork({ termVerdicts: read(cards({ programsDone: ['flashcards'] })), makeupPolicy: ON, logger: silent })
+      .execute({ learnerId: 'kid' });
+    expect(out.items).toEqual([]);
+  });
+
+  it('lists it on a day that does not owe it', async () => {
+    const out = await new GetMakeupWork({ termVerdicts: read(cards({ asked: false, needsPrograms: [] })), makeupPolicy: ON, logger: silent })
+      .execute({ learnerId: 'kid' });
+    expect(out.items).toEqual([{ day: WED, subject: 'language' }]);
+  });
+});

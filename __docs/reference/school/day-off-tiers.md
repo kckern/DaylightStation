@@ -186,7 +186,9 @@ section carries `backfill: {missedDays}` and `catchUp: true`.
   Saturday's debrief, which no week owes or pays), the piano course (a lesson is
   not a passed challenge, so `piano-practice` does not count it), and surface
   launchers (their evidence is the dispatch, not the work). A past weekday's
-  curriculum verdict is settled, so a late lesson changes nothing.
+  curriculum verdict is settled, so a late lesson changes nothing, unless
+  [makeup](./makeup-work.md) is on, in which case Saturday work in a missed
+  subject credits the missed weekday.
 - **Daily, non-elective only.** Weekly programs have their own fold; once-only
   and elective entries are never backfilled.
 - **The missed program is chosen across the shelf.** Among the section's

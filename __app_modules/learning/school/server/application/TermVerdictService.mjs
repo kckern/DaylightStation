@@ -383,10 +383,9 @@ export class TermVerdictService {
       ...(row.makeup ? { makeup: row.makeup } : {}),
       makeupOpen: ['partial', 'none'].includes(row.state)
         && makeupOpen({ day: studyDay, today, policy: this.#makeupPolicy() }),
-      ...(detail ? {
-        sections: (row.sections ?? []).map(({ ledger: _ledger, ...section }) => section),
-        weekly: row.weekly ?? [],
-      } : {}),
+      // With detail, sections keep their makeup `ledger`: the makeup sheet
+      // reads it to list only work that can still earn credit today.
+      ...(detail ? { sections: row.sections ?? [], weekly: row.weekly ?? [] } : {}),
     }));
     const byWeek = new Map();
     for (const [studyDay, row] of Object.entries(rows)) {

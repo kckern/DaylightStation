@@ -14,9 +14,11 @@
  *   units        the week's graded work sessions, with subject/course from the curriculum
  *
  * Reads only the application services School already has (term verdicts, the
- * learner session list, the curriculum), never files. Every fact is stamped
- * `timeliness: 'on-time'`: makeup (taxonomy D14) is not built, and the field
- * keeps future payout refs stable when it is.
+ * learner session list, the curriculum), never files. Day and section facts
+ * carry the term grid's `timeliness`: `makeup` when later work in the week
+ * turned them served (School makeup, taxonomy D14, `school.yml → makeup`),
+ * otherwise `on-time`; and `makeupOpen` while an unfinished day can still be
+ * made up, so the earnings rules do not settle it before its deadline.
  */
 import { ISchoolEarningEvidence } from "../../application/ports/IEarningEvidenceSource.mjs";
 import { dayOffTier, EXCUSING_TIERS, isoWeekday } from "../../../../../learning/school/server/study-calendar.mjs";
