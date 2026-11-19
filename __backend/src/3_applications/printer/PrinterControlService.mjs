@@ -1,7 +1,17 @@
-function tier(outcome) {
-  if (typeof outcome !== 'object' || outcome === null) return {};
+// Which printer printed: a routed printer says so (and whether it failed over);
+// a printer without a route printed where it was asked to, if it printed at all.
+function routing(outcome, location) {
+  if (typeof outcome === 'object' && outcome !== null && 'printedOn' in outcome) {
+    return { printedOn: outcome.printedOn ?? null, failedOver: outcome.failedOver === true, ...(outcome.tried ? { tried: outcome.tried } : {}) };
+  }
+  const sent = outcome === true || outcome?.dispatched === true;
+  return { printedOn: sent ? (location ?? null) : null, failedOver: false };
+}
+function tier(outcome, location) {
+  if (typeof outcome !== 'object' || outcome === null) return routing(outcome, location);
   return { dispatched: outcome.dispatched === true, verified: outcome.verified === true,
-    verification: outcome.verification ?? null, faults: outcome.faults ?? null, printerState: outcome.printerState ?? null };
+    verification: outcome.verification ?? null, faults: outcome.faults ?? null, printerState: outcome.printerState ?? null,
+    ...routing(outcome, location) };
 }
 export class PrinterControlService {
   #fleet; #readOutcome;
@@ -18,7 +28,7 @@ export class PrinterControlService {
   async #print(location, create, successMessage, failureMessage, extra = {}, includeJob = true) {
     return this.#with(location, async adapter => {
       const printJob = create(adapter); const outcome = await adapter.print(printJob); const success = this.#readOutcome(outcome).printed;
-      return { success, ...tier(outcome), message: success ? successMessage : failureMessage, ...(includeJob ? { printJob } : {}), ...extra };
+      return { success, ...tier(outcome, location), message: success ? successMessage : failureMessage, ...(includeJob ? { printJob } : {}), ...extra };
     });
   }
   text(location, text, options) { return this.#print(location, a => a.createTextPrint(text, options), 'Text printed successfully', 'Print failed'); }

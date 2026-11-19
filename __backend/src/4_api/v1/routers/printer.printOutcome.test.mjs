@@ -46,6 +46,9 @@ describe('printer router claim-tier mapping', () => {
       verification: 'verified',
       faults: null,
       printerState: null,
+      // No location in the URL and no route: printed on the default, unnamed here.
+      printedOn: null,
+      failedOver: false,
       message: 'Text printed successfully',
       printJob: { items: [{ type: 'text', text: 'hello' }], options: {} },
     });
@@ -156,5 +159,17 @@ describe('printer router claim-tier mapping', () => {
         feedButtonEnabled: false,
         note: 'Feed button status cannot be queried directly from most ESC/POS printers',
       });
+  });
+
+  it('says which printer printed and whether it failed over', async () => {
+    const { app } = appWith({ dispatched: true, verified: true, verification: 'verified', printedOn: 'upstairs', failedOver: true, tried: ['downstairs', 'upstairs'] });
+    const res = await request(app).post('/api/v1/printer/text/downstairs').send({ text: 'hello' });
+    expect(res.body).toMatchObject({ success: true, printedOn: 'upstairs', failedOver: true, tried: ['downstairs', 'upstairs'] });
+  });
+
+  it('names the asked-for printer when it has no route', async () => {
+    const { app } = appWith({ dispatched: true, verified: true, verification: 'verified' });
+    const res = await request(app).post('/api/v1/printer/text/upstairs').send({ text: 'hello' });
+    expect(res.body).toMatchObject({ printedOn: 'upstairs', failedOver: false });
   });
 });
