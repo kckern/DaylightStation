@@ -54,17 +54,28 @@ for (const width of [390, 1440]) {
   });
 }
 
-test('Media search does not steal focus from a confirmation dialog', async ({ page }) => {
+test('Media Start fresh owns Escape before Browse Back and returns focus to Settings', async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 850 });
   await page.goto('/media');
-  await page.getByRole('button', { name: 'Settings', exact: true }).click();
+  await page.getByTestId('app-nav-browse').click();
+  await expect(page).toHaveURL(/view=browse/);
+  const settings = page.getByRole('button', { name: 'Settings', exact: true });
+  await settings.click();
   await page.getByTestId('settings-reset-session').click();
   const dialog = page.getByRole('dialog', { name: 'Start fresh on this device?' });
   const cancel = dialog.getByRole('button', { name: 'Cancel', exact: true });
   await cancel.focus();
   await page.keyboard.press('/');
   await expect(cancel).toBeFocused();
+
+  await page.keyboard.press('Escape');
+  await expect(dialog).toBeHidden();
+  await expect(page).toHaveURL(/view=browse/);
+  await expect(settings).toBeFocused();
+  await page.keyboard.press('Escape');
+  await expect(page).toHaveURL(/\/media$/);
 });
+
 
 async function installMediaSearchResult(page) {
   const item = {

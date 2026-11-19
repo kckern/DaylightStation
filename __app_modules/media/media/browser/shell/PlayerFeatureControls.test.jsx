@@ -2,6 +2,7 @@ import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import { MantineProvider } from '@mantine/core';
+import { DismissStackProvider } from '@/lib/ui/dismiss/DismissStackProvider.jsx';
 
 // Player features in the one set of controls: subtitles/audio (STEER.12a),
 // music behind a slideshow (PLAY.9a), Shown briefly (PLAY.8a).
@@ -113,9 +114,9 @@ describe('music behind a slideshow (PLAY.9a)', () => {
   });
 });
 
-function StopHarness({ target, onStop }) {
-  const [guardStop, dialog] = useSlideshowStopGuard(target);
-  return <><button type="button" data-testid="stop" onClick={() => guardStop(onStop)}>stop</button>{dialog}</>;
+function StopHarness({ target, onStop, renderPrompt = true }) {
+  const [guardStop, dialog] = useSlideshowStopGuard(target, null, { available: renderPrompt });
+  return <><button type="button" data-testid="stop" onClick={event => guardStop(onStop, event.currentTarget)}>stop</button>{renderPrompt && dialog}</>;
 }
 
 describe('stopping the slideshow asks whether to keep the music (PLAY.9a/AC3)', () => {
@@ -144,6 +145,60 @@ describe('stopping the slideshow asks whether to keep the music (PLAY.9a/AC3)', 
     expect(onStop).toHaveBeenCalledTimes(1);
     expect(onStop).toHaveBeenCalledWith({ keepMusic: false });
     expect(session.controller.sessionControls.musicBehind).toHaveBeenCalledWith('stop');
+  });
+
+  it('cancels on Escape without a dismiss stack or a stop command', async () => {
+    session.snapshot = withMusic;
+    const onStop = vi.fn();
+    wrap(<StopHarness target={REMOTE} onStop={onStop} />);
+    fireEvent.click(screen.getByTestId('stop'));
+    expect(await screen.findByTestId('pf-stop-guard')).toBeInTheDocument();
+    fireEvent.keyDown(screen.getByTestId('pf-stop-cancel'), { key: 'Escape' });
+    await waitFor(() => expect(screen.queryByTestId('pf-stop-guard')).toBeNull());
+    expect(onStop).not.toHaveBeenCalled();
+    expect(session.controller.sessionControls.musicBehind).not.toHaveBeenCalled();
+  });
+
+  it('releases Escape when an external stop removes the prompt from its transport', async () => {
+    session.snapshot = withMusic;
+    const onStop = vi.fn();
+    const onBaseDismiss = vi.fn();
+    const view = renderPrompt => (
+      <MantineProvider><DismissStackProvider onBaseDismiss={onBaseDismiss}>
+        <StopHarness target={REMOTE} onStop={onStop} renderPrompt={renderPrompt} />
+      </DismissStackProvider></MantineProvider>
+    );
+    const { rerender } = render(view(true));
+    fireEvent.click(screen.getByTestId('stop'));
+    expect(await screen.findByTestId('pf-stop-guard')).toBeInTheDocument();
+
+    session.snapshot = { state: 'idle', currentItem: null };
+    rerender(view(false));
+    expect(screen.queryByTestId('pf-stop-guard')).toBeNull();
+    fireEvent.keyDown(document.body, { key: 'Escape' });
+    await waitFor(() => expect(onBaseDismiss).toHaveBeenCalledTimes(1));
+    expect(onStop).not.toHaveBeenCalled();
+
+    session.snapshot = withMusic;
+    rerender(view(true));
+    expect(screen.queryByTestId('pf-stop-guard')).toBeNull();
+  });
+
+  it('dismisses a prompt when music ends and restores the still-visible Stop button', async () => {
+    session.snapshot = withMusic;
+    const onStop = vi.fn();
+    const view = <MantineProvider><StopHarness target={REMOTE} onStop={onStop} /></MantineProvider>;
+    const { rerender } = render(view);
+    const opener = screen.getByTestId('stop');
+    fireEvent.click(opener);
+    const cancel = await screen.findByTestId('pf-stop-cancel');
+    cancel.focus();
+
+    session.snapshot = { ...withMusic, controls: {} };
+    rerender(<MantineProvider><StopHarness target={REMOTE} onStop={onStop} /></MantineProvider>);
+    await waitFor(() => expect(screen.queryByTestId('pf-stop-guard')).toBeNull());
+    await waitFor(() => expect(document.activeElement).toBe(opener));
+    expect(onStop).not.toHaveBeenCalled();
   });
 
   it('no music: Stop just stops', () => {

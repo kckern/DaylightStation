@@ -77,7 +77,7 @@ export const houseApi = {
     method: 'POST', body: confirm ? { confirm: true } : {},
   }),
   restoreScreen: (id) => call(`${screen(id)}/restore`, { method: 'POST', body: {} }),
-  screenRoutines: (id) => call(`${screen(id)}/routines`),
+  screenRoutines: (id, { signal } = {}) => call(`${screen(id)}/routines`, { signal }),
   startedByAll: ({ signal } = {}) => call(media('started-by'), { signal }),
   startedBy: (id, { signal } = {}) => call(`${screen(id)}/started-by`, { signal }),
   routineHistory: ({ limit = 50, signal } = {}) => call(media(`routines/history?limit=${limit}`), { signal }),

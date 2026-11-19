@@ -102,11 +102,12 @@ export function useScreenAdmin({ registry, api = defaultApi } = {}) {
     }
   }, [api, refresh, report, unmerge]);
 
-  const routinesFor = useCallback(async (screen) => {
+  const routinesFor = useCallback(async (screen, { signal } = {}) => {
     try {
-      const res = await api.screenRoutines(screen.id);
+      const res = await api.screenRoutines(screen.id, { signal });
       return { ok: true, routines: Array.isArray(res?.items) ? res.items : [] };
     } catch (error) {
+      if (signal?.aborted) return { ok: false };
       houseLog.adminActionFailed({ action: 'routines', deviceId: screen.id, status: error?.status ?? null, error: error?.message });
       return failure(error);
     }

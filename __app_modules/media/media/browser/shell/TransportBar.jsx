@@ -238,7 +238,7 @@ export function TransportBar({ target, snapshot: snapshotOverride = null, onComm
           className="np-icon-btn"
           aria-label="Stop"
           disabled={!controlsAvailable || typeof transport.stop !== 'function' || isPending('stop')}
-          onClick={() => guardStop((opts) => runCommand('stop', () => transport.stop?.(opts)))}
+          onClick={event => guardStop((opts) => runCommand('stop', () => transport.stop?.(opts)), event.currentTarget)}
         >
           <IconPlayerStopFilled size={20} />
         </button>

@@ -71,7 +71,7 @@ function FleetCard({ deviceId, startStatus, startedBy }) {
   const canMoveHere = !!snap?.meta?.playbackOwner;
   // Stopping a slideshow with music behind asks "Keep the music?" here too,
   // and the answer rides the stop command (never inferred from who sent it).
-  const [guardStop, stopGuardDialog] = useSlideshowStopGuard({ deviceId }, snap ?? null);
+  const [guardStop, stopGuardDialog] = useSlideshowStopGuard({ deviceId }, snap ?? null, { available: isActive });
   const sendTransport = (action, opts) => {
     const result = getController(deviceId)?.transport?.[action]?.(opts);
     result?.catch?.(() => {});
@@ -159,7 +159,7 @@ function FleetCard({ deviceId, startStatus, startedBy }) {
             <Button data-testid={`fleet-pause-${deviceId}`} size="compact-sm" variant="default" leftSection={<IconPlayerPauseFilled size={14} aria-hidden />} onClick={() => sendTransport('pause')}>
               Pause
             </Button>
-            <ScreenStopControl device={device ?? { id: deviceId }} name={name} onStop={() => guardStop((opts) => sendTransport('stop', opts))} />
+            <ScreenStopControl device={device ?? { id: deviceId }} name={name} onStop={event => guardStop((opts) => sendTransport('stop', opts), event.currentTarget)} />
             {stopGuardDialog}
             {!device?.isLocal && (
               <Button

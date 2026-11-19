@@ -2,7 +2,7 @@
 // This device's settings: its name and room (through the household screen
 // registry, RQ-HOUSE-06), the way into screen admin (RQ-HOUSE-08) and
 // routine history (RQ-AUTO-05), and Start fresh.
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useRef, useState } from 'react';
 import { Menu, ActionIcon } from '@mantine/core';
 import { IconDevices, IconEdit, IconHistory, IconSettings, IconRestore } from '@tabler/icons-react';
 import { useClientIdentity } from "../identity/useClientIdentity.js";
@@ -14,6 +14,7 @@ export function SettingsMenu({ onResetSession }) {
   const identity = useClientIdentity();
   const { devices, registry } = useFleetContext();
   const { push } = useNav();
+  const settingsRef = useRef(null);
   const [renameOpen, setRenameOpen] = useState(false);
   const closeRename = useCallback(() => setRenameOpen(false), []);
   const nameOf = (id) => registry?.byId?.get?.(id)?.name
@@ -27,7 +28,7 @@ export function SettingsMenu({ onResetSession }) {
     <>
       <Menu position="bottom-end" shadow="md" withinPortal>
         <Menu.Target>
-          <ActionIcon aria-label="Settings" data-testid="settings-menu-trigger">
+          <ActionIcon ref={settingsRef} aria-label="Settings" data-testid="settings-menu-trigger">
             <IconSettings size={20} />
           </ActionIcon>
         </Menu.Target>
@@ -44,7 +45,11 @@ export function SettingsMenu({ onResetSession }) {
           <Menu.Item
             data-testid="settings-reset-session"
             leftSection={<IconRestore size={16} />}
-            onClick={onResetSession}
+            onClick={() => {
+              // The menu item leaves the DOM. The dialog should return to Settings.
+              settingsRef.current?.focus({ preventScroll: true });
+              onResetSession?.();
+            }}
           >
             Start fresh
           </Menu.Item>

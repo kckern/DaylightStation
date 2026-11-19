@@ -4,12 +4,10 @@ import { Modal, Button, Group, Text } from '@mantine/core';
 import { useDismissLayer } from "@/lib/ui/dismiss/useDismissLayer.js";
 
 export function ConfirmDialog({ open, title, message, children, confirmLabel = 'OK', cancelLabel = 'Cancel', confirmDisabled = false, onConfirm, onCancel }) {
-  // Mantine Modal closes itself on Escape; register as a managed layer so the
-  // shell's base dismiss (view back) is suppressed while open.
-  useDismissLayer(open, onCancel, { managed: true });
+  const usesDismissStack = useDismissLayer(open, onCancel);
 
   return (
-    <Modal opened={open} onClose={onCancel} title={title} centered size="sm">
+    <Modal opened={open} onClose={onCancel} closeOnEscape={!usesDismissStack} title={title} centered size="sm">
       {/* testid lives on the content (the Modal root has no box) */}
       <div data-testid="confirm-dialog">
         <Text size="sm" mb="md">{message}</Text>

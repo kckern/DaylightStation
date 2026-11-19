@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { DaylightAPI } from "../../../../../frontend/src/lib/api.mjs";
+import { useRefreshableRead } from "../../../../../frontend/src/lib/hooks/useRefreshableRead.js";
 import getLogger from "../../../../../frontend/src/lib/logging/Logger.js";
 
 const WORKS_PATH = 'api/v1/admin/art/works';
@@ -22,11 +23,10 @@ export function useArtCuration(filters = {}) {
   const [index, setIndex] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const requestId = useRef(0);
   const [autoAdvance, setAutoAdvance] = useState(false);
   const undoStack = useRef([]);   // [{ id, prevMeta }]
   const worksRef = useRef([]);    // mirror of works for synchronous reads in callbacks
-  const filterKey = JSON.stringify(filters);
+  const path = `${WORKS_PATH}${qs({ ...filters, pageSize: 2000 })}`;
 
   // Keep worksRef in sync so callbacks can read the current list without stale closures.
   const applyWorks = useCallback((ws) => {
@@ -34,33 +34,28 @@ export function useArtCuration(filters = {}) {
     setWorks(ws);
   }, []);
 
-  const load = useCallback(async () => {
-    const id = ++requestId.current;
+  const readWorks = useCallback(async (isCurrent, signal) => {
     setError(null);
     setLoading(true);
     try {
       // Load the whole filtered pool so the grid is a real gallery, not the first
       // page. The backend caps pageSize, so this requests "all" up to that cap.
-      const res = await DaylightAPI(`${WORKS_PATH}${qs({ ...filters, pageSize: 2000 })}`);
-      if (id !== requestId.current) return;
+      const res = await DaylightAPI(path, {}, 'GET', { signal });
+      if (!isCurrent()) return;
       applyWorks(res.works || []);
       setIndex(0);
       logger.info('art.library.loaded', { total: res.total ?? 0 });
     } catch (err) {
-      if (id !== requestId.current) return;
+      if (!isCurrent()) return;
       applyWorks([]);
       setError(err);
       logger.error('art.library.load-failed', { error: err.message });
     } finally {
-      if (id === requestId.current) setLoading(false);
+      if (isCurrent()) setLoading(false);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filterKey, logger, applyWorks]);
-
-  useEffect(() => {
-    load();
-    return () => { requestId.current += 1; };
-  }, [load]);
+  }, [path, logger, applyWorks]);
+  const { reload: load } = useRefreshableRead(readWorks);
+  useEffect(() => { load(); }, [load]);
 
   const focused = works[index] || null;
 

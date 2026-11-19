@@ -11,7 +11,7 @@
 // Plus the stop guard for TransportBar: stopping a slideshow with music
 // behind asks whether to keep the music playing.
 import { UiIcon } from '../../../../../frontend/src/lib/ui/UiIcon.jsx';
-import React, { useCallback, useContext, useMemo, useState, useSyncExternalStore } from 'react';
+import React, { useCallback, useContext, useLayoutEffect, useMemo, useState, useSyncExternalStore } from 'react';
 import { Button, Group, Menu, Modal, Text } from '@mantine/core';
 import {
   IconBadgeCc, IconCheck, IconLanguage, IconMusic, IconPlayerPauseFilled, IconPlayerPlayFilled,
@@ -225,42 +225,56 @@ export function PlayerFeatureControls({ target, snapshot: snapshotOverride = nul
 
 /**
  * Stopping a slideshow with music behind asks whether to keep the music
- * (PLAY.9a/AC3). Returns [guardStop(stop), dialog] for TransportBar.
+ * (PLAY.9a/AC3). Returns [guardStop(stop, opener), dialog] for TransportBar.
  */
-export function useSlideshowStopGuard(target, snapshotOverride = null) {
+export function useSlideshowStopGuard(target, snapshotOverride = null, { available = true } = {}) {
   const f = usePlayerFeatures(target, snapshotOverride);
   const [pending, setPending] = useState(null);
-  const ask = isSlideshowItem(f.snapshot?.currentItem) && !!f.musicBehind && !!f.musicBehindCommand;
+  const targetKey = f.isLocal ? 'local' : target?.deviceId;
+  const ask = available && isSlideshowItem(f.snapshot?.currentItem) && !!f.musicBehind && !!f.musicBehindCommand;
+  const open = Boolean(ask && pending && pending.targetKey === targetKey);
   // `stop` receives { keepMusic } — the explicit answer, sent on the stop
   // command so the screen never has to guess it from who sent the Stop.
-  const guardStop = useCallback((stop) => {
+  const guardStop = useCallback((stop, opener) => {
     if (!ask) { stop({ keepMusic: false }); return; }
-    setPending(() => stop);
-  }, [ask]);
+    opener?.focus({ preventScroll: true });
+    setPending({ stop, opener, targetKey });
+  }, [ask, targetKey]);
   const close = useCallback(() => setPending(null), []);
-  useDismissLayer(!!pending, close, { managed: true });
-  const dialog = useMemo(() => (!pending ? null : (
-    <Modal opened onClose={close} title="Stop the slideshow" centered size="sm">
-      <div data-testid="pf-stop-guard">
+  const usesDismissStack = useDismissLayer(open, close);
+  useLayoutEffect(() => {
+    if (!pending || open) return;
+    setPending(null);
+    const { opener } = pending;
+    if (!available || pending.targetKey !== targetKey || !opener?.isConnected) return;
+    // Eligibility can remove the modal before Mantine's focus return runs.
+    queueMicrotask(() => {
+      if (opener.isConnected && document.activeElement === document.body) opener.focus({ preventScroll: true });
+    });
+  }, [available, open, pending, targetKey]);
+  // Keep the modal mounted while this prompt is available so Mantine can return focus on cancel.
+  const dialog = useMemo(() => !ask && !pending ? null : (
+    <Modal key={targetKey} opened={open} onClose={close} closeOnEscape={!usesDismissStack} title="Stop the slideshow" centered size="sm">
+      {open && <div data-testid="pf-stop-guard">
         <Text size="sm" mb="md">Keep the music playing?</Text>
         <Group justify="flex-end" gap="sm">
           <Button variant="default" data-testid="pf-stop-cancel" onClick={close}>Cancel</Button>
           <Button variant="default" data-testid="pf-stop-both" onClick={() => {
-            const stop = pending; setPending(null);
+            const { stop } = pending; close();
             mediaLog.playerFeature({ feature: 'music-behind', action: 'stop-with-slideshow', target: f.isLocal ? 'local' : target?.deviceId });
             stop?.({ keepMusic: false });
             Promise.resolve(f.musicBehindCommand('stop')).catch(() => {});
           }}>Stop music too</Button>
           <Button data-testid="pf-stop-keep-music" onClick={() => {
-            const stop = pending; setPending(null);
+            const { stop } = pending; close();
             mediaLog.playerFeature({ feature: 'music-behind', action: 'keep-after-slideshow', target: f.isLocal ? 'local' : target?.deviceId });
             if (f.isLocal) getLocalPlayerFeatures().keepMusicAfterStop();
             stop?.({ keepMusic: true });
           }}>Keep music</Button>
         </Group>
-      </div>
+      </div>}
     </Modal>
-  )), [pending, close, f, target]);
+  ), [ask, open, pending, close, usesDismissStack, f, target, targetKey]);
   return [guardStop, dialog];
 }
 

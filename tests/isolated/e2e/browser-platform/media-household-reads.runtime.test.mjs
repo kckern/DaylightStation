@@ -26,7 +26,7 @@ function returnToForeground(page) {
   });
 }
 
-test('Media Fleet removes Stop all after kept slideshow music ends', async ({ page }) => {
+test('Media can dismiss the slideshow stop guard before keeping the music on Fleet', async ({ page }) => {
   const photo = { contentId: 'plex:71', title: 'Slideshow photo', format: 'image', duration: 90 };
   const song = {
     id: 'plex:72', contentId: 'plex:72', title: 'Keep this song', format: 'audio',
@@ -69,7 +69,21 @@ test('Media Fleet removes Stop all after kept slideshow music ends', async ({ pa
   const music = page.getByTestId('music-behind-layer');
   const audio = music.locator('audio[src$="household-song.wav"]');
   await expect.poll(() => audio.evaluate(node => node.currentTime)).toBeGreaterThan(0);
-  await page.getByTestId('np-stop').click();
+  const stop = page.getByTestId('np-stop');
+  const guard = page.getByRole('dialog', { name: 'Stop the slideshow' });
+  const originalAudio = await audio.elementHandle();
+  const playingPosition = () => originalAudio.evaluate(node => node.isConnected && !node.paused ? node.currentTime : -1);
+  const beforeCancel = await playingPosition();
+  await stop.click();
+  await expect(guard).toBeVisible();
+  await guard.getByRole('button', { name: 'Cancel', exact: true }).focus();
+  await page.keyboard.press('Escape');
+  await expect(guard).toBeHidden();
+  await expect(page).toHaveURL(/view=nowPlaying/);
+  await expect(stop).toBeFocused();
+  await expect.poll(playingPosition).toBeGreaterThan(beforeCancel);
+
+  await stop.click();
   await page.getByTestId('pf-stop-keep-music').click();
   await page.getByTestId('app-nav-fleet').click();
 
