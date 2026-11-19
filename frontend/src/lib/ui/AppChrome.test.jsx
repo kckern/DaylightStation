@@ -42,10 +42,12 @@ describe('AppChrome', () => {
   });
 });
 
-it('exposes the main scroll element and its footer sibling through the frame', () => {
+it('keeps notices and the footer outside the main scroll element', () => {
   const mainRef = { current: null };
-  render(<AppChrome title="Home" mainRef={mainRef} footer={<button>Player</button>}>Rooms</AppChrome>);
+  render(<AppChrome title="Home" mainRef={mainRef} notices={<button>Retry device</button>} footer={<button>Player</button>}>Rooms</AppChrome>);
   expect(mainRef.current).toBe(screen.getByRole('main'));
+  const notices = screen.getByRole('button', { name: 'Retry device' }).parentElement;
+  expect(mainRef.current.previousElementSibling).toBe(notices);
   expect(mainRef.current.contains(screen.getByRole('button', { name: 'Player' }))).toBe(false);
 });
 

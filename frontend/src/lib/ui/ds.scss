@@ -209,19 +209,19 @@
   height: 100dvh;
   background: var(--ds-background);
   color: var(--ds-text-high);
-  // Mobile: header / main / footer / bottom tabs
-  grid-template-rows: auto 1fr auto auto;
-  grid-template-areas: "header" "main" "footer" "nav";
+  // The optional notice track collapses when its stack is empty.
+  grid-template-rows: auto auto minmax(0, 1fr) auto auto;
+  grid-template-areas: "header" "notices" "main" "footer" "nav";
 
   @include bp.tablet-up {
     // Desktop: left rail spanning all rows
     grid-template-columns: 200px 1fr;
-    grid-template-rows: auto 1fr auto;
-    grid-template-areas: "nav header" "nav main" "nav footer";
+    grid-template-rows: auto auto minmax(0, 1fr) auto;
+    grid-template-areas: "nav header" "nav notices" "nav main" "nav footer";
 
     &:not(:has(> .ds-chrome__nav)) {
       grid-template-columns: minmax(0, 1fr);
-      grid-template-areas: "header" "main" "footer";
+      grid-template-areas: "header" "notices" "main" "footer";
     }
   }
 
@@ -234,6 +234,17 @@
   }
   &__title { margin: 0; font-size: var(--ds-type-heading); font-weight: 600; }
   &__actions { display: flex; gap: var(--ds-space-sm); }
+  &__notices {
+    grid-area: notices;
+    display: flex;
+    justify-content: flex-end;
+    align-items: flex-start;
+    min-inline-size: 0;
+    max-block-size: 35vh;
+    max-block-size: 35dvh;
+    overflow-y: auto;
+    padding-inline: max(var(--ds-space-lg), env(safe-area-inset-left)) max(var(--ds-space-lg), env(safe-area-inset-right));
+  }
   &__main { grid-area: main; overflow-y: auto; padding: var(--ds-space-md) var(--ds-space-lg); }
   &__context { display: none; }
   @media (min-width: bp.$bp-lg) {

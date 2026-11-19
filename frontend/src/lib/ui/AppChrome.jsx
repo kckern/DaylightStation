@@ -4,7 +4,7 @@
 // CSS-switched). Nav pattern adopted from Media's PrimaryNav.
 import { Link } from 'react-router-dom';
 import { AppFrame } from './AppFrame.jsx';
-export function AppChrome({ title, tabs = [], activeTab, onTabChange, headerActions, footer, mainRef, sidebarRef, sidebarActive = false, children }) {
+export function AppChrome({ title, tabs = [], activeTab, onTabChange, headerActions, notices, footer, mainRef, sidebarRef, sidebarActive = false, children }) {
   const actions = Array.isArray(headerActions) ? headerActions : (headerActions ? [headerActions] : []);
   if (actions.length > 3) {
     throw new Error('AppChrome allows at most 3 header actions — quiet chrome is the contract');
@@ -32,6 +32,7 @@ export function AppChrome({ title, tabs = [], activeTab, onTabChange, headerActi
           : <button key={tab.id} type="button" {...props} onClick={() => onTabChange(tab.id)}>{label}</button>;
       })}
       context={sidebarRef && <div ref={sidebarRef} className="ds-chrome__context" hidden={!sidebarActive} />}
+      notices={notices}
       footer={footer}
     >
       {children}

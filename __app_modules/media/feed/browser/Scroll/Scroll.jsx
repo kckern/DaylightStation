@@ -166,7 +166,6 @@ export default function Scroll() {
   const filterParam = searchParams.get('filter') || '';
   const sessionStorageKey = `feed:scroll:session:${focusSource || 'all'}:${filterParam || 'all'}`;
   const storedSessionId = useMemo(() => browserPreference(sessionStorageKey, null, undefined, () => sessionStorage), [sessionStorageKey]);
-  const observerRef = useRef(null);
   const sentinelRef = useRef(null);
   const containerRef = useRef(null);
   const itemsRef = useRef(items);
@@ -180,8 +179,7 @@ export default function Scroll() {
   const savedScrollRef = useRef(0);
   const returnFocusId = useRef(null);
   const wasOnDetail = useRef(false);
-  const listAbortRef = useRef(null);
-  const appendLockRef = useRef(false);
+  const listRequestRef = useRef(null);
   const snapshotRef = useRef(null);
   const checkpointRestoredRef = useRef(false);
   const effectiveBudget = budgetOverride ?? readingPreferences.sessionBudget;
@@ -232,13 +230,15 @@ export default function Scroll() {
     : null;
 
   const fetchItems = useCallback(async (append = false, requestedSession = sessionId) => {
-    if (append && appendLockRef.current) return;
-    if (append) appendLockRef.current = true;
-    if (!append) listAbortRef.current?.abort();
+    if (append && listRequestRef.current) return;
+    listRequestRef.current?.abort();
     const controller = new AbortController();
-    if (!append) listAbortRef.current = controller;
+    listRequestRef.current = controller;
     if (append) setLoadingMore(true);
-    else setLoading(true);
+    else {
+      setLoadingMore(false);
+      setLoading(true);
+    }
     setError(null);
 
     try {
@@ -280,6 +280,7 @@ export default function Scroll() {
           limit: effectiveBudget > 0 ? Math.min(15, effectiveBudget) : undefined,
         }, 'POST', { signal: controller.signal });
       }
+      if (controller.signal.aborted) return;
       if (result.sessionId) {
         setSessionId(result.sessionId);
         storedSessionId.write(result.sessionId);
@@ -327,20 +328,23 @@ export default function Scroll() {
         setCaughtUp(!!result.caughtUp);
       }
     } catch (err) {
-      if (err.name === 'AbortError') return;
+      if (controller.signal.aborted || err.name === 'AbortError') return;
       feedLog.scroll('fetchError', err.message);
       // Surface an error state and stop the infinite sentinel from retrying
       // an outage in a tight loop. (F-11)
       setError(err.message || 'Failed to load feed');
       setHasMore(false);
     } finally {
-      setLoading(false);
-      setLoadingMore(false);
-      appendLockRef.current = false;
+      if (listRequestRef.current === controller) {
+        listRequestRef.current = null;
+        if (!controller.signal.aborted) {
+          setLoading(false);
+          setLoadingMore(false);
+        }
+      }
     }
   }, [applyPendingMutations, effectiveBudget, filterParam, focusSource, searchParams, sessionId, storedSessionId]);
 
-  useEffect(() => () => listAbortRef.current?.abort(), []);
   useEffect(() => { markVisited('scroll', visitStarted.current); }, [markVisited]);
 
   const lastListOffset = useRef(initialSnapshot.current?.scrollTop ?? initialCheckpoint.current?.scrollOffset ?? 0);
@@ -408,16 +412,19 @@ export default function Scroll() {
     setHasMore(true);
     setError(null);
     fetchItems(false, storedSession);
+    return () => listRequestRef.current?.abort();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionStorageKey]);
 
   // Infinite scroll via IntersectionObserver
   useEffect(() => {
-    if (!sentinelRef.current || !hasMore || loadingMore) return;
+    const sentinel = sentinelRef.current;
+    if (!sentinel || !hasMore || loading || loadingMore) return;
 
-    observerRef.current = new IntersectionObserver(
+    let observing = true;
+    const observer = new IntersectionObserver(
       ([entry]) => {
-        if (entry.isIntersecting && hasMore && !loadingMore) {
+        if (observing && entry?.isIntersecting) {
           feedLog.scroll('sentinel intersecting — triggering fetchMore', { scrollY: scrollRef?.current?.scrollTop || 0, itemCount: itemsRef.current.length });
           fetchItems(true);
         }
@@ -425,9 +432,12 @@ export default function Scroll() {
       { root: scrollRef?.current, threshold: 0.1 }
     );
 
-    observerRef.current.observe(sentinelRef.current);
-    return () => observerRef.current?.disconnect();
-  }, [hasMore, loadingMore, fetchItems, loading]);
+    observer.observe(sentinel);
+    return () => {
+      observing = false;
+      observer.disconnect();
+    };
+  }, [hasMore, loading, loadingMore, fetchItems, scrollRef]);
 
   // Scroll activity tracking (throttled to ~5/sec to reduce main-thread work)
   useEffect(() => {

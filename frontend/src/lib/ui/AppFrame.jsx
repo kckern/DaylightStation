@@ -9,7 +9,7 @@ export function useAppMainRef() {
   return useContext(AppMainContext);
 }
 
-export function AppFrame({ className = '', header, navigation, context, footer, mainRef, expandedContext = false, children }) {
+export function AppFrame({ className = '', header, navigation, context, notices, footer, mainRef, expandedContext = false, children }) {
   const scrollRef = useRef(null);
   const setMainRef = useMergedRef(scrollRef, mainRef);
   return (
@@ -21,6 +21,7 @@ export function AppFrame({ className = '', header, navigation, context, footer, 
           {context}
         </nav>
       )}
+      {notices && <div className="ds-chrome__notices">{notices}</div>}
       <main ref={setMainRef} className="ds-chrome__main">
         <AppMainContext.Provider value={scrollRef}>{children}</AppMainContext.Provider>
       </main>

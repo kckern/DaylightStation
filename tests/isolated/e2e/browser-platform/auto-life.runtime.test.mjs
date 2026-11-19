@@ -243,6 +243,82 @@ test('Life distinguishes unavailable goals from a successful empty list and retr
   await expect(page.getByText(/No goals yet/)).toBeVisible();
 });
 
+test('Life keeps frame controls reachable beside an in-flow notice stack', async ({ page }) => {
+  const members = ['amy', 'bob'].map(username => ({ username, displayName: username.toUpperCase() }));
+  let socket;
+  await page.routeWebSocket('**/*', connection => { socket = connection; });
+  await page.route('**/api/v1/life/**', route => {
+    const url = new URL(route.request().url());
+    if (url.pathname.endsWith('/users')) return route.fulfill({ json: { users: members } });
+    if (url.pathname.endsWith('/user')) return route.fulfill({ json: members.find(user => user.username === url.searchParams.get('username')) || members[0] });
+    if (url.pathname.endsWith('/goals')) return route.fulfill({ json: { goals: [] } });
+    return route.fulfill({ json: { purpose: { statement: 'Household plan' } } });
+  });
+  await page.goto('/life/plan');
+  const header = page.getByRole('banner');
+  const main = page.getByRole('main');
+  const switcher = page.getByRole('textbox', { name: 'Switch household member' });
+  await expect(switcher).toHaveValue('AMY');
+  await expect.poll(() => Boolean(socket)).toBe(true);
+  const emptyGap = async () => {
+    const [mainBox, headerBox] = await Promise.all([main.boundingBox(), header.boundingBox()]);
+    return Math.round(mainBox.y - headerBox.y - headerBox.height);
+  };
+  expect(await emptyGap()).toBe(0);
+
+  socket.send(JSON.stringify({
+    topic: 'notification', title: 'Household planning reminder', urgency: 'critical',
+    body: 'Review the household goals before the next planning meeting.',
+    metadata: { id: 'notice-slot-first' },
+    actions: [{ label: 'Open Goals', data: { url: '/life/plan/goals' } }],
+  }));
+  const notice = page.locator('.mantine-Notification-root').filter({ hasText: 'Household planning reminder' });
+  await expect(notice).toBeVisible();
+  expect(await switcher.evaluate(input => {
+    const box = input.getBoundingClientRect();
+    return document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2) === input;
+  })).toBe(true);
+  await switcher.click();
+  await page.getByRole('option', { name: 'BOB', exact: true }).click();
+  await expect(switcher).toHaveValue('BOB');
+  await notice.getByRole('button', { name: 'Open Goals', exact: true }).click();
+  await expect(page).toHaveURL(/\/life\/plan\/goals$/);
+  await expect(page.getByRole('link', { name: 'Goals', exact: true })).toHaveAttribute('aria-current', 'page');
+
+  for (const width of [767, 768, 1280]) {
+    await page.setViewportSize({ width, height: 550 });
+    const alertBox = await notice.boundingBox();
+    const headerBox = await header.boundingBox();
+    const mainBox = await main.boundingBox();
+    expect(alertBox.y).toBeGreaterThanOrEqual(Math.floor(headerBox.y + headerBox.height));
+    expect(alertBox.y + alertBox.height).toBeLessThanOrEqual(mainBox.y + 1);
+  }
+
+  await page.setViewportSize({ width: 390, height: 340 });
+  for (const id of ['second', 'third', 'fourth', 'fifth']) {
+    socket.send(JSON.stringify({
+      topic: 'notification', title: `Additional notice ${id}`, urgency: 'critical',
+      body: 'An update that wraps across more than one line on a compact screen.',
+      metadata: { id: `notice-slot-${id}` },
+    }));
+  }
+  await expect(page.getByText('Additional notice fifth', { exact: true })).toBeAttached();
+  const notices = notice.locator('xpath=ancestor::div[contains(@class,"ds-chrome__notices")]');
+  await expect.poll(() => notices.evaluate(el => el.scrollHeight > el.clientHeight)).toBe(true);
+  const mainTop = (await main.boundingBox()).y;
+  await notices.evaluate(el => { el.scrollTop = el.scrollHeight; });
+  await expect.poll(() => notices.evaluate(el => el.scrollTop)).toBeGreaterThan(0);
+  expect((await main.boundingBox()).y).toBe(mainTop);
+  await expect(page.getByRole('navigation', { name: 'Primary' }).getByRole('link', { name: 'Now', exact: true })).toBeInViewport();
+  await expect(main).toBeInViewport();
+  const stack = page.locator('.mantine-Notification-root');
+  for (let remaining = 5; remaining > 0; remaining -= 1) {
+    await stack.first().locator('button.mantine-Notification-closeButton').click();
+    await expect(stack).toHaveCount(remaining - 1);
+  }
+  await expect.poll(emptyGap).toBe(0);
+});
+
 test('Life Purpose retries a failed read after saving without writing the statement again', async ({ page }) => {
   await page.routeWebSocket('**/*', () => {});
   const member = { username: 'amy', displayName: 'Amy' };

@@ -134,6 +134,8 @@ The monitor is enabled only by `?debug=1`; normal reading sessions do not run it
 
 Uses `IntersectionObserver` on a sentinel div at the bottom of the card list. A fresh view creates a server-owned session with `POST /api/v1/feed/scroll/sessions`; subsequent batches use `GET /api/v1/feed/scroll/sessions/:id`. The browser keeps that ID in `sessionStorage` under the active focus/filter identity. On reload it requests `?resume=1`, restoring the complete served-item sequence as well as pool/cursor state. Snapshots are persisted per user for 24 hours, survive a server restart, and are physically pruned after expiry. When sources exhaust, the sentinel stops and the UI renders a caught-up state.
 
+The active focus and filter own the current list request, including pagination. Changing either cancels the previous request and disconnects its sentinel. The new filter loads its own session before observing for the next page.
+
 Card rendering is windowed to at most 60 mounted cards. Phone layouts use measured top/bottom spacers; desktop masonry keeps its complete position map while mounting only viewport and measurement-window cards. This bounds React, media, observer, layout, and paint work without truncating scroll history.
 
 `content-visibility: auto` applies on both phone and desktop to reduce off-screen layout/paint work. Route-level snapshots preserve the loaded items and scroll position while switching Feed modes. Masonry measurement and placement events are debug-only; normal sessions retain error-level overlap reporting without per-card log traffic.

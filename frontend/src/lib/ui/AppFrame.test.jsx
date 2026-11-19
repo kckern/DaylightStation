@@ -18,7 +18,7 @@ describe('AppFrame', () => {
   });
   it('omits unused regions', () => {
     const {container} = render(<AppFrame>Article</AppFrame>);
-    expect(container.querySelector('header,nav,.ds-chrome__footer')).toBeNull();
+    expect(container.querySelector('header,nav,.ds-chrome__notices,.ds-chrome__footer')).toBeNull();
   });
   it('exposes main to content and still forwards a caller callback ref', () => {
     const forward = vi.fn();

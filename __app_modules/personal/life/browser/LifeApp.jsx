@@ -149,12 +149,17 @@ function LifeAppShell() {
 
   return (
     <LifeUserContext.Provider value={lifeUser}>
-      <Notifications position="top-right" autoClose={8000} />
       <AppChrome
         title="Life"
         tabs={TABS}
         activeTab={activeTab}
         headerActions={headerActions}
+        notices={<Notifications
+          withinPortal={false}
+          position="top-right"
+          autoClose={8000}
+          styles={{ root: { position: 'static', width: '100%', zIndex: 'auto' } }}
+        />}
       >
         <div className="life-app-root">
           {activeTab === 'plan' && <PlanSecondaryNav pathname={location.pathname} />}
