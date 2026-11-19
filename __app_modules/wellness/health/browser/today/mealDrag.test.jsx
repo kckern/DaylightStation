@@ -296,6 +296,29 @@ describe('useMealMoves — moving to another day', () => {
     expect(result.current.items).toEqual([viewed]);
     expect(result.current.error).toContain("Couldn't move Eggs");
   });
+  it.each([
+    [403, { error: 'Food cannot move to that day' }, "Couldn't move Eggs to Wed, Jan 15: Food cannot move to that day"],
+    [422, { message: 'That day is closed' }, "Couldn't move Eggs to Wed, Jan 15: That day is closed"],
+    [404, undefined, "Couldn't move Eggs to Wed, Jan 15."],
+  ])('a permanent %i refusal gives the server\'s reason, never "when connected"', async (status, body, message) => {
+    apiMock.mockRejectedValue(Object.assign(new Error(`HTTP ${status}`), { status, body }));
+    const { result } = renderHook(() => useMealMoves({ items: [eggs], reload: vi.fn() }));
+    await act(async () => { await result.current.moveToDay([eggs], '2020-01-15'); });
+    expect(result.current.error).toBe(message);
+  });
+  it('a permanent refusal of a meal move reads the same way', async () => {
+    apiMock.mockRejectedValue(Object.assign(new Error('HTTP 404'), { status: 404 }));
+    const { result } = renderHook(() => useMealMoves({ items: [eggs], reload: vi.fn() }));
+    await act(async () => { await result.current.move(eggs, 'evening', 'morning'); });
+    expect(result.current.error).toBe("Couldn't move Eggs.");
+  });
+  it('a network failure still says to try again when connected', async () => {
+    apiMock.mockRejectedValue(new Error('Network error'));
+    const { result } = renderHook(() => useMealMoves({ items: [eggs], reload: vi.fn() }));
+    await act(async () => { await result.current.moveToDay([eggs], '2020-01-15'); });
+    expect(result.current.error).toContain('try again when connected');
+  });
+
   describe('when the outcome of a move from another day is unknown', () => {
     const dish = { uuid: 'dish', name: 'Burrito', kind: 'group', logId: 'log-1', date: '2026-09-28', mealTime: 'morning', version: 1 };
     const part = { uuid: 'part', name: 'Tortilla', parentId: 'dish', logId: 'log-1', date: '2026-09-28', mealTime: 'morning', version: 1 };

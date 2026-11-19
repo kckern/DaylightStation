@@ -973,6 +973,18 @@ describe('TodayView — fixing the day from the capture toast', () => {
       expect(await screen.findByText("New side is part of a dish and can't move alone, so it stayed.")).toBeTruthy();
     });
 
+    it('a retried partial move still says what stayed', async () => {
+      let sent = 0;
+      apiMock.mockImplementation(dayApi({ items: [plate, older, joined, eggs], input: { ...capture, entryIds: ['joined', 'eggs'],
+        items: [{ uuid: 'joined', kind: 'item', label: 'New side' }, { uuid: 'eggs', kind: 'item', label: 'Eggs' }] },
+        move: body => { if (++sent === 1) throw Object.assign(new Error('Bad gateway'), { status: 502 }); return { committed: true, undoToken: 'meal-move', date: today, toDate: body.toDate, items: [] }; } }));
+      await captureFood();
+      fireEvent.click(await screen.findByRole('button', { name: 'Move to Yesterday' }));
+      fireEvent.click(await screen.findByRole('button', { name: 'Retry moving 2 foods' }));
+      expect(await screen.findByText("New side is part of a dish and can't move alone, so it stayed.")).toBeTruthy();
+      expect(moveCalls()[1][1].operationId).toBe(moveCalls()[0][1].operationId);
+    });
+
     it('when only that part was captured, nothing moves and it says why', async () => {
       apiMock.mockImplementation(dayApi({ items: [plate, older, joined], input: { ...onlyPart, logId: 'QUICKADD' } }));
       await captureFood();
@@ -1213,6 +1225,36 @@ describe('TodayView — the day fix after every kind of add', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Move to Yesterday' }));
     await waitFor(() => expect(moved()).toHaveLength(2));
     expect(moved()[1].selectedIds).toEqual(['eggs']);
+  });
+
+  it.each([
+    ['Trail mix', ['trail'], ['Added Eggs to Today, Breakfast', 'Added Protein shake to Today, Breakfast']],
+    ['Protein shake', ['new-shake'], ['Added Eggs to Today, Breakfast', 'Added Trail mix to Today, Breakfast']],
+    ['Eggs', ['eggs'], ['Added Trail mix to Today, Breakfast', 'Added Protein shake to Today, Breakfast']],
+  ])('moving %s leaves the other two foods\' offers', async (food, selectedIds, kept) => {
+    const trail = row('trail', 'Trail mix', { logId: 'QUICKADD' });
+    const catalog = { 'cat-1': shake, 'cat-2': trail };
+    apiMock.mockImplementation(api({ items: [shake, trail, eggs], routes: {
+      'catalog/suggest': () => ({ items: [{ id: 'cat-1', name: 'Protein shake', nutrients: { calories: 160 } }, { id: 'cat-2', name: 'Trail mix', nutrients: { calories: 200 } }] }),
+      'catalog/quickadd': body => ({ logged: true, committed: true, item: { ...catalog[body.catalogEntryId] } }),
+    } }));
+    live();
+    const input = await screen.findByRole('combobox', { name: 'Add to Breakfast' });
+    fireEvent.focus(input);
+    fireEvent.change(input, { target: { value: 'tr' } });
+    fireEvent.click(await screen.findByRole('option', { name: /Trail mix/ }));
+    await screen.findByText('Added Trail mix to Today, Breakfast');
+    await pickSuggestion();
+    await screen.findByText('Added Protein shake to Today, Breakfast');
+    await typeSentence('two eggs');
+    await screen.findByRole('button', { name: 'Undo meal change' });
+    fireEvent.click(screen.getByRole('button', { name: `Move ${food} to Yesterday` }));
+    await waitFor(() => expect(moved()).toHaveLength(1));
+    expect(moved()[0].selectedIds).toEqual(selectedIds);
+    await screen.findByRole('button', { name: 'Undo move' });
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)); });
+    for (const label of kept) expect(screen.getByText(label)).toBeTruthy();
+    expect(screen.queryByText(`Added ${food} to Today, Breakfast`)).toBeNull();
   });
 
   it('a later capture with an Undo leaves an unrelated offer in place', async () => {

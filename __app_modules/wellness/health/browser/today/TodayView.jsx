@@ -406,19 +406,20 @@ export function TodayView({ active = true, sidebarTarget, followUpTarget = null,
         : `Those foods are no longer on ${elsewhere ? landedDay : 'this day'}.`);
       return;
     }
+    // A finished move retires the toast by itself (afterCompletedMove).
+    const report = outcome => {
+      logger.info('capture.move-day.result', { logId: offer.logId, outcome, to: iso });
+      if (outcome === MoveResult.MOVED && blocked.length) say(`${stayedInDish(blocked)}, so ${blocked.length === 1 ? 'it' : 'they'} stayed.`);
+      else if (outcome === MoveResult.UNCHANGED) say(`Those foods are already on ${dayLabel(iso, today)}.`);
+    };
     const onRetryable = retry => {
       const retryMove = retry && (async () => {
         logger.info('capture.move-day.retry', { logId: offer.logId, to: iso });
-        const outcome = await retry();
-        logger.info('capture.move-day.result', { logId: offer.logId, outcome, to: iso });
+        report(await retry());
       });
       setCaptureToasts(state => updateOffer(state, offer, shown => ({ ...shown, retryMove })));
     };
-    const outcome = await moves.moveFromDay(entries, iso, elsewhere ? items : null, { onRetryable });
-    logger.info('capture.move-day.result', { logId: offer.logId, outcome, to: iso });
-    // A finished move retires the toast by itself (afterCompletedMove).
-    if (outcome === MoveResult.MOVED && blocked.length) say(`${stayedInDish(blocked)}, so ${blocked.length === 1 ? 'it' : 'they'} stayed.`);
-    else if (outcome === MoveResult.UNCHANGED) say(`Those foods are already on ${dayLabel(iso, today)}.`);
+    report(await moves.moveFromDay(entries, iso, elsewhere ? items : null, { onRetryable }));
   };
 
   const handleCaptureResult = (result, bucket = null, targetDate = date, context = {}) => {
@@ -613,7 +614,7 @@ export function TodayView({ active = true, sidebarTarget, followUpTarget = null,
         onRetryCapture={retryVoiceCapture} onDismissCapture={() => { setCaptureNotice(null); setCaptureRetry(null); }}
         orphanRetry={orphanRetry} onRetryOrphan={retryOrphanedRecording} onDismissOrphan={() => setOrphanRetry(null)}
         moves={moves} mealUndo={mealUndo} onUndoMeal={undoMealChange} onDismissMealUndo={clearMealUndo}
-        onSupersedeMealUndo={() => setCaptureToasts(supersedeCaptureUndo)}
+        onSupersedeMealUndo={() => setCaptureToasts(state => supersedeCaptureUndo(moves.undo?.moved ? afterCompletedMove(state, moves.undo.moved) : state))}
         undoDelete={undoDelete} onUndoDelete={undoDeletedEntry} onDismissUndoDelete={() => setUndoDelete(null)} undoBusy={undoBusy}
         strandedPortion={strandedPortion ? portionControl : null} today={todayISO()} onMoveCapture={iso => moveOffered(mealUndo, iso)}
         dayOffers={captureToasts.offers} onMoveOffer={moveOffered}

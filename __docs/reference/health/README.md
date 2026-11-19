@@ -557,7 +557,8 @@ Three routes, one command (`useMealMoves().moveToDay`, `mealDrag.jsx`):
     carries food from another log. A captured part of any other dish stays, and the toast
     says it is part of a dish and can't move alone; the rest of the capture still moves.
   - **After the tap:** a move leaves only the move's Undo, because a capture's Undo stops
-    working once its rows change. A refused move keeps the toast and its day buttons. A
+    working once its rows change. A refused move keeps the toast and its day buttons, and
+    gives the server's reason (a refusal never says to try again when connected). A
     day that will not load, or food no longer on it, is reported and the toast stays.
   - **Unknown outcome (network failure or 5xx):** the food stays reserved, so the toast
     swaps its day buttons for **Try again**, which resends the same operation ID. If the

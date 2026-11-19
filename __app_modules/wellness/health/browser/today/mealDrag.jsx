@@ -19,7 +19,7 @@ import {
 } from '@dnd-kit/core';
 import { createAppLogger } from "../../../../../frontend/src/lib/ui/createAppLogger.js";
 import { FoodIcon } from "./FoodIcon.jsx";
-import { entryError, entryId, entryLabel } from "./entryCommands.js";
+import { entryError, entryId, entryLabel, isEntryConflict } from "./entryCommands.js";
 import { bucketLabel } from "./mealBuckets.js";
 import { groupRows } from "./groupRows.js";
 import { dayDropId, dayFromDropId, dayLabel } from "./moveDays.js";
@@ -154,6 +154,12 @@ const MOVE_PATH = 'api/v1/health/nutrition/foods-move';
 const UNDO_PATH = 'api/v1/health/nutrition/meal-undo';
 // The server answered and said no. A timeout or rate limit says nothing about the outcome.
 const isDefiniteRefusal = err => err?.status >= 400 && err.status < 500 && ![408, 425, 429].includes(err.status);
+/** "<what failed>: <why>". A refusal will not change with a better connection, so it gives the server's reason or none. */
+const failureText = (what, err) => {
+  if (isEntryConflict(err) || !isDefiniteRefusal(err)) return `${what}: ${entryError(err)}`;
+  const reason = err.body?.error || err.body?.message;
+  return reason ? `${what}: ${reason}` : `${what}.`;
+};
 
 // A moved row wears its new meal from the drop until the day reloads with it, so
 // it never snaps back in between. `moves` names every carried row, parts included.
@@ -271,7 +277,7 @@ export function useMealMoves(day) {
     } catch (err) {
       setMoves(previous => { const next = new Map(previous); ids.forEach(id => next.delete(id)); return next; });
       releaseIfRefused(err, body.operationId);
-      setError(`Couldn't move ${whatMoved(rows)}: ${entryError(err)}`);
+      setError(failureText(`Couldn't move ${whatMoved(rows)}`, err));
       logger.warn('entry.move.failed', { count: rows.length, from, to, status: err.status, error: err.message });
       setUndo(null);
       return MoveResult.NOT_MOVED;
@@ -306,7 +312,7 @@ export function useMealMoves(day) {
       } catch (err) {
         setGone(previous => { const next = new Set(previous); ids.forEach(id => next.delete(id)); return next; });
         releaseIfRefused(err, body.operationId);
-        setError(`Couldn't move ${whatMoved(rows)} to ${dayLabel(toDate, localTodayISO())}: ${entryError(err)}`);
+        setError(failureText(`Couldn't move ${whatMoved(rows)} to ${dayLabel(toDate, localTodayISO())}`, err));
         logger.warn('entry.move-day.failed', { count: rows.length, from: fromDate, to: toDate, status: err.status, error: err.message });
         setUndo(null);
         onRetryable?.(isDefiniteRefusal(err) ? null : attempt);
@@ -339,7 +345,7 @@ export function useMealMoves(day) {
       });
     } catch (err) {
       releaseIfRefused(err, current.operationId);
-      setError(`Couldn't undo that move: ${entryError(err)}`);
+      setError(failureText("Couldn't undo that move", err));
       logger.warn('entry.move.undo-failed', { count: current.rows.length, status: err.status, error: err.message });
     } finally { day.reload?.(); }
   };
