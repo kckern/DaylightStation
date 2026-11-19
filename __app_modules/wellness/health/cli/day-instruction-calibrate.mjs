@@ -30,7 +30,7 @@ export function readJevApiKey(base) {
 }
 
 /** What the reader is given for one case. A case may describe its own day. */
-export const readingInput = item => ({ text: item.text, date: TODAY, today: TODAY, foods: item.foods ?? FOODS, latest: item.latest ?? LATEST });
+export const readingInput = item => ({ text: item.text, date: TODAY, today: TODAY, foods: item.foods ?? FOODS, latest: item.latest ?? LATEST, latestDate: item.latestDate });
 
 /** Every case, or those named by `--only`, which costs one paid call each. */
 export function selectCases(cases, args) {

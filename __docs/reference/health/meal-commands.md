@@ -251,7 +251,8 @@ intended. It runs each phrase in
 `__app_modules/wellness/health/cli/fixtures/day-instruction-calibration.json` through
 `DayInstructionReader` against a fixed list of foods, and prints `ok` or `MISS` per
 phrase and a total. It exits non-zero on any miss. A phrase may set its own `foods` and
-`latest`, which is how the empty-day cases are written.
+`latest`, which is how the empty-day cases are written, and `latestDate` to put the latest
+capture on another day, which offers the viewed day as a destination.
 
 ```sh
 DAYLIGHT_BASE_PATH=<content-base> node cli/day-instruction-calibrate.mjs

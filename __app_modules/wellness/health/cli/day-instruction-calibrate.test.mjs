@@ -51,8 +51,13 @@ describe('calibration cases', () => {
     expect(readingInput({ text: 'a banana' })).toMatchObject({ text: 'a banana', foods: expect.arrayContaining(['Oatmeal']), latest: ['Iced tea', 'Rice'] });
     expect(readingInput({ text: 'a banana', foods: [], latest: ['Milk'] })).toMatchObject({ foods: [], latest: ['Milk'] });
   });
+  it('can place the latest capture on another day, which offers the viewed day as a destination', () => {
+    expect(readingInput({ text: 'x' }).latestDate).toBeUndefined();
+    expect(readingInput({ text: 'x', latestDate: '2026-11-17' })).toMatchObject({ date: '2026-11-18', latestDate: '2026-11-17' });
+    expect(fixture.find(item => item.id === 'latest-elsewhere-to-today')).toEqual({ id: 'latest-elsewhere-to-today', text: 'move that to today', foods: ['Oatmeal'], latest: ['Pizza'], latestDate: '2026-11-17', intent: 'move', target: 'latest', toDay: '2026-11-18' });
+  });
   it('covers an empty day: two dumps and a correction', () => {
-    expect(fixture).toHaveLength(22);
+    expect(fixture).toHaveLength(23);
     expect(fixture.slice(-3)).toEqual([
       { id: 'empty-dump', text: 'eggs for breakfast and a burrito at lunch', foods: [], latest: [], intent: 'add' },
       { id: 'empty-single', text: 'a banana', foods: [], latest: [], intent: 'add' },
