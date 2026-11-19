@@ -38,7 +38,7 @@ export function ImageFrame({
   const timerRef = useRef(null);
   const startTimeRef = useRef(null);
   const rafRef = useRef(null);
-  const prevMediaIdRef = useRef(null);
+  const hasDisplayedImageRef = useRef(false);
   const expectedIdRef = useRef(null);
   const pausedRef = useRef(false);
   const remainingRef = useRef(0);
@@ -370,15 +370,15 @@ export function ImageFrame({
     if (!media?.mediaUrl) return;
 
     const currentId = media.id || media.mediaUrl;
-    const isFirstImage = prevMediaIdRef.current === null;
-    const mediaChanged = currentId !== prevMediaIdRef.current;
-
-    if (!mediaChanged) return;
+    const isFirstImage = !hasDisplayedImageRef.current;
+    let disposed = false;
+    let showMetadataTimer;
+    let hideMetadataTimer;
+    let original;
 
     // Flush metrics from previous slide before starting new one
     perfFlush();
 
-    prevMediaIdRef.current = currentId;
     expectedIdRef.current = currentId;
 
     // Start perf collection for this slide
@@ -415,8 +415,8 @@ export function ImageFrame({
     });
 
     const onIncomingLoad = () => {
-      // Guard against stale loads from a previous image
-      if (expectedIdRef.current !== currentId) return;
+      if (disposed) return;
+      hasDisplayedImageRef.current = true;
 
       // Record thumbnail load time
       if (p && p.thumbLoadMs === null) {
@@ -471,16 +471,16 @@ export function ImageFrame({
       if (slideshow.showMetadata) {
         const metaDelay = isFirstImage ? 500 : DISSOLVE_MS + 200;
         const FADE_OUT_MS = 800;
-        setTimeout(() => {
-          if (expectedIdRef.current !== currentId) return;
+        showMetadataTimer = setTimeout(() => {
+          if (disposed) return;
           setSettledImageId(currentId);
           setMetadataVisible(true);
         }, metaDelay);
         // Schedule fade-out before advance
         const fadeOutAt = duration - FADE_OUT_MS - 200;
         if (fadeOutAt > metaDelay + 600) {
-          setTimeout(() => {
-            if (expectedIdRef.current !== currentId) return;
+          hideMetadataTimer = setTimeout(() => {
+            if (disposed) return;
             setMetadataVisible(false);
           }, fadeOutAt);
         }
@@ -509,9 +509,9 @@ export function ImageFrame({
       // Upgrade thumbnail → original
       if (thumbnailUrl !== originalUrl) {
         if (p) p.origStartMs = performance.now() - p.t0;
-        const original = new Image();
+        original = new Image();
         original.onload = () => {
-          if (expectedIdRef.current === currentId && activeLayerRef.current === incomingKey) {
+          if (!disposed && activeLayerRef.current === incomingKey) {
             incomingImg.src = originalUrl;
             if (p) {
               p.origLoadMs = performance.now() - p.t0;
@@ -532,12 +532,19 @@ export function ImageFrame({
     incomingImg.style.opacity = isFirstImage ? '1' : '0';
     incomingImg.onload = onIncomingLoad;
     incomingImg.onerror = () => {
+      if (disposed) return;
       logger.warn('image-frame-load-error', { imageId: currentId, mediaUrl: thumbnailUrl });
       manualAdvanceRef.current?.();
     };
     incomingImg.src = thumbnailUrl;
 
     return () => {
+      disposed = true;
+      incomingImg.onload = null;
+      incomingImg.onerror = null;
+      if (original) original.onload = null;
+      clearTimeout(showMetadataTimer);
+      clearTimeout(hideMetadataTimer);
       if (timerRef.current) clearTimeout(timerRef.current);
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
     };
