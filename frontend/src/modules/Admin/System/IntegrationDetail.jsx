@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Stack, Group, Text, Badge, Button, Paper, Alert, Center, Loader, Anchor }  from '@mantine/core';
 import {
@@ -69,12 +69,19 @@ function ProviderDetail({ provider, navigate }) {
   const integration = data?.integration;
   const [testResult, setTestResult] = useState(null);
   const [testing, setTesting] = useState(false);
+  const isActiveView = useRef(true);
+
+  useEffect(() => {
+    isActiveView.current = true;
+    return () => { isActiveView.current = false; };
+  }, []);
 
   const handleTestConnection = useCallback(async () => {
     setTesting(true);
     setTestResult(null);
     try {
       const result = await testConnection(provider);
+      if (!isActiveView.current) return;
       setTestResult(result);
       if (result?.status === 'success') {
         notifySuccess({
@@ -88,6 +95,7 @@ function ProviderDetail({ provider, navigate }) {
         });
       }
     } catch (err) {
+      if (!isActiveView.current) return;
       setTestResult({
         status: 'failed',
         message: err.message || 'Connection test failed',
@@ -95,7 +103,7 @@ function ProviderDetail({ provider, navigate }) {
       });
       notifyFailure({ title: 'Connection failed', message: err.message });
     } finally {
-      setTesting(false);
+      if (isActiveView.current) setTesting(false);
     }
   }, [provider, testConnection]);
 
