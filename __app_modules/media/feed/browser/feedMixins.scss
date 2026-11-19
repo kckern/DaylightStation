@@ -3,6 +3,10 @@
 // Token values (--feed-*) are defined on .feed-app in FeedApp.scss.
 // =========================================================================
 
+// Modal layers sit above Feed chrome and persistent playback controls.
+$feed-modal-scrim: 200;
+$feed-modal-panel: $feed-modal-scrim + 1;
+
 // Standard control chip: filter toggles, view switchers, action pills.
 @mixin feed-chip {
   min-height: var(--feed-control, 36px);

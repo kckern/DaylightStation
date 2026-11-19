@@ -154,7 +154,7 @@ describe('MosaicView', () => {
       Object.defineProperty(ev, 'pointerType', { value: 'touch' });
       fireEvent(el, ev);
     };
-    const tap = (el) => { touchDown(el); fireEvent.mouseOver(el); fireEvent.focus(el); fireEvent.click(el); };
+    const tap = (el) => { touchDown(el); fireEvent.mouseOver(el); fireEvent.focus(el); fireEvent.click(el, { detail: 1 }); };
     tap(lamp);
     expect(plain(screen.getByRole('tooltip').textContent)).toBe('Desk lamp · Off');
     expect(screen.queryByRole('dialog')).toBeNull();

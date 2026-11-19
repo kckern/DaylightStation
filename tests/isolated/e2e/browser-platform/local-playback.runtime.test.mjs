@@ -578,3 +578,50 @@ test('Media keeps the last paused seek when leaving its app and restores silentl
   await expect.poll(() => page.evaluate(() => window.initialFixturePlayingPosition ?? -1)).toBeCloseTo(10, 0);
   await expect.poll(clock).toBeGreaterThan(10.1);
 });
+
+test('Reader subscriptions own compact backdrop clicks while Feed audio keeps playing', async ({ page }) => {
+  await page.routeWebSocket('**/ws', () => {});
+  await page.route('**/api/**/reader/feeds', route => route.fulfill({ json: [{ id: 'fixture', title: 'Fixture Feed' }] }));
+  await page.route('**/api/**/reader/stream?*', route => route.fulfill({ json: { items: [], continuation: null } }));
+  await page.goto('/feed/scroll');
+  await page.getByRole('button', { name: 'Play', exact: true }).first().click();
+  const clock = await originalClock(page);
+  const stop = page.getByRole('button', { name: 'Stop playback' });
+  await page.getByRole('link', { name: 'Reader', exact: true }).click();
+  const opener = page.getByRole('button', { name: 'Open subscriptions' });
+  const drawer = page.getByRole('dialog', { name: 'Subscriptions' });
+  const stopBounds = await stop.boundingBox();
+  await opener.click();
+  await expect(drawer).toBeVisible();
+  const playingAt = await clock();
+
+  // The player stop button sits behind the modal backdrop, beyond the drawer edge.
+  await page.mouse.click(stopBounds.x + stopBounds.width / 2, stopBounds.y + stopBounds.height / 2);
+
+  await expect(drawer).toHaveCount(0);
+  await expect(opener).toBeFocused();
+  await expect(stop).toBeVisible();
+  await expect.poll(clock).toBeGreaterThan(playingAt);
+
+  await page.keyboard.press('Enter');
+  await expect(drawer).toBeFocused();
+  const first = drawer.getByRole('button', { name: 'Close subscriptions' });
+  const last = drawer.getByRole('button', { name: 'Uncategorized', exact: true });
+  await page.keyboard.press('Shift+Tab');
+  await expect(last).toBeFocused();
+  await page.keyboard.press('Tab');
+  await expect(first).toBeFocused();
+
+  await page.setViewportSize({ width: 768, height: 850 });
+  await expect(page.getByRole('complementary', { name: 'Subscriptions' })).toBeFocused();
+  await page.setViewportSize({ width: 390, height: 850 });
+  await expect(opener).toBeFocused();
+  await expect(opener).toHaveAttribute('aria-expanded', 'false');
+  await page.keyboard.press('Enter');
+  await expect(drawer).toBeFocused();
+  await page.keyboard.press('Escape');
+  await expect(opener).toBeFocused();
+  await expect(page).toHaveURL(/\/feed\/reader$/);
+  const beforeFinalTick = await clock();
+  await expect.poll(clock).toBeGreaterThan(beforeFinalTick);
+});

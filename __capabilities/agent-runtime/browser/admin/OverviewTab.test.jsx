@@ -94,6 +94,31 @@ it('retains the next member’s entries when a confirmed Clear All finishes late
   expect(DaylightAPI).toHaveBeenCalledWith('/api/v1/agents/coach/memory/alice', {}, 'DELETE');
 });
 
+it('keeps confirmed cleared memory empty after an earlier per-entry refresh resolves', async () => {
+  const priorRead = deferred();
+  let reads = 0;
+  DaylightAPI.mockImplementation(async (path, _body, method) => {
+    if (method === 'DELETE') return {};
+    if (path.endsWith('/assignments')) return { assignments: [] };
+    if (++reads === 1) return memory('Before clear');
+    if (reads === 2) return priorRead.promise;
+    return { entries: {} };
+  });
+  render(view('coach', 'alice'));
+  await screen.findByText('Before clear');
+  await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Delete memory entry note' })));
+  expect(reads).toBe(2);
+  fireEvent.click(screen.getByRole('button', { name: 'Clear All' }));
+  const dialog = await screen.findByRole('dialog');
+  await act(async () => fireEvent.click(within(dialog).getByRole('button', { name: 'Clear All' })));
+  expect(reads).toBe(3);
+  expect(screen.getByText('No memory entries')).toBeVisible();
+
+  await act(async () => priorRead.resolve(memory('Stale memory')));
+  expect(screen.queryByText('Stale memory')).toBeNull();
+  expect(screen.getByText('No memory entries')).toBeVisible();
+});
+
 it('reports a rejected deletion in the current view and can delete successfully on the next attempt', async () => {
   let removed = false;
   let attempts = 0;

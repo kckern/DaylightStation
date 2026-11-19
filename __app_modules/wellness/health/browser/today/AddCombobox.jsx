@@ -4,6 +4,8 @@ import { useDebouncedValue } from '@mantine/hooks';
 import { DaylightAPI } from "../../../../../frontend/src/lib/api.mjs";
 import { useApiResource } from "../../../../../frontend/src/lib/hooks/useApiResource.js";
 import { createAppLogger } from "../../../../../frontend/src/lib/ui/createAppLogger.js";
+import { useAppMainRef } from '@/lib/ui/AppFrame.jsx';
+import { observeVisualViewport } from '@/lib/ui/observeVisualViewport.js';
 import { operationRequest } from "../capture/operationRequest.js";
 import { FoodIcon } from "./FoodIcon.jsx";
 import { nutritionPhotoUrl } from "./photoUrl.js";
@@ -74,6 +76,7 @@ const visibleViewport = () => (typeof window === 'undefined' ? null
 export function AddCombobox({ bucketId, date = null, onDone, onFoodAdded = null, onCancel, onMeals, onTemplate, onManageFoods, onSentencePending = null,
   inline = false, label = null, focusRequest = 0, actions = null }) {
   const operations = useHealthOperations();
+  const mainRef = useAppMainRef();
   const [text, setText] = useState('');
   const [highlight, setHighlight] = useState(-1);
   const [phase, setPhase] = useState('typing'); // typing | parsing
@@ -131,25 +134,36 @@ export function AddCombobox({ bucketId, date = null, onDone, onFoodAdded = null,
 
   useLayoutEffect(() => {
     if (!inline || !open) return undefined;
+    const field = rootRef.current;
+    const popup = popupRef.current;
+    if (!field || !popup) return undefined;
+    const availableHeight = '--health-suggest-available-height';
     const place = () => {
-      const field = rootRef.current?.querySelector('.health-suggest__field') || rootRef.current;
-      const popup = popupRef.current;
-      if (!field || !popup) return;
-      setPlacement(popupPlacement(field.getBoundingClientRect(), popup.offsetHeight, visibleViewport()));
+      const viewport = visibleViewport();
+      const main = mainRef?.current?.getBoundingClientRect();
+      const top = Math.max(viewport.offsetTop, main?.top ?? viewport.offsetTop);
+      const viewportBottom = viewport.offsetTop + viewport.height;
+      const bottom = Math.min(viewportBottom, main?.bottom ?? viewportBottom);
+      const anchor = field.getBoundingClientRect();
+      // Measure before constraining the popup so a resize can choose either
+      // side based on the content, regardless of the previous height.
+      popup.style.removeProperty(availableHeight);
+      const side = popupPlacement(anchor, popup.offsetHeight, { offsetTop: top, height: bottom - top });
+      const room = side === 'above' ? anchor.top - top : bottom - anchor.bottom;
+      popup.style.setProperty(availableHeight, `${Math.max(0, room)}px`);
+      setPlacement(side);
     };
-    place();
-    const viewport = window.visualViewport;
-    viewport?.addEventListener('resize', place);
-    viewport?.addEventListener('scroll', place);
-    window.addEventListener('resize', place);
-    document.addEventListener('scroll', place, true);
+    const onScroll = event => {
+      if (!popup.contains(event.target)) place();
+    };
+    const stopObserving = observeVisualViewport(place);
+    document.addEventListener('scroll', onScroll, true);
     return () => {
-      viewport?.removeEventListener('resize', place);
-      viewport?.removeEventListener('scroll', place);
-      window.removeEventListener('resize', place);
-      document.removeEventListener('scroll', place, true);
+      stopObserving();
+      document.removeEventListener('scroll', onScroll, true);
+      popup.style.removeProperty(availableHeight);
     };
-  }, [inline, open, items.length, text]);
+  }, [inline, open, items.length, text, mainRef]);
 
   // The sheet unmounts on success. The inline row stays: clear it and forget
   // the operation id (the next add is a new intent even when the payload is

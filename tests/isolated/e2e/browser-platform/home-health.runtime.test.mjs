@@ -400,6 +400,41 @@ test('Home Mosaic keeps the tooltip and drawer reachable in its own frame', asyn
   await expect(drawer).toHaveCount(0);
 });
 
+test.describe('Home Mosaic mixed input', () => {
+  test.use({ hasTouch: true, viewport: { width: 390, height: 850 } });
+
+  for (const activation of ['Enter', 'Space', 'mouse']) {
+    test(`Home Mosaic opens another device by ${activation} immediately after a touch tooltip`, async ({ page, baseURL }) => {
+      const origin = new URL(baseURL).origin;
+      await page.context().route('**/*', route => (
+        new URL(route.request().url()).origin === origin ? route.fallback() : route.abort()
+      ));
+      const payload = house('on');
+      payload.entities.push({ ...payload.entities[0], id: 'light.hall', name: 'Hall light' });
+      const group = { id: 'kitchen', label: 'Kitchen', entityIds: ['light.kitchen', 'light.hall'] };
+      payload.mosaic = { byRoom: [group], byType: [group] };
+      await page.route('**/home-dashboard/entities', route => route.fulfill({ json: payload }));
+      // Keep pointer and keyboard activations in the same compatibility-event window.
+      await page.clock.setFixedTime(new Date('2026-11-22T19:00:00Z'));
+      await page.goto('/home');
+      await page.getByRole('button', { name: 'Mosaic', exact: true }).tap();
+      const kitchen = page.getByRole('button', { name: 'Kitchen light: On', exact: true });
+      const hall = page.getByRole('button', { name: 'Hall light: On', exact: true });
+
+      await kitchen.tap();
+      await expect(page.getByRole('tooltip')).toContainText('Kitchen light');
+      await expect(page.getByRole('dialog')).toHaveCount(0);
+      if (activation === 'mouse') await hall.click();
+      else await hall.press(activation);
+      const hallDetails = page.getByRole('dialog', { name: 'Hall light', exact: true });
+      await expect(hallDetails.getByRole('button', { name: 'Close', exact: true })).toBeFocused();
+      await page.keyboard.press('Escape');
+      await expect(hallDetails).toBeHidden();
+      await expect(hall).toBeFocused();
+    });
+  }
+});
+
 test.describe('Home phone history choices', () => {
   test.use({ hasTouch: true, viewport: { width: 390, height: 850 } });
 

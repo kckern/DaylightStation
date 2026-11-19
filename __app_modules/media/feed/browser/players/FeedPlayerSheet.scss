@@ -1,7 +1,9 @@
+@use "../feedMixins.scss" as feed;
+
 .feed-player-sheet-scrim {
   position: fixed;
   inset: 0;
-  z-index: 200;
+  z-index: feed.$feed-modal-scrim;
   background: rgba(0, 0, 0, 0.5);
   opacity: 0;
   transition: opacity 300ms ease;
@@ -18,7 +20,7 @@
   bottom: 0;
   left: var(--browser-safe-area-left);
   right: var(--browser-safe-area-right);
-  z-index: 201;
+  z-index: feed.$feed-modal-panel;
   background: var(--feed-surface-2, #1e2125);
   border-radius: 16px 16px 0 0;
   transform: translateY(100%);

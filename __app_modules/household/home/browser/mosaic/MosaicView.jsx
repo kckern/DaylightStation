@@ -127,7 +127,7 @@ export function MosaicView({ entities, mosaic, summary, haUrl, toggle }) {
   const [tip, setTip] = useState(null);
   const boxRef = useRef(null);
   const tipIdRef = useRef(null);
-  const touchRef = useRef({ at: 0, tipBefore: null });
+  const touchRef = useRef({ at: 0, entityId: null, tipBefore: null });
   const detail = useEntityDetail(entities || []);
   const tipDomId = useId();
 
@@ -193,7 +193,11 @@ export function MosaicView({ entities, mosaic, summary, haUrl, toggle }) {
 
   const onPointerDown = (e) => {
     if (e.pointerType === 'touch' || e.pointerType === 'pen') {
-      touchRef.current = { at: Date.now(), tipBefore: tipIdRef.current };
+      touchRef.current = {
+        at: Date.now(), entityId: squareOf(e)?.dataset.entityId, tipBefore: tipIdRef.current,
+      };
+    } else {
+      touchRef.current = { at: 0, entityId: null, tipBefore: null };
     }
   };
   const onMouseOver = (e) => {
@@ -206,11 +210,15 @@ export function MosaicView({ entities, mosaic, summary, haUrl, toggle }) {
     if (!sq) { hideTip(); return; }
     const entity = byId.get(sq.dataset.entityId);
     if (!entity) return;
-    // A tap first explains the square; tapping the same square again opens it.
-    if (recentTouch() && touchRef.current.tipBefore !== entity.id) {
-      touchRef.current.tipBefore = entity.id;
-      showTip(sq);
-      return;
+    // A touch can emit a compatibility mouse click. Match it to its square
+    // and consume it once. Keyboard activation has a click count of zero.
+    const touch = touchRef.current;
+    if (e.detail > 0 && recentTouch() && touch.entityId === entity.id) {
+      touch.entityId = null;
+      if (touch.tipBefore !== entity.id) {
+        showTip(sq);
+        return;
+      }
     }
     hideTip();
     detail.open(entity);

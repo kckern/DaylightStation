@@ -1060,19 +1060,24 @@ $health-aside-gap: 1.5rem;
 // sitting in flow. In flow, focusing the row pushed the page down by up to the
 // list's full height and blur/commit yanked it back — the add-row jostle that
 // `ui.layout-shift` reported. Full row width, same card look (the shadow is
-// inherited from the row's own card), scrolls inside its list's max-height.
-// No ancestor between here and the scrolling main clips overflow, so the
-// popup is never cut off; near the page end it extends the scroll area.
+// inherited from the row's own card). The popup fits the visible area of its
+// frame. Results scroll inside the space left by the popup actions.
 // The sheet (non-inline) mode keeps its in-flow layout.
 .health-suggest--inline {
   position: relative;
+  --health-suggest-gap: 2px;
   .health-suggest__popup {
-    position: absolute; top: calc(100% + 2px); left: -1px; right: -1px; z-index: 30;
+    position: absolute; top: calc(100% + var(--health-suggest-gap)); left: -1px; right: -1px; z-index: 30;
+    box-sizing: border-box;
+    max-block-size: max(0px, calc(var(--health-suggest-available-height, 100vh) - var(--health-suggest-gap)));
+    display: flex; flex-direction: column; align-items: flex-start; overflow-y: auto;
     padding: 0.25rem; border: 1px solid var(--ds-border); border-radius: 9px;
     background: var(--ds-surface); box-shadow: inherit;
+
+    > :not(.health-suggest__list) { flex: none; }
   }
-  // No room below in the visible viewport (AddCombobox popupPlacement): open upward.
-  &.health-suggest--above .health-suggest__popup { top: auto; bottom: calc(100% + 2px); }
+  .health-suggest__list { inline-size: 100%; min-block-size: 0; }
+  &.health-suggest--above .health-suggest__popup { top: auto; bottom: calc(100% + var(--health-suggest-gap)); }
 }
 // A meal's add row is a quiet line under its foods: no card, no border until
 // it is focused, and its capture icons muted until the row is reached. The

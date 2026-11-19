@@ -3,6 +3,7 @@ import { ActionIcon, FocusTrap } from '@mantine/core';
 import { useDismissLayer } from './dismiss/useDismissLayer.js';
 import { useOverlayFocusReturn } from './dismiss/useOverlayFocusReturn.js';
 import { UiIcon } from './UiIcon.jsx';
+import { observeVisualViewport } from './observeVisualViewport.js';
 import './ds.scss';
 
 /**
@@ -82,15 +83,10 @@ function fitSheetToKeyboard(sheet, viewport) {
     sheet.setAttribute('data-keyboard-viewport', '');
     fitted = true;
   };
-  viewport.addEventListener('resize', update);
-  viewport.addEventListener('scroll', update);
-  window.addEventListener('resize', update);
   sheet.addEventListener('focusin', update);
-  update();
+  const stopObserving = observeVisualViewport(update);
   return () => {
-    viewport.removeEventListener('resize', update);
-    viewport.removeEventListener('scroll', update);
-    window.removeEventListener('resize', update);
+    stopObserving();
     sheet.removeEventListener('focusin', update);
     if (fitted) reset();
   };

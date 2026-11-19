@@ -140,13 +140,17 @@ describe('add-food suggestion panel', () => {
   });
 
   it('inline: the popup overlays what follows instead of pushing it down', () => {
-    expect(rule('.health-suggest--inline')).toMatch(/position: relative/);
+    const inline = rule('.health-suggest--inline');
+    expect(inline).toMatch(/position: relative/);
+    expect(inline).toContain('--health-suggest-gap: 2px');
     const popup = rule('.health-suggest--inline .health-suggest__popup');
     expect(popup).toMatch(/position: absolute/);
-    expect(popup).toMatch(/top: calc\(100% \+ 2px\)/);
+    expect(popup).toContain('top: calc(100% + var(--health-suggest-gap))');
+    expect(popup).toMatch(/max-block-size:[^;]*var\(--health-suggest-available-height/);
     expect(popup).toMatch(/z-index: \d+/);
     expect(popup).toMatch(/background: var\(--ds-surface\)/);
-    expect(css).toMatch(/\.health-suggest--inline\.health-suggest--above \.health-suggest__popup \{[^}]*bottom: calc\(100% \+ 2px\)/);
+    expect(rule('.health-suggest--inline.health-suggest--above .health-suggest__popup'))
+      .toContain('bottom: calc(100% + var(--health-suggest-gap))');
     // The sheet mode's popup stays in flow: no unscoped popup rule positions it.
     expect(css).not.toMatch(/\} \.health-suggest__popup \{[^}]*position: absolute/);
   });
