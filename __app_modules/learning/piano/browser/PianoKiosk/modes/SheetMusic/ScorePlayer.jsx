@@ -2475,8 +2475,9 @@ export default function ScorePlayer({ score: scoreMeta }) {
 
       {roadmapLearn && practiceLoaded && (layout.measures?.length ?? 0) > 0 && (
         <>
-          <div className="piano-learn-entry piano-learn-coach"><button type="button" className="is-primary" onClick={() => openLearnPassage(coach.projection.recommended?.passageId ?? coachedPassages[0]?.id)}>{coach.state.evidence.length || coachedPassages.some((passage) => passage.inProgress || passage.complete) ? 'Continue learning' : 'Start learning'}</button>
-            {coach.projection.recommended && <span>{coachedPassages.find((passage) => passage.id === coach.projection.recommended.passageId)?.label} · {coach.projection.recommended.label}</span>}
+          <div className="piano-learn-entry piano-learn-coach"><button type="button" className="is-primary" onClick={() => openLearnPassage(coach.projection.recommended?.passageId ?? coach.projection.piece.nextGoldPassageId ?? coachedPassages[0]?.id)}>{!coach.projection.recommended && coach.projection.piece.nextGoldPassageId ? 'Go for Gold' : coach.state.evidence.length || coachedPassages.some((passage) => passage.inProgress || passage.complete) ? 'Continue learning' : 'Start learning'}</button>
+            {coach.projection.recommended && <span>{(() => { const passage = coachedPassages.find((item) => item.id === coach.projection.recommended.passageId); return passage?.barLabel ?? passage?.label; })()}: {coach.projection.recommended.label}</span>}
+            <span>{coach.projection.piece.silver} of {coach.projection.piece.total} passages Silver, {coach.projection.piece.gold} Gold</span>
             {coach.projection.review && <button type="button" onClick={() => { coach.selectTask(coach.projection.review); openLearnPassage(coach.projection.review.passageId); }}>Review a passage</button>}
           </div>
           <LearnProgressStrip segments={coachedPassages} selectedId={selectedPassage?.id ?? null} onOpenSegment={openLearnPassage} />

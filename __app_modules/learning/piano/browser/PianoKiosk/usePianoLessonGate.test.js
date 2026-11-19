@@ -134,7 +134,28 @@ describe('usePianoLessonGate', () => {
     expect(named.result.current.pending).toBe(true);
 
     const nobody = renderHook(() => usePianoLessonGate(null));
-    expect(nobody.result.current.pending).toBe(false);
+    expect(nobody.result.current.pending).toBe(true);
+  });
+
+  it('waits for the player without reading School, then opens at the ceiling', async () => {
+    vi.useFakeTimers();
+    try {
+      DaylightAPI.mockClear();
+      const { result } = renderHook(() => usePianoLessonGate(null));
+      await act(async () => { await vi.advanceTimersByTimeAsync(LOADING_CEILING_MS - 1); });
+      expect(result.current.pending).toBe(true);
+      expect(DaylightAPI).not.toHaveBeenCalled();
+      await act(async () => { await vi.advanceTimersByTimeAsync(1); });
+      expect(result.current).toMatchObject({ pending: false, status: 'timeout' });
+    } finally { vi.useRealTimers(); }
+  });
+
+  it('stays pending from unknown player until that learner is answered', async () => {
+    h.response = new Promise(() => {});
+    const { result, rerender } = renderHook(({ id }) => usePianoLessonGate(id), { initialProps: { id: null } });
+    rerender({ id: 'kid-one' });
+    expect(result.current.pending).toBe(true);
+    expect(DaylightAPI).toHaveBeenCalled();
   });
 
   it('stops being pending the moment a verdict lands', async () => {

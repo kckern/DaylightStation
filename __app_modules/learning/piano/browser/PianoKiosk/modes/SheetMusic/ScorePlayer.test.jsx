@@ -318,6 +318,7 @@ describe('ScorePlayer — guided Learn composition', () => {
  it('provides one learning entry, explicit start, result choice, and return to the score', async () => {
   setup(); renderPlayer(); pickMode('Learn');
   expect(screen.getByRole('navigation', { name: 'Piece learning progress' })).toBeInTheDocument();
+  expect(screen.getByText(/^0 of \d+ passages Silver, 0 Gold$/)).toBeInTheDocument();
   fireEvent.click(screen.getByRole('button', { name: 'Start learning' }));
   expect(screen.getByRole('button', { name: 'Start practice', exact: true })).toBeDisabled();
   fireEvent.click(screen.getByText('Music ready')); fireEvent.click(screen.getByRole('button', { name: 'Start practice', exact: true }));

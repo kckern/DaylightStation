@@ -3,12 +3,16 @@ const PROGRESS_LABEL = Object.freeze({
   learning: 'Learning',
   learned: 'Learned',
   mastered: 'Mastered',
+  silver: 'Silver',
+  gold: 'Gold',
   locked: 'Locked',
 });
 
 // eslint-disable-next-line react-refresh/only-export-components -- pure projection is covered independently
 export function learnSegmentProgressState(segment) {
   if (segment.locked) return 'locked';
+  if (segment.certification?.gold) return 'gold';
+  if (segment.certification?.silver) return 'silver';
   if (segment.testedOut) return 'mastered';
   if (segment.complete) return 'learned';
   if (segment.inProgress || segment.rungs?.some((rung) => (rung.passCount ?? 0) > 0)) return 'learning';

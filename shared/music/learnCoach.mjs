@@ -169,7 +169,7 @@ function legacyReady(legacy, segment, task) {
   return aliases.some((alias) => (passage?.rungs?.[alias]?.passCount ?? 0) >= oldRequired);
 }
 
-const isGoldWork = (task) => task.mode !== 'free' && task.track !== 'silver';
+export const isGoldWork = (task) => task.mode !== 'free' && task.track !== 'silver';
 const certificate = (achievement, provenance) => ({ at: achievement?.at ?? null, provenance });
 
 function segmentProjection(plan, state, legacy, segment) {
@@ -234,6 +234,7 @@ export function projectCoach({ plan, state, legacy = {}, dayKey }) {
     goldResume: liveResume(plan, segments, current.goldResume),
     gold: by((segment) => (segment.certification.gold ? null : segment.skills.find((task) => task.track === 'gold' && !task.ready) ?? null)),
     certifications: by((segment) => segment.certification),
+    afterSetAside: by((segment) => open.find((other) => other.id !== segment.id && !setAsideToday(other.id))?.id ?? null),
     canSetAside: by((segment) => !segment.certification.silver && !setAsideToday(segment.id) && missedTwice(current, segment)),
     piece: { total: segments.length,
       silver: segments.filter((segment) => segment.certification.silver).length,

@@ -161,6 +161,10 @@ describe('what comes next', () => {
     expect(state.resume).toBeNull();
     expect(projectCoach({ plan, state, dayKey: '2026-11-19' }).recommended.passageId).toBe('one');
   });
+  it('names where set-aside would go next', () => {
+    const plan = planOf();
+    expect(view(plan).afterSetAside).toEqual({ one: 'two', two: 'one', solo: 'one' });
+  });
   it('falls back to the earliest set-aside passage when all remaining are set aside', () => {
     const plan = planOf(); let state;
     for (const id of ['one', 'two', 'solo']) state = applyCoachEvent(state, { id, type: 'set-aside', task: task(plan, 'silver', id) }, { plan, now: 'x', dayKey: DAY });
