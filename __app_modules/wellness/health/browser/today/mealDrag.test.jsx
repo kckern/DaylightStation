@@ -296,6 +296,44 @@ describe('useMealMoves — moving to another day', () => {
     expect(result.current.items).toEqual([viewed]);
     expect(result.current.error).toContain("Couldn't move Eggs");
   });
+  describe('when the outcome of a move from another day is unknown', () => {
+    const dish = { uuid: 'dish', name: 'Burrito', kind: 'group', logId: 'log-1', date: '2026-09-28', mealTime: 'morning', version: 1 };
+    const part = { uuid: 'part', name: 'Tortilla', parentId: 'dish', logId: 'log-1', date: '2026-09-28', mealTime: 'morning', version: 1 };
+    const hook = () => renderHook(() => ({ moves: useMealMoves({ items: [], reload: vi.fn() }), session: useHealthOperations() }),
+      { wrapper: ({ children }) => <HealthOperationsProvider userId="u">{children}</HealthOperationsProvider> });
+    const down = () => Object.assign(new Error('Bad gateway'), { status: 502 });
+
+    it('holds the dish and all its parts, and retries as the same operation to the same success', async () => {
+      apiMock.mockRejectedValueOnce(down()).mockResolvedValueOnce({ committed: true, undoToken: 'meal-token' });
+      const { result } = hook();
+      const onRetryable = vi.fn();
+      await act(async () => { expect(await result.current.moves.moveFromDay([{ ...dish, children: [part] }], '2026-09-29', [dish, part], { onRetryable })).toBe('not-moved'); });
+      const [operation] = [...result.current.session.snapshot.operations.values()];
+      expect(operation.targetIds).toEqual(['dish', 'part']);
+      const retry = onRetryable.mock.calls.at(-1)[0];
+      expect(retry).toEqual(expect.any(Function));
+      await act(async () => { expect(await retry()).toBe('moved'); });
+      expect(apiMock.mock.calls[1][1].operationId).toBe(apiMock.mock.calls[0][1].operationId);
+      expect(result.current.moves.undo.moved).toEqual({ ids: ['dish', 'part'], logIds: ['log-1'], toDate: '2026-09-29', toMeal: null });
+      expect(result.current.moves.error).toBeNull();
+    });
+
+    it('a refusal frees the food and offers no retry', async () => {
+      apiMock.mockRejectedValueOnce(Object.assign(new Error('changed'), { status: 409 }));
+      const { result } = hook();
+      const onRetryable = vi.fn();
+      await act(async () => { await result.current.moves.moveFromDay([dish], '2026-09-29', [dish, part], { onRetryable }); });
+      expect(onRetryable).toHaveBeenLastCalledWith(null);
+      expect(result.current.session.snapshot.operations.size).toBe(0);
+    });
+  });
+
+  it('a meal move reports what it moved and where', async () => {
+    const { result } = renderHook(() => useMealMoves({ items: [{ ...eggs, logId: 'log-1' }], reload: vi.fn() }));
+    await act(async () => { await result.current.move({ ...eggs, logId: 'log-1' }, 'evening', 'morning'); });
+    expect(result.current.undo.moved).toEqual({ ids: ['eggs'], logIds: ['log-1'], toDate: null, toMeal: 'evening' });
+  });
+
   it('a row already on that day is left alone', async () => {
     const { result } = renderHook(() => useMealMoves({ items: [eggs], reload: vi.fn() }));
     await act(async () => { await result.current.moveToDay([eggs], '2026-09-28'); });

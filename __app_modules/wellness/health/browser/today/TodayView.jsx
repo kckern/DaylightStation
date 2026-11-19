@@ -74,8 +74,8 @@ const MAX_DAY_OFFERS = 2;
 const NO_CAPTURE_TOASTS = { undo: null, offers: [] };
 const sameFood = (a, b) => Boolean(a && b) && (a.ids.some(id => b.ids.includes(id))
   || (a.logId === b.logId && Boolean(a.logId) && !SHARED_LOG_IDS.has(a.logId)));
-const withOffer = (offers, { label, offer }) => [{ token: null, label, offer },
-  ...offers.filter(shown => !sameFood(shown.offer, offer))].slice(0, MAX_DAY_OFFERS);
+const withOffer = (offers, shown) => [{ ...shown, token: null },
+  ...offers.filter(other => !sameFood(other.offer, shown.offer))].slice(0, MAX_DAY_OFFERS);
 /** A new result. An Undo it replaces leaves its day offer behind, unless it is for the same food. */
 function announceCapture(state, undo) {
   if (!undo.token) {
@@ -86,10 +86,24 @@ function announceCapture(state, undo) {
   return { undo, offers: undo.offer ? kept.filter(shown => !sameFood(shown.offer, undo.offer)) : kept };
 }
 /** A newer action took over the one Undo slot. The food can still be moved. */
-const supersedeCaptureUndo = (state, moving) => ({ undo: null,
-  offers: state.undo?.offer && !moving.has(state.undo.offer) ? withOffer(state.offers, state.undo) : state.offers });
-const forgetFood = (state, offer) => ({ undo: sameFood(state.undo?.offer, offer) ? null : state.undo,
-  offers: state.offers.filter(shown => !sameFood(shown.offer, offer)) });
+const supersedeCaptureUndo = state => ({ undo: null, offers: state.undo?.offer ? withOffer(state.offers, state.undo) : state.offers });
+const capturePlace = (what, date, mealId) => `Added ${what} to ${dayLabel(date, todayISO())}${mealId ? `, ${bucketLabel(mealId)}` : ''}`;
+const updateOffer = (state, offer, change) => {
+  const update = shown => (shown?.offer === offer ? change(shown) : shown);
+  return { undo: update(state.undo), offers: state.offers.map(update) };
+};
+/**
+ * A move finished, by any route. Food sent to another day takes its toast along.
+ * Food sent to another meal can still be on the wrong day, so its toast stays and
+ * stops naming a meal: some or all of it has left the one it named.
+ */
+function afterCompletedMove(state, { ids, logIds, toDate }) {
+  const touched = shown => Boolean(shown?.offer) && (shown.offer.ids.some(id => ids.includes(id))
+    || (logIds.includes(shown.offer.logId) && !SHARED_LOG_IDS.has(shown.offer.logId)));
+  if (toDate) return { undo: touched(state.undo) ? null : state.undo, offers: state.offers.filter(shown => !touched(shown)) };
+  const relabel = shown => (touched(shown) ? { ...shown, label: capturePlace(shown.offer.what, shown.offer.date) } : shown);
+  return { undo: state.undo && relabel(state.undo), offers: state.offers.map(relabel) };
+}
 const stayedInDish = rows => `${rows.length === 1 ? entryLabel(rows[0]) : `${rows.length} foods`} ${rows.length === 1 ? 'is' : 'are'} part of a dish and can't move alone`;
 
 export function TodayView({ active = true, sidebarTarget, followUpTarget = null, onSetupGoals, onCoachTap }) {
@@ -106,6 +120,7 @@ export function TodayView({ active = true, sidebarTarget, followUpTarget = null,
   const moves = useMealMoves(day);
   const movedDay = useMemo(() => ({ ...day, items: moves.items }), [day, moves.items]);
   const preview = usePortionDraft(movedDay, date);
+  const completedMove = moves.undo?.operationId;
   // Rows just added from an add row, briefly highlighted once on screen.
   const justAdded = useAddedRowHighlight(day.items);
   const addedIds = useMemo(() => (moves.recentIds.size ? new Set([...justAdded, ...moves.recentIds]) : justAdded), [justAdded, moves.recentIds]);
@@ -119,8 +134,11 @@ export function TodayView({ active = true, sidebarTarget, followUpTarget = null,
   const [captureToasts, setCaptureToasts] = useState(NO_CAPTURE_TOASTS);
   const mealUndo = captureToasts.undo;
   const clearMealUndo = () => setCaptureToasts(state => ({ ...state, undo: null }));
-  // Offers on their way to another day: the move's own Undo must not keep them.
-  const movingOffers = useRef(new Set());
+  useEffect(() => {
+    if (moves.undo?.moved) setCaptureToasts(state => afterCompletedMove(state, moves.undo.moved));
+    // One pass per finished move; the object itself is rebuilt on every render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [completedMove]);
   // A failed voice send whose mic unmounted (the day changed): { run, label, busy, error }.
   const [orphanRetry, setOrphanRetry] = useState(null);
   const keepOrphanedRecording = (run, { mealLabel, date: recordedOn }) => setOrphanRetry({ run, label: recordedOn && recordedOn !== todayISO() ? `${mealLabel} recording from ${recordedOn}` : `${mealLabel} recording`, busy: false, error: null });
@@ -344,8 +362,7 @@ export function TodayView({ active = true, sidebarTarget, followUpTarget = null,
     const landed = foods[0].date || result.date || targetDate;
     const what = foods.length === 1 ? entryLabel(foods[0]) : `${foods.length} foods`;
     const mealId = result.mealTime || result.bucket || foods[0].mealTime;
-    const meal = mealId ? `, ${bucketLabel(mealId)}` : '';
-    return { ...undo, label: `Added ${what} to ${dayLabel(landed, todayISO())}${meal}`, offer: { logId: result.logId, ids, what, date: landed } };
+    return { ...undo, label: capturePlace(what, landed, mealId), offer: { logId: result.logId, ids, what, date: landed } };
   };
   const showAdded = undo => {
     if (undo.token) mealUndoOperation.current = null;
@@ -389,15 +406,19 @@ export function TodayView({ active = true, sidebarTarget, followUpTarget = null,
         : `Those foods are no longer on ${elsewhere ? landedDay : 'this day'}.`);
       return;
     }
-    movingOffers.current.add(offer);
-    let outcome;
-    try { outcome = await (elsewhere ? moves.moveFromDay(entries, iso, items) : moves.moveToDay(entries, iso)); }
-    finally { movingOffers.current.delete(offer); }
+    const onRetryable = retry => {
+      const retryMove = retry && (async () => {
+        logger.info('capture.move-day.retry', { logId: offer.logId, to: iso });
+        const outcome = await retry();
+        logger.info('capture.move-day.result', { logId: offer.logId, outcome, to: iso });
+      });
+      setCaptureToasts(state => updateOffer(state, offer, shown => ({ ...shown, retryMove })));
+    };
+    const outcome = await moves.moveFromDay(entries, iso, elsewhere ? items : null, { onRetryable });
     logger.info('capture.move-day.result', { logId: offer.logId, outcome, to: iso });
-    if (outcome === MoveResult.MOVED) {
-      setCaptureToasts(state => forgetFood(state, offer));
-      if (blocked.length) say(`${stayedInDish(blocked)}, so ${blocked.length === 1 ? 'it' : 'they'} stayed.`);
-    } else if (outcome === MoveResult.UNCHANGED) say(`Those foods are already on ${dayLabel(iso, today)}.`);
+    // A finished move retires the toast by itself (afterCompletedMove).
+    if (outcome === MoveResult.MOVED && blocked.length) say(`${stayedInDish(blocked)}, so ${blocked.length === 1 ? 'it' : 'they'} stayed.`);
+    else if (outcome === MoveResult.UNCHANGED) say(`Those foods are already on ${dayLabel(iso, today)}.`);
   };
 
   const handleCaptureResult = (result, bucket = null, targetDate = date, context = {}) => {
@@ -592,7 +613,7 @@ export function TodayView({ active = true, sidebarTarget, followUpTarget = null,
         onRetryCapture={retryVoiceCapture} onDismissCapture={() => { setCaptureNotice(null); setCaptureRetry(null); }}
         orphanRetry={orphanRetry} onRetryOrphan={retryOrphanedRecording} onDismissOrphan={() => setOrphanRetry(null)}
         moves={moves} mealUndo={mealUndo} onUndoMeal={undoMealChange} onDismissMealUndo={clearMealUndo}
-        onSupersedeMealUndo={() => setCaptureToasts(state => supersedeCaptureUndo(state, movingOffers.current))}
+        onSupersedeMealUndo={() => setCaptureToasts(supersedeCaptureUndo)}
         undoDelete={undoDelete} onUndoDelete={undoDeletedEntry} onDismissUndoDelete={() => setUndoDelete(null)} undoBusy={undoBusy}
         strandedPortion={strandedPortion ? portionControl : null} today={todayISO()} onMoveCapture={iso => moveOffered(mealUndo, iso)}
         dayOffers={captureToasts.offers} onMoveOffer={moveOffered}

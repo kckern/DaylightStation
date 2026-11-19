@@ -41,11 +41,15 @@ function useNewestUndo(candidates) {
  * retired, gets the day fix alone.
  */
 function MealUndoToast({ mealUndo, today, onMoveCapture, onUndoMeal, onDismissMealUndo, undoBusy, named = false }) {
-  const [moving, moveCapture] = useMoveInFlight(onMoveCapture);
+  const [moving, run] = useMoveInFlight(action => action());
   const food = named ? mealUndo.offer?.what || 'food' : null;
   return <Toast message={mealUndo.label}>
     <span className="health-capture-actions">
-      {mealUndo.offer ? <CaptureDayActions date={mealUndo.offer.date} today={today} onMove={moveCapture} busy={moving} disabled={undoBusy} food={food} /> : null}
+      {/* An unknown outcome holds the food: the only safe next step is the same move again. */}
+      {mealUndo.retryMove ? <Button size="compact-xs" variant="light" loading={moving} disabled={undoBusy}
+        aria-label={`Retry moving ${mealUndo.offer.what || 'food'}`} onClick={() => run(mealUndo.retryMove)}>Try again</Button>
+        : mealUndo.offer ? <CaptureDayActions date={mealUndo.offer.date} today={today} onMove={iso => run(() => onMoveCapture(iso))}
+          busy={moving} disabled={undoBusy} food={food} /> : null}
       {mealUndo.token ? <Button size="compact-xs" aria-label="Undo meal change" loading={undoBusy} disabled={moving} onClick={onUndoMeal}>Undo</Button> : null}
       <Button size="compact-xs" variant="subtle" disabled={undoBusy || moving} aria-label={food ? `Dismiss ${food}` : undefined} onClick={onDismissMealUndo}>Dismiss</Button>
     </span>

@@ -138,6 +138,20 @@ describe('TodayToasts', () => {
     expect(onDismiss).not.toHaveBeenCalled();
   });
 
+  it('a move with an unknown outcome offers only a retry of that move', async () => {
+    let finish; const retryMove = vi.fn(() => new Promise(resolve => { finish = resolve; }));
+    render(<MantineProvider><TodayToasts moves={noMoves} today="2026-11-18" onDismissMealUndo={() => {}}
+      mealUndo={{ token: 'meal-1', label: 'Added Eggs to Today', retryMove, offer: { ids: ['e'], what: 'Eggs', date: '2026-11-18' } }} /></MantineProvider>);
+    const retry = await screen.findByRole('button', { name: 'Retry moving Eggs' });
+    expect(retry.textContent).toBe('Try again');
+    expect(screen.queryByRole('button', { name: 'Move to Yesterday' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Other day…' })).toBeNull();
+    fireEvent.click(retry);
+    fireEvent.click(screen.getByRole('button', { name: 'Retry moving Eggs' }));
+    expect(retryMove).toHaveBeenCalledTimes(1);
+    await act(async () => { finish('moved'); });
+  });
+
   it('an Undo in progress holds the day buttons', async () => {
     render(<MantineProvider><TodayToasts moves={noMoves} today="2026-11-18" undoBusy onDismissMealUndo={() => {}}
       mealUndo={{ token: 'meal-1', label: 'Added Eggs to Today', offer: { logId: 'log', date: '2026-11-18' } }} /></MantineProvider>);

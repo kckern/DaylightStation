@@ -557,8 +557,16 @@ Three routes, one command (`useMealMoves().moveToDay`, `mealDrag.jsx`):
     carries food from another log. A captured part of any other dish stays, and the toast
     says it is part of a dish and can't move alone; the rest of the capture still moves.
   - **After the tap:** a move leaves only the move's Undo, because a capture's Undo stops
-    working once its rows change. A refused or failed move keeps the toast. A day that
-    will not load, or food no longer on it, is reported and the toast stays.
+    working once its rows change. A refused move keeps the toast and its day buttons. A
+    day that will not load, or food no longer on it, is reported and the toast stays.
+  - **Unknown outcome (network failure or 5xx):** the food stays reserved, so the toast
+    swaps its day buttons for **Try again**, which resends the same operation ID. If the
+    first attempt had committed, the server replays it and the move finishes normally.
+  - **Moves from anywhere:** every finished move reports its row IDs and destination
+    (`moves.undo.moved`), whether it came from the toast, a drag, a meal menu, selection
+    or a status-row Retry. A move to another day retires any toast about those foods. A
+    move to another meal keeps the day buttons and drops the meal from the toast's text.
+    Toasts about other foods are untouched.
   - **One report:** the toast replaces the "Moved to Lunch" cue and the add row's "Added
     to Lunch" line for the same add.
   - **No offer:** meal instructions, amends, and captures that put no food on the day

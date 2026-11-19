@@ -59,6 +59,8 @@ export function useFoodMutation(rows = []) {
   dispatch.release = id => {
     if (session && !session.store.getSnapshot().operations.get(id)?.response) session.store.discard(id);
   };
+  /** Rows from outside the viewed day, so a command on them reserves them and their parts. */
+  dispatch.remember = known => { if (session) for (const row of known) session.knownRows.set(String(row.uuid ?? row.id), row); };
   dispatch.withContinuation = (path, body, method, apply) => dispatch(path, body, method, undefined, apply);
   return dispatch;
 }
