@@ -5,8 +5,8 @@ import { MantineProvider } from '@mantine/core';
 const apiMock = vi.fn();
 vi.mock('../../../../../frontend/src/lib/api.mjs', () => ({ DaylightAPI: (...args) => apiMock(...args) }));
 vi.mock('../capture/VoiceCapture.jsx', () => ({ VoiceCapture: ({ onCapture, labelPrefix, onError }) => <>
-  <button onClick={() => onCapture('data:audio')}>{labelPrefix}</button>
-  <button onClick={() => onError('Microphone unavailable.')}>Break the microphone</button>
+  <button type="button" onClick={() => onCapture('data:audio')}>{labelPrefix}</button>
+  <button type="button" onClick={() => onError('Microphone unavailable.')}>Break the microphone</button>
 </> }));
 import { DayInputBar } from './DayInputBar.jsx';
 import { MoveResult } from './mealDrag.jsx';
@@ -266,6 +266,98 @@ describe('DayInputBar', () => {
   });
 });
 
+describe('a recording made while something is unsettled', () => {
+  const voiceSends = () => apiMock.mock.calls.filter(call => call[1].type === 'voice');
+  it('waits behind a question the running request raises, and goes after the answer', async () => {
+    const reply = deferred();
+    apiMock.mockReturnValueOnce(reply.promise).mockResolvedValue(done);
+    setup();
+    type('move it');
+    speak();
+    await act(async () => { reply.resolve(whichFood({ instructionText: 'move it' })); });
+    expect(await screen.findByRole('button', { name: 'Tea' })).toBeTruthy();
+    expect(screen.getByText(/recording is waiting/i)).toBeTruthy();
+    expect(voiceSends()).toHaveLength(0);
+    fireEvent.click(screen.getByRole('button', { name: 'Tea' }));
+    await waitFor(() => expect(voiceSends()).toHaveLength(1));
+    expect(body(1)).toMatchObject({ type: 'text', resolved: { foodId: 'tea' } });
+    expect(body(2)).toMatchObject({ type: 'voice', content: 'data:audio' });
+  });
+  it('is not sent over an open question until it is cancelled', async () => {
+    apiMock.mockResolvedValueOnce(whichFood({ instructionText: 'move it' })).mockResolvedValue(done);
+    setup();
+    type('move it');
+    await screen.findByRole('button', { name: 'Tea' });
+    speak();
+    await act(async () => {});
+    expect(voiceSends()).toHaveLength(0);
+    expect(screen.getByRole('button', { name: 'Tea' })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    await waitFor(() => expect(voiceSends()).toHaveLength(1));
+  });
+  it('waits behind a failure, which stays readable, until it is dismissed', async () => {
+    const reply = deferred();
+    apiMock.mockReturnValueOnce(reply.promise).mockResolvedValue(done);
+    setup();
+    type('eggs');
+    speak();
+    await act(async () => { reply.reject(new Error('Network error: down')); });
+    expect((await screen.findByRole('alert')).textContent).toMatch(/did not go through/);
+    expect(voiceSends()).toHaveLength(0);
+    fireEvent.click(screen.getByRole('button', { name: 'Dismiss' }));
+    await waitFor(() => expect(voiceSends()).toHaveLength(1));
+  });
+  it('waits while a retry runs, and goes once it succeeds', async () => {
+    apiMock.mockRejectedValueOnce(new Error('Network error: down')).mockResolvedValue(done);
+    setup();
+    type('eggs');
+    await screen.findByRole('button', { name: 'Try again' });
+    speak();
+    await act(async () => {});
+    expect(voiceSends()).toHaveLength(0);
+    fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
+    await waitFor(() => expect(voiceSends()).toHaveLength(1));
+    expect(body(1).operationId).toBe(body(0).operationId);
+  });
+});
+
+describe('questions and focus', () => {
+  it('announces a question and takes focus to its first choice', async () => {
+    apiMock.mockResolvedValueOnce(whichFood({ instructionText: 'move it' }));
+    setup();
+    field().focus();
+    type('move it');
+    const tea = await screen.findByRole('button', { name: 'Tea' });
+    expect(screen.getByRole('status').textContent).toBe('Which food did you mean?');
+    await waitFor(() => expect(document.activeElement).toBe(tea));
+  });
+  it('takes focus to the date field for a day question', async () => {
+    apiMock.mockResolvedValueOnce(whichDay({ instructionText: 'last month' }));
+    setup();
+    field().focus();
+    type('last month');
+    const input = await screen.findByLabelText('Which day should this go to?');
+    await waitFor(() => expect(document.activeElement).toBe(input));
+  });
+  it('leaves focus alone when the person has moved elsewhere', async () => {
+    apiMock.mockResolvedValueOnce(whichFood({ instructionText: 'move it' }));
+    setup();
+    const elsewhere = document.body.appendChild(document.createElement('button'));
+    type('move it');
+    elsewhere.focus();
+    await screen.findByRole('button', { name: 'Tea' });
+    expect(document.activeElement).toBe(elsewhere);
+    elsewhere.remove();
+  });
+  it('Cancel returns to the field', async () => {
+    apiMock.mockResolvedValueOnce(whichFood({ instructionText: 'move it' }));
+    setup();
+    type('move it');
+    fireEvent.click(await screen.findByRole('button', { name: 'Cancel' }));
+    expect(document.activeElement).toBe(field());
+  });
+});
+
 describe('DayInputBar in a Health session', () => {
   const session = { current: null };
   const Probe = () => { session.current = useHealthOperations(); return null; };
@@ -300,6 +392,20 @@ describe('DayInputBar in a Health session', () => {
     await screen.findByRole('button', { name: 'Try again' });
     expect(screen.getAllByRole('alert')).toHaveLength(1);
   });
+  it('falls back to the upload under the same ID when the saved recording is gone', async () => {
+    const send = vi.fn().mockRejectedValueOnce(httpError(502, { error: 'Could not hear that.', audioRef: 'va_123' }))
+      .mockRejectedValueOnce(httpError(404, { error: 'That recording is no longer available.', code: 'AUDIO_NOT_FOUND' }))
+      .mockResolvedValue({ committed: false, outcome: 'no-food', message: 'No food.' });
+    open(send);
+    speak();
+    fireEvent.click(await screen.findByRole('button', { name: 'Try again' }));
+    await waitFor(() => expect(send).toHaveBeenCalledTimes(3));
+    expect(send.mock.calls[1][1]).toMatchObject({ audioRef: 'va_123' });
+    expect(send.mock.calls[1][1]).not.toHaveProperty('content');
+    expect(send.mock.calls[2][1]).toMatchObject({ type: 'voice', content: 'data:audio', operationId: send.mock.calls[0][1].operationId });
+    expect(send.mock.calls[2][1]).not.toHaveProperty('audioRef');
+    await waitFor(() => expect(screen.queryByRole('alert')).toBeNull());
+  });
   it('a refused request does not stay in the session', async () => {
     open(vi.fn().mockRejectedValue(httpError(422, { error: 'No.', code: 'INVALID_DAY_INSTRUCTION' })));
     type('eggs');
@@ -323,7 +429,7 @@ describe("Move this day's food", () => {
     fireEvent.click(screen.getByRole('checkbox', { name: 'Loose' }));
     expect(screen.getByRole('button', { name: 'Move 1 selected to another day' })).toBeTruthy();
     await moveTo();
-    await waitFor(() => expect(onMoveDay).toHaveBeenCalledWith([expect.objectContaining({ uuid: 'eggs' })], yesterday));
+    await waitFor(() => expect(onMoveDay).toHaveBeenCalledWith([expect.objectContaining({ uuid: 'eggs' })], yesterday, expect.any(Object)));
     await waitFor(() => expect(screen.queryByRole('checkbox', { name: 'Eggs' })).toBeNull());
   });
   it('stays open with the unticks after a failed move', async () => {
@@ -349,6 +455,43 @@ describe("Move this day's food", () => {
     await openSheet();
     for (const name of ['Eggs', 'Tea', 'Loose']) fireEvent.click(screen.getByRole('checkbox', { name }));
     expect(screen.queryByRole('button', { name: /selected to another day/ })).toBeNull();
+  });
+  it('shows a definite refusal with its reason', async () => {
+    setup({ onMoveDay: vi.fn(async (_rows, _iso, { onRefused }) => { onRefused('This entry changed. Reload before saving.'); return MoveResult.NOT_MOVED; }) });
+    await openSheet();
+    await moveTo();
+    expect(await screen.findByText('This entry changed. Reload before saving.')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: 'Try again' })).toBeNull();
+  });
+  it('holds the choices while an unknown move can be retried', async () => {
+    const retry = vi.fn(async () => MoveResult.UNKNOWN);
+    setup({ onMoveDay: vi.fn(async (_rows, _iso, { onRetryable }) => { onRetryable(retry); return MoveResult.UNKNOWN; }) });
+    await openSheet();
+    await moveTo();
+    fireEvent.click(await screen.findByRole('button', { name: 'Try again' }));
+    await waitFor(() => expect(retry).toHaveBeenCalledTimes(1));
+    expect(screen.getByRole('checkbox', { name: 'Tea' }).disabled).toBe(true);
+    expect(screen.queryByRole('button', { name: /selected to another day/ })).toBeNull();
+  });
+  it('Escape closes only an open day menu, then the sheet, and focus returns to the button', async () => {
+    setup();
+    await openSheet();
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Tea' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Move 2 selected to another day' }));
+    await screen.findByRole('menuitem', { name: 'Yesterday' });
+    fireEvent.keyDown(document.body, { key: 'Escape' });
+    await waitFor(() => expect(screen.queryByRole('menuitem', { name: 'Yesterday' })).toBeNull());
+    expect(screen.getByRole('checkbox', { name: 'Tea' }).checked).toBe(false);
+    fireEvent.keyDown(document.body, { key: 'Escape' });
+    await waitFor(() => expect(screen.queryByRole('checkbox', { name: 'Tea' })).toBeNull());
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByRole('button', { name: MOVE })));
+  });
+  it('focus goes to the field when the button left with the food', async () => {
+    const view = setup();
+    await openSheet();
+    view.rerender({ entries: [] });
+    fireEvent.keyDown(document.body, { key: 'Escape' });
+    await waitFor(() => expect(document.activeElement).toBe(field()));
   });
   it('an empty day does not offer it', () => {
     setup({ entries: [] });

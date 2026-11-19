@@ -66,6 +66,7 @@ export function TodayToasts({
   orphanRetry, onRetryOrphan, onDismissOrphan,
   moves, mealUndo, onUndoMeal, onDismissMealUndo, undoDelete, onUndoDelete, onDismissUndoDelete, undoBusy,
   strandedPortion, today, onMoveCapture, onSupersedeMealUndo, dayOffers = [], onMoveOffer, onDismissOffer,
+  dayNotice = null, onDismissDayNotice,
 }) {
   const newestUndo = useNewestUndo([
     moves.undo && { key: `move:${moves.undo.label}`, clear: moves.undo.dismiss },
@@ -89,6 +90,10 @@ export function TodayToasts({
     {captureNotice ? <Toast message={captureNotice} autoCloseMs={captureRetry ? null : infoAutoClose(captureNotice)} onAutoClose={onDismissCapture}>
       {captureRetry ? <Button size="compact-xs" loading={retryBusy} disabled={retryBusy} onClick={onRetryCapture}>Try again</Button> : null}
       <Button size="compact-xs" variant="subtle" onClick={onDismissCapture}>Dismiss</Button>
+    </Toast> : null}
+    {/* Separate from the capture notice, which may be holding a recording's retry. */}
+    {dayNotice ? <Toast message={dayNotice} autoCloseMs={infoAutoClose(dayNotice)} onAutoClose={onDismissDayNotice}>
+      <Button size="compact-xs" variant="subtle" onClick={onDismissDayNotice}>Dismiss</Button>
     </Toast> : null}
     {kind === 'move' ? <Toast message={moves.undo.label}>
       <Button size="compact-xs" aria-label="Undo move" onClick={moves.undo.run}>Undo</Button>

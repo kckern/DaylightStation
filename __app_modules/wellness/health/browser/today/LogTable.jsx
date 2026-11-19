@@ -28,6 +28,7 @@ import "./mealWorkflow.scss";
 // each gram of food exactly once; `sumCounted` says so once, for everyone.
 // A typed sentence parses faster than a photo or a recording.
 const SENTENCE_ESTIMATE_MS = 6000;
+const NO_IDS = new Set();
 
 const kcal = (rows) => Math.round(sumCounted(rows, 'calories'));
 
@@ -252,7 +253,7 @@ function DaySelectionBar({ barRef, byBucket, date, selection, moving, setMoving,
     try {
       const result = await move();
       if (result === MoveResult.UNCHANGED) onNotice?.(alreadyThere);
-      else if (result !== MoveResult.NOT_MOVED) onDone(date);
+      else if (result !== MoveResult.NOT_MOVED && result !== MoveResult.UNKNOWN) onDone(date);
     } finally { setMoving(false); }
   };
   return <div ref={barRef} role="region" aria-label="Selected foods" className="health-selection-bar">
@@ -275,7 +276,7 @@ export function LogTable({
   bucketHeaderAction, coldLoading = false, capturePendingBucket = null, capturePendingBuckets = [],
   measuredByUuid = null, onVoiceCapture, onTextCapture, onMealChanged, captureTasks = [], clarifications, onClearClarification,
   renderAddRow = null, addedIds = null, onMoveEntry = null, onMoveMeal = null, onMoveToDay = null,
-  fastedMeals = [], onMealFastChanged = null, onNotice = null,
+  fastedMeals = [], onMealFastChanged = null, onNotice = null, hiddenIds = NO_IDS,
 }) {
   // "Select foods" spans the viewed day's meals and ends with that day.
   const [selecting, setSelecting] = useState(false);
@@ -327,14 +328,16 @@ export function LogTable({
   }, [selecting]);
   useEffect(() => { closing.current = null; setSelecting(false); setSelection([]); }, [date]);
   // Ticks follow the day's foods. A move hides its rows until it settles, and they
-  // return if it fails, so nothing is forgotten while one is running.
+  // return if it fails, so nothing is forgotten while one is running, whichever
+  // control started it (`hiddenIds` covers moves from outside the selection bar).
   useEffect(() => {
     if (!selecting || moving || coldLoading) return;
     const present = new Set([...byBucket.values()].flat().flatMap(row => [row.uuid, row.id]));
+    hiddenIds.forEach(id => present.add(id));
     setSelection(previous => (previous.every(id => present.has(id)) ? previous : previous.filter(id => present.has(id))));
     // No meal has foods, so no meal shows the control that ends selection.
-    if (!BUCKETS.some(bucket => byBucket.get(bucket.id)?.length)) closeSelection();
-  }, [byBucket, selecting, moving, coldLoading]);
+    if (!hiddenIds.size && !BUCKETS.some(bucket => byBucket.get(bucket.id)?.length)) closeSelection();
+  }, [byBucket, selecting, moving, coldLoading, hiddenIds]);
   // A move can finish after the person has gone to another day and started there.
   const selectionMoved = movedFrom => { if (movedFrom === viewedDate.current) closeSelection(); };
   // A command in one meal settles that meal's ticks; other meals keep theirs.

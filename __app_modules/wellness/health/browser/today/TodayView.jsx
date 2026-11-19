@@ -165,6 +165,7 @@ export function TodayView({ active = true, sidebarTarget, followUpTarget = null,
   // so the picker opens straight onto its variant step (PRD F8.2 → F6.1).
   const [focusTemplateId, setFocusTemplateId] = useState(null);
   const [captureNotice, setCaptureNotice] = useState(null); // string | null — e.g. "no food detected"
+  const [dayNotice, setDayNotice] = useState(null); // string | null — the day input's reply when it has no Undo
   const [undoDelete, setUndoDelete] = useState(null);
   // The row awaiting a yes, plus the in-flight/error state of that yes. Held by
   // the VIEW so one dialog serves every row and the edit sheet alike — see
@@ -362,7 +363,9 @@ export function TodayView({ active = true, sidebarTarget, followUpTarget = null,
     if (!added || !foods.length || !findable) return undo;
     const landed = foods[0].date || result.date || targetDate;
     const what = foods.length === 1 ? entryLabel(foods[0]) : `${foods.length} foods`;
-    const mealId = result.mealTime || result.bucket || foods[0].mealTime;
+    // A meal is named only when every food is in it.
+    const oneMeal = new Set(foods.map(row => row.mealTime ?? null)).size === 1;
+    const mealId = oneMeal ? result.mealTime || result.bucket || foods[0].mealTime : null;
     return { ...undo, label: capturePlace(what, landed, mealId), offer: { logId: result.logId, ids, what, date: landed } };
   };
   const showAdded = undo => {
@@ -427,13 +430,13 @@ export function TodayView({ active = true, sidebarTarget, followUpTarget = null,
   // no longer be the one on screen. Added food gets the capture toast; a move or
   // a change gets the service's sentence with Undo; anything else is a notice.
   const handleDayInput = (result, { date: asked }) => {
-    const notify = message => { if (message) { setCaptureRetry(null); setCaptureNotice(message); } };
-    if (result?.outcome !== 'committed') { notify(result?.message); return; }
+    if (result?.outcome !== 'committed') { setDayNotice(result?.message || null); return; }
     day.reload(); pendingReview.reload();
+    setDayNotice(null);
     if (!captureRetry) setCaptureNotice(null);
     // A replayed reply can come without the flag the capture toast reads.
     if (result.kind === 'added' && offerAddedFood({ ...result, committed: true }, asked, { added: true })) return;
-    if (!result.undoToken) { notify(result.message); return; }
+    if (!result.undoToken) { setDayNotice(result.message || null); return; }
     mealUndoOperation.current = null;
     const rows = result.items || [];
     const moved = { ids: [...new Set([...(result.entryIds || []), ...(result.affectedIds || []), ...rows.map(entryId)].map(String))],
@@ -638,6 +641,7 @@ export function TodayView({ active = true, sidebarTarget, followUpTarget = null,
         undoDelete={undoDelete} onUndoDelete={undoDeletedEntry} onDismissUndoDelete={() => setUndoDelete(null)} undoBusy={undoBusy}
         strandedPortion={strandedPortion ? portionControl : null} today={todayISO()} onMoveCapture={iso => moveOffered(mealUndo, iso)}
         dayOffers={captureToasts.offers} onMoveOffer={moveOffered}
+        dayNotice={dayNotice} onDismissDayNotice={() => setDayNotice(null)}
         onDismissOffer={shown => setCaptureToasts(state => ({ ...state, offers: state.offers.filter(item => item.offer !== shown.offer) }))} />
       <ConfirmDialog open={Boolean(pendingDelete)} title={pendingDelete ? `Delete ${entryLabel(pendingDelete)}?` : ''}
         body={pendingDelete ? deleteConfirmBody(pendingDelete) : ''} busy={deleteBusy} error={deleteError}
@@ -652,7 +656,7 @@ export function TodayView({ active = true, sidebarTarget, followUpTarget = null,
       {refreshFailed ? <Button variant="subtle" size="compact-xs" color="gray" className="health-refresh-failed" onClick={day.reload}>
         Couldn't refresh · Retry</Button> : null}
       <DayInputBar date={date} today={todayISO()} active={active} entries={dayEntries(movedDay.items)} onResult={handleDayInput}
-        onMoveDay={moves.moveToDay} />
+        onMoveDay={(rows, iso, options) => moves.moveFromDay(rows, iso, null, options)} />
       <LogTable clarifications={mealClarifications} onClearClarification={clearMealClarification} byBucket={preview.byBucket} date={date} sessions={preview.budget?.sessions || []}
         exerciseAvailable={Boolean(day.budget)}
         fastedMeals={day.dayStatus?.fastedMeals || []} onMealFastChanged={day.reload}
@@ -661,7 +665,7 @@ export function TodayView({ active = true, sidebarTarget, followUpTarget = null,
         bucketHeaderAction={bucketHeaderAction}
         onVoiceCapture={onVoiceCapture} onTextCapture={onTextCapture}
         onMealChanged={result=>handleCaptureResult(result)} captureTasks={[...capturePending.values()]}
-        measuredByUuid={measuredByUuid} addedIds={addedIds} onMoveEntry={moves.move} onMoveMeal={moves.moveMeal} onMoveToDay={moves.moveToDay}
+        hiddenIds={moves.hiddenIds} measuredByUuid={measuredByUuid} addedIds={addedIds} onMoveEntry={moves.move} onMoveMeal={moves.moveMeal} onMoveToDay={moves.moveToDay}
         onNotice={message => { setCaptureRetry(null); setCaptureNotice(message); }}
         renderAddRow={(bucket, label, meal) => <MealAddRow bucket={bucket} label={label} date={date} active={active}
           onVoiceCapture={meal?.onVoiceCapture} selectedCount={meal?.selectedIds?.length || 0} busy={false} onOrphanedRetry={keepOrphanedRecording}

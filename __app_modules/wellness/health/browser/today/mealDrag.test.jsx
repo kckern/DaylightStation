@@ -8,6 +8,7 @@ vi.mock("../../../../../frontend/src/lib/api.mjs", () => ({ DaylightAPI: (...a) 
 import { LogTable } from "./LogTable.jsx";
 import { isDragDeadZone, useMealMoves, MOVED_HIGHLIGHT_MS, dayEntries } from "./mealDrag.jsx";
 import { HealthOperationsProvider, useHealthOperations } from "../operations/HealthOperationsProvider.jsx";
+import { RECONSTRUCTION_LOG_ID } from "../../portable/contracts/nutrition/reconstruction.mjs";
 
 const wrapper = ({ children }) => <MantineProvider>{children}</MantineProvider>;
 
@@ -330,7 +331,7 @@ describe('useMealMoves — moving to another day', () => {
       apiMock.mockRejectedValueOnce(down()).mockResolvedValueOnce({ committed: true, undoToken: 'meal-token' });
       const { result } = hook();
       const onRetryable = vi.fn();
-      await act(async () => { expect(await result.current.moves.moveFromDay([{ ...dish, children: [part] }], '2026-09-29', [dish, part], { onRetryable })).toBe('not-moved'); });
+      await act(async () => { expect(await result.current.moves.moveFromDay([{ ...dish, children: [part] }], '2026-09-29', [dish, part], { onRetryable })).toBe('unknown'); });
       const [operation] = [...result.current.session.snapshot.operations.values()];
       expect(operation.targetIds).toEqual(['dish', 'part']);
       const retry = onRetryable.mock.calls.at(-1)[0];
@@ -394,7 +395,12 @@ describe('useMealMoves — moving to another day', () => {
     expect(outcome).toBe('moved');
     apiMock.mockRejectedValueOnce(new Error('boom'));
     await act(async () => { outcome = await result.current.moveToDay([toast], '2020-01-15'); });
+    expect(outcome).toBe('unknown');
+    apiMock.mockRejectedValueOnce(Object.assign(new Error('no'), { status: 409, body: { error: 'This entry changed.' } }));
+    const onRefused = vi.fn();
+    await act(async () => { outcome = await result.current.moveFromDay([toast], '2020-01-15', null, { onRefused }); });
     expect(outcome).toBe('not-moved');
+    expect(onRefused).toHaveBeenCalledWith(expect.stringContaining("Couldn't move"));
   });
   it('a failure brings the row back and says so', async () => {
     apiMock.mockRejectedValue(new Error('boom'));
@@ -627,6 +633,11 @@ describe('dayEntries', () => {
     expect(ids(entries).sort()).toEqual(['loose', 'lost', 'odd', 'stew', 'stray']);
     expect(ids(entries).slice(-2)).toEqual(['loose', 'odd']);
     expect(ids(entries.find(row => row.uuid === 'stew').children)).toEqual(['carrot']);
+  });
+  it('leaves out rejected rows, estimates, and the parts of a dish that is itself left out', () => {
+    expect(ids(dayEntries([{ uuid: 'gone', status: 'rejected', mealTime: 'morning' }, { uuid: 'wait', status: 'pending', mealTime: 'morning' },
+      { uuid: 'est', logId: RECONSTRUCTION_LOG_ID, mealTime: 'morning' }, { uuid: 'old', kind: 'group', status: 'rejected', mealTime: 'evening' },
+      { uuid: 'part', parentId: 'old', mealTime: 'evening' }, { uuid: 'eggs', mealTime: 'morning' }]))).toEqual(['eggs']);
   });
   it('leaves out a food that is still saving', () => {
     expect(ids(dayEntries([{ uuid: 'pending-1', mealTime: 'morning' }, { uuid: 'eggs', mealTime: 'morning' }]))).toEqual(['eggs']);

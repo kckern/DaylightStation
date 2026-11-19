@@ -22,6 +22,8 @@ import { FoodIcon } from "./FoodIcon.jsx";
 import { entryError, entryId, entryLabel, isEntryConflict } from "./entryCommands.js";
 import { BUCKETS, bucketLabel } from "./mealBuckets.js";
 import { isProvisionalRow } from "../healthResources.js";
+import { isCountedRow } from "../../portable/contracts/nutrition/countedRows.mjs";
+import { isReconstructedRow } from "../../portable/contracts/nutrition/reconstruction.mjs";
 import { groupRows } from "./groupRows.js";
 import { dayDropId, dayFromDropId, dayLabel } from "./moveDays.js";
 import { localTodayISO } from "./mealBuckets.js";
@@ -119,13 +121,16 @@ export const mealEntries = rows => groupRows(rows || []).map(({ row, children })
 /**
  * A whole day's top-level entries, as the page shows them: each meal grouped on
  * its own, then Ungrouped. A part stranded in another meal is its own entry there.
- * A food still saving has no server row to move yet.
+ * Only real food is offered: not a food still saving, a rejected or pending row, or
+ * a weight-derived estimate. A left-out dish takes its parts with it, since the
+ * server will not move a part without its dish.
  */
 export const dayEntries = rows => {
   const saved = (rows || []).filter(row => !isProvisionalRow(row));
   const known = new Set(BUCKETS.map(bucket => bucket.id));
   return [...BUCKETS.map(bucket => saved.filter(row => row.mealTime === bucket.id)),
-    saved.filter(row => !known.has(row.mealTime))].flatMap(mealEntries);
+    saved.filter(row => !known.has(row.mealTime))].flatMap(mealEntries)
+    .filter(row => isCountedRow(row) && !isReconstructedRow(row));
 };
 
 /** A whole meal, dragged by its header onto another meal. `rows` are its top-level entries (dishes carry children). */
@@ -161,7 +166,7 @@ export function useMealDropTarget(bucket) {
 }
 
 /** How a move ended. Drag and the meal menu ignore it; the selection bar does not. */
-export const MoveResult = Object.freeze({ MOVED: 'moved', UNCHANGED: 'unchanged', NOT_MOVED: 'not-moved' });
+export const MoveResult = Object.freeze({ MOVED: 'moved', UNCHANGED: 'unchanged', NOT_MOVED: 'not-moved', UNKNOWN: 'unknown' });
 
 const MOVE_PATH = 'api/v1/health/nutrition/foods-move';
 const UNDO_PATH = 'api/v1/health/nutrition/meal-undo';
@@ -188,7 +193,8 @@ function applyMoves(items, moves) {
  * Owns the move command: optimistic placement, one atomic `foods-move` per
  * gesture, a brief highlight on the moved rows, and one server Undo. Each move
  * resolves to a MoveResult: MOVED; UNCHANGED when every food was already there,
- * so nothing was sent; NOT_MOVED when it was refused or failed (`error` says why).
+ * so nothing was sent; NOT_MOVED when it was refused or failed (`error` says why);
+ * UNKNOWN when a move to a day got no answer, so it may have happened.
  */
 export function useMealMoves(day) {
   const foodAPI = useFoodMutation(day.items);
@@ -258,10 +264,11 @@ export function useMealMoves(day) {
   // keeps that change's placement and its Undo offer.
   const refuseMove = (rows, body) => {
     const refusal = foodAPI.refusal(MOVE_PATH, body, 'POST');
-    if (!refusal) return false;
-    setError(`Can't move ${whatMoved(rows)} yet. ${refusal}`);
+    if (!refusal) return null;
+    const text = `Can't move ${whatMoved(rows)} yet. ${refusal}`;
+    setError(text);
     logger.info('entry.move.blocked', { count: rows.length, reason: refusal });
-    return true;
+    return text;
   };
   // The server said no, so nothing happened and the foods are free. After any
   // other failure the outcome is unknown and the reservation stays for Retry.
@@ -302,7 +309,8 @@ export function useMealMoves(day) {
   // another day when the foods are not on the viewed one, which then stays as it
   // is. When the outcome is unknown the foods stay reserved, so `onRetryable` gets
   // a retry of this same operation; it gets null once there is nothing to retry.
-  const sendToDay = useCallback(async (requested, toDate, sourceRows = null, { onRetryable } = {}) => {
+  // `onRefused` gets the sentence when the move definitely did not happen.
+  const sendToDay = useCallback(async (requested, toDate, sourceRows = null, { onRetryable, onRefused } = {}) => {
     const rows = requested.filter(row => row.date && row.date !== toDate);
     if (!rows.length) return MoveResult.UNCHANGED;
     const fromDate = rows[0].date;
@@ -310,7 +318,8 @@ export function useMealMoves(day) {
     const carried = withParts(rows, sourceRows ?? day.items);
     const ids = carried.map(row => String(entryId(row)));
     const body = moveBody(rows, carried, { toDate });
-    if (refuseMove(rows, body)) return MoveResult.NOT_MOVED;
+    const blocked = refuseMove(rows, body);
+    if (blocked) { onRefused?.(blocked); return MoveResult.NOT_MOVED; }
     const attempt = async () => {
       setError(null);
       if (!sourceRows) setGone(previous => new Set([...previous, ...ids]));
@@ -325,10 +334,13 @@ export function useMealMoves(day) {
       } catch (err) {
         setGone(previous => { const next = new Set(previous); ids.forEach(id => next.delete(id)); return next; });
         releaseIfRefused(err, body.operationId);
-        setError(failureText(`Couldn't move ${whatMoved(rows)} to ${dayLabel(toDate, localTodayISO())}`, err));
+        const text = failureText(`Couldn't move ${whatMoved(rows)} to ${dayLabel(toDate, localTodayISO())}`, err);
+        setError(text);
         logger.warn('entry.move-day.failed', { count: rows.length, from: fromDate, to: toDate, status: err.status, error: err.message });
         setUndo(null);
-        onRetryable?.(isDefiniteRefusal(err) ? null : attempt);
+        if (!isDefiniteRefusal(err)) { onRetryable?.(attempt); return MoveResult.UNKNOWN; }
+        onRetryable?.(null);
+        onRefused?.(text);
         return MoveResult.NOT_MOVED;
       } finally { day.reload?.(); }
     };
@@ -373,6 +385,8 @@ export function useMealMoves(day) {
   return {
     items,
     recentIds: recent,
+    // Foods hidden for a move to another day, which come back if it fails.
+    hiddenIds: gone,
     moveToDay: (rows, toDate) => sendToDay(rows, toDate),
     moveFromDay: (rows, toDate, sourceRows, options) => sendToDay(rows, toDate, sourceRows, options),
     move: (row, to, from) => send([row], to, from),

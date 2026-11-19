@@ -1,12 +1,12 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, fireEvent, waitFor, cleanup, within } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, cleanup, within, act } from '@testing-library/react';
 import { MantineProvider } from '@mantine/core';
 import { MemoryRouter } from 'react-router-dom';
 
 const apiMock = vi.fn();
 vi.mock('../../../../../frontend/src/lib/api.mjs', () => ({ DaylightAPI: (...args) => apiMock(...args) }));
 vi.mock('../capture/PhotoCapture.jsx', () => ({ PhotoCapture: () => null }));
-vi.mock('../capture/VoiceCapture.jsx', () => ({ VoiceCapture: () => null }));
+vi.mock('../capture/VoiceCapture.jsx', () => ({ VoiceCapture: ({ bucket, onCapture }) => (bucket === 'morning' ? <button onClick={() => onCapture('data:audio/webm;base64,zzz', bucket)}>Record breakfast</button> : null) }));
 vi.mock('../capture/BarcodeCapture.jsx', () => ({ BarcodeCapture: () => null }));
 vi.mock('../capture/CustomFoodSheet.jsx', () => ({ CustomFoodSheet: () => null }));
 
@@ -14,14 +14,16 @@ import { TodayView } from './TodayView.jsx';
 import { localTodayISO } from './mealBuckets.js';
 import { addDaysISO } from './moveDays.js';
 import { resetApiResourceCache } from '../../../../../frontend/src/lib/hooks/useApiResource.js';
+import { RECONSTRUCTION_LOG_ID } from '../../portable/contracts/nutrition/reconstruction.mjs';
 
 const today = localTodayISO();
 const food = (uuid, extra = {}) => ({ uuid, name: uuid, date: today, mealTime: 'morning', calories: 10, version: 1, ...extra });
-let items, dayInput, dayReads;
+let items, dayInput, dayReads, foodsMove;
 const api = async (path, body) => {
   if (path === 'api/v1/health/nutrition/day-input') return dayInput(body);
   if (path === 'api/v1/health/nutrition/meal-undo') return { committed: true, affectedIds: [], affectedDates: [] };
-  if (path === 'api/v1/health/nutrition/foods-move') return { committed: true, undoToken: 'meal-sheet', items: [], affectedIds: [] };
+  if (path === 'api/v1/health/nutrition/foods-move') return foodsMove();
+  if (path === 'api/v1/health/nutrition/input') return { transcribeFailed: true, audioRef: 'va_1', responseText: 'Your recording is saved.' };
   if (path.includes('health/day?')) { dayReads += 1; return { items, budget: { budget: 2000, food: 0, exercise: 0, remaining: 2000, sessions: [] } }; }
   if (path.includes('nutrition/pending')) return { pending: [] };
   if (path.includes('observations')) return { observations: [] };
@@ -43,6 +45,7 @@ const calls = path => apiMock.mock.calls.filter(call => call[0] === path);
 beforeEach(() => {
   resetApiResourceCache(); apiMock.mockReset(); apiMock.mockImplementation(api);
   items = [food('Eggs')]; dayReads = 0; dayInput = async () => ({});
+  foodsMove = async () => ({ committed: true, undoToken: 'meal-sheet', items: [], affectedIds: [] });
 });
 afterEach(cleanup);
 
@@ -60,6 +63,18 @@ describe('TodayView day input', () => {
     expect(toasts().getByRole('button', { name: 'Move to Yesterday' })).toBeTruthy();
     fireEvent.click(toasts().getByRole('button', { name: 'Undo meal change' }));
     await waitFor(() => expect(calls('api/v1/health/nutrition/meal-undo')[0][1]).toMatchObject({ undoToken: 'meal-a' }));
+  });
+  it('names no meal when the foods landed in several', async () => {
+    dayInput = async () => ({ committed: true, outcome: 'committed', kind: 'added', undoToken: 'meal-a', logId: 'log-1', date: today, mealTime: 'morning',
+      items: [food('Toast', { logId: 'log-1' }), food('Soup', { logId: 'log-1', mealTime: 'evening' })] });
+    await say('toast for breakfast, soup for dinner');
+    expect(await toasts().findByText('Added 2 foods to Today')).toBeTruthy();
+  });
+  it('names the meal when every food shares it', async () => {
+    dayInput = async () => ({ committed: true, outcome: 'committed', kind: 'added', undoToken: 'meal-a', logId: 'log-1', date: today,
+      items: [food('Toast', { logId: 'log-1' }), food('Jam', { logId: 'log-1' })] });
+    await say('toast and jam');
+    expect(await toasts().findByText('Added 2 foods to Today, Breakfast')).toBeTruthy();
   });
   it('accepts added food from a replayed reply that has no committed flag', async () => {
     dayInput = async () => ({ outcome: 'committed', kind: 'added', message: 'Logged Toast', undoToken: 'meal-a', logId: 'log-1', date: today, items: [food('Toast', { logId: 'log-1' })] });
@@ -106,6 +121,33 @@ describe('TodayView day input', () => {
     expect(await toasts().findByText('Please make one change at a time.')).toBeTruthy();
     expect(dayReads).toBe(before);
   });
+  it('a notice leaves a meal recording\'s saved retry in place', async () => {
+    dayInput = async () => ({ committed: false, outcome: 'no-food', message: "I couldn't find any food in that." });
+    const field = await open();
+    fireEvent.click(await screen.findByRole('button', { name: 'Record breakfast' }));
+    expect(await toasts().findByText('Your recording is saved.')).toBeTruthy();
+    fireEvent.change(field, { target: { value: 'hello' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Send' }));
+    expect(await toasts().findByText("I couldn't find any food in that.")).toBeTruthy();
+    expect(toasts().getByText('Your recording is saved.')).toBeTruthy();
+    expect(toasts().getByRole('button', { name: 'Try again' })).toBeTruthy();
+  });
+  it('a failed sheet move keeps selection mode and its ticks', async () => {
+    let refuse;
+    foodsMove = () => new Promise((_, reject) => { refuse = () => reject(Object.assign(new Error('HTTP 422'), { status: 422, body: { error: 'This entry changed.' } })); });
+    await open();
+    fireEvent.click((await screen.findAllByRole('button', { name: 'Select foods' }))[0]);
+    fireEvent.click(await screen.findByRole('checkbox', { name: 'Select Eggs' }));
+    fireEvent.click(screen.getByRole('button', { name: "Move this day's food" }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Move 1 selected to another day', hidden: false }));
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Yesterday' }));
+    await waitFor(() => expect(refuse).toBeTruthy());
+    await waitFor(() => expect(screen.queryByRole('checkbox', { name: 'Select Eggs', hidden: true })).toBeNull());
+    await act(async () => { refuse(); });
+    const tick = await screen.findByRole('checkbox', { name: 'Select Eggs', hidden: true });
+    expect(tick.checked).toBe(true);
+    expect(await screen.findByText('Couldn\'t move Eggs to Yesterday: This entry changed.', { selector: '.health-day-move__note' })).toBeTruthy();
+  });
   it('the page keeps working when day input is unavailable', async () => {
     dayInput = async () => { throw Object.assign(new Error('HTTP 503: Service Unavailable'), { status: 503, body: { error: 'Day input is unavailable right now', code: 'DAY_INPUT_UNAVAILABLE' } }); };
     await say('eggs');
@@ -126,13 +168,28 @@ describe('TodayView day input', () => {
     fireEvent.click(screen.getByRole('button', { name: "Move this day's food" }));
     for (const name of ['Stew', 'Stray', 'Lost', 'Loose']) expect(await screen.findByRole('checkbox', { name })).toBeTruthy();
     expect(screen.queryByRole('checkbox', { name: 'Carrot' })).toBeNull();
-    fireEvent.click(screen.getByRole('button', { name: 'Move 4 selected to another day' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Move 3 selected to another day' }));
     fireEvent.click(await screen.findByRole('menuitem', { name: 'Yesterday' }));
     await waitFor(() => expect(calls('api/v1/health/nutrition/foods-move')).toHaveLength(1));
     const sent = calls('api/v1/health/nutrition/foods-move')[0][1];
-    expect([...sent.selectedIds].sort()).toEqual(['Loose', 'Lost', 'Stew', 'Stray']);
-    expect(Object.keys(sent.expectedVersions)).toContain('Carrot');
+    expect([...sent.selectedIds].sort()).toEqual(['Loose', 'Lost', 'Stew']);
+    expect(Object.keys(sent.expectedVersions)).toEqual(expect.arrayContaining(['Carrot', 'Stray']));
     await waitFor(() => expect(screen.queryByRole('checkbox', { name: 'Stew' })).toBeNull());
+  });
+  it('the sheet holds only real food, and only real food offers it', async () => {
+    items = [food('Eggs'), food('Estimate', { logId: RECONSTRUCTION_LOG_ID }), food('Rejected', { status: 'rejected' })];
+    await open();
+    await screen.findByText('Eggs');
+    fireEvent.click(screen.getByRole('button', { name: "Move this day's food" }));
+    expect(await screen.findByRole('checkbox', { name: 'Eggs' })).toBeTruthy();
+    expect(screen.queryByRole('checkbox', { name: 'Estimate' })).toBeNull();
+    expect(screen.queryByRole('checkbox', { name: 'Rejected' })).toBeNull();
+  });
+  it('a day of estimates offers no whole-day move', async () => {
+    items = [food('Estimate', { logId: RECONSTRUCTION_LOG_ID })];
+    await open();
+    await screen.findByText('Estimate');
+    expect(screen.queryByRole('button', { name: "Move this day's food" })).toBeNull();
   });
   it('an empty day offers no whole-day move', async () => {
     items = [];

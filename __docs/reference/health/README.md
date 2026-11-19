@@ -521,32 +521,47 @@ whole milk". It posts to `POST /nutrition/day-input`.
   does its question or error, which names that day if the page has moved on. A
   recording belongs to the day it was started on.
 - **One at a time.** While a request runs the field is read-only and keeps focus, Send
-  shows its spinner, and a second send is ignored. A recording that ends meanwhile goes
-  next.
+  shows its spinner, and a second send is ignored. A recording that ends while a request
+  runs, or while a question or failure is open, waits and says so. It goes once the
+  person has answered, cancelled, retried or dismissed, so it never replaces either.
 - **Operation IDs.** Every submission and every answer gets a new ID. Trying a failed
   request again (**Try again**, or Send with the same words on the same day) reuses its
-  ID, so a request that did commit is replayed and not done twice.
-- **Questions.** "Which food?" and "Which day?" open under the bar. An answer resends
+  ID, so a request that did commit is replayed and not done twice. The last typed request
+  with an unknown outcome is remembered apart from the visible error, so this holds after
+  Dismiss. Different words get a new ID.
+- **Questions.** "Which food?" and "Which day?" open under the bar, are announced through
+  the bar's status region, and take focus unless the person has moved elsewhere. An answer resends
   the same words with every answer so far: the text the server reports, else the words
   that were sent. A recording with no reported words is sent again.
 - **Failures.** The server's sentence is shown and typed words stay in the field. A
   refusal offers no retry. A failure carrying `audioRef` retries from the saved recording
-  under the same ID, so nothing is recorded twice. A 503 affects only this bar.
+  under the same ID, so nothing is recorded twice. The upload stays in memory, and if the
+  saved copy has gone (`AUDIO_NOT_FOUND`) it is sent instead, under that ID. A 503 affects
+  only this bar.
 - **Results.** Added food gets the capture toast with its day buttons. A move or change
   gets the service's sentence and an Undo through `POST /nutrition/meal-undo`, and a move
-  retires capture toasts for the food it took. "No change" and "no food" are notices,
-  and the words stay to be edited. Committed work refreshes the viewed day and every
-  other loaded Health day.
+  retires capture toasts for the food it took. The capture toast names a meal only when
+  every added food is in it. "No change" and "no food" are their own notice, which leaves
+  a meal recording's saved retry alone, and the words stay to be edited. Committed work
+  refreshes the viewed day and every other loaded Health day.
 - **Layout.** The bar is one row of constant height. Questions and errors open over the
   page below it, and its requests never appear in a meal's status rows. On a phone, every
   control is at least 44 px and the whole-day move shows as an icon.
-- **Move this day's food.** The button appears when the day has food and opens a sheet
-  of its top-level rows, all ticked: each meal as the page groups it, then Ungrouped, so
-  a broken-link row is its own line and a dish is one line. Foods still saving are left
-  out. It uses `moveToDay`, so it is one atomic move with one Undo. The sheet closes only
-  after a real move. A refused move keeps the unticks, and foods already on that day say so.
+- **Move this day's food.** The button appears when the day has real food and opens a
+  sheet of its top-level rows, all ticked: each meal as the page groups it, then
+  Ungrouped, so a broken-link row is its own line and a dish is one line. Foods still
+  saving, rejected or pending rows and weight-derived estimates are left out.
+  - **Stranded parts:** a dish part sitting in another meal travels with its dish. While
+    the dish is ticked the part reads "Moves with <dish>" and cannot be unticked. With the
+    dish unticked the part stays unless it is ticked itself.
+  - **Results:** one atomic move with one Undo, and the sheet closes only after it. A
+    refusal shows its reason and keeps the choices. Foods already on that day say so. An
+    unknown outcome (`MoveResult.UNKNOWN`) locks the choices and offers **Try again**
+    under the same operation ID. A failed move leaves selection mode and its ticks alone.
+  - **Keyboard:** Escape closes an open day menu first, then the sheet. Closing returns
+    focus to the button, or to the field if the button has gone with the food.
 - Logs (`health` / `day-input`): `day-input.submit`, `.result`, `.clarification`,
-  `.failed`, `.move-day.open`, `.move-day.result`.
+  `.failed`, `.recording-fallback`, `.move-day.open`, `.move-day.result`.
 
 ### Moving food to another day
 

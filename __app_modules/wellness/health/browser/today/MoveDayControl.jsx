@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Button, Menu } from '@mantine/core';
 import { useDayDropTarget, useMealDragActive } from "./mealDrag.jsx";
 import { addDaysISO, dayLabel, recentDays } from "./moveDays.js";
@@ -31,11 +31,21 @@ export function MoveDayItems({ date, today, onPick }) {
  * Selection mode: once foods are ticked, this moves them all to another day in
  * one step. `disabled` while the bar's other move is running. Inside a modal,
  * `portalTarget` keeps the menu in the modal's tree: anywhere else, the modal
- * hides it from assistive technology.
+ * hides it from assistive technology. Escape closes the open menu wherever focus
+ * is, and `onMenuChange` lets a modal leave that Escape to the menu.
  */
-export function MoveDayControl({ date, today, count, onMove, disabled = false, portalTarget }) {
+export function MoveDayControl({ date, today, count, onMove, disabled = false, portalTarget, onMenuChange }) {
   const [busy, pick] = useMoveInFlight(onMove);
-  return <Menu position="bottom-start" disabled={busy || disabled} classNames={MENU_CLASSES} portalProps={portalTarget ? { target: portalTarget } : undefined}>
+  const [open, setOpen] = useState(false);
+  const change = value => { setOpen(value); onMenuChange?.(value); };
+  useEffect(() => {
+    if (!open) return undefined;
+    const onKey = event => { if (event.key === 'Escape') change(false); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+  return <Menu opened={open} onChange={change} position="bottom-start" disabled={busy || disabled} classNames={MENU_CLASSES} portalProps={portalTarget ? { target: portalTarget } : undefined}>
     <Menu.Target>
       <Button size="compact-xs" variant="light" loading={busy} disabled={disabled && !busy} aria-label={`Move ${count} selected to another day`}>
         Move {count} to another day…
