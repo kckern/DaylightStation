@@ -5,6 +5,7 @@ import usePanZoom from "./usePanZoom.js";
 import { UiIcon } from '../../../../frontend/src/lib/ui/UiIcon.jsx';
 import { useDismissLayer } from '../../../../frontend/src/lib/ui/dismiss/useDismissLayer.js';
 import { useOverlayFocusReturn } from '../../../../frontend/src/lib/ui/dismiss/useOverlayFocusReturn.js';
+import { useOverlayScrollLock } from '../../../../frontend/src/lib/ui/useOverlayScrollLock.js';
 import CameraControls from "./CameraControls.jsx";
 import { getChildLogger } from "../../../../frontend/src/lib/logging/singleton.js";
 import useSnapshotFetch from "./useSnapshotFetch.js";
@@ -26,6 +27,7 @@ export default function CameraViewport({ cameraId, mode, snapshotSrc: externalSn
   const trap = useFocusTrap();
   const stackHandlesEscape = useDismissLayer(true, onClose);
   useOverlayFocusReturn(true);
+  useOverlayScrollLock(true);
   const cameraLabel = cameraId.replace(/-/g, ' ');
   const containerRef = useRef(null);
   const mediaRef = useRef(null);
@@ -108,14 +110,9 @@ export default function CameraViewport({ cameraId, mode, snapshotSrc: externalSn
     return () => window.removeEventListener('keydown', handleKey);
   }, [onClose, stackHandlesEscape]);
 
-  // Lock body scroll while viewport is open
   useEffect(() => {
-    document.body.style.overflow = 'hidden';
     logger.info?.('viewport.open', { mode });
-    return () => {
-      document.body.style.overflow = '';
-      logger.info?.('viewport.close');
-    };
+    return () => logger.info?.('viewport.close');
   }, [logger, mode]);
 
   const activeDetections = detections.filter(d => d.active);

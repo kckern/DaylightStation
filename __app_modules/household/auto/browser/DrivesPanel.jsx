@@ -24,12 +24,20 @@ export default function DrivesPanel({
 }) {
   const [naming, setNaming] = useState(null);
   const [fueling, setFueling] = useState(null);
+  const [changedShortFilter, setChangedShortFilter] = useState(false);
 
   const rows = journeys || [];
+  // Keep the used filter available for this visit, including when its
+  // next query has no hidden recordings.
+  const showShortFilter = hidden > 0 || includeShuffles || changedShortFilter;
+  const toggleShortFilter = () => {
+    setChangedShortFilter(true);
+    onToggleShuffles();
+  };
 
   const content = loading ? <LoadingState label="drives" />
     : error ? <ErrorState error={error} onRetry={onReload} label="Drives" />
-    : <div className="auto-panel">
+    : <>
       {rows.length === 0 ? (
         <EmptyState
           title="No drives yet"
@@ -52,19 +60,22 @@ export default function DrivesPanel({
           ))}
         </ul>
       )}
-
-      {(hidden > 0 || includeShuffles) && (
-        <button type="button" className="auto-btn auto-btn--ghost auto-shuffle-toggle" onClick={onToggleShuffles}>
-          {includeShuffles
-            ? 'Hide very short recordings'
-            : `Show ${hidden} very short recording${hidden === 1 ? '' : 's'}`}
-        </button>
-      )}
-    </div>;
+    </>;
 
   return (
     <>
-      {content}
+      <div className="auto-panel auto-panel--drives">
+        {showShortFilter && (
+          <button type="button" className="auto-btn auto-btn--ghost auto-shuffle-toggle" onClick={toggleShortFilter}>
+            {includeShuffles
+              ? 'Hide very short recordings'
+              : hidden > 0
+                ? `Show ${hidden} very short recording${hidden === 1 ? '' : 's'}`
+                : 'Show very short recordings'}
+          </button>
+        )}
+        {content}
+      </div>
       {fueling && (
         <FuelSheet
           vehicleId={vehicleId}

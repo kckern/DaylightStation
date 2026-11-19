@@ -6,6 +6,7 @@ import { MantineProvider } from '@mantine/core';
 import { DismissStackProvider } from './dismiss/DismissStackProvider.jsx';
 import { AppFrame } from './AppFrame.jsx';
 import { Sheet } from './Sheet.jsx';
+import { useOverlayScrollLock } from './useOverlayScrollLock.js';
 
 // Sheet uses Mantine's ActionIcon, which throws without a MantineProvider in
 // the tree (see states.test.jsx for the same pattern).
@@ -44,12 +45,16 @@ describe('Sheet', () => {
     expect(document.body.style.overflow).toBe('');
   });
 
-  it('locks only the owning frame and keeps it locked until its last sheet closes', () => {
+  it('locks only the owning frame and keeps it locked across different overlay types', () => {
+    function Fullscreen({ open }) {
+      useOverlayScrollLock(open);
+      return null;
+    }
     function Frames({ first, second }) {
       return <>
         <AppFrame>
           <Sheet open={first} title="First" onClose={() => {}}>First task</Sheet>
-          <Sheet open={second} title="Second" onClose={() => {}}>Second task</Sheet>
+          <Fullscreen open={second} />
         </AppFrame>
         <AppFrame>Independent view</AppFrame>
       </>;

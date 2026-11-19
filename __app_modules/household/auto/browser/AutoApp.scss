@@ -266,6 +266,11 @@
     grid-template-columns: repeat(2, 1fr);
     align-items: start;
   }
+  .auto-panel--drives {
+    display: flex;
+    align-items: stretch;
+  }
+
   // Lists stay single-column: a timeline reads down, not across.
   .auto-panel > .auto-list,
   .auto-panel > .auto-btn--block { grid-column: 1 / -1; }

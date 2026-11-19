@@ -1,8 +1,7 @@
 import React, { useLayoutEffect, useRef, useState } from 'react';
 import { SectionCard } from '../../../lib/ui/cards.jsx';
-import { ErrorState } from '../../../lib/ui/states.jsx';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Stack, Group, Text, Badge, Button, Paper, TextInput, Select, Alert, Center, Loader, Anchor }  from '@mantine/core';
+import { Stack, Group, Text, Badge, Button, Paper, TextInput, Select, Alert, Center, Anchor }  from '@mantine/core';
 import {
   IconArrowBack, IconTrash, IconAlertCircle, IconDeviceDesktopCog
 } from '@tabler/icons-react';
@@ -10,6 +9,7 @@ import { useApiResource } from '../../../lib/hooks/useApiResource.js';
 import { DaylightAPI } from '../../../lib/api.mjs';
 import ConfirmModal from '../shared/ConfirmModal.jsx';
 import SaveBar from '../shared/SaveBar.jsx';
+import EditorReadRegion from '../shared/EditorReadRegion.jsx';
 import { useUnsavedGuard } from '../shared/useUnsavedGuard.js';
 import { notifySuccess, notifyFailure } from '../shared/feedback.js';
 
@@ -239,47 +239,36 @@ function DeviceEditor() {
   const navigate = useNavigate();
   const { data, loading, error, reload } = useApiResource(`/api/v1/admin/household/devices/${deviceId}`);
 
-  if (loading && !data) {
-    return (
-      <Center h="60vh">
-        <Loader size="lg" />
-      </Center>
-    );
-  }
+  const back = (
+    <Anchor
+      size="sm"
+      onClick={() => navigate('/admin/household/devices')}
+      style={{ cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 4 }}
+    >
+      <IconArrowBack size={14} /> Back to Devices
+    </Anchor>
+  );
 
-  if (error && !data) {
-    return (
-      <Stack gap="md">
-        <Anchor
-          size="sm"
-          onClick={() => navigate('/admin/household/devices')}
-          style={{ cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 4 }}
-        >
-          <IconArrowBack size={14} /> Back to Devices
-        </Anchor>
-        <ErrorState error={error} onRetry={reload} title="Error loading device" />
-      </Stack>
-    );
-  }
-
-  if (!data?.device) {
-    return (
-      <Stack gap="md">
-        <Anchor
-          size="sm"
-          onClick={() => navigate('/admin/household/devices')}
-          style={{ cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 4 }}
-        >
-          <IconArrowBack size={14} /> Back to Devices
-        </Anchor>
-        <Center h="40vh">
-          <Text c="dimmed">Device not found.</Text>
-        </Center>
-      </Stack>
-    );
-  }
-
-  return <DeviceDraft key={deviceId} deviceId={deviceId} initialDevice={data.device} />;
+  return (
+    <EditorReadRegion
+      key={deviceId}
+      label="Device editor"
+      loading={loading && !data}
+      error={!data && error}
+      errorTitle="Error loading device"
+      reload={reload}
+      back={back}
+    >
+      {data?.device ? <DeviceDraft deviceId={deviceId} initialDevice={data.device} /> : (
+        <Stack gap="md">
+          {back}
+          <Center h="40vh">
+            <Text c="dimmed">Device not found.</Text>
+          </Center>
+        </Stack>
+      )}
+    </EditorReadRegion>
+  );
 }
 
 function DeviceDraft({ deviceId, initialDevice }) {

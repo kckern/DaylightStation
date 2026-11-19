@@ -1,10 +1,11 @@
-import { useEffect, useLayoutEffect, useRef } from 'react';
+import { useLayoutEffect, useRef } from 'react';
 import { ActionIcon, FocusTrap } from '@mantine/core';
-import { useAppMainRef, useViewOverlaysActive } from './AppFrame.jsx';
+import { useViewOverlaysActive } from './AppFrame.jsx';
 import { useDismissLayer } from './dismiss/useDismissLayer.js';
 import { useOverlayFocusReturn } from './dismiss/useOverlayFocusReturn.js';
 import { UiIcon } from './UiIcon.jsx';
 import { observeVisualViewport } from './observeVisualViewport.js';
+import { useOverlayScrollLock } from './useOverlayScrollLock.js';
 import './ds.scss';
 
 /**
@@ -15,28 +16,17 @@ import './ds.scss';
  */
 export function Sheet({ open, onClose, title, children, placement = 'center', returnFocusRef }) {
   const sheetRef = useRef(null);
-  const mainRef = useAppMainRef();
   const overlaysActive = useViewOverlaysActive();
   const visible = open && overlaysActive;
   useDismissLayer(open, onClose, { isActive: () => visible });
   useOverlayFocusReturn(open, returnFocusRef);
+  useOverlayScrollLock(visible);
 
   useLayoutEffect(() => {
     const viewport = window.visualViewport;
     if (!visible || !viewport) return undefined;
     return fitSheetToKeyboard(sheetRef.current, viewport);
   }, [visible]);
-
-  useEffect(() => {
-    if (!visible) return undefined;
-    const unlockBody = lockScroll(document.body);
-    const main = mainRef?.current;
-    const unlockMain = main ? lockScroll(main) : null;
-    return () => {
-      unlockMain?.();
-      unlockBody();
-    };
-  }, [mainRef, visible]);
 
   if (!open) return null;
   return (
@@ -99,24 +89,6 @@ function fitSheetToKeyboard(sheet, viewport) {
     stopObserving();
     sheet.removeEventListener('focusin', update);
     if (fitted) reset();
-  };
-}
-
-const scrollLocks = new WeakMap();
-function lockScroll(element) {
-  let lock = scrollLocks.get(element);
-  if (!lock) {
-    lock = { count: 0, previous: element.style.overflow };
-    scrollLocks.set(element, lock);
-    element.style.overflow = 'hidden';
-  }
-  lock.count += 1;
-  return () => {
-    lock.count -= 1;
-    if (lock.count === 0) {
-      element.style.overflow = lock.previous;
-      scrollLocks.delete(element);
-    }
   };
 }
 

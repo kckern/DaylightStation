@@ -82,6 +82,7 @@ for (const editor of [
     const root = '/admin/household/' + editor.resource + '/';
     const origin = new URL(baseURL).origin;
     let pending;
+    let retrying;
     const reads = [];
     const writes = [];
     await page.context().route('**/*', route => (
@@ -96,6 +97,7 @@ for (const editor of [
       if (path === '/api/v1' + root + 'alpha') return route.fulfill({ json: editor.record('alpha') });
       if (path === '/api/v1' + root + 'beta') {
         if (!pending) { pending = route; return; }
+        if (!retrying) { retrying = route; return; }
         return route.fulfill({ json: editor.record('beta') });
       }
       return route.fulfill({ json: path.endsWith('/supervision/bootstrap') ? { enabled: false } : {} });
@@ -110,10 +112,22 @@ for (const editor of [
     await expect(field).toHaveCount(0);
     await expect(page.getByTestId('config-save-button')).toHaveCount(0);
 
-    await page.getByRole('button', { name: 'Retry', exact: true }).click();
+    const region = page.getByRole('region', { name: editor.resource === 'members' ? 'Member editor' : 'Device editor' });
+    const retry = page.getByRole('button', { name: 'Retry', exact: true });
+    await retry.press('Enter');
+    await expect.poll(() => Boolean(retrying)).toBe(true);
+    await expect(region).toHaveAttribute('aria-busy', 'true');
+    await expect(region).toBeFocused();
+    const navigation = page.getByRole('navigation', { name: 'Primary' }).getByRole('link', { name: 'Devices', exact: true });
+    await navigation.focus();
+    await retrying.fulfill({ status: 404, json: { error: 'Beta still unavailable' } });
+    await expect(page.getByRole('alert')).toContainText(/Beta still unavailable|404/i);
+    await expect(navigation).toBeFocused();
+    await retry.press('Enter');
     await expect(page).toHaveURL(root + 'beta');
     await expect(field).toHaveValue(editor.fieldValue('beta'));
-    expect(reads).toEqual(['alpha', 'beta', 'beta'].map(id => '/api/v1' + root + id));
+    await expect(region).toBeFocused();
+    expect(reads).toEqual(['alpha', 'beta', 'beta', 'beta'].map(id => '/api/v1' + root + id));
     expect(writes).toEqual([]);
   });
 }

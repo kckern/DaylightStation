@@ -25,6 +25,20 @@ for (const width of [390, 1440]) {
     await page.goto('/home');
     await page.getByRole('button', { name: 'Cameras', exact: true }).press('Enter');
     const opener = page.getByRole('button', { name: 'Fullscreen doorbell', exact: true });
+    const main = page.locator('main');
+    await main.evaluate(element => {
+      document.body.style.setProperty('overflow-x', 'clip', 'important');
+      element.style.setProperty('overflow-y', 'scroll');
+    });
+    const scrolling = () => main.evaluate(element => ({
+      body: [
+        document.body.style.getPropertyValue('overflow-x'),
+        document.body.style.getPropertyValue('overflow-y'),
+        document.body.style.getPropertyPriority('overflow-x'),
+      ],
+      main: element.style.overflow,
+    }));
+    const restored = { body: ['clip', '', 'important'], main: '' };
     await opener.press('Enter');
     const dialog = page.getByRole('dialog', { name: 'Camera: doorbell', exact: true });
     const close = dialog.getByRole('button', { name: 'Close camera', exact: true });
@@ -46,12 +60,16 @@ for (const width of [390, 1440]) {
     await page.keyboard.press('Escape');
     await expect(dialog).toBeHidden();
     await expect(opener).toBeFocused();
+    await expect.poll(scrolling).toEqual(restored);
+    await expect(main).toHaveCSS('overflow-y', 'scroll');
 
     await opener.tap({ position: { x: 2, y: 22 } });
     await expect(close).toBeFocused();
+    await expect.poll(scrolling).toEqual({ body: ['hidden', 'hidden', ''], main: 'hidden' });
     await close.tap();
     await expect(dialog).toBeHidden();
     await expect(opener).toBeFocused();
+    await expect.poll(scrolling).toEqual(restored);
     expect(writes).toEqual([]);
   });
 }

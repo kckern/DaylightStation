@@ -3,7 +3,7 @@ import { SectionCard } from '../../../lib/ui/cards.jsx';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   Stack, Group, Text, Badge, Button, Tabs, TextInput, NumberInput, Select,
-  Paper, Alert, Center, Loader, Divider, Anchor, MultiSelect, CopyButton,
+  Paper, Alert, Divider, Anchor, MultiSelect, CopyButton,
   ActionIcon, Tooltip
 } from '@mantine/core';
 import {
@@ -12,10 +12,10 @@ import {
   IconCopy, IconCheck
 } from '@tabler/icons-react';
 import { useApiResource } from '../../../lib/hooks/useApiResource.js';
-import { ErrorState } from '../../../lib/ui/states.jsx';
 import { DaylightAPI } from '../../../lib/api.mjs';
 import { useAdminHousehold } from '../../../hooks/admin/useAdminHousehold';
 import SaveBar from '../shared/SaveBar.jsx';
+import EditorReadRegion from '../shared/EditorReadRegion.jsx';
 import { useUnsavedGuard } from '../shared/useUnsavedGuard.js';
 
 const AVAILABLE_ROLES = ['sysadmin', 'admin', 'parent', 'member', 'kiosk'];
@@ -25,34 +25,29 @@ function MemberEditor() {
   const navigate = useNavigate();
   const { data, loading, error, reload } = useApiResource(`/api/v1/admin/household/members/${username}`);
 
-  // Loading state
-  if (loading && !data) {
-    return (
-      <Center h="60vh">
-        <Loader size="lg" />
-      </Center>
-    );
-  }
+  const back = (
+    <Anchor
+      size="sm"
+      onClick={() => navigate('/admin/household/members')}
+      style={{ cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 4 }}
+    >
+      <IconArrowBack size={14} /> Back to Members
+    </Anchor>
+  );
 
-  // Error with no profile loaded
-  if (error && !data) {
-    return (
-      <Stack gap="md" p="md">
-        <Anchor
-          size="sm"
-          onClick={() => navigate('/admin/household/members')}
-          style={{ cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 4 }}
-        >
-          <IconArrowBack size={14} /> Back to Members
-        </Anchor>
-        <ErrorState error={error} onRetry={reload} title="Error loading member profile" />
-      </Stack>
-    );
-  }
-
-  if (!data?.member) return null;
-
-  return <MemberDraft key={username} username={username} initialProfile={data.member} authStatus={data.authStatus} />;
+  return (
+    <EditorReadRegion
+      key={username}
+      label="Member editor"
+      loading={loading && !data}
+      error={!data && error}
+      errorTitle="Error loading member profile"
+      reload={reload}
+      back={back}
+    >
+      {data?.member && <MemberDraft username={username} initialProfile={data.member} authStatus={data.authStatus} />}
+    </EditorReadRegion>
+  );
 }
 
 function MemberDraft({ username, initialProfile, authStatus }) {
