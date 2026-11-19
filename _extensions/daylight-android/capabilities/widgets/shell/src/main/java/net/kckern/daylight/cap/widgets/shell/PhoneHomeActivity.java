@@ -20,7 +20,6 @@ import android.view.View;
 import android.widget.*;
 
 import net.kckern.daylight.api.PayloadPort;
-import net.kckern.daylight.api.SurfaceKeys;
 import net.kckern.daylight.shellkit.ShellStart;
 import net.kckern.daylight.shellkit.SurfaceCache;
 
@@ -36,6 +35,7 @@ public class PhoneHomeActivity extends Activity {
     private static final int INK = 0xff14382f, GREEN = 0xff125b47, PAPER = 0xfff4f7f4;
     private final ExecutorService worker = Executors.newSingleThreadExecutor();
     private JSONArray pages = new JSONArray();
+    private JSONArray configuredActions = new JSONArray();
     private LinearLayout column;
     private boolean loading = true;
     private String loadError;
@@ -89,8 +89,12 @@ public class PhoneHomeActivity extends Activity {
         call("phone-bookmarks", request("list").toString(), result -> {
             pages = result.optJSONArray("items");
             if (pages == null) pages = new JSONArray();
-            loading = false;
-            draw();
+            call("phone-pin-action", "", actions -> {
+                configuredActions = actions.optJSONArray("items");
+                if (configuredActions == null) configuredActions = new JSONArray();
+                loading = false;
+                draw();
+            });
         });
     }
 
@@ -116,11 +120,12 @@ public class PhoneHomeActivity extends Activity {
             row(page.optString("label"), "Add to home screen", page.optString("icon"), () -> pinPage(page));
         }
         column.addView(label("Quick capture", 20, INK));
-        for (ButtonFace.Choice choice : ButtonFace.choices(SurfaceCache.get(this, SurfaceKeys.ACTION_IDS),
-                key -> SurfaceCache.get(this, key))) {
-            if (!choice.id.startsWith("journal") && !choice.id.startsWith("meal")) continue;
-            String icon = SurfaceCache.get(this, SurfaceKeys.action(choice.id, SurfaceKeys.ICON));
-            row(choice.label, "Add to home screen", icon, () -> call("phone-pin-action", choice.id, result -> {}));
+        for (int i = 0; i < configuredActions.length(); i++) {
+            JSONObject action = configuredActions.optJSONObject(i);
+            if (action == null || !"INPUT".equals(action.optString("kind"))) continue;
+            String id = action.optString("id");
+            row(action.optString("label"), "Add to home screen", action.optString("icon"),
+                    () -> call("phone-pin-action", id, result -> {}));
         }
         column.addView(label("Play on demand", 20, INK));
         row("Play a playlist", "Choose a playlist for a one-tap widget", "play",
@@ -131,7 +136,7 @@ public class PhoneHomeActivity extends Activity {
         String id = page.optString("id");
         ShortcutManager sm = getSystemService(ShortcutManager.class);
         if (sm == null || !sm.isRequestPinShortcutSupported()) { toast("This launcher cannot pin bookmarks."); return; }
-        if (!SurfaceCache.link(this, SurfaceKeys.action(id, SurfaceKeys.URI)).isEmpty()) {
+        if (!id.startsWith("saved-")) {
             call("phone-pin-action", id, result -> {});
             return;
         }
@@ -172,7 +177,7 @@ public class PhoneHomeActivity extends Activity {
         AppWidgetManager manager = AppWidgetManager.getInstance(this);
         if (manager == null) { toast("Android widgets are unavailable on this launcher."); return; }
         if (!manager.isRequestPinAppWidgetSupported()) {
-            toast("Long-press your home screen, choose Widgets, then Daylight button."); return;
+            toast("This launcher cannot add playlist widgets from Daylight."); return;
         }
         ComponentName provider = new ComponentName(this, ButtonWidgetProvider.class);
         Intent callback = new Intent(this, ButtonWidgetProvider.class).setAction(ButtonWidgetProvider.PIN_ACTION)
@@ -184,7 +189,7 @@ public class PhoneHomeActivity extends Activity {
         boolean requested;
         try { requested = manager.requestPinAppWidget(provider, null, confirmed); }
         catch (RuntimeException unavailable) { requested = false; }
-        if (!requested) toast("The launcher could not add this widget. Long-press the home screen and add Daylight button from Widgets.");
+        if (!requested) toast("Android could not add the playlist widget. Return to Daylight and try Add widget again.");
     }
 
     private int drawable(String name) {

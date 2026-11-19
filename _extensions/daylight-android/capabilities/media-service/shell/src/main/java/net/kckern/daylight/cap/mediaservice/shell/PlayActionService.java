@@ -155,7 +155,7 @@ public class PlayActionService extends Service {
         PlayStart.Step next = PlayStart.next(SystemClock.elapsedRealtime() - startedAt, failed, playedOnce,
                 c != null && c.isPlaying(), DaylightMediaService.inForeground());
         switch (next) {
-            case FAIL: finish("Could not start playback"); return;
+            case FAIL: finish("Could not start playback. Tap the button again to retry."); return;
             case RELEASE: finish(null); return;
             default: main.postDelayed(this::step, POLL_MS);
         }

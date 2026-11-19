@@ -237,6 +237,14 @@ public final class OneTapActionsCapability implements Capability, ActionList {
     volatile java.util.function.LongSupplier clock = System::currentTimeMillis;
     private final net.kckern.daylight.api.PayloadPort actionPinPort = net.kckern.daylight.api.PayloadPort.named("phone-pin-action");
     private final net.kckern.daylight.api.PayloadPort.Handler onActionPin = id -> {
+        if (id.isEmpty()) {
+            JSONArray items = new JSONArray();
+            for (Action configured : catalog(null).all()) {
+                items.put(new JSONObject().put("id", configured.id).put("label", configured.label)
+                        .put("icon", configured.icon).put("kind", configured.kind.name()));
+            }
+            return new JSONObject().put("items", items).toString();
+        }
         Action action = catalog(null).find(id);
         if (action == null) throw new IllegalArgumentException("Unknown action");
         requireSink().pin(action, uri(action), null);

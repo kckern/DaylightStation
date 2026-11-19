@@ -87,6 +87,14 @@ public class OneTapActionsCapabilityTest {
         TestCore.releaseMainThread();
     }
 
+    @Test public void phoneSetupReadsConfiguredActionsWithoutAWidgetCache() throws Exception {
+        cap.start();
+        net.kckern.daylight.api.PayloadPort port = net.kckern.daylight.api.PayloadPort.named("phone-pin-action");
+        JSONObject result = new JSONObject(port.call("", 0));
+        assertEquals("feed", result.getJSONArray("items").getJSONObject(0).getString("id"));
+        assertEquals("Feed", result.getJSONArray("items").getJSONObject(0).getString("label"));
+    }
+
     private LinkHandler actionLink() {
         for (LinkHandler h : core.services().all(LinkHandler.class)) if ("action".equals(h.kind())) return h;
         throw new AssertionError("no action handler");
