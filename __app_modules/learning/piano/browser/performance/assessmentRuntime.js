@@ -98,6 +98,7 @@ export function createAssessmentRuntime({ attempt, createAttempt, subscribeMidi,
     publish({
       ...rest,
       paused: false,
+      heldRebaseline: true,
       startedAt: Number.isFinite(rest.startedAt) ? rest.startedAt + shiftMs : rest.startedAt,
       lastOnsetAt: Number.isFinite(rest.lastOnsetAt) ? rest.lastOnsetAt + shiftMs : rest.lastOnsetAt,
       pausedDurationMs: (rest.pausedDurationMs ?? 0) + shiftMs,

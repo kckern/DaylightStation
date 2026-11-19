@@ -481,3 +481,97 @@ describe('immutable lifecycle', () => {
     expect(() => createAssessmentAttempt({ expectation: source, grading: { part_weights: { unassigned: 0 } } })).toThrow(/positive active part/);
   });
 });
+
+describe('concurrent-onset held matching', () => {
+  const held = (...midi) => new Map(midi.map((value) => [value, {}]));
+  const start = (events) => startAssessmentAttempt(createAssessmentAttempt({
+    expectation: expectation(events), matcher: 'cursor', requirement: { policy: { requireConcurrentOnset: true } },
+  }), { time: 0 });
+  const both = (id, rh, lh) => ({ id, notes: [{ midi: rh, part: 'rh' }, { midi: lh, part: 'lh' }] });
+  const right = (id, midi) => ({ id, notes: [{ midi, part: 'rh' }] });
+  const play = (attempt, frames) => frames.reduce((current, frame, index) => observeAssessment(current, {
+    held: held(...frame), time: (index + 1) * 10,
+  }).attempt, attempt);
+
+  it('scores a perfect take with the left hand sustained as clean', () => {
+    const done = play(start([both('a', 60, 48), right('b', 62), right('c', 64)]),
+      [[60, 48], [48], [62, 48], [48], [64, 48]]);
+    expect(done.status).toBe('completed');
+    const final = finalizeAssessmentAttempt(done);
+    expect(final.result.criteria.cleanliness).toBe(1);
+    expect(final.result.diagnostics.wrong_notes).toBe(0);
+  });
+
+  it('never counts a release as wrong', () => {
+    const first = play(start([both('a', 60, 48), right('b', 62)]), [[60, 48]]);
+    const released = observeAssessment(first, { held: held(48), time: 20 });
+    expect(released.event).toMatchObject({ type: 'ignored', reason: 'held_released' });
+    expect(released.attempt.wrong).toEqual([]);
+  });
+
+  it('counts a newly pressed unowed key once', () => {
+    const first = play(start([both('a', 60, 48), right('b', 62)]), [[60, 48], [48]]);
+    const wrong = observeAssessment(first, { held: held(48, 61), time: 30 });
+    expect(wrong.event.type).toBe('wrong');
+    expect(wrong.attempt.wrong).toHaveLength(1);
+    expect(observeAssessment(wrong.attempt, { held: held(48), time: 40 }).attempt.wrong).toHaveLength(1);
+  });
+
+  it('accepts both hands struck at different instants when both are down together', () => {
+    const first = observeAssessment(start([both('a', 60, 48), right('b', 62)]), { held: held(60), time: 10 });
+    expect(first.event.type).toBe('partial');
+    const second = observeAssessment(first.attempt, { held: held(60, 48), time: 400 });
+    expect(second.event.type).toBe('onset_complete');
+    expect(second.attempt.cursor).toBe(1);
+  });
+
+  it('requires both hands down at the same moment', () => {
+    const attempt = play(start([both('a', 60, 48), right('b', 62)]), [[60], [], [48]]);
+    expect(attempt.cursor).toBe(0);
+    expect(attempt.wrong).toEqual([]);
+  });
+
+  it('requires a repeated pitch to be struck again', () => {
+    const held60 = play(start([both('a', 60, 48), right('b', 60)]), [[60, 48], [60]]);
+    expect(held60.status).toBe('running');
+    expect(play(held60, [[], [60]]).status).toBe('completed');
+  });
+
+  it('ignores keys in baseline', () => {
+    const first = observeAssessment(start([both('a', 60, 48), right('b', 62)]), { held: held(60, 48), baseline: [72], time: 10 });
+    const next = observeAssessment(first.attempt, { held: held(60, 48, 72), time: 20 });
+    expect(next.attempt.wrong).toEqual([]);
+  });
+
+  it('counts a baseline key when it is released and struck when owed', () => {
+    const first = observeAssessment(start([both('a', 60, 48), right('b', 72)]), { held: held(60, 48), baseline: [72], time: 10 });
+    const released = observeAssessment(first.attempt, { held: held(60, 48), time: 20 });
+    expect(observeAssessment(released.attempt, { held: held(60, 48, 72), time: 30 }).attempt.status).toBe('completed');
+  });
+
+  it('keeps a held note fresh when the piano layer drops it after STALE_NOTE_MS', () => {
+    const first = observeAssessment(start([both('a', 60, 48), right('b', 62)]), { held: held(60), time: 0 });
+    const swept = observeAssessment(first.attempt, { held: held(), time: 10001 });
+    expect(observeAssessment(swept.attempt, { held: held(48), time: 10010 }).attempt.cursor).toBe(1);
+  });
+
+  it('does not keep a note fresh after an ordinary release', () => {
+    const first = observeAssessment(start([both('a', 60, 48), right('b', 62)]), { held: held(60), time: 0 });
+    const lifted = observeAssessment(first.attempt, { held: held(), time: 200 });
+    expect(observeAssessment(lifted.attempt, { held: held(48), time: 300 }).attempt.cursor).toBe(0);
+  });
+
+  it('re-baselines on the first observe after resume', () => {
+    const first = play(start([both('a', 60, 48), right('b', 62)]), [[60, 48]]);
+    const resumed = observeAssessment({ ...first, heldRebaseline: true }, { held: held(60, 48, 70), time: 20 });
+    expect(resumed.attempt.wrong).toEqual([]);
+    expect(resumed.attempt.heldRebaseline).toBe(false);
+    expect(observeAssessment(resumed.attempt, { held: held(60, 48), time: 30 }).attempt.wrong).toEqual([]);
+  });
+
+  it('reports wrong presses before a hit in the same observation', () => {
+    const result = observeAssessment(start([right('a', 60), right('b', 62)]), { held: held(60, 70), time: 10 });
+    expect(result.events.map((event) => event.type)).toEqual(['wrong', 'onset_complete']);
+    expect(result.attempt.wrong).toHaveLength(1);
+  });
+});

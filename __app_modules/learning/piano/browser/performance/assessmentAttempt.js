@@ -1,5 +1,6 @@
 import { isFractionPolicy, judgeTimedOnset, timedReachMs, timedTarget, timedWindowMs } from './timedJudge.js';
 import { partIdForStaff } from './partIdentity.js';
+import { STALE_NOTE_MS } from '../noteHistory.js';
 
 const MODES = new Set(['free', 'metronome', 'cued']);
 const MATCHERS = new Set(['cursor', 'timed', 'held']);
@@ -314,6 +315,65 @@ function observeTimed(attempt, input) {
   return { attempt: completed.attempt, event: completed.events[0], events: completed.events };
 }
 
+/**
+ * Hands-together grading from the held-key set. Only a newly pressed key can be
+ * right or wrong: releases and keys still down from earlier notes say nothing.
+ * A position across both hands completes when all its notes, each struck since
+ * the cursor arrived, are down at the same moment.
+ */
+function observeConcurrentHeld(attempt, input, held, index, current, baseline) {
+  if (attempt.heldRebaseline) {
+    return ignored({ ...attempt, heldRebaseline: false, heldLast: [...held] }, 'held_rebaselined', { time: input.time });
+  }
+  const carried = [...(baseline ?? [])];
+  const previous = new Set([...(attempt.heldLast ?? []), ...carried]);
+  const pressed = [...held].filter((midi) => !previous.has(midi));
+  const owed = new Set(current.notes.filter((note) => !attempt.hits[note.id]).map((note) => note.midi));
+  const fresh = {};
+  for (const [midi, pressedAt] of Object.entries(attempt.heldFresh ?? {})) {
+    // The piano layer forgets a key after STALE_NOTE_MS with no note-off, so a
+    // long-held key leaving the set is not evidence that it was lifted.
+    const expired = Number.isFinite(input.time) && input.time - pressedAt >= STALE_NOTE_MS;
+    if (held.has(Number(midi)) || expired) fresh[midi] = pressedAt;
+  }
+  for (const midi of pressed) if (owed.has(midi)) fresh[midi] = input.time;
+  const wrongPresses = pressed.filter((midi) => !owed.has(midi));
+  const wrong = wrongPresses.map((midi) => ({ midi, time: input.time, spanId: current.spanId, eventId: current.id }));
+  const wrongEvents = wrongPresses.map((midi) => ({ type: 'wrong', eventId: current.id, midi }));
+  const next = {
+    ...attempt,
+    musicalInput: attempt.musicalInput || pressed.length > 0,
+    wrong: [...attempt.wrong, ...wrong],
+    heldLast: [...new Set([...held, ...carried])],
+    heldFresh: fresh,
+  };
+  const multiPart = new Set(current.notes.map((note) => note.part).filter(Boolean)).size > 1;
+  const ready = multiPart
+    ? current.notes.every((note) => attempt.hits[note.id] || fresh[note.midi] !== undefined)
+    : pressed.some((midi) => owed.has(midi));
+  if (!ready) {
+    if (wrongEvents.length) return { attempt: next, event: wrongEvents[0], events: wrongEvents };
+    if (pressed.length) return { attempt: next, event: { type: 'partial', eventId: current.id, held: [...held] } };
+    return ignored(next, 'held_released', { time: input.time });
+  }
+  const matches = current.notes.filter((note) => !attempt.hits[note.id] && (multiPart || pressed.includes(note.midi)));
+  const hits = { ...attempt.hits };
+  for (const note of matches) hits[note.id] = { time: input.time };
+  const onsetComplete = current.notes.every((note) => hits[note.id]);
+  const cursor = onsetComplete ? skipEmpty(attempt.expectation.events, index + 1) : index;
+  const response = Number.isFinite(input.time) ? Math.max(0, input.time - (attempt.lastOnsetAt ?? attempt.startedAt)) : null;
+  const advanced = {
+    ...next, hits, cursor,
+    heldFresh: onsetComplete ? {} : fresh,
+    lastOnsetAt: onsetComplete && Number.isFinite(input.time) ? input.time : attempt.lastOnsetAt,
+    responses: response == null ? attempt.responses : [...attempt.responses, response],
+  };
+  const hitEvents = [{ type: onsetComplete ? 'onset_complete' : 'hit', eventId: current.id, noteIds: matches.map((note) => note.id) }];
+  if (onsetComplete && current.spanId !== attempt.expectation.events[cursor]?.spanId) hitEvents.push({ type: 'span_complete', spanId: current.spanId });
+  const completed = completeIfDone(advanced, [...wrongEvents, ...hitEvents]);
+  return { attempt: completed.attempt, event: completed.events[0], events: completed.events };
+}
+
 export function observeAssessment(attempt, midiOrHeldEvent) {
   if (attempt.status === 'prepared') return ignored(attempt, 'before_start', {});
   if (TERMINAL.has(attempt.status)) return { attempt, event: { type: 'ignored', reason: 'terminated' } };
@@ -380,21 +440,8 @@ export function observeAssessment(attempt, midiOrHeldEvent) {
       };
     }
   }
-  const onsetParts = new Set(current.notes.map((note) => note.part).filter(Boolean));
-  if (attempt.matcher === 'cursor' && attempt.policy.requireConcurrentOnset === true && heldPitches && onsetParts.size > 1) {
-    const expected = new Set(current.notes.map((note) => note.midi));
-    const exact = heldPitches.size === expected.size && [...expected].every((midi) => heldPitches.has(midi));
-    if (!exact) {
-      const onlyExpected = [...heldPitches].every((midi) => expected.has(midi));
-      if (onlyExpected && heldPitches.size < expected.size) {
-        return { attempt: { ...attempt, musicalInput: true }, event: { type: 'partial', eventId: current.id, held: [...heldPitches] } };
-      }
-      const wrongMidi = [...heldPitches].find((midi) => !expected.has(midi)) ?? Math.min(...heldPitches);
-      return {
-        attempt: { ...attempt, musicalInput: true, wrong: [...attempt.wrong, { midi: wrongMidi, time: input.time, spanId: current.spanId, eventId: current.id }] },
-        event: { type: 'wrong', eventId: current.id, midi: wrongMidi },
-      };
-    }
+  if (attempt.matcher === 'cursor' && attempt.policy.requireConcurrentOnset === true && heldPitches) {
+    return observeConcurrentHeld(attempt, input, heldPitches, index, current, midiOrHeldEvent?.baseline);
   }
   const matches = current.notes.filter((note) => !attempt.hits[note.id] && (heldPitches
     ? (attempt.policy.pitchClass === true ? [...heldPitches].some((midi) => pitchClassOf(midi) === pitchClassOf(note.midi)) : heldPitches.has(note.midi))

@@ -129,6 +129,18 @@ describe('assessment runtime', () => {
     expect(runtime.getSnapshot().status).toBe('completed');
   });
 
+  it('asks the held matcher to re-baseline after a running attempt resumes', () => {
+    let now = 0;
+    const attempt = createAssessmentAttempt({
+      expectation: compileAssessmentExpectation({ source: { kind: 'chart', id: 'resume' }, events: [{ id: 'a', notes: [{ midi: 60, part: 'rh' }] }] }),
+    });
+    const runtime = createAssessmentRuntime({ attempt, now: () => now, tickMs: 0 });
+    runtime.start();
+    runtime.pause();
+    now = 100; runtime.resume();
+    expect(runtime.getSnapshot().heldRebaseline).toBe(true);
+  });
+
   it('can pause and resume before the first note without starting the attempt', () => {
     let now = 20;
     const runtime = createAssessmentRuntime({ attempt: makeAttempt(), now: () => now, tickMs: 0 });

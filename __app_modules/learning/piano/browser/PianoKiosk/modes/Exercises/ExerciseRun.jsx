@@ -216,6 +216,23 @@ export function wrongEventState(event) {
   return event?.type === 'wrong' ? { midi: event.midi, eventId: event.eventId } : null;
 }
 
+/** A lifted finger answers nothing, so it must not take the after-wrong hint away. */
+export function nextLastWrong(previous, event) {
+  if (event?.type === 'ignored' && ['held_released', 'held_rebaselined'].includes(event.reason)) return previous;
+  return wrongEventState(event);
+}
+
+/** The first held observation of an armed run: the chord, with other down keys set aside. */
+export function armingHeldObservation(activeNotes, armingPitches, time) {
+  const keys = [...activeNotes];
+  return {
+    held: new Map(keys.filter(([midi]) => armingPitches.has(midi))),
+    baseline: keys.filter(([midi]) => !armingPitches.has(midi)).map(([midi]) => midi),
+    time,
+    clock: 'date-now',
+  };
+}
+
 /**
  * THE CURSOR A CHILD IS SHOWN, WHICH IS NEVER BEHIND THE ONE BEING GRADED.
  *
@@ -574,7 +591,7 @@ export default function ExerciseRun({ instance, score, requirement = null, pract
           logger.warn('piano.exercise-input-integrity', { reason: event.reason, assessmentId: assessmentIdRef.current });
           setUnrunnable(event.reason);
         }
-        setLastWrong(wrongEventState(event));
+        setLastWrong((previous) => nextLastWrong(previous, event));
         // Fold this observation into the hunt BEFORE tracing it, so a rung and
         // the observation that earned it carry the same cursor.
         if (huntingArmed(state?.matcher)) {
@@ -1184,8 +1201,7 @@ export default function ExerciseRun({ instance, score, requirement = null, pract
         // the intentional reach. Once running, the matcher's normal rules
         // apply to the whole held set, extras included.
         lastHeldObservedRef.current = heldKey;
-        const reach = new Map([...activeNotesRef.current].filter(([midi]) => armingPitches.has(midi)));
-        runtime.observe({ held: reach, time: armedAt, clock: 'date-now' });
+        runtime.observe(armingHeldObservation(activeNotesRef.current, armingPitches, armedAt));
       } else {
         // EVERY new onset in this commit, not only the one that armed.
         //
