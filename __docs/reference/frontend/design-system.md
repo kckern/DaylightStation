@@ -210,6 +210,10 @@ control. The feature still owns return focus and any navigation history.
 [Media phone search](../../../__app_modules/media/media/browser/search/SearchMode.jsx) ·
 [Feed Scroll detail](../../../__app_modules/media/feed/browser/Scroll/detail/DetailModal.jsx)
 
+In `Sheet`, mark the initial input with `data-autofocus`. The focus trap
+then focuses the input after the sheet records the original trigger.
+[Auto place naming](../../../__app_modules/household/auto/browser/DrivesPanel.jsx)
+
 The seven browser app routes opt into the edge-to-edge viewport. Mantine
 dialog sizing follows the same safe rectangle, including body portals.
 For centered notifications, set `data-safe-area-center` so they center

@@ -338,14 +338,11 @@ Use `ConfirmModal` before any delete or irreversible operation. Pair it with `Cr
 `Player` inside the admin UI so a list entry can be checked without walking to
 the kiosk.
 
-Its frame imitates a chosen screen rather than picking a convenient size. The
-inner box is laid out at that screen's exact `resolution` in CSS px and then
-`zoom`ed down to the 960px preview surface (`previewFrame.js`). That is the only
-way the preview can be trusted for type size: the Player is sized entirely in
-`rem` against an unmodified 16px root, so it renders honestly only inside a box
-with the same CSS-pixel count the kiosk has. Before this, the preview hardcoded
-1920x1080 at `zoom: 0.5` — the right visual size at the wrong layout size, which
-rendered every glyph half-size against a 960x540 screen.
+The inner box uses the selected screen's exact `resolution` in CSS pixels.
+`previewFrame.js` scales that box to the measured modal body, up to 960px wide,
+and preserves the screen's aspect ratio. The Player lays out its `rem` sizes
+against the original 16px root. Resizing the modal changes the scale while the
+same playback item remains mounted.
 
 Note the two coordinate spaces when debugging: under `zoom`, `offsetWidth` and
 `clientHeight` report **unzoomed layout px** while `getBoundingClientRect()`

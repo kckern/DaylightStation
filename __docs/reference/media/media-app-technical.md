@@ -904,10 +904,11 @@ start before origins were recorded). `kind` may be `unknown` for legacy text.
 **Client.** The house view reads `GET /started-by` when it opens, whenever what
 plays on any row changes, and every 60 s, and shows
 `houseCopy.startedByText` — "Started by <name>, <h:mm>" (weekday added when not
-today) — on rows that are active. `StartedByLine` with only a `deviceId`
-reads `GET /screens/:id/started-by` itself (re-read when the item changes); it
-is mounted in the screen's controls header (`shell/PeekPanel.jsx`, under the
-status line) while an item plays. Events `house.started-by-loaded|failed`.
+today) — on rows that are active. In the screen controls header, `StartedByLine`
+reads `GET /screens/:id/started-by` for the active remote item. It refreshes on a
+screen or item change, a reconnect, and foreground return, and polls every 60 s
+while visible. A failed read clears the attribution until recovery.
+Events `house.started-by-loaded|failed`.
 
 ### 2.8 Played earlier
 

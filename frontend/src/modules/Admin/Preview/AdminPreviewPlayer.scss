@@ -2,13 +2,13 @@
   display: flex;
   flex-direction: column;
   gap: 8px;
+  min-width: 0;
 }
 
-/* The VISIBLE box: fixed width, height derived from the target screen's own
-   aspect ratio. A hardcoded 540px forced every screen to 16:9 and cropped the
-   16:10 portal panel. */
+/* Fit the measured modal body and use the target screen's aspect ratio. */
 .admin-preview-player__video {
   width: var(--preview-width, 960px);
+  max-width: 100%;
   height: var(--preview-box-height, 540px);
   position: relative;
   background: #000;

@@ -7,6 +7,8 @@ test('a remote screen supplies its own clock and recovers a missed start outcome
   let socket;
   let connections = 0;
   let reads = 0;
+  const attributionReads = [];
+  let origin = 'Kitchen tablet';
   const commands = [];
   await page.routeWebSocket('**/*', connection => {
     socket = connection;
@@ -17,7 +19,7 @@ test('a remote screen supplies its own clock and recovers a missed start outcome
     });
   });
   await page.route('**/api/**', route => {
-    const path = new URL(route.request().url()).pathname;
+    const path = decodeURIComponent(new URL(route.request().url()).pathname);
     if (path.endsWith('/supervision/bootstrap')) return route.fulfill({ json: { enabled: false } });
     if (path.endsWith('/device/config')) {
       return route.fulfill({ json: { devices: { fixture: { name: 'Fixture screen', fleet: true } } } });
@@ -26,6 +28,10 @@ test('a remote screen supplies its own clock and recovers a missed start outcome
       reads++;
       const status = connections > 1 ? { phase: 'failed', updatedAt: new Date().toISOString() } : null;
       return route.fulfill({ json: { ok: true, status } });
+    }
+    if (path.endsWith('/media/screens/fleet:fixture/started-by')) {
+      attributionReads.push(connections);
+      return route.fulfill({ json: { startedBy: { kind: 'device', name: origin } } });
     }
     return route.fulfill({ json: {} });
   });
@@ -53,6 +59,16 @@ test('a remote screen supplies its own clock and recovers a missed start outcome
   await expect(seek).toHaveAttribute('aria-valuenow', '12');
   sendPosition(24);
   await expect(seek).toHaveAttribute('aria-valuenow', '24');
+
+  const attribution = panel.getByTestId('house-started-by-fixture');
+  await expect(attribution).toHaveText('Started by Kitchen tablet');
+  origin = 'Desk laptop';
+  socket.close({ code: 1001, reason: 'same title started on a different device' });
+  await expect.poll(() => connections, { timeout: 20000 }).toBe(3);
+  sendPosition(4);
+  await expect(seek).toHaveAttribute('aria-valuenow', '4');
+  await expect(attribution).toHaveText('Started by Desk laptop');
+  expect(attributionReads).toEqual([2, 3]);
   await expect(page.locator('audio[src],video[src]')).toHaveCount(0);
   expect(commands).toEqual([]);
 });

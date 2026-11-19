@@ -100,6 +100,69 @@ describe('useStartedBy', () => {
   });
 });
 
+it('refreshes the same screen and title once after a socket interruption', async () => {
+  const api = { startedBy: vi.fn()
+    .mockResolvedValueOnce({ startedBy: { name: 'Kitchen button' } })
+    .mockResolvedValueOnce({ startedBy: { name: 'Office remote' } }) };
+  const { unmount } = render(<OneProbe api={api} deviceId="office-tv" contentId="plex:1" />);
+  await screen.findByText('Kitchen button');
+  act(() => {
+    for (const connected of [true, false, false, true, true]) wsHandlers.status?.({ connected });
+  });
+  await screen.findByText('Office remote');
+  expect(api.startedBy.mock.calls).toEqual([['fleet:office-tv'], ['fleet:office-tv']]);
+  unmount();
+  expect(wsHandlers.status).toBeNull();
+});
+
+it('recovers a failed offline read on a visible poll and hides attribution when recovery fails', async () => {
+  vi.useFakeTimers();
+  const source = { startedBy: { name: 'Current source' } };
+  const api = { startedBy: vi.fn()
+    .mockRejectedValueOnce(new Error('offline'))
+    .mockResolvedValueOnce(source)
+    .mockRejectedValueOnce(new Error('unavailable')) };
+  try {
+    render(<OneProbe api={api} deviceId="office-tv" contentId="plex:1" />);
+    await act(async () => wsHandlers.status({ connected: false }));
+    expect(screen.getByTestId('o')).toHaveTextContent('-');
+    act(() => wsHandlers.status({ connected: true }));
+    await act(async () => vi.advanceTimersByTime(60_000));
+    expect(screen.getByTestId('o')).toHaveTextContent('Current source');
+    await act(async () => {
+      wsHandlers.status({ connected: false });
+      wsHandlers.status({ connected: true });
+    });
+    expect(screen.getByTestId('o')).toHaveTextContent('-');
+    expect(api.startedBy).toHaveBeenCalledTimes(3);
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it('defers hidden Peek reads and reconnects until visible, and ignores an unselected or local screen', async () => {
+  const visibility = vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('hidden');
+  const api = { startedBy: vi.fn().mockResolvedValue({ startedBy: { name: 'Office remote' } }) };
+  try {
+    const { rerender } = render(<OneProbe api={api} deviceId="office-tv" contentId="plex:1" />);
+    act(() => {
+      for (const connected of [true, false, true]) wsHandlers.status?.({ connected });
+    });
+    expect(api.startedBy).not.toHaveBeenCalled();
+    visibility.mockReturnValue('visible');
+    act(() => document.dispatchEvent(new Event('visibilitychange')));
+    await screen.findByText('Office remote');
+    for (const deviceId of [null, 'local']) {
+      rerender(<OneProbe api={api} deviceId={deviceId} contentId="plex:1" />);
+      expect(wsHandlers.status).toBeNull();
+      expect(screen.getByTestId('o')).toHaveTextContent('-');
+    }
+    expect(api.startedBy).toHaveBeenCalledTimes(1);
+  } finally {
+    visibility.mockRestore();
+  }
+});
+
 it('refreshes house attribution on foreground return and drops an older answer', async () => {
   const visibility = vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible');
   let release;

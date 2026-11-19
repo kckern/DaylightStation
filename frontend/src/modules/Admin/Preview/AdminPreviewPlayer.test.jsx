@@ -168,4 +168,20 @@ describe('AdminPreviewPlayer frame', () => {
     // Confirm we really are on the queue branch, not silently on Play mode.
     expect(container.querySelector('.admin-preview-player__queue-bar')).toBeTruthy();
   });
+
+  it('retries a failed preview queue without refetching the screens', async () => {
+    let reads = 0;
+    daylightAPI.mockImplementation(path => {
+      if (path !== 'api/v1/queue/list:hymns') return Promise.resolve(SCREENS);
+      return ++reads === 1 ? Promise.reject(new Error('Queue unavailable')) : Promise.resolve(QUEUE_ITEMS);
+    });
+
+    renderQueuePreview();
+    expect(await screen.findByRole('alert')).toHaveTextContent('Queue unavailable');
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    expect(await screen.findByText('Playing 1 of 2')).toBeVisible();
+    expect(daylightAPI.mock.calls.map(([path]) => path).sort()).toEqual([
+      'api/v1/queue/list:hymns', 'api/v1/queue/list:hymns', 'api/v1/screens',
+    ]);
+  });
 });

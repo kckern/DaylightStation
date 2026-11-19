@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { silentWave } from '../../../_fixtures/media/silentWave.mjs';
 
 test.use({ serviceWorkers: 'block' });
 
@@ -119,6 +120,82 @@ for (const width of [390, 1440]) {
     });
   });
 }
+
+for (const action of ['Play', 'Queue']) test(`Admin keeps the selected screen preview inside its modal while resizing during playback (${action})`, async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 850 });
+  await installFixtures(page);
+  await page.route('**/api/v1/admin/content/lists/menus/preview-fixture', route => route.fulfill({ json: {
+    name: 'preview-fixture', sections: [{ items: [{ uid: 'preview', label: 'Preview song', action, input: 'plex:42' }] }],
+  } }));
+  await page.route('**/api/v1/screens', route => route.fulfill({ json: { screens: [
+    { id: 'living-room', name: 'Living room', resolution: { width: 960, height: 540 } },
+    { id: 'portal', name: 'Portal', resolution: { width: 1280, height: 800 } },
+  ] } }));
+  await page.route('**/preview-song.wav', route => route.fulfill({ contentType: 'audio/wav', body: silentWave(30) }));
+  const song = {
+    id: 'plex:42', contentId: 'plex:42', title: 'Preview song', format: 'audio', mediaType: 'audio', mediaUrl: '/preview-song.wav', duration: 30,
+  };
+  await page.route(url => decodeURIComponent(url.pathname) === '/api/v1/play/plex:42', route => route.fulfill({ json: song }));
+  const queue = Promise.withResolvers();
+  if (action === 'Queue') {
+    await page.addInitScript(() => localStorage.setItem('daylight.adminPreview.screenId', 'portal'));
+    await page.route(url => decodeURIComponent(url.pathname) === '/api/v1/queue/plex:42', async route => {
+      await queue.promise;
+      return route.fulfill({ json: { items: [song] } });
+    });
+  }
+
+  await page.goto('/admin/content/lists/menus/preview-fixture');
+  const screens = page.waitForResponse(response => new URL(response.url()).pathname === '/api/v1/screens');
+  await page.getByTitle('Preview', { exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: 'Preview song' });
+  if (action === 'Queue') {
+    try {
+      await expect(dialog.getByText('Loading queue...')).toBeVisible();
+      expect(await (await screens).finished()).toBeNull();
+      await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+    } finally {
+      queue.resolve();
+    }
+  } else {
+    await screens;
+  }
+  const picker = dialog.getByLabel('Preview at screen');
+  if (action === 'Play') await picker.selectOption('portal');
+  await expect(picker).toHaveValue('portal');
+  const frame = dialog.locator('.admin-preview-player__video');
+  const geometry = () => frame.evaluate(element => {
+    const outer = element.getBoundingClientRect();
+    const modal = element.closest('[role="dialog"]').getBoundingClientRect();
+    const availableWidth = element.parentElement.getBoundingClientRect().width;
+    const inner = element.firstElementChild;
+    const rendered = inner.getBoundingClientRect();
+    return {
+      fits: outer.left >= 0 && outer.right <= innerWidth && outer.left >= modal.left && outer.right <= modal.right + 1,
+      aspect: Math.abs(outer.height - outer.width * 800 / 1280) <= 1,
+      filled: Math.abs(outer.width - rendered.width) <= 1,
+      usesAvailable: Math.abs(outer.width - Math.min(960, availableWidth)) <= 1,
+      kioskWidth: inner.offsetWidth, kioskHeight: inner.offsetHeight,
+      width: Math.round(outer.width),
+    };
+  });
+  const expectedFrame = { fits: true, aspect: true, filled: true, usesAvailable: true, kioskWidth: 1280, kioskHeight: 800 };
+  await expect.poll(geometry).toMatchObject(expectedFrame);
+  expect((await geometry()).width).toBeLessThan(390);
+
+  const audio = await page.waitForFunction(() => [...document.querySelectorAll('audio,video')]
+    .find(el => el.currentSrc.endsWith('preview-song.wav') && !el.paused && el.currentTime > 0), null, { timeout: 10000 });
+  const before = await audio.evaluate(el => el.currentTime);
+  for (const width of [320, 768, 1200]) {
+    await page.setViewportSize({ width, height: 850 });
+    await expect.poll(geometry).toMatchObject(expectedFrame);
+  }
+  await page.setViewportSize({ width: 1440, height: 850 });
+  await expect(picker).toHaveValue('portal');
+  await expect.poll(geometry).toMatchObject(expectedFrame);
+  expect((await geometry()).width).toBeGreaterThan(900);
+  await expect.poll(() => audio.evaluate(el => el.isConnected && !el.paused ? el.currentTime : -1)).toBeGreaterThan(before);
+});
 
 test('an Admin app preview owns its exact WebSocket topic while open', async ({ page }) => {
   const topic = 'diagnostic:browser-lifecycle-fixture';

@@ -117,18 +117,25 @@ export function useStartedByAll(playingKey, { api = defaultApi, pollMs = STARTED
 /** One screen's StartedBy — for a screen's controls header. */
 export function useStartedBy(deviceId, { api = defaultApi, contentId = null } = {}) {
   const [snapshot, setSnapshot] = useState(null);
-  const id = screenIdFor(deviceId);
+  const id = deviceId === 'local' ? null : screenIdFor(deviceId);
+  const readAttribution = useCallback(async isCurrent => {
+    try {
+      const info = await api.startedBy(id);
+      if (isCurrent()) setSnapshot({ id, contentId, info });
+    } catch (error) {
+      if (!isCurrent()) return;
+      setSnapshot(null);
+      houseLog.startedByFailed({ deviceId, status: error?.status ?? null, error: error?.message });
+    }
+  }, [id, deviceId, contentId, api]);
+  const { reload, poll } = useRefreshableRead(readAttribution);
   useEffect(() => {
     if (!id) return;
-    let active = true;
-    api.startedBy(id)
-      .then(info => { if (active) setSnapshot({ id, contentId, info }); })
-      .catch(error => {
-        if (!active) return;
-        setSnapshot(null);
-        houseLog.startedByFailed({ deviceId, status: error?.status ?? null, error: error?.message });
-      });
-    return () => { active = false; };
-  }, [id, deviceId, contentId, api]);
+    if (document.visibilityState === 'visible') reload();
+    return observeSocketStatus(onStatus, (_status, recovered) => {
+      if (recovered && document.visibilityState === 'visible') reload();
+    });
+  }, [id, reload]);
+  useVisibleRefresh({ active: !!id, intervalMs: STARTED_BY_POLL_MS, reload, poll });
   return snapshot?.id === id && snapshot?.contentId === contentId ? snapshot?.info ?? null : null;
 }

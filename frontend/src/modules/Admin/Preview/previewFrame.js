@@ -16,11 +16,7 @@
  */
 
 /**
- * Width of the visible preview surface, in real CSS px.
- *
- * Coupled to the preview modal's width: `ListsItemRow.jsx` opens it with
- * `size={980}` and `padding="xs"`. Raise this without raising that and the
- * frame overflows the modal.
+ * Maximum width of the visible preview surface, in real CSS px.
  */
 export const PREVIEW_WIDTH = 960;
 
@@ -30,6 +26,7 @@ export const PREVIEW_WIDTH = 960;
  * would come back null — a selectable option that renders nothing.
  *
  * @param {{width: number, height: number}|null|undefined} resolution
+ * @param {number} [availableWidth] Measured width inside the preview host
  * @returns {boolean}
  */
 export function isPreviewableResolution(resolution) {
@@ -44,13 +41,15 @@ export function isPreviewableResolution(resolution) {
  * @param {{width: number, height: number}|null|undefined} resolution
  * @returns {Object<string,string>|null} null when the screen declares no usable resolution
  */
-export function previewFrameVars(resolution) {
+export function previewFrameVars(resolution, availableWidth) {
   if (!isPreviewableResolution(resolution)) return null;
 
   const { width: w, height: h } = resolution;
-  const scale = PREVIEW_WIDTH / w;
+  const width = Number.isFinite(availableWidth) && availableWidth > 0
+    ? Math.min(PREVIEW_WIDTH, availableWidth) : PREVIEW_WIDTH;
+  const scale = width / w;
   return {
-    '--preview-width': `${PREVIEW_WIDTH}px`,
+    '--preview-width': `${width}px`,
     '--preview-screen-width': `${w}px`,
     '--preview-screen-height': `${h}px`,
     '--preview-scale': String(scale),

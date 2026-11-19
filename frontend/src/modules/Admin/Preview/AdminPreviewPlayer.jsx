@@ -1,7 +1,10 @@
 import { browserPreference } from '../../../lib/browserPreference.js';
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { NativeSelect } from '@mantine/core';
-import { DaylightAPI, DaylightMediaPath } from '../../../lib/api.mjs';
+import { useElementSize } from '@mantine/hooks';
+import { DaylightMediaPath } from '../../../lib/api.mjs';
+import { useApiResource } from '../../../lib/hooks/useApiResource.js';
+import { EmptyState, ErrorState, StateMessage } from '../../../lib/ui/states.jsx';
 import { Player as Player } from "../../../../../__app_modules/media/media/browser/playback.mjs";
 import { previewFrameVars } from './previewFrame.js';
 import { usePreviewScreens, FALLBACK_SCREEN } from './usePreviewScreens.js';
@@ -18,10 +21,13 @@ const screenPreference = browserPreference('daylight.adminPreview.screenId', nul
 
 export default function AdminPreviewPlayer({ contentId, action, volume, playbackRate, shuffle, onClose }) {
   const isQueue = action === 'Queue';
-  const [queueItems, setQueueItems] = useState(null);
-  const [currentIndex, setCurrentIndex] = useState(0);
-  const [error, setError] = useState(null);
+  const queuePath = isQueue && contentId ? `api/v1/queue/${contentId}${shuffle ? '?shuffle=true' : ''}` : null;
+  const queue = useApiResource(queuePath, { retryTransient: false, label: 'Preview queue' });
+  const queueItems = queue.data?.items;
+  const [selection, setSelection] = useState(null);
+  const currentIndex = selection?.path === queuePath ? selection.index : 0;
   const activeRef = useRef(null);
+  const { ref: previewRef, width: previewWidth } = useElementSize();
 
   // Which real screen this preview is imitating. The Player is sized entirely
   // in rem, so the ONLY thing that makes the preview match the kiosk is laying
@@ -50,7 +56,7 @@ export default function AdminPreviewPlayer({ contentId, action, volume, playback
   }, [resolvedAwayFromStored, screenId, activeScreen.id]);
 
   const frameVars = useMemo(() => {
-    const vars = previewFrameVars(activeScreen.resolution);
+    const vars = previewFrameVars(activeScreen.resolution, previewWidth);
     if (vars) return vars;
     // Unreachable today: usePreviewScreens filters every entry through the same
     // predicate previewFrameVars guards with, and FALLBACK_SCREEN is frozen and
@@ -59,8 +65,8 @@ export default function AdminPreviewPlayer({ contentId, action, volume, playback
     // the frame to the SCSS defaults with no error and no visual tell, which is
     // the exact bug class this whole change exists to remove. So: never silent.
     logger().warn('frame-vars-fallback', { screenId: activeScreen.id, resolution: activeScreen.resolution });
-    return previewFrameVars(FALLBACK_SCREEN.resolution);
-  }, [activeScreen]);
+    return previewFrameVars(FALLBACK_SCREEN.resolution, previewWidth);
+  }, [activeScreen, previewWidth]);
 
   const handleScreenChange = useCallback((event) => {
     const id = event.currentTarget.value;
@@ -69,23 +75,6 @@ export default function AdminPreviewPlayer({ contentId, action, volume, playback
     screenPreference.write(id);
   }, []);
 
-  // Fetch queue items on mount for Queue mode
-  useEffect(() => {
-    if (!isQueue || !contentId) return;
-    let cancelled = false;
-    (async () => {
-      try {
-        const data = await DaylightAPI(`api/v1/queue/${contentId}${shuffle ? '?shuffle=true' : ''}`);
-        if (!cancelled && data?.items) {
-          setQueueItems(data.items);
-        }
-      } catch (e) {
-        if (!cancelled) setError(e.message);
-      }
-    })();
-    return () => { cancelled = true; };
-  }, [contentId, isQueue, shuffle]);
-
   // Auto-scroll active item into view
   useEffect(() => {
     if (activeRef.current) {
@@ -93,25 +82,12 @@ export default function AdminPreviewPlayer({ contentId, action, volume, playback
     }
   }, [currentIndex]);
 
-  useCallback(() => {
-    if (!queueItems) { onClose(); return; }
-    const next = currentIndex + 1;
-    if (next >= queueItems.length) {
-      onClose();
-    } else {
-      setCurrentIndex(next);
-    }
-  }, [currentIndex, queueItems, onClose]);
-
-  const handleJump = useCallback((index) => {
-    setCurrentIndex(index);
-  }, []);
-
   // Memoised so the option list is not rebuilt on every queue-index change.
   const screenPicker = useMemo(() => (
     <NativeSelect
       size="xs"
       w={220}
+      maw="100%"
       label="Preview at screen"
       value={activeScreen.id}
       onChange={handleScreenChange}
@@ -122,80 +98,59 @@ export default function AdminPreviewPlayer({ contentId, action, volume, playback
     />
   ), [screens, activeScreen.id, handleScreenChange]);
 
-  // --- Play mode ---
-  if (!isQueue) {
-    const mediaConfig = { contentId, volume, playbackRate };
-    return (
-      <div className="admin-preview-player" style={frameVars}>
-        {screenPicker}
-        <div className="admin-preview-player__video">
-          <div className="admin-preview-player__video-inner">
-            <Player
-              play={mediaConfig}
-              clear={onClose}
-              playerType="preview"
-            />
-          </div>
-        </div>
-      </div>
-    );
+  const mediaConfig = useMemo(() => ({ contentId, volume, playbackRate }), [contentId, volume, playbackRate]);
+  const currentSlice = useMemo(() => queueItems?.slice(currentIndex), [queueItems, currentIndex]);
+
+  let status = null;
+  if (isQueue) {
+    if (queue.loading) status = <StateMessage state="loading" role="status" title="Loading queue..." />;
+    else if (queue.error) status = <ErrorState title="Failed to load queue" error={queue.error} onRetry={queue.reload} />;
+    else if (!queueItems?.length) status = <EmptyState title="Queue is empty." />;
   }
 
-  // --- Queue mode: loading ---
-  if (!queueItems) {
-    if (error) return <div style={{ color: 'var(--mantine-color-red-5)', padding: 16 }}>Failed to load queue: {error}</div>;
-    return <div style={{ color: 'var(--mantine-color-dimmed)', padding: 16 }}>Loading queue...</div>;
-  }
-
-  if (queueItems.length === 0) {
-    return <div style={{ color: 'var(--mantine-color-dimmed)', padding: 16 }}>Queue is empty.</div>;
-  }
-
-  // --- Queue mode: playing ---
-  const playerKey = `preview-${contentId}-${currentIndex}`;
-  const currentSlice = queueItems.slice(currentIndex);
-
-  return (
-    <div className="admin-preview-player" style={frameVars}>
+  return <div ref={previewRef} className="admin-preview-player" style={frameVars}>
+    {status ?? <>
       {screenPicker}
       <div className="admin-preview-player__video">
         <div className="admin-preview-player__video-inner">
-          <Player
-            key={playerKey}
-            queue={currentSlice}
-            clear={onClose}
-            playerType="preview"
-          />
+          {isQueue ? (
+            <Player key={`preview-${contentId}-${currentIndex}`} queue={currentSlice} clear={onClose} playerType="preview" />
+          ) : (
+            <Player play={mediaConfig} clear={onClose} playerType="preview" />
+          )}
         </div>
       </div>
 
-      <div className="admin-preview-player__queue-info">
-        <span>Playing {currentIndex + 1} of {queueItems.length}</span>
-      </div>
-
-      <div className="admin-preview-player__queue-bar">
-        {queueItems.map((item, i) => (
-          <div
-            key={item.id || i}
-            ref={i === currentIndex ? activeRef : undefined}
-            className={`admin-preview-player__queue-item${i === currentIndex ? ' admin-preview-player__queue-item--active' : ''}`}
-            onClick={() => handleJump(i)}
-            title={item.title}
-          >
-            {item.thumbnail ? (
-              <img
-                className="admin-preview-player__queue-thumb"
-                src={DaylightMediaPath(item.thumbnail)}
-                alt=""
-                loading="lazy"
-              />
-            ) : (
-              <div className="admin-preview-player__queue-thumb" />
-            )}
-            <div className="admin-preview-player__queue-title">{item.title}</div>
+      {isQueue && (
+        <>
+          <div className="admin-preview-player__queue-info">
+            <span>Playing {currentIndex + 1} of {queueItems.length}</span>
           </div>
-        ))}
-      </div>
-    </div>
-  );
+          <div className="admin-preview-player__queue-bar">
+            {queueItems.map((item, i) => (
+              <div
+                key={item.id || i}
+                ref={i === currentIndex ? activeRef : undefined}
+                className={`admin-preview-player__queue-item${i === currentIndex ? ' admin-preview-player__queue-item--active' : ''}`}
+                onClick={() => setSelection({ path: queuePath, index: i })}
+                title={item.title}
+              >
+                {item.thumbnail ? (
+                  <img
+                    className="admin-preview-player__queue-thumb"
+                    src={DaylightMediaPath(item.thumbnail)}
+                    alt=""
+                    loading="lazy"
+                  />
+                ) : (
+                  <div className="admin-preview-player__queue-thumb" />
+                )}
+                <div className="admin-preview-player__queue-title">{item.title}</div>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+    </>}
+  </div>;
 }

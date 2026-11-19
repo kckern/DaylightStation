@@ -186,6 +186,30 @@ test('Auto preserves a reopened fuel draft when the earlier save is acknowledged
   await expect(opener).toBeFocused();
 });
 
+test('Auto place naming focuses the name and returns focus to the journey action', async ({ page }) => {
+  await page.routeWebSocket('**/*', () => {});
+  const root = '/api/v1/automotive/vehicles';
+  const car = `${root}/sample`;
+  const fixtures = {
+    [root]: { vehicles: [{ id: 'sample', label: 'Sample' }] },
+    [car]: { odometer: { km: 123 }, fuel: { needsMoreData: true }, trip_count: 1 },
+    [`${car}/journeys`]: { journeys: [{ id: 'drive', title: 'Morning drive', origin: { fix: { lat: 1, lon: 2 } }, stops: [] }] },
+    [`${car}/fuel`]: { logs: [] },
+  };
+  await page.route('**/automotive/**', route => route.fulfill({ json: fixtures[new URL(route.request().url()).pathname] ?? {} }));
+
+  await page.goto('/auto');
+  await page.getByRole('button', { name: 'Drives', exact: true }).click();
+  const opener = page.getByRole('button', { name: 'Name this place', exact: true });
+  const dialog = page.getByRole('dialog', { name: 'Name this place' });
+  const name = dialog.getByRole('textbox', { name: 'What is it?' });
+  await opener.press('Enter');
+  await expect(name).toBeFocused();
+  await name.press('Escape');
+  await expect(dialog).toBeHidden();
+  await expect(opener).toBeFocused();
+});
+
 test('Auto keeps fuel Save reachable when only the visual viewport shrinks', async ({ page }) => {
   await page.routeWebSocket('**/*', () => {});
   await page.route('https://fonts.googleapis.com/**', route => route.abort());

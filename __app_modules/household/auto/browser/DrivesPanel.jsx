@@ -240,7 +240,7 @@ function NamePlaceSheet({ point, onClose }) {
             value={label}
             onChange={(e) => setLabel(e.target.value)}
             placeholder="Costco Gas"
-            autoFocus
+            data-autofocus
           />
         </label>
         <label className="auto-field">

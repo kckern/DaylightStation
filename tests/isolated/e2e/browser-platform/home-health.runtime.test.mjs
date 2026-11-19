@@ -32,6 +32,32 @@ test('Health closes metric suggestions before dismissing the reading sheet', asy
   await expect(opener).toBeFocused();
 });
 
+test('Health focuses the custom food name and returns to the barcode launcher', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 850 });
+  await page.route('**/health/context', route => route.fulfill({ json: { userId: 'alice' } }));
+  await page.route('**/api/v1/health/day?**', route => route.fulfill({
+    json: { items: [], budget: { budget: 2000, remaining: 2000 } },
+  }));
+  await page.route('**/api/v1/health/nutrition/input', route => route.fulfill({
+    json: { unknownUpc: true, upc: '012345678905' },
+  }));
+
+  await page.goto('/health');
+  const opener = page.getByRole('button', { name: 'Scan barcode to Breakfast', exact: true });
+  await opener.press('Enter');
+  const scanner = page.getByRole('dialog', { name: 'Scan barcode' });
+  await scanner.getByRole('textbox', { name: 'Manual UPC entry' }).fill('012345678905');
+  await scanner.getByRole('button', { name: 'Look up' }).press('Enter');
+
+  const form = page.getByRole('dialog', { name: 'New food' });
+  const name = form.getByRole('textbox', { name: 'Name', exact: true });
+  await expect(scanner).toBeHidden();
+  await expect(name).toBeFocused();
+  await name.press('Escape');
+  await expect(form).toBeHidden();
+  await expect(opener).toBeFocused();
+});
+
 test('Health returns focus to the day input after cancelling a clarification', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 850 });
   await page.route('**/health/context', route => route.fulfill({ json: { userId: 'alice' } }));
