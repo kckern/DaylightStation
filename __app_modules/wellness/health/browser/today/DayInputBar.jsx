@@ -37,6 +37,21 @@ const requestBody = ({ type, content, audioRef, date, resolved, operationId }) =
 });
 const mealName = row => BUCKETS.find(bucket => bucket.id === row.mealTime)?.label || UNGROUPED.label;
 
+/**
+ * Where focus waits in the day bar when nothing better is left. The field, except on
+ * a touch screen, which raises its keyboard for a text field: there it is the
+ * microphone, or the bar itself when the microphone is busy.
+ */
+export function dayBarFallback(bar = document.querySelector('.health-day-input')) {
+  if (!bar) return null;
+  const field = bar.querySelector('.health-day-input__field input');
+  if (!window.matchMedia?.('(pointer: coarse)')?.matches) return field;
+  const mic = bar.querySelector('.health-day-input__mic:not(:disabled)');
+  if (mic) return mic;
+  bar.setAttribute('tabindex', '-1');
+  return bar;
+}
+
 const MoveDayIcon = () => <svg width="18" height="18" viewBox="0 0 18 18" fill="none" aria-hidden="true">
   <rect x="2" y="3.5" width="14" height="12" rx="2" stroke="currentColor" strokeWidth="1.5" />
   <path d="M2 7h14M5.5 11.25h6M9.5 9.25l2 2-2 2" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
@@ -187,7 +202,7 @@ export function DayInputBar({ date, today, entries, active = true, onResult, onM
     };
   }, []);
   useEffect(() => {
-    if (sheetWasOpen.current && !moving) (moveButton.current || field.current)?.focus();
+    if (sheetWasOpen.current && !moving) (moveButton.current || dayBarFallback(root.current))?.focus();
     sheetWasOpen.current = moving;
   }, [moving]);
   const focusIsOurs = container => {
@@ -214,7 +229,7 @@ export function DayInputBar({ date, today, entries, active = true, onResult, onM
     const focused = document.activeElement;
     if (focused && focused !== document.body) return;
     const next = failurePanel.current?.querySelector('button:not(:disabled)')
-      || root.current?.querySelector('.health-day-input__mic:not(:disabled)') || field.current;
+      || root.current?.querySelector('.health-day-input__mic:not(:disabled)') || dayBarFallback(root.current);
     next?.focus({ preventScroll: true });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [busy]);
@@ -233,7 +248,7 @@ export function DayInputBar({ date, today, entries, active = true, onResult, onM
       // Words that did nothing stay, to be edited. Words changed since sending stay too.
       if (result?.outcome === 'committed' && request.typed) setText(current => (current.trim() === request.typed ? '' : current));
       reportResult.current?.(result, { date: request.date });
-      if (request.typed && focusIsOurs(form)) field.current?.focus();
+      if (request.typed && focusIsOurs(form)) (document.activeElement === field.current ? field.current : dayBarFallback(root.current))?.focus();
     } catch (err) {
       // Nothing is left to resume, and a saved recording changes the body under this ID.
       if (isRefusal(err) || err?.body?.audioRef) foodAPI.release(request.operationId);

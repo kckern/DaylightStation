@@ -567,6 +567,10 @@ which day. The request contract, the gateway questions and the correction rules 
   **Dismiss** after a refusal), else the microphone, else the field. Focus left in the
   field stays there, and a press anywhere outside the bar during the request leaves focus
   alone.
+- **No keyboard by surprise.** Wherever focus falls back to the field (`dayBarFallback`),
+  a touch screen (`(pointer: coarse)`) gets the microphone instead, or the bar itself
+  (`tabindex="-1"`) while the microphone is busy, because focusing a text field raises
+  the on-screen keyboard. Desktop keeps the field.
 - **"That" follows the food.** It means the viewed day's most recent capture, including
   one made that day and filed on another day, and the reply names that day. The words are read on an empty day too, so
   a correction there is not logged as food. See
@@ -599,7 +603,8 @@ which day. The request contract, the gateway questions and the correction rules 
     **Try again** and a refusal shows its reason in the page's error toast. A late result
     never closes a sheet opened since.
   - **Keyboard:** Escape closes an open day menu first, then the sheet. Closing returns
-    focus to the button, or to the field if the button has gone with the food. Closing on
+    focus to the button, or to the field if the button has gone with the food (the
+    microphone on a touch screen). Closing on
     an unresolved move puts focus on the page toast's **Try again** as soon as it can be
     pressed (`handedBackMove`), unless focus has gone elsewhere. When Try again replaces
     the move control, focus goes to it. When a move ends with a note and the control that
@@ -709,7 +714,8 @@ suggestion, a saved meal (template) and a Needs Review confirmation.
   the first attempt had committed, the server replays it and the move finishes normally.
   Dismissing the toast leaves the retry on the page's toast.
 - **Focus:** when a toast's action removes the focused button, focus goes to the next
-  action in that toast, then another toast, then the day bar's move button. Picking from
+  action in that toast, then another toast, then the day bar's move button, then the
+  day bar's fallback (the field, or the microphone on a touch screen). Picking from
   **Other day…** puts focus on the toast's **Move to …** button, which then behaves as if
   it had been pressed. After a move from a meal's `⋯` menu, whether it finished or failed,
   focus that was left on nothing goes to the same next action, such as **Undo** or **Try

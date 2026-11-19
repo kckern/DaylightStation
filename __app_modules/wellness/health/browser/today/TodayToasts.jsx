@@ -3,6 +3,7 @@ import { Button } from '@mantine/core';
 import { CHROME_SCROLL_CLASS, ToastRegion, Toast } from '@/lib/ui';
 import { PortionDraftAlert } from "./PortionDraftAlert.jsx";
 import { CaptureDayActions, useMoveInFlight } from "./MoveDayControl.jsx";
+import { dayBarFallback } from "./DayInputBar.jsx";
 
 // Pure information ("Moved to Lunch", "copied to today") retires on its own.
 // Anything carrying an action stays until it is used or dismissed.
@@ -49,7 +50,7 @@ function focusSuccessor(toast) {
   const live = toast?.isConnected ? toast : null;
   return enabledIn(live, '[data-after-focus-loss]').at(-1) || enabledIn(live, 'button')[0]
     || enabledIn(region, '[data-after-focus-loss]').at(-1) || enabledIn(region, 'button')[0]
-    || document.querySelector('.health-day-input__move') || document.querySelector('.health-day-input input');
+    || document.querySelector('.health-day-input__move') || dayBarFallback();
 }
 /**
  * A toast action often removes itself: a move replaces its button, an Undo ends its

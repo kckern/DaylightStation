@@ -5,6 +5,14 @@ import { MantineProvider } from '@mantine/core';
 import { TodayToasts } from "./TodayToasts.jsx";
 
 const noMoves = { undo: null, error: null, clearError: () => {} };
+// A touch screen: (pointer: coarse) matches, as on a phone.
+const asTouchScreen = () => {
+  const original = window.matchMedia;
+  window.matchMedia = query => ({ matches: /pointer:\s*coarse/.test(query), media: query, onchange: null,
+    addListener() {}, removeListener() {}, addEventListener() {}, removeEventListener() {}, dispatchEvent: () => false });
+  return () => { window.matchMedia = original; };
+};
+
 
 // A host holding the three undo slots the way TodayView does.
 function Host({ controls }) {
@@ -222,6 +230,18 @@ describe('TodayToasts', () => {
       rerender(view());
       expect(document.activeElement).toBe(bar.querySelector('button'));
       bar.remove();
+    });
+    it('on a touch screen with no move button, focus goes to the microphone, not the field', async () => {
+      const restore = asTouchScreen();
+      const bar = document.body.appendChild(document.createElement('div'));
+      bar.className = 'health-day-input';
+      bar.innerHTML = '<div class="health-day-input__field"><input /></div><button class="health-day-input__mic">Mic</button>';
+      try {
+        const { rerender } = render(view({ moves: moved }));
+        (await screen.findByRole('button', { name: 'Undo move' })).focus();
+        rerender(view());
+        expect(document.activeElement).toBe(bar.querySelector('.health-day-input__mic'));
+      } finally { bar.remove(); restore(); }
     });
     describe('picking from Other day…', () => {
       const pick = async name => {

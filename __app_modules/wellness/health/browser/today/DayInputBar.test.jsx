@@ -19,7 +19,7 @@ vi.mock('../capture/VoiceCapture.jsx', () => ({ VoiceCapture: ({ onCapture, labe
   <button type="button" className={className} onClick={() => onCapture('data:audio')}>{labelPrefix}</button>
   <button type="button" onClick={() => onError('Microphone unavailable.')}>Break the microphone</button>
 </> }));
-import { DayInputBar } from './DayInputBar.jsx';
+import { DayInputBar, dayBarFallback } from './DayInputBar.jsx';
 import { MoveResult } from './mealDrag.jsx';
 import { MoveDayControl } from './MoveDayControl.jsx';
 import { LogTable } from './LogTable.jsx';
@@ -48,6 +48,13 @@ const whichFood = extra => ({ committed: false, outcome: 'clarification', clarif
 const whichDay = extra => ({ committed: false, outcome: 'clarification', clarification: { kind: 'day', question: 'Which day should this go to?', choices: [] }, ...extra });
 const done = { committed: true, outcome: 'committed', kind: 'moved', message: 'Moved Tea' };
 
+// A touch screen: (pointer: coarse) matches, as on a phone.
+const asTouchScreen = () => {
+  const original = window.matchMedia;
+  window.matchMedia = query => ({ matches: /pointer:\s*coarse/.test(query), media: query, onchange: null,
+    addListener() {}, removeListener() {}, addEventListener() {}, removeEventListener() {}, dispatchEvent: () => false });
+  return () => { window.matchMedia = original; };
+};
 beforeEach(() => { apiMock.mockReset(); warnings.length = 0; });
 afterEach(cleanup);
 
@@ -707,6 +714,55 @@ describe("Move this day's food", () => {
     view.rerender({ entries: [] });
     fireEvent.keyDown(document.body, { key: 'Escape' });
     await waitFor(() => expect(document.activeElement).toBe(field()));
+  });
+  describe('on a touch screen, where focusing the field raises the keyboard', () => {
+    let restore;
+    beforeEach(() => { restore = asTouchScreen(); });
+    afterEach(() => restore());
+    it('focus goes to the microphone when the button left with the food', async () => {
+      const view = setup();
+      await openSheet();
+      view.rerender({ entries: [] });
+      fireEvent.keyDown(document.body, { key: 'Escape' });
+      await waitFor(() => expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Speak foods or changes' })));
+    });
+    it('the button still takes focus back when it is there', async () => {
+      setup();
+      await openSheet();
+      fireEvent.keyDown(document.body, { key: 'Escape' });
+      await waitFor(() => expect(document.activeElement).toBe(screen.getByRole('button', { name: MOVE })));
+    });
+    it('a typed request answered after focus left the field returns it to the microphone', async () => {
+      apiMock.mockResolvedValue(done);
+      const { onResult } = setup();
+      screen.getByRole('button', { name: 'Send' }).focus();
+      type('eggs');
+      await waitFor(() => expect(onResult).toHaveBeenCalled());
+      expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Speak foods or changes' }));
+    });
+    it('focus already in the field stays there', async () => {
+      apiMock.mockResolvedValue(done);
+      const { onResult } = setup();
+      field().focus();
+      type('eggs');
+      await waitFor(() => expect(onResult).toHaveBeenCalled());
+      expect(document.activeElement).toBe(field());
+    });
+    it('the bar itself takes focus when the microphone cannot', () => {
+      const bar = document.body.appendChild(document.createElement('div'));
+      bar.className = 'health-day-input';
+      bar.innerHTML = '<div class="health-day-input__field"><input /></div><button class="health-day-input__mic" disabled></button>';
+      expect(dayBarFallback(bar)).toBe(bar);
+      expect(bar.getAttribute('tabindex')).toBe('-1');
+      bar.remove();
+    });
+  });
+  it('off a touch screen the fallback stays the field', () => {
+    const bar = document.body.appendChild(document.createElement('div'));
+    bar.className = 'health-day-input';
+    bar.innerHTML = '<div class="health-day-input__field"><input /></div><button class="health-day-input__mic"></button>';
+    expect(dayBarFallback(bar)).toBe(bar.querySelector('input'));
+    bar.remove();
   });
   it('an empty day does not offer it', () => {
     setup({ entries: [] });
