@@ -21,7 +21,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import '@mantine/core/styles.css';
 import { ActionIcon } from '@mantine/core';
 import {
-  AppThemeProvider, AppChrome, DismissStackProvider, LoadingState, ErrorState, EmptyState,
+  AppThemeProvider, AppChrome, DismissStackProvider, LoadingState, ErrorState, EmptyState, useViewScroll,
 } from '@/lib/ui';
 import {
   useVehicles, useOverview, useJourneys, useFuel, useService, useDocuments, useServiceTypes,
@@ -103,6 +103,7 @@ const TABS = [
 
 function AutoAppShell() {
   const garageFocus = useRef(null);
+  const mainRef = useRef(null);
   const [tab, setTab] = useState('overview');
   const [vehicleId, setVehicleId] = useState(null);
   const [includeShuffles, setIncludeShuffles] = useState(false);
@@ -132,6 +133,14 @@ function AutoAppShell() {
   const fuel = useFuel(vehicleId);
   const service = useService(vehicleId);
   const documents = useDocuments(vehicleId);
+  const activeResource = { overview, drives: journeys, fuel, service, glove: documents }[tab];
+  // These panels keep their records visible during a same-car refresh.
+  const retainedContent = { drives: journeys.data?.journeys, fuel: fuel.data, service: service.data }[tab];
+  const showLoading = activeResource.loading && !retainedContent;
+  useViewScroll({
+    mainRef, viewKey: tab, owner: vehicleId,
+    ready: Boolean(vehicleId) && !showLoading && !activeResource.error,
+  });
 
   const vehicleLabel = useMemo(() => {
     const found = vehicles.data?.vehicles?.find((v) => v.id === vehicleId);
@@ -168,6 +177,7 @@ function AutoAppShell() {
   return (
     <AppChrome
       title={vehicleLabel}
+      mainRef={mainRef}
       tabs={TABS}
       activeTab={tab}
       onTabChange={(id) => { setTab(id); autoLog.debug('tab.changed', { tab: id }); }}
@@ -176,7 +186,7 @@ function AutoAppShell() {
       {tab === 'overview' && (
         <OverviewPanel
           overview={overview.data}
-          loading={overview.loading}
+          loading={showLoading}
           error={overview.error}
           onReload={overview.reload}
           onGoTo={setTab}
@@ -189,7 +199,7 @@ function AutoAppShell() {
           journeys={journeys.data?.journeys}
           hidden={journeys.data?.hidden || 0}
           fuelLogs={fuel.data?.logs}
-          loading={journeys.loading}
+          loading={showLoading}
           error={journeys.error}
           onReload={journeys.reload}
           includeShuffles={includeShuffles}
@@ -200,7 +210,7 @@ function AutoAppShell() {
         <FuelPanel
           vehicleId={vehicleId}
           fuel={fuel.data}
-          loading={fuel.loading}
+          loading={showLoading}
           error={fuel.error}
           onReload={fuel.reload}
         />
@@ -211,7 +221,7 @@ function AutoAppShell() {
           service={service.data}
           reminders={overview.data?.reminders}
           serviceTypes={serviceTypes.data?.types}
-          loading={service.loading}
+          loading={showLoading}
           error={service.error}
           onReload={service.reload}
         />
@@ -220,7 +230,7 @@ function AutoAppShell() {
         <GlovePanel
           documents={documents.data}
           reminders={overview.data?.reminders}
-          loading={documents.loading}
+          loading={showLoading}
           error={documents.error}
           onReload={documents.reload}
         />

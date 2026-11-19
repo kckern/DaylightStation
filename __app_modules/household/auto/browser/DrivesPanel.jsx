@@ -27,8 +27,7 @@ export default function DrivesPanel({
 
   const rows = journeys || [];
 
-  // Keep the opener mounted during a background refresh when rows are available.
-  const content = loading && !journeys ? <LoadingState label="drives" />
+  const content = loading ? <LoadingState label="drives" />
     : error ? <ErrorState error={error} onRetry={onReload} label="Drives" />
     : <div className="auto-panel">
       {rows.length === 0 ? (

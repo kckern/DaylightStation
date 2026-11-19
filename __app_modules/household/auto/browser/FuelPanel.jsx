@@ -19,8 +19,7 @@ export default function FuelPanel({ vehicleId, fuel, loading, error, onReload })
   const summary = fuel?.summary;
   const detected = fuel?.detected || [];
 
-  // Keep the opener mounted during a background refresh when rows are available.
-  const content = loading && !fuel ? <LoadingState label="fill-ups" />
+  const content = loading ? <LoadingState label="fill-ups" />
     : error ? <ErrorState error={error} onRetry={onReload} label="Fill-ups" />
     : <div className="auto-panel">
       <button type="button" className="auto-btn auto-btn--primary auto-btn--block" onClick={() => setSheet({})}>

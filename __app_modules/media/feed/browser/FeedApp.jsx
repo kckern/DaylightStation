@@ -150,7 +150,7 @@ function FeedLayout() {
         ref={playerRef}
         speed={speed}
         volume={volume}
-        contentId={activeMedia?.contentId || null}
+        media={activeMedia}
         onEnd={stop}
       />}
       data-density={density}

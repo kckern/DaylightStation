@@ -35,7 +35,7 @@ function buildInitialState() {
   const volume = volumePreference.read();
   const speed = speedPreference.read();
   return {
-    activeMedia: null,      // null | { item, contentId }
+    activeMedia: null,      // null | { item, contentId, position? }
     pausedMedia: null,       // null | { item, contentId, position }
     volume,                  // 0-1
     speed,                   // playback rate
@@ -49,6 +49,28 @@ function buildInitialState() {
 // Reducer
 // ---------------------------------------------------------------------------
 
+// The renderer boundary seeks within one mounted on-demand item. A collection,
+// live stream, or unmapped source must reopen through its normal playback entry.
+function capturePosition(handle) {
+  const contentId = handle?.getMountedContentId();
+  if (!contentId) return null;
+  const item = handle.getNowPlaying()?.item;
+  const timeline = item?.contentTimeline;
+  // The mounted operation seeks in renderer seconds; a remapped transport may
+  // reopen at a different origin and cannot safely use this absolute target.
+  if (item?.isLive || timeline?.rendererStartSeconds !== timeline?.contentStartSeconds) return null;
+  const position = handle.getContentTime();
+  const native = handle.getCurrentTime();
+  const duration = handle.getDuration();
+  return Number.isFinite(position) && position >= 0 && Number.isFinite(native) && native >= 0
+    && Number.isFinite(duration) && native < duration
+    ? { contentId, position } : null;
+}
+
+function parkMedia(active, captured) {
+  return { ...active, position: captured?.contentId === active.contentId ? captured?.position : null };
+}
+
 function feedPlayerReducer(state, action) {
   switch (action.type) {
     case 'PLAY': {
@@ -56,11 +78,7 @@ function feedPlayerReducer(state, action) {
       log().info('player.play', { title: item?.title, contentId, hadActive: !!state.activeMedia });
       // Pause current active → pausedMedia (capture position from caller)
       const pausedMedia = state.activeMedia
-        ? {
-            item: state.activeMedia.item,
-            contentId: state.activeMedia.contentId,
-            position: currentPosition ?? 0,
-          }
+        ? parkMedia(state.activeMedia, currentPosition)
         : state.pausedMedia;
       return {
         ...state,
@@ -79,15 +97,11 @@ function feedPlayerReducer(state, action) {
       // Swap paused ↔ active; capture current active position from caller
       const { currentPosition } = action.payload || {};
       const newPaused = state.activeMedia
-        ? {
-            item: state.activeMedia.item,
-            contentId: state.activeMedia.contentId,
-            position: currentPosition ?? 0,
-          }
+        ? parkMedia(state.activeMedia, currentPosition)
         : null;
       return {
         ...state,
-        activeMedia: { item: state.pausedMedia.item, contentId: state.pausedMedia.contentId },
+        activeMedia: state.pausedMedia,
         pausedMedia: newPaused,
       };
     }
@@ -149,7 +163,7 @@ export function FeedPlayerProvider({ children }) {
   // ---- actions ----
 
   const play = useCallback((item, contentId) => {
-    const currentPosition = playerRef.current?.getCurrentTime?.() ?? 0;
+    const currentPosition = capturePosition(playerRef.current);
     dispatch({ type: 'PLAY', payload: { item, contentId, currentPosition } });
   }, []);
 
@@ -158,7 +172,7 @@ export function FeedPlayerProvider({ children }) {
   }, []);
 
   const resumePaused = useCallback(() => {
-    const currentPosition = playerRef.current?.getCurrentTime?.() ?? 0;
+    const currentPosition = capturePosition(playerRef.current);
     dispatch({ type: 'RESUME_PAUSED', payload: { currentPosition } });
   }, []);
 

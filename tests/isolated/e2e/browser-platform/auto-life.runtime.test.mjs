@@ -82,6 +82,92 @@ test('Auto renders the selected vehicle’s records and discards a late document
   await expect(page.getByRole('combobox', { name: 'What was done' })).toHaveValue('cross-rotate');
 });
 
+for (const width of [390, 1440]) {
+  test(`Auto restores each record tab’s scroll for the selected car at ${width}px`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 850 });
+    await page.routeWebSocket('**/*', () => {});
+    const fuelLogs = Array.from({ length: 35 }, (_, i) => ({
+      id: `fuel-${i}`, date: '2026-10-08', price_total: 12 + i, volume_l: 30,
+    }));
+    let saveAccepted = false;
+    let pendingFuelRefresh;
+    await page.route('**/automotive/**', route => {
+      const request = route.request();
+      const { pathname } = new URL(request.url());
+      if (pathname.endsWith('/vehicles')) {
+        return route.fulfill({ json: { vehicles: [
+          { id: 'wagon', label: 'Family wagon' },
+          { id: 'hatchback', label: 'City hatchback' },
+        ] } });
+      }
+      if (/\/vehicles\/(wagon|hatchback)$/.test(pathname)) {
+        return route.fulfill({ json: { odometer: { km: 160 }, fuel: { needsMoreData: true, fillCount: 0 } } });
+      }
+      if (pathname.endsWith('/fuel')) {
+        if (request.method() === 'POST') {
+          saveAccepted = true;
+          return route.fulfill({ json: { ok: true } });
+        }
+        if (saveAccepted && pathname.endsWith('/wagon/fuel')) {
+          pendingFuelRefresh = route;
+          return;
+        }
+        return route.fulfill({ json: { logs: fuelLogs } });
+      }
+      if (pathname.endsWith('/service')) {
+        const vehicle = pathname.split('/').at(-2);
+        return route.fulfill({ json: { records: Array.from({ length: 35 }, (_, i) => ({
+          id: `service-${i}`, type: 'inspection', date: '2026-10-08', vendor: `${vehicle} shop ${i}`,
+        })) } });
+      }
+      return route.fulfill({ json: {} });
+    });
+
+    const main = page.getByRole('main');
+    const tab = name => page.getByRole('button', { name, exact: true });
+    const scrollPosition = () => main.evaluate(node => node.scrollTop);
+    const scrollTo = async top => {
+      await main.evaluate((node, position) => { node.scrollTop = position; }, top);
+      await expect.poll(scrollPosition).toBe(top);
+      await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+    };
+
+    await page.goto('/auto');
+    await tab('Family wagon').click();
+    await tab('Service').click();
+    await expect(main.getByText('wagon shop 0', { exact: true })).toBeVisible();
+    await tab('Fuel').click();
+    await expect(main.getByText('$12.00', { exact: true })).toBeVisible();
+    await scrollTo(610);
+
+    await tab('Service').click();
+    await expect.poll(scrollPosition).toBe(0);
+    await scrollTo(320);
+    await tab('Fuel').click();
+    await expect.poll(scrollPosition).toBe(610);
+    await tab('Log a fill-up').click();
+    const dialog = page.getByRole('dialog', { name: 'Log a fill-up' });
+    await dialog.getByLabel('Gallons').fill('5');
+    await dialog.getByLabel('Total ($)', { exact: true }).fill('99.25');
+    await dialog.getByRole('button', { name: 'Save', exact: true }).click();
+    await expect(dialog).toBeHidden();
+    await expect.poll(() => Boolean(pendingFuelRefresh)).toBe(true);
+    await scrollTo(495);
+    await pendingFuelRefresh.fulfill({ json: { logs: [
+      ...fuelLogs, { id: 'saved', date: '2026-10-08', price_total: 99.25, volume_l: 18.9 },
+    ] } });
+    await expect(main.getByText('$99.25', { exact: true })).toBeVisible();
+    await expect.poll(scrollPosition).toBe(495);
+    await tab('Service').click();
+    await expect.poll(scrollPosition).toBe(320);
+
+    await tab('Back to garage').click();
+    await tab('City hatchback').click();
+    await expect(main.getByText('hatchback shop 0', { exact: true })).toBeVisible();
+    await expect.poll(scrollPosition).toBe(0);
+  });
+}
+
 test('Auto saves one fuel entry at phone height and reopens on Car', async ({ page }) => {
   await page.routeWebSocket('**/*', () => {});
   const writes = [];

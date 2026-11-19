@@ -11,7 +11,16 @@ const tracks = ['41', '42'].map(id => ({
 test.beforeEach(async ({ page }) => {
   await page.routeWebSocket('**/*', () => {});
   const audio = silentWave(30);
-  await page.route('**/feed-speed-*.wav', route => route.fulfill({ contentType: 'audio/wav', body: audio }));
+  await page.route('**/feed-speed-*.wav', route => {
+    const range = /^bytes=(\d+)-(\d*)$/.exec(route.request().headers().range || '');
+    if (!range) return route.fulfill({ contentType: 'audio/wav', body: audio });
+    const first = Number(range[1]);
+    const last = range[2] ? Math.min(Number(range[2]), audio.length - 1) : audio.length - 1;
+    return route.fulfill({ status: 206, contentType: 'audio/wav',
+      headers: { 'accept-ranges': 'bytes', 'content-range': `bytes ${first}-${last}/${audio.length}` },
+      body: audio.subarray(first, last + 1),
+    });
+  });
   await page.route('**/api/**', route => {
     const path = decodeURIComponent(new URL(route.request().url()).pathname);
     const track = tracks.find(item => path.endsWith('/play/' + item.id));
@@ -73,4 +82,25 @@ test('Feed uses playable defaults for malformed speed and out-of-range volume', 
   await playTrack(page, '41');
   await expect(page.getByRole('button', { name: 'Playback speed 1x' })).toBeVisible();
   await expect.poll(() => playingSettings(page, '41')).toEqual({ speed: 1, volume: 1 });
+});
+
+test('Feed resumes both interrupted tracks at their captured positions', async ({ page }) => {
+  await page.goto('/feed/scroll');
+  const audio = id => page.locator('audio[src$="feed-speed-' + id + '.wav"]');
+  const listen = async (id, seconds) => {
+    await expect.poll(() => playingSettings(page, id)).not.toBeNull();
+    await expect.poll(() => audio(id).evaluate(el => el.currentTime), { timeout: 10_000 })
+      .toBeGreaterThanOrEqual(seconds);
+  };
+  await playTrack(page, '41');
+  await listen('41', 4);
+  await playTrack(page, '42');
+  await listen('42', 3);
+  await page.getByRole('button', { name: 'Resume previous' }).click();
+  await expect.poll(() => playingSettings(page, '41')).not.toBeNull();
+  expect(await audio('41').evaluate(el => el.currentTime)).toBeGreaterThanOrEqual(4);
+
+  await page.getByRole('button', { name: 'Resume previous' }).click();
+  await expect.poll(() => playingSettings(page, '42')).not.toBeNull();
+  expect(await audio('42').evaluate(el => el.currentTime)).toBeGreaterThanOrEqual(3);
 });

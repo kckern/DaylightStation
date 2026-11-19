@@ -82,3 +82,50 @@ test('Home camera opens fullscreen from the edge of its full touch target', asyn
   await fullscreen.tap({ position: { x: 2, y: 22 } });
   await expect(page.getByRole('button', { name: 'Close camera', exact: true })).toBeVisible();
 });
+
+test('Life value rank actions have accessible names and full touch targets', async ({ page }) => {
+  const member = { username: 'amy', displayName: 'Amy' };
+  let values = [
+    { id: 'care', name: 'Care', rank: 1 },
+    { id: 'curiosity', name: 'Curiosity', rank: 2 },
+  ];
+  const writes = [];
+  await page.route('**/api/v1/life/**', route => {
+    const request = route.request();
+    const url = new URL(request.url());
+    if (url.pathname.endsWith('/users')) return route.fulfill({ json: { users: [member] } });
+    if (url.pathname.endsWith('/user')) return route.fulfill({ json: member });
+    if (url.pathname.endsWith('/plan/')) return route.fulfill({ json: { values } });
+    if (url.pathname.endsWith('/plan/values') && request.method() === 'PATCH') {
+      writes.push({ username: url.searchParams.get('username'), values: request.postDataJSON() });
+      values = writes.at(-1).values;
+    }
+    return route.fulfill({ json: {} });
+  });
+
+  await page.goto('/life/plan/values');
+  await expect(page.getByText('Curiosity', { exact: true })).toBeVisible();
+  const up = name => page.getByRole('button', { name: `Move ${name} up`, exact: true });
+  const down = name => page.getByRole('button', { name: `Move ${name} down`, exact: true });
+  await expect(up('Care')).toBeDisabled();
+  await expect(down('Curiosity')).toBeDisabled();
+  await expectFullTouchTarget(up('Curiosity'));
+  await expectFullTouchTarget(down('Care'));
+
+  await up('Curiosity').tap({ position: { x: 2, y: 22 } });
+  await expect(up('Curiosity')).toBeDisabled();
+  await expect(down('Care')).toBeDisabled();
+  await down('Curiosity').press('Enter');
+  await expect(up('Care')).toBeDisabled();
+  await expect(down('Curiosity')).toBeDisabled();
+  expect(writes).toEqual([
+    { username: 'amy', values: [
+      { id: 'curiosity', name: 'Curiosity', rank: 1 },
+      { id: 'care', name: 'Care', rank: 2 },
+    ] },
+    { username: 'amy', values: [
+      { id: 'care', name: 'Care', rank: 1 },
+      { id: 'curiosity', name: 'Curiosity', rank: 2 },
+    ] },
+  ]);
+});

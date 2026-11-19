@@ -101,16 +101,20 @@ export function ValuesView({ username }) {
                   </Badge>
                 )}
                 <ActionIcon
+                  className="ds-touch-target"
                   variant="subtle"
                   size="sm"
+                  aria-label={`Move ${v.name} up`}
                   disabled={i === 0}
                   onClick={() => moveValue(i, -1)}
                 >
                   <IconArrowUp size={14} />
                 </ActionIcon>
                 <ActionIcon
+                  className="ds-touch-target"
                   variant="subtle"
                   size="sm"
+                  aria-label={`Move ${v.name} down`}
                   disabled={i === values.length - 1}
                   onClick={() => moveValue(i, 1)}
                 >

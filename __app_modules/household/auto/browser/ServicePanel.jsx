@@ -33,8 +33,7 @@ export default function ServicePanel({
   const records = service?.records || [];
   const due = (reminders || []).filter((r) => r.kind === 'service');
 
-  // Keep the opener mounted during a background refresh when rows are available.
-  const content = loading && !service ? <LoadingState label="service history" />
+  const content = loading ? <LoadingState label="service history" />
     : error ? <ErrorState error={error} onRetry={onReload} label="Service history" />
     : <div className="auto-panel">
       <button type="button" className="auto-btn auto-btn--primary auto-btn--block" onClick={() => setAdding(true)}>
