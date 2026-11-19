@@ -26,7 +26,7 @@ export { parseDeviceTopic };
 
 /** Subscribe to one exact topic string. Returns an unsubscribe function. */
 export function subscribeTopic(topic, callback, service = wsService) {
-  return service.subscribe((msg) => msg?.topic === topic, callback);
+  return service.subscribeTopic(topic, callback);
 }
 
 /**

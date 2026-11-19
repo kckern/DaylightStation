@@ -119,3 +119,68 @@ for (const width of [390, 1440]) {
     });
   });
 }
+
+test('an Admin app preview owns its exact WebSocket topic while open', async ({ page }) => {
+  const topic = 'diagnostic:browser-lifecycle-fixture';
+  await installFixtures(page);
+  await page.route('**/api/v1/admin/content/lists/menus/socket-fixture', route => route.fulfill({
+    json: {
+      name: 'socket-fixture',
+      sections: [{
+        title: 'Diagnostics',
+        items: [{
+          uid: 'socket-preview',
+          label: 'Socket diagnostic',
+          action: 'Open',
+          input: `app:websocket/${topic}`,
+        }],
+      }],
+    },
+  }));
+
+  const commands = [];
+  const topicSockets = new Set();
+  const closedSockets = new Set();
+  const scopedPaths = [];
+  await page.routeWebSocket(url => url.pathname.startsWith('/ws/'), socket => {
+    scopedPaths.push(new URL(socket.url()).pathname);
+  });
+  await page.routeWebSocket(url => url.pathname === '/ws', socket => {
+    socket.onClose(() => closedSockets.add(socket));
+    socket.onMessage(raw => {
+      const message = JSON.parse(raw);
+      if (message.type !== 'bus_command' || !message.topics?.includes(topic)) return;
+      topicSockets.add(socket);
+      commands.push(message.action);
+      if (message.action === 'subscribe') {
+        socket.send(JSON.stringify({ topic: 'diagnostic:other', type: topic, marker: 'Unrelated diagnostic' }));
+        socket.send(JSON.stringify({ topic, type: 'diagnostic', marker: `Diagnostic subscription ${commands.length}` }));
+      }
+    });
+  });
+
+  await page.goto('/admin/content/lists/menus/socket-fixture');
+  const preview = page.getByTitle('Preview app', { exact: true });
+  const dialog = page.getByRole('dialog', { name: 'Socket diagnostic' });
+
+  await preview.click();
+  await expect(dialog).toBeVisible();
+  await expect.poll(() => ({ commands, scopedPaths })).toEqual({ commands: ['subscribe'], scopedPaths: [] });
+  await expect(dialog.getByText(/Diagnostic subscription 1/)).toBeVisible();
+  await expect(dialog.getByText(/Unrelated diagnostic/)).toHaveCount(0);
+
+  await page.keyboard.press('Escape');
+  await expect(dialog).toBeHidden();
+  await expect.poll(() => commands).toEqual(['subscribe', 'unsubscribe']);
+
+  await preview.click();
+  await expect(dialog.getByText(/Diagnostic subscription 3/)).toBeVisible();
+  await expect(dialog.getByText(/Diagnostic subscription 1|Unrelated diagnostic/)).toHaveCount(0);
+
+  await page.keyboard.press('Escape');
+  await expect(dialog).toBeHidden();
+  await expect.poll(() => commands).toEqual(['subscribe', 'unsubscribe', 'subscribe', 'unsubscribe']);
+  expect(scopedPaths).toEqual([]);
+  expect(topicSockets.size).toBe(1);
+  for (const socket of topicSockets) expect(closedSockets.has(socket)).toBe(false);
+});

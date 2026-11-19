@@ -18,6 +18,8 @@ export const DEVICE_STATE_TOPIC   = (deviceId) => `device-state:${deviceId}`;
 export const ARCADE_SESSION_TOPIC = (deviceId) => `arcade-session:${deviceId}`;
 export const DEVICE_ACK_TOPIC     = (deviceId) => `device-ack:${deviceId}`;
 export const HOMELINE_TOPIC       = (deviceId) => `homeline:${deviceId}`;
+export const HOMELINE_CALL_TOPIC_PREFIX = 'homeline-call:';
+export const HOMELINE_CALL_TOPIC = (callId) => `${HOMELINE_CALL_TOPIC_PREFIX}${callId}`;
 // Compact start progress / last failure per device, replayed on subscribe
 // (RQ-HOUSE-04). `homeline:<id>` carries the raw per-dispatch step stream.
 export const DEVICE_START_TOPIC   = (deviceId) => `device-start:${deviceId}`;

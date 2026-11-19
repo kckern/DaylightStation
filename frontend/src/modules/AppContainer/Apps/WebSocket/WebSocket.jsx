@@ -1,24 +1,17 @@
 import { useEffect, useState } from "react";
-import {
-  DaylightWebsocketSubscribe,
-  DaylightWebsocketUnsubscribe
-} from "../../../../lib/api.mjs";
+import { wsService } from '../../../../services/WebSocketService.js';
 import "./WebSocket.scss";
 
-export default function WebSocketApp({ path }) {
+export default function WebSocketApp({ topic }) {
+  return <TopicMessages key={topic} topic={topic} />;
+}
+
+function TopicMessages({ topic }) {
   const [messages, setMessages] = useState([]);
 
-  useEffect(() => {
-    const handleNewMessage = (message) => {
-      setMessages((prevMessages) => [...prevMessages, message]);
-    };
-
-    DaylightWebsocketSubscribe(path, handleNewMessage);
-
-    return () => {
-      DaylightWebsocketUnsubscribe(path);
-    };
-  }, [path]);
+  useEffect(() => wsService.subscribeTopic(topic, message => {
+    setMessages(previous => [...previous, message]);
+  }), [topic]);
 
   return (
     <div className="websocket-app">

@@ -21,6 +21,7 @@
  * useEffect(() => unsubscribe, []);
  */
 import getLogger from '../lib/logging/Logger.js';
+import { HOMELINE_CALL_TOPIC_PREFIX } from '@shared-contracts/media/topics.mjs';
 
 // Adaptive throttling: progressive delays that never give up
 // Tiers: 1s, 2s, 4s, 8s, 15s, 30s, 1min, 5min, 15min, 1hr (terminal)
@@ -44,7 +45,8 @@ class WebSocketService {
   constructor() {
     this.logger = getLogger().child({ component: 'WebSocketService' });
     this.ws = null;
-    this.subscribers = new Map(); // key -> { filter, callbacks: Set }
+    this.subscribers = new Map(); // key -> { filter, callback }
+    this._syncedTopics = new Set();
     this.connected = false;
     this.connecting = false;
     this.reconnectTier = 0; // Current reconnection tier (0-9)
@@ -94,8 +96,9 @@ class WebSocketService {
       this._lastMessageAt = Date.now();
       this._clearAutoReloadTimer();
       this._startStaleCheck();
-      this._notifyStatusListeners();
+      this._syncedTopics.clear();
       this._reauthorizeTopics();
+      this._notifyStatusListeners();
       this._syncSubscriptions(); // Inform backend of our interests
       this._flushMessageQueue();
     };
@@ -115,7 +118,6 @@ class WebSocketService {
       this.connected = false;
       this.connecting = false;
       this.ws = null;
-      this._lastSyncKey = null; // Force re-sync on reconnect
       this._stopStaleCheck();
       this._notifyStatusListeners();
       this._scheduleReconnect();
@@ -154,8 +156,7 @@ class WebSocketService {
 
   /** Reassert every consumer's desired topics, including authorized call topics. */
   refreshSubscriptions() {
-    this._lastSyncKey = null;
-    this._syncSubscriptions();
+    this._syncSubscriptions({ reassert: true });
   }
 
   /** Join the singleton reconnect scheduler. Releasing cancels only this owner. */
@@ -210,7 +211,6 @@ class WebSocketService {
         this.ws = null;
         this.connected = false;
         this.connecting = false;
-        this._lastSyncKey = null;
         this._stopStaleCheck();
         oldSocket.close();
         this._notifyStatusListeners();
@@ -336,7 +336,7 @@ class WebSocketService {
   /**
    * Synchronize current subscriptions with the backend
    */
-  _syncSubscriptions() {
+  _syncSubscriptions({ reassert = false } = {}) {
     if (!this.connected || this.ws?.readyState !== WebSocket.OPEN) return;
 
     const topics = new Set();
@@ -360,19 +360,16 @@ class WebSocketService {
       topics.add('*');
     }
 
-    // Deduplicate: skip if topic set hasn't changed since last sync
-    const topicArray = Array.from(topics).sort();
-    const key = topicArray.join(',');
-    if (key === this._lastSyncKey) return;
-    this._lastSyncKey = key;
-
-    if (topicArray.length > 0) {
-      this.send({
-        type: 'bus_command',
-        action: 'subscribe',
-        topics: topicArray
-      });
-      this.logger.debug('websocket.subscriptions-synced', { topics: topicArray });
+    // Subscribe is additive on the server. Retire interests when their last owner leaves.
+    const removed = [...this._syncedTopics].filter(topic => !topics.has(topic)).sort();
+    if (removed.length && this.sendEphemeral({ type: 'bus_command', action: 'unsubscribe', topics: removed })) {
+      for (const topic of removed) this._syncedTopics.delete(topic);
+      this.logger.debug('websocket.subscriptions-released', { topics: removed });
+    }
+    const added = [...topics].filter(topic => reassert || !this._syncedTopics.has(topic)).sort();
+    if (added.length && this.sendEphemeral({ type: 'bus_command', action: 'subscribe', topics: added })) {
+      for (const topic of added) this._syncedTopics.add(topic);
+      this.logger.debug('websocket.subscriptions-synced', { topics: added });
     }
   }
 
@@ -442,6 +439,15 @@ class WebSocketService {
       this.subscribers.delete(key);
       this._syncSubscriptions(); // Update backend after unsubscription
     };
+  }
+
+  /** Subscribe to one actual topic, even when an envelope's type has the same name. */
+  subscribeTopic(topic, callback) {
+    if (typeof topic !== 'string' || !topic.trim() || topic === '*') return () => {};
+    if (topic.startsWith(HOMELINE_CALL_TOPIC_PREFIX)) return () => {};
+    return this.subscribe(topic, message => {
+      if (message?.topic === topic) callback(message);
+    });
   }
 
   /**

@@ -30,10 +30,6 @@ export const buildHeaders = (token, withContentType = true) => ({
 // In dev mode, Vite proxy handles forwarding to backend (see vite.config.js)
 // In production, frontend and backend are served from same origin
 const getBaseUrl = () => globalThis.window?.location?.origin || '';
-const getWsBaseUrl = () => {
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    return `${protocol}//${window.location.host}`;
-};
 
 function requestToken() {
     try { return getToken(); }
@@ -147,56 +143,6 @@ export const DaylightAPIText = async (path) => {
     }
     return response.text();
 };
-
-export const DaylightWebsocketUnsubscribe = (path) => {
-    const baseUrl = getWsBaseUrl();
-    const ws = new WebSocket(`${baseUrl}/ws/${path}`);
-
-    return () => {
-        if (ws && ws.readyState === WebSocket.OPEN) {
-            ws.close();
-            console.log("WebSocket connection closed for path:", path);
-        }
-    };
-};
-const activeWebsockets = new Map();
-
-export const DaylightWebsocketSubscribe = (path, callback) => {
-    if (activeWebsockets.has(path)) {
-        getLogger().warn('api.websocket.already_active', { path });
-        return activeWebsockets.get(path).unsubscribe;
-    }
-
-    const baseUrl = getWsBaseUrl();
-    const ws = new WebSocket(`${baseUrl}/ws/${path}`);
-
-    ws.onopen = () => console.log("WebSocket connection opened for path:", path);
-    ws.onmessage = (event) => {
-        try {
-            const message = JSON.parse(event.data);
-            callback(message);
-        } catch (error) {
-            console.error("Error parsing WebSocket message:", error);
-        }
-    };
-    ws.onclose = () => {
-        console.log("WebSocket connection closed for path:", path);
-        activeWebsockets.delete(path);
-    };
-    ws.onerror = (error) => console.error("WebSocket error for path:", path, error);
-
-    const unsubscribe = () => {
-        if (ws && ws.readyState === WebSocket.OPEN) {
-            ws.close();
-        }
-        activeWebsockets.delete(path);
-    };
-
-    activeWebsockets.set(path, { ws, unsubscribe });
-    return unsubscribe;
-};
-
-
 
 export const DaylightStatusCheck = async (path, data = {}, method = 'GET') => {
     const { url, options } = prepareApiRequest(path, {

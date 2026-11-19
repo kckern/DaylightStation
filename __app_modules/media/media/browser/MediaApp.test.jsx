@@ -13,6 +13,7 @@ vi.mock("../../../../frontend/src/services/WebSocketService.js", () => ({
   wsService: {
     send: vi.fn(),
     subscribe: vi.fn(() => () => {}),
+    subscribeTopic: vi.fn(() => () => {}),
     onStatusChange: vi.fn(() => () => {}),
     suppressAutoReload: vi.fn(() => vi.fn()),
   },

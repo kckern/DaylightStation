@@ -1,4 +1,5 @@
 import { shouldRelayBtTopic, shouldRelayKioskLaunchTopic, shouldRelayFitnessDiagnosticTopic } from './ClientRelayPolicy.mjs';
+import { HOMELINE_CALL_TOPIC_PREFIX } from '#shared-contracts/media/topics.mjs';
 import {
   controlTargetFromTopic,
   validateClientAck,
@@ -27,12 +28,12 @@ export class ClientIngressService {
   }
 
   canSubscribe(clientId, topic) {
-    return !String(topic).startsWith('homeline-call:')
+    return !String(topic).startsWith(HOMELINE_CALL_TOPIC_PREFIX)
       || this.getCallLeaseService()?.canSubscribe(clientId, topic) === true;
   }
 
   authorizeMessage(clientId, message) {
-    return message?.type !== 'homeline-authorize' && String(message?.topic).startsWith('homeline-call:')
+    return message?.type !== 'homeline-authorize' && String(message?.topic).startsWith(HOMELINE_CALL_TOPIC_PREFIX)
       ? (this.getCallLeaseService()?.validateSignal(clientId, message) || { ok: false, code: 'LEASES_NOT_READY' })
       : { ok: true, message };
   }
@@ -68,7 +69,7 @@ export class ClientIngressService {
       this.publications.sendAuthorizationAck(clientId, message.topic, result);
       return;
     }
-    if (message.topic?.startsWith('homeline-call:')) {
+    if (message.topic?.startsWith(HOMELINE_CALL_TOPIC_PREFIX)) {
       this.publications.publishCall(message.topic, message);
       return;
     }

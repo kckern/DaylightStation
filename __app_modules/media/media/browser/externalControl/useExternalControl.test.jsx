@@ -5,7 +5,7 @@ import { renderHook, act } from '@testing-library/react';
 const subscribeFn = vi.fn();
 const sendFn = vi.fn();
 vi.mock("../../../../../frontend/src/services/WebSocketService.js", () => ({
-  wsService: { send: (...a) => sendFn(...a), subscribe: (...a) => subscribeFn(...a), onStatusChange: vi.fn(() => () => {}) },
+  wsService: { send: (...a) => sendFn(...a), subscribeTopic: (...a) => subscribeFn(...a), onStatusChange: vi.fn(() => () => {}) },
   default: { send: (...a) => sendFn(...a), subscribe: (...a) => subscribeFn(...a), onStatusChange: vi.fn(() => () => {}) },
 }));
 
@@ -27,14 +27,14 @@ function makeController() {
   };
 }
 
-let capturedFilter = null;
+let capturedTopic = null;
 let capturedCallback = null;
 let controller;
 beforeEach(() => {
   sessionStorage.clear();
   controller = makeController();
-  subscribeFn.mockReset().mockImplementation((filter, cb) => {
-    capturedFilter = filter;
+  subscribeFn.mockReset().mockImplementation((topic, cb) => {
+    capturedTopic = topic;
     capturedCallback = cb;
     return () => {};
   });
@@ -42,11 +42,9 @@ beforeEach(() => {
 });
 
 describe('useExternalControl', () => {
-  it('subscribes with a filter matching only the registered live control identity', () => {
+  it('subscribes to the exact topic for the registered live control identity', () => {
     renderHook(() => useExternalControl(controller));
-    expect(typeof capturedFilter).toBe('function');
-    expect(capturedFilter({ topic: 'client-control:live-1' })).toBe(true);
-    expect(capturedFilter({ topic: 'client-control:other' })).toBe(false);
+    expect(capturedTopic).toBe('client-control:live-1');
   });
 
   it('routes transport commands and acks ok', () => {

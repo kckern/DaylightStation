@@ -291,6 +291,16 @@ mode; see
 [`__docs/reference/health/README.md`](../health/README.md#loading-and-refresh)
 for what that looks like end to end.
 
+## Real-time subscriptions
+
+Use `wsService.subscribeTopic(topic, handler)` when a feature needs events
+from one exact topic. Return its disposer from the subscribing effect. The
+shared connection subscribes once per topic and releases the server interest
+when the last consumer leaves. On reconnect it restores the active topics.
+The Admin diagnostic uses `app:websocket/<topic>` and the same subscription
+contract as Media's external controls. Home Line signaling uses the
+credentialed `subscribeAuthorized` method. [WebSocket service](../../../frontend/src/services/WebSocketService.js)
+
 ## The rules
 
 - New webapp UI is built from `@/lib/ui` and the token contract — not raw
