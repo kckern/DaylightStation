@@ -1,14 +1,10 @@
 import { useEffect, useState } from 'react';
 import { UnstyledButton } from '@mantine/core';
-import { localTodayISO } from "./mealBuckets.js";
+import { addCalendarDays as addDays } from "../../../../../frontend/src/lib/calendarDay.js";
 import { useBudgetRange } from "./useBudgetRange.js";
 import { barModel, barScale, barCellLabel, fmtKcal } from "./dayBars.js";
 
-export const addDays = (iso, n) => {
-  const d = new Date(`${iso}T12:00:00`); // noon anchor avoids DST edge shifts
-  d.setDate(d.getDate() + n);
-  return localTodayISO(d);
-};
+export { addDays };
 
 const WEEKDAY_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 

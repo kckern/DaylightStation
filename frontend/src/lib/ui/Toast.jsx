@@ -31,7 +31,9 @@ export function ToastRegion({ label = 'Notifications', children }) {
  * The countdown pauses while the pointer or focus is on the card.
  */
 export function Toast({ tone = 'info', message, children, autoCloseMs = null, onAutoClose }) {
-  const [held, setHeld] = useState(false);
+  const [hovered, setHovered] = useState(false);
+  const [focused, setFocused] = useState(false);
+  const held = hovered || focused;
   const onAutoCloseRef = useRef(onAutoClose);
   onAutoCloseRef.current = onAutoClose;
   useEffect(() => {
@@ -40,8 +42,8 @@ export function Toast({ tone = 'info', message, children, autoCloseMs = null, on
     return () => clearTimeout(timer);
   }, [autoCloseMs, held, message]);
   return <div className={`ds-toast ds-toast--${tone}`} role={tone === 'error' ? 'alert' : 'status'}
-    onPointerEnter={() => setHeld(true)} onPointerLeave={() => setHeld(false)}
-    onFocus={() => setHeld(true)} onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget)) setHeld(false); }}>
+    onPointerEnter={() => setHovered(true)} onPointerLeave={() => setHovered(false)}
+    onFocus={() => setFocused(true)} onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget)) setFocused(false); }}>
     <div className="ds-toast__message">{message}</div>
     {children ? <span className="ds-toast__actions">{children}</span> : null}
   </div>;

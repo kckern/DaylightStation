@@ -8,18 +8,15 @@
 // All dates are YYYY-MM-DD strings handled at UTC noon, which keeps a day from
 // slipping across a DST boundary.
 
+import { addCalendarDays as addDaysISO } from '../../../../../frontend/src/lib/calendarDay.js';
+
+export { addDaysISO };
 export const WINDOW_DAYS = 8;
 
 const MS_PER_DAY = 86400000;
 
 function toUtcNoon(dateStr) {
   return new Date(`${dateStr}T12:00:00Z`);
-}
-
-export function addDaysISO(dateStr, n) {
-  const d = toUtcNoon(dateStr);
-  d.setUTCDate(d.getUTCDate() + n);
-  return d.toISOString().slice(0, 10);
 }
 
 export function daysBetween(fromDate, toDate) {

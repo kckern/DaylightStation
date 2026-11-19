@@ -13,7 +13,7 @@ import { useBudgetRange } from "../today/useBudgetRange.js";
 import { MonthBlock } from "../today/MonthBlock.jsx";
 import { IntakeBurnChart } from "./IntakeBurnChart.jsx";
 import { goalSaveMessage } from "./goalSaveError.js";
-import { addDays } from "../today/WeekStrip.jsx";
+import { addCalendarDays as addDays } from "../../../../../frontend/src/lib/calendarDay.js";
 import { normalizeWeightEntries, buildWeightSeries, fmtDelta, fmtLbs, TREND_ARROWS } from "../today/weightSeries.js";
 import { buildWeightChartOptions, daysToGoal, goalDate, DEFAULT_TARGET_BODY_FAT_PCT } from "./weightChart.js";
 import { readTokens } from "./WeightTrendChart.jsx";
