@@ -44,7 +44,7 @@
     .piano-avatar { width: 2.6rem; height: 2.6rem; font-size: 0.75rem; }
   }
 
-  &__body { width: 12.5rem; display: flex; flex-direction: column; gap: 0.35rem; min-width: 0; }
+  &__body { width: 17rem; display: flex; flex-direction: column; gap: 0.35rem; min-width: 0; }
   &__title {
     font-size: 1rem;
     line-height: 1.15;
@@ -56,13 +56,12 @@
   &__body small { font-size: 0.85rem; color: var(--piano-muted); }
 
   &__map {
-    height: 1.3rem;
+    // One icon per passage: a tomato, a flower, a silver coin or a gold coin.
     display: grid;
-    gap: 0.15rem;
-    i { border-radius: 0.2rem; border: 1px solid var(--piano-border); background: var(--piano-surface-2); }
-    i[data-state='learning'] { border-color: var(--piano-silver); }
-    i[data-state='silver'] { border-color: var(--piano-silver); background: var(--piano-silver); }
-    i[data-state='gold'] { border-color: var(--piano-gold); background: var(--piano-gold); }
+    gap: 0.12rem;
+    align-items: center;
+    i { display: grid; aspect-ratio: 1; border-radius: 50%; }
+    i svg { display: block; }
     i[data-current] { box-shadow: 0 0 0 2px var(--piano-accent); }
   }
 

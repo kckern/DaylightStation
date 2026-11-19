@@ -21,6 +21,7 @@ import { railModel } from './passageRail.js';
 const segment = (index, state, done = 0) => ({ id: `p${index}`, inMeasure: index * 4, outMeasure: index * 4 + 3, barLabel: `Bars ${index * 4 + 1}–${index * 4 + 4}`,
   printedMeasures: [index * 4 + 1, index * 4 + 4],
   certification: { silver: state === 'silver' || state === 'gold' ? { at: 'x' } : null, gold: state === 'gold' ? { at: 'x' } : null },
+  flower: state === 'learning',
   skills: Array.from({ length: 4 }, (_, step) => ({ track: 'silver', ready: state === 'silver' || state === 'gold' || step < done, successes: 0 })) });
 const projectionOf = (segments, recommended) => ({ segments, recommended: recommended ? { passageId: recommended } : null,
   piece: { total: segments.length, silver: segments.filter((item) => item.certification.silver).length, gold: segments.filter((item) => item.certification.gold).length,
@@ -34,16 +35,29 @@ describe('PassageRail', () => {
 
   it('shows every passage by starting bar with its state, and never the word Segment', () => {
     widthOf(900);
-    render(<PassageRail model={modelOf(four, 'p2')} />);
+    render(<PassageRail model={modelOf(four, 'p2')} onPractice={vi.fn()} />);
     const rail = screen.getByRole('navigation', { name: 'Passages in this piece' });
     const tiles = within(rail).getAllByRole('listitem').map((item) => within(item).getByRole('button'));
-    expect(tiles.map((tile) => [tile.textContent, tile.dataset.state])).toEqual([['1gold', 'gold'], ['5silver', 'silver'], ['9', 'learning'], ['13', 'todo']]);
-    expect(tiles[2].querySelectorAll('i[data-done="true"]')).toHaveLength(2);
-    expect(tiles[2].querySelectorAll('i')).toHaveLength(4);
+    expect(tiles.map((tile) => [tile.textContent, tile.dataset.state])).toEqual([['1', 'gold'], ['5', 'silver'], ['9', 'learning'], ['13', 'todo']]);
+    // A passage is its icon: a gold coin, a silver coin, a flower, a tomato.
+    expect(tiles.map((tile) => tile.querySelector('svg').getAttribute('class') + (tile.querySelector('svg').dataset.metal ?? ''))).toEqual(['coin-icongold', 'coin-iconsilver', 'flower-icon', 'tomato-icon']);
     expect(tiles[2]).toHaveAttribute('aria-current', 'step');
     expect(rail.textContent).not.toMatch(/Segment/);
     expect(screen.getByRole('button', { name: 'Practice bars 9–12' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '2 of 4 Silver. Open the passage board' })).toHaveTextContent('2/4');
+    expect(screen.getByRole('button', { name: '2 of 4 Silver. Open the passage board' }).querySelector('.coin-icon[data-metal="silver"]')).not.toBeNull();
+  });
+
+  it('is only the map and the count when the host has its own controls', () => {
+    widthOf(900);
+    const onSelect = vi.fn();
+    render(<PassageRail model={modelOf(four, null, 'p1')} onSelect={onSelect} />);
+    const rail = screen.getByRole('navigation', { name: 'Passages in this piece' });
+    expect(rail).toHaveAttribute('data-bare', 'true');
+    expect(rail.querySelector('.piano-passage-rail__go')).toBeNull();
+    expect(within(rail).getAllByRole('listitem')).toHaveLength(4);
+    fireEvent.click(screen.getByRole('button', { name: 'Bars 13–16, Not started' }));
+    expect(onSelect).toHaveBeenCalledWith('p3');
   });
 
   it('selects on a tile tap and practices only from the button', () => {
@@ -85,19 +99,22 @@ describe('PassageRail', () => {
     widthOf(900);
     const done = [segment(0, 'silver'), segment(1, 'silver')];
     const onDismissPiece = vi.fn();
-    render(<PassageRail model={modelOf(done, null)} flips={{ p0: 'silver', p1: 'silver' }} piece="silver" onDismissPiece={onDismissPiece} />);
+    render(<PassageRail model={modelOf(done, null)} flips={{ p0: 'silver', p1: 'silver' }} piece="silver" onPractice={vi.fn()} onDismissPiece={onDismissPiece} />);
     expect(screen.getByRole('button', { name: 'Bars 1–4, Silver' })).toHaveAttribute('data-flip', 'silver');
+    // The earned tile's icon turns over: the flower leaves and the silver coin lands.
+    const turn = screen.getByRole('button', { name: 'Bars 1–4, Silver' }).querySelector('.piano-passage-turn');
+    expect([...turn.children].map((icon) => icon.getAttribute('class') + (icon.dataset.metal ?? ''))).toEqual(['flower-icon', 'coin-iconsilver']);
     expect(screen.getByRole('status')).toHaveTextContent('Your whole piece is Silver!');
     expect(screen.getByRole('button', { name: 'Go for Gold: bars 1–4' })).toHaveAttribute('data-kind', 'gold');
     fireEvent.click(screen.getByRole('status'));
     expect(onDismissPiece).toHaveBeenCalled();
   });
 
-  it('carries state without opacity and never uses the coin icon', () => {
+  it('carries state without opacity, and draws it with the one passage icon', () => {
     const source = readFileSync(resolve(__dirname, 'PassageRail.scss'), 'utf8');
     expect(source).not.toMatch(/opacity\s*:/);
     expect(source).not.toMatch(/transparent|rgba\(|filter\s*:/);
-    for (const file of ['PassageRail.jsx', 'PassageBoard.jsx']) expect(readFileSync(resolve(__dirname, file), 'utf8')).not.toMatch(/CoinIcon/);
+    for (const file of ['PassageRail.jsx', 'PassageBoard.jsx']) expect(readFileSync(resolve(__dirname, file), 'utf8')).toMatch(/PassageCoin/);
   });
 });
 
@@ -109,9 +126,16 @@ describe('PassageBoard', () => {
     expect(within(board).getByRole('heading', { name: 'Minuet in G' })).toBeInTheDocument();
     expect(within(board).getByText('2 of 4 Silver, 1 Gold')).toBeInTheDocument();
     expect(within(board).getByRole('list', { name: 'Goals for this piece' })).toHaveTextContent('All Silver: earn a gemAll Gold: earn a gem');
-    expect(within(board).getByRole('button', { name: 'Bars 9–12, Learning, 2 of 4 steps' })).toHaveTextContent('Bars 9–122 of 4 steps');
-    expect(within(board).getByRole('button', { name: 'Bars 9–12, Learning, 2 of 4 steps' })).toHaveAttribute('aria-current', 'step');
-    expect(within(board).getByRole('button', { name: 'Bars 1–4, Gold' })).toHaveAttribute('data-state', 'gold');
+    const partway = within(board).getByRole('button', { name: 'Bars 9–12, Partway, 2 of 4 steps' });
+    expect(partway).toHaveTextContent('Bars 9–12');
+    expect(partway.querySelector('.flower-icon')).not.toBeNull();
+    expect(partway.querySelectorAll('i[data-done="true"]')).toHaveLength(2);
+    expect(partway.querySelectorAll('i')).toHaveLength(4);
+    expect(partway).toHaveAttribute('aria-current', 'step');
+    expect(within(board).getByRole('button', { name: 'Bars 1–4, Gold' }).querySelector('.coin-icon[data-metal="gold"]')).not.toBeNull();
+    expect(within(board).getByRole('button', { name: 'Bars 13–16, Not started' }).querySelector('.tomato-icon')).not.toBeNull();
+    expect(within(board).getByRole('button', { name: 'Bars 13–16, Not started' }).querySelectorAll('i')).toHaveLength(0);
+    expect(within(board).getByRole('list', { name: 'Goals for this piece' }).querySelectorAll('.coin-icon')).toHaveLength(2);
     expect(within(board).queryByRole('button', { name: 'Review a passage' })).not.toBeInTheDocument();
   });
 

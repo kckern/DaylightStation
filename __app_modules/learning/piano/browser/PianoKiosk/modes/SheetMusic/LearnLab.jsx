@@ -48,7 +48,7 @@ export function learnPracticeRequirement(rung) {
   };
 }
 
-export default function LearnLab({ score, revision, segment, segments = {}, rung, creditRung = rung, tempo = {}, feedback = SHEET_MUSIC_DEFAULTS.learn.feedback, launchSource = 'recommended', creditEligible = true, startOnReady = false, coachingTask = null, onOutcome, onRecord, onClose, onChangePractice, onRungPassed, onMastered, onFinished, onUnavailable }) {
+export default function LearnLab({ score, revision, segment, segments = {}, rung, creditRung = rung, tempo = {}, feedback = SHEET_MUSIC_DEFAULTS.learn.feedback, launchSource = 'recommended', creditEligible = true, startOnReady = false, coachingTask = null, drill = null, card = null, onCardDone, notice = null, extraControls = null, resultLabel = null, resultActions = null, onPickStep = null, onListen = null, onStarted, onOutcome, onRecord, onClose, onChangePractice, onRungPassed, onMastered, onFinished, onUnavailable }) {
   const logger = useMemo(() => getLogger().child({ component: 'piano-learn-lab' }), []);
   const reactRunId = useId();
   const runIdRef = useRef(`learn-${reactRunId.replace(/[^a-z0-9_-]/gi, '')}`);
@@ -94,7 +94,9 @@ export default function LearnLab({ score, revision, segment, segments = {}, rung
     preferencesRef.current = { tempoStage: stage.id, tempoPercent, clickLevel: clickLevel.id };
   }, [clickLevel, logger, rung.id, score.id, segment.id, stage.id, tempoPercent]);
   const runRung = useMemo(() => ({ ...rung, passCount: runPassCount }), [rung, runPassCount]);
-  const projection = useMemo(() => learnDrillProjection(segment, runRung), [segment, runRung]);
+  // A coached passage brings its own sets: one per Silver or Gold step.
+  const ownProjection = useMemo(() => learnDrillProjection(segment, runRung), [segment, runRung]);
+  const projection = drill?.projection ?? ownProjection;
   const requirement = useMemo(() => learnPracticeRequirement(rung), [rung]);
   const partsKey = (rung.effectiveParts ?? []).join('\u0000');
   const runScore = useMemo(() => ({
@@ -105,6 +107,9 @@ export default function LearnLab({ score, revision, segment, segments = {}, rung
     tempoPercent,
   }), [score, segment.printedMeasures, segment.inMeasure, segment.outMeasure, partsKey, tempoPercent]);
   const stepIndex = setIndex;
+  const passageName = coachingTask ? (segment.barLabel ?? segment.label) : segment.label;
+  // A take replayed from the piano is a new take, reported in its own right.
+  const takeStarted = () => { outcomeReported.current = false; onStarted?.(); };
   const currentRep = Math.min(Math.max(1, rung.reps), (runPassCount % Math.max(1, rung.reps)) + 1);
   useEffect(() => {
     const bpm = Number(tempo.tempoMap?.[0]?.bpm);
@@ -195,13 +200,13 @@ export default function LearnLab({ score, revision, segment, segments = {}, rung
     if (launchSource !== 'recommended') onFinished?.(result);
   };
 
-  return <section className="piano-learn-lab" role="dialog" aria-modal="true" aria-label={`${segment.label} · ${rung.label}`}>
+  return <section className={`piano-learn-lab${coachingTask ? ' piano-learn-lab--coach' : ''}`} role="dialog" aria-modal="true" aria-label={`${passageName} · ${rung.label}`}>
     <header className="piano-learn-lab__toolbar">
-      <button className="piano-learn-lab__back" type="button" onClick={closeLab} aria-label={`Back to ${segment.label}`}>
+      <button className="piano-learn-lab__back" type="button" onClick={closeLab} aria-label={coachingTask ? 'Back to score' : `Back to ${segment.label}`}>
         <span aria-hidden="true">‹</span><span>Back</span>
       </button>
-      <div className="piano-learn-lab__identity"><strong>{segment.label}</strong><span>{segment.barLabel}</span></div>
-      <div className="piano-learn-lab__task"><strong>{rung.label}</strong><span>{coachingTask ? (rung.mode === 'cued' ? 'Play with the beat' : 'Find every note') : <>Set {setIndex + 1} of {rung.sets} · Rep {currentRep} of {rung.reps}</>}</span></div>
+      <div className="piano-learn-lab__identity">{coachingTask ? <strong>{passageName}</strong> : <><strong>{segment.label}</strong><span>{segment.barLabel}</span></>}</div>
+      <div className="piano-learn-lab__task"><strong>{rung.label}</strong>{!coachingTask && <span>Set {setIndex + 1} of {rung.sets} · Rep {currentRep} of {rung.reps}</span>}</div>
       {['cued', 'metronome'].includes(rung.mode) && <div className="piano-learn-lab__tempo" role="status">
         {adjustable ? <button type="button" aria-label={`Choose tempo: ${tempoLabel}`} aria-haspopup="dialog" aria-expanded={tempoSheetOpen}
           onClick={() => setTempoSheetOpen(true)}><strong>{tempoLabel}</strong></button> : <strong>{tempoLabel}</strong>}
@@ -212,19 +217,22 @@ export default function LearnLab({ score, revision, segment, segments = {}, rung
         {CLICK_LEVELS.map((level) => <button key={level.id} type="button" aria-pressed={clickLevel.id === level.id}
           onClick={() => selectClickLevel(level)}>{level.label}</button>)}
       </div>}
+      {notice}
       <div className="piano-learn-lab__run-controls" role="group" aria-label="Practice controls">
+        {onListen && <button type="button" onClick={() => { abandonTake('listen'); logControl('listen'); onListen(); }}>Listen</button>}
         <button type="button" onClick={togglePaused}>{paused ? 'Resume' : 'Pause'}</button>
         <button type="button" onClick={() => restartTake('restart')}>Start over</button>
         <button type="button" onClick={changePractice}>Change practice</button>
+        {extraControls}
       </div>
     </header>
     <ExerciseRun
       key={`${segment.id}:${rung.id}:${take}`} instance={null} score={runScore} intent="practice"
       practiceMode={rung.mode} practiceRequirement={requirement} programId={projection.id}
       clickGain={clickLevel.gain}
-      stepId={projection.steps[stepIndex]?.id} drillProjection={projection}
+      stepId={drill ? drill.stepId : projection.steps[stepIndex]?.id} drillProjection={projection}
       hideHeading scoreLayoutPolicy="whole-passage"
-      framing={`${segment.label} · ${rung.label}`}
+      framing={`${passageName} · ${rung.label}`}
       ask={rung.mode === 'free' ? 'Play the passage accurately.' : 'Play the passage with the beat.'}
       traceContext={{ runId: runIdRef.current, take, tempoPercent, tempoStage: stage.id, clickLevel: clickLevel.id, tempoSource: tempo.tempoSource ?? 'inferred', launchSource }} surface="learn-lab"
       paused={paused} resumeDelayMs={effectiveBpm ? Math.round(120000 / effectiveBpm) : 1000} controlKey={take}
@@ -232,11 +240,12 @@ export default function LearnLab({ score, revision, segment, segments = {}, rung
       persistInterrupted={false} persistAssessment={!coachingTask}
       scoreCursorPolicy="always" keyboardHintPolicy={coachingTask?.assist === 'none' ? 'never' : 'after-wrong'}
       incompleteAfterMs={coachingTask?.assist === 'none' && coachingTask.stallSeconds ? coachingTask.stallSeconds * 1000 : null}
-      failurePresentation={coachingTask ? 'host' : 'local'} onExit={onClose} onPassed={settle}
+      failurePresentation="local" resultLabel={resultLabel} resultActions={resultActions} onPickStep={onPickStep} onStarted={takeStarted} onExit={onClose} onPassed={settle}
       onFailed={failTake}
       onUnavailable={(reason, detail) => onUnavailable?.(detail || reason)}
     />
     {repCard && !success && <RepInterstitial {...repCard} onDone={() => setRepCard(null)} />}
+    {card && <RepInterstitial key={card.id} {...card} onDone={onCardDone} />}
     {success && <div className="piano-learn-lab__success" role="status"><strong>{success}</strong><span>Returning to the score…</span></div>}
     <LearnTempoSheet open={adjustable && tempoSheetOpen} stages={stages} selectedId={stage.id} effectiveBpm={effectiveBpm}
       onPick={(picked) => { setSelectedPercent(picked.percent); restartTake('tempo-change'); }} onClose={() => setTempoSheetOpen(false)} />

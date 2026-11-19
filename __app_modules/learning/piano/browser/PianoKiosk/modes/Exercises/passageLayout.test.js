@@ -22,6 +22,17 @@ describe('passage layout policy', () => {
     expect(resolvePassageLayout({ layout: grand, viewport: { width: 1200, height: 800 }, cursorSystem: 0 })).toMatchObject({ mode: 'full', compact: false, systemCount: 2 });
   });
 
+  it('ends the page where the ink does when every system stops short, so a few bars fill the stage', () => {
+    const short = { width: 1200, height: 200,
+      staffBoxes: [{ system: 0, staff: 0, top: 80, left: 40, right: 640, lineSpacing: 10 }],
+      measureBounds: [{ left: 40, right: 340, top: 60, bottom: 140 }, { left: 340, right: 640, top: 60, bottom: 140 }] };
+    const result = resolvePassageLayout({ layout: short, viewport: { width: 1200, height: 400 }, keepWholePassage: true });
+    // The left margin is mirrored on the right: 640 + 40, not the engraver's 1200.
+    expect(result.viewBox).toMatchObject({ x: 0, width: 680 });
+    // A page whose first system reaches the edge keeps the engraver's width.
+    expect(resolvePassageLayout({ layout: grand, viewport: { width: 1200, height: 800 }, keepWholePassage: true }).viewBox.width).toBe(1200);
+  });
+
   it('includes every stave when the engraved SVG reports a height above its actual bottom staff', () => {
     const stalePageHeight = { ...grand, height: 480 };
     const result = resolvePassageLayout({ layout: stalePageHeight, viewport: { width: 1200, height: 800 }, cursorSystem: 0 });

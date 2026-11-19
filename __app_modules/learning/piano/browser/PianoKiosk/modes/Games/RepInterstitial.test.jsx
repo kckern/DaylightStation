@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { render, act } from '@testing-library/react';
+import { render, act, screen } from '@testing-library/react';
 import RepInterstitial, { REP_CARD_MS, repCardCopy } from './RepInterstitial.jsx';
 
 const base = {
@@ -62,4 +62,11 @@ describe('RepInterstitial', () => {
       expect(onDone).toHaveBeenCalledWith('late');
     } finally { vi.useRealTimers(); }
   });
+  it("takes a host's own three lines and a mark, for a ceremony that is not a rep", () => {
+    render(<RepInterstitial copy={{ eyebrow: 'Bars 1–5', headline: 'Silver!', line: 'Next: bars 6–9' }} icon={<svg data-testid="mark" />} onDone={() => {}} />);
+    const card = screen.getByRole('status', { name: 'Bars 1–5. Silver!. Next: bars 6–9.' });
+    expect(card.querySelector('.rep-card__headline').textContent).toBe('Silver!');
+    expect(card.querySelector('.rep-card__icon [data-testid="mark"]')).not.toBeNull();
+  });
+
 });

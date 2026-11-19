@@ -15,9 +15,14 @@ describe('passage rail model', () => {
   it('shows every passage by its printed starting bar, with its state', () => {
     const plan = planOf(3); let state = earn(plan, null, 'm0-3', 'silver', 'a');
     state = earn(plan, state, 'm4-7', 'right', 'b');
+    // One hand is still a tomato, with its step counted; both hands make a flower.
+    const started = model(plan, state);
+    expect(started.tiles[1]).toMatchObject({ state: 'todo', underway: true, steps: { done: 1, total: 4 }, label: 'Bars 5–8, Started, 1 of 4 steps' });
+    expect(started.tiles[2]).toMatchObject({ state: 'todo', underway: false, label: 'Bars 9–12, Not started' });
+    state = earn(plan, state, 'm4-7', 'left', 'b2');
     const rail = model(plan, state);
     expect(rail.tiles.map((tile) => [tile.startLabel, tile.state, tile.barCount])).toEqual([['1', 'silver', 4], ['5', 'learning', 4], ['9', 'todo', 4]]);
-    expect(rail.tiles[1]).toMatchObject({ steps: { done: 1, total: 4 }, label: 'Bars 5–8, Learning, 1 of 4 steps' });
+    expect(rail.tiles[1]).toMatchObject({ underway: true, steps: { done: 2, total: 4 }, label: 'Bars 5–8, Partway, 2 of 4 steps' });
     expect(rail.tiles[0].label).toBe('Bars 1–4, Silver');
     expect(rail.count).toEqual({ level: 'silver', done: 1, total: 3, text: '1/3', label: '1 of 3 Silver' });
     expect(rail.summary).toBe('1 of 3 Silver');
@@ -58,8 +63,6 @@ describe('passage rail model', () => {
     expect(railFits(19, 900)).toBe(false);
     expect(railFits(40, 900)).toBe(false);
     expect(railFits(0, 900)).toBe(true);
-    expect(model(planOf(15), null).showWords).toBe(false);
-    expect(model(planOf(14), null).showWords).toBe(true);
   });
 });
 

@@ -34,6 +34,14 @@ describe('PianoHomeDesk progress strip', () => {
     expect(screen.getByText('11 of 173 lessons')).toBeInTheDocument();
   });
 
+  it('draws each passage as its icon: a silver coin, a flower, a tomato, with the next one ringed', async () => {
+    mount();
+    const card = await screen.findByRole('button', { name: 'Kid: 1 of 3 Silver' });
+    const marks = [...card.querySelectorAll('.piano-desk__map i')];
+    expect(marks.map((mark) => mark.querySelector('svg').getAttribute('class') + (mark.querySelector('svg').dataset.metal ?? ''))).toEqual(['coin-iconsilver', 'flower-icon', 'tomato-icon']);
+    expect(marks.map((mark) => mark.hasAttribute('data-current'))).toEqual([false, true, false]);
+  });
+
   it('shows only the children, never the parents', async () => {
     h.recent.players.push({ userId: 'parent', name: 'Parent', courses: [course] });
     mount();

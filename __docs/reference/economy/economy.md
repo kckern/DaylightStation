@@ -115,6 +115,11 @@ text and draw no coin.
   rebuilds the five roles as a tint ladder around that one colour and wins over
   `metal`.
 - Gems are `GemIcon`, a separate component with the same conventions.
+- Piano passage states reuse the coin: a passage certified Silver or Gold is drawn
+  as the silver or gold `CoinIcon` (no coin is paid for it). Before that it is a
+  `TomatoIcon` (Noto Emoji, Apache 2.0) or a `FlowerIcon`, two components with
+  the same `size`/`label` conventions. See
+  `__docs/reference/piano/sheet-music-player.md` (Passage rail and board).
 - The coin FIGURES' text colours are not part of the icon: they stay the School
   tokens `--school-coin-silver` and `--school-coin-gold`.
 - Add a coin only through this component. Never draw one as an emoji, a unicode

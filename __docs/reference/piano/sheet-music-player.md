@@ -216,19 +216,66 @@ five). The [passage rail](#passage-rail-and-board) under the score names the nex
 passage and shows every passage of the piece. A stale passage URL shows an
 explanation and the available choices.
 
-Selecting a passage opens preparation with its engraved excerpt, printed bar
-range, selected profile, earned skills, one musical task, and a plain success
-condition. **Start practice** becomes available after notation and its assessment
-expectation are ready. Preparation failures offer **Retry music**. A disconnected
-piano is explained separately. Routes, reloads, and profile restoration always
-prepare; they never start a graded run.
+A child uses two screens in Learn: the score with its rail and board, and the
+**drill screen**. There is no preparation page and no result page.
 
-**Listen** demonstrates only the selected passage and parts using the existing
-score transport, returns to the unchanged preparation, and records no assessment.
-**Change practice** retains hands, beat and named tempo choices; **Use this setup**
-returns to preparation. **Try the full passage** prepares a full-tempo timed
-demonstration when the passage has a timed mastery task. The learner can attempt
-it before completing the easier skills.
+#### The drill screen
+
+Opening a passage lands on the Exercises run surface (`ExerciseRun` inside
+`LearnLab`), on the passage's current step, ready to play. `LearnCoach` is glue:
+it chooses the step, hands the passage to the drill as sets and reps, records each
+take with the coach, and stacks the [passage rail](#passage-rail-and-board) under
+the drill. It draws no practice screen of its own.
+
+- **Sets and reps.** Every Silver and Gold step of the passage is one set in the
+  drill's progress row (`Right hand`, `Left hand`, `Together`, `On your own`,
+  `Beat`, `60%`, `80%`, `100%`), and the clean takes it needs are its reps. A Gold
+  step with no fixed count (two good takes out of the last three) shows two reps.
+  `passageDrill()` in `LearnCoach.jsx` builds this projection.
+- **Starting.** Nothing is pressed. A free take arms on its first correct note and
+  a timed take counts in on any key, exactly as in Exercises. The coach hears that
+  a step was chosen (`selection`) when the take begins, not when the passage opens.
+- **Choosing a step.** Tapping a set runs that step. This is how a child goes
+  straight to **On your own** (the Silver check) or to the full passage at score
+  tempo (`100%`).
+- **Chrome.** One toolbar row: Back (to the score), the printed bars, the step's
+  name, then for a timed step its tempo and click loudness, and **Listen**,
+  **Pause**, **Start over** and **Change practice**. A drill on part of the passage
+  is named by the bars it covers (`Bar 2`). Saving is mentioned only when it
+  failed (**Progress not saved**, **Retry saving**). A lost piano is announced once,
+  by the app's banner.
+- **A pass** shows the drill's own rep card (`RepInterstitial`): `Set 3 of 8
+  clear`, the score, `Next: On your own`. The next step is already mounted under it.
+- **Silver and Gold.** The take that certifies the passage shows the same card as
+  a ceremony: the passage's icon turns over into a silver (or gold) coin above
+  `Silver!` and `Next: bars 6–9`, its rail tile turns with it, and the screen then
+  moves to the next passage. When that take finishes the whole piece, the card says
+  `Your whole piece is Silver!` and the screen returns to the score, where the
+  whole-piece celebration plays.
+- **A miss** leaves the drill's result panel in the keyboard's place: the coach's
+  short verdict (`Almost on your own`, `Bar 2 is the tricky spot`), the take's
+  numbers, and the next moves: the smaller practice the coach recommends after two
+  misses (`Practice bar 2`, `Practice the left hand`, `Try a little slower · 80%`),
+  **Try again**, and **Come back to this later** when it is on offer. Playing any
+  key also tries again.
+- **Listen** demonstrates the step's bars and parts in the same chrome with one
+  control, **Stop listening**, and records nothing. **Change practice** keeps hands,
+  beat and tempo choices; **Use this setup** returns to the drill with that practice.
+- **Rail and board.** The same rail as the score view sits under the drill, with
+  this passage outlined and no practice button. A tile opens that passage; the
+  count opens the board over the drill, and a card opens its passage.
+
+The engraved passage is contained in the stage at every size: the passage,
+renderer and SVG wrappers each hold one definite grid cell, so a two-system grand
+staff can never grow past the paper, and a passage whose systems stop short of the
+page is scaled up to the ink rather than left in half the stage
+(`passageLayout.js`). This applies to every `ScorePassage`, in Exercises too.
+
+Logs (`piano-learn-coach`): `piano.learn.coach.step`, `piano.learn.coach.take`
+(`reason`, `passed`), `piano.learn.coach.pick`, `piano.learn.coach.certified`
+(`level`, `piece`, `next`), `piano.learn.coach.set-aside`,
+`piano.learn.coach.unavailable`, and `piano.learn.rail.select` with
+`source: learn-rail|learn-board`.
 
 ### Silver and Gold
 
@@ -260,6 +307,8 @@ sheetmusic:
         checkPasses: 1     # passing Silver checks required
         cleanliness: 0.8   # share of played notes that must be correct
         stallSeconds: 30   # time without a new correct note
+      flower:
+        after: both-hands  # when a passage is partway: both-hands | together | first-step
 ```
 
 Invalid values use these defaults. Policy changes never remove earned credit.
@@ -284,9 +333,19 @@ round again for Gold. The score stays the main thing on screen.
 `[Practice bars 1–5] | passage tiles | 3/12`
 
 - **Tiles.** Every passage of the piece, always, with no scrolling. Widths follow
-  bar counts and each tile shows the printed number of its first bar. A passage
-  is not started, learning (one mark per Silver step), Silver or Gold. State is
-  fill, border and marks, never opacity, and never `CoinIcon`.
+  bar counts and each tile shows the passage's state icon and the printed number
+  of its first bar. The icons are a crowd answering a stage act
+  (`PassageCoin.jsx`): a **tomato** (not started), a **flower** (partway), a
+  **silver coin** and a **gold coin**. The coins are the household `CoinIcon`;
+  `TomatoIcon` and `FlowerIcon` sit beside it in `frontend/src/lib/icons/`.
+  Opacity never shows state.
+- **Flower.** An uncertified passage becomes a flower by
+  `certification.flower.after`: `both-hands` (the default: each hand alone is
+  earned, or the hands together; a one-part passage when its notes step is
+  earned), `together` (the hands together only) or `first-step` (any note step).
+  Invalid values use the default. `projectCoach` computes it (`segment.flower`,
+  and `passageProgress().state === 'learning'`), so the home strip, the rail, the
+  board and the drill agree.
 - **Tapping a tile selects it.** The score moves to those bars and boxes them. It
   does not open practice. Tapping a passage on the score itself still opens it.
 - **The button** opens the selected passage in Learn (`Practice bars 14–17`). With
@@ -301,8 +360,9 @@ round again for Gold. The score stays the main thing on screen.
 
 **The board** slides over the score from the rail without moving the music. It is
 the table of contents and the trophy board: the piece's title, `3 of 12 Silver`,
-one card per passage with its bars and progress, and the two goals **All Silver**
-and **All Gold**. Tapping a card selects that passage as a tile does and closes the
+one card per passage with its state icon, its bars and, while it is under way, one
+mark per Silver step, and the two goals **All Silver** and **All Gold**, each with
+its coin. Tapping a card selects that passage as a tile does and closes the
 board. Otherwise it closes with **Close** (or Escape). **Review a passage** appears
 in its header when a review is due.
 
@@ -312,8 +372,11 @@ Board (`GET /api/v1/earnings/gems`, asked when the board first opens) reports
 is not switched off for them. A guest, an unreadable Gem Board or a missing rule
 gets the plain goal. No gem picture is drawn in the player.
 
-**Celebration.** When a passage turns Silver or Gold its tile flips with a short
-chime. When the whole piece turns Silver or Gold every tile flips in a wave, a
+The home strip above the piano menu draws the same icons: one per passage of the
+child's piece in progress, with the next passage ringed.
+
+**Celebration.** When a passage turns Silver or Gold its tile's icon turns over
+into the coin with a short chime. When the whole piece turns Silver or Gold every tile flips in a wave, a
 banner sits above the rail (it covers no music the child is reading and leaves on a
 tap or after seven seconds) and a longer chime plays. The sound is synthesized on
 the player's WebAudio context (`passageChime.js`), best effort.

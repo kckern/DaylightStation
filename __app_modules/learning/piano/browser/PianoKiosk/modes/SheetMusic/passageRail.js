@@ -4,10 +4,8 @@ import { passageProgress } from '../../../../../../../shared/music/learnCoach.mj
 /** The narrowest tile a child can reliably tap, plus the gap beside it. */
 export const TILE_MIN_PX = 44;
 export const TILE_GAP_PX = 4;
-/** Above this many tiles the medal word no longer fits under the bar number. */
-const WORD_LIMIT = 14;
 
-export const STATE_WORDS = Object.freeze({ todo: 'Not started', learning: 'Learning', silver: 'Silver', gold: 'Gold' });
+export const STATE_WORDS = Object.freeze({ todo: 'Not started', learning: 'Partway', silver: 'Silver', gold: 'Gold' });
 
 const printedStart = (segment) => {
   const printed = segment.printedMeasures?.[0];
@@ -20,9 +18,11 @@ const lowerBars = (label) => label.charAt(0).toLowerCase() + label.slice(1);
 export function passageTile(segment) {
   const progress = passageProgress(segment);
   const bars = barsOf(segment);
-  const detail = progress.state === 'learning' ? `Learning, ${progress.steps.done} of ${progress.steps.total} steps` : STATE_WORDS[progress.state];
+  // Steps are counted on any passage that is under way and not yet Silver, tomato or flower.
+  const underway = (progress.state === 'todo' || progress.state === 'learning') && progress.steps.done > 0;
+  const detail = underway ? `${progress.state === 'learning' ? 'Partway' : 'Started'}, ${progress.steps.done} of ${progress.steps.total} steps` : STATE_WORDS[progress.state];
   return { id: segment.id, startLabel: printedStart(segment), bars, barCount: Math.max(1, segment.outMeasure - segment.inMeasure + 1),
-    state: progress.state, steps: progress.steps, detail, label: `${bars}, ${detail}` };
+    state: progress.state, steps: progress.steps, underway, detail, label: `${bars}, ${detail}` };
 }
 
 /**
@@ -51,7 +51,6 @@ export function railModel({ segments = [], projection, selectedId = null }) {
       label: `${done} of ${piece.total} ${lap === 'gold' ? 'Gold' : 'Silver'}` },
     summary: `${piece.silver} of ${piece.total} Silver${piece.gold > 0 ? `, ${piece.gold} Gold` : ''}`,
     goals: [{ level: 'silver', label: 'All Silver', reached: allSilver }, { level: 'gold', label: 'All Gold', reached: allGold }],
-    showWords: tiles.length <= WORD_LIMIT,
   };
 }
 

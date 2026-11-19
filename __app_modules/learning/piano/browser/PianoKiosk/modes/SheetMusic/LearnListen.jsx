@@ -5,7 +5,7 @@ import { usePianoMidi } from '../../PianoMidiContext.jsx';
 import ScorePassage from '../Exercises/ScorePassage.jsx';
 
 /** Demonstration is playback only. It never installs an assessment. */
-export default function LearnListen({ score, task, tempoMap, onDone }) {
+export default function LearnListen({ score, task, tempoMap, passageName = '', onDone }) {
   const [expectation, setExpectation] = useState(null);
   const { sendNoteAt, sendNoteOffAt, sendPanic } = usePianoMidi();
   const started = useRef(false);
@@ -36,10 +36,16 @@ export default function LearnListen({ score, task, tempoMap, onDone }) {
     // MIDI's timestamp queue cannot be recalled; flush it after the lookahead.
     setTimeout(() => sendPanic?.(), 460);
   }, [sendPanic]);
-  return <section className="piano-learn-coach" aria-label="Passage demonstration">
-    <h2>Listen to this passage</h2><p>Your turn comes next. Listening does not change your progress.</p>
-    <button type="button" onClick={onDone}>Stop listening</button>
-    <div className="piano-learn-coach__demo piano-exercise-run__score"><ScorePassage musicXml={score.musicXml} sourceId={score.id} rangeIndices={task.range} activeParts={task.parts}
+  // The drill surface's chrome, with one control: the demonstration is not a take.
+  return <section className="piano-learn-lab piano-learn-lab--coach piano-learn-listen" role="dialog" aria-modal="true" aria-label="Passage demonstration">
+    <header className="piano-learn-lab__toolbar">
+      <div className="piano-learn-lab__identity"><strong>{passageName}</strong></div>
+      <div className="piano-learn-lab__task"><strong>Listen</strong></div>
+      <div className="piano-learn-lab__run-controls" role="group" aria-label="Practice controls">
+        <button type="button" onClick={onDone}>Stop listening</button>
+      </div>
+    </header>
+    <div className="piano-learn-listen__stage piano-exercise-run__score"><ScorePassage musicXml={score.musicXml} sourceId={score.id} rangeIndices={task.range} activeParts={task.parts}
       onExpectation={onExpectation} keepWholePassage onUnrunnable={onDone} /></div>
   </section>;
 }

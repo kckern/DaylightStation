@@ -1,5 +1,6 @@
 // The Learn passage rail, its whole-piece banner and the passage board.
-// State is carried by fill, border and marks. Opacity never shows state.
+// A passage's state is its icon: tomato, flower, silver coin, gold coin.
+// Opacity never shows state.
 .piano-passage-rail {
   --rail-h: 4rem;
   position: relative; z-index: 21;
@@ -8,6 +9,8 @@
   padding: 0.5rem var(--sp-4, 16px);
   color: var(--piano-fg); background: var(--piano-surface-1, #1c1c23); border-top: 1px solid var(--piano-border);
   button { font: inherit; cursor: pointer; }
+  // The drill screen has its own controls, so its rail is the map and the count.
+  &[data-bare] { grid-template-columns: minmax(0, 1fr) auto; }
 
   &__go {
     min-width: 13.5rem; padding: 0 var(--sp-4, 16px);
@@ -22,26 +25,22 @@
 
   &__tile {
     flex: 1; min-width: 0; padding: 0 2px; box-sizing: border-box;
-    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
+    display: flex; align-items: center; justify-content: center; gap: 0.3rem;
     border: 2px solid var(--piano-border); border-radius: var(--r-sm, 6px);
-    background: var(--piano-bg); color: var(--piano-muted);
+    background: var(--piano-bg); color: var(--piano-fg);
     font-weight: 800; line-height: 1; overflow: hidden;
-    &[data-state='learning'] { background: var(--piano-surface-2, #26262f); border-color: var(--piano-muted); color: var(--piano-fg); }
-    &[data-state='silver'] { background: var(--piano-silver); border-color: var(--piano-silver); color: var(--piano-medal-ink); }
-    &[data-state='gold'] { background: var(--piano-gold); border-color: var(--piano-gold); color: var(--piano-medal-ink); }
-    &[aria-current='step'] { outline: 3px solid var(--piano-accent); outline-offset: 1px; }
-    &[data-flip] { animation: piano-passage-flip 620ms ease-out both; }
+    &[aria-current='step'] { outline: 3px solid var(--piano-accent); outline-offset: 1px; background: var(--piano-surface-2, #26262f); }
   }
-  &__bar { font-size: 1rem; }
-  &__word { font-size: 0.56rem; letter-spacing: 0.06em; text-transform: uppercase; }
-  &__steps {
-    display: flex; gap: 2px; width: 70%; max-width: 3rem;
-    i { flex: 1; height: 0.3rem; border-radius: 1px; background: var(--piano-border); }
-    i[data-done='true'] { background: var(--piano-silver); }
-  }
-  // A long piece: every passage still shows, as a map. The tiles are too narrow
-  // to tap one by one, so a tap opens the board.
+  &__icon { display: grid; font-size: 1.9rem; flex: 0 0 auto; }
+  &__bar { font-size: 1.05rem; color: var(--piano-muted); }
+  &__tile[aria-current='step'] &__bar { color: var(--piano-fg); }
+  // A long piece: every passage still shows, as a map of colour. The tiles are
+  // too narrow to tap one by one, so a tap opens the board.
   &__track[data-compact] &__tile { border-width: 1px; border-radius: 2px; padding: 0; }
+  &__track[data-compact] &__tile[data-state='todo'] { background: #b3261e; border-color: #b3261e; }
+  &__track[data-compact] &__tile[data-state='learning'] { background: #ec5564; border-color: #ec5564; }
+  &__track[data-compact] &__tile[data-state='silver'] { background: var(--piano-silver); border-color: var(--piano-silver); }
+  &__track[data-compact] &__tile[data-state='gold'] { background: var(--piano-gold); border-color: var(--piano-gold); }
   &__track[data-compact] &__tile[aria-current='step'] { outline-width: 2px; }
 
   &__count {
@@ -49,10 +48,9 @@
     border: 2px solid var(--piano-border); border-radius: var(--r-md, 10px);
     background: var(--piano-surface-2, #26262f); color: var(--piano-fg);
     font-size: 1.15rem; font-weight: 800; font-variant-numeric: tabular-nums;
-    i { width: 0.85rem; height: 0.85rem; border-radius: 50%; background: var(--piano-silver); }
-    &[data-level='gold'] i { background: var(--piano-gold); }
-    svg { transition: transform 160ms ease; }
-    &[aria-expanded='true'] { border-color: var(--piano-accent); svg { transform: rotate(180deg); } }
+    .coin-icon { width: 1.7rem; height: 1.7rem; }
+    > svg:last-child { transition: transform 160ms ease; }
+    &[aria-expanded='true'] { border-color: var(--piano-accent); > svg:last-child { transform: rotate(180deg); } }
   }
 
   &__cheer {
@@ -93,9 +91,8 @@
       background: var(--piano-bg); font-size: 1rem; font-weight: 700; white-space: nowrap;
     }
     li[data-level='gold'] { border-color: var(--piano-gold); }
-    i { display: grid; place-items: center; width: 1.3rem; height: 1.3rem; border-radius: 50%; border: 2px solid var(--piano-silver); box-sizing: border-box; }
-    li[data-level='gold'] i { border-color: var(--piano-gold); }
-    li[data-reached='true'] { background: var(--piano-silver); color: var(--piano-medal-ink); i { border-color: var(--piano-medal-ink); } }
+    .coin-icon { width: 1.6rem; height: 1.6rem; }
+    li[data-reached='true'] { background: var(--piano-silver); color: var(--piano-medal-ink); }
     li[data-reached='true'][data-level='gold'] { background: var(--piano-gold); }
   }
   &__review, &__close {
@@ -107,32 +104,44 @@
   &__cards {
     list-style: none; margin: 0; padding: var(--sp-3, 12px) var(--sp-4, 16px) var(--sp-4, 16px);
     flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain;
-    display: grid; grid-template-columns: repeat(auto-fill, minmax(11rem, 1fr)); gap: var(--sp-2, 8px);
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(9.5rem, 1fr)); gap: var(--sp-2, 8px);
     li { min-width: 0; display: flex; }
   }
   &__card {
-    flex: 1; min-width: 0; min-height: 4.75rem; padding: 0.6rem 0.8rem; box-sizing: border-box;
-    display: flex; flex-direction: column; align-items: flex-start; justify-content: center; gap: 0.3rem; text-align: left;
+    flex: 1; min-width: 0; min-height: 7.5rem; padding: 0.6rem 0.5rem; box-sizing: border-box;
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.35rem; text-align: center;
     border: 2px solid var(--piano-border); border-radius: var(--r-md, 10px);
     background: var(--piano-bg); color: var(--piano-fg);
+    > svg { width: 3.4rem; height: 3.4rem; flex: 0 0 auto; }
     strong { font-size: 1.15rem; }
-    > span { font-size: 0.95rem; color: var(--piano-muted); }
-    &[data-state='learning'] { background: var(--piano-surface-2, #26262f); border-color: var(--piano-muted); }
-    &[data-state='silver'] { background: var(--piano-silver); border-color: var(--piano-silver); color: var(--piano-medal-ink); > span { color: inherit; font-weight: 700; } }
-    &[data-state='gold'] { background: var(--piano-gold); border-color: var(--piano-gold); color: var(--piano-medal-ink); > span { color: inherit; font-weight: 700; } }
-    &[aria-current='step'] { outline: 3px solid var(--piano-accent); outline-offset: 1px; }
+    &[aria-current='step'] { outline: 3px solid var(--piano-accent); outline-offset: 1px; background: var(--piano-surface-2, #26262f); }
   }
   &__steps {
-    display: flex; gap: 3px; width: 100%; max-width: 7rem;
-    i { flex: 1; height: 0.35rem; border-radius: 2px; background: var(--piano-border); }
+    display: flex; gap: 3px; width: 100%; max-width: 6rem;
+    i { flex: 1; height: 0.4rem; border-radius: 2px; background: var(--piano-border); }
     i[data-done='true'] { background: var(--piano-silver); }
   }
 }
 
-@keyframes piano-passage-flip {
-  0% { transform: rotateX(-90deg); }
-  60% { transform: rotateX(14deg); }
-  100% { transform: rotateX(0); }
+// One passage changing state: the old mark turns edge-on and the new one lands.
+// Each is fully drawn or not drawn at all; nothing is ever see-through.
+.piano-passage-turn {
+  display: inline-grid;
+  // A whole piece turns as a wave: each tile hands its own delay down.
+  > * { grid-area: 1 / 1; animation-delay: var(--turn-delay, 0ms); }
+  > :first-child { animation: piano-passage-turn-out 900ms ease-in both; }
+  > :last-child { animation: piano-passage-turn-in 900ms cubic-bezier(0.2, 0.9, 0.3, 1.3) both; }
+}
+@keyframes piano-passage-turn-out {
+  0%, 35% { transform: rotateY(0); visibility: visible; }
+  55% { transform: rotateY(90deg); visibility: visible; }
+  56%, 100% { transform: rotateY(90deg); visibility: hidden; }
+}
+@keyframes piano-passage-turn-in {
+  0%, 55% { transform: rotateY(-90deg) scale(1); visibility: hidden; }
+  56% { transform: rotateY(-90deg) scale(1); visibility: visible; }
+  85% { transform: rotateY(0) scale(1.18); visibility: visible; }
+  100% { transform: rotateY(0) scale(1); visibility: visible; }
 }
 @keyframes piano-passage-cheer {
   0% { transform: translateX(-50%) translateY(1.5rem) scale(0.9); }
@@ -143,6 +152,8 @@
   100% { transform: translateY(0); }
 }
 @media (prefers-reduced-motion: reduce) {
-  .piano-passage-rail__tile[data-flip], .piano-passage-rail__cheer, .piano-passage-board { animation: none; }
+  .piano-passage-rail__cheer, .piano-passage-board { animation: none; }
   .piano-passage-rail__count svg { transition: none; }
+  .piano-passage-turn > :first-child { animation: none; visibility: hidden; }
+  .piano-passage-turn > :last-child { animation: none; }
 }

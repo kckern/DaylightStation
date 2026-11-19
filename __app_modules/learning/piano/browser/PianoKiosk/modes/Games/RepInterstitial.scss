@@ -36,6 +36,8 @@
     animation: rep-card-in 260ms ease-out both;
   }
 
+  &__icon { display: grid; font-size: 7rem; line-height: 1; margin-bottom: 0.4rem; }
+
   &__eyebrow {
     font-size: 0.82rem;
     letter-spacing: 0.22em;

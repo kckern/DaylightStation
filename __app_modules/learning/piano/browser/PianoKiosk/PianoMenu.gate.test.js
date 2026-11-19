@@ -36,7 +36,7 @@ vi.mock('./PianoConfig.jsx', () => ({
 }));
 vi.mock('./kioskDeviceIdentity.js', () => ({ KIOSK_DEVICE_ID: 'piano-tablet' }));
 vi.mock('./PianoUserContext.jsx', () => ({
-  usePianoUser: () => ({ currentUser, setCurrentUser: () => {} }),
+  usePianoUser: () => ({ currentUser, setCurrentUser: () => {}, users: [{ id: 'learner2', schoolLearner: true }, { id: 'parent1', schoolLearner: false }] }),
 }));
 vi.mock('./PianoMidiContext.jsx', () => ({
   usePianoMidi: () => ({ pressNote: () => {}, releaseNote: () => {} }),

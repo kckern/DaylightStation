@@ -332,7 +332,8 @@ describe('LearnLab', () => {
     render(<LearnLab {...base} rung={{ ...rung, reps: 3, required: 6 }} coachingTask={{ key: 'task' }} onOutcome={onOutcome} onRecord={onRecord} />);
     expect(screen.queryByText(/Set 1 of/)).not.toBeInTheDocument();
     expect(exercise.props.persistAssessment).toBe(false);
-    expect(exercise.props.failurePresentation).toBe('host');
+    // The drill's own result panel shows a coached miss; the host adds its next moves to it.
+    expect(exercise.props.failurePresentation).toBe('local');
     fireEvent.click(screen.getByRole('button', { name: 'Finish take' }));
     expect(onOutcome).toHaveBeenCalledTimes(1);
     expect(onRecord).not.toHaveBeenCalled();
@@ -346,6 +347,55 @@ describe('LearnLab', () => {
     act(() => { exercise.props.onFailed(result); exercise.props.onFailed(result); });
     expect(onOutcome).toHaveBeenCalledExactlyOnceWith(result);
     expect(onRecord).not.toHaveBeenCalled();
+  });
+
+  it('gives a coached passage the drill chrome: bars only, its own sets, and Listen', () => {
+    const onListen = vi.fn(); const onPickStep = vi.fn();
+    const drill = { projection: { id: 'learn:m0-3', displaySingleStep: true, steps: [{ id: 'a' }, { id: 'b' }] }, stepId: 'b' };
+    render(<LearnLab {...base} coachingTask={{ key: 'task' }} drill={drill} onListen={onListen} onPickStep={onPickStep}
+      resultLabel="Almost on your own" resultActions={<button type="button">Practice bar 2</button>}
+      notice={<strong>Progress not saved</strong>} extraControls={<button type="button">Come back to this later</button>} onOutcome={vi.fn()} />);
+    expect(screen.getByRole('dialog', { name: 'Bars 1–4 · Right hand' })).toBeInTheDocument();
+    expect(screen.queryByText('Segment 1')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Back to score' })).toBeInTheDocument();
+    expect(exercise.props).toMatchObject({ drillProjection: drill.projection, stepId: 'b', resultLabel: 'Almost on your own', onPickStep });
+    expect(exercise.props.resultActions).toBeTruthy();
+    expect(screen.getByText('Progress not saved')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Come back to this later' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Listen' }));
+    expect(onListen).toHaveBeenCalledTimes(1);
+    expect(log.info.mock.calls.some(([event, data]) => event === 'piano.learn.take-abandoned' && data.reason === 'listen')).toBe(true);
+  });
+
+  it('keeps the uncoached lab as it was: segment name, set and rep line, no Listen', () => {
+    render(<LearnLab {...base} />);
+    expect(screen.getByText('Segment 1')).toBeInTheDocument();
+    expect(screen.getByText(/Set 1 of 1/)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Listen' })).not.toBeInTheDocument();
+    expect(exercise.props.stepId).toBe('right:set-1');
+  });
+
+  it('reports each coached take once, and a take replayed from the piano is a new one', () => {
+    const onOutcome = vi.fn(); const onStarted = vi.fn();
+    render(<LearnLab {...base} coachingTask={{ key: 'task' }} onOutcome={onOutcome} onStarted={onStarted} />);
+    const miss = { assessmentId: 'one', status: 'completed', verdict: { passed: false } };
+    act(() => { exercise.props.onStarted(); exercise.props.onFailed(miss); exercise.props.onFailed(miss); });
+    expect(onOutcome).toHaveBeenCalledTimes(1);
+    act(() => { exercise.props.onStarted(); exercise.props.onFailed({ ...miss, assessmentId: 'two' }); });
+    expect(onStarted).toHaveBeenCalledTimes(2);
+    expect(onOutcome).toHaveBeenCalledTimes(2);
+    expect(onOutcome.mock.calls[1][0].assessmentId).toBe('two');
+  });
+
+  it("shows the host's ceremony on the drill's rep card", () => {
+    vi.useFakeTimers();
+    const onCardDone = vi.fn();
+    render(<LearnLab {...base} coachingTask={{ key: 'task' }} onOutcome={vi.fn()} onCardDone={onCardDone}
+      card={{ id: 'take', copy: { eyebrow: 'Bars 1–4', headline: 'Silver!', line: 'Next: bars 5–8' }, icon: <svg data-testid="coin" /> }} />);
+    expect(screen.getByRole('status', { name: 'Bars 1–4. Silver!. Next: bars 5–8.' })).toBeInTheDocument();
+    expect(screen.getByTestId('coin')).toBeInTheDocument();
+    act(() => vi.advanceTimersByTime(2300));
+    expect(onCardDone).toHaveBeenCalledTimes(1);
   });
 
 });

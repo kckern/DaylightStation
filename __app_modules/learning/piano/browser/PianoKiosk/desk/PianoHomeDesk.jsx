@@ -5,6 +5,7 @@ import ProfileAvatar from '../../../../../../frontend/src/lib/identity/ProfileAv
 import usePianoList from '../usePianoList.js';
 import { usePianoUser } from '../PianoUserContext.jsx';
 import { titleFromScoreId } from '../modes/SheetMusic/scoreTitle.js';
+import PassageCoin from '../modes/SheetMusic/PassageCoin.jsx';
 import { pieceCount, relativeTime, scoreHeading, stripCards } from './deskModel.js';
 import './PianoHomeDesk.scss';
 
@@ -28,13 +29,15 @@ function usePrintedTitle(scoreId) {
 
 function PieceCard({ card }) {
   const title = usePrintedTitle(card.piece.scoreId);
-  const bars = card.piece.passages.map((passage) => `${passage.end - passage.start + 1}fr`).join(' ');
+  // One row of icons, or two for a long piece, so an icon never becomes a dot.
+  const count = card.piece.passages.length;
+  const columns = count > 14 ? Math.ceil(count / 2) : count;
   return (
     <span className="piano-desk__body">
       <strong className="piano-desk__title">{title}</strong>
-      <span className="piano-desk__map" style={{ gridTemplateColumns: bars }} aria-hidden="true">
+      <span className="piano-desk__map" style={{ gridTemplateColumns: `repeat(${columns}, minmax(0, 1.6rem))` }} aria-hidden="true">
         {card.piece.passages.map((passage) => (
-          <i key={passage.id} data-state={passage.state} data-current={passage.id === card.focus?.id || undefined} />
+          <i key={passage.id} data-state={passage.state} data-current={passage.id === card.focus?.id || undefined}><PassageCoin state={passage.state} size="100%" /></i>
         ))}
       </span>
       <small>{pieceCount(card.piece)}{card.piece.gold ? `, ${card.piece.gold} Gold` : ''}</small>

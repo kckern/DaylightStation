@@ -56,10 +56,10 @@ export default function LearnLaunchpad({ segment, preview = null, result = null,
   const chooseMode = (next) => { setMode(next); updateChoice({ mode: next }); };
   const chooseStage = (next) => { setStage(next); updateChoice({ tempoPercent: next.percent, tempoStage: next.id }); };
   const launchCustom = () => { onChoiceChange?.(choice); onLaunch?.(buildCustomLaunch(segment, choice)); };
-  return <section className="piano-learn-launchpad" role="dialog" aria-modal="true" aria-label={`${segment.label} practice`}>
+  return <section className="piano-learn-launchpad" role="dialog" aria-modal="true" aria-label={`${customOnly ? (segment.barLabel ?? segment.label) : segment.label} practice`}>
     <header>
       <button type="button" className="piano-learn-launchpad__back" onClick={view === 'home' || customOnly ? onBack : () => setView('home')}><Icon name="back" /> Back</button>
-      <div><strong>{segment.label}</strong><span>{segment.barLabel}</span></div>
+      <div>{customOnly ? <strong>{segment.barLabel ?? segment.label}</strong> : <><strong>{segment.label}</strong><span>{segment.barLabel}</span></>}</div>
       {(segment.complete || segment.testedOut) && <span className="piano-learn-launchpad__earned"><Icon name="crown" /> Mastered</span>}
     </header>
     <div className="piano-learn-launchpad__body">

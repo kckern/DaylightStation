@@ -413,9 +413,15 @@
   // axis. That is the same contain operation for a short treble stave, a grand
   // staff, and a two-system passage: maximum useful size, uniform scale, and
   // equal spare space on opposite sides instead of paper pinned to the top.
+  // One definite cell at every level. With an auto row a taller engraving sets
+  // the row's height itself, so `height: 100%` on the SVG meant "as tall as the
+  // music" and a two-system grand staff ran off the bottom of the paper.
+  grid-template: minmax(0, 1fr) / minmax(0, 1fr);
+
   .musicxml-renderer,
   .musicxml-renderer__svg {
     display: grid;
+    grid-template: minmax(0, 1fr) / minmax(0, 1fr);
     place-items: center;
     width: 100% !important;
     height: 100%;

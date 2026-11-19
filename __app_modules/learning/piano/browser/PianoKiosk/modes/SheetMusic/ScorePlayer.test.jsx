@@ -139,6 +139,7 @@ vi.mock('./LearnLab.jsx', () => ({
       <button type="button" onClick={() => (props.onOutcome ?? props.onFinished)({ assessmentId: 'played', status: 'completed', diagnostics: { expected_notes: 8, matched_notes: 8 }, criteria: { completeness: 1, cleanliness: 1 }, verdict: { passed: true } })}>Complete rung</button>
       <button type="button" onClick={() => { props.onMastered(props.segment.id); props.onFinished({ passed: true, score: 1 }); }}>Master segment</button>
       <button type="button" onClick={() => props.onUnavailable('passage-too-dense')}>Fail segment</button>
+      {props.onListen && <button type="button" onClick={props.onListen}>Listen</button>}
     </section>;
   },
 }));
@@ -309,24 +310,25 @@ describe('ScorePlayer — guided Learn composition', () => {
   h.layoutExtras = { measures: [{ number: 1, firstStep: 0, lastStep: 1 }, { number: 2, firstStep: 2, lastStep: 3 }],
     measureBounds: [{ left: 80, right: 190, top: 10, bottom: 210 }, { left: 190, right: 310, top: 10, bottom: 210 }] };
  };
- it('opens a deep link at preparation without starting a take', () => {
+ it('opens a deep link straight on the drill surface, at the current step', () => {
   setup(); renderPlayer('/?learnPassage=m0-1&learnRung=right');
-  expect(screen.getByRole('region', { name: 'Segment 1 learning' })).toBeInTheDocument();
-  expect(screen.getByRole('heading', { name: 'Find the right-hand notes' })).toBeInTheDocument();
-  expect(h.learnLabProps).toBeNull();
+  expect(h.learnLabProps.coachingTask).toMatchObject({ passageId: 'm0-1', skill: 'right' });
+  expect(h.learnLabProps.segment.barLabel).toBe('Bars 1–2');
+  expect(h.learnLabProps.drill.projection.steps).toHaveLength(8);
+  expect(screen.getByRole('navigation', { name: 'Passages in this piece' })).toHaveAttribute('data-bare', 'true');
+  expect(screen.queryByRole('button', { name: /Start practice/ })).not.toBeInTheDocument();
  });
- it('provides one learning entry, explicit start, result choice, and return to the score', async () => {
+ it('provides one learning entry that lands on the drill, banks a pass, and returns to the score', async () => {
   setup(); renderPlayer(); pickMode('Learn');
   expect(screen.getByRole('navigation', { name: 'Passages in this piece' })).toBeInTheDocument();
   expect(screen.getByRole('button', { name: /^0 of \d+ Silver\. Open the passage board$/ })).toBeInTheDocument();
   fireEvent.click(screen.getByRole('button', { name: 'Practice bars 1–2' }));
-  expect(screen.getByRole('button', { name: 'Start practice', exact: true })).toBeDisabled();
-  fireEvent.click(screen.getByText('Music ready')); fireEvent.click(screen.getByRole('button', { name: 'Start practice', exact: true }));
   expect(h.learnLabProps.coachingTask.parts).toEqual(['rh']);
   fireEvent.click(screen.getByRole('button', { name: 'Complete rung' }));
-  expect(await screen.findByRole('heading', { name: 'Nice work!' })).toBeInTheDocument();
-  expect(screen.queryByRole('button', { name: 'Complete rung' })).not.toBeInTheDocument();
-  fireEvent.click(screen.getByRole('button', { name: 'Finish for now' }));
+  // A pass is the drill's own rep card, with the next step already under it.
+  await waitFor(() => expect(h.learnLabProps.card).toMatchObject({ setIndex: 1, setClear: true, next: { key: 'Left hand' } }));
+  expect(h.learnLabProps.coachingTask.parts).toEqual(['lh']);
+  fireEvent.click(screen.getByRole('button', { name: 'Close lab' }));
   expect(screen.getByTestId('renderer')).toBeInTheDocument();
   expect(screen.getByRole('button', { name: 'Practice bars 1–2' })).toBeInTheDocument();
  });
@@ -345,10 +347,10 @@ describe('ScorePlayer — guided Learn composition', () => {
   expect(screen.queryByRole('button', { name: 'Listen' })).not.toBeInTheDocument();
   fireEvent.click(screen.getByRole('button', { name: 'Practice bars 1–2' }));
   fireEvent.click(screen.getByRole('button', { name: 'Listen' }));
-  expect(screen.getByRole('heading', { name: 'Listen to this passage' })).toBeInTheDocument();
+  expect(screen.getByRole('dialog', { name: 'Passage demonstration' })).toBeInTheDocument();
   fireEvent.click(screen.getByRole('button', { name: 'Stop listening' }));
-  expect(screen.getByRole('button', { name: 'Start practice', exact: true })).toBeInTheDocument();
-  expect(h.learnLabProps).toBeNull();
+  expect(screen.getByRole('button', { name: 'Listen' })).toBeInTheDocument();
+  expect(h.learnLabProps.coachingTask.skill).toBe('right');
  });
 });
 

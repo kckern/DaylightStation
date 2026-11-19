@@ -4,7 +4,11 @@ const PITCH = Object.freeze({ completeness: 1, cleanliness: 0.8 });
 const TIMED = Object.freeze({ ...PITCH, placement: 0.8 });
 export const CERTIFICATION_DEFAULTS = Object.freeze({
   silver: Object.freeze({ stepPasses: 1, checkPasses: 1, cleanliness: 0.8, stallSeconds: 30 }),
+  // When an uncertified passage counts as partway: `both-hands` (each hand alone, or the
+  // hands together), `together` (the hands together only) or `first-step` (any note step).
+  flower: Object.freeze({ after: 'both-hands' }),
 });
+export const FLOWER_AFTER = Object.freeze(['both-hands', 'together', 'first-step']);
 const LEGACY_STEP_PASSES = 6;
 const MAX_POLICY_PASSES = 20;
 const wholeIn = (value, fallback) => (Number.isInteger(value) && value >= 1 && value <= MAX_POLICY_PASSES ? value : fallback);
@@ -18,7 +22,7 @@ export function normalizeCertification(raw) {
     checkPasses: wholeIn(silver.checkPasses, fallback.checkPasses),
     cleanliness: Number.isFinite(silver.cleanliness) && silver.cleanliness > 0 && silver.cleanliness <= 1 ? silver.cleanliness : fallback.cleanliness,
     stallSeconds: Number.isFinite(silver.stallSeconds) && silver.stallSeconds >= 5 && silver.stallSeconds <= 600 ? silver.stallSeconds : fallback.stallSeconds,
-  } };
+  }, flower: { after: FLOWER_AFTER.includes(raw?.flower?.after) ? raw.flower.after : CERTIFICATION_DEFAULTS.flower.after } };
 }
 
 const partsOf = (parts = []) => [...new Set(parts)].sort((a, b) => {
@@ -172,15 +176,29 @@ function legacyReady(legacy, segment, task) {
 export const isGoldWork = (task) => task.mode !== 'free' && task.track !== 'silver';
 
 /**
+ * Whether an uncertified passage is partway there, by the plan's `flower.after`
+ * policy. The note steps are the Silver steps before the hints-off check: each
+ * hand alone and the whole passage. A one-part passage has only the whole.
+ */
+function partway(plan, segment, skills) {
+  const steps = skills.filter((skill) => skill.track === 'silver' && skill.assist !== 'none');
+  const whole = steps.filter((skill) => sameParts(skill.parts, segment.playableParts));
+  const alone = steps.filter((skill) => !whole.includes(skill));
+  const after = plan.certification?.flower?.after ?? CERTIFICATION_DEFAULTS.flower.after;
+  if (after === 'first-step') return steps.some((skill) => skill.ready);
+  if (whole.some((skill) => skill.ready)) return true;
+  return after === 'both-hands' && alone.length > 0 && alone.every((skill) => skill.ready);
+}
+
+/**
  * One projected passage as every surface shows it: not started (`todo`), `learning`
- * with its Silver steps counted, `silver` or `gold`. The home desk and the
+ * (partway, by the flower policy) with its Silver steps counted, `silver` or `gold`. The home desk and the
  * sheet-music rail both read this, so they cannot disagree.
  */
 export function passageProgress(segment) {
   const steps = (segment.skills ?? []).filter((skill) => skill.track === 'silver');
   const done = steps.filter((skill) => skill.ready).length;
-  const started = done > 0 || steps.some((skill) => skill.successes > 0);
-  const state = segment.certification?.gold ? 'gold' : segment.certification?.silver ? 'silver' : started ? 'learning' : 'todo';
+  const state = segment.certification?.gold ? 'gold' : segment.certification?.silver ? 'silver' : segment.flower ? 'learning' : 'todo';
   return { id: segment.id, start: segment.inMeasure, end: segment.outMeasure, state, steps: { done, total: steps.length } };
 }
 const certificate = (achievement, provenance) => ({ at: achievement?.at ?? null, provenance });
@@ -209,7 +227,7 @@ function segmentProjection(plan, state, legacy, segment) {
   });
   const completed = skills.find((task) => task.completes && task.ready);
   if (!silver && segment.authoredLadder && completed) silver = certificate(state.achievements[completed.key], 'demonstrated');
-  return { ...segment, skills, mastered, complete: legacyComplete || (!segment.authoredLadder && mastered) || Boolean(completed),
+  return { ...segment, skills, flower: !silver && partway(plan, segment, skills), mastered, complete: legacyComplete || (!segment.authoredLadder && mastered) || Boolean(completed),
     masteredAt: masteredAt?.at ?? null, certification: { silver, gold } };
 }
 

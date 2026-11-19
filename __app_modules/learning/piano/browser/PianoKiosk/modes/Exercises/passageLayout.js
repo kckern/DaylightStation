@@ -36,11 +36,16 @@ function contentBox(layout) {
   const staves = layout.staffBoxes ?? [];
   const measures = (layout.measureBounds ?? []).filter(Boolean);
   const spacing = Math.max(0, ...staves.map((staff) => staff.lineSpacing).filter(finite));
-  const right = Math.max(
-    layout.width,
+  // The engraver does not stretch a short last (or only) system across the
+  // page. When every system stops short, the page ends where the ink does, so
+  // a few bars are scaled up to fill the stage instead of sitting in half of it.
+  const inkRight = Math.max(
     ...staves.map((staff) => staff.right).filter(finite),
     ...measures.map((measure) => measure.right).filter(finite),
   );
+  const inkLeft = Math.min(...staves.map((staff) => staff.left).filter(finite), ...measures.map((measure) => measure.left).filter(finite));
+  const margin = finite(inkLeft) ? Math.max(spacing * 2, inkLeft) : spacing * 2;
+  const right = finite(inkRight) && inkRight + margin < layout.width ? inkRight + margin : Math.max(layout.width, finite(inkRight) ? inkRight : 0);
   const bottom = Math.max(
     layout.height,
     ...staves.map((staff) => staff.top + staff.lineSpacing * 4 + spacing * 2).filter(finite),

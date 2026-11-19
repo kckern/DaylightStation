@@ -140,4 +140,18 @@ describe('DrillProgress', () => {
     render(<DrillProgress programId={null} stepId={null} userId="kckern" />);
     expect(learning).not.toHaveBeenCalled();
   });
+
+  it('makes each set a button when the host lets a set be chosen, and a plain mark otherwise', () => {
+    const onPick = vi.fn();
+    const program = { id: 'p', steps: [step(1, { state: 'current' }), step(2)] };
+    const { rerender, container } = render(<DrillProgress program={program} stepId="scale-set-1" onPick={onPick} />);
+    const sets = screen.getAllByRole('button');
+    expect(sets.map((set) => set.getAttribute('aria-label'))).toEqual(['Set 1', 'Set 2']);
+    expect(sets[0]).toHaveAttribute('aria-current', 'step');
+    sets[1].click();
+    expect(onPick).toHaveBeenCalledWith(expect.objectContaining({ id: 'scale-set-2' }));
+    rerender(<DrillProgress program={program} stepId="scale-set-1" />);
+    expect(screen.queryAllByRole('button')).toHaveLength(0);
+    expect(container.querySelectorAll('div.drill-cluster')).toHaveLength(2);
+  });
 });

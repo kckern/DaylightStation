@@ -1,5 +1,6 @@
 import { useLayoutEffect, useRef, useState } from 'react';
 import { railFits, TILE_GAP_PX, TILE_MIN_PX } from './passageRail.js';
+import PassageCoin, { PassageTurn } from './PassageCoin.jsx';
 import './PassageRail.scss';
 
 const PIECE_COPY = Object.freeze({
@@ -28,7 +29,9 @@ function useTrackWidth(ref, mounted) {
 /**
  * The slim rail under the score: the one practice button, every passage of the
  * piece as a tile (widths follow bar counts, never scrolls), and the count that
- * opens the board. Tapping a tile only selects it. When a long piece cannot give
+ * opens the board. A passage is drawn as its state: a tomato, a flower, a silver
+ * coin or a gold coin. Tapping a tile only selects it. A host with no practice
+ * button of its own (the drill screen) leaves `onPractice` out. When a long piece cannot give
  * every tile a usable touch target the tiles become a plain map, and a tap on it
  * opens the board at that passage instead.
  */
@@ -39,29 +42,27 @@ export default function PassageRail({ model, flips = {}, piece = null, boardOpen
   const fits = railFits(model.tiles.length, width);
   const columns = model.tiles.map((tile) => `minmax(${fits ? `${TILE_MIN_PX}px` : '0'}, ${tile.barCount}fr)`).join(' ');
   const cheer = piece ? PIECE_COPY[piece] : null;
-  return <nav className="piano-passage-rail" aria-label="Passages in this piece">
+  const before = (level) => (level === 'gold' ? 'silver' : 'learning');
+  return <nav className="piano-passage-rail" data-bare={onPractice ? undefined : true} aria-label="Passages in this piece">
     {cheer && <button type="button" className="piano-passage-rail__cheer" data-level={piece} onClick={onDismissPiece}>
       <strong role="status">{cheer.title}</strong><span>{cheer.detail}</span>
     </button>}
-    <button type="button" className="piano-passage-rail__go" data-kind={model.target?.kind} disabled={!model.target} onClick={onPractice}>{model.buttonLabel}</button>
+    {onPractice && <button type="button" className="piano-passage-rail__go" data-kind={model.target?.kind} disabled={!model.target} onClick={onPractice}>{model.buttonLabel}</button>}
     <ol ref={track} className="piano-passage-rail__track" data-compact={!fits || undefined} style={{ gridTemplateColumns: columns, gap: fits ? TILE_GAP_PX : 2, maxWidth: `${model.tiles.length * 9}rem` }}>
       {model.tiles.map((tile, index) => <li key={tile.id}>
         <button type="button" className="piano-passage-rail__tile" data-state={tile.state} data-flip={flips[tile.id] || undefined}
-          style={flips[tile.id] && piece ? { animationDelay: `${index * 45}ms` } : undefined}
+          style={flips[tile.id] && piece ? { '--turn-delay': `${index * 45}ms` } : undefined}
           aria-current={tile.id === model.outlinedId ? 'step' : undefined} aria-pressed={fits ? tile.id === model.selectedId : undefined}
           aria-label={fits ? tile.label : `${tile.label}. Open the passage board`}
           onClick={() => (fits ? onSelect?.(tile.id) : onOpenBoard?.(tile.id))}>
+          {fits && <span className="piano-passage-rail__icon">{flips[tile.id] ? <PassageTurn from={before(flips[tile.id])} to={tile.state} /> : <PassageCoin state={tile.state} />}</span>}
           {fits && <span className="piano-passage-rail__bar">{tile.startLabel}</span>}
-          {fits && tile.state === 'learning' && <span className="piano-passage-rail__steps" aria-hidden="true">
-            {Array.from({ length: tile.steps.total }, (_, step) => <i key={step} data-done={step < tile.steps.done} />)}
-          </span>}
-          {fits && model.showWords && (tile.state === 'silver' || tile.state === 'gold') && <span className="piano-passage-rail__word" aria-hidden="true">{tile.state}</span>}
         </button>
       </li>)}
     </ol>
     <button type="button" className="piano-passage-rail__count" data-level={model.count.level} aria-expanded={boardOpen}
       aria-label={`${model.count.label}. ${boardOpen ? 'Close' : 'Open'} the passage board`} onClick={() => onOpenBoard?.(null)}>
-      <i aria-hidden="true" /><span>{model.count.text}</span><Chevron />
+      <PassageCoin state={model.count.level} /><span>{model.count.text}</span><Chevron />
     </button>
   </nav>;
 }

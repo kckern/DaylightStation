@@ -21,8 +21,17 @@ test('shows the most recently practiced piece with its next step', () => {
   assert.equal(players[0].piece.scoreId, SCORE);
   assert.equal(players[0].name, 'A');
   assert.deepEqual(players[0].piece.next, { passageId: 'm0-4', skill: 'left', label: 'Find the left-hand notes', start: 0, end: 4 });
-  assert.deepEqual(players[0].piece.passages.map((p) => p.state), ['learning', 'todo', 'todo']);
+  // One hand earned is real progress, but the passage is still a tomato.
+  assert.deepEqual(players[0].piece.passages.map((p) => p.state), ['todo', 'todo', 'todo']);
   assert.deepEqual(players[0].piece.passages[0].steps, { done: 1, total: 4 });
+});
+
+test('a passage with both hands earned is partway (the flower)', () => {
+  const both = { right: { passCount: 6 }, left: { passCount: 6 } };
+  const current = { scoreKey: KEY, record: record({ learn: { segments, passages: { 'm0-4': { rungs: both } } } }) };
+  const { piece } = deskFor({ a: [current] }).execute().players[0];
+  assert.deepEqual(piece.passages.map((p) => p.state), ['learning', 'todo', 'todo']);
+  assert.deepEqual(piece.passages[0].steps, { done: 2, total: 4 });
 });
 
 test('counts Silver and Gold from the same rules as Learn', () => {
