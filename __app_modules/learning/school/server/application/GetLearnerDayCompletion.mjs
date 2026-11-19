@@ -61,6 +61,8 @@ function compactSection(section) {
     reason: section.obligation?.reason ?? null,
     unknowable: section.obligation?.reason === 'no_history',
     weekly: (section.weekly ?? []).map(({ unitId, subject, state, servedOn }) => ({ unitId, subject, state, servedOn })),
+    // The day's work by track, for makeup credit (`domain/makeup.mjs`).
+    ...(section.ledger ? { ledger: section.ledger } : {}),
   };
 }
 

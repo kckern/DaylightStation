@@ -38,6 +38,9 @@ import {
 } from "../domain/termVerdict.mjs";
 import { studyDayForInstant } from "../domain/studyDay.mjs";
 import { dayOffTier } from "../domain/schoolCalendar.mjs";
+import {
+  DEFAULT_MAKEUP_POLICY, foldMakeup, makeupDeadline, makeupOpen,
+} from "../domain/makeup.mjs";
 
 const pendingRow = (studyDay, today) => ({ ...dayVerdict({ studyDay, today }), sections: [], weekly: [] });
 
@@ -45,6 +48,7 @@ export class TermVerdictService {
   #completion; #cache; #periods; #window; #timezone; #clock; #logger; #freshMs;
   #queues = new Map();
   #householdSchedule = null;
+  #makeupPolicy = () => DEFAULT_MAKEUP_POLICY;
   #changedAt = new Map(); // learnerId -> ms of the last completion input (see `invalidate`)
   // `${learnerId}|${day}|${today}` -> {startedMs, promise}: today's/yesterday's
   // live projections, shared while they are in flight and for `freshMs` after,
@@ -74,6 +78,9 @@ export class TermVerdictService {
     // day off covering it, read here from the calendar itself so a replayed
     // row and a live one agree by construction.
     householdSchedule = null,
+    // `school.yml → makeup` (`domain/makeup.mjs`), a value or a getter. Laid
+    // over the rows on every read; the cache keeps the raw replay.
+    makeupPolicy = DEFAULT_MAKEUP_POLICY,
   } = {}) {
     if (!getLearnerDayCompletion || !cache || !academicPeriods) {
       throw new Error('TermVerdictService requires getLearnerDayCompletion, cache and academicPeriods');
@@ -87,6 +94,35 @@ export class TermVerdictService {
     this.#freshMs = freshMs;
     this.#logger = logger;
     this.#householdSchedule = resolveLive(householdSchedule);
+    const livePolicy = resolveLive(makeupPolicy);
+    this.#makeupPolicy = () => livePolicy() ?? DEFAULT_MAKEUP_POLICY;
+  }
+
+  /**
+   * MAKEUP (`domain/makeup.mjs`). Spare work later in a week is credited to an
+   * earlier missed day of it. Applied to the rows on the way out, never
+   * written, so the cache stays the raw replay and a credit appears as soon
+   * as the later day's row is recomputed.
+   */
+  #withMakeup(rows, today) {
+    return foldMakeup(rows, { policy: this.#makeupPolicy(), today }).rows;
+  }
+
+  /**
+   * A cached row in a week whose makeup is still open must have been computed
+   * after its own day closed, and must carry the per-section ledger the fold
+   * reads. A row computed while its day was live (the board read it at noon,
+   * nobody read it as "yesterday") holds only the morning's work, and a row
+   * from before ledgers existed has nothing to lend.
+   */
+  #makeupStale(day, row, today) {
+    const policy = this.#makeupPolicy();
+    if (!policy.enabled || !row || row.state === 'unknown') return false;
+    if (today > makeupDeadline(day, policy)) return false;
+    const computedMs = row.computedAt ? Date.parse(row.computedAt) : NaN;
+    if (!Number.isFinite(computedMs)) return true;
+    if (studyDayForInstant(computedMs, { timezone: this.#timezone }) <= day) return true;
+    return (row.sections ?? []).some((s) => (s?.state === 'served' || s?.state === 'obligated') && !s.ledger);
   }
 
   today() {
@@ -127,7 +163,9 @@ export class TermVerdictService {
     return {
       ...verdict, computedAt,
       dayOff: off ? { tier: off.tier, label: off.label } : null,
-      sections: (result.sections ?? []).map(({ subject, state, reason, unknowable }) => ({ subject, state, reason, ...(unknowable ? { unknowable } : {}) })),
+      sections: (result.sections ?? []).map(({
+        subject, state, reason, unknowable, ledger,
+      }) => ({ subject, state, reason, ...(unknowable ? { unknowable } : {}), ...(ledger ? { ledger } : {}) })),
       weekly: (result.sections ?? []).flatMap((s) => s.weekly ?? []),
     };
   }
@@ -163,6 +201,19 @@ export class TermVerdictService {
    * is replayed once and merged back so the next ask is a cache read.
    */
   async dayRow(learnerId, studyDay, today = this.today()) {
+    const row = await this.#rawDayRow(learnerId, studyDay, today);
+    if (!this.#makeupPolicy().enabled || !row) return row;
+    // The day's makeup credit comes from LATER days of its week: read them
+    // from the cache (today's cached row may trail by `freshMs`; the board's
+    // own `read` is the exact answer).
+    const term = this.termFor({ today: studyDay });
+    const cached = term ? await this.#cache.read(learnerId, term.termId) : null;
+    const week = cached?.version === VERDICT_VERSION ? { ...cached.days } : {};
+    week[studyDay] = row;
+    return this.#withMakeup(week, today)[studyDay];
+  }
+
+  async #rawDayRow(learnerId, studyDay, today) {
     if (studyDay >= addDays(today, -1)) return this.computeDay(learnerId, studyDay, today);
     const term = this.termFor({ today: studyDay });
     if (!term) return this.computeDay(learnerId, studyDay, today);
@@ -171,7 +222,7 @@ export class TermVerdictService {
     const nowMs = this.#clock().getTime();
     const retryDue = row?.state === 'unknown'
       && (row.reason === 'pending' || !row.retryAfter || Date.parse(row.retryAfter) <= nowMs);
-    if (row && !retryDue) return row;
+    if (row && !retryDue && !this.#makeupStale(studyDay, row, today)) return row;
     const fresh = await this.computeDay(learnerId, studyDay, today);
     this.#enqueue(learnerId, () => this.#merge(learnerId, term.termId, { [studyDay]: fresh })).catch((err) => {
       this.#logger.warn?.('school.term-verdicts.day-cache-failed', { learnerId, studyDay, error: err?.message ?? String(err) });
@@ -215,7 +266,13 @@ export class TermVerdictService {
       }
       const retryDue = row?.state === 'unknown' && row.reason !== 'pending'
         && (!row.retryAfter || Date.parse(row.retryAfter) <= nowMs);
-      if (row && !retryDue && !(row.state === 'unknown' && row.reason === 'pending')) { rows[day] = row; continue; }
+      if (row && !retryDue && !(row.state === 'unknown' && row.reason === 'pending')) {
+        // A row the open makeup week cannot lend from is refreshed in the
+        // background; the read keeps it meanwhile rather than going pending.
+        if (this.#makeupStale(day, row, today)) stale.push(day);
+        rows[day] = row;
+        continue;
+      }
       stale.push(day);
       rows[day] = row ?? pendingRow(day, today);
     }
@@ -231,7 +288,7 @@ export class TermVerdictService {
         this.#logger.warn?.('school.term-verdicts.backfill-failed', { learnerId, error: err?.message ?? String(err) });
       });
     }
-    return this.#present({ term, today, rows, detail });
+    return this.#present({ term, today, rows: this.#withMakeup(rows, today), detail });
   }
 
   /**
@@ -318,6 +375,16 @@ export class TermVerdictService {
       studyDay, state: row.state, reason: row.reason ?? null,
       served: row.served ?? 0, asked: row.asked ?? 0, weekday: row.weekday,
       computedAt: row.computedAt ?? null, dayOff: row.dayOff ?? null,
+      // Makeup: `timeliness` is `makeup` when a later day's work turned a
+      // section served; `makeup` names each such section and the day it was
+      // done. `makeupOpen`: an unfinished day that can still be made up, so a
+      // reader (the economy) must not settle it yet.
+      timeliness: row.timeliness ?? 'on-time',
+      ...(row.makeup ? { makeup: row.makeup } : {}),
+      makeupOpen: ['partial', 'none'].includes(row.state)
+        && makeupOpen({ day: studyDay, today, policy: this.#makeupPolicy() }),
+      // With detail, sections keep their makeup `ledger`: the makeup sheet
+      // reads it to list only work that can still earn credit today.
       ...(detail ? { sections: row.sections ?? [], weekly: row.weekly ?? [] } : {}),
     }));
     const byWeek = new Map();

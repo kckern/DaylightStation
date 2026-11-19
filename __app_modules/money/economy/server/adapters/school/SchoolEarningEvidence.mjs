@@ -14,9 +14,11 @@
  *   units        the week's graded work sessions, with subject/course from the curriculum
  *
  * Reads only the application services School already has (term verdicts, the
- * learner session list, the curriculum), never files. Every fact is stamped
- * `timeliness: 'on-time'`: makeup (taxonomy D14) is not built, and the field
- * keeps future payout refs stable when it is.
+ * learner session list, the curriculum), never files. Day and section facts
+ * carry the term grid's `timeliness`: `makeup` when later work in the week
+ * turned them served (School makeup, taxonomy D14, `school.yml → makeup`),
+ * otherwise `on-time`; and `makeupOpen` while an unfinished day can still be
+ * made up, so the earnings rules do not settle it before its deadline.
  */
 import { ISchoolEarningEvidence } from "../../application/ports/IEarningEvidenceSource.mjs";
 import { dayOffTier, EXCUSING_TIERS, isoWeekday } from "../../../../../learning/school/server/study-calendar.mjs";
@@ -71,14 +73,20 @@ export class SchoolEarningEvidence extends ISchoolEarningEvidence {
       return { sectionDays: [], days: [], week: null, units: [], debriefs: [], coverage: 'outside-term' };
     }
     const rows = (term?.days ?? []).filter((d) => inWeek(d.studyDay));
+    // Makeup (School `domain/makeup.mjs`, taxonomy D14): a day turned green by
+    // later work in its week reads `timeliness: 'makeup'`; an unfinished day
+    // that can still be made up carries `makeupOpen` and is not settled yet.
     const days = rows.map((d) => ({
-      day: d.studyDay, state: d.state, reason: d.reason ?? null, greenWeek: this.#greenWeekDay(d.studyDay), timeliness: ON_TIME,
+      day: d.studyDay, state: d.state, reason: d.reason ?? null, greenWeek: this.#greenWeekDay(d.studyDay),
+      timeliness: d.timeliness ?? ON_TIME, makeupOpen: d.makeupOpen === true,
     }));
     const weekdays = [0, 1, 2, 3, 4].map((i) => new Date(Date.parse(`${week.from}T00:00:00.000Z`) + i * 86_400_000)
       .toISOString().slice(0, 10));
     const excusedDays = weekdays.filter((day) => !this.#greenWeekDay(day));
     const sectionDays = rows.flatMap((d) => (d.sections ?? []).map((s) => ({
-      day: d.studyDay, subject: s.subject, state: s.state, reason: s.reason ?? null, timeliness: ON_TIME,
+      day: d.studyDay, subject: s.subject, state: s.state, reason: s.reason ?? null,
+      timeliness: s.makeup ? 'makeup' : ON_TIME,
+      makeupOpen: d.makeupOpen === true && s.state === 'obligated',
     })));
     const row = (term?.weeks ?? []).find((w) => w.weekId === week.from) ?? null;
     const weekFact = row ? {

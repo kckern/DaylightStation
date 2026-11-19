@@ -29,6 +29,7 @@
  * per-unit tokens did — a token a child is already holding should keep
  * meaning something.
  */
+import { ValidationError } from '#domains/core/errors/index.mjs';
 import { PlanProjection } from "../PlanProjection.mjs";
 import { mintToken } from "../../domain/sessions/tokens.mjs";
 import { mintAccessCode } from "../../domain/sessions/accessCode.mjs";
@@ -93,6 +94,7 @@ const READING_CODE_MAX_USES = 12;
 const PREVIEW_TOKEN = 'preview:not-a-ticket';
 const PREVIEW_BULK_TOKEN = 'preview:not-a-bulk-ticket';
 const PREVIEW_READING_TOKEN = 'preview:not-a-reading-ticket';
+const PREVIEW_MAKEUP_TOKEN = 'preview:not-a-makeup-ticket';
 const PREVIEW_ACCESS_CODE = '000000';
 
 
@@ -105,7 +107,7 @@ export class BuildAgenda {
   #sessions; #tokens; #launchers; #timezone; #teacherNotes;
   #clock; #rng; #newSessionId; #ttlMs; #logger; #reviewQueue; #schoolCalcStudies; #schoolCalcMode;
   #selfService; #languageReelService; #previewOnly; #planProjection; #accessCodeMaxUses;
-  #economy; #economyTimeoutMs; #scheduler;
+  #economy; #economyTimeoutMs; #scheduler; #getMakeupWork;
 
   /**
    * @param {object} deps
@@ -150,6 +152,11 @@ export class BuildAgenda {
    * @param {{withDeadline: Function}|null} [deps.scheduler] - bounds the
    *   economy call (this layer holds no timers of its own). Composition always
    *   passes one; without it the call is awaited unbounded.
+   * @param {import('./GetMakeupWork.mjs').GetMakeupWork|(() => object)|null} [deps.getMakeupWork]
+   *   (or a getter for one) what is still owed from earlier this week. When it
+   *   lists anything, the agenda carries ONE small card whose `makeup_print`
+   *   ticket prints the makeup sheet. Absent or empty, the agenda is
+   *   byte-identical to one built before makeup existed.
    * @param {object} [deps.logger]
    */
   constructor({
@@ -173,6 +180,7 @@ export class BuildAgenda {
     // can quietly go back to hand-assembling the inputs.
     planProjection = null,
     economy = null, economyTimeoutMs = DEFAULT_ECONOMY_TIMEOUT_MS, scheduler = null,
+    getMakeupWork = null,
     logger = console,
   } = {}) {
     if (!curriculum || !assignments || !sessions || !tokens) {
@@ -192,6 +200,7 @@ export class BuildAgenda {
     this.#economy = typeof economy?.bankSummary === 'function' ? economy : null;
     this.#economyTimeoutMs = economyTimeoutMs;
     this.#scheduler = typeof scheduler?.withDeadline === 'function' ? scheduler : null;
+    this.#getMakeupWork = typeof getMakeupWork === 'function' ? getMakeupWork : () => getMakeupWork;
     if (!['off', 'issue', 'preview'].includes(schoolCalcMode)) {
       throw new Error('BuildAgenda schoolCalcMode must be off, issue, or preview');
     }
@@ -573,6 +582,59 @@ export class BuildAgenda {
       }
     }
 
+    // MAKEUP WORK: one card, never a lesson. A missed section from earlier this
+    // week is listed by `GetMakeupWork` (which never throws); the agenda gets a
+    // single `makeup_print` ticket that prints the makeup sheet, where the
+    // lessons are. The ticket names only the learner, so a scan recomputes
+    // what is still owed.
+    // Only for the LIVE study day: makeup is what is owed now, and a dry run of
+    // another day must not print (or preview) today's debt as that day's.
+    const liveDay = studyDayForInstant(this.#clock().getTime(), { timezone: this.#timezone, boundaryHour: BOUNDARY_HOUR });
+    const makeupWork = studyDay == null || studyDay === liveDay
+      ? await this.#readMakeupWork(learnerId)
+      : { deadline: null, items: [] };
+    let makeupCard = null;
+    if (makeupWork.items.length) {
+      if (this.#previewOnly) {
+        makeupCard = {
+          token: PREVIEW_MAKEUP_TOKEN,
+          ...(this.#selfService ? { accessCode: PREVIEW_ACCESS_CODE } : {}),
+          items: makeupWork.items, deadline: makeupWork.deadline,
+        };
+      } else {
+        const makeupExpiresAt = this.#makeupExpiryFor(makeupWork.deadline, now) ?? expiresAt;
+        const makeupAccessCode = this.#selfService
+          ? mintAccessCode({ rng: this.#rng, taken: (code) => liveCodes.has(code) || mintedCodes.has(code) })
+          : null;
+        if (makeupAccessCode) mintedCodes.add(makeupAccessCode);
+        const makeupRecord = mintToken({
+          tokenClass: 'makeup_print',
+          subject: { learnerId },
+          at: nowIso,
+          rng: this.#rng,
+          expiresAt: makeupExpiresAt,
+          ...(makeupAccessCode ? {
+            accessCode: makeupAccessCode,
+            accessCodeExpiresAt: this.#accessCodeExpiryFor(nowIso, makeupExpiresAt),
+            maxUses: this.#accessCodeMaxUses,
+          } : {}),
+        });
+        await this.#tokens.put(makeupRecord);
+        // Handed back like every other live code (cooldown revocation).
+        if (makeupRecord.accessCode) mintedTokens.push(makeupRecord.token);
+        makeupCard = {
+          token: makeupRecord.token,
+          ...(makeupRecord.accessCode ? { accessCode: makeupRecord.accessCode } : {}),
+          items: makeupWork.items, deadline: makeupWork.deadline,
+        };
+        this.#logger.info?.('school.agenda.makeup.minted', {
+          learnerId,
+          subjects: [...new Set(makeupWork.items.map((item) => item.subject))],
+          days: [...new Set(makeupWork.items.map((item) => item.day))],
+        });
+      }
+    }
+
     // THE READING LOG, FOR EVERY LEARNER — enrolled or not.
     //
     // A `book-log` enrollment carries an OBLIGATION; it does not grant access.
@@ -794,6 +856,7 @@ export class BuildAgenda {
       offers,
       createdSessions,
       mintedTokens,
+      ...(makeupWork.items.length ? { makeup: { deadline: makeupWork.deadline, items: makeupWork.items } } : {}),
       document: agendaDocument({
         learnerId, learnerName, generatedAt: nowIso, timeZone: this.#timezone,
         sections: sectionsForDocument, tokensBySubject, accessCodesByToken,
@@ -806,8 +869,31 @@ export class BuildAgenda {
         readingToken, readingAccessCode, readingFeature, readingSubject,
         notes,
         ...(economyLine ? { economyLine } : {}),
+        ...(makeupCard ? { makeup: makeupCard } : {}),
       }),
     };
+  }
+
+  /** What is still owed from earlier this week; empty when unwired or on any failure. */
+  async #readMakeupWork(learnerId) {
+    const getMakeupWork = this.#getMakeupWork();
+    if (typeof getMakeupWork?.execute !== 'function') return { deadline: null, items: [] };
+    try {
+      const work = await getMakeupWork.execute({ learnerId });
+      return Array.isArray(work?.items) ? { deadline: work.deadline ?? null, items: work.items } : { deadline: null, items: [] };
+    } catch (error) {
+      this.#logger.warn?.('school.agenda.makeup-failed', { learnerId, error: error?.message ?? String(error) });
+      return { deadline: null, items: [] };
+    }
+  }
+
+  /** The end of the makeup deadline's study day, or null when it cannot be told or has passed. */
+  #makeupExpiryFor(deadline, now) {
+    const window = typeof deadline === 'string'
+      ? studyDayWindowForDate(deadline, { timezone: this.#timezone, boundaryHour: BOUNDARY_HOUR })
+      : null;
+    if (!window || window.endAtMs <= now.getTime()) return null;
+    return new Date(window.endAtMs).toISOString();
   }
 
   /**

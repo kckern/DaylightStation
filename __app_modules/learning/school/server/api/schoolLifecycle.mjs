@@ -322,6 +322,9 @@ export function createSchoolLifecycleRouter({
           // Planner refusals (admin advocacy A4): a dead course id used to
           // surface only as a warn log — now the console can render it.
           errors: result.plan?.errors ?? [],
+          // Earlier days this week still owed ({deadline, items}), so the
+          // status board can say a makeup sheet is waiting. Null when none.
+          makeup: result.makeup ?? null,
         });
       }
       res.set('Cache-Control', 'private, no-store').set('X-School-Preview', 'agenda-non-recording');
