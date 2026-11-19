@@ -1,0 +1,149 @@
+// The home desk: one sheet of music on the stand above the keyboard. Every region
+// has a fixed place, so loading data never moves the screen.
+.piano-desk {
+  flex: 1 1 auto;
+  width: 100%;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 20rem;
+  grid-template-rows: minmax(0, 1fr) 3.75rem;
+  gap: var(--sp-3);
+
+  button { font: inherit; color: inherit; cursor: pointer; }
+  button:disabled { cursor: default; color: var(--piano-muted); }
+
+  &__paper {
+    min-width: 0;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    border-radius: var(--r-md);
+    background: #fff;
+    color: #17181c;
+  }
+  &__paper-skeleton { flex: 1; }
+  &__head {
+    flex: 0 0 auto;
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: var(--sp-4);
+    padding: var(--sp-3) var(--sp-4) 0;
+    h2 { margin: 0; min-width: 0; font-size: 1.65rem; line-height: 1.15; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    span { flex: 0 0 auto; font-size: 1.05rem; }
+  }
+  &__stage { flex: 1 1 auto; min-height: 0; position: relative; }
+  &__notation.piano-exercise-run__score {
+    position: absolute;
+    inset: 0;
+    display: grid;
+    grid-template: minmax(0, 1fr) / minmax(0, 1fr);
+    place-items: stretch;
+    padding: var(--sp-1) var(--sp-3) var(--sp-2);
+    border-radius: 0;
+    background: #fff;
+
+    // Definite rows at every level, so the engraving is contained by the page
+    // instead of growing past it.
+    .piano-score-passage,
+    .musicxml-renderer,
+    .musicxml-renderer__svg {
+      grid-template: minmax(0, 1fr) / minmax(0, 1fr);
+      place-items: stretch;
+      min-height: 0;
+    }
+  }
+  &__notation-error { margin: 0; height: 100%; display: grid; place-items: center; color: #4b4f58; font-size: 1.1rem; }
+  &__blank {
+    flex: 1;
+    display: grid;
+    place-items: center;
+    background: repeating-linear-gradient(to bottom, #fff 0 1.4rem, #c9ccd2 1.4rem calc(1.4rem + 1px));
+    h2 { margin: 0; padding: var(--sp-2) var(--sp-4); background: #fff; font-size: 1.8rem; }
+  }
+
+  &__side { min-width: 0; min-height: 0; display: grid; grid-template-rows: 3.25rem minmax(0, 1fr) 4.75rem; gap: var(--sp-2); }
+  &__family {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-2);
+    button { width: 3rem; height: 3rem; padding: 0.15rem; border: 2px solid transparent; border-radius: 50%; background: none; }
+    button[aria-pressed='true'] { border-color: var(--piano-accent); }
+    button:disabled .piano-avatar { filter: grayscale(1); }
+    .piano-avatar { display: block; width: 100%; height: 100%; font-size: 0.75rem; }
+  }
+  &__next { display: flex; flex-direction: column; justify-content: center; gap: var(--sp-2); min-height: 0; p { margin: 0; } }
+  &__bars { font-size: 2.2rem; font-weight: 800; line-height: 1; }
+  &__task { font-size: 1.15rem; color: var(--piano-muted); min-height: 1.4em; }
+  &__count { font-size: 1rem; color: var(--piano-muted); }
+  &__go {
+    min-height: 4.25rem;
+    border: 0;
+    border-radius: var(--r-md);
+    background: var(--piano-accent);
+    font-size: 1.45rem !important;
+    font-weight: 800;
+    color: var(--piano-accent-ink) !important;
+    &:active { filter: brightness(0.92); }
+    &:disabled { background: var(--piano-surface-2); color: var(--piano-muted) !important; }
+  }
+  &__course button {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    gap: var(--sp-2);
+    padding: var(--sp-1) var(--sp-2);
+    border: 1px solid var(--piano-border);
+    border-radius: var(--r-md);
+    background: var(--piano-surface);
+    text-align: left;
+    img { width: 2.6rem; height: 3.7rem; object-fit: cover; border-radius: 0.3rem; flex: 0 0 auto; }
+    span { min-width: 0; display: grid; }
+    strong, small { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    small { color: var(--piano-muted); }
+  }
+
+  &__progress { grid-column: 1 / -1; min-width: 0; }
+  &__progress-empty {
+    height: 100%;
+    margin: 0;
+    display: grid;
+    place-items: center;
+    border: 2px dashed var(--piano-border);
+    border-radius: var(--r-sm);
+    color: var(--piano-muted);
+    font-size: 1.05rem;
+  }
+  &__map { list-style: none; margin: 0; padding: 0; height: 100%; display: grid; gap: 0.3rem; li { min-width: 0; } }
+  &__passage {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    padding: 0 0 0.45rem;
+    display: grid;
+    place-items: center;
+    border: 2px solid var(--piano-border);
+    border-radius: var(--r-sm);
+    background: var(--piano-surface);
+    font-size: 1rem;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    &[data-state='learning'] { background: var(--piano-surface-2); }
+    &[data-state='silver'] { border-color: var(--piano-silver); background: var(--piano-silver); color: var(--piano-medal-ink) !important; }
+    &[data-state='gold'] { border-color: var(--piano-gold); background: var(--piano-gold); color: var(--piano-medal-ink) !important; }
+    &[aria-current='step'] { outline: 3px solid var(--piano-accent); outline-offset: 1px; }
+    &:disabled[aria-current='step'] { outline-color: var(--piano-border); }
+  }
+  &__steps {
+    position: absolute;
+    left: 0.3rem;
+    right: 0.3rem;
+    bottom: 0.3rem;
+    display: flex;
+    gap: 0.15rem;
+    i { flex: 1; height: 0.25rem; border-radius: 1px; background: var(--piano-border); }
+    i[data-done='true'] { background: var(--piano-silver); }
+  }
+}

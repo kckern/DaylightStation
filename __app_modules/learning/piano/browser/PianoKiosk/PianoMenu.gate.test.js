@@ -113,7 +113,7 @@ describe('PianoMenu with an owed lesson', () => {
     renderMenu();
     expect(screen.getByText('Lesson 5: Broken Chords')).toBeTruthy();
     expect(tiles()).toHaveLength(0);
-    expect(document.querySelector('.piano-menu-activity')).toBeNull();
+    expect(document.querySelector('.piano-desk')).toBeNull();
   });
 
   it('names the course and unit the lesson belongs to', () => {
@@ -181,9 +181,7 @@ describe('PianoMenu while the lesson verdict is still outstanding', () => {
   it('shuts the recent-courses strip the escape went through', async () => {
     gateState = LOADING;
     renderMenu();
-    await waitFor(() => expect(screen.getByAltText('Course B')).toBeTruthy());
-    expect(document.querySelector('.piano-menu-activity').className).toContain('is-disabled');
-    const course = document.querySelector('.piano-menu-activity__course');
+    const course = await screen.findByRole('button', { name: /Course B/ });
     expect(course.disabled).toBe(true);
     course.click();
     expect(navigate).not.toHaveBeenCalled();
@@ -192,9 +190,7 @@ describe('PianoMenu while the lesson verdict is still outstanding', () => {
   it('reopens the strip once the verdict lands', async () => {
     gateState = NOT_GATED;
     renderMenu();
-    await waitFor(() => expect(screen.getByAltText('Course B')).toBeTruthy());
-    expect(document.querySelector('.piano-menu-activity').className).not.toContain('is-disabled');
-    expect(document.querySelector('.piano-menu-activity__course').disabled).toBe(false);
+    expect((await screen.findByRole('button', { name: /Course B/ })).disabled).toBe(false);
   });
 
   // Not belt-and-braces coverage: PianoTile renders a real <button disabled>,

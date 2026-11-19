@@ -15,6 +15,7 @@
 import { GetCourseProgress } from './usecases/GetCourseProgress.mjs';
 import { GetPlayableUnits } from './usecases/GetPlayableUnits.mjs';
 import { GetRecentCourseActivity } from './usecases/GetRecentCourseActivity.mjs';
+import { GetPianoDesk } from './usecases/GetPianoDesk.mjs';
 
 export class PianoContainer {
   #curriculumIndex;
@@ -27,14 +28,17 @@ export class PianoContainer {
   #plexClient;
   #learningService;
   #schoolAssignments;
+  #timezone;
   #logger;
 
   #getCourseProgress;
   #getPlayableUnits;
   #getRecentCourseActivity;
+  #getPianoDesk;
 
   constructor({ studioDatastore, fitnessPlayableService = null, userVideoProgressStore = null, composerSongStore = null, configProjection, plexClient = null, learningService = null, schoolAssignments = null, logger = console } = {}) {
     this.#curriculumIndex = arguments[0]?.curriculumIndex ?? null;
+    this.#timezone = arguments[0]?.timezone ?? null;
     if (!studioDatastore) throw new Error('PianoContainer: studioDatastore required');
     if (!configProjection) throw new Error('PianoContainer: configProjection required');
     this.#studioDatastore = studioDatastore;
@@ -96,6 +100,18 @@ export class PianoContainer {
   /** Activity endpoint 503s without the Plex-backed services. */
   isActivityConfigured() {
     return !!this.#fitnessPlayableService && !!this.#plexClient;
+  }
+
+  getPianoDesk() {
+    if (!this.#getPianoDesk) {
+      this.#getPianoDesk = new GetPianoDesk({
+        datastore: this.#studioDatastore,
+        configProjection: this.#configProjection,
+        timezone: this.#timezone,
+        logger: this.#logger,
+      });
+    }
+    return this.#getPianoDesk;
   }
 
   getRecentCourseActivity() {

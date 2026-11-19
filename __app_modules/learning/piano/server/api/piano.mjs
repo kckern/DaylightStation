@@ -92,8 +92,9 @@ function attemptPolicyErrors(userId, body) {
  *   GET    /bank/<seed>/instances                → instance ids (?limit, ?expand=true)
  *   GET    /bank/<seed>/instance?<axes>          → one materialized instance
  *
- *   Menu activity strip:
+ *   Home desk:
  *   GET    /activity/recent                  → { players: [...] }  (per-player most-recent lesson-course progress)
+ *   GET    /activity/desk                    → { players: [...] }  (per-player current piece, passages and next step)
  *
  *   Game-time budget (server is the source of truth; unwired service fails open):
  *   GET    /users/:userId/game-budget                          → live balance ({enabled:false} if unwired/off)
@@ -1218,13 +1219,18 @@ export function createPianoRouter({ pianoContainer, schoolLearnerDirectory = nul
     res.json(outcome.result);
   }));
 
-  // ── Menu activity strip: per-player most-recent lesson-course progress ──────
+  // ── Home desk courses: per-player most-recent lesson-course progress ──────
   router.get('/activity/recent', asyncHandler(async (req, res) => {
     if (!pianoContainer.isActivityConfigured()) {
       return res.status(503).json({ error: 'Piano activity service not configured' });
     }
     const result = await pianoContainer.getRecentCourseActivity().execute();
     res.json(result);
+  }));
+
+  // ── Home desk: each player's current piece and next step ───────────────────
+  router.get('/activity/desk', asyncHandler(async (req, res) => {
+    res.json(pianoContainer.getPianoDesk().execute());
   }));
 
   // ── Always-on MIDI history (.mid per user/date) ─────────────────────────────

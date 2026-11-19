@@ -10,6 +10,9 @@
  *   piano-rung       (milestone)     the first time a rung was reached, on
  *                                    either ladder, from the dated rung log.
  *                                    key `${ladder}:${game}:${rung}`.
+ *   piano-piece      (milestone)     the first time a whole piece became all
+ *                                    Silver, and all Gold, from the dated piece
+ *                                    log. key `${level}:${scoreId}`.
  *
  * Milestones are reported only when their day falls inside the week, and a
  * key is the achievement's identity forever: the same win or rung never
@@ -20,15 +23,27 @@
  * Levels and rungs are in the units the game stores and shows: chess's
  * opponent levels are zero-based (Level 0 … Level 9), the others one-based.
  * The rung log has no history before it shipped (2026-11), so a rung reached
- * before then is never a milestone.
+ * before then is never a milestone. The piece log is the same (2026-11-18):
+ * it is written only when one saved take finishes the piece, so legacy credit
+ * and re-derived certification are never milestones.
  */
-export const PIANO_ACHIEVEMENT_ACTIVITIES = Object.freeze(['board-game-level', 'piano-practice', 'piano-rung']);
+export const PIANO_ACHIEVEMENT_ACTIVITIES = Object.freeze(['board-game-level', 'piano-practice', 'piano-rung', 'piano-piece']);
 
 export const BOARD_GAME_LABELS = Object.freeze({
   chess: 'Chess',
   checkers: 'Checkers',
   'connect-four': 'Connect Four',
 });
+
+const PIECE_LEVEL_LABELS = Object.freeze({ silver: 'Silver', gold: 'Gold' });
+
+/** "files:a/b/fur-elise.mxl" reads "Fur Elise". Display only. */
+function pieceTitle(scoreId) {
+  const base = String(scoreId ?? '').split('/').pop().replace(/^[a-z]+:/i, '').replace(/\.[a-z0-9]+$/i, '');
+  const words = base.replace(/[_-]+/g, ' ').replace(/\s+/g, ' ').trim();
+  if (!words) return 'A piece';
+  return /\s/.test(base) || base !== base.toLowerCase() ? words : words.replace(/(^|\s)\S/g, (c) => c.toUpperCase());
+}
 
 const LADDER_LABELS = Object.freeze({ match: 'rung', addressing: 'reading rung' });
 
@@ -46,11 +61,12 @@ function attemptPurpose(attempt) {
  * @param {{listGameSummaries(gameId, userIds): Promise<Array>|Array}} deps.gameHistory  DataServicePianoGameRepository
  * @param {{listCreatedBetween(userId, {fromMs, toMs}): Array}} deps.attemptStore  YamlPianoAttemptStore
  * @param {{list(userId): Array<{at, game, ladder, from, to}>}} deps.rungLog  PianoRungLog
+ * @param {{list(userId): Array<{at, scoreId, level}>}} [deps.pieceLog]  PianoPieceLog
  * @param {object} [deps.logger]
  * @param {string[]} [deps.games]  board games to read
  */
 export function createPianoAchievementProvider({
-  gameHistory, attemptStore, rungLog, logger = null, games = Object.keys(BOARD_GAME_LABELS),
+  gameHistory, attemptStore, rungLog, pieceLog = null, logger = null, games = Object.keys(BOARD_GAME_LABELS),
 } = {}) {
   async function boardGameLevels({ learnerIds, week, studyDay }) {
     const out = Object.fromEntries(learnerIds.map((id) => [id, []]));
@@ -115,10 +131,31 @@ export function createPianoAchievementProvider({
     return out;
   }
 
+  function piecesFinished({ learnerIds, week, studyDay }) {
+    if (!pieceLog) throw new Error('piece log unavailable');
+    const out = {};
+    for (const id of learnerIds) {
+      const first = new Map(); // key -> the earliest dated finish, which is the only one that counts
+      for (const entry of pieceLog.list(id)) {
+        const atMs = Date.parse(entry?.at ?? '');
+        if (!Number.isFinite(atMs) || !entry.scoreId || !PIECE_LEVEL_LABELS[entry.level]) continue;
+        const key = `${entry.level}:${entry.scoreId}`;
+        const candidate = { day: studyDay(atMs), atMs, key, scoreId: entry.scoreId, level: entry.level };
+        if (earlier(candidate, first.get(key))) first.set(key, candidate);
+      }
+      out[id] = [...first.values()]
+        .filter((piece) => inWeek(piece.day, week))
+        .sort((a, b) => a.day.localeCompare(b.day) || a.atMs - b.atMs || a.key.localeCompare(b.key))
+        .map((piece) => ({ key: piece.key, day: piece.day, label: `${pieceTitle(piece.scoreId)} all ${PIECE_LEVEL_LABELS[piece.level]}` }));
+    }
+    return out;
+  }
+
   const sources = [
     { activity: 'board-game-level', part: 'milestones', read: boardGameLevels },
     { activity: 'piano-practice', part: 'days', read: practiceDays },
     { activity: 'piano-rung', part: 'milestones', read: rungsReached },
+    { activity: 'piano-piece', part: 'milestones', read: piecesFinished },
   ];
 
   return {

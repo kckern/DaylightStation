@@ -170,6 +170,19 @@ function legacyReady(legacy, segment, task) {
 }
 
 export const isGoldWork = (task) => task.mode !== 'free' && task.track !== 'silver';
+
+/**
+ * One projected passage as every surface shows it: not started (`todo`), `learning`
+ * with its Silver steps counted, `silver` or `gold`. The home desk and the
+ * sheet-music rail both read this, so they cannot disagree.
+ */
+export function passageProgress(segment) {
+  const steps = (segment.skills ?? []).filter((skill) => skill.track === 'silver');
+  const done = steps.filter((skill) => skill.ready).length;
+  const started = done > 0 || steps.some((skill) => skill.successes > 0);
+  const state = segment.certification?.gold ? 'gold' : segment.certification?.silver ? 'silver' : started ? 'learning' : 'todo';
+  return { id: segment.id, start: segment.inMeasure, end: segment.outMeasure, state, steps: { done, total: steps.length } };
+}
 const certificate = (achievement, provenance) => ({ at: achievement?.at ?? null, provenance });
 
 function segmentProjection(plan, state, legacy, segment) {
@@ -250,7 +263,7 @@ const certificateStamp = (value) => (value ? value.at ?? 'legacy' : null);
 export function coachSummary(projection, { now, state = projection.state }) {
   return { total: projection.piece.total, silver: projection.piece.silver, gold: projection.piece.gold,
     nextPassageId: projection.piece.nextPassageId, setAside: { ...(state?.setAside ?? {}) },
-    passages: projection.segments.map((segment) => ({ id: segment.id, start: segment.inMeasure, end: segment.outMeasure,
+    passages: projection.segments.map((segment) => ({ id: segment.id, start: segment.inMeasure, end: segment.outMeasure, parts: segment.playableParts,
       silver: certificateStamp(segment.certification.silver), gold: certificateStamp(segment.certification.gold) })),
     updatedAt: now };
 }

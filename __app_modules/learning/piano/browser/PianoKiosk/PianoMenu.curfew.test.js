@@ -7,7 +7,7 @@ import { __clearPianoListCache } from './usePianoList.js';
 
 // Curfew (config-driven, data/household/piano/config.yml → `curfew:`): inside
 // the window every door out of the home screen is shut — tiles and the
-// activity strip's course buttons — while the piano's own auto-enter-Studio
+// home desk's course button — while the piano's own auto-enter-Studio
 // path (useAutoStudioEntry, wired in PianoApp, not here) is untouched.
 
 const navigate = vi.fn();
@@ -41,7 +41,7 @@ vi.mock('../../../../../frontend/src/lib/logging/Logger.js', () => ({
 const CURFEW = { enabled: true, start: '19:00', end: '06:00' };
 const ACTIVITY = {
   players: [{
-    userId: 'learner2', name: 'learner2', lastPlayedAt: '2026-08-21T10:00:00Z',
+    userId: 'guest', name: 'learner2', lastPlayedAt: '2026-08-21T10:00:00Z',
     courses: [{
       courseId: 'plex:11', courseTitle: 'Course B', thumbnail: '/img/b',
       completed: 13, total: 57, percent: 23, lastPlayedAt: '2026-08-21T10:00:00Z',
@@ -100,13 +100,10 @@ describe('PianoMenu under curfew', () => {
     expect(screen.queryByText(/the piano is still on/i)).toBeNull();
   });
 
-  it('disables the activity strip’s course buttons', async () => {
+  it('disables the home desk course button', async () => {
     atClock(20);
     renderMenu();
-    await waitFor(() => expect(screen.getByAltText('Course B')).toBeTruthy());
-    const strip = document.querySelector('.piano-menu-activity');
-    expect(strip.className).toContain('is-disabled');
-    const course = document.querySelector('.piano-menu-activity__course');
+    const course = await screen.findByRole('button', { name: /Course B/ });
     expect(course.disabled).toBe(true);
     course.click();
     expect(navigate).not.toHaveBeenCalled();

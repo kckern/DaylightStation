@@ -227,6 +227,7 @@ git rev-parse HEAD > {env.ops_docs}/docs-last-updated.txt
 | Media source healing (Plex refuses a file: proxy 503, Player waits, backend repair ladder) | `__docs/reference/player/media-source-healing.md` |
 | Home Line video calling (state, signaling, recovery, observability) | `__docs/reference/call/README.md` |
 | Real-time game kit (step runner, frame driver, effect dispatcher, tick lerp, run roles, simulated piano clock, gem-ceremony ordering) | `__docs/reference/gaming/realtime-kit.md` |
+| Piano home desk (current piece, next passage, Silver/Gold passage map, `activity/desk`) | `__docs/reference/piano/home-desk.md` |
 | Piano Producer (jam/song builder) | `__docs/reference/piano/producer.md` |
 | Piano tablet screen control (screensaver, manual off holds, power authority) | `__docs/reference/piano/screen-control.md` |
 | Piano voice patches + Patch finder (catalog address vs what the keyboard plays, `voicePatches` config, audition by ear, bridge `/midi/tap` listen) | `__docs/reference/piano/voice-patches.md` |

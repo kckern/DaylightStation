@@ -93,7 +93,7 @@ describe('PianoMenu (tile grid columns)', () => {
     render(createElement(MemoryRouter, null, createElement(PianoMenu)));
     const ul = document.querySelector('.piano-menu__tiles');
     expect(ul).toBeTruthy();
-    expect(ul.style.getPropertyValue('--tile-cols')).toBe('5');
+    expect(ul.style.getPropertyValue('--tile-cols')).toBe(String(PIANO_MODES.length));
   });
 });
 
@@ -114,23 +114,19 @@ describe('PianoMenu (school completion gate)', () => {
   });
 });
 
-// Integration-lite: the menu activity strip (Task 8, spec
-// 2026-07-28-piano-menu-activity-strip) mounts inside PianoMenu, above the tile
-// wall, without displacing it. Reuses Task 8's DaylightAPI mock pattern.
-describe('PianoMenu (activity strip)', () => {
-  // The strip reads through the shared SWR list cache — an earlier render in
-  // this file already cached an empty strip, so clear it (and the remembered
-  // skeleton shape) or this test would assert against that stale entry.
+// Integration-lite: the home desk mounts inside PianoMenu below the launcher row.
+describe('PianoMenu (home desk)', () => {
+  // The desk reads through the shared list cache, so clear earlier renders.
   beforeEach(() => {
     activityResponse = { players: [] };
     __clearPianoListCache();
     localStorage.clear();
   });
 
-  it('renders the activity strip alongside the tile wall', async () => {
+  it('renders the desk course link alongside the launcher row', async () => {
     activityResponse = {
       players: [{
-        userId: 'learner2', name: 'learner2', lastPlayedAt: '2026-07-28T10:00:00Z',
+        userId: 'learner1', name: 'learner2', lastPlayedAt: '2026-07-28T10:00:00Z',
         courses: [{
           courseId: 'plex:11', courseTitle: 'Course B', thumbnail: '/img/b',
           completed: 13, total: 57, percent: 23, lastPlayedAt: '2026-07-28T10:00:00Z',
@@ -138,7 +134,7 @@ describe('PianoMenu (activity strip)', () => {
       }],
     };
     render(createElement(MemoryRouter, null, createElement(PianoMenu)));
-    await waitFor(() => expect(screen.getByAltText('Course B')).toBeTruthy());
+    expect(await screen.findByRole('button', { name: /Course B/ })).toBeTruthy();
     expect(screen.getByText('Courses')).toBeTruthy();
   });
 });

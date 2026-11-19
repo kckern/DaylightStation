@@ -68,13 +68,13 @@ describe('gem metadata', () => {
       { id: 'strong', kind: 'ring-days', days: 4, min: 100, reward: { gems: 1 }, gem: { category: 'exercise' } },
     ]);
     expect(gemCategories(rs)).toEqual([
-      { id: 'green-week', label: 'green-week', cadence: 'weekly', group: 'school', area: 'school', color: '#f2c94c', ruleIds: ['green-week'], parts: [{ ruleId: 'green-week', label: 'green-week', cadence: 'weekly', area: 'school', color: '#f2c94c' }] },
+      { id: 'green-week', label: 'green-week', cadence: 'weekly', group: 'school', area: 'school', color: '#f2c94c', ruleIds: ['green-week'], parts: [{ ruleId: 'green-week', label: 'green-week', cadence: 'weekly', area: 'school', color: '#f2c94c', activity: null }] },
       {
         id: 'exercise', label: 'Exercise', cadence: 'weekly', group: 'move', area: 'move', color: '#1e88e5', ruleIds: ['moved', 'strong'],
-        parts: [{ ruleId: 'moved', label: 'moved', cadence: 'weekly', area: 'move', color: '#1e88e5' }, { ruleId: 'strong', label: 'strong', cadence: 'weekly', area: 'move', color: '#1e88e5' }],
+        parts: [{ ruleId: 'moved', label: 'moved', cadence: 'weekly', area: 'move', color: '#1e88e5', activity: null }, { ruleId: 'strong', label: 'strong', cadence: 'weekly', area: 'move', color: '#1e88e5', activity: null }],
       },
       // The ring contest's default row: it shares `ring-contests` with the most-improved contest.
-      { id: 'ring-contests', label: 'Most Rings', cadence: 'contest', group: 'move', area: 'move', color: '#1e88e5', ruleIds: ['contest'], parts: [{ ruleId: 'contest', label: 'contest', cadence: 'contest', area: 'move', color: '#1e88e5' }] },
+      { id: 'ring-contests', label: 'Most Rings', cadence: 'contest', group: 'move', area: 'move', color: '#1e88e5', ruleIds: ['contest'], parts: [{ ruleId: 'contest', label: 'contest', cadence: 'contest', area: 'move', color: '#1e88e5', activity: null }] },
     ]);
   });
 });
@@ -170,8 +170,8 @@ describe('row defaults and groups', () => {
       ['board-game-level', 'Board game level', 'games'],
     ]);
     expect(rows[0].parts).toEqual([
-      { ruleId: 'reader-week', label: 'Story time 4 days', cadence: 'weekly', area: 'school', color: '#f2c94c' },
-      { ruleId: 'book-finished', label: 'Book finished', cadence: 'milestone', area: 'school', color: '#f2c94c' },
+      { ruleId: 'reader-week', label: 'Story time 4 days', cadence: 'weekly', area: 'school', color: '#f2c94c', activity: 'story-read' },
+      { ruleId: 'book-finished', label: 'Book finished', cadence: 'milestone', area: 'school', color: '#f2c94c', activity: 'book-finished' },
     ]);
     expect(rows[0].cadence).toBe('weekly'); // the first rule's, as before
   });
@@ -203,6 +203,14 @@ describe('row defaults and groups', () => {
         ['reading-all', 'Reading', ['reader-week', 'book-finished']],
         ['reading', 'Reading lesson week', ['reading']],
       ]);
+    });
+
+    it('a whole-piece piano milestone folds into the Piano row and is a valid rule', () => {
+      const rung = { id: 'piano-rung', label: 'New piano level', kind: 'milestone', match: { activity: 'piano-rung' }, reward: { gems: 1 } };
+      const piece = { id: 'piano-piece', label: 'Whole piece Silver or Gold', kind: 'milestone', match: { activity: 'piano-piece' }, cap: { count: 2 }, reward: { gems: 1 }, effective: { from: '2026-11-18' } };
+      expect(shape([rung, piece])).toEqual([['piano', 'Piano', ['piano-rung', 'piano-piece']]]);
+      expect(gemCategories(ruleset([piece]))[0]).toMatchObject({ group: 'school', area: 'school', cadence: 'milestone' });
+      expect(validateRuleset({ rules: [piece] }).rules[0]).toMatchObject({ id: 'piano-piece', match: { activity: 'piano-piece' } });
     });
 
     it('an explicit gem.category is a literal id: it joins the row with that id', () => {

@@ -34,7 +34,7 @@ const routeInventory = [
   ['get', '/users/:userId/progress'], ['put', '/users/:userId/progress/:collection/:drillId'],
   ['get', '/bank'], ['get', '/bank/catalog'], ['get', '/bank/search'], ['get', '/bank/*splat'],
   ['get', '/lessons/:collection'], ['get', '/lessons/:collection/:id'],
-  ['get', '/courses/progress'], ['get', '/courses/:courseId/playable'], ['get', '/activity/recent'],
+  ['get', '/courses/progress'], ['get', '/courses/:courseId/playable'], ['get', '/activity/recent'], ['get', '/activity/desk'],
   ['put', '/users/:userId/history/:date/:takeId'], ['post', '/effect-audit/:runId/clip/:label'],
   ['post', '/effect-audit/:runId/manifest'],
 ];
@@ -62,6 +62,7 @@ function subject() {
     getCourseProgress: () => ({ execute: async () => ({ courses: [] }) }),
     getPlayableUnits: () => ({ execute: async () => ({ ok: true, result: {} }) }),
     getRecentCourseActivity: () => ({ execute: async () => ({}) }),
+    getPianoDesk: () => ({ execute: () => ({ players: [] }) }),
   };
   const seed = { id: 'chords/triads' };
   const exerciseBank = {
@@ -113,7 +114,7 @@ describe('piano route contract', () => {
       '/producer/songs', '/producer/songs/id', '/users/u/preferences', '/users/u/preset',
       '/users/u/practice/score-key', '/users/u/progress', '/bank', '/bank/catalog', '/bank/search',
       '/bank/chords', '/lessons/basics', '/lessons/basics/one', '/courses/progress',
-      '/courses/course/playable?userId=u', '/activity/recent',
+      '/courses/course/playable?userId=u', '/activity/recent', '/activity/desk',
     ];
     for (const path of paths) {
       const response = await request(app).head(`/piano${path}`);

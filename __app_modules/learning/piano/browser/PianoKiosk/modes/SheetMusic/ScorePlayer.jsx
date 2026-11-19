@@ -35,12 +35,16 @@ import useLearnCoach from './useLearnCoach.js';
 import { createCoachPlan } from '../../../../../../../shared/music/learnCoach.mjs';
 import LearnPassageLayer from './LearnPassageLayer.jsx';
 import { segmentNavigationState } from './LearnSegmentRail.jsx';
-import LearnProgressStrip from './LearnProgressStrip.jsx';
+import PassageRail from './PassageRail.jsx';
+import PassageBoard from './PassageBoard.jsx';
+import { railModel } from './passageRail.js';
+import usePassageCelebration from './usePassageCelebration.js';
+import usePieceGemOffer from './usePieceGemOffer.js';
 import LearnLaunchpad from './LearnLaunchpad.jsx';
 import { buildRungLaunch, creditEligibleRung, learnLaunchpadProjection } from './learnLaunch.js';
 import ScorePassage from '../Exercises/ScorePassage.jsx';
 import { resolveLearnPlan } from './resolveLearnPlan.js';
-import { buildEngravedMeasureRects, measureAtPosition } from './focusRangeGeometry.js';
+import { buildEngravedMeasureRects, measureAtPosition, notationRangeBands } from './focusRangeGeometry.js';
 import { completeBarSelection, moveBarEdge, validBarRange } from './learnBarSelection.js';
 import {
   compileScoreExpectation,
@@ -242,6 +246,8 @@ export default function ScorePlayer({ score: scoreMeta }) {
   }, []);
   const [mode, setMode] = useState(() => {
     if (autoplayMode) return autoplayMode;
+    // A link to one passage is a link into Learn.
+    if (searchParams.get('learnPassage') && VALID_MODES.includes('learn')) return 'learn';
     const m = restored.mode;
     return VALID_MODES.includes(m) ? m : (VALID_MODES.includes(smCfg.defaultMode) ? smCfg.defaultMode : 'learn');
   });
@@ -2184,7 +2190,13 @@ export default function ScorePlayer({ score: scoreMeta }) {
     }, { replace: true });
   }, [setSearchParams]);
   const closeLearnPassage = useCallback(() => updateLearnSelection(null), [updateLearnSelection]);
+  // The passage a rail tile or board card points at. It only shows those bars on
+  // the score: `learnPassage` in the URL is what opens Learn.
+  const [railPassageId, setRailPassageId] = useState(null);
+  const [passageBoard, setPassageBoard] = useState(null); // null, or { focusId }
   const openLearnPassage = useCallback((passageId) => {
+    // Back on the score, the rail button names the next recommended passage again.
+    setRailPassageId(null); setPassageBoard(null);
     setSelectionPhase(null);
     setArmedSelectionEdge(null);
     setRestoreLearnAnchor(scrollRef.current?.scrollTop ?? 0);
@@ -2294,6 +2306,44 @@ export default function ScorePlayer({ score: scoreMeta }) {
     });
     return () => cancelAnimationFrame(frame);
   }, [learnSessionOpen, restoreLearnAnchor]);
+
+  const railVisible = Boolean(roadmapLearn && practiceLoaded && (layout.measures?.length ?? 0) > 0 && !selectedPassage);
+  const rail = useMemo(() => railModel({ segments: coachedPassages, projection: coach.projection, selectedId: railPassageId }),
+    [coachedPassages, coach.projection, railPassageId]);
+  const celebration = usePassageCelebration({ scopeKey: `${coach.profileId}:${scoreMeta.id}:${fingerprint.contentSha256}`,
+    ready: Boolean(roadmapLearn && practiceLoaded && coach.loaded !== false), projection: coach.projection,
+    evidenceId: coach.state?.evidence?.at(-1)?.id ?? null, visible: railVisible, scoreId: scoreMeta.id });
+  const gemOffered = usePieceGemOffer({ userId: coach.profileId, enabled: Boolean(passageBoard) });
+  const selectRailPassage = useCallback((passageId, source) => {
+    const passage = coachedPassages.find((item) => item.id === passageId);
+    if (!passage) return;
+    setRailPassageId(passageId); setPassageBoard(null);
+    logger.info('piano.learn.rail.select', { scoreId: scoreMeta.id, passageId, source });
+    const el = scrollRef.current;
+    const rdr = el?.querySelector('.musicxml-renderer');
+    const band = notationRangeBands(layout.measures, selectionStepBoxes, passage, measureRects)[0];
+    if (!el || !rdr || !band) return;
+    const elRect = el.getBoundingClientRect();
+    const rdrRect = rdr.getBoundingClientRect();
+    if (flow === 'horizontal') tweenScrollTo(el, { left: rdrRect.left - elRect.left + el.scrollLeft + band.left - 48 }, { duration: 320 });
+    else tweenScrollTo(el, { top: rdrRect.top - elRect.top + el.scrollTop + band.top - Math.max(48, el.clientHeight * 0.18) }, { duration: 320 });
+  }, [coachedPassages, logger, scoreMeta.id, layout.measures, selectionStepBoxes, measureRects, flow]);
+  const practiceRailPassage = useCallback(() => {
+    if (!rail.target) return;
+    logger.info('piano.learn.rail.practice', { scoreId: scoreMeta.id, passageId: rail.target.passageId, target: rail.target.kind });
+    openLearnPassage(rail.target.passageId);
+  }, [rail.target, logger, scoreMeta.id, openLearnPassage]);
+  const boardIsOpen = Boolean(passageBoard);
+  const togglePassageBoard = useCallback((focusId) => {
+    // The count toggles; a tap on a long piece's map always opens at that passage.
+    const next = boardIsOpen && focusId == null ? null : { focusId: focusId ?? null };
+    logger.info(next ? 'piano.learn.board.open' : 'piano.learn.board.close', { scoreId: scoreMeta.id, ...(next ? { passageId: next.focusId } : { by: 'count' }) });
+    setPassageBoard(next);
+  }, [boardIsOpen, logger, scoreMeta.id]);
+  const closePassageBoard = useCallback(() => {
+    logger.info('piano.learn.board.close', { scoreId: scoreMeta.id, by: 'close' });
+    setPassageBoard(null);
+  }, [logger, scoreMeta.id]);
 
   if (roadmapLearn && selectedPassage) return <div className="piano-score-player piano-score-player--learn-launchpad">
     <LearnCoach score={learnScore} plan={coachPlan} segment={selectedPassage} coach={coach}
@@ -2449,6 +2499,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
               measureRects={measureRects}
               selectedRange={selectedRange}
               selectedId={selectedPassage?.id ?? null}
+              focusId={rail.selectedId}
               achievementId={learnAchievement}
               onAchievementEnd={() => setLearnAchievement(null)}
               onSelect={openLearnPassage}
@@ -2473,15 +2524,16 @@ export default function ScorePlayer({ score: scoreMeta }) {
         <StuckPrompt open={stuckOpen && mode === 'learn' && !roadmapLearn} onPick={onStuckPick} onDismiss={onStuckDismiss} />
       </div>
 
-      {roadmapLearn && practiceLoaded && (layout.measures?.length ?? 0) > 0 && (
-        <>
-          <div className="piano-learn-entry piano-learn-coach"><button type="button" className="is-primary" onClick={() => openLearnPassage(coach.projection.recommended?.passageId ?? coach.projection.piece.nextGoldPassageId ?? coachedPassages[0]?.id)}>{!coach.projection.recommended && coach.projection.piece.nextGoldPassageId ? 'Go for Gold' : coach.state.evidence.length || coachedPassages.some((passage) => passage.inProgress || passage.complete) ? 'Continue learning' : 'Start learning'}</button>
-            {coach.projection.recommended && <span>{(() => { const passage = coachedPassages.find((item) => item.id === coach.projection.recommended.passageId); return passage?.barLabel ?? passage?.label; })()}: {coach.projection.recommended.label}</span>}
-            <span>{coach.projection.piece.silver} of {coach.projection.piece.total} passages Silver, {coach.projection.piece.gold} Gold</span>
-            {coach.projection.review && <button type="button" onClick={() => { coach.selectTask(coach.projection.review); openLearnPassage(coach.projection.review.passageId); }}>Review a passage</button>}
-          </div>
-          <LearnProgressStrip segments={coachedPassages} selectedId={selectedPassage?.id ?? null} onOpenSegment={openLearnPassage} />
-        </>
+      {railVisible && passageBoard && (
+        <PassageBoard title={meta.title} model={rail} focusId={passageBoard.focusId} gemOffered={gemOffered}
+          review={Boolean(coach.projection.review)}
+          onReview={() => { coach.selectTask(coach.projection.review); openLearnPassage(coach.projection.review.passageId); }}
+          onSelect={(passageId) => selectRailPassage(passageId, 'board')} onClose={closePassageBoard} />
+      )}
+      {railVisible && (
+        <PassageRail model={rail} flips={celebration.flips} piece={celebration.piece} boardOpen={Boolean(passageBoard)}
+          onSelect={(passageId) => selectRailPassage(passageId, 'rail')} onPractice={practiceRailPassage}
+          onOpenBoard={togglePassageBoard} onDismissPiece={celebration.dismissPiece} />
       )}
 
       {keyboardVisible && !roadmapLearn && (

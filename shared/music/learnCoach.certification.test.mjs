@@ -193,7 +193,7 @@ describe('what comes next', () => {
     state = applyCoachEvent(state, { id: 'a', type: 'set-aside', task: task(plan, 'silver', 'two') }, { plan, now: 'x', dayKey: DAY });
     expect(coachSummary(view(plan, state), { now: 'NOW', state })).toMatchObject({
       total: 3, silver: 1, gold: 0, nextPassageId: 'two', setAside: { two: DAY }, updatedAt: 'NOW',
-      passages: [{ id: 'one', start: 0, end: 3, silver: `${DAY}T12:00:00Z`, gold: null }, { id: 'two', silver: null }, { id: 'solo', silver: null }],
+      passages: [{ id: 'one', start: 0, end: 3, parts: ['rh', 'lh'], silver: `${DAY}T12:00:00Z`, gold: null }, { id: 'two', silver: null }, { id: 'solo', silver: null }],
     });
   });
 });

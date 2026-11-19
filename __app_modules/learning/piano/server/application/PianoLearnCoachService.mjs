@@ -10,10 +10,24 @@ const fail = (message, status = 400) => { throw Object.assign(new Error(message)
 
 export class PianoLearnCoachService {
   #queues = new Map();
-  constructor({ datastore, receiptStore, attemptStore, clock, timezone, logger }) {
+  constructor({ datastore, receiptStore, attemptStore, clock, timezone, logger, pieceLog = null }) {
     if (!datastore || !receiptStore || !attemptStore || typeof clock !== 'function') throw new Error('Coaching persistence requires stores and clock');
     this.datastore = datastore;this.receiptStore = receiptStore;this.attemptStore = attemptStore;
-    this.clock = clock;this.timezone = timezone;this.logger = logger;
+    this.clock = clock;this.timezone = timezone;this.logger = logger;this.pieceLog = pieceLog;
+  }
+  /**
+   * The whole piece became all Silver or all Gold because of this one saved take.
+   * `before` and `after` share a plan and a legacy record, so legacy credit, a
+   * plan edit or a policy change can never be the cause.
+   */
+  #notePiece({ userId, plan, event, before, after, now }) {
+    if (event.type !== 'outcome') return;
+    for (const level of ['silver', 'gold']) {
+      const total = after.piece.total;
+      if (!(total > 0) || after.piece[level] !== total || before.piece[level] >= before.piece.total) continue;
+      this.logger?.info?.('piano.learn.piece-certified', { userId, scoreId: plan.scoreId, level, passages: total });
+      this.pieceLog?.note({ userId, scoreId: plan.scoreId, level, passages: total, fingerprint: plan.fingerprint, at: now });
+    }
   }
   async #serial(userId, scoreKey, operation) {
     const key = `${userId}/${scoreKey}`;
@@ -138,6 +152,8 @@ export class PianoLearnCoachService {
       const acknowledged = { signature, revision: state.revision, fingerprint: plan.fingerprint, scoreId: plan.scoreId };
       this.receiptStore.savePending(userId, scoreKey, { id: event.id, stateAfter: state, receipt: acknowledged });
       this.#recover(userId, scoreKey);
+      // Only after the take is durably saved, and never on a replayed receipt.
+      this.#notePiece({ userId, plan, event, before, after, now });
       this.logger?.info?.('piano.learn.saved', { userId, scoreId: plan.scoreId, eventId: event.id, revision: state.revision });
       return this.#response(this.#scope(userId, scoreKey), plan);
     });
