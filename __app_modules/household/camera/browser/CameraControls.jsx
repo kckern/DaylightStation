@@ -1,57 +1,58 @@
 // frontend/src/modules/CameraFeed/CameraControls.jsx
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useRef } from 'react';
+
+import { DaylightAPI } from '../../../../frontend/src/lib/api.mjs';
+import { useApiResource } from '../../../../frontend/src/lib/hooks/useApiResource.js';
 
 export default function CameraControls({ cameraId, logger }) {
-  const [controls, setControls] = useState([]);
+  const path = `/api/v1/camera/${encodeURIComponent(cameraId)}/controls`;
+  const { data, reload } = useApiResource(path);
+  const controls = data?.controls || [];
   const [confirming, setConfirming] = useState(null);
+  const timer = useRef(null);
+  const [commandError, setCommandError] = useState(null);
 
-  useEffect(() => {
-    fetch(`/api/v1/camera/${cameraId}/controls`)
-      .then(r => r.json())
-      .then(data => setControls(data.controls || []))
-      .catch(err => logger.warn?.('controls.fetchError', { error: err.message }));
-  }, [cameraId, logger]);
+  useEffect(() => () => clearTimeout(timer.current), []);
 
-  const execute = useCallback(async (controlId, action) => {
+  async function execute(controlId, action) {
+    setCommandError(null);
     try {
-      await fetch(`/api/v1/camera/${cameraId}/controls/${controlId}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action }),
-      });
+      const result = await DaylightAPI(`${path}/${encodeURIComponent(controlId)}`, { action }, 'POST');
+      if (result?.ok === false) throw new Error(result.error || 'Camera control failed');
       logger.info?.('controls.executed', { controlId, action });
-      // Refresh controls state
-      const res = await fetch(`/api/v1/camera/${cameraId}/controls`);
-      const data = await res.json();
-      setControls(data.controls || []);
+      reload();
     } catch (err) {
+      setCommandError(err.message);
       logger.warn?.('controls.executeError', { controlId, error: err.message });
     }
-  }, [cameraId, logger]);
+  }
 
-  const handleClick = useCallback((ctrl) => {
+  function handleClick(ctrl) {
     if (ctrl.type === 'siren') {
+      clearTimeout(timer.current);
       if (confirming === ctrl.id) {
-        execute(ctrl.id, 'trigger');
         setConfirming(null);
+        execute(ctrl.id, 'trigger');
       } else {
         setConfirming(ctrl.id);
-        setTimeout(() => setConfirming(prev => prev === ctrl.id ? null : prev), 3000);
+        timer.current = setTimeout(() => setConfirming(null), 3000);
       }
     } else {
       execute(ctrl.id, ctrl.state === 'on' ? 'off' : 'on');
     }
-  }, [confirming, execute]);
+  }
 
   if (controls.length === 0) return null;
 
   return (
     <div className="camera-viewport__controls">
+      {commandError && <span role="alert">{commandError}</span>}
       {controls.map(ctrl => (
         <button
           key={ctrl.id}
           className={`camera-viewport__control-btn camera-viewport__control-btn--${ctrl.type} ${ctrl.state === 'on' ? 'active' : ''} ${confirming === ctrl.id ? 'confirming' : ''}`}
           onClick={() => handleClick(ctrl)}
+          aria-label={confirming === ctrl.id ? `Confirm ${ctrl.label}` : ctrl.label}
           title={ctrl.label}
         >
           {ctrl.type === 'light' ? '\u{1F4A1}' : '\u{1F514}'}

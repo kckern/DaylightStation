@@ -1,38 +1,37 @@
-// frontend/src/modules/CameraFeed/useDetections.js
-import { useState, useEffect } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { DaylightAPI } from '../../../../frontend/src/lib/api.mjs';
+import { useVisibleRefresh } from '../../../../frontend/src/lib/hooks/useVisibleRefresh.js';
 
-/**
- * Poll camera detection state (motion, person, vehicle, animal).
- * @param {string} cameraId
- * @param {object} logger - child logger instance
- * @param {number} [intervalMs=2000]
- * @returns {{ type: string, active: boolean }[]}
- */
+/** Poll while visible. A stalled state read gets two polling periods before replacement. */
 export default function useDetections(cameraId, logger, intervalMs = 2000) {
-  const [detections, setDetections] = useState([]);
-
-  useEffect(() => {
-    if (!cameraId) return;
-    let active = true;
-
-    const poll = async () => {
-      try {
-        const res = await fetch(`/api/v1/camera/${cameraId}/state`);
-        if (!res.ok) {
-          logger?.debug?.('detection.poll.httpError', { status: res.status });
-          return;
-        }
-        const data = await res.json();
-        if (active) setDetections(data.detections || []);
-      } catch (err) {
-        logger?.debug?.('detection.poll.error', { error: err.message });
-      }
-    };
-
-    poll();
-    const timer = setInterval(poll, intervalMs);
-    return () => { active = false; clearInterval(timer); };
+  const [snapshot, setSnapshot] = useState(null);
+  const pending = useRef(null);
+  const poll = useCallback(async () => {
+    if (!cameraId || pending.current) return;
+    const controller = new AbortController();
+    pending.current = controller;
+    const expire = setTimeout(() => controller.abort(), 2 * intervalMs);
+    controller.signal.addEventListener('abort', () => {
+      clearTimeout(expire);
+      pending.current = null;
+    }, { once: true });
+    try {
+      const data = await DaylightAPI(`/api/v1/camera/${encodeURIComponent(cameraId)}/state`, {}, 'GET', {
+        signal: controller.signal,
+      });
+      if (!controller.signal.aborted) setSnapshot({ cameraId, detections: data.detections || [] });
+    } catch (error) {
+      if (!controller.signal.aborted) logger?.debug?.('detection.poll.error', { error: error.message });
+    } finally {
+      clearTimeout(expire);
+      if (pending.current === controller) pending.current = null;
+    }
   }, [cameraId, logger, intervalMs]);
 
-  return detections;
+  useEffect(() => {
+    if (document.visibilityState === 'visible') poll();
+    return () => pending.current?.abort();
+  }, [poll]);
+  useVisibleRefresh({ active: Boolean(cameraId), intervalMs, reload: poll });
+  return snapshot && snapshot.cameraId === cameraId ? snapshot.detections : [];
 }

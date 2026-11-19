@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
-import { Paper, Text, Group, Button, Collapse } from '@mantine/core';
+import { Paper, Text, Group, Button, Collapse, Alert, UnstyledButton } from '@mantine/core';
 import getLogger from "../../../../../frontend/src/lib/logging/Logger.js";
 import "./GameScheduleEditor.scss";
 
@@ -64,6 +64,7 @@ const GameScheduleEditor = ({ schedule, onSave }) => {
   const [painting, setPainting] = useState(null);
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState(null);
   const [expanded, setExpanded] = useState(false);
 
   useEffect(() => {
@@ -81,13 +82,14 @@ const GameScheduleEditor = ({ schedule, onSave }) => {
   }, []);
 
   const handleMouseDown = (dayIdx, slotIdx) => {
+    if (saving) return;
     const newValue = !grid[dayIdx][slotIdx];
     setPainting(newValue);
     toggleSlot(dayIdx, slotIdx, newValue);
   };
 
   const handleMouseEnter = (dayIdx, slotIdx) => {
-    if (painting !== null) {
+    if (!saving && painting !== null) {
       toggleSlot(dayIdx, slotIdx, painting);
     }
   };
@@ -96,11 +98,18 @@ const GameScheduleEditor = ({ schedule, onSave }) => {
 
   const handleSave = async () => {
     setSaving(true);
+    setPainting(null);
+    setSaveError(null);
     const newSchedule = gridToSchedule(grid);
     logger.info('schedule.save', { schedule: newSchedule });
-    await onSave(newSchedule);
-    setDirty(false);
-    setSaving(false);
+    try {
+      await onSave(newSchedule);
+      setDirty(false);
+    } catch (error) {
+      setSaveError(error.message);
+    } finally {
+      setSaving(false);
+    }
   };
 
   const hourLabels = [];
@@ -112,13 +121,14 @@ const GameScheduleEditor = ({ schedule, onSave }) => {
   return (
     <Paper p="sm" withBorder>
       <Group justify="space-between" mb={expanded ? 'sm' : 0}>
-        <Text fw={600} size="sm" style={{ cursor: 'pointer', userSelect: 'none' }} onClick={() => setExpanded(e => !e)}>
+        <Text component={UnstyledButton} type="button" aria-expanded={expanded} fw={600} size="sm" onClick={() => setExpanded(e => !e)}>
           Game Schedule {expanded ? '\u25BE' : '\u25B8'}
         </Text>
         {expanded && dirty && (
           <Button size="xs" onClick={handleSave} loading={saving}>Save Schedule</Button>
         )}
       </Group>
+      {saveError && <Alert color="red" role="alert">{saveError}</Alert>}
       <Collapse in={expanded}>
         <div
           className="schedule-grid"

@@ -1,3 +1,5 @@
+import { ErrorState } from '../../../../../frontend/src/lib/ui/states.jsx';
+import { useApiResource } from '../../../../../frontend/src/lib/hooks/useApiResource.js';
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useParams } from 'react-router-dom';
 import { SimpleGrid, Card, Image, Text, Stack, Loader, Select, Group, Button, Alert } from '@mantine/core';
@@ -18,8 +20,8 @@ const RESULT_MESSAGES = {
 const ConsoleDetail = () => {
   const logger = useMemo(() => getLogger().child({ component: 'ConsoleDetail' }), []);
   const { consoleId } = useParams();
-  const [games, setGames] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const { data, loading, error, reload } = useApiResource(`/api/v1/list/retroarch:${encodeURIComponent(consoleId)}`);
+  const games = Array.isArray(data) ? data : data?.items || [];
   const [targetId, setTargetId] = useState(null);
   const [result, setResult] = useState(null);
   const [pending, setPending] = useState(null);
@@ -29,12 +31,6 @@ const ConsoleDetail = () => {
 
   useEffect(() => {
     logger.info('consoleDetail.mounted', { consoleId });
-    fetch(`/api/v1/list/retroarch:${consoleId}`)
-      .then(r => r.json())
-      .then(data => {
-        setGames(data?.items || data || []);
-        setLoading(false);
-      });
   }, [consoleId, logger]);
 
   // Default to the only target rather than making the parent pick from a list of one.
@@ -60,6 +56,7 @@ const ConsoleDetail = () => {
   }, [targetId, send, logger]);
 
   if (loading) return <Loader />;
+  if (error) return <ErrorState label="games" error={error} onRetry={reload} />;
 
   const canLaunch = (game) => !!target && target.allow.includes(game.id);
 

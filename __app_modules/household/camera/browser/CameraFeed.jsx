@@ -1,6 +1,6 @@
 // frontend/src/modules/CameraFeed/CameraFeed.jsx
 import { useState, useCallback } from 'react';
-import CameraRenderer from "./CameraRenderer.jsx";
+import { CameraView } from "./CameraRenderer.jsx";
 import CameraViewport from "./CameraViewport.jsx";
 import useDetections from "./useDetections.js";
 
@@ -16,7 +16,8 @@ export default function CameraFeed({ cameraId, onError, renderHeader }) {
   return (
     <>
       {renderHeader?.(openViewport)}
-      <CameraRenderer
+      <CameraView
+        detections={detections}
         cameraId={cameraId}
         crop
         interactive

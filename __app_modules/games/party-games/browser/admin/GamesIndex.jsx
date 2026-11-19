@@ -1,64 +1,103 @@
-import { useState, useEffect, useMemo } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { Button, Card, Group, Text, Badge, Stack, Loader } from '@mantine/core';
+import { DaylightAPI, daylightApiResponse } from '../../../../../frontend/src/lib/api.mjs';
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import { Link } from 'react-router-dom';
+import { Button, Card, Group, Text, Badge, Stack, Loader, Alert } from '@mantine/core';
 import getLogger from "../../../../../frontend/src/lib/logging/Logger.js";
+import { ErrorState } from '../../../../../frontend/src/lib/ui/states.jsx';
 import GameScheduleEditor from "./GameScheduleEditor.jsx";
 import { configPath } from "../../../../../frontend/src/modules/Admin/utils/adminConfigPaths.js";
 
+const readConsoles = async signal => {
+  const list = await DaylightAPI('/api/v1/list/retroarch', {}, 'GET', { signal });
+  return Array.isArray(list) ? list : list?.items || [];
+};
+const readSyncStatus = signal => DaylightAPI('/api/v1/sync/retroarch/status', {}, 'GET', { signal });
+
 const GamesIndex = () => {
   const logger = useMemo(() => getLogger().child({ component: 'GamesIndex' }), []);
-  const navigate = useNavigate();
+  const view = useRef(null);
+  const [syncError, setSyncError] = useState(null);
   const [consoles, setConsoles] = useState([]);
   const [syncStatus, setSyncStatus] = useState(null);
   const [syncing, setSyncing] = useState(false);
   const [loading, setLoading] = useState(true);
   const [schedule, setSchedule] = useState(null);
 
+  const [scheduleError, setScheduleError] = useState(null);
+  const [scheduleLoading, setScheduleLoading] = useState(true);
+  const loadSchedule = useCallback(async (signal, lifetime = signal) => {
+    setScheduleLoading(true);
+    try {
+      const data = await DaylightAPI('/api/v1/content/schedule/retroarch', {}, 'GET', { signal });
+      if (lifetime.aborted) return;
+      setSchedule(data.schedule);
+      setScheduleError(null);
+    } catch (error) {
+      if (!lifetime.aborted) setScheduleError(error);
+    } finally {
+      if (!lifetime.aborted) setScheduleLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     logger.info('gamesIndex.mounted');
-    const withTimeout = (promise, ms = 5000) => {
-      const timeout = new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), ms));
-      return Promise.race([promise, timeout]);
-    };
+    const lifetime = new AbortController();
+    view.current = lifetime;
+    const initial = new AbortController();
+    const deadline = setTimeout(() => initial.abort(), 5000);
     Promise.all([
-      withTimeout(fetch('/api/v1/list/retroarch').then(r => r.json())).catch(() => []),
-      withTimeout(fetch('/api/v1/sync/retroarch/status').then(r => r.json())).catch(() => null),
-      withTimeout(fetch('/api/v1/content/schedule/retroarch').then(r => r.json())).catch(() => null)
-    ]).then(([list, status, scheduleData]) => {
-      setConsoles(list?.items || list || []);
+      readConsoles(initial.signal).catch(() => []),
+      readSyncStatus(initial.signal).catch(() => null),
+      loadSchedule(initial.signal, lifetime.signal),
+    ]).then(([list, status]) => {
+      clearTimeout(deadline);
+      if (lifetime.signal.aborted) return;
+      setConsoles(list);
       setSyncStatus(status);
-      setSchedule(scheduleData?.schedule || null);
       setLoading(false);
     });
-  }, [logger]);
+    return () => {
+      clearTimeout(deadline);
+      initial.abort();
+      lifetime.abort();
+    };
+  }, [logger, loadSchedule]);
 
   const handleSync = async () => {
+    const { signal } = view.current;
     setSyncing(true);
+    setSyncError(null);
     logger.info('admin.sync.triggered', { source: 'retroarch' });
     try {
-      await fetch('/api/v1/sync/retroarch', { method: 'POST' });
-      const status = await fetch('/api/v1/sync/retroarch/status').then(r => r.json());
-      setSyncStatus(status);
-      const list = await fetch('/api/v1/list/retroarch').then(r => r.json());
-      setConsoles(list?.items || list || []);
+      const response = await daylightApiResponse('/api/v1/sync/retroarch', { method: 'POST' });
+      if (!response.ok) throw new Error(`Sync failed (HTTP ${response.status})`);
+      if (signal.aborted) return;
+      const results = await Promise.allSettled([
+        readConsoles(signal).then(list => { if (!signal.aborted) setConsoles(list); }),
+        readSyncStatus(signal).then(status => { if (!signal.aborted) setSyncStatus(status); }),
+      ]);
+      if (signal.aborted) return;
+      const failure = results.find(result => result.status === 'rejected');
+      if (failure) throw failure.reason;
       logger.info('admin.sync.complete');
     } catch (err) {
-      logger.error('admin.sync.failed', { error: err.message });
+      if (!signal.aborted) {
+        setSyncError(err.message);
+        logger.error('admin.sync.failed', { error: err.message });
+      }
+    } finally {
+      if (!signal.aborted) setSyncing(false);
     }
-    setSyncing(false);
   };
 
-  const handleScheduleSave = async (newSchedule) => {
+  const handleScheduleSave = async newSchedule => {
     const url = `/api/v1/admin/config/files/${configPath('games')}`;
-    const configRes = await fetch(url);
-    const configData = await configRes.json();
-    const parsed = configData.parsed || {};
-    parsed.schedule = newSchedule;
-    await fetch(url, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ parsed })
-    });
+    const { parsed } = await DaylightAPI(url);
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      throw new Error('Could not read the current games configuration.');
+    }
+    const receipt = await DaylightAPI(url, { parsed: { ...parsed, schedule: newSchedule } }, 'PUT');
+    if (receipt?.ok !== true) throw new Error('The server did not confirm the schedule save.');
     setSchedule(newSchedule);
     logger.info('schedule.saved', { schedule: newSchedule });
   };
@@ -79,10 +118,13 @@ const GamesIndex = () => {
         </Group>
       </Group>
 
-      <GameScheduleEditor schedule={schedule} onSave={handleScheduleSave} />
+      {syncError && <Alert color="red" role="alert">{syncError}</Alert>}
+      {scheduleLoading ? <Loader aria-label="Loading game schedule" />
+        : scheduleError ? <ErrorState label="Game schedule" error={scheduleError} onRetry={() => loadSchedule(view.current.signal)} />
+        : <GameScheduleEditor schedule={schedule} onSave={handleScheduleSave} />}
 
       {consoles.map(c => (
-        <Card key={c.id} padding="sm" withBorder onClick={() => navigate(`/admin/content/games/${c.localId || c.id?.split(':')[1]}`)} style={{ cursor: 'pointer' }}>
+        <Card key={c.id} padding="sm" withBorder component={Link} to={`/admin/content/games/${encodeURIComponent(c.localId || c.id?.split(':')[1])}`}>
           <Group justify="space-between">
             <Text fw={500}>{c.title}</Text>
             <Badge>{c.metadata?.gameCount || 0} games</Badge>

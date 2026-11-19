@@ -1,6 +1,7 @@
 // frontend/src/modules/CameraFeed/CameraViewport.jsx
 import { useRef, useState, useEffect, useMemo, useCallback } from 'react';
 import usePanZoom from "./usePanZoom.js";
+import { UiIcon } from '../../../../frontend/src/lib/ui/UiIcon.jsx';
 import CameraControls from "./CameraControls.jsx";
 import { getChildLogger } from "../../../../frontend/src/lib/logging/singleton.js";
 import useSnapshotFetch from "./useSnapshotFetch.js";
@@ -196,7 +197,7 @@ export default function CameraViewport({ cameraId, mode, snapshotSrc: externalSn
       </div>
 
       {/* Close button */}
-      <button className="camera-viewport__close" onClick={onClose}>{'\u2715'}</button>
+      <button type="button" className="camera-viewport__close" aria-label="Close camera" onClick={onClose}><UiIcon name="close" /></button>
 
       {/* Zoom indicator */}
       <div className={`camera-viewport__zoom-indicator ${showZoom ? 'visible' : ''}`}>
@@ -284,7 +285,7 @@ export default function CameraViewport({ cameraId, mode, snapshotSrc: externalSn
       )}
 
       {/* Camera controls */}
-      <CameraControls cameraId={cameraId} logger={logger} />
+      <CameraControls key={cameraId} cameraId={cameraId} logger={logger} />
 
       {/* Hints bar */}
       <div className={`camera-viewport__hints ${showHints ? 'visible' : ''}`}>
