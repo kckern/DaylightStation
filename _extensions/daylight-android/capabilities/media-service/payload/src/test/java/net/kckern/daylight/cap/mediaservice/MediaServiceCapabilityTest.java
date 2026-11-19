@@ -364,6 +364,21 @@ public class MediaServiceCapabilityTest {
         assertFalse(fallback.getBoolean("selectionResolved"));
     }
 
+    @Test public void playlistPickerExcludesFoldersAndKeepsCanonicalIdentityAcrossPages() throws Exception {
+        api.responses.put("list plex:playlists 50 0",
+                "{\"total\":51,\"items\":[{\"id\":\"plex:10\",\"title\":\"Mix\",\"itemType\":\"container\",\"type\":\"folder\"},"
+                + "{\"id\":\"plex:11\",\"title\":\"Mix\",\"itemType\":\"container\",\"type\":\"playlist\"}]}");
+        api.responses.put("list plex:playlists 50 50",
+                "{\"total\":51,\"items\":[{\"id\":\"plex:12\",\"title\":\"Other\",\"type\":\"playlist\"}]}");
+        JSONObject first = cap.call(new JSONObject().put("op", "playlists")).body;
+        assertTrue(first.getBoolean("ok"));
+        assertEquals(1, first.getJSONArray("items").length());
+        assertEquals("plex:11", first.getJSONArray("items").getJSONObject(0).getString("contentId"));
+        JSONObject next = cap.call(new JSONObject().put("op", "playlists").put("cursor", first.getInt("nextCursor"))).body;
+        assertEquals("plex:12", next.getJSONArray("items").getJSONObject(0).getString("contentId"));
+        assertFalse(next.has("nextCursor"));
+    }
+
     @Test public void theInstalledServiceAsksOverThePortAndGetsTheSameAnswers() throws Exception {
         PayloadPort port = PayloadPort.named(MediaServiceCapability.PORT);
         assertFalse(port.ready());

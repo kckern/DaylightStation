@@ -124,7 +124,7 @@ public class PhoneHomeActivity extends Activity {
         }
         column.addView(label("Play on demand", 20, INK));
         row("Play a playlist", "Choose a playlist for a one-tap widget", "play",
-                () -> showMediaChoices("catalog"));
+                () -> showMediaChoices(0));
     }
 
     private void pinPage(JSONObject page) {
@@ -141,27 +141,29 @@ public class PhoneHomeActivity extends Activity {
         if (!sm.requestPinShortcut(shortcut, null)) toast("The launcher could not add this bookmark.");
     }
 
-    private void showMediaChoices(String parent) {
-        call("media", request("browse", "parent", parent).toString(), result -> {
-            java.util.ArrayList<JSONObject> choices = new java.util.ArrayList<>();
+    private void showMediaChoices(int cursor) {
+        call("media", request("playlists", "cursor", String.valueOf(cursor)).toString(), result -> {
             JSONArray items = result.optJSONArray("items");
-            if (items != null) {
-                for (int i = 0; i < items.length(); i++) {
-                    JSONObject item = items.optJSONObject(i);
-                    if (item != null && item.optBoolean("browsable")) choices.add(item);
-                }
+            if (!result.optBoolean("ok") || items == null) {
+                toast("Could not load playlists. Tap Play a playlist to retry.");
+                return;
             }
-            if (choices.isEmpty()) { toast("No playlists or folders are available here."); return; }
-            String[] names = choices.stream().map(item -> item.optString("title")).toArray(String[]::new);
+            int next = result.optInt("nextCursor", -1);
+            if (items.length() == 0 && next < 0) {
+                toast("No playlists are available.");
+                return;
+            }
+            String[] names = new String[items.length() + (next >= 0 ? 1 : 0)];
+            for (int i = 0; i < items.length(); i++) names[i] = items.optJSONObject(i).optString("title");
+            if (next >= 0) names[items.length()] = "More playlists";
             new AlertDialog.Builder(this).setTitle("Choose a playlist")
                     .setItems(names, (dialog, index) -> {
-                        JSONObject item = choices.get(index);
-                        String id = item.optString("id"), title = item.optString("title");
-                        if (!id.startsWith("c:")) { showMediaChoices(id); return; }
-                        new AlertDialog.Builder(this).setTitle(title)
-                                .setNegativeButton("Cancel", null)
-                                .setNeutralButton("Browse", (d, w) -> showMediaChoices(id))
-                                .setPositiveButton("Add widget", (d, w) -> pinWidget(id, title)).show();
+                        if (index == items.length()) { showMediaChoices(next); return; }
+                        JSONObject item = items.optJSONObject(index);
+                        String title = item.optString("title");
+                        new AlertDialog.Builder(this).setTitle(title).setNegativeButton("Cancel", null)
+                                .setPositiveButton("Add widget", (d, w) ->
+                                        pinWidget("c:" + item.optString("contentId"), title)).show();
                     }).setNegativeButton("Cancel", null).show();
         });
     }

@@ -202,6 +202,7 @@ public final class MediaServiceCapability implements Capability {
     Outcome call(JSONObject request) {
         try {
             String op = Json.str(request, "op");
+            if ("playlists".equals(op)) return playlists(request);
             if ("browse".equals(op)) return browse(request);
             if ("resolve".equals(op)) return resolve(request);
             if ("event".equals(op)) return event(request);
@@ -224,6 +225,29 @@ public final class MediaServiceCapability implements Capability {
     }
 
     private static Router.Response respond(Outcome o) { return Router.Response.json(o.status, o.body); }
+
+    private Outcome playlists(JSONObject request) throws Exception {
+        final int pageSize = (Integer) core.settings().get(PAGE_SIZE);
+        final int offset = request.optInt("cursor", 0);
+        if (offset < 0 || offset > Integer.MAX_VALUE - pageSize) throw new IllegalArgumentException("invalid playlist page");
+        JSONObject result = api.list("plex:playlists", pageSize, offset);
+        JSONArray entries = result.getJSONArray("items");
+        JSONArray playlists = new JSONArray();
+        for (int i = 0; i < entries.length(); i++) {
+            JSONObject item = entries.optJSONObject(i);
+            if (item == null || !"playlist".equals(item.optString("type"))) continue;
+            String id = item.optString("id");
+            String title = item.optString("title");
+            if (ContentId.valid(id) && !title.trim().isEmpty()) {
+                playlists.put(new JSONObject().put("contentId", id).put("title", title));
+            }
+        }
+        JSONObject response = Replies.ok().put("items", playlists);
+        if (offset + pageSize < result.optInt("total", offset + entries.length())) {
+            response.put("nextCursor", offset + pageSize);
+        }
+        return new Outcome(200, response);
+    }
 
     private Outcome browse(JSONObject request) throws Exception {
         final String parent = Json.first(Json.str(request, "parent"), MediaId.ROOT);
