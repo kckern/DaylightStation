@@ -96,6 +96,43 @@ function house(state) {
   };
 }
 
+test.describe('Home room detail on a coarse pointer', () => {
+  test.use({ hasTouch: true, viewport: { width: 390, height: 850 } });
+
+  test('Home opens entity detail from the full row without triggering the adjacent switch', async ({ page }) => {
+    const writes = [];
+    await page.route('**/home-dashboard/entities', route => route.fulfill({ json: house('on') }));
+    await page.route('**/home-dashboard/toggle', route => {
+      writes.push(route.request().postDataJSON());
+      return route.fulfill({ json: { ok: true } });
+    });
+    await page.goto('/home');
+    await page.getByRole('button', { name: 'Rooms', exact: true }).tap();
+    await page.getByRole('button', { name: 'Kitchen 1 on', exact: true }).tap();
+    const row = page.getByRole('main').locator('[data-entity-id="light.kitchen"]');
+    const opener = row.getByRole('button', { name: 'Kitchen light, On', exact: true });
+    const dialog = page.getByRole('dialog', { name: 'Kitchen light', exact: true });
+    await expect(opener).toBeVisible();
+    const openerBox = await opener.boundingBox();
+    const rowBox = await row.boundingBox();
+    expect.soft(openerBox.height).toBeGreaterThanOrEqual(44);
+    const edgeHitsOpener = await opener.evaluate((button, point) =>
+      button.contains(document.elementFromPoint(point.x, point.y)), { x: rowBox.x + 10, y: rowBox.y + rowBox.height - 2 });
+    expect.soft(edgeHitsOpener).toBe(true);
+    await row.tap({ position: { x: 10, y: rowBox.height - 2 } });
+    await expect(dialog).toBeVisible({ timeout: 2500 });
+    await page.keyboard.press('Escape');
+    await expect(dialog).toBeHidden();
+
+    await opener.press('Enter');
+    await expect(dialog.getByRole('button', { name: 'Close', exact: true })).toBeFocused();
+    await page.keyboard.press('Escape');
+    await expect(opener).toBeFocused();
+    await expect(row.getByRole('switch')).toBeChecked();
+    expect(writes).toEqual([]);
+  });
+});
+
 for (const fromDetail of [false, true]) {
   test(`Home keeps a pending switch focused in ${fromDetail ? 'the entity sheet' : 'Rooms'}`, async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 850 });

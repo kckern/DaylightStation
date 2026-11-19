@@ -132,11 +132,15 @@ describe('FleetView Play… affordance', () => {
     renderFleet();
     expect(screen.queryByTestId('mock-play-picker-livingroom-tv')).toBeNull();
 
-    fireEvent.click(screen.getByTestId('fleet-play-livingroom-tv'));
+    const opener = screen.getByTestId('fleet-play-livingroom-tv');
+    expect(opener).toHaveAttribute('aria-expanded', 'false');
+    fireEvent.click(opener);
+    expect(opener).toHaveAttribute('aria-expanded', 'true');
     expect(screen.getByTestId('mock-play-picker-livingroom-tv')).toBeInTheDocument();
     expect(screen.queryByTestId('mock-play-picker-office-tv')).toBeNull();
 
-    fireEvent.click(screen.getByTestId('fleet-play-livingroom-tv'));
+    fireEvent.click(opener);
+    expect(opener).toHaveAttribute('aria-expanded', 'false');
     expect(screen.queryByTestId('mock-play-picker-livingroom-tv')).toBeNull();
   });
 
@@ -147,12 +151,6 @@ describe('FleetView Play… affordance', () => {
 
     fireEvent.click(screen.getByTestId('mock-play-picker-close-office-tv'));
     expect(screen.queryByTestId('mock-play-picker-office-tv')).toBeNull();
-  });
-
-  it('marks the toggle so the picker can ignore its pointerdowns (clean toggle, no flicker)', () => {
-    renderFleet();
-    expect(screen.getByTestId('fleet-play-livingroom-tv'))
-      .toHaveAttribute('data-play-toggle', 'livingroom-tv');
   });
 
   it('offers inline Pause and Stop which route to that browser controller', () => {

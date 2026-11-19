@@ -57,7 +57,6 @@ function EntityHistory({ entity, range, onRange, history, error, reload }) {
         <h4 className="home-history__title">History</h4>
         <SegmentedControl
           size="xs"
-          classNames={{ label: 'home-history__range-option' }}
           data={RANGES}
           value={range}
           onChange={onRange}

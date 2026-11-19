@@ -47,11 +47,47 @@ for (const { width, hasTouch } of [{ width: 390, hasTouch: true }, { width: 1440
         }
       }
 
+      // Press Escape as soon as the portaled menu mounts, before a deferred
+      // focus transfer can move key handling from the trigger into the menu.
+      await listActions.evaluate(trigger => new Promise(resolve => {
+        const observer = new MutationObserver(() => {
+          const menu = document.getElementById(trigger.getAttribute('aria-controls'));
+          if (trigger.getAttribute('aria-expanded') !== 'true' || !menu || menu.getClientRects().length === 0) return;
+          observer.disconnect();
+          document.activeElement.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true, composed: true }));
+          resolve();
+        });
+        observer.observe(document.body, { childList: true, subtree: true });
+        trigger.focus();
+        trigger.click();
+      }));
+      await expect(listActions).toHaveAttribute('aria-expanded', 'false');
+      await expect(listActions).toBeFocused();
+      const listSettings = page.getByRole('menuitem', { name: 'Menu Settings', exact: true });
+      await expect(listSettings).toBeHidden();
+
+      const search = main.getByPlaceholder('Search items...');
+      await search.focus();
       if (hasTouch) await listActions.tap({ position: { x: 2, y: 22 } });
       else await listActions.press('Enter');
-      await expect(page.getByRole('menuitem', { name: 'Menu Settings', exact: true })).toBeVisible();
+      await expect(listSettings).toBeVisible();
+      await expect.poll(() => page.getByRole('menu').evaluate(menu =>
+        menu !== document.activeElement && menu.contains(document.activeElement)
+      )).toBe(true);
+      await page.keyboard.press('ArrowDown');
+      await expect(listSettings).toBeFocused();
+      await page.keyboard.press('ArrowDown');
+      await expect(page.getByRole('menuitem', { name: 'Delete Menu', exact: true })).toBeFocused();
       await page.keyboard.press('Escape');
+      await expect(listActions).toHaveAttribute('aria-expanded', 'false');
       await expect(listActions).toBeFocused();
+
+      await expect(listSettings).toBeHidden();
+      await listActions.press('Enter');
+      await expect(listSettings).toBeVisible();
+      await search.click();
+      await expect(listActions).toHaveAttribute('aria-expanded', 'false');
+      await expect(search).toBeFocused();
 
       const row = page.getByTestId('item-row-0-0');
       await expect(row).toBeVisible();
@@ -64,9 +100,20 @@ for (const { width, hasTouch } of [{ width: 390, hasTouch: true }, { width: 1440
       await expect(row).toBeVisible();
 
       await sectionActions.press('Enter');
-      await expect(page.getByRole('menuitem', { name: 'Section Settings', exact: true })).toBeVisible();
+      const sectionSettings = page.getByRole('menuitem', { name: 'Section Settings', exact: true });
+      await expect(sectionSettings).toBeVisible();
       await page.keyboard.press('Escape');
+      await expect(sectionActions).toHaveAttribute('aria-expanded', 'false');
       await expect(sectionActions).toBeFocused();
+      await expect(sectionSettings).toBeHidden();
+      await sectionActions.press('Enter');
+      await sectionSettings.click();
+      const dialog = page.getByRole('dialog', { name: 'Section Settings: Tonight' });
+      await expect(dialog).toBeVisible();
+      await page.keyboard.press('Escape');
+      await expect(dialog).toBeHidden();
+      await expect(sectionActions).toHaveAttribute('aria-expanded', 'false');
+
       await back.press('Enter');
       await expect(page).toHaveURL(new RegExp(index + '$'));
     });

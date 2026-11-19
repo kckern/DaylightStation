@@ -3,6 +3,7 @@ export { AppFrame, AppView, PlaybackFrame, useAppMainRef } from './AppFrame.jsx'
 export { AppThemeProvider } from './AppThemeProvider.jsx';
 export { AppChrome } from './AppChrome.jsx';
 export { Sheet } from './Sheet.jsx';
+export { ActionMenu } from './ActionMenu.jsx';
 export { useOverlayScrollLock } from './useOverlayScrollLock.js';
 export { useSheetSubmission } from './useSheetSubmission.js';
 export { DismissStackProvider } from './dismiss/DismissStackProvider.jsx';

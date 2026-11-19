@@ -42,7 +42,7 @@ export function EntityRow({ entity, sub = null, value, name, plain = false, cont
   return (
     <div className={classes} data-entity-id={entity.id}>
       {onOpen ? (
-        <UnstyledButton className="home-row__main" onClick={() => onOpen(entity)} aria-label={`${shown}, ${text}`}>
+        <UnstyledButton className="home-row__main ds-touch-target" onClick={() => onOpen(entity)} aria-label={`${shown}, ${text}`}>
           {main}
         </UnstyledButton>
       ) : (

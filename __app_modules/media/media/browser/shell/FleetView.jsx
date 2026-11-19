@@ -10,7 +10,7 @@
 // recent rename (RQ-HOUSE-06) and Stop "and turn the screen off" where the
 // screen supports it (RQ-STEER-11). The view offers Pause all / Stop all /
 // Resume all (RQ-STEER-13) and leads to screen admin and routine history.
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useMemo, useRef, useState } from 'react';
 import { Title, Text, Badge, Button, Progress, Group, Alert, Stack } from '@mantine/core';
 import { IconDeviceRemote, IconAlertCircle, IconPlayerPlay, IconPlayerPauseFilled, IconDevices, IconHistory, IconArrowBarToDown } from '@tabler/icons-react';
 import { useFleetContext } from "../fleet/useFleetContext.js";
@@ -51,6 +51,7 @@ function FleetCard({ deviceId, startStatus, startedBy }) {
   const moveHere = useMoveHere();
   // Inline "play something on this device" panel (FleetPlayPicker).
   const [playOpen, setPlayOpen] = useState(false);
+  const playOpenerRef = useRef(null);
   const closePlay = useCallback(() => setPlayOpen(false), []);
   const offline = !!entry?.offline;
   const snap = entry?.snapshot;
@@ -140,12 +141,9 @@ function FleetCard({ deviceId, startStatus, startedBy }) {
         >
           Remote
         </Button>
-        {/* data-play-toggle lets the panel's outside-tap dismissal ignore
-            this button, so a second tap toggles closed instead of
-            dismiss-then-reopen. */}
         <Button
+          ref={playOpenerRef}
           data-testid={`fleet-play-${deviceId}`}
-          data-play-toggle={deviceId}
           size="compact-sm"
           variant="default"
           leftSection={<IconPlayerPlay size={16} />}
@@ -182,7 +180,7 @@ function FleetCard({ deviceId, startStatus, startedBy }) {
           </>
         )}
       </Group>
-      {playOpen && <FleetPlayPicker deviceId={deviceId} onClose={closePlay} />}
+      {playOpen && <FleetPlayPicker deviceId={deviceId} onClose={closePlay} openerRef={playOpenerRef} />}
     </li>
   );
 }

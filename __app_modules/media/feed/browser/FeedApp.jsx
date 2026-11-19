@@ -3,10 +3,11 @@ import { feedQueueOwner } from './offline/feedOfflineStore.js';
 import { Select } from '@/lib/ui/Select.jsx';
 import { PlaybackFrame } from '@/lib/ui/AppFrame.jsx';
 import { useHotkey } from '@/lib/hooks/useHotkey.js';
-import { lazy, Suspense, useCallback, useState, useEffect, useRef, useSyncExternalStore } from 'react';
+import { lazy, Suspense, useCallback, useState, useEffect, useLayoutEffect, useRef, useSyncExternalStore } from 'react';
 import { Routes, Route, NavLink, Navigate, Outlet, useParams, useLocation, useMatch, useNavigate } from 'react-router-dom';
 import { AppThemeProvider } from '@/lib/ui/AppThemeProvider.jsx';
 import { DismissStackProvider } from '@/lib/ui/dismiss/DismissStackProvider.jsx';
+import { useDismissLayer } from '@/lib/ui/dismiss/useDismissLayer.js';
 import { useElementSize } from '@mantine/hooks';
 import { Notifications } from '@mantine/notifications';
 import '@mantine/core/styles.css';
@@ -62,6 +63,44 @@ function HeadlinesPage() {
   return <Headlines pageId={pageId} />;
 }
 
+function ReadingAppearance({ pathname }) {
+  const { readingPreferences, setReadingPreference, refreshWorkspace, refreshSummary, sourcePreferences, setSourcePreference } = useFeedWorkspace();
+  const [open, setOpen] = useState(false);
+  const disclosure = useRef(null);
+  const summary = useRef(null);
+
+  const close = useCallback(() => {
+    const details = disclosure.current;
+    if (!details?.open) return;
+    const restoreFocus = details.contains(document.activeElement);
+    setOpen(false);
+    if (restoreFocus) summary.current?.focus({ preventScroll: true });
+  }, []);
+  useDismissLayer(open, close);
+
+  // Keep account-owned import/export mounted when changing modes.
+  useLayoutEffect(close, [pathname, close]);
+
+  return (
+    <details ref={disclosure} className="feed-reading-settings" open={open}>
+      <summary ref={summary} aria-label="Reading appearance" onClick={event => {
+        // Register the layer with this activation, before the next key event.
+        event.preventDefault();
+        setOpen(current => !current);
+      }}>Aa</summary>
+      <div className="feed-reading-settings__panel">
+        <label>Theme<Select density="compact" value={readingPreferences.theme} onChange={event => setReadingPreference('theme', event.target.value)}><option value="dark">Dark</option><option value="sepia">Sepia</option><option value="light">Light</option></Select></label>
+        <label>Text size<Select density="compact" value={readingPreferences.fontScale} onChange={event => setReadingPreference('fontScale', Number(event.target.value))}><option value="0.9">Small</option><option value="1">Standard</option><option value="1.15">Large</option><option value="1.3">Extra large</option></Select></label>
+        <label>Line spacing<Select density="compact" value={readingPreferences.lineHeight} onChange={event => setReadingPreference('lineHeight', Number(event.target.value))}><option value="1.5">Tight</option><option value="1.65">Standard</option><option value="1.85">Relaxed</option></Select></label>
+        <label>Reading width<Select density="compact" value={readingPreferences.measure} onChange={event => setReadingPreference('measure', Number(event.target.value))}><option value="56">Narrow</option><option value="72">Standard</option><option value="88">Wide</option></Select></label>
+        <label>Scroll session<Select density="compact" value={readingPreferences.sessionBudget} onChange={event => setReadingPreference('sessionBudget', Number(event.target.value))}><option value="0">Until caught up</option><option value="30">30 items</option><option value="60">60 items</option><option value="100">100 items</option></Select></label>
+        <FeedDataControls onImported={() => Promise.all([refreshWorkspace(), refreshSummary()])} />
+        {!!Object.keys(sourcePreferences).length && <div className="feed-source-preferences"><span>Adjusted sources</span>{Object.entries(sourcePreferences).map(([source, level]) => <div key={source}><span>{source} · {level}</span><button type="button" onClick={() => setSourcePreference(source, 'normal').catch(() => {})}>Reset</button></div>)}</div>}
+      </div>
+    </details>
+  );
+}
+
 function FeedLayout() {
   useFeedPWA();
   const scrollRef = useRef(null);
@@ -101,7 +140,7 @@ function FeedLayout() {
   const isHeadlines = location.pathname.startsWith('/feed/headlines');
   const isSearch = Boolean(useMatch(SEARCH_PATH));
   const currentHeadlinePage = isHeadlines ? location.pathname.split('/').filter(Boolean)[2] : '';
-  const { density, setDensity, readingPreferences, setReadingPreference, summary, retrySync, pendingMutations, workspaceReady, refreshSummary, refreshWorkspace, sourcePreferences, setSourcePreference } = useFeedWorkspace();
+  const { density, setDensity, readingPreferences, summary, retrySync, pendingMutations, workspaceReady } = useFeedWorkspace();
 
   const { activeMedia, playerRef, stop, speed, volume } = useFeedPlayer();
   const playback = usePlaybackObserver(playerRef, !!activeMedia);
@@ -188,18 +227,7 @@ function FeedLayout() {
         <button className="feed-density-toggle" onClick={() => setDensity(density === 'compact' ? 'comfortable' : 'compact')} aria-label={`Use ${density === 'compact' ? 'comfortable' : 'compact'} density`}>
           {density === 'compact' ? 'Comfort' : 'Compact'}
         </button>
-        <details className="feed-reading-settings">
-          <summary aria-label="Reading appearance">Aa</summary>
-          <div className="feed-reading-settings__panel">
-            <label>Theme<Select density="compact" value={readingPreferences.theme} onChange={event => setReadingPreference('theme', event.target.value)}><option value="dark">Dark</option><option value="sepia">Sepia</option><option value="light">Light</option></Select></label>
-            <label>Text size<Select density="compact" value={readingPreferences.fontScale} onChange={event => setReadingPreference('fontScale', Number(event.target.value))}><option value="0.9">Small</option><option value="1">Standard</option><option value="1.15">Large</option><option value="1.3">Extra large</option></Select></label>
-            <label>Line spacing<Select density="compact" value={readingPreferences.lineHeight} onChange={event => setReadingPreference('lineHeight', Number(event.target.value))}><option value="1.5">Tight</option><option value="1.65">Standard</option><option value="1.85">Relaxed</option></Select></label>
-            <label>Reading width<Select density="compact" value={readingPreferences.measure} onChange={event => setReadingPreference('measure', Number(event.target.value))}><option value="56">Narrow</option><option value="72">Standard</option><option value="88">Wide</option></Select></label>
-            <label>Scroll session<Select density="compact" value={readingPreferences.sessionBudget} onChange={event => setReadingPreference('sessionBudget', Number(event.target.value))}><option value="0">Until caught up</option><option value="30">30 items</option><option value="60">60 items</option><option value="100">100 items</option></Select></label>
-            <FeedDataControls onImported={() => Promise.all([refreshWorkspace(), refreshSummary()])} />
-            {!!Object.keys(sourcePreferences).length && <div className="feed-source-preferences"><span>Adjusted sources</span>{Object.entries(sourcePreferences).map(([source, level]) => <div key={source}><span>{source} · {level}</span><button type="button" onClick={() => setSourcePreference(source, 'normal').catch(() => {})}>Reset</button></div>)}</div>}
-          </div>
-        </details>
+        <ReadingAppearance pathname={location.pathname} />
         {(summary.pendingSync + pendingMutations) > 0 && <button className="feed-sync-status" onClick={retrySync} title="Retry synchronization" aria-label={`Retry ${summary.pendingSync + pendingMutations} pending change${summary.pendingSync + pendingMutations === 1 ? '' : 's'}`}><span aria-hidden="true">↻</span><span className="feed-sync-status__label">{summary.pendingSync + pendingMutations} pending</span></button>}
       </nav>
       <main className="feed-content" ref={scrollRef} tabIndex={-1} aria-label="Feed">

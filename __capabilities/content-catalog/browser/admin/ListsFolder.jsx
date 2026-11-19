@@ -20,6 +20,7 @@ import { getChildLogger } from "../../../../frontend/src/lib/logging/singleton.j
 import { runWithFeedback, showUndoToast } from "../../../../frontend/src/modules/Admin/shared/feedback.js";
 import ConfirmModal from "../../../../frontend/src/modules/Admin/shared/ConfirmModal.jsx";
 import ListsItemRow from "./ListsItemRow.jsx";
+import { ActionMenu } from "../../../../frontend/src/lib/ui/ActionMenu.jsx";
 import { EmptyItemRow } from "./EmptyItemRow.jsx";
 import { fetchContentMetadata } from "./ContentDisplays.jsx";
 import { swapContentPayloads } from "./listConstants.js";
@@ -505,29 +506,26 @@ function FolderEditor({ type, listName }) {
             onChange={(e) => setSearchQuery(e.target.value)}
             className="lists-folder-search"
           />
-          <Menu position="bottom-end">
-            <Menu.Target>
-              <ActionIcon className="ds-touch-target" variant="subtle" aria-label="List actions" data-testid="list-menu-button">
-                <IconDotsVertical size={20} aria-hidden="true" />
-              </ActionIcon>
-            </Menu.Target>
-            <Menu.Dropdown>
-              <Menu.Item
-                leftSection={<IconSettings size={16} />}
-                onClick={() => setSettingsOpen(true)}
-              >
-                {typeLabel} Settings
-              </Menu.Item>
-              <Menu.Divider />
-              <Menu.Item
-                color="red"
-                leftSection={<IconTrash size={16} />}
-                onClick={() => setDeleteListOpen(true)}
-              >
-                Delete {typeLabel}
-              </Menu.Item>
-            </Menu.Dropdown>
-          </Menu>
+          <ActionMenu position="bottom-end" trigger={
+            <ActionIcon className="ds-touch-target" variant="subtle" aria-label="List actions" data-testid="list-menu-button">
+              <IconDotsVertical size={20} aria-hidden="true" />
+            </ActionIcon>
+          }>
+            <Menu.Item
+              leftSection={<IconSettings size={16} />}
+              onClick={() => setSettingsOpen(true)}
+            >
+              {typeLabel} Settings
+            </Menu.Item>
+            <Menu.Divider />
+            <Menu.Item
+              color="red"
+              leftSection={<IconTrash size={16} />}
+              onClick={() => setDeleteListOpen(true)}
+            >
+              Delete {typeLabel}
+            </Menu.Item>
+          </ActionMenu>
         </Group>
       </Group>
 

@@ -7,7 +7,8 @@
 // DispatchProgressTray, and the card itself goes live when the device reports.
 // No raw source ids render: titles via displayTitle, context via
 // resultSubtitle, device names via deviceName.
-import React, { useCallback, useRef, useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
+import { useClickOutside } from '@mantine/hooks';
 import { useDevice } from "./useDevice.js";
 import { deviceName } from "./deviceDisplay.js";
 import { useLiveSearch } from "../search/useLiveSearch.js";
@@ -17,7 +18,8 @@ import { SearchErrorState } from "../search/SearchErrorState.jsx";
 import { StreamStatusLine } from "../../../../../__capabilities/content-catalog/browser/search-status.mjs";
 import { describeBusy } from "../cast/castCopy.js";
 import { useDispatch } from "../cast/useDispatch.js";
-import { useDismissable } from "../../../../../frontend/src/hooks/useDismissable.js";
+import { useHotkey } from "@/lib/hooks/useHotkey.js";
+import { useDismissLayer } from "@/lib/ui/dismiss/useDismissLayer.js";
 import "./Fleet.scss";
 import { isContainer } from "../../../../../__capabilities/content-catalog/browser/combobox-state.mjs";
 
@@ -38,18 +40,29 @@ function sentenceCase(phrase) {
   return phrase.charAt(0).toUpperCase() + phrase.slice(1);
 }
 
-export function FleetPlayPicker({ deviceId, onClose }) {
+const OUTSIDE_EVENTS = ['pointerdown'];
+
+export function FleetPlayPicker({ deviceId, onClose, openerRef }) {
   const { device, entry } = useDevice(deviceId);
   const { dispatchToTarget } = useDispatch();
   const liveSearch = useLiveSearch();
   const { results, error, sourceErrors, setQuery, retry } = liveSearch;
   const [text, setText] = useState('');
-  const panelRef = useRef(null);
-
-  // Escape / tap-outside dismisses. The card's own "Play…" button is marked
-  // data-play-toggle=<id> and ignored here so its click toggles cleanly
-  // (dismiss + re-open flicker otherwise).
-  useDismissable(panelRef, { open: true, onDismiss: onClose, ignore: `[data-play-toggle="${deviceId}"]` });
+  const [panel, setPanel] = useState(null);
+  const inside = useMemo(() => {
+    const opener = openerRef?.current;
+    return opener ? [panel, opener] : [panel];
+  }, [panel, openerRef]);
+  const closeFromKeyboard = () => {
+    onClose?.();
+    openerRef?.current?.focus({ preventScroll: true });
+  };
+  const usesDismissStack = useDismissLayer(true, closeFromKeyboard);
+  useHotkey('escape', () => {
+    if (usesDismissStack) return false;
+    closeFromKeyboard();
+  });
+  useClickOutside(onClose, OUTSIDE_EVENTS, inside);
 
   const name = deviceName(device, deviceId);
   const busy = describeBusy(entry);
@@ -86,7 +99,7 @@ export function FleetPlayPicker({ deviceId, onClose }) {
   }, [dispatchToTarget, deviceId, onClose]);
 
   return (
-    <div ref={panelRef} data-testid={`fleet-play-panel-${deviceId}`} className="fleet-play-panel">
+    <div ref={setPanel} data-testid={`fleet-play-panel-${deviceId}`} className="fleet-play-panel">
       <input
         data-testid={`fleet-play-input-${deviceId}`}
         className="fleet-play-input"
