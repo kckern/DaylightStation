@@ -29,6 +29,50 @@ describe('acknowledged piano coaching', () => {
     expect(record.learn.revision).toBe('old');
   });
 
+  describe('mastery summary', () => {
+    const silverTask = (f) => f.plan.tasks.find((task) => task.skill === 'silver');
+    const withLog = (f) => { const info = []; return { info, service: new PianoLearnCoachService({ ...f, logger: { info: (name, data) => info.push([name, data]), warn() {} } }) }; };
+
+    it('stores per-passage certification with each saved event', async () => {
+      const f = pianoCoachFixture(); const { service } = withLog(f);
+      await service.record('learner4', SCORE, f.outcome('silver-take', { task: silverTask(f) }));
+      expect(f.records.get(`learner4/${SCORE}`).learnCoach.summary).toMatchObject({ total: 1, silver: 1, gold: 0, nextPassageId: null,
+        passages: [{ id: 'opening', start: 0, end: 3, silver: '2026-10-26T18:00:00.000Z', gold: null }], updatedAt: '2026-10-26T18:00:00.000Z' });
+    });
+
+    it('keeps the summary through pending-write recovery', async () => {
+      const f = pianoCoachFixture(); const { service } = withLog(f);
+      f.failNextSave();
+      await expect(service.record('learner4', SCORE, f.outcome('silver-take', { task: silverTask(f) }))).rejects.toThrow('disk full');
+      await new PianoLearnCoachService(f).get('learner4', SCORE);
+      expect(f.records.get(`learner4/${SCORE}`).learnCoach.summary.silver).toBe(1);
+    });
+
+    it('logs the check and a new certification once', async () => {
+      const f = pianoCoachFixture(); const { service, info } = withLog(f);
+      await service.record('learner4', SCORE, f.outcome('one', { task: silverTask(f) }));
+      await service.record('learner4', SCORE, f.outcome('two', { task: silverTask(f) }));
+      expect(info.filter(([name]) => name === 'piano.learn.silver-check')).toHaveLength(2);
+      expect(info.find(([name]) => name === 'piano.learn.silver-check')[1]).toMatchObject({ passageId: 'opening', passed: true, cleanliness: 1 });
+      expect(info.filter(([name]) => name === 'piano.learn.certified').map(([, data]) => data)).toEqual([expect.objectContaining({ userId: 'learner4', level: 'silver', passageId: 'opening', provenance: 'check' })]);
+    });
+
+    it('accepts and persists set-aside', async () => {
+      const f = pianoCoachFixture(); const { service, info } = withLog(f);
+      await service.record('learner4', SCORE, { plan: f.plan, event: { id: 'aside', type: 'set-aside', profileId: 'learner4', task: silverTask(f) } });
+      const stored = f.records.get(`learner4/${SCORE}`).learnCoach;
+      expect(stored.setAside).toEqual({ opening: '2026-10-26' });
+      expect(stored.summary.setAside).toEqual({ opening: '2026-10-26' });
+      expect(info.find(([name]) => name === 'piano.learn.set-aside')[1]).toMatchObject({ passageId: 'opening' });
+    });
+
+    it('rejects unknown event types and assist values', async () => {
+      const f = pianoCoachFixture(); const { service } = withLog(f);
+      await expect(service.record('learner4', SCORE, { plan: f.plan, event: { id: 'x', type: 'other', profileId: 'learner4', task: silverTask(f) } })).rejects.toMatchObject({ status: 400 });
+      await expect(service.record('learner4', SCORE, { plan: f.plan, event: { id: 'y', type: 'selection', profileId: 'learner4', task: { ...silverTask(f), assist: 'some' } } })).rejects.toMatchObject({ status: 400 });
+    });
+  });
+
   it('rejects reuse of an event ID with a different task payload', async () => {
     const f = pianoCoachFixture();const s = new PianoLearnCoachService(f);const body = f.outcome('attempt-one');
     await s.record('learner4', SCORE, body);

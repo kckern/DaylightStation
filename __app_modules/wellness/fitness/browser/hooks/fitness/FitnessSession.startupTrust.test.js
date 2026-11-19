@@ -194,3 +194,36 @@ describe('FitnessSession real accepted Cool baseline', () => {
     expect(map.get('rider-one')).toMatchObject({ zoneId: null, zoneColor: null, heartRate: 187 });
   });
 });
+
+describe('adult and admin startup trust through the live session', () => {
+  beforeEach(() => { vi.useFakeTimers({ toFake: ['Date'] }); vi.setSystemTime(new Date('2026-11-18T18:45:50Z')); });
+  afterEach(() => vi.useRealTimers());
+
+  it('scores an adult who starts Warm without ever visiting Cool', () => {
+    const session = sessionFor([{ id: 'parent', name: 'Parent', birthyear: 1980, hr_device_id: 'f' }]);
+    for (let i = 0; i < 3; i++) session.ingestData(hr('f', 150));
+    expect(session.getZoneProfile('parent')?.zoneTrusted ?? false).toBe(false);
+    session.ingestData(hr('f', 150));
+    expect(session.getZoneProfile('parent')).toMatchObject({ zoneTrusted: true, currentZoneId: 'warm' });
+    expect(session.treasureBox.perUser.get('parent').highestZone.id).toBe('warm');
+    for (let i = 0; i < 6; i++) { advance(1000); session.ingestData(hr('f', 150)); session._collectTimelineTick({ timestamp: Date.now() }); }
+    expect(session.treasureBox.perUser.get('parent').totalRings).toBeGreaterThan(0);
+  });
+
+  it('admin approval starts a child earning without waiting for Cool and cannot apply to a new session', () => {
+    const session = sessionFor([{ id: 'child', name: 'Child', birthyear: 2015, hr_device_id: 'f' }]);
+    for (let i = 0; i < 4; i++) session.ingestData(hr('f', 150));
+    const profile = session.getZoneProfile('child');
+    expect(profile.zoneTrusted).toBe(false);
+    const request = { sessionId: session.sessionId, userId: 'child', deviceId: 'f', trustRevision: profile.trustRevision, adminId: 'parent' };
+    expect(session.approveZoneTrust({ ...request, sessionId: 'old-session' })).toEqual({ ok: false, reason: 'session-changed' });
+    expect(session.approveZoneTrust(request)).toEqual({ ok: true });
+    expect(session.getZoneProfile('child')).toMatchObject({ zoneTrusted: true, currentZoneId: 'warm' });
+    advance(1000); session.ingestData(hr('f', 150));
+    expect(session.treasureBox.perUser.get('child').highestZone.id).toBe('warm');
+    for (let i = 0; i < 6; i++) { advance(1000); session.ingestData(hr('f', 150)); session._collectTimelineTick({ timestamp: Date.now() }); }
+    expect(session.treasureBox.perUser.get('child').totalRings).toBeGreaterThan(0);
+    session.reset();
+    expect(session.approveZoneTrust(request).ok).toBe(false);
+  });
+});

@@ -248,8 +248,20 @@ APK → `app/app/build/outputs/apk/debug/app-debug.apk`. **Bump `versionCode` on
 `install -r` rejects a lower one.
 
 The same build creates the configured payload jar and `.sha256`, then bakes that
-jar into the APK as the recovery payload. Routine development currently builds
-`p8-kiosk-alert-durability.jar`; shell version 32 supports this payload as its recovery image.
+jar into the APK as the recovery payload. Shell 36 builds
+`p10-ordered-owner-transfer.jar`. An APK replacement preserves the active payload
+pointer. Use `pkctl payload <jar-url> <sha256>` to activate the approved jar and
+`pkctl payload` to check its active version.
+
+Run the shell and payload tests with the same Gradle 7.5.1 distribution:
+
+```bash
+$GRADLE :app:testDebugUnitTest :payload:testDebugUnitTest :app:assembleDebug --no-daemon
+bash verify-cutover-apk.sh app/build/outputs/apk/debug/app-debug.apk <android-build-tools-dir>
+```
+
+Use the [Portal cutover runbook](../../__docs/runbooks/android/portal-cutover.md)
+to record the approved artifact digests and compare the signer with the installed APK.
 
 ## Persistent shell and zero-tap payloads
 
@@ -446,6 +458,102 @@ requires explicit authorization and a backup. The upstream connection driver
 expects a network ADB address; enable authorized TCP ADB from USB first rather
 than passing the USB serial to its reconnect loop.
 
+## Handing device ownership to DaylightStation Android
+
+Portal Keys can give its device-owner role to the DaylightStation Android app
+without a factory reset, using `DevicePolicyManager.transferOwnership` (Android
+API 28). **That API has never been run on this Portal firmware.** Everything
+below is compiled and unit-tested on the JVM against a fake; the Android calls
+themselves are unproven until a real transfer is attempted on hardware.
+
+```bash
+export PK_HOST=<portal-ip>:8771
+node _extensions/portal-keys/pkctl.mjs transfer-owner
+```
+
+The command sends the admin token and calls the operations payload:
+
+```
+POST http://<portal-ip>:8773/owner/transfer
+X-Portal-Token: <admin token>
+{"to":"net.kckern.daylight.portal/net.kckern.daylight.cap.lockdown.shell.DaylightAdminReceiver"}
+```
+
+The route needs the admin token like every other route on `:8773`. In order, it:
+
+1. Refuses any `to` other than exactly that component (`400`,
+   `error: target-not-allowed`). Nothing is touched.
+2. Refuses below API 28 (`409`, `api-28-required`) and when this app is not
+   device owner (`409`, `not-device-owner`). Nothing is touched.
+3. Sets a persisted hold so `KioskPolicy.enforce()` stops re-applying policy.
+4. **Releases the policy this app applied**, so the receiving app starts clean.
+   On API 28 a transfer carries the outgoing owner's policies over to the new
+   owner, which is why they are undone first:
+
+   | Step | Call |
+   |---|---|
+   | `persistent-home` | `clearPackagePersistentPreferredActivities(admin, "de.ozerov.fully")` |
+   | `lock-task-packages` | `setLockTaskPackages(admin, {})` (also ends Fully's pinned task) |
+   | `lock-task-features` | `setLockTaskFeatures(admin, LOCK_TASK_FEATURE_GLOBAL_ACTIONS)`, the documented default |
+   | `status-bar` | `setStatusBarDisabled(admin, false)` |
+   | `keyguard` | `setKeyguardDisabled(admin, false)` |
+   | `uninstall-block` | `setUninstallBlocked(admin, "de.ozerov.fully", false)` |
+   | `user-restrictions` | `clearUserRestriction` for `DISALLOW_SAFE_BOOT`, `DISALLOW_FACTORY_RESET`, `DISALLOW_ADD_USER`, `DISALLOW_APPS_CONTROL` |
+   | `organization-name` | `setOrganizationName(admin, null)` |
+   | `hidden-packages` | `setApplicationHidden(admin, pkg, false)` for `org.chromium.chrome`, `com.android.chrome`, `com.facebook.alohaapps.controlcenter`, `com.android.systemui` |
+
+   If any step throws, the rest are still attempted, the transfer is skipped
+   and the answer is `500`, `release-incomplete`, with the failures listed.
+5. Calls `transferOwnership(admin, target, null)`.
+
+The answer reports `ok`, `policyReleased`, `transferred`, the `released` steps,
+any `releaseFailures` and a `note`. An exception from `transferOwnership` is
+caught and returned as `500`, `error: transfer-failed`, with `exception` (the
+class name) and `message`. In that case the policy **stays released**: this app
+is still device owner, the kiosk is open, and nothing is put back by a timer, a
+payload restart or a reboot. Re-arm it explicitly:
+
+```bash
+node _extensions/portal-keys/pkctl.mjs resume-policy   # POST :8773/owner/resume-policy
+```
+
+Things the release does not undo, because `KioskPolicy` never applied them
+through device policy: the `pm disable-user` done over ADB during provisioning
+for SystemUI and the Control Center (un-hiding does not re-enable them), Fully's
+own kiosk lock, and the secure-settings writes made by the beep guard.
+`DISALLOW_CREATE_WINDOWS` is cleared by `enforce()`, never set, so there is
+nothing to restore.
+
+While the hold is set the Home watchdog stops pulling Fully to the foreground,
+so it does not fight a new Home app. It keeps observing and still queues
+`home-lost` and `policy-lost` alerts, which are accurate: this app is no longer
+protecting the panel. Uninstall or disable Portal Keys once the new app has
+taken over.
+
+**A payload rollback to p8 or earlier removes the hold logic.** If this app is
+still device owner at that point (a failed transfer), the older payload
+re-applies the full kiosk policy on its next tick.
+
+### Ownership coming back to this app
+
+The cutover shell declares `<support-transfer-ownership />` in
+`res/xml/device_admin.xml` and implements `PortalAdminReceiver.onTransferOwnershipComplete`. The framework
+checks that tag on the **receiving** admin, so it matters only when the new app
+transfers ownership back here. The receiver sets the same hold and writes an
+`OWNER` line to the shell log; it applies no policy. Run `resume-policy` to
+start enforcement again.
+
+### Which half, and how it reaches the panel
+
+| Change | Half | How it gets onto the device |
+|---|---|---|
+| `/owner/transfer`, `/owner/resume-policy`, `OwnerTransfer`, the release steps and the hold in `KioskPolicy`/`HomeWatchdog` | payload `p10-ordered-owner-transfer` | Zero-tap payload swap: `pkctl payload <jar-url> <sha256>` (see [Zero-tap payload upgrade](#zero-tap-payload-upgrade)). No Android confirmation. |
+| `<support-transfer-ownership />`, `onTransferOwnershipComplete` | persistent shell, `versionCode 36` | Full APK replacement: `adb install -r`, or `pkctl update <apk-url>`, which needs the Package Installer confirmation on the panel (one tap, or the accessibility service approving its own update dialog). |
+
+Use the verified shell and payload together for the rehearsal. Lock task and
+the hidden SystemUI can get in the
+way of the installer dialog, so prefer ADB for the shell on a locked panel.
+
 ## Keyboard transports measured on this Portal
 
 ### Bluetooth
@@ -637,14 +745,16 @@ for POST; a PUT body goes to a temp file named in `content`. Every authenticated
 
 **Shell 35 is installed (2026-11-17) and `shutdown/config.yml` points at `:8771`.**
 Shell APKs must be signed with the key that signed the installed app (the laptop's
-debug key, SHA-256 `3663e947…0fb4`). The payload also serves the same legacy
-contract, `PUT :8773/lockdown` (`LockdownRoute`), writing the `lockdownUntil`
-preference the shell's key filter reads; it carried the live lock before shell 35
-and remains a fallback (payload `p7.1-lockdown-route` = `04ed630a44` plus that route).
-Verified after install: a 15 s lock on `:8771` read `lockdownActive: true` and
-cleared at its deadline. Verify a lock after any shell change with a short
-deadline: `PUT /lockdown {"locked":true,"lockedUntil":<now+15s>}` must answer
-`lockdownActive: true`, then read false after the deadline.
+debug key, SHA-256 `3663e947…0fb4`). Shell 36 and its paired payload serve ordered
+protocol 2 on both `PUT :8771/lockdown` and `PUT :8773/lockdown`. Once an ordered
+revision is recorded, the shell uses its ordered deadline for key suppression,
+including when an older payload is restored.
+
+Verify a lock after any shell change with an approved short Stop issued by the
+safety service on the existing provider path. The response must include
+`lockdownProtocolVersion: 2`, the matching `lockdownRevision`, and
+`lockdownActive: true`. Confirm it clears at the deadline. The safety service
+owns the ordered revisions.
 
 The complete, tracked YAML template is
 [`__docs/configuration/public-kiosk-shutdown.yml`](../../__docs/configuration/public-kiosk-shutdown.yml).
@@ -662,6 +772,8 @@ node _extensions/portal-keys/pkctl.mjs status   # serviceBound / keysSeen / disp
 node _extensions/portal-keys/pkctl.mjs log      # recent key, screen and config events
 node _extensions/portal-keys/pkctl.mjs watch    # live key stream over the WebSocket
 node _extensions/portal-keys/pkctl.mjs config set <key> <value>
+node _extensions/portal-keys/pkctl.mjs transfer-owner   # release policy, hand device ownership to DaylightStation Android
+node _extensions/portal-keys/pkctl.mjs resume-policy    # re-arm kiosk policy after a failed transfer or a transfer back
 ```
 
 Keys: `fkbHost`, `fkbPassword`, `screenToggleEnabled`, `consumeVolume`, `doublePressMs`,

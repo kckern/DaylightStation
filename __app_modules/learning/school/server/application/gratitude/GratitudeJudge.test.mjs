@@ -1,5 +1,15 @@
-import { describe,it,expect } from 'vitest';
+import { describe,it,expect,vi } from 'vitest';
 import { GratitudeJudge } from './GratitudeJudge.mjs';
+import { GRATITUDE_NOVELTY } from '../../domain/gratitudeRubric.mjs';
+it('tells novelty that a reason added to a bare earlier name is new substance',()=>{
+  // Calibration 2026-11-17: without this rule, "my mom\nShe made me pancakes"
+  // against an earlier "I'm grateful for my mom" came back distinct but below
+  // the confidence bar, so a follow-up answer was sent back as unclear.
+  expect(GRATITUDE_NOVELTY).toContain('names only a person or group');
+  expect(GRATITUDE_NOVELTY).toContain('"My mom / She made me pancakes" is distinct from "Mom"');
+  // The same calibration showed the first wording let a bare compliment count as new.
+  expect(GRATITUDE_NOVELTY).toContain('"My mother is nice" repeats "My mother"');
+});
 const answer=(choice,confidence=.98)=>({type:'choice',choice,confidence,probabilities:{[choice]:confidence}});
 const effort=probability=>({type:'yesNo',probability});
 const history=[{id:'toys-day',studyDay:'2026-11-16',text:'My toys',subject:'Toys'}];
@@ -28,5 +38,27 @@ describe('gratitude Jev policy',()=>{
   it('allows a fresh meaningful experience and keeps service failure unpenalized',async()=>{
     expect((await judge({effort:effort(.98),novelty:answer('distinct')}).assess({text:'엄마가 내가 무서울 때 도와주셨어요',history})).verdict).toBe('eligible');
     expect((await new GratitudeJudge({}).assess({text:'Family',history:[]})).verdict).toBe('unavailable');
+  });
+  it('asks for a follow-up only when allowed and the answer is confidently general',async()=>{
+    const ask=specific=>judge({effort:effort(.98),specific:effort(specific)});
+    expect((await ask(.05).assess({text:'my mom',history:[],allowFollowUp:true})).verdict).toBe('general');
+    expect((await ask(.05).assess({text:'my mom',history:[]})).verdict).toBe('eligible');
+    expect((await ask(.5).assess({text:'my mom',history:[],allowFollowUp:true})).verdict).toBe('eligible');
+    expect((await ask(.97).assess({text:'Mom made pancakes',history:[],allowFollowUp:true})).verdict).toBe('eligible');
+  });
+  it('asks the specificity question only when a follow-up is allowed',async()=>{
+    const seen=[];const gateway={evaluate:async(state,questions)=>{seen.push(Object.keys(questions));return {answers:{effort:effort(.98)}};}};
+    await new GratitudeJudge({decisionGateway:gateway}).assess({text:'Mom',history:[]});
+    await new GratitudeJudge({decisionGateway:gateway}).assess({text:'Mom',history:[],allowFollowUp:true});
+    expect(seen).toEqual([['effort'],['effort','specific']]);
+  });
+  it('nonsense still wins over general, and general skips the repetition check',async()=>{
+    expect((await judge({effort:effort(.02),specific:effort(.01)}).assess({text:'lalala',history:[],allowFollowUp:true})).verdict).toBe('nonsense');
+    expect((await judge({effort:effort(.98),specific:effort(.02),novelty:answer('toys-day')}).assess({text:'toys',history,allowFollowUp:true})).verdict).toBe('general');
+  });
+  it('logs a judge failure by error name and code, never the gateway text',async()=>{
+    const warn=vi.fn();
+    await new GratitudeJudge({decisionGateway:{evaluate:async()=>{throw new Error('echo: my mom');}},logger:{warn}}).assess({text:'my mom',history:[]});
+    expect(warn).toHaveBeenCalledWith('school.gratitude.judge-unavailable',{error:'Error',code:null});
   });
 });

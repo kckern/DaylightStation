@@ -65,6 +65,34 @@ async function playFull(page){
  await page.getByRole('heading',{name:'Nice work!'}).waitFor({timeout:15000});
 }
 describe('real Learn journey',()=>{
+
+ const runReady=async(page)=>{await page.locator('.piano-exercise-run').waitFor({timeout:15000});await page.waitForTimeout(800);};
+ const startSilverCheck=async(page)=>{await click(page,'Start learning');await click(page,'Play it on your own');await page.getByRole('heading',{name:'Play it on your own'}).waitFor();
+  await page.waitForFunction(()=>[...document.querySelectorAll('button')].some(b=>b.textContent==='Start practice'&&!b.disabled));await page.screenshot({path:path.join(ARTIFACTS,'silver-prepare.png')});await click(page,'Start practice');
+  await runReady(page);};
+ const playFree=(page,frames)=>page.evaluate(async(list)=>{for(const frame of list){window.__hold(frame);await new Promise(r=>setTimeout(r,70));}},frames);
+ // Each position: right hand first, both down together, right lifts while left still holds, then all up.
+ const cleanTake=[[60,48],[62,50],[64,52],[65,53],[60,48],[62,50],[64,52],[65,53]].flatMap(([r,l])=>[[r],[r,l],[l],[]]);
+ it('certifies Silver from a clean hints-off take with hands held across each other',async()=>{
+  const{page,f,errors}=await open();try{
+   await startSilverCheck(page);await playFree(page,cleanTake);await page.getByRole('heading',{name:'Silver!'}).waitFor({timeout:15000});
+   await page.waitForFunction(()=>document.body.innerText.includes('Progress saved'));await page.screenshot({path:path.join(ARTIFACTS,'silver-earned.png')});
+   const attempt=[...f.attempts.values()][0];expect(attempt.diagnostics).toMatchObject({matched_notes:16,wrong_notes:0,missed_notes:0});expect(attempt.criteria.cleanliness).toBe(1);
+   const record=[...f.records.values()][0];expect(record.learnCoach.summary.silver).toBeGreaterThan(0);
+   await click(page,'Finish for now');await page.getByText(/passages Silver/).waitFor();await page.screenshot({path:path.join(ARTIFACTS,'silver-landing.png')});
+   await page.locator('.piano-learn-progress__pill[data-state="silver"]').first().click();await page.getByRole('heading',{name:'You have this one'}).waitFor();await page.screenshot({path:path.join(ARTIFACTS,'silver-certified.png')});
+   expect(errors).toEqual([]);
+  }finally{await page.close();}
+ },90000);
+ it('offers a retry, then a drill and a way out, after missed Silver checks',async()=>{
+  const{page,errors}=await open();try{
+   await startSilverCheck(page);const miss=[[60,48],[],...[[62,50],[64,52],[65,53],[60,48],[62,50],[64,52],[65,53]].flatMap((pair)=>[[70],[],[71],[],pair,[]])];
+   await playFree(page,miss);await page.getByRole('heading',{name:'Almost on your own'}).waitFor({timeout:15000});await page.screenshot({path:path.join(ARTIFACTS,'silver-miss.png')});
+   await click(page,'Try again');await runReady(page);await playFree(page,miss);
+   await page.getByRole('button',{name:'Come back to this later'}).waitFor({timeout:15000});await page.screenshot({path:path.join(ARTIFACTS,'silver-second-miss.png')});
+   expect(await page.getByRole('button',{name:/^Practice /}).count()).toBeGreaterThan(0);expect(errors).toEqual([]);
+  }finally{await page.close();}
+ },90000);
  it('grades two-hand timed notes, saves each take once, earns skills and resumes after remount',async()=>{
   const{page,f,errors}=await open();try{
    await prepareFull(page);await page.screenshot({path:path.join(ARTIFACTS,'tablet-preparation.png')});

@@ -30,9 +30,8 @@ describe('Learn coaching lifecycle', () => {
     const { result } = renderHook(() => useLearnCoach({ plan }));
     await waitFor(() => expect(result.current.loaded).toBe(true));
     await act(async () => { await result.current.selectTask(plan.tasks[1]); });
-    expect(result.current.projection.recommended.skill).toBe('left');
+    expect(result.current.state.resume.skill).toBe('left');
     await act(async () => { await result.current.record(plan.tasks[1], { ...good, assessmentId: 'one' }); });
-    await act(async () => { await result.current.record(plan.tasks[1], { ...good, assessmentId: 'two' }); });
     expect(result.current.projection.segments[0].skills.find((s) => s.skill === 'left').ready).toBe(true);
     expect(result.current.saveStatus).toBe('saved');
   });

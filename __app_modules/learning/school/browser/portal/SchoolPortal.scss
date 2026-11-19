@@ -58,3 +58,7 @@
 
 // Embedded app roots fill their measured surface even outside screen-host.
 .school-surface > .school-app { height: 100%; min-height: 0; }
+// The standalone page (`/app/school`) has no sized ancestor for that percentage:
+// html, body and #root are auto height. Inside a screen, the theme root is not a
+// child of #root and keeps filling its fixed-size screen box.
+#root > .school-surface-theme { height: 100dvh; }

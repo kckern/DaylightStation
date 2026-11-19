@@ -985,6 +985,11 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
   // the notice (continueAsGuest() + the refusal inside start(), batched into
   // the same render) -- justSetNoticeRef lets that single pass through.
   useEffect(() => {
+    // Identity is unknown until the roster lands and the persisted claim is
+    // read back. A Gratitude launch restored from sessionStorage on a reload is
+    // already in state by then; judging it against that blank identity would
+    // end it and drop the child on the code pad.
+    if (status !== 'ready') return;
     if (justSetNoticeRef.current) justSetNoticeRef.current = false;
     else setNotice(null);
     const activityLearner = active?.descriptor?.userId ?? active?.learnerId
@@ -995,7 +1000,7 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
     // Watching launches would also close a legitimate claim+launch transition.
     if ((activityLearner && activityLearner !== currentUser?.id) || active?.mode === 'remediation') goHome();
   // eslint-disable-next-line react-hooks/exhaustive-deps -- identity changes own this reset
-  }, [currentUser?.id, isGuest]);
+  }, [status, currentUser?.id, isGuest]);
 
   const subjectId = section?.startsWith('subject:') ? section.slice(8) : null;
   const courseId = section?.startsWith('sentence-ladder:') ? section.slice(16) : null;
@@ -1319,7 +1324,7 @@ function SchoolShell({ clear, mode = null, idleTimeoutSeconds = null, screenOffT
         {section === 'rubiks-cube' && !active && (
           <LocalMountCommit requestId={cubeLaunch?.mountRequestId} confirm={confirmLocalMount}>
             <SchoolActivityHost activityId="rubiks-cube" renderProps={{
-  userId: cubeLaunch?.learnerId === currentUser?.id ? cubeLaunch.learnerId : null,
+  userId: cubeLaunch && cubeLaunch.learnerId === currentUser?.id ? cubeLaunch.learnerId : null,
   courseId: cubeLaunch?.courseId ?? 'beginner-v1',
   cubeGrant: cubeLaunch?.cubeGrant ?? null,
   onExit: goHome

@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Replaces android-auto's file of the same name in a build that lists car-actions (this
+     module depends on android-auto's shell half, and a library's resource wins over its
+     dependency's). Android Auto reads it through android-auto's
+     com.google.android.gms.car.application metadata: a media app, and an app with
+     templated screens (the car list). -->
+<automotiveApp>
+    <uses name="media" />
+    <uses name="template" />
+</automotiveApp>

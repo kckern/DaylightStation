@@ -60,6 +60,7 @@ describe('expandContainerInput', () => {
     expect(out[0]).toEqual({
       contentId: 'plex:1', title: 'Track 1', thumbnail: '/thumb/1',
       duration: 101, format: 'audio', containerTitle: 'Beatles For Sale',
+      containerContentId: 'plex:900',
     });
   });
 
@@ -83,6 +84,8 @@ describe('expandContainerInput', () => {
     );
     expect(out.map((i) => i.contentId)).toEqual(['plex:e1', 'plex:e2', 'plex:e3']);
     expect(out.every((i) => i.containerTitle === 'The Show')).toBe(true);
+    // The pin target is the container that was played (the show), not a season.
+    expect(out.every((i) => i.containerContentId === 'plex:show')).toBe(true);
     expect(out[0].format).toBe('video');
   });
 

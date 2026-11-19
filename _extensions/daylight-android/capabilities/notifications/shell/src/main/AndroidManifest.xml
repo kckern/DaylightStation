@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application>
+        <!-- The one entry point for links. Exported and browsable, so a pushed notification
+             or a web page can open a view in the app; that also means any app can send it
+             anything. It reads the action and the data URI only, and the payload refuses
+             every link that is not on the configured site or does not carry this install's
+             key where one is needed.
+             The https filter for the household site is not here: its host is private, so
+             the device manifest adds it at build time (appLinks.host in the device file).
+             taskAffinity "" and excludeFromRecents: it is a pass-through with no window of
+             its own, and must not drag the app's task to the front by being started. -->
+        <activity
+            android:name="net.kckern.daylight.cap.notifications.shell.LinkActivity"
+            android:exported="true"
+            android:excludeFromRecents="true"
+            android:noHistory="true"
+            android:taskAffinity=""
+            android:theme="@android:style/Theme.Translucent.NoTitleBar">
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="daylight" />
+            </intent-filter>
+        </activity>
+    </application>
+</manifest>

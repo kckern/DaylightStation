@@ -1,0 +1,5 @@
+# Hardware volume keys become page input: consumed, sent on the control WebSocket as
+# {"type":"key"}, with double-press volume-down to sleep and any key to wake.
+entry: net.kckern.daylight.cap.volumekeys.VolumeKeysCapability
+requires: [accessibility]
+permissions: []

@@ -1,0 +1,10 @@
+# Deep links: the daylight:// scheme and https links of the household site, received by
+# one link activity in shell/ and decided here. Household pushes keep arriving through
+# the Home Assistant relay; this capability carries no push transport. It also posts
+# the app's own local notifications for the other capabilities (LocalNotices); the
+# permission to show them is asked for in the app, on Android 13 and later.
+entry: net.kckern.daylight.cap.notifications.NotificationsCapability
+permissions: []
+exported:
+  # Links from other apps and web pages; every one is checked by the payload.
+  - net.kckern.daylight.cap.notifications.shell.LinkActivity

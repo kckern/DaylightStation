@@ -17,6 +17,8 @@ final class OpsServer extends NanoHTTPD{
         if(u.equals("/")||u.equals("/status"))return json(new JSONObject().put("ok",true).put("payload",Main.VERSION).put("homeWatchdog",homeWatchdog.status()).put("port",PORT).put("hidPort",HidBridgeServer.PORT).put("shellVersionCode",shell.shellVersionCode()).put("a11yBound",shell.accessibilityService()!=null).put("usbHid",usbHid==null?JSONObject.NULL:usbHid.status()).put("bluetooth",bluetooth==null?JSONObject.NULL:bluetooth.status()));
         if(u.equals("/kiosk-home"))return json(homeWatchdog.status());
         if(u.equals("/kiosk-policy/system-ui")&&x.getMethod()==Method.POST)return json(homeWatchdog.configureShellUi(new JSONObject(body(x)).getBoolean("hidden")));
+        if(u.equals("/owner/transfer")&&x.getMethod()==Method.POST){String to=null;try{to=new JSONObject(body(x)).optString("to",null);}catch(Exception e){return json(Response.Status.BAD_REQUEST,new JSONObject().put("ok",false).put("error","usage: {\"to\":\"<package>/<receiver>\"}"));}return ownerTransfer(homeWatchdog.transferOwner(to));}
+        if(u.equals("/owner/resume-policy")&&x.getMethod()==Method.POST)return json(homeWatchdog.resumePolicy());
         if(u.equals("/kiosk-home/webhook")&&x.getMethod()==Method.POST)return json(homeWatchdog.configureWebhook(new JSONObject(body(x)).getString("url")));
         if(u.equals("/page/config")&&x.getMethod()==Method.POST)return json(homeWatchdog.configurePage(new JSONObject(body(x))));
         if(u.equals("/page/journal"))return json(homeWatchdog.pageJournal());
@@ -41,7 +43,7 @@ final class OpsServer extends NanoHTTPD{
         if(u.equals("/accessibility/silence-beep")&&x.getMethod()==Method.POST){if(beepGuard==null)return err("beep guard unavailable");return json(beepGuard.silence("request"));}
         if(u.equals("/payload")){if(x.getMethod()==Method.POST)return json(new JSONObject().put("ok",true).put("result",shell.requestPayloadSwap(param(x,"url"),param(x,"sha256"))));return json(new JSONObject(shell.payloadStatusJson()));}
         if(u.equals("/payload/rollback")&&x.getMethod()==Method.POST)return json(new JSONObject().put("ok",true).put("result",shell.requestPayloadRollback()));
-        return err("routes: /status /kiosk-home /kiosk-home/webhook /input /usb-hid /bluetooth /exec /logcat /getsetting /setsetting /accessibility/enable /accessibility/silence-beep /payload");
+        return err("routes: /status /kiosk-home /kiosk-home/webhook /owner/transfer /owner/resume-policy /input /usb-hid /bluetooth /exec /logcat /getsetting /setsetting /accessibility/enable /accessibility/silence-beep /payload");
     }catch(Exception e){return err(e.toString());}}
     static boolean trustedPage(String peer,String origin,String allowed) {
         return ("127.0.0.1".equals(peer) || "::1".equals(peer) || "0:0:0:0:0:0:0:1".equals(peer))
@@ -55,13 +57,25 @@ final class OpsServer extends NanoHTTPD{
             throw new IllegalArgumentException("bounded JSON required");
         return length;
     }
-    /** Legacy public-kiosk lockdown (see LockdownRoute); authenticated by its own token, not the admin one. */
+    /** Keep the fallback listener on the shell's ordered authority when available. */
     private Response lockdown(IHTTPSession x) throws Exception {
         if (x.getMethod()!=Method.PUT) return json(Response.Status.METHOD_NOT_ALLOWED,new JSONObject().put("ok",false).put("error","PUT required"));
-        android.content.SharedPreferences prefs=context.getSharedPreferences(LockdownRoute.PREFS,Context.MODE_PRIVATE);
         String body=LockdownRoute.readBody(x.getHeaders(),x.getInputStream());
+        String token=x.getHeaders().get("x-lockdown-token");
+        if (shell.shellVersionCode() >= 36) {
+            try {
+                ShellServices.LockdownReply reply = shell.applyLockdown(token, body);
+                Response response = newFixedLengthResponse(Response.Status.lookup(reply.status), "application/json", reply.body);
+                response.addHeader("Access-Control-Allow-Origin", "*");
+                return response;
+            } catch (IllegalStateException failed) {
+                return json(Response.Status.INTERNAL_ERROR,
+                    new JSONObject().put("ok", false).put("error", "lockdown persistence failed"));
+            }
+        }
+        android.content.SharedPreferences prefs=context.getSharedPreferences(LockdownRoute.PREFS,Context.MODE_PRIVATE);
         long now=System.currentTimeMillis();
-        LockdownRoute.Decision decision=LockdownRoute.decide(prefs.getString(LockdownRoute.TOKEN,""),x.getHeaders().get("x-lockdown-token"),body,now);
+        LockdownRoute.Decision decision=LockdownRoute.decide(prefs.getString(LockdownRoute.TOKEN,""),token,body,now);
         if (decision.status!=200) return json(decision.status==401?Response.Status.UNAUTHORIZED:Response.Status.BAD_REQUEST,new JSONObject().put("ok",false).put("error",decision.error));
         prefs.edit().putLong(LockdownRoute.UNTIL,decision.until).commit();
         long until=prefs.getLong(LockdownRoute.UNTIL,0);
@@ -102,6 +116,14 @@ final class OpsServer extends NanoHTTPD{
     private static String value(String v,String d){return v==null?d:v;}
     private static String body(IHTTPSession x){try{Map<String,String>f=new java.util.HashMap<>();x.parseBody(f);return f.get("postData");}catch(Exception e){return null;}}
     private boolean authorized(IHTTPSession x){String supplied=x.getHeaders().get("x-portal-token");if(supplied==null){String a=x.getHeaders().get("authorization");if(a!=null&&a.startsWith("Bearer "))supplied=a.substring(7);}return shell.adminToken().equals(supplied);}
+    private Response ownerTransfer(OwnerTransfer.Result r)throws Exception{
+        JSONObject o=new JSONObject().put("ok",r.ok).put("target",r.target==null?JSONObject.NULL:r.target).put("policyReleased",r.policyReleased).put("transferred",r.transferred)
+            .put("released",new org.json.JSONArray(r.released)).put("releaseFailures",new org.json.JSONArray(r.releaseFailures)).put("note",r.note);
+        if(r.error!=null)o.put("error",r.error);
+        if(r.exception!=null)o.put("exception",r.exception).put("message",r.message==null?JSONObject.NULL:r.message);
+        Response.Status s=r.http==200?Response.Status.OK:r.http==400?Response.Status.BAD_REQUEST:r.http==409?Response.Status.CONFLICT:Response.Status.INTERNAL_ERROR;
+        return json(s,o);
+    }
     private Response err(String s){try{return json(new JSONObject().put("ok",false).put("error",s));}catch(Exception e){return newFixedLengthResponse(s);}}
     private Response json(JSONObject o){return json(Response.Status.OK,o);}
     private Response json(Response.Status s,JSONObject o){Response r=newFixedLengthResponse(s,"application/json",o.toString());r.addHeader("Access-Control-Allow-Origin","*");return r;}

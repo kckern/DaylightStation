@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- force-lock: DevicePolicyManager.lockNow(), the screen-off of a device with no owner.
+     support-transfer-ownership: lets another app that is device owner today hand
+     ownership to this one with DevicePolicyManager.transferOwnership (API 28+), which
+     refuses a target admin that does not declare it. -->
+<device-admin xmlns:android="http://schemas.android.com/apk/res/android">
+    <support-transfer-ownership />
+    <uses-policies>
+        <force-lock />
+    </uses-policies>
+</device-admin>

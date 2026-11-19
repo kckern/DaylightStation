@@ -230,6 +230,50 @@ returns to preparation. **Try the full passage** prepares a full-tempo timed
 demonstration when the passage has a timed mastery task. The learner can attempt
 it before completing the easier skills.
 
+### Silver and Gold
+
+Each passage has two separate certifications. **Silver** certifies the notes and
+moves the learner on. **Gold** certifies playing with the metronome at score tempo.
+Gold is optional and never changes the recommended next step. Passing Gold also
+grants Silver.
+
+The recommendation is the first unfinished Silver step in the earliest passage
+without Silver. A Silver drill in progress comes first. Gold work and reviews keep
+their own resume slot. When every passage has Silver, the score offers Gold.
+
+**Play it on your own** is the Silver check: all playable parts, the learner's own
+pace, no metronome, no lit keys and no stuck-ladder note names. It can be attempted
+at any time. Two straight misses on a Silver step or drill offer **Come back to this
+later**, which skips that passage until the next household day. If every remaining
+passage is set aside, the earliest returns. The check ends as a miss after
+`stallSeconds` with no newly matched note, including when the first note is never found.
+
+Policy comes from `sheetmusic.learn.certification` and resolves through the same
+household, category, piece, user and user-piece layers as other Learn settings:
+
+```yaml
+sheetmusic:
+  learn:
+    certification:
+      silver:
+        stepPasses: 1      # clean takes per step before the check
+        checkPasses: 1     # passing Silver checks required
+        cleanliness: 0.8   # share of played notes that must be correct
+        stallSeconds: 30   # time without a new correct note
+```
+
+Invalid values use these defaults. Policy changes never remove earned credit.
+
+Hands-together free grading reads newly pressed keys only. Releases and keys still
+down from earlier notes are never wrong. A position across both hands completes when
+all its notes, each struck since the cursor arrived, are down at the same moment.
+
+Each saved coaching event stores `learnCoach.summary` in the practice record:
+`total`, `silver`, `gold`, `nextPassageId`, `setAside`, `updatedAt` and `passages[]`
+with `id`, `start`, `end`, `silver` and `gold`. Certification values are timestamps,
+`legacy`, or null. Logs: `piano.learn.silver-check`, `piano.learn.certified`,
+`piano.learn.set-aside`.
+
 The standard path is:
 
 | Skill | Assessment | Recommended tempo |
@@ -237,13 +281,14 @@ The standard path is:
 | Find the right-hand notes | Pitch, RH | Unpaced |
 | Find the left-hand notes | Pitch, LH | Unpaced |
 | Join the hands / Find the notes | Pitch, all playable parts | Unpaced |
+| Play it on your own (Silver) | Pitch, all playable parts, no hints | Unpaced |
 | Settle into a beat | Pitch with a guide click; timing is not graded | 60% |
 | Play with the beat | Pitch and placement | 60%, then 80% |
 | Play at score tempo | Pitch and placement, full passage and every playable part | 100% |
 
-Single-part passages omit separate-hand and coordination tasks. Standard
-readiness requires two successful valid equivalent completed takes among the
-latest three. Default criteria are completeness 1 and cleanliness at least 0.8;
+Single-part passages omit separate-hand and coordination tasks. Silver steps need
+`stepPasses` clean takes, one by default. Gold-path readiness requires two successful
+valid equivalent completed takes among the latest three. Default criteria are completeness 1 and cleanliness at least 0.8;
 timed work also requires placement at least 0.8. An explicitly authored ladder
 retains its order, criteria, repetition quota and consecutive-pass requirements.
 Authored per-set tempos remain distinct ordered requirements; repeating a slower set cannot finish a faster one. Its terminal achievement is **Practice plan complete** unless the work establishes

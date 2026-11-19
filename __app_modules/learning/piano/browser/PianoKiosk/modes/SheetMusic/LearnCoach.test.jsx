@@ -34,7 +34,7 @@ describe('LearnCoach', () => {
   await act(async () => h.lab.onOutcome(passed));
   expect(screen.getByRole('heading', { name: 'Nice work!' })).toBeInTheDocument();
   expect(screen.queryByText('Running take')).not.toBeInTheDocument();
-  expect(screen.getByText(/One more successful take/)).toBeInTheDocument();
+  expect(screen.getByText(/Skill earned/)).toBeInTheDocument();
   fireEvent.click(screen.getByRole('button', { name: 'Play again' }));
   expect(screen.getByText('Running take')).toBeInTheDocument();
   await act(async () => h.lab.onOutcome({ ...passed, assessmentId: 'take2' }));

@@ -363,6 +363,10 @@ show and a science show — so each show lands on its own shelf. Untagged and
 banks. An empty shelf renders greyed, not hidden. A tile never points at an
 absent endpoint.
 
+On a subject page, app and deck shelves sit in a 320px column beside posters. In
+a band with no posters they take the full width, cards side by side
+(`planBands` `fill`).
+
 **Deep links.** Under `/school` (or `/app/school`) the URL tracks the
 navigation level: `…/subject/<id>`, `…/subject/<id>/material/<materialId>`,
 `…/library`, `…/library/material/<materialId>`, `…/progress`, `…/practice`,
@@ -501,6 +505,11 @@ kind and ID, direct evidence count, descendant roll-up, latest activity, and
 children. Nodes are ordered by latest recorded activity and then stable ID.
 Evidence with no curriculum path is retained in an explicit `unscoped`
 summary, never dropped.
+
+A score is named for the child, never by its id: lesson, then unit, then course
+(`browser/progress/scoreLabel.js`). Week, day and page codes are dropped, so
+`cfm-w47-d3-hosea-10-11` reads "Hosea 10–11", and a printed worksheet's
+`ws-ses-…` session id is never shown.
 
 ### Calculator-family progress is a projection, not a second School model
 

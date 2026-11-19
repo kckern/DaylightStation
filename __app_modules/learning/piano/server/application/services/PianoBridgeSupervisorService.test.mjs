@@ -506,3 +506,38 @@ test('recovered events carry alerted so the week can be told apart', async () =>
   await r.step(1);
   assert.equal(r.events('piano.speaker.recovered')[0].data.alerted, false);
 });
+
+const UNAUTHORIZED = { reachable: false, unauthorized: true, ble: null, outVerified: null, speaker: null, error: 'unauthorized' };
+
+test('a 401 is a token fault, not a down bridge: one warning, no relaunch, no down alert, probing goes on', async () => {
+  const r = rig({ health: UNAUTHORIZED });
+  await r.step(20);   // ten minutes, twice the down-alert delay
+  assert.equal(r.relaunches.length, 0);
+  assert.equal(r.pushes.length, 0);
+  assert.equal(r.events('piano-bridge.supervisor.down').length, 0);
+  const warned = r.events('piano-bridge.supervisor.unauthorized');
+  assert.equal(warned.length, 1, 'logged once, not every tick');
+  assert.equal(warned[0].level, 'warn');
+  assert.ok(!/token/i.test(JSON.stringify(warned[0].data ?? {}).replace(/"[^"]*":/g, '')), 'no token value in the event');
+});
+
+test('a 401 that clears logs once more, and a later 401 warns again', async () => {
+  const r = rig({ health: UNAUTHORIZED });
+  await r.step(2);
+  r.state.health = { reachable: true, ble: 'CONNECTED', outVerified: true };
+  await r.step(1);
+  assert.equal(r.events('piano-bridge.supervisor.authorized').length, 1);
+  r.state.health = UNAUTHORIZED;
+  await r.step(1);
+  assert.equal(r.events('piano-bridge.supervisor.unauthorized').length, 2);
+});
+
+test('a bridge that was down and then answers 401 stops relaunching and alerting', async () => {
+  const r = rig({ health: DOWN });
+  await r.step(3);
+  const before = r.relaunches.length;
+  r.state.health = UNAUTHORIZED;
+  await r.step(20);
+  assert.equal(r.relaunches.length, before);
+  assert.equal(r.pushes.length, 0);
+});

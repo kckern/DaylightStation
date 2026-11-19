@@ -12,10 +12,29 @@
 export class ScreenOverrideService {
   #map;
   #clock;
+  #store;
+  #decided = new Set();
 
-  constructor({ clock = Date } = {}) {
+  constructor({ clock = Date, store = null } = {}) {
     this.#map = new Map();
     this.#clock = clock;
+    this.#store = store;
+    const saved = store?.load();
+    if (saved && saved.deviceId === store.deviceId) {
+      this.#decided.add(saved.deviceId);
+      const { state, until } = saved;
+      if ((state === 'on' || state === 'off') && Number.isSafeInteger(until)
+          && until > clock.now() && until <= clock.now() + 86400000 + 1000) {
+        this.#map.set(saved.deviceId, { state, until });
+      }
+    }
+  }
+
+  hasDecision(deviceId) { return this.#decided.has(deviceId); }
+
+  #remember(deviceId, entry) {
+    if (this.#store?.deviceId === deviceId) this.#store.save({ deviceId, ...entry });
+    this.#decided.add(deviceId);
   }
 
   /** @returns {{state:'on'|'off', until:number}} */
@@ -25,6 +44,7 @@ export class ScreenOverrideService {
     }
     const mins = Math.max(0, Number(minutes) || 0);
     const entry = { state, until: this.#clock.now() + mins * 60_000 };
+    this.#remember(deviceId, entry);
     this.#map.set(deviceId, entry);
     return entry;
   }
@@ -41,6 +61,7 @@ export class ScreenOverrideService {
   }
 
   clear(deviceId) {
+    this.#remember(deviceId, { state: null, until: 0 });
     this.#map.delete(deviceId);
   }
 }

@@ -1,0 +1,1000 @@
+import { describe, expect, it, vi } from 'vitest';
+import { DaylightAndroidContentAdapter } from './DaylightAndroidContentAdapter.mjs';
+import { isContentControl } from '#apps/devices/ports/IContentControl.mjs';
+
+const ok = (data = {}) => ({ ok: true, data: { ok: true, ...data } });
+const fail = (code, error = code) => ({ ok: false, code, error });
+
+function makeLogger() {
+  return { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
+}
+
+/**
+ * A rest client whose answers come from a `"METHOD /route"` table. A table
+ * entry may be a result or a function of the request. Unlisted routes answer
+ * `ok`, and every request is recorded in order.
+ */
+function makeRest(table = {}) {
+  const calls = [];
+  const answer = (method) => async (route, a, b) => {
+    const body = method === 'POST' ? a : undefined;
+    const options = method === 'POST' ? b : a;
+    calls.push({ method, route, body, options });
+    const entry = table[`${method} ${route}`];
+    return typeof entry === 'function' ? entry({ body, options, calls }) : (entry ?? ok());
+  };
+  return { get: vi.fn(answer('GET')), post: vi.fn(answer('POST')), delete: vi.fn(answer('DELETE')), calls };
+}
+
+const routes = rest => rest.calls.map(call => `${call.method} ${call.route}`);
+
+function makeAdapter(table = {}, { adbAdapter, config = {}, logger = makeLogger() } = {}) {
+  const rest = makeRest(table);
+  // A clock the test owns: sleeping moves it, and a table entry may move it
+  // too (`clock.advance`) to stand in for a slow request.
+  const clock = { t: 1_000_000, advance(ms) { this.t += ms; } };
+  const sleep = vi.fn(async (ms) => { clock.advance(ms); });
+  const adapter = new DaylightAndroidContentAdapter(
+    { host: 'kiosk.test', port: 8780, token: 'tok', daylightHost: 'https://daylight.test', ...config },
+    { restClient: rest, logger, adbAdapter, sleep, now: () => clock.t },
+  );
+  return { adapter, rest, logger, sleep, clock };
+}
+
+describe('DaylightAndroidContentAdapter', () => {
+  it('implements IContentControl and needs a transport', () => {
+    const { adapter } = makeAdapter();
+    expect(isContentControl(adapter)).toBe(true);
+    expect(() => new DaylightAndroidContentAdapter({ host: 'kiosk.test' }, {})).toThrow(/httpClient/);
+  });
+
+  it('builds its own rest client from an http client and sends the token as a header', async () => {
+    const httpClient = {
+      get: vi.fn(async () => ({ status: 200, data: { ok: true, ready: true } })),
+      post: vi.fn(),
+      delete: vi.fn(),
+    };
+    const adapter = new DaylightAndroidContentAdapter(
+      { host: 'kiosk.test', port: 8780, token: 'tok', daylightHost: 'https://daylight.test' },
+      { httpClient, logger: makeLogger() },
+    );
+    await adapter.getStatus();
+    const [url, config] = httpClient.get.mock.calls[0];
+    expect(url).toMatch(/^http:\/\/kiosk\.test:8780\//);
+    expect(url).not.toContain('tok');
+    expect(config.headers['X-Daylight-Token']).toBe('tok');
+  });
+
+  describe('load', () => {
+    it('posts the full URL and reports the confirmed load', async () => {
+      const { adapter, rest } = makeAdapter({
+        'POST /kiosk/load': ({ body }) => ok({ url: body.url, loaded: true, loadTimeMs: 840 }),
+      });
+
+      const result = await adapter.load('/screen/living-room', { queue: 'plex:1', shuffle: '1' });
+
+      expect(rest.calls).toHaveLength(1);
+      expect(rest.calls[0].body).toEqual({ url: 'https://daylight.test/screen/living-room?queue=plex%3A1&shuffle=1' });
+      expect(result).toMatchObject({
+        ok: true,
+        url: 'https://daylight.test/screen/living-room?queue=plex%3A1&shuffle=1',
+        attempt: 1,
+        verified: true,
+      });
+      expect(typeof result.loadTimeMs).toBe('number');
+    });
+
+    it('omits the question mark when there is no query', async () => {
+      const { adapter, rest } = makeAdapter();
+      await adapter.load('/piano');
+      expect(rest.calls[0].body).toEqual({ url: 'https://daylight.test/piano' });
+    });
+
+    it('gives the request longer than the device waits for the page', async () => {
+      const { adapter, rest } = makeAdapter();
+      await adapter.load('/piano');
+      expect(rest.calls[0].options.timeout).toBeGreaterThan(20_000);
+    });
+
+    it('without verifyAsync sends no wait flag and waits for the page', async () => {
+      const { adapter, rest } = makeAdapter();
+      await adapter.load('/piano');
+      expect(rest.calls[0].body).not.toHaveProperty('wait');
+      expect(routes(rest)).toEqual(['POST /kiosk/load']);
+    });
+
+    describe('verifyAsync', () => {
+      const URL_ = 'https://daylight.test/piano?queue=plex%3A1';
+      const accepted = { 'POST /kiosk/load': ({ body }) => ok({ accepted: true, url: body.url }) };
+
+      it('sends wait:false and returns on the acknowledgement', async () => {
+        const { adapter, rest } = makeAdapter({
+          ...accepted,
+          'GET /kiosk/status': ok({ lastLoad: { url: URL_, ok: true, atMs: 5 } }),
+        });
+
+        const result = await adapter.load('/piano', { queue: 'plex:1' }, { verifyAsync: true });
+
+        expect(rest.calls[0]).toMatchObject({ method: 'POST', route: '/kiosk/load', body: { url: URL_, wait: false } });
+        // No long page-load timeout: the client's default applies.
+        expect(rest.calls[0].options?.timeout ?? 10_000).toBeLessThanOrEqual(10_000);
+        expect(result).toMatchObject({ ok: true, url: URL_, attempt: 1, verified: 'async' });
+        expect(typeof result.loadTimeMs).toBe('number');
+      });
+
+      it('logs async-verified once lastLoad reports the URL loaded', async () => {
+        let polls = 0;
+        const { adapter, logger, sleep } = makeAdapter({
+          ...accepted,
+          'GET /kiosk/status': () => (++polls < 3
+            ? ok({ currentUrl: 'https://daylight.test/old', lastLoad: { url: 'https://daylight.test/old', ok: true, atMs: 1 } })
+            // Reported decoded and with a trailing slash difference: still the same page.
+            : ok({ currentUrl: 'https://daylight.test/piano?queue=plex:1', lastLoad: { url: 'https://daylight.test/piano?queue=plex:1', ok: true, atMs: 9 } })),
+        });
+
+        await adapter.load('/piano', { queue: 'plex:1' }, { verifyAsync: true });
+
+        await vi.waitFor(() => expect(logger.info).toHaveBeenCalledWith('daylightandroid.load.async-verified', {
+          fullUrl: URL_,
+          verified: true,
+          currentUrl: 'https://daylight.test/piano?queue=plex:1',
+          reason: undefined,
+        }));
+        expect(polls).toBe(3);
+        expect(sleep).toHaveBeenCalledWith(500);
+        expect(logger.warn).not.toHaveBeenCalledWith('daylightandroid.load.async-unverified', expect.anything());
+      });
+
+      it('logs async-unverified with the device error when the page failed to load', async () => {
+        const { adapter, logger } = makeAdapter({
+          ...accepted,
+          'GET /kiosk/status': ok({ currentUrl: 'about:blank', lastLoad: { url: URL_, ok: false, error: 'net::ERR_CONNECTION_REFUSED', atMs: 9 } }),
+        });
+
+        const result = await adapter.load('/piano', { queue: 'plex:1' }, { verifyAsync: true });
+
+        expect(result.ok).toBe(true);
+        await vi.waitFor(() => expect(logger.warn).toHaveBeenCalledWith('daylightandroid.load.async-unverified', {
+          fullUrl: URL_,
+          verified: false,
+          currentUrl: 'about:blank',
+          reason: 'net::ERR_CONNECTION_REFUSED',
+        }));
+      });
+
+      it('logs async-unverified when lastLoad never reports the URL', async () => {
+        let polls = 0;
+        const { adapter, logger } = makeAdapter({
+          ...accepted,
+          'GET /kiosk/status': () => { polls++; return ok({ currentUrl: 'https://daylight.test/old', lastLoad: { url: 'https://daylight.test/old', ok: true } }); },
+        });
+
+        await adapter.load('/piano', { queue: 'plex:1' }, { verifyAsync: true });
+
+        await vi.waitFor(() => expect(logger.warn).toHaveBeenCalledWith('daylightandroid.load.async-unverified', {
+          fullUrl: URL_,
+          verified: false,
+          currentUrl: 'https://daylight.test/old',
+          reason: 'lastLoad never reported this URL',
+        }));
+        // 30 s of wall clock at one poll per 500 ms.
+        expect(polls).toBe(60);
+      });
+
+      it('keeps polling through a status read that fails', async () => {
+        let polls = 0;
+        const { adapter, logger } = makeAdapter({
+          ...accepted,
+          'GET /kiosk/status': () => (++polls < 2 ? fail('TIMEOUT', 'timeout') : ok({ lastLoad: { url: URL_, ok: true } })),
+        });
+        await adapter.load('/piano', { queue: 'plex:1' }, { verifyAsync: true });
+        await vi.waitFor(() => expect(logger.info).toHaveBeenCalledWith('daylightandroid.load.async-verified', expect.any(Object)));
+      });
+
+      it('logs async-verify-failed when the verification itself throws', async () => {
+        const { adapter, rest, logger } = makeAdapter(accepted);
+        rest.get.mockRejectedValue(new Error('boom'));
+
+        const result = await adapter.load('/piano', { queue: 'plex:1' }, { verifyAsync: true });
+
+        expect(result.ok).toBe(true);
+        await vi.waitFor(() => expect(logger.warn).toHaveBeenCalledWith('daylightandroid.load.async-verify-failed', {
+          fullUrl: URL_, error: 'boom',
+        }));
+      });
+
+      describe('with a loadId in the acknowledgement', () => {
+        const withId = { 'POST /kiosk/load': ({ body }) => ok({ accepted: true, url: body.url, loadId: 'L2' }) };
+
+        it('does not accept an earlier load of the same URL', async () => {
+          let polls = 0;
+          const { adapter, logger } = makeAdapter({
+            ...withId,
+            'GET /kiosk/status': () => (++polls < 3
+              ? ok({ currentUrl: URL_, lastLoad: { loadId: 'L1', url: URL_, ok: true, atMs: 1 } })
+              : ok({ currentUrl: URL_, lastLoad: { loadId: 'L2', url: URL_, ok: true, atMs: 9 } })),
+          });
+
+          await adapter.load('/piano', { queue: 'plex:1' }, { verifyAsync: true });
+
+          await vi.waitFor(() => expect(logger.info).toHaveBeenCalledWith('daylightandroid.load.async-verified', {
+            fullUrl: URL_, verified: true, currentUrl: URL_, reason: undefined,
+          }));
+          expect(polls).toBe(3);
+          expect(logger.warn).not.toHaveBeenCalledWith('daylightandroid.load.async-verify-url-fallback', expect.anything());
+        });
+
+        it('matches on the id even when the device reports the URL differently', async () => {
+          const { adapter, logger } = makeAdapter({
+            ...withId,
+            'GET /kiosk/status': ok({ currentUrl: 'https://daylight.test/redirected', lastLoad: { loadId: 'L2', url: 'https://daylight.test/redirected', ok: true } }),
+          });
+          await adapter.load('/piano', { queue: 'plex:1' }, { verifyAsync: true });
+          await vi.waitFor(() => expect(logger.info).toHaveBeenCalledWith('daylightandroid.load.async-verified', expect.objectContaining({ verified: true })));
+        });
+
+        it('reports the failure of that load', async () => {
+          const { adapter, logger } = makeAdapter({
+            ...withId,
+            'GET /kiosk/status': ok({ currentUrl: 'about:blank', lastLoad: { loadId: 'L2', url: URL_, ok: false, error: 'net::ERR_TIMED_OUT' } }),
+          });
+          await adapter.load('/piano', { queue: 'plex:1' }, { verifyAsync: true });
+          await vi.waitFor(() => expect(logger.warn).toHaveBeenCalledWith('daylightandroid.load.async-unverified', {
+            fullUrl: URL_, verified: false, currentUrl: 'about:blank', reason: 'net::ERR_TIMED_OUT',
+          }));
+        });
+
+        it('is unverified when lastLoad never carries the id, even though the URL matches', async () => {
+          const { adapter, logger } = makeAdapter({
+            ...withId,
+            'GET /kiosk/status': ok({ currentUrl: URL_, lastLoad: { loadId: 'L1', url: URL_, ok: true } }),
+          });
+          await adapter.load('/piano', { queue: 'plex:1' }, { verifyAsync: true });
+          await vi.waitFor(() => expect(logger.warn).toHaveBeenCalledWith('daylightandroid.load.async-unverified', {
+            fullUrl: URL_, verified: false, currentUrl: URL_, reason: 'lastLoad never reported this load',
+          }));
+        });
+      });
+
+      describe('bounded and superseded', () => {
+        const ack = id => ({ body }) => ok({ accepted: true, url: body.url, loadId: id });
+        const flush = () => new Promise(resolve => setTimeout(resolve, 20));
+
+        it('stops at 30 s of wall clock, however slow each status read is', async () => {
+          let polls = 0;
+          const timeouts = [];
+          const { adapter, logger, clock } = makeAdapter({
+            'POST /kiosk/load': ack('L2'),
+            // Every status read hangs for as long as it is allowed to.
+            'GET /kiosk/status': ({ options }) => { polls++; timeouts.push(options.timeout); clock.advance(options.timeout); return fail('TIMEOUT', 'timeout'); },
+          });
+
+          await adapter.load('/piano', { queue: 'plex:1' }, { verifyAsync: true });
+
+          await vi.waitFor(() => expect(logger.warn).toHaveBeenCalledWith('daylightandroid.load.async-unverified', expect.objectContaining({
+            reason: 'lastLoad never reported this load',
+          })));
+          expect(Math.max(...timeouts)).toBeLessThanOrEqual(5000);
+          // 5 s per read plus the 500 ms pause: six reads fit in 30 s, never fifty.
+          expect(polls).toBeLessThanOrEqual(6);
+          expect(timeouts.reduce((sum, t) => sum + t, 0)).toBeLessThanOrEqual(30_000);
+        });
+
+        it('a newer load stops the poller of the one before it, without a warning', async () => {
+          let next = 0;
+          let live = null;
+          const { adapter, logger, rest } = makeAdapter({
+            'POST /kiosk/load': ({ body }) => { live = `L${++next}`; return ok({ accepted: true, url: body.url, loadId: live }); },
+            // The device only ever reports the newest load.
+            'GET /kiosk/status': () => ok({ currentUrl: 'https://daylight.test/b', lastLoad: live === 'L2' ? { loadId: 'L2', url: 'https://daylight.test/b', ok: true } : { loadId: 'L0', url: 'x', ok: true } }),
+          });
+
+          await adapter.load('/a', {}, { verifyAsync: true });
+          await adapter.load('/b', {}, { verifyAsync: true });
+          await flush();
+
+          expect(logger.info).toHaveBeenCalledWith('daylightandroid.load.async-verified', expect.objectContaining({ fullUrl: 'https://daylight.test/b' }));
+          expect(logger.debug).toHaveBeenCalledWith('daylightandroid.load.async-superseded', { fullUrl: 'https://daylight.test/a', by: 'newer-load' });
+          expect(logger.warn).not.toHaveBeenCalledWith('daylightandroid.load.async-unverified', expect.anything());
+          expect(logger.info).not.toHaveBeenCalledWith('daylightandroid.load.async-verified', expect.objectContaining({ fullUrl: 'https://daylight.test/a' }));
+          // The first poller did not keep reading for 30 s.
+          expect(rest.calls.filter(call => call.route === '/kiosk/status').length).toBeLessThan(10);
+        });
+
+        it('a waiting load supersedes an asynchronous one too', async () => {
+          const { adapter, logger } = makeAdapter({
+            'POST /kiosk/load': ({ body }) => (body.wait === false ? ok({ accepted: true, loadId: 'L1' }) : ok({ loaded: true, loadId: 'L2' })),
+            'GET /kiosk/status': ok({ lastLoad: { loadId: 'L0', url: 'x', ok: true } }),
+          });
+          await adapter.load('/a', {}, { verifyAsync: true });
+          await adapter.load('/b');
+          await flush();
+          expect(logger.debug).toHaveBeenCalledWith('daylightandroid.load.async-superseded', { fullUrl: 'https://daylight.test/a', by: 'newer-load' });
+        });
+
+        it('stops when lastLoad moves on to a load that is neither this one nor the one before it', async () => {
+          let polls = 0;
+          const { adapter, logger } = makeAdapter({
+            'POST /kiosk/load': ack('L2'),
+            // L1 was showing before; L3 is someone else's load that replaced ours.
+            'GET /kiosk/status': () => ok({ currentUrl: 'u', lastLoad: { loadId: ++polls < 3 ? 'L1' : 'L3', url: 'u', ok: true } }),
+          });
+
+          await adapter.load('/piano', {}, { verifyAsync: true });
+          await flush();
+
+          expect(polls).toBe(3);
+          expect(logger.debug).toHaveBeenCalledWith('daylightandroid.load.async-superseded', { fullUrl: 'https://daylight.test/piano', by: 'lastLoad' });
+          expect(logger.warn).not.toHaveBeenCalledWith('daylightandroid.load.async-unverified', expect.anything());
+        });
+
+        it('dispose stops a poller, and its timers never hold the process open', async () => {
+          vi.useFakeTimers();
+          const timers = [];
+          const realSetTimeout = globalThis.setTimeout;
+          const spy = vi.spyOn(globalThis, 'setTimeout').mockImplementation((fn, ms, ...args) => {
+            const timer = realSetTimeout(fn, ms, ...args);
+            timers.push({ timer, unref: vi.spyOn(timer, 'unref') });
+            return timer;
+          });
+          try {
+            const rest = makeRest({
+              'POST /kiosk/load': ack('L2'),
+              'GET /kiosk/status': ok({ lastLoad: { loadId: 'L1', url: 'u', ok: true } }),
+            });
+            const logger = makeLogger();
+            const adapter = new DaylightAndroidContentAdapter(
+              { host: 'kiosk.test', token: 'tok', daylightHost: 'https://daylight.test' },
+              { restClient: rest, logger },
+            );
+
+            await adapter.load('/piano', {}, { verifyAsync: true });
+            await vi.advanceTimersByTimeAsync(1200);
+            const pollsBefore = rest.calls.filter(call => call.route === '/kiosk/status').length;
+            expect(pollsBefore).toBeGreaterThan(1);
+            expect(timers.length).toBeGreaterThan(0);
+            for (const { unref } of timers) expect(unref).toHaveBeenCalled();
+
+            adapter.dispose();
+            await vi.advanceTimersByTimeAsync(60_000);
+
+            expect(rest.calls.filter(call => call.route === '/kiosk/status').length).toBe(pollsBefore);
+            expect(logger.warn).not.toHaveBeenCalledWith('daylightandroid.load.async-unverified', expect.anything());
+            expect(vi.getTimerCount()).toBe(0);
+          } finally {
+            spy.mockRestore();
+            vi.useRealTimers();
+          }
+        });
+      });
+
+      it('falls back to matching the URL, and says so, when the acknowledgement has no loadId', async () => {
+        const { adapter, logger } = makeAdapter({
+          ...accepted,
+          'GET /kiosk/status': ok({ currentUrl: URL_, lastLoad: { loadId: 'L7', url: URL_, ok: true } }),
+        });
+        await adapter.load('/piano', { queue: 'plex:1' }, { verifyAsync: true });
+        expect(logger.warn).toHaveBeenCalledWith('daylightandroid.load.async-verify-url-fallback', { fullUrl: URL_ });
+        await vi.waitFor(() => expect(logger.info).toHaveBeenCalledWith('daylightandroid.load.async-verified', expect.objectContaining({ verified: true })));
+      });
+
+      it('a refused acknowledgement fails the load and starts no verification', async () => {
+        const { adapter, rest } = makeAdapter({ 'POST /kiosk/load': fail('COMMAND_REJECTED', 'Command was rejected: bad_request') });
+        const result = await adapter.load('/piano', {}, { verifyAsync: true });
+        expect(result).toMatchObject({ ok: false, error: 'Command was rejected: bad_request', attempts: 1 });
+        expect(routes(rest)).toEqual(['POST /kiosk/load']);
+      });
+    });
+
+    it('reports a load the device refused without retrying', async () => {
+      const { adapter, rest, sleep } = makeAdapter({
+        'POST /kiosk/load': fail('COMMAND_REJECTED', 'Command was rejected: net::ERR_NAME_NOT_RESOLVED'),
+      });
+
+      const result = await adapter.load('/piano');
+
+      expect(rest.calls).toHaveLength(1);
+      expect(sleep).not.toHaveBeenCalled();
+      expect(result).toMatchObject({
+        ok: false,
+        url: 'https://daylight.test/piano',
+        error: 'Command was rejected: net::ERR_NAME_NOT_RESOLVED',
+        attempts: 1,
+      });
+      expect(adapter.getMetrics().errors).toBe(1);
+    });
+
+    describe('when the kiosk window is not up', () => {
+      const conflict = deviceCode => ({ ok: false, code: 'CONFLICT', status: 409, deviceCode, error: `HTTP 409: ${deviceCode}` });
+      const flush = () => new Promise(resolve => setTimeout(resolve, 20));
+
+      it.each(['no_kiosk_activity', 'not_in_foreground'])(
+        'on %s it resends with wait:false, takes the queued acknowledgement, and verifies by loadId',
+        async (deviceCode) => {
+          const { adapter, rest, logger } = makeAdapter({
+            'POST /kiosk/load': ({ body }) => (body.wait === false
+              ? ok({ accepted: true, queued: true, loadId: 'Q1' })
+              : conflict(deviceCode)),
+            'GET /kiosk/status': ok({ currentUrl: 'https://daylight.test/piano', lastLoad: { loadId: 'Q1', url: 'https://daylight.test/piano', ok: true } }),
+          });
+
+          const result = await adapter.load('/piano');
+
+          const loads = rest.calls.filter(call => call.route === '/kiosk/load');
+          expect(loads.map(call => call.body)).toEqual([
+            { url: 'https://daylight.test/piano' },
+            { url: 'https://daylight.test/piano', wait: false },
+          ]);
+          expect(result).toMatchObject({ ok: true, url: 'https://daylight.test/piano', verified: 'async', queued: true });
+          expect(logger.info).toHaveBeenCalledWith('daylightandroid.load.queued', expect.objectContaining({
+            fullUrl: 'https://daylight.test/piano', reason: deviceCode, loadId: 'Q1',
+          }));
+          await flush();
+          expect(logger.info).toHaveBeenCalledWith('daylightandroid.load.async-verified', expect.objectContaining({ verified: true }));
+          expect(adapter.getMetrics().errors).toBe(0);
+        },
+      );
+
+      it('fails when the queued resend is refused too', async () => {
+        const { adapter, rest } = makeAdapter({ 'POST /kiosk/load': conflict('no_kiosk_activity') });
+        const result = await adapter.load('/piano');
+        expect(rest.calls).toHaveLength(2);
+        expect(result).toMatchObject({ ok: false, error: 'HTTP 409: no_kiosk_activity' });
+      });
+
+      it('does not resend for any other conflict', async () => {
+        const { adapter, rest } = makeAdapter({ 'POST /kiosk/load': conflict('update_in_progress') });
+        const result = await adapter.load('/piano');
+        expect(rest.calls).toHaveLength(1);
+        expect(result).toMatchObject({ ok: false, error: 'HTTP 409: update_in_progress', attempts: 1 });
+      });
+
+      it('says so when a verifyAsync load was queued', async () => {
+        const { adapter, logger } = makeAdapter({
+          'POST /kiosk/load': ok({ accepted: true, queued: true, loadId: 'Q2' }),
+          'GET /kiosk/status': ok({ lastLoad: { loadId: 'Q2', url: 'https://daylight.test/piano', ok: true } }),
+        });
+        const result = await adapter.load('/piano', {}, { verifyAsync: true });
+        expect(result).toMatchObject({ ok: true, verified: 'async', queued: true });
+        expect(logger.info).toHaveBeenCalledWith('daylightandroid.load.queued', expect.objectContaining({ loadId: 'Q2' }));
+      });
+
+      it('an ordinary verifyAsync acknowledgement is not marked queued', async () => {
+        const { adapter, logger } = makeAdapter({
+          'POST /kiosk/load': ok({ accepted: true, loadId: 'L1' }),
+          'GET /kiosk/status': ok({ lastLoad: { loadId: 'L1', url: 'x', ok: true } }),
+        });
+        const result = await adapter.load('/piano', {}, { verifyAsync: true });
+        expect(result).not.toHaveProperty('queued');
+        expect(logger.info).not.toHaveBeenCalledWith('daylightandroid.load.queued', expect.anything());
+      });
+    });
+
+    describe('when the device does not allow the origin', () => {
+      const PRIVATE = '/screen/private-room';
+      it.each([
+        ['in `error`', { ok: false, code: 'COMMAND_REJECTED', status: 400, deviceCode: 'origin_not_allowed', deviceError: 'origin_not_allowed: https://daylight.test/screen/private-room?pin=42', error: 'HTTP 400: origin_not_allowed' }],
+        ['in `message`', { ok: false, code: 'COMMAND_REJECTED', status: 400, deviceCode: 'bad_request', deviceMessage: 'origin_not_allowed: https://daylight.test/screen/private-room?pin=42', error: 'HTTP 400: bad_request' }],
+      ])('fails once, names the origin only, and warns once (%s)', async (_label, refusal) => {
+        const { adapter, rest, logger, sleep } = makeAdapter({ 'POST /kiosk/load': refusal });
+
+        const result = await adapter.load(PRIVATE, { pin: '42' });
+
+        expect(rest.calls).toHaveLength(1);
+        expect(sleep).not.toHaveBeenCalled();
+        expect(result).toMatchObject({ ok: false, code: 'ORIGIN_NOT_ALLOWED', attempts: 1 });
+        expect(result.error).toContain('https://daylight.test');
+        expect(result.error).not.toMatch(/private-room|pin=42/);
+        const warns = logger.warn.mock.calls;
+        expect(warns).toEqual([['daylightandroid.load.originNotAllowed', { origin: 'https://daylight.test', host: 'kiosk.test' }]]);
+        expect(logger.error).not.toHaveBeenCalled();
+        expect(adapter.getMetrics().errors).toBe(1);
+      });
+
+      it('is the same for a verifyAsync load', async () => {
+        const { adapter } = makeAdapter({
+          'POST /kiosk/load': { ok: false, code: 'COMMAND_REJECTED', status: 400, deviceCode: 'origin_not_allowed', error: 'HTTP 400: origin_not_allowed' },
+        });
+        await expect(adapter.load('/piano', {}, { verifyAsync: true })).resolves.toMatchObject({ ok: false, code: 'ORIGIN_NOT_ALLOWED' });
+      });
+    });
+
+    it('retries an unreachable device with backoff and succeeds when it returns', async () => {
+      let attempt = 0;
+      const { adapter, rest, sleep } = makeAdapter({
+        'POST /kiosk/load': () => (++attempt < 3 ? fail('UNREACHABLE', 'connect ECONNREFUSED') : ok({ loaded: true })),
+      });
+
+      const result = await adapter.load('/piano');
+
+      expect(rest.calls).toHaveLength(3);
+      expect(sleep.mock.calls.map(call => call[0])).toEqual([1000, 2000]);
+      expect(result).toMatchObject({ ok: true, attempt: 3 });
+    });
+
+    it('gives up after three unreachable attempts', async () => {
+      const { adapter, rest, logger } = makeAdapter({
+        'POST /kiosk/load': fail('UNREACHABLE', 'connect ECONNREFUSED'),
+      });
+
+      const result = await adapter.load('/piano');
+
+      expect(rest.calls).toHaveLength(3);
+      expect(result).toMatchObject({ ok: false, error: 'connect ECONNREFUSED', attempts: 3 });
+      expect(logger.error).toHaveBeenCalledWith('daylightandroid.load.failed', expect.any(Object));
+    });
+  });
+
+  it('loadStartUrl posts /kiosk/load-start', async () => {
+    const good = makeAdapter();
+    await expect(good.adapter.loadStartUrl()).resolves.toEqual({ ok: true });
+    expect(routes(good.rest)).toEqual(['POST /kiosk/load-start']);
+
+    const bad = makeAdapter({ 'POST /kiosk/load-start': fail('TIMEOUT', 'timeout') });
+    await expect(bad.adapter.loadStartUrl()).resolves.toEqual({ ok: false, error: 'timeout' });
+  });
+
+  describe('screen', () => {
+    it('screenOn and screenOff post the wanted state', async () => {
+      const { adapter, rest } = makeAdapter({
+        'POST /screen': ({ body }) => ok({ screenOn: body.on }),
+      });
+
+      await expect(adapter.screenOn()).resolves.toEqual({ ok: true });
+      await expect(adapter.screenOff()).resolves.toEqual({ ok: true });
+
+      expect(rest.calls.map(call => call.body)).toEqual([{ on: true }, { on: false }]);
+    });
+
+    it('fails when the display did not reach the wanted state', async () => {
+      const { adapter } = makeAdapter({ 'POST /screen': ok({ screenOn: false }) });
+      const result = await adapter.screenOn();
+      expect(result.ok).toBe(false);
+      expect(result.error).toMatch(/screen/i);
+    });
+
+    it('passes a transport failure through', async () => {
+      const { adapter } = makeAdapter({ 'POST /screen': fail('UNREACHABLE', 'connect ECONNREFUSED') });
+      await expect(adapter.screenOff()).resolves.toEqual({ ok: false, error: 'connect ECONNREFUSED' });
+    });
+  });
+
+  describe('getStatus', () => {
+    it('reports the fields callers read, under their existing names', async () => {
+      const { adapter } = makeAdapter({
+        'GET /kiosk/status': ok({ ready: true, currentUrl: 'https://daylight.test/piano', screenOn: true, foreground: 'net.example.kiosk' }),
+        'GET /status': ok({ device: 'piano-tablet', appVersion: '2.1.0', payloadVersion: '1.4.0', shellVersionCode: 7 }),
+      });
+
+      await expect(adapter.getStatus()).resolves.toEqual({
+        ready: true,
+        provider: 'daylight-android',
+        currentUrl: 'https://daylight.test/piano',
+        screenOn: true,
+        appVersion: '2.1.0',
+      });
+    });
+
+    it('falls back to the payload version when the shell reports no appVersion', async () => {
+      const { adapter } = makeAdapter({
+        'GET /kiosk/status': ok({ ready: true }),
+        'GET /status': ok({ payloadVersion: '1.4.0' }),
+      });
+      await expect(adapter.getStatus()).resolves.toMatchObject({ appVersion: '1.4.0' });
+    });
+
+    it('reports whether the page bridge is available and how often the renderer was lost', async () => {
+      const { adapter } = makeAdapter({
+        'GET /kiosk/status': ok({ ready: true, screenOn: true, bridge: 'unavailable', bridgeReason: 'document-start injection unsupported', rendererLosses: 2 }),
+        'GET /status': ok({ appVersion: '2.1.0' }),
+      });
+      await expect(adapter.getStatus()).resolves.toMatchObject({
+        ready: true,
+        provider: 'daylight-android',
+        bridge: 'unavailable',
+        bridgeReason: 'document-start injection unsupported',
+        rendererLosses: 2,
+      });
+    });
+
+    it('still reports status when the version read fails', async () => {
+      const { adapter } = makeAdapter({
+        'GET /kiosk/status': ok({ ready: true, currentUrl: 'u', screenOn: false }),
+        'GET /status': fail('TIMEOUT', 'timeout'),
+      });
+      await expect(adapter.getStatus()).resolves.toMatchObject({
+        ready: true, provider: 'daylight-android', screenOn: false, appVersion: undefined,
+      });
+    });
+
+    it('passes on a kiosk that says its WebView is not ready', async () => {
+      const { adapter } = makeAdapter({ 'GET /kiosk/status': ok({ ready: false, screenOn: true }) });
+      await expect(adapter.getStatus()).resolves.toMatchObject({ ready: false, provider: 'daylight-android' });
+    });
+
+    it('is not ready, with the error, when the device does not answer', async () => {
+      const { adapter } = makeAdapter({ 'GET /kiosk/status': fail('UNREACHABLE', 'connect ECONNREFUSED') });
+      await expect(adapter.getStatus()).resolves.toEqual({
+        ready: false, provider: 'daylight-android', error: 'connect ECONNREFUSED',
+      });
+    });
+
+    it('is not ready when the client throws', async () => {
+      const { adapter, rest } = makeAdapter();
+      rest.get.mockRejectedValue(new Error('boom'));
+      await expect(adapter.getStatus()).resolves.toEqual({
+        ready: false, provider: 'daylight-android', error: 'boom',
+      });
+    });
+  });
+
+  describe('prepareForContent', () => {
+    const screenUp = { 'POST /screen': ok({ screenOn: true }) };
+    const adb = (count = '2\n') => ({
+      connect: vi.fn(async () => ({ ok: true })),
+      shell: vi.fn(async () => ({ ok: true, output: count })),
+      reboot: vi.fn(async () => ({ ok: true })),
+    });
+
+    it('wakes the screen first and stops there when that fails', async () => {
+      const { adapter, rest } = makeAdapter({ 'POST /screen': fail('UNREACHABLE', 'connect ECONNREFUSED') });
+
+      const result = await adapter.prepareForContent();
+
+      expect(routes(rest)).toEqual(['POST /screen']);
+      expect(rest.calls[0].body).toEqual({ on: true });
+      expect(result).toEqual({ ok: false, step: 'screenOn', error: 'connect ECONNREFUSED' });
+    });
+
+    it('fails at toForeground when the kiosk cannot be brought to the front', async () => {
+      const { adapter, rest } = makeAdapter({
+        ...screenUp,
+        'POST /kiosk/foreground': fail('COMMAND_REJECTED', 'Command was rejected: foreground is org.example.other'),
+      });
+
+      const result = await adapter.prepareForContent();
+
+      expect(routes(rest)).toEqual(['POST /screen', 'POST /kiosk/foreground']);
+      expect(result).toMatchObject({ ok: false, step: 'toForeground' });
+      expect(result.error).toContain('org.example.other');
+    });
+
+    it('names rejected credentials at the foreground step', async () => {
+      const { adapter } = makeAdapter({
+        ...screenUp,
+        'POST /kiosk/foreground': fail('AUTH_REJECTED', 'HTTP 401: unauthorized'),
+      });
+      const result = await adapter.prepareForContent();
+      expect(result.step).toBe('toForeground');
+      expect(result.error).toMatch(/rejected credentials/i);
+    });
+
+    describe('when the kiosk window is not up', () => {
+      const notInFront = { ok: false, code: 'CONFLICT', status: 409, deviceCode: 'not_in_foreground', error: 'HTTP 409: not_in_foreground' };
+
+      it('goes on, so the load that follows can be queued, and says the window is not up', async () => {
+        const { adapter, rest, logger } = makeAdapter({ ...screenUp, 'POST /kiosk/foreground': notInFront });
+
+        const result = await adapter.prepareForContent({ skipCameraCheck: true });
+
+        expect(routes(rest)).toContain('GET /capabilities');
+        expect(result).toMatchObject({ ok: true, kioskWindowUp: false, coldRestart: false });
+        expect(logger.warn).toHaveBeenCalledWith('daylightandroid.prepareForContent.kioskWindowNotUp', { reason: 'not_in_foreground' });
+      });
+
+      it('is the same on the broadcast profile, without claiming the foreground was verified', async () => {
+        const { adapter } = makeAdapter({ ...screenUp, 'POST /kiosk/foreground': notInFront });
+        await expect(adapter.prepareForContent({ profile: 'broadcast' })).resolves.toMatchObject({
+          ok: true, profile: 'broadcast', kioskWindowUp: false, foregroundVerified: false,
+        });
+      });
+
+      it('a normal prepare says the window is up', async () => {
+        const { adapter } = makeAdapter(screenUp);
+        await expect(adapter.prepareForContent({ skipCameraCheck: true })).resolves.toMatchObject({ ok: true, kioskWindowUp: true });
+      });
+
+      it('any other conflict at the foreground step still fails the prepare', async () => {
+        const { adapter } = makeAdapter({
+          ...screenUp,
+          'POST /kiosk/foreground': { ok: false, code: 'CONFLICT', status: 409, deviceCode: 'update_in_progress', error: 'HTTP 409: update_in_progress' },
+        });
+        await expect(adapter.prepareForContent()).resolves.toMatchObject({ ok: false, step: 'toForeground' });
+      });
+    });
+
+    describe('mic bridge restart answers', () => {
+      const held = {
+        'GET /capabilities': ok({ capabilities: ['mic-bridge'] }),
+        'GET /mic/status': ok({ heldByOther: true }),
+      };
+      const notReady = { ok: false, code: 'CONFLICT', status: 409, deviceCode: 'not_ready', error: 'HTTP 409: not_ready' };
+
+      it('retries once, shortly, when the bridge is not ready', async () => {
+        let posts = 0;
+        const { adapter, sleep, rest } = makeAdapter({ ...screenUp, ...held, 'POST /mic/restart': () => (++posts === 1 ? notReady : ok({ running: true })) });
+
+        const result = await adapter.prepareForContent({ skipCameraCheck: true });
+
+        expect(result).toMatchObject({ ok: true, micRestarted: true });
+        expect(rest.calls.filter(call => call.route === '/mic/restart')).toHaveLength(2);
+        expect(sleep).toHaveBeenCalledWith(1500);
+      });
+
+      it('gives up after that one retry', async () => {
+        const { adapter, rest, logger } = makeAdapter({ ...screenUp, ...held, 'POST /mic/restart': notReady });
+
+        const result = await adapter.prepareForContent({ skipCameraCheck: true });
+
+        expect(result).toMatchObject({ ok: true, micRestarted: false });
+        expect(rest.calls.filter(call => call.route === '/mic/restart')).toHaveLength(2);
+        expect(logger.warn).toHaveBeenCalledWith('daylightandroid.prepareForContent.micRestart.failed', expect.objectContaining({ code: 'CONFLICT' }));
+      });
+
+      it('does not retry when the capture did not come back (500)', async () => {
+        const { adapter, rest, sleep } = makeAdapter({ ...held, 'POST /mic/restart': fail('HTTP_ERROR', 'HTTP 500: internal') });
+
+        const result = await adapter.healAudioBridge();
+
+        expect(result).toMatchObject({ ok: false, micRestarted: false, error: 'HTTP 500: internal' });
+        expect(rest.calls.filter(call => call.route === '/mic/restart')).toHaveLength(1);
+        expect(sleep).not.toHaveBeenCalled();
+      });
+
+      it('healAudioBridge retries a not-ready bridge once too', async () => {
+        let posts = 0;
+        const { adapter } = makeAdapter({ ...held, 'POST /mic/restart': () => (++posts === 1 ? notReady : ok({ running: true })) });
+        await expect(adapter.healAudioBridge()).resolves.toMatchObject({ ok: true, micRestarted: true });
+      });
+    });
+
+    it('broadcast profile wakes and foregrounds, and does nothing else', async () => {
+      const adbAdapter = adb();
+      const { adapter, rest } = makeAdapter(screenUp, { adbAdapter });
+
+      const result = await adapter.prepareForContent({ profile: 'broadcast' });
+
+      expect(routes(rest)).toEqual(['POST /screen', 'POST /kiosk/foreground']);
+      expect(adbAdapter.connect).not.toHaveBeenCalled();
+      expect(adbAdapter.shell).not.toHaveBeenCalled();
+      expect(result).toMatchObject({
+        ok: true,
+        profile: 'broadcast',
+        coldRestart: false,
+        cameraAvailable: null,
+        cameraSkipped: true,
+        foregroundVerified: true,
+      });
+      expect(typeof result.elapsedMs).toBe('number');
+    });
+
+    it('full profile on a device without mic-bridge leaves the mic routes alone', async () => {
+      const { adapter, rest } = makeAdapter({
+        ...screenUp,
+        'GET /capabilities': ok({ capabilities: ['webview-host', 'screen-power'], routes: [] }),
+      });
+
+      const result = await adapter.prepareForContent({ skipCameraCheck: true });
+
+      expect(routes(rest)).toEqual(['POST /screen', 'POST /kiosk/foreground', 'GET /capabilities']);
+      expect(result).toMatchObject({ ok: true, coldRestart: false, cameraAvailable: null, cameraSkipped: true });
+    });
+
+    it('full profile with mic-bridge checks the mic and leaves a free mic alone', async () => {
+      const { adapter, rest } = makeAdapter({
+        ...screenUp,
+        'GET /capabilities': ok({ capabilities: ['webview-host', 'mic-bridge'] }),
+        'GET /mic/status': ok({ heldByOther: false }),
+      });
+
+      const result = await adapter.prepareForContent({ skipCameraCheck: true });
+
+      expect(routes(rest)).toEqual([
+        'POST /screen', 'POST /kiosk/foreground', 'GET /capabilities', 'GET /mic/status',
+      ]);
+      expect(result).toMatchObject({ ok: true, micRestarted: false });
+    });
+
+    it('restarts the mic bridge when another process holds the mic', async () => {
+      const { adapter, rest } = makeAdapter({
+        ...screenUp,
+        'GET /capabilities': ok({ capabilities: ['mic-bridge'] }),
+        'GET /mic/status': ok({ heldByOther: true, holder: 'org.example.other' }),
+      });
+
+      const result = await adapter.prepareForContent({ skipCameraCheck: true });
+
+      expect(routes(rest)).toEqual([
+        'POST /screen', 'POST /kiosk/foreground', 'GET /capabilities', 'GET /mic/status', 'POST /mic/restart',
+      ]);
+      expect(result).toMatchObject({ ok: true, micRestarted: true });
+    });
+
+    it('a failed mic check or restart is logged and does not fail the prepare', async () => {
+      const unknown = makeAdapter({ ...screenUp, 'GET /capabilities': fail('TIMEOUT', 'timeout') });
+      await expect(unknown.adapter.prepareForContent({ skipCameraCheck: true })).resolves.toMatchObject({ ok: true });
+      expect(unknown.logger.warn).toHaveBeenCalledWith('daylightandroid.prepareForContent.capabilities.failed', expect.any(Object));
+
+      const stuck = makeAdapter({
+        ...screenUp,
+        'GET /capabilities': ok({ capabilities: ['mic-bridge'] }),
+        'GET /mic/status': ok({ heldByOther: true }),
+        'POST /mic/restart': fail('HTTP_ERROR', 'HTTP 500: internal'),
+      });
+      await expect(stuck.adapter.prepareForContent({ skipCameraCheck: true })).resolves.toMatchObject({
+        ok: true, micRestarted: false,
+      });
+      expect(stuck.logger.warn).toHaveBeenCalledWith('daylightandroid.prepareForContent.micRestart.failed', expect.any(Object));
+    });
+
+    it('never force-stops or relaunches anything over ADB', async () => {
+      const adbAdapter = adb();
+      adbAdapter.launchActivity = vi.fn();
+      const { adapter } = makeAdapter({
+        ...screenUp,
+        'GET /capabilities': ok({ capabilities: ['mic-bridge'] }),
+        'GET /mic/status': ok({ heldByOther: true }),
+      }, { adbAdapter });
+
+      await adapter.prepareForContent();
+
+      expect(adbAdapter.launchActivity).not.toHaveBeenCalled();
+      expect(adbAdapter.shell.mock.calls.map(call => call[0]).join('\n')).not.toMatch(/force-stop|am start/);
+    });
+
+    it('runs the host-side camera probe over ADB', async () => {
+      const adbAdapter = adb('3\n');
+      const { adapter } = makeAdapter(screenUp, { adbAdapter });
+
+      const result = await adapter.prepareForContent();
+
+      expect(adbAdapter.connect).toHaveBeenCalledTimes(1);
+      expect(adbAdapter.shell).toHaveBeenCalledWith('ls /dev/camera/video* /dev/video* 2>/dev/null | wc -l');
+      expect(result).toMatchObject({ ok: true, cameraAvailable: true, cameraSkipped: false });
+    });
+
+    it('reports a missing camera after three probes', async () => {
+      const adbAdapter = adb('0\n');
+      const { adapter, sleep } = makeAdapter(screenUp, { adbAdapter });
+
+      const result = await adapter.prepareForContent();
+
+      expect(adbAdapter.shell).toHaveBeenCalledTimes(3);
+      expect(sleep.mock.calls.map(call => call[0])).toEqual([2000, 2000]);
+      expect(result).toMatchObject({ ok: true, cameraAvailable: false, cameraSkipped: false });
+    });
+
+    it('skips the camera probe when asked, and says it did not look', async () => {
+      const adbAdapter = adb();
+      const { adapter } = makeAdapter(screenUp, { adbAdapter });
+      const result = await adapter.prepareForContent({ skipCameraCheck: true });
+      expect(adbAdapter.shell).not.toHaveBeenCalled();
+      expect(result).toMatchObject({ cameraAvailable: null, cameraSkipped: true });
+    });
+
+    it('assumes the camera is there when no ADB probe is configured', async () => {
+      const { adapter } = makeAdapter(screenUp);
+      await expect(adapter.prepareForContent()).resolves.toMatchObject({
+        ok: true, cameraAvailable: true, cameraSkipped: false,
+      });
+    });
+
+    it('turns a thrown error into a failed result', async () => {
+      const { adapter, rest } = makeAdapter();
+      rest.post.mockRejectedValue(new Error('boom'));
+      await expect(adapter.prepareForContent()).resolves.toEqual({ ok: false, error: 'boom' });
+      expect(adapter.getMetrics().errors).toBe(1);
+    });
+  });
+
+  describe('reboot', () => {
+    it('asks the app to reboot the device', async () => {
+      const { adapter, rest } = makeAdapter({ 'POST /device/reboot': ok({ rebooting: true }) });
+      const result = await adapter.reboot();
+      expect(routes(rest)).toEqual(['POST /device/reboot']);
+      expect(result.ok).toBe(true);
+      expect(result.hint).toMatch(/reboot/i);
+    });
+
+    it('falls back to ADB when the app cannot reboot the device', async () => {
+      const adbAdapter = { reboot: vi.fn(async () => ({ ok: true })) };
+      const { adapter } = makeAdapter({
+        'POST /device/reboot': { ok: false, code: 'UNSUPPORTED', error: 'HTTP 501: unsupported - device owner required' },
+      }, { adbAdapter });
+
+      const result = await adapter.reboot();
+
+      expect(adbAdapter.reboot).toHaveBeenCalledTimes(1);
+      expect(result.ok).toBe(true);
+    });
+
+    it.each([
+      ['a dropped connection', { ok: false, code: 'UNREACHABLE', error: 'socket hang up' }],
+      ['a timeout', { ok: false, code: 'TIMEOUT', error: 'timeout of 10000ms exceeded' }],
+    ])('takes %s after the request went out as the reboot, and does not reboot again over ADB', async (_label, failure) => {
+      const adbAdapter = { reboot: vi.fn(async () => ({ ok: true })) };
+      const { adapter, logger } = makeAdapter({ 'POST /device/reboot': failure }, { adbAdapter });
+
+      const result = await adapter.reboot();
+
+      expect(result.ok).toBe(true);
+      expect(result.hint).toMatch(/dropped the connection/i);
+      expect(adbAdapter.reboot).not.toHaveBeenCalled();
+      expect(logger.info).toHaveBeenCalledWith('daylightandroid.reboot.dropped-as-expected', expect.any(Object));
+    });
+
+    it('uses ADB when the request never reached the app', async () => {
+      const adbAdapter = { reboot: vi.fn(async () => ({ ok: true })) };
+      const { adapter } = makeAdapter({
+        'POST /device/reboot': { ok: false, code: 'UNREACHABLE', error: 'connect ECONNREFUSED', neverSent: true },
+      }, { adbAdapter });
+      await expect(adapter.reboot()).resolves.toMatchObject({ ok: true });
+      expect(adbAdapter.reboot).toHaveBeenCalledTimes(1);
+    });
+
+    it('fails when the request never reached the app and there is no ADB', async () => {
+      const { adapter } = makeAdapter({
+        'POST /device/reboot': { ok: false, code: 'UNREACHABLE', error: 'connect ECONNREFUSED', neverSent: true },
+      });
+      await expect(adapter.reboot()).resolves.toEqual({ ok: false, error: 'connect ECONNREFUSED' });
+    });
+
+    it('reports the refusal when there is no ADB fallback', async () => {
+      const { adapter } = makeAdapter({
+        'POST /device/reboot': { ok: false, code: 'UNSUPPORTED', error: 'HTTP 501: unsupported - device owner required' },
+      });
+      await expect(adapter.reboot()).resolves.toEqual({
+        ok: false, error: 'HTTP 501: unsupported - device owner required',
+      });
+    });
+  });
+
+  describe('healAudioBridge', () => {
+    it('reports no mic bridge on a device without the capability', async () => {
+      const { adapter, rest } = makeAdapter({ 'GET /capabilities': ok({ capabilities: ['webview-host'] }) });
+      await expect(adapter.healAudioBridge()).resolves.toEqual({ ok: true, companions: [], reason: 'no-mic-bridge' });
+      expect(routes(rest)).toEqual(['GET /capabilities']);
+    });
+
+    it('leaves a free mic alone unless forced', async () => {
+      const table = {
+        'GET /capabilities': ok({ capabilities: ['mic-bridge'] }),
+        'GET /mic/status': ok({ heldByOther: false }),
+      };
+      const idle = makeAdapter(table);
+      await expect(idle.adapter.healAudioBridge()).resolves.toMatchObject({ ok: true, micRestarted: false });
+      expect(routes(idle.rest)).not.toContain('POST /mic/restart');
+
+      const forced = makeAdapter(table);
+      await expect(forced.adapter.healAudioBridge({ force: true })).resolves.toMatchObject({ ok: true, micRestarted: true });
+      expect(routes(forced.rest)).toContain('POST /mic/restart');
+    });
+
+    it('fails when the restart is refused', async () => {
+      const { adapter } = makeAdapter({
+        'GET /capabilities': ok({ capabilities: ['mic-bridge'] }),
+        'GET /mic/status': ok({ heldByOther: true }),
+        'POST /mic/restart': fail('HTTP_ERROR', 'HTTP 500: internal'),
+      });
+      await expect(adapter.healAudioBridge()).resolves.toMatchObject({
+        ok: false, micRestarted: false, error: 'HTTP 500: internal',
+      });
+    });
+  });
+
+  it('getMetrics counts loads, prepares and errors', async () => {
+    const { adapter } = makeAdapter({ 'POST /screen': ok({ screenOn: true }) });
+    await adapter.load('/piano');
+    await adapter.prepareForContent({ profile: 'broadcast' });
+
+    expect(adapter.getMetrics()).toMatchObject({
+      provider: 'daylight-android',
+      host: 'kiosk.test',
+      loads: 1,
+      prepares: 1,
+      errors: 0,
+    });
+    expect(typeof adapter.getMetrics().uptime).toBe('number');
+    expect(adapter.getMetrics().lastRequestAt).toBeTruthy();
+  });
+});

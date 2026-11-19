@@ -87,6 +87,18 @@ describe('/play/log stamps completedAt when watched threshold is crossed', () =>
     expect(setSpy.mock.calls[0][0].completedAt).toBeTruthy();
   });
 
+  test('a subsecond native report needs the natural-end marker to stamp completion', async () => {
+    const setSpy = vi.fn().mockResolvedValue(undefined);
+    const app = makeApp({ existingState: null, setSpy });
+    const report = { type: 'plex', assetId: 'plex:11', title: 'Clip', listId: null, percent: 100, seconds: 0 };
+
+    await request(app).post('/log').send(report).expect(200);
+    expect(setSpy.mock.calls[0][0].completedAt).toBeFalsy();
+
+    await request(app).post('/log').send({ ...report, naturalEnd: true }).expect(200);
+    expect(setSpy.mock.calls[1][0].completedAt).toBeTruthy();
+  });
+
   test('a minWatchSec rule: a tiny recorded watch delta does not stamp completedAt', async () => {
     const setSpy = vi.fn().mockResolvedValue(undefined);
     const ruleFor = vi.fn(() => ({ minPercent: 90, maxRemainingSec: null, minWatchSec: 30 }));

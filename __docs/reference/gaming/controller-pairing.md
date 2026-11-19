@@ -6,6 +6,13 @@ connected on the garage fitness box, and how to read what state it is in.
 The arcade's controller chip (🎮 top of the Video Games screen) opens the
 **Controllers** panel. That panel is the only pairing path anyone should need.
 
+This page is the garage box, where pairing runs through the host's BlueZ. An
+Android screen pairs its pads through the app on that device instead: the
+audio-bridge app, or the DaylightStation Android kiosk app on its control port
+when the device's `content_control.provider` is `daylight-android`. Both are
+described under "Controllers screen" in
+[RetroArch integration](../integrations/retroarch.md).
+
 ## Config: `media/emulation/input.yml`
 
 Every controller-specific word lives in the controller's entry. Code never names

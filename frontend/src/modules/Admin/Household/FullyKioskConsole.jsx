@@ -44,9 +44,27 @@ import { notifyFailure, notifySuccess } from '../shared/feedback.js';
 import fullyKioskAdminApi from './fullyKioskAdminApi.js';
 import './FullyKioskConsole.scss';
 
+// One console serves both kiosk providers. A device on the DaylightStation
+// Android kiosk app reports `provider: 'daylight-android'` in its status and
+// gets neutral wording; anything else is a Fully Kiosk device, worded as before.
+const DAYLIGHT_ANDROID = 'daylight-android';
+
+function wordingFor(provider) {
+  return provider === DAYLIGHT_ANDROID
+    ? {
+      product: 'Kiosk',
+      restartApp: ['Restart the kiosk app?', 'The kiosk app will briefly leave and restart the current page.', 'Restart app'],
+      reboot: 'Reboot is sent through the kiosk app. The device may drop the request while it restarts.',
+    }
+    : {
+      product: 'Fully Kiosk',
+      restartApp: ['Restart Fully Kiosk?', 'Fully Kiosk will briefly leave and restart the current page.', 'Restart app'],
+      reboot: 'Reboot is sent through Fully Kiosk. The device may drop the request while it restarts.',
+    };
+}
+
 const CONFIRMATIONS = Object.freeze({
   'reset-webview': ['Reset WebView?', 'The current page renderer will be recreated.', 'Reset WebView'],
-  'restart-app': ['Restart Fully Kiosk?', 'Fully Kiosk will briefly leave and restart the current page.', 'Restart app'],
   'kiosk-unlock': ['Unlock kiosk mode?', 'This allows someone at the device to leave the kiosk experience.', 'Unlock kiosk'],
   'maintenance-enable': ['Enable maintenance mode?', 'This exposes device maintenance controls at the kiosk.', 'Enable maintenance'],
   reboot: ['Reboot device?', 'The device will be unavailable for about a minute.', 'Reboot'],
@@ -87,6 +105,16 @@ function formatTemperature(value) {
   if (!Number.isFinite(temperature) || temperature <= 0) return 'Temperature not reported';
   const celsius = temperature > 100 ? temperature / 10 : temperature;
   return `${celsius.toFixed(celsius % 1 ? 1 : 0)}°C`;
+}
+
+/**
+ * Fully's numeric settings are brightness levels and durations in seconds, so
+ * its inputs are bounded. The Android kiosk app's settings are typed by the
+ * device, which checks the value itself; they get no ceiling here.
+ */
+function numberBounds(setting, provider) {
+  if (provider === DAYLIGHT_ANDROID) return {};
+  return { min: 0, max: setting.key.toLowerCase().includes('brightness') ? 255 : 86400 };
 }
 
 function SummaryCard({ label, value, detail }) {
@@ -258,14 +286,16 @@ function FullyKioskConsole() {
     }
   }, [deviceId, refreshStatus]);
 
+  const wording = useMemo(() => wordingFor(status?.provider), [status?.provider]);
+
   const runAction = useCallback((action, params = {}) => {
-    const confirmation = CONFIRMATIONS[action];
+    const confirmation = action === 'restart-app' ? wording.restartApp : CONFIRMATIONS[action];
     if (confirmation) {
       setPendingConfirmation({ action, params, confirmation });
       return;
     }
     executeAction(action, params);
-  }, [executeAction]);
+  }, [executeAction, wording]);
 
   const saveSetting = useCallback(async (setting) => {
     setSettingSaving(setting.key);
@@ -288,6 +318,12 @@ function FullyKioskConsole() {
   )), [settings, settingsFilter]);
   const summary = status?.summary || {};
   const device = status?.device || { id: deviceId, name: deviceId };
+  // An action the backend leaves out of `capabilities.actions` has no
+  // equivalent on this device (the Android kiosk app has no screensaver). A
+  // status without the list keeps every control, as before.
+  const supports = action => !Array.isArray(status?.capabilities?.actions)
+    || status.capabilities.actions.includes(action);
+  const hasScreensaver = supports('screensaver-start') || supports('screensaver-stop');
   const connection = statusError
     ? { label: 'Offline', color: 'red' }
     : status
@@ -310,7 +346,7 @@ function FullyKioskConsole() {
             <Text className="ds-page-title">{device.name || device.id}</Text>
             <Badge color={connection.color}>{connection.label}</Badge>
           </Group>
-          <Text size="sm" c="dimmed">Fully Kiosk · {device.address || 'Address unavailable'}</Text>
+          <Text size="sm" c="dimmed">{wording.product} · {device.address || 'Address unavailable'}</Text>
         </Box>
         <Button
           variant="light"
@@ -402,7 +438,7 @@ function FullyKioskConsole() {
                     <ActionButton action="foreground" label="Foreground" run={runAction} loadingActions={loadingActions} />
                     <ActionButton action="load-start-url" label="Start URL" run={runAction} loadingActions={loadingActions} />
                     <ActionButton action="refresh" label="Refresh page" run={runAction} loadingActions={loadingActions} />
-                    <ActionButton action="screensaver-start" label="Screensaver" run={runAction} loadingActions={loadingActions} />
+                    {supports('screensaver-start') && <ActionButton action="screensaver-start" label="Screensaver" run={runAction} loadingActions={loadingActions} />}
                   </SimpleGrid>
                   <Divider />
                   <Text size="xs" c="dimmed">Current page</Text>
@@ -420,7 +456,7 @@ function FullyKioskConsole() {
             <SummaryCard label="Memory" value={summary.ramFree != null ? `${formatBytes(summary.ramFree)} free` : null} detail={summary.ramTotal != null ? `${formatBytes(summary.ramTotal)} total` : 'Not reported'} />
             <SummaryCard label="Storage" value={summary.storageFree != null ? `${formatBytes(summary.storageFree)} free` : null} detail={summary.storageTotal != null ? `${formatBytes(summary.storageTotal)} total` : 'Not reported'} />
             <SummaryCard label="Kiosk" value={binaryState(summary.kioskLocked, 'Locked', 'Unlocked')} detail={`Mode ${reported(summary.kioskMode)} · maintenance ${reported(summary.maintenanceMode)}`} />
-            <SummaryCard label="Foreground" value={summary.foregroundPackage} detail={binaryState(summary.screensaver, 'Screensaver active', 'Screensaver inactive')} />
+            <SummaryCard label="Foreground" value={summary.foregroundPackage} detail={hasScreensaver ? binaryState(summary.screensaver, 'Screensaver active', 'Screensaver inactive') : undefined} />
           </SimpleGrid>
 
           <SimpleGrid cols={{ base: 1, xl: 2 }} spacing="md">
@@ -434,8 +470,8 @@ function FullyKioskConsole() {
                 <Button onClick={() => runAction('load-url', { url: targetUrl })} loading={Boolean(loadingActions['load-url'])}>Load</Button>
               </Group>
               <Group gap="xs">
-                <ActionButton action="screensaver-start" label="Start screensaver" run={runAction} loadingActions={loadingActions} />
-                <ActionButton action="screensaver-stop" label="Stop screensaver" run={runAction} loadingActions={loadingActions} />
+                {supports('screensaver-start') && <ActionButton action="screensaver-start" label="Start screensaver" run={runAction} loadingActions={loadingActions} />}
+                {supports('screensaver-stop') && <ActionButton action="screensaver-stop" label="Stop screensaver" run={runAction} loadingActions={loadingActions} />}
                 <ActionButton action="reset-webview" label="Reset WebView" run={runAction} loadingActions={loadingActions} color="orange" />
                 <ActionButton action="restart-app" label="Restart app" run={runAction} loadingActions={loadingActions} color="orange" />
               </Group>
@@ -486,7 +522,7 @@ function FullyKioskConsole() {
             </ControlPanel>
 
             <ControlPanel title="Device" icon={<IconReload size={18} />}>
-              <Text size="sm" c="dimmed">Reboot is sent through Fully Kiosk. The device may drop the request while it restarts.</Text>
+              <Text size="sm" c="dimmed">{wording.reboot}</Text>
               <Group>
                 <ActionButton action="reboot" label="Reboot device" run={runAction} loadingActions={loadingActions} color="red" />
               </Group>
@@ -514,7 +550,7 @@ function FullyKioskConsole() {
             </Accordion.Item>
 
             <Accordion.Item value="settings">
-              <Accordion.Control icon={<IconSettings size={18} />}>Fully Kiosk settings ({filteredSettings.length})</Accordion.Control>
+              <Accordion.Control icon={<IconSettings size={18} />}>{wording.product} settings ({filteredSettings.length})</Accordion.Control>
               <Accordion.Panel>
                 <Stack gap="sm">
                   {settingsError && <Alert color="red">{settingsError}</Alert>}
@@ -534,7 +570,7 @@ function FullyKioskConsole() {
                                   {setting.sensitive ? <Text c="dimmed">••••••</Text> : setting.editable && setting.type === 'boolean' ? (
                                     <Switch checked={Boolean(draft)} onChange={event => setDraftSettings(current => ({ ...current, [setting.key]: event.currentTarget.checked }))} />
                                   ) : setting.editable && setting.type === 'number' ? (
-                                    <NumberInput value={draft ?? ''} min={0} max={setting.key.toLowerCase().includes('brightness') ? 255 : 86400} onChange={value => setDraftSettings(current => ({ ...current, [setting.key]: value }))} />
+                                    <NumberInput value={draft ?? ''} {...numberBounds(setting, status?.provider)} onChange={value => setDraftSettings(current => ({ ...current, [setting.key]: value }))} />
                                   ) : setting.editable ? (
                                     <TextInput value={draft ?? ''} onChange={event => setDraftSettings(current => ({ ...current, [setting.key]: event.currentTarget.value }))} />
                                   ) : (

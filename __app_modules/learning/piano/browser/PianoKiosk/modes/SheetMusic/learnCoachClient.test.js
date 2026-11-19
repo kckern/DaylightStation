@@ -149,3 +149,33 @@ describe('profile-scoped coaching outbox', () => {
   });
 
 });
+
+describe('set-aside events', () => {
+  it('a queued set-aside survives an outbox reload', async () => {
+    const { createCoachPlan } = await import('../../../../../../../shared/music/learnCoach.mjs');
+    const plan = createCoachPlan({ scoreId: 'files:a.mxl', fingerprint: 'c', segments: [{ id: 'one', inMeasure: 0, outMeasure: 1, playableParts: ['rh'] }] });
+    const scope = { profileId: 'learner', scoreId: 'files:a.mxl', scoreKey: 'files-a-mxl', fingerprint: 'c' };
+    const data = new Map();
+    const storage = { getItem: (key) => data.get(key) ?? null, setItem: (key, value) => data.set(key, value), removeItem: (key) => data.delete(key) };
+    const offline = () => Promise.reject(Object.assign(new Error('offline'), { status: 503 }));
+    const first = createLearnCoachClient({ request: offline, storage, dayKey: () => '2026-11-18' });
+    await first.enqueue(scope, { id: 'aside-1', type: 'set-aside', task: plan.tasks.find((task) => task.skill === 'silver') }, plan).catch(() => {});
+    first.dispose();
+    const seen = [];
+    const second = createLearnCoachClient({ request: offline, storage, dayKey: () => '2026-11-18', onChange: (_scope, value) => seen.push(value) });
+    await second.load(scope, plan).catch(() => {});
+    expect(seen.at(-1).state.setAside).toEqual({ one: '2026-11-18' });
+    second.dispose();
+  });
+
+  it('a guest set-aside applies locally without a request', async () => {
+    const { createCoachPlan } = await import('../../../../../../../shared/music/learnCoach.mjs');
+    const plan = createCoachPlan({ scoreId: 'files:a.mxl', fingerprint: 'c', segments: [{ id: 'one', inMeasure: 0, outMeasure: 1, playableParts: ['rh'] }] });
+    const request = vi.fn(); const seen = [];
+    const client = createLearnCoachClient({ request, dayKey: () => '2026-11-18', onChange: (_scope, value) => seen.push(value) });
+    await client.enqueue({ profileId: 'guest', scoreId: 'files:a.mxl', scoreKey: 'files-a-mxl', fingerprint: 'c' }, { id: 'aside-2', type: 'set-aside', task: plan.tasks.find((task) => task.skill === 'silver') }, plan);
+    expect(seen.at(-1).state.setAside).toEqual({ one: '2026-11-18' });
+    expect(request).not.toHaveBeenCalled();
+    client.dispose();
+  });
+});

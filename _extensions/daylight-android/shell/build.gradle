@@ -1,0 +1,156 @@
+plugins { id 'com.android.application' }
+
+def catalog = rootProject.ext.catalog
+
+// Private per-device control tokens: -PcontrolTokens=<file>, or $DAYLIGHT_ANDROID_TOKENS.
+def tokensPath = project.findProperty('controlTokens') ?: System.getenv('DAYLIGHT_ANDROID_TOKENS')
+def tokens = net.kckern.daylight.build.ControlTokens.load(tokensPath ? new File(tokensPath.toString()) : null)
+
+android {
+    namespace 'net.kckern.daylight.shell'
+    compileSdk 33
+    // Without an NDK the packaging step cannot strip a capability's native libraries and
+    // ships them with debug symbols, several times their size. Only used when a device has ABIs.
+    ndkVersion rootProject.ext.ndkVersion
+
+    defaultConfig { minSdk 26 }
+
+    flavorDimensions 'device'
+    productFlavors {
+        catalog.devices().each { d ->
+            create(d.id) {
+                dimension 'device'
+                applicationId d.packageName
+                minSdkVersion d.minSdk
+                targetSdkVersion d.targetSdk
+                versionCode d.shellVersionCode
+                versionName d.shellVersionName
+                buildConfigField 'String', 'DEVICE_ID', "\"${d.id}\""
+                buildConfigField 'int', 'LIFELINE_PORT', "${d.lifelinePort}"
+                // lan, loopback or none: where the lifeline listens, if anywhere. The payload reads the same
+                // value from its generated DeviceConfig for the control server.
+                buildConfigField 'String', 'CONTROL_BIND', "\"${d.controlBind}\""
+                // A device that listens nowhere (control.bind none) gets no token compiled in:
+                // an APK can be read by every app on the device it is installed on.
+                buildConfigField 'String', 'CONTROL_TOKEN', "\"${d.controlBind == 'none' ? '' : tokens.tokenFor(d.id)}\""
+                if (!d.abis.isEmpty()) ndk { abiFilters(*d.abis) }
+            }
+        }
+    }
+
+    sourceSets {
+        catalog.devices().each { d ->
+            getByName(d.id).assets.srcDir new File(buildDir, "generated/baked/${d.id}")
+        }
+    }
+
+    // A release build is not debuggable, so `adb run-as` cannot open its data. It is
+    // signed only when the private file names a keystore for the device
+    // (`<id>_keystore`, a path relative to that file, with `<id>_keystore_password`,
+    // `<id>_key_alias` and `<id>_key_password` under `placeholders:`). Without one
+    // the release APK comes out unsigned and cannot be installed; the debug build is
+    // then the only installable one. No keystore is ever created or committed here.
+    signingConfigs {
+        catalog.devices().each { d ->
+            def ks = rootProject.ext.placeholders.find("${d.id}_keystore".toString())
+            if (ks != null && tokensPath) {
+                def storePath = new File(new File(tokensPath.toString()).parentFile, ks.toString())
+                create("${d.id}Release") {
+                    storeFile storePath
+                    storePassword rootProject.ext.placeholders.find("${d.id}_keystore_password".toString())
+                    keyAlias rootProject.ext.placeholders.find("${d.id}_key_alias".toString())
+                    keyPassword rootProject.ext.placeholders.find("${d.id}_key_password".toString())
+                }
+            }
+        }
+    }
+    productFlavors.all { flavor ->
+        def release = signingConfigs.findByName("${flavor.name}Release")
+        // The debug build type has its own signing config, which wins there; this one
+        // reaches the release build type alone.
+        if (release != null) flavor.signingConfig release
+    }
+
+    buildTypes { release { minifyEnabled false; debuggable false } }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_11
+        targetCompatibility JavaVersion.VERSION_11
+    }
+
+    testOptions { unitTests.returnDefaultValues = true }
+
+    // A real TV banner arrives with the Shield build in a later phase.
+    lint { disable 'MissingTvBanner' }
+}
+
+// Each device's extra permissions and foreground service types, as a manifest
+// fragment in that flavor's source set.
+catalog.devices().each { d ->
+    def dir = new File(buildDir, "generated/manifests/${d.id}")
+    // Rendered when the task runs, not when the build is configured: a device with
+    // appLinks resolves its host from the private file, and building another device
+    // must not need that value.
+    def xml = { net.kckern.daylight.build.DeviceManifestSource.render(d, rootProject.ext.placeholders, catalog.kioskOnlyPermissions(d)) }
+    def gen = tasks.create("generate${d.id.capitalize()}Manifest") {
+        inputs.property('xml', providers.provider(xml))
+        outputs.dir dir
+        doLast {
+            dir.mkdirs()
+            new File(dir, 'AndroidManifest.xml').setText(xml(), 'UTF-8')
+        }
+    }
+    android.sourceSets.getByName(d.id).manifest.srcFile new File(dir, 'AndroidManifest.xml')
+    tasks.matching { it.name ==~ "process${d.id.capitalize()}(Debug|Release)(Main)?Manifest" }.all { it.dependsOn gen }
+}
+
+// The build-level check of what installing would do to a device: each device's MERGED
+// manifest (the one in its APK) is read back and held to MergedManifestCheck's rules.
+// Part of `check`, so `./gradlew build` fails on a manifest that adds a home candidate.
+def mergedManifestChecks = catalog.devices().collect { d ->
+    def cap = d.id.capitalize()
+    tasks.register("check${cap}MergedManifest") {
+        group = 'verification'
+        description = "Checks the merged manifest of the ${d.id} debug APK."
+        dependsOn "process${cap}DebugManifest"
+        def merged = new File(buildDir, "intermediates/merged_manifests/${d.id}Debug/AndroidManifest.xml")
+        inputs.file(merged)
+        outputs.upToDateWhen { false }
+        doLast {
+            if (!merged.isFile()) throw new GradleException("no merged manifest at ${merged}")
+            // A device with control.bind none is also held to its exact list of permissions
+            // and exported components; every device to the backup rules.
+            def failures = net.kckern.daylight.build.MergedManifestCheck.failures(merged.getText('UTF-8'), d,
+                    net.kckern.daylight.build.PersonalBuild.expectation(d, catalog))
+            if (!failures.isEmpty()) {
+                throw new GradleException("${d.id}: merged manifest check failed:\n  " + failures.join('\n  '))
+            }
+        }
+    }
+}
+tasks.named('check') { dependsOn mergedManifestChecks }
+
+// A device build without a control token would install an API nobody can reach.
+catalog.devices().each { d ->
+    tasks.matching { it.name ==~ "pre${d.id.capitalize()}(Debug|Release)Build" }.all {
+        doFirst {
+            if (d.controlBind != 'none' && !tokens.has(d.id)) {
+                throw new GradleException("no control token for device '${d.id}'. " +
+                        "Add it to the private tokens file and set DAYLIGHT_ANDROID_TOKENS or -PcontrolTokens.")
+            }
+        }
+    }
+}
+
+dependencies {
+    implementation project(':shell-api')
+    // The shell ships NanoHTTPD; payloads link against this copy.
+    implementation 'org.nanohttpd:nanohttpd-websocket:2.3.1'
+    catalog.devices().each { d ->
+        d.capabilities.each { name ->
+            if (catalog.capability(name).hasShell) add("${d.id}Implementation", project(":capabilities:${name}:shell"))
+        }
+    }
+    testImplementation 'junit:junit:4.13.2'
+    testImplementation 'org.json:json:20231013'
+}

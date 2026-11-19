@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <!-- The overlay anchor. Granted once with `appops set <package> SYSTEM_ALERT_WINDOW allow`. -->
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+
+    <application>
+        <!-- Runs at process start, before the shell service is started. See MicAnchorProvider. -->
+        <provider
+            android:name="net.kckern.daylight.cap.micbridge.shell.MicAnchorProvider"
+            android:authorities="${applicationId}.mic-anchor"
+            android:exported="false" />
+    </application>
+</manifest>

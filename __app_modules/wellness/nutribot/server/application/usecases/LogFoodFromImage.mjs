@@ -8,10 +8,19 @@ import { capturedFoodGrams, capturedNutrientProvenance } from '../../../../healt
 
 import { v4 as uuidv4 } from 'uuid';
 import { repairTruncatedJson } from "../lib/repairJson.mjs";
+import { captureCatalogMicros, enrichFoodCapture, finishQuickInputEnrichment } from "../services/enrichFoodCapture.mjs";
 import { createNutriLog } from "../../../../health/server/nutrition-records.mjs";
 import { groupParsedItems } from "../../../../health/server/nutrition-capture-values.mjs";
 import { aiMicrosSource, pickMicros } from "../../../../health/server/nutrition-capture-values.mjs";
 import { confineIcon, iconVocabulary } from "../../../../health/server/nutrition-capture-values.mjs";
+
+/**
+ * What a log event may say about an image URL: the start of a web address.
+ * A `data:` URL is the image itself and is never logged.
+ */
+function loggableUrl(url) {
+  return typeof url === 'string' && /^https?:\/\//i.test(url) ? url.substring(0, 120) : undefined;
+}
 
 /**
  * Log food from image use case
@@ -116,7 +125,8 @@ export class LogFoodFromImage {
       hasResponseContext: !!responseContext,
       hasImageUrl: !!imageData?.url,
       hasFileId: !!imageData?.fileId,
-      imageUrl: imageData?.url?.substring(0, 120),
+      imageBytes: Buffer.isBuffer(imageData?.buffer) ? imageData.buffer.length : undefined,
+      imageUrl: loggableUrl(imageData?.url),
     });
 
     const messaging = this.#getMessaging(responseContext, conversationId);
@@ -140,15 +150,20 @@ export class LogFoodFromImage {
         }
       }
 
-      // 1. Resolve image URL
-      let imageUrl = imageData.url;
-      if (imageData.fileId && messaging.getFileUrl) {
+      // 1. Resolve image URL. An image handed over as bytes (a quick input
+      // uploaded from the phone) has no URL and no file id: the bytes are the
+      // source for the chat photo, for the model and for the photo store.
+      const imageBuffer = Buffer.isBuffer(imageData.buffer) ? imageData.buffer : null;
+      let imageUrl = imageBuffer ? undefined : imageData.url;
+      if (!imageBuffer && imageData.fileId && messaging.getFileUrl) {
         imageUrl = await messaging.getFileUrl(imageData.fileId);
       }
 
       // 2. Download image to buffer for sendPhoto
       let photoSource;
-      if (imageUrl && imageUrl.startsWith('http')) {
+      if (imageBuffer) {
+        photoSource = imageBuffer;
+      } else if (imageUrl && imageUrl.startsWith('http')) {
         try {
           photoSource = await this.#imageDownloader.download(imageUrl);
         } catch (e) {
@@ -219,10 +234,10 @@ export class LogFoodFromImage {
       const prompt = this.#buildDetectionPrompt(portionBoost, userCaption);
       const response = await this.#aiGateway.chatWithImage(prompt, imageForAI, { maxTokens: 4096 });
 
+      // The model's answer describes the photo, so it is logged by its length only.
       this.#logger.info?.('logImage.aiResponse', {
         conversationId,
         responseLength: response?.length || 0,
-        responsePreview: response?.substring(0, 200),
       });
 
       // 6. Parse response into food items
@@ -231,14 +246,13 @@ export class LogFoodFromImage {
       if (foodItems.length === 0) {
         this.#logger.warn?.('logImage.noFoodDetected', {
           conversationId,
-          imageUrl: imageUrl?.substring(0, 120),
+          imageUrl: loggableUrl(imageUrl),
           aiResponseLength: response?.length || 0,
-          aiResponsePreview: response?.substring(0, 300),
         });
         await messaging.updateMessage(photoMsgId, {
           caption: "❓ I couldn't identify any food in this image. Could you describe what you're eating?",
         });
-        return { success: false, error: 'No food detected' };
+        return { success: false, code: 'NO_FOOD', error: 'No food detected' };
       }
 
       // 6b. Persist the captured photo and stamp its ref onto the produced
@@ -270,77 +284,31 @@ export class LogFoodFromImage {
       if (this.#catalogService?.resolveIdentity) {
         for (let index = 0; index < foodItems.length; index++) foodItems[index] = await this.#catalogService.resolveIdentity(foodItems[index], effectiveUserId);
       }
+      const quickInput = input.quickInput && { ...input.quickInput, catalogMicros: captureCatalogMicros(foodItems) };
       const nutriLog = createNutriLog({
         userId: effectiveUserId,
         conversationId,
         items: foodItems,
         meal: {
           date: targetDate,
-          time: mealTime,
+          time: (quickInput && ((mealTimeExplicit && aiTime) || quickInput.bucket)) || mealTime,
         },
         metadata: {
+          ...(quickInput && { quickInput, messageId: photoMsgId ? String(photoMsgId) : undefined, messageKind: 'photo' }),
           source: 'image',
           imageUrl: imageUrl,
         },
         timezone,
         timestamp: now,
-      });
+      }, quickInput ? { newId: () => quickInput.logId } : {});
 
       // 8. Save NutriLog
       if (this.#foodLogStore) {
         await this.#foodLogStore.save(nutriLog);
       }
 
-      // 8a-bis. Density guard (catalog-density fix, step 2). BEFORE the catalog
-      // donation below — a donation adds this row to the very history the guard
-      // compares against, and a row judged against a median it has already
-      // moved is not judged at all. Nothing here corrects a number: the parsed
-      // values are logged as-is and land unsettled like every capture, so a
-      // flagged item just reaches the pending-review surface with a reason.
-      let densityFindings = [];
-      if (this.#catalogService?.assessDensity) {
-        try {
-          const findings = await this.#catalogService.assessDensity(foodItems, userId);
-          densityFindings = findings;
-          if (findings.length) this.#logger.info?.('nutribot.density.findings', { logId: nutriLog.id, findings });
-        } catch (err) {
-          this.#logger.warn?.('nutribot.density.assess_failed', { conversationId, error: err.message });
-        }
-      }
-
-      // 8b. Record food items in catalog for quick-add
-      if (this.#catalogService) {
-        for (const item of foodItems) {
-          try {
-            await this.#catalogService.recordUsage({
-              foodId: item.foodId,
-              name: item.label,
-              calories: item.calories,
-              protein: item.protein,
-              carbs: item.carbs,
-              fat: item.fat,
-              // The MASS, and the id that makes this row's observation
-              // idempotent. Without them the catalog can only remember a
-              // total, which is the portion-multiple problem it just stopped
-              // having.
-              grams: item.grams,
-              unit: item.unit,
-              amount: item.amount,
-              logId: item.id,
-              // Spread, not four named fields: an unanswered micro is ABSENT
-              // on `item` (see the mapper), and naming it here would
-              // resurrect it as `undefined` -> a donated structural zero.
-              ...pickMicros(item),
-              // Only a provenanced row donates its micros at all —
-              // see FoodCatalogService.recordUsage.
-              microsSource: item.microsSource,
-              source: 'nutritionix',
-            }, userId);
-          } catch (err) {
-            this.#logger.warn?.('nutribot.catalog.record_failed', { name: item.label, error: err.message });
-          }
-        }
-      }
+      if (quickInput) return { success: true, nutrilogUuid: nutriLog.id, itemCount: foodItems.length };
+      const densityFindings = await enrichFoodCapture(nutriLog, foodItems, this.#catalogService, this.#logger, userId);
 
       // Bind the processing photo. The receipt is rendered from the ledger
       // only AFTER the router commits the capture and resolves meal placement.
@@ -376,11 +344,14 @@ export class LogFoodFromImage {
         conversationId,
         error: error.message,
         stack: error.stack?.split('\n').slice(0, 5).join('\n'),
-        imageUrl: imageData?.url?.substring(0, 120),
+        imageUrl: loggableUrl(imageData?.url),
       });
 
+      // A retry fetches the image again by its file id or URL. An image that
+      // arrived as bytes has neither, so it is offered no Retry button.
+      const refetchable = Boolean(imageData?.fileId || imageData?.url);
       let retryStateWritten = false;
-      if (photoMsgId && this.#conversationStateStore) {
+      if (photoMsgId && this.#conversationStateStore && refetchable) {
         try {
           // Keyed to the failed photo's own message (a session), never the
           // root flow: an open revision must survive a failed photo.
@@ -424,6 +395,10 @@ export class LogFoodFromImage {
 
       throw error;
     }
+  }
+
+  finishQuickInput(log) {
+    return finishQuickInputEnrichment(log, this.#catalogService, this.#foodLogStore, this.#logger);
   }
 
   /**

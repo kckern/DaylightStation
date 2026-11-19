@@ -3,7 +3,7 @@ import { existsSync, mkdtempSync, mkdirSync, readFileSync, statSync, writeFileSy
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
-  FRONTEND_ROOT, REPO_ROOT, PATHS, renderIcon, prepareMedia, prepareFlags, prepareIcons,
+  FRONTEND_ROOT, REPO_ROOT, PATHS, renderIcon, prepareMedia, prepareFlags, prepareIcons, missingSourceAssets,
 } from '../../../frontend/scripts/prepare-public-assets.mjs';
 
 const HINT = 'run `npm run prepare:assets` in frontend/ (the prebuild hook)';
@@ -68,5 +68,20 @@ describe('prepare-public-assets generators', () => {
     const out = prepareIcons({ repoRoot: root, frontendRoot: FRONTEND_ROOT });
     expect(out).toHaveLength(2);
     expect(readFileSync(out[0], 'utf8')).toContain('<path');
+  });
+
+  // The vitest run warns from this list: a checkout that never ran prebuild
+  // otherwise fails icon and flag assertions in consumer suites with no hint.
+  it('names each generated source-asset folder that is missing or empty', () => {
+    const root = mkdtempSync(join(tmpdir(), 'prep-'));
+    for (const dir of [PATHS.iconsDir, PATHS.schoolIconsDir]) mkdirSync(join(root, dir), { recursive: true });
+    expect(missingSourceAssets({ repoRoot: root })).toEqual([
+      PATHS.flagsDir, `${PATHS.iconsDir}/svg/generated`, `${PATHS.schoolIconsDir}/svg/generated`,
+    ]);
+    mkdirSync(join(root, PATHS.flagsDir), { recursive: true });
+    writeFileSync(join(root, PATHS.flagsDir, 'us.svg'), '<svg/>');
+    mkdirSync(join(root, PATHS.schoolIconsDir, 'svg', 'generated'), { recursive: true });
+    writeFileSync(join(root, PATHS.schoolIconsDir, 'svg', 'generated', 'apple.svg'), '<svg/>');
+    expect(missingSourceAssets({ repoRoot: root })).toEqual([`${PATHS.iconsDir}/svg/generated`]);
   });
 });

@@ -84,6 +84,8 @@ export class ZoneProfileStore {
     // Per-user hysteresis state: Map<userId, { committedZoneId, lastCommitTs, rawZoneId, rawZoneStableSince }>
     this._hysteresis = new Map();
     this._trustedUsers = new Set();
+    this._trustRevision = 0;
+    this._trustRevisions = new Map();
     // Last CONFIRMED trusted reading per rider: Map<userId, { deviceId, zoneId, heartRate, at }>.
     // Refreshed only by a sample that supports the committed zone, so a held
     // spike can never become evidence. Survives a confirmed reading loss; a
@@ -132,6 +134,7 @@ export class ZoneProfileStore {
    */
   resetZoneState(userId, reason = 'wearer-change') {
     if (userId == null) return;
+    this._trustRevisions.set(userId, ++this._trustRevision);
     this._hysteresis.delete(userId);
     this._trustedUsers.delete(userId);
     this._zoneEntries.delete(userId);
@@ -148,10 +151,24 @@ export class ZoneProfileStore {
     const profile = this._profiles.get(userId);
     if (profile) this._profiles.set(userId, {
       ...profile, zoneTrusted: false, zoneEntry: null,
+      trustRevision: this._trustRevisions.get(userId),
       currentZoneId: null, currentZoneName: null, currentZoneColor: null
     });
     this._signature = null;
     getLogger().info('fitness.zone_state.reset', { userId, reason, keepsEvidence });
+  }
+
+  /** Called only after IdentityProvider has verified an admin fingerprint. */
+  approveTrust(userId, { adminId, deviceId, trustRevision } = {}) {
+    const profile = this._profiles.get(userId);
+    if (!adminId || !profile || !deviceId || profile.zoneReadingDeviceId !== String(deviceId)
+      || profile.trustRevision !== trustRevision) return { ok: false, reason: 'rider-changed' };
+    this._trustedUsers.add(userId);
+    // Approval is a baseline, never evidence of a new Fire crossing.
+    this._restoredWithoutEvidence.add(userId);
+    this._signature = null;
+    getLogger().info('fitness.zone_trust.admin_approved', { userId, deviceId, adminId, trustRevision });
+    return { ok: true };
   }
 
   /** Riders holding accepted-Cool trust, for persisting with the session. */
@@ -242,6 +259,8 @@ export class ZoneProfileStore {
     this._profiles.clear();
     this._signature = null;
     if (!preserveTrust) {
+      this._trustRevision++;
+      this._trustRevisions.clear();
       this._hysteresis.clear();
       this._trustedUsers.clear();
       this._zoneEntries.clear();
@@ -399,9 +418,17 @@ export class ZoneProfileStore {
     const sampleAt = Number.isFinite(user.zoneReadingAt) ? user.zoneReadingAt : null;
     const readingDeviceId = user.zoneReadingDeviceId != null ? String(user.zoneReadingDeviceId) : null;
     const readingSimulated = user.zoneReadingSimulated === true;
+    // The Cool-first rule prevents stale kid straps from satisfying governance.
+    // Adults can start above Cool. A known birthyear takes precedence over
+    // school membership (a child need not be enrolled). Unknown riders can use
+    // the visible admin remedy; generic guests carry their explicit age class.
+    const birthyear = Number(user.birthyear);
+    const age = birthyear > 0 ? new Date().getFullYear() - birthyear : null;
+    const adult = user.zoneAgeClass === 'adult' || (user.zoneAgeClass !== 'kid'
+      && (age != null ? age >= 18 : user.schoolLearner === false));
     let resumed = null;
     if (!this._trustedUsers.has(userId) && eligible && committedLadder) {
-      if (rawZoneId === 'cool') {
+      if (rawZoneId === 'cool' || adult) {
         this._trustedUsers.add(userId);
         this._resumeCandidates.delete(userId);
       } else {
@@ -463,7 +490,7 @@ export class ZoneProfileStore {
         userId, zoneTrusted,
         reason: !zoneTrusted ? 'awaiting-real-cool'
           : resumed ? 'resumed-recent-evidence'
-          : (!previous?.zoneTrusted ? 'accepted-cool-baseline' : 'hysteresis'),
+          : (!previous?.zoneTrusted ? (adult ? 'accepted-adult-baseline' : 'accepted-cool-baseline') : 'hysteresis'),
         heartRate, rawZoneId, committedZoneId: stabilized.zoneId,
         previousZoneId: previous?.currentZoneId ?? null,
         previousHeartRate: previous?.heartRate ?? null,
@@ -487,6 +514,7 @@ export class ZoneProfileStore {
       zoneSequence,
       zoneSnapshot: normalizedSnapshot,
       zoneTrusted,
+      trustRevision: this._trustRevisions.get(userId) ?? this._trustRevision,
       zoneEntry: this._zoneEntries.get(userId) ? { ...this._zoneEntries.get(userId) } : null,
       currentZoneId: stabilized.zoneId,
       currentZoneName: stabilized.zoneName,
@@ -851,6 +879,9 @@ export class ZoneProfileStore {
       zone: profile.currentZoneId,
       rawZone: profile.displayZoneId,
       trusted: profile.zoneTrusted,
+      trustRevision: profile.trustRevision,
+      eligible: profile.zoneReadingEligible,
+      deviceId: profile.zoneReadingDeviceId,
       entryId: profile.zoneEntry?.id ?? null,
       progress: profile.progress,
       config: profile.zoneConfig.map((zone) => `${zone.id}:${zone.min ?? ''}`).join('|')

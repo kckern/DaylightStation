@@ -6,13 +6,15 @@ const DEFAULT_TIMEOUT_MS = 10_000;
  * rung is a normal step on the ladder, not an exception.
  */
 export class PianoBridgeSpeakerActionsAdapter {
-  #baseUrl; #fetchImpl; #timeoutMs;
+  #baseUrl; #fetchImpl; #timeoutMs; #headers;
 
-  constructor({ bridgeUrl, fetchImpl = globalThis.fetch, timeoutMs = DEFAULT_TIMEOUT_MS } = {}) {
+  /** `headers` go on every request: the DaylightStation Android app's control API needs its token header. */
+  constructor({ bridgeUrl, fetchImpl = globalThis.fetch, timeoutMs = DEFAULT_TIMEOUT_MS, headers = {} } = {}) {
     if (!bridgeUrl) throw new Error('PianoBridgeSpeakerActionsAdapter requires bridgeUrl');
     this.#baseUrl = bridgeUrl.replace(/^ws(s?):\/\//i, 'http$1://').replace(/\/+$/, '');
     this.#fetchImpl = fetchImpl;
     this.#timeoutMs = timeoutMs;
+    this.#headers = { ...headers };
   }
 
   a2dpReconnect() { return this.#post('/speaker/reconnect'); }
@@ -23,15 +25,17 @@ export class PianoBridgeSpeakerActionsAdapter {
 
   /**
    * Readiness check: does the bridge carry the repair endpoints? A GET answers
-   * "POST only" when they exist and 404 on an older payload.
+   * "POST only" when they exist and 404 on an older payload. The DaylightStation
+   * Android app answers such a GET with 405 `method_not_allowed`, which also
+   * means the route exists.
    * @returns {Promise<{present: boolean|null}>} null when the bridge could not be asked
    */
   async probeEndpoints() {
     try {
       for (const path of ['/speaker/reconnect', '/speaker/bt-cycle']) {
-        const r = await this.#fetchImpl(`${this.#baseUrl}${path}`, { method: 'GET', signal: AbortSignal.timeout(this.#timeoutMs) });
+        const r = await this.#fetchImpl(`${this.#baseUrl}${path}`, { method: 'GET', headers: this.#headers, signal: AbortSignal.timeout(this.#timeoutMs) });
         if (r?.status === 404) return { present: false };
-        if (!r?.ok) return { present: null };
+        if (!r?.ok && r?.status !== 405) return { present: null };
       }
       return { present: true };
     } catch {
@@ -43,6 +47,7 @@ export class PianoBridgeSpeakerActionsAdapter {
     try {
       const res = await this.#fetchImpl(`${this.#baseUrl}${path}`, {
         method: 'POST',
+        headers: this.#headers,
         signal: AbortSignal.timeout(this.#timeoutMs),
       });
       if (res?.status === 404) return { ok: false, error: 'endpoint-missing' };

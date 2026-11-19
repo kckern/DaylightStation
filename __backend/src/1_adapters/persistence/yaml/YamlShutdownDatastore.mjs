@@ -1,4 +1,4 @@
-import {JsonSupervisionRepository} from '../../../../../__app_modules/household/supervision/server/index.mjs';
+import {JsonSupervisionRepository,createLedgerWriterGate} from '../../../../../__app_modules/household/supervision/server/index.mjs';
 import { loadYaml, saveYamlToPathAtomic } from '#system/utils/FileIO.mjs';
 import { ShutdownState } from '#domains/shutdown/ShutdownState.mjs';
 
@@ -9,7 +9,15 @@ export class YamlShutdownDatastore {
     if (!configService?.getHouseholdPath) throw new Error('YamlShutdownDatastore: configService required');
     this.#config = configService; this.#load = load; this.#save = save;
   }
-  incidentRepository(){return new JsonSupervisionRepository({path:`${this.#config.getHouseholdPath('shutdown')}/enforcement-incidents.json`});}
+  /**
+   * Who may write the incident ledger. `gateOptions` takes shutdown config's
+   * `writer` block plus the runtime facts (environment, hostId, platform,
+   * isDocker); keys left out are read from this process. See LedgerWriterGate.mjs.
+   */
+  incidentWriterGate(gateOptions={}){return createLedgerWriterGate({...gateOptions,ledger:'The shutdown incident ledger'});}
+  incidentRepository({writerGate,...gateOptions}={}){
+    return new JsonSupervisionRepository({path:`${this.#config.getHouseholdPath('shutdown')}/enforcement-incidents.json`,writerGate:writerGate??this.incidentWriterGate(gateOptions)});
+  }
   path() { return `${this.#config.getHouseholdPath('shutdown')}/lockdown.yml`; }
   async read() {
     try {

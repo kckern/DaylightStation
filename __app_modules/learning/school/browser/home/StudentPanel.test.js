@@ -56,4 +56,11 @@ describe('deriveLatestScore', () => {
     expect(deriveLatestScore([], titles)).toBe(null);
     expect(deriveLatestScore(null, titles)).toBe(null);
   });
+
+  it('names the course for a printed worksheet, never its session id', () => {
+    const s = deriveLatestScore([
+      { bankId: 'scripture/come-follow-me-ot-2026/ws-ses-7jv9m9mrij@c8d452399', quiz: { attempts: 5, correct: 5, lastAt: '2026-11-18T00:00:00Z' } },
+    ], new Map());
+    expect(s).toEqual({ label: 'Come Follow Me OT 2026', pct: 100 });
+  });
 });

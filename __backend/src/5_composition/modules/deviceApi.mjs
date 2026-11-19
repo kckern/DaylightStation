@@ -16,6 +16,8 @@ import { DeviceRecoveryService } from '#apps/devices/services/DeviceRecoveryServ
 import { AndroidExcursionGuard } from '#apps/devices/services/AndroidExcursionGuard.mjs';
 import { AdbAdapter } from '#adapters/devices/AdbAdapter.mjs';
 import { AndroidForegroundProbe } from '#adapters/devices/AndroidForegroundProbe.mjs';
+import { DaylightAndroidForegroundProbe } from '#adapters/devices/DaylightAndroidForegroundProbe.mjs';
+import { DaylightAndroidRestClient } from '#adapters/devices/DaylightAndroidRestClient.mjs';
 import { NodeApplicationScheduler } from '#adapters/scheduling/NodeApplicationScheduler.mjs';
 import { ConfigDeviceConfiguration } from '#adapters/devices/ConfigDeviceConfiguration.mjs';
 import { ConfigKeyboardBindingCatalog } from '#adapters/devices/ConfigKeyboardBindingCatalog.mjs';
@@ -28,18 +30,44 @@ const EXCURSION_POLICIES = Object.freeze({
   'com.android.tv.settings': { allow: ['.accessories.'], maxMs: 10 * 60_000 },
 });
 
-/** A foreground probe per ADB-reachable Fully Kiosk device, built on first use. */
-function createExcursionProbes({ configService, logger }) {
+/** The package AndroidExcursionGuard recognises as "the kiosk is in front". */
+const EXCURSION_KIOSK_PACKAGE = 'de.ozerov.fully';
+
+/**
+ * A foreground probe per kiosk device, built on first use.
+ *
+ * A Fully Kiosk device is probed over ADB, so it needs an `adb` fallback. A
+ * device on the Android kiosk app is asked through its control API and needs
+ * none; it reports the kiosk itself, so the probe answers with the guard's
+ * kiosk package whatever the app's own package is.
+ */
+export function createExcursionProbes({ configService, httpClient = null, kioskPackage = EXCURSION_KIOSK_PACKAGE, logger }) {
   const probes = new Map();
-  return (deviceId) => {
-    if (probes.has(deviceId)) return probes.get(deviceId);
+  const build = (deviceId) => {
     const control = configService?.getDeviceConfig?.(deviceId)?.content_control;
+    if (control?.provider === 'daylight-android') {
+      if (!control.host || !httpClient) return null;
+      // The token comes from the household auth file only; one written into
+      // devices.yml is ignored.
+      if (control.token) logger?.warn?.('device.excursion.inline_token_ignored', { deviceId });
+      const token = control.auth_ref ? configService?.getHouseholdAuth?.(control.auth_ref)?.[deviceId]?.token : null;
+      return new DaylightAndroidForegroundProbe({
+        restClient: new DaylightAndroidRestClient(
+          { host: control.host, port: control.port, token: token || '' },
+          { httpClient, logger },
+        ),
+        kioskPackage,
+        logger,
+      });
+    }
     const fallback = control?.provider === 'fully-kiosk' ? control.fallback : null;
-    const probe = fallback?.provider === 'adb' && fallback.host
+    return fallback?.provider === 'adb' && fallback.host
       ? new AndroidForegroundProbe({ adbAdapter: new AdbAdapter({ host: fallback.host, port: fallback.port }, { logger }), logger })
       : null;
-    probes.set(deviceId, probe);
-    return probe;
+  };
+  return (deviceId) => {
+    if (!probes.has(deviceId)) probes.set(deviceId, build(deviceId));
+    return probes.get(deviceId);
   };
 }
 
@@ -63,6 +91,7 @@ export function createDeviceApiRouter(config) {
     kioskFrictionTracker,
     callControl,
     startStatusService = null,
+    httpClient = null,
     logger = console
   } = config;
 
@@ -109,9 +138,9 @@ export function createDeviceApiRouter(config) {
     kioskFrictionTracker,
     startStatusService,
     excursionGuard: new AndroidExcursionGuard({
-      probeFor: createExcursionProbes({ configService, logger }),
+      probeFor: createExcursionProbes({ configService, httpClient, logger }),
       policies: EXCURSION_POLICIES,
-      kioskPackage: 'de.ozerov.fully',
+      kioskPackage: EXCURSION_KIOSK_PACKAGE,
       scheduler: new NodeApplicationScheduler(),
       logger,
     }),

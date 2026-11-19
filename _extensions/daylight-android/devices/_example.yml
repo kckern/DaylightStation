@@ -1,0 +1,16 @@
+# Template for a new device. Copy to <id>.yml; the file name must equal `id`.
+id: example
+package: net.kckern.daylight.example      # Android application id, unique per device
+android: { minSdk: 26, targetSdk: 33 }     # minSdk 26 is the lowest supported
+abis: []                                   # native ABIs, only when a capability ships native code
+control: { port: 8780, lifelinePort: 8781 }
+shell: { versionCode: 1, versionName: "0.1" }   # bump versionCode on every shell install
+foregroundServiceTypes: []                 # the shell service's types, e.g. [mediaPlayback]; empty for none
+permissions: []                            # permissions no capability owns, declared for this device only
+capabilities:                              # directory names under capabilities/
+  - debug-tools
+defaults:                                  # setting key: string, boolean or integer
+  debug.execEnabled: false
+  # A value that must stay out of the repo is a {placeholder}, resolved at build time
+  # from `placeholders:` in the private tokens file:
+  # some.url: "{placeholder_name}"

@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+    <!-- Page mic and camera. Granted once with `pm grant`; given to the page only for the configured origin. -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
+    <!-- POST /kiosk/overlay must show over a launched app (the arcade session message and countdown).
+         Granted once: appops set <package> SYSTEM_ALERT_WINDOW allow -->
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+
+    <!-- Declaring CAMERA and RECORD_AUDIO implies these features are required. They are not. -->
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
+    <uses-feature android:name="android.hardware.camera.autofocus" android:required="false" />
+    <uses-feature android:name="android.hardware.microphone" android:required="false" />
+    <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
+    <uses-feature android:name="android.software.leanback" android:required="false" />
+    <!-- A TV box on Ethernet has no WiFi; the WiFi fields of GET /kiosk/status are then null. -->
+    <uses-feature android:name="android.hardware.wifi" android:required="false" />
+
+    <application>
+        <!-- singleTask: a recall (startActivity) returns to this instance instead of making another.
+             configChanges: a keyboard, a rotation or a display change must not rebuild the WebView.
+             lockTaskMode if_whitelisted: under device owner, enters lock task when the lockdown
+             capability has allowlisted this package, and does nothing otherwise.
+             This is the app's one launcher entry: the device manifest takes the launcher
+             filter off the shell's setup Activity in any build that lists webview-host.
+             The HOME intent filter is NOT here. The lockdown capability adds it, so a build
+             without lockdown is not offered as a home app. -->
+        <activity
+            android:name="net.kckern.daylight.cap.webviewhost.shell.KioskActivity"
+            android:exported="true"
+            android:label="Daylight"
+            android:banner="@drawable/daylight_kiosk_banner"
+            android:launchMode="singleTask"
+            android:hardwareAccelerated="true"
+            android:lockTaskMode="if_whitelisted"
+            android:configChanges="keyboard|keyboardHidden|navigation|orientation|screenLayout|screenSize|smallestScreenSize|uiMode|density"
+            android:windowSoftInputMode="adjustResize"
+            android:theme="@android:style/Theme.Black.NoTitleBar.Fullscreen">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+                <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
+            </intent-filter>
+        </activity>
+    </application>
+</manifest>

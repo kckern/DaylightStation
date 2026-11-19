@@ -27,7 +27,7 @@ vi.mock('./PianoConfig.jsx', () => ({
     config: { keyboard: { startNote: 21, endNote: 108 }, curfew: curfewConfig, timezone: householdTimezone },
   }),
 }));
-vi.mock('./PianoUserContext.jsx', () => ({ usePianoUser: () => ({ setCurrentUser: () => {} }) }));
+vi.mock('./PianoUserContext.jsx', () => ({ usePianoUser: () => ({ currentUser: 'guest', setCurrentUser: () => {} }) }));
 vi.mock('./PianoMidiContext.jsx', () => ({
   usePianoMidi: () => ({ pressNote: () => {}, releaseNote: () => {} }),
 }));

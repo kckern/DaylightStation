@@ -226,6 +226,23 @@ The film has no bundle, so it ships its own logs over its socket as
 contact it visibly degrades instead of continuing to tick: a frozen clock that
 still looks authoritative would tell a child they have time they may not.
 
+The film is a web page the kiosk draws over other apps, and each kiosk app has
+its own way to put it there. Each device gets the driver for its
+`content_control.provider`:
+
+| Provider | Driver | Arm | Disarm |
+|---|---|---|---|
+| `fully-kiosk` | `FullyKioskArcadeGameOverlay` | settings `webOverlayGravity`, `webOverlayUrl` | `webOverlayUrl` set empty |
+| `daylight-android` | `DaylightAndroidArcadeGameOverlay` | `POST /kiosk/overlay {url, gravity}` | `POST /kiosk/overlay {url: ""}` |
+
+Both check that the page resolves before arming and refuse to arm when it does
+not. On the Android kiosk app the web overlay and the text message are
+separate layers: the film counts as armed when the answer says the web layer
+is showing, and disarming clears that layer only, so a message put up from the
+Admin console stays. A declared device with no usable kiosk address is left
+unmetered (`arcade.kiosk.unconfigured`) and the rest carry on. The kiosk client for each device
+is chosen in `__app_modules/games/arcade/server/composition/kioskClients.mjs`.
+
 Startup clears any overlay on a device with no open session, so a process that
 died mid-session cannot leave a countdown on the family television.
 

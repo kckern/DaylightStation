@@ -57,6 +57,20 @@ describe('useWebMidiBLE acquireInput:false (bridge mode)', () => {
     expect(result.current.notes.getSnapshot().activeNotes.has(60)).toBe(false);
   });
 
+  it('releases held keys and sustain when the bridge input disconnects', () => {
+    const { result } = renderHook(() => useWebMidiBLE({ acquireInput: false }));
+    const midi = result.current;
+    act(() => {
+      midi.feedNote('note_on', 60, 90, 100, 3);
+      midi.feedNote('control_change', 64, 127, undefined, 3);
+    });
+    expect(midi.notes.getSnapshot().activeNotes.has(60)).toBe(true);
+    expect(midi.notes.getSnapshot().sustainPedal).toBe(true);
+    act(() => midi.feedNote('reset'));
+    expect(midi.notes.getSnapshot().activeNotes.size).toBe(0);
+    expect(midi.notes.getSnapshot().sustainPedal).toBe(false);
+  });
+
   it('feedNote puts a known MIDI channel on the note tap, and none when unknown', async () => {
     mockAccess();
     const { result } = renderHook(() => useWebMidiBLE({ acquireInput: false }));

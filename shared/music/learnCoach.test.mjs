@@ -16,18 +16,18 @@ describe('guided musical progression', () => {
   it('offers a concrete first hand task and omits impossible hand stages for single-part music', () => {
     const plan = planOf();
     expect(projection(plan).recommended).toMatchObject({ skill: 'right', mode: 'free', parts: ['rh'], range: { start: 0, end: 3 } });
-    expect(plan.tasks.filter((task) => task.passageId === 'answer').map((task) => task.skill)).toEqual(['notes', 'pulse', 'timed-60', 'timed-80', 'mastery']);
+    expect(plan.tasks.filter((task) => task.passageId === 'answer').map((task) => task.skill)).toEqual(['notes', 'silver', 'pulse', 'timed-60', 'timed-80', 'mastery']);
   });
 
-  it('advances after two passes among three equivalent takes and never removes that achievement', () => {
-    const plan = planOf(); const task = choose(plan, 'right');
+  it('advances the Gold path after two passes among three equivalent takes and never removes that achievement', () => {
+    const plan = planOf(); const task = choose(plan, 'pulse');
     let state = outcome(undefined, plan, task);
-    expect(projection(plan, state).recommended.skill).toBe('right');
+    expect(projection(plan, state).gold.opening.skill).toBe('pulse');
     state = outcome(state, plan, task, bad);
     state = outcome(state, plan, task);
-    expect(projection(plan, state).recommended.skill).toBe('left');
+    expect(projection(plan, state).gold.opening.skill).toBe('timed-60');
     state = outcome(state, plan, task, bad);
-    expect(projection(plan, state).segments[0].skills.find((skill) => skill.skill === 'right').ready).toBe(true);
+    expect(projection(plan, state).segments[0].skills.find((skill) => skill.skill === 'pulse').ready).toBe(true);
   });
 
   it('does not combine unlike practice settings to manufacture timed readiness', () => {
@@ -85,7 +85,7 @@ describe('guided musical progression', () => {
 describe('focused recovery and honest feedback', () => {
   it('targets the hardest normalized measure only after two equivalent unsuccessful takes', () => {
     const plan = planOf();const task = choose(plan, 'right');
-    const result = { ...bad, spans: {
+    const result = { ...bad, criteria: { completeness: 1, cleanliness: 0.5 }, spans: {
       'measure:0': { diagnostics: { expected_notes: 20, missed_notes: 2, wrong_notes: 0 } },
       'measure:2': { diagnostics: { expected_notes: 4, missed_notes: 2, wrong_notes: 2 } },
     } };
@@ -120,11 +120,11 @@ describe('focused recovery and honest feedback', () => {
     const plan = planOf();const task = choose(plan, 'timed-60');
     const timing = { ...bad, criteria: { completeness: 1, cleanliness: 1, placement: 0.2 } };
     let state = outcome(outcome(undefined, plan, task, timing), plan, task, timing);
-    expect(projection(plan, state).recommended).toMatchObject({ tempoPercent: 40, range: { start: 0, end: 3 } });
-    const slower = projection(plan, state).recommended;
+    expect(projection(plan, state).goldResume).toMatchObject({ tempoPercent: 40, range: { start: 0, end: 3 } });
+    const slower = projection(plan, state).goldResume;
     state = outcome(outcome(state, plan, slower, timing), plan, slower, timing);
-    expect(projection(plan, state).recommended.tempoPercent).toBe(40);
-    expect(projection(plan, state).recommended.range.end).toBeLessThan(3);
+    expect(projection(plan, state).goldResume.tempoPercent).toBe(40);
+    expect(projection(plan, state).goldResume.range.end).toBeLessThan(3);
   });
 
   it('never describes metronome practice as measured timing accuracy', () => {
@@ -159,12 +159,12 @@ describe('identity, authored requirements, review and legacy preservation', () =
     expect(projection(old, undefined, { legacy }).recommended.skill).toBe('right');
   });
 
-  it('keeps an explicitly selected review as the next task even though mastery is earned', () => {
+  it('keeps an explicitly selected review on the Gold path even though mastery is earned', () => {
     const plan = planOf(); const task = choose(plan, 'mastery');
     let state = outcome(outcome(undefined, plan, task), plan, task);
     const review = projectCoach({ plan, state, dayKey: '2026-10-27' }).review;
     state = applyCoachEvent(state, { id: 'choose-review', type: 'selection', task: review }, { plan, now: '2026-10-27T18:00:00Z', dayKey: '2026-10-27' });
-    expect(projectCoach({ plan, state, dayKey: '2026-10-27' }).recommended).toMatchObject({ review: true, skill: 'mastery' });
+    expect(projectCoach({ plan, state, dayKey: '2026-10-27' }).goldResume).toMatchObject({ review: true, skill: 'mastery' });
   });
 
   it('offers a later-day review and keeps mastery after an unsuccessful review', () => {

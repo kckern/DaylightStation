@@ -12,7 +12,11 @@ import {
   journalistJournalHandler,
   journalistTriggerHandler,
   journalistMorningDebriefHandler,
+  journalistMemoRoute,
+  journalistMemoPreflight,
 } from "./handlers/index.mjs";
+
+import { quickInputRoute, quickInputPreflight } from '../../../../../__capabilities/quick-input/server/api.mjs';
 
 // HTTP middleware
 import { asyncHandler, errorHandlerMiddleware } from '#system/http/middleware/index.mjs';
@@ -26,12 +30,13 @@ import { idempotencyMiddleware } from "#api/v1/middleware/messagingWebhookIdempo
  * @param {Function} [options.webhookHandler] - Pre-built Telegram webhook handler
  * @param {string} [options.botId] - Telegram bot ID
  * @param {string} [options.secretToken] - X-Telegram-Bot-Api-Secret-Token for webhook auth
+ * @param {{voice?: Object, text?: Object}} [options.quickInput] - Quick-input endpoints by kind
  * @param {Object} [options.logger] - Logger instance
  * @returns {Router}
  */
 export function createJournalistRouter(journalistApi, options = {}) {
   const router = Router();
-  const { webhookHandler, botId, secretToken, gateway, idempotencyStore, logger = console } = options;
+  const { webhookHandler, botId, secretToken, gateway, idempotencyStore, quickInput = {}, logger = console } = options;
 
   // Webhook endpoint using pre-built handler
   if (webhookHandler) {
@@ -56,6 +61,30 @@ export function createJournalistRouter(journalistApi, options = {}) {
     '/morning',
     asyncHandler(journalistMorningDebriefHandler(journalistApi, { logger })),
   );
+
+  // Quick-input intakes (the phone app): a recording at /voice, a typed note
+  // at /text. Raw bodies; each route is the shared quick-input route, which
+  // guards itself (origin, device binding, daily allowance) and answers its
+  // own errors, and app.mjs keeps the app-wide CORS and body parsers off
+  // these paths. Contract: the Journalist reference doc.
+  for (const kind of ['voice', 'text']) {
+    if (!quickInput[kind]) continue;
+    const route = {
+      kind,
+      logger,
+      naming: {
+        logContext: { bot: 'journalist', kind },
+        // The voice intake began as /memo; its answers still carry memoId too.
+        ...(kind === 'voice' ? { idFields: ['inputId', 'memoId'] } : {}),
+      },
+    };
+    router.options(`/${kind}`, quickInputPreflight(route));
+    router.post(`/${kind}`, ...quickInputRoute(quickInput[kind], route));
+  }
+
+  // /memo: the name the voice intake began with. Same intake, earlier names.
+  router.options('/memo', journalistMemoPreflight({ logger }));
+  router.post('/memo', ...journalistMemoRoute(journalistApi, { logger }));
 
   // Health check endpoint
   router.get('/health', (req, res) => {

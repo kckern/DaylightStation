@@ -1,0 +1,9 @@
+apply from: rootProject.file('gradle/payload-lib.gradle')
+
+android {
+    namespace 'net.kckern.daylight.cap.midibridge'
+}
+
+dependencies {
+    implementation project(':core')
+}

@@ -21,21 +21,28 @@ export const LIST_CAP = 4;
 /**
  * @param {Array<{kindId:string, items:Array}>} shelves - non-empty kinds, in the
  *   order they should appear (KIND order). Each `items` is already ranked.
- * @returns {Array<{type:'row', shelves:Array<{kindId, items, wide:boolean, cap:number}>}>}
+ * @returns {Array<{type:'row', shelves:Array<{kindId, items, wide:boolean, fill:boolean, cap:number}>}>}
  *   a vertical list of bands; each band is a row of one wide shelf, or several
  *   narrow shelves packed side-by-side.
  */
 export function planBands(shelves = []) {
   const bands = [];
   let run = [];
-  const flush = () => { if (run.length) { bands.push({ type: 'row', shelves: run }); run = []; } };
+  // A band with no posters has nothing to sit beside, so its list shelves take
+  // the whole width instead of a lone 320px column in the middle of the page.
+  const flush = () => {
+    if (!run.length) return;
+    const fill = run.every((s) => !POSTER_KINDS.has(s.kindId));
+    bands.push({ type: 'row', shelves: run.map((s) => ({ ...s, fill })) });
+    run = [];
+  };
 
   for (const s of shelves) {
     if (!s || !s.items || s.items.length === 0) continue;
     const poster = POSTER_KINDS.has(s.kindId);
     const wide = poster && s.items.length >= FLOOD;
     const cap = wide ? WIDE_CAP : (poster ? s.items.length : LIST_CAP);
-    const entry = { ...s, wide, cap };
+    const entry = { ...s, wide, cap, fill: false };
     if (wide) {
       flush();                                   // a wide band stands alone
       bands.push({ type: 'row', shelves: [entry] });

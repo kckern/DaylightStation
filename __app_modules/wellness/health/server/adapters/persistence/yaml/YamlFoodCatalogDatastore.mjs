@@ -54,6 +54,7 @@ export class YamlFoodCatalogDatastore extends IFoodCatalogDatastore {
       source: entry.source,
       barcodeUpc: entry.barcodeUpc,
       useCount: entry.useCount,
+      ...(entry.quickInputUsageIds.length && { quickInputUsageIds: [...entry.quickInputUsageIds] }),
       // Per-bucket usage (Task 9.1). This is the ONLY place the on-disk catalog
       // shape is defined, so a field missing here is a field that silently does
       // not survive a restart — the trap this program has now hit four times.

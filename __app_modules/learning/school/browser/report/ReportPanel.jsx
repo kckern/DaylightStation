@@ -9,15 +9,7 @@ import CurriculumHistoryOverview from "../progress/CurriculumHistoryOverview.jsx
 import InstructionalInsightsOverview from "../progress/InstructionalInsightsOverview.jsx";
 import { useTeacherToday } from "./useTeacherToday.js";
 import { labelize } from "../teacher/labelize.js";
-
-/** A recent-score title for humans: the LAST path segment, labelized —
- * never 'history/i-survived/02-…/01-alone-in-the-matawan-creek' as a
- * child's achievement (design audit #3). */
-function scoreTitle(score) {
-  const raw = score.learning?.lessonId ?? score.activityId ?? '';
-  const last = String(raw).split('/').filter(Boolean).at(-1) ?? String(raw);
-  return labelize(last) || raw;
-}
+import { recentScoreTitle } from "../progress/scoreLabel.js";
 
 /**
  * The aggregate board: every program × every learner, in one shape.
@@ -235,7 +227,7 @@ function ProgressOverview({ snapshot, options, periodId, setPeriodId, subjectId,
             {snapshot.recentScores.map((score) => (
               <article key={`${score.learnerId}:${score.assessmentId}`} className="school-progress__score">
                 {!focus && <span className="school-progress__score-learner">{learnerNames.get(score.learnerId) ?? score.learnerId}</span>}
-                <strong>{scoreTitle(score)}</strong>
+                <strong>{recentScoreTitle(score)}</strong>
                 <span className="school-progress__score-value">{score.score.correct}/{score.score.total} · {score.score.percent}%</span>
                 {score.verification === 'pending' && <span className="school-progress__pending">Pending sync</span>}
                 <span className="school-progress__score-when">{relativeDay(score.occurredAt)}</span>

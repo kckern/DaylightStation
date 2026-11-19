@@ -122,6 +122,17 @@ describe('LearnLab', () => {
     expect(exercise.props.practiceRequirement.rubric.criteria).toEqual({ completeness: 1, cleanliness: 0.8 });
   });
 
+  it('runs the Silver check without hints and with its stall', () => {
+    render(<LearnLab {...base} coachingTask={{ assist: 'none', stallSeconds: 45, tempoPercent: null, parts: ['rh'] }} />);
+    expect(exercise.props).toMatchObject({ keyboardHintPolicy: 'never', incompleteAfterMs: 45000 });
+  });
+
+  it('keeps ordinary coached practice hinted and without a stall', () => {
+    render(<LearnLab {...base} coachingTask={{ tempoPercent: null, parts: ['rh'] }} />);
+    expect(exercise.props.keyboardHintPolicy).toBe('after-wrong');
+    expect(exercise.props.incompleteAfterMs).toBeNull();
+  });
+
   it('keeps Pause, Start over, and Change practice visible and controls the current take only', () => {
     const onChangePractice = vi.fn();
     render(<LearnLab {...base} onChangePractice={onChangePractice} />);

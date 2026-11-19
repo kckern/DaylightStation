@@ -29,6 +29,14 @@ describe('LearnProgressStrip', () => {
     expect(screen.getByRole('button', { name: 'Segment 5, Bars 17–20, Locked' })).toBeDisabled();
   });
 
+  it('shows Silver and Gold certification ahead of older states', () => {
+    const silver = { id: 's', number: 1, label: 'One', barLabel: 'Bars 1–4', certification: { silver: { at: 'x' }, gold: null } };
+    const gold = { id: 'g', number: 2, label: 'Two', barLabel: 'Bars 5–8', complete: true, testedOut: true, certification: { silver: { at: 'x' }, gold: { at: 'y' } } };
+    render(<LearnProgressStrip segments={[silver, gold]} onOpenSegment={vi.fn()} />);
+    expect(screen.getByRole('button', { name: 'One, Bars 1–4, Silver' })).toHaveAttribute('data-state', 'silver');
+    expect(screen.getByRole('button', { name: 'Two, Bars 5–8, Gold' })).toHaveAttribute('data-state', 'gold');
+  });
+
   it('opens unlocked segments directly and ignores locked segments', () => {
     const onOpenSegment = vi.fn();
     render(<LearnProgressStrip segments={segments} onOpenSegment={onOpenSegment} />);

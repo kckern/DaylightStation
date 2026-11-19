@@ -31,3 +31,13 @@ test('recovered says how long, and does not ring again', () => {
 test('unknown kind composes nothing', () => {
   assert.equal(composePianoBridgePush({ kind: 'nope', ...base }), null);
 });
+
+for (const reason of ['busy', 'unknown', 'cap', 'reboot-failed']) {
+  test(`no-link (${reason}) has no push-text defects and says what happens next`, () => {
+    const push = composePianoBridgePush({ ...base, kind: 'no-link', reason, since: '2026-11-18T21:03:44Z' });
+    assert.deepEqual(findPushTextDefects(push.title), []);
+    assert.deepEqual(findPushTextDefects(push.message), []);
+    assert.match(push.message, /1:03 PM/);
+    assert.match(push.message, /tablet/);
+  });
+}

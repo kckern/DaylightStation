@@ -42,7 +42,8 @@ export default function useLearnCoach({ plan, legacy = {} }) {
   const record = useCallback((task, result) => send({ id: result.assessmentId ?? freshId(), type: 'outcome', task,
     result: { ...result, inputContractVersion: 'onsets-v1' } }), [send]);
   const selectTask = useCallback((task) => send({ id: freshId(), type: 'selection', task }), [send]);
+  const setAside = useCallback((task) => send({ id: freshId(), type: 'set-aside', task }), [send]);
   const retry = useCallback(() => client.retry(scope), [client, scope]);
   const recoveryData = useCallback(() => client.recoveryData(scope), [client, scope]);
-  return { ...active, state: active.state ?? projection.state, projection, record, selectTask, retry, recoveryData, profileId: scope.profileId };
+  return { ...active, state: active.state ?? projection.state, projection, record, selectTask, setAside, retry, recoveryData, profileId: scope.profileId };
 }

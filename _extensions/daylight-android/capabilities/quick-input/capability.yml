@@ -1,0 +1,23 @@
+# Quick inputs: a recording, typed text or a photo, captured on the phone and sent to a
+# configured destination (a settings line: id, label, kind, and a route under /api/v1/
+# on the backend). The shell half captures: a recorder (a microphone foreground service),
+# a text screen, and a photo screen that opens the system's camera app and hands it one
+# file through a closed provider. Each is started only by a tap on this phone, through a
+# keyed link; none is exported. This payload queues every input on disk and uploads it
+# when the network is up, and keeps it until the backend has answered 200 for it.
+# Owns the link kinds daylight://input/<voice|text|photo|queue|discard> and, as the
+# earlier name of a voice input for the journal, daylight://memo/<new|queue|discard>.
+entry: net.kckern.daylight.cap.quickinput.QuickInputCapability
+# No CAMERA: a photo is taken by the system's camera app (ACTION_IMAGE_CAPTURE), which
+# an app may use without the permission as long as it does not declare it.
+permissions:
+  - android.permission.RECORD_AUDIO
+  - android.permission.FOREGROUND_SERVICE_MICROPHONE
+  # To try the queue only when a network is up, and again when one returns.
+  - android.permission.ACCESS_NETWORK_STATE
+# An input link is keyed and arrives through the link activity.
+requires:
+  - notifications
+# The queue's notices go through the notifications capability.
+startsAfter:
+  - notifications

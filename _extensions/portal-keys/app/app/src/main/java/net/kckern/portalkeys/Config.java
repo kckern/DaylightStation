@@ -2,6 +2,10 @@ package net.kckern.portalkeys;
 
 import android.content.Context;
 import android.content.SharedPreferences;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.util.Map;
+import net.kckern.portalkeys.api.ShellServices.LockdownReply;
 
 /**
  * On-device persisted config, settable over the control plane (pkctl) so a running
@@ -35,13 +39,23 @@ public class Config {
     // never returned by /status or /config, just like the FKB password.
     public static final String KEY_LOCKDOWN_TOKEN = "lockdownToken";
     private static final String KEY_LOCKDOWN_UNTIL = "lockdownUntil";
+    // Historical payloads can write the unversioned key during a payload rollback.
+    private static final String KEY_ORDERED_LOCKDOWN_UNTIL = "orderedLockdownUntil";
     private static final String KEY_LOCKDOWN_REVISION = "lockdownRevision";
 
     public static final String KEY_PAGE_MAINTENANCE_UNTIL="pageRecoveryMaintenanceUntil";
     private final SharedPreferences prefs;
 
     public Config(Context ctx) { this(ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE)); }
-    Config(SharedPreferences prefs) { this.prefs=prefs; }
+    Config(SharedPreferences prefs) {
+        this.prefs = prefs;
+        synchronized (prefs) {
+            if (lockdownRevision() > 0 && !prefs.getAll().containsKey(KEY_ORDERED_LOCKDOWN_UNTIL)) {
+                long until = prefs.getLong(KEY_LOCKDOWN_UNTIL, Long.MAX_VALUE);
+                prefs.edit().putLong(KEY_ORDERED_LOCKDOWN_UNTIL, until).commit();
+            }
+        }
+    }
 
     /** FKB REST endpoint on this same device. Loopback by default. */
     public String fkbHost() {
@@ -123,21 +137,56 @@ public class Config {
 
     /** A Long.MAX_VALUE deadline represents a fail-closed indefinite lock. */
     public boolean lockdownActive() {
-        long until = prefs.getLong(KEY_LOCKDOWN_UNTIL, 0);
-        return until == Long.MAX_VALUE || until > System.currentTimeMillis();
+        return lockdownUntil() > System.currentTimeMillis();
     }
 
-    public long lockdownUntil() { return prefs.getLong(KEY_LOCKDOWN_UNTIL, 0); }
+    public long lockdownUntil() {
+        synchronized (prefs) {
+            return lockdownRevision() > 0 ? prefs.getLong(KEY_ORDERED_LOCKDOWN_UNTIL, Long.MAX_VALUE)
+                    : prefs.getLong(KEY_LOCKDOWN_UNTIL, 0);
+        }
+    }
 
-    public long lockdownRevision() { return prefs.getLong(KEY_LOCKDOWN_REVISION,0); }
+    public long lockdownRevision() { return prefs.getLong(KEY_LOCKDOWN_REVISION, 0); }
 
     /** Commit both values together before acknowledging to the safety service. */
-    public synchronized boolean applyLockdown(LockdownCommand command) {
-        if (!command.canApply(lockdownRevision(),lockdownUntil())) return false;
-        SharedPreferences.Editor update=prefs.edit().putLong(KEY_LOCKDOWN_UNTIL,command.deadline());
-        if (command.revision!=null) update.putLong(KEY_LOCKDOWN_REVISION,command.revision);
-        if (!update.commit()) throw new IllegalStateException("Lockdown persistence failed");
-        return true;
+    public boolean applyLockdown(LockdownCommand command) {
+        synchronized (prefs) {
+            if (!command.canApply(lockdownRevision(), lockdownUntil())) return false;
+            SharedPreferences.Editor update = prefs.edit();
+            if (command.revision == null) {
+                update.putLong(KEY_LOCKDOWN_UNTIL, command.deadline());
+            } else {
+                update.putLong(KEY_ORDERED_LOCKDOWN_UNTIL, command.deadline());
+                update.putLong(KEY_LOCKDOWN_REVISION, command.revision);
+            }
+            if (!update.commit()) throw new IllegalStateException("Lockdown persistence failed");
+            return true;
+        }
+    }
+
+    boolean acceptsLockdownToken(String supplied) {
+        String expected = lockdownToken();
+        return !expected.isEmpty() && supplied != null && MessageDigest.isEqual(
+                expected.getBytes(StandardCharsets.UTF_8), supplied.getBytes(StandardCharsets.UTF_8));
+    }
+
+    LockdownReply lockdownReply(String token, String body, long now) {
+        if (!acceptsLockdownToken(token)) {
+            return new LockdownReply(401, "{\"error\":\"unauthorized\"}");
+        }
+        LockdownCommand command;
+        try {
+            command = LockdownCommand.parse(body, now);
+        } catch (IllegalArgumentException invalid) {
+            return new LockdownReply(400, "{\"error\":\"invalid lockdown command\"}");
+        }
+        synchronized (prefs) {
+            if (!applyLockdown(command)) {
+                return new LockdownReply(409, "{\"error\":\"stale or conflicting lockdown revision\"}");
+            }
+            return new LockdownReply(200, "{\"ok\":true," + toJsonRedacted().substring(1));
+        }
     }
 
     /** -1 unknown, 0 explicitly cleared; deadlines expire to UNKNOWN, never automatic release. */
@@ -154,9 +203,10 @@ public class Config {
 
     /** One atomic preferences view prevents pairing a stale Stop flag with a new revision. */
     public String pageSafetySnapshot(Integer displayState,long now) throws org.json.JSONException {
-        java.util.Map<String,?> values=prefs.getAll();
+        Map<String,?> values=prefs.getAll();
         long revision=values.get(KEY_LOCKDOWN_REVISION) instanceof Long?(Long)values.get(KEY_LOCKDOWN_REVISION):0;
-        long until=values.get(KEY_LOCKDOWN_UNTIL) instanceof Long?(Long)values.get(KEY_LOCKDOWN_UNTIL):Long.MAX_VALUE;
+        Object deadline = values.get(revision > 0 ? KEY_ORDERED_LOCKDOWN_UNTIL : KEY_LOCKDOWN_UNTIL);
+        long until = deadline instanceof Long ? (Long) deadline : Long.MAX_VALUE;
         long maintenance=values.get(KEY_PAGE_MAINTENANCE_UNTIL) instanceof Long?(Long)values.get(KEY_PAGE_MAINTENANCE_UNTIL):-1;
         long setAt=values.get("pageMaintenanceSetAt") instanceof Long?(Long)values.get("pageMaintenanceSetAt"):-1;
         boolean maintenanceKnown=maintenance==0 || (maintenance>now && now>=setAt && maintenance-setAt<=900000);

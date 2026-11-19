@@ -1,0 +1,7 @@
+# Microphone PCM (48 kHz mono s16le) over a WebSocket, for pages whose WebView
+# cannot open the device's microphone. Needs foregroundServiceTypes: [microphone]
+# in the device file.
+entry: net.kckern.daylight.cap.micbridge.MicBridgeCapability
+permissions:
+  - android.permission.RECORD_AUDIO
+  - android.permission.SYSTEM_ALERT_WINDOW

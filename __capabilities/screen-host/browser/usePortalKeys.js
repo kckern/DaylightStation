@@ -1,3 +1,4 @@
+import { inDaylightShell } from '../../../frontend/src/lib/daylightKiosk.js';
 import { useEffect, useRef } from 'react';
 import { useScreenVolume } from '../../../frontend/src/lib/volume/ScreenVolumeContext.js';
 import getLogger from '../../../frontend/src/lib/logging/Logger.js';
@@ -36,7 +37,17 @@ export function usePortalKeys({ enabled = true, port = DEFAULT_PORT } = {}) {
 
   useEffect(() => {
     if (!enabled) return undefined;
-    if (typeof window === 'undefined' || !('WebSocket' in window)) return undefined;
+    if (typeof window === 'undefined') return undefined;
+    if (inDaylightShell()) {
+      if (window.daylight?.deviceId !== 'portal') return undefined;
+      return window.daylight.portal?.subscribeVolume(({ code, action }) => {
+        if (action !== 'down') return;
+        const { step, stepSize } = handlersRef.current;
+        if (code === 'VolumeUp') step(stepSize || 0.05);
+        if (code === 'VolumeDown') step(-(stepSize || 0.05));
+      });
+    }
+    if (!('WebSocket' in window)) return undefined;
 
     let ws = null;
     let retryMs = RECONNECT_MIN_MS;
@@ -71,17 +82,7 @@ export function usePortalKeys({ enabled = true, port = DEFAULT_PORT } = {}) {
         const { step: doStep, stepSize: size } = handlersRef.current;
         const delta = size || 0.05;
 
-        // A physical press is logged at INFO, not debug: production ships `info`,
-        // so at debug every press on the panel was invisible in the log store —
-        // `pkctl status` read `keysSeen: 72` against zero events server-side while
-        // someone was standing there pressing the volume key and nothing moved.
-        // The key-up half stays at debug; it is protocol noise, not an action.
         const isPress = msg.action === 'down';
-        logger()[isPress ? 'info' : 'debug']('key-received', {
-          key: msg.key,
-          action: msg.action,
-          interactive: msg.interactive,
-        });
 
         // The APK broadcasts BOTH halves of every press (PortalKeysService
         // .onKeyEvent calls broadcast() for ACTION_DOWN and ACTION_UP alike).

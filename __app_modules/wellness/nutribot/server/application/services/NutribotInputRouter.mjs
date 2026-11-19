@@ -87,6 +87,13 @@ export class NutribotInputRouter extends BaseInputRouter {
     const result = await run(responseContext);
     const logId = result?.nutrilogUuid || null;
 
+    if (event.quickInput && logId === event.quickInput.logId) {
+      const log = await this.findQuickCapture(event.quickInput);
+      if (!log) throw new Error('Missing quick-input meal');
+      const receiptDelivery = await this.finishQuickCapture(log);
+      return { ok: true, result, logId, committed: true, receiptDelivery };
+    }
+
     if (!logId && result?.committed) return { ok: true, result, committed: true, items: result.items || [], mealTime: result.bucket || event.payload.bucket, moved: false };
 
     if (!logId) {
@@ -259,6 +266,73 @@ export class NutribotInputRouter extends BaseInputRouter {
     }
   }
 
+  async findQuickCapture(identity) {
+    const log = await this.container.getFoodLogStore().findByUuid(identity.logId, identity.username);
+    if (!log) return null;
+    const source = log.metadata.quickInput;
+    if (source?.username !== identity.username || source?.kind !== identity.kind || source?.inputId !== identity.inputId) {
+      throw new Error('Quick-input meal identity conflict');
+    }
+    return log;
+  }
+
+  async finishQuickCapture(log) {
+    const { userId, conversationId, id: logId } = log;
+    const checkpoint = log.metadata.quickInput;
+    if (checkpoint.finished) return checkpoint.receiptDelivery;
+    const source = checkpoint.kind === 'photo' ? 'image' : checkpoint.kind;
+    const store = this.container.getFoodLogStore();
+    const review = this.container.getFoodLogReview?.();
+    const exclusive = work => review?.runExclusive ? review.runExclusive(userId, work) : work();
+    // The review service owns its own lock during commit. Serialize just the
+    // two read-modify-write sections here, releasing it before entering commit.
+    log = await exclusive(async () => {
+      let current = await store.findByUuid(logId, userId);
+      if (!current.metadata.quickInput.enriched) {
+        const parser = source === 'image' ? this.container.getLogFoodFromImage() : this.container.getLogFoodFromText();
+        current = await parser.finishQuickInput(current);
+      }
+      if (current.status === 'pending' && !current.metadata.reviewOperation) {
+        const items = await this.#stampUnsettled(userId, logId, source);
+        if (!items.length) throw new Error('Quick-input review stamp needs retry');
+      }
+      return current;
+    });
+    if (log.status === 'pending' && !log.metadata.reviewOperation?.complete) {
+      if (!await this.#commitCapture({ userId, conversationId, logId, source })) throw new Error('Quick-input meal commit needs retry');
+    }
+    const receipts = this.container.getReceiptPublisher?.();
+    const messageId = log.metadata.messageId;
+    let receiptDelivery = 'uncertain';
+    if (messageId && receipts?.bind) {
+      const binding = await receipts.bind(userId, logId, {
+        conversationId, messageId, caption: source === 'image', requireDelivery: true,
+      });
+      const matched = binding?.receipts?.find(row => row.logId === logId && row.messageId === String(messageId));
+      if (binding?.retry || ['retry', 'pending'].includes(matched?.delivery)) {
+        throw new Error('Quick-input receipt needs retry');
+      }
+      if (['updated', 'unchanged'].includes(matched?.delivery)) receiptDelivery = 'delivered';
+      else if (matched?.delivery === 'unavailable') receiptDelivery = 'unavailable';
+    } else if (!receipts) {
+      receiptDelivery = 'unavailable';
+    } else if (messageId && receipts.refresh) {
+      // Older publisher contracts may refresh an existing message but supply
+      // no binding evidence. Keep delivery uncertain.
+      const result = await receipts.refresh(userId, logId);
+      if (result?.retry || result?.receipts?.some(row => row.logId === logId && ['retry', 'pending'].includes(row.delivery))) {
+        throw new Error('Quick-input receipt needs retry');
+      }
+    }
+    await exclusive(async () => {
+      const current = await store.findByUuid(logId, userId);
+      await store.save(current.with({ metadata: {
+        ...current.metadata, quickInput: { ...current.metadata.quickInput, finished: true, receiptDelivery },
+      } }, new Date()));
+    });
+    return receiptDelivery;
+  }
+
   // ==================== Event Handlers ====================
 
   async handleText(event, responseContext) {
@@ -284,7 +358,7 @@ export class NutribotInputRouter extends BaseInputRouter {
           this.logger.info?.('nutribot.handleText.revisionRouted', {
             conversationId: event.conversationId,
             pendingLogUuid,
-            text: event.payload.text?.substring(0, 50),
+            textLength: event.payload.text?.length ?? 0,
           });
           const useCase = this.container.getProcessRevisionInput();
           const result = await useCase.execute({
@@ -337,6 +411,7 @@ export class NutribotInputRouter extends BaseInputRouter {
       useCase.execute({
         userId: this.#resolveUserId(event),
         conversationId: event.conversationId,
+        ...(event.quickInput && { quickInput: { ...event.quickInput, bucket: event.payload.bucket } }),
         text: event.payload.text,
         messageId: event.messageId,
         // The day the person is LOOKING AT becomes the parse's "today", so a
@@ -358,12 +433,16 @@ export class NutribotInputRouter extends BaseInputRouter {
       useCase.execute({
         userId: this.#resolveUserId(event),
         conversationId: event.conversationId,
+        ...(event.quickInput && { quickInput: { ...event.quickInput, bucket: event.payload.bucket } }),
         imageData: {
           fileId: event.payload.fileId,
           // Web path: a data URL set by WebNutribotAdapter. LogFoodFromImage only
           // consults `url` when `fileId` is falsy, so Telegram's fileId-driven
           // resolution is unaffected.
           url: event.payload.imageUrl,
+          // Quick-input path: the image as bytes, uploaded from the phone. It
+          // has no file id or URL; LogFoodFromImage uses the bytes directly.
+          ...(Buffer.isBuffer(event.payload.imageBuffer) ? { buffer: event.payload.imageBuffer } : {}),
           caption: event.payload.text,
         },
         messageId: event.messageId,
@@ -383,6 +462,7 @@ export class NutribotInputRouter extends BaseInputRouter {
     const input = (rc) => ({
       userId: this.#resolveUserId(event),
       conversationId: event.conversationId,
+      ...(event.quickInput && { quickInput: { ...event.quickInput, bucket: event.payload.bucket } }),
       voiceData: {
         fileId: event.payload.fileId,
         // Set only on the web path, where the bytes were written to the

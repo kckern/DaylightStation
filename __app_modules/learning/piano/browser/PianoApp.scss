@@ -2702,6 +2702,8 @@
     &[data-state='learning'] { border-color: var(--piano-info, var(--piano-accent)); background: color-mix(in srgb, var(--piano-info, var(--piano-accent)) 14%, var(--piano-surface-2)); }
     &[data-state='learned'] { border-color: var(--piano-accent); background: color-mix(in srgb, var(--piano-accent) 18%, var(--piano-surface-2)); }
     &[data-state='mastered'] { border-color: var(--piano-accent); background: var(--piano-accent); color: var(--piano-bg); }
+    &[data-state='silver'] { border-color: var(--piano-silver); background: var(--piano-silver); color: var(--piano-medal-ink); .piano-learn-progress__state, small { color: inherit; } }
+    &[data-state='gold'] { border-color: var(--piano-gold); background: var(--piano-gold); color: var(--piano-medal-ink); .piano-learn-progress__state, small { color: inherit; } }
     &[data-state='locked'] { border-style: dashed; opacity: 0.42; }
     &[aria-current='step'] { box-shadow: 0 0 0 2px var(--piano-surface-1), 0 0 0 4px var(--piano-warn); }
   }

@@ -189,6 +189,10 @@ export const mediaLog = {
   flingDispatched:        info('fling.dispatched'),
   flingFailed:            warn('fling.failed'),
   flingLocalStopped:      info('fling.local-stopped'),
+  // Add to home screen on the phone app (shell/AddToHomeScreenButton.jsx).
+  // Kind and outcome only: never the content id or the label.
+  homeScreenPinShown:     debug('home-screen-pin.shown'),
+  homeScreenPinRequested: info('home-screen-pin.requested'),
 };
 
 export default mediaLog;

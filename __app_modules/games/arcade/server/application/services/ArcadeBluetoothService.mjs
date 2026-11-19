@@ -9,16 +9,25 @@ export function pairingGuide(pairing) {
 }
 const actions = new Set(['scan', 'scan/stop', 'pair', 'unpair', 'connect', 'disconnect', 'pairing']);
 export class ArcadeBluetoothService {
-  constructor({ deviceFor, adapterFor, logger = {} }) { Object.assign(this, { deviceFor, adapterFor, logger }); }
+  /**
+   * @param {Function} deps.adapterFor - (bridgeUrl) => adapter, for a device that names its bridge by URL
+   * @param {Function} [deps.adapterForDevice] - (deviceId, device) => { adapter } when the device's
+   *   Bluetooth is reached some other way, { unavailable: true } when it should be and cannot,
+   *   or null to leave the device to its bridge URL
+   */
+  constructor({ deviceFor, adapterFor, adapterForDevice = null, logger = {} }) { Object.assign(this, { deviceFor, adapterFor, adapterForDevice, logger }); }
   adapter(deviceId) {
     const device = this.deviceFor(deviceId);
     if (!device) fail(404, 'Unknown arcade device');
+    const own = this.adapterForDevice?.(deviceId, device);
+    if (own?.unavailable) fail(503, 'Controller recovery is not configured for this device');
+    if (own?.adapter) return own.adapter;
     if (!device.bluetooth_bridge?.url) fail(503, 'Controller recovery is not configured for this device');
     return this.adapterFor(device.bluetooth_bridge.url);
   }
   async state(deviceId) {
     const state = await this.adapter(deviceId).state();
-    const guide = pairingGuide(this.deviceFor(deviceId).bluetooth_bridge.pairing);
+    const guide = pairingGuide(this.deviceFor(deviceId).bluetooth_bridge?.pairing);
     return guide ? { ...state, guide } : state;
   }
   async command(deviceId, action, body) {

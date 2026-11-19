@@ -2,6 +2,8 @@ import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import getLogger from '../../../../../frontend/src/lib/logging/Logger.js';
 import { bridgeHostPlausible } from './bridgeHost.js';
 
+import { pagePiano, setPageVerified } from './bridgeMidiOut.js';
+
 let _logger;
 const logger = () => (_logger ||= getLogger().child({ component: 'piano-bridge-notes' }));
 
@@ -73,6 +75,8 @@ export function usePianoBridgeNotes({ url = DEFAULT_URL, enabled = true, onNote 
   // up, per the last few status heartbeats. Defaults true (non-kiosk clients
   // with no bridge never receive status frames, so they never flip it).
   const [speakerConnected, setSpeakerConnected] = useState(true);
+  const [pageWriteOpen, setPageWriteOpen] = useState(pagePiano() ? false : null);
+  const [outVerified, setOutVerified] = useState(null);
   const speakerFalseRunRef = useRef(0);
   const wsRef = useRef(null);
   const retryRef = useRef(0);
@@ -95,6 +99,66 @@ export function usePianoBridgeNotes({ url = DEFAULT_URL, enabled = true, onNote 
     let closed = false;
     let timer = null;
 
+    const receive = (msg) => {
+      if (msg.type === 'note.on') {
+        // `t` = epoch ms of the MIDI event (payload p20+); undefined on older payloads.
+        // `ch` (0-based MIDI channel) is optional: payloads up to p35 omit it,
+        // and the rhythm loop is then recognised by shape (humanNoteClassifier).
+        onNoteRef.current?.('note_on', msg.note, msg.velocity ?? 0, msg.t,
+          Number.isInteger(msg.ch) ? msg.ch : undefined);
+      } else if (msg.type === 'note.off') {
+        onNoteRef.current?.('note_off', msg.note, 0, msg.t);
+      } else if (msg.type === 'status' && 'speakerOk' in msg) {
+        if (msg.speakerOk) {
+          speakerFalseRunRef.current = 0;
+          setSpeakerConnected(true);
+        } else {
+          speakerFalseRunRef.current += 1;
+          if (speakerFalseRunRef.current >= SPEAKER_HYSTERESIS) setSpeakerConnected(false);
+        }
+      }
+    };
+
+    const piano = pagePiano();
+    if (piano) {
+      let inputOpen;
+      const onFrame = (msg) => {
+        if (closed) return;
+        if (msg.type === 'status') {
+          const verified = typeof msg.outVerified === 'boolean' ? msg.outVerified : null;
+          setPageVerified(verified);
+          setOutVerified(verified);
+          setPageWriteOpen(msg.midiWriteOpen === true);
+          if (typeof msg.midiInOpen === 'boolean') {
+            if (inputOpen && !msg.midiInOpen) onNoteRef.current?.('reset');
+            inputOpen = msg.midiInOpen;
+            setLink(inputOpen ? 'connected' : 'reconnecting');
+          }
+        } else if (msg.type === 'control.change') {
+          onNoteRef.current?.('control_change', msg.controller, msg.value, undefined, msg.ch);
+        } else if (msg.type === 'reset') {
+          onNoteRef.current?.('reset');
+        }
+        receive(msg);
+      };
+      let unsubscribe;
+      const subscribe = () => {
+        unsubscribe = piano.subscribe(onFrame);
+        if (!unsubscribe) {
+          setLink('connecting');
+          timer = setTimeout(subscribe, 250);
+        } else if (inputOpen === undefined) setLink('connected');
+      };
+      subscribe();
+      return () => {
+        closed = true;
+        clearTimeout(timer);
+        unsubscribe?.();
+        setPageVerified(null);
+        onNoteRef.current?.('reset');
+      };
+    }
+
     const open = () => {
       setLink((s) => (s === 'idle' ? 'connecting' : s));
       logger().info('bridge.connecting', { url, attempt: retryRef.current });
@@ -111,29 +175,7 @@ export function usePianoBridgeNotes({ url = DEFAULT_URL, enabled = true, onNote 
       };
 
       ws.onmessage = (e) => {
-        try {
-          const msg = JSON.parse(e.data);
-          if (msg.type === 'note.on') {
-            // `t` = epoch ms of the MIDI event (payload p20+); undefined on older payloads.
-            // `ch` (0-based MIDI channel) is optional: payloads up to p35 omit it,
-            // and the rhythm loop is then recognised by shape (humanNoteClassifier).
-            onNoteRef.current?.('note_on', msg.note, msg.velocity ?? 0, msg.t,
-              Number.isInteger(msg.ch) ? msg.ch : undefined);
-          } else if (msg.type === 'note.off') {
-            onNoteRef.current?.('note_off', msg.note, 0, msg.t);
-          } else if (msg.type === 'status' && 'speakerOk' in msg) {
-            if (msg.speakerOk) {
-              speakerFalseRunRef.current = 0;
-              setSpeakerConnected(true);
-            } else {
-              speakerFalseRunRef.current += 1;
-              if (speakerFalseRunRef.current >= SPEAKER_HYSTERESIS) setSpeakerConnected(false);
-            }
-          }
-          // other frame types (ready) are ignored here.
-        } catch {
-          // malformed frame — ignore, never let the socket die on bad JSON.
-        }
+        try { receive(JSON.parse(e.data)); } catch { /* malformed frame */ }
       };
 
       ws.onerror = () => {
@@ -213,6 +255,15 @@ export function usePianoBridgeNotes({ url = DEFAULT_URL, enabled = true, onNote 
    * drops a BLE→DIN SysEx; re-sending is the documented mitigation).
    */
   const sendSysex = useCallback((bytes, repeat = 1) => {
+    const piano = pagePiano();
+    if (piano) {
+      if (!Array.isArray(bytes) || !bytes.length) return false;
+      let accepted = true;
+      for (let i = 0; i < Math.max(1, Math.min(10, repeat)); i++) {
+        if (!piano.send(bytes, i * 30)) accepted = false;
+      }
+      return accepted;
+    }
     const ws = wsRef.current;
     if (!ws || ws.readyState !== 1 /* OPEN */) return false;
     if (!Array.isArray(bytes) || bytes.length === 0) return false;
@@ -225,8 +276,8 @@ export function usePianoBridgeNotes({ url = DEFAULT_URL, enabled = true, onNote 
   }, []);
 
   return useMemo(
-    () => ({ link, unavailable, speakerConnected, sendSysex }),
-    [link, unavailable, speakerConnected, sendSysex],
+    () => ({ link, unavailable, speakerConnected, sendSysex, pageWriteOpen, outVerified }),
+    [link, unavailable, speakerConnected, sendSysex, pageWriteOpen, outVerified],
   );
 }
 

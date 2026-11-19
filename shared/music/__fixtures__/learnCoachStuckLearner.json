@@ -1,0 +1,297 @@
+{
+ "state": {
+  "version": 1,
+  "scoreId": "files:anon/piece.mxl",
+  "fingerprint": "anon-content",
+  "revision": 6,
+  "achievements": {},
+  "counts": {
+   "[\"files:anon/piece.mxl\",\"anon-content\",0,4,[\"rh\",\"lh\"],\"free\",null,{\"cleanliness\":0.8,\"completeness\":1}]": {
+    "attempts": 2,
+    "passes": 0,
+    "streak": 0
+   },
+   "[\"files:anon/piece.mxl\",\"anon-content\",0,4,[\"rh\",\"lh\"],\"metronome\",60,{\"cleanliness\":0.8,\"completeness\":1}]": {
+    "attempts": 2,
+    "passes": 0,
+    "streak": 0
+   },
+   "[\"files:anon/piece.mxl\",\"anon-content\",9,12,[\"rh\"],\"free\",null,{\"cleanliness\":0.8,\"completeness\":1}]": {
+    "attempts": 1,
+    "passes": 0,
+    "streak": 0
+   }
+  },
+  "evidence": [
+   {
+    "id": "take-1",
+    "task": {
+     "scoreId": "files:anon/piece.mxl",
+     "fingerprint": "anon-content",
+     "passageId": "m0-4",
+     "skill": "pulse",
+     "label": "Settle into a beat",
+     "parts": [
+      "rh",
+      "lh"
+     ],
+     "range": {
+      "start": 0,
+      "end": 4
+     },
+     "mode": "metronome",
+     "tempoPercent": 60,
+     "criteria": {
+      "completeness": 1,
+      "cleanliness": 0.8
+     },
+     "required": null,
+     "consecutive": false,
+     "completes": false,
+     "mastery": false,
+     "depth": 0,
+     "key": "[\"files:anon/piece.mxl\",\"anon-content\",0,4,[\"rh\",\"lh\"],\"metronome\",60,{\"cleanliness\":0.8,\"completeness\":1}]"
+    },
+    "at": "2026-10-30T21:28:23.774Z",
+    "dayKey": "2026-10-30",
+    "eligible": [
+     "[\"files:anon/piece.mxl\",\"anon-content\",0,4,[\"rh\",\"lh\"],\"free\",null,{\"cleanliness\":0.8,\"completeness\":1}]",
+     "[\"files:anon/piece.mxl\",\"anon-content\",0,4,[\"rh\",\"lh\"],\"metronome\",60,{\"cleanliness\":0.8,\"completeness\":1}]"
+    ],
+    "passedCredits": [],
+    "result": {
+     "criteria": {
+      "completeness": 1,
+      "cleanliness": 0.3411652286332593
+     },
+     "diagnostics": {
+      "expected_notes": 59,
+      "matched_notes": 59,
+      "wrong_notes": 132,
+      "missed_notes": 0,
+      "response_median_ms": 521,
+      "offbeat_notes": 0,
+      "early_notes": 0,
+      "late_notes": 0
+     }
+    }
+   },
+   {
+    "id": "take-2",
+    "task": {
+     "scoreId": "files:anon/piece.mxl",
+     "fingerprint": "anon-content",
+     "passageId": "m0-4",
+     "skill": "custom",
+     "label": "Your practice",
+     "parts": [
+      "rh",
+      "lh"
+     ],
+     "range": {
+      "start": 0,
+      "end": 4
+     },
+     "mode": "metronome",
+     "tempoPercent": 80,
+     "criteria": {
+      "completeness": 1,
+      "cleanliness": 0.8
+     },
+     "required": null,
+     "consecutive": false,
+     "completes": false,
+     "mastery": false,
+     "depth": 0,
+     "source": "custom",
+     "key": "[\"files:anon/piece.mxl\",\"anon-content\",0,4,[\"rh\",\"lh\"],\"metronome\",80,{\"cleanliness\":0.8,\"completeness\":1}]"
+    },
+    "at": "2026-10-30T21:30:07.403Z",
+    "dayKey": "2026-10-30",
+    "eligible": [
+     "[\"files:anon/piece.mxl\",\"anon-content\",0,4,[\"rh\",\"lh\"],\"free\",null,{\"cleanliness\":0.8,\"completeness\":1}]",
+     "[\"files:anon/piece.mxl\",\"anon-content\",0,4,[\"rh\",\"lh\"],\"metronome\",60,{\"cleanliness\":0.8,\"completeness\":1}]",
+     "[\"files:anon/piece.mxl\",\"anon-content\",0,4,[\"rh\",\"lh\"],\"metronome\",80,{\"cleanliness\":0.8,\"completeness\":1}]"
+    ],
+    "passedCredits": [],
+    "result": {
+     "criteria": {
+      "completeness": 1,
+      "cleanliness": 0.19504850229186654
+     },
+     "diagnostics": {
+      "expected_notes": 59,
+      "matched_notes": 59,
+      "wrong_notes": 224,
+      "missed_notes": 0,
+      "response_median_ms": 371,
+      "offbeat_notes": 0,
+      "early_notes": 0,
+      "late_notes": 0
+     }
+    }
+   },
+   {
+    "id": "take-3",
+    "task": {
+     "scoreId": "files:anon/piece.mxl",
+     "fingerprint": "anon-content",
+     "passageId": "m9-12",
+     "skill": "right",
+     "label": "Find the right-hand notes",
+     "parts": [
+      "rh"
+     ],
+     "range": {
+      "start": 9,
+      "end": 12
+     },
+     "mode": "free",
+     "tempoPercent": null,
+     "criteria": {
+      "completeness": 1,
+      "cleanliness": 0.8
+     },
+     "required": null,
+     "consecutive": false,
+     "completes": false,
+     "mastery": false,
+     "depth": 0,
+     "key": "[\"files:anon/piece.mxl\",\"anon-content\",9,12,[\"rh\"],\"free\",null,{\"cleanliness\":0.8,\"completeness\":1}]"
+    },
+    "at": "2026-10-30T21:31:41.964Z",
+    "dayKey": "2026-10-30",
+    "eligible": [
+     "[\"files:anon/piece.mxl\",\"anon-content\",9,12,[\"rh\"],\"free\",null,{\"cleanliness\":0.8,\"completeness\":1}]"
+    ],
+    "passedCredits": [],
+    "result": {
+     "criteria": {
+      "completeness": 1,
+      "cleanliness": 0.5192307692307693
+     },
+     "diagnostics": {
+      "expected_notes": 27,
+      "matched_notes": 27,
+      "wrong_notes": 25,
+      "missed_notes": 0,
+      "response_median_ms": 2200,
+      "offbeat_notes": 0,
+      "early_notes": 0,
+      "late_notes": 0
+     }
+    }
+   }
+  ],
+  "reviews": {},
+  "resume": {
+   "scoreId": "files:anon/piece.mxl",
+   "fingerprint": "anon-content",
+   "passageId": "m9-12",
+   "skill": "right",
+   "label": "Find the right-hand notes",
+   "parts": [
+    "rh"
+   ],
+   "range": {
+    "start": 9,
+    "end": 12
+   },
+   "mode": "free",
+   "tempoPercent": null,
+   "criteria": {
+    "completeness": 1,
+    "cleanliness": 0.8
+   },
+   "required": null,
+   "consecutive": false,
+   "completes": false,
+   "mastery": false,
+   "depth": 0,
+   "key": "[\"files:anon/piece.mxl\",\"anon-content\",9,12,[\"rh\"],\"free\",null,{\"cleanliness\":0.8,\"completeness\":1}]"
+  }
+ },
+ "legacy": {
+  "fingerprint": {
+   "contentSha256": "anon-content"
+  },
+  "learn": {
+   "segments": {
+    "m0-4": {},
+    "m5-8": {},
+    "m9-12": {},
+    "m13-16": {},
+    "m17-20": {},
+    "m21-24": {},
+    "m25-28": {},
+    "m29-32": {},
+    "m33-36": {},
+    "m37-40": {},
+    "m41-44": {},
+    "m45-48": {}
+   },
+   "passages": {
+    "m0-4": {
+     "rungs": {
+      "right": {
+       "attempts": 6,
+       "passCount": 6
+      },
+      "left": {
+       "attempts": 6,
+       "passCount": 6
+      },
+      "together": {
+       "attempts": 6,
+       "passCount": 6
+      },
+      "timed": {
+       "attempts": 11,
+       "passCount": 0
+      }
+     },
+     "complete": false
+    },
+    "m17-20": {
+     "rungs": {
+      "right": {
+       "attempts": 13,
+       "passCount": 6
+      },
+      "test-out": {
+       "attempts": 2,
+       "passCount": 0
+      },
+      "left": {
+       "attempts": 1,
+       "passCount": 0
+      }
+     },
+     "complete": false
+    },
+    "m9-12": {
+     "rungs": {
+      "right": {
+       "attempts": 1,
+       "passCount": 0
+      }
+     },
+     "complete": false
+    },
+    "m5-8": {
+     "rungs": {
+      "right": {
+       "attempts": 3,
+       "passCount": 0
+      },
+      "test-out": {
+       "attempts": 1,
+       "passCount": 0
+      }
+     },
+     "complete": false
+    }
+   }
+  }
+ }
+}

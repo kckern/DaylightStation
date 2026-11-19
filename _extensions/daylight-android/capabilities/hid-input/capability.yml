@@ -1,0 +1,9 @@
+# USB HID keyboards read at the endpoint and delivered to the page as {"type":"keyboard"},
+# with Bluetooth keyboard bonding and radio diagnostics under /hid/bluetooth.
+entry: net.kckern.daylight.cap.hidinput.HidInputCapability
+# The USB permission dialog is confirmed through the accessibility service.
+requires: [accessibility]
+permissions:
+  - android.permission.BLUETOOTH
+  - android.permission.BLUETOOTH_ADMIN
+  - android.permission.ACCESS_COARSE_LOCATION

@@ -114,7 +114,6 @@ function cacheEntryEqual(a, b) {
  * @param {Object} timebase - Timeline timebase config
  * @param {Object} [options] - Additional options
  * @param {import('../../../domain').ActivityMonitor} [options.activityMonitor] - Optional ActivityMonitor for centralized activity tracking
- * @param {Array} [options.zoneConfig] - Zone configuration for ring rate lookup (fixes sawtooth)
  */
 const useRaceChartData = (roster, getSeries, timebase, options = {}) => {
 	const { activityMonitor, zoneConfig, exemptions } = options;
@@ -139,7 +138,7 @@ const useRaceChartData = (roster, getSeries, timebase, options = {}) => {
 			}
 			
 			const maxVal = Math.max(0, ...beats.filter((v) => Number.isFinite(v)));
-			// Pass zoneConfig and intervalMs to buildSegments for zone-based slope enforcement (fixes sawtooth)
+			// Use the timeline interval to measure dropout gap durations.
 			const intervalMs = Number(timebase?.intervalMs) > 0 ? Number(timebase.intervalMs) : 5000;
 			const segments = buildSegments(beats, zones, active, { zoneConfig, intervalMs });
 			const profileId = entry.profileId || entry.hrDeviceId || slugifyId(entry.name || entry.displayLabel || entry.id || idx);
@@ -309,7 +308,6 @@ const findFirstFiniteAfter = (arr = [], index) => {
  * @param {string[]} historicalParticipantIds - IDs of historical participants
  * @param {Object} [options] - Additional options
  * @param {import('../../../domain').ActivityMonitor} [options.activityMonitor] - Optional ActivityMonitor
- * @param {Array} [options.zoneConfig] - Zone configuration for ring rate lookup (fixes sawtooth)
  * @param {string} [options.sessionId] - Session ID to clear cache when session changes (memory leak fix)
  */
 const useRaceChartWithHistory = (roster, getSeries, timebase, historicalParticipantIds = [], options = {}) => {
@@ -357,7 +355,7 @@ const useRaceChartWithHistory = (roster, getSeries, timebase, historicalParticip
 				});
 				if (!beats.length) return;
 
-				// Pass zoneConfig and intervalMs for zone-based slope enforcement
+				// Use the timeline interval to measure dropout gap durations.
 				const intervalMs = Number(timebase?.intervalMs) > 0 ? Number(timebase.intervalMs) : 5000;
 				const segments = buildSegments(beats, zones, active, { zoneConfig, intervalMs });
 				if (!segments.length) return;
@@ -949,7 +947,7 @@ const FitnessChartViewBase = ({
 	timebase,
 	registerLifecycle,
 	activityMonitor,  // Phase 2 - centralized activity tracking
-	zoneConfig,       // Zone config for ring rate lookup (fixes sawtooth)
+	zoneConfig,       // Zone configuration
 	sessionId,        // Session ID for cache cleanup on session change
 	participantDisplayMap,     // SSoT for name/avatar/progress/zoneIndex per participant
 	sessionParticipantsMeta,   // Persisted session meta (for offline hydration — Issue A)
@@ -1023,7 +1021,6 @@ const FitnessChartViewBase = ({
 	}, []);
 
 	// Pass activityMonitor for centralized activity tracking (Phase 2)
-	// Pass zoneConfig for zone-based slope enforcement (fixes sawtooth pattern)
 	// Pass sessionId to clear cache on session change (memory leak fix)
 	const resolveHistorical = useCallback((slug) => {
 		return resolveHistoricalParticipant(slug, {

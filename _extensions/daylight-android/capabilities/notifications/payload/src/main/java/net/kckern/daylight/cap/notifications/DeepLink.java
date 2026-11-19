@@ -1,0 +1,166 @@
+package net.kckern.daylight.cap.notifications;
+
+import net.kckern.daylight.core.kiosk.Origins;
+
+import java.net.URI;
+import java.net.URLDecoder;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
+import java.util.Locale;
+import java.util.Map;
+import java.util.Set;
+
+/**
+ * A parsed link. Pure: no Android types. Two forms are links:
+ *
+ *   daylight://<kind>[/<arg>][?<query>][#k=<key>]     kind: open, bookmark, action, memo, input, media
+ *   http(s)://<an allowed origin>/<path>    read as daylight://open for that path
+ *
+ * Everything else is refused, and so is a web link on any other origin. Every link
+ * is untrusted input: the link activity is exported, so any app or web page on the
+ * device can send one. A refusal's message is one of a few fixed sentences and never
+ * repeats any part of the link, because it is written to a log that leaves the device.
+ */
+public final class DeepLink {
+    public static final String SCHEME = "daylight";
+    static final int MAX_LENGTH = 4096;
+    private static final Set<String> KINDS = new HashSet<>(Arrays.asList("open", "bookmark", "action", "memo", "input", "media"));
+    /**
+     * Kinds that do something other than open a page of the site. They are honoured only
+     * with this install's key: the link activity is exported, so without the key any web
+     * page or app on the phone could run an action, start a recording, open the camera,
+     * send typed text or start playback.
+     * "open" and "bookmark" only show a page of the site and are accepted without the
+     * key, but their handler is told whether it was there (see LinkHandler): without
+     * it, "open" shows a configured bookmark's page and nothing else, and the page that
+     * opens is given no microphone or camera.
+     */
+    private static final Set<String> KEYED = new HashSet<>(Arrays.asList("action", "memo", "input", "media"));
+    /** Kinds whose whole effect is to show a page of the site. Every other kind must be in KEYED. */
+    static final Set<String> PAGE_ONLY = new HashSet<>(Arrays.asList("open", "bookmark"));
+
+    /** Every kind is one or the other. A kind added later without deciding fails DeepLinkTest. */
+    static boolean everyKindIsDecided() {
+        for (String k : KINDS) if (KEYED.contains(k) == PAGE_ONLY.contains(k)) return false;
+        return true;
+    }
+    private static final String KEY_PARAM = "k";
+    /**
+     * The install key travels in the fragment: "#k=<key>". Android writes the links it
+     * starts to the system log ("START ... dat=daylight://action/x?..."), scheme, path
+     * and query, and leaves the fragment out. A key in the query is not read as one.
+     */
+    private static final String KEY_FRAGMENT = KEY_PARAM + "=";
+
+    /** The link with this key as its fragment, replacing any fragment it had. Unchanged for an empty key. */
+    public static String withKey(String link, String key) {
+        if (key == null || key.isEmpty()) return link;
+        int hash = link.indexOf('#');
+        return (hash < 0 ? link : link.substring(0, hash)) + "#" + KEY_FRAGMENT + key;
+    }
+
+    public final String kind;
+    /** The path after the kind, without the leading slash. Empty when absent. */
+    public final String arg;
+    public final Map<String, String> query;
+    /** What the fragment presented as a key, or null. */
+    private final String presentedKey;
+
+    private DeepLink(String kind, String arg, Map<String, String> query, String presentedKey) {
+        this.kind = kind;
+        this.arg = arg;
+        this.query = Collections.unmodifiableMap(query);
+        this.presentedKey = presentedKey;
+    }
+
+    /** @param webOrigins the origins ("scheme://host[:port]") whose web links may open in the app */
+    public static DeepLink parse(String raw, Set<String> webOrigins) {
+        if (raw == null || raw.trim().isEmpty()) throw new IllegalArgumentException("the link is empty");
+        if (raw.length() > MAX_LENGTH) throw new IllegalArgumentException("the link is too long");
+        String s = raw.trim();
+        String lower = s.toLowerCase(Locale.ROOT);
+        if (lower.startsWith("http:") || lower.startsWith("https:")) return web(s, webOrigins);
+
+        URI u;
+        try { u = URI.create(s); }
+        catch (IllegalArgumentException e) { throw new IllegalArgumentException("the link is not a URI"); }
+        if (u.getScheme() == null || !SCHEME.equals(u.getScheme().toLowerCase(Locale.ROOT))) {
+            throw new IllegalArgumentException("the link has a scheme this app does not open");
+        }
+        if (u.getUserInfo() != null || u.getPort() != -1) throw new IllegalArgumentException("the link is malformed");
+        String kind = u.getHost() == null ? "" : u.getHost().toLowerCase(Locale.ROOT);
+        if (!KINDS.contains(kind)) throw new IllegalArgumentException("the link is of a kind this app does not know");
+        String path = u.getPath() == null ? "" : u.getPath();
+        String arg = path.startsWith("/") ? path.substring(1) : path;
+        Map<String, String> query = new LinkedHashMap<>();
+        String rawQuery = u.getRawQuery();
+        if (rawQuery != null) {
+            for (String pair : rawQuery.split("&")) {
+                if (pair.isEmpty()) continue;
+                int eq = pair.indexOf('=');
+                String name = eq < 0 ? pair : pair.substring(0, eq);
+                String value = eq < 0 ? "" : pair.substring(eq + 1);
+                query.put(decode(name), decode(value));
+            }
+        }
+        String fragment = u.getRawFragment();
+        String presented = fragment != null && fragment.startsWith(KEY_FRAGMENT) && fragment.indexOf('&') < 0
+                ? fragment.substring(KEY_FRAGMENT.length()) : null;
+        return new DeepLink(kind, arg, query, presented);
+    }
+
+    /** A web link is an open link for its path, and only on an origin the app was told about. */
+    private static DeepLink web(String s, Set<String> webOrigins) {
+        String origin = Origins.of(s);
+        if (origin == null || webOrigins == null || !webOrigins.contains(origin)) {
+            throw new IllegalArgumentException("the link is not for this app's site");
+        }
+        String rest = s.substring(s.indexOf("://") + 3);
+        int at = rest.length();
+        for (char stop : new char[] { '/', '?', '#' }) {
+            int i = rest.indexOf(stop);
+            if (i >= 0 && i < at) at = i;
+        }
+        String path = rest.substring(at);
+        if (!path.startsWith("/")) path = "/" + path;
+        Map<String, String> query = new LinkedHashMap<>();
+        // Kept as written. The capability that opens pages checks the path's shape itself.
+        query.put("path", path);
+        return new DeepLink("open", "", query, null);
+    }
+
+    public boolean needsKey() { return KEYED.contains(kind); }
+
+    public boolean authorized(String installKey) {
+        return !needsKey() || presentsKey(installKey);
+    }
+
+    /**
+     * Whether the link carries this install's key, whatever its kind. A page-only link
+     * that does is one of the app's own; one that does not can come from anywhere.
+     */
+    public boolean presentsKey(String installKey) {
+        String presented = presentedKey;
+        if (installKey == null || installKey.length() < 32 || presented == null) return false;
+        return MessageDigest.isEqual(installKey.getBytes(StandardCharsets.UTF_8), presented.getBytes(StandardCharsets.UTF_8));
+    }
+
+    /** The query the owning capability receives: everything but the key. */
+    public Map<String, String> handlerQuery() {
+        Map<String, String> out = new LinkedHashMap<>(query);
+        out.remove(KEY_PARAM);
+        return out;
+    }
+
+    private static String decode(String s) {
+        try {
+            return URLDecoder.decode(s, "UTF-8");
+        } catch (Exception malformed) {
+            throw new IllegalArgumentException("the link has a malformed escape");
+        }
+    }
+}

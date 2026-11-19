@@ -57,7 +57,7 @@ export class ConfigDeviceBlueprintFactory extends IDeviceBlueprintFactory {
       contentControl: source.content_control
         ? this.#createContentControl(deviceId, source.content_control, source.camera_check)
         : null,
-      volumeControl: source.volume ? this.#createVolumeControl(source) : null,
+      volumeControl: source.volume ? this.#createVolumeControl(deviceId, source) : null,
     };
 
     return {
@@ -165,10 +165,14 @@ export class ConfigDeviceBlueprintFactory extends IDeviceBlueprintFactory {
    *
    * `fully-kiosk` reuses the panel's existing content_control credentials rather
    * than asking for them twice — a panel has one password, and duplicating it in
-   * a second block is how the two drift apart.
+   * a second block is how the two drift apart. `daylight-android` does the same
+   * with the panel's address and per-device token.
    */
-  #createVolumeControl(source) {
+  #createVolumeControl(deviceId, source) {
     const config = source.volume;
+    if (config.provider === 'daylight-android') {
+      return this.#createDaylightAndroidVolumeControl(deviceId, source);
+    }
     if (config.provider !== 'fully-kiosk') {
       this.#logger.warn?.('deviceFactory.unsupportedVolumeProvider', { provider: config.provider });
       return null;
@@ -201,7 +205,69 @@ export class ConfigDeviceBlueprintFactory extends IDeviceBlueprintFactory {
     }, { httpClient: this.#httpClient, logger: this.#logger }) ?? null;
   }
 
+  /**
+   * The Android kiosk app's token for one device. The household auth file
+   * named by `auth_ref` holds an entry per device id:
+   * `{ <deviceId>: { host, token } }`. That file is the only source.
+   */
+  #daylightAndroidToken(deviceId, config, block = 'content_control') {
+    // The token lives in the auth file only. devices.yml is ordinary config
+    // (edited from the Admin console, shown in editors); a token written
+    // there is ignored, and the warning names the device, never the value.
+    if (config.token) this.#logger.warn?.('deviceFactory.inlineTokenIgnored', { deviceId, block });
+    if (!config.auth_ref || !this.#configService) return '';
+    const token = this.#configService.getHouseholdAuth?.(config.auth_ref)?.[deviceId]?.token;
+    if (!token) this.#logger.warn?.('deviceFactory.noAuthToken', { auth_ref: config.auth_ref, deviceId });
+    return token || '';
+  }
+
+  #createDaylightAndroidVolumeControl(deviceId, source) {
+    const config = source.volume;
+    if (!this.#httpClient) {
+      this.#logger.warn?.('deviceFactory.noHttpClient');
+      return null;
+    }
+    const content = source.content_control;
+    if (content?.provider !== 'daylight-android') {
+      this.#logger.warn?.('deviceFactory.volumeWithoutDaylightAndroidContent', {
+        contentProvider: content?.provider ?? null,
+      });
+      return null;
+    }
+    return this.#factories.daylightAndroidVolume?.({
+      host: config.host || content.host,
+      port: config.port || content.port,
+      token: this.#daylightAndroidToken(deviceId, {
+        token: config.token,
+        auth_ref: config.auth_ref || content.auth_ref,
+      }, 'volume'),
+      stream: config.stream,
+    }, { httpClient: this.#httpClient, logger: this.#logger }) ?? null;
+  }
+
   #createContentControl(deviceId, config, cameraCheck) {
+    if (config.provider === 'daylight-android') {
+      if (!this.#httpClient) {
+        this.#logger.warn?.('deviceFactory.noHttpClient');
+        return null;
+      }
+      // ADB here serves the host-side camera probe and the reboot fallback.
+      // There is no resilient wrapper: that one relaunches Fully's activity,
+      // and this app restarts itself through its own control API.
+      const adbAdapter = config.fallback?.provider === 'adb'
+        ? this.#factories.adb?.({
+          host: config.fallback.host,
+          port: config.fallback.port,
+        }, { logger: this.#logger }) ?? null
+        : null;
+      return this.#factories.daylightAndroid?.({
+        host: config.host,
+        port: config.port,
+        token: this.#daylightAndroidToken(deviceId, config),
+        daylightHost: this.#daylightHost,
+      }, { httpClient: this.#httpClient, logger: this.#logger, adbAdapter }) ?? null;
+    }
+
     if (config.provider === 'fully-kiosk') {
       if (!this.#httpClient) {
         this.#logger.warn?.('deviceFactory.noHttpClient');

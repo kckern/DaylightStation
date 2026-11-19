@@ -1,3 +1,5 @@
+import { pianoToolResponse } from './pianoPageTools.js';
+
 const BASE = 'http://localhost:8770/bluetooth';
 
 /** Local native bridge only. An accepted command must be verified by a later state read. */
@@ -10,12 +12,15 @@ export function createBluetoothClient({ fetchImpl = (...args) => fetch(...args),
     let timedOut = false;
     const timer = setTimeout(() => { timedOut = true; controller.abort(); }, timeoutMs);
     try {
-      const response = await fetchImpl(`${BASE}${path}`, {
+      if (controller.signal.aborted) throw new DOMException('Aborted', 'AbortError');
+      const method = body === undefined ? 'bluetoothState' : 'bluetoothCommand';
+      const args = body === undefined ? [] : [path.slice(1), body];
+      const response = await pianoToolResponse(method, args, () => fetchImpl(`${BASE}${path}`, {
         method: body === undefined ? 'GET' : 'POST',
         cache: 'no-store',
         signal: controller.signal,
         ...(body === undefined ? {} : { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }),
-      });
+      }));
       let result;
       try { result = await response.json(); } catch { throw new Error('Invalid Bluetooth response'); }
       if (!response.ok || result?.ok === false) {

@@ -31,6 +31,8 @@
       background: var(--school-surface-2);
     }
   }
+  // The shared button's large touch type is for lone actions, not a dense map.
+  &__item.ds-touch { font-size: 0.95rem; font-weight: 600; line-height: 1.2; border-width: 1px; }
   &.is-list &__item { padding-left: calc(0.65rem + var(--school-overview-depth) * 1.1rem); }
 }
 
@@ -43,7 +45,7 @@
   &__head button {
     flex: 0 0 auto; min-height: 44px; padding: 0 0.75rem;
     border: 1px solid var(--school-border); border-radius: 8px;
-    background: var(--school-surface); color: var(--school-fg); cursor: pointer;
+    background: var(--school-surface); color: var(--school-fg); font-size: 0.95rem; cursor: pointer;
   }
   &__trail {
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;

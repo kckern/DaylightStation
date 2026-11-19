@@ -4,6 +4,12 @@
  * Provides control over Android devices running Fully Kiosk Browser.
  * Handles URL loading, waiting for kiosk readiness, and screen control.
  *
+ * Fully only. This is the single-device adapter configured by the system
+ * `kiosk` app config; `getMetrics().provider` is `fully-kiosk` because that is
+ * the only protocol it speaks. Per-device kiosks in devices.yml (either
+ * provider) go through `1_adapters/devices/` instead, and the composition does
+ * not build this adapter for a `daylight-android` kiosk.
+ *
  * @module adapters/home-automation/kiosk
  */
 

@@ -1,0 +1,65 @@
+apply from: rootProject.file('gradle/shell-lib.gradle')
+
+def catalog = rootProject.ext.catalog
+
+// Build for every ABI of every device that lists this capability.
+def abis = catalog.devices().findAll { it.capabilities.contains('synth') }.collectMany { it.abis }.unique()
+if (abis.isEmpty()) abis = ['armeabi-v7a', 'arm64-v8a']
+
+// The vendored sfizz tree is not in git. Point at it with sfizz.dir in
+// local.properties or with DAYLIGHT_SFIZZ_DIR.
+def props = new Properties()
+def lp = rootProject.file('local.properties')
+if (lp.exists()) lp.withInputStream { props.load(it) }
+def sfizzDir = props.getProperty('sfizz.dir') ?: System.getenv('DAYLIGHT_SFIZZ_DIR') ?: ''
+def haveSfizz = !sfizzDir.isEmpty() && new File(sfizzDir, 'CMakeLists.txt').exists()
+
+android {
+    namespace 'net.kckern.daylight.cap.synth.shell'
+    // Must be installed under $ANDROID_HOME/ndk/.
+    ndkVersion rootProject.ext.ndkVersion
+
+    // Lets CMake's find_package(oboe CONFIG) resolve the Oboe AAR's prefab package.
+    buildFeatures { prefab true }
+
+    defaultConfig {
+        ndk { abiFilters(*abis) }
+        externalNativeBuild {
+            cmake {
+                cppFlags '-std=c++17'
+                // Oboe's prefab package is built against c++_shared; the STL must match.
+                // CMakeLists.txt builds every variant optimized, whatever build type the
+                // Android plugin asks for.
+                arguments '-DANDROID_STL=c++_shared', "-DSFIZZ_DIR=${sfizzDir}",
+                        // Prefixes CMakeLists.txt maps out of __FILE__ strings and debug info.
+                        "-DDAYLIGHT_ROOT=${rootProject.projectDir}",
+                        "-DDAYLIGHT_GRADLE_HOME=${gradle.gradleUserHomeDir}"
+            }
+        }
+    }
+
+    externalNativeBuild {
+        cmake {
+            path 'src/main/cpp/CMakeLists.txt'
+            version '3.22.1'
+        }
+    }
+}
+
+// A synth without sfizz makes no sound, and nothing downstream would notice. Any task
+// that builds this module stops here instead. Other modules are not affected.
+tasks.matching { it.name == 'preBuild' }.all {
+    doFirst {
+        if (!haveSfizz) {
+            throw new GradleException(sfizzDir.isEmpty()
+                    ? "the synth capability needs the vendored sfizz tree: set sfizz.dir=<path to sfizz> in " +
+                      "${lp} (or DAYLIGHT_SFIZZ_DIR). The tree is not in git; see capabilities/synth in the README."
+                    : "sfizz.dir points at '${sfizzDir}', which has no CMakeLists.txt. Set sfizz.dir in ${lp} " +
+                      "to the vendored sfizz tree.")
+        }
+    }
+}
+
+dependencies {
+    implementation 'com.google.oboe:oboe:1.8.1'
+}

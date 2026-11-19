@@ -61,3 +61,21 @@ describe('ExerciseRun pass decision', () => {
     expect(runPassed(null, { challenge: true, passScore: 0.8 })).toBe(false);
   });
 });
+
+describe('hands-together input helpers', () => {
+  it('keeps the after-wrong hint when a key is lifted', async () => {
+    const { nextLastWrong } = await import('./ExerciseRun.jsx');
+    const wrong = { midi: 61, eventId: 'a' };
+    expect(nextLastWrong(wrong, { type: 'ignored', reason: 'held_released' })).toBe(wrong);
+    expect(nextLastWrong(wrong, { type: 'hit', eventId: 'a' })).toBeNull();
+    expect(nextLastWrong(null, { type: 'wrong', midi: 62, eventId: 'b' })).toEqual({ midi: 62, eventId: 'b' });
+  });
+
+  it('hands over only the armed chord and marks other down keys as baseline', async () => {
+    const { armingHeldObservation, heldSignatureOf } = await import('./ExerciseRun.jsx');
+    expect(heldSignatureOf(new Map([[60, { timestamp: 1 }]]))).not.toBe(heldSignatureOf(new Map([[60, { timestamp: 2 }]])));
+    const observed = armingHeldObservation(new Map([[60, {}], [48, {}], [72, {}]]), new Set([60, 48]), 5);
+    expect([...observed.held.keys()].sort()).toEqual([48, 60]);
+    expect(observed).toMatchObject({ baseline: [72], time: 5, clock: 'date-now' });
+  });
+});

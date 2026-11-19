@@ -1,0 +1,65 @@
+# NVIDIA Shield TV (Android 11). Helpers, the kiosk window, lockdown (built in, off until the home app is switched), screen power, volume and the app launcher.
+id: shield
+package: net.kckern.daylight.shield
+android: { minSdk: 30, targetSdk: 33 }
+abis: []
+control: { port: 8780, lifelinePort: 8781 }
+# Where this device is in its cutover: `before` (installed beside Fully, nothing armed) or
+# `done`, set at the runbook's make-it-permanent step together with lockdown.required and
+# the coexistence switches. tools/roadmap-capabilities.test.mjs checks the file against it.
+cutover: before
+shell: { versionCode: 38, versionName: "0.3-kiosk" }
+# microphone: the mic stream. location: Bluetooth discovery from a service needs it on Android 11.
+foregroundServiceTypes: [microphone, location]
+# `accessibility`: the lockdown watcher reads what is in front through it, and it is this
+# device's only way to turn the screen off (the Shield has no device-admin feature, so no
+# device admin and no device owner are possible). update.autoConfirm stays off.
+capabilities:
+  - webview-host
+  - debug-tools
+  - accessibility
+  - lockdown
+  - screen-power
+  - volume
+  - app-launcher
+  - bluetooth-controls
+  - mic-bridge
+  - lease-gate
+defaults:
+  # The kiosk's start page: this device's full https URL. Household-specific, so it is
+  # resolved from `placeholders:` in the private tokens file when the payload is built.
+  # https only: a page gets the microphone and camera in a secure context alone.
+  webview.startUrl: "{shield_start_url}"
+  # A household screen: it shows over a swipe keyguard after a wake, and its page may be
+  # given the microphone and the camera (each also needs the Android permission, granted
+  # once over ADB). All three are off unless a device file turns them on.
+  webview.showWhenLocked: true
+  webview.allowMic: true
+  webview.allowCamera: true
+  # Lockdown is built in and off. Until this device's home app is switched (phases 4 to
+  # 6) the app is installed beside Fully, and an armed watcher would recall itself over
+  # Fully. The allowlist stays empty: it is read from Fully at this device's cutover.
+  lockdown.enabled: false
+  # What the page and POST /launch may start: the arcade emulator the media menu launches
+  # today. Anything else Fully allows is read from Fully at this device's cutover.
+  launcher.allowed: "com.retroarch.aarch64"
+  debug.execEnabled: false
+  # Coexistence switches. This app is installed beside the old helper app(s) before the
+  # device is switched over, and two apps cannot hold the same hardware. Each switch
+  # below is off, so installing takes nothing from the helper that runs the device
+  # today. They are turned on at this device's cutover (`settings set <key> true`, applied
+  # at once, reported in GET /status under "switches"), after the old helper is stopped,
+  # and turned off again in a rollback. See __docs/runbooks/android/kiosk-cutover.md.
+  mic.enabled: false           # the microphone stream (audio-bridge streams it)
+  lease.enabled: false         # the lease loop (supervision-guard runs it)
+  heartbeat.enabled: true
+  # Where heartbeats and log lines are shipped. Household-specific: resolved from
+  # `placeholders:` in the private tokens file when this device's payload is built.
+  heartbeat.logStoreUrl: "{log_store_insert_url}"
+  # The Bluetooth panel pairs and connects game controllers.
+  bluetooth.mode: gamepad
+  # Share audio-bridge's loopback port so both consumers keep their existing URL.
+  # Only the old helper listens during coexistence. Stop it before enabling this stream.
+  mic.port: 8765
+  # No lease defaults: with lease.endpoint empty the loop is unprovisioned and idle,
+  # the state supervision-guard was left in. The credential is a secret setting.

@@ -1,3 +1,5 @@
+import { pianoToolResponse } from './pianoPageTools.js';
+
 // bridgeAudioVolume — ask the native bridge whether the tablet's OS media volume is
 // actually up (POST http://localhost:8770/audio-guard/volume-check).
 //
@@ -21,7 +23,7 @@ export async function checkBridgeMediaVolume({ fetchImpl = (...a) => fetch(...a)
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    const res = await fetchImpl(URL, { method: 'POST', cache: 'no-store', signal: controller.signal });
+    const res = await pianoToolResponse('checkVolume', [], () => fetchImpl(URL, { method: 'POST', cache: 'no-store', signal: controller.signal }));
     const body = await res.json();
     const g = body?.guard;
     if (!res.ok || body?.ok !== true || !g) return { available: false, error: body?.error || `http_${res.status}` };

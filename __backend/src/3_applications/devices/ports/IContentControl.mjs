@@ -2,7 +2,8 @@
  * IContentControl Port - Display content loading
  *
  * Abstraction for loading content on device displays.
- * Implemented by FullyKioskContentAdapter and WebSocketContentAdapter.
+ * Implemented by FullyKioskContentAdapter, DaylightAndroidContentAdapter and
+ * WebSocketContentAdapter.
  *
  * @module applications/devices/ports
  */
