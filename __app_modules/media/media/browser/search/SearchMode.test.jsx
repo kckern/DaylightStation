@@ -87,9 +87,10 @@ vi.mock("../cast/DispatchTargetPicker.jsx", () => ({
   DispatchTargetPicker: () => <div data-testid="picker-stub" />,
 }));
 
-// ── component-local info logger ──
+// SearchMode and the resource reader log through the same child logger.
 vi.mock("../../../../../frontend/src/lib/logging/Logger.js", () => {
-  const getLogger = () => ({ child: () => ({ info: vi.fn() }) });
+  const logger = { info: vi.fn(), debug: vi.fn(), warn: vi.fn(), error: vi.fn() };
+  const getLogger = () => ({ child: () => logger });
   return { default: getLogger, getLogger };
 });
 
