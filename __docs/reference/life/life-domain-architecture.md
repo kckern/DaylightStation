@@ -96,7 +96,7 @@ The notification bounded context routes NotificationIntents (title/body/category
 
 | Channel | Adapter | Delivery |
 |---------|---------|----------|
-| app | AppNotificationAdapter | WebSocketEventBus broadcast on the `notification` topic. The frontend `useAppNotifications` hook subscribes to the same shared WS client and renders a Mantine toast; intents carrying `metadata.username` are shown only to that user, unaddressed intents broadcast to everyone. Action urls are gated to `http(s)`/relative (`javascript:`/`mailto:`/`data:` fall back to a non-clickable toast) |
+| app | AppNotificationAdapter | WebSocketEventBus broadcast on the `notification` topic. Life subscribes through the shared WebSocket client and shows Mantine toasts. A toast addressed through `metadata.username` belongs to the selected member and is dismissed when that member changes or Life closes. Household broadcasts retain their normal lifetime. Actions accept relative and `http(s)` URLs. Other schemes render without an action. |
 | telegram | TelegramNotificationAdapter | Chat id resolved from profile `identities.telegram.user_id`; sends via the SystemBotLoader telegram adapter. Ceremony intents attach inline "Begin" buttons whose callback deep-links into the ceremony flow — this requires `system.public_url` to be configured; when it is unset (current state) the adapter degrades to a text-only message with no button |
 | push | PushNotificationAdapter | Home Assistant `notify.<service>`; service name from profile `identities.homeassistant.notify_service` |
 

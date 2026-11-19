@@ -13,6 +13,7 @@ Admin, Health, Media, Feed, Home, Life and Auto share browser layout and interac
 | Return to a view at its previous position | `useViewScroll({mainRef, viewKey, owner, ready})` restores the position after the view is ready and clears it when the owner changes. | Health Today |
 | Choose content without losing an unsaved form | Bind the catalog combobox to the draft’s content ID. On selection, update that field and keep the editor mounted. The editor owns Save and Cancel. | [Admin list item editor](../../../__capabilities/content-catalog/browser/admin/ListsItemEditor.jsx) |
 | Browse nearby catalog items | Use `ContentCombobox`. Its sibling window reuses the path selected by the hover preload or initial read. Scroll, loading and delayed page responses follow the current window. | [Catalog picker](../../../__capabilities/content-catalog/browser/combobox/ContentCombobox.jsx) |
+| Append a page to a filtered result | Keep the cursor and pending request with the selected filter. Retire that request when the route changes. An append failure can retain the loaded rows and offer a retry for the same cursor. | [Feed Reader](../../../__app_modules/media/feed/browser/Reader/Reader.jsx) |
 | Accept a typed content ID | Use the catalog picker's freeform mode. It shares a complete source and alias lookup across editors. If the lookup fails, typed IDs still save and reopening retries validation. | [Catalog source validation](../../../__capabilities/content-catalog/browser/lib/knownSources.js) |
 | Keep playback alive while browsing | `PlaybackFrame` places controls, overlays and the engine alongside routed children. Each app supplies one main landmark. Feed passes its scrolling element to its routes through Outlet context. | Feed reader and Media canvas |
 | Display progress for persistent playback | Attach the visible controls to the player's existing clock. Feed's single observer paints its mini, detail and sheet progress bars and suspends painting when the document is hidden. A sheet scrub preview owns the fill until the gesture ends. | [Feed playback observer](../../../__app_modules/media/feed/browser/Scroll/hooks/usePlaybackObserver.js) · [Feed player sheet](../../../__app_modules/media/feed/browser/players/FeedPlayerSheet.jsx) |
@@ -198,7 +199,7 @@ The primitives in the table are exported from `frontend/src/lib/ui/index.js`. Us
 ## Data fetching
 
 `frontend/src/lib/hooks/useApiResource.js` is the house `{ data, loading,
-error, revalidating, reload, refresh }` fetch hook — a GET-backed request wrapped in
+error, revalidating, reload, refresh, poll }` fetch hook — a GET-backed request wrapped in
 the loading/error bookkeeping every app needs, so no screen hand-rolls its
 own. In its default mode it behaves like any plain fetch-on-mount hook:
 `loading` starts `true` and clears once the request settles, and `reload()`
@@ -211,6 +212,8 @@ once that window expires. Invalidation and cache patches retire the
 pre-change request and let mounted readers share the first fresh GET for
 each path. Readers recovering from a transient failure can also share a
 pending retry. An explicit `reload()` or `refresh()` starts its own read.
+Use `poll()` on a timer. It waits for the next tick if the reader already has
+a GET, a retry delay or a queued refresh.
 
 Use `reload()` to retry one reader. Use `invalidateApiResources(matches)`
 when a write affects mounted readers of one or more shared resources. Use

@@ -138,7 +138,7 @@ test('Auto saves one fuel entry at phone height and reopens on Car', async ({ pa
   await expect(page.getByRole('button', { name: 'Car', exact: true })).toHaveAttribute('aria-current', 'page');
 });
 
-test('Life discards a previous member’s late plan and deduplicates recipient notifications', async ({ page }) => {
+test('Life retires previous-member plans and notifications on household switches', async ({ page }) => {
   const users = ['amy', 'bob'].map(username => ({ username, displayName: username.toUpperCase() }));
   let socket;
   let pendingPlan;
@@ -149,7 +149,7 @@ test('Life discards a previous member’s late plan and deduplicates recipient n
     const username = url.searchParams.get('username');
     if (url.pathname.endsWith('/users')) return route.fulfill({ json: { users } });
     if (url.pathname.endsWith('/user')) return route.fulfill({ json: users.find(user => user.username === username) || users[0] });
-    if (url.pathname.replace(/\/$/, '').endsWith('/plan') && username === 'amy') {
+    if (url.pathname.replace(/\/$/, '').endsWith('/plan') && username === 'amy' && !pendingPlan) {
       pendingPlan = route;
       return;
     }
@@ -158,12 +158,42 @@ test('Life discards a previous member’s late plan and deduplicates recipient n
   });
   await page.goto('/life/plan');
   const switcher = page.getByRole('textbox', { name: 'Switch household member' });
+  const switchMember = async (member) => {
+    await switcher.press('ArrowDown');
+    const option = page.getByRole('option', { name: member, exact: true });
+    await expect(option).toBeVisible();
+    const optionId = await option.getAttribute('id');
+    for (let step = 0; step < 2 && await switcher.getAttribute('aria-activedescendant') !== optionId; step += 1) {
+      await switcher.press('ArrowDown');
+    }
+    await expect(switcher).toHaveAttribute('aria-activedescendant', optionId);
+    await switcher.press('Enter');
+    await expect(switcher).toHaveValue(member);
+  };
   await expect.poll(() => Boolean(pendingPlan)).toBe(true);
-  await switcher.click();
-  await page.getByRole('option', { name: 'BOB' }).click();
+  await expect.poll(() => Boolean(socket)).toBe(true);
+  const amyAction = { label: 'Open Amy’s plan', data: { url: '/life/plan/goals' } };
+  const amyNotification = {
+    topic: 'notification', title: 'Amy’s reminder', body: 'Amy’s plan is due', urgency: 'critical',
+    metadata: { id: 'amy-reminder', username: 'amy' }, actions: [amyAction],
+  };
+  socket.send(JSON.stringify(amyNotification));
+  socket.send(JSON.stringify({
+    topic: 'notification', title: 'Household reminder', urgency: 'critical',
+    metadata: { id: 'household-reminder' },
+  }));
+  const reminder = page.getByText('Amy’s plan is due', { exact: true });
+  const action = page.getByRole('button', { name: amyAction.label, exact: true });
+  const household = page.getByText('Household reminder', { exact: true });
+  await expect(reminder).toBeVisible();
+  await expect(action).toBeVisible();
+  await expect(household).toBeVisible();
+  await switchMember('BOB');
   const plan = page.getByText('bob marker', { exact: true });
   await expect(plan).toBeVisible();
-  await expect.poll(() => Boolean(socket)).toBe(true);
+  await expect(reminder).toHaveCount(0);
+  await expect(action).toHaveCount(0);
+  await expect(household).toBeVisible();
   for (const username of ['amy', 'bob', 'bob']) {
     socket.send(JSON.stringify({
       topic: 'notification', title: username + ' recipient', urgency: 'critical',
@@ -176,9 +206,21 @@ test('Life discards a previous member’s late plan and deduplicates recipient n
   await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
   await expect(plan).toBeVisible();
   await expect(page.getByText('amy marker', { exact: true })).toHaveCount(0);
+
+  await switchMember('AMY');
+  await expect(page.getByText('amy marker', { exact: true })).toBeVisible();
+  socket.send(JSON.stringify(amyNotification));
+  socket.send(JSON.stringify({
+    ...amyNotification, title: 'New Amy reminder', body: 'Amy has a new task',
+    metadata: { id: 'amy-new-reminder', username: 'amy' },
+  }));
+  await expect(page.getByText('Amy has a new task', { exact: true })).toBeVisible();
+  await expect(reminder).toHaveCount(0);
+  await expect(page.getByText('bob recipient', { exact: true })).toHaveCount(0);
+  await expect(household).toBeVisible();
   await page.reload();
-  await expect(plan).toBeVisible();
-  await expect(switcher).toHaveValue('BOB');
+  await expect(page.getByText('amy marker', { exact: true })).toBeVisible();
+  await expect(switcher).toHaveValue('AMY');
 });
 
 test('Life distinguishes unavailable goals from a successful empty list and retries the read', async ({ page }) => {

@@ -15,6 +15,7 @@ import "./Reader.scss";
 
 const log = getLogger().child({ app: 'feed', module: 'reader' });
 const HISTORY_VIEWS = new Set(['unread', 'saved', 'archived']);
+const COMPACT_QUERY = `(max-width: ${DS_TOKENS.breakpoints.md - 1}px)`;
 
 function historyItemToArticle(item) {
   return {
@@ -185,8 +186,9 @@ export default function Reader() {
   const [offlineError, setOfflineError] = useState(null);
   const [offlineItems, setOfflineItems] = useState([]);
   const [offlineLoading, setOfflineLoading] = useState(false);
+  const [offlineAttempt, setOfflineAttempt] = useState(0);
   const [collapsedGroups, setCollapsedGroups] = useState(new Set());
-  const compact = useMediaQuery(`(max-width: ${DS_TOKENS.breakpoints.md - 1}px)`);
+  const compact = useMediaQuery(COMPACT_QUERY);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const drawerActive = compact && drawerOpen;
   const wasDrawerActive = useRef(false);
@@ -196,10 +198,13 @@ export default function Reader() {
   const listRef = useRef(null);
   const sidebarRef = useRef(null);
   const requestRef = useRef(null);
-  const appendLockRef = useRef(false);
+  const streamFilter = useRef({
+    view: initialSnapshot.current?.view ?? 'all',
+    feeds: initialSnapshot.current?.feeds ?? '',
+  });
   const snapshotRef = useRef(null);
   const checkpointRestoredRef = useRef(false);
-  snapshotRef.current = { articles, continuation, exhausted };
+  snapshotRef.current = { articles, continuation, exhausted, ...streamFilter.current };
 
   useEffect(() => { markVisited('reader', visitStarted.current); }, [markVisited]);
 
@@ -212,10 +217,15 @@ export default function Reader() {
     } else if (compact && sidebarRef.current?.contains(document.activeElement)) {
       drawerOpenerRef.current?.focus({ preventScroll: true });
     }
+    // Dock an open drawer. An open request may arrive before the media-query
+    // listener has reported that the compact control is visible again.
+    if (!compact && wasDrawerActive.current) setDrawerOpen(false);
     wasDrawerActive.current = drawerActive;
-    if (!compact && drawerOpen) setDrawerOpen(false);
-  }, [compact, drawerActive, drawerOpen]);
+  }, [compact, drawerActive]);
 
+  const openDrawer = () => {
+    if (window.matchMedia(COMPACT_QUERY).matches) setDrawerOpen(true);
+  };
   const closeDrawer = () => setDrawerOpen(false);
   const handleDrawerKeyDown = event => {
     if (event.defaultPrevented) return;
@@ -241,6 +251,7 @@ export default function Reader() {
   };
 
   useEffect(() => {
+    if (drawerActive) return;
     const onKeyDown = event => {
       if (!['j', 'k'].includes(event.key) || event.metaKey || event.ctrlKey || event.altKey) return;
       if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement || event.target instanceof HTMLSelectElement || event.target?.isContentEditable) return;
@@ -254,7 +265,7 @@ export default function Reader() {
     };
     document.addEventListener('keydown', onKeyDown);
     return () => document.removeEventListener('keydown', onKeyDown);
-  }, []);
+  }, [drawerActive]);
 
   const feedsError = feedsReadError ? 'Subscriptions are unavailable. The inbox can still be used.' : null;
   const loadFeeds = reloadFeeds;
@@ -262,20 +273,21 @@ export default function Reader() {
   // Fetch stream articles
   // Unfiltered: day-based primer (days=3)
   // Filtered:   count-based backlog (count=50), full feed history
-  const fetchStream = useCallback(async (cont = null, append = false) => {
-    if (append && appendLockRef.current) return;
-    if (append) appendLockRef.current = true;
-    if (!append) requestRef.current?.abort();
+  const fetchStream = useCallback(async (cont = null) => {
+    const append = cont !== null;
+    if (append && requestRef.current) return;
+    requestRef.current?.abort();
     const controller = new AbortController();
-    if (!append) requestRef.current = controller;
-    if (!append) setLoading(true);
-    else setLoadingMore(true);
+    requestRef.current = controller;
+    setLoading(!append);
+    setLoadingMore(append);
     setStreamError(null);
     try {
       if (HISTORY_VIEWS.has(activeView)) {
         const params = new URLSearchParams({ state: activeView, mode: 'reader', limit: '100' });
         if (cont) params.set('cursor', cont);
         const data = await DaylightAPI(`/api/v1/feed/search?${params}`, {}, 'GET', { signal: controller.signal });
+        if (controller.signal.aborted) return;
         const incoming = applyPendingMutations((data.items || []).map(historyItemToArticle));
         setArticles(prev => append ? [...prev, ...incoming.filter(item => !prev.some(existing => existing.stateKey === item.stateKey))] : incoming);
         setContinuation(data.nextCursor || null);
@@ -293,49 +305,53 @@ export default function Reader() {
       }
       if (cont) params.set('continuation', cont);
       const data = await DaylightAPI(`/api/v1/feed/reader/stream?${params}`, {}, 'GET', { signal: controller.signal });
+      if (controller.signal.aborted) return;
       const incoming = applyPendingMutations(data.items || []);
       setArticles(prev => append ? [...prev, ...incoming] : incoming);
       setContinuation(data.continuation || null);
       setExhausted(data.exhausted || false);
     } catch (err) {
-      if (err.name !== 'AbortError') {
+      if (!controller.signal.aborted && err.name !== 'AbortError') {
         log.warn('reader.stream.failed', { append, error: err.message });
-        setStreamError('Articles could not be refreshed.');
+        setStreamError({ cursor: cont, message: append ? 'More articles could not be loaded.' : 'Articles could not be refreshed.' });
       }
     } finally {
       if (!controller.signal.aborted) {
+        requestRef.current = null;
         setLoading(false);
         setLoadingMore(false);
       }
-      appendLockRef.current = false;
     }
   }, [activeFeeds, activeView, applyPendingMutations]);
 
   // Initial load + reload on filter change
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (activeView === 'offline') return undefined;
+    if (streamFilter.current.view !== activeView || streamFilter.current.feeds !== feedsParam) {
+      streamFilter.current = { view: activeView, feeds: feedsParam };
+      setArticles([]);
+      setContinuation(null);
+      setExhausted(false);
+    }
     fetchStream();
     return () => requestRef.current?.abort();
-  }, [activeView, fetchStream]);
+  }, [activeView, feedsParam, fetchStream]);
 
-  const loadOffline = useCallback(() => {
+  useEffect(() => {
+    if (activeView !== 'offline') return;
     let active = true;
     setOfflineLoading(true);
     setOfflineError(null);
     listOfflineEditions()
       .then(rows => { if (active) setOfflineItems(applyPendingMutations(rows.map(row => row.item))); })
       .catch(error => {
-        if (active) setOfflineError('Downloaded articles could not be opened on this device.');
+        if (!active) return;
+        setOfflineError('Downloaded articles could not be opened on this device.');
         log.warn('reader.offline_editions.failed', { error: error.message });
       })
       .finally(() => { if (active) setOfflineLoading(false); });
     return () => { active = false; };
-  }, [applyPendingMutations]);
-
-  useEffect(() => {
-    if (activeView !== 'offline') return undefined;
-    return loadOffline();
-  }, [activeView, loadOffline]);
+  }, [activeView, applyPendingMutations, offlineAttempt]);
 
   useEffect(() => {
     const el = inboxRef.current;
@@ -362,18 +378,22 @@ export default function Reader() {
 
   // Infinite scroll via IntersectionObserver
   useEffect(() => {
-    if (!sentinelRef.current) return;
+    if (loading || loadingMore || streamError || !sentinelRef.current) return;
+    let active = true;
     const observer = new IntersectionObserver(
       ([entry]) => {
-        if (entry.isIntersecting && continuation && !loadingMore) {
-          fetchStream(continuation, true);
+        if (active && entry.isIntersecting && continuation) {
+          fetchStream(continuation);
         }
       },
       { rootMargin: '200px' }
     );
     observer.observe(sentinelRef.current);
-    return () => observer.disconnect();
-  }, [continuation, loadingMore, fetchStream]);
+    return () => {
+      active = false;
+      observer.disconnect();
+    };
+  }, [continuation, loading, loadingMore, streamError, fetchStream]);
 
   // Sidebar filter toggle (single feed)
   const handleToggleFeed = (feedId, multiSelect) => {
@@ -475,6 +495,12 @@ export default function Reader() {
     setSearchParams(params);
   };
 
+  const errorMessage = activeView === 'offline' ? offlineError : streamError?.message;
+  const retryArticles = () => {
+    if (activeView === 'offline') setOfflineAttempt(attempt => attempt + 1);
+    else fetchStream(streamError.cursor);
+  };
+
   return (
     <div className="reader-view">
       {drawerActive && <div className="reader-drawer-backdrop" onClick={closeDrawer} aria-hidden="true" />}
@@ -503,7 +529,7 @@ export default function Reader() {
       </aside>
       <section className="reader-inbox" ref={inboxRef} inert={drawerActive ? '' : undefined}>
         <div className="reader-mobile-toolbar">
-          <button ref={drawerOpenerRef} className="reader-hamburger" onClick={() => setDrawerOpen(true)} aria-label="Open subscriptions" aria-expanded={drawerActive} aria-controls="reader-subscriptions">
+          <button ref={drawerOpenerRef} className="reader-hamburger" onClick={openDrawer} aria-label="Open subscriptions" aria-expanded={drawerActive} aria-controls="reader-subscriptions">
             <span /><span /><span />
           </button>
           <span className="reader-mobile-title">
@@ -518,7 +544,7 @@ export default function Reader() {
           }}>{view}</button>)}
           {activeView !== 'offline' && <button onClick={() => fetchStream()} disabled={loading}>Refresh</button>}
         </div>
-        {(activeView === 'offline' ? offlineError : streamError) && <div className="reader-inline-error" role="alert">{activeView === 'offline' ? offlineError : streamError}<button onClick={() => activeView === 'offline' ? loadOffline() : fetchStream()}>Retry</button></div>}
+        {errorMessage && <div className="reader-inline-error" role="alert">{errorMessage}<button onClick={retryArticles}>Retry</button></div>}
         {(activeView === 'offline' ? offlineLoading : loading) ? (
           <div className="reader-loading">Loading...</div>
         ) : (
