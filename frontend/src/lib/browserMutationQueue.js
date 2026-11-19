@@ -39,16 +39,17 @@ export function createBrowserMutationQueue({ prefix, getOwner, idOf, valid = () 
           [operation] = read(owner);
           if (!operation) break;
           const id = idOf(operation);
-          if (!acknowledged.has(owner) || acknowledged.get(owner) !== id) {
-            await send(operation);
-            acknowledged.set(owner, id);
+          let receipt = acknowledged.get(owner);
+          if (!receipt || receipt.id !== id) {
+            receipt = { id, result: await send(operation) };
+            acknowledged.set(owner, receipt);
           }
           if (getOwner() !== owner) break;
           const remaining = read(owner).filter(row => idOf(row) !== id);
           localStorage.setItem(prefix + owner, JSON.stringify(remaining));
           acknowledged.delete(owner);
           completed++;
-          onDequeue?.(remaining);
+          onDequeue?.(remaining, operation, receipt.result);
         }
       } catch (error) { onError?.(error, operation); }
       return completed;

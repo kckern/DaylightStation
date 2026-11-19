@@ -1,21 +1,31 @@
 import { Select } from '@/lib/ui/Select.jsx';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRefreshableRead } from '@/lib/hooks/useRefreshableRead.js';
 import { DaylightAPI } from "../../../../../frontend/src/lib/api.mjs";
 import getLogger from "../../../../../frontend/src/lib/logging/Logger.js";
 import {
   annotationOwner,
+  annotationPath,
+  annotationsWithPending,
   cacheAnnotations,
   cachedAnnotations,
   flushAnnotationMutations,
+  hasPendingAnnotationWrite,
   offlineAnnotationId,
-  queueAnnotationMutation,
-  queuedAnnotationCount,
+  queueAnnotationChange,
+  queuedAnnotationMutations,
+  subscribeToAnnotationQueue,
+  upsertAnnotation,
 } from "../offline/annotationOfflineStore.js";
 import "./AnnotationPanel.scss";
 
 const log = getLogger().child({ app: 'feed', module: 'annotations' });
 const mountedReaders = new Set();
+const writeFailure = {
+  POST: { event: 'feed.annotations.create_failed', message: 'The note was not saved. Try again.' },
+  PATCH: { event: 'feed.annotations.update_failed', message: 'The note was not updated.' },
+  DELETE: { event: 'feed.annotations.delete_failed', message: 'The note was not deleted.' },
+};
 
 function acknowledge(owner, itemId, update) {
   if (annotationOwner() !== owner) return;
@@ -25,9 +35,18 @@ function acknowledge(owner, itemId, update) {
   }
 }
 
-function upsertAnnotation(annotations, annotation) {
-  if (!annotations.some(value => value.id === annotation.id)) return [...annotations, annotation];
-  return annotations.map(value => value.id === annotation.id ? annotation : value);
+function replay(owner) {
+  if (navigator.onLine === false || annotationOwner() !== owner) return;
+  return flushAnnotationMutations(DaylightAPI, (operations, change) => {
+    for (const reader of mountedReaders) {
+      if (reader.owner !== owner) continue;
+      reader.setQueued(operations);
+      if (!change?.itemId || reader.itemId === change.itemId) {
+        if (change) reader.acknowledge(change.update);
+        else reader.load();
+      }
+    }
+  });
 }
 
 function isNetworkFailure(error) {
@@ -101,7 +120,9 @@ function ItemNotes({ item, owner }) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
   const [offline, setOffline] = useState(false);
-  const [pending, setPending] = useState(queuedAnnotationCount);
+  const [queued, setQueued] = useState(() => queuedAnnotationMutations(owner));
+  const pending = queued.length;
+  const visible = useMemo(() => annotationsWithPending(itemId, annotations, queued), [itemId, annotations, queued]);
   const noteRef = useRef(null);
   const panelRef = useRef(null);
 
@@ -109,7 +130,7 @@ function ItemNotes({ item, owner }) {
     if (!itemId || annotationOwner() !== owner) return;
     setError(null);
     try {
-      const result = await DaylightAPI(`/api/v1/feed/annotations?itemId=${encodeURIComponent(itemId)}`, {}, 'GET', { signal });
+      const result = await DaylightAPI(`${annotationPath()}?itemId=${encodeURIComponent(itemId)}`, {}, 'GET', { signal });
       if (!isCurrent() || annotationOwner() !== owner) return;
       const next = result.annotations || [];
       setAnnotations(next);
@@ -133,6 +154,8 @@ function ItemNotes({ item, owner }) {
     const reader = {
       owner,
       itemId,
+      setQueued,
+      load,
       acknowledge(update) {
         setAnnotations(update);
         load();
@@ -144,40 +167,37 @@ function ItemNotes({ item, owner }) {
   }, [itemId, owner, load]);
 
   useEffect(() => {
-    let active = true;
-    const replay = async () => {
-      if (navigator.onLine === false || annotationOwner() !== owner) return;
-      const completed = await flushAnnotationMutations(DaylightAPI);
-      if (!active || annotationOwner() !== owner) return;
-      setPending(queuedAnnotationCount());
-      if (completed) load();
-    };
-    window.addEventListener('online', replay);
-    replay();
-    return () => { active = false; window.removeEventListener('online', replay); };
-  }, [load, owner]);
+    const onOnline = () => replay(owner);
+    window.addEventListener('online', onOnline);
+    onOnline();
+    return () => window.removeEventListener('online', onOnline);
+  }, [owner]);
 
-  const commit = useCallback((updater) => {
-    if (annotationOwner() !== owner) return;
-    setAnnotations(current => {
-      const next = updater(current);
-      cacheAnnotations(itemId, next, owner);
-      return next;
-    });
-  }, [itemId, owner]);
+  useEffect(() => subscribeToAnnotationQueue(owner, operations => {
+    const remaining = new Set(operations.map(operation => operation?.queueId));
+    const removed = queued.filter(operation => operation && !remaining.has(operation.queueId) && (!operation.itemId || operation.itemId === itemId));
+    if (removed.length) {
+      // Keep the accepted changes visible while the read reconciles this tab.
+      setAnnotations(current => annotationsWithPending(itemId, current, removed));
+    }
+    setQueued(operations);
+    load();
+  }), [owner, itemId, queued, load]);
 
-  const queue = useCallback((method, path, data) => {
+  const queue = useCallback((method, annotationId, data, retry) => {
     if (annotationOwner() !== owner) return false;
     try {
-      const count = queueAnnotationMutation({ queueId: offlineAnnotationId(), method, path, data, createdAt: new Date().toISOString() }, owner);
-      setPending(count);
-      setOffline(true);
+      const operations = queueAnnotationChange(owner, itemId, method, annotationId, data);
+      for (const reader of mountedReaders) {
+        if (reader.owner === owner) reader.setQueued(operations);
+      }
+      if (retry) replay(owner);
       return true;
     } catch {
       setError('The change could not be saved on this device. Try again when online.');
       return false;
     }
-  }, [owner]);
+  }, [owner, itemId]);
 
   const captureSelection = () => {
     const selection = window.getSelection?.();
@@ -198,70 +218,53 @@ function ItemNotes({ item, owner }) {
     noteRef.current?.focus();
   };
 
+  async function write(method, id, values) {
+    if (annotationOwner() !== owner) return false;
+    if (method !== 'POST' && hasPendingAnnotationWrite(id, owner)) return queue(method, id, values, true);
+
+    // A request can fail after the online event already drained an empty queue.
+    let reconnected = false;
+    const onOnline = () => { reconnected = annotationOwner() === owner; };
+    window.addEventListener('online', onOnline, { once: true });
+    try {
+      const path = annotationPath(method === 'POST' ? null : id);
+      const result = await DaylightAPI(path, values, method);
+      const update = method === 'DELETE'
+        ? current => current.filter(note => note.id !== id)
+        : current => upsertAnnotation(current, result.annotation);
+      acknowledge(owner, itemId, update);
+      return annotationOwner() === owner;
+    } catch (error) {
+      if (annotationOwner() !== owner) return false;
+      const failure = writeFailure[method];
+      log.warn(failure.event, { itemId, annotationId: id, error: error.message });
+      if (isNetworkFailure(error)) return queue(method, id, values, reconnected);
+      setError(failure.message);
+      return false;
+    } finally {
+      window.removeEventListener('online', onOnline);
+    }
+  }
+
   const create = async event => {
     event.preventDefault();
     if (annotationOwner() !== owner || (!note.trim() && !quote.trim())) return;
     setSaving(true);
     setError(null);
     const id = offlineAnnotationId();
-    const values = { id, itemId: item.id, note, quote, color, locator };
     try {
-      const result = await DaylightAPI('/api/v1/feed/annotations', values, 'POST');
-      acknowledge(owner, itemId, current => upsertAnnotation(current, result.annotation));
-      if (annotationOwner() !== owner) return;
-      setNote('');
-      setQuote('');
-      setLocator(null);
-    } catch (saveError) {
-      if (annotationOwner() !== owner) return;
-      log.warn('feed.annotations.create_failed', { itemId: item.id, error: saveError.message });
-      if (isNetworkFailure(saveError)) {
-        const now = new Date().toISOString();
-        if (!queue('POST', '/api/v1/feed/annotations', values)) return;
-        commit(current => [...current, { ...values, stateKey: item.stateKey, createdAt: now, updatedAt: now, syncStatus: 'pending' }]);
+      if (await write('POST', id, { id, itemId, note, quote, color, locator })) {
         setNote('');
         setQuote('');
         setLocator(null);
-      } else setError('The note was not saved. Try again.');
+      }
     } finally {
       setSaving(false);
     }
   };
 
-  const update = async (annotation, values) => {
-    if (annotationOwner() !== owner) return false;
-    try {
-      const result = await DaylightAPI(`/api/v1/feed/annotations/${encodeURIComponent(annotation.id)}`, values, 'PATCH');
-      acknowledge(owner, itemId, current => upsertAnnotation(current, result.annotation));
-      return annotationOwner() === owner;
-    } catch (updateError) {
-      if (annotationOwner() !== owner) return false;
-      log.warn('feed.annotations.update_failed', { annotationId: annotation.id, error: updateError.message });
-      if (isNetworkFailure(updateError)) {
-        const optimistic = { ...annotation, ...values, updatedAt: new Date().toISOString(), syncStatus: 'pending' };
-        if (!queue('PATCH', `/api/v1/feed/annotations/${encodeURIComponent(annotation.id)}`, values)) return false;
-        commit(current => current.map(value => value.id === annotation.id ? optimistic : value));
-        return true;
-      }
-      setError('The note was not updated.');
-      return false;
-    }
-  };
-
-  const remove = async annotation => {
-    if (annotationOwner() !== owner) return;
-    try {
-      await DaylightAPI(`/api/v1/feed/annotations/${encodeURIComponent(annotation.id)}`, {}, 'DELETE');
-      acknowledge(owner, itemId, current => current.filter(value => value.id !== annotation.id));
-    } catch (deleteError) {
-      if (annotationOwner() !== owner) return;
-      log.warn('feed.annotations.delete_failed', { annotationId: annotation.id, error: deleteError.message });
-      if (isNetworkFailure(deleteError)) {
-        if (!queue('DELETE', `/api/v1/feed/annotations/${encodeURIComponent(annotation.id)}`, {})) return;
-        commit(current => current.filter(value => value.id !== annotation.id));
-      } else setError('The note was not deleted.');
-    }
-  };
+  const update = (annotation, values) => write('PATCH', annotation.id, values);
+  const remove = annotation => write('DELETE', annotation.id, {});
 
   const reveal = annotation => {
     const scope = panelRef.current?.closest('.article-expanded, .detail-view') || panelRef.current?.parentElement;
@@ -278,7 +281,7 @@ function ItemNotes({ item, owner }) {
       {(offline || pending > 0) && <p className="feed-annotations__status" role="status">{pending > 0 ? `${pending} note change${pending === 1 ? '' : 's'} waiting to sync.` : 'Showing notes saved on this device.'}</p>}
       {loading ? <p className="feed-annotations__status" role="status">Loading notes…</p> : (
         <>
-          {annotations.map(annotation => <AnnotationRow key={annotation.id} annotation={annotation} onUpdate={update} onDelete={remove} onReveal={reveal} />)}
+          {visible.map(annotation => <AnnotationRow key={annotation.id} annotation={annotation} onUpdate={update} onDelete={remove} onReveal={reveal} />)}
           <form onSubmit={create} className="feed-annotations__form">
             {quote && <blockquote className={`feed-annotation-quote feed-annotation-quote--${color}`}>{quote}<button type="button" aria-label="Remove selected quote" onClick={() => { setQuote(''); setLocator(null); }}>×</button></blockquote>}
             <label>
@@ -315,7 +318,7 @@ function AnnotationRow({ annotation, onUpdate, onDelete, onReveal }) {
       <div className="feed-annotation__meta">
         <time dateTime={annotation.updatedAt}>{new Date(annotation.updatedAt).toLocaleString()}</time>
         {annotation.locator && <button type="button" onClick={() => onReveal(annotation)}>Find highlight</button>}
-        {editing ? <><button type="button" onClick={save} disabled={saving || (!note.trim() && !annotation.quote)}>{saving ? 'Saving…' : 'Save'}</button><button type="button" onClick={() => { setNote(annotation.note || ''); setEditing(false); }}>Cancel</button></> : <button type="button" onClick={() => setEditing(true)}>Edit</button>}
+        {editing ? <><button type="button" onClick={save} disabled={saving || (!note.trim() && !annotation.quote)}>{saving ? 'Saving…' : 'Save'}</button><button type="button" onClick={() => { setNote(annotation.note || ''); setEditing(false); }}>Cancel</button></> : <button type="button" onClick={() => { setNote(annotation.note || ''); setEditing(true); }}>Edit</button>}
         <button type="button" onClick={() => onDelete(annotation)}>Delete</button>
       </div>
     </article>

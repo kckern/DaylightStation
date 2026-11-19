@@ -158,6 +158,71 @@ test('Feed keeps an invalid link error after the previous item’s offline looku
   await expect(alert).toContainText(invalidLink);
 });
 
+test('Feed prunes a downloaded edition only within the account that started the save', async ({ page }) => {
+  const alice = 'fixture-alice';
+  const bob = 'fixture-bob';
+  const downloadedKey = `${alice}:${article.id}`;
+  await page.addInitScript(({ alice, bob, downloadedKey }) => {
+    const token = sub => `token.${btoa(JSON.stringify({ sub }))}.signature`;
+    localStorage.setItem('ds_token', token(alice));
+    const put = IDBObjectStore.prototype.put;
+    IDBObjectStore.prototype.put = function (row, ...args) {
+      const request = put.call(this, row, ...args);
+      if (row?.key === downloadedKey) {
+        request.addEventListener('success', () => localStorage.setItem('ds_token', token(bob)), { once: true });
+      }
+      return request;
+    };
+  }, { alice, bob, downloadedKey });
+  await page.route(url => url.pathname === historyPath(article.id), route => route.fulfill({ json: { item: article, sections } }));
+  await page.goto(scrollPath(article.id));
+  await page.evaluate(({ alice, bob }) => new Promise((resolve, reject) => {
+    const request = indexedDB.open('daylight-feed-offline-v1', 1);
+    request.onerror = () => reject(request.error);
+    request.onupgradeneeded = () => {
+      const store = request.result.createObjectStore('editions', { keyPath: 'key' });
+      store.createIndex('user', 'user', { unique: false });
+      store.createIndex('savedAt', 'savedAt', { unique: false });
+    };
+    request.onsuccess = () => {
+      const db = request.result;
+      const transaction = db.transaction('editions', 'readwrite');
+      transaction.oncomplete = () => { db.close(); resolve(); };
+      transaction.onabort = () => { db.close(); reject(transaction.error); };
+      const store = transaction.objectStore('editions');
+      for (const [user, total] of [[alice, 100], [bob, 101]]) {
+        for (let index = 0; index < total; index++) {
+          const id = `old-${index}`;
+          store.put({ key: `${user}:${id}`, user, item: { id }, detail: null, savedAt: index });
+        }
+      }
+    };
+  }), { alice, bob });
+
+  await expect(page.getByText(articleBody, { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Download', exact: true }).click();
+  await expect(page.getByRole('button', { name: 'Downloaded', exact: true })).toBeVisible();
+  const currentOwner = await page.evaluate(() => JSON.parse(atob(localStorage.getItem('ds_token').split('.')[1])).sub);
+  expect(currentOwner).toBe(bob);
+  const records = await page.evaluate(() => new Promise((resolve, reject) => {
+    const request = indexedDB.open('daylight-feed-offline-v1', 1);
+    request.onerror = () => reject(request.error);
+    request.onsuccess = () => {
+      const db = request.result;
+      const transaction = db.transaction('editions', 'readonly');
+      const read = transaction.objectStore('editions').getAll();
+      transaction.oncomplete = () => { db.close(); resolve(read.result); };
+      transaction.onabort = () => { db.close(); reject(transaction.error); };
+    };
+  }));
+  expect(records.filter(row => row.user === alice).map(row => row.key).sort()).toEqual(
+    [downloadedKey, ...Array.from({ length: 99 }, (_, index) => `${alice}:old-${index + 1}`)].sort()
+  );
+  expect(records.filter(row => row.user === bob).map(row => row.key).sort()).toEqual(
+    Array.from({ length: 101 }, (_, index) => `${bob}:old-${index}`).sort()
+  );
+});
+
 test('Feed opens a compact article ready for arrow navigation from its keyboard entry', async ({ page }) => {
   const next = { ...article, id: 'reddit:next-detail', title: 'Next Feed item' };
   await page.route('**/scroll/sessions', route => route.fulfill({
@@ -321,4 +386,29 @@ test('Feed restores Back focus when the next button disappears from a scrolled d
   await page.keyboard.press('Enter');
   await expect(page).toHaveURL(/\/feed\/scroll$/);
   await expect(opener).toBeFocused();
+});
+
+test('Feed detail retains a queued deletion when reopened offline', async ({ page }) => {
+  let deletion;
+  let offline = false;
+  await page.route(url => url.pathname === detailPath(article.id), route => route.fulfill({ json: { sections } }));
+  await page.route('**/api/v1/feed/annotations?**', route => offline ? route.abort('failed') : route.fulfill({ json: {
+    annotations: [{ id: 'old-note', itemId: article.id, note: 'Remove this note', updatedAt: '2026-07-01T12:00:00Z' }],
+  } }));
+  await page.route('**/api/v1/feed/annotations/old-note', route => { deletion = route; });
+  await page.goto('/feed');
+  const open = page.getByRole('button', { name: `Open: ${article.title}` });
+  await open.click();
+  await expect(page.getByText('Remove this note')).toBeVisible();
+  await page.getByRole('button', { name: 'Delete' }).click();
+  await expect.poll(() => deletion?.request().method()).toBe('DELETE');
+  await page.keyboard.press('Escape');
+  await expect(open).toBeVisible();
+  offline = true;
+  await page.evaluate(() => Object.defineProperty(navigator, 'onLine', { configurable: true, value: false }));
+  await deletion.abort('failed');
+  await open.click();
+  await expect(page.getByRole('textbox', { name: 'Add a note' })).toBeVisible();
+  await expect(page.getByText('1 note change waiting to sync.')).toBeVisible();
+  await expect(page.getByText('Remove this note')).toHaveCount(0);
 });

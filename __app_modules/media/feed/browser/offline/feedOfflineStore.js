@@ -52,6 +52,10 @@ function editionKey(user, id) {
   return `${user}:${id}`;
 }
 
+function newestFirst(rows = []) {
+  return rows.sort((a, b) => b.savedAt - a.savedAt);
+}
+
 export async function getOfflineEdition(id) {
   const user = userScope();
   const store = await objectStore('readonly');
@@ -61,22 +65,30 @@ export async function getOfflineEdition(id) {
 export async function listOfflineEditions() {
   const user = userScope();
   const store = await objectStore('readonly');
-  const rows = await requestResult(store.index('user').getAll(user));
-  return (rows || []).sort((a, b) => b.savedAt - a.savedAt);
+  return newestFirst(await requestResult(store.index('user').getAll(user)));
 }
 
 export async function saveOfflineEdition(item, detail = null) {
   if (!item?.id) throw new Error('Feed item id required');
   const user = userScope();
   const row = { key: editionKey(user, item.id), user, item, detail, savedAt: Date.now() };
-  const store = await objectStore('readwrite');
-  await requestResult(store.put(row));
-  const rows = await listOfflineEditions();
-  if (rows.length > MAX_EDITIONS) {
-    const trimStore = await objectStore('readwrite');
-    await Promise.all(rows.slice(MAX_EDITIONS).map(value => requestResult(trimStore.delete(value.key))));
-  }
-  return row;
+  const db = await openDb();
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction(STORE, 'readwrite');
+    transaction.oncomplete = () => resolve(row);
+    transaction.onabort = () => reject(transaction.error ?? new Error('Offline edition save aborted'));
+
+    const store = transaction.objectStore(STORE);
+    const editions = store.index('user');
+    store.put(row);
+    const request = editions.getAll(user);
+    request.onsuccess = () => {
+      // Queue deletes while the native transaction is active.
+      for (const edition of newestFirst(request.result).slice(MAX_EDITIONS)) {
+        store.delete(edition.key);
+      }
+    };
+  });
 }
 
 export async function removeOfflineEdition(id) {

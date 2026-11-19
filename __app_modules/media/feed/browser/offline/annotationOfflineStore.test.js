@@ -30,6 +30,20 @@ describe('annotationOfflineStore', () => {
     expect(queuedAnnotationCount()).toBe(1);
   });
 
+  test('keeps acknowledged edits and deletes cached when replay runs from another item', async () => {
+    const first = { id: 'first', itemId: 'story', note: 'Original' };
+    const second = { id: 'second', itemId: 'story', note: 'Remove me' };
+    cacheAnnotations('story', [first, second]);
+    cacheAnnotations('other', [{ id: 'other', itemId: 'other' }]);
+    queueAnnotationMutation({ queueId: 'patch', method: 'PATCH', path: '/api/v1/feed/annotations/first', data: { note: 'Revised' } });
+    queueAnnotationMutation({ queueId: 'delete', method: 'DELETE', path: '/api/v1/feed/annotations/second' });
+    const saved = { ...first, note: 'Server revision' };
+    const send = vi.fn().mockResolvedValueOnce({ annotation: saved }).mockResolvedValueOnce({ removed: true });
+    expect(await flushAnnotationMutations(send)).toBe(2);
+    expect(cachedAnnotations('story')).toEqual([saved]);
+    expect(cachedAnnotations('other')).toEqual([{ id: 'other', itemId: 'other' }]);
+  });
+
   test('coalesces simultaneous replay attempts from multiple open articles', async () => {
     queueAnnotationMutation({ queueId: 'one', method: 'POST', path: '/annotations', data: { note: 'Once' } });
     let release;
@@ -57,7 +71,8 @@ describe('annotationOfflineStore', () => {
 
   test('retries local cleanup without resending an acknowledged create', async () => {
     queueAnnotationMutation({ queueId: 'cleanup', method: 'POST', path: '/notes' });
-    const send = vi.fn().mockResolvedValue({});
+    const saved = { id: 'accepted', itemId: 'story', note: 'Acknowledged note' };
+    const send = vi.fn().mockResolvedValue({ annotation: saved });
     const write = vi.spyOn(localStorage, 'setItem').mockImplementation(() => { throw new Error('quota'); });
     try {
       expect(await flushAnnotationMutations(send)).toBe(0);
@@ -65,6 +80,7 @@ describe('annotationOfflineStore', () => {
     } finally { write.mockRestore(); }
     expect(await flushAnnotationMutations(send)).toBe(1);
     expect(send).toHaveBeenCalledTimes(1);
+    expect(cachedAnnotations('story')).toEqual([saved]);
   });
 
   test('rejects a full or unreadable queue without replacing its contents', () => {
@@ -74,6 +90,26 @@ describe('annotationOfflineStore', () => {
       expect(() => queueAnnotationMutation({ queueId: 'new' })).toThrow();
       expect(localStorage.getItem(key)).toBe(raw);
     }
+  });
+
+  test('retains the canonical acknowledgement until the submitting account returns', async () => {
+    const switchTo = owner => localStorage.setItem('ds_token', 'header.' + btoa(JSON.stringify({ sub: owner })) + '.signature');
+    switchTo('first');
+    const prior = { id: 'note', itemId: 'story', note: 'Original' };
+    const saved = { ...prior, note: 'Server revision' };
+    cacheAnnotations('story', [prior]);
+    queueAnnotationMutation({ queueId: 'held', method: 'PATCH', path: '/api/v1/feed/annotations/note', data: { note: 'Edit' } });
+    let finish;
+    const send = vi.fn(() => new Promise(resolve => { finish = resolve; }));
+    const replay = flushAnnotationMutations(send);
+    switchTo('second');
+    finish({ annotation: saved });
+    expect(await replay).toBe(0);
+    expect(cachedAnnotations('story')).toEqual([]);
+    switchTo('first');
+    expect(await flushAnnotationMutations(send)).toBe(1);
+    expect(send).toHaveBeenCalledOnce();
+    expect(cachedAnnotations('story')).toEqual([saved]);
   });
 
   test('does not write a completed replay into a different account queue', async () => {

@@ -264,3 +264,82 @@ test('Reader keeps a retired account note acknowledgement out of the replacement
   ]);
   await switcher.close();
 });
+
+test('Reader shows a late offline save in the reopened article and replays it once', async ({ page }) => {
+  let write;
+  let sent = 0;
+  let saved;
+  await page.route('**/api/v1/feed/reader/stream?**', route => route.fulfill({ json: {
+    items: [article('notes', 'First story'), article('other', 'Other story')], exhausted: true,
+  } }));
+  await page.route('**/api/v1/feed/annotations?**', route => {
+    const itemId = new URL(route.request().url()).searchParams.get('itemId');
+    return route.fulfill({ json: { annotations: saved && itemId === 'notes' ? [saved] : [] } });
+  });
+  await page.route('**/api/v1/feed/annotations', route => {
+    if (++sent === 1) { write = route; return; }
+    saved = { ...route.request().postDataJSON(), note: 'Reconciled note' };
+    return route.fulfill({ json: { annotation: saved } });
+  });
+  await page.goto('/feed/reader');
+  const first = page.getByRole('button', { name: /First story/ });
+  await first.click();
+  await page.getByRole('button', { name: /Other story/ }).click();
+  const story = page.locator('#article-notes');
+  const other = page.locator('#article-other');
+  const draft = story.getByRole('textbox', { name: 'Add a note' });
+  await draft.fill('Pending note');
+  await story.getByRole('button', { name: 'Save note' }).click();
+  await expect.poll(() => Boolean(write)).toBe(true);
+  await first.click();
+  await expect(draft).toHaveCount(0);
+  await first.click();
+  await expect(draft).toBeVisible();
+  await write.abort('failed');
+  await expect(story.getByText('Pending note', { exact: true })).toBeVisible();
+  await expect(story.getByText('1 note change waiting to sync.')).toBeVisible();
+  await expect(other.getByText('Pending note', { exact: true })).toHaveCount(0);
+  await page.evaluate(() => window.dispatchEvent(new Event('online')));
+  await expect(story.getByText('Reconciled note', { exact: true })).toBeVisible();
+  await expect(story.getByText('1 note change waiting to sync.')).toHaveCount(0);
+  expect(sent).toBe(2);
+});
+
+test('Reader observes a note queued and acknowledged in another tab', async ({ page, context }) => {
+  const original = { id: 'note', itemId: 'story', note: 'Original note' };
+  const updated = { ...original, note: 'Server revision' };
+  let reads = 0;
+  const writes = [];
+  await page.route('**/api/v1/feed/reader/stream?**', route => route.fulfill({ json: {
+    items: [article('story', 'Shared story')], exhausted: true,
+  } }));
+  await page.route('**/api/v1/feed/annotations?**', route => {
+    reads++;
+    return reads === 1 ? route.fulfill({ json: { annotations: [original] } }) : route.abort('failed');
+  });
+  await page.route('**/api/v1/feed/annotations/note', route => {
+    writes.push(route.request().method());
+    return route.fulfill({ json: { annotation: updated } });
+  });
+  await page.goto('/feed/reader');
+  await page.getByRole('button', { name: /Shared story/ }).click();
+  await expect(page.getByText(original.note, { exact: true })).toBeVisible();
+  const writer = await context.newPage();
+  await writer.route('**/notes-writer', route => route.fulfill({ contentType: 'text/html', body: '<title>Notes writer</title>' }));
+  await writer.goto('/notes-writer');
+  const operation = {
+    queueId: 'pending-edit', method: 'PATCH', path: '/api/v1/feed/annotations/note',
+    data: { note: 'Pending revision' }, createdAt: '2026-07-01T12:00:00Z',
+  };
+  await writer.evaluate(row => localStorage.setItem('feed:annotation-queue:household', JSON.stringify([row])), operation);
+  await expect(page.getByText('Pending revision', { exact: true })).toBeVisible();
+  await expect(page.getByText('1 note change waiting to sync.')).toBeVisible();
+  await writer.evaluate(note => {
+    localStorage.setItem('feed:annotation-cache:household', JSON.stringify([note]));
+    localStorage.setItem('feed:annotation-queue:household', '[]');
+  }, updated);
+  await expect(page.getByText(updated.note, { exact: true })).toBeVisible();
+  await expect(page.getByText('1 note change waiting to sync.')).toHaveCount(0);
+  expect(writes).toEqual([]);
+  await writer.close();
+});

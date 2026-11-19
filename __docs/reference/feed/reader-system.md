@@ -173,7 +173,7 @@ The shell's `Aa` menu persists theme, text size, line spacing, reading width, de
 
 Expanded articles expose notes and quoted highlights. Capturing a selection stores a portable `TextQuoteSelector` locator containing exact text plus short prefix/suffix context. Notes are account-scoped and included in Feed export/import.
 
-The Download action stores the normalized item and currently available detail in user-scoped IndexedDB. The `?view=offline` Reader view lists up to 100 device-local editions, and Scroll detail can fall back to a downloaded edition when its API request fails. Cached annotations remain readable; note creation/edit/delete and read/save/archive actions queue in user-scoped local storage and replay in order when connectivity returns. Remote media availability still depends on the original resource.
+The Download action stores the normalized item and currently available detail in user-scoped IndexedDB. The `?view=offline` Reader view lists up to 100 device-local editions, and Scroll detail can fall back to a downloaded edition when its API request fails. Cached annotations remain readable; note creation/edit/delete and read/save/archive actions queue in user-scoped local storage and replay in order when connectivity returns. Reader and Scroll detail show pending note changes over the latest server or cached notes, including changes queued after an article closed. Open tabs refresh their view when another tab changes the note queue. A later edit or deletion of a pending note follows the earlier write during replay. Remote media availability still depends on the original resource.
 
 ---
 
