@@ -1,5 +1,6 @@
 import { Select } from '@/lib/ui/Select.jsx';
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { useRefreshableRead } from '@/lib/hooks/useRefreshableRead.js';
 import { DaylightAPI } from "../../../../../frontend/src/lib/api.mjs";
 import getLogger from "../../../../../frontend/src/lib/logging/Logger.js";
 import {
@@ -14,6 +15,20 @@ import {
 import "./AnnotationPanel.scss";
 
 const log = getLogger().child({ app: 'feed', module: 'annotations' });
+const mountedReaders = new Set();
+
+function acknowledge(owner, itemId, update) {
+  if (annotationOwner() !== owner) return;
+  cacheAnnotations(itemId, update(cachedAnnotations(itemId, owner)), owner);
+  for (const reader of mountedReaders) {
+    if (reader.owner === owner && reader.itemId === itemId) reader.acknowledge(update);
+  }
+}
+
+function upsertAnnotation(annotations, annotation) {
+  if (!annotations.some(value => value.id === annotation.id)) return [...annotations, annotation];
+  return annotations.map(value => value.id === annotation.id ? annotation : value);
+}
 
 function isNetworkFailure(error) {
   return navigator.onLine === false || error?.name === 'TypeError' || /failed to fetch|network/i.test(error?.message || '');
@@ -71,6 +86,12 @@ function revealLocator(locator, scope) {
 }
 
 export default function AnnotationPanel({ item }) {
+  const owner = annotationOwner();
+  return <ItemNotes key={JSON.stringify([owner, item.id])} item={item} owner={owner} />;
+}
+
+function ItemNotes({ item, owner }) {
+  const itemId = item.id;
   const [annotations, setAnnotations] = useState([]);
   const [note, setNote] = useState('');
   const [quote, setQuote] = useState('');
@@ -84,56 +105,69 @@ export default function AnnotationPanel({ item }) {
   const noteRef = useRef(null);
   const panelRef = useRef(null);
 
-  const load = useCallback(async () => {
-    if (!item?.id) return;
-    const owner = annotationOwner();
-    setLoading(true);
+  const read = useCallback(async (isCurrent, signal) => {
+    if (!itemId || annotationOwner() !== owner) return;
     setError(null);
     try {
-      const result = await DaylightAPI(`/api/v1/feed/annotations?itemId=${encodeURIComponent(item.id)}`);
-      if (annotationOwner() !== owner) return;
+      const result = await DaylightAPI(`/api/v1/feed/annotations?itemId=${encodeURIComponent(itemId)}`, {}, 'GET', { signal });
+      if (!isCurrent() || annotationOwner() !== owner) return;
       const next = result.annotations || [];
       setAnnotations(next);
-      cacheAnnotations(item.id, next, owner);
+      cacheAnnotations(itemId, next, owner);
       setOffline(false);
     } catch (loadError) {
-      log.warn('feed.annotations.load_failed', { itemId: item.id, error: loadError.message });
-      const cached = cachedAnnotations(item.id);
+      if (!isCurrent() || annotationOwner() !== owner) return;
+      log.warn('feed.annotations.load_failed', { itemId, error: loadError.message });
+      const cached = cachedAnnotations(itemId, owner);
       if (cached.length || isNetworkFailure(loadError)) {
         setAnnotations(cached);
         setOffline(true);
       } else setError('Notes could not be loaded.');
     } finally {
-      setLoading(false);
+      if (isCurrent() && annotationOwner() === owner) setLoading(false);
     }
-  }, [item?.id]);
+  }, [itemId, owner]);
+  const { reload: load } = useRefreshableRead(read);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => {
+    const reader = {
+      owner,
+      itemId,
+      acknowledge(update) {
+        setAnnotations(update);
+        load();
+      },
+    };
+    mountedReaders.add(reader);
+    load();
+    return () => { mountedReaders.delete(reader); };
+  }, [itemId, owner, load]);
 
   useEffect(() => {
     let active = true;
     const replay = async () => {
-      if (navigator.onLine === false) return;
+      if (navigator.onLine === false || annotationOwner() !== owner) return;
       const completed = await flushAnnotationMutations(DaylightAPI);
-      if (!active) return;
+      if (!active || annotationOwner() !== owner) return;
       setPending(queuedAnnotationCount());
       if (completed) load();
     };
     window.addEventListener('online', replay);
     replay();
     return () => { active = false; window.removeEventListener('online', replay); };
-  }, [load]);
+  }, [load, owner]);
 
-  const commit = useCallback((owner, updater) => {
+  const commit = useCallback((updater) => {
     if (annotationOwner() !== owner) return;
     setAnnotations(current => {
-      const next = typeof updater === 'function' ? updater(current) : updater;
-      cacheAnnotations(item.id, next, owner);
+      const next = updater(current);
+      cacheAnnotations(itemId, next, owner);
       return next;
     });
-  }, [item.id]);
+  }, [itemId, owner]);
 
-  const queue = useCallback((owner, method, path, data) => {
+  const queue = useCallback((method, path, data) => {
+    if (annotationOwner() !== owner) return false;
     try {
       const count = queueAnnotationMutation({ queueId: offlineAnnotationId(), method, path, data, createdAt: new Date().toISOString() }, owner);
       setPending(count);
@@ -143,7 +177,7 @@ export default function AnnotationPanel({ item }) {
       setError('The change could not be saved on this device. Try again when online.');
       return false;
     }
-  }, []);
+  }, [owner]);
 
   const captureSelection = () => {
     const selection = window.getSelection?.();
@@ -166,24 +200,25 @@ export default function AnnotationPanel({ item }) {
 
   const create = async event => {
     event.preventDefault();
-    if (!note.trim() && !quote.trim()) return;
+    if (annotationOwner() !== owner || (!note.trim() && !quote.trim())) return;
     setSaving(true);
     setError(null);
-    const owner = annotationOwner();
     const id = offlineAnnotationId();
     const values = { id, itemId: item.id, note, quote, color, locator };
     try {
       const result = await DaylightAPI('/api/v1/feed/annotations', values, 'POST');
-      commit(owner, current => [...current, result.annotation]);
+      acknowledge(owner, itemId, current => upsertAnnotation(current, result.annotation));
+      if (annotationOwner() !== owner) return;
       setNote('');
       setQuote('');
       setLocator(null);
     } catch (saveError) {
+      if (annotationOwner() !== owner) return;
       log.warn('feed.annotations.create_failed', { itemId: item.id, error: saveError.message });
       if (isNetworkFailure(saveError)) {
         const now = new Date().toISOString();
-        if (!queue(owner, 'POST', '/api/v1/feed/annotations', values)) return;
-        commit(owner, current => [...current, { ...values, stateKey: item.stateKey, createdAt: now, updatedAt: now, syncStatus: 'pending' }]);
+        if (!queue('POST', '/api/v1/feed/annotations', values)) return;
+        commit(current => [...current, { ...values, stateKey: item.stateKey, createdAt: now, updatedAt: now, syncStatus: 'pending' }]);
         setNote('');
         setQuote('');
         setLocator(null);
@@ -194,17 +229,18 @@ export default function AnnotationPanel({ item }) {
   };
 
   const update = async (annotation, values) => {
-    const owner = annotationOwner();
+    if (annotationOwner() !== owner) return false;
     try {
       const result = await DaylightAPI(`/api/v1/feed/annotations/${encodeURIComponent(annotation.id)}`, values, 'PATCH');
-      commit(owner, current => current.map(value => value.id === annotation.id ? result.annotation : value));
-      return true;
+      acknowledge(owner, itemId, current => upsertAnnotation(current, result.annotation));
+      return annotationOwner() === owner;
     } catch (updateError) {
+      if (annotationOwner() !== owner) return false;
       log.warn('feed.annotations.update_failed', { annotationId: annotation.id, error: updateError.message });
       if (isNetworkFailure(updateError)) {
         const optimistic = { ...annotation, ...values, updatedAt: new Date().toISOString(), syncStatus: 'pending' };
-        if (!queue(owner, 'PATCH', `/api/v1/feed/annotations/${encodeURIComponent(annotation.id)}`, values)) return false;
-        commit(owner, current => current.map(value => value.id === annotation.id ? optimistic : value));
+        if (!queue('PATCH', `/api/v1/feed/annotations/${encodeURIComponent(annotation.id)}`, values)) return false;
+        commit(current => current.map(value => value.id === annotation.id ? optimistic : value));
         return true;
       }
       setError('The note was not updated.');
@@ -213,15 +249,16 @@ export default function AnnotationPanel({ item }) {
   };
 
   const remove = async annotation => {
-    const owner = annotationOwner();
+    if (annotationOwner() !== owner) return;
     try {
       await DaylightAPI(`/api/v1/feed/annotations/${encodeURIComponent(annotation.id)}`, {}, 'DELETE');
-      commit(owner, current => current.filter(value => value.id !== annotation.id));
+      acknowledge(owner, itemId, current => current.filter(value => value.id !== annotation.id));
     } catch (deleteError) {
+      if (annotationOwner() !== owner) return;
       log.warn('feed.annotations.delete_failed', { annotationId: annotation.id, error: deleteError.message });
       if (isNetworkFailure(deleteError)) {
-        if (!queue(owner, 'DELETE', `/api/v1/feed/annotations/${encodeURIComponent(annotation.id)}`, {})) return;
-        commit(owner, current => current.filter(value => value.id !== annotation.id));
+        if (!queue('DELETE', `/api/v1/feed/annotations/${encodeURIComponent(annotation.id)}`, {})) return;
+        commit(current => current.filter(value => value.id !== annotation.id));
       } else setError('The note was not deleted.');
     }
   };

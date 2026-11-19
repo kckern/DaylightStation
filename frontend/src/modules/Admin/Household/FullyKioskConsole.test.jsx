@@ -9,7 +9,7 @@ import {
   within,
 } from '@testing-library/react';
 import { MantineProvider } from '@mantine/core';
-import { MemoryRouter, Route, Routes } from 'react-router-dom';
+import { Link, MemoryRouter, Route, Routes } from 'react-router-dom';
 
 const api = vi.hoisted(() => ({
   status: vi.fn(),
@@ -77,10 +77,11 @@ function screenshotResult(label = 'png') {
   };
 }
 
-function renderConsole() {
+function renderConsole(otherDeviceLink = false) {
   return render(
     <MantineProvider>
       <MemoryRouter initialEntries={['/admin/household/devices/tablet/fully-kiosk']}>
+        {otherDeviceLink && <Link to="/admin/household/devices/office/fully-kiosk">Office console</Link>}
         <Routes>
           <Route path="/admin/household/devices/:deviceId/fully-kiosk" element={<FullyKioskConsole />} />
         </Routes>
@@ -279,6 +280,43 @@ describe('FullyKioskConsole', () => {
     expect(await screen.findByText('Screenshot timed out')).toBeTruthy();
     expect(screen.queryByAltText('Current screen on Kitchen tablet')).toBeNull();
     expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:test-shot-2');
+  });
+
+  it('captures the new device while a screenshot for the previous device is still outstanding', async () => {
+    const old = deferred();
+    api.screenshot.mockImplementationOnce(() => old.promise);
+    api.status.mockImplementation(async id => ({
+      ...statusFixture, device: { id, name: id === 'office' ? 'Office tablet' : 'Kitchen tablet' },
+    }));
+    renderConsole(true);
+    await waitFor(() => expect(api.screenshot).toHaveBeenCalledTimes(1));
+    const signal = api.screenshot.mock.calls[0][1].signal;
+    fireEvent.click(screen.getByRole('link', { name: 'Office console' }));
+    await waitFor(() => expect(api.screenshot).toHaveBeenCalledWith('office', { signal: expect.anything() }));
+    expect(signal.aborted).toBe(true);
+    const officeShot = await screen.findByAltText('Current screen on Office tablet');
+    const currentUrl = officeShot.src;
+    await act(async () => old.resolve(screenshotResult('tablet')));
+    expect(officeShot.src).toBe(currentUrl);
+    expect(URL.createObjectURL).toHaveBeenCalledTimes(1);
+  });
+
+  it('replaces an outstanding screenshot on foreground recovery and ignores its late failure', async () => {
+    const old = deferred();
+    api.screenshot.mockImplementationOnce(() => old.promise);
+    renderConsole();
+    await waitFor(() => expect(api.screenshot).toHaveBeenCalledTimes(1));
+    const signal = api.screenshot.mock.calls[0][1].signal;
+    fireEvent.click(screen.getByRole('switch', { name: 'Every 5s' }));
+    const visibility = vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('hidden');
+    fireEvent(document, new Event('visibilitychange'));
+    visibility.mockReturnValue('visible');
+    fireEvent(document, new Event('visibilitychange'));
+    expect(await ready()).toHaveAttribute('src', 'blob:test-shot-1');
+    expect(signal.aborted).toBe(true);
+    await act(async () => old.reject(new Error('Expired screenshot')));
+    expect(screen.queryByText('Expired screenshot')).toBeNull();
+    expect(screen.getByAltText('Current screen on Kitchen tablet')).toHaveAttribute('src', 'blob:test-shot-1');
   });
 
   it('runs 5-second screenshot refresh without overlap and aborts/cleans up on unmount', async () => {

@@ -163,3 +163,104 @@ test('Reader retains an unread checkpoint on early departure and warm rows durin
   await expect(inbox.getByRole('button', { name: 'Refresh' })).toBeEnabled();
   expect(await inbox.evaluate(el => el.scrollTop)).toBe(1500);
 });
+
+test('Reader refreshes the reopened article when a pending note saves', async ({ page }) => {
+  const reads = [];
+  let save;
+  let notes = [];
+  let failNotesRead = false;
+  await page.route('**/api/v1/feed/reader/stream?**', route => route.fulfill({ json: {
+    items: [article('note-story', 'Article with a pending note'), article('other-story', 'Another article')],
+    exhausted: true,
+  } }));
+  await page.route('**/api/v1/feed/annotations?**', route => {
+    const itemId = new URL(route.request().url()).searchParams.get('itemId');
+    reads.push(itemId);
+    if (failNotesRead) return route.abort('failed');
+    return route.fulfill({ json: { annotations: itemId === 'note-story' ? notes : [] } });
+  });
+  await page.route('**/api/v1/feed/annotations', route => { save = route; });
+
+  await page.goto('/feed/reader');
+  const articleHeader = page.getByRole('button', { name: /Article with a pending note/ });
+  const otherHeader = page.getByRole('button', { name: /Another article/ });
+  await articleHeader.click();
+  await otherHeader.click();
+  const story = page.locator('[id="article-note-story"]');
+  const other = page.locator('[id="article-other-story"]');
+  const note = story.getByRole('textbox', { name: 'Add a note' });
+  await expect(other.getByRole('textbox', { name: 'Add a note' })).toBeVisible();
+  await note.fill('Remember this story');
+  await story.getByRole('button', { name: 'Save note' }).click();
+  await expect.poll(() => save?.request().method()).toBe('POST');
+  await articleHeader.click();
+  await expect(note).toHaveCount(0);
+  await articleHeader.click();
+  await expect(note).toBeVisible();
+  expect(reads.filter(id => id === 'note-story')).toHaveLength(2);
+
+  const saved = { ...save.request().postDataJSON(), createdAt: '2026-07-01T12:30:00Z' };
+  expect(saved.itemId).toBe('note-story');
+  notes = [saved];
+  await save.fulfill({ json: { annotation: saved } });
+
+  await expect(story.getByText('Remember this story', { exact: true })).toBeVisible();
+  await expect.poll(() => reads.filter(id => id === 'note-story').length).toBe(3);
+  await expect(other.getByText('Remember this story', { exact: true })).toHaveCount(0);
+  expect(reads.filter(id => id === 'other-story')).toHaveLength(1);
+
+  failNotesRead = true;
+  await articleHeader.click();
+  await articleHeader.click();
+  await expect(story.getByText('Showing notes saved on this device.')).toBeVisible();
+  await expect(story.getByText('Remember this story', { exact: true })).toBeVisible();
+});
+
+test('Reader keeps a retired account note acknowledgement out of the replacement account', async ({ page, context }) => {
+  const token = owner => 'header.' + Buffer.from(JSON.stringify({ sub: owner })).toString('base64url') + '.signature';
+  const ownerOf = route => route.request().headers().authorization === 'Bearer ' + token('bob') ? 'bob' : 'amy';
+  let save;
+  let bobReads = 0;
+  let bobRead;
+  await page.addInitScript(amy => { if (!localStorage.getItem('ds_token')) localStorage.setItem('ds_token', amy); }, token('amy'));
+  await page.route('**/api/v1/feed/workspace', route => route.fulfill({ json: { preferencesStored: true } }));
+  await page.route('**/api/v1/feed/reader/stream?**', route => route.fulfill({ json: {
+    items: [article('shared-note-story', ownerOf(route) + ' shared article')], exhausted: true,
+  } }));
+  await page.route('**/api/v1/feed/annotations?**', route => {
+    if (ownerOf(route) === 'amy') return route.fulfill({ json: { annotations: [] } });
+    bobReads++;
+    bobRead = route;
+  });
+  await page.route('**/api/v1/feed/annotations', route => { save = route; });
+
+  await page.goto('/feed/reader');
+  await page.getByRole('button', { name: /amy shared article/ }).click();
+  await page.getByRole('textbox', { name: 'Add a note' }).fill('Amy private note');
+  await page.getByRole('button', { name: 'Save note' }).click();
+  await expect.poll(() => save && ownerOf(save)).toBe('amy');
+
+  await context.route('**/note-test-tab', route => route.fulfill({ contentType: 'text/html', body: '<title>Account switch</title>' }));
+  const switcher = await context.newPage();
+  await switcher.goto('/note-test-tab');
+  await switcher.evaluate(bob => {
+    localStorage.setItem('feed:annotation-cache:bob', JSON.stringify([
+      { id: 'bob-cached', itemId: 'shared-note-story', note: 'Bob cached note' },
+    ]));
+    localStorage.setItem('ds_token', bob);
+  }, token('bob'));
+  await page.getByRole('button', { name: /bob shared article/ }).click();
+  await expect.poll(() => bobReads).toBe(1);
+
+  const acknowledgement = page.waitForEvent('requestfinished', request => request === save.request());
+  await save.fulfill({ json: { annotation: save.request().postDataJSON() } });
+  await acknowledgement;
+  await bobRead.abort('failed');
+  await expect(page.getByText('Bob cached note', { exact: true })).toBeVisible();
+  await expect(page.getByText('Amy private note', { exact: true })).toHaveCount(0);
+  expect(bobReads).toBe(1);
+  expect(await switcher.evaluate(() => JSON.parse(localStorage.getItem('feed:annotation-cache:bob')))).toEqual([
+    { id: 'bob-cached', itemId: 'shared-note-story', note: 'Bob cached note' },
+  ]);
+  await switcher.close();
+});

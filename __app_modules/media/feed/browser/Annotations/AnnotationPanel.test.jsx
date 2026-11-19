@@ -9,11 +9,23 @@ describe('AnnotationPanel', () => {
   beforeEach(() => {
     localStorage.clear();
     Object.defineProperty(navigator, 'onLine', { configurable: true, value: true });
-    apiMock.mockReset().mockImplementation((path, data, method) => {
-      if (method === 'POST') return Promise.resolve({ annotation: { id: 'note-2', itemId: 'one', note: data.note, quote: data.quote, color: data.color, locator: data.locator, updatedAt: '2026-08-24T12:00:00.000Z' } });
-      if (method === 'PATCH') return Promise.resolve({ annotation: { id: 'note-1', itemId: 'one', note: data.note, quote: 'Quoted', color: 'yellow', updatedAt: '2026-08-24T13:00:00.000Z' } });
-      if (method === 'DELETE') return Promise.resolve({ removed: true });
-      return Promise.resolve({ annotations: [{ id: 'note-1', itemId: 'one', note: 'Remember', quote: 'Quoted', color: 'yellow', updatedAt: '2026-08-24T12:00:00.000Z' }] });
+    const notes = [{ id: 'note-1', itemId: 'one', note: 'Remember', quote: 'Quoted', color: 'yellow', updatedAt: '2026-08-24T12:00:00.000Z' }];
+    apiMock.mockReset().mockImplementation(async (path, data, method) => {
+      if (method === 'POST') {
+        const annotation = { ...data, id: 'note-2', updatedAt: '2026-08-24T12:00:00.000Z' };
+        notes.push(annotation);
+        return { annotation };
+      }
+      if (method === 'PATCH') {
+        notes[0] = { ...notes[0], ...data, updatedAt: '2026-08-24T13:00:00.000Z' };
+        return { annotation: notes[0] };
+      }
+      if (method === 'DELETE') {
+        const index = notes.findIndex(note => path.endsWith('/' + note.id));
+        notes.splice(index, 1);
+        return { removed: true };
+      }
+      return { annotations: [...notes] };
     });
   });
 

@@ -8,12 +8,11 @@
 // schema and is deliberately not on this form until it would do something.
 
 import { useState } from 'react';
-import { LoadingState, ErrorState, EmptyState, Sheet, Select } from '@/lib/ui';
+import { LoadingState, ErrorState, EmptyState, Sheet, Select, useSheetSubmission } from '@/lib/ui';
 import { AutoSheetActions } from './AutoSheetActions.jsx';
 import { formatDay, formatMoney, formatDistance } from "./format.js";
 import { autoApi } from "./useAutoApi.js";
 import autoLog from "./autoLog.js";
-import { useAutoSheetSave } from './useAutoSheetSave.js';
 
 /**
  * Fallback vocabulary, used only if the config-driven list hasn't arrived.
@@ -116,7 +115,7 @@ function ServiceSheet({ vehicleId, types, onClose }) {
     intervalKm: null,
     notes: '',
   });
-  const { submit, saving, failure } = useAutoSheetSave(onClose, error => {
+  const { submit, saving, failure } = useSheetSubmission(onClose, error => {
     autoLog.warn('service.log_failed', { error: error?.message });
   });
 

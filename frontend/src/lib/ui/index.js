@@ -3,6 +3,7 @@ export { AppFrame, PlaybackFrame, useAppMainRef } from './AppFrame.jsx';
 export { AppThemeProvider } from './AppThemeProvider.jsx';
 export { AppChrome } from './AppChrome.jsx';
 export { Sheet } from './Sheet.jsx';
+export { useSheetSubmission } from './useSheetSubmission.js';
 export { DismissStackProvider } from './dismiss/DismissStackProvider.jsx';
 export { useDismissLayer } from './dismiss/useDismissLayer.js';
 export { LoadingState, ErrorState, EmptyState, StateMessage } from './states.jsx';

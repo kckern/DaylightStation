@@ -9,13 +9,12 @@
 // beside it is worth tapping.
 
 import { useState } from 'react';
-import { LoadingState, ErrorState, EmptyState, Sheet, Select } from '@/lib/ui';
+import { LoadingState, ErrorState, EmptyState, Sheet, Select, useSheetSubmission } from '@/lib/ui';
 import { AutoSheetActions } from './AutoSheetActions.jsx';
 import { formatDistance, formatDuration, formatDay, formatTime, formatSpeed } from "./format.js";
 import { autoApi } from "./useAutoApi.js";
 import FuelSheet from "./FuelSheet.jsx";
 import autoLog from "./autoLog.js";
-import { useAutoSheetSave } from './useAutoSheetSave.js';
 
 const PLACE_KINDS = ['home', 'school', 'church', 'work', 'fuel', 'store', 'service', 'other'];
 
@@ -209,7 +208,7 @@ function JourneyRow({ journey, onName, onLogFuel, fuelPrompt }) {
 function NamePlaceSheet({ point, onClose }) {
   const [label, setLabel] = useState('');
   const [kind, setKind] = useState('other');
-  const { submit, saving, failure } = useAutoSheetSave(onClose, error => {
+  const { submit, saving, failure } = useSheetSubmission(onClose, error => {
     autoLog.warn('place.name_failed', { error: error?.message });
   });
   const valid = Boolean(label.trim());

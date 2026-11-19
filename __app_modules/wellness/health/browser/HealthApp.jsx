@@ -96,7 +96,9 @@ const HealthShell = ({ userId }) => {
   useLayoutShiftLog({ route: location.pathname, tab: activeTab });
   const mainRef = useRef(null);
   const [readyPath, setReadyPath] = useState(null);
-  useViewScroll({ mainRef, viewKey: activeTab, owner: userId, ready: readyPath === location.pathname });
+  // Settings and Auditor share a navigation area but scroll independently.
+  const viewPath = location.pathname.replace(/\/+$/, '');
+  useViewScroll({ mainRef, viewKey: viewPath, owner: userId, ready: readyPath === viewPath });
   const visitedToday = useRef(false);
   if (activeTab === 'today') visitedToday.current = true;
   return (
@@ -130,7 +132,7 @@ const HealthShell = ({ userId }) => {
               <Route path="coach" element={<CoachChat userId={userId} conversation={conversation} style={{ height: '100%' }} />} />
               {/* Unknown subpath — render Today rather than 404ing the tab shell. */}
               <Route path="*" element={<Navigate to="/health" replace />} />
-            </Routes><RouteReady route={location.pathname} onReady={setReadyPath} /></Suspense>
+            </Routes><RouteReady route={viewPath} onReady={setReadyPath} /></Suspense>
           </AppChrome>
           <ChatOverlay open={overlayOpen} onClose={() => setOverlayOpen(false)} userId={userId}>
             <CoachChat userId={userId} conversation={conversation} variant="overlay" />

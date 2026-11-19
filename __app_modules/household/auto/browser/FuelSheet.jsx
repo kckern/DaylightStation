@@ -14,11 +14,10 @@
 // inventing a separate chore.
 
 import { useState } from 'react';
-import { Sheet } from '@/lib/ui';
+import { Sheet, useSheetSubmission } from '@/lib/ui';
 import { AutoSheetActions } from './AutoSheetActions.jsx';
 import { autoApi } from "./useAutoApi.js";
 import autoLog from "./autoLog.js";
-import { useAutoSheetSave } from './useAutoSheetSave.js';
 
 /**
  * @param {object} props
@@ -37,7 +36,7 @@ export default function FuelSheet({ vehicleId, initial = {}, onClose }) {
     priceTotal: '',
     partial: Boolean(initial.partial),
   });
-  const { submit, saving, failure } = useAutoSheetSave(onClose, error => {
+  const { submit, saving, failure } = useSheetSubmission(onClose, error => {
     autoLog.warn('fuel.log_failed', { error: error?.message });
   });
 

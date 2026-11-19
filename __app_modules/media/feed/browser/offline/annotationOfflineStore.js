@@ -19,9 +19,8 @@ function readList(key) {
   return value;
 }
 
-export function cachedAnnotations(itemId) {
-  const owner = annotationOwner();
-  if (!owner) return [];
+export function cachedAnnotations(itemId, owner = annotationOwner()) {
+  if (!owner || owner !== annotationOwner()) return [];
   try { return readList(CACHE_PREFIX + owner).filter(note => note?.itemId === itemId); }
   catch { return []; }
 }

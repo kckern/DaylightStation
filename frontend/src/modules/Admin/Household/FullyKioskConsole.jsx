@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useRefreshableRead } from '../../../lib/hooks/useRefreshableRead.js';
 import { useVisibleRefresh } from '../../../lib/hooks/useVisibleRefresh.js';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
@@ -158,6 +159,10 @@ function ActionButton({ action, label, run, loadingActions, ...props }) {
 
 function FullyKioskConsole() {
   const { deviceId } = useParams();
+  return <DeviceConsole key={deviceId} deviceId={deviceId} />;
+}
+
+function DeviceConsole({ deviceId }) {
   const navigate = useNavigate();
   const [status, setStatus] = useState(null);
   const [statusLoading, setStatusLoading] = useState(true);
@@ -184,10 +189,7 @@ function FullyKioskConsole() {
   const [speechLocale, setSpeechLocale] = useState('');
   const [overlay, setOverlay] = useState('');
   const [packageName, setPackageName] = useState('');
-  const screenshotAbortRef = useRef(null);
   const screenshotObjectUrlRef = useRef('');
-  const screenshotInFlightRef = useRef(false);
-  const mountedRef = useRef(true);
 
   const refreshStatus = useCallback(async ({ quiet = false } = {}) => {
     if (!quiet) setStatusLoading(true);
@@ -220,23 +222,19 @@ function FullyKioskConsole() {
     }
   }, [deviceId]);
 
-  const refreshScreenshot = useCallback(async () => {
-    if (screenshotInFlightRef.current) return;
-    screenshotInFlightRef.current = true;
+  const readScreenshot = useCallback(async (isCurrent, signal) => {
     setScreenshotLoading(true);
     setScreenshotError('');
-    const controller = new AbortController();
-    screenshotAbortRef.current = controller;
     try {
-      const result = await fullyKioskAdminApi.screenshot(deviceId, { signal: controller.signal });
-      if (!mountedRef.current || controller.signal.aborted) return;
+      const result = await fullyKioskAdminApi.screenshot(deviceId, { signal });
+      if (!isCurrent()) return;
       const nextUrl = URL.createObjectURL(result.blob);
       if (screenshotObjectUrlRef.current) URL.revokeObjectURL(screenshotObjectUrlRef.current);
       screenshotObjectUrlRef.current = nextUrl;
       setScreenshotUrl(nextUrl);
       setScreenshotCapturedAt(result.capturedAt);
     } catch (error) {
-      if (mountedRef.current && error.name !== 'AbortError') {
+      if (isCurrent() && error.name !== 'AbortError') {
         if (screenshotObjectUrlRef.current) URL.revokeObjectURL(screenshotObjectUrlRef.current);
         screenshotObjectUrlRef.current = '';
         setScreenshotUrl('');
@@ -244,10 +242,11 @@ function FullyKioskConsole() {
         setScreenshotError(error.message || 'Unable to capture screenshot');
       }
     } finally {
-      screenshotInFlightRef.current = false;
-      if (mountedRef.current) setScreenshotLoading(false);
+      if (isCurrent()) setScreenshotLoading(false);
     }
   }, [deviceId]);
+
+  const { reload: refreshScreenshot, poll: pollScreenshot } = useRefreshableRead(readScreenshot);
 
   useEffect(() => {
     refreshStatus();
@@ -255,11 +254,9 @@ function FullyKioskConsole() {
     refreshScreenshot();
   }, [refreshSettings, refreshScreenshot, refreshStatus]);
 
-  useVisibleRefresh({ active: autoScreenshot, intervalMs: 5000, reload: refreshScreenshot });
+  useVisibleRefresh({ active: autoScreenshot, intervalMs: 5000, reload: refreshScreenshot, poll: pollScreenshot });
 
   useEffect(() => () => {
-    mountedRef.current = false;
-    screenshotAbortRef.current?.abort();
     if (screenshotObjectUrlRef.current) URL.revokeObjectURL(screenshotObjectUrlRef.current);
   }, []);
 
