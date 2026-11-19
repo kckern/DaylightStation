@@ -84,15 +84,27 @@ export function useStartStatuses(deviceIds, { api = defaultApi } = {}) {
   return byDevice;
 }
 
+function useVisibleAttribution(read, { active = true, pollMs = STARTED_BY_POLL_MS } = {}) {
+  const { reload, poll } = useRefreshableRead(read);
+  useEffect(() => {
+    if (!active) return;
+    if (document.visibilityState === 'visible') reload();
+    return observeSocketStatus(onStatus, (_status, recovered) => {
+      if (recovered && document.visibilityState === 'visible') reload();
+    });
+  }, [active, reload]);
+  useVisibleRefresh({ active, intervalMs: pollMs, reload, poll });
+}
+
 /**
  * Map deviceId → StartedBy (§2.7) for every screen playing now.
  * `playingKey` changes whenever what plays anywhere changes.
  */
 export function useStartedByAll(playingKey, { api = defaultApi, pollMs = STARTED_BY_POLL_MS } = {}) {
   const [snapshot, setSnapshot] = useState(null);
-  const readAttribution = useCallback(async isCurrent => {
+  const readAttribution = useCallback(async (isCurrent, signal) => {
     try {
-      const res = await api.startedByAll();
+      const res = await api.startedByAll({ signal });
       if (!isCurrent()) return;
       const next = new Map();
       for (const item of Array.isArray(res?.items) ? res.items : []) {
@@ -106,11 +118,7 @@ export function useStartedByAll(playingKey, { api = defaultApi, pollMs = STARTED
       houseLog.startedByFailed({ status: error?.status ?? null, error: error?.message });
     }
   }, [api, playingKey]);
-  const { reload, poll } = useRefreshableRead(readAttribution);
-  useEffect(() => {
-    if (document.visibilityState === 'visible') reload();
-  }, [reload]);
-  useVisibleRefresh({ intervalMs: pollMs, reload, poll });
+  useVisibleAttribution(readAttribution, { pollMs });
   return snapshot && snapshot.playingKey === playingKey ? snapshot.byDevice : new Map();
 }
 
@@ -118,9 +126,9 @@ export function useStartedByAll(playingKey, { api = defaultApi, pollMs = STARTED
 export function useStartedBy(deviceId, { api = defaultApi, contentId = null } = {}) {
   const [snapshot, setSnapshot] = useState(null);
   const id = deviceId === 'local' ? null : screenIdFor(deviceId);
-  const readAttribution = useCallback(async isCurrent => {
+  const readAttribution = useCallback(async (isCurrent, signal) => {
     try {
-      const info = await api.startedBy(id);
+      const info = await api.startedBy(id, { signal });
       if (isCurrent()) setSnapshot({ id, contentId, info });
     } catch (error) {
       if (!isCurrent()) return;
@@ -128,14 +136,6 @@ export function useStartedBy(deviceId, { api = defaultApi, contentId = null } = 
       houseLog.startedByFailed({ deviceId, status: error?.status ?? null, error: error?.message });
     }
   }, [id, deviceId, contentId, api]);
-  const { reload, poll } = useRefreshableRead(readAttribution);
-  useEffect(() => {
-    if (!id) return;
-    if (document.visibilityState === 'visible') reload();
-    return observeSocketStatus(onStatus, (_status, recovered) => {
-      if (recovered && document.visibilityState === 'visible') reload();
-    });
-  }, [id, reload]);
-  useVisibleRefresh({ active: !!id, intervalMs: STARTED_BY_POLL_MS, reload, poll });
+  useVisibleAttribution(readAttribution, { active: Boolean(id) });
   return snapshot?.id === id && snapshot?.contentId === contentId ? snapshot?.info ?? null : null;
 }

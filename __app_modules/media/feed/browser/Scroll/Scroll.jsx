@@ -101,6 +101,8 @@ function ScrollCard({ item, isNew, colors, onDismiss, onPlay, onClick, onFilter,
     }
   };
 
+  const tune = level => onSourcePreference?.(item.source, sourcePreference === level ? 'normal' : level)?.catch(() => {});
+
   return (
     <div
       ref={setRefs}
@@ -129,9 +131,9 @@ function ScrollCard({ item, isNew, colors, onDismiss, onPlay, onClick, onFilter,
           </p>
           {item.source && <button type="button" onClick={() => onFilter?.(item.source)}>Show only this source</button>}
           {item.source && <div className="scroll-source-tuning" role="group" aria-label={`Tune ${item.sourceInfo?.label || item.source}`}>
-            <button type="button" className={sourcePreference === 'more' ? 'active' : ''} onClick={() => onSourcePreference?.(item.source, sourcePreference === 'more' ? 'normal' : 'more')}>More</button>
-            <button type="button" className={sourcePreference === 'less' ? 'active' : ''} onClick={() => onSourcePreference?.(item.source, sourcePreference === 'less' ? 'normal' : 'less')}>Less</button>
-            <button type="button" className={sourcePreference === 'mute' ? 'active' : ''} onClick={() => onSourcePreference?.(item.source, sourcePreference === 'mute' ? 'normal' : 'mute')}>Mute</button>
+            <button type="button" className={sourcePreference === 'more' ? 'active' : ''} onClick={() => tune('more')}>More</button>
+            <button type="button" className={sourcePreference === 'less' ? 'active' : ''} onClick={() => tune('less')}>Less</button>
+            <button type="button" className={sourcePreference === 'mute' ? 'active' : ''} onClick={() => tune('mute')}>Mute</button>
           </div>}
         </details>
         <button type="button" className="scroll-card-open" onClick={onClick} aria-label={item.title ? `Open: ${item.title}` : 'Open item'}>Open</button>

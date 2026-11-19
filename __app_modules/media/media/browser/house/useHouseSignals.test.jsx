@@ -70,7 +70,9 @@ describe('useStartedByAll', () => {
 
       await act(async () => vi.advanceTimersByTime(100));
       expect(pending).toHaveLength(2);
+      const [{ signal: previousSignal }] = api.startedByAll.mock.calls[1];
       rerender(<StartedByProbe api={api} playingKey="second" pollMs={100} />);
+      expect(previousSignal.aborted).toBe(true);
       expect(screen.getByTestId('b').textContent).toBe('-');
       expect(pending).toHaveLength(3);
       await act(async () => pending[1](answer('Retired source')));
@@ -96,7 +98,7 @@ describe('useStartedBy', () => {
     const api = { startedBy: vi.fn(async () => ({ deviceId: 'fleet:office-tv', startedBy: { kind: 'device', name: "Dad's phone" }, at: null })) };
     render(<OneProbe api={api} deviceId="office-tv" contentId="plex:1" />);
     await waitFor(() => expect(screen.getByTestId('o')).toHaveTextContent("Dad's phone"));
-    expect(api.startedBy).toHaveBeenCalledWith('fleet:office-tv');
+    expect(api.startedBy).toHaveBeenCalledWith('fleet:office-tv', { signal: expect.any(AbortSignal) });
   });
 });
 
@@ -110,7 +112,7 @@ it('refreshes the same screen and title once after a socket interruption', async
     for (const connected of [true, false, false, true, true]) wsHandlers.status?.({ connected });
   });
   await screen.findByText('Office remote');
-  expect(api.startedBy.mock.calls).toEqual([['fleet:office-tv'], ['fleet:office-tv']]);
+  expect(api.startedBy.mock.calls.map(([id]) => id)).toEqual(['fleet:office-tv', 'fleet:office-tv']);
   unmount();
   expect(wsHandlers.status).toBeNull();
 });

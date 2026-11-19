@@ -78,3 +78,46 @@ test('Feed keeps the end of Reading appearance reachable in a short landscape vi
   expect(await panel.evaluate(element => element.scrollTop)).toBeGreaterThan(0);
   expect(await page.locator('main').evaluate(element => element.scrollTop)).toBe(0);
 });
+
+test('Feed resets two source preferences independently when the first save fails', async ({ page }) => {
+  const entered = Promise.withResolvers();
+  const release = Promise.withResolvers();
+  const puts = [];
+  const errors = [];
+  page.on('pageerror', error => errors.push(error.message));
+  const sources = { alpha: 'more', beta: 'less' };
+  await page.routeWebSocket('**/*', () => {});
+  await page.route('**/api/**', async route => {
+    const { pathname } = new URL(route.request().url());
+    if (pathname.endsWith('/supervision/bootstrap')) return route.fulfill({ json: { enabled: false } });
+    if (pathname.endsWith('/feed/workspace')) return route.fulfill({ json: { preferencesStored: true, sourcePreferences: sources } });
+    if (pathname.includes('/workspace/sources/')) {
+      const key = pathname.split('/').at(-1);
+      puts.push([key, route.request().postDataJSON().level]);
+      if (key === 'alpha') {
+        entered.resolve();
+        await release.promise;
+        return route.fulfill({ status: 400, json: { error: 'Source preference refused' } });
+      }
+      delete sources[key];
+      return route.fulfill({ json: { sourcePreferences: sources } });
+    }
+    return route.fulfill({ json: {} });
+  });
+  await page.goto('/feed/search');
+  await page.getByLabel('Reading appearance').click();
+  const row = text => page.locator('.feed-source-preferences > div').filter({ hasText: text });
+  await row('alpha · more').getByRole('button', { name: 'Reset' }).click();
+  await entered.promise;
+  await row('beta · less').getByRole('button', { name: 'Reset' }).click();
+  await expect(row('beta · less')).toHaveCount(0);
+  release.resolve();
+  await expect(row('alpha · more')).toBeVisible();
+  await expect.poll(() => puts).toEqual([['alpha', 'normal'], ['beta', 'normal']]);
+  await expect(row('beta · less')).toHaveCount(0);
+  expect(errors).toEqual([]);
+  await page.reload();
+  await page.getByLabel('Reading appearance').click();
+  await expect(row('alpha · more')).toBeVisible();
+  await expect(row('beta · less')).toHaveCount(0);
+});

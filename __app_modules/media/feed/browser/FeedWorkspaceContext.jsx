@@ -83,7 +83,8 @@ export function FeedWorkspaceProvider({ children }) {
   const preferenceEdits = useRef(new Map());
   const [checkpoints, setCheckpoints] = useState({});
   const [sourcePreferences, setSourcePreferences] = useState({});
-  const sourcePreferencesRef = useRef({});
+  const confirmedSources = useRef(null);
+  const pendingSources = useRef(new Map());
   const [workspaceReady, setWorkspaceReady] = useState(false);
   const [pendingMutations, setPendingMutations] = useState(pendingRef.current);
   const [revision, setRevision] = useState(0);
@@ -119,6 +120,17 @@ export function FeedWorkspaceProvider({ children }) {
     publishReadingPreferences(next);
   }, [publishReadingPreferences]);
 
+  const publishSourcePreferences = useCallback(() => {
+    const owner = feedQueueOwner();
+    const next = confirmedSources.current?.owner === owner ? { ...confirmedSources.current.levels } : {};
+    for (const [source, edit] of pendingSources.current) {
+      if (edit.owner !== owner) continue;
+      if (edit.level === 'normal') delete next[source];
+      else next[source] = edit.level;
+    }
+    setSourcePreferences(next);
+  }, []);
+
   const refreshWorkspace = useCallback(({ migrateLocal = false } = {}) => {
     const owner = feedQueueOwner();
     const view = preferenceView.current;
@@ -138,9 +150,8 @@ export function FeedWorkspaceProvider({ children }) {
       const nextCheckpoints = workspace?.checkpoints || {};
       checkpointsRef.current = nextCheckpoints;
       setCheckpoints(nextCheckpoints);
-      const nextSourcePreferences = workspace?.sourcePreferences || {};
-      sourcePreferencesRef.current = nextSourcePreferences;
-      setSourcePreferences(nextSourcePreferences);
+      confirmedSources.current = { owner, levels: workspace?.sourcePreferences || {} };
+      publishSourcePreferences();
 
       if (migrateLocal && !workspace?.preferencesStored) {
         // Render using the local snapshot during migration. Later writes wait
@@ -155,7 +166,7 @@ export function FeedWorkspaceProvider({ children }) {
       }
       return workspace;
     });
-  }, [acceptReadingPreferences, publishReadingPreferences]);
+  }, [acceptReadingPreferences, publishReadingPreferences, publishSourcePreferences]);
 
   const publishPending = useCallback(next => {
     pendingRef.current = next;
@@ -231,25 +242,31 @@ export function FeedWorkspaceProvider({ children }) {
   const setDensity = useCallback((value) => setReadingPreference('density', value === 'compact' ? 'compact' : 'comfortable'), [setReadingPreference]);
   const density = readingPreferences.density;
 
-  const setSourcePreference = useCallback(async (sourceKey, level) => {
-    const previous = sourcePreferencesRef.current;
-    const optimistic = { ...previous };
-    if (level === 'normal') delete optimistic[sourceKey]; else optimistic[sourceKey] = level;
-    sourcePreferencesRef.current = optimistic;
-    setSourcePreferences(optimistic);
-    try {
-      const result = await DaylightAPI(`/api/v1/feed/workspace/sources/${encodeURIComponent(sourceKey)}`, { level }, 'PUT');
-      sourcePreferencesRef.current = result.sourcePreferences || {};
-      setSourcePreferences(sourcePreferencesRef.current);
-      notifications.show({ title: 'Feed preference saved', message: level === 'mute' ? `${sourceKey} will be hidden from For you.` : level === 'normal' ? `${sourceKey} is back to normal.` : `${sourceKey} will appear ${level} often.` });
-      return result.sourcePreferences || {};
-    } catch (error) {
-      sourcePreferencesRef.current = previous;
-      setSourcePreferences(previous);
-      notifications.show({ color: 'red', title: 'Preference not saved', message: 'Your feed mix was not changed.' });
-      throw error;
-    }
-  }, []);
+  const setSourcePreference = useCallback((sourceKey, level) => {
+    const owner = feedQueueOwner();
+    const view = preferenceView.current;
+    const edit = { owner, level };
+    pendingSources.current.set(sourceKey, edit);
+    publishSourcePreferences();
+    const currentView = () => view && preferenceView.current === view && owner === feedQueueOwner();
+    const currentEdit = () => currentView() && pendingSources.current.get(sourceKey) === edit;
+    return enqueuePreferenceTask(owner, async () => {
+      try {
+        if (owner !== feedQueueOwner()) return;
+        const result = await DaylightAPI(`/api/v1/feed/workspace/sources/${encodeURIComponent(sourceKey)}`, { level }, 'PUT');
+        const confirmed = result.sourcePreferences || {};
+        if (currentView()) confirmedSources.current = { owner, levels: confirmed };
+        if (currentEdit()) notifications.show({ title: 'Feed preference saved', message: level === 'mute' ? `${sourceKey} will be hidden from For you.` : level === 'normal' ? `${sourceKey} is back to normal.` : `${sourceKey} will appear ${level} often.` });
+        return confirmed;
+      } catch (error) {
+        if (currentEdit()) notifications.show({ color: 'red', title: 'Preference not saved', message: 'Your feed mix was not changed.' });
+        throw error;
+      } finally {
+        if (pendingSources.current.get(sourceKey) === edit) pendingSources.current.delete(sourceKey);
+        if (currentView()) publishSourcePreferences();
+      }
+    });
+  }, [publishSourcePreferences]);
 
   const getSnapshot = useCallback((key) => snapshotsRef.current.get(key) || null, []);
   const setSnapshot = useCallback((key, value) => {

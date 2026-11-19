@@ -25,15 +25,20 @@ export function deviceIdForScreen(screenId) {
   return screenId.startsWith('fleet:') ? screenId.slice('fleet:'.length) : screenId;
 }
 
-async function call(path, { method = 'GET', body } = {}) {
+async function call(path, { method = 'GET', body, signal } = {}) {
   let response;
   try {
-    response = await daylightApiResponse(path, { method, data: body });
+    response = await daylightApiResponse(path, { method, data: body, signal });
   } catch (error) {
+    if (error?.name === 'AbortError') throw error;
     throw new HouseApiError(`Network error: ${error?.message ?? 'request failed'}`, { transient: true });
   }
   let payload = null;
-  try { payload = await response.json(); } catch { payload = null; }
+  try {
+    payload = await response.json();
+  } catch (error) {
+    if (error?.name === 'AbortError') throw error;
+  }
   if (!response.ok) {
     const { error, code, ...details } = payload && typeof payload === 'object' ? payload : {};
     throw new HouseApiError(error || `HTTP ${response.status}`, {
@@ -73,8 +78,8 @@ export const houseApi = {
   }),
   restoreScreen: (id) => call(`${screen(id)}/restore`, { method: 'POST', body: {} }),
   screenRoutines: (id) => call(`${screen(id)}/routines`),
-  startedByAll: () => call(media('started-by')),
-  startedBy: (id) => call(`${screen(id)}/started-by`),
+  startedByAll: ({ signal } = {}) => call(media('started-by'), { signal }),
+  startedBy: (id, { signal } = {}) => call(`${screen(id)}/started-by`, { signal }),
   routineHistory: ({ limit = 50 } = {}) => call(media(`routines/history?limit=${limit}`)),
   routineFlags: () => call(media('routines/flags')),
   startStatus: (deviceId) => call(`api/v1/device/${encodeURIComponent(deviceId)}/start-status`),

@@ -25,6 +25,15 @@ function PreferenceProbe() {
   );
 }
 
+function SourceProbe() {
+  const { sourcePreferences, setSourcePreference, refreshWorkspace } = useFeedWorkspace();
+  return <>
+    <output aria-label="source level">{sourcePreferences.daily || 'normal'}</output>
+    {['more', 'less'].map(level => <button key={level} onClick={() => setSourcePreference('daily', level).catch(() => {})}>{level}</button>)}
+    <button onClick={() => refreshWorkspace()}>Refresh workspace</button>
+  </>;
+}
+
 function MutationProbe() {
   const { mutateItems, pendingMutations } = useFeedWorkspace();
   const [error, setError] = useState('');
@@ -300,6 +309,50 @@ describe('FeedWorkspaceProvider reading preferences', () => {
     await act(async () => { refresh.resolve({ preferencesStored: true, preferences: { density: 'compact', theme: 'sepia' } }); });
     expect(preferenceSaves()).toEqual([{ density: 'compact' }, { density: 'comfortable' }]);
     expect(storedAppearance()).toMatchObject({ density: 'comfortable', theme: 'sepia' });
+  });
+
+  test('a refused source edit rolls back to the last confirmed change for that source', async () => {
+    const writes = [];
+    apiMock.mockImplementation(path => {
+      if (!path.endsWith('/sources/daily')) return Promise.resolve({ preferencesStored: true });
+      const request = deferred();
+      writes.push(request);
+      return request.promise;
+    });
+    render(<FeedWorkspaceProvider><SourceProbe /></FeedWorkspaceProvider>);
+    fireEvent.click(screen.getByText('more'));
+    fireEvent.click(screen.getByText('less'));
+    const source = screen.getByLabelText('source level');
+    expect(source).toHaveTextContent('less');
+    await waitFor(() => expect(writes).toHaveLength(1));
+    await act(async () => writes[0].resolve({ sourcePreferences: { daily: 'more' } }));
+    expect(writes).toHaveLength(2);
+    expect(source).toHaveTextContent('less');
+    await act(async () => writes[1].reject(new Error('Save refused')));
+    expect(source).toHaveTextContent('more');
+  });
+
+  test('does not show another account’s pending source preference or its reply after refreshing the workspace', async () => {
+    const save = deferred();
+    localStorage.setItem('ds_token', tokenFor('amy'));
+    let reads = 0;
+    apiMock.mockImplementation(path => {
+      if (path.endsWith('/sources/daily')) return save.promise;
+      if (path.endsWith('/workspace')) return Promise.resolve({ preferencesStored: true, sourcePreferences: { daily: ++reads === 1 ? 'less' : 'mute' } });
+      return Promise.resolve({});
+    });
+    render(<FeedWorkspaceProvider><SourceProbe /></FeedWorkspaceProvider>);
+    const source = screen.getByLabelText('source level');
+    await waitFor(() => expect(source).toHaveTextContent('less'));
+    fireEvent.click(screen.getByRole('button', { name: 'more' }));
+    await waitFor(() => expect(apiMock).toHaveBeenCalledWith('/api/v1/feed/workspace/sources/daily', { level: 'more' }, 'PUT'));
+    localStorage.setItem('ds_token', tokenFor('bob'));
+    fireEvent.click(screen.getByText('Refresh workspace'));
+    await waitFor(() => expect(source).toHaveTextContent('mute'));
+    notifications.show.mockClear();
+    await act(async () => save.resolve({ sourcePreferences: { daily: 'more' } }));
+    expect(source).toHaveTextContent('mute');
+    expect(notifications.show).not.toHaveBeenCalled();
   });
 
   test('keeps optimistic state and durably queues a mutation while offline', async () => {

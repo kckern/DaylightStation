@@ -53,6 +53,17 @@ describe('houseApi', () => {
     expect(error.code).toBe(null);
   });
 
+  it('forwards attribution cancellation and preserves the abort error', async () => {
+    const { signal } = new AbortController();
+    const aborted = new DOMException('The request was aborted', 'AbortError');
+    fetchMock.mockRejectedValueOnce(aborted).mockResolvedValueOnce({
+      ok: true, json: () => Promise.reject(aborted),
+    });
+    await expect(houseApi.startedByAll({ signal })).rejects.toBe(aborted);
+    await expect(houseApi.startedBy('browser:guest', { signal })).rejects.toBe(aborted);
+    expect(fetchMock.mock.calls.map(([, options]) => options.signal)).toEqual([signal, signal]);
+  });
+
   it('asks for start status and turns a screen off through the device API', async () => {
     fetchMock.mockReturnValueOnce(respond(200, { ok: true, status: { phase: 'failed' } }));
     fetchMock.mockReturnValueOnce(respond(200, { ok: true }));
