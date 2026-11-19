@@ -1,9 +1,10 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useLayoutEffect, useRef, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Stack, Group, Text, Badge, Button, Paper, TextInput, Select, Alert, Center, Loader, Anchor }  from '@mantine/core';
 import {
   IconArrowBack, IconTrash, IconAlertCircle, IconDeviceDesktopCog
 } from '@tabler/icons-react';
+import { useApiResource } from '../../../lib/hooks/useApiResource.js';
 import { DaylightAPI } from '../../../lib/api.mjs';
 import ConfirmModal from '../shared/ConfirmModal.jsx';
 import SaveBar from '../shared/SaveBar.jsx';
@@ -237,37 +238,71 @@ function MidiKeyboardSections({ device, updateField }) {
 function DeviceEditor() {
   const { deviceId } = useParams();
   const navigate = useNavigate();
+  const { data, loading, error } = useApiResource(`/api/v1/admin/household/devices/${deviceId}`);
 
-  const [device, setDevice] = useState(null);
-  const [original, setOriginal] = useState(null);
-  const [loading, setLoading] = useState(true);
+  if (loading && !data) {
+    return (
+      <Center h="60vh">
+        <Loader size="lg" />
+      </Center>
+    );
+  }
+
+  if (error && !data) {
+    return (
+      <Stack gap="md">
+        <Anchor
+          size="sm"
+          onClick={() => navigate('/admin/household/devices')}
+          style={{ cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 4 }}
+        >
+          <IconArrowBack size={14} /> Back to Devices
+        </Anchor>
+        <Alert icon={<IconAlertCircle size={16} />} color="red" title="Error loading device">
+          {error.message || 'Failed to load device'}
+        </Alert>
+      </Stack>
+    );
+  }
+
+  if (!data?.device) {
+    return (
+      <Stack gap="md">
+        <Anchor
+          size="sm"
+          onClick={() => navigate('/admin/household/devices')}
+          style={{ cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 4 }}
+        >
+          <IconArrowBack size={14} /> Back to Devices
+        </Anchor>
+        <Center h="40vh">
+          <Text c="dimmed">Device not found.</Text>
+        </Center>
+      </Stack>
+    );
+  }
+
+  return <DeviceDraft key={deviceId} deviceId={deviceId} initialDevice={data.device} />;
+}
+
+function DeviceDraft({ deviceId, initialDevice }) {
+  const navigate = useNavigate();
+  const [device, setDevice] = useState(initialDevice);
+  const [original, setOriginal] = useState(initialDevice);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const active = useRef(false);
+  useLayoutEffect(() => {
+    active.current = true;
+    return () => { active.current = false; };
+  }, []);
 
   const dirty = JSON.stringify(device) !== JSON.stringify(original);
 
   // Unsaved-changes guard: beforeunload + AdminNav interception (audit C1)
   useUnsavedGuard(dirty, { label: `device:${deviceId}` });
-
-  const fetchDevice = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const result = await DaylightAPI(`/api/v1/admin/household/devices/${deviceId}`);
-      setDevice(result.device);
-      setOriginal(JSON.parse(JSON.stringify(result.device)));
-    } catch (err) {
-      setError(err);
-    } finally {
-      setLoading(false);
-    }
-  }, [deviceId]);
-
-  useEffect(() => {
-    fetchDevice();
-  }, [fetchDevice]);
 
   function updateField(path, value) {
     setDevice(prev => {
@@ -288,9 +323,11 @@ function DeviceEditor() {
     setError(null);
     try {
       await DaylightAPI(`/api/v1/admin/household/devices/${deviceId}`, device, 'PUT');
+      if (!active.current) return;
       setOriginal(JSON.parse(JSON.stringify(device)));
       notifySuccess({ title: 'Device saved', message: deviceId });
     } catch (err) {
+      if (!active.current) return;
       setError(err);
       notifyFailure({ title: 'Save failed', message: err.message });
     } finally {
@@ -306,9 +343,11 @@ function DeviceEditor() {
     setDeleting(true);
     try {
       await DaylightAPI(`/api/v1/admin/household/devices/${deviceId}`, {}, 'DELETE');
+      if (!active.current) return;
       notifySuccess({ title: 'Device deleted', message: deviceId });
       navigate('/admin/household/devices');
     } catch (err) {
+      if (!active.current) return;
       setError(err);
       notifyFailure({ title: 'Delete failed', message: err.message });
     } finally {
@@ -316,48 +355,6 @@ function DeviceEditor() {
       setDeleteOpen(false);
     }
   };
-
-  if (loading) {
-    return (
-      <Center h="60vh">
-        <Loader size="lg" />
-      </Center>
-    );
-  }
-
-  if (error && !device) {
-    return (
-      <Stack gap="md">
-        <Anchor
-          size="sm"
-          onClick={() => navigate('/admin/household/devices')}
-          style={{ cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 4 }}
-        >
-          <IconArrowBack size={14} /> Back to Devices
-        </Anchor>
-        <Alert icon={<IconAlertCircle size={16} />} color="red" title="Error loading device">
-          {error.message || 'Failed to load device'}
-        </Alert>
-      </Stack>
-    );
-  }
-
-  if (!device) {
-    return (
-      <Stack gap="md">
-        <Anchor
-          size="sm"
-          onClick={() => navigate('/admin/household/devices')}
-          style={{ cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 4 }}
-        >
-          <IconArrowBack size={14} /> Back to Devices
-        </Anchor>
-        <Center h="40vh">
-          <Text c="dimmed">Device not found.</Text>
-        </Center>
-      </Stack>
-    );
-  }
 
   return (
     <Stack gap="md">

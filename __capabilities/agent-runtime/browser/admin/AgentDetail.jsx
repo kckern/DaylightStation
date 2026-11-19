@@ -1,10 +1,10 @@
 // frontend/src/modules/Admin/Agents/AgentDetail.jsx
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useCallback } from 'react';
 import { useParams, useLocation, useNavigate } from 'react-router-dom';
 import { Tabs, Group, Select, Text, Stack, Loader } from '@mantine/core';
 import { IconSettings, IconLayoutDashboard, IconAdjustments } from '@tabler/icons-react';
-import { DaylightAPI } from "../../../../frontend/src/lib/api.mjs";
+import { useApiResource } from "../../../../frontend/src/lib/hooks/useApiResource.js";
 import OverviewTab from "./OverviewTab.jsx";
 import ConfigTab from "./ConfigTab.jsx";
 import "./AgentDetail.scss";
@@ -14,43 +14,17 @@ function AgentDetail({ DashboardView }) {
   const location = useLocation();
   const navigate = useNavigate();
 
-  // Tab from URL hash
-  const hashTab = location.hash?.replace('#', '') || 'overview';
-  const [activeTab, setActiveTab] = useState(hashTab);
-
-  // User selector
-  const [users, setUsers] = useState([]);
-  const [userId, setUserId] = useState(null);
-  const [usersLoading, setUsersLoading] = useState(true);
-
-  // Fetch household members for user selector
-  // API: GET /api/v1/admin/household -> { household, members }
-  // Each member has: username, display_name, etc.
-  useEffect(() => {
-    setUsersLoading(true);
-    DaylightAPI('/api/v1/admin/household')
-      .then(result => {
-        const members = result.members || [];
-        setUsers(members.map(m => ({
-          value: m.username || m.id,
-          label: m.display_name || m.username || m.id,
-        })));
-        // Default to first user
-        if (members.length > 0 && !userId) {
-          setUserId(members[0].username || members[0].id);
-        }
-      })
-      .catch(() => {
-        setUsers([]);
-      })
-      .finally(() => setUsersLoading(false));
-    // mount-only fetch — adding userId would re-fetch on every subsequent change
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  const activeTab = location.hash.slice(1) || 'overview';
+  const { data, loading: usersLoading } = useApiResource('/api/v1/admin/household');
+  const users = (data?.members || []).map(member => ({
+    value: member.username || member.id,
+    label: member.display_name || member.username || member.id,
+  }));
+  const [selectedUser, setSelectedUser] = useState();
+  const userId = selectedUser === undefined ? users[0]?.value ?? null : selectedUser;
 
   // Sync tab to URL hash
   const handleTabChange = useCallback((tab) => {
-    setActiveTab(tab);
     navigate(`#${tab}`, { replace: true });
   }, [navigate]);
 
@@ -68,7 +42,7 @@ function AgentDetail({ DashboardView }) {
               size="xs"
               w={180}
               value={userId}
-              onChange={setUserId}
+              onChange={setSelectedUser}
               data={users}
               placeholder="Select user"
             />

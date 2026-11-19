@@ -1,74 +1,35 @@
-import { useState, useCallback, useMemo } from 'react';
-import { DaylightAPI } from "../../../../../frontend/src/lib/api.mjs";
-import getLogger from "../../../../../frontend/src/lib/logging/Logger.js";
+import { useEffect, useMemo, useState } from 'react';
+import { DaylightAPI } from '../../../../../frontend/src/lib/api.mjs';
+import { useApiResource } from '../../../../../frontend/src/lib/hooks/useApiResource.js';
+import getLogger from '../../../../../frontend/src/lib/logging/Logger.js';
 
-const API_BASE = '/api/v1/agents';
-
-/**
- * Hook for reading and deleting agent working memory entries.
- *
- * Provides memory fetching, single-entry deletion, and bulk clearing,
- * with structured logging and error handling.
- *
- * @returns {object} Memory state and actions
- */
-export function useAgentMemory() {
+export function useAgentMemory(agentId, userId) {
   const logger = useMemo(() => getLogger().child({ hook: 'useAgentMemory' }), []);
+  const path = agentId && userId
+    ? `/api/v1/agents/${encodeURIComponent(agentId)}/memory/${encodeURIComponent(userId)}` : null;
+  const { data, loading, error, reload } = useApiResource(path, { label: 'Agent working memory' });
+  const [clearedSnapshot, setClearedSnapshot] = useState(null);
+  const unconfigured = error?.status === 501 || error?.message?.includes('HTTP 501');
 
-  const [entries, setEntries] = useState({});
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState(null);
+  useEffect(() => {
+    if (data) logger.info('admin.agents.memory.fetched', { agentId, userId, count: Object.keys(data.entries || {}).length });
+  }, [data, agentId, userId, logger]);
 
-  const fetchMemory = useCallback(async (agentId, userId) => {
-    if (!agentId || !userId) return;
-    setLoading(true);
-    setError(null);
-    try {
-      const result = await DaylightAPI(`${API_BASE}/${agentId}/memory/${userId}`);
-      setEntries(result.entries || {});
-      logger.info('admin.agents.memory.fetched', { agentId, userId, count: Object.keys(result.entries || {}).length });
-      return result;
-    } catch (err) {
-      // 501 means memory not configured — treat as empty, not error
-      if (err.message && err.message.includes('HTTP 501')) {
-        setEntries({});
-        return { entries: {} };
-      }
-      setError(err);
-      throw err;
-    } finally {
-      setLoading(false);
-    }
-  }, [logger]);
+  async function deleteEntry(key) {
+    await DaylightAPI(`${path}/${encodeURIComponent(key)}`, {}, 'DELETE');
+    logger.info('admin.agents.memory.entry.deleted', { agentId, userId, key });
+    reload();
+  }
 
-  const deleteEntry = useCallback(async (agentId, userId, key) => {
-    try {
-      const result = await DaylightAPI(`${API_BASE}/${agentId}/memory/${userId}/${key}`, {}, 'DELETE');
-      logger.info('admin.agents.memory.entry.deleted', { agentId, userId, key });
-      return result;
-    } catch (err) {
-      setError(err);
-      throw err;
-    }
-  }, [logger]);
-
-  const clearAll = useCallback(async (agentId, userId) => {
-    try {
-      const result = await DaylightAPI(`${API_BASE}/${agentId}/memory/${userId}`, {}, 'DELETE');
-      logger.info('admin.agents.memory.cleared', { agentId, userId });
-      setEntries({});
-      return result;
-    } catch (err) {
-      setError(err);
-      throw err;
-    }
-  }, [logger]);
-
-  const clearError = useCallback(() => setError(null), []);
+  async function clearAll() {
+    await DaylightAPI(path, {}, 'DELETE');
+    logger.info('admin.agents.memory.cleared', { agentId, userId });
+    setClearedSnapshot(data);
+  }
 
   return {
-    entries, loading, error,
-    fetchMemory, deleteEntry, clearAll, clearError,
+    entries: unconfigured || clearedSnapshot === data ? {} : data?.entries || {},
+    loading, error: unconfigured ? null : error, deleteEntry, clearAll,
   };
 }
 

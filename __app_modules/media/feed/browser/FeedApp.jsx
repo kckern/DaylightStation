@@ -15,7 +15,7 @@ import FeedPlayerMiniBar from "./players/FeedPlayerMiniBar.jsx";
 import FeedPlayerSheet from "./players/FeedPlayerSheet.jsx";
 import PersistentPlayer from "./Scroll/PersistentPlayer.jsx";
 import { usePlaybackObserver } from "./Scroll/hooks/usePlaybackObserver.js";
-import { DaylightAPI } from "../../../../frontend/src/lib/api.mjs";
+import { useApiResource } from "../../../../frontend/src/lib/hooks/useApiResource.js";
 import getLogger, { configure as configureLogger } from "../../../../frontend/src/lib/logging/Logger.js";
 import "./FeedApp.scss";
 
@@ -85,7 +85,8 @@ function FeedLayout() {
     return () => document.removeEventListener('visibilitychange', handler);
   }, []);
 
-  const [headlinePages, setHeadlinePages] = useState([]);
+  const { data: pages } = useApiResource('/api/v1/feed/headlines/pages', { label: 'Feed headline pages' });
+  const headlinePages = Array.isArray(pages) ? pages : [];
   const location = useLocation();
   const navigate = useNavigate();
   const isScroll = location.pathname.startsWith('/feed/scroll');
@@ -114,12 +115,6 @@ function FeedLayout() {
       prevMiniBarRef.current = showMiniBar;
     }
   }, [showMiniBar, activeMedia, playerVisible]);
-
-  useEffect(() => {
-    DaylightAPI('/api/v1/feed/headlines/pages')
-      .then(pages => setHeadlinePages(pages || []))
-      .catch(() => setHeadlinePages([]));
-  }, []);
 
   useEffect(() => {
     const onKeyDown = event => {

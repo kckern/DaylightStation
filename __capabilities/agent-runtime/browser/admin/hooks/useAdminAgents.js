@@ -7,7 +7,7 @@ const API_BASE = '/api/v1/agents';
 /**
  * Hook for managing agents via the admin agents API.
  *
- * Provides listing, assignment fetching, and assignment triggering operations,
+ * Provides agent listing,
  * with structured logging and error handling.
  *
  * @returns {object} Agents state and actions
@@ -36,38 +36,21 @@ export function useAdminAgents() {
     }
   }, [logger]);
 
-  const fetchAssignments = useCallback(async (agentId) => {
-    try {
-      const result = await DaylightAPI(`${API_BASE}/${agentId}/assignments`);
-      logger.info('admin.agents.assignments.fetched', { agentId, count: result.assignments?.length });
-      return result.assignments || [];
-    } catch (err) {
-      setError(err);
-      throw err;
-    }
-  }, [logger]);
-
-  const triggerAssignment = useCallback(async (agentId, assignmentId, userId) => {
-    try {
-      const result = await DaylightAPI(
-        `${API_BASE}/${agentId}/assignments/${assignmentId}/run`,
-        { userId },
-        'POST'
-      );
-      logger.info('admin.agents.assignment.triggered', { agentId, assignmentId, userId });
-      return result;
-    } catch (err) {
-      setError(err);
-      throw err;
-    }
-  }, [logger]);
-
   const clearError = useCallback(() => setError(null), []);
 
   return {
     agents, loading, error,
-    fetchAgents, fetchAssignments, triggerAssignment, clearError,
+    fetchAgents, clearError,
   };
+}
+
+export async function triggerAssignment(agentId, assignmentId, userId) {
+  const result = await DaylightAPI(
+    `${API_BASE}/${encodeURIComponent(agentId)}/assignments/${encodeURIComponent(assignmentId)}/run`,
+    { userId }, 'POST',
+  );
+  getLogger().child({ hook: 'useAdminAgents' }).info('admin.agents.assignment.triggered', { agentId, assignmentId, userId });
+  return result;
 }
 
 export default useAdminAgents;

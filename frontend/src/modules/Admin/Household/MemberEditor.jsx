@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useState, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   Stack, Group, Text, Badge, Button, Tabs, TextInput, NumberInput, Select,
@@ -11,6 +11,7 @@ import {
   IconCopy, IconCheck
 } from '@tabler/icons-react';
 import { useHotkeys } from '@mantine/hooks';
+import { useApiResource } from '../../../lib/hooks/useApiResource.js';
 import { DaylightAPI } from '../../../lib/api.mjs';
 import { useAdminHousehold } from '../../../hooks/admin/useAdminHousehold';
 import SaveBar from '../shared/SaveBar.jsx';
@@ -21,12 +22,46 @@ const AVAILABLE_ROLES = ['sysadmin', 'admin', 'parent', 'member', 'kiosk'];
 function MemberEditor() {
   const { username } = useParams();
   const navigate = useNavigate();
+  const { data, loading, error } = useApiResource(`/api/v1/admin/household/members/${username}`);
+
+  // Loading state
+  if (loading && !data) {
+    return (
+      <Center h="60vh">
+        <Loader size="lg" />
+      </Center>
+    );
+  }
+
+  // Error with no profile loaded
+  if (error && !data) {
+    return (
+      <Stack gap="md" p="md">
+        <Anchor
+          size="sm"
+          onClick={() => navigate('/admin/household/members')}
+          style={{ cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 4 }}
+        >
+          <IconArrowBack size={14} /> Back to Members
+        </Anchor>
+        <Alert icon={<IconAlertCircle size={16} />} color="red" title="Error">
+          {error.message || 'Failed to load member profile'}
+        </Alert>
+      </Stack>
+    );
+  }
+
+  if (!data?.member) return null;
+
+  return <MemberDraft key={username} username={username} initialProfile={data.member} authStatus={data.authStatus} />;
+}
+
+function MemberDraft({ username, initialProfile, authStatus }) {
+  const navigate = useNavigate();
   const { generateInvite } = useAdminHousehold();
 
-  const [profile, setProfile] = useState(null);
-  const [original, setOriginal] = useState(null);
-  const [authStatus, setAuthStatus] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const [profile, setProfile] = useState(initialProfile);
+  const [original, setOriginal] = useState(initialProfile);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
   const [inviteUrl, setInviteUrl] = useState(null);
@@ -36,21 +71,6 @@ function MemberEditor() {
 
   // Unsaved-changes guard: beforeunload + AdminNav interception (audit C1)
   useUnsavedGuard(dirty, { label: `member:${username}` });
-
-  const fetchProfile = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const result = await DaylightAPI(`/api/v1/admin/household/members/${username}`);
-      setProfile(result.member);
-      setOriginal(JSON.parse(JSON.stringify(result.member)));
-      setAuthStatus(result.authStatus || null);
-    } catch (err) {
-      setError(err.message || 'Failed to load member profile');
-    } finally {
-      setLoading(false);
-    }
-  }, [username]);
 
   const handleGenerateInvite = useCallback(async () => {
     setInviteLoading(true);
@@ -65,10 +85,6 @@ function MemberEditor() {
       setInviteLoading(false);
     }
   }, [username, generateInvite]);
-
-  useEffect(() => {
-    fetchProfile();
-  }, [fetchProfile]);
 
   function updateField(path, value) {
     setProfile(prev => {
@@ -129,35 +145,6 @@ function MemberEditor() {
       if (dirty && !saving) handleRevert();
     }],
   ]);
-
-  // Loading state
-  if (loading && !profile) {
-    return (
-      <Center h="60vh">
-        <Loader size="lg" />
-      </Center>
-    );
-  }
-
-  // Error with no profile loaded
-  if (error && !profile) {
-    return (
-      <Stack gap="md" p="md">
-        <Anchor
-          size="sm"
-          onClick={() => navigate('/admin/household/members')}
-          style={{ cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 4 }}
-        >
-          <IconArrowBack size={14} /> Back to Members
-        </Anchor>
-        <Alert icon={<IconAlertCircle size={16} />} color="red" title="Error">
-          {error}
-        </Alert>
-      </Stack>
-    );
-  }
-
-  if (!profile) return null;
 
   return (
     <Stack gap="md" p="md">

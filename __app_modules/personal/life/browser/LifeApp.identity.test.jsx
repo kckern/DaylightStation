@@ -43,3 +43,19 @@ it.each([['beliefs', 'beliefs'], ['ceremonies', 'cadence']])(
     expect(reads).toEqual(['/api/v1/life/plan/' + endpoint + '?username=bob']);
   },
 );
+
+it('keeps the saved member and their screen available when the optional switcher roster fails', async () => {
+  localStorage.setItem('life.username', 'bob');
+  DaylightAPI.mockImplementation(async path => {
+    if (path === 'api/v1/life/users') throw new Error('Roster unavailable');
+    if (path === 'api/v1/life/user?username=bob') return { username: 'bob', displayName: 'Bob' };
+    if (path === '/api/v1/life/plan/beliefs?username=bob') return { beliefs: [{ id: 'b', if_hypothesis: 'Bob marker' }] };
+    throw new Error('Unexpected fixture request ' + path);
+  });
+  render(<MemoryRouter initialEntries={['/life/plan/beliefs']}><Routes>
+    <Route path="/life/*" element={<LifeApp />} />
+  </Routes></MemoryRouter>);
+  expect(await screen.findByText('If Bob marker')).toBeVisible();
+  expect(screen.queryByRole('alert')).toBeNull();
+  expect(localStorage.getItem('life.username')).toBe('bob');
+});

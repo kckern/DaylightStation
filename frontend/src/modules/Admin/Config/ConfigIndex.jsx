@@ -1,8 +1,8 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Stack, Text, Group, Paper, Loader, Center, Alert, Badge, UnstyledButton } from '@mantine/core';
 import { IconFile, IconLock, IconAlertCircle, IconFolder } from '@tabler/icons-react';
-import { DaylightAPI } from '../../../lib/api.mjs';
+import { useApiResource } from '../../../lib/hooks/useApiResource.js';
 import { formatSize } from '../utils/formatters.js';
 
 /**
@@ -16,37 +16,11 @@ function formatDate(isoString) {
 
 function ConfigIndex() {
   const navigate = useNavigate();
-  const [files, setFiles] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    async function fetchFiles() {
-      setLoading(true);
-      setError(null);
-      try {
-        const result = await DaylightAPI('/api/v1/admin/config/files');
-        if (!cancelled) {
-          setFiles(result.files || []);
-        }
-      } catch (err) {
-        if (!cancelled) {
-          setError(err);
-        }
-      } finally {
-        if (!cancelled) {
-          setLoading(false);
-        }
-      }
-    }
-    fetchFiles();
-    return () => { cancelled = true; };
-  }, []);
+  const { data, loading, error } = useApiResource('/api/v1/admin/config/files');
 
   const grouped = useMemo(() => {
     const groups = {};
-    files.forEach(file => {
+    (data?.files || []).forEach(file => {
       const dir = file.directory || 'other';
       if (!groups[dir]) {
         groups[dir] = [];
@@ -56,7 +30,7 @@ function ConfigIndex() {
     return Object.keys(groups)
       .sort((a, b) => a.localeCompare(b))
       .map(dir => ({ directory: dir, files: groups[dir] }));
-  }, [files]);
+  }, [data]);
 
   if (loading) {
     return (
@@ -136,7 +110,7 @@ function ConfigIndex() {
         </Stack>
       ))}
 
-      {files.length === 0 && (
+      {grouped.length === 0 && (
         <Center h="40vh">
           <Text c="dimmed">No config files found.</Text>
         </Center>
