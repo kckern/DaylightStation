@@ -112,7 +112,10 @@ test('Feed retries the current detail after changing items and keeps its origina
     await page.goto('/feed/scroll');
     await page.getByRole('button', { name: `Open: ${article.title}` }).click();
     await expect.poll(() => started).toBe(true);
+    const retired = page.waitForEvent('requestfailed', request =>
+      new URL(request.url()).pathname === detailPath(article.id));
     await page.getByRole('button', { name: 'Next', exact: true }).first().click();
+    await retired;
     await expect(page).toHaveURL(scrollPath(second.id));
     const original = page.getByRole('link', { name: 'Open via archive' });
     await expect(original).toHaveAttribute('href', second.meta.paywallProxy + second.link);

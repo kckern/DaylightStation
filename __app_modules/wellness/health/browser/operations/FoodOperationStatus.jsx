@@ -5,7 +5,7 @@ import { normalizeFoodOperationResult } from './healthOperationResults.js';
 import { useHealthOperations } from './HealthOperationsProvider.jsx';
 // A transport error is for the logs. The person gets a sentence.
 const operationErrorText = error => (/^(HTTP \d|Unreadable response|Network error)|^\s*[{[<]/.test(error) ? 'That did not go through.' : error);
-export function FoodOperationStatus({ operation }) {
+export function FoodOperationStatus({ operation, active }) {
   const context = useHealthOperations();
   if (operation.phase === 'succeeded') {
     // The day's toast already said where this food landed.
@@ -28,5 +28,5 @@ export function FoodOperationStatus({ operation }) {
     {operation.phase !== 'conflict' && (!operation.response || acknowledged || operation.resumable) && <Button size="compact-xs" onClick={() => context.retry(operation.id).catch(() => {})}>{acknowledged ? 'Retry refresh' : 'Retry'}</Button>}
     {!acknowledged && <Button size="compact-xs" variant="subtle" onClick={() => context.store.discard(operation.id, { descendants: operation.resumable })}>Dismiss</Button>}
   </div>;
-  return <CaptureProgress startedAt={operation.startedAt} label="Food analysis" text={text}/>;
+  return <CaptureProgress startedAt={operation.startedAt} label="Food analysis" text={text} active={active} />;
 }

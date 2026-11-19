@@ -2,6 +2,7 @@ import { useFeedListShortcuts } from '../useFeedListShortcuts.js';
 import { useState, useEffect, useLayoutEffect, useCallback, useMemo, useRef } from 'react';
 import { useParams, useNavigate, useSearchParams, useLocation, useOutletContext } from 'react-router-dom';
 import { browserPreference } from "@/lib/browserPreference.js";
+import { useRefreshableRead } from "@/lib/hooks/useRefreshableRead.js";
 import { renderFeedCard } from "./cards/index.jsx";
 import DetailView from "./detail/DetailView.jsx";
 import DetailModal from "./detail/DetailModal.jsx";
@@ -513,13 +514,11 @@ export default function Scroll() {
   }, [fullId, mutateItems]);
 
   // Each route and Retry owns a detail request, including its offline fallback.
-  useEffect(() => {
+  const readDetail = useCallback((isCurrent, signal) => {
     setSettledDetail(null);
     if (!fullId) return;
-    const controller = new AbortController();
-    const { signal } = controller;
     const publish = (data, { item, error } = {}) => {
-      if (!signal.aborted) setSettledDetail({ key: detailKey, data, item, error });
+      if (isCurrent()) setSettledDetail({ key: detailKey, data, item, error });
     };
     const item = itemsRef.current.find(i => i.id === fullId);
 
@@ -541,15 +540,15 @@ export default function Scroll() {
       }
 
       const detailStart = performance.now();
-      DaylightAPI(`/api/v1/feed/detail/${encodeURIComponent(item.id)}?${params}`, {}, 'GET', { signal })
+      return DaylightAPI(`/api/v1/feed/detail/${encodeURIComponent(item.id)}?${params}`, {}, 'GET', { signal })
         .then(result => {
-          if (signal.aborted) return;
+          if (!isCurrent()) return;
           feedLog.timing('detail-sections', { durationMs: Math.round(performance.now() - detailStart), id: fullId, sectionCount: result.sections?.length || 0 });
           feedLog.detail('loaded', { id: fullId, sections: result.sections?.length || 0 });
           publish(result);
         })
         .catch(async err => {
-          if (signal.aborted || err.name === 'AbortError') return;
+          if (!isCurrent() || err.name === 'AbortError') return;
           feedLog.detail('fetchError', { id: fullId, error: err.message });
           const error = 'The reader view could not be loaded. You can still open the original article.';
           try {
@@ -566,9 +565,9 @@ export default function Scroll() {
       feedLog.detail('open (deep link)', { slug: urlSlug, fullId });
 
       const detailStart = performance.now();
-      DaylightAPI(`/api/v1/feed/items/${urlSlug}`, {}, 'GET', { signal })
+      return DaylightAPI(`/api/v1/feed/items/${urlSlug}`, {}, 'GET', { signal })
         .then(result => {
-          if (signal.aborted) return;
+          if (!isCurrent()) return;
           feedLog.timing('deeplink-fetch', { durationMs: Math.round(performance.now() - detailStart), slug: urlSlug, hasItem: !!result.item, sectionCount: result.sections?.length || 0 });
           feedLog.detail('deep link loaded', { hasItem: !!result.item, sections: result.sections?.length || 0 });
           publish({
@@ -578,10 +577,10 @@ export default function Scroll() {
           }, { item: result.item });
         })
         .catch(async err => {
-          if (signal.aborted || err.name === 'AbortError') return;
+          if (!isCurrent() || err.name === 'AbortError') return;
           try {
             const offline = await getOfflineEdition(fullId);
-            if (signal.aborted) return;
+            if (!isCurrent()) return;
             if (offline?.item) {
               feedLog.detail('deep link loaded from offline edition', { slug: urlSlug });
               publish(offline.detail || { sections: [], ogImage: null, ogDescription: offline.item.summary || null }, {
@@ -590,15 +589,16 @@ export default function Scroll() {
               return;
             }
           } catch (offlineError) {
-            if (signal.aborted) return;
+            if (!isCurrent()) return;
             feedLog.detail('offline edition unavailable', { slug: urlSlug, error: offlineError.message });
           }
           feedLog.detail('deep link unavailable', { slug: urlSlug, error: err.message });
           publish(null, { error: 'This item is no longer available in Feed history or on this device.' });
         });
     }
-    return () => controller.abort();
   }, [applyPendingMutations, detailKey, fullId, urlSlug]);
+  const { reload: loadDetail } = useRefreshableRead(readDetail);
+  useEffect(() => { loadDetail(); }, [loadDetail]);
 
   useLayoutEffect(() => {
     if (!urlSlug) return;

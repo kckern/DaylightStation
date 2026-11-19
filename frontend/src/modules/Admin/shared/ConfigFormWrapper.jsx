@@ -1,7 +1,6 @@
 import React from 'react';
 import { Stack, Alert, Center, Loader, Button, Group } from '@mantine/core';
 import { IconAlertCircle } from '@tabler/icons-react';
-import { useHotkeys } from '@mantine/hooks';
 import { useAdminConfig } from '../../../hooks/admin/useAdminConfig.js';
 import { useUnsavedGuard } from './useUnsavedGuard.js';
 import SaveBar from './SaveBar.jsx';
@@ -42,17 +41,6 @@ function ConfigFormWrapper({ filePath, title, children, validate, rawMode = fals
       // error state handled by the hook
     }
   };
-
-  useHotkeys([
-    ['mod+s', (e) => {
-      e.preventDefault();
-      if (dirty && !saving && !loading) handleSave();
-    }],
-    ['mod+z', (e) => {
-      e.preventDefault();
-      if (dirty && !saving && !loading) revert();
-    }],
-  ]);
 
   if (loading && !hasEditor) {
     return (

@@ -7,6 +7,7 @@ import { UnitIntention } from "./UnitIntention.jsx";
 import { UnitCapture } from "./UnitCapture.jsx";
 import { CycleRetro } from "./CycleRetro.jsx";
 import { PhaseReview } from "./PhaseReview.jsx";
+import { ErrorState } from '@/lib/ui';
 import { LoadingState } from "../../components/index.js";
 import getLogger from "../../../../../../frontend/src/lib/logging/Logger.js";
 
@@ -74,11 +75,7 @@ export function CeremonyFlow({ type, username, onComplete }) {
         </Paper>
       );
     }
-    return (
-      <Alert color="red" title="Ceremony unavailable" icon={<IconAlertCircle size={16} />}>
-        {error.message || 'Something went wrong loading this ceremony.'}
-      </Alert>
-    );
+    return <ErrorState title="Ceremony unavailable" error={error} onRetry={ceremony.reload} />;
   }
 
   if (completed) {

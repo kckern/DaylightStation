@@ -11,7 +11,6 @@ import {
   IconSettings, IconLink, IconApple, IconHeartbeat, IconShield,
   IconCopy, IconCheck
 } from '@tabler/icons-react';
-import { useHotkeys } from '@mantine/hooks';
 import { useApiResource } from '../../../lib/hooks/useApiResource.js';
 import { DaylightAPI } from '../../../lib/api.mjs';
 import { useAdminHousehold } from '../../../hooks/admin/useAdminHousehold';
@@ -135,17 +134,6 @@ function MemberDraft({ username, initialProfile, authStatus }) {
     setProfile(JSON.parse(JSON.stringify(original)));
     setError(null);
   }, [original]);
-
-  useHotkeys([
-    ['mod+s', (e) => {
-      e.preventDefault();
-      if (dirty && !saving) handleSave();
-    }],
-    ['mod+z', (e) => {
-      e.preventDefault();
-      if (dirty && !saving) handleRevert();
-    }],
-  ]);
 
   return (
     <Stack gap="md" p="md">

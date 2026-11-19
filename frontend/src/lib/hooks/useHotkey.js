@@ -11,9 +11,10 @@ const isTypingTarget = (el) => {
  * Launch shortcuts yield to focused modals and editable controls. Set
  * allowInInput to opt into editable controls. Escape can dismiss either.
  * Set allowRepeat for continuous navigation while a key is held.
+ * Set code to also match a physical key across keyboard layouts.
  * Return false from the handler when no action is available.
  */
-export function useHotkey(combo, handler, { allowInInput = false, allowRepeat = false } = {}) {
+export function useHotkey(combo, handler, { allowInInput = false, allowRepeat = false, code } = {}) {
   const handlerRef = useRef(handler);
   handlerRef.current = handler;
 
@@ -24,7 +25,7 @@ export function useHotkey(combo, handler, { allowInInput = false, allowRepeat = 
 
     const onKey = (e) => {
       if (e.defaultPrevented || e.isComposing || (e.repeat && !allowRepeat) || e.altKey) return;
-      if (e.key.toLowerCase() !== wantKey) return;
+      if (e.key.toLowerCase() !== wantKey && (!code || e.code !== code)) return;
       if (wantMod && !(e.metaKey || e.ctrlKey)) return;
       if (!wantMod && (e.metaKey || e.ctrlKey)) return;
       if (wantKey !== 'escape') {
@@ -37,7 +38,7 @@ export function useHotkey(combo, handler, { allowInInput = false, allowRepeat = 
     };
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
-  }, [combo, allowInInput, allowRepeat]);
+  }, [combo, allowInInput, allowRepeat, code]);
 }
 
 export default useHotkey;

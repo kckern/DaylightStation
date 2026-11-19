@@ -21,6 +21,20 @@ describe('useHotkey', () => {
     expect(fn).not.toHaveBeenCalled();
   });
 
+  it('matches an opted-in physical key across layouts and keeps the default logical', () => {
+    const logical = vi.fn();
+    const physical = vi.fn();
+    renderHook(() => {
+      useHotkey('mod+s', logical);
+      useHotkey('mod+s', physical, { code: 'KeyS' });
+    });
+    press('ы', { code: 'KeyD', ctrlKey: true });
+    expect(physical).not.toHaveBeenCalled();
+    press('ы', { code: 'KeyS', ctrlKey: true });
+    expect(physical).toHaveBeenCalledTimes(1);
+    expect(logical).not.toHaveBeenCalled();
+  });
+
   it('suppresses plain-key hotkeys while typing in an input', () => {
     const fn = vi.fn();
     renderHook(() => useHotkey('/', fn));

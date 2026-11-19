@@ -1,13 +1,13 @@
 import React from 'react';
 import { Group, Button, Badge, Text } from '@mantine/core';
 import { IconDeviceFloppy, IconArrowBack } from '@tabler/icons-react';
+import { useHotkey } from '../../../lib/hooks/useHotkey.js';
 
 /**
  * SaveBar — shared save/revert action bar for admin editors (audit C5).
  *
- * Single source of the "title + Unsaved badge + Revert/Save" chrome so
- * editors don't hand-roll their own. Used by ConfigFormWrapper and by
- * editors with bespoke data flows (e.g. MemberEditor).
+ * Owns the title, unsaved state, actions and keyboard shortcuts for Admin
+ * editors. Each editor supplies its save and revert operations.
  *
  * Props:
  *   title       - Page title; strings get the standard mono style, nodes render as-is
@@ -18,6 +18,14 @@ import { IconDeviceFloppy, IconArrowBack } from '@tabler/icons-react';
  *   headerExtra - Optional node rendered in the bar, before Revert/Save
  */
 function SaveBar({ title, dirty, saving, disabled = false, onSave, onRevert, headerExtra }) {
+  const canUseActions = dirty && !saving && !disabled;
+  const runShortcut = (event, action) => {
+    if (event.shiftKey) return false;
+    if (canUseActions) action();
+  };
+  useHotkey('mod+s', event => runShortcut(event, onSave), { code: 'KeyS' });
+  useHotkey('mod+z', event => runShortcut(event, onRevert), { code: 'KeyZ' });
+
   return (
     <Group
       justify="space-between"
@@ -39,7 +47,7 @@ function SaveBar({ title, dirty, saving, disabled = false, onSave, onRevert, hea
           variant="subtle"
           leftSection={<IconArrowBack size={16} />}
           onClick={onRevert}
-          disabled={!dirty || saving || disabled}
+          disabled={!canUseActions}
           size="sm"
         >
           Revert
@@ -48,7 +56,7 @@ function SaveBar({ title, dirty, saving, disabled = false, onSave, onRevert, hea
           leftSection={<IconDeviceFloppy size={16} />}
           onClick={onSave}
           loading={saving}
-          disabled={!dirty || saving || disabled}
+          disabled={!canUseActions}
           size="sm"
           data-testid="config-save-button"
         >

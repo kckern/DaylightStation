@@ -103,7 +103,8 @@ for (const width of [390, 1440]) {
       const name = page.getByRole('textbox', { name: 'Name', exact: true });
       const save = page.getByTestId('config-save-button');
       await name.fill('Submitted Market');
-      await save.click();
+      await save.focus();
+      await page.keyboard.press('Control+s');
       try {
         await expect.poll(() => submitted?.parsed.shopping.retailers[0].name).toBe('Submitted Market');
         await expect(save).toBeDisabled();

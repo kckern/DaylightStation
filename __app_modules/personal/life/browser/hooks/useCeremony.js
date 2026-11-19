@@ -1,4 +1,5 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useLayoutEffect, useCallback, useRef } from 'react';
+import { useRefreshableRead } from '@/lib/hooks/useRefreshableRead.js';
 import { DaylightAPI } from '@/lib/api.mjs';
 import getLogger from "../../../../../frontend/src/lib/logging/Logger.js";
 import { useLifeUsername } from "./useLifeUser.js";
@@ -47,10 +48,8 @@ export function useCeremony(type, username) {
 
   const session = useRef(null);
   const path = `${API_BASE}/ceremony/${type}`;
-  useEffect(() => {
-    const controller = new AbortController();
-    const current = { submitting: false };
-    session.current = current;
+  useLayoutEffect(() => {
+    session.current = { submitting: false };
     setContent(null);
     setResponses({});
     setStep(0);
@@ -59,21 +58,28 @@ export function useCeremony(type, username) {
     setSubmitError(null);
     setLoading(true);
     setError(null);
-    DaylightAPI(path + qs, {}, 'GET', { signal: controller.signal }).then(data => {
-      if (session.current !== current) return;
+    return () => { session.current = null; };
+  }, [path, qs]);
+
+  const readContent = useCallback(async (isCurrent, signal) => {
+    setLoading(true);
+    setError(null);
+    try {
+      const data = await DaylightAPI(path + qs, {}, 'GET', { signal });
+      if (!isCurrent()) return;
       setContent(data);
       logger().info('ceremony-loaded', { type, periodId: data.periodId });
-    }).catch(err => {
-      if (session.current !== current) return;
+    } catch (err) {
+      if (!isCurrent()) return;
       const info = ceremonyError(err);
       setError(info);
       logger().error('ceremony-load-error', { type, ...info });
-    }).finally(() => { if (session.current === current) setLoading(false); });
-    return () => {
-      session.current = null;
-      controller.abort();
-    };
+    } finally {
+      if (isCurrent()) setLoading(false);
+    }
   }, [path, type, qs]);
+  const { reload } = useRefreshableRead(readContent);
+  useEffect(() => { reload(); }, [reload]);
 
   const setResponse = useCallback((key, value) => {
     setResponses(prev => ({ ...prev, [key]: value }));
@@ -106,7 +112,7 @@ export function useCeremony(type, username) {
   }, [path, type, qs, responses]);
 
   return {
-    content, loading, error, submitError,
+    content, loading, error, reload, submitError,
     step, nextStep, prevStep,
     responses, setResponse,
     submit, submitting, completed,

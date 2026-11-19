@@ -40,7 +40,7 @@ const collapsedDishes = browserPreference('health:collapsed-dishes', [], raw => 
 const kcal = (rows) => Math.round(sumCounted(rows, 'calories'));
 
 function Section({
-  label, rows, renderAddRow = null, onRowTap, onConfirm, onRequestDelete, headerAction, coldLoading, pending,
+  label, rows, active, renderAddRow = null, onRowTap, onConfirm, onRequestDelete, headerAction, coldLoading, pending,
   measuredByUuid, addedIds = null, kcalScale = null, date, bucket, onVoiceCapture, onTextCapture, onChanged, captureTasks = [], externalClarification, onClearClarification,
   fasted = false, onFastChanged = null, selecting = false, onSelectionMode = () => {}, onMealCommandDone = () => {}, selection = [], setSelection = () => {},
 }) {
@@ -206,12 +206,12 @@ function Section({
           bucket), never as a page-level spinner. `aria-busy` on the row
           itself, not the whole section — the heading/kcal/add-row above
           stay fully interactive while a capture is in flight. */}
-      {captureTasks.length ? captureTasks.map(task=><CaptureProgress key={task.id} startedAt={task.startedAt} label={`${label} food analysis`}
+      {captureTasks.length ? captureTasks.map(task=><CaptureProgress key={task.id} startedAt={task.startedAt} label={`${label} food analysis`} active={active}
         text={task.text ?? null} estimateMs={task.text ? SENTENCE_ESTIMATE_MS : undefined}/>) : pending ?
-        <CaptureProgress startedAt={Date.now()} label={`${label} food analysis`}/> : null}
+        <CaptureProgress startedAt={Date.now()} label={`${label} food analysis`} active={active} /> : null}
       {/* The meal's add input is its last child, so a new food is typed right
           under the foods it joins. */}
-      {sentenceOperations.map(operation => <FoodOperationStatus key={operation.id} operation={operation} />)}
+      {sentenceOperations.map(operation => <FoodOperationStatus key={operation.id} operation={operation} active={active} />)}
       {addRow}
     </section>
   );
@@ -281,7 +281,7 @@ function DaySelectionBar({ barRef, byBucket, date, selection, moving, setMoving,
 }
 
 export function LogTable({
-  byBucket, date, sessions = [], exerciseAvailable = false, onRowTap, onConfirm, onRequestDelete,
+  byBucket, date, active = true, sessions = [], exerciseAvailable = false, onRowTap, onConfirm, onRequestDelete,
   bucketHeaderAction, coldLoading = false, capturePendingBucket = null, capturePendingBuckets = [],
   measuredByUuid = null, onVoiceCapture, onTextCapture, onMealChanged, captureTasks = [], clarifications, onClearClarification,
   renderAddRow = null, addedIds = null, onMoveEntry = null, onMoveMeal = null, onMoveToDay = null,
@@ -446,7 +446,7 @@ export function LogTable({
     const rows = byBucket.get(b.id) || [];
     return (
       <div key={`${date}:${b.id}`}>
-        <Section label={b.label} rows={rows} date={date} bucket={b.id}
+        <Section label={b.label} rows={rows} date={date} bucket={b.id} active={active}
           onVoiceCapture={onVoiceCapture} onTextCapture={onTextCapture} onChanged={onMealChanged}
           externalClarification={clarifications === undefined ? undefined : clarifications.get(`${date}:${b.id}`) || null}
           onClearClarification={()=>onClearClarification?.(`${date}:${b.id}`)}
@@ -480,7 +480,7 @@ export function LogTable({
       ))}
       {orphans.length ? (
         <div className="health-log__wide">
-          <Section label={UNGROUPED.label} rows={orphans} onRowTap={onRowTap} onConfirm={onConfirm} onRequestDelete={onRequestDelete}
+          <Section label={UNGROUPED.label} rows={orphans} active={active} onRowTap={onRowTap} onConfirm={onConfirm} onRequestDelete={onRequestDelete}
             measuredByUuid={measuredByUuid} kcalScale={kcalScale} />
         </div>
       ) : null}
