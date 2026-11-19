@@ -3510,7 +3510,7 @@ const { readingSessions, readingSessionInterceptor } = await createSchoolReading
   const triageRuntime = createTriageRuntime({
     configuration: () => configService.getHouseholdAppConfig(householdId, 'triage') ?? {},
     defaultUsername: configService.getHeadOfHousehold(),
-    isKnownUser: (username) => (configService.getHouseholdUsers(configService.getDefaultHouseholdId()) || [])
+    isKnownUser: (username) => (configService.getHouseholdUsers(householdId) || [])
       .map((u) => (typeof u === 'string' ? u : (u?.username || u?.userId || u?.name)))
       .includes(username),
     dataService, mailbox: null, work: workRuntime,
@@ -3521,7 +3521,7 @@ const { readingSessions, readingSessionInterceptor } = await createSchoolReading
   });
   await triageRuntime.start();
   v1Routers.triage = triageRuntime.router;
-  process.once('SIGTERM', () => { void triageRuntime.dispose(); });
+  process.once('SIGTERM', () => { void triageRuntime.dispose().catch((error) => rootLogger.warn?.('triage.dispose.failed', { reason: error.code ?? 'shutdown_failed' })); });
 
   const journalistServices = createJournalistServices({
     knowledgeRuntime,knowledgeSend,workRuntime,workSend:knowledgeSend,userTimezone:knowledgeTimezone,clock:Date.now,
