@@ -19,7 +19,7 @@ const API_BASE = '/api/v1/admin/config/files';
 export function useAdminConfig(filePath) {
   const logger = useMemo(() => getLogger().child({ hook: 'useAdminConfig', filePath }), [filePath]);
   const resourcePath = `${API_BASE}/${filePath}`;
-  const { data: loaded, loading: readLoading, error: readError } = useApiResource(resourcePath, {
+  const { data: loaded, loading: readLoading, error: readError, reload: reloadResource } = useApiResource(resourcePath, {
     label: `Admin config ${filePath}`,
     retryTransient: false,
   });
@@ -45,7 +45,21 @@ export function useAdminConfig(filePath) {
   const error = (commandError?.filePath === filePath ? commandError.error : null) || visibleReadError;
 
   useEffect(() => {
-    if (readLoading || readError) return;
+    if (readLoading) return;
+    if (readError) {
+      // A confirmed missing allowed file is editable from the raw config
+      // editor. Seed its empty draft so keystrokes and the first PUT have the
+      // same keyed ownership as an existing file; other read failures stay
+      // unable to initialize a new draft. An existing matching draft stays
+      // available during a failed revalidation.
+      if (readError.status === 404) {
+        setDraft(current => current.filePath === filePath
+          ? current
+          : { filePath, data: null, raw: '', dirty: false });
+        originalRef.current = { filePath, data: null, raw: '' };
+      }
+      return;
+    }
     const loadedData = loaded?.parsed ?? null;
     const loadedRaw = loaded?.raw ?? '';
     setDraft(current => current.filePath === filePath && current.dirty
@@ -72,6 +86,7 @@ export function useAdminConfig(filePath) {
         if (originalRef.current.filePath === filePath) {
           originalRef.current = { filePath, data: savedData, raw: savedRaw };
         }
+        dismissReadError();
       }
       logger.info('admin.config.saved', { filePath, useRaw });
       if (activeFilePath.current === filePath) {
@@ -98,7 +113,7 @@ export function useAdminConfig(filePath) {
     } finally {
       setSavingPath(current => current === filePath ? null : current);
     }
-  }, [filePath, resourcePath, data, raw, logger]);
+  }, [filePath, resourcePath, data, raw, logger, dismissReadError]);
 
   // Revert to the last-loaded values
   const revert = useCallback(() => {
@@ -144,18 +159,27 @@ export function useAdminConfig(filePath) {
     dismissReadError();
   }, [dismissReadError]);
 
+  const retryRead = useCallback(() => {
+    setCommandError(null);
+    dismissReadError();
+    reloadResource();
+  }, [dismissReadError, reloadResource]);
+
   return {
     data,
     raw,
     loading,
     saving,
     error,
+    readError: visibleReadError,
+    draftReady: draftMatches,
     dirty,
     save,
     revert,
     setData,
     setRaw,
-    clearError
+    clearError,
+    retryRead
   };
 }
 

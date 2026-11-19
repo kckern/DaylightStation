@@ -8,12 +8,15 @@ const mockConfig = {
   loading: false,
   saving: false,
   error: null,
+  readError: null,
+  draftReady: true,
   dirty: false,
   save: vi.fn().mockResolvedValue({}),
   revert: vi.fn(),
   setData: vi.fn(),
   setRaw: vi.fn(),
   clearError: vi.fn(),
+  retryRead: vi.fn(),
 };
 
 vi.mock('../../../hooks/admin/useAdminConfig.js', () => ({

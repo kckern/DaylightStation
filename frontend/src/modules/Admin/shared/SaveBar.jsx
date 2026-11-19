@@ -17,7 +17,7 @@ import { IconDeviceFloppy, IconArrowBack } from '@tabler/icons-react';
  *   onRevert    - Revert handler
  *   headerExtra - Optional node rendered in the bar, before Revert/Save
  */
-function SaveBar({ title, dirty, saving, onSave, onRevert, headerExtra }) {
+function SaveBar({ title, dirty, saving, disabled = false, onSave, onRevert, headerExtra }) {
   return (
     <Group
       justify="space-between"
@@ -39,7 +39,7 @@ function SaveBar({ title, dirty, saving, onSave, onRevert, headerExtra }) {
           variant="subtle"
           leftSection={<IconArrowBack size={16} />}
           onClick={onRevert}
-          disabled={!dirty || saving}
+          disabled={!dirty || saving || disabled}
           size="sm"
         >
           Revert
@@ -48,7 +48,7 @@ function SaveBar({ title, dirty, saving, onSave, onRevert, headerExtra }) {
           leftSection={<IconDeviceFloppy size={16} />}
           onClick={onSave}
           loading={saving}
-          disabled={!dirty}
+          disabled={!dirty || saving || disabled}
           size="sm"
           data-testid="config-save-button"
         >
