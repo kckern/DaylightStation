@@ -429,23 +429,32 @@ In `devices.yml` under `input.audio_bridge`:
 audio_bridge:
   url: ws://localhost:8765
   mode: fallback
-  gain: 1
+  gain: 3                  # static gain after AEC/AGC (living-room TV uses 3)
   aec:
     enabled: true
-    filter_length: 4800  # 100ms at 48kHz
-    frame_size: 480      # 10ms frames
+    filter_length: 24000   # 500ms at 48kHz: the echo window's WIDTH
+    frame_size: 480        # 10ms frames
+    ref_delay_ms: 0        # where the window STARTS: covers ref_delay_ms .. +filter_length
+    agc: true              # far-field voice lift (default on)
+    agc_max_gain_db: 18    # AGC ceiling
+    # agc_target: 0.053    # voice RMS before `gain` (default 0.158 / gain ≈ -16 dBFS after it)
 ```
 
-Set `aec.enabled: false` to disable AEC and rely on volume ducking only.
+Set `aec.enabled: false` to disable AEC (and with it the AGC, which runs in
+the AEC path) and rely on volume ducking only.
 
 ### Runtime Behavior
 
 - AEC initializes asynchronously when the bridge connects (WASM load takes ~50ms)
 - Until AEC is ready, or when no reference signal is available, audio passes through unchanged
-- If processing exceeds 8ms per frame consistently (>10 overruns in 100 frames), AEC auto-disables and falls back to passthrough. Logged as `bridge-aec-status: degraded`
+- There is no automatic fallback when processing is slow: AEC runs on the main thread for the whole call once a reference arrives.
 - Speex adaptive filter converges in 1-3 seconds — first seconds of a call may have some echo
 - **Alignment is by sample count, not time** (2026-09-08). The mic and reference rings are consumed in lockstep, so any reference sample the tap fails to deliver shifts the pair by that much for the rest of the call. The tap is therefore an AudioWorklet (audio thread, never skips; port messages queue), not a ScriptProcessor (main thread, Chrome drops its callback 512 samples at a time under load). Audio-thread underruns are zero-filled and logged as `aec-ref-gap`.
-- **Read the numbers, not the room.** Every 5s while the far end is audible the bridge logs `bridge-aec-diag`: `erleDb` (dB removed; healthy Speex is 15-25, ~0 = never converged), `lagMs` (cross-correlation of mic vs reference: positive = reference leads the echo, cancellable while under the 500ms filter window; negative = reference has fallen behind, uncancellable until realigned) and `peakCorr`.
+- **Read the numbers, not the room.** Every 5s while the far end is audible the bridge logs `bridge-aec-diag`: `erleDb` (dB removed; healthy Speex is 15-25, ~0 = never converged), `lagMs` (cross-correlation of mic vs reference: positive = reference leads the echo, cancellable while inside the `ref_delay_ms .. ref_delay_ms + filter_length` window; negative = reference has fallen behind, uncancellable until realigned) and `peakCorr`.
+- **Echo outside the window cannot be cancelled** (2026-11-19). Speex subtracts an echo only if it arrives 0..`filter_length` after its reference sample. The living-room path (Shield → HDMI → TV speakers → room → USB mic → bridge) is long: the one measured call read ERLE 1-3 dB (nothing removed) while its best-correlated `lagMs` readings were 573-648 ms, just past the 500 ms window. `ref_delay_ms` pre-fills the reference ring with silence so the window becomes `ref_delay_ms .. ref_delay_ms + filter_length`; set it from `lagMs` readings with `peakCorr` above ~0.3, leaving ~100 ms of margin below the lowest. `bridge-aec-status` reports the value in force.
+- **The echo gate is half-duplex.** While the reference is louder than -20 dBFS mean-square the mic is held at 0.2 (-14 dB) and released over ~1s. It is the only echo control that works when the window is wrong, and also why the room sounds faint while the caller is talking. Once ERLE is healthy it can be relaxed.
+- **AGC** (2026-11-19). A far-field voice reaches the mic at -35 to -45 dBFS; a hand-rolled AGC after Speex lifts it toward -16 dBFS (after `gain`), at most `agc_max_gain_db`, rising 6 dB/s and falling 30 dB/s. It adapts only on frames 12 dB above the noise floor and freezes while the far end is audible, so it neither pumps hiss nor learns the echo. Speex's own AGC is not used: on recorded speech at -45 dBFS it added ~1 dB in ten seconds. `bridge-aec-diag` carries `agcGainDb` and `voiceDbfs`.
+- **Latency is capped** (2026-11-19). The playout worklet between AEC and the WebRTC track kept every burst the WebSocket delivered after a main-thread stall; with arrival and drain at the same rate, a backlog never shrank, and one call sat at 0.8 s (`bridge-buffer-levels` 36-40k samples) before the network added its own. Past 150 ms it now drops the oldest audio back to 50 ms and logs `bridge-latency-trim`; `bridge-buffer-levels` carries `bufferedMs`.
 
 ### Files
 

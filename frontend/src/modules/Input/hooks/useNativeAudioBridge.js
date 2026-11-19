@@ -107,7 +107,20 @@ export const useNativeAudioBridge = (config = {}) => {
 
     // ── Simplified worklet: PCM output + RMS metering only ──
     // No WASM, no AEC — just receives audio and plays it.
+    //
+    // Latency is capped. The bridge delivers 10ms chunks, but the main thread
+    // stalls (React render, video decode) and the WebSocket then hands over a
+    // burst. This ring used to keep every burst forever — playback drains at
+    // exactly the rate audio arrives, so a backlog never shrinks — and on
+    // 2026-11-19 it sat at 36-40k samples: 0.8s of room audio queued before it
+    // even reached WebRTC, which the caller heard as lag. Past MAX it now
+    // drops the OLDEST audio back to TARGET; a lost burst is a short skip, a
+    // kept one is a permanent delay.
+    const maxBufferMs = Number(configRef.current.max_buffer_ms) || 150;
+    const targetBufferMs = Math.min(Number(configRef.current.target_buffer_ms) || 50, maxBufferMs);
     const processorSource = `
+const MAX_BUFFERED = ${Math.round(sampleRate * maxBufferMs / 1000)};
+const TARGET_BUFFERED = ${Math.round(sampleRate * targetBufferMs / 1000)};
 class BridgeProcessor extends AudioWorkletProcessor {
   constructor() {
     super();
@@ -117,33 +130,43 @@ class BridgeProcessor extends AudioWorkletProcessor {
     this._readPos = 0;
     this._count = 0;
     this._frameCount = 0;
+    this._trims = 0;
+    this._trimmedSamples = 0;
 
     this.port.onmessage = (e) => {
       if (e.data.pcm) {
         // Raw Int16 from mic (passthrough — no AEC)
         const int16 = new Int16Array(e.data.pcm);
-        const len = int16.length;
-        const ring = this._ring;
-        const cap = ring.length;
-        for (let i = 0; i < len; i++) {
-          ring[this._writePos] = int16[i] / 32768;
-          this._writePos = (this._writePos + 1) % cap;
-        }
-        this._count = Math.min(this._count + len, cap);
+        for (let i = 0; i < int16.length; i++) this._write(int16[i] / 32768);
+        this._cap();
       }
       if (e.data.cleanPcm) {
         // Float32 from main-thread AEC
         const float32 = new Float32Array(e.data.cleanPcm);
-        const len = float32.length;
-        const ring = this._ring;
-        const cap = ring.length;
-        for (let i = 0; i < len; i++) {
-          ring[this._writePos] = float32[i];
-          this._writePos = (this._writePos + 1) % cap;
-        }
-        this._count = Math.min(this._count + len, cap);
+        for (let i = 0; i < float32.length; i++) this._write(float32[i]);
+        this._cap();
       }
     };
+  }
+
+  _write(sample) {
+    const cap = this._ring.length;
+    this._ring[this._writePos] = sample;
+    this._writePos = (this._writePos + 1) % cap;
+    // A full ring overwrites its oldest sample, so the read head must move
+    // with it; clamping the count alone replayed stale audio out of order.
+    if (this._count === cap) this._readPos = (this._readPos + 1) % cap;
+    else this._count++;
+  }
+
+  _cap() {
+    if (this._count <= MAX_BUFFERED) return;
+    const drop = this._count - TARGET_BUFFERED;
+    this._readPos = (this._readPos + drop) % this._ring.length;
+    this._count = TARGET_BUFFERED;
+    this._trims += 1;
+    this._trimmedSamples += drop;
+    this.port.postMessage({ trim: { dropped: drop, trims: this._trims, trimmedSamples: this._trimmedSamples } });
   }
 
   process(inputs, outputs) {
@@ -254,6 +277,53 @@ registerProcessor('bridge-processor', BridgeProcessor);`;
         // (unlike SET_SAMPLING_RATE which dereferences ptr to read an int).
         speexMod._speex_preprocess_ctl(ppState, 24, state);
 
+        // Automatic gain for a far-field room mic. On 2026-11-19 the caller
+        // could barely hear the living room: someone across the room reaches
+        // the Shield's mic at -35 to -45 dBFS, and the fixed `gain` that suits
+        // a near talker leaves them inaudible. A slow AGC lifts voice toward a
+        // target, never by more than agc_max_gain_db.
+        //
+        // Hand-rolled because Speex's own AGC (SPEEX_PREPROCESS_SET_AGC) does
+        // not move on real speech in this build: fed recorded speech at
+        // -45 dBFS it added ~1 dB in ten seconds even when allowed 30 dB.
+        //
+        // It adapts only on frames well above the noise floor (so it never
+        // pumps up hiss in a silent room) and FREEZES while the far end is
+        // audible (refEnergy over the gate threshold), so it cannot learn to
+        // amplify the caller's own echo. Off with `aec.agc: false`.
+        const agcEnabled = aecConfig.agc !== false;
+        // The static `gain` still applies after this, so the target is set
+        // where AGC × gain lands voice near -16 dBFS RMS: loud on the phone,
+        // with peaks left to the limiter rather than living in it.
+        const agcTarget = Number(aecConfig.agc_target) || 0.158 / (Number(configRef.current.gain) || 2);
+        const agcMaxGain = 10 ** ((Number(aecConfig.agc_max_gain_db) || 18) / 20);
+        const AGC_UP = 10 ** (6 / 20 / 100);      // at most +6 dB/s, per 10ms frame
+        const AGC_DOWN = 10 ** (-30 / 20 / 100);  // -30 dB/s: back off fast when someone gets loud
+        let agcGain = 1;
+        let agcLevel = 0;                          // smoothed voice RMS
+        let noiseFloor = 1e-3;
+        const applyAgc = (frame, frameRms, farActive) => {
+          // Noise floor: follows quiet frames down at once, creeps up slowly.
+          noiseFloor = frameRms < noiseFloor ? frameRms : noiseFloor * 1.002;
+          const voiced = frameRms > Math.max(noiseFloor * 4, 3e-4);
+          if (voiced && !farActive) {
+            agcLevel = agcLevel === 0 ? frameRms : agcLevel + 0.05 * (frameRms - agcLevel);
+            const want = Math.min(agcMaxGain, Math.max(1, agcTarget / agcLevel));
+            agcGain = want > agcGain ? Math.min(want, agcGain * AGC_UP) : Math.max(want, agcGain * AGC_DOWN);
+          }
+          if (agcGain !== 1) for (let i = 0; i < frame.length; i++) frame[i] *= agcGain;
+        };
+
+        // Bulk delay on the reference. Speex can only cancel an echo that
+        // arrives 0..filter_length after its reference sample. If the TV's
+        // output path (HDMI → TV → speakers) is slower than that window, the
+        // echo is out of reach however long the call runs. Pre-filling the
+        // reference ring with silence makes every reference sample pair with
+        // mic audio that much later, sliding the window to
+        // ref_delay_ms .. ref_delay_ms + filter_length. Read `lagMs` in
+        // `bridge-aec-diag` to choose it.
+        const refDelaySamples = Math.round(48 * Math.max(0, Number(aecConfig.ref_delay_ms) || 0));
+
         // Pre-allocate WASM heap buffers (int16: 2 bytes per sample)
         const micPtr = speexMod._malloc(frameSize * 2);
         const refPtr = speexMod._malloc(frameSize * 2);
@@ -336,6 +406,11 @@ registerProcessor('bridge-processor', BridgeProcessor);`;
           },
 
           feedRef(float32Array) {
+            if (!hasRef && refDelaySamples > 0) {
+              // Ring starts zeroed; claiming those samples IS the delay.
+              refWP = refDelaySamples % RING_SIZE;
+              refCount = refDelaySamples;
+            }
             const len = float32Array.length;
             for (let i = 0; i < len; i++) {
               refRing[refWP] = float32Array[i];
@@ -394,14 +469,16 @@ registerProcessor('bridge-processor', BridgeProcessor);`;
               // Smooth gain transitions to avoid clicking
               gateGain += 0.1 * (targetGain - gateGain);
 
-              // Int16 → Float32 output, apply gate
+              // Int16 → Float32 output, then AGC, then the gate
               const output = new Float32Array(frameSize);
               let frameOutEnergy = 0;
               for (let i = 0; i < frameSize; i++) {
                 const o = speexMod.HEAP16[(outPtr >> 1) + i] / 32768;
                 frameOutEnergy += o * o;
-                output[i] = o * gateGain;
+                output[i] = o;
               }
+              if (agcEnabled) applyAgc(output, Math.sqrt(frameOutEnergy / frameSize), refEnergy > GATE_THRESHOLD);
+              if (gateGain !== 1) for (let i = 0; i < frameSize; i++) output[i] *= gateGain;
               results.push(output);
 
               // ERLE is only meaningful while the far end is audible.
@@ -413,7 +490,14 @@ registerProcessor('bridge-processor', BridgeProcessor);`;
                 // and at least every 15s regardless so silence is visible too.
                 if (farFrames >= 50 || diagIdle >= 3) {
                   const erleDb = farFrames ? Number((10 * Math.log10(Math.max(micE, 1e-9) / Math.max(outE, 1e-9))).toFixed(1)) : null;
-                  logger().info('bridge-aec-diag', { erleDb, farFrames, refEnergy: Number(refEnergy.toExponential(2)), gateGain: Number(gateGain.toFixed(2)), ...(lagEstimate() || { lagMs: null, peakCorr: null }) });
+                  logger().info('bridge-aec-diag', {
+                    erleDb, farFrames, refEnergy: Number(refEnergy.toExponential(2)), gateGain: Number(gateGain.toFixed(2)),
+                    // What the AGC is doing: a gain pinned at the max with a low
+                    // voice level means the room is too far away for the cap.
+                    agcGainDb: agcEnabled ? Number((20 * Math.log10(agcGain)).toFixed(1)) : null,
+                    voiceDbfs: agcLevel > 0 ? Number((20 * Math.log10(agcLevel)).toFixed(1)) : null,
+                    ...(lagEstimate() || { lagMs: null, peakCorr: null }),
+                  });
                   diagIdle = 0;
                 }
                 diagFrames = 0; farFrames = 0; micE = 0; outE = 0;
@@ -432,7 +516,11 @@ registerProcessor('bridge-processor', BridgeProcessor);`;
         };
 
         aecRef.current = aecState;
-        logger().info('bridge-aec-status', { status: 'ready', frameSize, filterLength });
+        logger().info('bridge-aec-status', {
+          status: 'ready', frameSize, filterLength,
+          refDelayMs: Math.round(refDelaySamples / 48),
+          agc: agcEnabled ? { targetDbfs: Number((20 * Math.log10(agcTarget)).toFixed(1)), maxGainDb: Number((20 * Math.log10(agcMaxGain)).toFixed(1)) } : false,
+        });
       } catch (err) {
         logger().warn('bridge-aec-status', { status: 'failed', error: err.message });
         aecRef.current = null;
@@ -478,7 +566,21 @@ registerProcessor('bridge-processor', BridgeProcessor);`;
         }
       }
       if (e.data.debug) {
-        logger().sampled('bridge-buffer-levels', e.data.debug, { maxPerMinute: 6 });
+        logger().sampled('bridge-buffer-levels', {
+          ...e.data.debug,
+          bufferedMs: Math.round(e.data.debug.buffered * 1000 / sampleRate),
+        }, { maxPerMinute: 6 });
+      }
+      if (e.data.trim) {
+        // Each trim is a short skip in what the far end hears; a steady stream
+        // of them means bursts are routine and the cap is too tight.
+        logger().sampled('bridge-latency-trim', {
+          droppedMs: Math.round(e.data.trim.dropped * 1000 / sampleRate),
+          trims: e.data.trim.trims,
+          trimmedMs: Math.round(e.data.trim.trimmedSamples * 1000 / sampleRate),
+          maxBufferMs,
+          targetBufferMs,
+        }, { maxPerMinute: 6, aggregate: true });
       }
     };
 
