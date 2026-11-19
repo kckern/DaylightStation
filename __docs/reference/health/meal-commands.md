@@ -39,42 +39,6 @@ Undo of an addition removes only that command's new foods. Manual grouping and
 ungrouping never delete foods. Ordinary successful captures also receive durable
 Undo tokens, including capture responses recovered after an interrupted request.
 
-`POST /api/v1/health/nutrition/foods-move` accepts `date`, `selectedIds`,
-`expectedVersions`, `operationId`, and a destination `toDate`, `toMeal`, or both.
-All selected foods move or none do. `expectedVersions` covers every row the move
-carries. A selected dish brings every row linked to it that day, by either of its
-IDs, including a part stranded in another meal, which rejoins the dish. A food counts
-as a dish part only when its `parentId` resolves to a group on the same day and in
-the same meal; selecting such a part alone is a 400. Any other link is broken: the
-food may move on its own and the move clears its `parentId`. A plain food brings only
-rows linked to it in its own meal. A row left behind with an already broken link to a
-moved row, such as a part on another day, stays as it is. Undo restores the exact
-earlier rows, broken links included. The audit lists these rows in `brokenLinkIds`,
-and the move and Undo accept only them. Undo excuses a listed row only if it restores
-that row or the link is still broken; a row left behind that has since become a valid
-part makes Undo a 409, as does any other new breakage. Day input uses
-the same rule to decide which foods are top-level. A destination after the server's today is rejected with 400; a `today` sent by the
-client is ignored. The response adds `toDate`, `toMeal`, `movedCount`, and one
-`undoToken` that `meal-undo` accepts.
-
-`POST /api/v1/health/nutrition/day-input` carries one day-level instruction. It
-accepts `type` (`text` or `voice`), `content` (the words, or a recording as a
-base64 data URL), `date`, a required `operationId`, and optionally `resolved`, the
-answer to a clarification, holding only `foodId` and `toDate` strings. New food is
-logged without the meal interpreter or revision flow; anything else goes through
-the commands above. The server supplies today.
-
-A failed transcription returns 502 with `audioRef`. To retry, send `audioRef` in
-place of `content` with the same `operationId`; the saved recording is read back
-and no new one is written, and an unknown ref returns 404 `AUDIO_NOT_FOUND`. A voice
-retry first looks for finished work, so food already logged is not heard again.
-Any later failure of a voice request also returns its `audioRef`, and a 404 frees
-the `operationId` so a new recording can use it.
-Words over the food log's 2000-character limit are refused before the parser runs:
-400 `DAY_INPUT_TOO_LONG` when typed, 422 with `audioRef` when transcribed. A provider
-failure returns 503 `DAY_INPUT_UNAVAILABLE`, never the provider's own status. If a
-commit fails after the rows reached the ledger, the food counts as logged.
-
 `POST /api/v1/health/nutrition/meal-suggestions` accepts `date`, `bucket`, and
 `selectedIds`. It is read-only and returns proposals with expected versions for
 explicit atomic application via `action: "groups"`.
@@ -83,6 +47,188 @@ Contextual capture retries read the durable inner command response before AI
 interpretation or transcription, preventing a changed meal from being interpreted
 as a fresh request after the inner command committed but the outer reply was lost.
 
+## Day-level commands
+
+These two commands work across a day instead of inside one meal. What the person
+sees is in the Health reference: [day input](README.md#day-input-dayinputbarjsx),
+[moves to another day](README.md#moving-food-to-another-day) and the
+[capture toast](README.md#capture-toast).
+
+### Moving foods: `foods-move`
+
+`POST /api/v1/health/nutrition/foods-move` accepts `date`, `selectedIds`,
+`expectedVersions`, `operationId`, and a destination: `toDate`, `toMeal`, or both.
+All rows commit together or none do. The response adds `toDate`, `toMeal`,
+`movedCount`, and one `undoToken` that `meal-undo` accepts.
+
+- **What can be selected.** Every ID must be a row on `date`: a top-level food, a
+  dish, or a food with a broken dish link. A food counts as a dish part only when its
+  `parentId` resolves to a group on the same day and in the same meal. A part cannot
+  move alone: selecting one is a 400.
+- **Dish links.** A `parentId` may name its dish by `uuid` or by short `id`. When one
+  value matches both, the row with that `uuid` wins.
+- **What travels.** A dish brings every row linked to it that day, including a part
+  stranded in another meal, which rejoins the dish. A plain food brings only rows
+  linked to it in its own meal, and those rows lose the link.
+- **Broken links.** Any link that is not a valid dish part is broken. A selected food
+  with one moves on its own and its `parentId` is cleared. A row left behind with an
+  already broken link to a moved row, such as a part on another day, stays as it is.
+- **Versions.** `expectedVersions` must hold the current version of every row the move
+  carries, or the move is a 409.
+- **Nothing to do.** A move that changes nothing is a 400 ("These foods are already
+  there"). A selected food counts as moving when its day or meal changes, or when a
+  stranded part rejoins it.
+- **Today belongs to the server.** A `toDate` after the server's today is a 400. A
+  `today` sent by the client is ignored.
+
+**Undo** restores the exact earlier rows, broken links included. The audit lists in
+`brokenLinkIds` every carried row whose link was not a valid dish link and every row
+left behind with a broken link to a moved row. Undo accepts a listed row's broken link
+only if Undo restores that row or the link is still broken. A row left behind that has
+since become a valid part makes Undo a 409, because restoring would split its dish, and
+so does any other new breakage. Undo checks only links touching the rows the move
+changed, so an unrelated broken row elsewhere does not block it.
+
+### Day input: `day-input`
+
+`POST /api/v1/health/nutrition/day-input` carries one instruction about a day, in
+words: new food, a move, or a correction.
+
+| Field | Contract |
+|---|---|
+| `type` | `text` or `voice` |
+| `content` | The words, up to 2000 characters after trimming, or for `voice` a recording as a base64 data URL |
+| `audioRef` | `voice` only, in place of `content`: retry from a recording the server already saved |
+| `date` | The day the instruction is about (`YYYY-MM-DD`) |
+| `operationId` | Required: 1 to 128 letters, digits, `_` or `-`. Repeating it with the same body returns the first result, and with a different body is a 409 |
+| `resolved` | Optional answer to a clarification, holding only non-empty `foodId` and `toDate` strings |
+
+The server supplies today. Every reply carries `outcome`, and `instructionText` when
+the words are known:
+
+| `outcome` | Meaning | Also returned |
+|---|---|---|
+| `committed` | The work is done | `kind` (`added`, `moved` or `changed`), `message`, the command's result, and its `undoToken` when there is one |
+| `clarification` | Nothing changed; one answer is needed | `clarification: {kind: "food" \| "day", question, choices: [{id, label}]}` |
+| `no-change` | Nothing changed, and the sentence says why | `message` |
+| `no-food` | The parser found no food in the words | `message` |
+
+#### How the words are read
+
+`DayInstructionReader` puts one set of fixed-option questions to `IDecisionGateway`.
+Answers are options, never free text, and a malformed answer stops the request with a
+503 rather than acting on it.
+
+| Question | Options |
+|---|---|
+| `intent` | `add`, `move`, `change`, `other` |
+| `target` | `latest` (the most recent capture), `whole_day`, `meal`, `named`. There is no `unclear` option |
+| `fromMeal` | Each meal, or `none` |
+| `toMeal` | `same`, or each meal |
+| `toDay` | `same`, `older`, or one of the seven days ending today, leaving out the day being viewed |
+| `compound` | Yes or no: does this ask for two or more separate changes? |
+
+A compound request changes nothing and asks for one change at a time. Reporting several
+foods is one request, and so is sending several foods to one place. `other` also
+changes nothing. A day with no counted food skips the reading and treats the words as
+new food. `named` targets, and corrections with several candidates, get one more
+yes-or-no question per candidate food.
+
+The server then checks every target against the day's rows. Weight-derived estimates
+and rows that are not counted are never targets. Top-level foods follow the same dish
+rule as `foods-move`, so a broken-link row stands alone.
+
+#### Acting, and when it asks
+
+The service acts on its best reading without asking first, and the reply's Undo is the
+way back. It asks only when it cannot identify the food or the destination:
+
+- `kind: "food"`, with the candidates as `choices`, when a move matches no food or a
+  correction does not match exactly one.
+- `kind: "day"`, with no `choices`, when a move names an older day it cannot pin down,
+  or names neither a day nor a meal.
+
+The browser answers by sending the same words with `resolved` under a new
+`operationId`, and the server reads them again. A `foodId` that is not an eligible food
+on that day is a 422. An answer to words that now read as new food changes nothing.
+
+Moves go through `foods-move`, and corrections through `meal-command`'s `amend` for
+that food's meal, so each has that command's Undo.
+
+#### New food: capture and placement
+
+New food goes through the normal text parser with the meal interpreter and revision
+flow turned off, because the words have already been judged to be new food. The parser
+may still file it on another day when the words say so. The gateway then assigns each
+top-level food to a meal, a dish's parts follow it, and a food whose meal the words do
+not give stays where the capture put it. Undo removes the whole capture.
+
+Placement never fails the request, because the food is already logged. If the gateway
+cannot place the foods they keep their capture meals. If placement cannot commit, for
+example because a row has been edited since, the capture gets its own Undo instead.
+
+Each step commits under an ID derived from `operationId`. A retry first looks for
+finished work: a finished move, correction or placement is returned as it stands, and a
+capture that committed resumes at placement without reading the words again. This
+matters because a day that already holds the food would read differently. A voice retry
+does this before transcribing. If a commit fails after the rows reached the ledger, the
+food counts as logged.
+
+#### Corrections and pinned fields
+
+A correction applies to one food. A revision proposal is cut down to the fields that
+may be written. Fields in `manualFields` or `cleanupFields` are pinned, unless they are
+also in `revisedFields`.
+
+- `grams`, `amount` and `unit` are one quantity and stay or change together. If the
+  quantity is pinned, the proposal's nutrients are scaled to the mass being kept.
+- If the quantity changes while a nutrient is pinned, that nutrient keeps its value.
+- If every proposed field is pinned, nothing changes and the reply says so. If only some
+  are, the reply says the hand-set details were kept.
+
+The write is an `amend` with the server-only `voiceCorrection` option, which the HTTP
+body cannot set. Changed fields join `manualFields`, so the cleanup auditor leaves them
+alone, and also `revisedFields`, so a later voice correction may replace them. A person's
+own edit takes the fields it changes off `revisedFields`, which pins them again.
+
+#### Failures
+
+| Status | `code` | When |
+|---|---|---|
+| 400 | `DAY_INPUT_TOO_LONG` | Typed words are over the limit, refused before the parser runs |
+| 400 | `AUDIO_REF_INVALID` | `audioRef` is malformed, sent with `content`, or sent for `text` |
+| 404 | `AUDIO_NOT_FOUND` | The saved recording is gone |
+| 422 | `DAY_INPUT_TOO_LONG` | Transcribed words are over the limit, with `audioRef` |
+| 422 | `TRANSCRIBE_EMPTY` | The recording held no words, with `audioRef` |
+| 422 | `INVALID_DAY_INSTRUCTION` | No words to act on, or an answer naming a food not on the day |
+| 502 | `TRANSCRIBE_FAILED` | Transcription failed, with `audioRef` |
+| 503 | `DAY_INPUT_UNAVAILABLE` | The gateway, or a provider behind the capture or correction, failed or is not configured. The provider's own status is never passed on |
+
+Other malformed requests are a plain 400. Refusals from `foods-move` and `amend` keep
+their own 400 or 409, and an unexpected failure is a 500. To retry a
+recording, send `audioRef` in place of `content` with the same `operationId`: the saved
+recording is read back and no new one is written. Every failure after a recording was
+saved returns its `audioRef`. That failure, like a 404, frees an `operationId` that
+committed nothing, so the changed request body is accepted.
+
+#### Calibrating the reader
+
+`cli/day-instruction-calibrate.mjs` checks that the gateway reads realistic phrasing as
+intended. It runs each phrase in
+`__app_modules/wellness/health/cli/fixtures/day-instruction-calibration.json` through
+`DayInstructionReader` against a fixed list of foods, and prints `ok` or `MISS` per
+phrase and a total. It exits non-zero on any miss.
+
+```sh
+DAYLIGHT_BASE_PATH=<content-base> node cli/day-instruction-calibrate.mjs
+```
+
+It makes **paid** Jev gateway calls, one per phrase, recorded in the AI usage ledger
+under the feature `day-instruction-calibration`. It writes no food data.
+
+The bar is every phrase passing on two consecutive runs, because a model can pass once
+by luck. Run it after changing the reader's questions or options. Fix a miss in that
+wording, not by changing a fixture to match a wrong answer.
 
 ## Meal capture UI
 
@@ -113,12 +259,10 @@ every row's version, so a stale view is rejected (409) and the change gets the
 usual meal Undo. The error shows under the dish it belongs to. Neither control
 appears in the Ungrouped section or while foods are being selected.
 
-Lunch and Dinner are always shown, in the left and right columns. Breakfast and
-Snacks appear when they hold food, when a recording, retryable task or
-clarification is in flight for them, or when chosen in the quick bar; the clock
-no longer opens an empty meal. Date navigation finishes a recording against its
+All four meals are always shown, an empty one as its header and add row. Date
+navigation finishes a recording against its
 original date and selected foods. Saved-audio retries preserve that context and
-can return the same selectable clarification flow. Every visible meal ends in an add row: type
+can return the same selectable clarification flow. Every meal ends in an add row: type
 to search saved foods or to have a sentence parsed, or use its photo, barcode and
 saved-meal buttons. A successful add clears the row and keeps focus for the next
 food. Each in-flight
@@ -174,11 +318,13 @@ The browser tracks operations separately from their affected foods. A group,
 membership change, or bulk move reserves its complete dependency set before
 sending; a command intersecting another pending operation cannot partially
 acquire targets. Independent groups may save concurrently, including in the
-same meal. A food move is one atomic command. It is checked against these
-reservations before the screen changes, so a refused gesture leaves the earlier
-change and its Undo offer alone. A 400 or 409 frees the foods at once, because
-nothing happened. After a network error or 5xx the outcome is unknown, so the
-foods stay reserved until Retry or Dismiss, and a successful Retry still offers Undo.
+same meal. A food move is one atomic command that reserves exactly the rows it
+carries. It is checked against these reservations before the screen changes, so a
+gesture refused here leaves the earlier change and its Undo offer alone. A 4xx answer
+other than 408, 425 or 429 frees the foods at once, because nothing happened. After a
+network error, a 5xx or one of those three the outcome is unknown, so the foods stay
+reserved until Retry or Dismiss. Retry resends the same operation ID, and a successful
+Retry still offers Undo.
 
 Contextual captures may supply `expectedVersions` from the submitted day.
 `MealInstructionService` forwards those versions to the final meal command; it
