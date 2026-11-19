@@ -36,6 +36,12 @@ describe('home desk reads', () => {
     fs.writeFileSync(path.join(practice, 'torn.yml'), 'a: [unclosed\n');
     expect(store.listPractice('kid').map((entry) => entry.scoreKey)).toEqual(['score-one']);
     expect(store.listSheetMusicIds()).toEqual(['files:docs/sheet-music/christmas/piece.mxl']);
+    // A score's poster is the same-name picture beside it, served like the score grid serves it.
+    expect(store.sheetMusicCover('files:docs/sheet-music/christmas/piece.mxl')).toBeNull();
+    fs.writeFileSync(path.join(library, 'piece.png'), 'x');
+    expect(store.sheetMusicCover('files:docs/sheet-music/christmas/piece.mxl'))
+      .toBe(`/api/v1/proxy/media/stream/${encodeURIComponent('docs/sheet-music/christmas/piece.png')}`);
+    expect(store.sheetMusicCover('files:../outside.mxl')).toBeNull();
     fs.rmSync(root, { recursive: true, force: true });
   });
 });

@@ -108,3 +108,14 @@ test('a child with only browsed pieces has no piece', () => {
   const browsed = { scoreKey: KEY, record: record({ learn: { segments, passages: {} } }) };
   assert.equal(deskFor({ a: [browsed] }).execute().players[0].piece, null);
 });
+
+test('carries the score poster when the library has one', () => {
+  const current = { scoreKey: KEY, record: record() };
+  const covered = new GetPianoDesk({
+    datastore: { listPractice: () => [current], listSheetMusicIds: () => [SCORE], sheetMusicCover: (id) => (id === SCORE ? '/cover.jpg' : null) },
+    configProjection: { roster: () => ['a'], profile: (id) => ({ display_name: id }), raw: () => ({}) },
+    clock: () => new Date('2026-11-18T20:00:00Z'), timezone: 'UTC',
+  });
+  assert.equal(covered.execute().players[0].piece.cover, '/cover.jpg');
+  assert.equal(deskFor({ a: [current] }).execute().players[0].piece.cover, null);
+});

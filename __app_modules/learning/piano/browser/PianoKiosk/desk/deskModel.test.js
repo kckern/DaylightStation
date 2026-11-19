@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { mapColumns, passageBars, pieceCount, pieceFocus, relativeTime, scoreHeading, stripCards } from './deskModel.js';
+import { mapColumns, passageBars, passageFaded, pieceCount, pieceFocus, relativeTime, scoreHeading, stripCards } from './deskModel.js';
 
 const passages = [{ id: 'a', start: 0, end: 4, state: 'silver' }, { id: 'b', start: 5, end: 8, state: 'todo' }];
 const piece = { total: 2, silver: 1, gold: 0, practicedAt: '2026-11-18T10:00:00Z', next: { passageId: 'b' }, nextGoldPassageId: 'a', passages };
@@ -10,12 +10,20 @@ describe('deskModel', () => {
     expect(scoreHeading('<work-title>Jesu, Joy of Man&apos;s Desiring</work-title><creator type="composer">Bach</creator>'))
       .toEqual({ title: "Jesu, Joy of Man's Desiring", composer: 'Bach' });
   });
-  it('shows a child piece whenever they have one, and the course otherwise', () => {
+  it('gives a child their piece and their course side by side, children by their latest activity', () => {
     const cards = stripCards({
-      pieces: [{ userId: 'a', name: 'A', piece }, { userId: 'b', name: 'B', piece }, { userId: 'c', name: 'C', piece: null }],
+      pieces: [{ userId: 'a', name: 'A', piece }, { userId: 'b', name: 'B', piece: null }, { userId: 'c', name: 'C', piece: null }],
       courses: [{ userId: 'a', courses: [course] }, { userId: 'b', courses: [{ ...course, lastPlayedAt: '2026-11-18T11:00:00Z' }] }, { userId: 'c', courses: [course] }],
     });
-    expect(cards.map((card) => [card.userId, card.kind])).toEqual([['a', 'piece'], ['b', 'piece'], ['c', 'course']]);
+    expect(cards.map((card) => [card.userId, card.kind])).toEqual([['b', 'course'], ['a', 'piece'], ['a', 'course'], ['c', 'course']]);
+    expect(new Set(cards.map((card) => card.key)).size).toBe(4);
+  });
+  it('fades only the tomatoes nobody has started, never the one up next', () => {
+    expect(passageFaded({ state: 'todo', steps: { done: 0, total: 4 } }, false)).toBe(true);
+    expect(passageFaded({ state: 'todo', steps: { done: 0, total: 4 } }, true)).toBe(false);
+    expect(passageFaded({ state: 'todo', steps: { done: 1, total: 4 } }, false)).toBe(false);
+    expect(passageFaded({ state: 'learning', steps: { done: 2, total: 4 } }, false)).toBe(false);
+    expect(passageFaded({ state: 'silver' }, false)).toBe(false);
   });
   it('leaves out a child with nothing to show', () => {
     expect(stripCards({ pieces: [{ userId: 'a', piece: null }], courses: [] })).toEqual([]);
