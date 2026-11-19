@@ -13,12 +13,11 @@ import {
   writePersistedSession,
   clearPersistedSession,
 } from "./persistence.js";
-import { STORAGE_KEYS } from "../constants.js";
 import { useClientIdentity } from "../identity/useClientIdentity.js";
 import { PlayerBridge } from "./PlayerBridge.jsx";
 import { MusicBehindHost } from "./MusicBehindHost.jsx";
 import { useSessionController } from "../controller/useSessionController.js";
-import { useUrlCommand } from "../externalControl/useUrlCommand.js";
+import { clearUrlCommandToken, useUrlCommand } from "../externalControl/useUrlCommand.js";
 import { useExternalControl } from "../externalControl/useExternalControl.js";
 import { usePlaybackStateBroadcast } from "../shared/usePlaybackStateBroadcast.js";
 import { publish } from "../net/ws.js";
@@ -59,7 +58,7 @@ export function LocalSessionProvider({ children }) {
       // so a deep link works again after an explicit reset.
       clearPersisted: () => {
         clearPersistedSession();
-        try { localStorage.removeItem(STORAGE_KEYS.URL_COMMAND_TOKEN); } catch { /* ignore */ }
+        clearUrlCommandToken();
       },
     });
     // Attach side effects synchronously: child effects (URL command,

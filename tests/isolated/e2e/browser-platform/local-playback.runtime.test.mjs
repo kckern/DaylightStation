@@ -42,6 +42,44 @@ async function originalClock(page) {
   return () => node.evaluate(media => media.isConnected && !media.paused ? media.currentTime : -1);
 }
 
+test('Media Start fresh forgets a Play URL only after a full reset', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 850 });
+  await page.routeWebSocket('**/ws', () => {});
+  const playUrl = '/media?play=plex%3A42';
+  const token = () => page.evaluate(() => localStorage.getItem('media-app.url-command-token'));
+  await page.goto(playUrl);
+  await originalClock(page);
+  const originalToken = await token();
+  expect(originalToken).toBe('v2:play=plex:42&queue=&shuffle=&shader=&volume=');
+  const dialog = page.getByRole('dialog', { name: 'Start fresh on this device?' });
+  const openReset = async () => {
+    await page.getByRole('button', { name: 'Settings', exact: true }).click();
+    await page.getByTestId('settings-reset-session').click();
+    await expect(dialog).toBeVisible();
+  };
+  const confirm = dialog.getByRole('button', { name: 'Start fresh', exact: true });
+
+  await openReset();
+  await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
+  await expect(dialog).toBeHidden();
+  expect(await token()).toBe(originalToken);
+
+  await openReset();
+  await dialog.getByTestId('start-fresh-playing').uncheck();
+  await confirm.click();
+  await expect(dialog).toBeHidden();
+  expect(await token()).toBe(originalToken);
+
+  await openReset();
+  await confirm.click();
+  await expect(dialog).toBeHidden();
+  expect(await token()).toBeNull();
+  await expect(page).toHaveURL(playUrl);
+  await page.reload();
+  await originalClock(page);
+  expect(await token()).toBe(originalToken);
+});
+
 async function openFixtureSheet(page) {
   await page.routeWebSocket('**/ws', () => {});
   await page.goto('/feed/scroll');

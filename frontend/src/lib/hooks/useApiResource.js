@@ -7,11 +7,12 @@
 // `path` holds the last successful payload. A cache hit on mount (or on any
 // later re-run of the fetch effect — path change, `reload()`) serves the
 // cached value immediately with `loading: false`, while a `revalidating` flag
-// reports that a background refresh is in flight. Callers that do not pass
-// `swr` never touch the cache (see useApiResource.swr.test.jsx's "regression
-// pin"); like every reader, they do share an identical request already in
-// flight (see "In-flight dedupe" below). Cache
-// writes go through two independent guards that do different jobs:
+// reports that a background refresh is in flight. Requests at the same path
+// share in-flight work by default. A non-SWR reader that remounts per account
+// can pass `dedupe: false` to issue independent requests. SWR entries still
+// use the path as their cache key.
+//
+// Cache writes go through two independent guards that do different jobs:
 //   - `live` (per effect run) discards a response whose OWN component/effect
 //     run is no longer current — unmount, path change, or an overlapping
 //     older `reload()` on the SAME hook instance.
@@ -229,15 +230,20 @@ export const apiResourceReadToken = value => value && typeof value === 'object' 
 const JOIN_WINDOW_MS = 3000;
 const inFlight = new Map(); // path -> { request, issuedAt, scope }
 
-function sharedRequest(path, { join = true } = {}) {
-  const current = inFlight.get(path);
-  const scope = registrationFor(path);
-  if (join && current && current.scope === scope && Date.now() - current.issuedAt < JOIN_WINDOW_MS) return current.request;
+function issueRequest(path) {
   const issuedEvent = nextApiResourceEvent();
-  const request = new Promise(resolve => resolve(DaylightAPI(path))).then(result => {
+  return new Promise(resolve => resolve(DaylightAPI(path))).then(result => {
     if (result && typeof result === 'object') networkStarts.set(result, issuedEvent);
     return result;
   });
+}
+
+function sharedRequest(path, { join = true, dedupe = true } = {}) {
+  if (!dedupe) return issueRequest(path);
+  const current = inFlight.get(path);
+  const scope = registrationFor(path);
+  if (join && current && current.scope === scope && Date.now() - current.issuedAt < JOIN_WINDOW_MS) return current.request;
+  const request = issueRequest(path);
   inFlight.set(path, { request, issuedAt: Date.now(), scope });
   const settle = () => { if (inFlight.get(path)?.request === request) inFlight.delete(path); };
   request.then(settle, settle);
@@ -251,8 +257,8 @@ function sharedRequest(path, { join = true } = {}) {
 // it reports anything, and stops as soon as it is no longer current.
 export const TRANSIENT_RETRY_DELAYS_MS = [1000, 3000];
 
-function requestWithRetry(path, { join, isCurrent, onRetry }) {
-  const attempt = (index, joinThis) => sharedRequest(path, { join: joinThis }).catch(err => {
+function requestWithRetry(path, { join, dedupe, isCurrent, onRetry }) {
+  const attempt = (index, joinThis) => sharedRequest(path, { join: joinThis, dedupe }).catch(err => {
     const delay = TRANSIENT_RETRY_DELAYS_MS[index];
     if (!err?.transient || delay === undefined || !isCurrent()) throw err;
     onRetry(err, index + 1);
@@ -444,7 +450,7 @@ function refreshAbortError() {
 
 export function useApiResource(path, {
   deps = [], enabled = true, label, logger = defaultLogger,
-  swr = false, retryTransient = true, clearDataOnError = false,
+  swr = false, dedupe = true, retryTransient = true, clearDataOnError = false,
 } = {}) {
   // Single shared cache lookup for the three lazy initializers below — each
   // useState initializer only runs once (on mount), and all three run inside
@@ -577,9 +583,9 @@ export function useApiResource(path, {
     fetchedReload.current = reloadRequest;
     const startedAt = performance.now();
     const request = retryTransient
-      ? requestWithRetry(path, { join, isCurrent,
+      ? requestWithRetry(path, { join, dedupe, isCurrent,
         onRetry: (err, attempt) => logger.debug('api.retry', { resource: label || path, attempt, status: err?.status ?? null }) })
-      : sharedRequest(path, { join });
+      : sharedRequest(path, { join, dedupe });
     request
       .then((result) => {
         // Two independent guards here, doing different jobs:
@@ -622,7 +628,7 @@ export function useApiResource(path, {
       takeRefresh()?.reject(refreshAbortError());
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [path, enabled, reloadRequest, swr, retryTransient, clearDataOnError, ...deps]);
+  }, [path, enabled, reloadRequest, swr, dedupe, retryTransient, clearDataOnError, ...deps]);
 
   // Effects run after render: conceal the previous key synchronously, not
   // just after the new request starts, so stale rows are never actionable.

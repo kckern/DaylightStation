@@ -12,6 +12,28 @@ describe('useApiResource.refresh', () => {
     resetApiResourceCache();
   });
 
+  it('keeps a dedupe opt-out separate without replacing a shared in-flight read', async () => {
+    const sharedRead = Promise.withResolvers();
+    const independentRead = Promise.withResolvers();
+    api.mockReturnValueOnce(sharedRead.promise).mockReturnValueOnce(independentRead.promise);
+
+    const first = renderHook(() => useApiResource('/records', { retryTransient: false }));
+    await waitFor(() => expect(api).toHaveBeenCalledTimes(1));
+    const independent = renderHook(() => useApiResource('/records', { dedupe: false, retryTransient: false }));
+    await waitFor(() => expect(api).toHaveBeenCalledTimes(2));
+    const second = renderHook(() => useApiResource('/records', { retryTransient: false }));
+
+    await act(async () => { independentRead.resolve({ value: 'independent' }); });
+    expect(independent.result.current.data).toEqual({ value: 'independent' });
+    expect(first.result.current.data).toBeNull();
+    expect(second.result.current.data).toBeNull();
+
+    await act(async () => { sharedRead.resolve({ value: 'shared' }); });
+    expect(first.result.current.data).toEqual({ value: 'shared' });
+    expect(second.result.current.data).toEqual({ value: 'shared' });
+    expect(api).toHaveBeenCalledTimes(2);
+  });
+
   it('forces a fresh read, returns its accepted snapshot, and ignores an older response', async () => {
     let resolveMount;
     let resolveRefresh;

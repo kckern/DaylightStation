@@ -13,6 +13,10 @@ import mediaLog from "../logging/mediaLog.js";
 export const URL_TOKEN_KEY = STORAGE_KEYS.URL_COMMAND_TOKEN;
 const lastCommand = browserPreference(URL_TOKEN_KEY, null);
 
+export function clearUrlCommandToken() {
+  lastCommand.clear();
+}
+
 // The dedupe token covers ONLY the playback namespace. Nav params share the
 // URL and change as the user navigates (?play=X → ?play=X&view=fleet), so a
 // raw-search token would treat reload-after-navigation as a brand-new

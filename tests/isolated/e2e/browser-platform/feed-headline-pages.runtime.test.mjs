@@ -205,3 +205,57 @@ test('Feed opens headlines while badge counts load and keeps counts from the lat
   expect(reads).toHaveLength(2);
   await expect(page.getByLabel('7 unread Reader items')).toBeVisible();
 });
+
+test('Feed reads headline editions and Reader subscriptions for the replacement account', async ({ page, context }) => {
+  const token = owner => 'header.' + Buffer.from(JSON.stringify({ sub: owner })).toString('base64url') + '.signature';
+  const reads = { editions: [], subscriptions: [] };
+  const workspaces = [];
+  const oldReads = {};
+  const editions = owner => [{ id: owner + '-edition', label: owner + ' edition' }];
+  const subscriptions = owner => [{ id: owner + '-feed', title: owner + ' feed', categories: [{ label: owner + ' subscriptions' }] }];
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.addInitScript(amy => { if (!localStorage.getItem('ds_token')) localStorage.setItem('ds_token', amy); }, token('amy'));
+  await page.routeWebSocket('**/*', () => {});
+  await page.route('**/api/**', route => {
+    const { pathname } = new URL(route.request().url());
+    const owner = route.request().headers().authorization === 'Bearer ' + token('bob') ? 'bob' : 'amy';
+    const resource = pathname.endsWith('/headlines/pages') ? 'editions'
+      : pathname.endsWith('/reader/feeds') ? 'subscriptions' : null;
+    if (resource) {
+      reads[resource].push(owner);
+      if (owner === 'amy') {
+        oldReads[resource] = route;
+        return;
+      }
+      if (resource === 'subscriptions' && reads.subscriptions.filter(value => value === 'bob').length === 1) {
+        return route.fulfill({ status: 503, json: { error: 'Temporarily unavailable' } });
+      }
+      return route.fulfill({ json: resource === 'editions' ? editions(owner) : subscriptions(owner) });
+    }
+    if (pathname.endsWith('/workspace')) {
+      workspaces.push(owner);
+      return route.fulfill({ json: { preferencesStored: true } });
+    }
+    if (pathname.endsWith('/reader/stream')) return route.fulfill({ json: { items: [], exhausted: true } });
+    return route.fulfill({ json: pathname.endsWith('/supervision/bootstrap') ? { enabled: false } : {} });
+  });
+
+  await context.route('**/edition-test-tab', route => route.fulfill({ contentType: 'text/html', body: '<title>Account switch</title>' }));
+  const switcher = await context.newPage();
+  await switcher.goto('/edition-test-tab');
+  await page.goto('/feed/reader');
+  await expect.poll(() => reads).toEqual({ editions: ['amy'], subscriptions: ['amy'] });
+  await switcher.evaluate(bob => localStorage.setItem('ds_token', bob), token('bob'));
+  await expect.poll(() => workspaces).toContain('bob');
+  await Promise.all([
+    oldReads.editions.fulfill({ json: editions('amy') }),
+    oldReads.subscriptions.fulfill({ json: subscriptions('amy') }),
+  ]);
+
+  await expect(page.getByRole('link', { name: 'Headlines', exact: true })).toHaveAttribute('href', '/feed/headlines/bob-edition');
+  await expect(page.getByRole('button', { name: 'amy subscriptions', exact: true })).toHaveCount(0);
+  await page.getByRole('button', { name: 'Expand bob subscriptions' }).click();
+  await expect(page.getByRole('button', { name: 'bob feed', exact: true })).toBeVisible();
+  expect(reads).toEqual({ editions: ['amy', 'bob'], subscriptions: ['amy', 'bob', 'bob'] });
+  await switcher.close();
+});

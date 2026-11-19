@@ -1,6 +1,6 @@
 import { daylightApiResponse } from '../../../../../../../frontend/src/lib/api.mjs';
 import { useEffect, useState, useMemo, useCallback } from 'react';
-import { wsService } from "../../../../../../../frontend/src/services/WebSocketService.js";
+import { useWebSocketSubscription } from "../../../../../../../frontend/src/hooks/useWebSocket.js";
 
 /**
  * Live hub status. Returns BOTH a Map<color, SlotStatus> and the timestamp
@@ -42,12 +42,8 @@ export function useHubStatus() {
     return () => controller.abort();
   }, [accept]);
 
-  useEffect(() => {
-    return wsService.subscribe('playback-hub:status', (msg) => {
-      if (msg?.type === 'playback-hub.status.snapshot') {
-        accept(msg.data);
-      }
-    });
+  useWebSocketSubscription('playback-hub:status', msg => {
+    if (msg?.type === 'playback-hub.status.snapshot') accept(msg.data);
   }, [accept]);
 
   return useMemo(() => {

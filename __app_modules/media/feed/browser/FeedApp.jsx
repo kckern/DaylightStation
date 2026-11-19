@@ -92,7 +92,7 @@ function FeedLayout() {
     return () => document.removeEventListener('visibilitychange', handler);
   }, []);
 
-  const { data: pages } = useApiResource('/api/v1/feed/headlines/pages', { label: 'Feed headline pages' });
+  const { data: pages } = useApiResource('/api/v1/feed/headlines/pages', { label: 'Feed headline pages', dedupe: false });
   const headlinePages = Array.isArray(pages) ? pages : [];
   const location = useLocation();
   const navigate = useNavigate();

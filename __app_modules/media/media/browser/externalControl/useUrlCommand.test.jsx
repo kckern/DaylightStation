@@ -1,7 +1,7 @@
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook } from '@testing-library/react';
-import { useUrlCommand } from "./useUrlCommand.js";
+import { clearUrlCommandToken, useUrlCommand } from "./useUrlCommand.js";
 
 function makeController() {
   return {
@@ -53,6 +53,17 @@ describe('useUrlCommand', () => {
       });
       rerender({ query: '?queue=plex:42&view=browse' });
       expect(controller.queue.add).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it('does not block a reset when dedupe storage refuses removal', () => {
+    const removeItem = vi.fn(() => { throw new DOMException('Storage unavailable', 'SecurityError'); });
+    vi.stubGlobal('localStorage', { removeItem });
+    try {
+      expect(() => clearUrlCommandToken()).not.toThrow();
+      expect(removeItem).toHaveBeenCalledWith('media-app.url-command-token');
     } finally {
       vi.unstubAllGlobals();
     }

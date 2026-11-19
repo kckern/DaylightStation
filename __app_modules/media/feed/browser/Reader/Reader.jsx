@@ -177,7 +177,7 @@ export default function Reader() {
   const initialCheckpoint = useRef(checkpoints.reader ?? {});
   const previousVisit = useRef(getLastVisit('reader'));
   const visitStarted = useRef(new Date().toISOString());
-  const { data: feedsData, error: feedsReadError, reload: reloadFeeds } = useApiResource('/api/v1/feed/reader/feeds', { label: 'Feed subscriptions' });
+  const { data: feedsData, error: feedsReadError, reload: reloadFeeds } = useApiResource('/api/v1/feed/reader/feeds', { label: 'Feed subscriptions', dedupe: false });
   const feeds = feedsData || [];
   const [articles, setArticles] = useState(() => applyPendingMutations(initialSnapshot.current?.articles || []));
   const [continuation, setContinuation] = useState(initialSnapshot.current?.continuation || null);
