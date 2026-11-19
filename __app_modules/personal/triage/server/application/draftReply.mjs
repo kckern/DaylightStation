@@ -15,7 +15,7 @@ const SYSTEM = [
   'Answer with an object { "body": "<reply text>" }.',
 ].join(' ');
 
-const clean = (s, max) => String(s ?? '').replace(/EMAIL>>>|<<<EMAIL/g, '').slice(0, max);
+const clean = (s, max) => String(s ?? '').replace(/EMAIL>>>|<<<EMAIL/gi, '').slice(0, max);
 
 export async function draftReply({ aiGateway, message, ownerName }) {
   if (typeof aiGateway?.chatStructured !== 'function') throw new Error('draft gateway unavailable');

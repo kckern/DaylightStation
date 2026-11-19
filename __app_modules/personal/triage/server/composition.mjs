@@ -43,6 +43,7 @@ export function createTriageRuntime(deps = {}) {
     registered = true;
     // One task per distinct schedule; each run goes through the enrolled users one at a time.
     const crons = [...new Set(enrolledUsers().map((u) => resolvePolicy(u).schedule))];
+    if (crons.length === 0) logger?.warn?.('triage.schedule.empty', { schedules: 0, users: 0 });
     crons.forEach((cron, i) => {
       const key = i === 0 ? 'triage:pass' : `triage:pass:${i + 1}`;
       scheduler.registerTask(key, cron, async () => {

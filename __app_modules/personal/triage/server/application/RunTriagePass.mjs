@@ -1,6 +1,7 @@
 // The triage pass: collect a user's inbox and open work items, apply the never-auto
 // guardrails, ask the decision gateway, pre-do only the safe things, draft replies and
-// write the card queue. One pass per username at a time (in-process).
+// write the card queue. One pass per username at a time (in-process lock: a Map in this
+// runtime; it does not span processes or hosts).
 //
 // Safety rules carried here:
 // - Dry run never archives or completes anything; it logs `dryRun: true` and cards the item.
@@ -95,7 +96,7 @@ export function createRunTriagePass({
 
   async function archiveOne({ username, item, proposal, policy, ctx, passId, asOf }) {
     if (policy.mode !== 'live') {
-      await ctx.appendLog({ item, action: 'archive', inverse: null, dryRun: true });
+      ctx.dryRunLog({ item, action: 'archive' });
       return { ...proposal, why: `Would have archived: ${proposal.why.replace(/^Archived:\s*/, '')}` };
     }
     if (!ctx.canModify) return { ...proposal, why: 'Not archived: the mailbox needs reconnecting' };
@@ -117,16 +118,30 @@ export function createRunTriagePass({
     return null;
   }
 
-  async function completeOne({ username, row, proposal, policy, ctx, passId, asOf }) {
+  // A close is pre-done only from a complete work read; an exact duplicate only while its
+  // twin is still open in that same read (otherwise closing it could leave nothing open).
+  function closeBlocker(proposal, todos, autoClose) {
+    if (!todos.complete) return 'work data may be out of date';
+    if (autoClose?.reason === 'exact_duplicate') {
+      const twin = autoClose.duplicateOf;
+      const open = twin && todos.rows.some((r) => r.item.ref?.provider === twin.provider && r.item.ref?.accountId === twin.accountId
+        && r.item.ref?.kind === twin.kind && r.item.ref?.id === twin.id);
+      if (!open) return 'its twin is no longer open';
+    }
+    return null;
+  }
+
+  async function completeOne({ username, row, proposal, policy, ctx, passId, asOf, blocker }) {
     const { item, domainId } = row;
     if (policy.mode !== 'live') {
-      await ctx.appendLog({ item, action: 'complete', inverse: null, dryRun: true });
+      ctx.dryRunLog({ item, action: 'complete' });
       return { ...proposal, why: `Would have closed: ${proposal.why}` };
     }
     const notClosed = (reason) => {
       logger?.warn?.('triage.pass.close_failed', { username, passId, itemId: item.id, reason });
       return { ...proposal, why: `Not closed automatically: ${proposal.why}` };
     };
+    if (blocker) return { ...notClosed(blocker), why: `Not closed automatically (${blocker}): ${proposal.why}` };
     const principal = work?.principal?.system?.({ username, job: SYSTEM_JOB }) ?? null;
     if (!principal || typeof work?.decisions?.confirmSystem !== 'function') return notClosed('principal_unavailable');
     try {
@@ -139,12 +154,17 @@ export function createRunTriagePass({
         principal, commandId: proposed.command.id, expectedVersion: proposed.command.expectedVersion, asOf,
       });
       const r = await work.commands.execute({ principal, commandId: proposed.command.id, confirmationId, asOf });
-      if (r?.outcome !== 'applied' && r?.outcome !== 'already_applied') return notClosed(r?.reason ?? r?.outcome ?? 'failed');
+      const inverse = (version) => ({ action: 'reopen', ref: item.ref, payload: { domainId }, expectedVersion: version });
+      const done = r?.outcome === 'applied' || r?.outcome === 'already_applied';
+      if ((done && !r.item?.version) || r?.outcome === 'uncertain') {
+        // It may have closed: leave a trail that can be undone, and keep the card.
+        await ctx.appendLog({ item, action: 'complete', dryRun: false, uncertain: true, inverse: inverse(null) });
+        logger?.warn?.('triage.pass.close_uncertain', { username, passId, itemId: item.id, outcome: r?.outcome, reason: r?.reason ?? null });
+        return { ...proposal, why: `May have been closed: ${proposal.why}` };
+      }
+      if (!done) return notClosed(r?.reason ?? r?.outcome ?? 'failed');
       ctx.preDone.closed += 1;
-      await ctx.appendLog({
-        item, action: 'complete', dryRun: false,
-        inverse: { action: 'reopen', ref: item.ref, payload: { domainId }, expectedVersion: r.item?.version ?? null },
-      });
+      await ctx.appendLog({ item, action: 'complete', dryRun: false, inverse: inverse(r.item.version) });
       logger?.debug?.('triage.pass.closed', { username, passId, itemId: item.id });
       return null;
     } catch (err) {
@@ -152,19 +172,48 @@ export function createRunTriagePass({
     }
   }
 
-  async function attachDraft({ username, item, card, ctx, passId }) {
-    if (!ctx.canCompose) return card;
+  // Drafts. Dry run writes nothing to the mailbox: the body stays on the card only.
+  // Live with compose: create the mailbox draft once per item; a re-carded item (its
+  // version changed) updates the draft it already has instead of making a second one.
+  async function draftFor({ username, card, policy, ctx, passId, persist }) {
+    const d = card.display ?? {};
+    const live = policy.mode === 'live';
+    if (live && !ctx.canCompose) return card;
+    const needsBody = !card.draftBody || card.redraft;
+    if (!live && !needsBody) return card;
+    if (live && card.draftId && !card.redraft) return card;
+    let body = card.draftBody;
     try {
-      const { body } = await draftReply({ aiGateway, message: item.facts, ownerName: ownerName(username) });
+      if (needsBody) {
+        ({ body } = await draftReply({ aiGateway, message: { from: d.from, subject: d.title, snippet: d.snippet }, ownerName: ownerName(username) }));
+      }
+      if (!live) return { ...card, draftBody: body };
+      if (card.draftId) {
+        await mailbox.updateDraft(username, card.draftId, { body });
+        logger?.debug?.('triage.pass.draft_updated', { username, passId, itemId: card.itemId });
+        return persist({ ...card, draftBody: body });
+      }
       const draft = await mailbox.createDraft(username, {
-        threadId: item.facts.threadId, to: item.facts.from?.address, subject: replySubject(item.facts.subject), body,
+        threadId: d.threadId ?? undefined, to: d.from?.address, subject: replySubject(d.title), body,
       });
-      logger?.debug?.('triage.pass.drafted', { username, passId, itemId: item.id });
-      return { ...card, draftId: draft.draftId, draftBody: body };
+      logger?.debug?.('triage.pass.drafted', { username, passId, itemId: card.itemId });
+      return persist({ ...card, draftId: draft.draftId, draftBody: body });
     } catch (err) {
       if (isScope(err)) { ctx.canCompose = false; ctx.mailbox = 'reconnect_needed'; }
-      logger?.warn?.('triage.pass.draft_failed', { username, passId, itemId: item.id, error: err?.message, code: err?.code ?? null });
+      logger?.warn?.('triage.pass.draft_failed', { username, passId, itemId: card.itemId, error: err?.message, code: err?.code ?? null });
       return card;
+    }
+  }
+
+  // An email card whose message is not in this listing (outside the window or past inboxMax)
+  // is kept unless the mailbox says the message left the inbox. Unknown => keep.
+  async function stillInInbox(username, card) {
+    try {
+      const m = await mailbox.getMessage(username, card.ref?.id);
+      return !(m === null || (Array.isArray(m.labels) && !m.labels.includes('INBOX')));
+    } catch (err) {
+      logger?.debug?.('triage.pass.recheck_failed', { username, itemId: card.itemId, error: err?.message });
+      return true;
     }
   }
 
@@ -172,6 +221,7 @@ export function createRunTriagePass({
     const passId = `pass.${nextId()}`;
     logger?.info?.('triage.pass.started', { username, trigger, passId, mode: policy.mode });
     const caps = mailbox?.capabilities?.(username) ?? { read: false, modify: false, compose: false };
+    const pendingDryRun = [];
     const ctx = {
       mailbox: mailbox && (!caps.read || !caps.modify) ? 'reconnect_needed' : 'ok',
       canModify: caps.modify === true,
@@ -179,10 +229,10 @@ export function createRunTriagePass({
       preDone: { archived: 0, closed: 0 },
       // The action (if any) already happened; a log write failure must not abort the pass,
       // and the full entry goes to the structured log so the action can still be traced and undone.
-      appendLog: async ({ item, action, inverse, dryRun }) => {
+      appendLog: async ({ item, action, inverse, dryRun, uncertain }) => {
         const entry = {
           id: `log.${nextId()}`, at: asOf, actor: 'system', passId, itemId: item.id, kind: item.kind, ref: item.ref,
-          itemVersion: item.version, action, inverse, dryRun, undoneAt: null,
+          itemVersion: item.version, action, inverse, dryRun, undoneAt: null, ...(uncertain ? { uncertain: true } : {}),
         };
         try {
           await store.appendLog(username, entry);
@@ -190,6 +240,9 @@ export function createRunTriagePass({
           logger?.error?.('triage.pass.log_failed', { username, entry, error: err?.message });
         }
       },
+      // Dry-run entries are written after the queue, so a failed queue write never hides a
+      // "would have" item behind a log entry that marks it as seen.
+      dryRunLog: ({ item, action }) => { pendingDryRun.push({ item, action, inverse: null, dryRun: true }); },
     };
 
     const queue = await store.readQueue(username);
@@ -202,25 +255,46 @@ export function createRunTriagePass({
     const emails = await collectEmail(username, policy, ctx);
     const todos = await collectTodos(username, asOf);
 
-    // Earlier cards: keep while their item is present and unchanged; drop when it changed or
-    // vanished. When a source could not be read (or was read incompletely), its cards stay.
+    // Earlier cards: keep while their item is present and unchanged; replace when it changed.
+    // Missing from this read: an email card goes only when the mailbox says the message left
+    // the inbox; a todo card goes only after a complete work read. An unread source keeps all.
     const present = new Map();
     for (const it of emails ?? []) present.set(it.id, it.version);
     for (const r of todos?.rows ?? []) present.set(r.item.id, r.item.version);
-    const kept = queue.cards.filter((c) => {
-      if (present.has(c.itemId)) return present.get(c.itemId) === c.itemVersion;
-      if (c.kind === 'email') return emails === null;
-      return todos === null || !todos.complete;
-    });
+    const previous = new Map();
+    const kept = [];
+    for (const c of queue.cards) {
+      if (present.has(c.itemId)) {
+        if (present.get(c.itemId) === c.itemVersion) kept.push(c);
+        else previous.set(c.itemId, c);
+        continue;
+      }
+      if (c.kind === 'email') {
+        if (emails === null) kept.push(c);
+        else if ((c.status === 'open' || c.status === 'skipped') && await stillInInbox(username, c)) kept.push(c);
+        continue;
+      }
+      if (todos === null || !todos.complete) kept.push(c);
+    }
 
     const fresh = [];
-    const toCard = (item, proposal, extra = {}) => ({
-      cardId: cardIdFor(item.id, item.version), passId, createdAt: asOf,
-      itemId: item.id, kind: item.kind, ref: item.ref, itemVersion: item.version,
-      step: proposal.step, urgent: proposal.urgent === true, choices: proposal.choices, suggested: proposal.suggested,
-      confidence: proposal.confidence, why: proposal.why, preDo: null, status: 'open',
-      display: display(item), ...extra,
-    });
+    const toCard = (item, proposal, extra = {}) => {
+      const card = {
+        cardId: cardIdFor(item.id, item.version), passId, createdAt: asOf,
+        itemId: item.id, kind: item.kind, ref: item.ref, itemVersion: item.version,
+        step: proposal.step, urgent: proposal.urgent === true, choices: proposal.choices, suggested: proposal.suggested,
+        confidence: proposal.confidence, why: proposal.why, preDo: null, status: 'open',
+        display: display(item), ...extra,
+      };
+      // A re-carded item keeps the draft it already has (never a second mailbox draft).
+      const prev = previous.get(item.id);
+      if (prev?.draftId || prev?.draftBody) {
+        if (prev.draftId) card.draftId = prev.draftId;
+        if (prev.draftBody) card.draftBody = prev.draftBody;
+        if (card.step === 'reply') card.redraft = true;
+      }
+      return card;
+    };
 
     const senders = new Map();
     for (const item of emails ?? []) {
@@ -231,9 +305,7 @@ export function createRunTriagePass({
       let card = proposal;
       if (proposal.preDo?.action === 'archive') card = await archiveOne({ username, item, proposal, policy, ctx, passId, asOf });
       if (!card) continue;
-      let built = toCard(item, card);
-      if (built.step === 'reply') built = await attachDraft({ username, item, card: built, ctx, passId });
-      fresh.push(built);
+      fresh.push(toCard(item, card));
     }
 
     const openItems = (todos?.rows ?? []).map((r) => r.item);
@@ -244,13 +316,40 @@ export function createRunTriagePass({
       const proposal = await classifyTodo({ item, autoClose, evaluate, capabilities: row.operations, logger, asOf });
       logger?.debug?.('triage.pass.item', { username, passId, itemId: item.id, kind: 'todo', preDo: proposal.preDo?.action ?? null });
       let card = proposal;
-      if (proposal.preDo?.action === 'complete') card = await completeOne({ username, row, proposal, policy, ctx, passId, asOf });
+      if (proposal.preDo?.action === 'complete') {
+        card = await completeOne({ username, row, proposal, policy, ctx, passId, asOf, blocker: closeBlocker(proposal, todos, autoClose) });
+      }
       if (!card) continue;
       fresh.push(toCard(item, card, { domainId: row.domainId }));
     }
 
-    const cards = [...kept, ...fresh];
+    let cards = [...kept, ...fresh];
+    const strip = (list) => list.map(({ redraft, ...c }) => c);
+    // Checkpoint: the cards are durable before drafts and dry-run log entries are written.
+    await store.writeQueue(username, { passId, builtAt: asOf, cards: strip(cards) });
+    for (const entry of pendingDryRun) await ctx.appendLog(entry);
+
+    // Drafts for open reply cards that lack one (including ones a crash or failure left
+    // without). Each mailbox draft is persisted at once so a re-run does not make another.
+    let newDrafts = 0;
+    for (let i = 0; i < cards.length; i += 1) {
+      const c = cards[i];
+      if (c.kind !== 'email' || c.step !== 'reply' || c.status !== 'open') continue;
+      const persist = async (next) => {
+        cards[i] = next;
+        newDrafts += 1;
+        try {
+          await store.writeQueue(username, { passId, builtAt: asOf, cards: strip(cards) });
+        } catch (err) {
+          logger?.error?.('triage.pass.draft_not_recorded', { username, passId, itemId: next.itemId, draftId: next.draftId, error: err?.message });
+        }
+        return next;
+      };
+      cards[i] = await draftFor({ username, card: c, policy, ctx, passId, persist });
+    }
+    cards = strip(cards);
     await store.writeQueue(username, { passId, builtAt: asOf, cards });
+
     const open = cards.filter((c) => c.status === 'open');
     const queued = {
       unsure: open.filter((c) => c.step === 'unsure').length,
@@ -261,13 +360,19 @@ export function createRunTriagePass({
     const summary = { passId, preDone: ctx.preDone, queued, mailbox: ctx.mailbox };
     logger?.info?.('triage.pass.completed', {
       username, trigger, passId, mode: policy.mode, mailbox: ctx.mailbox,
-      archived: ctx.preDone.archived, closed: ctx.preDone.closed, newCards: fresh.length, ...queued,
-      emailRead: emails !== null, todosRead: todos !== null,
+      archived: ctx.preDone.archived, closed: ctx.preDone.closed, newCards: fresh.length, mailboxDrafts: newDrafts, ...queued,
+      emailRead: emails !== null, todosRead: todos !== null, todosComplete: todos?.complete ?? null,
     });
     return summary;
   }
 
   return {
+    /**
+     * Runs one pass. Returns `{ passId, preDone: { archived, closed }, queued: { unsure, reply,
+     * todo, urgent }, mailbox: 'ok'|'reconnect_needed' }` or `{ skipped: 'not_enrolled'|'already_running' }`.
+     * `queued` counts every open card in the queue after the pass, not only the new ones.
+     * The lock is in-process only (one Map per runtime): it does not span processes or hosts.
+     */
     run({ username, trigger = 'manual', asOf } = {}) {
       const policy = resolvePolicy(username);
       if (!policy?.enrolled || policy.mode === 'off') {

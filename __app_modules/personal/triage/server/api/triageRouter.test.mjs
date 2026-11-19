@@ -120,3 +120,18 @@ describe('mailbox wiring', () => {
     expect(r.mailbox).toBe('ok');
   });
 });
+
+describe('triage schedule with nobody enrolled', () => {
+  it('warns schedules:0 and registers nothing', () => {
+    const warn = vi.fn();
+    const tasks = [];
+    const rt = createTriageRuntime({
+      configuration: () => ({ triage: { enabled: true, users: {} } }), defaultUsername: 'x', isKnownUser: () => true,
+      dataService: { user: { readStrict: async () => null, writeAtomic: async () => true } }, mailbox: null, work: null,
+      clock: () => 0, logger: { warn, info: vi.fn(), debug: vi.fn(), error: vi.fn() },
+    });
+    rt.registerSchedule({ registerTask: (...a) => tasks.push(a) });
+    expect(tasks).toEqual([]);
+    expect(warn).toHaveBeenCalledWith('triage.schedule.empty', expect.objectContaining({ schedules: 0 }));
+  });
+});

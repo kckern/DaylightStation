@@ -36,13 +36,15 @@ function setup({ mode = 'live', messages = [], todos = [], answers = {}, caps, w
   } };
   const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() };
   const store = createYamlTriageStore({ dataService, clock: () => NOW, logger });
-  const state = { messages, todos, caps: caps ?? { read: true, modify: true, compose: true, send: true } };
+  const state = { messages, todos, outside: {}, coverageComplete: true, caps: caps ?? { read: true, modify: true, compose: true, send: true } };
   const mailbox = {
     capabilities: vi.fn(() => ({ ...state.caps })),
     listInbox: vi.fn(async () => structuredClone(state.messages)),
     archive: vi.fn(async (u, id) => ({ version: `${id}-archived` })),
     senderHistory: vi.fn(async () => ({ sentToCount: 0 })),
     createDraft: vi.fn(async () => ({ draftId: 'd1' })),
+    updateDraft: vi.fn(async (u, draftId) => ({ draftId })),
+    getMessage: vi.fn(async (u, id) => structuredClone(state.messages.find((m) => m.ref.id === id) ?? state.outside[id] ?? null)),
   };
   const evaluateFn = evaluate ?? vi.fn(async (s, questions) => {
     if (questions.disposition) {
@@ -59,7 +61,7 @@ function setup({ mode = 'live', messages = [], todos = [], answers = {}, caps, w
   const work = workDisabled ? { context: null, principal: null, commands: null, decisions: null } : {
     context: { actionableItems: vi.fn(async () => ({
       items: structuredClone(state.todos).map((item) => ({ item, domainId: 'home', operations: ALL_OPS })),
-      coverage: { complete: true, reason: null },
+      coverage: { complete: state.coverageComplete, reason: null },
     })) },
     principal: { system: vi.fn(({ username, job }) => ({ platform: 'system', kind: 'job', job, username, authored: false })) },
     commands: {
@@ -155,13 +157,17 @@ describe('RunTriagePass', () => {
     const first = await s.queue();
     const logged = (await s.log()).length;
     const evals = s.evaluate.mock.calls.length;
-    expect(s.mailbox.createDraft).toHaveBeenCalledTimes(1);
+    // Dry run: the draft body stays on the card; no mailbox draft is created.
+    expect(s.mailbox.createDraft).not.toHaveBeenCalled();
+    const reply = first.find((c) => c.step === 'reply');
+    expect(reply.draftBody).toBe('Thanks, will do.\n\nK C');
+    expect(reply.draftId).toBeUndefined();
     expect(first).toHaveLength(5);
     await s.pass.run({ username: 'kc', trigger: 'manual' });
     expect(await s.queue()).toEqual(first);
     expect((await s.log()).length).toBe(logged);
     expect(s.evaluate.mock.calls.length).toBe(evals);
-    expect(s.mailbox.createDraft).toHaveBeenCalledTimes(1);
+    expect(s.mailbox.createDraft).not.toHaveBeenCalled();
     expect(s.aiGateway.chatStructured).toHaveBeenCalledTimes(1);
   });
 
@@ -240,6 +246,87 @@ describe('RunTriagePass', () => {
     expect(after).toHaveLength(2);
     expect(after.find((c) => c.itemId === refId(msg('m1').ref))).toEqual(before.find((c) => c.itemId === refId(msg('m1').ref)));
     expect(after.find((c) => c.itemId === refId(msg('m2').ref)).itemVersion).toBe('v2');
+  });
+
+  it('keeps a card whose message is outside the listing but still in the inbox; drops one that left it', async () => {
+    const s = setup({ mode: 'dryRun', messages: [msg('m1'), msg('m2'), msg('m3')] });
+    await s.pass.run({ username: 'kc', trigger: 'schedule' });
+    s.state.outside = { m1: msg('m1'), m2: msg('m2', { labels: ['CATEGORY_UPDATES'] }) };
+    s.state.messages = [];
+    await s.pass.run({ username: 'kc', trigger: 'manual' });
+    expect((await s.queue()).map((c) => c.itemId)).toEqual([refId(msg('m1').ref)]);
+  });
+
+  it('live: one mailbox draft per reply item; a re-carded item updates its draft instead of making another', async () => {
+    const s = setup({ messages: [msg('m1')], answers: { 'Weekly newsletter m1': { choice: 'reply', confidence: 0.9 } } });
+    await s.pass.run({ username: 'kc', trigger: 'schedule' });
+    expect(s.mailbox.createDraft).toHaveBeenCalledTimes(1);
+    expect(s.mailbox.createDraft).toHaveBeenCalledWith('kc', expect.objectContaining({ threadId: 't-m1', to: 'news@shop.example', subject: 'Re: Weekly newsletter m1' }));
+    expect((await s.queue())[0]).toMatchObject({ draftId: 'd1', draftBody: 'Thanks, will do.\n\nK C' });
+    await s.pass.run({ username: 'kc', trigger: 'manual' });
+    expect(s.mailbox.createDraft).toHaveBeenCalledTimes(1);
+    s.state.messages = [msg('m1', { version: 'v2' })];
+    await s.pass.run({ username: 'kc', trigger: 'manual' });
+    expect(s.mailbox.createDraft).toHaveBeenCalledTimes(1);
+    expect(s.mailbox.updateDraft).toHaveBeenCalledWith('kc', 'd1', { body: 'Thanks, will do.\n\nK C' });
+    const cards = await s.queue();
+    expect(cards).toHaveLength(1);
+    expect(cards[0]).toMatchObject({ itemVersion: 'v2', draftId: 'd1' });
+    expect(cards[0].redraft).toBeUndefined();
+  });
+
+  it('a reply card left without a draft gets one on a later live pass', async () => {
+    const s = setup({ messages: [msg('m1')], answers: { 'Weekly newsletter m1': { choice: 'reply', confidence: 0.9 } } });
+    s.mailbox.createDraft.mockRejectedValueOnce(new Error('flaky'));
+    await s.pass.run({ username: 'kc', trigger: 'schedule' });
+    expect((await s.queue())[0].draftId).toBeUndefined();
+    await s.pass.run({ username: 'kc', trigger: 'manual' });
+    expect(s.mailbox.createDraft).toHaveBeenCalledTimes(2);
+    expect((await s.queue())[0].draftId).toBe('d1');
+  });
+
+  it('incomplete work coverage: a would-be close becomes a card and nothing is proposed', async () => {
+    const s = setup({ todos: [staleTask('t1')] });
+    s.state.coverageComplete = false;
+    const r = await s.pass.run({ username: 'kc', trigger: 'manual' });
+    expect(s.work.commands.propose).not.toHaveBeenCalled();
+    expect(r.preDone.closed).toBe(0);
+    expect((await s.queue())[0].why).toMatch(/^Not closed automatically \(work data may be out of date\)/);
+  });
+
+  it('an exact duplicate closes only the newer copy while the twin is open in the same read', async () => {
+    const older = task('t1', { title: 'Call plumber', createdAt: NOW - 20 * DAY });
+    const newer = task('t2', { title: 'Call plumber', createdAt: NOW - 5 * DAY });
+    const s = setup({ todos: [older, newer] });
+    await s.pass.run({ username: 'kc', trigger: 'manual' });
+    expect(s.work.commands.propose).toHaveBeenCalledTimes(1);
+    expect(s.work.commands.propose.mock.calls[0][0].intent.ref.id).toBe('t2');
+  });
+
+  it('an uncertain close (or applied without an item) is logged with a reopen inverse and keeps the card', async () => {
+    for (const result of [{ outcome: 'uncertain', reason: 'reconciliation_required' }, { outcome: 'applied', item: null }]) {
+      const s = setup({ todos: [staleTask('t1')] });
+      s.work.commands.execute.mockResolvedValue(result);
+      const r = await s.pass.run({ username: 'kc', trigger: 'manual' });
+      expect(r.preDone.closed).toBe(0);
+      const [e] = await s.log();
+      expect(e).toMatchObject({ action: 'complete', uncertain: true, dryRun: false,
+        inverse: { action: 'reopen', payload: { domainId: 'home' }, expectedVersion: null } });
+      const cards = await s.queue();
+      expect(cards).toHaveLength(1);
+      expect(cards[0].why).toMatch(/^May have been closed: /);
+    }
+  });
+
+  it('dry run: a failed queue write leaves no log entry that would hide the item next time', async () => {
+    const s = setup({ mode: 'dryRun', messages: [msg('m1')], answers: { 'Weekly newsletter m1': ARCHIVE } });
+    const real = s.store.writeQueue;
+    s.store.writeQueue = vi.fn(async () => { throw new Error('disk full'); });
+    await expect(s.pass.run({ username: 'kc', trigger: 'schedule' })).rejects.toThrow('disk full');
+    expect(await s.log()).toEqual([]);
+    s.store.writeQueue = real;
+    await s.pass.run({ username: 'kc', trigger: 'manual' });
+    expect((await s.queue())[0].why).toMatch(/^Would have archived: /);
   });
 
   it('a failed inbox read keeps earlier email cards and still runs todos', async () => {
