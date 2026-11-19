@@ -1,9 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Stack } from '@mantine/core';
 import getLogger from "../../../../../frontend/src/lib/logging/Logger.js";
-import { invalidateApiResources } from "../../../../../frontend/src/lib/hooks/useApiResource.js";
 import { useAuditorSpend } from "./useAuditorSpend.js";
-import { cleanupPath, useCleanup } from "../cleanup/CleanupQuestions.jsx";
+import { useCleanup } from "../cleanup/CleanupQuestions.jsx";
 import { AuditorHeader } from "./AuditorHeader.jsx";
 import { RunTimeline } from "./RunTimeline.jsx";
 import { CleanupHistory } from "./CleanupHistory.jsx";
@@ -32,7 +31,7 @@ export function AuditorPage() {
     <AuditorConfig resource={resource} spend={spend} />
     <SettingsLog />
     <CleanupHistory resource={resource} />
-    {selected ? <RunDetail run={selected} onClose={() => setSelected(null)} onUndone={() => { resource.reload(); invalidateApiResources(path => path.startsWith(`${cleanupPath}/history`)); }} /> : null}
+    {selected ? <RunDetail run={selected} onClose={() => setSelected(null)} /> : null}
   </Stack>;
 }
 

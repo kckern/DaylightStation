@@ -84,6 +84,8 @@ const seedDish = () => store.saveMany([
 ]);
 
 beforeEach(() => {
+  vi.useFakeTimers({ toFake: ['Date'] });
+  vi.setSystemTime(new Date(`${date}T12:00:00`));
   root = fs.mkdtempSync(path.join(os.tmpdir(), 'day-input-stack-'));
   store = new YamlNutriListDatastore({ dataService: { user: { resolveDir: rel => path.join(root, rel) } }, logger: silent });
   commands = new MealFoodCommands({ nutritionItems: store, logger: silent });
@@ -91,7 +93,11 @@ beforeEach(() => {
   service = new DayInstructionService({ nutritionItems: store, reader, mealCommands: commands, entryRevisions: {}, logger: silent });
   lose = new Set(); sent = [];
 });
-afterEach(() => { cleanup(); fs.rmSync(root, { recursive: true, force: true }); });
+afterEach(() => {
+  cleanup();
+  vi.useRealTimers();
+  fs.rmSync(root, { recursive: true, force: true });
+});
 
 describe('a reply lost after the server committed', () => {
   it('Dismiss, then Send with the same words, logs the food once', async () => {

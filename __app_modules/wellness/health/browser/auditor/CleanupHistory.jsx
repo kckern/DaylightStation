@@ -4,6 +4,7 @@ import { SectionCard, Sheet, LoadingState, ErrorState } from "../../../../../fro
 import { useApiResource } from "../../../../../frontend/src/lib/hooks/useApiResource.js";
 import { DaylightAPI } from "../../../../../frontend/src/lib/api.mjs";
 import { refreshHealthResources, unavailableError } from "../healthResources.js";
+import { useHealthSessionGuard } from '../operations/HealthOperationsProvider.jsx';
 import { cleanupPath, RepairPreview } from "../cleanup/CleanupQuestions.jsx";
 import { RepairChanges } from "../cleanup/RepairChanges.jsx";
 
@@ -13,6 +14,7 @@ import { RepairChanges } from "../cleanup/RepairChanges.jsx";
  * cleanup status poll.
  */
 export function CleanupHistory({ resource }) {
+  const isSessionActive = useHealthSessionGuard();
   const [offset, setOffset] = useState(0);
   const history = useApiResource(`${cleanupPath}/history?offset=${offset}`, { swr: true });
   const [selected, setSelected] = useState(null);
@@ -23,10 +25,14 @@ export function CleanupHistory({ resource }) {
     setBusy(true); setError(null);
     try {
       await DaylightAPI(`${cleanupPath}/undo/${record.id}`, { operationId: crypto.randomUUID() }, 'POST');
-      resource.reload(); history.reload(); refreshHealthResources();
+      if (!isSessionActive()) return;
+      refreshHealthResources();
       setSelected(null);
-    } catch (err) { setError(err.message); }
-    finally { setBusy(false); }
+    } catch (err) {
+      if (isSessionActive()) setError(err.message);
+    } finally {
+      if (isSessionActive()) setBusy(false);
+    }
   };
   const runs = resource.data?.runs || [];
   return <>

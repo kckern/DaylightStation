@@ -420,3 +420,174 @@ test('Health keeps a late auditor settings response out of a different user’s 
   expect(writes.map(({ owner, route }) => [owner, route.request().method(), route.request().postDataJSON()]))
     .toEqual([['alice', 'PATCH', { expectedSettingsVersion: 3, enabled: true }]]);
 });
+
+const cleanupEndpoint = '/api/v1/health/nutrition/cleanup';
+const runAt = '2026-09-25T15:42:00.000Z';
+
+async function mockCleanupSession(page) {
+  let owner = 'alice';
+  let historyReads = 0;
+  const writes = [];
+
+  await page.route('**/health/context', route => route.fulfill({ json: { userId: owner } }));
+  await page.route(`**${cleanupEndpoint}`, route => route.fulfill({
+    json: {
+      settingsVersion: 1,
+      settings: { enabled: false, dryRun: false, telegram: false, dailyCapUsd: null },
+      options: { minGapMinutes: [0] },
+      questions: [{
+        id: `${owner}-question`, version: 2, status: 'open', question: `Which fish did ${owner} eat?`,
+        choices: [{ id: 'cod', label: 'Cod', repair: { updates: [{ id: 'fish', changes: { name: 'Cod' } }] } }],
+        entryNames: { fish: 'White Fish' },
+      }],
+      runs: [],
+    },
+  }));
+  await page.route(`**${cleanupEndpoint}/journal**`, route => {
+    const run = {
+      runId: `${owner}-run`, at: runAt, completedAt: runAt, status: 'completed', trigger: ['captures'],
+      model: 'gpt-4.1-mini', costUsd: 0.001, summary: `${owner} run summary`,
+      outcomes: [{ status: 'applied', operationId: `${owner}-run-repair`, affectedIds: ['fish'] }],
+    };
+    const { pathname } = new URL(route.request().url());
+    const json = pathname.endsWith('/journal') ? { rows: [run], total: 1 } : { ...run, transcriptExpired: true };
+    return route.fulfill({ json });
+  });
+  await page.route(`**${cleanupEndpoint}/history**`, route => {
+    historyReads++;
+    return route.fulfill({ json: { total: 1, records: [
+      { id: `${owner}-repair`, actor: owner, at: runAt, reason: `${owner} repair`, changes: [] },
+    ] } });
+  });
+  await page.route(`**${cleanupEndpoint}/**`, route => {
+    if (route.request().method() === 'GET') return route.fallback();
+    writes.push({ owner, route });
+  });
+
+  return {
+    writes,
+    historyReads: () => historyReads,
+    switchToBob() { owner = 'bob'; },
+  };
+}
+
+async function openRepairHistory(page, owner) {
+  await page.getByText('View repairs (1)', { exact: true }).click();
+  await expect(page.getByText(`${owner} repair`, { exact: false })).toBeVisible();
+}
+
+const repairHistoryUndo = {
+  label: 'repair history undo',
+  pagePath: '/health/auditor',
+  writePath: '/undo/alice-repair',
+  button: 'Undo this repair',
+  async open(page, owner) {
+    await openRepairHistory(page, owner);
+    await page.getByRole('button', { name: 'Details', exact: true }).click();
+    await expect(page.getByRole('dialog', { name: 'Repair details' })).toContainText(`${owner} repair`);
+  },
+  response: { status: 'undone' },
+  body: {},
+};
+const runDetailUndo = {
+  label: 'run detail undo',
+  pagePath: '/health/auditor',
+  writePath: '/undo/alice-run-repair',
+  button: 'Undo this change',
+  async open(page, owner) {
+    await page.getByRole('button', { name: /1 changed/ }).click();
+    await expect(page.getByText(`${owner} run summary`, { exact: true })).toBeVisible();
+  },
+  response: { status: 'undone' },
+  body: {},
+};
+const answerCleanupQuestion = {
+  label: 'cleanup question answer',
+  pagePath: '/health/settings',
+  writePath: '/questions/alice-question/answer',
+  button: 'Cod',
+  async open(page, owner) {
+    await expect(page.getByText(`Which fish did ${owner} eat?`, { exact: true })).toBeVisible();
+  },
+  response: { status: 'stale', outcome: { message: 'Alice’s food entry changed.' } },
+  body: { choiceId: 'cod', expectedVersion: 2 },
+};
+
+for (const action of [repairHistoryUndo, runDetailUndo, answerCleanupQuestion]) {
+  test(`Health ignores a late ${action.label} acknowledgement after the user changes`, async ({ page }) => {
+    const session = await mockCleanupSession(page);
+    await page.goto(action.pagePath);
+    await action.open(page, 'alice');
+    const button = page.getByRole('button', { name: action.button, exact: true });
+    await button.click();
+    await expect.poll(() => session.writes.length).toBe(1);
+
+    await navigateHealthOwnership(page, '/home');
+    await expect(page.getByRole('button', { name: 'Rooms', exact: true })).toBeVisible();
+    session.switchToBob();
+    await navigateHealthOwnership(page, repairHistoryUndo.pagePath);
+    await repairHistoryUndo.open(page, 'bob');
+    const before = session.historyReads();
+
+    await finishHealthWrite(page, session.writes[0].route, action.response);
+
+    expect(session.historyReads(), 'Alice’s response triggered a repair history read in Bob’s session').toBe(before);
+    await expect(page.getByRole('button', { name: repairHistoryUndo.button, exact: true })).toBeEnabled();
+    expect(session.writes.map(({ owner, route }) => ({
+      owner,
+      path: new URL(route.request().url()).pathname,
+      method: route.request().method(),
+      body: route.request().postDataJSON(),
+    }))).toEqual([{
+      owner: 'alice',
+      path: cleanupEndpoint + action.writePath,
+      method: 'POST',
+      body: { ...action.body, operationId: expect.any(String) },
+    }]);
+  });
+}
+
+test('Health keeps repair history undo available after a conflict and refreshes on retry', async ({ page }) => {
+  const action = repairHistoryUndo;
+  const session = await mockCleanupSession(page);
+  await page.goto(action.pagePath);
+  await action.open(page, 'alice');
+  const dialog = page.getByRole('dialog', { name: 'Repair details' });
+  const undo = dialog.getByRole('button', { name: action.button, exact: true });
+  await undo.click();
+  await expect.poll(() => session.writes.length).toBe(1);
+  await session.writes[0].route.fulfill({ status: 409, json: { message: 'A later edit conflicts' } });
+  await expect(dialog.getByRole('alert')).toContainText('A later edit conflicts');
+  await expect(undo).toBeEnabled();
+
+  const before = session.historyReads();
+  await undo.click();
+  await expect.poll(() => session.writes.length).toBe(2);
+  await finishHealthWrite(page, session.writes[1].route, action.response);
+  await expect(dialog).toHaveCount(0);
+  await expect.poll(session.historyReads).toBeGreaterThan(before);
+});
+
+test('Health refreshes repair history when an undo finishes across tabs for the same user', async ({ page }) => {
+  const action = repairHistoryUndo;
+  const session = await mockCleanupSession(page);
+  await page.goto(action.pagePath);
+  await action.open(page, 'alice');
+  await page.getByRole('button', { name: action.button, exact: true }).click();
+  await expect.poll(() => session.writes.length).toBe(1);
+
+  // The busy repair sheet blocks its underlying links. Simulate in-app history navigation.
+  await navigateHealthOwnership(page, '/health');
+  await expect(page.getByRole('link', { name: 'Today', exact: true })).toHaveAttribute('aria-current', 'page');
+  await expect(page.getByText('View repairs (1)', { exact: true })).toHaveCount(0);
+  const historyReload = page.waitForResponse(response => new URL(response.url()).pathname === `${cleanupEndpoint}/history`);
+  await navigateHealthOwnership(page, action.pagePath);
+  await openRepairHistory(page, 'alice');
+  expect(await (await historyReload).finished()).toBeNull();
+  const before = session.historyReads();
+
+  await finishHealthWrite(page, session.writes[0].route, action.response);
+
+  await expect.poll(session.historyReads).toBeGreaterThan(before);
+  expect(session.writes.map(({ owner, route }) => [owner, route.request().method()])).toEqual([['alice', 'POST']]);
+});

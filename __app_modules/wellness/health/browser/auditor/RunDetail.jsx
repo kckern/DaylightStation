@@ -5,6 +5,7 @@ import { useApiResource } from "../../../../../frontend/src/lib/hooks/useApiReso
 import { DaylightAPI } from "../../../../../frontend/src/lib/api.mjs";
 import getLogger from "../../../../../frontend/src/lib/logging/Logger.js";
 import { refreshHealthResources } from "../healthResources.js";
+import { useHealthSessionGuard } from '../operations/HealthOperationsProvider.jsx';
 import { cleanupPath, RepairPreview } from "../cleanup/CleanupQuestions.jsx";
 import { RepairChanges } from "../cleanup/RepairChanges.jsx";
 import { SUPPRESSED_REASONS, formatUsd, formatWhen, permissionLabel, triggerLabel } from "./auditorFormat.js";
@@ -74,7 +75,8 @@ function AppliedOutcome({ outcome, undo }) {
  * operation id only satisfies the endpoint's contract. On success the detail
  * reloads and the server's `undoneAt` takes over from the local "Undone".
  */
-function useUndo({ runId, logger, onUndone, reload }) {
+function useUndo({ runId, logger }) {
+  const isSessionActive = useHealthSessionGuard();
   const [busy, setBusy] = useState(null);
   const [done, setDone] = useState({});
   const [errors, setErrors] = useState({});
@@ -83,19 +85,23 @@ function useUndo({ runId, logger, onUndone, reload }) {
     setBusy(repairId); setErrors(current => ({ ...current, [repairId]: null }));
     try {
       await DaylightAPI(`${cleanupPath}/undo/${repairId}`, { operationId: crypto.randomUUID() }, 'POST');
+      if (!isSessionActive()) return;
       setDone(current => ({ ...current, [repairId]: true }));
       logger.info('health-auditor.undo.success', { runId, repairId });
-      refreshHealthResources(); reload(); onUndone();
+      refreshHealthResources();
     } catch (error) {
+      if (!isSessionActive()) return;
       setErrors(current => ({ ...current, [repairId]: error.message }));
       logger.warn('health-auditor.undo.failed', { runId, repairId, error: error.message });
-    } finally { setBusy(null); }
+    } finally {
+      if (isSessionActive()) setBusy(null);
+    }
   };
   return { run, busy, done, errors };
 }
 
-function Detail({ row, logger, onUndone, reload }) {
-  const undo = useUndo({ runId: row.runId, logger, onUndone, reload });
+function Detail({ row, logger }) {
+  const undo = useUndo({ runId: row.runId, logger });
   const outcomes = row.outcomes || [];
   const applied = outcomes.filter(o => o.status === 'applied');
   const proposed = outcomes.filter(o => o.status === 'proposed');
@@ -159,12 +165,12 @@ function Detail({ row, logger, onUndone, reload }) {
 }
 
 /** One auditor run in full: why, what it read, what it noticed and changed, and cost. */
-export function RunDetail({ run, onClose, onUndone = () => {} }) {
+export function RunDetail({ run, onClose }) {
   const logger = useMemo(() => getLogger().child({ component: 'health-auditor' }), []);
   const path = `${cleanupPath}/journal/${encodeURIComponent(run.runId)}${run.at ? `?at=${encodeURIComponent(run.at)}` : ''}`;
   const entry = useApiResource(path, { swr: true });
   return <Sheet open title={`Run at ${formatWhen(run.at)}`} onClose={onClose}>
-    {entry.data ? <Detail row={entry.data} logger={logger} onUndone={onUndone} reload={entry.reload} />
+    {entry.data ? <Detail row={entry.data} logger={logger} />
       : entry.error ? <ErrorState error={entry.error} onRetry={entry.reload} label="Run detail" />
       : <LoadingState label="Run detail" />}
   </Sheet>;
