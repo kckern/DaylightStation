@@ -66,6 +66,8 @@ public class LinkActivity extends Activity {
                 // This app's own launcher activity, asked of the package manager by this
                 // app's own package name. Nothing from the link or the answer is in the intent.
                 Intent front = getPackageManager().getLaunchIntentForPackage(getPackageName());
+                Intent page = new Intent().setClassName(this, "net.kckern.daylight.cap.webviewhost.shell.KioskActivity");
+                if (page.resolveActivity(getPackageManager()) != null) front = page;
                 if (front != null) startActivity(front.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_REORDER_TO_FRONT));
             }
         } catch (RuntimeException e) {

@@ -19,6 +19,8 @@ public interface KioskController {
 
     void onHostPaused();
 
+    default void onHostPermissionsResult(int requestCode) { }
+
     void onHostWindowFocus(boolean focused);
 
     /** An android.view.KeyEvent. Return true to consume it. */

@@ -5,6 +5,7 @@
 entry: net.kckern.daylight.cap.widgets.WidgetsCapability
 permissions: []
 exported:
+  - net.kckern.daylight.cap.widgets.shell.PhoneHomeActivity
   # The 1x1 button's chooser. The launcher starts it when a button is placed, and no
   # permission exists that only a launcher holds. It reads the widget id, lists the
   # actions and stores the choice; it runs nothing.

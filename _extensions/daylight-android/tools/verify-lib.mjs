@@ -285,6 +285,7 @@ export const EXPECTED_COMPONENTS = {
   'provider net.kckern.daylight.cap.micbridge.shell.MicAnchorProvider': { exported: false, permission: null },
   'provider net.kckern.daylight.cap.synth.shell.SynthEngineProvider': { exported: false, permission: null },
   'receiver net.kckern.daylight.cap.widgets.shell.ActionWidgetProvider': { exported: false, permission: null },
+  'activity net.kckern.daylight.cap.widgets.shell.PhoneHomeActivity': { exported: true, permission: null },
   'receiver net.kckern.daylight.cap.widgets.shell.ButtonWidgetProvider': { exported: false, permission: null },
   // Exported with no permission: the launcher starts it when a one-action button is
   // placed (APPWIDGET_CONFIGURE), and no permission exists that only a launcher holds.

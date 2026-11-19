@@ -22,6 +22,15 @@ import net.kckern.daylight.api.DirectPlay;
 public final class DirectPlayIntents {
     static final String INTENT_ACTION_PREFIX = "net.kckern.daylight.PLAY_ACTION.";
 
+    public static final String EXTRA_PLAYLIST = "net.kckern.daylight.EXTRA_PLAYLIST";
+
+    public static PendingIntent forPlaylistWidget(Context context, int widgetId, String mediaId) {
+        Intent play = new Intent(INTENT_ACTION_PREFIX + "playlist").setClassName(context, DirectPlay.SERVICE)
+                .putExtra(EXTRA_PLAYLIST, mediaId);
+        return PendingIntent.getForegroundService(context, widgetId, play,
+                PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
+    }
+
     private DirectPlayIntents() { }
 
     /** Whether this build has the play service. */

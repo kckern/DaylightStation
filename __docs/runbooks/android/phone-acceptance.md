@@ -99,7 +99,7 @@ From the plan's list of what was unverified; each is answered only on the phone.
    Confirm the sideload is accepted. If it is refused, or Play Protect interrupts,
    record the exact message. The build targets SDK 33; a later Android may want
    `--bypass-low-target-sdk-block`.
-3. Open Daylight from the launcher. The site's start page loads. The launcher lists
+3. Open Daylight from the launcher. The native Full screen, Bookmarks and Widgets tabs appear. Open Health, go back, save a household bookmark and request its home-screen pin. In Widgets, select an action and confirm its button in the launcher. The launcher lists
    the app once, and the phone does not offer it as a home app.
    `adb shell am start -n net.kckern.daylight.phone/net.kckern.daylight.shell.MainActivity`
    is refused: the setup activity is not exported.
@@ -144,29 +144,31 @@ From the plan's list of what was unverified; each is answered only on the phone.
    `daylight://bookmark/call`: nothing of the site shows over the lock screen.
 3. Unlocked, send `daylight://bookmark/call` from adb: the call page opens and
    the microphone and camera are not in use (no indicator in the status bar);
-   the shell log has "media request not granted".
-4. The app's permissions in the system settings list the microphone and
-   notifications and no camera; "Display over other apps" does not list the app.
+   Android should not offer access to this external link.
+4. Tap the configured Call widget. Allow the requested microphone and camera permissions
+   while using Daylight. Verify local preview, audio and video with a willing call partner.
+   Deny one permission on a separate attempt and verify **App settings** opens Daylight’s
+   permissions screen via **Permissions**. Return to Call and retry after granting access.
 
 ## C. One-tap surfaces, warm and cold
 
-1. Long-press the app icon: Journal, Meal, Meal photo, Journal note (a launcher
+1. Long-press the app icon: Journal voice, Meal voice, Meal photo, Journal text (a launcher
    shows about four; record how many this one shows). Each does its thing.
    Drag one to the home screen (a pinned shortcut), force-stop the app, and tap
    it: it works on the cold start and again a few minutes later, after the key
    has been replaced.
-2. Add the "Daylight 1" tile. It reads "Journal". Tap it unlocked, and from the
+2. Add the "Daylight 1" tile. It reads "Journal voice". Tap it unlocked, and from the
    lock screen (it asks for the unlock first). "Daylight 2" to "Daylight 4" read
-   "Meal", "Meal photo" and "Journal note".
-3. Add the "Daylight actions" widget. Four buttons (Journal, Meal, Meal photo,
+   "Meal voice", "Meal photo" and "Journal text".
+3. Add the "Daylight actions" widget. Four buttons (Journal voice, Meal voice, Meal photo,
    Media), each works. There is no Feed button anywhere.
 4. Cold: `adb shell am force-stop net.kckern.daylight.phone`, then tap the widget's
    Media button. The page opens within the wait, or "Daylight is still starting"
    shows and the next tap works.
 
-5. Add a "Daylight button" widget (one cell). The chooser opens and lists Journal,
-   Meal, Meal photo, Journal note, Meal note, Media, Call, On my way. Pick Journal: the
-   button shows a microphone and "Journal", and a tap opens the recorder. Record
+5. Add a "Daylight button" widget (one cell). The chooser opens and lists Journal voice,
+   Meal voice, Meal photo, Journal text, Meal text, Media, Call, On my way. Pick Journal voice: the
+   button shows a microphone and "Journal voice", and a tap opens the recorder. Record
    whether the launcher offered the widget at one cell and what it looks like.
 6. Back out of the chooser without picking: no widget is placed.
 7. Add a second button and pick Media. Force-stop the app and tap each button:
@@ -440,7 +442,7 @@ it does, step 2 shows the "not allowed yet" notice instead of an upload (see ste
 
 The steps below use the Journal button. Step 18 repeats the first two for Meal.
 
-1. Tap "Journal". The first time, the phone asks for the microphone and then for
+1. Tap "Journal voice". The first time, the phone asks for the microphone and then for
    notifications; both dialogs stay up long enough to answer. Speak for ten
    seconds, "Stop and save".
 2. Within a few minutes the transcript and the Journalist's reply arrive in the
@@ -500,25 +502,25 @@ The steps below use the Journal button. Step 18 repeats the first two for Meal.
     sending resumes; a tap on it does not send early; after the named time the
     queue drains. While Journal is held, a Meal input still uploads: a limit on one
     bot does not hold the other.
-18. **Meal by voice.** Tap "Meal", say what was eaten, "Stop and save". The file in
+18. **Meal by voice.** Tap "Meal voice", say what was eaten, "Stop and save". The file in
     the inbox is `<id>.meal.ogg`; Nutribot answers in its Telegram conversation as
     it does for a Telegram voice message. While a Journal recording is under way,
-    tap "Meal": the Journal recording stops and is saved (any capture button
+    tap "Meal voice": the Journal recording stops and is saved (any capture button
     tapped during a recording stops it), and no Meal recording starts until it is
     tapped again.
-18b. **Meal by voice, offline.** Airplane mode on, tap "Meal", speak, "Stop and
+18b. **Meal by voice, offline.** Airplane mode on, tap "Meal voice", speak, "Stop and
     save": the notice names Meal 1. Airplane mode off: it uploads without opening
     the app, and Nutribot answers.
 
 ## F2. Text inputs
 
-1. Tap "Journal note" (the fourth tile, or the long-press shortcut). A small
+1. Tap "Journal text" (the fourth tile, or the long-press shortcut). A small
    window titled "Journal note" opens with the keyboard up, one field, Cancel and
    Send. Nothing has been sent yet: `files/inputs/inbox` is empty.
 2. Type two lines and tap Send. The window closes with "Sending to Journal note".
    Within a pass the Journalist files a journal entry with that text, as it does
    for a Telegram text message, and `input-queue.json` shows `uploaded` one higher.
-3. Tap "Journal note", type, tap Cancel: nothing is in `files/inputs/inbox` and
+3. Tap "Journal text", type, tap Cancel: nothing is in `files/inputs/inbox` and
    nothing was sent. The same with the back button.
 4. Tap Send on an empty field, and on a field of spaces: "Nothing to send", and
    the window stays.
@@ -530,7 +532,7 @@ The steps below use the Journal button. Step 18 repeats the first two for Meal.
    open recents: no picture of the draft is there.
 8. Airplane mode on, send a note: the notice says one input is waiting (Journal
    note 1). Force-stop the app, airplane mode off, open the app: it uploads.
-9. With the phone locked, tap the Journal note tile: the unlock is asked for
+9. With the phone locked, tap the Journal text tile: the unlock is asked for
    first, and the field is never shown over the lock screen.
 10. "Meal note" (from the action list; it has no tile by default): the same, to
     Nutribot.
@@ -539,8 +541,7 @@ The steps below use the Journal button. Step 18 repeats the first two for Meal.
 
 ## F3. Photo inputs
 
-1. Tap "Meal photo". The system's camera app opens at once, with no permission
-   dialog from Daylight. Record which camera app it is. If instead a message says
+1. Tap "Meal photo". The system's camera app opens after granting Camera if needed. Record which camera app it is. If instead a message says
    "Could not open the camera" or "No camera app on this phone", record it with
    the logcat lines tagged `Daylight-Input`.
 2. Take the photo and accept it in the camera app. The camera closes with
@@ -564,8 +565,7 @@ The steps below use the Journal button. Step 18 repeats the first two for Meal.
 7. Open the camera with "Meal photo", and with the camera in front run
    `adb shell am kill net.kckern.daylight.phone` (or let a heavy camera app push
    the app out of memory). Take the photo: it is still prepared and queued.
-8. The app's permissions in the system settings still list no camera. `adb shell
-   dumpsys package net.kckern.daylight.phone | grep -i camera` shows nothing.
+8. Daylight lists Camera in system settings. Meal photo requires no media-library permission.
 9. From another app, try to read the provider:
    `adb shell content read --uri content://net.kckern.daylight.phone.inputs/capture/x`
    is refused (the provider is not exported), and so is a query of it.

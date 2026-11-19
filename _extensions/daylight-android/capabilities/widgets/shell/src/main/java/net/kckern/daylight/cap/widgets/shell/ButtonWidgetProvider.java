@@ -27,6 +27,27 @@ import net.kckern.daylight.shellkit.SurfaceCache;
  * each start and each time the actions are published, and asks for a redraw.
  */
 public class ButtonWidgetProvider extends AppWidgetProvider {
+    static final String PIN_ACTION = "net.kckern.daylight.WIDGET_PIN_CONFIRMED";
+    static final String EXTRA_ACTION_ID = "net.kckern.daylight.EXTRA_WIDGET_ACTION";
+
+    static final String EXTRA_PLAYLIST_LABEL = "net.kckern.daylight.EXTRA_PLAYLIST_LABEL";
+
+    @Override public void onReceive(Context context, Intent intent) {
+        if (!PIN_ACTION.equals(intent.getAction())) { super.onReceive(context, intent); return; }
+        android.net.Uri data = intent.getData();
+        if (data == null || data.getPathSegments().size() != 1) return;
+        String action = intent.getStringExtra(EXTRA_ACTION_ID);
+        int id = intent.getIntExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, AppWidgetManager.INVALID_APPWIDGET_ID);
+        AppWidgetManager manager = AppWidgetManager.getInstance(context);
+        android.appwidget.AppWidgetProviderInfo info = manager.getAppWidgetInfo(id);
+        if (info == null || !new android.content.ComponentName(context, ButtonWidgetProvider.class).equals(info.provider)
+                || action == null || !action.startsWith("c:")) return;
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
+                .putString(ButtonFace.storeKey(id), action)
+                .putString(ButtonFace.storeKey(id) + ".label", intent.getStringExtra(EXTRA_PLAYLIST_LABEL)).commit();
+        manager.updateAppWidget(id, render(context, id));
+    }
+
     /** This module's own file: the payload writes the surface cache and never this. */
     private static final String PREFS = "daylight_buttons";
 
@@ -40,7 +61,7 @@ public class ButtonWidgetProvider extends AppWidgetProvider {
         SharedPreferences prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
         if (prefs == null) return;
         SharedPreferences.Editor edit = prefs.edit();
-        for (int id : widgetIds) edit.remove(ButtonFace.storeKey(id));
+        for (int id : widgetIds) edit.remove(ButtonFace.storeKey(id)).remove(ButtonFace.storeKey(id) + ".label");
         edit.apply();
     }
 
@@ -57,6 +78,17 @@ public class ButtonWidgetProvider extends AppWidgetProvider {
 
     static RemoteViews render(Context context, int widgetId) {
         String actionId = chosen(context, widgetId);
+        if (actionId.startsWith("c:")) {
+            String label = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+                    .getString(ButtonFace.storeKey(widgetId) + ".label", "Playlist");
+            RemoteViews playlist = new RemoteViews(context.getPackageName(), R.layout.widget_button);
+            playlist.setTextViewText(R.id.button_label, label);
+            int icon = context.getResources().getIdentifier("ic_action_play", "drawable", context.getPackageName());
+            playlist.setImageViewResource(R.id.button_icon, icon == 0 ? android.R.drawable.ic_media_play : icon);
+            playlist.setOnClickPendingIntent(R.id.button_root,
+                    DirectPlayIntents.forPlaylistWidget(context, widgetId, actionId));
+            return playlist;
+        }
         boolean known = SurfaceKeys.actionId(actionId);
         ButtonFace face = ButtonFace.of(actionId,
                 known ? SurfaceCache.get(context, SurfaceKeys.action(actionId, SurfaceKeys.LABEL)) : "",

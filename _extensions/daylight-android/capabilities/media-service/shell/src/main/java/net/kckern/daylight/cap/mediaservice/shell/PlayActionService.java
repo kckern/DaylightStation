@@ -71,7 +71,9 @@ public class PlayActionService extends Service {
             return START_NOT_STICKY;
         }
         final String actionId = DirectPlay.actionFrom(intent == null ? null : intent.getStringExtra(DirectPlay.EXTRA_ACTION));
-        if (actionId == null || busy) {
+        final String playlist = intent == null ? null
+                : intent.getStringExtra(net.kckern.daylight.shellkit.DirectPlayIntents.EXTRA_PLAYLIST);
+        if ((actionId == null && (playlist == null || !playlist.startsWith("c:"))) || busy) {
             // A second tap while one is starting is dropped: the first one plays.
             if (!busy) finish(null);
             return START_NOT_STICKY;
@@ -84,7 +86,7 @@ public class PlayActionService extends Service {
         Thread ask = new Thread(() -> {
             String mediaId;
             try {
-                mediaId = PlayStart.mediaId(new PayloadMedia().action(actionId, PAYLOAD_WAIT_MS));
+                mediaId = actionId == null ? playlist : PlayStart.mediaId(new PayloadMedia().action(actionId, PAYLOAD_WAIT_MS));
             } catch (Throwable notReadyOrRefused) {
                 mediaId = null;
             }

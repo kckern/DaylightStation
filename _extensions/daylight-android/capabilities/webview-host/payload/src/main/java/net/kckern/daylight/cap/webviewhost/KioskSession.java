@@ -212,6 +212,7 @@ final class KioskSession implements KioskController, KioskSurface, net.kckern.da
         if (!overlayWebOverApps) removeOverlayWeb();
         root = null;
         banner = null;
+        requestedCallPermissions.clear();
         activity = null;
         host = null;
         resumed = false;
@@ -273,7 +274,7 @@ final class KioskSession implements KioskController, KioskSurface, net.kckern.da
                 case HISTORY:
                     // Not a kiosk: Back leaves the app once the page history is used up.
                     if (web != null && web.canGoBack()) web.goBack();
-                    else if (activity != null) activity.moveTaskToBack(true);
+                    else if (activity != null) activity.finish();
                     return true;
                 case RELOAD:
                     if (web != null) {
@@ -465,6 +466,7 @@ final class KioskSession implements KioskController, KioskSurface, net.kckern.da
     }
 
     private void destroyWebView() {
+        clearCallRequests();
         documentCommitted = false;
         detachPortal();
         detachPiano();
@@ -596,6 +598,7 @@ final class KioskSession implements KioskController, KioskSurface, net.kckern.da
         @Override public void onPageStarted(WebView view, String url, Bitmap favicon) {
             if (view != web) return;
             documentCommitted = false;
+            clearCallRequests();
             committingUrl = url;
             detachPiano();
             detachPortal();
@@ -729,8 +732,92 @@ final class KioskSession implements KioskController, KioskSurface, net.kckern.da
         }
     }
 
+    private static final int CALL_PERMISSIONS = 9342;
+    private final List<String> requestedCallPermissions = new ArrayList<>();
+    private final List<PermissionRequest> callRequests = new ArrayList<>();
+
+    private boolean callPage(PermissionRequest request) {
+        return activity != null && web != null && !errorPage && origins.allows(mainUrl)
+                && CallCapturePolicy.allows(startUrl(), web.getUrl(), String.valueOf(request.getOrigin()),
+                        trust.openedFromOutside());
+    }
+
+    private static String callPermission(String resource) {
+        if (PermissionRequest.RESOURCE_AUDIO_CAPTURE.equals(resource)) return android.Manifest.permission.RECORD_AUDIO;
+        if (PermissionRequest.RESOURCE_VIDEO_CAPTURE.equals(resource)) return android.Manifest.permission.CAMERA;
+        return null;
+    }
+
+    private void clearCallRequests() {
+        List<PermissionRequest> canceled = new ArrayList<>(callRequests);
+        callRequests.clear();
+        for (PermissionRequest request : canceled) request.deny();
+    }
+
+    private void handleCallRequest(PermissionRequest request) {
+        if (!callPage(request)) { request.deny(); return; }
+        List<String> missing = new ArrayList<>();
+        for (String resource : request.getResources()) {
+            String permission = callPermission(resource);
+            if (permission != null && !holds(permission)) missing.add(permission);
+        }
+        if (missing.isEmpty()) { finishCallRequest(request); return; }
+        callRequests.add(request);
+        if (!requestedCallPermissions.isEmpty()) return;
+        requestedCallPermissions.addAll(missing);
+        activity.requestPermissions(missing.toArray(new String[0]), CALL_PERMISSIONS);
+    }
+
+    private void finishCallRequest(PermissionRequest request) {
+        List<String> allowed = new ArrayList<>();
+        if (callPage(request)) {
+            for (String resource : request.getResources()) {
+                String permission = callPermission(resource);
+                if (permission != null && holds(permission)) allowed.add(resource);
+            }
+        }
+        if (allowed.isEmpty()) request.deny(); else request.grant(allowed.toArray(new String[0]));
+    }
+
+    @Override public void onHostPermissionsResult(int code) {
+        if (code != CALL_PERMISSIONS || requestedCallPermissions.isEmpty()) return;
+        List<String> attempted = new ArrayList<>(requestedCallPermissions);
+        requestedCallPermissions.clear();
+        List<PermissionRequest> requests = new ArrayList<>(callRequests);
+        callRequests.clear();
+        boolean denied = false;
+        for (PermissionRequest request : requests) {
+            boolean needsAnotherPrompt = false;
+            boolean requestDenied = false;
+            if (callPage(request)) {
+                for (String resource : request.getResources()) {
+                    String permission = callPermission(resource);
+                    if (permission != null && !holds(permission)) {
+                        if (attempted.contains(permission)) requestDenied = true;
+                        else needsAnotherPrompt = true;
+                    }
+                }
+            }
+            denied |= requestDenied;
+            if (needsAnotherPrompt && !requestDenied) handleCallRequest(request); else finishCallRequest(request);
+        }
+        if (denied && activity != null) {
+            new AlertDialog.Builder(activity).setTitle("Call permissions")
+                    .setMessage("To enable camera or microphone, open Permissions in Daylight’s app settings, then return and retry the call.")
+                    .setNegativeButton("Close", null)
+                    .setPositiveButton("App settings", (dialog, which) -> activity.startActivity(new Intent(
+                            android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                            android.net.Uri.fromParts("package", app.getPackageName(), null)))).show();
+        }
+    }
+
     private final class ChromeClient extends WebChromeClient {
+        @Override public void onPermissionRequestCanceled(PermissionRequest request) {
+            callRequests.remove(request);
+        }
+
         @Override public void onPermissionRequest(PermissionRequest request) {
+            if (bool("webview.callPermissions")) { handleCallRequest(request); return; }
             if (!origins.allows(String.valueOf(request.getOrigin()))) {
                 note("denied a media request from " + request.getOrigin());
                 request.deny();

@@ -7,6 +7,9 @@ import android.content.IntentSender;
 import android.content.SharedPreferences;
 import android.content.pm.ShortcutInfo;
 import android.content.pm.ShortcutManager;
+import android.graphics.Bitmap;
+import android.graphics.Canvas;
+import android.graphics.drawable.Drawable;
 import android.graphics.drawable.Icon;
 import android.net.Uri;
 
@@ -112,9 +115,23 @@ final class AndroidSurfaces implements SurfaceSink {
         return new ShortcutInfo.Builder(context, shortcutId)
                 .setShortLabel(a.label)
                 .setLongLabel(a.label)
-                .setIcon(Icon.createWithResource(context, iconResource(a.icon)))
+                .setIcon(shortcutIcon(a))
                 .setIntent(intent)
                 .build();
+    }
+
+    private Icon shortcutIcon(Action action) {
+        // Leave room for launcher masks. Tiles use the original monochrome drawable.
+        int size = Math.max(108, manager().getIconMaxWidth());
+        Bitmap bitmap = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888);
+        Canvas canvas = new Canvas(bitmap);
+        boolean meal = action.id.equals("meal") || action.id.startsWith("meal-");
+        canvas.drawColor(meal ? 0xff8b421e : 0xff17465a);
+        Drawable glyph = context.getDrawable(iconResource(action.icon));
+        int inset = size / 4;
+        glyph.setBounds(inset, inset, size - inset, size - inset);
+        glyph.draw(canvas);
+        return Icon.createWithAdaptiveBitmap(bitmap);
     }
 
     /** Drawables ship in this capability's shell half as ic_action_<name>. */

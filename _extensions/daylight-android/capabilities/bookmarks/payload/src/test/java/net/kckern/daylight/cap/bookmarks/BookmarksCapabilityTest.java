@@ -57,6 +57,23 @@ public class BookmarksCapabilityTest {
         return q;
     }
 
+    @Test public void phoneHomeCanSaveOpenAndRemoveAHouseholdPage() throws Exception {
+        cap.start();
+        net.kckern.daylight.api.PayloadPort port = net.kckern.daylight.api.PayloadPort.named("phone-bookmarks");
+        try {
+            port.call(new JSONObject().put("op", "save").put("label", "Progress")
+                    .put("path", "https://kiosk.example:3111/health/progress").toString(), 0);
+            JSONObject item = new JSONObject(port.call("{\"op\":\"list\"}", 0))
+                    .getJSONArray("items").getJSONObject(1);
+            assertEquals("/health/progress", item.getString("path"));
+            String id = item.getString("id");
+            port.call(new JSONObject().put("op", "open").put("id", id).toString(), 0);
+            assertEquals("https://kiosk.example:3111/health/progress", loaded.get(0));
+            port.call(new JSONObject().put("op", "remove").put("id", id).toString(), 0);
+            assertEquals(1, new JSONObject(port.call("{\"op\":\"list\"}", 0)).getJSONArray("items").length());
+        } finally { cap.stop(); }
+    }
+
     @Test public void listsBookmarksWithTheirLinks() throws Exception {
         JSONObject first = TestCore.get(core, "/bookmarks").getJSONArray("bookmarks").getJSONObject(0);
         assertEquals("feed", first.getString("id"));

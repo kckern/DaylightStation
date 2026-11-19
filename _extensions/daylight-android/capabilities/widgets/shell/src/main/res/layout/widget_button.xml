@@ -5,18 +5,18 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:layout_margin="2dp"
-    android:background="#CC202124"
     android:gravity="center"
     android:orientation="vertical"
     android:padding="4dp">
 
     <ImageView android:id="@+id/button_icon"
-        android:layout_width="24dp" android:layout_height="24dp"
+        android:layout_width="36dp" android:layout_height="36dp"
+        android:background="@drawable/widget_action_badge" android:padding="7dp"
         android:importantForAccessibility="no"
         android:src="@drawable/ic_widget_button_unset" />
 
     <TextView android:id="@+id/button_label"
         android:layout_width="match_parent" android:layout_height="wrap_content"
         android:layout_marginTop="2dp" android:gravity="center" android:maxLines="2"
-        android:ellipsize="end" android:textSize="11sp" android:textColor="#FFFFFFFF" />
+        android:ellipsize="end" android:shadowColor="#FF161A1B" android:shadowRadius="3" android:textSize="12sp" android:textColor="#FFFFFFFF" />
 </LinearLayout>

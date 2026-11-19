@@ -29,6 +29,17 @@ Journalist and Nutribot (`quick-input`: a recording, typed text or a photo) and
 the app's own local notifications. What it does not have is
 under "What the phone does not have".
 
+## Phone home
+
+The app icon opens a native launcher. **Full screen** opens Media, Call, Health or
+a saved household page in Daylight. **Bookmarks** saves a named household URL or
+path, such as `/health/progress`. Tap a bookmark there to pin it to the Android
+home screen. Long-press a custom bookmark to remove it. The library uses the eight
+configured bookmark slots. **Widgets** lets you choose an action and confirm its
+one-touch button with the Android launcher. Existing Call widgets keep their saved
+assignment. Call requests camera and microphone access when needed.
+
+
 ## What makes it a phone and not a kiosk
 
 | | Kiosk (`piano`, `portal`, `shield`) | `phone` |
@@ -39,7 +50,7 @@ under "What the phone does not have".
 | `debug-tools`, `app-launcher` | Listed | Not listed: both exist to be driven over the control API. The payload test fails a device that is not a kiosk and lists either |
 | Heartbeats and log shipping | On, to the household log store | Off (`heartbeat.enabled: false`, no log store URL). The test requires heartbeats of kiosks only |
 | Self-update and secure-settings permissions | `REQUEST_INSTALL_PACKAGES`, `WRITE_SECURE_SETTINGS` | Neither. They come from a kiosk build's generated manifest only |
-| Drawing over other apps, the page's camera | `SYSTEM_ALERT_WINDOW`, `CAMERA` (marked `kioskOnly` in `webview-host`'s `capability.yml`) | Neither: the phone's generated manifest removes them |
+| Drawing over other apps | `SYSTEM_ALERT_WINDOW` | Removed from the phone manifest |
 | Lock task, TV launcher entry | `lockTaskMode="if_whitelisted"` and a `LEANBACK_LAUNCHER` category on the kiosk Activity | Neither: removed by the phone's generated manifest |
 | Setup activity (`MainActivity`) | Exported, startable by name over adb | Not exported |
 | Plain-http traffic | Allowed (LAN services) | Refused by the platform: `usesCleartextTraffic="false"`, and the build fails on an address setting that is not https |
@@ -99,25 +110,12 @@ and `lockdown`, which the phone does not list (the same test fails a phone build
 that lists either). The Activity never turns the screen on and never dismisses the
 keyguard.
 
-When a build does allow capture, a request is granted only when all of these hold:
-
-1. The asking origin is the start URL's or one in `webview.bridgeOrigins`.
-2. The setting for that resource is true.
-3. The app holds the Android permission (`RECORD_AUDIO`, `CAMERA`). On the phone
-   the app holds `RECORD_AUDIO` after the first voice input, so this condition alone
-   protects nothing there. The phone build never holds `CAMERA`: a photo input is
-   taken by the system's camera app.
-4. The document was not opened by a link without the install key. The app
-   remembers how the document in the page got there. A link from another app or a
-   web page (`daylight://bookmark/call`, say) marks it; the mark stays through a
-   retry, a reload and a redirect the page makes by script, and is cleared by a
-   load the app started (the start page, a keyed link) or by a navigation the owner
-   started with a tap inside the page. A kiosk has no link activity and never sets
-   the mark.
-
-So with capture allowed, a page can start the microphone when the owner opened it
-from inside the app or from one of the app's own keyed surfaces, and cannot when
-another app or a web link opened it. With the phone's settings no page can.
+On the phone, `webview.callPermissions` enables runtime permission prompts for
+the household HTTPS `/call` page. Open the Call widget and allow Camera and
+Microphone while using Daylight. A denial offers **App settings**. Choose
+**Permissions**, change the relevant permission, then return and retry.
+A call page opened from an external unkeyed link cannot request capture.
+Other phone pages keep general web audio and video capture disabled.
 
 ## Private values a phone build needs
 
@@ -325,11 +323,11 @@ characters.
 | `api:/api/...` | Sends an empty `POST` to that backend path and shows the outcome |
 | `location:share` | A placeholder. A tap shows "Location sharing is not built yet" and does nothing else; `GET /actions` marks it `placeholder: true`. See "On my way" below |
 
-The phone's actions: Journal, Meal (both by voice), Meal photo, Journal note,
-Meal note, Media, Call, On my way. The first four are its launcher shortcuts and its four
-tiles; the widget has Journal, Meal, Meal photo and Media. Two icon names were
-added for them, `camera` and `note`, beside `bolt`, `mic`, `open`, `play` and
-`star`.
+Long-press Daylight for four shortcuts. **Journal voice** and **Meal voice** open
+the recorder for their respective destinations. **Meal photo** opens the camera.
+**Journal text** opens the keyboard. The four Quick Settings tiles use the same
+actions. The four-button widget initially shows Journal voice, Meal voice, Meal
+photo and Media. Meal text is also available for a configurable button.
 
 An action exists as a settings line, or as a pinned media action (up to 24, made
 at the owner's media page through the page bridge's `pinMedia` and Android's pin
@@ -1207,12 +1205,9 @@ one multi-line field, Cancel and Send.
 app. When the camera returns, the photo is prepared and queued, a short message
 says where it is going, and nothing else is shown: there is no review step.
 
-**The app has no camera permission.** Android lets an app use the system camera
-through that intent without holding `CAMERA`, as long as the app does not
-declare it; an app that declares `CAMERA` must hold it or the intent is refused.
-The phone build does not declare it (`webview-host` marks it `kioskOnly`), so it
-is never asked for. In a build that does declare it the screen asks for it first
-(`CameraAsk`).
+The phone declares camera permission for calls. Android also requires that
+permission before handing a meal photo to the system camera. If needed, the
+photo activity asks for it before opening the camera.
 
 **How the camera app gets the file.** `InputFileProvider` is a content provider
 that is not exported. The photo screen creates an empty file,
@@ -1495,23 +1490,15 @@ Twelve:
 | `POST_NOTIFICATIONS` | base | The service's and the app's own notifications |
 | `REQUEST_IGNORE_BATTERY_OPTIMIZATIONS` | base | Declared; the phone build has no screen that asks for it (the setup activity is not reachable) |
 | `ACCESS_WIFI_STATE`, `ACCESS_NETWORK_STATE` | base, `webview-host`, `media-service`, `quick-input` | Reload and upload when a network returns |
-| `RECORD_AUDIO` | `webview-host`, `quick-input`, `car-actions` | Voice inputs, on the phone and through the car's microphone. No page is given it (`webview.allowMic` is false) |
+| `RECORD_AUDIO` | `webview-host`, `quick-input`, `car-actions` | Voice inputs, on the phone and through the car's microphone. The trusted Call page can request it |
+| `CAMERA` | `webview-host` | Video calls and permission to launch the system camera for meal photos |
 | `MODIFY_AUDIO_SETTINGS` | `webview-host` | Page audio |
 | `FOREGROUND_SERVICE_MEDIA_PLAYBACK` | `media-service` | The media library service |
 | `FOREGROUND_SERVICE_MICROPHONE` | `quick-input` | The recorder service |
 
-The text and photo inputs added no permission: the list is the same twelve as
-before them, and `tools/phone-list.test.mjs` writes it out. A photo is taken by
-the system's camera app, so there is no `CAMERA`; the photo is written to the
-app's own files, so there is no storage or media permission; and nothing asks
-for a location.
-
-Not in the phone's APK, though a kiosk has them: `SYSTEM_ALERT_WINDOW`, `CAMERA`,
-`REQUEST_INSTALL_PACKAGES`, `WRITE_SECURE_SETTINGS`. Turning the page camera on
-for the phone later means taking `kioskOnly` off `CAMERA` in `webview-host`'s
-`capability.yml` as well as setting `webview.allowCamera`; the photo screen would
-then have to ask for the permission before it opens the camera app, which it
-does (`CameraAsk`).
+The phone keeps meal photos in its own files and requires no media-library,
+storage or location permission. Kiosk-only permissions include
+`SYSTEM_ALERT_WINDOW`, `REQUEST_INSTALL_PACKAGES` and `WRITE_SECURE_SETTINGS`.
 
 ### Application settings
 

@@ -28,12 +28,13 @@ test('the phone is a personal build that lists quick-input and car-actions', () 
     'media-service', 'android-auto', 'quick-input', 'car-actions']);
 });
 
-test('the phone asks for exactly these twelve permissions', () => {
+test('the phone asks for exactly these thirteen permissions', () => {
   const names = new Set([...BASE.map((p) => `android.permission.${p}`), ...permissionsFor(phone, capabilities).map((p) => p.name),
     ...(phone.permissions || [])]);
   assert.deepEqual([...names].sort(), [
     'android.permission.ACCESS_NETWORK_STATE',
     'android.permission.ACCESS_WIFI_STATE',
+    'android.permission.CAMERA',
     'android.permission.FOREGROUND_SERVICE',
     'android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK',
     'android.permission.FOREGROUND_SERVICE_MICROPHONE',
@@ -47,9 +48,9 @@ test('the phone asks for exactly these twelve permissions', () => {
   ]);
 });
 
-test('a photo is taken by the system camera app, so the phone asks for no camera, storage or location permission', () => {
+test('a photo is taken by the system camera app, so the phone asks for no storage or location permission', () => {
   const names = permissionsFor(phone, capabilities).map((p) => p.name);
-  for (const p of ['CAMERA', 'READ_EXTERNAL_STORAGE', 'WRITE_EXTERNAL_STORAGE', 'READ_MEDIA_IMAGES', 'ACCESS_MEDIA_LOCATION',
+  for (const p of ['READ_EXTERNAL_STORAGE', 'WRITE_EXTERNAL_STORAGE', 'READ_MEDIA_IMAGES', 'ACCESS_MEDIA_LOCATION',
     'ACCESS_FINE_LOCATION', 'ACCESS_COARSE_LOCATION']) {
     assert.equal(names.includes(`android.permission.${p}`), false, p);
   }
@@ -57,7 +58,7 @@ test('a photo is taken by the system camera app, so the phone asks for no camera
     'android.permission.FOREGROUND_SERVICE_MICROPHONE', 'android.permission.ACCESS_NETWORK_STATE']);
 });
 
-test('another app can reach exactly these ten components of the phone build', () => {
+test('another app can reach exactly these eleven components of the phone build', () => {
   const exported = ['net.kckern.daylight.shell.BootReceiver', ...phone.capabilities.flatMap((name) => capabilities[name]?.exported || [])];
   assert.deepEqual(exported.sort(), [
     'net.kckern.daylight.cap.caractions.shell.CarHostGateService',
@@ -69,16 +70,18 @@ test('another app can reach exactly these ten components of the phone build', ()
     'net.kckern.daylight.cap.onetap.shell.ActionTileService$Tile4',
     'net.kckern.daylight.cap.webviewhost.shell.KioskActivity',
     'net.kckern.daylight.cap.widgets.shell.ButtonWidgetConfigActivity',
+    'net.kckern.daylight.cap.widgets.shell.PhoneHomeActivity',
     'net.kckern.daylight.shell.BootReceiver',
   ]);
 });
 
 test('the one-action button added one exported component, its chooser, and no permission', () => {
-  assert.deepEqual(capabilities.widgets.exported, ['net.kckern.daylight.cap.widgets.shell.ButtonWidgetConfigActivity']);
+  assert.deepEqual(capabilities.widgets.exported, ['net.kckern.daylight.cap.widgets.shell.PhoneHomeActivity', 'net.kckern.daylight.cap.widgets.shell.ButtonWidgetConfigActivity']);
   assert.deepEqual(capabilities.widgets.permissions, []);
   const own = Object.entries(EXPECTED_COMPONENTS).filter(([key]) => key.includes('.cap.widgets.'));
   assert.deepEqual(own.map(([key, row]) => `${key} exported=${row.exported} permission=${row.permission}`).sort(), [
     'activity net.kckern.daylight.cap.widgets.shell.ButtonWidgetConfigActivity exported=true permission=null',
+    'activity net.kckern.daylight.cap.widgets.shell.PhoneHomeActivity exported=true permission=null',
     'receiver net.kckern.daylight.cap.widgets.shell.ActionWidgetProvider exported=false permission=null',
     'receiver net.kckern.daylight.cap.widgets.shell.ButtonWidgetProvider exported=false permission=null',
   ]);
@@ -100,7 +103,8 @@ test('nothing of quick-input is exported: a capture starts inside the app or not
   }
 });
 
-test('no page of the phone build is given the microphone or the camera', () => {
+test('the phone enables Call prompts and keeps general web capture off', () => {
+  assert.equal(phone.defaults['webview.callPermissions'], true);
   assert.equal(phone.defaults['webview.allowMic'], false);
   assert.equal(phone.defaults['webview.allowCamera'], false);
   assert.equal(phone.defaults['webview.showWhenLocked'], false);
@@ -113,8 +117,12 @@ test('Feed is gone from the phone: no bookmark, action, shortcut, tile or widget
   }
 });
 
-test('the memo button is called Journal and is a voice input for the journal', () => {
-  assert.equal(phone.defaults['actions.1'], 'journal|Journal|mic|input:voice:journal');
+test('phone input labels distinguish destination and input method', () => {
+  assert.equal(phone.defaults['actions.1'], 'journal|Journal voice|mic|input:voice:journal');
+  assert.equal(phone.defaults['actions.2'], 'meal|Meal voice|mic|input:voice:meal');
+  assert.equal(phone.defaults['actions.3'], 'meal-photo|Meal photo|camera|input:photo:meal-photo');
+  assert.equal(phone.defaults['actions.4'], 'journal-note|Journal text|note|input:text:journal-note');
+  assert.equal(phone.defaults['actions.5'], 'meal-note|Meal text|note|input:text:meal-note');
   assert.equal(Object.values(phone.defaults).some((v) => /New memo/.test(String(v))), false);
 });
 

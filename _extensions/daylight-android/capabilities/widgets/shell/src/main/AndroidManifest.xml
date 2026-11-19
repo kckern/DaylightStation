@@ -1,6 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <application>
+        <activity android:name="net.kckern.daylight.cap.widgets.shell.PhoneHomeActivity"
+            android:exported="true" android:theme="@android:style/Theme.Material.Light.NoActionBar" />
         <!-- Not exported: only the system (the launcher's widget host) and this app send it
              updates. It takes nothing from the broadcast but the widget ids. -->
         <receiver android:name="net.kckern.daylight.cap.widgets.shell.ActionWidgetProvider"

@@ -163,6 +163,7 @@ public final class OneTapActionsCapability implements Capability, ActionList {
             sink = new AndroidSurfaces((Context) context);
         }
         pinPort.attach(onPinConfirmed);
+        actionPinPort.attach(onActionPin);
         List<String> problems = new ArrayList<>();
         try {
             publish(problems);
@@ -175,6 +176,7 @@ public final class OneTapActionsCapability implements Capability, ActionList {
     /** May be called twice. */
     @Override public void stop() {
         pinPort.detach(onPinConfirmed);
+        actionPinPort.detach(onActionPin);
         ExecutorService w = worker;
         worker = null;
         if (w != null) w.shutdownNow();
@@ -233,6 +235,13 @@ public final class OneTapActionsCapability implements Capability, ActionList {
     private final java.util.LinkedHashMap<String, PendingPin> pendingPins = new java.util.LinkedHashMap<>();
     private final java.util.ArrayDeque<Long> acceptedAt = new java.util.ArrayDeque<>();
     volatile java.util.function.LongSupplier clock = System::currentTimeMillis;
+    private final net.kckern.daylight.api.PayloadPort actionPinPort = net.kckern.daylight.api.PayloadPort.named("phone-pin-action");
+    private final net.kckern.daylight.api.PayloadPort.Handler onActionPin = id -> {
+        Action action = catalog(null).find(id);
+        if (action == null) throw new IllegalArgumentException("Unknown action");
+        requireSink().pin(action, uri(action), null);
+        return "{}";
+    };
     private final net.kckern.daylight.api.PayloadPort pinPort = net.kckern.daylight.api.PayloadPort.named(PIN_PORT);
     private final net.kckern.daylight.api.PayloadPort.Handler onPinConfirmed = request -> {
         JSONObject r = new JSONObject(request);
