@@ -36,8 +36,7 @@ export function createAppTheme(pack) {
   // contract. `themeExtras` is a top-level, NOT deep-merged, override: keys
   // it sets (colors/other/components/...) fully replace the base's, so an
   // app's own component defaults are never silently blended with the base's
-  // generic ones. Additive: no existing pack sets this, so every other app's
-  // theme is unchanged. See __app_modules/Media/theme/mediaTheme.js (Phase 6).
+  // generic ones. Admin and Media supply their own native component defaults.
   return createTheme(pack?.themeExtras ? { ...base, ...pack.themeExtras } : base);
 }
 

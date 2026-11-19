@@ -31,22 +31,18 @@ export function ErrorState({ error, onRetry, label = 'This section' }) {
     throw new Error('ErrorState requires onRetry — errors must offer a next step');
   }
   return (
-    <div className="ds-state ds-state--error" role="alert">
-      <p className="ds-state__title">{label} failed to load</p>
-      <p className="ds-state__detail">{error?.message || 'Unknown error'}</p>
+    <StateMessage state="error" role="alert" title={`${label} failed to load`} detail={error?.message || 'Unknown error'}>
       <Button density="compact" variant="secondary" onClick={onRetry}>Retry</Button>
-    </div>
+    </StateMessage>
   );
 }
 
 export function EmptyState({ title, hint, action }) {
   return (
-    <div className="ds-state ds-state--empty">
-      <p className="ds-state__title">{title}</p>
-      {hint ? <p className="ds-state__detail">{hint}</p> : null}
+    <StateMessage state="empty" title={title} detail={hint || undefined}>
       {action ? (
         <Button density="compact" variant="secondary" onClick={action.onClick}>{action.label}</Button>
       ) : null}
-    </div>
+    </StateMessage>
   );
 }

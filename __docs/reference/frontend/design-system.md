@@ -13,12 +13,15 @@ Admin, Health, Media, Feed, Home, Life and Auto share browser layout and interac
 | Keep playback alive while browsing | `PlaybackFrame` places controls, overlays and the engine alongside routed children. Route-specific main landmarks and scrolling remain inside the content. | Feed reader and Media canvas |
 | Read server data | Use `useApiResource(path)` when a component observes a JSON resource. Use `DaylightAPI` for an imperative JSON operation. | [Catalog title lookup](../../../__capabilities/content-catalog/browser/lib/useContentTitle.js) |
 | Interpret a command response | Use `daylightApiResponse(path, { method, data, signal })` when the feature needs the original HTTP status and body. The shared client supplies request headers. The feature interprets partial successes and controls retries. | [Playback Hub commands](../../../__app_modules/media/media/browser/admin/playback-hub/hooks/useHubMutations.js) · [Screen registry conflicts](../../../__app_modules/media/media/browser/house/houseApi.js) |
+| Save a versioned document | Pass the current revision in `ifMatch` and read `ETag` from the response headers after a successful write. Keep the edited document and conflict errors with the feature. | [Agenda editor client](../../../__app_modules/household/agenda/browser/admin/agendaClient.js) |
+| Consume a stream or image | Use `daylightApiResponse` for same-origin requests and pass the response body to the consumer that owns its lifetime. Chat parses incremental events. Camera previews revoke their object URLs when replaced. | [Chat runtime](../../../__capabilities/agent-runtime/browser/chat/runtime.js) · [Camera snapshots](../../../__app_modules/household/camera/browser/useSnapshotFetch.js) |
 | Upload a file | Pass native `FormData` as `data` to `daylightApiResponse(path, { method: 'POST', data })`. The client supplies identity headers and the browser sets the multipart boundary. | [Catalog image picker](../../../__capabilities/content-catalog/browser/admin/ImagePickerModal.jsx) |
 | Subscribe to live changes | Use the shared socket subscription hook. The feature checks who an event belongs to and which resource changed. On reconnect, a stateful view can reload its authoritative snapshot. | [Subscription hook](../../../frontend/src/hooks/useWebSocket.js) · [Media fleet recovery](../../../__app_modules/media/media/browser/fleet/FleetProvider.jsx) |
 | Poll while a screen is in use | `useVisibleRefresh({active, intervalMs, reload})` releases its timer when the document is hidden and refreshes on return. | Home entities |
 | Label a native field in a mobile sheet | Associate a native label with the input. Use the shared `.ds-input` geometry and a compact `Button` for submission. | Auto fuel, maintenance and journey editors |
 | Show an action icon | Use `UiIcon` for search and close. Set the accessible name on the surrounding control. Decorative symbols stay out of its spoken name. | [Shared sheet](../../../frontend/src/lib/ui/Sheet.jsx) · [Media search launcher](../../../__app_modules/media/media/browser/shell/Dock.jsx) |
 | Show a field error | Give a Mantine input a label, description and field-specific error. The gallery demonstrates an error that clears after a correction. | [Controls gallery](../../../frontend/src/dev/DsGallery/DsGallery.jsx) |
+| Offer one or several choices | Use Mantine `Radio.Group` for mutually exclusive choices, a labelled `Checkbox` for a boolean, and `Chip.Group multiple` for a set. The feature owns the values. A `Menu` exposes actions such as resetting the set. | [Collection filters in the gallery](../../../frontend/src/dev/DsGallery/DsGallery.jsx) |
 | Remember a simple preference | `browserPreference(key, fallback, decode)` preserves the raw string format. The feature supplies migration and validation. | Home view, Admin preview screen and Feed playback settings |
 
 ## Token contract
@@ -30,6 +33,8 @@ Seven semantic color roles: `background`, `surface`, `surfaceAlt`, `border`,
 `textHigh`, `textMid`, `textLow`. Five status colors: `success`, `warning`,
 `danger`, `info`, `live`. Motion tokens: `fast` (120ms), `base` (200ms),
 `reveal` (300ms), and a shared `easing` curve. The `md` and `lg` breakpoints drive JavaScript and Sass. After editing them in `tokens.mjs`, run `node frontend/scripts/generate-browser-breakpoints.mjs` to update the checked-in Sass variables.
+
+Cards, sheets and frame regions use `--ds-space-sm`, `--ds-space-md` and `--ds-space-lg` for 0.5, 0.75 and 1rem spacing. Caption, detail and heading text use the corresponding `--ds-type-*` roles. These preserve the existing visual sizes across app packs.
 
 The contract reaches consumers through Mantine, scoped CSS or the document root.
 
@@ -138,8 +143,7 @@ it.
 
 For a content picker or search combo, use `ContentCombobox` from the catalog capability. Its `value` and `onChange` bind the selected content ID to the editor. The controller and result rows are also available for Media’s full-screen search. [Public picker export](../../../__capabilities/content-catalog/browser/picker.mjs) · [Admin form example](../../../__capabilities/content-catalog/browser/admin/ListsItemEditor.jsx)
 
-The primitives in the table are exported from `frontend/src/lib/ui/index.js`. New webapp
-UI is built from these, not from raw Mantine or hand-rolled equivalents.
+The primitives in the table are exported from `frontend/src/lib/ui/index.js`. Use them for shared layout, cards and feedback. Use the app’s themed Mantine controls for labelled fields, radio groups, chips and menus.
 
 | Primitive | For | Don't use it when |
 |---|---|---|

@@ -11,13 +11,29 @@ for (const viewport of [
     await page.goto('/dev/ds-gallery');
     await expect(page.getByTestId('gallery-grid')).toBeVisible();
 
-    // Chrome renders: title, both tabs, footer affordance
     await expect(page.getByText('DS Gallery')).toBeVisible();
-    const one = page.getByRole('button', { name: 'One', exact: true });
-    const two = page.getByRole('button', { name: 'Two', exact: true });
-    await expect(one).toHaveAttribute('aria-current', 'page');
-    await two.click();
-    await expect(two).toHaveAttribute('aria-current', 'page');
+    const controls = page.getByRole('button', { name: 'Controls', exact: true });
+    const choices = page.getByRole('button', { name: 'Choices', exact: true });
+    await expect(page.getByRole('link', { name: 'Admin', exact: true })).toHaveAttribute('href', '/admin');
+    await expect(controls).toHaveAttribute('aria-current', 'page');
+    await choices.click();
+    await expect(choices).toHaveAttribute('aria-current', 'page');
+
+    const order = page.getByRole('radio', { name: 'Title' });
+    await order.check();
+    await page.getByText('Library', { exact: true }).click();
+    await page.getByText('Feed', { exact: true }).click();
+    const saved = page.getByRole('checkbox', { name: 'Saved items only' });
+    await saved.check();
+    await expect(page.getByRole('checkbox', { name: 'Library' })).toBeChecked();
+    await expect(page.getByRole('checkbox', { name: 'Feed' })).toBeChecked();
+    await page.getByRole('button', { name: 'Filter actions' }).press('Enter');
+    await page.getByRole('menuitem', { name: 'Reset filters' }).press('Enter');
+    await expect(page.getByRole('radio', { name: 'Recently added' })).toBeChecked();
+    await expect(saved).not.toBeChecked();
+    await expect(page.getByRole('checkbox', { name: 'Library' })).not.toBeChecked();
+    await expect(choices).toHaveAttribute('aria-current', 'page');
+    await controls.click();
 
     const field = page.getByRole('textbox', { name: 'Search term' });
     await expect(field).toHaveAccessibleDescription(/Use at least two characters/);
@@ -44,3 +60,20 @@ for (const viewport of [
     await page.screenshot({ path: `test-results/ds-gallery-${viewport.name}.png`, fullPage: true });
   });
 }
+
+test.describe('coarse pointer choices', () => {
+  test.use({ hasTouch: true, isMobile: true, viewport: { width: 390, height: 844 } });
+  test('choice labels and portalled menu actions have a full touch target', async ({ page }) => {
+    await page.goto('/dev/ds-gallery');
+    await page.getByRole('button', { name: 'Choices', exact: true }).tap();
+    for (const name of ['Recently added', 'Title', 'Library', 'Feed', 'Saved items only']) {
+      const label = page.getByText(name, { exact: true });
+      const bounds = await label.evaluate(el => el.closest('label').getBoundingClientRect().toJSON());
+      expect(bounds.height, name).toBeGreaterThanOrEqual(44);
+      expect(bounds.width, name).toBeGreaterThanOrEqual(44);
+    }
+    await page.getByRole('button', { name: 'Filter actions' }).tap();
+    const bounds = await page.getByRole('menuitem', { name: 'Reset filters' }).boundingBox();
+    expect(bounds.height).toBeGreaterThanOrEqual(44);
+  });
+});

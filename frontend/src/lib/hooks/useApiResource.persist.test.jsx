@@ -258,3 +258,59 @@ it('isolates live registrations and rejects a previous owner response after swit
     b.dispose();
   }
 });
+
+it('isolates out-of-order hydration, queued writes and disposal while the sibling reader stays mounted', async () => {
+  const pathA = 'parallel/a/list';
+  const pathB = 'parallel/b/list';
+  const hydration = deferred();
+  const oldRead = deferred();
+  const newRead = deferred();
+  const siblingRead = deferred();
+  const nextSiblingRead = deferred();
+  const storeA = memoryStore({ owner: 'alice' });
+  const storeB = memoryStore({ owner: 'bob', entries: [{ path: pathB, value: 'disk B' }] });
+  storeA.load.mockReturnValueOnce(hydration.promise);
+  const a = registerResourcePersistence({ store: storeA, prefixes: ['parallel/a/'] });
+  const b = registerResourcePersistence({ store: storeB, prefixes: ['parallel/b/'] });
+  apiMock.mockReset().mockImplementation(path => path === pathA ? oldRead.promise : siblingRead.promise);
+  const readers = [];
+  try {
+    expect(await b.ready).toBe(1);
+    const readerB = renderHook(() => useApiResource(pathB, { swr: true }));
+    readers.push(readerB);
+    expect(readerB.result.current.data).toBe('disk B');
+    hydration.resolve({ owner: 'alice', entries: [{ path: pathA, value: 'disk A' }, { path: pathB, value: 'wrong store' }] });
+    expect(await a.ready).toBe(1);
+    expect(peekApiResource(pathB)).toBe('disk B');
+    const readerA = renderHook(() => useApiResource(pathA, { swr: true }));
+    readers.push(readerA);
+    expect(readerA.result.current.data).toBe('disk A');
+
+    primeApiResource(pathA, 'queued Alice write');
+    apiMock.mockImplementation(path => path === pathA ? newRead.promise : nextSiblingRead.promise);
+    act(() => a.setOwner('carol'));
+    expect(readerA.result.current.data).toBeNull();
+    await act(async () => oldRead.resolve('late Alice read'));
+    expect(readerA.result.current.data).toBeNull();
+    await act(async () => {
+      newRead.resolve('Carol');
+      siblingRead.resolve('Bob');
+    });
+    flushApiResourcePersistence();
+    expect(storeA.put.mock.calls).toEqual([[pathA, 'Carol', expect.any(Number), 'carol']]);
+    expect(storeB.put.mock.calls).toEqual([[pathB, 'Bob', expect.any(Number), 'bob']]);
+
+    readerA.unmount();
+    a.dispose();
+    act(() => readerB.result.current.reload());
+    await act(async () => nextSiblingRead.resolve('Bob after disposal'));
+    flushApiResourcePersistence();
+    expect(readerB.result.current.data).toBe('Bob after disposal');
+    expect(storeB.records.get(pathB)).toBe('Bob after disposal');
+    expect(storeA.put).toHaveBeenCalledTimes(1);
+  } finally {
+    for (const reader of readers) reader.unmount();
+    a.dispose();
+    b.dispose();
+  }
+});

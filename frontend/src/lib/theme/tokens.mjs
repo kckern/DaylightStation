@@ -21,6 +21,8 @@ export const DS_TOKENS = Object.freeze({
     info:    '#58a6ff',
     live:    '#ff6b6b',
   }),
+  spacing: Object.freeze({ sm: '0.5rem', md: '0.75rem', lg: '1rem' }),
+  type: Object.freeze({ caption: '0.7rem', detail: '0.85rem', heading: '1rem' }),
   controls: Object.freeze({
     'control-compact-height': '36px',
     'control-touch-target': '44px',
@@ -55,6 +57,8 @@ export function dsCssVars(pack = null) {
   for (const [name, hex] of Object.entries({ ...DS_TOKENS.status, ...pack?.status })) {
     vars[`--ds-${name}`] = hex;
   }
+  for (const [name, value] of Object.entries(DS_TOKENS.spacing)) vars[`--ds-space-${name}`] = value;
+  for (const [name, value] of Object.entries(DS_TOKENS.type)) vars[`--ds-type-${name}`] = value;
   for (const [name, value] of Object.entries(DS_TOKENS.controls)) {
     vars[`--ds-${name}`] = value;
   }

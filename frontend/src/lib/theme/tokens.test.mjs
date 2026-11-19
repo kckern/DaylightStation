@@ -25,6 +25,8 @@ describe('DS token contract', () => {
 
   it('emits every token as a --ds-* CSS var', () => {
     const vars = dsCssVars();
+    for (const [name, value] of Object.entries(DS_TOKENS.spacing)) expect(vars[`--ds-space-${name}`]).toBe(value);
+    for (const [name, value] of Object.entries(DS_TOKENS.type)) expect(vars[`--ds-type-${name}`]).toBe(value);
     expect(vars['--ds-surface']).toBe(DS_TOKENS.colors.surface);
     expect(vars['--ds-danger']).toBe(DS_TOKENS.status.danger);
     expect(vars['--ds-motion-base']).toBe('200ms');
