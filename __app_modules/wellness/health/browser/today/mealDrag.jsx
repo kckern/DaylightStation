@@ -320,6 +320,8 @@ export function useMealMoves(day) {
       return MoveResult.MOVED;
     } catch (err) {
       setMoves(previous => { const next = new Map(previous); ids.forEach(id => next.delete(id)); return next; });
+      // The foods are back where they were, so nothing here was "just moved".
+      setRecent(previous => { const next = new Set(previous); rows.forEach(row => next.delete(String(entryId(row)))); return next; });
       releaseIfRefused(err, body.operationId);
       setError(failureText(`Couldn't move ${whatMoved(rows)}`, err), { operationId: body.operationId });
       logger.warn('entry.move.failed', { count: rows.length, from, to, status: err.status, error: err.message });
@@ -334,8 +336,9 @@ export function useMealMoves(day) {
   // is. When the outcome is unknown the foods stay reserved, so `onRetryable` gets
   // a retry of this same operation (its `operationId` says which); it gets null once
   // there is nothing to retry. `onRefused` gets the sentence when the move definitely
-  // did not happen, and passing it means the caller reports the failure itself.
-  const sendToDay = useCallback(async (requested, toDate, sourceRows = null, { onRetryable, onRefused } = {}) => {
+  // did not happen, and passing it means the caller reports the failure itself, for as
+  // long as `ownsFailure` says it is still there to do so.
+  const sendToDay = useCallback(async (requested, toDate, sourceRows = null, { onRetryable, onRefused, ownsFailure = () => true } = {}) => {
     const rows = requested.filter(row => row.date && row.date !== toDate);
     if (!rows.length) return MoveResult.UNCHANGED;
     const fromDate = rows[0].date;
@@ -343,8 +346,8 @@ export function useMealMoves(day) {
     const carried = withParts(rows, sourceRows ?? day.items);
     const ids = carried.map(row => String(entryId(row)));
     const body = moveBody(rows, carried, { toDate });
-    const owned = Boolean(onRefused);
-    const blocked = refuseMove(rows, body, owned);
+    const owned = () => Boolean(onRefused) && ownsFailure();
+    const blocked = refuseMove(rows, body, owned());
     if (blocked) { onRefused?.(blocked); return MoveResult.NOT_MOVED; }
     const attempt = async () => {
       setError(null);
@@ -362,7 +365,7 @@ export function useMealMoves(day) {
         setGone(previous => { const next = new Set(previous); ids.forEach(id => next.delete(id)); return next; });
         releaseIfRefused(err, body.operationId);
         const text = failureText(`Couldn't move ${whatMoved(rows)} to ${dayLabel(toDate, localTodayISO())}`, err);
-        setError(text, { operationId: body.operationId, owned });
+        setError(text, { operationId: body.operationId, owned: owned() });
         logger.warn('entry.move-day.failed', { count: rows.length, from: fromDate, to: toDate, status: err.status, error: err.message });
         setUndo(null);
         if (!isDefiniteRefusal(err)) { onRetryable?.(attempt); return MoveResult.UNKNOWN; }

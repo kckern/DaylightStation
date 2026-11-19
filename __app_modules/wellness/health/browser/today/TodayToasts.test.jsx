@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, waitFor, act, fireEvent } from '@testing-library/react';
 import { useState } from 'react';
 import { MantineProvider } from '@mantine/core';
@@ -308,6 +308,59 @@ describe('TodayToasts', () => {
         rerender(view({ moves: failed, menuMoveSettled: 1 }));
         expect(document.activeElement).toBe(other);
         other.remove();
+      });
+    });
+    describe('a Try again on the page', () => {
+      const stuck = busy => [{ id: 'op', message: 'Could not confirm.', busy, retry: () => {}, dismiss: () => {} }];
+      // jsdom keeps focus on a disabled button, so the browser's drop to the page is staged.
+      const dropFocusWhile = run => {
+        Object.defineProperty(document, 'activeElement', { configurable: true, get: () => document.body });
+        try { run(); } finally { delete document.activeElement; }
+      };
+      const retryAfterBusyDrop = async ({ pressElsewhere = false } = {}) => {
+        const { rerender } = render(view({ unresolvedMoves: stuck(false) }));
+        const retry = await screen.findByRole('button', { name: 'Try again' });
+        retry.focus();
+        rerender(view({ unresolvedMoves: stuck(true) }));
+        if (pressElsewhere) fireEvent.pointerDown(document.body);
+        const focus = vi.spyOn(retry, 'focus');
+        dropFocusWhile(() => rerender(view({ unresolvedMoves: stuck(false) })));
+        return focus;
+      };
+      it('gets focus back when its retry fails again, after the busy button dropped it', async () => {
+        expect(await retryAfterBusyDrop()).toHaveBeenCalled();
+      });
+      it('leaves focus alone when the person pressed elsewhere during the retry', async () => {
+        expect(await retryAfterBusyDrop({ pressElsewhere: true })).not.toHaveBeenCalled();
+      });
+      describe('handed back by the closing day sheet', () => {
+        let moveButton;
+        beforeEach(() => { moveButton = document.body.appendChild(Object.assign(document.createElement('button'), { className: 'health-day-input__move' })); moveButton.focus(); });
+        afterEach(() => moveButton.remove());
+        // The toasts are already on the page when the sheet closes.
+        const handBack = async moves => {
+          const view_ = render(view({ unresolvedMoves: [] }));
+          await screen.findByRole('region', { name: 'Food log notifications' });
+          view_.rerender(view({ unresolvedMoves: moves, handedBackMove: 'op' }));
+          return view_;
+        };
+        it('takes focus from the day bar', async () => {
+          await handBack(stuck(false));
+          expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Try again' }));
+        });
+        it('waits for a retry still running, then takes focus', async () => {
+          const { rerender } = await handBack(stuck(true));
+          expect(document.activeElement).toBe(moveButton);
+          rerender(view({ unresolvedMoves: stuck(false), handedBackMove: 'op' }));
+          expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Try again' }));
+        });
+        it('leaves focus the person placed elsewhere', async () => {
+          const other = document.body.appendChild(document.createElement('button'));
+          other.focus();
+          await handBack(stuck(false));
+          expect(document.activeElement).toBe(other);
+          other.remove();
+        });
       });
     });
     it('focus elsewhere is left alone', async () => {

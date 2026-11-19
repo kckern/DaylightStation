@@ -55,7 +55,7 @@ function focusSuccessor(toast) {
  * A toast action often removes itself: a move replaces its button, an Undo ends its
  * toast. Focus left there would fall to the page, so it moves to what comes next. A
  * button only busy with its own request keeps its place, and focus the person has
- * taken elsewhere is left alone.
+ * taken elsewhere is left alone. A busy button that comes back gets its focus back.
  */
 function useToastFocusRecovery() {
   const focused = useRef(null); // { control, toast }
@@ -72,9 +72,16 @@ function useToastFocusRecovery() {
   useLayoutEffect(() => {
     if (!focused.current) return;
     const { control, toast } = focused.current;
-    if (control.isConnected && (!control.disabled || control.hasAttribute('data-loading'))) return;
     const active = document.activeElement;
-    if (active && active !== document.body && active !== control) return;
+    const lost = !active || active === document.body;
+    if (control.isConnected && control.disabled && control.hasAttribute('data-loading')) { focused.current.busy = true; return; }
+    if (control.isConnected && !control.disabled) {
+      // The browser can drop focus from a busy button, which is back if its retry failed.
+      if (focused.current.busy && lost) control.focus({ preventScroll: true });
+      focused.current.busy = false;
+      return;
+    }
+    if (!lost && active !== control) return;
     focused.current = null;
     focusSuccessor(toast)?.focus({ preventScroll: true });
   });
@@ -91,6 +98,23 @@ function useMenuMoveFocus(settled) {
     const active = document.activeElement;
     if (!active || active === document.body || active.closest?.('[data-menu-item]')) focusSuccessor(null)?.focus({ preventScroll: true });
   }, [settled]);
+}
+/**
+ * The day sheet closed on a move it could still retry, and that retry is now on a
+ * toast. Focus went to the day bar when the sheet closed, and goes on from there as
+ * soon as the button can be pressed, unless the person has taken it elsewhere.
+ */
+function useHandedBackMoveFocus(moveId) {
+  const settled = useRef(null);
+  useLayoutEffect(() => {
+    if (!moveId || settled.current === moveId) return;
+    const active = document.activeElement;
+    if (active && active !== document.body && !active.closest?.('.health-day-input__move')) { settled.current = moveId; return; }
+    const retry = document.querySelector(`${REGION} [data-move-retry="${moveId}"]:not(:disabled)`);
+    if (!retry) return;
+    settled.current = moveId;
+    retry.focus({ preventScroll: true });
+  });
 }
 /**
  * Toasts float over the end of the day, so the page gets that much more room to
@@ -169,10 +193,11 @@ export function TodayToasts({
   orphanRetry, onRetryOrphan, onDismissOrphan,
   moves, mealUndo, onUndoMeal, onDismissMealUndo, undoDelete, onUndoDelete, onDismissUndoDelete, undoBusy,
   strandedPortion, today, onMoveCapture, onSupersedeMealUndo, dayOffers = [], onMoveOffer, onDismissOffer,
-  dayNotice = null, onDismissDayNotice, unresolvedMoves = [], menuMoveSettled = 0,
+  dayNotice = null, onDismissDayNotice, unresolvedMoves = [], menuMoveSettled = 0, handedBackMove = null,
 }) {
   useToastFocusRecovery();
   useMenuMoveFocus(menuMoveSettled);
+  useHandedBackMoveFocus(handedBackMove);
   useToastClearance();
   const newestUndo = useNewestUndo([
     moves.undo && { key: `move:${moves.undo.label}`, clear: moves.undo.dismiss },
@@ -194,7 +219,7 @@ export function TodayToasts({
     </Toast> : null}
     {unresolved ? <Toast tone="error" message={waitingMoves ? `${unresolved.message} ${waitingMoves} more waiting.` : unresolved.message}>
       <Actions>
-        <Button {...NEXT_ACTION} size="compact-xs" variant="light" loading={unresolved.busy} onClick={unresolved.retry}>Try again</Button>
+        <Button {...NEXT_ACTION} data-move-retry={unresolved.id} size="compact-xs" variant="light" loading={unresolved.busy} onClick={unresolved.retry}>Try again</Button>
         {unresolved.dismiss ? <Button size="compact-xs" variant="subtle" disabled={unresolved.busy} onClick={unresolved.dismiss}>Dismiss</Button> : null}
       </Actions>
     </Toast> : null}

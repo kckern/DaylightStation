@@ -708,6 +708,8 @@ $health-aside-gap: 1.5rem;
   display: grid; gap: 2px; margin-bottom: 0.5rem; margin-inline: -1rem; padding: 0.3rem 1rem; padding-inline: 1rem;
   background: var(--ds-background); border-bottom: 1px solid var(--ds-border);
 }
+// Scroll room for a day too short to absorb the bar's height. Set only while it is open.
+.health-log-frame::after { content: ''; display: block; height: var(--health-selection-room, 0px); }
 .health-selection-bar__status {
   display: flex; gap: 0.5rem; min-width: 0; height: 1.1rem; line-height: 1.1rem; overflow: hidden;
   font-size: 0.75rem; white-space: nowrap; color: var(--ds-text-mid);

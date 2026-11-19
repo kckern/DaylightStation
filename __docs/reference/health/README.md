@@ -507,7 +507,7 @@ not the current hour. The resolved bucket is stored on each entry.
 - The move is optimistic: the row wears its new meal until the day reloads with it, and
   highlights briefly. A food that is still saving or busy with an earlier change is
   refused before anything changes on screen.
-- A failure puts every row back. **A refusal** (any 4xx except 408, 425 and 429) means
+- A failure puts every row back and drops the highlight. **A refusal** (any 4xx except 408, 425 and 429) means
   nothing happened, so the foods are free at once and the toast says why. **Any other
   failure leaves the outcome unknown:** the foods stay reserved, and a toast offers **Try
   again**, under the same operation ID, or **Dismiss**, which frees them. A Try again that
@@ -561,6 +561,12 @@ which day. The request contract, the gateway questions and the correction rules 
   under the same ID, so nothing is recorded twice. The upload stays in memory, and if the
   saved copy has gone (`AUDIO_NOT_FOUND`) it is sent instead, under that ID. A 503 affects
   only this bar.
+- **Focus after a request.** A request can take the focused control with it (an answered
+  question, a replaced **Try again**, a microphone busy with its recording). When it ends
+  with focus on nothing, focus goes to the error panel's first action (**Try again**, or
+  **Dismiss** after a refusal), else the microphone, else the field. Focus left in the
+  field stays there, and a press anywhere outside the bar during the request leaves focus
+  alone.
 - **"That" follows the food.** It means the viewed day's most recent capture, including
   one made that day and filed on another day, and the reply names that day. The words are read on an empty day too, so
   a correction there is not logged as food. See
@@ -587,10 +593,17 @@ which day. The request contract, the gateway questions and the correction rules 
     unknown outcome (`MoveResult.UNKNOWN`) locks the choices and offers **Try again**
     under the same operation ID. A failed move leaves selection mode and its ticks alone.
     The sheet alone reports its failures and sits above the toast layer. Closing it with a
-    move unresolved hands the retry to the page's toast.
+    move unresolved hands the retry to the page's toast. Closing it while a move is still
+    running hands that move over too: the sheet neither claims it nor owns its failure
+    (`ownsFailure` on `moveFromDay`), so an unknown outcome shows the page's toast with
+    **Try again** and a refusal shows its reason in the page's error toast. A late result
+    never closes a sheet opened since.
   - **Keyboard:** Escape closes an open day menu first, then the sheet. Closing returns
-    focus to the button, or to the field if the button has gone with the food. When Try
-    again replaces the move control, focus goes to it.
+    focus to the button, or to the field if the button has gone with the food. Closing on
+    an unresolved move puts focus on the page toast's **Try again** as soon as it can be
+    pressed (`handedBackMove`), unless focus has gone elsewhere. When Try again replaces
+    the move control, focus goes to it. When a move ends with a note and the control that
+    was used is busy or gone, focus goes to the note.
 - Logs (`health` / `day-input`): `day-input.submit`, `.result`, `.clarification`,
   `.failed`, `.recording-fallback`, `.recording-dropped`, `.move-day.open`, `.move-day.result`.
 
@@ -636,7 +649,10 @@ that have left the day are dropped.
   to a meal…", each one atomic command across all the meals. On touch its controls are at
   least 44 px. It spans the page's side padding, so ticks scroll under it.
 - **Nothing jumps:** opening and closing the bar adjust the scroller by the bar's height,
-  so the tapped meal and its foods hold their place, from the top of the page too. The one
+  so the tapped meal and its foods hold their place, from the top of the page too. A day
+  too short to scroll that far gets the missing room below the log
+  (`--health-selection-room` on `.health-log-frame`) while the bar is open, and loses it
+  when the bar closes, so no blank space stays behind. The one
   exception is a control the bar would land on, which moves just clear of it. Scroll
   anchoring is off for that moment so the two corrections never add up. Rows keep their
   height: a dish's add line holds its space and the meal's tool line scrolls instead of
@@ -669,7 +685,9 @@ suggestion, a saved meal (template) and a Needs Review confirmation.
   it beside the day buttons. Suggestions, created foods, saved meals and confirmations
   have none, so no Undo button appears.
 - **Several at once:** one toast holds an Undo. When a newer action takes that Undo
-  over, the toast loses only the Undo and keeps its day buttons. Offers without an Undo
+  over, the toast loses only the Undo and keeps its day buttons. A failure of that Undo
+  leaves with it: the page's toast reports the unconfirmed Undo once, and when its **Try
+  again** finishes, the day offer retires as well, because the food may be gone. Offers without an Undo
   stay until used or dismissed. The newest two are kept, and a newer result about the
   same food replaces its older offer. With two offers showing, each button's accessible
   name includes the food ("Move Eggs to Yesterday").
@@ -695,7 +713,10 @@ suggestion, a saved meal (template) and a Needs Review confirmation.
   **Other day…** puts focus on the toast's **Move to …** button, which then behaves as if
   it had been pressed. After a move from a meal's `⋯` menu, whether it finished or failed,
   focus that was left on nothing goes to the same next action, such as **Undo** or **Try
-  again**. The date field in these menus ignores a half-typed year.
+  again**. A **Try again** whose retry fails again gets focus back once it is no longer
+  busy, since the browser drops focus from a busy button. The date field in these menus
+  ignores a half-typed year. A meal's `⋯` menu items are 44 px tall on touch, like the
+  other move menus (`health-move-menu__item`).
 - **Room to scroll:** while toasts show, the page gains that much space at its end, so the
   last foods can be scrolled clear of them. The space is added below everything and kept
   until the view leaves it, so neither a toast arriving nor one leaving moves the page.

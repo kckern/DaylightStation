@@ -43,6 +43,20 @@ const moveToYesterday = async sheet => {
   fireEvent.click(sheet.getByRole('button', { name: /^Move \d+ selected to another day$/ }));
   fireEvent.click(await screen.findByRole('menuitem', { name: 'Yesterday' }));
 };
+const closeSheet = async () => {
+  fireEvent.click(document.querySelector('.health-day-move__close'));
+  await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+};
+/** Starts a sheet move the server has not answered, closes the sheet, and returns how to fail it. */
+const closeSheetDuringMove = async () => {
+  let reject;
+  foodsMove = () => new Promise((_resolve, no) => { reject = no; });
+  await open();
+  await moveToYesterday(await openSheet());
+  await waitFor(() => expect(moveCalls()).toHaveLength(1));
+  await closeSheet();
+  return err => act(async () => { reject(err); });
+};
 const moveMealToDinner = async () => {
   fireEvent.click(await screen.findByRole('button', { name: 'Breakfast actions' }));
   fireEvent.click(await screen.findByRole('menuitem', { name: 'Move all of Breakfast to Dinner' }));
@@ -74,6 +88,32 @@ describe('a failed food move is reported once, by what owns it', () => {
     expect(await toasts().findByRole('button', { name: 'Undo move' })).toBeTruthy();
     expect(moveCalls()[1][1].operationId).toBe(moveCalls()[0][1].operationId);
     expect(toasts().queryByRole('button', { name: 'Try again' })).toBeNull();
+  });
+  it('closing the sheet takes focus straight to the toast that can finish the move', async () => {
+    await open();
+    await moveToYesterday(await openSheet());
+    await screen.findByRole('button', { name: 'Try again' });
+    await closeSheet();
+    const retry = await toasts().findByRole('button', { name: 'Try again' });
+    await waitFor(() => expect(document.activeElement).toBe(retry));
+  });
+  it('a sheet closed while its move runs leaves an unknown outcome to the toast, which can finish it', async () => {
+    const fail = await closeSheetDuringMove();
+    await fail(gateway());
+    const retry = await toasts().findByRole('button', { name: 'Try again' });
+    expect(retry.closest('.ds-toast').textContent).toMatch(/couldn't confirm moving Eggs to Yesterday/i);
+    foodsMove = async () => moved;
+    fireEvent.click(retry);
+    expect(await toasts().findByRole('button', { name: 'Undo move' })).toBeTruthy();
+    expect(moveCalls()[1][1].operationId).toBe(moveCalls()[0][1].operationId);
+  });
+  it('a sheet closed while its move runs leaves a refusal to the toast, with its reason', async () => {
+    const fail = await closeSheetDuringMove();
+    await fail(Object.assign(new Error('HTTP 400: Bad Request'), { status: 400, body: { error: 'Eggs cannot move to that day' } }));
+    const alert = await toasts().findByRole('alert');
+    expect(alert.textContent).toMatch(/Couldn't move Eggs to Yesterday: Eggs cannot move to that day/);
+    expect(toasts().queryByRole('button', { name: 'Try again' })).toBeNull();
+    expect(toasts().getByRole('button', { name: 'Dismiss' })).toBeTruthy();
   });
   it('a meal move leaves no error row in the meal, one friendly toast, and a way to free the food', async () => {
     await open();

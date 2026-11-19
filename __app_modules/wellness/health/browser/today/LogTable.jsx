@@ -237,6 +237,8 @@ function DishAddRow({ dishName, candidates, busy, error, onAdd }) {
   </div>;
 }
 
+const SELECTION_ROOM = '--health-selection-room';
+
 /**
  * The ticked foods, across every meal, ready for one move. It stays for all of
  * selection mode at one height (health.scss), so ticks and server replies never
@@ -287,6 +289,7 @@ export function LogTable({
   const [selection, setSelectionState] = useState([]);
   const [moving, setMoving] = useState(false);
   const logRef = useRef(null);
+  const frameRef = useRef(null);
   const barRef = useRef(null);
   const viewedDate = useRef(date);
   viewedDate.current = date;
@@ -335,13 +338,28 @@ export function LogTable({
       opening.current = null;
       const scroller = scrollerOf(opened?.anchor);
       if (!scroller || !opened.anchor.isConnected) return;
-      scroller.scrollTop += opened.anchor.getBoundingClientRect().top - opened.top;
+      const shift = opened.anchor.getBoundingClientRect().top - opened.top;
+      // A short day cannot scroll by the bar's height, so it gets the room while the bar
+      // is open. A page held at a minimum height absorbs some of that room, so what is
+      // still missing is measured again, until the room stops helping.
+      const missing = () => shift - Math.max(0, scroller.scrollHeight - scroller.clientHeight - scroller.scrollTop);
+      let room = 0;
+      for (let short = missing(), tries = 0; short > 0.5 && tries < 4; tries += 1) {
+        const before = scroller.scrollHeight;
+        room += Math.ceil(short);
+        frameRef.current?.style.setProperty(SELECTION_ROOM, `${room}px`);
+        const still = missing();
+        if (scroller.scrollHeight === before || still >= short) break;
+        short = still;
+      }
+      scroller.scrollTop += shift;
       // The one exception to holding still: the bar must not land on the control just tapped.
       const control = opened.anchor.querySelector('[data-select-foods]');
       const covered = control && barRef.current ? barRef.current.getBoundingClientRect().bottom - control.getBoundingClientRect().top : 0;
       if (covered > 0) scroller.scrollTop -= covered;
       return;
     }
+    frameRef.current?.style.removeProperty(SELECTION_ROOM);
     const closed = closing.current;
     const log = logRef.current;
     closing.current = null;
@@ -428,7 +446,7 @@ export function LogTable({
   const showExercise = exerciseAvailable || sessions.length > 0;
   // The bar sits beside the grid, not in it: a sticky grid item can travel only
   // within its own grid row, which here is exactly as tall as the bar.
-  const log = <div className="health-log-frame">
+  const log = <div className="health-log-frame" ref={frameRef}>
     {selecting ? <DaySelectionBar barRef={barRef} byBucket={byBucket} date={date} selection={selection} moving={moving} setMoving={setMoving}
       onMoveToDay={onMoveToDay} onMoveMeal={onMoveMeal} onDone={selectionMoved} onNotice={onNotice} /> : null}
     <div className="health-log" ref={logRef}>

@@ -4,8 +4,8 @@ import { useDayDropTarget, useMealDragActive } from "./mealDrag.jsx";
 import { addDaysISO, dayLabel, EARLIEST_MOVE_DAY, recentDays } from "./moveDays.js";
 import { BUCKETS } from "./mealBuckets.js";
 
-// The selection bar's menus: full-height items under a finger (health.scss).
-const MENU_CLASSES = { item: 'health-move-menu__item' };
+// Food menus: full-height items under a finger (health.scss).
+export const MENU_CLASSES = { item: 'health-move-menu__item' };
 
 export function useMoveInFlight(onMove) {
   const [busy, setBusy] = useState(false);

@@ -48,7 +48,7 @@ const MoveDayIcon = () => <svg width="18" height="18" viewBox="0 0 18 18" fill="
  * cannot be unticked. Once the dish is unticked the part stays unless ticked
  * itself. What shows as moving is exactly what moves.
  */
-function MoveDaySheet({ date, today, entries, onMove, onClose, onClaimMove }) {
+function MoveDaySheet({ date, today, entries, onMove, onClose, onClaimMove, onMoveHandedBack }) {
   const [unticked, setUnticked] = useState(() => new Set());
   const [strandedTicks, setStrandedTicks] = useState(() => new Set());
   const [note, setNote] = useState(null);
@@ -58,14 +58,35 @@ function MoveDaySheet({ date, today, entries, onMove, onClose, onClaimMove }) {
   const [modalRoot, setModalRoot] = useState(null);
   const refusal = useRef(null);
   const retryButton = useRef(null);
+  const noteLine = useRef(null);
+  const open = useRef(false);
   const claimMove = useRef(onClaimMove);
   claimMove.current = onClaimMove;
+  const handBack = useRef(onMoveHandedBack);
+  handBack.current = onMoveHandedBack;
+  const heldMove = useRef(null);
+  heldMove.current = retry?.run.operationId ?? null;
   // While the sheet can retry a move, the sheet is what reports it. Once it closes,
-  // the page's toast takes over, so the retry stays reachable.
-  useEffect(() => () => claimMove.current?.(null), []);
+  // the page's toast takes over, so the retry stays reachable. A move still running
+  // then belongs to the page too: its result finds no sheet to report to.
+  useEffect(() => {
+    open.current = true;
+    return () => {
+      open.current = false;
+      claimMove.current?.(null);
+      if (heldMove.current) handBack.current?.(heldMove.current);
+    };
+  }, []);
   // Try again replaces the control that had focus.
   const canRetry = Boolean(retry);
   useEffect(() => { if (canRetry && !working) retryButton.current?.focus(); }, [canRetry, working]);
+  // Otherwise the control that was used is busy or gone, and the note says what happened.
+  useEffect(() => {
+    if (!note || canRetry || working) return;
+    const focused = document.activeElement;
+    if (!focused || focused === document.body || focused.closest?.('[data-menu-item]')) noteLine.current?.focus({ preventScroll: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [note]);
   const findModalRoot = useCallback(node => { if (node) setModalRoot(node.closest('.mantine-Modal-root')); }, []);
   const dishes = new Map(entries.filter(row => row.kind === 'group').flatMap(row => [row.uuid, row.id].filter(Boolean).map(id => [String(id), row])));
   const dishOf = row => { const dish = row.parentId ? dishes.get(String(row.parentId)) : null; return dish !== row ? dish : null; };
@@ -81,8 +102,10 @@ function MoveDaySheet({ date, today, entries, onMove, onClose, onClaimMove }) {
   const attempt = async (iso, run) => {
     setNote(null); setWorking(true); refusal.current = null;
     const outcome = await run();
-    setWorking(false);
     logger.info('day-input.move-day.result', { date, to: iso, count: picked.length, outcome });
+    // The sheet was closed meanwhile, and one open now is about something else.
+    if (!open.current) return;
+    setWorking(false);
     if (outcome === MoveResult.MOVED) onClose();
     else if (outcome === MoveResult.UNCHANGED) setNote(`Those foods are already on ${dayLabel(iso, today)}.`);
     else if (outcome === MoveResult.UNKNOWN) setNote('We could not confirm that move. Try again to finish it; nothing will move twice.');
@@ -90,8 +113,13 @@ function MoveDaySheet({ date, today, entries, onMove, onClose, onClaimMove }) {
   };
   const move = iso => attempt(iso, () => onMove(picked, iso, {
     // Claimed along with the failure, so the toast never shows for a moment first.
-    onRetryable: run => { setRetry(run ? { run, iso } : null); claimMove.current?.(run?.operationId ?? null); },
+    onRetryable: run => {
+      if (!open.current) return;
+      setRetry(run ? { run, iso } : null);
+      claimMove.current?.(run?.operationId ?? null);
+    },
     onRefused: reason => { refusal.current = reason; },
+    ownsFailure: () => open.current,
   }));
   const locked = working || Boolean(retry);
   // Above the toast layer (350), so no earlier toast can sit over the sheet's controls.
@@ -109,7 +137,7 @@ function MoveDaySheet({ date, today, entries, onMove, onClose, onClaimMove }) {
           </label>;
         })}
       </div>
-      {note ? <p role="status" className="health-day-move__note">{note}</p> : null}
+      {note ? <p ref={noteLine} role="status" tabIndex={-1} className="health-day-move__note">{note}</p> : null}
       {retry ? <Button ref={retryButton} size="compact-sm" variant="light" loading={working} onClick={() => attempt(retry.iso, retry.run)}>Try again</Button>
         : picked.length ? <MoveDayControl date={date} today={today} count={picked.length} onMove={move} portalTarget={modalRoot} onMenuChange={setMenuOpen} /> : null}
     </div>
@@ -123,7 +151,7 @@ function MoveDaySheet({ date, today, entries, onMove, onClose, onClaimMove }) {
  * below it, so nothing here moves the meals. A recording waits while anything is
  * unsettled, so it never replaces a question or a failure.
  */
-export function DayInputBar({ date, today, entries, active = true, onResult, onMoveDay, onClaimMove }) {
+export function DayInputBar({ date, today, entries, active = true, onResult, onMoveDay, onClaimMove, onMoveHandedBack }) {
   const foodAPI = useFoodMutation(entries);
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(null); // 'text' | 'voice' | null
@@ -141,7 +169,10 @@ export function DayInputBar({ date, today, entries, active = true, onResult, onM
   const field = useRef(null);
   const moveButton = useRef(null);
   const questionPanel = useRef(null);
+  const failurePanel = useRef(null);
   const sheetWasOpen = useRef(false);
+  const wasBusy = useRef(null);
+  const pressedElsewhere = useRef(false); // during the current request
   // A reply can land after the page moved on, so it goes to the current handler.
   const reportResult = useRef(onResult);
   reportResult.current = onResult;
@@ -164,8 +195,29 @@ export function DayInputBar({ date, today, entries, active = true, onResult, onM
     return !focused || focused === document.body || Boolean(container.current?.contains(focused));
   };
   useEffect(() => {
-    if (question && focusIsOurs(root)) questionPanel.current?.querySelector('button:not(:disabled), input:not(:disabled)')?.focus();
-  }, [question]);
+    const onPress = event => { if (!root.current?.contains(event.target)) pressedElsewhere.current = true; };
+    document.addEventListener('pointerdown', onPress, true);
+    return () => document.removeEventListener('pointerdown', onPress, true);
+  }, []);
+  // Choices are disabled until the request that raised the question has ended.
+  useEffect(() => {
+    if (question && !busy && focusIsOurs(root)) questionPanel.current?.querySelector('button:not(:disabled), input:not(:disabled)')?.focus();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [question, busy]);
+  // A request can take its control with it: an answered question, a replaced Try again,
+  // a microphone busy with its recording. Focus left with nowhere to be goes to what
+  // comes next, unless the person has pressed something else in the meantime.
+  useEffect(() => {
+    const finished = wasBusy.current && !busy;
+    wasBusy.current = busy;
+    if (!finished || !active || question || pressedElsewhere.current) return;
+    const focused = document.activeElement;
+    if (focused && focused !== document.body) return;
+    const next = failurePanel.current?.querySelector('button:not(:disabled)')
+      || root.current?.querySelector('.health-day-input__mic:not(:disabled)') || field.current;
+    next?.focus({ preventScroll: true });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [busy]);
 
   const deliver = async request => {
     try {
@@ -205,6 +257,7 @@ export function DayInputBar({ date, today, entries, active = true, onResult, onM
   };
   const send = request => {
     setBusy(request.type); setFailure(null); setQuestion(null);
+    pressedElsewhere.current = false;
     logger.info('day-input.submit', { type: request.type, date: request.date, answer: Boolean(request.resolved), saved: Boolean(request.audioRef) });
     flight.current = attempt(request);
   };
@@ -270,7 +323,7 @@ export function DayInputBar({ date, today, entries, active = true, onResult, onM
           <Button size="compact-sm" variant="subtle" onClick={() => backToField(setQuestion)}>Cancel</Button>
         </div>
       </div> : null}
-      {failure ? <div className="health-day-input__panel">
+      {failure ? <div ref={failurePanel} className="health-day-input__panel">
         <span role="alert" className="health-capture-error">{elsewhere(failure.date)}{failure.message}</span>
         <div className="health-day-input__actions">
           {failure.retry ? <Button size="compact-sm" variant="light" disabled={Boolean(busy)} onClick={() => { if (!flight.current) send(failure.retry); }}>Try again</Button> : null}
@@ -283,7 +336,7 @@ export function DayInputBar({ date, today, entries, active = true, onResult, onM
         <div className="health-day-input__actions"><Button size="compact-sm" variant="subtle" onClick={() => backToField(setMicError)}>Dismiss</Button></div>
       </div> : null}
     </div> : null}
-    {moving ? <MoveDaySheet date={date} today={today} entries={entries} onMove={onMoveDay} onClaimMove={onClaimMove} onClose={() => setMoving(false)} /> : null}
+    {moving ? <MoveDaySheet date={date} today={today} entries={entries} onMove={onMoveDay} onClaimMove={onClaimMove} onMoveHandedBack={onMoveHandedBack} onClose={() => setMoving(false)} /> : null}
   </div>;
 }
 export default DayInputBar;

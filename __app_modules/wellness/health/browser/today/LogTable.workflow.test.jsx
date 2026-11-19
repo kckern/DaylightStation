@@ -1,6 +1,6 @@
 import { render,screen,fireEvent,waitFor,cleanup,act } from '@testing-library/react';
 import { MantineProvider } from '@mantine/core';
-import { afterEach,it,expect,vi } from 'vitest';
+import { afterEach,describe,it,expect,vi } from 'vitest';
 import { LogTable } from "./LogTable.jsx";
 import { PortionContext } from "./usePortionDraft.js";
 import { VoiceCapture } from "../capture/VoiceCapture.jsx";
@@ -384,6 +384,51 @@ it('opening the bar leaves the tapped meal where it was on screen',()=>{
  expect(scroller.scrollTop).toBe(120);
  fireEvent.click(screen.getByRole('button',{name:'Done selecting'}));
  rect.mockRestore();
+});
+describe('a day too short to scroll',()=>{
+ const openShortDay=height=>{
+  const rect=vi.spyOn(Element.prototype,'getBoundingClientRect').mockImplementation(()=>({top:screen.queryByRole('region',{name:'Selected foods'})?230:150,bottom:0,left:0}));
+  const {container}=render(<div className="ds-chrome__main"><MantineProvider><LogTable date="2026-09-06" byBucket={buckets} onRowTap={()=>{}} onMealChanged={()=>{}} onMoveMeal={vi.fn()}/></MantineProvider></div>);
+  const scroller=container.querySelector('.ds-chrome__main');
+  Object.defineProperty(scroller,'clientHeight',{configurable:true,value:600});
+  Object.defineProperty(scroller,'scrollHeight',{configurable:true,value:height});
+  const room=()=>container.querySelector('.health-log-frame').style.getPropertyValue('--health-selection-room');
+  return {rect,scroller,room};
+ };
+ it('gets room to scroll while the bar is open, so the foods hold still, and gives it back',()=>{
+  const {rect,scroller,room}=openShortDay(600);
+  expect(room()).toBe('');
+  fireEvent.click(screen.getByRole('button',{name:'Select foods'}));
+  expect(room()).toBe('80px');
+  expect(scroller.scrollTop).toBe(80);
+  fireEvent.click(screen.getByRole('button',{name:'Done selecting'}));
+  expect(room()).toBe('');
+  rect.mockRestore();
+ });
+ it('borrows only what the page cannot already scroll',()=>{
+  const {rect,room}=openShortDay(630);
+  fireEvent.click(screen.getByRole('button',{name:'Select foods'}));
+  expect(room()).toBe('50px');
+  fireEvent.click(screen.getByRole('button',{name:'Done selecting'}));
+  rect.mockRestore();
+ });
+ it('adds what a page minimum height swallowed, so the full shift can scroll',()=>{
+  const {rect,scroller,room}=openShortDay(600);
+  // The page fills the scroller at a minimum height, which hides the first 4px of room.
+  Object.defineProperty(scroller,'scrollHeight',{configurable:true,get:()=>600+Math.max(0,(parseFloat(room())||0)-4)});
+  fireEvent.click(screen.getByRole('button',{name:'Select foods'}));
+  expect(room()).toBe('84px');
+  expect(scroller.scrollTop).toBe(80);
+  fireEvent.click(screen.getByRole('button',{name:'Done selecting'}));
+  rect.mockRestore();
+ });
+ it('a day long enough to scroll adds nothing',()=>{
+  const {rect,room}=openShortDay(2000);
+  fireEvent.click(screen.getByRole('button',{name:'Select foods'}));
+  expect(room()).toBe('');
+  fireEvent.click(screen.getByRole('button',{name:'Done selecting'}));
+  rect.mockRestore();
+ });
 });
 it('an open dish keeps the height of its add line while foods are picked',()=>{
  const dish=[{uuid:'d',name:'Stew',kind:'group',mealTime:'evening'},{uuid:'c',name:'Carrot',parentId:'d',mealTime:'evening',calories:9,grams:9}];

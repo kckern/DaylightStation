@@ -19,10 +19,10 @@ import { RECONSTRUCTION_LOG_ID } from '../../portable/contracts/nutrition/recons
 
 const today = localTodayISO();
 const food = (uuid, extra = {}) => ({ uuid, name: uuid, date: today, mealTime: 'morning', calories: 10, version: 1, ...extra });
-let items, dayInput, dayReads, foodsMove;
+let items, dayInput, dayReads, foodsMove, mealUndo;
 const api = async (path, body) => {
   if (path === 'api/v1/health/nutrition/day-input') return dayInput(body);
-  if (path === 'api/v1/health/nutrition/meal-undo') return { committed: true, affectedIds: [], affectedDates: [] };
+  if (path === 'api/v1/health/nutrition/meal-undo') return mealUndo();
   if (path === 'api/v1/health/nutrition/foods-move') return foodsMove();
   if (path === 'api/v1/health/nutrition/input') return { transcribeFailed: true, audioRef: 'va_1', responseText: 'Your recording is saved.' };
   if (path.includes('health/day?')) { dayReads += 1; return { items, budget: { budget: 2000, food: 0, exercise: 0, remaining: 2000, sessions: [] } }; }
@@ -47,6 +47,7 @@ const calls = path => apiMock.mock.calls.filter(call => call[0] === path);
 beforeEach(() => {
   resetApiResourceCache(); apiMock.mockReset(); apiMock.mockImplementation(api);
   items = [food('Eggs')]; dayReads = 0; dayInput = async () => ({});
+  mealUndo = async () => ({ committed: true, affectedIds: [], affectedDates: [] });
   foodsMove = async () => ({ committed: true, undoToken: 'meal-sheet', items: [], affectedIds: [] });
 });
 afterEach(cleanup);
@@ -223,6 +224,51 @@ describe('TodayView day input', () => {
     expect(await screen.findByRole('checkbox', { name: 'Eggs' })).toBeTruthy();
     expect(screen.queryByRole('checkbox', { name: 'Estimate' })).toBeNull();
     expect(screen.queryByRole('checkbox', { name: 'Rejected' })).toBeNull();
+  });
+  it("every item of a meal's menu gets the finger-sized treatment", async () => {
+    await open();
+    fireEvent.click(await screen.findByRole('button', { name: 'Breakfast actions' }));
+    const items = await screen.findAllByRole('menuitem');
+    expect(items.length).toBeGreaterThan(3);
+    for (const item of items) expect(item.classList.contains('health-move-menu__item')).toBe(true);
+  });
+  describe('a failed meal Undo whose toast a newer change replaced', () => {
+    const cards = () => [...document.querySelectorAll('.ds-toast')].map(node => node.textContent);
+    const unconfirmed = () => cards().filter(text => /confirm that undo/i.test(text));
+    const send = words => {
+      fireEvent.change(screen.getByRole('textbox', { name: 'Log food or change this day' }), { target: { value: words } });
+      fireEvent.click(screen.getByRole('button', { name: 'Send' }));
+    };
+    const failUndoThenReplaceIt = async () => {
+      items = [food('Eggs'), food('Toast', { logId: 'log-1' })];
+      const replies = [
+        async () => ({ committed: true, outcome: 'committed', kind: 'added', undoToken: 'meal-a', logId: 'log-1', date: today, entryIds: ['Toast'], affectedIds: ['Toast'], items: [food('Toast', { logId: 'log-1' })] }),
+        async () => ({ committed: true, outcome: 'committed', kind: 'changed', message: 'Updated Eggs', undoToken: 'meal-b', affectedIds: ['Eggs'], items: [food('Eggs')] }),
+      ];
+      dayInput = () => replies.shift()();
+      mealUndo = async () => { throw Object.assign(new Error('HTTP 502: Bad Gateway'), { status: 502 }); };
+      await open({ session: true });
+      send('toast');
+      fireEvent.click(await screen.findByRole('button', { name: 'Undo meal change' }));
+      await screen.findByText(/couldn't confirm that undo/i);
+      await waitFor(() => expect(screen.getByRole('textbox', { name: 'Log food or change this day' }).readOnly).toBe(false));
+      send('the eggs were scrambled');
+      await screen.findByText('Updated Eggs');
+    };
+    it('is reported once, by the page', async () => {
+      await failUndoThenReplaceIt();
+      await waitFor(() => expect(unconfirmed()).toHaveLength(1));
+      expect(within(screen.getByText(/confirm that undo/i).closest('.ds-toast')).getByRole('button', { name: 'Try again' })).toBeTruthy();
+      expect(toasts().getByText(/^Added Toast to Today/)).toBeTruthy();
+    });
+    it('retires the day offer when the retry finishes it, because the food may be gone', async () => {
+      await failUndoThenReplaceIt();
+      mealUndo = async () => ({ committed: true, affectedIds: ['Toast'], affectedDates: [today] });
+      fireEvent.click(await toasts().findByRole('button', { name: 'Try again' }));
+      await waitFor(() => expect(unconfirmed()).toHaveLength(0));
+      await waitFor(() => expect(toasts().queryByText(/^Added Toast to Today/)).toBeNull());
+      expect(toasts().getByText('Updated Eggs')).toBeTruthy();
+    });
   });
   it('a day of estimates offers no whole-day move', async () => {
     items = [food('Estimate', { logId: RECONSTRUCTION_LOG_ID })];

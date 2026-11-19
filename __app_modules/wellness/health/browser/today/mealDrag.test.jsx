@@ -249,6 +249,20 @@ describe('useMealMoves', () => {
     expect(result.current.error).toBeNull();
     expect(result.current.items[0].mealTime).toBe('morning');
   });
+  it('a failed meal move takes its "just moved" highlight back at once', async () => {
+    apiMock.mockRejectedValueOnce(Object.assign(new Error('HTTP 502: Bad Gateway'), { status: 502 }));
+    const { result } = renderHook(() => useMealMoves({ items: [eggs], reload: () => {} }));
+    await act(async () => { await result.current.moveMeal([eggs], 'evening', 'morning'); });
+    expect(result.current.recentIds.has('eggs')).toBe(false);
+  });
+  it('a closed surface stops owning a refusal: the failure goes to the page', async () => {
+    apiMock.mockRejectedValueOnce(Object.assign(new Error('HTTP 400: nope'), { status: 400, body: { error: 'Not that day' } }));
+    const onRefused = vi.fn();
+    const { result } = renderHook(() => useMealMoves({ items: [eggs], reload: () => {} }));
+    await act(async () => { await result.current.moveFromDay([{ ...eggs, date: '2026-11-18' }], '2026-11-17', null, { onRefused, ownsFailure: () => false }); });
+    expect(result.current.error).toMatch(/Not that day/);
+    expect(result.current.errorHandled).toBe(false);
+  });
   it('the highlight fades after its moment', async () => {
     vi.useFakeTimers();
     try {

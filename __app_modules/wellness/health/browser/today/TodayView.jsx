@@ -28,7 +28,7 @@ import { MealAddRow } from "./MealAddRow.jsx";
 import { DayInputBar } from "./DayInputBar.jsx";
 import { useMealMoves, mealEntries, dayEntries, MoveResult, isDefiniteRefusal, refusalReason, unconfirmedMoveText } from "./mealDrag.jsx";
 import { dayLabel } from "./moveDays.js";
-import { MoveDayItems } from "./MoveDayControl.jsx";
+import { MoveDayItems, MENU_CLASSES } from "./MoveDayControl.jsx";
 import { NeedsReviewSection } from "./NeedsReviewSection.jsx";
 import { DayClosePill } from "./DayClosePill.jsx";
 import { FollowUpTray } from "./FollowUpTray.jsx";
@@ -75,7 +75,9 @@ const MAX_DAY_OFFERS = 2;
 const NO_CAPTURE_TOASTS = { undo: null, offers: [] };
 const sameFood = (a, b) => Boolean(a && b) && (a.ids.some(id => b.ids.includes(id))
   || (a.logId === b.logId && Boolean(a.logId) && !SHARED_LOG_IDS.has(a.logId)));
-const withOffer = (offers, shown) => [{ ...shown, token: null },
+// The day offer outlives its toast's Undo. A failed Undo is then the page's to report,
+// and `replacedUndo` lets the offer retire if that Undo still finishes.
+const withOffer = (offers, shown) => [{ ...shown, token: null, failure: null, replacedUndo: shown.token },
   ...offers.filter(other => !sameFood(other.offer, shown.offer))].slice(0, MAX_DAY_OFFERS);
 /** A new result. An Undo it replaces leaves its day offer behind, unless it is for the same food. */
 function announceCapture(state, undo) {
@@ -88,6 +90,9 @@ function announceCapture(state, undo) {
 }
 /** A newer action took over the one Undo slot. The food can still be moved. */
 const supersedeCaptureUndo = state => ({ undo: null, offers: state.undo?.offer ? withOffer(state.offers, state.undo) : state.offers });
+/** An Undo finished, by any route. The food it covers may be gone, so nothing offers it any more. */
+const afterMealUndo = (state, token) => ({ undo: state.undo?.token === token ? null : state.undo,
+  offers: state.offers.filter(shown => shown.replacedUndo !== token) });
 const capturePlace = (what, date, mealId) => `Added ${what} to ${dayLabel(date, todayISO())}${mealId ? `, ${bucketLabel(mealId)}` : ''}`;
 const updateOffer = (state, offer, change) => {
   const update = shown => (shown?.offer === offer ? change(shown) : shown);
@@ -191,6 +196,8 @@ export function TodayView({ active = true, sidebarTarget, followUpTarget = null,
   const undoPending = useRef(false);
   // The unknown-outcome move the day sheet is showing, which it reports itself.
   const [sheetMove, setSheetMove] = useState(null);
+  // The move the sheet was offering to retry when it closed. Its toast takes focus.
+  const [handedBackMove, setHandedBackMove] = useState(null);
   const [barcodeDate, setBarcodeDate] = useState(date);
   // { audioRef | content, bucket, date, selectedIds } | null — a voice capture whose transcription failed on
   // the network. The recording is on the server, so the notice can offer a
@@ -572,7 +579,7 @@ export function TodayView({ active = true, sidebarTarget, followUpTarget = null,
   };
   const bucketHeaderAction = (bucketId, rows, label) => {
     if (!rows.length) return null;
-    return <Menu position="bottom-end">
+    return <Menu position="bottom-end" classNames={MENU_CLASSES}>
       <Menu.Target><ActionIcon className="health-meal__capture-btn" variant="subtle" aria-label={`${label} actions`}>⋯</ActionIcon></Menu.Target>
       <Menu.Dropdown>
         {date !== todayISO() ? <Menu.Item onClick={() => copyMealToToday(rows, bucketId, label)}>Copy to today</Menu.Item> : null}
@@ -605,7 +612,7 @@ export function TodayView({ active = true, sidebarTarget, followUpTarget = null,
     onThisUndo(undo => ({ ...undo, failure: null }));
     try {
       // In the continuation, so a retry from the page's toast finishes it the same way.
-      await foodAPI.withContinuation('api/v1/health/nutrition/meal-undo', { undoToken: token, operationId }, 'POST', () => { onThisUndo(() => null); day.reload(); });
+      await foodAPI.withContinuation('api/v1/health/nutrition/meal-undo', { undoToken: token, operationId }, 'POST', () => { setCaptureToasts(state => afterMealUndo(state, token)); day.reload(); });
     } catch (err) {
       logger.warn('meal-undo.failed', { status: err?.status, error: err?.message });
       if (isDefiniteRefusal(err)) { foodAPI.release(operationId); mealUndoOperation.current = null; setCaptureNotice(refusalReason(err) || "Couldn't undo that."); }
@@ -667,7 +674,7 @@ export function TodayView({ active = true, sidebarTarget, followUpTarget = null,
         undoDelete={undoDelete} onUndoDelete={undoDeletedEntry} onDismissUndoDelete={() => setUndoDelete(null)} undoBusy={undoBusy}
         strandedPortion={strandedPortion ? portionControl : null} today={todayISO()} onMoveCapture={iso => moveOffered(mealUndo, iso)}
         dayOffers={captureToasts.offers} onMoveOffer={moveOffered}
-        dayNotice={dayNotice} onDismissDayNotice={() => setDayNotice(null)} menuMoveSettled={menuMoveSettled}
+        dayNotice={dayNotice} onDismissDayNotice={() => setDayNotice(null)} menuMoveSettled={menuMoveSettled} handedBackMove={handedBackMove}
         onDismissOffer={shown => setCaptureToasts(state => ({ ...state, offers: state.offers.filter(item => item.offer !== shown.offer) }))} />
       <ConfirmDialog open={Boolean(pendingDelete)} title={pendingDelete ? `Delete ${entryLabel(pendingDelete)}?` : ''}
         body={pendingDelete ? deleteConfirmBody(pendingDelete) : ''} busy={deleteBusy} error={deleteError}
@@ -682,7 +689,7 @@ export function TodayView({ active = true, sidebarTarget, followUpTarget = null,
       {refreshFailed ? <Button variant="subtle" size="compact-xs" color="gray" className="health-refresh-failed" onClick={day.reload}>
         Couldn't refresh · Retry</Button> : null}
       <DayInputBar date={date} today={todayISO()} active={active} entries={dayEntries(movedDay.items)} onResult={handleDayInput}
-        onMoveDay={(rows, iso, options) => moves.moveFromDay(rows, iso, null, options)} onClaimMove={setSheetMove} />
+        onMoveDay={(rows, iso, options) => moves.moveFromDay(rows, iso, null, options)} onClaimMove={setSheetMove} onMoveHandedBack={setHandedBackMove} />
       <LogTable clarifications={mealClarifications} onClearClarification={clearMealClarification} byBucket={preview.byBucket} date={date} sessions={preview.budget?.sessions || []}
         exerciseAvailable={Boolean(day.budget)}
         fastedMeals={day.dayStatus?.fastedMeals || []} onMealFastChanged={day.reload}
