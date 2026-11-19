@@ -1,11 +1,13 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { MantineProvider } from '@mantine/core';
 import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { resource } = vi.hoisted(() => ({ resource: vi.fn() }));
-vi.mock('../../../lib/hooks/useApiResource.js', () => ({ useApiResource: (...args) => resource(...args) }));
+const { api } = vi.hoisted(() => ({ api: vi.fn() }));
+vi.mock('../../../lib/api.mjs', () => ({ DaylightAPI: (...args) => api(...args) }));
 import IntegrationsIndex from './IntegrationsIndex.jsx';
+
+const integrationsPath = '/api/v1/admin/integrations';
 
 function renderIndex() {
   return render(
@@ -16,35 +18,32 @@ function renderIndex() {
 }
 
 describe('IntegrationsIndex', () => {
-  beforeEach(() => resource.mockReset());
+  beforeEach(() => { api.mockReset(); });
 
   it('renders the roster returned by the shared integrations resource', async () => {
-    resource.mockReturnValue({
-      data: { integrations: [
+    api.mockResolvedValue({
+      integrations: [
         { provider: 'plex', category: 'media', url: 'https://plex.test', hasAuth: true },
         { provider: 'withings', category: 'fitness', hasAuth: false },
-      ] },
-      loading: false,
-      error: null,
+      ],
     });
 
     renderIndex();
 
-    expect(await screen.findByText('Plex')).toBeInTheDocument();
-    expect(screen.getByText('Withings')).toBeInTheDocument();
-    expect(resource).toHaveBeenCalledWith('/api/v1/admin/integrations', { label: 'Integrations' });
+    expect(await screen.findByRole('link', { name: /Plex/ })).toHaveAttribute('href', '/admin/system/integrations/plex');
+    expect(screen.getByRole('link', { name: /Withings/ })).toHaveAttribute('href', '/admin/system/integrations/withings');
+    expect(api.mock.calls).toEqual([[integrationsPath]]);
   });
 
-  it('lets the user dismiss a resource read error', async () => {
-    resource.mockReturnValue({
-      data: null,
-      loading: false,
-      error: new Error('Integrations unavailable'),
-    });
+  it('retries a failed roster read and waits for success before showing an empty list', async () => {
+    api.mockRejectedValueOnce(new Error('Integrations unavailable')).mockResolvedValueOnce({ integrations: [] });
 
     renderIndex();
     expect(await screen.findByRole('alert')).toHaveTextContent('Integrations unavailable');
-    fireEvent.click(screen.getByRole('button'));
-    await waitFor(() => expect(screen.queryByRole('alert')).toBeNull());
+    expect(screen.queryByText('No integrations found.')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    expect(await screen.findByText('No integrations found.')).toBeInTheDocument();
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(api.mock.calls).toEqual([[integrationsPath], [integrationsPath]]);
   });
 });

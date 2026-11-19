@@ -37,12 +37,18 @@ const EMPTY = {
 
 export function ReviewPage() {
   const { ratingKey, rowId } = useParams();
+  return <FilmReview key={ratingKey} ratingKey={ratingKey} rowId={rowId} />;
+}
+
+function FilmReview({ ratingKey, rowId }) {
   const navigate = useNavigate();
   const url = `${API}/${encodeURIComponent(ratingKey)}/review`;
   const { data, loading, error, reload } = useApiResource(url, { label: 'review', logger });
   const [selected, setSelected] = useState(null);
   const [picked, setPicked] = useState(() => new Set());
   const [notice, setNotice] = useState(null);
+  const [sending, setSending] = useState(false);
+  const activeView = useRef(true);
   const running = data?.job && (data.job.status === 'queued' || data.job.status === 'running');
   const waiting = !!data && (running || (data.audit && !data.audit.fresh) || data.status?.next === 'checking');
 
@@ -53,9 +59,15 @@ export function ReviewPage() {
     if (r?.id) opened.current = r.id;
     if (r?.id && r.id !== rowId) navigate(`/admin/content/filter/${encodeURIComponent(ratingKey)}/${encodeURIComponent(r.id)}`, { replace: true });
   };
+  useEffect(() => {
+    activeView.current = true;
+    return () => {
+      activeView.current = false;
+      opened.current = null;
+      previewStore.clearPending();
+    };
+  }, []);
   // Opening a permalink: select the row and seek to it once (the store holds the jump until the player binds).
-  // A different film on a mounted page: forget the old selection, parked jump and handled permalink.
-  useEffect(() => () => { opened.current = null; setSelected(null); setNotice(null); previewStore.clearPending(); }, [ratingKey]);
   useEffect(() => {
     if (!rowId || !data?.rows || opened.current === rowId) return;
     opened.current = rowId;
@@ -69,7 +81,7 @@ export function ReviewPage() {
   // The keyboard station: the cursor is `selected`; scope, verdicts and stepping live in the hook.
   // Not matched to Plex: a key that still holds household work shows its review; runs are refused.
   const notMatched = data?.match === 'unmatched';
-  const station = useReviewStation({ ratingKey, data, reload, selected, select, runBusy: running || notMatched });
+  const station = useReviewStation({ ratingKey, data, reload, selected, select, activeView, runBusy: running || notMatched });
   const { redoOpen } = useReviewKeys(station.handlers, { enabled: Boolean(data?.rows) });
   useVisibleRefresh({ active: Boolean(waiting), intervalMs: POLL_MS, reload });
 
@@ -85,16 +97,21 @@ export function ReviewPage() {
   const pick = (id, on) => setPicked((prev) => { const next = new Set(prev); if (on) next.add(id); else next.delete(id); return next; });
   const sendBackPicked = async () => {
     const cues = [...new Set((data?.rows || []).filter((r) => picked.has(r.id)).flatMap((r) => r.members || []))];
+    if (sending || !cues.length) return;
+    setSending(true);
     setNotice(null);
     try {
       await DaylightAPI(`${API}/${encodeURIComponent(ratingKey)}/jobs`, { kind: 'send-back', cues }, 'POST');
       logger.info('review.send-back', { ratingKey, rows: picked.size, cues: cues.length });
-      setPicked(new Set());
+      if (!activeView.current) return;
+      setPicked(current => new Set([...current].filter(id => !picked.has(id))));
       setNotice(`Sent ${cues.length} back to the pipeline.`);
       reload();
     } catch (err) {
       logger.warn('review.send-back_failed', { ratingKey, error: err.message });
-      setNotice(err.message || 'That did not work.');
+      if (activeView.current) setNotice(err.message || 'That did not work.');
+    } finally {
+      if (activeView.current) setSending(false);
     }
   };
 
@@ -138,7 +155,7 @@ export function ReviewPage() {
           <Stack gap="xs">
             {picked.size ? (
               <Group gap="xs">
-                <Button size="compact-xs" disabled={Boolean(runBlock)} onClick={sendBackPicked}>Send back {picked.size} selected</Button>
+                <Button size="compact-xs" loading={sending} disabled={sending || Boolean(runBlock)} onClick={sendBackPicked}>Send back {picked.size} selected</Button>
                 <Button size="compact-xs" variant="subtle" onClick={() => setPicked(new Set())}>Clear selection</Button>
               </Group>
             ) : null}

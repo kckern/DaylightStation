@@ -15,6 +15,64 @@ async function changeRoute(page, path) {
   }, path);
 }
 
+test('Integrations shows a retryable read error and opens a provider by keyboard after recovery', async ({ page }) => {
+  const firstRead = deferred();
+  const reads = [];
+  const integrationsPath = '/api/v1/admin/integrations';
+  const providerDetailUrl = 'https://withings.invalid/details';
+
+  await page.routeWebSocket('**/*', () => {});
+  await page.route('**/api/**', async route => {
+    const request = route.request();
+    const path = new URL(request.url()).pathname;
+    if (path === integrationsPath) {
+      reads.push(request.method());
+      if (reads.length === 1) {
+        await firstRead.promise;
+        return route.fulfill({ status: 500, json: { error: 'Provider roster unavailable' } });
+      }
+      return route.fulfill({ json: { integrations: [
+        { provider: 'withings', category: 'health', hasAuth: true },
+        { provider: 'plex', category: 'media', hasAuth: false },
+      ] } });
+    }
+    if (path === `${integrationsPath}/withings`) {
+      return route.fulfill({ json: { integration: { provider: 'withings', category: 'health', url: providerDetailUrl } } });
+    }
+    if (path === '/api/v1/auth/context') return route.fulfill({ json: { setupComplete: true, authenticated: true } });
+    if (path === '/api/v1/supervision/bootstrap') return route.fulfill({ json: { enabled: false } });
+    return route.fulfill({ json: {} });
+  });
+
+  const emptyState = page.getByText('No integrations found.', { exact: true });
+  const loadingState = page.getByLabel('Loading integrations', { exact: true });
+  try {
+    await page.goto('/admin/system/integrations');
+    await expect.poll(() => reads).toEqual(['GET']);
+    await expect(loadingState).toBeVisible();
+    await expect(emptyState).toHaveCount(0);
+  } finally {
+    firstRead.resolve();
+  }
+
+  const errorState = page.getByRole('alert').filter({ hasText: 'Provider roster unavailable' });
+  await expect(errorState).toBeVisible();
+  await expect(loadingState).toHaveCount(0);
+  await expect(emptyState).toHaveCount(0);
+  expect(reads).toEqual(['GET']);
+  await errorState.getByRole('button', { name: 'Retry', exact: true }).click();
+
+  const withings = page.getByRole('link', { name: /Withings/ });
+  await expect(withings).toBeVisible();
+  await expect(page.getByRole('link', { name: /Plex/ })).toBeVisible();
+  await expect(errorState).toHaveCount(0);
+  await expect(emptyState).toHaveCount(0);
+  await withings.press('Enter');
+  await expect(page).toHaveURL(/\/admin\/system\/integrations\/withings$/);
+  await expect(page.getByRole('link', { name: providerDetailUrl })).toBeVisible();
+  expect(reads).toEqual(['GET', 'GET']);
+});
+
 test('Integration Detail keeps provider data and test results with the provider route', async ({ page }) => {
   const oldRead = deferred();
   const readStarted = deferred();

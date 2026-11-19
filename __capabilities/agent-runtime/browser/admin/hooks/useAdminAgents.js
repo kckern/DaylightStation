@@ -1,6 +1,5 @@
 import { DaylightAPI } from "../../../../../frontend/src/lib/api.mjs";
 import { useApiResource } from "../../../../../frontend/src/lib/hooks/useApiResource.js";
-import { useDismissibleError } from "../../../../../frontend/src/lib/hooks/useDismissibleError.js";
 import getLogger from "../../../../../frontend/src/lib/logging/Logger.js";
 
 const API_BASE = '/api/v1/agents';
@@ -14,10 +13,8 @@ const API_BASE = '/api/v1/agents';
  * @returns {object} Agents state and actions
  */
 export function useAdminAgents() {
-  const { data, loading, error: readError } = useApiResource(API_BASE, { label: 'Admin agents' });
-  const { error, dismiss: dismissError } = useDismissibleError(readError);
-
-  return { agents: data?.agents || [], loading, error, dismissError };
+  const { data, loading, error, reload } = useApiResource(API_BASE, { label: 'Admin agents' });
+  return { agents: data?.agents || [], loading, error, reload };
 }
 
 export async function triggerAssignment(agentId, assignmentId, userId) {

@@ -2,7 +2,7 @@ import { useCallback, useMemo, useState } from 'react';
 import { Badge, Button, Group, Stack, Table, Text } from '@mantine/core';
 import { DaylightAPI } from '../../../lib/api.mjs';
 import { useApiResource } from '../../../lib/hooks/useApiResource.js';
-import { LoadingState, ErrorState, EmptyState, SectionCard, createAppLogger } from '@/lib/ui';
+import { LoadingState, ErrorState, EmptyState, SectionCard, StateMessage, createAppLogger } from '@/lib/ui';
 
 const logger = createAppLogger('admin').child('sessions');
 
@@ -45,6 +45,7 @@ export default function SessionsIndex() {
   const [notice, setNotice] = useState(null);
 
   const sessions = useMemo(() => data?.sessions ?? [], [data]);
+  const revocable = data?.revocable !== false;
   const others = sessions.filter((row) => !row.current).length;
 
   const revoke = useCallback(async (id, label) => {
@@ -67,20 +68,18 @@ export default function SessionsIndex() {
   return (
     <SectionCard
       title="Signed-in devices"
-      actions={others > 0 ? (
-        <Button size="compact-xs" color="red" variant="light" loading={busy === 'others'}
+      actions={revocable && others > 0 ? (
+        <Button size="compact-xs" color="red" variant="light" loading={busy === 'others'} disabled={Boolean(busy)}
           onClick={() => revoke('others', 'every other device')}>
           Sign out {others} other{others === 1 ? '' : 's'}
         </Button>
       ) : null}
     >
       <Stack gap="xs">
-        {data?.revocable === false ? (
-          <Text size="sm" c="dimmed">
-            This deployment has no session store, so sessions cannot be listed or revoked.
-          </Text>
-        ) : null}
-        {!sessions.length ? (
+        {!revocable ? (
+          <StateMessage state="unavailable" title="Session management unavailable"
+            detail="This deployment has no session store, so sessions cannot be listed or revoked." />
+        ) : !sessions.length ? (
           <EmptyState title="Nobody is signed in"
             hint="A session appears here the first time someone signs in on a device." />
         ) : (

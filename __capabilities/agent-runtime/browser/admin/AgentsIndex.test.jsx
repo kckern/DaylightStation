@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { MantineProvider } from '@mantine/core';
 import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -28,18 +28,22 @@ describe('AgentsIndex', () => {
 
     renderIndex();
 
-    expect(await screen.findByText('coach')).toBeInTheDocument();
+    expect(await screen.findByRole('link', { name: /coach/ })).toHaveAttribute('href', '/admin/agents/coach');
     expect(screen.getByText('Daily coach')).toBeInTheDocument();
     expect(apiState.calls).toEqual([['/api/v1/agents']]);
   });
 
-  it('dismisses a failed roster read', async () => {
+  it('offers a retry for an unavailable directory and shows empty only after a successful read', async () => {
     apiState.resolve = async () => { throw new Error('Agents unavailable'); };
 
     renderIndex();
 
     expect(await screen.findByRole('alert')).toHaveTextContent('Agents unavailable');
-    fireEvent.click(screen.getByRole('button'));
-    await waitFor(() => expect(screen.queryByRole('alert')).toBeNull());
+    expect(screen.queryByText('No agents registered')).toBeNull();
+    apiState.resolve = async () => ({ agents: [] });
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    expect(await screen.findByText('No agents registered')).toBeInTheDocument();
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(apiState.calls).toEqual([['/api/v1/agents'], ['/api/v1/agents']]);
   });
 });

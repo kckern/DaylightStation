@@ -27,7 +27,7 @@ const DEVICE_CONFIG_URL = '/api/v1/device/config';
  * rather than "yellow-room-tablet".
  *
  * @returns {{targets: Array<{deviceId: string, label: string, allow: string[]}>,
- *            loading: boolean, error: string|null}}
+ *            loading: boolean, error: Error|null, reload: () => void}}
  */
 export function useKioskLaunchTargets() {
   const roster = useApiResource(LAUNCH_TARGETS_URL);
@@ -41,7 +41,7 @@ export function useKioskLaunchTargets() {
     }));
   }, [roster.data, labels.data]);
 
-  return { targets, loading: roster.loading, error: roster.error?.message || null };
+  return { targets, loading: roster.loading, error: roster.error, reload: roster.reload };
 }
 
 export default useKioskLaunchTargets;

@@ -1,42 +1,31 @@
 // frontend/src/modules/Admin/Agents/AgentsIndex.jsx
 
 import React from 'react';
-import { useNavigate } from 'react-router-dom';
-import { SimpleGrid, Paper, Text, Group, Badge, Center, Loader, Alert, Stack } from '@mantine/core';
-import { IconAlertCircle } from '@tabler/icons-react';
+import { Link } from 'react-router-dom';
+import { SimpleGrid, Paper, Text, Group, Badge, Stack } from '@mantine/core';
+import { EmptyState, ErrorState, LoadingState } from '../../../../frontend/src/lib/ui/index.js';
 import { useAdminAgents } from "./hooks/useAdminAgents.js";
 
 function AgentsIndex() {
-  const navigate = useNavigate();
-  const { agents, loading, error, dismissError } = useAdminAgents();
-
-  if (loading && agents.length === 0) {
-    return <Center h={300}><Loader /></Center>;
-  }
+  const { agents, loading, error, reload } = useAdminAgents();
+  const ready = !loading && !error;
 
   return (
     <Stack p="md" gap="md">
-      <Text size="xl" fw={600} ff="var(--ds-font-mono)">Agents</Text>
+      <Text component="h1" size="xl" fw={600} ff="var(--ds-font-mono)">Agents</Text>
 
-      {error && (
-        <Alert
-          color="red"
-          icon={<IconAlertCircle size={16} />}
-          withCloseButton
-          onClose={dismissError}
-        >
-          {error.message || 'Failed to load agents'}
-        </Alert>
-      )}
-
-      <SimpleGrid cols={{ base: 1, sm: 2, md: 3 }} spacing="md">
+      {loading && <LoadingState label="agents" />}
+      {!loading && error && <ErrorState error={error} onRetry={reload} label="Agents" />}
+      {ready && agents.length === 0 && <EmptyState title="No agents registered" />}
+      {ready && agents.length > 0 && <SimpleGrid cols={{ base: 1, sm: 2, md: 3 }} spacing="md">
         {agents.map(agent => (
           <Paper
             key={agent.id}
+            component={Link}
+            to={`/admin/agents/${encodeURIComponent(agent.id)}`}
             p="lg"
             radius="md"
-            style={{ cursor: 'pointer' }}
-            onClick={() => navigate(`/admin/agents/${agent.id}`)}
+            style={{ color: 'inherit', textDecoration: 'none' }}
           >
             <Group justify="space-between" mb="xs">
               <Text size="lg" fw={600} ff="var(--ds-font-mono)">{agent.id}</Text>
@@ -45,11 +34,7 @@ function AgentsIndex() {
             <Text size="sm" c="dimmed">{agent.description || 'No description'}</Text>
           </Paper>
         ))}
-      </SimpleGrid>
-
-      {agents.length === 0 && !loading && (
-        <Text c="dimmed" ta="center" py="xl">No agents registered</Text>
-      )}
+      </SimpleGrid>}
     </Stack>
   );
 }

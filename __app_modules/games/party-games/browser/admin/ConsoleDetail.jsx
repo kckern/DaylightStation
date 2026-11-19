@@ -29,7 +29,8 @@ const ConsoleDetail = () => {
   const [result, setResult] = useState(null);
   const [pending, setPending] = useState(null);
 
-  const { targets, loading: targetsLoading } = useKioskLaunchTargets();
+  const { targets, loading: targetsLoading, error: targetsError, reload: reloadTargets } = useKioskLaunchTargets();
+  const targetsReady = !targetsLoading && !targetsError;
   const attemptRef = useRef(null);
   const clearAttempt = useCallback(() => {
     clearTimeout(attemptRef.current?.timer);
@@ -48,10 +49,10 @@ const ConsoleDetail = () => {
 
   // Default to the only target rather than making the parent pick from a list of one.
   useEffect(() => {
-    if (!targetId && targets.length === 1) setTargetId(targets[0].deviceId);
-  }, [targets, targetId]);
+    if (targetsReady && !targetId && targets.length === 1) setTargetId(targets[0].deviceId);
+  }, [targetsReady, targets, targetId]);
 
-  const target = targets.find(t => t.deviceId === targetId) || null;
+  const target = targetsReady ? targets.find(t => t.deviceId === targetId) : null;
 
   useWebSocketSubscription(KIOSK_LAUNCH_RESULT_TOPIC, (msg) => {
     const attempt = attemptRef.current;
@@ -89,7 +90,7 @@ const ConsoleDetail = () => {
     <Stack p="md">
       <Group justify="space-between" align="center">
         <Text size="xl" fw={700}>{games[0]?.metadata?.parentTitle || consoleId}</Text>
-        {!targetsLoading && targets.length > 0 && (
+        {targetsReady && targets.length > 0 && (
           <Select
             label="Launch on"
             placeholder="Pick a device"
@@ -102,7 +103,9 @@ const ConsoleDetail = () => {
         )}
       </Group>
 
-      {!targetsLoading && targets.length === 0 && (
+      {targetsError && <ErrorState label="Launch targets" error={targetsError} onRetry={reloadTargets} />}
+
+      {targetsReady && targets.length === 0 && (
         <Alert color="gray" variant="light">
           No launch targets configured. Add <code>launch.device_targets</code> to games.yml to
           launch a game on a device from here.

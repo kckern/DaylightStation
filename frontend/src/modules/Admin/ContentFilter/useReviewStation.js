@@ -19,7 +19,7 @@ const SCENE_EFFECTS = new Set(['skip', 'blackout']);
 const LEVEL_DEBOUNCE_MS = 400;
 const REWORK_ARM_MS = 4000;
 
-export function useReviewStation({ ratingKey, data, reload, selected, select, runBusy = false }) {
+export function useReviewStation({ ratingKey, data, reload, selected, select, activeView, runBusy = false }) {
   const rk = String(ratingKey);
   const rows = data?.rows;
   const [scope, setScopeState] = useState(DEFAULT_SCOPE);
@@ -31,7 +31,7 @@ export function useReviewStation({ ratingKey, data, reload, selected, select, ru
   const arrived = useRef({ id: null, at: Date.now(), replays: 0 });
   const via = useRef('click');
   const latest = useRef({});
-  latest.current = { rk, rows, selectedId: selected?.id ?? null, scoped: null };
+  latest.current = { rows, selectedId: selected?.id ?? null, scoped: null };
 
   const scoped = useMemo(() => scopeRows(rows, scope), [rows, scope]);
   latest.current.scoped = scoped;
@@ -73,9 +73,6 @@ export function useReviewStation({ ratingKey, data, reload, selected, select, ru
     via.current = 'click'; setMessage(null); select(r);
     if (seek) previewStore.jumpToCue({ in: r.in });
   }, [select]);
-  // A different film starts a fresh undo history.
-  useEffect(() => { setUndoStack([]); }, [rk]);
-
   const setScope = useCallback((next) => {
     setScopeState(next);
     setMessage(null);
@@ -102,8 +99,11 @@ export function useReviewStation({ ratingKey, data, reload, selected, select, ru
     busy.current = true; setSaving(true);
     try { await fn(); } catch (err) {
       logger.warn('content_filter.review.action_failed', { rk, rowId: selected?.id, key, error: err.message });
-      setMessage(err.message || 'That did not work.');
-    } finally { busy.current = false; setSaving(false); }
+      if (activeView.current) setMessage(err.message || 'That did not work.');
+    } finally {
+      busy.current = false;
+      if (activeView.current) setSaving(false);
+    }
   };
 
   const record = async (r, verdict, { reason, change } = {}) => {
@@ -112,6 +112,7 @@ export function useReviewStation({ ratingKey, data, reload, selected, select, ru
     await DaylightAPI(`${API}/${encodeURIComponent(rk)}/review/${encodeURIComponent(r.id)}`,
       { span: [r.in, r.out], verdict, ...(reason ? { reason } : {}), ...(change ? { change } : {}), dwellMs, replays }, 'PUT');
     logger.info('content_filter.review.verdict', { rk, rowId: r.id, kind: r.kind, category: r.group, effect: r.effect, verdict, ...(reason ? { reason } : {}), ...(change ? { change } : {}), dwellMs, replays });
+    if (!activeView.current) return;
     setUndoStack((s) => [...s, { rowId: r.id, verdict, changed: Boolean(change) }]);
     reload();
     advance(r);
@@ -160,6 +161,7 @@ export function useReviewStation({ ratingKey, data, reload, selected, select, ru
     if (!target) { setMessage('That part is already gone; it cannot be undone.'); return; }
     await DaylightAPI(`${API}/${encodeURIComponent(rk)}/review/${encodeURIComponent(last.rowId)}`, {}, 'DELETE');
     logger.info('content_filter.review.undo', { rk, rowId: last.rowId, undid: last.verdict });
+    if (!activeView.current) return;
     reload();
     go(target, 'key');
   });
@@ -176,6 +178,7 @@ export function useReviewStation({ ratingKey, data, reload, selected, select, ru
       const body = cues.length ? { kind: 'send-back', cues, reasons } : { kind: 'stage', stage: 'scenes', reasons };
       await DaylightAPI(`${API}/${encodeURIComponent(rk)}/jobs`, body, 'POST');
       logger.info('content_filter.review.rework', { rk, rows: flagged.length, cues: cues.length, kind: body.kind, reasons: Object.keys(reasons).length });
+      if (!activeView.current) return;
       const sceneRows = flagged.filter((r) => r.kind === 'scenes').length;
       setMessage(cues.length && sceneRows ? `Sent ${flagged.length - sceneRows} back. ${sceneRows} scene part${sceneRows === 1 ? '' : 's'} stay flagged for the next run.` : `Sent ${flagged.length} back to the pipeline.`);
       reload();
@@ -210,39 +213,36 @@ export function useReviewStation({ ratingKey, data, reload, selected, select, ru
     clearTimeout(st.timer); st.timer = null;
     const value = st.value;
     if (value == null) return;
+    st.value = null;
     try {
       await DaylightAPI(`${API}/${encodeURIComponent(rk)}/settings`, { settings: { bleepLevel: value } }, 'PUT');
       logger.info('content_filter.review.bleep_level', { rk, level: value });
+      if (!activeView.current) return;
       await previewStore.refresh();
-      // A flush from a film we have left saved the old film's setting; the page now shows another.
-      if (latest.current.rk !== rk) return;
+      if (!activeView.current) return;
       reload();
       const r = latest.current.rows?.find((x) => x.id === latest.current.selectedId);
       if (r) previewStore.jumpToCue({ in: r.in });
     } catch (err) {
       logger.warn('content_filter.review.bleep_level_failed', { rk, level: value, error: err.message });
-      if (latest.current.rk !== rk) return;
+      if (!activeView.current) return;
       setMessage(err.message || 'The bleep level did not save.');
     } finally {
-      if (st.value === value) { st.value = null; setPendingLevel(null); }
+      if (activeView.current && st.value == null) setPendingLevel(current => current === value ? null : current);
     }
-  }, [rk, reload]);
+  }, [rk, reload, activeView]);
   const changeBleepLevel = (delta) => {
     const st = levelRef.current;
-    const from = st.value ?? latest.current.savedLevel;
+    const from = st.value ?? bleepLevel;
     const next = clampBleepLevel(from + delta);
     st.value = next; setPendingLevel(next);
     setMessage(`Bleep level ${Math.round(next * 100)}%`);
     clearTimeout(st.timer);
     st.timer = setTimeout(saveLevel, LEVEL_DEBOUNCE_MS);
   };
-  latest.current.savedLevel = savedLevel;
   // Leaving the film must not drop the last keypress.
   useEffect(() => () => {
-    const st = levelRef.current;
-    if (st.value == null) return;
-    saveLevel(); // reads the value synchronously, so the pending level can be released at once
-    st.value = null; setPendingLevel(null);
+    saveLevel();
   }, [saveLevel]);
 
   const top = undoStack[undoStack.length - 1];

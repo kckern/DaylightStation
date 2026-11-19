@@ -421,10 +421,10 @@ warn on every call.
 **Exists.** The household's shared memory of what has played on every screen:
 recent (RQ-FIND-11), carry on with per-screen spots (RQ-FIND-12, RQ-PLAY-08/09),
 watched marks (RQ-FIND-13), favourites (RQ-FIND-14) and removal from the
-household list (RQ-FIND-15). Router: `__backend/src/4_api/v1/routers/media.mjs`;
-service: `__backend/src/3_applications/media/HouseholdMediaMemoryService.mjs`;
-list rules: `__backend/src/2_domains/media/householdMediaList.mjs`; spot rules:
-`__backend/src/2_domains/content/services/mediaSpots.mjs`.
+household list (RQ-FIND-15). The router is `__app_modules/media/media/server/api/media.mjs`.
+The service is `__app_modules/media/media/server/application/HouseholdMediaMemoryService.mjs`.
+List rules live in `__app_modules/media/media/server/domain/householdMediaList.mjs`.
+Spot rules live in `__capabilities/playback/server/domain/services/mediaSpots.mjs`.
 
 All routes take the optional `?household=<id>` used by the rest of
 `/api/v1/media`. Content ids travel in the **body or query, never the path**
