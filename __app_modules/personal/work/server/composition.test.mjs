@@ -562,3 +562,44 @@ describe('workProviderClass', () => {
     expect(() => workProviderClass({ type: 'other' })).toThrow('Unknown work provider type');
   });
 });
+describe('context.actionableItems', () => {
+  const writable = () => {
+    const c = configuration();
+    Object.assign(c.work, { write: true, providerWrites: true, writer_env: 'fixture-prod', writer_host: 'fixture-writer' });
+    c.work.providers.personal.operations = ['read', 'complete', 'update_task'];
+    return c;
+  };
+  const make = (c, tmp, extra = {}) => createWorkRuntime({
+    configuration: c, environment: 'fixture-prod', hostId: 'fixture-writer',
+    rootForUser: u => path.join(tmp, u, 'work'), userTimezone: () => 'America/Los_Angeles', clock: () => AS_OF,
+    readCurrent: async () => current(), readHistory: async () => ({}),
+    httpClient: { requestRaw: async () => { throw new Error('no network in tests'); } }, getUserAuth: () => ({ token: 'fixture' }),
+    logger: { warn() {}, info() {}, debug() {} }, ...extra
+  });
+  it('returns each item with its domain and the write operations allowed for it', async () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'work-actionable-'));
+    const runtime = make(writable(), tmp);
+    try {
+      const view = await runtime.context.actionableItems({ username: 'sample', asOf: AS_OF });
+      expect(view.coverage.complete).toBe(true);
+      expect(view.items).toHaveLength(1);
+      expect(view.items[0].domainId).toBe('personal');
+      expect(view.items[0].item.ref.kind).toBe('task');
+      expect(view.items[0].operations.sort()).toEqual(['complete', 'update_task']);
+    } finally {
+      await runtime.dispose();
+      fs.rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+  it('allows no operations on a host that is not the writer', async () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'work-actionable-'));
+    const runtime = make(writable(), tmp, { hostId: 'other-host' });
+    try {
+      const view = await runtime.context.actionableItems({ username: 'sample', asOf: AS_OF });
+      expect(view.items[0].operations).toEqual([]);
+    } finally {
+      await runtime.dispose();
+      fs.rmSync(tmp, { recursive: true, force: true });
+    }
+  });
+});

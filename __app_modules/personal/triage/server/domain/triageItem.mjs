@@ -19,3 +19,6 @@ const build = (kind, source) => ({ id: refId(source.ref), kind, ref: source.ref,
 
 export const itemFromMail = (msg) => build('email', msg);
 export const itemFromWork = (workItem) => build('todo', workItem);
+
+/** Stable card id for one item at one version (a re-run never mints a second card). */
+export const cardIdFor = (itemId, version) => `card.${createHash('sha256').update(`${itemId}@${version}`).digest('hex').slice(0, 32)}`;

@@ -1,6 +1,7 @@
 import {hostname} from 'node:os';
 import {createKnowledgeRuntime,createAuthoredJournalEvidence,createJournalKnowledgeSource} from '../../__app_modules/personal/lifelog/server/knowledge-runtime.mjs';
 import { createTriageRuntime } from '../../__app_modules/personal/triage/server/composition.mjs';
+import { GoogleGmailClientFactory } from '#adapters/google/GoogleGmailClientFactory.mjs';
 import {createWorkRuntime,resolveWorkHarvestScope} from '../../__app_modules/personal/work/server/runtime.mjs';
 import {createConfiguredMigrationOwnership} from '../../__app_modules/household/agenda/server/composition.mjs';
 import {installParticipantRuntime} from './5_composition/participants/installedRuntime.mjs';
@@ -3515,9 +3516,12 @@ const { readingSessions, readingSessionInterceptor } = await createSchoolReading
     isKnownUser: (username) => (configService.getHouseholdUsers(householdId) || [])
       .map((u) => (typeof u === 'string' ? u : (u?.username || u?.userId || u?.name)))
       .includes(username),
-    dataService, mailbox: null, work: workRuntime,
+    dataService, work: workRuntime,
+    createMailClient: new GoogleGmailClientFactory({ configService }).create,
     decisionGateway: scopedGateway(decisionGateway, { app: 'life', feature: 'triage' }),
     aiGateway: scopedGateway(sharedAiGateway, { app: 'life', feature: 'triage' }),
+    ownerName: (username) => { const p = configService.getUserProfile(username); return p?.display_name || p?.name || username; },
+    // The schedule is registered below, once agentsServices.scheduler exists.
     agentsScheduler: null, clock: Date.now,
     logger: rootLogger.child({ app: 'triage' }),
   });
@@ -3902,6 +3906,7 @@ const { readingSessions, readingSessionInterceptor } = await createSchoolReading
   registerHealthMaintenance({ healthServices, rootLogger, scheduler: agentsServices.scheduler });
 
   registerLifeplanMaintenance({ agentsServices, lifeplanResult, rootLogger });
+  triageRuntime.registerSchedule(agentsServices.scheduler);
 
   // Fitness recap sweep — safety net that recaps sessions ended via the common
   // paths (inactivity, closed tab, crash) that never fire a per-event trigger,

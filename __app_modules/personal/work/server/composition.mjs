@@ -30,7 +30,8 @@ import { TodoistWorkProvider } from './adapters/TodoistWorkProvider.mjs';
 import { ClickUpWorkProvider } from './adapters/ClickUpWorkProvider.mjs';
 import { ReadWorkContext } from './application/ReadWorkContext.mjs';
 import { accountKey, assertWorkUser, workError, workHash } from './domain/workState.mjs';
-import { keyOf } from './domain/workModel.mjs';
+import { keyOf, WORK_OPERATIONS } from './domain/workModel.mjs';
+import { routeWork } from './domain/workPolicy.mjs';
 import { NodeApplicationScheduler } from '#adapters/scheduling/NodeApplicationScheduler.mjs';
 import { WorkBackfillJob } from './application/WorkBackfillJob.mjs';
 import { WorkBackfillFiles } from './adapters/WorkBackfillFiles.mjs';
@@ -302,6 +303,53 @@ export function createWorkRuntime(options = {}) {
         ...input,
         expectedRevision: input.expectedRevision ?? current.revision
       });
+    },
+    /** Read-only: each in-scope item with its domain and the write operations a command could use on it now. */
+    actionableItems: async ({
+      username,
+      asOf
+    }) => {
+      ensureProviders();
+      const result = await reader.execute({
+        username,
+        asOf
+      });
+      const p = policy(username);
+      if (!p.enabled) return {
+        items: [],
+        coverage: result.coverage
+      };
+      const writable = canWrite(username);
+      const items = [];
+      for (const item of result.items) {
+        // Same domain choice as the conversation path: first configured domain holding the item.
+        const domainId = Object.keys(p.domains).find(id => {
+          const d = p.domains[id],
+            b = p.providers[d.provider];
+          return b && b.type === item.ref.provider && b.accountId === item.ref.accountId && item.containerRef?.id === d.containerId && (!d.assigneeIds || d.assigneeIds.some(a => item.assigneeIds.includes(a)));
+        });
+        if (!domainId) continue;
+        const binding = p.providers[p.domains[domainId].provider],
+          caps = writable ? providers.get(accountKey({
+            provider: binding.type,
+            accountId: binding.accountId
+          }))?.capabilities({
+            username
+          }) ?? {} : {};
+        items.push({
+          item,
+          domainId,
+          operations: WORK_OPERATIONS.filter(op => op !== 'read' && caps[op] === true && !routeWork({
+            policy: p,
+            domainId,
+            operation: op
+          }).denied)
+        });
+      }
+      return {
+        items,
+        coverage: result.coverage
+      };
     },
     getItem: input => {
       ensureProviders();
