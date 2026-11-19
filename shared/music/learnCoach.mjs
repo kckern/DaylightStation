@@ -50,6 +50,7 @@ export function makeCoachTask(plan, spec) {
     ...(spec.authoredStage != null ? { authoredSeries: spec.authoredSeries, authoredStage: spec.authoredStage, legacySkill: spec.legacySkill, legacyRequired: spec.legacyRequired } : {}),
     depth: spec.depth ?? 0, ...(spec.parent ? { parent: spec.parent } : {}),
     ...(spec.track ? { track: spec.track } : {}), ...(spec.assist ? { assist: spec.assist } : {}),
+    ...(spec.stallSeconds ? { stallSeconds: spec.stallSeconds } : {}),
     ...(spec.authoredStage == null && spec.legacyRequired != null ? { legacyRequired: spec.legacyRequired } : {}),
     ...(spec.review ? { review: true } : {}), ...(spec.source ? { source: spec.source } : {}),
     ...(spec.reason ? { reason: spec.reason } : {}),
@@ -89,7 +90,7 @@ export function createCoachPlan({ scoreId, fingerprint, segments = [], authoredL
       ...(parts.length > 1 ? parts.map((part) => ({ skill: part === 'rh' ? 'right' : part === 'lh' ? 'left' : `notes-${part}`,
         label: part === 'rh' ? 'Find the right-hand notes' : part === 'lh' ? 'Find the left-hand notes' : 'Find these notes', parts: [part], mode: 'free', ...noteStep })) : []),
       { skill: parts.length > 1 ? 'together' : 'notes', label: parts.length > 1 ? 'Join the hands' : 'Find the notes', parts, mode: 'free', ...noteStep },
-      { skill: 'silver', label: 'Play it on your own', parts, mode: 'free', track: 'silver', assist: 'none', required: policy.silver.checkPasses,
+      { skill: 'silver', label: 'Play it on your own', parts, mode: 'free', track: 'silver', assist: 'none', required: policy.silver.checkPasses, stallSeconds: policy.silver.stallSeconds,
         criteria: { completeness: 1, cleanliness: policy.silver.cleanliness } },
       { skill: 'pulse', label: 'Settle into a beat', parts, mode: 'metronome', tempoPercent: 60, track: 'gold' },
       ...[60, 80, 100].map((tempoPercent) => ({ track: 'gold', skill: tempoPercent === 100 ? 'mastery' : `timed-${tempoPercent}`,
@@ -284,7 +285,7 @@ function recovery(plan, task, result) {
     parts = parts.slice(0, 1);
   } else return null;
   const reason = timingOnly && tempoPercent !== task.tempoPercent ? 'slower-beat' : sameRange(range, task.range) ? 'one-hand' : 'focus-bars';
-  return makeCoachTask(plan, { ...task, range, parts, tempoPercent, required: null, assist: null, legacyRequired: null,
+  return makeCoachTask(plan, { ...task, range, parts, tempoPercent, required: null, assist: null, stallSeconds: null, legacyRequired: null,
     label: reason === 'slower-beat' ? 'Try a little slower' : reason === 'one-hand' ? 'Practice one hand' : 'Practice these bars',
     parent: task, depth: (task.depth ?? 0) + 1, reason, mastery: false, completes: false });
 }
@@ -339,6 +340,17 @@ export function coachFeedback(result, task) {
   if (result?.status === 'completed' && !receivedInput(result)) return {
     title: 'No notes were received', detail: 'Check the piano connection, then try when you’re ready. Your progress is safe.', reason: 'no-input',
   };
+  if (task.assist === 'none') {
+    const bars = `bars ${task.range.start + 1}-${task.range.end + 1}`;
+    if (passedFor(result, task)) return { title: 'Silver!', detail: `You can play ${bars} on your own.`, reason: 'silver' };
+    if ((result?.criteria?.completeness ?? 0) < task.criteria.completeness) {
+      const measures = Object.entries(result?.spans ?? {}).filter(([, span]) => span.diagnostics?.missed_notes > 0)
+        .map(([id]) => Number(id.replace(/^measure:/, ''))).filter(Number.isInteger);
+      const bar = (measures.length ? Math.min(...measures) : task.range.start) + 1;
+      return { title: `Bar ${bar} is the tricky spot`, detail: 'Practice that spot, then try again.', reason: 'stopped', bar };
+    }
+    return { title: 'Almost on your own', detail: 'Aim for fewer extra notes, then try again.', reason: 'notes' };
+  }
   if (passedFor(result, task)) return { title: 'Nice work!',
     detail: task.mode === 'cued' ? 'You played the passage with the beat.' : task.mode === 'metronome' ? 'You found the notes with the click playing.' : 'You found all the notes.', reason: 'passed' };
   if ((result?.criteria?.completeness ?? 0) < task.criteria.completeness) return {

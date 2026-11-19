@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import stuck from './__fixtures__/learnCoachStuckLearner.json';
-import { applyCoachEvent, coachSummary, coachTaskKey, createCoachPlan, normalizeCertification, projectCoach } from './learnCoach.mjs';
+import { applyCoachEvent, coachFeedback, coachSummary, coachTaskKey, createCoachPlan, normalizeCertification, projectCoach } from './learnCoach.mjs';
 
 const DAY = '2026-11-18';
 const segments = [
@@ -191,5 +191,24 @@ describe('what comes next', () => {
       total: 3, silver: 1, gold: 0, nextPassageId: 'two', setAside: { two: DAY }, updatedAt: 'NOW',
       passages: [{ id: 'one', start: 0, end: 3, silver: `${DAY}T12:00:00Z`, gold: null }, { id: 'two', silver: null }, { id: 'solo', silver: null }],
     });
+  });
+});
+
+describe('Silver check feedback', () => {
+  const check = task(planOf(), 'silver');
+  it('celebrates by bars', () => {
+    expect(coachFeedback(good, check)).toMatchObject({ reason: 'silver', title: 'Silver!', detail: 'You can play bars 1-4 on your own.' });
+  });
+  it('names the tricky bar of an unfinished take', () => {
+    const stopped = { ...good, criteria: { completeness: 0.5, cleanliness: 1 }, spans: { 'measure:2': { diagnostics: { missed_notes: 2 } }, 'measure:1': { diagnostics: { missed_notes: 1 } }, 'measure:0': { diagnostics: { missed_notes: 0 } } } };
+    expect(coachFeedback(stopped, check)).toMatchObject({ reason: 'stopped', bar: 2, title: 'Bar 2 is the tricky spot', detail: 'Practice that spot, then try again.' });
+  });
+  it('asks for fewer extra notes on a finished miss', () => {
+    expect(coachFeedback(bad, check)).toMatchObject({ reason: 'notes', title: 'Almost on your own', detail: 'Aim for fewer extra notes, then try again.' });
+  });
+  it('carries the policy stall on the check only', () => {
+    const plan = planOf({ certification: { silver: { stallSeconds: 45 } } });
+    expect(task(plan, 'silver').stallSeconds).toBe(45);
+    expect(task(plan, 'right').stallSeconds).toBeUndefined();
   });
 });

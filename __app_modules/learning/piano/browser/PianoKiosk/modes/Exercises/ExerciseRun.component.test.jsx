@@ -84,8 +84,8 @@ vi.mock('../../PianoUserContext.jsx', () => ({ usePianoUser: () => ({ currentUse
 vi.mock('../../../components/PianoKeyboard.jsx', () => ({
   // `wrongNotes` is the real consumer of `lastWrong.midi` — the footer lights the
   // key the child actually played. Surface it so the test can see it.
-  PianoKeyboard: ({ wrongNotes }) => (
-    <div data-testid="keyboard" data-wrong={[...(wrongNotes ?? [])].join(',')} />
+  PianoKeyboard: ({ wrongNotes, targetNotes }) => (
+    <div data-testid="keyboard" data-wrong={[...(wrongNotes ?? [])].join(',')} data-target={[...(targetNotes?.keys?.() ?? [])].join(',')} />
   ),
 }));
 vi.mock('./ExerciseNotation.jsx', () => ({
@@ -1581,6 +1581,66 @@ describe('ExerciseRun free-challenge stall', () => {
     expect(props.onExit).not.toHaveBeenCalled();
     expect(props.onFailed).not.toHaveBeenCalled();
     view.unmount();
+  });
+
+  describe('hints-off practice (the Silver check)', () => {
+    const silverProps = (extra = {}) => ({
+      instance: subject(), score: null, intent: 'practice', practiceMode: 'free',
+      practiceRequirement: { mode: 'free', rubric: { criteria: { completeness: 1, cleanliness: 0.8 } } },
+      keyboardHintPolicy: 'never', incompleteAfterMs: 30000,
+      onExit: vi.fn(), onPassed: vi.fn(), onFailed: vi.fn(), ...extra,
+    });
+
+    it('never names or lights the owed note, however many wrong notes are played', async () => {
+      h.instanceData = longInstance();
+      const props = silverProps();
+      const view = render(<ExerciseRun {...props} />);
+      await screen.findByText('Play the first note to begin.');
+      press(view, props, 60);
+      for (let i = 0; i < 6; i += 1) press(view, props, 61);
+      await wait(100);
+      expect(screen.queryByText(/Look for/)).toBeNull();
+      expect(screen.getByTestId('keyboard')).toHaveAttribute('data-target', '');
+    });
+
+    it('ends as an incomplete completed take after the stall', async () => {
+      h.instanceData = longInstance();
+      const props = silverProps();
+      const view = render(<ExerciseRun {...props} />);
+      await screen.findByText('Play the first note to begin.');
+      for (const midi of [60, 62]) press(view, props, midi);
+      await wait(30000);
+      await waitFor(() => expect(props.onFailed).toHaveBeenCalledTimes(1));
+      const result = props.onFailed.mock.calls[0][0];
+      expect(result.status).toBe('completed');
+      expect(result.criteria.completeness).toBeLessThan(1);
+    });
+
+    it('wrong notes do not extend the stall, and a matched note restarts it', async () => {
+      h.instanceData = longInstance();
+      const props = silverProps();
+      const view = render(<ExerciseRun {...props} />);
+      await screen.findByText('Play the first note to begin.');
+      press(view, props, 60);
+      await wait(20000);
+      press(view, props, 62);
+      await wait(20000);
+      expect(props.onFailed).not.toHaveBeenCalled();
+      press(view, props, 61);
+      await wait(10100);
+      await waitFor(() => expect(props.onFailed).toHaveBeenCalledTimes(1));
+    });
+
+    it('turns a child who cannot find the first note into a miss', async () => {
+      h.instanceData = longInstance();
+      const props = silverProps();
+      const view = render(<ExerciseRun {...props} />);
+      await screen.findByText('Play the first note to begin.');
+      press(view, props, 61);
+      await wait(30000);
+      await waitFor(() => expect(props.onFailed).toHaveBeenCalledTimes(1));
+      expect(props.onFailed.mock.calls[0][0]).toMatchObject({ status: 'completed', diagnostics: { wrong_notes: 1, matched_notes: 0 } });
+    });
   });
 
   it('does not stall practice, which has no ladder to move', async () => {

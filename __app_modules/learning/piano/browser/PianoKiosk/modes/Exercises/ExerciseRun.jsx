@@ -359,13 +359,15 @@ export function runPassed(result, { challenge = false, passScore = null } = {}) 
  * @param {'default'|'learn-lab'} [props.surface='default'] Host presentation.
  * @param {'timed'|'always'} [props.scoreCursorPolicy='timed'] Whether a score
  *   passage draws its position cursor only for clocked work or for every run.
- * @param {'always'|'after-wrong'} [props.keyboardHintPolicy='always'] Whether
+ * @param {number|null} [props.incompleteAfterMs] Free practice only: end the take
+ *   as incomplete after this long without a newly matched note.
+ * @param {'always'|'after-wrong'|'never'} [props.keyboardHintPolicy='always'] Whether
  *   the footer keyboard proactively names the target or reveals it as help.
  * @param {'host'|'local'} [props.failurePresentation='host'] Whether an
  *   `onFailed` consumer replaces the result screen or records it while the run
  *   retains its standard feedback and piano-driven retry.
  */
-export default function ExerciseRun({ instance, score, requirement = null, practiceRequirement = null, intent = 'practice', practiceMode = 'free', programId = null, stepId = null, drillProjection = null, framing = null, bare = false, hideHeading = false, ask = null, askTuple = null, tier = null, traceContext = null, surface = 'default', scoreCursorPolicy = 'timed', scoreLayoutPolicy = 'readable-system', keyboardHintPolicy = 'always', failurePresentation = 'host', clickGain, paused = false, resumeDelayMs = 1000, persistInterrupted = true, persistAssessment = true, startOnReady = false, onExit, onPassed, onFailed, onUnavailable }) {
+export default function ExerciseRun({ instance, score, requirement = null, practiceRequirement = null, intent = 'practice', practiceMode = 'free', programId = null, stepId = null, drillProjection = null, framing = null, bare = false, hideHeading = false, ask = null, askTuple = null, tier = null, traceContext = null, surface = 'default', scoreCursorPolicy = 'timed', scoreLayoutPolicy = 'readable-system', keyboardHintPolicy = 'always', incompleteAfterMs = null, failurePresentation = 'host', clickGain, paused = false, resumeDelayMs = 1000, persistInterrupted = true, persistAssessment = true, startOnReady = false, onExit, onPassed, onFailed, onUnavailable }) {
   const logger = useMemo(() => getLogger().child({ component: 'piano-exercise-run' }), []);
   const { currentUser } = usePianoUser();
   const { activeNotes } = usePianoMidiNotes();
@@ -436,6 +438,9 @@ export default function ExerciseRun({ instance, score, requirement = null, pract
   // reads. See stuckLadder.js for what the rungs are and why.
   const huntRef = useRef(NO_HUNT);
   const [huntHelp, setHuntHelp] = useState(null);
+  const hintsOffRef = useRef(false);
+  hintsOffRef.current = keyboardHintPolicy === 'never';
+  const [strayPress, setStrayPress] = useState(null);
   // One durable assessment identity per installed runtime. Hosts that grant a
   // stake after a real pass use this same id; retries get a fresh one, while a
   // repeated host delivery remains idempotent server-side.
@@ -594,7 +599,7 @@ export default function ExerciseRun({ instance, score, requirement = null, pract
         setLastWrong((previous) => nextLastWrong(previous, event));
         // Fold this observation into the hunt BEFORE tracing it, so a rung and
         // the observation that earned it carry the same cursor.
-        if (huntingArmed(state?.matcher)) {
+        if (!hintsOffRef.current && huntingArmed(state?.matcher)) {
           const hunt = nextHuntState(huntRef.current, { type: event.type, cursor: state?.cursor ?? null });
           huntRef.current = hunt;
           if (hunt.changed) {
@@ -636,6 +641,7 @@ export default function ExerciseRun({ instance, score, requirement = null, pract
     // A retry starts owed nothing: the help a child earned on the last attempt
     // is not still on screen when they begin a fresh one.
     huntRef.current = NO_HUNT;
+    setStrayPress(null);
     setHuntHelp(null);
     traceEvent('piano.exercise-runtime-installed', {
       matcher: next.getSnapshot().matcher,
@@ -918,6 +924,27 @@ export default function ExerciseRun({ instance, score, requirement = null, pract
     return () => globalThis.clearTimeout(timer);
   }, [logger, noteOnTick, stallable, subject]);
 
+  // The Silver check's stall. Only a newly matched note restarts it, so pressing
+  // wrong keys cannot keep a take alive.
+  const matchedNotes = Object.keys(snapshot.hits ?? {}).length;
+  const incompleteArmed = Boolean(incompleteAfterMs) && !challenge && snapshot.mode === 'free' && !snapshot.paused
+    && snapshot.status === 'running' && snapshot.musicalInput === true;
+  useEffect(() => {
+    if (!incompleteArmed) return undefined;
+    const timer = globalThis.setTimeout(() => {
+      logger.info('piano.exercise-stalled', { id: subject?.id ?? null, matcher: 'cursor', stallMs: incompleteAfterMs, matched_notes: matchedNotes, ending: 'incomplete' });
+      runtimeRef.current?.finishIncomplete();
+    }, incompleteAfterMs);
+    return () => globalThis.clearTimeout(timer);
+  }, [incompleteAfterMs, incompleteArmed, logger, matchedNotes, subject]);
+  // A child who never finds the first note still gets an answer and a way forward.
+  const unarmedStray = Boolean(incompleteAfterMs) && !challenge && snapshot.status === 'prepared' && !snapshot.paused ? strayPress : null;
+  useEffect(() => {
+    if (!unarmedStray) return undefined;
+    const timer = globalThis.setTimeout(() => runtimeRef.current?.finishUnstarted(unarmedStray), incompleteAfterMs);
+    return () => globalThis.clearTimeout(timer);
+  }, [incompleteAfterMs, unarmedStray]);
+
   /**
    * The three states this run cannot leave on its own. Reported through an
    * effect rather than from render so the host is told once, after the state
@@ -1184,7 +1211,10 @@ export default function ExerciseRun({ instance, score, requirement = null, pract
       // A note this ask did not want is a child finding their hands, not a
       // wrong answer: it starts nothing and is never counted against them.
       const arming = onsets.find((midi) => armingPitches.has(midi));
-      if (arming === undefined) return;
+      if (arming === undefined) {
+        if (incompleteAfterMs) setStrayPress((first) => first ?? { midi: onsets[0], time });
+        return;
+      }
       // Start FIRST, observe second, so the note that armed the run is also its
       // first graded note — a free ask asks for eight notes, not nine.
       runtime.start({ leadInMs: 0, clock: 'date-now' });
@@ -1360,7 +1390,7 @@ export default function ExerciseRun({ instance, score, requirement = null, pract
   // host explicitly keeps this panel and the run's piano-driven retry.
   const hostOwnsFailure = Boolean(onFailed) && failurePresentation !== 'local' && !passed;
   const currentEvent = askEvents[Math.min(visualCursor.index, askEvents.length - 1)] || askEvents[0];
-  const revealKeyboardTarget = keyboardHintPolicy !== 'after-wrong' || lastWrong !== null;
+  const revealKeyboardTarget = keyboardHintPolicy === 'always' || (keyboardHintPolicy === 'after-wrong' && lastWrong !== null);
   const targetNotes = new Map(((revealKeyboardTarget ? currentEvent?.notes : []) ?? []).map((note) => [note.midi, { velocity: 1 }]));
 
   /**

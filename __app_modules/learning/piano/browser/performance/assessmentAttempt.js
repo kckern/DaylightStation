@@ -465,6 +465,13 @@ export function observeAssessment(attempt, midiOrHeldEvent) {
     : ignored(attempt, 'implausible_pitch', input);
 }
 
+/** A press before the run could start, kept as evidence when the run ends without one. */
+export function recordStrayPress(attempt, { midi, time }) {
+  const current = attempt.expectation.events[skipEmpty(attempt.expectation.events, attempt.cursor)];
+  return { ...attempt, musicalInput: true,
+    wrong: [...attempt.wrong, { midi, time, spanId: current?.spanId ?? null, eventId: current?.id ?? null }] };
+}
+
 export function advanceAssessment(attempt, time) {
   if (attempt.status !== 'running' || attempt.matcher !== 'timed') return { attempt, events: [] };
   const misses = [...attempt.misses];

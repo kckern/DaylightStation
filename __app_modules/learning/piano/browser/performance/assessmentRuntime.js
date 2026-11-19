@@ -4,8 +4,7 @@ import {
   createAssessmentAttempt,
   finalizeAssessmentAttempt,
   observeAssessment,
-  startAssessmentAttempt,
-} from './assessmentAttempt.js';
+  startAssessmentAttempt, recordStrayPress } from './assessmentAttempt.js';
 
 /**
  * Imperative binding around the pure attempt state machine.
@@ -133,6 +132,15 @@ export function createAssessmentRuntime({ attempt, createAttempt, subscribeMidi,
     resume,
     terminate,
     timeout: () => terminate('timeout'),
+    /** End a running take as played so far: what was not reached counts as missed. */
+    finishIncomplete: () => terminate('completed'),
+    /** End a take that never armed, keeping the press that showed someone tried. */
+    finishUnstarted({ midi, time }) {
+      if (disposed || state.status !== 'prepared') return state;
+      publish(startAssessmentAttempt(state, { time: now() }), [], { immediate: true });
+      publish(recordStrayPress(state, { midi, time: time ?? now() }), [], { immediate: true });
+      return terminate('completed');
+    },
     abort: () => terminate('aborted'),
     dispose() {
       disconnect();

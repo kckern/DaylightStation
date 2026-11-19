@@ -230,7 +230,8 @@ export default function LearnLab({ score, revision, segment, segments = {}, rung
       paused={paused} resumeDelayMs={effectiveBpm ? Math.round(120000 / effectiveBpm) : 1000} controlKey={take}
       startOnReady={startOnReady}
       persistInterrupted={false} persistAssessment={!coachingTask}
-      scoreCursorPolicy="always" keyboardHintPolicy="after-wrong"
+      scoreCursorPolicy="always" keyboardHintPolicy={coachingTask?.assist === 'none' ? 'never' : 'after-wrong'}
+      incompleteAfterMs={coachingTask?.assist === 'none' && coachingTask.stallSeconds ? coachingTask.stallSeconds * 1000 : null}
       failurePresentation={coachingTask ? 'host' : 'local'} onExit={onClose} onPassed={settle}
       onFailed={failTake}
       onUnavailable={(reason, detail) => onUnavailable?.(detail || reason)}
