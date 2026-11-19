@@ -16,6 +16,7 @@ import React, { useCallback, useContext, useEffect, useMemo, useRef, useState, u
 import { ActionIcon, Button, Group, Stack, Title } from '@mantine/core';
 import { IconDeviceRemote, IconArrowBarToDown, IconLayoutGrid, IconChevronLeft, IconChevronRight } from '@tabler/icons-react';
 import { useApiResource } from "../../../../../frontend/src/lib/hooks/useApiResource.js";
+import { whileDocumentVisible } from "../../../../../frontend/src/lib/hooks/useVisibleRefresh.js";
 import { getDeviceId } from "../../../../../frontend/src/lib/deviceIdentity.js";
 import { EmptyState } from "../../../../../frontend/src/lib/ui/states.jsx";
 import { LoadErrorLine } from "../shared/LoadErrorLine.jsx";
@@ -37,6 +38,25 @@ import { FleetContext } from "../fleet/FleetProvider.jsx";
 import "./Home.scss";
 
 export const DEGRADED_RELOAD_MS = 10_000;
+
+function useRetryDegradedResource({ data, resourceKey, revalidating, poll }, deviceId) {
+  const retriedKeys = useRef(new Set());
+  const degraded = data?.degraded === true;
+  useEffect(() => {
+    if (!degraded || revalidating || retriedKeys.current.has(resourceKey)) return undefined;
+    // Cold catalog lookups can return partial data. Give each read one
+    // recovery attempt while Home is visible.
+    return whileDocumentVisible(() => {
+      if (retriedKeys.current.has(resourceKey)) return undefined;
+      const timer = setTimeout(() => {
+        retriedKeys.current.add(resourceKey);
+        mediaLog.householdDegradedReload({ deviceId, resource: resourceKey });
+        poll();
+      }, DEGRADED_RELOAD_MS);
+      return () => clearTimeout(timer);
+    });
+  }, [degraded, revalidating, resourceKey, poll, deviceId]);
+}
 
 function rowTestId(rowId) {
   return `home-row-${rowId}`;
@@ -227,6 +247,9 @@ export function HomeView() {
   const suggestions = useApiResource(suggestionsPath(deviceId), { swr: true, label: 'media-suggestions', logger: householdResourceLogger });
   const carryOn = useApiResource(HOUSEHOLD_PATHS.carryOn, { swr: true, label: 'media-carry-on', logger: householdResourceLogger });
   const recent = useApiResource(HOUSEHOLD_PATHS.recent, { swr: true, label: 'media-recent', logger: householdResourceLogger });
+  useRetryDegradedResource(suggestions, deviceId);
+  useRetryDegradedResource(carryOn, deviceId);
+  useRetryDegradedResource(recent, deviceId);
   const favourites = useFavourites();
   const { run, overlays, nameFor } = useItemVerbs();
   const { startingOnFor } = useStartingOn();
@@ -251,19 +274,6 @@ export function HomeView() {
       recent: recentItems.length,
     });
   }, [suggestions.data, shownKey, deviceId, rows, nowOn.length, recentItems.length]);
-  // A degraded answer (the server's catalog lookups ran out of time on a cold
-  // start) is reloaded once, ~10 s later, so missing titles fill in.
-  const reloadedRef = useRef(false);
-  const degraded = [suggestions.data, carryOn.data, recent.data].some(data => data?.degraded === true);
-  useEffect(() => {
-    if (!degraded || reloadedRef.current) return undefined;
-    const timer = setTimeout(() => {
-      reloadedRef.current = true;
-      mediaLog.householdDegradedReload({ deviceId });
-      for (const resource of [suggestions, carryOn, recent]) if (resource.data?.degraded) resource.reload();
-    }, DEGRADED_RELOAD_MS);
-    return () => clearTimeout(timer);
-  }, [degraded]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     for (const [section, resource] of [['suggestions', suggestions], ['carry-on', carryOn], ['recent', recent]]) {
       if (resource.error) mediaLog.householdLoadFailed({ section, error: resource.error.message });

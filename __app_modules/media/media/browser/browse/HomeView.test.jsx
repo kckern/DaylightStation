@@ -4,7 +4,7 @@
 // where it played, and a lead into Browse when there is nothing to suggest.
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { act, render, screen, within, fireEvent, waitFor } from '@testing-library/react';
+import { act, render, renderHook, screen, within, fireEvent, waitFor } from '@testing-library/react';
 import { MantineProvider } from '@mantine/core';
 
 const apiMock = vi.fn();
@@ -28,7 +28,8 @@ vi.mock("../logging/mediaLog.js", () => {
 import { HomeView, tileMeta } from "./HomeView.jsx";
 import { createFleetStore } from "../fleet/fleetStore.js";
 import { FleetContext } from "../fleet/FleetProvider.jsx";
-import { resetApiResourceCache } from "../../../../../frontend/src/lib/hooks/useApiResource.js";
+import { invalidateApiResources, resetApiResourceCache, useApiResource } from "../../../../../frontend/src/lib/hooks/useApiResource.js";
+import { HOUSEHOLD_PATHS } from '../household/householdApi.js';
 
 const SCREENS = { available: true, screens: [
   { id: 'fleet:livingroom-tv', screenId: 'livingroom-tv', name: 'Living Room TV', aliases: [] },
@@ -70,6 +71,8 @@ function routes(overrides = {}) {
     return Promise.reject(new Error(`unexpected ${path}`));
   });
 }
+
+const readCount = path => apiMock.mock.calls.filter(([requested]) => requested === path).length;
 
 let fleetEntries = {};
 const fleetStore = {
@@ -224,6 +227,105 @@ describe('HomeView start page', () => {
       await waitFor(() => expect(count()).toBe(2));
       await vi.advanceTimersByTimeAsync(30_000);
       expect(count()).toBe(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('revalidates each delayed partial response once and keeps other reads undisturbed', async () => {
+    vi.useFakeTimers();
+    try {
+      const { recent, carryOn } = HOUSEHOLD_PATHS;
+      const delayed = Promise.withResolvers();
+      routes({ [recent]: { degraded: true, items: [] } });
+      const respond = apiMock.getMockImplementation();
+      apiMock.mockImplementation((path, ...args) =>
+        path === carryOn && readCount(carryOn) === 1 ? delayed.promise : respond(path, ...args));
+      await act(async () => { renderHome(); });
+      expect(readCount(recent)).toBe(1);
+      expect(readCount(carryOn)).toBe(1);
+
+      await act(() => vi.advanceTimersByTimeAsync(10_000));
+      expect(readCount(recent)).toBe(2);
+      expect(readCount(carryOn)).toBe(1);
+
+      await act(async () => { delayed.resolve({ degraded: true, items: [], nowOn: [] }); });
+      await act(() => vi.advanceTimersByTimeAsync(10_000));
+      expect(readCount(carryOn)).toBe(2);
+      await act(() => vi.advanceTimersByTimeAsync(30_000));
+      expect(readCount(recent)).toBe(2);
+      expect(readCount(carryOn)).toBe(2);
+      expect(readCount(SUGGESTIONS)).toBe(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('cancels the pending recovery for a healthy response and retires all retries when Home unmounts', async () => {
+    vi.useFakeTimers();
+    try {
+      const { recent, carryOn } = HOUSEHOLD_PATHS;
+      routes({ [recent]: { degraded: true, items: [] } });
+      let view;
+      await act(async () => { view = renderHome(); });
+      await act(() => vi.advanceTimersByTimeAsync(5_000));
+      routes({ [recent]: { items: [] }, [carryOn]: { degraded: true, items: [], nowOn: [] } });
+      await act(async () => { invalidateApiResources(path => path === recent || path === carryOn); });
+      expect(readCount(recent)).toBe(2);
+      expect(readCount(carryOn)).toBe(2);
+      await act(() => vi.advanceTimersByTimeAsync(5_000));
+      expect(readCount(recent)).toBe(2);
+      expect(readCount(carryOn)).toBe(2);
+      view.unmount();
+      await act(() => vi.advanceTimersByTimeAsync(20_000));
+      expect(readCount(recent)).toBe(2);
+      expect(readCount(carryOn)).toBe(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('releases a pending partial-response retry while hidden and starts it again on return', async () => {
+    vi.useFakeTimers();
+    let visibility = 'visible';
+    const visible = vi.spyOn(document, 'visibilityState', 'get').mockImplementation(() => visibility);
+    try {
+      const { recent } = HOUSEHOLD_PATHS;
+      routes({ [recent]: { degraded: true, items: [] } });
+      await act(async () => { renderHome(); });
+      visibility = 'hidden';
+      document.dispatchEvent(new Event('visibilitychange'));
+      await act(() => vi.advanceTimersByTimeAsync(20_000));
+      expect(readCount(recent)).toBe(1);
+
+      visibility = 'visible';
+      document.dispatchEvent(new Event('visibilitychange'));
+      await act(() => vi.advanceTimersByTimeAsync(10_000));
+      expect(readCount(recent)).toBe(2);
+      await act(() => vi.advanceTimersByTimeAsync(20_000));
+      expect(readCount(recent)).toBe(2);
+    } finally {
+      visible.mockRestore();
+      vi.useRealTimers();
+    }
+  });
+
+  it('lets a queued shared invalidation own the partial-response recovery read', async () => {
+    vi.useFakeTimers();
+    try {
+      const { recent } = HOUSEHOLD_PATHS;
+      routes({ [recent]: { degraded: true, items: [] } });
+      await act(async () => {
+        renderHook(() => useApiResource(recent, { swr: true }));
+        renderHome();
+      });
+      expect(readCount(recent)).toBe(1);
+      routes({ [recent]: { items: [] } });
+      await act(async () => {
+        invalidateApiResources(path => path === recent);
+        vi.advanceTimersByTime(10_000);
+      });
+      expect(readCount(recent)).toBe(2);
     } finally {
       vi.useRealTimers();
     }
