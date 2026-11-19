@@ -4,6 +4,7 @@ import { afterEach,describe,it,expect,vi } from 'vitest';
 import { LogTable } from "./LogTable.jsx";
 import { PortionContext } from "./usePortionDraft.js";
 import { VoiceCapture } from "../capture/VoiceCapture.jsx";
+import { AppFrame } from '@/lib/ui';
 const apiMock=vi.hoisted(()=>vi.fn());
 vi.mock("../../../../../frontend/src/lib/api.mjs",()=>({DaylightAPI:(...args)=>apiMock(...args)}));
 vi.mock("../capture/VoiceCapture.jsx",()=>({VoiceCapture:({onCapture,bucket,mealLabel})=><button onClick={()=>onCapture('audio',bucket)}>Speak to {mealLabel}</button>}));
@@ -192,8 +193,8 @@ it('the bar stays while the ticked foods are away during a move',async()=>{
 it('closing the bar leaves the log where it was on screen',async()=>{
  const rect=vi.spyOn(Element.prototype,'getBoundingClientRect').mockImplementation(()=>({top:screen.queryByRole('region',{name:'Selected foods'})?200:150,left:0}));
  const onMoveMeal=vi.fn(async()=>'moved');
- const {container}=render(<div className="ds-chrome__main">{shell({onMoveMeal})}</div>);
- const scroller=container.querySelector('.ds-chrome__main');
+ render(<AppFrame>{shell({onMoveMeal})}</AppFrame>);
+ const scroller=screen.getByRole('main');
  startSelecting();tick('Eggs');tick('Tomatoes');
  scroller.scrollTop=300;
  await moveTwoToSnacks();
@@ -358,9 +359,9 @@ it('a move finishing after selection closed leaves a later day change alone',asy
  let top=150;
  const rect=vi.spyOn(Element.prototype,'getBoundingClientRect').mockImplementation(()=>({top,left:0}));
  let finish;const onMoveMeal=vi.fn(()=>new Promise(resolve=>{finish=resolve;}));
- const view=props=><div className="ds-chrome__main">{shell({onMoveMeal,...props})}</div>;
- const {container,rerender}=render(view());
- const scroller=container.querySelector('.ds-chrome__main');
+ const view=props=><AppFrame>{shell({onMoveMeal,...props})}</AppFrame>;
+ const {rerender}=render(view());
+ const scroller=screen.getByRole('main');
  startSelecting();tick('Eggs');tick('Tomatoes');
  await moveTwoToSnacks();
  await waitFor(()=>expect(onMoveMeal).toHaveBeenCalled());
@@ -377,19 +378,36 @@ it('a move finishing after selection closed leaves a later day change alone',asy
 });
 it('opening the bar leaves the tapped meal where it was on screen',()=>{
  const rect=vi.spyOn(Element.prototype,'getBoundingClientRect').mockImplementation(()=>({top:screen.queryByRole('region',{name:'Selected foods'})?230:150,bottom:0,left:0}));
- const {container}=render(<div className="ds-chrome__main"><MantineProvider><LogTable date="2026-09-06" byBucket={buckets} onRowTap={()=>{}} onMealChanged={()=>{}} onMoveMeal={vi.fn()}/></MantineProvider></div>);
- const scroller=container.querySelector('.ds-chrome__main');
+ render(<AppFrame>{shell({byBucket:buckets,onMoveMeal:vi.fn()})}</AppFrame>);
+ const scroller=screen.getByRole('main');
  scroller.scrollTop=40;
  fireEvent.click(screen.getByRole('button',{name:'Select foods'}));
  expect(scroller.scrollTop).toBe(120);
  fireEvent.click(screen.getByRole('button',{name:'Done selecting'}));
  rect.mockRestore();
 });
+
+it('keeps the latest selection adjustment and restores the prior anchoring on unmount', () => {
+  vi.useFakeTimers();
+  const { rerender } = render(<AppFrame>{shell()}</AppFrame>);
+  const scroller = screen.getByRole('main');
+  scroller.style.overflowAnchor = 'auto';
+  startSelecting();
+  expect(scroller.style.overflowAnchor).toBe('none');
+  act(() => vi.advanceTimersToNextFrame());
+  fireEvent.click(screen.getAllByRole('button', { name: 'Done selecting' })[0]);
+  act(() => vi.advanceTimersToNextFrame());
+  expect(scroller.style.overflowAnchor).toBe('none');
+  rerender(<AppFrame>Another view</AppFrame>);
+  expect(scroller.style.overflowAnchor).toBe('auto');
+  act(() => vi.advanceTimersToNextFrame());
+  expect(scroller.style.overflowAnchor).toBe('auto');
+});
 describe('a day too short to scroll',()=>{
  const openShortDay=height=>{
   const rect=vi.spyOn(Element.prototype,'getBoundingClientRect').mockImplementation(()=>({top:screen.queryByRole('region',{name:'Selected foods'})?230:150,bottom:0,left:0}));
-  const {container}=render(<div className="ds-chrome__main"><MantineProvider><LogTable date="2026-09-06" byBucket={buckets} onRowTap={()=>{}} onMealChanged={()=>{}} onMoveMeal={vi.fn()}/></MantineProvider></div>);
-  const scroller=container.querySelector('.ds-chrome__main');
+  const {container}=render(<AppFrame>{shell({byBucket:buckets,onMoveMeal:vi.fn()})}</AppFrame>);
+  const scroller=screen.getByRole('main');
   Object.defineProperty(scroller,'clientHeight',{configurable:true,value:600});
   Object.defineProperty(scroller,'scrollHeight',{configurable:true,value:height});
   const room=()=>container.querySelector('.health-log-frame').style.getPropertyValue('--health-selection-room');

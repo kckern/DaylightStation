@@ -113,6 +113,7 @@ function afterCompletedMove(state, { ids, logIds, toDate }) {
 const stayedInDish = rows => `${rows.length === 1 ? entryLabel(rows[0]) : `${rows.length} foods`} ${rows.length === 1 ? 'is' : 'are'} part of a dish and can't move alone`;
 
 export function TodayView({ active = true, sidebarTarget, followUpTarget = null, onSetupGoals, onCoachTap }) {
+  const pageRef = useRef(null);
   const [searchParams, setSearchParams] = useSearchParams();
   const dateParam = searchParams.get('date');
   const date = isISODate(dateParam) && dateParam <= todayISO() ? dateParam : todayISO();
@@ -649,7 +650,7 @@ export function TodayView({ active = true, sidebarTarget, followUpTarget = null,
   </>;
 
   return (
-    <PortionContext.Provider value={portionControl}><div className="health-today">
+    <PortionContext.Provider value={portionControl}><div ref={pageRef} className="health-today">
       <EquationStrip budget={preview.budget} baseline={day.budget} budgetError={day.budgetError} goals={preview.budget?.goals}
         macroCoverage={nutrientSummary(preview.items)} date={date} today={todayISO()}
         onDateChange={setDate} onSetupGoals={onSetupGoals}
@@ -666,7 +667,7 @@ export function TodayView({ active = true, sidebarTarget, followUpTarget = null,
       <FollowUpTray active={active} target={followUpTarget} observations={unmatched}
         onObservationsChanged={() => observations.reload()} onChanged={day.reload} />
       {wideViewport && sidebarTarget ? createPortal(history, sidebarTarget) : null}
-      <TodayToasts captureNotice={captureNotice} captureRetry={captureRetry} retryBusy={nutrition.busy}
+      <TodayToasts pageRef={pageRef} captureNotice={captureNotice} captureRetry={captureRetry} retryBusy={nutrition.busy}
         onRetryCapture={retryVoiceCapture} onDismissCapture={() => { setCaptureNotice(null); setCaptureRetry(null); }}
         orphanRetry={orphanRetry} onRetryOrphan={retryOrphanedRecording} onDismissOrphan={() => setOrphanRetry(null)}
         moves={moves} unresolvedMoves={unresolvedMoves} mealUndo={mealUndo} onUndoMeal={undoMealChange} onDismissMealUndo={clearMealUndo}

@@ -54,6 +54,50 @@ test('Home keeps a confirmed toggle when an older poll finishes', async ({ page 
   expect(writes).toEqual([{ entityId: 'light.kitchen', desiredState: 'off' }]);
 });
 
+test('Home Mosaic keeps the tooltip and drawer reachable in its own frame', async ({ page }) => {
+  const payload = house('on');
+  const group = { id: 'kitchen', label: 'Kitchen', entityIds: ['light.kitchen'] };
+  payload.mosaic = { byRoom: [group], byType: [group] };
+  await page.route('**/home-dashboard/entities', route => route.fulfill({ json: payload }));
+  await page.goto('/home');
+  await page.getByRole('button', { name: 'Mosaic', exact: true }).click();
+  const square = page.getByRole('main').getByRole('button', { name: 'Kitchen light: On', exact: true });
+  await square.focus();
+  const tooltip = page.getByRole('tooltip');
+  await expect(tooltip).toContainText('Kitchen light');
+  await expect(square).toHaveAttribute('aria-describedby', await tooltip.getAttribute('id'));
+  await square.press('Escape');
+  await expect(tooltip).toHaveCount(0);
+  await square.press('Enter');
+  const drawer = page.getByRole('dialog', { name: 'Kitchen light', exact: true });
+  await expect(drawer).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(drawer).toHaveCount(0);
+});
+
+test('Health selection restores the frame’s anchoring and keeps the meal control reachable', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 850 });
+  await page.route('**/health/context', route => route.fulfill({ json: { userId: 'alice' } }));
+  await page.route('**/health/day?date=*', route => {
+    const date = new URL(route.request().url()).searchParams.get('date');
+    return route.fulfill({ json: { items: [{ uuid: 'rice', name: 'Rice', mealTime: 'evening', calories: 120, grams: 100, date }] } });
+  });
+  await page.goto('/health');
+  const main = page.getByRole('main');
+  const select = main.getByRole('button', { name: 'Select foods', exact: true });
+  await expect(select).toBeVisible();
+  await main.evaluate(node => { node.style.overflowAnchor = 'auto'; });
+  await select.click();
+  const selected = main.getByRole('region', { name: 'Selected foods', exact: true });
+  await expect(selected).toBeVisible();
+  const done = main.getByRole('button', { name: 'Done selecting', exact: true });
+  await done.click();
+  await expect(selected).toHaveCount(0);
+  await expect(select).toBeFocused();
+  await expect(select).toBeInViewport();
+  await expect.poll(() => main.evaluate(node => node.style.overflowAnchor)).toBe('auto');
+});
+
 test('Health activates one coach shortcut across tab and household changes', async ({ page }) => {
   let owner = 'alice';
   const contextReads = [];

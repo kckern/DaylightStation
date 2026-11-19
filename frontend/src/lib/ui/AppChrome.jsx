@@ -4,8 +4,6 @@
 // CSS-switched). Nav pattern adopted from Media's PrimaryNav.
 import { Link } from 'react-router-dom';
 import { AppFrame } from './AppFrame.jsx';
-export { CHROME_SCROLL_CLASS } from './AppFrame.jsx';
-
 export function AppChrome({ title, tabs = [], activeTab, onTabChange, headerActions, footer, mainRef, sidebarRef, sidebarActive = false, children }) {
   const actions = Array.isArray(headerActions) ? headerActions : (headerActions ? [headerActions] : []);
   if (actions.length > 3) {

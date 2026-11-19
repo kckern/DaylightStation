@@ -1,7 +1,12 @@
 import { createRef } from 'react';
-import { render, screen } from '@testing-library/react';
-import { describe, it, expect } from 'vitest';
-import { AppFrame, PlaybackFrame } from './AppFrame.jsx';
+import { fireEvent, render, screen } from '@testing-library/react';
+import { describe, it, expect, vi } from 'vitest';
+import { AppFrame, PlaybackFrame, useAppMainRef } from './AppFrame.jsx';
+
+function MainProbe({ label, read }) {
+  const mainRef = useAppMainRef();
+  return <button onClick={() => read(mainRef?.current ?? null)}>{label}</button>;
+}
 
 describe('AppFrame', () => {
   it('places playback outside the scrolling main and exposes the scroll element', () => {
@@ -14,6 +19,23 @@ describe('AppFrame', () => {
   it('omits unused regions', () => {
     const {container} = render(<AppFrame>Article</AppFrame>);
     expect(container.querySelector('header,nav,.ds-chrome__footer')).toBeNull();
+  });
+  it('exposes main to content and still forwards a caller callback ref', () => {
+    const forward = vi.fn();
+    const read = vi.fn();
+    const { unmount } = render(
+      <AppFrame mainRef={forward} footer={<MainProbe label="Outside" read={read} />}>
+        <MainProbe label="Inside" read={read} />
+      </AppFrame>,
+    );
+    const main = screen.getByRole('main');
+    expect(forward).toHaveBeenLastCalledWith(main);
+    fireEvent.click(screen.getByRole('button', { name: 'Inside' }));
+    expect(read).toHaveBeenLastCalledWith(main);
+    fireEvent.click(screen.getByRole('button', { name: 'Outside' }));
+    expect(read).toHaveBeenLastCalledWith(null);
+    unmount();
+    expect(forward).toHaveBeenLastCalledWith(null);
   });
 });
 

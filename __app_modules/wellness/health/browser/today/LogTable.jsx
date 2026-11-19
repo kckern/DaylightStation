@@ -1,9 +1,9 @@
 import { useHealthOperations } from "../operations/HealthOperationsProvider.jsx";
 import { FoodOperationStatus } from "../operations/FoodOperationStatus.jsx";
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Button, NativeSelect } from '@mantine/core';
 import { browserPreference } from '@/lib/browserPreference.js';
-import { CHROME_SCROLL_CLASS, LoadingState } from '@/lib/ui';
+import { LoadingState, useAppMainRef } from '@/lib/ui';
 import { sumCounted } from "../../portable/contracts/nutrition/countedRows.mjs";
 import { MacroBadges } from "./MacroBadges.jsx";
 import { ExerciseSection } from "./ExerciseSection.jsx";
@@ -289,6 +289,7 @@ export function LogTable({
 }) {
   // "Select foods" spans the viewed day's meals and ends with that day.
   const [selecting, setSelecting] = useState(false);
+  const mainRef = useAppMainRef();
   const [selection, setSelectionState] = useState([]);
   const [moving, setMoving] = useState(false);
   const logRef = useRef(null);
@@ -309,12 +310,29 @@ export function LogTable({
   // back. The scroller absorbs the difference and the foods stay put. This code is
   // the only thing correcting the position: the browser's scroll anchoring would
   // otherwise make the same correction, so it is off for the change.
-  const scrollerOf = node => node?.closest(`.${CHROME_SCROLL_CLASS}`) || null;
+  const anchoring = useRef(null);
+  const restoreScrollAnchoring = useCallback(() => {
+    const hold = anchoring.current;
+    if (!hold) return;
+    anchoring.current = null;
+    if (hold.frame !== null) cancelAnimationFrame(hold.frame);
+    hold.scroller.style.overflowAnchor = hold.previous;
+  }, []);
+  useLayoutEffect(() => restoreScrollAnchoring, [date, restoreScrollAnchoring]);
+
   const holdScrollAnchoring = () => {
-    const scroller = scrollerOf(logRef.current);
-    if (!scroller) return;
+    const scroller = mainRef?.current;
+    if (!scroller?.contains(logRef.current)) return;
+    if (anchoring.current?.scroller !== scroller) {
+      restoreScrollAnchoring();
+      anchoring.current = { scroller, previous: scroller.style.overflowAnchor, frame: null };
+    }
+    const hold = anchoring.current;
+    if (hold.frame !== null) cancelAnimationFrame(hold.frame);
     scroller.style.overflowAnchor = 'none';
-    requestAnimationFrame(() => requestAnimationFrame(() => { scroller.style.overflowAnchor = ''; }));
+    hold.frame = requestAnimationFrame(() => {
+      hold.frame = requestAnimationFrame(restoreScrollAnchoring);
+    });
   };
   // Focus inside the bar would be lost with it. Only a close of the open bar on
   // this day is recorded: a late move can call this after selection ended, and a
@@ -339,8 +357,8 @@ export function LogTable({
     if (selecting) {
       const opened = opening.current;
       opening.current = null;
-      const scroller = scrollerOf(opened?.anchor);
-      if (!scroller || !opened.anchor.isConnected) return;
+      const scroller = mainRef?.current;
+      if (!opened || !scroller?.contains(opened.anchor)) return;
       const shift = opened.anchor.getBoundingClientRect().top - opened.top;
       // A short day cannot scroll by the bar's height, so it gets the room while the bar
       // is open. A page held at a minimum height absorbs some of that room, so what is
@@ -367,8 +385,8 @@ export function LogTable({
     const log = logRef.current;
     closing.current = null;
     if (!closed || !log || closed.date !== date) return;
-    const scroller = scrollerOf(log);
-    if (scroller) scroller.scrollTop += log.getBoundingClientRect().top - closed.top;
+    const scroller = mainRef?.current;
+    if (scroller?.contains(log)) scroller.scrollTop += log.getBoundingClientRect().top - closed.top;
     if (!closed.refocus) return;
     const target = log.querySelector('[data-select-foods]') || log;
     if (target === log) log.setAttribute('tabindex', '-1');

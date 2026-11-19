@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, within, waitFor } from '@testing-library/react';
 import { MantineProvider } from '@mantine/core';
-import { DismissStackProvider } from '@/lib/ui';
+import { AppFrame, DismissStackProvider } from '@/lib/ui';
 
 const apiMock = vi.fn();
 vi.mock('../../../../../frontend/src/lib/api.mjs', () => ({ DaylightAPI: (...a) => apiMock(...a) }));
@@ -99,6 +99,19 @@ describe('MosaicView', () => {
     const dialog = await screen.findByRole('dialog', { name: 'Kitchen light' });
     expect(within(dialog).getByText('Kitchen')).toBeTruthy();
     await waitFor(() => expect(apiMock).toHaveBeenCalledWith(expect.stringContaining('light.kitchen')));
+  });
+
+  it('uses the frame header edge even inside a class lookalike', () => {
+    render(<MantineProvider><DismissStackProvider><AppFrame>
+      <div className="ds-chrome__main">
+        <MosaicView entities={entities} mosaic={mosaic} summary={summary} toggle={vi.fn()} />
+      </div>
+    </AppFrame></DismissStackProvider></MantineProvider>);
+    vi.spyOn(screen.getByRole('main'), 'getBoundingClientRect').mockReturnValue({ top: 100 });
+    const light = square('Kitchen light');
+    vi.spyOn(light, 'getBoundingClientRect').mockReturnValue({ top: 104, bottom: 124, left: 32, width: 20 });
+    fireEvent.mouseOver(light);
+    expect(screen.getByRole('tooltip')).toHaveClass('home-mosaic__tip--below');
   });
 
   it('Escape hides a hovered tooltip wherever focus is, and still closes a drawer when no tooltip is open', async () => {

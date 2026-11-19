@@ -1,8 +1,17 @@
+import { createContext, useContext, useRef } from 'react';
+import { useMergedRef } from '@mantine/hooks';
 import './ds.scss';
 
-export const CHROME_SCROLL_CLASS = 'ds-chrome__main';
+const AppMainContext = createContext(null);
+
+/** Get the nearest AppFrame's ref. Read its current element in an event or effect. */
+export function useAppMainRef() {
+  return useContext(AppMainContext);
+}
 
 export function AppFrame({ className = '', header, navigation, context, footer, mainRef, expandedContext = false, children }) {
+  const scrollRef = useRef(null);
+  const setMainRef = useMergedRef(scrollRef, mainRef);
   return (
     <div className={['ds-chrome', expandedContext && 'ds-chrome--context', className].filter(Boolean).join(' ')}>
       {header && <header className="ds-chrome__header">{header}</header>}
@@ -12,7 +21,9 @@ export function AppFrame({ className = '', header, navigation, context, footer, 
           {context}
         </nav>
       )}
-      <main ref={mainRef} className={CHROME_SCROLL_CLASS}>{children}</main>
+      <main ref={setMainRef} className="ds-chrome__main">
+        <AppMainContext.Provider value={scrollRef}>{children}</AppMainContext.Provider>
+      </main>
       {footer && <div className="ds-chrome__footer">{footer}</div>}
     </div>
   );

@@ -1,7 +1,7 @@
 import { browserPreference } from '@/lib/browserPreference.js';
 import { memo, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { SegmentedControl, UnstyledButton } from '@mantine/core';
-import { CHROME_SCROLL_CLASS, EmptyState, useDismissLayer } from '@/lib/ui';
+import { EmptyState, useAppMainRef, useDismissLayer } from '@/lib/ui';
 import { displayName, formatEntityState, formatSince } from '../entities/formatEntityState.js';
 import { EntityDetailSheet } from '../ui/EntityDetailSheet.jsx';
 import { useEntityDetail } from '../ui/useEntityDetail.js';
@@ -122,6 +122,7 @@ function MosaicTooltip({ id, tip, text, boxRef }) {
  * tap).
  */
 export function MosaicView({ entities, mosaic, summary, haUrl, toggle }) {
+  const mainRef = useAppMainRef();
   const [mode, setMode] = useState(modePreference.read);
   const [tip, setTip] = useState(null);
   const boxRef = useRef(null);
@@ -176,13 +177,12 @@ export function MosaicView({ entities, mosaic, summary, haUrl, toggle }) {
     tipIdRef.current = entity.id;
     // The chrome's scroll region starts under the app header: that edge is the
     // ceiling. Outside AppChrome nothing covers the page, so the viewport top is.
-    const scroller = box.closest(`.${CHROME_SCROLL_CLASS}`);
-    const ceiling = scroller ? scroller.getBoundingClientRect().top : 0;
+    const ceiling = mainRef?.current?.getBoundingClientRect().top ?? 0;
     setTip({
       id: entity.id, x: r.left - b.left + r.width / 2,
       top: r.top - b.top, bottom: r.bottom - b.top, viewTop: r.top, ceiling,
     });
-  }, [byId]);
+  }, [byId, mainRef]);
 
   // Only a square on this board: the drawer also carries a data-entity-id.
   const squareOf = (e) => {
