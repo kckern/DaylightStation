@@ -1,8 +1,15 @@
 import { serializeFoodItem } from '../../../../health/server/nutrition-records.mjs';
 import { pickMicros } from '../../../../health/server/nutrition-capture-values.mjs';
 
+// FoodItem supplies display defaults when hydrating. Retain exactly which
+// nutrient values the parser supplied, including an explicitly reported zero.
+export function captureCatalogMicros(items) {
+  return Object.fromEntries(items.map(item => [item.id, pickMicros(item)]));
+}
+
 export async function finishQuickInputEnrichment(log, catalogService, foodLogStore, logger) {
-  const densityFindings = await enrichFoodCapture(log, log.items.map(serializeFoodItem), catalogService, logger);
+  const items = log.items.map(serializeFoodItem);
+  const densityFindings = await enrichFoodCapture(log, items, catalogService, logger);
   const enriched = log.with({ metadata: {
     ...log.metadata, densityFindings, quickInput: { ...log.metadata.quickInput, enriched: true },
   } }, new Date());
@@ -52,7 +59,10 @@ export async function enrichFoodCapture(log, foodItems, catalogService, logger, 
           // Spread, not four named fields: an unanswered micro is ABSENT
           // on `item` (see the mapper), and naming it here would
           // resurrect it as `undefined` -> a donated structural zero.
-          ...pickMicros(item),
+          ...(log.metadata.quickInput
+            ? log.metadata.quickInput.catalogMicros?.[item.id] || {}
+            : pickMicros(item)),
+          ...(log.metadata.quickInput && { quickInputUsageId: item.id }),
           // Only a provenanced row donates its micros at all —
           // see FoodCatalogService.recordUsage.
           microsSource: item.microsSource,
@@ -60,6 +70,7 @@ export async function enrichFoodCapture(log, foodItems, catalogService, logger, 
         }, userId);
       } catch (err) {
         logger.warn?.('nutribot.catalog.record_failed', { name: item.label, error: err.message });
+        if (log.metadata.quickInput) throw err;
       }
     }
   }

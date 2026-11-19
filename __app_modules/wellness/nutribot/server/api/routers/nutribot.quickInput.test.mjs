@@ -145,7 +145,7 @@ describe('POST /api/v1/nutribot/text', () => {
     const { app, telegram, ai, logs, receipts } = build();
     const res = await send(app, 'text');
     expect(res.status).toBe(200);
-    expect(res.body).toEqual({ ok: true, inputId: '1700000000000-0a1b2c3d', duplicate: false });
+    expect(res.body).toEqual({ ok: true, inputId: '1700000000000-0a1b2c3d', duplicate: false, receiptDelivery: 'uncertain' });
 
     const log = only(logs);
     expect(log.status).toBe('accepted');
@@ -157,7 +157,7 @@ describe('POST /api/v1/nutribot/text', () => {
     expect(receipts.refresh).toHaveBeenCalledWith('user_1', log.id);
 
     const again = await send(app, 'text');
-    expect(again.body).toEqual({ ok: true, inputId: '1700000000000-0a1b2c3d', duplicate: true });
+    expect(again.body).toEqual({ ok: true, inputId: '1700000000000-0a1b2c3d', duplicate: true, receiptDelivery: 'uncertain' });
     expect(logs.size).toBe(1);
     expect(ai.text).toBe(1);
   });
@@ -211,7 +211,7 @@ describe('POST /api/v1/nutribot/voice', () => {
     const { app, telegram, logs } = build();
     const res = await send(app, 'voice');
     expect(res.status).toBe(200);
-    expect(res.body).toEqual({ ok: true, inputId: '1700000000000-0a1b2c3d', duplicate: false });
+    expect(res.body).toEqual({ ok: true, inputId: '1700000000000-0a1b2c3d', duplicate: false, receiptDelivery: 'uncertain' });
     expect(telegram.transcribed).toHaveLength(1);
     expect(Buffer.isBuffer(telegram.transcribed[0].buffer)).toBe(true);
     expect(telegram.transcribed[0].mimeType).toBe('audio/ogg');
@@ -238,7 +238,7 @@ describe('POST /api/v1/nutribot/photo', () => {
     const { app, telegram, ai, logs } = build();
     const res = await send(app, 'photo');
     expect(res.status).toBe(200);
-    expect(res.body).toEqual({ ok: true, inputId: '1700000000000-0a1b2c3d', duplicate: false });
+    expect(res.body).toEqual({ ok: true, inputId: '1700000000000-0a1b2c3d', duplicate: false, receiptDelivery: 'uncertain' });
     expect(telegram.photos).toHaveLength(1);
     expect(telegram.photos[0].chatId).toBe(CHAT);
     expect(telegram.photos[0].source.equals(JPEG)).toBe(true);

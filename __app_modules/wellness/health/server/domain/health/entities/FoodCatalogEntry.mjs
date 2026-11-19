@@ -63,6 +63,7 @@ export class FoodCatalogEntry {
     this.observations = FoodCatalogEntry.#cloneObservations(data.observations);
     this.source = data.source || 'manual';
     this.barcodeUpc = data.barcodeUpc || null;
+    this.quickInputUsageIds = [...(data.quickInputUsageIds || [])];
     this.useCount = data.useCount || 1;
     this.favorite = data.favorite === true;
     // The manifest slug this food is pictured with (PRD F5.2). Null means "no

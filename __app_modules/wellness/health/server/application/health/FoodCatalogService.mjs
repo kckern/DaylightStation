@@ -70,6 +70,7 @@ function servingOf(foodItem, { fromRow = false } = {}) {
 
 export class FoodCatalogService {
   #catalogStore;
+  #usageQueues = new Map();
   #nutriListStore;
   #logger;
   #clock;
@@ -112,7 +113,14 @@ export class FoodCatalogService {
   async recordUsage(foodItem, userId) {
     if (!foodItem?.name) return;
 
-    const normalized = FoodCatalogEntry.normalize(foodItem.name);
+    const previous = this.#usageQueues.get(userId) || Promise.resolve();
+    const next = previous.catch(() => {}).then(() => this.#recordUsage(foodItem, userId));
+    this.#usageQueues.set(userId, next);
+    try { return await next; }
+    finally { if (this.#usageQueues.get(userId) === next) this.#usageQueues.delete(userId); }
+  }
+
+  async #recordUsage(foodItem, userId) {
     const existing = (foodItem.foodId && await this.#catalogStore.getById(foodItem.foodId, userId))
       || await this.#catalogStore.findByNormalizedName(foodItem.name, userId);
     const today = new Date(this.#clock.now()).toISOString().slice(0, 10);
@@ -126,6 +134,10 @@ export class FoodCatalogService {
       : {};
 
     if (existing) {
+      if (foodItem.quickInputUsageId) {
+        if (existing.quickInputUsageIds.includes(foodItem.quickInputUsageId)) return;
+        existing.quickInputUsageIds.push(foodItem.quickInputUsageId);
+      }
       existing.recordUsage(today, bucketOptions);
       // NOT "latest wins". The catalog's canonical nutrition is DERIVED from
       // the observation ring (FoodCatalogEntry.nutrients), so a capture
@@ -174,6 +186,7 @@ export class FoodCatalogService {
     } else {
       const entry = new FoodCatalogEntry({
         id: foodItem.foodId || this.#createId(),
+        quickInputUsageIds: foodItem.quickInputUsageId ? [foodItem.quickInputUsageId] : [],
         name: foodItem.name,
         nutrients: {
           calories: foodItem.calories || 0,

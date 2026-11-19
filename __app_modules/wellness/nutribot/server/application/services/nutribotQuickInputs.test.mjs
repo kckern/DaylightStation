@@ -11,6 +11,8 @@ import { AcceptFoodLog } from '../usecases/AcceptFoodLog.mjs';
 import { YamlFoodLogDatastore } from '../../../../health/server/adapters/persistence/yaml/YamlFoodLogDatastore.mjs';
 import { YamlNutriListDatastore } from '../../../../health/server/adapters/persistence/yaml/YamlNutriListDatastore.mjs';
 import { YamlNutritionSurfaceCheckpoints } from '../../../../health/server/adapters/persistence/yaml/YamlNutritionSurfaceCheckpoints.mjs';
+import { YamlFoodCatalogDatastore } from '../../../../health/server/adapters/persistence/yaml/YamlFoodCatalogDatastore.mjs';
+import { FoodCatalogService } from '../../../../health/server/application/health/FoodCatalogService.mjs';
 import { FoodLogReview } from '../../../../health/server/application/nutrition/FoodLogReview.mjs';
 import { NutritionReceiptPublisher } from '../../../../health/server/application/nutrition/NutritionReceiptPublisher.mjs';
 import { NutritionReceiptRenderer } from '../../../../health/server/rendering/NutritionReceiptRenderer.mjs';
@@ -182,21 +184,33 @@ describe('Nutribot quick inputs', () => {
 
 describe('durable Nutribot recovery', () => {
   for (const kind of ['text', 'voice', 'photo']) {
-    for (const crash of ['meal', 'projection', 'receipt', 'ledger']) {
+    for (const crash of ['meal', 'catalog', 'projection', 'receipt', 'ledger', 'missing-message', 'unavailable-message', 'empty-binding']) {
       it(`${kind} reopens the same meal after an interrupted ${crash} write`, async () => {
         const root = fs.mkdtempSync(path.join(os.tmpdir(), 'quick-meal-'));
         let now = NOW;
         let shouldFail = true;
+        const terminal = { 'missing-message': 'uncertain', 'unavailable-message': 'unavailable', 'empty-binding': 'uncertain' }[crash];
         let message = 10;
         const views = new Map();
         const owner = 'user_1';
         const chat = 'telegram:test';
         const input = { ...command(), conversationId: chat, recordedAt: now };
-        const answer = vi.fn(async () => JSON.stringify({ items: [{ name: 'Toast', grams: 40, calories: 110 }] }));
+        const fiber = kind === 'photo' ? 0 : 2;
+        const answer = vi.fn(async () => JSON.stringify({ items: [{ name: 'Toast', grams: 40, calories: 110, fiber }] }));
         const logger = { info() {}, warn() {}, debug() {}, error() {} };
         const clock = () => now;
         const start = () => {
-          const dataService = { user: { resolveDir: (rel, user) => path.join(root, user, rel) } };
+          const dataService = { user: {
+            resolveDir: (rel, user) => path.join(root, user, rel),
+            resolvePath: (rel, user) => path.join(root, user, rel + '.yml'),
+          } };
+          const catalogStore = new YamlFoodCatalogDatastore({ dataService, logger });
+          const saveCatalog = catalogStore.save.bind(catalogStore);
+          catalogStore.save = async (entry, user) => {
+            await saveCatalog(entry, user);
+            if (crash === 'catalog' && shouldFail) throw new Error('catalog saved before crash');
+          };
+          const catalogService = new FoodCatalogService({ catalogStore, clock: { now: clock }, createId: () => 'catalog-item', logger });
           const logs = new YamlFoodLogDatastore({ configService: { getUserDir: user => path.join(root, user) }, logger });
           const items = new YamlNutriListDatastore({ dataService, logger });
           const saveItems = items.saveMany.bind(items);
@@ -207,16 +221,21 @@ describe('durable Nutribot recovery', () => {
           const reviewService = new FoodLogReview({ foodLogs: logs, items, logger, clock: { now: clock } });
           const checkpoints = new YamlNutritionSurfaceCheckpoints({ dataService });
           const publisher = new NutritionReceiptPublisher({
-            destinationFor: () => chat, linkFor: () => null, foodLogs: logs, items, checkpoints, logger,
+            destinationFor: () => crash === 'empty-binding' ? null : chat, linkFor: () => null, foodLogs: logs, items, checkpoints, logger,
             renderer: new NutritionReceiptRenderer(),
             surface: { updateMessage: async (_, binding, receipt) => {
+              if (crash === 'unavailable-message') throw Object.assign(new Error('deleted message'), { permanent: true });
               if (crash === 'receipt' && shouldFail) throw new Error('receipt failed');
               views.set(binding.messageId, receipt);
             } },
           });
-          const send = async () => ({ messageId: String(++message) });
+          const send = vi.fn(async () => {
+            message++;
+            if (crash === 'missing-message') throw new Error('unconfirmed status send');
+            return { messageId: String(message) };
+          });
           const messagingGateway = { sendMessage: send, sendPhoto: send, updateMessage() {}, deleteMessage() {}, transcribeVoice: async () => 'toast' };
-          const deps = { messagingGateway, foodLogStore: logs, aiGateway: { chat: answer, chatWithImage: answer }, logger };
+          const deps = { messagingGateway, foodLogStore: logs, catalogService, aiGateway: { chat: answer, chatWithImage: answer }, logger };
           const text = new LogFoodFromText(deps);
           const image = new LogFoodFromImage({ ...deps, imageDownloader: {} });
           const voice = new LogFoodFromVoice({ ...deps, logFoodFromText: text });
@@ -242,33 +261,45 @@ describe('durable Nutribot recovery', () => {
               },
             } } }),
           });
-          return { ...quick, logs, items, checkpoints };
+          return { ...quick, logs, items, checkpoints, catalogStore };
         };
         try {
           const first = start();
           const legacy = createNutriLog({ userId: owner, conversationId: chat, timestamp: new Date(now),
             items: [{ label: 'Earlier toast', grams: 40, amount: 1, unit: 'slice', color: 'yellow', calories: 110 }], meal: { date: '2026-11-17', time: 'night' } });
           await first.logs.save(legacy);
-          await expect(first.endpoints[kind].submit(input)).rejects.toThrow();
+          if (terminal) expect(await first.endpoints[kind].submit(input)).toMatchObject({ kind: 'accepted', receiptDelivery: terminal });
+          else await expect(first.endpoints[kind].submit(input)).rejects.toThrow();
+          const originalMessageCount = message;
           const [original] = (await first.logs.findAll(owner)).filter(log => log.id !== legacy.id);
           expect(original.meal.date).toBe('2026-11-18');
           now += 24 * HOUR;
           shouldFail = false;
           const next = start();
           const replies = await Promise.all([next.endpoints[kind].submit(input), start().endpoints[kind].submit(input)]);
-          expect(replies[0].kind).toBe(crash === 'ledger' ? 'duplicate' : 'resumed');
+          expect(replies[0]).toMatchObject({ kind: terminal || crash === 'ledger' ? 'duplicate' : 'resumed',
+            receiptDelivery: terminal || 'delivered' });
+          expect(message).toBe(originalMessageCount);
           expect(answer).toHaveBeenCalledTimes(1);
           const cold = start();
-          expect((await cold.endpoints[kind].submit(input)).kind).toBe('duplicate');
+          expect(await cold.endpoints[kind].submit(input)).toMatchObject({ kind: 'duplicate', receiptDelivery: terminal || 'delivered' });
           expect(await cold.logs.findAll(owner)).toHaveLength(2);
           const meal = await cold.logs.findByUuid(original.id, owner);
           expect(meal).toMatchObject({ status: 'accepted', meal: original.meal, metadata: {
-            quickInput: { username: owner, inputId: 'i1', kind, finished: true }, reviewOperation: { complete: true },
+            quickInput: { username: owner, inputId: 'i1', kind, finished: true, receiptDelivery: terminal || 'delivered' }, reviewOperation: { complete: true },
           } });
           expect(await cold.items.findByLogId(owner, original.id)).toHaveLength(1);
-          expect((await cold.checkpoints.load(owner)).receipts[original.id].binding.messageId).toBe(original.metadata.messageId);
-          expect(views.get(original.metadata.messageId).text).toMatch(/toast/i);
-          expect(cold.ledger.usage(owner)).toEqual({ inputs: 0, bytes: 0, attempts: crash === 'ledger' ? 0 : 1 });
+          const [entry] = await cold.catalogStore.getAll(owner);
+          expect(entry.useCount).toBe(1);
+          expect(entry.quickInputUsageIds).toEqual([meal.items[0].id]);
+          expect(entry.baseNutrients).toMatchObject({ fiber });
+          for (const key of ['sodium', 'sugar', 'cholesterol']) expect(entry.baseNutrients).not.toHaveProperty(key);
+          if (terminal) expect(views.size).toBe(0);
+          else {
+            expect((await cold.checkpoints.load(owner)).receipts[original.id].binding.messageId).toBe(original.metadata.messageId);
+            expect(views.get(original.metadata.messageId).text).toMatch(/toast/i);
+          }
+          expect(cold.ledger.usage(owner)).toEqual({ inputs: 0, bytes: 0, attempts: terminal || crash === 'ledger' ? 0 : 1 });
           const otherInput = { ...input, username: 'other' };
           await Promise.all([cold.endpoints[kind].submit(otherInput), start().endpoints[kind].submit(otherInput)]);
           expect(answer).toHaveBeenCalledTimes(2);

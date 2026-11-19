@@ -139,14 +139,15 @@ export class QuickInputIntake {
     if (this.#handler.findCapture && !record?.saved) {
       const capture = await this.#handler.findCapture(input);
       if (capture) {
+        let acknowledgement = capture.acknowledgement || {};
         if (!capture.complete) {
           const admission = this.#ledger.admission(username, kind, inputId, 0, { processing: false });
           if (!admission.allowed) return { kind: 'daily_limit', inputId, limit: admission.limit, retryAfterSeconds: admission.retryAfterSeconds };
           this.#ledger.countAttempt(username, kind, inputId, 0, { processing: false });
-          await this.#handler.finishCapture(capture.state);
+          acknowledgement = await this.#handler.finishCapture(capture.state) || {};
         }
-        this.#ledger.mark(username, kind, inputId, { saved: true });
-        return { kind: capture.complete ? 'duplicate' : 'resumed', inputId };
+        this.#ledger.mark(username, kind, inputId, { saved: true, acknowledgement });
+        return { kind: capture.complete ? 'duplicate' : 'resumed', inputId, ...acknowledgement };
       }
     }
 
@@ -154,7 +155,7 @@ export class QuickInputIntake {
     // whether the replies went out. Stored with no ledger record is finished.
     let state = this.#handler.lookup ? await this.#handler.lookup(input) : (record?.saved ? {} : null);
     if (state && (!record || steps.every(({ step }) => record[noted(step)]))) {
-      return { kind: 'duplicate', inputId };
+      return { kind: 'duplicate', inputId, ...record?.acknowledgement };
     }
     const resuming = Boolean(state);
 
@@ -195,9 +196,9 @@ export class QuickInputIntake {
       }
 
       state = outcome.state ?? {};
-      summary = outcome.summary ?? {};
+      summary = { ...outcome.summary, ...outcome.acknowledgement };
       this.#ledger.mark(username, kind, inputId, {
-        saved: true, ...Object.fromEntries(steps.map(({ step }) => [noted(step), false])),
+        saved: true, ...(outcome.acknowledgement && { acknowledgement: outcome.acknowledgement }), ...Object.fromEntries(steps.map(({ step }) => [noted(step), false])),
       });
     }
 

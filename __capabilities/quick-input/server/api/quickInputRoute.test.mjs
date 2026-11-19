@@ -300,3 +300,15 @@ test('a request from another site is recognised by its Origin or by the browser\
   assert.equal(isCrossSiteFetch(req({ 'Sec-Fetch-Site': 'none' })), false);
   assert.equal(isCrossSiteFetch(req({})), false);
 });
+
+test('durable meal receipt dispositions survive first-time and duplicate HTTP acknowledgements', async () => {
+  const inputId = 'i1';
+  for (const kind of ['accepted', 'resumed', 'duplicate']) {
+    for (const receiptDelivery of ['delivered', 'uncertain', 'unavailable']) {
+      const [, , submit] = quickInputRoute({ submit: async () => ({ kind, inputId, receiptDelivery }) }, { kind: 'text', logger: {} });
+      const req = { body: Buffer.from('toast'), quickInput: { inputId, username: 'user', conversationId: 'chat', mimeType: 'text/plain' } };
+      const res = { status(code) { assert.equal(code, 200); return this; }, json(value) { return value; } };
+      assert.deepEqual(await submit(req, res), { ok: true, inputId, duplicate: kind !== 'accepted', receiptDelivery });
+    }
+  }
+});

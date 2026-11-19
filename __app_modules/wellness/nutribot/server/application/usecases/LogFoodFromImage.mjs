@@ -8,7 +8,7 @@ import { capturedFoodGrams, capturedNutrientProvenance } from '../../../../healt
 
 import { v4 as uuidv4 } from 'uuid';
 import { repairTruncatedJson } from "../lib/repairJson.mjs";
-import { enrichFoodCapture, finishQuickInputEnrichment } from "../services/enrichFoodCapture.mjs";
+import { captureCatalogMicros, enrichFoodCapture, finishQuickInputEnrichment } from "../services/enrichFoodCapture.mjs";
 import { createNutriLog } from "../../../../health/server/nutrition-records.mjs";
 import { groupParsedItems } from "../../../../health/server/nutrition-capture-values.mjs";
 import { aiMicrosSource, pickMicros } from "../../../../health/server/nutrition-capture-values.mjs";
@@ -284,7 +284,7 @@ export class LogFoodFromImage {
       if (this.#catalogService?.resolveIdentity) {
         for (let index = 0; index < foodItems.length; index++) foodItems[index] = await this.#catalogService.resolveIdentity(foodItems[index], effectiveUserId);
       }
-      const quickInput = input.quickInput;
+      const quickInput = input.quickInput && { ...input.quickInput, catalogMicros: captureCatalogMicros(foodItems) };
       const nutriLog = createNutriLog({
         userId: effectiveUserId,
         conversationId,

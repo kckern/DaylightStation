@@ -9,7 +9,7 @@ import { capturedFoodGrams, capturedNutrientProvenance } from '../../../../healt
 import { v4 as uuidv4 } from 'uuid';
 import { repairTruncatedJson } from "../lib/repairJson.mjs";
 import { deriveLogDate } from "../lib/deriveLogDate.mjs";
-import { enrichFoodCapture, finishQuickInputEnrichment } from "../services/enrichFoodCapture.mjs";
+import { captureCatalogMicros, enrichFoodCapture, finishQuickInputEnrichment } from "../services/enrichFoodCapture.mjs";
 import { createNutriLog, serializeNutriLog } from "../../../../health/server/nutrition-records.mjs";
 import { groupParsedItems } from "../../../../health/server/nutrition-capture-values.mjs";
 import { aiMicrosSource, pickMicros } from "../../../../health/server/nutrition-capture-values.mjs";
@@ -316,7 +316,7 @@ export class LogFoodFromText {
       // 4. Create NutriLog entity
       const timezone = this.#config?.getUserTimezone?.(userId) || 'America/Los_Angeles';
       const createTimestamp = new Date();
-      const quickInput = input.quickInput;
+      const quickInput = input.quickInput && { ...input.quickInput, catalogMicros: captureCatalogMicros(foodItems) };
       const nutriLog = createNutriLog({
         userId,
         conversationId,

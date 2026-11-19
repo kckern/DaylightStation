@@ -43,6 +43,10 @@ function outcomeOf(routed) {
     // The code only: a refusal's message can quote what was said.
     throw new Error(`Nutribot did not take the input: ${code || 'refused'}`);
   }
+  const receiptDelivery = routed?.receiptDelivery;
+  if (receiptDelivery) {
+    return { acknowledgement: { receiptDelivery } };
+  }
   return {};
 }
 
@@ -116,9 +120,18 @@ export function createNutribotQuickInputs({
     if (inputRouter?.findQuickCapture) {
       handler.findCapture = async input => {
         const log = await inputRouter.findQuickCapture(identity(input, kind));
-        return log && { complete: log.metadata.quickInput.finished === true, state: log };
+        const capture = log?.metadata.quickInput;
+        if (!capture) return null;
+        return {
+          complete: capture.finished === true, state: log,
+          acknowledgement: capture.receiptDelivery
+            ? { receiptDelivery: capture.receiptDelivery } : {},
+        };
       };
-      handler.finishCapture = log => inputRouter.finishQuickCapture(log);
+      handler.finishCapture = async log => {
+        const receiptDelivery = await inputRouter.finishQuickCapture(log);
+        return receiptDelivery ? { receiptDelivery } : {};
+      };
     }
     endpoints[kind] = new QuickInputEndpoint({
       intake: ready ? new QuickInputIntake({ bot: BOT, kind, handler, ledger, clock, logger, inFlight }) : null,

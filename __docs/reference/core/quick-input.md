@@ -45,7 +45,7 @@ The request is answered when the bot has finished with the input. A long recordi
 | Status | Body | When |
 |---|---|---|
 | 200 | `{ok: true, inputId, duplicate: false, ...}` | Processed. A bot may add fields (the Journalist voice route adds `transcriptionLength`) |
-| 200 | `{ok: true, inputId, duplicate: true}` | This id was already processed for this user and route; any reply an earlier attempt did not send has now gone |
+| 200 | `{ok: true, inputId, duplicate: true}` | The backend previously stored this input for this user and route |
 | 400 | `{ok: false, error: "user_required" \| "invalid_input_id" \| "empty_body" \| "unreadable_body", message}` | No `user`; id missing or malformed; no bytes, or text with nothing in it; a body that could not be read, or text that is not UTF-8 |
 | 403 | `{ok: false, error: "cross_origin", message}` | `Origin` present and not this app's own. Also the answer to every `OPTIONS` on these routes |
 | 403 | `{ok: false, error: "device_not_allowed", message}` | Device header missing, not a registered device, or not bound to `user` for this route's bot |
@@ -120,11 +120,13 @@ An input id is processed once per user per route.
 
 - The bot's ledger (`users/<username>/apps/<bot>/…`, one document per user per bot) records how far each input got: started, stored, which replies went out, or that nothing usable was in it.
 - A retry of a finished input answers `duplicate: true` and does nothing. This holds across a restart.
-- A retry of an input that was stored but whose replies did not all go out sends only the missing ones and answers `duplicate: true`.
+- A retry of a stored input resumes its outstanding work and answers `duplicate: true`. Nutribot reports its final receipt disposition as described below.
 - A retry of an input that failed before it was stored is processed again.
 - An input with nothing usable in it is noted, and its retry answers 422 without asking a model again.
 - Two uploads of one input that overlap share one run.
 - Ledger records are dropped after 35 days.
+
+Nutribot meal acknowledgements include `receiptDelivery` on both initial submissions and retries. `delivered` confirms the publisher updated the bound message or has a delivery checkpoint for the identical receipt. `unavailable` means the publisher or original message is permanently unavailable. `uncertain` means the backend cannot establish delivery to the original message. These terminal outcomes acknowledge a durably committed meal, so the phone can clear the queued capture. The backend never sends a replacement for an unconfirmed message. A transient receipt edit, catalog write or ledger failure returns a retryable server error and the phone retains the capture.
 
 The phone clears a queued capture after an HTTP 200 receipt with JSON `ok: true`, a boolean `duplicate`, and a string `inputId` equal to the submitted ID. On `/api/v1/journalist/memo` it also accepts a matching `memoId` when `inputId` is absent. Both first-time and duplicate receipts use this check, including after offline queue recovery. The receipt must be one complete JSON object with unique member names.
 
@@ -134,7 +136,7 @@ An unexpected receipt leaves the original bytes queued and retries with backoff 
 
 Nothing that was said, typed or photographed goes to any log event or error message from these routes or the intake: ids, byte counts, lengths, durations, states and error codes only. Each bot's reference says what its own use cases log.
 
-Events (`bot` and `kind` on each): `quick_input.received`, `.accepted`, `.duplicate` (`resumed: true` when replies were finished), `.rejected` (`reason`, `status`), `.failed`, `.recordedAtIgnored`, `.apologyFailed`, `.identityResolutionFailed`, `.deviceLookupFailed`, `.ledger.writeFailed`. The `/memo` alias and the Journalist voice intake behind it log the same events as `journalist.memo.*` with a `memoId`.
+Events (`bot` and `kind` on each): `quick_input.received`, `.accepted`, `.duplicate` (`resumed: true` when outstanding work was finished), `.rejected` (`reason`, `status`), `.failed`, `.recordedAtIgnored`, `.apologyFailed`, `.identityResolutionFailed`, `.deviceLookupFailed`, `.ledger.writeFailed`. The `/memo` alias and the Journalist voice intake behind it log the same events as `journalist.memo.*` with a `memoId`.
 
 ## Adding an intake to a bot
 

@@ -90,8 +90,8 @@ export class NutribotInputRouter extends BaseInputRouter {
     if (event.quickInput && logId === event.quickInput.logId) {
       const log = await this.findQuickCapture(event.quickInput);
       if (!log) throw new Error('Missing quick-input meal');
-      await this.finishQuickCapture(log);
-      return { ok: true, result, logId, committed: true };
+      const receiptDelivery = await this.finishQuickCapture(log);
+      return { ok: true, result, logId, committed: true, receiptDelivery };
     }
 
     if (!logId && result?.committed) return { ok: true, result, committed: true, items: result.items || [], mealTime: result.bucket || event.payload.bucket, moved: false };
@@ -279,7 +279,7 @@ export class NutribotInputRouter extends BaseInputRouter {
   async finishQuickCapture(log) {
     const { userId, conversationId, id: logId } = log;
     const checkpoint = log.metadata.quickInput;
-    if (checkpoint.finished) return;
+    if (checkpoint.finished) return checkpoint.receiptDelivery;
     const source = checkpoint.kind === 'photo' ? 'image' : checkpoint.kind;
     const store = this.container.getFoodLogStore();
     const review = this.container.getFoodLogReview?.();
@@ -302,18 +302,35 @@ export class NutribotInputRouter extends BaseInputRouter {
       if (!await this.#commitCapture({ userId, conversationId, logId, source })) throw new Error('Quick-input meal commit needs retry');
     }
     const receipts = this.container.getReceiptPublisher?.();
-    const binding = await receipts?.bind?.(userId, logId, {
-      conversationId, messageId: log.metadata.messageId, caption: source === 'image',
-    });
-    if (binding?.retry || binding?.receipts?.some(row => row.delivery === 'retry')) throw new Error('Quick-input receipt binding needs retry');
-    const receipt = await receipts?.refresh(userId, logId);
-    if (receipt?.retry || receipt?.receipts?.some(row => row.delivery === 'retry')) throw new Error('Quick-input receipt needs retry');
+    const messageId = log.metadata.messageId;
+    let receiptDelivery = 'uncertain';
+    if (messageId && receipts?.bind) {
+      const binding = await receipts.bind(userId, logId, {
+        conversationId, messageId, caption: source === 'image', requireDelivery: true,
+      });
+      const matched = binding?.receipts?.find(row => row.logId === logId && row.messageId === String(messageId));
+      if (binding?.retry || ['retry', 'pending'].includes(matched?.delivery)) {
+        throw new Error('Quick-input receipt needs retry');
+      }
+      if (['updated', 'unchanged'].includes(matched?.delivery)) receiptDelivery = 'delivered';
+      else if (matched?.delivery === 'unavailable') receiptDelivery = 'unavailable';
+    } else if (!receipts) {
+      receiptDelivery = 'unavailable';
+    } else if (messageId && receipts.refresh) {
+      // Older publisher contracts may refresh an existing message but supply
+      // no binding evidence. Keep delivery uncertain.
+      const result = await receipts.refresh(userId, logId);
+      if (result?.retry || result?.receipts?.some(row => row.logId === logId && ['retry', 'pending'].includes(row.delivery))) {
+        throw new Error('Quick-input receipt needs retry');
+      }
+    }
     await exclusive(async () => {
       const current = await store.findByUuid(logId, userId);
       await store.save(current.with({ metadata: {
-        ...current.metadata, quickInput: { ...current.metadata.quickInput, finished: true },
+        ...current.metadata, quickInput: { ...current.metadata.quickInput, finished: true, receiptDelivery },
       } }, new Date()));
     });
+    return receiptDelivery;
   }
 
   // ==================== Event Handlers ====================

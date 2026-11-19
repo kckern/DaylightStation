@@ -299,9 +299,9 @@ export function quickInputRoute(endpoint, options = {}) {
       return res.status(200).json({ ok: true, ...ids(inputId), duplicate: false, ...details });
     }
     if (outcome === 'duplicate' || outcome === 'resumed') {
-      // `resumed`: already stored; this call sent replies an earlier attempt did not.
+      // A resumed request finished outstanding processing for a previously stored input.
       log('info', 'duplicate', input, { bytes, durationMs, resumed: outcome === 'resumed' });
-      return res.status(200).json({ ok: true, ...ids(inputId), duplicate: true });
+      return res.status(200).json({ ok: true, ...ids(inputId), duplicate: true, ...details });
     }
     if (outcome === 'daily_limit') return refuseForToday(req, res, result);
     if (outcome === 'unavailable') return refuse(req, res, 503, 'unavailable');
