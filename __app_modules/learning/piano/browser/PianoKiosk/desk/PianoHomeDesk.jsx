@@ -42,7 +42,7 @@ function PassageMap({ piece, focusId, disabled, onOpen }) {
 export default function PianoHomeDesk({ disabled, onOpenPassage, onOpenCourse, onOpenLibrary }) {
   const logger = useMemo(() => getLogger().child({ component: 'piano-desk' }), []);
   const { currentUser, setCurrentUser } = usePianoUser();
-  const { data: deskPlayers, loading } = usePianoList('api/v1/piano/activity/desk', players);
+  const { data: deskPlayers, loading } = usePianoList('api/v1/piano/activity/desk', players, { alwaysRevalidate: true });
   const { data: courses } = usePianoList('api/v1/piano/activity/recent', players);
   const [heading, setHeading] = useState({ scoreId: null, title: null, composer: null });
   const view = deskView({ players: deskPlayers, courses, currentUser });

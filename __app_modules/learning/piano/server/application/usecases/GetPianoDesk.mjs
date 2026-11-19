@@ -12,13 +12,28 @@ const DEFAULT_PARTS = ['rh', 'lh'];
 
 export const practiceKeyOfScore = (id) => String(id).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 120);
 
+/** A single-staff passage has no separate-hand rungs, which is visible in older records. */
+function legacyParts(progress) {
+  const rungs = Object.keys(progress?.rungs ?? {});
+  return rungs.length && !rungs.includes('right') && !rungs.includes('left') ? ['rh'] : DEFAULT_PARTS;
+}
+
 function passageRanges(record) {
   const saved = record?.learnCoach?.summary?.passages;
-  const ids = Array.isArray(saved) && saved.length ? saved.map((passage) => passage.id) : Object.keys(record?.learn?.segments ?? {});
-  return ids.flatMap((id) => {
+  if (Array.isArray(saved) && saved.length) {
+    return saved.filter((passage) => Number.isInteger(passage?.start) && Number.isInteger(passage?.end)).map((passage) => ({
+      id: passage.id, inMeasure: passage.start, outMeasure: passage.end,
+      playableParts: Array.isArray(passage.parts) && passage.parts.length ? passage.parts : DEFAULT_PARTS,
+    }));
+  }
+  const planned = Object.keys(record?.learn?.segments ?? {}).flatMap((id) => {
     const match = /^m(\d+)-(\d+)$/.exec(id);
-    return match ? [{ id, inMeasure: Number(match[1]), outMeasure: Number(match[2]), playableParts: DEFAULT_PARTS }] : [];
-  }).sort((a, b) => a.inMeasure - b.inMeasure);
+    return match ? [{ id, inMeasure: Number(match[1]), outMeasure: Number(match[2]) }] : [];
+  });
+  const progress = Object.values(record?.learn?.passages ?? {});
+  const parts = progress.some((item) => legacyParts(item) === DEFAULT_PARTS && Object.keys(item?.rungs ?? {}).length)
+    ? DEFAULT_PARTS : progress.length ? ['rh'] : DEFAULT_PARTS;
+  return planned.map((passage) => ({ ...passage, playableParts: parts })).sort((x, y) => x.inMeasure - y.inMeasure);
 }
 
 function latestActivity(record) {
@@ -52,7 +67,7 @@ export class GetPianoDesk {
   }
 
   #piece({ scoreKey, record }, scoreIds, dayKey) {
-    const scoreId = record?.learnCoach?.scoreId ?? scoreIds.get(scoreKey);
+    const scoreId = record?.learnCoach?.scoreId ?? scoreIds().get(scoreKey);
     const fingerprint = record?.fingerprint?.contentSha256 ?? record?.learnCoach?.fingerprint;
     const segments = passageRanges(record);
     if (!scoreId || !fingerprint || !segments.length) return null;
@@ -84,9 +99,20 @@ export class GetPianoDesk {
   }
 
   execute() {
-    const scoreIds = new Map((this.#datastore.listSheetMusicIds() ?? []).map((id) => [practiceKeyOfScore(id), id]));
+    // Only older records need this: coached ones name their score.
+    let library = null;
+    const scoreIds = () => {
+      library ??= new Map((this.#datastore.listSheetMusicIds() ?? []).map((id) => [practiceKeyOfScore(id), id]));
+      return library;
+    };
     const dayKey = this.#dayKey();
-    const players = this.#configProjection.roster().map((userId) => this.#player(userId, scoreIds, dayKey));
+    const players = this.#configProjection.roster().map((userId) => {
+      try { return this.#player(userId, scoreIds, dayKey); } catch (error) {
+        this.#logger.warn?.('piano.desk.player_skipped', { userId, error: error.message });
+        const profile = this.#configProjection.profile(userId);
+        return { userId, name: profile?.display_name || profile?.username || userId, piece: null };
+      }
+    });
     players.sort((a, b) => String(b.piece?.practicedAt ?? '').localeCompare(String(a.piece?.practicedAt ?? '')));
     return { players };
   }

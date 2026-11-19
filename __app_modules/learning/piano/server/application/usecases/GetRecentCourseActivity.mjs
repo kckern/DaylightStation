@@ -1,6 +1,6 @@
 /**
  * GetRecentCourseActivity — per-player recent lesson-course progress for the
- * kiosk menu activity strip (spec 2026-07-28-piano-menu-activity-strip): each
+ * kiosk home desk (originally spec 2026-07-28-piano-menu-activity-strip): each
  * player's most recent courses (up to MAX_COURSES_PER_PLAYER), newest first.
  *
  * Scope: the first projected lesson group, with the projected fallback

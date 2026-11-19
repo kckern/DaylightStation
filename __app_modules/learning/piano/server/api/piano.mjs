@@ -92,7 +92,7 @@ function attemptPolicyErrors(userId, body) {
  *   GET    /bank/<seed>/instances                → instance ids (?limit, ?expand=true)
  *   GET    /bank/<seed>/instance?<axes>          → one materialized instance
  *
- *   Menu activity strip:
+ *   Home desk:
  *   GET    /activity/recent                  → { players: [...] }  (per-player most-recent lesson-course progress)
  *   GET    /activity/desk                    → { players: [...] }  (per-player current piece, passages and next step)
  *
@@ -1219,7 +1219,7 @@ export function createPianoRouter({ pianoContainer, schoolLearnerDirectory = nul
     res.json(outcome.result);
   }));
 
-  // ── Menu activity strip: per-player most-recent lesson-course progress ──────
+  // ── Home desk courses: per-player most-recent lesson-course progress ──────
   router.get('/activity/recent', asyncHandler(async (req, res) => {
     if (!pianoContainer.isActivityConfigured()) {
       return res.status(503).json({ error: 'Piano activity service not configured' });

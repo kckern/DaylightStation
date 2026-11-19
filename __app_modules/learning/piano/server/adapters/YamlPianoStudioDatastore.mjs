@@ -200,7 +200,12 @@ export class YamlPianoStudioDatastore extends ILoopManifestSource {
   listPractice(userId) {
     const dir = this.#userPianoDir(userId, 'practice');
     if (!dir) return [];
-    return listYamlFiles(dir).map((scoreKey) => ({ scoreKey, record: loadYaml(path.join(dir, scoreKey)) || {} }));
+    return listYamlFiles(dir).flatMap((scoreKey) => {
+      try { return [{ scoreKey, record: loadYaml(path.join(dir, scoreKey)) || {} }]; } catch (error) {
+        this.#logger?.warn?.('piano.practice.unreadable', { userId, scoreKey, error: error.message });
+        return [];
+      }
+    });
   }
 
   /** Content ids of the sheet-music library, as `files:docs/sheet-music/...`. */

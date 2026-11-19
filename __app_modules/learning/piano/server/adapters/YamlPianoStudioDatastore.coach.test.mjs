@@ -33,6 +33,8 @@ describe('home desk reads', () => {
     } });
     expect(store.listPractice('kid').map((entry) => entry.scoreKey)).toEqual(['score-one']);
     expect(store.listPractice('nobody')).toEqual([]);
+    fs.writeFileSync(path.join(practice, 'torn.yml'), 'a: [unclosed\n');
+    expect(store.listPractice('kid').map((entry) => entry.scoreKey)).toEqual(['score-one']);
     expect(store.listSheetMusicIds()).toEqual(['files:docs/sheet-music/christmas/piece.mxl']);
     fs.rmSync(root, { recursive: true, force: true });
   });

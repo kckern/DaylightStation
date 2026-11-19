@@ -250,7 +250,7 @@ const certificateStamp = (value) => (value ? value.at ?? 'legacy' : null);
 export function coachSummary(projection, { now, state = projection.state }) {
   return { total: projection.piece.total, silver: projection.piece.silver, gold: projection.piece.gold,
     nextPassageId: projection.piece.nextPassageId, setAside: { ...(state?.setAside ?? {}) },
-    passages: projection.segments.map((segment) => ({ id: segment.id, start: segment.inMeasure, end: segment.outMeasure,
+    passages: projection.segments.map((segment) => ({ id: segment.id, start: segment.inMeasure, end: segment.outMeasure, parts: segment.playableParts,
       silver: certificateStamp(segment.certification.silver), gold: certificateStamp(segment.certification.gold) })),
     updatedAt: now };
 }

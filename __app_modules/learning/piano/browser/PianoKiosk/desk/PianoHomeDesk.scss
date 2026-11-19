@@ -10,7 +10,7 @@
   gap: var(--sp-3);
 
   button { font: inherit; color: inherit; cursor: pointer; }
-  button:disabled { cursor: default; }
+  button:disabled { cursor: default; color: var(--piano-muted); }
 
   &__paper {
     min-width: 0;
@@ -54,6 +54,7 @@
       min-height: 0;
     }
   }
+  &__notation-error { margin: 0; height: 100%; display: grid; place-items: center; color: #4b4f58; font-size: 1.1rem; }
   &__blank {
     flex: 1;
     display: grid;
@@ -69,6 +70,7 @@
     gap: var(--sp-2);
     button { width: 3rem; height: 3rem; padding: 0.15rem; border: 2px solid transparent; border-radius: 50%; background: none; }
     button[aria-pressed='true'] { border-color: var(--piano-accent); }
+    button:disabled .piano-avatar { filter: grayscale(1); }
     .piano-avatar { display: block; width: 100%; height: 100%; font-size: 0.75rem; }
   }
   &__next { display: flex; flex-direction: column; justify-content: center; gap: var(--sp-2); min-height: 0; p { margin: 0; } }
@@ -132,6 +134,7 @@
     &[data-state='silver'] { border-color: var(--piano-silver); background: var(--piano-silver); color: var(--piano-medal-ink) !important; }
     &[data-state='gold'] { border-color: var(--piano-gold); background: var(--piano-gold); color: var(--piano-medal-ink) !important; }
     &[aria-current='step'] { outline: 3px solid var(--piano-accent); outline-offset: 1px; }
+    &:disabled[aria-current='step'] { outline-color: var(--piano-border); }
   }
   &__steps {
     position: absolute;

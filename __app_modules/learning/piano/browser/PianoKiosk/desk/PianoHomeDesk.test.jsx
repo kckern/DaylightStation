@@ -57,6 +57,15 @@ describe('PianoHomeDesk', () => {
     expect(onOpenLibrary).toHaveBeenCalled();
   });
 
+  it('rechecks progress every time the home screen opens', async () => {
+    const first = render(<PianoHomeDesk />);
+    await screen.findByText('1 of 3 passages Silver, 0 Gold');
+    first.unmount();
+    h.desk = { players: [{ userId: 'kid', name: 'Kid', piece: { ...piece, silver: 2 } }] };
+    render(<PianoHomeDesk />);
+    expect(await screen.findByText('2 of 3 passages Silver, 0 Gold')).toBeInTheDocument();
+  });
+
   it('shuts every door while disabled', async () => {
     const { onOpenPassage, onOpenCourse } = mount({ disabled: true });
     await screen.findByText('Bars 6–9');

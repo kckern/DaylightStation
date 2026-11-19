@@ -24,6 +24,10 @@ describe('deskModel', () => {
     expect(view.focus.id).toBe('a');
     expect(view.action).toEqual({ label: 'Go for Gold', detail: 'Your whole piece is Silver.' });
   });
+  it('does not claim more work when the whole piece is Gold', () => {
+    const done = { ...piece, silver: 2, gold: 2, next: null, nextGoldPassageId: null };
+    expect(deskView({ players: [{ userId: 'k', piece: done }], currentUser: 'k' }).action).toEqual({ label: 'Play again', detail: 'Your whole piece is Gold.' });
+  });
   it('has no focus for a player without a piece or an unknown player', () => {
     expect(deskView({ players: [{ userId: 'k', piece: null }], currentUser: 'k' })).toMatchObject({ piece: null, focus: null });
     expect(deskView({ players: null, currentUser: 'k' }).player).toBeNull();

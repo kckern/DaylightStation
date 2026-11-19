@@ -55,3 +55,32 @@ test('a corrupt record cannot take the desk down', () => {
   const bad = { scoreKey: KEY, record: record({ fingerprint: null, learnCoach: null }) };
   assert.equal(deskFor({ a: [bad] }).execute().players[0].piece, null);
 });
+
+test('uses saved passage ranges and parts, so one-hand pieces match Learn', () => {
+  const summary = { passages: [{ id: 'intro', start: 0, end: 3, parts: ['rh'] }, { id: 'tune', start: 4, end: 7, parts: ['rh'] }] };
+  const r = record({ learn: {}, learnCoach: { version: 1, scoreId: SCORE, fingerprint: 'c', revision: 1, achievements: {}, counts: {}, evidence: [], reviews: {}, resume: null, summary } });
+  const { piece } = deskFor({ a: [{ scoreKey: KEY, record: r }] }).execute().players[0];
+  assert.deepEqual(piece.passages.map((p) => [p.id, p.start, p.end]), [['intro', 0, 3], ['tune', 4, 7]]);
+  assert.deepEqual(piece.next, { passageId: 'intro', skill: 'notes', label: 'Find the notes', start: 0, end: 3 });
+});
+
+test('reads a one-hand legacy plan from its rungs', () => {
+  const r = record({ learn: { segments: { 'm0-3': {} }, passages: { 'm0-3': { rungs: { together: { passCount: 6 } } } } } });
+  assert.equal(deskFor({ a: [{ scoreKey: KEY, record: r }] }).execute().players[0].piece.next.skill, 'silver');
+});
+
+test('one player failing does not take the desk down', () => {
+  const desk = new GetPianoDesk({
+    datastore: { listPractice: (user) => { if (user === 'bad') throw new Error('broken'); return [{ scoreKey: KEY, record: record() }]; }, listSheetMusicIds: () => [SCORE] },
+    configProjection: { roster: () => ['bad', 'ok'], profile: (id) => ({ display_name: id }), raw: () => ({}) }, timezone: 'UTC', logger: { warn() {} },
+  });
+  assert.deepEqual(desk.execute().players.map((p) => [p.userId, Boolean(p.piece)]), [['ok', true], ['bad', false]]);
+});
+
+test('does not walk the library when every record names its score', () => {
+  let walks = 0;
+  const state = { version: 1, scoreId: SCORE, fingerprint: 'c', revision: 1, achievements: {}, counts: {}, evidence: [], reviews: {}, resume: null };
+  new GetPianoDesk({ datastore: { listPractice: () => [{ scoreKey: KEY, record: record({ learnCoach: state }) }], listSheetMusicIds: () => { walks += 1; return []; } },
+    configProjection: { roster: () => ['a'], profile: () => ({}), raw: () => ({}) }, timezone: 'UTC' }).execute();
+  assert.equal(walks, 0);
+});

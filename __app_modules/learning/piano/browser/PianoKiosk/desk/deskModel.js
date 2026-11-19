@@ -24,7 +24,8 @@ export function deskView({ players, courses, currentUser }) {
   const focus = byId(piece.next?.passageId) ?? byId(piece.nextGoldPassageId) ?? piece.passages[0] ?? null;
   const action = piece.next
     ? { label: piece.practicedAt ? 'Continue' : 'Start', detail: piece.next.label }
-    : { label: 'Go for Gold', detail: 'Your whole piece is Silver.' };
+    : piece.gold >= piece.total ? { label: 'Play again', detail: 'Your whole piece is Gold.' }
+      : { label: 'Go for Gold', detail: 'Your whole piece is Silver.' };
   return { player, piece, course, focus, action };
 }
 
