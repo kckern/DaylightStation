@@ -318,7 +318,7 @@ defaults. Every write archives the replaced revision under
 | `ring-days` | once per award week, as soon as at least `min` rings (default 1) land on at least `days` study days (default 5). Counts **final** workouts only, summed per study day by start (4 am boundary); `pending` with `progress: {have, need}` while the award week runs, `none` once it closes short |
 | `activity-days` | once per school week, as soon as `match.activity` was done on at least `days` study days (default 4). Activities: `piano-practice` (a passed piano challenge), `card-goal` (the flashcard day goal reached), `story-read` (story time credited). `pending` with progress until the week is over |
 | `activity-contest` | the best score in the roster for `match.activity` that week; `tie` as `ring-contest`. Activities: `race` (the week's featured cycle course, from the race ladder) and `ring-improved` (this award week's rings minus the learner's average over the previous four). Leading until the activity's own close, then won; a score of 0 never leads. Paid as `prize` |
-| `milestone` | one per NEW achievement of `match.activity` dated inside the week, oldest first, up to `cap: {count}` per week. Activities: `race-pb`, `glider-act`, `glider-bells`, `board-game-level` (first win at an opponent level), `piano-rung`, `perfect-sheet` (rule retired 2026-11-10; provider kept, evidence still recorded), `cards-mastered` (every 10 words), `book-finished`, `rings-lifetime`. A milestone dated before the rule's `effective.from` never pays, so history is not back-paid |
+| `milestone` | one per NEW achievement of `match.activity` dated inside the week, oldest first, up to `cap: {count}` per week. Activities: `race-pb`, `glider-act`, `glider-bells`, `board-game-level` (first win at an opponent level), `piano-rung`, `piano-piece` (a whole piece first all Silver, and first all Gold; see [the piece log](../piano/sheet-music-player.md#piece-log-and-the-piece-gems)), `perfect-sheet` (rule retired 2026-11-10; provider kept, evidence still recorded), `cards-mastered` (every 10 words), `book-finished`, `rings-lifetime`. A milestone dated before the rule's `effective.from` never pays, so history is not back-paid |
 | `debrief-day` | each day whose school debrief meets `match.criterion`: `completed`, `substantive` (on time, rubric level at or above `rich_level`, not a day the AI never scored (`questioner: fallback`); a legacy day uses its old 1-10 score), `teachable` (level at or above `teachable_level`, not a `questioner: fallback` day; late counts) or `quiz-passed` (not a day whose questions fell back, `questionSource: fallback`; an AI-scored day with fallback questions keeps `substantive` and `teachable`) |
 | `debrief-week` | the week, once every owed debrief day is completed (late counts) or excused **and at least one is completed**: excused only keeps a day from blocking, so an all-excused week pays nothing ("No debriefs done this week"). Pending until Friday's grace closes. See [School debrief](../school/school-debrief.md) |
 
@@ -430,7 +430,7 @@ the rule's own id. Rows keep the rules' order.
 | `ring-contests` | Most Rings | move | kind `ring-contest`; activity `ring-improved` |
 | `racing` | Cycle Race | games | `race`, `race-pb` |
 | `skyline-glider` | Skyline Glider | games | `glider-act`, `glider-bells` |
-| `piano` | Piano | school | `piano-practice`, `piano-rung` |
+| `piano` | Piano | school | `piano-practice`, `piano-rung`, `piano-piece` |
 | `flashcards` | Flashcards | school | `card-goal`, `cards-mastered` |
 | `reading` | Reading | school | `story-read`, `book-finished` |
 
@@ -481,7 +481,7 @@ explicit `gem.category` is a literal row id and joins whichever row has it.
 | `group` | the section id |
 | `area` | `move`, `school` or `games` |
 | `color` | the area's gem colour |
-| `parts[]` | one per rule in the row: `{ruleId, label, cadence, area, color}`, the row's area and colour |
+| `parts[]` | one per rule in the row: `{ruleId, label, cadence, area, color, activity}`, the row's area and colour. `activity` is the rule's `match.activity`, else null, so a surface can tell whether its own gem is on offer (the piano passage board reads it for `piano-piece`) |
 
 **A cell** is one learner in one row:
 

@@ -1,0 +1,148 @@
+// The Learn passage rail, its whole-piece banner and the passage board.
+// State is carried by fill, border and marks. Opacity never shows state.
+.piano-passage-rail {
+  --rail-h: 4rem;
+  position: relative; z-index: 21;
+  flex: 0 0 var(--rail-h); height: var(--rail-h); min-width: 0; box-sizing: border-box;
+  display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: stretch; gap: var(--sp-3, 12px);
+  padding: 0.5rem var(--sp-4, 16px);
+  color: var(--piano-fg); background: var(--piano-surface-1, #1c1c23); border-top: 1px solid var(--piano-border);
+  button { font: inherit; cursor: pointer; }
+
+  &__go {
+    min-width: 13.5rem; padding: 0 var(--sp-4, 16px);
+    border: 0; border-radius: var(--r-md, 10px);
+    background: var(--piano-accent); color: var(--piano-accent-ink);
+    font-size: 1.1rem; font-weight: 800; white-space: nowrap;
+    &[data-kind='gold'] { background: var(--piano-gold); color: var(--piano-medal-ink); }
+    &:disabled { background: var(--piano-surface-2, #26262f); color: var(--piano-muted); cursor: default; }
+  }
+
+  &__track { list-style: none; margin: 0; padding: 0; min-width: 0; display: grid; li { min-width: 0; display: flex; } }
+
+  &__tile {
+    flex: 1; min-width: 0; padding: 0 2px; box-sizing: border-box;
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
+    border: 2px solid var(--piano-border); border-radius: var(--r-sm, 6px);
+    background: var(--piano-bg); color: var(--piano-muted);
+    font-weight: 800; line-height: 1; overflow: hidden;
+    &[data-state='learning'] { background: var(--piano-surface-2, #26262f); border-color: var(--piano-muted); color: var(--piano-fg); }
+    &[data-state='silver'] { background: var(--piano-silver); border-color: var(--piano-silver); color: var(--piano-medal-ink); }
+    &[data-state='gold'] { background: var(--piano-gold); border-color: var(--piano-gold); color: var(--piano-medal-ink); }
+    &[aria-current='step'] { outline: 3px solid var(--piano-accent); outline-offset: 1px; }
+    &[data-flip] { animation: piano-passage-flip 620ms ease-out both; }
+  }
+  &__bar { font-size: 1rem; }
+  &__word { font-size: 0.56rem; letter-spacing: 0.06em; text-transform: uppercase; }
+  &__steps {
+    display: flex; gap: 2px; width: 70%; max-width: 3rem;
+    i { flex: 1; height: 0.3rem; border-radius: 1px; background: var(--piano-border); }
+    i[data-done='true'] { background: var(--piano-silver); }
+  }
+  // A long piece: every passage still shows, as a map. The tiles are too narrow
+  // to tap one by one, so a tap opens the board.
+  &__track[data-compact] &__tile { border-width: 1px; border-radius: 2px; padding: 0; }
+  &__track[data-compact] &__tile[aria-current='step'] { outline-width: 2px; }
+
+  &__count {
+    display: flex; align-items: center; gap: 0.45rem; padding: 0 var(--sp-3, 12px); min-width: 6.25rem; justify-content: center;
+    border: 2px solid var(--piano-border); border-radius: var(--r-md, 10px);
+    background: var(--piano-surface-2, #26262f); color: var(--piano-fg);
+    font-size: 1.15rem; font-weight: 800; font-variant-numeric: tabular-nums;
+    i { width: 0.85rem; height: 0.85rem; border-radius: 50%; background: var(--piano-silver); }
+    &[data-level='gold'] i { background: var(--piano-gold); }
+    svg { transition: transform 160ms ease; }
+    &[aria-expanded='true'] { border-color: var(--piano-accent); svg { transform: rotate(180deg); } }
+  }
+
+  &__cheer {
+    position: absolute; left: 50%; bottom: calc(100% + 0.75rem); transform: translateX(-50%);
+    display: grid; gap: 0.25rem; justify-items: center; max-width: min(46rem, calc(100% - 2rem));
+    padding: 0.9rem 1.6rem; border: 3px solid var(--piano-medal-ink); border-radius: var(--r-lg, 16px);
+    background: var(--piano-silver); color: var(--piano-medal-ink); text-align: center;
+    animation: piano-passage-cheer 420ms cubic-bezier(0.2, 0.9, 0.3, 1.25) both;
+    &[data-level='gold'] { background: var(--piano-gold); }
+    strong { font-size: 1.7rem; font-weight: 900; }
+    span { font-size: 1.05rem; font-weight: 600; }
+  }
+}
+
+.piano-passage-board {
+  position: absolute; z-index: 20; left: 0; right: 0; bottom: 4rem;
+  max-height: calc(100% - 4rem - 0.75rem); box-sizing: border-box;
+  display: flex; flex-direction: column; min-height: 0;
+  color: var(--piano-fg); background: var(--piano-surface-1, #1c1c23);
+  border-top: 3px solid var(--piano-accent); border-radius: var(--r-lg, 16px) var(--r-lg, 16px) 0 0;
+  animation: piano-passage-board-in 220ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  button { font: inherit; cursor: pointer; }
+
+  &__head {
+    flex: 0 0 auto; display: flex; align-items: center; gap: var(--sp-4, 16px);
+    padding: var(--sp-3, 12px) var(--sp-4, 16px); border-bottom: 1px solid var(--piano-border);
+  }
+  &__title {
+    flex: 1 1 auto; min-width: 0;
+    h2 { margin: 0; font-size: 1.45rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    p { margin: 0.15rem 0 0; font-size: 1.05rem; color: var(--piano-muted); }
+  }
+  &__goals {
+    list-style: none; margin: 0; padding: 0; display: flex; gap: var(--sp-2, 8px); flex: 0 0 auto;
+    li {
+      display: flex; align-items: center; gap: 0.5rem; padding: 0.5rem 0.8rem;
+      border: 2px solid var(--piano-silver); border-radius: var(--r-md, 10px);
+      background: var(--piano-bg); font-size: 1rem; font-weight: 700; white-space: nowrap;
+    }
+    li[data-level='gold'] { border-color: var(--piano-gold); }
+    i { display: grid; place-items: center; width: 1.3rem; height: 1.3rem; border-radius: 50%; border: 2px solid var(--piano-silver); box-sizing: border-box; }
+    li[data-level='gold'] i { border-color: var(--piano-gold); }
+    li[data-reached='true'] { background: var(--piano-silver); color: var(--piano-medal-ink); i { border-color: var(--piano-medal-ink); } }
+    li[data-reached='true'][data-level='gold'] { background: var(--piano-gold); }
+  }
+  &__review, &__close {
+    flex: 0 0 auto; display: flex; align-items: center; gap: 0.4rem; min-height: 3rem; padding: 0 var(--sp-4, 16px);
+    border: 2px solid var(--piano-border); border-radius: var(--r-md, 10px);
+    background: var(--piano-surface-2, #26262f); color: var(--piano-fg); font-size: 1.05rem; font-weight: 700;
+  }
+
+  &__cards {
+    list-style: none; margin: 0; padding: var(--sp-3, 12px) var(--sp-4, 16px) var(--sp-4, 16px);
+    flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain;
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(11rem, 1fr)); gap: var(--sp-2, 8px);
+    li { min-width: 0; display: flex; }
+  }
+  &__card {
+    flex: 1; min-width: 0; min-height: 4.75rem; padding: 0.6rem 0.8rem; box-sizing: border-box;
+    display: flex; flex-direction: column; align-items: flex-start; justify-content: center; gap: 0.3rem; text-align: left;
+    border: 2px solid var(--piano-border); border-radius: var(--r-md, 10px);
+    background: var(--piano-bg); color: var(--piano-fg);
+    strong { font-size: 1.15rem; }
+    > span { font-size: 0.95rem; color: var(--piano-muted); }
+    &[data-state='learning'] { background: var(--piano-surface-2, #26262f); border-color: var(--piano-muted); }
+    &[data-state='silver'] { background: var(--piano-silver); border-color: var(--piano-silver); color: var(--piano-medal-ink); > span { color: inherit; font-weight: 700; } }
+    &[data-state='gold'] { background: var(--piano-gold); border-color: var(--piano-gold); color: var(--piano-medal-ink); > span { color: inherit; font-weight: 700; } }
+    &[aria-current='step'] { outline: 3px solid var(--piano-accent); outline-offset: 1px; }
+  }
+  &__steps {
+    display: flex; gap: 3px; width: 100%; max-width: 7rem;
+    i { flex: 1; height: 0.35rem; border-radius: 2px; background: var(--piano-border); }
+    i[data-done='true'] { background: var(--piano-silver); }
+  }
+}
+
+@keyframes piano-passage-flip {
+  0% { transform: rotateX(-90deg); }
+  60% { transform: rotateX(14deg); }
+  100% { transform: rotateX(0); }
+}
+@keyframes piano-passage-cheer {
+  0% { transform: translateX(-50%) translateY(1.5rem) scale(0.9); }
+  100% { transform: translateX(-50%) translateY(0) scale(1); }
+}
+@keyframes piano-passage-board-in {
+  0% { transform: translateY(100%); }
+  100% { transform: translateY(0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .piano-passage-rail__tile[data-flip], .piano-passage-rail__cheer, .piano-passage-board { animation: none; }
+  .piano-passage-rail__count svg { transition: none; }
+}

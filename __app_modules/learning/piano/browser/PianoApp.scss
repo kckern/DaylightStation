@@ -2514,61 +2514,6 @@
   background: transparent; cursor: pointer;
   &[data-disabled] { cursor: not-allowed; }
 }
-.piano-learn-progress {
-  flex: 0 0 auto;
-  min-width: 0;
-  padding: 0.42rem 0.7rem;
-  color: var(--piano-fg);
-  background: var(--piano-surface-1);
-  border-top: 1px solid var(--piano-border);
-
-  &__track {
-    display: flex;
-    align-items: center;
-    justify-content: safe center;
-    gap: 0.42rem;
-    min-width: 0;
-    overflow-x: auto;
-    scrollbar-width: none;
-    &::-webkit-scrollbar { display: none; }
-  }
-
-  &__pill {
-    flex: 0 0 auto;
-    min-width: 9.5rem;
-    min-height: 4rem;
-    padding: 0.55rem 0.7rem;
-    border: 2px solid var(--piano-border);
-    border-radius: 0.85rem;
-    background: var(--piano-surface-2);
-    color: var(--piano-fg);
-    font: inherit;
-    display: grid;
-    grid-template-columns: 2.35rem minmax(0, 1fr);
-    grid-template-rows: 1fr auto;
-    column-gap: 0.6rem;
-    align-items: center;
-    text-align: left;
-    font-variant-numeric: tabular-nums;
-
-    &[data-state='learning'] { border-color: var(--piano-info, var(--piano-accent)); background: color-mix(in srgb, var(--piano-info, var(--piano-accent)) 14%, var(--piano-surface-2)); }
-    &[data-state='learned'] { border-color: var(--piano-accent); background: color-mix(in srgb, var(--piano-accent) 18%, var(--piano-surface-2)); }
-    &[data-state='mastered'] { border-color: var(--piano-accent); background: var(--piano-accent); color: var(--piano-bg); }
-    &[data-state='silver'] { border-color: var(--piano-silver); background: var(--piano-silver); color: var(--piano-medal-ink); .piano-learn-progress__state, small { color: inherit; } }
-    &[data-state='gold'] { border-color: var(--piano-gold); background: var(--piano-gold); color: var(--piano-medal-ink); .piano-learn-progress__state, small { color: inherit; } }
-    &[data-state='locked'] { border-style: dashed; opacity: 0.42; }
-    &[aria-current='step'] { box-shadow: 0 0 0 2px var(--piano-surface-1), 0 0 0 4px var(--piano-warn); }
-  }
-  &__number {
-    grid-row: 1 / 3; display: grid; place-items: center; width: 2.35rem; height: 2.35rem;
-    border-radius: 50%; background: color-mix(in srgb, currentColor 12%, transparent); font-weight: 900;
-  }
-  &__copy { min-width: 0; display: grid; line-height: 1.1; }
-  &__copy strong, &__copy small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  &__copy strong { font-size: 0.9rem; }
-  &__copy small, &__state { color: var(--piano-muted); font-size: 0.7rem; }
-  &__state { font-weight: 800; text-transform: uppercase; letter-spacing: 0.04em; }
-}
 .piano-learn-segment-rail {
   flex: 0 0 auto; display: grid; gap: 0.4rem; max-width: 100%; padding: 0.5rem 0.75rem;
   color: var(--piano-fg); background: color-mix(in srgb, var(--piano-surface-1) 96%, transparent); border-top: 1px solid var(--piano-border);
@@ -2589,6 +2534,11 @@
     &[data-state='complete'] { border-color: var(--piano-accent); }
     &[data-state='current'], &[data-state='available'] { border-color: var(--piano-warn); }
   }
+}
+// The bars a rail tile or board card points at, boxed on the score.
+.piano-learn-selection-box {
+  position: absolute; z-index: 6; pointer-events: none; box-sizing: border-box;
+  border: 3px solid var(--piano-accent); border-radius: 0.5rem;
 }
 .piano-learn-selection-outline {
   position: absolute; z-index: 6; pointer-events: none;

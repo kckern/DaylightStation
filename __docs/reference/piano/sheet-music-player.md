@@ -212,9 +212,9 @@ Green means one thing only: you are playing the right note, right now.
 
 The score remains the map. Rehearsal regions are never crossed; within each
 region the planner balances passages targeting four bars (normally three to
-five). **Start learning** or **Continue learning** names the next passage and
-skill. Large passage cards remain directly selectable, including completed
-passages. A stale passage URL shows an explanation and the available choices.
+five). The [passage rail](#passage-rail-and-board) under the score names the next
+passage and shows every passage of the piece. A stale passage URL shows an
+explanation and the available choices.
 
 Selecting a passage opens preparation with its engraved excerpt, printed bar
 range, selected profile, earned skills, one musical task, and a plain success
@@ -273,6 +273,94 @@ Each saved coaching event stores `learnCoach.summary` in the practice record:
 with `id`, `start`, `end`, `silver` and `gold`. Certification values are timestamps,
 `legacy`, or null. Logs: `piano.learn.silver-check`, `piano.learn.certified`,
 `piano.learn.set-aside`.
+
+### Passage rail and board
+
+Learn is a game played over the whole piece: turn every passage Silver, then go
+round again for Gold. The score stays the main thing on screen.
+
+**The rail** is one 64px row under the score:
+
+`[Practice bars 1–5] | passage tiles | 3/12`
+
+- **Tiles.** Every passage of the piece, always, with no scrolling. Widths follow
+  bar counts and each tile shows the printed number of its first bar. A passage
+  is not started, learning (one mark per Silver step), Silver or Gold. State is
+  fill, border and marks, never opacity, and never `CoinIcon`.
+- **Tapping a tile selects it.** The score moves to those bars and boxes them. It
+  does not open practice. Tapping a passage on the score itself still opens it.
+- **The button** opens the selected passage in Learn (`Practice bars 14–17`). With
+  nothing selected it opens the recommended passage. When every passage is Silver
+  it reads `Go for Gold: bars 1–5`. Opening Learn clears the selection, so on
+  return the button names the next recommended passage again.
+- **The count** shows `silver/total` until the piece is all Silver, then
+  `gold/total`, and opens the board.
+- **Long pieces.** A tile is never narrower than 44px. When the passages cannot all
+  fit at that width the tiles become a plain map of the piece (still every
+  passage, no numbers) and a tap on it opens the board at that passage's card.
+
+**The board** slides over the score from the rail without moving the music. It is
+the table of contents and the trophy board: the piece's title, `3 of 12 Silver`,
+one card per passage with its bars and progress, and the two goals **All Silver**
+and **All Gold**. Tapping a card selects that passage as a tile does and closes the
+board. Otherwise it closes with **Close** (or Escape). **Review a passage** appears
+in its header when a review is due.
+
+A goal reads `All Silver: earn a gem` only when a gem is really on offer: the Gem
+Board (`GET /api/v1/earnings/gems`, asked when the board first opens) reports
+`mode: live`, lists this player as a learner, and carries a `piano-piece` rule that
+is not switched off for them. A guest, an unreadable Gem Board or a missing rule
+gets the plain goal. No gem picture is drawn in the player.
+
+**Celebration.** When a passage turns Silver or Gold its tile flips with a short
+chime. When the whole piece turns Silver or Gold every tile flips in a wave, a
+banner sits above the rail (it covers no music the child is reading and leaves on a
+tap or after seven seconds) and a longer chime plays. The sound is synthesized on
+the player's WebAudio context (`passageChime.js`), best effort.
+
+A celebration answers a **change seen while the player is open**: the first
+projection after the coach state and the practice record have both loaded is the
+baseline, and a later one counts only when a new take was recorded since. Opening
+a piece that is already Silver, or legacy credit arriving late, celebrates nothing,
+so a whole piece is celebrated once. A change earned inside Learn waits until the
+rail is back on screen.
+
+Logs (`piano-score-player`, `piano-passage-celebration`, `piano-passage-board`):
+`piano.learn.rail.select` (`passageId`, `source: rail|board`),
+`piano.learn.rail.practice` (`passageId`, `target: selected|next|gold|again`),
+`piano.learn.board.open`, `piano.learn.board.close`, `piano.learn.celebrate`
+(`scope: passage|piece`, `level`, `passages`, `sounded`), `piano.learn.gem-offer`.
+
+### Piece log and the piece gems
+
+Finishing a piece pays one gem the first time it is all Silver and one the first
+time it is all Gold, through the economy's `milestone` earn rule for the activity
+`piano-piece` (see [economy](../economy/economy.md#earn-rules)).
+
+Passage certification is re-derived on every read and has no whole-piece date, so
+the coach service appends to a dated log when a piece is finished:
+
+```yaml
+# users/{id}/apps/piano/piece-log.yml
+schema: piano.piece-log/v1
+entries:
+  - { at: "2026-11-18T20:00:00.000Z", scoreId: "files:…", level: silver, passages: 12, fingerprint: "…" }
+```
+
+- It is written only when **one saved take** moves the piece from "not all" to
+  "all". Before and after are projected with the same plan and the same legacy
+  record, so legacy credit, a plan edit or a policy change never writes an entry.
+  A selection, a set-aside, a failed take and a replayed receipt never do either.
+- A piece and level are noted once. The achievement key is `{level}:{scoreId}` and
+  only its earliest entry ever counts, so a piece earned again after its file
+  changed does not pay again.
+- It is append-only and best effort: a failed append never fails the take. A lost
+  append loses that gem and can never pay twice. Guests have no log.
+- A take that earns Gold on the last passage of a piece with no Silver yet notes
+  both levels.
+
+Logs: `piano.learn.piece-certified` (`level`, `passages`), `piano.piece-log.appended`,
+`piano.piece-log.already-noted`, `piano.piece-log.append-failed`.
 
 The standard path is:
 
@@ -927,6 +1015,11 @@ during an active run so the judge and falling highway cannot jump timelines.
 | `HandsControl.jsx` | icon-only left/right-hand toggle, one semantic in every mode (grand-staff scores) |
 | `StaffDimLayer.jsx` | fades deselected staves by classing the engraving's own per-staff group |
 | `learnRange.js` | pure auto-range heuristic for the Learn landing (frontier → section → density → fallback) |
+| `passageRail.js` | pure rules for the passage rail and board: tiles, the button's target, the count, the celebration diff, the gem offer |
+| `PassageRail.jsx` / `PassageBoard.jsx` / `PassageRail.scss` | the rail under the score and the board that slides over it |
+| `usePassageCelebration.js` / `passageChime.js` | the tile flip and whole-piece moment, and their sound |
+| `usePieceGemOffer.js` | asks the Gem Board whether a piece gem is on offer |
+| `server/application/PianoPieceLog.mjs` | dated whole-piece Silver and Gold, read by the `piano-piece` milestone |
 | `usePracticeRecord.js` / `practiceKey.js` | per-user practice-history hook + score-key/hands-bucket helpers |
 | `assessmentProjections.js` | Sheet-only Polish tally and worst-range display projections |
 | `LearnInkLayer.jsx` | wrong-note wet ink drawn at the played pitch, on the score |

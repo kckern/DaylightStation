@@ -22,7 +22,7 @@
  * achievement evidence (ops:docs/superpowers/specs/2026-11-04-achievement-gems-design.md):
  *   activity-days    piano-practice | card-goal | story-read
  *   activity-contest race | ring-improved
- *   milestone        race-pb | glider-act | glider-bells | board-game-level | piano-rung
+ *   milestone        race-pb | glider-act | glider-bells | board-game-level | piano-rung | piano-piece
  *                    | perfect-sheet | cards-mastered | book-finished | rings-lifetime
  *   debrief-day     each day's after-school debrief, by criterion  School × Day (completed | substantive | quiz-passed | teachable)
  *   debrief-week    every owed debrief done (late counts) or excused  School × Week
@@ -47,7 +47,7 @@ export const RULE_KINDS = Object.freeze(['unit', 'section-day', 'section-week', 
 export const ACTIVITIES = Object.freeze({
   'activity-days': Object.freeze(['piano-practice', 'card-goal', 'story-read']),
   'activity-contest': Object.freeze(['race', 'ring-improved']),
-  milestone: Object.freeze(['race-pb', 'glider-act', 'glider-bells', 'board-game-level', 'piano-rung', 'perfect-sheet', 'cards-mastered', 'book-finished', 'rings-lifetime']),
+  milestone: Object.freeze(['race-pb', 'glider-act', 'glider-bells', 'board-game-level', 'piano-rung', 'piano-piece', 'perfect-sheet', 'cards-mastered', 'book-finished', 'rings-lifetime']),
 });
 const DEBRIEF_CRITERIA = ['completed', 'substantive', 'quiz-passed', 'teachable'];
 const SECTION_KINDS = new Set(['section-day', 'section-week']);

@@ -6,7 +6,7 @@
  * screen and the score cannot disagree. It reads practice records only, with no
  * Plex or network dependency, so the home screen can paint quickly.
  */
-import { createCoachPlan, projectCoach } from '#shared/music/learnCoach.mjs';
+import { createCoachPlan, passageProgress, projectCoach } from '#shared/music/learnCoach.mjs';
 
 const DEFAULT_PARTS = ['rh', 'lh'];
 
@@ -41,14 +41,6 @@ function latestActivity(record) {
     .filter(Boolean).map(String).sort().at(-1) ?? '';
 }
 
-function passageState(segment) {
-  const steps = segment.skills.filter((skill) => skill.track === 'silver');
-  const done = steps.filter((skill) => skill.ready).length;
-  const started = done > 0 || steps.some((skill) => skill.successes > 0);
-  const state = segment.certification.gold ? 'gold' : segment.certification.silver ? 'silver' : started ? 'learning' : 'todo';
-  return { id: segment.id, start: segment.inMeasure, end: segment.outMeasure, state, steps: { done, total: steps.length } };
-}
-
 export class GetPianoDesk {
   #datastore; #configProjection; #clock; #timezone; #logger;
 
@@ -80,7 +72,7 @@ export class GetPianoDesk {
       total: projection.piece.total, silver: projection.piece.silver, gold: projection.piece.gold,
       next: next ? { passageId: next.passageId, skill: next.skill, label: next.label, start: next.range.start, end: next.range.end } : null,
       nextGoldPassageId: projection.piece.nextGoldPassageId,
-      passages: projection.segments.map(passageState),
+      passages: projection.segments.map(passageProgress),
     };
   }
 

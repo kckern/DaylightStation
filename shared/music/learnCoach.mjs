@@ -170,6 +170,19 @@ function legacyReady(legacy, segment, task) {
 }
 
 export const isGoldWork = (task) => task.mode !== 'free' && task.track !== 'silver';
+
+/**
+ * One projected passage as every surface shows it: not started (`todo`), `learning`
+ * with its Silver steps counted, `silver` or `gold`. The home desk and the
+ * sheet-music rail both read this, so they cannot disagree.
+ */
+export function passageProgress(segment) {
+  const steps = (segment.skills ?? []).filter((skill) => skill.track === 'silver');
+  const done = steps.filter((skill) => skill.ready).length;
+  const started = done > 0 || steps.some((skill) => skill.successes > 0);
+  const state = segment.certification?.gold ? 'gold' : segment.certification?.silver ? 'silver' : started ? 'learning' : 'todo';
+  return { id: segment.id, start: segment.inMeasure, end: segment.outMeasure, state, steps: { done, total: steps.length } };
+}
 const certificate = (achievement, provenance) => ({ at: achievement?.at ?? null, provenance });
 
 function segmentProjection(plan, state, legacy, segment) {

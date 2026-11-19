@@ -9,11 +9,12 @@ const week = { from: '2026-11-02', to: '2026-11-08' };
 const schoolMs = { fromMs: at('2026-11-02T04:00:00Z'), toMs: at('2026-11-09T04:00:00Z') };
 const args = { learnerIds: ['kidB', 'kidC'], week, schoolMs, studyDay };
 
-function provider({ games = {}, attempts = {}, rungs = {}, logger } = {}) {
+function provider({ games = {}, attempts = {}, rungs = {}, pieces = {}, logger } = {}) {
   return createPianoAchievementProvider({
     gameHistory: { listGameSummaries: (game) => games[game] ?? [] },
     attemptStore: { listCreatedBetween: (id) => attempts[id] ?? [] },
     rungLog: { list: (id) => rungs[id] ?? [] },
+    pieceLog: { list: (id) => pieces[id] ?? [] },
     logger,
   });
 }
@@ -23,10 +24,10 @@ const win = (userId, level, iso, extra = {}) => ({
 });
 
 describe('piano achievement provider', () => {
-  it('names itself and its three activities', () => {
+  it('names itself and its activities', () => {
     const p = provider();
     expect(p.name).toBe('piano');
-    expect(p.activities).toEqual(['board-game-level', 'piano-practice', 'piano-rung']);
+    expect(p.activities).toEqual(['board-game-level', 'piano-practice', 'piano-rung', 'piano-piece']);
   });
 
   it('reports a first-ever win per level only when that first win is in the week', async () => {
@@ -97,6 +98,7 @@ describe('piano achievement provider', () => {
       gameHistory: { listGameSummaries: () => { throw new Error('EACCES'); } },
       attemptStore: { listCreatedBetween: () => [{ created_at: '2026-11-02T15:00:00Z', purpose: 'challenge', verdict: { passed: true } }] },
       rungLog: { list: () => [] },
+      pieceLog: { list: () => [] },
       logger,
     });
     const out = await p.week(args);
@@ -105,5 +107,33 @@ describe('piano achievement provider', () => {
     expect(out.learners.kidB.days['piano-practice']).toEqual(['2026-11-02']);
     expect(out.learners.kidB.milestones['piano-rung']).toEqual([]);
     expect(logger.warn).toHaveBeenCalledWith('piano.achievements.source-unavailable', expect.objectContaining({ activity: 'board-game-level', error: 'EACCES' }));
+  });
+
+  it('reports a whole piece once per level, dated by its first finish', async () => {
+    const out = await provider({ pieces: { kidB: [
+      { at: '2026-10-28T18:00:00Z', scoreId: 'files:old/minuet.mxl', level: 'silver' }, // weeks ago
+      { at: '2026-11-03T18:00:00Z', scoreId: 'files:sheets/fur-elise-easy.mxl', level: 'silver' },
+      { at: '2026-11-05T18:00:00Z', scoreId: 'files:sheets/fur-elise-easy.mxl', level: 'silver' }, // earned again after the file changed
+      { at: '2026-11-06T02:00:00Z', scoreId: 'files:sheets/fur-elise-easy.mxl', level: 'gold' }, // 2am counts for the day before
+      { at: '2026-11-04T18:00:00Z', scoreId: 'files:old/minuet.mxl', level: 'silver' }, // already finished in October
+      { at: 'garbage', scoreId: 'files:x.mxl', level: 'silver' },
+      { at: '2026-11-04T18:00:00Z', scoreId: 'files:x.mxl', level: 'bronze' },
+    ] } }).week(args);
+    expect(out.learners.kidB.milestones['piano-piece']).toEqual([
+      { key: 'silver:files:sheets/fur-elise-easy.mxl', day: '2026-11-03', label: 'Fur Elise Easy all Silver' },
+      { key: 'gold:files:sheets/fur-elise-easy.mxl', day: '2026-11-05', label: 'Fur Elise Easy all Gold' },
+    ]);
+    expect(out.learners.kidC.milestones['piano-piece']).toEqual([]);
+    expect(out.unavailable).toEqual([]);
+  });
+
+  it('an unreadable or missing piece log makes only piano-piece unavailable', async () => {
+    const unreadable = await provider({ pieces: new Proxy({}, { get() { throw new Error('bad yaml'); } }) }).week(args);
+    expect(unreadable.unavailable).toEqual(['piano-piece']);
+    expect(unreadable.learners.kidB.milestones['piano-rung']).toEqual([]);
+    const missing = await createPianoAchievementProvider({
+      gameHistory: { listGameSummaries: () => [] }, attemptStore: { listCreatedBetween: () => [] }, rungLog: { list: () => [] },
+    }).week(args);
+    expect(missing.unavailable).toEqual(['piano-piece']);
   });
 });

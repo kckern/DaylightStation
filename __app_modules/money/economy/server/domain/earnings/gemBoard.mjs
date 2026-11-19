@@ -71,7 +71,7 @@ const GLIDER = defaultRow('skyline-glider', 'Skyline Glider', 'games');
 const RING_CONTESTS = defaultRow('ring-contests', 'Most Rings', 'move');
 /** Where a rule sits on the board when its `gem` block does not say. */
 const ROW_BY_ACTIVITY = Object.freeze({
-  'piano-practice': PIANO, 'piano-rung': PIANO,
+  'piano-practice': PIANO, 'piano-rung': PIANO, 'piano-piece': PIANO,
   'card-goal': FLASHCARDS, 'cards-mastered': FLASHCARDS,
   'story-read': READING, 'book-finished': READING,
   race: RACING, 'race-pb': RACING,
@@ -93,7 +93,8 @@ const areaOf = (group) => (Object.hasOwn(GEM_AREAS, group) ? group : DEFAULT_GRO
 
 /**
  * The board's rows, in rule order:
- * `[{id, label, cadence, group, area, color, ruleIds, parts: [{ruleId, label, cadence, area, color}]}]`.
+ * `[{id, label, cadence, group, area, color, ruleIds, parts: [{ruleId, label, cadence, area, color, activity}]}]`
+ * (`activity` is the rule's `match.activity`, else null, so a surface can tell whether its own gem is on offer).
  * A merged row takes its label, cadence, group and area from its first rule;
  * its colour, and every part's, is the area's (`GEM_AREAS`) — never a rule's.
  *
@@ -116,7 +117,7 @@ export function gemCategories(ruleset) {
     const cadence = CADENCE[rule.kind] ?? 'weekly';
     const existing = rows.get(id);
     const area = existing?.area ?? areaOf(ruleGroup(rule));
-    const part = { ruleId: rule.id, label: rule.label ?? rule.id, cadence, area, color: GEM_AREAS[area].color };
+    const part = { ruleId: rule.id, label: rule.label ?? rule.id, cadence, area, color: GEM_AREAS[area].color, activity: rule.match?.activity ?? null };
     if (existing) { existing.ruleIds.push(rule.id); existing.parts.push(part); continue; }
     rows.set(id, {
       id,

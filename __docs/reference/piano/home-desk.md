@@ -11,6 +11,8 @@ player's current piece, resting directly above the live keyboard.
 - A count such as `3 of 12 passages Silver, 1 Gold`.
 - A passage map in score order. Widths follow bar counts. A passage is not started,
   learning (with one mark per Silver step), Silver or Gold. Tapping one opens it in Learn.
+  The sheet-music player's [passage rail](./sheet-music-player.md#passage-rail-and-board)
+  draws the same states from the same rule (`passageProgress` in `shared/music/learnCoach.mjs`).
 - The household's avatars. This is the one place on the desk that changes the player.
 - The player's video course, with real `completed of total` lesson counts.
 

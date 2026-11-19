@@ -8,11 +8,21 @@ const passageState = (passage) => passage.locked ? ['locked', 'Locked']
 
 export default function LearnPassageLayer({
   passages = [], measures = [], stepBoxes = [], measureRects = [], selectedId = null,
-  selectedRange = null, achievementId = null, onAchievementEnd, onSelect,
+  selectedRange = null, focusId = null, achievementId = null, onAchievementEnd, onSelect,
 }) {
   const selected = selectedRange || passages.find((passage) => passage.id === selectedId);
   const outlines = selected ? notationRangeBands(measures, stepBoxes, selected, measureRects) : [];
+  // The passage chosen on the rail or the board: boxed on every system it spans.
+  const focused = focusId ? passages.find((passage) => passage.id === focusId) : null;
+  const boxes = focused ? notationRangeBands(measures, stepBoxes, focused, measureRects) : [];
   return <>
+    {boxes.map((band, index) => <div
+      key={`focus-${index}`}
+      className="piano-learn-selection-box"
+      data-passage={focused.id}
+      aria-hidden="true"
+      style={{ left: band.left - 3, top: band.top - 6, width: Math.max(band.right - band.left, 8) + 6, height: Math.max(band.bottom - band.top, 8) + 12 }}
+    />)}
     {outlines.map((band, index) => <div
       key={`outline-${index}`}
       className="piano-learn-selection-outline piano-learn-selection-bracket"
@@ -37,7 +47,7 @@ export default function LearnPassageLayer({
         />)}
         <button
           type="button"
-          className={`piano-learn-passage-map${passage.id === selectedId ? ' is-selected' : ''}${passage.id === achievementId ? ' is-achievement' : ''}`}
+          className={`piano-learn-passage-map${passage.id === selectedId || passage.id === focusId ? ' is-selected' : ''}${passage.id === achievementId ? ' is-achievement' : ''}`}
           data-state={state}
           disabled={passage.locked}
           aria-label={label}

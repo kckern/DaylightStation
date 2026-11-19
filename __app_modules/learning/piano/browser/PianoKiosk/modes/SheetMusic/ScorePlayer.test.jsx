@@ -317,9 +317,9 @@ describe('ScorePlayer — guided Learn composition', () => {
  });
  it('provides one learning entry, explicit start, result choice, and return to the score', async () => {
   setup(); renderPlayer(); pickMode('Learn');
-  expect(screen.getByRole('navigation', { name: 'Piece learning progress' })).toBeInTheDocument();
-  expect(screen.getByText(/^0 of \d+ passages Silver, 0 Gold$/)).toBeInTheDocument();
-  fireEvent.click(screen.getByRole('button', { name: 'Start learning' }));
+  expect(screen.getByRole('navigation', { name: 'Passages in this piece' })).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: /^0 of \d+ Silver\. Open the passage board$/ })).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Practice bars 1–2' }));
   expect(screen.getByRole('button', { name: 'Start practice', exact: true })).toBeDisabled();
   fireEvent.click(screen.getByText('Music ready')); fireEvent.click(screen.getByRole('button', { name: 'Start practice', exact: true }));
   expect(h.learnLabProps.coachingTask.parts).toEqual(['rh']);
@@ -328,16 +328,22 @@ describe('ScorePlayer — guided Learn composition', () => {
   expect(screen.queryByRole('button', { name: 'Complete rung' })).not.toBeInTheDocument();
   fireEvent.click(screen.getByRole('button', { name: 'Finish for now' }));
   expect(screen.getByTestId('renderer')).toBeInTheDocument();
-  expect(screen.getByRole('button', { name: 'Continue learning' })).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Practice bars 1–2' })).toBeInTheDocument();
  });
  it('ignores a stale passage selection and keeps learning reachable', () => {
   setup(); renderPlayer('/?learnPassage=gone&learnRung=obsolete'); pickMode('Learn');
-  expect(screen.getByRole('button', { name: 'Start learning' })).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Practice bars 1–2' })).toBeInTheDocument();
   expect(h.learnLabProps).toBeNull();
  });
  it('keeps direct passage selection and listening available', () => {
   setup(); renderPlayer(); pickMode('Learn');
-  fireEvent.click(within(screen.getByRole('navigation', { name: 'Piece learning progress' })).getByRole('button', { name: /Segment 1/ }));
+  const tile = within(screen.getByRole('navigation', { name: 'Passages in this piece' })).getByRole('button', { name: 'Bars 1–2, Not started' });
+  fireEvent.click(tile);
+  // A tile only shows its bars on the score. The rail button is what opens Learn.
+  expect(tile).toHaveAttribute('aria-pressed', 'true');
+  expect(document.querySelector('.piano-learn-selection-box')).toHaveAttribute('data-passage', 'm0-1');
+  expect(screen.queryByRole('button', { name: 'Listen' })).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: 'Practice bars 1–2' }));
   fireEvent.click(screen.getByRole('button', { name: 'Listen' }));
   expect(screen.getByRole('heading', { name: 'Listen to this passage' })).toBeInTheDocument();
   fireEvent.click(screen.getByRole('button', { name: 'Stop listening' }));
