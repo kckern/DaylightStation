@@ -93,7 +93,7 @@ describe('PianoMenu (tile grid columns)', () => {
     render(createElement(MemoryRouter, null, createElement(PianoMenu)));
     const ul = document.querySelector('.piano-menu__tiles');
     expect(ul).toBeTruthy();
-    expect(ul.style.getPropertyValue('--tile-cols')).toBe(String(PIANO_MODES.length));
+    expect(ul.style.getPropertyValue('--tile-cols')).toBe('5');
   });
 });
 
