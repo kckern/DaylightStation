@@ -163,7 +163,7 @@ describe('Health AI spend is attributed health/<feature>', () => {
     const jev = new JevAdapter({ apiKey: 'test' }, { httpClient: { post }, logger: silent, aiUsageLedger: ledger });
     const { health } = harness();
     const findByDate = vi.fn(async () => [{ id: 'r1', uuid: 'r1', label: 'Oats', grams: 80, calories: 300, mealTime: 'morning', status: 'accepted' }]);
-    const nutriListStore = anything({ findByDate, readOperationResult: vi.fn(async () => null) });
+    const nutriListStore = anything({ findByDate, findByDateRange: vi.fn(async () => []), readOperationResult: vi.fn(async () => null) });
     const { webNutribotAdapter } = createNutribotApiRouter({
       nutribotServices: { nutribotContainer: container(health, { decisionGateway: jev.scoped({ app: 'health' }) }), nutriListStore, foodLogStore: anything() },
       logger: silent,

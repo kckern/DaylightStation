@@ -193,7 +193,8 @@ export class MealFoodCommands {
           const changes = updates.get(idOf(row))?.changes;
           return byLinkId.get(changes && Object.hasOwn(changes, 'parentId') ? changes.parentId : row.parentId) === parent;
         }) || creates.some(row => row.parentId === parentId);
-        if (!remaining && !deleteIds.includes(parentId)) deleteIds.push(parentId);
+        // A broken link can name a plain food, which is never retired with a dish.
+        if (parent.kind === 'group' && !remaining && !deleteIds.includes(parentId)) deleteIds.push(parentId);
       }
       const undoToken = `meal-${uuidv5(`${userId}:${operationId}`, uuidv5.URL)}`;
       const audit = { id: undoToken, fingerprint: fingerprint(input), type: 'meal-command', date, bucket };

@@ -1,4 +1,5 @@
 import { sha256Text } from '#system/utils/sha256.mjs';
+import { formatLocalTimestamp } from '#system/utils/time.mjs';
 import { v4 as uuidv4 } from 'uuid';
 import { MEAL_BUCKETS } from '../../../portable/contracts/health/mealBuckets.mjs';
 import { NUTRIENT_KEYS, foodGrams } from '../../../portable/contracts/health/foodQuantity.mjs';
@@ -19,8 +20,19 @@ const AMENDABLE = ['name', 'color', ...QUANTITY, ...NUTRIENT_KEYS];
 // What a resumed capture needs. The full reply can carry photos, which do not belong in the ledger.
 const CAPTURE_FIELDS = ['committed', 'outcome', 'message', 'logId', 'items', 'entryIds', 'date', 'mealTime', 'affectedIds', 'affectedDates', 'undoToken', 'instructionText'];
 const eligible = rows => rows.filter(row => isCountedRow(row) && !isReconstructedRow(row));
-/** A capture time, in one form: the ledger holds both "2026-11-18 12:00:00" and ISO strings. */
-const stampOf = row => (row.createdAt instanceof Date ? row.createdAt.toISOString() : String(row.createdAt || '')).slice(0, 19).replace('T', ' ');
+const ZONED_TIME = /\d{2}:\d{2}.*(?:Z|[+-]\d{2}(?::?\d{2})?)$/i;
+/**
+ * A capture time as household wall-clock "YYYY-MM-DD HH:mm:ss". The ledger writes
+ * that form already. A time carrying a zone is an instant, so it is converted:
+ * its leading date can be a different day from the household's.
+ */
+const stampOf = row => {
+  const at = row.createdAt;
+  if (!at) return '';
+  const instant = at instanceof Date ? at : ZONED_TIME.test(String(at)) ? new Date(at) : null;
+  if (instant && !Number.isNaN(instant.getTime())) return formatLocalTimestamp(instant);
+  return String(at).slice(0, 19).replace('T', ' ');
+};
 const dayOf = row => row.date || stampOf(row).slice(0, 10);
 /** The name of a day the work happened on, when that is not the day being viewed. */
 const otherDay = (day, viewed, today) => (day && day !== viewed ? dayName(day, today) : null);
@@ -91,7 +103,7 @@ export class DayInstructionService {
     const latestDay = await this.#latestDay(userId, viewed, today);
     // An empty day is read too: the words may correct food logged somewhere else.
     const plan = await this.#reading(() => this.reader.read({ text: said, date, today, foods: viewed.rows.filter(isFood).map(nameOf),
-      latest: this.#latestCapture(latestDay.rows).filter(isFood).map(nameOf), latestDate: latestDay.date }));
+      latest: this.#latestCapture(latestDay).filter(isFood).map(nameOf), latestDate: latestDay.date }));
     this.logger.info?.('health.day_instruction.read', { userId, date, latestDate: latestDay.date, ...plan });
     if (plan?.compound) return this.#reply(said, { committed: false, outcome: 'no-change', message: 'Please make one change at a time.' });
     if (plan?.intent === 'other') return this.#reply(said, { committed: false, outcome: 'no-change', message: "I can log food, move it, or correct it. I can't do that here." });
@@ -100,11 +112,16 @@ export class DayInstructionService {
       if (Object.keys(resolved).length) return this.#reply(said, { committed: false, outcome: 'no-change', message: 'Please say that again.' });
       return this.#add(context);
     }
-    // With nothing on this day, words that do not point at the latest capture
-    // have no food to act on. Offer that capture rather than guess.
-    const onlyAsk = !viewed.rows.length && plan.target !== 'latest' && !resolved.foodId;
-    const source = onlyAsk ? latestDay : this.#sourceDay(resolved, plan, viewed, latestDay);
-    return plan.intent === 'change' ? this.#change(context, source, plan, onlyAsk) : this.#move(context, source, plan, onlyAsk);
+    const { foodId } = resolved;
+    // With nothing on this day, words about a meal or the whole day have no food
+    // to act on. Offer the latest capture rather than guess.
+    const onlyAsk = !viewed.rows.length && !foodId && !['latest', 'named'].includes(plan.target);
+    const source = foodId ? await this.#dayHolding(userId, foodId, viewed, today)
+      : onlyAsk || plan.target === 'latest' ? latestDay : viewed;
+    // A named food may be in the latest capture, when that is on another day.
+    const other = plan.target === 'named' && !foodId && latestDay !== viewed ? latestDay : null;
+    const options = { onlyAsk, other };
+    return plan.intent === 'change' ? this.#change(context, source, plan, options) : this.#move(context, source, plan, options);
   }
 
   async #readDay(userId, date) {
@@ -113,29 +130,31 @@ export class DayInstructionService {
   }
 
   /**
-   * The day holding the most recent capture: the viewed day, or one of the last
-   * seven when a capture there has a newer time. A capture can land on another
-   * day ("pizza last night"), and "that" then means it. Rows without a time keep
-   * their place in the viewed day's ledger order, and lose only to a capture made
-   * on a later date than that day.
+   * The day holding the capture "that" means. On a day with food, that is the day
+   * itself, unless a newer capture was made on this calendar day and filed on
+   * another ("pizza last night", or food just moved away). Food logged on some
+   * other date is not what someone looking at this day means. Rows with no time
+   * keep their ledger order and lose to such a capture. On an empty day, the newest
+   * capture of the last seven days.
    */
   async #latestDay(userId, viewed, today) {
     const foods = viewed.rows.filter(isFood);
     const viewedStamp = foods.map(stampOf).sort().at(-1);
     const elsewhere = eligible(await this.nutritionItems.findByDateRange(userId, addDaysISO(today, -6), today))
-      .filter(row => isFood(row) && stampOf(row) && dayOf(row) !== viewed.date);
+      .filter(row => isFood(row) && stampOf(row) && dayOf(row) !== viewed.date
+        && (!foods.length || stampOf(row).slice(0, 10) === viewed.date));
     const newest = elsewhere.reduce((best, row) => (!best || stampOf(row) > stampOf(best) ? row : best), null);
-    if (!newest) return viewed;
-    const stamp = stampOf(newest);
-    const isNewer = !foods.length || (viewedStamp ? stamp > viewedStamp : stamp.slice(0, 10) > viewed.date);
-    return isNewer ? this.#readDay(userId, dayOf(newest)) : viewed;
+    if (!newest || (viewedStamp && stampOf(newest) <= viewedStamp)) return viewed;
+    // Later food on that day may fall outside the rule, so the capture is kept too.
+    return { ...await this.#readDay(userId, dayOf(newest)), anchor: newest };
   }
 
-  /** The day an instruction acts on. An answered food decides it, wherever that food is. */
-  #sourceDay({ foodId }, plan, viewed, latestDay) {
-    const holds = day => day.rows.some(row => idOf(row) === foodId);
-    if (foodId) return !holds(viewed) && holds(latestDay) ? latestDay : viewed;
-    return plan.target === 'latest' ? latestDay : viewed;
+  /** The day of an answered food: the viewed day, or its own day among those on offer. */
+  async #dayHolding(userId, foodId, viewed, today) {
+    if (viewed.rows.some(row => idOf(row) === foodId)) return viewed;
+    const row = await this.nutritionItems.findByUuid(userId, foodId);
+    const day = row ? dayOf(row) : null;
+    return day && day !== viewed.date && day >= addDaysISO(today, -6) && day <= today ? this.#readDay(userId, day) : viewed;
   }
 
   /**
@@ -201,32 +220,50 @@ export class DayInstructionService {
   #reply(said, body) { return { ...(said ? { instructionText: said } : {}), ...body }; }
   #child(context, step) { return sha256Text(`${context.operationId}:day:${step}`); }
   #ask(said, kind, question, choices = []) { return this.#reply(said, { committed: false, outcome: 'clarification', clarification: { kind, question, choices } }); }
-  #askFood({ said, date, today }, source, rows) {
-    if (!rows.length) return this.#reply(said, { committed: false, outcome: 'no-change', message: 'There is no food here I can change.' });
-    const day = otherDay(source.date, date, today);
-    return this.#ask(said, 'food', 'Which food did you mean?', rows.map(row => ({ id: idOf(row), label: day ? `${nameOf(row)} (${day})` : nameOf(row) })));
+  /** Asks which food, from `[day, rows]` groups. A food on another day is labelled with it. */
+  #askFood({ said, date, today }, ...groups) {
+    const choices = groups.flatMap(([day, rows]) => {
+      const name = otherDay(day.date, date, today);
+      return rows.map(row => ({ id: idOf(row), label: name ? `${nameOf(row)} (${name})` : nameOf(row) }));
+    });
+    if (!choices.length) return this.#reply(said, { committed: false, outcome: 'no-change', message: 'There is no food here I can change.' });
+    return this.#ask(said, 'food', 'Which food did you mean?', choices);
   }
-  #latestCapture(rows) {
+  /** The rows of a day's latest capture, among `rows`: the chosen capture, or the day's newest. */
+  #latestCapture({ rows: dayRows, anchor = null }, rows = dayRows) {
     if (!rows.length) return [];
     // Older rows have no capture time: the ledger keeps a day in the order it was
     // written, so ties go to the later row. A dish header is added after its
     // capture and says nothing about when the food was logged.
     const foods = rows.filter(isFood);
     const candidates = foods.length ? foods : rows;
-    const newest = candidates.reduce((best, row) => (stampOf(row) >= stampOf(best) ? row : best));
+    const newest = anchor ? rows.find(row => idOf(row) === idOf(anchor))
+      : candidates.reduce((best, row) => (stampOf(row) >= stampOf(best) ? row : best));
+    if (!newest) return [];
     if (!newest.logId) return [newest];
     if (!SHARED_LOG_IDS.has(newest.logId)) return rows.filter(row => row.logId === newest.logId);
     if (!newest.createdAt) return [newest];
     return rows.filter(row => row.logId === newest.logId && row.createdAt === newest.createdAt);
   }
-  /** Top-level foods of the latest capture. A part stands for its whole dish. */
-  #latestDishes(rows, tops, dayRows) {
+  /** A food with a broken dish link stands alone, as it does on screen and in moveFoods. */
+  #topsOf({ rows, dayRows }) {
     const byLinkId = indexByLinkId(dayRows);
-    const top = new Set(tops);
-    return [...new Set(this.#latestCapture(rows).map(row => dishOf(row, byLinkId) || row))].filter(row => top.has(row));
+    return rows.filter(row => !dishOf(row, byLinkId));
+  }
+  /** Top-level foods of the latest capture. A part stands for its whole dish. */
+  #latestDishes(day) {
+    const byLinkId = indexByLinkId(day.dayRows);
+    const top = new Set(this.#topsOf(day));
+    return [...new Set(this.#latestCapture(day).map(row => dishOf(row, byLinkId) || row))].filter(row => top.has(row));
+  }
+  #changeableFoods({ rows }) { return rows.filter(row => isFood(row) && row.mealTime); }
+  /** The foods among `rows` that the words refer to. No foods, no question. */
+  async #matching(said, rows, describe = () => ({})) {
+    if (!rows.length) return [];
+    const ids = new Set(await this.#reading(() => this.reader.matchFoods({ text: said, foods: rows.map(row => ({ id: idOf(row), name: nameOf(row), ...describe(row) })) })));
+    return rows.filter(row => ids.has(idOf(row)));
   }
   #inScope(rows, plan) {
-    if (plan.target === 'latest') return this.#latestCapture(rows);
     if (plan.target === 'meal') return plan.fromMeal === 'none' ? [] : rows.filter(row => row.mealTime === plan.fromMeal);
     return ['whole_day', 'named'].includes(plan.target) ? rows : [];
   }
@@ -236,25 +273,24 @@ export class DayInstructionService {
     return row;
   }
 
-  async #move(context, source, plan, onlyAsk = false) {
+  async #move(context, source, plan, { onlyAsk = false, other = null } = {}) {
+    const { said, resolved } = context;
+    const tops = this.#topsOf(source);
+    if (onlyAsk) return this.#askFood(context, [source, this.#latestDishes(source)]);
+    if (resolved.foodId) return this.#moveFoods(context, source, plan, [this.#resolvedFood(tops, resolved.foodId)]);
+    const matchDishes = (day, rows) => this.#matching(said, rows, row => ({ description: [row, ...partsOf(row, day.rows)].map(nameOf).join(', ') }));
+    const scoped = plan.target === 'latest' ? this.#latestDishes(source) : this.#inScope(tops, plan);
+    const targets = plan.target === 'named' ? await matchDishes(source, scoped) : scoped;
+    if (targets.length) return this.#moveFoods(context, source, plan, targets);
+    if (!other) return this.#askFood(context, [source, tops]);
+    const theirs = this.#latestDishes(other);
+    const matched = await matchDishes(other, theirs);
+    return matched.length ? this.#moveFoods(context, other, plan, matched) : this.#askFood(context, [source, tops], [other, theirs]);
+  }
+
+  async #moveFoods(context, source, plan, targets) {
     const { said, today, resolved, userId } = context;
-    const { date, rows, dayRows } = source;
-    // A food with a broken dish link stands alone, as it does on screen and in moveFoods.
-    const byLinkId = indexByLinkId(dayRows);
-    const tops = rows.filter(row => !dishOf(row, byLinkId));
-    if (onlyAsk) return this.#askFood(context, source, this.#latestDishes(rows, tops, dayRows));
-    let targets;
-    if (resolved.foodId) targets = [this.#resolvedFood(tops, resolved.foodId)];
-    else {
-      const scoped = plan.target === 'latest' ? this.#latestDishes(rows, tops, dayRows) : this.#inScope(tops, plan);
-      if (plan.target === 'named' && scoped.length) {
-        const foods = scoped.map(row => ({ id: idOf(row), name: nameOf(row),
-          description: [row, ...partsOf(row, rows)].map(nameOf).join(', ') }));
-        const matched = new Set(await this.#reading(() => this.reader.matchFoods({ text: said, foods })));
-        targets = scoped.filter(row => matched.has(idOf(row)));
-      } else targets = scoped;
-      if (!targets.length) return this.#askFood(context, source, tops);
-    }
+    const { date, dayRows } = source;
     const requestedDay = resolved.toDate || (!['same', 'older'].includes(plan.toDay) ? plan.toDay : null);
     const toMeal = plan.toMeal === 'same' ? null : plan.toMeal;
     if (!requestedDay && (plan.toDay === 'older' || !toMeal)) return this.#ask(said, 'day', 'Which day should this go to?');
@@ -268,24 +304,25 @@ export class DayInstructionService {
     return this.#reply(said, { ...result, outcome: 'committed', kind: 'moved', message: movedMessage(moving.length, moving[0], toDate, toMeal, today, otherDay(date, context.date, today)) });
   }
 
-  async #change(context, source, plan, onlyAsk = false) {
-    const { said, resolved, userId, today } = context;
-    const { date, rows, dayRows } = source;
+  async #change(context, source, plan, { onlyAsk = false, other = null } = {}) {
+    const { said, resolved } = context;
     if (!this.entryRevisions) fail('Food revision is unavailable', 503, 'DAY_INPUT_UNAVAILABLE');
-    const foods = rows.filter(row => isFood(row) && row.mealTime);
-    if (onlyAsk) return this.#askFood(context, source, this.#latestCapture(foods));
-    let target;
-    if (resolved.foodId) target = this.#resolvedFood(foods, resolved.foodId);
-    else {
-      const scoped = this.#inScope(foods, plan);
-      let matches = scoped;
-      if (scoped.length && (plan.target === 'named' || scoped.length > 1)) {
-        const ids = new Set(await this.#reading(() => this.reader.matchFoods({ text: said, foods: scoped.map(row => ({ id: idOf(row), name: nameOf(row) })) })));
-        matches = scoped.filter(row => ids.has(idOf(row)));
-      }
-      if (matches.length !== 1) return this.#askFood(context, source, matches.length ? matches : foods);
-      [target] = matches;
-    }
+    const foods = this.#changeableFoods(source);
+    if (onlyAsk) return this.#askFood(context, [source, this.#latestCapture(source, foods)]);
+    if (resolved.foodId) return this.#applyChange(context, source, this.#resolvedFood(foods, resolved.foodId));
+    const scoped = plan.target === 'latest' ? this.#latestCapture(source, foods) : this.#inScope(foods, plan);
+    const matches = plan.target === 'named' || scoped.length > 1 ? await this.#matching(said, scoped) : scoped;
+    if (matches.length === 1) return this.#applyChange(context, source, matches[0]);
+    if (matches.length || !other) return this.#askFood(context, [source, matches.length ? matches : foods]);
+    const theirs = this.#latestCapture(other, this.#changeableFoods(other));
+    const found = await this.#matching(said, theirs);
+    if (found.length === 1) return this.#applyChange(context, other, found[0]);
+    return found.length ? this.#askFood(context, [other, found]) : this.#askFood(context, [source, foods], [other, theirs]);
+  }
+
+  async #applyChange(context, source, target) {
+    const { said, userId, today } = context;
+    const { date, dayRows } = source;
     const id = idOf(target);
     const { proposal } = await this.#propose(userId, id, said);
     const { changes, held } = amendmentFor(target, proposal);

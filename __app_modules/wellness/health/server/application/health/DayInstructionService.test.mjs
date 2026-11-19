@@ -31,7 +31,7 @@ function harness(reading, { matched = [], placements = {}, dayRows = rows, store
     execute: vi.fn(async () => ({ committed: true, undoToken: 'meal-a', affectedDates: [date], affectedIds: ['milk'], items: [] })),
   };
   const entryRevisions = { propose: vi.fn(async () => ({ proposal: { name: 'Whole Milk', icon: 'milk', color: 'yellow', grams: 240, amount: 240, unit: 'g', calories: 149 } })) };
-  const nutritionItems = { findByDate: vi.fn(async () => dayRows), findByDateRange: vi.fn(async () => dayRows), findByLogId: vi.fn(async () => dayRows) };
+  const nutritionItems = { findByDate: vi.fn(async () => dayRows), findByDateRange: vi.fn(async () => dayRows), findByUuid: vi.fn(async id => dayRows.find(row => row.uuid === id || row.id === id) || null), findByLogId: vi.fn(async () => dayRows) };
   if (stored) nutritionItems.readOperationResult = vi.fn((_user, id) => stored[id] || null);
   const reader = { available: true, read: vi.fn(async () => reading), matchFoods: vi.fn(async () => matched), assignMeals: vi.fn(async () => placements) };
   const logger = { info: vi.fn(), warn: vi.fn() };
@@ -601,15 +601,109 @@ describe('DayInstructionService', () => {
         await h.run('that was a snack');
         expect(shown(h)).toMatchObject({ latest: ['pizza'], latestDate: yesterday });
       });
-      it('keeps ledger order for unstamped rows unless a capture was made after that day', async () => {
-        appendRaw([raw('first', yesterday, { logId: 'one' }), raw('second', yesterday, { logId: 'two' }), raw('sameDay', monday, { logId: 'm', createdAt: '2026-11-17 22:00:00' })]);
+      it('keeps ledger order for unstamped rows unless a capture made that day was filed elsewhere', async () => {
+        appendRaw([raw('first', yesterday, { logId: 'one' }), raw('second', yesterday, { logId: 'two' }), raw('madeLater', monday, { logId: 'n', createdAt: '2026-11-18 01:00:00' })]);
         const kept = stack(plan({ toMeal: 'night' }));
         await kept.run('that was a snack', { date: yesterday, operationId: 'kept' });
         expect(shown(kept)).toMatchObject({ latest: ['second'], latestDate: yesterday });
-        appendRaw([raw('later', monday, { logId: 'n', createdAt: '2026-11-18 01:00:00' })]);
-        const newer = stack(plan({ toMeal: 'morning' }));
-        await newer.run('that was breakfast', { date: yesterday, operationId: 'newer' });
-        expect(shown(newer)).toMatchObject({ latest: ['later'], latestDate: monday });
+        appendRaw([raw('sameDay', monday, { logId: 'm', createdAt: '2026-11-17 22:00:00' })]);
+        const followed = stack(plan({ toMeal: 'morning' }));
+        await followed.run('that was breakfast', { date: yesterday, operationId: 'followed' });
+        expect(shown(followed)).toMatchObject({ latest: ['sameDay'], latestDate: monday });
+      });
+      it('viewing an earlier day, "that" stays there when food was logged today', async () => {
+        await log(yesterday, 'soup', '2026-11-17 18:00:00', [food('soup')]);
+        await log(date, 'coffee', '2026-11-18 07:00:00', [food('coffee')], 'morning');
+        const h = stack(plan({ intent: 'change' }), { proposal: { name: 'Stew' } });
+        expect((await h.run('that was stew', { date: yesterday })).message).toBe('Changed soup to Stew');
+        expect(shown(h)).toMatchObject({ latest: ['soup'], latestDate: yesterday });
+        expect(await store.findByUuid('u', 'coffee')).toMatchObject({ name: 'coffee', version: 1 });
+      });
+      it('a capture made on the viewed day but older than its foods does not win', async () => {
+        await log(date, 'here', '2026-11-18 10:00:00', [food('oatmeal')]);
+        await pizza();
+        const h = stack(plan({ toMeal: 'night' }));
+        await h.run('that was a snack');
+        expect(shown(h)).toMatchObject({ latest: ['oatmeal'], latestDate: date });
+      });
+      it.each([
+        ['after UTC midnight, still the viewed day here', '2026-11-19T02:00:00Z', yesterday],
+        ['with an offset, on the viewed day', '2026-11-18T09:00:00-08:00', yesterday],
+        ['before UTC midnight, the day before here', '2026-11-18T02:00:00Z', date],
+      ])('reads a zoned capture time in household time: %s', async (_label, createdAt, latestDate) => {
+        await log(date, 'here', '2026-11-18 08:00:00', [food('oatmeal')]);
+        appendRaw([raw('pizza', yesterday, { logId: 'late', createdAt })]);
+        const h = stack(plan({ toMeal: 'night' }));
+        await h.run('that was a snack');
+        expect(shown(h).latestDate).toBe(latestDate);
+      });
+      describe('a named food that is not on the viewed day', () => {
+        const seed = async () => { await oatmeal(); await pizza(); };
+        const named = extra => plan({ target: 'named', ...extra });
+        it('corrects it on its own day and says which', async () => {
+          await seed();
+          const h = stack(named({ intent: 'change' }), { proposal: calzone.proposal });
+          h.reader.matchFoods.mockImplementation(async ({ foods }) => foods.filter(item => item.id === 'pizza').map(item => item.id));
+          expect((await h.run('the pizza was a calzone')).message).toBe('Changed pizza to Calzone for Yesterday');
+          expect(await store.findByUuid('u', 'pizza')).toMatchObject({ name: 'Calzone', date: yesterday });
+        });
+        it('moves it from its own day', async () => {
+          await seed();
+          const h = stack(named({ toDay: date }));
+          h.reader.matchFoods.mockImplementation(async ({ foods }) => foods.filter(item => item.id === 'pizza').map(item => item.id));
+          expect((await h.run('move the pizza to today')).message).toBe('Moved pizza from Yesterday to Today');
+          expect(await ids(date)).toEqual(['oatmeal', 'pizza']);
+        });
+        it.each([['change', {}], ['move', { toMeal: 'night' }]])('offers both days when nothing matches a %s', async (intent, extra) => {
+          await seed();
+          const h = stack(named({ intent, ...extra }));
+          const reply = await h.run('the soup');
+          expect(reply.clarification.choices).toEqual([{ id: 'oatmeal', label: 'oatmeal' }, { id: 'pizza', label: 'pizza (Yesterday)' }]);
+          expect(await store.findByUuid('u', 'pizza')).toMatchObject({ mealTime: 'evening', version: 1 });
+          expect(await store.findByUuid('u', 'oatmeal')).toMatchObject({ mealTime: 'morning', version: 1 });
+        });
+        it('prefers a match on the viewed day', async () => {
+          await seed();
+          const h = stack(named({ toMeal: 'night' }), { matched: ['oatmeal'] });
+          expect((await h.run('the oatmeal was a snack')).message).toBe('Moved oatmeal to Snacks');
+          expect(h.reader.matchFoods).toHaveBeenCalledTimes(1);
+        });
+        it('does not reach a capture the viewed-day rule excludes', async () => {
+          await log(yesterday, 'soup', '2026-11-17 18:00:00', [food('soup')]);
+          await log(date, 'coffee', '2026-11-18 07:00:00', [food('coffee')], 'morning');
+          const h = stack(named({ intent: 'change' }), { matched: ['coffee'] });
+          const reply = await h.run('the coffee was tea', { date: yesterday });
+          expect(reply.clarification.choices).toEqual([{ id: 'soup', label: 'soup' }]);
+          expect(h.entryRevisions.propose).not.toHaveBeenCalled();
+        });
+        it('on an empty viewed day, acts on a match in the latest capture', async () => {
+          await pizza();
+          const h = stack(named({ intent: 'change' }), { matched: ['pizza'], proposal: calzone.proposal });
+          expect((await h.run('the pizza was a calzone')).message).toBe('Changed pizza to Calzone for Yesterday');
+        });
+        it('an answer acts on that food\'s own day, even when it is no longer the latest', async () => {
+          await seed();
+          await log(monday, 'newest', '2026-11-18 10:00:00', [food('newest')]);
+          const h = stack(named({ intent: 'change' }), { proposal: calzone.proposal });
+          expect((await h.run('the pizza was a calzone', { resolved: { foodId: 'pizza' } })).message).toBe('Changed pizza to Calzone for Yesterday');
+          expect(await store.findByUuid('u', 'pizza')).toMatchObject({ name: 'Calzone', date: yesterday });
+          expect(await store.findByUuid('u', 'newest')).toMatchObject({ name: 'newest', version: 1 });
+        });
+        it('a meal given with an answer moves only the chosen food, on its own day', async () => {
+          await seed();
+          await log(yesterday, 'other', '2026-11-18 09:30:00', [food('salad')]);
+          const result = await stack(named({ toMeal: 'night' })).run('that goes in snacks', { resolved: { foodId: 'pizza' } });
+          expect(result.message).toBe('Moved pizza from Yesterday to Snacks');
+          expect(await store.findByUuid('u', 'pizza')).toMatchObject({ date: yesterday, mealTime: 'night' });
+          expect(await store.findByUuid('u', 'salad')).toMatchObject({ mealTime: 'evening', version: 1 });
+          expect(await store.findByUuid('u', 'oatmeal')).toMatchObject({ mealTime: 'morning', version: 1 });
+        });
+        it('refuses an answer outside the days on offer', async () => {
+          await oatmeal();
+          await log('2026-11-01', 'old', '2026-11-01 09:00:00', [food('ancient')]);
+          await expect(stack(named({ toMeal: 'night' })).run('x', { resolved: { foodId: 'ancient' } })).rejects.toMatchObject({ status: 422 });
+          expect(await store.findByUuid('u', 'ancient')).toMatchObject({ version: 1 });
+        });
       });
       it('looks back through six days and at the viewed day, no further', async () => {
         await log('2026-11-11', 'old', '2026-11-18 09:00:00', [food('tooOld')]);
@@ -717,6 +811,16 @@ describe('DayInstructionService', () => {
       it('still refuses to amend a dish row itself', async () => {
         await seed();
         await expect(commands.execute('u', { action: 'amend', date, bucket: 'afternoon', operationId: 'dish', selectedIds: ['dish'], expectedVersions: { dish: 1 }, changes: { dish: { name: 'x' } } })).rejects.toMatchObject({ status: 400 });
+      });
+      it('never retires a plain food that a regrouped row linked to by mistake', async () => {
+        await store.saveMany([row('plain', { mealTime: 'night' }), row('x', { mealTime: 'night', parentId: 'plain' }), row('y', { mealTime: 'night' })]);
+        await commands.execute('u', { action: 'group', name: 'New', date, bucket: 'night', operationId: 'grp', selectedIds: ['x', 'y'], expectedVersions: { x: 1, y: 1, plain: 1 } });
+        expect(await store.findByUuid('u', 'plain')).toMatchObject({ name: 'plain' });
+      });
+      it('still retires a dish left with no parts', async () => {
+        await store.saveMany([row('dish', { kind: 'group', calories: 0 }), row('rice', { parentId: 'dish-short' }), row('beans', { parentId: 'dish' }), row('z')]);
+        await commands.execute('u', { action: 'group', name: 'New', date, bucket: 'afternoon', operationId: 'grp', selectedIds: ['rice', 'beans', 'z'], expectedVersions: { rice: 1, beans: 1, z: 1, dish: 1 } });
+        expect(await store.findByUuid('u', 'dish')).toBeNull();
       });
       it('still refuses to group a food whose link is broken', async () => {
         await seed();

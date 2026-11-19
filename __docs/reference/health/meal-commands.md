@@ -39,7 +39,8 @@ an operation ID with different input returns 409.
 versions and preserving absent fields, metadata, and nutrient precision. It
 rejects intervening edits or graph changes that would leave orphaned children.
 Undo of an addition removes only that command's new foods. Manual grouping and
-ungrouping never delete foods. Ordinary successful captures also receive durable
+ungrouping never delete foods, and only a dish header is retired when it empties, so a
+plain food named by a broken link stays. Ordinary successful captures also receive durable
 Undo tokens, including capture responses recovered after an interrupted request.
 
 `POST /api/v1/health/nutrition/meal-suggestions` accepts `date`, `bucket`, and
@@ -151,12 +152,17 @@ rule as `foods-move`, so a broken-link row stands alone.
 night" files the food on Yesterday while Today stays on screen, and "that was actually a
 calzone" then means the pizza.
 
-- **Where it looks.** The viewed day, and today back through six days.
-- **Which capture wins.** The newest `createdAt` among counted foods. Reconstructed rows
-  and rows that are not counted are left out. A tie stays on the viewed day.
+- **On a day with food.** "That" means that day's newest capture. It follows a capture on
+  another day only if the capture was made on the viewed calendar day, was filed
+  elsewhere, and is newer than the viewed day's foods. Viewing Yesterday's soup while
+  coffee was logged today, "that" is the soup.
+- **On an empty day.** The newest capture from today back through six days.
+- **Which rows count.** Counted foods with a `createdAt`. Reconstructed and uncounted rows
+  are left out, and a tie stays on the viewed day.
+- **Capture times.** Times are compared as household wall-clock time. The ledger's
+  `YYYY-MM-DD HH:mm:ss` is already that, and a time with a zone is converted first.
 - **Rows with no time.** On the viewed day they keep ledger order, the last row being the
-  latest. A capture on another day beats them only if it was made on a later date than
-  the viewed day.
+  latest. A capture that meets the first rule beats them.
 - **What one capture is.** Rows sharing a `logId`, or under a shared ID such as `QUICKADD`
   the rows that also share a `createdAt`. A part moves with its whole dish.
 - **Where the work happens.** A move takes that day as its source, and a correction
@@ -165,10 +171,14 @@ calzone" then means the pizza.
 - **What the reply says.** It names the day when that is not the viewed day: "Moved Pizza
   from Yesterday to Today", "Changed Pizza to Calzone for Yesterday".
 
+A **named** food is looked for on the viewed day first. With no match there, it is looked
+for in the latest capture when that is on another day under the rules above. A match is
+acted on and the reply names its day. With no match, the question lists the viewed day's
+foods and the latest capture's foods, the latter labelled with their day.
+
 On an empty viewed day, a move or correction that points at the latest capture acts on
-it. One that names foods, a meal or the whole day has nothing to act on there, so it asks,
-offering the latest capture's foods labelled with their day. With no food in the seven
-days it changes nothing and says so.
+it. One about a meal or the whole day has nothing to act on there, so it asks, offering
+the latest capture's foods. With no food in the seven days it changes nothing and says so.
 
 #### Acting, and when it asks
 
@@ -182,8 +192,8 @@ way back. It asks only when it cannot identify the food or the destination:
 
 The browser answers by sending the same words with `resolved` under a new
 `operationId`, and the server reads them again. A `foodId` must be an eligible food on the
-viewed day or on the latest capture's day, and the work happens on the day that holds it.
-Any other `foodId` is a 422. An answer to words that now read as new food changes nothing.
+viewed day or on a day from today back through six days, and the work happens on that
+row's own date, on that food alone. Any other `foodId` is a 422. An answer to words that now read as new food changes nothing.
 
 Moves go through `foods-move`, and corrections through `meal-command`'s `amend` for
 that food's meal, so each has that command's Undo.
