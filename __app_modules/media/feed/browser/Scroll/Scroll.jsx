@@ -171,9 +171,7 @@ export default function Scroll() {
   const containerRef = useRef(null);
   const itemsRef = useRef(items);
   itemsRef.current = items;
-  const [detailData, setDetailData] = useState(null);
-  const [detailLoading, setDetailLoading] = useState(false);
-  const [detailError, setDetailError] = useState(null);
+  const [settledDetail, setSettledDetail] = useState(null);
   const [detailRetry, setDetailRetry] = useState(0);
   const { activeMedia, play: contextPlay, stop: contextStop } = useFeedPlayer();
   const [colors, setColors] = useState({});
@@ -181,9 +179,9 @@ export default function Scroll() {
   const [assemblyFilter, setAssemblyFilter] = useState({ tiers: [], sources: [] });
   const savedScrollRef = useRef(0);
   const returnFocusId = useRef(null);
+  const wasOnDetail = useRef(false);
   const listAbortRef = useRef(null);
   const appendLockRef = useRef(false);
-  const detailAbortRef = useRef(null);
   const snapshotRef = useRef(null);
   const checkpointRestoredRef = useRef(false);
   const effectiveBudget = budgetOverride ?? readingPreferences.sessionBudget;
@@ -204,9 +202,6 @@ export default function Scroll() {
     setAssemblyFilter(filter);
   }, []);
 
-  // Deep-linked item (fetched from server when not in scroll batch)
-  const [deepLinkedItem, setDeepLinkedItem] = useState(null);
-
   // Viewport-aware rendering
   const [isDesktop, setIsDesktop] = useState(
     typeof window !== 'undefined' && window.innerWidth >= 900
@@ -223,10 +218,17 @@ export default function Scroll() {
 
   // Decode URL slug to full item ID
   const fullId = urlSlug ? decodeFeedItemId(urlSlug) : null;
+  const detailKey = urlSlug ? `${urlSlug}:${detailRetry}` : null;
+  const detail = settledDetail?.key === detailKey ? settledDetail : null;
+  const detailData = detail?.data;
+  const detailLoading = Boolean(fullId && !detail);
+  const detailError = urlSlug && !fullId
+    ? 'This Feed link is invalid. Return to Scroll and choose an item again.'
+    : detail?.error;
 
   // Find selected item in loaded list or from deep-link fetch
   const selectedItem = fullId
-    ? (items.find(i => i.id === fullId) || (deepLinkedItem?.id === fullId ? deepLinkedItem : null))
+    ? (items.find(i => i.id === fullId) || (detail?.item?.id === fullId ? detail.item : null))
     : null;
 
   const fetchItems = useCallback(async (append = false, requestedSession = sessionId) => {
@@ -484,43 +486,31 @@ export default function Scroll() {
     return () => viewportObserverRef.current?.disconnect();
   }, []);
 
-  // Fetch detail when URL slug changes (route-driven)
-  const prevSlugRef = useRef(null);
-  // Monotonic generation guard: a slower, older detail request must not
-  // overwrite the sections of a newer selection. (F-11)
-  const detailGenRef = useRef(0);
+  // Opening an item marks it read. Retrying its detail does not reopen it.
   useEffect(() => {
-    const requestKey = `${urlSlug || ''}:${detailRetry}`;
-    if (!urlSlug || requestKey === prevSlugRef.current) return;
-    prevSlugRef.current = requestKey;
-
-    if (!fullId) {
-      setDetailError('This Feed link is invalid. Return to Scroll and choose an item again.');
-      setDetailLoading(false);
-      return;
-    }
-
-    const gen = ++detailGenRef.current;
-    const isCurrent = () => gen === detailGenRef.current;
-
-    // Opening an item marks it read, but never archives it.
-    const matchedItem = itemsRef.current.find(i => i.id === fullId);
-    if (matchedItem && !(matchedItem.state?.isRead ?? matchedItem.isRead)) {
-      mutateItems([matchedItem], 'read', {
+    if (!fullId) return;
+    const item = itemsRef.current.find(i => i.id === fullId);
+    if (item && !(item.state?.isRead ?? item.isRead)) {
+      mutateItems([item], 'read', {
         onApply: updated => setItems(current => current.map(value => updated.find(next => next.id === value.id) || value)),
       }).catch(() => {});
     }
+  }, [fullId, mutateItems]);
 
-    // Check if item is already in the loaded list
+  // Each route and Retry owns a detail request, including its offline fallback.
+  useEffect(() => {
+    setSettledDetail(null);
+    if (!fullId) return;
+    const controller = new AbortController();
+    const { signal } = controller;
+    const publish = (data, { item, error } = {}) => {
+      if (!signal.aborted) setSettledDetail({ key: detailKey, data, item, error });
+    };
     const item = itemsRef.current.find(i => i.id === fullId);
 
     if (item) {
       // Item is in the scroll batch — fetch detail the normal way
       feedLog.detail('open (in batch)', { id: fullId, source: item.source, title: item.title });
-      setDetailData(null);
-      setDetailError(null);
-      setDetailLoading(true);
-      if (!isDesktop) { const el = scrollRef?.current; if (el) el.scrollTop = 0; }
 
       const params = new URLSearchParams();
       if (item.contentType === 'youtube') params.set('quality', '480p');
@@ -536,94 +526,80 @@ export default function Scroll() {
       }
 
       const detailStart = performance.now();
-      detailAbortRef.current?.abort();
-      const controller = new AbortController();
-      detailAbortRef.current = controller;
-      DaylightAPI(`/api/v1/feed/detail/${encodeURIComponent(item.id)}?${params}`, {}, 'GET', { signal: controller.signal })
+      DaylightAPI(`/api/v1/feed/detail/${encodeURIComponent(item.id)}?${params}`, {}, 'GET', { signal })
         .then(result => {
-          if (!isCurrent()) return; // a newer selection superseded this request
+          if (signal.aborted) return;
           feedLog.timing('detail-sections', { durationMs: Math.round(performance.now() - detailStart), id: fullId, sectionCount: result.sections?.length || 0 });
           feedLog.detail('loaded', { id: fullId, sections: result.sections?.length || 0 });
-          setDetailData(result);
-          setDetailError(null);
+          publish(result);
         })
         .catch(async err => {
-          if (!isCurrent() || err.name === 'AbortError') return;
+          if (signal.aborted || err.name === 'AbortError') return;
           feedLog.detail('fetchError', { id: fullId, error: err.message });
+          const error = 'The reader view could not be loaded. You can still open the original article.';
           try {
             const offline = await getOfflineEdition(item.id);
-            if (!isCurrent()) return;
-            setDetailData(offline?.item ? (offline.detail || { sections: [], ogImage: null, ogDescription: offline.item.summary || item.summary || null }) : null);
-            setDetailError(offline?.item ? null : 'The reader view could not be loaded. You can still open the original article.');
+            if (offline?.item) {
+              publish(offline.detail || { sections: [], ogImage: null, ogDescription: offline.item.summary || item.summary || null });
+            } else publish(null, { error });
           } catch {
-            if (isCurrent()) {
-              setDetailData(null);
-              setDetailError('The reader view could not be loaded. You can still open the original article.');
-            }
+            publish(null, { error });
           }
-        })
-        .finally(() => { if (isCurrent()) setDetailLoading(false); });
+        });
     } else {
       // Cold load / deep link — fetch item + detail from server cache
       feedLog.detail('open (deep link)', { slug: urlSlug, fullId });
-      setDetailData(null);
-      setDetailError(null);
-      setDetailLoading(true);
-      setDeepLinkedItem(null);
-      if (!isDesktop) { const el = scrollRef?.current; if (el) el.scrollTop = 0; }
 
       const detailStart = performance.now();
-      detailAbortRef.current?.abort();
-      const controller = new AbortController();
-      detailAbortRef.current = controller;
-      DaylightAPI(`/api/v1/feed/items/${urlSlug}`, {}, 'GET', { signal: controller.signal })
+      DaylightAPI(`/api/v1/feed/items/${urlSlug}`, {}, 'GET', { signal })
         .then(result => {
-          if (!isCurrent()) return; // superseded by a newer selection
+          if (signal.aborted) return;
           feedLog.timing('deeplink-fetch', { durationMs: Math.round(performance.now() - detailStart), slug: urlSlug, hasItem: !!result.item, sectionCount: result.sections?.length || 0 });
           feedLog.detail('deep link loaded', { hasItem: !!result.item, sections: result.sections?.length || 0 });
-          if (result.item) setDeepLinkedItem(result.item);
-          setDetailData({
+          publish({
             sections: result.sections || [],
             ogImage: result.ogImage || null,
             ogDescription: result.ogDescription || null,
-          });
-          setDetailError(null);
+          }, { item: result.item });
         })
         .catch(async err => {
-          if (!isCurrent() || err.name === 'AbortError') return;
+          if (signal.aborted || err.name === 'AbortError') return;
           try {
             const offline = await getOfflineEdition(fullId);
-            if (!isCurrent()) return;
+            if (signal.aborted) return;
             if (offline?.item) {
               feedLog.detail('deep link loaded from offline edition', { slug: urlSlug });
-              setDeepLinkedItem(applyPendingMutations([offline.item])[0]);
-              setDetailData(offline.detail || { sections: [], ogImage: null, ogDescription: offline.item.summary || null });
+              publish(offline.detail || { sections: [], ogImage: null, ogDescription: offline.item.summary || null }, {
+                item: applyPendingMutations([offline.item])[0],
+              });
               return;
             }
           } catch (offlineError) {
+            if (signal.aborted) return;
             feedLog.detail('offline edition unavailable', { slug: urlSlug, error: offlineError.message });
           }
           feedLog.detail('deep link unavailable', { slug: urlSlug, error: err.message });
-          setDetailError('This item is no longer available in Feed history or on this device.');
-        })
-        .finally(() => { if (isCurrent()) setDetailLoading(false); });
+          publish(null, { error: 'This item is no longer available in Feed history or on this device.' });
+        });
     }
-    return () => detailAbortRef.current?.abort();
-  }, [applyPendingMutations, urlSlug, fullId, detailRetry, mutateItems, isDesktop]);
+    return () => controller.abort();
+  }, [applyPendingMutations, detailKey, fullId, urlSlug]);
+
+  useLayoutEffect(() => {
+    if (!urlSlug) return;
+    wasOnDetail.current = true;
+    if (fullId && !isDesktop && scrollRef?.current) scrollRef.current.scrollTop = 0;
+  }, [detailKey, fullId, isDesktop, scrollRef, urlSlug]);
 
   // Restore scroll position when navigating back to list
   const scrollLog = useCallback(() => getLogger().child({ module: 'scroll-restore' }), []);
   useEffect(() => {
     if (!urlSlug) {
-      if (!prevSlugRef.current) return;
+      if (!wasOnDetail.current) return;
+      wasOnDetail.current = false;
       const savedY = savedScrollRef.current;
       const el = scrollRef?.current;
       scrollLog().info('nav.backToList', { savedY, itemCount: items.length, scrollHeight: el?.scrollHeight || 0 });
-      setDetailData(null);
-      setDetailError(null);
-      setDetailLoading(false);
-      setDeepLinkedItem(null);
-      prevSlugRef.current = null;
 
       // Restore scroll on .feed-content — retry if content hasn't laid out yet
       let attempts = 0;
