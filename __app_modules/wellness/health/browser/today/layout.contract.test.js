@@ -109,7 +109,7 @@ describe('Today layout stylesheet', () => {
   it('opts Health into the left context rail without changing other apps', () => {
     const chrome = readFileSync(new URL("../../../../../frontend/src/lib/ui/ds.scss", import.meta.url), 'utf8');
     expect(chrome).toContain('&--context { grid-template-columns: 320px minmax(0, 1fr); }');
-    expect(chrome).toContain('grid-template-columns: 200px 1fr;');
+    expect(chrome).toContain('grid-template-columns: 200px minmax(0, 1fr);');
     expect(rule('.health-history > summary')).toMatch(/min-height: 44px/);
   });
 
@@ -184,7 +184,9 @@ describe('month block stylesheet', () => {
 
 describe('week strip stylesheet', () => {
   it('makes selection and week navigation visually explicit', () => {
-    expect(rule('.health-weekstrip__nav')).toMatch(/grid-template-columns: 44px 1fr 44px/);
+    expect(rule('.health-weekstrip__nav')).toContain(
+      'grid-template-columns: var(--ds-control-touch-target) 1fr var(--ds-control-touch-target)',
+    );
     expect(rule('.health-weekstrip__cell--active')).toMatch(/border-color: var\(--ds-accent\)/);
     expect(rule('.health-weekstrip__cell--month-start')).toMatch(/border-left-color: var\(--ds-border\)/);
   });
