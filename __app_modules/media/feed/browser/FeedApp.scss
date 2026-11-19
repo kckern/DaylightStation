@@ -154,6 +154,11 @@
   top: calc(100% + 0.4rem);
   right: 0;
   width: min(18rem, calc(100vw - 1rem));
+  max-block-size: calc(100vh - var(--feed-tabs-height) - var(--ds-space-md));
+  max-block-size: calc(100dvh - var(--feed-tabs-height) - var(--ds-space-md));
+  box-sizing: border-box;
+  overflow-y: auto;
+  overscroll-behavior: contain;
   display: grid;
   gap: 0.75rem;
   padding: 1rem;

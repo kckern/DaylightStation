@@ -1,40 +1,52 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useLayoutEffect, useRef } from 'react';
+import { useFocusTrap, useMergedRef } from '@mantine/hooks';
+import { useDismissLayer } from '@/lib/ui/dismiss/useDismissLayer.js';
 import DetailView from "./DetailView.jsx";
 import "./DetailView.scss";
 
 export default function DetailModal({ item, sections, ogImage, ogDescription, loading, error, onRetry, onBack, onNext, onPrev, onPlay, activeMedia, playback, onNavigateToItem, onStateAction }) {
-  const panelRef = useRef(null);
+  const dialogRef = useRef(null);
+  const trapRef = useFocusTrap();
+  const ref = useMergedRef(dialogRef, trapRef);
+  const usesDismissStack = useDismissLayer(true, onBack);
+
+  useLayoutEffect(() => {
+    const opener = document.activeElement;
+    return () => opener?.focus?.({ preventScroll: true });
+  }, []);
+
+  useLayoutEffect(() => {
+    // An adjacent item control can disappear at either end of the list.
+    if (document.activeElement === document.body) {
+      dialogRef.current?.querySelector('[data-autofocus]')?.focus({ preventScroll: true });
+    }
+  }, [item?.id]);
+
   useEffect(() => {
-    const previous = document.activeElement;
-    const panel = panelRef.current;
-    panel?.focus();
-    const onKeyDown = event => {
-      if (event.key === 'Escape') { event.preventDefault(); onBack(); return; }
-      if (event.key !== 'Tab' || !panel) return;
-      const focusable = [...panel.querySelectorAll('a[href], button:not([disabled]), input, select, textarea, [tabindex]:not([tabindex="-1"])')];
-      if (!focusable.length) { event.preventDefault(); panel.focus(); return; }
-      const first = focusable[0];
-      const last = focusable[focusable.length - 1];
-      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
-      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+    if (usesDismissStack) return;
+    const handleEscape = event => {
+      if (event.key !== 'Escape' || event.defaultPrevented) return;
+      if (event.target?.getAttribute?.('data-mantine-stop-propagation') === 'true') return;
+      event.preventDefault();
+      onBack();
     };
-    document.addEventListener('keydown', onKeyDown);
-    return () => { document.removeEventListener('keydown', onKeyDown); previous?.focus?.(); };
-  }, [onBack]);
+    document.addEventListener('keydown', handleEscape);
+    return () => document.removeEventListener('keydown', handleEscape);
+  }, [usesDismissStack, onBack]);
 
   return (
-    <div className="detail-modal-scrim" onClick={onBack}>
-      {onPrev && (
-        <button
-          className="detail-modal-arrow detail-modal-arrow--left"
-          onClick={(e) => { e.stopPropagation(); onPrev(); }}
-          aria-label="Previous item"
-        >
-          &#8249;
-        </button>
-      )}
-      <div ref={panelRef} className="detail-modal-panel" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-label={item?.title || 'Feed item detail'} tabIndex={-1}>
+    <div
+      ref={ref}
+      className="detail-modal-scrim"
+      onClick={event => { if (event.target === event.currentTarget) onBack(); }}
+      role="dialog"
+      aria-modal="true"
+      aria-label={item?.title || 'Feed item detail'}
+      tabIndex={-1}
+    >
+      <div className="detail-modal-panel">
         <DetailView
+          inModal
           item={item}
           sections={sections}
           ogImage={ogImage}
@@ -52,10 +64,21 @@ export default function DetailModal({ item, sections, ogImage, ogDescription, lo
           onStateAction={onStateAction}
         />
       </div>
+      {onPrev && (
+        <button
+          type="button"
+          className="detail-modal-arrow detail-modal-arrow--left"
+          onClick={() => onPrev()}
+          aria-label="Previous item"
+        >
+          &#8249;
+        </button>
+      )}
       {onNext && (
         <button
+          type="button"
           className="detail-modal-arrow detail-modal-arrow--right"
-          onClick={(e) => { e.stopPropagation(); onNext(); }}
+          onClick={() => onNext()}
           aria-label="Next item"
         >
           &#8250;

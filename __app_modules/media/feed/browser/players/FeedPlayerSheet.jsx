@@ -1,5 +1,6 @@
 import { useState, useRef, useCallback, useEffect, useLayoutEffect } from 'react';
 import { UiIcon } from '@/lib/ui/UiIcon.jsx';
+import { useDismissLayer } from '@/lib/ui/dismiss/useDismissLayer.js';
 import { proxyImage } from "../Scroll/cards/utils.js";
 import { feedLog } from "../Scroll/feedLog.js";
 import { useFeedPlayer, SPEED_STEPS } from "./FeedPlayerContext.jsx";
@@ -27,6 +28,7 @@ export default function FeedPlayerSheet({ open, onClose, item, playback, openerR
   const previousFocusRef = useRef(null);
   const dragRef = useRef(null);
   const [dragging, setDragging] = useState(false);
+  const usesDismissStack = useDismissLayer(open && Boolean(item), onClose);
 
   const handleTouchStart = useCallback((e) => {
     if (!open || e.touches.length !== 1 || scrubDragRef.current || scrubberRef.current?.contains(e.target)) return;
@@ -70,7 +72,8 @@ export default function FeedPlayerSheet({ open, onClose, item, playback, openerR
     previousFocusRef.current = document.activeElement;
     sheetRef.current?.focus();
     const handler = (e) => {
-      if (e.key === 'Escape') onClose();
+      if (e.defaultPrevented) return;
+      if (e.key === 'Escape' && !usesDismissStack) onClose();
       if (e.key !== 'Tab' || !sheetRef.current) return;
       const focusable = [...sheetRef.current.querySelectorAll('button:not([disabled]), input:not([disabled]), [tabindex]:not([tabindex="-1"])')];
       if (!focusable.length) { e.preventDefault(); sheetRef.current.focus(); return; }
@@ -81,7 +84,7 @@ export default function FeedPlayerSheet({ open, onClose, item, playback, openerR
     };
     document.addEventListener('keydown', handler);
     return () => { document.removeEventListener('keydown', handler); (openerRef?.current || previousFocusRef.current)?.focus?.({ preventScroll: true }); };
-  }, [open, onClose, openerRef]);
+  }, [open, onClose, openerRef, usesDismissStack]);
 
   // --- Seek scrubber ---
   const [scrubTime, setScrubTime] = useState(null);

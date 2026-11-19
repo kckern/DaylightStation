@@ -3,6 +3,7 @@ import { useState, useEffect, useLayoutEffect, useCallback, useMemo, useRef } fr
 import { useMediaQuery } from '@mantine/hooks';
 import { DS_TOKENS } from '@/lib/theme/tokens.mjs';
 import { UiIcon } from '@/lib/ui/UiIcon.jsx';
+import { useDismissLayer } from '@/lib/ui/dismiss/useDismissLayer.js';
 import { useSearchParams } from 'react-router-dom';
 import { DaylightAPI } from "../../../../../frontend/src/lib/api.mjs";
 import getLogger from "../../../../../frontend/src/lib/logging/Logger.js";
@@ -228,9 +229,10 @@ export default function Reader() {
     if (window.matchMedia(COMPACT_QUERY).matches) setDrawerOpen(true);
   };
   const closeDrawer = () => setDrawerOpen(false);
+  const usesDismissStack = useDismissLayer(drawerActive, closeDrawer);
   const handleDrawerKeyDown = event => {
     if (event.defaultPrevented) return;
-    if (event.key === 'Escape') {
+    if (event.key === 'Escape' && !usesDismissStack) {
       event.preventDefault();
       event.stopPropagation();
       closeDrawer();

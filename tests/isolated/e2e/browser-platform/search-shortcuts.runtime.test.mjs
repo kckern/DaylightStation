@@ -87,10 +87,25 @@ test('phone Media dismisses the item destination picker before Search and preser
   const search = page.getByRole('searchbox', { name: 'Search media' });
   await search.fill(item.title);
   const more = page.getByRole('button', { name: 'More actions' });
+  await expect(more).toBeVisible();
+  const close = page.getByRole('button', { name: 'Close search' });
+  await search.press('Shift+Tab');
+  await expect(close).toBeFocused();
+  await page.keyboard.press('Shift+Tab');
+  await expect(more).toBeFocused();
+  await page.keyboard.press('Tab');
+  await expect(close).toBeFocused();
+
   const playOn = page.getByRole('menuitem', { name: 'Play on…', exact: true });
   await more.press('Enter');
   await expect(playOn).toBeVisible();
-  await playOn.press('Escape');
+  const menu = page.getByRole('menu');
+  await playOn.focus();
+  await page.keyboard.press('Tab');
+  await expect(menu.locator(':focus')).toHaveCount(1);
+  await page.keyboard.press('Shift+Tab');
+  await expect(menu.locator(':focus')).toHaveCount(1);
+  await page.keyboard.press('Escape');
   await expect(playOn).toBeHidden();
   await expect(search).toHaveValue(item.title);
 
@@ -98,6 +113,11 @@ test('phone Media dismisses the item destination picker before Search and preser
   await playOn.click();
   const picker = page.getByRole('dialog', { name: 'Play on…', exact: true });
   await expect(picker).toBeVisible();
+  await expect(picker.locator(':focus')).toHaveCount(1);
+  await page.keyboard.press('Shift+Tab');
+  await expect(picker.locator(':focus')).toHaveCount(1);
+  await page.keyboard.press('Tab');
+  await expect(picker.locator(':focus')).toHaveCount(1);
   await page.keyboard.press('Escape');
   await expect(picker).toBeHidden();
   await expect(search).toHaveValue(item.title);

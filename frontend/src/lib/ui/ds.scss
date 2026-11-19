@@ -135,6 +135,14 @@
       animation: ds-sheet-in-side var(--ds-motion-base) var(--ds-motion-easing);
     }
   }
+
+  &[data-keyboard-viewport] {
+    top: var(--sheet-viewport-top);
+    bottom: auto;
+    height: var(--sheet-viewport-height);
+
+    .ds-sheet__panel { max-height: 100%; }
+  }
 }
 
 @keyframes ds-sheet-in-side {

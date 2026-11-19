@@ -551,7 +551,8 @@ which day. The request contract, the gateway questions and the correction rules 
 - **Questions.** "Which food did you mean?" lists the candidates, and "Which day should
   this go to?" offers a date field that stops at today. They open under the bar, are
   announced through the bar's status region, and take focus unless the person has moved
-  elsewhere. An answer resends the same words with every answer so far: the text the
+  elsewhere. **Cancel** returns focus to the day input with its words intact. An
+  answer resends the same words with every answer so far: the text the
   server reports, else the words that were sent. A recording with no reported words is
   sent again. A day answer also sends back the foods the question named, so it
   [cannot land on different ones](meal-commands.md#answering-which-day).

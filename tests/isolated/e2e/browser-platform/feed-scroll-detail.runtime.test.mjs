@@ -154,3 +154,55 @@ test('Feed keeps an invalid link error after the previous item’s offline looku
   });
   await expect(alert).toContainText(invalidLink);
 });
+
+test('Feed desktop detail contains Tab and returns focus to the opening card after navigation', async ({ page }) => {
+  const first = { ...article, id: 'reddit:previous-detail', title: 'Previous Feed item' };
+  const third = { ...article, id: 'reddit:next-detail', title: 'Next Feed item' };
+  await page.setViewportSize({ width: 1440, height: 850 });
+  await page.route('**/scroll/sessions', route => route.fulfill({
+    json: { items: [first, article, third], sessionId: 'three-articles', hasMore: false },
+  }));
+  await page.route('**/feed/detail/*', route => route.fulfill({ json: { sections } }));
+  await page.goto('/feed/scroll');
+
+  const opener = page.getByRole('button', { name: `Open: ${article.title}` });
+  await opener.focus();
+  await page.keyboard.press('Enter');
+  const dialog = page.getByRole('dialog', { name: article.title });
+  await expect(dialog).toBeVisible();
+  await expect.poll(() => dialog.evaluate(element => element.contains(document.activeElement))).toBe(true);
+
+  await page.keyboard.press('Shift+Tab');
+  expect(await dialog.evaluate(element => element.contains(document.activeElement))).toBe(true);
+  const next = dialog.getByRole('button', { name: 'Next item' });
+  await expect(next).toBeFocused();
+  await page.keyboard.press('Tab');
+  const back = dialog.getByRole('button', { name: 'Back to feed' }).first();
+  await expect(back).toBeFocused();
+  await page.keyboard.press('Shift+Tab');
+  await expect(next).toBeFocused();
+
+  await page.keyboard.press('Enter');
+  await expect(page).toHaveURL(scrollPath(third.id));
+  const lastDialog = page.getByRole('dialog', { name: third.title });
+  await expect.poll(() => lastDialog.evaluate(element => element.contains(document.activeElement))).toBe(true);
+  const previous = lastDialog.getByRole('button', { name: 'Previous item' });
+  await previous.focus();
+  await page.keyboard.press('Enter');
+  await expect(page).toHaveURL(scrollPath(article.id));
+  await expect(dialog.getByRole('button', { name: 'Previous item' })).toBeFocused();
+
+  await dialog.getByRole('button', { name: 'Download', exact: true }).click();
+  await expect(page.getByRole('alert').filter({ hasText: 'Available offline' })).toBeVisible();
+
+  await page.keyboard.press('Escape');
+  await expect(page).toHaveURL('/feed/scroll');
+  await expect(dialog).toHaveCount(0);
+  await expect(opener).toBeFocused();
+
+  await page.keyboard.press('Enter');
+  await expect(dialog).toBeVisible();
+  await page.mouse.click(10, 10);
+  await expect(page).toHaveURL('/feed/scroll');
+  await expect(opener).toBeFocused();
+});

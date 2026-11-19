@@ -138,6 +138,68 @@ test('Auto saves one fuel entry at phone height and reopens on Car', async ({ pa
   await expect(page.getByRole('button', { name: 'Car', exact: true })).toHaveAttribute('aria-current', 'page');
 });
 
+test('Auto keeps fuel Save reachable when only the visual viewport shrinks', async ({ page }) => {
+  await page.routeWebSocket('**/*', () => {});
+  await page.route('https://fonts.googleapis.com/**', route => route.abort());
+  await page.route('**/automotive/vehicles', route => route.fulfill({
+    json: { vehicles: [{ id: 'sample', label: 'Sample' }] },
+  }));
+  await page.route('**/automotive/vehicles/sample', route => route.fulfill({
+    json: { odometer: { km: 123 }, fuel: { needsMoreData: true, fillCount: 0 }, trip_count: 0 },
+  }));
+  await page.goto('/auto');
+  await page.getByRole('button', { name: 'Fuel', exact: true }).click();
+  const openFuel = page.getByRole('button', { name: 'Log a fill-up' });
+  await openFuel.click();
+  const dialog = page.getByRole('dialog', { name: 'Log a fill-up' });
+  const total = dialog.getByLabel('Total ($)', { exact: true });
+  await dialog.getByLabel('Gallons').fill('5.5');
+  await total.focus();
+
+  // Desktop browser automation has no soft keyboard. Keep the actual layout
+  // viewport fixed and drive the VisualViewport readings a keyboard changes.
+  const setVisualViewport = (values, event = 'resize') => page.evaluate(({ values, event }) => {
+    const viewport = window.visualViewport;
+    for (const [key, value] of Object.entries(values)) {
+      Object.defineProperty(viewport, key, { configurable: true, value });
+    }
+    viewport.dispatchEvent(new Event(event));
+  }, { values, event });
+  const dialogBounds = () => dialog.evaluate(element => {
+    const { top, bottom } = element.getBoundingClientRect();
+    return [top, bottom, window.innerHeight];
+  });
+  await setVisualViewport({ scale: 1, width: 390, height: 400, offsetTop: 0 });
+  await expect.poll(dialogBounds).toEqual([0, 400, 850]);
+  await setVisualViewport({ offsetTop: 100 }, 'scroll');
+  await expect.poll(dialogBounds).toEqual([100, 500, 850]);
+
+  const save = dialog.getByRole('button', { name: 'Save', exact: true });
+  await expect(save).toBeEnabled();
+  await save.scrollIntoViewIfNeeded();
+  await expect.poll(() => save.evaluate(button => {
+    const { left, right, top, bottom } = button.getBoundingClientRect();
+    const viewport = window.visualViewport;
+    return top >= viewport.offsetTop && bottom <= viewport.offsetTop + viewport.height
+      && button.contains(document.elementFromPoint((left + right) / 2, (top + bottom) / 2));
+  })).toBe(true);
+
+  await setVisualViewport({ scale: 1.25 });
+  await expect.poll(dialogBounds).toEqual([0, 850, 850]);
+  await setVisualViewport({ scale: 1 });
+  await expect.poll(dialogBounds).toEqual([100, 500, 850]);
+  await setVisualViewport({ height: 850, offsetTop: 0 });
+  await expect.poll(dialogBounds).toEqual([0, 850, 850]);
+  await setVisualViewport({ height: 400, offsetTop: 100 });
+  await expect.poll(dialogBounds).toEqual([100, 500, 850]);
+
+  await page.keyboard.press('Escape');
+  await expect(dialog).toBeHidden();
+  await expect(openFuel).toBeFocused();
+  await openFuel.click();
+  await expect.poll(dialogBounds).toEqual([0, 850, 850]);
+});
+
 test('Life retires previous-member plans and notifications on household switches', async ({ page }) => {
   const users = ['amy', 'bob'].map(username => ({ username, displayName: username.toUpperCase() }));
   let socket;

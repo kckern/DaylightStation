@@ -1,4 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
+import { useDismissLayer } from '@/lib/ui/dismiss/useDismissLayer.js';
 import { formatAge, proxyIcon, proxyImage, colorFromLabel } from "../cards/utils.js";
 import { renderSection } from "./sections/index.jsx";
 import { feedLog } from "../feedLog.js";
@@ -7,7 +8,8 @@ import AnnotationPanel from "../../Annotations/AnnotationPanel.jsx";
 import OfflineEditionButton from "../../offline/OfflineEditionButton.jsx";
 import "./DetailView.scss";
 
-export default function DetailView({ item, sections, ogImage, ogDescription, loading, error, onRetry, onBack, onNext, onPrev, onPlay, activeMedia, playback, onNavigateToItem, onStateAction }) {
+export default function DetailView({ inModal = false, item, sections, ogImage, ogDescription, loading, error, onRetry, onBack, onNext, onPrev, onPlay, activeMedia, playback, onNavigateToItem, onStateAction }) {
+  const usesDismissStack = useDismissLayer(!inModal, onBack);
   const sourceName = item.meta?.sourceName || item.source || '';
   const iconUrl = proxyIcon(item.meta?.sourceIcon);
   const borderColor = colorFromLabel(sourceName);
@@ -114,13 +116,13 @@ export default function DetailView({ item, sections, ogImage, ogDescription, loa
   useEffect(() => {
     const handleKeyDown = (e) => {
       if (e.defaultPrevented) return;
-      if (e.key === 'Escape') onBack();
+      if (!inModal && !usesDismissStack && e.key === 'Escape') onBack();
       if (e.key === 'ArrowLeft' && onPrev) navigateWithAnimation(-1, onPrev);
       if (e.key === 'ArrowRight' && onNext) navigateWithAnimation(1, onNext);
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [onBack, onNext, onPrev, navigateWithAnimation]);
+  }, [inModal, usesDismissStack, onBack, onNext, onPrev, navigateWithAnimation]);
 
   const touchRef = useRef(null);
 
@@ -145,13 +147,13 @@ export default function DetailView({ item, sections, ogImage, ogDescription, loa
 
   return (
     <div className="detail-view" onTouchStart={handleTouchStart} onTouchEnd={handleTouchEnd}>
-      <button className="detail-close" onClick={onBack} aria-label="Back to feed">
+      <button className="detail-close" onClick={onBack} aria-label="Back to feed" data-autofocus={inModal || undefined}>
         <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
           <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z" />
         </svg>
       </button>
       <div ref={stickyRef} className="detail-sticky-header" style={{ borderTop: `2px solid ${borderColor}` }}>
-        <button className="detail-sticky-back" onClick={onBack} aria-label="Back to feed">
+        <button className="detail-sticky-back" onClick={onBack} aria-label="Back to feed" tabIndex={inModal && !stickyVisible ? -1 : undefined}>
           <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
             <path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z" />
           </svg>
@@ -283,7 +285,7 @@ export default function DetailView({ item, sections, ogImage, ogDescription, loa
 
         <AnnotationPanel item={item} />
 
-        {(onPrev || onNext) && <nav className="detail-mobile-nav" aria-label="Article navigation">
+        {!inModal && (onPrev || onNext) && <nav className="detail-mobile-nav" aria-label="Article navigation">
           <button type="button" onClick={() => navigateWithAnimation(-1, onPrev)} disabled={!onPrev}>Previous</button>
           <button type="button" onClick={() => navigateWithAnimation(1, onNext)} disabled={!onNext}>Next</button>
         </nav>}

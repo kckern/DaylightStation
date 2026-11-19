@@ -32,6 +32,32 @@ test('Health closes metric suggestions before dismissing the reading sheet', asy
   await expect(opener).toBeFocused();
 });
 
+test('Health returns focus to the day input after cancelling a clarification', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 850 });
+  await page.route('**/health/context', route => route.fulfill({ json: { userId: 'alice' } }));
+  await page.route('**/api/v1/health/day?**', route => route.fulfill({
+    json: { items: [], budget: { budget: 2000, remaining: 2000 } },
+  }));
+  await page.route('**/api/v1/health/nutrition/day-input', route => route.fulfill({ json: {
+    committed: false,
+    outcome: 'clarification',
+    instructionText: 'move it',
+    clarification: {
+      kind: 'food', question: 'Which food did you mean?',
+      choices: [{ id: 'tea', label: 'Tea' }],
+    },
+  } }));
+
+  await page.goto('/health');
+  const field = page.getByRole('textbox', { name: 'Log food or change this day' });
+  await field.fill('move it');
+  await field.press('Enter');
+  await expect(page.getByRole('button', { name: 'Tea', exact: true })).toBeFocused();
+  await page.getByRole('button', { name: 'Cancel', exact: true }).click();
+  await expect(field).toBeFocused();
+  await expect(field).toHaveValue('move it');
+});
+
 function house(state) {
   const room = { id: 'kitchen', name: 'Kitchen' };
   return {

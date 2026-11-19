@@ -138,6 +138,10 @@ The active focus and filter own the current list request, including pagination. 
 
 “Continue 30 more” extends the reading boundary for the current filter visit. Retry keeps that extension. Switching filters or returning to a previous filter starts with the saved reading preference, including when resuming a server session that has already served more items.
 
+Reading appearance uses the current Feed tab bar height to size its own
+scroll region. In short windows, the lower preferences and data controls
+remain reachable without scrolling the reading view.
+
 Card rendering is windowed to at most 60 mounted cards. Phone layouts use measured top/bottom spacers; desktop masonry keeps its complete position map while mounting only viewport and measurement-window cards. This bounds React, media, observer, layout, and paint work without truncating scroll history.
 
 `content-visibility: auto` applies on both phone and desktop to reduce off-screen layout/paint work. Route-level snapshots preserve the loaded items and scroll position while switching Feed modes. Masonry measurement and placement events are debug-only; normal sessions retain error-level overlap reporting without per-card log traffic.
@@ -145,6 +149,8 @@ Card rendering is windowed to at most 60 mounted cards. Phone layouts use measur
 The sticky product controls expose the four tier moods and every source discovered in the current session through shareable `?filter=` state. On phones the controls are a single-line horizontal strip and the source chooser opens as a bounded sheet. Each card includes an explicit keyboard-focusable Open action and a “Why shown” disclosure identifying its source and tier, with `more`, `less`, `mute`, reset, and one-step source-focus actions. Preferences are account-scoped; muted sources are removed immediately in the client and excluded from future assembled batches, while explicit filtered views remain available for inspection/reset. Items newer than the prior visit are marked. The reading settings can optionally stop Scroll after 30, 60, or 100 items; the completion surface can extend the current session by 30 or move directly to saved items.
 
 Scroll detail offers notes/highlights and a device-local Download action. A failed cold detail request checks the user-scoped IndexedDB edition before presenting an actionable error without discarding the deep link. Extraction failures retain a visible original-publisher link even when an iframe fallback is attempted, and completed empty YouTube responses fall back to the embed instead of spinning indefinitely. Phone detail provides visible Previous and Next buttons in addition to swipe and keyboard navigation. Downloading stores the normalized item and the current detail response; it does not promise that third-party images or streaming media remain available offline.
+
+On desktop, the named article dialog opens with focus on Back to feed and keeps Tab within the dialog and its Previous and Next controls. Moving between articles keeps focus on the active control when it is still available. Escape follows the shared dismiss stack, and closing the dialog returns focus to the opening card when it is available.
 
 ## File Map
 

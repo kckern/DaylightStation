@@ -4,6 +4,8 @@ import { useHotkey } from '@/lib/hooks/useHotkey.js';
 import { lazy, Suspense, useCallback, useState, useEffect, useRef } from 'react';
 import { Routes, Route, NavLink, Navigate, Outlet, useParams, useLocation, useMatch, useNavigate } from 'react-router-dom';
 import { AppThemeProvider } from '@/lib/ui/AppThemeProvider.jsx';
+import { DismissStackProvider } from '@/lib/ui/dismiss/DismissStackProvider.jsx';
+import { useElementSize } from '@mantine/hooks';
 import { Notifications } from '@mantine/notifications';
 import '@mantine/core/styles.css';
 import '@mantine/notifications/styles.css';
@@ -60,6 +62,7 @@ function HeadlinesPage() {
 function FeedLayout() {
   useFeedPWA();
   const scrollRef = useRef(null);
+  const { ref: tabsRef, height: tabsHeight } = useElementSize();
 
   useEffect(() => {
     // Only crank the whole-app logger to debug when explicitly requested via
@@ -159,7 +162,8 @@ function FeedLayout() {
     >
       {/* Persistent nav on every mode so Reader/Headlines stay discoverable
           from Scroll; compact modifier keeps it unobtrusive while scrolling. (F-12) */}
-      <nav className={isScroll ? 'feed-tabs feed-tabs--compact' : 'feed-tabs'} aria-label="Feed modes">
+      <nav ref={tabsRef} className={isScroll ? 'feed-tabs feed-tabs--compact' : 'feed-tabs'}
+        style={{ '--feed-tabs-height': `${tabsHeight}px` }} aria-label="Feed modes">
         <NavLink to="/feed/reader" className={({ isActive }) => isActive ? 'active' : ''}>
           Reader{summary.readerUnread > 0 && <span className="feed-tab-badge" aria-label={`${summary.readerUnread} unread Reader items`}>{summary.readerUnread > 999 ? '999+' : summary.readerUnread}</span>}
         </NavLink>
@@ -209,21 +213,23 @@ const FeedApp = () => {
   useDocumentTitle('Feed');
   return (
     <AppThemeProvider pack="feed">
-      <Notifications position="bottom-center" />
-      <FeedWorkspaceProvider>
-        <FeedPlayerProvider>
-          <Routes>
-            <Route element={<FeedLayout />}>
-            <Route index element={<Navigate to="/feed/scroll" replace />} />
-            <Route path="reader" element={<Reader />} />
-            <Route path="headlines/:pageId" element={<HeadlinesPage />} />
-            <Route path="headlines" element={<Navigate to="/feed/headlines/mainstream" replace />} />
-            <Route path="scroll/:feedItemId?" element={<Scroll />} />
-            <Route path="search" element={<FeedSearch />} />
-            </Route>
-          </Routes>
-        </FeedPlayerProvider>
-      </FeedWorkspaceProvider>
+      <Notifications position="bottom-center" withinPortal={false} />
+      <DismissStackProvider>
+        <FeedWorkspaceProvider>
+          <FeedPlayerProvider>
+            <Routes>
+              <Route element={<FeedLayout />}>
+                <Route index element={<Navigate to="/feed/scroll" replace />} />
+                <Route path="reader" element={<Reader />} />
+                <Route path="headlines/:pageId" element={<HeadlinesPage />} />
+                <Route path="headlines" element={<Navigate to="/feed/headlines/mainstream" replace />} />
+                <Route path="scroll/:feedItemId?" element={<Scroll />} />
+                <Route path="search" element={<FeedSearch />} />
+              </Route>
+            </Routes>
+          </FeedPlayerProvider>
+        </FeedWorkspaceProvider>
+      </DismissStackProvider>
     </AppThemeProvider>
   );
 };

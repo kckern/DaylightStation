@@ -53,3 +53,28 @@ test('Feed retains a reading preference chosen during workspace startup', async 
   await expect(frame).toHaveAttribute('data-density', 'compact');
   expect(patches).toEqual([{ theme: 'sepia' }]);
 });
+
+test('Feed keeps the end of Reading appearance reachable in a short landscape viewport', async ({ page }) => {
+  await page.setViewportSize({ width: 740, height: 360 });
+  await page.routeWebSocket('**/*', () => {});
+  await page.route('**/api/**', route => route.fulfill({ json: new URL(route.request().url()).pathname.endsWith('/supervision/bootstrap')
+    ? { enabled: false }
+    : {} }));
+  await page.goto('/feed/search');
+
+  await page.getByLabel('Reading appearance').click();
+  const panel = page.locator('.feed-reading-settings__panel');
+  await expect.poll(() => panel.evaluate(element => element.getBoundingClientRect().bottom <= window.innerHeight)).toBe(true);
+  const session = page.getByRole('combobox', { name: 'Scroll session' });
+  const exportButton = page.getByRole('button', { name: 'Export', exact: true });
+  const importButton = page.getByRole('button', { name: 'Import', exact: true });
+  await session.focus();
+  await session.press('Tab');
+  await expect(exportButton).toBeFocused();
+  await exportButton.press('Tab');
+  await expect(importButton).toBeFocused();
+  await expect(importButton).toBeInViewport({ ratio: 1 });
+  await importButton.click({ trial: true });
+  expect(await panel.evaluate(element => element.scrollTop)).toBeGreaterThan(0);
+  expect(await page.locator('main').evaluate(element => element.scrollTop)).toBe(0);
+});

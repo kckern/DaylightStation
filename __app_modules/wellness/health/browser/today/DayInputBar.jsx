@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Button, Modal, TextInput } from '@mantine/core';
 import { createAppLogger } from '../../../../../frontend/src/lib/ui/createAppLogger.js';
 import { useFoodMutation } from '../operations/useFoodMutation.js';
@@ -214,8 +214,8 @@ export function DayInputBar({ date, today, entries, active = true, onResult, onM
     document.addEventListener('pointerdown', onPress, true);
     return () => document.removeEventListener('pointerdown', onPress, true);
   }, []);
-  // Choices are disabled until the request that raised the question has ended.
-  useEffect(() => {
+  // Focus the available choices before the question can be dismissed.
+  useLayoutEffect(() => {
     if (question && !busy && focusIsOurs(root)) questionPanel.current?.querySelector('button:not(:disabled), input:not(:disabled)')?.focus();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [question, busy]);

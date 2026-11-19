@@ -26,6 +26,7 @@ import { LoadErrorLine } from "../shared/LoadErrorLine.jsx";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { IconAlertTriangle } from '@tabler/icons-react';
 import { Button } from '@mantine/core';
+import { useFocusTrap } from '@mantine/hooks';
 import { UiIcon } from '@/lib/ui/UiIcon.jsx';
 import { useContentCombobox } from "../../../../../__capabilities/content-catalog/browser/picker-controller.mjs";
 import { StreamStatusLine } from "../../../../../__capabilities/content-catalog/browser/search-status.mjs";
@@ -66,7 +67,7 @@ export function SearchMode({ onClose, addTo = null, restoreSearchFocus }) {
   const { queue } = useSessionController('local');
   const { push } = useNav();
   const log = useMemo(() => getLogger().child({ component: 'search-mode' }), []);
-  const inputRef = useRef(null);
+  const dialogRef = useFocusTrap();
   const priorFocusRef = useRef(typeof document !== 'undefined' ? document.activeElement : null);
   const priorScrollRef = useRef(typeof window !== 'undefined' ? window.scrollY : 0);
   // Guards against a close path AND the popstate it triggers both firing a
@@ -214,14 +215,12 @@ export function SearchMode({ onClose, addTo = null, restoreSearchFocus }) {
   const searchText = state.search ?? '';
 
   // Every open resets scope to catalog-wide (spec D1: scope never carries
-  // over from a prior search session) and autofocuses the input. This is a
+  // over from a prior search session). This is a
   // mount-once effect — SearchMode is only ever in the tree while open (the
   // shell conditionally mounts it), so mount === open.
   useEffect(() => {
     resetScope();
     mediaLog.searchModeEntered({});
-    const raf = requestAnimationFrame(() => inputRef.current?.focus());
-    return () => cancelAnimationFrame(raf);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- intentionally once per mount
   }, []);
 
@@ -268,7 +267,7 @@ export function SearchMode({ onClose, addTo = null, restoreSearchFocus }) {
   const showWideningNotice = fellBackToAll && !isSearching && !streamError;
 
   return (
-    <div className="search-mode" data-testid="search-mode" role="dialog" aria-modal="true" aria-label="Search media">
+    <div ref={dialogRef} className="search-mode" data-testid="search-mode" role="dialog" aria-modal="true" aria-label="Search media">
       <div className="search-mode-header">
         <button
           type="button"
@@ -280,7 +279,7 @@ export function SearchMode({ onClose, addTo = null, restoreSearchFocus }) {
           <UiIcon name="close" size={22} />
         </button>
         <input
-          ref={inputRef}
+          data-autofocus
           type="search"
           className="search-mode-input"
           data-testid="search-mode-input"

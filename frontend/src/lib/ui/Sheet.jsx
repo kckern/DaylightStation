@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect } from 'react';
+import { useEffect, useLayoutEffect, useRef } from 'react';
 import { ActionIcon, FocusTrap } from '@mantine/core';
 import { useDismissLayer } from './dismiss/useDismissLayer.js';
 import { UiIcon } from './UiIcon.jsx';
@@ -15,6 +15,7 @@ let pendingFocusReturn = null;
  * body scroll while open.
  */
 export function Sheet({ open, onClose, title, children, placement = 'center' }) {
+  const sheetRef = useRef(null);
   useDismissLayer(open, onClose);
   // Also handle sheets mounted already open and removed on close. A hook
   // listening only for opened -> false misses that common lifecycle.
@@ -34,6 +35,12 @@ export function Sheet({ open, onClose, title, children, placement = 'center' }) 
     };
   }, [open]);
 
+  useLayoutEffect(() => {
+    const viewport = window.visualViewport;
+    if (!open || !viewport) return undefined;
+    return fitSheetToKeyboard(sheetRef.current, viewport);
+  }, [open]);
+
   useEffect(() => {
     if (!open) return undefined;
     return lockSheetScroll();
@@ -41,7 +48,7 @@ export function Sheet({ open, onClose, title, children, placement = 'center' }) 
 
   if (!open) return null;
   return (
-    <div className={placement === 'side' ? 'ds-sheet ds-sheet--side' : 'ds-sheet'} role="dialog" aria-modal="true" aria-label={title}>
+    <div ref={sheetRef} className={placement === 'side' ? 'ds-sheet ds-sheet--side' : 'ds-sheet'} role="dialog" aria-modal="true" aria-label={title}>
       <div className="ds-sheet__scrim" onClick={onClose} />
       <FocusTrap active={open}><div className="ds-sheet__panel" tabIndex={-1}>
         <header className="ds-sheet__header">
@@ -54,6 +61,58 @@ export function Sheet({ open, onClose, title, children, placement = 'center' }) 
       </div></FocusTrap>
     </div>
   );
+}
+
+const keyboardInputTypes = new Set(['text', 'search', 'email', 'password', 'url', 'tel', 'number']);
+
+function canOpenKeyboard(element) {
+  if (element?.inputMode === 'none') return false;
+  if (element?.isContentEditable) return true;
+  if (element instanceof HTMLTextAreaElement) return !element.readOnly;
+  return element instanceof HTMLInputElement && !element.readOnly && keyboardInputTypes.has(element.type);
+}
+
+function fitSheetToKeyboard(sheet, viewport) {
+  let fitted = false;
+  const reset = () => {
+    sheet.removeAttribute('data-keyboard-viewport');
+    sheet.style.removeProperty('--sheet-viewport-top');
+    sheet.style.removeProperty('--sheet-viewport-height');
+    fitted = false;
+  };
+  const update = () => {
+    const { height, width, offsetTop, scale } = viewport;
+    const layout = document.documentElement;
+    // A soft keyboard can shrink only the visual viewport. Check for a
+    // substantial vertical change at the default scale to exclude pinch zoom
+    // and browser toolbar movement.
+    const keyboardSized = Math.abs(scale - 1) < 0.01 && Math.abs(width - layout.clientWidth) < 2
+      && height > 0 && layout.clientHeight - height >= 100;
+    if (!keyboardSized) {
+      if (fitted) reset();
+      return;
+    }
+    const field = document.activeElement;
+    // Keep the panel steady if a Save tap blurs the field before the keyboard
+    // finishes closing.
+    if (!fitted && (!sheet.contains(field) || !canOpenKeyboard(field))) return;
+    sheet.style.setProperty('--sheet-viewport-top', `${Math.max(0, offsetTop)}px`);
+    sheet.style.setProperty('--sheet-viewport-height', `${height}px`);
+    sheet.setAttribute('data-keyboard-viewport', '');
+    fitted = true;
+  };
+  viewport.addEventListener('resize', update);
+  viewport.addEventListener('scroll', update);
+  window.addEventListener('resize', update);
+  sheet.addEventListener('focusin', update);
+  update();
+  return () => {
+    viewport.removeEventListener('resize', update);
+    viewport.removeEventListener('scroll', update);
+    window.removeEventListener('resize', update);
+    sheet.removeEventListener('focusin', update);
+    if (fitted) reset();
+  };
 }
 
 let locks = 0;
