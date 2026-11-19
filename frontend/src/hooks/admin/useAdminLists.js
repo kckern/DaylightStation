@@ -1,6 +1,7 @@
 import { useState, useCallback, useMemo } from 'react';
 import { DaylightAPI } from '../../lib/api.mjs';
 import { invalidateApiResources } from '../../lib/hooks/useApiResource.js';
+import { useRefreshableRead } from '../../lib/hooks/useRefreshableRead.js';
 import getLogger from '../../lib/logging/Logger.js';
 
 const API_BASE = '/api/v1/admin/content';
@@ -23,10 +24,11 @@ export async function createAdminList(type, name) {
 /**
  * Hook for managing admin config lists (menus, watchlists, programs)
  */
-export function useAdminLists() {
+export function useAdminLists(type, listName) {
   const logger = useMemo(() => getLogger().child({ hook: 'useAdminLists' }), []);
 
   const [loading, setLoading] = useState(false);
+  const [reading, setReading] = useState(false);
   const [error, setError] = useState(null);
   const [sections, setSections] = useState([]);
   const [listMetadata, setListMetadata] = useState(null);
@@ -39,26 +41,28 @@ export function useAdminLists() {
     ), [sections]);
 
   // Fetch a list (sections + metadata)
-  const fetchList = useCallback(async (type, listName) => {
-    setLoading(true);
+  const readList = useCallback(async (isCurrent, signal) => {
+    setReading(true);
     setError(null);
     try {
-      const data = await DaylightAPI(`${API_BASE}/lists/${type}/${listName}`);
+      const data = await DaylightAPI(`${API_BASE}/lists/${type}/${listName}`, {}, 'GET', { signal });
+      if (!isCurrent()) return;
       setSections(data.sections || []);
       const { sections: _sections, ...metadata } = data;
       setListMetadata(metadata);
       setCurrentType(type);
       setCurrentList(listName);
       logger.info('admin.lists.fetched', { type, list: listName, sectionCount: data.sections?.length });
-      return data.sections;
     } catch (err) {
+      if (!isCurrent()) return;
       setError(err);
       logger.error('admin.lists.fetch.failed', { type, list: listName, message: err.message });
       throw err;
     } finally {
-      setLoading(false);
+      if (isCurrent()) setReading(false);
     }
-  }, [logger]);
+  }, [logger, type, listName]);
+  const { reload: fetchList } = useRefreshableRead(readList);
 
   // Delete a list
   const deleteList = useCallback(async (type, listName) => {
@@ -85,7 +89,7 @@ export function useAdminLists() {
     try {
       const result = await DaylightAPI(`${API_BASE}/lists/${currentType}/${currentList}/items?section=${sectionIndex}`, item, 'POST');
       logger.info('admin.lists.item.added', { type: currentType, list: currentList, sectionIndex });
-      await fetchList(currentType, currentList);
+      await fetchList();
       return result;
     } catch (err) {
       setError(err);
@@ -103,7 +107,7 @@ export function useAdminLists() {
     try {
       await DaylightAPI(`${API_BASE}/lists/${currentType}/${currentList}/items/${itemIndex}?section=${sectionIndex}`, updates, 'PUT');
       logger.info('admin.lists.item.updated', { type: currentType, list: currentList, sectionIndex, itemIndex });
-      await fetchList(currentType, currentList);
+      await fetchList();
     } catch (err) {
       setError(err);
       throw err;
@@ -124,7 +128,7 @@ export function useAdminLists() {
         'PUT'
       );
       logger.info('admin.lists.items.swapped', { type: currentType, list: currentList, srcSection, srcIndex, dstSection, dstIndex });
-      await fetchList(currentType, currentList);
+      await fetchList();
     } catch (err) {
       setError(err);
       throw err;
@@ -141,7 +145,7 @@ export function useAdminLists() {
     try {
       await DaylightAPI(`${API_BASE}/lists/${currentType}/${currentList}/items/${itemIndex}?section=${sectionIndex}`, {}, 'DELETE');
       logger.info('admin.lists.item.deleted', { type: currentType, list: currentList, sectionIndex, itemIndex });
-      await fetchList(currentType, currentList);
+      await fetchList();
     } catch (err) {
       setError(err);
       throw err;
@@ -184,7 +188,7 @@ export function useAdminLists() {
     try {
       const result = await DaylightAPI(`${API_BASE}/lists/${currentType}/${currentList}/sections`, sectionData, 'POST');
       logger.info('admin.lists.section.added', { type: currentType, list: currentList });
-      await fetchList(currentType, currentList);
+      await fetchList();
       return result;
     } catch (err) {
       setError(err);
@@ -202,7 +206,7 @@ export function useAdminLists() {
     try {
       await DaylightAPI(`${API_BASE}/lists/${currentType}/${currentList}/sections/${sectionIndex}`, updates, 'PUT');
       logger.info('admin.lists.section.updated', { type: currentType, list: currentList, sectionIndex });
-      await fetchList(currentType, currentList);
+      await fetchList();
     } catch (err) {
       setError(err);
       throw err;
@@ -219,7 +223,7 @@ export function useAdminLists() {
     try {
       await DaylightAPI(`${API_BASE}/lists/${currentType}/${currentList}/sections/${sectionIndex}`, {}, 'DELETE');
       logger.info('admin.lists.section.deleted', { type: currentType, list: currentList, sectionIndex });
-      await fetchList(currentType, currentList);
+      await fetchList();
     } catch (err) {
       setError(err);
       throw err;
@@ -236,7 +240,7 @@ export function useAdminLists() {
     try {
       await DaylightAPI(`${API_BASE}/lists/${currentType}/${currentList}/sections/reorder`, { order: newOrder }, 'PUT');
       logger.info('admin.lists.sections.reordered', { type: currentType, list: currentList });
-      await fetchList(currentType, currentList);
+      await fetchList();
     } catch (err) {
       setError(err);
       throw err;
@@ -253,7 +257,7 @@ export function useAdminLists() {
     try {
       await DaylightAPI(`${API_BASE}/lists/${currentType}/${currentList}/items/move`, { from, to }, 'PUT');
       logger.info('admin.lists.item.moved', { type: currentType, list: currentList, from, to });
-      await fetchList(currentType, currentList);
+      await fetchList();
     } catch (err) {
       setError(err);
       throw err;
@@ -274,7 +278,7 @@ export function useAdminLists() {
         'POST'
       );
       logger.info('admin.lists.section.split', { type: currentType, list: currentList, sectionIndex, afterItemIndex });
-      await fetchList(currentType, currentList);
+      await fetchList();
       return result;
     } catch (err) {
       setError(err);
@@ -314,7 +318,7 @@ export function useAdminLists() {
   }, [currentType, currentList, logger]);
 
   return {
-    loading, error, sections, setSections, flatItems, listMetadata, currentType, currentList,
+    loading: loading || reading, error, sections, setSections, flatItems, listMetadata, currentType, currentList,
     deleteList, fetchList,
     addItem, updateItem, swapItems, deleteItem, reorderItems, toggleItemActive,
     addSection, updateSection, deleteSection, reorderSections, moveItem, splitSection,

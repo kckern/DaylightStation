@@ -54,9 +54,13 @@ it('ignores a moved alias response after another folder has opened', async () =>
   const alias = Promise.withResolvers();
   DaylightAPI.mockImplementation(path => path.endsWith('/first') ? alias.promise : Promise.resolve({ title: 'second', sections: [] }));
   openFolder();
-  await waitFor(() => expect(DaylightAPI).toHaveBeenCalledWith(api + '/first'));
+  await waitFor(() => expect(DaylightAPI).toHaveBeenCalledWith(
+    api + '/first', {}, 'GET', { signal: expect.any(AbortSignal) },
+  ));
+  const [, , , { signal }] = DaylightAPI.mock.calls.find(([path]) => path === api + '/first');
   fireEvent.click(screen.getByText('Open another folder'));
   await screen.findByText('Second');
+  expect(signal.aborted).toBe(true);
   await act(async () => alias.reject(Object.assign(Error('Moved'), {
     body: { code: 'resource_moved', adminUrl: '/admin/content/agendas/fhe' },
   })));

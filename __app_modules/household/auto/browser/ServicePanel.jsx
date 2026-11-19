@@ -7,7 +7,7 @@
 // an odometer the car isn't yet giving up. The field for miles exists in the
 // schema and is deliberately not on this form until it would do something.
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { LoadingState, ErrorState, EmptyState, Sheet, Select, useSheetSubmission } from '@/lib/ui';
 import { AutoSheetActions } from './AutoSheetActions.jsx';
 import { formatDay, formatMoney, formatDistance } from "./format.js";
@@ -15,7 +15,7 @@ import { autoApi } from "./useAutoApi.js";
 import autoLog from "./autoLog.js";
 
 /**
- * Fallback vocabulary, used only if the config-driven list hasn't arrived.
+ * Fallback vocabulary for a successful response with no configured types.
  * The real list comes from the backend (`GET /service-types`), which the
  * household can extend in vehicles.yml without a frontend deploy.
  */
@@ -25,9 +25,11 @@ const FALLBACK_TYPES = [
 ];
 
 export default function ServicePanel({
-  vehicleId, service, reminders, serviceTypes, loading, error, onReload,
+  vehicleId, service, reminders, typeResource, loading, error, onReload,
 }) {
   const [adding, setAdding] = useState(false);
+  const close = () => setAdding(false);
+  const serviceTypes = typeResource.data?.types;
   const types = serviceTypes?.length ? serviceTypes : FALLBACK_TYPES;
 
   const records = service?.records || [];
@@ -88,11 +90,13 @@ export default function ServicePanel({
     <>
       {content}
       {adding && (
-        <ServiceSheet
-          vehicleId={vehicleId}
-          types={types}
-          onClose={() => setAdding(false)}
-        />
+        <Sheet open onClose={close} title="Log service">
+          {typeResource.data
+            ? <ServiceForm vehicleId={vehicleId} availableTypes={types} onClose={close} />
+            : typeResource.error
+              ? <ErrorState error={typeResource.error} label="Service types" onRetry={typeResource.reload} />
+              : <LoadingState label="service types" />}
+        </Sheet>
       )}
     </>
   );
@@ -104,17 +108,31 @@ export default function ServicePanel({
 const labelFor = (type, types) => types.find((t) => t.value === type)?.label
   || String(type).replace(/[-_]+/g, ' ').replace(/^./, (c) => c.toUpperCase());
 
-function ServiceSheet({ vehicleId, types, onClose }) {
+function serviceTypeFields(type) {
+  return {
+    type: type.value,
+    intervalMonths: type.defaultIntervalMonths ? String(type.defaultIntervalMonths) : '',
+    // Keep the mileage rule on the record even before an odometer is available.
+    intervalKm: type.defaultIntervalKm ?? null,
+  };
+}
+
+function ServiceForm({ vehicleId, availableTypes, onClose }) {
+  // A form visit keeps the options it started with if configuration refreshes.
+  const [types] = useState(availableTypes);
+  const selectRef = useRef(null);
   const [form, setForm] = useState({
+    ...serviceTypeFields(types[0]),
     date: new Date().toISOString().slice(0, 10),
-    type: types[0]?.value || 'other',
     vendor: '',
     cost: '',
     odometerMi: '',
-    intervalMonths: '6',
-    intervalKm: null,
     notes: '',
   });
+  useEffect(() => {
+    // The sheet stays mounted while a type read retries and replaces its button.
+    if (document.activeElement === document.body) selectRef.current?.focus({ preventScroll: true });
+  }, []);
   const { submit, saving, failure } = useSheetSubmission(onClose, error => {
     autoLog.warn('service.log_failed', { error: error?.message });
   });
@@ -125,14 +143,8 @@ function ServiceSheet({ vehicleId, types, onClose }) {
   // recurrence, which is what makes the due list work at all.
   const setType = (event) => {
     const type = event.target.value;
-    const preset = types.find((t) => t.value === type);
-    setForm((f) => ({
-      ...f, type,
-      intervalMonths: preset?.defaultIntervalMonths ? String(preset.defaultIntervalMonths) : '',
-      // Stored with the record so the mileage rule is ready the day the
-      // odometer works; nothing displays it yet.
-      intervalKm: preset?.defaultIntervalKm || null,
-    }));
+    const preset = types.find((option) => option.value === type);
+    if (preset) setForm((f) => ({ ...f, ...serviceTypeFields(preset) }));
   };
 
   const save = async () => {
@@ -150,58 +162,56 @@ function ServiceSheet({ vehicleId, types, onClose }) {
   };
 
   return (
-    <Sheet open onClose={onClose} title="Log service">
-      <form onSubmit={event => submit(event, save)} aria-label="Log service">
+    <form onSubmit={event => submit(event, save)} aria-label="Log service">
+      <label className="auto-field">
+        <span>What was done</span>
+        <Select ref={selectRef} density="compact" className="ds-input" value={form.type} onChange={setType}>
+          {types.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
+        </Select>
+      </label>
+
+      <div className="auto-field-row">
         <label className="auto-field">
-          <span>What was done</span>
-          <Select density="compact" className="ds-input" value={form.type} onChange={setType}>
-            {types.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
-          </Select>
+          <span>Date</span>
+          <input className="ds-input" type="date" value={form.date} onChange={set('date')} />
         </label>
-
-        <div className="auto-field-row">
-          <label className="auto-field">
-            <span>Date</span>
-            <input className="ds-input" type="date" value={form.date} onChange={set('date')} />
-          </label>
-          <label className="auto-field">
-            <span>Cost ($)</span>
-            <input
-              className="ds-input" type="number" inputMode="decimal" step="0.01"
-              value={form.cost} onChange={set('cost')}
-            />
-          </label>
-        </div>
-
-        <div className="auto-field-row">
-          <label className="auto-field">
-            <span>Odometer (mi)</span>
-            <input
-              className="ds-input" type="number" inputMode="decimal"
-              value={form.odometerMi} onChange={set('odometerMi')} placeholder="optional"
-            />
-          </label>
-          <label className="auto-field">
-            <span>Repeat (months)</span>
-            <input
-              className="ds-input" type="number" inputMode="numeric"
-              value={form.intervalMonths} onChange={set('intervalMonths')} placeholder="none"
-            />
-          </label>
-        </div>
-
         <label className="auto-field">
-          <span>Who did it</span>
-          <input className="ds-input" value={form.vendor} onChange={set('vendor')} placeholder="optional" />
+          <span>Cost ($)</span>
+          <input
+            className="ds-input" type="number" inputMode="decimal" step="0.01"
+            value={form.cost} onChange={set('cost')}
+          />
         </label>
+      </div>
 
+      <div className="auto-field-row">
         <label className="auto-field">
-          <span>Notes</span>
-          <textarea className="ds-input" rows={2} value={form.notes} onChange={set('notes')} />
+          <span>Odometer (mi)</span>
+          <input
+            className="ds-input" type="number" inputMode="decimal"
+            value={form.odometerMi} onChange={set('odometerMi')} placeholder="optional"
+          />
         </label>
+        <label className="auto-field">
+          <span>Repeat (months)</span>
+          <input
+            className="ds-input" type="number" inputMode="numeric"
+            value={form.intervalMonths} onChange={set('intervalMonths')} placeholder="none"
+          />
+        </label>
+      </div>
 
-        <AutoSheetActions failure={failure} onCancel={onClose} saving={saving} />
-      </form>
-    </Sheet>
+      <label className="auto-field">
+        <span>Who did it</span>
+        <input className="ds-input" value={form.vendor} onChange={set('vendor')} placeholder="optional" />
+      </label>
+
+      <label className="auto-field">
+        <span>Notes</span>
+        <textarea className="ds-input" rows={2} value={form.notes} onChange={set('notes')} />
+      </label>
+
+      <AutoSheetActions failure={failure} onCancel={onClose} saving={saving} />
+    </form>
   );
 }

@@ -1,4 +1,5 @@
 import { useState, useRef, useCallback, useEffect, useLayoutEffect } from 'react';
+import { useFocusTrap, useMediaQuery, useMergedRef } from '@mantine/hooks';
 import { UiIcon } from '@/lib/ui/UiIcon.jsx';
 import { useDismissLayer } from '@/lib/ui/dismiss/useDismissLayer.js';
 import { proxyImage } from "../Scroll/cards/utils.js";
@@ -23,12 +24,25 @@ export default function FeedPlayerSheet({ open, onClose, item, playback, openerR
 
   // --- Swipe-to-dismiss gesture ---
   const sheetRef = useRef(null);
+  const closeRef = useRef(null);
+  const volumeRef = useRef(null);
   const scrubberRef = useRef(null);
   const scrubDragRef = useRef(null);
-  const previousFocusRef = useRef(null);
   const dragRef = useRef(null);
   const [dragging, setDragging] = useState(false);
-  const usesDismissStack = useDismissLayer(open && Boolean(item), onClose);
+  const active = open && Boolean(item);
+  const usesDismissStack = useDismissLayer(active, onClose);
+  const trapRef = useFocusTrap(active);
+  const panelRef = useMergedRef(sheetRef, trapRef);
+  const showVolume = useMediaQuery('(min-width: 900px)');
+  const bindVolume = useCallback(node => {
+    const previous = volumeRef.current;
+    volumeRef.current = node;
+    // Capture focus before the responsive volume control leaves the DOM.
+    if (!node && previous && document.activeElement === previous) {
+      closeRef.current?.focus({ preventScroll: true });
+    }
+  }, []);
 
   const handleTouchStart = useCallback((e) => {
     if (!open || e.touches.length !== 1 || scrubDragRef.current) return;
@@ -66,25 +80,26 @@ export default function FeedPlayerSheet({ open, onClose, item, playback, openerR
     }
   }, [cancelSwipe, onClose]);
 
-  // --- Dialog focus lifecycle and keyboard close ---
   useEffect(() => {
-    if (!open) return undefined;
-    previousFocusRef.current = document.activeElement;
-    sheetRef.current?.focus();
-    const handler = (e) => {
-      if (e.defaultPrevented) return;
-      if (e.key === 'Escape' && !usesDismissStack) onClose();
-      if (e.key !== 'Tab' || !sheetRef.current) return;
-      const focusable = [...sheetRef.current.querySelectorAll('button:not([disabled]), input:not([disabled]), [tabindex]:not([tabindex="-1"])')];
-      if (!focusable.length) { e.preventDefault(); sheetRef.current.focus(); return; }
-      const first = focusable[0];
-      const last = focusable[focusable.length - 1];
-      if (e.shiftKey && (document.activeElement === first || document.activeElement === sheetRef.current)) { e.preventDefault(); last.focus(); }
-      else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+    if (!active) return;
+    const previousFocus = document.activeElement;
+    return () => {
+      // Feed recreates its compact player button when the sheet closes.
+      const opener = openerRef?.current ?? previousFocus;
+      if (opener?.isConnected) opener.focus({ preventScroll: true });
     };
-    document.addEventListener('keydown', handler);
-    return () => { document.removeEventListener('keydown', handler); (openerRef?.current || previousFocusRef.current)?.focus?.({ preventScroll: true }); };
-  }, [open, onClose, openerRef, usesDismissStack]);
+  }, [active, openerRef]);
+
+  useEffect(() => {
+    if (!active || usesDismissStack) return;
+    const handleEscape = event => {
+      if (event.key !== 'Escape' || event.defaultPrevented) return;
+      event.preventDefault();
+      onClose();
+    };
+    document.addEventListener('keydown', handleEscape);
+    return () => document.removeEventListener('keydown', handleEscape);
+  }, [active, usesDismissStack, onClose]);
 
   // --- Seek scrubber ---
   const [scrubTime, setScrubTime] = useState(null);
@@ -152,11 +167,12 @@ export default function FeedPlayerSheet({ open, onClose, item, playback, openerR
         aria-hidden="true"
       />
       <div
-        ref={sheetRef}
+        ref={panelRef}
         className={`feed-player-sheet${open ? ' open' : ''}${dragging ? ' dragging' : ''}`}
         role="dialog"
         aria-modal="true"
         aria-hidden={!open}
+        inert={open ? undefined : ''}
         aria-labelledby="feed-player-sheet-title"
         tabIndex={-1}
       >
@@ -179,7 +195,7 @@ export default function FeedPlayerSheet({ open, onClose, item, playback, openerR
           </div>
         )}
 
-        <button type="button" className="sheet-close" onClick={onClose} aria-label="Close player">
+        <button ref={closeRef} type="button" className="sheet-close" onClick={onClose} aria-label="Close player">
           <UiIcon name="close" size={22} />
         </button>
         <div className="sheet-title">
@@ -275,7 +291,7 @@ export default function FeedPlayerSheet({ open, onClose, item, playback, openerR
         </div>
 
         {/* Volume (desktop only) */}
-        <div className="sheet-volume-row">
+        {showVolume && <div className="sheet-volume-row">
           <button type="button" className="sheet-volume-icon" onClick={toggleMute} aria-label={muted ? 'Unmute' : 'Mute'}>
             <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
               {muted || volume === 0
@@ -292,9 +308,10 @@ export default function FeedPlayerSheet({ open, onClose, item, playback, openerR
             step="0.05"
             value={muted ? 0 : volume}
             onChange={(e) => setVolume(parseFloat(e.target.value))}
+            ref={bindVolume}
             aria-label="Volume"
           />
-        </div>
+        </div>}
 
         {/* Resume previous */}
         {pausedMedia && (

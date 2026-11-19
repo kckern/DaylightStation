@@ -17,15 +17,20 @@ export function whileDocumentVisible(start) {
 }
 
 /** Poll an active view and refresh immediately when the document returns to the foreground. */
-export function useVisibleRefresh({ active = true, intervalMs, reload, poll = reload }) {
+export function useVisibleRefresh({ active = true, intervalMs, reload, poll = reload, refreshOnFocus = false }) {
   useEffect(() => {
     if (!active) return;
     return whileDocumentVisible(resumed => {
       if (resumed) reload();
-      if (intervalMs > 0) {
-        const timer = setInterval(poll, intervalMs);
-        return () => clearInterval(timer);
-      }
+      // A window can gain focus while the document stayed visible. Give an
+      // existing foreground read time to settle, just like an interval tick.
+      const onFocus = () => poll();
+      if (refreshOnFocus) window.addEventListener('focus', onFocus);
+      const timer = intervalMs > 0 ? setInterval(poll, intervalMs) : undefined;
+      return () => {
+        if (timer !== undefined) clearInterval(timer);
+        if (refreshOnFocus) window.removeEventListener('focus', onFocus);
+      };
     });
-  }, [active, intervalMs, reload, poll]);
+  }, [active, intervalMs, reload, poll, refreshOnFocus]);
 }

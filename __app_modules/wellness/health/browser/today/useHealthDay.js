@@ -95,14 +95,8 @@ export function useHealthDay(date, { enabled = true } = {}) {
     }
   }, [reload]);
 
-  useVisibleRefresh({ active: enabled, intervalMs: 15000, reload, poll: pollHealthResources });
-
-  // Kitchen-scale / Telegram entries appear when the tab regains focus.
-  useEffect(() => {
-    if (!enabled) return undefined;
-    window.addEventListener('focus', reload);
-    return () => window.removeEventListener('focus', reload);
-  }, [reload, enabled]);
+  // Kitchen-scale and Telegram entries can arrive while this window is blurred.
+  useVisibleRefresh({ active: enabled, intervalMs: 15000, reload, poll: pollHealthResources, refreshOnFocus: true });
 
   return {
     items,

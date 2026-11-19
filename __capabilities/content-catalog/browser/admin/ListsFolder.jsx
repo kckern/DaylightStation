@@ -84,7 +84,7 @@ function FolderEditor({ type, listName }) {
     sections, setSections, flatItems, loading, error, listMetadata,
     fetchList, addItem, updateItem, swapItems, deleteItem, reorderItems, toggleItemActive,
     deleteList, updateListSettings, addSection, updateSection, deleteSection, reorderSections, moveItem, splitSection
-  } = useAdminLists();
+  } = useAdminLists(type, listName);
 
   const active = useRef(false);
   useLayoutEffect(() => {
@@ -111,7 +111,7 @@ function FolderEditor({ type, listName }) {
       logContext: { type, list: listName },
     }).then((res) => {
       if (!res.ok && recover) {
-        fetchList(type, listName).catch(() => {});
+        fetchList().catch(() => {});
       }
       return res;
     }),
@@ -170,7 +170,7 @@ function FolderEditor({ type, listName }) {
 
   useEffect(() => {
     if (type && listName) {
-      fetchList(type, listName).catch(error => {
+      fetchList().catch(error => {
         const target = error?.body?.adminUrl;
         if (active.current && error?.body?.code === 'resource_moved' && typeof target === 'string'
           && /^\/admin\/content\/agendas\/[A-Za-z0-9_.-]+$/.test(target)) {

@@ -52,4 +52,36 @@ describe('useVisibleRefresh', () => {
     hook.unmount();
     expect(vi.getTimerCount()).toBe(0);
   });
+
+  it('uses the idle poll on visible window focus only while the opted-in view is active', () => {
+    const visibility = vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible');
+    const reload = vi.fn();
+    const poll = vi.fn();
+    const focus = () => window.dispatchEvent(new Event('focus'));
+    const hook = renderHook(({ active }) => useVisibleRefresh({ active, reload, poll, refreshOnFocus: true }), {
+      initialProps: { active: true },
+    });
+    focus();
+    expect(poll).toHaveBeenCalledTimes(1);
+    expect(reload).not.toHaveBeenCalled();
+
+    visibility.mockReturnValue('hidden');
+    document.dispatchEvent(new Event('visibilitychange'));
+    focus();
+    expect(poll).toHaveBeenCalledTimes(1);
+
+    visibility.mockReturnValue('visible');
+    document.dispatchEvent(new Event('visibilitychange'));
+    expect(reload).toHaveBeenCalledTimes(1);
+    focus();
+    expect(poll).toHaveBeenCalledTimes(2);
+
+    hook.rerender({ active: false });
+    focus();
+    expect(poll).toHaveBeenCalledTimes(2);
+    hook.rerender({ active: true });
+    hook.unmount();
+    focus();
+    expect(poll).toHaveBeenCalledTimes(2);
+  });
 });

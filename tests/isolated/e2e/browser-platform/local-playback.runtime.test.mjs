@@ -291,6 +291,35 @@ test('Feed Scroll leaves J/K focus with the expanded player until dismissal', as
   await expect(page.getByRole('button', { name: `Open: ${item.title}` })).toBeFocused();
 });
 
+for (const width of [390, 1440]) {
+  test(`Feed player sheet wraps Tab around its visible controls at ${width}px`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 850 });
+    const { clock, dialog, opener } = await openFixtureSheet(page);
+    const close = dialog.getByRole('button', { name: 'Close player' });
+    const volume = dialog.getByRole('slider', { name: 'Volume', exact: true });
+    const last = width < 900 ? dialog.getByRole('button', { name: '2x', exact: true }) : volume;
+    if (width < 900) await expect(volume).toBeHidden();
+
+    const before = await clock();
+    await last.focus();
+    await page.keyboard.press('Tab');
+    await expect(close).toBeFocused();
+    await page.keyboard.press('Shift+Tab');
+    await expect(last).toBeFocused();
+
+    if (width >= 900) {
+      await page.setViewportSize({ width: 390, height: 850 });
+      await expect(volume).toBeHidden();
+      await expect(close).toBeFocused();
+    }
+
+    await page.keyboard.press('Escape');
+    await expect(dialog).toBeHidden();
+    await expect(opener).toBeFocused();
+    await expect.poll(clock).toBeGreaterThan(before);
+  });
+}
+
 test('Feed keeps the mini bar and expanded player controls inside the safe area', async ({ page, browserName }) => {
   test.skip(browserName !== 'chromium', 'CSS environment override uses Chromium DevTools');
   const session = await page.context().newCDPSession(page);

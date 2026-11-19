@@ -214,7 +214,7 @@ function AutoAppShell() {
           vehicleId={vehicleId}
           service={service.data}
           reminders={overview.data?.reminders}
-          serviceTypes={serviceTypes.data?.types}
+          typeResource={serviceTypes}
           loading={showLoading}
           error={service.error}
           onReload={service.reload}
