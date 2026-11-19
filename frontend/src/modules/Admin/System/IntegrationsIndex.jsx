@@ -1,10 +1,11 @@
-import React, { useEffect, useMemo } from 'react';
+import React, { useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Stack, Text, SimpleGrid, Card, Badge, Group, Loader, Center, Alert
 } from '@mantine/core';
 import { IconAlertCircle, IconPlugConnected } from '@tabler/icons-react';
-import { useAdminIntegrations } from '../../../hooks/admin/useAdminIntegrations.js';
+import { useApiResource } from '../../../lib/hooks/useApiResource.js';
+import { useDismissibleError } from '../../../lib/hooks/useDismissibleError.js';
 
 const CATEGORY_LABELS = {
   media: 'Media',
@@ -41,11 +42,9 @@ function truncateUrl(url, maxLen = 40) {
 
 function IntegrationsIndex() {
   const navigate = useNavigate();
-  const { integrations, loading, error, fetchIntegrations, clearError } = useAdminIntegrations();
-
-  useEffect(() => {
-    fetchIntegrations().catch(() => {});
-  }, [fetchIntegrations]);
+  const { data, loading, error: readError } = useApiResource('/api/v1/admin/integrations', { label: 'Integrations' });
+  const { error, dismiss } = useDismissibleError(readError);
+  const integrations = data?.integrations || [];
 
   // Group integrations by category, maintaining defined order
   const groupedIntegrations = useMemo(() => {
@@ -91,7 +90,7 @@ function IntegrationsIndex() {
           color="red"
           title="Error"
           withCloseButton
-          onClose={clearError}
+          onClose={dismiss}
         >
           {error.message || 'Failed to load integrations'}
         </Alert>

@@ -1,6 +1,7 @@
 import { useState, useCallback, useMemo } from 'react';
 import { DaylightAPI } from "../../../../../../frontend/src/lib/api.mjs";
 import { useApiResource } from "../../../../../../frontend/src/lib/hooks/useApiResource.js";
+import { useDismissibleError } from "../../../../../../frontend/src/lib/hooks/useDismissibleError.js";
 import getLogger from "../../../../../../frontend/src/lib/logging/Logger.js";
 
 /**
@@ -18,9 +19,9 @@ export function useAgentDashboard(userId, date) {
   const { data, loading, error: readError, reload } = useApiResource(path, { label: 'Agent dashboard' });
   const [regenerating, setRegenerating] = useState(false);
   const [error, setError] = useState(null);
-  const [dismissedReadError, setDismissedReadError] = useState(null);
+  const { error: visibleReadError, dismiss: dismissReadError } = useDismissibleError(readError?.status === 404 ? null : readError);
   const dashboard = readError?.status === 404 ? null : data?.dashboard || null;
-  const visibleError = error || (readError?.status === 404 || readError === dismissedReadError ? null : readError);
+  const visibleError = error || visibleReadError;
 
   const fetchDashboard = useCallback(async (userId, date) => {
     reload();
@@ -59,8 +60,8 @@ export function useAgentDashboard(userId, date) {
 
   const clearError = useCallback(() => {
     setError(null);
-    setDismissedReadError(readError);
-  }, [readError]);
+    dismissReadError();
+  }, [dismissReadError]);
 
   return {
     dashboard, loading, regenerating, error: visibleError,

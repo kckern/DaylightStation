@@ -3,9 +3,8 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { MantineProvider } from '@mantine/core';
 import { MemoryRouter, Route, Routes, useNavigate } from 'react-router-dom';
 
-const fetchDetail = vi.fn();
 const resource = vi.fn();
-const hook = { fetchDetail, testConnection: vi.fn(), error: null, clearError: vi.fn() };
+const hook = { testConnection: vi.fn(), error: null, clearError: vi.fn() };
 vi.mock('../../../hooks/admin/useAdminIntegrations.js', () => ({ useAdminIntegrations: () => hook }));
 vi.mock('../../../lib/hooks/useApiResource.js', () => ({ useApiResource: (...args) => resource(...args) }));
 const { notifySuccess, notifyFailure } = vi.hoisted(() => ({ notifySuccess: vi.fn(), notifyFailure: vi.fn() }));
@@ -29,9 +28,7 @@ const renderAt = (provider) => render(
 );
 
 beforeEach(() => {
-  fetchDetail.mockReset();
   resource.mockReset();
-  hook.fetchDetail = fetchDetail;
   hook.testConnection = vi.fn();
   notifySuccess.mockReset();
   notifyFailure.mockReset();
