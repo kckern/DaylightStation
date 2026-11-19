@@ -63,6 +63,7 @@ import { pausedExceptionFor } from "../curriculumExceptionProjection.mjs";
 import { projectProgramEntry, bookLogShelfEntry } from "../assignedProgramPlan.mjs";
 import { BOOK_LOG_PROGRAM_ID, bookLogContext } from "../../domain/bookLog.mjs";
 import { findContinuationEntry, findReopenableProgramEntry } from "./continuationEntry.mjs";
+import { makeupBySubject, makeupDayList, makeupDueLine } from "../../domain/documents/receipts.mjs";
 
 /**
  * The sessionId the synthetic `created` event carries. Never persisted, and
@@ -230,6 +231,7 @@ export class ResolveAccessCode {
   #tokens; #curriculum; #sessions; #assignments; #attemptLimiter;
   #issueDocument; #companions; #roster; #mediaSurface; #timezone; #clock; #logger; #planProjection; #launchPreviewTokens;
   #kioskFrictionTracker;
+  #getMakeupWork;
 
   /**
    * @param {object} deps
@@ -253,6 +255,8 @@ export class ResolveAccessCode {
    *   optional-degrading, same as `attemptLimiter`: absent, a rejected code is
    *   simply not counted toward the household's kiosk-friction signal and the
    *   panel behaves exactly as it did before.
+   * @param {import('./GetMakeupWork.mjs').GetMakeupWork} [deps.getMakeupWork] - what a
+   *   typed `makeup_print` code lists. Absent, such a code answers the all-done card.
    */
   constructor({
     tokens, curriculum, assignments, sessions, launchers = new Map(),
@@ -262,6 +266,7 @@ export class ResolveAccessCode {
     planProjection = null, launchPreviewTokens = null,
     attemptLimiter = null,
     kioskFrictionTracker = null,
+    getMakeupWork = null,
     timezone = null, clock = () => new Date(), logger = console,
   } = {}) {
     if (!tokens || !curriculum || !assignments || !sessions) {
@@ -291,6 +296,7 @@ export class ResolveAccessCode {
     this.#clock = clock;
     this.#logger = logger;
     this.#launchPreviewTokens = launchPreviewTokens;
+    this.#getMakeupWork = getMakeupWork;
   }
 
   /**
@@ -422,6 +428,13 @@ export class ResolveAccessCode {
       // code-specific mechanism (that is what `#strikeAttempt` below is for).
       this.#kioskFrictionTracker?.recordFriction({ deviceId, kind: 'code-rejected' }).catch(() => {});
       return { card: USED_UP, resolution: null };
+    }
+
+    // The makeup-sheet code names only a learner; what it lists is recomputed.
+    // After the spent check, and carrying `record`, so a press is counted
+    // against the code's cap like a lesson code's.
+    if (record?.tokenClass === 'makeup_print') {
+      return { ...(await this.#resolveMakeup(record)), record };
     }
 
     const learnerId = record?.subject?.learnerId ?? null;
@@ -846,6 +859,45 @@ export class ResolveAccessCode {
         learnerId,
         refs: printableRefs,
       },
+    };
+  }
+
+  /**
+   * A typed `makeup_print` code: one card listing each subject still owed from
+   * earlier this week, with one Print button. `GetMakeupWork` never throws, so
+   * a failed read lands on the all-done card rather than a dead end.
+   */
+  async #resolveMakeup(record) {
+    const learnerId = record.subject?.learnerId ?? null;
+    const work = this.#getMakeupWork
+      ? await this.#getMakeupWork.execute({ learnerId })
+      : { deadline: null, items: [] };
+    const groups = makeupBySubject(work.items);
+    this.#logger.info?.('school.selfservice.makeup.resolved', { learnerId, subjects: groups.map((g) => g.subject) });
+    if (!groups.length) {
+      return {
+        card: {
+          ok: true, learner: learnerId, subject: null, title: null,
+          bulk: true, items: [],
+          sentence: 'Nothing to make up. Well done!',
+          actions: [{ kind: 'exit', label: 'Go back' }],
+        },
+        resolution: null,
+      };
+    }
+    return {
+      card: {
+        ok: true, learner: learnerId, subject: null,
+        title: 'Makeup work',
+        bulk: true,
+        items: groups.map(({ subject, days }) => ({ subject, title: makeupDayList(days) })),
+        sentence: `${makeupDueLine(work.deadline)}.`,
+        actions: [
+          { kind: 'print', label: 'Print makeup sheet' },
+          { kind: 'exit', label: 'Go back' },
+        ],
+      },
+      resolution: { kind: 'makeup_print', learnerId },
     };
   }
 

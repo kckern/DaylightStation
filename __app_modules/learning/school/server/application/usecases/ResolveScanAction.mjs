@@ -28,6 +28,7 @@ export class ResolveScanAction {
   #subjectResolver; #portal; #launchers; #donow; #close; #externalActivities;
   #learningAction;
   #replaceLostAnswerSheet;
+  #printMakeupAgenda;
 
   /**
    * @param {object} deps
@@ -61,6 +62,9 @@ export class ResolveScanAction {
    *   honors a launch unit the moment DoNow reports `dispatched` (spec §6.2's
    *   door), so the scan itself closes the session — never `signedOffBy`,
    *   that claim belongs to a grown-up, not a barcode.
+   * @param {import('./PrintMakeupAgenda.mjs').PrintMakeupAgenda} [deps.printMakeupAgenda] -
+   *   routes `makeup_print` tickets; absent, such a ticket degrades to the
+   *   standard "could not use that ticket" slip.
    * @param {() => Date} [deps.clock]
    * @param {object} [deps.logger]
    */
@@ -72,6 +76,7 @@ export class ResolveScanAction {
     externalActivityProvider = null,
     resolveLearningAction = null,
     replaceLostAnswerSheet = null,
+    printMakeupAgenda = null,
     clock = () => new Date(), logger = console,
   } = {}) {
     if (!tokens || !sessions || !curriculum || !resolvePersonalCard || !issueDocument
@@ -94,6 +99,7 @@ export class ResolveScanAction {
     this.#externalActivities = externalActivityProvider;
     this.#learningAction = resolveLearningAction;
     this.#replaceLostAnswerSheet = replaceLostAnswerSheet;
+    this.#printMakeupAgenda = printMakeupAgenda;
     this.#clock = clock;
     this.#logger = logger;
   }
@@ -145,7 +151,7 @@ export class ResolveScanAction {
     // Both classes name something other than a session — `identify` a
     // learner, `subject_next` a learner+subject — so neither has a
     // `sessionId` to look up ahead of resolving what the ticket means.
-    const sessionId = ['identify', 'subject_next', 'learning_action', 'answer_sheet_lost', 'agenda_print'].includes(record?.tokenClass)
+    const sessionId = ['identify', 'subject_next', 'learning_action', 'answer_sheet_lost', 'agenda_print', 'makeup_print'].includes(record?.tokenClass)
       ? null : (record?.subject?.sessionId ?? null);
     const sessionState = sessionId ? reduceSession(await this.#sessions.readEvents(sessionId)) : null;
     const resolution = resolveTokenState(record, { sessionState, now: this.#clock().toISOString() });
@@ -195,6 +201,10 @@ export class ResolveScanAction {
         // "could not use that ticket" slip rather than crashing.
         return this.#subjectResolver
           ? this.#bulkPrint(record)
+          : this.#unsupported(record.tokenClass, sessionId);
+      case 'makeup_print':
+        return this.#printMakeupAgenda
+          ? this.#makeupPrint(record)
           : this.#unsupported(record.tokenClass, sessionId);
       default:
         // Unreachable while TOKEN_CLASSES and this switch agree; a class with no
@@ -331,6 +341,48 @@ export class ResolveScanAction {
       message: `${printed} ${printed === 1 ? 'sheet' : 'sheets'} printed.`,
       effect: { results },
     };
+  }
+
+  /**
+   * The `makeup_print` ticket: prints the makeup sheet. The ticket names only
+   * the learner, so `PrintMakeupAgenda` recomputes what is still owed on every
+   * scan; a stale agenda never prints work already made up. Every outcome is
+   * paper: the sheet itself, or a slip saying there is nothing left or the
+   * printer did not answer.
+   */
+  async #makeupPrint(record) {
+    const { learnerId } = record.subject;
+    let result;
+    try {
+      result = await this.#printMakeupAgenda.execute({ learnerId });
+    } catch (err) {
+      this.#logger.warn?.('school.scan.makeup-print-failed', { learnerId, error: err?.message ?? String(err) });
+      result = { printed: false, reason: 'print_failed' };
+    }
+    if (result?.printed) {
+      return {
+        status: 'issued', tokenClass: 'makeup_print', sessionId: null,
+        physical: 'receipt', printed: true, message: 'Printing your makeup sheet.', effect: result,
+      };
+    }
+    if (result?.reason === 'nothing_to_make_up') {
+      return this.#slip({
+        status: 'already_done', tokenClass: 'makeup_print', sessionId: null,
+        id: `makeup-done-${learnerId}`,
+        headline: 'Nothing to make up',
+        lines: ['Every missed lesson this week is made up. Well done!'],
+        message: 'Nothing to make up.',
+        effect: result,
+      });
+    }
+    return this.#slip({
+      status: 'print_failed', tokenClass: 'makeup_print', sessionId: null,
+      id: `makeup-print-failed-${learnerId}`,
+      headline: 'The printer did not answer',
+      lines: ['Ask a grown-up to check the printer, then scan again.'],
+      message: 'The printer did not answer.',
+      effect: result,
+    });
   }
 
   #unsupported(tokenClass, sessionId) {

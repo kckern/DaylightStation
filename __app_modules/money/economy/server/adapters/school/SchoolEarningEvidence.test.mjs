@@ -39,7 +39,7 @@ describe('SchoolEarningEvidence.schoolWeek', () => {
     const out = await evidence.schoolWeek({ learnerId: 'learner-a', week: WEEK });
     expect(tv.calls[0]).toEqual({ learnerId: 'learner-a', opts: { detail: true } });
     expect(out.days.map((d) => [d.day, d.state])).toEqual([['2026-09-21', 'met'], ['2026-09-22', 'partial'], ['2026-09-26', 'exempt']]);
-    expect(out.sectionDays).toContainEqual({ day: '2026-09-22', subject: 'scripture', state: 'excused', reason: 'weekly_satisfied', timeliness: 'on-time' });
+    expect(out.sectionDays).toContainEqual({ day: '2026-09-22', subject: 'scripture', state: 'excused', reason: 'weekly_satisfied', timeliness: 'on-time', makeupOpen: false });
     expect(out.sectionDays.filter((s) => s.subject === 'language').map((s) => s.day)).toEqual(['2026-09-21', '2026-09-22', '2026-09-26']);
     expect(out.week).toEqual({ weekId: '2026-09-21', state: 'partial', reason: null, open: true, excusedDays: [], weekendSubjects: ['language'] });
   });

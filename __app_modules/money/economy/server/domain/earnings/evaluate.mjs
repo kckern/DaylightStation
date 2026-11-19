@@ -73,8 +73,9 @@ function sectionWeek(rule, facts, ctx) {
   if (matched.some((f) => f.state === 'faulted')) return { status: 'indeterminate', count: 0, amount: ZERO, evidence, note: 'A day could not be checked' };
   const missed = matched.filter((f) => f.state === 'obligated');
   // Today (and later) is still open: its obligations are "still to do", not missed.
-  const missedClosed = missed.filter((f) => !ctx.isOpen(f.day));
-  const missedOpen = missed.filter((f) => ctx.isOpen(f.day));
+  // A missed day that can still be made up (School makeup / D14) stays open.
+  const missedClosed = missed.filter((f) => !ctx.isOpen(f.day) && f.makeupOpen !== true);
+  const missedOpen = missed.filter((f) => ctx.isOpen(f.day) || f.makeupOpen === true);
   const served = matched.filter((f) => f.state === 'served');
   if (!ctx.weekdaysCovered) {
     const todo = missed.map((f) => (ctx.isOpen(f.day) ? 'today' : f.day));
@@ -96,7 +97,10 @@ function sectionWeek(rule, facts, ctx) {
     }
   }
   if (ctx.unknownDays(rule).length) return { status: 'indeterminate', count: 0, amount: ZERO, evidence, note: 'A day is not worked out yet' };
-  if (missedOpen.length) return { status: 'pending', count: 0, amount: ZERO, evidence, note: 'Still to do today' };
+  if (missedOpen.length) {
+    const makeupDays = missedOpen.filter((f) => !ctx.isOpen(f.day)).map((f) => f.day);
+    return { status: 'pending', count: 0, amount: ZERO, evidence, note: makeupDays.length ? `Can still make up: ${makeupDays.join(', ')}` : 'Still to do today' };
+  }
   if (served.length) return { status: 'earned', count: 1, amount: price(rule, 1), evidence, note: null };
   return { status: 'none', count: 0, amount: ZERO, evidence, note: matched.length && matched.every((f) => f.state === 'excused') ? 'Not on the plan this week' : (matched.length ? 'Not done this week' : 'Not on the plan this week') };
 }
@@ -162,7 +166,9 @@ function weekMet(rule, facts, ctx) {
   }
   const progress = greenWeekProgress(rule, facts, ctx);
   const notGreen = schoolDays.filter((d) => d.state !== 'met');
-  const settled = (d) => (ctx.today == null ? ctx.weekdaysCovered : !ctx.isOpen(d.day));
+  // A day that can still be made up (`makeupOpen`, School makeup / D14) is
+  // not settled until its makeup deadline passes.
+  const settled = (d) => d.makeupOpen !== true && (ctx.today == null ? ctx.weekdaysCovered : !ctx.isOpen(d.day));
   const closedNotGreen = notGreen.filter(settled);
   // A past day is SETTLED: the term grid replays it seeing only evidence
   // stamped before its window closed (term-grid.md "How a past day is

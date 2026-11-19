@@ -193,6 +193,23 @@ export function dayOffTitle(dayOff) {
   return dayOff.tier === 'away' ? 'No school today' : `${suffix.charAt(0).toUpperCase()}${suffix.slice(1)}`;
 }
 
+const SHORT_WEEKDAY = Object.freeze(['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']);
+
+/**
+ * MAKEUP WORK: the one board line for an agenda preview's `makeup:
+ * {deadline, items}` (earlier days this week still owed, `GetMakeupWork`).
+ * The work itself is on the makeup sheet the agenda's makeup card prints, so
+ * the board only says that it exists and when it is due. Null when nothing
+ * is owed.
+ */
+export function makeupHint(makeup) {
+  if (!Array.isArray(makeup?.items) || makeup.items.length === 0) return null;
+  const deadline = typeof makeup.deadline === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(makeup.deadline)
+    ? SHORT_WEEKDAY[new Date(`${makeup.deadline}T12:00:00Z`).getUTCDay()]
+    : null;
+  return `Makeup work: print your makeup sheet${deadline ? ` (due ${deadline})` : ''}`;
+}
+
 export function summarize(sections, sessions, entries = [], readingActivity = null, fitnessActivity = null, dayOff = null) {
   const planned = (sections ?? []).filter((section) => !section.suppressed);
   const plannedSubjects = new Set(planned.map((s) => s.subject));

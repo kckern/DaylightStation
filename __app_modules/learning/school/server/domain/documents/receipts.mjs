@@ -44,6 +44,52 @@ function catchUpRail(section) {
 
 const isNonEmptyString = (v) => typeof v === 'string' && v.trim().length > 0;
 
+const LONG_WEEKDAY = Object.freeze(['', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']);
+const COUNT_WORD = Object.freeze(['', 'One', 'Two', 'Three', 'Four', 'Five', 'Six']);
+
+const subjectName = (subject) => (isNonEmptyString(subject)
+  ? subject.trim()[0].toUpperCase() + subject.trim().slice(1)
+  : 'School');
+const shortWeekday = (day) => (typeof day === 'string' && ISO_DAY.test(day) ? SHORT_WEEKDAY[isoWeekday(day)] : null);
+
+/**
+ * MAKEUP WORK (`domain/makeup.mjs`): `[{day, subject}]` (oldest first) grouped
+ * by subject, in the order each subject was first missed. A subject missed on
+ * Monday and Wednesday is ONE card owing two lessons, never two cards.
+ * @returns {Array<{subject: string, days: string[]}>}
+ */
+export function makeupBySubject(items) {
+  const bySubject = new Map();
+  for (const item of Array.isArray(items) ? items : []) {
+    if (!isNonEmptyString(item?.subject) || typeof item.day !== 'string' || !ISO_DAY.test(item.day)) continue;
+    if (!bySubject.has(item.subject)) bySubject.set(item.subject, []);
+    const days = bySubject.get(item.subject);
+    if (!days.includes(item.day)) days.push(item.day);
+  }
+  return [...bySubject].map(([subject, days]) => ({ subject, days: days.sort() }));
+}
+
+/** `Due Saturday night`, from the makeup deadline's ISO date. */
+export function makeupDueLine(deadline) {
+  const weekday = typeof deadline === 'string' && ISO_DAY.test(deadline) ? LONG_WEEKDAY[isoWeekday(deadline)] : null;
+  return weekday ? `Due ${weekday} night` : 'Due this week';
+}
+
+/** `Mon, Wed`: the short weekday of each ISO day given. */
+export function makeupDayList(days) {
+  return (Array.isArray(days) ? days : []).map(shortWeekday).filter(Boolean).join(', ');
+}
+
+/** `Mon Math, Wed English`: each missed day and subject, oldest first. */
+export function makeupSummary(items) {
+  return (Array.isArray(items) ? items : [])
+    .filter((item) => isNonEmptyString(item?.subject) && shortWeekday(item.day))
+    .slice()
+    .sort((a, b) => a.day.localeCompare(b.day))
+    .map((item) => `${shortWeekday(item.day)} ${subjectName(item.subject)}`)
+    .join(', ');
+}
+
 /**
  * Document ids must match `^[a-z0-9][a-z0-9-]*$`, and a learner id or unit id is
  * not obliged to. Slugging keeps a receipt's identity derived from its subject
@@ -683,6 +729,12 @@ function shorten(chars, room) {
  *   (`agendaEconomyLine`), printed centred as the FIRST block, above the work
  *   and on the "nothing assigned" sheet too. Absent or blank, the receipt is
  *   byte-identical to one built before the line existed.
+ * @param {{token: string, accessCode?: string|null, items: Array<{day: string, subject: string}>,
+ *   deadline: string|null}|null} [args.makeup] earlier days this week still owed
+ *   (`GetMakeupWork`) and the `makeup_print` ticket that prints the makeup
+ *   sheet. ONE small card names them; the lessons themselves are on that sheet,
+ *   never here. Absent (or with no items), the receipt is byte-identical to one
+ *   built before makeup existed.
  * @returns {object} a document ready for `validateDocument`
  */
 export function agendaDocument({
@@ -692,7 +744,7 @@ export function agendaDocument({
   bulkToken = null, bulkAccessCode = null, bulkSubjects = null,
   readingToken = null, readingAccessCode = null,
   readingFeature = null, readingSubject = DEFAULT_BOOK_LOG_SUBJECT,
-  footer = null, notes = [], economyLine = null,
+  footer = null, notes = [], economyLine = null, makeup = null,
 } = {}) {
   // The learner's name is the document TITLE, not a text block: the renderers
   // give a title the standard-header treatment (inverted banner), which a
@@ -934,6 +986,16 @@ export function agendaDocument({
     }));
   }
 
+  // MAKEUP: one card, after the curriculum verdict above, so owed-from-earlier
+  // work never turns "All done today" into "Done today" (today IS done) and
+  // never crowds today's lessons. The sheet it prints carries the lessons.
+  const makeupLine = makeup && isNonEmptyString(makeup.token) ? makeupSummary(makeup.items) : '';
+  if (makeupLine) {
+    blocks.push(text(`Makeup work: ${makeupLine}. ${makeupDueLine(makeup.deadline)}.`));
+    // `accessCode` keeps `plainScanAction`'s tri-state: undefined makes no claim.
+    blocks.push(...plainScanAction(makeup.token, 'Scan to print your makeup sheet', makeup.accessCode));
+  }
+
   if (!shelfPrintedAsSection
     && isNonEmptyString(readingToken)
     && typeof readingAccessCode === 'string' && PANEL_CODE.test(readingAccessCode)) {
@@ -971,6 +1033,66 @@ export function agendaDocument({
   // sheet's own metadata.
   if (printedAt) blocks.push({ ...text(printedAt), align: 'center', rule: 'above' });
   return receipt(`agenda-${slugify(learnerId, 'learner')}`, blocks, { title });
+}
+
+/**
+ * The makeup sheet: one card per subject still owed from earlier this week,
+ * printed by a `makeup_print` scan.
+ *
+ * Each card's ticket is a `subject_next` with `continueToday`, so it opens the
+ * NEXT lesson in that subject even after today's is done, which is the spare
+ * work `foldMakeup` credits to the missed day. A subject missed twice is one
+ * card owing two lessons: the child scans, finishes, and scans the same card
+ * again.
+ *
+ * @param {object} args
+ * @param {string} args.learnerId
+ * @param {string} [args.learnerName]
+ * @param {string} [args.generatedAt]  ISO (injected)
+ * @param {string} [args.timeZone]
+ * @param {Array<{day: string, subject: string}>} args.items  oldest first
+ * @param {string|null} [args.deadline]  last study day the work counts on
+ * @param {Record<string, string>} [args.tokensBySubject]
+ * @param {Record<string, string>} [args.accessCodesByToken]  same contract as the agenda's
+ * @returns {object} a document ready for `validateDocument`
+ */
+export function makeupDocument({
+  learnerId, learnerName = null, generatedAt = null, timeZone = 'UTC',
+  items = [], deadline = null, tokensBySubject = {}, accessCodesByToken = {},
+} = {}) {
+  const blocks = [];
+  const due = makeupDueLine(deadline);
+  blocks.push(text('## MAKEUP WORK'));
+  blocks.push(text(`${due}. Each lesson counts for the day you missed.`));
+  const groups = makeupBySubject(items);
+  if (!groups.length) blocks.push(text('Nothing to make up. Well done!'));
+  for (const { subject, days } of groups) {
+    const dayNames = days.map(shortWeekday).filter(Boolean);
+    const token = tokensBySubject?.[subject];
+    const count = days.length;
+    const countWord = COUNT_WORD[count] ?? String(count);
+    const lessons = `${countWord} ${count === 1 ? 'lesson' : 'lessons'}`;
+    const description = count === 1
+      ? `${lessons}, for ${dayNames[0]}.`
+      : `${lessons}, for ${dayNames.slice(0, -1).join(', ')} and ${dayNames.at(-1)}. Finish one, then scan again for the next.`;
+    if (!isNonEmptyString(token)) {
+      blocks.push(text(`## ${subjectName(subject).toUpperCase()}`));
+      blocks.push(text(`${description} Ask a grown-up to start it.`));
+      continue;
+    }
+    blocks.push(...lessonAction({
+      token,
+      rail: `Makeup · ${dayNames.join(', ')}`,
+      title: subjectName(subject),
+      description,
+      icon: subject,
+      meta: count === 1 ? 'SCAN TO START' : 'SCAN FOR EACH LESSON',
+      accessCode: accessCodesByToken?.[token],
+    }));
+  }
+  const printedAt = formatPrintedAt(generatedAt, timeZone);
+  if (printedAt) blocks.push({ ...text(printedAt), align: 'center', rule: 'above' });
+  return receipt(`makeup-${slugify(learnerId, 'learner')}`, blocks, { title: learnerName || 'Makeup work' });
 }
 
 /**
