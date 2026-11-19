@@ -134,7 +134,7 @@ test('Feed keeps an invalid link error after the previous item’s offline looku
   const id = 'reddit:offline-missing';
   await page.addInitScript(() => {
     const open = indexedDB.open.bind(indexedDB);
-    indexedDB.open = (name, ...args) => {
+    IDBFactory.prototype.open = (name, ...args) => {
       if (name !== 'daylight-feed-offline-v1') return open(name, ...args);
       const request = { error: new Error('Storage denied by fixture') };
       window.rejectDepartedEdition = () => request.onerror();
