@@ -412,8 +412,12 @@ using the Android 9 device-owner launch API. Extra Chrome apps are hidden unless
 they provide the active WebView engine. It writes the whole policy once at startup
 (and after any failed pass), then every five seconds **reads each setting back and
 writes only what drifted** (`PolicyReconciler`); `/kiosk-home` reports
-`enforcement.driftRepairs` and `lastDrift`. Status bar and keyguard have no public
-getter on API 28 and are written only on that first pass. It checks actual
+`enforcement.driftRepairs` and `lastDrift`. Status bar, keyguard and organization
+name cannot be read back by a device owner on API 28 (`getOrganizationName` throws
+`SecurityException` outside a managed profile), so they are written only on that
+first pass. A readback that throws skips that one setting for the pass; it must
+never fail the pass, because a failed pass rewrites everything on the next
+one-second tick (p7.2 did exactly that and was rolled back). It checks actual
 lock-task state on the one-second watchdog tick.
 
 Do not go back to rewriting the policy blindly on a timer. Through p10 every pass

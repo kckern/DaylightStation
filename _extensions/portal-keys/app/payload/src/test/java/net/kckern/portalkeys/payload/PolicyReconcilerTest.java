@@ -21,22 +21,23 @@ public class PolicyReconcilerTest {
         CharSequence organization;
         final Map<String, Boolean> hidden = new HashMap<>();
         String webview = "com.android.chrome";
+        final Set<String> unreadable = new HashSet<>();
+        void read(String what) { if (unreadable.contains(what)) throw new SecurityException(what + " unreadable"); }
 
         @Override public void addPersistentHome() { writes.add("home"); }
-        @Override public String[] lockTaskPackages() { return lockTaskPackages; }
+        @Override public String[] lockTaskPackages() { read("lockTaskPackages"); return lockTaskPackages; }
         @Override public void setLockTaskPackages(String[] p) { writes.add("lockTaskPackages"); lockTaskPackages = p; }
-        @Override public int lockTaskFeatures() { return lockTaskFeatures; }
+        @Override public int lockTaskFeatures() { read("lockTaskFeatures"); return lockTaskFeatures; }
         @Override public void setLockTaskFeatures(int f) { writes.add("lockTaskFeatures"); lockTaskFeatures = f; }
         @Override public boolean disableStatusBar() { writes.add("statusBar"); return statusBarAccepted; }
         @Override public void disableKeyguard() { writes.add("keyguard"); }
-        @Override public boolean uninstallBlocked() { return uninstallBlocked; }
+        @Override public boolean uninstallBlocked() { read("uninstallBlocked"); return uninstallBlocked; }
         @Override public void blockUninstall() { writes.add("uninstall"); uninstallBlocked = true; }
-        @Override public Set<String> restrictions() { return new HashSet<>(restrictions); }
+        @Override public Set<String> restrictions() { read("restrictions"); return new HashSet<>(restrictions); }
         @Override public void addRestriction(String r) { writes.add("+" + r); restrictions.add(r); }
         @Override public void clearRestriction(String r) { writes.add("-" + r); restrictions.remove(r); }
-        @Override public CharSequence organizationName() { return organization; }
         @Override public void setOrganizationName(String n) { writes.add("organization"); organization = n; }
-        @Override public boolean hidden(String pkg) { return Boolean.TRUE.equals(hidden.get(pkg)); }
+        @Override public boolean hidden(String pkg) { read("hidden"); return Boolean.TRUE.equals(hidden.get(pkg)); }
         @Override public void setHidden(String pkg, boolean h) { writes.add((h ? "hide " : "show ") + pkg); hidden.put(pkg, h); }
         @Override public String webviewPackage() { return webview; }
     }
@@ -79,6 +80,37 @@ public class PolicyReconcilerTest {
         d.writes.clear();
         PolicyReconciler.reconcile(d, false, false, true);
         assertEquals(Arrays.asList("home"), d.writes);
+    }
+
+    @Test public void organizationNameIsWrittenOnceBecauseADeviceOwnerCannotReadIt() {
+        // Android 9: getOrganizationName throws SecurityException outside a managed profile (2026-11-19, p7.2).
+        FakeDevice d = new FakeDevice();
+        PolicyReconciler.reconcile(d, true, true, true);
+        assertTrue(d.writes.contains("organization"));
+        d.writes.clear();
+        PolicyReconciler.reconcile(d, true, false, true);
+        assertFalse(d.writes.contains("organization"));
+    }
+
+    @Test public void anUnreadableSettingIsSkippedAndTheRestStillReconcile() {
+        FakeDevice d = new FakeDevice();
+        PolicyReconciler.reconcile(d, true, true, true);
+        d.writes.clear();
+        d.unreadable.add("restrictions");
+        d.unreadable.add("uninstallBlocked");
+        d.hidden.put("com.android.systemui", false);
+        List<String> writes = PolicyReconciler.reconcile(d, true, false, true);
+        assertEquals(Arrays.asList("hide com.android.systemui"), writes);
+    }
+
+    @Test public void anUnreadableSettingIsStillWrittenOnTheFirstPass() {
+        FakeDevice d = new FakeDevice();
+        d.unreadable.add("restrictions");
+        d.unreadable.add("hidden");
+        PolicyReconciler.reconcile(d, true, true, true);
+        assertTrue(d.writes.contains("+no_safe_boot"));
+        assertTrue(d.writes.contains("-no_create_windows"));
+        assertTrue(d.writes.contains("hide com.android.systemui"));
     }
 
     @Test public void keepsTheActiveWebViewProviderVisible() {

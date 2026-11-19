@@ -43,7 +43,6 @@ final class KioskPolicy implements OwnerTransfer.Device {
         }
         @Override public void addRestriction(String r) { manager.addUserRestriction(admin, r); }
         @Override public void clearRestriction(String r) { manager.clearUserRestriction(admin, r); }
-        @Override public CharSequence organizationName() { return manager.getOrganizationName(admin); }
         @Override public void setOrganizationName(String n) { manager.setOrganizationName(admin, n); }
         @Override public boolean hidden(String pkg) { return manager.isApplicationHidden(admin, pkg); }
         @Override public void setHidden(String pkg, boolean h) { manager.setApplicationHidden(admin, pkg, h); }
