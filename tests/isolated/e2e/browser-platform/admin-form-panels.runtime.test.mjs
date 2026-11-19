@@ -171,16 +171,25 @@ for (const action of ['Play', 'Queue']) test(`Admin keeps the selected screen pr
     const availableWidth = element.parentElement.getBoundingClientRect().width;
     const inner = element.firstElementChild;
     const rendered = inner.getBoundingClientRect();
+    const kiosk = getComputedStyle(inner);
     return {
       fits: outer.left >= 0 && outer.right <= innerWidth && outer.left >= modal.left && outer.right <= modal.right + 1,
       aspect: Math.abs(outer.height - outer.width * 800 / 1280) <= 1,
       filled: Math.abs(outer.width - rendered.width) <= 1,
       usesAvailable: Math.abs(outer.width - Math.min(960, availableWidth)) <= 1,
-      kioskWidth: inner.offsetWidth, kioskHeight: inner.offsetHeight,
+      kioskWidth: Number.parseFloat(kiosk.width),
+      kioskHeight: Number.parseFloat(kiosk.height),
       width: Math.round(outer.width),
     };
   });
-  const expectedFrame = { fits: true, aspect: true, filled: true, usesAvailable: true, kioskWidth: 1280, kioskHeight: 800 };
+  const expectedFrame = {
+    fits: true,
+    aspect: true,
+    filled: true,
+    usesAvailable: true,
+    kioskWidth: expect.closeTo(1280, 1),
+    kioskHeight: expect.closeTo(800, 1),
+  };
   await expect.poll(geometry).toMatchObject(expectedFrame);
   expect((await geometry()).width).toBeLessThan(390);
 

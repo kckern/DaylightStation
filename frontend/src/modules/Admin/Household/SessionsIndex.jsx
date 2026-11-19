@@ -1,9 +1,10 @@
 import { useCallback, useMemo, useState } from 'react';
 import { Badge, Button, Group, Stack, Table, Text } from '@mantine/core';
 import { DaylightAPI } from '../../../lib/api.mjs';
-import { useApiResource } from '../../../lib/hooks/useApiResource.js';
+import { invalidateApiResources, useApiResource } from '../../../lib/hooks/useApiResource.js';
 import { LoadingState, ErrorState, EmptyState, SectionCard, StateMessage, createAppLogger } from '@/lib/ui';
 
+const sessionsPath = 'api/v1/auth/sessions';
 const logger = createAppLogger('admin').child('sessions');
 
 /** A user agent is a paragraph; this is the two words that identify a device. */
@@ -40,7 +41,7 @@ const when = (iso) => {
  * reason to rotate a household secret.
  */
 export default function SessionsIndex() {
-  const { data, loading, error, reload } = useApiResource('api/v1/auth/sessions', { label: 'sessions', logger });
+  const { data, loading, error, reload } = useApiResource(sessionsPath, { label: 'sessions', logger });
   const [busy, setBusy] = useState(null);
   const [notice, setNotice] = useState(null);
 
@@ -52,15 +53,15 @@ export default function SessionsIndex() {
     if (busy) return;
     setBusy(id); setNotice(null);
     try {
-      await DaylightAPI(`api/v1/auth/sessions/${encodeURIComponent(id)}`, {}, 'DELETE');
+      await DaylightAPI(`${sessionsPath}/${encodeURIComponent(id)}`, {}, 'DELETE');
       logger.info('session.revoked', { id });
       setNotice(id === 'others' ? 'Signed out everywhere else.' : `Signed out ${label}.`);
-      reload();
+      invalidateApiResources(path => path === sessionsPath);
     } catch (err) {
       logger.warn('session.revoke_failed', { id, error: err.message });
       setNotice(err.message || 'Could not sign that device out.');
     } finally { setBusy(null); }
-  }, [busy, reload]);
+  }, [busy]);
 
   if (loading) return <LoadingState label="sessions" rows={3} />;
   if (error) return <ErrorState error={error} onRetry={reload} label="Sessions" />;

@@ -118,12 +118,12 @@ function TrackMenu({ kind, tracks, selected, onSelect, disabled }) {
 function MusicPicker({ open, onClose, onPick }) {
   const search = useContext(SearchContext);
   const musicScope = search?.scopes?.find?.((s) => s.key === 'music')?.params ?? FALLBACK_MUSIC_SCOPE;
-  useDismissLayer(open, onClose, { managed: true });
+  const usesDismissStack = useDismissLayer(open, onClose);
   return (
-    <Modal opened={open} onClose={onClose} title="Add music behind" centered size="md">
+    <Modal opened={open} onClose={onClose} closeOnEscape={!usesDismissStack} title="Add music behind" centered size="md">
       <div data-testid="pf-music-picker">
         <Text size="sm" mb="sm">Choose a song, album or playlist. It plays under the photos.</Text>
-        <ContentCombobox
+        {open && <ContentCombobox
           value=""
           onChange={(id, item) => { if (id) onPick(id, item); }}
           placeholder="Search music…"
@@ -134,7 +134,7 @@ function MusicPicker({ open, onClose, onPick }) {
           scopeLabel="Music"
           logApp="media"
           allowFreeform={false}
-        />
+        />}
       </div>
     </Modal>
   );
@@ -210,14 +210,14 @@ export function PlayerFeatureControls({ target, snapshot: snapshotOverride = nul
             disabled={!f.musicBehindCommand} onClick={() => setPickerOpen(true)}>Add music behind</Button>
         </Group>
       )}
-      {pickerOpen && <MusicPicker
+      <MusicPicker
         open={pickerOpen}
         onClose={() => setPickerOpen(false)}
         onPick={(contentId, item) => {
           setPickerOpen(false);
           run('music-behind', 'start', () => f.musicBehindCommand('start', { contentId, title: item?.title ?? null }));
         }}
-      />}
+      />
       {feedback && <div className="pf-feedback" role="status" data-testid="pf-feedback">{feedback}</div>}
     </div>
   );

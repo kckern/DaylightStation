@@ -222,7 +222,8 @@ test('Feed cancels a player sheet scrub when Escape dismisses the sheet', async 
   expect((await seeks())[0]).toBeCloseTo(24, 0);
 });
 
-test('Feed abandons a canceled touch scrub without dragging the player sheet', async ({ page }) => {
+test('Feed abandons a canceled touch scrub without dragging the player sheet', async ({ page, browserName }) => {
+  test.skip(browserName !== 'chromium', 'Native touch cancellation uses Chromium DevTools');
   const { clock, dialog, opener } = await openFixtureSheet(page);
   const slider = dialog.getByRole('slider', { name: 'Playback position' });
   await expect(slider).toHaveAttribute('aria-valuemax', '30');

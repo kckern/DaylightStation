@@ -1,5 +1,6 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Button, Menu, TextInput } from '@mantine/core';
+import { useDismissLayer } from "../../../../../frontend/src/lib/ui/dismiss/useDismissLayer.js";
 import { useDayDropTarget, useMealDragActive } from "./mealDrag.jsx";
 import { addDaysISO, dayLabel, EARLIEST_MOVE_DAY, recentDays } from "./moveDays.js";
 import { BUCKETS } from "./mealBuckets.js";
@@ -51,23 +52,31 @@ export function MoveDayItems({ date, today, onPick }) {
 export function MoveDayControl({ date, today, count, onMove, disabled = false, portalTarget, onMenuChange }) {
   const [busy, pick] = useMoveInFlight(onMove);
   const [open, setOpen] = useState(false);
-  const change = value => { setOpen(value); onMenuChange?.(value); };
+  const trigger = useRef(null);
+  const change = useCallback(value => { setOpen(value); onMenuChange?.(value); }, [onMenuChange]);
+  const dismiss = useCallback(() => {
+    change(false);
+    trigger.current?.focus({ preventScroll: true });
+  }, [change]);
+  const stackHandlesEscape = useDismissLayer(open, dismiss);
   // A menu that leaves with this control must not stay "open" for its owner.
   const reportMenu = useRef(onMenuChange);
   reportMenu.current = onMenuChange;
   useEffect(() => () => reportMenu.current?.(false), []);
+  // Embedded controls without the stack still let the date input consume Escape first.
   useEffect(() => {
-    if (!open) return undefined;
-    const onKey = event => { if (event.key === 'Escape') change(false); };
+    if (!open || stackHandlesEscape) return undefined;
+    const onKey = event => {
+      if (event.key === 'Escape' && !event.defaultPrevented) dismiss();
+    };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open]);
-  // A menu inside the modal has to clear the modal's own layer.
-  return <Menu opened={open} onChange={change} position="bottom-start" disabled={busy || disabled} classNames={MENU_CLASSES}
+  }, [open, stackHandlesEscape, dismiss]);
+  // Disable Mantine's capture-phase Escape so the input can cancel the key.
+  return <Menu opened={open} onChange={change} position="bottom-start" disabled={busy || disabled} classNames={MENU_CLASSES} closeOnEscape={false}
     zIndex={portalTarget ? 400 : undefined} portalProps={portalTarget ? { target: portalTarget } : undefined}>
     <Menu.Target>
-      <Button size="compact-xs" variant="light" loading={busy} disabled={disabled && !busy} aria-label={`Move ${count} selected to another day`}>
+      <Button ref={trigger} size="compact-xs" variant="light" loading={busy} disabled={disabled && !busy} aria-label={`Move ${count} selected to another day`}>
         Move {count} to another day…
       </Button>
     </Menu.Target>

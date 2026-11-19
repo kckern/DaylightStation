@@ -66,8 +66,7 @@ test('Media search does not steal focus from a confirmation dialog', async ({ pa
   await expect(cancel).toBeFocused();
 });
 
-test('phone Media dismisses the item destination picker before Search and preserves Browse history', async ({ page }) => {
-  await page.setViewportSize({ width: 390, height: 850 });
+async function installMediaSearchResult(page) {
   const item = {
     id: 'plex:43', source: 'plex', title: 'Queued track', itemType: 'leaf',
     metadata: { type: 'track', category: 'work' }, children: [], childCount: 0,
@@ -77,6 +76,113 @@ test('phone Media dismisses the item destination picker before Search and preser
     body: [{ event: 'results', source: 'plex', items: [item], pending: [] }, { event: 'complete' }]
       .map(frame => 'data: ' + JSON.stringify(frame) + '\n\n').join(''),
   }));
+  return item;
+}
+
+test('desktop Media closes results before Back when Escape restores input focus', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 850 });
+  const item = await installMediaSearchResult(page);
+  await page.goto('/media');
+  const browse = page.getByTestId('app-nav-browse');
+  const home = page.getByTestId('app-nav-home');
+  await browse.click();
+  await expect(browse).toHaveAttribute('aria-current', 'page');
+  await expect(page).toHaveURL(/view=browse/);
+
+  const search = page.getByRole('textbox', { name: 'Search media…', exact: true });
+  await search.fill(item.title);
+  const results = page.getByRole('listbox');
+  const more = page.getByRole('button', { name: 'More actions' });
+  const playOn = page.getByRole('menuitem', { name: 'Play on…', exact: true });
+  await more.press('Enter');
+  await playOn.focus();
+  await page.keyboard.press('Escape');
+  await expect(playOn).toBeHidden();
+  await expect(more).toBeFocused();
+  await expect(results).toBeVisible();
+
+  await more.click();
+  await playOn.click();
+  const picker = page.getByRole('dialog', { name: 'Play on…', exact: true });
+  await expect(picker).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(picker).toBeHidden();
+  await expect(search).toHaveValue(item.title);
+  await expect(results).toBeVisible();
+
+  await more.click();
+  const add = page.getByRole('menuitem', { name: 'Add to Queue', exact: true });
+  await add.click();
+  await expect(add).toBeHidden();
+  await expect(results).toBeVisible();
+
+  await page.keyboard.press('Escape');
+  await expect(results).toBeHidden();
+  await expect(search).toBeFocused();
+  await expect(search).toHaveValue(item.title);
+  await expect(browse).toHaveAttribute('aria-current', 'page');
+
+  await page.keyboard.press('Escape');
+  await expect(page).toHaveURL(/\/media$/);
+  await expect(home).toHaveAttribute('aria-current', 'page');
+});
+
+test('desktop Media closes slideshow music search and dialog before leaving Now Playing', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 850 });
+  await page.addInitScript(() => {
+    const photo = { contentId: 'plex:71', title: 'Slideshow photo', format: 'image', duration: 90 };
+    const updatedAt = new Date().toISOString();
+    localStorage.setItem('media-app.session', JSON.stringify({
+      schemaVersion: 1, sessionId: 'fixture', updatedAt, wasPlayingOnUnload: false,
+      snapshot: {
+        sessionId: 'fixture', state: 'paused', currentItem: photo, position: 0,
+        queue: { items: [{ ...photo, queueItemId: 'photo' }], currentIndex: 0, upNextCount: 0 },
+        config: { shuffle: false, repeat: 'off', shader: null, volume: 50, playbackRate: 1 },
+        meta: { ownerId: 'fixture', updatedAt },
+      },
+    }));
+  });
+  const item = await installMediaSearchResult(page);
+  await page.goto('/media?view=fleet');
+  await page.getByTestId('mini-player-open-nowplaying').click();
+  await expect(page).toHaveURL(/view=nowPlaying/);
+
+  const opener = page.getByTestId('pf-music-add');
+  await opener.click();
+  const dialog = page.getByRole('dialog', { name: 'Add music behind' });
+  const search = dialog.getByRole('textbox', { name: 'Search music…' });
+  const result = page.getByTestId(`combobox-option-${item.id}`);
+  await search.fill(item.title);
+  await expect(result).toBeVisible();
+  await dialog.locator('.mantine-Modal-close').click();
+  // The dialog can still be fading, but it no longer owns a live picker.
+  expect(await page.getByPlaceholder('Search music…').count()).toBe(0);
+  await page.keyboard.press('Escape');
+  await expect(page).toHaveURL(/view=fleet/);
+
+  await page.getByTestId('mini-player-open-nowplaying').click();
+  await opener.click();
+  await expect(search).toHaveValue('');
+  await search.fill(item.title);
+  await expect(result).toBeVisible();
+
+  await page.keyboard.press('Escape');
+  await expect(result).toBeHidden();
+  await expect(dialog).toBeVisible();
+  await expect(search).toBeFocused();
+
+  await page.keyboard.press('Escape');
+  await expect(dialog).toBeHidden();
+  await expect(page).toHaveURL(/view=nowPlaying/);
+  await expect(opener).toBeFocused();
+
+  await page.keyboard.press('Escape');
+  await expect(page).toHaveURL(/view=fleet/);
+});
+
+test('phone Media dismisses the item destination picker before Search and preserves Browse history', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 850 });
+  const item = await installMediaSearchResult(page);
   await page.goto('/media');
   const home = page.getByTestId('app-tab-home');
   const browse = page.getByTestId('app-tab-browse');

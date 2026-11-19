@@ -17,6 +17,7 @@
 //   - result grouping by `group` field (index-owned highlight requires DOM
 //     order === items order; no current search transport emits `group`)
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useDismissLayer } from '@/lib/ui/dismiss/useDismissLayer.js';
 import {
   Combobox, TextInput, ScrollArea, Group, Text, Avatar, Badge, Loader, Button,
   Stack, ActionIcon, Box, useCombobox,
@@ -236,6 +237,14 @@ export function ContentCombobox({
     onClose?.(reason);
   }, [commit, onClose]);
 
+  // A portaled row action can leave focus outside while the picker is still
+  // editing. Restore focus before closing so onFocus cannot reopen it.
+  const dismissPicker = useCallback(() => {
+    inputRef.current?.focus({ preventScroll: true });
+    commitClose('escape');
+  }, [inputRef, commitClose]);
+  useDismissLayer(isEditing, dismissPicker);
+
   // ── Mantine store: dropdown visibility follows the machine mode ──
   const combobox = useCombobox({
     opened: isEditing,
@@ -354,7 +363,7 @@ export function ContentCombobox({
       commit('enter');   // decideCommit owns pick/render/literal/open; may keep the dropdown open
       return;
     }
-    if (e.key === 'Escape') {
+    if (e.key === 'Escape' && isEditing) {
       e.preventDefault();
       commitClose('escape');
       return;
