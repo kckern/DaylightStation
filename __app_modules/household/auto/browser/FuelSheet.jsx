@@ -24,7 +24,7 @@ import autoLog from "./autoLog.js";
  * @param {{date?: string, placeId?: string, placeLabel?: string, volumeGal?: string,
  *          partial?: boolean}} [props.initial] prefill from a detected fill-up
  */
-export default function FuelSheet({ vehicleId, initial = {}, onClose, onSaved }) {
+export default function FuelSheet({ vehicleId, initial = {}, onClose }) {
   const [form, setForm] = useState({
     date: initial.date || new Date().toISOString().slice(0, 10),
     odometerMi: '',
@@ -63,7 +63,7 @@ export default function FuelSheet({ vehicleId, initial = {}, onClose, onSaved })
         partial: form.partial,
         fromPrompt: Boolean(initial.placeId),
       });
-      onSaved();
+      onClose();
     } catch (err) {
       setFailure(err);
       autoLog.warn('fuel.log_failed', { error: err?.message });

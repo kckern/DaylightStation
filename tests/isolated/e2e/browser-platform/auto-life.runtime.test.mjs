@@ -85,11 +85,25 @@ test('Auto renders the selected vehicle’s records and discards a late document
 test('Auto saves one fuel entry at phone height and reopens on Car', async ({ page }) => {
   await page.routeWebSocket('**/*', () => {});
   const writes = [];
+  const readsAfterSave = [];
+  const car = '/api/v1/automotive/vehicles/sample';
   await page.route('**/automotive/**', route => {
     const request = route.request();
     if (request.method() === 'POST') {
       writes.push(request.postDataJSON());
       return route.fulfill({ json: { ok: true } });
+    }
+    if (writes.length) {
+      const path = new URL(request.url()).pathname;
+      readsAfterSave.push(path);
+      if (path === car + '/fuel') {
+        if (readsAfterSave.filter(read => read === path).length === 1) {
+          return route.fulfill({ status: 400, json: { error: 'Fuel log unavailable' } });
+        }
+        return route.fulfill({ json: { logs: [
+          { id: 'saved', date: '2026-10-08', volume_l: 20.82, price_total: 19.50 },
+        ] } });
+      }
     }
     if (request.url().endsWith('/vehicles')) {
       return route.fulfill({ json: { vehicles: [{ id: 'sample', label: 'Sample' }] } });
@@ -115,6 +129,10 @@ test('Auto saves one fuel entry at phone height and reopens on Car', async ({ pa
   await expect(save).toBeInViewport({ ratio: 1 });
   await save.press('Enter');
   await expect(dialog).toBeHidden();
+  await expect(page.getByRole('alert')).toBeVisible();
+  await page.getByRole('button', { name: 'Retry' }).click();
+  await expect(page.getByText('$19.50', { exact: true })).toBeVisible();
+  expect([...readsAfterSave].sort()).toEqual([car, car + '/fuel', car + '/fuel']);
   expect(writes).toEqual([expect.objectContaining({ volumeGal: 5.5, priceTotal: 19.5 })]);
   await page.reload();
   await expect(page.getByRole('button', { name: 'Car', exact: true })).toHaveAttribute('aria-current', 'page');
@@ -176,7 +194,7 @@ test('Life distinguishes unavailable goals from a successful empty list and retr
     ? route.fulfill({ json: { goals: [] } })
     : route.fulfill({ status: 503, json: { message: 'Goals temporarily unavailable' } }));
   await page.goto('/life/plan/goals');
-  await expect(page.getByRole('alert')).toContainText('Goals');
+  await expect(page.getByRole('alert')).toContainText('Goals', { timeout: 10_000 });
   await expect(page.getByText(/No goals yet/)).toHaveCount(0);
   recovered = true;
   await page.getByRole('button', { name: 'Retry' }).click();

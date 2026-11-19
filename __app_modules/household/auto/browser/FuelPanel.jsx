@@ -109,7 +109,6 @@ export default function FuelPanel({ vehicleId, fuel, loading, error, onReload })
           vehicleId={vehicleId}
           initial={sheet}
           onClose={() => setSheet(null)}
-          onSaved={() => { setSheet(null); onReload(); }}
         />
       )}
     </div>

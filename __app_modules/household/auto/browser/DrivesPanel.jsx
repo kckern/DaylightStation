@@ -18,7 +18,7 @@ import autoLog from "./autoLog.js";
 const PLACE_KINDS = ['home', 'school', 'church', 'work', 'fuel', 'store', 'service', 'other'];
 
 export default function DrivesPanel({
-  vehicleId, journeys, hidden, fuelLogs, loading, error, onReload, onFuelLogged,
+  vehicleId, journeys, hidden, fuelLogs, loading, error, onReload,
   includeShuffles, onToggleShuffles,
 }) {
   const [naming, setNaming] = useState(null);
@@ -67,7 +67,6 @@ export default function DrivesPanel({
           vehicleId={vehicleId}
           initial={fueling}
           onClose={() => setFueling(null)}
-          onSaved={() => { setFueling(null); onFuelLogged?.(); }}
         />
       )}
 
@@ -75,7 +74,6 @@ export default function DrivesPanel({
         <NamePlaceSheet
           point={naming}
           onClose={() => setNaming(null)}
-          onSaved={() => { setNaming(null); onReload(); }}
         />
       )}
     </div>
@@ -204,7 +202,7 @@ function JourneyRow({ journey, onName, onLogFuel, fuelPrompt }) {
  * a thumb: it rises from the bottom, where the thumb already is, instead of
  * appearing in the middle where the reach is worst.
  */
-function NamePlaceSheet({ point, onClose, onSaved }) {
+function NamePlaceSheet({ point, onClose }) {
   const [label, setLabel] = useState('');
   const [kind, setKind] = useState('other');
   const [saving, setSaving] = useState(false);
@@ -218,7 +216,7 @@ function NamePlaceSheet({ point, onClose, onSaved }) {
     try {
       await autoApi.namePlace({ label: label.trim(), kind, lat: point.fix.lat, lon: point.fix.lon });
       autoLog.info('place.named', { kind });
-      onSaved();
+      onClose();
     } catch (err) {
       setFailure(err);
       autoLog.warn('place.name_failed', { error: err?.message });

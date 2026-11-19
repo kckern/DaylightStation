@@ -218,11 +218,18 @@ the reader changes scope or unmounts. A create or remove dialog should
 close when its write succeeds. If the roster GET then fails, let the
 resource show a Retry button that issues only the GET.
 
-Before a write completion patches shared data or invalidates related reads,
-check that its submitting session is still active. Health keeps its session
-above the tabs, so a save can update the day after tab navigation. A new
-session reads the committed server state. See the
-[Health operations provider](../../../__app_modules/wellness/health/browser/operations/HealthOperationsProvider.jsx).
+Capture the affected resource paths when a write starts. Auto refreshes the
+submitted vehicle's overview and the changed collection, even if the driver
+has selected another car by the time the save finishes. Household place
+names have a wider audience and refresh the mounted journey and fuel-stop
+reads that use them.
+[Auto API](../../../__app_modules/household/auto/browser/useAutoApi.js)
+
+For writes that update view state or invalidate session-wide reads, check
+that the submitting session is still active. Health keeps its session above
+the tabs, so a save can update the day after tab navigation. A new session
+reads the committed server state.
+[Health operations provider](../../../__app_modules/wellness/health/browser/operations/HealthOperationsProvider.jsx)
 
 When an editor allows typing during a write, let the acknowledgement update
 the Revert baseline for the submitted draft. Keep edits made after submission

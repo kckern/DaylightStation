@@ -89,7 +89,6 @@ export default function ServicePanel({
           vehicleId={vehicleId}
           types={types}
           onClose={() => setAdding(false)}
-          onSaved={() => { setAdding(false); onReload(); }}
         />
       )}
     </div>
@@ -102,7 +101,7 @@ export default function ServicePanel({
 const labelFor = (type, types) => types.find((t) => t.value === type)?.label
   || String(type).replace(/[-_]+/g, ' ').replace(/^./, (c) => c.toUpperCase());
 
-function ServiceSheet({ vehicleId, types, onClose, onSaved }) {
+function ServiceSheet({ vehicleId, types, onClose }) {
   const [form, setForm] = useState({
     date: new Date().toISOString().slice(0, 10),
     type: types[0]?.value || 'other',
@@ -148,7 +147,7 @@ function ServiceSheet({ vehicleId, types, onClose, onSaved }) {
         notes: form.notes,
       });
       autoLog.info('service.logged', { type: form.type, recurring: form.intervalMonths !== '' });
-      onSaved();
+      onClose();
     } catch (err) {
       setFailure(err);
       autoLog.warn('service.log_failed', { error: err?.message });

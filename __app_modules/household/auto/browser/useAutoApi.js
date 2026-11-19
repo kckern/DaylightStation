@@ -8,17 +8,20 @@
 // promoting to the shared import changes nothing behaviorally; each resource
 // hook just passes `logger: autoLog` to keep the app.auto tag on its events.
 
-import { useApiResource } from '@/lib/hooks/useApiResource.js';
+import { invalidateApiResources, useApiResource } from '@/lib/hooks/useApiResource.js';
 import { DaylightAPI } from "../../../../frontend/src/lib/api.mjs";
 import autoLog from "./autoLog.js";
 
+const vehiclesPath = 'api/v1/automotive/vehicles';
+const vehiclePath = vehicleId => `${vehiclesPath}/${encodeURIComponent(vehicleId)}`;
+
 export function useVehicles() {
-  return useApiResource('api/v1/automotive/vehicles', { label: 'vehicles', logger: autoLog });
+  return useApiResource(vehiclesPath, { label: 'vehicles', logger: autoLog });
 }
 
 export function useOverview(vehicleId) {
   return useApiResource(
-    vehicleId ? `api/v1/automotive/vehicles/${vehicleId}` : null,
+    vehicleId ? vehiclePath(vehicleId) : null,
     { enabled: Boolean(vehicleId), label: 'overview', logger: autoLog },
   );
 }
@@ -26,21 +29,21 @@ export function useOverview(vehicleId) {
 export function useJourneys(vehicleId, { includeShuffles = false } = {}) {
   const query = includeShuffles ? '?shuffles=1' : '';
   return useApiResource(
-    vehicleId ? `api/v1/automotive/vehicles/${vehicleId}/journeys${query}` : null,
+    vehicleId ? `${vehiclePath(vehicleId)}/journeys${query}` : null,
     { enabled: Boolean(vehicleId), deps: [includeShuffles], label: 'journeys', logger: autoLog },
   );
 }
 
 export function useFuel(vehicleId) {
   return useApiResource(
-    vehicleId ? `api/v1/automotive/vehicles/${vehicleId}/fuel` : null,
+    vehicleId ? `${vehiclePath(vehicleId)}/fuel` : null,
     { enabled: Boolean(vehicleId), label: 'fuel', logger: autoLog },
   );
 }
 
 export function useService(vehicleId) {
   return useApiResource(
-    vehicleId ? `api/v1/automotive/vehicles/${vehicleId}/service` : null,
+    vehicleId ? `${vehiclePath(vehicleId)}/service` : null,
     { enabled: Boolean(vehicleId), label: 'service', logger: autoLog },
   );
 }
@@ -55,20 +58,32 @@ export function useServiceTypes() {
 
 export function useDocuments(vehicleId) {
   return useApiResource(
-    vehicleId ? `api/v1/automotive/vehicles/${vehicleId}/documents` : null,
+    vehicleId ? `${vehiclePath(vehicleId)}/documents` : null,
     { enabled: Boolean(vehicleId), label: 'documents', logger: autoLog },
   );
 }
 
-/** Write helpers. Each resolves to the saved record so a panel can reload after. */
+// Fuel and service records also feed the originating car's overview (odometer,
+// economy and reminders). Vehicle selection may change while the POST is pending.
+async function logRecord(vehicleId, collection, body) {
+  const overview = vehiclePath(vehicleId);
+  const record = `${overview}/${collection}`;
+  const saved = await DaylightAPI(record, body, 'POST');
+  invalidateApiResources(path => path === overview || path === record);
+  return saved;
+}
+
 export const autoApi = {
-  logFuel: (vehicleId, body) =>
-    DaylightAPI(`api/v1/automotive/vehicles/${vehicleId}/fuel`, body, 'POST'),
-  logService: (vehicleId, body) =>
-    DaylightAPI(`api/v1/automotive/vehicles/${vehicleId}/service`, body, 'POST'),
-  namePlace: (body) => DaylightAPI('api/v1/automotive/places', body, 'POST'),
+  logFuel: (vehicleId, body) => logRecord(vehicleId, 'fuel', body),
+  logService: (vehicleId, body) => logRecord(vehicleId, 'service', body),
+  async namePlace(body) {
+    const saved = await DaylightAPI('api/v1/automotive/places', body, 'POST');
+    // A household place labels journey points and detected fuel stops for every car.
+    invalidateApiResources(path => /^api\/v1\/automotive\/vehicles\/[^/]+\/(?:fuel|journeys)(?:\?|$)/.test(path));
+    return saved;
+  },
   deleteFuel: (vehicleId, logId) =>
-    DaylightAPI(`api/v1/automotive/vehicles/${vehicleId}/fuel/${logId}`, {}, 'DELETE'),
+    DaylightAPI(`${vehiclePath(vehicleId)}/fuel/${logId}`, {}, 'DELETE'),
   deleteService: (vehicleId, recordId) =>
-    DaylightAPI(`api/v1/automotive/vehicles/${vehicleId}/service/${recordId}`, {}, 'DELETE'),
+    DaylightAPI(`${vehiclePath(vehicleId)}/service/${recordId}`, {}, 'DELETE'),
 };

@@ -138,15 +138,6 @@ function AutoAppShell() {
     return found?.label || overview.data?.label || vehicleId || 'Vehicle';
   }, [vehicles.data, vehicleId, overview.data]);
 
-  // A reload after a write must refresh the overview too — logging a fill-up
-  // changes the odometer anchor and the economy summary, both of which live on
-  // a different tab than the form that changed them.
-  const reloadAll = () => {
-    overview.reload();
-    fuel.reload();
-    service.reload();
-  };
-
   let garageContent;
   if (vehicles.loading) {
     garageContent = <LoadingState label="garage" />;
@@ -201,7 +192,6 @@ function AutoAppShell() {
           loading={journeys.loading}
           error={journeys.error}
           onReload={journeys.reload}
-          onFuelLogged={() => { fuel.reload(); overview.reload(); }}
           includeShuffles={includeShuffles}
           onToggleShuffles={() => setIncludeShuffles((v) => !v)}
         />
@@ -212,7 +202,7 @@ function AutoAppShell() {
           fuel={fuel.data}
           loading={fuel.loading}
           error={fuel.error}
-          onReload={() => { fuel.reload(); reloadAll(); }}
+          onReload={fuel.reload}
         />
       )}
       {tab === 'service' && (
@@ -223,7 +213,7 @@ function AutoAppShell() {
           serviceTypes={serviceTypes.data?.types}
           loading={service.loading}
           error={service.error}
-          onReload={() => { service.reload(); reloadAll(); }}
+          onReload={service.reload}
         />
       )}
       {tab === 'glove' && (
