@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { act, render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { MantineProvider } from '@mantine/core';
 
 const api = vi.fn();
@@ -49,6 +49,28 @@ describe('NotificationsIndex', () => {
     // "Cooldown" and would ambiguously match a case-insensitive /cooldown/i.
     await waitFor(() => expect(screen.getByText(/cooldown/)).toBeInTheDocument()); // ledger row reason
   });
+  it('keeps edits made during a save for the next explicit save', async () => {
+    wrap(<NotificationsIndex />);
+    await screen.findByDisplayValue('21:00');
+    const start = screen.getByLabelText('Start');
+    const end = screen.getByLabelText('End');
+    const save = screen.getByRole('button', { name: 'Save' });
+    fireEvent.change(start, { target: { value: '20:00' } });
+    let finish;
+    api.mockImplementationOnce((_path, submitted) => new Promise(resolve => { finish = () => resolve(submitted); }));
+    fireEvent.click(save);
+    fireEvent.change(end, { target: { value: '08:30' } });
+    await act(async () => finish());
+    expect(end).toHaveValue('08:30');
+    expect(api.mock.calls.filter(([, , method]) => method === 'PUT')).toHaveLength(1);
+
+    fireEvent.click(save);
+    await waitFor(() => expect(api).toHaveBeenLastCalledWith('/api/v1/admin/notifications', {
+      quiet_hours: { enabled: true, start: '20:00', end: '08:30' },
+      cooldowns: { ceremony: 1200, default: 60 },
+    }, 'PUT'));
+  });
+
   it('saves quiet hours via PUT', async () => {
     wrap(<NotificationsIndex />);
     await screen.findByDisplayValue('21:00');

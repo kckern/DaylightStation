@@ -1,16 +1,20 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { notifications } from '@mantine/notifications';
 import { SourcePanel } from "./SourcePanel.jsx";
 import { DaylightAPI } from "../../../../../frontend/src/lib/api.mjs";
+import { useRefreshableRead } from "../../../../../frontend/src/lib/hooks/useRefreshableRead.js";
 import { useFeedWorkspace } from "../FeedWorkspaceContext.jsx";
 import { buildHeadlineGrid } from "./buildHeadlineGrid.js";
 import "./Headlines.scss";
 
 export default function Headlines({ pageId }) {
   const [pages, setPages] = useState({});
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
+  const [readState, setReadState] = useState(null);
+  const [harvesting, setHarvesting] = useState(() => new Set());
+  const [failedHarvest, setFailedHarvest] = useState(null);
+  const edition = useMemo(() => ({ pageId }), [pageId]);
+  const activeReader = useRef(null);
   const [searchParams, setSearchParams] = useSearchParams();
   const view = searchParams.get('view') === 'briefing' ? 'briefing' : 'outlets';
   const data = pages[pageId] || null;
@@ -20,40 +24,63 @@ export default function Headlines({ pageId }) {
 
   useEffect(() => { markVisited('headlines', visitStarted.current); }, [markVisited]);
 
-  const fetchHeadlines = useCallback(async ({ signal } = {}) => {
-    setError(null);
-    setLoading(true);
+  const readEdition = useCallback(async (isCurrent, signal) => {
+    const { pageId } = edition;
+    setReadState({ edition, loading: true, error: null });
     try {
       const result = await DaylightAPI(`/api/v1/feed/headlines?page=${encodeURIComponent(pageId || '')}`, {}, 'GET', { signal });
+      if (!isCurrent()) return;
       const sources = Object.fromEntries(Object.entries(result.sources || {}).map(([id, source]) => [id, { ...source, items: applyPendingMutations(source.items || []) }]));
       const briefing = (result.briefing || []).map(story => {
         const coverage = applyPendingMutations(story.coverage || []);
         return { ...story, coverage, state: coverage[0]?.state || story.state };
       });
-      if (!signal?.aborted) setPages(current => ({ ...current, [pageId]: { ...result, sources, briefing } }));
-    } catch (err) {
-      if (err.name !== 'AbortError') setError('This edition could not be refreshed.');
-    } finally {
-      if (!signal?.aborted) setLoading(false);
+      setPages(current => ({ ...current, [pageId]: { ...result, sources, briefing } }));
+      setReadState({ edition, loading: false, error: null });
+    } catch {
+      if (isCurrent()) setReadState({ edition, loading: false, error: 'This edition could not be refreshed.' });
     }
-  }, [applyPendingMutations, pageId]);
+  }, [applyPendingMutations, edition]);
+  const { reload } = useRefreshableRead(readEdition);
 
-  useEffect(() => {
-    const controller = new AbortController();
-    fetchHeadlines({ signal: controller.signal });
-    return () => controller.abort();
-  }, [fetchHeadlines]);
+  useLayoutEffect(() => {
+    activeReader.current = { edition, reload };
+    return () => { activeReader.current = null; };
+  }, [edition, reload]);
+  useEffect(() => { reload(); }, [reload]);
+
+  // A harvest may finish after navigation. Re-read only when its edition is visible.
+  const getActiveReaderForEdition = () => {
+    const reader = activeReader.current;
+    return reader && reader.edition.pageId === pageId ? reader : null;
+  };
+  const refreshAfterHarvest = () => getActiveReaderForEdition()?.reload();
 
   const triggerHarvestAll = async () => {
-    setLoading(true);
+    setHarvesting(current => new Set(current).add(pageId));
+    setFailedHarvest(null);
     try {
       await DaylightAPI(`/api/v1/feed/headlines/harvest?page=${encodeURIComponent(pageId || '')}`, {}, 'POST');
-      await fetchHeadlines();
+      await refreshAfterHarvest();
     } catch {
-      setError('Sources could not be refreshed. Existing headlines are still available.');
-      notifications.show({ color: 'red', title: 'Refresh failed', message: 'Showing the last available edition.' });
-    } finally { setLoading(false); }
+      const reader = getActiveReaderForEdition();
+      if (reader) {
+        setFailedHarvest(reader.edition);
+        notifications.show({ color: 'red', title: 'Refresh failed', message: 'Showing the last available edition.' });
+      }
+    } finally {
+      setHarvesting(current => {
+        const next = new Set(current);
+        next.delete(pageId);
+        return next;
+      });
+    }
   };
+
+  const loading = readState?.edition !== edition || readState.loading || harvesting.has(pageId);
+  const error = failedHarvest === edition
+    ? 'Sources could not be refreshed. Existing headlines are still available.'
+    : readState?.edition === edition && readState.error;
 
   if (loading && !data) return <div className="feed-placeholder" role="status">Loading headlines…</div>;
 
@@ -101,7 +128,7 @@ export default function Headlines({ pageId }) {
         </div>
         <button className="headlines-harvest-btn" onClick={triggerHarvestAll} disabled={loading}>{loading ? 'Refreshing…' : 'Refresh all'}</button>
       </header>
-      {error && <div className="headlines-error" role="alert"><span>{error}</span><button onClick={() => fetchHeadlines()}>Retry</button></div>}
+      {error && <div className="headlines-error" role="alert"><span>{error}</span><button onClick={() => { setFailedHarvest(null); reload(); }}>Retry</button></div>}
       {!!data?.configWarnings?.length && <div className="headlines-error" role="status">{data.configWarnings.length} source placement{data.configWarnings.length === 1 ? '' : 's'} need configuration attention.</div>}
 
       {view === 'briefing' ? (
@@ -127,8 +154,8 @@ export default function Headlines({ pageId }) {
       ) : (
         <section className="headlines-matrix" aria-label="Outlet matrix">
           {cells.map((row, r) => (
-            <div key={rows[r] ?? r} className="matrix-row">
-              {row.map((cell, c) => <SourcePanel key={cell?.id || `empty-${r}-${c}`} source={cell} col={c} totalCols={cols.length} paywallProxy={data?.paywallProxy || null} onRefresh={() => fetchHeadlines()} onStateAction={updateHeadlineState} colColors={data?.col_colors || null} />)}
+            <div key={`${pageId}:${rows[r] ?? r}`} className="matrix-row">
+              {row.map((cell, c) => <SourcePanel key={cell?.id || `empty-${r}-${c}`} source={cell} col={c} totalCols={cols.length} paywallProxy={data?.paywallProxy || null} onRefresh={refreshAfterHarvest} onStateAction={updateHeadlineState} colColors={data?.col_colors || null} />)}
             </div>
           ))}
         </section>

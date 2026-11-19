@@ -9,7 +9,7 @@
 // beside it is worth tapping.
 
 import { useState } from 'react';
-import { LoadingState, ErrorState, EmptyState, Sheet, Select } from '@/lib/ui';
+import { LoadingState, ErrorState, EmptyState, Sheet, Select, StateMessage } from '@/lib/ui';
 import { formatDistance, formatDuration, formatDay, formatTime, formatSpeed } from "./format.js";
 import { autoApi } from "./useAutoApi.js";
 import FuelSheet from "./FuelSheet.jsx";
@@ -254,7 +254,7 @@ function NamePlaceSheet({ point, onClose }) {
             Marking this a fuel stop lets the app spot fill-ups on the timeline.
           </p>
         )}
-        {failure && <p className="auto-field__error">{failure.message}</p>}
+        {failure && <StateMessage state="error" role="alert" title="Could not save" detail={failure.message} />}
         <div className="auto-sheet__actions">
           <button type="button" className="auto-btn auto-btn--ghost" onClick={onClose}>Cancel</button>
           <button type="submit" className="auto-btn auto-btn--primary" disabled={saving || !label.trim()}>

@@ -14,7 +14,7 @@
 // inventing a separate chore.
 
 import { useState } from 'react';
-import { Button, Sheet } from '@/lib/ui';
+import { Button, Sheet, StateMessage } from '@/lib/ui';
 import { autoApi } from "./useAutoApi.js";
 import autoLog from "./autoLog.js";
 import { useCloseAfterSave } from './useCloseAfterSave.js';
@@ -131,7 +131,7 @@ export default function FuelSheet({ vehicleId, initial = {}, onClose }) {
           </p>
         )}
 
-        {failure && <p className="auto-field__error">{failure.message}</p>}
+        {failure && <StateMessage state="error" role="alert" title="Could not save" detail={failure.message} />}
 
         <div className="auto-sheet__actions">
           <Button density="compact" variant="secondary" onClick={onClose}>Cancel</Button>

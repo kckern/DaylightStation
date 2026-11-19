@@ -138,6 +138,46 @@ test('Auto saves one fuel entry at phone height and reopens on Car', async ({ pa
   await expect(page.getByRole('button', { name: 'Car', exact: true })).toHaveAttribute('aria-current', 'page');
 });
 
+test('Auto announces a rejected fuel save and lets the keyboard user retry the draft', async ({ page }) => {
+  await page.routeWebSocket('**/*', () => {});
+  const writes = [];
+  const car = '/api/v1/automotive/vehicles/sample';
+  const fuelPath = car + '/fuel';
+  await page.route('**/automotive/**', route => {
+    const request = route.request();
+    const { pathname } = new URL(request.url());
+    if (pathname.endsWith('/vehicles')) {
+      return route.fulfill({ json: { vehicles: [{ id: 'sample', label: 'Sample' }] } });
+    }
+    if (pathname === car) {
+      return route.fulfill({ json: { odometer: { km: 123 }, fuel: { needsMoreData: true, fillCount: 0 }, trip_count: 0 } });
+    }
+    if (pathname === fuelPath && request.method() === 'POST') {
+      writes.push(request.postDataJSON());
+      if (writes.length === 1) return route.fulfill({ status: 422, json: { error: 'Volume exceeds tank capacity' } });
+    }
+    return route.fulfill({ json: {} });
+  });
+
+  await page.goto('/auto');
+  await page.getByRole('button', { name: 'Fuel', exact: true }).press('Enter');
+  const opener = page.getByRole('button', { name: 'Log a fill-up' });
+  await opener.press('Enter');
+  const dialog = page.getByRole('dialog', { name: 'Log a fill-up' });
+  const volume = dialog.getByLabel('Gallons');
+  const save = dialog.getByRole('button', { name: 'Save', exact: true });
+  await volume.fill('15');
+  await save.press('Enter');
+
+  await expect(dialog.getByRole('alert')).toContainText('Volume exceeds tank capacity');
+  await expect(volume).toHaveValue('15');
+  await volume.fill('5');
+  await save.press('Enter');
+  await expect(dialog).toBeHidden();
+  await expect(opener).toBeFocused();
+  expect(writes.map(write => write.volumeGal)).toEqual([15, 5]);
+});
+
 test('Auto preserves a reopened fuel draft when the earlier save is acknowledged', async ({ page }) => {
   await page.routeWebSocket('**/*', () => {});
   const car = '/api/v1/automotive/vehicles/sample';

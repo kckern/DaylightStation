@@ -280,6 +280,14 @@ headline_pages:
 
 Grid coordinates are zero-based and must fall within the declared row/column indexes.
 
+The browser retains loaded editions for the current Headlines session and
+projects pending item actions onto each edition's read. The active edition
+owns its read and refresh feedback. Switching editions cancels the previous
+read. A submitted harvest can finish on the server after navigation. Its
+acknowledgement refreshes the submitted edition when that edition is visible,
+and a later visit reads it normally. A failed edition harvest shows its error
+when the submitted edition is active, even if the reader has returned to it.
+
 ### RSS Harvesting
 
 - `RssHeadlineHarvester` supports both single `url` and multi-URL `urls` fields

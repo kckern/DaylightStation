@@ -33,7 +33,7 @@ Admin, Health, Media, Feed, Home, Life and Auto share browser layout and interac
 | Subscribe to live changes | Use the shared socket subscription hook. The feature checks who an event belongs to and which resource changed. On reconnect, a stateful view can reload its authoritative snapshot. | [Subscription hook](../../../frontend/src/hooks/useWebSocket.js) · [Media fleet recovery](../../../__app_modules/media/media/browser/fleet/FleetProvider.jsx) |
 | Poll while a screen is in use | `useVisibleRefresh({active, intervalMs, reload, poll})` releases its timer when the document is hidden. Pass `poll` for interval ticks that allow an outstanding read to finish. The foreground transition calls `reload`. For a grouped response, `useRefreshableRead` can supply both actions to an existing reader. | [Home entities](../../../__app_modules/household/home/browser/entities/useHomeEntities.js) · [Admin Virtual Console](../../../__app_modules/learning/school/browser/admin/VirtualConsole.jsx) |
 | Poll related resources on one timer | Use `pollApiResources(matches)` to schedule checks for matching idle mounted readers. Pending reads and prefetched results retain their lifetime. Use forced revalidation for a confirmed write or foreground recovery. | [Health Today](../../../__app_modules/wellness/health/browser/today/useHealthDay.js) |
-| Refresh a feature-owned read | `useRefreshableRead(read)` supplies `reload` and `poll` for an existing transport. Memoize the read by its scope and check its `isCurrent()` callback after the request completes. Pass `poll` for interval ticks that should give an outstanding read time to finish. | [Media screen registry](../../../__app_modules/media/media/browser/house/useScreenRegistry.js) |
+| Refresh a feature-owned read | `useRefreshableRead(read)` supplies `reload` and `poll` for an existing transport. Memoize `read(isCurrent, signal)` by its scope, pass the signal to the transport, and check `isCurrent()` before publishing. Reload, a scope change or unmount aborts the previous read. Pass `poll` for interval ticks that should give an outstanding read time to finish. | [Feed Headlines](../../../__app_modules/media/feed/browser/Headlines/Headlines.jsx) · [Media screen registry](../../../__app_modules/media/media/browser/house/useScreenRegistry.js) |
 | Reuse a feature snapshot across views | Read at the provider shared by those views. Derive labels, lookups or warnings from the provider's snapshot, and refresh through the same owner after a confirmed change. | [Media Fleet provider](../../../__app_modules/media/media/browser/fleet/FleetProvider.jsx) |
 | Keep a submitted command across local views | Mount the command owner above the views. Pass an active flag to polling and a null resource path to suspend reads when the view leaves. Start reconciliation with the server when the acknowledgement arrives. | [Home device controls](../../../__app_modules/household/home/browser/entities/useHomeEntities.js) |
 | Turn a sidebar into a compact drawer | Observe the shared breakpoint. Derive modal semantics, inert regions and focus from the active presentation. Return focus to a visible control as the presentation changes. | [Feed subscriptions](../../../__app_modules/media/feed/browser/Reader/Reader.jsx) |
@@ -268,11 +268,16 @@ reads the committed server state.
 
 When an editor allows typing during a write, let the acknowledgement update
 the Revert baseline for the submitted draft. Keep edits made after submission
-in the current draft and leave the Unsaved indicator visible.
+in the current draft and leave the Unsaved indicator visible. Admin notification
+settings replaces its draft with the server response only when the submitted
+draft is still current. Later edits stay in the form until the next Save.
+[Admin notification settings](../../../frontend/src/modules/Admin/Notifications/NotificationsIndex.jsx)
 
 A panel can keep an open editor mounted alongside its resource feedback.
 The write refreshes the submitted resource on acknowledgement. Only the
-editor instance that submitted it can dismiss itself after the save.
+editor instance that submitted it can dismiss itself after the save. A rejected
+save keeps the draft and uses `StateMessage` to announce the error in the
+editor, where the user can correct it and retry.
 [Auto Fuel panel](../../../__app_modules/household/auto/browser/FuelPanel.jsx)
 
 Player configuration belongs to the page. Playback instances share the first

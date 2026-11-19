@@ -77,6 +77,46 @@ test('Devices retries list errors and preserves a rejected creation for resubmis
   ]);
 });
 
+test('Admin notification settings preserve edits made during a pending save', async ({ page }) => {
+  const initial = {
+    quiet_hours: { enabled: true, start: '21:00', end: '07:00' },
+    cooldowns: { ceremony: 1200, default: 60 },
+  };
+  const writes = [];
+  const releaseFirstSave = Promise.withResolvers();
+  await page.route('**/api/v1/admin/notifications', async route => {
+    if (route.request().method() === 'GET') return route.fulfill({ json: initial });
+    const submitted = route.request().postDataJSON();
+    writes.push(submitted);
+    if (writes.length === 1) await releaseFirstSave.promise;
+    return route.fulfill({ json: submitted });
+  });
+
+  try {
+    await page.goto('/admin/system/notifications');
+    const start = page.getByRole('textbox', { name: 'Start' });
+    const end = page.getByRole('textbox', { name: 'End' });
+    const save = page.getByRole('button', { name: 'Save', exact: true });
+    await expect(start).toHaveValue('21:00');
+    await start.fill('20:00');
+    await save.click();
+    await expect.poll(() => writes.length).toBe(1);
+    await end.fill('08:30');
+    releaseFirstSave.resolve();
+    await expect(save).toBeEnabled();
+    await expect(end).toHaveValue('08:30');
+    expect(writes).toEqual([{ ...initial, quiet_hours: { enabled: true, start: '20:00', end: '07:00' } }]);
+
+    await save.click();
+    await expect.poll(() => writes[1]).toEqual({
+      ...initial, quiet_hours: { enabled: true, start: '20:00', end: '08:30' },
+    });
+    await expect(save).toBeEnabled();
+  } finally {
+    releaseFirstSave.resolve();
+  }
+});
+
 test('Review keys supports pointer and keyboard dismissal and returns focus to its opener', async ({ page }) => {
   await page.route('**/api/v1/content-filter/77/review', route => route.fulfill({ json: {
     title: 'Test film', certification: { level: 'none' }, audit: null, rows: [],

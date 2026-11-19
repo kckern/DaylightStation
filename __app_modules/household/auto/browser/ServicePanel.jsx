@@ -8,7 +8,7 @@
 // schema and is deliberately not on this form until it would do something.
 
 import { useState } from 'react';
-import { LoadingState, ErrorState, EmptyState, Sheet, Select } from '@/lib/ui';
+import { LoadingState, ErrorState, EmptyState, Sheet, Select, StateMessage } from '@/lib/ui';
 import { formatDay, formatMoney, formatDistance } from "./format.js";
 import { autoApi } from "./useAutoApi.js";
 import autoLog from "./autoLog.js";
@@ -212,7 +212,7 @@ function ServiceSheet({ vehicleId, types, onClose }) {
           <textarea className="ds-input" rows={2} value={form.notes} onChange={set('notes')} />
         </label>
 
-        {failure && <p className="auto-field__error">{failure.message}</p>}
+        {failure && <StateMessage state="error" role="alert" title="Could not save" detail={failure.message} />}
 
         <div className="auto-sheet__actions">
           <button type="button" className="auto-btn auto-btn--ghost" onClick={onClose}>Cancel</button>

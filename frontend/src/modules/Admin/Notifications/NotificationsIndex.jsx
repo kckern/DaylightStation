@@ -39,7 +39,10 @@ function NotificationSettings({ initial }) {
     setSaving(true); setError(null);
     try {
       const saved = await DaylightAPI('/api/v1/admin/notifications', config, 'PUT');
-      setConfig({ quiet_hours: saved.quiet_hours, cooldowns: saved.cooldowns });
+      // Inputs stay editable while the PUT is in flight. Only replace the draft that was submitted.
+      setConfig(current => current === config
+        ? { quiet_hours: saved.quiet_hours, cooldowns: saved.cooldowns }
+        : current);
     } catch (e) { setError(e.message); }
     finally { setSaving(false); }
   };

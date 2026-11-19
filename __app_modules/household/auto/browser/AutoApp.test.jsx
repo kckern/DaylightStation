@@ -84,13 +84,14 @@ it.each([
 
 const vehiclesPath = 'api/v1/automotive/vehicles';
 
-function mockGarage({ failingResource, holdWrite } = {}) {
+function mockGarage({ failingResource, holdWrite, writeError } = {}) {
   const reads = [];
   const writes = [];
   let failNext = Boolean(failingResource);
   DaylightAPI.mockImplementation((path, body, method) => {
     if (method === 'POST') {
       writes.push(path);
+      if (writeError && writes.length === 1) return Promise.reject(writeError);
       return holdWrite || Promise.resolve({});
     }
     reads.push(path);
@@ -212,3 +213,27 @@ it.each([
     expect(dialog().getByLabelText(field)).toHaveDisplayValue(second);
     expect(writes).toHaveLength(1);
   });
+
+it.each([
+  ['Fuel', 'Log a fill-up', 'Gallons', '5'],
+  ['Service', 'Log service', 'Who did it', 'City Tire'],
+  ['Drives', 'Name this place', 'What is it?', 'City Tire'],
+])('announces a rejected %s save and keeps the draft available for retry', async (tab, open, field, value) => {
+  const { reads, writes } = mockGarage({ writeError: new Error('Record refused') });
+  render(<AutoApp />);
+  await selectButton('Wagon');
+  await selectButton(tab);
+  await selectButton(open);
+  const dialog = within(screen.getByRole('dialog', { name: open }));
+  fireEvent.change(dialog.getByLabelText(field), { target: { value } });
+  reads.length = 0;
+  fireEvent.submit(dialog.getByRole('form'));
+  expect(await dialog.findByRole('alert')).toHaveTextContent('Record refused');
+  expect(dialog.getByLabelText(field)).toHaveDisplayValue(value);
+  expect(dialog.getByRole('button', { name: 'Save' })).toBeEnabled();
+  expect(reads).toEqual([]);
+
+  await act(async () => fireEvent.submit(dialog.getByRole('form')));
+  expect(screen.queryByRole('dialog', { name: open })).toBeNull();
+  expect(writes).toHaveLength(2);
+});

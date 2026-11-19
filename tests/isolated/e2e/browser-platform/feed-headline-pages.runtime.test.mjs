@@ -74,3 +74,88 @@ test('Feed entry redirects replace their history entries and share the main regi
   await expect(headlines).toHaveAttribute('aria-current', 'page');
   await expect(main).toBeVisible();
 });
+
+for (const refresh of [
+  { button: 'Refresh all', endpoint: '/headlines/harvest' },
+  { button: 'Refresh Local source', endpoint: '/headlines/harvest/daily' },
+  { button: 'Refresh all', endpoint: '/headlines/harvest', rejected: true },
+]) {
+  const title = refresh.rejected
+    ? 'Feed reports a failed harvest after returning to the submitted edition'
+    : `Feed ${refresh.button} completion stays with the submitted headline edition`;
+  test(title, async ({ page }) => {
+    const harvestStarted = Promise.withResolvers();
+    const releaseHarvest = Promise.withResolvers();
+    const reads = [];
+    let harvests = 0;
+    let harvested = false;
+    await page.routeWebSocket('**/*', () => {});
+    await page.route('**/api/**', async route => {
+      const { pathname, searchParams } = new URL(route.request().url());
+      if (pathname.endsWith('/headlines/pages')) {
+        return route.fulfill({ json: [{ id: 'local', label: 'Local news' }, { id: 'world', label: 'World' }] });
+      }
+      if (pathname.endsWith(refresh.endpoint)) {
+        harvests += 1;
+        harvestStarted.resolve();
+        await releaseHarvest.promise;
+        if (refresh.rejected) return route.fulfill({ status: 500, json: { message: 'Harvest unavailable' } });
+        harvested = true;
+        return route.fulfill({ json: {} });
+      }
+      if (pathname.endsWith('/headlines') && searchParams.has('page')) {
+        const edition = searchParams.get('page');
+        reads.push(edition);
+        const local = edition === 'local';
+        const title = local ? (harvested ? 'Updated local headline' : 'Local headline') : 'World headline';
+        return route.fulfill({ json: {
+          grid: { rows: ['main'], cols: ['main'] },
+          sources: { daily: {
+            label: local ? 'Local source' : 'World source',
+            row: 0,
+            col: 0,
+            url: 'https://example.test/feed',
+            items: [{ id: edition, title, link: `https://example.test/${edition}` }],
+          } },
+        } });
+      }
+      return route.fulfill({ json: pathname.endsWith('/supervision/bootstrap') ? { enabled: false } : {} });
+    });
+
+    await page.goto('/feed/headlines/local');
+    await expect(page.getByRole('link', { name: 'Local headline', exact: true })).toBeVisible();
+    await page.getByRole('button', { name: refresh.button, exact: true }).click();
+    await harvestStarted.promise;
+    const edition = page.getByLabel('Headline edition');
+    await edition.selectOption('world');
+    await expect(page.getByRole('link', { name: 'World headline' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Refresh all', exact: true })).toBeEnabled();
+
+    if (refresh.rejected) {
+      await edition.selectOption('local');
+      await expect(page.getByRole('button', { name: 'Refreshing…' })).toBeDisabled();
+      await expect.poll(() => reads.slice()).toEqual(['local', 'world', 'local']);
+      releaseHarvest.resolve();
+      const alert = page.getByRole('alert').filter({ hasText: 'Sources could not be refreshed' });
+      await expect(alert).toBeVisible();
+      expect(reads).toEqual(['local', 'world', 'local']);
+      await alert.getByRole('button', { name: 'Retry' }).click();
+      await expect(alert).toBeHidden();
+      await expect(page.getByRole('button', { name: 'Refresh all', exact: true })).toBeEnabled();
+      expect(reads).toEqual(['local', 'world', 'local', 'local']);
+      expect(harvests).toBe(1);
+      return;
+    }
+
+    const result = page.waitForResponse(response => new URL(response.url()).pathname.endsWith(refresh.endpoint));
+    releaseHarvest.resolve();
+    await (await result).finished();
+    await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+    expect(reads).toEqual(['local', 'world']);
+    await expect(page.getByRole('link', { name: 'World headline' })).toBeVisible();
+
+    await edition.selectOption('local');
+    await expect(page.getByRole('link', { name: 'Updated local headline' })).toBeVisible();
+    expect(reads).toEqual(['local', 'world', 'local']);
+  });
+}
