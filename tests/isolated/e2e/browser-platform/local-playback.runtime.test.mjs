@@ -355,6 +355,6 @@ test('Media keeps the last paused seek when leaving its app and restores silentl
   });
   await page.getByTestId('np-toggle').click();
   const clock = await originalClock(page);
-  await expect.poll(clock).toBeGreaterThan(9.5);
-  expect(await page.evaluate(() => window.initialFixturePlayingPosition)).toBeCloseTo(10, 0);
+  await expect.poll(() => page.evaluate(() => window.initialFixturePlayingPosition ?? -1)).toBeCloseTo(10, 0);
+  await expect.poll(clock).toBeGreaterThan(10.1);
 });
