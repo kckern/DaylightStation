@@ -522,8 +522,10 @@ whole milk". It posts to `POST /nutrition/day-input`.
   recording belongs to the day it was started on.
 - **One at a time.** While a request runs the field is read-only and keeps focus, Send
   shows its spinner, and a second send is ignored. A recording that ends while a request
-  runs, or while a question or failure is open, waits and says so. It goes once the
-  person has answered, cancelled, retried or dismissed, so it never replaces either.
+  runs, or while a question or failure is open, waits and says so on screen and in the
+  status region. It goes once the person has answered, cancelled, retried or dismissed,
+  so it never replaces either. Recordings still waiting when the bar unmounts are lost,
+  and `day-input.recording-dropped` logs how many.
 - **Operation IDs.** Every submission and every answer gets a new ID. Trying a failed
   request again (**Try again**, or Send with the same words on the same day) reuses its
   ID, so a request that did commit is replayed and not done twice. The last typed request
@@ -561,7 +563,7 @@ whole milk". It posts to `POST /nutrition/day-input`.
   - **Keyboard:** Escape closes an open day menu first, then the sheet. Closing returns
     focus to the button, or to the field if the button has gone with the food.
 - Logs (`health` / `day-input`): `day-input.submit`, `.result`, `.clarification`,
-  `.failed`, `.recording-fallback`, `.move-day.open`, `.move-day.result`.
+  `.failed`, `.recording-fallback`, `.recording-dropped`, `.move-day.open`, `.move-day.result`.
 
 ### Moving food to another day
 

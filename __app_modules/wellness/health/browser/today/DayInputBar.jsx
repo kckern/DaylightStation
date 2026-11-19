@@ -86,8 +86,7 @@ function MoveDaySheet({ date, today, entries, onMove, onClose }) {
     onRefused: reason => { refusal.current = reason; },
   }));
   const locked = working || Boolean(retry);
-  const menuShowing = menuOpen && picked.length > 0 && !retry;
-  return <Modal opened onClose={onClose} title="Move this day's food" centered returnFocus={false} closeOnEscape={!menuShowing}>
+  return <Modal opened onClose={onClose} title="Move this day's food" centered returnFocus={false} closeOnEscape={!menuOpen}>
     <div className="health-day-move" ref={findModalRoot}>
       <div className="health-day-move__list">
         {entries.map(row => {
@@ -136,10 +135,15 @@ export function DayInputBar({ date, today, entries, active = true, onResult, onM
   // A reply can land after the page moved on, so it goes to the current handler.
   const reportResult = useRef(onResult);
   reportResult.current = onResult;
+  const waitingCount = useRef(0);
+  waitingCount.current = waiting.length;
 
   useEffect(() => {
     logger.debug('day-input.mounted');
-    return () => logger.debug('day-input.unmounted');
+    return () => {
+      logger.debug('day-input.unmounted');
+      if (waitingCount.current) logger.warn('day-input.recording-dropped', { count: waitingCount.current });
+    };
   }, []);
   useEffect(() => {
     if (sheetWasOpen.current && !moving) (moveButton.current || field.current)?.focus();
@@ -223,7 +227,9 @@ export function DayInputBar({ date, today, entries, active = true, onResult, onM
   const backToField = clear => { clear(null); field.current?.focus(); };
   const elsewhere = day => (day === date ? '' : `${dayLabel(day, today)}: `);
   const working = busy === 'voice' ? 'Working on your recording…' : 'Working on it…';
-  const unsettled = question || failure;
+  const waitingText = !waiting.length ? ''
+    : `${waiting.length === 1 ? 'Your recording is waiting' : `${waiting.length} recordings are waiting`} and will send once this is settled.`;
+  const statusText = [busy ? working : question?.question, waitingText].filter(Boolean).join(' ');
 
   return <div ref={root} className="health-day-input">
     <form ref={form} className="health-day-input__row" onSubmit={event => { event.preventDefault(); submitText(); }}>
@@ -237,9 +243,9 @@ export function DayInputBar({ date, today, entries, active = true, onResult, onM
         leftSection={<MoveDayIcon />} onClick={() => { logger.info('day-input.move-day.open', { date, count: entries.length }); setMoving(true); }}>
         <span className="health-day-input__move-text">Move this day's food</span>
       </Button> : null}
-      <span role="status" className="health-day-input__status">{busy ? working : question ? question.question : ''}</span>
+      <span role="status" className="health-day-input__status">{statusText}</span>
     </form>
-    {unsettled || micError ? <div className="health-day-input__overlay">
+    {question || failure || micError || waiting.length ? <div className="health-day-input__overlay">
       {question ? <div ref={questionPanel} className="health-day-input__panel">
         <span>{elsewhere(question.request.date)}{question.question}</span>
         <div className="health-day-input__actions">
@@ -257,9 +263,7 @@ export function DayInputBar({ date, today, entries, active = true, onResult, onM
           <Button size="compact-sm" variant="subtle" onClick={() => backToField(setFailure)}>Dismiss</Button>
         </div>
       </div> : null}
-      {unsettled && waiting.length ? <p className="health-day-input__waiting">
-        {waiting.length === 1 ? 'Your recording is waiting' : `${waiting.length} recordings are waiting`} and will send once this is settled.
-      </p> : null}
+      {waitingText ? <p className="health-day-input__waiting">{waitingText}</p> : null}
       {micError ? <div className="health-day-input__panel">
         <span role="alert" className="health-capture-error">{micError}</span>
         <div className="health-day-input__actions"><Button size="compact-sm" variant="subtle" onClick={() => backToField(setMicError)}>Dismiss</Button></div>

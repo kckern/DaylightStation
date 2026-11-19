@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Button, Menu } from '@mantine/core';
 import { useDayDropTarget, useMealDragActive } from "./mealDrag.jsx";
 import { addDaysISO, dayLabel, recentDays } from "./moveDays.js";
@@ -38,6 +38,10 @@ export function MoveDayControl({ date, today, count, onMove, disabled = false, p
   const [busy, pick] = useMoveInFlight(onMove);
   const [open, setOpen] = useState(false);
   const change = value => { setOpen(value); onMenuChange?.(value); };
+  // A menu that leaves with this control must not stay "open" for its owner.
+  const reportMenu = useRef(onMenuChange);
+  reportMenu.current = onMenuChange;
+  useEffect(() => () => reportMenu.current?.(false), []);
   useEffect(() => {
     if (!open) return undefined;
     const onKey = event => { if (event.key === 'Escape') change(false); };

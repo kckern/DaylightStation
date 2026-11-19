@@ -3,6 +3,17 @@ import { render, screen, fireEvent, waitFor, cleanup, act } from '@testing-libra
 import { MantineProvider } from '@mantine/core';
 
 const apiMock = vi.fn();
+const warnings = vi.hoisted(() => []);
+vi.mock('../../../../../frontend/src/lib/ui/createAppLogger.js', async importOriginal => {
+  const actual = await importOriginal();
+  const watch = logger => new Proxy(logger, { get(target, key) {
+    if (key === 'warn') return (event, data) => { warnings.push([event, data]); return target.warn(event, data); };
+    if (key === 'child') return (...args) => watch(target.child(...args));
+    const value = target[key];
+    return typeof value === 'function' ? value.bind(target) : value;
+  } });
+  return { ...actual, createAppLogger: (...args) => watch(actual.createAppLogger(...args)) };
+});
 vi.mock('../../../../../frontend/src/lib/api.mjs', () => ({ DaylightAPI: (...args) => apiMock(...args) }));
 vi.mock('../capture/VoiceCapture.jsx', () => ({ VoiceCapture: ({ onCapture, labelPrefix, onError }) => <>
   <button type="button" onClick={() => onCapture('data:audio')}>{labelPrefix}</button>
@@ -10,6 +21,7 @@ vi.mock('../capture/VoiceCapture.jsx', () => ({ VoiceCapture: ({ onCapture, labe
 </> }));
 import { DayInputBar } from './DayInputBar.jsx';
 import { MoveResult } from './mealDrag.jsx';
+import { MoveDayControl } from './MoveDayControl.jsx';
 import { LogTable } from './LogTable.jsx';
 import { HealthOperationsProvider, useHealthOperations } from '../operations/HealthOperationsProvider.jsx';
 
@@ -36,7 +48,7 @@ const whichFood = extra => ({ committed: false, outcome: 'clarification', clarif
 const whichDay = extra => ({ committed: false, outcome: 'clarification', clarification: { kind: 'day', question: 'Which day should this go to?', choices: [] }, ...extra });
 const done = { committed: true, outcome: 'committed', kind: 'moved', message: 'Moved Tea' };
 
-beforeEach(() => { apiMock.mockReset(); });
+beforeEach(() => { apiMock.mockReset(); warnings.length = 0; });
 afterEach(cleanup);
 
 describe('DayInputBar', () => {
@@ -276,12 +288,40 @@ describe('a recording made while something is unsettled', () => {
     speak();
     await act(async () => { reply.resolve(whichFood({ instructionText: 'move it' })); });
     expect(await screen.findByRole('button', { name: 'Tea' })).toBeTruthy();
-    expect(screen.getByText(/recording is waiting/i)).toBeTruthy();
+    expect(screen.getByText(/recording is waiting/i, { selector: '.health-day-input__waiting' })).toBeTruthy();
     expect(voiceSends()).toHaveLength(0);
     fireEvent.click(screen.getByRole('button', { name: 'Tea' }));
     await waitFor(() => expect(voiceSends()).toHaveLength(1));
     expect(body(1)).toMatchObject({ type: 'text', resolved: { foodId: 'tea' } });
     expect(body(2)).toMatchObject({ type: 'voice', content: 'data:audio' });
+  });
+  it('says it is waiting while a request runs, on screen and in the status region', async () => {
+    const reply = deferred();
+    apiMock.mockReturnValueOnce(reply.promise).mockResolvedValue(done);
+    setup();
+    type('eggs');
+    speak();
+    const line = await screen.findByText(/recording is waiting/i, { selector: '.health-day-input__waiting' });
+    expect(line.closest('.health-day-input__overlay')).toBeTruthy();
+    expect(screen.getByRole('status').textContent).toMatch(/Working.*recording is waiting/);
+    await act(async () => { reply.resolve(done); });
+    await waitFor(() => expect(voiceSends()).toHaveLength(1));
+    await waitFor(() => expect(screen.queryByText(/recording is waiting/i)).toBeNull());
+  });
+  it('logs only the count when the bar goes away with recordings queued', async () => {
+    apiMock.mockReturnValue(new Promise(() => {}));
+    const view = render(ui({ onResult: vi.fn(), onMoveDay: vi.fn() }));
+    type('eggs');
+    speak();
+    speak();
+    await screen.findByText(/2 recordings are waiting/i, { selector: '.health-day-input__waiting' });
+    view.unmount();
+    expect(warnings).toContainEqual(['day-input.recording-dropped', { count: 2 }]);
+  });
+  it('logs nothing when the bar goes away with nothing queued', () => {
+    const view = render(ui({ onResult: vi.fn(), onMoveDay: vi.fn() }));
+    view.unmount();
+    expect(warnings.filter(([event]) => event === 'day-input.recording-dropped')).toHaveLength(0);
   });
   it('is not sent over an open question until it is cancelled', async () => {
     apiMock.mockResolvedValueOnce(whichFood({ instructionText: 'move it' })).mockResolvedValue(done);
@@ -485,6 +525,22 @@ describe("Move this day's food", () => {
     fireEvent.keyDown(document.body, { key: 'Escape' });
     await waitFor(() => expect(screen.queryByRole('checkbox', { name: 'Tea' })).toBeNull());
     await waitFor(() => expect(document.activeElement).toBe(screen.getByRole('button', { name: MOVE })));
+  });
+  it('Escape still closes the sheet after the open menu went away with its control', async () => {
+    setup();
+    await openSheet();
+    fireEvent.click(screen.getByRole('button', { name: 'Move 3 selected to another day' }));
+    await screen.findByRole('menuitem', { name: 'Yesterday' });
+    for (const name of ['Eggs', 'Tea', 'Loose']) fireEvent.click(screen.getByRole('checkbox', { name }));
+    await waitFor(() => expect(screen.queryByRole('button', { name: /selected to another day/ })).toBeNull());
+    fireEvent.keyDown(document.body, { key: 'Escape' });
+    await waitFor(() => expect(screen.queryByRole('checkbox', { name: 'Tea' })).toBeNull());
+  });
+  it('the day control reports its menu closed when it unmounts', () => {
+    const onMenuChange = vi.fn();
+    const view = render(<MantineProvider><MoveDayControl date={date} today={date} count={1} onMove={vi.fn()} onMenuChange={onMenuChange} /></MantineProvider>);
+    view.unmount();
+    expect(onMenuChange).toHaveBeenCalledWith(false);
   });
   it('focus goes to the field when the button left with the food', async () => {
     const view = setup();
