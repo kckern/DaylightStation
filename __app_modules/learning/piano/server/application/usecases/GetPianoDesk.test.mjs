@@ -5,7 +5,9 @@ import { GetPianoDesk, practiceKeyOfScore } from './GetPianoDesk.mjs';
 const SCORE = 'files:docs/sheet-music/christmas/piece.mxl';
 const KEY = practiceKeyOfScore(SCORE);
 const segments = { 'm0-4': {}, 'm5-8': {}, 'm9-12': {} };
-const record = (over = {}) => ({ fingerprint: { contentSha256: 'c' }, updatedAt: '2026-11-01T00:00:00Z', learn: { segments, passages: {} }, ...over });
+// Real progress sits on the last passage, so the next step stays at the start.
+const PROGRESS = { 'm9-12': { rungs: { right: { passCount: 6 } } } };
+const record = (over = {}) => ({ fingerprint: { contentSha256: 'c' }, updatedAt: '2026-11-01T00:00:00Z', learn: { segments, passages: PROGRESS }, ...over });
 const deskFor = (byUser, { roster = Object.keys(byUser), ids = [SCORE] } = {}) => new GetPianoDesk({
   datastore: { listPractice: (user) => byUser[user] ?? [], listSheetMusicIds: () => ids },
   configProjection: { roster: () => roster, profile: (id) => ({ display_name: id.toUpperCase() }), raw: () => ({}) },
@@ -58,14 +60,14 @@ test('a corrupt record cannot take the desk down', () => {
 
 test('uses saved passage ranges and parts, so one-hand pieces match Learn', () => {
   const summary = { passages: [{ id: 'intro', start: 0, end: 3, parts: ['rh'] }, { id: 'tune', start: 4, end: 7, parts: ['rh'] }] };
-  const r = record({ learn: {}, learnCoach: { version: 1, scoreId: SCORE, fingerprint: 'c', revision: 1, achievements: {}, counts: {}, evidence: [], reviews: {}, resume: null, summary } });
+  const r = record({ learn: { passages: { tune: { complete: true } } }, learnCoach: { version: 1, scoreId: SCORE, fingerprint: 'c', revision: 1, achievements: {}, counts: {}, evidence: [], reviews: {}, resume: null, summary } });
   const { piece } = deskFor({ a: [{ scoreKey: KEY, record: r }] }).execute().players[0];
   assert.deepEqual(piece.passages.map((p) => [p.id, p.start, p.end]), [['intro', 0, 3], ['tune', 4, 7]]);
   assert.deepEqual(piece.next, { passageId: 'intro', skill: 'notes', label: 'Find the notes', start: 0, end: 3 });
 });
 
 test('treats an older plan as two-handed, since its rungs cannot tell', () => {
-  const r = record({ learn: { segments: { 'm0-3': {} }, passages: { 'm0-3': { rungs: { 'test-out': { passCount: 0 } } } } } });
+  const r = record({ learn: { segments: { 'm0-3': {}, 'm4-7': {} }, passages: { 'm0-3': { rungs: { 'test-out': { passCount: 0 } } }, 'm4-7': { rungs: { right: { passCount: 6 } } } } } });
   assert.equal(deskFor({ a: [{ scoreKey: KEY, record: r }] }).execute().players[0].piece.next.skill, 'right');
 });
 
@@ -83,4 +85,17 @@ test('does not walk the library when every record names its score', () => {
   new GetPianoDesk({ datastore: { listPractice: () => [{ scoreKey: KEY, record: record({ learnCoach: state }) }], listSheetMusicIds: () => { walks += 1; return []; } },
     configProjection: { roster: () => ['a'], profile: () => ({}), raw: () => ({}) }, timezone: 'UTC' }).execute();
   assert.equal(walks, 0);
+});
+
+test('skips a piece that was only browsed and shows the most recent one with real progress', () => {
+  const browsed = { scoreKey: KEY, record: record({ updatedAt: '2026-11-17T00:00:00Z', learn: { segments, passages: { 'm0-4': { rungs: { 'test-out': { passCount: 0 } } } } } }) };
+  const realId = 'files:docs/sheet-music/real.mxl';
+  const real = { scoreKey: practiceKeyOfScore(realId), record: record({ updatedAt: '2026-11-01T00:00:00Z', learn: { segments, passages: { 'm0-4': { rungs: { right: { passCount: 6 } } } } } }) };
+  const { piece } = deskFor({ a: [browsed, real] }, { ids: [SCORE, realId] }).execute().players[0];
+  assert.equal(piece.scoreId, realId);
+});
+
+test('a child with only browsed pieces has no piece', () => {
+  const browsed = { scoreKey: KEY, record: record({ learn: { segments, passages: {} } }) };
+  assert.equal(deskFor({ a: [browsed] }).execute().players[0].piece, null);
 });

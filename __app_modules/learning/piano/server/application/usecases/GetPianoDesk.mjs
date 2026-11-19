@@ -1,6 +1,7 @@
 /**
  * GetPianoDesk — what each player is working on, for the kiosk home screen: the
- * piece practiced most recently, its passages, and the next Silver step.
+ * most recently practiced piece with real progress (at least one step earned),
+ * its passages, and the next Silver step.
  *
  * The answer always comes from the same coaching policy Learn uses, so the home
  * screen and the score cannot disagree. It reads practice records only, with no
@@ -59,13 +60,16 @@ export class GetPianoDesk {
     const certification = this.#configProjection.raw?.()?.sheetmusic?.learn?.certification;
     const plan = createCoachPlan({ scoreId, fingerprint, segments, certification });
     const projection = projectCoach({ plan, state: record.learnCoach ?? null, legacy: record, dayKey });
+    const passages = projection.segments.map(passageProgress);
+    // A piece someone only opened or tried is not one they are learning.
+    if (!passages.some((passage) => passage.steps.done > 0 || passage.state === 'silver' || passage.state === 'gold')) return null;
     const next = projection.recommended;
     return {
       scoreId, scoreKey, practicedAt: latestActivity(record) || null,
       total: projection.piece.total, silver: projection.piece.silver, gold: projection.piece.gold,
       next: next ? { passageId: next.passageId, skill: next.skill, label: next.label, start: next.range.start, end: next.range.end } : null,
       nextGoldPassageId: projection.piece.nextGoldPassageId,
-      passages: projection.segments.map(passageProgress),
+      passages,
     };
   }
 
