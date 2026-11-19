@@ -51,3 +51,33 @@ it('preserves one main when selecting a car and returning to the garage', async 
   expect(screen.getByRole('button', { name: 'First car' })).toHaveFocus();
   expect(screen.queryByRole('navigation')).toBeNull();
 });
+
+it.each([
+  { fuelState: 'a matching fill-up', logs: [{ date: '2026-10-08', place: 'station' }], prompts: 0 },
+  { fuelState: 'no fill-ups', logs: [], prompts: 1 },
+])('checks the fuel log before prompting to log a stop with $fuelState', async ({ logs, prompts }) => {
+  let resolveFuel;
+  const fuel = new Promise(resolve => { resolveFuel = resolve; });
+  const vehicles = 'api/v1/automotive/vehicles';
+  DaylightAPI.mockImplementation(path => {
+    if (path === vehicles) return Promise.resolve({ vehicles: [{ id: 'wagon', label: 'Family wagon' }] });
+    if (path === `${vehicles}/wagon`) return Promise.resolve({
+      odometer: { km: 320 }, fuel: { needsMoreData: true, fillCount: 0 }, trip_count: 0,
+    });
+    if (path === `${vehicles}/wagon/fuel`) return fuel;
+    if (path === `${vehicles}/wagon/journeys`) return Promise.resolve({ journeys: [{
+      id: 'station-trip',
+      title: 'Drive to the station',
+      has_fuel_stop: true,
+      stops: [{ is_fuel_stop: true, place_id: 'station', arrived_at: '2026-10-08T15:00:00Z' }],
+    }] });
+    return Promise.resolve({});
+  });
+  render(<AutoApp />);
+  fireEvent.click(await screen.findByRole('button', { name: 'Drives', exact: true }));
+  expect(await screen.findByText('Drive to the station')).toBeVisible();
+  expect(screen.queryByRole('button', { name: 'Log the fill-up' })).not.toBeInTheDocument();
+
+  await act(async () => resolveFuel({ logs }));
+  expect(screen.queryAllByRole('button', { name: 'Log the fill-up' })).toHaveLength(prompts);
+});

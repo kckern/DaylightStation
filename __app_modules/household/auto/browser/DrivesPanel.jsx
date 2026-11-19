@@ -115,7 +115,7 @@ function caveats(journey) {
  * Returns null when there is nothing to ask about.
  */
 function pendingFuelStop(journey, fuelLogs) {
-  if (!journey.has_fuel_stop) return null;
+  if (!journey.has_fuel_stop || !Array.isArray(fuelLogs)) return null;
   const stop = [journey.origin, ...journey.stops, journey.destination]
     .find((point) => point?.is_fuel_stop);
   if (!stop) return null;
@@ -124,7 +124,7 @@ function pendingFuelStop(journey, fuelLogs) {
   if (!when) return null;
   const day = when.slice(0, 10);
 
-  const alreadyLogged = (fuelLogs || []).some((log) => {
+  const alreadyLogged = fuelLogs.some((log) => {
     if (log.place && stop.place_id && log.place !== stop.place_id) return false;
     return Math.abs(daysBetween(log.date, day)) <= 1;
   });

@@ -1,11 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { act, render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { MantineProvider } from '@mantine/core';
 
 const apiMock = vi.fn();
 vi.mock("../../../../../frontend/src/lib/api.mjs", () => ({ DaylightAPI: (...a) => apiMock(...a) }));
 vi.mock("../history/HistoryChart.jsx", () => ({
-  default: ({ history }) => <div data-testid="history-chart" data-kind={history.kind} />,
+  default: ({ history }) => <div data-testid="history-chart" data-kind={history.kind}>{history.points?.[0]?.v}</div>,
 }));
 
 import { EntityDetailSheet } from './EntityDetailSheet.jsx';
@@ -74,6 +74,36 @@ describe('EntityDetailSheet history', () => {
     apiMock.mockResolvedValue(line([{ t: 1, v: 70, max: 71 }]));
     fireEvent.click(screen.getByText('Retry'));
     expect(await screen.findByTestId('history-chart')).toBeTruthy();
+  });
+
+  it('keeps the selected range’s cached chart visible when refresh fails and retries that range', async () => {
+    const dailyPath = 'api/v1/home-dashboard/entities/sensor.den_temperature/history?range=24h';
+    const weeklyPath = 'api/v1/home-dashboard/entities/sensor.den_temperature/history?range=7d';
+    let failRefresh;
+    apiMock
+      .mockResolvedValueOnce(line([{ t: 1, v: 70 }]))
+      .mockResolvedValueOnce({ ...line([{ t: 1, v: 65 }]), range: '7d' })
+      .mockReturnValueOnce(new Promise((_resolve, reject) => { failRefresh = reject; }))
+      .mockResolvedValueOnce(line([{ t: 1, v: 72 }]));
+    wrap(<EntityDetailSheet entity={temperature} onClose={() => {}} />);
+    const chart = () => screen.getByTestId('history-chart');
+
+    expect((await screen.findByTestId('history-chart')).textContent).toBe('70');
+    fireEvent.click(screen.getByText('7 d'));
+    await waitFor(() => expect(chart().textContent).toBe('65'));
+    fireEvent.click(screen.getByText('24 h'));
+    expect(chart().textContent).toBe('70');
+    expect(apiMock.mock.calls).toEqual([[dailyPath], [weeklyPath], [dailyPath]]);
+
+    await act(async () => { failRefresh(new Error('Connection lost')); });
+    expect(screen.getByRole('alert').textContent).toContain('Connection lost');
+    expect(screen.getByText('History could not refresh')).toBeTruthy();
+    expect(chart().textContent).toBe('70');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    await waitFor(() => expect(chart().textContent).toBe('72'));
+    expect(screen.queryByRole('alert')).toBeNull();
+    expect(apiMock.mock.calls).toEqual([[dailyPath], [weeklyPath], [dailyPath], [dailyPath]]);
   });
 
   it('a lamp keeps its switch; extra renders between the history and the link', async () => {

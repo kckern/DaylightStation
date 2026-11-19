@@ -26,12 +26,12 @@ export function LoadingState({ label = 'content', rows = 3, children, className 
   );
 }
 
-export function ErrorState({ error, onRetry, label = 'This section' }) {
+export function ErrorState({ error, onRetry, label = 'This section', title = `${label} failed to load` }) {
   if (typeof onRetry !== 'function') {
     throw new Error('ErrorState requires onRetry — errors must offer a next step');
   }
   return (
-    <StateMessage state="error" role="alert" title={`${label} failed to load`} detail={error?.message || 'Unknown error'}>
+    <StateMessage state="error" role="alert" title={title} detail={error?.message || 'Unknown error'}>
       <Button density="compact" variant="secondary" onClick={onRetry}>Retry</Button>
     </StateMessage>
   );

@@ -246,6 +246,11 @@ of flashing the view back to a loading state. A path with no cached entry yet
 behaves exactly like the default mode until its first successful response
 seeds the cache.
 
+When a background refresh fails, the reader can provide both the last
+successful `data` and the current `error`. Keep the selected snapshot visible
+and offer `reload()` through `ErrorState` with a refresh-specific `title`, as
+in the [Home history drawer](../../../__app_modules/household/home/browser/ui/EntityDetailSheet.jsx).
+
 Cache writes are race-protected: a response is only allowed to overwrite its
 path's cached value if it is still the most-recently-issued request for that
 path by the time it resolves. This covers both an overlapping reload on one

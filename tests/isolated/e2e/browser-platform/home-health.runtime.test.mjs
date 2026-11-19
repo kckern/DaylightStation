@@ -123,6 +123,50 @@ test('Home Mosaic keeps the tooltip and drawer reachable in its own frame', asyn
   await expect(drawer).toHaveCount(0);
 });
 
+test('Home keeps the rendered history chart during a failed refresh and retries the same range', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 850 });
+  await page.route('**/home-dashboard/entities', route => route.fulfill({ json: house('on') }));
+  const reads = [];
+  let pendingRefresh;
+  await page.route('**/home-dashboard/entities/light.kitchen/history?range=*', route => {
+    const range = new URL(route.request().url()).searchParams.get('range');
+    reads.push(range);
+    if (reads.length === 3) {
+      pendingRefresh = route;
+      return;
+    }
+    return route.fulfill({ json: {
+      entityId: 'light.kitchen', range, kind: 'state', hasData: true,
+      sinceIso: range === '7d' ? '2026-11-11T00:00:00Z' : '2026-11-17T00:00:00Z',
+      endIso: '2026-11-18T00:00:00Z',
+      intervals: [{ from: Date.parse('2026-11-17T05:00:00Z'), to: Date.parse('2026-11-17T08:00:00Z') }],
+    } });
+  });
+  await page.goto('/home');
+  await page.getByRole('button', { name: 'Rooms', exact: true }).click();
+  await page.getByRole('button', { name: 'Kitchen 1 on', exact: true }).click();
+  await page.getByRole('button', { name: 'Kitchen light, On', exact: true }).click();
+  const history = page.getByRole('dialog', { name: 'Kitchen light' }).getByRole('region', { name: 'History' });
+  const chart = history.locator('svg.highcharts-root');
+  await expect(chart).toBeVisible();
+  await history.getByText('7 d', { exact: true }).click();
+  await expect(chart).toBeVisible();
+  await expect.poll(() => reads).toEqual(['24h', '7d']);
+  await history.getByText('24 h', { exact: true }).click();
+  await expect.poll(() => reads).toEqual(['24h', '7d', '24h']);
+  await expect(chart).toBeVisible();
+
+  await pendingRefresh.fulfill({ status: 500, json: { error: 'Unavailable' } });
+  const alert = history.getByRole('alert');
+  await expect(alert).toBeVisible();
+  await expect(chart).toBeVisible();
+  await expect(alert).toContainText('History could not refresh');
+  await alert.getByRole('button', { name: 'Retry' }).click();
+  await expect.poll(() => reads).toEqual(['24h', '7d', '24h', '24h']);
+  await expect(alert).toHaveCount(0);
+  await expect(chart).toBeVisible();
+});
+
 test('Health selection restores the frame’s anchoring and keeps the meal control reachable', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 850 });
   await page.route('**/health/context', route => route.fulfill({ json: { userId: 'alice' } }));

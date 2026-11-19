@@ -7,6 +7,81 @@ test.beforeEach(async ({ page }) => {
   await page.route('**/supervision/bootstrap', route => route.fulfill({ json: { enabled: false } }));
 });
 
+test('Auto renders the selected vehicle’s records and discards a late document response from another car', async ({ page }) => {
+  await page.routeWebSocket('**/*', () => {});
+  const api = '/api/v1/automotive';
+  const first = `${api}/vehicles/wagon`;
+  const selected = `${api}/vehicles/hatchback`;
+  const document = { id: 'registration', kind: 'Registration' };
+  const journey = { id: 'river', title: 'Drive to the river', stops: [] };
+  const overview = { fuel: { needsMoreData: true, fillCount: 0 }, trip_count: 0 };
+  const responses = {
+    [`${api}/vehicles`]: { vehicles: [
+      { id: 'wagon', label: 'Family wagon' },
+      { id: 'hatchback', label: 'City hatchback' },
+    ] },
+    [`${api}/service-types`]: { types: [{ value: 'cross-rotate', label: 'Cross-pattern tire rotation' }] },
+    [first]: { ...overview, odometer: { km: 320 } },
+    [`${first}/journeys`]: { journeys: [] },
+    [`${first}/fuel`]: { logs: [] },
+    [`${first}/service`]: { records: [] },
+    [selected]: { ...overview, odometer: { km: 160.9344 } },
+    [`${selected}/journeys`]: { journeys: [journey], hidden: 1 },
+    [`${selected}/journeys?shuffles=1`]: { journeys: [journey, { id: 'shuffle', title: 'Garage shuffle', stops: [] }] },
+    [`${selected}/fuel`]: { logs: [{ id: 'fuel', date: '2026-10-08', price_total: 41.25, volume_l: 30 }] },
+    [`${selected}/service`]: { records: [{ id: 'rotation', type: 'cross-rotate', date: '2026-10-09', vendor: 'City Tire Shop' }] },
+    [`${selected}/documents`]: { documents: [{ ...document, file: 'city-registration.pdf', label: 'City registration' }] },
+  };
+  let pendingWagonDocuments;
+  await page.route(`**${api}/**`, route => {
+    const request = route.request();
+    const { pathname, search } = new URL(request.url());
+    const key = pathname + search;
+    if (request.method() !== 'GET') return route.fulfill({ status: 405 });
+    if (key === `${first}/documents`) {
+      pendingWagonDocuments = route;
+      return;
+    }
+    const json = responses[key];
+    return json ? route.fulfill({ json }) : route.fulfill({ status: 404 });
+  });
+
+  await page.goto('/auto');
+  await page.getByRole('button', { name: 'Family wagon', exact: true }).click();
+  const tab = name => page.getByRole('button', { name, exact: true });
+  await tab('Docs').click();
+  await expect(page.getByLabel('Loading documents')).toBeVisible();
+  await expect.poll(() => Boolean(pendingWagonDocuments)).toBe(true);
+  await page.getByRole('button', { name: 'Back to garage' }).click();
+  await page.getByRole('button', { name: 'City hatchback', exact: true }).click();
+  await expect(page.getByRole('heading', { name: 'City hatchback', exact: true })).toBeVisible();
+  const cityRegistration = page.getByRole('link', { name: /City registration/ });
+  await expect(cityRegistration).toHaveAttribute('href', `${api}/files/city-registration.pdf`);
+
+  const wagonResponse = page.waitForResponse(response => new URL(response.url()).pathname === `${first}/documents`);
+  await pendingWagonDocuments.fulfill({ json: { documents: [
+    { ...document, file: 'wagon-registration.pdf', label: 'Wagon registration' },
+  ] } });
+  expect(await (await wagonResponse).finished()).toBeNull();
+  await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+  await expect(cityRegistration).toBeVisible();
+  await expect(page.getByRole('link', { name: /Wagon registration/ })).toHaveCount(0);
+
+  await tab('Car').click();
+  await expect(page.getByText('100 mi', { exact: true })).toBeVisible();
+  await tab('Drives').click();
+  await expect(page.getByText(journey.title, { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Show 1 very short recording' }).click();
+  await expect(page.getByText('Garage shuffle', { exact: true })).toBeVisible();
+  await tab('Fuel').click();
+  await expect(page.getByText('$41.25', { exact: true })).toBeVisible();
+  await tab('Service').click();
+  await expect(page.getByText('City Tire Shop', { exact: true })).toBeVisible();
+  await expect(page.getByText('Cross-pattern tire rotation', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Log service' }).click();
+  await expect(page.getByRole('combobox', { name: 'What was done' })).toHaveValue('cross-rotate');
+});
+
 test('Auto saves one fuel entry at phone height and reopens on Car', async ({ page }) => {
   await page.routeWebSocket('**/*', () => {});
   const writes = [];
