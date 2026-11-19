@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback, useEffect } from 'react';
+import { useState, useRef, useCallback, useEffect, useLayoutEffect } from 'react';
 import { UiIcon } from '@/lib/ui/UiIcon.jsx';
 import { proxyImage } from "../Scroll/cards/utils.js";
 import { feedLog } from "../Scroll/feedLog.js";
@@ -15,43 +15,54 @@ function formatTime(s) {
 export default function FeedPlayerSheet({ open, onClose, item, playback, openerRef }) {
   const {
     speed, setSpeed, volume, setVolume, muted, toggleMute,
-    pausedMedia, resumePaused,
+    activeMedia, pausedMedia, resumePaused,
   } = useFeedPlayer();
 
   const { playing, currentTime, duration, toggle, seek } = playback || {};
 
   // --- Swipe-to-dismiss gesture ---
   const sheetRef = useRef(null);
+  const scrubberRef = useRef(null);
+  const scrubDragRef = useRef(null);
   const previousFocusRef = useRef(null);
-  const dragRef = useRef({ startY: 0, currentY: 0, dragging: false });
+  const dragRef = useRef(null);
   const [dragging, setDragging] = useState(false);
 
   const handleTouchStart = useCallback((e) => {
-    dragRef.current = { startY: e.touches[0].clientY, currentY: e.touches[0].clientY, dragging: true };
+    if (!open || e.touches.length !== 1 || scrubDragRef.current || scrubberRef.current?.contains(e.target)) return;
+    dragRef.current = { startY: e.touches[0].clientY, currentY: e.touches[0].clientY };
     setDragging(true);
-  }, []);
+  }, [open]);
 
   const handleTouchMove = useCallback((e) => {
-    if (!dragRef.current.dragging) return;
-    dragRef.current.currentY = e.touches[0].clientY;
-    const dy = dragRef.current.currentY - dragRef.current.startY;
-    if (dy > 0 && sheetRef.current) {
-      sheetRef.current.style.transform = `translateY(${dy}px)`;
+    const drag = dragRef.current;
+    if (!drag || e.touches.length !== 1) return;
+    drag.currentY = e.touches[0].clientY;
+    if (sheetRef.current) {
+      const dy = drag.currentY - drag.startY;
+      sheetRef.current.style.transform = dy > 0 ? `translateY(${dy}px)` : '';
     }
   }, []);
 
-  const handleTouchEnd = useCallback(() => {
-    const dy = dragRef.current.currentY - dragRef.current.startY;
-    dragRef.current.dragging = false;
+  const cancelSwipe = useCallback(() => {
+    if (!dragRef.current) return;
+    dragRef.current = null;
     setDragging(false);
     if (sheetRef.current) {
       sheetRef.current.style.transform = '';
     }
+  }, []);
+
+  const handleTouchEnd = useCallback(() => {
+    const drag = dragRef.current;
+    if (!drag) return;
+    const dy = drag.currentY - drag.startY;
+    cancelSwipe();
     if (dy > 80) {
       feedLog.player('sheet dismiss', { gesture: 'swipe-down', dy });
       onClose();
     }
-  }, [onClose]);
+  }, [cancelSwipe, onClose]);
 
   // --- Dialog focus lifecycle and keyboard close ---
   useEffect(() => {
@@ -73,69 +84,52 @@ export default function FeedPlayerSheet({ open, onClose, item, playback, openerR
   }, [open, onClose, openerRef]);
 
   // --- Seek scrubber ---
-  const scrubberRef = useRef(null);
-  const scrubFillRef = useRef(null);
-  const [scrubbing, setScrubbing] = useState(false);
-  const [scrubTime, setScrubTime] = useState(0);
-  const scrubDragRef = useRef(false);
+  const [scrubTime, setScrubTime] = useState(null);
+  const scrubbing = scrubTime !== null;
 
   const calcScrubTime = useCallback((clientX) => {
-    if (!scrubberRef.current || !duration) return 0;
     const rect = scrubberRef.current.getBoundingClientRect();
     const pct = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
     return pct * duration;
   }, [duration]);
 
-  const startScrub = useCallback((clientX) => {
-    scrubDragRef.current = true;
-    setScrubbing(true);
-    setScrubTime(calcScrubTime(clientX));
+  const startScrub = useCallback((event) => {
+    if (!open || !duration || event.button !== 0 || scrubDragRef.current || dragRef.current) return;
+    event.currentTarget.setPointerCapture(event.pointerId);
+    scrubDragRef.current = { node: event.currentTarget, id: event.pointerId };
+    setScrubTime(calcScrubTime(event.clientX));
+  }, [calcScrubTime, duration, open]);
+
+  const cancelScrub = useCallback(() => {
+    const drag = scrubDragRef.current;
+    if (!drag) return;
+    scrubDragRef.current = null;
+    if (drag.node.hasPointerCapture(drag.id)) drag.node.releasePointerCapture(drag.id);
+    setScrubTime(null);
+  }, []);
+
+  const contentId = activeMedia?.contentId;
+  useLayoutEffect(() => () => {
+    cancelScrub();
+    cancelSwipe();
+  }, [open, contentId, cancelScrub, cancelSwipe]);
+
+  const cancelScrubPointer = useCallback((event) => {
+    if (scrubDragRef.current?.id === event.pointerId) cancelScrub();
+  }, [cancelScrub]);
+
+  const moveScrub = useCallback((event) => {
+    if (scrubDragRef.current?.id !== event.pointerId) return;
+    setScrubTime(calcScrubTime(event.clientX));
   }, [calcScrubTime]);
 
-  const moveScrub = useCallback((clientX) => {
-    if (!scrubDragRef.current) return;
-    const t = calcScrubTime(clientX);
-    setScrubTime(t);
-    if (scrubFillRef.current && duration) {
-      scrubFillRef.current.style.width = `${(t / duration) * 100}%`;
-    }
-  }, [calcScrubTime, duration]);
-
-  const endScrub = useCallback(() => {
-    if (!scrubDragRef.current) return;
-    scrubDragRef.current = false;
-    setScrubbing(false);
-    feedLog.player('sheet seek', { to: scrubTime.toFixed(1) });
-    seek?.(scrubTime);
-  }, [scrubTime, seek]);
-
-  // Mouse support for scrubber
-  useEffect(() => {
-    if (!scrubbing) return;
-    const onMove = (e) => moveScrub(e.clientX);
-    const onUp = () => endScrub();
-    document.addEventListener('mousemove', onMove);
-    document.addEventListener('mouseup', onUp);
-    return () => {
-      document.removeEventListener('mousemove', onMove);
-      document.removeEventListener('mouseup', onUp);
-    };
-  }, [scrubbing, moveScrub, endScrub]);
-
-  // rAF progress sync when not scrubbing
-  const scrubRafRef = useRef(null);
-  useEffect(() => {
-    if (!open || scrubbing) return;
-    const tick = () => {
-      if (scrubFillRef.current && duration > 0) {
-        const pct = (currentTime / duration) * 100;
-        scrubFillRef.current.style.width = `${pct}%`;
-      }
-      scrubRafRef.current = requestAnimationFrame(tick);
-    };
-    scrubRafRef.current = requestAnimationFrame(tick);
-    return () => { if (scrubRafRef.current) cancelAnimationFrame(scrubRafRef.current); };
-  }, [open, scrubbing, currentTime, duration]);
+  const endScrub = useCallback((event) => {
+    if (scrubDragRef.current?.id !== event.pointerId) return;
+    const time = calcScrubTime(event.clientX);
+    cancelScrub();
+    feedLog.player('sheet seek', { to: time.toFixed(1) });
+    seek?.(time);
+  }, [calcScrubTime, cancelScrub, seek]);
 
   // --- Cover art ---
   const thumb = item?.image
@@ -165,6 +159,7 @@ export default function FeedPlayerSheet({ open, onClose, item, playback, openerR
         onTouchStart={handleTouchStart}
         onTouchMove={handleTouchMove}
         onTouchEnd={handleTouchEnd}
+        onTouchCancel={cancelSwipe}
       >
         <div className="sheet-drag-handle" />
 
@@ -195,10 +190,11 @@ export default function FeedPlayerSheet({ open, onClose, item, playback, openerR
         <div
           ref={scrubberRef}
           className={`sheet-scrubber${scrubbing ? ' dragging' : ''}`}
-          onMouseDown={(e) => startScrub(e.clientX)}
-          onTouchStart={(e) => startScrub(e.touches[0].clientX)}
-          onTouchMove={(e) => moveScrub(e.touches[0].clientX)}
-          onTouchEnd={endScrub}
+          onPointerDown={startScrub}
+          onPointerMove={moveScrub}
+          onPointerUp={endScrub}
+          onPointerCancel={cancelScrubPointer}
+          onLostPointerCapture={cancelScrubPointer}
           role="slider"
           tabIndex={0}
           aria-label="Playback position"
@@ -213,7 +209,11 @@ export default function FeedPlayerSheet({ open, onClose, item, playback, openerR
           }}
         >
           <div className="sheet-scrubber-track">
-            <div ref={scrubFillRef} className="sheet-scrubber-fill">
+            <div
+              ref={open && !scrubbing ? playback?.sheetProgressElRef : null}
+              className="sheet-scrubber-fill"
+              style={scrubbing && duration > 0 ? { width: `${scrubTime / duration * 100}%` } : undefined}
+            >
               <div className="sheet-scrubber-thumb" />
             </div>
           </div>

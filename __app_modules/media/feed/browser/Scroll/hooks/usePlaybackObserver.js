@@ -2,11 +2,12 @@ import { useVisibleRefresh, whileDocumentVisible } from '@/lib/hooks/useVisibleR
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { feedLog } from "../feedLog.js";
 
-// Both Feed controls display the persistent player's clock, even as routes change.
+// All Feed controls display the persistent player's clock, even as routes change.
 export function usePlaybackObserver(playerRef, active) {
   const [state, setState] = useState({ playing: false, currentTime: 0, duration: 0 });
   const progressElRef = useRef(null);
   const detailProgressElRef = useRef(null);
+  const sheetProgressElRef = useRef(null);
   const lastPlaying = useRef(null);
   const missingPlayerLogged = useRef(false);
 
@@ -46,12 +47,14 @@ export function usePlaybackObserver(playerRef, active) {
         const player = playerRef.current;
         const mini = progressElRef.current;
         const detail = detailProgressElRef.current;
-        if (player && (mini || detail)) {
-          const duration = player.getDuration?.() || 0;
-          const position = player.getCurrentTime?.() || 0;
+        const sheet = sheetProgressElRef.current;
+        if (mini || detail || sheet) {
+          const duration = player?.getDuration?.() || 0;
+          const position = player?.getCurrentTime?.() || 0;
           const width = `${duration > 0 ? position / duration * 100 : 0}%`;
           if (mini) mini.style.width = width;
           if (detail) detail.style.width = width;
+          if (sheet) sheet.style.width = width;
         }
         frame = requestAnimationFrame(paint);
       }
@@ -70,5 +73,5 @@ export function usePlaybackObserver(playerRef, active) {
     playerRef.current?.seek?.(t);
   }, [playerRef]);
 
-  return { ...state, toggle, seek, progressElRef, detailProgressElRef };
+  return { ...state, toggle, seek, progressElRef, detailProgressElRef, sheetProgressElRef };
 }

@@ -27,7 +27,7 @@ it('suspends presentation reads when hidden and immediately samples the continui
   expect(vi.getTimerCount()).toBe(0);
 });
 
-it('paints both mounted progress bars from the same frame sample and releases them on stop', () => {
+it('paints each mounted progress bar from the same frame sample and releases it on stop', () => {
   vi.useFakeTimers();
   vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible');
   const player = { getDuration: () => 20, getCurrentTime: vi.fn(() => 5) };
@@ -35,17 +35,39 @@ it('paints both mounted progress bars from the same frame sample and releases th
   const hook = renderHook(({ active }) => usePlaybackObserver(ref, active), { initialProps: { active: true } });
   const mini = document.createElement('div');
   const detail = document.createElement('div');
+  const sheet = document.createElement('div');
   hook.result.current.progressElRef.current = mini;
   hook.result.current.detailProgressElRef.current = detail;
+  hook.result.current.sheetProgressElRef.current = sheet;
   act(() => vi.advanceTimersToNextFrame());
   expect(mini.style.width).toBe('25%');
   expect(detail.style.width).toBe('25%');
+  expect(sheet.style.width).toBe('25%');
   expect(player.getCurrentTime).toHaveBeenCalledTimes(1);
   hook.result.current.detailProgressElRef.current = null;
   player.getCurrentTime.mockReturnValue(10);
   act(() => vi.advanceTimersToNextFrame());
   expect(mini.style.width).toBe('50%');
   expect(detail.style.width).toBe('25%');
+  expect(sheet.style.width).toBe('50%');
+
+  hook.result.current.sheetProgressElRef.current = null;
+  sheet.style.width = '80%';
+  ref.current = null;
+  act(() => vi.advanceTimersToNextFrame());
+  expect(mini.style.width).toBe('0%');
+  expect(sheet.style.width).toBe('80%');
+
+  hook.result.current.sheetProgressElRef.current = sheet;
+  act(() => vi.advanceTimersToNextFrame());
+  expect(sheet.style.width).toBe('0%');
+
+  const replacement = { getDuration: () => 80, getCurrentTime: vi.fn(() => 8) };
+  ref.current = replacement;
+  act(() => vi.advanceTimersToNextFrame());
+  expect(sheet.style.width).toBe('10%');
+  expect(replacement.getCurrentTime).toHaveBeenCalledTimes(1);
+
   hook.rerender({ active: false });
   expect(vi.getTimerCount()).toBe(0);
   hook.unmount();
