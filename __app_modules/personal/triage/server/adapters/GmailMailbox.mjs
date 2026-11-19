@@ -69,6 +69,9 @@ export class GmailMailbox {
     this.#clock = clock || { now: () => Date.now() };
   }
 
+  /** Display name of this mailbox source, for the owner-facing UI. */
+  get displayName() { return 'Gmail'; }
+
   capabilities(username) {
     return { ...(this.#caps.get(username) || { read: true, modify: true, compose: true, send: true }) };
   }

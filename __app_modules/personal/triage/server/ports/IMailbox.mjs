@@ -34,6 +34,7 @@
  * @property {boolean} send
  *
  * @typedef {Object} IMailbox
+ * @property {string} [displayName]  Owner-facing name of the mailbox source (supplied by the adapter).
  * @property {(username: string) => MailboxCapabilities} capabilities
  * @property {(username: string, opts: {newerThanDays?: number, max?: number}) => Promise<MailMessage[]>} listInbox
  * @property {(username: string, id: string) => Promise<MailMessage|null>} getMessage  null when gone.

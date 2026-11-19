@@ -24,7 +24,7 @@ const DAY_MS = 86400000;
 const LOG_LOOKBACK_DAYS = 90;
 const OPEN = new Set(['open', 'in_progress', 'paused']);
 const SYSTEM_JOB = 'triage-overnight';
-const ANSWER_FIELDS = ['answer', 'answeredAt', 'applyingAt', 'logEntryId', 'draftId', 'draftBody', 'step', 'skippedAt'];
+const ANSWER_FIELDS = ['answer', 'answeredAt', 'applyingAt', 'applyingAction', 'logEntryId', 'draftId', 'draftBody', 'step', 'skippedAt'];
 
 const seenKey = (itemId, version) => `${itemId}@${version}`;
 const isScope = (err) => err?.code === MAILBOX_SCOPE_MISSING;
@@ -105,7 +105,7 @@ export function createRunTriagePass({
   async function archiveOne({ username, item, proposal, policy, ctx, passId, asOf }) {
     if (policy.mode !== 'live') {
       ctx.dryRunLog({ item, action: 'archive' });
-      return { ...proposal, why: `Would have archived: ${proposal.why.replace(/^Archived:\s*/, '')}` };
+      return { ...proposal, dryRunAction: 'archive', why: `Would have archived: ${proposal.why.replace(/^Archived:\s*/, '')}` };
     }
     if (!ctx.canModify) return { ...proposal, why: 'Not archived: the mailbox needs reconnecting' };
     try {
@@ -156,7 +156,7 @@ export function createRunTriagePass({
     if (policy.mode !== 'live') {
       markClosing(closing, item, autoClose);
       ctx.dryRunLog({ item, action: 'complete' });
-      return { ...proposal, why: `Would have closed: ${proposal.why}` };
+      return { ...proposal, dryRunAction: 'close', why: `Would have closed: ${proposal.why}` };
     }
     const principal = work?.principal?.system?.({ username, job: SYSTEM_JOB }) ?? null;
     if (!principal || typeof work?.decisions?.confirmSystem !== 'function') return notClosed('principal_unavailable');
@@ -320,6 +320,7 @@ export function createRunTriagePass({
         itemId: item.id, kind: item.kind, ref: item.ref, itemVersion: item.version,
         step: proposal.step, urgent: proposal.urgent === true, choices: proposal.choices, suggested: proposal.suggested,
         confidence: proposal.confidence, why: proposal.why, preDo: null, status: 'open',
+        ...(proposal.dryRunAction ? { dryRunAction: proposal.dryRunAction } : {}),
         display: display(item, source), ...extra,
       };
       // A re-carded item keeps the draft it already has (never a second mailbox draft).

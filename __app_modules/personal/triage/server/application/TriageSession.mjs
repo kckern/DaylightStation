@@ -402,7 +402,7 @@ export function createTriageSession({
     // The version check cannot stop a repeat of these: mark the card first (a failed write
     // here means nothing was done).
     const unguarded = UNGUARDED.has(choice);
-    if (unguarded) await patchCard(username, cardId, { status: 'applying', applyingAt: asOf, answer: { choice } });
+    if (unguarded) await patchCard(username, cardId, { status: 'applying', applyingAt: asOf, answer: { choice }, applyingAction: choice === 'send' ? 'send' : 'create_task' });
 
     const r = card.kind === 'email'
       ? await applyEmail({ username, card, choice, draftBody, current: check.current, auth, asOf, policy })
@@ -415,7 +415,7 @@ export function createTriageSession({
         logger?.warn?.('triage.card.in_doubt', { username, cardId, kind: card.kind, choice, reason: r.reason });
         return done('failed', { reason: r.reason, inDoubt: true }, { ...card, ...(r.patch ?? {}), status: 'applying' });
       }
-      await patchCard(username, cardId, { status: 'open', ...(r.patch ?? {}) }, ['applyingAt', 'answer']);
+      await patchCard(username, cardId, { status: 'open', ...(r.patch ?? {}) }, ['applyingAt', 'applyingAction', 'answer']);
     }
 
     if (r.outcome === 'conflict') {
@@ -431,7 +431,7 @@ export function createTriageSession({
     const entry = await ownerLog(username, card, { ...r.log, choice, asOf });
     const next = await patchCard(username, cardId, {
       ...(r.patch ?? {}), status: 'answered', answeredAt: asOf, answer: { choice }, logEntryId: entry.id,
-    }, ['applyingAt']);
+    }, ['applyingAt', 'applyingAction']);
     return done('applied', { entryId: entry.id }, next ?? card);
   }
 
@@ -445,7 +445,7 @@ export function createTriageSession({
       logger?.warn?.('triage.card.in_doubt', { username, cardId: card.cardId, kind: card.kind, choice: card.answer?.choice ?? null });
       throw Object.assign(fail('TRIAGE_ANSWER_IN_DOUBT'), { status: 'applying' });
     }
-    const next = await patchCard(username, card.cardId, { status: 'answered', answeredAt: hit.at, logEntryId: hit.id }, ['applyingAt']);
+    const next = await patchCard(username, card.cardId, { status: 'answered', answeredAt: hit.at, logEntryId: hit.id }, ['applyingAt', 'applyingAction']);
     logger?.info?.('triage.card.answered', { username, cardId: card.cardId, kind: card.kind, choice: card.answer?.choice ?? null, outcome: 'applied', recovered: true });
     return { outcome: 'applied', entryId: hit.id, card: served(next ?? card) };
   }
@@ -459,15 +459,17 @@ export function createTriageSession({
         enrolled: policy.enrolled === true, mode: policy.mode ?? 'off',
         mailbox: q.mailbox ?? null, lastPassAt: q.builtAt ?? null,
         preDone: { archived: q.preDone?.archived ?? 0, closed: q.preDone?.closed ?? 0 },
+        mailboxName: mailbox?.displayName ?? null,
+        // Dry-run cards are counted under wouldHave, not again here.
         open: {
-          unsure: open.filter((c) => c.step === 'unsure').length,
-          reply: open.filter((c) => c.step === 'reply').length,
-          todo: open.filter((c) => c.step === 'todo').length,
+          unsure: open.filter((c) => c.step === 'unsure' && !c.dryRunAction).length,
+          reply: open.filter((c) => c.step === 'reply' && !c.dryRunAction).length,
+          todo: open.filter((c) => c.step === 'todo' && !c.dryRunAction).length,
         },
-        // Dry run: what the pass would have done, from the cards it left (the pass words them "Would have ...").
+        // Dry run: what the pass would have done (cards the pass marked with dryRunAction).
         wouldHave: {
-          archived: open.filter((c) => c.kind === 'email' && String(c.why ?? '').startsWith('Would have archived')).length,
-          closed: open.filter((c) => c.kind === 'todo' && String(c.why ?? '').startsWith('Would have closed')).length,
+          archived: open.filter((c) => c.dryRunAction === 'archive').length,
+          closed: open.filter((c) => c.dryRunAction === 'close').length,
         },
         draftsReady: open.filter((c) => c.step === 'reply' && c.draftBody).length,
       };
@@ -516,13 +518,13 @@ export function createTriageSession({
       const choice = card.answer?.choice ?? null;
       if (happened === true) {
         const asOf = clock();
-        const action = choice === 'send' ? 'send' : 'create_task';
+        const action = card.applyingAction ?? 'create_task';
         const entry = await ownerLog(username, card, { action, choice, inverse: null, asOf });
-        const next = await patchCard(username, cardId, { status: 'answered', answeredAt: asOf, logEntryId: entry.id }, ['applyingAt']);
+        const next = await patchCard(username, cardId, { status: 'answered', answeredAt: asOf, logEntryId: entry.id }, ['applyingAt', 'applyingAction']);
         logger?.info?.('triage.card.resolved', { username, cardId, kind: card.kind, choice, happened: true });
         return { outcome: 'applied', entryId: entry.id, card: served(next ?? card) };
       }
-      const next = await patchCard(username, cardId, { status: 'open' }, ['applyingAt', 'answer']);
+      const next = await patchCard(username, cardId, { status: 'open' }, ['applyingAt', 'applyingAction', 'answer']);
       logger?.info?.('triage.card.resolved', { username, cardId, kind: card.kind, choice, happened: false });
       return { outcome: 'reopened', card: served(next ?? card) };
     }),

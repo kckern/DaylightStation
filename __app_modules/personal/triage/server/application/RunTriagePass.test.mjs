@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { createRunTriagePass } from './RunTriagePass.mjs';
 import { createYamlTriageStore } from '../adapters/YamlTriageStore.mjs';
 import { MAILBOX_SCOPE_MISSING, MAILBOX_NOT_FOUND } from '../ports/IMailbox.mjs';
+import { createTriageSession } from './TriageSession.mjs';
 import { refId } from '../domain/triageItem.mjs';
 
 const NOW = Date.parse('2026-11-19T05:00:00Z');
@@ -390,6 +391,18 @@ describe('RunTriagePass', () => {
     s.state.todos = [task('t1'), task('t9')];
     await s.pass.run({ username: 'kc', trigger: 'manual' });
     expect((await s.queue()).map((c) => c.kind).sort()).toEqual(['email', 'todo', 'todo']);
+  });
+
+  it('dry run: the summary counts what the pass would have done structurally, and not again as calls to make', async () => {
+    const s = setup({ mode: 'dryRun', messages: [msg('m1'), msg('m2')], todos: [staleTask('t1')], answers: { 'Weekly newsletter m1': ARCHIVE } });
+    await s.pass.run({ username: 'kc', trigger: 'manual' });
+    const cards = await s.queue();
+    expect(cards.filter((c) => c.dryRunAction).map((c) => c.dryRunAction).sort()).toEqual(['archive', 'close']);
+    const session = createTriageSession({ store: s.store, mailbox: { displayName: 'Mailbox A' }, resolvePolicy: () => ({ enrolled: true, mode: 'dryRun' }), clock: () => NOW });
+    const sum = await session.summary({ username: 'kc' });
+    expect(sum.wouldHave).toEqual({ archived: 1, closed: 1 });
+    expect(sum.mailboxName).toBe('Mailbox A');
+    expect(sum.open.unsure + sum.open.todo + sum.open.reply).toBe(cards.length - 2);
   });
 
   describe('applying cards (an answer in doubt)', () => {

@@ -392,7 +392,7 @@ describe('summary and log', () => {
       cards: [emailCard('a'), emailCard('b', { step: 'reply', draftBody: 'x' }), emailCard('c', { step: 'reply' }), todoCard('t'), emailCard('d', { status: 'answered' })] });
     expect(await make({ store }).summary({ username: 'sample' })).toEqual({
       enrolled: true, mode: 'live', mailbox: 'reconnect_needed', lastPassAt: NOW - 1000,
-      preDone: { archived: 3, closed: 1 }, open: { unsure: 1, reply: 2, todo: 1 }, wouldHave: { archived: 0, closed: 0 }, draftsReady: 1,
+      preDone: { archived: 3, closed: 1 }, open: { unsure: 1, reply: 2, todo: 1 }, wouldHave: { archived: 0, closed: 0 }, mailboxName: null, draftsReady: 1,
     });
   });
 
@@ -578,7 +578,7 @@ describe('done counter (fix round 1)', () => {
 });
 
 describe('resolve: the owner exit for an in-doubt card', () => {
-  const applyingCard = (choice = 'send') => emailCard('m1', { step: 'reply', draftId: 'd1', draftBody: 'hi', status: 'applying', applyingAt: NOW - 1000, answer: { choice } });
+  const applyingCard = (choice = 'send') => emailCard('m1', { step: 'reply', draftId: 'd1', draftBody: 'hi', status: 'applying', applyingAt: NOW - 1000, applyingAction: 'send', answer: { choice } });
 
   it('happened:true logs the answer as the normal path would and marks it answered', async () => {
     const store = memoryStore({ passId: 'p', builtAt: NOW, cards: [applyingCard()] });
@@ -590,6 +590,12 @@ describe('resolve: the owner exit for an in-doubt card', () => {
     expect(store.queue.cards[0]).toMatchObject({ status: 'answered', logEntryId: store.entries[0].id });
     expect(store.queue.cards[0]).not.toHaveProperty('applyingAt');
     expect(mailbox.sendDraft).not.toHaveBeenCalled();
+  });
+  it('happened:true uses the action stored when the card went applying', async () => {
+    const store = memoryStore({ passId: 'p', builtAt: NOW, cards: [todoCard('t', { status: 'applying', applyingAt: NOW - 1, applyingAction: 'create_task', answer: { choice: 'shrink' } })] });
+    const s = make({ store });
+    await s.resolve({ username: 'sample', cardId: 'card.t', happened: true });
+    expect(store.entries[0]).toMatchObject({ action: 'create_task', choice: 'shrink' });
   });
   it('happened:false returns the card to open and clears applyingAt and answer', async () => {
     const store = memoryStore({ passId: 'p', builtAt: NOW, cards: [applyingCard()] });
@@ -612,9 +618,11 @@ describe('resolve: the owner exit for an in-doubt card', () => {
 describe('summary wouldHave (dry run)', () => {
   it('counts open cards the pass worded as would-have-done', async () => {
     const store = memoryStore({ passId: 'p', builtAt: NOW, cards: [
-      emailCard('a', { why: 'Would have archived: newsletter' }), emailCard('b'), todoCard('t', { why: 'Would have closed: stale' }),
+      emailCard('a', { dryRunAction: 'archive' }), emailCard('b'), todoCard('t', { dryRunAction: 'close' }),
     ] });
     const s = make({ store });
-    expect((await s.summary({ username: 'sample' })).wouldHave).toEqual({ archived: 1, closed: 1 });
+    const sum = await s.summary({ username: 'sample' });
+    expect(sum.wouldHave).toEqual({ archived: 1, closed: 1 });
+    expect(sum.open).toEqual({ unsure: 1, reply: 0, todo: 0 }); // the would-have cards are not counted again
   });
 });

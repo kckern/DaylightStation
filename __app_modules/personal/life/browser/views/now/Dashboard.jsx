@@ -29,7 +29,7 @@ export function Dashboard() {
   const navigate = useNavigate();
   const { data: priorityData, loading: pLoading } = useAlignment('priorities');
   const { data: dashData, loading: dLoading } = useAlignment('dashboard');
-  const { summary: triageSummary } = useTriage();
+  const { summary: triageSummary, error: triageError, refetch: refetchTriage } = useTriage();
   const { isEmpty: planIsEmpty, loading: planLoading } = useLifePlan();
   const dashboard = dashData?.dashboard;
   const stage = dashboard?.stage;
@@ -61,7 +61,7 @@ export function Dashboard() {
 
   return (
     <Stack gap="md">
-      <TriageSummaryCard summary={triageSummary} />
+      <TriageSummaryCard summary={triageSummary} error={triageError} onRetry={refetchTriage} />
 
       {planIsEmpty && (
         <SectionCard>
