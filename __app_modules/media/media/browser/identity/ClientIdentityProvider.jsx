@@ -12,10 +12,9 @@
 // names this device can see, as before.
 import React, { createContext, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useControlRegistration } from "../externalControl/useControlRegistration.js";
-import { createBrowserIdentity, renameBrowserIdentity, isPlaceholderName } from "./browserIdentity.js";
+import { browserIdentityStorage, createBrowserIdentity, persistBrowserIdentity, renameBrowserIdentity, isPlaceholderName } from "./browserIdentity.js";
 import { houseApi as defaultHouseApi } from "../house/houseApi.js";
 import houseLog from "../house/houseLog.js";
-import { STORAGE_KEYS } from "../constants.js";
 import { adoptBrowserDeviceId } from "../../../../../frontend/src/lib/deviceIdentity.js";
 
 export const ClientIdentityContext = createContext(null);
@@ -38,26 +37,11 @@ function uuidV4() {
   });
 }
 
-function storage() {
-  try { return globalThis.localStorage ?? null; } catch { return null; }
-}
-
 function readFirstUse(identity) {
   try {
-    if (storage()?.getItem(FIRST_USE_KEY)) return false;
+    if (browserIdentityStorage()?.getItem(FIRST_USE_KEY)) return false;
   } catch { return false; }
   return isPlaceholderName(identity.name);
-}
-
-function persistIdentity(next) {
-  const store = storage();
-  if (!store) return next;
-  try {
-    store.setItem(STORAGE_KEYS.CLIENT_ID, next.clientId);
-    store.setItem(STORAGE_KEYS.DISPLAY_NAME, next.name);
-    store.setItem(STORAGE_KEYS.BROWSER_IDENTITY, JSON.stringify(next));
-  } catch { /* storage refused: the in-memory identity still holds */ }
-  return next;
 }
 
 /** Take the registry's name/room as this browser's own. */
@@ -67,7 +51,7 @@ function adopt(current, screen) {
   if (current.name === screen.name && (current.room ?? null) === room) return current;
   const next = { ...current, name: screen.name };
   if (room) next.room = room; else delete next.room;
-  return persistIdentity(next);
+  return persistBrowserIdentity(next);
 }
 
 export function ClientIdentityProvider({ children, api = defaultHouseApi }) {
@@ -77,7 +61,7 @@ export function ClientIdentityProvider({ children, api = defaultHouseApi }) {
     // screen registry and the house view do (set before any child effect
     // issues a request).
     const previous = adoptBrowserDeviceId(created.clientId);
-    if (previous) { try { storage()?.setItem(PREVIOUS_ID_KEY, previous); } catch { /* storage refused */ } }
+    if (previous) { try { browserIdentityStorage()?.setItem(PREVIOUS_ID_KEY, previous); } catch { /* storage refused */ } }
     return created;
   });
   const [firstUse, setFirstUse] = useState(() => readFirstUse(identity));
@@ -98,10 +82,10 @@ export function ClientIdentityProvider({ children, api = defaultHouseApi }) {
     let cancelled = false;
     const { deviceId, name, room } = identityRef.current;
     let previousId = null;
-    try { previousId = storage()?.getItem(PREVIOUS_ID_KEY) || null; } catch { /* storage refused */ }
+    try { previousId = browserIdentityStorage()?.getItem(PREVIOUS_ID_KEY) || null; } catch { /* storage refused */ }
     api.announceScreen({ id: deviceId, name: isPlaceholderName(name) ? undefined : name, room, playing, previousId })
       .then((res) => {
-        if (previousId) { try { storage()?.removeItem(PREVIOUS_ID_KEY); } catch { /* storage refused */ } }
+        if (previousId) { try { browserIdentityStorage()?.removeItem(PREVIOUS_ID_KEY); } catch { /* storage refused */ } }
         if (cancelled || !res?.screen) return;
         houseLog.screenAnnounced({ deviceId, name: res.screen.name, adopted: res.screen.name !== name });
         setRegistered(res.screen);
@@ -157,9 +141,9 @@ export function ClientIdentityProvider({ children, api = defaultHouseApi }) {
         // The registry is out of reach: rename locally, unique among the
         // names this device can see (the registry re-reads it on announce).
         houseLog.adminActionFailed({ action: 'rename-self', deviceId: id, error: error?.message, fallback: 'local' });
-        setIdentity((prev) => persistIdentity(renameBrowserIdentity(prev, {
-          name: nextName || prev.name, room: nextRoom, existingNames,
-        })));
+        setIdentity((prev) => renameBrowserIdentity(prev, {
+          name: nextName || prev.name, room: nextRoom, existingNames, storage: browserIdentityStorage(),
+        }));
         return { ok: true, local: true };
       }
       houseLog.adminActionFailed({ action: 'rename-self', deviceId: id, status: error?.status ?? null, code: error?.code ?? null, error: error?.message });
@@ -168,7 +152,7 @@ export function ClientIdentityProvider({ children, api = defaultHouseApi }) {
   }, [api]);
 
   const completeFirstUse = useCallback((how) => {
-    try { storage()?.setItem(FIRST_USE_KEY, new Date().toISOString()); } catch { /* storage refused */ }
+    try { browserIdentityStorage()?.setItem(FIRST_USE_KEY, new Date().toISOString()); } catch { /* storage refused */ }
     setFirstUse(false);
     if (how === 'skipped') houseLog.firstUseSkipped({ deviceId: identityRef.current.deviceId });
     else houseLog.firstUseNamed({ deviceId: identityRef.current.deviceId, name: identityRef.current.name });

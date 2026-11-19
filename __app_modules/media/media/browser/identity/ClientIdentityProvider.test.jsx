@@ -23,6 +23,23 @@ describe('ClientIdentityProvider', () => {
     expect(screen.getByText(new RegExp(`cid=${stored};`))).toBeInTheDocument();
   });
 
+  it('mounts with one in-memory control identity when the browser denies localStorage access', () => {
+    const blocked = vi.spyOn(window, 'localStorage', 'get').mockImplementation(() => {
+      throw new DOMException('Storage is blocked', 'SecurityError');
+    });
+    try {
+      const tree = <ClientIdentityProvider><Probe /></ClientIdentityProvider>;
+      const view = render(tree);
+      const id = useControlRegistration.mock.lastCall[0];
+      expect(id).toBeTruthy();
+      expect(screen.getByText(/cid=/)).toHaveTextContent(`cid=${id};device=browser:${id};`);
+      view.rerender(<ClientIdentityProvider><Probe /></ClientIdentityProvider>);
+      expect(useControlRegistration.mock.lastCall[0]).toBe(id);
+    } finally {
+      blocked.mockRestore();
+    }
+  });
+
   it('reuses an existing clientId', () => {
     localStorage.setItem(STORAGE_KEYS.CLIENT_ID, 'preset-id-1234');
     render(<ClientIdentityProvider><Probe /></ClientIdentityProvider>);

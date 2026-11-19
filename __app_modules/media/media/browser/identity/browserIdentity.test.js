@@ -1,10 +1,36 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   createBrowserIdentity,
   renameBrowserIdentity,
 } from "./browserIdentity.js";
 
 describe('browser identity', () => {
+  it('can create an identity when acquiring storage throws', () => {
+    const blocked = vi.spyOn(window, 'localStorage', 'get').mockImplementation(() => { throw new Error('Denied'); });
+    try {
+      expect(createBrowserIdentity({ randomUuid: () => 'transient' }).clientId).toBe('transient');
+    } finally {
+      blocked.mockRestore();
+    }
+  });
+
+  it('can create an in-memory identity when all storage methods throw', () => {
+    const denied = () => { throw new DOMException('Denied', 'SecurityError'); };
+    const identity = createBrowserIdentity({ storage: { getItem: denied, setItem: denied }, randomUuid: () => 'transient' });
+    expect(identity).toMatchObject({ clientId: 'transient', deviceId: 'browser:transient' });
+  });
+
+  it('retains a readable identity and a local rename when writes are refused', () => {
+    const existing = { clientId: 'saved', name: 'Studio', connectedAt: '2026-01-01T00:00:00.000Z' };
+    const storage = {
+      getItem: key => key === 'media-app.browser-identity' ? JSON.stringify(existing) : null,
+      setItem: () => { throw new DOMException('Full', 'QuotaExceededError'); },
+    };
+    const current = createBrowserIdentity({ storage });
+    expect(current).toEqual({ ...existing, deviceId: 'browser:saved' });
+    expect(renameBrowserIdentity(current, { storage, name: 'Workshop' })).toEqual({ ...current, name: 'Workshop' });
+  });
+
   it('persists one stable routable identity shape across reloads', () => {
     const storage = new Map();
     const store = {
