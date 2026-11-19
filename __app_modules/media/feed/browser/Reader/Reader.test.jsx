@@ -50,6 +50,7 @@ function observeSentinel() {
 }
 
 afterEach(() => {
+  delete workspaceMock.itemSyncRevision;
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
 });
@@ -95,6 +96,59 @@ describe('Reader history views', () => {
     expect(await screen.findByText('Saved from last month')).toBeInTheDocument();
     await waitFor(() => expect(apiMock).toHaveBeenCalledWith(expect.stringContaining('/api/v1/feed/search?state=saved&mode=reader'), {}, 'GET', expect.anything()));
     expect(apiMock.mock.calls.some(([path]) => path.startsWith('/api/v1/feed/reader/stream'))).toBe(false);
+  });
+
+  test('retries every previously loaded page after item synchronization', async () => {
+    const intersect = observeSentinel();
+    let secondPageReads = 0;
+    apiMock.mockImplementation(async path => {
+      if (path.includes('/feeds')) return [];
+      if (!path.includes('cursor=next')) return { items: [article('first')], nextCursor: 'next' };
+      secondPageReads++;
+      if (secondPageReads === 2) throw new Error('offline');
+      return { items: [article(secondPageReads === 1 ? 'previous' : 'updated')] };
+    });
+    const view = () => <MemoryRouter initialEntries={['/feed/reader?view=saved']}><Reader /></MemoryRouter>;
+    const { rerender } = render(view());
+    await screen.findByText('first');
+    intersect();
+    await screen.findByText('previous');
+
+    workspaceMock.itemSyncRevision = 1;
+    rerender(view());
+    await screen.findByText('Articles could not be refreshed.');
+    expect(screen.getByText('previous')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    expect(await screen.findByText('updated')).toBeInTheDocument();
+    expect(screen.getByText('first')).toBeInTheDocument();
+  });
+
+  test('a late item-sync read retains newer writes while reconciling other rows', async () => {
+    const held = Promise.withResolvers();
+    const initial = ['edited', 'other'].map(id => ({ ...article(id), state: { isRead: true, isSaved: true } }));
+    let reads = 0;
+    apiMock.mockImplementation(async path => {
+      if (path.includes('/feeds')) return [];
+      if (path.includes('/stream?')) return ++reads === 1 ? { items: initial, exhausted: true } : held.promise;
+      return { annotations: [] };
+    });
+    workspaceMock.mutateItems.mockImplementationOnce(async ([item], action, { onApply }) => {
+      expect(action).toBe('unsave');
+      onApply([{ ...item, state: { isRead: true, isSaved: false } }]);
+    });
+    const view = () => <MemoryRouter initialEntries={['/feed/reader']}><Reader /></MemoryRouter>;
+    const { rerender } = render(view());
+    fireEvent.click((await screen.findByText('edited')).closest('button'));
+    workspaceMock.itemSyncRevision = 1;
+    rerender(view());
+    await waitFor(() => expect(reads).toBe(2));
+    fireEvent.click(screen.getByRole('button', { name: 'Saved', exact: true }));
+    await screen.findByRole('button', { name: 'Save', exact: true });
+    await act(async () => held.resolve({
+      items: [initial[0], { ...initial[1], title: 'refreshed other' }], exhausted: true,
+    }));
+    expect(screen.getByText('refreshed other')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Save', exact: true })).toBeInTheDocument();
   });
 
   test.each(['resolve', 'reject'])('ignores superseded history append on %s while the new stream appends', async outcome => {

@@ -169,7 +169,7 @@ function smartGroup(articles, isFiltered) {
 
 export default function Reader() {
   const [searchParams, setSearchParams] = useSearchParams();
-  const { getSnapshot, setSnapshot, getLastVisit, markVisited, mutateItems, applyPendingMutations, checkpoints } = useFeedWorkspace();
+  const { getSnapshot, setSnapshot, getLastVisit, markVisited, mutateItems, applyPendingMutations, pendingItemOperations, itemSyncRevision, checkpoints } = useFeedWorkspace();
   const activeView = searchParams.get('view') || 'all';
   const feedsParam = searchParams.get('feeds') || '';
   const cached = getSnapshot('reader');
@@ -201,6 +201,8 @@ export default function Reader() {
   const listRef = useRef(null);
   const sidebarRef = useRef(null);
   const requestRef = useRef(null);
+  const loadedPages = useRef(1);
+  const lastItemSync = useRef(itemSyncRevision);
   const streamFilter = useRef({
     view: initialSnapshot.current?.view ?? 'all',
     feeds: initialSnapshot.current?.feeds ?? '',
@@ -262,50 +264,62 @@ export default function Reader() {
   const feedsError = feedsReadError ? 'Subscriptions are unavailable. The inbox can still be used.' : null;
   const loadFeeds = reloadFeeds;
 
-  // Fetch stream articles
-  // Unfiltered: day-based primer (days=3)
-  // Filtered:   count-based backlog (count=50), full feed history
-  const fetchStream = useCallback(async (cont = null) => {
+  const readPage = useCallback(async (cursor, signal) => {
+    if (HISTORY_VIEWS.has(activeView)) {
+      const params = new URLSearchParams({ state: activeView, mode: 'reader', limit: '100' });
+      if (cursor) params.set('cursor', cursor);
+      const data = await DaylightAPI(`/api/v1/feed/search?${params}`, {}, 'GET', { signal });
+      return { items: (data.items || []).map(historyItemToArticle), next: data.nextCursor || null, exhausted: !data.nextCursor };
+    }
+    const params = activeFeeds.size
+      ? new URLSearchParams({ count: '50', feeds: [...activeFeeds].join(',') })
+      : new URLSearchParams({ days: '3', count: '100' });
+    if (cursor) params.set('continuation', cursor);
+    const data = await DaylightAPI(`/api/v1/feed/reader/stream?${params}`, {}, 'GET', { signal });
+    return { items: data.items || [], next: data.continuation || null, exhausted: !!data.exhausted };
+  }, [activeFeeds, activeView]);
+
+  const fetchStream = useCallback(async (cont = null, pages = 1) => {
     const append = cont !== null;
     if (append && requestRef.current) return;
-    requestRef.current?.abort();
+    requestRef.current?.controller.abort();
     const controller = new AbortController();
-    requestRef.current = controller;
+    const editedStates = new Map();
+    requestRef.current = { controller, editedStates };
     setLoading(!append);
     setLoadingMore(append);
     setStreamError(null);
     try {
-      if (HISTORY_VIEWS.has(activeView)) {
-        const params = new URLSearchParams({ state: activeView, mode: 'reader', limit: '100' });
-        if (cont) params.set('cursor', cont);
-        const data = await DaylightAPI(`/api/v1/feed/search?${params}`, {}, 'GET', { signal: controller.signal });
+      let cursor = cont;
+      const results = [];
+      let page;
+      do {
+        page = await readPage(cursor, controller.signal);
         if (controller.signal.aborted) return;
-        const incoming = applyPendingMutations((data.items || []).map(historyItemToArticle));
-        setArticles(prev => append ? [...prev, ...incoming.filter(item => !prev.some(existing => existing.stateKey === item.stateKey))] : incoming);
-        setContinuation(data.nextCursor || null);
-        setExhausted(!data.nextCursor);
-        return;
-      }
-      const isFiltered = activeFeeds.size > 0;
-      const params = new URLSearchParams();
-      if (isFiltered) {
-        params.set('count', '50');
-        params.set('feeds', [...activeFeeds].join(','));
-      } else {
-        params.set('days', '3');
-        params.set('count', '100');
-      }
-      if (cont) params.set('continuation', cont);
-      const data = await DaylightAPI(`/api/v1/feed/reader/stream?${params}`, {}, 'GET', { signal: controller.signal });
-      if (controller.signal.aborted) return;
-      const incoming = applyPendingMutations(data.items || []);
-      setArticles(prev => append ? [...prev, ...incoming] : incoming);
-      setContinuation(data.continuation || null);
-      setExhausted(data.exhausted || false);
+        results.push(page.items);
+        cursor = page.next;
+      } while (cursor && !page.exhausted && results.length < pages);
+      loadedPages.current = (append ? loadedPages.current : 0) + results.length;
+      setArticles(prev => {
+        const rows = append ? [...prev] : [];
+        for (const items of results) {
+          const incoming = applyPendingMutations(items.map(item => {
+            const state = editedStates.get(item.id);
+            return state ? { ...item, state, isRead: state.isRead } : item;
+          }));
+          const accepted = HISTORY_VIEWS.has(activeView) && rows.length
+            ? incoming.filter(item => !rows.some(existing => existing.stateKey === item.stateKey))
+            : incoming;
+          rows.push(...accepted);
+        }
+        return rows;
+      });
+      setContinuation(cursor);
+      setExhausted(page.exhausted);
     } catch (err) {
       if (!controller.signal.aborted && err.name !== 'AbortError') {
         log.warn('reader.stream.failed', { append, error: err.message });
-        setStreamError({ cursor: cont, message: append ? 'More articles could not be loaded.' : 'Articles could not be refreshed.' });
+        setStreamError({ cursor: cont, pages, message: append ? 'More articles could not be loaded.' : 'Articles could not be refreshed.' });
       }
     } finally {
       if (!controller.signal.aborted) {
@@ -314,20 +328,24 @@ export default function Reader() {
         setLoadingMore(false);
       }
     }
-  }, [activeFeeds, activeView, applyPendingMutations]);
+  }, [activeView, applyPendingMutations, readPage]);
 
   // Initial load + reload on filter change
   useLayoutEffect(() => {
+    const reconciled = lastItemSync.current !== itemSyncRevision;
+    lastItemSync.current = itemSyncRevision;
     if (activeView === 'offline') return undefined;
     if (streamFilter.current.view !== activeView || streamFilter.current.feeds !== feedsParam) {
       streamFilter.current = { view: activeView, feeds: feedsParam };
+      loadedPages.current = 1;
       setArticles([]);
       setContinuation(null);
       setExhausted(false);
     }
-    fetchStream();
-    return () => requestRef.current?.abort();
-  }, [activeView, feedsParam, fetchStream]);
+    // Keep every loaded page mounted until its canonical replacement is ready.
+    fetchStream(null, reconciled ? loadedPages.current : 1);
+    return () => requestRef.current?.controller.abort();
+  }, [activeView, feedsParam, fetchStream, itemSyncRevision]);
 
   useEffect(() => {
     if (activeView !== 'offline') return;
@@ -414,8 +432,19 @@ export default function Reader() {
     }
   };
 
+  // Apply queued changes to the pages already on screen, including downloads.
+  useEffect(() => {
+    if (pendingItemOperations?.length) {
+      setArticles(applyPendingMutations);
+      setOfflineItems(applyPendingMutations);
+    }
+  }, [applyPendingMutations, pendingItemOperations]);
+
   // Mark as read (single article)
   const applyUpdatedItems = useCallback(updated => {
+    // A read started before a local write can still update all other rows.
+    const edited = requestRef.current?.editedStates;
+    if (edited) for (const item of updated) edited.set(item.id, item.state);
     const apply = current => current.map(value => updated.find(item => item.id === value.id) || value);
     setArticles(apply);
     setOfflineItems(apply);
@@ -508,7 +537,7 @@ export default function Reader() {
   const errorMessage = activeView === 'offline' ? offlineError : streamError?.message;
   const retryArticles = () => {
     if (activeView === 'offline') setOfflineAttempt(attempt => attempt + 1);
-    else fetchStream(streamError.cursor);
+    else fetchStream(streamError.cursor, streamError.pages);
   };
 
   return (

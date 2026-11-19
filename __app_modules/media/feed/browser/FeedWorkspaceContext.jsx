@@ -95,6 +95,7 @@ export function FeedWorkspaceProvider({ children, owner = feedQueueOwner() }) {
   const confirmedSources = useRef(null);
   const pendingSources = useRef(new Map());
   const [workspaceReady, setWorkspaceReady] = useState(false);
+  const [itemSyncRevision, setItemSyncRevision] = useState(0);
   const [pendingMutations, setPendingMutations] = useState(pendingRef.current);
   const [revision, setRevision] = useState(0);
   const [summary, setSummary] = useState({ unread: 0, readerUnread: 0, saved: 0, archived: 0, pendingSync: 0 });
@@ -188,6 +189,14 @@ export function FeedWorkspaceProvider({ children, owner = feedQueueOwner() }) {
     setPendingMutations(next);
   }, []);
 
+  useEffect(() => itemMutations.subscribe(mountedOwner.current, next => {
+    publishPending(next);
+    if (!next.length) {
+      setItemSyncRevision(value => value + 1);
+      refreshSummary();
+    }
+  }), [publishPending, refreshSummary]);
+
   const synchronizeUserScope = useCallback(() => {
     const currentUser = feedQueueOwner();
     if (currentUser === userScopeRef.current) return currentUser;
@@ -212,6 +221,7 @@ export function FeedWorkspaceProvider({ children, owner = feedQueueOwner() }) {
       });
       if (completed && owner === feedQueueOwner()) {
         publishPending(itemMutations.snapshot(owner));
+        setItemSyncRevision(value => value + 1);
         refreshSummary();
         notifications.show({ title: 'Offline changes synchronized', message: `${completed} queued change${completed === 1 ? '' : 's'} saved.` });
       }
@@ -410,8 +420,8 @@ export function FeedWorkspaceProvider({ children, owner = feedQueueOwner() }) {
   const value = useMemo(() => ({
     density, setDensity, readingPreferences, setReadingPreference, checkpoints, workspaceReady, sourcePreferences, setSourcePreference,
     getSnapshot, setSnapshot, getLastVisit, markVisited, mutateItems, applyPendingMutations,
-    pendingMutations: pendingMutations.length, flushPendingMutations, revision, summary, refreshSummary, refreshWorkspace, retrySync,
-  }), [applyPendingMutations, checkpoints, density, flushPendingMutations, getLastVisit, getSnapshot, markVisited, mutateItems, pendingMutations.length, readingPreferences, refreshSummary, refreshWorkspace, retrySync, revision, setDensity, setReadingPreference, setSnapshot, setSourcePreference, sourcePreferences, summary, workspaceReady]);
+    itemSyncRevision, pendingItemOperations: pendingMutations, pendingMutations: pendingMutations.length, flushPendingMutations, revision, summary, refreshSummary, refreshWorkspace, retrySync,
+  }), [applyPendingMutations, checkpoints, density, flushPendingMutations, getLastVisit, getSnapshot, markVisited, mutateItems, itemSyncRevision, pendingMutations, readingPreferences, refreshSummary, refreshWorkspace, retrySync, revision, setDensity, setReadingPreference, setSnapshot, setSourcePreference, sourcePreferences, summary, workspaceReady]);
 
   return <FeedWorkspaceContext.Provider value={value}>{children}</FeedWorkspaceContext.Provider>;
 }

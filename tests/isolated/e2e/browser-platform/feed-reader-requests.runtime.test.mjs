@@ -343,3 +343,77 @@ test('Reader observes a note queued and acknowledged in another tab', async ({ p
   expect(writes).toEqual([]);
   await writer.close();
 });
+
+test('two Readers replay one queued item change and reconcile both open inboxes', async ({ page, context }) => {
+  const sibling = await context.newPage();
+  const pages = [page, sibling];
+  const writes = [];
+  const release = Promise.withResolvers();
+  let saved = false;
+  for (const reader of pages) {
+    if (reader === sibling) await reader.routeWebSocket('**/*', () => {});
+    await reader.route('**/api/**', route => {
+      const path = new URL(route.request().url()).pathname;
+      if (path.endsWith('/feed/items/state')) {
+        writes.push(route.request().postDataJSON());
+        return release.promise.then(() => {
+          // The canonical response also reflects an independent mark-unread.
+          saved = true;
+          return route.fulfill({ json: { items: [{ id: 'story', state: { isRead: false, isSaved: true } }] } });
+        });
+      }
+      if (path.endsWith('/reader/stream')) {
+        const second = new URL(route.request().url()).searchParams.get('continuation') === 'next';
+        return route.fulfill({ json: second
+          ? { items: [{ ...article('story', 'Shared item'), state: { isRead: !saved, isSaved: saved } }], exhausted: true }
+          : { items: [article('intro', 'First page item')], continuation: 'next' } });
+      }
+      const json = path.endsWith('/supervision/bootstrap') ? { enabled: false } : path.endsWith('/reader/feeds') ? [] : path.endsWith('/state/summary') ? { pendingSync: 0, saved: Number(saved) } : {};
+      return route.fulfill({ json });
+    });
+    await reader.goto('/feed/reader');
+    await reader.getByRole('button', { name: /Shared item/ }).click();
+    await expect(reader.getByRole('button', { name: 'Save', exact: true })).toBeVisible();
+    await reader.evaluate(() => Object.defineProperty(navigator, 'onLine', { configurable: true, value: false }));
+  }
+
+  await page.getByRole('button', { name: 'Save', exact: true }).click();
+  const pending = reader => reader.getByRole('button', { name: 'Retry 1 pending change' });
+  await expect(pending(page)).toBeVisible();
+  try {
+    await page.evaluate(() => {
+      delete navigator.onLine;
+      window.dispatchEvent(new Event('online'));
+    });
+    await expect.poll(() => writes.length).toBe(1);
+    // Observe the native contender settling while the first transport is held.
+    // Waiting on the browser callback makes the negative send assertion deterministic.
+    await sibling.evaluate(() => {
+      const request = navigator.locks.request.bind(navigator.locks);
+      navigator.locks.request = (name, ...args) => {
+        const result = request(name, ...args);
+        if (name === 'feed:pending-mutations:household') {
+          result.then(() => { window.itemReplaySettled = true; });
+        }
+        return result;
+      };
+      delete navigator.onLine;
+      window.dispatchEvent(new Event('online'));
+    });
+    await expect.poll(async () => writes.length > 1 || await sibling.evaluate(() => !!window.itemReplaySettled)).toBe(true);
+    expect(writes).toEqual([{ itemIds: ['story'], action: 'save' }]);
+    await expect(pending(sibling)).toBeVisible();
+    await expect(sibling.getByRole('button', { name: 'Saved', pressed: true, exact: true })).toBeVisible();
+  } finally {
+    release.resolve();
+  }
+
+  for (const reader of pages) {
+    await expect(pending(reader)).toHaveCount(0);
+    await expect(reader.getByRole('button', { name: /First page item/ })).toBeVisible();
+    await expect(reader.getByRole('button', { name: 'Mark read', exact: true })).toBeVisible();
+    await expect(reader.getByRole('button', { name: 'Saved', pressed: true, exact: true })).toBeVisible();
+  }
+  expect(await page.evaluate(() => JSON.parse(localStorage.getItem('feed:pending-mutations:household')))).toEqual([]);
+  expect(writes).toHaveLength(1);
+});

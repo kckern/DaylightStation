@@ -1,4 +1,3 @@
-import { subscribeToStorageKey } from '../../../../../frontend/src/lib/browserPreference.js';
 import { createBrowserMutationQueue } from '../../../../../frontend/src/lib/browserMutationQueue.js';
 import { feedQueueOwner as annotationOwner } from './feedOfflineStore.js';
 
@@ -97,9 +96,7 @@ export function hasPendingAnnotationWrite(id, owner) {
 }
 
 export function subscribeToAnnotationQueue(owner, listener) {
-  return subscribeToStorageKey(QUEUE_PREFIX + owner, () => {
-    if (owner && owner === annotationOwner()) listener(mutations.snapshot(owner));
-  });
+  return mutations.subscribe(owner, listener);
 }
 
 export function queuedAnnotationMutations(owner = annotationOwner()) {
