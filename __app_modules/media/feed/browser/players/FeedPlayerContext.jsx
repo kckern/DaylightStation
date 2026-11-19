@@ -13,12 +13,19 @@ function log() { return getLogger().child({ module: 'feed-player' }); }
 export const SPEED_STEPS = [1, 1.25, 1.5, 1.75, 2];
 
 function decodeNumber(raw) {
-  const value = Number.parseFloat(raw);
+  if (!raw.trim()) return null;
+  const value = Number(raw);
   return Number.isFinite(value) ? value : null;
 }
 
-const volumePreference = browserPreference('feedPlayer:volume', 1, decodeNumber);
-const speedPreference = browserPreference('feedPlayer:speed', 1, decodeNumber);
+const volumePreference = browserPreference('feedPlayer:volume', 1, raw => {
+  const value = decodeNumber(raw);
+  return value !== null && value >= 0 && value <= 1 ? value : null;
+});
+const speedPreference = browserPreference('feedPlayer:speed', 1, raw => {
+  const value = decodeNumber(raw);
+  return SPEED_STEPS.includes(value) ? value : null;
+});
 
 // ---------------------------------------------------------------------------
 // Initial state

@@ -3,7 +3,7 @@ import { feedLog } from "./feedLog.js";
 
 const Player = lazy(() => import("../../../media/browser/playback.mjs"));
 
-const PersistentPlayer = forwardRef(function PersistentPlayer({ contentId, onEnd, speed }, ref) {
+const PersistentPlayer = forwardRef(function PersistentPlayer({ contentId, onEnd, speed, volume }, ref) {
   // Memoize the play prop so Player receives a stable object reference.
   // Without this, every parent re-render creates a new { contentId } object,
   // which Player's WeakMap-based ensureEntryGuid treats as "new media",
@@ -38,6 +38,7 @@ const PersistentPlayer = forwardRef(function PersistentPlayer({ contentId, onEnd
         <Player
           ref={attachPlayer}
           play={play}
+          volume={volume}
           clear={onEnd}
           ignoreKeys
           playerType="feed"

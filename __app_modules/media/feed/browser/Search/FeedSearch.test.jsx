@@ -108,6 +108,42 @@ describe('FeedSearch', () => {
     await waitFor(() => expect(mocks.api).toHaveBeenLastCalledWith(expect.stringContaining('cursor=MQ'), {}, 'GET', expect.any(Object)));
   });
 
+  test('hides the previous query and its continuation while a new query loads or retries', async () => {
+    const page = (title, nextCursor) => ({
+      items: [{ id: title, title }], total: 2, nextCursor,
+      coverage: { status: 'complete', retentionMonths: 12 },
+    });
+    let rejectSearch;
+    mocks.api.mockResolvedValueOnce(page('Old match', 'old-page'))
+      .mockImplementationOnce(() => new Promise((resolve, reject) => { rejectSearch = reject; }))
+      .mockResolvedValueOnce(page('New match', 'new-page'))
+      .mockResolvedValueOnce(page('New second match', null));
+    render(<MemoryRouter initialEntries={['/feed/search?q=old']}><FeedSearch /></MemoryRouter>);
+    expect(await screen.findByRole('heading', { name: 'Old match' })).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Load more (1 of 2)' })).toBeEnabled();
+
+    fireEvent.change(screen.getByRole('textbox', { name: 'Search feed history' }), { target: { value: 'new' } });
+    fireEvent.submit(screen.getByRole('search'));
+    expect(screen.getByText('Searching…')).toBeVisible();
+    expect(screen.queryByRole('heading', { name: 'Old match' })).toBeNull();
+    expect(screen.queryByRole('button', { name: /Load more/ })).toBeNull();
+    expect(screen.queryByText('2 results · 12-month history')).toBeNull();
+
+    await act(async () => rejectSearch(new Error('Unavailable')));
+    expect(screen.getByRole('alert')).toHaveTextContent('Search could not be completed.');
+    expect(screen.queryByRole('heading', { name: 'Old match' })).toBeNull();
+    expect(screen.queryByRole('button', { name: /Load more/ })).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    expect(await screen.findByRole('heading', { name: 'New match' })).toBeVisible();
+    expect(mocks.api.mock.lastCall[0]).toContain('q=new');
+    expect(mocks.api.mock.lastCall[0]).not.toContain('cursor=');
+
+    fireEvent.click(screen.getByRole('button', { name: 'Load more (1 of 2)' }));
+    expect(await screen.findByRole('heading', { name: 'New second match' })).toBeVisible();
+    expect(mocks.api.mock.lastCall[0]).toContain('q=new');
+    expect(mocks.api.mock.lastCall[0]).toContain('cursor=new-page');
+  });
+
   test('exposes read, save, and archive controls for every result', async () => {
     render(<MemoryRouter initialEntries={['/feed/search']}><FeedSearch /></MemoryRouter>);
     await screen.findByRole('heading', { name: 'Saved result' });

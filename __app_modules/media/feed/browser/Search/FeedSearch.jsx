@@ -1,4 +1,5 @@
 import { Select } from '@/lib/ui/Select.jsx';
+import { EmptyState, ErrorState, StateMessage } from '@/lib/ui/states.jsx';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { DaylightAPI } from "../../../../../frontend/src/lib/api.mjs";
@@ -7,24 +8,25 @@ import { useFeedWorkspace } from "../FeedWorkspaceContext.jsx";
 import "../FeedShared.scss";
 
 const resultKey = item => item.stateKey || item.id;
+const NO_RESULTS = { items: [], nextCursor: null, total: 0, coverage: null };
 
 export default function FeedSearch() {
   const [params, setParams] = useSearchParams();
   const requestKey = params.toString();
   const [query, setQuery] = useState(params.get('q') || '');
   const [source, setSource] = useState(params.get('source') || '');
-  const [items, setItems] = useState([]);
-  const [nextCursor, setNextCursor] = useState(null);
-  const [total, setTotal] = useState(0);
-  const [coverage, setCoverage] = useState(null);
+  const [resultPage, setResultPage] = useState(null);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
-  const [error, setError] = useState(null);
+  const [requestError, setRequestError] = useState(null);
   const { mutateItems, applyPendingMutations } = useFeedWorkspace();
   const inputRef = useRef(null);
   const requestRef = useRef(null);
-  const hasAppendedPage = useRef(false);
   const writes = useRef({ pending: 0, generation: 0 });
+  const currentPage = resultPage?.requestKey === requestKey ? resultPage : null;
+  const { items, nextCursor, total, coverage } = currentPage ?? NO_RESULTS;
+  const error = requestError?.requestKey === requestKey ? requestError.error : null;
+  const searching = loading || (!currentPage && !error);
 
   useEffect(() => { inputRef.current?.focus(); }, []);
   useEffect(() => {
@@ -43,9 +45,9 @@ export default function FeedSearch() {
       if (append) setLoadingMore(true);
       else {
         setLoading(true);
-        hasAppendedPage.current = false;
+        setLoadingMore(false);
       }
-      setError(null);
+      setRequestError(null);
     }
     const api = new URLSearchParams(requestKey);
     api.set('limit', '30');
@@ -56,28 +58,32 @@ export default function FeedSearch() {
       // A poll overlapping an optimistic action can still report index
       // progress. A later poll can apply authoritative state after settlement.
       const overlappedWrite = writes.current.pending > 0 || writeGeneration !== writes.current.generation;
-      if (!refresh || !overlappedWrite) {
-        const incoming = applyPendingMutations(result.items || []);
-        if (append) {
-          hasAppendedPage.current = true;
-          setItems(current => {
-            const existing = new Set(current.map(resultKey));
-            return [...current, ...incoming.filter(item => !existing.has(resultKey(item)))];
-          });
-        } else if (refresh && hasAppendedPage.current) {
-          // Page one can update rows already displayed without moving the
-          // reader or replacing the continuation supplied by their last page.
-          const refreshed = new Map(incoming.map(item => [resultKey(item), item]));
-          setItems(current => current.map(item => refreshed.get(resultKey(item)) || item));
-        } else {
-          setItems(incoming);
+      const metadata = { total: result.total || 0, coverage: result.coverage || null };
+      const incoming = refresh && overlappedWrite ? null : applyPendingMutations(result.items || []);
+      const nextCursor = result.nextCursor || null;
+      setResultPage(current => {
+        if (!append && !refresh) {
+          return { requestKey, items: incoming, nextCursor, ...metadata, hasAppendedPage: false };
         }
-        if (!refresh || !hasAppendedPage.current) setNextCursor(result.nextCursor || null);
-      }
-      setTotal(result.total || 0);
-      setCoverage(result.coverage || null);
+        if (current?.requestKey !== requestKey) return current;
+        if (!incoming) return { ...current, ...metadata };
+        if (append) {
+          const existing = new Set(current.items.map(resultKey));
+          const items = [...current.items, ...incoming.filter(item => !existing.has(resultKey(item)))];
+          return { ...current, ...metadata, items, nextCursor, hasAppendedPage: true };
+        }
+        if (current.hasAppendedPage) {
+          // Update visible rows without replacing the last page's continuation.
+          const refreshed = new Map(incoming.map(item => [resultKey(item), item]));
+          const items = current.items.map(item => refreshed.get(resultKey(item)) || item);
+          return { ...current, ...metadata, items };
+        }
+        return { ...current, ...metadata, items: incoming, nextCursor };
+      });
     } catch (err) {
-      if (!refresh && !controller.signal.aborted && err.name !== 'AbortError') setError('Search could not be completed.');
+      if (!refresh && !controller.signal.aborted && err.name !== 'AbortError') {
+        setRequestError({ requestKey, error: new Error('Search could not be completed.') });
+      }
     } finally {
       if (requestRef.current === controller) {
         requestRef.current = null;
@@ -101,7 +107,10 @@ export default function FeedSearch() {
     if (source.trim()) next.set('source', source.trim()); else next.delete('source');
     setParams(next);
   };
-  const replace = updated => setItems(current => current.map(item => updated.find(value => value.id === item.id) || item));
+  const replace = updated => setResultPage(current => {
+    if (!current) return current;
+    return { ...current, items: current.items.map(item => updated.find(value => value.id === item.id) || item) };
+  });
   const actOnItem = async (item, action) => {
     writes.current.pending++;
     try {
@@ -137,9 +146,9 @@ export default function FeedSearch() {
         <button type="submit">Apply</button>
       </form>
       {coverage && <p className="feed-search__coverage" role="status">{total} result{total === 1 ? '' : 's'} · {coverage.retentionMonths}-month history{coverage.status === 'running' ? ` · indexing (${coverage.indexed || 0})` : coverage.status === 'failed' ? ' · backfill paused' : ''}</p>}
-      {loading && <p role="status">Searching…</p>}
-      {error && <p className="feed-error" role="alert">{error} <button onClick={() => runSearch()}>Retry</button></p>}
-      {!loading && !error && items.length === 0 && <p className="feed-empty">No matching items in indexed history.</p>}
+      {searching && <StateMessage state="loading" role="status" title="Searching…" />}
+      {error && <ErrorState title={null} error={error} onRetry={() => runSearch()} />}
+      {!searching && !error && items.length === 0 && <EmptyState title="No matching items in indexed history." />}
       <div className="feed-search__results">
         {items.map(item => (
           <article className="feed-result" key={item.stateKey || item.id}>
@@ -154,7 +163,7 @@ export default function FeedSearch() {
           </article>
         ))}
       </div>
-      {nextCursor && <button className="feed-search__more" disabled={loadingMore} onClick={() => runSearch({ append: true, cursor: nextCursor })}>{loadingMore ? 'Loading…' : `Load more (${items.length} of ${total})`}</button>}
+      {nextCursor && <button className="feed-search__more" disabled={searching || loadingMore} onClick={() => runSearch({ append: true, cursor: nextCursor })}>{loadingMore ? 'Loading…' : `Load more (${items.length} of ${total})`}</button>}
     </section>
   );
 }

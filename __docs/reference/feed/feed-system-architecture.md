@@ -416,6 +416,8 @@ Offline editions are a separate device concern. `feedOfflineStore.js` stores at 
 /feed/scroll/:feedItemId → Detail view (base64url-encoded item ID)
 ```
 
+Search uses the URL query and filters to own its rows, result count and cursor. A replacement query shows its own loading or retry state. Indexing updates can refresh an appended result without replacing its continuation cursor.
+
 ### Scroll Navigation
 
 - **Card tap** → navigates to `/feed/scroll/{base64url(item.id)}`, saves scroll position
@@ -426,20 +428,18 @@ Offline editions are a separate device concern. `feedOfflineStore.js` stores at 
 
 ### Persistent Media Player
 
-Media playback (Plex, Immich video) uses a persistent player architecture where the `<Player>` component lives at the Scroll level and never unmounts during navigation.
+Feed mounts the persistent `<Player>` in `FeedLayout` above the routed content. The same player continues during navigation while a track is active.
 
 ```
-Scroll.jsx
-├── scroll-view (card list)
-│   └── FeedCard → play button (e.stopPropagation → handlePlay, bypasses detail)
-├── DetailView / DetailModal
-│   └── PlayerSection (controller-only: play/pause, scrubber, time — no <Player>)
-├── PersistentPlayer (owns <Player ref={playerRef}>, visually hidden for audio)
-└── FeedPlayerMiniBar (thumbnail, play/pause toggle, progress bar)
+FeedLayout / PlaybackFrame
+├── Outlet (Search, Reader, Headlines, Scroll and detail)
+├── PersistentPlayer (owns <Player ref={playerRef}>)
+├── FeedPlayerMiniBar (thumbnail, playback controls, progress bar)
+└── FeedPlayerSheet (expanded controls)
 ```
 
 **State flow:**
-- `activeMedia` (`{ item, contentId }`) lives in Scroll — set by card play button or detail play button
+- `FeedPlayerProvider` owns `activeMedia` and the playback settings shared by the inline and expanded controls. Speed must match a supported preset and volume must be between 0 and 1. The existing `feedPlayer:speed` and `feedPlayer:volume` keys store raw numbers and invalid values use `1`. Mute applies zero volume to the running player and Unmute restores the prior setting.
 - `playerRef` (useRef) points to Player's imperative handle: `seek()`, `play()`, `pause()`, `toggle()`, `getCurrentTime()`, `getDuration()`, `getMediaElement()`
 - `usePlaybackObserver` hook polls playerRef at 500ms intervals for React state (`playing`, `currentTime`, `duration`) and uses `requestAnimationFrame` for smooth progress bar updates via direct DOM manipulation (`progressElRef`)
 

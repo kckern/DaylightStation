@@ -7,6 +7,40 @@ test.beforeEach(async ({ page }) => {
   await page.route('**/supervision/bootstrap', route => route.fulfill({ json: { enabled: false } }));
 });
 
+test('Admin Virtual Console completes a dispatched scan without refreshing a departed view', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 850 });
+  const scan = Promise.withResolvers();
+  const calls = [];
+  await page.route('**/api/v1/school/devices/*', async route => {
+    const request = route.request();
+    const action = new URL(request.url()).pathname.split('/').pop();
+    calls.push([request.method(), action]);
+    if (action === 'scan') {
+      await scan.promise;
+      return route.fulfill({ json: {} });
+    }
+    return route.fulfill({ json: action === 'status' ? { devices: { scanner: { present: true } } } : {} });
+  });
+
+  await page.goto('/admin/school/virtual-console');
+  await page.getByRole('textbox', { name: 'Code' }).fill('sch:fixture');
+  await page.getByRole('button', { name: 'Scan' }).click();
+  try {
+    await expect.poll(() => calls.filter(([, action]) => action === 'scan')).toEqual([['POST', 'scan']]);
+    await page.getByRole('link', { name: 'Devices', exact: true }).click();
+    await expect(page).toHaveURL(/\/admin\/household\/devices$/);
+    await expect(page.getByRole('heading', { name: 'School Virtual Device Console' })).toHaveCount(0);
+    const before = calls.slice();
+    const response = page.waitForResponse(result => result.url().endsWith('/school/devices/scan'));
+    scan.resolve();
+    expect((await response).ok()).toBe(true);
+    await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+    expect(calls).toEqual(before);
+  } finally {
+    scan.resolve();
+  }
+});
+
 test('Devices retries list errors and preserves a rejected creation for resubmission', async ({ page }) => {
   let reads = 0;
   const writes = [];

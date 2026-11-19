@@ -100,7 +100,7 @@ function FeedLayout() {
   const currentHeadlinePage = isHeadlines ? location.pathname.split('/').filter(Boolean)[2] : '';
   const { density, setDensity, readingPreferences, setReadingPreference, summary, retrySync, pendingMutations, workspaceReady, refreshSummary, refreshWorkspace, sourcePreferences, setSourcePreference } = useFeedWorkspace();
 
-  const { activeMedia, playerVisible, playerRef, stop, speed } = useFeedPlayer();
+  const { activeMedia, playerVisible, playerRef, stop, speed, volume } = useFeedPlayer();
   const playback = usePlaybackObserver(playerRef, !!activeMedia);
   const showMiniBar = !!activeMedia && !playerVisible;
   const [sheetOpen, setSheetOpen] = useState(false);
@@ -149,6 +149,7 @@ function FeedLayout() {
       player={<PersistentPlayer
         ref={playerRef}
         speed={speed}
+        volume={volume}
         contentId={activeMedia?.contentId || null}
         onEnd={stop}
       />}

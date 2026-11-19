@@ -1,10 +1,13 @@
 import { SchoolSurfaceProvider } from '../portal/SchoolSurface.jsx';
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Alert, Badge, Button, Card, Chip, Code, Group, Loader, NumberInput,
   ScrollArea, SegmentedControl, Stack, Text, TextInput, Title,
 } from '@mantine/core';
 import getLogger from "../../../../../frontend/src/lib/logging/Logger.js";
+import { daylightApiResponse } from "#frontend/lib/api.mjs";
+import { useRefreshableRead } from "#frontend/lib/hooks/useRefreshableRead.js";
+import { useVisibleRefresh } from "#frontend/lib/hooks/useVisibleRefresh.js";
 import "./VirtualConsole.scss";
 
 /**
@@ -35,11 +38,7 @@ const PRINTER_FAULTS = [
 
 /** @returns {Promise<any>} parsed body; throws with the router's `error` string. */
 async function callApi(path, { method = 'GET', body } = {}) {
-  const res = await fetch(API + path, {
-    method,
-    headers: body === undefined ? undefined : { 'Content-Type': 'application/json' },
-    body: body === undefined ? undefined : JSON.stringify(body),
-  });
+  const res = await daylightApiResponse(API + path, { method, data: body, withContentType: body !== undefined });
   const text = await res.text();
   let parsed = null;
   try { parsed = text ? JSON.parse(text) : null; } catch { parsed = null; }
@@ -91,20 +90,15 @@ export default function VirtualConsole() {
   const [blank, setBlank] = useState([]);
   const [lastSheet, setLastSheet] = useState(null);
 
-  // Race guard: polls and post-action refreshes overlap, and a slow reply must
-  // never overwrite a newer one.
-  const seqRef = useRef(0);
-
-  const refresh = useCallback(async () => {
-    const seq = ++seqRef.current;
+  const readDevices = useCallback(async (isCurrent) => {
     try {
       const [status, captures, playback] = await Promise.all([
         callApi('/status'),
         callApi('/captures').catch(() => ({ captures: [] })),
         callApi('/playback').catch(() => ({ dispatches: [] })),
       ]);
-      if (seq !== seqRef.current) {
-        logger.debug('refresh-superseded', { seq, latest: seqRef.current });
+      if (!isCurrent()) {
+        logger.debug('refresh-superseded', {});
         return;
       }
       setState({
@@ -117,7 +111,7 @@ export default function VirtualConsole() {
       // poll — otherwise "that fault was rejected" vanishes in three seconds.
       setError((prev) => (prev?.source === 'refresh' ? null : prev));
     } catch (err) {
-      if (seq !== seqRef.current) return;
+      if (!isCurrent()) return;
       if (err.status === 404) {
         setEnabled(false);
         logger.warn('console-not-wired', { status: err.status });
@@ -126,18 +120,17 @@ export default function VirtualConsole() {
         logger.error('refresh-failed', { error: err.message, status: err.status });
       }
     } finally {
-      if (seq === seqRef.current) setLoading(false);
+      if (isCurrent()) setLoading(false);
     }
   }, [logger]);
+
+  const { reload: refresh, poll } = useRefreshableRead(readDevices);
+  useVisibleRefresh({ intervalMs: POLL_MS, reload: refresh, poll });
 
   useEffect(() => {
     logger.info('mounted', {});
     refresh();
-    const timer = setInterval(refresh, POLL_MS);
-    return () => {
-      clearInterval(timer);
-      logger.info('unmounted', {});
-    };
+    return () => logger.info('unmounted', {});
   }, [logger, refresh]);
 
   /** Run one console action: log it, surface failures, refresh after. */
