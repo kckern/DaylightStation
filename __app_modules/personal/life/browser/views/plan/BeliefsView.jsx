@@ -1,11 +1,53 @@
 import { useState } from 'react';
-import { Stack, Paper, Text, Group, Badge, Progress, Button, TextInput, Select, Modal } from '@mantine/core';
+import { Stack, Paper, Text, Group, Badge, Progress, Button, TextInput, Select } from '@mantine/core';
 import { IconFlask } from '@tabler/icons-react';
+import { Button as FormButton, Sheet, StateMessage, createAppLogger, useSheetSubmission } from '@/lib/ui';
 import { useBeliefs } from "../../hooks/useLifePlan.js";
 import { beliefConfidenceColor } from "../../theme/semantics.js";
 import { LifePage, LoadingState, ErrorState } from "../../components/index.js";
 import { formatDate } from "../../lib/format.js";
 import { PlanCreateSheet } from "./PlanCreateSheet.jsx";
+
+const logger = createAppLogger('life').child('belief-evidence');
+
+function BeliefEvidenceSheet({ beliefId, onClose, addEvidence }) {
+  const [type, setType] = useState('confirmation');
+  const [note, setNote] = useState('');
+  const { submit, saving, failure } = useSheetSubmission(onClose, error => {
+    logger.warn('submit.failed', { beliefId, error: error?.message });
+  });
+  const save = () => addEvidence(beliefId, { type, note, date: new Date().toISOString().slice(0, 10) });
+
+  return (
+    <Sheet open onClose={onClose} title="Add Evidence">
+      <Stack component="form" aria-label="Add Evidence" gap="sm" onSubmit={event => submit(event, save, Boolean(type))}>
+        {failure && (
+          <StateMessage state="error" role="alert" title="Couldn't add evidence" detail={failure.message} />
+        )}
+        <Select
+          label="Type"
+          data={[
+            { value: 'confirmation', label: 'Confirmation' },
+            { value: 'disconfirmation', label: 'Disconfirmation' },
+            { value: 'spurious', label: 'Spurious' },
+          ]}
+          value={type}
+          onChange={setType}
+          allowDeselect={false}
+          comboboxProps={{ withinPortal: false }}
+          data-autofocus
+        />
+        <TextInput label="Note" value={note} onChange={event => setNote(event.currentTarget.value)} />
+        <Group justify="flex-end">
+          <FormButton density="compact" variant="secondary" onClick={onClose}>Cancel</FormButton>
+          <FormButton type="submit" density="compact" aria-busy={saving || undefined} aria-disabled={saving || undefined}>
+            {saving ? 'Submitting…' : 'Submit'}
+          </FormButton>
+        </Group>
+      </Stack>
+    </Sheet>
+  );
+}
 
 function stateColor(state) {
   const map = {
@@ -65,31 +107,21 @@ function BeliefCreateSheet({ onClose, createBelief }) {
 export function BeliefsView({ username }) {
   const { beliefs, loading, error, refetch, addEvidence, createBelief } = useBeliefs(username);
   const [addingTo, setAddingTo] = useState(null);
-  const [evidenceType, setEvidenceType] = useState('confirmation');
-  const [evidenceNote, setEvidenceNote] = useState('');
-
   const [creating, setCreating] = useState(false);
   const close = () => setCreating(false);
 
-  const handleAddEvidence = async () => {
-    if (!addingTo) return;
-    await addEvidence(addingTo, {
-      type: evidenceType,
-      note: evidenceNote,
-      date: new Date().toISOString().slice(0, 10),
-    });
-    setAddingTo(null);
-    setEvidenceNote('');
-  };
-
-  const actions = (!loading && !error) || creating
+  const hasBeliefs = beliefs.length > 0;
+  const initialLoading = loading && !hasBeliefs;
+  const readError = error && <ErrorState label="Beliefs" error={error} onRetry={refetch} />;
+  const actions = (!initialLoading && !error) || creating
     ? <Button onClick={() => setCreating(true)}>Add belief</Button> : undefined;
   let content;
-  if (loading) content = <LoadingState />;
-  else if (error) content = <ErrorState label="Beliefs" error={error} onRetry={refetch} />;
+  if (initialLoading) content = <LoadingState />;
+  else if (error && !hasBeliefs) content = readError;
   else content = (
     <>
-      {beliefs.length === 0 && (
+      {readError}
+      {!hasBeliefs && (
         <Text size="sm" c="dimmed">No beliefs defined yet — add a hypothesis to start testing it.</Text>
       )}
 
@@ -147,36 +179,16 @@ export function BeliefsView({ username }) {
           );
         })}
       </Stack>
-
-      <Modal opened={!!addingTo} onClose={() => setAddingTo(null)} title="Add Evidence">
-        <Stack gap="sm">
-          <Select
-            label="Type"
-            data={[
-              { value: 'confirmation', label: 'Confirmation' },
-              { value: 'disconfirmation', label: 'Disconfirmation' },
-              { value: 'spurious', label: 'Spurious' },
-            ]}
-            value={evidenceType}
-            onChange={setEvidenceType}
-          />
-          <TextInput
-            label="Note"
-            value={evidenceNote}
-            onChange={(e) => setEvidenceNote(e.currentTarget.value)}
-          />
-          <Button onClick={handleAddEvidence}>Submit</Button>
-        </Stack>
-      </Modal>
     </>
   );
 
   return (
     <>
-      <LifePage title="Beliefs" actions={actions} scrollReady={!loading && !error}>
+      <LifePage title="Beliefs" actions={actions} scrollReady={hasBeliefs || (!initialLoading && !error)}>
         {content}
       </LifePage>
       {creating && <BeliefCreateSheet createBelief={createBelief} onClose={close} />}
+      {addingTo && <BeliefEvidenceSheet beliefId={addingTo} addEvidence={addEvidence} onClose={() => setAddingTo(null)} />}
     </>
   );
 }

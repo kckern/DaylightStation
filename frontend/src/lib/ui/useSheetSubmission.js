@@ -24,7 +24,7 @@ export function useSheetSubmission(onClose, onError) {
       if (mounted.current) onClose();
     } catch (error) {
       if (mounted.current) setFailure(error);
-      onError(error);
+      onError?.(error);
     } finally {
       inFlight.current = false;
       if (mounted.current) setSaving(false);

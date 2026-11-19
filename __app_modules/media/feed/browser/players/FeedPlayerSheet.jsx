@@ -2,6 +2,7 @@ import { useState, useRef, useCallback, useEffect, useLayoutEffect } from 'react
 import { useFocusTrap, useMediaQuery, useMergedRef } from '@mantine/hooks';
 import { UiIcon } from '@/lib/ui/UiIcon.jsx';
 import { useDismissLayer } from '@/lib/ui/dismiss/useDismissLayer.js';
+import { useOverlayFocusReturn } from '@/lib/ui/dismiss/useOverlayFocusReturn.js';
 import { proxyImage } from "../Scroll/cards/utils.js";
 import { feedLog } from "../Scroll/feedLog.js";
 import { useFeedPlayer, SPEED_STEPS } from "./FeedPlayerContext.jsx";
@@ -32,6 +33,7 @@ export default function FeedPlayerSheet({ open, onClose, item, playback, openerR
   const [dragging, setDragging] = useState(false);
   const active = open && Boolean(item);
   const usesDismissStack = useDismissLayer(active, onClose);
+  useOverlayFocusReturn(active, openerRef);
   const trapRef = useFocusTrap(active);
   const panelRef = useMergedRef(sheetRef, trapRef);
   const showVolume = useMediaQuery('(min-width: 900px)');
@@ -79,16 +81,6 @@ export default function FeedPlayerSheet({ open, onClose, item, playback, openerR
       onClose();
     }
   }, [cancelSwipe, onClose]);
-
-  useEffect(() => {
-    if (!active) return;
-    const previousFocus = document.activeElement;
-    return () => {
-      // Feed recreates its compact player button when the sheet closes.
-      const opener = openerRef?.current ?? previousFocus;
-      if (opener?.isConnected) opener.focus({ preventScroll: true });
-    };
-  }, [active, openerRef]);
 
   useEffect(() => {
     if (!active || usesDismissStack) return;

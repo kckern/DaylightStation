@@ -26,6 +26,7 @@ const LISTED = 5;
  */
 export function FollowUpTray({ active = true, target = null, observations = [], onObservationsChanged, onChanged }) {
   const cleanup = useCleanup(active);
+  const bellRef = useRef(null);
   const [sheet, setSheet] = useState(null); // null | { startId }
   // Held here: a stale answer to the LAST question empties the list, and the
   // message must outlive it.
@@ -64,7 +65,7 @@ export function FollowUpTray({ active = true, target = null, observations = [], 
       <Menu position="bottom-end" width={300} shadow="md" withinPortal trapFocus={false}
         onOpen={() => logger.debug('menu.open', { questions: questions.length, readings })}>
         <Menu.Target>
-          <ActionIcon variant="subtle" size="lg" className="health-followups__button" aria-label={summary}>
+          <ActionIcon ref={bellRef} variant="subtle" size="lg" className="health-followups__button" aria-label={summary}>
             <IconBell size={20} stroke={1.6} aria-hidden="true" />
           </ActionIcon>
         </Menu.Target>
@@ -97,7 +98,7 @@ export function FollowUpTray({ active = true, target = null, observations = [], 
   return (
     <>
       {active ? (target ? createPortal(bell, target) : bell) : null}
-      <Sheet open={Boolean(sheet)} onClose={closeSheet} title="Follow-ups">
+      <Sheet open={Boolean(sheet)} onClose={closeSheet} title="Follow-ups" returnFocusRef={bellRef}>
         {feedback ? <p className="health-followups__feedback" role="status">{feedback}</p> : null}
         {questions.length ? (
           <QuestionDeck key={sheet?.startId || 'first'} questions={questions} startId={sheet?.startId}

@@ -1,5 +1,6 @@
 import React, { useLayoutEffect, useRef, useState } from 'react';
 import { SectionCard } from '../../../lib/ui/cards.jsx';
+import { ErrorState } from '../../../lib/ui/states.jsx';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Stack, Group, Text, Badge, Button, Paper, TextInput, Select, Alert, Center, Loader, Anchor }  from '@mantine/core';
 import {
@@ -236,7 +237,7 @@ function MidiKeyboardSections({ device, updateField }) {
 function DeviceEditor() {
   const { deviceId } = useParams();
   const navigate = useNavigate();
-  const { data, loading, error } = useApiResource(`/api/v1/admin/household/devices/${deviceId}`);
+  const { data, loading, error, reload } = useApiResource(`/api/v1/admin/household/devices/${deviceId}`);
 
   if (loading && !data) {
     return (
@@ -256,9 +257,7 @@ function DeviceEditor() {
         >
           <IconArrowBack size={14} /> Back to Devices
         </Anchor>
-        <Alert icon={<IconAlertCircle size={16} />} color="red" title="Error loading device">
-          {error.message || 'Failed to load device'}
-        </Alert>
+        <ErrorState error={error} onRetry={reload} title="Error loading device" />
       </Stack>
     );
   }

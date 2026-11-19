@@ -13,13 +13,13 @@ import './ds.scss';
  * a drill-in that sits beside the page it came from (CSS). Registers on the dismiss stack (Escape), closes on scrim click, locks
  * body scroll while open.
  */
-export function Sheet({ open, onClose, title, children, placement = 'center' }) {
+export function Sheet({ open, onClose, title, children, placement = 'center', returnFocusRef }) {
   const sheetRef = useRef(null);
   const mainRef = useAppMainRef();
   const overlaysActive = useViewOverlaysActive();
   const visible = open && overlaysActive;
   useDismissLayer(open, onClose, { isActive: () => visible });
-  useOverlayFocusReturn(open);
+  useOverlayFocusReturn(open, returnFocusRef);
 
   useLayoutEffect(() => {
     const viewport = window.visualViewport;

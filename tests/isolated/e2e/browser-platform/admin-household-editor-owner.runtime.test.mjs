@@ -78,16 +78,26 @@ for (const editor of [
     });
   }
 
-  test(editor.resource + ' hides the previous record and its save action when the new read fails', async ({ page }) => {
+  test(editor.resource + ' hides the previous record and its save action when the new read fails and retries the current record', async ({ page, baseURL }) => {
     const root = '/admin/household/' + editor.resource + '/';
+    const origin = new URL(baseURL).origin;
     let pending;
+    const reads = [];
     const writes = [];
+    await page.context().route('**/*', route => (
+      new URL(route.request().url()).origin === origin ? route.fallback() : route.abort()
+    ));
     await page.routeWebSocket('**/*', () => {});
     await page.route('**/api/**', route => {
-      const path = new URL(route.request().url()).pathname;
-      if (route.request().method() === 'PUT') writes.push(path);
+      const request = route.request();
+      const path = new URL(request.url()).pathname;
+      if (request.method() === 'PUT') writes.push(path);
+      if (path.startsWith('/api/v1' + root) && request.method() === 'GET') reads.push(path);
       if (path === '/api/v1' + root + 'alpha') return route.fulfill({ json: editor.record('alpha') });
-      if (path === '/api/v1' + root + 'beta') { pending = route; return; }
+      if (path === '/api/v1' + root + 'beta') {
+        if (!pending) { pending = route; return; }
+        return route.fulfill({ json: editor.record('beta') });
+      }
       return route.fulfill({ json: path.endsWith('/supervision/bootstrap') ? { enabled: false } : {} });
     });
     await page.goto(root + 'alpha');
@@ -99,6 +109,11 @@ for (const editor of [
     await expect(page.getByRole('alert')).toContainText(/Beta unavailable|404/i);
     await expect(field).toHaveCount(0);
     await expect(page.getByTestId('config-save-button')).toHaveCount(0);
+
+    await page.getByRole('button', { name: 'Retry', exact: true }).click();
+    await expect(page).toHaveURL(root + 'beta');
+    await expect(field).toHaveValue(editor.fieldValue('beta'));
+    expect(reads).toEqual(['alpha', 'beta', 'beta'].map(id => '/api/v1' + root + id));
     expect(writes).toEqual([]);
   });
 }

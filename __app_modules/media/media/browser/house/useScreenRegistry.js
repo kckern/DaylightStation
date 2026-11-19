@@ -5,7 +5,7 @@
 // and after every change made here. An unwired registry (501) is
 // "unavailable" — names then come from devices.yml and the browsers' own
 // broadcasts, as before.
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useRefreshableRead } from '@/lib/hooks/useRefreshableRead.js';
 import { useVisibleRefresh } from '@/lib/hooks/useVisibleRefresh.js';
 import { houseApi as defaultApi, screenIdFor } from "./houseApi.js";
@@ -16,6 +16,13 @@ export const REGISTRY_POLL_MS = 120_000;
 
 export function useScreenRegistry({ api = defaultApi, pollMs = REGISTRY_POLL_MS } = {}) {
   const [state, setState] = useState({ ...EMPTY, loaded: false, available: true, error: null });
+  const roomWriteScope = useRef(null);
+  const [roomSavePending, setRoomSavePending] = useState(false);
+  useLayoutEffect(() => {
+    roomWriteScope.current = { api, pending: false };
+    setRoomSavePending(false);
+    return () => { roomWriteScope.current = null; };
+  }, [api]);
   const readRegistry = useCallback(async (isCurrent, signal) => {
     try {
       const res = await api.listScreens({ signal });
@@ -46,6 +53,31 @@ export function useScreenRegistry({ api = defaultApi, pollMs = REGISTRY_POLL_MS 
 
   useVisibleRefresh({ intervalMs: pollMs, reload: refresh, poll });
 
+  const setRoomNeighbours = useCallback(async (room, neighbours) => {
+    const scope = roomWriteScope.current;
+    if (scope?.api !== api) throw new Error('The screen registry changed');
+    if (scope.pending) throw new Error('Another room save is in progress');
+    scope.pending = true;
+    setRoomSavePending(true);
+    try {
+      const result = await api.setRoomNeighbours(room, neighbours);
+      if (roomWriteScope.current !== scope) return result;
+      // Retire reads that began before the write. The accepted adjacency stays
+      // available if the follow-up read cannot refresh the rest of the registry.
+      const revalidation = refresh();
+      const adjacency = result?.roomAdjacency;
+      if (adjacency && typeof adjacency === 'object' && !Array.isArray(adjacency)) {
+        setState(current => ({ ...current, roomAdjacency: adjacency }));
+      } else {
+        await revalidation;
+      }
+      return result;
+    } finally {
+      scope.pending = false;
+      if (roomWriteScope.current === scope) setRoomSavePending(false);
+    }
+  }, [api, refresh]);
+
   const byId = useMemo(() => {
     const map = new Map();
     for (const list of [state.retired, state.unnamed, state.notSeenLately, state.screens]) {
@@ -57,7 +89,10 @@ export function useScreenRegistry({ api = defaultApi, pollMs = REGISTRY_POLL_MS 
     return map;
   }, [state.screens, state.notSeenLately, state.retired, state.unnamed]);
 
-  return useMemo(() => ({ ...state, byId, refresh }), [state, byId, refresh]);
+  return useMemo(
+    () => ({ ...state, byId, refresh, roomSavePending, setRoomNeighbours }),
+    [state, byId, refresh, roomSavePending, setRoomNeighbours],
+  );
 }
 
 /** Browser rows whose live name differs from the cached registry: it is stale. */

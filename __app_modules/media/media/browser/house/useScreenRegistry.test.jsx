@@ -85,6 +85,60 @@ describe('useScreenRegistry', () => {
     expect(screen.getByTestId('probe')).toHaveTextContent('Current name|y');
   });
 
+  it('keeps the confirmed room links when the post-write registry read fails', async () => {
+    const response = Promise.withResolvers();
+    const revalidation = Promise.withResolvers();
+    const roomAdjacency = { Den: ['Kitchen'], Kitchen: ['Den'] };
+    const api = {
+      listScreens: vi.fn().mockResolvedValueOnce({ screens: [{ id: 'den', name: 'Den' }] })
+        .mockImplementationOnce(() => revalidation.promise),
+      setRoomNeighbours: vi.fn(() => response.promise),
+    };
+    render(<Probe api={api} />);
+    await waitFor(() => expect(captured.loaded).toBe(true));
+
+    let write;
+    act(() => { write = captured.setRoomNeighbours('Den', ['Kitchen']); });
+    expect(captured.roomSavePending).toBe(true);
+    await expect(captured.setRoomNeighbours('Kitchen', ['Porch'])).rejects.toThrow('Another room save is in progress');
+    expect(api.setRoomNeighbours).toHaveBeenCalledExactlyOnceWith('Den', ['Kitchen']);
+
+    await act(async () => { response.resolve({ roomAdjacency }); });
+    expect(captured.roomSavePending).toBe(false);
+    await expect(write).resolves.toEqual({ roomAdjacency });
+    expect(captured.roomAdjacency).toEqual(roomAdjacency);
+    await act(async () => { revalidation.reject(new HouseApiError('Temporary error', { status: 500 })); });
+    expect(captured.error?.message).toBe('Temporary error');
+    expect(captured.roomAdjacency).toEqual(roomAdjacency);
+    expect(captured.byId.get('den')?.name).toBe('Den');
+  });
+
+  it('keeps a replacement registry and pending room save when an old write settles', async () => {
+    const formerResponse = Promise.withResolvers();
+    const currentResponse = Promise.withResolvers();
+    const former = {
+      listScreens: vi.fn(async () => ({ screens: [] })),
+      setRoomNeighbours: vi.fn(() => formerResponse.promise),
+    };
+    const current = {
+      listScreens: vi.fn(async () => ({ screens: [] })),
+      setRoomNeighbours: vi.fn(() => currentResponse.promise),
+    };
+    const { rerender } = render(<Probe api={former} />);
+    let oldWrite;
+    act(() => { oldWrite = captured.setRoomNeighbours('Den', ['Kitchen']); });
+    rerender(<Probe api={current} />);
+    let currentWrite;
+    act(() => { currentWrite = captured.setRoomNeighbours('Kitchen', ['Porch']); });
+
+    await act(async () => { formerResponse.resolve({ roomAdjacency: { Den: ['Kitchen'] } }); await oldWrite; });
+    expect(former.listScreens).toHaveBeenCalledTimes(1);
+    expect(captured.roomSavePending).toBe(true);
+    expect(captured.roomAdjacency).toEqual({});
+    await act(async () => { currentResponse.resolve({ roomAdjacency: {} }); await currentWrite; });
+    expect(captured.roomSavePending).toBe(false);
+  });
+
   it('reports an unwired registry (501) as unavailable rather than broken', async () => {
     const api = { listScreens: vi.fn(async () => { throw new HouseApiError('no', { status: 501 }); }) };
     render(<Probe api={api} />);

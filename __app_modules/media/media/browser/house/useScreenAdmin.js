@@ -17,6 +17,7 @@ function failure(error) {
 export function useScreenAdmin({ registry, api = defaultApi } = {}) {
   const outcomes = useContext(DispatchContext);
   const refresh = registry?.refresh;
+  const writeNeighbours = registry?.setRoomNeighbours;
   const report = useCallback((kind, primary, secondary = null, undo = null) => {
     outcomes?.recordLocal?.({ kind, phase: 'confirmed', item: { contentId: null, title: null }, command: { copy: { primary, secondary } }, undo });
   }, [outcomes]);
@@ -49,15 +50,14 @@ export function useScreenAdmin({ registry, api = defaultApi } = {}) {
   // Which rooms neighbour `room` (the several-screen drift warning); the link is mutual.
   const setNeighbours = useCallback(async (room, neighbours) => {
     try {
-      const res = await api.setRoomNeighbours(room, neighbours);
+      const res = await writeNeighbours(room, neighbours);
       houseLog.roomNeighboursSet({ room, neighbours });
-      await refresh?.();
       return { ok: true, roomAdjacency: res?.roomAdjacency ?? null };
     } catch (error) {
       houseLog.adminActionFailed({ action: 'room-neighbours', status: error?.status ?? null, code: error?.code ?? null, error: error?.message });
       return failure(error);
     }
-  }, [api, refresh]);
+  }, [writeNeighbours]);
 
   const addScreen = useCallback(async ({ name, room }) => {
     try {

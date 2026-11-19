@@ -84,5 +84,9 @@ test('Health unlocks Progress while the Today follow-ups sheet is hidden', async
   await page.keyboard.press('Escape');
   await page.goForward();
   await expect(sheet.getByText('Was the white fish cod?', { exact: true })).toBeVisible();
+  await page.setViewportSize({ width: 1440, height: 850 });
+  await page.keyboard.press('Escape');
+  await expect(sheet).toBeHidden();
+  await expect(bell).toBeFocused();
   expect(fixture.unexpected).toEqual([]);
 });

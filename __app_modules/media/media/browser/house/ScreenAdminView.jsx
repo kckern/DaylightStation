@@ -210,7 +210,8 @@ export function ScreenAdminView() {
         <Title order={2} size="h4" id="screen-admin-list-title">Every screen</Title>
         <ul className="house-list" data-testid="screen-admin-list">{screens.map(item)}</ul>
       </section>
-      <RoomNeighboursSection screens={live} adjacency={registry?.roomAdjacency ?? {}} admin={admin} />
+      <RoomNeighboursSection screens={live} adjacency={registry?.roomAdjacency ?? {}}
+        savePending={registry?.roomSavePending} admin={admin} />
       {notSeen.length > 0 && (
         <details className="house-section" data-testid="screen-admin-not-seen">
           <summary><Text span fw={600}>Not seen lately ({notSeen.length})</Text> <Text span size="sm" c="dimmed">— silent for more than 30 days</Text></summary>

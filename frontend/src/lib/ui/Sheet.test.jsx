@@ -1,7 +1,7 @@
 // frontend/src/lib/ui/Sheet.test.jsx
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { MantineProvider } from '@mantine/core';
 import { DismissStackProvider } from './dismiss/DismissStackProvider.jsx';
 import { AppFrame } from './AppFrame.jsx';
@@ -91,5 +91,23 @@ describe('Sheet', () => {
     fireEvent.keyDown(document, { key: 'Escape' });
     await waitFor(() => expect(document.activeElement).toBe(opener));
     expect(document.body.style.overflow).toBe('');
+  });
+
+  it('returns to the current trigger when the original trigger was removed', async () => {
+    function Flow() {
+      const [open, setOpen] = useState(false);
+      const trigger = useRef(null);
+      return <>
+        {open ? null : <button ref={trigger} onClick={() => setOpen(true)}>Open task</button>}
+        <Sheet open={open} onClose={() => setOpen(false)} title="Task" returnFocusRef={trigger}>Task body</Sheet>
+      </>;
+    }
+    wrap(<Flow />);
+    const original = screen.getByRole('button', { name: 'Open task' });
+    original.focus();
+    fireEvent.click(original);
+    expect(original.isConnected).toBe(false);
+    fireEvent.keyDown(document, { key: 'Escape' });
+    await waitFor(() => expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Open task' })));
   });
 });

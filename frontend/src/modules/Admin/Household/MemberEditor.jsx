@@ -12,6 +12,7 @@ import {
   IconCopy, IconCheck
 } from '@tabler/icons-react';
 import { useApiResource } from '../../../lib/hooks/useApiResource.js';
+import { ErrorState } from '../../../lib/ui/states.jsx';
 import { DaylightAPI } from '../../../lib/api.mjs';
 import { useAdminHousehold } from '../../../hooks/admin/useAdminHousehold';
 import SaveBar from '../shared/SaveBar.jsx';
@@ -22,7 +23,7 @@ const AVAILABLE_ROLES = ['sysadmin', 'admin', 'parent', 'member', 'kiosk'];
 function MemberEditor() {
   const { username } = useParams();
   const navigate = useNavigate();
-  const { data, loading, error } = useApiResource(`/api/v1/admin/household/members/${username}`);
+  const { data, loading, error, reload } = useApiResource(`/api/v1/admin/household/members/${username}`);
 
   // Loading state
   if (loading && !data) {
@@ -44,9 +45,7 @@ function MemberEditor() {
         >
           <IconArrowBack size={14} /> Back to Members
         </Anchor>
-        <Alert icon={<IconAlertCircle size={16} />} color="red" title="Error">
-          {error.message || 'Failed to load member profile'}
-        </Alert>
+        <ErrorState error={error} onRetry={reload} title="Error loading member profile" />
       </Stack>
     );
   }

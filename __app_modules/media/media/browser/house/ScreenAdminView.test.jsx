@@ -46,6 +46,7 @@ beforeEach(() => {
     restoreScreen: vi.fn(async (id) => ({ screen: { id, name: 'Attic TV' } })),
     setRoomNeighbours: vi.fn(async (room, neighbours) => ({ roomAdjacency: { [room]: neighbours } })),
   });
+  ctx.registry.setRoomNeighbours = api.setRoomNeighbours;
 });
 
 describe('ScreenAdminView room neighbours (PLACE.4a/AC6)', () => {
@@ -59,7 +60,6 @@ describe('ScreenAdminView room neighbours (PLACE.4a/AC6)', () => {
     fireEvent.click(kitchen);
     fireEvent.click(screen.getByTestId('room-neighbours-save'));
     await waitFor(() => expect(api.setRoomNeighbours).toHaveBeenCalledWith('Den', []));
-    expect(ctx.registry.refresh).toHaveBeenCalled();
   });
 
   it('is hidden while the household has fewer than two rooms', () => {
