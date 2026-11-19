@@ -80,6 +80,27 @@ describe('prefetchApiResources', () => {
     expect(prefetchApiResources(['p'])).toBe(1);
   });
 
+  it('keeps an invalidated in-flight prefetch from warming the cache', async () => {
+    const before = deferred();
+    apiMock.mockReturnValueOnce(before.promise)
+      .mockResolvedValueOnce({ v: 'replacement' })
+      .mockResolvedValueOnce({ v: 'after' });
+    prefetchApiResources(['p']);
+    const nonCachingReader = renderHook(() => useApiResource('p'));
+    act(() => nonCachingReader.result.current.reload());
+    await waitFor(() => expect(nonCachingReader.result.current.data).toEqual({ v: 'replacement' }));
+    nonCachingReader.unmount();
+    invalidateApiResources(path => path === 'p');
+    before.resolve({ v: 'before' });
+    await flush();
+    expect(peekApiResource('p')).toBeUndefined();
+
+    const { result } = renderHook(() => useApiResource('p', { swr: true }));
+    expect(result.current.loading).toBe(true);
+    await waitFor(() => expect(result.current.data).toEqual({ v: 'after' }));
+    expect(apiMock).toHaveBeenCalledTimes(3);
+  });
+
   it('a reader mounting during a prefetch joins it instead of requesting again', async () => {
     const slow = deferred();
     apiMock.mockReturnValueOnce(slow.promise);

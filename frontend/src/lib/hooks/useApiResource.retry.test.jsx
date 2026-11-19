@@ -24,6 +24,25 @@ describe('useApiResource transient retry', () => {
     expect(apiMock).toHaveBeenCalledTimes(2);
   });
 
+  it('shares a pending transient retry between readers of the same resource', async () => {
+    let rejectInitial;
+    let resolveRetry;
+    apiMock
+      .mockReturnValueOnce(new Promise((_, reject) => { rejectInitial = reject; }))
+      .mockReturnValue(new Promise(resolve => { resolveRetry = resolve; }));
+    const first = renderHook(() => useApiResource('/records', { swr: true }));
+    const second = renderHook(() => useApiResource('/records'));
+    expect(apiMock).toHaveBeenCalledTimes(1);
+
+    await act(async () => { rejectInitial(transient()); });
+    await waitOut(TRANSIENT_RETRY_DELAYS_MS[0]);
+    expect(apiMock).toHaveBeenCalledTimes(2);
+    const snapshot = { records: ['restored'] };
+    await act(async () => { resolveRetry(snapshot); });
+    expect(first.result.current.data).toBe(snapshot);
+    expect(second.result.current.data).toBe(snapshot);
+  });
+
   it('reports the failure once every retry has also failed', async () => {
     apiMock.mockRejectedValue(transient(503));
     const { result } = renderHook(() => useApiResource('api/v1/thing'));

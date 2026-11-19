@@ -58,6 +58,9 @@ export function invalidateApiResources(matches = () => true) {
   // Cached-but-unmounted entries (prefetched neighbours) become stale too:
   // they keep painting instantly, and the next prefetch pass refreshes them.
   for (const path of fetchedAt.keys()) if (matches(path)) fetchedAt.delete(path);
+  for (const path of inFlight.keys()) if (matches(path)) inFlight.delete(path);
+  // A prefetch can outlive a later request that replaced it in inFlight.
+  for (const path of prefetchInFlight) if (matches(path)) claimGeneration(path);
   for (const notify of invalidationListeners) notify(matches);
 }
 
@@ -216,9 +219,9 @@ export function flushApiResourcePersistence() { for (const scope of registration
 // both reading the week's budgets) used to issue two identical GETs, and on a
 // browser that queues past six connections per host the duplicate delayed
 // everything behind it. A reader or prefetch that finds the path already in
-// flight joins that request. An explicit reload() never joins: it is asked
-// for BECAUSE something changed after the in-flight request was issued, and
-// joining would hand back the pre-change answer.
+// flight joins that request. An explicit reload() starts its own read.
+// Cache broadcasts retire the old request first, so affected readers can all
+// join the first fresh read without taking a pre-change answer.
 // Only a request issued moments ago is joined: the point is readers mounting
 // together. A request still pending after that may be stuck, and a reader
 // mounting later (navigating back) must get a fresh one, not wait on it.
@@ -261,7 +264,9 @@ function requestWithRetry(path, { join, isCurrent, onRetry }) {
     return new Promise((resolve, reject) => {
       setTimeout(() => {
         if (!isCurrent()) { reject(err); return; }
-        attempt(index + 1, false).then(resolve, reject);
+        // The failed request is already retired. A pending replacement is
+        // fresh enough for readers recovering from the same failure.
+        attempt(index + 1, true).then(resolve, reject);
       }, delay);
     });
   });
@@ -363,6 +368,7 @@ export function patchApiResource(path, update) {
   if (!swrCache.has(path)) return false;
   const next = update(swrCache.get(path));
   if (next === undefined) return false;
+  inFlight.delete(path);
   claimGeneration(path);
   cacheSet(path, next);
   for (const notify of patchListeners) notify(path, next);
@@ -428,8 +434,8 @@ export function useApiResource(path, {
   });
   const [revalidating, setRevalidating] = useState(() => getInitialCache().hit);
   const [error, setError] = useState(null);
-  const [nonce, setNonce] = useState(0);
-  const nonceRef = useRef(nonce);
+  const [reloadRequest, setReloadRequest] = useState(null);
+  const requestedReload = useRef(reloadRequest);
   const activePath = useRef(null);
   const pendingRefresh = useRef(null);
 
@@ -438,11 +444,12 @@ export function useApiResource(path, {
     pendingRefresh.current = null;
     pending?.reject(refreshAbortError());
   }, []);
-  const requestReload = useCallback((waiter) => {
+  const requestReload = useCallback((waiter, join = false) => {
     cancelRefresh();
-    const next = ++nonceRef.current;
-    if (waiter) pendingRefresh.current = { ...waiter, nonce: next };
-    setNonce(next);
+    const next = { join };
+    requestedReload.current = next;
+    if (waiter) pendingRefresh.current = { ...waiter, request: next };
+    setReloadRequest(next);
   }, [cancelRefresh]);
   const reload = useCallback(() => { requestReload(); }, [requestReload]);
   const refresh = useCallback(() => {
@@ -451,17 +458,16 @@ export function useApiResource(path, {
       requestReload({ resolve, reject });
     });
   }, [enabled, path, requestReload]);
-  // A new nonce forces a read that cannot join an older in-flight request.
-  const fetchedNonce = useRef(nonce);
+  const fetchedReload = useRef(reloadRequest);
 
   useEffect(() => {
     activePath.current = enabled ? path : null;
-    const notify = matches => { if (enabled && path && matches(path)) reload(); };
+    const notify = matches => { if (enabled && path && matches(path)) requestReload(null, true); };
     const clearOwner = matches => {
       if (!path || !matches(path)) return;
       setData(null);
       setError(null);
-      if (enabled) reload();
+      if (enabled) requestReload(null, true);
     };
     invalidationListeners.add(notify);
     ownerListeners.add(clearOwner);
@@ -471,7 +477,7 @@ export function useApiResource(path, {
       invalidationListeners.delete(notify);
       ownerListeners.delete(clearOwner);
     };
-  }, [path, enabled, reload, cancelRefresh]);
+  }, [path, enabled, requestReload, cancelRefresh]);
 
   // Adopt a patch now, then revalidate. The reload also retires this hook's
   // in-flight request (its `live` flag), which predates the patch.
@@ -481,16 +487,16 @@ export function useApiResource(path, {
       if (!enabled || patched !== path) return;
       setData(value);
       setResultPath(path);
-      reload();
+      requestReload(null, true);
     };
     patchListeners.add(notify);
     return () => patchListeners.delete(notify);
-  }, [path, enabled, swr, reload]);
+  }, [path, enabled, swr, requestReload]);
 
   useEffect(() => {
     const takeRefresh = () => {
       const pending = pendingRefresh.current;
-      if (pending?.nonce !== nonce) return null;
+      if (!pending || pending.request !== reloadRequest) return null;
       pendingRefresh.current = null;
       return pending;
     };
@@ -498,7 +504,7 @@ export function useApiResource(path, {
     let live = true;
     const scope = registrationFor(path);
     const epoch = scope?.epoch;
-    const isCurrent = () => live && nonce === nonceRef.current &&
+    const isCurrent = () => live && reloadRequest === requestedReload.current &&
       scope === registrationFor(path) && scope?.epoch === epoch;
 
     const { hit: cacheHit, value: cachedValue } = swr ? cacheGet(path) : { hit: false };
@@ -521,13 +527,13 @@ export function useApiResource(path, {
     // "last-issued wins" semantics for the single-instance case.
     const myGeneration = swr ? claimGeneration(path) : null;
 
-    const forced = fetchedNonce.current !== nonce;
-    fetchedNonce.current = nonce;
+    const join = fetchedReload.current === reloadRequest || reloadRequest?.join;
+    fetchedReload.current = reloadRequest;
     const startedAt = performance.now();
     const request = retryTransient
-      ? requestWithRetry(path, { join: !forced, isCurrent,
+      ? requestWithRetry(path, { join, isCurrent,
         onRetry: (err, attempt) => logger.debug('api.retry', { resource: label || path, attempt, status: err?.status ?? null }) })
-      : sharedRequest(path, { join: !forced });
+      : sharedRequest(path, { join });
     request
       .then((result) => {
         // Two independent guards here, doing different jobs:
@@ -568,7 +574,7 @@ export function useApiResource(path, {
       takeRefresh()?.reject(refreshAbortError());
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [path, enabled, nonce, swr, retryTransient, clearDataOnError, ...deps]);
+  }, [path, enabled, reloadRequest, swr, retryTransient, clearDataOnError, ...deps]);
 
   // Effects run after render: conceal the previous key synchronously, not
   // just after the new request starts, so stale rows are never actionable.

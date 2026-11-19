@@ -86,6 +86,31 @@ describe('read hooks', () => {
     expect(result.current.has('plex:3')).toBe(false);
   });
 
+  it('shares one fresh favourites read across consumers after a household write', async () => {
+    const path = 'api/v1/media/household/favourites';
+    let resolveBefore;
+    let resolveAfter;
+    const before = new Promise(resolve => { resolveBefore = resolve; });
+    const after = new Promise(resolve => { resolveAfter = resolve; });
+    const reads = () => apiMock.mock.calls.filter(args => args.length === 1 && args[0] === path).length;
+    apiMock.mockImplementation((_path, _body, method) => method === 'POST'
+      ? Promise.resolve({ ok: true })
+      : reads() === 1 ? before : after);
+    const first = renderHook(useFavourites);
+    const second = renderHook(useFavourites);
+    const { result: actions } = renderHook(useHouseholdActions, { wrapper: wrapperWith(outcomes) });
+    expect(reads()).toBe(1);
+
+    await act(() => actions.current.toggleFavourite({ id: 'plex:9', title: 'Bluey' }, false));
+    expect(reads()).toBe(2);
+    await act(async () => { resolveBefore({ items: [{ id: 'plex:old' }] }); });
+    expect([...first.result.current]).toEqual([]);
+    expect([...second.result.current]).toEqual([]);
+    await act(async () => { resolveAfter({ items: [{ id: 'plex:9' }] }); });
+    expect([...first.result.current]).toEqual(['plex:9']);
+    expect([...second.result.current]).toEqual(['plex:9']);
+  });
+
   it('names screens from the registry', async () => {
     apiMock.mockResolvedValue({ screens: [{ id: 'fleet:livingroom-tv', screenId: 'livingroom-tv', name: 'Living Room TV' }] });
     const { result } = renderHook(() => useScreenNamer());

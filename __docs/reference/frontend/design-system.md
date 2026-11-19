@@ -197,18 +197,15 @@ own. In its default mode it behaves like any plain fetch-on-mount hook:
 always re-enters that same loading state. This mode does no cache reads or
 writes, and there is nothing new to opt into.
 
-**One request per path in flight, in every mode.** A reader that mounts while
-a request for its path is already in flight (from another reader or from the
-prefetcher), issued within the last 3 s, joins that request instead of issuing
-its own. An older pending request may be stuck. A reader mounting later
-(navigating back) gets a fresh request rather than waiting on it. Two widgets
-mounting on the same path in one frame make one GET. An explicit `reload()`
-never joins. It exists because something changed after the in-flight request
-was issued, and joining would return the pre-change answer. The same applies
-to the reloads that an invalidation or a patch triggers. After a write,
-each mounted reader of a path still issues its own request.
+Concurrent mounts share a pending GET for the same path and scope when it
+started within the last three seconds. A later mount starts a fresh read
+once that window expires. Invalidation and cache patches retire the
+pre-change request and let mounted readers share the first fresh GET for
+each path. Readers recovering from a transient failure can also share a
+pending retry. An explicit `reload()` or `refresh()` starts its own read.
 
-Use `reload()` for a Retry button or an invalidation callback. Use
+Use `reload()` to retry one reader. Use `invalidateApiResources(matches)`
+when a write affects mounted readers of one or more shared resources. Use
 `await refresh()` when a workflow must wait for its fresh GET to settle.
 It resolves with the response accepted by this reader, rejects with the
 read error, and rejects with `AbortError` if the request is superseded or
