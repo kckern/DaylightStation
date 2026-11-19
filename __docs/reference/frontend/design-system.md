@@ -205,6 +205,11 @@ was issued, and joining would return the pre-change answer. The same applies
 to the reloads that an invalidation or a patch triggers. After a write,
 each mounted reader of a path still issues its own request.
 
+Transient network and proxy failures retry twice by default. A current
+one-shot consumer can pass `retryTransient: false` to retain its immediate
+error behavior; Displayer uses this while still sharing key scoping and
+stale-response protection.
+
 An opt-in stale-while-revalidate mode (`swr: true`) is for a view whose
 structure should survive a refetch rather than disappear behind a loading
 state. A small in-memory cache, keyed by the request path and bounded to a

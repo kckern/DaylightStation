@@ -29,6 +29,13 @@ async function renderResolved(payload) {
 }
 
 describe('Displayer image source resolution', () => {
+  it('uses a caller-hydrated payload without reading item metadata again', () => {
+    render(<Displayer display={{ id: ID, title: 'Provided', mediaType: 'image', imageUrl: '/provided.jpg' }} />);
+
+    expect(screen.getByRole('img')).toHaveAttribute('src', '/provided.jpg');
+    expect(apiMock).not.toHaveBeenCalled();
+  });
+
   it('uses imageUrl when the payload carries one', async () => {
     const img = await renderResolved({
       title: 'esther',
@@ -88,5 +95,20 @@ describe('Displayer image source resolution', () => {
     render(<Displayer display={{ id: ID }} />);
     const alert = await waitFor(() => screen.getByRole('alert'));
     expect(alert.textContent).toMatch(/404 Not Found/);
+  });
+
+  it('loads the new item when the same display instance receives a different id', async () => {
+    apiMock.mockImplementation(path => Promise.resolve({
+      title: path.endsWith('/second.jpg') ? 'second' : 'esther',
+      mediaType: 'image',
+      imageUrl: path.endsWith('/second.jpg') ? '/second.jpg' : '/esther.jpg',
+    }));
+    const { rerender } = render(<Displayer display={{ id: ID }} />);
+    await waitFor(() => expect(screen.getByRole('img')).toHaveAttribute('src', '/esther.jpg'));
+
+    rerender(<Displayer display={{ id: 'files:art/fhe/second.jpg' }} />);
+
+    await waitFor(() => expect(screen.getByRole('img')).toHaveAttribute('src', '/second.jpg'), { timeout: 1000 });
+    expect(apiMock).toHaveBeenCalledWith('/api/v1/info/files/art/fhe/second.jpg');
   });
 });

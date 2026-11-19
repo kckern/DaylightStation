@@ -400,7 +400,7 @@ export function resetApiResourceCache(path) {
   schedulePersist(path, undefined);
 }
 
-export function useApiResource(path, { deps = [], enabled = true, label, logger = defaultLogger, swr = false } = {}) {
+export function useApiResource(path, { deps = [], enabled = true, label, logger = defaultLogger, swr = false, retryTransient = true } = {}) {
   // Single shared cache lookup for the three lazy initializers below — each
   // useState initializer only runs once (on mount), and all three run inside
   // the same render, so a memoized closure keeps `cacheGet` (which mutates
@@ -485,8 +485,11 @@ export function useApiResource(path, { deps = [], enabled = true, label, logger 
     const forced = fetchedNonce.current !== nonce;
     fetchedNonce.current = nonce;
     const startedAt = performance.now();
-    requestWithRetry(path, { join: !forced, isCurrent,
-      onRetry: (err, attempt) => logger.debug('api.retry', { resource: label || path, attempt, status: err?.status ?? null }) })
+    const request = retryTransient
+      ? requestWithRetry(path, { join: !forced, isCurrent,
+        onRetry: (err, attempt) => logger.debug('api.retry', { resource: label || path, attempt, status: err?.status ?? null }) })
+      : sharedRequest(path, { join: !forced });
+    request
       .then((result) => {
         // Two independent guards here, doing different jobs:
         //   - `live` is THIS effect run's own liveness — false on unmount or
@@ -520,7 +523,7 @@ export function useApiResource(path, { deps = [], enabled = true, label, logger 
 
     return () => { live = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [path, enabled, nonce, swr, ...deps]);
+  }, [path, enabled, nonce, swr, retryTransient, ...deps]);
 
   // Effects run after render: conceal the previous key synchronously, not
   // just after the new request starts, so stale rows are never actionable.

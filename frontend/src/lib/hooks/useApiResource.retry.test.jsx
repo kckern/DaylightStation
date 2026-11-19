@@ -41,6 +41,14 @@ describe('useApiResource transient retry', () => {
     expect(apiMock).toHaveBeenCalledTimes(1);
   });
 
+  it('supports a current consumer that owns its one-shot transient failure policy', async () => {
+    apiMock.mockRejectedValue(transient());
+    const { result } = renderHook(() => useApiResource('api/v1/thing', { retryTransient: false }));
+    await waitFor(() => expect(result.current.error?.status).toBe(502));
+    await waitOut(TRANSIENT_RETRY_DELAYS_MS.reduce((a, b) => a + b, 0));
+    expect(apiMock).toHaveBeenCalledTimes(1);
+  });
+
   it('stops retrying when the reader unmounts', async () => {
     apiMock.mockRejectedValue(transient());
     const { unmount } = renderHook(() => useApiResource('api/v1/thing'));
