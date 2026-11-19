@@ -26,7 +26,7 @@ import { useIsWideViewport } from "./layout.js";
 import { LogTable } from "./LogTable.jsx";
 import { MealAddRow } from "./MealAddRow.jsx";
 import { DayInputBar } from "./DayInputBar.jsx";
-import { useMealMoves, mealEntries, dayEntries, MoveResult } from "./mealDrag.jsx";
+import { useMealMoves, mealEntries, dayEntries, MoveResult, isDefiniteRefusal, refusalReason, unconfirmedMoveText } from "./mealDrag.jsx";
 import { dayLabel } from "./moveDays.js";
 import { MoveDayItems } from "./MoveDayControl.jsx";
 import { NeedsReviewSection } from "./NeedsReviewSection.jsx";
@@ -189,6 +189,8 @@ export function TodayView({ active = true, sidebarTarget, followUpTarget = null,
   };
   const [undoBusy, setUndoBusy] = useState(false);
   const undoPending = useRef(false);
+  // The unknown-outcome move the day sheet is showing, which it reports itself.
+  const [sheetMove, setSheetMove] = useState(null);
   const [barcodeDate, setBarcodeDate] = useState(date);
   // { audioRef | content, bucket, date, selectedIds } | null — a voice capture whose transcription failed on
   // the network. The recording is on the server, so the notice can offer a
@@ -417,11 +419,12 @@ export function TodayView({ active = true, sidebarTarget, followUpTarget = null,
       else if (outcome === MoveResult.UNCHANGED) say(`Those foods are already on ${dayLabel(iso, today)}.`);
     };
     const onRetryable = retry => {
-      const retryMove = retry && (async () => {
+      const retryMove = retry && Object.assign(async () => {
         logger.info('capture.move-day.retry', { logId: offer.logId, to: iso });
         report(await retry());
-      });
-      setCaptureToasts(state => updateOffer(state, offer, shown => ({ ...shown, retryMove })));
+      }, { operationId: retry.operationId });
+      const moveFailure = retry ? unconfirmedMoveText(offer.what, dayLabel(iso, today)) : null;
+      setCaptureToasts(state => updateOffer(state, offer, shown => ({ ...shown, retryMove, moveFailure })));
     };
     report(await moves.moveFromDay(entries, iso, elsewhere ? items : null, { onRetryable }));
   };
@@ -589,9 +592,17 @@ export function TodayView({ active = true, sidebarTarget, followUpTarget = null,
     if (undoPending.current || !mealUndo) return;
     undoPending.current = true; setUndoBusy(true);
     mealUndoOperation.current ??= crypto.randomUUID();
-    try { await foodAPI('api/v1/health/nutrition/meal-undo', { undoToken: mealUndo.token, operationId: mealUndoOperation.current }, 'POST'); clearMealUndo(); day.reload(); }
-    catch (err) { setCaptureNotice(err.message || 'Undo failed. Try again.'); }
-    finally { undoPending.current = false; setUndoBusy(false); }
+    const { token } = mealUndo, operationId = mealUndoOperation.current;
+    const onThisUndo = change => setCaptureToasts(state => (state.undo?.token === token ? { ...state, undo: change(state.undo) } : state));
+    onThisUndo(undo => ({ ...undo, failure: null }));
+    try {
+      // In the continuation, so a retry from the page's toast finishes it the same way.
+      await foodAPI.withContinuation('api/v1/health/nutrition/meal-undo', { undoToken: token, operationId }, 'POST', () => { onThisUndo(() => null); day.reload(); });
+    } catch (err) {
+      logger.warn('meal-undo.failed', { status: err?.status, error: err?.message });
+      if (isDefiniteRefusal(err)) { foodAPI.release(operationId); mealUndoOperation.current = null; setCaptureNotice(refusalReason(err) || "Couldn't undo that."); }
+      else onThisUndo(undo => ({ ...undo, failure: "Couldn't confirm that undo. Try again when connected." }));
+    } finally { undoPending.current = false; setUndoBusy(false); }
   };
   const undoDeletedEntry = async () => {
     if (undoPending.current || !undoDelete) return;
@@ -599,9 +610,16 @@ export function TodayView({ active = true, sidebarTarget, followUpTarget = null,
     try {
       await foodAPI('api/v1/health/nutrition/restore', { entryIds: undoDelete.entryIds }, 'POST');
       setUndoDelete(null); day.reload();
-    } catch (err) { setCaptureNotice(err.message); }
-    finally { undoPending.current = false; setUndoBusy(false); }
+    } catch (err) {
+      logger.warn('entry.restore_failed', { status: err?.status, error: err?.message });
+      setCaptureNotice(refusalReason(err) || "Couldn't bring that back. Try again when connected.");
+    } finally { undoPending.current = false; setUndoBusy(false); }
   };
+  // A move with no known outcome is reported by whatever is showing it. Anything
+  // no longer showing one falls to the page's toast, which can retry or release it.
+  const shownMoves = new Set([sheetMove, moves.undo?.operationId, mealUndo ? mealUndoOperation.current : null,
+    ...[mealUndo, ...captureToasts.offers].map(shown => shown?.retryMove?.operationId)].filter(Boolean));
+  const unresolvedMoves = moves.unresolved.filter(move => !shownMoves.has(move.id));
   // A portion edit's error is shown on its own row (EntryRow). The one case
   // with no row to sit on — the entry left the day — falls back to a toast.
   const portionControl = { ...preview.control, reloadDay: day.reload };
@@ -636,7 +654,7 @@ export function TodayView({ active = true, sidebarTarget, followUpTarget = null,
       <TodayToasts captureNotice={captureNotice} captureRetry={captureRetry} retryBusy={nutrition.busy}
         onRetryCapture={retryVoiceCapture} onDismissCapture={() => { setCaptureNotice(null); setCaptureRetry(null); }}
         orphanRetry={orphanRetry} onRetryOrphan={retryOrphanedRecording} onDismissOrphan={() => setOrphanRetry(null)}
-        moves={moves} mealUndo={mealUndo} onUndoMeal={undoMealChange} onDismissMealUndo={clearMealUndo}
+        moves={moves} unresolvedMoves={unresolvedMoves} mealUndo={mealUndo} onUndoMeal={undoMealChange} onDismissMealUndo={clearMealUndo}
         onSupersedeMealUndo={() => setCaptureToasts(state => supersedeCaptureUndo(moves.undo?.moved ? afterCompletedMove(state, moves.undo.moved) : state))}
         undoDelete={undoDelete} onUndoDelete={undoDeletedEntry} onDismissUndoDelete={() => setUndoDelete(null)} undoBusy={undoBusy}
         strandedPortion={strandedPortion ? portionControl : null} today={todayISO()} onMoveCapture={iso => moveOffered(mealUndo, iso)}
@@ -656,7 +674,7 @@ export function TodayView({ active = true, sidebarTarget, followUpTarget = null,
       {refreshFailed ? <Button variant="subtle" size="compact-xs" color="gray" className="health-refresh-failed" onClick={day.reload}>
         Couldn't refresh · Retry</Button> : null}
       <DayInputBar date={date} today={todayISO()} active={active} entries={dayEntries(movedDay.items)} onResult={handleDayInput}
-        onMoveDay={(rows, iso, options) => moves.moveFromDay(rows, iso, null, options)} />
+        onMoveDay={(rows, iso, options) => moves.moveFromDay(rows, iso, null, options)} onClaimMove={setSheetMove} />
       <LogTable clarifications={mealClarifications} onClearClarification={clearMealClarification} byBucket={preview.byBucket} date={date} sessions={preview.budget?.sessions || []}
         exerciseAvailable={Boolean(day.budget)}
         fastedMeals={day.dayStatus?.fastedMeals || []} onMealFastChanged={day.reload}

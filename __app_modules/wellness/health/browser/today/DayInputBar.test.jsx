@@ -513,6 +513,17 @@ describe("Move this day's food", () => {
     expect(screen.getByRole('checkbox', { name: 'Tea' }).disabled).toBe(true);
     expect(screen.queryByRole('button', { name: /selected to another day/ })).toBeNull();
   });
+  it('tells the page which move it is holding, until it closes', async () => {
+    const onClaimMove = vi.fn(), run = Object.assign(vi.fn(async () => MoveResult.UNKNOWN), { operationId: 'op-1' });
+    setup({ onClaimMove, onMoveDay: vi.fn(async (_rows, _iso, { onRetryable }) => { onRetryable(run); return MoveResult.UNKNOWN; }) });
+    await openSheet();
+    await moveTo();
+    const retry = await screen.findByRole('button', { name: 'Try again' });
+    await waitFor(() => expect(document.activeElement).toBe(retry));
+    expect(onClaimMove).toHaveBeenLastCalledWith('op-1');
+    fireEvent.keyDown(document.body, { key: 'Escape' });
+    await waitFor(() => expect(onClaimMove).toHaveBeenLastCalledWith(null));
+  });
   it('Escape closes only an open day menu, then the sheet, and focus returns to the button', async () => {
     setup();
     await openSheet();

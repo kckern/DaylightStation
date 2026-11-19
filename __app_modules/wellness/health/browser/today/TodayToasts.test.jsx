@@ -158,4 +158,80 @@ describe('TodayToasts', () => {
     expect((await screen.findByRole('button', { name: 'Move to Yesterday' })).disabled).toBe(true);
     expect(screen.getByRole('button', { name: 'Other day…' }).disabled).toBe(true);
   });
+
+  describe('a move whose outcome is unknown', () => {
+    const unresolved = { id: 'op-1', message: "We couldn't confirm moving Eggs to Dinner.", busy: false, retry: vi.fn(), dismiss: vi.fn() };
+    it('gets one toast that can retry it or let it go', () => {
+      render(<MantineProvider><TodayToasts moves={{ ...noMoves, error: 'Could not save.', errorHandled: true }} unresolvedMoves={[unresolved]} /></MantineProvider>);
+      expect(screen.getAllByRole('alert')).toHaveLength(1);
+      fireEvent.click(screen.getByRole('button', { name: 'Try again' }));
+      expect(unresolved.retry).toHaveBeenCalled();
+      fireEvent.click(screen.getByRole('button', { name: 'Dismiss' }));
+      expect(unresolved.dismiss).toHaveBeenCalled();
+    });
+    it('a change that already went through cannot be dismissed', () => {
+      render(<MantineProvider><TodayToasts moves={noMoves} unresolvedMoves={[{ ...unresolved, dismiss: null }]} /></MantineProvider>);
+      expect(screen.queryByRole('button', { name: 'Dismiss' })).toBeNull();
+    });
+  });
+
+  it('every toast action sits in the row that gives fingers 44 px', () => {
+    render(<MantineProvider><TodayToasts moves={{ ...noMoves, error: 'No.', undo: { label: 'Moved', run: () => {}, dismiss: () => {} } }} captureNotice="Hello" dayNotice="Hi" onDismissCapture={() => {}} /></MantineProvider>);
+    for (const button of screen.getAllByRole('button')) expect(button.closest('.health-capture-actions')).toBeTruthy();
+  });
+
+  it('the page keeps room for toasts until the view has left it', async () => {
+    const view = props => <MantineProvider><div className="ds-root"><div className="ds-chrome__main"><div className="health-today"><TodayToasts moves={noMoves} {...props} /></div></div></div></MantineProvider>;
+    const { container, rerender } = render(view({ dayNotice: 'Hello', onDismissDayNotice: () => {} }));
+    await screen.findByText('Hello');
+    rerender(view({ dayNotice: 'Hello again', onDismissDayNotice: () => {} }));
+    const page = container.querySelector('.health-today'), scroller = container.querySelector('.ds-chrome__main');
+    const clearance = () => page.style.getPropertyValue('--health-toast-clearance');
+    expect(clearance()).toBe('8px');
+    rerender(view());
+    expect(clearance()).toBe('8px'); // the view is at the end, standing in that room
+    Object.defineProperty(scroller, 'scrollHeight', { value: 1000 });
+    Object.defineProperty(scroller, 'clientHeight', { value: 100 });
+    fireEvent.scroll(scroller);
+    expect(clearance()).toBe('0px');
+  });
+
+  describe('focus when the focused control leaves', () => {
+    const offer = { token: 'meal-1', label: 'Added Eggs to Today', offer: { ids: ['e'], what: 'Eggs', date: '2026-11-18' } };
+    const moved = { ...noMoves, undo: { label: 'Moved Eggs to Yesterday', run: () => {}, dismiss: () => {} } };
+    const view = props => <MantineProvider><TodayToasts today="2026-11-18" moves={noMoves} onDismissMealUndo={() => {}} {...props} /></MantineProvider>;
+    it('a finished move hands focus to its Undo', async () => {
+      const { rerender } = render(view({ mealUndo: offer }));
+      (await screen.findByRole('button', { name: 'Move to Yesterday' })).focus();
+      rerender(view({ moves: moved }));
+      expect(document.activeElement).toBe(await screen.findByRole('button', { name: 'Undo move' }));
+    });
+    it('a failed move hands focus to Try again in the same toast', async () => {
+      const { rerender } = render(view({ mealUndo: offer }));
+      (await screen.findByRole('button', { name: 'Move to Yesterday' })).focus();
+      rerender(view({ mealUndo: { ...offer, retryMove: () => {} } }));
+      expect(document.activeElement).toBe(await screen.findByRole('button', { name: 'Retry moving Eggs' }));
+    });
+    it('with no toast left, focus goes to the day bar and not the page', async () => {
+      const bar = document.createElement('div');
+      bar.className = 'health-day-input';
+      bar.innerHTML = '<input /><button class="health-day-input__move">Move</button>';
+      document.body.append(bar);
+      const { rerender } = render(view({ moves: moved }));
+      (await screen.findByRole('button', { name: 'Undo move' })).focus();
+      rerender(view());
+      expect(document.activeElement).toBe(bar.querySelector('button'));
+      bar.remove();
+    });
+    it('focus elsewhere is left alone', async () => {
+      const other = document.createElement('button');
+      document.body.append(other);
+      const { rerender } = render(view({ moves: moved }));
+      (await screen.findByRole('button', { name: 'Undo move' })).focus();
+      other.focus();
+      rerender(view());
+      expect(document.activeElement).toBe(other);
+      other.remove();
+    });
+  });
 });

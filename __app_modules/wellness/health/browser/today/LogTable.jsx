@@ -29,6 +29,7 @@ import "./mealWorkflow.scss";
 // A typed sentence parses faster than a photo or a recording.
 const SENTENCE_ESTIMATE_MS = 6000;
 const NO_IDS = new Set();
+const OWN_REPORTING = /\/nutrition\/(day-input|foods-move|meal-undo)$/;
 
 const kcal = (rows) => Math.round(sumCounted(rows, 'calories'));
 
@@ -40,8 +41,9 @@ function Section({
   const [localClarification, setClarification] = useState(null);
   const clarification = externalClarification === undefined ? localClarification : externalClarification;
   const operations = useHealthOperations();
-  // The day input has no meal and reports its own requests, so none of them belong here.
-  const sentenceOperations = [...(operations?.snapshot.operations.values() || [])].filter(op => !operations?.snapshot.operations.get(op.parentId)?.resumable && !op.request?.path?.endsWith('/nutrition/day-input')).filter(op => (op.kind === 'sentence' || (['mutation', 'quickadd'].includes(op.kind) && op.error)) && op.date === date && op.bucket === bucket);
+  // The day input, food moves and their Undos report through their own surfaces
+  // and the page's toasts (mealDrag.jsx), so none of them belong in a meal.
+  const sentenceOperations = [...(operations?.snapshot.operations.values() || [])].filter(op => !operations?.snapshot.operations.get(op.parentId)?.resumable && !OWN_REPORTING.test(op.request?.path || '')).filter(op => (op.kind === 'sentence' || (['mutation', 'quickadd'].includes(op.kind) && op.error)) && op.date === date && op.bucket === bucket);
   const [clarifying, setClarifying] = useState(false);
   const [clarifyError, setClarifyError] = useState(null);
   // The day's selection spans meals; this meal's voice and commands get only its own foods.
@@ -139,7 +141,7 @@ function Section({
       </header>
       {bucket && rows.length && onChanged ? <MealFoodControls date={date} bucket={bucket} rows={rows} selectedIds={selectedIds} selecting={selecting}
         extraActions={headerAction}
-        onSelectionMode={onSelectionMode}
+        onSelectionMode={on => onSelectionMode(on, sectionRef.current)}
         onChanged={result=>{onMealCommandDone(selectedIds);onChanged(result);}}/> : null}
       {clarification ? <div className="health-meal-command-panel"><span>{clarification.question}</span>
         <div className="health-meal-command-actions">{clarification.choices.map(choice=><Button key={choice.id} size="compact-xs" disabled={clarifying} onClick={async()=>{
@@ -192,6 +194,8 @@ function Section({
               measured:measuredByUuid?.get(c.uuid) ?? measuredByUuid?.get(c.id) ?? null})) : null}
             {isOpen && dishEditable ? <DishAddRow dishName={row.name || row.item || row.label} candidates={dishOptions(rows, key)}
               busy={dish.isBusy ? dish.isBusy(key) : dish.busy === key} error={dish.error?.groupId === key ? dish.error.message : null} onAdd={foodId=>dish.add(key,foodId)}/> : null}
+            {/* Holds the line's height while picking foods, so the rows below stay put. */}
+            {isOpen && selecting && bucket && onChanged ? <div className="health-row-line health-dish-add" aria-hidden="true" style={{ visibility: 'hidden' }} /> : null}
           </div>
         );
       })}
@@ -295,15 +299,27 @@ export function LogTable({
     setSelectionState(next);
     return next;
   };
-  // Closing removes the bar above the log, so the scroller gives that height back
-  // and the foods stay put. Focus inside the bar would be lost with it. Only a
-  // close of the open bar on this day is recorded: a late move can call this
-  // after selection ended, and a day change resets the page by itself.
+  // The bar sits above the log, so opening it takes height and closing gives it
+  // back. The scroller absorbs the difference and the foods stay put. This code is
+  // the only thing correcting the position: the browser's scroll anchoring would
+  // otherwise make the same correction, so it is off for the change.
+  const scrollerOf = node => node?.closest(`.${CHROME_SCROLL_CLASS}`) || null;
+  const holdScrollAnchoring = () => {
+    const scroller = scrollerOf(logRef.current);
+    if (!scroller) return;
+    scroller.style.overflowAnchor = 'none';
+    requestAnimationFrame(() => requestAnimationFrame(() => { scroller.style.overflowAnchor = ''; }));
+  };
+  // Focus inside the bar would be lost with it. Only a close of the open bar on
+  // this day is recorded: a late move can call this after selection ended, and a
+  // day change resets the page by itself.
   const closing = useRef(null);
+  const opening = useRef(null);
   const selectingNow = useRef(selecting);
   selectingNow.current = selecting;
   const closeSelection = () => {
     if (selectingNow.current) {
+      holdScrollAnchoring();
       const active = document.activeElement;
       closing.current = {
         date: viewedDate.current,
@@ -314,12 +330,23 @@ export function LogTable({
     setSelection([]); setSelecting(false);
   };
   useLayoutEffect(() => {
-    if (selecting) return;
+    if (selecting) {
+      const opened = opening.current;
+      opening.current = null;
+      const scroller = scrollerOf(opened?.anchor);
+      if (!scroller || !opened.anchor.isConnected) return;
+      scroller.scrollTop += opened.anchor.getBoundingClientRect().top - opened.top;
+      // The one exception to holding still: the bar must not land on the control just tapped.
+      const control = opened.anchor.querySelector('[data-select-foods]');
+      const covered = control && barRef.current ? barRef.current.getBoundingClientRect().bottom - control.getBoundingClientRect().top : 0;
+      if (covered > 0) scroller.scrollTop -= covered;
+      return;
+    }
     const closed = closing.current;
     const log = logRef.current;
     closing.current = null;
     if (!closed || !log || closed.date !== date) return;
-    const scroller = log.closest(`.${CHROME_SCROLL_CLASS}`);
+    const scroller = scrollerOf(log);
     if (scroller) scroller.scrollTop += log.getBoundingClientRect().top - closed.top;
     if (!closed.refocus) return;
     const target = log.querySelector('[data-select-foods]') || log;
@@ -344,7 +371,14 @@ export function LogTable({
   const mealCommandDone = ids => {
     if (!setSelection(previous => previous.filter(id => !ids.includes(id))).length) closeSelection();
   };
-  const selectionMode = on => { if (on) setSelecting(true); else closeSelection(); };
+  const selectionMode = (on, anchor = null) => {
+    if (!on) { closeSelection(); return; }
+    if (!selectingNow.current && anchor) {
+      holdScrollAnchoring();
+      opening.current = { anchor, top: anchor.getBoundingClientRect().top };
+    }
+    setSelecting(true);
+  };
   // All four meals always render: an empty one is its header and add row, so
   // any meal can be added to in place without a separate "add to" control.
   const orphans = byBucket.get(null) || [];

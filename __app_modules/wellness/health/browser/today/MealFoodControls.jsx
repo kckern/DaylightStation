@@ -45,7 +45,7 @@ export function MealFoodControls({ date, bucket, rows, selectedIds, selecting, o
     setGroupId(id); setMembers(rows.filter(row => row.parentId === id).map(idOf));
   };
   return <>
-    <div className="health-meal-tools">
+    <div className={selecting ? 'health-meal-tools health-meal-tools--selecting' : 'health-meal-tools'}>
       <Button size="compact-xs" variant="subtle" data-select-foods onClick={()=>onSelectionMode(!selecting)} disabled={busy}>{selecting ? 'Done selecting' : 'Select foods'}</Button>
       {/* Holds its place while selecting, so ticking never rewraps this row. */}
       {selecting || canGroup ? <Button size="compact-xs" variant="light" aria-label="Group selected foods" disabled={busy || !canGroup} style={canGroup ? undefined : { visibility: 'hidden' }} onClick={()=>{setName('');setPanel('group');}}>Group ({Math.max(selectedFoods.length, 2)})</Button> : null}

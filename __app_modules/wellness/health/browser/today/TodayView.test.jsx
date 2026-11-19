@@ -1176,7 +1176,7 @@ describe('TodayView — the day fix after every kind of add', () => {
       expect(await screen.findByRole('button', { name: 'Move to Yesterday', hidden: true })).toBeTruthy();
     });
 
-    it('a status-row Retry that lands the move retires the toast', async () => {
+    it('a toast Retry that lands the move retires the toast, with no error row in the meal', async () => {
       let sent = 0;
       apiMock.mockImplementation(api({ items: [eggs], routes: { 'nutrition/foods-move': body => {
         if (++sent === 1) throw Object.assign(new Error('Bad gateway'), { status: 502 });
@@ -1185,7 +1185,8 @@ describe('TodayView — the day fix after every kind of add', () => {
       live();
       await typeSentence('two eggs');
       fireEvent.click(await screen.findByRole('button', { name: 'Move to Yesterday' }));
-      fireEvent.click(await screen.findByRole('button', { name: 'Retry' }));
+      fireEvent.click(await screen.findByRole('button', { name: 'Retry moving Eggs' }));
+      expect(document.querySelector('.health-meal [role=alert]')).toBeNull();
       await staysGone('Added Eggs to Today, Breakfast');
       expect(moved()[1].operationId).toBe(moved()[0].operationId);
     });

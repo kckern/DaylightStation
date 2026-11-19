@@ -50,7 +50,7 @@ const MoveDayIcon = () => <svg width="18" height="18" viewBox="0 0 18 18" fill="
  * cannot be unticked. Once the dish is unticked the part stays unless ticked
  * itself. What shows as moving is exactly what moves.
  */
-function MoveDaySheet({ date, today, entries, onMove, onClose }) {
+function MoveDaySheet({ date, today, entries, onMove, onClose, onClaimMove }) {
   const [unticked, setUnticked] = useState(() => new Set());
   const [strandedTicks, setStrandedTicks] = useState(() => new Set());
   const [note, setNote] = useState(null);
@@ -59,6 +59,15 @@ function MoveDaySheet({ date, today, entries, onMove, onClose }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [modalRoot, setModalRoot] = useState(null);
   const refusal = useRef(null);
+  const retryButton = useRef(null);
+  const claimMove = useRef(onClaimMove);
+  claimMove.current = onClaimMove;
+  // While the sheet can retry a move, the sheet is what reports it. Once it closes,
+  // the page's toast takes over, so the retry stays reachable.
+  useEffect(() => () => claimMove.current?.(null), []);
+  // Try again replaces the control that had focus.
+  const canRetry = Boolean(retry);
+  useEffect(() => { if (canRetry && !working) retryButton.current?.focus(); }, [canRetry, working]);
   const findModalRoot = useCallback(node => { if (node) setModalRoot(node.closest('.mantine-Modal-root')); }, []);
   const dishes = new Map(entries.filter(row => row.kind === 'group').flatMap(row => [row.uuid, row.id].filter(Boolean).map(id => [String(id), row])));
   const dishOf = row => { const dish = row.parentId ? dishes.get(String(row.parentId)) : null; return dish !== row ? dish : null; };
@@ -82,11 +91,14 @@ function MoveDaySheet({ date, today, entries, onMove, onClose }) {
     else setNote(refusal.current || 'Those foods were not moved. Your choices are still here.');
   };
   const move = iso => attempt(iso, () => onMove(picked, iso, {
-    onRetryable: run => setRetry(run ? { run, iso } : null),
+    // Claimed along with the failure, so the toast never shows for a moment first.
+    onRetryable: run => { setRetry(run ? { run, iso } : null); claimMove.current?.(run?.operationId ?? null); },
     onRefused: reason => { refusal.current = reason; },
   }));
   const locked = working || Boolean(retry);
-  return <Modal opened onClose={onClose} title="Move this day's food" centered returnFocus={false} closeOnEscape={!menuOpen}>
+  // Above the toast layer (350), so no earlier toast can sit over the sheet's controls.
+  return <Modal opened onClose={onClose} title="Move this day's food" centered returnFocus={false} closeOnEscape={!menuOpen}
+    zIndex={360} classNames={{ close: 'health-day-move__close' }}>
     <div className="health-day-move" ref={findModalRoot}>
       <div className="health-day-move__list">
         {entries.map(row => {
@@ -100,7 +112,7 @@ function MoveDaySheet({ date, today, entries, onMove, onClose }) {
         })}
       </div>
       {note ? <p role="status" className="health-day-move__note">{note}</p> : null}
-      {retry ? <Button size="compact-sm" variant="light" loading={working} onClick={() => attempt(retry.iso, retry.run)}>Try again</Button>
+      {retry ? <Button ref={retryButton} size="compact-sm" variant="light" loading={working} onClick={() => attempt(retry.iso, retry.run)}>Try again</Button>
         : picked.length ? <MoveDayControl date={date} today={today} count={picked.length} onMove={move} portalTarget={modalRoot} onMenuChange={setMenuOpen} /> : null}
     </div>
   </Modal>;
@@ -113,7 +125,7 @@ function MoveDaySheet({ date, today, entries, onMove, onClose }) {
  * below it, so nothing here moves the meals. A recording waits while anything is
  * unsettled, so it never replaces a question or a failure.
  */
-export function DayInputBar({ date, today, entries, active = true, onResult, onMoveDay }) {
+export function DayInputBar({ date, today, entries, active = true, onResult, onMoveDay, onClaimMove }) {
   const foodAPI = useFoodMutation(entries);
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(null); // 'text' | 'voice' | null
@@ -269,7 +281,7 @@ export function DayInputBar({ date, today, entries, active = true, onResult, onM
         <div className="health-day-input__actions"><Button size="compact-sm" variant="subtle" onClick={() => backToField(setMicError)}>Dismiss</Button></div>
       </div> : null}
     </div> : null}
-    {moving ? <MoveDaySheet date={date} today={today} entries={entries} onMove={onMoveDay} onClose={() => setMoving(false)} /> : null}
+    {moving ? <MoveDaySheet date={date} today={today} entries={entries} onMove={onMoveDay} onClaimMove={onClaimMove} onClose={() => setMoving(false)} /> : null}
   </div>;
 }
 export default DayInputBar;

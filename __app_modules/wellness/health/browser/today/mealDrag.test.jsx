@@ -575,6 +575,48 @@ describe('useMealMoves — inside a Health session', () => {
     await act(async () => { await result.current.moveToDay([plain], TO); });
     expect(result.current.items).toEqual([linked]);
   });
+  it('a move with no known outcome is listed for retry as the same operation', async () => {
+    apiMock.mockRejectedValueOnce(failure(500)).mockResolvedValueOnce(movedReply);
+    const { result } = render();
+    await act(async () => { await result.current.moves.move(eggs, 'evening', 'morning'); });
+    const [held] = result.current.moves.unresolved;
+    expect(held.message).toBe("We couldn't confirm moving Eggs to Dinner. Try again to finish it; nothing will move twice.");
+    expect(result.current.moves.errorHandled).toBe(true);
+    await act(async () => { await held.retry(); });
+    expect(apiMock.mock.calls[1][1].operationId).toBe(apiMock.mock.calls[0][1].operationId);
+    expect(result.current.moves.unresolved).toEqual([]);
+    expect(result.current.moves.undo).not.toBeNull();
+  });
+  it('dismissing an unknown move frees the food and reports nothing more', async () => {
+    apiMock.mockRejectedValueOnce(failure(500));
+    const { result } = render();
+    await act(async () => { await result.current.moves.moveToDay([eggs], TO); });
+    await act(async () => { result.current.moves.unresolved[0].dismiss(); });
+    expect(result.current.ops.store.isReserved(['eggs'])).toBe(false);
+    expect(result.current.moves.unresolved).toEqual([]);
+    expect(result.current.moves.error).toBeNull();
+  });
+  it('a surface reporting its own refusal keeps it out of the toasts', async () => {
+    apiMock.mockRejectedValueOnce(failure(409));
+    const { result } = render();
+    await act(async () => { await result.current.moves.moveFromDay([eggs], TO, null, { onRefused: () => {} }); });
+    expect(result.current.moves.errorHandled).toBe(true);
+  });
+  it('an unknown Undo failure is told on its own offer, and survives the offer being dismissed', async () => {
+    apiMock.mockResolvedValueOnce(movedReply).mockRejectedValueOnce(failure(500));
+    const { result } = render();
+    await act(async () => { await result.current.moves.moveToDay([eggs], TO); });
+    await act(async () => { await result.current.moves.undo.run(); });
+    expect(result.current.moves.undo.failure).toMatch(/^Couldn't undo that move/);
+    expect(result.current.moves.errorHandled).toBe(true);
+    expect(result.current.moves.unresolved[0].message).toMatch(/confirm that undo/);
+  });
+  it('a refusal that is not a sentence is not shown', async () => {
+    apiMock.mockRejectedValueOnce(Object.assign(new Error('HTTP 422'), { status: 422, body: { error: 'HTTP 422: {"code":"X"}' } }));
+    const { result } = render();
+    await act(async () => { await result.current.moves.move(eggs, 'evening', 'morning'); });
+    expect(result.current.moves.error).toBe("Couldn't move Eggs.");
+  });
   it('a failed Undo can be run again', async () => {
     apiMock.mockResolvedValueOnce(movedReply).mockRejectedValueOnce(new Error('offline')).mockResolvedValueOnce(undoReply);
     const { result } = render();

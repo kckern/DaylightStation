@@ -53,7 +53,7 @@ export function EntryRow({ row, densityRow = row, onTap, onConfirm, onRequestDel
   // The magnifier card: held closed while a portion drag owns the pointer.
   const previewContent = useMemo(() => ({ row, isGroup, kcal: displayKcal }), [row, isGroup, displayKcal]);
   // The page's one preview card (RowPreviewProvider), at the cursor.
-  const preview = useRowPreview({ disabled: Boolean(portions?.draft || portions?.locked), onOpen: () => logRowPreviewOpen(row), content: previewContent });
+  const preview = useRowPreview({ disabled: Boolean(selecting || portions?.draft || portions?.locked), onOpen: () => logRowPreviewOpen(row), content: previewContent });
   // The row is its own drag handle (mealDrag.jsx): never an ingredient on its
   // own, never while a portion drag owns the pointer.
   const drag = useDraggableRow(row, child ? null : dragBucket, { disabled: Boolean(portions?.draft || portions?.locked) });

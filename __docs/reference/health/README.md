@@ -509,13 +509,21 @@ not the current hour. The resolved bucket is stored on each entry.
   refused before anything changes on screen.
 - A failure puts every row back. **A refusal** (any 4xx except 408, 425 and 429) means
   nothing happened, so the foods are free at once and the toast says why. **Any other
-  failure leaves the outcome unknown:** the foods stay reserved, and the meal's status row
-  offers **Retry**, under the same operation ID, or **Dismiss**. A Retry that succeeds
-  still offers Undo.
+  failure leaves the outcome unknown:** the foods stay reserved, and a toast offers **Try
+  again**, under the same operation ID, or **Dismiss**, which frees them. A Try again that
+  succeeds still offers Undo.
 - Success offers one Undo through `POST /nutrition/meal-undo`. A failed Undo leaves the
-  foods moved, keeps the offer, and retries under the same operation ID. Logs:
+  foods moved, says so on the Undo's toast, and retries under the same operation ID. Logs:
   `entry.move`, `meal.move`, `*.undo`, `entry.move.blocked`, `entry.move.failed`,
-  `entry.move.undo-blocked`, `entry.move.undo-failed`.
+  `entry.move.undo-blocked`, `entry.move.undo-failed`, `entry.move.retried`,
+  `entry.move.retry-failed`, `entry.move.unresolved-dismissed`.
+- **One report per failure.** Moves and their Undos never appear in a meal's status rows,
+  and people never see a status line or a payload. The surface that started the action
+  reports it: the sheet, the capture toast or the Undo toast. Any move or Undo with an
+  unknown outcome that no surface is showing, because it was closed, dismissed or replaced,
+  falls to the page's toast (`moves.unresolved`), newest first, so the retry and the way to
+  free the foods are always reachable. A change that committed and only failed to refresh
+  offers **Try again** alone.
 
 ### Day input (`DayInputBar.jsx`)
 
@@ -564,7 +572,8 @@ which day. The request contract, the gateway questions and the correction rules 
   refreshes the viewed day and every other loaded Health day.
 - **Layout.** The bar is one row of constant height. Questions and errors open over the
   page below it, and its requests never appear in a meal's status rows. On a phone, every
-  control is at least 44 px and the whole-day move shows as an icon.
+  control, including the sheet's close button and date field, is at least 44 px and the
+  whole-day move shows as an icon.
 - **Move this day's food.** The button appears when the day has real food and opens a
   sheet of its top-level rows, all ticked: each meal as the page groups it, then
   Ungrouped, so a broken-link row is its own line and a dish is one line. Foods still
@@ -576,8 +585,11 @@ which day. The request contract, the gateway questions and the correction rules 
     refusal shows its reason and keeps the choices. Foods already on that day say so. An
     unknown outcome (`MoveResult.UNKNOWN`) locks the choices and offers **Try again**
     under the same operation ID. A failed move leaves selection mode and its ticks alone.
+    The sheet alone reports its failures and sits above the toast layer. Closing it with a
+    move unresolved hands the retry to the page's toast.
   - **Keyboard:** Escape closes an open day menu first, then the sheet. Closing returns
-    focus to the button, or to the field if the button has gone with the food.
+    focus to the button, or to the field if the button has gone with the food. When Try
+    again replaces the move control, focus goes to it.
 - Logs (`health` / `day-input`): `day-input.submit`, `.result`, `.clarification`,
   `.failed`, `.recording-fallback`, `.recording-dropped`, `.move-day.open`, `.move-day.result`.
 
@@ -603,8 +615,8 @@ The rows leave the viewed day at once (`gone`), unless they are being moved from
 day, and one `foods-move` follows. Every failure brings them back on screen. A refusal
 frees the foods and resolves `MoveResult.NOT_MOVED`. With no definite answer the move
 resolves `MoveResult.UNKNOWN` and the foods stay reserved. The capture toast and the sheet
-then offer **Try again**, and the other routes use the meal's status-row **Retry**, all
-under the same operation ID, so a move that did commit is replayed and not done twice.
+then offer **Try again**, and the other routes use the page's toast, all under the same
+operation ID, so a move that did commit is replayed and not done twice.
 Success offers one server Undo. Logs: `entry.move-day`, `entry.move-day.undo`,
 `entry.move-day.failed`. Day choices live in `moveDays.js`.
 
@@ -621,7 +633,16 @@ that have left the day are dropped.
   height, so ticks and replies never move the log. It counts what is selected and offers
   "Move N to another day…" (recent days, or a date picker for anything older) and "Move N
   to a meal…", each one atomic command across all the meals. On touch its controls are at
-  least 44 px.
+  least 44 px. It spans the page's side padding, so ticks scroll under it.
+- **Nothing jumps:** opening and closing the bar adjust the scroller by the bar's height,
+  so the tapped meal and its foods hold their place, from the top of the page too. The one
+  exception is a control the bar would land on, which moves just clear of it. Scroll
+  anchoring is off for that moment so the two corrections never add up. Rows keep their
+  height: a dish's add line holds its space and the meal's tool line scrolls instead of
+  wrapping.
+- **On a phone:** a row is its picture, name and calories. The macros, portion and empty
+  menu track give their width to the name, and normal mode is unchanged. No preview card
+  opens while picking.
 - **Dishes:** a dish moves whole, so it counts only when every one of its ingredients is
   ticked. A partly-ticked dish is skipped with a note.
 - **Outcomes:** a move that is refused, fails or has an unknown outcome keeps the ticks.
@@ -664,12 +685,18 @@ suggestion, a saved meal (template) and a Needs Review confirmation.
   working once its rows change. A refused move keeps the toast and its day buttons, and
   gives the server's reason (a refusal never says to try again when connected). A
   day that will not load, or food no longer on it, is reported and the toast stays.
-- **Unknown outcome:** the food stays reserved, so the toast swaps its day buttons for
-  **Try again**, which resends the same operation ID. If the first attempt had committed,
-  the server replays it and the move finishes normally.
+- **Unknown outcome:** the food stays reserved, so the toast says it could not confirm the
+  move and swaps its day buttons for **Try again**, which resends the same operation ID. If
+  the first attempt had committed, the server replays it and the move finishes normally.
+  Dismissing the toast leaves the retry on the page's toast.
+- **Focus:** when a toast's action removes the focused button, focus goes to the next
+  action in that toast, then another toast, then the day bar's move button.
+- **Room to scroll:** while toasts show, the page gains that much space at its end, so the
+  last foods can be scrolled clear of them. The space is added below everything and kept
+  until the view leaves it, so neither a toast arriving nor one leaving moves the page.
 - **Moves from anywhere:** every finished move reports its row IDs and destination
   (`moves.undo.moved`), whether it came from the toast, a drag, a meal menu, selection
-  or a status-row Retry. A move to another day retires any toast about those foods. A
+  or the page's Try again toast. A move to another day retires any toast about those foods. A
   move to another meal keeps the day buttons and drops the meal from the toast's text.
   Toasts about other foods are untouched.
 - **One report:** the toast replaces the "Moved to Lunch" cue and the add row's "Added

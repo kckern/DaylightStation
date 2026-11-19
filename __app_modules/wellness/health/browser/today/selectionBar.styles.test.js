@@ -38,3 +38,30 @@ it('the capture toast wraps at phone width and gives fingers 44 px', () => {
   const coarse = css.split('@media (pointer: coarse)').slice(1).join(' ');
   expect(coarse).toMatch(/\.health-capture-actions \.mantine-Button-root[^{]*\{[^}]*min-height: 44px/);
 });
+const phone = css.split('@media (max-width: 767px)').slice(1).join(' ');
+const coarse = css.split('@media (pointer: coarse)').slice(1).join(' ');
+it('while selecting on a phone the row is name and calories, without the menu track', () => {
+  expect(phone).toMatch(/\.health-meal-selection-row \.health-row-line \{[^}]*grid-template-columns: 12px minmax\(0, 1fr\) auto/);
+  expect(phone).toMatch(/\.health-meal-selection-row :is\([^)]*\.health-row__macros[^)]*\.health-row__portion-cell[^)]*\.health-row__action[^)]*\) \{[^}]*display: none/);
+  expect(phone).toMatch(/\.health-meal-selection-row \.health-row__kcal \{[^}]*grid-column: 3/);
+});
+it('a name being picked sits at the middle of its row', () => {
+  expect(rule('.health-meal-selection-row .health-row-name')).toContain('align-items: center');
+});
+it('the sticky bar spans the page gutter the ticks reach into', () => {
+  const bar = rule('.health-selection-bar');
+  expect(bar).toContain('margin-inline: -1rem');
+  expect(bar).toContain('padding-inline: 1rem');
+});
+it('fingers get 44 px on the sheet close button and the date field', () => {
+  expect(coarse).toMatch(/\.health-day-move__close[^{]*\{[^}]*min-width: 44px; min-height: 44px/);
+  expect(coarse).toMatch(/\.health-move-date input \{[^}]*min-height: 44px/);
+});
+it('the day keeps room below it for the toasts over it', () => {
+  expect(rule('.health-today::after')).toContain('height: var(--health-toast-clearance, 0px)');
+});
+it('wrapped names in the sheet are kept apart', () => {
+  const workflow = sass.compile(fileURLToPath(new URL('./mealWorkflow.scss', import.meta.url))).css.replace(/\s+/g, ' ');
+  expect(workflow).toMatch(/\.health-day-move__list \{[^}]*gap: 0\.25rem/);
+  expect(workflow).toMatch(/\.health-day-move__row \{[^}]*padding-block: 0\.3rem/);
+});

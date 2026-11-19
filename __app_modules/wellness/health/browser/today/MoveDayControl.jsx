@@ -19,7 +19,7 @@ export function MoveDayItems({ date, today, onPick }) {
     {recentDays(today, date).map(iso => <Menu.Item key={iso} onClick={() => onPick(iso)}>{dayLabel(iso, today)}</Menu.Item>)}
     <Menu.Divider />
     <Menu.Label>Another day</Menu.Label>
-    <div style={{ padding: '0 0.75rem 0.5rem' }}>
+    <div className="health-move-date" style={{ padding: '0 0.75rem 0.5rem' }}>
       <input type="date" aria-label="Move to another day" max={today} defaultValue=""
         onClick={event => event.stopPropagation()}
         onChange={event => { const value = event.target.value; if (value && value <= today && value !== date) onPick(value); }} />
@@ -49,7 +49,9 @@ export function MoveDayControl({ date, today, count, onMove, disabled = false, p
     return () => window.removeEventListener('keydown', onKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
-  return <Menu opened={open} onChange={change} position="bottom-start" disabled={busy || disabled} classNames={MENU_CLASSES} portalProps={portalTarget ? { target: portalTarget } : undefined}>
+  // A menu inside the modal has to clear the modal's own layer.
+  return <Menu opened={open} onChange={change} position="bottom-start" disabled={busy || disabled} classNames={MENU_CLASSES}
+    zIndex={portalTarget ? 400 : undefined} portalProps={portalTarget ? { target: portalTarget } : undefined}>
     <Menu.Target>
       <Button size="compact-xs" variant="light" loading={busy} disabled={disabled && !busy} aria-label={`Move ${count} selected to another day`}>
         Move {count} to another day…

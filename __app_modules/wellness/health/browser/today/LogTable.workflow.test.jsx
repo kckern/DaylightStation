@@ -375,3 +375,30 @@ it('a move finishing after selection closed leaves a later day change alone',asy
  expect(document.activeElement).toBe(document.body);
  rect.mockRestore();
 });
+it('opening the bar leaves the tapped meal where it was on screen',()=>{
+ const rect=vi.spyOn(Element.prototype,'getBoundingClientRect').mockImplementation(()=>({top:screen.queryByRole('region',{name:'Selected foods'})?230:150,bottom:0,left:0}));
+ const {container}=render(<div className="ds-chrome__main"><MantineProvider><LogTable date="2026-09-06" byBucket={buckets} onRowTap={()=>{}} onMealChanged={()=>{}} onMoveMeal={vi.fn()}/></MantineProvider></div>);
+ const scroller=container.querySelector('.ds-chrome__main');
+ scroller.scrollTop=40;
+ fireEvent.click(screen.getByRole('button',{name:'Select foods'}));
+ expect(scroller.scrollTop).toBe(120);
+ fireEvent.click(screen.getByRole('button',{name:'Done selecting'}));
+ rect.mockRestore();
+});
+it('an open dish keeps the height of its add line while foods are picked',()=>{
+ const dish=[{uuid:'d',name:'Stew',kind:'group',mealTime:'evening'},{uuid:'c',name:'Carrot',parentId:'d',mealTime:'evening',calories:9,grams:9}];
+ const {container}=renderLog({byBucket:new Map([['evening',dish]])});
+ expect(container.querySelectorAll('.health-dish-add')).toHaveLength(1);
+ fireEvent.click(screen.getByRole('button',{name:'Select foods'}));
+ expect(container.querySelectorAll('.health-dish-add')).toHaveLength(1);
+ expect(screen.queryByRole('combobox',{name:/Add a food to/})).toBeNull();
+});
+it('foods being picked open no preview card',()=>{
+ const {container}=renderLog();
+ fireEvent.pointerEnter(container.querySelector('.health-row-name'),{pointerType:'mouse',clientX:5,clientY:5});
+ expect(document.querySelector('.health-row-preview__card')).toBeTruthy();
+ fireEvent.click(screen.getByRole('button',{name:'Select foods'}));
+ expect(document.querySelector('.health-row-preview__card')).toBeNull();
+ fireEvent.pointerEnter(container.querySelector('.health-row-name'),{pointerType:'mouse',clientX:5,clientY:5});
+ expect(document.querySelector('.health-row-preview__card')).toBeNull();
+});
