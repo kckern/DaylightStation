@@ -7,6 +7,32 @@ const SENT_CAP = 5;
 const b64url = (s) => Buffer.from(s, 'utf8').toString('base64url');
 const fromB64url = (s) => Buffer.from(s || '', 'base64url').toString('utf8');
 const noop = () => {};
+const INVALID_HEADER = 'MAILBOX_INVALID_HEADER';
+
+/** Caller-supplied header value: CR/LF would inject headers, so refuse it. */
+function strictHeader(name, value) {
+  const v = String(value ?? '');
+  if (/[\r\n]/.test(v)) {
+    const e = new Error(`Header "${name}" contains a line break`);
+    e.code = INVALID_HEADER;
+    throw e;
+  }
+  return v;
+}
+/** Value copied from inbound mail (untrusted): strip line breaks. */
+const cleanHeader = (v) => String(v ?? '').replace(/[\r\n]+/g, ' ').trim();
+/** RFC 2047 encode a subject when it holds non-ASCII. */
+const encodeSubject = (s) => (/^[\x20-\x7e]*$/.test(s) ? s : `=?UTF-8?B?${Buffer.from(s, 'utf8').toString('base64')}?=`);
+
+function buildRaw({ to, subject, cc, bcc, inReplyTo, references, body }) {
+  const lines = [`To: ${to}`];
+  if (cc) lines.push(`Cc: ${cc}`);
+  if (bcc) lines.push(`Bcc: ${bcc}`);
+  lines.push(`Subject: ${subject}`, 'MIME-Version: 1.0', 'Content-Type: text/plain; charset="UTF-8"');
+  if (inReplyTo) lines.push(`In-Reply-To: ${inReplyTo}`);
+  if (references) lines.push(`References: ${references}`);
+  return b64url(`${lines.join('\r\n')}\r\n\r\n${body}`);
+}
 
 function parseAddress(raw = '') {
   const m = raw.match(/^\s*"?([^"<]*?)"?\s*<([^>]+)>\s*$/);
@@ -69,6 +95,21 @@ export class GmailMailbox {
     }
   }
 
+  /** Run a read; map insufficientPermissions to MAILBOX_SCOPE_MISSING and flip `read`. */
+  async #read(username, op, fn) {
+    if (!this.capabilities(username).read) throw this.#scopeError('read');
+    try {
+      return await fn(await this.#createClient(username));
+    } catch (err) {
+      if (isScopeError(err)) {
+        this.#flip(username, 'read');
+        this.#logger.warn?.('triage.mailbox.scope_missing', { username, op, capability: 'read' });
+        throw this.#scopeError('read', err);
+      }
+      throw err;
+    }
+  }
+
   #scopeError(cap, cause) {
     const e = new Error(`Mailbox capability "${cap}" is missing`);
     e.code = MAILBOX_SCOPE_MISSING;
@@ -115,45 +156,55 @@ export class GmailMailbox {
     return (t.data.messages || []).some((m) => m.id !== msg.id && (m.labelIds || []).includes('SENT'));
   }
 
-  async listInbox(username, { newerThanDays = 14, max = 200 } = {}) {
-    const gmail = await this.#createClient(username);
-    const q = `in:inbox newer_than:${newerThanDays}d`;
-    const list = await gmail.users.messages.list({ userId: 'me', q, maxResults: max });
-    const ids = (list.data.messages || []).map((m) => m.id);
-    // metadata format carries no parts; one extra search flags attachments instead of fetching full bodies.
-    const att = await gmail.users.messages.list({ userId: 'me', q: `${q} has:attachment`, maxResults: max });
-    const withAtt = new Set((att.data.messages || []).map((m) => m.id));
-    const out = [];
-    for (const id of ids) {
-      const res = await gmail.users.messages.get({
-        userId: 'me', id, format: 'metadata', metadataHeaders: HEADERS,
-      });
-      const msg = res.data;
-      out.push(this.#normalize(username, msg, {
-        hasAttachments: withAtt.has(id),
-        ownerReplied: await this.#ownerReplied(gmail, msg),
-      }));
-    }
-    this.#logger.info?.('triage.mailbox.listed', { username, count: out.length, newerThanDays });
-    return out;
+  listInbox(username, { newerThanDays = 14, max = 200 } = {}) {
+    return this.#read(username, 'list_inbox', async (gmail) => {
+      const q = `in:inbox newer_than:${newerThanDays}d`;
+      const list = await gmail.users.messages.list({ userId: 'me', q, maxResults: max });
+      const ids = (list.data.messages || []).map((m) => m.id);
+      // metadata format carries no parts; one extra search flags attachments instead of fetching full bodies.
+      const att = await gmail.users.messages.list({ userId: 'me', q: `${q} has:attachment`, maxResults: max });
+      const withAtt = new Set((att.data.messages || []).map((m) => m.id));
+      const out = [];
+      for (const id of ids) {
+        try {
+          const res = await gmail.users.messages.get({
+            userId: 'me', id, format: 'metadata', metadataHeaders: HEADERS,
+          });
+          const msg = res.data;
+          out.push(this.#normalize(username, msg, {
+            hasAttachments: withAtt.has(id),
+            ownerReplied: await this.#ownerReplied(gmail, msg),
+          }));
+        } catch (err) {
+          if (isNotFound(err)) {
+            this.#logger.debug?.('triage.mailbox.message_gone', { username, id });
+            continue;
+          }
+          throw err;
+        }
+      }
+      this.#logger.info?.('triage.mailbox.listed', { username, count: out.length, newerThanDays });
+      return out;
+    });
   }
 
-  async getMessage(username, id) {
-    const gmail = await this.#createClient(username);
-    try {
-      const res = await gmail.users.messages.get({ userId: 'me', id, format: 'full' });
-      const msg = res.data;
-      return this.#normalize(username, msg, {
-        hasAttachments: hasAttachmentPart(msg.payload),
-        ownerReplied: await this.#ownerReplied(gmail, msg),
-      });
-    } catch (err) {
-      if (isNotFound(err)) {
-        this.#logger.debug?.('triage.mailbox.message_gone', { username, id });
-        return null;
+  getMessage(username, id) {
+    return this.#read(username, 'get_message', async (gmail) => {
+      try {
+        const res = await gmail.users.messages.get({ userId: 'me', id, format: 'full' });
+        const msg = res.data;
+        return this.#normalize(username, msg, {
+          hasAttachments: hasAttachmentPart(msg.payload),
+          ownerReplied: await this.#ownerReplied(gmail, msg),
+        });
+      } catch (err) {
+        if (isNotFound(err)) {
+          this.#logger.debug?.('triage.mailbox.message_gone', { username, id });
+          return null;
+        }
+        throw err;
       }
-      throw err;
-    }
+    });
   }
 
   async #modify(username, id, op, body) {
@@ -169,28 +220,35 @@ export class GmailMailbox {
   star(username, id) { return this.#modify(username, id, 'star', { addLabelIds: ['STARRED'] }); }
   unstar(username, id) { return this.#modify(username, id, 'unstar', { removeLabelIds: ['STARRED'] }); }
 
-  async senderHistory(username, address) {
-    const gmail = await this.#createClient(username);
-    const res = await gmail.users.messages.list({
-      userId: 'me', q: `to:${address} in:sent`, maxResults: SENT_CAP,
+  senderHistory(username, address) {
+    return this.#read(username, 'sender_history', async (gmail) => {
+      const safe = String(address).replace(/["\\\r\n]/g, '');
+      const res = await gmail.users.messages.list({
+        userId: 'me', q: `to:"${safe}" in:sent`, maxResults: SENT_CAP,
+      });
+      return { sentToCount: Math.min((res.data.messages || []).length, SENT_CAP) };
     });
-    return { sentToCount: Math.min((res.data.messages || []).length, SENT_CAP) };
   }
 
   async #raw(gmail, { threadId, to, subject, body }) {
-    const lines = [`To: ${to}`, `Subject: ${subject}`, 'MIME-Version: 1.0', 'Content-Type: text/plain; charset="UTF-8"'];
+    const fields = {
+      to: strictHeader('To', to),
+      subject: encodeSubject(strictHeader('Subject', subject)),
+      body,
+    };
     if (threadId) {
       const t = await gmail.users.threads.get({
         userId: 'me', id: threadId, format: 'metadata', metadataHeaders: ['Message-ID', 'References'],
       });
       const last = (t.data.messages || []).slice(-1)[0];
       const h = Object.fromEntries((last?.payload?.headers || []).map((x) => [x.name.toLowerCase(), x.value]));
-      if (h['message-id']) {
-        lines.push(`In-Reply-To: ${h['message-id']}`);
-        lines.push(`References: ${[h['references'], h['message-id']].filter(Boolean).join(' ')}`);
+      const mid = cleanHeader(h['message-id']);
+      if (mid) {
+        fields.inReplyTo = mid;
+        fields.references = [cleanHeader(h['references']), mid].filter(Boolean).join(' ');
       }
     }
-    return b64url(`${lines.join('\r\n')}\r\n\r\n${body}`);
+    return buildRaw(fields);
   }
 
   createDraft(username, { threadId, to, subject, body }) {
@@ -208,11 +266,12 @@ export class GmailMailbox {
     return this.#write(username, 'compose', 'update_draft', async (gmail) => {
       const cur = await gmail.users.drafts.get({ userId: 'me', id: draftId, format: 'full' });
       const msg = cur.data.message || {};
-      const h = Object.fromEntries((msg.payload?.headers || []).map((x) => [x.name.toLowerCase(), x.value]));
-      const lines = [`To: ${h['to'] || ''}`, `Subject: ${h['subject'] || ''}`, 'MIME-Version: 1.0', 'Content-Type: text/plain; charset="UTF-8"'];
-      if (h['in-reply-to']) lines.push(`In-Reply-To: ${h['in-reply-to']}`);
-      if (h['references']) lines.push(`References: ${h['references']}`);
-      const raw = b64url(`${lines.join('\r\n')}\r\n\r\n${body}`);
+      const h = Object.fromEntries((msg.payload?.headers || []).map((x) => [x.name.toLowerCase(), cleanHeader(x.value)]));
+      const raw = buildRaw({
+        to: h['to'] || '', cc: h['cc'], bcc: h['bcc'],
+        subject: encodeSubject(h['subject'] || ''),
+        inReplyTo: h['in-reply-to'], references: h['references'], body,
+      });
       const res = await gmail.users.drafts.update({
         userId: 'me', id: draftId,
         requestBody: { message: { raw, ...(msg.threadId ? { threadId: msg.threadId } : {}) } },
