@@ -612,6 +612,190 @@ test.describe('Life Plan on a narrow touch screen', () => {
   });
 });
 
+for (const width of [390, 1440]) {
+  test.describe(`Life Purpose at ${width}px`, () => {
+    test.use({ hasTouch: width === 390, viewport: { width, height: 850 } });
+
+    test('hands keyboard focus between the inline editor and its trigger', async ({ page }) => {
+      await page.routeWebSocket('**/*', () => {});
+      const member = { username: 'amy', displayName: 'Amy' };
+      const statement = 'Make time to learn something new.';
+      const writes = [];
+      await page.route('**/api/v1/life/**', route => {
+        const request = route.request();
+        const { pathname } = new URL(request.url());
+        if (pathname === '/api/v1/life/users') return route.fulfill({ json: { users: [member] } });
+        if (pathname === '/api/v1/life/user') return route.fulfill({ json: member });
+        if (pathname === '/api/v1/life/plan/') return route.fulfill({ json: { purpose: { statement } } });
+        if (pathname === '/api/v1/life/plan/purpose' && request.method() === 'POST') {
+          writes.push(request.postDataJSON());
+          return route.fulfill({ status: 500, json: { error: 'Purpose was not saved' } });
+        }
+        return route.fallback();
+      });
+      await page.goto('/life/plan');
+
+      const edit = page.getByRole('button', { name: 'Edit purpose', exact: true });
+      const draft = page.getByRole('textbox', { name: 'Purpose statement' });
+      const save = page.getByRole('button', { name: 'Save', exact: true });
+      const cancel = page.getByRole('button', { name: 'Cancel', exact: true });
+      const checkTouchTarget = async control => {
+        await expect(control).toBeVisible();
+        const box = await control.boundingBox();
+        expect.soft(box.width).toBeGreaterThanOrEqual(44);
+        expect.soft(box.height).toBeGreaterThanOrEqual(44);
+      };
+
+      if (width === 390) {
+        expect(await page.evaluate(() => matchMedia('(pointer: coarse)').matches)).toBe(true);
+        await checkTouchTarget(edit);
+      }
+      await edit.press('Enter');
+      await expect.soft(draft).toBeFocused({ timeout: 1_000 });
+      if (width === 390) {
+        await checkTouchTarget(save);
+        await checkTouchTarget(cancel);
+      }
+      await draft.fill('A draft to discard');
+      await cancel.press('Enter');
+      await expect.soft(edit).toBeFocused({ timeout: 1_000 });
+      await expect(page.getByText(statement, { exact: true })).toBeVisible();
+      expect(writes).toEqual([]);
+
+      await edit.press('Enter');
+      await expect(draft).toHaveValue(statement);
+      await draft.fill('Keep this draft after a refused save');
+      await save.press('Enter');
+      await expect(page.getByRole('alert').filter({ hasText: 'Purpose was not saved' })).toBeVisible();
+      await expect(draft).toHaveValue('Keep this draft after a refused save');
+      await expect(save).toBeFocused({ timeout: 1_000 });
+      expect(writes).toEqual([{ statement: 'Keep this draft after a refused save' }]);
+    });
+  });
+}
+
+for (const focusDestination of ['the opener', 'navigation', 'another member’s editor']) {
+  test(`Life Purpose leaves focus on ${focusDestination} after a pending save`, async ({ page }) => {
+    await page.routeWebSocket('**/*', () => {});
+    const members = [{ username: 'amy', displayName: 'Amy' }, { username: 'bob', displayName: 'Bob' }];
+    const saved = 'Make time to learn something new.';
+    const submitted = Promise.withResolvers();
+    const release = Promise.withResolvers();
+    const writes = [];
+    let committed = false;
+
+    await page.route('**/api/v1/life/**', async route => {
+      const request = route.request();
+      const { pathname, searchParams } = new URL(request.url());
+      if (pathname === '/api/v1/life/users') return route.fulfill({ json: { users: members } });
+      if (pathname === '/api/v1/life/user') {
+        return route.fulfill({ json: members.find(member => member.username === searchParams.get('username')) ?? members[0] });
+      }
+      if (pathname === '/api/v1/life/plan/') {
+        const statement = searchParams.get('username') === 'bob' ? 'Bob’s purpose' : committed ? saved : 'Earlier purpose';
+        return route.fulfill({ json: { purpose: { statement } } });
+      }
+      if (pathname === '/api/v1/life/plan/purpose' && request.method() === 'POST') {
+        writes.push({ username: searchParams.get('username'), ...request.postDataJSON() });
+        submitted.resolve();
+        await release.promise;
+        committed = true;
+        return route.fulfill({ json: { statement: saved } });
+      }
+      return route.fallback();
+    });
+
+    await page.goto('/life/plan');
+    const edit = page.getByRole('button', { name: 'Edit purpose', exact: true });
+    const purposeLink = page.getByRole('navigation', { name: 'Plan sections' }).getByRole('link', { name: 'Purpose' });
+    const draft = page.getByRole('textbox', { name: 'Purpose statement' });
+    await edit.press('Enter');
+    await draft.fill(saved);
+    const save = page.getByRole('button', { name: 'Save', exact: true });
+    const response = page.waitForResponse(res => new URL(res.url()).pathname.endsWith('/plan/purpose'));
+    try {
+      await save.press('Enter');
+      await submitted.promise;
+      await save.press('Enter');
+      if (focusDestination === 'navigation') {
+        await purposeLink.focus();
+      } else if (focusDestination === 'another member’s editor') {
+        const switcher = page.getByRole('textbox', { name: 'Switch household member' });
+        await switcher.click();
+        await page.getByRole('option', { name: 'Bob', exact: true }).click();
+        await expect(page.getByText('Bob’s purpose', { exact: true })).toBeVisible();
+        await edit.press('Enter');
+        await draft.fill('Bob’s unsaved draft');
+      }
+    } finally {
+      release.resolve();
+    }
+    await (await response).finished();
+    if (focusDestination === 'another member’s editor') {
+      await expect(draft).toHaveValue('Bob’s unsaved draft');
+      await expect(draft).toBeFocused();
+    } else {
+      await expect(page.getByText(saved, { exact: true })).toBeVisible();
+      await expect(focusDestination === 'the opener' ? edit : purposeLink).toBeFocused();
+    }
+    expect(writes).toEqual([{ username: 'amy', statement: saved }]);
+  });
+}
+
+for (const moveFocus of [false, true]) {
+  test(`Life Purpose ${moveFocus ? 'keeps navigation focus' : 'restores the opener'} after cancelling during readback`, async ({ page }) => {
+    await page.routeWebSocket('**/*', () => {});
+    const member = { username: 'amy', displayName: 'Amy' };
+    const saved = 'Make time to learn something new.';
+    const reading = Promise.withResolvers();
+    const release = Promise.withResolvers();
+    const writes = [];
+
+    await page.route('**/api/v1/life/**', async route => {
+      const request = route.request();
+      const { pathname } = new URL(request.url());
+      if (pathname === '/api/v1/life/users') return route.fulfill({ json: { users: [member] } });
+      if (pathname === '/api/v1/life/user') return route.fulfill({ json: member });
+      if (pathname === '/api/v1/life/plan/purpose' && request.method() === 'POST') {
+        writes.push(request.postDataJSON());
+        return route.fulfill({ json: { statement: saved } });
+      }
+      if (pathname === '/api/v1/life/plan/') {
+        if (writes.length === 0) {
+          return route.fulfill({ json: { purpose: { statement: 'Earlier purpose' } } });
+        }
+        reading.resolve();
+        await release.promise;
+        return route.fulfill({ json: { purpose: { statement: saved } } });
+      }
+      return route.fallback();
+    });
+
+    await page.goto('/life/plan');
+    const edit = page.getByRole('button', { name: 'Edit purpose', exact: true });
+    const draft = page.getByRole('textbox', { name: 'Purpose statement' });
+    const purposeLink = page.getByRole('navigation', { name: 'Plan sections' }).getByRole('link', { name: 'Purpose' });
+    await edit.press('Enter');
+    await draft.fill(saved);
+    try {
+      await page.getByRole('button', { name: 'Save', exact: true }).press('Enter');
+      await reading.promise;
+      await page.getByRole('button', { name: 'Cancel', exact: true }).press('Enter');
+      await expect(draft).toHaveCount(0);
+      await expect(edit).toHaveCount(0);
+      if (moveFocus) {
+        await purposeLink.focus();
+        await expect(purposeLink).toBeFocused();
+      }
+    } finally {
+      release.resolve();
+    }
+    await expect(page.getByText(saved, { exact: true })).toBeVisible();
+    await expect(moveFocus ? purposeLink : edit).toBeFocused();
+    expect(writes).toEqual([{ statement: saved }]);
+  });
+}
+
 test('Life Purpose retries a failed read after saving without writing the statement again', async ({ page }) => {
   await page.routeWebSocket('**/*', () => {});
   const member = { username: 'amy', displayName: 'Amy' };
