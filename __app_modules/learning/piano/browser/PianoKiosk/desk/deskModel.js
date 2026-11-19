@@ -1,4 +1,4 @@
-// deskModel.js — pure view rules for the piano home desk.
+// deskModel.js — pure view rules for the progress strip above the home menu.
 
 export const passageBars = (passage) => (passage ? `Bars ${passage.start + 1}–${passage.end + 1}` : '');
 
@@ -14,19 +14,42 @@ export function scoreHeading(xml) {
   };
 }
 
-/** What the desk shows for the active player. */
-export function deskView({ players, courses, currentUser }) {
-  const player = players?.find((item) => item.userId === currentUser) ?? null;
-  const piece = player?.piece ?? null;
-  const course = courses?.find((item) => item.userId === currentUser)?.courses?.[0] ?? null;
-  if (!piece) return { player, piece: null, course, focus: null, action: null };
-  const byId = (id) => piece.passages.find((passage) => passage.id === id) ?? null;
-  const focus = byId(piece.next?.passageId) ?? byId(piece.nextGoldPassageId) ?? piece.passages[0] ?? null;
-  const action = piece.next
-    ? { label: piece.practicedAt ? 'Continue' : 'Start', detail: piece.next.label }
-    : piece.gold >= piece.total ? { label: 'Play again', detail: 'Your whole piece is Gold.' }
-      : { label: 'Go for Gold', detail: 'Your whole piece is Silver.' };
-  return { player, piece, course, focus, action };
+/** "just now" / "Nm ago" / "Nh ago" / "Nd ago". */
+export function relativeTime(iso, now = Date.now()) {
+  const t = Date.parse(iso || '');
+  if (!Number.isFinite(t)) return '';
+  const mins = Math.floor(Math.max(0, now - t) / 60_000);
+  if (mins < 1) return 'just now';
+  if (mins < 60) return `${mins}m ago`;
+  const hours = Math.floor(mins / 60);
+  return hours < 24 ? `${hours}h ago` : `${Math.floor(hours / 24)}d ago`;
 }
 
-export const pieceCount = (piece) => `${piece.silver} of ${piece.total} passages Silver, ${piece.gold} Gold`;
+/** The passage a piece card points at, and what its button would do. */
+export function pieceFocus(piece) {
+  const byId = (id) => piece.passages.find((passage) => passage.id === id) ?? null;
+  return byId(piece.next?.passageId) ?? byId(piece.nextGoldPassageId) ?? piece.passages[0] ?? null;
+}
+
+/**
+ * One card per child with something to show, newest first. Each card shows the
+ * more recent of the child's piece and course, never both.
+ */
+export function stripCards({ pieces, courses }) {
+  const ids = [...new Set([...(pieces ?? []).map((p) => p.userId), ...(courses ?? []).map((c) => c.userId)])];
+  return ids.flatMap((userId) => {
+    const deskPlayer = pieces?.find((p) => p.userId === userId);
+    const coursePlayer = courses?.find((c) => c.userId === userId);
+    const piece = deskPlayer?.piece ?? null;
+    const course = coursePlayer?.courses?.[0] ?? null;
+    if (!piece && !course) return [];
+    const pieceAt = piece?.practicedAt ?? '';
+    const courseAt = course?.lastPlayedAt ?? coursePlayer?.lastPlayedAt ?? '';
+    const name = deskPlayer?.name ?? coursePlayer?.name ?? userId;
+    return piece && (!course || pieceAt >= courseAt)
+      ? [{ userId, name, kind: 'piece', at: pieceAt, piece, focus: pieceFocus(piece) }]
+      : [{ userId, name, kind: 'course', at: courseAt, course }];
+  }).sort((a, b) => String(b.at).localeCompare(String(a.at)));
+}
+
+export const pieceCount = (piece) => `${piece.silver} of ${piece.total} Silver`;

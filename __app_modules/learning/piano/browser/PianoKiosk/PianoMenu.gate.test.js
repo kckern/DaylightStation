@@ -31,9 +31,10 @@ vi.mock('./PianoConfig.jsx', () => ({
   usePianoKioskConfig: () => ({
     pianoId: 'test-piano',
     basePath: '/piano',
-    config: { keyboard: { startNote: 21, endNote: 108 }, curfew: curfewConfig },
+    config: { screensaver: { deviceId: 'piano-tablet' }, keyboard: { startNote: 21, endNote: 108 }, curfew: curfewConfig },
   }),
 }));
+vi.mock('./kioskDeviceIdentity.js', () => ({ KIOSK_DEVICE_ID: 'piano-tablet' }));
 vi.mock('./PianoUserContext.jsx', () => ({
   usePianoUser: () => ({ currentUser, setCurrentUser: () => {} }),
 }));

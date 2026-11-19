@@ -7,7 +7,9 @@ import { usePianoMidi } from './PianoMidiContext.jsx';
 import { usePianoUser } from './PianoUserContext.jsx';
 import PianoTile from './PianoTile.jsx';
 import PianoHomeDesk from './desk/PianoHomeDesk.jsx';
+import { KIOSK_DEVICE_ID } from './kioskDeviceIdentity.js';
 import LiveKeyboard from './LiveKeyboard.jsx';
+import { balancedColumns } from './tileGridLayout.js';
 import usePianoCurfew from './usePianoCurfew.js';
 import useSchoolGameAccess from './useSchoolGameAccess.js';
 import useKaraokeSchoolAccess from './useKaraokeSchoolAccess.js';
@@ -20,20 +22,20 @@ import { PIANO_MODES } from './pianoModes.js';
  * PianoMenu — the touch-first home screen for a piano. Tiles route to each mode.
  *
  * Under curfew (config.curfew, default 19:00–06:00) the whole menu goes dark:
- * every tile and the home desk grey out and stop responding. The
+ * every tile and the progress strip grey out and stops responding. The
  * one thing still working is the piano — sitting down and playing auto-enters
  * Studio (useAutoStudioEntry in PianoApp), which is deliberately independent of
  * this menu, so evening free play is unaffected.
  *
  * While the active player still owes today's assigned School piano lesson, the
- * tiles and the home desk are REPLACED by that one lesson
+ * tiles and the progress strip are REPLACED by that one lesson
  * (TodaysLessonGate) — not greyed out, which is curfew's look and would read as
  * "everything is closed" rather than "here is the one thing". It clears itself
  * when School says the day is discharged. Curfew outranks it.
  *
  * Until that verdict arrives the menu is PENDING: greyed like curfew, with one
  * caption, because nothing here is tappable *yet*. Reading `gated === false`
- * alone is what let a learner walk out through a course link on
+ * alone is what let a learner walk out through the activity strip on
  * 2026-09-01, 3.5s into an 11.1s read. A verdict of any kind — including the
  * hook's timeout and error — opens the menu; the gate must never lock a child
  * out over a fault.
@@ -54,8 +56,12 @@ export function PianoMenu() {
   const karaokeAccess = useKaraokeSchoolAccess();
   const kb = config?.keyboard || { startNote: 21, endNote: 108 };
   const logger = useMemo(() => getLogger().child({ component: 'piano-menu' }), []);
-  const cols = PIANO_MODES.length; // one row, so the music gets the room
-  const curfew = usePianoCurfew(config?.curfew, config?.timezone);
+  const cols = balancedColumns(PIANO_MODES.length); // 10 → 5
+  // Curfew is for the piano's own tablet. A grown-up opening the page in an
+  // ordinary browser is not locked out for the night.
+  const onKiosk = Boolean(config?.screensaver?.deviceId) && KIOSK_DEVICE_ID === config.screensaver.deviceId;
+  const curfewWindow = usePianoCurfew(config?.curfew, config?.timezone);
+  const curfew = curfewWindow && onKiosk;
   // Curfew wins outright: after bedtime there is nothing to offer, so the
   // closed-for-the-night view stands rather than a launchable lesson card.
   const lessonGate = usePianoLessonGate(currentUser);
@@ -66,7 +72,7 @@ export function PianoMenu() {
   const gamesOff = gamesDisabledFor(config.gameAccess, currentUser);
   const gated = !curfew && lessonGate.gated;
   // A learner whose verdict has not arrived is PENDING, not free: on
-  // 2026-09-01 one walked out through a course link 3.5s into an 11.1s
+  // 2026-09-01 one walked out through the activity strip 3.5s into an 11.1s
   // read, so `gated === false` alone is not permission to open the menu. Who
   // counts as waiting is the HOOK's rule, not re-derived here — this screen
   // only adds that curfew outranks it, having nothing left to wait for.
@@ -100,6 +106,21 @@ export function PianoMenu() {
           />
         ) : (
           <>
+          <PianoHomeDesk
+            disabled={curfew || pending}
+            onOpenPassage={(userId, scoreId, passageId) => {
+              // Tapping a child's card IS picking that child: their progress,
+              // their credit (owner-requested 2026-07-28).
+              if (userId) setCurrentUser(userId);
+              if (curfew || pending) return; // the door the 2026-09-01 escape used
+              navigate(`${basePath}/sheetmusic/view/${scoreId}${passageId ? `?learnPassage=${encodeURIComponent(passageId)}` : ''}`);
+            }}
+            onOpenCourse={(userId, courseId) => {
+              if (userId) setCurrentUser(userId);
+              if (curfew || pending) return;
+              navigate(`${basePath}/videos/${String(courseId).replace(/^plex:/, '')}`);
+            }}
+          />
           <ul className="piano-menu__tiles" style={{ '--tile-cols': cols }}>
             {PIANO_MODES.map((m) => {
               const gamesOffTile = m.id === 'games' && gamesOff;
@@ -145,8 +166,7 @@ export function PianoMenu() {
                   <PianoTile
                     icon={m.icon}
                     label={m.label}
-                    // The row names each mode; only a tile with something to explain speaks up.
-                    blurb={blurb === m.blurb ? undefined : blurb}
+                    blurb={blurb}
                     disabled={disabled}
                     onClick={disabled ? undefined : () => open(m.id)}
                   />
@@ -154,18 +174,6 @@ export function PianoMenu() {
               );
             })}
           </ul>
-          <PianoHomeDesk
-            disabled={curfew || pending}
-            onOpenPassage={(scoreId, passageId) => {
-              if (curfew || pending) return;
-              navigate(`${basePath}/sheetmusic/view/${scoreId}?learnPassage=${encodeURIComponent(passageId)}`);
-            }}
-            onOpenCourse={(courseId) => {
-              if (curfew || pending) return; // the door the 2026-09-01 escape used
-              navigate(`${basePath}/videos/${String(courseId).replace(/^plex:/, '')}`);
-            }}
-            onOpenLibrary={() => open('sheetmusic')}
-          />
           </>
         )}
         {curfew && (
