@@ -18,7 +18,8 @@ import { useSessionController } from "../controller/useSessionController.js";
 import { usePlaybackPosition } from "../controller/usePlaybackPosition.js";
 import { useNav } from "./NavProvider.jsx";
 import { usePlayerHost } from "../session/usePlayerHost.js";
-import { useSessionControls, useSecondTick, secondsUntil, formatClock } from "../controller/useSessionControls.js";
+import { useDisplayClock } from '@/lib/hooks/useDisplayClock.js';
+import { useSessionControls, secondsUntil, formatClock } from "../controller/useSessionControls.js";
 import { useSlideshowStopGuard } from "./PlayerFeatureControls.jsx";
 import { HandleHouseMenu } from "../house/HouseQuietControls.jsx";
 import { FlingButton } from "./FlingButton.jsx";
@@ -55,7 +56,7 @@ function problemLabel(problem) {
 function useSleepLeft() {
   const { controls } = useSessionControls('local');
   const sleepTimer = controls?.sleepTimer ?? null;
-  const now = useSecondTick(sleepTimer?.mode === 'minutes');
+  const now = useDisplayClock(sleepTimer?.mode === 'minutes');
   if (!sleepTimer) return null;
   if (sleepTimer.mode === 'atEnd') return { text: 'end', label: 'Sleep timer: stops at the end of this item' };
   const left = formatClock(secondsUntil(sleepTimer.endsAt, now) ?? sleepTimer.remainingSeconds);

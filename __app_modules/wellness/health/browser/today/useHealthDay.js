@@ -1,3 +1,4 @@
+import { useVisibleRefresh } from '@/lib/hooks/useVisibleRefresh.js';
 import { useCallback, useEffect, useMemo, useRef } from 'react';
 import { summarizeDayQuality } from "./dayQuality.js";
 import { useApiResource, peekApiResource, apiResourceReadToken } from "../../../../../frontend/src/lib/hooks/useApiResource.js";
@@ -94,18 +95,13 @@ export function useHealthDay(date, { enabled = true } = {}) {
     }
   }, [reload]);
 
+  useVisibleRefresh({ active: enabled, intervalMs: 15000, reload });
+
   // Kitchen-scale / Telegram entries appear when the tab regains focus.
   useEffect(() => {
     if (!enabled) return undefined;
     window.addEventListener('focus', reload);
-    const onVisible = () => { if (document.visibilityState === 'visible') reload(); };
-    document.addEventListener('visibilitychange', onVisible);
-    const interval = setInterval(onVisible, 15000);
-    return () => {
-      window.removeEventListener('focus', reload);
-      document.removeEventListener('visibilitychange', onVisible);
-      clearInterval(interval);
-    };
+    return () => window.removeEventListener('focus', reload);
   }, [reload, enabled]);
 
   return {

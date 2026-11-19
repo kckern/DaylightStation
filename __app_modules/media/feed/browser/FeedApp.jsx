@@ -94,7 +94,7 @@ function FeedLayout() {
   const { density, setDensity, readingPreferences, setReadingPreference, summary, retrySync, pendingMutations, workspaceReady, refreshSummary, refreshWorkspace, sourcePreferences, setSourcePreference } = useFeedWorkspace();
 
   const { activeMedia, playerVisible, playerRef, stop, speed } = useFeedPlayer();
-  const playback = usePlaybackObserver(playerRef, !!activeMedia, speed);
+  const playback = usePlaybackObserver(playerRef, !!activeMedia);
   const showMiniBar = !!activeMedia && !playerVisible;
   const [sheetOpen, setSheetOpen] = useState(false);
 
@@ -153,6 +153,7 @@ function FeedLayout() {
       />}
       player={<PersistentPlayer
         ref={playerRef}
+        speed={speed}
         contentId={activeMedia?.contentId || null}
         onEnd={stop}
       />}
@@ -204,7 +205,7 @@ function FeedLayout() {
       <main className="feed-content" ref={scrollRef} tabIndex={-1} aria-label="Feed">
         {workspaceReady ? (
           <FeedErrorBoundary route={location.pathname}>
-            <Suspense fallback={<div className="feed-placeholder" role="status">Loading view…</div>}><Outlet context={scrollRef} /></Suspense>
+            <Suspense fallback={<div className="feed-placeholder" role="status">Loading view…</div>}><Outlet context={{ scrollRef, playback: { ...playback, progressElRef: playback.detailProgressElRef } }} /></Suspense>
           </FeedErrorBoundary>
         ) : <div className="feed-placeholder" role="status">Restoring your reading workspace…</div>}
       </main>

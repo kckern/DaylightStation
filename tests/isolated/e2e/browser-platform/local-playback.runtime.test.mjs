@@ -81,3 +81,27 @@ test('Feed article playback survives its player sheet and Back restores the card
   expect(returned).toBeGreaterThan(initial);
   await expect.poll(clock).toBeGreaterThan(returned);
 });
+
+test('Feed suspends its progress display while the same audio keeps playing in the background', async ({ page }) => {
+  await page.routeWebSocket('**/*', () => {});
+  await page.goto('/feed/scroll');
+  await page.getByRole('button', { name: 'Play', exact: true }).first().click();
+  const clock = await originalClock(page);
+  const progress = page.locator('.feed-mini-bar-progress-fill');
+  await expect(progress).toBeVisible();
+  const width = () => progress.evaluate(bar => parseFloat(bar.style.width));
+  await expect.poll(width).toBeGreaterThan(0);
+  await page.evaluate(() => {
+    Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'hidden' });
+    document.dispatchEvent(new Event('visibilitychange'));
+  });
+  const hidden = await width();
+  const position = await clock();
+  await expect.poll(clock).toBeGreaterThan(position + 1);
+  expect(await width()).toBe(hidden);
+  await page.evaluate(() => {
+    delete document.visibilityState;
+    document.dispatchEvent(new Event('visibilitychange'));
+  });
+  await expect.poll(width).toBeGreaterThan(hidden);
+});

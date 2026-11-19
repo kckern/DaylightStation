@@ -7,7 +7,8 @@
 // their single instance.
 import { daylightApiResponse } from '../../../../frontend/src/lib/api.mjs';
 import { contentInfoPath, splitContentId } from '../lib/contentSearchLogic.js';
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
+import { useDisplayClock } from '../../../../frontend/src/lib/hooks/useDisplayClock.js';
 import { Text, Loader, Group, Avatar, Badge, Box, ActionIcon } from '@mantine/core';
 import {
   IconChevronRight, IconAlertTriangle, IconCheck, IconPhoto, IconPlayerPlay,
@@ -167,12 +168,9 @@ function ContentItemDisplay({ item, isHighlighted: _isHighlighted, isCurrent, sh
 
 // Loading display with countup timer — shows user's intent while resolving
 export function ResolvingDisplay({ value, onClick }) {
-  const [elapsed, setElapsed] = useState(0);
-  useEffect(() => {
-    const t0 = Date.now();
-    const id = setInterval(() => setElapsed(Math.floor((Date.now() - t0) / 1000)), 1000);
-    return () => clearInterval(id);
-  }, []);
+  const [startedAt] = useState(Date.now);
+  const now = useDisplayClock();
+  const elapsed = Math.floor((now - startedAt) / 1000);
   return (
     <div onClick={onClick} className="content-display" style={{ cursor: 'pointer' }}>
       <Group gap={6} wrap="nowrap" style={{ flex: 1 }}>

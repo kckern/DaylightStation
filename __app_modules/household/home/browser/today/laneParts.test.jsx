@@ -30,8 +30,41 @@ describe('useTimeline polling', () => {
     await act(async () => { await vi.advanceTimersByTimeAsync(60_000); });
     expect(calls('today')).toBe(first + 1);
     setVisibility('hidden');
+    act(() => document.dispatchEvent(new Event('visibilitychange')));
     await act(async () => { await vi.advanceTimersByTimeAsync(120_000); });
     expect(calls('today')).toBe(first + 1);
+  });
+
+  it('restarts the minute on foreground and drops the old timer when the range changes', async () => {
+    const view = renderHook(({ range }) => useTimeline(range), { initialProps: { range: 'today' } });
+    await act(async () => { await vi.advanceTimersByTimeAsync(58_000); });
+    setVisibility('hidden');
+    act(() => document.dispatchEvent(new Event('visibilitychange')));
+    await act(async () => { await vi.advanceTimersByTimeAsync(1_000); });
+    setVisibility('visible');
+    await act(async () => document.dispatchEvent(new Event('visibilitychange')));
+    expect(calls('today')).toBe(2);
+    await act(async () => { await vi.advanceTimersByTimeAsync(1_000); });
+    expect(calls('today')).toBe(2);
+    await act(async () => { await vi.advanceTimersByTimeAsync(59_000); });
+    expect(calls('today')).toBe(3);
+    view.rerender({ range: 'yesterday' });
+    await act(async () => { await vi.advanceTimersByTimeAsync(120_000); });
+    expect(calls('today')).toBe(3);
+    expect(calls('yesterday')).toBe(1);
+  });
+
+  it('keeps the selected range when a previous day responds late', async () => {
+    let finishToday;
+    apiMock.mockImplementation(path => path.endsWith('=today')
+      ? new Promise(resolve => { finishToday = resolve; })
+      : Promise.resolve({ range: 'yesterday', days: [], lanes: [] }));
+    const view = renderHook(({ range }) => useTimeline(range), { initialProps: { range: 'today' } });
+    view.rerender({ range: 'yesterday' });
+    await act(async () => {});
+    expect(view.result.current.timeline.range).toBe('yesterday');
+    await act(async () => finishToday({ range: 'today', days: [], lanes: [] }));
+    expect(view.result.current.timeline.range).toBe('yesterday');
   });
 
   it('never re-reads the settled week', async () => {

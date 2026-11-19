@@ -16,7 +16,8 @@ import { Button, Group, Menu, Text } from '@mantine/core';
 import {
   IconMoon, IconPlayerStop, IconPlaylistAdd, IconArrowBackUp, IconPlayerTrackNext, IconX,
 } from '@tabler/icons-react';
-import { useSessionControls, useSecondTick, secondsUntil, formatClock } from "../controller/useSessionControls.js";
+import { useDisplayClock } from '@/lib/hooks/useDisplayClock.js';
+import { useSessionControls, secondsUntil, formatClock } from "../controller/useSessionControls.js";
 import { useSessionController } from "../controller/useSessionController.js";
 import { DispatchContext } from "../cast/DispatchProvider.jsx";
 import mediaLog from "../logging/mediaLog.js";
@@ -48,7 +49,7 @@ export function SessionControlsPanel({ target, targetName = null }) {
   const targetId = isLocal ? 'local' : target?.deviceId ?? null;
   const ticking = !!controls?.countdown || controls?.sleepTimer?.mode === 'minutes'
     || (controls?.notes ?? []).some((note) => note.putBack);
-  const now = useSecondTick(ticking);
+  const now = useDisplayClock(ticking);
   const [busy, setBusy] = useState(null);
 
   const hasItem = !!snapshot?.currentItem;

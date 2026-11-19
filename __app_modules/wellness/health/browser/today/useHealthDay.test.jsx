@@ -42,6 +42,30 @@ describe('useHealthDay', () => {
     expect(result.current.budget.remaining).toBe(1460);
   });
 
+  it('releases the day refresh interval while hidden and starts a fresh interval after foreground return', async () => {
+    const visibility = vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible');
+    const intervals = vi.spyOn(globalThis, 'setInterval');
+    const clear = vi.spyOn(globalThis, 'clearInterval');
+    const hook = renderHook(() => useHealthDay('2026-09-02'));
+    try {
+      await waitFor(() => expect(hook.result.current.loading).toBe(false));
+      const index = intervals.mock.calls.findIndex(([, delay]) => delay === 15000);
+      expect(index).toBeGreaterThanOrEqual(0);
+      visibility.mockReturnValue('hidden');
+      act(() => document.dispatchEvent(new Event('visibilitychange')));
+      expect(clear).toHaveBeenCalledWith(intervals.mock.results[index].value);
+      visibility.mockReturnValue('visible');
+      act(() => document.dispatchEvent(new Event('visibilitychange')));
+      await waitFor(() => expect(apiMock).toHaveBeenCalledTimes(2));
+      expect(intervals.mock.calls.filter(([, delay]) => delay === 15000)).toHaveLength(2);
+    } finally {
+      hook.unmount();
+      visibility.mockRestore();
+      intervals.mockRestore();
+      clear.mockRestore();
+    }
+  });
+
   it('quietly adopts Telegram/reviewer ledger changes when the tab regains focus', async () => {
     const { result } = renderHook(() => useHealthDay('2026-09-02'));
     await waitFor(() => expect(result.current.loading).toBe(false));

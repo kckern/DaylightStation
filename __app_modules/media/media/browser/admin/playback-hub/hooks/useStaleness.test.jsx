@@ -8,6 +8,7 @@ describe('useStaleness', () => {
   });
 
   afterEach(() => {
+    vi.restoreAllMocks();
     vi.useRealTimers();
   });
 
@@ -35,6 +36,24 @@ describe('useStaleness', () => {
     const { result } = renderHook(() => useStaleness(null, { staleAfterMs: 10000 }));
     expect(result.current.isStale).toBe(true);
     expect(result.current.secondsSinceUpdate).toBeNull();
+  });
+
+  it('pauses the stale label while hidden, catches up on return and releases its timer without a snapshot', () => {
+    const visibility = vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible');
+    const { result, rerender } = renderHook(({ at }) => useStaleness(at), { initialProps: { at: new Date() } });
+    act(() => {
+      visibility.mockReturnValue('hidden');
+      document.dispatchEvent(new Event('visibilitychange'));
+      vi.advanceTimersByTime(12000);
+    });
+    expect(result.current.secondsSinceUpdate).toBe(0);
+    act(() => {
+      visibility.mockReturnValue('visible');
+      document.dispatchEvent(new Event('visibilitychange'));
+    });
+    expect(result.current).toEqual({ isStale: true, secondsSinceUpdate: 12 });
+    rerender({ at: null });
+    expect(vi.getTimerCount()).toBe(0);
   });
 
   it('updates secondsSinceUpdate as time passes', () => {

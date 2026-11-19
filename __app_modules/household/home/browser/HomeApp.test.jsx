@@ -122,6 +122,19 @@ describe('HomeApp — Today', () => {
     expect(apiMock).toHaveBeenCalledWith('api/v1/home-dashboard/timeline?range=today');
   });
 
+  it('switches the visible timeline and restores the selected range on reopening Home', async () => {
+    routeApi();
+    const first = render(<HomeApp />);
+    await lanesShown();
+    fireEvent.click(screen.getByRole('radio', { name: 'Yesterday' }));
+    await waitFor(() => expect(apiMock).toHaveBeenCalledWith('api/v1/home-dashboard/timeline?range=yesterday'));
+    expect(screen.getByRole('radio', { name: 'Yesterday' })).toBeChecked();
+    first.unmount();
+    render(<HomeApp />);
+    await lanesShown();
+    expect(screen.getByRole('radio', { name: 'Yesterday' })).toBeChecked();
+  });
+
   it('restores Rooms after choosing it and reopening the dashboard', async () => {
     routeApi();
     const first = render(<HomeApp />);

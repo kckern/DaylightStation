@@ -5,7 +5,6 @@ import { renderFeedCard } from "./cards/index.jsx";
 import DetailView from "./detail/DetailView.jsx";
 import DetailModal from "./detail/DetailModal.jsx";
 import { useFeedPlayer } from "../players/FeedPlayerContext.jsx";
-import { usePlaybackObserver } from "./hooks/usePlaybackObserver.js";
 import { useMasonryLayout } from "./hooks/useMasonryLayout.js";
 import { usePerfMonitor } from "./hooks/usePerfMonitor.js";
 import { useMasonryVirtualWindow, useVirtualFeedWindow } from "./hooks/useVirtualFeedWindow.js";
@@ -141,7 +140,7 @@ function ScrollCard({ item, isNew, colors, onDismiss, onPlay, onClick, onFilter,
 }
 
 export default function Scroll() {
-  const scrollRef = useOutletContext();
+  const { scrollRef, playback } = useOutletContext();
   const { feedItemId: urlSlug } = useParams();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -176,7 +175,7 @@ export default function Scroll() {
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState(null);
   const [detailRetry, setDetailRetry] = useState(0);
-  const { activeMedia, play: contextPlay, stop: contextStop, playerRef, speed } = useFeedPlayer();
+  const { activeMedia, play: contextPlay, stop: contextStop } = useFeedPlayer();
   const [colors, setColors] = useState({});
   const [assemblyBatches, setAssemblyBatches] = useState([]);
   const [assemblyFilter, setAssemblyFilter] = useState({ tiers: [], sources: [] });
@@ -194,8 +193,6 @@ export default function Scroll() {
     setBudgetOverride(null);
     setBudgetReached(false);
   }, [sessionStorageKey]);
-
-  const playback = usePlaybackObserver(playerRef, !!activeMedia, speed);
 
   const handlePlay = useCallback((item, contentId) => {
     if (!item) { feedLog.player('clear activeMedia'); contextStop(); return; }

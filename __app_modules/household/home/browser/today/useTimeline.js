@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import { useApiResource } from '@/lib/hooks/useApiResource.js';
+import { useVisibleRefresh } from '@/lib/hooks/useVisibleRefresh.js';
 import homeLogger from '../homeLogger.js';
 
 const logger = homeLogger.child({ component: 'timeline' });
@@ -12,21 +13,13 @@ export const timelinePath = (range) => `api/v1/home-dashboard/timeline?range=${r
 /**
  * The house's day as lanes: `{timeline, loading, error, reload}`. Today is
  * still being written, so it re-reads every minute while the page is
- * visible; yesterday and the week are settled and read once (cached per
- * range, so flipping back paints at once).
+ * visible. Yesterday and Week revalidate on selection and keep their cached
+ * range available when the user switches back.
  */
 export function useTimeline(range) {
   const { data: timeline, loading, error, reload } = useApiResource(timelinePath(range), { label: 'timeline', logger, swr: true });
 
-  useEffect(() => {
-    if (range !== 'today') return undefined;
-    const id = setInterval(() => {
-      if (document.visibilityState === 'visible') reload();
-    }, REFRESH_MS);
-    const onVisible = () => { if (document.visibilityState === 'visible') reload(); };
-    document.addEventListener('visibilitychange', onVisible);
-    return () => { clearInterval(id); document.removeEventListener('visibilitychange', onVisible); };
-  }, [range, reload]);
+  useVisibleRefresh({ active: range === 'today', reload, intervalMs: REFRESH_MS });
 
   useEffect(() => {
     if (timeline) logger.debug('home.timeline.loaded', { range, lanes: timeline.lanes?.length ?? 0 });
