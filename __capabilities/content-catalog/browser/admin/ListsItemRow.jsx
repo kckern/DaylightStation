@@ -49,7 +49,7 @@ async function preloadSiblings(contentId, contentInfo) {
   }
 }
 
-function ListsItemRow({ item, onUpdate, onDelete, onToggleActive, onDuplicate, isWatchlist, onEdit, onSplit, sectionIndex, sectionCount, sections, itemCount, onMoveItem, activeContentDrag, dragId, allowSublistNavigation = true, allowNewSection = true }) {
+function ListsItemRow({ item, onUpdate, onDelete, onToggleActive, onDuplicate, isWatchlist, onEdit, onSplit, sectionIndex, sectionCount, sections, itemCount, onMoveItem, activeContentDrag, swapFlashKey, dragId, allowSublistNavigation = true, allowNewSection = true }) {
   const log = useMemo(() => adminLog('ListsItemRow'), []);
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: dragId ? `row:${dragId}` : `row-${sectionIndex}-${item.index}`
@@ -242,6 +242,7 @@ function ListsItemRow({ item, onUpdate, onDelete, onToggleActive, onDuplicate, i
 
   return (
     <div ref={setNodeRef} style={style} className={rowClassName} data-testid={`item-row-${sectionIndex}-${item.index}`} onMouseEnter={handleRowHover}>
+      {swapFlashKey != null && <span key={swapFlashKey} className="swap-flash" aria-hidden="true" />}
       <div className="col-active">
         <Checkbox
           checked={item.active !== false}

@@ -61,6 +61,7 @@
 
   // Compact spreadsheet-style rows
   .item-row {
+    position: relative;
     display: flex;
     align-items: center;
     padding: var(--ds-space-1) var(--ds-space-2);
@@ -337,7 +338,10 @@
     }
 
     // Swap confirmation flash
-    &.swap-flash {
+    > .swap-flash {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
       animation: swap-confirm 300ms ease-out;
     }
 

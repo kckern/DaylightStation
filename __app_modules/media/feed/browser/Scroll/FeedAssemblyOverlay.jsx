@@ -1,4 +1,5 @@
 import { useState, useCallback } from 'react';
+import { useTemporaryIndicator } from '../../../../../frontend/src/lib/hooks/useTemporaryIndicator.js';
 import "./FeedAssemblyOverlay.scss";
 
 const TIER_COLORS = {
@@ -84,9 +85,18 @@ function BatchBlock({ batch, index, activeTiers, activeSources, onToggleTier, on
   );
 }
 
+function CopyAssemblyButton({ batches }) {
+  const [copied, showCopied] = useTemporaryIndicator(1500);
+  const copy = () => navigator.clipboard.writeText(JSON.stringify(batches, null, 2)).then(showCopied);
+  return (
+    <button className="assembly-copy-btn" onClick={copy}>
+      {copied ? 'Copied!' : 'Copy JSON'}
+    </button>
+  );
+}
+
 export default function FeedAssemblyOverlay({ batches, onFilterChange }) {
   const [open, setOpen] = useState(false);
-  const [copied, setCopied] = useState(false);
   const [activeTiers, setActiveTiers] = useState(() => new Set());
   const [activeSources, setActiveSources] = useState(() => new Set());
 
@@ -120,13 +130,6 @@ export default function FeedAssemblyOverlay({ batches, onFilterChange }) {
     emitFilter(new Set(), new Set());
   }, [emitFilter]);
 
-  const handleCopy = useCallback(() => {
-    navigator.clipboard.writeText(JSON.stringify(batches, null, 2)).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1500);
-    });
-  }, [batches]);
-
   if (!batches || batches.length === 0) return null;
 
   const hasAnyFilter = activeTiers.size > 0 || activeSources.size > 0;
@@ -157,9 +160,7 @@ export default function FeedAssemblyOverlay({ batches, onFilterChange }) {
                     Clear All
                   </button>
                 )}
-                <button className="assembly-copy-btn" onClick={handleCopy}>
-                  {copied ? 'Copied!' : 'Copy JSON'}
-                </button>
+                <CopyAssemblyButton batches={batches} />
                 <button className="assembly-close-btn" onClick={() => setOpen(false)}>
                   &times;
                 </button>

@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef } from 'react';
+import React, { useCallback, useLayoutEffect, useRef, useState } from 'react';
 import { clampPair } from "./cropGeometry.js";
 
 // Per-axis config: which margins, which dimension/coordinate to drag along.
@@ -18,17 +18,20 @@ export default function CropEditor({ crop, onCrop, axis = 'vertical' }) {
   const a = Number.isFinite(crop?.[ax.a]) ? crop[ax.a] : 8;   // start-edge margin %
   const b = Number.isFinite(crop?.[ax.b]) ? crop[ax.b] : 8;   // end-edge margin %
   const stageRef = useRef(null);
-  const listenersRef = useRef(null); // { move, up } — for unmount cleanup
+  const drag = useRef(null);
+  const [preview, setPreview] = useState(null);
 
-  // Drop any in-flight drag listeners if we unmount mid-drag (e.g. navigating to
-  // the next work), so a stray pointermove can't commit onto an unmounted editor.
-  useEffect(() => () => {
-    if (listenersRef.current) {
-      window.removeEventListener('pointermove', listenersRef.current.move);
-      window.removeEventListener('pointerup', listenersRef.current.up);
-      listenersRef.current = null;
-    }
+  const releaseDrag = useCallback(() => {
+    const active = drag.current;
+    if (!active) return;
+    drag.current = null;
+    if (active.handle.hasPointerCapture(active.id)) active.handle.releasePointerCapture(active.id);
+    setPreview(null);
   }, []);
+
+  // The loupe can switch artworks without remounting the handles. Its save
+  // callback belongs to the focused work, so retire any gesture on replacement.
+  useLayoutEffect(() => releaseDrag, [onCrop, ax, disabled, releaseDrag]);
 
   const commit = useCallback((sa, sb) => {
     const [ca, cb] = clampPair(sa, sb);
@@ -46,42 +49,54 @@ export default function CropEditor({ crop, onCrop, axis = 'vertical' }) {
     else commit(a, b + d);
   }, [a, b, commit]);
 
-  const onPointerDown = useCallback((edge) => (e) => {
-    e.preventDefault();
-    const size = stageRef.current?.[ax.sizeDim] || 1;
-    const start0 = e[ax.clientAxis];
-    const move = (ev) => {
-      const deltaPct = ((ev[ax.clientAxis] - start0) / size) * 100;
-      // The end edge's margin shrinks as you drag it toward the far side.
-      if (edge === 'a') commit(a + deltaPct, b);
-      else commit(a, b - deltaPct);
+  const onPointerDown = edge => event => {
+    if (drag.current || event.button !== 0) return;
+    const size = stageRef.current?.[ax.sizeDim];
+    if (!size) return;
+    event.preventDefault();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    drag.current = {
+      handle: event.currentTarget, id: event.pointerId, edge, size,
+      start: event[ax.clientAxis], a, b,
     };
-    const up = () => {
-      window.removeEventListener('pointermove', move);
-      window.removeEventListener('pointerup', up);
-      listenersRef.current = null;
-    };
-    listenersRef.current = { move, up };
-    window.addEventListener('pointermove', move);
-    window.addEventListener('pointerup', up);
-  }, [a, b, commit, ax]);
+  };
 
-  const win = axis === 'horizontal' ? { left: `${a}%`, right: `${b}%` } : { top: `${a}%`, bottom: `${b}%` };
+  const onPointerChange = event => {
+    const active = drag.current;
+    if (!active || event.pointerId !== active.id) return;
+    const delta = (event[ax.clientAxis] - active.start) * 100 / active.size;
+    const pair = active.edge === 'a'
+      ? clampPair(active.a + delta, active.b)
+      : clampPair(active.a, active.b - delta);
+    if (event.type === 'pointerup') {
+      releaseDrag();
+      if (pair[0] !== active.a || pair[1] !== active.b) {
+        onCrop({ enabled: true, [ax.a]: pair[0], [ax.b]: pair[1] });
+      }
+    } else setPreview(pair);
+  };
+  const onCancel = event => {
+    if (drag.current?.id === event.pointerId) releaseDrag();
+  };
+  const [shownA, shownB] = preview ?? [a, b];
+  const win = { [ax.a]: `${shownA}%`, [ax.b]: `${shownB}%` };
 
   return (
-    <div className={`crop-editor crop-editor--${axis}`} ref={stageRef} data-testid="crop-editor">
+    <div className={`crop-editor crop-editor--${axis}`} ref={stageRef} data-testid="crop-editor"
+      onPointerMove={onPointerChange} onPointerUp={onPointerChange}
+      onPointerCancel={onCancel} onLostPointerCapture={onCancel}>
       {!disabled && (
         <>
-          <div className={`crop-editor__shade crop-editor__shade--${ax.a}`} style={{ [ax.dimCss]: `${a}%` }} />
-          <div className={`crop-editor__shade crop-editor__shade--${ax.b}`} style={{ [ax.dimCss]: `${b}%` }} />
+          <div className={`crop-editor__shade crop-editor__shade--${ax.a}`} style={{ [ax.dimCss]: `${shownA}%` }} />
+          <div className={`crop-editor__shade crop-editor__shade--${ax.b}`} style={{ [ax.dimCss]: `${shownB}%` }} />
           <div className="crop-editor__window" style={win}>
             <button type="button" data-testid={`crop-handle-${ax.a}`}
               className={`crop-editor__handle crop-editor__handle--${ax.a}`}
-              aria-label={`${ax.a} crop edge`} onPointerDown={onPointerDown('a')} onKeyDown={onHandleKey('a')} />
+              style={{ touchAction: 'none' }} aria-label={`${ax.a} crop edge`} onPointerDown={onPointerDown('a')} onKeyDown={onHandleKey('a')} />
             <button type="button" data-testid={`crop-handle-${ax.b}`}
               className={`crop-editor__handle crop-editor__handle--${ax.b}`}
-              aria-label={`${ax.b} crop edge`} onPointerDown={onPointerDown('b')} onKeyDown={onHandleKey('b')} />
-            <span className="crop-editor__readout">{ax.a} {a}% · {ax.b} {b}%</span>
+              style={{ touchAction: 'none' }} aria-label={`${ax.b} crop edge`} onPointerDown={onPointerDown('b')} onKeyDown={onHandleKey('b')} />
+            <span className="crop-editor__readout">{ax.a} {shownA}% · {ax.b} {shownB}%</span>
           </div>
         </>
       )}

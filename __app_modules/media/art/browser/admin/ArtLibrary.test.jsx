@@ -1,6 +1,6 @@
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { act, render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { MantineProvider } from '@mantine/core';
 
 const api = vi.fn();
@@ -48,6 +48,39 @@ describe('ArtLibrary', () => {
   it('renders the focused work title', async () => {
     renderLib();
     await waitFor(() => expect(screen.getByText('Sunrise')).toBeTruthy());
+  });
+
+  it('keeps saved visible for 800 ms after the most recent completed save', async () => {
+    renderLib();
+    await screen.findByText('Sunrise');
+    vi.useFakeTimers();
+    try {
+      await act(async () => fireEvent.keyDown(window, { key: 'x' }));
+      act(() => vi.advanceTimersByTime(400));
+      await act(async () => fireEvent.keyDown(window, { key: 'x' }));
+      act(() => vi.advanceTimersByTime(400));
+      expect(screen.getByText(/✓ saved/)).toBeVisible();
+      act(() => vi.advanceTimersByTime(400));
+      expect(screen.queryByText(/✓ saved/)).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('does not start feedback when a save completes after exiting Art Library', async () => {
+    const { unmount } = renderLib();
+    await screen.findByText('Sunrise');
+    let finishSave;
+    api.mockReturnValueOnce(new Promise(resolve => { finishSave = resolve; }));
+    fireEvent.keyDown(window, { key: 'x' });
+    unmount();
+    const schedule = vi.spyOn(globalThis, 'setTimeout');
+    try {
+      await act(async () => finishSave({ ok: true, meta: { hidden: true } }));
+      expect(schedule.mock.calls.some(([, delay]) => delay === 800)).toBe(false);
+    } finally {
+      schedule.mockRestore();
+    }
   });
 
   it('pressing "1" applies the first quick-tag via PATCH', async () => {

@@ -75,6 +75,10 @@ function dualCollisionDetection(args) {
 
 function ListsFolder() {
   const { type, name: listName } = useParams();
+  return <FolderEditor key={JSON.stringify([type, listName])} type={type} listName={listName} />;
+}
+
+function FolderEditor({ type, listName }) {
   const navigate = useNavigate();
   const {
     sections, setSections, flatItems, loading, error, listMetadata,
@@ -83,6 +87,7 @@ function ListsFolder() {
   } = useAdminLists();
 
   const swapInProgressRef = useRef(false);
+  const [swapFlash, setSwapFlash] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [editorOpen, setEditorOpen] = useState(false);
   const [editingItem, setEditingItem] = useState(null);
@@ -231,7 +236,7 @@ function ListsFolder() {
         return next;
       });
 
-      await mutate(
+      const result = await mutate(
         'lists.swap',
         'Could not swap content — reloading the list',
         () => swapItems(srcSi, srcIdx, dstSi, dstIdx),
@@ -239,18 +244,12 @@ function ListsFolder() {
       );
       swapInProgressRef.current = false;
 
-      // Flash both rows
-      requestAnimationFrame(() => {
-        document.querySelectorAll('.item-row.swap-flash').forEach(el => el.classList.remove('swap-flash'));
-        const allRows = document.querySelectorAll('[data-testid^="item-row-"]');
-        allRows.forEach(row => {
-          const testId = row.getAttribute('data-testid');
-          if (testId === `item-row-${srcSi}-${srcIdx}` || testId === `item-row-${dstSi}-${dstIdx}`) {
-            row.classList.add('swap-flash');
-            row.addEventListener('animationend', () => row.classList.remove('swap-flash'), { once: true });
-          }
-        });
-      });
+      if (result.ok) {
+        setSwapFlash(previous => ({
+          sequence: (previous?.sequence ?? 0) + 1,
+          rows: [srcItem.uid || activeId, dstItem.uid || overId],
+        }));
+      }
       setActiveContentDrag(null);
       return;
     }
@@ -471,6 +470,7 @@ function ListsFolder() {
             itemCount={itemsToRender.length}
             onMoveItem={(action, targetSection) => handleMoveItem(sectionIndex, idx, action, targetSection)}
             activeContentDrag={activeContentDrag}
+            swapFlashKey={swapFlash?.rows.includes(item.uid || `content-${sectionIndex}-${idx}`) ? swapFlash.sequence : null}
           />
         ))}
       </SortableContext>

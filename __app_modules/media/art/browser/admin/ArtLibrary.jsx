@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { TextInput, Group, Switch, Badge, Button } from '@mantine/core';
 import getLogger from "../../../../../frontend/src/lib/logging/Logger.js";
 import { useAdminConfig } from "../../../../../frontend/src/hooks/admin/useAdminConfig.js";
+import { useTemporaryIndicator } from "../../../../../frontend/src/lib/hooks/useTemporaryIndicator.js";
 import { ErrorState } from "../../../../../frontend/src/lib/ui/states.jsx";
 import { useArtCuration } from "./useArtCuration.js";
 import { keyToAction } from "./keymap.js";
@@ -19,7 +20,7 @@ export default function ArtLibrary() {
   const [filters, setFilters] = useState({});
   const [view, setView] = useState('loupe');   // 'loupe' | 'grid'
   const [editMode, setEditMode] = useState(false);
-  const [saved, setSaved] = useState(false);
+  const [saved, flash] = useTemporaryIndicator(800);
   const searchRef = useRef(null);
 
   const cfg = useAdminConfig(configPath('art'));
@@ -33,8 +34,6 @@ export default function ArtLibrary() {
     works, focused, index, loading, error, reload, autoAdvance,
     setAutoAdvance, next, prev, goto, mutate, undo,
   } = useArtCuration(filters);
-
-  const flash = useCallback(() => { setSaved(true); setTimeout(() => setSaved(false), 800); }, []);
 
   // The collection the list is currently filtered to (for remove-from-collection).
   const currentCollection = filters.tag || null;

@@ -271,6 +271,44 @@ describe('TransportRow', () => {
       vi.doUnmock('@mantine/notifications');
     });
 
+    it.each(['unmount', 'replace'])('skips the old verification read when a play settles after %s', async change => {
+      vi.useFakeTimers();
+      const { TransportRow: Subject } = await import('./TransportRow.jsx');
+      let settle;
+      const sendCommand = vi.fn(() => new Promise(resolve => { settle = resolve; }));
+      const verifyAudio = vi.fn();
+      const row = color => <MantineProvider>
+        <Subject slot={{ ...mkSlot(), color }} status={mkStatus()} mutations={{ sendCommand, verifyAudio }} />
+      </MantineProvider>;
+      const view = render(row('red'));
+      act(() => pickerOnChangeRef('plex:42'));
+      fireEvent.click(screen.getByRole('button', { name: /play now/i }));
+      if (change === 'unmount') view.unmount();
+      else view.rerender(row('blue'));
+      await act(async () => { settle({ applied: ['red'] }); });
+      await act(async () => { await vi.advanceTimersByTimeAsync(5000); });
+      expect(sendCommand).toHaveBeenCalledTimes(1);
+      expect(verifyAudio).not.toHaveBeenCalled();
+    });
+
+    it('drops a pending audio verification response after the row unmounts', async () => {
+      vi.useFakeTimers();
+      const { TransportRow: Subject } = await import('./TransportRow.jsx');
+      let finishRead;
+      const mutations = {
+        sendCommand: vi.fn().mockResolvedValue({ applied: ['red'] }),
+        verifyAudio: vi.fn(() => new Promise(resolve => { finishRead = resolve; })),
+      };
+      const view = render(<MantineProvider><Subject slot={mkSlot()} status={mkStatus()} mutations={mutations} /></MantineProvider>);
+      act(() => pickerOnChangeRef('plex:42'));
+      fireEvent.click(screen.getByRole('button', { name: /play now/i }));
+      await act(async () => { await vi.advanceTimersByTimeAsync(5000); });
+      expect(mutations.verifyAudio).toHaveBeenCalledWith('red');
+      view.unmount();
+      await act(async () => { finishRead({ audio_flowing: true }); });
+      expect(notificationsMock.show).not.toHaveBeenCalled();
+    });
+
     it('after a successful Play Now, calls verifyAudio after 5s and shows a green toast when audio_flowing', async () => {
       vi.useFakeTimers();
       const { TransportRow: Subject } = await import("./TransportRow.jsx");

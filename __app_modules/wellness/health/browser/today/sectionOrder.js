@@ -73,41 +73,56 @@ export const FLIP_CLASS = 'health-flip-moving';
 export function useFlipMoves(containerRef, orderKey) {
   const positions = useRef(null);
   const lastKey = useRef(orderKey);
-  const frame = useRef(0);
+  const cancelMoves = useRef(null);
   useLayoutEffect(() => {
+    const reordered = lastKey.current !== orderKey;
+    if (reordered) {
+      cancelMoves.current?.();
+      cancelMoves.current = null;
+    }
     const root = containerRef.current;
     if (!root) return;
     const base = root.getBoundingClientRect().top;
     const nodes = Array.from(root.children).filter(node => node.dataset?.entryKey);
     const next = new Map(nodes.map(node => [node.dataset.entryKey, node.getBoundingClientRect().top - base]));
     const before = positions.current;
-    const reordered = lastKey.current !== orderKey;
     positions.current = next;
     lastKey.current = orderKey;
     if (!reordered || !before || prefersReducedMotion()) return;
-    const moved = [];
+    const moved = new Set();
     for (const node of nodes) {
       const from = before.get(node.dataset.entryKey);
       const delta = from == null ? 0 : from - next.get(node.dataset.entryKey);
       if (Math.abs(delta) < 1) continue;
       node.classList.remove(FLIP_CLASS);
       node.style.transform = `translateY(${delta}px)`;
-      moved.push(node);
+      moved.add(node);
     }
-    if (!moved.length) return;
-    cancelAnimationFrame(frame.current);
-    frame.current = requestAnimationFrame(() => {
+    if (!moved.size) return;
+    function release(node) {
+      node.removeEventListener('transitionend', settle);
+      node.removeEventListener('transitioncancel', settle);
+      node.classList.remove(FLIP_CLASS);
+      node.style.transform = '';
+      moved.delete(node);
+    }
+    function settle(event) {
+      if (event.target === event.currentTarget && event.propertyName === 'transform') {
+        release(event.currentTarget);
+      }
+    }
+    const frame = requestAnimationFrame(() => {
       for (const node of moved) {
+        node.addEventListener('transitionend', settle);
+        node.addEventListener('transitioncancel', settle);
         node.classList.add(FLIP_CLASS);
         node.style.transform = '';
-        const settle = event => {
-          if (event.propertyName !== 'transform') return;
-          node.classList.remove(FLIP_CLASS);
-          node.removeEventListener('transitionend', settle);
-        };
-        node.addEventListener('transitionend', settle);
       }
     });
+    cancelMoves.current = () => {
+      cancelAnimationFrame(frame);
+      moved.forEach(release);
+    };
   });
-  useLayoutEffect(() => () => cancelAnimationFrame(frame.current), []);
+  useLayoutEffect(() => () => cancelMoves.current?.(), []);
 }

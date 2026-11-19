@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useLayoutEffect, useRef, useState, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   Stack, Group, Text, Badge, Button, Paper, Alert, Center, Loader,
@@ -8,6 +8,7 @@ import {
   IconArrowBack, IconPlayerPlay, IconEdit, IconTrash, IconAlertCircle, IconClock
 } from '@tabler/icons-react';
 import { DaylightAPI } from '../../../lib/api.mjs';
+import { useApiResource } from '../../../lib/hooks/useApiResource.js';
 import ConfirmModal from '../shared/ConfirmModal.jsx';
 import { notifySuccess, notifyFailure } from '../shared/feedback.js';
 
@@ -58,11 +59,26 @@ function InfoRow({ label, children }) {
 
 function JobDetail() {
   const { jobId } = useParams();
-  const navigate = useNavigate();
+  return <JobDetailView key={jobId} jobId={jobId} />;
+}
 
-  const [job, setJob] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
+function JobDetailView({ jobId }) {
+  const navigate = useNavigate();
+  const path = `/api/v1/admin/scheduler/jobs/${encodeURIComponent(jobId)}`;
+  const { data, loading, error: readError, reload } = useApiResource(path);
+  const job = data?.job;
+  const [actionError, setActionError] = useState(null);
+  const [dismissedError, setDismissedError] = useState(null);
+  const error = actionError || (readError !== dismissedError && readError?.message);
+  const mounted = useRef(false);
+  const refreshTimer = useRef(null);
+  useLayoutEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+      clearTimeout(refreshTimer.current);
+    };
+  }, []);
   const [runQueued, setRunQueued] = useState(false);
 
   // Edit modal state
@@ -75,40 +91,26 @@ function JobDetail() {
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleteLoading, setDeleteLoading] = useState(false);
 
-  const fetchJob = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const result = await DaylightAPI(`/api/v1/admin/scheduler/jobs/${jobId}`);
-      setJob(result.job);
-    } catch (err) {
-      setError(err.message || 'Failed to load job');
-    } finally {
-      setLoading(false);
-    }
-  }, [jobId]);
-
-  useEffect(() => {
-    fetchJob();
-  }, [fetchJob]);
-
   const handleRunNow = useCallback(async () => {
     setRunQueued(true);
+    setActionError(null);
     try {
-      await DaylightAPI(`/api/v1/admin/scheduler/jobs/${jobId}/run`, {}, 'POST');
+      await DaylightAPI(`${path}/run`, {}, 'POST');
+      if (!mounted.current) return;
       notifySuccess({ title: 'Job triggered', message: jobId });
       // Re-fetch to update runtime status after a short delay
-      setTimeout(() => {
-        fetchJob();
+      refreshTimer.current = setTimeout(() => {
+        reload();
         setRunQueued(false);
       }, 2000);
     } catch (err) {
+      if (!mounted.current) return;
       const msg = err.message || 'Failed to trigger job';
-      setError(msg);
+      setActionError(msg);
       notifyFailure({ title: 'Trigger failed', message: msg });
       setRunQueued(false);
     }
-  }, [jobId, fetchJob]);
+  }, [jobId, path, reload]);
 
   const openEditModal = useCallback(() => {
     if (!job) return;
@@ -130,36 +132,40 @@ function JobDetail() {
       const deps = editForm.dependencies
         ? editForm.dependencies.split(',').map(d => d.trim()).filter(Boolean)
         : [];
-      await DaylightAPI(`/api/v1/admin/scheduler/jobs/${jobId}`, {
+      await DaylightAPI(path, {
         name: editForm.name,
         module: editForm.module,
         schedule: editForm.schedule,
         dependencies: deps,
         window: editForm.window
       }, 'PUT');
+      if (!mounted.current) return;
       setEditOpen(false);
-      await fetchJob();
+      setActionError(null);
+      reload();
     } catch (err) {
-      setEditError(err.message || 'Failed to save changes');
+      if (mounted.current) setEditError(err.message || 'Failed to save changes');
     } finally {
-      setEditSaving(false);
+      if (mounted.current) setEditSaving(false);
     }
-  }, [jobId, editForm, fetchJob]);
+  }, [path, editForm, reload]);
 
   const handleDelete = useCallback(async () => {
     setDeleteLoading(true);
     try {
-      await DaylightAPI(`/api/v1/admin/scheduler/jobs/${jobId}`, {}, 'DELETE');
+      await DaylightAPI(path, {}, 'DELETE');
+      if (!mounted.current) return;
       notifySuccess({ title: 'Job deleted', message: jobId });
       navigate('/admin/system/scheduler');
     } catch (err) {
+      if (!mounted.current) return;
       const msg = err.message || 'Failed to delete job';
-      setError(msg);
+      setActionError(msg);
       notifyFailure({ title: 'Delete failed', message: msg });
       setDeleteLoading(false);
       setDeleteOpen(false);
     }
-  }, [jobId, navigate]);
+  }, [path, jobId, navigate]);
 
   // Loading state
   if (loading && !job) {
@@ -211,7 +217,7 @@ function JobDetail() {
           color="red"
           title="Error"
           withCloseButton
-          onClose={() => setError(null)}
+          onClose={() => { setActionError(null); setDismissedError(readError); }}
         >
           {error}
         </Alert>

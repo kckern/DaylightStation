@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Group, Stack, Text, Badge, Avatar, Button } from '@mantine/core';
 import {
   IconBluetooth,
@@ -23,9 +23,19 @@ function useFix(color, onFix) {
   const [busy, setBusy] = useState(false);
   const [line, setLine] = useState(null);
   const timer = useRef(null);
-  useEffect(() => () => clearTimeout(timer.current), []);
+  const deviceGeneration = useRef(0);
+  useLayoutEffect(() => {
+    setBusy(false);
+    setLine(null);
+    return () => {
+      deviceGeneration.current += 1;
+      clearTimeout(timer.current);
+    };
+  }, [color]);
 
   const run = async () => {
+    const generation = deviceGeneration.current;
+    clearTimeout(timer.current);
     setBusy(true);
     setLine('Working on it…');
     logger.info('fix.click', { color });
@@ -35,6 +45,7 @@ function useFix(color, onFix) {
     } catch (err) {
       out = { ok: false, result: err?.message || 'The hub did not answer.' };
     }
+    if (generation !== deviceGeneration.current) return;
     logger.info('fix.result', { color, ok: out?.ok, code: out?.code, result: out?.result });
     setBusy(false);
     setLine(out?.result || out?.error || 'Done.');
