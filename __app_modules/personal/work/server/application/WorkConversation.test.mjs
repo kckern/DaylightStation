@@ -149,6 +149,10 @@ function setup(extra = {}) {
     scheduler,
     clock: () => now,
     deliver,
+    describeProvider: () => ({
+      containerNoun: 'project',
+      assigneeField: 'single'
+    }),
     ...extra
   });
   const save = () => service.onEntrySaved({
@@ -456,4 +460,9 @@ it.each([['single', {
   });
   expect(result.status).toBe('confirmation');
   expect(x.commands.propose.mock.calls.at(-1)[0].intent.payload).toMatchObject(expected);
+});
+it('requires a provider descriptor function', () => {
+  expect(() => setup({
+    describeProvider: undefined
+  })).toThrow('Work provider descriptor required');
 });

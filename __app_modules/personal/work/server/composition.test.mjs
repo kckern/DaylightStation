@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { createWorkRuntime, resolveWorkHarvestScope } from './runtime.mjs';
+import { workProviderClass } from './composition.mjs';
 import { AS_OF, todoTask } from '../../../../tests/_lib/work/observations.mjs';
 const configuration = () => ({
   work: {
@@ -552,4 +553,12 @@ it('keeps KB-only attention behavior for an unenrolled or read-only user without
       force: true
     });
   }
+});
+
+describe('workProviderClass', () => {
+  it('selects the adapter for each configured type and rejects unknown types', () => {
+    expect(workProviderClass({ type: 'todoist' }).descriptor).toMatchObject({ assigneeField: 'single' });
+    expect(workProviderClass({ type: 'clickup' }).descriptor).toMatchObject({ containerNoun: 'List' });
+    expect(() => workProviderClass({ type: 'other' })).toThrow('Unknown work provider type');
+  });
 });

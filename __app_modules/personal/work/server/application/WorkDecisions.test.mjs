@@ -131,7 +131,11 @@ async function setup() {
     verifyPrincipal,
     clock: () => time.now,
     nextId: randomUUID,
-    tokens
+    tokens,
+    describeProvider: () => ({
+      containerNoun: 'project',
+      assigneeField: 'single'
+    })
   };
   decisions = new WorkDecisions(options);
   const proposed = await commands.propose({
@@ -841,4 +845,11 @@ it('a web principal cannot open a Telegram decision page', async () => {
     commandId: x.command.id,
     asOf: AS_OF
   })).rejects.toThrow('WORK_PRINCIPAL_REQUIRED');
+});
+it('requires a provider descriptor function', async () => {
+  const x = await setup();
+  expect(() => new WorkDecisions({
+    ...x.options,
+    describeProvider: undefined
+  })).toThrow('Work provider descriptor required');
 });

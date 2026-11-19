@@ -6,10 +6,6 @@ const denied = reason => ({
   reason
 });
 const SESSION_GRANT_MS = 5 * 60000;
-const DEFAULT_PROVIDER_DESCRIPTOR = Object.freeze({
-  containerNoun: 'project',
-  assigneeField: 'single'
-});
 const labels = {
   complete: 'Complete task',
   reopen: 'Reopen task',
@@ -47,10 +43,11 @@ export class WorkDecisions {
     clock,
     nextId,
     tokens,
-    describeProvider = () => DEFAULT_PROVIDER_DESCRIPTOR,
+    describeProvider,
     logger = null
   }) {
     if (!state?.read || !state?.transact || !commands?.execute || typeof resolvePolicy !== 'function' || typeof verifyPrincipal !== 'function' || typeof clock !== 'function' || typeof nextId !== 'function' || !tokens?.mint || !tokens?.hash) throw new TypeError('Work decision dependencies required');
+    if (typeof describeProvider !== 'function') throw new TypeError('Work provider descriptor required');
     this.#state = state;
     this.#commands = commands;
     this.#context = context;

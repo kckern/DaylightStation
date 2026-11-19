@@ -146,7 +146,11 @@ async function setup(count = 1) {
       verifyPrincipal: p => authority.verify(p),
       clock: () => now,
       nextId: randomUUID,
-      tokens: createWorkCallbackTokens()
+      tokens: createWorkCallbackTokens(),
+      describeProvider: () => ({
+        containerNoun: 'project',
+        assigneeField: 'single'
+      })
     });
   const selector = new SelectWorkFlow({
     context,
