@@ -4,7 +4,7 @@ import { foodOperationScope } from "./foodOperationScope.js";
 import { createHealthOperations } from './healthOperations.js';
 import { createHealthReconciliation } from './healthReconciliation.js';
 import { normalizeFoodOperationResult } from './healthOperationResults.js';
-import { primeApiResource, peekApiResource, patchApiResource } from '../../../../../frontend/src/lib/hooks/useApiResource.js';
+import { peekApiResource, patchApiResource } from '../../../../../frontend/src/lib/hooks/useApiResource.js';
 import { createAppLogger } from "../../../../../frontend/src/lib/ui/createAppLogger.js";
 import { healthDayPath, refreshHealthResources } from '../healthResources.js';
 
@@ -49,7 +49,8 @@ function Session({ userId, children, send }) {
         const rows = [];
         for (const date of dates) {
           const readToken = reconciliation.beginRead();
-          const fresh = await send(healthDayPath(date));
+          const path = healthDayPath(date);
+          const fresh = await send(path);
           if (!owner?.active || store.disposed) return;
           const current = fresh.items || fresh.data || [];
           if (Object.entries(result.versions).some(([id, version]) => {
@@ -58,7 +59,7 @@ function Session({ userId, children, send }) {
           })) throw new Error('Saved changes are still refreshing. Retry refresh.');
           const projected = reconciliation.reconcile({ date, rows: current, budget: fresh.budget, readToken });
           const snapshot = { ...fresh, items: projected.rows, budget: projected.budget };
-          if (!patchApiResource(healthDayPath(date), () => snapshot)) primeApiResource(healthDayPath(date), snapshot);
+          patchApiResource(path, () => snapshot, { create: true });
           rows.push(...current);
         }
         result = { ...result, rows, removedIds: (op.targetIds || []).filter(id => !rows.some(row => String(row.uuid ?? row.id) === id)) };

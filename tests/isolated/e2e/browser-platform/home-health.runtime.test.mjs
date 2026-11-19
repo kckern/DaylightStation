@@ -525,6 +525,106 @@ test('Health keeps a late auditor settings response out of a different user’s 
 const cleanupEndpoint = '/api/v1/health/nutrition/cleanup';
 const runAt = '2026-09-25T15:42:00.000Z';
 
+function mockHealthVisibility(page) {
+  return page.addInitScript(() => {
+    window.healthFixtureVisible = true;
+    Object.defineProperty(document, 'visibilityState', {
+      get: () => window.healthFixtureVisible ? 'visible' : 'hidden',
+    });
+  });
+}
+
+function foregroundHealth(page) {
+  return page.evaluate(() => {
+    window.healthFixtureVisible = false;
+    document.dispatchEvent(new Event('visibilitychange'));
+    window.healthFixtureVisible = true;
+    document.dispatchEvent(new Event('visibilitychange'));
+  });
+}
+
+test('Health Settings refreshes its auditor summary and questions with one foreground read', async ({ page }) => {
+  await mockHealthVisibility(page);
+  await page.route('**/health/context', route => route.fulfill({ json: { userId: 'alice' } }));
+  let reads = 0;
+  let question = 'Which fish did you eat?';
+  await page.route(`**${cleanupEndpoint}`, route => {
+    reads += 1;
+    return route.fulfill({ json: {
+      settings: { enabled: true, dryRun: true },
+      runs: [],
+      questions: [{ id: 'fish', version: 1, question, choices: [] }],
+    } });
+  });
+
+  await page.goto('/health/settings');
+  await expect(page.getByText('Preview only · No runs yet', { exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: question })).toBeVisible();
+  expect(reads).toBe(1);
+
+  question = 'Which fish was in the sandwich?';
+  await foregroundHealth(page);
+  await expect(page.getByRole('heading', { name: question })).toBeVisible();
+  expect(reads).toBe(2);
+});
+
+test('Health auditor refreshes its spend once when the latest run finishes', async ({ page }) => {
+  await mockHealthVisibility(page);
+  await page.route('**/health/context', route => route.fulfill({ json: { userId: 'alice' } }));
+  let completedAt = null;
+  let statusReads = 0;
+  let spendReads = 0;
+  await page.route(`**${cleanupEndpoint}`, route => {
+    statusReads += 1;
+    return route.fulfill({ json: {
+      settings: { enabled: false },
+      options: { minGapMinutes: [0] },
+      questions: [],
+      runs: [{ id: 'fish-run', createdAt: runAt, completedAt }],
+    } });
+  });
+  await page.route(`**${cleanupEndpoint}/spend?days=30`, route => {
+    spendReads += 1;
+    return route.fulfill({ json: { today: completedAt ? 0.3 : 0.1, week: 0.3, month: 0.3 } });
+  });
+  await page.route(`**${cleanupEndpoint}/journal**`, route => route.fulfill({ json: { rows: [], total: 0 } }));
+  await page.route(`**${cleanupEndpoint}/history**`, route => route.fulfill({ json: { records: [], total: 0 } }));
+
+  await page.goto('/health/auditor');
+  await expect(page.getByText('$0.10 today', { exact: true })).toBeVisible();
+  expect(spendReads).toBe(1);
+  const unchanged = page.waitForResponse(response => new URL(response.url()).pathname === cleanupEndpoint);
+  await foregroundHealth(page);
+  await (await unchanged).finished();
+  await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+  expect(statusReads).toBe(2);
+  expect(spendReads).toBe(1);
+
+  completedAt = '2026-09-25T15:43:00.000Z';
+  await foregroundHealth(page);
+  await expect(page.getByText('$0.30 today', { exact: true })).toBeVisible();
+  expect(spendReads).toBe(2);
+});
+
+test('Health Progress recovers the saved goals from a GET-only retry', async ({ page }) => {
+  let reads = 0;
+  const methods = [];
+  await page.route('**/health/context', route => route.fulfill({ json: { userId: 'alice' } }));
+  await page.route('**/api/v1/health/goals', route => {
+    methods.push(route.request().method());
+    if (++reads === 1) return route.fulfill({ status: 409, json: { error: 'Goals temporarily unavailable' } });
+    return route.fulfill({ json: { goals: { targetWeightLbs: 170, weeklyRateLbs: 0.5, budgetFloor: 1600 } } });
+  });
+
+  await page.goto('/health/progress');
+  await expect(page.getByText('Goals failed to load', { exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Edit goals' })).toBeHidden();
+  await page.getByRole('button', { name: 'Retry', exact: true }).click();
+  await expect(page.getByText('Target 170 lb', { exact: false })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Edit goals' })).toBeEnabled();
+  expect(methods).toEqual(['GET', 'GET']);
+});
+
 async function mockCleanupSession(page) {
   let owner = 'alice';
   let historyReads = 0;

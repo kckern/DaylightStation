@@ -12,7 +12,7 @@ import { DaylightAPI } from "../../../../../frontend/src/lib/api.mjs";
 import { createAppLogger } from "../../../../../frontend/src/lib/ui/createAppLogger.js";
 import { useApiResource } from "../../../../../frontend/src/lib/hooks/useApiResource.js";
 import { useHealthDay } from "./useHealthDay.js";
-import { pendingReviewPath, observationsPath, healthDayPath } from "../healthResources.js";
+import { HEALTH_DASHBOARD_PATH, pendingReviewPath, observationsPath, healthDayPath } from "../healthResources.js";
 import { useHealthDayPrefetch } from "./useHealthDayPrefetch.js";
 import { useAddedRowHighlight } from "./addFlow.js";
 import { EquationStrip } from "./EquationStrip.jsx";
@@ -229,7 +229,7 @@ export function TodayView({ active = true, sidebarTarget, followUpTarget = null,
   // Waiting its turn with nothing cached reads as loading, not as an empty month.
   const monthLoading = monthRange.loading || (!settled && !monthRange.days.length);
   // Only the coach line reads this, and it is the slowest call Health makes.
-  const dash = useApiResource('api/v1/health/dashboard', { enabled: active && settled, label: 'dashboard', logger, swr: true });
+  const dash = useApiResource(HEALTH_DASHBOARD_PATH, { enabled: active && settled, label: 'dashboard', logger, swr: true });
   // Review belongs to the shared food log, regardless of capture surface.
   // In particular, scanner/Telegram UPC captures can remain pending until
   // a portion is confirmed. Health must offer confirmation for those too.

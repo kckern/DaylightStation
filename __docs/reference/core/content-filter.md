@@ -839,6 +839,8 @@ It starts collapsed; open state of all sections is kept in `localStorage`. Ready
 and Running start open. A verified card with a runtime warning shows a small "Runtime 162 min (VidAngel 124)"
 note (Plex file / VidAngel). A title search flattens the verified films into one grid with stage
 chips and filters the Not matched section alike; the "N of M films" count covers both.
+When a build request is acknowledged, the shared library read refreshes any
+open library view, including one reopened while the request was pending.
 
 An unmatched film's page (`GET /:rk/review`) answers `200 { title, year, match: 'unmatched',
 unmatched }` when there is nothing to review, and the page says why the film can't be reviewed

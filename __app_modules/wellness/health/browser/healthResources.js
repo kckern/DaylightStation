@@ -8,7 +8,7 @@ const logger = () => (_logger ??= createAppLogger('health').child('health-resour
 // seconds of server work that stalls every other request behind it, including
 // the day refetch a write is waiting on. Nothing a food write changes reaches
 // what Today reads from it (the coach line), so a write leaves it alone.
-const DASHBOARD_PATH = 'api/v1/health/dashboard';
+export const HEALTH_DASHBOARD_PATH = 'api/v1/health/dashboard';
 const STATIC_ICON_PATH = 'api/v1/health/nutrition/icons';
 const isHealthResource = path => (path.startsWith('api/v1/health/') && !path.startsWith(STATIC_ICON_PATH))
   || path === 'api/v1/lifelog/weight';
@@ -21,7 +21,7 @@ const isHealthResource = path => (path.startsWith('api/v1/health/') && !path.sta
  */
 export const unavailableError = resource => (resource?.data == null ? resource?.error ?? null : null);
 
-const isHealthRefreshResource = path => isHealthResource(path) && path !== DASHBOARD_PATH;
+const isHealthRefreshResource = path => isHealthResource(path) && path !== HEALTH_DASHBOARD_PATH;
 export const refreshHealthResources = () => invalidateApiResources(isHealthRefreshResource);
 export const pollHealthResources = () => pollApiResources(isHealthRefreshResource);
 

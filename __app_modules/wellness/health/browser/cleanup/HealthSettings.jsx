@@ -31,7 +31,7 @@ export function CleanupSettings() {
       </Stack>
     </SectionCard>
     <AiUsageCard compact />
-    <CleanupQuestions />
+    <CleanupQuestions resource={resource} />
     <ArtworkQueue />
   </Stack>;
 }

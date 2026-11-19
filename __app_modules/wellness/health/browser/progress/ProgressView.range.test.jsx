@@ -1,16 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { MantineProvider } from '@mantine/core';
 
-// The one thing this file exists to pin: the Progress page fires TWO range
-// requests, not fourteen per-day ones. Before Task 8.5 the adherence bars were
-// a `Promise.all` over 14 `GET /budget?date=` calls fired on mount — the same
-// fan-out the week strip had, on a page people open right after Today.
-//
-// ProgressView mounts Highcharts, which is why it had no test file at all
-// (decision log §6.13). Highcharts is stubbed here rather than the whole
-// component being left unverified: the chart's rendering is not what this
-// asserts, the network shape is.
+// Stub the chart renderer so these tests can exercise the real Progress view
+// and its resource reads without requiring a browser layout engine.
 const apiMock = vi.fn();
 vi.mock("../../../../../frontend/src/lib/api.mjs", () => ({ DaylightAPI: (...a) => apiMock(...a) }));
 vi.mock('highcharts', () => ({ default: {} }));
@@ -36,9 +29,53 @@ beforeEach(() => {
       const p = new URLSearchParams(path.split('?')[1]);
       return rangeDays(p.get('from'), p.get('to'));
     }
-    if (path.includes('lifelog/weight')) return {};
+    if (path === 'api/v1/health/weight') return {};
     if (path.includes('health/goals')) return { goals: { heightIn: 70, birthYear: 1986, sex: 'male' } };
     return {};
+  });
+});
+
+describe('ProgressView resource reads', () => {
+  it('retries a failed initial goals read and opens the editor with the saved goals', async () => {
+    const fallback = apiMock.getMockImplementation();
+    let rejectInitialGoals;
+    const initialGoals = new Promise((_, reject) => { rejectInitialGoals = reject; });
+    let goalReads = 0;
+    apiMock.mockImplementation((path, ...args) => {
+      if (path === 'api/v1/health/goals') {
+        if (++goalReads === 1) return initialGoals;
+        return Promise.resolve({ goals: { sex: 'female', targetWeightLbs: 155, weeklyRateLbs: 0.5, budgetFloor: 1500, heightIn: 66, birthYear: 1986 } });
+      }
+      return fallback(path, ...args);
+    });
+
+    render(<MantineProvider><ProgressView /></MantineProvider>);
+    expect(screen.queryByRole('button', { name: 'Edit goals' })).toBeNull();
+    await act(async () => { rejectInitialGoals(new Error('Goals unavailable')); });
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent('Goals failed to load');
+    expect(screen.queryByRole('button', { name: 'Edit goals' })).toBeNull();
+
+    fireEvent.click(within(alert).getByRole('button', { name: 'Retry' }));
+    expect(await screen.findByText('Target 155 lb · 0.5 lb/week · Floor 1500 kcal')).toBeVisible();
+    expect(apiMock.mock.calls.filter(([path]) => path === 'api/v1/health/goals')).toEqual([
+      ['api/v1/health/goals'], ['api/v1/health/goals'],
+    ]);
+    fireEvent.click(screen.getByRole('button', { name: 'Edit goals' }));
+    expect(await screen.findByLabelText('Target weight')).toHaveValue('155 lbs');
+  });
+
+  it('reads Health weight history and shows the latest adjusted weight', async () => {
+    const fallback = apiMock.getMockImplementation();
+    apiMock.mockImplementation((path) => path === 'api/v1/health/weight' ? Promise.resolve({
+      '2026-09-03': { date: '2026-09-03', lbs: 172.4, measurement: 172.4, lbs_adjusted_average: 172.0 },
+      '2026-09-10': { date: '2026-09-10', lbs: 170.9, measurement: 170.9, lbs_adjusted_average: 171.6 },
+    }) : fallback(path));
+
+    render(<MantineProvider><ProgressView /></MantineProvider>);
+    expect(await screen.findByText('Weight · as of 2026-09-10')).toBeVisible();
+    expect(screen.getByText('171.6')).toBeVisible();
+    expect(apiMock.mock.calls.filter(([path]) => path === 'api/v1/health/weight')).toEqual([['api/v1/health/weight']]);
   });
 });
 

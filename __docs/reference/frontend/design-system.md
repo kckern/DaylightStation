@@ -237,6 +237,12 @@ names have a wider audience and refresh the mounted journey and fuel-stop
 reads that use them.
 [Auto API](../../../__app_modules/household/auto/browser/useAutoApi.js)
 
+Use `patchApiResource(path, update, { create: true })` when a confirmed
+snapshot must publish even if the key is cold. The patch retires older
+requests and reaches mounted readers before they revalidate. Health uses
+this when reconciliation returns the first snapshot for an affected day.
+[Health reconciliation](../../../__app_modules/wellness/health/browser/operations/HealthOperationsProvider.jsx)
+
 For writes that update view state or invalidate session-wide reads, check
 that the submitting session is still active. Health keeps its session above
 the tabs, so a save can update the day after tab navigation. A new session

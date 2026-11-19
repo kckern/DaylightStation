@@ -44,6 +44,7 @@ export function ProgressView() {
 
   const weightRes = useApiResource('api/v1/health/weight', { label: 'weight', logger });
   const goalsRes = useApiResource('api/v1/health/goals', { label: 'goals', logger });
+  const goalsError = unavailableError(goalsRes);
   const [form, setForm] = useState(null);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState(null);
@@ -110,10 +111,12 @@ export function ProgressView() {
   return (
     <div className="health-progress" ref={containerRef}>
       <SectionCard title="Goals">
-        <div className="health-goals-summary"><Text size="sm">{goalsRes.data?.goals
-          ? `Target ${goalsRes.data.goals.targetWeightLbs ?? '—'} lb · ${goalsRes.data.goals.weeklyRateLbs ?? '—'} lb/week · Floor ${goalsRes.data.goals.budgetFloor ?? '—'} kcal${goalsRes.data.goals.maintenanceKcal ? ` · Break even ${goalsRes.data.goals.maintenanceKcal} kcal` : ''}`
-          : 'Set your goals to calculate a daily budget.'}</Text>
-          <Button variant="light" onClick={() => { setForm(goalsRes.data?.goals || emptyGoals()); setSaveError(null); setEditingGoals(true); }}>Edit goals</Button></div>
+        {goalsError ? <ErrorState error={goalsError} onRetry={goalsRes.reload} label="Goals" />
+          : goalsRes.loading && !goalsRes.data ? <LoadingState label="goals" rows={1} />
+            : <div className="health-goals-summary"><Text size="sm">{goalsRes.data?.goals
+              ? `Target ${goalsRes.data.goals.targetWeightLbs ?? '—'} lb · ${goalsRes.data.goals.weeklyRateLbs ?? '—'} lb/week · Floor ${goalsRes.data.goals.budgetFloor ?? '—'} kcal${goalsRes.data.goals.maintenanceKcal ? ` · Break even ${goalsRes.data.goals.maintenanceKcal} kcal` : ''}`
+              : 'Set your goals to calculate a daily budget.'}</Text>
+              <Button variant="light" onClick={() => { setForm(goalsRes.data?.goals || emptyGoals()); setSaveError(null); setEditingGoals(true); }}>Edit goals</Button></div>}
       </SectionCard>
       {weightRes.loading ? <LoadingState label="weight history" rows={5} /> : null}
       {unavailableError(weightRes) ? <ErrorState error={weightRes.error} onRetry={weightRes.reload} label="Weight history" /> : null}
@@ -161,7 +164,7 @@ export function ProgressView() {
       </SectionCard>
 
       <Sheet open={editingGoals} onClose={() => { if (!saving) { setEditingGoals(false); setForm(goalsRes.data?.goals || null); } }} title="Edit goals">
-        {unavailableError(goalsRes) ? <ErrorState error={goalsRes.error} onRetry={goalsRes.reload} label="Goals" /> : !form ? <LoadingState label="goals" rows={4} /> : (
+        {goalsError ? <ErrorState error={goalsError} onRetry={goalsRes.reload} label="Goals" /> : !form ? <LoadingState label="goals" rows={4} /> : (
           <Stack gap="sm">
             {saveError ? <Text size="sm" c="red">{goalSaveMessage(saveError)}</Text> : null}
             <SegmentedControl aria-label="Sex for budget calculation" value={form.sex || 'male'} onChange={(v) => setForm({ ...form, sex: v })}

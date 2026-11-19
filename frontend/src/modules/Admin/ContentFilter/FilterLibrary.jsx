@@ -4,7 +4,7 @@ import { Accordion, Badge, Button, Group, Select, SimpleGrid, Stack, Text, TextI
 import { browserPreference } from '../../../lib/browserPreference.js';
 import { useVisibleRefresh } from '../../../lib/hooks/useVisibleRefresh.js';
 import { DaylightAPI } from '../../../lib/api.mjs';
-import { useApiResource } from '../../../lib/hooks/useApiResource.js';
+import { invalidateApiResources, useApiResource } from '../../../lib/hooks/useApiResource.js';
 import { LoadingState, ErrorState, EmptyState, SectionCard, createAppLogger } from '../../../lib/ui/index.js';
 import { STAGE_LABELS } from '../../../../../__app_modules/media/media/browser/content-filter/adminWorkspace.mjs';
 import './ContentFilterAdmin.scss';
@@ -16,6 +16,7 @@ import './ContentFilterAdmin.scss';
  */
 const logger = createAppLogger('admin').child('content-filter');
 const API = 'api/v1/content-filter';
+const LIBRARY_PATH = `${API}/library`;
 const POLL_MS = 5000;
 
 export { STAGE_LABELS };
@@ -50,7 +51,7 @@ export function runText(job, worker = null) {
 const active = (job) => job?.status === 'queued' || job?.status === 'running';
 
 export function FilterLibrary() {
-  const { data, loading, error, reload, poll } = useApiResource(`${API}/library`, { label: 'content filter library', logger });
+  const { data, loading, error, reload, poll } = useApiResource(LIBRARY_PATH, { label: 'content filter library', logger });
   const [stage, setStage] = useState(null);
   const [q, setQ] = useState('');
   const [busy, setBusy] = useState(null);
@@ -69,12 +70,12 @@ export function FilterLibrary() {
     try {
       const r = await DaylightAPI(`${API}/${encodeURIComponent(film.ratingKey)}/jobs`, { kind: 'make' }, 'POST');
       logger.info('job.queued', { ratingKey: film.ratingKey, runId: r?.run?.id ?? null });
-      reload();
+      invalidateApiResources(path => path === LIBRARY_PATH);
     } catch (err) {
       logger.warn('job.queue_failed', { ratingKey: film.ratingKey, error: err.message });
       setNotice(err.message || 'That did not work.');
     } finally { setBusy(null); }
-  }, [reload]);
+  }, []);
 
   const [openSections, setOpenSections] = useState(openSectionsPreference.read);
   const onToggle = useCallback((v) => { setOpenSections(v); openSectionsPreference.write(JSON.stringify(v)); }, []);

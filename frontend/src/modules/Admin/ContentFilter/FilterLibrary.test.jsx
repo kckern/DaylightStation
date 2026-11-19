@@ -5,6 +5,7 @@ import { MemoryRouter } from 'react-router-dom';
 
 const calls = [];
 const reload = vi.fn();
+const poll = vi.fn();
 let failNext = null;
 let worker = { alive: true };
 const films = [
@@ -17,8 +18,9 @@ const films = [
   { ratingKey: '78', title: 'Back to the Future', year: 1985, stage: 'running', job: { status: 'running', step: 'refine', error: null }, reviewed: null },
   { ratingKey: '79', title: 'Matilda', year: 1996, stage: 'audited', job: { status: 'failed', step: 'scenes', error: 'Jev timed out' }, reviewed: { n: 3, m: 40 } },
 ];
-vi.mock('../../../lib/hooks/useApiResource.js', () => ({
-  useApiResource: () => ({ data: { films, worker, meta: { indexedAt: '2026-06-30T00:00:00.000Z', total: 8, unlinked: 1, verified: 6, unmatched: 2 } }, loading: false, error: null, reload }),
+vi.mock('../../../lib/hooks/useApiResource.js', async original => ({
+  ...await original(),
+  useApiResource: () => ({ data: { films, worker, meta: { indexedAt: '2026-06-30T00:00:00.000Z', total: 8, unlinked: 1, verified: 6, unmatched: 2 } }, loading: false, error: null, reload, poll }),
 }));
 vi.mock('../../../lib/api.mjs', () => ({
   DaylightAPI: async (path, body, method) => {
@@ -52,18 +54,22 @@ describe('FilterLibrary', () => {
     vi.useFakeTimers();
     const visibility = vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('hidden');
     reload.mockClear();
+    poll.mockClear();
     try {
       const { unmount } = show();
       act(() => vi.advanceTimersByTime(10_000));
       expect(reload).not.toHaveBeenCalled();
+      expect(poll).not.toHaveBeenCalled();
       visibility.mockReturnValue('visible');
       fireEvent(document, new Event('visibilitychange'));
       expect(reload).toHaveBeenCalledTimes(1);
       act(() => vi.advanceTimersByTime(5000));
-      expect(reload).toHaveBeenCalledTimes(2);
+      expect(reload).toHaveBeenCalledTimes(1);
+      expect(poll).toHaveBeenCalledTimes(1);
       unmount();
       act(() => vi.advanceTimersByTime(5000));
-      expect(reload).toHaveBeenCalledTimes(2);
+      expect(reload).toHaveBeenCalledTimes(1);
+      expect(poll).toHaveBeenCalledTimes(1);
     } finally {
       visibility.mockRestore();
       vi.useRealTimers();

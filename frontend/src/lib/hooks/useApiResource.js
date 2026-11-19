@@ -352,16 +352,18 @@ export function primeApiResource(path, value) {
  * prefetch) from writing the pre-write value back over it.
  *
  * `update(current)` returns the next value, or undefined to leave it alone.
- * Returns false when nothing has loaded the path yet: there is nothing on
- * screen to patch, and the reader's own load will include the change.
+ * Returns false when nothing has loaded the path yet. With `create: true`,
+ * `update(undefined)` can publish the first value using the same read guards.
  */
-export function patchApiResource(path, update) {
-  if (!swrCache.has(path)) return false;
+export function patchApiResource(path, update, { create = false } = {}) {
+  const cached = swrCache.has(path);
+  if (!cached && !create) return false;
   const next = update(swrCache.get(path));
   if (next === undefined) return false;
   inFlight.delete(path);
   claimGeneration(path);
   cacheSet(path, next);
+  if (!cached) fetchedAt.set(path, Date.now());
   for (const notify of patchListeners) notify(path, next);
   return true;
 }

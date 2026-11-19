@@ -239,8 +239,10 @@ scoped views, `origin`, Whisper (billed on returned audio duration) and TTS
 
 ## The auditor page
 
-`/health/auditor` (`frontend/src/modules/Health/auditor/`), reached from Health
-→ Settings → **Open auditor**. One cleanup status poll feeds every section.
+`/health/auditor` (`__app_modules/wellness/health/browser/auditor/`), reached from
+Health → Settings → **Open auditor**. One cleanup status poll feeds the
+auditor page. Settings shares one status read between its summary and open
+questions. The spend summary refreshes when the latest run changes or finishes.
 Top to bottom:
 
 - **Header**: state (On / Preview only / Off, and Over cap), model, last run,

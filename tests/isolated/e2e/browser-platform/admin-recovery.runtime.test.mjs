@@ -71,3 +71,37 @@ test('Review keys supports pointer and keyboard dismissal and returns focus to i
   await expect(dialog).toBeHidden();
   await expect(opener).toBeFocused();
 });
+
+test('Admin refreshes the reopened filter library when a queued job is acknowledged', async ({ page }) => {
+  let pendingJob;
+  let queued = false;
+  const calls = [];
+  await page.route('**/api/v1/content-filter/library', route => {
+    calls.push(route.request().method());
+    return route.fulfill({ json: { films: [{
+      ratingKey: '77', title: 'Fixture Film', stage: 'parent', job: queued ? { status: 'queued' } : null,
+    }] } });
+  });
+  await page.route('**/api/v1/content-filter/77/jobs', route => {
+    calls.push(route.request().method());
+    pendingJob = route;
+  });
+  await page.route('**/api/v1/content-filter/77/review', route => route.fulfill({ json: {
+    title: 'Fixture Film', certification: { level: 'none' }, audit: null, rows: [],
+    reviewed: 0, total: 0, job: null, signOff: { ready: false, missing: [], parent: null },
+  } }));
+
+  await page.goto('/admin/content/filter');
+  await page.getByRole('button', { name: 'Run again' }).click();
+  await expect.poll(() => Boolean(pendingJob)).toBe(true);
+  await page.getByRole('link', { name: /Fixture Film/ }).click();
+  await expect(page.getByRole('button', { name: 'All keys' })).toBeVisible();
+  await page.goBack();
+  await expect(page.getByRole('button', { name: 'Run again' })).toBeEnabled();
+
+  queued = true;
+  expect(pendingJob.request().postDataJSON()).toEqual({ kind: 'make' });
+  await pendingJob.fulfill({ json: { run: { id: 'fixture-job' } } });
+  await expect(page.getByText('Queued', { exact: true })).toBeVisible();
+  expect(calls).toEqual(['GET', 'POST', 'GET', 'GET']);
+});

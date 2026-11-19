@@ -62,6 +62,7 @@ import { TodayView } from "./TodayView.jsx";
 import { localTodayISO } from "./mealBuckets.js";
 import { addDaysISO } from "./moveDays.js";
 import { resetApiResourceCache } from "../../../../../frontend/src/lib/hooks/useApiResource.js";
+import { refreshHealthResources, refreshHealthResourcesWithDashboard } from "../healthResources.js";
 
 function r(ui) { return render(<MemoryRouter><MantineProvider>{ui}</MantineProvider></MemoryRouter>); }
 
@@ -78,6 +79,33 @@ const baseApi = (overrides = {}) => async (path) => {
   if (path.includes('nutrition/input')) return overrides.nutritionInput ?? {};
   return {};
 };
+
+it('waits for the day before reading the coach line and refreshes it after coaching', async () => {
+  apiMock.mockReset();
+  resetApiResourceCache();
+  const day = Promise.withResolvers();
+  const dashboardPath = 'api/v1/health/dashboard';
+  const dashboardReads = () => apiMock.mock.calls.filter(([path]) => path === dashboardPath);
+  let line = 'First coach line';
+  apiMock.mockImplementation(path => {
+    if (path === `api/v1/health/day?date=${localTodayISO()}`) return day.promise;
+    if (path === dashboardPath) return Promise.resolve({ today: { coaching: [{ text: `<b>${line}</b>\nDetails` }] } });
+    return baseApi()(path);
+  });
+  r(<TodayView onSetupGoals={() => {}} onCoachTap={() => {}} />);
+  await waitFor(() => expect(apiMock).toHaveBeenCalledWith(`api/v1/health/day?date=${localTodayISO()}`));
+  expect(dashboardReads()).toHaveLength(0);
+  await act(async () => day.resolve({ items: [], budget: BUDGET }));
+  expect(await screen.findByRole('button', { name: line })).toBeVisible();
+
+  await act(async () => refreshHealthResources());
+  expect(dashboardReads()).toHaveLength(1);
+
+  line = 'Updated coach line';
+  await act(async () => refreshHealthResourcesWithDashboard());
+  expect(await screen.findByRole('button', { name: line })).toBeVisible();
+  expect(dashboardReads()).toHaveLength(2);
+});
 
 // Captures are committed on arrival (Task 1.1): a successful photo/voice
 // submit already logged the row(s) as accepted+unsettled — there is no
