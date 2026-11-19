@@ -42,6 +42,17 @@ describe('PianoHomeDesk progress strip', () => {
     expect(marks.map((mark) => mark.hasAttribute('data-current'))).toEqual([false, true, false]);
   });
 
+  it('counts the piece with coins, as the passage board does, and says no sentence', async () => {
+    mount();
+    const card = await screen.findByRole('button', { name: 'Kid: 1 of 3 Silver' });
+    const count = card.querySelector('.piano-desk__count');
+    expect(count.textContent).toBe('1/3');
+    expect(count.querySelectorAll('.coin-icon[data-metal="silver"]')).toHaveLength(1);
+    // Gold is counted only once there is some.
+    expect(count.querySelector('[data-level="gold"]')).toBeNull();
+    expect(card.textContent).not.toMatch(/ of 3 Silver/);
+  });
+
   it('shows only the children, never the parents', async () => {
     h.recent.players.push({ userId: 'parent', name: 'Parent', courses: [course] });
     mount();

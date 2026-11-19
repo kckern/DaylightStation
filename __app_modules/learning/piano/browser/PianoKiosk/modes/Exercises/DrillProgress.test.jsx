@@ -154,4 +154,21 @@ describe('DrillProgress', () => {
     expect(screen.queryAllByRole('button')).toHaveLength(0);
     expect(container.querySelectorAll('div.drill-cluster')).toHaveLength(2);
   });
+
+  it("names a set with the host's picture and keeps its words as the accessible name", () => {
+    const pictured = (n, over) => step(n, { title: `Step ${n}`, display: { key: `Words ${n}`, hand: null, icon: <svg data-testid={`icon-${n}`} /> }, ...over });
+    const program = { id: 'p', steps: [pictured(1, { state: 'current' }), pictured(2), step(3)] };
+    const { rerender, container } = render(<DrillProgress program={program} stepId="scale-set-1" onPick={() => {}} />);
+    const sets = screen.getAllByRole('button');
+    expect(sets.map((set) => set.getAttribute('aria-label'))).toEqual(['Step 1', 'Step 2', 'Set 3']);
+    expect(sets[0].querySelector('.drill-cluster__label--icon [data-testid="icon-1"]')).not.toBeNull();
+    expect(sets[0].textContent).not.toContain('Words 1');
+    // A set with no picture still reads as words.
+    expect(sets[2].textContent).toContain('A major');
+    rerender(<DrillProgress program={program} stepId="scale-set-1" />);
+    expect(container.querySelector('div.drill-cluster[role="group"]').getAttribute('aria-label')).toBe('Step 1');
+    // The game gate's unlabelled run draws no picture either.
+    rerender(<DrillProgress program={program} stepId="scale-set-1" labels={false} />);
+    expect(container.querySelector('.drill-cluster__label')).toBeNull();
+  });
 });

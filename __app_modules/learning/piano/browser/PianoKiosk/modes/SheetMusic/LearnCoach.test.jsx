@@ -110,20 +110,12 @@ describe('LearnCoach', () => {
   await waitFor(() => expect(h.lab.resultLabel).toBeNull());
   expect(h.lab.coachingTask.skill).toBe('right');
  });
- it('keeps custom hands, beat and tempo into the drill and another setup visit', () => {
+ it('has no practice chooser: the sets are how a step is chosen', () => {
   render(<LearnCoach {...props} />);
-  act(() => h.lab.onChangePractice());
-  expect(screen.queryByText(/Segment 1/)).toBeNull();
-  fireEvent.click(screen.getByRole('button', { name: 'Left hand', exact: true }));
-  fireEvent.click(screen.getByRole('button', { name: 'Play on time', exact: true }));
-  fireEvent.click(screen.getByRole('button', { name: 'Slow 40%' }));
-  expect(h.preview.activeParts).toEqual(['rh']);
-  fireEvent.click(screen.getByRole('button', { name: 'Use this setup' }));
-  expect(h.lab.coachingTask).toMatchObject({ parts: ['lh'], mode: 'cued', tempoPercent: 40, label: 'Your practice' });
-  expect(h.lab.drill.stepId).toBeNull();
-  act(() => h.lab.onChangePractice());
-  expect(screen.getByRole('button', { name: 'Left hand', exact: true })).toHaveAttribute('aria-pressed', 'true');
-  expect(screen.getByRole('button', { name: 'Slow 40%' })).toHaveAttribute('aria-pressed', 'true');
+  expect(h.lab.onChangePractice).toBeUndefined();
+  expect(h.lab.drill.projection.steps.map((step) => step.display.key)).toEqual(['Right hand', 'Left hand', 'Together', 'On your own', 'Beat', '60%', '80%', '100%']);
+  // Each set is named by a picture; the words stay as its accessible name.
+  expect(h.lab.drill.projection.steps.every((step) => step.display.icon && step.title)).toBe(true);
  });
  it('shows save state only when it failed, and retries the same take', async () => {
   const coach = { profileId: 'learner4', loaded: true, projection: projectCoach({ plan }), state: {}, saveStatus: 'error', selectTask: vi.fn(), record: vi.fn(), retry: vi.fn(async () => {}) };

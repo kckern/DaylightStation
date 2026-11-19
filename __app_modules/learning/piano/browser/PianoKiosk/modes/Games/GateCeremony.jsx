@@ -24,10 +24,23 @@ import './GateCeremony.scss';
 
 /** Total wall-clock before the game is handed control. Mirrors GateCeremony.scss. */
 export const CEREMONY_MS = 3400;
+/** The stillness before the curtain moves. The rest of the wall-clock is the curtain's run. */
+const STILL_MS = 400;
+/** When a host's verdict lands on the closed curtain, for anything timed to it. Mirrors `[data-host]` in GateCeremony.scss. */
+export const hostVerdictAt = (durationMs) => Math.round(STILL_MS + (durationMs - STILL_MS) * 0.16);
 
-export default function GateCeremony({ gameId = null, gameLabel = null, score = null, onDone }) {
+/**
+ * A HOST WITH ITS OWN VERDICT borrows the same curtain. Learn closes it on a
+ * passage that has just turned Silver or Gold: `word` replaces "Cleared",
+ * `mark` stands above it (the passage's icon turning into its coin), and
+ * `behind` says what the curtain parts onto (`{ mark, eyebrow, label }`) in
+ * place of the game. `durationMs` lengthens the whole run for a bigger moment
+ * (a finished piece). A host's curtain is shut from 16% to 66% of its run
+ * (`HOST_VERDICT_AT`), where the game gate's is shut from 22% to 60%. Left out, every one of these is the game gate's ceremony, unchanged.
+ */
+export default function GateCeremony({ gameId = null, gameLabel = null, score = null, word = 'Cleared', mark = null, behind = null, announce = null, durationMs = CEREMONY_MS, onDone }) {
   const entry = gameId ? getGameEntry(gameId) : null;
-  const label = gameLabel ?? entry?.label ?? 'Your game';
+  const label = behind?.label ?? gameLabel ?? entry?.label ?? 'Your game';
   const icon = entry?.icon ?? 'game';
 
   // THE HAND-OVER IS ARMED ONCE, ON MOUNT, AND NOTHING MAY RE-ARM IT.
@@ -41,17 +54,20 @@ export default function GateCeremony({ gameId = null, gameLabel = null, score = 
   const onDoneRef = useRef(onDone);
   onDoneRef.current = onDone;
   useEffect(() => {
-    const timer = setTimeout(() => onDoneRef.current?.(), CEREMONY_MS);
+    const timer = setTimeout(() => onDoneRef.current?.(), durationMs);
     return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- armed once; a ceremony's length is fixed at mount
   }, []);
+  const style = durationMs === CEREMONY_MS ? undefined : { '--gate-run': `${Math.max(1000, durationMs - STILL_MS)}ms` };
 
   return (
-    <div className="gate-ceremony" role="status" aria-label={`Gate cleared. ${label} unlocked.`}>
+    <div className="gate-ceremony" role="status" style={style} data-host={behind || mark ? 'true' : undefined}
+      aria-label={announce ?? `Gate cleared. ${label} unlocked.`}>
       {/* What is behind the curtain. Opaque before the panels part, so the
           practice screen is never visible through the gap. */}
       <div className="gate-ceremony__behind" aria-hidden="true">
-        <Icon name={icon} className="gate-ceremony__icon" />
-        <span className="gate-ceremony__unlocked">Unlocked</span>
+        {behind?.mark ? <span className="gate-ceremony__icon">{behind.mark}</span> : <Icon name={icon} className="gate-ceremony__icon" />}
+        <span className="gate-ceremony__unlocked">{behind ? behind.eyebrow : 'Unlocked'}</span>
         <span className="gate-ceremony__game">{label}</span>
       </div>
 
@@ -64,7 +80,8 @@ export default function GateCeremony({ gameId = null, gameLabel = null, score = 
       </div>
 
       <div className="gate-ceremony__verdict" aria-hidden="true">
-        <span className="gate-ceremony__word">Cleared</span>
+        {mark && <span className="gate-ceremony__mark">{mark}</span>}
+        <span className="gate-ceremony__word">{word}</span>
         {Number.isFinite(score) && (
           <span className="gate-ceremony__score">{Math.round(score * 100)}%</span>
         )}

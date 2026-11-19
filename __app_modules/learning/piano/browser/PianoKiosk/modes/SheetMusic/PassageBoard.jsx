@@ -6,7 +6,8 @@ const Check = () => <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden=
 
 /**
  * The passage board: the piece's table of contents and trophy board. Every
- * passage is its state icon: a tomato, a flower, a silver coin or a gold coin. It slides
+ * passage is its state icon: a tomato, a flower, a silver coin or a gold coin.
+ * Its header counts the two goals, each beside its coin. It slides
  * over the score from the rail without moving the music, and closes only with
  * its own control. Tapping a card selects that passage on the score.
  */
@@ -26,11 +27,12 @@ export default function PassageBoard({ title, model, focusId = null, gemOffered 
   }, [onClose]);
   return <section className="piano-passage-board" role="dialog" aria-label="Passage board">
     <header className="piano-passage-board__head">
-      <div className="piano-passage-board__title"><h2>{title}</h2><p>{model.summary}</p></div>
+      <h2 className="piano-passage-board__title">{title}</h2>
       <ul className="piano-passage-board__goals" aria-label="Goals for this piece">
-        {model.goals.map((goal) => <li key={goal.level} data-level={goal.level} data-reached={goal.reached}>
-          <PassageCoin state={goal.level} />{goal.reached && <Check />}
-          <span>{goal.label}{goal.reached ? ': done' : gemOffered ? ': earn a gem' : ''}</span>
+        {model.goals.map((goal) => <li key={goal.level} data-level={goal.level} data-reached={goal.reached}
+          aria-label={`${goal.label}: ${goal.reached ? 'done' : `${goal.done} of ${goal.total}`}${!goal.reached && gemOffered ? ', earn a gem' : ''}`}>
+          <PassageCoin state={goal.level} /><strong>{goal.done}/{goal.total}</strong>{goal.reached && <Check />}
+          {!goal.reached && gemOffered && <span>earn a gem</span>}
         </li>)}
       </ul>
       {review && <button type="button" className="piano-passage-board__review" onClick={onReview}>Review a passage</button>}

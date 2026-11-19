@@ -53,3 +53,39 @@ describe('GateCeremony — the curtain always parts', () => {
     expect(onDone).toHaveBeenCalledTimes(1);
   });
 });
+
+describe("GateCeremony — a host's own verdict on the same curtain", () => {
+  it('is the game gate ceremony when nothing is handed in', () => {
+    const { container } = render(<GateCeremony gameId="connect-four" score={1} onDone={() => {}} />);
+    const root = container.querySelector('.gate-ceremony');
+    expect(root.getAttribute('aria-label')).toBe('Gate cleared. Connect Four unlocked.');
+    expect(root.hasAttribute('data-host')).toBe(false);
+    expect(root.style.getPropertyValue('--gate-run')).toBe('');
+    expect(container.querySelector('.gate-ceremony__word').textContent).toBe('Cleared');
+    expect(container.querySelector('.gate-ceremony__unlocked').textContent).toBe('Unlocked');
+    expect(container.querySelector('.gate-ceremony__mark')).toBeNull();
+  });
+
+  it("carries a host's word and mark, and parts onto what the host names", () => {
+    const { container } = render(<GateCeremony word="Silver!" mark={<svg data-testid="coin" />} announce="Bars 1–5. Silver!"
+      behind={{ mark: <svg data-testid="next" />, eyebrow: 'Next', label: 'Bars 6–9' }} onDone={() => {}} />);
+    const root = container.querySelector('.gate-ceremony');
+    expect(root.getAttribute('aria-label')).toBe('Bars 1–5. Silver!');
+    expect(container.querySelector('.gate-ceremony__verdict').textContent).toBe('Silver!');
+    expect(container.querySelector('.gate-ceremony__mark [data-testid="coin"]')).not.toBeNull();
+    expect(container.querySelector('.gate-ceremony__behind').textContent).toBe('NextBars 6–9');
+    expect(container.querySelector('.gate-ceremony__icon [data-testid="next"]')).not.toBeNull();
+  });
+
+  it('runs as long as the host asks, and scales the curtain with it', () => {
+    vi.useFakeTimers();
+    const onDone = vi.fn();
+    const { container } = render(<GateCeremony word="All Gold!" durationMs={6400} onDone={onDone} />);
+    expect(container.querySelector('.gate-ceremony').style.getPropertyValue('--gate-run')).toBe('6000ms');
+    act(() => vi.advanceTimersByTime(CEREMONY_MS + 100));
+    expect(onDone).not.toHaveBeenCalled();
+    act(() => vi.advanceTimersByTime(6400 - CEREMONY_MS));
+    expect(onDone).toHaveBeenCalledTimes(1);
+  });
+});
+

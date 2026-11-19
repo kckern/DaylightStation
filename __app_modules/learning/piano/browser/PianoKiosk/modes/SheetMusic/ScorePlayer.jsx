@@ -38,7 +38,6 @@ import { segmentNavigationState } from './LearnSegmentRail.jsx';
 import PassageRail from './PassageRail.jsx';
 import PassageBoard from './PassageBoard.jsx';
 import { railModel } from './passageRail.js';
-import usePassageCelebration from './usePassageCelebration.js';
 import usePieceGemOffer from './usePieceGemOffer.js';
 import LearnLaunchpad from './LearnLaunchpad.jsx';
 import { buildRungLaunch, creditEligibleRung, learnLaunchpadProjection } from './learnLaunch.js';
@@ -2310,9 +2309,6 @@ export default function ScorePlayer({ score: scoreMeta }) {
   const railVisible = Boolean(roadmapLearn && practiceLoaded && (layout.measures?.length ?? 0) > 0 && !selectedPassage);
   const rail = useMemo(() => railModel({ segments: coachedPassages, projection: coach.projection, selectedId: railPassageId }),
     [coachedPassages, coach.projection, railPassageId]);
-  const celebration = usePassageCelebration({ scopeKey: `${coach.profileId}:${scoreMeta.id}:${fingerprint.contentSha256}`,
-    ready: Boolean(roadmapLearn && practiceLoaded && coach.loaded !== false), projection: coach.projection,
-    evidenceId: coach.state?.evidence?.at(-1)?.id ?? null, visible: railVisible, scoreId: scoreMeta.id });
   const gemOffered = usePieceGemOffer({ userId: coach.profileId, enabled: Boolean(passageBoard) });
   const selectRailPassage = useCallback((passageId, source) => {
     const passage = coachedPassages.find((item) => item.id === passageId);
@@ -2531,9 +2527,9 @@ export default function ScorePlayer({ score: scoreMeta }) {
           onSelect={(passageId) => selectRailPassage(passageId, 'board')} onClose={closePassageBoard} />
       )}
       {railVisible && (
-        <PassageRail model={rail} flips={celebration.flips} piece={celebration.piece} boardOpen={Boolean(passageBoard)}
+        <PassageRail model={rail} boardOpen={Boolean(passageBoard)}
           onSelect={(passageId) => selectRailPassage(passageId, 'rail')} onPractice={practiceRailPassage}
-          onOpenBoard={togglePassageBoard} onDismissPiece={celebration.dismissPiece} />
+          onOpenBoard={togglePassageBoard} />
       )}
 
       {keyboardVisible && !roadmapLearn && (

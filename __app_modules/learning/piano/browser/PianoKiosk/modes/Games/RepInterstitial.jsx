@@ -52,9 +52,9 @@ export function repCardCopy({ score, setIndex, setCount, repIndex, repCount, set
   };
 }
 
-export default function RepInterstitial({ score = null, setIndex, setCount, repIndex, repCount, setClear = false, next = null, copy: hostCopy = null, icon = null, onDone }) {
-  // A host with its own ceremony (a passage turning Silver) hands the three
-  // lines down and may put a mark above them; the card and its timing are the same.
+export default function RepInterstitial({ score = null, setIndex, setCount, repIndex, repCount, setClear = false, next = null, copy: hostCopy = null, onDone }) {
+  // A host whose rep is not a set of a program (a passage's recovery drill)
+  // hands the three lines down; the card and its timing are the same.
   const copy = hostCopy ?? repCardCopy({ score, setIndex, setCount, repIndex, repCount, setClear, next });
 
   // Armed once, on mount — the same rule as GateCeremony, for the same reason:
@@ -70,7 +70,6 @@ export default function RepInterstitial({ score = null, setIndex, setCount, repI
   return (
     <div className="rep-card" role="status" aria-label={`${copy.eyebrow}. ${copy.headline}. ${copy.line}.`}>
       <div className="rep-card__face">
-        {icon && <span className="rep-card__icon" aria-hidden="true">{icon}</span>}
         <span className="rep-card__eyebrow">{copy.eyebrow}</span>
         <span className="rep-card__headline">{copy.headline}</span>
         <span className="rep-card__line">{copy.line}</span>

@@ -10,9 +10,10 @@ things. A piece in progress (at least one step earned; the most recent such piec
 wins. Otherwise the card shows the course. Pieces only opened or tried do not count:
 
 - **Piece:** the sheet-music piece title, a passage map in score order (widths follow
-  bar counts; not started, learning, Silver or Gold; the next passage outlined), and a
-  count such as `3 of 12 Silver, 1 Gold`. Tapping opens that child's next passage in
-  Learn.
+  bar counts; a tomato, a flower, a silver coin or a gold coin; the next passage
+  ringed), and the passage board's counters: a silver coin with `3/12` and, once
+  there is some Gold, a gold coin with `1/12`. No sentence. Tapping opens that
+  child's next passage in Learn.
 - **Course:** the video course poster, title and `completed of total` lessons. Tapping
   opens the course.
 

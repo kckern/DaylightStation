@@ -62,11 +62,10 @@ describe('RepInterstitial', () => {
       expect(onDone).toHaveBeenCalledWith('late');
     } finally { vi.useRealTimers(); }
   });
-  it("takes a host's own three lines and a mark, for a ceremony that is not a rep", () => {
-    render(<RepInterstitial copy={{ eyebrow: 'Bars 1–5', headline: 'Silver!', line: 'Next: bars 6–9' }} icon={<svg data-testid="mark" />} onDone={() => {}} />);
-    const card = screen.getByRole('status', { name: 'Bars 1–5. Silver!. Next: bars 6–9.' });
-    expect(card.querySelector('.rep-card__headline').textContent).toBe('Silver!');
-    expect(card.querySelector('.rep-card__icon [data-testid="mark"]')).not.toBeNull();
+  it("takes a host's own three lines, for a rep that is not a set of a program", () => {
+    render(<RepInterstitial copy={{ eyebrow: 'Bar 2', headline: '100%', line: 'Next: On your own' }} onDone={() => {}} />);
+    const card = screen.getByRole('status', { name: 'Bar 2. 100%. Next: On your own.' });
+    expect(card.querySelector('.rep-card__headline').textContent).toBe('100%');
   });
 
 });

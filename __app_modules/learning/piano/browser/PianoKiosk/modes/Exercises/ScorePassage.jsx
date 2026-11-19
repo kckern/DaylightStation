@@ -14,6 +14,18 @@ function logger() {
   return _logger;
 }
 
+/**
+ * The engraving's true extent, in its own units: every note, word and bracket.
+ * The stage frames this rather than the engraver's page (`passageLayout.js`).
+ * Unmeasurable (no layout engine, nothing drawn yet) is `null`, and the page is used.
+ */
+function measureInk(container) {
+  try {
+    const box = container?.querySelector('.musicxml-renderer__svg svg')?.getBBox?.();
+    return box && box.width > 0 && box.height > 0 ? { x: box.x, y: box.y, width: box.width, height: box.height } : null;
+  } catch { return null; }
+}
+
 export function fitPassageLayout({ layout, scale, minScale, maxSystems }) {
   const systems = new Set((layout?.staves ?? []).map((staff) => staff.system).filter(Number.isInteger));
   const count = systems.size || 1;
@@ -195,7 +207,7 @@ export default function ScorePassage({
         setFitError('passage-layout-unbalanced');
         return;
       }
-      setFitError(null); setLayout(result); return;
+      setFitError(null); setLayout({ ...result, ink: measureInk(containerRef.current) }); return;
     }
     setLayout(null);
     if (fit.nextScale != null) setRenderScale(fit.nextScale);

@@ -54,6 +54,12 @@
     overflow: hidden;
   }
   &__body small { font-size: 0.85rem; color: var(--piano-muted); }
+  &__count {
+    display: flex; gap: 0.9rem; font-size: 1rem; font-weight: 800; font-variant-numeric: tabular-nums;
+    span { display: flex; align-items: center; gap: 0.3rem; color: var(--piano-silver); }
+    span[data-level='gold'] { color: var(--piano-gold); }
+    svg { width: 1.25rem; height: 1.25rem; }
+  }
 
   &__map {
     // One icon per passage: a tomato, a flower, a silver coin or a gold coin.

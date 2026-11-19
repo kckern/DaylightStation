@@ -66,17 +66,21 @@ function Cluster({ step, isCurrent, noteProgress, labels, onPick = null }) {
   const done = step.passed;
   const label = labels ? (step.display?.key ?? step.title ?? '') : '';
   const badge = labels ? (HAND_BADGE[step.display?.hand] ?? null) : null;
+  // A host may name a set with a picture (a hand, a metronome, the coin the set
+  // earns). The words stay as the set's accessible name.
+  const icon = labels ? (step.display?.icon ?? null) : null;
 
   // A host whose sets can be chosen (a passage's steps) makes each one a button.
   const Tag = onPick ? 'button' : 'div';
   const pick = onPick ? { type: 'button', 'aria-label': step.title ?? label, 'aria-current': isCurrent ? 'step' : undefined, onClick: () => onPick(step) } : {};
+  const named = icon && !onPick ? { role: 'group', 'aria-label': step.title ?? label } : {};
   return (
-    <Tag className="drill-cluster" data-active={isCurrent || undefined} data-done={done || undefined} {...pick}>
+    <Tag className="drill-cluster" data-active={isCurrent || undefined} data-done={done || undefined} {...named} {...pick}>
       {/* A SET WITH NOTHING TO SAY SAYS NOTHING. A reading deck declares no
           label on purpose — naming the pitch under a staff a child is being
           asked to read hands them the answer — and an empty label row here
           would still have reserved its line and its gap. */}
-      {(badge || label) && (
+      {icon ? <div className="drill-cluster__label drill-cluster__label--icon" aria-hidden="true">{icon}</div> : (badge || label) && (
         <div className="drill-cluster__label">
           {badge && <span className="drill-cluster__badge">{badge}</span>}
           {label && <span>{label}</span>}

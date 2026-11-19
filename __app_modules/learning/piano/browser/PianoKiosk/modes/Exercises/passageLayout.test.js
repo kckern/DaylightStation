@@ -33,6 +33,25 @@ describe('passage layout policy', () => {
     expect(resolvePassageLayout({ layout: grand, viewport: { width: 1200, height: 800 }, keepWholePassage: true }).viewBox.width).toBe(1200);
   });
 
+  it('frames the measured ink on every side, so a passage is as large as its stage allows', () => {
+    // Two short systems in the middle of a tall page: the engraver's page margins are not the passage.
+    const loose = { width: 1200, height: 720, ink: { x: 150, y: 190, width: 700, height: 320 },
+      staffBoxes: [{ system: 0, staff: 0, top: 220, left: 160, right: 850, lineSpacing: 10 }, { system: 1, staff: 0, top: 440, left: 160, right: 600, lineSpacing: 10 }],
+      measureBounds: [{ left: 160, right: 850, top: 200, bottom: 280 }, { left: 160, right: 600, top: 420, bottom: 500 }] };
+    const framed = resolvePassageLayout({ layout: loose, viewport: { width: 1200, height: 440 }, keepWholePassage: true });
+    // One and a half staff spaces of air around the ink, and nothing else.
+    expect(framed.viewBox).toEqual({ x: 135, y: 175, width: 730, height: 350 });
+    const unmeasured = resolvePassageLayout({ layout: { ...loose, ink: null }, viewport: { width: 1200, height: 440 }, keepWholePassage: true });
+    expect(framed.projectedStaffSpacePx).toBeGreaterThan(unmeasured.projectedStaffSpacePx * 1.5);
+    // Ink that the staves and bars outrun (a stale measurement) never crops them.
+    const stale = resolvePassageLayout({ layout: { ...loose, ink: { x: 300, y: 300, width: 100, height: 50 } }, viewport: { width: 1200, height: 440 }, keepWholePassage: true });
+    expect(stale.viewBox.x).toBeLessThanOrEqual(160 - 15); expect(stale.viewBox.y).toBeLessThanOrEqual(200 - 15);
+    expect(stale.viewBox.x + stale.viewBox.width).toBeGreaterThanOrEqual(850 + 15); expect(stale.viewBox.y + stale.viewBox.height).toBeGreaterThanOrEqual(500 + 15);
+    // A system the child is following keeps the same horizontal frame.
+    const focused = resolvePassageLayout({ layout: loose, viewport: { width: 300, height: 60 }, cursorSystem: 1 });
+    expect(focused).toMatchObject({ mode: 'system', viewBox: { x: 135, width: 730 } });
+  });
+
   it('includes every stave when the engraved SVG reports a height above its actual bottom staff', () => {
     const stalePageHeight = { ...grand, height: 480 };
     const result = resolvePassageLayout({ layout: stalePageHeight, viewport: { width: 1200, height: 800 }, cursorSystem: 0 });

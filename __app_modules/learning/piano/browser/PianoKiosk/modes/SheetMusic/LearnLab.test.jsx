@@ -387,15 +387,24 @@ describe('LearnLab', () => {
     expect(onOutcome.mock.calls[1][0].assessmentId).toBe('two');
   });
 
-  it("shows the host's ceremony on the drill's rep card", () => {
+  it("shows the host's rep card, and its ceremony over the run", () => {
     vi.useFakeTimers();
     const onCardDone = vi.fn();
-    render(<LearnLab {...base} coachingTask={{ key: 'task' }} onOutcome={vi.fn()} onCardDone={onCardDone}
-      card={{ id: 'take', copy: { eyebrow: 'Bars 1–4', headline: 'Silver!', line: 'Next: bars 5–8' }, icon: <svg data-testid="coin" /> }} />);
-    expect(screen.getByRole('status', { name: 'Bars 1–4. Silver!. Next: bars 5–8.' })).toBeInTheDocument();
-    expect(screen.getByTestId('coin')).toBeInTheDocument();
+    const view = render(<LearnLab {...base} coachingTask={{ key: 'task' }} onOutcome={vi.fn()} onCardDone={onCardDone}
+      card={{ id: 'take', copy: { eyebrow: 'Bar 2', headline: '100%', line: 'Next: On your own' } }} />);
+    expect(screen.getByRole('status', { name: 'Bar 2. 100%. Next: On your own.' })).toBeInTheDocument();
     act(() => vi.advanceTimersByTime(2300));
     expect(onCardDone).toHaveBeenCalledTimes(1);
+    view.rerender(<LearnLab {...base} coachingTask={{ key: 'task' }} onOutcome={vi.fn()} ceremony={<div data-testid="curtain" />} />);
+    expect(screen.getByTestId('curtain').closest('.piano-learn-lab')).not.toBeNull();
+    vi.useRealTimers();
+  });
+
+  it('keeps a coached toolbar to what a child acts on', () => {
+    render(<LearnLab {...base} rung={{ ...base.rung, mode: 'cued', tempoPercent: 60 }} coachingTask={{ key: 'task', tempoPercent: 60 }} tempo={{ tempoMap: [{ bpm: 100 }], tempoSource: 'musicxml' }} onOutcome={vi.fn()} />);
+    expect(screen.queryByRole('button', { name: 'Change practice' })).toBeNull();
+    expect(screen.queryByText(/Score tempo|Fallback tempo/)).toBeNull();
+    expect(screen.getByText('60 BPM')).toBeInTheDocument();
   });
 
 });

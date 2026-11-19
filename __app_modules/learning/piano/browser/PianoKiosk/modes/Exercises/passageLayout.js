@@ -29,13 +29,29 @@ function systemBox(layout, system) {
   });
   const top = Math.min(staffTop, ...measures.map((measure) => measure.top)) - spacing * 2;
   const bottom = Math.max(staffBottom, ...measures.map((measure) => measure.bottom)) + spacing * 2;
-  return { x: 0, y: Math.max(0, top), width: contentBox(layout).width, height: bottom - Math.max(0, top), spacing };
+  const page = contentBox(layout);
+  return { x: page.x, y: Math.max(0, top), width: page.width, height: bottom - Math.max(0, top), spacing };
 }
 
 function contentBox(layout) {
   const staves = layout.staffBoxes ?? [];
   const measures = (layout.measureBounds ?? []).filter(Boolean);
   const spacing = Math.max(0, ...staves.map((staff) => staff.lineSpacing).filter(finite));
+  // The engraving's measured extent, when the host could read it: the page is
+  // the ink and a little air, on every side. The engraver's own page margins
+  // (and the room it leaves for a title) are not part of a passage, and left in
+  // they made a two-system passage a fifth smaller than its stage allowed.
+  // Staves and bars are unioned in, so a stale measurement can never crop them.
+  const ink = layout.ink;
+  if (ink && [ink.x, ink.y, ink.width, ink.height].every(finite) && ink.width > 0 && ink.height > 0) {
+    const air = spacing * 1.5;
+    const left = Math.min(ink.x, ...staves.map((staff) => staff.left).filter(finite), ...measures.map((measure) => measure.left).filter(finite));
+    const top = Math.min(ink.y, ...staves.map((staff) => staff.top).filter(finite), ...measures.map((measure) => measure.top).filter(finite));
+    const right = Math.max(ink.x + ink.width, ...staves.map((staff) => staff.right).filter(finite), ...measures.map((measure) => measure.right).filter(finite));
+    const bottom = Math.max(ink.y + ink.height, ...staves.map((staff) => staff.top + staff.lineSpacing * 4).filter(finite), ...measures.map((measure) => measure.bottom).filter(finite));
+    const x = Math.max(0, left - air); const y = Math.max(0, top - air);
+    return { x, y, width: right + air - x, height: bottom + air - y };
+  }
   // The engraver does not stretch a short last (or only) system across the
   // page. When every system stops short, the page ends where the ink does, so
   // a few bars are scaled up to fill the stage instead of sitting in half of it.

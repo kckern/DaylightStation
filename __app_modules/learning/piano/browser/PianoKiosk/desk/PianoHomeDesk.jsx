@@ -40,7 +40,11 @@ function PieceCard({ card }) {
           <i key={passage.id} data-state={passage.state} data-current={passage.id === card.focus?.id || undefined}><PassageCoin state={passage.state} size="100%" /></i>
         ))}
       </span>
-      <small>{pieceCount(card.piece)}{card.piece.gold ? `, ${card.piece.gold} Gold` : ''}</small>
+      {/* The same counters as the passage board: a coin and how many passages carry it. */}
+      <span className="piano-desk__count" aria-hidden="true">
+        <span data-level="silver"><PassageCoin state="silver" />{card.piece.silver}/{card.piece.total}</span>
+        {card.piece.gold > 0 && <span data-level="gold"><PassageCoin state="gold" />{card.piece.gold}/{card.piece.total}</span>}
+      </span>
     </span>
   );
 }
