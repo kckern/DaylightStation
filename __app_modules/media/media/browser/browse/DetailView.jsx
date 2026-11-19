@@ -4,7 +4,8 @@ import { ItemQualityButton } from "../quality/PlaybackQualityButtons.jsx";
 // Up Next / Add / Cast.
 import React, { useState } from 'react';
 import { Stack, Title, Text, Button, Group, Image } from '@mantine/core';
-import { IconChevronLeft, IconPlayerPlayFilled, IconPlayerTrackNext, IconRowInsertTop, IconPlaylistAdd } from '@tabler/icons-react';
+import { IconPlayerPlayFilled, IconPlayerTrackNext, IconRowInsertTop, IconPlaylistAdd } from '@tabler/icons-react';
+import { UiIcon } from '@/lib/ui/UiIcon.jsx';
 import { LoadErrorLine } from "../shared/LoadErrorLine.jsx";
 import { useContentInfo } from "./useContentInfo.js";
 import { useContentDispatch } from "../search/useContentDispatch.js";
@@ -37,7 +38,7 @@ export function DetailView({ contentId }) {
   const playNextHold = usePressHoldOffer({ onOffered: () => mediaLog.playNextHoldOffered({ surface: 'detail' }) });
   const back = (
     <Button variant="subtle" color="gray" data-testid="detail-back" className="detail-back" onClick={() => pop()}>
-      <IconChevronLeft size={16} aria-hidden /> {backDestination ?? 'Home'}
+      <UiIcon name="back" /> {backDestination ?? 'Home'}
     </Button>
   );
 

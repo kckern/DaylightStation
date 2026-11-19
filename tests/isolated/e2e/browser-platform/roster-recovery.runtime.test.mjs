@@ -165,3 +165,62 @@ test('Admin Devices leaves a slow enforcement poll alone while the visible statu
   await page.clock.runFor(4200);
   expect(statusReads).toHaveLength(3);
 });
+
+for (const [fixture, removing] of [[adminCases[0], false], [adminCases[1], false], [adminCases[0], true]]) {
+  test(`a confirmed ${fixture.name} ${removing ? 'removal' : 'creation'} refreshes the reopened roster without closing its new draft`, async ({ page }) => {
+    const method = removing ? 'DELETE' : 'POST';
+    const actionPath = removing ? fixture.create + '/fixture' : fixture.create;
+    const release = Promise.withResolvers();
+    const requests = [];
+    let roster = removing ? fixture.updated : fixture.initial;
+    await page.routeWebSocket('**/*', () => {});
+    await page.route('**/api/**', async route => {
+      const { pathname } = new URL(route.request().url());
+      const operation = route.request().method();
+      if (pathname === actionPath && operation === method) {
+        requests.push(method);
+        await release.promise;
+        roster = removing ? fixture.initial : fixture.updated;
+        return route.fulfill({ json: { ok: true } });
+      }
+      if (pathname === fixture.roster && operation === 'GET') {
+        requests.push('GET');
+        return route.fulfill({ json: roster });
+      }
+      return route.fulfill({ json: pathname.endsWith('/supervision/bootstrap') ? { enabled: false } : {} });
+    });
+
+    await page.goto('/admin/household/devices');
+    const link = page.getByRole('link', { name: fixture.name === 'Scheduler' ? 'Scheduler' : 'Members', exact: true });
+    await link.click();
+    const row = page.getByRole('row').filter({ hasText: fixture.row });
+    const dialog = page.getByRole('dialog');
+    if (removing) {
+      await row.getByRole('button', { name: 'Remove' }).click();
+      await dialog.getByRole('button', { name: 'Remove', exact: true }).click();
+    } else {
+      await page.getByRole('button', { name: fixture.open, exact: true }).click();
+      for (const [label, value] of Object.entries(fixture.fields)) await dialog.getByLabel(label).fill(value);
+      await dialog.getByRole('button', { name: fixture.submit, exact: true }).click();
+    }
+    const draftField = dialog.getByLabel(Object.keys(fixture.fields)[0]);
+    try {
+      await expect.poll(() => requests).toEqual(['GET', method]);
+      await page.goBack();
+      await link.click();
+      await expect.poll(() => requests).toEqual(['GET', method, 'GET']);
+      if (removing) await expect(row).toBeVisible();
+      else await expect(row).toHaveCount(0);
+      await page.getByRole('button', { name: fixture.open, exact: true }).click();
+      await draftField.fill('new-draft');
+    } finally {
+      release.resolve();
+    }
+    await expect.poll(() => requests).toEqual(['GET', method, 'GET', 'GET']);
+    await expect(draftField).toHaveValue('new-draft');
+    await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
+    if (removing) await expect(row).toHaveCount(0);
+    else await expect(row).toBeVisible();
+    expect(requests).toEqual(['GET', method, 'GET', 'GET']);
+  });
+}

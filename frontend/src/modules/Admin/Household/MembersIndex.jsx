@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Stack, Text, Table, Badge, Button, Group, Modal, TextInput, Select, NumberInput, Center, Alert, Paper, Divider }  from '@mantine/core';
 import { IconPlus, IconAlertCircle, IconUsers, IconTrash } from '@tabler/icons-react';
 import { ADMIN_HOUSEHOLD_PATH, useAdminHousehold } from '../../../hooks/admin/useAdminHousehold.js';
-import { useApiResource } from '../../../lib/hooks/useApiResource.js';
+import { useAdminRoster } from '../shared/useAdminRoster.js';
 import { ErrorState, LoadingState } from '../../../lib/ui/states.jsx';
 import ConfirmModal from '../shared/ConfirmModal.jsx';
 
@@ -38,7 +38,7 @@ function groupBadgeColor(group) {
 function MembersIndex() {
   const navigate = useNavigate();
   const { error, createMember, removeMember, clearError } = useAdminHousehold();
-  const { data, loading, error: readError, reload, refresh } = useApiResource(ADMIN_HOUSEHOLD_PATH, { retryTransient: false });
+  const { data, loading, error: readError, reload, refreshAfterWrite } = useAdminRoster(ADMIN_HOUSEHOLD_PATH);
   const household = data?.household;
   const members = data?.members ?? [];
 
@@ -96,7 +96,7 @@ function MembersIndex() {
         birthyear: null
       });
       setCreateErrors({});
-      await refresh();
+      await refreshAfterWrite();
     } catch {
       // Command and roster errors are reported by their respective hooks.
     } finally {
@@ -116,7 +116,7 @@ function MembersIndex() {
     try {
       await removeMember(removeTarget.username);
       setRemoveTarget(null);
-      await refresh();
+      await refreshAfterWrite();
     } catch {
       // Command and roster errors are reported by their respective hooks.
     } finally {

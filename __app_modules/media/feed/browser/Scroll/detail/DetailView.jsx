@@ -1,5 +1,6 @@
 import { useState, useRef, useCallback, useEffect, useLayoutEffect } from 'react';
 import { useDismissLayer } from '@/lib/ui/dismiss/useDismissLayer.js';
+import { UiIcon } from '@/lib/ui/UiIcon.jsx';
 import { formatAge, proxyIcon, proxyImage, colorFromLabel } from "../cards/utils.js";
 import { renderSection } from "./sections/index.jsx";
 import { feedLog } from "../feedLog.js";
@@ -29,12 +30,28 @@ export default function DetailView({ renderDialog, focusOnEntry = false, item, s
   const [imagePhase, setImagePhase] = useState('original'); // original → proxy → hidden
   const contentRef = useRef(null);
   const backRef = useRef(null);
+  const stickyBackRef = useRef(null);
+  const backFocusToRestore = useRef(null);
   const dirRef = useRef(0); // -1 = prev, 1 = next
-  const titleAreaRef = useRef(null);
   const stickyRef = useRef(null);
   const stickyInitRef = useRef(true);
   const heroLoadStartRef = useRef(performance.now());
   const [stickyVisible, setStickyVisible] = useState(false);
+
+  const updateStickyVisibility = useCallback(visible => {
+    const outgoing = visible ? backRef.current : stickyBackRef.current;
+    if (outgoing && document.activeElement === outgoing) backFocusToRestore.current = outgoing;
+    setStickyVisible(visible);
+  }, []);
+
+  useLayoutEffect(() => {
+    const previous = backFocusToRestore.current;
+    backFocusToRestore.current = null;
+    const active = document.activeElement;
+    if (previous && (active === previous || active === document.body)) {
+      (stickyVisible ? stickyBackRef : backRef).current?.focus({ preventScroll: true });
+    }
+  }, [stickyVisible]);
 
   useLayoutEffect(() => {
     if (!focusOnEntry) return;
@@ -54,7 +71,7 @@ export default function DetailView({ renderDialog, focusOnEntry = false, item, s
 
   // Reset sticky header and scroll position on item change
   useEffect(() => {
-    setStickyVisible(false);
+    updateStickyVisibility(false);
     stickyInitRef.current = true;
     const el = stickyRef.current;
     if (el) {
@@ -63,20 +80,21 @@ export default function DetailView({ renderDialog, focusOnEntry = false, item, s
       el.style.pointerEvents = 'none';
     }
     contentRef.current?.closest('.detail-modal-panel')?.scrollTo(0, 0);
-  }, [item.id]);
+  }, [item.id, updateStickyVisibility]);
 
 
-  // IntersectionObserver for sticky header
+  // Hand Back to the sticky toolbar before the top target leaves the scrollport.
+  // IntersectionObserver measures its box even while CSS hides the control.
   useEffect(() => {
-    const el = titleAreaRef.current;
+    const el = backRef.current;
     if (!el) return;
     const observer = new IntersectionObserver(
-      ([entry]) => setStickyVisible(!entry.isIntersecting),
-      { threshold: 0 }
+      ([entry]) => updateStickyVisibility(entry.intersectionRatio < 1),
+      { threshold: 1 }
     );
     observer.observe(el);
     return () => observer.disconnect();
-  }, []);
+  }, [updateStickyVisibility]);
 
   // Animate sticky header visibility (Web Animations API for TV compat)
   useEffect(() => {
@@ -167,16 +185,14 @@ export default function DetailView({ renderDialog, focusOnEntry = false, item, s
 
   const article = (
     <div className="detail-view" onKeyDown={inModal ? undefined : handleArticleArrows} onTouchStart={handleTouchStart} onTouchEnd={handleTouchEnd}>
-      <button ref={backRef} className="detail-close" onClick={onBack} aria-label="Back to feed" data-autofocus={inModal || undefined}>
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
-          <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z" />
-        </svg>
+      <button type="button" ref={backRef} className="detail-close ds-touch-target" onClick={onBack} aria-label="Back to feed"
+        aria-hidden={stickyVisible || undefined} data-autofocus={inModal && !stickyVisible || undefined}>
+        <UiIcon name="back" size={20} />
       </button>
-      <div ref={stickyRef} className="detail-sticky-header" style={{ borderTop: `2px solid ${borderColor}` }}>
-        <button className="detail-sticky-back" onClick={onBack} aria-label="Back to feed" tabIndex={inModal && !stickyVisible ? -1 : undefined}>
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor">
-            <path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z" />
-          </svg>
+      <div ref={stickyRef} className="detail-sticky-header" aria-hidden={!stickyVisible || undefined} style={{ borderTop: `2px solid ${borderColor}` }}>
+        <button type="button" ref={stickyBackRef} className="detail-sticky-back ds-touch-target" onClick={onBack}
+          aria-label="Back to feed" tabIndex={stickyVisible ? undefined : -1} data-autofocus={inModal && stickyVisible || undefined}>
+          <UiIcon name="back" size={18} />
         </button>
         {iconUrl && <img src={iconUrl} alt="" className="detail-sticky-icon" onError={(e) => { e.target.style.display = 'none'; }} />}
         <span className="detail-sticky-title">{item.title}</span>
@@ -235,7 +251,7 @@ export default function DetailView({ renderDialog, focusOnEntry = false, item, s
           );
         })()}
 
-        <div ref={titleAreaRef} className="detail-title-area">
+        <div className="detail-title-area">
           <h2 className="detail-title">{item.title}</h2>
           {dateStr && <span className="detail-date">{dateStr}</span>}
           {!hasArticle && subtitle && <p className="detail-subtitle">{subtitle}</p>}

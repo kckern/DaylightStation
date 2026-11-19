@@ -226,3 +226,99 @@ test('Feed desktop detail contains Tab and returns focus to the opening card aft
   await expect(page).toHaveURL('/feed/scroll');
   await expect(opener).toBeFocused();
 });
+
+const scrollArticle = (header, amount) => header.evaluate((element, y) => {
+  for (let node = element.parentElement; node; node = node.parentElement) {
+    if (node.scrollHeight > node.clientHeight + 100 && /auto|scroll/.test(getComputedStyle(node).overflowY)) {
+      node.scrollTo(0, y);
+      return;
+    }
+  }
+  window.scrollTo(0, y);
+}, amount);
+
+test.describe('Feed detail Back controls on a coarse pointer', () => {
+  test.use({ hasTouch: true });
+
+  for (const width of [390, 1440]) {
+    test(`Feed exposes one full-size Back control while scrolling at ${width}px`, async ({ page, baseURL }) => {
+      const origin = new URL(baseURL).origin;
+      await page.context().route('**/*', route => (
+        new URL(route.request().url()).origin === origin ? route.fallback() : route.abort()
+      ));
+      await page.route(url => url.pathname === detailPath(article.id), route => route.fulfill({
+        json: { sections: [{ type: 'article', data: { html: `<p>${articleBody}</p>`.repeat(70) } }] },
+      }));
+      await page.setViewportSize({ width, height: 850 });
+      await page.goto('/feed/scroll');
+      const opener = page.getByRole('button', { name: `Open: ${article.title}` });
+      await opener.press('Enter');
+      await expect(page).toHaveURL(scrollPath(article.id));
+      const activeBack = page.getByRole('button', { name: 'Back to feed', exact: true });
+      const top = page.locator('.detail-close');
+      const sticky = page.locator('.detail-sticky-back');
+      const header = page.locator('.detail-sticky-header');
+
+      await expect(top).toBeFocused();
+      await expect(header).toHaveCSS('opacity', '0');
+      await expect(activeBack).toHaveCount(1);
+      await expect(activeBack).toBeInViewport({ ratio: 1 });
+      await page.keyboard.press('Tab');
+      await expect(sticky).not.toBeFocused();
+      expect(await page.evaluate(() => matchMedia('(pointer: coarse)').matches)).toBe(true);
+      const topBounds = await top.boundingBox();
+      expect(topBounds.width).toBeGreaterThanOrEqual(44);
+      expect(topBounds.height).toBeGreaterThanOrEqual(44);
+
+      await top.focus();
+      await scrollArticle(header, 70);
+      await expect(header).toHaveCSS('opacity', '1');
+      await expect(sticky).toBeFocused();
+      await expect(activeBack).toHaveCount(1);
+      await expect(activeBack).toBeInViewport({ ratio: 1 });
+      const stickyBounds = await sticky.boundingBox();
+      const headerBounds = await header.boundingBox();
+      expect(stickyBounds.width).toBeGreaterThanOrEqual(44);
+      expect(stickyBounds.height).toBeGreaterThanOrEqual(44);
+      expect(stickyBounds.y).toBeGreaterThanOrEqual(headerBounds.y);
+      expect(stickyBounds.y + stickyBounds.height).toBeLessThanOrEqual(headerBounds.y + headerBounds.height);
+
+      await scrollArticle(header, 0);
+      await expect(header).toHaveCSS('opacity', '0');
+      await expect(top).toBeFocused();
+      await scrollArticle(header, 650);
+      await expect(sticky).toBeFocused();
+      await page.keyboard.press('Enter');
+      await expect(page).toHaveURL(/\/feed\/scroll$/);
+      await expect(opener).toBeFocused();
+    });
+  }
+});
+
+
+test('Feed restores Back focus when the next button disappears from a scrolled dialog', async ({ page }) => {
+  const last = { ...article, id: 'reddit:final-detail', title: 'Final Feed item' };
+  await page.setViewportSize({ width: 1440, height: 850 });
+  await page.route('**/scroll/sessions', route => route.fulfill({
+    json: { items: [article, last], sessionId: 'two-articles', hasMore: false },
+  }));
+  await page.route('**/feed/detail/*', route => route.fulfill({
+    json: { sections: [{ type: 'article', data: { html: `<p>${articleBody}</p>`.repeat(70) } }] },
+  }));
+  await page.goto('/feed/scroll');
+  const opener = page.getByRole('button', { name: `Open: ${article.title}` });
+  await opener.press('Enter');
+
+  const header = page.locator('.detail-sticky-header');
+  await expect(page.locator('.detail-close')).toBeFocused();
+  await scrollArticle(header, 650);
+  await expect(header).toHaveCSS('opacity', '1');
+  await page.getByRole('button', { name: 'Next item', exact: true }).press('Enter');
+  await expect(page).toHaveURL(scrollPath(last.id));
+  await expect(header).toHaveCSS('opacity', '0');
+  await expect(page.getByRole('button', { name: 'Back to feed', exact: true })).toBeFocused();
+
+  await page.keyboard.press('Enter');
+  await expect(page).toHaveURL(/\/feed\/scroll$/);
+  await expect(opener).toBeFocused();
+});

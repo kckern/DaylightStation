@@ -80,8 +80,8 @@ export const houseApi = {
   screenRoutines: (id) => call(`${screen(id)}/routines`),
   startedByAll: ({ signal } = {}) => call(media('started-by'), { signal }),
   startedBy: (id, { signal } = {}) => call(`${screen(id)}/started-by`, { signal }),
-  routineHistory: ({ limit = 50 } = {}) => call(media(`routines/history?limit=${limit}`)),
-  routineFlags: () => call(media('routines/flags')),
+  routineHistory: ({ limit = 50, signal } = {}) => call(media(`routines/history?limit=${limit}`), { signal }),
+  routineFlags: ({ signal } = {}) => call(media('routines/flags'), { signal }),
   startStatus: (deviceId) => call(`api/v1/device/${encodeURIComponent(deviceId)}/start-status`),
   screenOff: (deviceId) => call(`api/v1/device/${encodeURIComponent(deviceId)}/off`),
 };

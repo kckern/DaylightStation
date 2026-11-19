@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Stack, Text, Table, Badge, Button, Group, Modal, TextInput, Center, Alert }  from '@mantine/core';
 import { IconPlus, IconPlayerPlay, IconAlertCircle, IconClock } from '@tabler/icons-react';
 import { ADMIN_SCHEDULER_JOBS_PATH, useAdminScheduler } from '../../../hooks/admin/useAdminScheduler.js';
-import { useApiResource } from '../../../lib/hooks/useApiResource.js';
+import { useAdminRoster } from '../shared/useAdminRoster.js';
 import { ErrorState, LoadingState } from '../../../lib/ui/states.jsx';
 import { cronToHuman, formatDuration } from '../utils/formatters.js';
 
@@ -63,7 +63,7 @@ const BAND_LABELS = {
 function SchedulerIndex() {
   const navigate = useNavigate();
   const { error, createJob, triggerJob, clearError } = useAdminScheduler();
-  const { data, loading, error: readError, reload, refresh } = useApiResource(ADMIN_SCHEDULER_JOBS_PATH, { retryTransient: false });
+  const { data, loading, error: readError, reload, refreshAfterWrite } = useAdminRoster(ADMIN_SCHEDULER_JOBS_PATH);
   const jobs = data?.jobs ?? EMPTY_JOBS;
   const [createModalOpen, setCreateModalOpen] = useState(false);
   const [createForm, setCreateForm] = useState({ id: '', name: '', module: '', schedule: '' });
@@ -119,7 +119,7 @@ function SchedulerIndex() {
       setCreateModalOpen(false);
       setCreateForm({ id: '', name: '', module: '', schedule: '' });
       setCreateErrors({});
-      await refresh();
+      await refreshAfterWrite();
     } catch {
       // Command and roster errors are reported by their respective hooks.
     } finally {
@@ -133,7 +133,7 @@ function SchedulerIndex() {
     setTriggeringIds(current => new Set(current).add(jobId));
     try {
       await triggerJob(jobId);
-      await refresh();
+      await refreshAfterWrite();
     } catch {
       // Command and roster errors are reported by their respective hooks.
     } finally {

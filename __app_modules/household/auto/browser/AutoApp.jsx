@@ -21,7 +21,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import '@mantine/core/styles.css';
 import { ActionIcon } from '@mantine/core';
 import {
-  AppThemeProvider, AppChrome, DismissStackProvider, LoadingState, ErrorState, EmptyState, useViewScroll,
+  AppThemeProvider, AppChrome, DismissStackProvider, LoadingState, ErrorState, EmptyState, UiIcon, useViewScroll,
 } from '@/lib/ui';
 import {
   useVehicles, useOverview, useJourneys, useFuel, useService, useDocuments, useServiceTypes,
@@ -38,12 +38,6 @@ import "./AutoApp.scss";
 const TabIcon = ({ children }) => (
   <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
     {children}
-  </svg>
-);
-
-const BackIcon = () => (
-  <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-    <path d="M10 3L5 8l5 5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
   </svg>
 );
 
@@ -169,7 +163,7 @@ function AutoAppShell() {
         garageFocus.current = vehicleId;
         setVehicleId(null);
       }}>
-        <BackIcon />
+        <UiIcon name="back" />
       </ActionIcon>
     )]
     : undefined;

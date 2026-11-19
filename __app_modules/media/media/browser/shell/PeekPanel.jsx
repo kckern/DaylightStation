@@ -5,7 +5,8 @@ import { ActiveQualityButton } from "../quality/PlaybackQualityButtons.jsx";
 // pending fields) rather than a second set of transport controls.
 import React, { useCallback, useContext, useEffect, useMemo, useRef } from 'react';
 import { Button, Title, Text, Group, Stack, Badge, Menu } from '@mantine/core';
-import { IconPlaylistAdd, IconChevronLeft, IconSwitchHorizontal } from '@tabler/icons-react';
+import { IconPlaylistAdd, IconSwitchHorizontal } from '@tabler/icons-react';
+import { UiIcon } from '@/lib/ui/UiIcon.jsx';
 import { useSessionController } from "../controller/useSessionController.js";
 import { usePeek } from "../peek/usePeek.js";
 import { useDevice } from "../fleet/useDevice.js";
@@ -106,7 +107,7 @@ export function PeekPanel({ deviceId }) {
     <Stack data-testid="peek-panel" className="peek-panel" gap="md">
       <Group justify="space-between">
         <Button data-testid="peek-back" variant="subtle" color="gray" onClick={() => pop()}>
-          <IconChevronLeft size={16} aria-hidden /> {backDestination ?? 'Home'}
+          <UiIcon name="back" /> {backDestination ?? 'Home'}
         </Button>
         {otherScreens.length > 0 && (
           <Menu position="bottom-start" withinPortal shadow="md">

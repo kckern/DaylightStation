@@ -3,7 +3,6 @@ import { PlaybackQualityForm } from '../../../../../__capabilities/playback/brow
 import { browserPreference } from '@/lib/browserPreference.js';
 import { Sheet } from '@/lib/ui';
 import { normalizePlaybackQuality } from '@shared-contracts/media/playbackQuality.mjs';
-import { useDismissLayer } from '@/lib/ui/dismiss/useDismissLayer.js';
 import mediaLog from '../logging/mediaLog.js';
 
 const Context = createContext(null);
@@ -80,11 +79,10 @@ export function PlaybackQualityProvider({ children }) {
 
 export const usePlaybackQuality = () => useContext(Context);
 
-/** Mounted inside MediaAppShell so Escape participates in Media's dismiss stack. */
+/** The shared Sheet owns dismissal within MediaAppShell. */
 export function PlaybackQualityHost() {
   const context = usePlaybackQuality();
   const request = context?.request;
-  useDismissLayer(!!request, context?.close);
   return <Sheet open={!!request} onClose={context?.close} title="Playback quality">
     {request && <PlaybackQualityForm key={request.sequence} request={request} onApply={context.apply} />}
   </Sheet>;

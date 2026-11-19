@@ -7,7 +7,8 @@ import { ActiveQualityButton } from "../quality/PlaybackQualityButtons.jsx";
 // transport. Playback-speed control gets the portaled media element found
 // inside the claimed host (the only rate pathway; see TransportBar).
 import React, { useEffect, useRef, useState } from 'react';
-import { IconArrowsMinimize, IconMaximize, IconChevronLeft } from '@tabler/icons-react';
+import { IconArrowsMinimize, IconMaximize } from '@tabler/icons-react';
+import { UiIcon } from '@/lib/ui/UiIcon.jsx';
 import { useSessionController } from "../controller/useSessionController.js";
 import { usePlayerHost } from "../session/usePlayerHost.js";
 import { useNav } from "./NavProvider.jsx";
@@ -138,7 +139,7 @@ export function NowPlayingView() {
           className="np-back-btn"
           onClick={() => pop()}
         >
-          <IconChevronLeft size={16} aria-hidden /> {backDestination ?? 'Home'}
+          <UiIcon name="back" /> {backDestination ?? 'Home'}
         </button>
         {!showMeta && statusBlock}
       </div>

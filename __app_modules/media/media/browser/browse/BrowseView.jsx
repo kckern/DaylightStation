@@ -19,7 +19,6 @@
 import React, { useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Text, Stack } from '@mantine/core';
 import {
-  IconChevronLeft,
   IconChevronRight,
   IconPlayerPlay,
   IconArrowsShuffle,
@@ -34,6 +33,7 @@ import { DestinationLine } from "../cast/DestinationLine.jsx";
 import getLogger from "../../../../../frontend/src/lib/logging/Logger.js";
 import Skeleton from '@/lib/ui/Skeleton.jsx';
 import { Button } from '@/lib/ui/Button.jsx';
+import { UiIcon } from '@/lib/ui/UiIcon.jsx';
 import { StateMessage } from '@/lib/ui/states.jsx';
 import { ResultRow } from "../../../../../__capabilities/content-catalog/browser/result-row.mjs";
 import { ItemDestinationPicker } from "../actions/ItemDestinationPicker.jsx";
@@ -199,7 +199,7 @@ export function BrowseView({
         {/* When Back would land on Home the Home crumb already says so; two Homes is clutter. */}
         {depth > 1 && breadcrumbs.length === 0 && backDestination && backDestination !== 'Home' && (
           <button data-testid="browse-crumb-back" className="browse-crumb" onClick={() => pop()}>
-            <IconChevronLeft size={16} aria-hidden /> {backDestination}
+            <UiIcon name="back" /> {backDestination}
           </button>
         )}
         {breadcrumbs.map((crumb, index) => (
