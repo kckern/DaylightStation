@@ -8,9 +8,8 @@
 //    (audio continues across all views: "playback is ambient, not modal").
 //    Guarded by PlayerBridge.test.jsx — do not go back to conditionally
 //    portalling; see the note at the render for why that remounts.
-//  - Volume is applied imperatively via getMediaElement() with a bounded
-//    retry, because the element may not exist when the effect first runs and
-//    routing volume through the play prop would remount the Player.
+//  - Volume follows the native media binding, including decoder replacements.
+//    Routing volume through the play prop would remount the Player.
 //  - Position ticks feed the hot position channel only; the durable
 //    snapshot position is written on the ≥5s cadence (§11.3).
 //  - Stall detection (C9.3) is suppressed for live content, which has no
@@ -32,6 +31,7 @@ import { registerTrackOwner, createTrackPreferenceStore, readContentPosition } f
 import { getLocalPlayerFeatures } from "./localPlayerFeatures.js";
 import { playLogOrigin } from "./playOrigin.js";
 
+const VOLUME_REAPPLY_EVENTS = ['loadedmetadata', 'loadeddata', 'canplay'];
 const RENDERER_BOUNDARY_FORMATS = new Set(['video', 'hls_video', 'dash_video', 'audio']);
 // Media waits out a refused (unreadable) file for 60 s, then lets the queue
 // move on; kiosks keep the Player's 30-minute default (RELY.5a ruling).
@@ -170,37 +170,17 @@ export function PlayerBridge() {
   useEffect(() => controller.output?.subscribe?.((value) => setOutputFade(value)) ?? undefined, [controller]);
   useEffect(() => { playerRef.current?.setPlaybackRate?.(playbackRate); }, [playbackRate, currentItem?.contentId]);
   useEffect(() => { playerRef.current?.setShader?.(sessionShader); }, [sessionShader, currentItem?.contentId]);
+  const targetVolume = Math.max(0, Math.min(1, (volume / 100) * outputFade));
+  const targetVolumeRef = useRef(targetVolume);
+  const applyVolume = useCallback((event) => {
+    const el = playerRef.current?.getMediaElement?.();
+    if (!el || (event && event.currentTarget !== el)) return;
+    try { el.volume = targetVolumeRef.current; } catch { /* unsupported volume control */ }
+  }, []);
   useEffect(() => {
-    let cancelled = false;
-    const target = Math.max(0, Math.min(1, (volume / 100) * outputFade));
-    // The Player resets the element's volume to 1 when its metadata loads
-    // (the bridge passes it no volume prop, to avoid remounting), so the
-    // session level is applied again at each of these points.
-    const REAPPLY_EVENTS = ['loadedmetadata', 'loadeddata', 'canplay'];
-    let attached = null;
-    const set = (el) => { try { el.volume = target; } catch { /* ignore */ } };
-    const apply = () => {
-      const el = playerRef.current?.getMediaElement?.();
-      if (!el) return false;
-      set(el);
-      if (attached !== el && typeof el.addEventListener === 'function') {
-        attached = el;
-        for (const name of REAPPLY_EVENTS) el.addEventListener(name, onMedia);
-      }
-      return true;
-    };
-    const onMedia = (event) => { if (!cancelled) set(event.currentTarget ?? attached); };
-    const detach = () => {
-      if (attached && typeof attached.removeEventListener === 'function') {
-        for (const name of REAPPLY_EVENTS) attached.removeEventListener(name, onMedia);
-      }
-      attached = null;
-    };
-    if (apply()) return () => { cancelled = true; detach(); };
-    const id = setInterval(() => { if (cancelled || apply()) clearInterval(id); }, TIMING.VOLUME_APPLY_RETRY_MS);
-    const timeout = setTimeout(() => clearInterval(id), TIMING.VOLUME_APPLY_GIVE_UP_MS);
-    return () => { cancelled = true; detach(); clearInterval(id); clearTimeout(timeout); };
-  }, [volume, outputFade, currentItem?.contentId]);
+    targetVolumeRef.current = targetVolume;
+    applyVolume();
+  }, [targetVolume, applyVolume]);
 
   useEffect(() => () => {
     if (stallTimerRef.current) {
@@ -480,6 +460,10 @@ export function PlayerBridge() {
       const observeTimeUpdate = () => { observeNative('timeupdate'); };
       const observeEnded = () => { observeNative('ended'); };
       const observeError = () => { observeNative('error'); };
+      // The Player can restore full volume as a decoder becomes ready.
+      // Keep these listeners with the decoder that owns native observation.
+      applyVolume();
+      for (const type of VOLUME_REAPPLY_EVENTS) bound.addEventListener(type, applyVolume);
       bound.addEventListener('loadedmetadata', observeDuration);
       bound.addEventListener('durationchange', observeDuration);
       bound.addEventListener('pause', observePaused);
@@ -492,6 +476,7 @@ export function PlayerBridge() {
       bound.addEventListener('error', observeError);
       observeDuration();
       detach = () => {
+        for (const type of VOLUME_REAPPLY_EVENTS) bound?.removeEventListener(type, applyVolume);
         bound?.removeEventListener('loadedmetadata', observeDuration);
         bound?.removeEventListener('durationchange', observeDuration);
         bound?.removeEventListener('pause', observePaused);
@@ -508,7 +493,7 @@ export function PlayerBridge() {
 
     bindNativeOperationRef.current = bind;
     bind();
-    const poll = setInterval(bind, TIMING.VOLUME_APPLY_RETRY_MS);
+    const poll = setInterval(bind, TIMING.NATIVE_MEDIA_BIND_INTERVAL_MS);
     return () => {
       clearInterval(poll);
       if (bindNativeOperationRef.current === bind) bindNativeOperationRef.current = null;
@@ -525,7 +510,7 @@ export function PlayerBridge() {
         controller.releaseNativeObservation?.(retired, retiredGeneration);
       }
     };
-  }, [controller, contentId, playbackGeneration, onProgress]);
+  }, [controller, contentId, playbackGeneration, onProgress, applyVolume]);
 
   // Stable play prop across re-renders of the same item. The platform
   // Player honors `seconds` as the start offset.

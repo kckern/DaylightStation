@@ -9,6 +9,7 @@ import { PlayerHostProvider } from "./PlayerHostProvider.jsx";
 import { LocalSessionContext } from "./LocalSessionContext.js";
 import { usePlayerHost } from "./usePlayerHost.js";
 import { createLocalSessionController } from "./LocalSessionController.js";
+import { TIMING } from "../constants.js";
 import { applyCommandEnvelope } from "../externalControl/commandHandler.js";
 
 // Count how many times the platform Player is actually mounted. A remount is
@@ -855,6 +856,37 @@ describe('PlayerBridge — held natural end replays (duplicate-completion guard)
 });
 
 describe('PlayerBridge — session volume survives the Player resetting the element', () => {
+  it('moves the mute setting and metadata listeners to a replacement decoder for the same item', () => {
+    vi.useFakeTimers();
+    const controller = makeRealController();
+    mountedContentId = 'plex:replaced-audio';
+    controller.queue.playNow({ contentId: mountedContentId, format: 'audio' });
+    controller.config.setVolume(0);
+    const retired = document.createElement('audio');
+    mediaElement = retired;
+    const { unmount } = render(<Harness controller={controller} />);
+    expect(retired.volume).toBe(0);
+
+    const replacement = document.createElement('audio');
+    mediaElement = replacement;
+    act(() => vi.advanceTimersByTime(TIMING.NATIVE_MEDIA_BIND_INTERVAL_MS));
+    expect(replacement.volume).toBe(0);
+
+    retired.volume = 1;
+    replacement.volume = 1;
+    act(() => {
+      retired.dispatchEvent(new Event('loadedmetadata'));
+      replacement.dispatchEvent(new Event('loadedmetadata'));
+    });
+    expect(retired.volume).toBe(1);
+    expect(replacement.volume).toBe(0);
+
+    unmount();
+    replacement.volume = 1;
+    replacement.dispatchEvent(new Event('canplay'));
+    expect(replacement.volume).toBe(1);
+  });
+
   it('re-applies the session volume when the element loads its metadata (the Player writes volume 1 then)', async () => {
     vi.useFakeTimers();
     const controller = makeRealController();
