@@ -134,10 +134,11 @@ export function useContentCombobox({
     paginationOwnerRef.current = null;
   };
 
-  // Warm the valid-prefix set so a literal commit can tell a pasted-but-valid
-  // id from an invented source. Cached module-wide, so this is one request per
-  // page regardless of how many comboboxes mount.
-  useEffect(() => { loadKnownSources(); }, []);
+  // Warm the valid-prefix set for pickers that accept typed IDs. These reads
+  // are shared across rows, and reopening can retry an incomplete lookup.
+  useEffect(() => {
+    if (allowFreeform) loadKnownSources();
+  }, [allowFreeform]);
 
   // ── 1. Reducer wiring: VALUE_CHANGED on prop change (skip initial render) ──
   const prevValueRef = useRef(value);
@@ -381,6 +382,7 @@ export function useContentCombobox({
   }, []);
 
   const openWithSiblings = useCallback(async () => {
+    if (allowFreeform) loadKnownSources();
     invalidateBrowseLoads();
     dispatch({ type: 'OPEN' });
     const contentId = stateRef.current.value;
@@ -412,7 +414,7 @@ export function useContentCombobox({
       log.error('load_siblings.error', { contentId, error: err.message });
       if (stillWanted()) dispatch({ type: 'BROWSE_LOADING', loading: false });
     }
-  }, [applyBrowseData, log]);
+  }, [allowFreeform, applyBrowseData, log]);
 
   // ── 4. Drill / up ──
   const drill = useCallback(async (item) => {

@@ -3,6 +3,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { renderHook, act, waitFor } from '@testing-library/react';
 import { clearCache, getCacheEntry, loadSiblings, setCacheEntry } from "../lib/siblingsCache.js";
+import { isKnownSource, loadKnownSources, resetKnownSources } from "../lib/knownSources.js";
 
 // Hoisted so tests (Task 5: search.settled / search.source_error /
 // search.retry_after_source_error) can assert on calls — vi.hoisted runs
@@ -118,6 +119,43 @@ describe('useContentCombobox', () => {
     expect(result.current.state.mode).toBe('display');
     expect(result.current.state.value).toBe('plex:2');
     expect(result.current.state.search).toBeNull();
+  });
+
+  it('recognizes recovered aliases when the same picker opens after an outage', async () => {
+    resetKnownSources();
+    let aliasesAvailable = false;
+    fetchMock.mockImplementation(path => {
+      if (path === '/api/v1/content/sources') return jsonResponse({ sources: ['plex'] });
+      if (path === '/api/v1/content/aliases') return Promise.resolve(aliasesAvailable
+        ? Response.json({ userDefined: ['family-alias'] })
+        : Response.json({ error: 'Service unavailable' }, { status: 503 }));
+      return jsonResponse({ items: [] });
+    });
+    const onChange = vi.fn();
+    const { result } = setup({ onChange });
+    await act(async () => { await loadKnownSources(); });
+
+    act(() => { result.current.handleInput('family-alias:first'); });
+    act(() => { result.current.commit('enter'); });
+    expect(onChange).toHaveBeenCalledWith('family-alias:first');
+    expect(notifyWarning).toHaveBeenLastCalledWith(expect.objectContaining({ title: 'Saved as raw id' }));
+
+    aliasesAvailable = true;
+    await openBrowse(result);
+    await waitFor(() => expect(isKnownSource('family-alias')).toBe(true));
+    expect(fetchMock.mock.calls.filter(([path]) => path === '/api/v1/content/aliases')).toHaveLength(2);
+
+    act(() => { result.current.handleInput('invented:second'); });
+    act(() => { result.current.commit('enter'); });
+    expect(onChange).toHaveBeenCalledWith('invented:second');
+    expect(notifyWarning).toHaveBeenLastCalledWith(expect.objectContaining({ title: 'Unknown source “invented”' }));
+  });
+
+  it('skips literal validation requests for a selection-only picker', async () => {
+    resetKnownSources();
+    const { result } = setup({ allowFreeform: false });
+    await openBrowse(result);
+    expect(fetchMock.mock.calls.filter(([path]) => /^\/api\/v1\/content\/(sources|aliases)$/.test(path))).toEqual([]);
   });
 
   it("handleClose('outside') with exploratory text calls onChange ZERO times and resets state", async () => {

@@ -12,9 +12,8 @@ import { DaylightAPI } from '../../../../frontend/src/lib/api.mjs';
  *
  * The set is the union of registered adapter sources, their categories and
  * providers, and the query aliases (`hymn:`, `scripture:`, …) — anything the
- * backend will resolve. Fetched once per page load; a failure leaves the set
- * unknown, and callers treat unknown as "cannot judge" rather than "invalid",
- * so a fetch problem never produces a false alarm.
+ * backend will resolve. Cache the first complete lookup for this page.
+ * Until both catalogs are known, callers cannot judge a typed prefix.
  */
 
 let knownSources = null;
@@ -33,9 +32,8 @@ export function loadKnownSources() {
       const [sources, aliases] = await Promise.all([
         DaylightAPI('/api/v1/content/sources'),
         DaylightAPI('/api/v1/content/aliases').catch(error => {
-          // An unwired resolver returns 501. Network and decoding failures
-          // leave validation unknown so a typed source is never mislabelled.
-          if (error.status >= 300) return {};
+          // Only the catalog's explicit unwired response confirms no aliases.
+          if (error.status === 501 && error.body?.code === 'ALIAS_RESOLVER_NOT_CONFIGURED') return {};
           throw error;
         }),
       ]);
