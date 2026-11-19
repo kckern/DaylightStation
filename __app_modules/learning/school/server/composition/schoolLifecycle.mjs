@@ -176,6 +176,7 @@ import { IssueSubjectCode } from "../application/usecases/IssueSubjectCode.mjs";
 import { validateSchedule } from "../domain/schoolCalendar.mjs";
 import { LiveHouseholdCalendar } from "../application/LiveHouseholdCalendar.mjs";
 import { checkDayOffCalendar, readDayOffPolicy } from "../domain/dayOffPolicy.mjs";
+import { readMakeupPolicy } from "../domain/makeup.mjs";
 import { YamlTermVerdictCache } from "../adapters/persistence/YamlTermVerdictCache.mjs";
 import { TermVerdictService } from "../application/TermVerdictService.mjs";
 import { GetLearnerTerm } from "../application/usecases/GetLearnerTerm.mjs";
@@ -660,6 +661,11 @@ export async function createSchoolLifecycle({
   // to "keep everything") and says so.
   const { errors: dayOffPolicyErrors, policy: dayOffPolicy } = readDayOffPolicy(cfg.dayOffTiers);
   if (dayOffPolicyErrors.length) logger.warn?.('school.day-off-policy.invalid', { errors: dayOffPolicyErrors });
+  // `school.yml → makeup` (`domain/makeup.mjs`): missed work made up later in
+  // the same week, through the deadline weekday, credits the missed day. A bad
+  // block turns makeup off and says so. Boot-cached like the rest of the file.
+  const { errors: makeupErrors, policy: makeupPolicy } = readMakeupPolicy(cfg.makeup);
+  if (makeupErrors.length) logger.warn?.('school.makeup-policy.invalid', { errors: makeupErrors });
   const { untiered: untieredBreaks } = checkDayOffCalendar({ schedule: householdSchedule });
   if (untieredBreaks.length) logger.warn?.('school.calendar.untiered', { labels: untieredBreaks });
   // The two as ONE swappable value: every consumer below takes the getters and
@@ -1677,6 +1683,7 @@ export async function createSchoolLifecycle({
       // 1 September. Never widens.
       window: lifecycleCfg.board?.term ?? null,
       timezone, clock, logger, householdSchedule: liveCalendar.schedule,
+      makeupPolicy,
     });
     // Any completion input makes today's cached row out of date at once, so a
     // payout settled seconds later reads the day as it now is.

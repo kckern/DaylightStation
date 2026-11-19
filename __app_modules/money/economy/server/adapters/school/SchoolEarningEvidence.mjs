@@ -71,14 +71,20 @@ export class SchoolEarningEvidence extends ISchoolEarningEvidence {
       return { sectionDays: [], days: [], week: null, units: [], debriefs: [], coverage: 'outside-term' };
     }
     const rows = (term?.days ?? []).filter((d) => inWeek(d.studyDay));
+    // Makeup (School `domain/makeup.mjs`, taxonomy D14): a day turned green by
+    // later work in its week reads `timeliness: 'makeup'`; an unfinished day
+    // that can still be made up carries `makeupOpen` and is not settled yet.
     const days = rows.map((d) => ({
-      day: d.studyDay, state: d.state, reason: d.reason ?? null, greenWeek: this.#greenWeekDay(d.studyDay), timeliness: ON_TIME,
+      day: d.studyDay, state: d.state, reason: d.reason ?? null, greenWeek: this.#greenWeekDay(d.studyDay),
+      timeliness: d.timeliness ?? ON_TIME, makeupOpen: d.makeupOpen === true,
     }));
     const weekdays = [0, 1, 2, 3, 4].map((i) => new Date(Date.parse(`${week.from}T00:00:00.000Z`) + i * 86_400_000)
       .toISOString().slice(0, 10));
     const excusedDays = weekdays.filter((day) => !this.#greenWeekDay(day));
     const sectionDays = rows.flatMap((d) => (d.sections ?? []).map((s) => ({
-      day: d.studyDay, subject: s.subject, state: s.state, reason: s.reason ?? null, timeliness: ON_TIME,
+      day: d.studyDay, subject: s.subject, state: s.state, reason: s.reason ?? null,
+      timeliness: s.makeup ? 'makeup' : ON_TIME,
+      makeupOpen: d.makeupOpen === true && s.state === 'obligated',
     })));
     const row = (term?.weeks ?? []).find((w) => w.weekId === week.from) ?? null;
     const weekFact = row ? {
