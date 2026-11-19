@@ -140,6 +140,8 @@ import { RecoverMisattributedWorksheet } from "../application/usecases/RecoverMi
 import { ResolvePersonalCard } from "../application/usecases/ResolvePersonalCard.mjs";
 import { ResolveScanAction } from "../application/usecases/ResolveScanAction.mjs";
 import { ResolveSubjectNext } from "../application/usecases/ResolveSubjectNext.mjs";
+import { GetMakeupWork } from "../application/usecases/GetMakeupWork.mjs";
+import { PrintMakeupAgenda } from "../application/usecases/PrintMakeupAgenda.mjs";
 import { ResolveAccessCode } from "../application/usecases/ResolveAccessCode.mjs";
 import { createTokenBucket } from '#system/utils/tokenBucket.mjs';
 import { HmacSchoolMountReceiptIssuer } from '../adapters/actions/HmacSchoolMountReceiptIssuer.mjs';
@@ -989,6 +991,12 @@ export async function createSchoolLifecycle({
   // Bounds the economy line's read (2 s, BuildAgenda's default): the
   // application layer holds no timers of its own.
   const agendaScheduler = new NodeApplicationScheduler();
+  // MAKEUP WORK: what is still owed from earlier this week, read off the term
+  // verdicts. `termVerdicts` is built further down (it needs the completion
+  // use case), so this takes a getter; nothing calls it during composition.
+  const getMakeupWork = new GetMakeupWork({
+    termVerdicts: () => termVerdicts, makeupPolicy, logger,
+  });
   const buildAgenda = new BuildAgenda({
     planProjection,
     attestations, teacherNotes,
@@ -1007,12 +1015,20 @@ export async function createSchoolLifecycle({
     // what it printed before the feature existed.
     selfService: cfg.selfService,
     economy: agendaEconomy, scheduler: agendaScheduler,
+    getMakeupWork,
   });
   const resolveSubjectNext = new ResolveSubjectNext({
     planProjection,
     attestations,
     curriculum, assignments: stores.assignments, sessions: stores.sessions,
     launchers, timezone, clock, newSessionId, curriculumExceptions: curriculumExceptionStore, logger,
+  });
+  // The makeup sheet a `makeup_print` scan or typed code prints: one
+  // continue-today ticket per subject still owed, through the same receipts
+  // printer as the agenda.
+  const printMakeupAgenda = new PrintMakeupAgenda({
+    getMakeupWork, tokens: stores.tokens, receipts, resolveSubjectNext, roster: schoolRoster,
+    selfService: cfg.selfService, timezone, clock, rng: draw, logger,
   });
   // Read-only twin of `buildAgenda`'s planning path (design
   // 2026-08-23-student-completion-state-machine): "is this learner done for
@@ -1072,6 +1088,9 @@ export async function createSchoolLifecycle({
     // Teacher planning is a non-recording view.  Its document must not carry
     // a token or panel code that resembles an issued agenda ticket.
     previewOnly: true,
+    // Read-only: the preview shows the makeup card (inert) and its JSON
+    // carries `makeup`, which the status board reads.
+    getMakeupWork,
     // Read-only, like the review queue: `peekBalance` writes no wallet and the
     // next-item preview opens no session. A preview without the line the real
     // print carries would show a parent a different sheet.
@@ -1359,6 +1378,7 @@ export async function createSchoolLifecycle({
     externalActivityProvider: fitnessSchoolCourseService,
     resolveLearningAction: schoolCalcActionResolver,
     replaceLostAnswerSheet,
+    printMakeupAgenda,
   });
 
   // The pending->approved half of the launch-unit loop (spec §6 "the approval
@@ -1557,6 +1577,7 @@ export async function createSchoolLifecycle({
     clock,
     logger,
     launchPreviewTokens,
+    getMakeupWork,
   });
 
   // The WRITE half. `/act` is where a button press earns a real session — the
@@ -1591,6 +1612,7 @@ export async function createSchoolLifecycle({
     // child their work was opening in front of them.
     launchers,
     companions, companionHandlers,
+    printMakeupAgenda,
     newSessionId,
     clock,
     logger,
