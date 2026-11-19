@@ -42,6 +42,13 @@ public class BackendMediaApiTest {
         assertEquals("https://kiosk.example/api/v1/content/query/search?text=miles+%26+davis%2F..%2Fx%3Fy%3D1%23z&take=50", gets.get(0));
     }
 
+    @Test public void thePlayRequestDisablesResumeOnlyWhenAsked() throws Exception {
+        api.play("plex:99", true);
+        api.play("plex:99", false);
+        assertEquals("https://kiosk.example/api/v1/play/plex/99", gets.get(0));
+        assertEquals("https://kiosk.example/api/v1/play/plex/99?resume=false", gets.get(1));
+    }
+
     @Test public void aRefusedSearchIsRefused() {
         status = 501;
         try {

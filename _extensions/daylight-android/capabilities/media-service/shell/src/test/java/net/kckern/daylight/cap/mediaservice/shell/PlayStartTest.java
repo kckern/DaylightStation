@@ -55,32 +55,35 @@ public class PlayStartTest {
     }
 
     @Test public void controllerStartUsesTheResolvedIndexAndExplicitOffset() throws Exception {
-        assertStart(1, 1234, 2, 1234);
+        assertStart(1, 1234, true, 2, 1234);
     }
 
     @Test public void explicitZeroOverridesTheSavedPosition() throws Exception {
-        assertStart(1, 0, 2, 0);
-        assertStart(C.INDEX_UNSET, 0, 1, 0);
+        assertStart(1, 0, true, 2, 0);
+        assertStart(C.INDEX_UNSET, 0, true, 1, 0);
     }
 
     @Test public void unsetOrInvalidControllerSelectionKeepsResolverDefaults() throws Exception {
-        assertStart(C.INDEX_UNSET, C.TIME_UNSET, 1, 250_000);
-        assertStart(9, C.TIME_UNSET, 1, 250_000);
-        assertStart(9, 0, 1, 250_000);
+        assertStart(C.INDEX_UNSET, C.TIME_UNSET, false, 1, 250_000);
+        assertStart(9, C.TIME_UNSET, false, 1, 250_000);
+        assertStart(9, 0, false, 1, 250_000);
     }
 
     @Test public void anEmptySelectionDoesNotSeekInTheFallbackTrack() throws Exception {
-        assertStart(0, 1234, 1, 250_000);
+        assertStart(0, 1234, true, 1, 250_000);
     }
 
-    private void assertStart(int index, long position, int expectedIndex, long expectedPosition) throws Exception {
+    private void assertStart(int index, long position, boolean explicit, int expectedIndex, long expectedPosition)
+            throws Exception {
         if (handler != null) PayloadPort.named(PayloadMedia.PORT).detach(handler);
         handler = raw -> {
             JSONObject request = new JSONObject(raw);
             int selected = request.optInt("startIndex", C.INDEX_UNSET);
+            assertEquals("explicit position", explicit, request.optBoolean("explicitPosition"));
             JSONObject track = new JSONObject().put("id", "plex:1").put("title", "Song").put("url", "https://kiosk.example/s");
             return new JSONObject().put("ok", true).put("startIndex", selected == 1 ? 2 : 1)
-                    .put("startPositionMs", 250_000).put("selectionResolved", selected == 1)
+                    .put("startPositionMs", 250_000)
+                    .put("selectionResolved", selected == 1 || (selected == C.INDEX_UNSET && explicit))
                     .put("tracks", new JSONArray().put(track).put(track).put(track)).toString();
         };
         PayloadPort.named(PayloadMedia.PORT).attach(handler);

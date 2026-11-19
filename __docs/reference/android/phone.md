@@ -630,7 +630,9 @@ beginning.
 - A Plex stream URL gets `session=daylight-<device id>` when it has none, as the
   web player's does, so Plex sees one client.
 - Resume: the position the backend gives, for a single item. A Plex stream URL
-  that already carries `offset=` is not sought again.
+  that already carries `offset=` is not sought again by default. With an explicit
+  controller position, the selected play response is requested with
+  `resume=false` so Media3 can seek from the beginning of its stream.
 - Progress follows the web player: at most one report every 10 seconds while
   playing and only past 10 seconds; one more when an item is paused, stopped or
   replaced, unless it was a skim (under 10 seconds and under 90 percent); one at

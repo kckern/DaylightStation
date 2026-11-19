@@ -146,7 +146,7 @@ final class LibraryCallback implements MediaLibrarySession.Callback {
         final SettableFuture<List<MediaItem>> future = SettableFuture.create();
         try {
             io.execute(() -> {
-                try { future.set(NodeItems.tracks(resolve(requested, C.INDEX_UNSET).tracks)); }
+                try { future.set(NodeItems.tracks(resolve(requested, C.INDEX_UNSET, C.TIME_UNSET).tracks)); }
                 catch (Throwable e) { future.setException(failure(e)); }
             });
         } catch (RuntimeException stopping) {
@@ -163,10 +163,9 @@ final class LibraryCallback implements MediaLibrarySession.Callback {
         try {
             io.execute(() -> {
                 try {
-                    TrackAnswer r = resolve(requested, startIndex);
+                    TrackAnswer r = resolve(requested, startIndex, startPositionMs);
                     long defaultPosition = r.startPositionMs > 0 ? r.startPositionMs : C.TIME_UNSET;
-                    boolean applyOffset = startIndex == C.INDEX_UNSET || r.selectionResolved;
-                    long position = applyOffset && startPositionMs >= 0 ? startPositionMs : defaultPosition;
+                    long position = r.selectionResolved && startPositionMs >= 0 ? startPositionMs : defaultPosition;
                     future.set(new MediaSession.MediaItemsWithStartPosition(NodeItems.tracks(r.tracks), r.startIndex, position));
                 } catch (Throwable e) {
                     future.setException(failure(e));
@@ -184,7 +183,7 @@ final class LibraryCallback implements MediaLibrarySession.Callback {
      * The one exception is a play-from-search (one item, no id, a search query): the
      * payload searches and names the item to play, which is then resolved like any id.
      */
-    private TrackAnswer resolve(List<MediaItem> requested, int startIndex) throws Exception {
+    private TrackAnswer resolve(List<MediaItem> requested, int startIndex, long startPositionMs) throws Exception {
         List<String> ids = new ArrayList<>();
         List<String> queries = new ArrayList<>();
         for (MediaItem item : requested) {
@@ -200,7 +199,8 @@ final class LibraryCallback implements MediaLibrarySession.Callback {
             ids = java.util.Collections.singletonList(best);
         }
         int selected = startIndex >= 0 && startIndex < ids.size() ? startIndex : C.INDEX_UNSET;
-        return TrackAnswer.parse(media.resolve(ids, selected, PLAY_WAIT_MS));
+        boolean explicitPosition = startPositionMs >= 0 && (startIndex == C.INDEX_UNSET || selected >= 0);
+        return TrackAnswer.parse(media.resolve(ids, selected, explicitPosition, PLAY_WAIT_MS));
     }
 
     // ── voice search ──────────────────────────────────────────────────────────

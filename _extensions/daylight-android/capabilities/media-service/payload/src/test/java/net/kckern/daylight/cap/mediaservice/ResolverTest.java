@@ -30,7 +30,7 @@ public class ResolverTest {
     }
 
     private Resolver.Resolved resolve(String... ids) throws Exception {
-        return Resolver.resolve(Arrays.asList(ids), api, backend, "s");
+        return Resolver.resolve(Arrays.asList(ids), -1, false, api, backend, "s");
     }
 
     @Test public void aContainerResolvesToItsWholeQueue() throws Exception {
@@ -91,7 +91,7 @@ public class ResolverTest {
     @Test public void theSelectedInputStartsAfterEarlierExpandedTracks() throws Exception {
         api.responses.put("play plex:99", "{\"id\":\"plex:99\",\"mediaType\":\"audio\",\"mediaUrl\":\"/s/99\","
                 + "\"duration\":60,\"resume_position\":30,\"resumable\":true}");
-        Resolver.Resolved r = Resolver.resolve(Arrays.asList("c:plex:10", "p:plex:99"), 1, api, backend, "s");
+        Resolver.Resolved r = Resolver.resolve(Arrays.asList("c:plex:10", "p:plex:99"), 1, false, api, backend, "s");
         assertEquals(2, r.startIndex);
         assertEquals("plex:99", r.tracks.get(r.startIndex).id);
         assertEquals(0, r.startPositionMs);
@@ -125,7 +125,7 @@ public class ResolverTest {
         }
         api.responses.put("queue plex:77", big.append("]}").toString());
         assertEquals(Resolver.MAX_TRACKS, resolve("c:plex:77").tracks.size());
-        Resolver.Resolved selected = Resolver.resolve(Arrays.asList("c:plex:77", "c:plex:10"), 1, api, backend, "s");
+        Resolver.Resolved selected = Resolver.resolve(Arrays.asList("c:plex:77", "c:plex:10"), 1, false, api, backend, "s");
         assertEquals(Resolver.MAX_TRACKS, selected.tracks.size());
         assertEquals("plex:11", selected.tracks.get(selected.startIndex).id);
         assertEquals("the item that was asked for is kept when the queue is cut", "plex:" + (1000 + Resolver.MAX_TRACKS + 10),

@@ -36,11 +36,8 @@ final class Resolver {
 
     private Resolver() { }
 
-    static Resolved resolve(List<String> mediaIds, MediaApi api, Backend backend, String session) throws Exception {
-        return resolve(mediaIds, -1, api, backend, session);
-    }
-
-    static Resolved resolve(List<String> mediaIds, int requestedIndex, MediaApi api, Backend backend, String session) throws Exception {
+    static Resolved resolve(List<String> mediaIds, int requestedIndex, boolean explicitPosition,
+                            MediaApi api, Backend backend, String session) throws Exception {
         if (mediaIds == null || mediaIds.isEmpty()) throw new IllegalArgumentException("unknown media id");
         if (mediaIds.size() > MAX_IDS) throw new IllegalArgumentException("too many media ids");
         List<MediaId> ids = new ArrayList<>();
@@ -78,7 +75,10 @@ final class Resolver {
                     continue;
                 }
             }
-            JSONObject play = api.play(id.contentId);
+            // For a play response, the server may embed its saved position in the stream URL.
+            // Ask it to start the selected response at the beginning and let Media3 seek.
+            boolean selectedInput = requestedIndex == i || (requestedIndex == -1 && tracks.isEmpty());
+            JSONObject play = api.play(id.contentId, !(explicitPosition && selectedInput));
             // The play route answers a container with its first playable item. The id in
             // the answer is then not the one asked for, and the whole container is queued.
             String answered = QueueMapper.id(play);
@@ -105,7 +105,8 @@ final class Resolver {
             tracks = new ArrayList<>(tracks.subList(from, from + MAX_TRACKS));
             startIndex -= from;
         }
-        return new Resolved(tracks, startIndex, startPositionMs, selectionResolved);
+        return new Resolved(tracks, startIndex, startPositionMs,
+                selectionResolved || (explicitPosition && requestedIndex == -1));
     }
 
     private static JSONObject itemOf(JSONObject queue, String contentId) {

@@ -39,7 +39,7 @@ public class PayloadMediaTest {
         assertEquals("c:plex:9", browse.getString("parent"));
         assertEquals(2, browse.getInt("page"));
 
-        media.resolve(Arrays.asList("p:plex:11|plex:9", "c:plex:10"), -1, 0);
+        media.resolve(Arrays.asList("p:plex:11|plex:9", "c:plex:10"), -1, false, 0);
         JSONObject resolve = new JSONObject(seen.get(1));
         assertEquals("resolve", resolve.getString("op"));
         assertEquals("c:plex:10", resolve.getJSONArray("ids").getString(1));

@@ -331,6 +331,39 @@ public class MediaServiceCapabilityTest {
         assertEquals("an id the backend does not have", 404, post("/media/resolve", "{\"ids\":[\"p:plex:404\"]}").getInt("_status"));
     }
 
+    @Test public void onlyTheSelectedPlayResponseSuppressesItsServerResume() throws Exception {
+        String proxied = "/api/v1/proxy/plex/stream/99?session=fixture";
+        String signed = "/s/11?offset=7&signature=fixture%2Bvalue";
+        api.responses.put("play plex:99", "{\"id\":\"plex:99\",\"mediaType\":\"audio\",\"mediaUrl\":\"" + proxied
+                + "&offset=30\",\"duration\":100,\"resumable\":true,\"resume_position\":30}");
+        api.responses.put("play plex:99?resume=false",
+                "{\"id\":\"plex:99\",\"mediaType\":\"audio\",\"mediaUrl\":\"" + proxied + "\"}");
+        api.responses.put("play plex:11", "{\"id\":\"plex:11\",\"mediaType\":\"audio\",\"mediaUrl\":\"" + signed + "\"}");
+        api.responses.put("queue plex:20", "{\"items\":[]}");
+
+        JSONObject saved = post("/media/resolve", "{\"ids\":[\"p:plex:99\"]}");
+        assertEquals("https://kiosk.example" + proxied + "&offset=30",
+                saved.getJSONArray("tracks").getJSONObject(0).getString("url"));
+
+        JSONObject explicit = post("/media/resolve",
+                "{\"ids\":[\"p:plex:11\",\"p:plex:99\"],\"startIndex\":1,\"explicitPosition\":true}");
+        assertEquals("https://kiosk.example" + signed, explicit.getJSONArray("tracks").getJSONObject(0).getString("url"));
+        assertEquals("https://kiosk.example" + proxied, explicit.getJSONArray("tracks").getJSONObject(1).getString("url"));
+        assertTrue(explicit.getBoolean("selectionResolved"));
+
+        JSONObject explicitDefault = post("/media/resolve",
+                "{\"ids\":[\"p:plex:99\"],\"explicitPosition\":true}");
+        assertTrue(explicitDefault.getBoolean("selectionResolved"));
+        assertEquals("https://kiosk.example" + proxied,
+                explicitDefault.getJSONArray("tracks").getJSONObject(0).getString("url"));
+
+        JSONObject fallback = post("/media/resolve",
+                "{\"ids\":[\"c:plex:20\",\"p:plex:99\"],\"startIndex\":0,\"explicitPosition\":true}");
+        assertEquals("https://kiosk.example" + proxied + "&offset=30",
+                fallback.getJSONArray("tracks").getJSONObject(0).getString("url"));
+        assertFalse(fallback.getBoolean("selectionResolved"));
+    }
+
     @Test public void theInstalledServiceAsksOverThePortAndGetsTheSameAnswers() throws Exception {
         PayloadPort port = PayloadPort.named(MediaServiceCapability.PORT);
         assertFalse(port.ready());

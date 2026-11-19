@@ -32,7 +32,9 @@ final class BackendMediaApi implements MediaApi {
 
     @Override public JSONObject queue(String contentId) throws Exception { return get("queue", ContentPath.of("queue", contentId)); }
 
-    @Override public JSONObject play(String contentId) throws Exception { return get("play", ContentPath.of("play", contentId)); }
+    @Override public JSONObject play(String contentId, boolean resume) throws Exception {
+        return get("play", ContentPath.of("play", contentId) + (resume ? "" : "?resume=false"));
+    }
 
     /**
      * The content query search route (content-catalog's router, mounted at

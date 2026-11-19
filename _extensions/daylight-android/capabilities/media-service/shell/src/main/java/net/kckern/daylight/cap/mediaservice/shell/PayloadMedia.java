@@ -25,9 +25,10 @@ final class PayloadMedia {
                 .put("pageSize", pageSize).toString(), waitMs);
     }
 
-    String resolve(List<String> mediaIds, int startIndex, long waitMs) throws Exception {
+    String resolve(List<String> mediaIds, int startIndex, boolean explicitPosition, long waitMs) throws Exception {
         JSONObject request = new JSONObject().put("op", "resolve").put("ids", new JSONArray(mediaIds));
         if (startIndex >= 0) request.put("startIndex", startIndex);
+        if (explicitPosition) request.put("explicitPosition", true);
         return port.call(request.toString(), waitMs);
     }
 
