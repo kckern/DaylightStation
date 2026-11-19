@@ -40,7 +40,7 @@
 
   &__poster { flex: 0 0 auto; height: 100%; aspect-ratio: 2 / 3; object-fit: cover; border-radius: 0.35rem; background: var(--piano-surface-2); }
 
-  &__body { flex: 1 1 auto; display: flex; flex-direction: column; justify-content: space-between; gap: 0.2rem; min-width: 0; padding: 0.1rem 0; }
+  &__body { flex: 1 1 auto; display: flex; flex-direction: column; justify-content: space-between; gap: 0.1rem; min-width: 0; padding: 0; }
 
   &__who {
     display: flex;

@@ -78,11 +78,11 @@ describe('PianoHomeDesk progress strip', () => {
     expect(card.textContent).not.toMatch(/ of 3 Silver/);
   });
 
-  it('keeps a twelve-passage piece to two rows of six, so four cards fit the strip at full icon size', async () => {
+  it('keeps a twelve-passage piece to two rows of six small icons, so a card fits with or without a poster', async () => {
     h.desk.players[0].piece = { ...piece, total: 12, passages: Array.from({ length: 12 }, (_, index) => ({ id: `p${index}`, start: index * 4, end: index * 4 + 3, state: 'todo' })) };
     mount();
     const card = await screen.findByRole('button', { name: 'Kid: 1 of 12 Silver' });
-    expect(card.querySelector('.piano-desk__map').style.gridTemplateColumns).toBe('repeat(6, minmax(0, 1.75rem))');
+    expect(card.querySelector('.piano-desk__map').style.gridTemplateColumns).toBe('repeat(6, minmax(0, 1.05rem))');
   });
 
   it('shows only the children, never the parents', async () => {

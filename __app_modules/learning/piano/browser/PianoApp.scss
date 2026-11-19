@@ -397,6 +397,15 @@
     padding: 0 var(--sp-6, 3rem) var(--sp-3);
   }
 
+  // An owed video lesson under the strip, with the one mode it leaves open
+  // (Sheet Music) beside it as an ordinary menu tile, never stretched.
+  &__owed {
+    flex: 1 1 auto; min-height: 0; width: 100%;
+    display: flex; align-items: stretch; gap: var(--sp-4, 16px);
+    .piano-lesson-gate { flex: 1 1 auto; min-width: 0; }
+    > .piano-tile { flex: 0 0 13rem; width: 13rem; align-self: center; }
+  }
+
   &__keyboard {
     flex: 0 0 auto;
     background: #2a2a2a;

@@ -123,7 +123,8 @@ describe('PianoMenu driven by the real lesson gate', () => {
       await vi.advanceTimersByTimeAsync(0);
     });
     await waitFor(() => expect(screen.getByText('Meet the Eighth Note')).toBeTruthy());
-    expect(tiles()).toHaveLength(0);
+    // Only Sheet Music stays open beside an owed lesson.
+    expect(tiles().map((tile) => tile.textContent)).toEqual([expect.stringMatching(/Sheet Music/)]);
   });
 
   // The incident, reconstructed: a learner picks their name and reaches for a

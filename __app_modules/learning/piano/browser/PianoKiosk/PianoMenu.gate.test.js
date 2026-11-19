@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { createElement } from 'react';
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { PianoMenu } from './PianoMenu.jsx';
 import { __clearPianoListCache } from './usePianoList.js';
@@ -51,6 +51,7 @@ vi.mock('./usePianoLessonGate.js', async () => ({
   ...(await vi.importActual('./usePianoLessonGate.js')),
   default: () => gateState,
 }));
+vi.mock('../ask/AskSession.jsx', () => ({ default: () => createElement('div', { 'data-testid': 'ask-session' }) }));
 vi.mock('../../../../../frontend/src/lib/logging/Logger.js', () => ({
   default: () => ({ child: () => ({ info() {}, debug() {}, warn() {}, error() {} }) }),
 }));
@@ -109,10 +110,25 @@ beforeEach(() => {
 afterEach(() => { vi.useRealTimers(); });
 
 describe('PianoMenu with an owed lesson', () => {
-  it('shows only the lesson card — no tile grid, no activity strip', () => {
+  // Sheet music is the exception (owner, 2026-11-19): a child who owes the video
+  // lesson can still reach their pieces, through the strip's piece card or the
+  // one Sheet Music tile beside the lesson. Every other mode stays behind it.
+  it('keeps the lesson card, the progress strip and only the Sheet Music tile', async () => {
     gateState = GATED;
     renderMenu();
     expect(screen.getByText('Lesson 5: Broken Chords')).toBeTruthy();
+    expect(document.querySelector('.piano-desk')).not.toBeNull();
+    expect(tiles()).toHaveLength(1);
+    expect(tiles()[0].textContent).toMatch(/Sheet Music/);
+    fireEvent.click(tiles()[0]);
+    expect(navigate).toHaveBeenCalledWith('/piano/sheetmusic');
+    // The strip's own cards stay live: a course card here belongs to this child.
+    expect(await screen.findByRole('button', { name: /learner2: Course B/ })).not.toBeDisabled();
+  });
+
+  it('leaves a PianoChallenge its whole screen, with no strip or tile', () => {
+    gateState = { ...GATED, challenge: { id: 'c', ask: { id: 'a' }, materialSpec: {}, framing: null } };
+    renderMenu();
     expect(tiles()).toHaveLength(0);
     expect(document.querySelector('.piano-desk')).toBeNull();
   });
@@ -156,7 +172,7 @@ describe('PianoMenu with an owed lesson', () => {
   it('clears live when School says the lesson landed — no reload', async () => {
     gateState = GATED;
     const view = renderMenu();
-    expect(tiles()).toHaveLength(0);
+    expect(tiles()).toHaveLength(1);
 
     gateState = NOT_GATED;
     view.rerender(createElement(MemoryRouter, null, createElement(PianoMenu)));

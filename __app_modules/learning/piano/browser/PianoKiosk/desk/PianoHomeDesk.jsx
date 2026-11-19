@@ -50,7 +50,7 @@ function PieceCard({ card }) {
       <span className="piano-desk__body">
         <Who card={card} />
         <strong className="piano-desk__title">{title}</strong>
-        <span className="piano-desk__map" style={{ gridTemplateColumns: `repeat(${columns}, minmax(0, 1.75rem))` }} aria-hidden="true">
+        <span className="piano-desk__map" style={{ gridTemplateColumns: `repeat(${columns}, minmax(0, 1.05rem))` }} aria-hidden="true">
           {card.piece.passages.map((passage) => {
             const current = passage.id === card.focus?.id;
             return (
