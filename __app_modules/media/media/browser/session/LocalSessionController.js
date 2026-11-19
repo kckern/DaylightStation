@@ -157,7 +157,7 @@ export function createLocalSessionController({
     if (!restoreHeld) return;
     restoreHeld = false;
     mediaLog.sessionRestoreReleased({ sessionId: store.getSnapshot().sessionId, reason });
-    for (const fn of [...restoreListeners]) fn(false);
+    for (const fn of [...restoreListeners]) fn(false, reason);
   };
   if (restoreHeld) {
     mediaLog.sessionRestoredPaused({

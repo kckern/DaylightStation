@@ -297,3 +297,64 @@ test('Feed stops painting its open player sheet while the audio keeps playing in
   });
   await expect.poll(width).toBeGreaterThan(hiddenWidth);
 });
+
+test('Media keeps the last paused seek when leaving its app and restores silently on return', async ({ page }) => {
+  const track = { contentId: item.contentId, title: item.title, format: 'audio', duration: 30 };
+  await page.addInitScript(track => {
+    const updatedAt = new Date().toISOString();
+    localStorage.setItem('media-app.session', JSON.stringify({
+      schemaVersion: 1, sessionId: 'fixture', updatedAt, wasPlayingOnUnload: false,
+      snapshot: {
+        sessionId: 'fixture', state: 'paused', currentItem: track, position: 0,
+        queue: { items: [{ ...track, queueItemId: 'fixture-track' }], currentIndex: 0, upNextCount: 0 },
+        config: { shuffle: false, repeat: 'off', shader: null, volume: 50, playbackRate: 1 },
+        meta: { ownerId: 'fixture', updatedAt },
+      },
+    }));
+  }, track);
+  const playbackRequests = [];
+  page.on('request', request => {
+    const path = decodeURIComponent(new URL(request.url()).pathname);
+    if (path.endsWith('/play/plex:42') || path.endsWith('/fixture-audio.wav')) playbackRequests.push(path);
+  });
+  await page.routeWebSocket('**/*', () => {});
+  await page.clock.install();
+  await page.goto('/media?view=nowPlaying');
+  const seek = page.getByRole('slider', { name: 'Seek' });
+  await expect(seek).toBeVisible();
+  const now = await page.evaluate(() => Date.now());
+  await page.clock.pauseAt(now + 1000);
+
+  await seek.press('ArrowRight');
+  await seek.press('ArrowRight');
+  await expect(seek).toHaveAttribute('aria-valuenow', '10');
+  const diskPosition = () => page.evaluate(() =>
+    JSON.parse(localStorage.getItem('media-app.session')).snapshot.position);
+  expect(await diskPosition()).toBeLessThan(10);
+
+  const navigate = path => page.evaluate(path => {
+    const state = { idx: (history.state?.idx ?? 0) + 1, key: path, usr: null };
+    history.pushState(state, '', path);
+    dispatchEvent(new PopStateEvent('popstate', { state }));
+  }, path);
+  await navigate('/home');
+  await expect(page.getByRole('button', { name: 'Rooms', exact: true })).toBeVisible();
+  expect(await diskPosition()).toBe(10);
+  await navigate('/media?view=nowPlaying');
+  await expect(seek).toHaveAttribute('aria-valuenow', '10');
+  await expect(page.locator('audio,video')).toHaveCount(0);
+  expect(playbackRequests).toEqual([]);
+
+  await page.clock.resume();
+  await page.evaluate(() => {
+    document.addEventListener('playing', event => {
+      if (event.target instanceof HTMLAudioElement && event.target.currentSrc.endsWith('/fixture-audio.wav')) {
+        window.initialFixturePlayingPosition ??= event.target.currentTime;
+      }
+    }, true);
+  });
+  await page.getByTestId('np-toggle').click();
+  const clock = await originalClock(page);
+  await expect.poll(clock).toBeGreaterThan(9.5);
+  expect(await page.evaluate(() => window.initialFixturePlayingPosition)).toBeCloseTo(10, 0);
+});

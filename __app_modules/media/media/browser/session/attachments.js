@@ -42,9 +42,8 @@ export function attachPersistence(store, { write, timing = TIMING, setTimeoutFn 
     }
   });
 
-  // A reload inside the throttle window would drop the trailing write — and
-  // with it the observed duration and position the handle's progress strip is
-  // restored from. Flush it when the page is going away.
+  // Flush pending progress at page and active-owner exit boundaries. A
+  // superseded owner instead cancels its pending write.
   const flushPending = () => {
     if (!trailing) return;
     clearTimeoutFn(trailing);
@@ -55,11 +54,12 @@ export function attachPersistence(store, { write, timing = TIMING, setTimeoutFn 
   globalThis.addEventListener?.('pagehide', flushPending);
   globalThis.document?.addEventListener?.('visibilitychange', onVisibility);
 
-  return () => {
+  return ({ flush = false } = {}) => {
     globalThis.removeEventListener?.('pagehide', flushPending);
     globalThis.document?.removeEventListener?.('visibilitychange', onVisibility);
     detachTransition();
-    if (trailing) { clearTimeoutFn(trailing); trailing = null; }
+    if (flush) flushPending();
+    else if (trailing) { clearTimeoutFn(trailing); trailing = null; }
   };
 }
 

@@ -65,6 +65,20 @@ describe('attachPersistence', () => {
     expect(write).toHaveBeenCalledTimes(2); // trailing timer cancelled, no double write
   });
 
+  it('flushes the last transition only when the departing owner requests it', () => {
+    const store = makeStore();
+    const write = vi.fn(() => ({ ok: true }));
+    const detach = attachPersistence(store, { write });
+    store.dispatch({ type: 'SET_CONFIG', patch: { volume: 10 } });
+    store.dispatch({ type: 'SET_CONFIG', patch: { volume: 20 } });
+    detach({ flush: true });
+    expect(write.mock.calls.map(([snapshot]) => snapshot.config.volume)).toEqual([10, 20]);
+    store.dispatch({ type: 'SET_CONFIG', patch: { volume: 30 } });
+    window.dispatchEvent(new Event('pagehide'));
+    vi.advanceTimersByTime(1000);
+    expect(write).toHaveBeenCalledTimes(2);
+  });
+
   it('detach cancels the trailing write', () => {
     const store = makeStore();
     const write = vi.fn(() => ({ ok: true }));

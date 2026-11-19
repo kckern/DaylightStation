@@ -62,18 +62,39 @@ export function PlayerBridge() {
   const bindNativeOperationRef = useRef(null);
   const rendererOperationSequenceRef = useRef(0);
   const pendingInitialRendererOperationRef = useRef(null);
+  const prepareInitialRendererOperation = useCallback((item, targetSeconds, source, autoplay) => {
+    pendingInitialRendererOperationRef.current = {
+      operationId: `local-owner-${++rendererOperationSequenceRef.current}`,
+      expectedContentId: item.contentId,
+      targetSeconds,
+      autoplay,
+      source,
+      format: item.format,
+      isLive: item.isLive === true,
+    };
+  }, []);
   const [restoreHeld, setRestoreHeld] = useState(() => controller.restore?.isHeld?.() === true);
   useEffect(() => {
     if (!controller.restore?.subscribe) return undefined;
-    const sync = () => {
-      const held = controller.restore.isHeld();
-      // Start where the held session now says (a seek while held moved it).
-      if (!held) startSecondsRef.current = controller.getSnapshot().position ?? 0;
+    const sync = (held, reason) => {
+      if (!held) {
+        const { currentItem: item, position } = controller.getSnapshot();
+        // A seek while held changes the spot that the first decoder should use.
+        startSecondsRef.current = position ?? 0;
+        const timeline = item?.contentTimeline;
+        if (reason === 'play' && item?.contentId && item.format === 'audio' && item.isLive !== true
+          && timeline?.rendererStartSeconds === timeline?.contentStartSeconds
+          && Number.isFinite(position) && position > 0 && Number.isFinite(item.duration) && position < item.duration) {
+          // Generic audio starts can restart short tracks. Explicitly resuming
+          // a held track uses the current item's exact renderer seek.
+          prepareInitialRendererOperation(item, position, 'local-restore-audio', true);
+        }
+      }
       setRestoreHeld(held);
     };
-    sync();
+    sync(controller.restore.isHeld());
     return controller.restore.subscribe(sync);
-  }, [controller]);
+  }, [controller, prepareInitialRendererOperation]);
 
   // Subtitles and audio language (RQ-STEER-14): this device claims only its
   // own Player; the choice is remembered per show on this device.
@@ -126,7 +147,7 @@ export function PlayerBridge() {
 
   const hasCurrentItem = Boolean(currentItem);
   useEffect(() => {
-    if (!hasCurrentItem || typeof playerRef.current?.subscribeMountedMediaOperations !== 'function') return undefined;
+    if (restoreHeld || !hasCurrentItem || typeof playerRef.current?.subscribeMountedMediaOperations !== 'function') return undefined;
     const subscription = playerRef.current.subscribeMountedMediaOperations((binding) => {
       const ready = bindNativeOperationRef.current?.(binding) === true;
       return ready ? { ready: true, ...binding } : { ready: false };
@@ -148,7 +169,7 @@ export function PlayerBridge() {
   // on an A -> B adoption removes the exact observer ID that the synchronous
   // renderer-boundary request just marked as required, so B can never admit
   // its mounted decoder operation and its native resume seek remains at zero.
-  }, [hasCurrentItem]);
+  }, [hasCurrentItem, restoreHeld]);
 
   // Track volume so we can sync it to the media element as the user adjusts it.
   const [volume, setVolume] = useState(() => controller.getSnapshot().config?.volume ?? 100);
@@ -205,17 +226,10 @@ export function PlayerBridge() {
         const requestedStart = Number.isFinite(snap.position) ? snap.position : 0;
         startSecondsRef.current = requestedStart;
         playbackGenerationRef.current += 1;
+        pendingInitialRendererOperationRef.current = null;
         if (action.type === 'ADOPT_SNAPSHOT' && next?.contentId && !playerRef.current
           && next.isLive !== true && RENDERER_BOUNDARY_FORMATS.has(next.format)) {
-          pendingInitialRendererOperationRef.current = {
-            operationId: `local-owner-${++rendererOperationSequenceRef.current}`,
-            expectedContentId: next.contentId,
-            targetSeconds: requestedStart,
-            autoplay: action.autoplay !== false,
-            source: 'local-adopt_snapshot',
-            format: next.format,
-            isLive: next.isLive === true,
-          };
+          prepareInitialRendererOperation(next, requestedStart, 'local-adopt_snapshot', action.autoplay !== false);
         }
         const mountedMatchesRequested = next?.contentId
           && playerRef.current?.getMountedContentId?.() === next.contentId;
@@ -267,7 +281,7 @@ export function PlayerBridge() {
       return controller.store.onTransition((_prev, next, action) => check(next, action));
     }
     return controller.subscribe(check);
-  }, [controller]);
+  }, [controller, prepareInitialRendererOperation]);
 
   // Reset per-item progress gating when the current item changes.
   useEffect(() => {

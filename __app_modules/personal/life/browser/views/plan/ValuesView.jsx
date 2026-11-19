@@ -65,7 +65,7 @@ export function ValuesView({ username }) {
   }, [values, updateSection]);
 
   if (loading) return <LoadingState />;
-  if (readError) return <LifePage title="Values"><ErrorState label="Values" error={readError} onRetry={refetch} /></LifePage>;
+  if (readError) return <LifePage title="Values" scrollReady={false}><ErrorState label="Values" error={readError} onRetry={refetch} /></LifePage>;
 
   return (
     <LifePage title="Values" actions={<Button onClick={() => setOpened(true)}>Add value</Button>}>

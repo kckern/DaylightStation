@@ -19,7 +19,7 @@ export function CeremonyConfig({ username }) {
 
   if (loading) return <LoadingState />;
   if (error) return (
-    <LifePage title="Ceremonies">
+    <LifePage title="Ceremonies" scrollReady={false}>
       <ErrorState label="Ceremonies" error={error} onRetry={refetch} />
     </LifePage>
   );

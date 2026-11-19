@@ -743,7 +743,7 @@ $health-aside-gap: 1.5rem;
   .health-selection-bar__actions, .health-selection-bar__actions .mantine-Button-root, .health-move-menu__item { min-height: 44px; }
   .health-capture-actions .mantine-Button-root { min-width: 44px; min-height: 44px; }
   .health-day-move__close { min-width: 44px; min-height: 44px; }
-  .health-move-date input { box-sizing: border-box; width: 100%; min-height: 44px; }
+  .health-move-date input { box-sizing: border-box; width: 100%; min-height: var(--ds-control-touch-target); }
   // A full 44 px target taking 28 px of the row: the rest reaches into the page's
   // side padding, never rightward over a dish's expand triangle.
   .health-meal-selection-tick { position: relative; z-index: 1; width: 44px; height: 44px; margin-left: -16px; }

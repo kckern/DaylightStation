@@ -60,3 +60,45 @@ test('a run response received after leaving its job cannot start a delayed refre
   expect(reads).toEqual(['a', 'b', 'b']);
   await expect(page.getByText('Fixture b', { exact: true })).toBeVisible();
 });
+
+for (const [action, destination] of [['edit', 'roster'], ['edit', 'job'], ['delete', 'roster']]) {
+  test(`Scheduler reconciles a committed ${action} with the current ${destination}`, async ({ page }) => {
+    const deleting = action === 'delete';
+    const release = Promise.withResolvers();
+    let job = { id: 'a', name: 'Original job', schedule: '* * * * *' };
+    let submissions = 0;
+    await page.routeWebSocket('**/*', () => {});
+    await page.route('**/api/**', async route => {
+      const request = route.request();
+      const path = new URL(request.url()).pathname;
+      if (path.endsWith('/scheduler/jobs')) return route.fulfill({ json: { jobs: job ? [job] : [] } });
+      if (path.endsWith('/scheduler/jobs/a')) {
+        if (request.method() !== 'GET') {
+          submissions++;
+          await release.promise;
+          job = deleting ? null : { ...job, ...request.postDataJSON() };
+        }
+        return route.fulfill({ json: { job } });
+      }
+      return route.fulfill({ json: path.endsWith('/supervision/bootstrap') ? { enabled: false } : {} });
+    });
+    await page.goto('/admin/system/scheduler');
+    await page.getByText('Original job', { exact: true }).click();
+    await page.getByRole('button', { name: deleting ? 'Delete' : 'Edit', exact: true }).click();
+    const dialog = page.getByRole('dialog');
+    if (!deleting) await dialog.getByLabel('Name', { exact: true }).fill('Updated job');
+    await dialog.getByRole('button', { name: deleting ? 'Delete' : 'Save', exact: true }).click();
+    await expect.poll(() => submissions).toBe(1);
+    await page.goBack();
+    await expect(page.getByText('Scheduler Jobs', { exact: true })).toBeVisible();
+    const original = page.getByText('Original job', { exact: true });
+    await expect(original).toBeVisible();
+    if (destination === 'job') {
+      await original.click();
+      await expect(page.getByText('Job Info', { exact: true })).toBeVisible();
+    }
+    release.resolve();
+    await expect(page.getByText(deleting ? 'No scheduler jobs found. Create one to get started.' : 'Updated job', { exact: true })).toBeVisible();
+    expect(submissions).toBe(1);
+  });
+}

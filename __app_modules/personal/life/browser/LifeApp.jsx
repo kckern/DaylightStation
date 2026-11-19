@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Select } from '@mantine/core';
 import { Notifications } from '@mantine/notifications';
 import { Routes, Route, Link, Navigate, useNavigate, useLocation, useParams } from 'react-router-dom';
@@ -9,10 +9,11 @@ import {
 import '@mantine/core/styles.css';
 import '@mantine/notifications/styles.css';
 import "./LifeApp.scss";
-import { AppThemeProvider, AppChrome, LoadingState, createAppLogger } from '@/lib/ui';
+import { AppThemeProvider, AppChrome, LoadingState, createAppLogger, useViewScroll } from '@/lib/ui';
 import { configure } from "../../../../frontend/src/lib/logging/Logger.js";
 import useDocumentTitle from "../../../../frontend/src/hooks/useDocumentTitle.js";
 import { ErrorState } from './components/ErrorState.jsx';
+import { LifePageScrollRef } from './components/LifePage.jsx';
 import { Dashboard } from "./views/now/Dashboard.jsx";
 import { LogBrowser } from "./views/log/LogBrowser.jsx";
 import { LogDayDetail } from "./views/log/LogDayDetail.jsx";
@@ -133,6 +134,18 @@ function LifeAppShell() {
   }, [location.pathname]);
 
   const activeTab = tabForPath(location.pathname);
+  const mainRef = useRef(null);
+  const owner = lifeUser?.username;
+  const viewKey = location.pathname;
+  const scrollScope = useMemo(() => ({ owner, viewKey }), [owner, viewKey]);
+  const [readyScope, setReadyScope] = useState(null);
+  const registerPage = useCallback((node) => {
+    setReadyScope(current => node ? scrollScope : current === scrollScope ? null : current);
+  }, [scrollScope]);
+  // Plan and linked log pages publish their loaded content. The Log browser
+  // changes its own filters within one URL, and Coach scrolls its own thread.
+  const managedPage = activeTab === 'plan' || /^\/life\/log\/[^/]/.test(viewKey);
+  useViewScroll({ mainRef, owner, viewKey, ready: managedPage && readyScope === scrollScope });
 
   const headerActions = lifeUsers.length > 1 ? [(
     <Select
@@ -151,6 +164,7 @@ function LifeAppShell() {
     <LifeUserContext.Provider value={lifeUser}>
       <AppChrome
         title="Life"
+        mainRef={mainRef}
         tabs={TABS}
         activeTab={activeTab}
         headerActions={headerActions}
@@ -161,27 +175,29 @@ function LifeAppShell() {
           styles={{ root: { position: 'static', width: '100%', zIndex: 'auto' } }}
         />}
       >
-        <div className="life-app-root">
-          {activeTab === 'plan' && <PlanSecondaryNav pathname={location.pathname} />}
-          {identityError ? <ErrorState label="Household member" error={identityError} onRetry={retryIdentity} />
-            : !lifeUser ? <LoadingState label="household member" />
-            : <Routes key={lifeUser.username}>
-            <Route index element={<Navigate to="now" />} />
-            <Route path="now" element={<Dashboard />} />
-            <Route path="log" element={<LogBrowser />} />
-            <Route path="log/:date" element={<LogDayRoute />} />
-            <Route path="log/category/:category" element={<LogCategoryRoute />} />
-            <Route path="plan" element={<PurposeView />} />
-            <Route path="plan/goals" element={<GoalsView onGoalClick={(id) => navigate(`/life/plan/goals/${id}`)} />} />
-            <Route path="plan/goals/:goalId" element={<GoalDetailRoute />} />
-            <Route path="plan/beliefs" element={<BeliefsView />} />
-            <Route path="plan/values" element={<ValuesView />} />
-            <Route path="plan/qualities" element={<QualitiesView />} />
-            <Route path="plan/ceremonies" element={<CeremonyConfig />} />
-            <Route path="ceremony/:type" element={<CeremonyRoute />} />
-            <Route path="coach" element={<CoachChat userId={lifeUser.username} />} />
-          </Routes>}
-        </div>
+        <LifePageScrollRef.Provider value={managedPage ? registerPage : null}>
+          <div className="life-app-root">
+            {activeTab === 'plan' && <PlanSecondaryNav pathname={location.pathname} />}
+            {identityError ? <ErrorState label="Household member" error={identityError} onRetry={retryIdentity} />
+              : !lifeUser ? <LoadingState label="household member" />
+              : <Routes key={lifeUser.username}>
+                <Route index element={<Navigate to="now" />} />
+                <Route path="now" element={<Dashboard />} />
+                <Route path="log" element={<LogBrowser />} />
+                <Route path="log/:date" element={<LogDayRoute />} />
+                <Route path="log/category/:category" element={<LogCategoryRoute />} />
+                <Route path="plan" element={<PurposeView />} />
+                <Route path="plan/goals" element={<GoalsView onGoalClick={(id) => navigate(`/life/plan/goals/${id}`)} />} />
+                <Route path="plan/goals/:goalId" element={<GoalDetailRoute />} />
+                <Route path="plan/beliefs" element={<BeliefsView />} />
+                <Route path="plan/values" element={<ValuesView />} />
+                <Route path="plan/qualities" element={<QualitiesView />} />
+                <Route path="plan/ceremonies" element={<CeremonyConfig />} />
+                <Route path="ceremony/:type" element={<CeremonyRoute />} />
+                <Route path="coach" element={<CoachChat userId={lifeUser.username} />} />
+              </Routes>}
+          </div>
+        </LifePageScrollRef.Provider>
       </AppChrome>
     </LifeUserContext.Provider>
   );

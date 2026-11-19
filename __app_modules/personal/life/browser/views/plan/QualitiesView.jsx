@@ -37,7 +37,7 @@ export function QualitiesView({ username }) {
   const { plan, loading, error, refetch } = useLifePlan(username);
 
   if (loading) return <LoadingState />;
-  if (error) return <LifePage title="Qualities"><ErrorState label="Qualities" error={error} onRetry={refetch} /></LifePage>;
+  if (error) return <LifePage title="Qualities" scrollReady={false}><ErrorState label="Qualities" error={error} onRetry={refetch} /></LifePage>;
 
   const qualities = plan?.qualities || [];
 

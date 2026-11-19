@@ -3,7 +3,7 @@
 // attaches side effects (persistence, logging), and mounts the
 // player bridge plus the URL-command / external-control / state-broadcast
 // hooks. Everything below the provider sees only the controller interface.
-import React, { useMemo, useEffect, useRef } from 'react';
+import React, { useMemo, useEffect, useLayoutEffect, useRef } from 'react';
 import { LocalSessionContext } from "./LocalSessionContext.js";
 import { PlayerHostProvider } from "./PlayerHostProvider.jsx";
 import { createLocalSessionController } from "./LocalSessionController.js";
@@ -68,8 +68,8 @@ export function LocalSessionProvider({ children }) {
     // The browser-only recents list is gone (Home's Recent is the
     // household's); drop its leftover key.
     try { localStorage.removeItem('media-app.recents'); } catch { /* storage unavailable */ }
+    ctl.detachPersistence = attachPersistence(ctl.store, { write: writePersistedSession });
     ctl.detachers = [
-      attachPersistence(ctl.store, { write: writePersistedSession }),
       attachLogging(ctl.store),
       attachSlowStartWatchdog(ctl.store),
     ];
@@ -84,11 +84,19 @@ export function LocalSessionProvider({ children }) {
     return ctl;
   }, [clientId]);
 
+  const committedController = useRef(null);
+  useLayoutEffect(() => {
+    committedController.current = controller;
+  }, [controller]);
+
   const recoveryLifecycleRef = useRef(null);
   useEffect(() => {
     const lifecycle = {};
     recoveryLifecycleRef.current = { controller, lifecycle };
     return () => {
+      // A route exit commits its final snapshot. A replaced controller no
+      // longer owns persistence once the new controller has committed.
+      controller.detachPersistence({ flush: committedController.current === controller });
       controller.detachers?.forEach((d) => d());
       queueMicrotask(() => {
         if (recoveryLifecycleRef.current?.controller !== controller || recoveryLifecycleRef.current?.lifecycle === lifecycle) controller.disposeRecovery?.();

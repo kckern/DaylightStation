@@ -48,7 +48,7 @@ export function BeliefsView({ username }) {
 
   if (loading) return <LoadingState />;
   if (error) return (
-    <LifePage title="Beliefs">
+    <LifePage title="Beliefs" scrollReady={false}>
       <ErrorState label="Beliefs" error={error} onRetry={refetch} />
     </LifePage>
   );

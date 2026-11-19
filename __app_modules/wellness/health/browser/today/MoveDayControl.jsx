@@ -1,11 +1,14 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { Button, Menu } from '@mantine/core';
+import { Button, Menu, TextInput } from '@mantine/core';
 import { useDayDropTarget, useMealDragActive } from "./mealDrag.jsx";
 import { addDaysISO, dayLabel, EARLIEST_MOVE_DAY, recentDays } from "./moveDays.js";
 import { BUCKETS } from "./mealBuckets.js";
 
 // Food menus: full-height items under a finger (health.scss).
 export const MENU_CLASSES = { item: 'health-move-menu__item' };
+const earliestMoveDayLabel = new Date(`${EARLIEST_MOVE_DAY}T00:00:00Z`).toLocaleDateString(undefined, {
+  year: 'numeric', month: 'long', day: 'numeric', timeZone: 'UTC',
+});
 
 export function useMoveInFlight(onMove) {
   const [busy, setBusy] = useState(false);
@@ -15,14 +18,25 @@ export function useMoveInFlight(onMove) {
 
 /** The day choices as menu items, plus a date picker for anything older. */
 export function MoveDayItems({ date, today, onPick }) {
+  const [error, setError] = useState(null);
+  const changeDate = event => {
+    const { value } = event.currentTarget;
+    let message = null;
+    if (value === date) message = 'Choose a different day.';
+    else if (value && value < EARLIEST_MOVE_DAY) message = `Choose ${earliestMoveDayLabel} or later.`;
+    else if (value > today) message = 'Choose today or an earlier day.';
+    setError(message);
+    if (value && !message) onPick(value);
+  };
+
   return <>
     {recentDays(today, date).map(iso => <Menu.Item key={iso} onClick={() => onPick(iso)}>{dayLabel(iso, today)}</Menu.Item>)}
     <Menu.Divider />
-    <Menu.Label>Another day</Menu.Label>
     <div className="health-move-date" style={{ padding: '0 0.75rem 0.5rem' }}>
-      <input type="date" aria-label="Move to another day" max={today} defaultValue=""
+      <TextInput type="date" size="xs" label="Another day" aria-label="Move to another day"
+        min={EARLIEST_MOVE_DAY} max={today} defaultValue="" error={error}
         onClick={event => event.stopPropagation()}
-        onChange={event => { const value = event.target.value; if (value && value >= EARLIEST_MOVE_DAY && value <= today && value !== date) onPick(value); }} />
+        onChange={changeDate} />
     </div>
   </>;
 }

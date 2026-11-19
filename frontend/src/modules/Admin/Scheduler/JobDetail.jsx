@@ -8,7 +8,8 @@ import {
   IconArrowBack, IconPlayerPlay, IconEdit, IconTrash, IconAlertCircle, IconClock
 } from '@tabler/icons-react';
 import { DaylightAPI } from '../../../lib/api.mjs';
-import { useApiResource } from '../../../lib/hooks/useApiResource.js';
+import { ADMIN_SCHEDULER_JOBS_PATH } from '../../../hooks/admin/useAdminScheduler.js';
+import { invalidateApiResources, useApiResource } from '../../../lib/hooks/useApiResource.js';
 import ConfirmModal from '../shared/ConfirmModal.jsx';
 import { notifySuccess, notifyFailure } from '../shared/feedback.js';
 
@@ -57,6 +58,10 @@ function InfoRow({ label, children }) {
   );
 }
 
+function refreshJobConfiguration(path) {
+  invalidateApiResources(key => key === ADMIN_SCHEDULER_JOBS_PATH || key === path);
+}
+
 function JobDetail() {
   const { jobId } = useParams();
   return <JobDetailView key={jobId} jobId={jobId} />;
@@ -64,7 +69,7 @@ function JobDetail() {
 
 function JobDetailView({ jobId }) {
   const navigate = useNavigate();
-  const path = `/api/v1/admin/scheduler/jobs/${encodeURIComponent(jobId)}`;
+  const path = `${ADMIN_SCHEDULER_JOBS_PATH}/${encodeURIComponent(jobId)}`;
   const { data, loading, error: readError, reload } = useApiResource(path);
   const job = data?.job;
   const [actionError, setActionError] = useState(null);
@@ -139,21 +144,22 @@ function JobDetailView({ jobId }) {
         dependencies: deps,
         window: editForm.window
       }, 'PUT');
+      refreshJobConfiguration(path);
       if (!mounted.current) return;
       setEditOpen(false);
       setActionError(null);
-      reload();
     } catch (err) {
       if (mounted.current) setEditError(err.message || 'Failed to save changes');
     } finally {
       if (mounted.current) setEditSaving(false);
     }
-  }, [path, editForm, reload]);
+  }, [path, editForm]);
 
   const handleDelete = useCallback(async () => {
     setDeleteLoading(true);
     try {
       await DaylightAPI(path, {}, 'DELETE');
+      refreshJobConfiguration(path);
       if (!mounted.current) return;
       notifySuccess({ title: 'Job deleted', message: jobId });
       navigate('/admin/system/scheduler');

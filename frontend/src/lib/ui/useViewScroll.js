@@ -2,15 +2,21 @@ import { useLayoutEffect, useRef } from 'react';
 
 export function useViewScroll({ mainRef, viewKey, owner, ready = true }) {
   const positions = useRef(new Map());
-  const previousOwner = useRef(owner);
+  const previousScope = useRef(null);
 
   useLayoutEffect(() => {
-    if (previousOwner.current !== owner) {
-      positions.current.clear();
-      previousOwner.current = owner;
-    }
+    const previous = previousScope.current;
+    const ownerChanged = previous?.owner !== owner;
+    const scopeChanged = !previous || ownerChanged || previous.viewKey !== viewKey;
+    if (ownerChanged) positions.current.clear();
+    previousScope.current = { owner, viewKey };
+
     const main = mainRef.current;
-    if (!main || !ready) return;
+    if (!main) return;
+    if (!ready) {
+      if (scopeChanged) main.scrollTop = 0;
+      return;
+    }
     main.scrollTop = positions.current.get(viewKey) ?? 0;
     const remember = () => positions.current.set(viewKey, main.scrollTop);
     main.addEventListener('scroll', remember);

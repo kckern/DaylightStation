@@ -118,7 +118,7 @@ export function GoalsView({ username, onGoalClick }) {
 
   if (error) {
     return (
-      <LifePage title="Goals" actions={headerActions}>
+      <LifePage title="Goals" actions={headerActions} scrollReady={false}>
         <ErrorState label="Goals" error={error} onRetry={refetch} />
         {addModal}
       </LifePage>

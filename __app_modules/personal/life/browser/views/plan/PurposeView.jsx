@@ -15,7 +15,7 @@ export function PurposeView({ username }) {
   const [saving, setSaving] = useState(false);
 
   if (loading) return <LoadingState />;
-  if (error) return <LifePage title="Purpose"><ErrorState label="Purpose" error={error} onRetry={refetch} /></LifePage>;
+  if (error) return <LifePage title="Purpose" scrollReady={false}><ErrorState label="Purpose" error={error} onRetry={refetch} /></LifePage>;
 
   const purpose = plan?.purpose;
 
