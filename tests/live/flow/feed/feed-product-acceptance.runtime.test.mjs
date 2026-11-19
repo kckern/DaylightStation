@@ -133,6 +133,9 @@ test.describe('Feed product acceptance', () => {
     await page.setViewportSize({ width: 1440, height: 1000 });
     await page.goto('/feed/headlines/mainstream', { waitUntil: 'networkidle' });
 
+    await expect(page.getByRole('button', { name: 'Outlets' })).toHaveAttribute('aria-pressed', 'true');
+    await page.getByRole('button', { name: 'Briefing' }).click();
+    await expect(page).toHaveURL(/view=briefing/);
     await expect(page.getByRole('heading', { name: 'Update: coastal communities prepare for major storm' })).toBeVisible();
     await expect(page.getByText('2 outlets', { exact: false })).toBeVisible();
     await page.getByText('Story timeline', { exact: true }).click();
