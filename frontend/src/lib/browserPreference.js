@@ -26,3 +26,16 @@ export function browserPreference(key, fallback, decode = value => value, getSto
     },
   };
 }
+
+// A notification can arrive after a newer write. Let the owner reread the key
+// so its current value and fallback policy still come from one place.
+export function subscribeToStorageKey(key, listener, getStorage = () => localStorage) {
+  const onStorage = event => {
+    if (event.key !== key && event.key !== null) return;
+    let storage;
+    try { storage = getStorage(); } catch { return; }
+    if (storage && event.storageArea === storage) listener();
+  };
+  window.addEventListener('storage', onStorage);
+  return () => window.removeEventListener('storage', onStorage);
+}

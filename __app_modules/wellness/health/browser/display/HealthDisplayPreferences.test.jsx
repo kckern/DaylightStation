@@ -1,6 +1,6 @@
 import React from 'react';
 import { beforeEach, expect, it, vi } from 'vitest';
-import { act, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import { MantineProvider } from '@mantine/core';
 import { MemoryRouter } from 'react-router-dom';
 import { HealthDisplayPreferencesProvider, useHealthDisplayPreferences } from "./HealthDisplayPreferences.jsx";
@@ -26,7 +26,7 @@ beforeEach(() => localStorage.clear());
 it('updates the mounted log and persists the chosen placement', () => {
   mount();
   expect(screen.getByTestId('placement').textContent).toBe('before');
-  screen.getByLabelText('After food name').click();
+  fireEvent.click(screen.getByLabelText('After food name'));
   expect(screen.getByTestId('placement').textContent).toBe('after');
   expect(JSON.parse(localStorage.getItem('health:display:test-user'))).toEqual({ densityPlacement: 'after' });
 });
@@ -52,12 +52,36 @@ it('falls back for corrupt or invalid stored preferences', () => {
 
 it('updates mounted consumers when another tab changes the preference', () => {
   mount();
+  localStorage.setItem('health:display:test-user', JSON.stringify({ densityPlacement: 'after' }));
   act(() => window.dispatchEvent(new StorageEvent('storage', {
     key: 'health:display:test-user',
     newValue: JSON.stringify({ densityPlacement: 'after' }),
     storageArea: window.localStorage,
   })));
   expect(screen.getByTestId('placement')).toHaveTextContent('after');
+});
+
+it('keeps a newer local choice when an earlier cross-tab notification arrives', () => {
+  const key = 'health:display:test-user';
+  const earlier = JSON.stringify({ densityPlacement: 'before' });
+  mount();
+  localStorage.setItem(key, earlier);
+  fireEvent.click(screen.getByLabelText('After food name'));
+  act(() => window.dispatchEvent(new StorageEvent('storage', {
+    key, newValue: earlier, storageArea: window.localStorage,
+  })));
+  expect(screen.getByTestId('placement')).toHaveTextContent('after');
+  expect(JSON.parse(localStorage.getItem(key)).densityPlacement).toBe('after');
+});
+
+it('retains the current tab’s selection when the browser refuses persistence', () => {
+  mount();
+  const write = vi.spyOn(localStorage, 'setItem').mockImplementation(() => { throw new Error('Unavailable'); });
+  try {
+    fireEvent.click(screen.getByLabelText('After food name'));
+    expect(screen.getByTestId('placement')).toHaveTextContent('after');
+    expect(localStorage.getItem('health:display:test-user')).toBeNull();
+  } finally { write.mockRestore(); }
 });
 
 it('resets the placement when another tab clears local storage', () => {

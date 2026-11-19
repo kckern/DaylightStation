@@ -1,21 +1,15 @@
 // frontend/src/lib/auth.js
+import { subscribeToStorageKey } from './browserPreference.js';
 
 const TOKEN_KEY = 'ds_token';
 const tokenListeners = new Set();
 
 export function subscribeToken(listener) {
-  const onStorage = event => {
-    if (event.key !== TOKEN_KEY && event.key !== null) return;
-    try {
-      if (event.storageArea !== window.localStorage) return;
-    } catch { return; }
-    listener();
-  };
+  const stopStorage = subscribeToStorageKey(TOKEN_KEY, listener);
   tokenListeners.add(listener);
-  window.addEventListener('storage', onStorage);
   return () => {
     tokenListeners.delete(listener);
-    window.removeEventListener('storage', onStorage);
+    stopStorage();
   };
 }
 

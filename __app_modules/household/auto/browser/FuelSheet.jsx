@@ -14,10 +14,11 @@
 // inventing a separate chore.
 
 import { useState } from 'react';
-import { Button, Sheet, StateMessage } from '@/lib/ui';
+import { Sheet } from '@/lib/ui';
+import { AutoSheetActions } from './AutoSheetActions.jsx';
 import { autoApi } from "./useAutoApi.js";
 import autoLog from "./autoLog.js";
-import { useCloseAfterSave } from './useCloseAfterSave.js';
+import { useAutoSheetSave } from './useAutoSheetSave.js';
 
 /**
  * @param {object} props
@@ -36,49 +37,38 @@ export default function FuelSheet({ vehicleId, initial = {}, onClose }) {
     priceTotal: '',
     partial: Boolean(initial.partial),
   });
-  const [saving, setSaving] = useState(false);
-  const [failure, setFailure] = useState(null);
-  const closeAfterSave = useCloseAfterSave(onClose);
+  const { submit, saving, failure } = useAutoSheetSave(onClose, error => {
+    autoLog.warn('fuel.log_failed', { error: error?.message });
+  });
 
   const set = (key) => (event) => setForm((f) => ({
     ...f,
     [key]: event.target.type === 'checkbox' ? event.target.checked : event.target.value,
   }));
 
-  const submit = async (event) => {
-    event.preventDefault();
-    setSaving(true);
-    setFailure(null);
-    try {
-      // Miles and gallons go out as-is; the backend converts once, at the
-      // application edge. The wire never carries a mixed-unit payload.
-      await autoApi.logFuel(vehicleId, {
-        date: form.date,
-        volumeGal: Number(form.volumeGal),
-        odometerMi: form.odometerMi === '' ? undefined : Number(form.odometerMi),
-        priceTotal: form.priceTotal === '' ? null : Number(form.priceTotal),
-        placeId: initial.placeId || null,
-        partial: form.partial,
-      });
-      autoLog.info('fuel.logged', {
-        hasOdometer: form.odometerMi !== '',
-        partial: form.partial,
-        fromPrompt: Boolean(initial.placeId),
-      });
-      closeAfterSave();
-    } catch (err) {
-      setFailure(err);
-      autoLog.warn('fuel.log_failed', { error: err?.message });
-    } finally {
-      setSaving(false);
-    }
+  const save = async () => {
+    // Miles and gallons go out as-is; the backend converts once, at the
+    // application edge. The wire never carries a mixed-unit payload.
+    await autoApi.logFuel(vehicleId, {
+      date: form.date,
+      volumeGal: Number(form.volumeGal),
+      odometerMi: form.odometerMi === '' ? undefined : Number(form.odometerMi),
+      priceTotal: form.priceTotal === '' ? null : Number(form.priceTotal),
+      placeId: initial.placeId || null,
+      partial: form.partial,
+    });
+    autoLog.info('fuel.logged', {
+      hasOdometer: form.odometerMi !== '',
+      partial: form.partial,
+      fromPrompt: Boolean(initial.placeId),
+    });
   };
 
   const valid = Number(form.volumeGal) > 0;
 
   return (
     <Sheet open onClose={onClose} title="Log a fill-up">
-      <form onSubmit={submit} aria-label="Log a fill-up">
+      <form onSubmit={event => submit(event, save, valid)} aria-label="Log a fill-up">
         {initial.placeLabel && (
           <p className="auto-field__note">At {initial.placeLabel}</p>
         )}
@@ -131,14 +121,7 @@ export default function FuelSheet({ vehicleId, initial = {}, onClose }) {
           </p>
         )}
 
-        {failure && <StateMessage state="error" role="alert" title="Could not save" detail={failure.message} />}
-
-        <div className="auto-sheet__actions">
-          <Button density="compact" variant="secondary" onClick={onClose}>Cancel</Button>
-          <Button type="submit" density="compact" busy={saving} disabled={!valid}>
-            {saving ? 'Saving…' : 'Save'}
-          </Button>
-        </div>
+        <AutoSheetActions failure={failure} onCancel={onClose} saving={saving} valid={valid} />
       </form>
     </Sheet>
   );

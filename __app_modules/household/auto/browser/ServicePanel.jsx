@@ -8,11 +8,12 @@
 // schema and is deliberately not on this form until it would do something.
 
 import { useState } from 'react';
-import { LoadingState, ErrorState, EmptyState, Sheet, Select, StateMessage } from '@/lib/ui';
+import { LoadingState, ErrorState, EmptyState, Sheet, Select } from '@/lib/ui';
+import { AutoSheetActions } from './AutoSheetActions.jsx';
 import { formatDay, formatMoney, formatDistance } from "./format.js";
 import { autoApi } from "./useAutoApi.js";
 import autoLog from "./autoLog.js";
-import { useCloseAfterSave } from './useCloseAfterSave.js';
+import { useAutoSheetSave } from './useAutoSheetSave.js';
 
 /**
  * Fallback vocabulary, used only if the config-driven list hasn't arrived.
@@ -115,9 +116,9 @@ function ServiceSheet({ vehicleId, types, onClose }) {
     intervalKm: null,
     notes: '',
   });
-  const [saving, setSaving] = useState(false);
-  const [failure, setFailure] = useState(null);
-  const closeAfterSave = useCloseAfterSave(onClose);
+  const { submit, saving, failure } = useAutoSheetSave(onClose, error => {
+    autoLog.warn('service.log_failed', { error: error?.message });
+  });
 
   const set = (key) => (event) => setForm((f) => ({ ...f, [key]: event.target.value }));
 
@@ -135,34 +136,23 @@ function ServiceSheet({ vehicleId, types, onClose }) {
     }));
   };
 
-  const submit = async (event) => {
-    event.preventDefault();
-    setSaving(true);
-    setFailure(null);
-    try {
-      await autoApi.logService(vehicleId, {
-        date: form.date,
-        type: form.type,
-        vendor: form.vendor || null,
-        cost: form.cost === '' ? null : Number(form.cost),
-        odometerMi: form.odometerMi === '' ? undefined : Number(form.odometerMi),
-        intervalMonths: form.intervalMonths === '' ? null : Number(form.intervalMonths),
-        intervalKm: form.intervalKm || null,
-        notes: form.notes,
-      });
-      autoLog.info('service.logged', { type: form.type, recurring: form.intervalMonths !== '' });
-      closeAfterSave();
-    } catch (err) {
-      setFailure(err);
-      autoLog.warn('service.log_failed', { error: err?.message });
-    } finally {
-      setSaving(false);
-    }
+  const save = async () => {
+    await autoApi.logService(vehicleId, {
+      date: form.date,
+      type: form.type,
+      vendor: form.vendor || null,
+      cost: form.cost === '' ? null : Number(form.cost),
+      odometerMi: form.odometerMi === '' ? undefined : Number(form.odometerMi),
+      intervalMonths: form.intervalMonths === '' ? null : Number(form.intervalMonths),
+      intervalKm: form.intervalKm || null,
+      notes: form.notes,
+    });
+    autoLog.info('service.logged', { type: form.type, recurring: form.intervalMonths !== '' });
   };
 
   return (
     <Sheet open onClose={onClose} title="Log service">
-      <form onSubmit={submit} aria-label="Log service">
+      <form onSubmit={event => submit(event, save)} aria-label="Log service">
         <label className="auto-field">
           <span>What was done</span>
           <Select density="compact" className="ds-input" value={form.type} onChange={setType}>
@@ -211,14 +201,7 @@ function ServiceSheet({ vehicleId, types, onClose }) {
           <textarea className="ds-input" rows={2} value={form.notes} onChange={set('notes')} />
         </label>
 
-        {failure && <StateMessage state="error" role="alert" title="Could not save" detail={failure.message} />}
-
-        <div className="auto-sheet__actions">
-          <button type="button" className="auto-btn auto-btn--ghost" onClick={onClose}>Cancel</button>
-          <button type="submit" className="auto-btn auto-btn--primary" disabled={saving}>
-            {saving ? 'Saving…' : 'Save'}
-          </button>
-        </div>
+        <AutoSheetActions failure={failure} onCancel={onClose} saving={saving} />
       </form>
     </Sheet>
   );

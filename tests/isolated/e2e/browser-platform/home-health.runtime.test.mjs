@@ -192,7 +192,18 @@ test('Health resets food log display after another tab clears local storage', as
   await other.goto('/preference-storage-fixture');
   expect(await other.evaluate(() => JSON.parse(localStorage.getItem('health:display:alice')))).toEqual({ densityPlacement: 'after' });
   await other.evaluate(() => localStorage.clear());
-  await expect(page.getByRole('radio', { name: 'Before food name' })).toBeChecked();
+  const before = page.getByRole('radio', { name: 'Before food name' });
+  await expect(before).toBeChecked();
+
+  await page.evaluate(async () => {
+    // Deliver the previous value after the native cross-tab clear.
+    window.dispatchEvent(new StorageEvent('storage', {
+      key: 'health:display:alice', storageArea: localStorage,
+      newValue: JSON.stringify({ densityPlacement: 'after' }),
+    }));
+    await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+  });
+  await expect(before).toBeChecked({ timeout: 4_000 });
 });
 
 test('Home keeps a confirmed toggle when an older poll finishes', async ({ page }) => {

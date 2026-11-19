@@ -9,12 +9,13 @@
 // beside it is worth tapping.
 
 import { useState } from 'react';
-import { LoadingState, ErrorState, EmptyState, Sheet, Select, StateMessage } from '@/lib/ui';
+import { LoadingState, ErrorState, EmptyState, Sheet, Select } from '@/lib/ui';
+import { AutoSheetActions } from './AutoSheetActions.jsx';
 import { formatDistance, formatDuration, formatDay, formatTime, formatSpeed } from "./format.js";
 import { autoApi } from "./useAutoApi.js";
 import FuelSheet from "./FuelSheet.jsx";
 import autoLog from "./autoLog.js";
-import { useCloseAfterSave } from './useCloseAfterSave.js';
+import { useAutoSheetSave } from './useAutoSheetSave.js';
 
 const PLACE_KINDS = ['home', 'school', 'church', 'work', 'fuel', 'store', 'service', 'other'];
 
@@ -208,30 +209,19 @@ function JourneyRow({ journey, onName, onLogFuel, fuelPrompt }) {
 function NamePlaceSheet({ point, onClose }) {
   const [label, setLabel] = useState('');
   const [kind, setKind] = useState('other');
-  const [saving, setSaving] = useState(false);
-  const [failure, setFailure] = useState(null);
-  const closeAfterSave = useCloseAfterSave(onClose);
+  const { submit, saving, failure } = useAutoSheetSave(onClose, error => {
+    autoLog.warn('place.name_failed', { error: error?.message });
+  });
+  const valid = Boolean(label.trim());
 
-  const submit = async (event) => {
-    event.preventDefault();
-    if (!label.trim()) return;
-    setSaving(true);
-    setFailure(null);
-    try {
-      await autoApi.namePlace({ label: label.trim(), kind, lat: point.fix.lat, lon: point.fix.lon });
-      autoLog.info('place.named', { kind });
-      closeAfterSave();
-    } catch (err) {
-      setFailure(err);
-      autoLog.warn('place.name_failed', { error: err?.message });
-    } finally {
-      setSaving(false);
-    }
+  const save = async () => {
+    await autoApi.namePlace({ label: label.trim(), kind, lat: point.fix.lat, lon: point.fix.lon });
+    autoLog.info('place.named', { kind });
   };
 
   return (
     <Sheet open onClose={onClose} title="Name this place">
-      <form onSubmit={submit} aria-label="Name this place">
+      <form onSubmit={event => submit(event, save, valid)} aria-label="Name this place">
         <label className="auto-field">
           <span>What is it?</span>
           <input
@@ -253,13 +243,7 @@ function NamePlaceSheet({ point, onClose }) {
             Marking this a fuel stop lets the app spot fill-ups on the timeline.
           </p>
         )}
-        {failure && <StateMessage state="error" role="alert" title="Could not save" detail={failure.message} />}
-        <div className="auto-sheet__actions">
-          <button type="button" className="auto-btn auto-btn--ghost" onClick={onClose}>Cancel</button>
-          <button type="submit" className="auto-btn auto-btn--primary" disabled={saving || !label.trim()}>
-            {saving ? 'Saving…' : 'Save'}
-          </button>
-        </div>
+        <AutoSheetActions failure={failure} onCancel={onClose} saving={saving} valid={valid} />
       </form>
     </Sheet>
   );
