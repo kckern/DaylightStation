@@ -227,3 +227,6 @@
     .auth-container { min-height: 0; padding: 0; background: none; }
   }
 }
+
+.life-triage__log-meta { display: flex; align-items: center; gap: 0.4rem; }
+.life-triage__log-state { display: flex; align-items: center; gap: 0.5rem; }

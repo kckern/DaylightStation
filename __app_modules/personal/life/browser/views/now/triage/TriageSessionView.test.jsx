@@ -37,7 +37,7 @@ function makeTriage(over = {}) {
     summary: { enrolled: true, mode: 'live' },
     session: { steps: [{ id: 'unsure', count: 2 }], cards: [unsure('c1', 'Volunteer slots'), unsure('c2', 'Bake sale')], total: 2, done: 0 },
     loading: false, error: null, needsLogin: false,
-    refetch: vi.fn(), answer: vi.fn(), skip: vi.fn(), resolve: vi.fn(), undo: vi.fn(), run: vi.fn(),
+    refetch: vi.fn(), answer: vi.fn(), skip: vi.fn(), resolve: vi.fn(), undo: vi.fn(), log: vi.fn(), run: vi.fn(),
     ...over,
   };
 }
@@ -103,7 +103,8 @@ describe('TriageSessionView', () => {
     triage = makeTriage({ session: { steps: [{ id: 'reply', count: 1 }], cards: [reply], total: 1, done: 0 } });
     triage.answer.mockResolvedValue({ outcome: 'skipped', interpreted: 'send', card: reply });
     wrap();
-    const input = screen.getByLabelText('Answer in your own words');
+    const input = screen.getByLabelText(/^Answer in your own words/);
+    expect(input).toHaveAttribute('placeholder', 'Change it…');
     fireEvent.change(input, { target: { value: 'send it' } });
     fireEvent.submit(input.closest('form'));
     await waitFor(() => expect(screen.getByText('Tap Send to send it.')).toBeInTheDocument());
@@ -154,21 +155,47 @@ describe('TriageSessionView', () => {
     await waitFor(() => expect(screen.getByText(/All done/)).toBeInTheDocument());
   });
 
-  it('the recap card opens the action log, undoes an entry, and notes a dry run', async () => {
-    const recap = {
-      cardId: 'recap', kind: 'recap', step: 'recap', status: 'open', choices: [{ key: 'ok', label: 'Got it' }], suggested: 'ok',
-      why: 'Done for you since your last session', counts: { archived: 1, closed: 0 },
-      entries: [{ entryId: 'log.1', at: 1, action: 'archive', kind: 'email', title: 'Receipt #42', uncertain: false, undoneAt: null, undoable: true }],
-    };
-    triage = makeTriage({ summary: { enrolled: true, mode: 'dryRun' }, session: { steps: [{ id: 'recap', count: 1 }], cards: [recap], total: 1, done: 0 } });
+  const recap = {
+    cardId: 'recap', kind: 'recap', step: 'recap', status: 'open', choices: [{ key: 'ok', label: 'Got it' }], suggested: 'ok',
+    why: 'Done for you since your last session', counts: { archived: 38, closed: 4 }, entries: [],
+  };
+  const logBody = { sinceDays: 7, entries: [
+    { id: 'log.1', at: 2, actor: 'system', action: 'archive', title: 'Receipt #42', dryRun: false, uncertain: false, undoneAt: null, undoable: true },
+    { id: 'log.2', at: 1, actor: 'owner', action: 'send', title: 'Re: Deck quote', dryRun: false, uncertain: false, undoneAt: null, undoable: false },
+  ] };
+
+  it('the recap opens the action log with auto and owner entries, and undoes one', async () => {
+    triage = makeTriage({ session: { steps: [{ id: 'recap', count: 1 }], cards: [recap], total: 1, done: 0 } });
+    triage.log.mockResolvedValue(logBody);
     triage.undo.mockResolvedValue({ outcome: 'undone' });
     wrap();
-    expect(screen.getByText(/Dry run — nothing was done automatically; your taps are real\./)).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: /Review what was done/ }));
-    expect(screen.getByText('Receipt #42')).toBeInTheDocument();
-    await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Undo/ })); });
+    expect(screen.getByText('Done for you')).toBeInTheDocument();
+    expect(screen.getByText('Archived')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Review' }));
+    await waitFor(() => expect(screen.getByText('Receipt #42')).toBeInTheDocument());
+    expect(triage.log).toHaveBeenCalledWith(7);
+    expect(screen.getByText('Re: Deck quote')).toBeInTheDocument();
+    expect(screen.getByText('auto')).toBeInTheDocument();
+    expect(screen.getByText('you')).toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: 'Undo' })).toHaveLength(1); // the owner's send has no inverse
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Undo' })); });
     expect(triage.undo).toHaveBeenCalledWith('log.1');
     await waitFor(() => expect(screen.getByText('Undone')).toBeInTheDocument());
+  });
+
+  it('in a dry run the recap reads what would have been done, from wouldHave', () => {
+    triage = makeTriage({
+      summary: { enrolled: true, mode: 'dryRun', wouldHave: { archived: 7, closed: 2 } },
+      session: { steps: [{ id: 'recap', count: 1 }], cards: [recap], total: 1, done: 0 },
+    });
+    wrap();
+    expect(screen.getByText('What I would have done')).toBeInTheDocument();
+    expect(screen.getByText(/Would have archived/)).toBeInTheDocument();
+    expect(screen.getByText('7')).toBeInTheDocument();
+    expect(screen.getByText(/Would have closed/)).toBeInTheDocument();
+    expect(screen.queryByText('38')).not.toBeInTheDocument();
+    expect(screen.queryByText('Done for you')).not.toBeInTheDocument();
+    expect(screen.getByText(/Dry run — nothing was done automatically; your taps are real\./)).toBeInTheDocument();
   });
 
   it('Stop for now returns to Now', () => {

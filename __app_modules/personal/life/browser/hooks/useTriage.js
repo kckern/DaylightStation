@@ -78,6 +78,7 @@ export function useTriage({ withSession = false } = {}) {
   const answer = useCallback((cardId, body) => call('answer', `cards/${encodeURIComponent(cardId)}/answer`, body, 'POST'), [call]);
   const skip = useCallback((cardId) => call('skip', `cards/${encodeURIComponent(cardId)}/skip`, {}, 'POST'), [call]);
   const resolve = useCallback((cardId, happened) => call('resolve', `cards/${encodeURIComponent(cardId)}/resolve`, { happened }, 'POST'), [call]);
+  const log = useCallback((sinceDays = 7) => call('log', `log?sinceDays=${encodeURIComponent(sinceDays)}`), [call]);
   const undo = useCallback((entryId) => call('undo', `log/${encodeURIComponent(entryId)}/undo`, {}, 'POST'), [call]);
   const run = useCallback(async () => {
     const out = await call('run', 'run', {}, 'POST');
@@ -85,7 +86,7 @@ export function useTriage({ withSession = false } = {}) {
     return out;
   }, [call, refetch]);
 
-  return { summary, session, loading, error, refetch, answer, skip, resolve, undo, run, needsLogin };
+  return { summary, session, loading, error, refetch, answer, skip, resolve, undo, log, run, needsLogin };
 }
 
 export default useTriage;

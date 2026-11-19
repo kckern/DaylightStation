@@ -19,7 +19,7 @@ function blobToBase64(blob) {
  * the owner to confirm; it is never submitted on its own. `value` is owned by the caller so
  * a failed submit never loses the owner's words.
  */
-export function AnswerInput({ value, onChange, onSubmit, placeholder = 'Or say what to do…', prompt = null, focusKey = null, disabled = false }) {
+export function AnswerInput({ value, onChange, onSubmit, placeholder = 'Or say what to do…', prompt = null, focusKey = null, disabled = false, label = 'Answer in your own words' }) {
   const logger = useMemo(() => getLogger().child({ component: 'triage-answer-input' }), []);
   const { isRecording, start, stop, error: micError } = useMediaRecorderCapture();
   const [transcribing, setTranscribing] = useState(false);
@@ -68,7 +68,7 @@ export function AnswerInput({ value, onChange, onSubmit, placeholder = 'Or say w
         <TextInput
           ref={inputRef}
           className="life-triage__answer-input"
-          aria-label="Answer in your own words"
+          aria-label={label}
           placeholder={placeholder}
           value={value}
           onChange={(e) => onChange(e.currentTarget.value)}

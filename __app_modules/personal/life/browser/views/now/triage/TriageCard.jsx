@@ -111,21 +111,25 @@ function ReplyBody({ card, busy, highlightSend, onSend, onSkip, onChoice }) {
   );
 }
 
-function RecapBody({ card, mode, busy, onChoice, onUndo }) {
+function RecapBody({ card, mode, wouldHave, busy, onChoice, onUndo, onLoadLog }) {
   const [showLog, setShowLog] = useState(false);
-  const counts = card.counts ?? {};
-  const entries = card.entries ?? [];
+  const dry = mode === 'dryRun';
+  // A dry run did nothing on its own: show what it would have done, never "Archived N".
+  const rows = dry
+    ? [['Would have archived', wouldHave?.archived ?? 0], ['Would have closed', wouldHave?.closed ?? 0]]
+    : [['Archived', card.counts?.archived ?? 0], ['Closed stale todos', card.counts?.closed ?? 0]];
   return (
     <>
       <div className="life-triage__stats">
-        <div className="life-triage__stat"><span><IconCheck size={14} aria-hidden /> Archived</span><span>{counts.archived ?? 0}</span></div>
-        <div className="life-triage__stat"><span><IconCheck size={14} aria-hidden /> Closed stale todos</span><span>{counts.closed ?? 0}</span></div>
+        {rows.map(([label, n]) => (
+          <div key={label} className="life-triage__stat"><span>{!dry && <IconCheck size={14} aria-hidden />} {label}</span><span>{n}</span></div>
+        ))}
       </div>
-      {mode === 'dryRun' && <Text size="xs" c="dimmed" mt="xs">{DRY_RUN_NOTE}</Text>}
-      {showLog && <div className="life-triage__log-wrap"><ActionLog entries={entries} onUndo={onUndo} /></div>}
+      {dry && <Text size="xs" c="dimmed" mt="xs">{DRY_RUN_NOTE}</Text>}
+      {showLog && <div className="life-triage__log-wrap"><ActionLog loadLog={onLoadLog} onUndo={onUndo} /></div>}
       <div className="life-triage__actions">
-        <Button size="sm" variant="default" onClick={() => setShowLog((v) => !v)} disabled={entries.length === 0}>
-          {showLog ? 'Hide the list' : 'Review what was done'}
+        <Button size="sm" variant="default" onClick={() => setShowLog((v) => !v)} disabled={!onLoadLog}>
+          {showLog ? 'Hide' : 'Review'}
         </Button>
         <Button size="sm" onClick={() => onChoice('ok')} disabled={busy}>Got it →</Button>
       </div>
@@ -153,14 +157,14 @@ function ApplyingBody({ card, busy, onResolve }) {
  */
 export function TriageCard({
   card, mode, busy = false, text, onTextChange, onSubmitText, prompt = null, focusKey = null,
-  highlightSend = false, onChoice, onSend, onSkip, onResolve, onUndo,
+  highlightSend = false, onChoice, onSend, onSkip, onResolve, onUndo, onLoadLog = null, wouldHave = null,
 }) {
   if (card.kind === 'recap') {
     return (
       <article className="life-triage__card">
-        <Text fw={600} className="life-triage__title">Done for you</Text>
+        <Text fw={600} className="life-triage__title">{mode === 'dryRun' ? 'What I would have done' : 'Done for you'}</Text>
         <Text size="xs" c="dimmed">Since your last session</Text>
-        <RecapBody card={card} mode={mode} busy={busy} onChoice={onChoice} onUndo={onUndo} />
+        <RecapBody card={card} mode={mode} wouldHave={wouldHave} busy={busy} onChoice={onChoice} onUndo={onUndo} onLoadLog={onLoadLog} />
       </article>
     );
   }
@@ -183,7 +187,8 @@ export function TriageCard({
             prompt={prompt}
             focusKey={focusKey}
             disabled={busy}
-            placeholder={prompt ? 'e.g. "Read one review"' : reply ? 'Change it: "make it shorter, ask about Friday"' : 'Or say what to do…'}
+            placeholder={prompt ? 'e.g. "Read one review"' : reply ? 'Change it…' : 'Or say what to do…'}
+            label={reply ? 'Answer in your own words, e.g. "make it shorter, ask about Friday"' : undefined}
           />
           {!reply && (
             <Button variant="subtle" size="compact-sm" color="gray" className="life-triage__skip" onClick={onSkip} disabled={busy}>Skip for now</Button>

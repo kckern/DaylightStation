@@ -210,6 +210,8 @@ export function TriageSessionView() {
           onSkip={onSkip}
           onResolve={onResolve}
           onUndo={(entryId) => t.undo(entryId)}
+          onLoadLog={() => t.log(7)}
+          wouldHave={summary?.wouldHave ?? null}
         />
       ) : (
         <article className="life-triage__card life-triage__card--end">
