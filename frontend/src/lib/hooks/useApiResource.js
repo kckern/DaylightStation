@@ -149,8 +149,8 @@ export function registerResourcePersistence({ store, prefixes, owner, timeoutMs 
     }
     for (const path of inFlight.keys()) if (scope.matches(path)) inFlight.delete(path);
     for (const path of prefetchInFlight.keys()) if (scope.matches(path)) prefetchInFlight.delete(path);
-    prefetchQueue = prefetchQueue.filter(({ path }) => !scope.matches(path));
-    if (isPrefetchIdle()) prefetchOnIdle = null;
+    if (prefetchBatch) prefetchBatch.queue = prefetchBatch.queue.filter(path => !scope.matches(path));
+    if (isPrefetchIdle()) discardPrefetchBatch();
     pumpPrefetch();
     for (const notify of ownerListeners) notify(scope.matches);
     return dropped;
@@ -290,17 +290,30 @@ function isNewestGeneration(path, generation) {
 const PREFETCH_CONCURRENCY = 2;
 const PREFETCH_FRESH_MS = 60_000;
 const fetchedAt = new Map();
-let prefetchQueue = [];
+let prefetchBatch = null;
 const prefetchInFlight = new Map();
 // Cumulative since page load (or the last reset): what the prefetcher was
 // asked to warm, and how it went. Read by callers that report on it.
 const prefetchStats = { queued: 0, completed: 0, failed: 0 };
-let prefetchOnIdle = null; // the latest caller's "queue drained" callback
+
+function discardPrefetchBatch() {
+  const batch = prefetchBatch;
+  prefetchBatch = null;
+  batch?.signal?.removeEventListener('abort', batch.cancel);
+}
+
+function finishPrefetchBatch() {
+  if (!isPrefetchIdle()) return;
+  const onIdle = prefetchBatch?.onIdle;
+  discardPrefetchBatch();
+  onIdle?.(getPrefetchStats());
+}
 
 function pumpPrefetch() {
-  while (prefetchInFlight.size < PREFETCH_CONCURRENCY && prefetchQueue.length) {
-    const task = prefetchQueue.shift();
-    const { path, onDone } = task;
+  while (prefetchInFlight.size < PREFETCH_CONCURRENCY && prefetchBatch?.queue.length) {
+    const { queue, onDone, signal } = prefetchBatch;
+    const path = queue.shift();
+    const task = {};
     const generation = claimGeneration(path);
     prefetchInFlight.set(path, task);
     const isCurrent = () => prefetchInFlight.get(path) === task;
@@ -309,11 +322,19 @@ function pumpPrefetch() {
         if (!isCurrent()) return;
         if (isNewestGeneration(path, generation)) { cacheSet(path, result); fetchedAt.set(path, Date.now()); }
         prefetchStats.completed += 1;
-        onDone?.(null, path);
+        if (!signal?.aborted) onDone?.(null, path);
       })
-      .catch(err => { if (!isCurrent()) return; prefetchStats.failed += 1; onDone?.(err, path); })
-      .finally(() => { if (!isCurrent()) return; prefetchInFlight.delete(path); pumpPrefetch();
-        if (isPrefetchIdle() && prefetchOnIdle) { const onIdle = prefetchOnIdle; prefetchOnIdle = null; onIdle(getPrefetchStats()); } });
+      .catch(err => {
+        if (!isCurrent()) return;
+        prefetchStats.failed += 1;
+        if (!signal?.aborted) onDone?.(err, path);
+      })
+      .finally(() => {
+        if (!isCurrent()) return;
+        prefetchInFlight.delete(path);
+        pumpPrefetch();
+        finishPrefetchBatch();
+      });
   }
 }
 
@@ -324,7 +345,7 @@ export function getPrefetchStats() {
 
 /** True when nothing is queued or in flight. */
 export function isPrefetchIdle() {
-  return prefetchInFlight.size === 0 && prefetchQueue.length === 0;
+  return prefetchInFlight.size === 0 && !prefetchBatch?.queue.length;
 }
 
 /** True when the swr cache holds a payload for `path` fetched recently. */
@@ -370,19 +391,27 @@ export function patchApiResource(path, update, { create = false } = {}) {
 
 /**
  * Replace the prefetch queue with `paths`, in priority order. Paths already
- * fresh in the cache are skipped; requests already in flight finish.
- * `onIdle(stats)` fires once, when the queue and in-flight set drain.
+ * fresh in the cache are skipped. The signal drops this batch's queued work
+ * and callbacks on abort. Admitted reads can finish and warm the cache.
+ * The latest active batch's `onIdle(stats)` runs once when all work drains.
  */
-export function prefetchApiResources(paths, { onDone, onIdle } = {}) {
-  prefetchOnIdle = typeof onIdle === 'function' ? onIdle : null;
-  prefetchQueue = [...new Set(paths)].filter(path => path && !isApiResourceFresh(path) && !prefetchInFlight.has(path)).map(path => ({ path, onDone }));
-  const accepted = prefetchQueue.length;
+export function prefetchApiResources(paths, { onDone, onIdle, signal } = {}) {
+  if (signal?.aborted) return 0;
+  discardPrefetchBatch();
+  const queue = [...new Set(paths)].filter(path => path && !isApiResourceFresh(path) && !prefetchInFlight.has(path));
+  const batch = {
+    queue, onDone, onIdle: typeof onIdle === 'function' ? onIdle : null, signal,
+    cancel: () => { if (prefetchBatch === batch) discardPrefetchBatch(); },
+  };
+  prefetchBatch = batch;
+  signal?.addEventListener('abort', batch.cancel, { once: true });
+  const accepted = queue.length;
   prefetchStats.queued += accepted;
   pumpPrefetch();
   // Nothing to fetch and nothing in flight: this call's neighbourhood is
   // already warm, so report now (with the caller's own context) rather than
   // leave the callback waiting for a drain that will not come.
-  if (isPrefetchIdle() && prefetchOnIdle) { const onIdle = prefetchOnIdle; prefetchOnIdle = null; onIdle(getPrefetchStats()); }
+  finishPrefetchBatch();
   return accepted;
 }
 
@@ -390,7 +419,17 @@ export function prefetchApiResources(paths, { onDone, onIdle } = {}) {
 // invalidateApiResources to revalidate mounted readers. The no-argument reset
 // is for tests and clears memory only, leaving attached stores intact.
 export function resetApiResourceCache(path) {
-  if (path === undefined) { swrCache.clear(); pathGenerations.clear(); fetchedAt.clear(); inFlight.clear(); for (const scope of registrations) scope.pending.clear(); prefetchQueue = []; prefetchInFlight.clear(); prefetchOnIdle = null; Object.assign(prefetchStats, { queued: 0, completed: 0, failed: 0 }); return; }
+  if (path === undefined) {
+    swrCache.clear();
+    pathGenerations.clear();
+    fetchedAt.clear();
+    inFlight.clear();
+    for (const scope of registrations) scope.pending.clear();
+    discardPrefetchBatch();
+    prefetchInFlight.clear();
+    Object.assign(prefetchStats, { queued: 0, completed: 0, failed: 0 });
+    return;
+  }
   swrCache.delete(path);
   pathGenerations.delete(path);
   fetchedAt.delete(path);

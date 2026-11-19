@@ -27,6 +27,7 @@ function SectionHeader({
   };
 
   const isAnonymous = !section.title;
+  const sectionName = section.title || `Section ${sectionIndex + 1}`;
 
   // Don't render header for the sole anonymous section in single-section lists
   if (isAnonymous && isFirst && isLast) return null;
@@ -43,8 +44,10 @@ function SectionHeader({
         <div {...(dragHandleProps || {})} style={{ cursor: 'grab' }}>
           <IconGripVertical size={14} stroke={1.5} color="gray" />
         </div>
-        <ActionIcon variant="subtle" size="xs" onClick={() => onToggleCollapse(sectionIndex)}>
-          {collapsed ? <IconChevronRight size={14} /> : <IconChevronDown size={14} />}
+        <ActionIcon className="ds-touch-target" variant="subtle" size="xs"
+          aria-label={`${collapsed ? 'Expand' : 'Collapse'} ${sectionName}`} aria-expanded={!collapsed}
+          onClick={() => onToggleCollapse(sectionIndex)}>
+          {collapsed ? <IconChevronRight size={14} aria-hidden="true" /> : <IconChevronDown size={14} aria-hidden="true" />}
         </ActionIcon>
         {editingTitle ? (
           <TextInput
@@ -64,7 +67,7 @@ function SectionHeader({
             onClick={() => setEditingTitle(true)}
             style={{ cursor: 'pointer' }}
           >
-            {section.title || `Section ${sectionIndex + 1}`}
+            {sectionName}
           </Text>
         )}
         <Badge size="xs" variant="light" color="gray">{itemCount}</Badge>
@@ -75,8 +78,8 @@ function SectionHeader({
       </Group>
       <Menu position="bottom-end">
         <Menu.Target>
-          <ActionIcon variant="subtle" size="xs">
-            <IconDotsVertical size={14} />
+          <ActionIcon className="ds-touch-target" variant="subtle" size="xs" aria-label={`Section actions for ${sectionName}`}>
+            <IconDotsVertical size={14} aria-hidden="true" />
           </ActionIcon>
         </Menu.Target>
         <Menu.Dropdown>

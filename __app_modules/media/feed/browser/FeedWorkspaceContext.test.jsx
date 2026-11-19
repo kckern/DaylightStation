@@ -39,6 +39,15 @@ function MutationProbe() {
   );
 }
 
+function SummaryProbe() {
+  const { summary, refreshSummary, retrySync } = useFeedWorkspace();
+  return <>
+    <output aria-label="unread Reader items">{summary.readerUnread}</output>
+    <button onClick={refreshSummary}>Refresh counts</button>
+    <button onClick={retrySync}>Retry source sync</button>
+  </>;
+}
+
 function tokenFor(username) {
   return `header.${btoa(JSON.stringify({ sub: username })).replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_')}.signature`;
 }
@@ -61,6 +70,67 @@ describe('FeedWorkspaceProvider reading preferences', () => {
     localStorage.clear();
     Object.defineProperty(navigator, 'onLine', { configurable: true, value: true });
     apiMock.mockReset().mockResolvedValue({ unread: 0, saved: 0, archived: 0, pendingSync: 0 });
+  });
+
+  test('a retired counts read cannot replace the current badge even if its transport ignores abort', async () => {
+    const summaries = [];
+    apiMock.mockImplementation((path, _data, _method, options) => {
+      if (!path.endsWith('/items/state/summary')) return Promise.resolve({ preferencesStored: true });
+      const request = deferred();
+      summaries.push({ ...request, signal: options.signal });
+      return request.promise;
+    });
+    const view = render(<FeedWorkspaceProvider><SummaryProbe /></FeedWorkspaceProvider>);
+    fireEvent.click(screen.getByText('Refresh counts'));
+    expect(summaries[0].signal.aborted).toBe(true);
+    await act(async () => summaries[1].resolve({ readerUnread: 7 }));
+    await act(async () => summaries[0].resolve({ readerUnread: 8 }));
+    expect(screen.getByLabelText('unread Reader items')).toHaveTextContent('7');
+    fireEvent.click(screen.getByText('Refresh counts'));
+    view.unmount();
+    expect(summaries[2].signal.aborted).toBe(true);
+    await act(async () => summaries[2].resolve({ readerUnread: 9 }));
+  });
+
+  test('does not hold an acknowledged offline replay or source retry behind a badge refresh', async () => {
+    Object.defineProperty(navigator, 'onLine', { configurable: true, value: false });
+    localStorage.setItem('feed:pending-mutations:household', JSON.stringify([
+      { id: 'saved', itemIds: ['one'], action: 'save' },
+    ]));
+    const slowRead = deferred();
+    let summaryReads = 0;
+    apiMock.mockImplementation(path => {
+      if (path.endsWith('/items/state/summary') && ++summaryReads === 2) return slowRead.promise;
+      return Promise.resolve({ readerUnread: 1, pendingSync: 0, preferencesStored: true });
+    });
+    render(<FeedWorkspaceProvider><SummaryProbe /></FeedWorkspaceProvider>);
+    await screen.findByText('1');
+    Object.defineProperty(navigator, 'onLine', { configurable: true, value: true });
+    fireEvent.click(screen.getByText('Retry source sync'));
+    try {
+      await waitFor(() => expect(apiMock).toHaveBeenCalledWith('/api/v1/feed/items/state/retry', {}, 'POST'), { timeout: 750 });
+      expect(apiMock.mock.calls.filter(([path]) => path === '/api/v1/feed/items/state')).toHaveLength(1);
+    } finally {
+      await act(async () => slowRead.resolve({ readerUnread: 9, pendingSync: 0 }));
+    }
+    expect(screen.getByLabelText('unread Reader items')).toHaveTextContent('1');
+  });
+
+  test('finishes a submitted source retry after exit without refreshing or notifying the replacement workspace', async () => {
+    const retry = deferred();
+    apiMock.mockImplementation(path => path.endsWith('/state/retry') ? retry.promise
+      : Promise.resolve({ preferencesStored: true, readerUnread: 2 }));
+    const view = render(<FeedWorkspaceProvider><SummaryProbe /></FeedWorkspaceProvider>);
+    fireEvent.click(screen.getByText('Retry source sync'));
+    await waitFor(() => expect(apiMock).toHaveBeenCalledWith('/api/v1/feed/items/state/retry', {}, 'POST'));
+    view.unmount();
+    render(<FeedWorkspaceProvider><SummaryProbe /></FeedWorkspaceProvider>);
+    await screen.findByText('2');
+    notifications.show.mockClear();
+    await act(async () => retry.resolve({ readerUnread: 0, pendingSync: 0 }));
+    expect(screen.getByLabelText('unread Reader items')).toHaveTextContent('2');
+    expect(apiMock.mock.calls.filter(([path]) => path.endsWith('/items/state/summary'))).toHaveLength(2);
+    expect(notifications.show).not.toHaveBeenCalled();
   });
 
   test('loads persisted preferences and saves updates', async () => {

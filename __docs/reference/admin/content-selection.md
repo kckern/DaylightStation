@@ -2,6 +2,8 @@
 
 When creating list items (playlists, watchlists, workout queues), admins specify content via the `input` field. Content lives across multiple sources - Plex libraries, local media, Immich photos, YouTube, etc. Each uses standardized `source:localId` format.
 
+In the list editor, open **List actions** for settings that apply to the whole list. Each named section has its own actions menu and expand or collapse button. Pressing Escape returns focus to the menu button. The compact controls use the shared 44px touch target on coarse pointers. [Design-system reference](../frontend/design-system.md)
+
 ## Content ID Format
 
 All content references follow `source:localId`:

@@ -692,6 +692,53 @@ function foregroundHealth(page) {
   });
 }
 
+for (const inactive of ['another route', 'a hidden document']) {
+  test(`Health stops starting neighbouring-day reads in ${inactive}`, async ({ page }) => {
+    await mockHealthVisibility(page);
+    const date = '2026-10-20';
+    const adjacent = new Set([
+      '/api/v1/health/day', '/api/v1/health/nutrition/pending', '/api/v1/health/nutrition/observations',
+    ]);
+    const speculativeReads = [];
+    let returning = false;
+    await page.route('**/api/v1/health/**', route => {
+      const { pathname, searchParams } = new URL(route.request().url());
+      if (pathname.endsWith('/context')) return route.fulfill({ json: { userId: 'alice' } });
+      const requestedDate = searchParams.get('date');
+      if (requestedDate && requestedDate !== date && adjacent.has(pathname)) {
+        speculativeReads.push(route);
+        if (!returning) return;
+      }
+      return route.fulfill({ json: { items: [], budget: { budget: 2000, remaining: 2000 } } });
+    });
+
+    const setVisible = visible => page.evaluate(visible => {
+      window.healthFixtureVisible = visible;
+      document.dispatchEvent(new Event('visibilitychange'));
+    }, visible);
+    await page.goto(`/health/?date=${date}`);
+    await expect.poll(() => speculativeReads.length).toBe(2);
+    if (inactive === 'another route') {
+      await page.getByRole('link', { name: 'Progress', exact: true }).click();
+      await expect(page.getByRole('link', { name: 'Progress', exact: true })).toHaveAttribute('aria-current', 'page');
+    } else {
+      await setVisible(false);
+    }
+    await Promise.all(speculativeReads.slice().map(async route => {
+      const response = page.waitForResponse(result => result.request() === route.request());
+      await route.fulfill({ json: { items: [] } });
+      await (await response).finished();
+    }));
+    await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+    expect(speculativeReads).toHaveLength(2);
+
+    returning = true;
+    if (inactive === 'another route') await page.getByRole('link', { name: 'Today', exact: true }).click();
+    else await setVisible(true);
+    await expect.poll(() => speculativeReads.length).toBeGreaterThan(2);
+  });
+}
+
 test('Health Settings refreshes its auditor summary and questions with one foreground read', async ({ page }) => {
   await mockHealthVisibility(page);
   await page.route('**/health/context', route => route.fulfill({ json: { userId: 'alice' } }));

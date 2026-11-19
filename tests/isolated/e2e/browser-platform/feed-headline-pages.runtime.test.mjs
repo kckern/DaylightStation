@@ -159,3 +159,49 @@ for (const refresh of [
     expect(reads).toEqual(['local', 'world', 'local']);
   });
 }
+
+test('Feed opens headlines while badge counts load and keeps counts from the latest item change', async ({ page }) => {
+  const firstSummary = Promise.withResolvers();
+  const release = Promise.withResolvers();
+  const reads = [];
+  const actions = [];
+  await page.routeWebSocket('**/*', () => {});
+  await page.route('**/api/**', async route => {
+    const req = route.request();
+    const { pathname } = new URL(req.url());
+    if (pathname.endsWith('/supervision/bootstrap')) return route.fulfill({ json: { enabled: false } });
+    if (pathname.endsWith('/workspace')) return route.fulfill({ json: { preferencesStored: true } });
+    if (pathname.endsWith('/items/state/summary')) {
+      reads.push(pathname);
+      if (reads.length === 1) {
+        firstSummary.resolve();
+        await release.promise;
+        return route.fulfill({ json: { readerUnread: 8, pendingSync: 0 } });
+      }
+      return route.fulfill({ json: { readerUnread: 7, pendingSync: 0 } });
+    }
+    if (pathname.endsWith('/items/state')) {
+      actions.push(req.postDataJSON());
+      return route.fulfill({ json: { items: [{ id: 'story', state: { isRead: true } }] } });
+    }
+    if (pathname.endsWith('/headlines/pages')) return route.fulfill({ json: [{ id: 'local', label: 'Local' }] });
+    if (pathname.endsWith('/headlines')) return route.fulfill({ json: {
+      grid: { rows: ['main'], cols: ['main'] }, sources: { daily: { row: 0, col: 0,
+        label: 'Daily', url: 'https://example.test/feed', items: [{ id: 'story', title: 'Morning story', link: 'https://example.test/story' }] } },
+    } });
+    return route.fulfill({ json: {} });
+  });
+  await page.goto('/feed/headlines/local');
+  await firstSummary.promise;
+  try {
+    await expect(page.getByRole('link', { name: 'Morning story' })).toBeVisible();
+    await page.getByRole('button', { name: 'Mark read: Morning story' }).press('Enter');
+    await expect(page.getByLabel('7 unread Reader items')).toBeVisible();
+  } finally {
+    release.resolve();
+  }
+  await expect(page.getByRole('button', { name: 'Mark unread: Morning story' })).toBeVisible();
+  expect(actions).toEqual([{ itemIds: ['story'], action: 'read' }]);
+  expect(reads).toHaveLength(2);
+  await expect(page.getByLabel('7 unread Reader items')).toBeVisible();
+});

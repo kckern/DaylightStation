@@ -6,7 +6,7 @@ vi.mock('../api.mjs', () => ({ DaylightAPI: (...args) => apiMock(...args) }));
 
 import {
   useApiResource, resetApiResourceCache, prefetchApiResources, isApiResourceFresh,
-  peekApiResource, invalidateApiResources, getPrefetchStats,
+  peekApiResource, invalidateApiResources, getPrefetchStats, isPrefetchIdle,
 } from './useApiResource.js';
 
 const deferred = () => { let resolve; const promise = new Promise(r => { resolve = r; }); return { promise, resolve }; };
@@ -66,6 +66,48 @@ describe('prefetchApiResources', () => {
     calls[0].d.resolve({}); calls[1].d.resolve({});
     await flush();
     expect(calls.map(c => c.path)).toEqual(['a', 'b', 'x']);
+  });
+
+  it('cancels queued work and callbacks when its owner leaves, allowing admitted reads to settle', async () => {
+    const first = deferred();
+    const second = deferred();
+    const owner = new AbortController();
+    const onDone = vi.fn();
+    const onIdle = vi.fn();
+    apiMock.mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise).mockResolvedValue({});
+
+    prefetchApiResources(['a', 'b', 'c'], { signal: owner.signal, onDone, onIdle });
+    owner.abort();
+    first.resolve({ keep: true });
+    second.resolve({});
+    await flush();
+
+    expect(apiMock.mock.calls.map(([path]) => path)).toEqual(['a', 'b']);
+    expect(peekApiResource('a')).toEqual({ keep: true });
+    expect(isPrefetchIdle()).toBe(true);
+    expect(onDone).not.toHaveBeenCalled();
+    expect(onIdle).not.toHaveBeenCalled();
+  });
+
+  it('keeps the replacement queue when an earlier owner leaves', async () => {
+    const first = deferred();
+    const second = deferred();
+    const previous = new AbortController();
+    const current = new AbortController();
+    const previousDone = vi.fn();
+    const currentIdle = vi.fn();
+    apiMock.mockReturnValueOnce(first.promise).mockReturnValueOnce(second.promise).mockResolvedValue({});
+
+    prefetchApiResources(['a', 'b', 'c'], { signal: previous.signal, onDone: previousDone });
+    prefetchApiResources(['x'], { signal: current.signal, onIdle: currentIdle });
+    previous.abort();
+    first.resolve({});
+    second.resolve({});
+    await flush();
+
+    expect(apiMock.mock.calls.map(([path]) => path)).toEqual(['a', 'b', 'x']);
+    expect(previousDone).not.toHaveBeenCalled();
+    expect(currentIdle).toHaveBeenCalledOnce();
   });
 
   it('skips fresh paths, and refetches them after an invalidation', async () => {

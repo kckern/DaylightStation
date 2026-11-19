@@ -492,8 +492,8 @@ function FolderEditor({ type, listName }) {
       <Stack gap="xs" className="lists-view">
       <Group justify="space-between" className="ds-page-header" style={{ marginBottom: 0 }}>
         <Group>
-          <ActionIcon variant="subtle" onClick={() => navigate(-1)}>
-            <IconArrowLeft size={20} />
+          <ActionIcon className="ds-touch-target" variant="subtle" aria-label="Back" onClick={() => navigate(-1)}>
+            <IconArrowLeft size={20} aria-hidden="true" />
           </ActionIcon>
           <span className="ds-page-title">{listTitle}</span>
         </Group>
@@ -507,8 +507,8 @@ function FolderEditor({ type, listName }) {
           />
           <Menu position="bottom-end">
             <Menu.Target>
-              <ActionIcon variant="subtle" data-testid="list-menu-button">
-                <IconDotsVertical size={20} />
+              <ActionIcon className="ds-touch-target" variant="subtle" aria-label="List actions" data-testid="list-menu-button">
+                <IconDotsVertical size={20} aria-hidden="true" />
               </ActionIcon>
             </Menu.Target>
             <Menu.Dropdown>

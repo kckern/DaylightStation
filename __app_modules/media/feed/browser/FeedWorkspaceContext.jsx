@@ -1,3 +1,4 @@
+import { useRefreshableRead } from '../../../../frontend/src/lib/hooks/useRefreshableRead.js';
 import { browserPreference } from '../../../../frontend/src/lib/browserPreference.js';
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { notifications } from '@mantine/notifications';
@@ -88,16 +89,17 @@ export function FeedWorkspaceProvider({ children }) {
   const [revision, setRevision] = useState(0);
   const [summary, setSummary] = useState({ unread: 0, readerUnread: 0, saved: 0, archived: 0, pendingSync: 0 });
 
-  const refreshSummary = useCallback(async () => {
+  const readSummary = useCallback(async (isCurrent, signal) => {
+    const owner = feedQueueOwner();
     try {
-      const value = await DaylightAPI('/api/v1/feed/items/state/summary');
-      setSummary(value);
-      return value;
+      const value = await DaylightAPI('/api/v1/feed/items/state/summary', {}, 'GET', { signal });
+      if (isCurrent() && owner === feedQueueOwner()) setSummary(value);
     } catch (error) {
-      log.warn('feed.state.summary_failed', { error: error.message });
-      return null;
+      if (isCurrent()) log.warn('feed.state.summary_failed', { error: error.message });
     }
   }, []);
+  const { reload: refreshSummary } = useRefreshableRead(readSummary);
+  useEffect(() => { refreshSummary(); }, [refreshSummary]);
 
   const publishReadingPreferences = useCallback(next => {
     readingPreferencesRef.current = next;
@@ -184,7 +186,7 @@ export function FeedWorkspaceProvider({ children }) {
       });
       if (completed && owner === feedQueueOwner()) {
         publishPending(itemMutations.snapshot(owner));
-        await refreshSummary();
+        refreshSummary();
         notifications.show({ title: 'Offline changes synchronized', message: `${completed} queued change${completed === 1 ? '' : 's'} saved.` });
       }
     } finally {
@@ -195,19 +197,13 @@ export function FeedWorkspaceProvider({ children }) {
   useEffect(() => {
     const view = {};
     preferenceView.current = view;
-    Promise.allSettled([
-      refreshWorkspace({ migrateLocal: true }),
-      refreshSummary(),
-    ]).then(([workspaceResult]) => {
-      if (preferenceView.current !== view) return;
-      if (workspaceResult.status === 'rejected') {
-        log.warn('feed.workspace.load_failed', { error: workspaceResult.reason?.message });
-      }
+    refreshWorkspace({ migrateLocal: true }).catch(error => {
+      if (preferenceView.current === view) log.warn('feed.workspace.load_failed', { error: error.message });
     }).finally(() => {
       if (preferenceView.current === view) setWorkspaceReady(true);
     });
     return () => { preferenceView.current = null; };
-  }, [refreshSummary, refreshWorkspace]);
+  }, [refreshWorkspace]);
 
   useEffect(() => {
     const handleOnline = () => flushPendingMutations();
@@ -340,16 +336,22 @@ export function FeedWorkspaceProvider({ children }) {
   }, [publishPending, flushPendingMutations, refreshSummary, synchronizeUserScope]);
 
   const retrySync = useCallback(async () => {
+    const owner = feedQueueOwner();
+    const view = preferenceView.current;
+    const isCurrent = () => view && preferenceView.current === view && owner === feedQueueOwner();
     try {
       await flushPendingMutations();
+      if (!isCurrent()) return;
       const value = await DaylightAPI('/api/v1/feed/items/state/retry', {}, 'POST');
-      setSummary(value);
+      if (!isCurrent()) return;
+      refreshSummary();
       notifications.show({ title: value.pendingSync ? 'Sync still pending' : 'Feed synchronized', message: value.pendingSync ? `${value.pendingSync} change${value.pendingSync === 1 ? '' : 's'} will retry again.` : 'All source changes are up to date.' });
     } catch (error) {
+      if (!isCurrent()) return;
       log.warn('feed.state.retry_failed', { error: error.message });
       notifications.show({ color: 'red', title: 'Sync retry failed', message: 'Local changes are safe and will remain queued.' });
     }
-  }, [flushPendingMutations]);
+  }, [flushPendingMutations, refreshSummary]);
 
   const value = useMemo(() => ({
     density, setDensity, readingPreferences, setReadingPreference, checkpoints, workspaceReady, sourcePreferences, setSourcePreference,
