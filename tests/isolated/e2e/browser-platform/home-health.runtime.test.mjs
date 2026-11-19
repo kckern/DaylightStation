@@ -102,6 +102,59 @@ test('Home keeps a confirmed toggle when an older poll finishes', async ({ page 
   expect(writes).toEqual([{ entityId: 'light.kitchen', desiredState: 'off' }]);
 });
 
+test('Home preserves a pending toggle across a camera visit and pauses house reads', async ({ page }) => {
+  await page.clock.install();
+  let reads = 0;
+  let pendingToggle;
+  const writes = [];
+  let lightState = 'on';
+  await page.route('**/home-dashboard/entities', route => {
+    reads += 1;
+    return route.fulfill({ json: house(lightState) });
+  });
+  await page.route('**/home-dashboard/toggle', route => {
+    writes.push(route.request().postDataJSON());
+    pendingToggle = route;
+  });
+  await page.route('**/api/v1/camera', route => route.fulfill({ json: { cameras: [] } }));
+  await page.goto('/home');
+  const rooms = page.getByRole('button', { name: 'Rooms', exact: true });
+  const cameras = page.getByRole('button', { name: 'Cameras', exact: true });
+  const kitchen = page.locator('[data-room-id="kitchen"] .home-room__row');
+  const openKitchen = async () => {
+    await rooms.click();
+    await kitchen.click();
+  };
+  await openKitchen();
+  const light = page.getByRole('switch', { name: 'Kitchen light: turn off' });
+  await page.locator(`label[for="${await light.getAttribute('id')}"]`).click();
+  await expect.poll(() => writes.length).toBe(1);
+
+  await cameras.click();
+  await expect(page.getByText('No cameras configured')).toBeVisible();
+  await openKitchen();
+  const pending = page.getByRole('switch', { name: 'Kitchen light: turn on' });
+  await expect(pending).toBeDisabled();
+  await expect(pending).not.toBeChecked();
+  await expect.poll(() => reads).toBe(2);
+
+  await cameras.click();
+  await expect(page.getByText('No cameras configured')).toBeVisible();
+  await page.clock.fastForward(11_000);
+  expect(reads).toBe(2);
+  lightState = 'off';
+  const response = page.waitForResponse(result => result.request() === pendingToggle.request());
+  await pendingToggle.fulfill({ json: { ok: true } });
+  await (await response).finished();
+  await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+  expect(reads).toBe(2);
+  await openKitchen();
+  await expect(pending).toBeEnabled();
+  await expect(pending).not.toBeChecked();
+  await expect.poll(() => reads).toBe(3);
+  expect(writes).toEqual([{ entityId: 'light.kitchen', desiredState: 'off' }]);
+});
+
 test('Home Mosaic keeps the tooltip and drawer reachable in its own frame', async ({ page }) => {
   const payload = house('on');
   const group = { id: 'kitchen', label: 'Kitchen', entityIds: ['light.kitchen'] };

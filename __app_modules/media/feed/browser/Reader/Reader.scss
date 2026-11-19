@@ -1,4 +1,5 @@
 @use "../feedMixins.scss" as *;
+@use "../../../../../frontend/src/styles/breakpoints" as bp;
 
 // =========================================================================
 // Reader — 2-column inbox. Dark shell on the Feed token scale; the article
@@ -529,7 +530,7 @@
 
 // ---- Mobile responsive ----
 
-@media (max-width: 768px) {
+@include bp.mobile-only {
   .reader-view {
     grid-template-columns: 1fr;
     overflow-x: hidden;

@@ -1,4 +1,6 @@
-import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { useState, useEffect, useLayoutEffect, useCallback, useMemo, useRef } from 'react';
+import { useMediaQuery } from '@mantine/hooks';
+import { DS_TOKENS } from '@/lib/theme/tokens.mjs';
 import { UiIcon } from '@/lib/ui/UiIcon.jsx';
 import { useSearchParams } from 'react-router-dom';
 import { DaylightAPI } from "../../../../../frontend/src/lib/api.mjs";
@@ -184,7 +186,11 @@ export default function Reader() {
   const [offlineItems, setOfflineItems] = useState([]);
   const [offlineLoading, setOfflineLoading] = useState(false);
   const [collapsedGroups, setCollapsedGroups] = useState(new Set());
+  const compact = useMediaQuery(`(max-width: ${DS_TOKENS.breakpoints.md - 1}px)`);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const drawerActive = compact && drawerOpen;
+  const wasDrawerActive = useRef(false);
+  const drawerOpenerRef = useRef(null);
   const sentinelRef = useRef(null);
   const inboxRef = useRef(null);
   const listRef = useRef(null);
@@ -197,29 +203,42 @@ export default function Reader() {
 
   useEffect(() => { markVisited('reader', visitStarted.current); }, [markVisited]);
 
-  useEffect(() => {
-    if (!drawerOpen) return undefined;
-    const previous = document.activeElement;
-    const inbox = inboxRef.current;
-    inbox?.setAttribute('inert', '');
-    sidebarRef.current?.focus();
-    const onKeyDown = event => {
-      if (event.key === 'Escape') setDrawerOpen(false);
-      if (event.key !== 'Tab' || !sidebarRef.current) return;
-      const focusable = [...sidebarRef.current.querySelectorAll('button:not([disabled]), a[href], input:not([disabled]), [tabindex]:not([tabindex="-1"])')];
-      if (!focusable.length) { event.preventDefault(); sidebarRef.current.focus(); return; }
-      const first = focusable[0];
-      const last = focusable[focusable.length - 1];
-      if (event.shiftKey && (document.activeElement === first || document.activeElement === sidebarRef.current)) { event.preventDefault(); last.focus(); }
-      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
-    };
-    document.addEventListener('keydown', onKeyDown);
-    return () => {
-      document.removeEventListener('keydown', onKeyDown);
-      inbox?.removeAttribute('inert');
-      previous?.focus?.({ preventScroll: true });
-    };
-  }, [drawerOpen]);
+  useLayoutEffect(() => {
+    if (drawerActive) {
+      sidebarRef.current?.focus({ preventScroll: true });
+    } else if (wasDrawerActive.current) {
+      const target = compact ? drawerOpenerRef.current : sidebarRef.current;
+      target?.focus({ preventScroll: true });
+    } else if (compact && sidebarRef.current?.contains(document.activeElement)) {
+      drawerOpenerRef.current?.focus({ preventScroll: true });
+    }
+    wasDrawerActive.current = drawerActive;
+    if (!compact && drawerOpen) setDrawerOpen(false);
+  }, [compact, drawerActive, drawerOpen]);
+
+  const closeDrawer = () => setDrawerOpen(false);
+  const handleDrawerKeyDown = event => {
+    if (event.defaultPrevented) return;
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      event.stopPropagation();
+      closeDrawer();
+      return;
+    }
+    if (event.key !== 'Tab') return;
+    const sidebar = event.currentTarget;
+    const focusable = [...sidebar.querySelectorAll('button:not([disabled]), a[href], input:not([disabled]), [tabindex]:not([tabindex="-1"])')]
+      .filter(node => node.getClientRects().length > 0 && getComputedStyle(node).visibility === 'visible');
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    if (event.shiftKey && (event.target === first || event.target === sidebar)) {
+      event.preventDefault();
+      last?.focus();
+    } else if (!event.shiftKey && event.target === last) {
+      event.preventDefault();
+      first?.focus();
+    }
+  };
 
   useEffect(() => {
     const onKeyDown = event => {
@@ -458,9 +477,19 @@ export default function Reader() {
 
   return (
     <div className="reader-view">
-      {drawerOpen && <div className="reader-drawer-backdrop" onClick={() => setDrawerOpen(false)} aria-hidden="true" />}
-      <aside ref={sidebarRef} tabIndex={-1} id="reader-subscriptions" aria-label="Subscriptions" role={drawerOpen ? 'dialog' : undefined} aria-modal={drawerOpen || undefined} className={`reader-sidebar-wrapper ${drawerOpen ? 'open' : ''}`}>
-        <button type="button" className="reader-drawer-close" onClick={() => setDrawerOpen(false)} aria-label="Close subscriptions">
+      {drawerActive && <div className="reader-drawer-backdrop" onClick={closeDrawer} aria-hidden="true" />}
+      <aside
+        ref={sidebarRef}
+        tabIndex={-1}
+        id="reader-subscriptions"
+        aria-label="Subscriptions"
+        role={drawerActive ? 'dialog' : undefined}
+        aria-modal={drawerActive || undefined}
+        inert={compact && !drawerActive ? '' : undefined}
+        onKeyDown={drawerActive ? handleDrawerKeyDown : undefined}
+        className={`reader-sidebar-wrapper ${drawerActive ? 'open' : ''}`}
+      >
+        <button type="button" className="reader-drawer-close" onClick={closeDrawer} aria-label="Close subscriptions">
           <UiIcon name="close" size={22} />
         </button>
         {feedsError && <div className="reader-inline-error" role="status">{feedsError}<button onClick={loadFeeds}>Retry</button></div>}
@@ -472,9 +501,9 @@ export default function Reader() {
           onClearFilters={handleMobileClearFilters}
         />
       </aside>
-      <section className="reader-inbox" ref={inboxRef}>
+      <section className="reader-inbox" ref={inboxRef} inert={drawerActive ? '' : undefined}>
         <div className="reader-mobile-toolbar">
-          <button className="reader-hamburger" onClick={() => setDrawerOpen(true)} aria-label="Open subscriptions" aria-expanded={drawerOpen} aria-controls="reader-subscriptions">
+          <button ref={drawerOpenerRef} className="reader-hamburger" onClick={() => setDrawerOpen(true)} aria-label="Open subscriptions" aria-expanded={drawerActive} aria-controls="reader-subscriptions">
             <span /><span /><span />
           </button>
           <span className="reader-mobile-title">

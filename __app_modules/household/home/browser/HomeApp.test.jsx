@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor, fireEvent, within } from '@testing-library/react';
+import { act, render, screen, waitFor, fireEvent, within } from '@testing-library/react';
 
 const apiMock = vi.fn();
 vi.mock("../../../../frontend/src/lib/api.mjs", () => ({ DaylightAPI: (...a) => apiMock(...a) }));
@@ -265,6 +265,35 @@ describe('HomeApp — Rooms', () => {
     expect(sw.disabled).toBe(true);
     fireEvent.click(sw);
     expect(apiMock.mock.calls.filter(([p]) => p.includes('toggle'))).toHaveLength(1);
+  });
+
+  it('keeps a slow switch disabled and starts the confirmation deadline after acknowledgement', async () => {
+    let acknowledge;
+    const pending = new Promise(resolve => { acknowledge = resolve; });
+    const routed = apiMock.getMockImplementation();
+    apiMock.mockImplementation((path, ...args) => path.endsWith('/toggle') ? pending : routed(path, ...args));
+    render(<HomeApp />);
+    await lanesShown();
+    openView('Rooms');
+    fireEvent.click(document.querySelector('[data-room-id="kitchen"] .home-room__row'));
+
+    vi.useFakeTimers({ toFake: ['Date', 'setTimeout', 'clearTimeout'] });
+    try {
+      fireEvent.click(screen.getByLabelText('Kitchen light: turn off'));
+      await act(async () => vi.advanceTimersByTimeAsync(6000));
+      const switched = screen.getByLabelText('Kitchen light: turn on');
+      expect(switched).toBeDisabled();
+      fireEvent.click(switched);
+      expect(apiMock.mock.calls.filter(([path]) => path.endsWith('/toggle'))).toHaveLength(1);
+
+      await act(async () => { acknowledge({ ok: true }); });
+      await act(async () => vi.advanceTimersByTimeAsync(4999));
+      expect(switched).toBeDisabled();
+      await act(async () => vi.advanceTimersByTimeAsync(101));
+      expect(screen.getByLabelText('Kitchen light: turn off')).toBeEnabled();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 

@@ -91,9 +91,10 @@ function CameraGrid() {
   );
 }
 
-/** Today, Mosaic and Rooms share one polled reading of the house. */
-function HouseViews({ view }) {
-  const house = useHomeEntities();
+function HomeView({ view }) {
+  const showCameras = view === 'cameras';
+  const house = useHomeEntities({ active: !showCameras });
+  if (showCameras) return <CameraGrid />;
   const { entities, rooms, types, mosaic, haUrl, summary, hasData, loading, error, reload, toggle, turnOff } = house;
 
   if (!hasData && loading) return <LoadingState label="the house" rows={6} />;
@@ -131,7 +132,7 @@ function HomeApp() {
         <div className="home-app">
           <AppChrome title="Home" tabs={TABS} activeTab={view} onTabChange={changeView}>
             <div className="home-app__page">
-              {view === 'cameras' ? <CameraGrid /> : <HouseViews view={view} />}
+              <HomeView view={view} />
             </div>
           </AppChrome>
         </div>
