@@ -24,9 +24,12 @@ public class PlaybackEventsTest {
     private final MediaItem first = item("plex:1");
     private final MediaItem second = item("plex:2");
     private MediaItem current = first;
+    private int playbackState = Player.STATE_READY;
+    private final List<String> states = new ArrayList<>();
     private final List<String> ends = new ArrayList<>();
     private final PayloadPort.Handler handler = raw -> {
         JSONObject event = new JSONObject(raw);
+        states.add(event.getString("state"));
         if ("ended".equals(event.getString("state"))) {
             ends.add(event.getString("id") + "@" + event.getLong("positionMs") + "/" + event.getLong("durationMs"));
         }
@@ -39,6 +42,7 @@ public class PlaybackEventsTest {
                     case "getCurrentMediaItem": return current;
                     case "getCurrentPosition": return current == second ? 2400L : 0L;
                     case "getDuration": return current == second ? 2400L : 1200L;
+                    case "getPlaybackState": return playbackState;
                     case "isPlaying": return false;
                     default: throw new AssertionError(method.getName());
                 }
@@ -65,6 +69,17 @@ public class PlaybackEventsTest {
         events.onMediaItemTransition(second, Player.MEDIA_ITEM_TRANSITION_REASON_SEEK);
         events.onPlaybackStateChanged(Player.STATE_ENDED);
         assertEquals(Collections.singletonList("plex:2@2400/2400"), ends);
+    }
+
+    @Test public void aTransitionToAnAlreadyEndedItemDoesNotEmitPausedProgress() {
+        PlaybackEvents events = new PlaybackEvents(player, new PayloadMedia(), MoreExecutors.newDirectExecutorService());
+        current = second;
+        playbackState = Player.STATE_ENDED;
+        events.onPositionDiscontinuity(position(first, 0, 1200), position(second, 1, 0),
+                Player.DISCONTINUITY_REASON_AUTO_TRANSITION);
+        events.onMediaItemTransition(second, Player.MEDIA_ITEM_TRANSITION_REASON_AUTO);
+        events.onPlaybackStateChanged(Player.STATE_ENDED);
+        assertEquals(Arrays.asList("ended", "transition", "ended"), states);
     }
 
     private static MediaItem item(String id) {

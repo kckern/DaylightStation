@@ -270,7 +270,7 @@ public final class MediaServiceCapability implements Capability {
         JSONArray tracks = new JSONArray();
         for (Track t : r.tracks) tracks.put(t.toJson());
         return new Outcome(200, Replies.ok().put("tracks", tracks).put("startIndex", r.startIndex)
-                .put("startPositionMs", r.startPositionMs));
+                .put("startPositionMs", r.startPositionMs).put("selectionResolved", r.selectionResolved));
     }
 
     /**

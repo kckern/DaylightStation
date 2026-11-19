@@ -38,11 +38,13 @@ final class TrackAnswer {
     final List<Track> tracks;
     final int startIndex;
     final long startPositionMs;
+    final boolean selectionResolved;
 
-    private TrackAnswer(List<Track> tracks, int startIndex, long startPositionMs) {
+    private TrackAnswer(List<Track> tracks, int startIndex, long startPositionMs, boolean selectionResolved) {
         this.tracks = tracks;
         this.startIndex = startIndex;
         this.startPositionMs = startPositionMs;
+        this.selectionResolved = selectionResolved;
     }
 
     static TrackAnswer parse(String json) throws BrowseAnswer.Failed {
@@ -50,7 +52,7 @@ final class TrackAnswer {
         JSONArray list = o.optJSONArray("tracks");
         List<Track> out = new ArrayList<>();
         int start = o.optInt("startIndex", 0);
-        int keptStart = 0;
+        int keptStart = -1;
         for (int i = 0; list != null && i < list.length() && out.size() < MAX_TRACKS; i++) {
             JSONObject t = list.optJSONObject(i);
             if (t == null) continue;
@@ -62,6 +64,7 @@ final class TrackAnswer {
                     BrowseAnswer.https(t.optString("artUrl", "")), t.optString("listId", "")));
         }
         if (out.isEmpty()) throw new BrowseAnswer.Failed("nothing to play");
-        return new TrackAnswer(out, keptStart, Math.max(0, o.optLong("startPositionMs", 0)));
+        return new TrackAnswer(out, Math.max(0, keptStart), Math.max(0, o.optLong("startPositionMs", 0)),
+                keptStart >= 0 && o.optBoolean("selectionResolved"));
     }
 }

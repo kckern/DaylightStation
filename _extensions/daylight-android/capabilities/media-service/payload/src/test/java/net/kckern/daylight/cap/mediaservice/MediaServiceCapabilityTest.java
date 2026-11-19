@@ -106,6 +106,21 @@ public class MediaServiceCapabilityTest {
         assertEquals(0, api.calls.size());
     }
 
+    @Test public void twoQueueEntriesEndingInOneUpdateEachSendOneNaturalReport() throws Exception {
+        post("/media/event", "{\"id\":\"plex:11\",\"positionMs\":500,\"durationMs\":500,\"state\":\"ended\"}");
+        post("/media/event", "{\"id\":\"plex:12\",\"positionMs\":700,\"durationMs\":700,\"state\":\"transition\"}");
+        post("/media/event", "{\"id\":\"plex:12\",\"positionMs\":700,\"durationMs\":700,\"state\":\"ended\"}");
+
+        assertEquals(2, api.logged.size());
+        assertEquals("plex:11", api.logged.get(0).getString("assetId"));
+        assertEquals("plex:12", api.logged.get(1).getString("assetId"));
+        for (JSONObject report : api.logged) {
+            assertTrue(report.getBoolean("naturalEnd"));
+            assertEquals(0, report.getLong("seconds"));
+            assertEquals(100.0, report.getDouble("percent"), 0.001);
+        }
+    }
+
     @Test public void eventsBecomePlayLogCalls() throws Exception {
         now = 30_000;
         JSONObject r = post("/media/event", "{\"id\":\"plex:11\",\"title\":\"So What\",\"positionMs\":30000,\"durationMs\":300000,\"state\":\"playing\"}");
@@ -334,6 +349,14 @@ public class MediaServiceCapabilityTest {
                 "{\"op\":\"resolve\",\"ids\":[\"c:plex:10\",\"p:plex:99\"],\"startIndex\":1}", 0));
         assertEquals(1, selected.getInt("startIndex"));
         assertEquals("plex:99", selected.getJSONArray("tracks").getJSONObject(1).getString("id"));
+        assertTrue(selected.getBoolean("selectionResolved"));
+
+        api.responses.put("queue plex:20", "{\"items\":[]}");
+        JSONObject emptySelection = new JSONObject(port.call(
+                "{\"op\":\"resolve\",\"ids\":[\"c:plex:20\",\"p:plex:99\"],\"startIndex\":0}", 0));
+        assertEquals(0, emptySelection.getInt("startIndex"));
+        assertEquals("plex:99", emptySelection.getJSONArray("tracks").getJSONObject(0).getString("id"));
+        assertFalse(emptySelection.getBoolean("selectionResolved"));
 
         JSONObject refused = new JSONObject(port.call("{\"op\":\"resolve\",\"ids\":[\"x\"]}", 0));
         assertFalse(refused.getBoolean("ok"));

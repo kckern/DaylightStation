@@ -165,7 +165,8 @@ final class LibraryCallback implements MediaLibrarySession.Callback {
                 try {
                     TrackAnswer r = resolve(requested, startIndex);
                     long defaultPosition = r.startPositionMs > 0 ? r.startPositionMs : C.TIME_UNSET;
-                    long position = startPositionMs >= 0 ? startPositionMs : defaultPosition;
+                    boolean applyOffset = startIndex == C.INDEX_UNSET || r.selectionResolved;
+                    long position = applyOffset && startPositionMs >= 0 ? startPositionMs : defaultPosition;
                     future.set(new MediaSession.MediaItemsWithStartPosition(NodeItems.tracks(r.tracks), r.startIndex, position));
                 } catch (Throwable e) {
                     future.setException(failure(e));

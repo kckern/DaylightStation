@@ -70,6 +70,18 @@ public class ProgressReporterTest {
         assertEquals(1, at("plex:1", 1200, 1200, "ended", 2400).size());
     }
 
+    @Test public void anAlreadyEndedDuplicateQueueEntryAddsOnlyItsOwnCompletion() throws Exception {
+        List<Report> first = at("plex:1", 500, 500, "ended", 500);
+        assertEquals(1, first.size());
+        assertTrue(at("plex:1", 500, 500, "transition", 1000).isEmpty());
+        List<Report> second = at("plex:1", 500, 500, "ended", 1000);
+        assertEquals(1, second.size());
+        JSONObject body = second.get(0).toBody();
+        assertTrue(body.getBoolean("naturalEnd"));
+        assertEquals(0, body.getLong("seconds"));
+        assertEquals(100.0, body.getDouble("percent"), 0.001);
+    }
+
     @Test public void movingToAnotherItemSavesTheOneThatWasLeft() {
         at("plex:1", 11_000, FIVE_MIN, "playing", 11_000);
         at("plex:1", 18_000, FIVE_MIN, "playing", 18_000);
@@ -106,13 +118,12 @@ public class ProgressReporterTest {
         assertEquals("So What", body.getString("title"));
         assertEquals("list-9", body.getString("listId"));
         assertEquals("exactly the web player's fields", 6, body.length());
-        // The web player's last report is the same body at the end position: it sends no
-        // naturalEnd and no status, and a missing list as null.
+        assertFalse(body.has("naturalEnd"));
         JSONObject end = reporter.onEvent("plex:1", "So What", "", FIVE_MIN, FIVE_MIN, "ended", 400_000).get(0).toBody();
         assertEquals(100.0, end.getDouble("percent"), 0.001);
         assertEquals(300, end.getInt("seconds"));
         assertTrue(end.has("listId") && end.isNull("listId"));
-        assertFalse(end.has("naturalEnd"));
+        assertTrue(end.getBoolean("naturalEnd"));
         assertFalse(end.has("status"));
         assertEquals("the type is the content's source, which picks the backend's adapter", "files",
                 reporter.onEvent("files:clips/a.mp3", "A", "", 30_000, FIVE_MIN, "playing", 500_000).get(0).toBody().getString("type"));

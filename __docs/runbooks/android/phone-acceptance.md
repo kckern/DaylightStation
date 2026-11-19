@@ -220,7 +220,8 @@ Pick the content id of a music track and of an album from the Media page.
 
 13. Queue two tracks shorter than five seconds and let both finish. Check the backend
     for exactly one final `play.log` at 100 percent per track. Repeat and press Next
-    before the first track ends. Only the second track has a final report.
+    before the first track ends. Only the second track has a report with
+    `naturalEnd: true`.
 14. From an allowed media controller, set a list of two items and request item 2
     at 1234 ms. The second item starts at that offset, including when the first
     input item expands to several tracks. With an explicit offset of zero, the

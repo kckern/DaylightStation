@@ -37,17 +37,19 @@ final class ProgressReporter {
         /**
          * The POST /api/v1/play/log body, with the web player's fields and no others.
          * type is the content's source, which the backend uses to pick its adapter;
-         * assetId is the whole content id. The web player's report at the end of an item
-         * is this same body at the end position, so naturalEnd is not sent.
+         * assetId is the whole content id. The backend uses naturalEnd to distinguish
+         * an actual finish from progress judged against a household completion rule.
          */
         JSONObject toBody() throws JSONException {
-            return new JSONObject()
+            JSONObject body = new JSONObject()
                     .put("type", ContentId.source(contentId))
                     .put("assetId", contentId)
                     .put("seconds", seconds)
                     .put("percent", percent)
                     .put("title", title)
                     .put("listId", listId == null || listId.isEmpty() ? JSONObject.NULL : listId);
+            if (naturalEnd) body.put("naturalEnd", true);
+            return body;
         }
     }
 
@@ -60,14 +62,16 @@ final class ProgressReporter {
     private long lastSentSeconds = -1;
     private boolean ended;
 
-    /** state is "playing", "paused", "stopped" or "ended"; an event in any other state, or for no content id, is dropped. */
+    /** A transition starts a new queue entry, even if it has the same content id. */
     synchronized List<Report> onEvent(String eventId, String eventTitle, String eventListId,
                                       long eventPositionMs, long eventDurationMs, String state, long nowMs) {
         List<Report> out = new ArrayList<>();
         boolean playing = "playing".equals(state);
         boolean ending = "ended".equals(state);
-        if (!ContentId.valid(eventId) || !(playing || ending || "paused".equals(state) || "stopped".equals(state))) return out;
-        if (id == null || !id.equals(eventId)) {
+        boolean transition = "transition".equals(state);
+        if (!ContentId.valid(eventId)
+                || !(playing || ending || transition || "paused".equals(state) || "stopped".equals(state))) return out;
+        if (transition || !eventId.equals(id)) {
             Report left = leaving();
             if (left != null) out.add(left);
             id = eventId;
@@ -95,7 +99,7 @@ final class ProgressReporter {
                 lastSentAtMs = nowMs;
                 lastSentSeconds = seconds;
             }
-        } else {
+        } else if (!transition) {
             Report left = leaving();
             if (left != null) out.add(left);
         }

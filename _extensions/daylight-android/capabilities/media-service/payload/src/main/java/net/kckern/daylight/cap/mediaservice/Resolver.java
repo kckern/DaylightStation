@@ -24,11 +24,13 @@ final class Resolver {
         final List<Track> tracks;
         final int startIndex;
         final long startPositionMs;
+        final boolean selectionResolved;
 
-        Resolved(List<Track> tracks, int startIndex, long startPositionMs) {
+        Resolved(List<Track> tracks, int startIndex, long startPositionMs, boolean selectionResolved) {
             this.tracks = tracks;
             this.startIndex = startIndex;
             this.startPositionMs = startPositionMs;
+            this.selectionResolved = selectionResolved;
         }
     }
 
@@ -91,8 +93,9 @@ final class Resolver {
             }
         }
         offsets[ids.size()] = tracks.size();
-        if (!single && requestedIndex >= 0 && requestedIndex < ids.size()
-                && offsets[requestedIndex] < offsets[requestedIndex + 1]) {
+        boolean selectionResolved = requestedIndex >= 0 && requestedIndex < ids.size()
+                && offsets[requestedIndex] < offsets[requestedIndex + 1];
+        if (!single && selectionResolved) {
             startIndex = offsets[requestedIndex];
         }
         if (tracks.isEmpty()) throw new IllegalArgumentException("nothing here plays as audio");
@@ -102,7 +105,7 @@ final class Resolver {
             tracks = new ArrayList<>(tracks.subList(from, from + MAX_TRACKS));
             startIndex -= from;
         }
-        return new Resolved(tracks, startIndex, startPositionMs);
+        return new Resolved(tracks, startIndex, startPositionMs, selectionResolved);
     }
 
     private static JSONObject itemOf(JSONObject queue, String contentId) {

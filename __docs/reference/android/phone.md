@@ -634,8 +634,9 @@ beginning.
 - Progress follows the web player: at most one report every 10 seconds while
   playing and only past 10 seconds; one more when an item is paused, stopped or
   replaced, unless it was a skim (under 10 seconds and under 90 percent); one at
-  the end at 100 percent, with no `naturalEnd`. A report that fails is dropped;
-  the next carries a later position.
+  each natural end at 100 percent with `naturalEnd: true`. The backend can also
+  infer completion from ordinary progress using household rules. A report that
+  fails is dropped and the next carries a later position.
 - The phone's own progress spot on the backend needs a `phone` entry in the
   household's `devices.yml`. Without it reports are still saved, with no
   per-screen spot.

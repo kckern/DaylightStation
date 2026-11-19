@@ -72,7 +72,13 @@ final class PlaybackEvents implements Player.Listener {
             send(outgoing.mediaItem, end, end, "ended");
         }
         outgoing = null;
-        if (item != null) send(player.isPlaying() ? "playing" : "paused");
+        if (item != null) {
+            send("transition");
+            // The final state callback owns progress if this item is already at its end.
+            if (player.getPlaybackState() != Player.STATE_ENDED) {
+                send(player.isPlaying() ? "playing" : "paused");
+            }
+        }
     }
 
     /** Called on the main thread; the call to the payload runs on the io executor. */
