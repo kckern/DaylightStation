@@ -1,16 +1,17 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { MantineProvider } from '@mantine/core';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, useLocation } from 'react-router-dom';
 
-const navigate = vi.fn();
-vi.mock('react-router-dom', async (orig) => ({ ...(await orig()), useNavigate: () => navigate }));
 let mockUsername = 'alice';
 vi.mock("../../hooks/useLifeUser.js", () => ({ useLifeUsername: () => mockUsername }));
 import { PriorityList } from "./PriorityList.jsx";
 
-const wrap = (ui) => render(<MantineProvider><MemoryRouter>{ui}</MemoryRouter></MantineProvider>);
-beforeEach(() => { localStorage.clear(); navigate.mockReset(); mockUsername = 'alice'; });
+function CurrentPath() {
+  return <output aria-label="Current route">{useLocation().pathname}</output>;
+}
+const wrap = (ui) => render(<MantineProvider><MemoryRouter>{ui}<CurrentPath /></MemoryRouter></MantineProvider>);
+beforeEach(() => { localStorage.clear(); mockUsername = 'alice'; });
 
 describe('PriorityList', () => {
   const items = [
@@ -19,8 +20,8 @@ describe('PriorityList', () => {
   ];
   it('taps a ceremony_due through to the ceremony route', () => {
     wrap(<PriorityList priorities={items} />);
-    fireEvent.click(screen.getByText('Set your intention'));
-    expect(navigate).toHaveBeenCalledWith('/life/ceremony/unit_intention');
+    fireEvent.click(screen.getByRole('link', { name: 'Set your intention' }));
+    expect(screen.getByLabelText('Current route')).toHaveTextContent('/life/ceremony/unit_intention');
   });
   it('does not navigate for a goal_deadline card (related_value is a quality id, not a value)', () => {
     const goalItem = [
@@ -28,7 +29,8 @@ describe('PriorityList', () => {
     ];
     wrap(<PriorityList priorities={goalItem} />);
     fireEvent.click(screen.getByText('Finish the draft'));
-    expect(navigate).not.toHaveBeenCalled();
+    expect(screen.queryByRole('link', { name: 'Finish the draft' })).not.toBeInTheDocument();
+    expect(screen.getByLabelText('Current route')).toHaveTextContent(/^\/$/);
   });
   it('dismisses a card and keeps it dismissed within the same render', () => {
     wrap(<PriorityList priorities={items} />);

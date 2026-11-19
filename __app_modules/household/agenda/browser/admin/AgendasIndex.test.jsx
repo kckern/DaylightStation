@@ -1,6 +1,6 @@
 import React from 'react';
 import {it,expect,vi} from 'vitest';
-import {render,screen} from '@testing-library/react';
+import {act,render,screen} from '@testing-library/react';
 import {MantineProvider} from '@mantine/core';
 import {MemoryRouter} from 'react-router-dom';
 import AgendasIndex from './AgendasIndex.jsx';
@@ -18,5 +18,26 @@ it('keeps archived series in collapsed accessible history while showing active s
  expect(history.parentElement.querySelector('a')).toHaveAttribute('href','/admin/content/agendas/old');
  history.focus();expect(history).toHaveFocus();history.click();
  expect(screen.getByRole('link',{name:'Old'})).toHaveAttribute('href','/admin/content/agendas/old');
- expect(history.parentElement).toHaveAttribute('open');expect(client.plans).toHaveBeenCalledTimes(1);expect(client.plans).toHaveBeenCalledWith('active');
+ expect(history.parentElement).toHaveAttribute('open');
+ const [options] = client.seriesList.mock.calls[0];
+ const signal = options?.signal;
+ expect(signal).toBeInstanceOf(AbortSignal);
+ for (const read of [client.plans, client.planningContext]) {
+   expect(read).toHaveBeenCalledTimes(1);
+   const [[seriesId, readOptions]] = read.mock.calls;
+   expect(seriesId).toBe('active');
+   expect(readOptions?.signal).toBe(signal);
+ }
+});
+
+it('does not start child reads when the departed index client returns a late list', async () => {
+ const list = Promise.withResolvers();
+ const client = { seriesList: vi.fn(() => list.promise), plans: vi.fn(), planningContext: vi.fn() };
+ const view = render(<MantineProvider><MemoryRouter><AgendasIndex client={client}/></MemoryRouter></MantineProvider>);
+ view.unmount();
+ await act(async () => {
+   list.resolve({ document: { series: [{ document: { series_id: 'active', status: 'active' } }] } });
+ });
+ expect(client.plans).not.toHaveBeenCalled();
+ expect(client.planningContext).not.toHaveBeenCalled();
 });

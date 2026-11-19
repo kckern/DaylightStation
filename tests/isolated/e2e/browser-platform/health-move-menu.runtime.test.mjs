@@ -19,6 +19,21 @@ async function openHealthDay(page, baseURL) {
   return fixture;
 }
 
+async function pressCanceledEscape(page, field) {
+  const canceledEscape = field.evaluate(input => new Promise(resolve => {
+    input.addEventListener('keydown', event => {
+      if (event.key !== 'Escape') return;
+      event.preventDefault();
+      // Let any deferred dismissal run before checking the open menu.
+      setTimeout(() => resolve(event.defaultPrevented), 0);
+    }, { once: true });
+    input.setAttribute('data-escape-probe-ready', '');
+  }));
+  await expect(field).toHaveAttribute('data-escape-probe-ready', '');
+  await page.keyboard.press('Escape');
+  expect(await canceledEscape).toBe(true);
+}
+
 for (const inDialog of [false, true]) {
   test(`Health explains invalid dates and honors Escape ownership in ${inDialog ? 'the whole-day dialog' : 'selected foods'}`, async ({ page, baseURL }) => {
     const fixture = await openHealthDay(page, baseURL);
@@ -48,18 +63,7 @@ for (const inDialog of [false, true]) {
     await expect(field).toHaveAttribute('min', '2000-01-01');
     await expect(field).toHaveAttribute('max', date);
     await expect(field).toBeFocused();
-    const canceledEscape = field.evaluate(input => new Promise(resolve => {
-      input.addEventListener('keydown', event => {
-        if (event.key !== 'Escape') return;
-        event.preventDefault();
-        // Let any deferred dismissal run before checking the open menu.
-        setTimeout(() => resolve(event.defaultPrevented), 0);
-      }, { once: true });
-      input.setAttribute('data-escape-probe-ready', '');
-    }));
-    await expect(field).toHaveAttribute('data-escape-probe-ready', '');
-    await page.keyboard.press('Escape');
-    expect(await canceledEscape).toBe(true);
+    await pressCanceledEscape(page, field);
     await expect(field).toBeFocused();
     await expect(field).toHaveValue('2026-11-23');
     await expect(field).toHaveAccessibleDescription('Choose today or an earlier day.');
@@ -93,6 +97,33 @@ test('Health dismisses the whole-day dialog before canceling a portion draft', a
   await page.keyboard.press('Escape');
   await expect(dialog).toBeHidden();
   await expect(wholeDay).toBeFocused();
+  await expect(portion).toHaveAccessibleName('Adjust portion of Rice, 101 g');
+
+  await page.keyboard.press('Escape');
+  await expect(portion).toHaveAccessibleName('Adjust portion of Rice, 100 g');
+  expect(fixture.unexpected).toEqual([]);
+  expect(fixture.requests.filter(request => request.method !== 'GET')).toEqual([]);
+});
+
+test('Health dismisses the meal actions menu before canceling a portion draft', async ({ page, baseURL }) => {
+  const fixture = await openHealthDay(page, baseURL);
+  const portion = page.getByRole('button', { name: /^Adjust portion of Rice,/ });
+  await portion.press('ArrowRight');
+  await expect(portion).toHaveAccessibleName('Adjust portion of Rice, 101 g');
+
+  const opener = page.getByRole('button', { name: 'Dinner actions', exact: true });
+  await opener.press('Enter');
+  const menu = page.getByRole('menu');
+  const field = menu.getByLabel('Move to another day', { exact: true });
+  await field.fill(date);
+  await expect(field).toBeFocused();
+  await pressCanceledEscape(page, field);
+  await expect(field).toBeFocused();
+  await expect(field).toHaveValue(date);
+  await menu.getByRole('menuitem', { name: 'Save as meal' }).focus();
+  await page.keyboard.press('Escape');
+  await expect(menu).toBeHidden();
+  await expect(opener).toBeFocused();
   await expect(portion).toHaveAccessibleName('Adjust portion of Rice, 101 g');
 
   await page.keyboard.press('Escape');

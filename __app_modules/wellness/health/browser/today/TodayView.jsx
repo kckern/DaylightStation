@@ -7,7 +7,7 @@ import { SHARED_LOG_IDS } from "../../portable/contracts/nutrition/sharedLogIds.
 import { useSearchParams } from 'react-router-dom';
 import { isISODate } from "../../portable/contracts/health/isoDate.mjs";
 import { ActionIcon, Button, Menu } from '@mantine/core';
-import { ErrorState } from '@/lib/ui';
+import { ErrorState, useDismissLayer } from '@/lib/ui';
 import { DaylightAPI } from "../../../../../frontend/src/lib/api.mjs";
 import { createAppLogger } from "../../../../../frontend/src/lib/ui/createAppLogger.js";
 import { useApiResource } from "../../../../../frontend/src/lib/hooks/useApiResource.js";
@@ -111,6 +111,19 @@ function afterCompletedMove(state, { ids, logIds, toDate }) {
   return { undo: state.undo && relabel(state.undo), offers: state.offers.map(relabel) };
 }
 const stayedInDish = rows => `${rows.length === 1 ? entryLabel(rows[0]) : `${rows.length} foods`} ${rows.length === 1 ? 'is' : 'are'} part of a dish and can't move alone`;
+
+function MealActionsMenu({ label, children }) {
+  const [open, setOpen] = useState(false);
+  const trigger = useRef(null);
+  const stackHandlesEscape = useDismissLayer(open, () => {
+    setOpen(false);
+    trigger.current?.focus({ preventScroll: true });
+  });
+  return <Menu opened={open} onChange={setOpen} closeOnEscape={!stackHandlesEscape} position="bottom-end" classNames={MENU_CLASSES}>
+    <Menu.Target><ActionIcon ref={trigger} className="health-meal__capture-btn" variant="subtle" aria-label={`${label} actions`}>⋯</ActionIcon></Menu.Target>
+    <Menu.Dropdown>{children}</Menu.Dropdown>
+  </Menu>;
+}
 
 export function TodayView({ active = true, sidebarTarget, followUpTarget = null, onSetupGoals, onCoachTap }) {
   const pageRef = useRef(null);
@@ -579,21 +592,18 @@ export function TodayView({ active = true, sidebarTarget, followUpTarget = null,
     setMenuMoveSettled(count => count + 1);
   };
   const bucketHeaderAction = (bucketId, rows, label) => {
-    if (!rows.length) return null;
-    return <Menu position="bottom-end" classNames={MENU_CLASSES}>
-      <Menu.Target><ActionIcon className="health-meal__capture-btn" variant="subtle" aria-label={`${label} actions`}>⋯</ActionIcon></Menu.Target>
-      <Menu.Dropdown>
-        {date !== todayISO() ? <Menu.Item onClick={() => copyMealToToday(rows, bucketId, label)}>Copy to today</Menu.Item> : null}
-        <Menu.Item onClick={() => saveBucketAsMeal(rows, label)}>Save as meal</Menu.Item>
-        <Menu.Divider />
-        <Menu.Label>Move all to day</Menu.Label>
-        <MoveDayItems date={date} today={todayISO()} onPick={iso => moveFromMealMenu(bucketId, () => moves.moveToDay(mealEntries(rows), iso))} />
-        <Menu.Divider />
-        <Menu.Label>Move all to</Menu.Label>
-        {BUCKETS.filter(bucket => bucket.id !== bucketId).map(bucket => <Menu.Item key={bucket.id}
-          aria-label={`Move all of ${label} to ${bucket.label}`} onClick={() => moveFromMealMenu(bucketId, () => moves.moveMeal(mealEntries(rows), bucket.id, bucketId))}>{bucket.label}</Menu.Item>)}
-      </Menu.Dropdown>
-    </Menu>;
+    if (!active || !rows.length) return null;
+    return <MealActionsMenu label={label}>
+      {date !== todayISO() ? <Menu.Item onClick={() => copyMealToToday(rows, bucketId, label)}>Copy to today</Menu.Item> : null}
+      <Menu.Item onClick={() => saveBucketAsMeal(rows, label)}>Save as meal</Menu.Item>
+      <Menu.Divider />
+      <Menu.Label>Move all to day</Menu.Label>
+      <MoveDayItems date={date} today={todayISO()} onPick={iso => moveFromMealMenu(bucketId, () => moves.moveToDay(mealEntries(rows), iso))} />
+      <Menu.Divider />
+      <Menu.Label>Move all to</Menu.Label>
+      {BUCKETS.filter(bucket => bucket.id !== bucketId).map(bucket => <Menu.Item key={bucket.id}
+        aria-label={`Move all of ${label} to ${bucket.label}`} onClick={() => moveFromMealMenu(bucketId, () => moves.moveMeal(mealEntries(rows), bucket.id, bucketId))}>{bucket.label}</Menu.Item>)}
+    </MealActionsMenu>;
   };
 
   // The day's STRUCTURE (headings, section frames, add rows) renders

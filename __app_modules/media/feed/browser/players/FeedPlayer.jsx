@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
+import { whileDocumentVisible } from '@/lib/hooks/useVisibleRefresh.js';
 import { RemuxPlayer } from "../../../../../__capabilities/playback/browser/remux.mjs";
 import { useFeedPlayer } from "./FeedPlayerContext.jsx";
 import getLogger from "../../../../../frontend/src/lib/logging/Logger.js";
@@ -132,8 +133,8 @@ export default function FeedPlayer({ playerData, onError, aspectRatio = '16 / 9'
     return () => clearTimeout(hideTimerRef.current);
   }, [playing, scheduleHide]);
 
-  // Sync progress bar via rAF for smoothness
-  useEffect(() => {
+  // Paint progress only in the foreground. The decoder owns playback independently.
+  useEffect(() => whileDocumentVisible(() => {
     let raf;
     const update = () => {
       const v = videoRef.current;
@@ -148,7 +149,7 @@ export default function FeedPlayer({ playerData, onError, aspectRatio = '16 / 9'
     };
     raf = requestAnimationFrame(update);
     return () => cancelAnimationFrame(raf);
-  }, []);
+  }), []);
 
   const toggle = useCallback(() => {
     const v = videoRef.current;

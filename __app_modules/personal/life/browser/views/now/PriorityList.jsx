@@ -1,8 +1,8 @@
 import { useState } from 'react';
 import { browserPreference } from '@/lib/browserPreference.js';
+import { UiIcon } from '@/lib/ui/UiIcon.jsx';
 import { Stack, Paper, Group, Text, Badge, ThemeIcon, ActionIcon } from '@mantine/core';
-import { IconX } from '@tabler/icons-react';
-import { useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { priorityTypeMeta } from "../../theme/semantics.js";
 import { useLifeUsername } from "../../hooks/useLifeUser.js";
 
@@ -41,7 +41,6 @@ function routeFor(item) {
 }
 
 export function PriorityList({ priorities = [] }) {
-  const navigate = useNavigate();
   const username = useLifeUsername();
   const today = todayStr();
   const keyOf = (item) => `${username || 'anon'}:${today}:${item.type}:${item.title}`;
@@ -68,20 +67,19 @@ export function PriorityList({ priorities = [] }) {
         const meta = priorityTypeMeta[item.type] || priorityTypeMeta.goal_deadline;
         const Icon = meta.icon;
         const route = routeFor(item);
+        const titleLink = route ? { component: Link, to: route, className: 'life-dashboard-link life-priority__link' } : {};
         return (
-          <Paper key={keyOf(item) + i} p="sm" withBorder
-            className={route ? 'life-clickable' : undefined}
-            onClick={route ? () => navigate(route) : undefined}>
+          <Paper key={keyOf(item) + i} p="sm" withBorder className="life-priority">
             <Group wrap="nowrap">
               <ThemeIcon color={meta.color} variant="light" size="lg"><Icon size={18} /></ThemeIcon>
               <Stack gap={2} style={{ flex: 1 }}>
-                <Text size="sm" fw={500}>{item.title}</Text>
+                <Text size="sm" fw={500} {...titleLink}>{item.title}</Text>
                 <Text size="xs" c="dimmed">{item.reason}</Text>
               </Stack>
               <Badge color={meta.color} variant="light" size="sm">{meta.label}</Badge>
               <ActionIcon variant="subtle" color="gray" aria-label={`Dismiss ${item.title}`}
-                onClick={(e) => { e.stopPropagation(); dismiss(item); }}>
-                <IconX size={14} />
+                className="life-priority__dismiss ds-touch-target" onClick={() => dismiss(item)}>
+                <UiIcon name="close" size={14} />
               </ActionIcon>
             </Group>
           </Paper>

@@ -1,6 +1,6 @@
 import { useMemo, useEffect } from 'react';
 import { Stack, Paper, Title, Text, Group, SimpleGrid, Button, Anchor } from '@mantine/core';
-import { useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { IconCircleCheck, IconCircle } from '@tabler/icons-react';
 import { useAlignment } from "../../hooks/useAlignment.js";
 import { useLifePlan } from "../../hooks/useLifePlan.js";
@@ -13,10 +13,11 @@ import { PriorityList } from "./PriorityList.jsx";
 import { LoadingState, ErrorState, SectionCard } from "../../components/index.js";
 import getLogger from "../../../../../../frontend/src/lib/logging/Logger.js";
 
-function ChecklistRow({ done, label, onClick }) {
+function ChecklistRow({ done, label, to }) {
+  const action = done ? {} : { component: Link, to, className: 'life-dashboard-link ds-touch-target' };
   return (
-    <Group gap="xs" className={done ? undefined : 'life-clickable'} onClick={done ? undefined : onClick}>
-      {done ? <IconCircleCheck size={18} color="var(--mantine-color-teal-5)" /> : <IconCircle size={18} color="var(--mantine-color-dimmed)" />}
+    <Group gap="xs" {...action}>
+      {done ? <IconCircleCheck size={18} color="var(--mantine-color-teal-5)" aria-hidden /> : <IconCircle size={18} color="var(--mantine-color-dimmed)" aria-hidden />}
       <Text size="sm" c={done ? 'dimmed' : undefined} td={done ? 'line-through' : undefined}>{label}</Text>
     </Group>
   );
@@ -24,7 +25,6 @@ function ChecklistRow({ done, label, onClick }) {
 
 export function Dashboard() {
   const logger = useMemo(() => getLogger().child({ component: 'life-dashboard' }), []);
-  const navigate = useNavigate();
   const priorityRead = useAlignment('priorities');
   const summaryRead = useAlignment('dashboard');
   const { isEmpty: planIsEmpty, loading: planLoading, error: planError, refetch: refetchPlan } = useLifePlan();
@@ -67,8 +67,8 @@ export function Dashboard() {
               and your first check-in tomorrow morning.
             </Text>
             <Group gap="md" mt="xs">
-              <Button onClick={() => navigate('/life/coach')}>Talk to your coach</Button>
-              <Anchor size="sm" c="dimmed" onClick={() => navigate('/life/log')}>
+              <Button component={Link} to="/life/coach">Talk to your coach</Button>
+              <Anchor component={Link} to="/life/log" size="sm" c="dimmed">
                 Browse my life log first
               </Anchor>
             </Group>
@@ -79,9 +79,9 @@ export function Dashboard() {
       {!planIsEmpty && stage === 'scaffolding' && completeness && (
         <SectionCard title="Finish setting up">
           <Stack gap="xs">
-            <ChecklistRow done={completeness.hasPurpose} label="Name your purpose" onClick={() => navigate('/life/plan')} />
-            <ChecklistRow done={completeness.valueCount >= 2} label="Add a couple of values" onClick={() => navigate('/life/plan/values')} />
-            <ChecklistRow done={completeness.goalCount >= 1} label="Set your first goal" onClick={() => navigate('/life/plan/goals')} />
+            <ChecklistRow done={completeness.hasPurpose} label="Name your purpose" to="/life/plan" />
+            <ChecklistRow done={completeness.valueCount >= 2} label="Add a couple of values" to="/life/plan/values" />
+            <ChecklistRow done={completeness.goalCount >= 1} label="Set your first goal" to="/life/plan/goals" />
           </Stack>
         </SectionCard>
       )}

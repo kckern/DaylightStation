@@ -39,3 +39,21 @@ it('reads the default same-origin series URL without a JSON content type and pre
     vi.unstubAllGlobals();
   }
 });
+
+it('forwards the index read signal without changing the response envelope', async () => {
+  const { signal } = new AbortController();
+  const fetcher = vi.fn(async () => Response.json({}, { headers: { ETag: '"revision"' } }));
+  const client = createAgendaClient(fetcher);
+  const responses = await Promise.all([
+    client.seriesList({ signal }),
+    client.plans('family/series', { signal }),
+    client.planningContext('family/series', { signal }),
+  ]);
+  expect(responses).toEqual(Array(3).fill({ document: {}, etag: '"revision"' }));
+  expect(fetcher.mock.calls.map(([url, options]) => [url, options.method])).toEqual([
+    ['/api/v1/admin/content/agendas', 'GET'],
+    ['/api/v1/admin/content/agendas/family%2Fseries/plans', 'GET'],
+    ['/api/v1/admin/content/agendas/family%2Fseries/planning-context', 'GET'],
+  ]);
+  for (const [, options] of fetcher.mock.calls) expect(options.signal).toBe(signal);
+});
