@@ -92,3 +92,40 @@ describe('todos', () => {
     expect(task('a').id).toBe(task('a').id);
   });
 });
+
+describe('fix round 1: inflections, stems, phrasing, fail-closed', () => {
+  const hit = (text, rule) => expect(emailGuardrails(mail({ snippet: text }), {}).rules).toContain(rule);
+  it.each([
+    ['appointments', 'sensitive_topic'], ['contracts', 'sensitive_topic'], ['schools', 'sensitive_topic'],
+    ['doctors', 'sensitive_topic'], ['billed', 'money'], ['refunded', 'money'], ['invoiced', 'money'],
+    ['pediatrician visit', 'sensitive_topic'], ['pharmacy pickup', 'sensitive_topic'], ['therapy', 'sensitive_topic'],
+    ['vaccine', 'sensitive_topic'], ['surgery', 'sensitive_topic'], ['custody', 'sensitive_topic'], ['divorce', 'sensitive_topic'],
+    ['passport', 'sensitive_topic'], ['visa', 'sensitive_topic'], ['immigration', 'sensitive_topic'], ['police report', 'sensitive_topic'],
+    ['daycare', 'sensitive_topic'], ['legal notice', 'sensitive_topic'], ['medical', 'sensitive_topic'], ['health plan', 'sensitive_topic'],
+    ['rent', 'money'], ['mortgage', 'money'], ['statement ready', 'money'], ['subscription', 'money'], ['renewal', 'money'],
+    ['please renew', 'deadline'], ['pay', 'money'], ['paid', 'money'], ['receipt', 'money'], ['loan', 'money'], ['bank', 'money'],
+    ['credit card', 'money'], ['50 dollars', 'money'], ['12 €', 'money'], ['CHF 40', 'money'], ['AUD 9', 'money'], ['¥500', 'money'],
+    ['no later than Monday', 'deadline'], ['closes tonight', 'deadline'], ['ends Friday', 'deadline'], ['before Friday', 'deadline'],
+    ['today only', 'deadline'], ['within 48 hours', 'deadline'],
+  ])('%s -> %s', (text, rule) => hit(text, rule));
+
+  it.each(['Pay rent', 'Pay the plumber', 'Renew passport'])('"%s" overdue todo is never auto-closed', (title) => {
+    const t = task('z', { title, due: { date: null, at: ASOF - 200 * DAY, recurring: false }, modifiedAt: ASOF - 200 * DAY });
+    expect(todoGuardrails(t).blocked).toBe(true);
+    expect(todoAutoClose(t, { openItems: [t.facts], asOf: ASOF, overdueDays: 60 }).eligible).toBe(false);
+  });
+  it('fails closed on missing item or facts', () => {
+    for (const bad of [null, undefined, {}, { facts: null }]) {
+      expect(emailGuardrails(bad, {})).toEqual({ blocked: true, rules: ['missing_facts'] });
+      expect(todoGuardrails(bad)).toEqual({ blocked: true, rules: ['missing_facts'] });
+    }
+  });
+  it('tolerates missing snippet, from and description', () => {
+    expect(() => emailGuardrails({ facts: { automated: true } }, {})).not.toThrow();
+    expect(todoGuardrails({ facts: { title: 'Water plants' } }).blocked).toBe(false);
+  });
+  it('shipped notice stays unblocked', () => {
+    expect(emailGuardrails(mail({ subject: 'Your order has shipped', snippet: '' }), {}).blocked).toBe(false);
+  });
+});
+
