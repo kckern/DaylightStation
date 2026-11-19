@@ -4,16 +4,16 @@
 // affordance, not the default. Mode stays transfer/fork internally but the
 // UI surfaces the choice whenever a source can potentially dispatch content.
 // A `snapshot` source dispatches in adopt mode (hand-off).
-import { useCallback, useContext, useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { useFleetContext } from "../fleet/useFleetContext.js";
 import { useDispatch } from "./useDispatch.js";
 import { useCastTarget } from "./useCastTarget.js";
 import { useHandOff } from "./useHandOff.js";
+import { useControllerSnapshot } from "../controller/useControllerSnapshot.js";
 import { LocalSessionContext } from "../session/LocalSessionContext.js";
 import { describeBusy } from "./castCopy.js";
 import mediaLog from "../logging/mediaLog.js";
 
-const NOOP_UNSUB = () => {};
 const LOCAL_ACTIVE_STATES = new Set(['playing', 'paused', 'buffering', 'stalled']);
 
 /**
@@ -25,15 +25,7 @@ const LOCAL_ACTIVE_STATES = new Set(['playing', 'paused', 'buffering', 'stalled'
 export function useLocalPlaybackActive(source) {
   const local = useContext(LocalSessionContext);
   const controller = local?.controller ?? null;
-  const subscribe = useCallback(
-    (cb) => (controller ? controller.subscribe(cb) : NOOP_UNSUB),
-    [controller]
-  );
-  const get = useCallback(
-    () => (controller ? controller.getSnapshot() : null),
-    [controller]
-  );
-  const snap = useSyncExternalStore(subscribe, get, get);
+  const snap = useControllerSnapshot(controller);
   if (source?.getSnapshot || source?.snapshot) return true;
   return !!(snap?.currentItem && LOCAL_ACTIVE_STATES.has(snap.state));
 }

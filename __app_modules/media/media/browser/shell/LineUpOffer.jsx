@@ -8,6 +8,7 @@
 import React, { useCallback, useContext, useSyncExternalStore } from 'react';
 import { Button, Group } from '@mantine/core';
 import { IconArrowsHorizontal } from '@tabler/icons-react';
+import { useControllerSnapshot } from "../controller/useControllerSnapshot.js";
 import { useSessionController } from "../controller/useSessionController.js";
 import { useFleetContext } from "../fleet/useFleetContext.js";
 import { deviceName } from "../fleet/deviceDisplay.js";
@@ -21,7 +22,6 @@ import "./SessionControls.scss";
 
 const ACTIVE = new Set(['playing', 'paused', 'buffering']);
 const EMPTY = new Map();
-const NO_SUBSCRIBE = () => () => {};
 
 /**
  * Other screens (and this device) playing the same item as `contentId`.
@@ -55,9 +55,7 @@ export function LineUpOffer({ target, targetName = null }) {
   const subscribe = useCallback((notify) => store?.subscribeAll?.(notify) ?? (() => {}), [store]);
   const getAll = useCallback(() => store?.getAll?.() ?? EMPTY, [store]);
   const entries = useSyncExternalStore(subscribe, getAll, getAll);
-  const localSubscribe = useCallback((cb) => localController?.subscribe?.(cb) ?? NO_SUBSCRIBE(), [localController]);
-  const localGet = useCallback(() => localController?.getSnapshot?.() ?? null, [localController]);
-  const localSnapshot = useSyncExternalStore(localSubscribe, localGet, localGet);
+  const localSnapshot = useControllerSnapshot(localController);
 
   const isLocal = target === 'local';
   const selfId = isLocal ? 'local' : target?.deviceId;

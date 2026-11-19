@@ -12,12 +12,13 @@
 // The screen starts from the beginning. Past 10% of the item (cast/flingStart.js)
 // the panel also offers "Start where I am (m:ss)"; the beginning stays first
 // and selected.
-import React, { useCallback, useContext, useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import React, { useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { Popover, UnstyledButton } from '@mantine/core';
 import { IconCast } from '@tabler/icons-react';
 import { FleetContext } from "../fleet/FleetProvider.jsx";
 import { DispatchContext } from "../cast/DispatchProvider.jsx";
 import { LocalSessionContext } from "../session/LocalSessionContext.js";
+import { useControllerSnapshot } from "../controller/useControllerSnapshot.js";
 import { usePlaybackPosition } from "../controller/usePlaybackPosition.js";
 import { useHandOff } from "../cast/useHandOff.js";
 import { flingStartChoice, flingStartAt } from "../cast/flingStart.js";
@@ -30,13 +31,6 @@ import mediaLog from "../logging/mediaLog.js";
 import "./Fling.scss";
 
 const ACTIVE_STATES = new Set(['playing', 'paused', 'buffering', 'stalled']);
-const NOOP_UNSUB = () => () => {};
-
-function useLocalSnapshot(controller) {
-  const subscribe = useCallback((cb) => (controller ? controller.subscribe(cb) : NOOP_UNSUB()), [controller]);
-  const get = useCallback(() => (controller ? controller.getSnapshot() : null), [controller]);
-  return useSyncExternalStore(subscribe, get, get);
-}
 
 /** Plain words for a fling that did not finish. Local playback is untouched. */
 export function flingFailureCopy(result, targetName) {
@@ -60,7 +54,7 @@ export function FlingButton(props) {
 
 function FlingControl({ fleet, outcomes, position: placement = 'top-end', size = 44, variant = 'subtle' }) {
   const controller = useContext(LocalSessionContext)?.controller ?? null;
-  const snapshot = useLocalSnapshot(controller);
+  const snapshot = useControllerSnapshot(controller);
   const live = usePlaybackPosition(controller);
   const handOff = useHandOff();
   const [open, setOpen] = useState(false);

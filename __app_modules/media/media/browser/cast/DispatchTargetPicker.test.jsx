@@ -1,7 +1,8 @@
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render as renderView, screen, fireEvent, waitFor } from '@testing-library/react';
+import { act, render as renderView, screen, fireEvent, waitFor } from '@testing-library/react';
 import { FleetContext } from "../fleet/FleetProvider.jsx";
+import { createSessionStore } from "../session/sessionStore.js";
 import { LocalSessionContext } from "../session/LocalSessionContext.js";
 
 // ── Mocks (hook-level, per repo convention — see FleetPlayPicker.test.jsx) ──
@@ -208,6 +209,19 @@ describe('DispatchTargetPicker / useDispatchTargetPicker', () => {
       expect(screen.getByTestId('picker-mode-transfer')).toHaveTextContent(/stop playing here/i);
       expect(screen.getByTestId('picker-mode-fork')).toHaveTextContent('Keep playing here too');
       expect(screen.queryByTestId('picker-move-unavailable')).toBeNull();
+    });
+
+    it('updates the Move choice when playback starts and stops while the picker is open', () => {
+      const idle = { state: 'idle', currentItem: null };
+      const controller = createSessionStore(idle);
+      render(<LocalSessionContext.Provider value={{ controller }}>
+        <DispatchTargetPicker source={{ play: 'plex:1' }} />
+      </LocalSessionContext.Provider>);
+      expect(screen.queryByTestId('picker-mode-transfer')).toBeNull();
+      act(() => controller.replace({ state: 'paused', currentItem: { contentId: 'plex:2' } }));
+      expect(screen.getByTestId('picker-mode-transfer')).toHaveTextContent(/stop playing here/i);
+      act(() => controller.replace(idle));
+      expect(screen.queryByTestId('picker-mode-transfer')).toBeNull();
     });
 
     it('does not ask when nothing plays here (tap sends at once)', () => {

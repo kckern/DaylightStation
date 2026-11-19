@@ -3,7 +3,7 @@ import { silentWave } from '../../../_fixtures/media/silentWave.mjs';
 
 test.use({ viewport: { width: 390, height: 850 }, serviceWorkers: 'block' });
 
-test('Media resume chooser owns Escape before Details Back while audio plays', async ({ page, baseURL }) => {
+async function openDetailsWithPlayback(page, baseURL) {
   const origin = new URL(baseURL).origin;
   const audio = silentWave(30);
   const item = {
@@ -14,6 +14,7 @@ test('Media resume chooser owns Escape before Details Back while audio plays', a
     ],
   };
   const playRequests = [];
+  const castRequests = [];
   await page.context().route('**/*', route => (
     new URL(route.request().url()).origin === origin ? route.fallback() : route.abort()
   ));
@@ -23,6 +24,9 @@ test('Media resume chooser owns Escape before Details Back while audio plays', a
   await page.route('**/api/**', route => {
     const path = decodeURIComponent(new URL(route.request().url()).pathname);
     if (path.endsWith('/supervision/bootstrap')) return route.fulfill({ json: { enabled: false } });
+    if (path.endsWith('/device/config')) return route.fulfill({ json: { devices: {
+      lounge: { name: 'Lounge TV', fleet: true },
+    } } });
     if (path === '/api/v1/media/screens') return route.fulfill({ json: { screens: [
       { id: 'fleet:lounge', name: 'Lounge TV' }, { id: 'browser:tablet', name: 'Kitchen Tablet' },
     ] } });
@@ -30,6 +34,7 @@ test('Media resume chooser owns Escape before Details Back while audio plays', a
     if (path === '/api/v1/media/household/carry-on') return route.fulfill({ json: { items: [item] } });
     if (path === '/api/v1/info/plex/123') return route.fulfill({ json: item });
     if (path.includes('/play/')) playRequests.push(path);
+    if (path.endsWith('/device/lounge/load')) castRequests.push(path);
     if (path.endsWith('/play/plex:42')) return route.fulfill({ json: {
       id: 'plex:42', contentId: 'plex:42', title: 'Current track fixture',
       format: 'audio', mediaType: 'audio', mediaUrl: '/fixture-audio.wav', duration: 30,
@@ -43,6 +48,11 @@ test('Media resume chooser owns Escape before Details Back while audio plays', a
   const playbackTime = () => original.evaluate(media => media.isConnected && !media.paused ? media.currentTime : -1);
   await page.getByTestId('home-tile-carry-on-plex:123-more').click();
   await page.getByRole('menuitem', { name: 'Details', exact: true }).click();
+  return { playbackTime, playRequests, castRequests };
+}
+
+test('Media resume chooser owns Escape before Details Back while audio plays', async ({ page, baseURL }) => {
+  const { playbackTime, playRequests } = await openDetailsWithPlayback(page, baseURL);
   const playNow = page.getByRole('button', { name: 'Play Now', exact: true });
   await playNow.press('Enter');
   const chooser = page.getByRole('dialog', { name: 'Continue Resume fixture film from…' });
@@ -62,4 +72,77 @@ test('Media resume chooser owns Escape before Details Back while audio plays', a
   const afterBack = await playbackTime();
   expect(afterBack).toBeGreaterThan(0);
   await expect.poll(playbackTime).toBeGreaterThan(afterBack);
+});
+
+test('Media Detail Cast stays visible on resize and owns the first Escape', async ({ page, baseURL }) => {
+  await page.setViewportSize({ width: 1440, height: 850 });
+  const { playbackTime, playRequests, castRequests } = await openDetailsWithPlayback(page, baseURL);
+  const trigger = page.getByRole('button', { name: 'Cast', exact: true });
+  await trigger.press('Enter');
+  const popover = page.getByRole('dialog', { name: 'Cast to a device', exact: true });
+  const target = popover.getByTestId('picker-device-lounge');
+  await expect(target).toBeVisible();
+  await expect(popover).toBeFocused();
+  await page.keyboard.press('Tab');
+  await expect(target).toBeFocused();
+  const beforeResize = await playbackTime();
+
+  await page.setViewportSize({ width: 390, height: 600 });
+  await expect.soft(target).toBeInViewport({ ratio: 1 });
+  await expect(target).toBeFocused();
+
+  await page.keyboard.press('Escape');
+  await expect(popover).toBeHidden();
+  await expect(trigger).toBeFocused();
+  await expect(page).toHaveURL(/view=detail/);
+  await expect.poll(playbackTime).toBeGreaterThan(beforeResize);
+  expect(playRequests).toEqual(['/api/v1/play/plex:42']);
+  expect(castRequests).toEqual([]);
+
+  await page.keyboard.press('Escape');
+  await expect(page).not.toHaveURL(/view=detail/);
+});
+
+test('Media Detail Cast stays reachable when the visual viewport excludes its trigger', async ({ page, baseURL }) => {
+  await openDetailsWithPlayback(page, baseURL);
+  const trigger = page.getByRole('button', { name: 'Cast', exact: true });
+  await trigger.press('Enter');
+  const popover = page.getByRole('dialog', { name: 'Cast to a device', exact: true });
+  const target = popover.getByTestId('picker-device-lounge');
+  await expect(target).toBeVisible();
+
+  const moveViewport = (position, event) => trigger.evaluate((button, { position, event }) => {
+    const bounds = button.getBoundingClientRect();
+    const top = position === 'above' ? 0 : bounds.bottom + 48;
+    const bottom = position === 'above' ? bounds.top - 48 : window.innerHeight;
+    const viewport = window.visualViewport;
+    Object.defineProperties(viewport, {
+      offsetTop: { configurable: true, value: top },
+      height: { configurable: true, value: bottom - top },
+    });
+    viewport.dispatchEvent(new Event(event));
+  }, { position, event });
+  const pickerFits = () => popover.evaluate(panel => {
+    const { top, bottom } = panel.getBoundingClientRect();
+    const viewport = window.visualViewport;
+    return top >= viewport.offsetTop && bottom <= viewport.offsetTop + viewport.height;
+  });
+  const targetIsReachable = () => target.evaluate(button => {
+    const { top, bottom, left, right } = button.getBoundingClientRect();
+    const viewport = window.visualViewport;
+    return top >= viewport.offsetTop && bottom <= viewport.offsetTop + viewport.height
+      && button.contains(document.elementFromPoint((left + right) / 2, (top + bottom) / 2));
+  });
+
+  await moveViewport('above', 'resize');
+  await expect.configure({ soft: true }).poll(pickerFits).toBe(true);
+  await expect.configure({ soft: true }).poll(targetIsReachable).toBe(true);
+  await moveViewport('below', 'scroll');
+  await expect.configure({ soft: true }).poll(pickerFits).toBe(true);
+  await expect.poll(targetIsReachable).toBe(true);
+
+  await page.keyboard.press('Escape');
+  await expect(popover).toBeHidden();
+  await expect(trigger).toBeFocused();
+  await expect(page).toHaveURL(/view=detail/);
 });

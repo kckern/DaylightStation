@@ -49,6 +49,44 @@ describe('useSessionController', () => {
     expect(result.current.snapshot).toBeNull();
   });
 
+  it('follows controller replacement behind a stable remote lookup and detaches old listeners', () => {
+    function trackedRemote() {
+      const remote = createMockController({ kind: 'remote' });
+      const subscribe = vi.fn(notify => vi.fn(remote.subscribe(notify)));
+      return { ...remote, subscribe };
+    }
+    const first = trackedRemote();
+    const second = trackedRemote();
+    let current = null;
+    const peek = { getController: () => current };
+    const wrapper = ({ children }) => <PeekContext.Provider value={peek}>{children}</PeekContext.Provider>;
+    const { result, rerender } = renderHook(() => useSessionController({ deviceId: 'lr' }), { wrapper });
+    expect(result.current.snapshot).toBeNull();
+
+    current = first;
+    rerender();
+    const snapshot = first.getSnapshot();
+    expect(result.current.snapshot).toBe(snapshot);
+    rerender();
+    expect(result.current.snapshot).toBe(snapshot);
+    expect(first.subscribe).toHaveBeenCalledTimes(1);
+    const detachFirst = first.subscribe.mock.results[0].value;
+
+    current = second;
+    rerender();
+    expect(result.current.snapshot).toBe(second.getSnapshot());
+    expect(result.current.transport).toBe(second.transport);
+    expect(detachFirst).toHaveBeenCalledTimes(1);
+    const detachSecond = second.subscribe.mock.results[0].value;
+    act(() => second.config.setVolume(37));
+    expect(result.current.snapshot.config.volume).toBe(37);
+
+    current = null;
+    rerender();
+    expect(result.current.snapshot).toBeNull();
+    expect(detachSecond).toHaveBeenCalledTimes(1);
+  });
+
   it('throws for invalid targets', () => {
     const controller = createMockController();
     const wrapper = ({ children }) => (

@@ -3,11 +3,11 @@
 // side — the symmetry seam in hook form. Both contexts are read
 // unconditionally (rules of hooks); target selection just picks which
 // resolved controller to bind.
-import { useContext, useCallback, useSyncExternalStore } from 'react';
+import { useContext } from 'react';
+import { useControllerSnapshot } from "./useControllerSnapshot.js";
 import { LocalSessionContext } from "../session/LocalSessionContext.js";
 import { PeekContext } from "../peek/PeekContext.js";
 
-const NOOP_UNSUB = () => {};
 const noopGroup = {};
 
 export function useSessionController(target) {
@@ -24,15 +24,7 @@ export function useSessionController(target) {
     throw new Error('useSessionController: target must be "local" or {deviceId}');
   }
 
-  const subscribe = useCallback(
-    (cb) => (controller ? controller.subscribe(cb) : NOOP_UNSUB),
-    [controller]
-  );
-  const getSnapshot = useCallback(
-    () => (controller ? controller.getSnapshot() : null),
-    [controller]
-  );
-  const snapshot = useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
+  const snapshot = useControllerSnapshot(controller);
 
   return {
     controller,

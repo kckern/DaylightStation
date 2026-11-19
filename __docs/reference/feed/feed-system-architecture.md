@@ -431,6 +431,7 @@ Search uses the URL query and filters to own its rows, result count and cursor. 
 ### Scroll Navigation
 
 - **Card tap** → navigates to `/feed/scroll/{base64url(item.id)}`, saves scroll position
+- **Archive** on image and text cards uses the shared 44px minimum on coarse pointers. It updates the card in place and keeps the reader on Scroll.
 - **Back button** → traverses browser history when opened in-app; cold links fall back to the query-preserving list URL
 - **Swipe left/right** → navigates to next/previous item in the loaded list
 - **Primary tabs** remain available in a compact shell

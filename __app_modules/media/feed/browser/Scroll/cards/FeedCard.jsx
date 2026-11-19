@@ -454,14 +454,14 @@ export default function FeedCard({ item, onDismiss, onPlay }) {
           {/* Archive button overlay — mobile also supports swipe-left. */}
           {onDismiss && (
             <button
-              className="feed-card-dismiss"
+              className="ds-touch-target"
               onClick={(e) => { e.stopPropagation(); onDismiss(item); }}
               style={{
                 position: 'absolute',
                 top: '8px',
                 right: '8px',
-                width: '28px',
-                height: '28px',
+                width: '40px',
+                height: '40px',
                 borderRadius: '50%',
                 background: 'rgba(0,0,0,0.55)',
                 border: 'none',
@@ -536,14 +536,16 @@ export default function FeedCard({ item, onDismiss, onPlay }) {
         )}
         {/* Archive footer for text-only cards. */}
         {onDismiss && !(item.image && isImageUrl(item.image)) && (
-          <div className="feed-card-dismiss" style={{
+          <div style={{
             display: 'flex',
             justifyContent: 'flex-end',
+            minHeight: '40px',
             marginTop: '0.4rem',
             paddingTop: '0.3rem',
             borderTop: '1px solid rgba(255,255,255,0.05)',
           }}>
             <button
+              className="ds-touch-target"
               onClick={(e) => { e.stopPropagation(); onDismiss(item); }}
               style={{
                 background: 'none',

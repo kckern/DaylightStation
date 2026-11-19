@@ -18,6 +18,7 @@ const log = vi.hoisted(() => {
 });
 vi.mock("../logging/mediaLog.js", () => ({ default: log.stub, mediaLog: log.stub }));
 
+import { createSessionStore } from "../session/sessionStore.js";
 import { FlingButton } from "./FlingButton.jsx";
 
 const devices = [
@@ -74,6 +75,17 @@ describe('FlingButton visibility', () => {
   it('shows while something plays locally and a screen exists', () => {
     renderFling();
     expect(screen.getByTestId('fling-button')).toHaveAccessibleName('Play on a screen');
+  });
+
+  it('follows local playback starting and stopping after mount', () => {
+    const idle = { state: 'idle', currentItem: null };
+    const store = createSessionStore(idle);
+    renderFling({ controller: { ...makeController(), ...store } });
+    expect(screen.queryByTestId('fling-button')).toBeNull();
+    act(() => store.replace(snapshotAt()));
+    expect(screen.getByRole('button', { name: 'Play on a screen' })).toBeInTheDocument();
+    act(() => store.replace(idle));
+    expect(screen.queryByTestId('fling-button')).toBeNull();
   });
 
   it('shows for paused local playback too', () => {

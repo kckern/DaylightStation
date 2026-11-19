@@ -1177,6 +1177,12 @@ semantics" cheap, and it should survive any rebuild. A stopped session keeps
 that same queue reachable through the mini-player's explicitly named queue
 handle until clear/reset removes it.
 
+React components observe a resolved controller through `useControllerSnapshot`.
+It returns the current durable snapshot, or `null` while the controller is
+unavailable. `useSessionController` resolves the local or remote target and
+exposes its commands. Progress displays subscribe to the separate position
+channel through `usePlaybackPosition`.
+
 ### Platform relationships
 
 - **Content paradigm** (`__docs/reference/content/`) — defines content IDs,

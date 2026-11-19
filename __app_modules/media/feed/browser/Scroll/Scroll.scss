@@ -47,13 +47,6 @@
   border-radius: 0 !important;
 }
 
-// Keep the explicit archive control on every viewport; swipe is only a shortcut.
-.scroll-item-wrapper .feed-card-dismiss {
-  display: flex !important;
-  min-width: 40px;
-  min-height: 40px;
-}
-
 // Cap portrait images at 9:16 (tallest allowed ratio)
 .feed-card-image {
   max-height: calc(100cqi * 16 / 9);

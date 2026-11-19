@@ -302,6 +302,42 @@ const scrollArticle = (header, amount) => header.evaluate((element, y) => {
   window.scrollTo(0, y);
 }, amount);
 
+test.describe('Feed card Archive on a coarse pointer', () => {
+  test.use({ hasTouch: true });
+
+  for (const variant of ['image', 'text']) {
+    test(`Feed Scroll archives the ${variant} card from its full touch target`, async ({ page }) => {
+      const item = variant === 'image' ? { ...article, image: '/fixture-feed-card.svg' } : article;
+      const writes = [];
+      await page.route('**/fixture-feed-card.svg', route => route.fulfill({
+        contentType: 'image/svg+xml',
+        body: '<svg xmlns="http://www.w3.org/2000/svg" width="400" height="225"><rect width="400" height="225" fill="#234"/></svg>',
+      }));
+      await page.route('**/scroll/sessions', route => route.fulfill({
+        json: { items: [item], sessionId: 'archive-fixture', hasMore: false },
+      }));
+      await page.route('**/feed/items/state', route => {
+        writes.push(route.request().postDataJSON());
+        return route.fulfill({ json: { items: [{ id: article.id, state: { isArchived: true } }] } });
+      });
+
+      await page.goto('/feed/scroll');
+      const archive = page.getByRole('button', { name: 'Archive', exact: true });
+      await expect(archive).toBeVisible();
+      await archive.scrollIntoViewIfNeeded();
+      expect(await page.evaluate(() => matchMedia('(pointer: coarse)').matches)).toBe(true);
+      const bounds = await archive.boundingBox();
+      expect(bounds.width).toBeGreaterThanOrEqual(44);
+      expect(bounds.height).toBeGreaterThanOrEqual(44);
+
+      await page.touchscreen.tap(bounds.x + bounds.width - 2, bounds.y + bounds.height / 2);
+      await expect.poll(() => writes).toEqual([{ itemIds: [article.id], action: 'archive' }]);
+      await expect(archive).toHaveCount(0);
+      await expect(page).toHaveURL(/\/feed\/scroll$/);
+    });
+  }
+});
+
 test.describe('Feed detail Back controls on a coarse pointer', () => {
   test.use({ hasTouch: true });
 
