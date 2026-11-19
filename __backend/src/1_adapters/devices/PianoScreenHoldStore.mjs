@@ -4,10 +4,15 @@ export function createPianoScreenHoldStore(deviceId, path) {
   return {
     deviceId,
     load() {
-      try { return JSON.parse(readTextFromPath(path)); }
-      catch (error) { if (error.code === 'ENOENT') return null; throw error; }
+      try {
+        return JSON.parse(readTextFromPath(path));
+      } catch (error) {
+        if (error.code === 'ENOENT') return null;
+        throw error;
+      }
     },
-    save(entry) { writeBinaryAtomic(path, Buffer.from(JSON.stringify(entry)), { durable: true, mode: 0o600 }); },
+    save(entry) {
+      writeBinaryAtomic(path, Buffer.from(JSON.stringify(entry)), { durable: true, mode: 0o600 });
+    },
   };
 }
-

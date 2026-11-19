@@ -512,7 +512,8 @@ until every line of this stage is marked ok on that device.**
       small zip, with its true sha256). The loader activates it, it fails to
       start, and the loader goes back to the previous payload by itself.
       `dd payload` shows `lastFailed`. The control port answers again within the
-      20 second deadline plus the restart.
+      20 second deadline plus the restart when cleanup completes. If cleanup
+      is fenced, follow the fresh-process recovery at the start of this runbook.
 - [ ] **A stored setting that breaks the start.** Only if one is found: the
       control port stays down, `dd lifeline reset-settings` clears the overrides
       and the payload starts on its defaults. Secrets must be set again after it.
@@ -740,8 +741,10 @@ rollback that skips one leaves two apps holding one device.
        restrictions and hidden packages are undone), then move ownership back:
        `dd settings set lockdown.ownerTransferTarget net.kckern.portalkeys/net.kckern.portalkeys.PortalAdminReceiver`
        and `dd lockdown owner transfer net.kckern.portalkeys/net.kckern.portalkeys.PortalAdminReceiver`.
-       If the transfer back is refused, this app stays the owner with nothing
-       applied; the old helper then runs without owner authority (no lock task).
+       Record the actual current owner from Android device policy and the app's
+       owner status. After a refused, failed or ambiguous response, follow the
+       supervised ownership recovery in stage 0. Resume the helper's policy
+       only after confirming it owns the panel.
 3. [ ] Turn the coexistence switches back off, so this app lets go of the hardware
        before the old helper is started: each one with
        `dd settings set <key> false`. `dd status`: every one `active: false`.
@@ -807,8 +810,9 @@ the installed signer. Archive source revision, versions, test results, signer
 fingerprint, APK and payload bytes and SHA-256 digests privately.
 
 At the approved sitting, verify the archived hashes before installing the
-exact APK with existing data preserved. Confirm installed version and signer,
-active baked payload, lifeline, required lockdown and HOME. Repeat the device's
+exact APK with existing data preserved. Verify the installed base APK digest
+and signer against the archive, confirm the reported shell version and active
+baked payload, then check lifeline, required lockdown and HOME. Repeat the device's
 post-install workflow and cold-boot checks with the legacy helper stopped.
 Record observed results, time and rollback outcome. Start that kiosk's 14-day
 soak only after those checks pass. A failed check keeps the gate open and the
