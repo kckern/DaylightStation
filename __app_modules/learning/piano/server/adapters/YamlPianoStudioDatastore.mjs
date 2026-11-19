@@ -221,6 +221,21 @@ export class YamlPianoStudioDatastore extends ILoopManifestSource {
     return walk(relative);
   }
 
+  /**
+   * A score's poster: the same-name picture beside it in the library, as the
+   * score grid shows it. Null when there is none.
+   */
+  sheetMusicCover(scoreId) {
+    const local = String(scoreId || '').replace(/^files:/, '');
+    if (!local.startsWith('docs/sheet-music/') || local.split('/').includes('..')) return null;
+    const stem = local.slice(0, local.length - path.extname(local).length);
+    const media = this.#configService.getMediaDir();
+    for (const ext of ['.jpg', '.jpeg', '.png', '.webp']) {
+      if (getStats(path.join(media, stem + ext))) return `/api/v1/proxy/media/stream/${encodeURIComponent(stem + ext)}`;
+    }
+    return null;
+  }
+
   savePractice(userId, scoreKey, record) {
     return this.savePracticeAtomic(userId, scoreKey, record);
   }

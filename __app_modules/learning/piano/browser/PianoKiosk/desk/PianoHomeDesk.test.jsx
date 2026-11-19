@@ -25,17 +25,38 @@ describe('PianoHomeDesk progress strip', () => {
     h.recent = { players: [{ userId: 'kid', name: 'Kid', courses: [course] }, { userId: 'sib', name: 'Sib', courses: [course] }] };
   });
 
-  it('shows one card per child with the more recent of piece and course', async () => {
+  it('gives a child with both a piece card and a course card, the course drawn as a ring', async () => {
     mount();
     expect(await screen.findByRole('button', { name: 'Kid: 1 of 3 Silver' })).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: 'Kid: Piano University' })).toBeInTheDocument();
     expect(await screen.findByRole('button', { name: 'Sib: Piano University' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Idle/ })).toBeNull();
     expect(await screen.findByText('Jesu Joy')).toBeInTheDocument();
-    // A course is counted and drawn, never written out as a sentence.
+    // A course is drawn as a ring with its percent, never a bar or a sentence.
     const sib = screen.getByRole('button', { name: 'Sib: Piano University' });
-    expect(sib.querySelector('.piano-desk__lessons').textContent).toBe('11/173');
-    expect(sib.querySelector('.piano-desk__bar i').style.width).toBe('6%');
+    const ring = sib.querySelector('.psc-ring');
+    expect(ring.style.getPropertyValue('--p')).toBe('6');
+    expect(ring.textContent).toBe('6%');
+    expect(sib.querySelector('.piano-desk__bar')).toBeNull();
     expect(sib.textContent).not.toMatch(/lessons/);
+  });
+
+  it('shows the score poster on a piece card', async () => {
+    h.desk.players[0].piece = { ...piece, cover: '/api/cover.jpg' };
+    mount();
+    const card = await screen.findByRole('button', { name: 'Kid: 1 of 3 Silver' });
+    expect(card.querySelector('.piano-desk__poster')).toHaveAttribute('src', '/api/cover.jpg');
+  });
+
+  it('fades the tomatoes nobody has started, and keeps the one up next bright', async () => {
+    h.desk.players[0].piece = { ...piece, next: { passageId: 'c' }, passages: [
+      { id: 'a', start: 0, end: 4, state: 'todo', steps: { done: 1, total: 4 } },
+      { id: 'b', start: 5, end: 8, state: 'todo', steps: { done: 0, total: 4 } },
+      { id: 'c', start: 9, end: 12, state: 'todo', steps: { done: 0, total: 4 } },
+    ] };
+    mount();
+    const card = await screen.findByRole('button', { name: 'Kid: 1 of 3 Silver' });
+    expect([...card.querySelectorAll('.piano-desk__map i')].map((mark) => mark.hasAttribute('data-faded'))).toEqual([false, true, false]);
   });
 
   it('draws each passage as its icon: a silver coin, a flower, a tomato, with the next one ringed', async () => {
