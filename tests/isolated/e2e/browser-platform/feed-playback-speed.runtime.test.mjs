@@ -27,15 +27,14 @@ test('Feed restores the saved speed on a lazy player and retains a speed change 
   });
 
   await page.goto('/feed/scroll');
-  const play = page.getByRole('button', { name: 'Play', exact: true });
-  await expect(play).toHaveCount(2);
-  await play.first().click();
+  const playTrack = id => page.locator(`[data-feed-item-id="plex:${id}"]`).getByRole('button', { name: 'Play', exact: true });
+  await playTrack('41').click();
   const currentRate = id => page.evaluate(id => [...document.querySelectorAll('audio,video')]
     .find(el => el.currentSrc.includes('feed-speed-' + id + '.wav') && !el.paused && el.currentTime > 0)?.playbackRate, id);
   await expect.poll(() => currentRate('41')).toBe(1.5);
   await page.getByRole('button', { name: 'Playback speed 1.5x' }).click();
   await expect(page.getByRole('button', { name: 'Playback speed 1.75x' })).toBeVisible();
   await expect.poll(() => currentRate('41')).toBe(1.75);
-  await page.getByRole('button', { name: 'Play', exact: true }).last().click();
+  await playTrack('42').click();
   await expect.poll(() => currentRate('42')).toBe(1.75);
 });
