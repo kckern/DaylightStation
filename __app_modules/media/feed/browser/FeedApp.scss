@@ -57,11 +57,15 @@
 }
 
 .feed-tabs {
+  --feed-tabs-gutter: 1rem;
+  position: relative;
   display: flex;
+  flex: none;
+  flex-wrap: wrap;
   gap: 0;
   background: var(--feed-surface-1);
   border-bottom: 1px solid var(--feed-border);
-  padding: 0 1rem;
+  padding: 0 var(--feed-tabs-gutter);
   align-items: center;
   min-width: 0;
 
@@ -89,7 +93,12 @@
 
 .feed-tabs__icon { white-space: nowrap; }
 
-.feed-edition-picker select { background: var(--feed-surface-2); }
+.feed-edition-picker {
+  max-width: 100%;
+  min-width: 0;
+
+  select { max-width: 100%; background: var(--feed-surface-2); }
+}
 
 .feed-density-toggle,
 .feed-reading-settings summary {
@@ -132,7 +141,6 @@
 .feed-density-toggle { margin-left: 0.4rem; cursor: pointer; }
 
 .feed-reading-settings {
-  position: relative;
   margin-left: 0.4rem;
 
   summary {
@@ -152,10 +160,10 @@
   position: absolute;
   z-index: 40;
   top: calc(100% + 0.4rem);
-  right: 0;
-  width: min(18rem, calc(100vw - 1rem));
-  max-block-size: calc(100vh - var(--feed-tabs-height) - var(--ds-space-md));
-  max-block-size: calc(100dvh - var(--feed-tabs-height) - var(--ds-space-md));
+  right: var(--feed-tabs-gutter);
+  width: min(18rem, calc(100% - 2 * var(--feed-tabs-gutter)));
+  max-block-size: calc(100vh - var(--browser-safe-area-top) - var(--browser-safe-area-bottom) - var(--feed-tabs-height) - var(--ds-space-md));
+  max-block-size: calc(100dvh - var(--browser-safe-area-top) - var(--browser-safe-area-bottom) - var(--feed-tabs-height) - var(--ds-space-md));
   box-sizing: border-box;
   overflow-y: auto;
   overscroll-behavior: contain;
@@ -220,7 +228,7 @@
 // Compact persistent switcher shown while scrolling — keeps Reader/Headlines
 // reachable without dominating the immersive scroll view. (F-12)
 .feed-tabs--compact {
-  padding: 0 0.5rem;
+  --feed-tabs-gutter: 0.5rem;
   background: rgba(23, 25, 28, 0.92);
 
   a {
@@ -264,8 +272,7 @@
 @media (max-width: 600px) {
   .feed-tabs,
   .feed-tabs--compact {
-    padding: 0 0.35rem;
-    gap: 0;
+    --feed-tabs-gutter: 0.35rem;
 
     a { padding: 0.7rem 0.55rem; font-size: 0.78rem; }
   }
@@ -274,7 +281,6 @@
   .feed-reading-settings { margin-left: 0; }
   .feed-sync-status { width: 36px; padding: 0; justify-content: center; }
   .feed-sync-status__label { display: none; }
-  .feed-edition-picker { position: absolute; top: 3.25rem; right: 0.5rem; z-index: 5; }
 }
 
 @media (min-width: 1600px) and (pointer: coarse) {

@@ -37,7 +37,15 @@
     @include ds-scrollbar;
   }
 
-  .admin-navigation-toggle { display: none; }
+  .admin-navigation-toggle { display: none; flex: none; }
+
+  .admin-breadcrumbs {
+    display: flex;
+    align-items: center;
+    min-width: 0;
+    overflow-x: auto;
+    white-space: nowrap;
+  }
 
   @include bp.mobile-only {
     .admin-navigation-toggle { display: inline-flex; }
@@ -48,7 +56,6 @@
       display: none;
       grid-area: main;
       z-index: var(--ds-z-sticky);
-      padding-bottom: env(safe-area-inset-bottom);
     }
 
     &--menu-open > .ds-chrome__nav { display: block; }

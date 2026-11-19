@@ -41,13 +41,16 @@ export const isCoarsePointer = () => {
  * Where the card goes: above-right of the point, flipped below when there is
  * no room above, pulled left when it would leave the viewport.
  */
-export function placeCard({ x, y }, { width, height }, { innerWidth, innerHeight }) {
-  let left = x + CURSOR_OFFSET_PX;
-  if (left + width > innerWidth - EDGE_PX) left = Math.max(EDGE_PX, innerWidth - EDGE_PX - width);
+export function placeCard({ x, y }, { width, height }, { innerWidth, innerHeight }, insets = {}) {
+  const leftEdge = EDGE_PX + (insets.left ?? 0);
+  const rightEdge = innerWidth - EDGE_PX - (insets.right ?? 0);
+  const topEdge = EDGE_PX + (insets.top ?? 0);
+  const bottomEdge = innerHeight - EDGE_PX - (insets.bottom ?? 0);
+  const left = Math.max(leftEdge, Math.min(x + CURSOR_OFFSET_PX, rightEdge - width));
   const above = y - CURSOR_OFFSET_PX - height;
   const below = y + CURSOR_OFFSET_PX + 6;
-  const side = above >= EDGE_PX || below + height > innerHeight - EDGE_PX ? 'top' : 'bottom';
-  const top = side === 'top' ? Math.max(EDGE_PX, above) : below;
+  const side = above >= topEdge || below + height > bottomEdge ? 'top' : 'bottom';
+  const top = side === 'top' ? Math.max(topEdge, Math.min(above, bottomEdge - height)) : below;
   return { left: Math.round(left), top: Math.round(top), side };
 }
 
@@ -68,7 +71,11 @@ export function RowPreviewProvider({ children }) {
     const card = cardRef.current;
     if (!card) return;
     const rect = card.getBoundingClientRect();
-    const { left, top, side } = placeCard(point.current, { width: rect.width, height: rect.height }, window);
+    const style = getComputedStyle(card);
+    const inset = edge => parseFloat(style.getPropertyValue(`--browser-safe-area-${edge}`)) || 0;
+    const { left, top, side } = placeCard(point.current, rect, window, {
+      top: inset('top'), right: inset('right'), bottom: inset('bottom'), left: inset('left'),
+    });
     card.style.transform = `translate(${left}px, ${top}px)`;
     card.dataset.position = side;
   }, []);
@@ -106,9 +113,11 @@ export function RowPreviewProvider({ children }) {
     const close = () => { const owner = ownerRef.current; if (owner) api.hide(owner, { now: true }); };
     const onDown = event => { if (!event.target?.closest?.('.health-row-artwork, [data-row-preview-toggle]')) close(); };
     window.addEventListener('scroll', close, true);
+    window.addEventListener('resize', close);
     document.addEventListener('pointerdown', onDown, true);
     return () => {
       window.removeEventListener('scroll', close, true);
+      window.removeEventListener('resize', close);
       document.removeEventListener('pointerdown', onDown, true);
     };
   }, [shown, api]);

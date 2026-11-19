@@ -587,12 +587,12 @@
 
   .reader-sidebar-wrapper {
     position: fixed;
-    top: 0;
-    left: 0;
-    bottom: 0;
-    width: 260px;
+    top: var(--browser-safe-area-top);
+    left: var(--browser-safe-area-left);
+    bottom: var(--browser-safe-area-bottom);
+    width: min(260px, calc(100vw - var(--browser-safe-area-left) - var(--browser-safe-area-right)));
     z-index: 30;
-    transform: translateX(-100%);
+    transform: translateX(calc(-100% - var(--browser-safe-area-left)));
     transition: transform 0.2s ease;
     background: var(--feed-surface-1);
     box-shadow: 2px 0 8px rgba(0, 0, 0, 0.4);

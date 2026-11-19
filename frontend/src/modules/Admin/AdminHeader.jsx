@@ -52,14 +52,11 @@ function AdminHeader({ opened, toggle, opener }) {
   });
 
   return (
-    <Group h="100%" px="md" justify="space-between">
-      <Group gap="sm">
-        <Burger ref={opener} aria-label="Toggle admin navigation" aria-expanded={opened} opened={opened} onClick={toggle} className="admin-navigation-toggle" size="sm" />
-        <Box style={{ display: 'flex', alignItems: 'center' }}>
-          {breadcrumbs}
-        </Box>
-      </Group>
-      <div />
+    <Group h="100%" px="md" gap="sm" wrap="nowrap">
+      <Burger ref={opener} aria-label="Toggle admin navigation" aria-expanded={opened} opened={opened} onClick={toggle} className="admin-navigation-toggle" size="sm" />
+      <Box className="admin-breadcrumbs">
+        {breadcrumbs}
+      </Box>
     </Group>
   );
 }

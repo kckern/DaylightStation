@@ -81,6 +81,13 @@ describe('placeCard', () => {
     const at = placeCard({ x: 950, y: 400 }, size, view);
     expect(at.left + size.width).toBeLessThanOrEqual(1000 - 8);
   });
+  it('positions previews inside asymmetric device insets', () => {
+    const insets = { top: 47, right: 36, bottom: 21, left: 15 };
+    const topRight = placeCard({ x: 950, y: 80 }, size, view, insets);
+    expect(topRight).toEqual({ left: 656, top: 100, side: 'bottom' });
+    const bottomLeft = placeCard({ x: 4, y: 795 }, size, view, insets);
+    expect(bottomLeft).toEqual({ left: 23, top: 651, side: 'top' });
+  });
 });
 
 describe('EntryRow preview card — one card, at the cursor', () => {

@@ -1,7 +1,7 @@
 .assembly-fab {
   position: fixed;
-  bottom: 16px;
-  left: 16px;
+  bottom: calc(16px + var(--browser-safe-area-bottom));
+  left: calc(16px + var(--browser-safe-area-left));
   z-index: 90;
   width: 36px;
   height: 36px;
@@ -37,7 +37,8 @@
   display: flex;
   align-items: flex-end;
   justify-content: flex-start;
-  padding: 16px;
+  padding: calc(16px + var(--browser-safe-area-top)) calc(16px + var(--browser-safe-area-right))
+    calc(16px + var(--browser-safe-area-bottom)) calc(16px + var(--browser-safe-area-left));
 }
 
 .assembly-modal {
@@ -46,7 +47,7 @@
   border-radius: 12px;
   max-width: 420px;
   width: 100%;
-  max-height: 80vh;
+  max-height: min(80vh, 100%);
   display: flex;
   flex-direction: column;
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);

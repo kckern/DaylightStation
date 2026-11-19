@@ -31,7 +31,7 @@ export default function FeedPlayerSheet({ open, onClose, item, playback, openerR
   const usesDismissStack = useDismissLayer(open && Boolean(item), onClose);
 
   const handleTouchStart = useCallback((e) => {
-    if (!open || e.touches.length !== 1 || scrubDragRef.current || scrubberRef.current?.contains(e.target)) return;
+    if (!open || e.touches.length !== 1 || scrubDragRef.current) return;
     dragRef.current = { startY: e.touches[0].clientY, currentY: e.touches[0].clientY };
     setDragging(true);
   }, [open]);
@@ -159,12 +159,10 @@ export default function FeedPlayerSheet({ open, onClose, item, playback, openerR
         aria-hidden={!open}
         aria-labelledby="feed-player-sheet-title"
         tabIndex={-1}
-        onTouchStart={handleTouchStart}
-        onTouchMove={handleTouchMove}
-        onTouchEnd={handleTouchEnd}
-        onTouchCancel={cancelSwipe}
       >
-        <div className="sheet-drag-handle" />
+        <div className="sheet-drag-handle" aria-hidden="true"
+          onTouchStart={handleTouchStart} onTouchMove={handleTouchMove}
+          onTouchEnd={handleTouchEnd} onTouchCancel={cancelSwipe} />
 
         {thumb ? (
           <img

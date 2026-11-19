@@ -60,6 +60,7 @@ export default function MediaApp() {
     <AppThemeProvider pack={MEDIA_PACK} forceColorScheme="dark">
       <Notifications
         position="top-center"
+        data-safe-area-center
         autoClose={3000}
         style={{ pointerEvents: 'none' }}
         classNames={{ notification: 'media-app-notification' }}

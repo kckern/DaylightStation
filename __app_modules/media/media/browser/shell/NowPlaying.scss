@@ -71,7 +71,11 @@ $np-amber-ink: #1a1300;
     z-index: 1000;
     max-width: none;
     height: 100dvh;
-    padding: var(--mantine-spacing-md);
+    box-sizing: border-box;
+    padding: calc(var(--mantine-spacing-md) + var(--browser-safe-area-top))
+      calc(var(--mantine-spacing-md) + var(--browser-safe-area-right))
+      calc(var(--mantine-spacing-md) + var(--browser-safe-area-bottom))
+      calc(var(--mantine-spacing-md) + var(--browser-safe-area-left));
     background: var(--mantine-color-dark-8);
     overflow: auto;
 

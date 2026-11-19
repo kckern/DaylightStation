@@ -116,7 +116,8 @@
   display: flex;
   flex-direction: column;
   background: var(--mantine-color-dark-7);
-  padding-top: env(safe-area-inset-top, 0px);
+  padding: var(--browser-safe-area-top) var(--browser-safe-area-right)
+    var(--browser-safe-area-bottom) var(--browser-safe-area-left);
 }
 
 .search-mode-header {

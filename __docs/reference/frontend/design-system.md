@@ -10,6 +10,7 @@ Admin, Health, Media, Feed, Home, Life and Auto share browser layout and interac
 | Open a feature from a keyboard shortcut | `useHotkey(combo, handler)` binds the shortcut for the mounted owner. Launch shortcuts yield to editable fields and focused modal dialogs. The app chooses the destination or control. Return `false` when there is nothing to open. | [Feed search](../../../__app_modules/media/feed/browser/FeedApp.jsx) · [Media search](../../../__app_modules/media/media/browser/shell/MediaAppShell.jsx) · Health Coach |
 | Move through a list with held keys | Use `useHotkey` with `allowRepeat: true`. The list owns movement and centering. The shortcut yields to a focused dialog or editable control. | [Feed list navigation](../../../__app_modules/media/feed/browser/useFeedListShortcuts.js) |
 | Compose a grouped editor | Supply header and navigation to `AppFrame`. Its `mainRef` points to the primary scroll region. | Admin |
+| Keep controls inside the display safe area | `AppFrame` and `PlaybackFrame` reserve the four device insets at their outer edges. Flow content uses the remaining space. A viewport-fixed surface can use the `--browser-safe-area-*` properties for its own bounds. | [Shared frame and overlay styles](../../../frontend/src/lib/ui/ds.scss) |
 | Keep notices clear of frame controls | Pass an in-flow notice host to the `notices` slot on `AppFrame` or `AppChrome`. The row sits below the header, collapses when empty and scrolls independently of the main region for a long stack. | [Life notifications](../../../__app_modules/personal/life/browser/LifeApp.jsx) |
 | Measure or adjust the active scroll region | Inside `AppFrame` content, get the ref with `useAppMainRef()` and read `ref?.current` in an event or effect. The frame owns the element and a caller can still receive it through the `mainRef` prop. | Home Mosaic tooltip positioning, Health food selection and toast clearance |
 | Return to a view at its previous position | `useViewScroll({mainRef, viewKey, owner, ready})` restores the position after the view is ready and clears it when the owner changes. | Health Today |
@@ -208,6 +209,11 @@ inside that boundary. Give focus to the primary input or a useful first
 control. The feature still owns return focus and any navigation history.
 [Media phone search](../../../__app_modules/media/media/browser/search/SearchMode.jsx) ·
 [Feed Scroll detail](../../../__app_modules/media/feed/browser/Scroll/detail/DetailModal.jsx)
+
+The seven browser app routes opt into the edge-to-edge viewport. Mantine
+dialog sizing follows the same safe rectangle, including body portals.
+For centered notifications, set `data-safe-area-center` so they center
+between asymmetric device insets.
 
 ## Data fetching
 

@@ -127,6 +127,27 @@ test('Feed Scroll leaves J/K focus with the expanded player until dismissal', as
   await expect(page.getByRole('button', { name: `Open: ${item.title}` })).toBeFocused();
 });
 
+test('Feed keeps the mini bar and expanded player controls inside the safe area', async ({ page, browserName }) => {
+  test.skip(browserName !== 'chromium', 'CSS environment override uses Chromium DevTools');
+  const session = await page.context().newCDPSession(page);
+  await session.send('Emulation.setSafeAreaInsetsOverride', { insets: { left: 40, right: 40, top: 30, bottom: 24 } });
+  const { clock, dialog, opener } = await openFixtureSheet(page);
+  const initial = await clock();
+  const close = dialog.getByRole('button', { name: 'Close player' });
+  const inside = locator => locator.evaluate(element => {
+    const box = element.getBoundingClientRect();
+    return box.left >= 39 && box.right <= 351 && box.top >= 29 && box.bottom <= innerHeight - 23;
+  });
+  await expect.poll(() => inside(close)).toBe(true);
+  await page.setViewportSize({ width: 390, height: 420 });
+  await expect.poll(() => dialog.evaluate(node => node.scrollHeight > node.clientHeight)).toBe(true);
+  await expect(dialog).toHaveCSS('touch-action', 'auto');
+  await close.click();
+  await expect(opener).toBeFocused();
+  await expect.poll(() => inside(opener)).toBe(true);
+  await expect.poll(clock).toBeGreaterThan(initial);
+});
+
 test('Feed cancels a player sheet scrub when Escape dismisses the sheet', async ({ page }) => {
   const { clock, dialog, opener } = await openFixtureSheet(page);
   await page.locator('audio[src$="fixture-audio.wav"]').evaluate(audio => {

@@ -2,6 +2,7 @@ import { useRef } from 'react';
 import { proxyImage } from "../Scroll/cards/utils.js";
 import { feedLog } from "../Scroll/feedLog.js";
 import { useFeedPlayer } from "./FeedPlayerContext.jsx";
+import "./FeedPlayerMiniBar.scss";
 
 function formatTime(s) {
   if (!s || !Number.isFinite(s)) return '0:00';

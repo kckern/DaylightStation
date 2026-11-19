@@ -689,7 +689,11 @@ $health-aside-gap: 1.5rem;
 // so it takes no room and cannot shift the page; vertically centred, clear of
 // the scroll bands at the top and bottom of the viewport.
 .health-day-dock {
-  position: fixed; right: 12px; top: 50%; transform: translateY(-50%); z-index: 1200;
+  position: fixed; right: calc(12px + var(--browser-safe-area-right)); z-index: 1200;
+  top: calc((100% + var(--browser-safe-area-top) - var(--browser-safe-area-bottom)) / 2);
+  transform: translateY(-50%);
+  max-height: calc(100% - var(--browser-safe-area-top) - var(--browser-safe-area-bottom));
+  overflow-y: auto;
   display: flex; flex-direction: column; gap: 0.35rem; width: 8.5rem; padding: 0.5rem;
   border: 1px solid var(--ds-border); border-radius: 10px; background: var(--ds-surface);
   box-shadow: 0 8px 24px color-mix(in srgb, var(--ds-text-high) 18%, transparent);
@@ -847,7 +851,8 @@ $health-aside-gap: 1.5rem;
   position: fixed; top: 0; left: 0; z-index: 400; pointer-events: none; will-change: transform;
   background: var(--ds-surface); border: 1px solid var(--ds-border); color: var(--ds-text-high);
   border-radius: 8px; box-shadow: 0 8px 24px color-mix(in srgb, var(--ds-text-high) 14%, transparent);
-  padding: 0.6rem; max-width: min(20rem, calc(100vw - 2rem));
+  padding: 0.6rem;
+  max-width: min(20rem, calc(100vw - 2rem - var(--browser-safe-area-left) - var(--browser-safe-area-right)));
 }
 .health-row-preview {
   display: flex; gap: 0.7rem; align-items: flex-start;
@@ -899,8 +904,8 @@ $health-aside-gap: 1.5rem;
   &__error { border-left: 2px solid var(--ds-danger); padding-left: 0.75rem; color: var(--ds-text-high);
     p { margin: 0 0 0.25rem; }
   }
-  &__actions { position: sticky; z-index: 2; bottom: calc(-0.75rem - env(safe-area-inset-bottom)); display: grid;
-    grid-template-columns: 1.3fr 1fr auto; gap: 0.5rem; margin: 0 -1rem -0.75rem; padding: 0.7rem 1rem calc(0.75rem + env(safe-area-inset-bottom));
+  &__actions { position: sticky; z-index: 2; bottom: -0.75rem; display: grid;
+    grid-template-columns: 1.3fr 1fr auto; gap: 0.5rem; margin: 0 -1rem -0.75rem; padding: 0.7rem 1rem 0.75rem;
     border-top: 1px solid var(--ds-border); background: var(--ds-surface);
     button { min-height: 44px; }
   }

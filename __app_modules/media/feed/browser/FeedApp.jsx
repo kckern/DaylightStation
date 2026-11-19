@@ -213,7 +213,7 @@ const FeedApp = () => {
   useDocumentTitle('Feed');
   return (
     <AppThemeProvider pack="feed">
-      <Notifications position="bottom-center" withinPortal={false} />
+      <Notifications position="bottom-center" withinPortal={false} data-safe-area-center />
       <DismissStackProvider>
         <FeedWorkspaceProvider>
           <FeedPlayerProvider>

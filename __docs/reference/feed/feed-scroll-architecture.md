@@ -3,8 +3,8 @@
 ## Layout Structure
 
 ```
-.feed-app              (height: 100vh, overflow: hidden)
-  .feed-tabs           (nav bar — hidden on /feed/scroll routes)
+.feed-app              (viewport height, safe-area padding, overflow: hidden)
+  .feed-tabs           (persistent nav, compact on /feed/scroll routes)
   .feed-content        (flex: 1, overflow-y: auto)  ← SCROLL CONTAINER
     .scroll-layout     (display: flex, min-height: 100vh)
       .scroll-view     (max-width: 540px on mobile, flex: 1 on desktop)
@@ -15,7 +15,10 @@
 
 ### Critical: Scroll Container
 
-**The scroll container is `.feed-content`, NOT `window`.** The `.feed-app` has `height: 100vh; overflow: hidden`, so the document/window never scrolls. All scrolling happens on `.feed-content` which has `overflow-y: auto`.
+The `.feed-app` uses `PlaybackFrame` to fit the viewport and keep its routed content inside the safe area. The `.feed-content` element has `overflow-y: auto` and owns scrolling.
+
+The player mini bar and expanded sheet position themselves against the viewport
+and use its safe-area insets. They remain available while changing Feed modes.
 
 This means:
 - Use `el.scrollTop` (not `window.scrollY`) to read scroll position
@@ -138,9 +141,9 @@ The active focus and filter own the current list request, including pagination. 
 
 “Continue 30 more” extends the reading boundary for the current filter visit. Retry keeps that extension. Switching filters or returning to a previous filter starts with the saved reading preference, including when resuming a server session that has already served more items.
 
-Reading appearance uses the current Feed tab bar height to size its own
-scroll region. In short windows, the lower preferences and data controls
-remain reachable without scrolling the reading view.
+The Feed tab bar wraps when the available width narrows. Reading appearance opens
+below the full tab bar and uses the height between that bar and the safe bottom
+edge to size its own scroll region.
 
 Card rendering is windowed to at most 60 mounted cards. Phone layouts use measured top/bottom spacers; desktop masonry keeps its complete position map while mounting only viewport and measurement-window cards. This bounds React, media, observer, layout, and paint work without truncating scroll history.
 
