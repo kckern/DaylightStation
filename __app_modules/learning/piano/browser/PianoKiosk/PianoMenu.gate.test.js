@@ -26,7 +26,7 @@ vi.mock('react-router-dom', async () => {
   const actual = await vi.importActual('react-router-dom');
   return { ...actual, useNavigate: () => navigate };
 });
-vi.mock('../../../../../frontend/src/lib/api.mjs', () => ({ DaylightAPI: vi.fn(() => Promise.resolve(activityResponse)) }));
+vi.mock('../../../../../frontend/src/lib/api.mjs', () => ({ DaylightAPI: vi.fn(() => Promise.resolve(activityResponse)), DaylightAPIText: vi.fn(() => Promise.resolve('<work-title>Jesu Joy</work-title>')) }));
 vi.mock('./PianoConfig.jsx', () => ({
   usePianoKioskConfig: () => ({
     pianoId: 'test-piano',
@@ -124,6 +124,19 @@ describe('PianoMenu with an owed lesson', () => {
     expect(navigate).toHaveBeenCalledWith('/piano/sheetmusic');
     // The strip's own cards stay live: a course card here belongs to this child.
     expect(await screen.findByRole('button', { name: /learner2: Course B/ })).not.toBeDisabled();
+  });
+
+  it('puts the child latest piece above the Sheet Music tile, opening straight into it', async () => {
+    gateState = GATED;
+    const piece = { scoreId: 'files:docs/sheet-music/jesu.mxl', cover: '/api/cover.jpg', practicedAt: '2026-08-21T11:00:00Z', total: 2, silver: 1, gold: 0,
+      next: { passageId: 'b' }, nextGoldPassageId: 'a', passages: [{ id: 'a', start: 0, end: 4, state: 'silver' }, { id: 'b', start: 5, end: 8, state: 'todo' }] };
+    activityResponse = { players: [{ ...ACTIVITY.players[0], piece }] };
+    renderMenu();
+    const latest = await screen.findByRole('button', { name: /^Play / });
+    expect(latest.querySelector('img')).toHaveAttribute('src', '/api/cover.jpg');
+    expect(latest.closest('.piano-home__side').querySelector('.piano-tile')).not.toBeNull();
+    fireEvent.click(latest);
+    expect(navigate).toHaveBeenCalledWith('/piano/sheetmusic/view/files:docs/sheet-music/jesu.mxl?learnPassage=b');
   });
 
   it('leaves a PianoChallenge its whole screen, with no strip or tile', () => {

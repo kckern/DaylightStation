@@ -1,31 +1,39 @@
-// The progress strip above the home menu: a child's piece and course cards.
-// Fixed height, filled or empty, so the tiles below never move. The cards share
-// its width: six fit side by side, it never scrolls, and nothing is cut off.
+// The progress strip above the home menu: each child's avatar and name over
+// their piece and course cards. Fixed height, filled or empty, so the tiles
+// below never move. Three children with two cards each fit the 1216px row; a
+// crowded row shrinks its cards rather than scrolling or cutting one off.
 .piano-desk {
   flex: 0 0 auto;
-  height: 8.2rem;
-  // The whole row, so each card gets its full share rather than its content's width.
+  height: 194px;
   width: 100%;
   box-sizing: border-box;
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: center;
-  gap: 0.6rem;
-  padding: 0 var(--sp-4);
+  gap: 16px;
   overflow: hidden;
 
-  // Six cards across (two per child at most), so a card is about a sixth of
-  // the row: the poster takes its full height on the left, and who, the title
-  // and the progress stack beside it.
+  &__child { flex: 0 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+
+  &__who {
+    height: 36px; display: flex; align-items: center; gap: 8px; min-width: 0;
+    .piano-avatar { width: 36px; height: 36px; font-size: 0.8rem; flex: 0 0 auto; }
+  }
+  &__name { font-size: 18px; font-weight: 800; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+  &__cards { display: flex; gap: 8px; min-width: 0; }
+
+  // Poster and title on top; the progress in its own band underneath.
   &__card {
-    flex: 0 1 13rem;
+    flex: 0 1 auto;
+    width: 193px;
     min-width: 0;
-    height: 7.8rem;
+    height: 152px;
     box-sizing: border-box;
     display: flex;
-    align-items: stretch;
-    gap: 0.5rem;
-    padding: 0.35rem;
+    flex-direction: column;
+    gap: 8px;
+    padding: 8px;
     border: 1px solid var(--piano-border);
     border-radius: var(--r-md);
     background: var(--piano-surface);
@@ -38,39 +46,29 @@
     &:disabled .piano-avatar, &:disabled img { filter: grayscale(1); }
   }
 
-  &__poster { flex: 0 0 auto; height: 100%; aspect-ratio: 2 / 3; object-fit: cover; border-radius: 0.35rem; background: var(--piano-surface-2); }
-
-  &__body { flex: 1 1 auto; display: flex; flex-direction: column; justify-content: space-between; gap: 0.1rem; min-width: 0; padding: 0; }
-
-  &__who {
-    display: flex;
-    align-items: center;
-    gap: 0.3rem;
-    font-size: 0.68rem;
-    color: var(--piano-muted);
-    white-space: nowrap;
-    flex: 0 0 auto;
-    .piano-avatar { width: 1.5rem; height: 1.5rem; font-size: 0.55rem; flex: 0 0 auto; }
-  }
+  &__top { flex: 0 0 84px; display: flex; gap: 8px; min-width: 0; }
+  &__poster { flex: 0 0 56px; width: 56px; height: 84px; object-fit: cover; border-radius: 4px; background: var(--piano-surface-2); }
+  &__head { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
 
   &__title {
-    flex: 0 0 auto;
-    font-size: 0.82rem;
-    line-height: 1.15;
+    font-size: 15px;
+    line-height: 1.2;
     display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
   }
   &__count {
-    display: flex; gap: 0.6rem; font-size: 0.78rem; font-weight: 800; font-variant-numeric: tabular-nums;
-    span { display: flex; align-items: center; gap: 0.2rem; color: var(--piano-silver); }
+    display: flex; gap: 10px; font-size: 16px; font-weight: 800; font-variant-numeric: tabular-nums;
+    span { display: flex; align-items: center; gap: 4px; color: var(--piano-silver); }
     span[data-level='gold'] { color: var(--piano-gold); }
-    svg { width: 0.95rem; height: 0.95rem; }
+    svg { width: 18px; height: 18px; }
   }
 
+  &__band { flex: 0 0 44px; display: flex; align-items: center; min-width: 0; }
+
   &__map {
-    // One icon per passage: a tomato, a flower, a silver coin or a gold coin.
+    // One coin per passage: a tomato, a flower, a silver coin or a gold coin.
     display: grid;
-    gap: 0.1rem;
-    align-items: center;
+    gap: 2px;
+    align-content: center;
     justify-content: start;
     i { display: grid; aspect-ratio: 1; border-radius: 50%; }
     i svg { display: block; }
@@ -79,6 +77,5 @@
     i[data-faded] { opacity: 0.3; }
   }
 
-  .psc-ring { align-self: flex-start; }
-  .psc-ring__c { font-size: 0.72rem; font-weight: 800; font-family: inherit; }
+  .psc-ring__c { font-size: 14px; font-weight: 800; font-family: inherit; }
 }

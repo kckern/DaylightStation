@@ -41,6 +41,15 @@ describe('PianoHomeDesk progress strip', () => {
     expect(sib.textContent).not.toMatch(/lessons/);
   });
 
+  it('heads each child cards with their avatar and name, not a time', async () => {
+    mount();
+    await screen.findByRole('button', { name: 'Kid: 1 of 3 Silver' });
+    const groups = [...document.querySelectorAll('.piano-desk__child')];
+    expect(groups.map((group) => group.querySelector('.piano-desk__name').textContent)).toEqual(['Kid', 'Sib']);
+    expect(groups[0].querySelectorAll('.piano-desk__card')).toHaveLength(2);
+    expect(document.querySelector('.piano-desk').textContent).not.toMatch(/ago|just now/);
+  });
+
   it('shows the score poster on a piece card', async () => {
     h.desk.players[0].piece = { ...piece, cover: '/api/cover.jpg' };
     mount();
@@ -82,7 +91,7 @@ describe('PianoHomeDesk progress strip', () => {
     h.desk.players[0].piece = { ...piece, total: 12, passages: Array.from({ length: 12 }, (_, index) => ({ id: `p${index}`, start: index * 4, end: index * 4 + 3, state: 'todo' })) };
     mount();
     const card = await screen.findByRole('button', { name: 'Kid: 1 of 12 Silver' });
-    expect(card.querySelector('.piano-desk__map').style.gridTemplateColumns).toBe('repeat(6, minmax(0, 1.05rem))');
+    expect(card.querySelector('.piano-desk__map').style.gridTemplateColumns).toBe('repeat(6, 20px)');
   });
 
   it('shows only the children, never the parents', async () => {

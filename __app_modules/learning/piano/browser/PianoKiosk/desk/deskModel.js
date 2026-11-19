@@ -54,6 +54,20 @@ export function stripCards({ pieces, courses }) {
     .flatMap((child) => child.cards);
 }
 
+/** The strip's cards grouped by child, so one avatar and name heads each child's cards. */
+export function stripGroups(sources) {
+  const groups = [];
+  for (const card of stripCards(sources)) {
+    const group = groups.at(-1);
+    if (group?.userId === card.userId) group.cards.push(card);
+    else groups.push({ userId: card.userId, name: card.name, cards: [card] });
+  }
+  return groups;
+}
+
+/** Passage coin size in px: one row of up to eight is largest, two rows smaller. */
+export const coinSize = (count) => (count <= 8 ? 24 : count <= 16 ? 20 : 18);
+
 /** A tomato nobody has started yet sits back, unless it is the one up next. */
 export const passageFaded = (passage, isCurrent) => !isCurrent && passage?.state === 'todo' && !(passage?.steps?.done > 0);
 

@@ -7,6 +7,7 @@ import { usePianoMidi } from './PianoMidiContext.jsx';
 import { usePianoUser } from './PianoUserContext.jsx';
 import PianoTile from './PianoTile.jsx';
 import PianoHomeDesk from './desk/PianoHomeDesk.jsx';
+import LatestPieceCard from './desk/LatestPieceCard.jsx';
 import { KIOSK_DEVICE_ID } from './kioskDeviceIdentity.js';
 import LiveKeyboard from './LiveKeyboard.jsx';
 import { balancedColumns } from './tileGridLayout.js';
@@ -90,16 +91,17 @@ export function PianoMenu() {
     navigate(`${basePath}/${id}`);
   };
 
+  const openPassage = (userId, scoreId, passageId) => {
+    // Tapping a child's card IS picking that child: their progress,
+    // their credit (owner-requested 2026-07-28).
+    if (userId) setCurrentUser(userId);
+    if (curfew || pending) return; // the door the 2026-09-01 escape used
+    navigate(`${basePath}/sheetmusic/view/${scoreId}${passageId ? `?learnPassage=${encodeURIComponent(passageId)}` : ''}`);
+  };
   const desk = (
     <PianoHomeDesk
       disabled={curfew || pending}
-      onOpenPassage={(userId, scoreId, passageId) => {
-        // Tapping a child's card IS picking that child: their progress,
-        // their credit (owner-requested 2026-07-28).
-        if (userId) setCurrentUser(userId);
-        if (curfew || pending) return; // the door the 2026-09-01 escape used
-        navigate(`${basePath}/sheetmusic/view/${scoreId}${passageId ? `?learnPassage=${encodeURIComponent(passageId)}` : ''}`);
-      }}
+      onOpenPassage={openPassage}
       onOpenCourse={(userId, courseId) => {
         if (userId) setCurrentUser(userId);
         if (curfew || pending) return;
@@ -132,7 +134,11 @@ export function PianoMenu() {
             {desk}
             <div className="piano-home__owed">
               {lessonCard}
-              <PianoTile icon={sheetMusic.icon} label={sheetMusic.label} blurb={sheetMusic.blurb} onClick={() => open(sheetMusic.id)} />
+              {/* The child's latest piece goes straight in; the tile browses every score. */}
+              <div className="piano-home__side">
+                <LatestPieceCard userId={currentUser} onOpen={(scoreId, passageId) => openPassage(currentUser, scoreId, passageId)} />
+                <PianoTile icon={sheetMusic.icon} label={sheetMusic.label} blurb={sheetMusic.blurb} onClick={() => open(sheetMusic.id)} />
+              </div>
             </div>
           </>
         ) : (
