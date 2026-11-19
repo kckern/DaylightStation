@@ -1,8 +1,10 @@
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Stack, Text, Table, Badge, Button, Group, Modal, TextInput, Loader, Center, Alert }  from '@mantine/core';
+import { Stack, Text, Table, Badge, Button, Group, Modal, TextInput, Center, Alert }  from '@mantine/core';
 import { IconPlus, IconPlayerPlay, IconAlertCircle, IconClock } from '@tabler/icons-react';
-import { useAdminScheduler } from '../../../hooks/admin/useAdminScheduler.js';
+import { ADMIN_SCHEDULER_JOBS_PATH, useAdminScheduler } from '../../../hooks/admin/useAdminScheduler.js';
+import { useApiResource } from '../../../lib/hooks/useApiResource.js';
+import { ErrorState, LoadingState } from '../../../lib/ui/states.jsx';
 import { cronToHuman, formatDuration } from '../utils/formatters.js';
 
 /**
@@ -50,6 +52,7 @@ function statusBadgeColor(status) {
  * Frequency band display order and labels.
  */
 const BAND_ORDER = ['Frequent', 'Hourly', 'Daily', 'Other'];
+const EMPTY_JOBS = [];
 const BAND_LABELS = {
   Frequent: 'Frequent (Sub-hourly)',
   Hourly: 'Hourly',
@@ -59,16 +62,14 @@ const BAND_LABELS = {
 
 function SchedulerIndex() {
   const navigate = useNavigate();
-  const { jobs, loading, error, fetchJobs, createJob, triggerJob, clearError } = useAdminScheduler();
+  const { error, createJob, triggerJob, clearError } = useAdminScheduler();
+  const { data, loading, error: readError, reload, refresh } = useApiResource(ADMIN_SCHEDULER_JOBS_PATH, { retryTransient: false });
+  const jobs = data?.jobs ?? EMPTY_JOBS;
   const [createModalOpen, setCreateModalOpen] = useState(false);
   const [createForm, setCreateForm] = useState({ id: '', name: '', module: '', schedule: '' });
   const [createErrors, setCreateErrors] = useState({});
   const [creating, setCreating] = useState(false);
-  const [triggeringId, setTriggeringId] = useState(null);
-
-  useEffect(() => {
-    fetchJobs().catch(() => {});
-  }, [fetchJobs]);
+  const [triggeringIds, setTriggeringIds] = useState(() => new Set());
 
   // Group jobs by frequency band
   const groupedJobs = useMemo(() => {
@@ -106,6 +107,7 @@ function SchedulerIndex() {
 
   const handleCreateSubmit = async () => {
     if (!validateCreateForm()) return;
+    clearError();
     setCreating(true);
     try {
       await createJob({
@@ -114,12 +116,12 @@ function SchedulerIndex() {
         module: createForm.module.trim() || undefined,
         schedule: createForm.schedule.trim()
       });
-      await fetchJobs();
       setCreateModalOpen(false);
       setCreateForm({ id: '', name: '', module: '', schedule: '' });
       setCreateErrors({});
+      await refresh();
     } catch {
-      // error is set in the hook
+      // Command and roster errors are reported by their respective hooks.
     } finally {
       setCreating(false);
     }
@@ -127,14 +129,19 @@ function SchedulerIndex() {
 
   const handleTrigger = async (e, jobId) => {
     e.stopPropagation();
-    setTriggeringId(jobId);
+    clearError();
+    setTriggeringIds(current => new Set(current).add(jobId));
     try {
       await triggerJob(jobId);
-      await fetchJobs();
+      await refresh();
     } catch {
-      // error is set in the hook
+      // Command and roster errors are reported by their respective hooks.
     } finally {
-      setTriggeringId(null);
+      setTriggeringIds(current => {
+        const next = new Set(current);
+        next.delete(jobId);
+        return next;
+      });
     }
   };
 
@@ -142,13 +149,7 @@ function SchedulerIndex() {
     navigate(`/admin/system/scheduler/${jobId}`);
   };
 
-  if (loading && jobs.length === 0) {
-    return (
-      <Center h="60vh">
-        <Loader size="lg" />
-      </Center>
-    );
-  }
+  if (loading && !data) return <LoadingState label="scheduler jobs" />;
 
   return (
     <Stack gap="lg">
@@ -157,6 +158,7 @@ function SchedulerIndex() {
         <Button
           leftSection={<IconPlus size={16} />}
           onClick={() => setCreateModalOpen(true)}
+          disabled={creating}
         >
           Create Job
         </Button>
@@ -173,6 +175,7 @@ function SchedulerIndex() {
           {error.message || 'Failed to load scheduler jobs'}
         </Alert>
       )}
+      {readError && <ErrorState error={readError} label="Scheduler jobs" onRetry={reload} />}
 
       {groupedJobs.map(group => (
         <Stack key={group.band} gap="xs">
@@ -236,7 +239,7 @@ function SchedulerIndex() {
                         size="xs"
                         variant="light"
                         leftSection={<IconPlayerPlay size={14} />}
-                        loading={triggeringId === job.id}
+                        loading={triggeringIds.has(job.id)}
                         onClick={(e) => handleTrigger(e, job.id)}
                       >
                         Run
@@ -250,7 +253,7 @@ function SchedulerIndex() {
         </Stack>
       ))}
 
-      {jobs.length === 0 && !loading && (
+      {jobs.length === 0 && !loading && !readError && (
         <Center h="40vh">
           <Stack align="center">
             <IconClock size={48} stroke={1} color="gray" />

@@ -24,6 +24,8 @@ import { usePeek } from "../peek/usePeek.js";
 import { stateColor } from "../theme/mediaTheme.js";
 import { deviceStateLabel } from "./stateCopy.js";
 import Skeleton from '@/lib/ui/Skeleton.jsx';
+import { Button as UiButton } from '@/lib/ui/Button.jsx';
+import { StateMessage } from '@/lib/ui/states.jsx';
 import { deviceKind } from "../cast/castCopy.js";
 import { canShowNotes, wasNameLabel } from "../house/houseCopy.js";
 import { useStartStatuses, useStartedByAll } from "../house/useHouseSignals.js";
@@ -186,7 +188,7 @@ function FleetCard({ deviceId, startStatus, startedBy }) {
 }
 
 export function FleetView() {
-  const { devices, loading, error, connected, store } = useFleetContext();
+  const { devices, loading, error, connected, store, refresh } = useFleetContext();
   const { push } = useNav();
   const deviceIds = useMemo(() => devices.map((d) => d.id), [devices]);
   const startStatuses = useStartStatuses(deviceIds);
@@ -206,13 +208,13 @@ export function FleetView() {
   }
   if (error) {
     return (
-      <Alert data-testid="fleet-error" color="red" variant="light" icon={<IconAlertCircle size={18} />}>
-        Couldn&apos;t load your devices. Check the connection and try again.
+      <StateMessage data-testid="fleet-error" state="error" role="alert" title="Couldn’t load your devices">
+        <UiButton density="compact" variant="secondary" onClick={refresh}>Retry</UiButton>
         <details className="error-detail">
           <summary>Technical details</summary>
           {error.message}
         </details>
-      </Alert>
+      </StateMessage>
     );
   }
   if (!devices.length) {

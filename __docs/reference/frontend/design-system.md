@@ -12,7 +12,7 @@ Admin, Health, Media, Feed, Home, Life and Auto share browser layout and interac
 | Choose content without losing an unsaved form | Bind the catalog combobox to the draft’s content ID. On selection, update that field and keep the editor mounted. The editor owns Save and Cancel. | [Admin list item editor](../../../__capabilities/content-catalog/browser/admin/ListsItemEditor.jsx) |
 | Keep playback alive while browsing | `PlaybackFrame` places controls, overlays and the engine alongside routed children. Each app supplies one main landmark. Feed passes its scrolling element to its routes through Outlet context. | Feed reader and Media canvas |
 | Render a symbol or app supplied icon asset | `UiIcon` maps semantic names to the shared icon set. With `src`, it renders the asset and falls back to the named icon on load failure. Icons are decorative; the surrounding control supplies its accessible name. | Fitness navigation rail |
-| Read server data | Use `useApiResource(path)` when a component observes a JSON resource. Use `DaylightAPI` for an imperative JSON operation. | [Catalog title lookup](../../../__capabilities/content-catalog/browser/lib/useContentTitle.js) · [Health food icon picker](../../../__app_modules/wellness/health/browser/today/EntryEditor.jsx) · [Admin config editor](../../../frontend/src/modules/Admin/shared/ConfigFormWrapper.jsx) · Admin Art settings · Admin agent directory |
+| Read server data | Use `useApiResource(path)` when a component observes a JSON resource. Use `DaylightAPI` for an imperative JSON operation. | [Catalog title lookup](../../../__capabilities/content-catalog/browser/lib/useContentTitle.js) · [Health food icon picker](../../../__app_modules/wellness/health/browser/today/EntryEditor.jsx) · [Admin config editor](../../../frontend/src/modules/Admin/shared/ConfigFormWrapper.jsx) · [Admin member roster](../../../frontend/src/modules/Admin/Household/MembersIndex.jsx) |
 | Let someone dismiss an error without clearing its resource | `useDismissibleError(error)` returns the visible error and a `dismiss()` action. Dismissal applies to that error object; a later error remains visible. The resource keeps ownership of the error itself. | Admin integrations, agent directory and Health Agent Dashboard |
 | Interpret a command response | Use `daylightApiResponse(path, { method, data, signal })` when the feature needs the original HTTP status and body. The shared client supplies request headers. The feature interprets partial successes and controls retries. | [Playback Hub commands](../../../__app_modules/media/media/browser/admin/playback-hub/hooks/useHubMutations.js) · [Screen registry conflicts](../../../__app_modules/media/media/browser/house/houseApi.js) |
 | Save a versioned document | Pass the current revision in `ifMatch` and read `ETag` from the response headers after a successful write. Keep the edited document and conflict errors with the feature. | [Agenda editor client](../../../__app_modules/household/agenda/browser/admin/agendaClient.js) |
@@ -188,7 +188,7 @@ The primitives in the table are exported from `frontend/src/lib/ui/index.js`. Us
 ## Data fetching
 
 `frontend/src/lib/hooks/useApiResource.js` is the house `{ data, loading,
-error, revalidating, reload }` fetch hook — a GET-backed request wrapped in
+error, revalidating, reload, refresh }` fetch hook — a GET-backed request wrapped in
 the loading/error bookkeeping every app needs, so no screen hand-rolls its
 own. In its default mode it behaves like any plain fetch-on-mount hook:
 `loading` starts `true` and clears once the request settles, and `reload()`
@@ -206,10 +206,23 @@ was issued, and joining would return the pre-change answer. The same applies
 to the reloads that an invalidation or a patch triggers. After a write,
 each mounted reader of a path still issues its own request.
 
+Use `reload()` for a Retry button or an invalidation callback. Use
+`await refresh()` when a workflow must wait for its fresh GET to settle.
+It resolves with the response accepted by this reader, rejects with the
+read error, and rejects with `AbortError` if the request is superseded or
+the reader changes scope or unmounts. A create or remove dialog should
+close when its write succeeds. If the roster GET then fails, let the
+resource show a Retry button that issues only the GET.
+
 Transient network and proxy failures retry twice by default. A current
 one-shot consumer can pass `retryTransient: false` to retain its immediate
 error behavior; Displayer uses this while still sharing key scoping and
 stale-response protection.
+
+`clearDataOnError: true` clears a reader's displayed snapshot when an
+accepted request fails. Media Fleet uses it because a failed roster must
+stop offering those devices until a later read succeeds. This option
+does not evict shared or persisted cache entries.
 
 An opt-in stale-while-revalidate mode (`swr: true`) is for a view whose
 structure should survive a refetch rather than disappear behind a loading

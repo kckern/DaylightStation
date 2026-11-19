@@ -400,7 +400,16 @@ export function resetApiResourceCache(path) {
   schedulePersist(path, undefined);
 }
 
-export function useApiResource(path, { deps = [], enabled = true, label, logger = defaultLogger, swr = false, retryTransient = true } = {}) {
+function refreshAbortError() {
+  const error = new Error('Resource refresh was superseded before it completed');
+  error.name = 'AbortError';
+  return error;
+}
+
+export function useApiResource(path, {
+  deps = [], enabled = true, label, logger = defaultLogger,
+  swr = false, retryTransient = true, clearDataOnError = false,
+} = {}) {
   // Single shared cache lookup for the three lazy initializers below — each
   // useState initializer only runs once (on mount), and all three run inside
   // the same render, so a memoized closure keeps `cacheGet` (which mutates
@@ -420,12 +429,33 @@ export function useApiResource(path, { deps = [], enabled = true, label, logger 
   const [revalidating, setRevalidating] = useState(() => getInitialCache().hit);
   const [error, setError] = useState(null);
   const [nonce, setNonce] = useState(0);
+  const nonceRef = useRef(nonce);
+  const activePath = useRef(null);
+  const pendingRefresh = useRef(null);
 
-  const reload = useCallback(() => setNonce((n) => n + 1), []);
-  // The nonce the last fetch ran under: a run with a new nonce is a reload().
+  const cancelRefresh = useCallback(() => {
+    const pending = pendingRefresh.current;
+    pendingRefresh.current = null;
+    pending?.reject(refreshAbortError());
+  }, []);
+  const requestReload = useCallback((waiter) => {
+    cancelRefresh();
+    const next = ++nonceRef.current;
+    if (waiter) pendingRefresh.current = { ...waiter, nonce: next };
+    setNonce(next);
+  }, [cancelRefresh]);
+  const reload = useCallback(() => { requestReload(); }, [requestReload]);
+  const refresh = useCallback(() => {
+    if (!enabled || !path || activePath.current !== path) return Promise.reject(refreshAbortError());
+    return new Promise((resolve, reject) => {
+      requestReload({ resolve, reject });
+    });
+  }, [enabled, path, requestReload]);
+  // A new nonce forces a read that cannot join an older in-flight request.
   const fetchedNonce = useRef(nonce);
 
   useEffect(() => {
+    activePath.current = enabled ? path : null;
     const notify = matches => { if (enabled && path && matches(path)) reload(); };
     const clearOwner = matches => {
       if (!path || !matches(path)) return;
@@ -436,10 +466,12 @@ export function useApiResource(path, { deps = [], enabled = true, label, logger 
     invalidationListeners.add(notify);
     ownerListeners.add(clearOwner);
     return () => {
+      activePath.current = null;
+      cancelRefresh();
       invalidationListeners.delete(notify);
       ownerListeners.delete(clearOwner);
     };
-  }, [path, enabled, reload]);
+  }, [path, enabled, reload, cancelRefresh]);
 
   // Adopt a patch now, then revalidate. The reload also retires this hook's
   // in-flight request (its `live` flag), which predates the patch.
@@ -456,11 +488,18 @@ export function useApiResource(path, { deps = [], enabled = true, label, logger 
   }, [path, enabled, swr, reload]);
 
   useEffect(() => {
+    const takeRefresh = () => {
+      const pending = pendingRefresh.current;
+      if (pending?.nonce !== nonce) return null;
+      pendingRefresh.current = null;
+      return pending;
+    };
     if (!enabled || !path) { setLoading(false); return undefined; }
     let live = true;
     const scope = registrationFor(path);
     const epoch = scope?.epoch;
-    const isCurrent = () => live && scope === registrationFor(path) && scope?.epoch === epoch;
+    const isCurrent = () => live && nonce === nonceRef.current &&
+      scope === registrationFor(path) && scope?.epoch === epoch;
 
     const { hit: cacheHit, value: cachedValue } = swr ? cacheGet(path) : { hit: false };
     if (cacheHit) {
@@ -511,19 +550,25 @@ export function useApiResource(path, { deps = [], enabled = true, label, logger 
         setResultPath(path);
         setLoading(false);
         if (swr) setRevalidating(false);
+        takeRefresh()?.resolve(result);
         logger.debug(cacheHit ? 'api.revalidated' : 'api.loaded', { resource: label || path, ms: Math.round(performance.now() - startedAt) });
       })
       .catch((err) => {
         if (!isCurrent()) return;
+        if (clearDataOnError) setData(null);
         setError(err);
         setLoading(false);
         if (swr) setRevalidating(false);
+        takeRefresh()?.reject(err);
         logger.warn('api.failed', { resource: label || path, error: err?.message });
       });
 
-    return () => { live = false; };
+    return () => {
+      live = false;
+      takeRefresh()?.reject(refreshAbortError());
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [path, enabled, nonce, swr, retryTransient, ...deps]);
+  }, [path, enabled, nonce, swr, retryTransient, clearDataOnError, ...deps]);
 
   // Effects run after render: conceal the previous key synchronously, not
   // just after the new request starts, so stale rows are never actionable.
@@ -532,11 +577,11 @@ export function useApiResource(path, { deps = [], enabled = true, label, logger 
   // flash a day flip used to show before the effect copied the cache over.
   const matches = resultPath === path;
   if (!matches && swr && enabled && path && swrCache.has(path)) {
-    return { data: swrCache.get(path), resourceKey: path, loading: false, error: null, revalidating: true, reload };
+    return { data: swrCache.get(path), resourceKey: path, loading: false, error: null, revalidating: true, reload, refresh };
   }
   return { data: matches ? data : null, resourceKey: path,
     loading: matches ? loading : Boolean(enabled && path),
-    error: matches ? error : null, revalidating: matches && revalidating, reload };
+    error: matches ? error : null, revalidating: matches && revalidating, reload, refresh };
 }
 
 export default useApiResource;

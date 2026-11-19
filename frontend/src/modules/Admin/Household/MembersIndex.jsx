@@ -1,8 +1,10 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Stack, Text, Table, Badge, Button, Group, Modal, TextInput, Select, NumberInput, Loader, Center, Alert, Paper, Divider }  from '@mantine/core';
+import { Stack, Text, Table, Badge, Button, Group, Modal, TextInput, Select, NumberInput, Center, Alert, Paper, Divider }  from '@mantine/core';
 import { IconPlus, IconAlertCircle, IconUsers, IconTrash } from '@tabler/icons-react';
-import { useAdminHousehold } from '../../../hooks/admin/useAdminHousehold.js';
+import { ADMIN_HOUSEHOLD_PATH, useAdminHousehold } from '../../../hooks/admin/useAdminHousehold.js';
+import { useApiResource } from '../../../lib/hooks/useApiResource.js';
+import { ErrorState, LoadingState } from '../../../lib/ui/states.jsx';
 import ConfirmModal from '../shared/ConfirmModal.jsx';
 
 const TYPE_OPTIONS = [
@@ -35,10 +37,10 @@ function groupBadgeColor(group) {
 
 function MembersIndex() {
   const navigate = useNavigate();
-  const {
-    household, members, loading, error,
-    fetchHousehold, createMember, removeMember, clearError
-  } = useAdminHousehold();
+  const { error, createMember, removeMember, clearError } = useAdminHousehold();
+  const { data, loading, error: readError, reload, refresh } = useApiResource(ADMIN_HOUSEHOLD_PATH, { retryTransient: false });
+  const household = data?.household;
+  const members = data?.members ?? [];
 
   const [createModalOpen, setCreateModalOpen] = useState(false);
   const [createForm, setCreateForm] = useState({
@@ -53,10 +55,6 @@ function MembersIndex() {
 
   const [removeTarget, setRemoveTarget] = useState(null);
   const [removing, setRemoving] = useState(false);
-
-  useEffect(() => {
-    fetchHousehold().catch(() => {});
-  }, [fetchHousehold]);
 
   const handleCreateFormChange = (field, value) => {
     setCreateForm(prev => ({ ...prev, [field]: value }));
@@ -78,6 +76,7 @@ function MembersIndex() {
 
   const handleCreateSubmit = async () => {
     if (!validateCreateForm()) return;
+    clearError();
     setCreating(true);
     try {
       const payload = {
@@ -88,7 +87,6 @@ function MembersIndex() {
         birthyear: createForm.birthyear || undefined
       };
       await createMember(payload);
-      await fetchHousehold();
       setCreateModalOpen(false);
       setCreateForm({
         username: '',
@@ -98,8 +96,9 @@ function MembersIndex() {
         birthyear: null
       });
       setCreateErrors({});
+      await refresh();
     } catch {
-      // error is set in the hook
+      // Command and roster errors are reported by their respective hooks.
     } finally {
       setCreating(false);
     }
@@ -112,13 +111,14 @@ function MembersIndex() {
 
   const handleRemoveConfirm = async () => {
     if (!removeTarget) return;
+    clearError();
     setRemoving(true);
     try {
       await removeMember(removeTarget.username);
-      await fetchHousehold();
       setRemoveTarget(null);
+      await refresh();
     } catch {
-      // error is set in the hook
+      // Command and roster errors are reported by their respective hooks.
     } finally {
       setRemoving(false);
     }
@@ -128,13 +128,7 @@ function MembersIndex() {
     navigate(`/admin/household/members/${username}`);
   };
 
-  if (loading && members.length === 0) {
-    return (
-      <Center h="60vh">
-        <Loader size="lg" />
-      </Center>
-    );
-  }
+  if (loading && !data) return <LoadingState label="household members" />;
 
   return (
     <Stack gap="lg">
@@ -173,6 +167,7 @@ function MembersIndex() {
         <Button
           leftSection={<IconPlus size={16} />}
           onClick={() => setCreateModalOpen(true)}
+          disabled={creating}
         >
           Add Member
         </Button>
@@ -189,6 +184,7 @@ function MembersIndex() {
           {error.message || 'Failed to load household data'}
         </Alert>
       )}
+      {readError && <ErrorState error={readError} label="Household members" onRetry={reload} />}
 
       {/* Members table */}
       {members.length > 0 && (
@@ -245,6 +241,7 @@ function MembersIndex() {
                     color="red"
                     leftSection={<IconTrash size={14} />}
                     onClick={(e) => handleRemoveClick(e, member)}
+                    disabled={removing}
                   >
                     Remove
                   </Button>
@@ -255,7 +252,7 @@ function MembersIndex() {
         </Table>
       )}
 
-      {members.length === 0 && !loading && (
+      {members.length === 0 && !loading && !readError && (
         <Center h="40vh">
           <Stack align="center">
             <IconUsers size={48} stroke={1} color="gray" />

@@ -8,12 +8,13 @@ import { render, screen, fireEvent } from '@testing-library/react';
 import { MantineProvider } from '@mantine/core';
 
 const fleet = { devices: [], entries: {} };
+const refresh = vi.fn();
 const getController = vi.fn();
 const moveHere = vi.fn(async () => ({ ok: true }));
 vi.mock("../household/useMoveHere.js", () => ({ useMoveHere: () => moveHere }));
 
 vi.mock("../fleet/useFleetContext.js", () => ({
-  useFleetContext: () => ({ devices: fleet.devices, loading: false, error: null, store: {}, connected: fleet.connected }),
+  useFleetContext: () => ({ devices: fleet.devices, loading: false, error: fleet.error, store: {}, connected: fleet.connected, refresh }),
 }));
 vi.mock("../fleet/useDevice.js", () => ({
   useDevice: (deviceId) => ({
@@ -59,12 +60,22 @@ beforeEach(() => {
     { id: 'office-tv', name: 'Office TV', type: 'linux-pc' },
   ];
   fleet.entries = {};
+  fleet.error = null;
   fleet.connected = true;
+  refresh.mockClear();
   getController.mockReset();
   moveHere.mockClear();
 });
 
 describe('FleetView Play… affordance', () => {
+  it('offers a roster retry and preserves the technical details after a read failure', () => {
+    fleet.error = new Error('Device service unavailable');
+    renderFleet();
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+    expect(refresh).toHaveBeenCalledTimes(1);
+    expect(screen.getByText('Device service unavailable')).toBeInTheDocument();
+  });
+
   it('identifies the browser session that owns this Fleet view as This device', () => {
     fleet.devices = [{ id: 'browser:browser-a', name: 'Browser A', type: 'browser', isLocal: true }];
     fleet.entries = {
