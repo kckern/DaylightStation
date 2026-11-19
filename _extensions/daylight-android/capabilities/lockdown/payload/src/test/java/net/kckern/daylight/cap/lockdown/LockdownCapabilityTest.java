@@ -595,6 +595,27 @@ public class LockdownCapabilityTest {
 
     // ── the input lock (volume-keys) ──────────────────────────────────────────
 
+    @Test public void orderedLockdownWireFixturesMatchTheNativeRoute() throws Exception {
+        File dir = tmp.newFolder();
+        startForReal(new FakeContext(dir), dir);
+        cap.useSuppressionReadyForTest(() -> true);
+        try (java.io.InputStream input = getClass().getResourceAsStream("/ordered-lockdown.json");
+             java.util.Scanner scanner = new java.util.Scanner(input, "UTF-8").useDelimiter("\\A")) {
+            org.json.JSONArray cases = new org.json.JSONArray(scanner.next());
+            for (int i = 0; i < cases.length(); i++) {
+                JSONObject fixture = cases.getJSONObject(i);
+                JSONObject response = call("POST", "/lockdown/input", fixture.getJSONObject("request").toString());
+                assertEquals(200, response.remove("_status"));
+                JSONObject expected = fixture.getJSONObject("daylight");
+                java.util.Iterator<String> fields = expected.keys();
+                while (fields.hasNext()) {
+                    String field = fields.next();
+                    assertEquals(field, expected.get(field), response.get(field));
+                }
+            }
+        }
+    }
+
     @Test public void theInputLockFollowsOrderedCommandsAndSurvivesARestart() throws Exception {
         File dir = tmp.newFolder();
         startForReal(new FakeContext(dir), dir);
