@@ -2,7 +2,7 @@ import { useNavigate } from 'react-router-dom';
 import { Stack, Paper, Text, Group, Badge, Accordion, ThemeIcon } from '@mantine/core';
 import { IconShield, IconAlertTriangle } from '@tabler/icons-react';
 import { useLifePlan } from "../../hooks/useLifePlan.js";
-import { LifePage, LoadingState, EmptyState } from "../../components/index.js";
+import { LifePage, LoadingState, ErrorState, EmptyState } from "../../components/index.js";
 import { humanize } from "../../lib/format.js";
 
 function effectivenessColor(effectiveness) {
@@ -34,9 +34,10 @@ function RuleItem({ rule }) {
 
 export function QualitiesView({ username }) {
   const navigate = useNavigate();
-  const { plan, loading } = useLifePlan(username);
+  const { plan, loading, error, refetch } = useLifePlan(username);
 
   if (loading) return <LoadingState />;
+  if (error) return <LifePage title="Qualities"><ErrorState label="Qualities" error={error} onRetry={refetch} /></LifePage>;
 
   const qualities = plan?.qualities || [];
 

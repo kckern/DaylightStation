@@ -5,7 +5,7 @@ import {
 } from '@mantine/core';
 import { IconArrowUp, IconArrowDown } from '@tabler/icons-react';
 import { useLifePlan } from "../../hooks/useLifePlan.js";
-import { LifePage, LoadingState } from "../../components/index.js";
+import { LifePage, LoadingState, ErrorState } from "../../components/index.js";
 import { humanize } from "../../lib/format.js";
 
 function alignmentColor(state) {
@@ -16,7 +16,7 @@ function alignmentColor(state) {
 }
 
 export function ValuesView({ username }) {
-  const { plan, loading, updateSection, createValue } = useLifePlan(username);
+  const { plan, loading, error, readError, refetch, updateSection, createValue } = useLifePlan(username);
 
   const values = useMemo(() => plan?.values || [], [plan?.values]);
 
@@ -60,17 +60,16 @@ export function ValuesView({ username }) {
     try {
       await updateSection('values', updated);
     } catch {
-      // updateSection() records the failure in useLifePlan's internal `error`
-      // state (which this view doesn't currently surface); swallow here so a
-      // failed reorder doesn't become an unhandled promise rejection now that
-      // updateSection() rethrows for callers (e.g. PurposeView) that do want it.
+      // The plan hook exposes the section update error to this view.
     }
   }, [values, updateSection]);
 
   if (loading) return <LoadingState />;
+  if (readError) return <LifePage title="Values"><ErrorState label="Values" error={readError} onRetry={refetch} /></LifePage>;
 
   return (
     <LifePage title="Values" actions={<Button onClick={() => setOpened(true)}>Add value</Button>}>
+      {error && <Alert color="red" title="Couldn’t reorder values">{error}</Alert>}
       {values.length === 0 && (
         <Text size="sm" c="dimmed">No values defined yet — add one to rank what matters most.</Text>
       )}

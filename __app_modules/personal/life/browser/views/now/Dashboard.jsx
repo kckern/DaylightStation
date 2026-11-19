@@ -10,7 +10,7 @@ import { GoalProgressBar } from "../../widgets/GoalProgressBar.jsx";
 import { BeliefConfidenceChip } from "../../widgets/BeliefConfidenceChip.jsx";
 import { ValueAllocationChart } from "../../widgets/ValueAllocationChart.jsx";
 import { PriorityList } from "./PriorityList.jsx";
-import { LoadingState, SectionCard } from "../../components/index.js";
+import { LoadingState, ErrorState, SectionCard } from "../../components/index.js";
 import getLogger from "../../../../../../frontend/src/lib/logging/Logger.js";
 
 function ChecklistRow({ done, label, onClick }) {
@@ -27,7 +27,7 @@ export function Dashboard() {
   const navigate = useNavigate();
   const { data: priorityData, loading: pLoading } = useAlignment('priorities');
   const { data: dashData, loading: dLoading } = useAlignment('dashboard');
-  const { isEmpty: planIsEmpty, loading: planLoading } = useLifePlan();
+  const { isEmpty: planIsEmpty, loading: planLoading, error: planError, refetch: refetchPlan } = useLifePlan();
   const dashboard = dashData?.dashboard;
   const stage = dashboard?.stage;
   const completeness = dashboard?.completeness;
@@ -53,6 +53,8 @@ export function Dashboard() {
   if (pLoading || dLoading || planLoading) {
     return <LoadingState />;
   }
+
+  if (planError) return <ErrorState label="Life plan" error={planError} onRetry={refetchPlan} />;
 
   const priorities = priorityData?.priorities || [];
 

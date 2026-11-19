@@ -1,16 +1,21 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MantineProvider } from '@mantine/core';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
-import { expect, it, vi } from 'vitest';
+import { beforeEach, expect, it, vi } from 'vitest';
 import { DaylightAPI } from '../../../../../../frontend/src/lib/api.mjs';
+import { resetApiResourceCache } from '@/lib/hooks/useApiResource.js';
+import { PurposeView } from './PurposeView.jsx';
 import { BeliefsView } from './BeliefsView.jsx';
 import { CeremonyConfig } from './CeremonyConfig.jsx';
 
 vi.mock('../../../../../../frontend/src/lib/api.mjs', () => ({ DaylightAPI: vi.fn() }));
 
+beforeEach(() => resetApiResourceCache());
+
 function page(path, user = 'amy') {
   return <MantineProvider><MemoryRouter initialEntries={['/life/plan/' + path]}>
     <Routes key={user}>
+      <Route path="/life/plan/purpose" element={<PurposeView username={user} />} />
       <Route path="/life/plan/beliefs" element={<BeliefsView username={user} />} />
       <Route path="/life/plan/ceremonies" element={<CeremonyConfig username={user} />} />
     </Routes>
@@ -75,4 +80,23 @@ it.each(['beliefs', 'ceremonies'])('discards a late failed %s read after switchi
   else await screen.findAllByRole('switch');
   await act(async () => rejectOld(new Error('Old member failure')));
   expect(screen.queryByRole('alert')).toBeNull();
+});
+
+it('offers a read retry when a saved purpose cannot be reloaded', async () => {
+  const purpose = { statement: 'Practice' };
+  DaylightAPI.mockReset()
+    .mockResolvedValueOnce({})
+    .mockResolvedValueOnce(purpose)
+    .mockRejectedValueOnce(new Error('Refresh failed'))
+    .mockResolvedValueOnce({ purpose });
+  render(page('purpose'));
+  fireEvent.click(await screen.findByTestId('edit'));
+  fireEvent.change(screen.getByRole('textbox'), { target: { value: 'Practice' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+  expect(await screen.findByRole('alert')).toHaveTextContent('Refresh failed');
+  fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+  expect(await screen.findByText('Practice')).toBeVisible();
+  expect(DaylightAPI.mock.calls.filter(([, , method]) => method === 'POST')).toEqual([
+    ['/api/v1/life/plan/purpose?username=amy', purpose, 'POST'],
+  ]);
 });

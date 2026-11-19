@@ -3,18 +3,19 @@ import { useNavigate } from 'react-router-dom';
 import { Stack, Paper, Text, Group, Badge, Button, Textarea, ActionIcon, Alert } from '@mantine/core';
 import { IconEdit, IconCheck, IconX } from '@tabler/icons-react';
 import { useLifePlan } from "../../hooks/useLifePlan.js";
-import { LifePage, LoadingState, EmptyState } from "../../components/index.js";
+import { LifePage, LoadingState, ErrorState, EmptyState } from "../../components/index.js";
 import { formatDate, humanize } from "../../lib/format.js";
 
 export function PurposeView({ username }) {
   const navigate = useNavigate();
-  const { plan, loading, setPurpose } = useLifePlan(username);
+  const { plan, loading, error, refetch, setPurpose } = useLifePlan(username);
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState('');
   const [saveError, setSaveError] = useState(null);
   const [saving, setSaving] = useState(false);
 
   if (loading) return <LoadingState />;
+  if (error) return <LifePage title="Purpose"><ErrorState label="Purpose" error={error} onRetry={refetch} /></LifePage>;
 
   const purpose = plan?.purpose;
 
@@ -40,7 +41,7 @@ export function PurposeView({ username }) {
   };
 
   const actions = !editing && (
-    <ActionIcon variant="subtle" data-testid="edit" onClick={startEdit}>
+    <ActionIcon variant="subtle" aria-label="Edit purpose" data-testid="edit" onClick={startEdit}>
       <IconEdit size={18} />
     </ActionIcon>
   );
@@ -66,6 +67,7 @@ export function PurposeView({ username }) {
               <Alert color="red" title="Couldn't save your purpose">{saveError}</Alert>
             )}
             <Textarea
+              aria-label="Purpose statement"
               value={draft}
               onChange={(e) => setDraft(e.currentTarget.value)}
               autosize

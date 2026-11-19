@@ -182,3 +182,46 @@ test('Life distinguishes unavailable goals from a successful empty list and retr
   await page.getByRole('button', { name: 'Retry' }).click();
   await expect(page.getByText(/No goals yet/)).toBeVisible();
 });
+
+test('Life Purpose retries a failed read after saving without writing the statement again', async ({ page }) => {
+  await page.routeWebSocket('**/*', () => {});
+  const member = { username: 'amy', displayName: 'Amy' };
+  const statement = 'Make time to learn something new.';
+  const planPath = '/api/v1/life/plan/?username=amy';
+  const purposePath = '/api/v1/life/plan/purpose?username=amy';
+  const reads = [];
+  const writes = [];
+
+  await page.route('**/api/v1/life/**', route => {
+    const request = route.request();
+    const { pathname, search } = new URL(request.url());
+    const path = pathname + search;
+    if (pathname === '/api/v1/life/users') return route.fulfill({ json: { users: [member] } });
+    if (pathname === '/api/v1/life/user') return route.fulfill({ json: member });
+    if (path === planPath && request.method() === 'GET') {
+      reads.push(path);
+      if (reads.length === 1) return route.fulfill({ json: {} });
+      if (reads.length === 2) return route.fulfill({ status: 500, json: { error: 'Purpose read temporarily unavailable' } });
+      return route.fulfill({ json: { purpose: { statement } } });
+    }
+    if (path === purposePath && request.method() === 'POST') {
+      writes.push(request.postDataJSON());
+      return route.fulfill({ json: { statement } });
+    }
+    return route.fallback();
+  });
+
+  await page.goto('/life/plan');
+  const edit = page.getByRole('button', { name: 'Edit purpose', exact: true });
+  await expect(page.getByRole('button', { name: 'Talk to your coach' })).toBeVisible();
+  await edit.click();
+  await page.getByRole('textbox', { name: 'Purpose statement' }).fill(statement);
+  await page.getByRole('button', { name: 'Save', exact: true }).click();
+  const error = page.getByRole('alert').filter({ hasText: 'Purpose read temporarily unavailable' });
+  await expect(error).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Talk to your coach' })).toHaveCount(0);
+  await error.getByRole('button', { name: 'Retry', exact: true }).click();
+  await expect(page.getByText(statement, { exact: true })).toBeVisible();
+  expect(reads).toEqual([planPath, planPath, planPath]);
+  expect(writes).toEqual([{ statement }]);
+});

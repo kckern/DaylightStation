@@ -379,11 +379,9 @@ export function prefetchApiResources(paths, { onDone, onIdle } = {}) {
   return accepted;
 }
 
-// Test-only reset, and the seam a later task (day-view mutation) can use to
-// invalidate a specific path after a write — call with a path to drop just
-// that entry, or with no argument to clear everything. A path reset also
-// deletes it from the persistent store; the no-argument reset clears MEMORY
-// only, so an attached store would restore those entries on the next attach.
+// A path reset drops that snapshot from memory and persistent storage. Use
+// invalidateApiResources to revalidate mounted readers. The no-argument reset
+// is for tests and clears memory only, leaving attached stores intact.
 export function resetApiResourceCache(path) {
   if (path === undefined) { swrCache.clear(); pathGenerations.clear(); fetchedAt.clear(); inFlight.clear(); for (const scope of registrations) scope.pending.clear(); prefetchQueue = []; prefetchInFlight.clear(); prefetchOnIdle = null; Object.assign(prefetchStats, { queued: 0, completed: 0, failed: 0 }); return; }
   swrCache.delete(path);
