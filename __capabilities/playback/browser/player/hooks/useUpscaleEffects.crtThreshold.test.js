@@ -13,8 +13,8 @@ function fakeVideo(width, height) {
 }
 
 function showCrtFor(width, height) {
-  const mediaRef = { current: fakeVideo(width, height) };
-  const { result } = renderHook(() => useUpscaleEffects({ mediaRef, stabilizeMs: 10 }));
+  const video = fakeVideo(width, height);
+  const { result } = renderHook(() => useUpscaleEffects({ video, stabilizeMs: 10 }));
   act(() => { vi.advanceTimersByTime(20); });
   return result.current.overlayProps.showCRT;
 }

@@ -1,5 +1,5 @@
 // frontend/src/modules/Player/hooks/useUpscaleEffects.js
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect } from 'react';
 
 // Blur calculation constants
 const BLUR_FACTOR = 1.2;      // px of blur per 1x upscale
@@ -16,6 +16,7 @@ const SD_HEIGHT = 480;
 
 // Timing
 const DEFAULT_STABILIZE_MS = 1500;
+const EMPTY_DIMENSIONS = { width: 0, height: 0 };
 
 // Presets define which effects are enabled
 const PRESETS = {
@@ -30,119 +31,70 @@ const PRESETS = {
  * Hook to detect video upscaling and return appropriate visual effect styles.
  *
  * @param {Object} options
- * @param {React.RefObject} options.mediaRef - ref to video element (or dash-video)
+ * @param {HTMLVideoElement|null} options.video - current native video element
  * @param {string} options.preset - 'auto' | 'blur-only' | 'crt-only' | 'aggressive' | 'none'
  * @param {number} options.stabilizeMs - delay before applying effects (default 1500)
  * @returns {Object} { effectStyles, overlayProps, isActive, debug }
  */
 export function useUpscaleEffects({
-  mediaRef,
+  video,
   preset = 'auto',
   stabilizeMs = DEFAULT_STABILIZE_MS
 } = {}) {
-  const [srcDimensions, setSrcDimensions] = useState({ width: 0, height: 0 });
-  const [displayDimensions, setDisplayDimensions] = useState({ width: 0, height: 0 });
-  const [isStabilized, setIsStabilized] = useState(false);
-  const stabilizeTimerRef = useRef(null);
-  const resizeObserverRef = useRef(null);
-
+  const [measurement, setMeasurement] = useState(null);
+  const { srcDimensions = EMPTY_DIMENSIONS, displayDimensions = EMPTY_DIMENSIONS, isStabilized = false } =
+    measurement && measurement.video === video ? measurement : {};
   const presetConfig = PRESETS[preset] || PRESETS.auto;
 
-  // Get the actual video element (handles dash-video shadow DOM)
-  const getVideoElement = useCallback(() => {
-    const el = mediaRef?.current;
-    if (!el) return null;
-    // dash-video wraps the video in shadow DOM
-    if (el.shadowRoot) {
-      return el.shadowRoot.querySelector('video') || el;
-    }
-    return el;
-  }, [mediaRef]);
-
-  // Read source dimensions from video element
-  const updateSrcDimensions = useCallback(() => {
-    const videoEl = getVideoElement();
-    if (!videoEl) return;
-    const width = videoEl.videoWidth || 0;
-    const height = videoEl.videoHeight || 0;
-    if (width > 0 && height > 0) {
-      setSrcDimensions(prev => {
-        if (prev.width === width && prev.height === height) return prev;
-        return { width, height };
-      });
-    }
-  }, [getVideoElement]);
-
-  // Read display dimensions from rendered element
-  const updateDisplayDimensions = useCallback(() => {
-    const videoEl = getVideoElement();
-    if (!videoEl) return;
-    const rect = videoEl.getBoundingClientRect();
-    const width = Math.round(rect.width) || 0;
-    const height = Math.round(rect.height) || 0;
-    if (width > 0 && height > 0) {
-      setDisplayDimensions(prev => {
-        if (prev.width === width && prev.height === height) return prev;
-        return { width, height };
-      });
-    }
-  }, [getVideoElement]);
-
-  // Handle resolution changes (loadedmetadata, resize)
   useEffect(() => {
-    const videoEl = getVideoElement();
-    if (!videoEl) return;
+    if (!video) return;
+    const current = { video, srcDimensions: EMPTY_DIMENSIONS, displayDimensions: EMPTY_DIMENSIONS, isStabilized: false };
+    let stabilization;
+    let retired = false;
 
-    const handleMetadata = () => {
-      updateSrcDimensions();
-      // Reset stabilization on resolution change
-      setIsStabilized(false);
-      if (stabilizeTimerRef.current) {
-        clearTimeout(stabilizeTimerRef.current);
+    function publish() {
+      if (!retired) setMeasurement({ ...current });
+    }
+
+    function measureDisplay() {
+      if (retired) return;
+      const rect = video.getBoundingClientRect();
+      const width = Math.round(rect.width);
+      const height = Math.round(rect.height);
+      if (width > 0 && height > 0 && (current.displayDimensions.width !== width || current.displayDimensions.height !== height)) {
+        current.displayDimensions = { width, height };
+        publish();
       }
-      stabilizeTimerRef.current = setTimeout(() => {
-        setIsStabilized(true);
+    }
+
+    function measureSource() {
+      if (retired) return;
+      const { videoWidth: width, videoHeight: height } = video;
+      if (width > 0 && height > 0) current.srcDimensions = { width, height };
+      current.isStabilized = false;
+      publish();
+      clearTimeout(stabilization);
+      stabilization = setTimeout(() => {
+        current.isStabilized = true;
+        publish();
       }, stabilizeMs);
-    };
-
-    // Listen for metadata load and resolution changes
-    videoEl.addEventListener('loadedmetadata', handleMetadata);
-    videoEl.addEventListener('resize', handleMetadata);
-
-    // Initial check
-    if (videoEl.videoWidth > 0) {
-      handleMetadata();
     }
 
+    video.addEventListener('loadedmetadata', measureSource);
+    video.addEventListener('resize', measureSource);
+    measureDisplay();
+    if (video.videoWidth > 0) measureSource();
+
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(measureDisplay);
+    observer?.observe(video);
     return () => {
-      videoEl.removeEventListener('loadedmetadata', handleMetadata);
-      videoEl.removeEventListener('resize', handleMetadata);
-      if (stabilizeTimerRef.current) {
-        clearTimeout(stabilizeTimerRef.current);
-      }
+      retired = true;
+      observer?.disconnect();
+      clearTimeout(stabilization);
+      video.removeEventListener('loadedmetadata', measureSource);
+      video.removeEventListener('resize', measureSource);
     };
-  }, [getVideoElement, updateSrcDimensions, stabilizeMs]);
-
-  // Track display dimension changes via ResizeObserver
-  useEffect(() => {
-    const videoEl = getVideoElement();
-    if (!videoEl) return;
-
-    updateDisplayDimensions();
-
-    if (typeof ResizeObserver !== 'undefined') {
-      resizeObserverRef.current = new ResizeObserver(() => {
-        updateDisplayDimensions();
-      });
-      resizeObserverRef.current.observe(videoEl);
-    }
-
-    return () => {
-      if (resizeObserverRef.current) {
-        resizeObserverRef.current.disconnect();
-      }
-    };
-  }, [getVideoElement, updateDisplayDimensions]);
+  }, [video, stabilizeMs]);
 
   // Calculate upscale ratio and effects
   const { upscaleRatio, blurPx, shouldBlur, shouldCRT } = (() => {
@@ -188,10 +140,7 @@ export function useUpscaleEffects({
   })();
 
   // Check loop state synchronously - looped videos skip upscale effects for performance
-  const isLooping = (() => {
-    const videoEl = getVideoElement();
-    return videoEl?.loop === true;
-  })();
+  const isLooping = video?.loop === true;
 
   // Disable effects for looped videos (performance optimization for continuous playback)
   const isActive = isStabilized && !isLooping && (shouldBlur || shouldCRT);

@@ -136,6 +136,8 @@ Uses `IntersectionObserver` on a sentinel div at the bottom of the card list. A 
 
 The active focus and filter own the current list request, including pagination. Changing either cancels the previous request and disconnects its sentinel. The new filter loads its own session before observing for the next page.
 
+“Continue 30 more” extends the reading boundary for the current filter visit. Retry keeps that extension. Switching filters or returning to a previous filter starts with the saved reading preference, including when resuming a server session that has already served more items.
+
 Card rendering is windowed to at most 60 mounted cards. Phone layouts use measured top/bottom spacers; desktop masonry keeps its complete position map while mounting only viewport and measurement-window cards. This bounds React, media, observer, layout, and paint work without truncating scroll history.
 
 `content-visibility: auto` applies on both phone and desktop to reduce off-screen layout/paint work. Route-level snapshots preserve the loaded items and scroll position while switching Feed modes. Masonry measurement and placement events are debug-only; normal sessions retain error-level overlap reporting without per-card log traffic.

@@ -182,7 +182,9 @@ export default function Scroll() {
   const listRequestRef = useRef(null);
   const snapshotRef = useRef(null);
   const checkpointRestoredRef = useRef(false);
-  const effectiveBudget = budgetOverride ?? readingPreferences.sessionBudget;
+  const effectiveBudget = budgetOverride?.scope === sessionStorageKey
+    ? budgetOverride.limit
+    : readingPreferences.sessionBudget;
   snapshotRef.current = { items, hasMore, caughtUp, budgetReached, serverHasMore, sessionId };
 
   useEffect(() => {
@@ -818,7 +820,7 @@ export default function Scroll() {
             <p>You reached your {effectiveBudget}-item reading boundary.</p>
             <div className="scroll-end__actions">
               <button className="scroll-load-more" disabled={!serverHasMore} onClick={() => {
-                setBudgetOverride(items.length + 30);
+                setBudgetOverride({ scope: sessionStorageKey, limit: items.length + 30 });
                 setBudgetReached(false);
                 setHasMore(serverHasMore);
               }}>Continue 30 more</button>

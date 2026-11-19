@@ -193,9 +193,14 @@ export function VideoPlayer({
     enabled: !!advance
   });
 
-  // Upscale detection and effects
+  // Both visual effects follow the controller's current native decoder.
+  const [videoElement, setVideoElement] = useState(null);
+  const bindVideo = useCallback(node => {
+    containerRef.current = node;
+    setVideoElement(getMediaEl());
+  }, [containerRef, getMediaEl]);
   const { effectStyles, overlayProps } = useUpscaleEffects({
-    mediaRef: containerRef,
+    video: videoElement,
     preset: upscaleEffects
   });
 
@@ -205,7 +210,7 @@ export function VideoPlayer({
   const crtCanvasRef = useRef(null);
   const crt = useCrtShader({
     canvasRef: crtCanvasRef,
-    mediaRef: containerRef,
+    video: videoElement,
     enabled: overlayProps.showCRT
   });
   const crtShaderActive = overlayProps.showCRT && crt.active;
@@ -1011,7 +1016,7 @@ export function VideoPlayer({
       {isDash ? (
         <dash-video
           key={dashElementKey}
-          ref={containerRef}
+          ref={bindVideo}
           class={`video-element ${displayReady ? 'show' : ''} ${crtShaderActive ? 'crt-source' : ''}`}
           src={mediaUrl}
           autoplay={isOwnerOperationMount ? undefined : ''}
@@ -1021,7 +1026,7 @@ export function VideoPlayer({
         <video
           key={dashElementKey}
           autoPlay={!isOwnerOperationMount}
-          ref={containerRef}
+          ref={bindVideo}
           className={`video-element ${displayReady ? 'show' : ''} ${crtShaderActive ? 'crt-source' : ''}`}
           src={isHls ? undefined : mediaUrl}
           style={crtShaderActive ? undefined : effectStyles}
