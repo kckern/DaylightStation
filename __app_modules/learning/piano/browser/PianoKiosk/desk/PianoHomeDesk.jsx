@@ -108,7 +108,9 @@ export default function PianoHomeDesk({ disabled, onOpenPassage, onOpenCourse })
   // The strip is for the children; school learners are the roster's children.
   const { users } = usePianoUser();
   const children = new Set((users ?? []).filter((user) => user.schoolLearner === true).map((user) => user.id));
-  const groups = stripGroups({ pieces, courses }).filter((group) => children.has(group.userId));
+  // Both lists or neither: cards that arrived in two waves would reflow the strip.
+  const loaded = pieces !== null && courses !== null;
+  const groups = loaded ? stripGroups({ pieces, courses }).filter((group) => children.has(group.userId)) : [];
   const cards = groups.flatMap((group) => group.cards);
   useEffect(() => {
     logger.debug('piano.desk.view', { cards: cards.map((card) => card.key) });

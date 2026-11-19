@@ -21,7 +21,9 @@ their latest activity.
   with `1/12`. A tomato nobody has started sits back at 30% opacity; a started tomato
   and the one up next are full colour (`passageFaded`). Tapping opens that child's next
   passage in Learn.
-- **Course:** the video course poster, title, and a 44px ring filled to the share of
+- **Course:** the child's enrolled course leads (School's `piano-course` assignment: the
+  first unfinished course in its sequence, marked `enrolled`); otherwise the unfinished
+  course furthest along. The card shows the video course poster, title, and a 44px ring filled to the share of
   lessons done, with the percent inside. No sentence. Tapping opens the course.
 
 Tapping a card also makes that child the current player (owner-requested 2026-07-28).
@@ -41,6 +43,10 @@ A passage link is `{basePath}/sheetmusic/view/{scoreId}?learnPassage={id}`; the
 ## Layout and locks
 
 The strip keeps one fixed height whether or not it has cards, so the tiles never move.
+Nothing on the home screen changes height after load: the strip sits 16px under the
+header in every state and draws only once both its lists have arrived; the tile wall (or
+the owed lesson) is centred in the rest; the pending and curfew captions float; and the
+connection banner floats over the page under the 61px header rather than pushing it.
 It is 194px tall. Three children with two cards each fit the 1216px row; a crowded row
 shrinks its cards rather than scrolling or cutting one off.
 Curfew applies only on the piano's own tablet (the client whose kiosk device id matches

@@ -105,6 +105,8 @@
 
 .piano-chrome {
   flex: 0 0 auto;
+  height: 61px;
+  box-sizing: border-box;
   display: flex;
   align-items: center;
   gap: 1rem;
@@ -290,6 +292,9 @@
 }
 
 .piano-linkbanner {
+  // A notification never takes page space: it floats over the top of the page,
+  // just under the 61px header, so nothing below it moves when it appears.
+  position: absolute; top: 61px; left: 0; right: 0; z-index: 40;
   display: flex;
   align-items: center;
   gap: var(--sp-3);
@@ -385,16 +390,19 @@
   display: flex;
   flex-direction: column;
 
-  // Strip and tile wall share the vertical space evenly (space-around), with
-  // breathing room at the left/right screen edges.
+  // Every height here is fixed before data arrives, so nothing jolts on load:
+  // the strip sits 16px under the header in every state, and the tile wall
+  // (or the owed lesson) takes the rest, centred. Captions float, never in flow.
   &__body {
+    position: relative;
     flex: 1 1 auto;
     min-height: 0;
     display: flex;
     align-items: center;
     flex-direction: column;
-    justify-content: space-around;
-    padding: 0 var(--sp-6, 3rem) var(--sp-3);
+    justify-content: flex-start;
+    padding: 16px var(--sp-6, 3rem) var(--sp-3);
+    .piano-menu__tiles { margin-block: auto; }
   }
 
   // An owed video lesson under the strip, with a 224px column beside it: the
@@ -423,8 +431,8 @@
   // which greys the menu for the same reason: nothing here is tappable *yet*.
   &__curfew,
   &__pending {
+    position: absolute; left: 0; right: 0; bottom: 2px;
     margin: 0;
-    padding-top: var(--sp-3);
     font-size: 1.1rem;
     color: var(--piano-muted);
     text-align: center;
