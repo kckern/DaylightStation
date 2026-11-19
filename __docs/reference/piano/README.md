@@ -333,7 +333,7 @@ recover from the rough edges of an aging WebView.
   piano" screen (no MIDI connected) still sleeps after idle rather than staying lit forever.
 - **Curfew.** A configured evening window (`curfew:` in the piano config — off unless the
   household sets it) greys the home menu out: every mode tile and every card in the
-  recent-activity strip dims and stops responding, so no one starts a course, a video,
+  home desk disables its controls, so no one starts a course, a video,
   karaoke or a game after hours. The piano itself is untouched — sitting down and playing
   still auto-enters Studio, and the menu's live keyboard stays playable — so evening
   practice works exactly as it does at noon; only screen-driven content closes. `start`

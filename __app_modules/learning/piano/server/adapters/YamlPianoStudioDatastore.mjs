@@ -30,6 +30,7 @@ import {
   ensureDir,
   writeBinary,
   listFiles,
+  listDirs,
   readFile,
   getStats,
 } from "#system/utils/FileIO.mjs";
@@ -193,6 +194,26 @@ export class YamlPianoStudioDatastore extends ILoopManifestSource {
     const dir = this.#userPianoDir(userId, 'practice');
     if (!dir) return null;
     return loadYaml(path.join(dir, scoreKey)) || {};
+  }
+
+  /** Every practice record of one player, with its score key. */
+  listPractice(userId) {
+    const dir = this.#userPianoDir(userId, 'practice');
+    if (!dir) return [];
+    return listYamlFiles(dir).map((scoreKey) => ({ scoreKey, record: loadYaml(path.join(dir, scoreKey)) || {} }));
+  }
+
+  /** Content ids of the sheet-music library, as `files:docs/sheet-music/...`. */
+  listSheetMusicIds() {
+    const relative = 'docs/sheet-music';
+    const walk = (folder) => {
+      const absolute = path.join(this.#configService.getMediaDir(), folder);
+      return [
+        ...listFiles(absolute).filter((file) => /\.(mxl|musicxml|xml)$/i.test(file)).map((file) => `files:${folder}/${file}`),
+        ...listDirs(absolute).flatMap((child) => walk(`${folder}/${child}`)),
+      ];
+    };
+    return walk(relative);
   }
 
   savePractice(userId, scoreKey, record) {

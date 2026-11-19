@@ -310,7 +310,7 @@ describe('ScorePlayer — guided Learn composition', () => {
     measureBounds: [{ left: 80, right: 190, top: 10, bottom: 210 }, { left: 190, right: 310, top: 10, bottom: 210 }] };
  };
  it('opens a deep link at preparation without starting a take', () => {
-  setup(); renderPlayer('/?learnPassage=m0-1&learnRung=right'); pickMode('Learn');
+  setup(); renderPlayer('/?learnPassage=m0-1&learnRung=right');
   expect(screen.getByRole('region', { name: 'Segment 1 learning' })).toBeInTheDocument();
   expect(screen.getByRole('heading', { name: 'Find the right-hand notes' })).toBeInTheDocument();
   expect(h.learnLabProps).toBeNull();

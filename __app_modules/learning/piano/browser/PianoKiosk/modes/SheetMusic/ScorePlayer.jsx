@@ -242,6 +242,8 @@ export default function ScorePlayer({ score: scoreMeta }) {
   }, []);
   const [mode, setMode] = useState(() => {
     if (autoplayMode) return autoplayMode;
+    // A link to one passage is a link into Learn.
+    if (searchParams.get('learnPassage') && VALID_MODES.includes('learn')) return 'learn';
     const m = restored.mode;
     return VALID_MODES.includes(m) ? m : (VALID_MODES.includes(smCfg.defaultMode) ? smCfg.defaultMode : 'learn');
   });

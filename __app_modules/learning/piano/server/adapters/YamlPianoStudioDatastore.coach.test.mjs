@@ -18,3 +18,22 @@ it('writes the complete coaching summary while retaining legacy progress and ref
   expect(datastore.savePracticeAtomic('unknown', 'files-test', record)).toBe(false);
   expect(fs.existsSync(path.join(root, 'unknown'))).toBe(false);
 });
+
+describe('home desk reads', () => {
+  it('lists a player practice records and the sheet-music library', () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'piano-desk-'));
+    const practice = path.join(root, 'users/kid/apps/piano/practice');
+    const library = path.join(root, 'media/docs/sheet-music/christmas');
+    fs.mkdirSync(practice, { recursive: true }); fs.mkdirSync(library, { recursive: true });
+    fs.writeFileSync(path.join(practice, 'score-one.yml'), 'updatedAt: yes\n');
+    fs.writeFileSync(path.join(library, 'piece.mxl'), 'x'); fs.writeFileSync(path.join(library, 'cover.jpg'), 'x');
+    const store = new YamlPianoStudioDatastore({ configService: {
+      getUserDir: (id) => path.join(root, 'users', id), getUserProfile: (id) => (id === 'kid' ? { id } : null),
+      getHouseholdPath: (rel) => path.join(root, 'household', rel), getHouseholdAppConfig: () => ({}), getMediaDir: () => path.join(root, 'media'),
+    } });
+    expect(store.listPractice('kid').map((entry) => entry.scoreKey)).toEqual(['score-one']);
+    expect(store.listPractice('nobody')).toEqual([]);
+    expect(store.listSheetMusicIds()).toEqual(['files:docs/sheet-music/christmas/piece.mxl']);
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+});

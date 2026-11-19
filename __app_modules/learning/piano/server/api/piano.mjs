@@ -94,6 +94,7 @@ function attemptPolicyErrors(userId, body) {
  *
  *   Menu activity strip:
  *   GET    /activity/recent                  → { players: [...] }  (per-player most-recent lesson-course progress)
+ *   GET    /activity/desk                    → { players: [...] }  (per-player current piece, passages and next step)
  *
  *   Game-time budget (server is the source of truth; unwired service fails open):
  *   GET    /users/:userId/game-budget                          → live balance ({enabled:false} if unwired/off)
@@ -1225,6 +1226,11 @@ export function createPianoRouter({ pianoContainer, schoolLearnerDirectory = nul
     }
     const result = await pianoContainer.getRecentCourseActivity().execute();
     res.json(result);
+  }));
+
+  // ── Home desk: each player's current piece and next step ───────────────────
+  router.get('/activity/desk', asyncHandler(async (req, res) => {
+    res.json(pianoContainer.getPianoDesk().execute());
   }));
 
   // ── Always-on MIDI history (.mid per user/date) ─────────────────────────────
