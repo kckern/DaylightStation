@@ -81,7 +81,10 @@ export const DaylightAPI = async (path, data = {}, method = 'GET', requestOption
     }
 
     if (!response.ok) {
-        const errorText = await response.text().catch(() => '');
+        const errorText = await response.text().catch(error => {
+            if (error?.name === 'AbortError') throw error;
+            return '';
+        });
         const transient = TRANSIENT_STATUSES.has(response.status);
         getLogger()[transient ? 'warn' : 'error']('api.response.error', { path, status: response.status, statusText: response.statusText });
         // `status` is attached (not just embedded in the message string) so a
@@ -104,7 +107,8 @@ export const DaylightAPI = async (path, data = {}, method = 'GET', requestOption
     if (response.status === 204) return null;
     try {
         return await response.json();
-    } catch {
+    } catch (err) {
+        if (err?.name === 'AbortError') throw err;
         getLogger().warn('api.response.unreadable', { path, status: response.status });
         const error = new Error(`Unreadable response (HTTP ${response.status})`);
         error.status = response.status;

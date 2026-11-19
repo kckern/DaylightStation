@@ -33,7 +33,8 @@ export function TemplateEditor({ template, onSaved, onCancel }) {
           onChange={grams => update(index, { ...(component.grams > 0 && grams > 0 ? scaleFoodPortion(component, grams / component.grams) : {}), grams })} />
         <Button size="compact-xs" variant="subtle" color="red" disabled={busy} onClick={() => setDraft(previous => ({ ...previous, components: previous.components.filter((_, i) => i !== index) }))}>Remove</Button>
       </Group>
-      <SegmentedControl size="xs" value={component.role || 'core'} data={[{ label: 'Always', value: 'core' }, { label: 'Optional', value: 'variant' }]} onChange={role => update(index, { role })} disabled={busy} />
+      <SegmentedControl aria-label={`${component.name || `Component ${index + 1}`} meal inclusion`}
+        size="xs" value={component.role || 'core'} data={[{ label: 'Always', value: 'core' }, { label: 'Optional', value: 'variant' }]} onChange={role => update(index, { role })} disabled={busy} />
       <details><summary>Nutrition</summary><Group gap="xs">{NUTRIENT_KEYS.map(key =>
         <NumberInput key={key} label={key} min={0} value={component[key] ?? ''} disabled={busy} onChange={value => update(index, {
           [key]: value === '' ? null : value, correctedNutrients: [...new Set([...(component.correctedNutrients || []), key])],

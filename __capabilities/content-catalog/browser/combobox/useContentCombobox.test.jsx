@@ -380,6 +380,37 @@ describe('useContentCombobox', () => {
     expect(result.current.state.results.map((r) => r.id)).toEqual(['plex:5']);
   });
 
+  it('retires the old batch before the replacement debounce and ignores its late response', async () => {
+    vi.useFakeTimers();
+    const older = Promise.withResolvers();
+    const newer = Promise.withResolvers();
+    fetchMock.mockImplementation(url => {
+      if (url.includes('text=older')) return older.promise;
+      if (url.includes('text=newer')) return newer.promise;
+      return jsonResponse({ items: [] });
+    });
+    const searches = () => fetchMock.mock.calls.filter(([url]) => url.startsWith('/api/v1/content/query/search?'));
+    const { result } = setup({});
+
+    act(() => result.current.handleInput('older'));
+    await act(async () => { vi.advanceTimersByTime(300); });
+    expect(searches()).toHaveLength(1);
+    act(() => result.current.handleInput('newer'));
+    expect(searches()[0][1].signal?.aborted).toBe(true);
+    expect(result.current.isSearching).toBe(true);
+    await act(async () => { vi.advanceTimersByTime(299); });
+    expect(searches()).toHaveLength(1);
+    await act(async () => { vi.advanceTimersByTime(1); });
+    expect(searches()).toHaveLength(2);
+
+    await act(async () => older.resolve(await jsonResponse({ items: [{ id: 'plex:1', title: 'Older' }] })));
+    expect(result.current.state.results).toEqual([]);
+    expect(result.current.isSearching).toBe(true);
+    await act(async () => newer.resolve(await jsonResponse({ items: [{ id: 'plex:2', title: 'Newer' }] })));
+    expect(result.current.state.results.map(item => item.id)).toEqual(['plex:2']);
+    expect(result.current.isSearching).toBe(false);
+  });
+
   it('F13: a bare source prefix ("singalong:") dispatches an empty search, not a literal', async () => {
     vi.useFakeTimers();
     const { result } = setup({});

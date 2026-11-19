@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useId, useMemo, useState } from 'react';
 import { Button, Checkbox, NumberInput, SegmentedControl, Select, SimpleGrid, Stack, Switch, Text } from '@mantine/core';
 import { SectionCard, LoadingState, ErrorState } from "../../../../../frontend/src/lib/ui/index.js";
 import { DaylightAPI } from "../../../../../frontend/src/lib/api.mjs";
@@ -39,6 +39,7 @@ function parseCap(value, max) {
  * auditorFormat, and a kind it has no label for shows its key.
  */
 export function AuditorConfig({ resource, spend }) {
+  const gapLabelId = useId();
   const isSessionActive = useHealthSessionGuard();
   const logger = useMemo(() => getLogger().child({ component: 'health-auditor' }), []);
   const [busy, setBusy] = useState(null);
@@ -135,8 +136,8 @@ export function AuditorConfig({ resource, spend }) {
           onKeyDown={event => { if (event.key === 'Enter') commitCap(); }} />
       </SimpleGrid>
       <Stack gap={4}>
-        <Text size="sm" fw={500}>Minimum gap between automatic runs</Text>
-        <SegmentedControl data={list(options.minGapMinutes).map(minutes => ({ label: gapLabel(minutes), value: String(minutes) }))} value={String(settings.minGapMinutes ?? 0)} disabled={disabled} fullWidth
+        <Text id={gapLabelId} size="sm" fw={500}>Minimum gap between automatic runs</Text>
+        <SegmentedControl aria-labelledby={gapLabelId} data={list(options.minGapMinutes).map(minutes => ({ label: gapLabel(minutes), value: String(minutes) }))} value={String(settings.minGapMinutes ?? 0)} disabled={disabled} fullWidth
           onChange={value => save('minGapMinutes', { minGapMinutes: Number(value) })} />
       </Stack>
 

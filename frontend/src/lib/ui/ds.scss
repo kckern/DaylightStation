@@ -377,12 +377,13 @@ html[data-browser-app-viewport] {
 @media (pointer: coarse) {
   body:has(.ds-chrome, .ds-playback-frame) {
     :is(.mantine-Radio-body, .mantine-Checkbox-body) { align-items: center; }
-    :is(.mantine-Radio-label, .mantine-Checkbox-label, .mantine-Chip-label) {
-      display: inline-flex;
+    :is(.mantine-Radio-label, .mantine-Checkbox-label, .mantine-Chip-label, .mantine-SegmentedControl-label) {
       align-items: center;
       min-height: var(--ds-control-touch-target);
       min-width: var(--ds-control-touch-target);
     }
+    :is(.mantine-Radio-label, .mantine-Checkbox-label, .mantine-Chip-label) { display: inline-flex; }
+    .mantine-SegmentedControl-label { display: flex; justify-content: center; }
     .mantine-Menu-item { min-height: var(--ds-control-touch-target); }
   }
 }

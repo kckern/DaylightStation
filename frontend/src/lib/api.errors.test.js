@@ -98,6 +98,26 @@ describe('DaylightAPI failures', () => {
     expect(await failure()).toBe(abort);
   });
 
+  it.each([200, 409])('preserves cancellation while reading the HTTP %i response body', async status => {
+    const controller = new AbortController();
+    const { signal } = controller;
+    const abort = new DOMException('The operation was aborted.', 'AbortError');
+    const body = new ReadableStream({
+      start(stream) {
+        stream.enqueue(new TextEncoder().encode('{"unfinished":'));
+        signal.addEventListener('abort', () => stream.error(signal.reason), { once: true });
+      },
+    });
+    const reply = new Response(body, { status });
+    fetchMock.mockResolvedValue(reply);
+
+    const request = DaylightAPI('api/v1/example', {}, 'GET', { signal });
+    const canceled = expect(request).rejects.toBe(abort);
+    await expect.poll(() => reply.bodyUsed).toBe(true);
+    controller.abort(abort);
+    await canceled;
+  });
+
   it('a 200 that is not JSON says so instead of a parser error', async () => {
     fetchMock.mockResolvedValue(response({ body: '<!doctype html><html></html>' }));
     const err = await failure();

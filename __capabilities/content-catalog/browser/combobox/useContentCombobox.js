@@ -167,6 +167,13 @@ export function useContentCombobox({
 
   const [batchResults, setBatchResults] = useState([]);
   const [batchLoading, setBatchLoading] = useState(false);
+  const batchRequest = useRef(null);
+  const abortBatchRequest = useCallback(() => {
+    const previous = batchRequest.current;
+    batchRequest.current = null;
+    previous?.abort();
+  }, []);
+  useEffect(() => abortBatchRequest, [abortBatchRequest]);
   // `cancelStream()` deliberately drops the previous request synchronously,
   // before its 300ms replacement debounce opens. Keep that visible intent
   // distinct from transport activity: otherwise both consumers briefly claim
@@ -192,6 +199,12 @@ export function useContentCombobox({
   // INPUT (handleInput) and on every scope change so a stale flag never
   // survives onto a different query or a different scope.
   const [fellBackToAll, setFellBackToAll] = useState(false);
+  const clearBatchSearch = useCallback(() => {
+    abortBatchRequest();
+    queryRef.current = '';
+    setBatchLoading(false);
+    setBatchResults([]);
+  }, [abortBatchRequest]);
 
   // S5 fix: `searchParams` MUST be in the deps — the standalone version
   // omitted it, so prop changes never reached the batch URL (stale closure).
@@ -201,25 +214,34 @@ export function useContentCombobox({
   const doBatchSearch = useCallback(async (text, overrideParams) => {
     if (!text || text.length < 2) {
       log.debug('batch_search.skip', { text, reason: 'too_short' });
-      setBatchResults([]);
+      clearBatchSearch();
       return;
     }
+    abortBatchRequest();
+    const request = new AbortController();
+    batchRequest.current = request;
     const effectiveParams = overrideParams !== undefined ? overrideParams : searchParams;
     log.info('batch_search.start', { text, params: effectiveParams || null });
     setBatchLoading(true);
     try {
       const data = await DaylightAPI(
-        `${SEARCH_BATCH_ENDPOINT}?text=${encodeURIComponent(text)}&take=${BATCH_TAKE}${effectiveParams ? '&' + effectiveParams : ''}`
+        `${SEARCH_BATCH_ENDPOINT}?text=${encodeURIComponent(text)}&take=${BATCH_TAKE}${effectiveParams ? '&' + effectiveParams : ''}`,
+        {}, 'GET', { signal: request.signal },
       );
+      if (batchRequest.current !== request) return;
       log.info('batch_search.done', { text, resultCount: (data.items || []).length });
       setBatchResults(data.items || []);
     } catch (err) {
+      if (batchRequest.current !== request) return;
       log.error('batch_search.error', { text, error: err.message });
       setBatchResults([]);
     } finally {
-      setBatchLoading(false);
+      if (batchRequest.current === request) {
+        batchRequest.current = null;
+        setBatchLoading(false);
+      }
     }
-  }, [searchParams, log]);
+  }, [abortBatchRequest, clearBatchSearch, searchParams, log]);
 
   const debouncedSearch = useDebouncedCallback((text) => {
     const mode = supportsSSE() ? 'sse' : 'batch';
@@ -246,12 +268,13 @@ export function useContentCombobox({
     // previous stream must be retired before its late callback can land under
     // the newly visible text.
     cancelStream();
+    if (!supportsSSE()) clearBatchSearch();
     invalidateBrowseLoads();
     setFellBackToAll(false); // new text invalidates any prior D5 fallback flag
     setDebouncePending(!isBareSourcePrefix(text) && text.trim().length >= 2);
     dispatch({ type: 'INPUT', text });
     debouncedSearch(text);
-  }, [cancelStream, debouncedSearch]);
+  }, [cancelStream, clearBatchSearch, debouncedSearch]);
 
   // Scope chips change `searchParams`, and nothing re-ran the search: the chip
   // lit up (aria-pressed) directly above a result list that was still whatever
@@ -274,18 +297,20 @@ export function useContentCombobox({
   useEffect(() => {
     if (prevSearchParamsRef.current === searchParams) return;
     prevSearchParamsRef.current = searchParams;
-    const text = stateRef.current.search ?? '';
+    const { mode, search } = stateRef.current;
+    const text = search ?? '';
     // Nothing meaningful in the box (closed, cleared, too short, or a bare
     // `source:` prefix) — there is no search to re-run.
-    if (isBareSourcePrefix(text) || text.trim().length < 2) return;
+    if (mode !== Modes.SEARCH || isBareSourcePrefix(text) || text.trim().length < 2) return;
     // Scope changed now; the scoped replacement still debounces, but the old
     // scope must stop owning callbacks immediately.
     cancelStream();
+    if (!supportsSSE()) clearBatchSearch();
     setFellBackToAll(false); // a different scope invalidates the previous widening
     setDebouncePending(true);
     log.info('search.rerun_for_scope', { textLength: text.length, scopeKey: scopeKey ?? null });
     debouncedSearch(text);
-  }, [searchParams, scopeKey, cancelStream, debouncedSearch, log]);
+  }, [searchParams, scopeKey, cancelStream, clearBatchSearch, debouncedSearch, log]);
 
   // F14: while searching, a `source:term` query scopes the backend search to
   // that one source. Surface the scope so the UI can show a removable chip.
@@ -347,8 +372,8 @@ export function useContentCombobox({
     setDebouncePending(false);
     debouncedSearch('');
     if (supportsSSE()) streamSearch(''); // hook clears results/pending for short queries
-    else setBatchResults([]);
-  }, [debouncedSearch, streamSearch]);
+    else clearBatchSearch();
+  }, [clearBatchSearch, debouncedSearch, streamSearch]);
 
   // ── 3. Siblings browse (cache-aware) ──
   const applyBrowseData = useCallback((contentId, data) => {

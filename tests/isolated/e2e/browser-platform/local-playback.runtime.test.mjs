@@ -392,6 +392,32 @@ test('Feed stops painting its open player sheet while the audio keeps playing in
   await expect.poll(width).toBeGreaterThan(hiddenWidth);
 });
 
+test('Media holds Now Playing progress while the original audio keeps playing in the background', async ({ page }) => {
+  await page.routeWebSocket('**/ws', () => {});
+  await page.goto('/media?play=plex%3A42');
+  const clock = await originalClock(page);
+  await page.getByTestId('mini-player-open-nowplaying').click();
+  const fill = page.locator('.np-seek-fill');
+  const width = () => fill.evaluate(node => Number.parseFloat(node.style.width));
+  await expect.poll(width).toBeGreaterThan(0);
+  const frozenWidth = await fill.evaluate(node => {
+    Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'hidden' });
+    document.dispatchEvent(new Event('visibilitychange'));
+    return Number.parseFloat(node.style.width);
+  });
+  const hiddenTime = await clock();
+  await expect.poll(clock).toBeGreaterThan(hiddenTime + 1);
+  expect(await width()).toBe(frozenWidth);
+
+  await page.evaluate(() => {
+    delete document.visibilityState;
+    document.dispatchEvent(new Event('visibilitychange'));
+  });
+  await expect.poll(width).toBeGreaterThan(frozenWidth);
+  const resumed = await clock();
+  await expect.poll(clock).toBeGreaterThan(resumed);
+});
+
 test('Media keeps the last paused seek when leaving its app and restores silently on return', async ({ page }) => {
   const track = { contentId: item.contentId, title: item.title, format: 'audio', duration: 30 };
   await page.addInitScript(track => {

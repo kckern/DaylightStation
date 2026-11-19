@@ -209,7 +209,7 @@ export function ProgressView() {
                     value={watch?.limit ?? ''}
                     onChange={(v) => setForm(setWatchMicro(form, f.key, { limit: v }))} />
                   {watch ? (
-                    <SegmentedControl size="xs" value={watch.direction}
+                    <SegmentedControl aria-label={`${f.label} direction`} size="xs" value={watch.direction}
                       onChange={(v) => setForm(setWatchMicro(form, f.key, { direction: v }))}
                       data={[{ label: 'Stay under', value: 'ceiling' }, { label: 'Reach', value: 'floor' }]} />
                   ) : null}
