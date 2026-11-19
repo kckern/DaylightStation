@@ -13,26 +13,20 @@
   gap: 16px;
   overflow: hidden;
 
-  &__child { flex: 0 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+  // A child's cards sit together; children are 16px apart.
+  &__child { flex: 0 1 auto; min-width: 0; display: flex; gap: 8px; }
 
-  &__who {
-    height: 36px; display: flex; align-items: center; gap: 8px; min-width: 0;
-    .piano-avatar { width: 36px; height: 36px; font-size: 0.8rem; flex: 0 0 auto; }
-  }
-  &__name { font-size: 18px; font-weight: 800; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-
-  &__cards { display: flex; gap: 8px; min-width: 0; }
-
-  // Poster and title on top; the progress in its own band underneath.
+  // Every card: whose it is (avatar and name) on top, then the very next thing
+  // to do filling the rest. 193x194, nothing left empty.
   &__card {
     flex: 0 1 auto;
     width: 193px;
     min-width: 0;
-    height: 152px;
+    height: 194px;
     box-sizing: border-box;
     display: flex;
     flex-direction: column;
-    gap: 8px;
+    gap: 6px;
     padding: 8px;
     border: 1px solid var(--piano-border);
     border-radius: var(--r-md);
@@ -41,28 +35,43 @@
     font: inherit;
     text-align: left;
     cursor: pointer;
+    overflow: hidden;
     &:active { background: var(--piano-surface-2); }
     &:disabled { cursor: default; color: var(--piano-muted); }
     &:disabled .piano-avatar, &:disabled img { filter: grayscale(1); }
   }
 
+  &__who {
+    flex: 0 0 32px; display: flex; align-items: center; gap: 8px; min-width: 0;
+    .piano-avatar { width: 32px; height: 32px; font-size: 0.75rem; flex: 0 0 auto; }
+  }
+  &__name { font-size: 16px; font-weight: 800; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+  // Piece: poster beside title, next bars and count; the passage map underneath.
   &__top { flex: 0 0 84px; display: flex; gap: 8px; min-width: 0; }
   &__poster { flex: 0 0 56px; width: 56px; height: 84px; object-fit: cover; border-radius: 4px; background: var(--piano-surface-2); }
-  &__head { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+  &__head { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+  &__next { font-size: 13px; font-weight: 700; color: var(--piano-accent-text); }
+  &__band { flex: 0 0 44px; display: flex; align-items: center; min-width: 0; }
+
+  // Course: the next lesson's still across the card, then its title beside the ring.
+  &__still { flex: 0 0 auto; width: 100%; aspect-ratio: 16 / 9; object-fit: cover; border-radius: 4px; background: var(--piano-surface-2); }
+  &__foot { flex: 1 1 auto; min-height: 0; display: flex; align-items: center; gap: 8px; }
+  &__lesson { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+  &__course { font-size: 12px; color: var(--piano-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .piano-desk__card[data-kind='course'] > .piano-desk__poster { align-self: flex-start; }
 
   &__title {
-    font-size: 15px;
+    font-size: 14px;
     line-height: 1.2;
     display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
   }
   &__count {
-    display: flex; gap: 10px; font-size: 16px; font-weight: 800; font-variant-numeric: tabular-nums;
+    display: flex; gap: 10px; font-size: 15px; font-weight: 800; font-variant-numeric: tabular-nums;
     span { display: flex; align-items: center; gap: 4px; color: var(--piano-silver); }
     span[data-level='gold'] { color: var(--piano-gold); }
-    svg { width: 18px; height: 18px; }
+    svg { width: 17px; height: 17px; }
   }
-
-  &__band { flex: 0 0 44px; display: flex; align-items: center; min-width: 0; }
 
   &__map {
     // One coin per passage: a tomato, a flower, a silver coin or a gold coin.
@@ -77,5 +86,6 @@
     i[data-faded] { opacity: 0.3; }
   }
 
-  .psc-ring__c { font-size: 14px; font-weight: 800; font-family: inherit; }
+  .psc-ring { flex: 0 0 auto; }
+  .psc-ring__c { font-size: 11px; font-weight: 800; font-family: inherit; }
 }

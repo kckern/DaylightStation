@@ -47,6 +47,18 @@ const SLOT_BUILDERS = {
 };
 const DEFAULT_SLOTS = ['top-incomplete-courses'];
 const PIANO_COURSE_PROGRAM = 'piano-course';
+// The lesson a child plays next: the first one not yet watched, in course order.
+// Its still only when it is a rooted proxy path a kiosk can fetch.
+const nextLesson = (enriched) => {
+  const item = enriched.find((it) => !it.userWatched);
+  if (!item) return null;
+  const still = String(item.thumbnail ?? item.image ?? item.metadata?.thumbnail ?? '').trim();
+  return {
+    id: item.id ?? (item.plex ? `plex:${item.plex}` : null),
+    title: item.title ?? item.metadata?.title ?? null,
+    thumbnail: still.startsWith('/') ? still : null,
+  };
+};
 const courseKey = (id) => `plex:${String(id ?? '').replace(/^plex:/, '')}`;
 
 export class GetRecentCourseActivity {
@@ -264,6 +276,7 @@ export class GetRecentCourseActivity {
           percent,
           units: unitStates,
           courseCompleted: enriched.length > 0 && courseCompleted >= enriched.length,
+          next: nextLesson(enriched),
         });
       }
       if (!touched.length) continue;
@@ -278,16 +291,18 @@ export class GetRecentCourseActivity {
         units: e.units,
         courseCompleted: e.courseCompleted,
         lastPlayedAt: e.lastPlayedAt,
+        next: e.next,
       }));
 
       // Fill the card from the configured slots in order, dedupe by course.
       // The enrolled course leads: the first unfinished course in the child's
-      // enrolled sequence, or its last touched one when all are finished.
+      // enrolled sequence. When all are finished, the ordinary order stands.
       const courses = [];
       const seenCourseIds = new Set();
       const enrolledIds = enrollments[userId] ?? [];
       const enrolledTouched = enrolledIds.map((id) => allCourses.find((c) => c.courseId === id)).filter(Boolean);
-      const lead = enrolledTouched.find((c) => !c.courseCompleted) ?? enrolledTouched.at(-1) ?? null;
+      // A finished enrollment has nothing next, so it leads nothing.
+      const lead = enrolledTouched.find((c) => !c.courseCompleted) ?? null;
       if (lead) {
         courses.push({ ...lead, enrolled: true });
         seenCourseIds.add(lead.courseId);

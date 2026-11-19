@@ -7,7 +7,7 @@ import { usePianoUser } from '../PianoUserContext.jsx';
 import { titleFromScoreId } from '../modes/SheetMusic/scoreTitle.js';
 import PassageCoin from '../modes/SheetMusic/PassageCoin.jsx';
 import ProgressRing from '../modes/Videos/ProgressRing.jsx';
-import { coinSize, mapColumns, passageFaded, pieceCount, scoreHeading, stripGroups } from './deskModel.js';
+import { coinSize, mapColumns, passageBars, passageFaded, pieceCount, scoreHeading, stripGroups } from './deskModel.js';
 import './PianoHomeDesk.scss';
 
 const players = (response) => (Array.isArray(response?.players) ? response.players : []);
@@ -63,14 +63,25 @@ export const PieceCount = ({ piece }) => (
 
 export { usePrintedTitle };
 
+/** Whose card it is: the child's avatar and name, on every card. */
+const Who = ({ card }) => (
+  <span className="piano-desk__who">
+    <ProfileAvatar id={card.userId} name={card.name} />
+    <span className="piano-desk__name">{card.name}</span>
+  </span>
+);
+
+/** The piece: poster, title, the next passage's bars and the Silver count; the passage map underneath. */
 function PieceCard({ card }) {
   const title = usePrintedTitle(card.piece.scoreId);
   return (
     <>
+      <Who card={card} />
       <span className="piano-desk__top">
         <Poster src={card.piece.cover} />
         <span className="piano-desk__head">
           <strong className="piano-desk__title">{title}</strong>
+          {card.focus && <span className="piano-desk__next">{passageBars(card.focus)}</span>}
           <PieceCount piece={card.piece} />
         </span>
       </span>
@@ -79,25 +90,41 @@ function PieceCard({ card }) {
   );
 }
 
+/** The course: the next lesson's still and title, with the course's ring and name under it. */
 function CourseCard({ card }) {
   const { course } = card;
   const percent = course.total > 0 ? Math.min(100, Math.round((course.completed / course.total) * 100)) : 0;
+  const lesson = course.next;
   return (
     <>
-      <span className="piano-desk__top">
-        <Poster src={course.thumbnail ? sized(course.thumbnail, 112, 168) : null} />
-        <span className="piano-desk__head"><strong className="piano-desk__title">{course.courseTitle}</strong></span>
+      <Who card={card} />
+      {lesson?.thumbnail
+        ? <img className="piano-desk__still" src={sized(lesson.thumbnail, 360, 202)} alt="" decoding="async" />
+        : (
+          // No still: the course poster beside its title, as a piece card has.
+          <span className="piano-desk__top">
+            <Poster src={course.thumbnail ? sized(course.thumbnail, 112, 168) : null} />
+            <span className="piano-desk__head"><strong className="piano-desk__title">{lesson?.title ?? course.courseTitle}</strong></span>
+          </span>
+        )}
+      {lesson?.thumbnail && (
+      <span className="piano-desk__foot">
+        <ProgressRing percent={percent} label={`${percent}%`} size="34px" />
+        <span className="piano-desk__lesson">
+          <strong className="piano-desk__title">{lesson?.title ?? course.courseTitle}</strong>
+          {lesson?.title && <small className="piano-desk__course">{course.courseTitle}</small>}
+        </span>
       </span>
-      {/* Lessons done, as a ring that fills; no sentence. */}
-      <span className="piano-desk__band"><ProgressRing percent={percent} label={`${percent}%`} size="44px" /></span>
+      )}
+      {!lesson?.thumbnail && <span className="piano-desk__band"><ProgressRing percent={percent} label={`${percent}%`} size="40px" /></span>}
     </>
   );
 }
 
 /**
  * The progress strip above the home menu: for each child (school learners, not
- * parents), a card for the piece they are learning and one for their video course, under one
- * avatar and name per child. The strip keeps one
+ * parents), a card for the piece they are learning and one for their video course. Every
+ * card carries the child's avatar and name, and leads with the very next thing to do. The strip keeps one
  * height whether or not it has cards, so the menu below never moves. The cards share its width:
  * it never scrolls, and a card is never cut off at its edge.
  */
@@ -120,29 +147,22 @@ export default function PianoHomeDesk({ disabled, onOpenPassage, onOpenCourse })
       logger.info('piano.desk.open-passage', { userId: card.userId, scoreId: card.piece.scoreId, passageId: card.focus?.id ?? null });
       onOpenPassage?.(card.userId, card.piece.scoreId, card.focus?.id);
     } else {
-      logger.info('piano.desk.open-course', { userId: card.userId, courseId: card.course.courseId });
-      onOpenCourse?.(card.userId, card.course.courseId);
+      logger.info('piano.desk.open-course', { userId: card.userId, courseId: card.course.courseId, lessonId: card.course.next?.id ?? null });
+      onOpenCourse?.(card.userId, card.course.courseId, card.course.next?.id ?? null);
     }
   };
   return (
     <section className={`piano-desk${disabled ? ' is-disabled' : ''}`} aria-label="Recent progress">
       {groups.map((group) => (
-        <div key={group.userId} className="piano-desk__child">
-          {/* One avatar and name heads the child's cards. */}
-          <span className="piano-desk__who">
-            <ProfileAvatar id={group.userId} name={group.name} />
-            <span className="piano-desk__name">{group.name}</span>
-          </span>
-          <span className="piano-desk__cards">
-            {group.cards.map((card) => (
-              <button type="button" key={card.key} className="piano-desk__card" data-kind={card.kind} disabled={disabled}
-                aria-label={card.kind === 'piece' ? `${card.name}: ${pieceCount(card.piece)}` : `${card.name}: ${card.course.courseTitle}`}
-                onClick={() => open(card)}>
-                {card.kind === 'piece' ? <PieceCard card={card} /> : <CourseCard card={card} />}
-              </button>
-            ))}
-          </span>
-        </div>
+        <span key={group.userId} className="piano-desk__child">
+          {group.cards.map((card) => (
+            <button type="button" key={card.key} className="piano-desk__card" data-kind={card.kind} disabled={disabled}
+              aria-label={card.kind === 'piece' ? `${card.name}: ${pieceCount(card.piece)}` : `${card.name}: ${card.course.next?.title ?? card.course.courseTitle}`}
+              onClick={() => open(card)}>
+              {card.kind === 'piece' ? <PieceCard card={card} /> : <CourseCard card={card} />}
+            </button>
+          ))}
+        </span>
       ))}
     </section>
   );

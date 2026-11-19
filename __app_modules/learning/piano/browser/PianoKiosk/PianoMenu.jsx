@@ -17,6 +17,7 @@ import useKaraokeSchoolAccess from './useKaraokeSchoolAccess.js';
 import { canBuyPass, canEnterLock } from './earlyPass.js';
 import usePianoLessonGate, { PENDING_CAPTION } from './usePianoLessonGate.js';
 import TodaysLessonGate from './TodaysLessonGate.jsx';
+import { openPianoCourseLesson } from './pianoContentOpen.js';
 import { PIANO_MODES } from './pianoModes.js';
 
 /**
@@ -102,9 +103,11 @@ export function PianoMenu() {
     <PianoHomeDesk
       disabled={curfew || pending}
       onOpenPassage={openPassage}
-      onOpenCourse={(userId, courseId) => {
+      onOpenCourse={(userId, courseId, lessonId) => {
         if (userId) setCurrentUser(userId);
         if (curfew || pending) return;
+        // Straight into the lesson the card shows; the course page when that cannot resolve.
+        if (lessonId && openPianoCourseLesson({ courseId, lessonId, basePath, navigate })) return;
         navigate(`${basePath}/videos/${String(courseId).replace(/^plex:/, '')}`);
       }}
     />

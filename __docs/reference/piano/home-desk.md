@@ -6,14 +6,14 @@ their video course.
 
 ## Cards
 
-Each child is headed once, by their avatar (36px) and name; their cards sit under it
-(`stripGroups`). Every card (193x152) has a small 2:3 poster (56x84) beside its title,
-and its progress in a band underneath. A child gets a piece card when they have a piece
-in progress (at least one step earned; the most recent such piece; pieces only opened or
-tried do not count), and a course card when they have a course. Children are ordered by
-their latest activity.
+Each card answers "what's next for this child?" and resumes it in one tap. Every card
+(193x194) carries the child's avatar and name on top; under it, the very next thing to
+do fills the card. A child gets a piece card when they have a piece in progress (at least
+one step earned; the most recent such piece; pieces only opened or tried do not count),
+and a course card when they have a course. A child's cards sit together; children are
+ordered by their latest activity.
 
-- **Piece:** the score's poster (the same-name picture beside the score, `cover`; none
+- **Piece:** the score's poster beside its title, the next passage's bars (`Bars 6–9`) (the same-name picture beside the score, `cover`; none
   shows when the library has none), the printed title, a passage map in score order (a
   tomato, a flower, a silver coin or a gold coin; the next passage ringed; up to eight
   icons in one row, a longer piece in two equal rows, `mapColumns`), and the passage

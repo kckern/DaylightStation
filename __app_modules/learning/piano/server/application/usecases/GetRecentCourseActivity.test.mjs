@@ -353,3 +353,27 @@ test('an unreadable assignment leaves the ordinary order', async () => {
   const { players } = await new GetRecentCourseActivity(deps).execute();
   assert.equal(players.find((p) => p.userId === 'learner2').courses[0].courseId, 'plex:10');
 });
+
+test('each course names its next lesson: the first one not yet watched, with its still', async () => {
+  const deps = makeDeps({ summaries: { learner2: { 10: { completed: 1, total: 3, lastPlayedAt: '2026-07-20T00:00:00Z' } } }, itemCounts: { 10: 3 } });
+  const base = deps.fitnessPlayableService.getPlayableEpisodes;
+  deps.fitnessPlayableService.getPlayableEpisodes = async (id) => {
+    const r = await base(id);
+    return { ...r, items: r.items.map((it, i) => ({ ...it, id: `plex:${it.plex}`, title: `Lesson ${i + 1}`, thumbnail: i === 1 ? '/api/still-2.jpg' : 'http://plex/raw' })) };
+  };
+  const { players } = await new GetRecentCourseActivity(deps).execute();
+  const course = players.find((p) => p.userId === 'learner2').courses[0];
+  assert.deepEqual(course.next, { id: 'plex:10-e2', title: 'Lesson 2', thumbnail: '/api/still-2.jpg' });
+});
+
+test('a finished enrollment with nothing after it does not lead', async () => {
+  const deps = makeDeps({ summaries: { learner2: {
+    10: { completed: 2, total: 2, lastPlayedAt: '2026-07-20T00:00:00Z' }, // enrolled, finished
+    11: { completed: 1, total: 2, lastPlayedAt: '2026-07-19T00:00:00Z' },
+  } } });
+  deps.schoolAssignments = { get: async () => ({ programs: [{ programId: 'piano-course', courseId: 'plex:10' }] }) };
+  const { players } = await new GetRecentCourseActivity(deps).execute();
+  const courses = players.find((p) => p.userId === 'learner2').courses;
+  assert.equal(courses[0].courseId, 'plex:11');
+  assert.equal(courses.some((c) => c.enrolled), false);
+});

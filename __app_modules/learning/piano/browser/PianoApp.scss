@@ -292,9 +292,11 @@
 }
 
 .piano-linkbanner {
-  // A notification never takes page space: it floats over the top of the page,
-  // just under the 61px header, so nothing below it moves when it appears.
-  position: absolute; top: 61px; left: 0; right: 0; z-index: 40;
+  // A notification never takes page space and never covers the work: it floats
+  // at the foot of the screen, over the on-screen keyboard, so nothing moves
+  // when it appears and the progress strip stays readable.
+  position: absolute; bottom: 0; left: 0; right: 0; z-index: 40;
+  border-top: 1px solid var(--piano-border);
   display: flex;
   align-items: center;
   gap: var(--sp-3);

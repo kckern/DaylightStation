@@ -15,7 +15,8 @@ vi.mock('../pianoListCache.js', () => ({ idbGet: async () => null, idbSet: async
 const piece = { scoreId: 'files:docs/sheet-music/jesu.mxl', practicedAt: '2026-11-18T10:00:00Z', total: 3, silver: 1, gold: 0,
   next: { passageId: 'b' }, nextGoldPassageId: 'a',
   passages: [{ id: 'a', start: 0, end: 4, state: 'silver' }, { id: 'b', start: 5, end: 8, state: 'learning' }, { id: 'c', start: 9, end: 12, state: 'todo' }] };
-const course = { courseId: 'plex:9', courseTitle: 'Piano University', thumbnail: null, completed: 11, total: 173, lastPlayedAt: '2026-11-17T10:00:00Z' };
+const course = { courseId: 'plex:9', courseTitle: 'Piano University', thumbnail: null, completed: 11, total: 173, lastPlayedAt: '2026-11-17T10:00:00Z',
+  next: { id: 'plex:91', title: 'Lesson 12: Swing', thumbnail: '/api/still.jpg' } };
 const mount = (props = {}) => { const handlers = { onOpenPassage: vi.fn(), onOpenCourse: vi.fn() }; render(<PianoHomeDesk {...handlers} {...props} />); return handlers; };
 
 describe('PianoHomeDesk progress strip', () => {
@@ -28,12 +29,12 @@ describe('PianoHomeDesk progress strip', () => {
   it('gives a child with both a piece card and a course card, the course drawn as a ring', async () => {
     mount();
     expect(await screen.findByRole('button', { name: 'Kid: 1 of 3 Silver' })).toBeInTheDocument();
-    expect(await screen.findByRole('button', { name: 'Kid: Piano University' })).toBeInTheDocument();
-    expect(await screen.findByRole('button', { name: 'Sib: Piano University' })).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: 'Kid: Lesson 12: Swing' })).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: 'Sib: Lesson 12: Swing' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Idle/ })).toBeNull();
     expect(await screen.findByText('Jesu Joy')).toBeInTheDocument();
     // A course is drawn as a ring with its percent, never a bar or a sentence.
-    const sib = screen.getByRole('button', { name: 'Sib: Piano University' });
+    const sib = screen.getByRole('button', { name: 'Sib: Lesson 12: Swing' });
     const ring = sib.querySelector('.psc-ring');
     expect(ring.style.getPropertyValue('--p')).toBe('6');
     expect(ring.textContent).toBe('6%');
@@ -41,13 +42,21 @@ describe('PianoHomeDesk progress strip', () => {
     expect(sib.textContent).not.toMatch(/lessons/);
   });
 
-  it('heads each child cards with their avatar and name, not a time', async () => {
+  it('puts the child avatar and name on every card, never a time', async () => {
     mount();
     await screen.findByRole('button', { name: 'Kid: 1 of 3 Silver' });
-    const groups = [...document.querySelectorAll('.piano-desk__child')];
-    expect(groups.map((group) => group.querySelector('.piano-desk__name').textContent)).toEqual(['Kid', 'Sib']);
-    expect(groups[0].querySelectorAll('.piano-desk__card')).toHaveLength(2);
+    const cards = [...document.querySelectorAll('.piano-desk__card')];
+    expect(cards).toHaveLength(3);
+    expect(cards.map((card) => card.querySelector('.piano-desk__name').textContent)).toEqual(['Kid', 'Kid', 'Sib']);
+    expect(cards.every((card) => card.querySelector('.piano-avatar'))).toBe(true);
     expect(document.querySelector('.piano-desk').textContent).not.toMatch(/ago|just now/);
+  });
+
+  it('leads a course card with the next lesson: its still and its title', async () => {
+    mount();
+    const sib = await screen.findByRole('button', { name: 'Sib: Lesson 12: Swing' });
+    expect(sib.querySelector('.piano-desk__still').getAttribute('src')).toMatch(/^\/api\/still\.jpg/);
+    expect(sib.querySelector('.piano-desk__title').textContent).toBe('Lesson 12: Swing');
   });
 
   it('shows the score poster on a piece card', async () => {
@@ -97,7 +106,7 @@ describe('PianoHomeDesk progress strip', () => {
   it('shows only the children, never the parents', async () => {
     h.recent.players.push({ userId: 'parent', name: 'Parent', courses: [course] });
     mount();
-    await screen.findByRole('button', { name: 'Sib: Piano University' });
+    await screen.findByRole('button', { name: 'Sib: Lesson 12: Swing' });
     expect(screen.queryByRole('button', { name: /Parent/ })).toBeNull();
   });
 
@@ -105,8 +114,8 @@ describe('PianoHomeDesk progress strip', () => {
     const { onOpenPassage, onOpenCourse } = mount();
     fireEvent.click(await screen.findByRole('button', { name: 'Kid: 1 of 3 Silver' }));
     expect(onOpenPassage).toHaveBeenCalledWith('kid', piece.scoreId, 'b');
-    fireEvent.click(await screen.findByRole('button', { name: 'Sib: Piano University' }));
-    expect(onOpenCourse).toHaveBeenCalledWith('sib', 'plex:9');
+    fireEvent.click(await screen.findByRole('button', { name: 'Sib: Lesson 12: Swing' }));
+    expect(onOpenCourse).toHaveBeenCalledWith('sib', 'plex:9', 'plex:91');
   });
 
   it('rechecks progress every time the home screen opens', async () => {
