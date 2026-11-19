@@ -3,6 +3,7 @@ package net.kckern.daylight.cap.midibridge;
 import android.bluetooth.BluetoothAdapter;
 import android.bluetooth.BluetoothDevice;
 import android.bluetooth.BluetoothManager;
+import android.bluetooth.BluetoothProfile;
 import android.bluetooth.le.BluetoothLeScanner;
 import android.bluetooth.le.ScanCallback;
 import android.bluetooth.le.ScanFilter;
@@ -76,6 +77,7 @@ public class BleMidiConnector {
     private final Handler callbackHandler = new Handler(Looper.getMainLooper());
 
     private MidiManager midiManager;
+    private BluetoothManager bluetoothManager;
     private BluetoothAdapter adapter;
     private BluetoothLeScanner scanner;
 
@@ -94,6 +96,9 @@ public class BleMidiConnector {
     private boolean pairingPaused = false;
     private long connectGeneration;
     private long openRequest;
+    private int gattMisses;
+    private int noLinkStreak;
+    private volatile Boolean gattConnected;
     private ScanCallback activeScan;
 
     public BleMidiConnector(Context ctx, MidiConfig cfg, Listener listener) {
@@ -111,8 +116,8 @@ public class BleMidiConnector {
             if (stopped) return;
             running = true;
             midiManager = (MidiManager) ctx.getSystemService(Context.MIDI_SERVICE);
-            BluetoothManager bm = (BluetoothManager) ctx.getSystemService(Context.BLUETOOTH_SERVICE);
-            adapter = bm != null ? bm.getAdapter() : BluetoothAdapter.getDefaultAdapter();
+            bluetoothManager = (BluetoothManager) ctx.getSystemService(Context.BLUETOOTH_SERVICE);
+            adapter = bluetoothManager != null ? bluetoothManager.getAdapter() : BluetoothAdapter.getDefaultAdapter();
             if (midiManager != null) {
                 midiManager.registerDeviceCallback(deviceWatcher, handler);
             }
@@ -132,6 +137,7 @@ public class BleMidiConnector {
             stopScan();
             if (state != State.CONNECTED) {
                 connectGeneration++;
+                closeDevice(); // an open still waiting on its link must not race the bond
                 setState(State.IDLE, null);
             }
             done.countDown();
@@ -242,7 +248,9 @@ public class BleMidiConnector {
             Diag.log(TAG, "direct connect attempt → " + targetMac);
             openTarget(direct, /*scanOnFail=*/true);
             handler.postDelayed(() -> {
-                if (running && !suspended && generation == connectGeneration && state == State.CONNECTING) {
+                // An opened device is already waiting on its GATT link; a scan would only disturb it.
+                if (running && !suspended && generation == connectGeneration && state == State.CONNECTING
+                        && openDevice == null) {
                     Diag.log(TAG, "direct connect still pending — falling back to scan");
                     startScan(targetMac);
                 }
@@ -387,16 +395,76 @@ public class BleMidiConnector {
                 openDevice = device;
                 connectedName = name;
                 connectedMac = mac;
-                connectedSince = SystemClock.elapsedRealtime();
-                setState(State.CONNECTED, null);
-                Log.i(TAG, "BLE-MIDI connected: " + name + " (" + mac + ")");
-                listener.onMidiDeviceOpened(device, name, mac);
+                confirmLink(dev, device, name, mac, generation, request, SystemClock.elapsedRealtime());
                 })) closeLateDevice(device);
             }, callbackHandler);
         } catch (SecurityException e) {
             setState(State.FAILED, "connect permission denied");
             scheduleRetry();
         }
+    }
+
+    /** CONNECTED is earned here: the opened device must have a real GATT link behind it. */
+    private void confirmLink(BluetoothDevice dev, MidiDevice device, String name, String mac,
+                             long generation, long request, long startedAt) {
+        if (!running || stopped || suspended || generation != connectGeneration
+                || request != openRequest || openDevice != device) return;
+        long elapsed = SystemClock.elapsedRealtime() - startedAt;
+        switch (GattLinkGate.opening(isGattConnected(dev), elapsed)) {
+            case CONFIRMED:
+                connectedSince = SystemClock.elapsedRealtime();
+                gattMisses = 0;
+                noLinkStreak = 0;
+                setState(State.CONNECTED, null);
+                Log.i(TAG, "BLE-MIDI connected: " + name + " (" + mac + ") gatt after " + elapsed + "ms");
+                listener.onMidiDeviceOpened(device, name, mac);
+                handler.postDelayed(() -> watchLink(dev, device, generation), GattLinkGate.WATCH_INTERVAL_MS);
+                break;
+            case NO_LINK:
+                noLinkStreak++;
+                dropLink("opened but no Bluetooth link");
+                break;
+            default:
+                handler.postDelayed(() -> confirmLink(dev, device, name, mac, generation, request, startedAt),
+                        GattLinkGate.CONFIRM_POLL_MS);
+        }
+    }
+
+    /** A link can vanish without MidiManager ever reporting the device removed. */
+    private void watchLink(BluetoothDevice dev, MidiDevice device, long generation) {
+        if (!running || stopped || suspended || generation != connectGeneration
+                || openDevice != device || state != State.CONNECTED) return;
+        gattMisses = GattLinkGate.nextMisses(isGattConnected(dev), gattMisses);
+        if (GattLinkGate.linkLost(gattMisses)) {
+            dropLink("Bluetooth link lost");
+            return;
+        }
+        handler.postDelayed(() -> watchLink(dev, device, generation), GattLinkGate.WATCH_INTERVAL_MS);
+    }
+
+    private void dropLink(String reason) {
+        Log.w(TAG, reason + " — reconnecting");
+        reconnects++;
+        closeDevice();
+        listener.onMidiDeviceClosed();
+        setState(State.FAILED, reason);
+        scheduleRetry();
+    }
+
+    private Boolean isGattConnected(BluetoothDevice dev) {
+        if (bluetoothManager == null || dev == null) {
+            gattConnected = null;
+            return null;
+        }
+        try {
+            gattConnected = bluetoothManager.getConnectionState(dev, BluetoothProfile.GATT)
+                    == BluetoothProfile.STATE_CONNECTED;
+        } catch (RuntimeException e) {
+            // An unavailable reading cannot confirm a link.
+            Log.w(TAG, "GATT state unavailable", e);
+            gattConnected = null;
+        }
+        return gattConnected;
     }
 
     private static void closeLateDevice(MidiDevice device) {
@@ -430,7 +498,7 @@ public class BleMidiConnector {
     private void scheduleRetry() {
         if (!running || stopped || suspended || pairingPaused || !cfg.bluetoothMidiEnabled()) return;
         handler.removeCallbacks(retryRunnable); // collapse duplicate retries into one
-        handler.postDelayed(retryRunnable, cfg.reconnectDelayMs());
+        handler.postDelayed(retryRunnable, GattLinkGate.retryDelayMs(cfg.reconnectDelayMs(), noLinkStreak));
     }
 
     private void stopScan() {
@@ -448,6 +516,7 @@ public class BleMidiConnector {
         connectedName = null;
         connectedMac = null;
         connectedSince = 0L;
+        gattConnected = false;
     }
 
     // --- diagnostics -----------------------------------------------------
@@ -499,7 +568,11 @@ public class BleMidiConnector {
     public JSONObject status() {
         JSONObject o = new JSONObject();
         try {
-            o.put("state", state.name());
+            // Keep the open device during the watchdog debounce, but report only confirmed links.
+            Boolean confirmed = gattConnected;
+            State observed = state;
+            o.put("state", observed == State.CONNECTED && !Boolean.TRUE.equals(confirmed)
+                    ? State.CONNECTING.name() : observed.name());
             o.put("targetMac", cfg.targetMac());
             o.put("targetName", cfg.targetName());
             o.put("connectedName", connectedName == null ? JSONObject.NULL : connectedName);
@@ -507,6 +580,7 @@ public class BleMidiConnector {
             o.put("connectedSeconds", connectedSince == 0 ? 0
                     : (SystemClock.elapsedRealtime() - connectedSince) / 1000);
             o.put("reconnects", reconnects);
+            o.put("gattConnected", confirmed == null ? JSONObject.NULL : confirmed); // cached: /status must not block on Bluetooth
             o.put("lastError", lastError == null ? JSONObject.NULL : lastError);
             o.put("bluetoothOn", adapter != null && adapter.isEnabled());
             o.put("locationOn", isLocationEnabled());

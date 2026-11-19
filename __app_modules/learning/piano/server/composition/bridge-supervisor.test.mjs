@@ -1,6 +1,6 @@
 import { test, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { createPianoBridgeSupervisor, _resetForTests } from "./bridge-supervisor.mjs";
+import { createPianoBridgeSupervisor, linkRepairTimings, _resetForTests } from "./bridge-supervisor.mjs";
 
 afterEach(() => _resetForTests());
 
@@ -242,4 +242,85 @@ test('daylight-android: each reachable tick lets the wake-hold sync reconcile', 
   await pianoBridgeSupervisor.tick();
   await pianoBridgeSupervisor.tick();
   assert.equal(reconciles, 2);
+});
+
+test('link repair reads the configured JamCorder and reboots through remote admin', async () => {
+  const actions = [];
+  const fetched = [];
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async (url) => {
+    fetched.push(String(url));
+    if (String(url).includes('/select/logsql/query')) return { ok: true, text: async () => '' };
+    if (String(url).endsWith('/info')) return { ok: true, json: async () => ({ power: { interactive: false } }) };
+    return { ok: true, json: async () => ({ clients: [] }) };
+  };
+  try {
+    const { pianoBridgeSupervisor } = createPianoBridgeSupervisor({
+      configService: {
+        ...configService({
+          midi_wake: { device_id: 'yellow-room-tablet', bridge_url: 'ws://t:8770' },
+          screen_power_sync: { piano_power_entity: 'binary_sensor.piano_power' },
+          effects: { jamcorder: { web: 'http://jam' } },
+          bridge_supervisor: { enabled: true, link_repair: { hold_ms: 60000, power_on_settle_ms: 0 } },
+        }),
+        get: (key) => (key === 'logging.remoteSink' ? { enabled: true, url: 'http://logs:9428/insert/jsonline' } : undefined),
+      },
+      remoteAdmin: { performAction: async (...a) => { actions.push(a); return { accepted: true }; } },
+      haGateway: { getState: async () => ({ state: 'on' }), callService: async () => {} },
+      probeFactory: () => ({ readHealth: async () => ({ reachable: true, ble: 'CONNECTED', outVerified: false }) }),
+      logger: logger(), scheduler,
+    });
+    const realNow = Date.now;
+    let offset = 0;
+    Date.now = () => realNow() + offset;
+    try {
+      await pianoBridgeSupervisor.tick();
+      offset = 61_000;
+      await pianoBridgeSupervisor.tick();
+    } finally { Date.now = realNow; }
+    assert.ok(fetched.includes('http://jam/api/bluetooth/state/get'));
+    assert.deepEqual(actions, [['yellow-room-tablet', 'reboot']]);
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+});
+
+for (const [name, patch] of [
+  ['is switched off', { bridge_supervisor: { enabled: true, link_repair: { enabled: false } }, effects: { jamcorder: { web: 'http://jam' } } }],
+  ['has no JamCorder address', { bridge_supervisor: { enabled: true } }],
+]) {
+  test(`link repair stays out of the way when it ${name}`, async () => {
+    const actions = [];
+    const log = logger();
+    const { pianoBridgeSupervisor } = createPianoBridgeSupervisor({
+      configService: {
+        ...configService({ midi_wake: { device_id: 'd', bridge_url: 'ws://t:8770' }, screen_power_sync: { piano_power_entity: 'p' }, ...patch }),
+        get: () => ({ enabled: true, url: 'http://logs:9428/insert' }),
+      },
+      remoteAdmin: { performAction: async (...a) => { actions.push(a); return {}; } },
+      haGateway: { getState: async () => ({ state: 'on' }), callService: async () => {} },
+      probeFactory: () => ({ readHealth: async () => ({ reachable: true, outVerified: false }) }),
+      logger: log, scheduler,
+    });
+    await pianoBridgeSupervisor.tick();
+    assert.deepEqual(actions, []);
+    assert.equal(log.logs.find((l) => l.event === 'piano-bridge.supervisor.created').data.linkRepair, false);
+  });
+}
+
+test('nonsense link repair numbers fall back to safe values', () => {
+  assert.deepEqual(linkRepairTimings({ hold_ms: '3m', min_reboot_gap_ms: 5, max_reboots_per_day: 0, reboot_grace_ms: -1, power_on_settle_ms: 'x' }), {
+    holdMs: 180_000, minRebootGapMs: 600_000, maxRebootsPerDay: 1, rebootGraceMs: 120_000, powerOnSettleMs: 300_000,
+  });
+});
+
+test('Daylight keeps device reboot disabled even when every legacy repair dependency is configured', () => {
+  const d = androidDeps({ contentControl: androidControl, piano: {
+    effects: { jamcorder: { web: 'http://jam.invalid' } },
+    screen_power_sync: { piano_power_entity: 'binary_sensor.fixture' },
+    bridge_supervisor: { enabled: true, device_id: 'yellow-room-tablet', link_repair: { enabled: true } },
+  } });
+  d.args.configService.get = () => ({ enabled: true, url: 'http://logs.invalid/insert/jsonline' });
+  createPianoBridgeSupervisor(d.args);
+  assert.equal(d.logs.find((l) => l.event === 'piano-bridge.supervisor.created').data.linkRepair, false);
 });

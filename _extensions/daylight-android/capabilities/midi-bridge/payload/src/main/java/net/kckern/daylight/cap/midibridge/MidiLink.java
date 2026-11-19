@@ -310,7 +310,7 @@ public class MidiLink {
             // L1: forget + reconnect the BLE device (drops both ports, re-opens fresh).
             steps.put(step("L1 BLE reconnect", () -> {
                 if (bleConnector != null) { bleConnector.forget(); sleepMs(1200); bleConnector.connectNow(); }
-                waitConnected(12000);
+                waitConnected(LINK_WAIT_MS);
             }));
             if (verifyEcho()) { o.put("fixed", true).put("recoveredAt", "L1").put("steps", steps); return finishReset(o); }
             // The radio is not bounced for a link that is being torn down.
@@ -327,7 +327,7 @@ public class MidiLink {
                     sleepMs(6000);
                 }
                 if (bleConnector != null) bleConnector.connectNow();
-                waitConnected(15000);
+                waitConnected(LINK_WAIT_MS);
             }));
             resetVerdict(o, verifyEcho(), "L2").put("steps", steps);
             return finishReset(o);
@@ -381,6 +381,8 @@ public class MidiLink {
     private void sleepMs(long ms) {
         try { Thread.sleep(ms); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
     }
+    private static final long LINK_WAIT_MS = GattLinkGate.CONFIRM_TIMEOUT_MS + 5_000L;
+
     private void waitConnected(long budgetMs) {
         long end = System.currentTimeMillis() + budgetMs;
         while (System.currentTimeMillis() < end && !stopped && !Thread.currentThread().isInterrupted()) {

@@ -16,6 +16,13 @@
  *     interval_ms: 30000
  *     alert_after_ms: 300000
  *     one_way_alert_after_ms: 600000
+ *     jamcorder_url: http://...              # defaults to effects.jamcorder.web
+ *     link_repair:                           # on unless enabled: false
+ *       hold_ms: 180000                      # no echo + no JamCorder client this long
+ *       min_reboot_gap_ms: 3600000
+ *       max_reboots_per_day: 3
+ *       reboot_grace_ms: 300000
+ *       power_on_settle_ms: 300000           # no reboot this soon after the piano turns on
  *
  *   bridge_provider: piano-bridge          # top-level; default. `daylight-android` moves the
  *                                          # probe, the speaker actions and the relaunch onto the
@@ -43,6 +50,7 @@ import { createHaPlugCycle } from "../adapters/bridge/haPlugCycle.mjs";
 import { createScreenHold } from "../adapters/bridge/screenHold.mjs";
 import { createSpeakerReadinessCheck } from "../adapters/bridge/speakerReadiness.mjs";
 import { createLogStoreQuery, logStoreBaseFromSinkUrl } from "../adapters/bridge/logStoreQuery.mjs";
+import { createJamcorderClientReader, createPianoKioskIdleCheck, createTabletScreenReader } from "../adapters/bridge/pianoLinkRepairSignals.mjs";
 import { composePianoSpeakerPush } from "../domain/bridge/pianoSpeakerPush.mjs";
 import { PianoBridgeLifelineRestartAdapter } from "../adapters/bridge/PianoBridgeLifelineRestartAdapter.mjs";
 import { getPianoWakeHoldSync, _resetForTests as resetWakeHoldSync } from "./wake-hold-sync.mjs";
@@ -56,6 +64,21 @@ const DEFAULT_PACKAGE = 'net.kckern.pianobridge';
  * string, so a rename cannot silently break either.
  */
 export const PIANO_BRIDGE_SUPERVISOR_LOG_MODULE = 'piano-bridge-supervisor';
+
+/** A typo here must not remove the waits that protect a child's tablet. */
+export function linkRepairTimings(cfg = {}) {
+  const read = (value, fallback, floor) => {
+    if (typeof value !== 'number' || !Number.isFinite(value)) return fallback;
+    return Math.max(value, floor);
+  };
+  return {
+    holdMs: read(cfg.hold_ms, 180_000, 60_000),
+    minRebootGapMs: read(cfg.min_reboot_gap_ms, 3_600_000, 600_000),
+    maxRebootsPerDay: Math.floor(read(cfg.max_reboots_per_day, 3, 1)),
+    rebootGraceMs: read(cfg.reboot_grace_ms, 300_000, 120_000),
+    powerOnSettleMs: read(cfg.power_on_settle_ms, 300_000, 0),
+  };
+}
 
 /** @type {PianoBridgeSupervisorService | null} */
 let instance = null;
@@ -135,6 +158,32 @@ export function createPianoBridgeSupervisor({
     ? (push) => haGateway.callService('notify', notifyService, push)
     : null;
 
+  const sink = configService?.get?.('logging.remoteSink');
+  // A disabled sink ships nothing: every read of it would come back empty.
+  const logStoreBase = sink?.enabled ? logStoreBaseFromSinkUrl(sink.url) : null;
+  const queryLogs = logStoreBase ? createLogStoreQuery({ baseUrl: logStoreBase }) : null;
+
+  const linkCfg = cfg.link_repair ?? {};
+  const jamcorderUrl = cfg.jamcorder_url || piano.effects?.jamcorder?.web || null;
+  // Every input is required: without one the repair would be guessing about a child's tablet.
+  const legacyRepair = endpoint.provider !== DAYLIGHT_ANDROID;
+  const linkRepair = legacyRepair && linkCfg.enabled !== false && jamcorderUrl && queryLogs && readPianoPower
+    ? {
+      readJamcorderClients: createJamcorderClientReader({ baseUrl: jamcorderUrl }),
+      checkKioskIdle: createPianoKioskIdleCheck({
+        queryLogs, readScreenOn: createTabletScreenReader({ bridgeUrl }),
+      }),
+      reboot: () => remoteAdmin.performAction(deviceId, 'reboot'),
+      queryLogs,
+      ...linkRepairTimings(linkCfg),
+    }
+    : null;
+  if (legacyRepair && !linkRepair && linkCfg.enabled !== false) {
+    logger.warn?.('piano-bridge.supervisor.link-repair-unavailable', {
+      jamcorderUrl, logStore: !!queryLogs, pianoPower: !!readPianoPower,
+    });
+  }
+
   const speakerCfg = piano.speaker_recovery;
   let speaker = null;
   let plugEntity = null;
@@ -149,13 +198,10 @@ export function createPianoBridgeSupervisor({
       : null;
     if (plugCycle && !holdScreen) logger.warn?.('piano.speaker.no-screen-hold', { deviceId });
     const actions = speakerActionsFactory({ bridgeUrl: httpBase, headers });
-    const sink = configService?.get?.('logging.remoteSink');
-    // A disabled sink ships nothing: every week would read as quiet.
-    const logStoreBase = sink?.enabled ? logStoreBaseFromSinkUrl(sink.url) : null;
     speaker = {
       actions,
       checkReady: createSpeakerReadinessCheck({ actions, haGateway, plugEntity }),
-      queryLogs: logStoreBase ? createLogStoreQuery({ baseUrl: logStoreBase }) : null,
+      queryLogs,
       plugCycle,
       holdScreen,
       publish: typeof eventBus?.broadcast === 'function'
@@ -189,6 +235,7 @@ export function createPianoBridgeSupervisor({
     alertAfterMs: cfg.alert_after_ms,
     oneWayAlertAfterMs: cfg.one_way_alert_after_ms,
     speaker,
+    linkRepair,
     logModule: PIANO_BRIDGE_SUPERVISOR_LOG_MODULE,
     afterReachable: holdSync ? () => holdSync.reconcile() : null,
   });
@@ -196,7 +243,7 @@ export function createPianoBridgeSupervisor({
   instance = service;
   logger.info?.('piano-bridge.supervisor.created', {
     deviceId, provider: endpoint.provider, bridgeUrl: httpBase, pkg: endpoint.provider === DAYLIGHT_ANDROID ? null : pkg, notifyService, powerEntity, speakerRecovery: !!speaker, plugEntity, screenHold: !!speaker?.holdScreen,
-    readiness: !!speaker?.checkReady, weeklySummary: !!speaker?.queryLogs, wakeHoldSync: !!holdSync,
+    readiness: !!speaker?.checkReady, weeklySummary: !!speaker?.queryLogs, wakeHoldSync: !!holdSync, linkRepair: !!linkRepair,
   });
   return { pianoBridgeSupervisor: service };
 }
