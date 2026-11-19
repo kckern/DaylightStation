@@ -5,7 +5,7 @@ import { getContentPlugin } from "../../contentPlugins/index.js";
 import { feedLog } from "../feedLog.js";
 import getLogger from "../../../../../../frontend/src/lib/logging/Logger.js";
 import FeedPlayer from "../../players/FeedPlayer.jsx";
-import { DaylightAPI } from "../../../../../../frontend/src/lib/api.mjs";
+import { INLINE_YOUTUBE_QUALITY, inlineYouTubeDetailPath, useInlineYouTubeDetail } from "../../players/useInlineYouTubeDetail.js";
 
 // Info-level logger for image lifecycle (visible in backend session logs)
 function imgLog() { return getLogger().child({ module: 'feed-card-image' }); }
@@ -317,6 +317,7 @@ export default function FeedCard({ item, onDismiss, onPlay }) {
   const BodyModule = contentPlugin?.ScrollBody || getBodyModule(item.source);
 
   const canPlayInline = item.contentType === 'youtube' && item.meta?.videoId;
+  const detailPath = playingInline && canPlayInline && inlineYouTubeDetailPath(item.id, item.meta.videoId);
 
   const handlePlay = (e) => {
     e.stopPropagation();
@@ -348,8 +349,8 @@ export default function FeedCard({ item, onDismiss, onPlay }) {
             aspectRatio: heroAspectRatio(item),
             backgroundColor: '#1a1b1e',
           }}>
-          {playingInline ? (
-            <CardYouTubePlayer item={item} />
+          {detailPath ? (
+            <CardYouTubePlayer key={detailPath} item={item} detailPath={detailPath} />
           ) : item.meta?.galleryImages?.length > 1 ? (
             <GalleryHero images={item.meta.galleryImages} feedItemId={item.id} title={item.title} />
           ) : (
@@ -567,44 +568,37 @@ export default function FeedCard({ item, onDismiss, onPlay }) {
   );
 }
 
-function CardYouTubePlayer({ item }) {
-  const [playerData, setPlayerData] = useState(null);
-  const [fetchDone, setFetchDone] = useState(false);
+function CardYouTubePlayer({ item, detailPath }) {
+  const { playerData, loading, error, sectionCount } = useInlineYouTubeDetail(detailPath);
   const [useEmbed, setUseEmbed] = useState(false);
+  const fetchStartRef = useRef(null);
+  const itemRef = useRef(item);
+  itemRef.current = item;
 
   useEffect(() => {
-    const fetchStart = performance.now();
-    const params = new URLSearchParams();
-    params.set('quality', '720p');
-    if (item.meta) params.set('meta', JSON.stringify(item.meta));
-
-    feedLog.resolution('native-attempt', { videoId: item.meta?.videoId, title: item.title, quality: '720p' });
-
-    DaylightAPI(`/api/v1/feed/detail/${encodeURIComponent(item.id)}?${params}`)
-      .then(result => {
-        const durationMs = Math.round(performance.now() - fetchStart);
-        const section = result?.sections?.find(s => s.type === 'player' && s.data?.provider === 'youtube');
-        if (section) {
-          feedLog.resolution('native-resolved', {
-            videoId: item.meta?.videoId,
-            title: item.title,
-            hasVideoUrl: !!section.data?.videoUrl,
-            hasAudioUrl: !!section.data?.audioUrl,
-            hasUrl: !!section.data?.url,
-            mode: (section.data?.videoUrl && section.data?.audioUrl) ? 'split' : 'combined',
-            durationMs,
-          });
-          setPlayerData(section.data);
-        } else {
-          feedLog.resolution('native-no-player-section', { videoId: item.meta?.videoId, title: item.title, durationMs, sectionCount: result?.sections?.length || 0 });
-        }
-        setFetchDone(true);
-      })
-      .catch((err) => {
-        feedLog.resolution('native-fetch-error', { videoId: item.meta?.videoId, title: item.title, error: err.message });
-        setFetchDone(true);
+    const { title, meta: { videoId } } = itemRef.current;
+    if (loading) {
+      fetchStartRef.current = performance.now();
+      feedLog.resolution('native-attempt', { videoId, title, quality: INLINE_YOUTUBE_QUALITY });
+      return;
+    }
+    const durationMs = Math.round(performance.now() - fetchStartRef.current);
+    if (error) {
+      feedLog.resolution('native-fetch-error', { videoId, title, error: error.message });
+    } else if (playerData) {
+      feedLog.resolution('native-resolved', {
+        videoId,
+        title,
+        hasVideoUrl: !!playerData.videoUrl,
+        hasAudioUrl: !!playerData.audioUrl,
+        hasUrl: !!playerData.url,
+        mode: playerData.videoUrl && playerData.audioUrl ? 'split' : 'combined',
+        durationMs,
       });
-  }, [item.id, item.meta, item.title]);
+    } else {
+      feedLog.resolution('native-no-player-section', { videoId, title, durationMs, sectionCount });
+    }
+  }, [loading, error, playerData, sectionCount]);
 
   const handleStreamError = useCallback(() => {
     feedLog.resolution('embed-fallback', { videoId: item.meta?.videoId, title: item.title, reason: 'stream-error' });
@@ -615,7 +609,7 @@ function CardYouTubePlayer({ item }) {
     ? `${item.meta.imageWidth} / ${item.meta.imageHeight}`
     : '16 / 9';
 
-  if (!fetchDone) {
+  if (loading) {
     return (
       <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#000' }}>
         <div className="scroll-loading-dots"><span /><span /><span /></div>
