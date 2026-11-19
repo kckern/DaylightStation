@@ -36,14 +36,15 @@ function useNewestUndo(candidates) {
 /**
  * A meal change and its Undo. A fresh capture also carries `offer`: the fix for
  * food that landed on the wrong day. One action runs at a time, because a move
- * retires the capture's Undo and an Undo removes the foods being moved.
+ * retires the capture's Undo and an Undo removes the foods being moved. Food
+ * added without a server Undo (`token` null) gets the day fix alone.
  */
 function MealUndoToast({ mealUndo, today, onMoveCapture, onUndoMeal, onDismissMealUndo, undoBusy }) {
   const [moving, moveCapture] = useMoveInFlight(onMoveCapture);
   return <Toast message={mealUndo.label}>
     <span className="health-capture-actions">
       {mealUndo.offer ? <CaptureDayActions date={mealUndo.offer.date} today={today} onMove={moveCapture} busy={moving} disabled={undoBusy} /> : null}
-      <Button size="compact-xs" aria-label="Undo meal change" loading={undoBusy} disabled={moving} onClick={onUndoMeal}>Undo</Button>
+      {mealUndo.token ? <Button size="compact-xs" aria-label="Undo meal change" loading={undoBusy} disabled={moving} onClick={onUndoMeal}>Undo</Button> : null}
       <Button size="compact-xs" variant="subtle" disabled={undoBusy || moving} onClick={onDismissMealUndo}>Dismiss</Button>
     </span>
   </Toast>;
@@ -58,7 +59,7 @@ export function TodayToasts({
   captureNotice, captureRetry, retryBusy, onRetryCapture, onDismissCapture,
   orphanRetry, onRetryOrphan, onDismissOrphan,
   moves, mealUndo, onUndoMeal, onDismissMealUndo, undoDelete, onUndoDelete, onDismissUndoDelete, undoBusy,
-  strandedPortion, today, onMoveCapture,
+  strandedPortion, today, onMoveCapture, addedOffer, onMoveAdded, onDismissAdded,
 }) {
   const newestUndo = useNewestUndo([
     moves.undo && { key: `move:${moves.undo.label}`, clear: moves.undo.dismiss },
@@ -87,6 +88,8 @@ export function TodayToasts({
     </Toast> : null}
     {kind === 'meal' ? <MealUndoToast key={mealUndo.token} mealUndo={mealUndo} today={today} onMoveCapture={onMoveCapture}
       onUndoMeal={onUndoMeal} onDismissMealUndo={onDismissMealUndo} undoBusy={undoBusy} /> : null}
+    {addedOffer ? <MealUndoToast key={addedOffer.offer.ids.join(',')} mealUndo={addedOffer} today={today} onMoveCapture={onMoveAdded}
+      onDismissMealUndo={onDismissAdded} undoBusy={false} /> : null}
     {kind === 'delete' ? <Toast message={`${undoDelete.label} deleted.`}>
       <Button size="compact-xs" loading={undoBusy} onClick={onUndoDelete}>Undo</Button>
       <Button size="compact-xs" variant="subtle" disabled={undoBusy} onClick={onDismissUndoDelete}>Dismiss</Button>

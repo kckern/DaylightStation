@@ -89,14 +89,14 @@ export function TemplatePicker({ open, onClose, onLogged, bucketId, date = null,
     submitting.current = true;
     setBusy(true); setError(null);
     try {
-      await DaylightAPI(`api/v1/health/nutrition/templates/${template.id}/instantiate`,
+      const logged = await DaylightAPI(`api/v1/health/nutrition/templates/${template.id}/instantiate`,
         // Instantiate onto the day being VIEWED. The route has always taken a
       // `date`; nothing was sending one, so every template landed on today.
       operationRequest(requestRef, { ...(bucketId ? { mealTime: bucketId } : {}), ...(date ? { date } : {}), variantNames, templateId: template.id }), 'POST');
       requestRef.current = null;
       logger.info('template.logged', { id: template.id, bucket: bucketId ?? null, variants: variantNames.length });
       setChosen(null); setVariants(new Set());
-      onLogged();
+      onLogged(logged);
     } catch (err) {
       logger.error('template.log_failed', { id: template.id, error: err?.message });
       setError(err);

@@ -38,6 +38,16 @@ describe('CustomFoodSheet', () => {
     expect(quickaddBody()).toEqual({ catalogEntryId: 'e9', mealTime: 'evening', date: '2026-09-03', operationId: expect.any(String) });
   });
 
+  it('hands the saved row to the day', async () => {
+    const onCreated = vi.fn();
+    apiMock.mockImplementation(async (path) => (path.endsWith('nutrition/catalog') ? { entry: { id: 'e9' } } : { committed: true, item: { uuid: 'row-1' } }));
+    r(<CustomFoodSheet upc="012345678905" open onClose={() => {}} onCreated={onCreated} />);
+    fireEvent.change(screen.getByLabelText(/name/i), { target: { value: 'Trail mix' } });
+    fireEvent.change(screen.getByLabelText(/Weight in grams/i), { target: { value: '100' } });
+    fireEvent.click(screen.getByRole('button', { name: /create & log/i }));
+    await waitFor(() => expect(onCreated).toHaveBeenCalledWith({ committed: true, item: { uuid: 'row-1' } }));
+  });
+
   it('with neither, the body is unchanged — absent still means today and the clock\'s meal', async () => {
     await save({});
     expect(quickaddBody()).toEqual({ catalogEntryId: 'e9', operationId: expect.any(String) });

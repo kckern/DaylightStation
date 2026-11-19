@@ -6,6 +6,8 @@ import { useHealthOperations } from './HealthOperationsProvider.jsx';
 export function FoodOperationStatus({ operation }) {
   const context = useHealthOperations();
   if (operation.phase === 'succeeded') {
+    // The day's toast already said where this food landed.
+    if (operation.reported) return null;
     const destination = operation.normalizedResult?.destination;
     const movedDate = destination?.date && destination.date !== operation.date;
     const movedMeal = destination?.bucket && destination.bucket !== operation.bucket;

@@ -24,12 +24,12 @@ const MealsIcon = () => (
  * (`selectedCount`), the section hands in a capture that carries the selection,
  * so what is said edits those foods. The label says which. */
 export function MealAddRow({ bucket, label, date, focusRequest = 0, busy = false, active = true, selectedCount = 0,
-  onOrphanedRetry, onAdded, onSentencePending, onVoiceCapture, onPhotoCapture, onOpenBarcode, onOpenTemplates, onManageFoods }) {
+  onOrphanedRetry, onAdded, onFoodAdded, onSentencePending, onVoiceCapture, onPhotoCapture, onOpenBarcode, onOpenTemplates, onManageFoods }) {
   const openBarcode = () => { logger.debug('barcode.open', { bucket }); onOpenBarcode(bucket); };
   const openTemplates = (templateId) => { logger.debug('templates.open', { bucket, templateId }); onOpenTemplates(bucket, templateId); };
   return <div className="health-meal__add-row" data-selecting={selectedCount ? 'true' : undefined}>
     <AddCombobox inline bucketId={bucket} label={label} date={date} focusRequest={focusRequest}
-      onDone={onAdded} onManageFoods={onManageFoods} onSentencePending={onSentencePending}
+      onDone={onAdded} onFoodAdded={onFoodAdded} onManageFoods={onManageFoods} onSentencePending={onSentencePending}
       onTemplate={entry => openTemplates(entry.id)}
       actions={<span className="health-meal__add-actions">
         {onVoiceCapture ? <VoiceCapture active={active} bucket={bucket} mealLabel={label}

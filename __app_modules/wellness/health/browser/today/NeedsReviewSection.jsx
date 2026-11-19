@@ -23,7 +23,7 @@ function itemsSummary(items) {
  * (Telegram, the scale bridge, a failed AI call) and otherwise invisible in
  * the web Today view until acted on. Root-cause fix, live incident 2026-09-02.
  */
-function NeedsReviewRow({ entry, onChanged }) {
+function NeedsReviewRow({ entry, onChanged, onConfirmed }) {
   const [reviewing, setReviewing] = useState(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
@@ -58,7 +58,7 @@ function NeedsReviewRow({ entry, onChanged }) {
         <Button size="xs" loading={busy} disabled={busy} onClick={() => setReviewing(entry)}>Review food</Button>
         <Button size="xs" variant="subtle" color="red" loading={busy} disabled={busy} onClick={discard}>Discard</Button>
       </div>
-      {reviewing ? <PendingReviewEditor entry={reviewing} onClose={() => setReviewing(null)} onChanged={onChanged} /> : null}
+      {reviewing ? <PendingReviewEditor entry={reviewing} onClose={() => setReviewing(null)} onChanged={onChanged} onConfirmed={onConfirmed} /> : null}
     </div>
   );
 }
@@ -68,13 +68,13 @@ function NeedsReviewRow({ entry, onChanged }) {
  * surface. Rendered below the meal log when non-empty; entirely absent (not
  * just empty) otherwise, matching `.health-pending`'s occasional-banner feel.
  */
-export function NeedsReviewSection({ pending, onChanged }) {
+export function NeedsReviewSection({ pending, onChanged, onConfirmed }) {
   if (!pending || pending.length === 0) return null;
   return (
     <details className="health-pending health-pending--needs-review">
       <summary>{pending.length} {pending.length === 1 ? 'capture' : 'captures'} not counted · Review</summary>
       {pending.map((entry) => (
-        <NeedsReviewRow key={entry.id} entry={entry} onChanged={onChanged} />
+        <NeedsReviewRow key={entry.id} entry={entry} onChanged={onChanged} onConfirmed={onConfirmed} />
       ))}
     </details>
   );

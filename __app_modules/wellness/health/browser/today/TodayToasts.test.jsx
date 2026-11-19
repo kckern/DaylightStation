@@ -106,6 +106,16 @@ describe('TodayToasts', () => {
     expect(screen.getByRole('button', { name: 'Move to Yesterday' }).disabled).toBe(false);
   });
 
+  it('an add with no Undo offers the day move beside any Undo already showing', async () => {
+    const onMoveAdded = vi.fn(); const onDismissAdded = vi.fn();
+    render(<MantineProvider><TodayToasts moves={noMoves} today="2026-11-18" onDismissMealUndo={() => {}} mealUndo={{ token: 'meal-1', label: 'Meal updated' }}
+      addedOffer={{ token: null, label: 'Added Apple to Today', offer: { ids: ['a'], date: '2026-11-18' } }} onMoveAdded={onMoveAdded} onDismissAdded={onDismissAdded} /></MantineProvider>);
+    expect(await screen.findByText('Added Apple to Today')).toBeTruthy();
+    expect(screen.getAllByRole('button', { name: 'Undo meal change' })).toHaveLength(1);
+    fireEvent.click(screen.getByRole('button', { name: 'Move to Yesterday' }));
+    expect(onMoveAdded).toHaveBeenCalledWith('2026-11-17');
+  });
+
   it('an Undo in progress holds the day buttons', async () => {
     render(<MantineProvider><TodayToasts moves={noMoves} today="2026-11-18" undoBusy onDismissMealUndo={() => {}}
       mealUndo={{ token: 'meal-1', label: 'Added Eggs to Today', offer: { logId: 'log', date: '2026-11-18' } }} /></MantineProvider>);

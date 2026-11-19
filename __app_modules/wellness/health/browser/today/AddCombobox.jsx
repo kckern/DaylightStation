@@ -64,7 +64,13 @@ const visibleViewport = () => (typeof window === 'undefined' ? null
   : window.visualViewport ? { offsetTop: window.visualViewport.offsetTop, height: window.visualViewport.height }
     : { offsetTop: 0, height: window.innerHeight });
 
-export function AddCombobox({ bucketId, date = null, onDone, onCancel, onMeals, onTemplate, onManageFoods, onSentencePending = null,
+/**
+ * `onFoodAdded(result, date, { added })` hears every committed add, including one
+ * finished by a Retry. `added` marks a pick, which is new food by definition; a
+ * sentence may instead have changed existing food. It returns true once the
+ * person has been told where the food landed.
+ */
+export function AddCombobox({ bucketId, date = null, onDone, onFoodAdded = null, onCancel, onMeals, onTemplate, onManageFoods, onSentencePending = null,
   inline = false, label = null, focusRequest = 0, actions = null }) {
   const operations = useHealthOperations();
   const [text, setText] = useState('');
@@ -208,9 +214,12 @@ export function AddCombobox({ bucketId, date = null, onDone, onCancel, onMeals, 
       if (operations) {
         operations.store.begin({ id: request.operationId, kind: 'quickadd', date: targetDate, bucket: bucketId, targetIds: [], label: entry.name,
           provisionalRow: provisional, request: { path: 'api/v1/health/nutrition/catalog/quickadd', body: request, method: 'POST' } });
-        response = await operations.execute(request.operationId);
+        response = await operations.execute(request.operationId, result => { onFoodAdded?.(result, targetDate, { added: true }); });
         if (!operations.isActive()) return;
-      } else response = await DaylightAPI('api/v1/health/nutrition/catalog/quickadd', request, 'POST');
+      } else {
+        response = await DaylightAPI('api/v1/health/nutrition/catalog/quickadd', request, 'POST');
+        onFoodAdded?.(response, targetDate, { added: true });
+      }
       logger.info('quickadd.done', { entry: entry.name, bucket: bucketId, surface, saveMs: Math.round(performance.now() - submittedAt) });
       settleProvisionalRow(provisional, response?.item ?? null);
       trackAddFlow({ ids: addedRowIds(response), userId: operations?.snapshot.userId ?? null, date: operations ? targetDate : null, bucket: bucketId ?? null, surface, kind: 'pick', submitToCommittedMs: performance.now() - submittedAt });
@@ -259,6 +268,7 @@ export function AddCombobox({ bucketId, date = null, onDone, onCancel, onMeals, 
       // The response IS the saved row: show it now. Waiting for the day
       // refetch left the add row cleared and the meal unchanged for seconds.
       showCommittedFoodRows(response?.item ? [response.item] : []);
+      onFoodAdded?.(response, date || localTodayISO(), { added: true });
       trackAddFlow({ ids: addedRowIds(response), userId: operations?.snapshot.userId ?? null, date: operations ? (date || localTodayISO()) : null, bucket: bucketId ?? null, surface, kind: 'pick', submitToCommittedMs: performance.now() - submittedAt });
       finish();
     } catch (err) {
@@ -271,7 +281,10 @@ export function AddCombobox({ bucketId, date = null, onDone, onCancel, onMeals, 
     if (operations) {
       const submitted = text.trim();
       if (!submitted) return;
-      operations.submitSentence({ text: submitted, date: date || localTodayISO(), bucket: bucketId });
+      const targetDate = date || localTodayISO();
+      operations.submitSentence({ text: submitted, date: targetDate, bucket: bucketId, onResult: (result, operation) => {
+        if (onFoodAdded?.(result, targetDate)) operations.store.transition(operation.id, { reported: true });
+      } });
       setText(''); setHighlight(-1); setError(null);
       return;
     }
@@ -309,6 +322,7 @@ export function AddCombobox({ bucketId, date = null, onDone, onCancel, onMeals, 
         // Rows that landed on another day or meal ("…for lunch") will never
         // appear here: drop the placeholder now rather than after the timeout.
         if (landedElsewhere(result, { date, bucketId })) settle(); else flow.then(settle);
+        onFoodAdded?.(result, date || localTodayISO());
         finish(result);
       }
     } catch (err) {

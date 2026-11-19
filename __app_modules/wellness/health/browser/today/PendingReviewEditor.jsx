@@ -11,7 +11,7 @@ const secondaryNutrients = ['fiber', 'sugar', 'sodium', 'cholesterol'];
 const label = key => `${key[0].toUpperCase()}${key.slice(1)} (${key === 'calories' ? 'kcal' : ['sodium', 'cholesterol'].includes(key) ? 'mg' : 'g'})`;
 
 /** Holds the opened version while background refreshes continue. Never overwrite a draft. */
-export function PendingReviewEditor({ entry, onClose, onChanged }) {
+export function PendingReviewEditor({ entry, onClose, onChanged, onConfirmed }) {
   const [factor, setFactor] = useState(1);
   const [draft, setDraft] = useState({});
   const [date, setDate] = useState(entry.date || '');
@@ -38,6 +38,7 @@ export function PendingReviewEditor({ entry, onClose, onChanged }) {
       await DaylightAPI(`api/v1/health/nutrition/pending/${entry.id}/review`,
         { ...payload, operationId: operation.current.id }, 'POST');
       logger.info('saved', { logId: entry.id, action });
+      if (action === 'confirm') onConfirmed?.(entry, { date, mealTime });
       onChanged(); onClose();
     } catch (err) {
       logger.warn('failed', { logId: entry.id, action, error: err.message });

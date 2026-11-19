@@ -83,6 +83,9 @@ export function TodayView({ active = true, sidebarTarget, followUpTarget = null,
   // Warm ±7 days and each meal's shortlist once the viewed day is on screen.
   useHealthDayPrefetch(date, { enabled: active, ready: settled && !day.loading });
   const [mealUndo, setMealUndo] = useState(null);
+  // Food added with no server Undo: the day fix alone. It has its own slot so it
+  // never retires a working Undo, which an undo slot's newest-wins rule would do.
+  const [addedOffer, setAddedOffer] = useState(null);
   // A failed voice send whose mic unmounted (the day changed): { run, label, busy, error }.
   const [orphanRetry, setOrphanRetry] = useState(null);
   const keepOrphanedRecording = (run, { mealLabel, date: recordedOn }) => setOrphanRetry({ run, label: recordedOn && recordedOn !== todayISO() ? `${mealLabel} recording from ${recordedOn}` : `${mealLabel} recording`, busy: false, error: null });
@@ -235,9 +238,9 @@ export function TodayView({ active = true, sidebarTarget, followUpTarget = null,
     const operation = prior || { id: crypto.randomUUID() };
     operation.pending = true; copyOperations.current.set(key, operation);
     try {
-      await DaylightAPI('api/v1/health/nutrition/copy', { entryIds, date: todayISO(), mealTime: bucketId, operationId: operation.id }, 'POST');
+      const copied = await DaylightAPI('api/v1/health/nutrition/copy', { entryIds, date: todayISO(), mealTime: bucketId, operationId: operation.id }, 'POST');
       logger.info('copy-to-today', { bucketId, count: rows.length });
-      setCaptureNotice(`${label} copied to today.`);
+      if (!offerAddedFood(copied, todayISO(), { added: true, label: `${label} copied to today.` })) setCaptureNotice(`${label} copied to today.`);
       copyOperations.current.delete(key);
       day.reload();
     } catch (err) {
@@ -293,23 +296,39 @@ export function TodayView({ active = true, sidebarTarget, followUpTarget = null,
   // saying "log this for lunch" must not silently land the entry under
   // Breakfast with no explanation. Reuse the existing captureNotice banner
   // rather than inventing a second notice mechanism.
-  // New food says where it landed and offers the wrong-day fix. A meal instruction
-  // or amend has no log ID, and is not new food.
-  const captureUndo = (result, targetDate) => {
-    const undo = { token: result.undoToken, label: 'Meal updated' };
-    const rows = result.items || [];
+  // New food says where it landed and offers the wrong-day fix. A capture is new
+  // food when it has a log ID (a meal instruction or amend has none); `added` is
+  // for routes that only ever add, whose results carry no parsed log.
+  const captureUndo = (result, targetDate, { added = Boolean(result.logId), label } = {}) => {
+    const undo = { token: result.undoToken ?? null, label: 'Meal updated' };
+    const rows = result.items || (result.item ? [result.item] : []);
     const foods = rows.filter(row => row.kind !== 'group');
     const ids = [...new Set([...(result.entryIds || []), ...(result.affectedIds || []), ...rows.map(entryId)].filter(Boolean).map(String))];
-    if (!result.logId || !foods.length || (SHARED_LOG_IDS.has(result.logId) && !ids.length)) return undo;
+    const findable = ids.length > 0 || (result.logId && !SHARED_LOG_IDS.has(result.logId));
+    if (!added || !foods.length || !findable) return undo;
     const landed = foods[0].date || result.date || targetDate;
     const what = foods.length === 1 ? entryLabel(foods[0]) : `${foods.length} foods`;
-    const meal = result.mealTime ? `, ${bucketLabel(result.mealTime)}` : '';
-    return { ...undo, label: `Added ${what} to ${dayLabel(landed, todayISO())}${meal}`, offer: { logId: result.logId, ids, date: landed } };
+    const mealId = result.mealTime || result.bucket || foods[0].mealTime;
+    const meal = mealId ? `, ${bucketLabel(mealId)}` : '';
+    return { ...undo, label: label || `Added ${what} to ${dayLabel(landed, todayISO())}${meal}`, offer: { logId: result.logId, ids, date: landed } };
   };
-  // The capture's Undo stops working once its rows change, so it retires only
-  // after a real move. Anything else leaves the toast for another try.
-  const moveCapture = async iso => {
-    const { token, offer } = mealUndo || {};
+  const showAdded = undo => {
+    if (undo.token) { setMealUndo(undo); setAddedOffer(null); mealUndoOperation.current = null; }
+    else if (undo.offer) setAddedOffer(undo);
+  };
+  // For every add outside the capture flow. True when the toast now reports it.
+  const offerAddedFood = (result, targetDate, options) => {
+    if (result?.committed !== true) return false;
+    const undo = captureUndo(result, targetDate, options);
+    if (!undo.offer) return false;
+    logger.info('capture.offer', { logId: result.logId ?? null, count: undo.offer.ids.length, date: undo.offer.date, undo: Boolean(undo.token) });
+    showAdded(undo);
+    return true;
+  };
+  // A capture's Undo stops working once its rows change, so a toast retires only
+  // after a real move. Anything else leaves it for another try.
+  const moveOffered = async (shown, retire, iso) => {
+    const offer = shown?.offer;
     if (!offer) return;
     const today = todayISO();
     const say = message => { setCaptureRetry(null); setCaptureNotice(message); };
@@ -323,9 +342,11 @@ export function TodayView({ active = true, sidebarTarget, followUpTarget = null,
     }
     const outcome = await moves.moveToDay(entries, iso);
     logger.info('capture.move-day.result', { logId: offer.logId, outcome, to: iso });
-    if (outcome === MoveResult.MOVED) setMealUndo(current => (current?.token === token ? null : current));
+    if (outcome === MoveResult.MOVED) retire();
     else if (outcome === MoveResult.UNCHANGED) say(`Those foods are already on ${dayLabel(iso, today)}.`);
   };
+  const moveCapture = iso => moveOffered(mealUndo, () => setMealUndo(current => (current === mealUndo ? null : current)), iso);
+  const moveAdded = iso => moveOffered(addedOffer, () => setAddedOffer(current => (current === addedOffer ? null : current)), iso);
 
   const handleCaptureResult = (result, bucket = null, targetDate = date, context = {}) => {
     // Offer the retry BEFORE the message is rendered, so the sentence that
@@ -339,8 +360,10 @@ export function TodayView({ active = true, sidebarTarget, followUpTarget = null,
     } else { clearMealClarification(clarificationKey); }
     if (result?.committed) {
       day.reload(); pendingReview.reload();
-      setCaptureNotice(result?.moved ? `Moved to ${bucketLabel(result.mealTime)}` : null);
-      if (result.undoToken) { setMealUndo(captureUndo(result, targetDate)); mealUndoOperation.current=null; }
+      const undo = captureUndo(result, targetDate);
+      // The toast names the meal itself, so the moved cue would repeat it.
+      setCaptureNotice(result?.moved && !undo.offer ? `Moved to ${bucketLabel(result.mealTime)}` : null);
+      showAdded(undo);
       return;
     }
     if (result?.clarification) { setCaptureNotice(null); return; }
@@ -518,7 +541,8 @@ export function TodayView({ active = true, sidebarTarget, followUpTarget = null,
         orphanRetry={orphanRetry} onRetryOrphan={retryOrphanedRecording} onDismissOrphan={() => setOrphanRetry(null)}
         moves={moves} mealUndo={mealUndo} onUndoMeal={undoMealChange} onDismissMealUndo={() => setMealUndo(null)}
         undoDelete={undoDelete} onUndoDelete={undoDeletedEntry} onDismissUndoDelete={() => setUndoDelete(null)} undoBusy={undoBusy}
-        strandedPortion={strandedPortion ? portionControl : null} today={todayISO()} onMoveCapture={moveCapture} />
+        strandedPortion={strandedPortion ? portionControl : null} today={todayISO()} onMoveCapture={moveCapture}
+        addedOffer={addedOffer} onMoveAdded={moveAdded} onDismissAdded={() => setAddedOffer(null)} />
       <ConfirmDialog open={Boolean(pendingDelete)} title={pendingDelete ? `Delete ${entryLabel(pendingDelete)}?` : ''}
         body={pendingDelete ? deleteConfirmBody(pendingDelete) : ''} busy={deleteBusy} error={deleteError}
         onConfirm={confirmDelete} onCancel={() => { setPendingDelete(null); setDeleteError(null); }} />
@@ -543,10 +567,11 @@ export function TodayView({ active = true, sidebarTarget, followUpTarget = null,
         onNotice={message => { setCaptureRetry(null); setCaptureNotice(message); }}
         renderAddRow={(bucket, label, meal) => <MealAddRow bucket={bucket} label={label} date={date} active={active}
           onVoiceCapture={meal?.onVoiceCapture} selectedCount={meal?.selectedIds?.length || 0} busy={false} onOrphanedRetry={keepOrphanedRecording}
-          onAdded={() => day.reload()} onSentencePending={text => beginSentencePending(bucket, text)} onPhotoCapture={onPhotoCapture} onOpenBarcode={openBarcode}
+          onAdded={() => day.reload()} onFoodAdded={offerAddedFood} onSentencePending={text => beginSentencePending(bucket, text)} onPhotoCapture={onPhotoCapture} onOpenBarcode={openBarcode}
           onOpenTemplates={(target, templateId) => { setFocusTemplateId(templateId); setTemplatesFor(target); }}
           onManageFoods={() => setManageFoods(true)} />} />
-      <NeedsReviewSection pending={pendingLogs} onChanged={day.reload} />
+      <NeedsReviewSection pending={pendingLogs} onChanged={day.reload} onConfirmed={(entry, placed) => offerAddedFood(
+        { committed: true, logId: entry.id, items: entry.items, date: placed.date || entry.date, mealTime: placed.mealTime }, date)} />
       {!wideViewport || !sidebarTarget ? <details className="health-history"><summary>Week &amp; weight history</summary>{history}</details> : null}
       {coachLine ? <Button variant="subtle" onClick={() => onCoachTap()}>{coachLine}</Button> : null}
       <BarcodeCapture open={active && captureMode === 'barcode'} busy={false} bucket={barcodeTargetBucket}
@@ -575,13 +600,15 @@ export function TodayView({ active = true, sidebarTarget, followUpTarget = null,
           if (result?.aiEstimate) {
             logger.info('barcode.ai-estimate', { logId: result.logId ?? null });
             setCaptureNotice('No calories on the label — estimated for one serving. Check the row.');
-          } else if (result?.moved) setCaptureNotice(`Moved to ${bucketLabel(result.mealTime)}`);
+          }
+          const reported = offerAddedFood(result, barcodeDate);
+          if (!result?.aiEstimate && result?.moved && !reported) setCaptureNotice(`Moved to ${bucketLabel(result.mealTime)}`);
           day.reload();
         }} />
       <CustomFoodSheet upc={unknownUpc} open={active && Boolean(unknownUpc)}
         bucketId={barcodeTargetBucket} date={barcodeDate}
         onClose={() => setUnknownUpc(null)}
-        onCreated={() => { setUnknownUpc(null); day.reload(); }} />
+        onCreated={logged => { setUnknownUpc(null); day.reload(); offerAddedFood(logged, barcodeDate, { added: true }); }} />
       <EntryEditor row={editingRow} open={active && Boolean(editingRow)}
         onClose={() => setEditingRow(null)} onChanged={day.reload}
         onRequestDelete={row => { setDeleteError(null); setEditingRow(null); setPendingDelete(row); }}
@@ -598,7 +625,7 @@ export function TodayView({ active = true, sidebarTarget, followUpTarget = null,
         }} />
       <FoodCatalogManager open={active && manageFoods} onClose={() => setManageFoods(false)} onChanged={day.reload} />
       <TemplatePicker open={active && Boolean(templatesFor)} bucketId={templatesFor} date={date} focusTemplateId={focusTemplateId}
-        onLogged={() => { setTemplatesFor(null); setFocusTemplateId(null); day.reload(); }}
+        onLogged={logged => { setTemplatesFor(null); setFocusTemplateId(null); day.reload(); offerAddedFood(logged, date, { added: true }); }}
         onClose={() => { setTemplatesFor(null); setFocusTemplateId(null); }} />
     </div></PortionContext.Provider>
   );
