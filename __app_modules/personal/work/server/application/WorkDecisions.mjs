@@ -288,7 +288,8 @@ export class WorkDecisions {
     if (!record || record.command.username !== p.username || record.status !== 'queued' || record.sourcePlatform !== platform || record.policyRevision !== policy.revision) throw workError('WORK_COMMAND_UNAVAILABLE');
     if (platform === 'system' && record.command.operation !== 'complete') throw workError('WORK_SYSTEM_OPERATION_DENIED');
     if (record.command.expectedVersion !== expectedVersion) throw workError('WORK_SELECTION_CHANGED');
-    for (const [id, grant] of this.#sessionGrants) if (grant.expiresAt <= asOf) this.#sessionGrants.delete(id);
+    const issuedAt = this.#clock();
+    for (const [id, grant] of this.#sessionGrants) if (grant.expiresAt <= issuedAt) this.#sessionGrants.delete(id);
     const confirmationId = `confirm.${platform}.${this.#id()}`;
     this.#sessionGrants.set(confirmationId, {
       platform,
@@ -297,7 +298,7 @@ export class WorkDecisions {
       commandId,
       commandHash: workHash(record.command),
       expectedVersion,
-      expiresAt: asOf + SESSION_GRANT_MS
+      expiresAt: issuedAt + SESSION_GRANT_MS
     });
     this.#logger?.info?.('work.confirmation.granted', {
       platform,
@@ -349,7 +350,7 @@ export class WorkDecisions {
       if (!grant || grant.platform !== p.platform || grant.username !== p.username || grant.job !== (p.job ?? null) || !command || command.id !== grant.commandId || command.username !== p.username || command.expectedVersion !== grant.expectedVersion || workHash(command) !== grant.commandHash || p.platform === 'system' && command.operation !== 'complete') return false;
       // Single use: consumed by the first matching check, whether or not it is in time.
       this.#sessionGrants.delete(confirmationId);
-      if (!Number.isFinite(asOf) || asOf >= grant.expiresAt) return false;
+      if (this.#clock() >= grant.expiresAt) return false;
       const state = await this.#state.read({
           username: p.username
         }),

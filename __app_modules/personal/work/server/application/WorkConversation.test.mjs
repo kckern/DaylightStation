@@ -38,6 +38,7 @@ function setup() {
     conversationId: dto.conversationId,
     messageId: '99',
     receiptId: 'receipt-1',
+    platform: 'telegram',
     sourceRevision: 'identity-v1',
     kind: 'text',
     authored: true,
@@ -162,6 +163,7 @@ function setup() {
     asOf: now
   });
   return {
+    trust: p => trusted.add(p),
     h,
     state,
     service,
@@ -376,4 +378,27 @@ it.each(['substring', 'duplicate'])('does not save ambiguous %s observations as 
     username: 'sample'
   });
   expect(Object.values(snapshot.sources)[0].observations).toHaveLength(0);
+});
+it('open refuses a non-Telegram principal', async () => {
+  const x = setup(),
+    web = Object.freeze({
+      ...x.principal,
+      platform: 'web',
+      kind: 'session',
+      sessionId: 'sid-1',
+      authored: true
+    });
+  x.trust(web);
+  await expect(x.service.open({
+    principal: web,
+    flow: 'tasks',
+    asOf: AS_OF
+  })).rejects.toThrow('WORK_PRINCIPAL_REQUIRED');
+  await expect(x.service.open({
+    principal: x.principal,
+    flow: 'create_task',
+    asOf: AS_OF
+  })).resolves.toMatchObject({
+    decisionId: null
+  });
 });

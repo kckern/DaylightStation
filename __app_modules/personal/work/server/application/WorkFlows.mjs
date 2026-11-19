@@ -110,7 +110,7 @@ export class WorkFlows {
   }
   #actor(principal) {
     const p = this.#verify(principal);
-    if (!p?.authored || !this.#policy(p.username).enabled) throw workError('WORK_PRINCIPAL_REQUIRED');
+    if (!p?.authored || p.platform !== 'telegram' || !this.#policy(p.username).enabled) throw workError('WORK_PRINCIPAL_REQUIRED');
     return p;
   }
   async #gate(username, askDate) {

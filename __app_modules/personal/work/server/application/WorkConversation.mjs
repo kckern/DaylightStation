@@ -784,7 +784,7 @@ export class WorkConversation {
     asOf = this.#clock()
   }) {
     const p = !this.#closed && this.#principal.verify(principal);
-    if (!p?.authored || !['tasks', 'projects', 'create_task', 'create_container'].includes(flow)) throw workError('WORK_PRINCIPAL_REQUIRED');
+    if (!p?.authored || p.platform !== 'telegram' || !['tasks', 'projects', 'create_task', 'create_container'].includes(flow)) throw workError('WORK_PRINCIPAL_REQUIRED');
     if (['create_task', 'create_container'].includes(flow)) return {
       decisionId: null,
       text: `Send “Create ${flow === 'create_task' ? 'task' : 'project'} <title>” with the title you want. Then choose and confirm its configured destination.`,

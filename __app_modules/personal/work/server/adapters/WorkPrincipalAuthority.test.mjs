@@ -178,7 +178,7 @@ describe('web and system principals', () => {
       kind: 'session',
       username: 'sample',
       sessionId: 'sid-live',
-      receiptId: 'req-1',
+      receiptId: 'web:req-1',
       authored: true,
       receivedAt: 1000
     });

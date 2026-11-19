@@ -18,6 +18,9 @@ async function setup() {
     trusted = new WeakSet(),
     writes = [];
   let version = 'item-v1';
+  const time = {
+    now: AS_OF
+  };
   const actor = patch => {
     const p = Object.freeze({
       username: 'sample',
@@ -117,7 +120,7 @@ async function setup() {
     context,
     resolvePolicy: () => policy,
     verifyPrincipal,
-    clock: () => AS_OF
+    clock: () => time.now
   });
   const tokens = createWorkCallbackTokens();
   const options = {
@@ -126,7 +129,7 @@ async function setup() {
     context,
     resolvePolicy: () => policy,
     verifyPrincipal,
-    clock: () => AS_OF,
+    clock: () => time.now,
     nextId: randomUUID,
     tokens
   };
@@ -157,6 +160,7 @@ async function setup() {
     ...patch
   });
   return {
+    time,
     h,
     actor,
     state,
@@ -654,11 +658,48 @@ it('a web grant expires after five minutes', async () => {
     expectedVersion: 'item-v1',
     asOf: AS_OF
   });
+  x.time.now = AS_OF + 5 * 60000;
   expect(await x.decisions.verifyConfirmation({
     principal: x.web,
     command: x.command,
     confirmationId,
-    asOf: AS_OF + 5 * 60000
+    asOf: AS_OF
+  })).toBe(false);
+});
+it('a web grant expiry follows the injected clock, not the caller asOf', async () => {
+  const x = await webSetup();
+  const {
+    confirmationId
+  } = await x.decisions.confirmWeb({
+    principal: x.web,
+    commandId: x.command.id,
+    expectedVersion: 'item-v1',
+    asOf: AS_OF
+  });
+  x.time.now = AS_OF + 5 * 60000 + 1;
+  expect(await x.decisions.verifyConfirmation({
+    principal: x.web,
+    command: x.command,
+    confirmationId,
+    asOf: AS_OF
+  })).toBe(false);
+});
+it('a caller-supplied future asOf cannot extend a grant issued now', async () => {
+  const x = await webSetup();
+  const {
+    confirmationId
+  } = await x.decisions.confirmWeb({
+    principal: x.web,
+    commandId: x.command.id,
+    expectedVersion: 'item-v1',
+    asOf: AS_OF + 3600000
+  });
+  x.time.now = AS_OF + 5 * 60000;
+  expect(await x.decisions.verifyConfirmation({
+    principal: x.web,
+    command: x.command,
+    confirmationId,
+    asOf: AS_OF
   })).toBe(false);
 });
 it('confirmWeb refuses a Telegram principal and a Telegram-queued command', async () => {

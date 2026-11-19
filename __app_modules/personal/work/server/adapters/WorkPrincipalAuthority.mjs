@@ -136,7 +136,7 @@ export class WorkPrincipalAuthority {
       kind: 'session',
       username,
       sessionId: sid,
-      receiptId: requestId,
+      receiptId: `web:${requestId}`,
       authored: true,
       receivedAt
     });

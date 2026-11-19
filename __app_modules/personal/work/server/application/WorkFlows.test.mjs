@@ -74,7 +74,9 @@ async function setup(count = 1) {
     authority = new WorkPrincipalAuthority({
       identityForSender: id => id === '101' ? identity : null,
       webhookSecret: 'secret',
-      clock: () => now
+      clock: () => now,
+      isActiveSession: () => true,
+      isEnrolled: () => true
     });
   const principal = (token = null, messageId = '99') => authority.capturePrincipal({
     event: {
@@ -186,6 +188,13 @@ async function setup(count = 1) {
     });
   };
   return {
+    web: () => authority.web({
+      session: {
+        username: 'sample',
+        sid: 'sid-1'
+      },
+      requestId: 'req-1'
+    }),
     state,
     flow,
     decisions,
@@ -206,6 +215,20 @@ async function setup(count = 1) {
     }
   };
 }
+it('refuses a web principal for open and renderFlow', async () => {
+  const x = await setup(1),
+    web = x.web();
+  expect(web.platform).toBe('web');
+  await expect(x.flow.open({
+    principal: web,
+    flowType: 'housekeeping',
+    asOf: x.now()
+  })).rejects.toThrow('WORK_PRINCIPAL_REQUIRED');
+  await expect(x.flow.renderFlow({
+    principal: web,
+    flowState: {}
+  })).rejects.toThrow('WORK_PRINCIPAL_REQUIRED');
+});
 it('manual cleanup pages show at most three items and Stop tracking changes only local relevance', async () => {
   const x = await setup(106),
     page = await x.flow.open({
