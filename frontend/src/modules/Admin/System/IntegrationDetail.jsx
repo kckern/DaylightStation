@@ -5,6 +5,7 @@ import {
   IconArrowBack, IconPlugConnected, IconAlertCircle, IconCheck, IconX, IconRefresh
 } from '@tabler/icons-react';
 import { useAdminIntegrations } from '../../../hooks/admin/useAdminIntegrations.js';
+import { useApiResource } from '../../../lib/hooks/useApiResource.js';
 import { notifySuccess, notifyFailure } from '../shared/feedback.js';
 
 const CATEGORY_LABELS = {
@@ -59,30 +60,15 @@ function InfoRow({ label, children }) {
 function IntegrationDetail() {
   const { provider } = useParams();
   const navigate = useNavigate();
-  const { fetchDetail, testConnection, error, clearError } = useAdminIntegrations();
+  return <ProviderDetail key={provider} provider={provider} navigate={navigate} />;
+}
 
-  const [integration, setIntegration] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [loadError, setLoadError] = useState(null);
+function ProviderDetail({ provider, navigate }) {
+  const { testConnection, error, clearError } = useAdminIntegrations();
+  const { data, loading, error: loadError, reload } = useApiResource(`/api/v1/admin/integrations/${provider}`);
+  const integration = data?.integration;
   const [testResult, setTestResult] = useState(null);
   const [testing, setTesting] = useState(false);
-
-  const loadDetail = useCallback(async () => {
-    setLoading(true);
-    setLoadError(null);
-    try {
-      const result = await fetchDetail(provider);
-      setIntegration(result);
-    } catch (err) {
-      setLoadError(err.message || 'Failed to load integration details');
-    } finally {
-      setLoading(false);
-    }
-  }, [provider, fetchDetail]);
-
-  useEffect(() => {
-    loadDetail();
-  }, [loadDetail]);
 
   const handleTestConnection = useCallback(async () => {
     setTesting(true);
@@ -134,8 +120,9 @@ function IntegrationDetail() {
           <IconArrowBack size={14} /> Back to Integrations
         </Anchor>
         <Alert icon={<IconAlertCircle size={16} />} color="red" title="Error">
-          {loadError}
+          {loadError.message || 'Failed to load integration details'}
         </Alert>
+        <Button onClick={reload}>Retry</Button>
         {/* Harvester-only providers (e.g. Withings) may not be listed in
             integrations.yml; keep the reconnect reachable anyway. */}
         <Group><ReconnectButton provider={provider} /></Group>

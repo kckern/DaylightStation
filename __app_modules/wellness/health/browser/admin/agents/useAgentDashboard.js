@@ -1,5 +1,6 @@
 import { useState, useCallback, useMemo } from 'react';
 import { DaylightAPI } from "../../../../../../frontend/src/lib/api.mjs";
+import { useApiResource } from "../../../../../../frontend/src/lib/hooks/useApiResource.js";
 import getLogger from "../../../../../../frontend/src/lib/logging/Logger.js";
 
 /**
@@ -11,47 +12,30 @@ import getLogger from "../../../../../../frontend/src/lib/logging/Logger.js";
  *
  * @returns {object} Dashboard state and actions
  */
-export function useAgentDashboard() {
+export function useAgentDashboard(userId, date) {
   const logger = useMemo(() => getLogger().child({ hook: 'useAgentDashboard' }), []);
-
-  const [dashboard, setDashboard] = useState(null);
-  const [loading, setLoading] = useState(false);
+  const path = userId && date ? `/api/v1/health-dashboard/${userId}/${date}` : null;
+  const { data, loading, error: readError, reload } = useApiResource(path, { label: 'Agent dashboard' });
   const [regenerating, setRegenerating] = useState(false);
   const [error, setError] = useState(null);
+  const dashboard = readError?.status === 404 ? null : data?.dashboard || null;
+  const visibleError = error || (readError?.status === 404 ? null : readError);
 
   const fetchDashboard = useCallback(async (userId, date) => {
-    if (!userId || !date) return;
-    setLoading(true);
-    setError(null);
-    try {
-      const result = await DaylightAPI(`/api/v1/health-dashboard/${userId}/${date}`);
-      setDashboard(result.dashboard || null);
-      logger.info('admin.dashboard.fetched', { userId, date });
-      return result;
-    } catch (err) {
-      // 404 means no dashboard generated — treat as null, not error
-      if (err.message?.includes('404')) {
-        setDashboard(null);
-        return null;
-      }
-      setError(err);
-      throw err;
-    } finally {
-      setLoading(false);
-    }
-  }, [logger]);
+    reload();
+  }, [reload]);
 
   const deleteDashboard = useCallback(async (userId, date) => {
     try {
       const result = await DaylightAPI(`/api/v1/health-dashboard/${userId}/${date}`, {}, 'DELETE');
-      setDashboard(null);
       logger.info('admin.dashboard.deleted', { userId, date });
+      reload();
       return result;
     } catch (err) {
       setError(err);
       throw err;
     }
-  }, [logger]);
+  }, [logger, userId, date, reload]);
 
   const regenerate = useCallback(async (agentId, userId) => {
     setRegenerating(true);
@@ -75,7 +59,7 @@ export function useAgentDashboard() {
   const clearError = useCallback(() => setError(null), []);
 
   return {
-    dashboard, loading, regenerating, error,
+    dashboard, loading, regenerating, error: visibleError,
     fetchDashboard, deleteDashboard, regenerate, clearError,
   };
 }

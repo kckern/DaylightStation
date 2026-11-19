@@ -1,6 +1,6 @@
 // frontend/src/modules/Admin/Agents/DashboardsTab.jsx
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
   Stack, Paper, Text, Group, Button, Badge, Alert, Center, Loader,
   TextInput, Blockquote, Code, Collapse,
@@ -21,16 +21,12 @@ function DashboardsTab({ agentId, userId }) {
   const {
     dashboard, loading, regenerating, error,
     fetchDashboard, deleteDashboard, regenerate, clearError,
-  } = useAgentDashboard();
-
-  useEffect(() => {
-    if (userId && date) fetchDashboard(userId, date).catch(() => {});
-  }, [userId, date, fetchDashboard]);
+  } = useAgentDashboard(userId, date);
 
   const handleRegenerate = useCallback(async () => {
     await regenerate(agentId, userId);
     // Refresh after regeneration
-    await fetchDashboard(userId, date);
+    fetchDashboard();
   }, [agentId, userId, date, regenerate, fetchDashboard]);
 
   const handleDelete = useCallback(async () => {
