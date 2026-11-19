@@ -3,6 +3,7 @@ package net.kckern.daylight.core;
 import net.kckern.daylight.api.ShellServices;
 
 import org.json.JSONArray;
+import net.kckern.daylight.core.spi.PianoKioskTools;
 import org.json.JSONObject;
 
 import java.io.File;
@@ -130,6 +131,10 @@ public final class CoreRuntime implements CoreContext {
             if (d == null) return;
             if (key.startsWith("wifi.")) d.wifiLink.updateConfig(config);
             if (key.startsWith("heartbeat.")) d.heartbeat.updateConfig(config);
+        });
+        if ("piano".equals(deviceId)) services().provide(PianoKioskTools.Wifi.class, () -> {
+            CoreServices current = device;
+            return current == null ? null : current.wifiLink.snapshot(true);
         });
         registerCoreRoutes();
         for (Capability c : capabilities) c.register(this);

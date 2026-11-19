@@ -23,6 +23,7 @@ const RELAY_TIMEOUT_MS = 10_000;
  * See composition/bridge-endpoint.mjs.
  */
 export class PianoMidiBridgeAdapter extends IPianoMidiBridge {
+  #settingRelay = Promise.resolve();
   #bridgeUrl; #logger; #WebSocketImpl; #fetchImpl; #headers; #relay; #now; #onRelayFailed;
   #backoffBaseMs; #backoffMaxMs; #backoff; #ws; #stopped; #onNoteOn;
 
@@ -112,7 +113,10 @@ export class PianoMidiBridgeAdapter extends IPianoMidiBridge {
   }
 
   async suppressWakeUntil(deadlineMs) {
-    if (this.#relay === 'setting') return this.#relaySetting(deadlineMs);
+    if (this.#relay === 'setting') {
+      this.#settingRelay = this.#settingRelay.then(() => this.#relaySetting(deadlineMs));
+      return this.#settingRelay;
+    }
     const httpBase = this.#bridgeUrl.replace(/^ws(s?):\/\//i, 'http$1://').replace(/\/+$/, '');
     const url = `${httpBase}/config`;
     try {

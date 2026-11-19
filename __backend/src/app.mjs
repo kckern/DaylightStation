@@ -2567,6 +2567,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // default (config `piano.screen_power_sync.enabled`); no-ops without HA/device.
   // Not a two-writer conflict with screen-presence: that device is not
   // presence-managed, and presence actuates HA input_booleans, not the backlight.
+  getScreenOverrideService({ configService, householdId });
   createPianoScreenPowerSync({
     getScreenOverrideService,
     haGateway: homeAutomationAdapters.haGateway,

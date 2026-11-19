@@ -11,6 +11,7 @@ import net.kckern.daylight.core.StatusBoard;
 import net.kckern.daylight.core.spi.BluetoothRole;
 
 import org.json.JSONArray;
+import net.kckern.daylight.core.spi.PianoKioskTools;
 import org.json.JSONObject;
 
 public final class MidiBridgeCapability implements Capability {
@@ -28,6 +29,10 @@ public final class MidiBridgeCapability implements Capability {
 
     @Override public void register(CoreContext core) {
         this.core = core;
+        core.services().provide(PianoKioskTools.MidiTap.class, () -> {
+            MidiLink current = link;
+            return current != null && config.bluetoothMidiEnabled() ? current.midiInTapSnapshot() : null;
+        });
         MidiConfig.declare(core.settings());
         config = new MidiConfig(core.settings());
         core.settings().onChange(key -> {

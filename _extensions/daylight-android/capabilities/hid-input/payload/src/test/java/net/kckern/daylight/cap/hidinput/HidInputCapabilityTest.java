@@ -42,7 +42,7 @@ public class HidInputCapabilityTest {
         hid.stop();
     }
 
-    @Test public void aKeyPressReachesThePageOnTheControlSocketAsAKeyboardMessage() throws Exception {
+    @Test public void aKeyPressReachesOnlyTheFocusedPageAndNeverTheControlSocket() throws Exception {
         CoreRuntime core = TestCore.create(tmp.newFolder());
         final List<String> seen = new CopyOnWriteArrayList<>();
         core.socket().opened(new SocketHub.Client() {
@@ -50,21 +50,22 @@ public class HidInputCapabilityTest {
             @Override public void ping() { }
             @Override public void close() { }
         });
-        HidEventStream stream = new HidEventStream(core.socket());
+        List<JSONObject> page = new CopyOnWriteArrayList<>();
+        HidEventStream stream = new HidEventStream(() -> page::add);
         stream.publish(new HidKeyEvent(4, "down", "a", "KeyA", 0, false, false, false, false, false));
         stream.publish(new HidKeyEvent(4, "up", "a", "KeyA", 0, false, false, false, false, false));
-        long deadline = System.currentTimeMillis() + 2000;
-        while (seen.size() < 3 && System.currentTimeMillis() < deadline) Thread.sleep(10);
         stream.stop();
-        assertEquals("ready, then down and up", 3, seen.size());
-        JSONObject down = new JSONObject(seen.get(1));
+        assertEquals(2, page.size());
+        assertEquals("control clients only receive their ready greeting", 1, seen.size());
+        JSONObject down = page.get(0);
         assertEquals("keyboard", down.getString("type"));
         assertEquals("down", down.getString("action"));
         assertEquals("KeyA", down.getString("code"));
-        assertEquals("up", new JSONObject(seen.get(2)).getString("action"));
+        assertEquals("up", page.get(1).getString("action"));
         assertEquals(2, stream.events());
-        // A report that arrives after stop() is sent once and must not throw.
+        // A late report after stop is discarded.
         stream.publish(new HidKeyEvent(5, "down", "b", "KeyB", 0, false, false, false, false, false));
+        assertEquals(2, page.size());
     }
 
     // ── a real start, over a fake Android context ───────────────────────────

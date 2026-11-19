@@ -13,6 +13,7 @@ import net.kckern.daylight.core.StatusBoard;
 import net.kckern.daylight.core.spi.BluetoothRole;
 
 import org.json.JSONException;
+import net.kckern.daylight.core.spi.PianoKioskTools;
 import org.json.JSONObject;
 
 public final class AudioGuardCapability implements Capability {
@@ -40,6 +41,10 @@ public final class AudioGuardCapability implements Capability {
 
     @Override public void register(CoreContext core) {
         this.core = core;
+        core.services().provide(PianoKioskTools.Volume.class, () -> {
+            AudioGuardHost current = host;
+            return current == null ? null : current.checkAudioVolumeNow();
+        });
         SpeakerConfig.declare(core.settings());
         config = new SpeakerConfig(core.settings());
         core.settings().onChange(key -> {

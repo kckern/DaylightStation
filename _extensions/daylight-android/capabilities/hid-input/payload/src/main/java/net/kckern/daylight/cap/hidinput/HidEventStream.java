@@ -1,6 +1,8 @@
 package net.kckern.daylight.cap.hidinput;
 
-import net.kckern.daylight.core.SocketHub;
+import java.util.function.Consumer;
+import java.util.function.Supplier;
+import org.json.JSONObject;
 
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -11,35 +13,34 @@ import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 
-/**
- * Keyboard events for the page, with host-side key repeat, on the control WebSocket.
- * In portal-keys this was a loopback WebSocket server on its own port; the repeat
- * logic is unchanged and the transport is the core hub.
- */
+/** Decoded USB reports and repeats belong to the focused kiosk document that received the press. */
 final class HidEventStream {
-    private final SocketHub socket;
+    private final Supplier<Consumer<JSONObject>> currentTarget;
     private final ScheduledExecutorService repeats = Executors.newSingleThreadScheduledExecutor();
     private final Map<Integer, ScheduledFuture<?>> repeatTasks = new ConcurrentHashMap<>();
     private final AtomicLong events = new AtomicLong();
 
-    HidEventStream(SocketHub socket) { this.socket = socket; }
+    HidEventStream(Supplier<Consumer<JSONObject>> currentTarget) { this.currentTarget = currentTarget; }
 
     void publish(final HidKeyEvent event) {
-        if ("down".equals(event.action) && !event.repeat && event.repeatable()) startRepeat(event);
         if ("up".equals(event.action)) stopRepeat(event.usage);
-        send(event);
+        Consumer<JSONObject> target = currentTarget.get();
+        if (target == null || repeats.isShutdown()) return;
+        if ("down".equals(event.action) && !event.repeat && event.repeatable()) startRepeat(event, target);
+        send(event, target);
     }
 
-    private void send(final HidKeyEvent event) {
+    private void send(HidKeyEvent event, Consumer<JSONObject> target) {
+        if (repeats.isShutdown()) return;
         events.incrementAndGet();
-        socket.broadcastAsync(event.toJson());
+        target.accept(event.asJson());
     }
 
-    private void startRepeat(final HidKeyEvent event) {
+    private void startRepeat(final HidKeyEvent event, Consumer<JSONObject> target) {
         stopRepeat(event.usage);
         try {
             repeatTasks.put(event.usage, repeats.scheduleAtFixedRate(new Runnable() {
-                @Override public void run() { send(event.asRepeat()); }
+                @Override public void run() { send(event.asRepeat(), target); }
             }, 450, 50, TimeUnit.MILLISECONDS));
         } catch (RejectedExecutionException stopped) {
             // A key report that raced stop(): the key is sent once and does not repeat.

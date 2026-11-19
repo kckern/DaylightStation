@@ -29,6 +29,7 @@
 const DEFAULT_COOLDOWN_MS = 8000;
 
 export class PianoMidiWakeService {
+  #prepareWake;
   #deviceService; #logger; #clock;
   #deviceId; #cooldownMs; #bridge;
   #lastWakeAt;   // ms of the last wake fired, or null (never)
@@ -49,7 +50,7 @@ export class PianoMidiWakeService {
     deviceService, deviceId, bridge,
     logger = console, clock = Date,
     cooldownMs = DEFAULT_COOLDOWN_MS,
-    screenOverride = null,
+    screenOverride = null, prepareWake = null,
   } = {}) {
     if (!deviceService || typeof deviceService.get !== 'function') {
       throw new Error('PianoMidiWakeService requires deviceService with get');
@@ -69,6 +70,7 @@ export class PianoMidiWakeService {
     this.#lastWakeAt = null;
     this.#waking = false;
     this.#screenOverride = screenOverride;
+    this.#prepareWake = prepareWake;
   }
 
   /**
@@ -115,7 +117,7 @@ export class PianoMidiWakeService {
   _relayDone() { return this.#lastRelay ?? Promise.resolve(); }
 
   /** Test seam: exercise the note-on handler without a live WS. */
-  _handleNoteOnForTest() { this.#onNoteOn(); }
+  _handleNoteOnForTest() { return this.#onNoteOn(); }
 
   start() {
     this.#logger.info?.('piano-midi-wake.started', {
@@ -129,7 +131,8 @@ export class PianoMidiWakeService {
   }
 
   /** @private Debounced wake: at most one setScreen(true) per cooldown window. */
-  #onNoteOn() {
+  async #onNoteOn() {
+    if (this.#prepareWake && !await this.#prepareWake()) return;
     const now = this.#clock.now();
     if (this.#screenOverride?.get(this.#deviceId)?.state === 'off') return; // manually muted
     if (this.#lastWakeAt !== null && now - this.#lastWakeAt < this.#cooldownMs) return;

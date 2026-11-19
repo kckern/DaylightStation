@@ -70,6 +70,75 @@ public class BridgeDispatcherTest {
         }
     }
 
+    @Test public void kioskToolsRequireTheCurrentDocumentAndTrustedTopFrame() {
+        String top = bridge.open(KEY, "top");
+        String frame = bridge.open(KEY, "frame");
+        for (String op : new String[]{"pianoBluetoothState", "pianoBluetoothCommand", "pianoMidiTap", "pianoCheckVolume", "pianoWifi"}) {
+            assertEquals("ok", bridge.call(top, op, ""));
+            assertEquals("", bridge.call(frame, op, ""));
+        }
+        tokens.navigated();
+        assertEquals("", bridge.call(top, "pianoBluetoothState", ""));
+        String current = bridge.open(KEY, "top");
+        url = "https://elsewhere.test/piano";
+        assertEquals("", bridge.call(current, "pianoBluetoothState", ""));
+        url = "https://app.example.test/elsewhere";
+        assertEquals("", bridge.call(current, "pianoBluetoothState", ""));
+    }
+
+    @Test public void portalInputDiscardsBufferedKeysAndRepeatsAcrossStopReleaseNavigationAndRefocus() throws Exception {
+        String doc = bridge.open(KEY, "top");
+        PortalPageInput page = new PortalPageInput();
+        page.attach(doc);
+        final long[] revision = {0};
+        net.kckern.daylight.core.spi.InputLock lock = new net.kckern.daylight.core.spi.InputLock() {
+            public boolean active() { return revision[0] == 1; }
+            public long revision() { return revision[0]; }
+        };
+        org.json.JSONObject frame = new org.json.JSONObject().put("key", "a");
+        Object original = page.target(lock, tokens);
+        assertTrue(page.offer(original, frame, lock, tokens));
+        revision[0] = 1;
+        assertEquals("[]", page.read(doc, lock));
+        assertNull(page.target(lock, tokens));
+        revision[0] = 2;
+        assertFalse(page.offer(original, frame, lock, tokens));
+        Object released = page.target(lock, tokens);
+        assertTrue(page.offer(released, frame, lock, tokens));
+        assertEquals("", page.read(bridge.open(KEY, "frame"), lock));
+        assertEquals("a", new org.json.JSONArray(page.read(doc, lock)).getJSONObject(0).getString("key"));
+        assertEquals("[]", page.read(doc, lock));
+        page.clear();
+        assertFalse(page.offer(released, frame, lock, tokens));
+        tokens.navigated();
+        assertNull(page.target(lock, tokens));
+    }
+
+    @Test public void pianoToolsProjectOnlyUiFieldsAndCannotDispatchOtherOperations() throws Exception {
+        net.kckern.daylight.core.ServiceRegistry services = new net.kckern.daylight.core.ServiceRegistry();
+        assertEquals("", PianoToolCalls.call(services, "pianoCheckVolume", ""));
+        final org.json.JSONObject guard = new org.json.JSONObject().put("routeOk", true).put("musicIndex", 9)
+                .put("musicMax", 15).put("privateDiagnostic", "unused");
+        services.provide(net.kckern.daylight.core.spi.PianoKioskTools.Volume.class, () -> guard);
+        org.json.JSONObject result = new org.json.JSONObject(PianoToolCalls.call(services, "pianoCheckVolume", ""));
+        assertEquals(9, result.getJSONObject("guard").getInt("musicIndex"));
+        assertFalse(result.toString().contains("privateDiagnostic"));
+        services.provide(net.kckern.daylight.core.spi.PianoKioskTools.Bluetooth.class, (action, body) -> {
+            assertEquals("pair", action);
+            assertTrue(body.contains("address"));
+            return new org.json.JSONObject(java.util.Collections.singletonMap("code", "permission_denied"));
+        });
+        assertEquals("", PianoToolCalls.call(services, "pianoBluetoothCommand", "{action:'settings',body:{}}"));
+        String denied = PianoToolCalls.call(services, "pianoBluetoothCommand", "{action:'pair',body:{address:'fixture'}}");
+        assertEquals("permission_denied", new org.json.JSONObject(denied).getString("code"));
+    }
+
+    @Test public void portalShimOffersDistinctVolumeAndKeyboardSubscriptions() {
+        String shim = BridgeScript.shim(KEY, "p1", "portal");
+        assertTrue(shim.contains("subscribeVolume"));
+        assertTrue(shim.contains("subscribeKeyboard"));
+    }
+
     @Test public void pianoRepairReturnsOnlyTheOwnersInstrumentVerdict() throws Exception {
         java.util.List<Runnable> jobs = new java.util.ArrayList<>();
         PianoRepair repair = new PianoRepair();
@@ -179,7 +248,7 @@ public class BridgeDispatcherTest {
         for (java.lang.reflect.Method m : BridgeDispatcher.Actions.class.getDeclaredMethods()) actions.add(m.getName());
         assertEquals("the bridge does exactly what the contract lists",
                 new java.util.TreeSet<>(java.util.Arrays.asList("capabilitiesJson", "launch", "screen", "restartApp",
-                        "reboot", "setBackMode", "volumeJson", "canPinMedia", "pinMedia", "piano")), actions);
+                        "reboot", "setBackMode", "volumeJson", "canPinMedia", "pinMedia", "piano", "portal")), actions);
     }
 
     // ── tokens belong to a document ──────────────────────────────────────────

@@ -524,10 +524,9 @@ until every line of this stage is marked ok on that device.**
 
 ### Portal
 
-- [ ] **Volume keys delivered.** With `volume-keys` running, each volume key
-      reaches the page as `daylight:key` (stage 6's recorder) and as a `key`
-      message on the control port's WebSocket, and the system volume does not
-      move. No beep.
+- [ ] With the old helper stopped, press a volume key on the lit panel.
+      The focused screen's software volume moves by one step per press, the
+      system volume holds steady, and the release makes no additional step.
 - [ ] The double volume-down gesture, if `keys.screenToggleEnabled` is to be on.
 - [ ] `dd lockdown input lock --revision <n>`: the volume keys do nothing;
       `dd lockdown input release --revision <n+1>`: they work again. An older
@@ -536,8 +535,9 @@ until every line of this stage is marked ok on that device.**
       swipe the panel up. It is pushed back down within a second or two;
       `dd lifeline log` records the attempts. During an unlock window it is left
       alone.
-- [ ] USB keyboard: keys arrive as `keyboard` messages; the USB permission dialog
-      is confirmed by the app.
+- [ ] Focus a text field and type a disposable character with the configured
+      USB keyboard. It appears once. Stop and release through supervision and
+      verify both keyboard and volume suppression and resumption.
 - [ ] Presence: `dd get /presence` shows the connected devices, and the backend
       receives the report (after `presence.endpoint` and `presence.token` are set).
 - [ ] The display off for an hour: `dd status` still answers.

@@ -80,6 +80,11 @@ final class BridgeTokens {
     /** Whether a valid token was opened by a top-frame document. */
     synchronized boolean topFrame(String token) { return valid(token) && topFrame.contains(token); }
 
+    synchronized boolean currentTopFrame(String token) {
+        Long issued = issuedIn.get(token);
+        return issued != null && issued == generation && topFrame.contains(token);
+    }
+
     /** Was this token issued to the current document (or the one a navigation is replacing right now)? */
     synchronized boolean valid(String token) {
         if (token == null || token.isEmpty()) return false;

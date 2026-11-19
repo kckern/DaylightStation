@@ -123,14 +123,14 @@ final class VolumeKeys implements AccessibilityHub.InputLockFilter {
         // physical double-press screen toggle and Android volume changes.
         InputLock lock = core.services().find(InputLock.class);
         if (lock != null && lock.active()) {
-            core.log().add("key-suppressed-lockdown " + name + " revision=" + lock.revision());
+            core.log().add("key-suppressed-lockdown revision=" + lock.revision());
             return true;
         }
         broadcast(name, down ? "down" : "up", interactive);
         // The page in this app's own kiosk hears the key as daylight:key, through the event
         // bus and webview-host. Once per press and once per release: a held key repeats on
         // the WebSocket, as it always did, and not here.
-        if (repeatCount == 0) publishForPage(code, down);
+        if (interactive && repeatCount == 0) publishForPage(code, down);
 
         // Display is OFF: any volume key wakes it, and changes nothing else.
         // Stepping the volume blind, with no HUD visible, would be a surprise.
@@ -173,8 +173,6 @@ final class VolumeKeys implements AccessibilityHub.InputLockFilter {
     }
 
     private void broadcast(String keyName, String action, boolean interactive) {
-        core.log().add("key " + keyName + " " + action + " interactive=" + interactive);
-        Log.i(TAG, "key code=" + keyName + " action=" + action + " interactive=" + interactive);
         // onKeyEvent runs on the service's main thread; a socket write there kills the process.
         core.socket().broadcastAsync(keyFrame(keyName, action, interactive, clock.getAsLong()));
     }

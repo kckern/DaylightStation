@@ -38,6 +38,7 @@ export class PianoScreenAuthorityService {
   #ha; #deviceService; #logger; #clock;
   #deviceId; #pianoPowerEntity;
   #pollMs; #offDebounceMs; #reconcileMs; #maxRetries; #backoffBaseMs;
+  #prepareWake;
   #notifyService; #scheduler; #override;
 
   #pollTimer; #reconcileTimer;
@@ -75,7 +76,7 @@ export class PianoScreenAuthorityService {
     backoffBaseMs = DEFAULT_BACKOFF_BASE_MS,
     notifyService = null,
     scheduler,
-    screenOverrideService = null,
+    screenOverrideService = null, prepareWake = null,
   } = {}) {
     if (!haGateway || typeof haGateway.getState !== 'function') {
       throw new Error('PianoScreenAuthorityService requires haGateway with getState');
@@ -100,6 +101,7 @@ export class PianoScreenAuthorityService {
     this.#backoffBaseMs = backoffBaseMs;
     this.#notifyService = notifyService;
     this.#override = screenOverrideService;
+    this.#prepareWake = prepareWake;
     this.#scheduler = scheduler;
 
     this.#pollTimer = null;
@@ -150,6 +152,7 @@ export class PianoScreenAuthorityService {
    */
   async #tickPoll() {
     try {
+      if (this.#prepareWake && !await this.#prepareWake()) return;
       // A live manual override owns the screen — no edge pulse, no continuous-off
       // debounce. (Reconcile enforces the window's state; see #tickReconcile.)
       if (this.#override?.get(this.#deviceId)) return;
@@ -211,6 +214,7 @@ export class PianoScreenAuthorityService {
    */
   async #tickReconcile() {
     try {
+      if (this.#prepareWake && !await this.#prepareWake()) return;
       const ov = this.#override?.get(this.#deviceId);
       if (ov) {
         const overrideDevice = this.#deviceService.get(this.#deviceId);

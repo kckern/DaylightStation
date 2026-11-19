@@ -15,6 +15,7 @@ import java.util.function.Supplier;
 final class BridgeDispatcher {
     interface Actions {
         String capabilitiesJson();
+        default String portal(String token, String method) { return ""; }
         default String piano(String token, String method, String arg) throws Exception { return ""; }
         boolean launch(String json);
         boolean screen(boolean on);
@@ -80,6 +81,14 @@ final class BridgeDispatcher {
         String a = arg == null ? "" : arg;
         try {
             switch (method) {
+                case "portalVolumeSubscribe": case "portalVolumeRead": case "portalVolumeUnsubscribe":
+                case "portalKeyboardSubscribe": case "portalKeyboardRead": case "portalKeyboardUnsubscribe":
+                    return tokens.currentTopFrame(presentedToken) ? actions.portal(presentedToken, method) : "";
+                case "pianoBluetoothState": case "pianoBluetoothCommand": case "pianoCheckVolume":
+                case "pianoMidiTap": case "pianoWifi":
+                    if (!tokens.currentTopFrame(presentedToken) || !pianoPath(mainFrameUrl.get())) return "";
+                    return actions.piano(presentedToken, method, a);
+                case "currentPage": return String.valueOf(tokens.currentTopFrame(presentedToken));
                 case "pianoSubscribe": case "pianoUnsubscribe": case "pianoRead":
                 case "pianoStatus": case "pianoSend": case "pianoRepair": case "pianoRepairResult":
                     if (!tokens.topFrame(presentedToken) || !pianoPath(mainFrameUrl.get())) return "";

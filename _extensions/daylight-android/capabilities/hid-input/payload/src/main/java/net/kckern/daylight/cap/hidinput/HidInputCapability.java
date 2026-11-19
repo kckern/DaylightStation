@@ -12,8 +12,7 @@ import net.kckern.daylight.core.StatusBoard;
 import org.json.JSONObject;
 
 /**
- * USB keyboards read at the endpoint, their events sent to the page on the control
- * WebSocket as {"type":"keyboard"}, plus the Bluetooth keyboard diagnostics portal-keys
+ * USB keyboards read at the endpoint, their events delivered to the focused kiosk page as {"type":"keyboard"}, plus the Bluetooth keyboard diagnostics portal-keys
  * carried. Route bodies are those of portal-keys' ops server and of its /btdiag and
  * /btscan; the Bluetooth routes sit under /hid/bluetooth because bluetooth-controls
  * owns /bluetooth.
@@ -119,7 +118,10 @@ public final class HidInputCapability implements Capability {
     private void claimUsb() {
         Context ctx = context;
         if (ctx == null) throw new IllegalStateException("not started");
-        HidEventStream s = new HidEventStream(core.socket());
+        HidEventStream s = new HidEventStream(() -> {
+            net.kckern.daylight.core.spi.PortalKeyboard page = core.services().find(net.kckern.daylight.core.spi.PortalKeyboard.class);
+            return page == null ? null : page.currentTarget();
+        });
         // Handed over as a source, not as the service: the service may bind after this,
         // and the USB permission dialog must still be confirmed then.
         UsbHidController u = new UsbHidController(ctx, accessibilitySource(core), s);

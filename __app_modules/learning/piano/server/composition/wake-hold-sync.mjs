@@ -10,7 +10,7 @@
 import { PianoWakeHoldSyncAdapter } from '../adapters/bridge/PianoWakeHoldSyncAdapter.mjs';
 import { DAYLIGHT_ANDROID } from './bridge-endpoint.mjs';
 
-let instance = null;
+const instances = new Map();
 
 /**
  * @param {Object} opts
@@ -21,11 +21,12 @@ let instance = null;
  */
 export function getPianoWakeHoldSync({ endpoint, deviceId, getScreenOverrideService, logger = console, factory = (o) => new PianoWakeHoldSyncAdapter(o) }) {
   if (endpoint?.provider !== DAYLIGHT_ANDROID || typeof getScreenOverrideService !== 'function') return null;
-  if (!instance) {
-    instance = factory({ baseUrl: endpoint.httpBase, headers: endpoint.headers, deviceId, overrides: getScreenOverrideService(), logger });
+  const key = JSON.stringify([deviceId, endpoint.httpBase]);
+  if (!instances.has(key)) {
+    instances.set(key, factory({ baseUrl: endpoint.httpBase, headers: endpoint.headers, deviceId, overrides: getScreenOverrideService(), logger }));
   }
-  return instance;
+  return instances.get(key);
 }
 
 /** Test-only: forget the shared instance. */
-export function _resetForTests() { instance = null; }
+export function _resetForTests() { instances.clear(); }

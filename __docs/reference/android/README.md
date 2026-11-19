@@ -302,7 +302,6 @@ and is disconnected; the others are not affected.
 | `midi.raw` | in | `midi-bridge` |
 | `engine.start`, `engine.stop`, `preset.load`, `param.set`, `panic`, `note.on`, `note.off` | in | `synth` |
 | `key` | out | `volume-keys` |
-| `keyboard` | out | `hid-input` |
 
 ### Routes by owner
 
@@ -724,15 +723,13 @@ release is sent on the WebSocket as
 (`interactive` is whether the panel is lit, `ts` epoch ms) and, with
 `keys.consumeVolume` on, is kept from Android so the system volume does not move
 under the page. Other keys pass through untouched. They are counted
-(`otherKeysSeen` in `/status`) and not recorded: `GET /log` holds volume keys
-only, so what is typed on an attached keyboard is never in it.
+(`otherKeysSeen` in `/status`). The event log omits key values.
 With `keys.screenToggleEnabled` on, any volume key wakes a dark panel and two
 volume-down presses within `keys.doublePressMs` sleep it, through `screen-power`;
 on a build without it the attempt is logged as `screen-toggle-unavailable`.
 
-Each press and each release is also published on the event bus, so a page in this
-app's own kiosk receives it as `daylight:key` with `code` `VolumeUp` or
-`VolumeDown` (a held key repeats on the WebSocket only). Leave the volume keys out
+The focused Portal page subscribes with `window.daylight.portal.subscribeVolume`
+to receive `VolumeUp` and `VolumeDown` when the panel is lit (a held key repeats on the WebSocket only). Leave the volume keys out
 of `webview.interceptKeys` on a device with this capability, or the page would hear
 a key twice when `keys.consumeVolume` is off. While `lockdown`'s input lock is
 active a volume key is consumed and goes nowhere.
@@ -780,14 +777,15 @@ guard still runs and the tablet's own speaker stays clamped.
 ### `hid-input`
 
 Needs `accessibility`. A USB keyboard on the allowlist is read directly at its USB
-endpoint (the Portal does not route it to Android input), and each key is sent on
-the WebSocket as
+endpoint. The focused, trusted Portal page subscribes with
+`window.daylight.portal.subscribeKeyboard`. A decoded report has this shape
 
 ```json
 {"type":"keyboard","action":"down","key":"a","code":"KeyA","location":0,"ctrlKey":false,"shiftKey":false,"altKey":false,"metaKey":false,"repeat":false,"ts":1800000000123}
 ```
 
-A held key repeats from the device: first after 450 ms, then every 50 ms, with
+Focus loss, navigation and an ordered input stop invalidate pending reports and
+held-key repeats. A held key repeats after 450 ms, then every 50 ms, with
 `repeat: true`. The USB permission dialog is confirmed through the accessibility
 service, which is looked up each time a dialog is expected, so a service that
 binds after the payload started is used. The dialog is confirmed only when its
@@ -897,7 +895,7 @@ Behavior that changed in the port, for whoever switches a device over.
 | Synth library in a debug APK | CMake's unoptimized `Debug` build | Optimized (`RelWithDebInfo`) in every variant |
 | Portal Bluetooth diagnostics | `/bluetooth*` on the ops port, `/btdiag`, `/btscan` on the control port | `/hid/bluetooth*`, `/hid/bluetooth/radio`, `/hid/bluetooth/radio/scan` |
 | Portal key events | WebSocket on the old control port | `key` messages on the control port's WebSocket |
-| Portal keyboard events | Loopback WebSocket on its own port, no token | `keyboard` messages on the control port's WebSocket, which needs the token |
+| Portal keyboard events | Loopback WebSocket on its own port, no token | Document-bound `subscribeKeyboard` in the focused Portal kiosk |
 | `GET /input` field `external` | Always a boolean | `null` on a system where the call is missing |
 | Presence report field `version` | portal-keys' version name | This app's version name |
 | Presence with no endpoint | Not logged | Logged once per start |
@@ -911,8 +909,8 @@ Behavior that changed in the port, for whoever switches a device over.
 | Shield `/bluetooth` before the controller exists | No such answer | `200` with `ok: false, code: unavailable` (not `409`) until the capability has started |
 | Shield `GET /mic/status` fields | The control API contract's `running`, `streaming`, `clients`, `heldByOther`, `lastError` | Adds `port` and `lastErrorDetail`; `lastError` is a code (`bind_failed`, `capture_denied`, `permission_missing`) and `capture_denied` survives a restart |
 | Shield microphone socket clients | Any client that could reach the port | The handshake's `Origin` must match `webview.startUrl`; a client with no `Origin` is admitted from loopback while `mic.allowNoOrigin` is true |
-| Portal keyboard socket's first frame | `{"type":"ready","port":...}` | `{"type":"ready","device":"<id>"}`, the hub's greeting; there is no `port` field |
-| Portal keyboard events' audience | The clients of the keyboard socket | Every client of the control port's WebSocket |
+| Portal keyboard subscription | A socket with an initial ready frame | A page subscription with an unsubscribe callback |
+| Portal keyboard events' audience | The clients of the keyboard socket | Only the subscribed, focused kiosk page |
 | Portal non-volume keys | Each one written to the event log (`hid-pass`) | Counted (`otherKeysSeen`), never logged |
 | Portal `keys.doublePressMs`, `presence.heartbeatMs` out of range | Refused by the old config route | Refused when set, with `400 invalid_setting` (150 to 2000 ms; 5 s to 10 min) |
 | Portal accessibility service config | Events `typeWindowsChanged` and `typeWindowStateChanged`; flags `flagRequestFilterKeyEvents`, `flagRetrieveInteractiveWindows` | Declares `typeWindowStateChanged` only; flags `flagDefault`, `flagReportViewIds`, `flagRetrieveInteractiveWindows`; adds `canRequestTouchExplorationMode` (the piano's set). Key filtering and further event types are switched on at run time for a capability that registers for them. See the note below |

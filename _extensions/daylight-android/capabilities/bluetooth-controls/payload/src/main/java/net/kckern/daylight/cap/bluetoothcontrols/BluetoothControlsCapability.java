@@ -11,6 +11,7 @@ import net.kckern.daylight.core.SettingsRegistry;
 import net.kckern.daylight.core.StatusBoard;
 import net.kckern.daylight.core.spi.PairingDialogExemption;
 
+import net.kckern.daylight.core.spi.PianoKioskTools;
 import org.json.JSONObject;
 
 public final class BluetoothControlsCapability implements Capability {
@@ -30,6 +31,8 @@ public final class BluetoothControlsCapability implements Capability {
 
     @Override public void register(CoreContext core) {
         this.core = core;
+        core.services().provide(PianoKioskTools.Bluetooth.class, (action, body) ->
+                request(action.isEmpty() ? "GET" : "POST", action, body));
         core.settings().declare("bluetooth.mode", SettingsRegistry.Type.STRING, MODE_ROLES,
                 SettingsRegistry.oneOf(MODE_ROLES, MODE_GAMEPAD));
         // Opt in only after the kiosk permits the exact Bluetooth pairing dialog component.

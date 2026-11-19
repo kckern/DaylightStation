@@ -6,18 +6,13 @@ const SETTING = 'power.wakeSuppressUntilSec';
  * epoch seconds, 0 = none) in step with the backend's screen override, when a relay
  * alone cannot:
  *
- * - The override lives in memory, so after a backend restart the tablet can still
- *   hold a future deadline that nothing will clear.
- * - A relay that failed left the tablet with the old value.
- *
- * `reconcile()` runs on the bridge supervisor's reachable ticks. It acts on the first
- * one after boot, and on the first one after `relayFailed()`. A check that fails is
- * logged and tried again on the next reachable tick, until one succeeds. It reads the
- * device's value and writes the backend's: the `off` override's deadline, or 0 when
- * the backend holds nothing and the tablet still holds a future deadline.
+ * A saved local decision (including an explicit release or expired hold) wins.
+ * On first migration only, adopt a valid unexpired tablet deadline. Failed
+ * reads and writes retry on the supervisor's next reachable tick.
  */
 export class PianoWakeHoldSyncAdapter {
   #baseUrl; #headers; #deviceId; #overrides; #now; #fetchImpl; #timeoutMs; #logger;
+  #checking = null;
   #pending = true;   // the first reachable tick after boot
 
   constructor({ baseUrl, headers = {}, deviceId, overrides, now = () => Date.now(), fetchImpl = globalThis.fetch, timeoutMs = DEFAULT_TIMEOUT_MS, logger = console } = {}) {
@@ -38,16 +33,36 @@ export class PianoWakeHoldSyncAdapter {
   relayFailed() { this.#pending = true; }
 
   /** @returns {Promise<{checked: boolean, wrote?: number|null, error?: string}>} */
-  async reconcile() {
+  async prepareWake() {
+    if (this.#overrides.hasDecision?.(this.#deviceId)) return true;
+    return !(await this.reconcile()).error;
+  }
+
+  reconcile() {
+    if (!this.#checking) this.#checking = this.#check().finally(() => { this.#checking = null; });
+    return this.#checking;
+  }
+
+  async #check() {
     if (!this.#pending) return { checked: false };
     this.#pending = false;
     try {
       const read = await this.#fetchImpl(`${this.#baseUrl}/settings`, { method: 'GET', headers: this.#headers, signal: AbortSignal.timeout(this.#timeoutMs) });
       if (!read?.ok) return this.#failed(`read HTTP ${read?.status ?? 'error'}`);
-      const has = Number((await read.json())?.settings?.find((s) => s.key === SETTING)?.value ?? 0);
+      const response = await read.json();
+      const has = response?.settings?.find((s) => s.key === SETTING)?.value;
+      if (response?.ok !== true || !Number.isInteger(has) || has < 0 || has > 2147483647)
+        return this.#failed('invalid wake-suppression setting');
       // Read the backend's hold only now: one relayed while the GET was in flight must win.
       const override = this.#overrides.get(this.#deviceId);
-      const want = override?.state === 'off' ? Math.ceil(override.until / 1000) : 0;
+      const now = this.#now();
+      if (!override && this.#overrides.hasDecision?.(this.#deviceId) === false
+          && has * 1000 > now
+          && has * 1000 <= now + 86400000 + 1000) {
+        this.#overrides.set(this.#deviceId, 'off', (has * 1000 - now) / 60000);
+        return { checked: true, wrote: null };
+      }
+      const want = override?.state === 'off' ? Math.min(2147483647, Math.ceil(override.until / 1000)) : 0;
       const holding = has * 1000 > this.#now();
       const agrees = want > 0 ? has === want : !holding;
       if (agrees) {
@@ -61,6 +76,12 @@ export class PianoWakeHoldSyncAdapter {
         signal: AbortSignal.timeout(this.#timeoutMs),
       });
       if (!write?.ok) return this.#failed(`HTTP ${write?.status ?? 'error'}`);
+      // A user can clear/reassert while the tablet is writing. Recheck if that happened.
+      const latest = this.#overrides.get(this.#deviceId);
+      if (latest?.until !== override?.until || latest?.state !== override?.state) {
+        this.#pending = true;
+        return this.#check();
+      }
       this.#logger.info?.('piano-wake-hold.resynced', { deviceId: this.#deviceId, had: has, wrote: want });
       return { checked: true, wrote: want };
     } catch (err) {

@@ -114,7 +114,7 @@ public class VolumeKeysBehaviorTest {
         lit = false;
         assertTrue(press(DOWN));
         assertTrue("no wake during a lockdown", screen.isEmpty());
-        assertTrue(log().contains("key-suppressed-lockdown KEYCODE_VOLUME_DOWN revision=12"));
+        assertTrue(log().contains("key-suppressed-lockdown revision=12"));
     }
 
     @Test public void theDisplaysOwnStateDecidesAndThePowerManagerOnlyWithoutIt() {
@@ -137,7 +137,7 @@ public class VolumeKeysBehaviorTest {
 
         press(UP);
         String after = log();
-        assertTrue(after, after.contains("key KEYCODE_VOLUME_UP down"));
+        assertFalse(after, after.contains("KEYCODE_VOLUME_UP"));
         assertFalse(after.contains("hid-pass"));
         assertFalse(after.contains("scanCode"));
     }

@@ -27,6 +27,7 @@ export class DeviceScreenControlService {
     let currentlyOn = false;
     try { currentlyOn = (await device.getStatus())?.screenOn === true; } catch { currentlyOn = false; }
     const next = !currentlyOn;
+    if (next && this.#isWakeDevice(deviceId)) this.#midiWake.resumeWake?.();
     if (this.#overrides) { if (next) this.#overrides.set(deviceId, 'on', this.#holdPolicy.onMinutes()); else this.#overrides.clear(deviceId); }
     this.#logger.info?.('device.router.screen.toggle', { deviceId, next });
     const result = await device.setScreen(next);
@@ -36,6 +37,7 @@ export class DeviceScreenControlService {
     const device = this.#devices.get(deviceId); if (!device) return { kind: 'not_found' };
     const minutes = clampMinutes(requestedMinutes > 0 ? requestedMinutes
       : (state === 'off' ? this.#holdPolicy.offMinutes() : this.#holdPolicy.onMinutes()));
+    if (state === 'on' && this.#isWakeDevice(deviceId)) this.#midiWake.resumeWake?.();
     this.#overrides?.set(deviceId, state === 'off' ? 'off' : 'on', minutes);
     if (state === 'off' && this.#isWakeDevice(deviceId) && this.#midiWake.suppressWakeUntil) {
       this.#midiWake.suppressWakeUntil(this.#nowMs() + minutes * 60_000);
@@ -49,7 +51,7 @@ export class DeviceScreenControlService {
   // authority reconcile re-darkens the panel every tick until it expires.
   clearOverride(deviceId) {
     const cleared = this.#overrides?.get(deviceId) ?? null;
-    if (cleared?.state === 'off' && this.#isWakeDevice(deviceId) && this.#midiWake.resumeWake) this.#midiWake.resumeWake();
+    if (cleared?.state !== 'on' && this.#isWakeDevice(deviceId)) this.#midiWake.resumeWake?.();
     this.#overrides?.clear(deviceId);
     this.#logger.info?.('device.router.screen.override.cleared', { deviceId, cleared: cleared?.state ?? null });
     return { ok: true, cleared };

@@ -83,6 +83,8 @@ export function createPianoMidiWake({
         // A relay that did not arrive is re-synced on the supervisor's next reachable tick.
         onRelayFailed: () => getPianoWakeHoldSync({ endpoint, deviceId, getScreenOverrideService, logger })?.relayFailed(),
       }),
+    prepareWake: endpoint.provider === PIANO_BRIDGE ? null : () =>
+      getPianoWakeHoldSync({ endpoint, deviceId, getScreenOverrideService, logger }).prepareWake(),
     cooldownMs: cfg.cooldown_ms ?? cfg.cooldownMs,
     screenOverride: getScreenOverrideService(),
   });

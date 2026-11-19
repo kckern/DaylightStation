@@ -6,10 +6,18 @@ import org.junit.Test;
 
 public class BridgeScriptTest {
     @Test public void earlyPianoSubscriptionSurvivesLateNavigationCallback() throws Exception {
-        java.io.File fixture = new java.io.File(getClass().getResource("/piano-navigation.cjs").toURI());
+        runShim("piano", "/piano-navigation.cjs");
+    }
+
+    @Test public void portalSubscriptionsCleanUpAndNeverReplayAnotherDocument() throws Exception {
+        runShim("portal", "/portal-input.cjs");
+    }
+
+    private void runShim(String device, String resource) throws Exception {
+        java.io.File fixture = new java.io.File(getClass().getResource(resource).toURI());
         Process node = new ProcessBuilder("node", fixture.getAbsolutePath()).redirectErrorStream(true).start();
         try (java.io.OutputStream stdin = node.getOutputStream()) {
-            stdin.write(BridgeScript.shim("test-key", "fixture", "piano").getBytes(java.nio.charset.StandardCharsets.UTF_8));
+            stdin.write(BridgeScript.shim("test-key", "fixture", device).getBytes(java.nio.charset.StandardCharsets.UTF_8));
         }
         assertTrue(node.waitFor(15, java.util.concurrent.TimeUnit.SECONDS));
         assertEquals(new String(node.getInputStream().readAllBytes(), java.nio.charset.StandardCharsets.UTF_8), 0, node.exitValue());

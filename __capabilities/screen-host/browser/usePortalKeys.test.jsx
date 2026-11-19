@@ -59,6 +59,41 @@ function renderBridge({ config, step = vi.fn(), stepSize = 0.1 }) {
 
 const volumeSocket = () => sockets.find((socket) => socket.url.includes(':8771/') || socket.url.includes(':9999/'));
 
+describe('Daylight Portal page input', () => {
+  it('leaves legacy ports closed if this WebView could not install its document bridge', () => {
+    vi.stubGlobal('WebSocket', FakeWebSocket);
+    const userAgent = vi.spyOn(window.navigator, 'userAgent', 'get').mockReturnValue('Android DaylightKiosk/1');
+    sockets = [];
+    try {
+      const { unmount } = renderBridge({ config: {enabled:true} });
+      unmount();
+      expect(sockets).toHaveLength(0);
+    } finally { userAgent.mockRestore(); vi.unstubAllGlobals(); }
+  });
+  it('steps the volume and edits focused text once, with no legacy sockets or callbacks after unmount', () => {
+    const volume = new Set(), keyboard = new Set();
+    const subscribe = set => cb => { set.add(cb); return () => set.delete(cb); };
+    vi.stubGlobal('WebSocket', FakeWebSocket);
+    window.daylight = {deviceId: 'portal', portal: {subscribeVolume: subscribe(volume), subscribeKeyboard: subscribe(keyboard)}};
+    sockets = [];
+    const field = document.createElement('input');
+    document.body.appendChild(field);
+    field.focus();
+    try {
+      for (let i = 0; i < 2; i++) {
+        const { unmount, step } = renderBridge({ config: { enabled: true } });
+        for (const cb of volume) cb({ code: 'VolumeDown', action: 'down' });
+        for (const cb of keyboard) cb({type: 'keyboard', key: 'a', code: 'KeyA', action: 'down'});
+        expect(step).toHaveBeenCalledExactlyOnceWith(-0.1);
+        expect(field.value).toBe('a'.repeat(i + 1));
+        expect(sockets).toHaveLength(0);
+        unmount();
+        expect(volume.size + keyboard.size).toBe(0);
+      }
+    } finally { delete window.daylight; field.remove(); vi.unstubAllGlobals(); }
+  });
+});
+
 describe('usePortalKeys / PortalKeysBridge', () => {
   beforeEach(() => {
     sockets = [];

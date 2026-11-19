@@ -32,6 +32,11 @@ public final class WebViewHostCapability implements Capability {
 
     private final EventBus.Listener toPage = (topic, detail) -> {
         // "key" is for a capability whose accessibility key filter sees keys before the Activity does.
+        if ("key".equals(topic) && "portal".equals(core.deviceId())
+                && ("VolumeUp".equals(detail.optString("code")) || "VolumeDown".equals(detail.optString("code")))) {
+            session.portalVolume(detail);
+            return;
+        }
         if ("screen".equals(topic) || "network".equals(topic) || "key".equals(topic)) session.emit(topic, detail);
     };
 
@@ -80,6 +85,8 @@ public final class WebViewHostCapability implements Capability {
         core.settings().declare("recovery.reloadOnNetworkReturn", Type.BOOLEAN, true);
         core.settings().declare("recovery.rendererUnresponsiveSec", Type.INTEGER, 30, SettingsRegistry.range(0, 3600));
 
+        if ("portal".equals(core.deviceId())) core.services().provide(net.kckern.daylight.core.spi.PortalKeyboard.class,
+                session::keyboardTarget);
         core.services().provide(KioskSurface.class, session);
         core.services().provide(net.kckern.daylight.core.spi.PageOpener.class, session);
 

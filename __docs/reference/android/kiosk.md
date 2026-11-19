@@ -191,7 +191,7 @@ Calls return at once; what they start happens afterwards. Events are DOM
 | `daylight:pause` | `{to}` | Another app took the front |
 | `daylight:back` | `{}` | Back was pressed, in back mode `page` only |
 | `daylight:screen` | `{on}` | The display turned on or off |
-| `daylight:key` | `{code, action}` | A key in `webview.interceptKeys`, or a volume key on a device with `volume-keys` |
+| `daylight:key` | `{code, action}` | A key in `webview.interceptKeys` |
 | `daylight:network` | `{connected}` | The network came or went |
 
 Remote and keyboard keys that Android delivers to the WebView are not
@@ -774,3 +774,12 @@ What an operator used to Fully will notice.
 | Screenshot | The WebView's drawing | The same, with the same limits for video and other apps' windows |
 | Updating the app | `mdmApkToInstall` | `POST /update`, which checks the package, the version and an optional hash first |
 | A bad update | Reinstall over ADB | A payload that fails to start is rolled back by the shell; the lifeline port stays up |
+
+
+The focused Portal screen uses `daylight.portal.subscribeVolume` and
+`subscribeKeyboard`. Each returns a cleanup callback. Input requires the
+configured capability and switch, the current top-level document on the start
+origin and an unlocked input revision. The piano page under `/piano` has
+scoped Bluetooth state and command methods, MIDI tap, audio-volume check and
+Wi-Fi sample methods. Each uses the corresponding native service and its
+existing device permission decisions. Fully continues using its legacy helpers.

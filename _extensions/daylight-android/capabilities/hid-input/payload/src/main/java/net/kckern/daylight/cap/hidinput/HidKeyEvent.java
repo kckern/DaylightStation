@@ -35,11 +35,11 @@ final class HidKeyEvent {
                 && !"ScrollLock".equals(key) && !"Pause".equals(key);
     }
 
-    String toJson() {
+    org.json.JSONObject asJson() {
         return Jsons.object(
                 "type", "keyboard", "action", action, "key", key, "code", code,
                 "location", location, "ctrlKey", ctrl, "shiftKey", shift,
                 "altKey", alt, "metaKey", meta, "repeat", repeat,
-                "ts", System.currentTimeMillis()).toString();
+                "ts", System.currentTimeMillis());
     }
 }

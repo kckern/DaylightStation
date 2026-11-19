@@ -22,10 +22,10 @@ function device(value, { failPost = false, failGet = false } = {}) {
 }
 const make = (dev, override) => new PianoWakeHoldSyncAdapter({
   baseUrl: 'http://tablet.invalid:8780', headers: { 'X-Daylight-Token': 'tok' }, deviceId: 'yellow-room-tablet',
-  overrides: { get: () => override }, now: () => NOW, fetchImpl: dev.fetchImpl, logger: noLog,
+  overrides: { get: () => override, hasDecision: () => true }, now: () => NOW, fetchImpl: dev.fetchImpl, logger: noLog,
 });
 
-test('after a restart with no hold in the backend, a future deadline left on the tablet is cleared with 0', async () => {
+test('after a recorded release a stale tablet deadline is cleared with 0', async () => {
   const dev = device(Math.ceil(NOW / 1000) + 3600);
   const sync = make(dev, null);
   assert.deepEqual(await sync.reconcile(), { checked: true, wrote: 0 });
@@ -110,4 +110,68 @@ test('a failed re-sync is tried again on the next reachable tick', async () => {
   assert.deepEqual(await sync.reconcile(), { checked: true, wrote: 0 });
   assert.equal(dev.state.value, 0);
   assert.equal((await sync.reconcile()).checked, false, 'once it has succeeded there is nothing left to do');
+});
+
+import { ScreenOverrideService } from '../../../../../../__backend/src/3_applications/devices/services/ScreenOverrideService.mjs';
+import { DeviceScreenControlService } from '../../../../../../__backend/src/3_applications/devices/services/DeviceScreenControlService.mjs';
+import { PianoMidiWakeService } from '../../application/services/PianoMidiWakeService.mjs';
+import { PianoMidiBridgeAdapter } from './PianoMidiBridgeAdapter.mjs';
+
+test('manual off survives a backend restart before first note, release during outage wins after restart, and holds expire', async () => {
+  const dev = device(0);
+  const id = 'piano-tablet';
+  let now = NOW, online = true, saved = null, wakes = 0;
+  const clock = { now: () => now };
+  const store = { deviceId: id, load: () => saved, save: value => { saved = structuredClone(value); } };
+  const fetchImpl = (...args) => online ? dev.fetchImpl(...args) : Promise.reject(Error('offline'));
+  const devices = { get: () => ({ setScreen: async (on) => { if (on) wakes++; return { ok: true }; } }) };
+  function boot() {
+    const overrides = new ScreenOverrideService({ clock, store });
+    const sync = new PianoWakeHoldSyncAdapter({ baseUrl: 'http://fixture.invalid', deviceId: id, overrides, now: clock.now, fetchImpl, logger: noLog });
+    const bridge = new PianoMidiBridgeAdapter({ bridgeUrl: 'ws://fixture.invalid', relay: 'setting', now: clock.now, fetchImpl, logger: noLog, onRelayFailed: () => sync.relayFailed() });
+    const wake = new PianoMidiWakeService({ deviceService: devices, deviceId: id, screenOverride: overrides, bridge, clock, logger: noLog });
+    const api = new DeviceScreenControlService({ devices, screenOverrides: overrides, midiWake: wake, holdPolicy: {}, nowMs: clock.now, logger: noLog });
+    return { api, wake, sync };
+  }
+  let app = boot();
+  await app.api.setOverride(id, 'off', 30);
+  await app.wake._relayDone();
+  assert.equal(dev.state.value, NOW / 1000 + 1800);
+  app = boot();
+  app.wake._handleNoteOnForTest();
+  assert.equal(wakes, 0);
+  assert.equal((await app.sync.reconcile()).wrote, null);
+  online = false;
+  app.api.clearOverride(id);
+  await app.wake._relayDone();
+  app = boot();
+  online = true;
+  assert.equal((await app.sync.reconcile()).wrote, 0);
+  app.wake._handleNoteOnForTest();
+  assert.equal(wakes, 1);
+  await app.api.setOverride(id, 'off', 1);
+  await app.wake._relayDone();
+  now += 61000;
+  app = boot();
+  assert.equal(app.api.override(id).override, null);
+  assert.ok(dev.state.value * 1000 < now);
+  app.wake._handleNoteOnForTest();
+  assert.equal(wakes, 2);
+});
+
+test('first migration imports an existing bounded tablet hold when no manual decision was recorded', async () => {
+  const deadline = NOW + 3600000;
+  const dev = device(deadline / 1000);
+  const overrides = new ScreenOverrideService({ clock: { now: () => NOW } });
+  const sync = new PianoWakeHoldSyncAdapter({ baseUrl: 'http://fixture.invalid', deviceId: 'piano', overrides, now: () => NOW, fetchImpl: dev.fetchImpl, logger: noLog });
+  let wakes = 0;
+  const wake = new PianoMidiWakeService({
+    deviceService: {get: () => ({setScreen: async () => { wakes++; }})}, deviceId: 'piano',
+    screenOverride: overrides, bridge: {start(){}, stop(){}, suppressWakeUntil(){}}, logger: noLog,
+    prepareWake: () => sync.prepareWake(),
+  });
+  await wake._handleNoteOnForTest();
+  assert.equal(wakes, 0);
+  assert.deepEqual(overrides.get('piano'), { state: 'off', until: deadline });
+  assert.equal(dev.state.value * 1000, deadline);
 });

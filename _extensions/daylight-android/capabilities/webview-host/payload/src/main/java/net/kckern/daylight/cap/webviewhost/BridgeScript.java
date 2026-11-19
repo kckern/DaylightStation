@@ -33,6 +33,8 @@ final class BridgeScript {
                 + "var T=\"\";function t(){if(!T){try{T=n.open(" + JSONObject.quote(sessionKey)
                 + ",window.top===window?\"top\":\"frame\")||\"\";}catch(e){}}return T;}"
                 + "function c(m,a){try{return n.call(t(),m,a===undefined||a===null?\"\":String(a));}catch(e){return \"\";}}"
+                + "function current(){if(c('currentPage')!=='true')T='';}"
+                + "function tool(m,a){current();var r=c(m,a);return r?JSON.parse(r):null;}"
                 + "var piano=null;if(" + "piano".equals(deviceId)
                 + "&&window===window.top){"
                 + "var subscribed=null;"
@@ -50,10 +52,16 @@ final class BridgeScript {
                 + "window.addEventListener('daylight:midiready',read);"
                 + "if(c('pianoSubscribe')!=='true'){T='';window.removeEventListener('daylight:midiready',read);return null;}"
                 + "subscribed=stop;timer=setInterval(status,1000);status();return stop;},"
+                + "bluetoothState:function(){return tool('pianoBluetoothState');},"
+                + "bluetoothCommand:function(action,body){return tool('pianoBluetoothCommand',JSON.stringify({action:action,body:body}));},"
+                + "midiTap:function(){return tool('pianoMidiTap');},checkVolume:function(){return tool('pianoCheckVolume');},"
+                + "wifi:function(){return tool('pianoWifi');},"
                 + "startRepair:function(){return c('pianoRepair')==='true';},"
                 + "repairResult:function(){var r=c('pianoRepairResult');return r?JSON.parse(r):{fixed:false,reason:'unavailable'};},"
                 + "send:function(bytes,inMs){return c('pianoSend',JSON.stringify({bytes:Array.from(bytes),inMs:inMs||0}))==='true';}});}"
+                + ("portal".equals(deviceId) ? portalShim() : "")
                 + "window.daylight=Object.freeze({"
+                + ("portal".equals(deviceId) ? "portal:window===window.top?portal:null," : "")
                 + ("piano".equals(deviceId) ? "get piano(){return /^\\/piano(?:\\/|$)/.test(location.pathname)?piano:null;}," : "")
                 + "version:" + JSONObject.quote(version) + ","
                 + "deviceId:" + JSONObject.quote(deviceId) + ","
@@ -71,6 +79,18 @@ final class BridgeScript {
                         + "return {accepted:false,reason:\"refused\"};}" : "")
                 + "});"
                 + "})();";
+    }
+
+    private static String portalShim() {
+        return "function channel(kind,event){var previous=null;return function(f){"
+                + "if(previous)previous();var active=true;"
+                + "function attach(){if(active){current();c(kind+'Subscribe');}}"
+                + "function read(){if(!active)return;var r=c(kind+'Read');if(r)JSON.parse(r).forEach(f);}"
+                + "function stop(){if(!active)return;active=false;clearInterval(timer);"
+                + "window.removeEventListener(event,read);c(kind+'Unsubscribe');previous=null;}"
+                + "window.addEventListener(event,read);previous=stop;attach();var timer=setInterval(attach,1000);return stop;};}"
+                + "var portal=Object.freeze({subscribeVolume:channel('portalVolume','daylight:portalvolumeready'),"
+                + "subscribeKeyboard:channel('portalKeyboard','daylight:portalkeyboardready')});";
     }
 
     /** Dispatches daylight:<name> on window. detailJson must be a JSON object's text. */

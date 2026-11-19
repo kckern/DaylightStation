@@ -51,6 +51,7 @@ import net.kckern.daylight.core.spi.ScreenControl;
 import net.kckern.daylight.core.spi.VolumeControl;
 
 import org.json.JSONArray;
+import net.kckern.daylight.core.spi.PianoKioskTools;
 import org.json.JSONObject;
 
 import java.io.ByteArrayOutputStream;
@@ -237,12 +238,15 @@ final class KioskSession implements KioskController, KioskSurface, net.kckern.da
 
     @Override public void onHostPaused() {
         resumed = false;
+        clearPortalFrames();
         pausedAt = System.currentTimeMillis();
         String to = pausedAt - lastLaunchAt < 3000 ? lastLaunched : null;
         try { emit("pause", new JSONObject().put("to", to == null ? JSONObject.NULL : to)); } catch (Exception ignored) { }
     }
 
     @Override public void onHostWindowFocus(boolean focused) {
+        windowFocused = focused;
+        if (!focused) clearPortalFrames();
         if (focused) applyWindowFlags();
         try { core.events().publish("kiosk-focus", new JSONObject().put("focused", focused)); } catch (Exception ignored) { }
     }
@@ -302,6 +306,7 @@ final class KioskSession implements KioskController, KioskSurface, net.kckern.da
         navigation = NavigationPolicy.of(startUrl(), str("webview.allowedOrigins"), foreign("links.origins"));
         web = new WebView(activity);
         WebSettings s = web.getSettings();
+        s.setUserAgentString(s.getUserAgentString() + " DaylightKiosk/1");
         s.setJavaScriptEnabled(true);
         s.setDomStorageEnabled(true);
         s.setDatabaseEnabled(true);
@@ -369,8 +374,55 @@ final class KioskSession implements KioskController, KioskSurface, net.kckern.da
                 + " navigation=" + navigation.origins());
     }
 
+    private volatile boolean windowFocused, documentCommitted;
+    private String committingUrl;
+    private final PortalPageInput portalVolume = new PortalPageInput();
+    private final PortalPageInput portalKeyboard = new PortalPageInput();
+
+    private boolean trustedKioskPage() {
+        String start = OriginPolicy.originOf(startUrl());
+        return !midiStopped && documentCommitted && rendererAlive && !errorPage && !trust.openedFromOutside()
+                && start != null && start.equals(OriginPolicy.originOf(mainUrl)) && origins.allows(mainUrl);
+    }
+
+    private boolean visibleKioskPage() { return resumed && windowFocused && trustedKioskPage(); }
+
+    private void clearPortalFrames() { portalVolume.clear(); portalKeyboard.clear(); }
+    private void detachPortal() { portalVolume.detach(); portalKeyboard.detach(); }
+
+    private net.kckern.daylight.core.spi.InputLock inputLock() {
+        return core.services().find(net.kckern.daylight.core.spi.InputLock.class);
+    }
+
+    private boolean portalEnabled(boolean keyboard) {
+        return "portal".equals(core.deviceId()) && core.capabilityNames().contains(keyboard ? "hid-input" : "volume-keys")
+                && bool(keyboard ? "hid.enabled" : "volumeKeys.enabled");
+    }
+
+    java.util.function.Consumer<JSONObject> keyboardTarget() {
+        if (!portalEnabled(true) || !visibleKioskPage()) return null;
+        Object destination = portalKeyboard.target(inputLock(), tokens);
+        return destination == null ? null : frame -> portalInput(true, frame, destination);
+    }
+
+    void portalVolume(JSONObject frame) {
+        portalInput(false, frame, portalVolume.target(inputLock(), tokens));
+    }
+
+    private void portalInput(boolean keyboard, JSONObject frame, Object destination) {
+        PortalPageInput page = keyboard ? portalKeyboard : portalVolume;
+        if (!portalEnabled(keyboard) || !visibleKioskPage()) return;
+        if (page.offer(destination, frame, inputLock(), tokens)) {
+            final String event = keyboard ? "daylight:portalkeyboardready" : "daylight:portalvolumeready";
+            ui.post(() -> {
+                if (web != null && visibleKioskPage())
+                    web.evaluateJavascript("window.dispatchEvent(new Event('" + event + "'))", null);
+            });
+        }
+    }
+
     private PianoPage pianoPage;
-    private boolean midiStopped;
+    private volatile boolean midiStopped;
     private final PianoRepair pianoRepair = new PianoRepair();
 
     private synchronized void detachPiano() {
@@ -413,6 +465,8 @@ final class KioskSession implements KioskController, KioskSurface, net.kckern.da
     }
 
     private void destroyWebView() {
+        documentCommitted = false;
+        detachPortal();
         detachPiano();
         hideCustomView();
         if (web == null) return;
@@ -541,7 +595,10 @@ final class KioskSession implements KioskController, KioskSurface, net.kckern.da
     private final class PageClient extends WebViewClient {
         @Override public void onPageStarted(WebView view, String url, Bitmap favicon) {
             if (view != web) return;
+            documentCommitted = false;
+            committingUrl = url;
             detachPiano();
+            detachPortal();
             mainUrl = url;
             if (isLocalPage(url)) return;
             // The second line of the navigation rule: a main-frame load that got past
@@ -579,6 +636,11 @@ final class KioskSession implements KioskController, KioskSurface, net.kckern.da
                 armDeadline(loads.begin(url, System.currentTimeMillis()));
             }
             loads.started(url);
+        }
+
+        @Override public void onPageCommitVisible(WebView view, String url) {
+            if (view == web && url != null && url.equals(committingUrl) && origins.allows(url) && origins.allows(mainUrl))
+                documentCommitted = true;
         }
 
         @Override public void onPageFinished(WebView view, String url) {
@@ -765,8 +827,23 @@ final class KioskSession implements KioskController, KioskSurface, net.kckern.da
     /** What an accepted bridge call does. Reads answer inline; actions run on the bridge executor. */
     private final class PageActions implements BridgeDispatcher.Actions {
         @Override public String piano(String token, String method, String arg) throws Exception {
+            if (PianoToolCalls.supports(method)) {
+                if (!"piano".equals(core.deviceId()) || !visibleKioskPage() || !tokens.currentTopFrame(token)
+                        || !BridgeDispatcher.pianoPath(mainUrl)) return "";
+                return PianoToolCalls.call(core.services(), method, arg);
+            }
             return pianoCall(token, method, arg);
         }
+        @Override public String portal(String token, String method) {
+            boolean keyboard = method.startsWith("portalKeyboard");
+            PortalPageInput page = keyboard ? portalKeyboard : portalVolume;
+            if (!"portal".equals(core.deviceId()) || !trustedKioskPage() || !tokens.currentTopFrame(token)) return "";
+            if (method.endsWith("Unsubscribe")) { page.detach(token); return "true"; }
+            if (!portalEnabled(keyboard)) return "";
+            if (method.endsWith("Subscribe")) { page.attach(token); return "true"; }
+            return visibleKioskPage() ? page.read(token, inputLock()) : "";
+        }
+
         @Override public String capabilitiesJson() { return new JSONArray(core.capabilityNames()).toString(); }
 
         @Override public boolean launch(String json) {
@@ -845,6 +922,7 @@ final class KioskSession implements KioskController, KioskSurface, net.kckern.da
 
     /** Called from the capability's stop(), on any thread. Does not wait for the main thread. */
     void shutdown() {
+        detachPortal();
         synchronized (this) { midiStopped = true; detachPiano(); pianoRepair.stop(); }
         bridgeExec.shutdown();
         ui.post(() -> {
