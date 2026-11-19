@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React from 'react';
 import { Stack, Alert, Center, Loader } from '@mantine/core';
 import { IconAlertCircle } from '@tabler/icons-react';
 import { useHotkeys } from '@mantine/hooks';
@@ -23,12 +23,8 @@ import SaveBar from './SaveBar.jsx';
 function ConfigFormWrapper({ filePath, title, children, validate, rawMode = false, headerExtra }) {
   const {
     data, raw, loading, saving, error, dirty,
-    load, save, revert, setData, setRaw, clearError
+    save, revert, setData, setRaw, clearError
   } = useAdminConfig(filePath);
-
-  useEffect(() => {
-    load().catch(() => { /* error state handled by the hook */ });
-  }, [load]);
 
   // Unsaved-changes guard: beforeunload + AdminNav interception (audit C1)
   useUnsavedGuard(dirty, { label: filePath });

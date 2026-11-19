@@ -9,7 +9,6 @@ const mockConfig = {
   saving: false,
   error: null,
   dirty: false,
-  load: vi.fn().mockResolvedValue({}),
   save: vi.fn().mockResolvedValue({}),
   revert: vi.fn(),
   setData: vi.fn(),

@@ -1,5 +1,7 @@
-import { useState, useCallback, useMemo, useRef } from 'react';
+import { useState, useCallback, useMemo, useRef, useEffect } from 'react';
 import { DaylightAPI } from '../../lib/api.mjs';
+import { useApiResource } from '../../lib/hooks/useApiResource.js';
+import { useDismissibleError } from '../../lib/hooks/useDismissibleError.js';
 import { notifications } from '@mantine/notifications';
 import getLogger from '../../lib/logging/Logger.js';
 
@@ -16,83 +18,95 @@ const API_BASE = '/api/v1/admin/config/files';
  */
 export function useAdminConfig(filePath) {
   const logger = useMemo(() => getLogger().child({ hook: 'useAdminConfig', filePath }), [filePath]);
+  const resourcePath = `${API_BASE}/${filePath}`;
+  const { data: loaded, loading: readLoading, error: readError, resourceKey } = useApiResource(resourcePath, {
+    label: `Admin config ${filePath}`,
+    retryTransient: false,
+  });
+  const { error: visibleReadError, dismiss: dismissReadError } = useDismissibleError(readError);
 
-  const [data, setDataState] = useState(null);
-  const [raw, setRawState] = useState('');
-  const [loading, setLoading] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState(null);
-  const [dirty, setDirty] = useState(false);
+  const [draft, setDraft] = useState({ filePath: null, data: null, raw: '', dirty: false });
+  const [savingPath, setSavingPath] = useState(null);
+  const [commandError, setCommandError] = useState(null);
 
   // Store the original values from the last successful load for revert
-  const originalRef = useRef({ data: null, raw: '' });
+  const originalRef = useRef({ filePath: null, data: null, raw: '' });
+  const activeFilePath = useRef(filePath);
+  activeFilePath.current = filePath;
+  const draftMatches = draft.filePath === filePath;
+  const data = draftMatches ? draft.data : null;
+  const raw = draftMatches ? draft.raw : '';
+  const dirty = draftMatches && draft.dirty;
+  const loading = readLoading;
+  const saving = savingPath === filePath;
+  const error = (commandError?.filePath === filePath ? commandError.error : null) || visibleReadError;
 
-  // Fetch config from the API
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const result = await DaylightAPI(`${API_BASE}/${filePath}`);
-      const loadedData = result.parsed ?? null;
-      const loadedRaw = result.raw ?? '';
-      setDataState(loadedData);
-      setRawState(loadedRaw);
-      originalRef.current = { data: loadedData, raw: loadedRaw };
-      setDirty(false);
-      logger.info('admin.config.loaded', { filePath });
-      return result;
-    } catch (err) {
-      setError(err);
-      logger.error('admin.config.load.failed', { filePath, message: err.message });
-      throw err;
-    } finally {
-      setLoading(false);
-    }
-  }, [filePath, logger]);
+  useEffect(() => {
+    if (readLoading || resourceKey !== resourcePath || readError) return;
+    const loadedData = loaded?.parsed ?? null;
+    const loadedRaw = loaded?.raw ?? '';
+    setDraft(current => current.filePath === filePath && current.dirty
+      ? current
+      : { filePath, data: loadedData, raw: loadedRaw, dirty: false });
+    originalRef.current = { filePath, data: loadedData, raw: loadedRaw };
+    logger.info('admin.config.loaded', { filePath });
+  }, [filePath, loaded, logger, readError, readLoading, resourceKey, resourcePath]);
 
   // Save config to the API
   const save = useCallback(async ({ useRaw = false } = {}) => {
-    setSaving(true);
-    setError(null);
+    setSavingPath(filePath);
+    setCommandError(null);
     try {
       const body = useRaw ? { raw } : { parsed: data };
       const result = await DaylightAPI(`${API_BASE}/${filePath}`, body, 'PUT');
       // After a successful save, update the originals so revert goes back to saved state
       const savedData = result.parsed ?? data;
       const savedRaw = result.raw ?? raw;
-      setDataState(savedData);
-      setRawState(savedRaw);
-      originalRef.current = { data: savedData, raw: savedRaw };
-      setDirty(false);
+      if (activeFilePath.current === filePath) {
+        setDraft(current => current.filePath === filePath
+          ? { ...current, data: savedData, raw: savedRaw, dirty: false }
+          : current);
+        if (originalRef.current.filePath === filePath) {
+          originalRef.current = { filePath, data: savedData, raw: savedRaw };
+        }
+      }
       logger.info('admin.config.saved', { filePath, useRaw });
-      notifications.show({
-        title: 'Saved',
-        message: `${filePath} updated`,
-        color: 'green',
-        autoClose: 3000,
-      });
+      if (activeFilePath.current === filePath) {
+        notifications.show({
+          title: 'Saved',
+          message: `${filePath} updated`,
+          color: 'green',
+          autoClose: 3000,
+        });
+      }
       return result;
     } catch (err) {
-      setError(err);
+      if (activeFilePath.current === filePath) setCommandError({ filePath, error: err });
       logger.error('admin.config.save.failed', { filePath, message: err.message });
-      notifications.show({
-        title: 'Save failed',
-        message: err.message || 'An error occurred',
-        color: 'red',
-        autoClose: false,
-      });
+      if (activeFilePath.current === filePath) {
+        notifications.show({
+          title: 'Save failed',
+          message: err.message || 'An error occurred',
+          color: 'red',
+          autoClose: false,
+        });
+      }
       throw err;
     } finally {
-      setSaving(false);
+      setSavingPath(current => current === filePath ? null : current);
     }
   }, [filePath, data, raw, logger]);
 
   // Revert to the last-loaded values
   const revert = useCallback(() => {
-    setDataState(originalRef.current.data);
-    setRawState(originalRef.current.raw);
-    setDirty(false);
-    setError(null);
+    if (originalRef.current.filePath !== filePath) return;
+    setDraft({
+      filePath,
+      data: originalRef.current.data,
+      raw: originalRef.current.raw,
+      dirty: false,
+    });
+    setCommandError(null);
     logger.info('admin.config.reverted', { filePath });
     notifications.show({
       title: 'Reverted',
@@ -105,23 +119,27 @@ export function useAdminConfig(filePath) {
   // Stage a parsed data update and mark dirty.
   // Accepts either a new object or an updater function: setData(prev => ({ ...prev, key: value }))
   const setData = useCallback((newDataOrUpdater) => {
-    setDataState(prev => {
+    setDraft(current => {
+      if (current.filePath !== filePath) return current;
       const next = typeof newDataOrUpdater === 'function'
-        ? newDataOrUpdater(prev)
+        ? newDataOrUpdater(current.data)
         : newDataOrUpdater;
-      return next;
+      return { ...current, data: next, dirty: true };
     });
-    setDirty(true);
-  }, []);
+  }, [filePath]);
 
   // Stage a raw YAML string update and mark dirty
   const setRaw = useCallback((newStr) => {
-    setRawState(newStr);
-    setDirty(true);
-  }, []);
+    setDraft(current => current.filePath === filePath
+      ? { ...current, raw: newStr, dirty: true }
+      : current);
+  }, [filePath]);
 
   // Clear error state
-  const clearError = useCallback(() => setError(null), []);
+  const clearError = useCallback(() => {
+    setCommandError(null);
+    dismissReadError();
+  }, [dismissReadError]);
 
   return {
     data,
@@ -130,7 +148,6 @@ export function useAdminConfig(filePath) {
     saving,
     error,
     dirty,
-    load,
     save,
     revert,
     setData,
