@@ -92,19 +92,23 @@ export default function TodaysLessonGate({
     );
   }
 
-  // Arcade standard: the lesson's picture, its name and one way in. The whole
-  // card is the button, and nothing on it is there only to be read.
+  // Arcade standard: the course poster, then the lesson's name over its still,
+  // with a play disc on the still. The whole card is the button, and nothing on
+  // it is there only to be read.
   return (
     <section className="piano-lesson-gate">
       <button type="button" className="piano-lesson-gate__start" aria-label={`Start today's lesson: ${lesson?.title ?? ''}`} onClick={onLaunch}>
-        {lesson?.thumbnail && (
-          <img className="piano-lesson-gate__thumb" src={lesson.thumbnail} alt="" role="presentation" />
+        {course?.thumbnail && (
+          <img className="piano-lesson-gate__poster" src={course.thumbnail} alt="" decoding="async" />
         )}
         <span className="piano-lesson-gate__side">
           <strong className="piano-lesson-gate__title">{lesson?.title}</strong>
-          <span className="piano-lesson-gate__go">
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4.5v15l12.5-7.5z" fill="currentColor" /></svg>
-            Start
+          {/* The way in is a play disc on the lesson's still, never a slab of a button. */}
+          <span className="piano-lesson-gate__still">
+            {lesson?.thumbnail && <img className="piano-lesson-gate__thumb" src={lesson.thumbnail} alt="" decoding="async" />}
+            <span className="piano-lesson-gate__play" aria-hidden="true">
+              <svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z" fill="currentColor" /></svg>
+            </span>
           </span>
         </span>
       </button>

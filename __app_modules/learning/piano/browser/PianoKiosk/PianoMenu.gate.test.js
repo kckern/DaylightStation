@@ -117,11 +117,11 @@ describe('PianoMenu with an owed lesson', () => {
     expect(document.querySelector('.piano-desk')).toBeNull();
   });
 
-  // Arcade standard: the card is the lesson's picture, its title and Start.
+  // Arcade standard: the card is the course poster, the lesson title and a play disc on its still.
   it('carries the lesson title and one start action, and nothing only to be read', () => {
     gateState = GATED;
     renderMenu();
-    expect(document.querySelector('.piano-lesson-gate').textContent).toBe('Lesson 5: Broken ChordsStart');
+    expect(document.querySelector('.piano-lesson-gate').textContent).toBe('Lesson 5: Broken Chords');
     expect(screen.getByRole('button', { name: /start today.s lesson/i })).toBeTruthy();
   });
 

@@ -213,7 +213,11 @@ the second read seam for the kiosk beside `/completion` (which gates Games).
 School serves it because School owns the rule; the kiosk only renders it.
 
 While `gated` is true the kiosk replaces its whole tile grid with that one
-lesson. So the read **fails open**: no assignment file, an unreachable Plex, a
+lesson: one card that is itself the button, with the course poster
+(`course.thumbnail`) on the left and the lesson title over its still
+(`lesson.thumbnail`) on the right, with a small play disc on the still. There
+is no separate Start button. Both pictures are optional and are only ever
+rooted proxy paths. So the read **fails open**: no assignment file, an unreachable Plex, a
 launcher error, or an unwired lifecycle all return `gated: false`. A wrong
 `true` would lock a child out of every mode over a transient fault; a wrong
 `false` merely fails to nag. (`GetPlayableUnits`'s co-progress exemption fails

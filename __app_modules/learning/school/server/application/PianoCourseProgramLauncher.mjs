@@ -553,10 +553,13 @@ export class PianoCourseProgramLauncher {
     const parent = result?.parents?.[item.parentId] ?? null;
     const thumbnail = lessonThumbnail(item);
     const description = lessonSummary(item);
+    // The course poster, under the same rule as the lesson still: a rooted proxy path or nothing.
+    const poster = lessonThumbnail({ thumbnail: result?.info?.image ?? result?.info?.thumbnail });
     return {
       course: {
         id: result?.compoundId ?? null,
         title: result?.info?.title ?? result?.title ?? result?.compoundId ?? 'Piano course',
+        ...(poster ? { thumbnail: poster } : {}),
       },
       unit: item.parentId ? {
         id: String(item.parentId),
