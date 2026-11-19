@@ -621,3 +621,143 @@ test('Life Purpose retries a failed read after saving without writing the statem
   expect(reads).toEqual([planPath, planPath, planPath]);
   expect(writes).toEqual([{ statement }]);
 });
+
+test('Life goal detail reads its selected goal and keeps a refused transition retryable', async ({ page }) => {
+  const member = { username: 'amy', displayName: 'Amy' };
+  const requests = [];
+  const release = Promise.withResolvers();
+  const entered = Promise.withResolvers();
+  let state = 'ready';
+  let writes = 0;
+  let failDetail = false;
+  await page.routeWebSocket('**/*', () => {});
+  await page.route('**/api/v1/life/**', async route => {
+    const request = route.request();
+    const url = new URL(request.url());
+    if (url.pathname.endsWith('/users')) return route.fulfill({ json: { users: [member] } });
+    if (url.pathname.endsWith('/user')) return route.fulfill({ json: member });
+    if (!url.pathname.includes('/life/plan/')) return route.fulfill({ json: {} });
+    requests.push([request.method(), url.pathname, url.searchParams.get('username')]);
+    if (url.pathname.endsWith('/transition')) {
+      writes++;
+      if (writes === 1) {
+        entered.resolve();
+        await release.promise;
+        return route.fulfill({ status: 400, json: { error: 'Transition refused' } });
+      }
+      state = request.postDataJSON().state;
+      failDetail = true;
+      return route.fulfill({ json: { id: 'practice', name: 'Practice goal', state } });
+    }
+    if (url.pathname.endsWith('/practice')) {
+      if (failDetail) {
+        failDetail = false;
+        return route.fulfill({ status: 400, json: { error: 'Goal temporarily unavailable' } });
+      }
+      return route.fulfill({ json: { id: 'practice', name: 'Practice goal', state } });
+    }
+    return route.fulfill({ json: { goals: [] } });
+  });
+  await page.goto('/life/plan/goals/practice');
+  await expect(page.getByRole('heading', { name: 'Practice goal' })).toBeVisible();
+  const select = page.getByPlaceholder('New state');
+  const transition = page.getByRole('button', { name: 'Transition', exact: true });
+  await select.click();
+  await page.getByRole('option', { name: 'committed' }).click();
+  await transition.click();
+  await entered.promise;
+  await expect(transition).toBeDisabled();
+  await expect(select).toBeDisabled();
+  release.resolve();
+  await expect(page.getByRole('alert')).toContainText(/refused|400/i);
+  await expect(select).toHaveValue('committed');
+  await transition.click();
+  await expect(page.getByRole('alert')).toContainText('Goal');
+  await page.getByRole('button', { name: 'Retry' }).click();
+  await expect(page.getByText('committed', { exact: true })).toBeVisible();
+  expect(writes).toBe(2);
+  expect(requests.every(([, path, user]) => path.includes('/goals/practice') && user === 'amy')).toBe(true);
+});
+
+for (const { owner, draft } of [
+  { owner: 'bob', draft: 'considered' },
+  { owner: 'amy', draft: 'considered' },
+  { owner: 'amy', draft: 'committed' },
+]) {
+  test(`Life keeps the transition draft with ${owner} when a late write settles against ${draft}`, async ({ page }) => {
+    const users = ['amy', 'bob'].map(username => ({ username, displayName: username.toUpperCase() }));
+    const reads = [];
+    const writes = [];
+    const entered = Promise.withResolvers();
+    const release = Promise.withResolvers();
+    let committed = false;
+    let socket;
+    await page.routeWebSocket('**/*', connection => { socket = connection; });
+    await page.route('**/api/v1/life/**', async route => {
+      const request = route.request();
+      const url = new URL(request.url());
+      const user = url.searchParams.get('username');
+      if (url.pathname.endsWith('/users')) return route.fulfill({ json: { users } });
+      if (url.pathname.endsWith('/user')) return route.fulfill({ json: users.find(member => member.username === user) || users[0] });
+      if (url.pathname.endsWith('/transition')) {
+        writes.push([user, url.pathname, request.postDataJSON().state]);
+        entered.resolve();
+        await release.promise;
+        committed = true;
+        return route.fulfill({ json: { state: 'committed' } });
+      }
+      const goal = url.pathname.split('/').at(-1);
+      reads.push([user, goal]);
+      return route.fulfill({ json: { id: goal, name: user + ' ' + goal, state: user === 'amy' && goal === 'second' && committed ? 'committed' : 'ready' } });
+    });
+    await page.goto('/life/plan/goals/first');
+    await expect(page.getByRole('heading', { name: 'amy first' })).toBeVisible();
+    const select = page.getByPlaceholder('New state');
+    const choose = async state => {
+      await select.click();
+      await page.getByRole('option', { name: state, exact: true }).click();
+    };
+    await choose('achieved');
+    await expect.poll(() => Boolean(socket)).toBe(true);
+    socket.send(JSON.stringify({ topic: 'notification', title: 'Second goal', urgency: 'critical',
+      metadata: { id: 'next-goal', username: 'amy' },
+      actions: [{ label: 'View second goal', data: { url: '/life/plan/goals/second' } }],
+    }));
+    await page.getByRole('button', { name: 'View second goal' }).click();
+    await expect(page.getByRole('heading', { name: 'amy second' })).toBeVisible();
+    await expect(select).toHaveValue('');
+    await choose('committed');
+    await page.getByRole('button', { name: 'Transition', exact: true }).click();
+    await entered.promise;
+    const switcher = page.getByRole('textbox', { name: 'Switch household member' });
+    await switcher.click();
+    await page.getByRole('option', { name: 'BOB' }).click();
+    await expect(page.getByRole('heading', { name: 'bob second' })).toBeVisible();
+    if (owner === 'amy') {
+      await switcher.click();
+      await page.getByRole('option', { name: 'AMY' }).click();
+      await expect(page.getByRole('heading', { name: 'amy second' })).toBeVisible();
+    }
+    await choose(draft);
+    const response = page.waitForResponse(res => new URL(res.url()).pathname.endsWith('/transition'));
+    release.resolve();
+    await (await response).finished();
+    const transition = page.getByRole('button', { name: 'Transition', exact: true });
+    const expectedReads = [['amy', 'first'], ['amy', 'second'], ['bob', 'second']];
+    if (owner === 'amy') {
+      await expect(page.getByText('committed', { exact: true })).toBeVisible();
+      expectedReads.push(['amy', 'second'], ['amy', 'second']);
+    }
+    if (draft === 'committed') {
+      await expect(select).toHaveValue('');
+      await expect(transition).toBeDisabled();
+      await choose('considered');
+      await expect(transition).toBeEnabled();
+    } else {
+      await expect(select).toHaveValue(draft);
+      await expect(transition).toBeEnabled();
+    }
+    expect(reads).toEqual(expectedReads);
+    expect(writes).toEqual([['amy', '/api/v1/life/plan/goals/second/transition', 'committed']]);
+  });
+}

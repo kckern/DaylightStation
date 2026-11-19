@@ -86,7 +86,7 @@ const LogCategoryRoute = () => {
 
 const GoalDetailRoute = () => {
   const { goalId } = useParams();
-  return <GoalDetail goalId={goalId} />;
+  return <GoalDetail key={goalId} goalId={goalId} />;
 };
 
 const CeremonyRoute = () => {

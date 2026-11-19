@@ -13,7 +13,7 @@ Admin, Health, Media, Feed, Home, Life and Auto share browser layout and interac
 | Keep controls inside the display safe area | `AppFrame` and `PlaybackFrame` reserve the four device insets at their outer edges. Flow content uses the remaining space. A viewport-fixed surface can use the `--browser-safe-area-*` properties for its own bounds. | [Shared frame and overlay styles](../../../frontend/src/lib/ui/ds.scss) |
 | Keep notices clear of frame controls | Pass an in-flow notice host to the `notices` slot on `AppFrame` or `AppChrome`. The row sits below the header, collapses when empty and scrolls independently of the main region for a long stack. | [Life notifications](../../../__app_modules/personal/life/browser/LifeApp.jsx) |
 | Measure or adjust the active scroll region | Inside `AppFrame` content, get the ref with `useAppMainRef()` and read `ref?.current` in an event or effect. The frame owns the element and a caller can still receive it through the `mainRef` prop. | Home Mosaic tooltip positioning, Health food selection and toast clearance |
-| Return to a view at its previous position | `useViewScroll({mainRef, viewKey, owner, ready})` restores the position after the view is ready and clears it when the owner changes. | Health Today · [Auto record tabs](../../../__app_modules/household/auto/browser/AutoApp.jsx) |
+| Return to a view at its previous position | `useViewScroll({mainRef, viewKey, owner, ready})` restores the position after the view is ready and clears it when the owner changes. | Health Today · [Auto record tabs](../../../__app_modules/household/auto/browser/AutoApp.jsx) · [Home views](../../../__app_modules/household/home/browser/HomeApp.jsx) |
 | Choose content without losing an unsaved form | Bind the catalog combobox to the draft’s content ID. On selection, update that field and keep the editor mounted. The editor owns Save and Cancel. | [Admin list item editor](../../../__capabilities/content-catalog/browser/admin/ListsItemEditor.jsx) |
 | Browse nearby catalog items | Use `ContentCombobox`. Its sibling window reuses the path selected by the hover preload or initial read. Scroll, loading and delayed page responses follow the current window. | [Catalog picker](../../../__capabilities/content-catalog/browser/combobox/ContentCombobox.jsx) |
 | Append a page to a filtered result | Keep the rows, cursor and pending request with the selected filter. Retire them when the filter changes. An append failure can retain the loaded rows and offer a retry for the same cursor. | [Feed Search](../../../__app_modules/media/feed/browser/Search/FeedSearch.jsx) · [Feed Reader](../../../__app_modules/media/feed/browser/Reader/Reader.jsx) |
@@ -38,6 +38,7 @@ Admin, Health, Media, Feed, Home, Life and Auto share browser layout and interac
 | Reuse a feature snapshot across views | Read at the provider shared by those views. Derive labels, lookups or warnings from the provider's snapshot, and refresh through the same owner after a confirmed change. | [Media Fleet provider](../../../__app_modules/media/media/browser/fleet/FleetProvider.jsx) |
 | Keep a submitted command across local views | Mount the command owner above the views. Pass an active flag to polling and a null resource path to suspend reads when the view leaves. Start reconciliation with the server when the acknowledgement arrives. | [Home device controls](../../../__app_modules/household/home/browser/entities/useHomeEntities.js) |
 | Turn a sidebar into a compact drawer | Observe the shared breakpoint. Derive modal semantics, inert regions and focus from the active presentation. Return focus to a visible control as the presentation changes. | [Feed subscriptions](../../../__app_modules/media/feed/browser/Reader/Reader.jsx) |
+| Move from a list into an editor inside a sheet | Let the sheet handle focus on open and dismissal. When the list or editor replaces the focused control, focus the primary field of the new view. Keep the search query with the list. | [Health saved foods](../../../__app_modules/wellness/health/browser/today/FoodCatalogManager.jsx) |
 | Show temporary confirmation after an action | `useTemporaryIndicator(durationMs)` returns `[visible, show]`. The feature calls `show()` when its current action succeeds. Calling it again extends the confirmation. Unmounting clears the timer. | Art save feedback and Feed copy confirmation |
 | Display elapsed time or a countdown | `useDisplayClock(active, intervalMs)` samples wall time while the label is visible. The feature supplies the start time or deadline. | Admin catalog resolving label, Media sleep countdown |
 | Observe browser work that has multiple resources to release | In an effect, return `whileDocumentVisible(start)`. Its start callback acquires resources for one visible interval and returns the cleanup. | Feed Scroll performance sampling and player progress painting |
@@ -247,6 +248,12 @@ read error, and rejects with `AbortError` if the request is superseded or
 the reader changes scope or unmounts. A create or remove dialog should
 close when its write succeeds. If the roster GET then fails, let the
 resource show a Retry button that issues only the GET.
+
+Life goal detail reads the selected member's goal and uses the same transition
+command as the list. An acknowledged transition invalidates that goal, the
+member's list and the full plan. The current detail waits for its GET, and
+its Retry repeats the read while the submitted transition stays committed.
+[Life goal detail](../../../__app_modules/personal/life/browser/views/plan/GoalDetail.jsx)
 
 Capture the affected resource paths when a write starts. Auto refreshes the
 submitted vehicle's overview and the changed collection, even if the driver

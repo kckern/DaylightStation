@@ -1,26 +1,38 @@
-import { Stack, Paper, Text, Group, Badge, Progress, Timeline, Button, Select } from '@mantine/core';
+import { Stack, Paper, Text, Group, Badge, Progress, Timeline, Button, Select, Alert } from '@mantine/core';
 import { useState } from 'react';
 import { IconFlag, IconHistory } from '@tabler/icons-react';
-import { useGoalDetail, useGoals } from "../../hooks/useLifePlan.js";
+import { useGoalDetail } from "../../hooks/useLifePlan.js";
 import { goalStateColor } from "../../theme/semantics.js";
-import { LifePage, LoadingState } from "../../components/index.js";
+import { LifePage, LoadingState, ErrorState } from "../../components/index.js";
 import { formatDate, humanize } from "../../lib/format.js";
 
 const STATES = ['dream', 'considered', 'ready', 'committed', 'achieved', 'failed', 'abandoned', 'paused', 'evolved'];
 
 export function GoalDetail({ goalId, username }) {
-  const { goal, loading, error } = useGoalDetail(goalId, username);
-  const { transitionGoal } = useGoals(username);
+  const { goal, loading, error, refetch, transitionGoal } = useGoalDetail(goalId, username);
   const [transitionState, setTransitionState] = useState(null);
 
-  if (loading) return <LoadingState />;
-  if (error) return <Text c="red">{error}</Text>;
+  const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState(null);
+
+  if (loading && !goal) return <LoadingState />;
+  if (error) return <ErrorState label="Goal" error={error} onRetry={refetch} />;
   if (!goal) return <Text c="dimmed">Goal not found</Text>;
 
+  const selectedTransition = transitionState === goal.state ? null : transitionState;
+  const canTransition = Boolean(selectedTransition) && !submitting;
   const handleTransition = async () => {
-    if (!transitionState) return;
-    await transitionGoal(goalId, transitionState, 'Manual transition');
-    setTransitionState(null);
+    if (!canTransition) return;
+    setSubmitting(true);
+    setSubmitError(null);
+    try {
+      await transitionGoal(goalId, selectedTransition, 'Manual transition');
+      setTransitionState(null);
+    } catch (err) {
+      setSubmitError(err.message);
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -107,16 +119,18 @@ export function GoalDetail({ goalId, username }) {
         <Text size="sm" fw={500} mb="xs">Transition</Text>
         <Group>
           <Select
+            disabled={submitting}
             placeholder="New state"
             data={STATES.filter(s => s !== goal.state).map(s => ({ value: s, label: s }))}
-            value={transitionState}
+            value={selectedTransition}
             onChange={setTransitionState}
             size="xs"
           />
-          <Button size="xs" disabled={!transitionState} onClick={handleTransition}>
+          <Button size="xs" disabled={!canTransition} onClick={handleTransition}>
             Transition
           </Button>
         </Group>
+        {submitError && <Alert color="red" title="Transition failed">{submitError}</Alert>}
       </Paper>
 
       {goal.retrospective && (

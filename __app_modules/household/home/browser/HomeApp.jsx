@@ -5,6 +5,7 @@ import { IconDoor, IconLayoutGrid, IconTimeline, IconVideo } from '@tabler/icons
 import '@mantine/core/styles.css';
 import {
   AppThemeProvider, AppChrome, DismissStackProvider, SectionCard, LoadingState, ErrorState, EmptyState,
+  useViewScroll,
 } from '@/lib/ui';
 import { useApiResource } from '@/lib/hooks/useApiResource.js';
 import CameraFeed from "../../camera/browser/feed.mjs";
@@ -77,7 +78,7 @@ function CameraCard({ camId }) {
   );
 }
 
-function CameraGrid() {
+function CameraGrid({ contentRef }) {
   const { data, loading, error, reload } = useApiResource('api/v1/camera', { label: 'cameras', logger });
   const cameras = useMemo(() => sortCameras(data?.cameras || []), [data]);
   if (loading) return <LoadingState label="cameras" rows={4} />;
@@ -86,16 +87,13 @@ function CameraGrid() {
     return <EmptyState title="No cameras configured" hint="Add a camera in devices.yml to see it here." />;
   }
   return (
-    <div className="home-app__cameras">
+    <div ref={contentRef} className="home-app__cameras">
       {cameras.map((cam) => <CameraCard key={cam.id} camId={cam.id} />)}
     </div>
   );
 }
 
-function HomeView({ view }) {
-  const showCameras = view === 'cameras';
-  const house = useHomeEntities({ active: !showCameras });
-  if (showCameras) return <CameraGrid />;
+function HomeView({ view, house }) {
   const { entities, rooms, types, mosaic, haUrl, summary, hasData, loading, error, reload, toggle, turnOff } = house;
 
   if (!hasData && loading) return <LoadingState label="the house" rows={6} />;
@@ -112,6 +110,11 @@ function HomeView({ view }) {
 function HomeApp() {
   useDocumentTitle('Home');
   const [view, setView] = useState(viewPreference.read);
+  const mainRef = useRef(null);
+  const [cameraGrid, setCameraGrid] = useState(null);
+  const showCameras = view === 'cameras';
+  const house = useHomeEntities({ active: !showCameras });
+  useViewScroll({ mainRef, viewKey: view, ready: showCameras ? Boolean(cameraGrid) : house.hasData });
 
   useEffect(() => {
     logger.info('home.mount', { view });
@@ -131,9 +134,9 @@ function HomeApp() {
       {/* One Escape handler for the app: it closes the topmost drawer. */}
       <DismissStackProvider>
         <div className="home-app">
-          <AppChrome title="Home" tabs={TABS} activeTab={view} onTabChange={changeView}>
+          <AppChrome title="Home" tabs={TABS} activeTab={view} onTabChange={changeView} mainRef={mainRef}>
             <div className="home-app__page">
-              <HomeView view={view} />
+              {showCameras ? <CameraGrid contentRef={setCameraGrid} /> : <HomeView view={view} house={house} />}
             </div>
           </AppChrome>
         </div>

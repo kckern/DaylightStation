@@ -24,18 +24,18 @@ function usePlanMember(username) {
 
 // Await the GET after a write. A read failure belongs to the retryable view,
 // while the caller still receives the successful write and closes its editor.
-function usePlanRead(path, user, label) {
-  const { data, loading, error, refresh } = useApiResource(path, { swr: Boolean(user), label, logger: logger() });
+function usePlanRead(path, user, label, swr = Boolean(user)) {
+  const { data, loading, error, refresh } = useApiResource(path, { swr, label, logger: logger() });
   const refetch = useCallback(async () => {
     try { await refresh(); } catch { /* The resource exposes the GET error. */ }
   }, [refresh]);
-  const afterWrite = useCallback(async () => {
+  const afterWrite = useCallback(async (related = []) => {
     // A committed change also affects the full plan. Drop both old snapshots
     // so returning to the dashboard cannot offer onboarding from a known-empty plan.
     const aggregate = `${API_BASE}/${memberQuery(user)}`;
-    resetApiResourceCache(path);
-    if (aggregate !== path) resetApiResourceCache(aggregate);
-    invalidateApiResources(key => key === path || key === aggregate);
+    const changed = new Set([path, aggregate, ...related]);
+    for (const key of changed) resetApiResourceCache(key);
+    invalidateApiResources(key => changed.has(key));
     await refetch();
   }, [path, user, refetch]);
   return { data, loading, error: error?.message ?? null, refetch, afterWrite };
@@ -111,24 +111,28 @@ export function useLifePlan(username) {
   };
 }
 
+function goalListPath(user, state) {
+  const params = new URLSearchParams();
+  if (user) params.set('username', user);
+  if (state) params.set('state', state);
+  return `${API_BASE}/goals${params.size ? `?${params}` : ''}`;
+}
+
+function useGoalTransition(user, afterWrite) {
+  return useCallback(async (goalId, newState, reason) => {
+    const result = await DaylightAPI(goalPath(goalId, user, '/transition'), { state: newState, reason }, 'POST');
+    await afterWrite([goalPath(goalId, user), goalListPath(user)]);
+    return result;
+  }, [user, afterWrite]);
+}
+
 /**
  * Fetches goals, optionally filtered by state.
  */
 export function useGoals(username, state) {
   const user = usePlanMember(username);
-  const params = new URLSearchParams();
-  if (user) params.set('username', user);
-  if (state) params.set('state', state);
-  const qs = params.size ? `?${params}` : '';
-  const { data, loading, error, refetch, afterWrite } = usePlanRead(`${API_BASE}/goals${qs}`, user, 'life goals');
-
-  const transitionGoal = useCallback(async (goalId, newState, reason) => {
-    const result = await DaylightAPI(goalPath(goalId, user, '/transition'), { state: newState, reason }, 'POST');
-    const detailPath = goalPath(goalId, user);
-    invalidateApiResources(path => path === detailPath);
-    await afterWrite();
-    return result;
-  }, [user, afterWrite]);
+  const { data, loading, error, refetch, afterWrite } = usePlanRead(goalListPath(user, state), user, 'life goals');
+  const transitionGoal = useGoalTransition(user, afterWrite);
 
   // Author a new goal. Throws on failure so the caller can surface the error
   // inline; refetches the goal list on success and returns the created goal.
@@ -148,8 +152,9 @@ export function useGoals(username, state) {
 export function useGoalDetail(goalId, username) {
   const user = usePlanMember(username);
   const path = goalId ? goalPath(goalId, user) : null;
-  const { data: goal, loading, error, reload } = useApiResource(path, { label: 'goal detail' });
-  return { goal, loading, error: error?.message ?? null, refetch: reload };
+  const { data: goal, loading, error, refetch, afterWrite } = usePlanRead(path, user, 'goal detail', false);
+  const transitionGoal = useGoalTransition(user, afterWrite);
+  return { goal, loading, error, refetch, transitionGoal };
 }
 
 /**

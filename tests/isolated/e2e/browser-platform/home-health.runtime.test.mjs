@@ -231,6 +231,68 @@ test('Home preserves a pending toggle across a camera visit and pauses house rea
   expect(writes).toEqual([{ entityId: 'light.kitchen', desiredState: 'off' }]);
 });
 
+for (const width of [390, 1440]) {
+  test(`Home restores Rooms and Cameras scroll independently at ${width}px`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 850 });
+    await page.addInitScript(() => localStorage.setItem('home.view', 'rooms'));
+    const rooms = Array.from({ length: 32 }, (_, index) => ({ id: `room-${index}`, name: `Room ${index}` }));
+    const device = house('off');
+    await page.route('**/home-dashboard/entities', route => route.fulfill({ json: {
+      ...device,
+      rooms,
+      entities: rooms.map(room => ({ ...device.entities[0], id: `light.${room.id}`, room })),
+    } }));
+    const cameraList = { cameras: Array.from({ length: 12 }, (_, index) => ({ id: `yard-${index}` })) };
+    let reads = 0;
+    let pendingCameras;
+    await page.route('**/api/v1/camera', route => {
+      if (++reads === 1) return route.fulfill({ json: cameraList });
+      pendingCameras = route;
+    });
+
+    const main = page.getByRole('main');
+    const tab = name => page.getByRole('button', { name, exact: true });
+    const scrollPosition = () => main.evaluate(node => node.scrollTop);
+    const expectScroll = top => expect.poll(async () => Math.abs(await scrollPosition() - top)).toBeLessThanOrEqual(1);
+    const scrollTo = async top => {
+      await main.evaluate((node, position) => { node.scrollTop = position; }, top);
+      await expectScroll(top);
+      await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+    };
+    const room = main.getByRole('button', { name: 'Room 0', exact: true });
+    const camera = main.getByRole('button', { name: 'Fullscreen yard-0', exact: true });
+
+    await page.goto('/home');
+    await expect(room).toBeVisible();
+    if (width === 1440) {
+      // Revisiting this route mounts its Rooms content from the in-memory read.
+      await navigateWithHistory(page, '/auto');
+      await expect(page.getByRole('heading', { name: 'Garage', exact: true })).toBeVisible();
+      await navigateWithHistory(page, '/home');
+      await expect(room).toBeVisible();
+    }
+    await scrollTo(510);
+    expect(reads).toBe(0);
+
+    await tab('Cameras').click();
+    await expect(camera).toBeVisible();
+    await expectScroll(0);
+    await scrollTo(280);
+    await tab('Rooms').click();
+    await expect(room).toBeVisible();
+    await expectScroll(510);
+    expect(reads).toBe(1);
+
+    await tab('Cameras').click();
+    await expect(main.getByLabel('Loading cameras')).toBeVisible();
+    await expect.poll(() => Boolean(pendingCameras)).toBe(true);
+    await pendingCameras.fulfill({ json: cameraList });
+    await expect(camera).toBeVisible();
+    await expectScroll(280);
+    expect(reads).toBe(2);
+  });
+}
+
 test('Home lets slow initial and periodic house reads finish across polling ticks', async ({ page }) => {
   await page.clock.install();
   await page.addInitScript(() => localStorage.setItem('home.view', 'rooms'));
@@ -478,7 +540,7 @@ async function finishHealthWrite(page, route, json) {
   await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
 }
 
-const navigateHealthOwnership = (page, path) => page.evaluate(path => {
+const navigateWithHistory = (page, path) => page.evaluate(path => {
   history.pushState({}, '', path);
   dispatchEvent(new PopStateEvent('popstate'));
 }, path);
@@ -528,10 +590,10 @@ async function holdHealthStatusWrite(page, action) {
 for (const action of [dayClose, mealSkip]) {
   test(`Health keeps a late ${action.name} response out of a different user's same date`, async ({ page }) => {
     const write = await holdHealthStatusWrite(page, action);
-    await navigateHealthOwnership(page, '/home');
+    await navigateWithHistory(page, '/home');
     await expect(page.getByRole('button', { name: 'Rooms', exact: true })).toBeVisible();
     write.switchToBob();
-    await navigateHealthOwnership(page, healthStatusPath);
+    await navigateWithHistory(page, healthStatusPath);
     const bobDinner = page.getByRole('button', { name: 'Edit bob dinner', exact: true });
     const unchanged = page.getByRole('button', { name: action.before, exact: true });
     await expect(bobDinner).toBeVisible();
@@ -592,10 +654,10 @@ test('Health keeps a late auditor settings response out of a different user’s 
   await page.getByText('Automatic cleanup', { exact: true }).click();
   await expect.poll(() => writes.length).toBe(1);
 
-  await navigateHealthOwnership(page, '/home');
+  await navigateWithHistory(page, '/home');
   await expect(page.getByRole('button', { name: 'Rooms', exact: true })).toBeVisible();
   owner = 'bob';
-  await navigateHealthOwnership(page, auditorPath);
+  await navigateWithHistory(page, auditorPath);
   await expect(telegram).toBeChecked();
   await expect(automatic).not.toBeChecked();
 
@@ -810,10 +872,10 @@ for (const action of [repairHistoryUndo, runDetailUndo, answerCleanupQuestion]) 
     await button.click();
     await expect.poll(() => session.writes.length).toBe(1);
 
-    await navigateHealthOwnership(page, '/home');
+    await navigateWithHistory(page, '/home');
     await expect(page.getByRole('button', { name: 'Rooms', exact: true })).toBeVisible();
     session.switchToBob();
-    await navigateHealthOwnership(page, repairHistoryUndo.pagePath);
+    await navigateWithHistory(page, repairHistoryUndo.pagePath);
     await repairHistoryUndo.open(page, 'bob');
     const before = session.historyReads();
 
@@ -865,11 +927,11 @@ test('Health refreshes repair history when an undo finishes across tabs for the 
   await expect.poll(() => session.writes.length).toBe(1);
 
   // The busy repair sheet blocks its underlying links. Simulate in-app history navigation.
-  await navigateHealthOwnership(page, '/health');
+  await navigateWithHistory(page, '/health');
   await expect(page.getByRole('link', { name: 'Today', exact: true })).toHaveAttribute('aria-current', 'page');
   await expect(page.getByText('View repairs (1)', { exact: true })).toHaveCount(0);
   const historyReload = page.waitForResponse(response => new URL(response.url()).pathname === `${cleanupEndpoint}/history`);
-  await navigateHealthOwnership(page, action.pagePath);
+  await navigateWithHistory(page, action.pagePath);
   await openRepairHistory(page, 'alice');
   expect(await (await historyReload).finished()).toBeNull();
   const before = session.historyReads();

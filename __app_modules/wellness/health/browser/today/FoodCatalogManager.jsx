@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useLayoutEffect, useRef, useState } from 'react';
 import { Button, Group, NumberInput, Stack, Text, TextInput, UnstyledButton } from '@mantine/core';
 import { Sheet, ErrorState, LoadingState } from '@/lib/ui';
 import { useApiResource } from "../../../../../frontend/src/lib/hooks/useApiResource.js";
@@ -18,6 +18,15 @@ function Manager({ onClose, onChanged }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
   const pending = useRef(false);
+  const primaryInput = useRef(null);
+  const editing = draft !== null;
+  const wasEditing = useRef(editing);
+  useLayoutEffect(() => {
+    // The sheet owns initial focus. Its list and editor can change in place.
+    if (wasEditing.current === editing) return;
+    wasEditing.current = editing;
+    primaryInput.current?.focus();
+  }, [editing]);
   const foods = useApiResource(`api/v1/health/nutrition/catalog/suggest?q=${encodeURIComponent(query)}&limit=40`, { logger, swr: true });
   const run = async action => {
     if (pending.current) return;
@@ -31,7 +40,7 @@ function Manager({ onClose, onChanged }) {
       <Text size="sm" c="dimmed">These definitions apply to future logging. Your past entries keep their original nutrition.</Text>
       {error ? <Text c="red" role="alert">{error.message}</Text> : null}
       {draft ? <>
-        <TextInput label="Food name" value={draft.name} onChange={event => setDraft(previous => ({ ...previous, name: event.target.value }))} disabled={busy} />
+        <TextInput ref={primaryInput} label="Food name" value={draft.name} onChange={event => setDraft(previous => ({ ...previous, name: event.target.value }))} disabled={busy} />
         <NumberInput label="Nutrition basis in grams" suffix=" g" min={0.01} value={draft.grams ?? ''} onChange={grams => setDraft(previous => ({ ...previous, grams }))} disabled={busy} />
         {NUTRIENT_KEYS.map(key => <NumberInput key={key} label={key} min={0} disabled={busy} value={draft.nutrients?.[key] ?? ''}
           onChange={value => setDraft(previous => ({ ...previous, nutrients: { ...previous.nutrients, [key]: value === '' ? null : value } }))} />)}
@@ -44,7 +53,7 @@ function Manager({ onClose, onChanged }) {
             { name: draft.name, grams: draft.grams, nutrients: draft.nutrients }, 'PUT'))}>Save definition</Button>
         </Group>
       </> : <>
-        <TextInput label="Find a saved food" value={query} onChange={event => setQuery(event.target.value)} data-autofocus />
+        <TextInput ref={primaryInput} label="Find a saved food" value={query} onChange={event => setQuery(event.target.value)} data-autofocus />
         {foods.loading ? <LoadingState label="Saved foods" /> : null}
         {unavailableError(foods) ? <ErrorState error={foods.error} onRetry={foods.reload} label="Saved foods" /> : null}
         {(foods.data?.items || []).filter(food => food.type !== 'template').map(food => <UnstyledButton key={food.id} onClick={() => setDraft(structuredClone(food))}>
