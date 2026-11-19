@@ -1,6 +1,6 @@
 // frontend/src/modules/Admin/Agents/AgentsIndex.jsx
 
-import React, { useEffect } from 'react';
+import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import { SimpleGrid, Paper, Text, Group, Badge, Center, Loader, Alert, Stack } from '@mantine/core';
 import { IconAlertCircle } from '@tabler/icons-react';
@@ -8,11 +8,7 @@ import { useAdminAgents } from "./hooks/useAdminAgents.js";
 
 function AgentsIndex() {
   const navigate = useNavigate();
-  const { agents, loading, error, fetchAgents, clearError } = useAdminAgents();
-
-  useEffect(() => {
-    fetchAgents().catch(() => {});
-  }, [fetchAgents]);
+  const { agents, loading, error, dismissError } = useAdminAgents();
 
   if (loading && agents.length === 0) {
     return <Center h={300}><Loader /></Center>;
@@ -27,7 +23,7 @@ function AgentsIndex() {
           color="red"
           icon={<IconAlertCircle size={16} />}
           withCloseButton
-          onClose={clearError}
+          onClose={dismissError}
         >
           {error.message || 'Failed to load agents'}
         </Alert>

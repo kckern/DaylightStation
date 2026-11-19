@@ -1,5 +1,6 @@
-import { useState, useCallback, useMemo } from 'react';
 import { DaylightAPI } from "../../../../../frontend/src/lib/api.mjs";
+import { useApiResource } from "../../../../../frontend/src/lib/hooks/useApiResource.js";
+import { useDismissibleError } from "../../../../../frontend/src/lib/hooks/useDismissibleError.js";
 import getLogger from "../../../../../frontend/src/lib/logging/Logger.js";
 
 const API_BASE = '/api/v1/agents';
@@ -13,35 +14,10 @@ const API_BASE = '/api/v1/agents';
  * @returns {object} Agents state and actions
  */
 export function useAdminAgents() {
-  const logger = useMemo(() => getLogger().child({ hook: 'useAdminAgents' }), []);
+  const { data, loading, error: readError } = useApiResource(API_BASE, { label: 'Admin agents' });
+  const { error, dismiss: dismissError } = useDismissibleError(readError);
 
-  const [agents, setAgents] = useState([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState(null);
-
-  const fetchAgents = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const result = await DaylightAPI(API_BASE);
-      setAgents(result.agents || []);
-      logger.info('admin.agents.fetched', { count: result.agents?.length });
-      return result;
-    } catch (err) {
-      setError(err);
-      logger.error('admin.agents.fetch.failed', { message: err.message });
-      throw err;
-    } finally {
-      setLoading(false);
-    }
-  }, [logger]);
-
-  const clearError = useCallback(() => setError(null), []);
-
-  return {
-    agents, loading, error,
-    fetchAgents, clearError,
-  };
+  return { agents: data?.agents || [], loading, error, dismissError };
 }
 
 export async function triggerAssignment(agentId, assignmentId, userId) {
