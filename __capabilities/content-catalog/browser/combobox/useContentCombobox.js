@@ -7,7 +7,7 @@
 //        can never inherit the siblings window (structural, via the machine).
 //   S5 — doBatchSearch lists `searchParams` in its deps, so a prop change
 //        reaches the batch fallback URL (the standalone had a stale closure).
-import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { DaylightAPI } from '../../../../frontend/src/lib/api.mjs';
 import { useDebouncedCallback } from '@mantine/hooks';
 import { useStreamingSearch } from "../../../../frontend/src/hooks/useStreamingSearch.js";
@@ -123,7 +123,7 @@ export function useContentCombobox({
   // the dropdown closes, or the committed value changes — a late response must
   // not yank the machine back into BROWSE over newer intent.
   const browseTokenRef = useRef(0);
-  // Which committed value the live browse pagination belongs to. Only a
+  // Which committed value and request path own the live browse window. Only a
   // siblings load (BROWSE_LOADED) sets it — drilled/parent levels own their
   // own pagination, and paginate() must never fetch /siblings for those.
   // Structural guard: it does not rely on /list responses happening to carry
@@ -141,7 +141,7 @@ export function useContentCombobox({
 
   // ── 1. Reducer wiring: VALUE_CHANGED on prop change (skip initial render) ──
   const prevValueRef = useRef(value);
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (prevValueRef.current === value) return;
     const prevValue = prevValueRef.current;
     prevValueRef.current = value;
@@ -370,7 +370,7 @@ export function useContentCombobox({
     // highlight nothing (idx -1) rather than a phantom row 0. The absence is
     // surfaced instead by the orientation header in ContentCombobox.
     const referenceIndex = foundIndex >= 0 ? foundIndex : -1;
-    paginationOwnerRef.current = data.pagination ? contentId : null;
+    paginationOwnerRef.current = data.pagination && data.requestPath ? { contentId, path: data.requestPath } : null;
     dispatch({
       type: 'BROWSE_LOADED',
       items,
@@ -528,23 +528,21 @@ export function useContentCombobox({
   }, [log]);
 
   // ── 5. Pagination (in-flight guarded; the machine owns items/window math) ──
-  // Returns true only when a PAGINATED event was actually dispatched, so the
-  // component can arm/disarm its scroll-suppression guard accurately.
-  const paginationInFlightRef = useRef(false);
-  const paginate = useCallback(async (direction) => {
+  // A skipped request returns false immediately. A started request resolves
+  // true only after dispatching PAGINATED to its current window.
+  const paginationInFlightRef = useRef(null);
+  const paginate = useCallback((direction) => {
     const current = stateRef.current;
     const pagination = current.browse.pagination;
-    const contentId = current.value;
-    if (!contentId || !pagination || paginationInFlightRef.current) return false;
+    const owner = paginationOwnerRef.current;
+    if (!pagination || paginationInFlightRef.current === browseTokenRef.current) return false;
     // Structural guard: only the siblings level paginates against /siblings.
     // After a drill/up, the visible pagination belongs to that level's /list
     // response — fetching value's siblings for it would corrupt the window.
-    if (paginationOwnerRef.current !== contentId) {
+    if (!owner || owner.contentId !== current.value) {
       log.debug('load_more_siblings.skip', { direction, reason: 'not_siblings_level' });
       return false;
     }
-    const parsed = splitContentId(contentId);
-    if (!parsed) return false;
 
     let offset;
     let limit;
@@ -559,23 +557,22 @@ export function useContentCombobox({
       if (limit <= 0) return false;
     }
 
-    log.info('load_more_siblings', { direction, offset, limit, ...parsed });
-    paginationInFlightRef.current = true;
+    log.info('load_more_siblings', { direction, offset, limit, contentId: owner.contentId, path: owner.path });
     const token = ++browseTokenRef.current; // invalidate overlapping browse responses
-    paginationOwnerRef.current = contentId; // still the siblings level
-    try {
-      const data = await DaylightAPI(
-        `/api/v1/siblings/${parsed.source}/${encodeURIComponent(parsed.localId)}?offset=${offset}&limit=${limit}`
-      );
-      if (browseTokenRef.current !== token) return false;
-      dispatch({ type: 'PAGINATED', direction, items: (data.items || []).map(toBrowseItem) });
-      return true;
-    } catch (err) {
-      log.error('load_more_siblings.error', { direction, error: err.message });
-      return false;
-    } finally {
-      paginationInFlightRef.current = false;
-    }
+    paginationInFlightRef.current = token;
+    return DaylightAPI(`${owner.path}?offset=${offset}&limit=${limit}`)
+      .then(data => {
+        if (browseTokenRef.current !== token) return false;
+        dispatch({ type: 'PAGINATED', direction, items: (data.items || []).map(toBrowseItem) });
+        return true;
+      })
+      .catch(err => {
+        log.error('load_more_siblings.error', { direction, error: err.message });
+        return false;
+      })
+      .finally(() => {
+        if (paginationInFlightRef.current === token) paginationInFlightRef.current = null;
+      });
   }, [log]);
 
   // ── Lifecycle: close-commit policy + selection ──
@@ -829,6 +826,7 @@ export function useContentCombobox({
     goUp,
     goToCrumb,
     paginate,
+    paginationWindow: state.mode === Modes.BROWSE ? paginationOwnerRef.current : null,
     // lifecycle
     handleClose,
     select,

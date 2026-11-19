@@ -1,11 +1,11 @@
-import React, { useEffect, useState, useMemo } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import React, { useState, useMemo } from 'react';
+import { Link, useParams } from 'react-router-dom';
 import {
   SimpleGrid, Card, Text, Badge, Group, Button,
-  Center, Loader, Alert, Stack, Box
+  Stack, Box
 } from '@mantine/core';
 import {
-  IconPlus, IconList, IconAlertCircle,
+  IconPlus, IconList,
   // Common icons for lists
   IconHome, IconStar, IconHeart, IconBookmark, IconFolder,
   IconMusic, IconVideo, IconPhoto, IconBook, IconMovie,
@@ -13,7 +13,9 @@ import {
   IconRun, IconBolt, IconFlame, IconTrophy, IconTarget,
   IconSettings, IconMenu2, IconPlayerPlay
 } from '@tabler/icons-react';
-import { useAdminLists } from "../../../../frontend/src/hooks/admin/useAdminLists.js";
+import { useApiResource } from "../../../../frontend/src/lib/hooks/useApiResource.js";
+import { LoadingState, ErrorState, EmptyState } from "../../../../frontend/src/lib/ui/states.jsx";
+import { adminListsPath, createAdminList } from "../../../../frontend/src/hooks/admin/useAdminLists.js";
 import ListCreate from "./ListCreate.jsx";
 import "./ContentLists.scss";
 
@@ -72,22 +74,18 @@ function formatName(name) {
 
 function ListsIndex() {
   const { type } = useParams();
-  const navigate = useNavigate();
-  const { lists, loading, error, fetchLists, createList } = useAdminLists();
-  const [createModalOpen, setCreateModalOpen] = useState(false);
+  return <ListCollection key={type} type={type} />;
+}
 
-  useEffect(() => {
-    if (type) {
-      // The hook exposes the error for the alert below.
-      fetchLists(type).catch(() => {});
-    }
-  }, [type, fetchLists]);
+function ListCollection({ type }) {
+  const { data, loading, error, reload } = useApiResource(adminListsPath(type), { retryTransient: false });
+  const [createModalOpen, setCreateModalOpen] = useState(false);
 
   // Group lists by their group field
   const groupedLists = useMemo(() => {
     const groups = {};
 
-    lists.forEach(list => {
+    (data?.lists ?? []).forEach(list => {
       const groupName = list.group || 'Ungrouped';
       if (!groups[groupName]) {
         groups[groupName] = [];
@@ -106,26 +104,16 @@ function ListsIndex() {
       name,
       lists: groups[name]
     }));
-  }, [lists]);
-
-  const handleListClick = (list) => {
-    navigate(`/admin/content/lists/${type}/${list.name}`);
-  };
+  }, [data]);
 
   const handleCreateList = async (name) => {
-    await createList(type, name);
+    await createAdminList(type, name);
     setCreateModalOpen(false);
   };
 
   const typeLabel = TYPE_LABELS[type] || type;
 
-  if (loading && lists.length === 0) {
-    return (
-      <Center h="60vh">
-        <Loader size="lg" />
-      </Center>
-    );
-  }
+  if (loading && !data) return <LoadingState label={typeLabel.toLowerCase()} />;
 
   return (
     <Stack gap="md">
@@ -141,11 +129,7 @@ function ListsIndex() {
         </Button>
       </Group>
 
-      {error && (
-        <Alert icon={<IconAlertCircle size={16} />} color="red" title="Error">
-          {error.message || 'Failed to load lists'}
-        </Alert>
-      )}
+      {error && <ErrorState label={typeLabel} error={error} onRetry={reload} />}
 
       {groupedLists.map(group => (
         <Box key={group.name}>
@@ -163,7 +147,8 @@ function ListsIndex() {
                 radius="md"
                 withBorder
                 className="list-card"
-                onClick={() => handleListClick(list)}
+                component={Link}
+                to={`/admin/content/lists/${type}/${list.name}`}
                 data-testid={`list-card-${list.name}`}
               >
                 <Group justify="space-between" wrap="nowrap">
@@ -201,20 +186,14 @@ function ListsIndex() {
         </Box>
       ))}
 
-      {lists.length === 0 && !loading && !error && (
-        <Center h="40vh">
-          <Stack align="center">
-            <IconList size={48} stroke={1} color="gray" />
-            <Text c="dimmed">No {typeLabel.toLowerCase()} yet. Create one to get started.</Text>
-          </Stack>
-        </Center>
+      {!groupedLists.length && !loading && !error && (
+        <EmptyState title={`No ${typeLabel.toLowerCase()} yet`} hint="Create one to get started." />
       )}
 
       <ListCreate
         opened={createModalOpen}
         onClose={() => setCreateModalOpen(false)}
         onCreate={handleCreateList}
-        loading={loading}
         typeLabel={typeLabel.slice(0, -1)}
       />
     </Stack>

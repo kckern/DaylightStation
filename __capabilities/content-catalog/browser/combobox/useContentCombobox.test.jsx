@@ -567,6 +567,71 @@ describe('useContentCombobox', () => {
     expect(result.current.state.highlight.idx).toBe(1); // referenceIndex unchanged
   });
 
+  it('pages through the same canonical source that supplied a preloaded sibling window', async () => {
+    const location = '/api/v1/siblings/plex/10';
+    const next = { id: 'plex:12', title: 'Next episode' };
+    fetchMock.mockImplementation(url => {
+      if (url === location) return jsonResponse(SIBLINGS_RESPONSE);
+      if (url === location + '?offset=43&limit=21') return jsonResponse({ items: [next] });
+      return jsonResponse({});
+    });
+    await loadSiblings('legacy:10', 'plex');
+    const { result } = setup({ value: 'legacy:10' });
+    await openBrowse(result);
+
+    await act(async () => { expect(await result.current.paginate('after')).toBe(true); });
+
+    expect(fetchMock.mock.calls.map(([url]) => url).filter(url => url.startsWith('/api/v1/siblings/')))
+      .toEqual([location, location + '?offset=43&limit=21']);
+    expect(result.current.state.browse.items.map(item => item.id)).toContain(next.id);
+  });
+
+  it('allows the current sibling window to page while a previous window is still pending', async () => {
+    const firstWindow = '/api/v1/siblings/plex/10';
+    const nextWindow = '/api/v1/siblings/plex/20';
+    const pageQuery = '?offset=43&limit=21';
+    let finishFirst;
+    let finishNext;
+    const firstPage = new Promise(resolve => { finishFirst = resolve; });
+    const nextPage = new Promise(resolve => { finishNext = resolve; });
+    const newItem = { id: 'plex:20', title: 'New reference' };
+    fetchMock.mockImplementation(url => {
+      if (url === firstWindow) return jsonResponse(SIBLINGS_RESPONSE);
+      if (url === nextWindow) return jsonResponse({ ...SIBLINGS_RESPONSE, items: [newItem], referenceIndex: 0 });
+      if (url === firstWindow + pageQuery) return firstPage;
+      if (url === nextWindow + pageQuery) return nextPage;
+      return jsonResponse({});
+    });
+
+    const { result, rerender } = setup({ value: 'plex:10' });
+    await openBrowse(result);
+    let oldPagination;
+    act(() => { oldPagination = result.current.paginate('after'); });
+    rerender({ value: 'plex:20', onChange: vi.fn() });
+    await openBrowse(result);
+    let newPagination;
+    act(() => { newPagination = result.current.paginate('after'); });
+    try {
+      expect(fetchMock.mock.calls.map(([url]) => url).filter(url => url.endsWith(pageQuery)))
+        .toEqual([firstWindow + pageQuery, nextWindow + pageQuery]);
+
+      await act(async () => {
+        finishFirst(await jsonResponse({ items: [{ id: 'plex:12' }] }));
+        expect(await oldPagination).toBe(false);
+      });
+      await act(async () => { expect(await result.current.paginate('after')).toBe(false); });
+      await act(async () => {
+        finishNext(await jsonResponse({ items: [{ id: 'plex:21' }] }));
+        expect(await newPagination).toBe(true);
+      });
+      expect(result.current.state.browse.items.map(item => item.id)).toEqual(['plex:20', 'plex:21']);
+    } finally {
+      finishFirst(await jsonResponse({ items: [] }));
+      finishNext(await jsonResponse({ items: [] }));
+      await act(async () => { await Promise.all([oldPagination, newPagination]); });
+    }
+  });
+
   it('applyBrowseData falls back to the single parent crumb when the response has NO ancestors (no regression)', async () => {
     fetchMock.mockImplementation((url) => (
       url.startsWith('/api/v1/siblings/plex/10') ? jsonResponse(SIBLINGS_RESPONSE) : jsonResponse({ items: [] })

@@ -56,8 +56,10 @@ async function fetchSiblingsData(contentId, sourceOverride) {
   if (!parsed?.source || !parsed.localId) return null;
   const { localId } = parsed;
   const source = sourceOverride || parsed.source;
-  const data = await DaylightAPI(`/api/v1/siblings/${encodeURIComponent(source)}/${encodeURIComponent(localId)}`);
+  const requestPath = `/api/v1/siblings/${encodeURIComponent(source)}/${encodeURIComponent(localId)}`;
+  const data = await DaylightAPI(requestPath);
   return {
+    requestPath,
     browseItems: (data.items || []).map(toBrowseItem),
     currentParent: data.parent
       ? {

@@ -1,5 +1,5 @@
 import { UiIcon } from '../../../../frontend/src/lib/ui/UiIcon.jsx';
-import React, { useEffect, useState, useMemo, useCallback, useRef } from 'react';
+import React, { useEffect, useLayoutEffect, useState, useMemo, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   Stack, Group, Title, TextInput, Center, Loader, Alert,
@@ -86,6 +86,11 @@ function FolderEditor({ type, listName }) {
     deleteList, updateListSettings, addSection, updateSection, deleteSection, reorderSections, moveItem, splitSection
   } = useAdminLists();
 
+  const active = useRef(false);
+  useLayoutEffect(() => {
+    active.current = true;
+    return () => { active.current = false; };
+  }, []);
   const swapInProgressRef = useRef(false);
   const [swapFlash, setSwapFlash] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
@@ -166,8 +171,11 @@ function FolderEditor({ type, listName }) {
   useEffect(() => {
     if (type && listName) {
       fetchList(type, listName).catch(error => {
-        const target=error?.body?.adminUrl;
-        if (error?.body?.code === 'resource_moved' && typeof target === 'string' && /^\/admin\/content\/agendas\/[A-Za-z0-9_.-]+$/.test(target)) navigate(target,{replace:true});
+        const target = error?.body?.adminUrl;
+        if (active.current && error?.body?.code === 'resource_moved' && typeof target === 'string'
+          && /^\/admin\/content\/agendas\/[A-Za-z0-9_.-]+$/.test(target)) {
+          navigate(target, { replace: true });
+        }
       });
     }
   }, [type, listName, fetchList, navigate]);
@@ -342,6 +350,7 @@ function FolderEditor({ type, listName }) {
   const handleDeleteList = async () => {
     setDeletingList(true);
     const res = await mutate('lists.delete_list', 'Could not delete list', () => deleteList(type, listName));
+    if (!active.current) return;
     setDeletingList(false);
     if (res.ok) {
       setDeleteListOpen(false);

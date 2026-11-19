@@ -144,7 +144,7 @@ export function ContentCombobox({
   const {
     state, dispatch,
     handleInput, activeScope, clearScope,
-    openWithSiblings, drill, goUp, goToCrumb, paginate,
+    openWithSiblings, drill, goUp, goToCrumb, paginate, paginationWindow,
     handleClose, select, commit,
     resolvedTitle, isSearching, pendingSources, sourceErrors, streamError, retrySource, truncatedAt, fellBackToAll, searchState,
   } = useContentCombobox({
@@ -179,9 +179,12 @@ export function ContentCombobox({
   const viewportRef = useRef(null);
   const prevIdxRef = useRef(-1);
   const scrollAnimRef = useRef(null);
-  const paginationScrollGuardRef = useRef(false); // suppress scroll-to-highlight after load-more
-  const loadCooldownRef = useRef(false);          // ignore scroll events briefly after load-more
-  const [loadingMore, setLoadingMore] = useState(false);
+  const paginationScrollGuardRef = useRef(null); // window whose prepend or append owns scroll placement
+  const loadCooldownRef = useRef(null);
+  const currentPaginationWindow = useRef(paginationWindow);
+  currentPaginationWindow.current = paginationWindow;
+  const [loadingPage, setLoadingPage] = useState(null);
+  const loadingDirection = loadingPage?.owner === paginationWindow ? loadingPage?.direction : null;
   const handleMoreMenuPointerDown = useCallback((trigger, isPortaledMenu = false) => {
     moreMenuOpenRef.current = true;
     moreMenuInternalPointerRef.current = isPortaledMenu;
@@ -363,17 +366,19 @@ export function ContentCombobox({
 
   // ── Scroll-edge pagination (hook owns in-flight/owner guards) ──
   const runPaginate = async (direction) => {
-    setLoadingMore(true);
-    // Arm the scroll-suppression guard BEFORE the hook can dispatch PAGINATED;
-    // disarm if the hook reports it didn't dispatch (guard would otherwise
-    // leak and swallow the next arrow-navigation scroll).
-    paginationScrollGuardRef.current = true;
+    const request = paginate(direction);
+    if (!request) return;
+    const owner = paginationWindow;
+    setLoadingPage({ owner, direction });
+    paginationScrollGuardRef.current = owner;
     const viewport = viewportRef.current;
+    const isCurrent = () => currentPaginationWindow.current === owner && viewportRef.current === viewport;
     const prevScrollHeight = direction === 'before' ? (viewport?.scrollHeight || 0) : 0;
     const prevScrollTop = direction === 'before' ? (viewport?.scrollTop || 0) : 0;
     try {
-      const dispatched = await paginate(direction);
-      if (!dispatched) paginationScrollGuardRef.current = false;
+      const dispatched = await request;
+      if (!isCurrent()) return;
+      if (!dispatched) paginationScrollGuardRef.current = null;
       if (dispatched && direction === 'before' && viewport) {
         // Maintain scroll position after prepending. overflowAnchor:none disables
         // native scroll-anchoring, so this manual restore is the only safeguard.
@@ -383,7 +388,7 @@ export function ContentCombobox({
         // the viewport upward.
         requestAnimationFrame(() => {
           requestAnimationFrame(() => {
-            if (!viewport) return;
+            if (!isCurrent()) return;
             viewport.scrollTop = computeScrollRestore({
               prevScrollHeight,
               newScrollHeight: viewport.scrollHeight,
@@ -393,18 +398,21 @@ export function ContentCombobox({
         });
       }
     } finally {
-      setLoadingMore(false);
-      // Cooldown: appended items shift scroll position, which would re-trigger
-      // onScrollPositionChange in a feedback loop.
-      loadCooldownRef.current = true;
-      requestAnimationFrame(() => {
-        requestAnimationFrame(() => { loadCooldownRef.current = false; });
-      });
+      if (isCurrent()) {
+        setLoadingPage(null);
+        // Let appended items settle before accepting another scroll event.
+        loadCooldownRef.current = owner;
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => {
+            if (loadCooldownRef.current === owner) loadCooldownRef.current = null;
+          });
+        });
+      }
     }
   };
 
   const handleScrollPosition = ({ y }) => {
-    if (!isBrowse || !pagination || loadingMore || loadCooldownRef.current) return;
+    if (!paginationWindow || loadingDirection || loadCooldownRef.current === paginationWindow) return;
     const viewport = viewportRef.current;
     if (!viewport) return;
     const { scrollHeight, clientHeight } = viewport;
@@ -462,11 +470,11 @@ export function ContentCombobox({
     const decision = shouldRunScrollToHighlighted({
       highlightedIdx: highlightIdx,
       prevIdx: prevIdxRef.current,
-      paginationInFlight: paginationScrollGuardRef.current,
+      paginationInFlight: Boolean(paginationWindow && paginationScrollGuardRef.current === paginationWindow),
     });
 
     if (decision.reason === 'pagination') {
-      paginationScrollGuardRef.current = false;
+      paginationScrollGuardRef.current = null;
       prevIdxRef.current = highlightIdx;
       return undefined;
     }
@@ -529,7 +537,7 @@ export function ContentCombobox({
     return () => {
       if (scrollAnimRef.current) cancelAnimationFrame(scrollAnimRef.current);
     };
-  }, [highlightIdx, items.length]);  
+  }, [highlightIdx, items.length, paginationWindow]);
 
   // ── Option row (standalone renderer + twin highlight/current classes) ──
   const renderOption = (item, idx) => {
@@ -874,9 +882,9 @@ export function ContentCombobox({
             viewportProps={{ style: { overflowAnchor: 'none' } }}
             onScrollPositionChange={handleScrollPosition}
           >
-            {loadingMore && pagination?.hasBefore && (
+            {loadingDirection === 'before' && (
               <Group justify="center" py={4}>
-                <Loader size="xs" />
+                <Loader size="xs" role="status" aria-label="Loading more items" />
               </Group>
             )}
             {(isSearching || browseLoading) && items.length === 0 ? (
@@ -908,9 +916,9 @@ export function ContentCombobox({
                 <Group gap="xs"><IconPencil size={14} /><Text size="sm">Use “{search}” as raw value</Text></Group>
               </Combobox.Option>
             )}
-            {loadingMore && pagination?.hasAfter && (
+            {loadingDirection === 'after' && (
               <Group justify="center" py={4}>
-                <Loader size="xs" />
+                <Loader size="xs" role="status" aria-label="Loading more items" />
               </Group>
             )}
             {!isBrowse && !isSearching && truncatedAt && items.length >= truncatedAt && (

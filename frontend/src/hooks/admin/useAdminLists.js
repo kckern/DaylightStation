@@ -1,8 +1,24 @@
 import { useState, useCallback, useMemo } from 'react';
 import { DaylightAPI } from '../../lib/api.mjs';
+import { invalidateApiResources } from '../../lib/hooks/useApiResource.js';
 import getLogger from '../../lib/logging/Logger.js';
 
 const API_BASE = '/api/v1/admin/content';
+
+export const adminListsPath = type => `${API_BASE}/lists/${type}`;
+
+export async function createAdminList(type, name) {
+  const path = adminListsPath(type);
+  const logger = getLogger().child({ component: 'admin-lists' });
+  try {
+    const result = await DaylightAPI(path, { name }, 'POST');
+    logger.info('admin.lists.created', { type, list: result?.list ?? name });
+  } catch (err) {
+    logger.error('admin.lists.create.failed', { type, name, message: err.message });
+    throw err;
+  }
+  invalidateApiResources(key => key === path);
+}
 
 /**
  * Hook for managing admin config lists (menus, watchlists, programs)
@@ -12,7 +28,6 @@ export function useAdminLists() {
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
-  const [lists, setLists] = useState([]);
   const [sections, setSections] = useState([]);
   const [listMetadata, setListMetadata] = useState(null);
   const [currentType, setCurrentType] = useState(null);
@@ -22,25 +37,6 @@ export function useAdminLists() {
     sections.flatMap((section, si) =>
       section.items.map((item, ii) => ({ ...item, sectionIndex: si, itemIndex: ii, sectionTitle: section.title }))
     ), [sections]);
-
-  // Fetch all lists of a specific type
-  const fetchLists = useCallback(async (type) => {
-    setLoading(true);
-    setError(null);
-    try {
-      const data = await DaylightAPI(`${API_BASE}/lists/${type}`);
-      setLists(data.lists || []);
-      setCurrentType(type);
-      logger.info('admin.lists.fetched', { type, count: data.lists?.length });
-      return data.lists;
-    } catch (err) {
-      setError(err);
-      logger.error('admin.lists.fetch.failed', { type, message: err.message });
-      throw err;
-    } finally {
-      setLoading(false);
-    }
-  }, [logger]);
 
   // Fetch a list (sections + metadata)
   const fetchList = useCallback(async (type, listName) => {
@@ -64,24 +60,6 @@ export function useAdminLists() {
     }
   }, [logger]);
 
-  // Create a new list
-  const createList = useCallback(async (type, name) => {
-    setLoading(true);
-    setError(null);
-    try {
-      const result = await DaylightAPI(`${API_BASE}/lists/${type}`, { name }, 'POST');
-      logger.info('admin.lists.created', { type, list: result.list });
-      await fetchLists(type);
-      return result;
-    } catch (err) {
-      setError(err);
-      logger.error('admin.lists.create.failed', { type, name, message: err.message });
-      throw err;
-    } finally {
-      setLoading(false);
-    }
-  }, [fetchLists, logger]);
-
   // Delete a list
   const deleteList = useCallback(async (type, listName) => {
     setLoading(true);
@@ -89,7 +67,7 @@ export function useAdminLists() {
     try {
       await DaylightAPI(`${API_BASE}/lists/${type}/${listName}`, {}, 'DELETE');
       logger.info('admin.lists.deleted', { type, list: listName });
-      await fetchLists(type);
+      invalidateApiResources(path => path === adminListsPath(type));
     } catch (err) {
       setError(err);
       logger.error('admin.lists.delete.failed', { type, list: listName, message: err.message });
@@ -97,7 +75,7 @@ export function useAdminLists() {
     } finally {
       setLoading(false);
     }
-  }, [fetchLists, logger]);
+  }, [logger]);
 
   // Add an item to a section in the current list
   const addItem = useCallback(async (sectionIndex, item) => {
@@ -336,8 +314,8 @@ export function useAdminLists() {
   }, [currentType, currentList, logger]);
 
   return {
-    loading, error, lists, sections, setSections, flatItems, listMetadata, currentType, currentList,
-    fetchLists, createList, deleteList, fetchList,
+    loading, error, sections, setSections, flatItems, listMetadata, currentType, currentList,
+    deleteList, fetchList,
     addItem, updateItem, swapItems, deleteItem, reorderItems, toggleItemActive,
     addSection, updateSection, deleteSection, reorderSections, moveItem, splitSection,
     updateListSettings,
