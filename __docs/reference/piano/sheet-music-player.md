@@ -278,8 +278,13 @@ the drill. It draws no practice screen of its own.
   count opens the board over the drill, and a card opens its passage.
 
 The engraved passage is contained in the stage at every size: the passage,
-renderer and SVG wrappers each hold one definite grid cell, so a two-system grand
-staff can never grow past the paper. The stage frames the **measured ink**, not
+renderer, the engraver's own wrapper around its SVG, and the SVG each hold one
+definite grid cell, so a two-system grand staff can never grow past the paper.
+(The engraver's wrapper once sized itself to the page, and a two-system grand
+staff was cropped top and bottom on the tablet.) A passage that takes two systems
+is engraved once more with its last system justified (`stretchLastSystem`), so
+the second line runs the width of the first and never stops halfway across blank
+paper; a one-system passage is left alone and scaled up to the stage. The stage frames the **measured ink**, not
 the engraver's page: `ScorePassage` reads the engraving's bounding box and
 `passageLayout.js` shows it with one and a half staff spaces of air on every
 side, so a passage is as large as its stage allows (a two-system grand staff is
@@ -381,8 +386,11 @@ round again for Gold. The score stays the main thing on screen.
   fit at that width the tiles become a plain map of the piece (still every
   passage, no numbers) and a tap on it opens the board at that passage's card.
 
-**The board** slides over the score from the rail without moving the music. It is
-the table of contents and the trophy board: the piece's title, the two goals as
+**The board** slides up from the rail and covers the whole stage above it, without
+moving the music underneath; no staff is left sliced behind it. Its cards fill
+it: they are shared evenly between the rows (`boardColumns`: twelve passages are
+six and six), the rows share the height, and each card's icon is half the card.
+It is the table of contents and the trophy board: the piece's title, the two goals as
 counters (a silver coin with `3/12` and a gold coin with `1/12`, ticked when
 reached), and one card per passage with its state icon, its bars and, while it is
 under way, one mark per Silver step. Tapping a card selects that passage as a tile does and closes the

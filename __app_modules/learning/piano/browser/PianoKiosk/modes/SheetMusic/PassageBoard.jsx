@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
 import PassageCoin from './PassageCoin.jsx';
+import { boardColumns } from './passageRail.js';
 
 const Close = () => <svg viewBox="0 0 16 16" width="18" height="18" aria-hidden="true"><path d="M3.5 3.5l9 9m0-9l-9 9" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" /></svg>;
 const Check = () => <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M3 8.5l3.2 3.2L13 5" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" /></svg>;
@@ -7,7 +8,8 @@ const Check = () => <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden=
 /**
  * The passage board: the piece's table of contents and trophy board. Every
  * passage is its state icon: a tomato, a flower, a silver coin or a gold coin.
- * Its header counts the two goals, each beside its coin. It slides
+ * Its header counts the two goals, each beside its coin. Its cards are shared
+ * evenly between the rows (`boardColumns`), so no row ends in blank cells. It slides
  * over the score from the rail without moving the music, and closes only with
  * its own control. Tapping a card selects that passage on the score.
  */
@@ -38,7 +40,7 @@ export default function PassageBoard({ title, model, focusId = null, gemOffered 
       {review && <button type="button" className="piano-passage-board__review" onClick={onReview}>Review a passage</button>}
       <button ref={close} type="button" className="piano-passage-board__close" onClick={onClose}><Close /><span>Close</span></button>
     </header>
-    <ol ref={cards} className="piano-passage-board__cards">
+    <ol ref={cards} className="piano-passage-board__cards" style={{ gridTemplateColumns: `repeat(${boardColumns(model.tiles.length)}, minmax(0, 1fr))` }}>
       {model.tiles.map((tile) => <li key={tile.id}>
         <button type="button" className="piano-passage-board__card" data-passage={tile.id} data-state={tile.state}
           aria-current={tile.id === (focusId ?? model.outlinedId) ? 'step' : undefined} aria-label={tile.label} onClick={() => onSelect?.(tile.id)}>

@@ -55,8 +55,9 @@
 }
 
 .piano-passage-board {
-  position: absolute; z-index: 20; left: 0; right: 0; bottom: 4rem;
-  max-height: calc(100% - 4rem - 0.75rem); box-sizing: border-box;
+  // The whole stage above the rail. A board that covered only part of it left a
+  // staff sliced in half behind it, and its cards a third of their room.
+  position: absolute; z-index: 20; left: 0; right: 0; top: 0; bottom: 4rem; box-sizing: border-box;
   display: flex; flex-direction: column; min-height: 0;
   color: var(--piano-fg); background: var(--piano-surface-1, #1c1c23);
   border-top: 3px solid var(--piano-accent); border-radius: var(--r-lg, 16px) var(--r-lg, 16px) 0 0;
@@ -85,21 +86,24 @@
   &__cards {
     list-style: none; margin: 0; padding: var(--sp-3, 12px) var(--sp-4, 16px) var(--sp-4, 16px);
     flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain;
-    display: grid; grid-template-columns: repeat(auto-fill, minmax(9.5rem, 1fr)); gap: var(--sp-2, 8px);
-    li { min-width: 0; display: flex; }
+    // Columns come from `boardColumns`; the rows share the height, so the cards
+    // fill the board and a long piece gets shorter cards before it ever scrolls.
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(9.5rem, 1fr)); grid-auto-rows: minmax(6rem, 1fr); gap: var(--sp-2, 8px);
+    li { min-width: 0; min-height: 0; display: flex; container-type: size; }
   }
   &__card {
-    flex: 1; min-width: 0; min-height: 7.5rem; padding: 0.6rem 0.5rem; box-sizing: border-box;
-    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.35rem; text-align: center;
+    flex: 1; min-width: 0; min-height: 0; padding: 0.6rem 0.5rem; box-sizing: border-box;
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.5rem; text-align: center;
     border: 2px solid var(--piano-border); border-radius: var(--r-md, 10px);
     background: var(--piano-bg); color: var(--piano-fg);
-    > svg { width: 3.4rem; height: 3.4rem; flex: 0 0 auto; }
-    strong { font-size: 1.15rem; }
+    // The icon is the card: half its height, whatever the piece's length.
+    > svg { width: clamp(2.6rem, 50cqh, 7rem); height: clamp(2.6rem, 50cqh, 7rem); flex: 0 0 auto; }
+    strong { font-size: clamp(1.05rem, 11cqh, 1.5rem); }
     &[aria-current='step'] { outline: 3px solid var(--piano-accent); outline-offset: 1px; background: var(--piano-surface-2, #26262f); }
   }
   &__steps {
-    display: flex; gap: 3px; width: 100%; max-width: 6rem;
-    i { flex: 1; height: 0.4rem; border-radius: 2px; background: var(--piano-border); }
+    display: flex; gap: 4px; width: 100%; max-width: 8rem;
+    i { flex: 1; height: 0.5rem; border-radius: 3px; background: var(--piano-border); }
     i[data-done='true'] { background: var(--piano-silver); }
   }
 }

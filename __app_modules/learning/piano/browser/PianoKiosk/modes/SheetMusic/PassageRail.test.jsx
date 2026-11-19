@@ -153,6 +153,12 @@ describe('PassageBoard', () => {
     expect(within(board).queryByRole('button', { name: 'Review a passage' })).not.toBeInTheDocument();
   });
 
+  it('shares its cards evenly between the rows', () => {
+    const twelve = Array.from({ length: 12 }, (_, index) => segment(index, 'todo'));
+    render(<PassageBoard title="T" model={modelOf(twelve, null)} onClose={vi.fn()} />);
+    expect(screen.getByRole('dialog', { name: 'Passage board' }).querySelector('.piano-passage-board__cards').style.gridTemplateColumns).toBe('repeat(6, minmax(0, 1fr))');
+  });
+
   it('promises a gem only when one is on offer, and marks a reached goal done', () => {
     const silver = [segment(0, 'silver'), segment(1, 'silver')];
     const { rerender } = render(<PassageBoard title="T" model={modelOf(silver, null)} onClose={vi.fn()} />);

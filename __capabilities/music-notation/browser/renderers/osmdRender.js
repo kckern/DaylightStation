@@ -650,7 +650,7 @@ function applyManuscriptRules(osmd, manuscript) {
  * @param {HTMLElement} host
  * @param {string} xml - raw MusicXML
  * @param {{ width?:number, flow?:'wrapped'|'horizontal', scale?:number,
- *           transpose?:number, manuscript?:boolean, newSystemFromXML?:boolean,
+ *           transpose?:number, manuscript?:boolean, newSystemFromXML?:boolean, stretchLastSystem?:boolean,
  *           shouldAbort?:() => boolean }} [opts]
  *   transpose is an integer semitone offset (default 0) re-engraving the score in
  *   a new key — the notation AND the extracted pitches follow it.
@@ -689,6 +689,9 @@ export async function osmdEngrave(host, xml, opts = {}) {
   // Mid-system measure numbers pile onto tight chords; system-start only.
   osmd.EngravingRules.RenderMeasureNumbersOnlyAtSystemStart = true;
   applyManuscriptRules(osmd, opts.manuscript);
+  // A host showing a short excerpt as a whole (a drill passage) may ask for its
+  // last system to be justified like the rest.
+  if (opts.stretchLastSystem === true) osmd.EngravingRules.StretchLastSystemLine = true;
   await osmd.load(xml);
   if (abort()) return null;
 

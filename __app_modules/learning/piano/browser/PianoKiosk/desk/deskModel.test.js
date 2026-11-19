@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { passageBars, pieceCount, pieceFocus, relativeTime, scoreHeading, stripCards } from './deskModel.js';
+import { mapColumns, passageBars, pieceCount, pieceFocus, relativeTime, scoreHeading, stripCards } from './deskModel.js';
 
 const passages = [{ id: 'a', start: 0, end: 4, state: 'silver' }, { id: 'b', start: 5, end: 8, state: 'todo' }];
 const piece = { total: 2, silver: 1, gold: 0, practicedAt: '2026-11-18T10:00:00Z', next: { passageId: 'b' }, nextGoldPassageId: 'a', passages };
@@ -28,5 +28,12 @@ describe('deskModel', () => {
   });
   it('writes coarse relative times', () => {
     expect(relativeTime('2026-11-18T10:00:00Z', Date.parse('2026-11-18T12:00:00Z'))).toBe('2h ago');
+  });
+
+  it('lays a piece out in one row of icons, or two once a row would shrink them', () => {
+    expect(mapColumns(5)).toBe(5);
+    expect(mapColumns(8)).toBe(8);
+    expect(mapColumns(12)).toBe(6);
+    expect(mapColumns(13)).toBe(7);
   });
 });

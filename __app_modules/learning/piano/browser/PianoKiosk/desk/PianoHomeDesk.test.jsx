@@ -31,7 +31,11 @@ describe('PianoHomeDesk progress strip', () => {
     expect(await screen.findByRole('button', { name: 'Sib: Piano University' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Idle/ })).toBeNull();
     expect(await screen.findByText('Jesu Joy')).toBeInTheDocument();
-    expect(screen.getByText('11 of 173 lessons')).toBeInTheDocument();
+    // A course is counted and drawn, never written out as a sentence.
+    const sib = screen.getByRole('button', { name: 'Sib: Piano University' });
+    expect(sib.querySelector('.piano-desk__lessons').textContent).toBe('11/173');
+    expect(sib.querySelector('.piano-desk__bar i').style.width).toBe('6%');
+    expect(sib.textContent).not.toMatch(/lessons/);
   });
 
   it('draws each passage as its icon: a silver coin, a flower, a tomato, with the next one ringed', async () => {
@@ -51,6 +55,13 @@ describe('PianoHomeDesk progress strip', () => {
     // Gold is counted only once there is some.
     expect(count.querySelector('[data-level="gold"]')).toBeNull();
     expect(card.textContent).not.toMatch(/ of 3 Silver/);
+  });
+
+  it('keeps a twelve-passage piece to two rows of six, so four cards fit the strip at full icon size', async () => {
+    h.desk.players[0].piece = { ...piece, total: 12, passages: Array.from({ length: 12 }, (_, index) => ({ id: `p${index}`, start: index * 4, end: index * 4 + 3, state: 'todo' })) };
+    mount();
+    const card = await screen.findByRole('button', { name: 'Kid: 1 of 12 Silver' });
+    expect(card.querySelector('.piano-desk__map').style.gridTemplateColumns).toBe('repeat(6, minmax(0, 1.75rem))');
   });
 
   it('shows only the children, never the parents', async () => {

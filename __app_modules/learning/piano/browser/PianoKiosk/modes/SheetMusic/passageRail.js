@@ -54,6 +54,17 @@ export function railModel({ segments = [], projection, selectedId = null }) {
   };
 }
 
+/**
+ * How many cards across the passage board. Rows hold up to seven cards (eight
+ * on a long piece), and the cards are shared evenly between the rows: twelve
+ * passages are six and six, never seven and five with blank cells.
+ */
+export function boardColumns(count) {
+  if (!(count > 0)) return 1;
+  const rows = Math.ceil(count / (count > 21 ? 8 : 7));
+  return Math.ceil(count / rows);
+}
+
 /** Whether every tile keeps a usable touch target in a track this wide. */
 export function railFits(tileCount, trackWidth) {
   if (!(tileCount > 0) || !(trackWidth > 0)) return true;

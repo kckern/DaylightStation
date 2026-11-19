@@ -168,6 +168,10 @@ export default function ScorePassage({
 
   const [renderScale, setRenderScale] = useState(1);
   const [systemBreakBefore, setSystemBreakBefore] = useState(null);
+  // A two-system passage is engraved once more with its last system justified:
+  // the second line then runs the width of the first instead of stopping halfway
+  // across blank paper. One system is left alone; it is scaled up to the stage.
+  const [stretchLastSystem, setStretchLastSystem] = useState(false);
   const [fitError, setFitError] = useState(null);
 
   useLayoutEffect(() => {
@@ -207,12 +211,18 @@ export default function ScorePassage({
         setFitError('passage-layout-unbalanced');
         return;
       }
+      const systems = new Set((result?.staves ?? []).map((staff) => staff.system).filter(Number.isInteger)).size;
+      if (systems > 1 && !stretchLastSystem) {
+        setLayout(null);
+        setStretchLastSystem(true);
+        return;
+      }
       setFitError(null); setLayout({ ...result, ink: measureInk(containerRef.current) }); return;
     }
     setLayout(null);
     if (fit.nextScale != null) setRenderScale(fit.nextScale);
     else setFitError('passage-too-dense');
-  }, [measures, renderScale, sourceId, systemBreakBefore]);
+  }, [measures, renderScale, sourceId, stretchLastSystem, systemBreakBefore]);
 
   /**
    * The one place a dead end is announced. Every caller of this is a decision to
@@ -487,7 +497,7 @@ export default function ScorePassage({
   return (
     <div ref={containerRef} className="piano-score-passage" data-system-count={systemCount || undefined} data-layout-mode={presentation?.mode} data-layout-compact={presentation?.compact || undefined} data-cursor-enabled={String(showCursor)}>
       {focused.musicXml ? (
-        <MusicXmlRenderer key={`${systemBreakBefore ?? 'auto'}:${renderScale}`} musicXml={focused.musicXml} scale={renderScale} newSystemFromXML fillContainer presentationViewBox={presentation?.viewBox} onLayout={handleLayout} onFailed={handleEngraveFailed}>
+        <MusicXmlRenderer key={`${systemBreakBefore ?? 'auto'}:${renderScale}:${stretchLastSystem}`} musicXml={focused.musicXml} scale={renderScale} newSystemFromXML stretchLastSystem={stretchLastSystem} fillContainer presentationViewBox={presentation?.viewBox} onLayout={handleLayout} onFailed={handleEngraveFailed}>
           <NoteHighlightLayer step={currentStep} activeParts={activeParts} />
         </MusicXmlRenderer>
       ) : (

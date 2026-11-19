@@ -6,7 +6,7 @@ import usePianoList from '../usePianoList.js';
 import { usePianoUser } from '../PianoUserContext.jsx';
 import { titleFromScoreId } from '../modes/SheetMusic/scoreTitle.js';
 import PassageCoin from '../modes/SheetMusic/PassageCoin.jsx';
-import { pieceCount, relativeTime, scoreHeading, stripCards } from './deskModel.js';
+import { mapColumns, pieceCount, relativeTime, scoreHeading, stripCards } from './deskModel.js';
 import './PianoHomeDesk.scss';
 
 const players = (response) => (Array.isArray(response?.players) ? response.players : []);
@@ -29,13 +29,12 @@ function usePrintedTitle(scoreId) {
 
 function PieceCard({ card }) {
   const title = usePrintedTitle(card.piece.scoreId);
-  // One row of icons, or two for a long piece, so an icon never becomes a dot.
-  const count = card.piece.passages.length;
-  const columns = count > 14 ? Math.ceil(count / 2) : count;
+  // One row of icons, or two for a longer piece, so an icon never becomes a dot.
+  const columns = mapColumns(card.piece.passages.length);
   return (
     <span className="piano-desk__body">
       <strong className="piano-desk__title">{title}</strong>
-      <span className="piano-desk__map" style={{ gridTemplateColumns: `repeat(${columns}, minmax(0, 1.6rem))` }} aria-hidden="true">
+      <span className="piano-desk__map" style={{ gridTemplateColumns: `repeat(${columns}, minmax(0, 1.75rem))` }} aria-hidden="true">
         {card.piece.passages.map((passage) => (
           <i key={passage.id} data-state={passage.state} data-current={passage.id === card.focus?.id || undefined}><PassageCoin state={passage.state} size="100%" /></i>
         ))}
@@ -58,7 +57,9 @@ function CourseCard({ card }) {
         : <span className="piano-desk__poster-fallback" aria-hidden="true" />}
       <span className="piano-desk__course-text">
         <strong className="piano-desk__title">{course.courseTitle}</strong>
-        <small>{course.completed} of {course.total} lessons</small>
+        {/* Lessons done, drawn as a bar and counted; no sentence. */}
+        <span className="piano-desk__bar" aria-hidden="true"><i style={{ width: `${course.total > 0 ? Math.min(100, Math.round((course.completed / course.total) * 100)) : 0}%` }} /></span>
+        <small className="piano-desk__lessons" aria-hidden="true">{course.completed}/{course.total}</small>
       </span>
     </span>
   );
@@ -67,7 +68,8 @@ function CourseCard({ card }) {
 /**
  * The progress strip above the home menu: one card per child (school learners,
  * not parents), showing their piece in progress or else their video course. The strip keeps one
- * height whether or not it has cards, so the menu below never moves.
+ * height whether or not it has cards, so the menu below never moves. The cards share its width:
+ * it never scrolls, and a card is never cut off at its edge.
  */
 export default function PianoHomeDesk({ disabled, onOpenPassage, onOpenCourse }) {
   const logger = useMemo(() => getLogger().child({ component: 'piano-desk' }), []);

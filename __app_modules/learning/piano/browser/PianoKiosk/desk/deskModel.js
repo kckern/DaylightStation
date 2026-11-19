@@ -53,4 +53,10 @@ export function stripCards({ pieces, courses }) {
   }).sort((a, b) => String(b.at).localeCompare(String(a.at)));
 }
 
+/**
+ * How many icons across a piece's map. Up to eight sit in one row; a longer
+ * piece takes two rows, so four cards share the strip with icons at full size.
+ */
+export const mapColumns = (count) => (count > 8 ? Math.ceil(count / 2) : Math.max(1, count));
+
 export const pieceCount = (piece) => `${piece.silver} of ${piece.total} Silver`;

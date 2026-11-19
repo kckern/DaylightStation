@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createCoachPlan, projectCoach, applyCoachEvent } from '../../../../../../../shared/music/learnCoach.mjs';
-import { passageTile, pieceGemOffered, railFits, railModel } from './passageRail.js';
+import { boardColumns, passageTile, pieceGemOffered, railFits, railModel } from './passageRail.js';
 
 const segment = (index, bars = 4, parts = ['rh', 'lh']) => ({ id: `m${index * 4}-${index * 4 + bars - 1}`, inMeasure: index * 4, outMeasure: index * 4 + bars - 1,
   printedMeasures: [index * 4 + 1, index * 4 + bars], barLabel: `Bars ${index * 4 + 1}–${index * 4 + bars}`, playableParts: parts });
@@ -80,5 +80,17 @@ describe('gem offer', () => {
     expect(pieceGemOffered(board({ cells: { piano: { kid: { state: 'disabled', parts: [{ ruleId: 'piano-piece', state: 'disabled' }] } } } }), 'kid')).toBe(false);
     expect(pieceGemOffered(board({ cells: {} }), 'kid')).toBe(false);
     expect(pieceGemOffered(null, 'kid')).toBe(false);
+  });
+});
+
+describe('boardColumns', () => {
+  it('fills every row of the board evenly, so a row never ends in blank cells it could have shared', () => {
+    expect(boardColumns(4)).toBe(4);
+    expect(boardColumns(7)).toBe(7);
+    expect(boardColumns(12)).toBe(6);
+    expect(boardColumns(13)).toBe(7);
+    expect(boardColumns(15)).toBe(5);
+    expect(boardColumns(30)).toBe(8);
+    expect(boardColumns(0)).toBe(1);
   });
 });
