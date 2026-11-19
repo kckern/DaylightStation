@@ -78,3 +78,112 @@ test('Life Log applies selected categories across day and period views without r
   await expect(main.getByText(calendar.text, { exact: true })).toBeVisible();
   expect(reads).toEqual([...beforeDay, `${base}/${date}`, `${base}/${date}`]);
 });
+
+test('Life Log restores a history visit after its period loads and isolates the next member', async ({ page, baseURL }) => {
+  await page.setViewportSize({ width: 390, height: 390 });
+  const members = [
+    { username: 'amy', displayName: 'Amy' },
+    { username: 'bob', displayName: 'Bob' },
+  ];
+  const period = '/api/v1/life/log/amy/scope/month';
+  const day = {
+    sources: { weight: {}, calendar: {} },
+    categories: { health: { weight: {} }, calendar: { calendar: {} } },
+  };
+  const days = Object.fromEntries(Array.from({ length: 30 }, (_, index) => [
+    '2026-11-' + String(index + 1).padStart(2, '0'), day,
+  ]));
+  const release = Promise.withResolvers();
+  let monthReads = 0;
+  const origin = new URL(baseURL).origin;
+  await page.context().route('**/*', route => (
+    new URL(route.request().url()).origin === origin ? route.fallback() : route.abort()
+  ));
+  await page.routeWebSocket('**/*', () => {});
+  await page.route('**/api/**', async route => {
+    const { pathname, searchParams } = new URL(route.request().url());
+    if (pathname === '/api/v1/life/users') return route.fulfill({ json: { users: members } });
+    if (pathname === '/api/v1/life/user') {
+      const user = searchParams.get('username') || 'amy';
+      return route.fulfill({ json: members.find(member => member.username === user) });
+    }
+    if (pathname === period) {
+      if (++monthReads === 2) await release.promise;
+      return route.fulfill({ json: { days } });
+    }
+    return route.fulfill({ json: pathname.endsWith('/supervision/bootstrap') ? { enabled: false } : {} });
+  });
+  await page.clock.setFixedTime(new Date('2026-11-19T16:00:00Z'));
+
+  await page.goto('/life/plan');
+  const logTab = page.getByRole('link', { name: 'Log', exact: true });
+  await logTab.click();
+  const main = page.getByRole('main');
+  const scroll = () => main.evaluate(node => node.scrollTop);
+  const month = main.getByRole('radio', { name: 'Month' });
+  const week = main.getByRole('radio', { name: 'Week' });
+  const health = main.getByRole('checkbox', { name: 'Health' });
+  const monthHeading = main.getByRole('heading', { name: 'This Month', exact: true });
+  const lastWeek = main.getByText(/^Week of /).last();
+  await main.locator('label').filter({ hasText: /^Month$/ }).click();
+  await main.locator('label').filter({ hasText: /^Health$/ }).click();
+  await expect(monthHeading).toBeVisible();
+  await expect(month).toBeChecked();
+  await expect(health).toBeChecked();
+  await lastWeek.scrollIntoViewIfNeeded();
+  await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+  const savedPosition = await scroll();
+  expect(savedPosition).toBeGreaterThan(100);
+
+  await logTab.click();
+  await expect(month).toBeChecked();
+  await expect(health).toBeChecked();
+  await expect.poll(scroll).toBe(savedPosition);
+
+  await page.getByRole('link', { name: 'Plan', exact: true }).click();
+  await expect(page).toHaveURL(/\/life\/plan$/);
+  await page.goBack();
+  try {
+    await expect(page).toHaveURL(/\/life\/log$/);
+    await expect(month).toBeChecked();
+    await expect(health).toBeChecked();
+    await expect.poll(() => monthReads).toBe(2);
+    await expect(monthHeading).toHaveCount(0);
+    await expect.poll(scroll).toBe(0);
+  } finally {
+    release.resolve();
+  }
+  await expect(monthHeading).toBeAttached();
+  await expect(main.locator('svg title').filter({ hasText: '2026-11-19: 1 sources' })).toHaveCount(1);
+  await expect.poll(scroll).toBe(savedPosition);
+  await expect(lastWeek).toBeInViewport();
+
+  await page.goForward();
+  await expect(page).toHaveURL(/\/life\/plan$/);
+  await logTab.click();
+  await expect(week).toBeChecked();
+  await expect(health).not.toBeChecked();
+  await expect.poll(scroll).toBe(0);
+  await page.goBack();
+  await expect(page).toHaveURL(/\/life\/plan$/);
+  await page.goBack();
+  await expect(month).toBeChecked();
+  await expect(health).toBeChecked();
+  await expect.poll(scroll).toBe(savedPosition);
+
+  await page.goBack();
+  await expect(page).toHaveURL(/\/life\/plan$/);
+  await page.goForward();
+  await expect(page).toHaveURL(/\/life\/log$/);
+  await expect(month).toBeChecked();
+  await expect(health).toBeChecked();
+  await expect.poll(scroll).toBe(savedPosition);
+
+  const switcher = page.getByRole('textbox', { name: 'Switch household member' });
+  await switcher.click();
+  await page.getByRole('option', { name: 'Bob' }).click();
+  await expect(switcher).toHaveValue('Bob');
+  await expect(week).toBeChecked();
+  await expect(health).not.toBeChecked();
+  await expect.poll(scroll).toBe(0);
+});

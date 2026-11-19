@@ -12,7 +12,7 @@ const logger = createAppLogger('health').child('food-manager');
 export function FoodCatalogManager({ open, ...props }) {
   return open ? <Manager {...props} /> : null;
 }
-function Manager({ onClose, onChanged }) {
+function Manager({ active = true, onClose, onChanged }) {
   const [query, setQuery] = useState('');
   const [draft, setDraft] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -27,7 +27,7 @@ function Manager({ onClose, onChanged }) {
     wasEditing.current = editing;
     primaryInput.current?.focus();
   }, [editing]);
-  const foods = useApiResource(`api/v1/health/nutrition/catalog/suggest?q=${encodeURIComponent(query)}&limit=40`, { logger, swr: true });
+  const foods = useApiResource(`api/v1/health/nutrition/catalog/suggest?q=${encodeURIComponent(query)}&limit=40`, { enabled: active, logger, swr: true });
   const run = async action => {
     if (pending.current) return;
     pending.current = true; setBusy(true); setError(null);
@@ -40,7 +40,7 @@ function Manager({ onClose, onChanged }) {
       <Text size="sm" c="dimmed">These definitions apply to future logging. Your past entries keep their original nutrition.</Text>
       {error ? <Text c="red" role="alert">{error.message}</Text> : null}
       {draft ? <>
-        <TextInput ref={primaryInput} label="Food name" value={draft.name} onChange={event => setDraft(previous => ({ ...previous, name: event.target.value }))} disabled={busy} />
+        <TextInput ref={primaryInput} label="Food name" value={draft.name} onChange={event => setDraft(previous => ({ ...previous, name: event.target.value }))} disabled={busy} data-autofocus />
         <NumberInput label="Nutrition basis in grams" suffix=" g" min={0.01} value={draft.grams ?? ''} onChange={grams => setDraft(previous => ({ ...previous, grams }))} disabled={busy} />
         {NUTRIENT_KEYS.map(key => <NumberInput key={key} label={key} min={0} disabled={busy} value={draft.nutrients?.[key] ?? ''}
           onChange={value => setDraft(previous => ({ ...previous, nutrients: { ...previous.nutrients, [key]: value === '' ? null : value } }))} />)}

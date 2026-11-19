@@ -17,6 +17,11 @@ export function SettingsMenu({ onResetSession }) {
   const settingsRef = useRef(null);
   const [renameOpen, setRenameOpen] = useState(false);
   const closeRename = useCallback(() => setRenameOpen(false), []);
+  const openDialog = (open) => {
+    // The menu item leaves the DOM. Return focus to the Settings trigger.
+    settingsRef.current?.focus({ preventScroll: true });
+    open?.();
+  };
   const nameOf = (id) => registry?.byId?.get?.(id)?.name
     ?? devices.find((device) => device.id === id || device.screenId === id)?.name
     ?? 'another screen';
@@ -33,7 +38,7 @@ export function SettingsMenu({ onResetSession }) {
           </ActionIcon>
         </Menu.Target>
         <Menu.Dropdown data-testid="settings-menu-panel">
-          <Menu.Item data-testid="settings-rename-device" leftSection={<IconEdit size={16} />} onClick={() => setRenameOpen(true)}>
+          <Menu.Item data-testid="settings-rename-device" leftSection={<IconEdit size={16} />} onClick={() => openDialog(() => setRenameOpen(true))}>
             Rename this device
           </Menu.Item>
           <Menu.Item data-testid="settings-manage-screens" leftSection={<IconDevices size={16} />} onClick={() => push('screens', {})}>
@@ -45,11 +50,7 @@ export function SettingsMenu({ onResetSession }) {
           <Menu.Item
             data-testid="settings-reset-session"
             leftSection={<IconRestore size={16} />}
-            onClick={() => {
-              // The menu item leaves the DOM. The dialog should return to Settings.
-              settingsRef.current?.focus({ preventScroll: true });
-              onResetSession?.();
-            }}
+            onClick={() => openDialog(onResetSession)}
           >
             Start fresh
           </Menu.Item>

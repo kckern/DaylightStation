@@ -74,6 +74,7 @@ describe('NotificationsIndex', () => {
   it('saves quiet hours via PUT', async () => {
     wrap(<NotificationsIndex />);
     await screen.findByDisplayValue('21:00');
+    fireEvent.change(screen.getByLabelText('Start'), { target: { value: '20:00' } });
     fireEvent.click(screen.getByRole('button', { name: /save/i }));
     // Real DaylightAPI signature is (path, data, method) — see frontend/src/lib/api.mjs.
     await waitFor(() => expect(api).toHaveBeenCalledWith(
@@ -81,5 +82,24 @@ describe('NotificationsIndex', () => {
       expect.objectContaining({ quiet_hours: expect.any(Object), cooldowns: expect.any(Object) }),
       'PUT'
     ));
+  });
+
+  it('keeps refused edits dirty and reverts to the confirmed configuration without writing', async () => {
+    wrap(<NotificationsIndex />);
+    const start = await screen.findByLabelText('Start');
+    const save = screen.getByRole('button', { name: 'Save', exact: true });
+    expect(save).toBeDisabled();
+    fireEvent.change(start, { target: { value: '20:00' } });
+    api.mockRejectedValueOnce(new Error('Settings refused'));
+    fireEvent.click(save);
+    expect(await screen.findByText('Settings refused')).toBeVisible();
+    expect(start).toHaveValue('20:00');
+    expect(screen.getByText('Unsaved', { exact: true })).toBeVisible();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Revert', exact: true }));
+    expect(start).toHaveValue('21:00');
+    expect(save).toBeDisabled();
+    expect(screen.queryByText('Settings refused')).toBeNull();
+    expect(api.mock.calls.filter(([, , method]) => method === 'PUT')).toHaveLength(1);
   });
 });

@@ -96,7 +96,7 @@ export function FollowUpTray({ active = true, target = null, observations = [], 
 
   return (
     <>
-      {target ? createPortal(bell, target) : bell}
+      {active ? (target ? createPortal(bell, target) : bell) : null}
       <Sheet open={Boolean(sheet)} onClose={closeSheet} title="Follow-ups">
         {feedback ? <p className="health-followups__feedback" role="status">{feedback}</p> : null}
         {questions.length ? (

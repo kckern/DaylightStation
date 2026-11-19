@@ -18,7 +18,7 @@ export function RenameScreenDialog({
   const [busy, setBusy] = useState(false);
   const [answer, setAnswer] = useState(null);
   const draftRef = useRef(null);
-  useDismissLayer(open, onClose, { managed: true });
+  const usesDismissStack = useDismissLayer(open, onClose);
   useEffect(() => {
     if (!open) {
       draftRef.current = null;
@@ -54,7 +54,7 @@ export function RenameScreenDialog({
   };
 
   return (
-    <Modal opened={open} onClose={onClose} title={title} centered>
+    <Modal opened={open} onClose={onClose} closeOnEscape={!usesDismissStack} title={title} centered>
       <Stack gap="sm" data-testid={`${testid}-dialog`}>
         <TextInput
           label={nameLabel}
@@ -66,7 +66,7 @@ export function RenameScreenDialog({
             setAnswer(null);
           }}
           data-testid={`${testid}-name`}
-          autoFocus
+          data-autofocus
         />
         {withRoom && (
           <TextInput label="Room" value={room} data-testid={`${testid}-room`} onChange={event => {

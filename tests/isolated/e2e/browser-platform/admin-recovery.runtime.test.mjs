@@ -111,7 +111,8 @@ test('Admin notification settings preserve edits made during a pending save', as
     await expect.poll(() => writes[1]).toEqual({
       ...initial, quiet_hours: { enabled: true, start: '20:00', end: '08:30' },
     });
-    await expect(save).toBeEnabled();
+    await expect(save).toBeDisabled();
+    await expect(page.getByText('Unsaved', { exact: true })).toHaveCount(0);
   } finally {
     releaseFirstSave.resolve();
   }

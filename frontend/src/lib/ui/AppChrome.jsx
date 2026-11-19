@@ -28,7 +28,7 @@ export function AppChrome({ title, tabs = [], activeTab, onTabChange, headerActi
           <span className="ds-chrome__tab-label">{tab.label}</span>
         </>;
         return tab.href
-          ? <Link key={tab.id} to={tab.href} {...props}>{label}</Link>
+          ? <Link key={tab.id} to={tab.href} state={tab.state} {...props}>{label}</Link>
           : <button key={tab.id} type="button" {...props} onClick={() => onTabChange(tab.id)}>{label}</button>;
       })}
       context={sidebarRef && <div ref={sidebarRef} className="ds-chrome__context" hidden={!sidebarActive} />}

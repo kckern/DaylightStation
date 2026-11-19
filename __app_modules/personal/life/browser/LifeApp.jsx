@@ -15,7 +15,7 @@ import useDocumentTitle from "../../../../frontend/src/hooks/useDocumentTitle.js
 import { ErrorState } from './components/ErrorState.jsx';
 import { LifePageScrollRef } from './components/LifePage.jsx';
 import { Dashboard } from "./views/now/Dashboard.jsx";
-import { LogBrowser } from "./views/log/LogBrowser.jsx";
+import { LogBrowser, readLogVisit } from "./views/log/LogBrowser.jsx";
 import { LogDayDetail } from "./views/log/LogDayDetail.jsx";
 import { LogCategoryView } from "./views/log/LogCategoryView.jsx";
 import { PurposeView } from "./views/plan/PurposeView.jsx";
@@ -136,15 +136,20 @@ function LifeAppShell() {
   const activeTab = tabForPath(location.pathname);
   const mainRef = useRef(null);
   const owner = lifeUser?.username;
-  const viewKey = location.pathname;
+  const pathname = location.pathname;
+  const logVisit = /^\/life\/log\/?$/.test(pathname) ? readLogVisit(location, owner) : null;
+  const logTabState = logVisit && !location.search && !location.hash ? location.state : null;
+  const tabs = logTabState
+    ? TABS.map(tab => tab.href === pathname ? { ...tab, state: logTabState } : tab)
+    : TABS;
+  const viewKey = logVisit ? `${pathname}:${logVisit.visitKey}:${logVisit.scope}` : pathname;
   const scrollScope = useMemo(() => ({ owner, viewKey }), [owner, viewKey]);
   const [readyScope, setReadyScope] = useState(null);
   const registerPage = useCallback((node) => {
     setReadyScope(current => node ? scrollScope : current === scrollScope ? null : current);
   }, [scrollScope]);
-  // Plan and linked log pages publish their loaded content. The Log browser
-  // changes its own filters within one URL, and Coach scrolls its own thread.
-  const managedPage = activeTab === 'plan' || /^\/life\/log\/[^/]/.test(viewKey);
+  // Plan and Log publish their loaded content. Coach scrolls its own thread.
+  const managedPage = activeTab === 'plan' || activeTab === 'log';
   useViewScroll({ mainRef, owner, viewKey, ready: managedPage && readyScope === scrollScope });
 
   const headerActions = lifeUsers.length > 1 ? [(
@@ -165,7 +170,7 @@ function LifeAppShell() {
       <AppChrome
         title="Life"
         mainRef={mainRef}
-        tabs={TABS}
+        tabs={tabs}
         activeTab={activeTab}
         headerActions={headerActions}
         notices={<Notifications

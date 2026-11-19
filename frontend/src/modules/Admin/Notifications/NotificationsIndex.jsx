@@ -1,8 +1,16 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { Stack, Paper, Title, Group, Switch, TextInput, Table, Button, Badge, NumberInput, Text, Loader } from '@mantine/core';
 import { useApiResource } from '../../../lib/hooks/useApiResource.js';
 import { ErrorState } from '../../../lib/ui/states.jsx';
 import { DaylightAPI } from '../../../lib/api.mjs';
+import SaveBar from '../shared/SaveBar.jsx';
+import { useUnsavedGuard } from '../shared/useUnsavedGuard.js';
+
+const settingsPath = '/api/v1/admin/notifications';
+const editableConfig = ({ quiet_hours, cooldowns }) => ({ quiet_hours, cooldowns });
+const editsSince = (draft, submitted) => Object.fromEntries(
+  Object.entries(draft).filter(([key, value]) => !Object.is(value, submitted[key])),
+);
 
 /**
  * SYSTEM > Notifications admin page.
@@ -16,7 +24,7 @@ import { DaylightAPI } from '../../../lib/api.mjs';
  * — see frontend/src/lib/api.mjs — not (path, method, data).
  */
 export function NotificationsIndex() {
-  const settings = useApiResource('/api/v1/admin/notifications');
+  const settings = useApiResource(settingsPath);
   const ledger = useApiResource('/api/v1/admin/notifications/ledger?limit=50');
 
   return (
@@ -31,20 +39,38 @@ export function NotificationsIndex() {
 }
 
 function NotificationSettings({ initial }) {
-  const [config, setConfig] = useState(() => ({ quiet_hours: initial.quiet_hours, cooldowns: initial.cooldowns }));
+  const [original, setOriginal] = useState(() => editableConfig(initial));
+  const [config, setConfig] = useState(original);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState(null);
+  const pendingSave = useRef(false);
+  const dirty = JSON.stringify(config) !== JSON.stringify(original);
+  useUnsavedGuard(dirty || saving, { label: 'notification settings' });
 
   const save = async () => {
-    setSaving(true); setError(null);
+    if (!dirty || pendingSave.current) return;
+    pendingSave.current = true;
+    setSaving(true);
+    setError(null);
     try {
-      const saved = await DaylightAPI('/api/v1/admin/notifications', config, 'PUT');
-      // Inputs stay editable while the PUT is in flight. Only replace the draft that was submitted.
-      setConfig(current => current === config
-        ? { quiet_hours: saved.quiet_hours, cooldowns: saved.cooldowns }
-        : current);
-    } catch (e) { setError(e.message); }
-    finally { setSaving(false); }
+      const saved = editableConfig(await DaylightAPI(settingsPath, config, 'PUT'));
+      setOriginal(saved);
+      // Adopt confirmed values and carry forward only edits made during the PUT.
+      setConfig(current => ({
+        quiet_hours: { ...saved.quiet_hours, ...editsSince(current.quiet_hours, config.quiet_hours) },
+        cooldowns: { ...saved.cooldowns, ...editsSince(current.cooldowns, config.cooldowns) },
+      }));
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      pendingSave.current = false;
+      setSaving(false);
+    }
+  };
+
+  const revert = () => {
+    setConfig(original);
+    setError(null);
   };
 
   const qh = config.quiet_hours;
@@ -53,6 +79,7 @@ function NotificationSettings({ initial }) {
 
   return (
     <>
+      <SaveBar title="Notification settings" dirty={dirty} saving={saving} onSave={save} onRevert={revert} />
       {error && <Text c="red">{error}</Text>}
 
       <Paper p="md" withBorder>
@@ -79,8 +106,6 @@ function NotificationSettings({ initial }) {
           </Table.Tbody>
         </Table>
       </Paper>
-
-      <Group><Button onClick={save} loading={saving}>Save</Button></Group>
     </>
   );
 }

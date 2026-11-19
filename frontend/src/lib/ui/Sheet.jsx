@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useRef } from 'react';
 import { ActionIcon, FocusTrap } from '@mantine/core';
+import { useAppMainRef, useViewOverlaysActive } from './AppFrame.jsx';
 import { useDismissLayer } from './dismiss/useDismissLayer.js';
 import { useOverlayFocusReturn } from './dismiss/useOverlayFocusReturn.js';
 import { UiIcon } from './UiIcon.jsx';
@@ -14,25 +15,34 @@ import './ds.scss';
  */
 export function Sheet({ open, onClose, title, children, placement = 'center' }) {
   const sheetRef = useRef(null);
-  useDismissLayer(open, onClose);
+  const mainRef = useAppMainRef();
+  const overlaysActive = useViewOverlaysActive();
+  const visible = open && overlaysActive;
+  useDismissLayer(open, onClose, { isActive: () => visible });
   useOverlayFocusReturn(open);
 
   useLayoutEffect(() => {
     const viewport = window.visualViewport;
-    if (!open || !viewport) return undefined;
+    if (!visible || !viewport) return undefined;
     return fitSheetToKeyboard(sheetRef.current, viewport);
-  }, [open]);
+  }, [visible]);
 
   useEffect(() => {
-    if (!open) return undefined;
-    return lockSheetScroll();
-  }, [open]);
+    if (!visible) return undefined;
+    const unlockBody = lockScroll(document.body);
+    const main = mainRef?.current;
+    const unlockMain = main ? lockScroll(main) : null;
+    return () => {
+      unlockMain?.();
+      unlockBody();
+    };
+  }, [mainRef, visible]);
 
   if (!open) return null;
   return (
-    <div ref={sheetRef} className={placement === 'side' ? 'ds-sheet ds-sheet--side' : 'ds-sheet'} role="dialog" aria-modal="true" aria-label={title}>
+    <div ref={sheetRef} className={placement === 'side' ? 'ds-sheet ds-sheet--side' : 'ds-sheet'} hidden={!visible} role="dialog" aria-modal={visible || undefined} aria-label={title}>
       <div className="ds-sheet__scrim" onClick={onClose} />
-      <FocusTrap active={open}><div className="ds-sheet__panel" tabIndex={-1}>
+      <FocusTrap active={visible}><div className="ds-sheet__panel" tabIndex={-1}>
         <header className="ds-sheet__header">
           <h3 className="ds-sheet__title">{title}</h3>
           <ActionIcon className="ds-touch-target" onClick={onClose} aria-label="Close">
@@ -92,16 +102,22 @@ function fitSheetToKeyboard(sheet, viewport) {
   };
 }
 
-let locks = 0;
-let restoreScroll = () => {};
-function lockSheetScroll() {
-  if (locks++ === 0) {
-    const elements = [document.body, ...document.querySelectorAll('.ds-chrome__main')];
-    const previous = elements.map(element => element.style.overflow);
-    elements.forEach(element => { element.style.overflow = 'hidden'; });
-    restoreScroll = () => elements.forEach((element, index) => { element.style.overflow = previous[index]; });
+const scrollLocks = new WeakMap();
+function lockScroll(element) {
+  let lock = scrollLocks.get(element);
+  if (!lock) {
+    lock = { count: 0, previous: element.style.overflow };
+    scrollLocks.set(element, lock);
+    element.style.overflow = 'hidden';
   }
-  return () => { if (--locks === 0) restoreScroll(); };
+  lock.count += 1;
+  return () => {
+    lock.count -= 1;
+    if (lock.count === 0) {
+      element.style.overflow = lock.previous;
+      scrollLocks.delete(element);
+    }
+  };
 }
 
 export default Sheet;

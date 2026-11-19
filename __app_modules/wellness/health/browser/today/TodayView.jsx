@@ -769,7 +769,7 @@ export function TodayView({ active = true, sidebarTarget, followUpTarget = null,
           day.reload();
           if (err) setCaptureNotice(err.message);
         }} />
-      <FoodCatalogManager open={active && manageFoods} onClose={() => setManageFoods(false)} onChanged={day.reload} />
+      <FoodCatalogManager open={manageFoods} active={active} onClose={() => setManageFoods(false)} onChanged={day.reload} />
       <TemplatePicker open={active && Boolean(templatesFor)} bucketId={templatesFor} date={date} focusTemplateId={focusTemplateId}
         onLogged={logged => { setTemplatesFor(null); setFocusTemplateId(null); day.reload(); offerAddedFood(logged, date, { added: true }); }}
         onClose={() => { setTemplatesFor(null); setFocusTemplateId(null); }} />

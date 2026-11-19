@@ -4,6 +4,7 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { useState } from 'react';
 import { MantineProvider } from '@mantine/core';
 import { DismissStackProvider } from './dismiss/DismissStackProvider.jsx';
+import { AppFrame } from './AppFrame.jsx';
 import { Sheet } from './Sheet.jsx';
 
 // Sheet uses Mantine's ActionIcon, which throws without a MantineProvider in
@@ -40,6 +41,31 @@ describe('Sheet', () => {
     const { unmount } = wrap(<Sheet open onClose={() => {}} title="T">x</Sheet>);
     expect(document.body.style.overflow).toBe('hidden');
     unmount();
+    expect(document.body.style.overflow).toBe('');
+  });
+
+  it('locks only the owning frame and keeps it locked until its last sheet closes', () => {
+    function Frames({ first, second }) {
+      return <>
+        <AppFrame>
+          <Sheet open={first} title="First" onClose={() => {}}>First task</Sheet>
+          <Sheet open={second} title="Second" onClose={() => {}}>Second task</Sheet>
+        </AppFrame>
+        <AppFrame>Independent view</AppFrame>
+      </>;
+    }
+    const view = wrap(<Frames first second />);
+    const [owner, other] = screen.getAllByRole('main');
+    expect(owner.style.overflow).toBe('hidden');
+    expect(other.style.overflow).toBe('');
+    view.rerender(<MantineProvider><DismissStackProvider>
+      <Frames first={false} second />
+    </DismissStackProvider></MantineProvider>);
+    expect(owner.style.overflow).toBe('hidden');
+    view.rerender(<MantineProvider><DismissStackProvider>
+      <Frames first={false} second={false} />
+    </DismissStackProvider></MantineProvider>);
+    expect(owner.style.overflow).toBe('');
     expect(document.body.style.overflow).toBe('');
   });
 

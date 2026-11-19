@@ -3,10 +3,26 @@ import { useMergedRef } from '@mantine/hooks';
 import './ds.scss';
 
 const AppMainContext = createContext(null);
+const ViewOverlaysContext = createContext(true);
 
 /** Get the nearest AppFrame's ref. Read its current element in an event or effect. */
 export function useAppMainRef() {
   return useContext(AppMainContext);
+}
+
+export function useViewOverlaysActive() {
+  return useContext(ViewOverlaysContext);
+}
+
+// Keep a view mounted while its route is inactive so drafts can be resumed.
+export function AppView({ active, suspendOverlays = false, children }) {
+  const parentOverlaysActive = useViewOverlaysActive();
+  const overlaysActive = parentOverlaysActive && active && !suspendOverlays;
+  return (
+    <ViewOverlaysContext.Provider value={overlaysActive}>
+      <div hidden={!active}>{children}</div>
+    </ViewOverlaysContext.Provider>
+  );
 }
 
 export function AppFrame({ className = '', header, navigation, context, notices, footer, mainRef, expandedContext = false, children }) {

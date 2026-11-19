@@ -8,7 +8,7 @@ import { refreshHealthResourcesWithDashboard } from "./healthResources.js";
 import { claimHealthCacheOwner, healthCacheHeldByOther, HEALTH_CONTEXT_PATH, hydrateHealthCache, useHealthCacheHydrated } from "./healthCache.js";
 import '@mantine/core/styles.css';
 import {
-  AppThemeProvider, AppChrome, DismissStackProvider, LoadingState, ErrorState,
+  AppThemeProvider, AppChrome, AppView, DismissStackProvider, LoadingState, ErrorState,
 } from '@/lib/ui';
 import { useViewScroll } from '@/lib/ui/useViewScroll.js';
 import { useHotkey } from '@/lib/hooks/useHotkey.js';
@@ -92,6 +92,7 @@ const HealthShell = ({ userId }) => {
   useHotkey('mod+k', () => openCoach(null));
 
   const activeTab = tabForPath(location.pathname);
+  const todayActive = activeTab === 'today';
   // Unexpected page movement, per 1 s burst (ui.layout-shift).
   useLayoutShiftLog({ route: location.pathname, tab: activeTab });
   const mainRef = useRef(null);
@@ -100,13 +101,13 @@ const HealthShell = ({ userId }) => {
   const viewPath = location.pathname.replace(/\/+$/, '');
   useViewScroll({ mainRef, viewKey: viewPath, owner: userId, ready: readyPath === viewPath });
   const visitedToday = useRef(false);
-  if (activeTab === 'today') visitedToday.current = true;
+  if (todayActive) visitedToday.current = true;
   return (
     <AppThemeProvider pack="health">
       <AgentConversationProvider conversation={conversation}>
         <DismissStackProvider>
           <AppChrome title="Health" mainRef={mainRef} tabs={TABS.map(tab => ({ ...tab, href: tab.href + location.search }))} activeTab={activeTab}
-            sidebarRef={setSidebarTarget} sidebarActive={activeTab === 'today'}
+            sidebarRef={setSidebarTarget} sidebarActive={todayActive}
             headerActions={[
               <span key="follow-ups" ref={setFollowUpTarget} className="health-followups-slot" />,
               <ActionIcon key="settings" className="ds-touch-target" aria-label="Health settings"
@@ -116,9 +117,9 @@ const HealthShell = ({ userId }) => {
              ]}>
             {/* Keep the logging session (drafts, pending requests, retry bytes)
                 alive between tabs; hidden views do not poll or acquire media. */}
-            {visitedToday.current ? <div hidden={activeTab !== 'today'}>
-              <TodayView active={activeTab === 'today'} sidebarTarget={sidebarTarget} followUpTarget={followUpTarget} onSetupGoals={() => navigate(`/health/progress${location.search}`)} onCoachTap={openCoach} />
-            </div> : null}
+            {visitedToday.current ? <AppView active={todayActive} suspendOverlays={overlayOpen}>
+              <TodayView active={todayActive} sidebarTarget={sidebarTarget} followUpTarget={followUpTarget} onSetupGoals={() => navigate(`/health/progress${location.search}`)} onCoachTap={openCoach} />
+            </AppView> : null}
             <Suspense fallback={<LoadingState label="Health" />}><Routes>
               <Route index element={null} />
               <Route path="progress" element={<ProgressView />} />
@@ -133,10 +134,10 @@ const HealthShell = ({ userId }) => {
               {/* Unknown subpath — render Today rather than 404ing the tab shell. */}
               <Route path="*" element={<Navigate to="/health" replace />} />
             </Routes><RouteReady route={viewPath} onReady={setReadyPath} /></Suspense>
+            <ChatOverlay open={overlayOpen} onClose={() => setOverlayOpen(false)} userId={userId}>
+              <CoachChat userId={userId} conversation={conversation} variant="overlay" />
+            </ChatOverlay>
           </AppChrome>
-          <ChatOverlay open={overlayOpen} onClose={() => setOverlayOpen(false)} userId={userId}>
-            <CoachChat userId={userId} conversation={conversation} variant="overlay" />
-          </ChatOverlay>
         </DismissStackProvider>
       </AgentConversationProvider>
     </AppThemeProvider>

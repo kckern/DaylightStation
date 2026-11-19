@@ -1,5 +1,5 @@
 export { useViewScroll } from './useViewScroll.js';
-export { AppFrame, PlaybackFrame, useAppMainRef } from './AppFrame.jsx';
+export { AppFrame, AppView, PlaybackFrame, useAppMainRef } from './AppFrame.jsx';
 export { AppThemeProvider } from './AppThemeProvider.jsx';
 export { AppChrome } from './AppChrome.jsx';
 export { Sheet } from './Sheet.jsx';
