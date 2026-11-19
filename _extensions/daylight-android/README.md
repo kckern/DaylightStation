@@ -4,30 +4,23 @@ One Android codebase that builds a separate APK for each household device. A dev
 is described by one YAML file. The build reads that file and produces an app with
 that device's package name, SDK levels, ports and capabilities.
 
-**State.** A fourth device, `phone`, builds from `devices/phone.yml` (not a kiosk; see
-`__docs/reference/android/phone.md`): web views, one-tap actions, native audio with
-Android Auto, voice memos and local notifications. It has never been installed; its
-acceptance checklist is `__docs/runbooks/android/phone-acceptance.md`. The phone's
-media capability is the only user of Jetpack Media3, pinned to 1.1.1, the newest
-version that builds at compileSdk 33; no kiosk APK contains it. Phase 1 built the foundation: a service, a control API and a payload the
-app can swap over the network. Phase 2 ported the helper code of the old helper apps
-into capabilities. Phase 3 added the kiosk: the WebView window and its page bridge,
-lockdown, screen power, volume, the app launcher and the remote diagnostics
-(`debug-tools`). The `piano`, `portal` and `shield` device files list all of it,
-with lockdown switched off and every coexistence switch off, and each build serves
-every route of the control API contract. A build that lists `lockdown` gets a HOME
-filter on a disabled activity-alias of the kiosk Activity from its generated
-device manifest, so installing it adds no home candidate. Fully Kiosk Browser and the old helpers still
-run every device. The only hardware fact: on 2026-11-16 the phase 1 build was
-installed on the Portal beside the existing apps, its payload loaded and the
-control API answered. Nothing from phase 2 or phase 3 has run on a device.
+## Build and commissioning status
 
-Operating a device (routes, error codes, settings, the lifeline, the CLI) is
-covered in `__docs/reference/android/README.md`, and the kiosk capabilities (the
-page bridge, lockdown, the debug tools, the one-time grants) in
-`__docs/reference/android/kiosk.md`. Switching a device
-from Fully to this app is `__docs/runbooks/android/kiosk-cutover.md`. This file
-covers building.
+On November 18, 2026, source revision `1ff572300d` passed local qualification
+for supervised testing. It produced phone, Portal and Shield version 38, piano
+version 40 and the legacy Portal helper version 36. Match the APK to its entry
+in the private release record before a sitting. The hardware evidence so far
+is the November 16 Portal foundation smoke test. Fully and the existing helpers
+still operate the three kiosks. Phone acceptance and kiosk cutovers are pending.
+
+Start with the [Android operating reference](../../__docs/reference/android/README.md).
+After the integrated backend and web rollout, run [phone acceptance](../../__docs/runbooks/android/phone-acceptance.md).
+Then follow the [shared kiosk procedure](../../__docs/runbooks/android/kiosk-cutover.md)
+with the checklist for [Portal](../../__docs/runbooks/android/portal-cutover.md),
+[piano](../../__docs/runbooks/android/piano-cutover.md) or
+[Shield](../../__docs/runbooks/android/shield-cutover.md), in that order.
+The [phone reference](../../__docs/reference/android/phone.md) and
+[kiosk reference](../../__docs/reference/android/kiosk.md) describe each runtime.
 
 ## Layout
 

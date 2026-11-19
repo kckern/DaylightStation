@@ -784,6 +784,18 @@ rollback that skips one leaves two apps holding one device.
 
 ## Record
 
+For each kiosk, enter the first qualifying day after its
+[permanent build passes the post-install checks](#permanent-build-qualification).
+Record the APK digest from the installed device so the observation period can
+be traced to the exact build. Record a fresh start date after rollback or
+lifeline/ADB recovery.
+
+| Device | Permanent version and installed APK SHA-256 | Post-install workflow and cold boot passed on | Soak start | Fourteen clean days completed on |
+|---|---|---|---|---|
+| Portal | | | | |
+| Piano tablet | | | | |
+| Shield | | | | |
+
 | Device | Android | Stage reached | Date | Home candidates unchanged by install | Lifeline back after reboot (n of 3) | ADB back after reboot | Open failures |
 |---|---|---|---|---|---|---|---|
 | Portal | | | | | | | |

@@ -9,6 +9,8 @@ adding a device and adding a capability are covered in
 
 ## Status: built, nothing switched
 
+The [build README](../../../_extensions/daylight-android/README.md#build-and-commissioning-status) identifies the qualified revision and device versions. Start with [phone acceptance](../../runbooks/android/phone-acceptance.md), then use the [kiosk cutover procedure](../../runbooks/android/kiosk-cutover.md).
+
 **Nothing here runs a device yet.** Fully Kiosk Browser and the old helper apps
 still run all three devices. The kiosk capabilities are in the build and have never
 run on a device.
@@ -48,11 +50,10 @@ Switching a device from Fully to this app is a per-device procedure with its own
 checks: `__docs/runbooks/android/kiosk-cutover.md`. The backend adapters and the
 page's bridge wrapper are built separately against the same contract.
 
-The kiosk page cannot use the helper routes yet: the old helpers answered it on
-`localhost` with no token and with `Access-Control-Allow-Origin: *`; the control
-port needs the token and sends no CORS headers. The page reaches the app through
-`window.daylight` for what the bridge offers; how it reaches the helper routes
-(MIDI, the Bluetooth panel) is decided at each device's cutover.
+On the Daylight provider, trusted kiosk pages use the scoped native methods on
+`window.daylight` for piano tools and Portal input. The control port requires a
+token. Fully keeps the legacy helper transport during coexistence. Check the
+actual page workflow with the old helper stopped during each device sitting.
 
 ## Shell and payload
 

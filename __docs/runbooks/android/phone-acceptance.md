@@ -6,8 +6,7 @@ is from Android's documentation and from the backend's code as read. Mark each l
 "verified on the phone, <date>" or write down what happened instead. A line that
 was not run is "not run".
 
-What the build is: `__docs/reference/android/phone.md`. Building:
-`__docs/reference/android/README.md`.
+See the [phone capabilities](../../reference/android/phone.md) and [build instructions](../../../_extensions/daylight-android/README.md).
 
 Needs the owner's go-ahead before step A2. What installing does: the package
 `net.kckern.daylight.phone` is added to the owner's phone with a persistent
