@@ -198,3 +198,26 @@ test.describe('Feed product acceptance', () => {
     await expect(page.getByText('Downloaded body remains readable.', { exact: true })).toBeVisible();
   });
 });
+
+test.describe('Feed touch controls', () => {
+  test.use({ viewport: { width: 390, height: 850 }, hasTouch: true, serviceWorkers: 'block' });
+
+  test('reading and search choices keep a touch target and update their own state', async ({ page }) => {
+    await page.route('**/api/**', route => route.fulfill({ json: {} }));
+    await page.route('**/supervision/bootstrap', route => route.fulfill({ json: { enabled: false } }));
+    await page.routeWebSocket('**/*', () => {});
+    await installFeedRoutes(page);
+    await page.goto('/feed/search');
+    const mode = page.getByRole('combobox', { name: 'Mode', exact: true });
+    await expect(mode).toBeVisible();
+    expect((await mode.boundingBox()).height).toBeGreaterThanOrEqual(44);
+    await mode.selectOption('reader');
+    await expect(page).toHaveURL(/[?&]mode=reader/);
+    await page.getByLabel('Reading appearance').click();
+    const theme = page.getByRole('combobox', { name: 'Theme', exact: true });
+    expect((await theme.boundingBox()).height).toBeGreaterThanOrEqual(44);
+    await theme.selectOption('sepia');
+    await expect(theme).toHaveValue('sepia');
+    await expect(mode).toHaveValue('reader');
+  });
+});

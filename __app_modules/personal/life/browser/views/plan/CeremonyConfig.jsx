@@ -2,7 +2,7 @@ import { Stack, Paper, Text, Group, Badge, Switch } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
 import { IconCalendarEvent, IconFlame } from '@tabler/icons-react';
 import { useCeremonyConfig } from "../../hooks/useLifePlan.js";
-import { LifePage, LoadingState } from "../../components/index.js";
+import { LifePage, LoadingState, ErrorState } from "../../components/index.js";
 import { formatPeriodLabel } from "../../lib/format.js";
 
 const CEREMONY_TYPES = [
@@ -15,9 +15,14 @@ const CEREMONY_TYPES = [
 ];
 
 export function CeremonyConfig({ username }) {
-  const { config, current, loading, updateCadence } = useCeremonyConfig(username);
+  const { config, current, loading, error, refetch, updateCadence } = useCeremonyConfig(username);
 
   if (loading) return <LoadingState />;
+  if (error) return (
+    <LifePage title="Ceremonies">
+      <ErrorState label="Ceremonies" error={error} onRetry={refetch} />
+    </LifePage>
+  );
 
   const ceremonies = config?.ceremonies || {};
 

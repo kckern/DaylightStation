@@ -38,6 +38,10 @@ Apply these questions during discovery, design, diff review, integration testing
 | Separation of concerns | Can layout change without interrupting playback, writing a draft or duplicating a subscription? |
 | YAGNI | Which current workflow or acceptance case requires each new option, layer or dependency? |
 
+Feed uses the shared native `Select` for reading preferences, edition, search mode and highlight color. Auto uses it for place and service types. The surrounding label names the control. The feature owns its options and selected value. Compact density uses the shared touch target on coarse pointers.
+
+A day navigator receives calendar keys in `YYYY-MM-DD` form. The shared `addCalendarDays` helper shifts these keys independently of the device time zone. Health and Weekly Review keep their own rules for selecting today and limiting the range.
+
 ## Token contract
 
 `frontend/src/lib/theme/tokens.mjs` defines the base roles, motion values and control geometry. App packs in

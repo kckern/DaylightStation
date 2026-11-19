@@ -1,4 +1,5 @@
 import { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import { useApiResource } from '@/lib/hooks/useApiResource.js';
 import { browserPreference } from '@/lib/browserPreference.js';
 import getLogger from "../../../../../frontend/src/lib/logging/Logger.js";
 import { DaylightAPI } from "../../../../../frontend/src/lib/api.mjs";
@@ -38,35 +39,18 @@ export function useLifeUsername() {
  */
 export function useLifeUser() {
   const [selected, setSelected] = useState(memberPreference.read);
-  const [user, setUser] = useState(null);
   const [users, setUsers] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
+  const qs = selected ? `?username=${encodeURIComponent(selected)}` : '';
+  const identity = useApiResource(`api/v1/life/user${qs}`, { label: 'Life household member', logger: logger() });
+  const resolved = identity.data;
+  const matches = typeof resolved?.username === 'string' && !!resolved.username && (!selected || resolved.username === selected);
+  const user = matches ? resolved : null;
+  const error = identity.error?.message || (!identity.loading && !user ? 'Could not resolve the selected household member.' : null);
 
-  // Resolve the active user, re-running when the selection changes.
   useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      setLoading(true);
-      setError(null);
-      try {
-        const qs = selected ? `?username=${encodeURIComponent(selected)}` : '';
-        const json = await DaylightAPI(`api/v1/life/user${qs}`);
-        if (!cancelled) {
-          setUser(json);
-          logger().info('life.user.resolved', { username: json.username, selected: !!selected });
-        }
-      } catch (err) {
-        if (!cancelled) {
-          setError(err.message);
-          logger().warn('life.user.error', { error: err.message });
-        }
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    })();
-    return () => { cancelled = true; };
-  }, [selected]);
+    if (user) logger().info('life.user.resolved', { username: user.username, selected: !!selected });
+    else if (error) logger().warn('life.user.error', { error });
+  }, [user, error, selected]);
 
   // Load the household roster once for the switcher.
   useEffect(() => {
@@ -94,5 +78,5 @@ export function useLifeUser() {
     logger().info('life.user.switched', { username });
   }, []);
 
-  return { user, users, setUsername, loading, error };
+  return { user, users, setUsername, loading: identity.loading, error, retry: identity.reload };
 }

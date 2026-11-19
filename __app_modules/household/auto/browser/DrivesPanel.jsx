@@ -9,7 +9,7 @@
 // beside it is worth tapping.
 
 import { useState } from 'react';
-import { LoadingState, ErrorState, EmptyState, Sheet } from '@/lib/ui';
+import { LoadingState, ErrorState, EmptyState, Sheet, Select } from '@/lib/ui';
 import { formatDistance, formatDuration, formatDay, formatTime, formatSpeed } from "./format.js";
 import { autoApi } from "./useAutoApi.js";
 import FuelSheet from "./FuelSheet.jsx";
@@ -242,9 +242,9 @@ function NamePlaceSheet({ point, onClose, onSaved }) {
         </label>
         <label className="auto-field">
           <span>Kind</span>
-          <select className="ds-input" value={kind} onChange={(e) => setKind(e.target.value)}>
+          <Select density="compact" className="ds-input" value={kind} onChange={(e) => setKind(e.target.value)}>
             {PLACE_KINDS.map((k) => <option key={k} value={k}>{k}</option>)}
-          </select>
+          </Select>
         </label>
         {kind === 'fuel' && (
           <p className="auto-field__note">

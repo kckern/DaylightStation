@@ -1,3 +1,4 @@
+import { Select } from '@/lib/ui/Select.jsx';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { DaylightAPI } from "../../../../../frontend/src/lib/api.mjs";
@@ -129,7 +130,7 @@ export default function FeedSearch() {
         ))}
       </div>
       <form className="feed-search__advanced" aria-label="Search scope" onSubmit={submit}>
-        <label>Mode<select value={params.get('mode') || ''} onChange={event => setFilter('mode', event.target.value)}><option value="">Any</option><option value="reader">Reader</option><option value="headlines">Headlines</option><option value="scroll">Scroll</option></select></label>
+        <label>Mode<Select density="compact" value={params.get('mode') || ''} onChange={event => setFilter('mode', event.target.value)}><option value="">Any</option><option value="reader">Reader</option><option value="headlines">Headlines</option><option value="scroll">Scroll</option></Select></label>
         <label>Source<input value={source} onChange={event => setSource(event.target.value)} placeholder="Name or type" /></label>
         <label>From<input type="date" value={params.get('from') || ''} onChange={event => setFilter('from', event.target.value)} /></label>
         <label>To<input type="date" value={(params.get('to') || '').slice(0, 10)} onChange={event => setFilter('to', event.target.value ? `${event.target.value}T23:59:59.999Z` : '')} /></label>

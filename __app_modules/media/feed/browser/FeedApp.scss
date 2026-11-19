@@ -89,7 +89,8 @@
 
 .feed-tabs__icon { white-space: nowrap; }
 
-.feed-edition-picker select,
+.feed-edition-picker select { background: var(--feed-surface-2); }
+
 .feed-density-toggle,
 .feed-reading-settings summary {
   min-height: var(--feed-control);
@@ -163,7 +164,7 @@
   color: var(--feed-text-1);
 
   label { display: grid; gap: 0.3rem; font-size: 0.82rem; }
-  select { min-height: 40px; border: 1px solid var(--feed-border-strong); border-radius: var(--feed-radius-sm); background: var(--feed-surface-3); color: inherit; padding: 0.35rem; }
+  select { background: var(--feed-surface-3); }
 }
 
 .feed-data-controls {

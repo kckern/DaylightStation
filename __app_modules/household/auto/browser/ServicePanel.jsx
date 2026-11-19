@@ -8,7 +8,7 @@
 // schema and is deliberately not on this form until it would do something.
 
 import { useState } from 'react';
-import { LoadingState, ErrorState, EmptyState, Sheet } from '@/lib/ui';
+import { LoadingState, ErrorState, EmptyState, Sheet, Select } from '@/lib/ui';
 import { formatDay, formatMoney, formatDistance } from "./format.js";
 import { autoApi } from "./useAutoApi.js";
 import autoLog from "./autoLog.js";
@@ -162,9 +162,9 @@ function ServiceSheet({ vehicleId, types, onClose, onSaved }) {
       <form onSubmit={submit} aria-label="Log service">
         <label className="auto-field">
           <span>What was done</span>
-          <select className="ds-input" value={form.type} onChange={setType}>
+          <Select density="compact" className="ds-input" value={form.type} onChange={setType}>
             {types.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
-          </select>
+          </Select>
         </label>
 
         <div className="auto-field-row">

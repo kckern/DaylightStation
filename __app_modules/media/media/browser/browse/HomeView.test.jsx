@@ -4,7 +4,7 @@
 // where it played, and a lead into Browse when there is nothing to suggest.
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, within, fireEvent, waitFor } from '@testing-library/react';
+import { act, render, screen, within, fireEvent, waitFor } from '@testing-library/react';
 import { MantineProvider } from '@mantine/core';
 
 const apiMock = vi.fn();
@@ -26,6 +26,7 @@ vi.mock("../logging/mediaLog.js", () => {
 });
 
 import { HomeView, tileMeta } from "./HomeView.jsx";
+import { createFleetStore } from "../fleet/fleetStore.js";
 import { FleetContext } from "../fleet/FleetProvider.jsx";
 import { resetApiResourceCache } from "../../../../../frontend/src/lib/hooks/useApiResource.js";
 
@@ -78,10 +79,10 @@ const fleetStore = {
   subscribeAll: () => () => {},
 };
 
-function renderHome() {
+function renderHome(store = fleetStore) {
   return render(
     <MantineProvider>
-      <FleetContext.Provider value={{ store: fleetStore, devices: [] }}><HomeView /></FleetContext.Provider>
+      <FleetContext.Provider value={{ store, devices: [] }}><HomeView /></FleetContext.Provider>
     </MantineProvider>,
   );
 }
@@ -141,6 +142,18 @@ describe('HomeView start page', () => {
     expect(within(card).getByRole('button', { name: /Move here/ })).toBeInTheDocument();
     fireEvent.click(within(card).getByRole('button', { name: /Remote/ }));
     expect(push).toHaveBeenCalledWith('peek', { deviceId: 'livingroom-tv' });
+  });
+
+  it('offers Move here only after a live playback owner arrives for the suggested screen', async () => {
+    const store = createFleetStore();
+    renderHome(store);
+    const card = await screen.findByTestId('home-tile-now-on-livingroom-tv-plex:9');
+    expect(within(card).queryByRole('button', { name: /Move here/ })).toBeNull();
+    act(() => store.receive({
+      deviceId: 'livingroom-tv', ts: new Date().toISOString(),
+      snapshot: { currentItem: { contentId: 'plex:9' }, meta: { playbackOwner: { ownerInstanceId: 'tv', playbackRevision: 1 } } },
+    }));
+    expect(within(card).getByRole('button', { name: /Move here/ })).toBeInTheDocument();
   });
 
   it('labels recent items from any screen with where they played', async () => {

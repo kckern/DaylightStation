@@ -3,7 +3,7 @@ import { Stack, Paper, Text, Group, Badge, Progress, Button, TextInput, Select, 
 import { IconFlask } from '@tabler/icons-react';
 import { useBeliefs } from "../../hooks/useLifePlan.js";
 import { beliefConfidenceColor } from "../../theme/semantics.js";
-import { LifePage, LoadingState } from "../../components/index.js";
+import { LifePage, LoadingState, ErrorState } from "../../components/index.js";
 import { formatDate } from "../../lib/format.js";
 
 function stateColor(state) {
@@ -35,7 +35,7 @@ function EvidenceTimeline({ history = [] }) {
 }
 
 export function BeliefsView({ username }) {
-  const { beliefs, loading, addEvidence, createBelief } = useBeliefs(username);
+  const { beliefs, loading, error, refetch, addEvidence, createBelief } = useBeliefs(username);
   const [addingTo, setAddingTo] = useState(null);
   const [evidenceType, setEvidenceType] = useState('confirmation');
   const [evidenceNote, setEvidenceNote] = useState('');
@@ -47,6 +47,11 @@ export function BeliefsView({ username }) {
   const [createError, setCreateError] = useState(null);
 
   if (loading) return <LoadingState />;
+  if (error) return (
+    <LifePage title="Beliefs">
+      <ErrorState label="Beliefs" error={error} onRetry={refetch} />
+    </LifePage>
+  );
 
   const handleAddEvidence = async () => {
     if (!addingTo) return;

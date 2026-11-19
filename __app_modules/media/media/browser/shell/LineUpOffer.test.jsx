@@ -8,6 +8,7 @@ import { FleetContext } from "../fleet/FleetProvider.jsx";
 import { PeekContext } from "../peek/PeekContext.js";
 import { LocalSessionContext } from "../session/LocalSessionContext.js";
 import { DispatchContext } from "../cast/DispatchProvider.jsx";
+import { createSessionStore } from "../session/sessionStore.js";
 import { createFleetStore } from "../fleet/fleetStore.js";
 import { createLocalSessionController } from "../session/LocalSessionController.js";
 import { LineUpOffer, lineUpPeers, reportedSpot } from "./LineUpOffer.jsx";
@@ -75,6 +76,22 @@ describe('LineUpOffer', () => {
     await waitFor(() => expect(recordLocal).toHaveBeenCalledWith(expect.objectContaining({
       kind: 'lineUp', phase: 'confirmed', targetId: 'living', item: expect.objectContaining({ title: 'Hospital with Kitchen' }),
     })));
+  });
+
+  it('updates the local line-up offer independently of the selected remote', () => {
+    const remote = createSessionStore(snap('plex:1', 40));
+    const local = createSessionStore(snap('plex:other', 20));
+    const fleet = { store: createFleetStore(), devices: [], identity: { deviceId: 'browser:me' } };
+    render(<MantineProvider><FleetContext.Provider value={fleet}>
+      <LocalSessionContext.Provider value={{ controller: local }}>
+        <PeekContext.Provider value={{ getController: () => remote }}><LineUpOffer target={{ deviceId: 'living' }} /></PeekContext.Provider>
+      </LocalSessionContext.Provider>
+    </FleetContext.Provider></MantineProvider>);
+    expect(screen.queryByTestId('line-up-local')).toBeNull();
+    act(() => local.replace(snap('plex:1', 20)));
+    expect(screen.getByTestId('line-up-local')).toHaveTextContent('Line up with This device');
+    act(() => local.replace(snap('plex:other', 25)));
+    expect(screen.queryByTestId('line-up-local')).toBeNull();
   });
 
   it('offers nothing when no other screen plays the same item', () => {

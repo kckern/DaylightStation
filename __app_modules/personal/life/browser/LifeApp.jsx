@@ -9,9 +9,10 @@ import {
 import '@mantine/core/styles.css';
 import '@mantine/notifications/styles.css';
 import "./LifeApp.scss";
-import { AppThemeProvider, AppChrome, createAppLogger } from '@/lib/ui';
+import { AppThemeProvider, AppChrome, LoadingState, createAppLogger } from '@/lib/ui';
 import { configure } from "../../../../frontend/src/lib/logging/Logger.js";
 import useDocumentTitle from "../../../../frontend/src/hooks/useDocumentTitle.js";
+import { ErrorState } from './components/ErrorState.jsx';
 import { Dashboard } from "./views/now/Dashboard.jsx";
 import { LogBrowser } from "./views/log/LogBrowser.jsx";
 import { LogDayDetail } from "./views/log/LogDayDetail.jsx";
@@ -109,7 +110,7 @@ function LifeAppShell() {
   useDocumentTitle('Life');
   const navigate = useNavigate();
   const location = useLocation();
-  const { user: lifeUser, users: lifeUsers, setUsername } = useLifeUser();
+  const { user: lifeUser, users: lifeUsers, setUsername, error: identityError, retry: retryIdentity } = useLifeUser();
 
   // Render the in-app fallback channel for the notification service. Most
   // household members have no Telegram/HA push, so this WS toast is the only
@@ -157,7 +158,9 @@ function LifeAppShell() {
       >
         <div className="life-app-root">
           {activeTab === 'plan' && <PlanSecondaryNav pathname={location.pathname} />}
-          <Routes key={lifeUser?.username}>
+          {identityError ? <ErrorState label="Household member" error={identityError} onRetry={retryIdentity} />
+            : !lifeUser ? <LoadingState label="household member" />
+            : <Routes key={lifeUser.username}>
             <Route index element={<Navigate to="now" />} />
             <Route path="now" element={<Dashboard />} />
             <Route path="log" element={<LogBrowser />} />
@@ -171,9 +174,8 @@ function LifeAppShell() {
             <Route path="plan/qualities" element={<QualitiesView />} />
             <Route path="plan/ceremonies" element={<CeremonyConfig />} />
             <Route path="ceremony/:type" element={<CeremonyRoute />} />
-            {/* Gate on resolved user so agent memory keys to the right person */}
-            <Route path="coach" element={lifeUser ? <CoachChat userId={lifeUser.username} /> : null} />
-          </Routes>
+            <Route path="coach" element={<CoachChat userId={lifeUser.username} />} />
+          </Routes>}
         </div>
       </AppChrome>
     </LifeUserContext.Provider>

@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { act, renderHook, waitFor } from '@testing-library/react';
+import React from 'react';
+import { act, render, renderHook, waitFor } from '@testing-library/react';
 import { subscribeSkipCard, isSkipCardPaused } from './skipCardState.js';
 
 // Exercise the real Media data/effect hooks; only external HTTP and media IO are synthetic.
@@ -24,6 +25,8 @@ describe('installed Media playback presentation', () => {
     const store = contract.getLoadingPresentation();
     expect(store.subscribeLoadingSuppression).toBe(subscribeSkipCard);
     expect(store.getLoadingSuppression).toBe(isSkipCardPaused);
+    const overlay = render(<installed.PlayerOverlayLoading shouldRender isVisible stalled seconds={100} status="recovering" />);
+    expect(overlay.container.querySelector('.loading-overlay')).toBeInTheDocument();
     const el = document.createElement('video');
     el.pause = vi.fn();
     el.play = vi.fn(() => Promise.resolve());
@@ -35,6 +38,7 @@ describe('installed Media playback presentation', () => {
     await waitFor(() => expect(result.current.overlay).toBeTruthy());
     act(() => { el.currentTime = 2; el.dispatchEvent(new Event('timeupdate')); });
     await waitFor(() => expect(store.getLoadingSuppression()).toBe(true));
+    expect(overlay.container.querySelector('.loading-overlay')).toBeNull();
     expect(el.pause).toHaveBeenCalledTimes(1);
     expect(el.currentTime).toBeGreaterThan(5);
     expect(result.current.overlay.props.activeCard).toEqual({ text: 'Fixture card' });
@@ -43,6 +47,7 @@ describe('installed Media playback presentation', () => {
       .toThrow('already configured');
     unmount();
     expect(store.getLoadingSuppression()).toBe(false);
+    expect(overlay.container.querySelector('.loading-overlay')).toBeInTheDocument();
   });
 
   it('passes a badge (provisional when a mute is approximate) and a bumper summary to the overlay', async () => {

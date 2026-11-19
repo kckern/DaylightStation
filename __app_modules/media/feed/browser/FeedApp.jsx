@@ -1,3 +1,4 @@
+import { Select } from '@/lib/ui/Select.jsx';
 import { PlaybackFrame } from '@/lib/ui/AppFrame.jsx';
 import { lazy, Suspense, useCallback, useState, useEffect, useRef } from 'react';
 import { Routes, Route, NavLink, Navigate, Outlet, useParams, useLocation, useNavigate } from 'react-router-dom';
@@ -177,9 +178,9 @@ function FeedLayout() {
         {isHeadlines && headlinePages.length > 1 && (
           <label className="feed-edition-picker">
             <span className="feed-visually-hidden">Headline edition</span>
-            <select value={currentHeadlinePage} onChange={event => navigate(`/feed/headlines/${event.target.value}${location.search}`)}>
+            <Select density="compact" value={currentHeadlinePage} onChange={event => navigate(`/feed/headlines/${event.target.value}${location.search}`)}>
               {headlinePages.map(page => <option key={page.id} value={page.id}>{page.label}</option>)}
-            </select>
+            </Select>
           </label>
         )}
         <NavLink to="/feed/search" aria-label="Search feed history" className={({ isActive }) => `feed-tabs__icon ${isActive ? 'active' : ''}`}>Search</NavLink>
@@ -189,11 +190,11 @@ function FeedLayout() {
         <details className="feed-reading-settings">
           <summary aria-label="Reading appearance">Aa</summary>
           <div className="feed-reading-settings__panel">
-            <label>Theme<select value={readingPreferences.theme} onChange={event => setReadingPreference('theme', event.target.value)}><option value="dark">Dark</option><option value="sepia">Sepia</option><option value="light">Light</option></select></label>
-            <label>Text size<select value={readingPreferences.fontScale} onChange={event => setReadingPreference('fontScale', Number(event.target.value))}><option value="0.9">Small</option><option value="1">Standard</option><option value="1.15">Large</option><option value="1.3">Extra large</option></select></label>
-            <label>Line spacing<select value={readingPreferences.lineHeight} onChange={event => setReadingPreference('lineHeight', Number(event.target.value))}><option value="1.5">Tight</option><option value="1.65">Standard</option><option value="1.85">Relaxed</option></select></label>
-            <label>Reading width<select value={readingPreferences.measure} onChange={event => setReadingPreference('measure', Number(event.target.value))}><option value="56">Narrow</option><option value="72">Standard</option><option value="88">Wide</option></select></label>
-            <label>Scroll session<select value={readingPreferences.sessionBudget} onChange={event => setReadingPreference('sessionBudget', Number(event.target.value))}><option value="0">Until caught up</option><option value="30">30 items</option><option value="60">60 items</option><option value="100">100 items</option></select></label>
+            <label>Theme<Select density="compact" value={readingPreferences.theme} onChange={event => setReadingPreference('theme', event.target.value)}><option value="dark">Dark</option><option value="sepia">Sepia</option><option value="light">Light</option></Select></label>
+            <label>Text size<Select density="compact" value={readingPreferences.fontScale} onChange={event => setReadingPreference('fontScale', Number(event.target.value))}><option value="0.9">Small</option><option value="1">Standard</option><option value="1.15">Large</option><option value="1.3">Extra large</option></Select></label>
+            <label>Line spacing<Select density="compact" value={readingPreferences.lineHeight} onChange={event => setReadingPreference('lineHeight', Number(event.target.value))}><option value="1.5">Tight</option><option value="1.65">Standard</option><option value="1.85">Relaxed</option></Select></label>
+            <label>Reading width<Select density="compact" value={readingPreferences.measure} onChange={event => setReadingPreference('measure', Number(event.target.value))}><option value="56">Narrow</option><option value="72">Standard</option><option value="88">Wide</option></Select></label>
+            <label>Scroll session<Select density="compact" value={readingPreferences.sessionBudget} onChange={event => setReadingPreference('sessionBudget', Number(event.target.value))}><option value="0">Until caught up</option><option value="30">30 items</option><option value="60">60 items</option><option value="100">100 items</option></Select></label>
             <FeedDataControls onImported={() => Promise.all([refreshWorkspace(), refreshSummary()])} />
             {!!Object.keys(sourcePreferences).length && <div className="feed-source-preferences"><span>Adjusted sources</span>{Object.entries(sourcePreferences).map(([source, level]) => <div key={source}><span>{source} · {level}</span><button type="button" onClick={() => setSourcePreference(source, 'normal')}>Reset</button></div>)}</div>}
           </div>

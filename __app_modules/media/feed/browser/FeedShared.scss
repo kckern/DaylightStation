@@ -60,7 +60,7 @@
   margin: 0.75rem 0 1rem;
 
   label { display: grid; gap: 0.25rem; color: var(--feed-text-2); font-size: 0.8rem; }
-  select,
+  select { background: var(--feed-surface-2); }
   input { min-height: 40px; border: 1px solid var(--feed-border-strong); border-radius: var(--feed-radius-sm); background: var(--feed-surface-2); color: var(--feed-text-1); padding: 0.35rem 0.5rem; }
   button { @include feed-chip; align-self: end; min-height: 40px; }
 }

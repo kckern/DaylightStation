@@ -1,3 +1,4 @@
+import { Select } from '@/lib/ui/Select.jsx';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { DaylightAPI } from "../../../../../frontend/src/lib/api.mjs";
 import getLogger from "../../../../../frontend/src/lib/logging/Logger.js";
@@ -248,7 +249,7 @@ export default function AnnotationPanel({ item }) {
               <textarea ref={noteRef} value={note} maxLength={10000} rows={3} onChange={event => setNote(event.target.value)} placeholder="What do you want to remember?" />
             </label>
             <div className="feed-annotations__form-actions">
-              <label>Highlight <select value={color} onChange={event => setColor(event.target.value)}><option value="yellow">Yellow</option><option value="blue">Blue</option><option value="green">Green</option><option value="pink">Pink</option><option value="none">None</option></select></label>
+              <label>Highlight <Select density="compact" value={color} onChange={event => setColor(event.target.value)}><option value="yellow">Yellow</option><option value="blue">Blue</option><option value="green">Green</option><option value="pink">Pink</option><option value="none">None</option></Select></label>
               <button type="submit" disabled={saving || (!note.trim() && !quote.trim())}>{saving ? 'Saving…' : 'Save note'}</button>
             </div>
           </form>
