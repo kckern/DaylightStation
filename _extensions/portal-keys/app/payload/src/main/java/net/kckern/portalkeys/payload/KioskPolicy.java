@@ -8,7 +8,6 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.os.SystemClock;
-import android.os.UserManager;
 import org.json.JSONObject;
 
 /** Android policy enforcement; the helper is the DPC and Fully remains the Home app. */
@@ -20,14 +19,45 @@ final class KioskPolicy implements OwnerTransfer.Device {
     private final ComponentName fully = new ComponentName("de.ozerov.fully", "de.ozerov.fully.LauncherReplacement");
     private long appliedAt, launchedAt;
     private boolean policyApplied, statusBarDisabled;
-    private String error;
+    private String error, lastDrift;
+    private long driftRepairs;
+    private final PolicyReconciler.Device device = new PolicyReconciler.Device() {
+        @Override public void addPersistentHome() {
+            IntentFilter home = new IntentFilter(Intent.ACTION_MAIN);
+            home.addCategory(Intent.CATEGORY_HOME); home.addCategory(Intent.CATEGORY_DEFAULT);
+            manager.addPersistentPreferredActivity(admin, home, fully);
+        }
+        @Override public String[] lockTaskPackages() { return manager.getLockTaskPackages(admin); }
+        @Override public void setLockTaskPackages(String[] p) { manager.setLockTaskPackages(admin, p); }
+        @Override public int lockTaskFeatures() { return manager.getLockTaskFeatures(admin); }
+        @Override public void setLockTaskFeatures(int f) { manager.setLockTaskFeatures(admin, f); }
+        @Override public boolean disableStatusBar() { return manager.setStatusBarDisabled(admin, true); }
+        @Override public void disableKeyguard() { manager.setKeyguardDisabled(admin, true); }
+        @Override public boolean uninstallBlocked() { return manager.isUninstallBlocked(admin, FULLY_PACKAGE); }
+        @Override public void blockUninstall() { manager.setUninstallBlocked(admin, FULLY_PACKAGE, true); }
+        @Override public java.util.Set<String> restrictions() {
+            android.os.Bundle b = manager.getUserRestrictions(admin);
+            java.util.Set<String> out = new java.util.HashSet<>();
+            for (String k : b.keySet()) if (b.getBoolean(k)) out.add(k);
+            return out;
+        }
+        @Override public void addRestriction(String r) { manager.addUserRestriction(admin, r); }
+        @Override public void clearRestriction(String r) { manager.clearUserRestriction(admin, r); }
+        @Override public CharSequence organizationName() { return manager.getOrganizationName(admin); }
+        @Override public void setOrganizationName(String n) { manager.setOrganizationName(admin, n); }
+        @Override public boolean hidden(String pkg) { return manager.isApplicationHidden(admin, pkg); }
+        @Override public void setHidden(String pkg, boolean h) { manager.setApplicationHidden(admin, pkg, h); }
+        @Override public String webviewPackage() {
+            android.content.pm.PackageInfo w = android.webkit.WebView.getCurrentWebViewPackage();
+            return w == null ? null : w.packageName;
+        }
+    };
     /** Shared with PortalAdminReceiver in the shell, which sets the same key when ownership arrives. */
     static final String PREFS = "kiosk-policy", HOLD = "ownerTransferHold";
     private static final String FULLY_PACKAGE = "de.ozerov.fully";
-    private static final String[] RESTRICTIONS = {UserManager.DISALLOW_SAFE_BOOT, UserManager.DISALLOW_FACTORY_RESET,
-            UserManager.DISALLOW_ADD_USER, UserManager.DISALLOW_APPS_CONTROL};
-    private static final String[] BROWSERS = {"org.chromium.chrome", "com.android.chrome"};
-    private static final String[] SHELL_UI = {"com.facebook.alohaapps.controlcenter", "com.android.systemui"};
+    private static final String[] RESTRICTIONS = PolicyReconciler.RESTRICTIONS;
+    private static final String[] BROWSERS = PolicyReconciler.BROWSERS;
+    private static final String[] SHELL_UI = PolicyReconciler.SHELL_UI;
 
     KioskPolicy(Context context) {
         this.context = context;
@@ -45,26 +75,12 @@ final class KioskPolicy implements OwnerTransfer.Device {
         long now = SystemClock.elapsedRealtime();
         try {
             if (!policyApplied || !homeCorrect || now - appliedAt >= 5000) {
-                IntentFilter home = new IntentFilter(Intent.ACTION_MAIN);
-                home.addCategory(Intent.CATEGORY_HOME); home.addCategory(Intent.CATEGORY_DEFAULT);
-                manager.addPersistentPreferredActivity(admin, home, fully);
-                manager.setLockTaskPackages(admin, new String[]{"de.ozerov.fully"});
-                manager.setLockTaskFeatures(admin, DevicePolicyManager.LOCK_TASK_FEATURE_NONE);
-                statusBarDisabled = manager.setStatusBarDisabled(admin, true);
-                if (!statusBarDisabled) throw new IllegalStateException("status-bar-policy-rejected");
-                manager.setUninstallBlocked(admin, "de.ozerov.fully", true);
-                manager.clearUserRestriction(admin, UserManager.DISALLOW_CREATE_WINDOWS);
-                manager.setKeyguardDisabled(admin, true);
-                manager.setOrganizationName(admin, "School Portal");
-                for (String restriction : RESTRICTIONS) manager.addUserRestriction(admin, restriction);
-                // A second browser must not remain a fallback if Fully crashes.
-                android.content.pm.PackageInfo webview = android.webkit.WebView.getCurrentWebViewPackage();
-                for (String browser : BROWSERS) {
-                    if (webview == null || !browser.equals(webview.packageName)) manager.setApplicationHidden(admin, browser, true);
-                }
+                // Read back every 5 s, write only drift (see PolicyReconciler). Blind rewrites stalled Fully.
+                boolean firstPass = !policyApplied;
                 boolean hide = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getBoolean("hideShellUi", true);
-                manager.setApplicationHidden(admin, "com.facebook.alohaapps.controlcenter", hide);
-                manager.setApplicationHidden(admin, "com.android.systemui", hide);
+                java.util.List<String> writes = PolicyReconciler.reconcile(device, homeCorrect, firstPass, hide);
+                if (firstPass) statusBarDisabled = true;
+                else if (!writes.isEmpty()) { driftRepairs++; lastDrift = String.join(",", writes); }
                 appliedAt = now; policyApplied = true;
             }
             error = null;
@@ -88,7 +104,7 @@ final class KioskPolicy implements OwnerTransfer.Device {
         return (!locked || !homeCorrect) && guard.run(true,launch);
     }
     JSONObject status() throws Exception {
-        return new JSONObject().put("deviceOwner", isOwner()).put("policyApplied", policyApplied)
+        return new JSONObject().put("deviceOwner", isOwner()).put("policyApplied", policyApplied).put("driftRepairs", driftRepairs).put("lastDrift", lastDrift == null ? JSONObject.NULL : lastDrift)
                 .put("statusBarDisabled", statusBarDisabled).put("lockTaskLocked", locked())
                 .put("heldForOwnerTransfer", held())
                 .put("lockTaskMode", activities.getLockTaskModeState())
