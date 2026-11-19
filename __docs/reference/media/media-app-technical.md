@@ -1336,6 +1336,9 @@ view, so the wildcard replay alone would not reach it) and then follows
 sends `transport.pause` to every row playing/buffering, Stop all
 `transport.stop` to every active row, each through that screen's session
 controller (§4.3, or the browser route), plus this device's local session.
+Fleet and the dock also observe the local player feature store. This keeps
+Stop all available while music continues after its slideshow, and removes it
+when the music ends and no other target is active.
 Offline rows are not sent anything and are reported "not reachable"; a refusal
 or no answer within 8 s is "didn't answer". The ids actually paused are kept
 in `FleetProvider` (`quiet.resumable`) and Resume all sends `transport.play`

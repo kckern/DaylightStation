@@ -384,6 +384,41 @@ test('Health Coach yields Mod+K to its composer and restores the shortcut opener
   await expect(opener).toBeFocused();
 });
 
+test('Health Coach restores its tab transcript when local thread writes are unavailable', async ({ page }) => {
+  await page.addInitScript(() => {
+    const setItem = Storage.prototype.setItem;
+    Storage.prototype.setItem = function (key, value) {
+      if (this === localStorage && key.startsWith('daylight-station:agent-thread:')) {
+        throw new DOMException('Fixture storage quota', 'QuotaExceededError');
+      }
+      return setItem.call(this, key, value);
+    };
+  });
+  const requests = [];
+  await page.route('**/health/context', route => route.fulfill({ json: { userId: 'fixture' } }));
+  await page.route('**/agents/health-coach/run-stream', route => {
+    requests.push(route.request().postDataJSON());
+    const event = { type: 'text-delta', text: requests.length === 1 ? 'First fixture answer' : 'Second fixture answer' };
+    return route.fulfill({ contentType: 'text/event-stream', body: `data: ${JSON.stringify(event)}\n\ndata: {"type":"done"}\n\n` });
+  });
+  const composer = page.getByRole('main').getByPlaceholder(/^Ask…/);
+  const send = async prompt => {
+    await composer.fill(prompt);
+    await page.getByRole('main').getByRole('button', { name: 'Send message' }).click();
+  };
+
+  await page.goto('/health/coach');
+  await send('Review my fixture');
+  await expect(page.getByText('First fixture answer', { exact: true })).toBeVisible();
+  await expect.poll(() => page.evaluate(() => JSON.stringify(Object.values(sessionStorage)))).toContain('First fixture answer');
+  await page.reload();
+  await expect(page.getByText('First fixture answer', { exact: true })).toBeVisible();
+  await send('Continue that fixture');
+  await expect(page.getByText('Second fixture answer', { exact: true })).toBeVisible();
+  expect(requests.map(request => request.threadId)).toEqual([null, null]);
+  expect(requests[1].messages).toContainEqual({ role: 'assistant', content: 'First fixture answer' });
+});
+
 const healthStatusDate = '2026-09-24';
 const healthStatusPath = `/health?date=${healthStatusDate}`;
 const openDayStatus = { today: healthStatusDate, status: null, minCalories: 1800, fastedMeals: [] };

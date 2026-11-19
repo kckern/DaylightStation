@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { expect, it, vi } from 'vitest';
 import { DaylightAPI } from '../../../../frontend/src/lib/api.mjs';
 import AutoApp from './AutoApp.jsx';
@@ -105,8 +105,10 @@ function mockGarage({ failingResource, holdWrite } = {}) {
       odometer: { km: 320 }, fuel: { needsMoreData: true }, trip_count: 0,
     });
     if (path.includes('/journeys')) return Promise.resolve({ hidden: 1, journeys: [{
-      id: 'drive', title: 'Morning drive', stops: [], origin: { fix: { lat: 1, lon: 2 } },
+      id: 'drive', title: 'Morning drive', origin: { fix: { lat: 1, lon: 2 } },
+      has_fuel_stop: true, stops: [{ is_fuel_stop: true, place_id: 'station', arrived_at: '2026-10-08T15:00:00Z' }],
     }] });
+    if (path.endsWith('/fuel')) return Promise.resolve({ logs: [] });
     return Promise.resolve({});
   });
   return { reads, writes };
@@ -177,3 +179,36 @@ it.each([
   expect(reads.sort()).toEqual(tab === 'Drives' ? [other + '/fuel', other + '/journeys?shuffles=1'] : []);
   expect(screen.getByRole('heading', { name: 'Other wagon' })).toBeVisible();
 });
+
+it.each([
+  ['Fuel', 'Log a fill-up', 'Log a fill-up', 'Gallons', '5', '7', '/fuel'],
+  ['Service', 'Log service', 'Log service', 'Who did it', 'First shop', 'Second shop', '/service'],
+  ['Drives', 'Name this place', 'Name this place', 'What is it?', 'First place', 'Second place', 'places'],
+  ['Drives', 'Log the fill-up', 'Log a fill-up', 'Gallons', '5', '7', '/fuel'],
+])('keeps the reopened %s draft after saving from %s and closing before acknowledgement',
+  async (tab, open, title, field, first, second, resource) => {
+    let releaseWrite;
+    const { reads, writes } = mockGarage({ holdWrite: new Promise(resolve => { releaseWrite = resolve; }) });
+    render(<AutoApp />);
+    await selectButton('Wagon');
+    await selectButton(tab);
+    await selectButton(open);
+    const dialog = () => within(screen.getByRole('dialog', { name: title }));
+    fireEvent.change(dialog().getByLabelText(field), { target: { value: first } });
+    expect(dialog().getByRole('button', { name: 'Save' })).toBeEnabled();
+    fireEvent.submit(dialog().getByRole('form'));
+    const vehicle = vehiclesPath + '/wagon%20%232';
+    expect(writes).toEqual([resource === 'places' ? 'api/v1/automotive/places' : vehicle + resource]);
+
+    fireEvent.keyDown(document, { key: 'Escape' });
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: title })).toBeNull());
+    await selectButton(open);
+    fireEvent.change(dialog().getByLabelText(field), { target: { value: second } });
+
+    reads.length = 0;
+    await act(async () => releaseWrite({}));
+    const expectedReads = resource === 'places' ? [vehicle + '/fuel', vehicle + '/journeys'] : [vehicle, vehicle + resource];
+    expect(reads.sort()).toEqual(expectedReads);
+    expect(dialog().getByLabelText(field)).toHaveDisplayValue(second);
+    expect(writes).toHaveLength(1);
+  });

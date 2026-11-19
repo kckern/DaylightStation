@@ -14,6 +14,7 @@ import { formatDistance, formatDuration, formatDay, formatTime, formatSpeed } fr
 import { autoApi } from "./useAutoApi.js";
 import FuelSheet from "./FuelSheet.jsx";
 import autoLog from "./autoLog.js";
+import { useCloseAfterSave } from './useCloseAfterSave.js';
 
 const PLACE_KINDS = ['home', 'school', 'church', 'work', 'fuel', 'store', 'service', 'other'];
 
@@ -24,13 +25,12 @@ export default function DrivesPanel({
   const [naming, setNaming] = useState(null);
   const [fueling, setFueling] = useState(null);
 
-  if (loading) return <LoadingState label="drives" />;
-  if (error) return <ErrorState error={error} onRetry={onReload} label="Drives" />;
-
   const rows = journeys || [];
 
-  return (
-    <div className="auto-panel">
+  // Keep the opener mounted during a background refresh when rows are available.
+  const content = loading && !journeys ? <LoadingState label="drives" />
+    : error ? <ErrorState error={error} onRetry={onReload} label="Drives" />
+    : <div className="auto-panel">
       {rows.length === 0 ? (
         <EmptyState
           title="No drives yet"
@@ -61,7 +61,11 @@ export default function DrivesPanel({
             : `Show ${hidden} very short recording${hidden === 1 ? '' : 's'}`}
         </button>
       )}
+    </div>;
 
+  return (
+    <>
+      {content}
       {fueling && (
         <FuelSheet
           vehicleId={vehicleId}
@@ -76,7 +80,7 @@ export default function DrivesPanel({
           onClose={() => setNaming(null)}
         />
       )}
-    </div>
+    </>
   );
 }
 
@@ -207,6 +211,7 @@ function NamePlaceSheet({ point, onClose }) {
   const [kind, setKind] = useState('other');
   const [saving, setSaving] = useState(false);
   const [failure, setFailure] = useState(null);
+  const closeAfterSave = useCloseAfterSave(onClose);
 
   const submit = async (event) => {
     event.preventDefault();
@@ -216,7 +221,7 @@ function NamePlaceSheet({ point, onClose }) {
     try {
       await autoApi.namePlace({ label: label.trim(), kind, lat: point.fix.lat, lon: point.fix.lon });
       autoLog.info('place.named', { kind });
-      onClose();
+      closeAfterSave();
     } catch (err) {
       setFailure(err);
       autoLog.warn('place.name_failed', { error: err?.message });

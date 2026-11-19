@@ -138,6 +138,54 @@ test('Auto saves one fuel entry at phone height and reopens on Car', async ({ pa
   await expect(page.getByRole('button', { name: 'Car', exact: true })).toHaveAttribute('aria-current', 'page');
 });
 
+test('Auto preserves a reopened fuel draft when the earlier save is acknowledged', async ({ page }) => {
+  await page.routeWebSocket('**/*', () => {});
+  const car = '/api/v1/automotive/vehicles/sample';
+  let pendingSave;
+  let saved = false;
+  await page.route('**/automotive/**', route => {
+    const request = route.request();
+    const path = new URL(request.url()).pathname;
+    if (path === car + '/fuel' && request.method() === 'POST') {
+      pendingSave = route;
+      return;
+    }
+    if (path.endsWith('/vehicles')) {
+      return route.fulfill({ json: { vehicles: [{ id: 'sample', label: 'Sample' }] } });
+    }
+    if (path === car) {
+      return route.fulfill({ json: { odometer: { km: 123 }, fuel: { needsMoreData: true }, trip_count: 0 } });
+    }
+    if (path === car + '/fuel') {
+      const logs = saved ? [{ id: 'saved', date: '2026-10-08', volume_l: 20.82, price_total: 19.50 }] : [];
+      return route.fulfill({ json: { logs } });
+    }
+    return route.fulfill({ json: {} });
+  });
+
+  await page.goto('/auto');
+  await page.getByRole('button', { name: 'Fuel', exact: true }).click();
+  const opener = page.getByRole('button', { name: 'Log a fill-up' });
+  const dialog = page.getByRole('dialog', { name: 'Log a fill-up' });
+  await opener.press('Enter');
+  await dialog.getByLabel('Gallons').fill('5.5');
+  await dialog.getByRole('button', { name: 'Save', exact: true }).click();
+  await expect.poll(() => Boolean(pendingSave)).toBe(true);
+
+  await page.keyboard.press('Escape');
+  await expect(dialog).toBeHidden();
+  await expect(opener).toBeFocused();
+  await opener.press('Enter');
+  await dialog.getByLabel('Gallons').fill('7');
+
+  saved = true;
+  await pendingSave.fulfill({ json: { ok: true } });
+  await expect(page.getByText('$19.50', { exact: true })).toBeVisible();
+  await expect(dialog.getByLabel('Gallons')).toHaveValue('7');
+  await page.keyboard.press('Escape');
+  await expect(opener).toBeFocused();
+});
+
 test('Auto keeps fuel Save reachable when only the visual viewport shrinks', async ({ page }) => {
   await page.routeWebSocket('**/*', () => {});
   await page.route('https://fonts.googleapis.com/**', route => route.abort());

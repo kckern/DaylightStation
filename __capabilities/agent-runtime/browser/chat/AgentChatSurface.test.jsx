@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, fireEvent, screen, waitFor } from '@testing-library/react';
+import { act, render, fireEvent, screen, waitFor } from '@testing-library/react';
 import { useState } from 'react';
 import { MantineProvider } from '@mantine/core';
 import { AgentChatSurface, AgentConversationProvider, useAgentConversation } from "./AgentChatSurface.jsx";
@@ -50,7 +50,7 @@ describe('AgentChatSurface — basic rendering', () => {
     expect(container.querySelector('.coach-chat--overlay')).toBeTruthy();
   });
 
-  it.each([false, true])('lets overlay Escape dismiss without clearing the draft (mentions=%s)', withMentions => {
+  it.each([false, true])('lets overlay Escape dismiss without clearing the draft (mentions=%s)', async withMentions => {
     const onClose = vi.fn();
     render(<MantineProvider><DismissStackProvider>
       <Sheet open title="Coach" onClose={onClose}>
@@ -62,17 +62,18 @@ describe('AgentChatSurface — basic rendering', () => {
     input.focus();
     fireEvent.change(input, { target: { value: 'Keep this draft' } });
     fireEvent.keyDown(input, { key: 'Escape' });
-    expect(onClose).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
     expect(input.value).toBe('Keep this draft');
   });
 
   it('preserves a real thread while its view is closed and replaced', async () => {
+    const onComplete = vi.fn();
     globalThis.fetch = vi.fn(async () => new Response(
       'data: {"type":"text-delta","text":"Retained answer"}\n\ndata: {"type":"done"}\n\n',
       { headers: { 'Content-Type': 'text/event-stream' } },
     ));
     function Flow() {
-      const conversation = useAgentConversation({ agentId: 'fixture', userId: 'fixture' });
+      const conversation = useAgentConversation({ agentId: 'fixture', userId: 'fixture', onComplete });
       const [surface, setSurface] = useState('overlay');
       return <AgentConversationProvider conversation={conversation}>
         <button onClick={() => setSurface(null)}>Close view</button>
@@ -90,6 +91,24 @@ describe('AgentChatSurface — basic rendering', () => {
     fireEvent.click(screen.getByText('Open tab'));
     await waitFor(() => expect(screen.getByText('Retained answer')).toBeTruthy());
     expect(globalThis.fetch).toHaveBeenCalledTimes(1);
+    expect(onComplete).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not refresh app resources when a stream finishes after its conversation owner leaves', async () => {
+    const onComplete = vi.fn();
+    let finish;
+    const body = new ReadableStream({ start(controller) { finish = () => controller.close(); } });
+    globalThis.fetch = vi.fn(async () => new Response(body, { headers: { 'Content-Type': 'text/event-stream' } }));
+    const { unmount } = render(<MantineProvider>
+      <AgentChatSurface agentId="health-coach" userId="fixture" onComplete={onComplete} />
+    </MantineProvider>);
+    const input = screen.getByRole('textbox');
+    fireEvent.change(input, { target: { value: 'Review this fixture' } });
+    fireEvent.submit(input.closest('form'));
+    await waitFor(() => expect(globalThis.fetch).toHaveBeenCalledTimes(1));
+    unmount();
+    await act(async () => finish());
+    expect(onComplete).not.toHaveBeenCalled();
   });
 
   it('does NOT apply coach-chat--overlay for the default (light) variant', () => {

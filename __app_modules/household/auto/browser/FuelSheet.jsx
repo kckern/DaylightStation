@@ -17,6 +17,7 @@ import { useState } from 'react';
 import { Button, Sheet } from '@/lib/ui';
 import { autoApi } from "./useAutoApi.js";
 import autoLog from "./autoLog.js";
+import { useCloseAfterSave } from './useCloseAfterSave.js';
 
 /**
  * @param {object} props
@@ -37,6 +38,7 @@ export default function FuelSheet({ vehicleId, initial = {}, onClose }) {
   });
   const [saving, setSaving] = useState(false);
   const [failure, setFailure] = useState(null);
+  const closeAfterSave = useCloseAfterSave(onClose);
 
   const set = (key) => (event) => setForm((f) => ({
     ...f,
@@ -63,7 +65,7 @@ export default function FuelSheet({ vehicleId, initial = {}, onClose }) {
         partial: form.partial,
         fromPrompt: Boolean(initial.placeId),
       });
-      onClose();
+      closeAfterSave();
     } catch (err) {
       setFailure(err);
       autoLog.warn('fuel.log_failed', { error: err?.message });

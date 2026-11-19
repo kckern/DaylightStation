@@ -15,15 +15,14 @@ import FuelSheet from "./FuelSheet.jsx";
 export default function FuelPanel({ vehicleId, fuel, loading, error, onReload }) {
   const [sheet, setSheet] = useState(null);
 
-  if (loading) return <LoadingState label="fill-ups" />;
-  if (error) return <ErrorState error={error} onRetry={onReload} label="Fill-ups" />;
-
   const logs = fuel?.logs || [];
   const summary = fuel?.summary;
   const detected = fuel?.detected || [];
 
-  return (
-    <div className="auto-panel">
+  // Keep the opener mounted during a background refresh when rows are available.
+  const content = loading && !fuel ? <LoadingState label="fill-ups" />
+    : error ? <ErrorState error={error} onRetry={onReload} label="Fill-ups" />
+    : <div className="auto-panel">
       <button type="button" className="auto-btn auto-btn--primary auto-btn--block" onClick={() => setSheet({})}>
         Log a fill-up
       </button>
@@ -103,7 +102,11 @@ export default function FuelPanel({ vehicleId, fuel, loading, error, onReload })
           ))}
         </ul>
       )}
+    </div>;
 
+  return (
+    <>
+      {content}
       {sheet && (
         <FuelSheet
           vehicleId={vehicleId}
@@ -111,6 +114,6 @@ export default function FuelPanel({ vehicleId, fuel, loading, error, onReload })
           onClose={() => setSheet(null)}
         />
       )}
-    </div>
+    </>
   );
 }

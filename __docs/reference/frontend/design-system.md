@@ -266,6 +266,11 @@ When an editor allows typing during a write, let the acknowledgement update
 the Revert baseline for the submitted draft. Keep edits made after submission
 in the current draft and leave the Unsaved indicator visible.
 
+A panel can keep an open editor mounted alongside its resource feedback.
+The write refreshes the submitted resource on acknowledgement. Only the
+editor instance that submitted it can dismiss itself after the save.
+[Auto Fuel panel](../../../__app_modules/household/auto/browser/FuelPanel.jsx)
+
 Player configuration belongs to the page. Playback instances share the first
 request and its result, including the default when that request fails.
 

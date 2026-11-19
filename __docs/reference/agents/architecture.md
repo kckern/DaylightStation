@@ -179,6 +179,8 @@ The component consumes the streaming wire. As text deltas arrive, the assistant 
 
 When a turn finishes, the component captures token usage from the finish event and exposes it on the message metadata for any consumer that wants to display it.
 
+Health mounts one conversation above its coach views. It uses the same agent, user, and thread ID for a streamed turn and its tab transcript. If the browser refuses to store a new thread ID in local storage, the conversation uses the existing null thread and can still restore recent messages from session storage. A departed conversation cannot trigger a resource refresh when its stream settles.
+
 ---
 
 ## Reasoning patterns

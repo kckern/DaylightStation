@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { silentWave } from '../../../_fixtures/media/silentWave.mjs';
 
 test.use({ viewport: { width: 1440, height: 850 }, serviceWorkers: 'block' });
 
@@ -24,6 +25,60 @@ function returnToForeground(page) {
     document.dispatchEvent(new Event('visibilitychange'));
   });
 }
+
+test('Media Fleet removes Stop all after kept slideshow music ends', async ({ page }) => {
+  const photo = { contentId: 'plex:71', title: 'Slideshow photo', format: 'image', duration: 90 };
+  const song = {
+    id: 'plex:72', contentId: 'plex:72', title: 'Keep this song', format: 'audio',
+    mediaType: 'audio', mediaUrl: '/household-song.wav', duration: 30,
+  };
+  await page.addInitScript(photo => {
+    const updatedAt = new Date().toISOString();
+    localStorage.setItem('media-app.session', JSON.stringify({
+      schemaVersion: 1, sessionId: 'fixture', updatedAt, wasPlayingOnUnload: false,
+      snapshot: {
+        sessionId: 'fixture', state: 'paused', currentItem: photo, position: 0,
+        queue: { items: [{ ...photo, queueItemId: 'photo' }], currentIndex: 0, upNextCount: 0 },
+        config: { shuffle: false, repeat: 'off', shader: null, volume: 50, playbackRate: 1 },
+        meta: { ownerId: 'fixture', updatedAt },
+      },
+    }));
+  }, photo);
+  await page.route('**/household-song.wav', route => route.fulfill({ contentType: 'audio/wav', body: silentWave(30) }));
+  await page.route('**/api/**', route => {
+    const path = decodeURIComponent(new URL(route.request().url()).pathname);
+    if (path.endsWith('/supervision/bootstrap')) return route.fulfill({ json: { enabled: false } });
+    if (path.endsWith('/device/config')) return route.fulfill({ json: { devices: { lounge: { name: 'Lounge screen', fleet: true } } } });
+    if (path.endsWith('/media/screens')) return route.fulfill({ json: { screens: [{ id: 'fleet:lounge', name: 'Lounge screen', room: 'Den' }] } });
+    if (path.endsWith('/queue/plex:72')) return route.fulfill({ json: { items: [song] } });
+    if (path.endsWith('/play/plex:72')) return route.fulfill({ json: song });
+    if (path.endsWith('/search/stream')) {
+      const item = { id: song.id, source: 'plex', title: song.title, itemType: 'leaf', metadata: { type: 'track' } };
+      return route.fulfill({ contentType: 'text/event-stream', body: [
+        { event: 'results', source: 'plex', items: [item], pending: [] }, { event: 'complete' },
+      ].map(frame => `data: ${JSON.stringify(frame)}\n\n`).join('') });
+    }
+    return route.fulfill({ json: {} });
+  });
+
+  await page.goto('/media?view=fleet');
+  await page.getByTestId('mini-player-open-nowplaying').click();
+  await page.getByTestId('pf-music-add').click();
+  await page.getByPlaceholder('Search music…').fill(song.title);
+  await page.getByTestId('combobox-option-plex:72').click();
+  const music = page.getByTestId('music-behind-layer');
+  const audio = music.locator('audio[src$="household-song.wav"]');
+  await expect.poll(() => audio.evaluate(node => node.currentTime)).toBeGreaterThan(0);
+  await page.getByTestId('np-stop').click();
+  await page.getByTestId('pf-stop-keep-music').click();
+  await page.getByTestId('app-nav-fleet').click();
+
+  const stopAll = page.getByTestId('fleet-view').getByRole('button', { name: 'Stop all' });
+  await expect(stopAll).toBeEnabled();
+  await audio.dispatchEvent('ended');
+  await expect(music).toHaveCount(0);
+  await expect(stopAll).toHaveCount(0);
+});
 
 test('Media Home and the open cast picker share screen names and rooms', async ({ page }) => {
   const item = {

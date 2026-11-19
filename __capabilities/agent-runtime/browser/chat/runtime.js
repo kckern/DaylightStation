@@ -10,6 +10,7 @@
  * @returns {{ run: Function, runStream: AsyncGeneratorFunction }}
  */
 import { daylightApiResponse } from '../../../../frontend/src/lib/api.mjs';
+import { browserPreference } from '../../../../frontend/src/lib/browserPreference.js';
 import { parseSSE } from "../../../../frontend/src/lib/sse/parseSSE.js";
 
 // ---------------------------------------------------------------------------
@@ -18,41 +19,29 @@ import { parseSSE } from "../../../../frontend/src/lib/sse/parseSSE.js";
 
 const THREAD_PREFIX = 'daylight-station:agent-thread:';
 
-function getStorage() {
-  try {
-    if (typeof globalThis !== 'undefined' && globalThis.localStorage) return globalThis.localStorage;
-    if (typeof window !== 'undefined' && window.localStorage) return window.localStorage;
-  } catch {}
-  return null;
-}
+const threadPreference = (agentId, userId) => browserPreference(`${THREAD_PREFIX}${agentId}:${userId}`, null, value => value || null);
 
 export function getOrCreateThreadId(agentId, userId) {
   if (!agentId || !userId) return null;
-  const storage = getStorage();
-  if (!storage) return null;
-  const key = `${THREAD_PREFIX}${agentId}:${userId}`;
-  let id;
-  try { id = storage.getItem(key); } catch { return null; }
-  if (!id) {
-    id = `t-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
-    try { storage.setItem(key, id); } catch {}
-  }
-  return id;
+  const preference = threadPreference(agentId, userId);
+  const existing = preference.read();
+  if (existing) return existing;
+  preference.write(`t-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`);
+  // The tab transcript can fall back to the same null thread on reload when
+  // the browser will not save the generated ID.
+  return preference.read();
 }
 
 export function resetThread(agentId, userId) {
   if (!agentId || !userId) return;
-  const storage = getStorage();
-  if (!storage) return;
-  const key = `${THREAD_PREFIX}${agentId}:${userId}`;
-  try { storage.removeItem(key); } catch {}
+  threadPreference(agentId, userId).clear();
 }
 
 export function createAgentRuntime(agentId) {
   const runUrl = `/api/v1/agents/${agentId}/run`;
   const streamUrl = `/api/v1/agents/${agentId}/run-stream`;
 
-  function submit(url, messages, userId, attachments, context, signal) {
+  function submit(url, messages, userId, attachments, threadId, context, signal) {
     return daylightApiResponse(url, {
       method: 'POST',
       signal,
@@ -60,7 +49,7 @@ export function createAgentRuntime(agentId) {
         input: extractText(messages.at(-1)),
         context: { ...context, userId, attachments },
         messages: serializeMessages(messages),
-        threadId: getOrCreateThreadId(agentId, userId),
+        threadId,
       },
     });
   }
@@ -73,7 +62,7 @@ export function createAgentRuntime(agentId) {
      * @param {Array<object>} [args.attachments]
      */
     async run({ messages, userId, attachments = [] }) {
-      const res = await submit(runUrl, messages, userId, attachments);
+      const res = await submit(runUrl, messages, userId, attachments, getOrCreateThreadId(agentId, userId));
 
       if (!res.ok) {
         throw new Error(`Agent run failed: ${res.status} ${res.statusText || ''}`.trim());
@@ -87,8 +76,8 @@ export function createAgentRuntime(agentId) {
       };
     },
 
-    async *runStream({ messages, userId, attachments = [], abortSignal, context = null }) {
-      const res = await submit(streamUrl, messages, userId, attachments, context, abortSignal);
+    async *runStream({ messages, userId, attachments = [], abortSignal, context = null, threadId = getOrCreateThreadId(agentId, userId) }) {
+      const res = await submit(streamUrl, messages, userId, attachments, threadId, context, abortSignal);
 
       if (!res.ok || !res.body) {
         throw new Error(`Agent stream failed: ${res.status} ${res.statusText || ''}`.trim());

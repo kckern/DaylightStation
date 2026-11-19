@@ -12,6 +12,7 @@ import { LoadingState, ErrorState, EmptyState, Sheet, Select } from '@/lib/ui';
 import { formatDay, formatMoney, formatDistance } from "./format.js";
 import { autoApi } from "./useAutoApi.js";
 import autoLog from "./autoLog.js";
+import { useCloseAfterSave } from './useCloseAfterSave.js';
 
 /**
  * Fallback vocabulary, used only if the config-driven list hasn't arrived.
@@ -29,14 +30,13 @@ export default function ServicePanel({
   const [adding, setAdding] = useState(false);
   const types = serviceTypes?.length ? serviceTypes : FALLBACK_TYPES;
 
-  if (loading) return <LoadingState label="service history" />;
-  if (error) return <ErrorState error={error} onRetry={onReload} label="Service history" />;
-
   const records = service?.records || [];
   const due = (reminders || []).filter((r) => r.kind === 'service');
 
-  return (
-    <div className="auto-panel">
+  // Keep the opener mounted during a background refresh when rows are available.
+  const content = loading && !service ? <LoadingState label="service history" />
+    : error ? <ErrorState error={error} onRetry={onReload} label="Service history" />
+    : <div className="auto-panel">
       <button type="button" className="auto-btn auto-btn--primary auto-btn--block" onClick={() => setAdding(true)}>
         Log service
       </button>
@@ -83,7 +83,11 @@ export default function ServicePanel({
           ))}
         </ul>
       )}
+    </div>;
 
+  return (
+    <>
+      {content}
       {adding && (
         <ServiceSheet
           vehicleId={vehicleId}
@@ -91,7 +95,7 @@ export default function ServicePanel({
           onClose={() => setAdding(false)}
         />
       )}
-    </div>
+    </>
   );
 }
 
@@ -114,6 +118,7 @@ function ServiceSheet({ vehicleId, types, onClose }) {
   });
   const [saving, setSaving] = useState(false);
   const [failure, setFailure] = useState(null);
+  const closeAfterSave = useCloseAfterSave(onClose);
 
   const set = (key) => (event) => setForm((f) => ({ ...f, [key]: event.target.value }));
 
@@ -147,7 +152,7 @@ function ServiceSheet({ vehicleId, types, onClose }) {
         notes: form.notes,
       });
       autoLog.info('service.logged', { type: form.type, recurring: form.intervalMonths !== '' });
-      onClose();
+      closeAfterSave();
     } catch (err) {
       setFailure(err);
       autoLog.warn('service.log_failed', { error: err?.message });

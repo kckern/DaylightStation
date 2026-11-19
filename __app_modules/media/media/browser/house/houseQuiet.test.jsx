@@ -4,6 +4,9 @@
 import React from 'react';
 import { describe, it, expect, vi } from 'vitest';
 import { render, act } from '@testing-library/react';
+import { MantineProvider } from '@mantine/core';
+import { HouseQuietBar } from "./HouseQuietControls.jsx";
+import { getLocalPlayerFeatures } from "../session/localPlayerFeatures.js";
 import { planQuiet, useHouseQuiet } from "./houseQuiet.js";
 import { FleetContext } from "../fleet/FleetProvider.jsx";
 import { PeekContext } from "../peek/PeekContext.js";
@@ -79,6 +82,29 @@ function harness({ controllers, localTransport, resumable = null }) {
 }
 
 describe('useHouseQuiet', () => {
+  it('offers Stop all only while music remains on an otherwise idle device', () => {
+    const features = getLocalPlayerFeatures();
+    const fleet = { devices: [], store: { getEntry } };
+    const local = { controller: { subscribe: () => () => {}, getSnapshot: () => ({ state: 'idle' }) } };
+    const view = render(
+      <MantineProvider>
+        <FleetContext.Provider value={fleet}>
+          <LocalSessionContext.Provider value={local}><HouseQuietBar /></LocalSessionContext.Provider>
+        </FleetContext.Provider>
+      </MantineProvider>,
+    );
+    try {
+      expect(view.queryByRole('button', { name: 'Stop all' })).toBeNull();
+      act(() => features.setMusicState({ contentId: 'plex:5', state: 'playing' }));
+      expect(view.getByRole('button', { name: 'Stop all' })).toBeEnabled();
+      act(() => features.setMusicState(null));
+      expect(view.queryByRole('button', { name: 'Stop all' })).toBeNull();
+    } finally {
+      view.unmount();
+      features.setMusicState(null);
+    }
+  });
+
   it('Pause all remembers the screens it paused and reports the ones it could not reach', async () => {
     const tv = { transport: { pause: vi.fn(async () => ({ ok: true })) } };
     const local = { pause: vi.fn(), play: vi.fn(), stop: vi.fn() };

@@ -7,7 +7,8 @@ import {
   MessagePrimitive,
   unstable_useMentionAdapter,
 } from '@assistant-ui/react';
-import { createContext, useContext, useMemo, useEffect, useRef, useState } from 'react';
+import { createContext, useContext, useMemo, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { browserPreference } from '../../../../frontend/src/lib/browserPreference.js';
 import "./AgentChatSurface.scss";
 import { createAgentRuntime, getOrCreateThreadId } from "./runtime.js";
 import { MarkdownText } from "./MarkdownText.jsx";
@@ -28,16 +29,25 @@ import { ToolCallAttribution } from "./ToolCallAttribution.jsx";
  *   fetches suggestions on mount. When absent, the bare composer renders.
  */
 export function useAgentConversation({ agentId, userId, onComplete, context = null, persistSession = false }) {
-  const agentRuntime = useMemo(() => createAgentRuntime(agentId), [agentId]);
   const pendingMentionsRef = useRef([]);
   const contextRef = useRef(context);
   contextRef.current = context;
-  const sessionKey = persistSession ? `agent-session:${agentId}:${userId}:${getOrCreateThreadId(agentId, userId)}` : null;
-  const initialMessages = useMemo(() => {
-    if (!sessionKey) return undefined;
-    try { const messages = JSON.parse(sessionStorage.getItem(sessionKey) || '[]'); return Array.isArray(messages) ? messages : []; }
-    catch { return []; }
-  }, [sessionKey]);
+  const owner = useMemo(() => {
+    const agentRuntime = createAgentRuntime(agentId);
+    if (!persistSession) return { agentRuntime };
+    const threadId = getOrCreateThreadId(agentId, userId);
+    const transcript = browserPreference(`agent-session:${agentId}:${userId}:${threadId}`, [], raw => {
+      const messages = JSON.parse(raw);
+      return Array.isArray(messages) ? messages : null;
+    }, () => sessionStorage);
+    return { agentRuntime, threadId, transcript };
+  }, [agentId, userId, persistSession]);
+  const liveOwner = useRef(null);
+  useLayoutEffect(() => {
+    liveOwner.current = owner;
+    return () => { liveOwner.current = null; };
+  }, [owner]);
+  const initialMessages = useMemo(() => owner.transcript?.read(), [owner]);
 
   const adapter = useMemo(() => ({
     async *run({ messages, abortSignal }) {
@@ -46,30 +56,34 @@ export function useAgentConversation({ agentId, userId, onComplete, context = nu
         ...pendingMentionsRef.current,
       ];
       pendingMentionsRef.current = [];
-      try { for await (const chunk of agentRuntime.runStream({ messages, userId, attachments, abortSignal, context: contextRef.current })) {
-        yield {
-          content: chunk.content,
-          metadata: {
-            custom: {
-              toolCalls: chunk.metadata?.toolCalls ?? [],
+      try {
+        for await (const chunk of owner.agentRuntime.runStream({ messages, userId, attachments, abortSignal, context: contextRef.current, threadId: owner.threadId })) {
+          yield {
+            content: chunk.content,
+            metadata: {
+              custom: {
+                toolCalls: chunk.metadata?.toolCalls ?? [],
+              },
             },
-          },
-        };
-      } } finally { onComplete?.(); }
+          };
+        }
+      } finally {
+        if (liveOwner.current === owner) onComplete?.();
+      }
     },
-  }), [agentRuntime, userId, onComplete]);
+  }), [owner, userId, onComplete]);
 
   const runtime = useLocalRuntime(adapter, { initialMessages });
   useEffect(() => {
-    if (!sessionKey) return;
+    if (!owner.transcript) return;
     return runtime.thread.subscribe(() => {
       if (runtime.thread.getState().isRunning) return;
       const messages = runtime.thread.getState().messages.slice(-80).map(message => ({
         id: message.id, role: message.role, content: message.content, metadata: message.metadata,
       }));
-      try { sessionStorage.setItem(sessionKey, JSON.stringify(messages)); } catch { /* Session continuity remains in memory if storage is unavailable. */ }
+      owner.transcript.write(JSON.stringify(messages));
     });
-  }, [runtime, sessionKey]);
+  }, [runtime, owner]);
   return { runtime, pendingMentionsRef };
 }
 
