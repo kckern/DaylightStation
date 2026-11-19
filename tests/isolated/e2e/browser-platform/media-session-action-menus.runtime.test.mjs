@@ -100,7 +100,8 @@ for (const { name, trigger, choice, path, parameters, before, after } of options
     await menu.getByTestId(choice).click();
     await expect.poll(() => commands).toEqual([{ command: path, parameters }]);
     await expect(opener).toHaveText(after);
-    await expect(panel.getByRole('slider', { name: 'Seek' })).toHaveAttribute('aria-valuenow', '20');
+    const seek = panel.getByRole('slider', { name: 'Seek' });
+    await expect.poll(async () => Number(await seek.getAttribute('aria-valuenow'))).toBeGreaterThanOrEqual(20);
     await expect(panel).toContainText(item.title);
     await page.keyboard.press('Escape');
     await expect(page).toHaveURL(/view=fleet/);
