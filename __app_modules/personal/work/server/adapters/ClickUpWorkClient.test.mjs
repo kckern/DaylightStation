@@ -44,10 +44,72 @@ function setup() {
         workspace_id: 'workspace'
       }),
       getHouseholdAuth,
-      clock: () => 1000
+      clock: () => 1000,
+      timezone: () => 'America/Los_Angeles'
     })
   };
 }
+describe('ClickUp dueDate updates', () => {
+  const upd = (x, payload) => x.client.request({
+    username: 'sample',
+    operation: 'update_task',
+    ref,
+    payload
+  });
+  it('sends local-midnight ms in the user timezone with due_date_time false', async () => {
+    const x = setup();
+    await upd(x, {
+      dueDate: '2026-12-01'
+    });
+    expect(x.requests[0].body).toEqual({
+      due_date: Date.UTC(2026, 11, 1, 8),
+      due_date_time: false
+    });
+  });
+  it('honours DST: summer date is UTC-7', async () => {
+    const x = setup();
+    await upd(x, {
+      dueDate: '2026-07-01'
+    });
+    expect(x.requests[0].body.due_date).toBe(Date.UTC(2026, 6, 1, 7));
+  });
+  it('null clears the due date', async () => {
+    const x = setup();
+    await upd(x, {
+      dueDate: null
+    });
+    expect(x.requests[0].body).toEqual({
+      due_date: null,
+      due_date_time: false
+    });
+  });
+  it.each(['2026-13-01', '12/01/2026', 20261201, '2026-12-01T10:00'])('rejects malformed dueDate %s before HTTP', async bad => {
+    const x = setup();
+    await expect(upd(x, {
+      dueDate: bad
+    })).rejects.toThrow('INVALID_CLICKUP_WORK_REQUEST');
+    expect(x.requests).toEqual([]);
+  });
+  it('rejects a dueDate when no valid timezone is known', async () => {
+    const x = setup();
+    const c = new ClickUpWorkClient({
+      httpClient: x.httpClient,
+      getUserAuth: async () => ({
+        api_key: 'k',
+        workspace_id: 'workspace'
+      }),
+      clock: () => 1000
+    });
+    await expect(c.request({
+      username: 'sample',
+      operation: 'update_task',
+      ref,
+      payload: {
+        dueDate: '2026-12-01'
+      }
+    })).rejects.toThrow('INVALID_CLICKUP_WORK_REQUEST');
+  });
+});
 describe('ClickUp command transport', () => {
   it.each([['transition', 'PUT', '/task/9007199254740993123', {
     status: 'review'

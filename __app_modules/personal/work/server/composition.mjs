@@ -242,6 +242,7 @@ export function createWorkRuntime(options = {}) {
             httpClient: options.httpClient,
             getUserAuth: scopedAuth,
             clock,
+            timezone,
             canSend: ({
               username
             }) => canWrite(username)

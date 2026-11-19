@@ -202,7 +202,8 @@ export class ClickUpWorkProvider extends IWorkProvider {
     clickUpRequest({
       operation: command.operation,
       ref: command.ref,
-      payload
+      payload,
+      timezone: route.policy.timezone
     });
     return {
       payload
@@ -212,12 +213,12 @@ export class ClickUpWorkProvider extends IWorkProvider {
     if (live.failure) return false;
     if (['transition', 'complete', 'reopen'].includes(command.operation)) return live.item.status?.native === payload.status;
     if (command.operation === 'archive_task') return live.row.archived === true;
-    if (command.operation === 'update_task' || command.operation === 'rename_container') return Object.entries(payload).every(([key, value]) => live.item[key] === value);
+    if (command.operation === 'update_task' || command.operation === 'rename_container') return Object.entries(payload).every(([key, value]) => key === 'dueDate' ? (live.item.due?.date ?? null) === value : live.item[key] === value);
     return false;
   }
   #unrequestedChange(command, before, after) {
     const omitted = new Set(['version', 'observedAt', 'modifiedAt', 'completedAt']);
-    if (command.operation === 'update_task') Object.keys(command.payload).forEach(k => omitted.add(k));
+    if (command.operation === 'update_task') Object.keys(command.payload).forEach(k => omitted.add(k === 'dueDate' ? 'due' : k));
     if (['transition', 'complete', 'reopen'].includes(command.operation)) omitted.add('status');
     if (command.operation === 'rename_container') omitted.add('title');
     const select = item => Object.fromEntries(Object.entries(item).filter(([key]) => !omitted.has(key)));
