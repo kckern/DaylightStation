@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { GmailMailbox } from './GmailMailbox.mjs';
+import { MAILBOX_NOT_FOUND } from '../ports/IMailbox.mjs';
 
 const hdrs = (o) => Object.entries(o).map(([name, value]) => ({ name, value }));
 const gmErr = (code, reason) => Object.assign(new Error('x'), { code, errors: [{ reason }] });
@@ -142,6 +143,14 @@ describe('GmailMailbox', () => {
     await make(g).createDraft('u', { to: 'a@b.com', subject: 'Café', body: 'b' });
     const raw = Buffer.from(g.users.drafts.create.mock.calls[0][0].requestBody.message.raw, 'base64url').toString();
     expect(raw).toContain(`Subject: =?UTF-8?B?${Buffer.from('Café').toString('base64')}?=`);
+  });
+
+  it('a write on a draft or message that is gone throws MAILBOX_NOT_FOUND', async () => {
+    const g = fake();
+    g.users.drafts.get = vi.fn(async () => { throw gmErr(404, 'notFound'); });
+    await expect(make(g).updateDraft('u', 'gone', { body: 'x' })).rejects.toMatchObject({ code: MAILBOX_NOT_FOUND });
+    g.users.messages.modify = vi.fn(async () => { throw gmErr(404, 'notFound'); });
+    await expect(make(g).archive('u', 'gone')).rejects.toMatchObject({ code: MAILBOX_NOT_FOUND });
   });
 
   it('updateDraft preserves Cc, Bcc and threading', async () => {

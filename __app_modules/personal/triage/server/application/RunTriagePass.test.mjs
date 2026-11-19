@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { createRunTriagePass } from './RunTriagePass.mjs';
 import { createYamlTriageStore } from '../adapters/YamlTriageStore.mjs';
-import { MAILBOX_SCOPE_MISSING } from '../ports/IMailbox.mjs';
+import { MAILBOX_SCOPE_MISSING, MAILBOX_NOT_FOUND } from '../ports/IMailbox.mjs';
 import { refId } from '../domain/triageItem.mjs';
 
 const NOW = Date.parse('2026-11-19T05:00:00Z');
@@ -275,6 +275,34 @@ describe('RunTriagePass', () => {
     expect(cards[0].redraft).toBeUndefined();
   });
 
+  it('a re-carded reply whose draft was deleted gets a new draft, recorded on the card', async () => {
+    const s = setup({ messages: [msg('m1')], answers: { 'Weekly newsletter m1': { choice: 'reply', confidence: 0.9 } } });
+    await s.pass.run({ username: 'kc', trigger: 'schedule' });
+    s.mailbox.updateDraft.mockRejectedValueOnce(Object.assign(new Error('gone'), { code: MAILBOX_NOT_FOUND }));
+    s.mailbox.createDraft.mockResolvedValueOnce({ draftId: 'd2' });
+    s.aiGateway.chatStructured.mockResolvedValueOnce({ body: 'New answer.' });
+    s.state.messages = [msg('m1', { version: 'v2' })];
+    await s.pass.run({ username: 'kc', trigger: 'manual' });
+    expect(s.mailbox.createDraft).toHaveBeenCalledTimes(2);
+    expect((await s.queue())[0]).toMatchObject({ draftId: 'd2', draftBody: 'New answer.\n\nK C' });
+  });
+
+  it('a re-carded reply whose draft update fails otherwise keeps the new body and retries next pass', async () => {
+    const s = setup({ messages: [msg('m1')], answers: { 'Weekly newsletter m1': { choice: 'reply', confidence: 0.9 } } });
+    await s.pass.run({ username: 'kc', trigger: 'schedule' });
+    s.mailbox.updateDraft.mockRejectedValueOnce(new Error('503'));
+    s.aiGateway.chatStructured.mockResolvedValueOnce({ body: 'New answer.' });
+    s.state.messages = [msg('m1', { version: 'v2' })];
+    await s.pass.run({ username: 'kc', trigger: 'manual' });
+    expect((await s.queue())[0]).toMatchObject({ draftId: 'd1', draftBody: 'New answer.\n\nK C', redraft: true });
+    await s.pass.run({ username: 'kc', trigger: 'manual' });
+    expect(s.mailbox.updateDraft).toHaveBeenLastCalledWith('kc', 'd1', { body: 'New answer.\n\nK C' });
+    expect(s.aiGateway.chatStructured).toHaveBeenCalledTimes(2);
+    const [card] = await s.queue();
+    expect(card.redraft).toBeUndefined();
+    expect(s.mailbox.createDraft).toHaveBeenCalledTimes(1);
+  });
+
   it('a reply card left without a draft gets one on a later live pass', async () => {
     const s = setup({ messages: [msg('m1')], answers: { 'Weekly newsletter m1': { choice: 'reply', confidence: 0.9 } } });
     s.mailbox.createDraft.mockRejectedValueOnce(new Error('flaky'));
@@ -301,6 +329,26 @@ describe('RunTriagePass', () => {
     await s.pass.run({ username: 'kc', trigger: 'manual' });
     expect(s.work.commands.propose).toHaveBeenCalledTimes(1);
     expect(s.work.commands.propose.mock.calls[0][0].intent.ref.id).toBe('t2');
+  });
+
+  it('an overdue older copy and its fresh newer duplicate: exactly one is closed, in either order', async () => {
+    const older = task('t1', { title: 'Call plumber', createdAt: Date.parse('2025-12-01T00:00:00Z'),
+      due: { date: '2026-01-02', at: null, recurring: false, occurrenceId: null }, modifiedAt: Date.parse('2026-01-02T00:00:00Z') });
+    const newer = task('t2', { title: 'Call plumber', createdAt: NOW - 5 * DAY });
+    for (const [mode, todos] of [['live', [older, newer]], ['live', [newer, older]], ['dryRun', [older, newer]], ['dryRun', [newer, older]]]) {
+      const s = setup({ mode, todos });
+      const r = await s.pass.run({ username: 'kc', trigger: 'manual' });
+      const cards = await s.queue();
+      expect(cards).toHaveLength(mode === 'live' ? 1 : 2);
+      if (mode === 'live') {
+        expect(s.work.commands.propose).toHaveBeenCalledTimes(1);
+        expect(r.preDone.closed).toBe(1);
+      } else {
+        expect(s.work.commands.propose).not.toHaveBeenCalled();
+        expect(cards.filter((c) => c.why.startsWith('Would have closed: '))).toHaveLength(1);
+      }
+      expect(cards.filter((c) => /^Not closed automatically \(its twin is being closed\)/.test(c.why))).toHaveLength(1);
+    }
   });
 
   it('an uncertain close (or applied without an item) is logged with a reopen inverse and keeps the card', async () => {

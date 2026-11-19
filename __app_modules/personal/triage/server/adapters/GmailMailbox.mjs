@@ -1,4 +1,4 @@
-import { MAILBOX_SCOPE_MISSING } from '../ports/IMailbox.mjs';
+import { MAILBOX_SCOPE_MISSING, MAILBOX_NOT_FOUND } from '../ports/IMailbox.mjs';
 
 const HEADERS = ['From', 'To', 'Subject', 'List-Unsubscribe', 'Precedence', 'Auto-Submitted', 'Date'];
 const NOREPLY = /^(no-?reply|do-?not-?reply|notifications?|mailer-daemon|bounce)/i;
@@ -89,6 +89,10 @@ export class GmailMailbox {
         this.#flip(username, cap);
         this.#logger.warn?.('triage.mailbox.scope_missing', { username, op, capability: cap });
         throw this.#scopeError(cap, err);
+      }
+      if (isNotFound(err)) {
+        this.#logger.warn?.('triage.mailbox.write_target_gone', { username, op });
+        throw Object.assign(new Error(`mailbox ${op}: not found`), { code: MAILBOX_NOT_FOUND, cause: err });
       }
       this.#logger.error?.('triage.mailbox.write_failed', { username, op, error: err?.message });
       throw err;

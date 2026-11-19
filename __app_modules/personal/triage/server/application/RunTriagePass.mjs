@@ -11,7 +11,7 @@
 // - An item already carded or logged at the same version is not looked at again.
 import { itemFromMail, itemFromWork, cardIdFor } from '../domain/triageItem.mjs';
 import { emailGuardrails, todoAutoClose } from '../domain/guardrails.mjs';
-import { MAILBOX_SCOPE_MISSING } from '../ports/IMailbox.mjs';
+import { MAILBOX_SCOPE_MISSING, MAILBOX_NOT_FOUND } from '../ports/IMailbox.mjs';
 import { classifyEmail } from './classifyEmail.mjs';
 import { classifyTodo } from './classifyTodo.mjs';
 import { draftReply as defaultDraftReply } from './draftReply.mjs';
@@ -118,30 +118,38 @@ export function createRunTriagePass({
     return null;
   }
 
-  // A close is pre-done only from a complete work read; an exact duplicate only while its
-  // twin is still open in that same read (otherwise closing it could leave nothing open).
-  function closeBlocker(proposal, todos, autoClose) {
+  // A close is pre-done only from a complete work read, and never takes the last copy of a
+  // duplicate pair: an exact duplicate whose twin was closed (or would be, or may be) earlier
+  // in this pass stays open, and so does the twin of a duplicate closed earlier in the pass.
+  const refKey = (r) => JSON.stringify([r?.provider, r?.accountId, r?.kind, r?.id]);
+  function closeBlocker(item, todos, autoClose, closing) {
     if (!todos.complete) return 'work data may be out of date';
+    if (closing.survivors.has(refKey(item.ref))) return 'its twin is being closed';
     if (autoClose?.reason === 'exact_duplicate') {
       const twin = autoClose.duplicateOf;
-      const open = twin && todos.rows.some((r) => r.item.ref?.provider === twin.provider && r.item.ref?.accountId === twin.accountId
-        && r.item.ref?.kind === twin.kind && r.item.ref?.id === twin.id);
-      if (!open) return 'its twin is no longer open';
+      if (!twin || closing.closed.has(refKey(twin))) return 'its twin is being closed';
+      // todoAutoClose only matches a twin that is open in this same read; checked again here.
+      if (!todos.rows.some((r) => refKey(r.item.ref) === refKey(twin))) return 'its twin is no longer open';
     }
     return null;
   }
+  const markClosing = (closing, item, autoClose) => {
+    closing.closed.add(refKey(item.ref));
+    if (autoClose?.reason === 'exact_duplicate' && autoClose.duplicateOf) closing.survivors.add(refKey(autoClose.duplicateOf));
+  };
 
-  async function completeOne({ username, row, proposal, policy, ctx, passId, asOf, blocker }) {
+  async function completeOne({ username, row, proposal, policy, ctx, passId, asOf, blocker, autoClose, closing }) {
     const { item, domainId } = row;
-    if (policy.mode !== 'live') {
-      ctx.dryRunLog({ item, action: 'complete' });
-      return { ...proposal, why: `Would have closed: ${proposal.why}` };
-    }
     const notClosed = (reason) => {
       logger?.warn?.('triage.pass.close_failed', { username, passId, itemId: item.id, reason });
       return { ...proposal, why: `Not closed automatically: ${proposal.why}` };
     };
     if (blocker) return { ...notClosed(blocker), why: `Not closed automatically (${blocker}): ${proposal.why}` };
+    if (policy.mode !== 'live') {
+      markClosing(closing, item, autoClose);
+      ctx.dryRunLog({ item, action: 'complete' });
+      return { ...proposal, why: `Would have closed: ${proposal.why}` };
+    }
     const principal = work?.principal?.system?.({ username, job: SYSTEM_JOB }) ?? null;
     if (!principal || typeof work?.decisions?.confirmSystem !== 'function') return notClosed('principal_unavailable');
     try {
@@ -157,12 +165,14 @@ export function createRunTriagePass({
       const inverse = (version) => ({ action: 'reopen', ref: item.ref, payload: { domainId }, expectedVersion: version });
       const done = r?.outcome === 'applied' || r?.outcome === 'already_applied';
       if ((done && !r.item?.version) || r?.outcome === 'uncertain') {
+        markClosing(closing, item, autoClose);
         // It may have closed: leave a trail that can be undone, and keep the card.
         await ctx.appendLog({ item, action: 'complete', dryRun: false, uncertain: true, inverse: inverse(null) });
         logger?.warn?.('triage.pass.close_uncertain', { username, passId, itemId: item.id, outcome: r?.outcome, reason: r?.reason ?? null });
         return { ...proposal, why: `May have been closed: ${proposal.why}` };
       }
       if (!done) return notClosed(r?.reason ?? r?.outcome ?? 'failed');
+      markClosing(closing, item, autoClose);
       ctx.preDone.closed += 1;
       await ctx.appendLog({ item, action: 'complete', dryRun: false, inverse: inverse(r.item.version) });
       logger?.debug?.('triage.pass.closed', { username, passId, itemId: item.id });
@@ -173,40 +183,57 @@ export function createRunTriagePass({
   }
 
   // Drafts. Dry run writes nothing to the mailbox: the body stays on the card only.
-  // Live with compose: create the mailbox draft once per item; a re-carded item (its
-  // version changed) updates the draft it already has instead of making a second one.
-  async function draftFor({ username, card, policy, ctx, passId, persist }) {
-    const d = card.display ?? {};
+  // Live with compose: one mailbox draft per item. A re-carded item gets a fresh body
+  // (`regenerate`, this pass only) and its existing draft is updated (`redraft`, persisted
+  // until the update lands). A draft deleted in the mailbox is replaced by a new one.
+  async function draftFor({ username, card: input, policy, ctx, passId, persist }) {
+    const d = input.display ?? {};
     const live = policy.mode === 'live';
-    if (live && !ctx.canCompose) return card;
-    const needsBody = !card.draftBody || card.redraft;
-    if (!live && !needsBody) return card;
-    if (live && card.draftId && !card.redraft) return card;
-    let body = card.draftBody;
-    try {
-      if (needsBody) {
-        ({ body } = await draftReply({ aiGateway, message: { from: d.from, subject: d.title, snippet: d.snippet }, ownerName: ownerName(username) }));
-      }
-      if (!live) return { ...card, draftBody: body };
-      if (card.draftId) {
-        await mailbox.updateDraft(username, card.draftId, { body });
-        logger?.debug?.('triage.pass.draft_updated', { username, passId, itemId: card.itemId });
-        return persist({ ...card, draftBody: body });
-      }
-      const draft = await mailbox.createDraft(username, {
-        threadId: d.threadId ?? undefined, to: d.from?.address, subject: replySubject(d.title), body,
-      });
-      logger?.debug?.('triage.pass.drafted', { username, passId, itemId: card.itemId });
-      return persist({ ...card, draftId: draft.draftId, draftBody: body });
-    } catch (err) {
+    if (live && !ctx.canCompose) return input;
+    let card = input;
+    const fail = (err, keep) => {
       if (isScope(err)) { ctx.canCompose = false; ctx.mailbox = 'reconnect_needed'; }
       logger?.warn?.('triage.pass.draft_failed', { username, passId, itemId: card.itemId, error: err?.message, code: err?.code ?? null });
-      return card;
+      return keep;
+    };
+    if (card.regenerate || !card.draftBody) {
+      try {
+        const { body } = await draftReply({ aiGateway, message: { from: d.from, subject: d.title, snippet: d.snippet }, ownerName: ownerName(username) });
+        card = { ...card, draftBody: body, ...(card.draftId ? { redraft: true } : {}) };
+      } catch (err) {
+        return fail(err, input);
+      }
+    }
+    if (!live) return card;
+    if (card.draftId && card.redraft) {
+      try {
+        await mailbox.updateDraft(username, card.draftId, { body: card.draftBody });
+        const { redraft, ...done } = card;
+        logger?.debug?.('triage.pass.draft_updated', { username, passId, itemId: card.itemId });
+        return persist(done, 'updated');
+      } catch (err) {
+        if (err?.code !== MAILBOX_NOT_FOUND) return fail(err, card); // new body kept; retried next pass
+        logger?.info?.('triage.pass.draft_gone', { username, passId, itemId: card.itemId });
+        const { draftId, redraft, ...rest } = card;
+        card = rest;
+      }
+    }
+    if (card.draftId) return card;
+    try {
+      const draft = await mailbox.createDraft(username, {
+        threadId: d.threadId ?? undefined, to: d.from?.address, subject: replySubject(d.title), body: card.draftBody,
+      });
+      logger?.debug?.('triage.pass.drafted', { username, passId, itemId: card.itemId });
+      return persist({ ...card, draftId: draft.draftId }, 'created');
+    } catch (err) {
+      return fail(err, card);
     }
   }
 
   // An email card whose message is not in this listing (outside the window or past inboxMax)
   // is kept unless the mailbox says the message left the inbox. Unknown => keep.
+  // The port has no lighter lookup than getMessage (full fetch); these re-checks are few
+  // (open cards outside the listing only), so that cost is accepted.
   async function stillInInbox(username, card) {
     try {
       const m = await mailbox.getMessage(username, card.ref?.id);
@@ -291,7 +318,7 @@ export function createRunTriagePass({
       if (prev?.draftId || prev?.draftBody) {
         if (prev.draftId) card.draftId = prev.draftId;
         if (prev.draftBody) card.draftBody = prev.draftBody;
-        if (card.step === 'reply') card.redraft = true;
+        if (card.step === 'reply') card.regenerate = true;
       }
       return card;
     };
@@ -309,6 +336,7 @@ export function createRunTriagePass({
     }
 
     const openItems = (todos?.rows ?? []).map((r) => r.item);
+    const closing = { closed: new Set(), survivors: new Set() };
     for (const row of todos?.rows ?? []) {
       const { item } = row;
       if (seen.has(seenKey(item.id, item.version))) continue;
@@ -317,27 +345,28 @@ export function createRunTriagePass({
       logger?.debug?.('triage.pass.item', { username, passId, itemId: item.id, kind: 'todo', preDo: proposal.preDo?.action ?? null });
       let card = proposal;
       if (proposal.preDo?.action === 'complete') {
-        card = await completeOne({ username, row, proposal, policy, ctx, passId, asOf, blocker: closeBlocker(proposal, todos, autoClose) });
+        card = await completeOne({ username, row, proposal, policy, ctx, passId, asOf, autoClose, closing,
+          blocker: closeBlocker(item, todos, autoClose, closing) });
       }
       if (!card) continue;
       fresh.push(toCard(item, card, { domainId: row.domainId }));
     }
 
     let cards = [...kept, ...fresh];
-    const strip = (list) => list.map(({ redraft, ...c }) => c);
+    const strip = (list) => list.map(({ regenerate, ...c }) => c);
     // Checkpoint: the cards are durable before drafts and dry-run log entries are written.
     await store.writeQueue(username, { passId, builtAt: asOf, cards: strip(cards) });
     for (const entry of pendingDryRun) await ctx.appendLog(entry);
 
     // Drafts for open reply cards that lack one (including ones a crash or failure left
     // without). Each mailbox draft is persisted at once so a re-run does not make another.
-    let newDrafts = 0;
+    const drafts = { created: 0, updated: 0 };
     for (let i = 0; i < cards.length; i += 1) {
       const c = cards[i];
       if (c.kind !== 'email' || c.step !== 'reply' || c.status !== 'open') continue;
-      const persist = async (next) => {
+      const persist = async (next, how) => {
         cards[i] = next;
-        newDrafts += 1;
+        drafts[how] += 1;
         try {
           await store.writeQueue(username, { passId, builtAt: asOf, cards: strip(cards) });
         } catch (err) {
@@ -360,7 +389,7 @@ export function createRunTriagePass({
     const summary = { passId, preDone: ctx.preDone, queued, mailbox: ctx.mailbox };
     logger?.info?.('triage.pass.completed', {
       username, trigger, passId, mode: policy.mode, mailbox: ctx.mailbox,
-      archived: ctx.preDone.archived, closed: ctx.preDone.closed, newCards: fresh.length, mailboxDrafts: newDrafts, ...queued,
+      archived: ctx.preDone.archived, closed: ctx.preDone.closed, newCards: fresh.length, draftsCreated: drafts.created, draftsUpdated: drafts.updated, ...queued,
       emailRead: emails !== null, todosRead: todos !== null, todosComplete: todos?.complete ?? null,
     });
     return summary;

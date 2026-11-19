@@ -45,9 +45,11 @@
  * @property {(username: string, draftId: string) => Promise<{messageId: string}>} sendDraft
  *
  * Write methods throw an Error with `code: 'MAILBOX_SCOPE_MISSING'` when the
- * matching capability is false or the provider answers 403 insufficientPermissions.
+ * matching capability is false or the provider answers 403 insufficientPermissions,
+ * and `code: 'MAILBOX_NOT_FOUND'` when the message or draft no longer exists.
  *
  * Implemented by a mailbox adapter.
  */
 export const MAILBOX_SCOPE_MISSING = 'MAILBOX_SCOPE_MISSING';
+export const MAILBOX_NOT_FOUND = 'MAILBOX_NOT_FOUND';
 export default {};
