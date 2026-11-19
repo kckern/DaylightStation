@@ -176,3 +176,22 @@ test('playing with no window adds one service of media-service, not exported, an
   assert.deepEqual(EXPECTED_COMPONENTS['service net.kckern.daylight.cap.mediaservice.shell.PlayActionService'].foregroundServiceType,
     ['mediaPlayback']);
 });
+
+test('the setup screen has direct destinations for Home and Lifelog', () => {
+  const entries = Object.entries(phone.defaults);
+  const byPrefix = (prefix) => entries.filter(([key]) => key.startsWith(prefix)).map(([, value]) => value);
+  const bookmarks = Object.fromEntries(byPrefix('bookmarks.').map(row => {
+    const [id, , , path] = row.split('|');
+    return [id, path];
+  }));
+  assert.deepEqual(bookmarks, {media: '/media', call: '/call', health: '/health', home: '/home', lifelog: '/life/log'});
+  const actions = Object.fromEntries(byPrefix('actions.').filter(row => row.includes('|')).map(row => {
+    const [id, , , target] = row.split('|');
+    return [id, target];
+  }));
+  for (const id of Object.keys(bookmarks)) assert.equal(actions[id], 'bookmark:' + id);
+  for (const [id, target] of Object.entries({
+    journal: 'input:voice:journal', 'journal-note': 'input:text:journal-note',
+    meal: 'input:voice:meal', 'meal-note': 'input:text:meal-note', 'meal-photo': 'input:photo:meal-photo',
+  })) assert.equal(actions[id], target);
+});

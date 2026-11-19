@@ -88,6 +88,7 @@ public class PhoneHomeActivity extends Activity {
         loadError = null;
         call("phone-bookmarks", request("list").toString(), result -> {
             pages = result.optJSONArray("items");
+            if (pages == null) pages = new JSONArray();
             loading = false;
             draw();
         });
@@ -108,18 +109,18 @@ public class PhoneHomeActivity extends Activity {
         column.addView(label("Add to your Android home screen", 16, INK));
         if (loading) { column.addView(label("Loading services…", 16, INK)); return; }
         if (loadError != null) { row("Try again", loadError, "open", this::refresh); return; }
-        column.addView(label("Open a service", 20, INK));
+        column.addView(label("Services", 20, INK));
         for (int i = 0; i < pages.length(); i++) {
             JSONObject page = pages.optJSONObject(i);
             if (page == null) continue;
-            row(page.optString("label"), "Add shortcut", page.optString("icon"), () -> pinPage(page));
+            row(page.optString("label"), "Add to home screen", page.optString("icon"), () -> pinPage(page));
         }
         column.addView(label("Quick capture", 20, INK));
         for (ButtonFace.Choice choice : ButtonFace.choices(SurfaceCache.get(this, SurfaceKeys.ACTION_IDS),
                 key -> SurfaceCache.get(this, key))) {
             if (!choice.id.startsWith("journal") && !choice.id.startsWith("meal")) continue;
             String icon = SurfaceCache.get(this, SurfaceKeys.action(choice.id, SurfaceKeys.ICON));
-            row(choice.label, "Add shortcut", icon, () -> call("phone-pin-action", choice.id, result -> {}));
+            row(choice.label, "Add to home screen", icon, () -> call("phone-pin-action", choice.id, result -> {}));
         }
         column.addView(label("Play on demand", 20, INK));
         row("Play a playlist", "Choose a playlist for a one-tap widget", "play",

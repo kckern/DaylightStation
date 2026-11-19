@@ -41,9 +41,11 @@ defaults:
   webview.backButton: "history"
   # Pages of the site that an action, or a link without the install key, may open. Each
   # is "id|label|icon|path"; a path is a page of the site, never an API route.
-  bookmarks.1: "media|Media|play|/media"
+  bookmarks.1: "media|Media Browse|play|/media"
   bookmarks.3: "health|Health|health|/health"
   bookmarks.2: "call|Call|call|/call"
+  bookmarks.4: "home|Home|home|/home"
+  bookmarks.5: "lifelog|Lifelog|lifelog|/life/log"
   # Where a quick input goes is a settings line, input.dest.<n>: "id|label|kind|route",
   # the kind being voice, text or photo and the route a path under /api/v1/ on the
   # backend. The five of the intake contract are the capability's own defaults (journal,
@@ -62,12 +64,14 @@ defaults:
   actions.3: "meal-photo|Meal photo|camera|input:photo:meal-photo"
   actions.4: "journal-note|Journal text|note|input:text:journal-note"
   actions.5: "meal-note|Meal text|note|input:text:meal-note"
-  actions.6: "media|Media|play|bookmark:media"
+  actions.6: "media|Media Browse|play|bookmark:media"
   actions.7: "call|Call|call|bookmark:call"
   # PLACEHOLDER: "On my way". A tap says location sharing is not built yet and does
   # nothing else; the phone asks for no location permission. On no surface by default:
   # add its id to a list below (or a one-action button) to place it.
   actions.9: "health|Health|health|bookmark:health"
+  actions.10: "home|Home|home|bookmark:home"
+  actions.11: "lifelog|Lifelog|lifelog|bookmark:lifelog"
   actions.8: "omw|On my way|bolt|location:share"
   # Launcher (long-press) shortcuts, in order, and the action of each quick-settings
   # slot ("Daylight 1" to "Daylight 4"; an empty entry leaves a slot unassigned).
