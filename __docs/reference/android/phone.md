@@ -31,14 +31,14 @@ under "What the phone does not have".
 
 ## Phone home
 
-The app icon opens a native launcher. **Full screen** opens Media, Call, Health or
-a saved household page in Daylight. **Bookmarks** saves a named household URL or
-path, such as `/health/progress`. Tap a bookmark there to pin it to the Android
-home screen. Long-press a custom bookmark to remove it. The library uses the eight
-configured bookmark slots. **Widgets** lets you choose an action and confirm its
-one-touch button with the Android launcher. Existing Call widgets keep their saved
-assignment. Call requests camera and microphone access when needed.
+The Daylight app icon opens setup. Choose Health, Home, Lifelog, Media Browse or
+Call to add its own shortcut to Android Home. Journal and Meal capture shortcuts
+open the recorder, text form or camera directly from Android Home. Full Journal
+needs a supported mobile destination before it can be offered.
 
+Choose **Play a playlist** to pick a Plex playlist and add its named 1×1 widget.
+Tap it from Android Home to start playback. Android media controls pause or stop
+playback. Existing Call widgets keep their assignments.
 
 ## What makes it a phone and not a kiosk
 

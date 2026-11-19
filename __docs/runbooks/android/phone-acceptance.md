@@ -99,7 +99,7 @@ From the plan's list of what was unverified; each is answered only on the phone.
    Confirm the sideload is accepted. If it is refused, or Play Protect interrupts,
    record the exact message. The build targets SDK 33; a later Android may want
    `--bypass-low-target-sdk-block`.
-3. Open Daylight from the launcher. The native Full screen, Bookmarks and Widgets tabs appear. Open Health, go back, save a household bookmark and request its home-screen pin. In Widgets, select an action and confirm its button in the launcher. The launcher lists
+3. Open Daylight from the launcher. The setup screen offers service shortcuts, capture shortcuts and **Play a playlist**. Add Health and confirm Android placement. After leaving Daylight, tap Health directly on Android Home. Record placement and launch separately. The launcher lists
    the app once, and the phone does not offer it as a home app.
    `adb shell am start -n net.kckern.daylight.phone/net.kckern.daylight.shell.MainActivity`
    is refused: the setup activity is not exported.
