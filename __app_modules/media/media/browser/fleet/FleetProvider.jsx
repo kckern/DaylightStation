@@ -4,6 +4,7 @@
 // broadcasts, staleness from WS connection status.
 import React, { createContext, useEffect, useMemo, useReducer, useRef, useState, useSyncExternalStore } from 'react';
 import { useVisibleRefresh } from '@/lib/hooks/useVisibleRefresh.js';
+import { observeSocketStatus } from '../../../../../frontend/src/services/observeSocketStatus.js';
 import { subscribeTopic, subscribeTopicKind, onStatus, topics } from "../net/ws.js";
 import { useDevices } from "./useDevices.js";
 import { createFleetStore } from "./fleetStore.js";
@@ -142,19 +143,13 @@ export function FleetProvider({ children }) {
   }, [browserEntries]);
 
   useEffect(() => {
-    let previouslyConnected;
-    let reconnectPending = false;
-    return onStatus((status) => {
+    return observeSocketStatus(onStatus, (status, recovered) => {
       if (status && status.connected === false) {
-        if (previouslyConnected) reconnectPending = true;
-        previouslyConnected = false;
         setConnected(false);
         store.markAllStale({ exclude: id => id.startsWith('browser:') });
         mediaLog.wsDisconnected({});
       } else if (status && status.connected === true) {
-        previouslyConnected = true;
-        if (reconnectPending) {
-          reconnectPending = false;
+        if (recovered) {
           refresh();
           refreshRegistry();
         }

@@ -43,6 +43,15 @@ export function useReviewKeys(handlers, { enabled = true } = {}) {
       const lower = key.length === 1 ? key.toLowerCase() : key;
       const active = document.activeElement;
       if (key !== 'Escape' && isTypingTarget(active)) return;
+      // Keep the station shortcuts quiet and leave native dialog navigation alone.
+      if (h.helpOpen) {
+        if (key === '?' || key === 'Escape') {
+          e.preventDefault();
+          e.stopPropagation();
+          if (!e.repeat) h.escape?.();
+        }
+        return;
+      }
       // A modal owns the keyboard; a focused button keeps Space/Enter to press itself.
       if (key !== 'Escape' && (active?.closest?.('[role=dialog]') || e.target?.closest?.('[role=dialog]'))) return;
       if ((key === ' ' || key === 'Enter') && (active?.tagName === 'BUTTON' || active?.tagName === 'A' || active?.getAttribute?.('role') === 'button')) return;
@@ -56,8 +65,6 @@ export function useReviewKeys(handlers, { enabled = true } = {}) {
         return take(() => openRedo(false));
       }
       if (key === 'Escape') { if (h.escape?.()) take(); return; }
-      // The help sheet is read-only: only Esc and ? (which closes it) act while it is open.
-      if (h.helpOpen && key !== '?') return take();
       if (key === 'ArrowRight' || (key === 'Tab' && !e.shiftKey)) return take(h.next);
       if (key === 'ArrowLeft' || (key === 'Tab' && e.shiftKey)) return take(h.prev);
       if (key === ' ') return take(h.replay);

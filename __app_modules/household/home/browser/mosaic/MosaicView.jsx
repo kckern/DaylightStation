@@ -1,3 +1,4 @@
+import { browserPreference } from '@/lib/browserPreference.js';
 import { memo, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { SegmentedControl, UnstyledButton } from '@mantine/core';
 import { CHROME_SCROLL_CLASS, EmptyState, useDismissLayer } from '@/lib/ui';
@@ -12,20 +13,10 @@ import './MosaicView.scss';
 const logger = homeLogger.child({ component: 'mosaic' });
 
 const MODES = [{ value: 'room', label: 'By room' }, { value: 'type', label: 'By type' }];
-const MODE_KEY = 'home.mosaic.mode';
+const modePreference = browserPreference('home.mosaic.mode', 'room', saved =>
+  MODES.some(option => option.value === saved) ? saved : 'room');
 // A tap's compatibility mouse events land within this long of its pointerdown.
 const TOUCH_WINDOW_MS = 1000;
-
-// The grouping is a per-viewer convenience; storage may be unavailable.
-function readSavedMode() {
-  try {
-    const saved = window.localStorage.getItem(MODE_KEY);
-    return MODES.some((m) => m.value === saved) ? saved : 'room';
-  } catch { return 'room'; }
-}
-function saveMode(mode) {
-  try { window.localStorage.setItem(MODE_KEY, mode); } catch { /* storage unavailable */ }
-}
 
 /** The groups to draw: each with its squares' entities and tones, in server order. */
 function buildGroups(groups, byId, flags) {
@@ -131,7 +122,7 @@ function MosaicTooltip({ id, tip, text, boxRef }) {
  * tap).
  */
 export function MosaicView({ entities, mosaic, summary, haUrl, toggle }) {
-  const [mode, setMode] = useState(readSavedMode);
+  const [mode, setMode] = useState(modePreference.read);
   const [tip, setTip] = useState(null);
   const boxRef = useRef(null);
   const tipIdRef = useRef(null);
@@ -156,7 +147,7 @@ export function MosaicView({ entities, mosaic, summary, haUrl, toggle }) {
   const changeMode = (next) => {
     logger.info('home.mosaic.mode', { from: mode, to: next });
     setMode(next);
-    saveMode(next);
+    modePreference.write(next);
     setTip(null);
     tipIdRef.current = null;
   };

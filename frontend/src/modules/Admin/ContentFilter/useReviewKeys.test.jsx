@@ -71,6 +71,6 @@ describe('useReviewKeys', () => {
     for (const k of ['a', 'r', 'w', 'm', 'ArrowRight', ' ']) press(k);
     expect(h.verdict).not.toHaveBeenCalled(); expect(h.widen).not.toHaveBeenCalled(); expect(h.effect).not.toHaveBeenCalled();
     expect(h.next).not.toHaveBeenCalled(); expect(h.replay).not.toHaveBeenCalled();
-    press('?', { shiftKey: true }); expect(h.help).toHaveBeenCalled();
+    press('?', { shiftKey: true }); expect(h.escape).toHaveBeenCalled();
   });
 });

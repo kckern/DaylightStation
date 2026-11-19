@@ -68,6 +68,7 @@ it first:
   Garamonds, the clock's Droid Sans Mono, School's Kongtext) stays with that
   module.
 - Admin's palette lives in its pack. `frontend/src/modules/Admin/Admin.variables.scss` defines scoped legacy aliases for editors. The provider encloses an Admin portal target so controls and dialogs inherit the same colors.
+- Admin’s navigation uses the shared `md` breakpoint. At 768px the focused link stays in the visible rail. At 767px the rail collapses and its toggle takes focus if that link was focused. [Keyboard and resize tests](../../../tests/live/flow/admin/admin-navigation.runtime.test.mjs)
 
 Before route splitting, one 11 MB bundle loaded every app's CSS on every
 page. That hid these dependencies. Lib/ui, Life, Auto and Call had been

@@ -3,7 +3,7 @@ import { useLocation } from 'react-router-dom';
 import { Group, Burger, Text, Anchor, Box } from '@mantine/core';
 import { Link } from 'react-router-dom';
 
-function AdminHeader({ opened, toggle }) {
+function AdminHeader({ opened, toggle, opener }) {
   const location = useLocation();
 
   const pathParts = location.pathname.split('/').filter(Boolean);
@@ -54,7 +54,7 @@ function AdminHeader({ opened, toggle }) {
   return (
     <Group h="100%" px="md" justify="space-between">
       <Group gap="sm">
-        <Burger aria-label="Toggle admin navigation" aria-expanded={opened} opened={opened} onClick={toggle} hiddenFrom="sm" size="sm" />
+        <Burger ref={opener} aria-label="Toggle admin navigation" aria-expanded={opened} opened={opened} onClick={toggle} className="admin-navigation-toggle" size="sm" />
         <Box style={{ display: 'flex', alignItems: 'center' }}>
           {breadcrumbs}
         </Box>

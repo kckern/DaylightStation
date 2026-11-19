@@ -276,3 +276,79 @@ test('dirty editor navigation and catalog selection preserve the intended draft'
   await expect(page.getByRole('dialog')).toBeHidden();
   expect(saved).toEqual([expect.objectContaining({ label: 'Retained draft', input: 'plex:42' })]);
 });
+
+async function useCompactNavFixture(page) {
+  await page.setViewportSize({ width: 390, height: 850 });
+  await page.routeWebSocket('**/*', () => {});
+  await page.route('**/api/**', route => {
+    const { pathname } = new URL(route.request().url());
+    if (pathname.endsWith('/supervision/bootstrap')) return route.fulfill({ json: { enabled: false } });
+    if (pathname.endsWith('/admin/notifications')) return route.fulfill({ json: { quiet_hours: { enabled: false, start: '21:00', end: '07:00' }, cooldowns: {} } });
+    if (pathname.endsWith('/members/fixture')) return route.fulfill({ json: { member: { username: 'fixture', display_name: 'Fixture' } } });
+    return route.fulfill({ json: {} });
+  });
+}
+
+test('compact navigation restores keyboard focus on Escape, selection, and Back', async ({ page }) => {
+  await useCompactNavFixture(page);
+  await page.goto(`${BASE_URL}/admin/household/devices`);
+  const toggle = page.getByRole('button', { name: 'Toggle admin navigation' });
+  const nav = page.getByRole('navigation', { name: 'Primary' });
+  const devices = nav.getByRole('link', { name: 'Devices', exact: true });
+  const notifications = nav.getByRole('link', { name: 'Notifications', exact: true });
+  await toggle.press('Enter');
+  await expect(devices).toBeFocused();
+  await page.keyboard.press('Escape');
+  await expect(nav).toBeHidden();
+  await expect(toggle).toBeFocused();
+  await toggle.press('Enter');
+  await notifications.press('Enter');
+  await expect(page).toHaveURL(/\/admin\/system\/notifications$/);
+  await expect(nav).toBeHidden();
+  await expect(page.locator('.admin-content')).toBeFocused();
+  await toggle.press('Enter');
+  await expect(notifications).toBeFocused();
+  await page.goBack();
+  await expect(page).toHaveURL(/\/admin\/household\/devices$/);
+  await expect(nav).toBeHidden();
+  await expect(page.locator('.admin-content')).toBeFocused();
+});
+
+test('Escape dismisses a compact dirty-form confirmation before its navigation drawer', async ({ page }) => {
+  await useCompactNavFixture(page);
+  await page.goto(`${BASE_URL}/admin/household/members/fixture`);
+  const name = page.getByLabel('Display Name');
+  await name.fill('Unsaved');
+  const toggle = page.getByRole('button', { name: 'Toggle admin navigation' });
+  await toggle.press('Enter');
+  const nav = page.getByRole('navigation', { name: 'Primary' });
+  await nav.getByRole('link', { name: 'Notifications' }).press('Enter');
+  const dialog = page.getByRole('dialog', { name: 'Discard unsaved changes?' });
+  await expect(dialog).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(dialog).toBeHidden();
+  await expect(nav).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(toggle).toBeFocused();
+  await expect(nav).toBeHidden();
+  await expect(name).toHaveValue('Unsaved');
+});
+
+test('Admin keeps navigation focus visible across the 767px and 768px boundary', async ({ page }) => {
+  await useCompactNavFixture(page);
+  await page.setViewportSize({ width: 767, height: 850 });
+  await page.goto(`${BASE_URL}/admin/household/devices`);
+  const toggle = page.getByRole('button', { name: 'Toggle admin navigation' });
+  const nav = page.getByRole('navigation', { name: 'Primary' });
+  const devices = nav.getByRole('link', { name: 'Devices', exact: true });
+  await expect(nav).toBeHidden();
+  await toggle.press('Enter');
+  await expect(devices).toBeFocused();
+  await page.setViewportSize({ width: 768, height: 850 });
+  await expect(toggle).toBeHidden();
+  await expect(nav).toBeVisible();
+  await expect(devices).toBeFocused();
+  await page.setViewportSize({ width: 767, height: 850 });
+  await expect(nav).toBeHidden();
+  await expect(toggle).toBeFocused();
+});

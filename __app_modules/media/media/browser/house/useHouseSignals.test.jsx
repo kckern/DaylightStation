@@ -6,6 +6,7 @@ import { render, screen, waitFor, act } from '@testing-library/react';
 
 const wsHandlers = vi.hoisted(() => ({ kinds: new Map() }));
 vi.mock("../net/ws.js", () => ({
+  onStatus: cb => { wsHandlers.status = cb; return () => { wsHandlers.status = null; }; },
   subscribeTopicKind: (kind, cb) => { wsHandlers.kinds.set(kind, cb); return () => wsHandlers.kinds.delete(kind); },
   parseDeviceTopic: (topic) => { const i = topic.indexOf(':'); return { kind: topic.slice(0, i), deviceId: topic.slice(i + 1) }; },
 }));
@@ -68,4 +69,86 @@ describe('useStartedBy', () => {
     await waitFor(() => expect(screen.getByTestId('o')).toHaveTextContent("Dad's phone"));
     expect(api.startedBy).toHaveBeenCalledWith('fleet:office-tv');
   });
+});
+
+it('refreshes house attribution on foreground return and drops an older answer', async () => {
+  const visibility = vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible');
+  let release;
+  const item = name => ({ items: [{ deviceId: 'fleet:livingroom-tv', startedBy: { name } }] });
+  const api = { startedByAll: vi.fn()
+    .mockImplementationOnce(() => new Promise(resolve => { release = resolve; }))
+    .mockResolvedValueOnce(item('Current source')) };
+  try {
+    const { rerender } = render(<StartedByProbe api={api} playingKey="a" />);
+    visibility.mockReturnValue('hidden');
+    act(() => { document.dispatchEvent(new Event('visibilitychange')); });
+    rerender(<StartedByProbe api={api} playingKey="b" />);
+    expect(api.startedByAll).toHaveBeenCalledTimes(1);
+    visibility.mockReturnValue('visible');
+    act(() => { document.dispatchEvent(new Event('visibilitychange')); });
+    await screen.findByText('Current source');
+    await act(async () => { release(item('Previous source')); });
+    expect(screen.getByText('Current source')).toBeVisible();
+  } finally {
+    visibility.mockRestore();
+  }
+});
+
+it('drops a pending single-screen attribution when the screen is deselected', async () => {
+  let release;
+  const api = { startedBy: vi.fn(() => new Promise(resolve => { release = resolve; })) };
+  const { rerender } = render(<OneProbe api={api} deviceId="office-tv" contentId="plex:1" />);
+  rerender(<OneProbe api={api} deviceId={null} contentId={null} />);
+  await act(async () => { release({ startedBy: { name: 'Former screen' } }); });
+  expect(screen.getByTestId('o').textContent).toBe('-');
+});
+
+it('recovers missed start status once per reconnect and keeps a newer live update', async () => {
+  let finish;
+  const api = { startStatus: vi.fn()
+    .mockResolvedValueOnce({ status: null })
+    .mockImplementationOnce(() => new Promise(resolve => { finish = resolve; })) };
+  const { unmount } = render(<StatusProbe api={api} ids={['tv', 'browser:1']} />);
+  act(() => {
+    for (const connected of [false, true, true, false, false, true, true]) wsHandlers.status({ connected });
+  });
+  expect(api.startStatus.mock.calls).toEqual([['tv'], ['tv']]);
+  act(() => wsHandlers.kinds.get('device-start')({ topic: 'device-start:tv', phase: 'started', updatedAt: '2026-10-01T10:00:00Z' }));
+  await act(async () => finish({ status: { phase: 'starting', updatedAt: '2026-10-01T09:59:00Z' } }));
+  expect(screen.getByTestId('s')).toHaveTextContent('tv=started');
+  unmount();
+  expect(wsHandlers.status).toBeNull();
+});
+
+it('hides the former playback source as soon as the playing item changes', async () => {
+  const api = { startedByAll: vi.fn()
+    .mockResolvedValueOnce({ items: [{ deviceId: 'livingroom-tv', startedBy: { name: 'Former source' } }] })
+    .mockImplementationOnce(() => new Promise(() => {})) };
+  const { rerender } = render(<StartedByProbe api={api} playingKey="first track" />);
+  await screen.findByText('Former source');
+  rerender(<StartedByProbe api={api} playingKey="second track" />);
+  expect(screen.getByTestId('b').textContent).toBe('-');
+});
+
+it('clears start history lost at the server and preserves a live event after the read began', async () => {
+  const pending = new Map();
+  const api = { startStatus: vi.fn(async id => ({ status: { phase: 'failed' } })) };
+  render(<StatusProbe api={api} ids={['left', 'right']} />);
+  await screen.findByText('left=failed,right=failed');
+  api.startStatus.mockImplementation(id => new Promise(resolve => pending.set(id, resolve)));
+  act(() => {
+    for (const connected of [true, false, true]) wsHandlers.status({ connected });
+    wsHandlers.kinds.get('device-start')({ topic: 'device-start:right', phase: 'started' });
+  });
+  await act(async () => { for (const finish of pending.values()) finish({ status: null }); });
+  expect(screen.getByTestId('s')).toHaveTextContent('left=-,right=started');
+});
+
+it.each([undefined, '2026-10-01T10:00:00Z'])('keeps live status when a later HTTP reply has no newer timestamp (%s)', async updatedAt => {
+  let finish;
+  const api = { startStatus: vi.fn(() => new Promise(resolve => { finish = resolve; })) };
+  render(<StatusProbe api={api} ids={['tv']} />);
+  act(() => wsHandlers.kinds.get('device-start')({ topic: 'device-start:tv', phase: 'started', updatedAt }));
+  await act(async () => finish({ status: { phase: 'starting', updatedAt } }));
+  expect(screen.getByTestId('s')).toHaveTextContent('tv=started');
 });

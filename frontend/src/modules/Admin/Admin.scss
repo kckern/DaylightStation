@@ -1,3 +1,4 @@
+@use '../../styles/breakpoints' as bp;
 @import './Admin.variables.scss';
 
 // ──────────────────────────────────────────────
@@ -36,7 +37,10 @@
     @include ds-scrollbar;
   }
 
-  @media (max-width: 47.999em) {
+  .admin-navigation-toggle { display: none; }
+
+  @include bp.mobile-only {
+    .admin-navigation-toggle { display: inline-flex; }
     grid-template-columns: minmax(0, 1fr);
     grid-template-areas: "header" "main";
 

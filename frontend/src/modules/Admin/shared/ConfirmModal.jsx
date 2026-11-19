@@ -23,10 +23,11 @@ function ConfirmModal({
   message,
   impact,
   confirmLabel = 'Delete',
-  loading = false
+  loading = false,
+  closeOnEscape = true
 }) {
   return (
-    <Modal opened={opened} onClose={onClose} title={title} centered size="sm" transitionProps={{ transition: 'pop', duration: 150 }}>
+    <Modal opened={opened} onClose={onClose} closeOnEscape={closeOnEscape} title={title} centered size="sm" transitionProps={{ transition: 'pop', duration: 150 }}>
       <Stack gap="md">
         <Text size="sm">{message}</Text>
 

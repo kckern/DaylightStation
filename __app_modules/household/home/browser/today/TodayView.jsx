@@ -1,3 +1,4 @@
+import { browserPreference } from '@/lib/browserPreference.js';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { SegmentedControl } from '@mantine/core';
 import { LoadingState, ErrorState, EmptyState } from '@/lib/ui';
@@ -17,18 +18,8 @@ const RANGES = [
   { value: 'yesterday', label: 'Yesterday' },
   { value: 'week', label: 'Week' },
 ];
-const RANGE_KEY = 'home.today.range';
-
-// The range is a per-viewer convenience; storage may be unavailable.
-function readSavedRange() {
-  try {
-    const saved = window.localStorage.getItem(RANGE_KEY);
-    return RANGES.some((r) => r.value === saved) ? saved : 'today';
-  } catch { return 'today'; }
-}
-function saveRange(range) {
-  try { window.localStorage.setItem(RANGE_KEY, range); } catch { /* storage unavailable */ }
-}
+const rangePreference = browserPreference('home.today.range', 'today', saved =>
+  RANGES.some(option => option.value === saved) ? saved : 'today');
 
 /** The 6-hour guides and labels for a day, memoised per window. */
 function useTicks(timeZone) {
@@ -82,7 +73,7 @@ function Timeline({ timeline, onOpen }) {
  * adds (where the power goes, the rings' clips).
  */
 export function TodayView({ entities, rooms, summary, haUrl, toggle }) {
-  const [range, setRange] = useState(readSavedRange);
+  const [range, setRange] = useState(rangePreference.read);
   const [openLaneId, setOpenLaneId] = useState(null);
   const { timeline, loading, error, reload } = useTimeline(range);
   const sentence = useMemo(() => composeNow({ entities, rooms, summary }).sentences[0] || null, [entities, rooms, summary]);
@@ -97,7 +88,7 @@ export function TodayView({ entities, rooms, summary, haUrl, toggle }) {
   const changeRange = (next) => {
     logger.info('home.today.range', { from: range, to: next });
     setRange(next);
-    saveRange(next);
+    rangePreference.write(next);
   };
   const openLane = useCallback((lane) => {
     logger.info('home.lane.open', { laneId: lane.id, kind: lane.kind });

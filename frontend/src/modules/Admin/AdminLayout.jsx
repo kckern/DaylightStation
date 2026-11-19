@@ -1,26 +1,44 @@
-import React from 'react';
+import React, { useCallback, useLayoutEffect, useRef, useState } from 'react';
 import { Outlet, useLocation } from 'react-router-dom';
+import { DS_TOKENS } from '../../lib/theme/tokens.mjs';
 import { AppFrame } from '../../lib/ui/AppFrame.jsx';
-import { useDisclosure } from '@mantine/hooks';
+import { useMediaQuery } from '@mantine/hooks';
+import { DismissStackProvider } from '../../lib/ui/dismiss/DismissStackProvider.jsx';
 import AdminNav from './AdminNav.jsx';
 import AdminHeader from './AdminHeader.jsx';
 import { UnsavedGuardProvider } from './shared/UnsavedGuardContext.jsx';
 import './Admin.scss';
 
 function AdminLayout() {
-  const [opened, { toggle, close }] = useDisclosure();
-  const { pathname } = useLocation();
-  React.useEffect(close, [pathname, close]);
+  const { key } = useLocation();
+  const compact = useMediaQuery(`(max-width: ${DS_TOKENS.breakpoints.md - 1}px)`);
+  const [openAt, setOpenAt] = useState(null);
+  const opened = compact && openAt === key;
+  const opener = useRef(null);
+  const content = useRef(null);
+  const dismiss = useCallback(() => {
+    setOpenAt(null);
+    opener.current?.focus();
+  }, []);
+
+  useLayoutEffect(() => {
+    if (openAt === null || opened) return;
+    // A destination change hides the compact links, including the focused link.
+    if (compact && key !== openAt) content.current?.focus({ preventScroll: true });
+    setOpenAt(null);
+  }, [compact, key, openAt, opened]);
 
   return (
     <UnsavedGuardProvider>
-      <AppFrame
-        className={opened ? 'admin-layout admin-layout--menu-open' : 'admin-layout'}
-        header={<AdminHeader opened={opened} toggle={toggle} />}
-        navigation={<AdminNav />}
-      >
-        <div className="admin-content"><Outlet /></div>
-      </AppFrame>
+      <DismissStackProvider>
+        <AppFrame
+          className={opened ? 'admin-layout admin-layout--menu-open' : 'admin-layout'}
+          header={<AdminHeader opened={opened} opener={opener} toggle={() => opened ? dismiss() : setOpenAt(key)} />}
+          navigation={<AdminNav opened={opened} onDismiss={dismiss} />}
+        >
+          <div className="admin-content" ref={content} tabIndex={-1}><Outlet /></div>
+        </AppFrame>
+      </DismissStackProvider>
     </UnsavedGuardProvider>
   );
 }

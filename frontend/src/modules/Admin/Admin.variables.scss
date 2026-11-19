@@ -27,9 +27,9 @@
 
   // Spacing (4px grid)
   --ds-space-1:  4px;
-  --ds-space-2:  8px;
-  --ds-space-3:  12px;
-  --ds-space-4:  16px;
+  --ds-space-2:  var(--ds-space-sm);
+  --ds-space-3:  var(--ds-space-md);
+  --ds-space-4:  var(--ds-space-lg);
   --ds-space-5:  20px;
   --ds-space-6:  24px;
   --ds-space-8:  32px;

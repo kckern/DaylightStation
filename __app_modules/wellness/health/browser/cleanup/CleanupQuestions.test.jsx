@@ -1,8 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { act, render, renderHook, screen, fireEvent, waitFor } from '@testing-library/react';
 import { MantineProvider } from '@mantine/core';
 import { MemoryRouter, Routes, Route, useLocation } from 'react-router-dom';
-import { CleanupQuestions, cleanupPath } from "./CleanupQuestions.jsx";
+import { CleanupQuestions, cleanupPath, useCleanup } from "./CleanupQuestions.jsx";
 import { HealthSettings } from "./HealthSettings.jsx";
 import { resetApiResourceCache } from "../../../../../frontend/src/lib/hooks/useApiResource.js";
 const api = vi.fn();
@@ -43,6 +43,26 @@ describe('Health cleanup controls', () => {
     await screen.findByText('Food changed. Review it manually.');
     await waitFor(() => expect(screen.queryByText('Which fish?')).toBeNull());
     expect(screen.getByText('Food changed. Review it manually.')).toBeTruthy();
+  });
+  it('pauses cleanup polling in the background and reads once on foreground', async () => {
+    vi.useFakeTimers();
+    const visibility = vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible');
+    const cleanup = renderHook(() => useCleanup());
+    try {
+      await act(async () => {});
+      expect(api).toHaveBeenCalledTimes(1);
+      visibility.mockReturnValue('hidden');
+      fireEvent(document, new Event('visibilitychange'));
+      await act(async () => vi.advanceTimersByTimeAsync(45_000));
+      expect(api).toHaveBeenCalledTimes(1);
+      visibility.mockReturnValue('visible');
+      await act(async () => fireEvent(document, new Event('visibilitychange')));
+      expect(api).toHaveBeenCalledTimes(2);
+    } finally {
+      cleanup.unmount();
+      visibility.mockRestore();
+      vi.useRealTimers();
+    }
   });
   it('does not fetch for an inactive retained Today view', async () => {
     mount(<CleanupQuestions active={false} />);

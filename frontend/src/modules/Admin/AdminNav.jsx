@@ -1,7 +1,8 @@
-import React, { useState, useMemo, useCallback } from 'react';
+import React, { useState, useMemo, useCallback, useLayoutEffect, useRef } from 'react';
 import { NavLink as RouterNavLink, useLocation, useNavigate } from 'react-router-dom';
 import { NavLink, Stack, Text, Box } from '@mantine/core';
 import { useUnsavedGuardRegistry } from './shared/useUnsavedGuardRegistry.js';
+import { useDismissLayer } from '../../lib/ui/dismiss/useDismissLayer.js';
 import ConfirmModal from './shared/ConfirmModal.jsx';
 import getLogger from '../../lib/logging/Logger.js';
 import {
@@ -76,7 +77,8 @@ const navSections = [
   }
 ];
 
-function AdminNav() {
+function AdminNav({ opened, onDismiss }) {
+  const list = useRef(null);
   const location = useLocation();
   const navigate = useNavigate();
   const guardRegistry = useUnsavedGuardRegistry();
@@ -84,6 +86,15 @@ function AdminNav() {
 
   // Destination intercepted by the unsaved-changes guard (null = no modal).
   const [pendingTo, setPendingTo] = useState(null);
+
+  useDismissLayer(opened, onDismiss);
+  const cancelDiscard = useCallback(() => setPendingTo(null), []);
+  useDismissLayer(opened && pendingTo !== null, cancelDiscard);
+  useLayoutEffect(() => {
+    if (!opened) return;
+    const current = list.current.querySelector('[aria-current="page"]') || list.current.querySelector('a[href]');
+    current?.focus();
+  }, [opened]);
 
   // Intercept navigation while any registered editor is dirty (audit C1).
   const handleNavClick = useCallback((event, to) => {
@@ -103,8 +114,13 @@ function AdminNav() {
     }
   }, [pendingTo, navigate, logger]);
 
+  function handleBlur(event) {
+    // The browser drops focus when the compact breakpoint hides the focused rail.
+    if (!event.relatedTarget && !event.currentTarget.getClientRects().length) onDismiss?.();
+  }
+
   return (
-    <Stack gap={0} className="ds-nav">
+    <Stack onBlur={handleBlur} ref={list} gap={0} className="ds-nav">
       {/* Brand */}
       <Box className="ds-nav-brand" py="md" px="md" mb="sm">
         <Text
@@ -164,7 +180,8 @@ function AdminNav() {
 
       <ConfirmModal
         opened={pendingTo !== null}
-        onClose={() => setPendingTo(null)}
+        onClose={cancelDiscard}
+        closeOnEscape={!opened}
         onConfirm={handleDiscardConfirm}
         title="Discard unsaved changes?"
         message="You have unsaved changes on this page."

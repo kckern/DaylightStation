@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from 'react';
+import { useVisibleRefresh } from '../../../../../frontend/src/lib/hooks/useVisibleRefresh.js';
+import { useRef, useState } from 'react';
 import { Button, Group, Stack, Text, Textarea } from '@mantine/core';
 import { SectionCard } from "../../../../../frontend/src/lib/ui/index.js";
 import { useApiResource } from "../../../../../frontend/src/lib/hooks/useApiResource.js";
@@ -8,11 +9,7 @@ import { refreshHealthResources } from "../healthResources.js";
 export const cleanupPath = 'api/v1/health/nutrition/cleanup';
 export function useCleanup(active = true) {
   const resource = useApiResource(cleanupPath, { enabled: active, swr: true });
-  useEffect(() => {
-    if (!active) return undefined;
-    const timer = setInterval(resource.reload, 15000);
-    return () => clearInterval(timer);
-  }, [active, resource.reload]);
+  useVisibleRefresh({ active, intervalMs: 15000, reload: resource.reload });
   return resource;
 }
 

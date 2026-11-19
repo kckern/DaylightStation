@@ -2,12 +2,14 @@ import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Stack, Text, SimpleGrid, Card, Badge, Button, Group, Modal,
-  TextInput, Select, Loader, Center, Alert
+  TextInput, Select, Alert
 } from '@mantine/core';
-import { IconPlus, IconAlertCircle, IconDevices } from '@tabler/icons-react';
+import { IconPlus, IconAlertCircle } from '@tabler/icons-react';
 import {EnforcementStatus} from '../../../../../__app_modules/household/supervision/browser/index.js';
 import { useApiResource } from '../../../lib/hooks/useApiResource.js';
 import { DaylightAPI } from '../../../lib/api.mjs';
+
+import { EmptyState, ErrorState, LoadingState } from '../../../lib/ui/states.jsx';
 
 const DEVICES_PATH = '/api/v1/admin/household/devices';
 
@@ -67,8 +69,9 @@ function DevicesIndex() {
     return Object.keys(errors).length === 0;
   };
 
-  const handleCreateSubmit = async () => {
-    if (!validateCreateForm()) return;
+  const handleCreateSubmit = async event => {
+    event.preventDefault();
+    if (creating || !validateCreateForm()) return;
     setCreating(true);
     try {
       const payload = {
@@ -80,28 +83,21 @@ function DevicesIndex() {
       setCreateModalOpen(false);
       setCreateForm({ id: '', type: 'shield-tv' });
       setCreateErrors({});
-    } catch {
-      // error displayed via general error state
+    } catch (err) {
+      setCreateErrors({ submit: err.message || 'Could not add device. Try again.' });
     } finally {
       setCreating(false);
     }
   };
 
-  if (loading) {
-    return (
-      <Center h="60vh">
-        <Loader size="lg" />
-      </Center>
-    );
-  }
+  if (loading) return <LoadingState label="devices" />;
+  if (error) return <ErrorState label="Devices" error={error} onRetry={reload} />;
 
-  if (error) {
-    return (
-      <Alert icon={<IconAlertCircle size={16} />} color="red" title="Error loading devices">
-        {error.message || 'Failed to load device list'}
-      </Alert>
-    );
-  }
+  const closeCreate = () => {
+    if (creating) return;
+    setCreateModalOpen(false);
+    setCreateErrors({});
+  };
 
   return (
     <Stack gap="lg">
@@ -155,43 +151,38 @@ function DevicesIndex() {
           ))}
         </SimpleGrid>
       ) : (
-        <Center h="40vh">
-          <Stack align="center">
-            <IconDevices size={48} stroke={1} color="gray" />
-            <Text c="dimmed">No devices found. Add one to get started.</Text>
-          </Stack>
-        </Center>
+        <EmptyState title="No devices found" hint="Add a device to get started." />
       )}
 
       {/* Add Device Modal */}
       <Modal
         opened={createModalOpen}
-        onClose={() => {
-          setCreateModalOpen(false);
-          setCreateErrors({});
-        }}
+        onClose={closeCreate}
         title="Add Device"
       >
-        <Stack gap="md">
+        <Stack component="form" gap="md" onSubmit={handleCreateSubmit}>
           <TextInput
             label="Device ID"
             placeholder="living-room-shield"
             required
+            disabled={creating}
             value={createForm.id}
             onChange={(e) => handleCreateFormChange('id', e.currentTarget.value)}
             error={createErrors.id}
           />
           <Select
             label="Type"
+            disabled={creating}
             data={DEVICE_TYPE_OPTIONS}
             value={createForm.type}
             onChange={(value) => handleCreateFormChange('type', value)}
           />
+          {createErrors.submit && <Alert role="alert" color="red" icon={<IconAlertCircle size={16} />}>{createErrors.submit}</Alert>}
           <Group justify="flex-end">
-            <Button variant="default" onClick={() => setCreateModalOpen(false)}>
+            <Button type="button" variant="default" disabled={creating} onClick={closeCreate}>
               Cancel
             </Button>
-            <Button onClick={handleCreateSubmit} loading={creating}>
+            <Button type="submit" loading={creating}>
               Add Device
             </Button>
           </Group>
