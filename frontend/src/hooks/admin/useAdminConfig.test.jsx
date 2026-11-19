@@ -71,6 +71,40 @@ describe('useAdminConfig resource ownership', () => {
     expect(result.current.dirty).toBe(false);
   });
 
+  it.each(['parsed', 'raw'])('preserves a newer %s draft and reverts to the acknowledged save', async format => {
+    let reply;
+    apiState.respond = (path, body, method) => method === 'PUT'
+      ? new Promise(resolve => { reply = resolve; })
+      : Promise.resolve({ parsed: { file: 'original' }, raw: 'file: original\n' });
+    const { result } = renderHook(() => useAdminConfig('one.yml'));
+    await waitFor(() => expect(result.current.draftReady).toBe(true));
+
+    const useRaw = format === 'raw';
+    const edit = value => useRaw
+      ? result.current.setRaw(`file: ${value}\n`)
+      : result.current.setData({ file: value });
+    act(() => edit('submitted'));
+    let saved;
+    act(() => { saved = result.current.save({ useRaw }); });
+    expect(apiState.calls[1].slice(1)).toEqual([
+      useRaw ? { raw: 'file: submitted\n' } : { parsed: { file: 'submitted' } },
+      'PUT',
+    ]);
+    act(() => edit('latest draft'));
+    await act(async () => {
+      reply({ parsed: { file: 'normalized' }, raw: 'file: normalized\n' });
+      await saved;
+    });
+
+    if (useRaw) expect(result.current.raw).toBe('file: latest draft\n');
+    else expect(result.current.data).toEqual({ file: 'latest draft' });
+    expect(result.current.dirty).toBe(true);
+    act(() => result.current.revert());
+    expect(result.current.raw).toBe('file: normalized\n');
+    expect(result.current.data).toEqual({ file: 'normalized' });
+    expect(result.current.dirty).toBe(false);
+  });
+
   it('keeps a dirty draft when the shared resource is refreshed', async () => {
     let readCount = 0;
     apiState.respond = async (path, body, method) => {

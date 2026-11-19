@@ -86,5 +86,36 @@ for (const width of [390, 1440]) {
       await expect(name).toHaveCount(0);
       await expect(page.getByText(/No retailers configured/)).toBeVisible();
     });
+
+    test('config acknowledgement preserves typing during save and advances Revert', async ({ page }) => {
+      await installFixtures(page);
+      let acknowledge;
+      let submitted;
+      const hold = new Promise(resolve => { acknowledge = resolve; });
+      await page.route('**/api/v1/admin/config/files/household/harvest/config.yml', async route => {
+        if (route.request().method() !== 'PUT') return route.fallback();
+        submitted = route.request().postDataJSON();
+        await hold;
+        return route.fulfill({ json: { parsed: { shopping: { retailers: [{ name: 'Saved Market', id: 'corner' }] } } } });
+      });
+      await page.goto('/admin/apps/shopping');
+      const name = page.getByRole('textbox', { name: 'Name', exact: true });
+      const save = page.getByTestId('config-save-button');
+      await name.fill('Submitted Market');
+      await save.click();
+      try {
+        await expect.poll(() => submitted?.parsed.shopping.retailers[0].name).toBe('Submitted Market');
+        await expect(save).toBeDisabled();
+        await name.fill('Newer Draft');
+      } finally {
+        acknowledge();
+      }
+      await expect(page.getByText('Saved', { exact: true })).toBeVisible();
+      await expect(name).toHaveValue('Newer Draft');
+      await expect(page.getByText('Unsaved', { exact: true })).toBeVisible();
+      await page.getByRole('button', { name: 'Revert', exact: true }).click();
+      await expect(name).toHaveValue('Saved Market');
+      await expect(page.getByText('Unsaved', { exact: true })).toHaveCount(0);
+    });
   });
 }

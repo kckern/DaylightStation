@@ -3,25 +3,27 @@ import { DaylightAPI } from '../../../../../frontend/src/lib/api.mjs';
 
 const DEFAULT = { preempt_seconds: 15, displace_to_queue: false };
 
-let _cached = null;
+let cachedOnDeck = DEFAULT;
+let request;
+
+// A player can unmount while another one is starting. The request and its
+// fallback belong to the page so both players use the same answer.
+function readOnDeck() {
+  request ??= DaylightAPI('api/v1/config/player').then(data => {
+    cachedOnDeck = data?.on_deck || DEFAULT;
+    return cachedOnDeck;
+  }, () => DEFAULT);
+  return request;
+}
 
 export function usePlayerConfig() {
-  const [onDeck, setOnDeck] = useState(_cached?.on_deck || DEFAULT);
+  const [onDeck, setOnDeck] = useState(cachedOnDeck);
 
   useEffect(() => {
-    if (_cached) return;
     let cancelled = false;
-    DaylightAPI('api/v1/config/player')
-      .then((data) => {
-        if (cancelled) return;
-        _cached = data;
-        setOnDeck(data?.on_deck || DEFAULT);
-      })
-      .catch(() => {
-        if (cancelled) return;
-        _cached = { on_deck: DEFAULT };
-        setOnDeck(DEFAULT);
-      });
+    readOnDeck().then(config => {
+      if (!cancelled) setOnDeck(config);
+    });
     return () => { cancelled = true; };
   }, []);
 

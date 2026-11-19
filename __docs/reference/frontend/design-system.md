@@ -216,6 +216,13 @@ the reader changes scope or unmounts. A create or remove dialog should
 close when its write succeeds. If the roster GET then fails, let the
 resource show a Retry button that issues only the GET.
 
+When an editor allows typing during a write, let the acknowledgement update
+the Revert baseline for the submitted draft. Keep edits made after submission
+in the current draft and leave the Unsaved indicator visible.
+
+Player configuration belongs to the page. Playback instances share the first
+request and its result, including the default when that request fails.
+
 Transient network and proxy failures retry twice by default. A current
 one-shot consumer can pass `retryTransient: false` to retain its immediate
 error behavior; Displayer uses this while still sharing key scoping and

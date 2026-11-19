@@ -80,7 +80,9 @@ export function useAdminConfig(filePath) {
       const savedData = result.parsed ?? data;
       const savedRaw = result.raw ?? raw;
       if (activeFilePath.current === filePath) {
-        setDraft(current => current.filePath === filePath
+        // The response acknowledges the submitted draft. Later edits still
+        // belong to the editor, while Revert should now return to this save.
+        setDraft(current => current === draft && current.filePath === filePath
           ? { ...current, data: savedData, raw: savedRaw, dirty: false }
           : current);
         if (originalRef.current.filePath === filePath) {
@@ -113,7 +115,7 @@ export function useAdminConfig(filePath) {
     } finally {
       setSavingPath(current => current === filePath ? null : current);
     }
-  }, [filePath, resourcePath, data, raw, logger, dismissReadError]);
+  }, [filePath, resourcePath, data, raw, draft, logger, dismissReadError]);
 
   // Revert to the last-loaded values
   const revert = useCallback(() => {
