@@ -9,7 +9,7 @@ control: { port: 8780, lifelinePort: 8781 }
 # `done`, set at the runbook's make-it-permanent step together with lockdown.required and
 # the coexistence switches. tools/roadmap-capabilities.test.mjs checks the file against it.
 cutover: before
-shell: { versionCode: 38, versionName: "0.3-kiosk" }
+shell: { versionCode: 39, versionName: "0.3-kiosk" }
 foregroundServiceTypes: [mediaPlayback]
 # Declared now, as the piano-bridge shell did, because a payload update cannot add a
 # permission: that takes an install and a tap on the tablet.
