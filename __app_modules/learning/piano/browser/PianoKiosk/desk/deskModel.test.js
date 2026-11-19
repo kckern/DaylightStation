@@ -10,12 +10,12 @@ describe('deskModel', () => {
     expect(scoreHeading('<work-title>Jesu, Joy of Man&apos;s Desiring</work-title><creator type="composer">Bach</creator>'))
       .toEqual({ title: "Jesu, Joy of Man's Desiring", composer: 'Bach' });
   });
-  it('shows each child the more recent of piece and course', () => {
+  it('shows a child piece whenever they have one, and the course otherwise', () => {
     const cards = stripCards({
       pieces: [{ userId: 'a', name: 'A', piece }, { userId: 'b', name: 'B', piece }, { userId: 'c', name: 'C', piece: null }],
       courses: [{ userId: 'a', courses: [course] }, { userId: 'b', courses: [{ ...course, lastPlayedAt: '2026-11-18T11:00:00Z' }] }, { userId: 'c', courses: [course] }],
     });
-    expect(cards.map((card) => [card.userId, card.kind])).toEqual([['b', 'course'], ['a', 'piece'], ['c', 'course']]);
+    expect(cards.map((card) => [card.userId, card.kind])).toEqual([['a', 'piece'], ['b', 'piece'], ['c', 'course']]);
   });
   it('leaves out a child with nothing to show', () => {
     expect(stripCards({ pieces: [{ userId: 'a', piece: null }], courses: [] })).toEqual([]);

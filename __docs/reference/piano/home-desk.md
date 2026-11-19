@@ -5,8 +5,9 @@ activity strip used, a progress strip shows **one card per child** with recent w
 
 ## Cards
 
-Each card shows the child's avatar, how long ago they last practiced, and the more
-recent of two things:
+Each card shows the child's avatar, how long ago they last practiced, and one of two
+things. A piece in progress (at least one step earned; the most recent such piece) always
+wins. Otherwise the card shows the course. Pieces only opened or tried do not count:
 
 - **Piece:** the sheet-music piece title, a passage map in score order (widths follow
   bar counts; not started, learning, Silver or Gold; the next passage outlined), and a
