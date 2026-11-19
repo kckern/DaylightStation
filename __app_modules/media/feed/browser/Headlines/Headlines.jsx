@@ -90,7 +90,7 @@ export default function Headlines({ pageId }) {
   }).catch(() => {});
 
   return (
-    <main className="headlines-view">
+    <section className="headlines-view">
       <header className="headlines-toolbar">
         <div>
           <div className="headlines-view-switcher" role="group" aria-label="Headline view">
@@ -133,7 +133,7 @@ export default function Headlines({ pageId }) {
           ))}
         </section>
       )}
-    </main>
+    </section>
   );
 }
 

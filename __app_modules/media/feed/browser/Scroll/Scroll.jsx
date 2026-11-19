@@ -1,5 +1,5 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
-import { useParams, useNavigate, useSearchParams, useLocation } from 'react-router-dom';
+import { useState, useEffect, useLayoutEffect, useCallback, useRef } from 'react';
+import { useParams, useNavigate, useSearchParams, useLocation, useOutletContext } from 'react-router-dom';
 import { renderFeedCard } from "./cards/index.jsx";
 import DetailView from "./detail/DetailView.jsx";
 import DetailModal from "./detail/DetailModal.jsx";
@@ -139,10 +139,8 @@ function ScrollCard({ item, isNew, colors, onDismiss, onPlay, onClick, onFilter,
   );
 }
 
-/** Scroll container is .feed-content (overflow-y: auto), NOT the window. */
-function getScrollEl() { return document.querySelector('.feed-content'); }
-
 export default function Scroll() {
+  const scrollRef = useOutletContext();
   const { feedItemId: urlSlug } = useParams();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -181,6 +179,7 @@ export default function Scroll() {
   const [assemblyBatches, setAssemblyBatches] = useState([]);
   const [assemblyFilter, setAssemblyFilter] = useState({ tiers: [], sources: [] });
   const savedScrollRef = useRef(0);
+  const returnFocusId = useRef(null);
   const listAbortRef = useRef(null);
   const appendLockRef = useRef(false);
   const detailAbortRef = useRef(null);
@@ -221,7 +220,7 @@ export default function Scroll() {
   }, []);
 
   // Performance monitoring — active when scroll list is visible (not detail view)
-  usePerfMonitor(searchParams.get('debug') === '1' && !loading && !(urlSlug && !isDesktop));
+  usePerfMonitor(searchParams.get('debug') === '1' && !loading && !(urlSlug && !isDesktop), scrollRef);
 
   // Decode URL slug to full item ID
   const fullId = urlSlug ? decodeFeedItemId(urlSlug) : null;
@@ -343,29 +342,62 @@ export default function Scroll() {
   useEffect(() => () => listAbortRef.current?.abort(), []);
   useEffect(() => { markVisited('scroll', visitStarted.current); }, [markVisited]);
 
-  useEffect(() => {
-    const scrollEl = getScrollEl();
-    const initialOffset = initialSnapshot.current?.scrollTop ?? initialCheckpoint.current?.scrollOffset;
-    if (scrollEl && initialOffset) requestAnimationFrame(() => { scrollEl.scrollTop = initialOffset; });
+  const lastListOffset = useRef(initialSnapshot.current?.scrollTop ?? initialCheckpoint.current?.scrollOffset ?? 0);
+  const restoringList = useRef(lastListOffset.current > 0);
+  useLayoutEffect(() => {
+    const el = scrollRef?.current;
+    if (!el || urlSlug || loading || !items.length || !restoringList.current) return;
+    const wanted = lastListOffset.current;
+    // Masonry publishes estimated positions before its measured heights. A
+    // first successful scroll can still be clamped during the next layout.
+    let frame;
+    let previousHeight = -1;
+    let stableFrames = 0;
+    function stop() {
+      cancelAnimationFrame(frame);
+      restoringList.current = false;
+    }
+    function restore() {
+      el.scrollTop = wanted;
+      stableFrames = el.scrollHeight === previousHeight ? stableFrames + 1 : 0;
+      previousHeight = el.scrollHeight;
+      if (stableFrames >= 3) stop();
+      else frame = requestAnimationFrame(restore);
+    }
+    frame = requestAnimationFrame(restore);
+    el.addEventListener('wheel', stop, { passive: true });
+    el.addEventListener('touchstart', stop, { passive: true });
+    el.addEventListener('keydown', stop);
     return () => {
-      const scrollOffset = getScrollEl()?.scrollTop || 0;
-      const scrollEl = getScrollEl();
-      const itemId = [...(scrollEl?.querySelectorAll('[data-feed-item-id]') || [])]
-        .find(node => node.getBoundingClientRect().bottom > scrollEl.getBoundingClientRect().top + 8)?.dataset.feedItemId || null;
+      cancelAnimationFrame(frame);
+      el.removeEventListener('wheel', stop);
+      el.removeEventListener('touchstart', stop);
+      el.removeEventListener('keydown', stop);
+    };
+  }, [items.length, loading, scrollRef, urlSlug]);
+
+  useLayoutEffect(() => {
+    const el = scrollRef?.current;
+    return () => {
+      const scrollOffset = lastListOffset.current;
+      const itemId = [...(el?.querySelectorAll('[data-feed-item-id]') || [])]
+        .find(node => node.getBoundingClientRect().bottom > el.getBoundingClientRect().top + 8)?.dataset.feedItemId || null;
       setSnapshot('scroll', { ...snapshotRef.current, scrollTop: scrollOffset });
       markVisited('scroll', new Date().toISOString(), { itemId, scrollOffset });
     };
-  }, [markVisited, setSnapshot]);
+  }, [markVisited, scrollRef, setSnapshot]);
 
   useEffect(() => {
-    if (checkpointRestoredRef.current || initialSnapshot.current?.scrollTop || !initialCheckpoint.current?.itemId || !items.length) return;
-    const target = [...(getScrollEl()?.querySelectorAll('[data-feed-item-id]') || [])]
+    if (checkpointRestoredRef.current || initialSnapshot.current?.scrollTop || initialCheckpoint.current?.scrollOffset
+      || !initialCheckpoint.current?.itemId || !items.length) return;
+    const target = [...(scrollRef?.current?.querySelectorAll('[data-feed-item-id]') || [])]
       .find(node => node.dataset.feedItemId === initialCheckpoint.current.itemId);
     if (target) {
       checkpointRestoredRef.current = true;
-      requestAnimationFrame(() => target.scrollIntoView({ block: 'start' }));
+      const frame = requestAnimationFrame(() => target.scrollIntoView({ block: 'start' }));
+      return () => cancelAnimationFrame(frame);
     }
-  }, [items.length]);
+  }, [items.length, scrollRef]);
 
   // Initial load + reset/refetch whenever the ?filter= identity changes. (F-11)
   useEffect(() => {
@@ -385,11 +417,11 @@ export default function Scroll() {
     observerRef.current = new IntersectionObserver(
       ([entry]) => {
         if (entry.isIntersecting && hasMore && !loadingMore) {
-          feedLog.scroll('sentinel intersecting — triggering fetchMore', { scrollY: getScrollEl()?.scrollTop || 0, itemCount: itemsRef.current.length });
+          feedLog.scroll('sentinel intersecting — triggering fetchMore', { scrollY: scrollRef?.current?.scrollTop || 0, itemCount: itemsRef.current.length });
           fetchItems(true);
         }
       },
-      { threshold: 0.1 }
+      { root: scrollRef?.current, threshold: 0.1 }
     );
 
     observerRef.current.observe(sentinelRef.current);
@@ -398,13 +430,14 @@ export default function Scroll() {
 
   // Scroll activity tracking (throttled to ~5/sec to reduce main-thread work)
   useEffect(() => {
-    const scrollEl = getScrollEl();
+    const scrollEl = scrollRef?.current;
     if (!scrollEl) return;
     let lastY = scrollEl.scrollTop;
     let lastTime = performance.now();
     let lastLogTime = 0;
 
     const handler = () => {
+      if (!urlSlug && !loading && !restoringList.current) lastListOffset.current = scrollEl.scrollTop;
       const now = performance.now();
       if (now - lastLogTime < 200) return;
       lastLogTime = now;
@@ -425,7 +458,7 @@ export default function Scroll() {
 
     scrollEl.addEventListener('scroll', handler, { passive: true });
     return () => scrollEl.removeEventListener('scroll', handler);
-  }, []);
+  }, [loading, scrollRef, urlSlug]);
 
   // Card viewport tracking (enter/exit with dwell time)
   const enterTimesRef = useRef(new Map());
@@ -439,15 +472,15 @@ export default function Scroll() {
           if (!id) continue;
           if (entry.isIntersecting) {
             enterTimesRef.current.set(id, performance.now());
-            feedLog.viewport('enter', { id, scrollY: Math.round(getScrollEl()?.scrollTop || 0) });
+            feedLog.viewport('enter', { id, scrollY: Math.round(scrollRef?.current?.scrollTop || 0) });
           } else if (enterTimesRef.current.has(id)) {
             const dwellMs = Math.round(performance.now() - enterTimesRef.current.get(id));
             enterTimesRef.current.delete(id);
-            feedLog.viewport('exit', { id, dwellMs, scrollY: Math.round(getScrollEl()?.scrollTop || 0) });
+            feedLog.viewport('exit', { id, dwellMs, scrollY: Math.round(scrollRef?.current?.scrollTop || 0) });
           }
         }
       },
-      { threshold: 0.5 }
+      { root: scrollRef?.current, threshold: 0.5 }
     );
     return () => viewportObserverRef.current?.disconnect();
   }, []);
@@ -488,7 +521,7 @@ export default function Scroll() {
       setDetailData(null);
       setDetailError(null);
       setDetailLoading(true);
-      if (!isDesktop) { const el = getScrollEl(); if (el) el.scrollTop = 0; }
+      if (!isDesktop) { const el = scrollRef?.current; if (el) el.scrollTop = 0; }
 
       const params = new URLSearchParams();
       if (item.contentType === 'youtube') params.set('quality', '480p');
@@ -538,7 +571,7 @@ export default function Scroll() {
       setDetailError(null);
       setDetailLoading(true);
       setDeepLinkedItem(null);
-      if (!isDesktop) { const el = getScrollEl(); if (el) el.scrollTop = 0; }
+      if (!isDesktop) { const el = scrollRef?.current; if (el) el.scrollTop = 0; }
 
       const detailStart = performance.now();
       detailAbortRef.current?.abort();
@@ -583,8 +616,9 @@ export default function Scroll() {
   const scrollLog = useCallback(() => getLogger().child({ module: 'scroll-restore' }), []);
   useEffect(() => {
     if (!urlSlug) {
+      if (!prevSlugRef.current) return;
       const savedY = savedScrollRef.current;
-      const el = getScrollEl();
+      const el = scrollRef?.current;
       scrollLog().info('nav.backToList', { savedY, itemCount: items.length, scrollHeight: el?.scrollHeight || 0 });
       setDetailData(null);
       setDetailError(null);
@@ -594,25 +628,33 @@ export default function Scroll() {
 
       // Restore scroll on .feed-content — retry if content hasn't laid out yet
       let attempts = 0;
+      let frame;
       const tryRestore = () => {
-        const scrollEl = getScrollEl();
+        const scrollEl = scrollRef?.current;
         if (!scrollEl) return;
         scrollEl.scrollTop = savedY;
         attempts++;
         const actual = scrollEl.scrollTop;
         scrollLog().info('nav.scrollRestore', { savedY, actualY: actual, attempt: attempts, scrollHeight: scrollEl.scrollHeight });
-        if (savedY > 0 && Math.abs(actual - savedY) > 50 && attempts < 5) {
-          requestAnimationFrame(tryRestore);
+        const card = [...(containerRef.current?.querySelectorAll('[data-feed-item-id]') || [])]
+          .find(node => node.dataset.feedItemId === returnFocusId.current)?.querySelector('.scroll-card-open');
+        if (attempts < 5 && (Math.abs(actual - savedY) > 50 || (returnFocusId.current && !card))) {
+          frame = requestAnimationFrame(tryRestore);
+        } else {
+          lastListOffset.current = actual;
+          (card || scrollEl).focus({ preventScroll: true });
+          returnFocusId.current = null;
         }
       };
-      requestAnimationFrame(tryRestore);
+      frame = requestAnimationFrame(tryRestore);
+      return () => cancelAnimationFrame(frame);
     }
-  }, [items.length, scrollLog, urlSlug]);
+  }, [scrollRef, scrollLog, urlSlug]);
 
   // Lock the actual Feed scroller while the desktop modal is open.
   useEffect(() => {
     if (urlSlug && isDesktop) {
-      const scrollEl = getScrollEl();
+      const scrollEl = scrollRef?.current;
       if (!scrollEl) return undefined;
       const previous = scrollEl.style.overflow;
       scrollEl.style.overflow = 'hidden';
@@ -644,7 +686,7 @@ export default function Scroll() {
     const onKeyDown = event => {
       if (!['j', 'k'].includes(event.key) || event.metaKey || event.ctrlKey || event.altKey) return;
       if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement || event.target instanceof HTMLSelectElement || event.target?.isContentEditable) return;
-      const cards = [...document.querySelectorAll('.scroll-item-wrapper .scroll-card-open')];
+      const cards = [...(containerRef.current?.querySelectorAll('.scroll-card-open') || [])];
       if (!cards.length) return;
       const activeIndex = cards.findIndex(card => card === document.activeElement);
       const nextIndex = event.key === 'j' ? Math.min(cards.length - 1, activeIndex + 1) : Math.max(0, activeIndex <= 0 ? 0 : activeIndex - 1);
@@ -657,8 +699,8 @@ export default function Scroll() {
   }, [urlSlug]);
 
   const { containerStyle, getItemStyle, getItemMetrics, measureRef } = useMasonryLayout(containerRef, visibleItems, isDesktop);
-  const mobileWindow = useVirtualFeedWindow(containerRef, visibleItems, !isDesktop);
-  const desktopWindow = useMasonryVirtualWindow(containerRef, visibleItems, isDesktop, getItemMetrics);
+  const mobileWindow = useVirtualFeedWindow(containerRef, visibleItems, !isDesktop, { scrollRef });
+  const desktopWindow = useMasonryVirtualWindow(containerRef, visibleItems, isDesktop, getItemMetrics, scrollRef);
   const renderedItems = isDesktop ? desktopWindow : mobileWindow.items;
   const renderedContainerStyle = isDesktop ? containerStyle : {
     paddingTop: `${mobileWindow.paddingTop}px`,
@@ -667,9 +709,10 @@ export default function Scroll() {
 
   const handleCardClick = useCallback((e, item) => {
     e.preventDefault();
-    const el = getScrollEl();
+    const el = scrollRef?.current;
     const scrollY = el ? el.scrollTop : 0;
     savedScrollRef.current = scrollY;
+    returnFocusId.current = item.id;
     getLogger().child({ module: 'scroll-restore' }).info('nav.saveScroll', {
       scrollY: Math.round(scrollY),
       scrollHeight: el ? el.scrollHeight : 0,

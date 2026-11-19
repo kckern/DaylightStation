@@ -14,7 +14,7 @@ function log() { return getLogger().child({ component: 'feed-perf' }); }
  * @param {boolean} active - Whether monitoring is active
  * @param {number} [snapshotIntervalMs=5000] - How often to emit a summary snapshot
  */
-export function usePerfMonitor(active, snapshotIntervalMs = 5000) {
+export function usePerfMonitor(active, scrollRef, snapshotIntervalMs = 5000) {
   useEffect(() => {
     if (!active) return;
 
@@ -97,8 +97,8 @@ export function usePerfMonitor(active, snapshotIntervalMs = 5000) {
       }, 150);
     }
 
-    const scrollEl = document.querySelector('.feed-content') || window;
-    scrollEl.addEventListener('scroll', onScroll, { passive: true });
+    const scrollEl = scrollRef?.current;
+    scrollEl?.addEventListener('scroll', onScroll, { passive: true });
 
     // ── Periodic snapshot ──
     const snapshotId = setInterval(() => {
@@ -141,10 +141,10 @@ export function usePerfMonitor(active, snapshotIntervalMs = 5000) {
       cancelAnimationFrame(rafId);
       clearInterval(snapshotId);
       clearTimeout(scrollTimer);
-      scrollEl.removeEventListener('scroll', onScroll);
+      scrollEl?.removeEventListener('scroll', onScroll);
       longTaskObserver?.disconnect();
     };
-  }, [active, snapshotIntervalMs]);
+  }, [active, scrollRef, snapshotIntervalMs]);
 }
 
 function percentile(arr, p) {

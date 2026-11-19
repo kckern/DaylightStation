@@ -56,6 +56,7 @@ function HeadlinesPage() {
 
 function FeedLayout() {
   useFeedPWA();
+  const scrollRef = useRef(null);
 
   useEffect(() => {
     // Only crank the whole-app logger to debug when explicitly requested via
@@ -199,13 +200,13 @@ function FeedLayout() {
         </details>
         {(summary.pendingSync + pendingMutations) > 0 && <button className="feed-sync-status" onClick={retrySync} title="Retry synchronization" aria-label={`Retry ${summary.pendingSync + pendingMutations} pending change${summary.pendingSync + pendingMutations === 1 ? '' : 's'}`}><span aria-hidden="true">↻</span><span className="feed-sync-status__label">{summary.pendingSync + pendingMutations} pending</span></button>}
       </nav>
-      <div className="feed-content">
+      <main className="feed-content" ref={scrollRef} tabIndex={-1} aria-label="Feed">
         {workspaceReady ? (
-          <FeedErrorBoundary key={location.pathname}>
-            <Suspense fallback={<div className="feed-placeholder" role="status">Loading view…</div>}><Outlet /></Suspense>
+          <FeedErrorBoundary route={location.pathname}>
+            <Suspense fallback={<div className="feed-placeholder" role="status">Loading view…</div>}><Outlet context={scrollRef} /></Suspense>
           </FeedErrorBoundary>
         ) : <div className="feed-placeholder" role="status">Restoring your reading workspace…</div>}
-      </div>
+      </main>
     </PlaybackFrame>
   );
 }
@@ -223,8 +224,7 @@ const FeedApp = () => {
             <Route path="reader" element={<Reader />} />
             <Route path="headlines/:pageId" element={<HeadlinesPage />} />
             <Route path="headlines" element={<Navigate to="/feed/headlines/mainstream" replace />} />
-            <Route path="scroll" element={<Scroll />} />
-            <Route path="scroll/:feedItemId" element={<Scroll />} />
+            <Route path="scroll/:feedItemId?" element={<Scroll />} />
             <Route path="search" element={<FeedSearch />} />
             </Route>
           </Routes>

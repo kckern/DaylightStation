@@ -1,4 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
+import { UiIcon } from '@/lib/ui/UiIcon.jsx';
 import { proxyImage } from "../Scroll/cards/utils.js";
 import { feedLog } from "../Scroll/feedLog.js";
 import { useFeedPlayer, SPEED_STEPS } from "./FeedPlayerContext.jsx";
@@ -182,7 +183,9 @@ export default function FeedPlayerSheet({ open, onClose, item, playback, openerR
           </div>
         )}
 
-        <button type="button" className="sheet-close" onClick={onClose} aria-label="Close player">×</button>
+        <button type="button" className="sheet-close" onClick={onClose} aria-label="Close player">
+          <UiIcon name="close" size={22} />
+        </button>
         <div className="sheet-title">
           <div className="sheet-title-text" id="feed-player-sheet-title">{item.title}</div>
         </div>

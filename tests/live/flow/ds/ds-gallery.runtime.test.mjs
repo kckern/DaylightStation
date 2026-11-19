@@ -51,6 +51,10 @@ for (const viewport of [
 
     // Sheet opens and closes
     const opener = page.getByRole('button', { name: 'Open sheet' });
+    const density = page.getByRole('combobox', { name: 'Density' });
+    await density.selectOption('touch');
+    await expect(opener).toHaveAttribute('data-density', 'touch');
+    await density.selectOption('compact');
     await opener.click();
     await expect(page.getByText('Sheet body content.')).toBeVisible();
     await page.keyboard.press('Escape');

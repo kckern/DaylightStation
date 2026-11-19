@@ -1,3 +1,4 @@
+import { browserPreference } from '../../../../frontend/src/lib/browserPreference.js';
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { notifications } from '@mantine/notifications';
 import { DaylightAPI } from "../../../../frontend/src/lib/api.mjs";
@@ -6,7 +7,9 @@ import { offlineStorageUser } from "./offline/feedOfflineStore.js";
 
 const FeedWorkspaceContext = createContext(null);
 const log = getLogger().child({ app: 'feed', module: 'workspace' });
-const PREFERENCES_KEY = 'feed:reading-preferences';
+const storedPreferences = browserPreference('feed:reading-preferences', {}, JSON.parse);
+const storedDensity = browserPreference('feed:density', null);
+const lastVisit = mode => browserPreference(`feed:last-visit:${mode}`, null);
 const PENDING_PREFIX = 'feed:pending-mutations:';
 const DEFAULT_READING_PREFERENCES = Object.freeze({ theme: 'dark', density: 'comfortable', fontScale: 1, lineHeight: 1.65, measure: 72, sessionBudget: 0 });
 
@@ -20,8 +23,8 @@ function loadJson(key, fallback) {
 }
 
 function loadReadingPreferences() {
-  const stored = loadJson(PREFERENCES_KEY, {});
-  const density = localStorage.getItem('feed:density');
+  const stored = storedPreferences.read();
+  const density = storedDensity.read();
   return { ...DEFAULT_READING_PREFERENCES, ...stored, ...(density ? { density } : {}) };
 }
 
@@ -98,8 +101,8 @@ export function FeedWorkspaceProvider({ children }) {
       : localPreferences;
     readingPreferencesRef.current = nextPreferences;
     setReadingPreferencesState(nextPreferences);
-    localStorage.setItem(PREFERENCES_KEY, JSON.stringify(nextPreferences));
-    localStorage.setItem('feed:density', nextPreferences.density);
+    storedPreferences.write(JSON.stringify(nextPreferences));
+    storedDensity.write(nextPreferences.density);
 
     const nextCheckpoints = workspace?.checkpoints || {};
     checkpointsRef.current = nextCheckpoints;
@@ -188,14 +191,14 @@ export function FeedWorkspaceProvider({ children }) {
     const next = { ...readingPreferencesRef.current, [key]: value };
     readingPreferencesRef.current = next;
     setReadingPreferencesState(next);
-    localStorage.setItem(PREFERENCES_KEY, JSON.stringify(next));
-    if (key === 'density') localStorage.setItem('feed:density', value);
+    storedPreferences.write(JSON.stringify(next));
+    if (key === 'density') storedDensity.write(value);
     DaylightAPI('/api/v1/feed/workspace/preferences', { [key]: value }, 'PATCH')
       .then(result => {
         if (result?.preferences) {
           readingPreferencesRef.current = result.preferences;
           setReadingPreferencesState(result.preferences);
-          localStorage.setItem(PREFERENCES_KEY, JSON.stringify(result.preferences));
+          storedPreferences.write(JSON.stringify(result.preferences));
         }
       })
       .catch(error => log.warn('feed.preferences.save_failed', { key, error: error.message }));
@@ -230,10 +233,10 @@ export function FeedWorkspaceProvider({ children }) {
     setRevision(value => value + 1);
   }, []);
 
-  const getLastVisit = useCallback((mode) => checkpointsRef.current[mode]?.visitedAt || localStorage.getItem(`feed:last-visit:${mode}`), []);
+  const getLastVisit = useCallback((mode) => checkpointsRef.current[mode]?.visitedAt || lastVisit(mode).read(), []);
   const markVisited = useCallback((mode, timestamp = new Date().toISOString(), position = {}) => {
     const optimistic = { itemId: position.itemId || null, scrollOffset: Math.max(0, Math.round(position.scrollOffset || 0)), visitedAt: timestamp };
-    localStorage.setItem(`feed:last-visit:${mode}`, timestamp);
+    lastVisit(mode).write(timestamp);
     checkpointsRef.current = { ...checkpointsRef.current, [mode]: optimistic };
     setCheckpoints(checkpointsRef.current);
     DaylightAPI(`/api/v1/feed/workspace/checkpoints/${encodeURIComponent(mode)}`, optimistic, 'PUT')
@@ -241,7 +244,7 @@ export function FeedWorkspaceProvider({ children }) {
         if (!result?.checkpoint) return;
         checkpointsRef.current = { ...checkpointsRef.current, [mode]: result.checkpoint };
         setCheckpoints(checkpointsRef.current);
-        localStorage.setItem(`feed:last-visit:${mode}`, result.checkpoint.visitedAt);
+        lastVisit(mode).write(result.checkpoint.visitedAt);
       })
       .catch(error => log.warn('feed.checkpoint.save_failed', { mode, error: error.message }));
   }, []);

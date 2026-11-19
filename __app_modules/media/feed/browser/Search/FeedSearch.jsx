@@ -76,7 +76,7 @@ export default function FeedSearch() {
   };
 
   return (
-    <main className="feed-search" aria-labelledby="feed-search-title">
+    <section className="feed-search" aria-labelledby="feed-search-title">
       <h1 id="feed-search-title">Search your feed</h1>
       <form className="feed-search__form" onSubmit={submit} role="search">
         <input ref={inputRef} value={query} onChange={event => setQuery(event.target.value)} placeholder="Search headlines, sources, summaries…" aria-label="Search feed history" />
@@ -113,6 +113,6 @@ export default function FeedSearch() {
         ))}
       </div>
       {nextCursor && <button className="feed-search__more" disabled={loadingMore} onClick={() => runSearch({ append: true, cursor: nextCursor })}>{loadingMore ? 'Loading…' : `Load more (${items.length} of ${total})`}</button>}
-    </main>
+    </section>
   );
 }

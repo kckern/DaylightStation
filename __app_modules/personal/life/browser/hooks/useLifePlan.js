@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
+import { invalidateApiResources, useApiResource } from "../../../../../frontend/src/lib/hooks/useApiResource.js";
 import getLogger from "../../../../../frontend/src/lib/logging/Logger.js";
 import { DaylightAPI } from "../../../../../frontend/src/lib/api.mjs";
 import { useLifeUsername } from "./useLifeUser.js";
@@ -10,6 +11,10 @@ function logger() {
 }
 
 const API_BASE = '/api/v1/life/plan';
+const goalPath = (goalId, user, action = '') => {
+  const qs = user ? `?username=${encodeURIComponent(user)}` : '';
+  return `${API_BASE}/goals/${encodeURIComponent(goalId)}${action}${qs}`;
+};
 
 // A plan is "empty" when it has no substance yet: no object, no keys, or no
 // goals/values/beliefs/qualities/purpose. Consumers (e.g. the dashboard
@@ -139,11 +144,9 @@ export function useGoals(username, state) {
   useEffect(() => { fetchGoals(); }, [fetchGoals]);
 
   const transitionGoal = useCallback(async (goalId, newState, reason) => {
-    const userQs = user ? `?username=${encodeURIComponent(user)}` : '';
-    const result = await api(`/goals/${goalId}/transition${userQs}`, {
-      method: 'POST',
-      body: JSON.stringify({ state: newState, reason }),
-    });
+    const result = await DaylightAPI(goalPath(goalId, user, '/transition'), { state: newState, reason }, 'POST');
+    const detailPath = goalPath(goalId, user);
+    invalidateApiResources(path => path === detailPath);
     await fetchGoals();
     return result;
   }, [user, fetchGoals]);
@@ -168,31 +171,11 @@ export function useGoals(username, state) {
  * Fetches a single goal by ID with full detail.
  */
 export function useGoalDetail(goalId, username) {
-  const [goal, setGoal] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-
   const ctxUsername = useLifeUsername();
   const user = username || ctxUsername;
-  const qs = user ? `?username=${encodeURIComponent(user)}` : '';
-
-  const fetchGoal = useCallback(async () => {
-    if (!goalId) return;
-    setLoading(true);
-    setError(null);
-    try {
-      const data = await api(`/goals/${goalId}${qs}`);
-      setGoal(data);
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setLoading(false);
-    }
-  }, [goalId, qs]);
-
-  useEffect(() => { fetchGoal(); }, [fetchGoal]);
-
-  return { goal, loading, error, refetch: fetchGoal };
+  const path = goalId ? goalPath(goalId, user) : null;
+  const { data: goal, loading, error, reload } = useApiResource(path, { label: 'goal detail' });
+  return { goal, loading, error: error?.message ?? null, refetch: reload };
 }
 
 /**

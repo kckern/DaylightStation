@@ -24,8 +24,9 @@
 // same useContentDispatch path MediaContentSearch already uses.
 import { LoadErrorLine } from "../shared/LoadErrorLine.jsx";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { IconX, IconAlertTriangle } from '@tabler/icons-react';
+import { IconAlertTriangle } from '@tabler/icons-react';
 import { Button } from '@mantine/core';
+import { UiIcon } from '@/lib/ui/UiIcon.jsx';
 import { useContentCombobox } from "../../../../../__capabilities/content-catalog/browser/picker-controller.mjs";
 import { StreamStatusLine } from "../../../../../__capabilities/content-catalog/browser/search-status.mjs";
 import { ResultRow } from "../../../../../__capabilities/content-catalog/browser/result-row.mjs";
@@ -267,7 +268,7 @@ export function SearchMode({ onClose, addTo = null, restoreSearchFocus }) {
           aria-label="Close search"
           onClick={closeViaButton}
         >
-          <IconX size={22} />
+          <UiIcon name="close" size={22} />
         </button>
         <input
           ref={inputRef}

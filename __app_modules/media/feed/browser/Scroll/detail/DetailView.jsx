@@ -113,6 +113,7 @@ export default function DetailView({ item, sections, ogImage, ogDescription, loa
 
   useEffect(() => {
     const handleKeyDown = (e) => {
+      if (e.defaultPrevented) return;
       if (e.key === 'Escape') onBack();
       if (e.key === 'ArrowLeft' && onPrev) navigateWithAnimation(-1, onPrev);
       if (e.key === 'ArrowRight' && onNext) navigateWithAnimation(1, onNext);

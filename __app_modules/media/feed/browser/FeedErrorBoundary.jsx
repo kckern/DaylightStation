@@ -10,6 +10,10 @@ export default class FeedErrorBoundary extends Component {
     return { error };
   }
 
+  componentDidUpdate(previous) {
+    if (this.state.error && previous.route !== this.props.route) this.setState({ error: null });
+  }
+
   componentDidCatch(error, info) {
     log.error('feed.view.render_failed', {
       error: error?.message || String(error),

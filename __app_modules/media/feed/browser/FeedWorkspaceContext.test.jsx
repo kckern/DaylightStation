@@ -57,6 +57,23 @@ describe('FeedWorkspaceProvider reading preferences', () => {
     expect(localStorage.getItem('feed:last-visit:reader')).toBe('2026-08-24T12:00:00.000Z');
   });
 
+  test('continues syncing preferences and checkpoints when browser writes exceed quota', async () => {
+    const write = vi.spyOn(localStorage, 'setItem').mockImplementation(() => {
+      throw new DOMException('Storage full', 'QuotaExceededError');
+    });
+    try {
+      render(<FeedWorkspaceProvider><PreferenceProbe /></FeedWorkspaceProvider>);
+      await waitFor(() => expect(screen.getByLabelText('workspace ready')).toHaveTextContent('true'));
+      fireEvent.click(screen.getByRole('button', { name: 'Larger' }));
+      expect(apiMock).toHaveBeenCalledWith('/api/v1/feed/workspace/preferences', { fontScale: 1.3 }, 'PATCH');
+      fireEvent.click(screen.getByRole('button', { name: 'Visit' }));
+      expect(screen.getByLabelText('last visit')).toHaveTextContent('2026-08-24T12:00:00.000Z');
+      expect(apiMock).toHaveBeenCalledWith('/api/v1/feed/workspace/checkpoints/reader', expect.any(Object), 'PUT');
+    } finally {
+      write.mockRestore();
+    }
+  });
+
   test('hydrates account preferences and checkpoints before declaring the workspace ready', async () => {
     apiMock.mockImplementation(path => {
       if (path === '/api/v1/feed/workspace') return Promise.resolve({

@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { UiIcon } from '@/lib/ui/UiIcon.jsx';
 import { useSearchParams } from 'react-router-dom';
 import { DaylightAPI } from "../../../../../frontend/src/lib/api.mjs";
 import getLogger from "../../../../../frontend/src/lib/logging/Logger.js";
@@ -198,6 +199,8 @@ export default function Reader() {
   useEffect(() => {
     if (!drawerOpen) return undefined;
     const previous = document.activeElement;
+    const inbox = inboxRef.current;
+    inbox?.setAttribute('inert', '');
     sidebarRef.current?.focus();
     const onKeyDown = event => {
       if (event.key === 'Escape') setDrawerOpen(false);
@@ -210,22 +213,18 @@ export default function Reader() {
       else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
     };
     document.addEventListener('keydown', onKeyDown);
-    return () => { document.removeEventListener('keydown', onKeyDown); previous?.focus?.(); };
-  }, [drawerOpen]);
-
-  useEffect(() => {
-    const inbox = inboxRef.current;
-    if (!inbox) return undefined;
-    if (drawerOpen) inbox.setAttribute('inert', '');
-    else inbox.removeAttribute('inert');
-    return () => inbox.removeAttribute('inert');
+    return () => {
+      document.removeEventListener('keydown', onKeyDown);
+      inbox?.removeAttribute('inert');
+      previous?.focus?.({ preventScroll: true });
+    };
   }, [drawerOpen]);
 
   useEffect(() => {
     const onKeyDown = event => {
       if (!['j', 'k'].includes(event.key) || event.metaKey || event.ctrlKey || event.altKey) return;
       if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement || event.target instanceof HTMLSelectElement || event.target?.isContentEditable) return;
-      const rows = [...document.querySelectorAll('.article-row-header')];
+      const rows = [...(listRef.current?.querySelectorAll('.article-row-header') || [])];
       if (!rows.length) return;
       const activeIndex = rows.findIndex(row => row === document.activeElement);
       const nextIndex = event.key === 'j' ? Math.min(rows.length - 1, activeIndex + 1) : Math.max(0, activeIndex <= 0 ? 0 : activeIndex - 1);
@@ -476,7 +475,9 @@ export default function Reader() {
     <div className="reader-view">
       {drawerOpen && <div className="reader-drawer-backdrop" onClick={() => setDrawerOpen(false)} aria-hidden="true" />}
       <aside ref={sidebarRef} tabIndex={-1} id="reader-subscriptions" aria-label="Subscriptions" role={drawerOpen ? 'dialog' : undefined} aria-modal={drawerOpen || undefined} className={`reader-sidebar-wrapper ${drawerOpen ? 'open' : ''}`}>
-        <button type="button" className="reader-drawer-close" onClick={() => setDrawerOpen(false)} aria-label="Close subscriptions">×</button>
+        <button type="button" className="reader-drawer-close" onClick={() => setDrawerOpen(false)} aria-label="Close subscriptions">
+          <UiIcon name="close" size={22} />
+        </button>
         {feedsError && <div className="reader-inline-error" role="status">{feedsError}<button onClick={loadFeeds}>Retry</button></div>}
         <ReaderSidebar
           feeds={feeds}
@@ -486,7 +487,7 @@ export default function Reader() {
           onClearFilters={handleMobileClearFilters}
         />
       </aside>
-      <main className="reader-inbox" ref={inboxRef}>
+      <section className="reader-inbox" ref={inboxRef}>
         <div className="reader-mobile-toolbar">
           <button className="reader-hamburger" onClick={() => setDrawerOpen(true)} aria-label="Open subscriptions" aria-expanded={drawerOpen} aria-controls="reader-subscriptions">
             <span /><span /><span />
@@ -563,7 +564,7 @@ export default function Reader() {
             )}
           </>
         )}
-      </main>
+      </section>
     </div>
   );
 }

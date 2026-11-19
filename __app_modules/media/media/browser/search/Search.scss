@@ -132,8 +132,8 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 44px;
-    height: 44px;
+    width: var(--ds-control-touch-target);
+    height: var(--ds-control-touch-target);
     background: none;
     border: none;
     border-radius: var(--mantine-radius-sm);
