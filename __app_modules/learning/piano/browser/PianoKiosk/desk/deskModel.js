@@ -65,16 +65,19 @@ export function stripGroups(sources) {
   return groups;
 }
 
-/** Passage coin size in px: one row of up to eight is largest, two rows smaller. */
-export const coinSize = (count) => (count <= 8 ? 24 : count <= 16 ? 20 : 18);
+/** Passage coin size in px: the row fills the card's 175px, never above 26px. */
+export const coinSize = (count) => {
+  const columns = mapColumns(count);
+  return Math.min(26, Math.floor((175 - (columns - 1) * 3) / columns));
+};
 
 /** A tomato nobody has started yet sits back, unless it is the one up next. */
 export const passageFaded = (passage, isCurrent) => !isCurrent && passage?.state === 'todo' && !(passage?.steps?.done > 0);
 
 /**
- * How many icons across a piece's map. Up to eight sit in one row; a longer
- * piece takes two rows, so four cards share the strip with icons at full size.
+ * How many coins across a piece's map: up to six sit in one row; a longer
+ * piece takes two equal rows.
  */
-export const mapColumns = (count) => (count > 8 ? Math.ceil(count / 2) : Math.max(1, count));
+export const mapColumns = (count) => (count > 6 ? Math.ceil(count / 2) : Math.max(1, count));
 
 export const pieceCount = (piece) => `${piece.silver} of ${piece.total} Silver`;

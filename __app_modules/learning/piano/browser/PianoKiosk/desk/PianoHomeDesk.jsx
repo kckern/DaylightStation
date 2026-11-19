@@ -30,11 +30,6 @@ function usePrintedTitle(scoreId) {
 
 const sized = (url, w, h) => `${url}${url.includes('?') ? '&' : '?'}w=${w}&h=${h}`;
 
-/** A card's poster, or a plain block of the same size when there is none. */
-const Poster = ({ src }) => (src
-  ? <img className="piano-desk__poster" src={src} alt="" decoding="async" />
-  : <span className="piano-desk__poster piano-desk__poster--none" aria-hidden="true" />);
-
 /** The passage map: one coin per passage, in score order, the next one ringed. */
 export function PassageMap({ piece, focusId }) {
   const columns = mapColumns(piece.passages.length);
@@ -71,52 +66,53 @@ const Who = ({ card }) => (
   </span>
 );
 
-/** The piece: poster, title, the next passage's bars and the Silver count; the passage map underneath. */
+/** The picture of the next thing, cropped to fill, with a play badge: tap to resume. */
+const Media = ({ src }) => (
+  <span className="piano-desk__media">
+    {src && <img src={src} alt="" decoding="async" />}
+    <span className="piano-desk__play" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z" fill="currentColor" /></svg></span>
+  </span>
+);
+
+/**
+ * One layout for both kinds, so the strip reads as one row of cards: whose it
+ * is, the picture of the next thing, what it is, and how far along.
+ */
 function PieceCard({ card }) {
   const title = usePrintedTitle(card.piece.scoreId);
   return (
     <>
       <Who card={card} />
-      <span className="piano-desk__top">
-        <Poster src={card.piece.cover} />
-        <span className="piano-desk__head">
-          <strong className="piano-desk__title">{title}</strong>
+      <Media src={card.piece.cover} />
+      <span className="piano-desk__text">
+        <strong className="piano-desk__title piano-desk__title--one">{title}</strong>
+        <span className="piano-desk__sub">
           {card.focus && <span className="piano-desk__next">{passageBars(card.focus)}</span>}
           <PieceCount piece={card.piece} />
         </span>
       </span>
-      <span className="piano-desk__band"><PassageMap piece={card.piece} focusId={card.focus?.id} /></span>
+      <span className="piano-desk__progress"><PassageMap piece={card.piece} focusId={card.focus?.id} /></span>
     </>
   );
 }
 
-/** The course: the next lesson's still and title, with the course's ring and name under it. */
 function CourseCard({ card }) {
   const { course } = card;
   const percent = course.total > 0 ? Math.min(100, Math.round((course.completed / course.total) * 100)) : 0;
   const lesson = course.next;
+  const picture = lesson?.thumbnail ? sized(lesson.thumbnail, 360, 202) : course.thumbnail ? sized(course.thumbnail, 360, 202) : null;
   return (
     <>
       <Who card={card} />
-      {lesson?.thumbnail
-        ? <img className="piano-desk__still" src={sized(lesson.thumbnail, 360, 202)} alt="" decoding="async" />
-        : (
-          // No still: the course poster beside its title, as a piece card has.
-          <span className="piano-desk__top">
-            <Poster src={course.thumbnail ? sized(course.thumbnail, 112, 168) : null} />
-            <span className="piano-desk__head"><strong className="piano-desk__title">{lesson?.title ?? course.courseTitle}</strong></span>
-          </span>
-        )}
-      {lesson?.thumbnail && (
-      <span className="piano-desk__foot">
-        <ProgressRing percent={percent} label={`${percent}%`} size="34px" />
-        <span className="piano-desk__lesson">
-          <strong className="piano-desk__title">{lesson?.title ?? course.courseTitle}</strong>
-          {lesson?.title && <small className="piano-desk__course">{course.courseTitle}</small>}
-        </span>
+      <Media src={picture} />
+      <span className="piano-desk__text">
+        <strong className="piano-desk__title">{lesson?.title ?? course.courseTitle}</strong>
       </span>
-      )}
-      {!lesson?.thumbnail && <span className="piano-desk__band"><ProgressRing percent={percent} label={`${percent}%`} size="40px" /></span>}
+      <span className="piano-desk__progress">
+        <ProgressRing percent={percent} label={`${percent}%`} size="44px" />
+        {/* The course's name, unless the title above already is it; then the lessons done. */}
+        <span className="piano-desk__course">{lesson?.title ? course.courseTitle : `${course.completed}/${course.total}`}</span>
+      </span>
     </>
   );
 }

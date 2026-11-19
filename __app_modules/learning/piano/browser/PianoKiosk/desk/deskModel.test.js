@@ -25,11 +25,11 @@ describe('deskModel', () => {
     });
     expect(groups.map((group) => [group.userId, group.name, group.cards.map((card) => card.kind)])).toEqual([['b', 'B', ['course']], ['a', 'A', ['piece', 'course']]]);
   });
-  it('sizes passage coins by how many share a row', () => {
-    expect(coinSize(8)).toBe(24);
-    expect(coinSize(12)).toBe(20);
-    expect(coinSize(16)).toBe(20);
-    expect(coinSize(18)).toBe(18);
+  it('sizes passage coins to fill the card width, as large as 26px', () => {
+    expect(coinSize(12)).toBe(26);
+    expect(coinSize(8)).toBe(26);
+    expect(coinSize(16)).toBe(19);
+    expect(coinSize(18)).toBe(16);
   });
   it('fades only the tomatoes nobody has started, never the one up next', () => {
     expect(passageFaded({ state: 'todo', steps: { done: 0, total: 4 } }, false)).toBe(true);
@@ -51,9 +51,10 @@ describe('deskModel', () => {
     expect(relativeTime('2026-11-18T10:00:00Z', Date.parse('2026-11-18T12:00:00Z'))).toBe('2h ago');
   });
 
-  it('lays a piece out in one row of icons, or two once a row would shrink them', () => {
+  it('lays a piece out in one row of up to six coins, else two equal rows', () => {
     expect(mapColumns(5)).toBe(5);
-    expect(mapColumns(8)).toBe(8);
+    expect(mapColumns(6)).toBe(6);
+    expect(mapColumns(8)).toBe(4);
     expect(mapColumns(12)).toBe(6);
     expect(mapColumns(13)).toBe(7);
   });

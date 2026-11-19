@@ -4,7 +4,7 @@
 // crowded row shrinks its cards rather than scrolling or cutting one off.
 .piano-desk {
   flex: 0 0 auto;
-  height: 194px;
+  height: 234px;
   width: 100%;
   box-sizing: border-box;
   display: flex;
@@ -16,18 +16,19 @@
   // A child's cards sit together; children are 16px apart.
   &__child { flex: 0 1 auto; min-width: 0; display: flex; gap: 8px; }
 
-  // Every card: whose it is (avatar and name) on top, then the very next thing
-  // to do filling the rest. 193x194, nothing left empty.
+  // One layout for both kinds of card, 193x234: whose it is (32), the picture
+  // of the next thing with a play badge (80), what it is (two lines), and the
+  // progress pinned to the bottom (56). Nothing left empty.
   &__card {
     flex: 0 1 auto;
     width: 193px;
     min-width: 0;
-    height: 194px;
+    height: 234px;
     box-sizing: border-box;
     display: flex;
     flex-direction: column;
-    gap: 6px;
-    padding: 8px;
+    gap: 5px;
+    padding: 8px 8px 9px;
     border: 1px solid var(--piano-border);
     border-radius: var(--r-md);
     background: var(--piano-surface);
@@ -45,38 +46,44 @@
     flex: 0 0 32px; display: flex; align-items: center; gap: 8px; min-width: 0;
     .piano-avatar { width: 32px; height: 32px; font-size: 0.75rem; flex: 0 0 auto; }
   }
-  &__name { font-size: 16px; font-weight: 800; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  &__name { font-size: 17px; font-weight: 800; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
-  // Piece: poster beside title, next bars and count; the passage map underneath.
-  &__top { flex: 0 0 84px; display: flex; gap: 8px; min-width: 0; }
-  &__poster { flex: 0 0 56px; width: 56px; height: 84px; object-fit: cover; border-radius: 4px; background: var(--piano-surface-2); }
-  &__head { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
-  &__next { font-size: 13px; font-weight: 700; color: var(--piano-accent-text); }
-  &__band { flex: 0 0 44px; display: flex; align-items: center; min-width: 0; }
+  &__media {
+    position: relative; flex: 0 0 80px; border-radius: 6px; overflow: hidden; background: var(--piano-surface-2);
+    img { display: block; width: 100%; height: 100%; object-fit: cover; object-position: center 30%; }
+  }
+  // The resume cue: a small solid play disc in the picture's corner.
+  &__play {
+    position: absolute; right: 6px; bottom: 6px; width: 28px; height: 28px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    color: var(--piano-accent-ink); background: var(--piano-accent); border: 2px solid var(--piano-surface);
+    svg { width: 16px; height: 16px; margin-left: 2px; }
+  }
 
-  // Course: the next lesson's still across the card, then its title beside the ring.
-  &__still { flex: 0 0 auto; width: 100%; aspect-ratio: 16 / 9; object-fit: cover; border-radius: 4px; background: var(--piano-surface-2); }
-  &__foot { flex: 1 1 auto; min-height: 0; display: flex; align-items: center; gap: 8px; }
-  &__lesson { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
-  &__course { font-size: 12px; color: var(--piano-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .piano-desk__card[data-kind='course'] > .piano-desk__poster { align-self: flex-start; }
-
+  &__text { flex: 0 0 38px; min-width: 0; display: flex; flex-direction: column; justify-content: center; gap: 2px; }
   &__title {
-    font-size: 14px;
+    font-size: 15px;
     line-height: 1.2;
     display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
   }
+  &__title--one { -webkit-line-clamp: 1; }
+  &__sub { display: flex; align-items: center; gap: 10px; min-width: 0; }
+  &__next { font-size: 15px; font-weight: 800; color: var(--piano-accent-text); white-space: nowrap; }
   &__count {
-    display: flex; gap: 10px; font-size: 15px; font-weight: 800; font-variant-numeric: tabular-nums;
-    span { display: flex; align-items: center; gap: 4px; color: var(--piano-silver); }
+    display: flex; gap: 8px; font-size: 15px; font-weight: 800; font-variant-numeric: tabular-nums;
+    span { display: flex; align-items: center; gap: 3px; color: var(--piano-silver); }
     span[data-level='gold'] { color: var(--piano-gold); }
-    svg { width: 17px; height: 17px; }
+    svg { width: 16px; height: 16px; }
   }
+
+  &__progress { flex: 1 1 auto; min-height: 0; display: flex; align-items: center; gap: 8px; min-width: 0; }
+  &__course { font-size: 14px; font-weight: 700; color: var(--piano-muted); line-height: 1.2;
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 
   &__map {
     // One coin per passage: a tomato, a flower, a silver coin or a gold coin.
     display: grid;
-    gap: 2px;
+    gap: 3px;
     align-content: center;
     justify-content: start;
     i { display: grid; aspect-ratio: 1; border-radius: 50%; }
@@ -87,5 +94,5 @@
   }
 
   .psc-ring { flex: 0 0 auto; }
-  .psc-ring__c { font-size: 11px; font-weight: 800; font-family: inherit; }
+  .psc-ring__c { font-size: 14px; font-weight: 800; font-family: inherit; }
 }

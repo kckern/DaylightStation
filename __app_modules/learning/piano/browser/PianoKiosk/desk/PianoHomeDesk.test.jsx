@@ -55,7 +55,7 @@ describe('PianoHomeDesk progress strip', () => {
   it('leads a course card with the next lesson: its still and its title', async () => {
     mount();
     const sib = await screen.findByRole('button', { name: 'Sib: Lesson 12: Swing' });
-    expect(sib.querySelector('.piano-desk__still').getAttribute('src')).toMatch(/^\/api\/still\.jpg/);
+    expect(sib.querySelector('.piano-desk__media img').getAttribute('src')).toMatch(/^\/api\/still\.jpg/);
     expect(sib.querySelector('.piano-desk__title').textContent).toBe('Lesson 12: Swing');
   });
 
@@ -63,7 +63,7 @@ describe('PianoHomeDesk progress strip', () => {
     h.desk.players[0].piece = { ...piece, cover: '/api/cover.jpg' };
     mount();
     const card = await screen.findByRole('button', { name: 'Kid: 1 of 3 Silver' });
-    expect(card.querySelector('.piano-desk__poster')).toHaveAttribute('src', '/api/cover.jpg');
+    expect(card.querySelector('.piano-desk__media img')).toHaveAttribute('src', '/api/cover.jpg');
   });
 
   it('fades the tomatoes nobody has started, and keeps the one up next bright', async () => {
@@ -100,7 +100,7 @@ describe('PianoHomeDesk progress strip', () => {
     h.desk.players[0].piece = { ...piece, total: 12, passages: Array.from({ length: 12 }, (_, index) => ({ id: `p${index}`, start: index * 4, end: index * 4 + 3, state: 'todo' })) };
     mount();
     const card = await screen.findByRole('button', { name: 'Kid: 1 of 12 Silver' });
-    expect(card.querySelector('.piano-desk__map').style.gridTemplateColumns).toBe('repeat(6, 20px)');
+    expect(card.querySelector('.piano-desk__map').style.gridTemplateColumns).toBe('repeat(6, 26px)');
   });
 
   it('shows only the children, never the parents', async () => {
