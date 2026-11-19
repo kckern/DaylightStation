@@ -482,7 +482,7 @@ until every line of this stage is marked ok on that device.**
       check after each reboot. Without touching the Shield after boot, verify
       that a Home Line call or approved recording consumer receives PCM audio
       frames and have a person confirm audible speech. Record both observations
-      in the private sitting notes using the [Shield capture procedure](shield-cutover.md#microphone-capture-after-each-reboot).
+      in the private sitting notes using the [Shield capture procedure](shield-cutover.md#microphone-capture-at-handover-and-after-each-cold-boot).
 - [ ] **What survives a reboot on this device.** Record: does ADB over WiFi come
       back (`adb connect {device-address}:5555`)? On the Portal it does not. Then
       the lifeline and `dd update` are the whole way back in, and both were just
