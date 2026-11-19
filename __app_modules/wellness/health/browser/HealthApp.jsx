@@ -107,7 +107,10 @@ const HealthShell = ({ userId }) => {
             sidebarRef={setSidebarTarget} sidebarActive={activeTab === 'today'}
             headerActions={[
               <span key="follow-ups" ref={setFollowUpTarget} className="health-followups-slot" />,
-              <ActionIcon key="settings" aria-label="Health settings" variant="subtle" onClick={() => navigate('/health/settings')}><Icon d="M4 5h12M4 10h12M4 15h12M7 3v4M13 8v4M9 13v4" /></ActionIcon>,
+              <ActionIcon key="settings" className="ds-touch-target" aria-label="Health settings"
+                variant="subtle" onClick={() => navigate('/health/settings')}>
+                <Icon d="M4 5h12M4 10h12M4 15h12M7 3v4M13 8v4M9 13v4" />
+              </ActionIcon>,
              ]}>
             {/* Keep the logging session (drafts, pending requests, retry bytes)
                 alive between tabs; hidden views do not poll or acquire media. */}

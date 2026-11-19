@@ -41,8 +41,8 @@ describe('useStartStatuses', () => {
 });
 
 let startedBy;
-function StartedByProbe({ api, playingKey }) {
-  startedBy = useStartedByAll(playingKey, { api });
+function StartedByProbe({ api, playingKey, pollMs }) {
+  startedBy = useStartedByAll(playingKey, { api, pollMs });
   return <div data-testid="b">{startedBy.get('livingroom-tv')?.startedBy?.name ?? '-'}</div>;
 }
 
@@ -53,6 +53,35 @@ describe('useStartedByAll', () => {
     await waitFor(() => expect(screen.getByTestId('b')).toHaveTextContent('Kitchen button'));
     rerender(<StartedByProbe api={api} playingKey="b" />);
     await waitFor(() => expect(api.startedByAll).toHaveBeenCalledTimes(2));
+  });
+
+  it('lets slow attribution finish across ticks for the current playback', async () => {
+    vi.useFakeTimers();
+    const visibility = vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible');
+    const pending = [];
+    const api = { startedByAll: vi.fn(() => new Promise(resolve => pending.push(resolve))) };
+    const answer = name => ({ items: [{ deviceId: 'livingroom-tv', startedBy: { name } }] });
+    try {
+      const { rerender } = render(<StartedByProbe api={api} playingKey="first" pollMs={100} />);
+      await act(async () => vi.advanceTimersByTime(250));
+      expect(pending).toHaveLength(1);
+      await act(async () => pending[0](answer('First source')));
+      expect(screen.getByTestId('b')).toHaveTextContent('First source');
+
+      await act(async () => vi.advanceTimersByTime(100));
+      expect(pending).toHaveLength(2);
+      rerender(<StartedByProbe api={api} playingKey="second" pollMs={100} />);
+      expect(screen.getByTestId('b').textContent).toBe('-');
+      expect(pending).toHaveLength(3);
+      await act(async () => pending[1](answer('Retired source')));
+      await act(async () => vi.advanceTimersByTime(250));
+      expect(pending).toHaveLength(3);
+      await act(async () => pending[2](answer('Current source')));
+      expect(screen.getByTestId('b')).toHaveTextContent('Current source');
+    } finally {
+      visibility.mockRestore();
+      vi.useRealTimers();
+    }
   });
 });
 

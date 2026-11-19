@@ -46,7 +46,9 @@ export function Sheet({ open, onClose, title, children, placement = 'center' }) 
       <FocusTrap active={open}><div className="ds-sheet__panel" tabIndex={-1}>
         <header className="ds-sheet__header">
           <h3 className="ds-sheet__title">{title}</h3>
-          <ActionIcon onClick={onClose} aria-label="Close"><UiIcon name="close" /></ActionIcon>
+          <ActionIcon className="ds-touch-target" onClick={onClose} aria-label="Close">
+            <UiIcon name="close" />
+          </ActionIcon>
         </header>
         <div className="ds-sheet__body">{children}</div>
       </div></FocusTrap>

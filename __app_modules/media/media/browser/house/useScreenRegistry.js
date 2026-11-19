@@ -5,7 +5,8 @@
 // and after every change made here. An unwired registry (501) is
 // "unavailable" — names then come from devices.yml and the browsers' own
 // broadcasts, as before.
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useRefreshableRead } from '@/lib/hooks/useRefreshableRead.js';
 import { useVisibleRefresh } from '@/lib/hooks/useVisibleRefresh.js';
 import { houseApi as defaultApi, screenIdFor } from "./houseApi.js";
 import houseLog from "./houseLog.js";
@@ -15,13 +16,10 @@ export const REGISTRY_POLL_MS = 120_000;
 
 export function useScreenRegistry({ api = defaultApi, pollMs = REGISTRY_POLL_MS } = {}) {
   const [state, setState] = useState({ ...EMPTY, loaded: false, available: true, error: null });
-  const latestRead = useRef(0);
-
-  const refresh = useCallback(async () => {
-    const read = ++latestRead.current;
+  const readRegistry = useCallback(async isCurrent => {
     try {
       const res = await api.listScreens();
-      if (read !== latestRead.current) return;
+      if (!isCurrent()) return;
       const next = {
         screens: Array.isArray(res?.screens) ? res.screens : [],
         notSeenLately: Array.isArray(res?.notSeenLately) ? res.notSeenLately : [],
@@ -32,19 +30,19 @@ export function useScreenRegistry({ api = defaultApi, pollMs = REGISTRY_POLL_MS 
       houseLog.registryLoaded({ screens: next.screens.length, notSeenLately: next.notSeenLately.length, retired: next.retired.length });
       setState({ ...next, loaded: true, available: true, error: null });
     } catch (error) {
-      if (read !== latestRead.current) return;
+      if (!isCurrent()) return;
       const unavailable = error?.status === 501 || error?.status === 404;
       houseLog.registryFailed({ status: error?.status ?? null, error: error?.message, unavailable });
       setState((prev) => ({ ...prev, loaded: true, available: !unavailable && prev.available, error: unavailable ? null : error }));
     }
   }, [api]);
 
+  const { reload: refresh, poll } = useRefreshableRead(readRegistry);
   useEffect(() => {
     refresh();
-    return () => { latestRead.current++; };
   }, [refresh]);
 
-  useVisibleRefresh({ intervalMs: pollMs, reload: refresh });
+  useVisibleRefresh({ intervalMs: pollMs, reload: refresh, poll });
 
   const byId = useMemo(() => {
     const map = new Map();

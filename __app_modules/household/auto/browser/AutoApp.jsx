@@ -156,7 +156,7 @@ function AutoAppShell() {
 
   const headerActions = vehicles.data.vehicles.length > 1
     ? [(
-      <ActionIcon key="back" aria-label="Back to garage" variant="subtle" autoFocus onClick={() => {
+      <ActionIcon key="back" className="ds-touch-target" aria-label="Back to garage" variant="subtle" autoFocus onClick={() => {
         garageFocus.current = vehicleId;
         setVehicleId(null);
       }}>

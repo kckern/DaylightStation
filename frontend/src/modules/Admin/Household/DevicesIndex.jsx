@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Stack, Text, SimpleGrid, Card, Badge, Button, Group, Modal,
@@ -8,6 +8,7 @@ import { IconPlus, IconAlertCircle } from '@tabler/icons-react';
 import {EnforcementStatus} from '../../../../../__app_modules/household/supervision/browser/index.js';
 import { useVisibleRefresh } from '../../../lib/hooks/useVisibleRefresh.js';
 import { useApiResource } from '../../../lib/hooks/useApiResource.js';
+import { useRefreshableRead } from '../../../lib/hooks/useRefreshableRead.js';
 import { DaylightAPI } from '../../../lib/api.mjs';
 
 import { EmptyState, ErrorState, LoadingState } from '../../../lib/ui/states.jsx';
@@ -41,22 +42,20 @@ function DevicesIndex() {
   const [createErrors, setCreateErrors] = useState({});
   const [creating, setCreating] = useState(false);
 
-  const latestStatusRead = useRef(0);
-  const refreshEnforcement = useCallback(async () => {
-    const read = ++latestStatusRead.current;
+  const readEnforcement = useCallback(async isCurrent => {
     setEnforcementNow(Date.now());
     try {
       const status = await DaylightAPI('/api/v1/admin/household/shutdown/status');
-      if (read !== latestStatusRead.current) return;
+      if (!isCurrent()) return;
       setShutdown(status);
       setEnforcementNow(Date.now());
     } catch {
-      if (read === latestStatusRead.current) setShutdown(null);
+      if (isCurrent()) setShutdown(null);
     }
   }, []);
+  const { reload: refreshEnforcement } = useRefreshableRead(readEnforcement);
   useEffect(() => {
     if (document.visibilityState === 'visible') refreshEnforcement();
-    return () => { latestStatusRead.current++; };
   }, [refreshEnforcement]);
   useVisibleRefresh({ intervalMs: 2000, reload: refreshEnforcement });
 

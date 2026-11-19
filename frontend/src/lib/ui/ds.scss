@@ -87,6 +87,13 @@
   &:focus-visible { outline: var(--ds-focus-width) solid var(--ds-accent); outline-offset: 1px; }
 }
 
+@media (pointer: coarse) {
+  :is(button, a).ds-touch-target {
+    min-inline-size: var(--ds-control-touch-target);
+    min-block-size: var(--ds-control-touch-target);
+  }
+}
+
 .ds-sheet {
   position: fixed; inset: 0; z-index: 300;
 

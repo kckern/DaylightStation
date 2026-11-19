@@ -5,7 +5,8 @@
 //   shows it), then followed live on `device-start:*` (§9.15);
 // - how its playback started (RQ-HOUSE-07): GET /api/v1/media/started-by,
 //   re-read whenever what is playing around the house changes.
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
+import { useRefreshableRead } from '@/lib/hooks/useRefreshableRead.js';
 import { useVisibleRefresh } from '../../../../../frontend/src/lib/hooks/useVisibleRefresh.js';
 import { observeSocketStatus } from '../../../../../frontend/src/services/observeSocketStatus.js';
 import { subscribeTopicKind, parseDeviceTopic, onStatus } from "../net/ws.js";
@@ -89,12 +90,10 @@ export function useStartStatuses(deviceIds, { api = defaultApi } = {}) {
  */
 export function useStartedByAll(playingKey, { api = defaultApi, pollMs = STARTED_BY_POLL_MS } = {}) {
   const [snapshot, setSnapshot] = useState(null);
-  const latest = useRef(0);
-  const load = useCallback(async () => {
-    const ticket = ++latest.current;
+  const readAttribution = useCallback(async isCurrent => {
     try {
       const res = await api.startedByAll();
-      if (ticket !== latest.current) return;
+      if (!isCurrent()) return;
       const next = new Map();
       for (const item of Array.isArray(res?.items) ? res.items : []) {
         const id = deviceIdForScreen(item.deviceId);
@@ -103,15 +102,15 @@ export function useStartedByAll(playingKey, { api = defaultApi, pollMs = STARTED
       houseLog.startedByLoaded({ screens: next.size });
       setSnapshot({ playingKey, byDevice: next });
     } catch (error) {
-      if (ticket !== latest.current) return;
+      if (!isCurrent()) return;
       houseLog.startedByFailed({ status: error?.status ?? null, error: error?.message });
     }
   }, [api, playingKey]);
+  const { reload, poll } = useRefreshableRead(readAttribution);
   useEffect(() => {
-    if (document.visibilityState === 'visible') load();
-    return () => { latest.current++; };
-  }, [load]);
-  useVisibleRefresh({ intervalMs: pollMs, reload: load });
+    if (document.visibilityState === 'visible') reload();
+  }, [reload]);
+  useVisibleRefresh({ intervalMs: pollMs, reload, poll });
   return snapshot && snapshot.playingKey === playingKey ? snapshot.byDevice : new Map();
 }
 

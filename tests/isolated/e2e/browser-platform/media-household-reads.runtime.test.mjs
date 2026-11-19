@@ -7,6 +7,73 @@ test.beforeEach(async ({ page }) => {
   await page.routeWebSocket('**/*', () => {});
 });
 
+test('Media keeps a slow screen registry read through polling and refreshes it on foreground return', async ({ page }) => {
+  const registry = [];
+  let socket;
+  let connections = 0;
+  await page.routeWebSocket('**/*', connection => { socket = connection; connections++; });
+  await page.setViewportSize({ width: 390, height: 850 });
+  await page.clock.install();
+  await page.addInitScript(() => {
+    window.registryFixtureVisible = true;
+    Object.defineProperty(document, 'visibilityState', {
+      get: () => window.registryFixtureVisible ? 'visible' : 'hidden',
+    });
+  });
+  await page.route('**/api/**', route => {
+    const { pathname } = new URL(route.request().url());
+    if (pathname.endsWith('/supervision/bootstrap')) return route.fulfill({ json: { enabled: false } });
+    if (pathname.endsWith('/device/config')) {
+      return route.fulfill({ json: { devices: { lounge: { name: 'Configured screen', fleet: true } } } });
+    }
+    if (pathname === '/api/v1/media/screens') {
+      registry.push(route);
+      return;
+    }
+    return route.fulfill({ json: {} });
+  });
+
+  const registryResult = name => ({ json: { screens: [{ id: 'fleet:lounge', name }] } });
+  const elapseRegistryInterval = async () => {
+    for (let seconds = 0; seconds < 120; seconds += 30) {
+      // Keep the mocked connection alive as the server normally does. A
+      // reconnect would correctly force a new read independently of polling.
+      socket.send(JSON.stringify({ type: 'ping' }));
+      await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+      await page.clock.fastForward(30_000);
+    }
+    expect(connections).toBe(1);
+  };
+  await page.goto('/media?view=fleet');
+  const screen = page.getByTestId('fleet-card-lounge');
+  await expect(screen).toContainText('Configured screen');
+  await expect.poll(() => registry.length).toBeGreaterThan(0);
+  await expect.poll(() => connections).toBe(1);
+  const initialReads = registry.splice(0);
+  await elapseRegistryInterval();
+  await elapseRegistryInterval();
+  for (const read of initialReads) await read.fulfill(registryResult('Original registry name'));
+  await expect(screen).toContainText('Original registry name');
+  expect(registry).toHaveLength(0);
+
+  await elapseRegistryInterval();
+  await expect.poll(() => registry.length).toBe(1);
+  await page.evaluate(() => {
+    window.registryFixtureVisible = false;
+    document.dispatchEvent(new Event('visibilitychange'));
+    window.registryFixtureVisible = true;
+    document.dispatchEvent(new Event('visibilitychange'));
+  });
+  await expect.poll(() => registry.length).toBe(2);
+  await registry[1].fulfill(registryResult('Renamed registry screen'));
+  await expect(screen).toContainText('Renamed registry screen');
+  const staleResponse = page.waitForResponse(response => response.request() === registry[0].request());
+  await registry[0].fulfill(registryResult('Superseded registry name'));
+  await (await staleResponse).finished();
+  await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+  await expect(screen).toContainText('Renamed registry screen');
+});
+
 test('Media favourites revalidate once with Home and desktop search mounted', async ({ page }) => {
   const item = { contentId: 'plex:123', title: 'Fixture Film', type: 'movie' };
   const reads = [];

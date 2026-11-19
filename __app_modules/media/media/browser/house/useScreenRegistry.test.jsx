@@ -5,8 +5,8 @@ import { useScreenRegistry, mergeRegistryNames, registryLagsLiveNames } from "./
 import { HouseApiError } from "./houseApi.js";
 
 let captured;
-function Probe({ api }) {
-  captured = useScreenRegistry({ api, pollMs: 0 });
+function Probe({ api, pollMs = 0 }) {
+  captured = useScreenRegistry({ api, pollMs });
   return <div data-testid="probe">{captured.screens.map((s) => s.name).join(',')}|{captured.available ? 'y' : 'n'}</div>;
 }
 
@@ -32,6 +32,55 @@ describe('useScreenRegistry', () => {
     expect(pending).toHaveLength(2);
     await act(async () => pending[1]({ screens: [{ id: 'den', name: 'Current name' }] }));
     await act(async () => pending[0]({ screens: [{ id: 'den', name: 'Old name' }] }));
+    expect(screen.getByTestId('probe')).toHaveTextContent('Current name|y');
+  });
+
+  it('lets a slow registry read finish across ticks and still replaces it on explicit refresh', async () => {
+    vi.useFakeTimers();
+    const visibility = vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('hidden');
+    const pending = [];
+    const api = { listScreens: vi.fn(() => new Promise(resolve => pending.push(resolve))) };
+    const result = name => ({ screens: [{ id: 'den', name }] });
+    try {
+      render(<Probe api={api} pollMs={100} />);
+      expect(pending).toHaveLength(1);
+      await act(async () => vi.advanceTimersByTime(250));
+      expect(pending).toHaveLength(1);
+
+      visibility.mockReturnValue('visible');
+      act(() => document.dispatchEvent(new Event('visibilitychange')));
+      expect(pending).toHaveLength(2);
+      await act(async () => vi.advanceTimersByTime(250));
+      expect(pending).toHaveLength(2);
+      await act(async () => pending[1](result('Current name')));
+      expect(screen.getByTestId('probe')).toHaveTextContent('Current name|y');
+
+      await act(async () => vi.advanceTimersByTime(100));
+      expect(pending).toHaveLength(3);
+      let refreshed;
+      act(() => { refreshed = captured.refresh(); });
+      expect(pending).toHaveLength(4);
+      await act(async () => pending[2](result('Superseded name')));
+      await act(async () => vi.advanceTimersByTime(100));
+      expect(pending).toHaveLength(4);
+      await act(async () => { pending[3](result('Renamed screen')); await refreshed; });
+      await act(async () => pending[0](result('Original name')));
+      expect(screen.getByTestId('probe')).toHaveTextContent('Renamed screen|y');
+    } finally {
+      visibility.mockRestore();
+      vi.useRealTimers();
+    }
+  });
+
+  it('retires a retained registry refresh when its API changes', async () => {
+    const previous = { listScreens: vi.fn(async () => ({ screens: [{ id: 'den', name: 'Former name' }] })) };
+    const current = { listScreens: vi.fn(async () => ({ screens: [{ id: 'den', name: 'Current name' }] })) };
+    const { rerender } = render(<Probe api={previous} />);
+    const formerRefresh = captured.refresh;
+    rerender(<Probe api={current} />);
+    await waitFor(() => expect(screen.getByTestId('probe')).toHaveTextContent('Current name|y'));
+    await act(async () => formerRefresh());
+    expect(previous.listScreens).toHaveBeenCalledTimes(1);
     expect(screen.getByTestId('probe')).toHaveTextContent('Current name|y');
   });
 

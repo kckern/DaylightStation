@@ -59,6 +59,7 @@ function CameraCard({ camId }) {
       title={camId}
       actions={(
         <ActionIcon
+          className="ds-touch-target"
           aria-label={`Fullscreen ${camId}`}
           variant="subtle"
           size="sm"
