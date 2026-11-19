@@ -1,6 +1,23 @@
 // frontend/src/lib/auth.js
 
 const TOKEN_KEY = 'ds_token';
+const tokenListeners = new Set();
+
+export function subscribeToken(listener) {
+  const onStorage = event => {
+    if (event.key !== TOKEN_KEY && event.key !== null) return;
+    try {
+      if (event.storageArea !== window.localStorage) return;
+    } catch { return; }
+    listener();
+  };
+  tokenListeners.add(listener);
+  window.addEventListener('storage', onStorage);
+  return () => {
+    tokenListeners.delete(listener);
+    window.removeEventListener('storage', onStorage);
+  };
+}
 
 export function getToken() {
   return localStorage.getItem(TOKEN_KEY);
@@ -8,10 +25,12 @@ export function getToken() {
 
 export function setToken(token) {
   localStorage.setItem(TOKEN_KEY, token);
+  for (const listener of tokenListeners) listener();
 }
 
 export function clearToken() {
   localStorage.removeItem(TOKEN_KEY);
+  for (const listener of tokenListeners) listener();
 }
 
 export function getUser() {

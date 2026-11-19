@@ -44,3 +44,67 @@ test('Feed Search retires the old query and cursor during a failed replacement',
   await expect(page.getByRole('heading', { name: 'Fish match' })).toBeVisible();
   expect(queries).toEqual([['birds', null], ['fish', null], ['fish', null]]);
 });
+
+for (const keepFocus of [true, false]) {
+  test(`Feed Search retries a failed third page ${keepFocus ? 'with pagination focus' : 'after moving focus'}`, async ({ page }) => {
+    const queries = [];
+    const retry = Promise.withResolvers();
+    let thirdPageAttempts = 0;
+    const result = (id, title, nextCursor) => ({ items: [{ id, title }], total: 3, nextCursor });
+    await page.routeWebSocket('**/*', () => {});
+    await page.route('**/api/**', async route => {
+      const { pathname, searchParams } = new URL(route.request().url());
+      if (!pathname.startsWith('/api/')) return route.fallback();
+      if (pathname.endsWith('/supervision/bootstrap')) return route.fulfill({ json: { enabled: false } });
+      if (pathname !== '/api/v1/feed/search') return route.fulfill({ json: {} });
+      const cursor = searchParams.get('cursor');
+      queries.push([searchParams.get('q'), searchParams.get('source'), searchParams.get('state'), cursor]);
+      if (cursor === 'page-two') return route.fulfill({ json: result('two', 'Second bird', 'page-three') });
+      if (cursor === 'page-three') {
+        if (++thirdPageAttempts === 1) return route.fulfill({ status: 500, json: { error: 'Unavailable' } });
+        await retry.promise;
+        return route.fulfill({ json: result('three', 'Third bird', null) });
+      }
+      return route.fulfill({ json: result('one', 'First bird', 'page-two') });
+    });
+
+    await page.goto('/feed/search?q=birds&source=fixture&state=saved');
+    const row = name => page.getByRole('heading', { name, exact: true });
+    const more = page.getByRole('button', { name: /Load more/ });
+    const search = page.getByRole('textbox', { name: 'Search feed history' });
+    await expect(row('First bird')).toBeVisible();
+    await more.press('Enter');
+    await expect(row('Second bird')).toBeVisible();
+    await expect(more).toBeFocused();
+    await page.keyboard.press('Enter');
+    const error = page.getByRole('alert').filter({ hasText: 'Search could not be completed.' });
+    await expect(error).toBeVisible();
+    await expect(row('First bird')).toBeVisible();
+    await expect(row('Second bird')).toBeVisible();
+    const otherContinuation = await more.count();
+    try {
+      await expect(page.getByRole('button', { name: 'Retry', exact: true })).toBeFocused();
+      await page.keyboard.press('Enter');
+      await expect.poll(() => queries).toEqual([
+        ['birds', 'fixture', 'saved', null],
+        ['birds', 'fixture', 'saved', 'page-two'],
+        ['birds', 'fixture', 'saved', 'page-three'],
+        ['birds', 'fixture', 'saved', 'page-three'],
+      ]);
+      expect(otherContinuation).toBe(0);
+      const loading = page.getByRole('button', { name: 'Loading…', exact: true });
+      await expect(loading).toBeDisabled();
+      await expect(loading).toBeFocused();
+      await page.keyboard.press('Enter');
+      if (!keepFocus) await search.focus();
+      await expect(row('First bird')).toBeVisible();
+      await expect(row('Second bird')).toBeVisible();
+    } finally {
+      retry.resolve();
+    }
+    await expect(row('Third bird')).toBeVisible();
+    await expect(more).toHaveCount(0);
+    await expect(keepFocus ? row('Third bird') : search).toBeFocused();
+    expect(queries).toHaveLength(4);
+  });
+}

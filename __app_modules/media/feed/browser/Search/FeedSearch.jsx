@@ -1,6 +1,7 @@
+import { Button } from '@/lib/ui/Button.jsx';
 import { Select } from '@/lib/ui/Select.jsx';
 import { EmptyState, ErrorState, StateMessage } from '@/lib/ui/states.jsx';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { DaylightAPI } from "../../../../../frontend/src/lib/api.mjs";
 import { useVisibleRefresh } from "@/lib/hooks/useVisibleRefresh.js";
@@ -21,12 +22,24 @@ export default function FeedSearch() {
   const [requestError, setRequestError] = useState(null);
   const { mutateItems, applyPendingMutations } = useFeedWorkspace();
   const inputRef = useRef(null);
+  const paginationRef = useRef(null);
+  const appendedHeadingRef = useRef(null);
+  const handledAppendFocus = useRef(null);
   const requestRef = useRef(null);
   const writes = useRef({ pending: 0, generation: 0 });
   const currentPage = resultPage?.requestKey === requestKey ? resultPage : null;
   const { items, nextCursor, total, coverage } = currentPage ?? NO_RESULTS;
-  const error = requestError?.requestKey === requestKey ? requestError.error : null;
-  const searching = loading || (!currentPage && !error);
+  const failure = requestError?.requestKey === requestKey ? requestError : null;
+  const searching = loading || (!currentPage && !failure);
+  const appendFocus = currentPage?.appendFocus;
+
+  useLayoutEffect(() => {
+    if (!appendFocus || handledAppendFocus.current === appendFocus) return;
+    handledAppendFocus.current = appendFocus;
+    if (document.activeElement === document.body) {
+      (appendedHeadingRef.current ?? inputRef.current)?.focus();
+    }
+  }, [appendFocus]);
 
   useEffect(() => { inputRef.current?.focus(); }, []);
   useEffect(() => {
@@ -61,6 +74,7 @@ export default function FeedSearch() {
       const metadata = { total: result.total || 0, coverage: result.coverage || null };
       const incoming = refresh && overlappedWrite ? null : applyPendingMutations(result.items || []);
       const nextCursor = result.nextCursor || null;
+      const moveFocus = append && !nextCursor && paginationRef.current?.matches(':focus');
       setResultPage(current => {
         if (!append && !refresh) {
           return { requestKey, items: incoming, nextCursor, ...metadata, hasAppendedPage: false };
@@ -69,8 +83,11 @@ export default function FeedSearch() {
         if (!incoming) return { ...current, ...metadata };
         if (append) {
           const existing = new Set(current.items.map(resultKey));
-          const items = [...current.items, ...incoming.filter(item => !existing.has(resultKey(item)))];
-          return { ...current, ...metadata, items, nextCursor, hasAppendedPage: true };
+          const added = incoming.filter(item => !existing.has(resultKey(item)));
+          const items = [...current.items, ...added];
+          const focusItem = added[0] ?? items.at(-1);
+          const appendFocus = moveFocus ? { key: focusItem && resultKey(focusItem) } : null;
+          return { ...current, ...metadata, items, nextCursor, hasAppendedPage: true, appendFocus };
         }
         if (current.hasAppendedPage) {
           // Update visible rows without replacing the last page's continuation.
@@ -82,7 +99,7 @@ export default function FeedSearch() {
       });
     } catch (err) {
       if (!refresh && !controller.signal.aborted && err.name !== 'AbortError') {
-        setRequestError({ requestKey, error: new Error('Search could not be completed.') });
+        setRequestError({ requestKey, append, cursor, error: new Error('Search could not be completed.') });
       }
     } finally {
       if (requestRef.current === controller) {
@@ -98,7 +115,7 @@ export default function FeedSearch() {
   }, [runSearch]);
 
   const refreshCoverage = useCallback(() => runSearch({ refresh: true }), [runSearch]);
-  useVisibleRefresh({ active: coverage?.status === 'running' && !error, intervalMs: 2000, reload: refreshCoverage });
+  useVisibleRefresh({ active: coverage?.status === 'running' && !failure, intervalMs: 2000, reload: refreshCoverage });
 
   const submit = event => {
     event.preventDefault();
@@ -125,6 +142,8 @@ export default function FeedSearch() {
     if (value) next.set(key, value); else next.delete(key);
     setParams(next);
   };
+  const appendFailure = failure?.append ? failure : null;
+  const paginationDisabled = searching || loadingMore;
 
   return (
     <section className="feed-search" aria-labelledby="feed-search-title">
@@ -147,23 +166,37 @@ export default function FeedSearch() {
       </form>
       {coverage && <p className="feed-search__coverage" role="status">{total} result{total === 1 ? '' : 's'} · {coverage.retentionMonths}-month history{coverage.status === 'running' ? ` · indexing (${coverage.indexed || 0})` : coverage.status === 'failed' ? ' · backfill paused' : ''}</p>}
       {searching && <StateMessage state="loading" role="status" title="Searching…" />}
-      {error && <ErrorState title={null} error={error} onRetry={() => runSearch()} />}
-      {!searching && !error && items.length === 0 && <EmptyState title="No matching items in indexed history." />}
+      {failure && !appendFailure && <ErrorState title={null} error={failure.error} onRetry={() => runSearch()} />}
+      {!searching && !failure && items.length === 0 && <EmptyState title="No matching items in indexed history." />}
       <div className="feed-search__results">
-        {items.map(item => (
-          <article className="feed-result" key={item.stateKey || item.id}>
+        {items.map(item => {
+          const key = resultKey(item);
+          const isFocusTarget = appendFocus?.key === key;
+          return <article className="feed-result" key={key}>
             <div className="feed-result__meta">{item.sourceInfo?.label || item.source} · {item.publishedAt ? new Date(item.publishedAt).toLocaleDateString() : ''}{item.state?.syncStatus === 'pending' ? ' · sync pending' : ''}</div>
-            <h2>{item.url ? <a href={item.url} target="_blank" rel="noreferrer">{item.title}</a> : item.title}</h2>
+            <h2 ref={isFocusTarget ? appendedHeadingRef : null} tabIndex={isFocusTarget ? -1 : undefined}>
+              {item.url ? <a href={item.url} target="_blank" rel="noreferrer">{item.title}</a> : item.title}
+            </h2>
             {item.summary && <p>{item.summary}</p>}
             <div className="feed-item-actions">
               <button aria-pressed={!!item.state?.isSaved} onClick={() => actOnItem(item, item.state?.isSaved ? 'unsave' : 'save')}>{item.state?.isSaved ? 'Saved' : 'Save'}</button>
               <button onClick={() => actOnItem(item, item.state?.isArchived ? 'unarchive' : 'archive')}>{item.state?.isArchived ? 'Restore' : 'Archive'}</button>
               <button onClick={() => actOnItem(item, item.state?.isRead ? 'unread' : 'read')}>{item.state?.isRead ? 'Mark unread' : 'Mark read'}</button>
             </div>
-          </article>
-        ))}
+          </article>;
+        })}
       </div>
-      {nextCursor && <button className="feed-search__more" disabled={searching || loadingMore} onClick={() => runSearch({ append: true, cursor: nextCursor })}>{loadingMore ? 'Loading…' : `Load more (${items.length} of ${total})`}</button>}
+      {appendFailure && <StateMessage state="error" role="alert" detail={appendFailure.error.message} />}
+      {nextCursor && (
+        <Button ref={paginationRef} className="feed-search__more" density="compact" variant="secondary"
+          aria-disabled={paginationDisabled || undefined} aria-busy={loadingMore || undefined}
+          onClick={() => {
+            if (paginationDisabled) return;
+            runSearch({ append: true, cursor: appendFailure?.cursor ?? nextCursor });
+          }}>
+          {loadingMore ? 'Loading…' : appendFailure ? 'Retry' : `Load more (${items.length} of ${total})`}
+        </Button>
+      )}
     </section>
   );
 }

@@ -19,6 +19,7 @@ function PreferenceProbe() {
       <button onClick={() => setReadingPreference('density', 'comfortable')}>Comfortable</button>
       <button onClick={() => refreshWorkspace()}>Refresh preferences</button>
       <button onClick={() => markVisited('reader', '2026-08-24T12:00:00.000Z')}>Visit</button>
+      <button onClick={() => markVisited('reader', '2026-08-25T12:00:00.000Z', { itemId: 'two', scrollOffset: 200 })}>Visit again</button>
       <output aria-label="last visit">{getLastVisit('reader') || 'never'}</output>
       <output aria-label="workspace ready">{String(workspaceReady)}</output>
     </>
@@ -166,9 +167,127 @@ describe('FeedWorkspaceProvider reading preferences', () => {
       await waitFor(() => expect(apiMock).toHaveBeenCalledWith('/api/v1/feed/workspace/preferences', { fontScale: 1.3 }, 'PATCH'));
       fireEvent.click(screen.getByRole('button', { name: 'Visit' }));
       expect(screen.getByLabelText('last visit')).toHaveTextContent('2026-08-24T12:00:00.000Z');
-      expect(apiMock).toHaveBeenCalledWith('/api/v1/feed/workspace/checkpoints/reader', expect.any(Object), 'PUT');
+      await waitFor(() => expect(apiMock).toHaveBeenCalledWith('/api/v1/feed/workspace/checkpoints/reader', expect.any(Object), 'PUT'));
     } finally {
       write.mockRestore();
+    }
+  });
+
+  test('keeps the newest visit visible across a stale workspace read and checkpoint acknowledgement', async () => {
+    const read = deferred();
+    const first = deferred();
+    const second = deferred();
+    const writes = [];
+    apiMock.mockImplementation((path, body) => {
+      if (path.endsWith('/workspace')) return read.promise;
+      if (path.endsWith('/checkpoints/reader')) {
+        writes.push(body);
+        return writes.length === 1 ? first.promise : second.promise;
+      }
+      return Promise.resolve({});
+    });
+    render(<FeedWorkspaceProvider><PreferenceProbe /></FeedWorkspaceProvider>);
+    await waitFor(() => expect(apiMock).toHaveBeenCalledWith('/api/v1/feed/workspace'));
+    fireEvent.click(screen.getByText('Visit'));
+    fireEvent.click(screen.getByText('Visit again'));
+    const visit = screen.getByLabelText('last visit');
+    const newest = '2026-08-25T12:00:00.000Z';
+    try {
+      await act(async () => read.resolve({ preferencesStored: true, checkpoints: { reader: { visitedAt: 'older' } } }));
+      expect(visit).toHaveTextContent(newest);
+      expect(writes).toHaveLength(1);
+      await act(async () => first.resolve({ checkpoint: { visitedAt: 'old acknowledgement' } }));
+      expect(writes).toHaveLength(2);
+      expect(visit).toHaveTextContent(newest);
+      expect(localStorage.getItem('feed:last-visit:reader')).toBe(newest);
+      expect(writes[1]).toMatchObject({ visitedAt: newest, itemId: 'two', scrollOffset: 200 });
+      await act(async () => second.resolve({ checkpoint: { visitedAt: 'latest acknowledgement' } }));
+      expect(visit).toHaveTextContent('latest acknowledgement');
+      expect(localStorage.getItem('feed:last-visit:reader')).toBe('latest acknowledgement');
+    } finally {
+      await act(async () => { first.resolve({}); second.resolve({}); });
+    }
+  });
+
+  for (const order of ['read before visit', 'visit before read']) {
+    test(order + ' keeps an acknowledged visit when a stale workspace read settles last', async () => {
+      const read = deferred();
+      const save = deferred();
+      let reads = 0;
+      apiMock.mockImplementation(path => {
+        if (path.endsWith('/workspace') && ++reads === 2) return read.promise;
+        if (path.endsWith('/checkpoints/reader')) return save.promise;
+        return Promise.resolve({ preferencesStored: true });
+      });
+      render(<FeedWorkspaceProvider><PreferenceProbe /></FeedWorkspaceProvider>);
+      await screen.findByText('true');
+      if (order === 'visit before read') fireEvent.click(screen.getByText('Visit'));
+      fireEvent.click(screen.getByText('Refresh preferences'));
+      try {
+        await waitFor(() => expect(reads).toBe(2));
+        if (order === 'read before visit') fireEvent.click(screen.getByText('Visit'));
+        await act(async () => save.resolve({ checkpoint: { visitedAt: 'confirmed visit' } }));
+        expect(screen.getByLabelText('last visit')).toHaveTextContent('confirmed visit');
+        await act(async () => read.resolve({ preferencesStored: true, checkpoints: { reader: { visitedAt: 'older' } } }));
+        expect(screen.getByLabelText('last visit')).toHaveTextContent('confirmed visit');
+      } finally {
+        await act(async () => { read.resolve({ preferencesStored: true }); save.resolve({}); });
+      }
+    });
+  }
+
+  test('a replacement workspace loads and saves preferences while an accepted Reader write is held', async () => {
+    const save = deferred();
+    apiMock.mockImplementation(path => path.endsWith('/checkpoints/reader') ? save.promise
+      : Promise.resolve({ preferencesStored: true, checkpoints: { reader: { visitedAt: 'older' } } }));
+    const old = render(<FeedWorkspaceProvider><PreferenceProbe /></FeedWorkspaceProvider>);
+    await screen.findByText('true');
+    fireEvent.click(screen.getByText('Visit'));
+    await waitFor(() => expect(apiMock).toHaveBeenCalledWith('/api/v1/feed/workspace/checkpoints/reader', expect.any(Object), 'PUT'));
+    old.unmount();
+    render(<FeedWorkspaceProvider><PreferenceProbe /></FeedWorkspaceProvider>);
+    try {
+      await screen.findByText('true');
+      expect(screen.getByLabelText('last visit')).toHaveTextContent('2026-08-24T12:00:00.000Z');
+      fireEvent.click(screen.getByText('Sepia'));
+      await waitFor(() => expect(preferenceSaves()).toEqual([{ theme: 'sepia' }]));
+      await act(async () => save.resolve({ checkpoint: { visitedAt: 'retired reply' } }));
+      expect(localStorage.getItem('feed:last-visit:reader')).toBe('2026-08-24T12:00:00.000Z');
+      expect(screen.getByLabelText('last visit')).toHaveTextContent('2026-08-24T12:00:00.000Z');
+    } finally {
+      await act(async () => save.resolve({}));
+    }
+  });
+
+  test('a switched account can save its own Reader visit before the former account replies', async () => {
+    const save = deferred();
+    const writes = [];
+    localStorage.setItem('ds_token', tokenFor('amy'));
+    apiMock.mockImplementation((path, position) => {
+      if (path.endsWith('/checkpoints/reader')) {
+        writes.push(position);
+        return writes.length === 1 ? save.promise : Promise.resolve({ checkpoint: { visitedAt: 'Bob confirmed' } });
+      }
+      return Promise.resolve({ preferencesStored: true });
+    });
+    const previous = render(<FeedWorkspaceProvider><PreferenceProbe /></FeedWorkspaceProvider>);
+    await screen.findByText('true');
+    fireEvent.click(screen.getByText('Visit'));
+    await waitFor(() => expect(writes).toHaveLength(1));
+    localStorage.setItem('ds_token', tokenFor('bob'));
+    fireEvent.click(screen.getByText('Visit again'));
+    expect(localStorage.getItem('feed:last-visit:reader')).toBe('2026-08-24T12:00:00.000Z');
+    previous.unmount();
+    render(<FeedWorkspaceProvider><PreferenceProbe /></FeedWorkspaceProvider>);
+    await screen.findByText('true');
+    try {
+      fireEvent.click(screen.getByText('Visit again'));
+      await screen.findByText('Bob confirmed');
+      await act(async () => save.resolve({ checkpoint: { visitedAt: 'Amy confirmed' } }));
+      expect(screen.getByLabelText('last visit')).toHaveTextContent('Bob confirmed');
+      expect(localStorage.getItem('feed:last-visit:reader')).toBe('Bob confirmed');
+    } finally {
+      await act(async () => save.resolve({}));
     }
   });
 
@@ -474,16 +593,59 @@ describe('FeedWorkspaceProvider reading preferences', () => {
     expect(apiMock).not.toHaveBeenCalledWith('/api/v1/feed/items/state', expect.anything(), 'PATCH');
   });
 
-  test('switches queue scope before a mutation after the active account changes', async () => {
+  test('a retired Undo cannot submit an item mutation for the next member', async () => {
+    localStorage.setItem('ds_token', tokenFor('amy'));
+    notifications.show.mockClear();
+    const amy = render(<FeedWorkspaceProvider><MutationProbe /></FeedWorkspaceProvider>);
+    fireEvent.click(screen.getByText('Save item'));
+    await waitFor(() => expect(notifications.show).toHaveBeenCalledWith(expect.objectContaining({ title: 'Saved' })));
+    const toast = notifications.show.mock.calls.at(-1)[0];
+    localStorage.setItem('ds_token', tokenFor('bob'));
+    amy.unmount();
+    render(<FeedWorkspaceProvider><MutationProbe />{toast.message}</FeedWorkspaceProvider>);
+    fireEvent.click(screen.getByRole('button', { name: 'Undo' }));
+    await act(async () => {});
+    expect(apiMock.mock.calls.filter(([path]) => path.endsWith('/items/state'))).toHaveLength(1);
+  });
+
+  for (const result of ['success', 'refusal', 'network failure', 'same account network failure']) {
+    test('a retired mutation handles ' + result + ' without publishing into the replacement', async () => {
+      const request = deferred();
+      localStorage.setItem('ds_token', tokenFor('amy'));
+      apiMock.mockImplementation(path => path.endsWith('/items/state') ? request.promise : Promise.resolve({ preferencesStored: true }));
+      const amy = render(<FeedWorkspaceProvider><MutationProbe /></FeedWorkspaceProvider>);
+      fireEvent.click(screen.getByText('Save item'));
+      await waitFor(() => expect(apiMock).toHaveBeenCalledWith('/api/v1/feed/items/state', expect.any(Object), 'PATCH'));
+      amy.unmount();
+      if (result !== 'same account network failure') localStorage.setItem('ds_token', tokenFor('bob'));
+      render(<FeedWorkspaceProvider><MutationProbe /></FeedWorkspaceProvider>);
+      notifications.show.mockClear();
+      await act(async () => {
+        if (result === 'success') request.resolve({ items: [] });
+        else request.reject(result === 'refusal' ? new Error('Refused') : new TypeError('Failed to fetch'));
+      });
+      expect(notifications.show).not.toHaveBeenCalled();
+      expect(localStorage.getItem('feed:pending-mutations:bob')).toBeNull();
+      if (result === 'same account network failure') {
+        expect(JSON.parse(localStorage.getItem('feed:pending-mutations:amy'))).toMatchObject([{ itemIds: ['one'], action: 'save' }]);
+      } else expect(localStorage.getItem('feed:pending-mutations:amy')).toBeNull();
+    });
+  }
+
+  test('only the replacement workspace can enqueue for the newly active account', async () => {
     Object.defineProperty(navigator, 'onLine', { configurable: true, value: false });
     localStorage.setItem('ds_token', tokenFor('alice'));
     localStorage.setItem('feed:pending-mutations:alice', JSON.stringify([{ id: 'alice-change', itemIds: ['alice-item'], action: 'save', createdAt: '2026-08-24T10:00:00.000Z' }]));
-    render(<FeedWorkspaceProvider><MutationProbe /></FeedWorkspaceProvider>);
+    const previous = render(<FeedWorkspaceProvider><MutationProbe /></FeedWorkspaceProvider>);
 
     expect(screen.getByLabelText('pending')).toHaveTextContent('1');
     localStorage.setItem('ds_token', tokenFor('bob'));
     fireEvent.click(screen.getByRole('button', { name: 'Save item' }));
 
+    expect(localStorage.getItem('feed:pending-mutations:bob')).toBeNull();
+    previous.unmount();
+    render(<FeedWorkspaceProvider><MutationProbe /></FeedWorkspaceProvider>);
+    fireEvent.click(screen.getByText('Save item'));
     await waitFor(() => expect(JSON.parse(localStorage.getItem('feed:pending-mutations:bob'))).toMatchObject([{ itemIds: ['one'], action: 'save' }]));
     expect(JSON.parse(localStorage.getItem('feed:pending-mutations:alice'))).toHaveLength(1);
   });

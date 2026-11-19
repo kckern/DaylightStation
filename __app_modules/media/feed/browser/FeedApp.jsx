@@ -1,7 +1,9 @@
+import { subscribeToken } from '@/lib/auth.js';
+import { feedQueueOwner } from './offline/feedOfflineStore.js';
 import { Select } from '@/lib/ui/Select.jsx';
 import { PlaybackFrame } from '@/lib/ui/AppFrame.jsx';
 import { useHotkey } from '@/lib/hooks/useHotkey.js';
-import { lazy, Suspense, useCallback, useState, useEffect, useRef } from 'react';
+import { lazy, Suspense, useCallback, useState, useEffect, useRef, useSyncExternalStore } from 'react';
 import { Routes, Route, NavLink, Navigate, Outlet, useParams, useLocation, useMatch, useNavigate } from 'react-router-dom';
 import { AppThemeProvider } from '@/lib/ui/AppThemeProvider.jsx';
 import { DismissStackProvider } from '@/lib/ui/dismiss/DismissStackProvider.jsx';
@@ -212,11 +214,12 @@ function FeedLayout() {
 
 const FeedApp = () => {
   useDocumentTitle('Feed');
+  const owner = useSyncExternalStore(subscribeToken, feedQueueOwner);
   return (
     <AppThemeProvider pack="feed">
       <Notifications position="bottom-center" withinPortal={false} data-safe-area-center />
       <DismissStackProvider>
-        <FeedWorkspaceProvider>
+        <FeedWorkspaceProvider key={JSON.stringify(owner)} owner={owner}>
           <FeedPlayerProvider>
             <Routes>
               <Route element={<FeedLayout />}>

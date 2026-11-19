@@ -22,10 +22,9 @@ const renderFlow = (props) => render(
   </MantineProvider>
 );
 
-const jsonResponse = (status, body) => ({
-  ok: status >= 200 && status < 300,
+const jsonResponse = (status, body) => new Response(JSON.stringify(body), {
   status,
-  json: async () => body,
+  headers: { 'Content-Type': 'application/json' },
 });
 
 beforeEach(() => {
@@ -80,7 +79,10 @@ describe('CeremonyFlow error states', () => {
   });
 
   it('falls back to a friendly message when the error body is not JSON', async () => {
-    fetch.mockResolvedValue({ ok: false, status: 502, json: async () => { throw new Error('not json'); } });
+    fetch.mockResolvedValue(new Response('<html>Bad Gateway</html>', {
+      status: 502,
+      headers: { 'Content-Type': 'text/html' },
+    }));
 
     renderFlow({ type: 'unit_intention' });
 
