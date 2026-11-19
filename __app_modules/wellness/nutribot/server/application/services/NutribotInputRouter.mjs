@@ -87,6 +87,13 @@ export class NutribotInputRouter extends BaseInputRouter {
     const result = await run(responseContext);
     const logId = result?.nutrilogUuid || null;
 
+    if (event.quickInput && logId === event.quickInput.logId) {
+      const log = await this.findQuickCapture(event.quickInput);
+      if (!log) throw new Error('Missing quick-input meal');
+      await this.finishQuickCapture(log);
+      return { ok: true, result, logId, committed: true };
+    }
+
     if (!logId && result?.committed) return { ok: true, result, committed: true, items: result.items || [], mealTime: result.bucket || event.payload.bucket, moved: false };
 
     if (!logId) {
@@ -259,6 +266,56 @@ export class NutribotInputRouter extends BaseInputRouter {
     }
   }
 
+  async findQuickCapture(identity) {
+    const log = await this.container.getFoodLogStore().findByUuid(identity.logId, identity.username);
+    if (!log) return null;
+    const source = log.metadata.quickInput;
+    if (source?.username !== identity.username || source?.kind !== identity.kind || source?.inputId !== identity.inputId) {
+      throw new Error('Quick-input meal identity conflict');
+    }
+    return log;
+  }
+
+  async finishQuickCapture(log) {
+    const { userId, conversationId, id: logId } = log;
+    const checkpoint = log.metadata.quickInput;
+    if (checkpoint.finished) return;
+    const source = checkpoint.kind === 'photo' ? 'image' : checkpoint.kind;
+    const store = this.container.getFoodLogStore();
+    const review = this.container.getFoodLogReview?.();
+    const exclusive = work => review?.runExclusive ? review.runExclusive(userId, work) : work();
+    // The review service owns its own lock during commit. Serialize just the
+    // two read-modify-write sections here, releasing it before entering commit.
+    log = await exclusive(async () => {
+      let current = await store.findByUuid(logId, userId);
+      if (!current.metadata.quickInput.enriched) {
+        const parser = source === 'image' ? this.container.getLogFoodFromImage() : this.container.getLogFoodFromText();
+        current = await parser.finishQuickInput(current);
+      }
+      if (current.status === 'pending' && !current.metadata.reviewOperation) {
+        const items = await this.#stampUnsettled(userId, logId, source);
+        if (!items.length) throw new Error('Quick-input review stamp needs retry');
+      }
+      return current;
+    });
+    if (log.status === 'pending' && !log.metadata.reviewOperation?.complete) {
+      if (!await this.#commitCapture({ userId, conversationId, logId, source })) throw new Error('Quick-input meal commit needs retry');
+    }
+    const receipts = this.container.getReceiptPublisher?.();
+    const binding = await receipts?.bind?.(userId, logId, {
+      conversationId, messageId: log.metadata.messageId, caption: source === 'image',
+    });
+    if (binding?.retry || binding?.receipts?.some(row => row.delivery === 'retry')) throw new Error('Quick-input receipt binding needs retry');
+    const receipt = await receipts?.refresh(userId, logId);
+    if (receipt?.retry || receipt?.receipts?.some(row => row.delivery === 'retry')) throw new Error('Quick-input receipt needs retry');
+    await exclusive(async () => {
+      const current = await store.findByUuid(logId, userId);
+      await store.save(current.with({ metadata: {
+        ...current.metadata, quickInput: { ...current.metadata.quickInput, finished: true },
+      } }, new Date()));
+    });
+  }
+
   // ==================== Event Handlers ====================
 
   async handleText(event, responseContext) {
@@ -337,6 +394,7 @@ export class NutribotInputRouter extends BaseInputRouter {
       useCase.execute({
         userId: this.#resolveUserId(event),
         conversationId: event.conversationId,
+        ...(event.quickInput && { quickInput: { ...event.quickInput, bucket: event.payload.bucket } }),
         text: event.payload.text,
         messageId: event.messageId,
         // The day the person is LOOKING AT becomes the parse's "today", so a
@@ -357,6 +415,7 @@ export class NutribotInputRouter extends BaseInputRouter {
       useCase.execute({
         userId: this.#resolveUserId(event),
         conversationId: event.conversationId,
+        ...(event.quickInput && { quickInput: { ...event.quickInput, bucket: event.payload.bucket } }),
         imageData: {
           fileId: event.payload.fileId,
           // Web path: a data URL set by WebNutribotAdapter. LogFoodFromImage only
@@ -385,6 +444,7 @@ export class NutribotInputRouter extends BaseInputRouter {
     const input = (rc) => ({
       userId: this.#resolveUserId(event),
       conversationId: event.conversationId,
+      ...(event.quickInput && { quickInput: { ...event.quickInput, bucket: event.payload.bucket } }),
       voiceData: {
         fileId: event.payload.fileId,
         // Set only on the web path, where the bytes were written to the

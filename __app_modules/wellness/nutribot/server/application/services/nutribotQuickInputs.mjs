@@ -19,12 +19,14 @@
  * file id, a photo as `imageBuffer`.
  */
 
+import { v5 as uuidv5 } from 'uuid';
 import {
   QuickInputIntake, QuickInputLedger, QuickInputEndpoint, boundUsers, localDayParts,
 } from '../../../../../../__capabilities/quick-input/server/public.mjs';
 import { getMealTimeFromHour } from '../../../../health/server/nutrition-values.mjs';
 
 const BOT = 'nutribot';
+const inFlight = new Map();
 
 /**
  * What the router's answer means for the input.
@@ -77,8 +79,13 @@ export function createNutribotQuickInputs({
     const { date, hour } = localDayParts(input.capturedAt, timezone(input.username));
     return { date, bucket: getMealTimeFromHour(hour) };
   };
+  const identity = ({ username, inputId }, kind) => ({
+    username, kind, inputId,
+    logId: uuidv5(JSON.stringify(['nutribot', username, kind, inputId]), uuidv5.URL),
+  });
   const event = (input, type, payload) => ({
     platform: 'quick-input',
+    quickInput: identity(input, type === 'image' ? 'photo' : type),
     type,
     userId: input.username,
     conversationId: input.conversationId,
@@ -104,12 +111,22 @@ export function createNutribotQuickInputs({
     },
   };
 
-  const endpoints = Object.fromEntries(Object.entries(handlers).map(([kind, handler]) => [kind, new QuickInputEndpoint({
-    intake: ready ? new QuickInputIntake({ bot: BOT, kind, handler, ledger, clock, logger }) : null,
-    deviceUsers: (deviceKey) => boundUsers(deviceConfig?.(deviceKey), BOT, kind),
-    resolveConversationId,
-    logger,
-  })]));
+  const endpoints = {};
+  for (const [kind, handler] of Object.entries(handlers)) {
+    if (inputRouter?.findQuickCapture) {
+      handler.findCapture = async input => {
+        const log = await inputRouter.findQuickCapture(identity(input, kind));
+        return log && { complete: log.metadata.quickInput.finished === true, state: log };
+      };
+      handler.finishCapture = log => inputRouter.finishQuickCapture(log);
+    }
+    endpoints[kind] = new QuickInputEndpoint({
+      intake: ready ? new QuickInputIntake({ bot: BOT, kind, handler, ledger, clock, logger, inFlight }) : null,
+      deviceUsers: deviceKey => boundUsers(deviceConfig?.(deviceKey), BOT, kind),
+      resolveConversationId,
+      logger,
+    });
+  }
 
   return { endpoints, ledger };
 }

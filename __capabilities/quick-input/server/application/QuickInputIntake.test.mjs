@@ -218,3 +218,19 @@ test('an endpoint with no intake, or one switched off, is unavailable; a binding
   assert.equal(broken.deviceAllowed('fleet:phone', 'user_1'), false);
   assert.deepEqual(warnings, ['quick_input.deviceLookupFailed']);
 });
+
+test('a durable partial capture resumes at the byte limit and costs one attempt', async () => {
+  const { ledger } = build({ limits: { bytes: 5, inputs: 1 } });
+  ledger.countAttempt('user_1', 'photo', 'i1', 5);
+  let resumed = 0;
+  const intake = new QuickInputIntake({ bot: 'nutribot', kind: 'photo', ledger, handler: {
+    findCapture: async () => ({ complete: false, state: { id: 1 } }),
+    finishCapture: async ({ id }) => { assert.equal(id, 1); resumed++; },
+    process: async () => assert.fail('reparsed saved meal'),
+  } });
+  assert.equal(intake.admission(input()).allowed, true);
+  assert.equal((await intake.execute(input())).kind, 'resumed');
+  assert.equal((await intake.execute(input())).kind, 'duplicate');
+  assert.equal(resumed, 1);
+  assert.deepEqual(ledger.usage('user_1'), { inputs: 1, bytes: 5, attempts: 2 });
+});

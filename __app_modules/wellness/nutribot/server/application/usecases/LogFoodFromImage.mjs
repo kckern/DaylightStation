@@ -8,6 +8,7 @@ import { capturedFoodGrams, capturedNutrientProvenance } from '../../../../healt
 
 import { v4 as uuidv4 } from 'uuid';
 import { repairTruncatedJson } from "../lib/repairJson.mjs";
+import { enrichFoodCapture, finishQuickInputEnrichment } from "../services/enrichFoodCapture.mjs";
 import { createNutriLog } from "../../../../health/server/nutrition-records.mjs";
 import { groupParsedItems } from "../../../../health/server/nutrition-capture-values.mjs";
 import { aiMicrosSource, pickMicros } from "../../../../health/server/nutrition-capture-values.mjs";
@@ -283,77 +284,31 @@ export class LogFoodFromImage {
       if (this.#catalogService?.resolveIdentity) {
         for (let index = 0; index < foodItems.length; index++) foodItems[index] = await this.#catalogService.resolveIdentity(foodItems[index], effectiveUserId);
       }
+      const quickInput = input.quickInput;
       const nutriLog = createNutriLog({
         userId: effectiveUserId,
         conversationId,
         items: foodItems,
         meal: {
           date: targetDate,
-          time: mealTime,
+          time: (quickInput && ((mealTimeExplicit && aiTime) || quickInput.bucket)) || mealTime,
         },
         metadata: {
+          ...(quickInput && { quickInput, messageId: photoMsgId ? String(photoMsgId) : undefined, messageKind: 'photo' }),
           source: 'image',
           imageUrl: imageUrl,
         },
         timezone,
         timestamp: now,
-      });
+      }, quickInput ? { newId: () => quickInput.logId } : {});
 
       // 8. Save NutriLog
       if (this.#foodLogStore) {
         await this.#foodLogStore.save(nutriLog);
       }
 
-      // 8a-bis. Density guard (catalog-density fix, step 2). BEFORE the catalog
-      // donation below — a donation adds this row to the very history the guard
-      // compares against, and a row judged against a median it has already
-      // moved is not judged at all. Nothing here corrects a number: the parsed
-      // values are logged as-is and land unsettled like every capture, so a
-      // flagged item just reaches the pending-review surface with a reason.
-      let densityFindings = [];
-      if (this.#catalogService?.assessDensity) {
-        try {
-          const findings = await this.#catalogService.assessDensity(foodItems, userId);
-          densityFindings = findings;
-          if (findings.length) this.#logger.info?.('nutribot.density.findings', { logId: nutriLog.id, findings });
-        } catch (err) {
-          this.#logger.warn?.('nutribot.density.assess_failed', { conversationId, error: err.message });
-        }
-      }
-
-      // 8b. Record food items in catalog for quick-add
-      if (this.#catalogService) {
-        for (const item of foodItems) {
-          try {
-            await this.#catalogService.recordUsage({
-              foodId: item.foodId,
-              name: item.label,
-              calories: item.calories,
-              protein: item.protein,
-              carbs: item.carbs,
-              fat: item.fat,
-              // The MASS, and the id that makes this row's observation
-              // idempotent. Without them the catalog can only remember a
-              // total, which is the portion-multiple problem it just stopped
-              // having.
-              grams: item.grams,
-              unit: item.unit,
-              amount: item.amount,
-              logId: item.id,
-              // Spread, not four named fields: an unanswered micro is ABSENT
-              // on `item` (see the mapper), and naming it here would
-              // resurrect it as `undefined` -> a donated structural zero.
-              ...pickMicros(item),
-              // Only a provenanced row donates its micros at all —
-              // see FoodCatalogService.recordUsage.
-              microsSource: item.microsSource,
-              source: 'nutritionix',
-            }, userId);
-          } catch (err) {
-            this.#logger.warn?.('nutribot.catalog.record_failed', { name: item.label, error: err.message });
-          }
-        }
-      }
+      if (quickInput) return { success: true, nutrilogUuid: nutriLog.id, itemCount: foodItems.length };
+      const densityFindings = await enrichFoodCapture(nutriLog, foodItems, this.#catalogService, this.#logger, userId);
 
       // Bind the processing photo. The receipt is rendered from the ledger
       // only AFTER the router commits the capture and resolves meal placement.
@@ -440,6 +395,10 @@ export class LogFoodFromImage {
 
       throw error;
     }
+  }
+
+  finishQuickInput(log) {
+    return finishQuickInputEnrichment(log, this.#catalogService, this.#foodLogStore, this.#logger);
   }
 
   /**

@@ -141,3 +141,9 @@ test('the limits come from config, the earlier voice memo keys still count, and 
 test('the store is required', () => {
   assert.throws(() => new QuickInputLedger({}), /store/);
 });
+
+test('a refused progress write fails the attempt', () => {
+  const { ledger } = build({ store: { read: () => null, write: () => false } });
+  assert.throws(() => ledger.mark('user', 'text', 'id', { saved: true }), /ledger write failed/);
+  assert.throws(() => ledger.countAttempt('user', 'text', 'id', 10), /ledger write failed/);
+});

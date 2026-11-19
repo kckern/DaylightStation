@@ -16,6 +16,11 @@
  *       the replies need (for a journal entry, its text). A handler with no
  *       lookup is asked nothing: the ledger's own record decides.
  *
+ *   findCapture?(input) -> { complete, state } | null
+ *   finishCapture?(state) -> void
+ *       Resume a durable capture that has additional processing of its own.
+ *       A complete capture only needs its ledger acknowledgement repaired.
+ *
  *   process(input)  -> { state?, summary? }
  *                    | { nothing: 'empty_transcription' | 'unusable_input', notify? }
  *                    | { unavailable: true }
@@ -48,7 +53,7 @@ export class QuickInputIntake {
   #describe;
   // Inputs being processed right now, so a retry that arrives while the
   // first attempt is still running joins it and does not start a second.
-  #inFlight = new Map();
+  #inFlight;
 
   /**
    * @param {Object} deps
@@ -57,15 +62,17 @@ export class QuickInputIntake {
    * @param {Object} deps.handler - The bot's kind handler (see above)
    * @param {import('./QuickInputLedger.mjs').QuickInputLedger} deps.ledger - This bot's ledger
    * @param {() => number} [deps.clock] - Epoch ms
+   * @param {Map} [deps.inFlight] - Shared across intakes for a single running backend
    * @param {Object} [deps.logger]
    * @param {string} [deps.events] - Prefix of the log events this intake emits
    * @param {(input: Object) => Object} [deps.describe] - The fields an event names the input by
    */
-  constructor({ bot, kind, handler, ledger, clock = Date.now, logger = {}, events = 'quick_input', describe = null } = {}) {
+  constructor({ bot, kind, handler, ledger, clock = Date.now, inFlight = new Map(), logger = {}, events = 'quick_input', describe = null } = {}) {
     if (!bot) throw new Error('bot is required');
     if (!kind) throw new Error('kind is required');
     if (typeof handler?.process !== 'function') throw new Error('handler is required');
     if (!ledger?.record || !ledger?.admission) throw new Error('ledger is required');
+    this.#inFlight = inFlight;
     this.#bot = bot;
     this.#kind = kind;
     this.#handler = handler;
@@ -84,6 +91,9 @@ export class QuickInputIntake {
    * @returns {{allowed: true} | {allowed: false, limit: 'inputs'|'bytes', retryAfterSeconds: number}}
    */
   admission({ username, inputId, bytes = 0 }) {
+    // An interrupted meal may need only its receipt. Check the actual bytes
+    // inside execute after the durable lookup establishes whether parsing is needed.
+    if (this.#handler.findCapture && this.#ledger.record(username, this.#kind, inputId)) return { allowed: true };
     return this.#ledger.admission(username, this.#kind, inputId, bytes);
   }
 
@@ -105,7 +115,7 @@ export class QuickInputIntake {
    *   an earlier attempt did not.
    */
   async execute(input) {
-    const key = `${input.username}|${input.inputId}`;
+    const key = JSON.stringify([this.#bot, this.#kind, input.username, input.inputId]);
     const running = this.#inFlight.get(key);
     if (running) return running;
 
@@ -123,6 +133,22 @@ export class QuickInputIntake {
     if (record?.outcome) return { kind: record.outcome, inputId };
 
     const input = { conversationId, username, inputId, body, mimeType, capturedAt: null };
+
+    // A meal is durable before its processing and receipt are complete.
+    // Recover from that checkpoint without re-uploading bytes to the parser.
+    if (this.#handler.findCapture && !record?.saved) {
+      const capture = await this.#handler.findCapture(input);
+      if (capture) {
+        if (!capture.complete) {
+          const admission = this.#ledger.admission(username, kind, inputId, 0, { processing: false });
+          if (!admission.allowed) return { kind: 'daily_limit', inputId, limit: admission.limit, retryAfterSeconds: admission.retryAfterSeconds };
+          this.#ledger.countAttempt(username, kind, inputId, 0, { processing: false });
+          await this.#handler.finishCapture(capture.state);
+        }
+        this.#ledger.mark(username, kind, inputId, { saved: true });
+        return { kind: capture.complete ? 'duplicate' : 'resumed', inputId };
+      }
+    }
 
     // The bot's own store is the record of what was taken in; the ledger says
     // whether the replies went out. Stored with no ledger record is finished.

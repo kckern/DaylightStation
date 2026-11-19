@@ -364,6 +364,7 @@ export function validateNutriLog(log) {
       questions: log.questions || [],
       nutrition: log.nutrition || {},
       metadata: {
+        ...(log.metadata?.quickInput && { quickInput: log.metadata.quickInput }),
         messageId: log.metadata?.messageId,
         messageKind: log.metadata?.messageKind,
         densityFindings: log.metadata?.densityFindings,

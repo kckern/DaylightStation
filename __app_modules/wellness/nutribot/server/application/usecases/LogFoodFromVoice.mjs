@@ -198,6 +198,7 @@ export class LogFoodFromVoice {
         userId,
         conversationId,
         text: transcription,
+        ...(input.quickInput && { quickInput: input.quickInput }),
         interpretText: input.interpretText,
         // The spoken words are parsed against the day the person is LOOKING
         // AT, not the server's today — a memo recorded while viewing yesterday

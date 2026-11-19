@@ -101,7 +101,7 @@ export class QuickInputLedger {
    * finishing its replies sends nothing new for processing.
    * @returns {{allowed: true} | {allowed: false, limit: 'inputs'|'bytes', retryAfterSeconds: number}}
    */
-  admission(username, kind, inputId, bytes = 0) {
+  admission(username, kind, inputId, bytes = 0, { processing = true } = {}) {
     const ledger = this.#load(username);
     const key = keyOf(kind, inputId);
     const record = ledger.inputs[key];
@@ -111,7 +111,7 @@ export class QuickInputLedger {
     const day = { ...emptyDay(), ...ledger.days[date] };
     const refuse = (limit) => ({ allowed: false, limit, retryAfterSeconds: secondsToMidnight });
 
-    if (!record?.saved) {
+    if (processing && !record?.saved) {
       if (!day.inputIds.includes(key) && day.inputIds.length >= this.#limits.inputs) return refuse('inputs');
       if (day.bytes + amount(bytes) > this.#limits.bytes) return refuse('bytes');
     }
@@ -168,7 +168,7 @@ export class QuickInputLedger {
     for (const [key, record] of Object.entries(ledger.inputs)) {
       if (!(new Date(record?.startedAt).getTime() >= cutoff)) delete ledger.inputs[key];
     }
-    this.#store.write(username, ledger);
+    if (this.#store.write(username, ledger) === false) throw new Error('Quick-input ledger write failed');
   }
 }
 
