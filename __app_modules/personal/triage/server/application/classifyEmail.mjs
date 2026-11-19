@@ -68,10 +68,11 @@ export async function classifyEmail({ item, guard, policy, evaluate, logger }) {
   }
 
   const blocked = guard?.blocked !== false; // fail closed on a missing verdict
-  const confidence = Number.isFinite(disp.confidence) ? disp.confidence : 0;
+  const confidence = Number.isFinite(disp.confidence) ? Math.min(1, Math.max(0, disp.confidence)) : 0;
+  const threshold = policy?.autoArchiveConfidence;
   const step = disp.choice === 'reply' ? 'reply' : 'unsure';
   const urgent = step === 'reply' && urg?.type === 'yesNo' && urg.probability >= URGENT_P;
-  const preDo = disp.choice === 'archive' && confidence >= policy.autoArchiveConfidence && !blocked
+  const preDo = disp.choice === 'archive' && Number.isFinite(threshold) && confidence >= threshold && !blocked
     ? { action: 'archive', reason: 'confident archive' } : null;
 
   let why;
@@ -84,7 +85,7 @@ export async function classifyEmail({ item, guard, policy, evaluate, logger }) {
     const top = Object.entries(disp.probabilities ?? {}).filter(([k, p]) => KEYS.has(k) && Number.isFinite(p))
       .sort((a, b) => b[1] - a[1]).slice(0, 2);
     why = top.length
-      ? `${confidence >= policy.autoArchiveConfidence ? 'Suggested' : 'Unsure'}: ${top.map(([k, p]) => `${k} ${pct(p)}`).join(' / ')}`
+      ? `${Number.isFinite(threshold) && confidence >= threshold ? 'Suggested' : 'Unsure'}: ${top.map(([k, p]) => `${k} ${pct(p)}`).join(' / ')}`
       : `Suggested: ${disp.choice}`;
   }
   return {

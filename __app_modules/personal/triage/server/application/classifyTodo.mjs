@@ -33,30 +33,50 @@ export function todoState(item, asOf) {
   };
 }
 
+const span = (n) => (n === 0 ? 'today' : n === 1 ? '1 day' : `${n} days`);
+
 function staleWhy(item, asOf) {
   const w = item.facts ?? {};
   const due = dueMs(w.due);
-  if (due !== null && due < asOf) return `Overdue ${days(asOf - due)} days`;
-  if (Number.isFinite(w.modifiedAt)) return `Idle ${days(asOf - w.modifiedAt)} days`;
+  if (due !== null && due < asOf) {
+    const n = days(asOf - due);
+    return n === 0 ? 'Due today' : `Overdue ${span(n)}`;
+  }
+  if (Number.isFinite(w.modifiedAt)) {
+    const n = days(asOf - w.modifiedAt);
+    return n === 0 ? 'Touched today' : `Idle ${span(n)}`;
+  }
   return 'Open todo';
+}
+
+function autoCloseWhy(item, autoClose, asOf) {
+  if (autoClose.reason === 'exact_duplicate') {
+    const d = autoClose.duplicateOf;
+    return `Duplicate of \u201c${d?.title ?? d?.id ?? 'another open todo'}\u201d`;
+  }
+  const w = item.facts ?? {};
+  const due = dueMs(w.due);
+  if (due !== null && Number.isFinite(w.modifiedAt)) {
+    return `Overdue ${span(days(asOf - due))} and untouched for ${days(asOf - w.modifiedAt)}`;
+  }
+  return 'Long overdue and untouched';
 }
 
 export async function classifyTodo({ item, autoClose, evaluate, capabilities, logger, asOf = Date.now() }) {
   const base = { itemId: item.id, kind: 'todo', step: 'todo', urgent: false };
-  if (autoClose?.eligible) {
-    const reason = autoClose.reason ?? 'auto_close';
-    return { ...base, choices: [], suggested: 'drop', confidence: 1,
-      why: reason === 'exact_duplicate' ? 'Exact duplicate of another open todo' : `Long overdue and untouched (${reason})`,
-      preDo: { action: 'complete', reason } };
-  }
   const caps = capabilities instanceof Set ? capabilities : new Set(capabilities ?? []);
   const offered = ALL.filter((c) => caps.has(c.needs));
   const choices = offered.map(({ key, label }) => ({ key, label }));
+  if (autoClose?.eligible && caps.has('complete')) {
+    const reason = autoClose.reason ?? 'auto_close';
+    return { ...base, choices, suggested: 'drop', confidence: 1, why: autoCloseWhy(item, autoClose, asOf),
+      preDo: { action: 'complete', reason } };
+  }
   if (offered.length === 0) {
     return { ...base, choices: [], suggested: null, confidence: 0, why: 'no actions available', preDo: null };
   }
   if (offered.length === 1) {
-    return { ...base, choices, suggested: offered[0].key, confidence: 0, why: staleWhy(item, asOf), preDo: null };
+    return { ...base, choices, suggested: offered[0].key === 'drop' ? null : offered[0].key, confidence: 0, why: staleWhy(item, asOf), preDo: null };
   }
   let ans;
   try {

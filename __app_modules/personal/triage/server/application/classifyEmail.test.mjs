@@ -61,4 +61,27 @@ describe('classifyEmail', () => {
     expect(evaluate.mock.calls[0][0]).toMatchObject({ subject: 'Hello', receivedAt: '1970-01-01T00:00:00.001Z' });
     expect(evaluate.mock.calls[0][2]).toEqual({ timeout: 20000 });
   });
+  it('clamps confidence and treats non-numeric as 0', async () => {
+    const hi = await classifyEmail({ item, guard: ok, policy, evaluate: ev('archive', 7) });
+    expect(hi.confidence).toBe(1);
+    const nan = await classifyEmail({ item, guard: ok, policy, evaluate: ev('archive', 'high') });
+    expect(nan.confidence).toBe(0);
+    expect(nan.preDo).toBeNull();
+  });
+  it('degrades on an unknown choice key', async () => {
+    const p = await classifyEmail({ item, guard: ok, policy, evaluate: ev('delete', 0.99) });
+    expect(p.why).toBe('decision unavailable');
+    expect(p.preDo).toBeNull();
+  });
+  it('does not pre-archive and does not throw without a policy threshold', async () => {
+    for (const pol of [undefined, {}]) {
+      const p = await classifyEmail({ item, guard: ok, policy: pol, evaluate: ev('archive', 0.99) });
+      expect(p.preDo).toBeNull();
+    }
+  });
+  it('keeps suggested within choices', async () => {
+    const outs = [await classifyEmail({ item, guard: ok, policy, evaluate: ev('keep', 0.9) }),
+      await classifyEmail({ item, guard: ok, policy, evaluate: vi.fn().mockRejectedValue(new Error('x')) })];
+    for (const p of outs) expect(p.suggested === null || p.choices.some((c) => c.key === p.suggested)).toBe(true);
+  });
 });
