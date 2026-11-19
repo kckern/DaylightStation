@@ -50,7 +50,7 @@ export function runText(job, worker = null) {
 const active = (job) => job?.status === 'queued' || job?.status === 'running';
 
 export function FilterLibrary() {
-  const { data, loading, error, reload } = useApiResource(`${API}/library`, { label: 'content filter library', logger });
+  const { data, loading, error, reload, poll } = useApiResource(`${API}/library`, { label: 'content filter library', logger });
   const [stage, setStage] = useState(null);
   const [q, setQ] = useState('');
   const [busy, setBusy] = useState(null);
@@ -62,7 +62,7 @@ export function FilterLibrary() {
     if (data?.meta) logger.debug('library.loaded', { total: data.meta.total, verified: data.meta.verified ?? null, unmatched: data.meta.unmatched ?? null });
   }, [data]);
 
-  useVisibleRefresh({ active: anyActive, intervalMs: POLL_MS, reload });
+  useVisibleRefresh({ active: anyActive, intervalMs: POLL_MS, reload, poll });
 
   const make = useCallback(async (film) => {
     setBusy(film.ratingKey); setNotice(null);

@@ -421,6 +421,7 @@ export function useApiResource(path, {
   const [reloadRequest, setReloadRequest] = useState(null);
   const requestedReload = useRef(reloadRequest);
   const activePath = useRef(null);
+  const activeRead = useRef(null);
   const pendingRefresh = useRef(null);
 
   const cancelRefresh = useCallback(() => {
@@ -443,6 +444,13 @@ export function useApiResource(path, {
     });
   }, [enabled, path, requestReload]);
   const fetchedReload = useRef(reloadRequest);
+  // Interval ticks leave the active read and any refresh waiting for an
+  // effect alone. An explicit or foreground reload may still supersede them.
+  const poll = useCallback(() => {
+    if (!path || activePath.current !== path || activeRead.current
+      || fetchedReload.current !== requestedReload.current) return;
+    requestReload(null, true);
+  }, [path, requestReload]);
 
   useEffect(() => {
     activePath.current = enabled ? path : null;
@@ -490,6 +498,10 @@ export function useApiResource(path, {
     const epoch = scope?.epoch;
     const isCurrent = () => live && reloadRequest === requestedReload.current &&
       scope === registrationFor(path) && scope?.epoch === epoch;
+    activeRead.current = isCurrent;
+    const releaseRead = () => {
+      if (activeRead.current === isCurrent) activeRead.current = null;
+    };
 
     const { hit: cacheHit, value: cachedValue } = swr ? cacheGet(path) : { hit: false };
     if (cacheHit) {
@@ -551,10 +563,12 @@ export function useApiResource(path, {
         if (swr) setRevalidating(false);
         takeRefresh()?.reject(err);
         logger.warn('api.failed', { resource: label || path, error: err?.message });
-      });
+      })
+      .finally(releaseRead);
 
     return () => {
       live = false;
+      releaseRead();
       takeRefresh()?.reject(refreshAbortError());
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -567,11 +581,11 @@ export function useApiResource(path, {
   // flash a day flip used to show before the effect copied the cache over.
   const matches = resultPath === path;
   if (!matches && swr && enabled && path && swrCache.has(path)) {
-    return { data: swrCache.get(path), resourceKey: path, loading: false, error: null, revalidating: true, reload, refresh };
+    return { data: swrCache.get(path), resourceKey: path, loading: false, error: null, revalidating: true, reload, refresh, poll };
   }
   return { data: matches ? data : null, resourceKey: path,
     loading: matches ? loading : Boolean(enabled && path),
-    error: matches ? error : null, revalidating: matches && revalidating, reload, refresh };
+    error: matches ? error : null, revalidating: matches && revalidating, reload, refresh, poll };
 }
 
 export default useApiResource;

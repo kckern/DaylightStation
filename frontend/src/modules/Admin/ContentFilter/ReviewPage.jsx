@@ -43,7 +43,7 @@ export function ReviewPage() {
 function FilmReview({ ratingKey, rowId }) {
   const navigate = useNavigate();
   const url = `${API}/${encodeURIComponent(ratingKey)}/review`;
-  const { data, loading, error, reload } = useApiResource(url, { label: 'review', logger });
+  const { data, loading, error, reload, poll } = useApiResource(url, { label: 'review', logger });
   const [selected, setSelected] = useState(null);
   const [picked, setPicked] = useState(() => new Set());
   const [notice, setNotice] = useState(null);
@@ -83,7 +83,7 @@ function FilmReview({ ratingKey, rowId }) {
   const notMatched = data?.match === 'unmatched';
   const station = useReviewStation({ ratingKey, data, reload, selected, select, activeView, runBusy: running || notMatched });
   const { redoOpen } = useReviewKeys(station.handlers, { enabled: Boolean(data?.rows) });
-  useVisibleRefresh({ active: Boolean(waiting), intervalMs: POLL_MS, reload });
+  useVisibleRefresh({ active: Boolean(waiting), intervalMs: POLL_MS, reload, poll });
 
   // Rows in a queued/running send-back carry its step ("Sent back: refine").
   const sentBack = useMemo(() => {

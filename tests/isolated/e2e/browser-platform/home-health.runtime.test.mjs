@@ -155,6 +155,30 @@ test('Home preserves a pending toggle across a camera visit and pauses house rea
   expect(writes).toEqual([{ entityId: 'light.kitchen', desiredState: 'off' }]);
 });
 
+test('Home lets slow initial and periodic house reads finish across polling ticks', async ({ page }) => {
+  await page.clock.install();
+  await page.addInitScript(() => localStorage.setItem('home.view', 'rooms'));
+  const reads = [];
+  await page.route('**/home-dashboard/entities', route => { reads.push(route); });
+  await page.goto('/home');
+  await expect.poll(() => reads.length).toBe(1);
+  await page.clock.fastForward(10_001);
+  await page.clock.fastForward(10_001);
+  await reads[0].fulfill({ json: house('on') });
+
+  await page.locator('[data-room-id="kitchen"] .home-room__row').click();
+  await expect(page.getByRole('switch', { name: 'Kitchen light: turn off' })).toBeChecked();
+  expect(reads).toHaveLength(1);
+
+  await page.clock.fastForward(10_001);
+  await expect.poll(() => reads.length).toBe(2);
+  await page.clock.fastForward(10_001);
+  await page.clock.fastForward(10_001);
+  await reads[1].fulfill({ json: house('off') });
+  await expect(page.getByRole('switch', { name: 'Kitchen light: turn on' })).not.toBeChecked();
+  expect(reads).toHaveLength(2);
+});
+
 test('Home Mosaic keeps the tooltip and drawer reachable in its own frame', async ({ page }) => {
   const payload = house('on');
   const group = { id: 'kitchen', label: 'Kitchen', entityIds: ['light.kitchen'] };

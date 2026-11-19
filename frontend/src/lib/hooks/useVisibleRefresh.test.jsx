@@ -30,4 +30,26 @@ describe('useVisibleRefresh', () => {
     hook.unmount();
     expect(vi.getTimerCount()).toBe(0);
   });
+
+  it('uses the periodic callback on ticks and still reloads immediately in the foreground', () => {
+    vi.useFakeTimers();
+    const visibility = vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible');
+    const reload = vi.fn();
+    const poll = vi.fn();
+    const hook = renderHook(() => useVisibleRefresh({ intervalMs: 100, reload, poll }));
+    vi.advanceTimersByTime(100);
+    expect(poll).toHaveBeenCalledTimes(1);
+    expect(reload).not.toHaveBeenCalled();
+    visibility.mockReturnValue('hidden');
+    document.dispatchEvent(new Event('visibilitychange'));
+    vi.advanceTimersByTime(100);
+    expect(poll).toHaveBeenCalledTimes(1);
+    visibility.mockReturnValue('visible');
+    document.dispatchEvent(new Event('visibilitychange'));
+    expect(reload).toHaveBeenCalledTimes(1);
+    vi.advanceTimersByTime(100);
+    expect(poll).toHaveBeenCalledTimes(2);
+    hook.unmount();
+    expect(vi.getTimerCount()).toBe(0);
+  });
 });

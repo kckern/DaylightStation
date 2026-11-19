@@ -10,7 +10,7 @@ import { useHealthSessionGuard } from '../operations/HealthOperationsProvider.js
 export const cleanupPath = 'api/v1/health/nutrition/cleanup';
 export function useCleanup(active = true) {
   const resource = useApiResource(cleanupPath, { enabled: active, swr: true });
-  useVisibleRefresh({ active, intervalMs: 15000, reload: resource.reload });
+  useVisibleRefresh({ active, intervalMs: 15000, reload: resource.reload, poll: resource.poll });
   return resource;
 }
 

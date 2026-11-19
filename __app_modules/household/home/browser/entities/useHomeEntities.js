@@ -18,12 +18,12 @@ const logger = homeLogger.child({ component: 'home-entities' });
  * that show the new state until the next reading confirms (or contradicts) it.
  */
 export function useHomeEntities({ active = true, refreshMs = REFRESH_MS } = {}) {
-  const { data, loading, error, reload, revalidating } = useApiResource(active ? PATH : null, { label: 'home entities', logger, swr: true });
+  const { data, loading, error, reload, revalidating, poll } = useApiResource(active ? PATH : null, { label: 'home entities', logger, swr: true });
   // A null deadline represents a command whose acknowledgement is still pending.
   const [pending, setPending] = useState({});
   const submitting = useRef(new Set());
 
-  useVisibleRefresh({ active, intervalMs: refreshMs, reload });
+  useVisibleRefresh({ active, intervalMs: refreshMs, reload, poll });
 
   // A reading retires a guess only when it agrees with it; a guess that the
   // platform never confirms expires, and the real state shows.

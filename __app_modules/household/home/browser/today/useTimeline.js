@@ -17,9 +17,9 @@ export const timelinePath = (range) => `api/v1/home-dashboard/timeline?range=${r
  * range available when the user switches back.
  */
 export function useTimeline(range) {
-  const { data: timeline, loading, error, reload } = useApiResource(timelinePath(range), { label: 'timeline', logger, swr: true });
+  const { data: timeline, loading, error, reload, poll } = useApiResource(timelinePath(range), { label: 'timeline', logger, swr: true });
 
-  useVisibleRefresh({ active: range === 'today', reload, intervalMs: REFRESH_MS });
+  useVisibleRefresh({ active: range === 'today', reload, poll, intervalMs: REFRESH_MS });
 
   useEffect(() => {
     if (timeline) logger.debug('home.timeline.loaded', { range, lanes: timeline.lanes?.length ?? 0 });

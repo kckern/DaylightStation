@@ -17,15 +17,15 @@ export function whileDocumentVisible(start) {
 }
 
 /** Poll an active view and refresh immediately when the document returns to the foreground. */
-export function useVisibleRefresh({ active = true, intervalMs, reload }) {
+export function useVisibleRefresh({ active = true, intervalMs, reload, poll = reload }) {
   useEffect(() => {
     if (!active) return;
     return whileDocumentVisible(resumed => {
       if (resumed) reload();
       if (intervalMs > 0) {
-        const timer = setInterval(reload, intervalMs);
+        const timer = setInterval(poll, intervalMs);
         return () => clearInterval(timer);
       }
     });
-  }, [active, intervalMs, reload]);
+  }, [active, intervalMs, reload, poll]);
 }

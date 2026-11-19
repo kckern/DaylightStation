@@ -6,6 +6,13 @@ vi.mock('../api.mjs', () => ({ DaylightAPI: (...args) => apiMock(...args) }));
 
 import { useApiResource } from './useApiResource.js';
 
+function heldResponse() {
+  let resolve;
+  let reject;
+  const promise = new Promise((accept, refuse) => { resolve = accept; reject = refuse; });
+  return { promise, resolve, reject };
+}
+
 describe('useApiResource', () => {
   beforeEach(() => apiMock.mockReset());
 
@@ -48,6 +55,64 @@ describe('useApiResource', () => {
     act(() => result.current.reload());
     await waitFor(() => expect(result.current.data).toEqual({ n: 2 }));
     expect(apiMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('polls only when its current read and queued manual refresh have settled', async () => {
+    const initial = heldResponse();
+    const manual = heldResponse();
+    const recovery = heldResponse();
+    apiMock.mockReturnValueOnce(initial.promise).mockReturnValueOnce(manual.promise).mockReturnValueOnce(recovery.promise);
+    const { result } = renderHook(() => useApiResource('/api/v1/polled', { retryTransient: false }));
+    act(() => result.current.poll?.());
+    expect(apiMock).toHaveBeenCalledTimes(1);
+
+    let refresh;
+    act(() => {
+      refresh = result.current.refresh();
+      result.current.poll?.();
+    });
+    expect(apiMock).toHaveBeenCalledTimes(2);
+    await act(async () => { initial.resolve({ n: 0 }); });
+    act(() => result.current.poll?.());
+    expect(apiMock).toHaveBeenCalledTimes(2);
+
+    await act(async () => { manual.resolve({ n: 1 }); });
+    await expect(refresh).resolves.toEqual({ n: 1 });
+    act(() => { result.current.poll?.(); result.current.poll?.(); });
+    expect(apiMock).toHaveBeenCalledTimes(3);
+    await act(async () => { recovery.reject(new Error('Unavailable')); });
+    expect(result.current.error?.message).toBe('Unavailable');
+    apiMock.mockResolvedValueOnce({ n: 2 });
+    await act(async () => { result.current.poll?.(); });
+    expect(result.current.data).toEqual({ n: 2 });
+  });
+
+  it('preserves retry backoff and then shares the idle poll across readers of one path', async () => {
+    vi.useFakeTimers();
+    try {
+      const retry = heldResponse();
+      apiMock.mockRejectedValueOnce(Object.assign(new Error('Proxy restarting'), { transient: true }));
+      apiMock.mockReturnValueOnce(retry.promise);
+      const path = '/api/v1/retrying-poll';
+      const first = renderHook(() => useApiResource(path));
+      const second = renderHook(() => useApiResource(path));
+      await act(async () => { await vi.advanceTimersByTimeAsync(100); });
+      act(() => { first.result.current.poll(); second.result.current.poll(); });
+      expect(apiMock).toHaveBeenCalledTimes(1);
+
+      await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
+      expect(apiMock).toHaveBeenCalledTimes(2);
+      await act(async () => { retry.resolve({ n: 1 }); });
+      expect(first.result.current.data).toEqual({ n: 1 });
+      expect(second.result.current.data).toEqual({ n: 1 });
+      apiMock.mockResolvedValue({ n: 2 });
+      await act(async () => { first.result.current.poll(); second.result.current.poll(); });
+      expect(apiMock).toHaveBeenCalledTimes(3);
+      expect(first.result.current.data).toEqual({ n: 2 });
+      expect(second.result.current.data).toEqual({ n: 2 });
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('discards responses that land after unmount', async () => {
