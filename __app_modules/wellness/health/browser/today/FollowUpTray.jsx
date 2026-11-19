@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { ActionIcon, Menu, VisuallyHidden } from '@mantine/core';
 import { IconBell, IconScale } from '@tabler/icons-react';
-import { Sheet } from '@/lib/ui';
+import { ActionMenu, Sheet } from '@/lib/ui';
 import { createAppLogger } from "../../../../../frontend/src/lib/ui/createAppLogger.js";
 import { useCleanup } from "../cleanup/CleanupQuestions.jsx";
 import { QuestionDeck, subjectOf } from "../cleanup/QuestionDeck.jsx";
@@ -59,35 +59,38 @@ export function FollowUpTray({ active = true, target = null, observations = [], 
 
   const bell = (
     <span className={`health-followups${empty ? ' health-followups--empty' : ''}`}>
-      {/* No focus trap: its aria-hider would race the sheet a pick opens and
-          leave the page (the sheet included) aria-hidden. Arrow keys and
-          Escape still work. */}
-      <Menu position="bottom-end" width={300} shadow="md" withinPortal trapFocus={false}
-        onOpen={() => logger.debug('menu.open', { questions: questions.length, readings })}>
-        <Menu.Target>
+      {/* The menu's non-trapping focus lets a picked action open its sheet
+          without a competing aria-hider. */}
+      <ActionMenu
+        position="bottom-end"
+        width={300}
+        shadow="md"
+        withinPortal
+        onOpen={() => logger.debug('menu.open', { questions: questions.length, readings })}
+        dropdownProps={{ className: 'health-followups__menu' }}
+        trigger={
           <ActionIcon ref={bellRef} variant="subtle" size="lg" className="health-followups__button" aria-label={summary}>
             <IconBell size={20} stroke={1.6} aria-hidden="true" />
           </ActionIcon>
-        </Menu.Target>
-        <Menu.Dropdown className="health-followups__menu">
-          {empty ? <Menu.Label>Nothing waiting. All caught up.</Menu.Label> : null}
-          {questions.slice(0, LISTED).map((question) => (
-            <Menu.Item key={question.id} onClick={() => openSheet(question.id)}>
-              <span className="health-followups__item-subject">{subjectOf(question)}</span>
-              <span className="health-followups__item-text">{question.question}</span>
-            </Menu.Item>
-          ))}
-          {questions.length > LISTED ? (
-            <Menu.Item onClick={() => openSheet(questions[LISTED].id)}>{`${questions.length - LISTED} more questions`}</Menu.Item>
-          ) : null}
-          {readings ? (
-            <Menu.Item leftSection={<IconScale size={16} aria-hidden="true" />} onClick={() => openSheet()}>
-              {`${plural(readings, 'scale reading', 'scale readings')} to match`}
-            </Menu.Item>
-          ) : null}
-          {feedback && !questions.length ? <Menu.Item onClick={() => openSheet()}>A follow-up needs a look</Menu.Item> : null}
-        </Menu.Dropdown>
-      </Menu>
+        }
+      >
+        {empty ? <Menu.Label>Nothing waiting. All caught up.</Menu.Label> : null}
+        {questions.slice(0, LISTED).map((question) => (
+          <Menu.Item key={question.id} onClick={() => openSheet(question.id)}>
+            <span className="health-followups__item-subject">{subjectOf(question)}</span>
+            <span className="health-followups__item-text">{question.question}</span>
+          </Menu.Item>
+        ))}
+        {questions.length > LISTED ? (
+          <Menu.Item onClick={() => openSheet(questions[LISTED].id)}>{`${questions.length - LISTED} more questions`}</Menu.Item>
+        ) : null}
+        {readings ? (
+          <Menu.Item leftSection={<IconScale size={16} aria-hidden="true" />} onClick={() => openSheet()}>
+            {`${plural(readings, 'scale reading', 'scale readings')} to match`}
+          </Menu.Item>
+        ) : null}
+        {feedback && !questions.length ? <Menu.Item onClick={() => openSheet()}>A follow-up needs a look</Menu.Item> : null}
+      </ActionMenu>
       {/* Floats over the bell: its arrival moves nothing. */}
       {empty ? null : <span className="health-followups__badge" aria-hidden="true">{count || '!'}</span>}
       {/* ONE persistent live region, updated (and announced), never replaced. */}

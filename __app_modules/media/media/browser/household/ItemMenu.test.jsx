@@ -1,7 +1,7 @@
 // FIND.9a/AC2, FIND.11a/AC3, FIND.12a/AC1, FIND.13a/AC1 — one menu, every verb.
 import React from 'react';
 import { describe, it, expect, vi } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, act } from '@testing-library/react';
 import { MantineProvider } from '@mantine/core';
 import { ItemMenu } from "./ItemMenu.jsx";
 
@@ -38,6 +38,23 @@ describe('ItemMenu', () => {
     open({ item: { id: 'plex:1', title: 'Arrival', itemType: 'leaf' }, watched: true });
     expect(await screen.findByTestId('t-verb-unwatched')).toBeInTheDocument();
     expect(screen.queryByTestId('t-verb-watched')).toBeNull();
+  });
+
+  it('keeps the held Play next offer open and only dispatches the explicit front action', async () => {
+    const onVerb = open({ item: { id: 'plex:1', title: 'Arrival', itemType: 'leaf' } });
+    const next = await screen.findByTestId('t-verb-playNext');
+    vi.useFakeTimers();
+    try {
+      fireEvent.pointerDown(next);
+      await act(async () => vi.advanceTimersByTime(500));
+      fireEvent.pointerUp(next);
+      fireEvent.click(next);
+      expect(onVerb).not.toHaveBeenCalled();
+      fireEvent.click(screen.getByTestId('t-verb-playNextFront'));
+      expect(onVerb.mock.calls).toEqual([['playFirst']]);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('is a 44px target named for its item', () => {

@@ -5,6 +5,7 @@ import { ActiveQualityButton } from "../quality/PlaybackQualityButtons.jsx";
 // pending fields) rather than a second set of transport controls.
 import React, { useCallback, useContext, useEffect, useMemo, useRef } from 'react';
 import { Button, Title, Text, Group, Stack, Badge, Menu } from '@mantine/core';
+import { ActionMenu } from '@/lib/ui/ActionMenu.jsx';
 import { IconPlaylistAdd, IconSwitchHorizontal } from '@tabler/icons-react';
 import { UiIcon } from '@/lib/ui/UiIcon.jsx';
 import { useSessionController } from "../controller/useSessionController.js";
@@ -110,21 +111,22 @@ export function PeekPanel({ deviceId }) {
           <UiIcon name="back" /> {backDestination ?? 'Home'}
         </Button>
         {otherScreens.length > 0 && (
-          <Menu position="bottom-start" withinPortal shadow="md">
-            <Menu.Target>
+          <ActionMenu
+            position="bottom-start" withinPortal shadow="md"
+            dropdownProps={{ 'data-testid': 'peek-switch-menu' }}
+            trigger={
               <Button data-testid="peek-switch" className="session-controls-btn" variant="subtle" color="gray" leftSection={<IconSwitchHorizontal size={16} aria-hidden />}>
                 Switch screen
               </Button>
-            </Menu.Target>
-            <Menu.Dropdown data-testid="peek-switch-menu">
-              <Menu.Label>Steer another screen</Menu.Label>
-              {otherScreens.map((d) => (
-                <Menu.Item key={d.id} data-testid={`peek-switch-${d.id}`} className="session-controls-menu-item" onClick={() => switchTo(d.id)}>
-                  {deviceName(d, d.id)}{deviceLocation(d) ? ` · ${deviceLocation(d)}` : ''}
-                </Menu.Item>
-              ))}
-            </Menu.Dropdown>
-          </Menu>
+            }
+          >
+            <Menu.Label>Steer another screen</Menu.Label>
+            {otherScreens.map((d) => (
+              <Menu.Item key={d.id} data-testid={`peek-switch-${d.id}`} className="session-controls-menu-item" onClick={() => switchTo(d.id)}>
+                {deviceName(d, d.id)}{deviceLocation(d) ? ` · ${deviceLocation(d)}` : ''}
+              </Menu.Item>
+            ))}
+          </ActionMenu>
         )}
         {entry?.isStale && <Badge color="yellow" variant="light">Out of date</Badge>}
         {entry?.offline && <Badge color="gray" variant="light">Offline</Badge>}

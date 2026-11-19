@@ -71,10 +71,23 @@ test('Health unlocks Progress while the Today follow-ups sheet is hidden', async
   await expect.poll(overflow).toEqual(restingOverflow);
   await page.getByRole('link', { name: 'Today', exact: true }).click();
   const bell = page.getByRole('button', { name: '1 follow-up question' });
+  const questionAction = page.getByRole('menuitem', { name: /Was the white fish cod/ });
+  await bell.press('Enter');
+  await expect(questionAction).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(bell).toHaveAttribute('aria-expanded', 'false');
+  await expect(questionAction).toBeHidden();
+  await expect(bell).toBeFocused();
+  await expect(page).toHaveURL(/\/health$/);
+
   await bell.click();
-  await page.getByRole('menuitem', { name: /Was the white fish cod/ }).click();
+  await expect(questionAction).toBeVisible();
+  await page.keyboard.press('ArrowDown');
+  await expect(questionAction).toBeFocused();
+  await page.keyboard.press('Enter');
   const sheet = page.getByRole('dialog', { name: 'Follow-ups', exact: true });
   await expect(sheet).toBeVisible();
+  await expect(sheet.locator(':focus')).toHaveCount(1);
   await expect.poll(overflow).toEqual(lockedOverflow);
 
   await page.goBack();

@@ -7,7 +7,7 @@ for (const { width, hasTouch } of [{ width: 390, hasTouch: true }, { width: 1440
   test.describe(`Admin list controls at ${width}px`, () => {
     test.use({ hasTouch, serviceWorkers: 'block', viewport: { width, height: 850 } });
 
-    test('names and operates the list and section controls', async ({ page }) => {
+    test.beforeEach(async ({ page }) => {
       await page.routeWebSocket('**/*', () => {});
       await page.route('**/api/**', route => {
         const path = new URL(route.request().url()).pathname;
@@ -28,6 +28,40 @@ for (const { width, hasTouch } of [{ width: 390, hasTouch: true }, { width: 1440
       await page.goto(index);
       await page.getByRole('link', { name: /Family Picks/ }).click();
       await expect(page).toHaveURL(new RegExp(folder + '$'));
+    });
+
+    test('keeps the first arrow selection and tabs out in the trigger order', async ({ page }) => {
+      const main = page.getByRole('main');
+      const trigger = main.getByRole('button', { name: 'List actions', exact: true });
+      const menu = page.getByRole('menu', { name: 'List actions', exact: true });
+      const firstAction = menu.getByRole('menuitem', { name: 'Menu Settings', exact: true });
+      const deleteAction = menu.getByRole('menuitem', { name: 'Delete Menu', exact: true });
+      const collapse = main.getByRole('button', { name: 'Collapse Tonight', exact: true });
+      const search = main.getByPlaceholder('Search items...');
+      await trigger.focus();
+
+      const start = new Date('2026-01-01T00:00:00Z');
+      await page.clock.install({ time: start });
+      await page.clock.pauseAt(new Date(start.getTime() + 1000));
+      await page.keyboard.press('Enter');
+      await menu.waitFor({ state: 'attached' });
+      expect.soft(await firstAction.evaluate(item => document.activeElement === item)).toBe(true);
+      await page.keyboard.press('ArrowDown');
+      await page.clock.runFor(160);
+      await expect(deleteAction).toBeFocused();
+
+      await page.keyboard.press('Tab');
+      await expect(menu).toBeHidden();
+      await expect(collapse).toBeFocused();
+
+      await trigger.press('Space');
+      await expect(firstAction).toBeFocused();
+      await page.keyboard.press('Shift+Tab');
+      await expect(menu).toBeHidden();
+      await expect(search).toBeFocused();
+    });
+
+    test('names and operates the list and section controls', async ({ page }) => {
       const main = page.getByRole('main');
       const back = main.getByRole('button', { name: 'Back', exact: true });
       const listActions = main.getByRole('button', { name: 'List actions', exact: true });
@@ -47,8 +81,7 @@ for (const { width, hasTouch } of [{ width: 390, hasTouch: true }, { width: 1440
         }
       }
 
-      // Press Escape as soon as the portaled menu mounts, before a deferred
-      // focus transfer can move key handling from the trigger into the menu.
+      // Press Escape as soon as the portaled menu mounts.
       await listActions.evaluate(trigger => new Promise(resolve => {
         const observer = new MutationObserver(() => {
           const menu = document.getElementById(trigger.getAttribute('aria-controls'));
@@ -62,19 +95,14 @@ for (const { width, hasTouch } of [{ width: 390, hasTouch: true }, { width: 1440
         trigger.click();
       }));
       await expect(listActions).toHaveAttribute('aria-expanded', 'false');
-      await expect(listActions).toBeFocused();
       const listSettings = page.getByRole('menuitem', { name: 'Menu Settings', exact: true });
       await expect(listSettings).toBeHidden();
+      await expect(listActions).toBeFocused();
 
       const search = main.getByPlaceholder('Search items...');
       await search.focus();
       if (hasTouch) await listActions.tap({ position: { x: 2, y: 22 } });
       else await listActions.press('Enter');
-      await expect(listSettings).toBeVisible();
-      await expect.poll(() => page.getByRole('menu').evaluate(menu =>
-        menu !== document.activeElement && menu.contains(document.activeElement)
-      )).toBe(true);
-      await page.keyboard.press('ArrowDown');
       await expect(listSettings).toBeFocused();
       await page.keyboard.press('ArrowDown');
       await expect(page.getByRole('menuitem', { name: 'Delete Menu', exact: true })).toBeFocused();

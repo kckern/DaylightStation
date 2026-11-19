@@ -10,6 +10,7 @@
 //                    (RQ-STEER-11)
 import React, { useEffect, useReducer, useState } from 'react';
 import { Button, Group, Menu, Text } from '@mantine/core';
+import { ActionMenu } from '@/lib/ui/ActionMenu.jsx';
 import { IconChevronDown, IconPlayerStopFilled, IconPower, IconArrowBackUp } from '@tabler/icons-react';
 import { startStatusLine, startedByText, rowNotes } from "./houseCopy.js";
 import { useStartedBy } from "./useHouseSignals.js";
@@ -132,8 +133,10 @@ export function ScreenStopControl({ device, name, onStop }) {
   return (
     <Button.Group>
       {stop}
-      <Menu position="bottom-end" withinPortal>
-        <Menu.Target>
+      <ActionMenu
+        position="bottom-end"
+        withinPortal
+        trigger={
           <Button
             size="compact-sm"
             variant="default"
@@ -143,17 +146,16 @@ export function ScreenStopControl({ device, name, onStop }) {
           >
             <IconChevronDown size={14} aria-hidden />
           </Button>
-        </Menu.Target>
-        <Menu.Dropdown>
-          <Menu.Item
-            data-testid={`fleet-stop-off-${deviceId}`}
-            leftSection={<IconPower size={16} aria-hidden />}
-            onClick={() => stopAndTurnOff({ deviceId, name })}
-          >
-            Stop and turn the screen off
-          </Menu.Item>
-        </Menu.Dropdown>
-      </Menu>
+        }
+      >
+        <Menu.Item
+          data-testid={`fleet-stop-off-${deviceId}`}
+          leftSection={<IconPower size={16} aria-hidden />}
+          onClick={() => stopAndTurnOff({ deviceId, name })}
+        >
+          Stop and turn the screen off
+        </Menu.Item>
+      </ActionMenu>
     </Button.Group>
   );
 }

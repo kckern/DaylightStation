@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Menu, UnstyledButton } from '@mantine/core';
 import { IconCheck, IconMoon, IconChevronDown } from '@tabler/icons-react';
+import { ActionMenu } from '@/lib/ui';
 import { sumCounted } from "../../portable/contracts/nutrition/countedRows.mjs";
 import { DaylightAPI } from "../../../../../frontend/src/lib/api.mjs";
 import { createAppLogger } from "../../../../../frontend/src/lib/ui/createAppLogger.js";
@@ -90,25 +91,22 @@ export function DayClosePill({ date, dayStatus, items = [], onChanged }) {
 
   return (
     <span className="health-dayclose">
-      <Menu position="bottom-end" withinPortal>
-        <Menu.Target>
-          <UnstyledButton data-testid="dayclose-pill" aria-busy={Boolean(busy)}
-            className={['health-dayclose-pill', status && 'health-dayclose-pill--closed', flagged && 'health-dayclose-pill--flagged'].filter(Boolean).join(' ')}
-            aria-label={status ? `${text}. Change` : `${text}. Close this day`}>
-            <Icon size={13} aria-hidden="true" />
-            <span>{text}</span>
-            <IconChevronDown size={11} aria-hidden="true" />
-          </UnstyledButton>
-        </Menu.Target>
-        <Menu.Dropdown>
-          {status ? (
-            <Menu.Item onClick={() => set(null)}>Reopen day</Menu.Item>
-          ) : <>
-            <Menu.Label>{hint}</Menu.Label>
-            <Menu.Item leftSection={<IconCheck size={14} />} onClick={() => set('done')}>Done logging</Menu.Item>
-          </>}
-        </Menu.Dropdown>
-      </Menu>
+      <ActionMenu position="bottom-end" withinPortal trigger={
+        <UnstyledButton data-testid="dayclose-pill" aria-busy={Boolean(busy)}
+          className={['health-dayclose-pill', status && 'health-dayclose-pill--closed', flagged && 'health-dayclose-pill--flagged'].filter(Boolean).join(' ')}
+          aria-label={status ? `${text}. Change` : `${text}. Close this day`}>
+          <Icon size={13} aria-hidden="true" />
+          <span>{text}</span>
+          <IconChevronDown size={11} aria-hidden="true" />
+        </UnstyledButton>
+      }>
+        {status ? (
+          <Menu.Item onClick={() => set(null)}>Reopen day</Menu.Item>
+        ) : <>
+          <Menu.Label>{hint}</Menu.Label>
+          <Menu.Item leftSection={<IconCheck size={14} />} onClick={() => set('done')}>Done logging</Menu.Item>
+        </>}
+      </ActionMenu>
       {error ? <span className="health-dayclose__error" role="alert">{error}</span> : null}
     </span>
   );

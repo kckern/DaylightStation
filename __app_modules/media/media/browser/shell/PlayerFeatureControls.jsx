@@ -23,6 +23,7 @@ import { getLocalPlayerFeatures } from "../session/localPlayerFeatures.js";
 import { ContentCombobox } from "../../../../../__capabilities/content-catalog/browser/picker.mjs";
 import { SearchContext } from "../search/SearchProvider.jsx";
 import { useDismissLayer } from "@/lib/ui/dismiss/useDismissLayer.js";
+import { ActionMenu } from '@/lib/ui/ActionMenu.jsx';
 import mediaLog from "../logging/mediaLog.js";
 import "./PlayerFeatureControls.scss";
 
@@ -83,8 +84,9 @@ function TrackMenu({ kind, tracks, selected, onSelect, disabled }) {
   return (
     // flip + size: open toward the larger free side and never past the
     // viewport — a file can carry dozens of subtitle streams.
-    <Menu position="top" withinPortal middlewares={{ flip: true, shift: true, size: { padding: 8 } }}>
-      <Menu.Target>
+    <ActionMenu position="top" withinPortal middlewares={{ flip: true, shift: true, size: { padding: 8 } }}
+      dropdownProps={{ 'data-testid': `pf-${isSubs ? 'subtitles' : 'audio'}-menu`, className: 'pf-track-menu' }}
+      trigger={
         <Button
           variant="default" size="sm" disabled={disabled}
           leftSection={isSubs ? <IconBadgeCc size={16} /> : <IconLanguage size={16} />}
@@ -93,25 +95,23 @@ function TrackMenu({ kind, tracks, selected, onSelect, disabled }) {
         >
           {label}
         </Button>
-      </Menu.Target>
-      <Menu.Dropdown data-testid={`pf-${isSubs ? 'subtitles' : 'audio'}-menu`} className="pf-track-menu">
-        {isSubs && (
-          <Menu.Item data-testid="pf-subtitle-off" onClick={() => onSelect({ subtitle: SUBTITLES_OFF })}
-            data-selected={!selected || undefined} leftSection={<Mark on={!selected} />}>Off</Menu.Item>
-        )}
-        {list.map((t) => (
-          <Menu.Item
-            key={t.id}
-            data-selected={t.id === selected || undefined}
-            leftSection={<Mark on={t.id === selected} />}
-            data-testid={`pf-${isSubs ? 'subtitle' : 'audio'}-${t.id}`}
-            onClick={() => onSelect(isSubs ? { subtitle: t.id } : { audio: t.id })}
-          >
-            {t.label}
-          </Menu.Item>
-        ))}
-      </Menu.Dropdown>
-    </Menu>
+      }>
+      {isSubs && (
+        <Menu.Item data-testid="pf-subtitle-off" onClick={() => onSelect({ subtitle: SUBTITLES_OFF })}
+          data-selected={!selected || undefined} leftSection={<Mark on={!selected} />}>Off</Menu.Item>
+      )}
+      {list.map((t) => (
+        <Menu.Item
+          key={t.id}
+          data-selected={t.id === selected || undefined}
+          leftSection={<Mark on={t.id === selected} />}
+          data-testid={`pf-${isSubs ? 'subtitle' : 'audio'}-${t.id}`}
+          onClick={() => onSelect(isSubs ? { subtitle: t.id } : { audio: t.id })}
+        >
+          {t.label}
+        </Menu.Item>
+      ))}
+    </ActionMenu>
   );
 }
 

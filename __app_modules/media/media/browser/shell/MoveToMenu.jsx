@@ -6,6 +6,7 @@
 // Playing.
 import React, { useContext, useState } from 'react';
 import { Button, Menu } from '@mantine/core';
+import { ActionMenu } from '@/lib/ui/ActionMenu.jsx';
 import { IconArrowForwardUp } from '@tabler/icons-react';
 import { useFleetContext } from "../fleet/useFleetContext.js";
 import { deviceName, deviceLocation } from "../fleet/deviceDisplay.js";
@@ -58,8 +59,10 @@ export function MoveToMenu({ sourceId, available = true, title = null }) {
   };
 
   return (
-    <Menu position="bottom-start" withinPortal shadow="md" disabled={!available || moving}>
-      <Menu.Target>
+    <ActionMenu
+      position="bottom-start" withinPortal shadow="md" disabled={!available || moving}
+      dropdownProps={{ 'data-testid': 'move-to-menu' }}
+      trigger={
         <Button
           data-testid="peek-move-to"
           className="session-controls-btn"
@@ -70,24 +73,23 @@ export function MoveToMenu({ sourceId, available = true, title = null }) {
         >
           Move to…
         </Button>
-      </Menu.Target>
-      <Menu.Dropdown data-testid="move-to-menu">
-        <Menu.Label>Move this playback to</Menu.Label>
-        <Menu.Item data-testid="move-to-local" className="session-controls-menu-item" onClick={() => move('local')}>
-          This device
+      }
+    >
+      <Menu.Label>Move this playback to</Menu.Label>
+      <Menu.Item data-testid="move-to-local" className="session-controls-menu-item" onClick={() => move('local')}>
+        This device
+      </Menu.Item>
+      {choices.map((device) => (
+        <Menu.Item
+          key={device.id}
+          data-testid={`move-to-${device.id}`}
+          className="session-controls-menu-item"
+          onClick={() => move(device.id)}
+        >
+          {deviceName(device, device.id)}{deviceLocation(device) ? ` · ${deviceLocation(device)}` : ''}
         </Menu.Item>
-        {choices.map((device) => (
-          <Menu.Item
-            key={device.id}
-            data-testid={`move-to-${device.id}`}
-            className="session-controls-menu-item"
-            onClick={() => move(device.id)}
-          >
-            {deviceName(device, device.id)}{deviceLocation(device) ? ` · ${deviceLocation(device)}` : ''}
-          </Menu.Item>
-        ))}
-      </Menu.Dropdown>
-    </Menu>
+      ))}
+    </ActionMenu>
   );
 }
 
