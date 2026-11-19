@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { act, render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { MantineProvider } from '@mantine/core';
 
 const h = vi.hoisted(() => ({
@@ -11,9 +11,10 @@ const h = vi.hoisted(() => ({
 
 vi.mock('react-router-dom', () => ({ useParams: () => ({ consoleId: 'gb' }) }));
 vi.mock("../../../../../frontend/src/hooks/useWebSocket.js", () => ({
-  useWebSocketSend: () => h.send,
+
   useWebSocketSubscription: (_topic, cb) => { h.resultHandlers[0] = cb; },
 }));
+vi.mock("../../../../../frontend/src/services/WebSocketService.js", () => ({ wsService: { sendEphemeral: h.send } }));
 vi.mock("./useKioskLaunchTargets.js", () => ({
   useKioskLaunchTargets: () => ({ targets: h.targets, loading: h.targetsLoading, error: null }),
 }));
@@ -31,7 +32,7 @@ const GAMES = [
 const wrap = (ui) => render(<MantineProvider>{ui}</MantineProvider>);
 
 beforeEach(() => {
-  h.send.mockReset();
+  h.send.mockReset().mockReturnValue(true);
   h.resultHandlers.length = 0;
   h.targets = [{ deviceId: 'yellow-room-tablet', label: 'Piano Tablet', allow: [ALLOWED] }];
   h.targetsLoading = false;
@@ -89,6 +90,30 @@ describe('ConsoleDetail launch controls', () => {
 
     h.resultHandlers[0]({ deviceId: 'livingroom-tv', contentId: ALLOWED, ok: true });
     await waitFor(() => expect(screen.queryByText('Launched.')).not.toBeInTheDocument());
+  });
+
+  it('ignores another title and expires an unconfirmed launch', async () => {
+    wrap(<ConsoleDetail />);
+    const button = await screen.findByRole('button', { name: 'Launch' });
+    vi.useFakeTimers();
+    try {
+      fireEvent.click(button);
+      act(() => h.resultHandlers[0]({ deviceId: 'yellow-room-tablet', contentId: EXCLUDED, ok: true }));
+      expect(screen.queryByText('Launched.')).not.toBeInTheDocument();
+      expect(button).toBeDisabled();
+      act(() => vi.advanceTimersByTime(30_000));
+      expect(screen.getByText(/did not confirm/i)).toBeInTheDocument();
+      expect(button).toBeEnabled();
+    } finally { vi.useRealTimers(); }
+  });
+
+  it('reports an unavailable connection immediately without queuing a later launch', async () => {
+    h.send.mockReturnValue(false);
+    wrap(<ConsoleDetail />);
+    const button = await screen.findByRole('button', { name: 'Launch' });
+    fireEvent.click(button);
+    expect(screen.getByText(/connection unavailable/i)).toBeInTheDocument();
+    expect(button).toBeEnabled();
   });
 
   it('explains itself when no launch targets are configured', async () => {

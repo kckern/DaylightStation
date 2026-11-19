@@ -1,16 +1,19 @@
 import { ErrorState } from '../../../../../frontend/src/lib/ui/states.jsx';
 import { useApiResource } from '../../../../../frontend/src/lib/hooks/useApiResource.js';
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useParams } from 'react-router-dom';
 import { SimpleGrid, Card, Image, Text, Stack, Loader, Select, Group, Button, Alert } from '@mantine/core';
 import getLogger from "../../../../../frontend/src/lib/logging/Logger.js";
-import { useWebSocketSend, useWebSocketSubscription } from "../../../../../frontend/src/hooks/useWebSocket.js";
+import { useWebSocketSubscription } from "../../../../../frontend/src/hooks/useWebSocket.js";
+import { wsService } from "../../../../../frontend/src/services/WebSocketService.js";
 import { useKioskLaunchTargets } from "./useKioskLaunchTargets.js";
 
 const KIOSK_LAUNCH_TOPIC = 'kiosk.launch';
 const KIOSK_LAUNCH_RESULT_TOPIC = 'kiosk.launch.result';
 
 const RESULT_MESSAGES = {
+  unavailable: 'Connection unavailable. Reconnect before launching.',
+  unconfirmed: 'The device did not confirm the launch. Check the device before retrying.',
   not_allowed: 'That title is not on this device\'s allowlist.',
   intent_resolve_failed: 'The device could not resolve the game.',
   target_malformed: 'The game is misconfigured — no launch target.',
@@ -27,7 +30,17 @@ const ConsoleDetail = () => {
   const [pending, setPending] = useState(null);
 
   const { targets, loading: targetsLoading } = useKioskLaunchTargets();
-  const send = useWebSocketSend();
+  const attemptRef = useRef(null);
+  const clearAttempt = useCallback(() => {
+    clearTimeout(attemptRef.current?.timer);
+    attemptRef.current = null;
+  }, []);
+
+  useEffect(() => {
+    setPending(null);
+    setResult(null);
+    return clearAttempt;
+  }, [consoleId, targetId, clearAttempt]);
 
   useEffect(() => {
     logger.info('consoleDetail.mounted', { consoleId });
@@ -41,19 +54,31 @@ const ConsoleDetail = () => {
   const target = targets.find(t => t.deviceId === targetId) || null;
 
   useWebSocketSubscription(KIOSK_LAUNCH_RESULT_TOPIC, (msg) => {
-    if (!msg || msg.deviceId !== targetId) return;
+    const attempt = attemptRef.current;
+    if (!attempt || msg?.deviceId !== attempt.deviceId || msg.contentId !== attempt.contentId) return;
+    clearAttempt();
     setPending(null);
     setResult(msg);
     logger.info('launch.result', { contentId: msg.contentId, ok: msg.ok, error: msg.error });
-  }, [targetId, logger]);
+  }, [clearAttempt, logger]);
 
   const handleLaunch = useCallback((game) => {
-    if (!targetId) return;
+    if (!targetId || attemptRef.current) return;
     setResult(null);
     setPending(game.id);
     logger.info('launch.requested', { contentId: game.id, deviceId: targetId });
-    send({ topic: KIOSK_LAUNCH_TOPIC, deviceId: targetId, contentId: game.id });
-  }, [targetId, send, logger]);
+    const timer = setTimeout(() => {
+      clearAttempt();
+      setPending(null);
+      setResult({ ok: false, error: 'unconfirmed' });
+    }, 15000);
+    attemptRef.current = { deviceId: targetId, contentId: game.id, timer };
+    if (!wsService.sendEphemeral({ topic: KIOSK_LAUNCH_TOPIC, deviceId: targetId, contentId: game.id })) {
+      clearAttempt();
+      setPending(null);
+      setResult({ ok: false, error: 'unavailable' });
+    }
+  }, [targetId, clearAttempt, logger]);
 
   if (loading) return <Loader />;
   if (error) return <ErrorState label="games" error={error} onRetry={reload} />;
@@ -110,7 +135,7 @@ const ConsoleDetail = () => {
                 mt={6}
                 fullWidth
                 variant={canLaunch(game) ? 'light' : 'subtle'}
-                disabled={!canLaunch(game)}
+                disabled={!canLaunch(game) || pending !== null}
                 loading={pending === game.id}
                 onClick={() => handleLaunch(game)}
               >

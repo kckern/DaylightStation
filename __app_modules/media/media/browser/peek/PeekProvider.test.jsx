@@ -3,6 +3,7 @@ import { act, fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { FleetContext } from "../fleet/FleetProvider.jsx";
 import { PeekProvider } from "./PeekProvider.jsx";
+import { createClientControlCorrelator } from "../externalControl/clientControlCorrelator.js";
 import { usePeek } from "./usePeek.js";
 
 let steeringCallback = null;
@@ -58,6 +59,33 @@ function DispatchProvenanceProbe({ receipt = {
 }
 
 describe('PeekProvider steering activity bridge', () => {
+  it('retains exactly one live acknowledgement listener in StrictMode and releases it on unmount', () => {
+    createClientControlCorrelator.mockClear();
+    const fleet = { store: {}, identity: { clientId: 'caller', deviceId: 'browser:caller' } };
+    const { unmount } = render(<React.StrictMode><FleetContext.Provider value={fleet}><PeekProvider><Probe /></PeekProvider></FleetContext.Provider></React.StrictMode>);
+    fireEvent.click(screen.getByRole('button', { name: 'open browser remote' }));
+    const listeners = createClientControlCorrelator.mock.results.map(result => result.value);
+    expect(listeners.filter(listener => !listener.dispose.mock.calls.length)).toEqual([browserOptions.correlator]);
+    unmount();
+    for (const listener of listeners) expect(listener.dispose).toHaveBeenCalledTimes(1);
+  });
+
+  it('replaces cached browser controllers when the caller identity changes', () => {
+    const store = {};
+    const tree = clientId => <FleetContext.Provider value={{ store, identity: { clientId, deviceId: 'browser:' + clientId } }}>
+      <PeekProvider><Probe /></PeekProvider>
+    </FleetContext.Provider>;
+    const { rerender } = render(tree('first'));
+    const open = () => fireEvent.click(screen.getByRole('button', { name: 'open browser remote' }));
+    open();
+    const first = browserOptions.correlator;
+    rerender(tree('second'));
+    open();
+    expect(first.dispose).toHaveBeenCalledOnce();
+    expect(browserOptions.callerDeviceId).toBe('browser:second');
+    expect(browserOptions.correlator).not.toBe(first);
+  });
+
   it('selects the browser controller and stable route for browser rows', () => {
     const store = { getEntry: vi.fn(), subscribeDevice: vi.fn(() => vi.fn()) };
     const fleet = { store, identity: { clientId: 'caller', deviceId: 'browser:caller' } };

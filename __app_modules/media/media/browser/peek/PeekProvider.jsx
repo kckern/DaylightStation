@@ -32,19 +32,32 @@ export function PeekProvider({ children }) {
     get id() { return originRef.current.id ?? undefined; },
     get name() { return originRef.current.name ?? undefined; },
   }), [originRef]);
-  const correlatorRef = useRef(null);
-  if (!correlatorRef.current && fleet.identity?.clientId) {
-    correlatorRef.current = createClientControlCorrelator({
-      controlClientId: fleet.identity.clientId,
-      service: wsService,
-    });
-  }
+  const clientId = fleet.identity?.clientId;
+  const [registration, setRegistration] = useState(null);
 
   const ackRouterRef = useRef(null);
   if (!ackRouterRef.current) ackRouterRef.current = createAckRouter();
   const ackRouter = ackRouterRef.current;
 
   const controllersRef = useRef(new Map()); // deviceId -> controller
+  useEffect(() => {
+    if (!clientId) {
+      setRegistration(null);
+      return;
+    }
+    const correlator = createClientControlCorrelator({ controlClientId: clientId, service: wsService });
+    setRegistration({ clientId, correlator });
+    return () => {
+      for (const [deviceId, controller] of controllersRef.current) {
+        if (deviceId.startsWith('browser:')) {
+          controller.destroy?.();
+          controllersRef.current.delete(deviceId);
+        }
+      }
+      correlator.dispose();
+    };
+  }, [clientId]);
+
   const [steeringByDevice, setSteeringByDevice] = useState(() => new Map());
   // STEER.1a/AC4: the screen most recently sent to or steered, for the handle.
   const [lastSteeredId, setLastSteeredId] = useState(null);
@@ -87,18 +100,17 @@ export function PeekProvider({ children }) {
   useEffect(() => () => {
     for (const ctl of controllersRef.current.values()) ctl.destroy?.();
     controllersRef.current.clear();
-    correlatorRef.current?.dispose?.();
-    correlatorRef.current = null;
   }, []);
 
   const getController = useCallback((deviceId) => {
     if (typeof deviceId !== 'string' || !deviceId) return null;
+    if (deviceId.startsWith('browser:') && (!clientId || registration?.clientId !== clientId)) return null;
     let ctl = controllersRef.current.get(deviceId);
     if (!ctl) {
       ctl = deviceId.startsWith('browser:')
         ? createBrowserSessionController({
           deviceId, callerDeviceId: fleet.identity?.deviceId,
-          fleetStore, correlator: correlatorRef.current,
+          fleetStore, correlator: registration.correlator,
         })
         : createRemoteSessionController({
           deviceId, fleetStore, ackRouter, onSteeringActivity: recordSteeringActivity,
@@ -107,7 +119,7 @@ export function PeekProvider({ children }) {
       controllersRef.current.set(deviceId, ctl);
     }
     return ctl;
-  }, [fleetStore, ackRouter, recordSteeringActivity, fleet.identity?.deviceId, commandOrigin]);
+  }, [fleetStore, ackRouter, recordSteeringActivity, fleet.identity?.deviceId, commandOrigin, clientId, registration]);
 
   const enterPeek = useCallback((deviceId) => {
     mediaLog.peekEntered({ deviceId });
