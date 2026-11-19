@@ -109,9 +109,10 @@ export class DayInstructionService {
     if (plan?.intent === 'other') return this.#reply(said, { committed: false, outcome: 'no-change', message: "I can log food, move it, or correct it. I can't do that here." });
     if (!plan || plan.intent === 'add') {
       // An answer to a question is not a description of food.
-      if (Object.keys(resolved).length) return this.#reply(said, { committed: false, outcome: 'no-change', message: 'Please say that again.' });
+      if (Object.keys(resolved).length) return this.#sayAgain(said);
       return this.#add(context);
     }
+    if (resolved.foodIds) return this.#moveKeptFoods(context, viewed, plan);
     const { foodId } = resolved;
     // With nothing on this day, words about a meal or the whole day have no food
     // to act on. Offer the latest capture rather than guess.
@@ -218,8 +219,9 @@ export class DayInstructionService {
     return null;
   }
   #reply(said, body) { return { ...(said ? { instructionText: said } : {}), ...body }; }
+  #sayAgain(said) { return this.#reply(said, { committed: false, outcome: 'no-change', message: 'Please say that again.' }); }
   #child(context, step) { return sha256Text(`${context.operationId}:day:${step}`); }
-  #ask(said, kind, question, choices = []) { return this.#reply(said, { committed: false, outcome: 'clarification', clarification: { kind, question, choices } }); }
+  #ask(said, kind, question, choices = [], details = {}) { return this.#reply(said, { committed: false, outcome: 'clarification', clarification: { kind, question, choices, ...details } }); }
   /** Asks which food, from `[day, rows]` groups. A food on another day is labelled with it. */
   #askFood({ said, date, today }, ...groups) {
     const choices = groups.flatMap(([day, rows]) => {
@@ -288,12 +290,34 @@ export class DayInstructionService {
     return matched.length ? this.#moveFoods(context, other, plan, matched) : this.#askFood(context, [source, tops], [other, theirs]);
   }
 
+  /**
+   * A day answer that names the foods the question was about. The words are not
+   * matched again, so the answer cannot land on different foods. They still give
+   * the meal, and if they no longer read as a move, nothing is guessed. Every food
+   * must still be a counted top-level row of a day that could have been asked about.
+   */
+  async #moveKeptFoods(context, viewed, plan) {
+    const { said, resolved, userId, today } = context;
+    if (plan.intent !== 'move') return this.#sayAgain(said);
+    const { foodIds, fromDate } = resolved;
+    const onOffer = fromDate === viewed.date || (fromDate >= addDaysISO(today, -6) && fromDate <= today);
+    const source = !onOffer ? null : fromDate === viewed.date ? viewed : await this.#readDay(userId, fromDate);
+    const kept = new Set(foodIds);
+    const targets = source ? this.#topsOf(source).filter(row => kept.has(idOf(row))) : [];
+    if (targets.length !== kept.size) {
+      this.logger.warn?.('health.day_instruction.kept_foods_stale', { userId, fromDate, requested: kept.size, found: targets.length });
+      fail('Those foods are no longer on that day');
+    }
+    this.logger.info?.('health.day_instruction.kept_foods', { userId, fromDate, toDate: resolved.toDate, count: targets.length });
+    return this.#moveFoods(context, source, plan, targets);
+  }
+
   async #moveFoods(context, source, plan, targets) {
     const { said, today, resolved, userId } = context;
     const { date, dayRows } = source;
     const requestedDay = resolved.toDate || (!['same', 'older'].includes(plan.toDay) ? plan.toDay : null);
     const toMeal = plan.toMeal === 'same' ? null : plan.toMeal;
-    if (!requestedDay && (plan.toDay === 'older' || !toMeal)) return this.#ask(said, 'day', 'Which day should this go to?');
+    if (!requestedDay && (plan.toDay === 'older' || !toMeal)) return this.#ask(said, 'day', 'Which day should this go to?', [], { foodIds: targets.map(idOf), fromDate: date });
     const toDate = requestedDay === date ? null : requestedDay;
     const moving = targets.filter(row => toDate || (toMeal && row.mealTime !== toMeal));
     if (!moving.length) return this.#reply(said, { committed: false, outcome: 'no-change', message: 'Those foods are already there.' });

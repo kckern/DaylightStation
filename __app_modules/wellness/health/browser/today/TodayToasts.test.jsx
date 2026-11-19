@@ -223,6 +223,93 @@ describe('TodayToasts', () => {
       expect(document.activeElement).toBe(bar.querySelector('button'));
       bar.remove();
     });
+    describe('picking from Other day…', () => {
+      const pick = async name => {
+        const opener = await screen.findByRole('button', { name: 'Other day…' });
+        opener.focus();
+        fireEvent.click(opener);
+        const item = await screen.findByRole('menuitem', { name });
+        item.focus();
+        fireEvent.click(item);
+      };
+      const pending = () => { let finish; const onMoveCapture = vi.fn(() => new Promise(resolve => { finish = resolve; })); return { onMoveCapture, finish: value => finish(value) }; };
+      it('keeps focus in the toast while the move runs', async () => {
+        const { onMoveCapture } = pending();
+        render(view({ mealUndo: offer, onMoveCapture }));
+        await pick('Yesterday');
+        expect(onMoveCapture).toHaveBeenCalledWith('2026-11-17');
+        expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Move to Yesterday' }));
+      });
+      it('a finished move hands focus to its Undo', async () => {
+        const { onMoveCapture, finish } = pending();
+        const { rerender } = render(view({ mealUndo: offer, onMoveCapture }));
+        await pick('Yesterday');
+        await act(async () => { finish('moved'); });
+        rerender(view({ moves: moved, onMoveCapture }));
+        expect(document.activeElement).toBe(await screen.findByRole('button', { name: 'Undo move' }));
+      });
+      it('a move with no known outcome hands focus to Try again', async () => {
+        const { onMoveCapture, finish } = pending();
+        const { rerender } = render(view({ mealUndo: offer, onMoveCapture }));
+        await pick('Yesterday');
+        await act(async () => { finish('unknown'); });
+        rerender(view({ mealUndo: { ...offer, retryMove: () => {} }, onMoveCapture }));
+        expect(document.activeElement).toBe(await screen.findByRole('button', { name: 'Retry moving Eggs' }));
+      });
+      it('a refused move leaves focus on the toast, even if the busy button dropped it', async () => {
+        const { onMoveCapture, finish } = pending();
+        render(view({ mealUndo: offer, onMoveCapture }));
+        await pick('Yesterday');
+        await waitFor(() => expect(screen.getByRole('button', { name: 'Move to Yesterday' }).disabled).toBe(true));
+        document.activeElement.blur();
+        await act(async () => { finish('not-moved'); });
+        expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Move to Yesterday' }));
+      });
+      it('a date from the field closes the menu and keeps focus in the toast', async () => {
+        const { onMoveCapture } = pending();
+        render(view({ mealUndo: offer, onMoveCapture }));
+        fireEvent.click(await screen.findByRole('button', { name: 'Other day…' }));
+        const field = await screen.findByLabelText('Move to another day');
+        field.focus();
+        fireEvent.change(field, { target: { value: '2026-11-02' } });
+        expect(onMoveCapture).toHaveBeenCalledWith('2026-11-02');
+        expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Move to Yesterday' }));
+        await waitFor(() => expect(screen.queryByLabelText('Move to another day')).toBeNull());
+      });
+      it('a half-typed year in the date field moves nothing', async () => {
+        const onMoveCapture = vi.fn();
+        render(view({ mealUndo: offer, onMoveCapture }));
+        fireEvent.click(await screen.findByRole('button', { name: 'Other day…' }));
+        fireEvent.change(await screen.findByLabelText('Move to another day'), { target: { value: '0002-11-02' } });
+        expect(onMoveCapture).not.toHaveBeenCalled();
+      });
+    });
+    describe('after a move from a menu outside the toasts', () => {
+      const failed = { ...noMoves, error: "Couldn't move Eggs.", clearError: () => {} };
+      it('goes to the toast that reports it, when focus was lost', async () => {
+        const { rerender } = render(view({ moves: failed }));
+        await screen.findByRole('button', { name: 'Dismiss' });
+        rerender(view({ moves: failed, menuMoveSettled: 1 }));
+        expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Dismiss' }));
+      });
+      it('prefers the next action, such as Try again', async () => {
+        const stuck = [{ id: 'op', message: 'Could not confirm.', busy: false, retry: () => {}, dismiss: () => {} }];
+        const { rerender } = render(view({ unresolvedMoves: stuck }));
+        await screen.findByRole('button', { name: 'Try again' });
+        rerender(view({ unresolvedMoves: stuck, menuMoveSettled: 1 }));
+        expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Try again' }));
+      });
+      it('leaves focus the person has placed elsewhere', async () => {
+        const other = document.createElement('button');
+        document.body.append(other);
+        const { rerender } = render(view({ moves: failed }));
+        await screen.findByRole('button', { name: 'Dismiss' });
+        other.focus();
+        rerender(view({ moves: failed, menuMoveSettled: 1 }));
+        expect(document.activeElement).toBe(other);
+        other.remove();
+      });
+    });
     it('focus elsewhere is left alone', async () => {
       const other = document.createElement('button');
       document.body.append(other);

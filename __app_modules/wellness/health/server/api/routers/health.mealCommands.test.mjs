@@ -51,6 +51,34 @@ describe('meal command HTTP adapter',()=>{
    for(const bad of [{type:'image'},{date:'bad'},{content:'  '},{type:'voice',content:'not a recording'},{type:'voice',content:'data:audio/webm,AAAA'},{type:'voice',content:'data:audio/webm;base64,'},{type:'voice',content:'data:audio/webm;base64,A'},{type:'voice',content:'data:audio/webm;base64,$$$$'},{type:'voice',content:'data:audio/webm;base64'}]) expect((await post(app,{...body,...bad})).status).toBe(400);
    expect(ops.processDayInput).not.toHaveBeenCalled();
   });
+  describe('a day answer that keeps the foods first read',()=>{
+   const kept={toDate:'2026-09-01',foodIds:['b','a'],fromDate:'2026-09-05'};
+   it('passes the foods on in one stable order, for the payload and the service',async()=>{
+    const {app,healthOperations:ops}=setup();
+    expect((await post(app,{...body,resolved:kept})).status).toBe(200);
+    const stable={toDate:'2026-09-01',foodIds:['a','b'],fromDate:'2026-09-05'};
+    expect(ops.runNutritionOperation.mock.calls[0][2].resolved).toEqual(stable);
+    expect(Object.keys(ops.runNutritionOperation.mock.calls[0][2].resolved)).toEqual(['toDate','foodIds','fromDate']);
+    expect(ops.processDayInput.mock.calls[0][0].resolved).toEqual(stable);
+    expect((await post(app,{...body,resolved:{fromDate:'2026-09-05',foodIds:['a','b'],toDate:'2026-09-01'}})).status).toBe(200);
+    expect(JSON.stringify(ops.runNutritionOperation.mock.calls[1][2])).toBe(JSON.stringify(ops.runNutritionOperation.mock.calls[0][2]));
+   });
+   it('accepts the most foods allowed',async()=>{
+    const {app}=setup();const foodIds=Array.from({length:200},(_,i)=>`f${i}`);
+    expect((await post(app,{...body,resolved:{...kept,foodIds}})).status).toBe(200);
+   });
+   it.each([
+    ['foods that are not a list',{...kept,foodIds:'a'}],['no foods',{...kept,foodIds:[]}],['too many foods',{...kept,foodIds:Array.from({length:201},(_,i)=>`f${i}`)}],
+    ['a food that is not a string',{...kept,foodIds:['a',7]}],['an unsafe food ID',{...kept,foodIds:['../a']}],['the same food twice',{...kept,foodIds:['a','a']}],
+    ['foods without their day',{toDate:'2026-09-01',foodIds:['a']}],['a day without foods',{toDate:'2026-09-01',fromDate:'2026-09-05'}],
+    ['a source day that is not a date',{...kept,fromDate:'2026-02-31'}],['a source day that is not a string',{...kept,fromDate:20260905}],
+    ['foods without a destination',{foodIds:['a'],fromDate:'2026-09-05'}],['a single food as well',{...kept,foodId:'a'}],
+   ])('refuses %s',async(_label,resolved)=>{
+    const {app,healthOperations:ops}=setup();
+    expect((await post(app,{...body,resolved})).status).toBe(400);
+    expect(ops.runNutritionOperation).not.toHaveBeenCalled();
+   });
+  });
   it('requires a valid operation ID',async()=>{
    const {app,healthOperations:ops}=setup();const {operationId:_omit,...withoutId}=body;
    expect((await post(app,withoutId)).status).toBe(400);

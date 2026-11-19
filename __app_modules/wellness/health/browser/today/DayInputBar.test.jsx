@@ -100,6 +100,34 @@ describe('DayInputBar', () => {
     fireEvent.change(await screen.findByLabelText('Which day should this go to?'), { target: { value: '2026-10-02' } });
     await waitFor(() => expect(body(2).resolved).toEqual({ foodId: 'tea', toDate: '2026-10-02' }));
   });
+  describe('a day question that names its foods', () => {
+    const named = extra => { const reply = whichDay({ instructionText: 'move the tea', ...extra }); return { ...reply, clarification: { ...reply.clarification, foodIds: ['tea'], fromDate: yesterday } }; };
+    it('sends those foods and their day back with the answer', async () => {
+      apiMock.mockResolvedValueOnce(named()).mockResolvedValueOnce(done);
+      setup();
+      type('move the tea');
+      fireEvent.change(await screen.findByLabelText('Which day should this go to?'), { target: { value: '2026-10-02' } });
+      await waitFor(() => expect(body(1).resolved).toEqual({ toDate: '2026-10-02', foodIds: ['tea'], fromDate: yesterday }));
+      expect(body(1).content).toBe('move the tea');
+    });
+    it('they replace a food already chosen, which they include', async () => {
+      apiMock.mockResolvedValueOnce(whichFood({ instructionText: 'move it' })).mockResolvedValueOnce(named()).mockResolvedValueOnce(done);
+      setup();
+      type('move it');
+      fireEvent.click(await screen.findByRole('button', { name: 'Tea' }));
+      fireEvent.change(await screen.findByLabelText('Which day should this go to?'), { target: { value: '2026-10-02' } });
+      await waitFor(() => expect(body(2).resolved).toEqual({ toDate: '2026-10-02', foodIds: ['tea'], fromDate: yesterday }));
+    });
+    it('a failed answer retries with the same foods and operation', async () => {
+      apiMock.mockResolvedValueOnce(named()).mockRejectedValueOnce(httpError(500, {})).mockResolvedValueOnce(done);
+      setup();
+      type('move the tea');
+      fireEvent.change(await screen.findByLabelText('Which day should this go to?'), { target: { value: '2026-10-02' } });
+      fireEvent.click(await screen.findByRole('button', { name: 'Try again' }));
+      await waitFor(() => expect(apiMock).toHaveBeenCalledTimes(3));
+      expect(body(2)).toEqual(body(1));
+    });
+  });
   it('uses the words it sent when a reply leaves them out', async () => {
     apiMock.mockResolvedValueOnce(whichFood()).mockResolvedValueOnce(done);
     setup();

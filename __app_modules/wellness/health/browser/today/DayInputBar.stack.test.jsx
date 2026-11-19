@@ -115,6 +115,39 @@ describe('a reply lost after the server committed', () => {
   });
 });
 
+describe('answering which day', () => {
+  const askedDay = '2026-11-04';
+  const reading = { intent: 'move', target: 'named', fromMeal: 'none', toMeal: 'night', toDay: 'older', compound: false };
+  it('moves the foods first read, into the meal the words named, with one Undo', async () => {
+    await store.saveMany([food('tea', { name: 'Tea' }), food('coffee', { name: 'Coffee' })]);
+    service.reader.read = async () => reading;
+    let matches = ['tea'];
+    service.reader.matchFoods = async () => matches;
+    await open(2);
+    say('move the drink');
+    const picker = await screen.findByLabelText('Which day should this go to?');
+    matches = ['coffee'];
+    fireEvent.change(picker, { target: { value: askedDay } });
+    await waitFor(async () => expect(await names(askedDay)).toEqual(['Tea']));
+    expect(await store.findByUuid('u', 'tea')).toMatchObject({ mealTime: 'night' });
+    expect(await names(date)).toEqual(['Coffee']);
+  });
+  it('says so when a food left the day before the answer', async () => {
+    await store.saveMany([food('tea', { name: 'Tea' }), food('coffee', { name: 'Coffee' })]);
+    service.reader.read = async () => reading;
+    service.reader.matchFoods = async () => ['tea'];
+    await open(2);
+    say('move the drink');
+    const picker = await screen.findByLabelText('Which day should this go to?');
+    await store.update('u', 'tea', { date: yesterday });
+    fireEvent.change(picker, { target: { value: askedDay } });
+    expect((await screen.findByRole('alert')).textContent).toMatch(/no longer on that day/i);
+    expect(screen.queryByRole('button', { name: 'Try again' })).toBeNull();
+    expect(await names(askedDay)).toEqual([]);
+    expect(await names(date)).toEqual(['Coffee']);
+  });
+});
+
 describe("the sheet's unknown outcome", () => {
   it('offers Try again with the same operation and finishes as a normal move', async () => {
     await store.saveMany([food('eggs', { name: 'Eggs' })]);

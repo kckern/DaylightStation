@@ -80,6 +80,19 @@ function useToastFocusRecovery() {
   });
 }
 /**
+ * A move picked from a menu outside the toasts: the menu is closing, and a meal's
+ * menu button leaves with the meal's foods. Each time `settled` changes, focus with
+ * nowhere to be goes to what the move left to do. The picked item counts as nowhere,
+ * since it may still be fading out.
+ */
+function useMenuMoveFocus(settled) {
+  useLayoutEffect(() => {
+    if (!settled) return;
+    const active = document.activeElement;
+    if (!active || active === document.body || active.closest?.('[data-menu-item]')) focusSuccessor(null)?.focus({ preventScroll: true });
+  }, [settled]);
+}
+/**
  * Toasts float over the end of the day, so the page gets that much more room to
  * scroll. The room is added below everything, so nothing on screen moves when a
  * toast arrives. Room the view is standing in is kept until it scrolls away, so a
@@ -156,9 +169,10 @@ export function TodayToasts({
   orphanRetry, onRetryOrphan, onDismissOrphan,
   moves, mealUndo, onUndoMeal, onDismissMealUndo, undoDelete, onUndoDelete, onDismissUndoDelete, undoBusy,
   strandedPortion, today, onMoveCapture, onSupersedeMealUndo, dayOffers = [], onMoveOffer, onDismissOffer,
-  dayNotice = null, onDismissDayNotice, unresolvedMoves = [],
+  dayNotice = null, onDismissDayNotice, unresolvedMoves = [], menuMoveSettled = 0,
 }) {
   useToastFocusRecovery();
+  useMenuMoveFocus(menuMoveSettled);
   useToastClearance();
   const newestUndo = useNewestUndo([
     moves.undo && { key: `move:${moves.undo.label}`, clear: moves.undo.dismiss },

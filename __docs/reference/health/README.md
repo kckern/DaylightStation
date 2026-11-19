@@ -553,7 +553,8 @@ which day. The request contract, the gateway questions and the correction rules 
   announced through the bar's status region, and take focus unless the person has moved
   elsewhere. An answer resends the same words with every answer so far: the text the
   server reports, else the words that were sent. A recording with no reported words is
-  sent again.
+  sent again. A day answer also sends back the foods the question named, so it
+  [cannot land on different ones](meal-commands.md#answering-which-day).
 - **Failures.** The server's sentence is shown and typed words stay in the field. A
   refusal offers no retry, and neither do words over the length limit, typed or
   transcribed. Any other failure carrying `audioRef` retries from the saved recording
@@ -690,7 +691,11 @@ suggestion, a saved meal (template) and a Needs Review confirmation.
   the first attempt had committed, the server replays it and the move finishes normally.
   Dismissing the toast leaves the retry on the page's toast.
 - **Focus:** when a toast's action removes the focused button, focus goes to the next
-  action in that toast, then another toast, then the day bar's move button.
+  action in that toast, then another toast, then the day bar's move button. Picking from
+  **Other day…** puts focus on the toast's **Move to …** button, which then behaves as if
+  it had been pressed. After a move from a meal's `⋯` menu, whether it finished or failed,
+  focus that was left on nothing goes to the same next action, such as **Undo** or **Try
+  again**. The date field in these menus ignores a half-typed year.
 - **Room to scroll:** while toasts show, the page gains that much space at its end, so the
   last foods can be scrolled clear of them. The space is added below everything and kept
   until the view leaves it, so neither a toast arriving nor one leaving moves the page.

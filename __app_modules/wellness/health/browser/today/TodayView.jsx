@@ -562,6 +562,14 @@ export function TodayView({ active = true, sidebarTarget, followUpTarget = null,
     setCaptureMode('barcode');
   };
 
+  // Picking closes the menu, and the ⋯ button goes with the meal's foods. The toasts
+  // take focus once the move has ended, whichever way it ended.
+  const [menuMoveSettled, setMenuMoveSettled] = useState(0);
+  const moveFromMealMenu = async (bucketId, run) => {
+    const outcome = await run();
+    logger.debug('meal-menu.move.settled', { bucketId, outcome });
+    setMenuMoveSettled(count => count + 1);
+  };
   const bucketHeaderAction = (bucketId, rows, label) => {
     if (!rows.length) return null;
     return <Menu position="bottom-end">
@@ -571,11 +579,11 @@ export function TodayView({ active = true, sidebarTarget, followUpTarget = null,
         <Menu.Item onClick={() => saveBucketAsMeal(rows, label)}>Save as meal</Menu.Item>
         <Menu.Divider />
         <Menu.Label>Move all to day</Menu.Label>
-        <MoveDayItems date={date} today={todayISO()} onPick={iso => moves.moveToDay(mealEntries(rows), iso, bucketId)} />
+        <MoveDayItems date={date} today={todayISO()} onPick={iso => moveFromMealMenu(bucketId, () => moves.moveToDay(mealEntries(rows), iso))} />
         <Menu.Divider />
         <Menu.Label>Move all to</Menu.Label>
         {BUCKETS.filter(bucket => bucket.id !== bucketId).map(bucket => <Menu.Item key={bucket.id}
-          aria-label={`Move all of ${label} to ${bucket.label}`} onClick={() => moves.moveMeal(mealEntries(rows), bucket.id, bucketId)}>{bucket.label}</Menu.Item>)}
+          aria-label={`Move all of ${label} to ${bucket.label}`} onClick={() => moveFromMealMenu(bucketId, () => moves.moveMeal(mealEntries(rows), bucket.id, bucketId))}>{bucket.label}</Menu.Item>)}
       </Menu.Dropdown>
     </Menu>;
   };
@@ -659,7 +667,7 @@ export function TodayView({ active = true, sidebarTarget, followUpTarget = null,
         undoDelete={undoDelete} onUndoDelete={undoDeletedEntry} onDismissUndoDelete={() => setUndoDelete(null)} undoBusy={undoBusy}
         strandedPortion={strandedPortion ? portionControl : null} today={todayISO()} onMoveCapture={iso => moveOffered(mealUndo, iso)}
         dayOffers={captureToasts.offers} onMoveOffer={moveOffered}
-        dayNotice={dayNotice} onDismissDayNotice={() => setDayNotice(null)}
+        dayNotice={dayNotice} onDismissDayNotice={() => setDayNotice(null)} menuMoveSettled={menuMoveSettled}
         onDismissOffer={shown => setCaptureToasts(state => ({ ...state, offers: state.offers.filter(item => item.offer !== shown.offer) }))} />
       <ConfirmDialog open={Boolean(pendingDelete)} title={pendingDelete ? `Delete ${entryLabel(pendingDelete)}?` : ''}
         body={pendingDelete ? deleteConfirmBody(pendingDelete) : ''} busy={deleteBusy} error={deleteError}

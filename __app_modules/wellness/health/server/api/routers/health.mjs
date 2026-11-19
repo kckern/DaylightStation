@@ -45,11 +45,24 @@ const OBSERVATION_ID_PATTERN = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0
 const ENTRY_UUID_PATTERN = /^[A-Za-z0-9_-]{1,64}$/;
 const OPERATION_ID_PATTERN = /^[A-Za-z0-9_-]{1,128}$/;
 const DAY_INPUT_CLARIFICATION_KEYS = ['foodId', 'toDate'];
-/** A clarification in one fixed key order, or null when its shape is wrong. */
+const DAY_INPUT_MAX_KEPT_FOODS = 200;
+/** The foods a day answer keeps, in one order however they were listed, or null when unusable. */
+const keptFoodIds = ids => (Array.isArray(ids) && ids.length > 0 && ids.length <= DAY_INPUT_MAX_KEPT_FOODS
+  && ids.every(id => typeof id === 'string' && ENTRY_UUID_PATTERN.test(id)) && new Set(ids).size === ids.length ? [...ids].sort() : null);
+/**
+ * A clarification in one fixed key order, or null when its shape is wrong. A day
+ * answer can name the foods the first reading chose (`foodIds`, from `fromDate`):
+ * those come as a pair, with `toDate`, and stand in for any single `foodId`.
+ */
 const dayInputClarification = (resolved = {}) => {
   if (!resolved || typeof resolved !== 'object' || Array.isArray(resolved)) return null;
-  const valid = Object.entries(resolved).every(([key, value]) => DAY_INPUT_CLARIFICATION_KEYS.includes(key) && typeof value === 'string' && value);
-  return valid ? Object.fromEntries(DAY_INPUT_CLARIFICATION_KEYS.filter(key => resolved[key]).map(key => [key, resolved[key]])) : null;
+  const { foodIds, fromDate, ...answers } = resolved;
+  const valid = Object.entries(answers).every(([key, value]) => DAY_INPUT_CLARIFICATION_KEYS.includes(key) && typeof value === 'string' && value);
+  if (!valid) return null;
+  const clean = Object.fromEntries(DAY_INPUT_CLARIFICATION_KEYS.filter(key => answers[key]).map(key => [key, answers[key]]));
+  if (foodIds === undefined && fromDate === undefined) return clean;
+  const kept = keptFoodIds(foodIds);
+  return kept && typeof fromDate === 'string' && isISODate(fromDate) && clean.toDate && !clean.foodId ? { ...clean, foodIds: kept, fromDate } : null;
 };
 /** A recording as the browser sends it: `data:<mime>[;params];base64,<bytes>`. */
 const isBase64DataUrl = value => {

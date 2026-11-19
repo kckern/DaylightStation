@@ -105,7 +105,7 @@ words: new food, a move, or a correction.
 | `audioRef` | `voice` only, in place of `content`: retry from a recording the server already saved |
 | `date` | The day the instruction is about (`YYYY-MM-DD`) |
 | `operationId` | Required: 1 to 128 letters, digits, `_` or `-`. Repeating it with the same body returns the first result, and with a different body is a 409 |
-| `resolved` | Optional answer to a clarification, holding only non-empty `foodId` and `toDate` strings |
+| `resolved` | Optional answer to a clarification: non-empty `foodId` and `toDate` strings. A day answer may instead keep the foods the question named, with `toDate`, `foodIds` (1 to 200 unique entry IDs, stored sorted so a retry matches) and `fromDate` (an ISO date). `foodIds` and `fromDate` come together and replace `foodId`. Any other shape is a 400 |
 
 The server supplies today. Every reply carries `outcome`, and `instructionText` when
 the words are known:
@@ -113,7 +113,7 @@ the words are known:
 | `outcome` | Meaning | Also returned |
 |---|---|---|
 | `committed` | The work is done | `kind` (`added`, `moved` or `changed`), `message`, the command's result, and its `undoToken` when there is one |
-| `clarification` | Nothing changed; one answer is needed | `clarification: {kind: "food" \| "day", question, choices: [{id, label}]}` |
+| `clarification` | Nothing changed; one answer is needed | `clarification: {kind: "food" \| "day", question, choices: [{id, label}]}`. A `day` question also has `foodIds` and `fromDate`: the foods it is about and their day |
 | `no-change` | Nothing changed, and the sentence says why | `message` |
 | `no-food` | The parser found no food in the words | `message` |
 
@@ -145,6 +145,19 @@ other day.
 The server then checks every target against the day's rows. Weight-derived estimates
 and rows that are not counted are never targets. Top-level foods follow the same dish
 rule as `foods-move`, so a broken-link row stands alone.
+
+#### Answering "which day?"
+
+The first reading decides which foods move. The `day` question returns their IDs and
+source day, and the answer sends them back, so the words are not matched against foods a
+second time.
+
+The server checks the kept foods against the ledger as it stands. Each ID must still be a
+counted top-level row on `fromDate`, and `fromDate` must be the viewed day or within the
+last seven days. Otherwise the request is a 422 and nothing moves. The words are still
+read, for the destination meal. If they no longer read as a move the reply is `no-change`
+("Please say that again."). Replies, Undo and retries under the same operation ID work as
+for any other move.
 
 #### What "that" means
 

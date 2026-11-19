@@ -6,6 +6,7 @@ import { loadYaml, saveYamlToPathAtomic } from '#system/utils/FileIO.mjs';
 import { sha256Text } from '#system/utils/sha256.mjs';
 import { YamlNutriListDatastore } from '../../adapters/persistence/yaml/YamlNutriListDatastore.mjs';
 import { DayInstructionService } from './DayInstructionService.mjs';
+import { dayName } from './DayInstructionReader.mjs';
 import { MealFoodCommands } from './MealFoodCommands.mjs';
 import { HealthOperations } from './HealthOperations.mjs';
 import { RECONSTRUCTION_LOG_ID } from '../../../portable/contracts/nutrition/reconstruction.mjs';
@@ -413,7 +414,7 @@ describe('DayInstructionService', () => {
       const logger = { info: vi.fn(), warn: vi.fn() };
       const captureFoods = vi.fn(async () => { await lunch(); return { committed: true, logId: 'cap' }; });
       const service = new DayInstructionService({ nutritionItems: store, reader, mealCommands: commands, entryRevisions, logger });
-      return { reader, entryRevisions, logger, captureFoods, run: (text, extra) => service.execute('u', { text, date, today, operationId: 'outer', captureFoods, ...extra }) };
+      return { service, reader, entryRevisions, logger, captureFoods, run: (text, extra) => service.execute('u', { text, date, today, operationId: 'outer', captureFoods, ...extra }) };
     };
     beforeEach(() => {
       root = fs.mkdtempSync(path.join(os.tmpdir(), 'day-instruction-'));
@@ -471,6 +472,113 @@ describe('DayInstructionService', () => {
       expect(await h.run('soup')).toMatchObject({ committed: true, kind: 'added', logId: 'cap', message: 'Logged 3 foods' });
       expect(h.captureFoods).toHaveBeenCalledTimes(1);
       expect(await store.findByLogId('u', 'cap')).toHaveLength(3);
+    });
+    describe('a day answer keeps the foods first read', () => {
+      const older = '2026-11-04';
+      const asked = plan({ target: 'named', toDay: 'older', toMeal: 'night' });
+      const answer = (foodIds, extra) => ({ resolved: { toDate: older, foodIds, fromDate: date, ...extra } });
+      const logOn = (day, id, createdAt, items, time = 'evening') => store.syncFromLog({ id, userId: 'u', isAccepted: true, status: 'accepted', createdAt, meal: { date: day, time }, items });
+      it('the day question returns the foods it read and their day', async () => {
+        await lunch();
+        const reply = await stack(asked, { matched: ['a', 'c'] }).run('move the soup');
+        expect(reply).toMatchObject({ committed: false, outcome: 'clarification' });
+        expect(reply.clarification).toEqual({ kind: 'day', question: 'Which day should this go to?', choices: [], foodIds: ['a', 'c'], fromDate: date });
+      });
+      it('a food question carries no foods to keep', async () => {
+        await lunch();
+        const reply = await stack(asked).run('move the soup');
+        expect(reply.clarification.kind).toBe('food');
+        expect(reply.clarification).not.toHaveProperty('foodIds');
+        expect(reply.clarification).not.toHaveProperty('fromDate');
+      });
+      it('the answer moves those foods even if the words would now match others, and keeps the meal', async () => {
+        await lunch();
+        const h = stack(asked, { matched: ['b'] });
+        const result = await h.run('move the soup', answer(['a']));
+        expect(h.reader.matchFoods).not.toHaveBeenCalled();
+        expect(result).toMatchObject({ committed: true, outcome: 'committed', kind: 'moved', message: `Moved a to ${dayName(older, today)}, Snacks`, instructionText: 'move the soup' });
+        expect(await store.findByUuid('u', 'a')).toMatchObject({ date: older, mealTime: 'night' });
+        expect(await ids(date)).toEqual(['b', 'c']);
+      });
+      it('Undo puts the foods back, and a repeat of the answer replays it', async () => {
+        await lunch();
+        const h = stack(asked);
+        const result = await h.run('move the soup', answer(['a', 'b']));
+        expect(result.undoToken).toEqual(expect.stringMatching(/^meal-/));
+        const again = await h.run('move the soup', answer(['a', 'b']));
+        expect(again).toMatchObject({ kind: 'moved', message: result.message, undoToken: result.undoToken });
+        expect(h.reader.read).toHaveBeenCalledTimes(1);
+        await commands.undo('u', { undoToken: result.undoToken, operationId: 'undo-answer' });
+        expect(await ids(date)).toEqual(['a', 'b', 'c']);
+        expect(await store.findByUuid('u', 'a')).toMatchObject({ mealTime: 'afternoon' });
+      });
+      it('resumes an answered move by its operation', async () => {
+        await lunch();
+        const h = stack(asked);
+        const result = await h.run('move the soup', answer(['a']));
+        expect(await h.service.resume('u', { date, today, operationId: 'outer' })).toMatchObject({ outcome: 'committed', kind: 'moved', message: result.message });
+      });
+      it('acts on the day the foods were read from, and says so', async () => {
+        await logOn(yesterday, 'night', '2026-11-17 19:00:00', [food('pizza')]);
+        await lunch();
+        const result = await stack(asked).run('move the pizza', answer(['pizza'], { fromDate: yesterday }));
+        expect(result.message).toBe(`Moved pizza from Yesterday to ${dayName(older, today)}, Snacks`);
+        expect(await store.findByUuid('u', 'pizza')).toMatchObject({ date: older, mealTime: 'night' });
+        expect(await ids(date)).toEqual(['a', 'b', 'c']);
+      });
+      it('a dish goes with its parts', async () => {
+        await lunch();
+        const grouped = await commands.execute('u', { action: 'group', name: 'Soup', date, bucket: 'afternoon', operationId: 'grp', selectedIds: ['a', 'b'], expectedVersions: { a: 1, b: 1 } });
+        const header = grouped.items.find(row => row.kind === 'group');
+        const h = stack(plan({ toDay: 'older', toMeal: 'same' }));
+        const reply = await h.run('that was earlier');
+        expect([...reply.clarification.foodIds].sort()).toEqual(['c', header.uuid].sort());
+        await h.run('that was earlier', answer([header.uuid]));
+        expect(await ids(older)).toEqual(['a', 'b', header.uuid].sort());
+      });
+      describe('refuses, changing nothing,', () => {
+        const refused = async (extra, foodIds = ['a', 'gone']) => {
+          const h = stack(asked);
+          await expect(h.run('move the soup', answer(foodIds, extra))).rejects.toMatchObject({ status: 422 });
+          expect(h.reader.matchFoods).not.toHaveBeenCalled();
+          expect(await store.findByUuid('u', 'a')).toMatchObject({ date, version: 1 });
+        };
+        it('when any food is no longer on that day', async () => { await lunch(); await refused(); });
+        it('when a food was moved off that day after the question', async () => {
+          await lunch();
+          await store.update('u', 'b', { date: yesterday });
+          await refused({}, ['a', 'b']);
+        });
+        it('when a food no longer counts', async () => {
+          await lunch();
+          await store.update('u', 'b', { status: 'rejected' });
+          await refused({}, ['a', 'b']);
+        });
+        it('for a weight-derived estimate', async () => {
+          await lunch();
+          await store.saveMany([{ ...food('estimate'), userId: 'u', name: 'Estimate', date, mealTime: 'afternoon', logId: RECONSTRUCTION_LOG_ID }]);
+          await refused({}, ['a', 'estimate']);
+        });
+        it('for a part of a dish', async () => {
+          await lunch();
+          await commands.execute('u', { action: 'group', name: 'Soup', date, bucket: 'afternoon', operationId: 'grp', selectedIds: ['b', 'c'], expectedVersions: { b: 1, c: 1 } });
+          await refused({}, ['a', 'b']);
+        });
+        it('for a source day outside those on offer', async () => {
+          await logOn('2026-11-01', 'old', '2026-11-01 09:00:00', [food('a')]);
+          const h = stack(asked);
+          await expect(h.run('move the soup', answer(['a'], { fromDate: '2026-11-01' }))).rejects.toMatchObject({ status: 422 });
+          expect(await store.findByUuid('u', 'a')).toMatchObject({ date: '2026-11-01', version: 1 });
+        });
+      });
+      it.each([['a correction', { intent: 'change' }], ['new food', { intent: 'add' }]])('asks again when the words now read as %s', async (_label, reading) => {
+        await lunch();
+        const h = stack(plan({ target: 'named', ...reading }));
+        expect(await h.run('move the soup', answer(['a']))).toMatchObject({ committed: false, outcome: 'no-change', message: 'Please say that again.' });
+        expect(await store.findByUuid('u', 'a')).toMatchObject({ date, version: 1 });
+        expect(h.entryRevisions.propose).not.toHaveBeenCalled();
+        expect(h.captureFoods).not.toHaveBeenCalled();
+      });
     });
     describe('foods with broken dish links', () => {
       const row = (uuid, extra) => ({ uuid, userId: 'u', name: uuid, date, mealTime: 'afternoon', grams: 100, unit: 'g', amount: 100, calories: 50, logId: 'old', createdAt: '2026-11-18T08:00:00Z', ...extra });

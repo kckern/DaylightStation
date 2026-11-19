@@ -5,6 +5,9 @@
 // nearest days are one tap away and anything older goes through a date picker.
 import { localDateISO } from "../../portable/contracts/health/isoDate.mjs";
 
+// A date field reports year 0002 while the person is still typing 2026.
+export const EARLIEST_MOVE_DAY = '2000-01-01';
+
 export const DAY_DROP_PREFIX = 'day:';
 export const dayDropId = iso => `${DAY_DROP_PREFIX}${iso}`;
 export const dayFromDropId = id => (typeof id === 'string' && id.startsWith(DAY_DROP_PREFIX) ? id.slice(DAY_DROP_PREFIX.length) : null);

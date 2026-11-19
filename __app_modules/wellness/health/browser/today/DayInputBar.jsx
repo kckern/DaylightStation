@@ -6,14 +6,12 @@ import { VoiceCapture } from '../capture/VoiceCapture.jsx';
 import { MoveDayControl } from './MoveDayControl.jsx';
 import { MoveResult } from './mealDrag.jsx';
 import { BUCKETS, UNGROUPED } from './mealBuckets.js';
-import { dayLabel } from './moveDays.js';
+import { dayLabel, EARLIEST_MOVE_DAY } from './moveDays.js';
 import { entryId, entryLabel } from './entryCommands.js';
 
 const logger = createAppLogger('health').child('day-input');
 const DAY_INPUT_PATH = 'api/v1/health/nutrition/day-input';
 const FALLBACK_ERROR = 'That did not go through. Try again.';
-// A date field reports year 0002 while the person is still typing 2026.
-const EARLIEST_ANSWER = '2000-01-01';
 
 const newOperationId = () => crypto.randomUUID();
 /** The server answered and said no, so sending the same thing again cannot help. */
@@ -175,7 +173,7 @@ export function DayInputBar({ date, today, entries, active = true, onResult, onM
       if (unknownOutcome.current?.operationId === request.operationId) unknownOutcome.current = null;
       logger.info('day-input.result', { date: request.date, outcome: result?.outcome, kind: result?.kind });
       if (result?.clarification) {
-        logger.info('day-input.clarification', { date: request.date, kind: result.clarification.kind });
+        logger.info('day-input.clarification', { date: request.date, kind: result.clarification.kind, keptFoods: result.clarification.foodIds?.length ?? 0 });
         setQuestion({ ...result.clarification, choices: result.clarification.choices || [],
           request: { ...request, said: result.instructionText || request.said || null } });
         return;
@@ -231,10 +229,14 @@ export function DayInputBar({ date, today, entries, active = true, onResult, onM
     if (flight.current || !question) return;
     const { said, typed, type, content, audioRef, recording, date: askedOn, resolved } = question.request;
     const source = said ? { type: 'text', content: said } : { type, ...(audioRef ? { audioRef, recording } : { content }) };
-    send({ ...source, said, typed, date: askedOn, resolved: { ...resolved, ...picked }, operationId: newOperationId() });
+    // Kept foods already include any food chosen earlier.
+    const { foodId, ...others } = resolved || {};
+    send({ ...source, said, typed, date: askedOn, resolved: { ...(picked.foodIds ? others : resolved), ...picked }, operationId: newOperationId() });
   };
+  // A day question can name the foods it was about, so the answer stays on them.
+  const dayAnswer = toDate => ({ toDate, ...(question?.foodIds?.length && question.fromDate ? { foodIds: question.foodIds, fromDate: question.fromDate } : {}) });
   const answerDay = value => {
-    if (value && value >= EARLIEST_ANSWER && value <= today) answer({ toDate: value });
+    if (value && value >= EARLIEST_MOVE_DAY && value <= today) answer(dayAnswer(value));
   };
   const backToField = clear => { clear(null); field.current?.focus(); };
   const elsewhere = day => (day === date ? '' : `${dayLabel(day, today)}: `);
@@ -262,7 +264,7 @@ export function DayInputBar({ date, today, entries, active = true, onResult, onM
         <span>{elsewhere(question.request.date)}{question.question}</span>
         <div className="health-day-input__actions">
           {question.choices.map(choice => <Button key={choice.id} size="compact-sm" variant="light" disabled={Boolean(busy)}
-            onClick={() => answer(question.kind === 'day' ? { toDate: choice.id } : { foodId: choice.id })}>{choice.label}</Button>)}
+            onClick={() => answer(question.kind === 'day' ? dayAnswer(choice.id) : { foodId: choice.id })}>{choice.label}</Button>)}
           {question.kind === 'day' ? <input type="date" aria-label={question.question} max={today} disabled={Boolean(busy)}
             onChange={event => answerDay(event.target.value)} /> : null}
           <Button size="compact-sm" variant="subtle" onClick={() => backToField(setQuestion)}>Cancel</Button>
