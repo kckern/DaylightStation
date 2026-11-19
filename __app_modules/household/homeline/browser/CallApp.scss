@@ -52,22 +52,33 @@
   }
 
   &--connected {
+    // The far end takes exactly the height its own picture needs — the TV's
+    // camera is landscape, so on a portrait phone that is a band across the
+    // top, not a tall box of letterbox bars. --remote-aspect is the live
+    // video's own ratio (set by the component on loadedmetadata/resize); 16:9
+    // until the first frame says otherwise. Capped so a portrait far end
+    // cannot squeeze the self-view out.
     .call-app__remote {
       order: 1;
       display: block;
-      flex: 1 1 auto;
+      flex: 0 0 auto; // never shrinks below its own shape; max-height is the cap
+      width: 100%;
+      aspect-ratio: var(--remote-aspect, 16 / 9);
+      max-height: 55%;
       min-height: 0;
       border-radius: calc(1rem * var(--u));
       overflow: hidden;
       background: var(--ds-background);
     }
 
-    // In a call the caller's own camera steps down to a strip: the person on
-    // the other end is what matters, but a self-view you cannot see is how
-    // people end up talking to a ceiling.
+    // The caller's own camera keeps everything else, so it stays the same
+    // portrait picture it was in the lobby — only shorter. It used to step
+    // down to a fixed 26% strip, which `object-fit: cover` filled by cropping
+    // a portrait face to a letterbox: the self-view went from vertical to
+    // horizontal the moment the call connected.
     .call-app__stage {
       order: 2;
-      flex: 0 0 26%;
+      flex: 1 1 auto;
     }
 
     .call-app__panel {
@@ -402,6 +413,23 @@
       flex: 0 0 46%;
       justify-content: center;
       overflow-y: auto;
+    }
+
+    // Side by side there is no room for a full-height 16:9 far end next to
+    // the panel, so the two pictures split the free width evenly. Each is a
+    // tall column, so the self-view stays portrait here too.
+    &--connected {
+      .call-app__remote,
+      .call-app__stage {
+        flex: 1 1 0;
+        min-width: 0;
+      }
+
+      .call-app__remote {
+        width: auto;
+        aspect-ratio: auto;
+        max-height: none;
+      }
     }
   }
 }
