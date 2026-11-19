@@ -26,6 +26,7 @@ import { ItemDetailsDrawer } from "./ItemDetailsDrawer.jsx";
 import { AppParamPicker } from "./AppParamPicker.jsx";
 import { ActionChipSelect } from "./ActionChipSelect.jsx";
 import { CapabilityWarning } from "./CapabilityWarning.jsx";
+import { ActionMenu } from "../../../../frontend/src/lib/ui/ActionMenu.jsx";
 import { DaylightMediaPath } from "../../../../frontend/src/lib/api.mjs";
 import ImagePickerModal from "./ImagePickerModal.jsx";
 import AdminPreviewPlayer from "../../../../frontend/src/modules/Admin/Preview/AdminPreviewPlayer.jsx";
@@ -87,6 +88,7 @@ function ListsItemRow({ item, onUpdate, onDelete, onToggleActive, onDuplicate, i
   const [labelValue, setLabelValue] = useState(item.label || '');
   const [drawerOpen, setDrawerOpen] = useState(false);
   const labelInputRef = useRef(null);
+  const rowActionsRef = useRef(null);
 
   const handleRowHover = useCallback(() => {
     if (!item.input) return;
@@ -515,30 +517,27 @@ function ListsItemRow({ item, onUpdate, onDelete, onToggleActive, onDuplicate, i
       </div>
 
       <div className="col-menu">
-        <Menu position="bottom-end">
-          <Menu.Target>
-            <ActionIcon variant="subtle" size="sm" aria-label={`Actions for ${item.label || item.input || 'item'}`} data-testid={`row-menu-${sectionIndex}-${item.index}`}>
-              <IconDotsVertical size={14} />
-            </ActionIcon>
-          </Menu.Target>
-          <Menu.Dropdown>
-            <Menu.Item leftSection={<IconInfoCircle size={14} />} onClick={() => { log.info('menu.more_info', { index: item.index, input: item.input }); setDrawerOpen(true); }}>
-              More Info
+        <ActionMenu position="bottom-end" trigger={
+          <ActionIcon ref={rowActionsRef} variant="subtle" size="sm" aria-label={`Actions for ${item.label || item.input || 'item'}`} data-testid={`row-menu-${sectionIndex}-${item.index}`}>
+            <IconDotsVertical size={14} />
+          </ActionIcon>
+        }>
+          <Menu.Item leftSection={<IconInfoCircle size={14} />} onClick={() => { log.info('menu.more_info', { index: item.index, input: item.input }); setDrawerOpen(true); }}>
+            More Info
+          </Menu.Item>
+          <Menu.Item leftSection={<IconCopy size={14} />} onClick={() => { log.info('menu.duplicate', { index: item.index }); onDuplicate(); }}>
+            Duplicate
+          </Menu.Item>
+          {onSplit && (
+            <Menu.Item leftSection={<IconArrowBarDown size={14} />} onClick={() => { log.info('menu.split', { index: item.index }); onSplit(); }}>
+              Split Below
             </Menu.Item>
-            <Menu.Item leftSection={<IconCopy size={14} />} onClick={() => { log.info('menu.duplicate', { index: item.index }); onDuplicate(); }}>
-              Duplicate
-            </Menu.Item>
-            {onSplit && (
-              <Menu.Item leftSection={<IconArrowBarDown size={14} />} onClick={() => { log.info('menu.split', { index: item.index }); onSplit(); }}>
-                Split Below
-              </Menu.Item>
-            )}
-            <Menu.Divider />
-            <Menu.Item color="red" data-testid={`row-delete-${sectionIndex}-${item.index}`} leftSection={<IconTrash size={14} />} onClick={() => { log.info('menu.delete', { index: item.index, label: item.label }); onDelete(); }}>
-              Delete
-            </Menu.Item>
-          </Menu.Dropdown>
-        </Menu>
+          )}
+          <Menu.Divider />
+          <Menu.Item color="red" data-testid={`row-delete-${sectionIndex}-${item.index}`} leftSection={<IconTrash size={14} />} onClick={() => { log.info('menu.delete', { index: item.index, label: item.label }); onDelete(); }}>
+            Delete
+          </Menu.Item>
+        </ActionMenu>
       </div>
       </div>
 
@@ -546,6 +545,7 @@ function ListsItemRow({ item, onUpdate, onDelete, onToggleActive, onDuplicate, i
         opened={drawerOpen}
         onClose={() => setDrawerOpen(false)}
         contentValue={item.input}
+        returnFocusRef={rowActionsRef}
       />
     </div>
   );

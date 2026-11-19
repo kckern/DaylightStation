@@ -1,4 +1,5 @@
 import { useApiResource } from '../../../../frontend/src/lib/hooks/useApiResource.js';
+import { useOverlayFocusReturn } from '../../../../frontend/src/lib/ui/dismiss/useOverlayFocusReturn.js';
 import { ErrorState } from '../../../../frontend/src/lib/ui/states.jsx';
 import { contentInfoPath, splitContentId } from '../lib/contentSearchLogic.js';
 import React, { useState, useMemo } from 'react';
@@ -13,9 +14,10 @@ import { getChildLogger } from "../../../../frontend/src/lib/logging/singleton.j
 import { ShimmerAvatar } from "./ShimmerAvatar.jsx";
 import { CONTAINER_TYPES, SOURCE_COLORS } from "./contentDisplaysUtils.jsx";
 
-export function ItemDetailsDrawer({ opened, onClose, contentValue }) {
+export function ItemDetailsDrawer({ opened, onClose, contentValue, returnFocusRef }) {
+  useOverlayFocusReturn(opened && Boolean(returnFocusRef), returnFocusRef);
   return (
-    <Drawer opened={opened} onClose={onClose} title="Item Details" position="right" size="md" padding="md">
+    <Drawer opened={opened} onClose={onClose} returnFocus={!returnFocusRef} title="Item Details" position="right" size="md" padding="md">
       {opened && <ItemDetails key={contentValue} contentValue={contentValue} />}
     </Drawer>
   );

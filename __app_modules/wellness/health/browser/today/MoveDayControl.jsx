@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Button, Menu, TextInput } from '@mantine/core';
+import { ActionMenu } from '@/lib/ui/ActionMenu.jsx';
 import { useDismissLayer } from "../../../../../frontend/src/lib/ui/dismiss/useDismissLayer.js";
 import { useDayDropTarget, useMealDragActive } from "./mealDrag.jsx";
 import { addDaysISO, dayLabel, EARLIEST_MOVE_DAY, recentDays } from "./moveDays.js";
@@ -125,14 +126,14 @@ export function CaptureDayActions({ date, today, onMove, busy = false, disabled 
 /** Selection mode: move every ticked food into one meal. */
 export function MoveMealControl({ count, onMove, disabled = false }) {
   const [busy, pick] = useMoveInFlight(onMove);
-  return <Menu position="bottom-start" disabled={busy || disabled} classNames={MENU_CLASSES}>
-    <Menu.Target>
+  return <ActionMenu position="bottom-start" disabled={busy || disabled} classNames={MENU_CLASSES}
+    trigger={
       <Button size="compact-xs" variant="light" loading={busy} disabled={disabled && !busy} aria-label={`Move ${count} selected to a meal`}>
         Move {count} to a meal…
       </Button>
-    </Menu.Target>
-    <Menu.Dropdown>{BUCKETS.map(bucket => <Menu.Item key={bucket.id} onClick={() => pick(bucket.id)}>{bucket.label}</Menu.Item>)}</Menu.Dropdown>
-  </Menu>;
+    }>
+    {BUCKETS.map(bucket => <Menu.Item key={bucket.id} onClick={() => pick(bucket.id)}>{bucket.label}</Menu.Item>)}
+  </ActionMenu>;
 }
 
 function DayChip({ iso, today }) {

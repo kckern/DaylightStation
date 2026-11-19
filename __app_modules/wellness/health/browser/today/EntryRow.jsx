@@ -1,6 +1,7 @@
 import { useFoodMutation } from "../operations/useFoodMutation.js";
 import { useMemo, useRef, useState } from 'react';
 import { Menu, UnstyledButton } from '@mantine/core';
+import { ActionMenu } from '@/lib/ui/ActionMenu.jsx';
 import { createAppLogger } from "../../../../../frontend/src/lib/ui/createAppLogger.js";
 import { MacroBadges } from "./MacroBadges.jsx";
 import { DensityBadge } from "./DensityBadge.jsx";
@@ -43,7 +44,11 @@ export function EntryRow({ row, densityRow = row, onTap, onConfirm, onRequestDel
   const operation = useRef(null);
   const [brokenPhoto, setBrokenPhoto] = useState(null);
   const portions = usePortionControl(row);
+  const menuTrigger = useRef(null);
   const saving = Boolean(portions?.saving || confirmation === 'saving');
+  const menuDisabled = saving || Boolean(portions?.draft || portions?.locked);
+  // A sheet opened by a menu item returns to the row after that item unmounts.
+  const focusMenuTrigger = () => menuTrigger.current?.focus({ preventScroll: true });
   const { densityPlacement } = useHealthDisplayPreferences();
   const unsettled = row.settled === false || (isGroup && row.children?.some(item => item.settled === false));
   const name = row.name || row.item || row.label || '';
@@ -109,21 +114,19 @@ export function EntryRow({ row, densityRow = row, onTap, onConfirm, onRequestDel
     <div className="health-row__action health-row__visual">
       {saving ? <span className="health-row__saving-status" role="status" aria-label={`Saving ${name}`} /> : null}
       {confirmation === 'saved' ? <span className="health-row__verified" role="status" aria-label={`${name} verified`} title="Verified">✓</span> : null}
-      {selecting ? null : <Menu position="bottom-end" withinPortal shadow="md" disabled={saving || Boolean(portions?.draft || portions?.locked)}>
-        <Menu.Target>
-          <UnstyledButton className="health-row__menu" aria-label={`Actions for ${name}`} title={saving ? 'Saving' : 'Actions'} disabled={saving || Boolean(portions?.draft || portions?.locked)}>
+      {selecting ? null : <ActionMenu position="bottom-end" withinPortal shadow="md" disabled={menuDisabled}
+        trigger={
+          <UnstyledButton ref={menuTrigger} className="health-row__menu" aria-label={`Actions for ${name}`} title={saving ? 'Saving' : 'Actions'} disabled={menuDisabled}>
             {saving ? <svg className="health-row__saving-spinner" width="14" height="14" viewBox="0 0 14 14" aria-hidden="true" focusable="false"><circle cx="7" cy="7" r="5" fill="none" stroke="currentColor" strokeWidth="1.5" strokeDasharray="23 9" /></svg> : <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true" focusable="false">
               <circle cx="7" cy="2.5" r="1.4" fill="currentColor" /><circle cx="7" cy="7" r="1.4" fill="currentColor" /><circle cx="7" cy="11.5" r="1.4" fill="currentColor" />
             </svg>}
           </UnstyledButton>
-        </Menu.Target>
-        <Menu.Dropdown>
-          <Menu.Item onClick={() => { logger.debug('row.menu', { action: 'details', uuid: entryId(row) }); openDetails(); }}>Details</Menu.Item>
-          {unsettled && confirmation !== 'saved' ? <Menu.Item disabled={confirmation === 'saving'} onClick={() => { logger.debug('row.menu', { action: 'verify', uuid: entryId(row) }); confirm(); }}>Verify</Menu.Item> : null}
-          <Menu.Item onClick={() => { logger.debug('row.menu', { action: 'revise', uuid: entryId(row) }); setRevising(true); }}>Revise</Menu.Item>
-          {onRequestDelete ? <Menu.Item color="red" onClick={() => { logger.debug('row.menu', { action: 'remove', uuid: entryId(row) }); onRequestDelete(row); }}>Remove</Menu.Item> : null}
-        </Menu.Dropdown>
-      </Menu>}
+        }>
+        <Menu.Item onClick={() => { focusMenuTrigger(); logger.debug('row.menu', { action: 'details', uuid: entryId(row) }); openDetails(); }}>Details</Menu.Item>
+        {unsettled && confirmation !== 'saved' ? <Menu.Item disabled={confirmation === 'saving'} onClick={() => { logger.debug('row.menu', { action: 'verify', uuid: entryId(row) }); confirm(); }}>Verify</Menu.Item> : null}
+        <Menu.Item onClick={() => { logger.debug('row.menu', { action: 'revise', uuid: entryId(row) }); setRevising(true); }}>Revise</Menu.Item>
+        {onRequestDelete ? <Menu.Item color="red" onClick={() => { focusMenuTrigger(); logger.debug('row.menu', { action: 'remove', uuid: entryId(row) }); onRequestDelete(row); }}>Remove</Menu.Item> : null}
+      </ActionMenu>}
     </div>
     {error ? <span role="alert" className="health-row__error">{error}</span> : null}
     {portionAlertFor(portions, row) ? <PortionDraftAlert control={portions} className="health-portion-error health-portion-error--row" /> : null}
