@@ -71,3 +71,95 @@ test('Reader retains the first page and retries a failed cursor only when asked'
   await expect(page.getByText('Second page article', { exact: true })).toBeVisible();
   expect(reads).toEqual([null, 'next', 'next']);
 });
+
+test('Reader restores a saved position after its first page supplies the scrollable rows', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 720 });
+  const offset = 2200;
+  await page.route('**/api/v1/feed/workspace', route => route.fulfill({ json: {
+    preferencesStored: true, checkpoints: { reader: { scrollOffset: offset, itemId: 'retired-story' } },
+  } }));
+  const entered = Promise.withResolvers();
+  const release = Promise.withResolvers();
+  const items = Array.from({ length: 98 }, (_, i) => article(String(i), 'Reader article ' + i));
+  await page.route('**/api/v1/feed/reader/stream?**', async route => {
+    entered.resolve();
+    await release.promise;
+    return route.fulfill({ json: { items, exhausted: true } });
+  });
+  await page.goto('/feed/reader');
+  await entered.promise;
+  const inbox = page.locator('.reader-inbox');
+  await expect(inbox.getByText('Loading...', { exact: true })).toBeVisible();
+  await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+  release.resolve();
+  await expect.poll(() => inbox.evaluate(el => el.scrollHeight - el.clientHeight)).toBeGreaterThan(offset);
+  await expect.poll(() => inbox.evaluate(el => el.scrollTop)).toBe(offset);
+  expect(await page.getByRole('main', { name: 'Feed' }).evaluate(el => el.scrollTop)).toBe(0);
+});
+
+for (const query of ['view=saved', 'feeds=news']) {
+  test('Reader keeps the default checkpoint independent of ' + query, async ({ page }) => {
+    const checkpoint = { itemId: 'retired', scrollOffset: 2200 };
+    const writes = [];
+    await page.route('**/api/v1/feed/workspace', route => route.fulfill({ json: {
+      preferencesStored: true, checkpoints: { reader: checkpoint },
+    } }));
+    await page.route('**/api/v1/feed/workspace/checkpoints/reader', route => {
+      writes.push(route.request().postDataJSON());
+      return route.fulfill({ json: {} });
+    });
+    const items = Array.from({ length: 98 }, (_, i) => article(String(i), 'Story ' + i));
+    await page.route(/\/api\/v1\/feed\/(reader\/stream|search)\?/, route => route.fulfill({ json: { items, exhausted: true } }));
+    await page.goto('/feed/reader?' + query);
+    const inbox = page.locator('.reader-inbox');
+    await expect.poll(() => inbox.evaluate(el => el.scrollHeight - el.clientHeight)).toBeGreaterThan(2200);
+    expect(await inbox.evaluate(el => el.scrollTop)).toBe(0);
+    await inbox.evaluate(el => { el.scrollTop = 1100; });
+    await page.getByRole('link', { name: 'Headlines', exact: true }).click();
+    await expect.poll(() => writes.length).toBeGreaterThanOrEqual(2);
+    for (const write of writes) expect(write).toMatchObject(checkpoint);
+    await page.getByRole('link', { name: 'Reader', exact: true }).click();
+    await expect(page).toHaveURL(/\/feed\/reader$/);
+    await expect.poll(() => inbox.evaluate(el => el.scrollTop)).toBe(2200);
+  });
+}
+
+test('Reader retains an unread checkpoint on early departure and warm rows during revalidation', async ({ page }) => {
+  const checkpoint = { itemId: 'retired', scrollOffset: 2200 };
+  const writes = [];
+  await page.route('**/api/v1/feed/workspace', route => route.fulfill({ json: {
+    preferencesStored: true, checkpoints: { reader: checkpoint },
+  } }));
+  await page.route('**/api/v1/feed/workspace/checkpoints/reader', route => {
+    writes.push(route.request().postDataJSON());
+    return route.fulfill({ json: {} });
+  });
+  const items = Array.from({ length: 98 }, (_, i) => article(String(i), 'Story ' + i));
+  let reads = 0;
+  let revalidate;
+  const payload = { json: { items, exhausted: true } };
+  await page.route('**/api/v1/feed/reader/stream?**', route => {
+    reads++;
+    if (reads === 1) return;
+    if (reads === 2) return route.fulfill(payload);
+    revalidate = route;
+  });
+  await page.goto('/feed/reader');
+  await expect.poll(() => reads).toBe(1);
+  const headlines = page.getByRole('link', { name: 'Headlines', exact: true });
+  const reader = page.getByRole('link', { name: 'Reader', exact: true });
+  await headlines.click();
+  await expect.poll(() => writes.length).toBeGreaterThanOrEqual(2);
+  for (const write of writes) expect(write).toMatchObject(checkpoint);
+  await reader.click();
+  const inbox = page.locator('.reader-inbox');
+  await expect.poll(() => inbox.evaluate(el => el.scrollTop)).toBe(2200);
+  await inbox.evaluate(el => { el.scrollTop = 1500; });
+  await headlines.click();
+  await reader.click();
+  await expect.poll(() => Boolean(revalidate)).toBe(true);
+  await expect.poll(() => inbox.evaluate(el => el.scrollTop)).toBe(1500);
+  await revalidate.fulfill(payload);
+  await expect(inbox.getByRole('button', { name: 'Refresh' })).toBeEnabled();
+  expect(await inbox.evaluate(el => el.scrollTop)).toBe(1500);
+});

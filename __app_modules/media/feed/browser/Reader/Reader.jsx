@@ -170,8 +170,11 @@ function smartGroup(articles, isFiltered) {
 export default function Reader() {
   const [searchParams, setSearchParams] = useSearchParams();
   const { getSnapshot, setSnapshot, getLastVisit, markVisited, mutateItems, applyPendingMutations, checkpoints } = useFeedWorkspace();
-  const initialSnapshot = useRef(getSnapshot('reader'));
-  const initialCheckpoint = useRef(checkpoints.reader);
+  const activeView = searchParams.get('view') || 'all';
+  const feedsParam = searchParams.get('feeds') || '';
+  const cached = getSnapshot('reader');
+  const initialSnapshot = useRef(cached?.view === activeView && cached.feeds === feedsParam ? cached : null);
+  const initialCheckpoint = useRef(checkpoints.reader ?? {});
   const previousVisit = useRef(getLastVisit('reader'));
   const visitStarted = useRef(new Date().toISOString());
   const { data: feedsData, error: feedsReadError, reload: reloadFeeds } = useApiResource('/api/v1/feed/reader/feeds', { label: 'Feed subscriptions' });
@@ -179,9 +182,7 @@ export default function Reader() {
   const [articles, setArticles] = useState(() => applyPendingMutations(initialSnapshot.current?.articles || []));
   const [continuation, setContinuation] = useState(initialSnapshot.current?.continuation || null);
   const [exhausted, setExhausted] = useState(initialSnapshot.current?.exhausted || false);
-  const feedsParam = searchParams.get('feeds') || '';
   const activeFeeds = useMemo(() => new Set(feedsParam.split(',').filter(Boolean)), [feedsParam]);
-  const activeView = searchParams.get('view') || 'all';
   const [loading, setLoading] = useState(!initialSnapshot.current?.articles?.length);
   const [loadingMore, setLoadingMore] = useState(false);
   const [streamError, setStreamError] = useState(null);
@@ -205,10 +206,13 @@ export default function Reader() {
     feeds: initialSnapshot.current?.feeds ?? '',
   });
   const snapshotRef = useRef(null);
+  const entryFilter = useRef({ view: activeView, feeds: feedsParam });
   const checkpointRestoredRef = useRef(false);
-  snapshotRef.current = { articles, continuation, exhausted, ...streamFilter.current };
+  snapshotRef.current = activeView === 'offline'
+    ? { view: activeView, feeds: feedsParam }
+    : { articles, continuation, exhausted, view: activeView, feeds: feedsParam };
 
-  useEffect(() => { markVisited('reader', visitStarted.current); }, [markVisited]);
+  useEffect(() => { markVisited('reader', visitStarted.current, initialCheckpoint.current); }, [markVisited]);
 
   useLayoutEffect(() => {
     if (drawerActive) {
@@ -341,28 +345,23 @@ export default function Reader() {
     return () => { active = false; };
   }, [activeView, applyPendingMutations, offlineAttempt]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const el = inboxRef.current;
-    const initialOffset = initialSnapshot.current?.scrollTop ?? initialCheckpoint.current?.scrollOffset;
-    if (el && initialOffset) requestAnimationFrame(() => { el.scrollTop = initialOffset; });
     return () => {
-      const scrollOffset = el?.scrollTop || 0;
-      const itemId = [...(el?.querySelectorAll('[data-feed-item-id]') || [])]
-        .find(node => node.getBoundingClientRect().bottom > el.getBoundingClientRect().top + 8)?.dataset.feedItemId || null;
-      setSnapshot('reader', { ...snapshotRef.current, scrollTop: scrollOffset });
-      markVisited('reader', new Date().toISOString(), { itemId, scrollOffset });
+      const snapshot = snapshotRef.current;
+      let position = initialCheckpoint.current;
+      const rows = el?.querySelectorAll('[data-feed-item-id]');
+      if (rows?.length) {
+        const scrollOffset = el.scrollTop;
+        setSnapshot('reader', { ...snapshot, scrollTop: scrollOffset });
+        if (snapshot.view === 'all' && !snapshot.feeds) {
+          const itemId = [...rows].find(node => node.getBoundingClientRect().bottom > el.getBoundingClientRect().top + 8)?.dataset.feedItemId || null;
+          position = { itemId, scrollOffset };
+        }
+      }
+      markVisited('reader', new Date().toISOString(), position);
     };
   }, [markVisited, setSnapshot]);
-
-  useEffect(() => {
-    if (checkpointRestoredRef.current || initialSnapshot.current?.scrollTop || !initialCheckpoint.current?.itemId || !articles.length) return;
-    const target = [...(inboxRef.current?.querySelectorAll('[data-feed-item-id]') || [])]
-      .find(node => node.dataset.feedItemId === initialCheckpoint.current.itemId);
-    if (target) {
-      checkpointRestoredRef.current = true;
-      requestAnimationFrame(() => target.scrollIntoView({ block: 'start' }));
-    }
-  }, [articles.length]);
 
   // Infinite scroll via IntersectionObserver
   useEffect(() => {
@@ -468,6 +467,29 @@ export default function Reader() {
     overscan: 600,
   });
 
+  useLayoutEffect(() => {
+    if (checkpointRestoredRef.current) return;
+    if (entryFilter.current.view !== activeView || entryFilter.current.feeds !== feedsParam) {
+      checkpointRestoredRef.current = true;
+      return;
+    }
+    const inbox = inboxRef.current;
+    if (!inbox || !listRef.current || !readerRows.length) return;
+    checkpointRestoredRef.current = true;
+    const snapshot = initialSnapshot.current;
+    if (snapshot?.scrollTop != null) {
+      inbox.scrollTop = snapshot.scrollTop;
+      return;
+    }
+    // Durable Reader positions have no filter identity and belong to the default inbox.
+    if (activeView !== 'all' || feedsParam) return;
+    const checkpoint = initialCheckpoint.current;
+    const anchor = checkpoint?.itemId && [...listRef.current.querySelectorAll('[data-feed-item-id]')]
+      .find(node => node.dataset.feedItemId === checkpoint.itemId);
+    if (anchor) inbox.scrollTop += anchor.getBoundingClientRect().top - inbox.getBoundingClientRect().top;
+    else if (checkpoint?.scrollOffset) inbox.scrollTop = checkpoint.scrollOffset;
+  }, [activeView, feedsParam, readerRows.length]);
+
   // Keep the drawer open while choosing feeds so touch users can build a
   // multi-feed selection without modifier keys. The explicit close button
   // completes the selection.
@@ -533,7 +555,7 @@ export default function Reader() {
           {activeView !== 'offline' && <button onClick={() => fetchStream()} disabled={loading}>Refresh</button>}
         </div>
         {errorMessage && <div className="reader-inline-error" role="alert">{errorMessage}<button onClick={retryArticles}>Retry</button></div>}
-        {(activeView === 'offline' ? offlineLoading : loading) ? (
+        {(activeView === 'offline' ? offlineLoading : loading && !articles.length) ? (
           <div className="reader-loading">Loading...</div>
         ) : (
           <>

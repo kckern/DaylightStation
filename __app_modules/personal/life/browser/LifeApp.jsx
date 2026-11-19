@@ -63,7 +63,7 @@ function PlanSecondaryNav({ pathname }) {
         <Link
           key={link.path}
           to={link.path}
-          className={`life-plan-subnav__link${link.match(pathname) ? ' life-plan-subnav__link--active' : ''}`}
+          className={`ds-touch-target life-plan-subnav__link${link.match(pathname) ? ' life-plan-subnav__link--active' : ''}`}
           aria-current={link.match(pathname) ? 'page' : undefined}
         >
           {link.icon}

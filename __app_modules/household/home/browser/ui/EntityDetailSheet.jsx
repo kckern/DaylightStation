@@ -54,7 +54,14 @@ function EntityHistory({ entity, range, onRange, history, error, reload }) {
     <section className="home-history" aria-label="History">
       <div className="home-history__head">
         <h4 className="home-history__title">History</h4>
-        <SegmentedControl size="xs" data={RANGES} value={range} onChange={onRange} aria-label="History range" />
+        <SegmentedControl
+          size="xs"
+          classNames={{ label: 'home-history__range-option' }}
+          data={RANGES}
+          value={range}
+          onChange={onRange}
+          aria-label="History range"
+        />
       </div>
       {body}
       {error ? <ErrorState error={error} onRetry={reload} label="History" title={history ? 'History could not refresh' : undefined} /> : null}

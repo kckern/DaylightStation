@@ -579,6 +579,39 @@ test('Life keeps frame controls reachable beside an in-flow notice stack', async
   await expect.poll(emptyGap).toBe(0);
 });
 
+test.describe('Life Plan on a narrow touch screen', () => {
+  test.use({ hasTouch: true, viewport: { width: 320, height: 600 } });
+
+  test('keeps each section link reachable and reports the selected page', async ({ page }) => {
+    const member = { username: 'amy', displayName: 'Amy' };
+    await page.routeWebSocket('**/ws', () => {});
+    await page.route('**/api/v1/life/**', route => {
+      const path = new URL(route.request().url()).pathname;
+      if (path.endsWith('/users')) return route.fulfill({ json: { users: [member] } });
+      if (path.endsWith('/user')) return route.fulfill({ json: member });
+      return route.fulfill({ json: {} });
+    });
+
+    await page.goto('/life/plan');
+    const plan = page.getByRole('navigation', { name: 'Plan sections' });
+    await expect(plan.getByRole('link', { name: 'Purpose' })).toHaveAttribute('aria-current', 'page');
+    expect(await page.evaluate(() => matchMedia('(pointer: coarse)').matches)).toBe(true);
+    const sectionTargets = await plan.getByRole('link').evaluateAll(links => links.map(link => {
+      const { left, right, width, height } = link.getBoundingClientRect();
+      return { name: link.textContent, withinViewport: left >= 0 && right <= innerWidth, largeEnough: width >= 44 && height >= 44 };
+    }));
+    expect(sectionTargets).toEqual(['Purpose', 'Goals', 'Beliefs', 'Values', 'Qualities', 'Ceremonies'].map(name => ({
+      name, withinViewport: true, largeEnough: true,
+    })));
+
+    const ceremonies = plan.getByRole('link', { name: 'Ceremonies' });
+    await ceremonies.tap({ position: { x: 30, y: 39 }, timeout: 5_000 });
+    await expect(page).toHaveURL(/\/life\/plan\/ceremonies$/);
+    await expect(ceremonies).toHaveAttribute('aria-current', 'page');
+    await expect(plan.locator('[aria-current="page"]')).toHaveCount(1);
+  });
+});
+
 test('Life Purpose retries a failed read after saving without writing the statement again', async ({ page }) => {
   await page.routeWebSocket('**/*', () => {});
   const member = { username: 'amy', displayName: 'Amy' };

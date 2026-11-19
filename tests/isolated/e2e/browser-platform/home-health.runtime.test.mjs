@@ -338,6 +338,47 @@ test('Home Mosaic keeps the tooltip and drawer reachable in its own frame', asyn
   await expect(drawer).toHaveCount(0);
 });
 
+test.describe('Home phone history choices', () => {
+  test.use({ hasTouch: true, viewport: { width: 390, height: 850 } });
+
+  test('supports an edge tap and native radio keyboard selection', async ({ page }) => {
+    await page.route('**/home-dashboard/entities', route => route.fulfill({ json: house('on') }));
+    const ranges = [];
+    await page.route('**/home-dashboard/entities/light.kitchen/history?range=*', route => {
+      const range = new URL(route.request().url()).searchParams.get('range');
+      ranges.push(range);
+      return route.fulfill({ json: { range, kind: 'state', hasData: false } });
+    });
+    await page.goto('/home');
+    await page.getByRole('button', { name: 'Rooms', exact: true }).tap();
+    await page.getByRole('button', { name: 'Kitchen 1 on', exact: true }).tap();
+    const opener = page.getByRole('button', { name: 'Kitchen light, On', exact: true });
+    await opener.press('Enter');
+    const detail = page.getByRole('dialog', { name: 'Kitchen light' });
+    const choices = detail.getByRole('radiogroup', { name: 'History range' });
+    const day = choices.getByRole('radio', { name: '24 h', exact: true });
+    const week = choices.getByRole('radio', { name: '7 d', exact: true });
+    await expect(day).toBeChecked();
+    for (const label of await choices.locator('label').all()) {
+      const { width, height } = await label.boundingBox();
+      expect(width).toBeGreaterThanOrEqual(44);
+      expect(height).toBeGreaterThanOrEqual(44);
+    }
+    const weekTarget = choices.locator('label').filter({ hasText: /^7 d$/ });
+    await weekTarget.tap({ position: { x: 2, y: 22 } });
+    await expect(week).toBeChecked();
+    await expect.poll(() => ranges).toEqual(['24h', '7d']);
+    await week.focus();
+    await page.keyboard.press('ArrowLeft');
+    await expect(day).toBeChecked();
+    await expect(day).toBeFocused();
+    await expect.poll(() => ranges).toEqual(['24h', '7d', '24h']);
+    await page.keyboard.press('Escape');
+    await expect(detail).toBeHidden();
+    await expect(opener).toBeFocused();
+  });
+});
+
 test('Home keeps the rendered history chart during a failed refresh and retries the same range', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 850 });
   await page.route('**/home-dashboard/entities', route => route.fulfill({ json: house('on') }));
@@ -362,6 +403,8 @@ test('Home keeps the rendered history chart during a failed refresh and retries 
   await page.getByRole('button', { name: 'Kitchen 1 on', exact: true }).click();
   await page.getByRole('button', { name: 'Kitchen light, On', exact: true }).click();
   const history = page.getByRole('dialog', { name: 'Kitchen light' }).getByRole('region', { name: 'History' });
+  const rangeLabel = history.getByRole('radiogroup', { name: 'History range' }).locator('label').first();
+  expect((await rangeLabel.boundingBox()).height).toBeLessThan(44);
   const chart = history.locator('svg.highcharts-root');
   await expect(chart).toBeVisible();
   await history.getByText('7 d', { exact: true }).click();

@@ -196,6 +196,15 @@
     color: var(--ds-text-low);
   }
 
+  @media (pointer: coarse) {
+    &__range-option {
+      display: grid;
+      place-items: center;
+      min-inline-size: var(--ds-control-touch-target);
+      min-block-size: var(--ds-control-touch-target);
+    }
+  }
+
   &__chart { min-width: 0; }
 
   &__empty {
