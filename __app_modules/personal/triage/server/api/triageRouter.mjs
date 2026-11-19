@@ -5,7 +5,7 @@ export { requireOwnerSession };
 
 const ERROR_STATUS = {
   TRIAGE_CARD_NOT_FOUND: [404, 'card_not_found'], TRIAGE_CARD_NOT_OPEN: [409, 'card_not_open'],
-  TRIAGE_INVALID_ANSWER: [400, 'invalid_answer'], TRIAGE_ANSWER_IN_DOUBT: [409, 'answer_in_doubt'],
+  TRIAGE_INVALID_ANSWER: [400, 'invalid_answer'], TRIAGE_ANSWER_IN_DOUBT: [409, 'answer_in_doubt'], TRIAGE_CARD_NOT_APPLYING: [409, 'CARD_NOT_APPLYING'],
 };
 const requestId = () => `req.${globalThis.crypto.randomUUID()}`;
 
@@ -70,6 +70,11 @@ export function createTriageRouter({ resolvePolicy, defaultUsername, isKnownUser
       text: typeof text === 'string' ? text : undefined,
       draft: draft && typeof draft === 'object' ? { body: draft.body } : undefined,
     });
+  }));
+  router.post('/cards/:cardId/resolve', requireOwnerSession, needSession, json, handle('resolve', (req) => {
+    const { happened } = req.body ?? {};
+    if (typeof happened !== 'boolean') throw Object.assign(new Error('happened must be boolean'), { code: 'TRIAGE_INVALID_ANSWER' });
+    return session.resolve({ username: req.triageUsername, cardId: req.params.cardId, happened });
   }));
   router.post('/cards/:cardId/skip', requireOwnerSession, needSession, handle('skip',
     (req) => session.skip({ username: req.triageUsername, cardId: req.params.cardId })));

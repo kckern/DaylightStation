@@ -370,7 +370,12 @@ export function createRunTriagePass({
       const stored = await store.readQueue(username);
       const byId = new Map(stored.cards.map((c) => [c.cardId, c]));
       // Transient fields (regenerate) stay in memory and are stripped only from what is written.
-      const merged = list.map((c) => {
+      // An 'applying' card (an answer in doubt) is never dropped, and its item gets no second card.
+      const applying = stored.cards.filter((c) => c.status === 'applying');
+      const applyingItems = new Set(applying.map((c) => c.itemId));
+      const inList = new Set(list.map((c) => c.cardId));
+      const kept = list.filter((c) => !applyingItems.has(c.itemId) || byId.get(c.cardId)?.status === 'applying');
+      const merged = kept.map((c) => {
         const s = byId.get(c.cardId);
         if (!s) return c;
         if (s.status !== 'open') {
@@ -380,6 +385,7 @@ export function createRunTriagePass({
         }
         return Number.isFinite(s.skippedAt) ? { ...c, skippedAt: s.skippedAt } : c;
       });
+      for (const a of applying) if (!inList.has(a.cardId)) merged.push(a);
       await store.writeQueue(username, { passId, builtAt: asOf, firstBuiltAt, cards: strip(merged), mailbox: ctx.mailbox, preDone: ctx.preDone });
       return merged;
     };

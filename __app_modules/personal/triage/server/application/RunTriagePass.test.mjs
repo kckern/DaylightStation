@@ -392,6 +392,33 @@ describe('RunTriagePass', () => {
     expect((await s.queue()).map((c) => c.kind).sort()).toEqual(['email', 'todo', 'todo']);
   });
 
+  describe('applying cards (an answer in doubt)', () => {
+    const seedApplying = async (s) => {
+      await s.pass.run({ username: 'kc', trigger: 'schedule' });
+      const q = await s.store.readQueue('kc');
+      q.cards = q.cards.map((c) => ({ ...c, status: 'applying', applyingAt: NOW, answer: { choice: 'send' } }));
+      await s.store.writeQueue('kc', q);
+      return q.cards[0];
+    };
+    it('keeps an applying card when the item changed version, and makes no second card for it', async () => {
+      const s = setup({ mode: 'dryRun', messages: [msg('m1')] });
+      const applying = await seedApplying(s);
+      s.state.messages = [msg('m1', { version: 'v2' })];
+      await s.pass.run({ username: 'kc', trigger: 'manual' });
+      const cards = await s.queue();
+      expect(cards).toHaveLength(1);
+      expect(cards[0]).toMatchObject({ cardId: applying.cardId, status: 'applying', answer: { choice: 'send' } });
+    });
+    it('keeps an applying card when the item left the inbox', async () => {
+      const s = setup({ mode: 'dryRun', messages: [msg('m1')] });
+      const applying = await seedApplying(s);
+      s.state.messages = [];
+      await s.pass.run({ username: 'kc', trigger: 'manual' });
+      const cards = await s.queue();
+      expect(cards.map((c) => [c.cardId, c.status])).toEqual([[applying.cardId, 'applying']]);
+    });
+  });
+
   it('work disabled: todos are skipped and logged, email still runs', async () => {
     const s = setup({ workDisabled: true, messages: [msg('m1')], answers: { 'Weekly newsletter m1': ARCHIVE } });
     const r = await s.pass.run({ username: 'kc', trigger: 'manual' });

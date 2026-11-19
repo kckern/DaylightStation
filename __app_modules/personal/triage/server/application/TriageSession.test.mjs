@@ -576,3 +576,35 @@ describe('done counter (fix round 1)', () => {
     expect((await make({ store }).session({ username: 'sample' })).done).toBe(1);
   });
 });
+
+describe('resolve: the owner exit for an in-doubt card', () => {
+  const applyingCard = (choice = 'send') => emailCard('m1', { step: 'reply', draftId: 'd1', draftBody: 'hi', status: 'applying', applyingAt: NOW - 1000, answer: { choice } });
+
+  it('happened:true logs the answer as the normal path would and marks it answered', async () => {
+    const store = memoryStore({ passId: 'p', builtAt: NOW, cards: [applyingCard()] });
+    const mailbox = fakeMailbox({ m1: { version: 'v1' } });
+    const s = make({ store, mailbox });
+    const out = await s.resolve({ username: 'sample', cardId: 'card.m1', happened: true });
+    expect(out.outcome).toBe('applied');
+    expect(store.entries).toEqual([expect.objectContaining({ actor: 'owner', action: 'send', choice: 'send', inverse: null, cardId: 'card.m1' })]);
+    expect(store.queue.cards[0]).toMatchObject({ status: 'answered', logEntryId: store.entries[0].id });
+    expect(store.queue.cards[0]).not.toHaveProperty('applyingAt');
+    expect(mailbox.sendDraft).not.toHaveBeenCalled();
+  });
+  it('happened:false returns the card to open and clears applyingAt and answer', async () => {
+    const store = memoryStore({ passId: 'p', builtAt: NOW, cards: [applyingCard()] });
+    const s = make({ store, mailbox: fakeMailbox({}) });
+    const out = await s.resolve({ username: 'sample', cardId: 'card.m1', happened: false });
+    expect(out.outcome).toBe('reopened');
+    expect(store.queue.cards[0].status).toBe('open');
+    expect(store.queue.cards[0]).not.toHaveProperty('applyingAt');
+    expect(store.queue.cards[0]).not.toHaveProperty('answer');
+    expect(store.entries).toEqual([]);
+  });
+  it('refuses a card that is not applying with CARD_NOT_APPLYING', async () => {
+    const store = memoryStore({ passId: 'p', builtAt: NOW, cards: [emailCard('m1')] });
+    const s = make({ store, mailbox: fakeMailbox({}) });
+    await expect(s.resolve({ username: 'sample', cardId: 'card.m1', happened: true })).rejects.toMatchObject({ code: 'TRIAGE_CARD_NOT_APPLYING' });
+    await expect(s.resolve({ username: 'sample', cardId: 'nope', happened: true })).rejects.toMatchObject({ code: 'TRIAGE_CARD_NOT_FOUND' });
+  });
+});

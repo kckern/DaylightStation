@@ -234,3 +234,28 @@ describe('session route conflicts (fix round 1)', () => {
     expect([doubt.status, doubt.body.error]).toEqual([409, 'answer_in_doubt']);
   });
 });
+
+describe('POST /cards/:cardId/resolve', () => {
+  const mk = (resolve) => {
+    return import('./triageRouter.mjs').then(({ createTriageRouter }) => {
+      const router = createTriageRouter({
+        resolvePolicy: () => ({ enrolled: true, mode: 'live' }), defaultUsername: 'sample', isKnownUser: () => true,
+        session: { resolve }, logger: null,
+      });
+      return (user) => express().use((req, _r, n) => { req.user = user; n(); }).use('/t', router);
+    });
+  };
+  it('needs the owner login, a boolean, and maps CARD_NOT_APPLYING to 409', async () => {
+    const resolve = vi.fn()
+      .mockResolvedValueOnce({ outcome: 'applied' })
+      .mockRejectedValueOnce(Object.assign(new Error('x'), { code: 'TRIAGE_CARD_NOT_APPLYING', status: 'open' }));
+    const app = await mk(resolve);
+    expect((await request(app(null)).post('/t/cards/c/resolve?username=sample').send({ happened: true })).status).toBe(401);
+    const a = app({ sub: 'sample', sid: 's1' });
+    expect((await request(a).post('/t/cards/c/resolve').send({ happened: 'yes' })).status).toBe(400);
+    expect((await request(a).post('/t/cards/c/resolve').send({ happened: true })).body.outcome).toBe('applied');
+    expect(resolve).toHaveBeenCalledWith({ username: 'sample', cardId: 'c', happened: true });
+    const no = await request(a).post('/t/cards/c/resolve').send({ happened: false });
+    expect([no.status, no.body.error]).toEqual([409, 'CARD_NOT_APPLYING']);
+  });
+});

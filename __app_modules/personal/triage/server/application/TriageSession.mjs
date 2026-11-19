@@ -501,6 +501,27 @@ export function createTriageSession({
 
     answer: (input) => exclusive(input.username, () => answerOne(input)),
 
+    // The owner's exit for an 'applying' (in doubt) card: it did happen -> log it as the
+    // normal path would and mark answered; it did not -> back to open.
+    resolve: ({ username, cardId, happened }) => exclusive(username, async () => {
+      const q = await store.readQueue(username);
+      const card = q.cards.find((c) => c.cardId === cardId);
+      if (!card) throw fail('TRIAGE_CARD_NOT_FOUND');
+      if (card.status !== 'applying') throw Object.assign(fail('TRIAGE_CARD_NOT_APPLYING'), { status: card.status });
+      const choice = card.answer?.choice ?? null;
+      if (happened === true) {
+        const asOf = clock();
+        const action = choice === 'send' ? 'send' : 'create_task';
+        const entry = await ownerLog(username, card, { action, choice, inverse: null, asOf });
+        const next = await patchCard(username, cardId, { status: 'answered', answeredAt: asOf, logEntryId: entry.id }, ['applyingAt']);
+        logger?.info?.('triage.card.resolved', { username, cardId, kind: card.kind, choice, happened: true });
+        return { outcome: 'applied', entryId: entry.id, card: served(next ?? card) };
+      }
+      const next = await patchCard(username, cardId, { status: 'open' }, ['applyingAt', 'answer']);
+      logger?.info?.('triage.card.resolved', { username, cardId, kind: card.kind, choice, happened: false });
+      return { outcome: 'reopened', card: served(next ?? card) };
+    }),
+
     skip: ({ username, cardId }) => exclusive(username, async () => {
       const q = await store.readQueue(username);
       const card = q.cards.find((c) => c.cardId === cardId);
