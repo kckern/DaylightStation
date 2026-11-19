@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { renderHook, waitFor } from '@testing-library/react';
+import { act, renderHook, waitFor } from '@testing-library/react';
 
 const mockLogger = vi.hoisted(() => ({ info: vi.fn(), debug: vi.fn(), warn: vi.fn(), error: vi.fn(), sampled: vi.fn() }));
 vi.mock("../../../../../frontend/src/lib/logging/singleton.js", () => ({ getChildLogger: () => mockLogger }));
@@ -99,4 +99,53 @@ describe('useFilterData — reload', () => {
     expect(result.current.status).toBe('ready');
     expect(mockLogger.warn).toHaveBeenCalledWith('content-filter.reload.failed', expect.objectContaining({ ratingKey: '1' }));
   });
+});
+
+it('keeps the newest edit when an earlier reload later reports missing data', async () => {
+  let finishEarlier;
+  vi.stubGlobal('fetch', vi.fn()
+    .mockResolvedValueOnce(Response.json({ revision: 1 }))
+    .mockImplementationOnce(() => new Promise(resolve => { finishEarlier = resolve; }))
+    .mockResolvedValueOnce(Response.json({ revision: 3 })));
+  const { result } = renderHook(() => useFilterData('plex:1'));
+  await waitFor(() => expect(result.current.status).toBe('ready'));
+  const pending = result.current.reload();
+  await act(async () => { await result.current.reload(); });
+  await act(async () => { finishEarlier(new Response(null, { status: 404 })); await pending; });
+  expect(result.current.data).toEqual({ revision: 3 });
+});
+
+it('settles a failed refresh during initial load and ignores the superseded request', async () => {
+  let finishEarlier;
+  vi.stubGlobal('fetch', vi.fn()
+    .mockImplementationOnce(() => new Promise(resolve => { finishEarlier = resolve; }))
+    .mockRejectedValueOnce(new Error('offline')));
+  const { result } = renderHook(() => useFilterData('plex:1'));
+  await act(async () => { await result.current.reload(); });
+  await act(async () => { finishEarlier(Response.json({ revision: 1 })); });
+  expect(result.current.status).toBe('failed');
+});
+
+it('never renders another title’s data and drops a late response after returning to a title', async () => {
+  let finishEarlier;
+  vi.stubGlobal('fetch', vi.fn()
+    .mockResolvedValueOnce(Response.json({ title: 'A' }))
+    .mockImplementationOnce(() => new Promise(resolve => { finishEarlier = resolve; }))
+    .mockResolvedValueOnce(Response.json({ title: 'B' }))
+    .mockResolvedValueOnce(Response.json({ title: 'A' })));
+  const history = [];
+  const { result, rerender } = renderHook(({ id }) => {
+    const filter = useFilterData(id);
+    history.push([id, filter.data?.title]);
+    return filter;
+  }, { initialProps: { id: 'A' } });
+  await waitFor(() => expect(result.current.status).toBe('ready'));
+  const pending = result.current.reload();
+  rerender({ id: 'B' });
+  await waitFor(() => expect(result.current.data?.title).toBe('B'));
+  rerender({ id: 'A' });
+  await waitFor(() => expect(result.current.status).toBe('ready'));
+  await act(async () => { finishEarlier(new Response(null, { status: 404 })); await pending; });
+  expect(result.current.data.title).toBe('A');
+  expect(history.every(([id, title]) => title === undefined || id === title)).toBe(true);
 });

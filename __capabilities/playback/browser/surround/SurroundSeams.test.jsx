@@ -33,7 +33,7 @@ vi.mock("../player/Player.jsx", async () => {
 });
 
 vi.mock("../../../screen-host/browser/menu-navigation.mjs", () => ({
-  useMenuNavigationContext: () => h.nav,
+  useMenuNavigationContext: () => ({ ...h.nav, stack: h.nav.currentContent ? [h.nav.currentContent] : [] }),
   MenuNavigationProvider: ({ children }) => children,
 }));
 

@@ -27,6 +27,9 @@ vi.mock('../../../../frontend/src/lib/api.mjs', () => ({
         ],
       };
     }
+    if (path === '/api/v1/queue/plex%3Amusic') {
+      return { items: [{ id: 'plex:song', contentId: 'plex:song', format: 'audio' }] };
+    }
     const contentId = String(path).replace(/^api\/v1\/play\//, '');
     return {
       contentId, id: contentId, title: contentId, mediaUrl: `/stream/${contentId}`,
@@ -110,6 +113,7 @@ describe('Player queue-op ownership integration', () => {
         .toEqual(['immich:photo', 'immich:video']);
     });
 
+    await waitFor(() => expect(document.querySelector('.audio-layer .player.background')).toBeTruthy());
     await act(async () => {
       getPlayerQueueOpRegistry().dispatch({ op: 'skip-next' });
     });

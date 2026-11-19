@@ -1,8 +1,7 @@
 // frontend/src/modules/Health/CoachChat/index.jsx
 import { DaylightAPI } from "@/lib/api.mjs";
-import { FALLBACK_SUGGEST_ENDPOINT } from "./mentions/vocabulary.config.js";
+import { FALLBACK_SUGGEST_ENDPOINT, MENTION_CATEGORIES, buildAttachment } from "./mentions/vocabulary.config.js";
 import { AgentChatSurface } from "../../../../../__capabilities/agent-runtime/browser/chat.mjs";
-import { MENTION_CATEGORIES, buildAttachment } from "./mentions/index.js";
 
 const loadSuggestions = (path, options) => DaylightAPI(path, {}, 'GET', options);
 

@@ -43,6 +43,26 @@ describe('AudioLayer', () => {
     vi.unstubAllGlobals();
   });
 
+  it('hides the old queue immediately and discards superseded reads', async () => {
+    const response = id => ({ ok: true, json: async () => ({ items: [{ id }] }) });
+    let finishOldRead;
+    const fetch = vi.fn()
+      .mockResolvedValueOnce(response('first'))
+      .mockImplementationOnce(() => new Promise(resolve => { finishOldRead = resolve; }))
+      .mockResolvedValueOnce(response('third'));
+    vi.stubGlobal('fetch', fetch);
+    const Player = ({ queue }) => <span>{queue[0].id}</span>;
+    const { container, rerender } = render(<AudioLayer contentId="one" Player={Player} />);
+    await waitFor(() => expect(container).toHaveTextContent('first'));
+    rerender(<AudioLayer contentId="two" Player={Player} />);
+    expect(container).toBeEmptyDOMElement();
+    rerender(<AudioLayer contentId="three" Player={Player} />);
+    expect(fetch.mock.calls[1][1].signal.aborted).toBe(true);
+    await waitFor(() => expect(container).toHaveTextContent('third'));
+    await act(async () => finishOldRead(response('second')));
+    expect(container).toHaveTextContent('third');
+  });
+
   it('ramps music down and back up over 300ms when a video starts and ends', async () => {
     const clock = installAnimationFrameClock();
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({

@@ -23,3 +23,19 @@ it('sends shared authentication, device, context and conditional headers from th
  try {await agendaClient.savePlan('s','p',{},'"old"');expect(fetcher.mock.calls[0][1].headers).toMatchObject({Authorization:'Bearer neutral-token','X-Daylight-Device':'fleet:sample-screen','X-Sample-Context':'sample','If-Match':'"old"'});}
  finally {localStorage.removeItem('ds_token');delete window.__DAYLIGHT_DEVICE_ID;setRequestContextHeaders('agenda-test',null);vi.unstubAllGlobals();}
 });
+
+it('reads the default same-origin series URL without a JSON content type and preserves its revision', async () => {
+  const fetcher = vi.fn(async () => Response.json({ series: [] }, { headers: { ETag: '"series-rev"' } }));
+  vi.stubGlobal('fetch', fetcher);
+  try {
+    const client = createAgendaClient();
+    await expect(client.series('family/series')).resolves.toEqual({ document: { series: [] }, etag: '"series-rev"' });
+    const [url, options] = fetcher.mock.calls[0];
+    expect(url).toBe(location.origin + '/api/v1/admin/content/agendas/family%2Fseries');
+    expect(options.headers['Content-Type']).toBeUndefined();
+    expect(options.headers['If-Match']).toBeUndefined();
+    expect(options.headers['X-Daylight-Device']).toBeTruthy();
+  } finally {
+    vi.unstubAllGlobals();
+  }
+});

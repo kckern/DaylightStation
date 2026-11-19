@@ -9,6 +9,7 @@
  * @param {string} agentId — backend agent id (e.g. 'health-coach', 'lifeplan-guide')
  * @returns {{ run: Function, runStream: AsyncGeneratorFunction }}
  */
+import { daylightApiResponse } from '../../../../frontend/src/lib/api.mjs';
 import { parseSSE } from "../../../../frontend/src/lib/sse/parseSSE.js";
 
 // ---------------------------------------------------------------------------
@@ -51,6 +52,19 @@ export function createAgentRuntime(agentId) {
   const runUrl = `/api/v1/agents/${agentId}/run`;
   const streamUrl = `/api/v1/agents/${agentId}/run-stream`;
 
+  function submit(url, messages, userId, attachments, context, signal) {
+    return daylightApiResponse(url, {
+      method: 'POST',
+      signal,
+      data: {
+        input: extractText(messages.at(-1)),
+        context: { ...context, userId, attachments },
+        messages: serializeMessages(messages),
+        threadId: getOrCreateThreadId(agentId, userId),
+      },
+    });
+  }
+
   return {
     /**
      * @param {object} args
@@ -59,20 +73,7 @@ export function createAgentRuntime(agentId) {
      * @param {Array<object>} [args.attachments]
      */
     async run({ messages, userId, attachments = [] }) {
-      const last = messages.at(-1);
-      const text = extractText(last);
-      const threadId = getOrCreateThreadId(agentId, userId);
-
-      const res = await fetch(runUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          input: text,
-          context: { userId, attachments },
-          messages: serializeMessages(messages),
-          threadId,
-        }),
-      });
+      const res = await submit(runUrl, messages, userId, attachments);
 
       if (!res.ok) {
         throw new Error(`Agent run failed: ${res.status} ${res.statusText || ''}`.trim());
@@ -87,16 +88,7 @@ export function createAgentRuntime(agentId) {
     },
 
     async *runStream({ messages, userId, attachments = [], abortSignal, context = null }) {
-      const last = messages.at(-1);
-      const text = extractText(last);
-      const threadId = getOrCreateThreadId(agentId, userId);
-
-      const res = await fetch(streamUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ input: text, context: { ...context, userId, attachments }, messages: serializeMessages(messages), threadId }),
-        signal: abortSignal,
-      });
+      const res = await submit(streamUrl, messages, userId, attachments, context, abortSignal);
 
       if (!res.ok || !res.body) {
         throw new Error(`Agent stream failed: ${res.status} ${res.statusText || ''}`.trim());

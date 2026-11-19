@@ -1,4 +1,5 @@
 import React, { useRef, useEffect, useMemo, useState, useCallback } from 'react';
+import { DaylightAPI } from '../../../../../frontend/src/lib/api.mjs';
 import PropTypes from 'prop-types';
 import './ImageFrame.scss';
 import getLogger from '../../../../../frontend/src/lib/logging/Logger.js';
@@ -158,13 +159,12 @@ export function ImageFrame({
     }
 
     // Fallback: defer fetch to idle time so it doesn't collide with animation setup
-    let cancelled = false;
+    const controller = new AbortController();
+    const { signal } = controller;
     const fetchMetadata = async () => {
       try {
-        const response = await fetch(`/api/v1/info/${encodeURIComponent(imageId)}`);
-        if (!response.ok || cancelled) return;
-        const data = await response.json();
-        if (cancelled) return;
+        const data = await DaylightAPI(`/api/v1/info/${encodeURIComponent(imageId)}`, {}, 'GET', { signal });
+        if (signal.aborted) return;
         const meta = data.metadata || {};
         logger.debug('image-frame-jit-metadata', {
           imageId,
@@ -182,6 +182,7 @@ export function ImageFrame({
           location: meta.location || null,
         });
       } catch (err) {
+        if (signal.aborted) return;
         logger.warn('image-frame-jit-metadata-error', { imageId, error: err.message });
       }
     };
@@ -191,16 +192,16 @@ export function ImageFrame({
     let idleHandle;
     if (typeof requestIdleCallback === 'function') {
       idleHandle = requestIdleCallback(() => {
-        if (!cancelled) fetchMetadata();
+        if (!signal.aborted) fetchMetadata();
       }, { timeout: 2000 });
     } else {
       idleHandle = setTimeout(() => {
-        if (!cancelled) fetchMetadata();
+        if (!signal.aborted) fetchMetadata();
       }, 200);
     }
 
     return () => {
-      cancelled = true;
+      controller.abort();
       if (typeof cancelIdleCallback === 'function' && typeof requestIdleCallback === 'function') {
         cancelIdleCallback(idleHandle);
       } else {
@@ -306,11 +307,13 @@ export function ImageFrame({
     const origUrl = nextMedia.mediaUrl;
     const nextId = nextMedia.id;
     const t0 = performance.now();
-    let cancelled = false;
+    const controller = new AbortController();
+    const { signal } = controller;
 
     // Preload images (existing logic)
     const thumbImg = new Image();
     thumbImg.onload = () => {
+      if (signal.aborted) return;
       preloadRef.current.thumbDone = true;
       perfLog.info('slideshow.preload-thumb', { nextId, ms: Math.round(performance.now() - t0) });
     };
@@ -321,6 +324,7 @@ export function ImageFrame({
     if (origUrl && origUrl !== thumbUrl) {
       const origImg = new Image();
       origImg.onload = () => {
+        if (signal.aborted) return;
         preloadRef.current.origDone = true;
         perfLog.info('slideshow.preload-orig', { nextId, ms: Math.round(performance.now() - t0) });
       };
@@ -333,10 +337,8 @@ export function ImageFrame({
     // Preload metadata for next slide
     const fetchNextMeta = async () => {
       try {
-        const response = await fetch(`/api/v1/info/${encodeURIComponent(nextId)}`);
-        if (!response.ok || cancelled) return;
-        const data = await response.json();
-        if (cancelled) return;
+        const data = await DaylightAPI(`/api/v1/info/${encodeURIComponent(nextId)}`, {}, 'GET', { signal });
+        if (signal.aborted) return;
         const meta = data.metadata || {};
         preloadedEnrichmentRef.current = {
           forId: nextId,
@@ -350,14 +352,15 @@ export function ImageFrame({
         };
         logger.debug('image-frame-preload-meta', { nextId, peopleCount: meta.people?.length || 0 });
       } catch (err) {
+        if (signal.aborted) return;
         logger.warn('image-frame-preload-meta-error', { nextId, error: err.message });
       }
     };
-    fetchNextMeta();
+    if (nextId) fetchNextMeta();
 
     logger.debug('image-frame-preload-start', { nextId });
     return () => {
-      cancelled = true;
+      controller.abort();
       preloadRef.current = { thumb: null, orig: null, thumbDone: false, origDone: false };
     };
   }, [nextMedia?.id, nextMedia?.mediaUrl, nextMedia?.thumbnail, perfLog]);

@@ -19,76 +19,74 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { getChildLogger } from "../../../../../frontend/src/lib/logging/singleton.js";
 
+import { daylightApiResponse } from '../../../../../frontend/src/lib/api.mjs';
+
+async function readFilter(url, signal) {
+  const response = await daylightApiResponse(url, { signal });
+  if (response.status === 404) return { data: null, status: 'none' };
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  return { data: await response.json(), status: 'ready' };
+}
+
 let _logger;
 const logger = () => (_logger ||= getChildLogger({ component: 'content-filter-data' }));
 
 export function useFilterData(contentId, { profile = 'family', enabled = true, retryDelayMs = 2000 } = {}) {
-  const [state, setState] = useState({ data: null, status: 'idle' });
-  // The title the current effect loaded; a reload that lands after the title
-  // changed is dropped.
-  const keyRef = useRef(null);
+  const [state, setState] = useState({ url: null, data: null, status: 'idle' });
+  const activeRead = useRef(null);
+  const ratingKey = contentId ? String(contentId).replace(/^plex:/, '') : '';
+  const url = enabled && ratingKey ? filterUrl(ratingKey, profile) : null;
 
   useEffect(() => {
-    if (!enabled || !contentId) { setState({ data: null, status: 'idle' }); return undefined; }
-    const ratingKey = String(contentId).replace(/^plex:/, '');
-    const url = filterUrl(ratingKey, profile);
-    keyRef.current = url;
-    let cancelled = false;
-    let timer = null;
-    setState({ data: null, status: 'loading' });
-
-    const attempt = (n) => fetch(url)
-      .then((r) => {
-        if (r.status === 404) return { kind: 'none' };
-        if (!r.ok) throw new Error(`HTTP ${r.status}`);
-        return r.json().then((d) => ({ kind: 'ready', d }));
-      })
-      .then((res) => {
-        if (cancelled) return;
-        if (res.kind === 'none') {
-          setState({ data: null, status: 'none' });
-          logger().debug?.('content-filter.load.none', { ratingKey });
-          return;
-        }
-        setState({ data: res.d, status: 'ready' });
-        logger().info?.('content-filter.loaded', { ratingKey, cues: res.d?.edl?.cues?.length || 0, profile: res.d?.profile?.name || null, attempt: n });
-      })
-      .catch((e) => {
-        if (cancelled) return;
-        if (n === 0) {
-          logger().debug?.('content-filter.load.retry', { ratingKey, error: e?.message, retryDelayMs });
-          timer = setTimeout(() => { timer = null; attempt(1); }, retryDelayMs);
-          return;
-        }
-        setState({ data: null, status: 'failed' });
-        logger().warn?.('content-filter.load.failed', { ratingKey, error: e?.message });
-      });
-
-    attempt(0);
-    return () => { cancelled = true; keyRef.current = null; if (timer) clearTimeout(timer); };
-  }, [contentId, profile, enabled, retryDelayMs]);
-
-  const reload = useCallback(async () => {
-    const url = keyRef.current;
-    if (!url) return;
-    const ratingKey = String(contentId).replace(/^plex:/, '');
-    try {
-      const r = await fetch(url);
-      if (keyRef.current !== url) return;
-      if (r.status === 404) { setState({ data: null, status: 'none' }); return; }
-      if (!r.ok) throw new Error(`HTTP ${r.status}`);
-      const d = await r.json();
-      if (keyRef.current !== url) return;
-      setState({ data: d, status: 'ready' });
-      logger().info?.('content-filter.reloaded', { ratingKey, cues: d?.edl?.cues?.length || 0 });
-    } catch (e) {
-      logger().warn?.('content-filter.reload.failed', { ratingKey, error: e?.message });
+    if (!url) {
+      setState({ url, data: null, status: 'idle' });
+      return;
     }
-  }, [contentId]);
+    let controller;
+    let timer;
+    setState({ url, data: null, status: 'loading' });
 
-  return { ...state, reload };
+    async function read(refresh = false, attempt = 0) {
+      clearTimeout(timer);
+      controller?.abort();
+      controller = new AbortController();
+      const { signal } = controller;
+      try {
+        const next = await readFilter(url, signal);
+        if (signal.aborted) return;
+        setState({ url, ...next });
+        if (next.status === 'none') logger().debug?.('content-filter.load.none', { ratingKey });
+        else logger().info?.(refresh ? 'content-filter.reloaded' : 'content-filter.loaded', {
+          ratingKey, cues: next.data?.edl?.cues?.length || 0, profile: next.data?.profile?.name || null, attempt,
+        });
+      } catch (error) {
+        if (signal.aborted) return;
+        if (!refresh && attempt === 0) {
+          logger().debug?.('content-filter.load.retry', { ratingKey, error: error.message, retryDelayMs });
+          timer = setTimeout(() => read(false, 1), retryDelayMs);
+          return;
+        }
+        setState(previous => previous.url === url && previous.status === 'loading'
+          ? { url, data: null, status: 'failed' } : previous);
+        logger().warn?.(refresh ? 'content-filter.reload.failed' : 'content-filter.load.failed', { ratingKey, error: error.message });
+      }
+    }
+
+    activeRead.current = read;
+    read();
+    return () => {
+      activeRead.current = null;
+      controller.abort();
+      clearTimeout(timer);
+    };
+  }, [url, ratingKey, retryDelayMs]);
+
+  const reload = useCallback(async () => { await activeRead.current?.(true); }, []);
+
+  if (state.url !== url) return { data: null, status: url ? 'loading' : 'idle', reload };
+  return { data: state.data, status: state.status, reload };
 }
 
 function filterUrl(ratingKey, profile) {
-  return `/api/v1/content-filter/${ratingKey}?profile=${encodeURIComponent(profile)}`;
+  return `/api/v1/content-filter/${encodeURIComponent(ratingKey)}?profile=${encodeURIComponent(profile)}`;
 }

@@ -1,13 +1,15 @@
-import { buildHeaders } from '../../../../../frontend/src/lib/api.mjs';
+import { daylightApiResponse } from '../../../../../frontend/src/lib/api.mjs';
 
 const encode = value => encodeURIComponent(value);
 const base = '/api/v1/admin/content/agendas';
 
-export function createAgendaClient(fetcher = fetch) {
-  async function request(path, {method='GET',body,etag}={}) {
-    const headers = buildHeaders(localStorage.getItem('ds_token'), body !== undefined);
-    if (etag != null) headers['If-Match'] = etag;
-    const response = await fetcher(path,{method,headers,...(body !== undefined ? {body:JSON.stringify(body)} : {})});
+export function createAgendaClient(fetcher) {
+  async function request(path, { method = 'GET', body, etag } = {}) {
+    // Injected fetch adapters historically receive the route relative to the origin.
+    const send = fetcher && ((_url, init) => fetcher(path, init));
+    const response = await daylightApiResponse(path, {
+      method, data: body, ifMatch: etag, withContentType: body !== undefined,
+    }, send);
     const document = await response.json();
     if (!response.ok) throw Object.assign(new Error(document.message || 'Request failed'),document,{status:response.status});
     return {document,etag:response.headers.get('ETag')};
@@ -33,4 +35,4 @@ export function createAgendaClient(fetcher = fetch) {
     describe:(target,action)=>request('/api/v1/participant-launches/describe',{method:'POST',body:{target,action}}),
   };
 }
-export const agendaClient = createAgendaClient((...args) => fetch(...args));
+export const agendaClient = createAgendaClient();

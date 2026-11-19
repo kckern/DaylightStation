@@ -1,4 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
+import { daylightApiResponse } from '@/lib/api.mjs';
 import getLogger from '@/lib/logging/Logger.js';
 import { putChunk, markChunkUploaded, getChunksForSession, purgeExpired } from "./chunkDb.js";
 
@@ -73,10 +74,9 @@ export function useChunkUploader({ sessionId, week }) {
     const next = queueRef.current[0];
     try {
       const chunkBase64 = await blobToBase64(next.blob);
-      const resp = await fetch(CHUNK_ENDPOINT, {
+      const resp = await daylightApiResponse(CHUNK_ENDPOINT, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sessionId, seq: next.seq, week, chunkBase64 }),
+        data: { sessionId, seq: next.seq, week, chunkBase64 },
       });
       if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
       await resp.json();
