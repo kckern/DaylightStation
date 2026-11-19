@@ -47,13 +47,15 @@ it('forwards the agenda read signal without changing the response envelope', asy
   const responses = await Promise.all([
     client.seriesList({ signal }),
     client.plans('family/series', { signal }),
+    client.plan('family/series', 'week/one', { signal }),
     client.planningContext('family/series', { signal }),
     client.people({ signal }),
   ]);
-  expect(responses).toEqual(Array(4).fill({ document: {}, etag: '"revision"' }));
+  expect(responses).toEqual(Array(5).fill({ document: {}, etag: '"revision"' }));
   expect(fetcher.mock.calls.map(([url, options]) => [url, options.method])).toEqual([
     ['/api/v1/admin/content/agendas', 'GET'],
     ['/api/v1/admin/content/agendas/family%2Fseries/plans', 'GET'],
+    ['/api/v1/admin/content/agendas/family%2Fseries/plans/week%2Fone', 'GET'],
     ['/api/v1/admin/content/agendas/family%2Fseries/planning-context', 'GET'],
     ['/api/v1/admin/people?includeArchived=true', 'GET'],
   ]);

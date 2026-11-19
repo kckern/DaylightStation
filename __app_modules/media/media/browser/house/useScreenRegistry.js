@@ -16,9 +16,9 @@ export const REGISTRY_POLL_MS = 120_000;
 
 export function useScreenRegistry({ api = defaultApi, pollMs = REGISTRY_POLL_MS } = {}) {
   const [state, setState] = useState({ ...EMPTY, loaded: false, available: true, error: null });
-  const readRegistry = useCallback(async isCurrent => {
+  const readRegistry = useCallback(async (isCurrent, signal) => {
     try {
-      const res = await api.listScreens();
+      const res = await api.listScreens({ signal });
       if (!isCurrent()) return;
       const next = {
         screens: Array.isArray(res?.screens) ? res.screens : [],

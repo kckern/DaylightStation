@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { Link } from 'react-router-dom';
 import {
   Stack, Paper, Text, Group, Badge, SimpleGrid,
   Button, Modal, TextInput, Textarea, Alert,
@@ -17,9 +18,9 @@ const STATE_GROUPS = [
   { label: 'Completed', states: ['achieved', 'failed', 'abandoned', 'paused', 'evolved'] },
 ];
 
-function GoalCard({ goal, onClick }) {
+function GoalCard({ goal }) {
   return (
-    <Paper p="sm" withBorder style={{ cursor: 'pointer' }} onClick={() => onClick?.(goal.id)}>
+    <Paper component={Link} to={`/life/plan/goals/${goal.id}`} aria-label={goal.name} p="sm" withBorder className="life-goal-link ds-touch-target">
       <Group justify="space-between" mb={4}>
         <Text size="sm" fw={500} lineClamp={1}>{goal.name}</Text>
         <Badge color={goalStateColor(goal.state)} variant="light" size="xs">
@@ -39,7 +40,7 @@ function GoalCard({ goal, onClick }) {
   );
 }
 
-export function GoalsView({ username, onGoalClick }) {
+export function GoalsView({ username }) {
   const { goals, loading, error, refetch, createGoal } = useGoals(username);
 
   const [opened, setOpened] = useState(false);
@@ -155,7 +156,7 @@ export function GoalsView({ username, onGoalClick }) {
                 <Badge size="xs" variant="light">{groupGoals.length}</Badge>
               </Group>
               {groupGoals.map(g => (
-                <GoalCard key={g.id} goal={g} onClick={onGoalClick} />
+                <GoalCard key={g.id} goal={g} />
               ))}
             </Stack>
           );

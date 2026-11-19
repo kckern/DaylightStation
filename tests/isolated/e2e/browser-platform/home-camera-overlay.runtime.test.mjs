@@ -55,3 +55,49 @@ for (const width of [390, 1440]) {
     expect(writes).toEqual([]);
   });
 }
+
+test('Home camera replaces a held detection read on foreground return', async ({ page, baseURL }) => {
+  const origin = new URL(baseURL).origin;
+  await page.context().route('**/*', route => (
+    new URL(route.request().url()).origin === origin ? route.fallback() : route.abort()
+  ));
+  await page.addInitScript(() => {
+    window.cameraVisibility = 'visible';
+    Object.defineProperty(document, 'visibilityState', { get: () => window.cameraVisibility });
+  });
+  await page.routeWebSocket('**/*', () => {});
+  let held;
+  let reads = 0;
+  let canceled = false;
+  page.on('requestfailed', request => {
+    if (held?.request() === request) canceled = true;
+  });
+  await page.route('**/api/**', route => {
+    const { pathname } = new URL(route.request().url());
+    if (pathname === '/api/v1/camera/doorbell/state') {
+      if (++reads === 1) {
+        held = route;
+        return;
+      }
+      return route.fulfill({ json: { detections: [{ type: 'motion', active: true }] } });
+    }
+    if (pathname.endsWith('/supervision/bootstrap')) return route.fulfill({ json: { enabled: false } });
+    return route.fulfill({ json: pathname === '/api/v1/camera' ? { cameras: [{ id: 'doorbell' }] } : {} });
+  });
+
+  await page.goto('/home');
+  await page.getByRole('button', { name: 'Cameras', exact: true }).click();
+  await expect.poll(() => reads).toBe(1);
+  await page.evaluate(() => {
+    window.cameraVisibility = 'hidden';
+    document.dispatchEvent(new Event('visibilitychange'));
+    window.cameraVisibility = 'visible';
+    document.dispatchEvent(new Event('visibilitychange'));
+  });
+  // The foreground event must issue a replacement before the two-second poll.
+  await expect.poll(() => reads, { timeout: 1500 }).toBe(2);
+  await expect.poll(() => canceled).toBe(true);
+  await expect(page.getByText('motion', { exact: true })).toBeVisible();
+  await held.fulfill({ json: { detections: [{ type: 'person', active: true }] } }).catch(() => {});
+  await expect(page.getByText('person', { exact: true })).toHaveCount(0);
+});

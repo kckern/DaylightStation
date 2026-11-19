@@ -264,13 +264,12 @@ test('Media screen settings preserve a concurrent rename during a room-only edit
   expect(writes).toEqual([{ room: 'Lounge' }]);
 });
 
-test('Media keeps a slow screen registry read through polling and refreshes it on foreground return', async ({ page }) => {
+async function installHeldRegistry(page) {
   const registry = [];
-  let socket;
-  let connections = 0;
-  await page.routeWebSocket('**/*', connection => { socket = connection; connections++; });
-  await page.setViewportSize({ width: 390, height: 850 });
-  await page.clock.install();
+  const sockets = [];
+  const canceled = [];
+  await page.routeWebSocket('**/ws', socket => sockets.push(socket));
+  page.on('requestfailed', request => canceled.push(request));
   await mockRegistryVisibility(page);
   await page.route('**/api/**', route => {
     const { pathname } = new URL(route.request().url());
@@ -284,23 +283,30 @@ test('Media keeps a slow screen registry read through polling and refreshes it o
     }
     return route.fulfill({ json: {} });
   });
+  return { registry, sockets, canceled };
+}
 
-  const registryResult = name => ({ json: { screens: [{ id: 'fleet:lounge', name }] } });
+const registryResult = name => ({ json: { screens: [{ id: 'fleet:lounge', name }] } });
+
+test('Media keeps a slow screen registry read through polling and refreshes it on foreground return', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 850 });
+  await page.clock.install();
+  const { registry, sockets, canceled } = await installHeldRegistry(page);
   const elapseRegistryInterval = async () => {
     for (let seconds = 0; seconds < 120; seconds += 30) {
       // Keep the mocked connection alive as the server normally does. A
       // reconnect would correctly force a new read independently of polling.
-      socket.send(JSON.stringify({ type: 'ping' }));
+      sockets[0].send(JSON.stringify({ type: 'ping' }));
       await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
       await page.clock.fastForward(30_000);
     }
-    expect(connections).toBe(1);
+    expect(sockets).toHaveLength(1);
   };
   await page.goto('/media?view=fleet');
   const screen = page.getByTestId('fleet-card-lounge');
   await expect(screen).toContainText('Configured screen');
   await expect.poll(() => registry.length).toBeGreaterThan(0);
-  await expect.poll(() => connections).toBe(1);
+  await expect.poll(() => sockets.length).toBe(1);
   const initialReads = registry.splice(0);
   await elapseRegistryInterval();
   await elapseRegistryInterval();
@@ -312,13 +318,39 @@ test('Media keeps a slow screen registry read through polling and refreshes it o
   await expect.poll(() => registry.length).toBe(1);
   await returnToForeground(page);
   await expect.poll(() => registry.length).toBe(2);
+  await expect.poll(() => canceled.includes(registry[0].request())).toBe(true);
   await registry[1].fulfill(registryResult('Renamed registry screen'));
   await expect(screen).toContainText('Renamed registry screen');
-  const staleResponse = page.waitForResponse(response => response.request() === registry[0].request());
-  await registry[0].fulfill(registryResult('Superseded registry name'));
-  await (await staleResponse).finished();
-  await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
-  await expect(screen).toContainText('Renamed registry screen');
+});
+
+test('Media retires screen registry reads on reconnect and soft app exit', async ({ page }) => {
+  const { registry, sockets, canceled } = await installHeldRegistry(page);
+  await page.goto('/media?view=fleet');
+  const screen = page.getByTestId('fleet-card-lounge');
+  await expect(screen).toContainText('Configured screen');
+  await expect.poll(() => [sockets.length, registry.length]).toEqual([1, 1]);
+
+  sockets[0].close({ code: 1001, reason: 'Fixture reconnect' });
+  await expect.poll(() => [sockets.length, registry.length], { timeout: 20000 }).toEqual([2, 2]);
+  await expect.poll(() => canceled.includes(registry[0].request())).toBe(true);
+  await registry[1].fulfill(registryResult('Reconnected screen'));
+  await expect(screen).toContainText('Reconnected screen');
+
+  await returnToForeground(page);
+  await expect.poll(() => registry.length).toBe(3);
+  const navigate = path => page.evaluate(path => {
+    const state = { idx: (history.state?.idx ?? 0) + 1, key: path, usr: null };
+    history.pushState(state, '', path);
+    dispatchEvent(new PopStateEvent('popstate', { state }));
+  }, path);
+  await navigate('/home');
+  await expect(page.getByRole('button', { name: 'Rooms', exact: true })).toBeVisible();
+  await expect.poll(() => canceled.includes(registry[2].request())).toBe(true);
+
+  await navigate('/media?view=fleet');
+  await expect.poll(() => registry.length).toBe(4);
+  await registry[3].fulfill(registryResult('Reopened screen'));
+  await expect(screen).toContainText('Reopened screen');
 });
 
 test('Media favourites revalidate once with Home and desktop search mounted', async ({ page }) => {

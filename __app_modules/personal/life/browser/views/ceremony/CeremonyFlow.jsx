@@ -1,6 +1,6 @@
 import { useMemo, useEffect, useRef } from 'react';
 import { Stack, Paper, Title, Text, Group, Button, Stepper, Alert, Anchor } from '@mantine/core';
-import { useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { IconCheck, IconArrowRight, IconArrowLeft, IconAlertCircle } from '@tabler/icons-react';
 import { useCeremony } from "../../hooks/useCeremony.js";
 import { UnitIntention } from "./UnitIntention.jsx";
@@ -29,7 +29,6 @@ const CEREMONY_COMPONENTS = {
 
 export function CeremonyFlow({ type, username, onComplete }) {
   const logger = useMemo(() => getLogger().child({ component: 'ceremony-flow' }), []);
-  const navigate = useNavigate();
   const ceremony = useCeremony(type, username);
   const { content, loading, error, submitError, step, nextStep, prevStep, submit, submitting, completed } = ceremony;
 
@@ -67,8 +66,8 @@ export function CeremonyFlow({ type, username, onComplete }) {
           <Stack align="center" gap="md">
             <Title order={4}>You don&apos;t have a life plan yet</Title>
             <Text c="dimmed">Ceremonies work against your plan — create one first.</Text>
-            <Button onClick={() => navigate('/life/coach')}>Talk to your coach</Button>
-            <Anchor size="sm" c="dimmed" onClick={() => navigate('/life/plan')}>
+            <Button component={Link} to="/life/coach">Talk to your coach</Button>
+            <Anchor component={Link} to="/life/plan" size="sm" c="dimmed">
               See the plan page
             </Anchor>
           </Stack>

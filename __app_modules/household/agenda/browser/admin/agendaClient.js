@@ -24,7 +24,7 @@ export function createAgendaClient(fetcher) {
     defaultsArtwork:id=>request(`${seriesPath(id)}/defaults/artwork`),
     planningContext:(id, { signal } = {})=>request(`${seriesPath(id)}/planning-context`, { signal }),
     plans:(id, { signal } = {})=>request(`${seriesPath(id)}/plans`, { signal }),
-    plan:(id,planId)=>request(planPath(id,planId)),
+    plan:(id,planId, { signal } = {})=>request(planPath(id,planId), { signal }),
     createPlan:(id,input)=>request(`${seriesPath(id)}/plans`,{method:'POST',body:input}),
     savePlan:(id,planId,plan,etag)=>request(planPath(id,planId),{method:'PUT',body:{plan},etag}),
     transition:(id,planId,action,etag)=>request(`${planPath(id,planId)}/${encode(action)}`,{method:'POST',body:{},etag}),

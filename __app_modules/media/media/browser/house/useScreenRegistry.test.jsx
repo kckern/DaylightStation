@@ -27,9 +27,10 @@ describe('useScreenRegistry', () => {
 
   it('keeps the newest screen list when an older request settles after StrictMode remount', async () => {
     const pending = [];
-    const api = { listScreens: () => new Promise(resolve => pending.push(resolve)) };
+    const api = { listScreens: vi.fn(() => new Promise(resolve => pending.push(resolve))) };
     render(<React.StrictMode><Probe api={api} /></React.StrictMode>);
     expect(pending).toHaveLength(2);
+    expect(api.listScreens.mock.calls.map(([{ signal }]) => signal.aborted)).toEqual([true, false]);
     await act(async () => pending[1]({ screens: [{ id: 'den', name: 'Current name' }] }));
     await act(async () => pending[0]({ screens: [{ id: 'den', name: 'Old name' }] }));
     expect(screen.getByTestId('probe')).toHaveTextContent('Current name|y');

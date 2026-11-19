@@ -21,7 +21,6 @@ export default function AgendaPlanEditor({client=agendaClient,editors={}}) {
   const [state,dispatch]=useReducer(planDraftReducer,null);
   const [context,setContext]=useState(null), [directory,setDirectory]=useState({people:[],etag:null}), [error,setError]=useState(''), [directoryError,setDirectoryError]=useState(''), [artworkBusy,setArtworkBusy]=useState(false), [operationBusy,setOperationBusy]=useState(false);
   useUnsavedGuard(!!state?.dirty,{label:'agenda plan'});
-  useEffect(()=>{let active=true; Promise.all([client.plan(seriesId,planId),client.planningContext(seriesId)]).then(([plan,week])=>{if(active){dispatch({type:'load',...plan,scope:JSON.stringify([seriesId,planId]),generation});setContext(week.document);}}).catch(e=>active&&setError(e.message));return()=>{active=false;};},[client,seriesId,planId]);
   const draft=state?.draft;
   useEffect(()=>{setArtworkBusy(false);setOperationBusy(false);setError('');setDirectoryError('');},[seriesId,planId]);
   const current=useRef(null);
@@ -37,6 +36,26 @@ export default function AgendaPlanEditor({client=agendaClient,editors={}}) {
   useEffect(()=>{mounted.current=true;return()=>{mounted.current=false;};},[]);
   const sameScope=snapshot=>mounted.current && current.current.scopeKey===snapshot.scopeKey && current.current.generation===snapshot.generation;
   const stillCurrent=snapshot=>sameScope(snapshot) && current.current.draft===snapshot.draft;
+
+  const readPlan = useCallback(async (isCurrent, signal) => {
+    const ownsPlan = () => isCurrent() &&
+      current.current.scopeKey === scopeKey && current.current.generation === generation;
+    const reads = [];
+    try {
+      reads.push(client.plan(seriesId, planId, { signal }));
+      reads.push(client.planningContext(seriesId, { signal }));
+      const [plan, week] = await Promise.all(reads);
+      if (!ownsPlan()) return;
+      dispatch({ type: 'load', ...plan, scope: scopeKey, generation });
+      setContext(week.document);
+    } catch (error) {
+      if (ownsPlan()) setError(error.message);
+      // Report the first failure immediately and keep its pending sibling cancelable.
+      await Promise.allSettled(reads);
+    }
+  }, [client, seriesId, planId, scopeKey, generation]);
+  const { reload: loadPlan } = useRefreshableRead(readPlan);
+  useEffect(() => { loadPlan(); }, [loadPlan]);
 
   const readDirectory = useCallback(async (isCurrent, signal) => {
     const applySnapshots = onDirectoryRefresh.current;

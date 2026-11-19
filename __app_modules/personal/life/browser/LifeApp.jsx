@@ -187,7 +187,7 @@ function LifeAppShell() {
                 <Route path="log/:date" element={<LogDayRoute />} />
                 <Route path="log/category/:category" element={<LogCategoryRoute />} />
                 <Route path="plan" element={<PurposeView />} />
-                <Route path="plan/goals" element={<GoalsView onGoalClick={(id) => navigate(`/life/plan/goals/${id}`)} />} />
+                <Route path="plan/goals" element={<GoalsView />} />
                 <Route path="plan/goals/:goalId" element={<GoalDetailRoute />} />
                 <Route path="plan/beliefs" element={<BeliefsView />} />
                 <Route path="plan/values" element={<ValuesView />} />

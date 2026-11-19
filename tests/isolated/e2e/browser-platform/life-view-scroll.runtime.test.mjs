@@ -33,18 +33,23 @@ test('Life restores its Goals list after detail and clears scroll when the membe
   await page.goto('/life/plan/goals');
   const main = page.getByRole('main');
   const scroll = () => main.evaluate(node => node.scrollTop);
-  const goal = main.getByText('amy goal 24', { exact: true });
+  const goal = main.getByRole('link', { name: 'amy goal 24', exact: true });
+  await expect(goal).toHaveAttribute('href', '/life/plan/goals/goal-24');
   await goal.scrollIntoViewIfNeeded();
   await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
   const savedPosition = await scroll();
   expect(savedPosition).toBeGreaterThan(500);
-  await goal.click();
+  await goal.press('Enter');
   await expect(main.getByRole('heading', { name: 'Goal details' })).toBeVisible();
   await expect.poll(scroll).toBe(0);
   await page.goBack();
   await expect(goal).toBeAttached();
   await expect.poll(scroll, { timeout: 5_000 }).toBe(savedPosition);
   await expect(goal).toBeInViewport();
+  await goal.click({ position: { x: 4, y: 4 } });
+  await expect(main.getByRole('heading', { name: 'Goal details' })).toBeVisible();
+  await page.goBack();
+  await expect.poll(scroll, { timeout: 5_000 }).toBe(savedPosition);
 
   const switcher = page.getByRole('textbox', { name: 'Switch household member' });
   await switcher.click();
