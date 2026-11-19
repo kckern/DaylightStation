@@ -124,3 +124,44 @@ for (const width of [390, 1440]) {
     });
   });
 }
+
+test('Admin Devices leaves a slow enforcement poll alone while the visible status ages', async ({ page }) => {
+  const now = new Date('2026-11-19T12:00:00Z');
+  await page.setViewportSize({ width: 1440, height: 850 });
+  await page.clock.install({ time: now });
+  await page.routeWebSocket('**/*', () => {});
+  const statusReads = [];
+  const status = lastContactAt => ({ enforcement: { consumers: [{
+    deviceId: 'fixture', deviceLabel: 'Fixture device', capability: 'ha-stop', acknowledged: true, lastContactAt,
+  }] } });
+  await page.route('**/api/**', async route => {
+    const { pathname } = new URL(route.request().url());
+    if (pathname.endsWith('/shutdown/status')) {
+      statusReads.push(route);
+      if (statusReads.length === 1) return route.fulfill({ json: status(now.getTime()) });
+      return;
+    }
+    return route.fulfill({ json: pathname.endsWith('/supervision/bootstrap') ? { enabled: false } : {} });
+  });
+
+  await page.goto('/admin/household/devices');
+  await expect(page.getByText('Fixture device — Power: acknowledged (ready)', { exact: true })).toBeVisible();
+  await page.clock.runFor(2000);
+  await expect.poll(() => statusReads.length).toBe(2);
+  await page.clock.runFor(4200);
+  await expect(page.getByText(/Fixture device — Power: unverified.*stale/)).toBeVisible();
+  expect(statusReads).toHaveLength(2);
+
+  const freshTime = await page.evaluate(() => Date.now());
+  await statusReads[1].fulfill({ json: status(freshTime) });
+  await expect(page.getByText('Fixture device — Power: acknowledged (ready)', { exact: true })).toBeVisible();
+  await page.clock.runFor(2000);
+  await expect.poll(() => statusReads.length).toBe(3);
+
+  const aborted = page.waitForEvent('requestfailed', request => request === statusReads[2].request());
+  await page.getByRole('link', { name: 'Sessions', exact: true }).click();
+  await expect(page).toHaveURL(/\/admin\/household\/sessions$/);
+  await aborted;
+  await page.clock.runFor(4200);
+  expect(statusReads).toHaveLength(3);
+});

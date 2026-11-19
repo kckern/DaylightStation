@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Autocomplete, Button, Group, NumberInput, Stack, Text, TextInput } from '@mantine/core';
 import { SectionCard, StatCard, Sheet, LoadingState, ErrorState, EmptyState } from '@/lib/ui';
-import { useApiResource } from "../../../../../frontend/src/lib/hooks/useApiResource.js";
+import { invalidateApiResources, useApiResource } from "../../../../../frontend/src/lib/hooks/useApiResource.js";
 import { unavailableError } from "../healthResources.js";
 import { DaylightAPI } from "../../../../../frontend/src/lib/api.mjs";
 import { createAppLogger } from "../../../../../frontend/src/lib/ui/createAppLogger.js";
@@ -10,6 +10,7 @@ import { MEDICAL_METRICS } from "../../portable/contracts/health/medicalMetrics.
 
 const logger = createAppLogger('health').child('medical');
 
+const medicalPath = 'api/v1/health/medical';
 const METRIC_SUGGESTIONS = Object.keys(MEDICAL_METRICS);
 const labelFor = (metric) => MEDICAL_METRICS[metric]?.label || metric;
 const formatValue = (r) => (r?.value2 != null ? `${r.value}/${r.value2}` : r?.value ?? '—');
@@ -17,7 +18,7 @@ const emptyForm = () => ({ metric: '', value: '', value2: '', unit: '', date: lo
 
 /** Grouped medical readings (BP, labs, vitals) — manual entry, no interpretation. */
 export function MedicalView() {
-  const med = useApiResource('api/v1/health/medical', { label: 'medical', logger });
+  const med = useApiResource(medicalPath, { label: 'medical', logger });
   const [open, setOpen] = useState(false);
   const [form, setForm] = useState(emptyForm());
   const [saving, setSaving] = useState(false);
@@ -38,10 +39,10 @@ export function MedicalView() {
         date: form.date,
         note: form.note,
       };
-      await DaylightAPI('api/v1/health/medical', body, 'POST');
+      await DaylightAPI(medicalPath, body, 'POST');
       logger.info('reading.added', { metric: body.metric });
       setOpen(false);
-      med.reload();
+      invalidateApiResources(path => path === medicalPath);
     } catch (err) {
       logger.error('reading.add.failed', { error: err?.message });
       setError(err);
@@ -53,9 +54,9 @@ export function MedicalView() {
   const remove = async (id, metric) => {
     if (!window.confirm('Delete this reading?')) return;
     try {
-      await DaylightAPI(`api/v1/health/medical/${id}`, {}, 'DELETE');
+      await DaylightAPI(`${medicalPath}/${id}`, {}, 'DELETE');
       logger.info('reading.removed', { id, metric });
-      med.reload();
+      invalidateApiResources(path => path === medicalPath);
     } catch (err) {
       logger.error('reading.remove.failed', { id, error: err?.message });
       setError(err);

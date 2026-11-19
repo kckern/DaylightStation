@@ -42,10 +42,10 @@ function DevicesIndex() {
   const [createErrors, setCreateErrors] = useState({});
   const [creating, setCreating] = useState(false);
 
-  const readEnforcement = useCallback(async isCurrent => {
+  const readEnforcement = useCallback(async (isCurrent, signal) => {
     setEnforcementNow(Date.now());
     try {
-      const status = await DaylightAPI('/api/v1/admin/household/shutdown/status');
+      const status = await DaylightAPI('/api/v1/admin/household/shutdown/status', {}, 'GET', { signal });
       if (!isCurrent()) return;
       setShutdown(status);
       setEnforcementNow(Date.now());
@@ -53,11 +53,16 @@ function DevicesIndex() {
       if (isCurrent()) setShutdown(null);
     }
   }, []);
-  const { reload: refreshEnforcement } = useRefreshableRead(readEnforcement);
+  const { reload: refreshEnforcement, poll } = useRefreshableRead(readEnforcement);
+  const pollEnforcement = useCallback(() => {
+    // Age the displayed acknowledgement even when an in-flight read skips this tick.
+    setEnforcementNow(Date.now());
+    return poll();
+  }, [poll]);
   useEffect(() => {
     if (document.visibilityState === 'visible') refreshEnforcement();
   }, [refreshEnforcement]);
-  useVisibleRefresh({ intervalMs: 2000, reload: refreshEnforcement });
+  useVisibleRefresh({ intervalMs: 2000, reload: refreshEnforcement, poll: pollEnforcement });
 
   const handleCreateFormChange = (field, value) => {
     setCreateForm(prev => ({ ...prev, [field]: value }));

@@ -96,6 +96,57 @@ function house(state) {
   };
 }
 
+for (const fromDetail of [false, true]) {
+  test(`Home keeps a pending switch focused in ${fromDetail ? 'the entity sheet' : 'Rooms'}`, async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 850 });
+    const acknowledgement = Promise.withResolvers();
+    const writes = [];
+    let deviceState = 'on';
+    await page.route('**/home-dashboard/entities', route => route.fulfill({ json: house(deviceState) }));
+    await page.route('**/home-dashboard/toggle', async route => {
+      writes.push(route.request().postDataJSON());
+      await acknowledgement.promise;
+      deviceState = 'off';
+      return route.fulfill({ json: { ok: true } });
+    });
+    await page.goto('/home');
+    await page.getByRole('button', { name: 'Rooms', exact: true }).click();
+    await page.getByRole('button', { name: 'Kitchen 1 on', exact: true }).click();
+    const opener = page.getByRole('button', { name: 'Kitchen light, On', exact: true });
+    const dialog = page.getByRole('dialog', { name: 'Kitchen light', exact: true });
+    if (fromDetail) await opener.press('Enter');
+    const scope = fromDetail ? dialog : page.getByRole('main');
+    const control = scope.getByRole('switch', { name: /Kitchen light:/ });
+    await expect(control).toBeChecked();
+    if (fromDetail) {
+      await expect(dialog.getByRole('button', { name: 'Close', exact: true })).toBeFocused();
+      await page.keyboard.press('Tab');
+    } else {
+      await control.focus();
+    }
+    await expect(control).toBeFocused();
+
+    try {
+      await page.keyboard.press('Space');
+      await expect(control).not.toBeChecked();
+      await expect(control).toBeFocused();
+      await expect(control).toBeDisabled();
+      await page.keyboard.press('Space');
+      await expect(control).not.toBeChecked();
+      expect(writes).toEqual([{ entityId: 'light.kitchen', desiredState: 'off' }]);
+    } finally {
+      acknowledgement.resolve();
+    }
+    await expect(control).toBeEnabled();
+    await expect(control).toBeFocused();
+    if (fromDetail) {
+      await page.keyboard.press('Escape');
+      await expect(dialog).toBeHidden();
+      await expect(page.getByRole('button', { name: 'Kitchen light, Off', exact: true })).toBeFocused();
+    }
+  });
+}
+
 test('Health opens after the first confirmed context while its background revalidation waits', async ({ page }) => {
   let contextReads = 0;
   await page.route('**/health/context', route => {

@@ -1,4 +1,5 @@
-import { Switch, UnstyledButton } from '@mantine/core';
+import { UnstyledButton } from '@mantine/core';
+import { EntitySwitch } from './EntitySwitch.jsx';
 import { displayName, formatEntityState } from '../entities/formatEntityState.js';
 import './home-ui.scss';
 
@@ -49,13 +50,7 @@ export function EntityRow({ entity, sub = null, value, name, plain = false, cont
       )}
       {showControl === 'switch' ? (
         <div className="home-row__action">
-          <Switch
-            checked={entity.stateClass === 'on'}
-            onChange={() => onToggle?.(entity)}
-            disabled={Boolean(entity.pending)}
-            aria-label={`${entity.name}: turn ${entity.stateClass === 'on' ? 'off' : 'on'}`}
-            size="md"
-          />
+          <EntitySwitch entity={entity} onToggle={onToggle} size="md" />
         </div>
       ) : null}
       {showControl === 'off' && entity.stateClass === 'on' ? (

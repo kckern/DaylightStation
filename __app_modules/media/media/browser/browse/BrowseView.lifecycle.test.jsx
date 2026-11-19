@@ -34,8 +34,8 @@ vi.mock("../cast/DispatchTargetPicker.jsx", () => ({ DispatchTargetPicker: () =>
 import { BrowseView } from "./BrowseView.jsx";
 import { CastTargetProvider } from "../cast/CastTargetProvider.jsx";
 
-function renderBrowse(props = {}) {
-  return render(
+function browseElement(props = {}) {
+  return (
     <MantineProvider>
       <CastTargetProvider>
         <div data-testid="scroll-host" style={{ overflowY: 'auto', height: 200 }}>
@@ -50,8 +50,12 @@ function renderBrowse(props = {}) {
           />
         </div>
       </CastTargetProvider>
-    </MantineProvider>,
+    </MantineProvider>
   );
+}
+
+function renderBrowse(props) {
+  return render(browseElement(props));
 }
 
 beforeEach(() => {
@@ -100,7 +104,7 @@ describe('BrowseView lifecycle', () => {
     expect(titles).toEqual(['Episode 1', 'Episode 2', 'Episode 10']);
   });
 
-  it('loads the next page when the end sentinel intersects without a Load more button', () => {
+  it('loads a visible continuation and retires the observer when retry is required', () => {
     let callback;
     const observe = vi.fn();
     vi.stubGlobal('IntersectionObserver', class {
@@ -109,12 +113,24 @@ describe('BrowseView lifecycle', () => {
       disconnect() {}
     });
 
-    renderBrowse();
-    expect(screen.queryByRole('button', { name: /Load more/ })).toBeNull();
-    expect(observe).toHaveBeenCalledWith(screen.getByTestId('browse-page-sentinel'));
-    act(() => callback([{ isIntersecting: true }]));
-    expect(loadMore).toHaveBeenCalledTimes(1);
-    vi.unstubAllGlobals();
+    try {
+      const { rerender } = renderBrowse();
+      expect(screen.queryByRole('button', { name: /Load more/ })).toBeNull();
+      expect(observe).toHaveBeenCalledWith(screen.getByTestId('browse-page-sentinel'));
+      const previousObserver = callback;
+      act(() => previousObserver([{ isIntersecting: true }]));
+      expect(loadMore).toHaveBeenCalledTimes(1);
+
+      browseState.appendError = new Error('The next page failed');
+      rerender(browseElement());
+      expect(screen.queryByTestId('browse-page-sentinel')).toBeNull();
+      act(() => previousObserver([{ isIntersecting: true }]));
+      expect(loadMore).toHaveBeenCalledTimes(1);
+      fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
+      expect(loadMore).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
   it('does not reset the current scroll when an automatic page appends rows', () => {

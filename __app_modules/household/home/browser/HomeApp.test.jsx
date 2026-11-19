@@ -262,12 +262,12 @@ describe('HomeApp — Rooms', () => {
     await waitFor(() => expect(entitiesCalls).toBeGreaterThan(1));
     const sw = screen.getByLabelText('Kitchen light: turn on');
     expect(sw.checked).toBe(false);
-    expect(sw.disabled).toBe(true);
+    expect(sw).toHaveAttribute('aria-disabled', 'true');
     fireEvent.click(sw);
     expect(apiMock.mock.calls.filter(([p]) => p.includes('toggle'))).toHaveLength(1);
   });
 
-  it('keeps a slow switch disabled and starts the confirmation deadline after acknowledgement', async () => {
+  it('keeps a slow switch unavailable and starts the confirmation deadline after acknowledgement', async () => {
     let acknowledge;
     const pending = new Promise(resolve => { acknowledge = resolve; });
     const routed = apiMock.getMockImplementation();
@@ -282,15 +282,15 @@ describe('HomeApp — Rooms', () => {
       fireEvent.click(screen.getByLabelText('Kitchen light: turn off'));
       await act(async () => vi.advanceTimersByTimeAsync(6000));
       const switched = screen.getByLabelText('Kitchen light: turn on');
-      expect(switched).toBeDisabled();
+      expect(switched).toHaveAttribute('aria-disabled', 'true');
       fireEvent.click(switched);
       expect(apiMock.mock.calls.filter(([path]) => path.endsWith('/toggle'))).toHaveLength(1);
 
       await act(async () => { acknowledge({ ok: true }); });
       await act(async () => vi.advanceTimersByTimeAsync(4999));
-      expect(switched).toBeDisabled();
+      expect(switched).toHaveAttribute('aria-disabled', 'true');
       await act(async () => vi.advanceTimersByTimeAsync(101));
-      expect(screen.getByLabelText('Kitchen light: turn off')).toBeEnabled();
+      expect(screen.getByLabelText('Kitchen light: turn off')).not.toHaveAttribute('aria-disabled');
     } finally {
       vi.useRealTimers();
     }

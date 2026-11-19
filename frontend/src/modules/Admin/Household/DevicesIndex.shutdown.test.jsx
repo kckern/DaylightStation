@@ -19,15 +19,15 @@ it('renders actual legacy admin diagnostics with consumer evidence and top-level
  render(<MantineProvider><MemoryRouter><DevicesIndex/></MemoryRouter></MantineProvider>);
  expect(await screen.findByText(/portal.*Buttons: unverified/i)).toBeTruthy();
  expect(screen.getByText('Incident reporting unavailable')).toBeTruthy();expect(screen.getByText('Timed Stop requested')).toBeTruthy();
- expect(api).toHaveBeenCalledWith('/api/v1/admin/household/shutdown/status');
+ expect(api).toHaveBeenCalledWith('/api/v1/admin/household/shutdown/status', {}, 'GET', { signal: expect.any(AbortSignal) });
 });
 
-it('refreshes enforcement on foreground return and ignores a superseded diagnostic read', async () => {
+it('lets interval reads finish and replaces a held read on foreground return', async () => {
   vi.useFakeTimers();
   const visibility = vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('hidden');
   const pending = [];
-  api.mockImplementation(path => path.endsWith('/shutdown/status')
-    ? new Promise(resolve => pending.push(resolve))
+  api.mockImplementation((path, _body, _method, requestOptions) => path.endsWith('/shutdown/status')
+    ? new Promise(resolve => pending.push({ resolve, signal: requestOptions.signal }))
     : Promise.resolve({ devices: [] }));
   try {
     const view = render(<MantineProvider><MemoryRouter><DevicesIndex /></MemoryRouter></MantineProvider>);
@@ -37,9 +37,16 @@ it('refreshes enforcement on foreground return and ignores a superseded diagnost
     fireEvent(document, new Event('visibilitychange'));
     expect(pending).toHaveLength(1);
     await act(async () => vi.advanceTimersByTime(2000));
+    expect(pending).toHaveLength(1);
+    expect(pending[0].signal.aborted).toBe(false);
+    visibility.mockReturnValue('hidden');
+    fireEvent(document, new Event('visibilitychange'));
+    visibility.mockReturnValue('visible');
+    fireEvent(document, new Event('visibilitychange'));
     expect(pending).toHaveLength(2);
-    await act(async () => pending[1]({ mode: 'legacy', locked: true }));
-    await act(async () => pending[0]({ mode: 'legacy', locked: false }));
+    expect(pending[0].signal.aborted).toBe(true);
+    await act(async () => pending[1].resolve({ mode: 'legacy', locked: true }));
+    await act(async () => pending[0].resolve({ mode: 'legacy', locked: false }));
     expect(screen.getByText('Timed Stop requested')).toBeVisible();
     view.unmount();
     await act(async () => vi.advanceTimersByTime(4000));

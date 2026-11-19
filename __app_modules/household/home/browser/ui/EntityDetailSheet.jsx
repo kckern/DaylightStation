@@ -1,6 +1,7 @@
 import { lazy, Suspense, useState } from 'react';
-import { SegmentedControl, Switch } from '@mantine/core';
+import { SegmentedControl } from '@mantine/core';
 import { Sheet, Skeleton, ErrorState } from '@/lib/ui';
+import { EntitySwitch } from './EntitySwitch.jsx';
 import { displayName, formatEntityState, formatSince } from '../entities/formatEntityState.js';
 import { useEntityHistory } from '../history/useEntityHistory.js';
 import { RingClips } from '../doorbell/RingClips.jsx';
@@ -102,15 +103,7 @@ function EntityDetailBody({ entity, haUrl, onToggle, extra }) {
     <div className={`home-detail${lit ? ' home-detail--lit' : ''}${silent ? ' home-detail--silent' : ''}`} data-entity-id={entity.id}>
       <div className="home-detail__state">
         <span>{formatEntityState(entity)}</span>
-        {entity.controllable ? (
-          <Switch
-            checked={entity.stateClass === 'on'}
-            onChange={() => onToggle?.(entity)}
-            disabled={Boolean(entity.pending)}
-            aria-label={`${entity.name}: turn ${entity.stateClass === 'on' ? 'off' : 'on'}`}
-            size="lg"
-          />
-        ) : null}
+        {entity.controllable ? <EntitySwitch entity={entity} onToggle={onToggle} size="lg" /> : null}
       </div>
       <EntityHistory entity={entity} range={range} onRange={onRange} history={history} error={error} reload={reload} />
       {below ? <div className="home-detail__extra">{below}</div> : null}

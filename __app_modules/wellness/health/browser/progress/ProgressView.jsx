@@ -3,7 +3,7 @@ import HighchartsReact from 'highcharts-react-official';
 import Highcharts from 'highcharts';
 import { Button, NumberInput, SegmentedControl, Stack, Text } from '@mantine/core';
 import { SectionCard, StatCard, Sheet, LoadingState, ErrorState } from '@/lib/ui';
-import { useApiResource } from "../../../../../frontend/src/lib/hooks/useApiResource.js";
+import { invalidateApiResources, useApiResource } from "../../../../../frontend/src/lib/hooks/useApiResource.js";
 import { unavailableError } from "../healthResources.js";
 import { DaylightAPI } from "../../../../../frontend/src/lib/api.mjs";
 import { createAppLogger } from "../../../../../frontend/src/lib/ui/createAppLogger.js";
@@ -18,6 +18,7 @@ import { normalizeWeightEntries, buildWeightSeries, fmtDelta, fmtLbs, TREND_ARRO
 import { buildWeightChartOptions, daysToGoal, goalDate, DEFAULT_TARGET_BODY_FAT_PCT } from "./weightChart.js";
 import { readTokens } from "./WeightTrendChart.jsx";
 
+const goalsPath = 'api/v1/health/goals';
 const logger = createAppLogger('health').child('progress');
 
 // A projection that cannot be made says why. "⚠" alone leaves the reader
@@ -43,19 +44,12 @@ export function ProgressView() {
   }, []);
 
   const weightRes = useApiResource('api/v1/health/weight', { label: 'weight', logger });
-  const goalsRes = useApiResource('api/v1/health/goals', { label: 'goals', logger });
+  const goalsRes = useApiResource(goalsPath, { label: 'goals', logger });
   const goalsError = unavailableError(goalsRes);
   const [form, setForm] = useState(null);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState(null);
   const [editingGoals, setEditingGoals] = useState(false);
-
-  // Seed the form once goals load; a later reload (after save) must not
-  // clobber in-progress edits, so only seed while form is still null.
-  useEffect(() => {
-    if (goalsRes.data && !form) setForm(goalsRes.data.goals || emptyGoals());
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [goalsRes.data]);
 
   // ONE request for the whole window. This used to be 14 parallel
   // `GET /budget?date=` calls fired from an effect — the same fan-out the week
@@ -70,7 +64,8 @@ export function ProgressView() {
   const latest = entries[entries.length - 1] || null;
   const weightTrend = useMemo(() => buildWeightSeries(weightRes.data), [weightRes.data]);
 
-  const goalLbs = form?.targetWeightLbs ?? goalsRes.data?.goals?.targetWeightLbs ?? null;
+  const displayedGoals = editingGoals ? form : goalsRes.data?.goals;
+  const goalLbs = displayedGoals?.targetWeightLbs ?? null;
   const chartOptions = useMemo(
     () => buildWeightChartOptions({ entries, tokens, goalLbs: goalLbs || null }),
     [tokens, entries, goalLbs],
@@ -81,7 +76,7 @@ export function ProgressView() {
   // futures for the same day.
   // Number() rather than ?? — a cleared NumberInput is '', which is not nullish
   // and would otherwise be handed to the projection as a target of "".
-  const targetBodyFatPct = Number(form?.targetBodyFatPct ?? goalsRes.data?.goals?.targetBodyFatPct)
+  const targetBodyFatPct = Number(displayedGoals?.targetBodyFatPct)
     || DEFAULT_TARGET_BODY_FAT_PCT;
   const projection = useMemo(() => daysToGoal({
     lbs: latest?.avg ?? latest?.lbs ?? null,
@@ -96,9 +91,11 @@ export function ProgressView() {
     setSaveError(null);
     try {
       const payload = Object.fromEntries(Object.entries(form).filter(([, value]) => value !== ''));
-      await DaylightAPI('api/v1/health/goals', payload, 'PUT');
+      await DaylightAPI(goalsPath, payload, 'PUT');
       logger.info('goals.saved', {});
-      goalsRes.reload();
+      // Both the daily ledger and range charts include budgets calculated from these goals.
+      invalidateApiResources(path => path === goalsPath || path.startsWith('api/v1/health/budget/range?')
+        || path.startsWith('api/v1/health/day?'));
       setEditingGoals(false);
     } catch (err) {
       logger.error('goals.save.failed', { error: err?.message });

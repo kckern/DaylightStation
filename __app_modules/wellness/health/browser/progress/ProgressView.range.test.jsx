@@ -10,7 +10,7 @@ vi.mock('highcharts', () => ({ default: {} }));
 vi.mock('highcharts-react-official', () => ({ default: () => <div data-testid="hc" /> }));
 
 import { ProgressView } from "./ProgressView.jsx";
-import { resetApiResourceCache } from "../../../../../frontend/src/lib/hooks/useApiResource.js";
+import { isApiResourceFresh, primeApiResource, resetApiResourceCache } from "../../../../../frontend/src/lib/hooks/useApiResource.js";
 
 const rangeDays = (from, to) => {
   const days = [];
@@ -76,6 +76,39 @@ describe('ProgressView resource reads', () => {
     expect(await screen.findByText('Weight · as of 2026-09-10')).toBeVisible();
     expect(screen.getByText('171.6')).toBeVisible();
     expect(apiMock.mock.calls.filter(([path]) => path === 'api/v1/health/weight')).toEqual([['api/v1/health/weight']]);
+  });
+});
+
+describe('committed Health writes', () => {
+  it('refreshes goals in a replacement Progress view after the original save finishes', async () => {
+    const fallback = apiMock.getMockImplementation();
+    const save = Promise.withResolvers();
+    let target = 155;
+    apiMock.mockImplementation((path, body, method) => {
+      if (path !== 'api/v1/health/goals') return fallback(path, body, method);
+      if (method === 'PUT') return save.promise.then(() => { target = 160; });
+      return Promise.resolve({ goals: { targetWeightLbs: target } });
+    });
+    const mount = () => render(<MantineProvider><ProgressView /></MantineProvider>);
+    const first = mount();
+    fireEvent.click(await screen.findByRole('button', { name: 'Edit goals' }));
+    fireEvent.change(await screen.findByLabelText('Target weight'), { target: { value: '160' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save goals' }));
+    expect(apiMock).toHaveBeenCalledWith('api/v1/health/goals', expect.objectContaining({ targetWeightLbs: 160 }), 'PUT');
+    first.unmount();
+    mount();
+    await screen.findByText(/Target 155 lb/);
+    const rangeReads = () => apiMock.mock.calls.filter(([path]) => path.includes('budget/range')).length;
+    const before = rangeReads();
+    const dayPath = 'api/v1/health/day?date=2026-09-23';
+    const unrelated = 'api/v1/health/dashboard';
+    primeApiResource(dayPath, { budget: {} });
+    primeApiResource(unrelated, {});
+    await act(async () => save.resolve());
+    expect(await screen.findByText(/Target 160 lb/)).toBeVisible();
+    expect(rangeReads()).toBe(before + 2);
+    expect(isApiResourceFresh(dayPath)).toBe(false);
+    expect(isApiResourceFresh(unrelated)).toBe(true);
   });
 });
 

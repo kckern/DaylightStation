@@ -8,6 +8,8 @@ vi.mock("../../../../../frontend/src/lib/api.mjs", () => ({
 
 import { useListBrowse } from "./useListBrowse.js";
 
+const requestOptions = [{}, 'GET', { signal: expect.any(AbortSignal) }];
+
 beforeEach(() => { apiMock.mockReset(); });
 
 function deferred() {
@@ -22,7 +24,7 @@ describe('useListBrowse', () => {
     apiMock.mockResolvedValueOnce({ items: [{ id: 'a' }, { id: 'b' }], total: 10 });
     const { result } = renderHook(() => useListBrowse('watchlist/TVApp', { take: 25 }));
     await waitFor(() => expect(result.current.loading).toBe(false));
-    expect(apiMock).toHaveBeenCalledWith('api/v1/list/watchlist/TVApp?take=25');
+    expect(apiMock).toHaveBeenCalledWith('api/v1/list/watchlist/TVApp?take=25', ...requestOptions);
     expect(result.current.items).toHaveLength(2);
     expect(result.current.total).toBe(10);
   });
@@ -31,14 +33,14 @@ describe('useListBrowse', () => {
     apiMock.mockResolvedValueOnce({ items: [], total: 0 });
     renderHook(() => useListBrowse('music/recent', { modifiers: { playable: true, shuffle: true }, take: 5 }));
     await waitFor(() => expect(apiMock).toHaveBeenCalled());
-    expect(apiMock).toHaveBeenCalledWith('api/v1/list/music/recent/playable/shuffle?take=5');
+    expect(apiMock).toHaveBeenCalledWith('api/v1/list/music/recent/playable/shuffle?take=5', ...requestOptions);
   });
 
   it('passes the expand modifier so a Plex season lists its episodes, not itself', async () => {
     apiMock.mockResolvedValueOnce({ items: [], total: 0 });
     renderHook(() => useListBrowse('plex/70265', { modifiers: { expand: true }, take: 5 }));
     await waitFor(() => expect(apiMock).toHaveBeenCalled());
-    expect(apiMock).toHaveBeenCalledWith('api/v1/list/plex/70265/expand?take=5');
+    expect(apiMock).toHaveBeenCalledWith('api/v1/list/plex/70265/expand?take=5', ...requestOptions);
   });
 
   it('loadMore appends the next page with skip', async () => {
@@ -48,8 +50,21 @@ describe('useListBrowse', () => {
     const { result } = renderHook(() => useListBrowse('x', { take: 1 }));
     await waitFor(() => expect(result.current.items).toHaveLength(1));
     await act(async () => { await result.current.loadMore(); });
-    expect(apiMock).toHaveBeenLastCalledWith('api/v1/list/x?take=1&skip=1');
+    expect(apiMock).toHaveBeenLastCalledWith('api/v1/list/x?take=1&skip=1', ...requestOptions);
     expect(result.current.items).toEqual([{ id: '1' }, { id: '2' }]);
+  });
+
+  it('ends automatic paging when the reported total exceeds the available rows', async () => {
+    apiMock
+      .mockResolvedValueOnce({ items: [{ id: '1' }], total: 2 })
+      .mockResolvedValueOnce({ items: [], total: 2 });
+    const { result } = renderHook(() => useListBrowse('x', { take: 1 }));
+    await waitFor(() => expect(result.current.items).toHaveLength(1));
+    await act(async () => { await result.current.loadMore(); });
+    expect(result.current.items).toEqual([{ id: '1' }]);
+    expect(result.current.total).toBe(1);
+    await act(async () => { await result.current.loadMore(); });
+    expect(apiMock).toHaveBeenCalledTimes(2);
   });
 
   it('returning with a larger initialTake restores that many rows in one request, then pages by take', async () => {
@@ -58,15 +73,15 @@ describe('useListBrowse', () => {
       .mockResolvedValueOnce({ items: [{ id: 'r150' }], total: 400 });
     const { result } = renderHook(() => useListBrowse('x', { take: 50, initialTake: 150 }));
     await waitFor(() => expect(result.current.items).toHaveLength(150));
-    expect(apiMock).toHaveBeenCalledWith('api/v1/list/x?take=150');
+    expect(apiMock).toHaveBeenCalledWith('api/v1/list/x?take=150', ...requestOptions);
     await act(async () => { await result.current.loadMore(); });
-    expect(apiMock).toHaveBeenLastCalledWith('api/v1/list/x?take=50&skip=150');
+    expect(apiMock).toHaveBeenLastCalledWith('api/v1/list/x?take=50&skip=150', ...requestOptions);
   });
 
   it('an initialTake smaller than take never shrinks the first page', async () => {
     apiMock.mockResolvedValueOnce({ items: [], total: 0 });
     renderHook(() => useListBrowse('x', { take: 50, initialTake: 10 }));
-    await waitFor(() => expect(apiMock).toHaveBeenCalledWith('api/v1/list/x?take=50'));
+    await waitFor(() => expect(apiMock).toHaveBeenCalledWith('api/v1/list/x?take=50', ...requestOptions));
   });
 
   it('captures error and sets loading=false', async () => {
@@ -93,7 +108,9 @@ describe('useListBrowse', () => {
     await waitFor(() => expect(result.current.items).toEqual([{ id: 'old-1' }]));
     let oldLoad;
     act(() => { oldLoad = result.current.loadMore(); });
+    const appendSignal = apiMock.mock.lastCall[3].signal;
     rerender({ path: 'new' });
+    expect(appendSignal.aborted).toBe(true);
     await act(async () => { newPageOne.resolve({ items: [{ id: 'new-1' }], total: 1 }); });
     await waitFor(() => expect(result.current.items).toEqual([{ id: 'new-1' }]));
 
@@ -117,9 +134,9 @@ describe('useListBrowse', () => {
     const queuedObserverLoad = result.current.loadMore;
 
     rerender({ path: 'new' });
-    await waitFor(() => expect(apiMock).toHaveBeenCalledWith('api/v1/list/new?take=1'));
+    await waitFor(() => expect(apiMock).toHaveBeenCalledWith('api/v1/list/new?take=1', ...requestOptions));
     await act(async () => { await queuedObserverLoad(); });
-    expect(apiMock).not.toHaveBeenCalledWith('api/v1/list/new?take=1&skip=0');
+    expect(apiMock).not.toHaveBeenCalledWith('api/v1/list/new?take=1&skip=0', ...requestOptions);
     expect(apiMock).toHaveBeenCalledTimes(2);
 
     await act(async () => { newPageOne.resolve({ items: [{ id: 'new-1' }], total: 1 }); });
