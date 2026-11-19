@@ -5,12 +5,12 @@ import { emailGuardrails, todoGuardrails, todoAutoClose } from './guardrails.mjs
 const DAY = 86400000;
 const ASOF = Date.UTC(2026, 10, 19);
 const mail = (o = {}) => itemFromMail({
-  ref: { provider: 'gmail', accountId: 'sample', kind: 'message', id: 'm1' }, threadId: 't', version: '1',
+  ref: { provider: 'mail-a', accountId: 'sample', kind: 'message', id: 'm1' }, threadId: 't', version: '1',
   from: { name: 'X', address: 'x@example.com' }, to: [], subject: 'Hello', snippet: '', receivedAt: 1, labels: [],
   starred: false, hasAttachments: false, automated: true, ownerRepliedInThread: false, ...o,
 });
 const task = (id, o = {}) => itemFromWork({
-  ref: { provider: 'todoist', accountId: 'sample', kind: 'task', id }, title: 'Buy filters', description: null,
+  ref: { provider: 'tasks-a', accountId: 'sample', kind: 'task', id }, title: 'Buy filters', description: null,
   status: { category: 'open', native: null }, containerRef: { id: 'list1' }, due: null, createdAt: 1000,
   modifiedAt: ASOF, version: '1', ...o,
 });

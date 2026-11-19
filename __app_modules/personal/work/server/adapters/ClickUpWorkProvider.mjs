@@ -17,6 +17,11 @@ const failure = response => response.status === 401 || response.status === 403 ?
 }) : response.status >= 500 ? result('uncertain', 'provider_unavailable') : result('failed', 'provider_rejected');
 /** Board workflow remains provider-owned; every mutation is explicitly confirmed. */
 export class ClickUpWorkProvider extends IWorkProvider {
+  /** Provider vocabulary the application layer reads instead of keying on a provider type. */
+  static descriptor = Object.freeze({
+    containerNoun: 'List',
+    assigneeField: 'multiple'
+  });
   #options;
   #client;
   #verify;

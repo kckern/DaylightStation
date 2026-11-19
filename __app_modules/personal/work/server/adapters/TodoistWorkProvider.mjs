@@ -19,6 +19,11 @@ const failed = response => response.status === 401 || response.status === 403 ? 
 }) : response.status >= 500 ? result('uncertain', 'provider_unavailable') : result('failed', 'provider_rejected');
 /** Cached observations and live, independently authorized command dispatch. */
 export class TodoistWorkProvider extends IWorkProvider {
+  /** Provider vocabulary the application layer reads instead of keying on a provider type. */
+  static descriptor = Object.freeze({
+    containerNoun: 'project',
+    assigneeField: 'single'
+  });
   #options;
   #client;
   #verify;

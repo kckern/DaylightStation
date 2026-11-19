@@ -219,6 +219,8 @@ export function createWorkRuntime(options = {}) {
     readHealth: options.readHealth
   });
   const providers = new Map();
+  const providerClassFor = binding => binding.type === 'todoist' ? TodoistWorkProvider : ClickUpWorkProvider;
+  const describeProvider = binding => providerClassFor(binding).descriptor;
   const scopedAuth = (service, username) => {
     const p = policy(username),
       bindings = p.enabled ? Object.values(p.providers).filter(binding => binding.type === service) : [];
@@ -232,7 +234,7 @@ export function createWorkRuntime(options = {}) {
         accountId: binding.accountId
       });
       if (!providers.has(key)) {
-        const Provider = binding.type === 'todoist' ? TodoistWorkProvider : ClickUpWorkProvider;
+        const Provider = providerClassFor(binding);
         providers.set(key, new Provider({
           accountId: binding.accountId,
           loadCurrent: (u, p) => source.current(u, p),
@@ -545,6 +547,7 @@ export function createWorkRuntime(options = {}) {
     clock,
     nextId: options.nextId ?? randomUUID,
     tokens: createWorkCallbackTokens(),
+    describeProvider,
     logger
   });
   const decisions = {
@@ -606,6 +609,7 @@ export function createWorkRuntime(options = {}) {
       evidence: options.journalEvidence,
       intentExtractor: extractor,
       resolvePolicy: policy,
+      describeProvider,
       scheduler: {
         after: (delay, work) => scheduler.after(delay, () => track(Promise.resolve().then(work)))
       },

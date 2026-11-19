@@ -1,6 +1,10 @@
 import { matchWorkIntent, groundedWorkMentions } from '../domain/workIntent.mjs';
 import { keyOf } from '../domain/workModel.mjs';
 import { workHash, workError } from '../domain/workState.mjs';
+const DEFAULT_PROVIDER_DESCRIPTOR = Object.freeze({
+  containerNoun: 'project',
+  assigneeField: 'single'
+});
 /** Verified saved journal input and explicit Work flows; never scans old backlog on boot. */
 export class WorkConversation {
   #state;
@@ -14,6 +18,7 @@ export class WorkConversation {
   #scheduler;
   #clock;
   #deliver;
+  #describe;
   #logger;
   #timers = new Map();
   #principals = new Map();
@@ -31,6 +36,7 @@ export class WorkConversation {
     scheduler,
     clock,
     deliver = null,
+    describeProvider = () => DEFAULT_PROVIDER_DESCRIPTOR,
     logger
   }) {
     if (!state?.read || !state?.transact || !context?.execute || !commands?.propose || !decisions?.prepare || !principalAuthority?.verify || !evidence?.readByRefs || !evidence?.readForMessage || !intentExtractor?.extract || !scheduler?.after || typeof resolvePolicy !== 'function' || typeof clock !== 'function') throw new TypeError('Work conversation dependencies required');
@@ -45,6 +51,7 @@ export class WorkConversation {
     this.#scheduler = scheduler;
     this.#clock = clock;
     this.#deliver = deliver;
+    this.#describe = describeProvider;
     this.#logger = logger;
   }
   capturePrincipal(input) {
@@ -627,7 +634,7 @@ export class WorkConversation {
       const binding = policy.providers[domain.provider];
       payload = {
         ...payload,
-        ...(binding.type === 'todoist' ? {
+        ...(this.#describe(binding).assigneeField === 'single' ? {
           assigneeId
         } : {
           assigneeIds: [assigneeId]

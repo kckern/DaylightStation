@@ -5,7 +5,7 @@
  * triage `username` first; nothing is global.
  *
  * @typedef {Object} MailRef
- * @property {'gmail'} provider
+ * @property {string} provider  Opaque provider id.
  * @property {string} accountId  The triage username.
  * @property {'message'} kind    The mailbox's own ref shape (not the work module's).
  * @property {string} id
@@ -47,7 +47,7 @@
  * Write methods throw an Error with `code: 'MAILBOX_SCOPE_MISSING'` when the
  * matching capability is false or the provider answers 403 insufficientPermissions.
  *
- * Implementations: GmailMailbox
+ * Implemented by a mailbox adapter.
  */
 export const MAILBOX_SCOPE_MISSING = 'MAILBOX_SCOPE_MISSING';
 export default {};

@@ -6,6 +6,10 @@ const denied = reason => ({
   reason
 });
 const SESSION_GRANT_MS = 5 * 60000;
+const DEFAULT_PROVIDER_DESCRIPTOR = Object.freeze({
+  containerNoun: 'project',
+  assigneeField: 'single'
+});
 const labels = {
   complete: 'Complete task',
   reopen: 'Reopen task',
@@ -33,6 +37,7 @@ export class WorkDecisions {
   // Web/system grants live in memory only, keyed by confirmationId: a restart forces a fresh tap.
   #sessionGrants = new Map();
   #logger;
+  #describe;
   constructor({
     state,
     commands,
@@ -42,6 +47,7 @@ export class WorkDecisions {
     clock,
     nextId,
     tokens,
+    describeProvider = () => DEFAULT_PROVIDER_DESCRIPTOR,
     logger = null
   }) {
     if (!state?.read || !state?.transact || !commands?.execute || typeof resolvePolicy !== 'function' || typeof verifyPrincipal !== 'function' || typeof clock !== 'function' || typeof nextId !== 'function' || !tokens?.mint || !tokens?.hash) throw new TypeError('Work decision dependencies required');
@@ -53,6 +59,7 @@ export class WorkDecisions {
     this.#clock = clock;
     this.#id = nextId;
     this.#tokens = tokens;
+    this.#describe = describeProvider;
     this.#logger = logger;
   }
   async #change(username, id, asOf, build) {
@@ -112,7 +119,7 @@ export class WorkDecisions {
         domain = policy.domains[cmd.domainId],
         provider = policy.providers[domain.provider];
       let label = cmd.operation === 'transition' ? `Move to ${domain.transitions?.[cmd.payload.transition] ?? 'unavailable'}` : labels[cmd.operation];
-      if (provider.type === 'clickup' && cmd.operation.endsWith('_container')) label = label.replace('project', 'List');
+      if (cmd.operation.endsWith('_container')) label = label.replace('project', this.#describe(provider).containerNoun);
       const title = cmd.operation.startsWith('create_') ? cmd.payload.title : record.display?.title ?? record.intent.title ?? cmd.ref?.id;
       const destination = record.display?.destinationTitle ?? cmd.domainId;
       const changes = [...(cmd.payload.assigneeId ? [`assigned to: ${cmd.payload.assigneeId}`] : cmd.payload.assigneeIds ? [`assigned to: ${cmd.payload.assigneeIds.join(', ')}`] : []), ...(cmd.operation === 'rename_container' || cmd.operation === 'update_task' && cmd.payload.title ? [`new name: “${cmd.payload.title}”`] : []), ...(cmd.payload.description !== undefined ? [`description: ${cmd.payload.description.slice(0, 500)}`] : []), ...(cmd.payload.dueDate ? [`due: ${cmd.payload.dueDate}`] : []), ...(cmd.operation === 'transition' ? [`status: ${domain.transitions?.[cmd.payload.transition] ?? 'unavailable'}`] : [])];

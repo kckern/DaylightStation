@@ -533,6 +533,45 @@ it('presents a separately named Archive task confirmation', async () => {
   });
   expect(page.choices[0][0].text).toBe('Archive task');
 });
+it.each([['List', 'Archive List'], ['project', 'Archive project']])('labels container operations with the descriptor noun %s, not a provider type', async (containerNoun, expected) => {
+  const x = await setup(),
+    s = await x.state.read({
+      username: 'sample'
+    });
+  x.policy.providers.p.type = 'tasks-x';
+  const record = s.commands[x.commandId];
+  const command = {
+    ...record.command,
+    id: 'command.' + 'e'.repeat(64),
+    operation: 'archive_container'
+  };
+  await x.state.transact({
+    username: 'sample',
+    id: 'archive-container-fixture',
+    expectedRevision: s.revision,
+    asOf: AS_OF,
+    events: [{
+      type: 'command.queued',
+      record: {
+        ...record,
+        command
+      }
+    }]
+  });
+  const decisions = new WorkDecisions({
+    ...x.options,
+    describeProvider: () => ({
+      containerNoun,
+      assigneeField: 'single'
+    })
+  });
+  const page = await decisions.prepare({
+    principal: x.principal,
+    commandId: command.id,
+    asOf: AS_OF
+  });
+  expect(page.choices[0][0].text).toBe(expected);
+});
 
 async function webSetup() {
   const x = await setup();
