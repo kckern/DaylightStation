@@ -18,7 +18,18 @@ order to try things. `dd` is the fleet CLI for the device (see Placeholders).
 
 1. **Does the lifeline answer?** `dd lifeline status`. The lifeline is the shell's
    own port and answers when the payload is broken.
-   - It answers and `payload.active` is null or `lastError` is set:
+   - Read the payload's `active`, `current`, `previous`, `baked`, `lastError` and
+     `recoveryReason` fields. A cleanup timeout or failed cleanup with no active
+     payload fences this process. Record the status and lifeline log. Same-process
+     rollback and restart return `refused: process recovery required`.
+     During the approved sitting, with the fallback supervised, stop the application
+     process normally and start its service again using the stage 4 keep-alive
+     broadcast. Verify it starts in a fresh process. The shell extracts the
+     installed APK's baked payload and clears the old rollback pointer. Check
+     lifeline and control status, `active == current == baked`, the archived baked
+     version, `previous: null` and the retained `recoveryReason`. If baked startup
+     fails, keep the fallback and record the reason for the next recovery sitting.
+   - For an ordinary recoverable payload failure with a known previous payload:
      `dd lifeline rollback` (the previous payload), then `dd lifeline restart`.
    - The payload cannot start with the stored settings: `dd lifeline reset-settings`.
      This deletes every stored override and its backup. Secrets (`lockdown.exitPin`,
@@ -140,9 +151,8 @@ paste a token into a command, a note or this file.
 The Portal's device owner today is the old helper (`net.kckern.portalkeys`). Owner
 mode in this app needs ownership to be moved to it, with
 `DevicePolicyManager.transferOwnership` (Android 9, API 28). **That call has never
-been made on this firmware.** Until it has been made in both directions, with
-lockdown off, this device is cut over in `app` mode and the old helper keeps
-ownership.
+been made on this firmware.** A successful rehearsed return to the legacy owner with lockdown off is required
+before permanent transfer or lockdown.
 
 Follow the [Portal cutover prerequisites](portal-cutover.md#before-the-sitting-no-device-contact)
 for legacy shell 36 and payload `p10-ordered-owner-transfer`. Record the approved
@@ -170,21 +180,21 @@ Rehearsal, with lockdown off on both apps' sides and someone at the panel:
        `pkctl kiosk-verify`: the old helper holds the device as in step 1.
 6. [ ] Reboot once and repeat step 5's check.
 
-If a transfer is refused (the answer carries the exception's class and message):
+A failed, refused, timed-out or ambiguous transfer in either direction stops
+the sitting before permanent transfer or lockdown. Record the actual current owner
+from Android device policy and cross-check the app's owner status, firmware,
+direction, response and timestamp. Keep someone at the panel.
 
-- **Out refused.** The old helper is still the owner with its policy released and
-  held. `pkctl resume-policy` puts it back. This device is cut over in `app` mode:
-  leave `lockdown.mode` at `auto` (it resolves to `app` while this app is not the
-  owner), and expect no lock task, no hidden packages and no remote reboot.
-- **Back refused.** This app is still the owner with its policy released and the
-  hold set. `dd lockdown owner resume` applies owner policy again when wanted.
-  The old helper then has no owner authority; decide whether to stay on this app.
-- Record the firmware build, the exception and which direction, in the Record
-  table. Do not retry in a loop.
+- If portal-keys owns the panel, resume its policy and verify Fully is pinned.
+- If Daylight owns it, leave lockdown off and the owner hold in place. Use the
+  approved reverse transfer as a supervised recovery and verify the old owner's
+  policy and Fully HOME. A failed return leaves the device supervised with
+  the reversible configuration in place. Record who has custody.
+- If the owner is unclear, keep both packages installed and stop mutations until
+  the owner can be established. Retain the USB recovery path.
 
-For the cutover itself, ownership is moved out once more (step 2) just before
-stage 10's lock step, and `dd lockdown owner resume` is what makes this app act
-as owner.
+Resume permanent transfer only at an approved sitting after a clean forward
+transfer, successful rehearsed return and verification of the legacy policy.
 
 ## Stage 1. Pre-flight
 
@@ -658,13 +668,8 @@ the device and time to spare. Stage 8 is complete on this device.
         stored overrides, which a lifeline settings reset deletes. In
         `devices/<device>.yml` set `lockdown.required: true`, set this device's
         coexistence switches to `true`, and copy `lockdown.allowedApps`,
-        `launcher.allowed` and `webview.allowedOrigins` in as defaults. Bump
-        `shell.versionCode`, rebuild, `verify-build`, and install with
-        `dd update <apk-url> <sha256>`. Afterwards `dd lockdown` reads
-        `required: true`; `dd settings set lockdown.enabled false` answers 400;
-        `dd lifeline reset-settings` leaves the device locked (set the secrets
-        again after it). From here lockdown is relaxed only by an unlock, which
-        always ends.
+        `launcher.allowed` and `webview.allowedOrigins` in as defaults. Complete the [permanent build qualification](#permanent-build-qualification)
+        before approving this kiosk for its soak.
 
 **Escape attempts.** Each one should end with the kiosk back in front within
 about two seconds, `recallsSinceBoot` one higher, and `lastRecall` naming what was
@@ -788,3 +793,23 @@ Portal ownership transfer (`transferOwnership`, API 28, untested on this firmwar
 |---|---|---|---|---|
 | Old helper to this app | | | | |
 | This app to old helper | | | | |
+
+
+## Permanent build qualification
+
+The pre-cutover archive qualifies only its recorded bytes. For each kiosk,
+review the permanent device defaults and commit the exact source. Assign a
+higher shell versionCode than the installed build and record the payload
+version. Run the affected backend, browser, CLI, JVM, device-assembly and
+packaging tests against that source. Build the device release, compare the
+standalone and APK-embedded payload digests and verify the APK signer matches
+the installed signer. Archive source revision, versions, test results, signer
+fingerprint, APK and payload bytes and SHA-256 digests privately.
+
+At the approved sitting, verify the archived hashes before installing the
+exact APK with existing data preserved. Confirm installed version and signer,
+active baked payload, lifeline, required lockdown and HOME. Repeat the device's
+post-install workflow and cold-boot checks with the legacy helper stopped.
+Record observed results, time and rollback outcome. Start that kiosk's 14-day
+soak only after those checks pass. A failed check keeps the gate open and the
+fallback available.

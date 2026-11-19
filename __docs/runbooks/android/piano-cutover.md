@@ -77,7 +77,7 @@ container, as in a deploy.
 | 13 | `acc --active --fps-baseline <fps> --rtt-baseline <rtt>`, then each MANUAL line: escapes, touch and the PIN prompt, synth audible on the speaker and no sound when the speaker is off, a pairing started from the page keeps Android's dialog in front, five minutes without WiFi | no FAIL | stage 11 |
 | 14 | Device owner, only with the owner's go-ahead: remove the Google account in Settings, `adb -s <serial> shell dpm set-device-owner net.kckern.daylight.piano/net.kckern.daylight.cap.lockdown.shell.DaylightAdminReceiver`, re-add the account; `dd lockdown owner resume` | `deviceOwner: true`, `mode: owner` | the app has no route that gives ownership up: `dd lockdown owner release` undoes every owner policy, and removing ownership itself takes a factory reset. If `set-device-owner` is refused, stay in `app` mode and record why |
 | 15 | `acc --only reboot --reboot` with lockdown on (ADB check after); then `acc --only logstore --log-store {log-store-url}` | PASS | stage 11 |
-| 16 | The next day: make it permanent (stage 10 step 12). In `devices/piano.yml`: `cutover: done`, `lockdown.enabled` and `lockdown.required` `true`, `midi.enabled`, `speaker.enabled` `true`, `logstore.app` as chosen | `required: true`; `node --test tools/roadmap-capabilities.test.mjs` passes | `dd update` with `required: false` |
+| 16 | The next day: make it permanent (stage 10 step 12). In `devices/piano.yml`: `cutover: done`, `lockdown.enabled` and `lockdown.required` `true`, `midi.enabled`, `speaker.enabled` `true`, `logstore.app` as chosen Complete the [permanent build qualification](kiosk-cutover.md#permanent-build-qualification). | Exact installed bytes pass the post-install workflow and cold-boot checks. Record approval and results. | Hold the soak and use the documented reversible recovery. |
 
 Rollback for the backend alone (stage 11 step 8 on this tablet): set the
 devices.yml entry back to `fully-kiosk`, remove `bridge_provider`, and set
@@ -88,7 +88,7 @@ device says `fully-kiosk`, and must not watch the old bridge before it runs.
 
 ## The soak: two weeks
 
-Starts the day step 16 is done. Fully and the old bridge stay installed and stopped.
+Starts after step 16's newly qualified permanent build passes its recorded post-install checks. Fully and the old bridge stay installed and stopped.
 
 Watched daily, read-only:
 
