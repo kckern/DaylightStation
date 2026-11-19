@@ -6,7 +6,7 @@ const apiMock = vi.fn();
 vi.mock("../../../../../frontend/src/lib/api.mjs", () => ({ DaylightAPI: (...a) => apiMock(...a) }));
 
 import { LogTable } from "./LogTable.jsx";
-import { isDragDeadZone, useMealMoves, MOVED_HIGHLIGHT_MS } from "./mealDrag.jsx";
+import { isDragDeadZone, useMealMoves, MOVED_HIGHLIGHT_MS, dayEntries } from "./mealDrag.jsx";
 import { HealthOperationsProvider, useHealthOperations } from "../operations/HealthOperationsProvider.jsx";
 
 const wrapper = ({ children }) => <MantineProvider>{children}</MantineProvider>;
@@ -615,5 +615,20 @@ describe('dragging a row onto a day', () => {
     const iso = `${yesterday.getFullYear()}-${String(yesterday.getMonth() + 1).padStart(2, '0')}-${String(yesterday.getDate()).padStart(2, '0')}`;
     expect(onMoveToDay).toHaveBeenCalledWith([expect.objectContaining({ uuid: 'eggs' })], iso, 'morning');
     expect(screen.queryByLabelText('Drop on a day to move it')).toBeNull();
+  });
+});
+
+describe('dayEntries', () => {
+  const ids = rows => rows.map(row => row.uuid);
+  it('reads a day as the page shows it: each meal on its own, then Ungrouped', () => {
+    const stew = { uuid: 'stew', kind: 'group', mealTime: 'evening' };
+    const entries = dayEntries([{ uuid: 'loose', mealTime: null }, { uuid: 'odd', mealTime: 'brunch' }, stew,
+      { uuid: 'carrot', parentId: 'stew', mealTime: 'evening' }, { uuid: 'stray', parentId: 'stew', mealTime: 'morning' }, { uuid: 'lost', parentId: 'gone', mealTime: 'morning' }]);
+    expect(ids(entries).sort()).toEqual(['loose', 'lost', 'odd', 'stew', 'stray']);
+    expect(ids(entries).slice(-2)).toEqual(['loose', 'odd']);
+    expect(ids(entries.find(row => row.uuid === 'stew').children)).toEqual(['carrot']);
+  });
+  it('leaves out a food that is still saving', () => {
+    expect(ids(dayEntries([{ uuid: 'pending-1', mealTime: 'morning' }, { uuid: 'eggs', mealTime: 'morning' }]))).toEqual(['eggs']);
   });
 });

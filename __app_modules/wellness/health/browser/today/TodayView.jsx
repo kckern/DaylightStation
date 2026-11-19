@@ -25,7 +25,8 @@ import { useAfterFirstPaint } from "./useAfterFirstPaint.js";
 import { useIsWideViewport } from "./layout.js";
 import { LogTable } from "./LogTable.jsx";
 import { MealAddRow } from "./MealAddRow.jsx";
-import { useMealMoves, mealEntries, MoveResult } from "./mealDrag.jsx";
+import { DayInputBar } from "./DayInputBar.jsx";
+import { useMealMoves, mealEntries, dayEntries, MoveResult } from "./mealDrag.jsx";
 import { dayLabel } from "./moveDays.js";
 import { MoveDayItems } from "./MoveDayControl.jsx";
 import { NeedsReviewSection } from "./NeedsReviewSection.jsx";
@@ -422,6 +423,25 @@ export function TodayView({ active = true, sidebarTarget, followUpTarget = null,
     report(await moves.moveFromDay(entries, iso, elsewhere ? items : null, { onRetryable }));
   };
 
+  // A reply from the day input, for the day it was asked on (`asked`), which may
+  // no longer be the one on screen. Added food gets the capture toast; a move or
+  // a change gets the service's sentence with Undo; anything else is a notice.
+  const handleDayInput = (result, { date: asked }) => {
+    const notify = message => { if (message) { setCaptureRetry(null); setCaptureNotice(message); } };
+    if (result?.outcome !== 'committed') { notify(result?.message); return; }
+    day.reload(); pendingReview.reload();
+    if (!captureRetry) setCaptureNotice(null);
+    // A replayed reply can come without the flag the capture toast reads.
+    if (result.kind === 'added' && offerAddedFood({ ...result, committed: true }, asked, { added: true })) return;
+    if (!result.undoToken) { notify(result.message); return; }
+    mealUndoOperation.current = null;
+    const rows = result.items || [];
+    const moved = { ids: [...new Set([...(result.entryIds || []), ...(result.affectedIds || []), ...rows.map(entryId)].map(String))],
+      logIds: [...new Set(rows.map(row => row.logId).filter(Boolean))], toDate: result.toDate ?? null };
+    setCaptureToasts(state => announceCapture(result.kind === 'moved' ? afterCompletedMove(state, moved) : state,
+      { token: result.undoToken, label: result.message || 'Day updated' }));
+  };
+
   const handleCaptureResult = (result, bucket = null, targetDate = date, context = {}) => {
     // Offer the retry BEFORE the message is rendered, so the sentence that
     // says the recording is saved arrives with the button that uses it.
@@ -631,6 +651,8 @@ export function TodayView({ active = true, sidebarTarget, followUpTarget = null,
       {!day.error && observations.error && !observations.data ? <ErrorState error={observations.error} onRetry={observations.reload} label="Measurements unavailable" /> : null}
       {refreshFailed ? <Button variant="subtle" size="compact-xs" color="gray" className="health-refresh-failed" onClick={day.reload}>
         Couldn't refresh · Retry</Button> : null}
+      <DayInputBar date={date} today={todayISO()} active={active} entries={dayEntries(movedDay.items)} onResult={handleDayInput}
+        onMoveDay={moves.moveToDay} />
       <LogTable clarifications={mealClarifications} onClearClarification={clearMealClarification} byBucket={preview.byBucket} date={date} sessions={preview.budget?.sessions || []}
         exerciseAvailable={Boolean(day.budget)}
         fastedMeals={day.dayStatus?.fastedMeals || []} onMealFastChanged={day.reload}

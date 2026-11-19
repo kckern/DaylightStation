@@ -20,7 +20,8 @@ import {
 import { createAppLogger } from "../../../../../frontend/src/lib/ui/createAppLogger.js";
 import { FoodIcon } from "./FoodIcon.jsx";
 import { entryError, entryId, entryLabel, isEntryConflict } from "./entryCommands.js";
-import { bucketLabel } from "./mealBuckets.js";
+import { BUCKETS, bucketLabel } from "./mealBuckets.js";
+import { isProvisionalRow } from "../healthResources.js";
 import { groupRows } from "./groupRows.js";
 import { dayDropId, dayFromDropId, dayLabel } from "./moveDays.js";
 import { localTodayISO } from "./mealBuckets.js";
@@ -114,6 +115,18 @@ export function useDraggableRow(row, bucket, { disabled = false } = {}) {
 
 /** A meal's flat rows as its top-level entries, each dish carrying its ingredients. */
 export const mealEntries = rows => groupRows(rows || []).map(({ row, children }) => (children.length ? { ...row, children } : row));
+
+/**
+ * A whole day's top-level entries, as the page shows them: each meal grouped on
+ * its own, then Ungrouped. A part stranded in another meal is its own entry there.
+ * A food still saving has no server row to move yet.
+ */
+export const dayEntries = rows => {
+  const saved = (rows || []).filter(row => !isProvisionalRow(row));
+  const known = new Set(BUCKETS.map(bucket => bucket.id));
+  return [...BUCKETS.map(bucket => saved.filter(row => row.mealTime === bucket.id)),
+    saved.filter(row => !known.has(row.mealTime))].flatMap(mealEntries);
+};
 
 /** A whole meal, dragged by its header onto another meal. `rows` are its top-level entries (dishes carry children). */
 export function useDraggableMeal(bucket, rows) {

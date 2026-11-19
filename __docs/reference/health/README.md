@@ -511,6 +511,43 @@ not the current hour. The resolved bucket is stored on each entry.
   retries under the same operation ID. Logs: `entry.move`, `meal.move`, `*.undo`,
   `entry.move.failed`, `entry.move.undo-failed`.
 
+### Day input (`DayInputBar.jsx`)
+
+One row directly above the meals logs a whole day or corrects it, by typing or by
+voice: "eggs for breakfast, burrito at lunch", "move the drinks to snacks", "that was
+whole milk". It posts to `POST /nutrition/day-input`.
+
+- **The day belongs to the request.** A request keeps the day it was made on, and so
+  does its question or error, which names that day if the page has moved on. A
+  recording belongs to the day it was started on.
+- **One at a time.** While a request runs the field is read-only and keeps focus, Send
+  shows its spinner, and a second send is ignored. A recording that ends meanwhile goes
+  next.
+- **Operation IDs.** Every submission and every answer gets a new ID. Trying a failed
+  request again (**Try again**, or Send with the same words on the same day) reuses its
+  ID, so a request that did commit is replayed and not done twice.
+- **Questions.** "Which food?" and "Which day?" open under the bar. An answer resends
+  the same words with every answer so far: the text the server reports, else the words
+  that were sent. A recording with no reported words is sent again.
+- **Failures.** The server's sentence is shown and typed words stay in the field. A
+  refusal offers no retry. A failure carrying `audioRef` retries from the saved recording
+  under the same ID, so nothing is recorded twice. A 503 affects only this bar.
+- **Results.** Added food gets the capture toast with its day buttons. A move or change
+  gets the service's sentence and an Undo through `POST /nutrition/meal-undo`, and a move
+  retires capture toasts for the food it took. "No change" and "no food" are notices,
+  and the words stay to be edited. Committed work refreshes the viewed day and every
+  other loaded Health day.
+- **Layout.** The bar is one row of constant height. Questions and errors open over the
+  page below it, and its requests never appear in a meal's status rows. On a phone, every
+  control is at least 44 px and the whole-day move shows as an icon.
+- **Move this day's food.** The button appears when the day has food and opens a sheet
+  of its top-level rows, all ticked: each meal as the page groups it, then Ungrouped, so
+  a broken-link row is its own line and a dish is one line. Foods still saving are left
+  out. It uses `moveToDay`, so it is one atomic move with one Undo. The sheet closes only
+  after a real move. A refused move keeps the unticks, and foods already on that day say so.
+- Logs (`health` / `day-input`): `day-input.submit`, `.result`, `.clarification`,
+  `.failed`, `.move-day.open`, `.move-day.result`.
+
 ### Moving food to another day
 
 Same rows, different `date` (the meal is kept; a dish moves with its ingredients).

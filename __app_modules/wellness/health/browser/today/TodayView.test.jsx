@@ -378,19 +378,19 @@ describe('TodayView — Task 4.2: per-meal capture buttons + the moved cue', () 
   });
 });
 
-describe('TodayView — capture lives only in the meal add rows', () => {
+describe('TodayView — capture lives in the meal add rows and the one day input', () => {
   beforeEach(() => { apiMock.mockReset(); resetApiResourceCache(); });
 
-  it('renders no page-level capture bar and no footer capture controls', async () => {
+  it('renders no other page-level capture bar and no footer capture controls', async () => {
     apiMock.mockImplementation(baseApi());
     r(<TodayView onSetupGoals={() => {}} onCoachTap={() => {}} />);
     await waitFor(() => screen.getByText('Lunch'));
     expect(screen.queryByRole('textbox', { name: 'Capture meal' })).toBeNull();
     expect(screen.queryByRole('button', { name: /^Quick add to/ })).toBeNull();
-    // No BARE (bucket-less) capture trigger exists anywhere — every mocked
-    // instance carries a `-{bucket}` suffix, i.e. came from a meal's add row.
+    // Every other mocked instance carries a `-{bucket}` suffix, i.e. came from
+    // a meal's add row. The day input's microphone is the only one without.
     expect(screen.queryByText('MockPhotoCapture')).toBeNull();
-    expect(screen.queryByText('MockVoiceCapture')).toBeNull();
+    expect(screen.getByText('MockVoiceCapture').closest('.health-day-input')).toBeTruthy();
     expect(document.querySelector('.health-footer__actions')).toBeFalsy();
   });
 });
@@ -1407,7 +1407,8 @@ describe('TodayView — the day fix after every kind of add', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Breakfast actions' }));
     fireEvent.click(await screen.findByRole('menuitem', { name: 'Copy to today' }));
     expect(await screen.findByText('Breakfast copied to today.')).toBeTruthy();
-    expect(screen.queryByRole('button', { name: /^Move/, hidden: true })).toBeNull();
+    // The day input's own whole-day button is always on a day with food.
+    expect(screen.queryByRole('button', { name: /^Move(?! this day's food$)/, hidden: true })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Other day…', hidden: true })).toBeNull();
     expect(offersLogged()).toHaveLength(0);
   });
