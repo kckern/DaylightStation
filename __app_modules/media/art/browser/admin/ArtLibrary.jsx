@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { TextInput, Group, Switch, Badge, Button } from '@mantine/core';
 import getLogger from "../../../../../frontend/src/lib/logging/Logger.js";
-import { useAdminConfig } from "../../../../../frontend/src/hooks/admin/useAdminConfig.js";
+import { useApiResource } from "../../../../../frontend/src/lib/hooks/useApiResource.js";
 import { useTemporaryIndicator } from "../../../../../frontend/src/lib/hooks/useTemporaryIndicator.js";
 import { ErrorState } from "../../../../../frontend/src/lib/ui/states.jsx";
 import { useArtCuration } from "./useArtCuration.js";
@@ -23,12 +23,12 @@ export default function ArtLibrary() {
   const [saved, flash] = useTemporaryIndicator(800);
   const searchRef = useRef(null);
 
-  const cfg = useAdminConfig(configPath('art'));
-  const loadSettings = useCallback(() => cfg.load().catch(() => {
-    // useAdminConfig records the failure for the settings retry control.
-  }), [cfg.load]);
-  useEffect(() => { loadSettings(); }, [loadSettings]);
-  const quickTags = useMemo(() => cfg.data?.quickTags || [], [cfg.data?.quickTags]);
+  const settingsPath = `/api/v1/admin/config/files/${configPath('art')}`;
+  const { data: settings, error: settingsError, reload: reloadSettings } = useApiResource(settingsPath, {
+    label: 'Admin Art settings',
+    retryTransient: false,
+  });
+  const quickTags = useMemo(() => settings?.parsed?.quickTags || [], [settings?.parsed?.quickTags]);
 
   const {
     works, focused, index, loading, error, reload, autoAdvance,
@@ -162,7 +162,7 @@ export default function ArtLibrary() {
         {quickTags.length ? ` · 1–${quickTags.length} quick-tag` : ''} · X hide · F flag · E edit · A auto-advance · U undo
       </div>
 
-      {cfg.error && <ErrorState label="Artwork settings" error={cfg.error} onRetry={loadSettings} />}
+      {settingsError && <ErrorState label="Artwork settings" error={settingsError} onRetry={reloadSettings} />}
       <ArtErrorBoundary>
         {error ? <ErrorState label="Artwork" error={error} onRetry={reload} />
           : loading ? <div className="art-library__loading">Loading…</div>

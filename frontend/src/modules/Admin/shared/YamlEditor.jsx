@@ -2,11 +2,13 @@ import React, { useEffect, useRef } from 'react';
 import { Alert } from '@mantine/core';
 import { IconAlertTriangle } from '@tabler/icons-react';
 import { EditorView } from '@codemirror/view';
-import { EditorState } from '@codemirror/state';
+import { Annotation, EditorState } from '@codemirror/state';
 import { basicSetup } from 'codemirror';
 import { yaml } from '@codemirror/lang-yaml';
 import { oneDark } from '@codemirror/theme-one-dark';
 import './YamlEditor.scss';
+
+const externalSync = Annotation.define();
 
 /**
  * YamlEditor - A reusable syntax-highlighted YAML editor using CodeMirror 6
@@ -41,7 +43,7 @@ function YamlEditor({ value = '', onChange, readOnly = false, error = null, heig
         '.cm-scroller': { overflow: 'auto' },
       }),
       EditorView.updateListener.of((update) => {
-        if (update.docChanged && onChangeRef.current) {
+        if (update.docChanged && !update.transactions.some(transaction => transaction.annotation(externalSync)) && onChangeRef.current) {
           onChangeRef.current(update.state.doc.toString());
         }
       }),
@@ -80,6 +82,7 @@ function YamlEditor({ value = '', onChange, readOnly = false, error = null, heig
     const currentContent = view.state.doc.toString();
     if (value !== currentContent) {
       view.dispatch({
+        annotations: externalSync.of(true),
         changes: {
           from: 0,
           to: currentContent.length,

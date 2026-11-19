@@ -19,7 +19,7 @@ const API_BASE = '/api/v1/admin/config/files';
 export function useAdminConfig(filePath) {
   const logger = useMemo(() => getLogger().child({ hook: 'useAdminConfig', filePath }), [filePath]);
   const resourcePath = `${API_BASE}/${filePath}`;
-  const { data: loaded, loading: readLoading, error: readError, resourceKey } = useApiResource(resourcePath, {
+  const { data: loaded, loading: readLoading, error: readError } = useApiResource(resourcePath, {
     label: `Admin config ${filePath}`,
     retryTransient: false,
   });
@@ -37,12 +37,15 @@ export function useAdminConfig(filePath) {
   const data = draftMatches ? draft.data : null;
   const raw = draftMatches ? draft.raw : '';
   const dirty = draftMatches && draft.dirty;
-  const loading = readLoading;
+  // Keep the form behind its loader until the selected resource has been
+  // copied into the keyed local draft. A failed read still needs to expose
+  // its error instead of waiting forever for a draft that cannot hydrate.
+  const loading = readLoading || (!readError && !draftMatches);
   const saving = savingPath === filePath;
   const error = (commandError?.filePath === filePath ? commandError.error : null) || visibleReadError;
 
   useEffect(() => {
-    if (readLoading || resourceKey !== resourcePath || readError) return;
+    if (readLoading || readError) return;
     const loadedData = loaded?.parsed ?? null;
     const loadedRaw = loaded?.raw ?? '';
     setDraft(current => current.filePath === filePath && current.dirty
@@ -50,7 +53,7 @@ export function useAdminConfig(filePath) {
       : { filePath, data: loadedData, raw: loadedRaw, dirty: false });
     originalRef.current = { filePath, data: loadedData, raw: loadedRaw };
     logger.info('admin.config.loaded', { filePath });
-  }, [filePath, loaded, logger, readError, readLoading, resourceKey, resourcePath]);
+  }, [filePath, loaded, logger, readError, readLoading, resourcePath]);
 
   // Save config to the API
   const save = useCallback(async ({ useRaw = false } = {}) => {
@@ -58,7 +61,7 @@ export function useAdminConfig(filePath) {
     setCommandError(null);
     try {
       const body = useRaw ? { raw } : { parsed: data };
-      const result = await DaylightAPI(`${API_BASE}/${filePath}`, body, 'PUT');
+      const result = await DaylightAPI(resourcePath, body, 'PUT');
       // After a successful save, update the originals so revert goes back to saved state
       const savedData = result.parsed ?? data;
       const savedRaw = result.raw ?? raw;
@@ -95,7 +98,7 @@ export function useAdminConfig(filePath) {
     } finally {
       setSavingPath(current => current === filePath ? null : current);
     }
-  }, [filePath, data, raw, logger]);
+  }, [filePath, resourcePath, data, raw, logger]);
 
   // Revert to the last-loaded values
   const revert = useCallback(() => {
