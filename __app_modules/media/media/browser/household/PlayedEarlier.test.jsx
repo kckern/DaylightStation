@@ -31,7 +31,6 @@ beforeEach(() => {
     if (method && method !== 'GET') return Promise.resolve({ ok: true });
     if (path.startsWith('api/v1/media/screens/livingroom-tv/played-earlier')) return Promise.resolve({ deviceId: 'fleet:livingroom-tv', items: rows });
     if (path === 'api/v1/media/household/favourites') return Promise.resolve({ items: [] });
-    if (path === 'api/v1/media/screens') return Promise.resolve({ screens: [] });
     return Promise.reject(new Error(path));
   });
 });

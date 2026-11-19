@@ -33,7 +33,9 @@ export function useScreenRegistry({ api = defaultApi, pollMs = REGISTRY_POLL_MS 
       if (!isCurrent()) return;
       const unavailable = error?.status === 501 || error?.status === 404;
       houseLog.registryFailed({ status: error?.status ?? null, error: error?.message, unavailable });
-      setState((prev) => ({ ...prev, loaded: true, available: !unavailable && prev.available, error: unavailable ? null : error }));
+      setState(prev => unavailable
+        ? { ...EMPTY, loaded: true, available: false, error: null }
+        : { ...prev, loaded: true, error });
     }
   }, [api]);
 

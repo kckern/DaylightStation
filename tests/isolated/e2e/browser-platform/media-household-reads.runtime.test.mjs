@@ -7,6 +7,194 @@ test.beforeEach(async ({ page }) => {
   await page.routeWebSocket('**/*', () => {});
 });
 
+function mockRegistryVisibility(page) {
+  return page.addInitScript(() => {
+    window.registryFixtureVisible = true;
+    Object.defineProperty(document, 'visibilityState', {
+      get: () => window.registryFixtureVisible ? 'visible' : 'hidden',
+    });
+  });
+}
+
+function returnToForeground(page) {
+  return page.evaluate(() => {
+    window.registryFixtureVisible = false;
+    document.dispatchEvent(new Event('visibilitychange'));
+    window.registryFixtureVisible = true;
+    document.dispatchEvent(new Event('visibilitychange'));
+  });
+}
+
+test('Media Home and the open cast picker share screen names and rooms', async ({ page }) => {
+  const item = {
+    contentId: 'plex:123', title: 'Fixture Film', type: 'movie',
+    spots: [
+      { playhead: 720, duration: 7200, deviceId: 'fleet:lounge' },
+      { playhead: 4800, duration: 7200, deviceId: 'fleet:projector' },
+    ],
+  };
+  let screens = [
+    { id: 'fleet:lounge', name: 'Den TV', room: 'Den' },
+    { id: 'fleet:projector', name: 'Projector', room: 'Den' },
+  ];
+  let registryReads = 0;
+  await mockRegistryVisibility(page);
+  await page.route('**/api/**', route => {
+    const { pathname } = new URL(route.request().url());
+    if (pathname.endsWith('/supervision/bootstrap')) return route.fulfill({ json: { enabled: false } });
+    if (pathname.endsWith('/device/config')) {
+      return route.fulfill({ json: { devices: {
+        lounge: { name: 'Configured lounge', fleet: true },
+        projector: { name: 'Configured projector', fleet: true },
+      } } });
+    }
+    if (pathname === '/api/v1/media/suggestions') {
+      return route.fulfill({ json: { rows: [{ id: 'carry-on', title: 'Carry on', items: [item] }] } });
+    }
+    if (pathname === '/api/v1/media/household/carry-on') return route.fulfill({ json: { items: [item] } });
+    if (pathname === '/api/v1/media/screens') {
+      registryReads += 1;
+      return route.fulfill({ json: { screens } });
+    }
+    return route.fulfill({ json: {} });
+  });
+
+  await page.goto('/media');
+  const tile = page.getByTestId('home-tile-carry-on-plex:123');
+  await expect(tile).toContainText('12 m on Den TV');
+  await page.getByTestId('home-tile-carry-on-plex:123-more').click();
+  await page.getByRole('menuitem', { name: 'Play on…', exact: true }).click();
+  const picker = page.getByRole('dialog', { name: 'Play on…', exact: true });
+  await picker.getByTestId('picker-multi-toggle').click();
+  const lounge = picker.getByTestId('picker-device-lounge');
+  const projector = picker.getByTestId('picker-device-projector');
+  await lounge.click();
+  await projector.click();
+  const warning = picker.getByTestId('picker-drift-warning');
+  await expect(warning).toContainText('are both in Den');
+  expect.soft(registryReads, 'Home and the cast picker use the same initial registry read').toBe(1);
+
+  screens = [{ ...screens[0], name: 'Lounge TV', room: 'Lounge' }, screens[1]];
+  await returnToForeground(page);
+  await expect(lounge).toContainText('Lounge TV');
+  await expect(warning).toBeHidden();
+  await expect(lounge).toHaveAttribute('aria-pressed', 'true');
+  await expect(projector).toHaveAttribute('aria-pressed', 'true');
+  await page.keyboard.press('Escape');
+  await expect(picker).toBeHidden();
+  await expect(tile).toContainText('12 m on Lounge TV');
+  expect(registryReads).toBe(2);
+});
+
+test('Media screen settings show a saved name when saving its room fails', async ({ page }) => {
+  let screen = { id: 'fleet:lounge', name: 'Den TV', room: 'Den' };
+  const writes = [];
+  let registryReads = 0;
+  let roomUnavailable = true;
+  await page.route('**/api/**', route => {
+    const request = route.request();
+    const path = decodeURIComponent(new URL(request.url()).pathname);
+    if (path.endsWith('/supervision/bootstrap')) return route.fulfill({ json: { enabled: false } });
+    if (path === '/api/v1/media/screens') {
+      registryReads += 1;
+      return route.fulfill({ json: { screens: [screen] } });
+    }
+    if (path === '/api/v1/media/screens/fleet:lounge' && request.method() === 'PATCH') {
+      const body = request.postDataJSON();
+      writes.push(body);
+      if ('room' in body && roomUnavailable) return route.fulfill({ status: 409, json: { error: 'Room unavailable' } });
+      screen = { ...screen, ...body };
+      return route.fulfill({ json: { screen, routines: [] } });
+    }
+    return route.fulfill({ json: {} });
+  });
+
+  await page.goto('/media?view=screens');
+  const row = page.getByTestId('screen-admin-item-fleet:lounge');
+  await expect(row).toContainText('Den TV');
+  await row.getByTestId('screen-admin-rename-fleet:lounge').click();
+  await page.getByTestId('screen-admin-rename-name').fill('Lounge TV');
+  await page.getByTestId('screen-admin-rename-room').fill('Lounge');
+  await page.getByTestId('screen-admin-rename-save').click();
+  await expect(page.getByTestId('screen-admin-rename-error')).toContainText('Room unavailable');
+  await expect(row).toContainText('Lounge TV');
+  await expect(row).toContainText('· Den');
+  expect(writes).toEqual([{ name: 'Lounge TV' }, { room: 'Lounge' }]);
+  expect(registryReads).toBe(2);
+
+  roomUnavailable = false;
+  await page.getByTestId('screen-admin-rename-save').click();
+  await expect(page.getByTestId('screen-admin-rename-dialog')).toBeHidden();
+  await expect(row).toContainText('· Lounge');
+  expect(writes).toEqual([{ name: 'Lounge TV' }, { room: 'Lounge' }, { room: 'Lounge' }]);
+});
+
+test('Media device settings keep a room draft after saving the name', async ({ page }) => {
+  let screen;
+  let roomUnavailable = true;
+  const writes = [];
+  await page.route('**/api/**', route => {
+    const request = route.request();
+    const path = decodeURIComponent(new URL(request.url()).pathname);
+    if (path.endsWith('/supervision/bootstrap')) return route.fulfill({ json: { enabled: false } });
+    if (path === '/api/v1/media/screens') return route.fulfill({ json: { screens: screen ? [screen] : [] } });
+    if (path.startsWith('/api/v1/media/screens/browser:') && request.method() === 'PATCH') {
+      const body = request.postDataJSON();
+      writes.push(body);
+      if ('room' in body && roomUnavailable) return route.fulfill({ status: 409, json: { error: 'Room unavailable' } });
+      screen = { id: path.split('/').at(-1), room: null, ...screen, ...body };
+      return route.fulfill({ json: { screen, routines: [] } });
+    }
+    return route.fulfill({ json: {} });
+  });
+
+  await page.goto('/media');
+  await page.getByRole('button', { name: 'Settings', exact: true }).click();
+  await page.getByTestId('settings-rename-device').click();
+  const room = page.getByTestId('settings-rename-room');
+  await page.getByTestId('settings-rename-name').fill('Kitchen Tablet');
+  await room.fill('Kitchen');
+  await page.getByTestId('settings-rename-save').click();
+  await expect(page.getByTestId('settings-rename-error')).toContainText('Room unavailable');
+  await expect(room).toHaveValue('Kitchen');
+
+  roomUnavailable = false;
+  await page.getByTestId('settings-rename-save').click();
+  await expect(page.getByTestId('settings-rename-dialog')).toBeHidden();
+  expect(writes).toEqual([{ name: 'Kitchen Tablet' }, { room: 'Kitchen' }, { room: 'Kitchen' }]);
+});
+
+test('Media screen settings preserve a concurrent rename during a room-only edit', async ({ page }) => {
+  let screen = { id: 'fleet:lounge', name: 'Den TV', room: 'Den' };
+  const writes = [];
+  await mockRegistryVisibility(page);
+  await page.route('**/api/**', route => {
+    const request = route.request();
+    const path = decodeURIComponent(new URL(request.url()).pathname);
+    if (path.endsWith('/supervision/bootstrap')) return route.fulfill({ json: { enabled: false } });
+    if (path === '/api/v1/media/screens') return route.fulfill({ json: { screens: [screen] } });
+    if (path === '/api/v1/media/screens/fleet:lounge' && request.method() === 'PATCH') {
+      const body = request.postDataJSON();
+      writes.push(body);
+      screen = { ...screen, ...body };
+      return route.fulfill({ json: { screen } });
+    }
+    return route.fulfill({ json: {} });
+  });
+
+  await page.goto('/media?view=screens');
+  const row = page.getByTestId('screen-admin-item-fleet:lounge');
+  await row.getByTestId('screen-admin-rename-fleet:lounge').click();
+  await page.getByTestId('screen-admin-rename-room').fill('Lounge');
+  screen = { ...screen, name: 'Family TV' };
+  await returnToForeground(page);
+  await expect(row).toContainText('Family TV');
+  await page.getByTestId('screen-admin-rename-save').click();
+  await expect(page.getByTestId('screen-admin-rename-dialog')).toBeHidden();
+  await expect(row).toContainText('Family TV· Lounge');
+  expect(writes).toEqual([{ room: 'Lounge' }]);
+});
+
 test('Media keeps a slow screen registry read through polling and refreshes it on foreground return', async ({ page }) => {
   const registry = [];
   let socket;
@@ -14,12 +202,7 @@ test('Media keeps a slow screen registry read through polling and refreshes it o
   await page.routeWebSocket('**/*', connection => { socket = connection; connections++; });
   await page.setViewportSize({ width: 390, height: 850 });
   await page.clock.install();
-  await page.addInitScript(() => {
-    window.registryFixtureVisible = true;
-    Object.defineProperty(document, 'visibilityState', {
-      get: () => window.registryFixtureVisible ? 'visible' : 'hidden',
-    });
-  });
+  await mockRegistryVisibility(page);
   await page.route('**/api/**', route => {
     const { pathname } = new URL(route.request().url());
     if (pathname.endsWith('/supervision/bootstrap')) return route.fulfill({ json: { enabled: false } });
@@ -58,12 +241,7 @@ test('Media keeps a slow screen registry read through polling and refreshes it o
 
   await elapseRegistryInterval();
   await expect.poll(() => registry.length).toBe(1);
-  await page.evaluate(() => {
-    window.registryFixtureVisible = false;
-    document.dispatchEvent(new Event('visibilitychange'));
-    window.registryFixtureVisible = true;
-    document.dispatchEvent(new Event('visibilitychange'));
-  });
+  await returnToForeground(page);
   await expect.poll(() => registry.length).toBe(2);
   await registry[1].fulfill(registryResult('Renamed registry screen'));
   await expect(screen).toContainText('Renamed registry screen');

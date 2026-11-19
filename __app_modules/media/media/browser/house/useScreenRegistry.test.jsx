@@ -91,6 +91,28 @@ describe('useScreenRegistry', () => {
     expect(captured.available).toBe(false);
     expect(captured.error).toBe(null);
   });
+
+  it('retains the last list after a transient error and clears it when the registry is unavailable', async () => {
+    const saved = { id: 'fleet:den', name: 'Den TV', room: 'Den', aliases: ['browser:old'] };
+    const api = { listScreens: vi.fn()
+      .mockResolvedValueOnce({ screens: [saved], roomAdjacency: { Den: ['Kitchen'] } })
+      .mockRejectedValueOnce(new HouseApiError('Temporary error', { status: 500 }))
+      .mockRejectedValueOnce(new HouseApiError('Unavailable', { status: 501 }))
+      .mockResolvedValueOnce({ screens: [saved] }) };
+    render(<Probe api={api} />);
+    await waitFor(() => expect(screen.getByTestId('probe')).toHaveTextContent('Den TV|y'));
+    await act(async () => captured.refresh());
+    expect(captured.byId.get('browser:old')).toBe(saved);
+    expect(captured.roomAdjacency).toEqual({ Den: ['Kitchen'] });
+    await act(async () => captured.refresh());
+    expect(captured.available).toBe(false);
+    expect(captured.screens).toEqual([]);
+    expect(captured.byId.size).toBe(0);
+    expect(captured.roomAdjacency).toEqual({});
+    await act(async () => captured.refresh());
+    expect(captured.available).toBe(true);
+    expect(captured.byId.get('fleet:den')).toBe(saved);
+  });
 });
 
 describe('mergeRegistryNames', () => {

@@ -668,6 +668,13 @@ persists it at most every 10 min. `lastSeen` also comes from fleet
 `device-state` heartbeats (online/offline) and each screen's newest play-ledger
 start.
 
+Fleet owns the browser's registry snapshot. Fleet rows, household playback
+labels, screen settings and cast room warnings use that snapshot. Confirmed
+screen edits refresh it even when a subsequent room save fails. An open
+rename form retains the room draft so the user can retry. A temporary
+read failure keeps the last snapshot. A 404 or 501 clears registry data so
+displays can fall back to the device's configured or broadcast information.
+
 **Names.** Trimmed, single-spaced, ≤ 48 chars, unique case-insensitively among
 live (not retired) screens, including configured names. A rename to a taken
 name is **409 `NAME_TAKEN`** with `heldBy` and a free `suggestion`

@@ -7,7 +7,6 @@ import { useCallback, useContext } from 'react';
 import { DispatchContext } from "../cast/DispatchProvider.jsx";
 import { houseApi as defaultApi } from "./houseApi.js";
 import houseLog from "./houseLog.js";
-import { resetScreenRoomsCache } from "../cast/screenRooms.js";
 
 const UNDO_MS = 10_000;
 
@@ -25,23 +24,26 @@ export function useScreenAdmin({ registry, api = defaultApi } = {}) {
   const nameScreen = useCallback(async (screen, { name, room, confirm, onCollision } = {}) => {
     const nextName = (name ?? '').trim();
     const nextRoom = (room ?? '').trim();
+    let savedName;
+    let result = null;
     try {
-      let result = null;
       if (nextName && nextName !== screen.name) {
         result = await api.renameScreen(screen.id, { name: nextName, confirm, onCollision });
-        houseLog.screenRenamed({ deviceId: screen.id, from: screen.name, to: result?.screen?.name ?? nextName, routines: result?.routines?.length ?? 0 });
+        savedName = result?.screen?.name ?? nextName;
+        houseLog.screenRenamed({ deviceId: screen.id, from: screen.name, to: savedName, routines: result?.routines?.length ?? 0 });
       }
-      if (nextRoom !== (screen.room ?? '')) {
+      if (room !== undefined && nextRoom !== (screen.room ?? '')) {
         result = await api.setScreenRoom(screen.id, nextRoom || null);
         houseLog.roomSet({ deviceId: screen.id, room: nextRoom || null });
       }
-      await refresh?.();
-      return { ok: true, screen: result?.screen ?? null };
     } catch (error) {
+      if (savedName !== undefined) await refresh?.();
       if (error?.code === 'NAME_TAKEN' || error?.code === 'ROUTINES_TARGET') houseLog.renameConflict({ deviceId: screen.id, code: error.code });
       else houseLog.adminActionFailed({ action: 'name', deviceId: screen.id, status: error?.status ?? null, code: error?.code ?? null, error: error?.message });
-      return failure(error);
+      return { ...failure(error), savedName };
     }
+    await refresh?.();
+    return { ok: true, screen: result?.screen ?? null };
   }, [api, refresh]);
 
   // Which rooms neighbour `room` (the several-screen drift warning); the link is mutual.
@@ -49,7 +51,6 @@ export function useScreenAdmin({ registry, api = defaultApi } = {}) {
     try {
       const res = await api.setRoomNeighbours(room, neighbours);
       houseLog.roomNeighboursSet({ room, neighbours });
-      resetScreenRoomsCache();
       await refresh?.();
       return { ok: true, roomAdjacency: res?.roomAdjacency ?? null };
     } catch (error) {

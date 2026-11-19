@@ -67,14 +67,49 @@ describe('ClientIdentityProvider and the screen registry', () => {
     expect(getDeviceId()).toBe('browser:aaaa1111-2222');
   });
 
-  it('renames through the registry and keeps the registry answer', async () => {
-    const houseApi = api();
+  it('renames through the registry without clearing a room omitted from the edit', async () => {
+    localStorage.setItem(STORAGE_KEYS.DISPLAY_NAME, 'Old name');
+    const houseApi = api({
+      announceScreen: vi.fn(async ({ id, name }) => ({ screen: { id, name, room: 'Den' } })),
+      renameScreen: vi.fn(async (id, { name }) => ({ screen: { id, name, room: 'Den' }, routines: [] })),
+    });
     render(<ClientIdentityProvider api={houseApi}><Probe /></ClientIdentityProvider>);
+    await waitFor(() => expect(screen.getByTestId('probe')).toHaveTextContent('Old name|Den|'));
     let result;
     await act(async () => { result = await captured.rename({ name: 'Poo' }); });
     expect(houseApi.renameScreen).toHaveBeenCalledWith('browser:aaaa1111-2222', { name: 'Poo', confirm: false, onCollision: undefined });
     expect(result.ok).toBe(true);
-    expect(screen.getByTestId('probe')).toHaveTextContent('Poo|');
+    expect(houseApi.setScreenRoom).not.toHaveBeenCalled();
+    expect(screen.getByTestId('probe')).toHaveTextContent('Poo|Den|');
+  });
+
+  it('keeps a confirmed rename when the separate room change fails', async () => {
+    localStorage.setItem(STORAGE_KEYS.DISPLAY_NAME, 'Old name');
+    const houseApi = api({
+      renameScreen: vi.fn(async id => ({ screen: { id, name: 'Chosen (2)', room: 'Den' } })),
+      setScreenRoom: vi.fn(async () => { throw new HouseApiError('Room offline', { transient: true }); }),
+    });
+    render(<ClientIdentityProvider api={houseApi}><Probe /></ClientIdentityProvider>);
+    await waitFor(() => expect(captured.registered?.name).toBe('Old name'));
+    let result;
+    await act(async () => { result = await captured.rename({ name: 'Chosen', room: 'Kitchen' }); });
+    expect(result).toMatchObject({ ok: false, error: 'Room offline' });
+    expect(captured.registered).toMatchObject({ name: 'Chosen (2)', room: 'Den' });
+    expect(screen.getByTestId('probe')).toHaveTextContent('Chosen (2)|Den');
+  });
+
+  it('keeps a room write when the older startup announce finishes later', async () => {
+    localStorage.setItem(STORAGE_KEYS.DISPLAY_NAME, 'Kitchen tab');
+    let finishAnnounce;
+    const houseApi = api({
+      announceScreen: vi.fn(() => new Promise(resolve => { finishAnnounce = resolve; })),
+      setScreenRoom: vi.fn(async (id, room) => ({ screen: { id, name: 'Kitchen tab', room } })),
+    });
+    render(<ClientIdentityProvider api={houseApi}><Probe /></ClientIdentityProvider>);
+    await act(async () => { await captured.rename({ name: 'Kitchen tab', room: 'Pantry' }); });
+    await act(async () => finishAnnounce({ screen: { id: captured.deviceId, name: 'Kitchen tab', room: 'Kitchen' } }));
+    expect(captured.registered?.room).toBe('Pantry');
+    expect(screen.getByTestId('probe')).toHaveTextContent('Kitchen tab|Pantry');
   });
 
   it('hands a taken name back with the suggestion, and routines back for confirmation', async () => {

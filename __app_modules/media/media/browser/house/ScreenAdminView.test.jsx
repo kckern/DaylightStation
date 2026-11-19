@@ -99,6 +99,17 @@ describe('ScreenAdminView', () => {
     await waitFor(() => expect(api.setScreenRoom).toHaveBeenCalledWith('browser:new', 'Pantry'));
   });
 
+  it('refreshes a committed rename when the subsequent room update fails', async () => {
+    api.setScreenRoom.mockRejectedValueOnce(new Error('Room unavailable'));
+    wrap();
+    fireEvent.click(screen.getByTestId('screen-admin-rename-browser:new'));
+    fireEvent.change(await screen.findByTestId('screen-admin-rename-name'), { target: { value: 'Pantry tablet' } });
+    fireEvent.change(screen.getByTestId('screen-admin-rename-room'), { target: { value: 'Pantry' } });
+    fireEvent.click(screen.getByTestId('screen-admin-rename-save'));
+    expect(await screen.findByText(/Room unavailable/)).toBeInTheDocument();
+    expect(ctx.registry.refresh).toHaveBeenCalledTimes(1);
+  });
+
   it('retires only after showing the routines that point at the screen', async () => {
     wrap();
     fireEvent.click(screen.getByTestId('screen-admin-retire-fleet:livingroom-tv'));

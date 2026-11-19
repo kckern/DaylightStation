@@ -30,7 +30,7 @@ import { createFleetStore } from "../fleet/fleetStore.js";
 import { FleetContext } from "../fleet/FleetProvider.jsx";
 import { resetApiResourceCache } from "../../../../../frontend/src/lib/hooks/useApiResource.js";
 
-const SCREENS = { screens: [
+const SCREENS = { available: true, screens: [
   { id: 'fleet:livingroom-tv', screenId: 'livingroom-tv', name: 'Living Room TV', aliases: [] },
   { id: 'browser:kid', name: "Kid's tablet", aliases: [] },
 ] };
@@ -62,7 +62,6 @@ function routes(overrides = {}) {
         playedOn: { deviceId: 'fleet:livingroom-tv' }, plays: [], spots: [] },
     ] },
     'api/v1/media/household/favourites': { items: [{ id: 'plex:100' }] },
-    'api/v1/media/screens': SCREENS,
     ...overrides,
   };
   apiMock.mockImplementation((path, body, method) => {
@@ -79,10 +78,10 @@ const fleetStore = {
   subscribeAll: () => () => {},
 };
 
-function renderHome(store = fleetStore) {
+function renderHome(store = fleetStore, registry = SCREENS) {
   return render(
     <MantineProvider>
-      <FleetContext.Provider value={{ store, devices: [] }}><HomeView /></FleetContext.Provider>
+      <FleetContext.Provider value={{ store, devices: [], registry }}><HomeView /></FleetContext.Provider>
     </MantineProvider>,
   );
 }
@@ -288,12 +287,11 @@ describe('HomeView start page', () => {
   });
 
   it('never shows a machine browser name: an unnamed browser is "a browser"', async () => {
-    routes({ 'api/v1/media/screens': { screens: [{ id: 'browser:kid', name: 'Browser 4778f429', aliases: [] }] },
-      'api/v1/media/household/recent?limit=24': { items: [
+    routes({ 'api/v1/media/household/recent?limit=24': { items: [
         { contentId: 'plex:50', title: 'Last Night Film', type: 'movie', lastPlayed: '2026-10-02 21:30:00', finished: true,
           playedOn: { deviceId: 'browser:kid' }, plays: [], spots: [] },
       ] } });
-    renderHome();
+    renderHome(fleetStore, { ...SCREENS, screens: [{ id: 'browser:kid', name: 'Browser 4778f429', aliases: [] }] });
     const tile = await screen.findByTestId('home-tile-recent-plex:50');
     await waitFor(() => expect(tile).toHaveTextContent('a browser'));
     expect(document.body.textContent).not.toMatch(/Browser [0-9a-f]{8}/);

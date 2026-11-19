@@ -1,6 +1,7 @@
 import React from 'react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render as renderView, screen, fireEvent, waitFor } from '@testing-library/react';
+import { FleetContext } from "../fleet/FleetProvider.jsx";
 import { LocalSessionContext } from "../session/LocalSessionContext.js";
 
 // ── Mocks (hook-level, per repo convention — see FleetPlayPicker.test.jsx) ──
@@ -14,9 +15,23 @@ let fleetDevices = [
   { id: 'office-tv', name: 'Office TV' },
 ];
 let fleetEntries = {};
-vi.mock("../fleet/useFleetContext.js", () => ({
-  useFleetContext: () => ({ devices: fleetDevices, store: { getEntry: (id) => fleetEntries[id] ?? null } }),
-}));
+const fleetStore = { getEntry: (id) => fleetEntries[id] ?? null };
+const fleetRegistry = {
+  screens: [
+    { id: 'fleet:livingroom-tv', screenId: 'livingroom-tv', room: 'Living Room' },
+    { id: 'fleet:den-speaker', screenId: 'den-speaker', room: 'Living Room' },
+    { id: 'fleet:office-tv', screenId: 'office-tv', room: 'Office' },
+  ],
+  roomAdjacency: {},
+};
+
+function withFleet(children, registry = fleetRegistry) {
+  return <FleetContext.Provider value={{ devices: fleetDevices, store: fleetStore, registry }}>{children}</FleetContext.Provider>;
+}
+
+function render(children) {
+  return renderView(children, { wrapper: ({ children }) => withFleet(children) });
+}
 
 // DeviceTile/BusyWarning read per-device live status through useDevice —
 // stub it directly rather than standing up a real fleet store.
@@ -35,18 +50,12 @@ vi.mock("../logging/mediaLog.js", () => {
 });
 
 vi.mock("../../../../../frontend/src/lib/api.mjs", () => ({
-  DaylightAPI: vi.fn(async (path) => (path === 'api/v1/media/screens'
-    ? { screens: [
-      { id: 'fleet:livingroom-tv', screenId: 'livingroom-tv', room: 'Living Room' },
-      { id: 'fleet:den-speaker', screenId: 'den-speaker', room: 'Living Room' },
-      { id: 'fleet:office-tv', screenId: 'office-tv', room: 'Office' },
-    ] }
-    : {})),
+  DaylightAPI: vi.fn(),
 }));
 
+import { DaylightAPI } from "../../../../../frontend/src/lib/api.mjs";
 import mediaLog from "../logging/mediaLog.js";
 import { DispatchTargetPicker } from "./DispatchTargetPicker.jsx";
-import { resetScreenRoomsCache } from "./screenRooms.js";
 
 // Wrap with a LocalSessionContext whose controller reports active local
 // playback — this is what makes useLocalPlaybackActive (and therefore the
@@ -318,7 +327,6 @@ describe('DispatchTargetPicker / useDispatchTargetPicker', () => {
 
 describe('DispatchTargetPicker — several screens (PLACE.4a)', () => {
   beforeEach(() => {
-    resetScreenRoomsCache();
     fleetDevices = [
       { id: 'livingroom-tv', name: 'Living Room TV' },
       { id: 'den-speaker', name: 'Den speaker' },
@@ -341,5 +349,24 @@ describe('DispatchTargetPicker — several screens (PLACE.4a)', () => {
       'Living Room TV and Den speaker are both in Living Room — they start together but can drift apart, and you may hear it.',
     );
     expect(mediaLog.aimDriftWarned).toHaveBeenCalledWith(expect.objectContaining({ state: 'shown', rooms: ['Living Room'] }));
+  });
+
+  it('updates the drift warning when a selected screen changes rooms while the picker is open', async () => {
+    const picker = <DispatchTargetPicker source={{ play: 'plex:1', title: 'Song' }} />;
+    const { rerender } = renderView(withFleet(picker));
+    fireEvent.click(screen.getByTestId('picker-multi-toggle'));
+    fireEvent.click(screen.getByTestId('picker-device-livingroom-tv'));
+    fireEvent.click(screen.getByTestId('picker-device-den-speaker'));
+    expect(await screen.findByTestId('picker-drift-warning')).toHaveTextContent('both in Living Room');
+
+    rerender(withFleet(picker, {
+      ...fleetRegistry,
+      screens: fleetRegistry.screens.map((entry) => entry.screenId === 'den-speaker' ? { ...entry, room: 'Den' } : entry),
+      roomAdjacency: { Den: ['Living Room'] },
+    }));
+
+    expect(screen.getByTestId('picker-drift-warning')).toHaveTextContent('neighbouring rooms (Den and Living Room)');
+    expect(screen.getByTestId('picker-device-den-speaker')).toHaveAttribute('aria-pressed', 'true');
+    expect(DaylightAPI).not.toHaveBeenCalled();
   });
 });

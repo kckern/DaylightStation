@@ -230,7 +230,10 @@ export function ScreenAdminView() {
         title={renaming ? `Name and room: ${renaming.name}` : ''}
         initialName={renaming?.name ?? ''}
         initialRoom={renaming?.room ?? ''}
-        onSubmit={(input) => admin.nameScreen(renaming, input)}
+        onSubmit={input => {
+          const current = registry?.byId?.get(renaming.id);
+          return admin.nameScreen(current?.id === renaming.id ? current : renaming, input);
+        }}
         nameOf={nameOf}
         saveLabel="Save"
         nameLabel="Name"

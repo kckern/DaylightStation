@@ -21,10 +21,11 @@
 import React from 'react';
 import { useDispatchTargetPicker } from "./useDispatchTargetPicker.js";
 import { useDevice } from "../fleet/useDevice.js";
+import { useFleetContext } from "../fleet/useFleetContext.js";
 import { deviceName, deviceIcon, deviceLocation } from "../fleet/deviceDisplay.js";
 import { deviceStatusLine, describeBusy } from "./castCopy.js";
 import { aimName } from "./AimLabel.jsx";
-import { useScreenRooms, sharedRoomGroups, neighbouringRoomGroups, driftWarningText } from "./screenRooms.js";
+import { screenRoomsFromRegistry, sharedRoomGroups, neighbouringRoomGroups, driftWarningText } from "./screenRooms.js";
 import mediaLog from "../logging/mediaLog.js";
 import "./Cast.scss";
 
@@ -82,9 +83,10 @@ function BusyWarning({ device, intent }) {
 // PLACE.4a/AC6 (RQ-PLACE-10): several screens in the same or a neighbouring
 // room drift apart audibly; say so while they are being chosen.
 function DriftWarning({ targetIds, devices }) {
-  const rooms = useScreenRooms(targetIds.length > 1);
-  const groups = targetIds.length > 1 ? sharedRoomGroups(targetIds, devices, rooms) : [];
-  const neighbours = targetIds.length > 1 ? neighbouringRoomGroups(targetIds, devices, rooms) : [];
+  const { registry } = useFleetContext();
+  const rooms = React.useMemo(() => screenRoomsFromRegistry(registry), [registry]);
+  const groups = sharedRoomGroups(targetIds, devices, rooms);
+  const neighbours = neighbouringRoomGroups(targetIds, devices, rooms);
   const text = driftWarningText(groups, neighbours);
   const key = [...groups.map((group) => `${group.room}:${group.names.join('|')}`), ...neighbours.map((n) => `${n.rooms.join('+')}:${n.names.join('|')}`)].join(';');
   React.useEffect(() => {
@@ -156,7 +158,7 @@ export function DispatchTargetPicker({ source, onComplete, autoFocus = true, ver
         </button>
       )}
       {selectedDevices.map((d) => <BusyWarning key={d.id} device={d} intent={intent} />)}
-      {multi && <DriftWarning targetIds={selectedDevices.map((d) => d.id)} devices={devices} />}
+      {multi && selectedDevices.length > 1 && <DriftWarning targetIds={selectedDevices.map((d) => d.id)} devices={devices} />}
       {/* The transfer/fork choice only makes sense when a dispatch is
           actually about to happen — a destination-only pick never plays or
           moves anything, so the choice would be pure noise (and a lie about

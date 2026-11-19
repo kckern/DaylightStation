@@ -67,6 +67,7 @@ export function ClientIdentityProvider({ children, api = defaultHouseApi }) {
   const [firstUse, setFirstUse] = useState(() => readFirstUse(identity));
   const [registered, setRegistered] = useState(null); // registry Screen for this browser
   const registration = useControlRegistration(identity.clientId);
+  const editRevision = useRef(0);
   const identityRef = useRef(identity);
   identityRef.current = identity;
 
@@ -80,13 +81,14 @@ export function ClientIdentityProvider({ children, api = defaultHouseApi }) {
   useEffect(() => {
     if (!named && !playing) return undefined;
     let cancelled = false;
+    const announcedBeforeEdit = editRevision.current;
     const { deviceId, name, room } = identityRef.current;
     let previousId = null;
     try { previousId = browserIdentityStorage()?.getItem(PREVIOUS_ID_KEY) || null; } catch { /* storage refused */ }
     api.announceScreen({ id: deviceId, name: isPlaceholderName(name) ? undefined : name, room, playing, previousId })
       .then((res) => {
         if (previousId) { try { browserIdentityStorage()?.removeItem(PREVIOUS_ID_KEY); } catch { /* storage refused */ } }
-        if (cancelled || !res?.screen) return;
+        if (cancelled || announcedBeforeEdit !== editRevision.current || !res?.screen) return;
         houseLog.screenAnnounced({ deviceId, name: res.screen.name, adopted: res.screen.name !== name });
         setRegistered(res.screen);
         setIdentity((current) => adopt(current, res.screen));
@@ -99,7 +101,7 @@ export function ClientIdentityProvider({ children, api = defaultHouseApi }) {
 
   /**
    * Rename this browser (and/or set its room). Resolves to
-   * `{ ok: true, screen?, local? }` or `{ ok: false, code, suggestion?, heldBy?, routines?, error? }`.
+   * `{ ok: true, screen?, local? }` or `{ ok: false, code, suggestion?, heldBy?, routines?, error?, savedName? }`.
    * Pass `confirm: true` after showing the routines a ROUTINES_TARGET listed;
    * `onCollision: "suffix"` takes the registry's free suggestion.
    */
@@ -108,28 +110,27 @@ export function ClientIdentityProvider({ children, api = defaultHouseApi }) {
     const nextName = typeof name === 'string' ? name.trim() : '';
     const nextRoom = typeof room === 'string' ? room.trim() : '';
     const nameChanged = !!nextName && nextName !== current.name;
-    const roomChanged = nextRoom !== (current.room ?? '');
+    const roomChanged = room !== undefined && nextRoom !== (current.room ?? '');
     const id = current.deviceId;
+    let screen = null;
+    let savedName;
     try {
-      let screen = null;
       if (nameChanged) {
         const send = () => api.renameScreen(id, { name: nextName, confirm, onCollision });
         const res = await send().catch(async (error) => {
           if (error?.code !== 'SCREEN_NOT_FOUND') throw error;
-          await api.announceScreen({ id, name: isPlaceholderName(current.name) ? undefined : current.name, room: current.room, playing: true });
+          const announced = await api.announceScreen({ id, name: isPlaceholderName(current.name) ? undefined : current.name, room: current.room, playing: true });
+          screen = announced?.screen ?? null;
           return send();
         });
-        screen = res?.screen ?? null;
-        houseLog.screenRenamed({ deviceId: id, from: current.name, to: screen?.name ?? nextName, routines: res?.routines?.length ?? 0, self: true });
+        screen = res?.screen ?? screen;
+        savedName = res?.screen?.name ?? nextName;
+        houseLog.screenRenamed({ deviceId: id, from: current.name, to: savedName, routines: res?.routines?.length ?? 0, self: true });
       }
       if (roomChanged) {
         const res = await api.setScreenRoom(id, nextRoom || null);
         screen = res?.screen ?? screen;
         houseLog.roomSet({ deviceId: id, room: nextRoom || null, self: true });
-      }
-      if (screen) {
-        setRegistered(screen);
-        setIdentity((prev) => adopt(prev, screen));
       }
       return { ok: true, screen };
     } catch (error) {
@@ -137,17 +138,24 @@ export function ClientIdentityProvider({ children, api = defaultHouseApi }) {
         houseLog.renameConflict({ deviceId: id, code: error.code, routines: error.details?.routines?.length ?? 0 });
         return { ok: false, code: error.code, ...error.details };
       }
-      if (error?.transient || error?.status === 501) {
+      if (!screen && savedName === undefined && (error?.transient || error?.status === 501)) {
         // The registry is out of reach: rename locally, unique among the
         // names this device can see (the registry re-reads it on announce).
         houseLog.adminActionFailed({ action: 'rename-self', deviceId: id, error: error?.message, fallback: 'local' });
+        editRevision.current++;
         setIdentity((prev) => renameBrowserIdentity(prev, {
-          name: nextName || prev.name, room: nextRoom, existingNames, storage: browserIdentityStorage(),
+          name: nextName || prev.name, room: room === undefined ? prev.room : nextRoom, existingNames, storage: browserIdentityStorage(),
         }));
         return { ok: true, local: true };
       }
       houseLog.adminActionFailed({ action: 'rename-self', deviceId: id, status: error?.status ?? null, code: error?.code ?? null, error: error?.message });
-      return { ok: false, code: error?.code ?? 'FAILED', error: error?.message ?? 'Could not rename' };
+      return { ok: false, code: error?.code ?? 'FAILED', error: error?.message ?? 'Could not rename', savedName };
+    } finally {
+      if (screen) {
+        editRevision.current++;
+        setRegistered(screen);
+        setIdentity(prev => adopt(prev, screen));
+      }
     }
   }, [api]);
 

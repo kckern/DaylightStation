@@ -9,6 +9,7 @@ import { useCallback, useContext, useMemo } from 'react';
 import { useApiResource } from "../../../../../frontend/src/lib/hooks/useApiResource.js";
 import { getDeviceId } from "../../../../../frontend/src/lib/deviceIdentity.js";
 import { DispatchContext } from "../cast/DispatchProvider.jsx";
+import { FleetContext } from "../fleet/FleetProvider.jsx";
 import mediaLog from "../logging/mediaLog.js";
 import getLogger from "../../../../../frontend/src/lib/logging/Logger.js";
 import {
@@ -55,10 +56,11 @@ export function useHouseholdEntry(contentId) {
   return resolveHouseholdEntry(contentId, carryOn, recent);
 }
 
-/** `nameFor(deviceId)` from GET /api/v1/media/screens; this device is "this device". */
+/** `nameFor(deviceId)` from Fleet's screen registry; this device is "this device". */
 export function useScreenNamer() {
-  const { data } = useApiResource(HOUSEHOLD_PATHS.screens, { swr: true, label: 'media-screens', logger: householdResourceLogger });
-  return useMemo(() => createScreenNamer(data, { selfId: getDeviceId() }), [data]);
+  const registry = useContext(FleetContext)?.registry;
+  const selfId = getDeviceId();
+  return useMemo(() => createScreenNamer(registry, { selfId }), [registry, selfId]);
 }
 
 function outcomeItem(item) {

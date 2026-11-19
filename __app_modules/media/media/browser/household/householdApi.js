@@ -1,5 +1,5 @@
 // frontend/src/modules/Media/household/householdApi.js
-// Client for the household media memory, screen registry, played-earlier and
+// Client for the household media memory, played-earlier and
 // suggestions routes (tech doc §2.4–2.9). Content ids travel in the body or
 // query, never the path. Every call goes through DaylightAPI, so it carries
 // this device's X-Daylight-Device id.
@@ -14,7 +14,6 @@ export const HOUSEHOLD_PATHS = Object.freeze({
   // 12, not 20: each carry-on entry costs a catalog lookup on a cold start.
   carryOn: `${BASE}/household/carry-on?limit=12`,
   favourites: `${BASE}/household/favourites`,
-  screens: `${BASE}/screens`,
 });
 
 export function suggestionsPath(deviceId) {
