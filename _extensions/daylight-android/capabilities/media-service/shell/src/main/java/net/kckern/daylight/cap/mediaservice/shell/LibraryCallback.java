@@ -146,7 +146,7 @@ final class LibraryCallback implements MediaLibrarySession.Callback {
         final SettableFuture<List<MediaItem>> future = SettableFuture.create();
         try {
             io.execute(() -> {
-                try { future.set(NodeItems.tracks(resolve(requested).tracks)); }
+                try { future.set(NodeItems.tracks(resolve(requested, C.INDEX_UNSET).tracks)); }
                 catch (Throwable e) { future.setException(failure(e)); }
             });
         } catch (RuntimeException stopping) {
@@ -163,9 +163,10 @@ final class LibraryCallback implements MediaLibrarySession.Callback {
         try {
             io.execute(() -> {
                 try {
-                    TrackAnswer r = resolve(requested);
-                    future.set(new MediaSession.MediaItemsWithStartPosition(NodeItems.tracks(r.tracks), r.startIndex,
-                            r.startPositionMs > 0 ? r.startPositionMs : C.TIME_UNSET));
+                    TrackAnswer r = resolve(requested, startIndex);
+                    long defaultPosition = r.startPositionMs > 0 ? r.startPositionMs : C.TIME_UNSET;
+                    long position = startPositionMs >= 0 ? startPositionMs : defaultPosition;
+                    future.set(new MediaSession.MediaItemsWithStartPosition(NodeItems.tracks(r.tracks), r.startIndex, position));
                 } catch (Throwable e) {
                     future.setException(failure(e));
                 }
@@ -182,7 +183,7 @@ final class LibraryCallback implements MediaLibrarySession.Callback {
      * The one exception is a play-from-search (one item, no id, a search query): the
      * payload searches and names the item to play, which is then resolved like any id.
      */
-    private TrackAnswer resolve(List<MediaItem> requested) throws Exception {
+    private TrackAnswer resolve(List<MediaItem> requested, int startIndex) throws Exception {
         List<String> ids = new ArrayList<>();
         List<String> queries = new ArrayList<>();
         for (MediaItem item : requested) {
@@ -197,7 +198,8 @@ final class LibraryCallback implements MediaLibrarySession.Callback {
             if (best == null) throw new IllegalStateException("nothing found");
             ids = java.util.Collections.singletonList(best);
         }
-        return TrackAnswer.parse(media.resolve(ids, PLAY_WAIT_MS));
+        int selected = startIndex >= 0 && startIndex < ids.size() ? startIndex : C.INDEX_UNSET;
+        return TrackAnswer.parse(media.resolve(ids, selected, PLAY_WAIT_MS));
     }
 
     // ── voice search ──────────────────────────────────────────────────────────

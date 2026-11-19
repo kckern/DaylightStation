@@ -218,6 +218,15 @@ Pick the content id of a music track and of an album from the Media page.
     not, the same log names the system UI's package with a reason: record it. A
     system UI that is not platform-signed is pinned as in E3.
 
+13. Queue two tracks shorter than five seconds and let both finish. Check the backend
+    for exactly one final `play.log` at 100 percent per track. Repeat and press Next
+    before the first track ends. Only the second track has a final report.
+14. From an allowed media controller, set a list of two items and request item 2
+    at 1234 ms. The second item starts at that offset, including when the first
+    input item expands to several tracks. With an explicit offset of zero, the
+    selected item starts at its beginning. Request a saved audiobook chapter with
+    start position unset and check that playback still starts at its saved position.
+
 ## D2. Playing with no window
 
 The phone's device file has no `media:` action (content ids are household data).

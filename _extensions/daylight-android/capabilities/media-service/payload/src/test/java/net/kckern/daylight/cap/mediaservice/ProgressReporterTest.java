@@ -55,6 +55,21 @@ public class ProgressReporterTest {
         assertTrue("nothing more is saved for an item that ended", at("plex:1", FIVE_MIN, FIVE_MIN, "paused", 302_000).isEmpty());
     }
 
+    @Test public void twoShortTracksCompleteBeforeAnyPeriodicSample() {
+        assertTrue(at("plex:1", 0, 1200, "playing", 0).isEmpty());
+        assertTrue(at("plex:1", 1200, 1200, "ended", 1200).get(0).naturalEnd);
+        assertTrue(at("plex:2", 0, 2400, "playing", 1200).isEmpty());
+        assertTrue(at("plex:2", 2400, 2400, "ended", 3600).get(0).naturalEnd);
+        assertTrue(at("plex:2", 2400, 2400, "playing", 3700).isEmpty());
+        assertTrue(at("plex:2", 2400, 2400, "ended", 3700).isEmpty());
+    }
+
+    @Test public void aReplayOfTheSameShortTrackCanCompleteAgain() {
+        assertEquals(1, at("plex:1", 1200, 1200, "ended", 1200).size());
+        assertTrue(at("plex:1", 0, 1200, "playing", 1200).isEmpty());
+        assertEquals(1, at("plex:1", 1200, 1200, "ended", 2400).size());
+    }
+
     @Test public void movingToAnotherItemSavesTheOneThatWasLeft() {
         at("plex:1", 11_000, FIVE_MIN, "playing", 11_000);
         at("plex:1", 18_000, FIVE_MIN, "playing", 18_000);

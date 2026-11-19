@@ -5,7 +5,17 @@ import static org.junit.Assert.*;
 import net.kckern.daylight.api.PayloadPort;
 import net.kckern.daylight.cap.mediaservice.shell.PlayStart.Step;
 
+import androidx.media3.common.C;
+import androidx.media3.common.MediaItem;
+import androidx.media3.session.MediaSession;
+
+import com.google.common.util.concurrent.ListeningExecutorService;
+import com.google.common.util.concurrent.MoreExecutors;
+
+import org.json.JSONArray;
 import org.json.JSONObject;
+
+import java.util.Arrays;
 import org.junit.After;
 import org.junit.Test;
 
@@ -42,6 +52,40 @@ public class PlayStartTest {
         assertEquals(Step.WAIT, PlayStart.next(2000, false, true, true, false));
         assertEquals(Step.WAIT, PlayStart.next(10 * 60_000, false, true, true, false));
         assertEquals("playback ended or paused", Step.RELEASE, PlayStart.next(10 * 60_000, false, true, false, false));
+    }
+
+    @Test public void controllerStartUsesTheResolvedIndexAndExplicitOffset() throws Exception {
+        assertStart(1, 1234, 2, 1234);
+    }
+
+    @Test public void explicitZeroOverridesTheSavedPosition() throws Exception {
+        assertStart(1, 0, 2, 0);
+        assertStart(C.INDEX_UNSET, 0, 1, 0);
+    }
+
+    @Test public void unsetOrInvalidControllerSelectionKeepsResolverDefaults() throws Exception {
+        assertStart(C.INDEX_UNSET, C.TIME_UNSET, 1, 250_000);
+        assertStart(9, C.TIME_UNSET, 1, 250_000);
+    }
+
+    private void assertStart(int index, long position, int expectedIndex, long expectedPosition) throws Exception {
+        if (handler != null) PayloadPort.named(PayloadMedia.PORT).detach(handler);
+        handler = raw -> {
+            JSONObject request = new JSONObject(raw);
+            int selected = request.optInt("startIndex", C.INDEX_UNSET);
+            JSONObject track = new JSONObject().put("id", "plex:1").put("title", "Song").put("url", "https://kiosk.example/s");
+            return new JSONObject().put("ok", true).put("startIndex", selected == 1 ? 2 : 1)
+                    .put("startPositionMs", 250_000)
+                    .put("tracks", new JSONArray().put(track).put(track).put(track)).toString();
+        };
+        PayloadPort.named(PayloadMedia.PORT).attach(handler);
+        ListeningExecutorService executor = MoreExecutors.newDirectExecutorService();
+        LibraryCallback callback = new LibraryCallback(new PayloadMedia(), executor, "test", null, () -> "");
+        MediaSession.MediaItemsWithStartPosition result = callback.onSetMediaItems(null, null,
+                Arrays.asList(new MediaItem.Builder().setMediaId("c:plex:1").build(),
+                        new MediaItem.Builder().setMediaId("p:plex:2").build()), index, position).get();
+        assertEquals(expectedIndex, result.startIndex);
+        assertEquals(expectedPosition, result.startPositionMs);
     }
 
     @Test public void theRequestNamesAnActionAndNothingElse() throws Exception {

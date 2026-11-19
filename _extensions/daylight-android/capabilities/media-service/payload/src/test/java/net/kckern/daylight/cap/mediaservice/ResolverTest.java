@@ -88,6 +88,15 @@ public class ResolverTest {
         assertEquals("a resume point belongs to a single request", 0, r.startPositionMs);
     }
 
+    @Test public void theSelectedInputStartsAfterEarlierExpandedTracks() throws Exception {
+        api.responses.put("play plex:99", "{\"id\":\"plex:99\",\"mediaType\":\"audio\",\"mediaUrl\":\"/s/99\","
+                + "\"duration\":60,\"resume_position\":30,\"resumable\":true}");
+        Resolver.Resolved r = Resolver.resolve(Arrays.asList("c:plex:10", "p:plex:99"), 1, api, backend, "s");
+        assertEquals(2, r.startIndex);
+        assertEquals("plex:99", r.tracks.get(r.startIndex).id);
+        assertEquals(0, r.startPositionMs);
+    }
+
     @Test public void videoOrAnUnknownIdIsRefusedWithAReason() throws Exception {
         api.responses.put("play plex:20", "{\"id\":\"plex:20\",\"mediaType\":\"dash_video\",\"mediaUrl\":\"/s/20\"}");
         try { resolve("p:plex:20"); fail(); }
@@ -116,6 +125,9 @@ public class ResolverTest {
         }
         api.responses.put("queue plex:77", big.append("]}").toString());
         assertEquals(Resolver.MAX_TRACKS, resolve("c:plex:77").tracks.size());
+        Resolver.Resolved selected = Resolver.resolve(Arrays.asList("c:plex:77", "c:plex:10"), 1, api, backend, "s");
+        assertEquals(Resolver.MAX_TRACKS, selected.tracks.size());
+        assertEquals("plex:11", selected.tracks.get(selected.startIndex).id);
         assertEquals("the item that was asked for is kept when the queue is cut", "plex:" + (1000 + Resolver.MAX_TRACKS + 10),
                 resolve("p:plex:" + (1000 + Resolver.MAX_TRACKS + 10) + "|plex:77").tracks
                         .get(resolve("p:plex:" + (1000 + Resolver.MAX_TRACKS + 10) + "|plex:77").startIndex).id);

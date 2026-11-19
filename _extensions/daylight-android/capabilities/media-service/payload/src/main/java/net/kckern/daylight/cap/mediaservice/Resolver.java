@@ -35,6 +35,10 @@ final class Resolver {
     private Resolver() { }
 
     static Resolved resolve(List<String> mediaIds, MediaApi api, Backend backend, String session) throws Exception {
+        return resolve(mediaIds, -1, api, backend, session);
+    }
+
+    static Resolved resolve(List<String> mediaIds, int requestedIndex, MediaApi api, Backend backend, String session) throws Exception {
         if (mediaIds == null || mediaIds.isEmpty()) throw new IllegalArgumentException("unknown media id");
         if (mediaIds.size() > MAX_IDS) throw new IllegalArgumentException("too many media ids");
         List<MediaId> ids = new ArrayList<>();
@@ -47,7 +51,11 @@ final class Resolver {
         int startIndex = 0;
         long startPositionMs = 0;
         boolean single = ids.size() == 1;
-        for (MediaId id : ids) {
+        // Each input can add zero, one, or several tracks. Record its queue range.
+        int[] offsets = new int[ids.size() + 1];
+        for (int i = 0; i < ids.size(); i++) {
+            offsets[i] = tracks.size();
+            MediaId id = ids.get(i);
             if (id.kind == MediaId.Kind.CONTAINER) {
                 tracks.addAll(QueueMapper.fromQueue(api.queue(id.contentId), backend, session));
                 continue;
@@ -58,7 +66,9 @@ final class Resolver {
                 JSONObject queue = api.queue(id.parent);
                 List<Track> siblings = QueueMapper.fromQueue(queue, backend, session);
                 int at = -1;
-                for (int i = 0; i < siblings.size(); i++) if (siblings.get(i).id.equals(id.contentId)) at = i;
+                for (int sibling = 0; sibling < siblings.size(); sibling++) {
+                    if (siblings.get(sibling).id.equals(id.contentId)) at = sibling;
+                }
                 if (at >= 0) {
                     tracks.addAll(siblings);
                     startIndex = at;
@@ -79,6 +89,11 @@ final class Resolver {
                 tracks.add(t);
                 if (single) startPositionMs = QueueMapper.resumeMs(play);
             }
+        }
+        offsets[ids.size()] = tracks.size();
+        if (!single && requestedIndex >= 0 && requestedIndex < ids.size()
+                && offsets[requestedIndex] < offsets[requestedIndex + 1]) {
+            startIndex = offsets[requestedIndex];
         }
         if (tracks.isEmpty()) throw new IllegalArgumentException("nothing here plays as audio");
         if (tracks.size() > MAX_TRACKS) {

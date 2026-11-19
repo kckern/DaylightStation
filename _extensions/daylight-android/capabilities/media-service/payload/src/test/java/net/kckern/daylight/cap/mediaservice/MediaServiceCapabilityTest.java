@@ -329,6 +329,12 @@ public class MediaServiceCapabilityTest {
         JSONObject resolved = new JSONObject(port.call("{\"op\":\"resolve\",\"ids\":[\"c:plex:10\"]}", 0));
         assertEquals("plex:11", resolved.getJSONArray("tracks").getJSONObject(0).getString("id"));
 
+        api.responses.put("play plex:99", "{\"id\":\"plex:99\",\"mediaType\":\"audio\",\"mediaUrl\":\"/s/99\"}");
+        JSONObject selected = new JSONObject(port.call(
+                "{\"op\":\"resolve\",\"ids\":[\"c:plex:10\",\"p:plex:99\"],\"startIndex\":1}", 0));
+        assertEquals(1, selected.getInt("startIndex"));
+        assertEquals("plex:99", selected.getJSONArray("tracks").getJSONObject(1).getString("id"));
+
         JSONObject refused = new JSONObject(port.call("{\"op\":\"resolve\",\"ids\":[\"x\"]}", 0));
         assertFalse(refused.getBoolean("ok"));
         assertEquals("bad_request", refused.getString("error"));

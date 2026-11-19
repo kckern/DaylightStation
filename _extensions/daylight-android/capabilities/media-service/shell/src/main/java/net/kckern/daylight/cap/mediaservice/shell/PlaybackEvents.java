@@ -7,7 +7,9 @@ import androidx.media3.common.C;
 import androidx.media3.common.MediaItem;
 import androidx.media3.common.Player;
 
-import java.util.concurrent.ExecutorService;
+import com.google.common.util.concurrent.MoreExecutors;
+
+import java.util.concurrent.Executor;
 
 /**
  * Sends the player's position to the payload: on every transition and every five
@@ -19,7 +21,8 @@ final class PlaybackEvents implements Player.Listener {
 
     private final Player player;
     private final PayloadMedia media;
-    private final ExecutorService io;
+    private final Executor io;
+    private Player.PositionInfo outgoing;
     private final Handler main = new Handler(Looper.getMainLooper());
     private final Runnable tick = new Runnable() {
         @Override public void run() {
@@ -28,10 +31,11 @@ final class PlaybackEvents implements Player.Listener {
         }
     };
 
-    PlaybackEvents(Player player, PayloadMedia media, ExecutorService io) {
+    PlaybackEvents(Player player, PayloadMedia media, Executor io) {
         this.player = player;
         this.media = media;
-        this.io = io;
+        // The service shares a pool with browse requests. Preserve playback event order.
+        this.io = MoreExecutors.newSequentialExecutor(io);
     }
 
     void attach() { player.addListener(this); }
@@ -55,19 +59,32 @@ final class PlaybackEvents implements Player.Listener {
         if (state == Player.STATE_ENDED) send("ended");
     }
 
+    @Override public void onPositionDiscontinuity(Player.PositionInfo oldPosition,
+                                                  Player.PositionInfo newPosition, int reason) {
+        outgoing = reason == Player.DISCONTINUITY_REASON_AUTO_TRANSITION ? oldPosition : null;
+    }
+
     @Override public void onMediaItemTransition(MediaItem item, int reason) {
+        if (outgoing != null && (reason == Player.MEDIA_ITEM_TRANSITION_REASON_AUTO
+                || reason == Player.MEDIA_ITEM_TRANSITION_REASON_REPEAT)) {
+            // Media3 supplies the old item's end position even if we never sampled it.
+            long end = outgoing.contentPositionMs;
+            send(outgoing.mediaItem, end, end, "ended");
+        }
+        outgoing = null;
         if (item != null) send(player.isPlaying() ? "playing" : "paused");
     }
 
     /** Called on the main thread; the call to the payload runs on the io executor. */
     private void send(final String state) {
-        MediaItem current = player.getCurrentMediaItem();
+        send(player.getCurrentMediaItem(), player.getCurrentPosition(), player.getDuration(), state);
+    }
+
+    private void send(MediaItem current, long position, long duration, String state) {
         if (current == null) return;
         final String id = current.mediaId;
         final String title = current.mediaMetadata.title == null ? "" : current.mediaMetadata.title.toString();
         final String listId = current.mediaMetadata.extras == null ? "" : current.mediaMetadata.extras.getString(NodeItems.EXTRA_LIST_ID, "");
-        final long position = player.getCurrentPosition();
-        final long duration = player.getDuration();
         try {
             io.execute(() -> media.event(id, title, listId, position, duration == C.TIME_UNSET ? 0 : duration, state));
         } catch (RuntimeException stopping) {

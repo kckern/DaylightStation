@@ -25,8 +25,10 @@ final class PayloadMedia {
                 .put("pageSize", pageSize).toString(), waitMs);
     }
 
-    String resolve(List<String> mediaIds, long waitMs) throws Exception {
-        return port.call(new JSONObject().put("op", "resolve").put("ids", new JSONArray(mediaIds)).toString(), waitMs);
+    String resolve(List<String> mediaIds, int startIndex, long waitMs) throws Exception {
+        JSONObject request = new JSONObject().put("op", "resolve").put("ids", new JSONArray(mediaIds));
+        if (startIndex >= 0) request.put("startIndex", startIndex);
+        return port.call(request.toString(), waitMs);
     }
 
     /** A car's voice search. The query goes to the payload as it came; the payload cuts and cleans it. */

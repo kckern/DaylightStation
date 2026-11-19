@@ -266,7 +266,7 @@ public final class MediaServiceCapability implements Capability {
             Object id = ids.opt(i);
             mediaIds.add(id instanceof String ? (String) id : null);
         }
-        Resolver.Resolved r = Resolver.resolve(mediaIds, api, backend, "daylight-" + core.deviceId());
+        Resolver.Resolved r = Resolver.resolve(mediaIds, request.optInt("startIndex", -1), api, backend, "daylight-" + core.deviceId());
         JSONArray tracks = new JSONArray();
         for (Track t : r.tracks) tracks.put(t.toJson());
         return new Outcome(200, Replies.ok().put("tracks", tracks).put("startIndex", r.startIndex)

@@ -84,6 +84,8 @@ final class ProgressReporter {
             if (!ended && durationMs > 0) out.add(new Report(id, title, listId, durationMs / 1000, 100.0, true));
             ended = true;
         } else if (playing) {
+            // An observation at the end can follow completion. A replay starts earlier.
+            if (ended && durationMs > 0 && positionMs >= durationMs) return out;
             ended = false;
             long seconds = positionMs / 1000;
             // A wall clock can be set back; a report is then due at once and not in an hour.
