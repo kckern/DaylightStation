@@ -1947,7 +1947,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   const printersConfig = adaptersConfig.thermal_printers || {};
   const printerDefaults = adaptersConfig.thermal_printer_defaults || {};
 
-  const printerRegistry = new ThermalPrinterRegistry();
+  const printerRegistry = new ThermalPrinterRegistry({ logger: hardwareLogger });
   for (const [name, cfg] of Object.entries(printersConfig)) {
     if (!cfg?.host) {
       hardwareLogger.warn('thermalPrinter.skipNoHost', { name });
@@ -1964,13 +1964,17 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       },
       { logger: hardwareLogger }
     );
-    printerRegistry.register(name, adapter, { isDefault: cfg.default === true });
+    // `fallback: [other]` routes a job this printer never took to the next one.
+    printerRegistry.register(name, adapter, {
+      isDefault: cfg.default === true,
+      fallback: Array.isArray(cfg.fallback) ? cfg.fallback : (cfg.fallback ? [cfg.fallback] : []),
+    });
   }
 
   const registeredPrinters = printerRegistry.list();
   if (registeredPrinters.length > 0) {
     const summary = registeredPrinters
-      .map(p => `${p.name} (${p.host}:${p.port}${p.isDefault ? ', default' : ''})`)
+      .map(p => `${p.name} (${p.host}:${p.port}${p.isDefault ? ', default' : ''}${p.fallback?.length ? `, then ${p.fallback.join(' > ')}` : ''})`)
       .join(', ');
     hardwareLogger.info('thermalPrinter.registered', { count: registeredPrinters.length, summary });
   } else {
