@@ -509,6 +509,9 @@
 }
 
 .image-picker-thumb {
+  padding: 0;
+  border: 0;
+  background: transparent;
   width: 100%;
   aspect-ratio: 1;
   border-radius: var(--ds-radius-sm);
@@ -523,7 +526,7 @@
     display: block;
   }
 
-  &:hover {
+  &:hover, &:focus-visible {
     outline: 2px solid var(--ds-text-secondary);
     outline-offset: 1px;
   }

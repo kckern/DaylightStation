@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 import { useApiResource } from '../../../../frontend/src/lib/hooks/useApiResource.js';
-import { splitContentId } from './contentSearchLogic.js';
+import { contentInfoPath, splitContentId } from './contentSearchLogic.js';
 
 const TITLE_CACHE_MAX = 500;
 // Process-lifetime cache of contentId -> human title so the resolved-title
@@ -20,9 +20,7 @@ export function rememberTitle(contentId, title) {
 export function useContentTitle(contentId) {
   const parsed = splitContentId(contentId);
   const cached = contentId ? titleCache.get(contentId) : null;
-  const path = parsed?.source && parsed.localId && !cached
-    ? `/api/v1/info/${encodeURIComponent(parsed.source)}/${encodeURIComponent(parsed.localId)}`
-    : null;
+  const path = cached ? null : contentInfoPath(parsed?.source, parsed?.localId);
   const { data } = useApiResource(path);
   useEffect(() => {
     if (data?.title) rememberTitle(contentId, data.title);

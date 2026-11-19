@@ -62,7 +62,7 @@ describe('useAutoResolve', () => {
     expect(started).toBe(true);
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const [url, opts] = fetchMock.mock.calls[0];
-    expect(url).toBe('/api/v1/content/query/search?text=blue%20danube&take=1&tier=1');
+    expect(url).toBe(`${location.origin}/api/v1/content/query/search?text=blue%20danube&take=1&tier=1`);
     expect(opts.signal).toBeInstanceOf(AbortSignal);
   });
 

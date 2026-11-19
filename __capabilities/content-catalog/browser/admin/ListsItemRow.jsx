@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { Text, Checkbox, ActionIcon, Menu, TextInput, Modal } from '@mantine/core';
+import { Text, Checkbox, ActionIcon, Menu, TextInput, Modal, UnstyledButton } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
 import {
   IconGripVertical, IconTrash, IconCopy, IconDotsVertical, IconPlus,
@@ -309,11 +309,11 @@ function ListsItemRow({ item, onUpdate, onDelete, onToggleActive, onDuplicate, i
         <Text size="xs" c="dimmed">{item.index + 1}</Text>
       </div>
 
-      <div className="col-icon" onClick={() => { log.info('image_picker.open', { index: item.index }); setImagePickerOpen(true); }}>
+      <UnstyledButton type="button" className="col-icon" aria-label={`Edit image for ${item.label || item.input || 'item'}`} onClick={() => { log.info('image_picker.open', { index: item.index }); setImagePickerOpen(true); }}>
         <ShimmerAvatar src={rowThumbnail} size={28} radius="sm">
           {item.label ? item.label.charAt(0).toUpperCase() : '#'}
         </ShimmerAvatar>
-      </div>
+      </UnstyledButton>
       <ImagePickerModal
         opened={imagePickerOpen}
         onClose={() => setImagePickerOpen(false)}
@@ -520,7 +520,7 @@ function ListsItemRow({ item, onUpdate, onDelete, onToggleActive, onDuplicate, i
       <div className="col-menu">
         <Menu position="bottom-end">
           <Menu.Target>
-            <ActionIcon variant="subtle" size="sm" data-testid={`row-menu-${sectionIndex}-${item.index}`}>
+            <ActionIcon variant="subtle" size="sm" aria-label={`Actions for ${item.label || item.input || 'item'}`} data-testid={`row-menu-${sectionIndex}-${item.index}`}>
               <IconDotsVertical size={14} />
             </ActionIcon>
           </Menu.Target>

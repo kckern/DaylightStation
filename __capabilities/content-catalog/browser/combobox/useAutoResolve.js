@@ -1,3 +1,4 @@
+import { daylightApiResponse } from '../../../../frontend/src/lib/api.mjs';
 // useAutoResolve.js — row-level auto-resolve for freeform content values.
 // Ported from the inline row combobox's commitFreeformText (ListsItemRow.jsx,
 // Phase 0 behavior): when a committed value is freeform text (not a content
@@ -70,12 +71,13 @@ export function useAutoResolve({ value, onChange, setContentInfo, fetchMetadata 
     const timeout = setTimeout(() => {
       log.warn('search.auto_resolve.timeout', { query: freeformText, timeoutMs: AUTO_RESOLVE_TIMEOUT_MS });
       controller.abort();
+      if (autoResolveRef.current === entry) autoResolveRef.current = null;
     }, AUTO_RESOLVE_TIMEOUT_MS);
     const entry = { query: freeformText, controller, startedAt: Date.now() };
     autoResolveRef.current = entry;
     log.info('search.auto_resolve.start', { query: freeformText, trigger, timeoutMs: AUTO_RESOLVE_TIMEOUT_MS });
 
-    fetch(
+    daylightApiResponse(
       `/api/v1/content/query/search?text=${encodeURIComponent(freeformText)}&take=1&tier=1`,
       { signal: controller.signal }
     )
@@ -84,7 +86,7 @@ export function useAutoResolve({ value, onChange, setContentInfo, fetchMetadata 
         // A newer resolve (or cancel) supersedes this continuation. Identity
         // check (not just query text) so an aborted twin of the same query
         // can never race the live one.
-        if (autoResolveRef.current !== entry) return;
+        if (autoResolveRef.current !== entry || controller.signal.aborted) return;
         const items = data?.items || [];
         if (items.length > 0 && valueRef.current === freeformText) {
           // Only replace if the committed value is still the freeform text —

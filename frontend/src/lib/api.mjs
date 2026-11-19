@@ -37,21 +37,22 @@ const getWsBaseUrl = () => {
 
 const apiToken = browserPreference('ds_token', null);
 
-function jsonRequest(path, { method = 'GET', data, signal } = {}) {
+function prepareApiRequest(path, { method = 'GET', data, signal } = {}) {
     const route = path.replace(/^\/|\/$/g, '');
     const url = `${getBaseUrl()}/${route}`;
+    const multipart = typeof FormData !== 'undefined' && data instanceof FormData;
     const options = {
         method,
-        headers: buildHeaders(apiToken.read()),
+        headers: buildHeaders(apiToken.read(), !multipart),
         signal,
-        ...(data === undefined ? {} : { body: JSON.stringify(data) }),
+        ...(data === undefined ? {} : { body: multipart ? data : JSON.stringify(data) }),
     };
     return { url, options };
 }
 
-/** Same-origin JSON request for consumers that interpret HTTP status and body together. */
+/** Same-origin request with JSON or FormData for consumers that interpret status and body together. */
 export async function daylightApiResponse(path, init) {
-    const { url, options } = jsonRequest(path, init);
+    const { url, options } = prepareApiRequest(path, init);
     return fetch(url, options);
 }
 
@@ -62,7 +63,7 @@ export const DaylightAPI = async (path, data = {}, method = 'GET', requestOption
         method = 'POST';
     }
     
-    const { url, options } = jsonRequest(path, {
+    const { url, options } = prepareApiRequest(path, {
         method,
         data: method === 'GET' ? undefined : data,
         signal: requestOptions.signal,

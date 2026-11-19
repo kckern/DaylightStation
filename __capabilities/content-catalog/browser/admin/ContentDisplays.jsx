@@ -5,6 +5,8 @@
 // Extracted verbatim from ListsItemRow.jsx (Task 14). The module caches
 // (contentInfoCache / inflightRequests) are shared state — this module is
 // their single instance.
+import { daylightApiResponse } from '../../../../frontend/src/lib/api.mjs';
+import { contentInfoPath, splitContentId } from '../lib/contentSearchLogic.js';
 import React, { useState, useEffect } from 'react';
 import { Text, Loader, Group, Avatar, Badge, Box, ActionIcon } from '@mantine/core';
 import {
@@ -371,21 +373,16 @@ export async function fetchContentMetadata(value) {
     }
 
     // Parse source:id format (trim whitespace from parts)
-    const match = value.match(/^([^:]+):\s*(.+)$/);
-    if (!match) {
-      // Format can't be parsed - return unresolved
-      return { value, unresolved: true };
-    }
-
-    const [, source, localId] = [null, match[1].trim(), match[2].trim()];
-    const normalizedSource = normalizeListSource(source);
+    const parsed = splitContentId(value);
+    if (!parsed?.source || !parsed.localId) return { value, unresolved: true };
+    const { source: normalizedSource, localId } = parsed;
 
     try {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 5000);
       let response;
       try {
-        response = await fetch(`/api/v1/info/${normalizedSource}/${localId}`, { signal: controller.signal });
+        response = await daylightApiResponse(contentInfoPath(normalizedSource, localId), { signal: controller.signal });
       } finally {
         clearTimeout(timeoutId);
       }
