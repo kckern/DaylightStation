@@ -1,6 +1,5 @@
 import { NavRailSkeletonItems } from './NavRailSkeleton.jsx';
 import React, { useMemo, useEffect } from 'react';
-import { DaylightImagePath } from '@/lib/api.mjs';
 import { UiIcon } from '@/lib/ui/UiIcon.jsx';
 import SidebarFooter from "./SidebarFooter.jsx";
 import { sortNavItems, getNavItemClasses, isNavItemActive } from "../lib/navigationUtils.js";
@@ -74,7 +73,7 @@ const FitnessNavbar = ({
                 <div className="nav-icon">
                   <UiIcon
                     name="television"
-                    src={item.icon ? DaylightImagePath(`icons/${item.icon}.svg`) : undefined}
+                    assetName={item.icon}
                     size={24}
                   />
                 </div>

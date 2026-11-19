@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { IconDeviceTv, IconSearch, IconX } from '@tabler/icons-react';
+import { DaylightImagePath } from '../api.mjs';
 
 const icons = { close: IconX, search: IconSearch, television: IconDeviceTv };
 
@@ -23,8 +24,13 @@ function ImageIcon({ src, size, className, fallback: FallbackIcon, ...props }) {
 }
 
 /** Decorative symbol. Give its surrounding control the accessible action name. */
-export function UiIcon({ name, size = 16, src, ...props }) {
+export function UiIcon({ name, size = 16, assetName, src, ...props }) {
   const Icon = icons[name];
-  if (src) return <ImageIcon key={src} src={src} size={size} fallback={Icon} {...props} />;
+  let imageSrc = src;
+  if (imageSrc == null && assetName) {
+    const filename = /\.svg$/i.test(assetName) ? assetName : `${assetName}.svg`;
+    imageSrc = DaylightImagePath(`icons/${filename}`);
+  }
+  if (imageSrc) return <ImageIcon key={imageSrc} src={imageSrc} size={size} fallback={Icon} {...props} />;
   return <Icon {...props} size={size} aria-hidden="true" focusable="false" />;
 }
