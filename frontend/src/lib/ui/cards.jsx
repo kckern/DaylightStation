@@ -1,10 +1,10 @@
 // frontend/src/lib/ui/cards.jsx
 import './ds.scss';
 
-/** A titled surface panel — the house card. */
-export function SectionCard({ title, actions, children, className = '' }) {
+/** A surface panel. Use the form variant for elevated groups of editor fields. */
+export function SectionCard({ title, actions, children, variant, className = '' }) {
   return (
-    <section className={`ds-card ${className}`.trim()}>
+    <section className={`ds-card${variant === 'form' ? ' ds-card--form' : ''} ${className}`.trim()}>
       {(title || actions) ? (
         <header className="ds-card__header">
           {title ? <h3 className="ds-card__title">{title}</h3> : <span />}

@@ -138,31 +138,6 @@
 .ds-field--select { max-width: 360px; }
 
 // ──────────────────────────────────────────────
-// Section Panels — replaces raw Paper for config sections
-// ──────────────────────────────────────────────
-
-.ds-section-panel {
-  position: relative;
-  border-left: 3px solid var(--ds-border);
-  transition: border-color var(--ds-transition-base);
-  padding: var(--ds-space-5) var(--ds-space-6) !important;
-
-  .ds-section-label {
-    font-family: var(--ds-font-mono);
-    font-size: 13px;
-    font-weight: 600;
-    letter-spacing: 0.02em;
-    color: var(--ds-text-secondary);
-    margin-bottom: var(--ds-space-4);
-    text-transform: uppercase;
-  }
-
-  &:hover {
-    border-left-color: var(--ds-accent);
-  }
-}
-
-// ──────────────────────────────────────────────
 // Navigation items
 // ──────────────────────────────────────────────
 

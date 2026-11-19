@@ -21,8 +21,8 @@ export const DS_TOKENS = Object.freeze({
     info:    '#58a6ff',
     live:    '#ff6b6b',
   }),
-  spacing: Object.freeze({ sm: '0.5rem', md: '0.75rem', lg: '1rem' }),
-  type: Object.freeze({ caption: '0.7rem', detail: '0.85rem', heading: '1rem' }),
+  spacing: Object.freeze({ sm: '0.5rem', md: '0.75rem', lg: '1rem', xl: '1.25rem', xxl: '1.5rem' }),
+  type: Object.freeze({ caption: '0.7rem', label: '0.8125rem', detail: '0.85rem', heading: '1rem' }),
   controls: Object.freeze({
     'control-compact-height': '36px',
     'control-touch-target': '44px',

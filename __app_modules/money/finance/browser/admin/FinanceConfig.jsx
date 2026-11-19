@@ -1,5 +1,6 @@
 import React from 'react';
-import { Stack, NumberInput, TagsInput, Paper, Text } from '@mantine/core';
+import { Stack, NumberInput, TagsInput, Text } from '@mantine/core';
+import { SectionCard } from '../../../../../frontend/src/lib/ui/cards.jsx';
 import ConfigFormWrapper from "../../../../../frontend/src/modules/Admin/shared/ConfigFormWrapper.jsx";
 import { configPath } from "../../../../../frontend/src/modules/Admin/utils/adminConfigPaths.js";
 
@@ -22,8 +23,7 @@ function FinanceConfigContent({ data, setData }) {
   return (
     <Stack gap="lg">
       {/* Buxfer Integration */}
-      <Paper p="md" withBorder className="ds-section-panel">
-        <Text className="ds-section-label">Buxfer Integration</Text>
+      <SectionCard variant="form" title="Buxfer Integration">
         <Stack gap="sm">
           <NumberInput
             label="Payroll Account ID"
@@ -45,11 +45,10 @@ function FinanceConfigContent({ data, setData }) {
             max={1}
           />
         </Stack>
-      </Paper>
+      </SectionCard>
 
       {/* ClickUp Integration */}
-      <Paper p="md" withBorder className="ds-section-panel">
-        <Text className="ds-section-label">ClickUp Integration</Text>
+      <SectionCard variant="form" title="ClickUp Integration">
         <Stack gap="sm">
           <NumberInput
             label="Team ID"
@@ -91,7 +90,7 @@ function FinanceConfigContent({ data, setData }) {
             min={0}
           />
         </Stack>
-      </Paper>
+      </SectionCard>
     </Stack>
   );
 }

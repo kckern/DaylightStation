@@ -1,5 +1,6 @@
 import React from 'react';
-import { Stack, NumberInput, TextInput, Switch, Paper, Text, Group } from '@mantine/core';
+import { Stack, NumberInput, TextInput, Switch, Text, Group } from '@mantine/core';
+import { SectionCard } from '../../../../../frontend/src/lib/ui/cards.jsx';
 import ConfigFormWrapper from '../../../../../frontend/src/modules/Admin/shared/ConfigFormWrapper.jsx';
 import CrudTable from '../../../../../frontend/src/modules/Admin/shared/CrudTable.jsx';
 import { configPath } from '../../../../../frontend/src/modules/Admin/utils/adminConfigPaths.js';
@@ -31,8 +32,7 @@ function GratitudeConfigContent({ data, setData }) {
   return (
     <Stack gap="lg">
       {/* Categories */}
-      <Paper p="md" withBorder className="ds-section-panel">
-        <Text className="ds-section-label">Categories</Text>
+      <SectionCard variant="form" title="Categories">
         <CrudTable
           items={data.categories || []}
           onChange={(updated) => setData({ ...data, categories: updated })}
@@ -41,11 +41,10 @@ function GratitudeConfigContent({ data, setData }) {
           addLabel="Add Category"
           emptyMessage="No categories defined."
         />
-      </Paper>
+      </SectionCard>
 
       {/* Display Settings */}
-      <Paper p="md" withBorder className="ds-section-panel">
-        <Text className="ds-section-label">Display</Text>
+      <SectionCard variant="form" title="Display">
         <Stack gap="sm">
           <NumberInput
             label="Options Per Page"
@@ -66,11 +65,10 @@ function GratitudeConfigContent({ data, setData }) {
             min={0}
           />
         </Stack>
-      </Paper>
+      </SectionCard>
 
       {/* Snapshots */}
-      <Paper p="md" withBorder className="ds-section-panel">
-        <Text className="ds-section-label">Snapshots</Text>
+      <SectionCard variant="form" title="Snapshots">
         <Stack gap="sm">
           <Group>
             <Switch
@@ -93,7 +91,7 @@ function GratitudeConfigContent({ data, setData }) {
             readOnly
           />
         </Stack>
-      </Paper>
+      </SectionCard>
     </Stack>
   );
 }

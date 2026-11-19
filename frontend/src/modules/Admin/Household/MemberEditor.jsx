@@ -1,4 +1,5 @@
 import React, { useState, useCallback } from 'react';
+import { SectionCard } from '../../../lib/ui/cards.jsx';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   Stack, Group, Text, Badge, Button, Tabs, TextInput, NumberInput, Select,
@@ -300,8 +301,7 @@ function MemberDraft({ username, initialProfile, authStatus }) {
 
         {/* Identities Tab */}
         <Tabs.Panel value="identities" pt="md">
-          <Paper withBorder p="md" className="ds-section-panel">
-            <Text fw={600} mb="sm" className="ds-section-label">Telegram</Text>
+          <SectionCard variant="form" title="Telegram">
             <Stack gap="sm">
               <TextInput
                 label="User ID"
@@ -314,13 +314,12 @@ function MemberDraft({ username, initialProfile, authStatus }) {
                 onChange={(e) => updateField('identities.telegram.default_bot', e.currentTarget.value)}
               />
             </Stack>
-          </Paper>
+          </SectionCard>
         </Tabs.Panel>
 
         {/* Nutribot Tab */}
         <Tabs.Panel value="nutribot" pt="md">
-          <Paper withBorder p="md" className="ds-section-panel">
-            <Text fw={600} mb="sm" className="ds-section-label">Nutrition Goals</Text>
+          <SectionCard variant="form" title="Nutrition Goals">
             <Stack gap="sm">
               <Group grow>
                 <NumberInput
@@ -371,13 +370,12 @@ function MemberDraft({ username, initialProfile, authStatus }) {
                 min={0}
               />
             </Stack>
-          </Paper>
+          </SectionCard>
         </Tabs.Panel>
 
         {/* Fitness Tab */}
         <Tabs.Panel value="fitness" pt="md">
-          <Paper withBorder p="md" className="ds-section-panel">
-            <Text fw={600} mb="sm" className="ds-section-label">Heart Rate Zone Overrides</Text>
+          <SectionCard variant="form" title="Heart Rate Zone Overrides">
             <Stack gap="sm">
               <NumberInput
                 label="Active (bpm)"
@@ -404,15 +402,14 @@ function MemberDraft({ username, initialProfile, authStatus }) {
                 min={0}
               />
             </Stack>
-          </Paper>
+          </SectionCard>
         </Tabs.Panel>
 
         {/* Auth Tab */}
         <Tabs.Panel value="auth" pt="md">
           <Stack gap="md">
             {/* Roles Section */}
-            <Paper withBorder p="md" className="ds-section-panel">
-              <Text fw={600} mb="sm" className="ds-section-label">Roles</Text>
+            <SectionCard variant="form" title="Roles">
               <MultiSelect
                 label="Assigned Roles"
                 description="Controls what this user can access"
@@ -423,11 +420,10 @@ function MemberDraft({ username, initialProfile, authStatus }) {
                 searchable
                 clearable
               />
-            </Paper>
+            </SectionCard>
 
             {/* Auth Status Section */}
-            <Paper withBorder p="md" className="ds-section-panel">
-              <Text fw={600} mb="sm" className="ds-section-label">Auth Status</Text>
+            <SectionCard variant="form" title="Auth Status">
               <Stack gap="xs">
                 <Group gap="sm">
                   <Text size="sm" c="dimmed" w={120}>Password set:</Text>
@@ -460,11 +456,10 @@ function MemberDraft({ username, initialProfile, authStatus }) {
                   </Group>
                 )}
               </Stack>
-            </Paper>
+            </SectionCard>
 
             {/* Invite Link Section */}
-            <Paper withBorder p="md" className="ds-section-panel">
-              <Text fw={600} mb="sm" className="ds-section-label">Invite Link</Text>
+            <SectionCard variant="form" title="Invite Link">
               <Stack gap="sm">
                 <Text size="sm" c="dimmed">
                   Generate a one-time invite link for this user to set their password.
@@ -504,7 +499,7 @@ function MemberDraft({ username, initialProfile, authStatus }) {
                   </Group>
                 )}
               </Stack>
-            </Paper>
+            </SectionCard>
           </Stack>
         </Tabs.Panel>
       </Tabs>

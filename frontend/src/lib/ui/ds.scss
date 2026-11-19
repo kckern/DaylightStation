@@ -29,6 +29,23 @@
     margin-bottom: var(--ds-space-sm);
   }
   &__title { margin: 0; font-size: 0.8rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: var(--ds-text-mid); }
+
+  &--form {
+    background: var(--ds-surface-alt);
+    border-radius: var(--mantine-radius-md, 0.5rem);
+    padding: var(--ds-space-xl) var(--ds-space-xxl);
+
+    > .ds-card__header {
+      margin-bottom: var(--ds-space-lg);
+
+      > .ds-card__title {
+        font-family: var(--mantine-font-family-monospace, monospace);
+        font-size: var(--ds-type-label);
+        line-height: 1.55;
+        letter-spacing: 0.02em;
+      }
+    }
+  }
 }
 
 .ds-stat {

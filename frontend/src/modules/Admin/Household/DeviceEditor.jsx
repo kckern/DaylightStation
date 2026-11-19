@@ -1,4 +1,5 @@
 import React, { useLayoutEffect, useRef, useState } from 'react';
+import { SectionCard } from '../../../lib/ui/cards.jsx';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Stack, Group, Text, Badge, Button, Paper, TextInput, Select, Alert, Center, Loader, Anchor }  from '@mantine/core';
 import {
@@ -30,14 +31,11 @@ function typeBadgeColor(type) {
 /**
  * Section wrapper for grouping related fields.
  */
-function Section({ title, children }) {
+function DeviceFieldsSection({ title, children }) {
   return (
-    <Paper p="md" withBorder className="ds-section-panel">
-      <Stack gap="sm">
-        <Text size="sm" fw={600} c="dimmed" tt="uppercase" className="ds-section-label">{title}</Text>
-        {children}
-      </Stack>
-    </Paper>
+    <SectionCard variant="form" title={title}>
+      <Stack gap="sm">{children}</Stack>
+    </SectionCard>
   );
 }
 
@@ -114,7 +112,7 @@ function ShieldTVSections({ device, updateField }) {
 
   return (
     <>
-      <Section title="Device Control - Displays">
+      <DeviceFieldsSection title="Device Control - Displays">
         <DisplayFields
           displays={displays}
           onUpdate={(subPath, value) => updateField(`device_control.displays.${subPath}`, value)}
@@ -122,9 +120,9 @@ function ShieldTVSections({ device, updateField }) {
         {Object.keys(displays).length === 0 && (
           <Text size="sm" c="dimmed">No displays configured.</Text>
         )}
-      </Section>
+      </DeviceFieldsSection>
 
-      <Section title="Content Control">
+      <DeviceFieldsSection title="Content Control">
         <ObjectFields
           data={contentControl}
           pathPrefix="content_control"
@@ -133,7 +131,7 @@ function ShieldTVSections({ device, updateField }) {
         {Object.keys(contentControl).length === 0 && (
           <Text size="sm" c="dimmed">No content control configured.</Text>
         )}
-      </Section>
+      </DeviceFieldsSection>
     </>
   );
 }
@@ -150,7 +148,7 @@ function LinuxPCSections({ device, updateField }) {
 
   return (
     <>
-      <Section title="Device Control - Displays">
+      <DeviceFieldsSection title="Device Control - Displays">
         <DisplayFields
           displays={displays}
           onUpdate={(subPath, value) => updateField(`device_control.displays.${subPath}`, value)}
@@ -158,9 +156,9 @@ function LinuxPCSections({ device, updateField }) {
         {Object.keys(displays).length === 0 && (
           <Text size="sm" c="dimmed">No displays configured.</Text>
         )}
-      </Section>
+      </DeviceFieldsSection>
 
-      <Section title="OS Control">
+      <DeviceFieldsSection title="OS Control">
         <ObjectFields
           data={osControl}
           pathPrefix="os_control"
@@ -169,9 +167,9 @@ function LinuxPCSections({ device, updateField }) {
         {Object.keys(osControl).length === 0 && (
           <Text size="sm" c="dimmed">No OS control configured.</Text>
         )}
-      </Section>
+      </DeviceFieldsSection>
 
-      <Section title="Content Control">
+      <DeviceFieldsSection title="Content Control">
         <ObjectFields
           data={contentControl}
           pathPrefix="content_control"
@@ -180,9 +178,9 @@ function LinuxPCSections({ device, updateField }) {
         {Object.keys(contentControl).length === 0 && (
           <Text size="sm" c="dimmed">No content control configured.</Text>
         )}
-      </Section>
+      </DeviceFieldsSection>
 
-      <Section title="Modules">
+      <DeviceFieldsSection title="Modules">
         {Object.entries(modules).map(([moduleName, moduleConfig]) => (
           <Paper key={moduleName} p="sm" withBorder variant="light">
             <Stack gap="xs">
@@ -215,7 +213,7 @@ function LinuxPCSections({ device, updateField }) {
         {Object.keys(modules).length === 0 && (
           <Text size="sm" c="dimmed">No modules configured.</Text>
         )}
-      </Section>
+      </DeviceFieldsSection>
     </>
   );
 }
@@ -225,13 +223,13 @@ function LinuxPCSections({ device, updateField }) {
  */
 function MidiKeyboardSections({ device, updateField }) {
   return (
-    <Section title="MIDI Configuration">
+    <DeviceFieldsSection title="MIDI Configuration">
       <TextInput
         label="Extension Path"
         value={device.extension_path || ''}
         onChange={(e) => updateField('extension_path', e.currentTarget.value)}
       />
-    </Section>
+    </DeviceFieldsSection>
   );
 }
 
@@ -419,7 +417,7 @@ function DeviceDraft({ deviceId, initialDevice }) {
       )}
 
       {/* Type (read-only display) */}
-      <Section title="General">
+      <DeviceFieldsSection title="General">
         <Select
           label="Type"
           data={DEVICE_TYPE_OPTIONS}
@@ -427,7 +425,7 @@ function DeviceDraft({ deviceId, initialDevice }) {
           readOnly
           description="Device type cannot be changed after creation"
         />
-      </Section>
+      </DeviceFieldsSection>
 
       {/* Type-specific sections */}
       {device.type === 'shield-tv' && (
