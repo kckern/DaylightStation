@@ -464,6 +464,11 @@ export function createTriageSession({
           reply: open.filter((c) => c.step === 'reply').length,
           todo: open.filter((c) => c.step === 'todo').length,
         },
+        // Dry run: what the pass would have done, from the cards it left (the pass words them "Would have ...").
+        wouldHave: {
+          archived: open.filter((c) => c.kind === 'email' && String(c.why ?? '').startsWith('Would have archived')).length,
+          closed: open.filter((c) => c.kind === 'todo' && String(c.why ?? '').startsWith('Would have closed')).length,
+        },
         draftsReady: open.filter((c) => c.step === 'reply' && c.draftBody).length,
       };
     },

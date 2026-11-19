@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, lazy, Suspense } from 'react';
 import { Select } from '@mantine/core';
 import { Notifications } from '@mantine/notifications';
 import { Routes, Route, Navigate, useNavigate, useLocation, useParams } from 'react-router-dom';
@@ -13,6 +13,7 @@ import { AppThemeProvider, AppChrome, createAppLogger } from '@/lib/ui';
 import { configure } from "../../../../frontend/src/lib/logging/Logger.js";
 import useDocumentTitle from "../../../../frontend/src/hooks/useDocumentTitle.js";
 import { Dashboard } from "./views/now/Dashboard.jsx";
+const TriageSessionView = lazy(() => import("./views/now/triage/TriageSessionView.jsx"));
 import { LogBrowser } from "./views/log/LogBrowser.jsx";
 import { LogDayDetail } from "./views/log/LogDayDetail.jsx";
 import { LogCategoryView } from "./views/log/LogCategoryView.jsx";
@@ -164,6 +165,7 @@ function LifeAppShell() {
           <Routes>
             <Route index element={<Navigate to="now" />} />
             <Route path="now" element={<Dashboard />} />
+            <Route path="now/triage" element={<Suspense fallback={null}><TriageSessionView /></Suspense>} />
             <Route path="log" element={<LogBrowser />} />
             <Route path="log/:date" element={<LogDayRoute />} />
             <Route path="log/category/:category" element={<LogCategoryRoute />} />

@@ -392,7 +392,7 @@ describe('summary and log', () => {
       cards: [emailCard('a'), emailCard('b', { step: 'reply', draftBody: 'x' }), emailCard('c', { step: 'reply' }), todoCard('t'), emailCard('d', { status: 'answered' })] });
     expect(await make({ store }).summary({ username: 'sample' })).toEqual({
       enrolled: true, mode: 'live', mailbox: 'reconnect_needed', lastPassAt: NOW - 1000,
-      preDone: { archived: 3, closed: 1 }, open: { unsure: 1, reply: 2, todo: 1 }, draftsReady: 1,
+      preDone: { archived: 3, closed: 1 }, open: { unsure: 1, reply: 2, todo: 1 }, wouldHave: { archived: 0, closed: 0 }, draftsReady: 1,
     });
   });
 
@@ -606,5 +606,15 @@ describe('resolve: the owner exit for an in-doubt card', () => {
     const s = make({ store, mailbox: fakeMailbox({}) });
     await expect(s.resolve({ username: 'sample', cardId: 'card.m1', happened: true })).rejects.toMatchObject({ code: 'TRIAGE_CARD_NOT_APPLYING' });
     await expect(s.resolve({ username: 'sample', cardId: 'nope', happened: true })).rejects.toMatchObject({ code: 'TRIAGE_CARD_NOT_FOUND' });
+  });
+});
+
+describe('summary wouldHave (dry run)', () => {
+  it('counts open cards the pass worded as would-have-done', async () => {
+    const store = memoryStore({ passId: 'p', builtAt: NOW, cards: [
+      emailCard('a', { why: 'Would have archived: newsletter' }), emailCard('b'), todoCard('t', { why: 'Would have closed: stale' }),
+    ] });
+    const s = make({ store });
+    expect((await s.summary({ username: 'sample' })).wouldHave).toEqual({ archived: 1, closed: 1 });
   });
 });

@@ -9,6 +9,8 @@ import { DriftGauge } from "../../widgets/DriftGauge.jsx";
 import { GoalProgressBar } from "../../widgets/GoalProgressBar.jsx";
 import { BeliefConfidenceChip } from "../../widgets/BeliefConfidenceChip.jsx";
 import { ValueAllocationChart } from "../../widgets/ValueAllocationChart.jsx";
+import { TriageSummaryCard } from "./TriageSummaryCard.jsx";
+import { useTriage } from "../../hooks/useTriage.js";
 import { PriorityList } from "./PriorityList.jsx";
 import { LoadingState, SectionCard } from "../../components/index.js";
 import getLogger from "../../../../../../frontend/src/lib/logging/Logger.js";
@@ -27,6 +29,7 @@ export function Dashboard() {
   const navigate = useNavigate();
   const { data: priorityData, loading: pLoading } = useAlignment('priorities');
   const { data: dashData, loading: dLoading } = useAlignment('dashboard');
+  const { summary: triageSummary } = useTriage();
   const { isEmpty: planIsEmpty, loading: planLoading } = useLifePlan();
   const dashboard = dashData?.dashboard;
   const stage = dashboard?.stage;
@@ -58,6 +61,8 @@ export function Dashboard() {
 
   return (
     <Stack gap="md">
+      <TriageSummaryCard summary={triageSummary} />
+
       {planIsEmpty && (
         <SectionCard>
           <Stack gap="sm">
