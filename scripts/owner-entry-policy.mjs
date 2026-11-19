@@ -145,6 +145,7 @@ export const OWNER_ENTRY_POLICY = Object.freeze({
   '__app_modules/personal/lifelog/server/composition/work-evidence.mjs': 'composition',
   '__app_modules/personal/work/server/runtime.mjs': 'composition',
   '__app_modules/personal/work/server/composition.mjs': 'composition',
+  '__app_modules/personal/triage/server/composition.mjs': 'composition',
   '__app_modules/personal/work/cli/work.cli.mjs': null,
   '__app_modules/wellness/health/server/composition/lifelog-weight.mjs': 'composition',
   '__app_modules/media/feed/server/api/feed.mjs': 'api',

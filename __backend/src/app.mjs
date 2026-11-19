@@ -1,5 +1,6 @@
 import {hostname} from 'node:os';
 import {createKnowledgeRuntime,createAuthoredJournalEvidence,createJournalKnowledgeSource} from '../../__app_modules/personal/lifelog/server/knowledge-runtime.mjs';
+import { createTriageRuntime } from '../../__app_modules/personal/triage/server/composition.mjs';
 import {createWorkRuntime,resolveWorkHarvestScope} from '../../__app_modules/personal/work/server/runtime.mjs';
 import {createConfiguredMigrationOwnership} from '../../__app_modules/household/agenda/server/composition.mjs';
 import {installParticipantRuntime} from './5_composition/participants/installedRuntime.mjs';
@@ -3505,6 +3506,22 @@ const { readingSessions, readingSessionInterceptor } = await createSchoolReading
   for(const username of Object.keys(workConfiguration()?.work?.users??{}))await workRuntime.activities?.flush({username,asOf:Date.now()}).catch(error=>rootLogger.warn?.('work.activity.start-pending',{reason:error.code??'projection_failed'}));
   process.once('SIGTERM',()=>{void knowledgeRuntime.dispose().catch(error=>rootLogger.warn?.('lifelog.knowledge.dispose-failed',{reason:error.code??'shutdown_failed'}));});
   process.once('SIGTERM',()=>{void workRuntime.dispose().catch(error=>rootLogger.warn?.('work.dispose.failed',{reason:error.code??'shutdown_failed'}));});
+
+  const triageRuntime = createTriageRuntime({
+    configuration: () => configService.getHouseholdAppConfig(householdId, 'triage') ?? {},
+    defaultUsername: configService.getHeadOfHousehold(),
+    isKnownUser: (username) => (configService.getHouseholdUsers(configService.getDefaultHouseholdId()) || [])
+      .map((u) => (typeof u === 'string' ? u : (u?.username || u?.userId || u?.name)))
+      .includes(username),
+    dataService, mailbox: null, work: workRuntime,
+    decisionGateway: scopedGateway(decisionGateway, { app: 'life', feature: 'triage' }),
+    aiGateway: scopedGateway(sharedAiGateway, { app: 'life', feature: 'triage' }),
+    agentsScheduler: null, clock: Date.now,
+    logger: rootLogger.child({ app: 'triage' }),
+  });
+  await triageRuntime.start();
+  v1Routers.triage = triageRuntime.router;
+  process.once('SIGTERM', () => { void triageRuntime.dispose(); });
 
   const journalistServices = createJournalistServices({
     knowledgeRuntime,knowledgeSend,workRuntime,workSend:knowledgeSend,userTimezone:knowledgeTimezone,clock:Date.now,

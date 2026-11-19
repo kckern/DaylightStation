@@ -1,0 +1,12 @@
+# Household triage/config.yml. No credentials belong here. Everything is off by default.
+triage:
+  enabled: false
+  defaults:
+    mode: dryRun            # off | dryRun | live
+    inboxWindowDays: 14
+    inboxMax: 200
+    autoArchiveConfidence: 0.92   # must be >= 0.8 or the user is disabled
+    overdueDays: 60
+    schedule: "0 5 * * *"
+  users:
+    sample: {}              # explicit opt-in; scalar overrides merge over defaults
