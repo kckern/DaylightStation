@@ -1,6 +1,17 @@
 // Undo replays an action-log entry's inverse. Outcomes:
-// 'undone' | 'already_undone' | 'conflict' | 'not_undoable' | 'failed' (with reason).
+// 'undone' (optionally with warning 'log_not_marked') | 'already_undone' | 'conflict'
+// | 'not_undoable' | 'failed' (with reason).
+//
+// Task entries (reopen / update_task) need a WEB principal: the owner's own login
+// session proposes and confirms the inverse. A system principal is refused by the
+// work layer for these operations. The intent carries no sourceReceipt: the work
+// layer binds a web proposal to the principal's own receipt.
+// A task entry's `inverse` must carry { ref, expectedVersion, payload: { domainId, dueDate? } }
+// where expectedVersion is the item version AFTER the logged action. Provider
+// specifics (e.g. a reopen status) are filled in by the work layer, never here.
 import { MAILBOX_SCOPE_MISSING } from '../ports/IMailbox.mjs';
+
+const CONFLICT_CODES = new Set(['WORK_SELECTION_CHANGED']);
 
 export function createUndoAction({ store, mailbox, work, clock = () => Date.now(), logger = null }) {
   const chains = new Map();
@@ -15,7 +26,7 @@ export function createUndoAction({ store, mailbox, work, clock = () => Date.now(
     return run;
   };
 
-  const viaWork = async ({ username, entry, principal, operation, payload }) => {
+  const viaWork = async ({ entry, principal, operation, payload }) => {
     const { inverse } = entry;
     const asOf = clock();
     const intent = {
@@ -23,7 +34,7 @@ export function createUndoAction({ store, mailbox, work, clock = () => Date.now(
       domainId: inverse.payload?.domainId,
       ref: inverse.ref,
       payload,
-      sourceReceipt: `triage-undo:${entry.id}`,
+      expectedVersion: inverse.expectedVersion,
     };
     const proposed = await work.commands.propose({ principal, intent, asOf });
     if (proposed?.outcome === 'denied') return { outcome: 'failed', reason: proposed.reason ?? 'denied' };
@@ -45,10 +56,11 @@ export function createUndoAction({ store, mailbox, work, clock = () => Date.now(
       else await mailbox.archive(username, id);
       return { outcome: 'undone' };
     }
-    if (inv.action === 'reopen') return viaWork({ username, entry, principal, operation: 'reopen', payload: {} });
+    if (inv.action === 'reopen') return viaWork({ entry, principal, operation: 'reopen', payload: {} });
     if (inv.action === 'update_task') {
-      const { dueDate } = inv.payload ?? {};
-      return viaWork({ username, entry, principal, operation: 'update_task', payload: { dueDate } });
+      // No prior due date -> an explicit clear, never an undefined field.
+      const dueDate = inv.payload?.dueDate ?? null;
+      return viaWork({ entry, principal, operation: 'update_task', payload: { dueDate } });
     }
     return { outcome: 'not_undoable' };
   };
@@ -65,13 +77,23 @@ export function createUndoAction({ store, mailbox, work, clock = () => Date.now(
     try {
       result = await replay({ username, entry, principal });
     } catch (err) {
-      result = err?.code === MAILBOX_SCOPE_MISSING
-        ? { outcome: 'failed', reason: 'mailbox_permission_missing' }
-        : { outcome: 'failed', reason: err?.message ?? 'error' };
+      result = err?.code === MAILBOX_SCOPE_MISSING ? { outcome: 'failed', reason: 'mailbox_permission_missing' }
+        : CONFLICT_CODES.has(err?.code) ? { outcome: 'conflict' }
+        : { outcome: 'failed', reason: err?.code ?? err?.message ?? 'error' };
     }
     if (result.outcome === 'undone') {
-      await store.markUndone(username, entryId, clock());
-      log('triage.undo.applied', { username, entryId, action: entry.inverse.action });
+      // The inverse already ran; a log failure must not make the next undo repeat it.
+      try {
+        const marked = await store.markUndone(username, entryId, clock());
+        if (!marked) {
+          result = { outcome: 'undone', warning: 'log_not_marked' };
+          logger?.error?.('triage.undo.log_not_marked', { username, entryId, reason: 'entry_missing' });
+        }
+      } catch (err) {
+        result = { outcome: 'undone', warning: 'log_not_marked' };
+        logger?.error?.('triage.undo.log_not_marked', { username, entryId, error: err?.message });
+      }
+      log('triage.undo.applied', { username, entryId, action: entry.inverse.action, warning: result.warning });
     } else if (result.outcome === 'conflict') {
       log('triage.undo.conflict', { username, entryId });
     } else if (result.outcome === 'failed') {

@@ -28,7 +28,7 @@ export function todoistRequest({
   }[operation] ?? [];
   if (Object.keys(payload).some(key => !fields.includes(key))) fail();
   if (operation.startsWith('create_') && !text(payload.title) || operation === 'rename_container' && !text(payload.title) || operation === 'update_task' && !Object.keys(payload).length) fail();
-  if (payload.title !== undefined && !text(payload.title) || payload.description !== undefined && (typeof payload.description !== 'string' || payload.description.length > 16384) || payload.dueDate !== undefined && !date(payload.dueDate) || payload.containerId !== undefined && !opaque(payload.containerId) || payload.parentId !== undefined && !opaque(payload.parentId) || payload.assigneeId !== undefined && !opaque(payload.assigneeId)) fail();
+  if (payload.title !== undefined && !text(payload.title) || payload.description !== undefined && (typeof payload.description !== 'string' || payload.description.length > 16384) || payload.dueDate !== undefined && payload.dueDate !== null && !date(payload.dueDate) || payload.containerId !== undefined && !opaque(payload.containerId) || payload.parentId !== undefined && !opaque(payload.parentId) || payload.assigneeId !== undefined && !opaque(payload.assigneeId)) fail();
   if (operation === 'create_task' && !opaque(payload.containerId) || operation === 'create_container' && !opaque(payload.parentId)) fail();
   const body = {};
   for (const [key, wire] of Object.entries({
@@ -39,6 +39,8 @@ export function todoistRequest({
     assigneeId: 'assignee_id',
     parentId: 'parent_id'
   })) if (Object.hasOwn(payload, key)) body[wire] = payload[key];
+  // A null due date clears it; the REST API clears through due_string.
+  if (operation === 'update_task' && payload.dueDate === null) { delete body.due_date; body.due_string = 'no date'; }
   const family = container || ref?.kind === 'container' ? 'projects' : 'tasks';
   const suffix = {
     complete: '/close',

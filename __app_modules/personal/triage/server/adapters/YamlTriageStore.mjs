@@ -4,10 +4,18 @@ const QUEUE = 'apps/triage/queue';
 const monthKey = (ms) => new Date(ms).toISOString().slice(0, 7);
 const LOOKBACK_MONTHS = 24;
 
-export function createYamlTriageStore({ dataService, clock = () => Date.now() }) {
-  const read = async (rel, u) => (await dataService.user.read(rel, u)) ?? null;
+export function createYamlTriageStore({ dataService, clock = () => Date.now(), logger = null }) {
+  // Missing -> null. Present but unreadable/unparseable throws and is never overwritten.
+  const read = async (rel, u) => {
+    try {
+      return (await dataService.user.readStrict(rel, u)) ?? null;
+    } catch (err) {
+      logger?.error?.('triage.store.unreadable', { username: u, path: rel, error: err?.message });
+      throw new Error(`triage store unreadable: ${rel}`, { cause: err });
+    }
+  };
   const write = async (rel, data, u) => {
-    if ((await dataService.user.write(rel, data, u)) === false) throw new Error(`triage store write failed: ${rel}`);
+    if ((await dataService.user.writeAtomic(rel, data, u)) !== true) throw new Error(`triage store write failed: ${rel}`);
   };
   const logPath = (month) => `apps/triage/log/${month}`;
   const months = (fromMs, count) => {
@@ -20,20 +28,33 @@ export function createYamlTriageStore({ dataService, clock = () => Date.now() })
   };
   const entries = async (u, month) => {
     const rows = await read(logPath(month), u);
-    return Array.isArray(rows) ? rows : [];
+    if (rows === null) return [];
+    if (!Array.isArray(rows)) {
+      logger?.error?.('triage.store.unreadable', { username: u, path: logPath(month), error: 'log is not a list' });
+      throw new Error(`triage store unreadable: ${logPath(month)}`);
+    }
+    return rows;
   };
 
   // Read-modify-write on a month file must not interleave for the same user.
   const chains = new Map();
   const exclusive = (u, fn) => {
     const run = (chains.get(u) ?? Promise.resolve()).then(fn);
-    chains.set(u, run.catch(() => {}));
+    const tail = run.catch(() => {});
+    chains.set(u, tail);
+    tail.then(() => { if (chains.get(u) === tail) chains.delete(u); });
     return run;
   };
 
   return {
     async readQueue(u) {
-      return (await read(QUEUE, u)) ?? { passId: null, builtAt: null, cards: [] };
+      const q = await read(QUEUE, u);
+      if (q === null) return { passId: null, builtAt: null, cards: [] };
+      if (typeof q !== 'object' || Array.isArray(q) || !Array.isArray(q.cards)) {
+        logger?.error?.('triage.store.unreadable', { username: u, path: QUEUE, error: 'queue malformed' });
+        throw new Error(`triage store unreadable: ${QUEUE}`);
+      }
+      return q;
     },
     async writeQueue(u, queue) {
       await write(QUEUE, queue, u);

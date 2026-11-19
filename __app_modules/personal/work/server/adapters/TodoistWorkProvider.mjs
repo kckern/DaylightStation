@@ -191,7 +191,7 @@ export class TodoistWorkProvider extends IWorkProvider {
     if (command.operation === 'reopen') return live.item.status?.category === 'open' && live.item.version !== command.expectedVersion;
     if (command.operation === 'archive_container') return live.item.archived === true;
     if (command.operation === 'rename_container') return live.item.title === command.payload.title;
-    if (command.operation === 'update_task') return Object.entries(command.payload).every(([key, value]) => key === 'title' ? live.item.title === value : key === 'description' ? live.item.description === value : key === 'dueDate' ? live.item.due?.date === value : key === 'assigneeId' ? live.item.assigneeIds.includes(value) : false);
+    if (command.operation === 'update_task') return Object.entries(command.payload).every(([key, value]) => key === 'title' ? live.item.title === value : key === 'description' ? live.item.description === value : key === 'dueDate' ? (live.item.due?.date ?? null) === value : key === 'assigneeId' ? live.item.assigneeIds.includes(value) : false);
     return false;
   }
   async execute({
