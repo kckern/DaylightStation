@@ -53,9 +53,34 @@ it('falls back for corrupt or invalid stored preferences', () => {
 it('updates mounted consumers when another tab changes the preference', () => {
   mount();
   act(() => window.dispatchEvent(new StorageEvent('storage', {
-    key: 'health:display:test-user', newValue: JSON.stringify({ densityPlacement: 'after' }),
+    key: 'health:display:test-user',
+    newValue: JSON.stringify({ densityPlacement: 'after' }),
+    storageArea: window.localStorage,
   })));
   expect(screen.getByTestId('placement')).toHaveTextContent('after');
+});
+
+it('resets the placement when another tab clears local storage', () => {
+  localStorage.setItem('health:display:test-user', JSON.stringify({ densityPlacement: 'after' }));
+  mount();
+  expect(screen.getByTestId('placement')).toHaveTextContent('after');
+
+  act(() => {
+    localStorage.clear();
+    window.dispatchEvent(new StorageEvent('storage', { storageArea: window.localStorage }));
+  });
+
+  expect(screen.getByTestId('placement')).toHaveTextContent('before');
+});
+
+it('ignores changes to the same key in session storage', () => {
+  mount();
+  act(() => window.dispatchEvent(new StorageEvent('storage', {
+    key: 'health:display:test-user',
+    newValue: JSON.stringify({ densityPlacement: 'after' }),
+    storageArea: window.sessionStorage,
+  })));
+  expect(screen.getByTestId('placement')).toHaveTextContent('before');
 });
 
 it('keeps both display choices available when cleanup settings fail', async () => {

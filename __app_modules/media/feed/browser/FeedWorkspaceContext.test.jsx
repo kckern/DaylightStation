@@ -9,11 +9,15 @@ vi.mock("../../../../frontend/src/lib/api.mjs", () => ({ DaylightAPI: (...args) 
 vi.mock('@mantine/notifications', () => ({ notifications: { show: vi.fn() } }));
 
 function PreferenceProbe() {
-  const { readingPreferences, setReadingPreference, getLastVisit, markVisited, workspaceReady } = useFeedWorkspace();
+  const { readingPreferences, setReadingPreference, getLastVisit, markVisited, workspaceReady, refreshWorkspace } = useFeedWorkspace();
   return (
     <>
       <output>{JSON.stringify(readingPreferences)}</output>
       <button onClick={() => setReadingPreference('fontScale', 1.3)}>Larger</button>
+      <button onClick={() => setReadingPreference('theme', 'sepia')}>Sepia</button>
+      <button onClick={() => setReadingPreference('density', 'compact')}>Compact</button>
+      <button onClick={() => setReadingPreference('density', 'comfortable')}>Comfortable</button>
+      <button onClick={() => refreshWorkspace()}>Refresh preferences</button>
       <button onClick={() => markVisited('reader', '2026-08-24T12:00:00.000Z')}>Visit</button>
       <output aria-label="last visit">{getLastVisit('reader') || 'never'}</output>
       <output aria-label="workspace ready">{String(workspaceReady)}</output>
@@ -38,6 +42,18 @@ function MutationProbe() {
 function tokenFor(username) {
   return `header.${btoa(JSON.stringify({ sub: username })).replace(/=/g, '').replace(/\+/g, '-').replace(/\//g, '_')}.signature`;
 }
+
+function deferred() {
+  let resolve;
+  let reject;
+  const promise = new Promise((yes, no) => { resolve = yes; reject = no; });
+  return { promise, resolve, reject };
+}
+
+const preferenceSaves = () => apiMock.mock.calls
+  .filter(([path, , method]) => path === '/api/v1/feed/workspace/preferences' && method === 'PATCH')
+  .map(([, body]) => body);
+const storedAppearance = () => JSON.parse(localStorage.getItem('feed:reading-preferences'));
 
 
 describe('FeedWorkspaceProvider reading preferences', () => {
@@ -68,7 +84,7 @@ describe('FeedWorkspaceProvider reading preferences', () => {
       render(<FeedWorkspaceProvider><PreferenceProbe /></FeedWorkspaceProvider>);
       await waitFor(() => expect(screen.getByLabelText('workspace ready')).toHaveTextContent('true'));
       fireEvent.click(screen.getByRole('button', { name: 'Larger' }));
-      expect(apiMock).toHaveBeenCalledWith('/api/v1/feed/workspace/preferences', { fontScale: 1.3 }, 'PATCH');
+      await waitFor(() => expect(apiMock).toHaveBeenCalledWith('/api/v1/feed/workspace/preferences', { fontScale: 1.3 }, 'PATCH'));
       fireEvent.click(screen.getByRole('button', { name: 'Visit' }));
       expect(screen.getByLabelText('last visit')).toHaveTextContent('2026-08-24T12:00:00.000Z');
       expect(apiMock).toHaveBeenCalledWith('/api/v1/feed/workspace/checkpoints/reader', expect.any(Object), 'PUT');
@@ -92,6 +108,128 @@ describe('FeedWorkspaceProvider reading preferences', () => {
     await waitFor(() => expect(screen.getByLabelText('workspace ready')).toHaveTextContent('true'));
     expect(screen.getByText(/"theme":"light"/)).toHaveTextContent('"density":"compact"');
     expect(screen.getByLabelText('last visit')).toHaveTextContent('2026-08-23T10:00:00.000Z');
+  });
+
+  test('keeps an early edit when the startup workspace response has an older value', async () => {
+    const initial = deferred();
+    apiMock.mockImplementation((path, patch) => {
+      if (path.endsWith('/workspace')) return initial.promise;
+      if (path.endsWith('/preferences')) return Promise.resolve({ preferences: { theme: patch.theme, density: 'compact' } });
+      return Promise.resolve({});
+    });
+    render(<FeedWorkspaceProvider><PreferenceProbe /></FeedWorkspaceProvider>);
+    await waitFor(() => expect(apiMock).toHaveBeenCalledWith('/api/v1/feed/workspace'));
+    fireEvent.click(screen.getByRole('button', { name: 'Sepia' }));
+    expect(storedAppearance().theme).toBe('sepia');
+    expect(preferenceSaves()).toEqual([]);
+
+    await act(async () => { initial.resolve({ preferencesStored: true, preferences: { theme: 'dark', density: 'compact' } }); });
+    await waitFor(() => expect(preferenceSaves()).toEqual([{ theme: 'sepia' }]));
+    expect(screen.getByText(/"theme":"sepia"/)).toHaveTextContent('"density":"compact"');
+    expect(storedAppearance()).toMatchObject({ theme: 'sepia', density: 'compact' });
+    expect(localStorage.getItem('feed:density')).toBe('compact');
+  });
+
+  test('migrates the initial legacy values before sending a preference edited during startup', async () => {
+    localStorage.setItem('feed:reading-preferences', JSON.stringify({ measure: 56 }));
+    localStorage.setItem('feed:density', 'compact');
+    const initial = deferred();
+    const migration = deferred();
+    apiMock.mockImplementation((path, patch) => {
+      if (path.endsWith('/workspace')) return initial.promise;
+      if (path.endsWith('/preferences')) return Object.hasOwn(patch, 'measure') ? migration.promise : Promise.resolve({});
+      return Promise.resolve({});
+    });
+    render(<FeedWorkspaceProvider><PreferenceProbe /></FeedWorkspaceProvider>);
+    await waitFor(() => expect(apiMock).toHaveBeenCalledWith('/api/v1/feed/workspace'));
+    fireEvent.click(screen.getByRole('button', { name: 'Comfortable' }));
+    expect(preferenceSaves()).toEqual([]);
+    await act(async () => { initial.resolve({ preferencesStored: false }); });
+    expect(screen.getByLabelText('workspace ready')).toHaveTextContent('true');
+    expect(preferenceSaves()).toEqual([expect.objectContaining({ measure: 56, density: 'compact' })]);
+
+    await act(async () => { migration.resolve({ preferences: { measure: 56, density: 'compact' } }); });
+    expect(preferenceSaves()).toEqual([expect.objectContaining({ measure: 56 }), { density: 'comfortable' }]);
+    expect(storedAppearance()).toMatchObject({ measure: 56, density: 'comfortable' });
+    expect(localStorage.getItem('feed:density')).toBe('comfortable');
+  });
+
+  test('serializes accepted edits and only applies the submitted field of a current response', async () => {
+    const first = deferred();
+    const second = deferred();
+    const third = deferred();
+    const saves = [first, second, third];
+    apiMock.mockImplementation(path => {
+      if (path.endsWith('/workspace')) return Promise.resolve({ preferencesStored: true });
+      if (path.endsWith('/preferences')) return saves.shift().promise;
+      return Promise.resolve({});
+    });
+    render(<FeedWorkspaceProvider><PreferenceProbe /></FeedWorkspaceProvider>);
+    await waitFor(() => expect(screen.getByLabelText('workspace ready')).toHaveTextContent('true'));
+
+    fireEvent.click(screen.getByRole('button', { name: 'Compact' }));
+    await waitFor(() => expect(preferenceSaves()).toEqual([{ density: 'compact' }]));
+    fireEvent.click(screen.getByRole('button', { name: 'Comfortable' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Sepia' }));
+    expect(screen.getByText(/"theme":"sepia"/)).toHaveTextContent('"density":"comfortable"');
+    expect(preferenceSaves()).toEqual([{ density: 'compact' }]);
+
+    await act(async () => { first.resolve({ preferences: { density: 'compact', theme: 'dark' } }); });
+    expect(storedAppearance()).toMatchObject({ density: 'comfortable', theme: 'sepia' });
+    expect(preferenceSaves()).toEqual([{ density: 'compact' }, { density: 'comfortable' }]);
+    await act(async () => { second.reject(new Error('Write was refused')); });
+    expect(preferenceSaves()).toEqual([{ density: 'compact' }, { density: 'comfortable' }, { theme: 'sepia' }]);
+    await act(async () => { third.resolve({ preferences: { density: 'compact', theme: 'sepia' } }); });
+    expect(storedAppearance()).toMatchObject({ density: 'comfortable', theme: 'sepia' });
+    expect(localStorage.getItem('feed:density')).toBe('comfortable');
+  });
+
+  test('accepts imported changes while keeping an edit made during that refresh', async () => {
+    const imported = deferred();
+    let reads = 0;
+    apiMock.mockImplementation(path => {
+      if (path.endsWith('/workspace')) {
+        return ++reads === 1 ? Promise.resolve({ preferencesStored: true }) : imported.promise;
+      }
+      return Promise.resolve({});
+    });
+    render(<FeedWorkspaceProvider><PreferenceProbe /></FeedWorkspaceProvider>);
+    await waitFor(() => expect(screen.getByLabelText('workspace ready')).toHaveTextContent('true'));
+    fireEvent.click(screen.getByRole('button', { name: 'Compact' }));
+    await waitFor(() => expect(preferenceSaves()).toEqual([{ density: 'compact' }]));
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh preferences' }));
+    await waitFor(() => expect(reads).toBe(2));
+    fireEvent.click(screen.getByRole('button', { name: 'Sepia' }));
+    await act(async () => { imported.resolve({ preferencesStored: true, preferences: { density: 'comfortable', theme: 'light' } }); });
+    expect(storedAppearance()).toMatchObject({ density: 'comfortable', theme: 'sepia' });
+    expect(localStorage.getItem('feed:density')).toBe('comfortable');
+    expect(preferenceSaves()).toEqual([{ density: 'compact' }, { theme: 'sepia' }]);
+  });
+
+  test('finishes accepted saves in order across replacement workspaces without publishing an old response', async () => {
+    const old = deferred();
+    const refresh = deferred();
+    let workspaceReads = 0;
+    apiMock.mockImplementation((path, patch) => {
+      if (path.endsWith('/workspace')) return ++workspaceReads === 1 ? Promise.resolve({ preferencesStored: true }) : refresh.promise;
+      if (path.endsWith('/preferences')) return patch.density === 'compact' ? old.promise : Promise.resolve({ preferences: patch });
+      return Promise.resolve({});
+    });
+    const first = render(<FeedWorkspaceProvider><PreferenceProbe /></FeedWorkspaceProvider>);
+    await waitFor(() => expect(screen.getByLabelText('workspace ready')).toHaveTextContent('true'));
+    fireEvent.click(screen.getByRole('button', { name: 'Compact' }));
+    await waitFor(() => expect(preferenceSaves()).toEqual([{ density: 'compact' }]));
+    first.unmount();
+
+    render(<FeedWorkspaceProvider><PreferenceProbe /></FeedWorkspaceProvider>);
+    fireEvent.click(screen.getByRole('button', { name: 'Comfortable' }));
+    expect(workspaceReads).toBe(1);
+    await act(async () => { old.resolve({ preferences: { density: 'compact', theme: 'light' } }); });
+    expect(workspaceReads).toBe(2);
+    expect(storedAppearance()).toMatchObject({ density: 'comfortable', theme: 'dark' });
+    await act(async () => { refresh.resolve({ preferencesStored: true, preferences: { density: 'compact', theme: 'sepia' } }); });
+    expect(preferenceSaves()).toEqual([{ density: 'compact' }, { density: 'comfortable' }]);
+    expect(storedAppearance()).toMatchObject({ density: 'comfortable', theme: 'sepia' });
   });
 
   test('keeps optimistic state and durably queues a mutation while offline', async () => {

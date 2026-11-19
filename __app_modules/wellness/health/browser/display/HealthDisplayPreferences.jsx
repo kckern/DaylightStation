@@ -4,19 +4,23 @@ import { densityRevision } from "../../portable/contracts/health/foodDensity.mjs
 import { createAppLogger } from "../../../../../frontend/src/lib/ui/createAppLogger.js";
 
 const logger = createAppLogger('health').child('display-preferences');
+const DEFAULT_PLACEMENT = 'before';
 const validPlacement = value => value === 'before' || value === 'after';
+const decodePlacement = raw => {
+  const placement = JSON.parse(raw)?.densityPlacement;
+  return validPlacement(placement) ? placement : DEFAULT_PLACEMENT;
+};
 const readPlacement = key => {
   try {
-    const value = JSON.parse(localStorage.getItem(key));
-    return validPlacement(value?.densityPlacement) ? value.densityPlacement : 'before';
+    return decodePlacement(localStorage.getItem(key));
   } catch (error) {
     logger.warn('preference.read_failed', { key, error: error?.message });
-    return 'before';
+    return DEFAULT_PLACEMENT;
   }
 };
 
 const defaults = {
-  densityPlacement: 'before',
+  densityPlacement: DEFAULT_PLACEMENT,
   setDensityPlacement: () => {},
   densityLevels: DEFAULT_DENSITY_LEVELS,
   densityRevision: densityRevision(DEFAULT_DENSITY_LEVELS),
@@ -31,14 +35,16 @@ export function HealthDisplayPreferencesProvider({
   const [densityPlacement, setPlacement] = useState(() => readPlacement(key));
   useEffect(() => setPlacement(readPlacement(key)), [key]);
   useEffect(() => {
+    let storageArea;
+    try { storageArea = window.localStorage; }
+    catch { return undefined; }
     const onStorage = event => {
-      if (event.key !== key) return;
+      if (event.storageArea !== storageArea || (event.key !== null && event.key !== key)) return;
       try {
-        const next = event.newValue === null ? 'before' : JSON.parse(event.newValue)?.densityPlacement;
-        setPlacement(validPlacement(next) ? next : 'before');
+        setPlacement(decodePlacement(event.newValue));
       } catch (error) {
         logger.warn('preference.storage_event_failed', { key, error: error?.message });
-        setPlacement('before');
+        setPlacement(DEFAULT_PLACEMENT);
       }
     };
     window.addEventListener('storage', onStorage);

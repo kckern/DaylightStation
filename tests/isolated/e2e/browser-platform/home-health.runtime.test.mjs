@@ -49,6 +49,25 @@ test('Health opens after the first confirmed context while its background revali
   await expect(page.getByRole('main')).toBeVisible();
 });
 
+test('Health resets food log display after another tab clears local storage', async ({ page, context }) => {
+  test.setTimeout(20_000);
+  await page.route('**/health/context', route => route.fulfill({ json: { userId: 'alice' } }));
+  await page.route('**/health/nutrition/cleanup', route => route.fulfill({ status: 404, json: {} }));
+  await page.goto('/health/settings');
+  const after = page.getByRole('radio', { name: 'After food name' });
+  await after.check();
+  await expect(after).toBeChecked();
+
+  const other = await context.newPage();
+  await other.route('**/preference-storage-fixture', route => route.fulfill({
+    contentType: 'text/html', body: '<title>Storage fixture</title>',
+  }));
+  await other.goto('/preference-storage-fixture');
+  expect(await other.evaluate(() => JSON.parse(localStorage.getItem('health:display:alice')))).toEqual({ densityPlacement: 'after' });
+  await other.evaluate(() => localStorage.clear());
+  await expect(page.getByRole('radio', { name: 'Before food name' })).toBeChecked();
+});
+
 test('Home keeps a confirmed toggle when an older poll finishes', async ({ page }) => {
   let reads = 0;
   let pendingPoll;

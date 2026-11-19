@@ -13,6 +13,20 @@ const storedDensity = browserPreference('feed:density', null);
 const lastVisit = mode => browserPreference(`feed:last-visit:${mode}`, null);
 const PENDING_PREFIX = 'feed:pending-mutations:';
 const DEFAULT_READING_PREFERENCES = Object.freeze({ theme: 'dark', density: 'comfortable', fontScale: 1, lineHeight: 1.65, measure: 72, sessionBudget: 0 });
+const READING_PREFERENCES_PATH = '/api/v1/feed/workspace/preferences';
+const preferenceTails = new Map();
+
+// A write accepted before navigation must finish before the replacement
+// workspace reads or saves preferences for the same account.
+function enqueuePreferenceTask(owner, task) {
+  const result = (preferenceTails.get(owner) ?? Promise.resolve()).then(task);
+  const tail = result.catch(() => {});
+  preferenceTails.set(owner, tail);
+  tail.then(() => {
+    if (preferenceTails.get(owner) === tail) preferenceTails.delete(owner);
+  });
+  return result;
+}
 
 const actions = new Set(['read', 'unread', 'save', 'unsave', 'archive', 'unarchive']);
 const itemMutations = createBrowserMutationQueue({
@@ -63,6 +77,9 @@ export function FeedWorkspaceProvider({ children }) {
   const activeReplayOwner = useRef(null);
   const [readingPreferences, setReadingPreferencesState] = useState(loadReadingPreferences);
   const readingPreferencesRef = useRef(readingPreferences);
+  const preferenceView = useRef(null);
+  const preferenceRevision = useRef(0);
+  const preferenceEdits = useRef(new Map());
   const [checkpoints, setCheckpoints] = useState({});
   const [sourcePreferences, setSourcePreferences] = useState({});
   const sourcePreferencesRef = useRef({});
@@ -82,30 +99,61 @@ export function FeedWorkspaceProvider({ children }) {
     }
   }, []);
 
-  const refreshWorkspace = useCallback(async ({ migrateLocal = false } = {}) => {
-    const workspace = await DaylightAPI('/api/v1/feed/workspace');
-    const localPreferences = loadReadingPreferences();
-    const nextPreferences = workspace?.preferencesStored
-      ? { ...DEFAULT_READING_PREFERENCES, ...(workspace.preferences || {}) }
-      : localPreferences;
-    readingPreferencesRef.current = nextPreferences;
-    setReadingPreferencesState(nextPreferences);
-    storedPreferences.write(JSON.stringify(nextPreferences));
-    storedDensity.write(nextPreferences.density);
-
-    const nextCheckpoints = workspace?.checkpoints || {};
-    checkpointsRef.current = nextCheckpoints;
-    setCheckpoints(nextCheckpoints);
-    const nextSourcePreferences = workspace?.sourcePreferences || {};
-    sourcePreferencesRef.current = nextSourcePreferences;
-    setSourcePreferences(nextSourcePreferences);
-
-    if (migrateLocal && !workspace?.preferencesStored) {
-      DaylightAPI('/api/v1/feed/workspace/preferences', nextPreferences, 'PATCH')
-        .catch(error => log.warn('feed.preferences.migration_failed', { error: error.message }));
-    }
-    return workspace;
+  const publishReadingPreferences = useCallback(next => {
+    readingPreferencesRef.current = next;
+    setReadingPreferencesState(next);
+    storedPreferences.write(JSON.stringify(next));
+    storedDensity.write(next.density);
   }, []);
+
+  const acceptReadingPreferences = useCallback((preferences, revision, keys = Object.keys(DEFAULT_READING_PREFERENCES)) => {
+    if (!preferences) return;
+    const next = { ...readingPreferencesRef.current };
+    for (const key of keys) {
+      if (Object.hasOwn(preferences, key) && (preferenceEdits.current.get(key) ?? 0) <= revision) {
+        next[key] = preferences[key];
+      }
+    }
+    publishReadingPreferences(next);
+  }, [publishReadingPreferences]);
+
+  const refreshWorkspace = useCallback(({ migrateLocal = false } = {}) => {
+    const owner = feedQueueOwner();
+    const view = preferenceView.current;
+    const revision = preferenceRevision.current;
+    const localBeforeRead = readingPreferencesRef.current;
+    const isCurrent = () => view && preferenceView.current === view && owner === feedQueueOwner();
+    return enqueuePreferenceTask(owner, async () => {
+      if (!isCurrent()) return null;
+      const workspace = await DaylightAPI('/api/v1/feed/workspace');
+      if (!isCurrent()) return workspace;
+
+      if (workspace?.preferencesStored) {
+        acceptReadingPreferences({ ...DEFAULT_READING_PREFERENCES, ...workspace.preferences }, revision);
+      } else {
+        publishReadingPreferences(readingPreferencesRef.current);
+      }
+      const nextCheckpoints = workspace?.checkpoints || {};
+      checkpointsRef.current = nextCheckpoints;
+      setCheckpoints(nextCheckpoints);
+      const nextSourcePreferences = workspace?.sourcePreferences || {};
+      sourcePreferencesRef.current = nextSourcePreferences;
+      setSourcePreferences(nextSourcePreferences);
+
+      if (migrateLocal && !workspace?.preferencesStored) {
+        // Render using the local snapshot during migration. Later writes wait
+        // in order, so a partial edit cannot prevent the initial full save.
+        setWorkspaceReady(true);
+        try {
+          const result = await DaylightAPI(READING_PREFERENCES_PATH, localBeforeRead, 'PATCH');
+          if (isCurrent()) acceptReadingPreferences(result?.preferences, revision);
+        } catch (error) {
+          log.warn('feed.preferences.migration_failed', { error: error.message });
+        }
+      }
+      return workspace;
+    });
+  }, [acceptReadingPreferences, publishReadingPreferences]);
 
   const publishPending = useCallback(next => {
     pendingRef.current = next;
@@ -145,19 +193,20 @@ export function FeedWorkspaceProvider({ children }) {
   }, [publishPending, refreshSummary, synchronizeUserScope]);
 
   useEffect(() => {
-    let active = true;
+    const view = {};
+    preferenceView.current = view;
     Promise.allSettled([
       refreshWorkspace({ migrateLocal: true }),
       refreshSummary(),
     ]).then(([workspaceResult]) => {
-      if (!active) return;
+      if (preferenceView.current !== view) return;
       if (workspaceResult.status === 'rejected') {
         log.warn('feed.workspace.load_failed', { error: workspaceResult.reason?.message });
       }
     }).finally(() => {
-      if (active) setWorkspaceReady(true);
+      if (preferenceView.current === view) setWorkspaceReady(true);
     });
-    return () => { active = false; };
+    return () => { preferenceView.current = null; };
   }, [refreshSummary, refreshWorkspace]);
 
   useEffect(() => {
@@ -168,21 +217,20 @@ export function FeedWorkspaceProvider({ children }) {
   }, [flushPendingMutations]);
 
   const setReadingPreference = useCallback((key, value) => {
-    const next = { ...readingPreferencesRef.current, [key]: value };
-    readingPreferencesRef.current = next;
-    setReadingPreferencesState(next);
-    storedPreferences.write(JSON.stringify(next));
-    if (key === 'density') storedDensity.write(value);
-    DaylightAPI('/api/v1/feed/workspace/preferences', { [key]: value }, 'PATCH')
-      .then(result => {
-        if (result?.preferences) {
-          readingPreferencesRef.current = result.preferences;
-          setReadingPreferencesState(result.preferences);
-          storedPreferences.write(JSON.stringify(result.preferences));
-        }
-      })
-      .catch(error => log.warn('feed.preferences.save_failed', { key, error: error.message }));
-  }, []);
+    const view = preferenceView.current;
+    if (!view) return;
+    const owner = feedQueueOwner();
+    const revision = ++preferenceRevision.current;
+    preferenceEdits.current.set(key, revision);
+    publishReadingPreferences({ ...readingPreferencesRef.current, [key]: value });
+    enqueuePreferenceTask(owner, async () => {
+      if (owner !== feedQueueOwner()) return;
+      const result = await DaylightAPI(READING_PREFERENCES_PATH, { [key]: value }, 'PATCH');
+      if (preferenceView.current === view && owner === feedQueueOwner()) {
+        acceptReadingPreferences(result?.preferences, revision, [key]);
+      }
+    }).catch(error => log.warn('feed.preferences.save_failed', { key, error: error.message }));
+  }, [acceptReadingPreferences, publishReadingPreferences]);
 
   const setDensity = useCallback((value) => setReadingPreference('density', value === 'compact' ? 'compact' : 'comfortable'), [setReadingPreference]);
   const density = readingPreferences.density;
