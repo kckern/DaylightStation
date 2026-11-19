@@ -475,7 +475,7 @@ export function LogTable({
         <div key={index} className="health-log__column">
           {ids.map(id => BUCKETS.find(b => b.id === id)).map(renderBucket)}
           {/* Workouts sit under Snacks, a meal-width column like any food. */}
-          {index === 1 && showExercise ? <ExerciseSection date={date} sessions={sessions} /> : null}
+          {index === 1 && showExercise ? <ExerciseSection date={date} sessions={sessions} active={active} /> : null}
         </div>
       ))}
       {orphans.length ? (

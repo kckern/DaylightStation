@@ -26,7 +26,7 @@ describe('useStartStatuses', () => {
     const api = { startStatus: vi.fn(async (id) => ({ ok: true, status: id === 'office-tv' ? { deviceId: id, phase: 'failed', updatedAt: '2026-10-03T14:00:00.000Z' } : null })) };
     render(<StatusProbe ids={['office-tv', 'livingroom-tv', 'browser:x']} api={api} />);
     await waitFor(() => expect(screen.getByTestId('s')).toHaveTextContent('office-tv=failed,livingroom-tv=-'));
-    expect(api.startStatus).not.toHaveBeenCalledWith('browser:x');
+    expect(api.startStatus.mock.calls.map(([id]) => id)).toEqual(['office-tv', 'livingroom-tv']);
     act(() => wsHandlers.kinds.get('device-start')({ topic: 'device-start:livingroom-tv', deviceId: 'livingroom-tv', phase: 'starting', step: 'power', updatedAt: '2026-10-03T14:01:00.000Z' }));
     expect(screen.getByTestId('s')).toHaveTextContent('livingroom-tv=starting');
   });
@@ -206,7 +206,10 @@ it('recovers missed start status once per reconnect and keeps a newer live updat
   act(() => {
     for (const connected of [false, true, true, false, false, true, true]) wsHandlers.status({ connected });
   });
-  expect(api.startStatus.mock.calls).toEqual([['tv'], ['tv']]);
+  expect(api.startStatus.mock.calls.map(([id]) => id)).toEqual(['tv', 'tv']);
+  const [[, first], [, second]] = api.startStatus.mock.calls;
+  expect(first.signal.aborted).toBe(true);
+  expect(second.signal.aborted).toBe(false);
   act(() => wsHandlers.kinds.get('device-start')({ topic: 'device-start:tv', phase: 'started', updatedAt: '2026-10-01T10:00:00Z' }));
   await act(async () => finish({ status: { phase: 'starting', updatedAt: '2026-10-01T09:59:00Z' } }));
   expect(screen.getByTestId('s')).toHaveTextContent('tv=started');

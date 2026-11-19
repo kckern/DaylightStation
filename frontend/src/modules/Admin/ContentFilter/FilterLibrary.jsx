@@ -63,7 +63,7 @@ export function FilterLibrary() {
     if (data?.meta) logger.debug('library.loaded', { total: data.meta.total, verified: data.meta.verified ?? null, unmatched: data.meta.unmatched ?? null });
   }, [data]);
 
-  useVisibleRefresh({ active: anyActive, intervalMs: POLL_MS, reload, poll });
+  useVisibleRefresh({ intervalMs: anyActive ? POLL_MS : undefined, reload, poll });
 
   const make = useCallback(async (film) => {
     setBusy(film.ratingKey); setNotice(null);

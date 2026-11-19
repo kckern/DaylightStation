@@ -5,7 +5,7 @@
 //   shows it), then followed live on `device-start:*` (§9.15);
 // - how its playback started (RQ-HOUSE-07): GET /api/v1/media/started-by,
 //   re-read whenever what is playing around the house changes.
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRefreshableRead } from '@/lib/hooks/useRefreshableRead.js';
 import { useVisibleRefresh } from '../../../../../frontend/src/lib/hooks/useVisibleRefresh.js';
 import { observeSocketStatus } from '../../../../../frontend/src/services/observeSocketStatus.js';
@@ -36,50 +36,54 @@ export function useStartStatuses(deviceIds, { api = defaultApi } = {}) {
     });
   }, []);
 
-  const key = deviceIds.filter((id) => !id.startsWith('browser:')).join('|');
+  const key = deviceIds.filter(id => !id.startsWith('browser:')).join('|');
+  const liveUpdates = useRef(new Set());
+  const readStatuses = useCallback(async (isCurrent, signal) => {
+    if (!key) return;
+    const updates = new Set();
+    liveUpdates.current = updates;
+    await Promise.all(key.split('|').map(async deviceId => {
+      try {
+        const res = await api.startStatus(deviceId, { signal });
+        if (!isCurrent()) return;
+        if (res?.status === null && !updates.has(deviceId)) {
+          setByDevice(previous => {
+            if (!previous.has(deviceId)) return previous;
+            const next = new Map(previous);
+            next.delete(deviceId);
+            return next;
+          });
+        } else if (PHASES.has(res?.status?.phase)) {
+          put(deviceId, { ...res.status, deviceId }, updates.has(deviceId));
+        }
+      } catch (error) {
+        if (isCurrent() && error?.status !== 404) {
+          houseLog.startStatusFailed({ deviceId, status: error?.status ?? null, error: error?.message });
+        }
+      }
+    }));
+  }, [key, api, put]);
+  const { reload } = useRefreshableRead(readStatuses);
+
   useEffect(() => {
-    let generation = 0;
-    const liveUpdates = new Set();
     const stopEvents = subscribeTopicKind('device-start', msg => {
       const parsed = typeof msg?.topic === 'string' ? parseDeviceTopic(msg.topic) : null;
       const deviceId = (parsed?.kind === 'device-start' ? parsed.deviceId : null) ?? msg?.deviceId;
       if (typeof deviceId !== 'string' || !deviceId || !PHASES.has(msg?.phase)) return;
-      liveUpdates.add(deviceId);
+      liveUpdates.current.add(deviceId);
       houseLog.startStatus({ deviceId, phase: msg.phase, step: msg.step ?? null, replay: !!msg.replay });
       put(deviceId, { ...msg, deviceId });
     });
-    if (!key) return stopEvents;
-    const refresh = () => {
-      const current = ++generation;
-      liveUpdates.clear();
-      for (const deviceId of key.split('|')) {
-        api.startStatus(deviceId)
-          .then(res => {
-            if (current !== generation) return;
-            if (res?.status === null && !liveUpdates.has(deviceId)) {
-              setByDevice(previous => {
-                if (!previous.has(deviceId)) return previous;
-                const next = new Map(previous);
-                next.delete(deviceId);
-                return next;
-              });
-            } else if (PHASES.has(res?.status?.phase)) {
-              put(deviceId, { ...res.status, deviceId }, liveUpdates.has(deviceId));
-            }
-          })
-          .catch(error => {
-            if (current === generation && error?.status !== 404) {
-              houseLog.startStatusFailed({ deviceId, status: error?.status ?? null, error: error?.message });
-            }
-          });
-      }
-    };
-    refresh();
-    const unsubscribe = observeSocketStatus(onStatus, (_status, recovered) => {
-      if (recovered) refresh();
+    return stopEvents;
+  }, [put]);
+
+  useEffect(() => {
+    if (!key) return;
+    reload();
+    return observeSocketStatus(onStatus, (_status, recovered) => {
+      if (recovered) reload();
     });
-    return () => { generation++; unsubscribe(); stopEvents(); };
-  }, [key, api, put]);
+  }, [key, reload]);
 
   return byDevice;
 }

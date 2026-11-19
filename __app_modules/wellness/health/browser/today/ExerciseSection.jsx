@@ -82,14 +82,14 @@ function ExerciseRow({ workout, linked }) {
   </Row>;
 }
 
-export function ExerciseSection({ date, sessions }) {
+export function ExerciseSection({ date, sessions, active = true }) {
   // One lightweight day index supplies verified links and program artwork.
   // Nutrition's workout ledger remains the authority for calorie credit.
   // Asked again when a new home session reaches the ledger (a workout that
   // ended after the page loaded), not on every budget poll.
   const linkIds = sessions.map(workout => workout.homeSessionId).filter(Boolean).join(',');
   const details = useApiResource(date && linkIds ? `api/v1/fitness/sessions?date=${encodeURIComponent(date)}` : null,
-    { swr: true, deps: [linkIds], label: 'Workout details', logger });
+    { enabled: active, swr: true, deps: [linkIds], label: 'Workout details', logger });
   const homeSessions = details.data?.sessions || [];
   return <section className="health-meal health-meal--exercise">
     <header className="health-meal__header">

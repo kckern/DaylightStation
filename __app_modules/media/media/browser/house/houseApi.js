@@ -82,7 +82,7 @@ export const houseApi = {
   startedBy: (id, { signal } = {}) => call(`${screen(id)}/started-by`, { signal }),
   routineHistory: ({ limit = 50, signal } = {}) => call(media(`routines/history?limit=${limit}`), { signal }),
   routineFlags: ({ signal } = {}) => call(media('routines/flags'), { signal }),
-  startStatus: (deviceId) => call(`api/v1/device/${encodeURIComponent(deviceId)}/start-status`),
+  startStatus: (deviceId, { signal } = {}) => call(`api/v1/device/${encodeURIComponent(deviceId)}/start-status`, { signal }),
   screenOff: (deviceId) => call(`api/v1/device/${encodeURIComponent(deviceId)}/off`),
 };
 
