@@ -72,7 +72,7 @@ function encodeIntentPart(part) {
 // What qualifies an object as Fully's control interface. `restartApp` and
 // `reboot` are deliberately not on it: they are called on whichever object
 // this list selects, and an object carrying only those does not qualify.
-const CONTROL_METHODS = ['turnScreenOff', 'turnScreenOn', 'startApplication', 'startIntent', 'bind', 'reboot'];
+const CONTROL_METHODS = ['turnScreenOff', 'turnScreenOn', 'startApplication', 'startIntent', 'bind'];
 
 /**
  * The `window.daylight` members this module calls. As with Fully, a name on

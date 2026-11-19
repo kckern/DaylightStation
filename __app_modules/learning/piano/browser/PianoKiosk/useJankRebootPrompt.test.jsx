@@ -80,7 +80,7 @@ describe('requested recovery', () => {
   it('request is verified only by new boot identity and a fresh page beat', async () => {
     const readStatus = vi.fn().mockResolvedValue(healthy);
     vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: readStatus })));
-    window.fully = { reboot: () => true };
+    window.fully = { bind: vi.fn(), reboot: () => true };
     const first = renderHook(() => useJankRebootPrompt());
     await act(async () => { await first.result.current.onReboot(); });
     const acceptedCommandOnly = { verified: first.result.current.recoveryVerified };
