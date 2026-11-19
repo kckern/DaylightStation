@@ -9,7 +9,7 @@ import {
 import '@mantine/core/styles.css';
 import '@mantine/notifications/styles.css';
 import "./LifeApp.scss";
-import { AppThemeProvider, AppChrome, LoadingState, createAppLogger, useViewScroll } from '@/lib/ui';
+import { AppThemeProvider, AppChrome, DismissStackProvider, LoadingState, createAppLogger, useViewScroll } from '@/lib/ui';
 import { configure } from "../../../../frontend/src/lib/logging/Logger.js";
 import useDocumentTitle from "../../../../frontend/src/hooks/useDocumentTitle.js";
 import { ErrorState } from './components/ErrorState.jsx';
@@ -205,7 +205,9 @@ function LifeAppShell() {
 
 const LifeApp = () => (
   <AppThemeProvider pack="life">
-    <LifeAppShell />
+    <DismissStackProvider>
+      <LifeAppShell />
+    </DismissStackProvider>
   </AppThemeProvider>
 );
 

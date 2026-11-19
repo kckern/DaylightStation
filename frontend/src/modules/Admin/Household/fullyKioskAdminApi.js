@@ -25,8 +25,8 @@ async function jsonRequest(request) {
 }
 
 export const fullyKioskAdminApi = {
-  status: deviceId => jsonRequest(DaylightAPI(`${base(deviceId)}/status`)),
-  settings: deviceId => jsonRequest(DaylightAPI(`${base(deviceId)}/settings`)),
+  status: (deviceId, { signal } = {}) => jsonRequest(DaylightAPI(`${base(deviceId)}/status`, {}, 'GET', { signal })),
+  settings: (deviceId, { signal } = {}) => jsonRequest(DaylightAPI(`${base(deviceId)}/settings`, {}, 'GET', { signal })),
   action: (deviceId, action, params = {}) => jsonRequest(DaylightAPI(
     `${base(deviceId)}/actions/${encodeURIComponent(action)}`,
     params,

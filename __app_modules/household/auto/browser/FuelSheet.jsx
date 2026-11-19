@@ -109,7 +109,7 @@ export default function FuelSheet({ vehicleId, initial = {}, onClose }) {
           </label>
         </div>
 
-        <label className="auto-field auto-field--check">
+        <label className="auto-field auto-field--check ds-touch-target">
           <input type="checkbox" checked={form.partial} onChange={set('partial')} />
           <span>Partial fill (didn’t fill the tank)</span>
         </label>

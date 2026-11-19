@@ -191,10 +191,10 @@ function DeviceConsole({ deviceId }) {
   const [packageName, setPackageName] = useState('');
   const screenshotObjectUrlRef = useRef('');
 
-  const refreshStatus = useCallback(async ({ quiet = false } = {}) => {
-    if (!quiet) setStatusLoading(true);
+  const readStatus = useCallback(async (isCurrent, signal) => {
     try {
-      const result = await fullyKioskAdminApi.status(deviceId);
+      const result = await fullyKioskAdminApi.status(deviceId, { signal });
+      if (!isCurrent()) return;
       setStatus(result);
       setStatusError('');
       const reportedBrightness = Number(result.summary?.brightness);
@@ -202,25 +202,32 @@ function DeviceConsole({ deviceId }) {
         && Number.isFinite(reportedBrightness)) setBrightness(reportedBrightness);
       if (result.summary?.currentUrl) setTargetUrl(current => current || result.summary.currentUrl);
     } catch (error) {
-      setStatusError(error.message || 'Unable to reach the device');
+      if (isCurrent()) setStatusError(error.message || 'Unable to reach the device');
     } finally {
-      if (!quiet) setStatusLoading(false);
+      if (isCurrent()) setStatusLoading(false);
     }
   }, [deviceId]);
+  const { reload: reloadStatus } = useRefreshableRead(readStatus);
+  const refreshStatus = useCallback(({ quiet = false } = {}) => {
+    if (!quiet) setStatusLoading(true);
+    return reloadStatus();
+  }, [reloadStatus]);
 
-  const refreshSettings = useCallback(async () => {
+  const readSettings = useCallback(async (isCurrent, signal) => {
     setSettingsLoading(true);
     try {
-      const result = await fullyKioskAdminApi.settings(deviceId);
+      const result = await fullyKioskAdminApi.settings(deviceId, { signal });
+      if (!isCurrent()) return;
       setSettings(result.settings || []);
       setDraftSettings(Object.fromEntries((result.settings || []).map(setting => [setting.key, setting.value])));
       setSettingsError('');
     } catch (error) {
-      setSettingsError(error.message || 'Unable to read settings');
+      if (isCurrent()) setSettingsError(error.message || 'Unable to read settings');
     } finally {
-      setSettingsLoading(false);
+      if (isCurrent()) setSettingsLoading(false);
     }
   }, [deviceId]);
+  const { reload: refreshSettings } = useRefreshableRead(readSettings);
 
   const readScreenshot = useCallback(async (isCurrent, signal) => {
     setScreenshotLoading(true);

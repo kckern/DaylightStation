@@ -22,6 +22,7 @@ import PersistentPlayer from "./Scroll/PersistentPlayer.jsx";
 import { usePlaybackObserver } from "./Scroll/hooks/usePlaybackObserver.js";
 import { useApiResource } from "../../../../frontend/src/lib/hooks/useApiResource.js";
 import getLogger, { configure as configureLogger } from "../../../../frontend/src/lib/logging/Logger.js";
+import { wsService } from "../../../../frontend/src/services/WebSocketService.js";
 import "./FeedApp.scss";
 
 const Headlines = lazy(() => import("./Headlines/Headlines.jsx"));
@@ -214,6 +215,8 @@ function FeedLayout() {
 
 const FeedApp = () => {
   useDocumentTitle('Feed');
+  // A sustained backend outage must leave Feed's local playback running.
+  useEffect(() => wsService.suppressAutoReload('feed local playback'), []);
   const owner = useSyncExternalStore(subscribeToken, feedQueueOwner);
   return (
     <AppThemeProvider pack="feed">

@@ -120,7 +120,7 @@ html[data-browser-app-viewport] {
 }
 
 @media (pointer: coarse) {
-  :is(button, a).ds-touch-target {
+  :is(button, a, label).ds-touch-target {
     min-inline-size: var(--ds-control-touch-target);
     min-block-size: var(--ds-control-touch-target);
   }

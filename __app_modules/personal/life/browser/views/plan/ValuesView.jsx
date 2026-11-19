@@ -1,12 +1,13 @@
 import { useState, useCallback, useMemo } from 'react';
 import {
   Stack, Paper, Text, Group, Badge, ActionIcon,
-  Button, Modal, TextInput, Alert,
+  Button, TextInput, Alert,
 } from '@mantine/core';
 import { IconArrowUp, IconArrowDown } from '@tabler/icons-react';
 import { useLifePlan } from "../../hooks/useLifePlan.js";
 import { LifePage, LoadingState, ErrorState } from "../../components/index.js";
 import { humanize } from "../../lib/format.js";
+import { PlanCreateSheet } from "./PlanCreateSheet.jsx";
 
 function alignmentColor(state) {
   if (state === 'aligned') return 'green';
@@ -15,35 +16,29 @@ function alignmentColor(state) {
   return 'gray';
 }
 
+function ValueCreateSheet({ onClose, createValue }) {
+  const [name, setName] = useState('');
+  return (
+    <PlanCreateSheet noun="value" onClose={onClose} save={() => createValue({ name: name.trim() })} valid={Boolean(name.trim())}>
+      <TextInput
+        label="Value"
+        placeholder="What principle guides you?"
+        required
+        data-autofocus
+        value={name}
+        onChange={(e) => setName(e.currentTarget.value)}
+      />
+    </PlanCreateSheet>
+  );
+}
+
 export function ValuesView({ username }) {
   const { plan, loading, error, readError, refetch, updateSection, createValue } = useLifePlan(username);
 
   const values = useMemo(() => plan?.values || [], [plan?.values]);
 
   const [opened, setOpened] = useState(false);
-  const [name, setName] = useState('');
-  const [submitting, setSubmitting] = useState(false);
-  const [formError, setFormError] = useState(null);
-
-  const closeModal = () => {
-    setOpened(false);
-    setName('');
-    setFormError(null);
-  };
-
-  const handleSubmit = async () => {
-    if (!name.trim() || submitting) return;
-    setSubmitting(true);
-    setFormError(null);
-    try {
-      await createValue({ name: name.trim() });
-      closeModal();
-    } catch (err) {
-      setFormError(err.message);
-    } finally {
-      setSubmitting(false);
-    }
-  };
+  const close = () => setOpened(false);
 
   const moveValue = useCallback(async (index, direction) => {
     const newValues = [...values];
@@ -64,11 +59,13 @@ export function ValuesView({ username }) {
     }
   }, [values, updateSection]);
 
-  if (loading) return <LoadingState />;
-  if (readError) return <LifePage title="Values" scrollReady={false}><ErrorState label="Values" error={readError} onRetry={refetch} /></LifePage>;
-
-  return (
-    <LifePage title="Values" actions={<Button onClick={() => setOpened(true)}>Add value</Button>}>
+  const actions = (!loading && !readError) || opened
+    ? <Button onClick={() => setOpened(true)}>Add value</Button> : undefined;
+  let content;
+  if (loading) content = <LoadingState />;
+  else if (readError) content = <ErrorState label="Values" error={readError} onRetry={refetch} />;
+  else content = (
+    <>
       {error && <Alert color="red" title="Couldn’t reorder values">{error}</Alert>}
       {values.length === 0 && (
         <Text size="sm" c="dimmed">No values defined yet — add one to rank what matters most.</Text>
@@ -143,27 +140,15 @@ export function ValuesView({ username }) {
           </Paper>
         ))}
       </Stack>
+    </>
+  );
 
-      <Modal opened={opened} onClose={closeModal} title="Add value">
-        <Stack gap="sm">
-          {formError && (
-            <Alert color="red" title="Couldn't create the value">{formError}</Alert>
-          )}
-          <TextInput
-            label="Value"
-            placeholder="What principle guides you?"
-            required
-            value={name}
-            onChange={(e) => setName(e.currentTarget.value)}
-          />
-          <Group justify="flex-end">
-            <Button variant="subtle" onClick={closeModal}>Cancel</Button>
-            <Button onClick={handleSubmit} loading={submitting} disabled={!name.trim()}>
-              Create value
-            </Button>
-          </Group>
-        </Stack>
-      </Modal>
-    </LifePage>
+  return (
+    <>
+      <LifePage title="Values" actions={actions} scrollReady={!loading && !readError}>
+        {content}
+      </LifePage>
+      {opened && <ValueCreateSheet createValue={createValue} onClose={close} />}
+    </>
   );
 }

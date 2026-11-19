@@ -41,7 +41,7 @@ beforeEach(() => {
 });
 
 describe('GoalsView create-goal flow', () => {
-  it('opens the modal, POSTs the goal, and refetches so the new goal renders', async () => {
+  it('opens the sheet, POSTs the goal, and refetches so the new goal renders', async () => {
     let created = false;
     fetch.mockImplementation((url, opts) => {
       if (url.includes('/life/plan/goals') && opts?.method === 'POST') {
@@ -56,12 +56,11 @@ describe('GoalsView create-goal flow', () => {
 
     renderAt(<GoalsView username="test-user" />);
 
-    // Empty state renders its own "Add goal" button
     await waitFor(() => expect(screen.getByText(/No goals yet/)).toBeInTheDocument());
     fireEvent.click(screen.getByRole('button', { name: 'Add goal' }));
 
     const dialog = await screen.findByRole('dialog');
-    const nameInput = within(dialog).getByLabelText(/Goal/i);
+    const nameInput = within(dialog).getByRole('textbox', { name: 'Goal', exact: true });
     const submit = within(dialog).getByRole('button', { name: 'Create goal' });
 
     // Submit is disabled until a name is entered
@@ -79,12 +78,12 @@ describe('GoalsView create-goal flow', () => {
     expect(url).toContain('username=test-user');
     expect(JSON.parse(opts.body)).toMatchObject({ name: 'Run a 5k', why: 'health' });
 
-    // Refetch happened → the new goal is now on the board and the modal closed
+    // Refetch happened → the new goal is now on the board and the sheet closed
     await waitFor(() => expect(screen.getByText('Run a 5k')).toBeInTheDocument());
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
   });
 
-  it('keeps the modal open and shows an alert when the POST fails', async () => {
+  it('keeps the sheet open and shows an alert when the POST fails', async () => {
     fetch.mockImplementation((url, opts) => {
       if (url.includes('/life/plan/goals') && opts?.method === 'POST') {
         return Promise.resolve(jsonResponse(500, { error: 'disk full' }));
@@ -98,25 +97,22 @@ describe('GoalsView create-goal flow', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Add goal' }));
 
     const dialog = await screen.findByRole('dialog');
-    fireEvent.change(within(dialog).getByLabelText(/Goal/i), { target: { value: 'Nope' } });
+    fireEvent.change(within(dialog).getByRole('textbox', { name: 'Goal', exact: true }), { target: { value: 'Nope' } });
     fireEvent.click(within(dialog).getByRole('button', { name: 'Create goal' }));
 
     // A substring match, because lib/api.mjs wraps every non-2xx body into
     // `HTTP <status>: <statusText> - <body>` and several callers (the queue
     // controller, the feed) parse that exact shape, so it is not ours to
     // change here. What this test is actually for still holds: the server's
-    // reason reaches the user rather than being swallowed, and the modal stays
+    // reason reaches the user rather than being swallowed, and the sheet stays
     // open so the typing is not lost.
-    await waitFor(() => expect(
-      within(dialog).getByText((_, el) => /disk full/.test(el?.textContent || ''), { selector: '[class*="Alert-message"]' })
-    ).toBeInTheDocument());
-    // Modal is still open
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent('disk full');
     expect(screen.getByRole('dialog')).toBeInTheDocument();
   });
 });
 
 describe('ValuesView create-value flow', () => {
-  it('opens the modal, POSTs the value, and refetches so it renders', async () => {
+  it('opens the sheet, POSTs the value, and refetches so it renders', async () => {
     let created = false;
     fetch.mockImplementation((url, opts) => {
       if (url.includes('/life/plan/values') && opts?.method === 'POST') {
@@ -132,12 +128,12 @@ describe('ValuesView create-value flow', () => {
 
     renderAt(<ValuesView username="test-user" />);
     await waitFor(() => expect(screen.getByText('Values')).toBeInTheDocument());
-    fireEvent.click(screen.getByRole('button', { name: 'Add value' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Add value' }));
 
     const dialog = await screen.findByRole('dialog');
     const submit = within(dialog).getByRole('button', { name: 'Create value' });
     expect(submit).toBeDisabled();
-    fireEvent.change(within(dialog).getByLabelText(/Value/i), { target: { value: 'Integrity' } });
+    fireEvent.change(within(dialog).getByRole('textbox', { name: 'Value', exact: true }), { target: { value: 'Integrity' } });
     expect(submit).not.toBeDisabled();
     fireEvent.click(submit);
 
@@ -152,7 +148,7 @@ describe('ValuesView create-value flow', () => {
 });
 
 describe('BeliefsView create-belief flow', () => {
-  it('opens the modal, POSTs both fields, and refetches so it renders', async () => {
+  it('opens the sheet, POSTs both fields, and refetches so it renders', async () => {
     let created = false;
     fetch.mockImplementation((url, opts) => {
       if (url.includes('/life/plan/beliefs') && opts?.method === 'POST') {
@@ -167,7 +163,7 @@ describe('BeliefsView create-belief flow', () => {
 
     renderAt(<BeliefsView username="test-user" />);
     await waitFor(() => expect(screen.getByText('Beliefs')).toBeInTheDocument());
-    fireEvent.click(screen.getByRole('button', { name: 'Add belief' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Add belief' }));
 
     const dialog = await screen.findByRole('dialog');
     const submit = within(dialog).getByRole('button', { name: 'Create belief' });

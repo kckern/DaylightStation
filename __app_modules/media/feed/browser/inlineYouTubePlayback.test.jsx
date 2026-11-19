@@ -30,6 +30,11 @@ function ActiveMedia() {
   return <output aria-label="Active and paused media">{`${activeMedia?.item.id || ''}|${pausedMedia?.item.id || ''}`}</output>;
 }
 
+function StartFixtureAudio() {
+  const { play } = useFeedPlayer();
+  return <button onClick={() => play({ id: 'fixture-audio' }, 'plex:42')}>Play fixture audio</button>;
+}
+
 describe('Feed inline YouTube playback', () => {
   beforeEach(() => {
     vi.stubGlobal('IntersectionObserver', class {
@@ -48,10 +53,21 @@ describe('Feed inline YouTube playback', () => {
     DaylightAPI.mockImplementation(async path => path.startsWith('/api/v1/feed/detail/')
       ? playerResult(firstStream)
       : { annotations: [] });
-    const view = article => <FeedPlayerProvider><ArticleRow article={article} /><ActiveMedia /></FeedPlayerProvider>;
+    const view = article => (
+      <FeedPlayerProvider>
+        <StartFixtureAudio />
+        <ArticleRow article={article} />
+        <ActiveMedia />
+      </FeedPlayerProvider>
+    );
     const { container, rerender } = render(view(readerVideo));
+    fireEvent.click(screen.getByRole('button', { name: 'Play fixture audio' }));
+    const ownership = screen.getByLabelText('Active and paused media');
+    expect(ownership).toHaveTextContent(/^fixture-audio\|$/);
     await act(async () => fireEvent.click(screen.getByRole('button', { name: /First video/ })));
-    expect(container.querySelector('video')).toHaveAttribute('src', firstStream);
+    const video = container.querySelector('video');
+    expect(video).toHaveAttribute('src', firstStream);
+    expect(ownership).toHaveTextContent(/^\|fixture-audio$/);
 
     await act(async () => rerender(view({
       ...readerVideo, title: 'Updated title', meta: { ...readerVideo.meta, imageWidth: 1080 },
@@ -62,8 +78,9 @@ describe('Feed inline YouTube playback', () => {
     expect(request.pathname).toBe('/api/v1/feed/detail/youtube%3Afirst123456');
     expect(request.searchParams.get('quality')).toBe('720p');
     expect(JSON.parse(request.searchParams.get('meta'))).toEqual({ videoId: 'first123456' });
-    expect(screen.getByLabelText('Active and paused media')).toHaveTextContent('youtube:first123456|');
-    expect(container.querySelector('video')).toHaveAttribute('src', firstStream);
+    expect(ownership).toHaveTextContent(/^\|fixture-audio$/);
+    expect(container.querySelector('video')).toBe(video);
+    expect(video).toHaveAttribute('src', firstStream);
   });
 
   test('Reader and Scroll share a pending stream read, and reopening asks for a fresh stream', async () => {

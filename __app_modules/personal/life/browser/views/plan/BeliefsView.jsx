@@ -1,10 +1,11 @@
 import { useState } from 'react';
-import { Stack, Paper, Text, Group, Badge, Progress, Button, TextInput, Select, Modal, Alert } from '@mantine/core';
+import { Stack, Paper, Text, Group, Badge, Progress, Button, TextInput, Select, Modal } from '@mantine/core';
 import { IconFlask } from '@tabler/icons-react';
 import { useBeliefs } from "../../hooks/useLifePlan.js";
 import { beliefConfidenceColor } from "../../theme/semantics.js";
 import { LifePage, LoadingState, ErrorState } from "../../components/index.js";
 import { formatDate } from "../../lib/format.js";
+import { PlanCreateSheet } from "./PlanCreateSheet.jsx";
 
 function stateColor(state) {
   const map = {
@@ -34,6 +35,33 @@ function EvidenceTimeline({ history = [] }) {
   );
 }
 
+function BeliefCreateSheet({ onClose, createBelief }) {
+  const [ifHypothesis, setIfHypothesis] = useState('');
+  const [thenOutcome, setThenOutcome] = useState('');
+  const valid = Boolean(ifHypothesis.trim() && thenOutcome.trim());
+  const save = () => createBelief({ if_hypothesis: ifHypothesis.trim(), then_outcome: thenOutcome.trim() });
+
+  return (
+    <PlanCreateSheet noun="belief" onClose={onClose} save={save} valid={valid}>
+      <TextInput
+        label="If I…"
+        placeholder="practice piano every morning"
+        required
+        data-autofocus
+        value={ifHypothesis}
+        onChange={(e) => setIfHypothesis(e.currentTarget.value)}
+      />
+      <TextInput
+        label="…then"
+        placeholder="I'll be recital-ready by spring"
+        required
+        value={thenOutcome}
+        onChange={(e) => setThenOutcome(e.currentTarget.value)}
+      />
+    </PlanCreateSheet>
+  );
+}
+
 export function BeliefsView({ username }) {
   const { beliefs, loading, error, refetch, addEvidence, createBelief } = useBeliefs(username);
   const [addingTo, setAddingTo] = useState(null);
@@ -41,17 +69,7 @@ export function BeliefsView({ username }) {
   const [evidenceNote, setEvidenceNote] = useState('');
 
   const [creating, setCreating] = useState(false);
-  const [ifHypothesis, setIfHypothesis] = useState('');
-  const [thenOutcome, setThenOutcome] = useState('');
-  const [submitting, setSubmitting] = useState(false);
-  const [createError, setCreateError] = useState(null);
-
-  if (loading) return <LoadingState />;
-  if (error) return (
-    <LifePage title="Beliefs" scrollReady={false}>
-      <ErrorState label="Beliefs" error={error} onRetry={refetch} />
-    </LifePage>
-  );
+  const close = () => setCreating(false);
 
   const handleAddEvidence = async () => {
     if (!addingTo) return;
@@ -64,29 +82,13 @@ export function BeliefsView({ username }) {
     setEvidenceNote('');
   };
 
-  const closeCreate = () => {
-    setCreating(false);
-    setIfHypothesis('');
-    setThenOutcome('');
-    setCreateError(null);
-  };
-
-  const handleCreate = async () => {
-    if (!ifHypothesis.trim() || !thenOutcome.trim() || submitting) return;
-    setSubmitting(true);
-    setCreateError(null);
-    try {
-      await createBelief({ if_hypothesis: ifHypothesis.trim(), then_outcome: thenOutcome.trim() });
-      closeCreate();
-    } catch (err) {
-      setCreateError(err.message);
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  return (
-    <LifePage title="Beliefs" actions={<Button onClick={() => setCreating(true)}>Add belief</Button>}>
+  const actions = (!loading && !error) || creating
+    ? <Button onClick={() => setCreating(true)}>Add belief</Button> : undefined;
+  let content;
+  if (loading) content = <LoadingState />;
+  else if (error) content = <ErrorState label="Beliefs" error={error} onRetry={refetch} />;
+  else content = (
+    <>
       {beliefs.length === 0 && (
         <Text size="sm" c="dimmed">No beliefs defined yet — add a hypothesis to start testing it.</Text>
       )}
@@ -146,38 +148,6 @@ export function BeliefsView({ username }) {
         })}
       </Stack>
 
-      <Modal opened={creating} onClose={closeCreate} title="Add belief">
-        <Stack gap="sm">
-          {createError && (
-            <Alert color="red" title="Couldn't create the belief">{createError}</Alert>
-          )}
-          <TextInput
-            label="If I…"
-            placeholder="practice piano every morning"
-            required
-            value={ifHypothesis}
-            onChange={(e) => setIfHypothesis(e.currentTarget.value)}
-          />
-          <TextInput
-            label="…then"
-            placeholder="I'll be recital-ready by spring"
-            required
-            value={thenOutcome}
-            onChange={(e) => setThenOutcome(e.currentTarget.value)}
-          />
-          <Group justify="flex-end">
-            <Button variant="subtle" onClick={closeCreate}>Cancel</Button>
-            <Button
-              onClick={handleCreate}
-              loading={submitting}
-              disabled={!ifHypothesis.trim() || !thenOutcome.trim()}
-            >
-              Create belief
-            </Button>
-          </Group>
-        </Stack>
-      </Modal>
-
       <Modal opened={!!addingTo} onClose={() => setAddingTo(null)} title="Add Evidence">
         <Stack gap="sm">
           <Select
@@ -198,6 +168,15 @@ export function BeliefsView({ username }) {
           <Button onClick={handleAddEvidence}>Submit</Button>
         </Stack>
       </Modal>
-    </LifePage>
+    </>
+  );
+
+  return (
+    <>
+      <LifePage title="Beliefs" actions={actions} scrollReady={!loading && !error}>
+        {content}
+      </LifePage>
+      {creating && <BeliefCreateSheet createBelief={createBelief} onClose={close} />}
+    </>
   );
 }

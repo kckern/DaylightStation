@@ -2,13 +2,14 @@ import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   Stack, Paper, Text, Group, Badge, SimpleGrid,
-  Button, Modal, TextInput, Textarea, Alert,
+  Button, TextInput, Textarea,
 } from '@mantine/core';
 import { useGoals } from "../../hooks/useLifePlan.js";
 import { GoalProgressBar } from "../../widgets/GoalProgressBar.jsx";
 import { goalStateColor } from "../../theme/semantics.js";
 import { LifePage, LoadingState, ErrorState } from "../../components/index.js";
 import { formatDate } from "../../lib/format.js";
+import { PlanCreateSheet } from "./PlanCreateSheet.jsx";
 
 const STATE_GROUPS = [
   { label: 'Dreams', states: ['dream'] },
@@ -40,130 +41,85 @@ function GoalCard({ goal }) {
   );
 }
 
-export function GoalsView({ username }) {
-  const { goals, loading, error, refetch, createGoal } = useGoals(username);
-
-  const [opened, setOpened] = useState(false);
+function GoalCreateSheet({ onClose, createGoal }) {
   const [name, setName] = useState('');
   const [why, setWhy] = useState('');
   const [milestone, setMilestone] = useState('');
-  const [submitting, setSubmitting] = useState(false);
-  const [formError, setFormError] = useState(null);
-
-  const resetForm = () => {
-    setName('');
-    setWhy('');
-    setMilestone('');
-    setFormError(null);
-  };
-
-  const closeModal = () => {
-    setOpened(false);
-    resetForm();
-  };
-
-  const handleSubmit = async () => {
-    if (!name.trim() || submitting) return;
-    setSubmitting(true);
-    setFormError(null);
-    try {
-      await createGoal({ name: name.trim(), why: why.trim() || undefined, milestone: milestone.trim() || undefined });
-      closeModal();
-    } catch (err) {
-      setFormError(err.message);
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  const addModal = (
-    <Modal opened={opened} onClose={closeModal} title="Add goal">
-      <Stack gap="sm">
-        {formError && (
-          <Alert color="red" title="Couldn't create the goal">{formError}</Alert>
-        )}
-        <TextInput
-          label="Goal"
-          placeholder="What do you want to achieve?"
-          required
-          value={name}
-          onChange={(e) => setName(e.currentTarget.value)}
-        />
-        <Textarea
-          label="Why does this matter?"
-          placeholder="The purpose behind it"
-          autosize
-          minRows={2}
-          value={why}
-          onChange={(e) => setWhy(e.currentTarget.value)}
-        />
-        <TextInput
-          label="First milestone"
-          placeholder="A concrete first step"
-          value={milestone}
-          onChange={(e) => setMilestone(e.currentTarget.value)}
-        />
-        <Group justify="flex-end">
-          <Button variant="subtle" onClick={closeModal}>Cancel</Button>
-          <Button onClick={handleSubmit} loading={submitting} disabled={!name.trim()}>
-            Create goal
-          </Button>
-        </Group>
-      </Stack>
-    </Modal>
-  );
-
-  if (loading) return <LoadingState />;
-
-  const headerActions = <Button onClick={() => setOpened(true)}>Add goal</Button>;
-
-  if (error) {
-    return (
-      <LifePage title="Goals" actions={headerActions} scrollReady={false}>
-        <ErrorState label="Goals" error={error} onRetry={refetch} />
-        {addModal}
-      </LifePage>
-    );
-  }
-
-  if (goals.length === 0) {
-    return (
-      <LifePage title="Goals">
-        <Paper p="lg" withBorder radius="md">
-          <Stack gap="sm" align="flex-start">
-            <Text c="dimmed">
-              No goals yet — add one below, or let your coach walk you through it.
-            </Text>
-            <Button onClick={() => setOpened(true)}>Add goal</Button>
-          </Stack>
-        </Paper>
-        {addModal}
-      </LifePage>
-    );
-  }
+  const save = () => createGoal({
+    name: name.trim(),
+    why: why.trim() || undefined,
+    milestone: milestone.trim() || undefined,
+  });
 
   return (
-    <LifePage title="Goals" actions={headerActions}>
-      <SimpleGrid cols={{ base: 1, sm: 2, md: 3 }} spacing="md">
-        {STATE_GROUPS.map(group => {
-          const groupGoals = goals.filter(g => group.states.includes(g.state));
-          if (groupGoals.length === 0) return null;
+    <PlanCreateSheet noun="goal" onClose={onClose} save={save} valid={Boolean(name.trim())}>
+      <TextInput
+        label="Goal"
+        placeholder="What do you want to achieve?"
+        required
+        data-autofocus
+        value={name}
+        onChange={(e) => setName(e.currentTarget.value)}
+      />
+      <Textarea
+        label="Why does this matter?"
+        placeholder="The purpose behind it"
+        autosize
+        minRows={2}
+        value={why}
+        onChange={(e) => setWhy(e.currentTarget.value)}
+      />
+      <TextInput
+        label="First milestone"
+        placeholder="A concrete first step"
+        value={milestone}
+        onChange={(e) => setMilestone(e.currentTarget.value)}
+      />
+    </PlanCreateSheet>
+  );
+}
 
-          return (
-            <Stack key={group.label} gap="sm">
-              <Group>
-                <Text size="sm" fw={600}>{group.label}</Text>
-                <Badge size="xs" variant="light">{groupGoals.length}</Badge>
-              </Group>
-              {groupGoals.map(g => (
-                <GoalCard key={g.id} goal={g} />
-              ))}
-            </Stack>
-          );
-        })}
-      </SimpleGrid>
+export function GoalsView({ username }) {
+  const { goals, loading, error, refetch, createGoal } = useGoals(username);
+  const [opened, setOpened] = useState(false);
+  const close = () => setOpened(false);
+  const actions = (!loading || opened) && <Button onClick={() => setOpened(true)}>Add goal</Button>;
+  let content;
+  if (loading) content = <LoadingState />;
+  else if (error) content = <ErrorState label="Goals" error={error} onRetry={refetch} />;
+  else if (goals.length === 0) {
+    content = (
+      <Paper p="lg" withBorder radius="md">
+        <Text c="dimmed">No goals yet. Add a goal or let your coach walk you through it.</Text>
+      </Paper>
+    );
+  } else content = (
+    <SimpleGrid cols={{ base: 1, sm: 2, md: 3 }} spacing="md">
+      {STATE_GROUPS.map(group => {
+        const groupGoals = goals.filter(g => group.states.includes(g.state));
+        if (groupGoals.length === 0) return null;
 
-      {addModal}
-    </LifePage>
+        return (
+          <Stack key={group.label} gap="sm">
+            <Group>
+              <Text size="sm" fw={600}>{group.label}</Text>
+              <Badge size="xs" variant="light">{groupGoals.length}</Badge>
+            </Group>
+            {groupGoals.map(g => (
+              <GoalCard key={g.id} goal={g} />
+            ))}
+          </Stack>
+        );
+      })}
+    </SimpleGrid>
+  );
+
+  return (
+    <>
+      <LifePage title="Goals" actions={actions} scrollReady={!loading && !error}>
+        {content}
+      </LifePage>
+      {opened && <GoalCreateSheet createGoal={createGoal} onClose={close} />}
+    </>
   );
 }

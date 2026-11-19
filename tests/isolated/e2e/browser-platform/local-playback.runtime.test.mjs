@@ -116,6 +116,77 @@ for (const app of ['Media', 'Feed']) {
   });
 }
 
+test('Feed keeps its original audio through a prolonged socket outage and releases the policy on exit', async ({ page }) => {
+  await page.clock.install();
+  await page.addInitScript(() => {
+    sessionStorage.setItem('fixture-document-count', Number(sessionStorage.getItem('fixture-document-count') || 0) + 1);
+    let down = false;
+    window.fixtureFailedConnections = 0;
+    const NativeSocket = window.WebSocket;
+    function Socket(url, ...options) {
+      if (new URL(url).pathname !== '/ws') return new NativeSocket(url, ...options);
+      const socket = {
+        readyState: NativeSocket.CONNECTING,
+        send() {},
+        close() {
+          this.readyState = NativeSocket.CLOSED;
+          this.onclose?.(new CloseEvent('close', { code: 1006 }));
+        },
+      };
+      queueMicrotask(() => {
+        if (down) {
+          window.fixtureFailedConnections++;
+          socket.close();
+        } else {
+          socket.readyState = NativeSocket.OPEN;
+          window.fixtureDisconnect = () => { down = true; socket.close(); };
+          socket.onopen?.();
+        }
+      });
+      return socket;
+    }
+    Object.setPrototypeOf(Socket, NativeSocket);
+    Socket.prototype = NativeSocket.prototype;
+    window.WebSocket = Socket;
+  });
+
+  await page.goto('/feed/scroll');
+  await page.getByRole('button', { name: 'Play', exact: true }).first().click();
+  const clock = await originalClock(page);
+  const beforeOutage = await clock();
+  await page.waitForFunction(() => typeof window.fixtureDisconnect === 'function');
+  await page.evaluate(() => window.fixtureDisconnect());
+
+  // Run the real shared backoff timers through their first degraded attempt.
+  for (const delay of [1000, 2000, 4000, 8000, 15000, 30000]) {
+    await page.clock.fastForward(delay + 500);
+  }
+  expect(await page.evaluate(() => window.fixtureFailedConnections)).toBeGreaterThanOrEqual(6);
+  await page.clock.fastForward(181_000);
+  const documentCount = () => page.evaluate(() => Number(sessionStorage.getItem('fixture-document-count'))).catch(() => 0);
+  await expect.poll(() => clock().catch(() => -1)).toBeGreaterThan(beforeOutage + 0.5);
+  expect(await documentCount()).toBe(1);
+
+  await page.getByRole('link', { name: 'Reader', exact: true }).click();
+  await expect(page).toHaveURL(/\/feed\/reader$/);
+  const readerClock = await clock();
+  await expect.poll(clock).toBeGreaterThan(readerClock);
+  expect(await documentCount()).toBe(1);
+
+  await page.route('**/home', route => route.request().isNavigationRequest()
+    ? route.fulfill({ contentType: 'text/html', body: '<p>Reload after Feed exit</p>' })
+    : route.fallback());
+  await page.evaluate(() => {
+    const state = { idx: (history.state?.idx ?? 0) + 1, key: 'feed-outage-home', usr: null };
+    history.pushState(state, '', '/home');
+    dispatchEvent(new PopStateEvent('popstate', { state }));
+  });
+  await expect(page.getByRole('button', { name: 'Rooms', exact: true })).toBeVisible();
+  await page.clock.fastForward(181_000);
+  await expect(page.getByText('Reload after Feed exit', { exact: true })).toBeVisible();
+  await expect(page).toHaveURL(/\/home$/);
+});
+
 test('Feed article playback survives Escape dismissing the player sheet before the article', async ({ page }) => {
   await page.routeWebSocket('**/*', () => {});
   await page.goto('/feed/scroll');

@@ -122,6 +122,40 @@ afterEach(() => {
 });
 
 describe('FullyKioskConsole', () => {
+  it('keeps newer status and settings when superseded reads resolve or fail late', async () => {
+    const oldStatus = deferred();
+    const oldSettings = deferred();
+    api.status
+      .mockResolvedValueOnce(statusFixture)
+      .mockReturnValueOnce(oldStatus.promise)
+      .mockResolvedValue({ ...statusFixture, device: { ...statusFixture.device, name: 'Fresh tablet' } });
+    api.settings
+      .mockResolvedValueOnce(settingsFixture)
+      .mockReturnValueOnce(oldSettings.promise)
+      .mockResolvedValue({ settings: [{ key: 'startURL', value: 'https://fixture.test/fresh', type: 'url', editable: true }] });
+    renderConsole();
+    await ready();
+    await openSettings();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Screen on' }));
+    await waitFor(() => expect(api.status).toHaveBeenCalledTimes(2));
+    const refresh = screen.getByRole('button', { name: 'Refresh device' });
+    fireEvent.click(refresh);
+    await screen.findByText('Fresh tablet');
+    fireEvent.click(refresh);
+    await screen.findByDisplayValue('https://fixture.test/fresh');
+
+    await act(async () => {
+      oldStatus.reject(new Error('Stale status failed'));
+      oldSettings.resolve(settingsFixture);
+    });
+    expect(screen.queryByText('Stale status failed')).toBeNull();
+    expect(screen.getByText('Online')).toBeVisible();
+    expect(screen.getByDisplayValue('https://fixture.test/fresh')).toBeVisible();
+    expect(api.status.mock.calls[1][1]?.signal.aborted).toBe(true);
+    expect(api.settings.mock.calls[1][1]?.signal.aborted).toBe(true);
+  });
+
   it('renders current device status, missing-field fallbacks, screenshot links, and safe quick controls', async () => {
     renderConsole();
 

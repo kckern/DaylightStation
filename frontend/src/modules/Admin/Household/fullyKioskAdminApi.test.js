@@ -22,14 +22,17 @@ afterEach(() => {
 
 describe('fullyKioskAdminApi', () => {
   it('uses the registered device route for JSON reads and semantic mutations', async () => {
-    await fullyKioskAdminApi.status('kitchen/tablet');
+    const { signal } = new AbortController();
+    await fullyKioskAdminApi.status('kitchen/tablet', { signal });
     expect(mocks.daylightApi).toHaveBeenLastCalledWith(
       '/api/v1/admin/household/devices/kitchen%2Ftablet/fully-kiosk/status',
+      {}, 'GET', { signal },
     );
 
-    await fullyKioskAdminApi.settings('tablet');
+    await fullyKioskAdminApi.settings('tablet', { signal });
     expect(mocks.daylightApi).toHaveBeenLastCalledWith(
       '/api/v1/admin/household/devices/tablet/fully-kiosk/settings',
+      {}, 'GET', { signal },
     );
 
     await fullyKioskAdminApi.action('tablet', 'load/url', { url: 'https://example.test/' });
