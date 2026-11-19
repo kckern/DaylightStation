@@ -42,10 +42,17 @@ import { useRowLabels } from "./useRowLabels.js";
 import { displayTitle, resultSubtitle } from "./resultPresentation.js";
 import getLogger from "../../../../../frontend/src/lib/logging/Logger.js";
 import mediaLog from "../logging/mediaLog.js";
+import { useDismissLayer } from '@/lib/ui/dismiss/useDismissLayer.js';
 import { ItemDestinationPicker } from "../actions/ItemDestinationPicker.jsx";
 import { useHouseholdResultActions } from "../household/useHouseholdResultActions.js";
 import "./Search.scss";
 import "../shell/SessionControls.scss";
+
+function SearchResultRow(props) {
+  const [menuOpen, setMenuOpen] = useState(false);
+  useDismissLayer(menuOpen, undefined, { managed: true });
+  return <ResultRow {...props} onMenuOpenChange={setMenuOpen} />;
+}
 
 // `addTo` ({ deviceId, name }) opens this search for ONE addition to that
 // screen's queue (STEER.1b/AC7, RQ-STEER-22): every pick is added there, the
@@ -233,6 +240,8 @@ export function SearchMode({ onClose, addTo = null, restoreSearchFocus }) {
     closeSurface('dismiss');
   }, [closeSurface, addTo]);
 
+  useDismissLayer(true, closeViaButton);
+
   const handleStreamRetry = useCallback((source) => {
     log.info('stream_status.retry', { source, text: searchText });
     retrySource(source);
@@ -333,7 +342,7 @@ export function SearchMode({ onClose, addTo = null, restoreSearchFocus }) {
         )}
         {results.map((item) => (
           <li key={item.id} className="result-row">
-            <ResultRow
+            <SearchResultRow
               item={item}
               title={displayTitle(item)}
               subtitle={rowLabelsFor(item)?.subtitle ?? resultSubtitle(item)}

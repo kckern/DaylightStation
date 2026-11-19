@@ -6,7 +6,7 @@ import { PlaybackFrame } from '@/lib/ui/AppFrame.jsx';
 import { useHotkey } from '@/lib/hooks/useHotkey.js';
 import React, { useCallback, useState } from 'react';
 import { NavProvider, useNav } from "./NavProvider.jsx";
-import { DismissStackProvider } from "./DismissStackProvider.jsx";
+import { DismissStackProvider } from "@/lib/ui/dismiss/DismissStackProvider.jsx";
 import { Dock } from "./Dock.jsx";
 import { NavRail, TabBar } from "./PrimaryNav.jsx";
 import { Canvas } from "./Canvas.jsx";

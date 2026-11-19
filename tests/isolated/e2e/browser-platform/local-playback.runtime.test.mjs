@@ -104,6 +104,20 @@ test('Feed article playback survives its player sheet and Back restores the card
   await expect.poll(clock).toBeGreaterThan(returned);
 });
 
+test('Feed Scroll leaves J/K focus with the expanded player until dismissal', async ({ page }) => {
+  const { dialog, opener } = await openFixtureSheet(page);
+  const close = dialog.getByRole('button', { name: 'Close player' });
+  await close.focus();
+  await page.keyboard.press('j');
+  await expect(close).toBeFocused();
+  await page.keyboard.press('k');
+  await expect(close).toBeFocused();
+  await close.press('Escape');
+  await expect(opener).toBeFocused();
+  await page.keyboard.press('j');
+  await expect(page.getByRole('button', { name: `Open: ${item.title}` })).toBeFocused();
+});
+
 test('Feed cancels a player sheet scrub when Escape dismisses the sheet', async ({ page }) => {
   const { clock, dialog, opener } = await openFixtureSheet(page);
   await page.locator('audio[src$="fixture-audio.wav"]').evaluate(audio => {

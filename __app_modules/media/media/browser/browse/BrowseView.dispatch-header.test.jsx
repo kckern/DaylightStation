@@ -69,7 +69,7 @@ let fleetDevices = [];
 vi.mock("../fleet/useFleetContext.js", () => ({
   useFleetContext: () => ({ devices: fleetDevices }),
 }));
-vi.mock("../shell/useDismissLayer.js", () => ({
+vi.mock("@/lib/ui/dismiss/useDismissLayer.js", () => ({
   useDismissLayer: () => {},
 }));
 vi.mock("../cast/DispatchTargetPicker.jsx", () => ({

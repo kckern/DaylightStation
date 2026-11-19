@@ -1,18 +1,20 @@
-// useDismissLayer.js — the hook half of DismissStackProvider.jsx, split out
-// so Fast Refresh can hot-reload the provider component on its own.
-// Ported from frontend/src/modules/Media/shell/useDismissLayer.js.
-import { useContext, useEffect, useId } from 'react';
+import { useContext, useLayoutEffect, useRef } from 'react';
 import { DismissContext } from './DismissStackProvider.jsx';
 
 /**
- * Register a dismissable layer while `open` is true.
- * `managed: true` for Mantine overlays that close themselves on Escape.
+ * Register a layer for one open visit. Pass `managed: true` when it handles
+ * Escape itself. Use `isActive` when a persistent portal opens independently.
+ * Returns whether the shared stack handles this open visit.
  */
-export function useDismissLayer(open, onDismiss, { managed = false } = {}) {
+export function useDismissLayer(open, onDismiss, { managed = false, isActive } = {}) {
   const register = useContext(DismissContext);
-  const id = useId();
-  useEffect(() => {
+  const callbacks = useRef({ onDismiss, managed, isActive });
+  useLayoutEffect(() => {
+    callbacks.current = { onDismiss, managed, isActive };
+  }, [onDismiss, managed, isActive]);
+  useLayoutEffect(() => {
     if (!open || !register) return undefined;
-    return register(id, onDismiss, managed);
-  }, [open, onDismiss, managed, register, id]);
+    return register(callbacks);
+  }, [open, register]);
+  return Boolean(open && register);
 }

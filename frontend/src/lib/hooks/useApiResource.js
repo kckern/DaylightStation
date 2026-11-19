@@ -42,7 +42,7 @@ const swrCache = new Map();
 // LRU eviction removes the corresponding token. A path that never writes to
 // the cache can retain one token until the cache is reset.
 const pathGenerations = new Map();
-const invalidationListeners = new Set();
+const refreshListeners = new Set();
 const patchListeners = new Set();
 
 /** Revalidate mounted readers together without blanking same-key snapshots. */
@@ -53,7 +53,12 @@ export function invalidateApiResources(matches = () => true) {
   for (const path of inFlight.keys()) if (matches(path)) inFlight.delete(path);
   // A prefetch can outlive a later request that replaced it in inFlight.
   for (const path of prefetchInFlight.keys()) if (matches(path)) claimGeneration(path);
-  for (const notify of invalidationListeners) notify(matches);
+  for (const notify of refreshListeners) notify(matches);
+}
+
+/** Poll matching mounted readers without invalidating cached or outstanding reads. */
+export function pollApiResources(matches = () => true) {
+  for (const notify of refreshListeners) notify(matches, true);
 }
 
 function cacheGet(path) {
@@ -454,22 +459,26 @@ export function useApiResource(path, {
 
   useEffect(() => {
     activePath.current = enabled ? path : null;
-    const notify = matches => { if (enabled && path && matches(path)) requestReload(null, true); };
+    const notify = (matches, pollOnly) => {
+      if (!enabled || !path || !matches(path)) return;
+      if (pollOnly) poll();
+      else requestReload(null, true);
+    };
     const clearOwner = matches => {
       if (!path || !matches(path)) return;
       setData(null);
       setError(null);
       if (enabled) requestReload(null, true);
     };
-    invalidationListeners.add(notify);
+    refreshListeners.add(notify);
     ownerListeners.add(clearOwner);
     return () => {
       activePath.current = null;
       cancelRefresh();
-      invalidationListeners.delete(notify);
+      refreshListeners.delete(notify);
       ownerListeners.delete(clearOwner);
     };
-  }, [path, enabled, requestReload, cancelRefresh]);
+  }, [path, enabled, requestReload, cancelRefresh, poll]);
 
   // Adopt a patch now, then revalidate. The reload also retires this hook's
   // in-flight request (its `live` flag), which predates the patch.

@@ -25,7 +25,7 @@ import { deviceName, deviceLocation } from "../fleet/deviceDisplay.js";
 import { DeviceIcon } from "../fleet/DeviceIcon.jsx";
 import { moveDestinations } from "./MoveToMenu.jsx";
 import { formatTime } from "./formatTime.js";
-import { useDismissLayer } from "./useDismissLayer.js";
+import { useDismissLayer } from "@/lib/ui/dismiss/useDismissLayer.js";
 import mediaLog from "../logging/mediaLog.js";
 import "./Fling.scss";
 

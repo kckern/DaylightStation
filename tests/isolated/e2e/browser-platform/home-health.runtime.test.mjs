@@ -8,6 +8,30 @@ test.beforeEach(async ({ page }) => {
   await page.route('**/supervision/bootstrap', route => route.fulfill({ json: { enabled: false } }));
 });
 
+test('Health closes metric suggestions before dismissing the reading sheet', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 850 });
+  await page.route('**/health/context', route => route.fulfill({ json: { userId: 'alice' } }));
+  await page.route('**/api/v1/health/medical', route => route.fulfill({ json: { metrics: [] } }));
+  await page.goto('/health/medical');
+  const opener = page.getByRole('button', { name: 'Add reading', exact: true });
+  await opener.click();
+  const sheet = page.getByRole('dialog', { name: 'Add reading', exact: true });
+  const metric = sheet.getByLabel('Metric', { exact: true });
+  const note = sheet.getByRole('textbox', { name: 'Note' });
+  await note.fill('Draft note');
+  await metric.fill('glu');
+  const suggestion = page.locator('[role="listbox"]').getByText('glucose', { exact: true });
+  await expect(suggestion).toBeVisible();
+  await metric.press('Escape');
+  await expect(suggestion).toBeHidden();
+  await expect(note).toHaveValue('Draft note');
+  await expect(metric).toBeFocused();
+
+  await metric.press('Escape');
+  await expect(sheet).toBeHidden();
+  await expect(opener).toBeFocused();
+});
+
 function house(state) {
   const room = { id: 'kitchen', name: 'Kitchen' };
   return {

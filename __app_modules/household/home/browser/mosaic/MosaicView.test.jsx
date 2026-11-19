@@ -120,11 +120,11 @@ describe('MosaicView', () => {
     expect(screen.getByRole('tooltip')).toBeTruthy();
     document.body.focus();
     fireEvent.keyDown(document.body, { key: 'Escape' });
-    expect(screen.queryByRole('tooltip')).toBeNull();
+    await waitFor(() => expect(screen.queryByRole('tooltip')).toBeNull());
     fireEvent.click(square('Kitchen light'));
     expect(await screen.findByRole('dialog', { name: 'Kitchen light' })).toBeTruthy();
     fireEvent.keyDown(document, { key: 'Escape' });
-    expect(screen.queryByRole('dialog')).toBeNull();
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
   });
 
   it('the square a tooltip describes points at it', () => {

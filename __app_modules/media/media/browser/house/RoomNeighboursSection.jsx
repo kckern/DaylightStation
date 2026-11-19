@@ -6,7 +6,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Button, Checkbox, Group, Modal, Stack, Text, Title } from '@mantine/core';
 import { IconDoor } from '@tabler/icons-react';
-import { useDismissLayer } from "../shell/useDismissLayer.js";
+import { useDismissLayer } from "@/lib/ui/dismiss/useDismissLayer.js";
 
 const key = (room) => String(room).trim().toLowerCase();
 

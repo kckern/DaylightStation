@@ -3,7 +3,7 @@ import { PlaybackQualityForm } from '../../../../../__capabilities/playback/brow
 import { browserPreference } from '@/lib/browserPreference.js';
 import { Sheet } from '@/lib/ui';
 import { normalizePlaybackQuality } from '@shared-contracts/media/playbackQuality.mjs';
-import { useDismissLayer } from '../shell/useDismissLayer.js';
+import { useDismissLayer } from '@/lib/ui/dismiss/useDismissLayer.js';
 import mediaLog from '../logging/mediaLog.js';
 
 const Context = createContext(null);

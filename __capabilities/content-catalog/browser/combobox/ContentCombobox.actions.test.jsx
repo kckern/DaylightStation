@@ -12,7 +12,7 @@ import { CastTargetProvider } from "../../../../__app_modules/media/media/browse
 import { DispatchContext } from "../../../../__app_modules/media/media/browser/cast/DispatchProvider.jsx";
 import { FleetContext } from "../../../../__app_modules/media/media/browser/fleet/FleetProvider.jsx";
 import { createFleetStore } from "../../../../__app_modules/media/media/browser/fleet/fleetStore.js";
-import { DismissStackProvider } from "../../../../__app_modules/media/media/browser/shell/DismissStackProvider.jsx";
+import { DismissStackProvider } from "@/lib/ui/dismiss/DismissStackProvider.jsx";
 
 vi.mock("../../../../frontend/src/lib/logging/singleton.js", () => {
   const logger = {

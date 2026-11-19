@@ -18,7 +18,7 @@ describe('Sheet', () => {
     expect(container.querySelector('.ds-sheet')).toBeNull();
   });
 
-  it('renders title and children when open, closes on scrim click and Escape', () => {
+  it('renders title and children when open, closes on scrim click and Escape', async () => {
     const onClose = vi.fn();
     const { container } = wrap(<Sheet open onClose={onClose} title="Portion">body</Sheet>);
     expect(screen.getByText('Portion')).toBeTruthy();
@@ -26,7 +26,7 @@ describe('Sheet', () => {
     fireEvent.click(container.querySelector('.ds-sheet__scrim'));
     expect(onClose).toHaveBeenCalledTimes(1);
     fireEvent.keyDown(document, { key: 'Escape' });
-    expect(onClose).toHaveBeenCalledTimes(2);
+    await waitFor(() => expect(onClose).toHaveBeenCalledTimes(2));
   });
 
   it('placement="side" marks the root; the default has no modifier', () => {

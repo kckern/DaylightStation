@@ -1,3 +1,4 @@
+import { useFeedListShortcuts } from '../useFeedListShortcuts.js';
 import { useState, useEffect, useLayoutEffect, useCallback, useMemo, useRef } from 'react';
 import { useMediaQuery } from '@mantine/hooks';
 import { DS_TOKENS } from '@/lib/theme/tokens.mjs';
@@ -250,22 +251,7 @@ export default function Reader() {
     }
   };
 
-  useEffect(() => {
-    if (drawerActive) return;
-    const onKeyDown = event => {
-      if (!['j', 'k'].includes(event.key) || event.metaKey || event.ctrlKey || event.altKey) return;
-      if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement || event.target instanceof HTMLSelectElement || event.target?.isContentEditable) return;
-      const rows = [...(listRef.current?.querySelectorAll('.article-row-header') || [])];
-      if (!rows.length) return;
-      const activeIndex = rows.findIndex(row => row === document.activeElement);
-      const nextIndex = event.key === 'j' ? Math.min(rows.length - 1, activeIndex + 1) : Math.max(0, activeIndex <= 0 ? 0 : activeIndex - 1);
-      event.preventDefault();
-      rows[nextIndex].focus({ preventScroll: true });
-      rows[nextIndex].scrollIntoView({ block: 'center', behavior: 'smooth' });
-    };
-    document.addEventListener('keydown', onKeyDown);
-    return () => document.removeEventListener('keydown', onKeyDown);
-  }, [drawerActive]);
+  useFeedListShortcuts(listRef, '.article-row-header', !drawerActive);
 
   const feedsError = feedsReadError ? 'Subscriptions are unavailable. The inbox can still be used.' : null;
   const loadFeeds = reloadFeeds;

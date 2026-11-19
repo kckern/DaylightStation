@@ -28,7 +28,7 @@ vi.mock("../../../../../frontend/src/lib/logging/Logger.js", () => {
   return { default: getLogger, getLogger };
 });
 vi.mock("../fleet/useFleetContext.js", () => ({ useFleetContext: () => ({ devices: [] }) }));
-vi.mock("../shell/useDismissLayer.js", () => ({ useDismissLayer: () => {} }));
+vi.mock("@/lib/ui/dismiss/useDismissLayer.js", () => ({ useDismissLayer: () => {} }));
 vi.mock("../cast/DispatchTargetPicker.jsx", () => ({ DispatchTargetPicker: () => null }));
 
 import { BrowseView } from "./BrowseView.jsx";

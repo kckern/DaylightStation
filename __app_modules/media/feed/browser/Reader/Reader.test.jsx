@@ -1,6 +1,8 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
+import FeedPlayerSheet from '../players/FeedPlayerSheet.jsx';
+import { FeedPlayerProvider } from '../players/FeedPlayerContext.jsx';
 import Reader from "./Reader.jsx";
 import { listOfflineEditions } from '../offline/feedOfflineStore.js';
 
@@ -166,6 +168,26 @@ describe('Reader history views', () => {
     await screen.findByRole('alert');
     expect(screen.queryByText('saved article')).toBeNull();
     expect(container.querySelector('.reader-sentinel')).toBeNull();
+  });
+
+  test('the expanded player owns focus until Reader list navigation resumes', async () => {
+    mountReader('?view=saved');
+    const row = (await screen.findByText('Saved from last month')).closest('button');
+    row.scrollIntoView = vi.fn();
+    const player = render(<FeedPlayerProvider>
+      <FeedPlayerSheet open item={{ title: 'Playing' }} onClose={() => {}} />
+    </FeedPlayerProvider>);
+    const close = screen.getByRole('button', { name: 'Close player' });
+    close.focus();
+    fireEvent.keyDown(close, { key: 'j' });
+    fireEvent.keyDown(close, { key: 'k' });
+    expect(close).toHaveFocus();
+    expect(row.scrollIntoView).not.toHaveBeenCalled();
+
+    player.unmount();
+    fireEvent.keyDown(document, { key: 'j', repeat: true });
+    expect(row).toHaveFocus();
+    expect(row.scrollIntoView).toHaveBeenCalledOnce();
   });
 
   test('keeps article shortcuts inactive while subscriptions has modal focus', async () => {

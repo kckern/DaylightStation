@@ -1,17 +1,64 @@
-import React, { useContext, useEffect } from 'react';
 import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/react';
-import { DismissContext, DismissStackProvider } from "./DismissStackProvider.jsx";
+import { DismissStackProvider } from './DismissStackProvider.jsx';
+import { useDismissLayer } from './useDismissLayer.js';
 
-function Layer({ onDismiss, managed = false, isActive = () => true, children }) {
-  const register = useContext(DismissContext);
-  useEffect(() => register('search-results', onDismiss, managed, isActive), [onDismiss, managed, isActive, register]);
+function Layer({ open = true, onDismiss, managed = false, isActive, children }) {
+  useDismissLayer(open, onDismiss, { managed, isActive });
   return children ?? null;
 }
 
 const afterNativeEventDispatch = () => new Promise(resolve => setTimeout(resolve, 0));
 
 describe('DismissStackProvider', () => {
+  it('keeps an open lower layer in place when its dismissal callback changes', async () => {
+    const initialLower = vi.fn();
+    const updatedLower = vi.fn();
+    const upper = vi.fn();
+    const stack = (lower, topOpen) => (
+      <DismissStackProvider>
+        <Layer onDismiss={lower} />
+        <Layer open={topOpen} onDismiss={upper} />
+      </DismissStackProvider>
+    );
+    const { rerender } = render(stack(initialLower, false));
+    rerender(stack(initialLower, true));
+    rerender(stack(updatedLower, true));
+
+    fireEvent.keyDown(document, { key: 'Escape' });
+    await afterNativeEventDispatch();
+    expect(upper).toHaveBeenCalledTimes(1);
+    expect(updatedLower).not.toHaveBeenCalled();
+
+    rerender(stack(updatedLower, false));
+    fireEvent.keyDown(document, { key: 'Escape' });
+    await afterNativeEventDispatch();
+    expect(updatedLower).toHaveBeenCalledTimes(1);
+    expect(initialLower).not.toHaveBeenCalled();
+  });
+
+  it('does not pass queued Escape to a layer reopened before dismissal', async () => {
+    const onDismiss = vi.fn();
+    const onBaseDismiss = vi.fn();
+    const stack = open => (
+      <DismissStackProvider onBaseDismiss={onBaseDismiss}>
+        <Layer open={open} onDismiss={onDismiss} />
+      </DismissStackProvider>
+    );
+    const { rerender } = render(stack(true));
+
+    fireEvent.keyDown(document, { key: 'Escape' });
+    rerender(stack(false));
+    rerender(stack(true));
+    await afterNativeEventDispatch();
+    expect(onDismiss).not.toHaveBeenCalled();
+    expect(onBaseDismiss).not.toHaveBeenCalled();
+
+    fireEvent.keyDown(document, { key: 'Escape' });
+    await afterNativeEventDispatch();
+    expect(onDismiss).toHaveBeenCalledTimes(1);
+  });
+
   it.each([false, true])('consumes the Escape that closes an active layer before document bubble (managed=%s)', async (managed) => {
     let active = true;
     const dismissLayer = vi.fn();

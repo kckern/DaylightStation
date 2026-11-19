@@ -10,9 +10,10 @@ const isTypingTarget = (el) => {
  * Bind a document shortcut such as 'mod+k', 'escape', '/', or a plain letter.
  * Launch shortcuts yield to focused modals and editable controls. Set
  * allowInInput to opt into editable controls. Escape can dismiss either.
+ * Set allowRepeat for continuous navigation while a key is held.
  * Return false from the handler when no action is available.
  */
-export function useHotkey(combo, handler, { allowInInput = false } = {}) {
+export function useHotkey(combo, handler, { allowInInput = false, allowRepeat = false } = {}) {
   const handlerRef = useRef(handler);
   handlerRef.current = handler;
 
@@ -22,7 +23,7 @@ export function useHotkey(combo, handler, { allowInInput = false } = {}) {
     const wantKey = key.toLowerCase();
 
     const onKey = (e) => {
-      if (e.defaultPrevented || e.isComposing || e.repeat || e.altKey) return;
+      if (e.defaultPrevented || e.isComposing || (e.repeat && !allowRepeat) || e.altKey) return;
       if (e.key.toLowerCase() !== wantKey) return;
       if (wantMod && !(e.metaKey || e.ctrlKey)) return;
       if (!wantMod && (e.metaKey || e.ctrlKey)) return;
@@ -36,7 +37,7 @@ export function useHotkey(combo, handler, { allowInInput = false } = {}) {
     };
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
-  }, [combo, allowInInput]);
+  }, [combo, allowInInput, allowRepeat]);
 }
 
 export default useHotkey;

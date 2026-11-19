@@ -4,7 +4,7 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { MantineProvider } from '@mantine/core';
 import { CastTargetProvider } from "./CastTargetProvider.jsx";
 import { DestinationLine } from "./DestinationLine.jsx";
-import { DismissStackProvider } from "../shell/DismissStackProvider.jsx";
+import { DismissStackProvider } from "@/lib/ui/dismiss/DismissStackProvider.jsx";
 
 vi.mock("../fleet/useFleetContext.js", () => ({ useFleetContext: () => ({ devices: [] }) }));
 vi.mock("./DispatchTargetPicker.jsx", () => ({ DispatchTargetPicker: () => <div data-testid="picker-stub" /> }));

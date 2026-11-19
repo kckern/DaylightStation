@@ -1,3 +1,4 @@
+import { useFeedListShortcuts } from '../useFeedListShortcuts.js';
 import { useState, useEffect, useLayoutEffect, useCallback, useMemo, useRef } from 'react';
 import { useParams, useNavigate, useSearchParams, useLocation, useOutletContext } from 'react-router-dom';
 import { browserPreference } from "@/lib/browserPreference.js";
@@ -668,22 +669,7 @@ export default function Scroll() {
       return tierMatch && sourceMatch;
     });
   })();
-  useEffect(() => {
-    if (urlSlug) return undefined;
-    const onKeyDown = event => {
-      if (!['j', 'k'].includes(event.key) || event.metaKey || event.ctrlKey || event.altKey) return;
-      if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement || event.target instanceof HTMLSelectElement || event.target?.isContentEditable) return;
-      const cards = [...(containerRef.current?.querySelectorAll('.scroll-card-open') || [])];
-      if (!cards.length) return;
-      const activeIndex = cards.findIndex(card => card === document.activeElement);
-      const nextIndex = event.key === 'j' ? Math.min(cards.length - 1, activeIndex + 1) : Math.max(0, activeIndex <= 0 ? 0 : activeIndex - 1);
-      event.preventDefault();
-      cards[nextIndex].focus({ preventScroll: true });
-      cards[nextIndex].scrollIntoView({ block: 'center', behavior: 'smooth' });
-    };
-    document.addEventListener('keydown', onKeyDown);
-    return () => document.removeEventListener('keydown', onKeyDown);
-  }, [urlSlug]);
+  useFeedListShortcuts(containerRef, '.scroll-card-open', !urlSlug);
 
   const { containerStyle, getItemStyle, getItemMetrics, measureRef } = useMasonryLayout(containerRef, visibleItems, isDesktop);
   const mobileWindow = useVirtualFeedWindow(containerRef, visibleItems, !isDesktop, { scrollRef });

@@ -28,7 +28,7 @@ vi.mock("../logging/mediaLog.js", () => {
   return { default: stub, mediaLog: stub };
 });
 vi.mock("../fleet/useFleetContext.js", () => ({ useFleetContext: () => ({ devices: [] }) }));
-vi.mock("../shell/useDismissLayer.js", () => ({ useDismissLayer: () => {} }));
+vi.mock("@/lib/ui/dismiss/useDismissLayer.js", () => ({ useDismissLayer: () => {} }));
 vi.mock("../cast/DispatchTargetPicker.jsx", () => ({ DispatchTargetPicker: () => null }));
 vi.mock("../../../../../frontend/src/lib/logging/Logger.js", () => {
   const getLogger = () => ({ child: () => ({ debug: vi.fn(), info: vi.fn(), warn: vi.fn() }) });

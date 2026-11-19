@@ -6,7 +6,7 @@ import { PlaybackQualityProvider, PlaybackQualityHost, usePlaybackQuality } from
 import { ItemQualityButton, ActiveQualityButton } from './PlaybackQualityButtons.jsx';
 import { LocalSessionContext } from '../session/LocalSessionContext.js';
 import { createLocalSessionController } from '../session/LocalSessionController.js';
-import { DismissStackProvider } from '../shell/DismissStackProvider.jsx';
+import { DismissStackProvider } from '@/lib/ui/dismiss/DismissStackProvider.jsx';
 
 const item = { id: 'plex:42', contentId: 'plex:42', title: 'Movie', type: 'movie', format: 'video' };
 function Selected() {

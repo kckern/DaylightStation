@@ -5,7 +5,7 @@ import { useApiResource, peekApiResource, apiResourceReadToken } from "../../../
 import { createAppLogger } from "../../../../../frontend/src/lib/ui/createAppLogger.js";
 import { BUCKETS } from "./mealBuckets.js";
 import { noteVisibleRows } from "./addFlow.js";
-import { refreshHealthResources, healthDayPath, isProvisionalRow } from "../healthResources.js";
+import { refreshHealthResources, pollHealthResources, healthDayPath, isProvisionalRow } from "../healthResources.js";
 
 import { projectRowsBudget } from "./portionPreview.js";
 import { useHealthOperations } from "../operations/HealthOperationsProvider.jsx";
@@ -95,7 +95,7 @@ export function useHealthDay(date, { enabled = true } = {}) {
     }
   }, [reload]);
 
-  useVisibleRefresh({ active: enabled, intervalMs: 15000, reload });
+  useVisibleRefresh({ active: enabled, intervalMs: 15000, reload, poll: pollHealthResources });
 
   // Kitchen-scale / Telegram entries appear when the tab regains focus.
   useEffect(() => {

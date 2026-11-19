@@ -18,7 +18,7 @@ import { IconChevronDown } from '@tabler/icons-react';
 import { useCastTarget } from "./useCastTarget.js";
 import { DispatchTargetPicker } from "./DispatchTargetPicker.jsx";
 import { GlobalAimLabel } from "./AimLabel.jsx";
-import { useDismissLayer } from "../shell/useDismissLayer.js";
+import { useDismissLayer } from "@/lib/ui/dismiss/useDismissLayer.js";
 import mediaLog from "../logging/mediaLog.js";
 import "./Cast.scss";
 

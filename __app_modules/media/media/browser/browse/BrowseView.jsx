@@ -37,7 +37,7 @@ import { ResultRow } from "../../../../../__capabilities/content-catalog/browser
 import { ItemDestinationPicker } from "../actions/ItemDestinationPicker.jsx";
 import { sourceIconFor, dedupeSourceRows } from "./sourceIcons.jsx";
 import { sourceRootPresentation } from "../search/resultPresentation.js";
-import { useDismissLayer } from "../shell/useDismissLayer.js";
+import { useDismissLayer } from "@/lib/ui/dismiss/useDismissLayer.js";
 import { useHouseholdResultActions } from "../household/useHouseholdResultActions.js";
 
 function splitPath(path) {

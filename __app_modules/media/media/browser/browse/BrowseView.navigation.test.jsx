@@ -17,7 +17,7 @@ vi.mock("../search/useContentDispatch.js", () => ({
   }),
 }));
 vi.mock("../fleet/useFleetContext.js", () => ({ useFleetContext: () => ({ devices: [] }) }));
-vi.mock("../shell/useDismissLayer.js", () => ({ useDismissLayer: () => {} }));
+vi.mock("@/lib/ui/dismiss/useDismissLayer.js", () => ({ useDismissLayer: () => {} }));
 vi.mock("../cast/DispatchTargetPicker.jsx", () => ({ DispatchTargetPicker: () => null }));
 
 function NavigationSurface() {

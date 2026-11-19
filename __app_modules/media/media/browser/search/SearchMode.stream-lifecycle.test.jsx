@@ -6,7 +6,7 @@ import { MantineProvider } from '@mantine/core';
 
 vi.mock("../cast/useDispatch.js", () => ({ useDispatch: () => ({ dispatchToTarget: vi.fn(), dispatches: new Map(), retry: vi.fn() }) }));
 vi.mock("../fleet/useFleetContext.js", () => ({ useFleetContext: () => ({ devices: [] }) }));
-vi.mock("../shell/useDismissLayer.js", () => ({ useDismissLayer: () => {} }));
+vi.mock("@/lib/ui/dismiss/useDismissLayer.js", () => ({ useDismissLayer: () => {} }));
 vi.mock("../cast/DispatchTargetPicker.jsx", () => ({ DispatchTargetPicker: () => <div data-testid="picker-stub" /> }));
 vi.mock('@mantine/notifications', () => ({ notifications: { show: vi.fn() } }));
 vi.mock("../logging/mediaLog.js", () => {

@@ -9,7 +9,7 @@ import { MantineProvider } from '@mantine/core';
 import { BrowseView } from "./BrowseView.jsx";
 import { NavProvider } from "../shell/NavProvider.jsx";
 import { CastTargetProvider } from "../cast/CastTargetProvider.jsx";
-import { DismissStackProvider } from "../shell/DismissStackProvider.jsx";
+import { DismissStackProvider } from "@/lib/ui/dismiss/DismissStackProvider.jsx";
 import { DaylightAPI } from "../../../../../frontend/src/lib/api.mjs";
 
 vi.mock("../../../../../frontend/src/lib/api.mjs", () => ({ DaylightAPI: vi.fn() }));

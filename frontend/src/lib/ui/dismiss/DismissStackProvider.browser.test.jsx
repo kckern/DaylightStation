@@ -6,8 +6,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { chromium } from 'playwright';
 import { createServer as createViteServer } from 'vite';
 
-// The Media shell moved into __app_modules; Vite still roots at frontend/ (its
-// plugins and deps live there) and serves the fixture beside this test by path.
+// Serve the fixture through the same Vite setup as application components.
 const here = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(here, '../../../../..');
 const frontendRoot = path.join(repoRoot, 'frontend');

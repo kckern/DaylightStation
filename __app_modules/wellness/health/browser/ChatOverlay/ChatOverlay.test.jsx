@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { MantineProvider } from '@mantine/core';
 import { ChatOverlay } from "./index.jsx";
 import { DismissStackProvider } from '@/lib/ui';
@@ -17,11 +17,11 @@ describe('ChatOverlay', () => {
     expect(screen.getByRole('dialog', { name: 'Health Coach' })).toBeInTheDocument();
   });
 
-  it('Esc closes', () => {
+  it('Esc closes', async () => {
     const onClose = vi.fn();
     r(<ChatOverlay open={true} onClose={onClose} userId="kc">child</ChatOverlay>);
     fireEvent.keyDown(document, { key: 'Escape' });
-    expect(onClose).toHaveBeenCalled();
+    await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
   });
 
   it('scrim click closes', () => {

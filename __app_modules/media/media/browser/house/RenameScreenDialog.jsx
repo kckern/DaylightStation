@@ -7,7 +7,7 @@
 import React, { useEffect, useState } from 'react';
 import { Button, Group, List, Modal, Stack, Text, TextInput } from '@mantine/core';
 import { IconDeviceFloppy } from '@tabler/icons-react';
-import { useDismissLayer } from "../shell/useDismissLayer.js";
+import { useDismissLayer } from "@/lib/ui/dismiss/useDismissLayer.js";
 
 export function RenameScreenDialog({
   open, onClose, title = 'Rename this device', initialName = '', initialRoom = '', withRoom = true,

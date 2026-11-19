@@ -22,7 +22,7 @@ import { useSessionController } from "../controller/useSessionController.js";
 import { getLocalPlayerFeatures } from "../session/localPlayerFeatures.js";
 import { ContentCombobox } from "../../../../../__capabilities/content-catalog/browser/picker.mjs";
 import { SearchContext } from "../search/SearchProvider.jsx";
-import { useDismissLayer } from "./useDismissLayer.js";
+import { useDismissLayer } from "@/lib/ui/dismiss/useDismissLayer.js";
 import mediaLog from "../logging/mediaLog.js";
 import "./PlayerFeatureControls.scss";
 

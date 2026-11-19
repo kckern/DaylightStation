@@ -1,10 +1,10 @@
-import React, { useContext, useEffect, useState } from 'react';
+import { useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { DismissContext, DismissStackProvider } from "./DismissStackProvider.jsx";
+import { DismissStackProvider } from './DismissStackProvider.jsx';
+import { useDismissLayer } from './useDismissLayer.js';
 
 function Layer({ onDismiss, isActive }) {
-  const register = useContext(DismissContext);
-  useEffect(() => register('browser-menu', onDismiss, false, isActive), [isActive, onDismiss, register]);
+  useDismissLayer(true, onDismiss, { isActive });
   return null;
 }
 

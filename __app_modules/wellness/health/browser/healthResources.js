@@ -1,4 +1,4 @@
-import { invalidateApiResources, patchApiResource } from "../../../../frontend/src/lib/hooks/useApiResource.js";
+import { invalidateApiResources, patchApiResource, pollApiResources } from "../../../../frontend/src/lib/hooks/useApiResource.js";
 import { createAppLogger } from "../../../../frontend/src/lib/ui/createAppLogger.js";
 
 let _logger;
@@ -21,8 +21,9 @@ const isHealthResource = path => (path.startsWith('api/v1/health/') && !path.sta
  */
 export const unavailableError = resource => (resource?.data == null ? resource?.error ?? null : null);
 
-export const refreshHealthResources = () => invalidateApiResources(path =>
-  isHealthResource(path) && path !== DASHBOARD_PATH);
+const isHealthRefreshResource = path => isHealthResource(path) && path !== DASHBOARD_PATH;
+export const refreshHealthResources = () => invalidateApiResources(isHealthRefreshResource);
+export const pollHealthResources = () => pollApiResources(isHealthRefreshResource);
 
 /** After a coach turn, which may have written the day's coaching. */
 export const refreshHealthResourcesWithDashboard = () => invalidateApiResources(isHealthResource);

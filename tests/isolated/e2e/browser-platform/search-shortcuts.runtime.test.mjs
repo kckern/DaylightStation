@@ -65,3 +65,49 @@ test('Media search does not steal focus from a confirmation dialog', async ({ pa
   await page.keyboard.press('/');
   await expect(cancel).toBeFocused();
 });
+
+test('phone Media dismisses the item destination picker before Search and preserves Browse history', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 850 });
+  const item = {
+    id: 'plex:43', source: 'plex', title: 'Queued track', itemType: 'leaf',
+    metadata: { type: 'track', category: 'work' }, children: [], childCount: 0,
+  };
+  await page.route('**/api/v1/content/query/search/stream**', route => route.fulfill({
+    contentType: 'text/event-stream',
+    body: [{ event: 'results', source: 'plex', items: [item], pending: [] }, { event: 'complete' }]
+      .map(frame => 'data: ' + JSON.stringify(frame) + '\n\n').join(''),
+  }));
+  await page.goto('/media');
+  const home = page.getByTestId('app-tab-home');
+  const browse = page.getByTestId('app-tab-browse');
+  await browse.click();
+  await expect(browse).toHaveAttribute('aria-current', 'page');
+  const launcher = page.getByTestId('app-tab-search');
+  await launcher.press('Enter');
+  const search = page.getByRole('searchbox', { name: 'Search media' });
+  await search.fill(item.title);
+  const more = page.getByRole('button', { name: 'More actions' });
+  const playOn = page.getByRole('menuitem', { name: 'Play on…', exact: true });
+  await more.press('Enter');
+  await expect(playOn).toBeVisible();
+  await playOn.press('Escape');
+  await expect(playOn).toBeHidden();
+  await expect(search).toHaveValue(item.title);
+
+  await more.click();
+  await playOn.click();
+  const picker = page.getByRole('dialog', { name: 'Play on…', exact: true });
+  await expect(picker).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(picker).toBeHidden();
+  await expect(search).toHaveValue(item.title);
+  expect(await page.evaluate(() => history.state.mediaSearchMode)).toBe(true);
+
+  await page.keyboard.press('Escape');
+  await expect(search).toBeHidden();
+  await expect(launcher).toBeFocused();
+  await expect(browse).toHaveAttribute('aria-current', 'page');
+  await expect.poll(() => page.evaluate(() => !!history.state.mediaSearchMode)).toBe(false);
+  await page.goBack();
+  await expect(home).toHaveAttribute('aria-current', 'page');
+});

@@ -32,7 +32,7 @@ import { useContentDispatch } from "./useContentDispatch.js";
 import { useDestinationInteraction } from "../cast/destinationInteraction.js";
 import { useSessionController } from "../controller/useSessionController.js";
 import { useNav } from "../shell/NavProvider.jsx";
-import { useDismissLayer } from "../shell/useDismissLayer.js";
+import { useDismissLayer } from "@/lib/ui/dismiss/useDismissLayer.js";
 import { collapseResultEditions } from "./collapseResultEditions.js";
 import { applyResultRowVerb } from "./resultRowVerbs.js";
 import { useRowLabels } from "./useRowLabels.js";

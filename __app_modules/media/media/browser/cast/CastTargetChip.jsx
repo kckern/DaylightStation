@@ -9,7 +9,7 @@
 import React, { useState, useCallback, useContext, useEffect } from 'react';
 import { Popover, Text, UnstyledButton } from '@mantine/core';
 import { IconChevronDown } from '@tabler/icons-react';
-import { useDismissLayer } from "../shell/useDismissLayer.js";
+import { useDismissLayer } from "@/lib/ui/dismiss/useDismissLayer.js";
 import { useCastTarget } from "./useCastTarget.js";
 import { useFleetContext } from "../fleet/useFleetContext.js";
 import { deviceName } from "../fleet/deviceDisplay.js";
