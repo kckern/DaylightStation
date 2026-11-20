@@ -1,4 +1,19 @@
-import { expect, test } from '@playwright/test';
+import { expect, test as base } from '@playwright/test';
+
+const test = base.extend({
+  context: async ({ browserName, playwright, baseURL }, use, testInfo) => {
+    // A persistent profile lets WebKit store the audio Blob used by the draft.
+    const context = await playwright[browserName].launchPersistentContext(testInfo.outputPath('recording-profile'), {
+      baseURL,
+      serviceWorkers: 'block',
+    });
+    try {
+      await use(context);
+    } finally {
+      await context.close();
+    }
+  },
+});
 
 const dbName = 'weekly-review-chunks-v1';
 const week = '2026-11-14';
@@ -6,9 +21,9 @@ const sessionId = 'saved-review';
 
 async function seedDraftAndFailFirstOpen(page) {
   await page.evaluate(async ({ dbName, week, sessionId }) => {
-    const open = indexedDB.open.bind(indexedDB);
+    const open = IDBFactory.prototype.open;
     const db = await new Promise((resolve, reject) => {
-      const request = open(dbName, 1);
+      const request = open.call(indexedDB, dbName, 1);
       request.onupgradeneeded = () => {
         const store = request.result.createObjectStore('chunks', { keyPath: ['sessionId', 'seq'] });
         store.createIndex('sessionId', 'sessionId');
@@ -26,18 +41,18 @@ async function seedDraftAndFailFirstOpen(page) {
     });
     db.close();
     window.recordingDatabaseOpens = 0;
-    indexedDB.open = (name, ...args) => {
+    IDBFactory.prototype.open = function (name, ...args) {
       if (name === dbName && ++window.recordingDatabaseOpens === 1) {
         throw new DOMException('Fixture temporary database error', 'UnknownError');
       }
-      return open(name, ...args);
+      return open.call(this, name, ...args);
     };
   }, { dbName, week, sessionId });
 }
 
 async function readDraftRows(page) {
   return page.evaluate(name => new Promise((resolve, reject) => {
-    const request = IDBFactory.prototype.open.call(indexedDB, name, 1);
+    const request = indexedDB.open(name, 1);
     request.onerror = () => reject(request.error);
     request.onsuccess = () => {
       const db = request.result;
