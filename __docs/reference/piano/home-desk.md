@@ -13,36 +13,55 @@ A child has a piece when they have one in progress (at least one step earned; th
 recent such piece; pieces only opened or tried do not count), and a course when they
 have one.
 
-A child with both gets two small tabs at the right of their header: ♪ **Sheet music**
-(the piece) and ▶ **Video lesson** (the course), each a 32px round button with that
-`aria-label` and `aria-pressed`. The shown one is filled with the accent, the other
-outlined. The card shown is the most recent of the two (piece `practicedAt`, course
-`lastPlayedAt`; a tie keeps the piece) until a tab is pressed (`shownCard`). Pressing a
-tab only swaps the card; it never opens anything. The choice is kept per child while
-the strip is mounted (component state, no storage), and logs `piano.desk.tab` (debug,
-`{ userId, kind }`). A child with only one of the two has no tabs. One card per child
-keeps the row to four wide cards for today's four children (two preschoolers only have
-a course) rather than six narrow ones (owner, 2026-11-19).
+A child with both switches between them with a **sideways swipe on the card**: left
+shows the next card, right the one before, wrapping like a carousel (`swipeTarget`;
+works for any number of cards, two today). The swipe uses pointer events
+(`useCardSwipe.js`): a drag counts once it is mostly sideways (horizontal travel over
+1.5 times the vertical) and past 8px; while it drags the card follows the finger at
+half its travel, at most 32px (`--piano-desk-drag` on the `.piano-desk__deck` wrapper,
+`touch-action: pan-y` so vertical moves still scroll), and springs back on release. A
+release 40px or more sideways switches the card, which slides in from that side
+(`data-enter`). Any sideways drag, switching or not, swallows the click the browser
+sends after it, so a swipe never also opens the card; vertical gestures and small
+wobbles are ignored, so a tap still opens. A swipe logs `piano.desk.swipe` (debug,
+`{ userId, from, to }`). With `prefers-reduced-motion` the card neither follows nor
+slides; it swaps in place. Closed (curfew, a pending lesson) there is no swiping.
 
-Both kinds share one layout (the panel's width by 150): a 64x96 poster on the left with a small play
-disc in its corner; beside it a badge (one line), the title (up to three lines) and the next step;
-the progress in a row along the bottom. The poster is the picture in a 2:3 frame
-(cropped to fit only when its own shape differs), never squeezed into a wide band. With no picture, or one that fails to load, a tinted
-stand-in shows a ♪ and the title.
+The header keeps two tabs at its right as indicators: ♪ **Sheet music** (the piece) and
+▶ **Video lesson** (the course), 32px round buttons with an 18px icon (their hit area
+reaches a few px past the circle) with that `aria-label` and `aria-pressed`. They are
+light: no ring, the shown one a soft accent tint. Tapping one still swaps the card and
+never opens anything (logs `piano.desk.tab`, debug, `{ userId, kind }`). The card shown
+is the most recent of the two (piece `practicedAt`, course `lastPlayedAt`; a tie keeps
+the piece) until the child swipes or taps (`shownCard`). The choice is kept per child
+while the strip is mounted (component state, no storage). A child with only one of the
+two has no tabs and no swipe. One card per child keeps the row to four wide cards for
+today's four children (two preschoolers only have a course) rather than six narrow ones
+(owner, 2026-11-19).
 
-- **Piece:** the score's `cover` (the same-name picture beside the score), the printed
-  title, and the next step: the next passage's bars (`Bars 6–9`), or **Whole piece** once
-  every passage is Gold (`piecePolishing`). The badge is **Silver next** while
+Both kinds put the poster the card's **full height** on the left, in a 2:3 frame (88x132,
+or about 103x154 on a tall card), with a small play disc in its corner; the right column
+(176px wide at four children) holds the rest, with the progress pinned to its bottom
+(owner, 2026-11-20). The poster is the picture cropped to fit only when its own shape
+differs. With no picture, or one that fails to load, a tinted stand-in shows a ♪ and
+the title. Titles wrap to two lines, then end in an ellipsis.
+
+- **Piece:** top to bottom beside the score's `cover` (the same-name picture beside the
+  score): the badge, the printed title, the next step (the next passage's bars, `Bars
+  6–9`, or **Whole piece** once every passage is Gold, `piecePolishing`), then what to do
+  in them: the coach's next skill, `piece.next.label` ("Settle into a beat"; `nextSkill`),
+  left out when the desk gives none and while polishing. The badge is **Silver next** while
   any passage lacks Silver, **Gold next** once every passage has it, then the Polish
   goal once the piece is all Gold: **Polish next** (gold) until the piece's Polish gem,
   **Diamond next** (pale diamond colour) after the gem, and **Diamond** once the diamond
-  is earned (`cardBadge`). The progress row is the passage map in score order (a tomato, a
-  flower, a silver coin or a gold coin; the next passage ringed), one row of coins up
-  to 22px sized to fill a 276px row (`coinSize`; a narrower card shrinks them further);
-  a piece with more than 14 passages takes two equal
-  rows (`mapColumns`, `mapRows`, `coinSize`). A tomato nobody has started sits back at
+  is earned (`cardBadge`). Pinned at the bottom of the column: the Silver count (and the
+  Gold count once there is one, `PieceCount`), over the passage map in score order (a
+  tomato, a flower, a silver coin or a gold coin; the next passage ringed). Up to ten
+  passages make one row of coins up to 24px, sized to fill the 176px column
+  (`coinSize`; a narrower card shrinks them further); a piece with more than ten
+  passages takes two equal rows of coins up to 22px (`mapColumns`, `mapRows`, `coinSize`). A tomato nobody has started sits back at
   30% opacity; a started tomato and the one up next are full colour (`passageFaded`).
-  No count: the coins show it. A piece holding its Polish gem ends the coin row with
+  A piece holding its Polish gem ends the coin row with
   a coin-sized gem (`#f2c94c`); once the diamond is earned, the diamond (`#cfe8f7`)
   takes its place (`polishStone` in `modes/SheetMusic/polishAwards.js`). The stone
   takes one more column of the row, so the coins size for it (`coinSize(count, 1)`)
@@ -53,11 +72,14 @@ stand-in shows a ♪ and the title.
   (log `piano.desk.open-polish`).
 - **Course:** the child's enrolled course leads (School's `piano-course` assignment: the
   first unfinished course in its sequence, marked `enrolled`); otherwise the unfinished
-  course furthest along. The poster is the course art. The title is the next lesson's,
-  without a leading "Lesson 51 |" or "Lesson 12:" (`lessonTitle`); the next step is
-  "Lesson 51": the number printed in that prefix, else the lesson's `position`, else
-  lessons done plus one (`nextStep`). The badge is **Next lesson**; the progress row is
-  a thin bar with the percent of lessons done. Tapping plays that lesson.
+  course furthest along. The poster is the course art. At the top of the column is the
+  next episode's own still (`course.next.thumbnail`, 16:9, 96px wide), so the child knows
+  the lesson by its picture; with none, or one that fails to load, a tinted frame with a
+  play icon. Beside it, "LESSON" over the number: the number printed in a "Lesson 51 |"
+  prefix, else the lesson's `position`, else lessons done plus one (`lessonNumber`). Under
+  them the lesson's title without that prefix (`lessonTitle`), and at the bottom a thin
+  bar with the percent of lessons done. There is no badge: the still says which lesson
+  is next. Tapping plays that lesson.
 
 Tapping a card also makes that child the current player (owner-requested 2026-07-28).
 Choosing a player otherwise stays in the "Who's playing" modal. A child with neither
@@ -86,10 +108,14 @@ header in every state and draws only once both its lists have arrived; the tile 
 the owed lesson) is centred in the rest; the pending and curfew captions float; and the
 connection banner floats at the foot of the screen, over the on-screen keyboard.
 It is 208px tall: the 32px header, a 6px gap and a card. A card is 150px: 2px of
-border, 16px of padding, the 96px poster row, a 10px gap and a 26px progress row. When
-any piece shown on the strip needs two coin rows, every card grows to 170px together
-(`data-tall`; the progress row becomes 46px, two 22px coins and a 2px gap) so the row
-stays even; a long piece behind a child's other tab does not count. The children's
+border, 16px of padding and 132px of content (the poster, and the right column: badge,
+two title lines, bars, skill, and the count over one row of coins). When any piece shown
+on the strip needs two coin rows, every card grows to 170px together (`data-tall`; the
+posters grow with it at 2:3) so the row stays even; a long piece behind a child's other
+tab does not count. `PianoHomeDesk.layout.test.jsx` renders the strip in Chromium at
+1280x800 (two and four children, short and long titles, 2, 7 and 20 passages, a missing
+episode still, closed), checks that nothing spills out of a card, swipes a card with a
+real pointer, and saves screenshots (to `DESK_SHOTS`, else the OS temp folder). The children's
 panels share the row (`flex: 1 1 0`, at most 300px each, 16px apart): four children in
 the 1216px row get about 292px each. A crowded row shrinks its cards rather than
 scrolling or cutting one off.
@@ -97,5 +123,5 @@ Curfew applies only on the piano's own tablet (the client whose kiosk device id 
 `screensaver.deviceId`); an ordinary browser stays usable. Curfew and a pending lesson
 check disable every card and tab. An owed video lesson replaces the tiles, but not the strip, with that lesson and a 224px column beside it: the child's latest piece (`LatestPieceCard`: poster, play disc, Silver count, title; one tap opens it at its next passage) over the Sheet Music tile (browse every score): sheet music is the one mode an owed lesson leaves open (owner, 2026-11-19), through that tile or a piece card on the strip. A PianoChallenge still takes the whole screen. The lesson is one card that is one button: the course poster on the left, then the lesson title over the lesson's still, which fills its area (cropping slightly rather than leaving a band), with a small play disc on it. There is no separate Start button, and no description, course or unit line.
 
-Logs: `piano.desk.view` (the cards shown), `piano.desk.tab`, `piano.desk.open-passage`, `piano.desk.open-polish`, `piano.desk.open-course`, server
+Logs: `piano.desk.view` (the cards shown), `piano.desk.tab`, `piano.desk.swipe`, `piano.desk.open-passage`, `piano.desk.open-polish`, `piano.desk.open-course`, server
 `piano.desk.record_skipped`, `piano.desk.player_skipped`.

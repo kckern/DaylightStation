@@ -1,6 +1,6 @@
 // The progress strip above the home menu: one panel per child, headed by their
 // avatar and name (and, for a child with a piece and a course, two tabs), over
-// one card. Fixed height, filled or empty, so the tiles below never move. The
+// one card that swipes sideways between them. Fixed height, filled or empty, so the tiles below never move. The
 // panels share the row, up to 300px each: four children in the 1216px row get
 // about 292px apiece; a crowded row shrinks them rather than scrolling.
 .piano-desk {
@@ -23,28 +23,41 @@
   }
   &__name { font-size: 17px; font-weight: 800; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
-  // Sheet music and video lesson: 32px tabs for small fingers. The shown one is
-  // filled with the accent, the other outlined. A tab only swaps the card.
-  &__tabs { flex: 0 0 auto; display: flex; gap: 6px; }
+  // Sheet music and video lesson: indicators of the card shown, and still a tap
+  // to swap it; the swipe is the main control. Light: no ring, the shown one a
+  // soft accent tint. Each reaches past its 32px circle for a finger.
+  &__tabs { flex: 0 0 auto; display: flex; gap: 8px; }
   &__tab {
+    position: relative;
     width: 32px; height: 32px; padding: 0; box-sizing: border-box;
     display: flex; align-items: center; justify-content: center;
-    border: 2px solid var(--piano-accent); border-radius: 50%;
-    background: transparent; color: var(--piano-accent-text);
+    border: 0; border-radius: 50%;
+    background: transparent; color: var(--piano-muted);
     font: inherit; font-size: 16px; cursor: pointer;
-    &[aria-pressed='true'] { background: var(--piano-accent); color: var(--piano-accent-ink); }
-    &:disabled { cursor: default; border-color: var(--piano-muted); color: var(--piano-muted); }
-    &:disabled[aria-pressed='true'] { background: var(--piano-muted); color: var(--piano-surface); }
-    .piano-icon { display: flex; width: 16px; height: 16px; }
+    &::after { content: ''; position: absolute; inset: -6px -4px; }
+    &[aria-pressed='true'] { background: color-mix(in srgb, var(--piano-accent) 22%, transparent); color: var(--piano-accent-text); }
+    &:disabled { cursor: default; color: var(--piano-muted); }
+    &:disabled[aria-pressed='true'] { background: var(--piano-surface-2); color: var(--piano-muted); }
+    .piano-icon { display: flex; width: 18px; height: 18px; }
     .piano-icon svg { width: 100%; height: 100%; }
   }
 
-  // One layout for both kinds of card, the panel's width by 150: the 64x96
-  // poster with the badge, title and next step beside it, and the progress
-  // pinned under it (150 = 2 border + 16 padding + 96 + 10 gap + 26 progress).
-  // A piece with more than fourteen passages takes two coin rows and 170px
-  // (46px of progress: two 22px coins and a 2px gap). When any shown piece
-  // needs two rows, every card grows together so the row stays even.
+  // The swipe surface: it holds the card and follows the finger a little while
+  // it drags sideways (--piano-desk-drag, at most 32px), then springs back.
+  // pan-y leaves vertical scrolling to the page and sideways moves to the swipe.
+  &__deck {
+    display: block; width: 100%; min-width: 0;
+    transform: translateX(var(--piano-desk-drag, 0px));
+    transition: transform var(--ds-motion-fast, 150ms) var(--ds-motion-easing, ease-out);
+    &[data-swipe] { touch-action: pan-y; }
+    &[data-dragging] { transition: none; }
+  }
+
+  // Both cards, the panel's width by 150: a full-height 2:3 poster on the left
+  // (88x132 inside 2px of border and 16px of padding), the right column beside
+  // it (176px wide at four children). A piece with more than ten passages takes
+  // two coin rows and 170px; when any shown piece needs two rows, every card
+  // grows together so the row stays even, and the posters grow with it (2:3).
   &[data-tall] &__card { height: 170px; }
 
   &__card {
@@ -54,7 +67,8 @@
     height: 150px;
     box-sizing: border-box;
     display: flex;
-    flex-direction: column;
+    flex-direction: row;
+    align-items: stretch;
     gap: 10px;
     padding: 8px;
     border: 1px solid var(--piano-border);
@@ -65,56 +79,94 @@
     text-align: left;
     cursor: pointer;
     overflow: hidden;
+    -webkit-user-select: none; user-select: none;
     &:active { background: var(--piano-surface-2); }
     &:disabled { cursor: default; color: var(--piano-muted); }
     &:disabled img { filter: grayscale(1); }
+    // Closed: the accents go grey with the pictures.
+    &:disabled .piano-desk__step, &:disabled .piano-desk__still[data-stand-in] { color: var(--piano-muted); }
+    &:disabled .piano-desk__play, &:disabled .piano-desk__bar i { background: var(--piano-muted); }
+    // A swiped-in card slides in from the side the finger came from.
+    &[data-enter='left'] { animation: piano-desk-in-left var(--ds-motion-base, 200ms) var(--ds-motion-easing, ease-out); }
+    &[data-enter='right'] { animation: piano-desk-in-right var(--ds-motion-base, 200ms) var(--ds-motion-easing, ease-out); }
   }
-
-  &__top { flex: 0 0 96px; display: flex; gap: 8px; min-width: 0; }
 
   // The tall poster: score cover or course art, or a tinted stand-in with a title.
   &__poster {
-    position: relative; flex: 0 0 64px; width: 64px; height: 96px;
+    position: relative; flex: 0 0 auto; height: 100%; aspect-ratio: 2 / 3;
     border-radius: 6px; overflow: hidden; background: var(--piano-surface-2);
-    img { display: block; width: 100%; height: 100%; object-fit: cover; }
+    img { display: block; width: 100%; height: 100%; object-fit: cover; -webkit-user-drag: none; }
     &[data-stand-in] {
-      // The bottom 26px belong to the play disc, so the title stops above it.
-      display: flex; flex-direction: column; align-items: center; justify-content: flex-start; gap: 4px;
-      padding: 8px 4px 26px; box-sizing: border-box;
+      // The bottom 30px belong to the play disc, so the title stops above it.
+      display: flex; flex-direction: column; align-items: center; justify-content: flex-start; gap: 6px;
+      padding: 12px 6px 30px; box-sizing: border-box;
       background: color-mix(in srgb, var(--piano-accent) 18%, var(--piano-surface-2));
     }
   }
-  &__note { font-size: 22px; line-height: 1; color: var(--piano-accent-text); }
+  &__note { font-size: 26px; line-height: 1; color: var(--piano-accent-text); }
   &__stand-in {
-    font-size: 11px; font-weight: 700; line-height: 1.15; text-align: center; color: var(--piano-muted);
+    font-size: 12px; font-weight: 700; line-height: 1.2; text-align: center; color: var(--piano-muted);
     overflow-wrap: anywhere;
-    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+    display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden;
   }
   // The resume cue: a small solid play disc in the poster's corner.
   &__play {
-    position: absolute; right: 4px; bottom: 4px; width: 22px; height: 22px; border-radius: 50%;
+    position: absolute; right: 5px; bottom: 5px; width: 24px; height: 24px; border-radius: 50%;
     display: flex; align-items: center; justify-content: center;
     color: var(--piano-accent-ink); background: var(--piano-accent); border: 2px solid var(--piano-surface);
-    svg { width: 13px; height: 13px; margin-left: 1px; }
+    svg { width: 14px; height: 14px; margin-left: 1px; }
   }
 
+  // The right column: text from the top, progress pinned to the bottom.
   &__text { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 2px; overflow: hidden; }
   &__badge {
+    flex: none;
     font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.06em; line-height: 13px;
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
     &[data-level='silver'] { color: var(--piano-silver); }
     &[data-level='gold'] { color: var(--piano-gold); }
     &[data-level='diamond'] { color: var(--piano-diamond); }
-    &[data-level='lesson'] { color: var(--piano-accent-text); }
   }
   &__title {
-    font-size: 15px; font-weight: 800; line-height: 1.2;
-    display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;
+    flex: none;
+    font-size: 15px; font-weight: 800; line-height: 18px; max-height: 36px;
+    overflow-wrap: anywhere;
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
   }
-  &__step { font-size: 14px; font-weight: 700; color: var(--piano-accent-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  &__step { flex: none; font-size: 14px; font-weight: 700; line-height: 17px; color: var(--piano-accent-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  // What to do in those bars, from the coach: "Settle into a beat".
+  &__skill { flex: none; font-size: 13px; font-weight: 600; line-height: 16px; color: var(--piano-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
-  // Under the poster: the passage coins, or a course's bar and percent.
-  &__progress { flex: 1 1 auto; min-height: 0; display: flex; align-items: center; gap: 8px; min-width: 0; }
+  // A course's next episode: its own still (16:9) with the lesson number beside it.
+  &__episode { flex: none; display: flex; align-items: center; gap: 8px; min-width: 0; margin-bottom: 4px; }
+  &__still {
+    flex: 0 0 auto; width: 96px; aspect-ratio: 16 / 9; border-radius: 4px; overflow: hidden;
+    background: var(--piano-surface-2);
+    img { display: block; width: 100%; height: 100%; object-fit: cover; -webkit-user-drag: none; }
+    &[data-stand-in] {
+      display: flex; align-items: center; justify-content: center;
+      background: color-mix(in srgb, var(--piano-accent) 18%, var(--piano-surface-2));
+      color: var(--piano-accent-text);
+      .piano-icon { display: flex; width: 22px; height: 22px; }
+      .piano-icon svg { width: 100%; height: 100%; }
+    }
+  }
+  &__step[data-kind='lesson'] {
+    display: flex; flex-direction: column; min-width: 0; line-height: 1;
+    small { font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.06em; color: var(--piano-muted); }
+    b { font-size: 24px; font-weight: 800; line-height: 28px; font-variant-numeric: tabular-nums; }
+  }
+
+  // Pinned to the bottom of the right column: a piece's count over its coins, or a course's bar and percent.
+  &__progress { flex: none; margin-top: auto; padding-top: 2px; display: flex; min-width: 0; }
+  &__progress[data-kind='piece'] { flex-direction: column; gap: 2px; }
+  &__progress[data-kind='course'] { align-items: center; gap: 8px; height: 18px; }
+  &__count {
+    display: flex; gap: 10px; font-size: 12px; font-weight: 800; line-height: 14px; font-variant-numeric: tabular-nums;
+    span { display: flex; align-items: center; gap: 3px; color: var(--piano-silver); }
+    span[data-level='gold'] { color: var(--piano-gold); }
+    svg { width: 12px; height: 12px; }
+  }
   &__bar {
     flex: 1; height: 6px; border-radius: 3px; background: var(--piano-surface-2); overflow: hidden;
     i { display: block; height: 100%; background: var(--piano-accent); border-radius: 3px; }
@@ -123,7 +175,7 @@
 
   &__map {
     // One coin per passage: a tomato, a flower, a silver coin or a gold coin.
-    // The gap matches GAP in deskModel.js, which sizes the coins to fill the row.
+    // The gap matches GAP in deskModel.js, which sizes the coins to fill the column.
     // Coins shrink with a crowded card rather than spill past its edge.
     display: grid;
     width: 100%;
@@ -140,6 +192,15 @@
     i[data-stone] { align-self: center; border-radius: 0; }
   }
 
+  // Reduced motion: the card swaps in place; no follow, no slide.
+  @media (prefers-reduced-motion: reduce) {
+    &__deck { transform: none; transition: none; }
+    &__card[data-enter] { animation: none; }
+  }
+
   // Closed (curfew, a pending lesson): the child headers go grey with their cards.
   &.is-disabled .piano-avatar { filter: grayscale(1); }
 }
+
+@keyframes piano-desk-in-left { from { transform: translateX(24px); opacity: 0.4; } to { transform: none; opacity: 1; } }
+@keyframes piano-desk-in-right { from { transform: translateX(-24px); opacity: 0.4; } to { transform: none; opacity: 1; } }

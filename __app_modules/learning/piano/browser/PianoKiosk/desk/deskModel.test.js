@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { piecePolishing, cardBadge, coinSize, lessonTitle, mapColumns, mapRows, nextStep, passageBars, passageFaded, pieceCount, pieceFocus, pieceLabel, relativeTime, scoreHeading, shownCard, stripCards, stripGroups } from './deskModel.js';
+import { piecePolishing, cardBadge, coinSize, lessonNumber, lessonTitle, nextSkill, swipeTarget, mapColumns, mapRows, nextStep, passageBars, passageFaded, pieceCount, pieceFocus, pieceLabel, relativeTime, scoreHeading, shownCard, stripCards, stripGroups } from './deskModel.js';
 
 const passages = [{ id: 'a', start: 0, end: 4, state: 'silver' }, { id: 'b', start: 5, end: 8, state: 'todo' }];
 const piece = { total: 2, silver: 1, gold: 0, practicedAt: '2026-11-18T10:00:00Z', next: { passageId: 'b' }, nextGoldPassageId: 'a', passages };
@@ -83,25 +83,49 @@ describe('deskModel', () => {
     expect(nextStep({ kind: 'piece', piece: gold, focus: { start: 0, end: 3 } })).toBe('Whole piece');
     expect(nextStep({ kind: 'piece', piece: { ...gold, gold: 0 }, focus: { start: 0, end: 3 } })).toBe('Bars 1–4');
   });
-  it('lays coins in one row up to fourteen, else two equal rows', () => {
-    expect(mapColumns(12)).toBe(12);
-    expect(mapColumns(14)).toBe(14);
+  it('lays coins in one row up to ten, else two equal rows', () => {
+    expect(mapColumns(3)).toBe(3);
+    expect(mapColumns(10)).toBe(10);
+    expect(mapColumns(11)).toBe(6);
     expect(mapColumns(20)).toBe(10);
-    expect(mapRows(14)).toBe(1);
-    expect(mapRows(15)).toBe(2);
+    expect(mapRows(10)).toBe(1);
+    expect(mapRows(11)).toBe(2);
   });
-  it('sizes coins to fill the card row, never above 22px', () => {
-    expect(coinSize(3)).toBe(22);
-    expect(coinSize(12)).toBe(21);
-    expect(coinSize(14)).toBe(17);
-    expect(coinSize(20)).toBe(22);
-    expect(coinSize(28)).toBe(17);
+  it('sizes coins to fill the right column: up to 24px on one row, 22px on two', () => {
+    expect(coinSize(2)).toBe(24);
+    expect(coinSize(3)).toBe(24);
+    expect(coinSize(10)).toBe(15);
+    expect(coinSize(12)).toBe(22);
+    expect(coinSize(20)).toBe(15);
+    expect(coinSize(28)).toBe(10);
   });
   it('makes room for one more coin-sized slot when the row ends in a Polish stone', () => {
-    expect(coinSize(3, 1)).toBe(22);
-    expect(coinSize(12, 1)).toBe(19);
-    expect(coinSize(14, 1)).toBe(16);
-    expect(coinSize(28, 1)).toBe(16);
+    expect(coinSize(3, 1)).toBe(24);
+    expect(coinSize(10, 1)).toBe(14);
+    expect(coinSize(28, 1)).toBe(9);
+  });
+  it('reads the coach\'s next skill as the piece card\'s what-to-do line, never while polishing', () => {
+    const piece = { total: 3, gold: 0, next: { passageId: 'a', skill: 'pulse', label: 'Settle into a beat' } };
+    expect(nextSkill({ kind: 'piece', piece })).toBe('Settle into a beat');
+    expect(nextSkill({ kind: 'piece', piece: { ...piece, next: { passageId: 'a' } } })).toBe('');
+    expect(nextSkill({ kind: 'piece', piece: { ...piece, next: null } })).toBe('');
+    expect(nextSkill({ kind: 'piece', piece: { ...piece, gold: 3 } })).toBe('');
+    expect(nextSkill({ kind: 'course', course: {} })).toBe('');
+  });
+  it('numbers the next lesson on its own, for the course card', () => {
+    expect(lessonNumber({ completed: 47, next: { title: 'Lesson 51 | Jingle Bells', position: 48 } })).toBe('51');
+    expect(lessonNumber({ completed: 98, next: { title: 'x' } })).toBe('99');
+    expect(lessonNumber({ completed: 5, next: null })).toBe('');
+  });
+  it('steps through a child\'s cards like a carousel, wrapping both ways', () => {
+    const cards = [{ kind: 'piece' }, { kind: 'course' }];
+    expect(swipeTarget(cards, 'piece', 'left').kind).toBe('course');
+    expect(swipeTarget(cards, 'course', 'left').kind).toBe('piece');
+    expect(swipeTarget(cards, 'piece', 'right').kind).toBe('course');
+    const three = [{ kind: 'a' }, { kind: 'b' }, { kind: 'c' }];
+    expect(swipeTarget(three, 'a', 'right').kind).toBe('c');
+    expect(swipeTarget(three, 'c', 'left').kind).toBe('a');
+    expect(swipeTarget([{ kind: 'piece' }], 'piece', 'left')).toBeNull();
   });
   it('names a piece card with its Polish stone for a screen reader', () => {
     expect(pieceLabel('Kid', { silver: 3, total: 3 })).toBe('Kid: 3 of 3 Silver');

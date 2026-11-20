@@ -109,33 +109,66 @@ export function cardBadge(card) {
 }
 
 /**
- * The line under a card's title: the bars up next, or the next lesson's number —
- * the one printed in its title when there is one (the server's position counts
- * graded lessons only), else its place in the course.
+ * The next lesson's number: the one printed in its title when there is one (the
+ * server's position counts graded lessons only), else its place in the course.
  */
-export function nextStep(card) {
-  if (card.kind === 'piece') return piecePolishing(card.piece) ? 'Whole piece' : passageBars(card.focus);
-  const { course } = card;
-  if (!course.next) return '';
+export function lessonNumber(course) {
+  if (!course?.next) return '';
   const title = String(course.next.title ?? '').trim();
   // The number the title prints, with a separator ("Lesson 51 | …") or alone ("Lesson 3").
   const printed = (LESSON_PREFIX.exec(title) ?? /^lesson\s+(\d+)$/i.exec(title))?.[1];
   const position = printed ?? course.next.position ?? (Number.isFinite(course.completed) ? course.completed + 1 : null);
-  return position ? `Lesson ${position}` : '';
+  return position ? String(position) : '';
 }
 
-/** The card's inner width in px, which the coin row fills, and the gap between coins. */
-const ROW = 276;
+/** The line under a card's title: the bars up next, or "Lesson 51". */
+export function nextStep(card) {
+  if (card.kind === 'piece') return piecePolishing(card.piece) ? 'Whole piece' : passageBars(card.focus);
+  const number = lessonNumber(card.course);
+  return number ? `Lesson ${number}` : '';
+}
+
+/**
+ * What to do in those bars: the coach's next skill ("Settle into a beat"), from
+ * the desk's `piece.next`. Nothing while polishing: the card opens Polish, not that skill.
+ */
+export const nextSkill = (card) => (card.kind === 'piece' && !piecePolishing(card.piece) ? String(card.piece?.next?.label ?? '').trim() : '');
+
+/**
+ * The card a swipe brings in: a swipe left shows the next card, right the one
+ * before, wrapping like a carousel. Null when the child has only one card.
+ */
+export function swipeTarget(cards, kind, direction) {
+  const list = cards ?? [];
+  if (list.length < 2) return null;
+  const at = Math.max(0, list.findIndex((card) => card.kind === kind));
+  const step = direction === 'left' ? 1 : -1;
+  return list[(at + step + list.length) % list.length];
+}
+
+/**
+ * The right column's width in px at a 292px panel (four children), which the
+ * coin rows fill: 292 - 2 border - 16 padding - 88 poster - 10 gap. And the gap
+ * between coins (the map's CSS gap).
+ */
+const ROW = 176;
 const GAP = 2;
+/** One row up to ten coins, else two equal rows. */
+const ONE_ROW = 10;
 
-/** Coins across a piece's map: one row up to fourteen, else two equal rows. */
-export const mapColumns = (count) => (count > 14 ? Math.ceil(count / 2) : Math.max(1, count));
-export const mapRows = (count) => (count > 14 ? 2 : 1);
+/** Coins across a piece's map. */
+export const mapColumns = (count) => (count > ONE_ROW ? Math.ceil(count / 2) : Math.max(1, count));
+export const mapRows = (count) => (count > ONE_ROW ? 2 : 1);
 
-/** Coin size in px: the row fills the card, never above 22px. `extra` slots (a Polish stone) share the row. */
+/**
+ * Coin size in px: the row fills the column, never above 24px on one row (a few
+ * passages get big coins) or 22px on two (the tall card's height). `extra` slots
+ * (a Polish stone) share the row.
+ */
 export const coinSize = (count, extra = 0) => {
   const columns = mapColumns(count) + extra;
-  return Math.min(22, Math.floor((ROW - (columns - 1) * GAP) / columns));
+  const most = mapRows(count) > 1 ? 22 : 24;
+  return Math.min(most, Math.floor((ROW - (columns - 1) * GAP) / columns));
 };
 
 export const pieceCount = (piece) => `${piece.silver} of ${piece.total} Silver`;
