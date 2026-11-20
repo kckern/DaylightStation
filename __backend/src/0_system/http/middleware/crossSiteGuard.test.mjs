@@ -13,6 +13,7 @@ function build({ allowedOrigins = [], trustProxy = null, logger = null } = {}) {
   app.use(express.json());
   app.use(express.urlencoded({ extended: true }));
   app.all('/api/v1/admin/thing', (req, res) => res.json({ ok: true }));
+  app.all(['/api/v1/proxy/plex/photo', '/admin', '/admin/x', '/administrator', '/apis', '/fitness', '/build.txt'], (req, res) => res.json({ ok: true }));
   return app;
 }
 
@@ -60,12 +61,85 @@ describe('crossSiteGuard', () => {
     expect(res.status).toBe(200);
   });
 
-  it('leaves GET and HEAD alone, even cross-site', async () => {
-    const get = await request(build()).get('/api/v1/admin/thing')
-      .set('Host', HOST).set('Origin', 'https://evil.example').set('Sec-Fetch-Site', 'cross-site');
+  it('leaves a GET or HEAD outside /api and /admin alone, even cross-site', async () => {
+    const get = await request(build()).get('/fitness')
+      .set('Host', HOST).set('Sec-Fetch-Site', 'cross-site').set('Sec-Fetch-Mode', 'no-cors');
     expect(get.status).toBe(200);
-    const head = await request(build()).head('/api/v1/admin/thing').set('Sec-Fetch-Site', 'cross-site');
+    const head = await request(build()).head('/build.txt').set('Sec-Fetch-Site', 'cross-site').set('Sec-Fetch-Mode', 'no-cors');
     expect(head.status).toBe(200);
+  });
+
+  describe('resource isolation: other sites may not load /api or /admin as a subresource', () => {
+    const cases = [
+      ['img or video', 'no-cors', 'image'],
+      ['fetch', 'cors', 'empty'],
+      ['script', 'no-cors', 'script'],
+    ];
+
+    it('refuses a cross-site or same-site subresource GET of /api and /admin', async () => {
+      for (const site of ['cross-site', 'same-site']) {
+        for (const [label, mode, dest] of cases) {
+          for (const path of ['/api/v1/admin/thing', '/api/v1/proxy/plex/photo', '/admin', '/admin/x']) {
+            const res = await request(build()).get(path)
+              .set('Host', HOST).set('Sec-Fetch-Site', site).set('Sec-Fetch-Mode', mode).set('Sec-Fetch-Dest', dest);
+            expect(res.status, `${site} ${label} ${path}`).toBe(403);
+            expect(res.body).toEqual({ error: 'cross-site-refused' });
+          }
+        }
+      }
+      const head = await request(build()).head('/api/v1/admin/thing').set('Sec-Fetch-Site', 'cross-site').set('Sec-Fetch-Mode', 'no-cors');
+      expect(head.status).toBe(403);
+    });
+
+    it('lets a top-level navigation through: a Telegram button, an OAuth callback, a link', async () => {
+      for (const site of ['cross-site', 'same-site']) {
+        const res = await request(build()).get('/api/v1/admin/thing')
+          .set('Host', HOST).set('Sec-Fetch-Site', site).set('Sec-Fetch-Mode', 'navigate').set('Sec-Fetch-Dest', 'document');
+        expect(res.status, site).toBe(200);
+      }
+    });
+
+    it('refuses a navigation nested in another site\'s frame (an invisible iframe could fire an action GET)', async () => {
+      for (const dest of ['iframe', 'frame', 'embed', 'object']) {
+        const res = await request(build()).get('/api/v1/admin/thing')
+          .set('Host', HOST).set('Sec-Fetch-Site', 'cross-site').set('Sec-Fetch-Mode', 'navigate').set('Sec-Fetch-Dest', dest);
+        expect(res.status, dest).toBe(403);
+      }
+    });
+
+    it('lets the app\'s own page, a typed URL, and non-browser callers read', async () => {
+      for (const site of ['same-origin', 'none']) {
+        const res = await request(build()).get('/api/v1/admin/thing').set('Sec-Fetch-Site', site).set('Sec-Fetch-Mode', 'cors');
+        expect(res.status, site).toBe(200);
+      }
+      expect((await request(build()).get('/api/v1/admin/thing')).status).toBe(200);
+    });
+
+    it('lets an allow-listed origin read cross-site, preflight included', async () => {
+      const app = build({ allowedOrigins: ['https://partner.example'] });
+      const get = await request(app).get('/api/v1/admin/thing')
+        .set('Origin', 'https://partner.example').set('Sec-Fetch-Site', 'cross-site').set('Sec-Fetch-Mode', 'cors');
+      expect(get.status).toBe(200);
+      const preflight = await request(app).options('/api/v1/admin/thing')
+        .set('Origin', 'https://partner.example').set('Sec-Fetch-Site', 'cross-site').set('Sec-Fetch-Mode', 'cors')
+        .set('Access-Control-Request-Method', 'POST');
+      expect(preflight.status).toBe(204);
+    });
+
+    it('does not take /administrator or /apis for /admin or /api', async () => {
+      for (const path of ['/administrator', '/apis']) {
+        const res = await request(build()).get(path).set('Sec-Fetch-Site', 'cross-site').set('Sec-Fetch-Mode', 'no-cors');
+        expect(res.status, path).toBe(200);
+      }
+    });
+
+    it('logs a read refusal with its reason', async () => {
+      const calls = [];
+      const logger = { sampled: (event, data) => calls.push({ event, data }) };
+      await request(build({ logger })).get('/api/v1/admin/thing')
+        .set('Sec-Fetch-Site', 'cross-site').set('Sec-Fetch-Mode', 'no-cors').set('Sec-Fetch-Dest', 'image');
+      expect(calls).toEqual([{ event: 'security.cross-site-refused', data: expect.objectContaining({ method: 'GET', reason: 'cross-site-read', secFetchMode: 'no-cors', secFetchDest: 'image' }) }]);
+    });
   });
 
   describe('without Sec-Fetch-Site (older browsers and WebViews)', () => {
@@ -143,7 +217,7 @@ describe('crossSiteGuard', () => {
       .set('Host', HOST).set('Origin', 'https://evil.example').set('Sec-Fetch-Site', 'cross-site');
     expect(calls).toEqual([{
       event: 'security.cross-site-refused',
-      data: { method: 'DELETE', path: '/api/v1/admin/thing', origin: 'https://evil.example', secFetchSite: 'cross-site', reason: 'sec-fetch-site' },
+      data: { method: 'DELETE', path: '/api/v1/admin/thing', origin: 'https://evil.example', secFetchSite: 'cross-site', secFetchMode: null, secFetchDest: null, reason: 'sec-fetch-site' },
       opts: { maxPerMinute: 20, aggregate: true, level: 'warn' },
     }]);
   });

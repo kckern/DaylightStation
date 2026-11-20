@@ -19,11 +19,39 @@
  *   4. Neither header: allowed. That is every non-browser caller (CLIs, Home
  *      Assistant, bridges, firmware, the Android app's native code, webhooks).
  *
+ * Reads are isolated too, for `/api` and `/admin` paths, by any method: a
+ * request whose `Sec-Fetch-Site` is `cross-site` or `same-site` is refused
+ * unless it is a top-level navigation (`Sec-Fetch-Mode: navigate` into a
+ * document: a link, a Telegram button, an OAuth callback). So another site's
+ * page cannot fire an action GET from an <img>, a fetch or a hidden iframe,
+ * nor read a response. An `Origin` on the allow-list is still allowed. Requests
+ * without `Sec-Fetch-Site` (non-browser callers, plain-http LAN pages, older
+ * WebViews) are not affected. No path is exempt: nothing on another origin
+ * embeds the API (checked 2026-11-20: the data tree, Home Assistant's config and
+ * dashboards, the extensions, the frontend).
+ *
  * Reference: __docs/reference/core/network-exposure.md (Cross-site requests).
  */
 
 const UNSAFE_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 const ALLOWED_SITES = new Set(['same-origin', 'none']);
+const FOREIGN_SITES = new Set(['cross-site', 'same-site']);
+const ISOLATED_PREFIXES = ['/api', '/admin'];
+// Navigations that land inside another page rather than replacing it.
+const NESTED_DESTINATIONS = new Set(['iframe', 'frame', 'embed', 'object', 'fencedframe']);
+
+function header(req, name) {
+  return req.get?.(name) ?? req.headers?.[name.toLowerCase()];
+}
+
+function lowerHeader(req, name) {
+  return String(header(req, name) ?? '').trim().toLowerCase();
+}
+
+function isIsolatedPath(path) {
+  const value = String(path || '');
+  return ISOLATED_PREFIXES.some((prefix) => value === prefix || value.startsWith(`${prefix}/`));
+}
 
 /** `scheme://host[:port]`, lower-case, default port dropped; null when not a usable origin. */
 export function normalizeOrigin(value) {
@@ -70,14 +98,14 @@ export function originAllowList(list, { logger = null } = {}) {
 
 /**
  * Why a request is refused, or null when it may proceed.
- * @returns {null | 'sec-fetch-site' | 'origin-null' | 'origin-mismatch'}
+ * @returns {null | 'sec-fetch-site' | 'origin-null' | 'origin-mismatch' | 'cross-site-read' | 'cross-site-frame'}
  */
 export function crossSiteRefusal(req, allowed = new Set()) {
-  if (!UNSAFE_METHODS.has(String(req.method || '').toUpperCase())) return null;
-
   const origin = req.get?.('Origin') ?? req.headers?.origin;
   const normalized = normalizeOrigin(origin);
   if (normalized && allowed.has(normalized)) return null;
+
+  if (!UNSAFE_METHODS.has(String(req.method || '').toUpperCase())) return crossSiteReadRefusal(req);
 
   const site = String(req.get?.('Sec-Fetch-Site') ?? req.headers?.['sec-fetch-site'] ?? '').trim().toLowerCase();
   if (site) return ALLOWED_SITES.has(site) ? null : 'sec-fetch-site';
@@ -86,6 +114,18 @@ export function crossSiteRefusal(req, allowed = new Set()) {
   if (!normalized) return 'origin-null';
   const url = new URL(normalized);
   return requestHosts(req, url.protocol).has(hostKey(url.host, url.protocol)) ? null : 'origin-mismatch';
+}
+
+/**
+ * Resource isolation for a read (GET, HEAD, OPTIONS) of `/api` or `/admin`:
+ * another site's page may navigate there, but not load it.
+ * @returns {null | 'cross-site-read' | 'cross-site-frame'}
+ */
+function crossSiteReadRefusal(req) {
+  if (!isIsolatedPath(req.path ?? String(req.url || '').split('?')[0])) return null;
+  if (!FOREIGN_SITES.has(lowerHeader(req, 'Sec-Fetch-Site'))) return null;
+  if (lowerHeader(req, 'Sec-Fetch-Mode') !== 'navigate') return 'cross-site-read';
+  return NESTED_DESTINATIONS.has(lowerHeader(req, 'Sec-Fetch-Dest')) ? 'cross-site-frame' : null;
 }
 
 /**
@@ -146,6 +186,8 @@ export function crossSiteGuard({ allowedOrigins = [], logger = null } = {}) {
       path: req.path,
       origin: req.get?.('Origin') ?? null,
       secFetchSite: req.get?.('Sec-Fetch-Site') ?? null,
+      secFetchMode: req.get?.('Sec-Fetch-Mode') ?? null,
+      secFetchDest: req.get?.('Sec-Fetch-Dest') ?? null,
       reason,
     };
     if (logger?.sampled) logger.sampled('security.cross-site-refused', data, { maxPerMinute: 20, aggregate: true, level: 'warn' });
