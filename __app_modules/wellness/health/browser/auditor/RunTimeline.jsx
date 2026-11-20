@@ -78,8 +78,9 @@ function SkipRow({ row }) {
  * reports how many rows survive the min-cost filter, so the timeline can say
  * when none on any loaded page do.
  */
-function JournalPage({ filters, offset, minCost, isLast, onMore, onOpen, onShown }) {
+function JournalPage({ filters, offset, minCost, isLast, onMore, onOpen, onShown, onSettled }) {
   const page = useApiResource(journalPath({ ...filters, offset }), { swr: true });
+  const settled = !page.loading && !page.revalidating;
   const [requestedRetry, setRequestedRetry] = useState(false);
   const { regionProps, retry } = useRetryRegion(() => {
     setRequestedRetry(true);
@@ -89,6 +90,7 @@ function JournalPage({ filters, offset, minCost, isLast, onMore, onOpen, onShown
   const shown = page.data ? rows.length : null;
   useEffect(() => { onShown(offset, shown); }, [onShown, offset, shown]);
   useEffect(() => () => onShown(offset, null), [onShown, offset]);
+  useEffect(() => { onSettled?.(settled); }, [onSettled, settled]);
 
   const firstPageEmpty = offset === 0 && page.data?.rows.length === 0;
   const canLoadMore = isLast && offset + PAGE_SIZE < page.data?.total;
@@ -112,7 +114,7 @@ function JournalPage({ filters, offset, minCost, isLast, onMore, onOpen, onShown
 }
 
 /** The auditor's run journal, newest first, with filters and paging. */
-export function RunTimeline({ onOpen }) {
+export function RunTimeline({ onOpen, onFirstPageSettled }) {
   const logger = useMemo(() => getLogger().child({ component: 'health-auditor' }), []);
   const [changed, setChanged] = useState(false);
   const [trigger, setTrigger] = useState(null);
@@ -138,7 +140,8 @@ export function RunTimeline({ onOpen }) {
       <Stack gap="xs">
         {filteredEmpty ? <EmptyState title={`No runs at or above ${formatUsd(cost)} on the loaded pages`} /> : null}
         {Array.from({ length: pages }, (_, i) => <JournalPage key={`${changed}:${trigger}:${i}`} filters={filters}
-          offset={i * PAGE_SIZE} minCost={cost} isLast={i === pages - 1} onMore={() => setPages(pages + 1)} onOpen={onOpen} onShown={onShown} />)}
+          offset={i * PAGE_SIZE} minCost={cost} isLast={i === pages - 1} onMore={() => setPages(pages + 1)}
+          onOpen={onOpen} onShown={onShown} onSettled={i === 0 ? onFirstPageSettled : undefined} />)}
       </Stack>
     </Stack>
   </SectionCard>;

@@ -16,17 +16,20 @@ import { AiUsageCard } from "../ai-usage/AiUsageCard.jsx";
  * /health/auditor: what the nutrition auditor did, why, and what it cost.
  * One cleanup status poll is shared by every section on the page.
  */
-export function AuditorPage() {
+export function AuditorPage({ routeReady = true }) {
   const logger = useMemo(() => getLogger().child({ component: 'health-auditor' }), []);
   const resource = useCleanup();
   const spend = useAuditorSpend(resource);
   const [selected, setSelected] = useState(null);
+  const [firstPageSettled, setFirstPageSettled] = useState(false);
+  const headerSettled = !resource.loading && !resource.revalidating
+    && (!resource.data || (!spend.loading && !spend.revalidating));
   useEffect(() => { logger.info('health-auditor.mounted', {}); }, [logger]);
   const open = run => { logger.debug('health-auditor.run-open', run); setSelected(run); };
   return <Stack gap="md" className="health-auditor">
     <AuditorHeader resource={resource} spend={spend} />
-    <RunTimeline onOpen={open} />
-    <AiUsageCard />
+    <RunTimeline onOpen={open} onFirstPageSettled={setFirstPageSettled} />
+    <AiUsageCard anchorReady={routeReady && headerSettled && firstPageSettled} />
     <SpendPanel spend={spend} capUsd={resource.data ? (resource.data.settings?.dailyCapUsd ?? null) : undefined} />
     <AuditorConfig resource={resource} spend={spend} />
     <SettingsLog />

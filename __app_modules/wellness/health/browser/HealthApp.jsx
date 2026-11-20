@@ -110,7 +110,8 @@ const HealthShell = ({ userId }) => {
   const [readyPath, setReadyPath] = useState(null);
   // Settings and Auditor share a navigation area but scroll independently.
   const viewPath = location.pathname.replace(/\/+$/, '');
-  useViewScroll({ mainRef, viewKey: viewPath, owner: userId, ready: readyPath === viewPath });
+  const routeReady = readyPath === viewPath;
+  useViewScroll({ mainRef, viewKey: viewPath, owner: userId, ready: routeReady });
   const visitedToday = useRef(false);
   if (todayActive) visitedToday.current = true;
   return (
@@ -136,7 +137,7 @@ const HealthShell = ({ userId }) => {
               <Route path="progress" element={<ProgressView />} />
               <Route path="medical" element={<MedicalView />} />
               <Route path="settings" element={<HealthSettings />} />
-              <Route path="auditor" element={<AuditorPage />} />
+              <Route path="auditor" element={<AuditorPage routeReady={routeReady} />} />
               {/* CoachChat only supports variant 'light'|'overlay' (see AgentChatSurface) —
                   'full' isn't a real variant. The default 'light' variant is already the
                   full-height flex-column layout (`.coach-chat { height: 100% }`), which is
