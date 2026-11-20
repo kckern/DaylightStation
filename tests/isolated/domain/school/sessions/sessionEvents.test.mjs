@@ -21,6 +21,7 @@ const PAYLOADS = {
   reprinted: { artifactId: 'doc_1' },
   result_receipt_captured: { artifactId: 'receipt/ses_abc123/out:ses_abc123', kind: 'result-receipt', printed: true },
   result_receipt_reprinted: { artifactId: 'receipt/ses_abc123/out:ses_abc123', idempotencyKey: 'rp_1', reprintedBy: 'parent1' },
+  makeup_claimed: { forDay: '2026-11-18', subject: 'math', deadline: '2026-11-21' },
   media_dispatched: { dispatchId: 'dsp_1', target: 'shield-tv', contentId: 'plex:1234' },
   media_completed: {},
   media_stalled: {},
@@ -77,6 +78,7 @@ describe('EVENT_TYPES', () => {
     expect(EVENT_TYPES).toEqual([
       'practice_prepared',
       'created', 'issued', 'reprinted', 'result_receipt_captured', 'result_receipt_reprinted',
+      'makeup_claimed',
       'media_dispatched', 'media_completed', 'media_stalled', 'checkpoint_cleared',
       'launch_dispatched', 'program_dispatched', 'external_activity_dispatched', 'external_activity_assessed',
       'submitted', 'graded', 'companion_gate_read', 'outcome_recorded', 'rewarded',

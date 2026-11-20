@@ -206,6 +206,22 @@ const SCHEMA = {
     fields: ['artifactId', 'confirmed', 'idempotencyKey', 'reprintedBy'],
     validate: allOf(stringField('artifactId'), booleanIfPresent('confirmed'), stringField('idempotencyKey'), stringField('reprintedBy')),
   },
+  // MAKEUP CLAIM (2026-11-19). This session's lesson is makeup for an
+  // earlier missed day: it was opened or reprinted from a makeup-sheet code
+  // (`ClaimMakeupLesson`). Its pass then credits `forDay` instead of the day
+  // it was done on (`domain/makeup.mjs` `honouredMakeupClaim`). An
+  // ANNOTATION: it changes which day the work counts for, never where the
+  // session is in its lifecycle.
+  makeup_claimed: {
+    fields: ['forDay', 'subject', 'deadline'],
+    validate: allOf(stringField('subject'), (raw, push) => {
+      if (!isStudyDay(raw.forDay)) push('forDay: must be YYYY-MM-DD');
+      if (!isStudyDay(raw.deadline)) push('deadline: must be YYYY-MM-DD');
+      if (isStudyDay(raw.forDay) && isStudyDay(raw.deadline) && raw.deadline < raw.forDay) {
+        push('deadline: must not be before forDay');
+      }
+    }),
+  },
   media_dispatched: {
     fields: ['dispatchId', 'target', 'contentId'],
     validate: allOf(stringField('dispatchId'), stringField('target'), stringField('contentId')),
@@ -582,6 +598,7 @@ export const ANNOTATION_EVENTS = Object.freeze(new Set([
   'reward_reconciled', 'reward_reconciliation_failed',
   'result_receipt_captured', 'result_receipt_reprinted', 'checkpoint_cleared',
   'companion_gate_read', 'remediation_replaced', 'practice_prepared',
+  'makeup_claimed',
 ]));
 /**
  * Annotations that are legal only from specific states, overriding the default
@@ -648,12 +665,15 @@ const ANNOTATION_STATES = new Map([
  *   payee the fold derives one, and it is exact, because a reassignment could
  *   not legally follow a reward until this change. Making a reassignment MOVE
  *   coins is a household-economy decision nobody has taken.
+ * - `makeup_claimed`: which day a lesson counts for is attribution, like
+ *   `reassigned`. A child's scan never claims a settled session
+ *   (`ClaimMakeupLesson` refuses), so after settlement only a repair writes it.
  */
 const TERMINAL_ANNOTATIONS = new Set([
   'grade_adjusted', 'grade_adjustment_retracted', 'evidence_invalidated', 'evidence_attributed',
   'reward_reconciled', 'reward_reconciliation_failed',
   'result_receipt_captured', 'result_receipt_reprinted',
-  'reassigned',
+  'reassigned', 'makeup_claimed',
 ]);
 
 /** States the table can reach but never leave. */
@@ -773,6 +793,10 @@ const emptyState = () => ({
   learnerId: null,
   unitId: null,
   studyDay: null,
+  // `makeup_claimed`: the missed day this lesson counts for, or null.
+  makeupFor: null,
+  makeupSubject: null,
+  makeupDeadline: null,
   state: null,
   terminal: false,
   issuedArtifacts: [],
@@ -884,6 +908,11 @@ const APPLY = {
     if (Number.isInteger(e.variant)) s.variant = e.variant;
     if (isNonEmptyString(e.replacementKey)) s.replacementKey = e.replacementKey;
     if (isNonEmptyString(e.replacesSessionId)) s.replacesSessionId = e.replacesSessionId;
+  },
+  makeup_claimed(s, e) {
+    s.makeupFor = e.forDay;
+    s.makeupSubject = e.subject;
+    s.makeupDeadline = e.deadline;
   },
   issued(s, e) {
     if (e.artifactId && !s.issuedArtifacts.includes(e.artifactId)) s.issuedArtifacts.push(e.artifactId);
