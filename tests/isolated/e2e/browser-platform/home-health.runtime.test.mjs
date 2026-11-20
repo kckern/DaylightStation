@@ -1519,11 +1519,9 @@ async function openRoomGroup(page) {
   first.state = first.stateClass = 'off';
   await writes.find(r => r.request().postDataJSON().entityId === first.id).fulfill({ json: { ok: true } });
   const failure = writes.find(r => r.request().postDataJSON().entityId === lamps[0].id);
-  const refresh = async () => {
-    const response = page.waitForResponse(r => new URL(r.url()).pathname.endsWith('/home-dashboard/entities'));
-    await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
-    await (await response).finished();
-  };
+  // The acknowledgement may also start a GET. Each case waits for the applied
+  // snapshot in the UI while the shared reader retires any superseded request.
+  const refresh = () => page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
   return { room, header, lamps, failure, refresh, writes };
 }
 
