@@ -1,4 +1,5 @@
 import { ActionIcon } from '@mantine/core';
+import { useMergedRef } from '@mantine/hooks';
 import { useRef } from 'react';
 import { useViewOverlaysActive } from './AppFrame.jsx';
 import { useDialogFocus } from './dismiss/useDialogFocus.js';
@@ -15,11 +16,12 @@ import './ds.scss';
  * `placement="fullscreen"` for an edge-to-edge camera stage. A visible sheet
  * registers on the dismiss stack and locks its frame and the document.
  */
-export function Sheet({ open, onClose, title, children, placement = 'center', returnFocusRef, getFallbackFocusTarget }) {
+export function Sheet({ open, onClose, title, children, placement = 'center', scrollRef, returnFocusRef, getFallbackFocusTarget }) {
   const overlaysActive = useViewOverlaysActive();
   const visible = open && overlaysActive;
   const sheetRef = useKeyboardViewport(visible);
   const panelRef = useRef(null);
+  const setPanelRef = useMergedRef(panelRef, scrollRef);
   const closeRef = useRef(null);
   useDismissLayer(open, onClose, { isActive: () => visible });
   useOverlayFocusReturn(open, returnFocusRef, getFallbackFocusTarget);
@@ -32,7 +34,7 @@ export function Sheet({ open, onClose, title, children, placement = 'center', re
   return (
     <div ref={sheetRef} className={className} hidden={!visible} role="dialog" aria-modal={visible || undefined} aria-label={title}>
       <div className="ds-sheet__scrim" onClick={onClose} />
-      <div className="ds-sheet__panel" ref={panelRef} tabIndex={-1} onKeyDown={handleKeys}>
+      <div className="ds-sheet__panel" ref={setPanelRef} tabIndex={-1} onKeyDown={handleKeys}>
         <header className="ds-sheet__header">
           <h3 className="ds-sheet__title">{title}</h3>
           <ActionIcon ref={closeRef} className="ds-touch-target" onClick={onClose} aria-label="Close">

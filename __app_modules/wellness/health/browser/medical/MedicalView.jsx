@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Autocomplete, Button, Group, NumberInput, Stack, TextInput } from '@mantine/core';
-import { Button as SubmitButton, SectionCard, StatCard, Sheet, LoadingState, ErrorState, EmptyState, StateMessage, useRetryRegion, useSheetSubmission } from '@/lib/ui';
+import { SubmitButton, SectionCard, StatCard, Sheet, LoadingState, ErrorState, EmptyState, StateMessage, useRetryRegion, useSheetSubmission } from '@/lib/ui';
 import { invalidateApiResources, useApiResource } from "../../../../../frontend/src/lib/hooks/useApiResource.js";
 import { unavailableError } from "../healthResources.js";
 import { DaylightAPI } from "../../../../../frontend/src/lib/api.mjs";
@@ -116,8 +116,7 @@ function MedicalReadingSheet({ onClose }) {
           onChange={(e) => setForm({ ...form, date: e.currentTarget.value })} />
         <TextInput label="Note" placeholder="optional" value={form.note}
           onChange={(e) => setForm({ ...form, note: e.currentTarget.value })} />
-        <SubmitButton type="submit" density="compact" disabled={!valid && !saving} aria-label="Save reading"
-          aria-busy={saving || undefined} aria-disabled={saving || undefined}>
+        <SubmitButton density="compact" disabled={!valid} pending={saving} aria-label="Save reading">
           {saving ? 'Saving reading…' : 'Save reading'}
         </SubmitButton>
       </Stack>

@@ -1,5 +1,5 @@
 import { Group, Stack } from '@mantine/core';
-import { Button, Sheet, StateMessage, createAppLogger, useSheetSubmission } from '@/lib/ui';
+import { Button, Sheet, StateMessage, SubmitButton, createAppLogger, useSheetSubmission } from '@/lib/ui';
 
 const logger = createAppLogger('life').child('plan-create');
 
@@ -18,15 +18,9 @@ export function PlanCreateSheet({ noun, onClose, save, valid, children }) {
         {children}
         <Group justify="flex-end">
           <Button density="compact" variant="secondary" onClick={onClose}>Cancel</Button>
-          <Button
-            type="submit"
-            density="compact"
-            disabled={!valid && !saving}
-            aria-busy={saving || undefined}
-            aria-disabled={saving || undefined}
-          >
+          <SubmitButton density="compact" disabled={!valid} pending={saving}>
             {saving ? 'Creating…' : 'Create ' + noun}
-          </Button>
+          </SubmitButton>
         </Group>
       </Stack>
     </Sheet>

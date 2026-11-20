@@ -17,5 +17,5 @@ export function useRetryRegion(onRetry, busy) {
     return onRetry();
   };
 
-  return { regionProps, retry };
+  return { regionProps, focus, retry };
 }

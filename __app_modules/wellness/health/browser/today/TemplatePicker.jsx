@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { UnstyledButton, Button, Text } from '@mantine/core';
-import { Sheet, LoadingState, EmptyState, ErrorState, useSheetSubmission } from '@/lib/ui';
+import { Sheet, LoadingState, EmptyState, ErrorState, useRetryRegion, useSheetSubmission } from '@/lib/ui';
 import { invalidateApiResources, useApiResource } from '../../../../../frontend/src/lib/hooks/useApiResource.js';
 import { DaylightAPI } from "../../../../../frontend/src/lib/api.mjs";
 import { createAppLogger } from "../../../../../frontend/src/lib/ui/createAppLogger.js";
@@ -72,7 +72,7 @@ export function TemplatePicker({ open, onClose, onLogged, bucketId, date = null,
 }
 
 function TemplatePickerVisit({ onClose, onLogged, bucketId, focusTemplateId, instantiate, isSessionActive }) {
-  const { data, loading, reload, error: loadError } = useApiResource(
+  const { data, loading, revalidating, reload, error: loadError } = useApiResource(
     templatesPath, { label: 'meal-templates', logger },
   );
   // template | null — the one whose variants are being chosen.
@@ -80,6 +80,19 @@ function TemplatePickerVisit({ onClose, onLogged, bucketId, focusTemplateId, ins
   const [editing, setEditing] = useState(null);
   const [variants, setVariants] = useState(() => new Set());
   const { run, saving: busy, failure: error, clearFailure } = useSheetSubmission(onClose);
+  const { regionProps, focus, retry } = useRetryRegion(reload, loading || revalidating);
+  const scrollRef = useRef(null);
+
+  function showEditor(template, { afterSave = false } = {}) {
+    // The same region owns focus on either side of the editor transition.
+    // If focus moved to the sheet controls during a save, leave it there.
+    const region = regionProps.ref.current;
+    if (!afterSave || region?.contains(region.ownerDocument.activeElement)) {
+      focus();
+      if (scrollRef.current) scrollRef.current.scrollTop = 0;
+    }
+    setEditing(template);
+  }
 
   const templates = data?.templates || [];
   // Honour `focusTemplateId` once per opening. A ref, not state derived from
@@ -145,95 +158,100 @@ function TemplatePickerVisit({ onClose, onLogged, bucketId, focusTemplateId, ins
   const icon = (template) => (template.icon ? nutritionIconUrl(template.icon) : null);
 
   return (
-    <Sheet open onClose={onClose} title={chosen ? chosen.name : 'Meals & templates'}>
+    <Sheet open onClose={onClose} title={chosen ? chosen.name : 'Meals & templates'} scrollRef={scrollRef}>
       {error ? <p className="health-suggest__error">{error.message}</p> : null}
-      {loadError ? <ErrorState error={loadError} onRetry={reload} label="Meals unavailable" /> : null}
+      <section aria-label="Saved meals" {...regionProps}>
+        {loadError ? <ErrorState error={loadError} onRetry={retry} label="Meals unavailable" /> : null}
 
-      {editing ? <TemplateEditor key={editing.id} template={editing} onCancel={() => setEditing(null)} onSaved={() => { setEditing(null); refreshTemplates(); }} /> : chosen ? (
-        <div className="health-templates__variants">
-          <p className="health-templates__hint">
-            {coreOf(chosen).length > 0
-              ? `${coreOf(chosen).length} always included. Add anything else you want today.`
-              : 'Nothing is always included — pick at least one.'}
-          </p>
-          <ul className="health-templates__list">
-            {variantsOf(chosen).map((component) => {
-              const on = variants.has(component.name);
-              return (
-                <li key={component.name}>
-                  <UnstyledButton
-                    className={`health-templates__toggle${on ? ' health-templates__toggle--on' : ''}`}
-                    role="switch" aria-checked={on} onClick={() => toggleVariant(component.name)}>
-                    <span className="health-templates__check" aria-hidden="true">{on ? '✓' : '+'}</span>
-                    <span>{component.name}</span>
-                    <span className="health-suggest__kcal">{Math.round(Number(component.calories) || 0)}</span>
-                  </UnstyledButton>
-                </li>
-              );
-            })}
-          </ul>
-          <div className="health-templates__actions">
-            <Button size="sm" disabled={busy || selection.length === 0}
-              onClick={() => log(chosen, [...variants])}>
-              {`Log ${kcal(selection)} kcal`}
-            </Button>
-            <Button size="sm" variant="subtle" disabled={busy} onClick={() => { setChosen(null); setVariants(new Set()); }}>
-              Back
-            </Button>
-          </div>
-        </div>
-      ) : (
-        <>
-          {loading ? <LoadingState label="meals" /> : null}
-          {!loading && !loadError && templates.length === 0 ? (
-            <EmptyState title="No meals or templates yet"
-              hint="Save one from a meal's ⋯ menu, or wait for a suggestion." />
-          ) : null}
-
-          {proposals.length > 0 ? (
-            <section className="health-templates__proposals">
-              <h3 className="health-pending__heading">Suggested</h3>
-              {proposals.map((proposal) => (
-                <div key={proposal.id} className="health-templates__proposal">
-                  <div className="health-templates__proposal-info">
-                    <span>{proposal.name}</span>
-                    <Text size="xs" c="dimmed">
-                      {`${coreOf(proposal).length} items · logged ${proposal.occurrences || 0}×`}
-                    </Text>
-                  </div>
-                  <div className="health-templates__actions">
-                    <Button size="xs" disabled={busy} onClick={() => decide(proposal, 'approve')}>Keep</Button>
-                    <Button size="xs" variant="subtle" disabled={busy} onClick={() => decide(proposal, 'dismiss')}>
-                      No thanks
-                    </Button>
-                  </div>
-                </div>
-              ))}
-            </section>
-          ) : null}
-
-          {active.map((template) => (
-            <div key={template.id}>
-            <UnstyledButton className="health-suggest__item" disabled={busy}
-              onClick={() => openTemplate(template)}>
-              <FoodIcon icon={template.icon} className="health-suggest__icon" />
-              <span>{template.name}</span>
-              <Text size="xs" c="dimmed" ml="auto">
-                {`${coreOf(template).length} items · ${kcal(coreOf(template))} kcal`}
-              </Text>
-            </UnstyledButton>
-            <Button size="compact-xs" variant="subtle" disabled={busy} onClick={() => setEditing(template)} aria-label={`Edit ${template.name}`}>Edit</Button>
-            <Button size="compact-xs" variant="subtle" color="red" disabled={busy} onClick={() => {
-              if (!window.confirm(`Delete saved meal ${template.name}? Logged food will stay unchanged.`)) return;
-              void run(async () => {
-                await DaylightAPI(`api/v1/health/nutrition/templates/${template.id}`, {}, 'DELETE');
-                refreshTemplates();
-              }, { onSuccess: null });
-            }} aria-label={`Delete ${template.name}`}>Delete</Button>
+        {editing ? (
+          <TemplateEditor key={editing.id} template={editing} onCommitted={refreshTemplates}
+            onClose={() => showEditor(null, { afterSave: true })} onCancel={() => showEditor(null)} />
+        ) : chosen ? (
+          <div className="health-templates__variants">
+            <p className="health-templates__hint">
+              {coreOf(chosen).length > 0
+                ? `${coreOf(chosen).length} always included. Add anything else you want today.`
+                : 'Nothing is always included — pick at least one.'}
+            </p>
+            <ul className="health-templates__list">
+              {variantsOf(chosen).map((component) => {
+                const on = variants.has(component.name);
+                return (
+                  <li key={component.name}>
+                    <UnstyledButton
+                      className={`health-templates__toggle${on ? ' health-templates__toggle--on' : ''}`}
+                      role="switch" aria-checked={on} onClick={() => toggleVariant(component.name)}>
+                      <span className="health-templates__check" aria-hidden="true">{on ? '✓' : '+'}</span>
+                      <span>{component.name}</span>
+                      <span className="health-suggest__kcal">{Math.round(Number(component.calories) || 0)}</span>
+                    </UnstyledButton>
+                  </li>
+                );
+              })}
+            </ul>
+            <div className="health-templates__actions">
+              <Button size="sm" disabled={busy || selection.length === 0}
+                onClick={() => log(chosen, [...variants])}>
+                {`Log ${kcal(selection)} kcal`}
+              </Button>
+              <Button size="sm" variant="subtle" disabled={busy} onClick={() => { setChosen(null); setVariants(new Set()); }}>
+                Back
+              </Button>
             </div>
-          ))}
-        </>
-      )}
+          </div>
+        ) : (
+          <>
+            {loading ? <LoadingState label="meals" /> : null}
+            {!loading && !loadError && templates.length === 0 ? (
+              <EmptyState title="No meals or templates yet"
+                hint="Save one from a meal's ⋯ menu, or wait for a suggestion." />
+            ) : null}
+
+            {proposals.length > 0 ? (
+              <section className="health-templates__proposals">
+                <h3 className="health-pending__heading">Suggested</h3>
+                {proposals.map((proposal) => (
+                  <div key={proposal.id} className="health-templates__proposal">
+                    <div className="health-templates__proposal-info">
+                      <span>{proposal.name}</span>
+                      <Text size="xs" c="dimmed">
+                        {`${coreOf(proposal).length} items · logged ${proposal.occurrences || 0}×`}
+                      </Text>
+                    </div>
+                    <div className="health-templates__actions">
+                      <Button size="xs" disabled={busy} onClick={() => decide(proposal, 'approve')}>Keep</Button>
+                      <Button size="xs" variant="subtle" disabled={busy} onClick={() => decide(proposal, 'dismiss')}>
+                        No thanks
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+              </section>
+            ) : null}
+
+            {active.map((template) => (
+              <div key={template.id}>
+                <UnstyledButton className="health-suggest__item" disabled={busy}
+                  onClick={() => openTemplate(template)}>
+                  <FoodIcon icon={template.icon} className="health-suggest__icon" />
+                  <span>{template.name}</span>
+                  <Text size="xs" c="dimmed" ml="auto">
+                    {`${coreOf(template).length} items · ${kcal(coreOf(template))} kcal`}
+                  </Text>
+                </UnstyledButton>
+                <Button size="compact-xs" variant="subtle" disabled={busy} onClick={() => showEditor(template)} aria-label={`Edit ${template.name}`}>Edit</Button>
+                <Button size="compact-xs" variant="subtle" color="red" disabled={busy} onClick={() => {
+                  if (!window.confirm(`Delete saved meal ${template.name}? Logged food will stay unchanged.`)) return;
+                  void run(async () => {
+                    await DaylightAPI(`api/v1/health/nutrition/templates/${template.id}`, {}, 'DELETE');
+                    refreshTemplates();
+                  }, { onSuccess: null });
+                }} aria-label={`Delete ${template.name}`}>Delete</Button>
+              </div>
+            ))}
+          </>
+        )}
+      </section>
     </Sheet>
   );
 }

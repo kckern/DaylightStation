@@ -18,5 +18,6 @@ export { createAppLogger } from './createAppLogger.js';
 export { TouchButton } from './TouchButton.jsx';
 export { ToastRegion, Toast } from './Toast.jsx';
 export { Button } from './Button.jsx';
+export { SubmitButton } from './SubmitButton.jsx';
 export { Select } from './Select.jsx';
 export { UiIcon } from './UiIcon.jsx';

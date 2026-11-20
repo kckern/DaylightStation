@@ -145,3 +145,164 @@ test('Health refreshes a replacement saved-meal list after the original edit com
     release.resolve();
   }
 });
+
+test('Health keeps focus in saved meals when retrying the list read', async ({ page, baseURL }) => {
+  const pending = Promise.withResolvers();
+  const release = Promise.withResolvers();
+  const reads = [];
+  await startHealth(page, baseURL);
+  await page.route(`**${templatePath}?*`, async route => {
+    reads.push(route.request().method());
+    if (reads.length === 1) return route.fulfill({ status: 409, json: { error: 'Meals refused' } });
+    pending.resolve();
+    await release.promise;
+    return route.fulfill({ json: { templates } });
+  });
+
+  try {
+    await page.goto('/health?date=' + date);
+    await page.getByRole('button', { name: 'Saved meals for Breakfast', exact: true }).press('Enter');
+    const dialog = page.getByRole('dialog', { name: 'Meals & templates', exact: true });
+    const retry = dialog.getByRole('button', { name: 'Retry', exact: true });
+    await retry.press('Enter');
+    await pending.promise;
+    await expect(retry).toBeHidden();
+    expect(await dialog.evaluate(node => node.contains(document.activeElement))).toBe(true);
+    const list = dialog.getByRole('region', { name: 'Saved meals', exact: true });
+    await expect(list).toBeFocused();
+    await expect(list).toHaveAttribute('aria-busy', 'true');
+    await page.keyboard.press('Shift+Tab');
+    const close = dialog.getByRole('button', { name: 'Close', exact: true });
+    await expect(close).toBeFocused();
+    release.resolve();
+    await expect(list.getByRole('button', { name: 'Edit Breakfast oats' })).toBeVisible();
+    await expect(list).not.toHaveAttribute('aria-busy', 'true');
+    await expect(close).toBeFocused();
+    expect(reads).toEqual(['GET', 'GET']);
+  } finally {
+    release.resolve();
+  }
+});
+
+for (const activation of ['keyboard', 'pointer']) {
+  test(`Health reveals the saved-meal editor and list when switching from a scrolled sheet by ${activation}`, async ({ page, baseURL }) => {
+    await page.setViewportSize({ width: 390, height: 500 });
+    await startHealth(page, baseURL);
+    const longList = Array.from({ length: 18 }, (_, index) => ({
+      id: `meal-${index + 1}`, name: `Meal ${index + 1}`,
+      components: Array.from({ length: 15 }, (_, step) => ({ name: `Component ${step + 1}`, role: 'core', grams: 100 })),
+    }));
+    await page.route(`**${templatePath}?*`, route => route.fulfill({ json: { templates: longList } }));
+    await page.goto('/health?date=' + date);
+    await page.getByRole('button', { name: 'Saved meals for Breakfast', exact: true }).press('Enter');
+    const dialog = page.getByRole('dialog', { name: 'Meals & templates', exact: true });
+    const list = dialog.getByRole('region', { name: 'Saved meals', exact: true });
+    const panel = dialog.locator('.ds-sheet__panel');
+    const close = dialog.getByRole('button', { name: 'Close', exact: true });
+    async function activateScrolledControl(control) {
+      if (activation === 'pointer') await close.focus();
+      await control.scrollIntoViewIfNeeded();
+      expect(await panel.evaluate(node => node.scrollTop)).toBeGreaterThan(200);
+      if (activation === 'keyboard') {
+        await control.press('Enter');
+      } else {
+        // Exercise a pointer activation where the browser keeps previous focus.
+        await control.evaluate(node => node.addEventListener('pointerdown', event => event.preventDefault(), { once: true }));
+        await control.click();
+      }
+    }
+
+    await activateScrolledControl(dialog.getByRole('button', { name: 'Edit Meal 18', exact: true }));
+    await expect(list).toBeFocused();
+    await expect(dialog.getByLabel('Meal name', { exact: true })).toBeInViewport({ ratio: 1 });
+    await expect(close).toBeInViewport({ ratio: 1 });
+    await activateScrolledControl(dialog.getByRole('button', { name: 'Cancel', exact: true }));
+    await expect(list).toBeFocused();
+    await expect(dialog.getByRole('button', { name: 'Edit Meal 1', exact: true })).toBeInViewport({ ratio: 1 });
+  });
+}
+
+for (const moveFocus of [false, true]) {
+  test(`Health retains keyboard focus through a saved-meal edit ${moveFocus ? 'after moving to Close' : 'and returns to the list'}`, async ({ page, baseURL }) => {
+    const putStarted = Promise.withResolvers();
+    const refuse = Promise.withResolvers();
+    const accepted = Promise.withResolvers();
+    const release = Promise.withResolvers();
+    const confirming = Promise.withResolvers();
+    const refreshed = Promise.withResolvers();
+    const methods = [];
+    const payloads = [];
+    let template = templates[0];
+    await startHealth(page, baseURL);
+    await page.route(`**${templatePath}?*`, async route => {
+      methods.push(route.request().method());
+      if (methods.length > 1) {
+        confirming.resolve();
+        await refreshed.promise;
+      }
+      return route.fulfill({ json: { templates: [template] } });
+    });
+    await page.route(`**${templatePath}/breakfast`, async route => {
+      methods.push(route.request().method());
+      payloads.push(route.request().postDataJSON());
+      if (payloads.length === 1) {
+        putStarted.resolve();
+        await refuse.promise;
+        return route.fulfill({ status: 409, json: { error: 'Save refused' } });
+      }
+      accepted.resolve();
+      await release.promise;
+      template = { ...template, ...payloads.at(-1) };
+      return route.fulfill({ json: { template } });
+    });
+
+    try {
+      await page.goto('/health?date=' + date);
+      await page.getByRole('button', { name: 'Saved meals for Breakfast', exact: true }).press('Enter');
+      const dialog = page.getByRole('dialog', { name: 'Meals & templates', exact: true });
+      const list = dialog.getByRole('region', { name: 'Saved meals', exact: true });
+      await dialog.getByRole('button', { name: 'Edit Breakfast oats', exact: true }).press('Enter');
+      const name = dialog.getByLabel('Meal name', { exact: true });
+      await expect(list).toBeFocused();
+      await page.keyboard.press('Tab');
+      await expect(name).toBeFocused();
+      await name.fill('Updated oats');
+      const save = dialog.getByRole('button', { name: 'Save meal', exact: true });
+      await save.press('Enter');
+      await putStarted.promise;
+      expect.soft(await save.evaluate(node => node === document.activeElement)).toBe(true);
+      await expect(save).toHaveAttribute('aria-busy', 'true');
+      await expect(name).toBeDisabled();
+      await page.keyboard.press('Enter');
+      refuse.resolve();
+
+      await expect(dialog.getByRole('alert')).toContainText('Save refused');
+      await expect(save).toBeFocused();
+      await expect(name).toHaveValue('Updated oats');
+      expect(methods).toEqual(['GET', 'PUT']);
+      await save.press('Enter');
+      await accepted.promise;
+      const close = dialog.getByRole('button', { name: 'Close', exact: true });
+      if (moveFocus) {
+        await page.keyboard.press('Tab');
+        await expect(close).toBeFocused();
+      }
+      release.resolve();
+      await confirming.promise;
+      await expect(moveFocus ? close : list).toBeFocused();
+      await expect(list).toHaveAttribute('aria-busy', 'true');
+      refreshed.resolve();
+      const edit = list.getByRole('button', { name: 'Edit Updated oats', exact: true });
+      await expect(edit).toBeVisible();
+      await expect(moveFocus ? close : list).toBeFocused();
+      await page.keyboard.press('Tab');
+      await expect(list.getByRole('button', { name: /Updated oats.*1 items/ })).toBeFocused();
+      expect(methods).toEqual(['GET', 'PUT', 'PUT', 'GET']);
+      expect(payloads).toEqual(Array(2).fill({ name: 'Updated oats', components: templates[0].components }));
+    } finally {
+      refuse.resolve();
+      release.resolve();
+      refreshed.resolve();
+    }
+  });
+}

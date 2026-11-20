@@ -1,5 +1,6 @@
 import { useRef, useState } from 'react';
-import { Alert, Box, Button, Group, Loader, Stack } from '@mantine/core';
+import { Alert, Box, Button, Group, Stack } from '@mantine/core';
+import { SubmitButton } from '../../../../frontend/src/lib/ui/SubmitButton.jsx';
 import { useRetryRegion } from '../../../../frontend/src/lib/ui/useRetryRegion.js';
 import { useSheetSubmission } from '../../../../frontend/src/lib/ui/useSheetSubmission.js';
 import { ListReadError } from './ListReadError.jsx';
@@ -65,7 +66,6 @@ export function SettingsDialogForm({
     });
   }
 
-  const unavailable = blocked || saving;
   return (
     <form onSubmit={submit}>
       <Box component="section" aria-label={recoveryLabel} mb={read.error ? 'md' : 0} {...regionProps}>
@@ -76,16 +76,9 @@ export function SettingsDialogForm({
         {children(values, change)}
         <Group justify="flex-end" mt="md">
           <Button type="button" variant="subtle" onClick={onClose}>Cancel</Button>
-          <Button
-            type="submit"
-            aria-disabled={unavailable || undefined}
-            data-disabled={unavailable || undefined}
-            aria-busy={saving || undefined}
-            leftSection={saving ? <Loader size="xs" aria-hidden="true" /> : undefined}
-            data-testid={saveTestId}
-          >
+          <SubmitButton as={Button} pending={saving} blocked={blocked} data-testid={saveTestId}>
             {saveLabel}
-          </Button>
+          </SubmitButton>
         </Group>
       </Stack>
     </form>

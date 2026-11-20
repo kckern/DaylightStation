@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Stack, Paper, Text, Group, Badge, Progress, Button, TextInput, Select } from '@mantine/core';
 import { IconFlask } from '@tabler/icons-react';
-import { Button as FormButton, Sheet, StateMessage, createAppLogger, useSheetSubmission } from '@/lib/ui';
+import { Button as FormButton, Sheet, StateMessage, SubmitButton, createAppLogger, useSheetSubmission } from '@/lib/ui';
 import { useBeliefs } from "../../hooks/useLifePlan.js";
 import { beliefConfidenceColor } from "../../theme/semantics.js";
 import { LifePage, LoadingState, ErrorState } from "../../components/index.js";
@@ -40,9 +40,9 @@ function BeliefEvidenceSheet({ beliefId, onClose, addEvidence }) {
         <TextInput label="Note" value={note} onChange={event => setNote(event.currentTarget.value)} />
         <Group justify="flex-end">
           <FormButton density="compact" variant="secondary" onClick={onClose}>Cancel</FormButton>
-          <FormButton type="submit" density="compact" aria-busy={saving || undefined} aria-disabled={saving || undefined}>
+          <SubmitButton density="compact" pending={saving}>
             {saving ? 'Submitting…' : 'Submit'}
-          </FormButton>
+          </SubmitButton>
         </Group>
       </Stack>
     </Sheet>
