@@ -5,6 +5,7 @@ import {
   parseBattery,
   pollBtInventory,
   parseDeviceKind,
+  parseHasHidService,
   startBtInventoryBroadcast,
   hasInputDevice,
   nextReconnectDelay,
@@ -87,6 +88,20 @@ test('parseDeviceKind: maps the bluetoothctl Icon line to a kind', () => {
   assert.equal(parseDeviceKind(''), null);
 });
 
+test('parseHasHidService: true for a HID or HID-over-GATT UUID line, case-insensitive', () => {
+  assert.equal(parseHasHidService('\tUUID: Human Interface Device... (00001124-0000-1000-8000-00805f9b34fb)'), true);
+  assert.equal(parseHasHidService('\tUUID: Human Interface Device (00001812-0000-1000-8000-00805F9B34FB)'), true);
+  // A speaker: AVRCP + audio sink, no HID.
+  assert.equal(parseHasHidService([
+    '\tUUID: Audio Sink                (0000110b-0000-1000-8000-00805f9b34fb)',
+    '\tUUID: A/V Remote Control        (0000110e-0000-1000-8000-00805f9b34fb)',
+  ].join('\n')), false);
+  // The HID UUID outside a UUID: line does not count.
+  assert.equal(parseHasHidService('\tModalias: 00001124-0000-1000-8000-00805f9b34fb'), false);
+  assert.equal(parseHasHidService(''), false);
+  assert.equal(parseHasHidService(null), false);
+});
+
 // ── pollBtInventory ───────────────────────────────────────────────────────
 
 const NO_INPUT = async () => "";
@@ -111,8 +126,8 @@ test('pollBtInventory: merges connected list with per-device battery info', asyn
   });
   const devices = await pollBtInventory({ exec, readInputDevices: NO_INPUT });
   assert.deepEqual(devices, [
-    { address: 'AA:BB:CC:DD:EE:FF', name: '8BitDo SN30 Pro', connected: true, battery: 75, paired: true, trusted: false, gamepad: false, kind: null, input: false },
-    { address: '11:22:33:44:55:66', name: 'Xbox', connected: true, battery: null, paired: true, trusted: false, gamepad: false, kind: null, input: false },
+    { address: 'AA:BB:CC:DD:EE:FF', name: '8BitDo SN30 Pro', connected: true, battery: 75, paired: true, trusted: false, gamepad: false, kind: null, input: false, hid: false },
+    { address: '11:22:33:44:55:66', name: 'Xbox', connected: true, battery: null, paired: true, trusted: false, gamepad: false, kind: null, input: false, hid: false },
   ]);
 });
 
@@ -126,18 +141,18 @@ test('pollBtInventory: a failing info call does not sink the whole poll', async 
   });
   const devices = await pollBtInventory({ exec, readInputDevices: NO_INPUT });
   assert.deepEqual(devices, [
-    { address: 'AA:BB:CC:DD:EE:FF', name: 'Good', connected: true, battery: 100, paired: true, trusted: false, gamepad: false, kind: null, input: false },
-    { address: '11:22:33:44:55:66', name: 'Bad', connected: false, battery: null, paired: true, trusted: false, gamepad: false, kind: null, input: false },
+    { address: 'AA:BB:CC:DD:EE:FF', name: 'Good', connected: true, battery: 100, paired: true, trusted: false, gamepad: false, kind: null, input: false, hid: false },
+    { address: '11:22:33:44:55:66', name: 'Bad', connected: false, battery: null, paired: true, trusted: false, gamepad: false, kind: null, input: false, hid: false },
   ]);
 });
 
 test('pollBtInventory: a paired pad that is asleep reports connected:false (trusted gamepad, no input)', async () => {
   const exec = makeExec({
     'bluetoothctl --agent off devices Paired': 'Device E4:17:D8:C6:54:F0 8Bitdo SFC30 GamePad',
-    'bluetoothctl --agent off info E4:17:D8:C6:54:F0': '\tPaired: yes\n\tTrusted: yes\n\tIcon: input-gaming\n\tConnected: no',
+    'bluetoothctl --agent off info E4:17:D8:C6:54:F0': '\tPaired: yes\n\tTrusted: yes\n\tIcon: input-gaming\n\tConnected: no\n\tUUID: Human Interface Device... (00001124-0000-1000-8000-00805f9b34fb)',
   });
   assert.deepEqual(await pollBtInventory({ exec, readInputDevices: NO_INPUT }), [
-    { address: 'E4:17:D8:C6:54:F0', name: '8Bitdo SFC30 GamePad', connected: false, battery: null, paired: true, trusted: true, gamepad: true, kind: 'gamepad', input: false },
+    { address: 'E4:17:D8:C6:54:F0', name: '8Bitdo SFC30 GamePad', connected: false, battery: null, paired: true, trusted: true, gamepad: true, kind: 'gamepad', input: false, hid: true },
   ]);
 });
 

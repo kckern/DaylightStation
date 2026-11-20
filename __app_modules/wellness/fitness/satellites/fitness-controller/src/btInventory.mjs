@@ -94,6 +94,19 @@ export function parseDeviceKind(infoOutput) {
   return m ? (ICON_KIND[m[1]] || null) : null;
 }
 
+const HID_UUIDS = ['00001124-0000-1000-8000-00805f9b34fb', '00001812-0000-1000-8000-00805f9b34fb'];
+
+/**
+ * True when a `bluetoothctl info` blob advertises a HID service: classic HID
+ * (0x1124) or HID over GATT (0x1812, Bluetooth Low Energy). Unlike `input`
+ * (a kernel input node exists now), this holds while the device sleeps, and a
+ * speaker's AVRCP remote-control node never sets it.
+ */
+export function parseHasHidService(infoOutput) {
+  return String(infoOutput || '').toLowerCase().split('\n')
+    .some((l) => /^\s*uuid:/.test(l) && HID_UUIDS.some((u) => l.includes(u)));
+}
+
 /** True when the kernel input table (/proc/bus/input/devices) lists this MAC. */
 export function hasInputDevice(inputDevicesText, mac) {
   const want = String(mac || '').toLowerCase();
@@ -118,10 +131,11 @@ async function defaultReadInputDevices() {
  * @param {object} [opts]
  * @param {Function} [opts.exec] - injected promisified exec ({stdout,stderr}).
  * @param {Function} [opts.readInputDevices] - async () => /proc/bus/input/devices text.
- * @returns {Promise<Array<{ address, name, connected, battery, paired, trusted, gamepad, kind, input }>>}
+ * @returns {Promise<Array<{ address, name, connected, battery, paired, trusted, gamepad, kind, input, hid }>>}
  *   Bonded devices (paired:true) plus any device connected right now WITHOUT a
  *   bond (paired:false — a pad dialing in on a bond this host dropped).
  *   `kind` is 'gamepad'|'keyboard'|'mouse'|'tablet' from the Icon line, else null.
+ *   `hid` is true when the device advertises a HID service (see parseHasHidService).
  */
 export async function pollBtInventory({ exec = defaultExec, readInputDevices = defaultReadInputDevices } = {}) {
   let listOut;
@@ -168,6 +182,7 @@ export async function pollBtInventory({ exec = defaultExec, readInputDevices = d
       gamepad: parseIsGamepad(info),
       kind: parseDeviceKind(info),
       input: hasInputDevice(inputTable, dev.address),
+      hid: parseHasHidService(info),
     });
   }
   return results;

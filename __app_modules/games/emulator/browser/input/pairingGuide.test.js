@@ -114,6 +114,16 @@ describe('otherBtDevices', () => {
   it('is empty without an inventory feed', () => {
     expect(otherBtDevices([SFC30], null)).toEqual([]);
   });
+  it('lists a sleeping HID device whose kind is unknown', () => {
+    const ring = { address: '11:22:33:44:55:77', name: 'Ring', kind: null, hid: true, input: false, paired: true, connected: false };
+    const out = otherBtDevices([], [ring]);
+    expect(out.map((d) => d.address)).toEqual(['11:22:33:44:55:77']);
+    expect(out[0].status).toBe('asleep');
+  });
+  it('leaves out a speaker whose AVRCP node shows as an input device', () => {
+    const speaker = { address: 'AA:BB:CC:00:00:03', name: 'JBL', kind: null, hid: false, input: true, paired: true, connected: true };
+    expect(otherBtDevices([], [speaker])).toEqual([]);
+  });
 });
 
 describe('deviceOsStatus', () => {

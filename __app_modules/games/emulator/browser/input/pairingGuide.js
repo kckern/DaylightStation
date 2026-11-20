@@ -108,8 +108,11 @@ const INPUT_KINDS = new Set(['gamepad', 'keyboard', 'mouse', 'tablet']);
 
 /**
  * bt_inventory rows that no configured controller claims and that are input
- * devices (a known input kind, or up as an input device now). Speakers and
- * other bonded non-input devices are left out, so nobody forgets them here.
+ * devices: a known input kind (from the Icon line), or a device that advertises
+ * a HID service (`hid`, which holds while it sleeps). A live kernel input node
+ * (`input`) does not count on its own: a speaker's AVRCP remote-control node
+ * is one. Speakers and other bonded non-input devices are left out, so nobody
+ * forgets them here.
  *
  * @param {Array<object>} controllers  input.yml `controllers` entries.
  * @param {Array<object>|null|undefined} btInventory
@@ -124,7 +127,7 @@ export function otherBtDevices(controllers, btInventory) {
   }
   return btInventory
     .filter((d) => d && typeof d.address === 'string' && !claimed.has(d.address.toUpperCase()))
-    .filter((d) => INPUT_KINDS.has(d.kind) || d.input === true)
+    .filter((d) => INPUT_KINDS.has(d.kind) || d.hid === true)
     .map((d) => ({ ...d, status: deviceOsStatus(d) }));
 }
 
