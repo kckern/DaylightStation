@@ -1,19 +1,11 @@
 # Phone build: on-device acceptance
 
-**Nothing in this checklist has been run.** The phone build passes its unit tests,
-lint and the build verifier, and has never been installed. Every expectation below
-is from Android's documentation and from the backend's code as read. Mark each line
-"verified on the phone, <date>" or write down what happened instead. A line that
-was not run is "not run".
+Build 49 preflight established the starting package on Android 17 and Apex.
+Use the candidate qualification below for the draft-capable checkpoint and the next release candidate. The later sections
+cover the broader phone build, including Android Auto.
 
-See the [phone capabilities](../../reference/android/phone.md) and [build instructions](../../../_extensions/daylight-android/README.md).
-
-Needs the owner's go-ahead before step A2. What installing does: the package
-`net.kckern.daylight.phone` is added to the owner's phone with a persistent
-"Daylight" notification, four quick-settings tiles the owner may add, two widgets
-(four buttons, and a one-action button), launcher shortcuts, and a list of actions
-in Android Auto. `adb uninstall net.kckern.daylight.phone` removes all of it,
-including any quick input (a recording, typed text, a photo) not yet uploaded.
+See the [phone capabilities](../../reference/android/phone.md) and
+[build instructions](../../../_extensions/daylight-android/README.md).
 
 There is no control API on the phone. Every check is by hand on the phone, or over
 adb:
@@ -40,6 +32,88 @@ fragment:
 K=$(adb shell run-as net.kckern.daylight.phone cat files/payloads/state/link-key)
 adb shell am start -a android.intent.action.VIEW -d "'daylight://input/queue#k=$K'"
 ```
+
+## Shortcut lifecycle candidate qualification
+
+Use a supervised slot with a disposable fixture and the matching phone APK,
+web assets and backend. Record launcher and launcher version, Android release,
+APK checksum, deployed web and backend identity, safe fixture ID, initial state,
+action, intermediate view, final side effect, exit, and verdict for each case.
+Use **pass**, **fail**, **blocked** (name the dependency) or **unrun**. Record
+placement separately from use. Report IDs and counts where possible, and leave
+capture contents, credentials, private file contents and room URLs out of logs.
+
+### Inventory, upgrade and rollback
+
+1. Before any installation, record the current launcher, installed package and
+   version. Save its APK and hash if authorized. Record one working service
+   shortcut and the exact widget IDs and titles of two assigned buttons. Keep
+   any existing queued or parked entries intact. If the version supports private
+   drafts, record a disposable memo, stop it privately, and confirm it plays.
+   With the network offline, explicitly Send a separate disposable capture and
+   record its ID from status or queue metadata. Keep it offline for the upgrade.
+   Record unavailable fixtures as blocked. Build 49 lacks the candidate draft
+   interface, so draft migration from 49 remains unrun. A real 49 shortcut and
+   queue comparison still need their own observations.
+2. Validate both candidate APKs first. A same-signer `adb install -r` preserves
+   app data. Compare the package and signer against the saved starting APK.
+   Before outcome checks, verify which APK Android loaded and which web assets
+   it serves. Keep the phone offline until the upgrade fixtures have survived.
+
+   ```bash
+   adb shell dumpsys package net.kckern.daylight.phone | grep -m 1 versionCode
+   adb shell pm path net.kckern.daylight.phone
+   adb pull '<base.apk path reported above>' '<private output directory>/installed.apk'
+   shasum -a 256 '<private output directory>/installed.apk'
+   apksigner verify --print-certs '<private output directory>/installed.apk'
+   ```
+
+   Record the matching checksum and signer. Record the deployed backend image
+   or revision. Fetch the deployed service HTML and its referenced hashed JS
+   and CSS from the testing origin. Compare paths and byte hashes with the
+   published asset manifest. If deployment produced a fresh bundle, use that
+   bundle’s manifest and log its distinct build identity. Confirm the WebView
+   actually requested those asset paths before accepting a result.
+3. On build 50, confirm any build 49 fixtures that were available. Stage one
+   preexisting service shortcut, two distinct playlist widgets, one playable
+   private draft and one different explicitly queued offline capture. Record
+   safe IDs. Upgrade from 50 to the identified release candidate using the same procedure. Tap the original
+   shortcut and both widgets, stop each after confirming its track, and reopen
+   the same draft privately. Restore connectivity and check the queued ID
+   reaches its own destination exactly once. Keep its final receipt ID and
+   destination count. Check that the private draft still has zero uploads.
+4. Keep the verified baseline and checkpoint APKs, and record the previous
+   backend image and web asset identity before rollout. If rollback is needed,
+   keep pending data in place. Revert the paired backend and assets to the
+   previous validated deployment when compatible with the active phone. For
+   the phone, prefer an authorized same-signer recovery build with a higher
+   version code using the prior source and a payload that can read data already
+   written. A debug APK downgrade with `adb install -r -d` requires explicit
+   rollback authorization and a check of data compatibility first. Verify the
+   actual installed base and retained fixtures after any rollback. Uninstall
+   and clear storage delete private drafts and queue data.
+
+### Device scenarios
+
+| Case | Initial state and action | Intermediate view, outcome and exit |
+| --- | --- | --- |
+| Launcher placement | On Samsung launcher and Apex separately, open Daylight setup. Choose a named service and a capture. Confirm placement, repeat with Android confirmation dismissed, and let an unanswered request time out. | Expect **Confirm in Android** followed by launcher-reported **Added** or **Placement unconfirmed**. Check Android Home for a named icon separately. Remove and re-add each fixture. Cancel in setup and confirm the home screen still has the original set. Record each pin and launch separately. |
+| Apex app and gesture picker | Open Daylight from Apex Apps. Assign a gesture using Apex’s shortcut picker. Choose a supported service, then repeat with an assigned capture. Cancel a picker run. | The named chooser returns to Apex on selection. Canceled selection leaves the existing gesture assignment. Trigger each gesture warm and after a process restart. Service lands on its root. Capture opens the correct private editor and only explicit Send submits. Back returns to Apex. |
+| Service roots and stale auth | Start Health, Home, Lifelog, Media and Call from their own shortcuts cold. Navigate one level, then tap a second service from Home while the first is warm. Repeat with a disposable stale web session for each sign-in-enabled service. | Check the requested service and its own history. Back from a detail returns to that service root, and Back from the root returns to Android Home. Sign-in stays at the requested address and, after successful authentication, reloads the service including its original query. Call uses household network access. |
+| Health barcode review | Starting with the disposable meal row count recorded, enter from the **Meal barcode** shortcut. Grant Camera and scan a physical supported UPC. Repeat from the meal-row scanner. Use scanner sound where allowed by device volume and settings. | Watch the real camera read and listen for detection sound. Camera indicator ends at review. Check product, portion and selectable meal. Back or cancel before **Log item** leaves zero writes. On approval, verify one real meal row, the entry reference and Undo. Undo removes exactly that row. **Scan another** can deliberately log the same UPC as a second separate operation. **View in Health** opens the committed entry. **Done** from a new shortcut-origin run returns Home. The meal-row flow closes in Health. |
+| Barcode recovery | Deny Camera, grant it in Android Settings, and reopen. While scanning, press Home then return. Test an unknown physical UPC and a disposable operation with offline or interrupted delivery. Double tap Log and reopen after a process restart. | Observe permission guidance and eventual scanning, with no camera indicator in the background. Unknown UPC offers manual entry. Failed or uncertain writes remain visible in Health status. Retry reuses the same operation ID. Check one final committed row at most for that ID and verify undo if committed. |
+| Voice drafts | From Home open Journal voice, then Meal voice during the recording. Rotate, press Home and return. Interrupt a separate recording with loss of audio focus or process stop, then reopen its destination. Deny microphone on a fresh attempt and recover through system settings. | The active recording retains the original destination. No upload before **Send memo**. A recoverable interrupted draft plays via **Resume draft**. Back prompts before discard, and canceling the prompt keeps it. Send exactly once and review status, then Back to the prior surface. Denial starts no recording. |
+| Text drafts | Open Journal text and Meal text in separate attempts. Enter disposable text, rotate, background and restart. Press Back, keep the draft, and reopen it. Try double tap on Send on a separate disposable draft. | Contents remain in their own destination. Empty text stays in the editor. Confirmed Discard clears the draft and leaves the destination count unchanged. Only Send moves one ID into Capture status. Match the receipt to the destination entry. |
+| Meal photo | Deny Camera first and recover in Settings. Open **Meal photo**, cancel camera, reopen, take and confirm a disposable photo. Retake and cancel once. Press Back during Daylight review and cancel the discard prompt. Repeat across backgrounding and a camera-result process recreation where Android permits it. | Camera cancel leaves no new submission. Confirming the camera returns to private review. After **Use photo**, check that Send is available and the upload count stays unchanged. **Retake** cancel preserves the prior photo. Confirmed **Discard** submits nothing. Send moves one capture ID into status. Match the final meal receipt and **View in Health** if offered, then Back. |
+| Delivery and retry | Use a matched backend and disposable capture. Send offline, reopen Capture status from Home and a single-item notification, restart, reconnect and retry only if offered. Exercise an unusable fixture separately. | Check queued or uncertain state on the same ID across restart. **Accepted** can remain when the intake has no final receipt. **Delivered** must resolve to one saved destination entry. **Replace capture** opens private review with no new upload until Send. Check the original and replacement IDs separately. |
+| Call permissions and exit | Launch from a trusted Call shortcut or widget. Test full grant, both denied, then each permission denied separately. Use a willing call partner for a real connect and hangup. Try Cancel from preview, Back while joined and a warm switch to another service. | Preview precedes screen choice. Settings and **Retry media** recover permission. From each exit check that local camera and microphone indicators stop, peer media ends and the screen becomes available again. Record reservation release or lease expiry on interrupted network. |
+| Named playlist widgets | Pick two distinct playlists and record each widget ID/title. Test pin, an unanswered placement and manual recovery; if a late callback creates an extra widget, remove only the extra. Test offline and rapid taps from both widgets. | Each button starts audibly playing its own track without opening a window. Verify the audible track or media title and control it with Pause and Stop. A failed or superseded start leaves no late playback and allows retry. Confirm the original two assignments survive restart and upgrade. |
+| TalkBack and enlarged text | On each physical launcher, enable TalkBack and large system text. Start from launcher focus and traverse setup, picker, draft review, permission controls, barcode review, status and widgets. | Record focus order, spoken action and destination labels, placement and status announcements, and where focus lands after dialog close or Back. Check that controls and confirmation text remain readable, scrollable and selectable. Record observed labels and any clipped or unreachable control. |
+
+Full Journal needs a supported mobile destination. For cases needing stale
+authentication, a physical barcode, two safe playlists, a call partner, or the
+Samsung launcher, record the specific missing dependency before setting the
+verdict to blocked.
 
 ## First install, in one sitting
 
@@ -95,7 +169,7 @@ From the plan's list of what was unverified; each is answered only on the phone.
 
 1. Record the phone's model and Android version (`adb shell getprop ro.product.model`,
    `adb shell getprop ro.build.version.release`).
-2. `adb install -r shell/build/outputs/apk/phone/debug/shell-phone-debug.apk`.
+2. `adb install -r <verified candidate APK path>`.
    Confirm the sideload is accepted. If it is refused, or Play Protect interrupts,
    record the exact message. The build targets SDK 33; a later Android may want
    `--bypass-low-target-sdk-block`.
@@ -461,35 +535,34 @@ The steps below use the Journal button. Step 18 repeats the first two for Meal.
    sounds and its size per minute. On Android 10 and later it is `<id>.journal.ogg`,
    Opus at 16 kHz and 32 kbit/s; if logcat says the recorder did not start at
    16000 Hz, the 48 kHz fallback was used.
-7. Airplane mode on. Record two memos. A notice says two are waiting. Airplane
+7. Airplane mode on. Record and Send two memos. Check that two are waiting. Airplane
    mode off: both upload without opening the app, one after the other, and the
    notice goes. Their journal entries carry the times they were recorded.
-8. Record a memo with airplane mode on, restart the phone, airplane mode off: the
-   memo uploads.
+8. Record and Send a memo with airplane mode on. Restart the phone and restore
+   connectivity. Verify the same ID is delivered once.
 9. **Cut-off recording.** Start a memo, then force-stop Daylight. Reopen it and
-   verify the private draft does not enter the upload inbox. Record again to
-   clear the interrupted draft.
-10. Take a phone call in the middle of a recording: the memo stops and what was
-    said before the call is uploaded.
-11. Let a recording run to thirty minutes: it stops by itself and uploads as one
-    memo. Record the file's size.
+   verify the private draft stays out of the upload inbox. Play a recoverable
+   draft with **Resume draft** or record the interruption message.
+10. Take a phone call in the middle of a recording. Check that the memo stops
+    privately. Reopen its draft and confirm that the upload count is unchanged.
+11. Let a recording run to thirty minutes. Check that it stops privately, then
+    open playback before choosing Send or Discard.
 12. Deny the microphone: nothing is recorded and the app says so.
 13. Answer "Don't allow" to notifications: recording still works, the question is
     not asked again, and the record screen says there is no recording notice and
-    how to stop. Start a memo, leave the screen, and stop it by tapping the memo
-    tile again. Record whether Android's own "active apps" list names Daylight
+    how to stop. Start a memo, leave the screen, and reopen it by tapping the memo tile again. Check the destination, then
+    choose Send or confirm Discard. Record whether Android's own "active apps" list names Daylight
     while it records.
 14. From a page of the site, try to start a recording, the camera and the text
     screen (links to `daylight://memo/new`, `daylight://input/voice?to=journal`,
     `daylight://input/photo?to=meal-photo` and `daylight://input/text?to=journal-note`
     in a page, and the same set by script as the page's location): nothing records,
     no camera opens, no text screen opens.
-15. **Off the VPN.** Turn the VPN off with Wi-Fi on, record a memo and leave the
-    phone for an hour. `input-queue.json` shows the input `QUEUED` with
+15. **Off the VPN.** Turn the VPN off with Wi-Fi on, record and send a memo and leave the phone for an hour. `input-queue.json` shows the input `QUEUED` with
     `attempts: 0` and a growing `nextAttemptAtMs`; `lastError` is "no connection"
     or an `HTTP <status>` of some other network. Turn the VPN on: it uploads.
-16. **Device binding.** With the phone's key not bound to the user in the
-    household config for the Journalist, record a memo. A notice says "This phone
+16. **Device binding.** With the phone's key unbound in the household config for the Journalist,
+    explicitly send a memo. A notice says "This phone
     is not allowed to send to Journal yet"; `input-queue.json` shows `attempts: 0`.
     Bind the key; the memo uploads within the backoff and the notice goes. With the
     key bound for the Journalist and not for Nutribot, a Meal input waits with the
@@ -511,10 +584,10 @@ The steps below use the Journal button. Step 18 repeats the first two for Meal.
 1. Tap "Journal text" (the fourth tile, or the long-press shortcut). A small
    window titled "Journal note" opens with the keyboard up, one field, Cancel and
    Send. Nothing has been sent yet: `files/inputs/inbox` is empty.
-2. Type two lines and tap Send. The window closes with "Sending to Journal note".
+2. Type two lines and tap Send. Capture status opens on the sent note.
    Within a pass the Journalist files a journal entry with that text, as it does
    for a Telegram text message, and `input-queue.json` shows `uploaded` one higher.
-3. Tap "Journal text", type, tap Cancel: nothing is in `files/inputs/inbox` and
+3. Tap "Journal text", type, tap Cancel and confirm Discard. Nothing is in `files/inputs/inbox` and
    nothing was sent. The same with the back button.
 4. Tap Send on an empty field, and on a field of spaces: "Nothing to send", and
    the window stays.
@@ -538,10 +611,10 @@ The steps below use the Journal button. Step 18 repeats the first two for Meal.
 1. Tap "Meal photo". The system's camera app opens after granting Camera if needed. Record which camera app it is. If instead a message says
    "Could not open the camera" or "No camera app on this phone", record it with
    the logcat lines tagged `Daylight-Input`.
-2. Take the photo and accept it in the camera app. The camera closes with
-   "Sending to Meal photo" and nothing else is shown. Within a pass Nutribot
-   answers in Telegram as it does for a Telegram photo.
-3. Before it uploads (airplane mode on), check the queued file:
+2. Take the photo and accept it in the camera app. Daylight opens private review.
+   Choose **Use photo**, then **Send**. Check Capture status and confirm the
+   Nutribot receipt and resulting meal entry when the paired backend is running.
+3. With airplane mode on, choose Send and check the queued file:
    `adb shell run-as net.kckern.daylight.phone ls -l files/inputs/inbox` shows one
    `<id>.meal-photo.jpg` and no `.part` file. Pull that one file and read its
    metadata on the workstation (`exiftool` or `identify -verbose`): **no GPS
@@ -558,7 +631,7 @@ The steps below use the Journal button. Step 18 repeats the first two for Meal.
    retake or cancel control): the same as 5.
 7. Open the camera with "Meal photo", and with the camera in front run
    `adb shell am kill net.kckern.daylight.phone` (or let a heavy camera app push
-   the app out of memory). Take the photo: it is still prepared and queued.
+   the app out of memory). Take the photo and confirm it. Check that it reaches private review with no upload.
 8. Daylight lists Camera in system settings. Meal photo requires no media-library permission.
 9. From another app, try to read the provider:
    `adb shell content read --uri content://net.kckern.daylight.phone.inputs/capture/x`
@@ -591,6 +664,6 @@ The steps below use the Journal button. Step 18 repeats the first two for Meal.
 
 ## I. Record the results
 
-Write what was verified and what failed beside each line, and bring
-`__docs/reference/android/phone.md` in line with what the phone did: every
-"unproven on a phone" there is one of the lines above.
+Record observations with the tested artifact identities in the private evidence
+file. Mark placement and outcome separately. Publish phone support claims only
+for the tested launcher, flow and build combination.

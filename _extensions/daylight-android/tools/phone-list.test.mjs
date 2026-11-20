@@ -90,6 +90,7 @@ test('nothing of quick-input is exported: a capture starts inside the app or not
   assert.equal(capabilities['quick-input'].exported, undefined);
   const own = Object.entries(EXPECTED_COMPONENTS).filter(([key]) => key.includes('.cap.quickinput.'));
   assert.deepEqual(own.map(([key]) => key).sort(), [
+    'activity net.kckern.daylight.cap.quickinput.shell.CaptureStatusActivity',
     'activity net.kckern.daylight.cap.quickinput.shell.PhotoCaptureActivity',
     'activity net.kckern.daylight.cap.quickinput.shell.RecordActivity',
     'activity net.kckern.daylight.cap.quickinput.shell.TextInputActivity',

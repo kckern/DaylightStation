@@ -7,17 +7,11 @@ routes (which the phone registers and serves to nobody), settings and the fleet 
 `__docs/reference/android/README.md`; the web view and its page bridge are in
 `__docs/reference/android/kiosk.md`.
 
-**None of this has run on a phone.** The build passes its unit tests, lint and the
-build verifier. Nothing has been installed. A security review of the build was
-answered before any install; what it changed is in "The lock screen, the
-microphone and the camera", "The link key", "Who may connect", "The exact list"
-and the `quick-input` section. The quick inputs (text, photo, more than one
-destination) were added after that review and have had none of their own. A later
-review of the car screen and of pinning media changed "Who may bind the car screen"
-(the binder gate) and "What a pin does" (recorded only on the owner's confirmation). Every statement below about what
-Android does (cold starts, tiles, the launcher, link handling) is from the
-platform's documentation and is unproven until the on-device checklist is run.
-"Unproven on a phone" below marks the places where that matters most.
+Build 49 was observed on Android 17 with Apex as the active launcher. Build 50 is
+a signed debug checkpoint for testing the upgrade with a private draft. The acceptance
+runbook records setup and actual use separately for each launcher and identifies
+which steps need the paired web and backend build, a physical fixture, or another
+person. See [phone acceptance](../../runbooks/android/phone-acceptance.md).
 
 What the phone build has: the site's mobile web views (`webview-host`), links
 (`notifications`), `bookmarks`, `one-tap-actions` (with the "On my way"
@@ -33,8 +27,14 @@ under "What the phone does not have".
 
 The Daylight app icon opens setup. Choose Health, Home, Lifelog, Media or
 Call to add its own shortcut to Android Home. Journal and Meal capture shortcuts
-open the recorder, text form or camera directly from Android Home. Full Journal
-needs a supported mobile destination before it can be offered.
+open the recorder, text form or camera directly from Android Home. **Meal
+barcode** opens the Health scanner. **Capture status** opens receipt and retry
+controls. Full Journal needs a supported mobile destination.
+
+A service shortcut starts a fresh service WebView. Back follows that service’s
+history and returns to Android Home from its root. Health, Home, Lifelog and
+Media can show sign-in in place and reload the requested address after sign-in.
+Call uses the household network and opens local preview before screen selection.
 
 Choose **Add to home screen** beside a service or capture action. **Confirm in
 Android** means Daylight is waiting for the launcher. **Added** means the launcher
@@ -49,7 +49,8 @@ playlist in Daylight. Open Widgets on Android Home, add **Daylight playlist** an
 choose the playlist shown there. Each widget keeps its own assignment. If a late
 Android confirmation creates a second widget after manual placement, touch and hold
 the extra widget and choose **Remove**. Tap the widget to start playback and use
-Android media controls to pause or stop. Existing 1×1 Call widgets keep their
+Android media controls to pause or stop. The start attempt has a 15-second
+budget and counts as started once the player reaches playing state. Existing 1×1 Call widgets keep their
 assignments.
 
 ## What makes it a phone and not a kiosk
@@ -122,12 +123,18 @@ and `lockdown`, which the phone does not list (the same test fails a phone build
 that lists either). The Activity never turns the screen on and never dismisses the
 keyguard.
 
-On the phone, `webview.callPermissions` enables runtime permission prompts for
-the household HTTPS `/call` page. Open the Call widget and allow Camera and
+On the phone, `webview.callPermissions` scopes runtime prompts to trusted
+household capture pages. Call can request camera and microphone. The Health
+barcode route can request camera for barcode scanning. Open the Call widget and allow Camera and
 Microphone while using Daylight. A denial offers **App settings**. Choose
 **Permissions**, change the relevant permission, then return and retry.
 A call page opened from an external unkeyed link cannot request capture.
-Other phone pages keep general web audio and video capture disabled.
+Other phone pages keep general web audio and video capture disabled. The barcode
+scanner releases the camera at review and when backgrounded. **Log item**
+commits the reviewed product, portion and meal with an operation ID. Verify the
+entry reference and Undo, or open it through **View in Health**. **Scan another**
+begins a separate attempt. **Done** on the trusted originating shortcut returns
+to Android Home. An ordinary Health scanner closes in Health.
 
 ## Private values a phone build needs
 
@@ -163,9 +170,10 @@ Two forms are links:
 | `daylight://open?path=/media[#k=<key>]` | Open that page of the site in the app | no, when the path is exactly a configured bookmark's; yes for any other page |
 | `daylight://bookmark/<id>` | Open a configured bookmark | no |
 | `daylight://action/<id>#k=<key>` | Run a one-tap action | yes |
-| `daylight://input/voice?to=<destination id>#k=<key>` | Open the recorder and start a recording for that destination; while one is being recorded, stop and save it | yes |
+| `daylight://input/voice?to=<destination id>#k=<key>` | Open the recorder or resume the active recording | yes |
 | `daylight://input/text?to=<destination id>#k=<key>` | Open the text screen for that destination | yes |
-| `daylight://input/photo?to=<destination id>#k=<key>` | Open the system's camera app; the photo it takes is queued for that destination | yes |
+| `daylight://input/photo?to=<destination id>#k=<key>` | Open the system camera or the destination’s private photo review | yes |
+| `daylight://input/status#k=<key>` | Open Capture status | yes |
 | `daylight://input/queue#k=<key>` | Try every waiting and parked input again, and say how many there are | yes |
 | `daylight://input/discard#k=<key>` | Throw away the inputs that could not be sent. Asks first; a second tap within twenty seconds deletes | yes |
 | `daylight://memo/new#k=<key>`, `memo/queue`, `memo/discard` | The earlier names of `input/voice?to=journal`, `input/queue` and `input/discard` | yes |
@@ -1075,8 +1083,9 @@ through the same queue.
 
 The contract with the backend is
 `ops:docs/superpowers/specs/2026-11-17-daylight-quick-input-intake-contract.md`.
-The backend's side was built in parallel on another branch; **no request has
-been sent to it from this app.**
+The paired backend adds per-ID destination receipts. The older intake contract
+can acknowledge transport. The acceptance runbook distinguishes that
+acknowledgment from a saved destination entry.
 
 ### Destinations
 
@@ -1131,8 +1140,7 @@ action is an `input:` line), or a keyed `input` link the app built itself.
   tap on that entry on the car's screen, into this same queue (see "A voice memo in
   the car"). Both hold the car to a pinned certificate.
 - A page's own use of the microphone or camera (`getUserMedia`) is a separate
-  path, through the web view, and is off on the phone (`webview.allowMic` and
-  `webview.allowCamera` are false).
+  path, through the web view, and follows the scoped Call and Health rules above.
 
 With `identity.user` empty, or `identity.device` not `fleet:<key>`, no screen
 opens: the action answers "Quick inputs are not set up on this phone: identity
@@ -1140,120 +1148,55 @@ not configured" (or "device identity not configured").
 
 ### Voice
 
-A recording for a destination. The recorder is the one the voice memo had,
-unchanged but for one thing: it is told the destination's id and puts it in the
-file's name (`<id>.<destination>.ogg`), so a recording still goes where it was
-meant to after the process was killed. A recording with no destination in its
-name (one made by an earlier build) is the journal's.
-
-Tapping any voice button while a recording is under way stops and saves that
-recording, whichever destination the button is for; it does not start another.
-
-**A recording is filed at the time it started.** The upload carries
-`X-Daylight-Recorded-At`, the epoch milliseconds at which the recording began, as
-kept in the queue entry (it is the leading number of the input's id, and for a
-recording recovered after a cut-off it is the start of that recording). The
-backend uses that time when it is within the last 30 days and no more than five
-minutes ahead of its own clock; outside that window it uses the time it received
-the input. A memo recorded with no connection and uploaded hours later is
-therefore journaled when it was said. Text and photos carry the same header: the
-time Send was tapped, and the time the camera was opened.
+Open the voice shortcut to record. Another tap returns to the active recording
+with its original destination. **Send memo** publishes the draft to the upload
+queue. The top-right **×** and Android Back ask before discarding a draft with
+content. Rotation keeps the recording. Loss of audio focus, recorder failure,
+service shutdown, or the recording limit ends the draft privately. Reopen the
+same destination and use **Resume draft** to play a recoverable recording, then
+send or discard it. An unreadable recording stays private with an interruption
+message. Phone audio uses Ogg/Opus where supported, with an AAC fallback. Car
+recording retains its own capture and send flow.
 
 ### Text
 
-`TextInputActivity`: a small dialog window titled with the destination's label,
-one multi-line field, Cancel and Send.
-
-- Nothing leaves the screen until Send. Cancel and the back button discard the
-  draft; a touch beside the window does nothing, so a draft is not lost to a
-  stray tap.
-- The intake's limit of 16,384 bytes is held as the text is typed, counted in
-  UTF-8 bytes (a Korean syllable is three, most emoji four). What does not fit is
-  not taken, and a character of several bytes is taken whole or not at all. A
-  line under the field says how much is left once under 2,048 bytes remain.
-- Send trims the space around the text. A draft with no character that shows is
-  not sent ("Nothing to send"): the intake would refuse it.
-- Send writes the text to `files/inputs/inbox/<id>.<destination>.txt` (to a
-  `.part` file, synced, then renamed) and tells the payload. From there it is in
-  the queue on disk: it survives the process being killed and is sent when the
-  backend can be reached. If the file cannot be written the draft stays in the
-  field and a message says nothing was sent.
-- The window is not shown over the lock screen, is kept out of the recents list,
-  and from Android 13 the system takes no recents picture of it; the field is
-  emptied before the window closes. `FLAG_SECURE` is not set, on purpose:
-  screenshots work.
-- A second input link while the screen is up changes nothing: the draft and its
-  destination stay.
+The named text shortcut opens a multiline editor. Edits are saved to a private
+draft, including across process restart. The 16,384-byte limit counts UTF-8 bytes
+and keeps each character intact. Send trims surrounding whitespace and requires
+visible content. Back or Cancel asks before discarding a draft with content.
+If the write fails, the draft remains available.
 
 ### Photo
 
-`PhotoCaptureActivity` has no window. Opening it opens the system's camera app
-(`MediaStore.ACTION_IMAGE_CAPTURE`), which writes the picture to a file of this
-app. When the camera returns, the photo is prepared and queued, a short message
-says where it is going, and nothing else is shown: there is no review step.
+Open **Meal photo** and grant Camera if prompted. Android’s camera app writes
+to a single-URI grant provided by `InputFileProvider`. After the camera confirms
+the image and the grant is withdrawn, Daylight shows a private review. **Use
+photo** reveals **Send**. **Retake** opens the camera again and retains the
+previous photo if canceled. **Discard** and Back ask before dropping a photo
+draft. Daylight recovers the capture where Android delivers the camera result
+after process recreation.
 
-The phone declares camera permission for calls. Android also requires that
-permission before handing a meal photo to the system camera. If needed, the
-photo activity asks for it before opening the camera.
+Daylight applies EXIF orientation, scales the long edge to at most 2048 pixels,
+and re-encodes the image as JPEG. It checks the encoded file for EXIF, XMP and
+IPTC blocks and removes the camera source after processing. Upload uses the
+processed image and the capture timestamp kept separately.
 
-**How the camera app gets the file.** `InputFileProvider` is a content provider
-that is not exported. The photo screen creates an empty file,
-`files/inputs/inbox/<id>.<destination>.raw.part`, and gives the camera app a
-grant for that one URI (`content://<package>.inputs/capture/<that name>`), which
-it withdraws when the camera returns. The manifest allows grants for `/capture/`
-only (`grantUriPermissions="false"` with one `grant-uri-permission` path prefix;
-the verifier fails a build where that is wider). The provider serves a name of
-exactly that shape, for writing, and nothing else: not a finished photo, not
-typed text, not a recording, not any other file of the app.
+### Capture status
 
-**What is queued is never the camera's file.** Every capture is decoded and
-written again as a JPEG (`PhotoPlan`):
+Voice, text and photo drafts live in app-private storage under
+`files/capture-drafts`. They retain their ID, destination and capture time.
+An explicit Send publishes the draft to the appropriate inbox. Sending opens
+**Capture status** with that operation first. The same surface is available from
+its home shortcut or a single-item notification. It displays the configured
+destination, kind, time, delivery state and any saved reference.
 
-| Step | What |
-|---|---|
-| Turn | The camera's EXIF orientation is applied to the pixels, since the tag itself does not survive |
-| Scale | The long edge is at most 2048 pixels; a smaller photo is not enlarged |
-| Encode | JPEG quality 85 |
-| Fit | If the file is over the intake's 15,728,640 bytes it is written again at quality 70, then at 1536 pixels, then at 1024 pixels and quality 60 |
-| Check | The written file's headers are read (`JpegCheck`): a file with an EXIF or XMP segment (APP1) or an IPTC segment (APP13) is refused and deleted |
-| Clean up | The camera's file is deleted whatever the outcome |
-
-Writing the pixels again is what removes the EXIF block, and with it the
-position the photo was taken at, the phone's model and the capture time. **A
-photo's position does not leave the phone**; the check after writing is there so
-that a change to the encoder cannot undo that without a failure.
-
-A cancelled capture (back, or a rejected photo in the camera's own review)
-leaves no file. A capture whose screen was killed leaves the camera's file,
-which is removed once it is thirty minutes old, at the next pass of the queue or
-the next time a capture screen opens. If Android ends the app's process while
-the camera is in front, the screen is rebuilt when the camera returns and the
-photo is still prepared.
-
-### The pieces
-
-| Piece | Installed (shell half) | Payload | With no payload loaded |
-|---|---|---|---|
-| `RecordActivity` (not exported) | Asks for the microphone, starts the recorder, shows a clock and "Send memo" and "Cancel recording" | Opens it, on a keyed `input/voice` link, after checking the destination and that `identity.user` and `identity.device` are usable | Not reached through a link: the link activity waited for the payload. From the recording's notification it works as always |
-| `MemoRecorderService` (not exported; foreground service of type `microphone`) | Records into `<files>/memos/inbox/`, to a file ending `.part` that is renamed when whole | Told over the `inputs` port | Recording does not need the payload. The file waits in the inbox for the payload's next scan |
-| `TextInputActivity` (not exported) | The field; writes `<files>/inputs/inbox/<id>.<destination>.txt` on Send | Opens it, on a keyed `input/text` link; told over the `inputs` port | As above: the file waits for the next scan |
-| `PhotoCaptureActivity` (not exported) and `InputFileProvider` (not exported) | Opens the camera app, prepares the photo, writes `<files>/inputs/inbox/<id>.<destination>.jpg` | Opens it, on a keyed `input/photo` link; told over the `inputs` port | As above |
-
-Text and photos have an inbox of their own because the recorder's recovery
-treats a `.part` file as a recording that was cut off, which is right for audio
-only. A capture screen an older installed app does not have answers "<label>:
-not available in the installed app" and nothing else happens.
-
-### Recording
-
-- Open a voice shortcut to record. Another tap returns to the current recording.
-- **Send memo** queues the audio for upload. The top-right **×** and Android Back
-  ask before discarding. The notification can reopen the recorder.
-- Rotation keeps the recording. Loss of audio focus, recorder failure, service
-  shutdown or the recording limit ends the draft without queuing it.
-- Phone drafts are stored apart from the upload inbox. A process kill leaves an
-  unsubmitted draft that the next recording clears. Audio uses Ogg/Opus on API
-  29 and later and MP4/AAC on API 26–28.
+**Accepted** means the intake acknowledged the capture. **Delivered** requires
+a final destination receipt. Journal receipts identify the saved entry. Meal
+receipts identify the saved meal log and can offer **View in Health**. **Retry**
+reuses the same capture ID. **Replace capture** opens a new private draft and
+requires a new Send. **Health status** opens the barcode operation history.
+Capture status shows items for the current household binding. The older queue
+continues to support legacy uploads with its existing aggregate controls.
 
 ### The upload queue
 
@@ -1505,7 +1448,7 @@ What another app on the phone can reach, and what stands in the way.
 | `DaylightCarAppService` (`car-actions`) | Not exported | The Car App Library's service; bound only by the gate, in process |
 | `ButtonWidgetConfigActivity` (`widgets`) | The launcher starts it when a one-action button is placed | No permission exists that only a launcher holds. It reads the widget id, uses it only when Android says that widget is this app's button, lists the action labels and stores the owner's choice. It runs nothing |
 | `ActionWidgetProvider`, `ButtonWidgetProvider` | Not exported | Reached by the system's widget host and by the app only |
-| `PlayActivity`, `RecordActivity`, `TextInputActivity`, `PhotoCaptureActivity`, `MemoRecorderService` | Not exported | Started by this app only, by the payload on a keyed link |
+| `PlayActivity`, `RecordActivity`, `TextInputActivity`, `PhotoCaptureActivity`, `CaptureStatusActivity`, `MemoRecorderService` | Not exported | Started by this app only, by the payload on a keyed link |
 | `PlayActionService` (`media-service`) | Not exported | Started by this app's own widget buttons (an immutable `PendingIntent`) and tiles. Reads one action id; the payload decides what it plays |
 | `InputFileProvider` (`quick-input`) | Not exported | Reached by the camera app through a grant for the one file of a capture, made by the photo screen and withdrawn when the camera returns. Grants are limited to `/capture/` in the manifest, and the provider serves a capture file's exact name and nothing else |
 | `PinResultReceiver` (`one-tap-actions`) | Not exported | Reached only through the immutable, one-shot `PendingIntent` the payload hands `requestPinShortcut`, which the system sends once the owner has pinned a media shortcut. It passes a single-use token to the payload and nothing else |
@@ -1556,12 +1499,12 @@ components.
   of a real photo and the memory that takes, the rebuild of the screen after the
   process was ended behind the camera. Their decisions are in `PhotoPlan`,
   `JpegCheck`, `CameraAsk` and `CaptureFiles`, which are tested with made-up
-  files; no real photo has been through them.
+  files. Record physical camera review and upload separately.
 - `MemoRecorderService` and `RecordActivity`: the microphone, the encoder (Ogg/Opus,
-  and the MP4 segment rotation below Android 10), the foreground service, the
+  and the AAC fallback), the foreground service, the
   permission dialogs, a rebuild of the screen. Their decisions are in
   `RecorderMachine`, `MemoFiles`, `MemoRecovery` and `PermissionAsk`, which are
-  tested; that a cut-off Ogg file plays has not been tried.
+  tested. Playability after interruption requires a phone check.
 - `CarHostGateService`, `DaylightCarAppService`, `ActionsScreen`, `RecordScreen`,
   `CarRecorder` and `CarMemoWriter`: Android Auto binding the gate, the forward to
   the library's binder, the templates on a head unit, the car's microphone, the
@@ -1575,7 +1518,7 @@ components.
 - `AndroidNotices`: a notification on a screen. On the JVM it runs over a context
   with no notification service, which shows only that it does nothing there.
 - The backend's side of every media and quick-input request. The tests use a fake backend
-  built from the backend's code as read; no request has been sent.
+  to exercise request and response handling. Use the paired deployment for outcome checks.
 - That nothing listens on a real phone. The tests start the payload for the phone's
   configuration and show no control socket is bound and the port stays free; the
   shell's decision not to start a lifeline is one line that reads the same value
