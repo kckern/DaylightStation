@@ -64,7 +64,7 @@ const BAND_LABELS = {
 function SchedulerIndex() {
   const navigate = useNavigate();
   const { error, createJob, triggerJob, clearError } = useAdminScheduler();
-  const { data, loading, error: readError, reload, refreshAfterWrite } = useAdminRoster(ADMIN_SCHEDULER_JOBS_PATH);
+  const { data, loading, error: readError, reload, invalidateAfterWrite, refreshAfterWrite } = useAdminRoster(ADMIN_SCHEDULER_JOBS_PATH);
   const jobs = data?.jobs ?? EMPTY_JOBS;
   const [createModalOpen, setCreateModalOpen] = useState(false);
   const [createForm, setCreateForm] = useState({ id: '', name: '', module: '', schedule: '' });
@@ -107,7 +107,7 @@ function SchedulerIndex() {
   };
 
   const handleCreateSubmit = async () => {
-    if (!validateCreateForm()) return;
+    if (creating || !validateCreateForm()) return;
     clearError();
     setCreating(true);
     try {
@@ -120,9 +120,9 @@ function SchedulerIndex() {
       setCreateModalOpen(false);
       setCreateForm({ id: '', name: '', module: '', schedule: '' });
       setCreateErrors({});
-      await refreshAfterWrite();
+      invalidateAfterWrite();
     } catch {
-      // Command and roster errors are reported by their respective hooks.
+      // The command hook reports the write error.
     } finally {
       setCreating(false);
     }
@@ -150,8 +150,6 @@ function SchedulerIndex() {
     navigate(`/admin/system/scheduler/${jobId}`);
   };
 
-  if (loading && !data) return <LoadingState label="scheduler jobs" />;
-
   return (
     <Stack gap="lg">
       <Group justify="space-between" className="ds-page-header">
@@ -177,6 +175,7 @@ function SchedulerIndex() {
         </Alert>
       )}
       {readError && <ErrorState error={readError} label="Scheduler jobs" onRetry={reload} />}
+      {loading && !data && <LoadingState label="scheduler jobs" />}
 
       {groupedJobs.map(group => (
         <Stack key={group.band} gap="xs">

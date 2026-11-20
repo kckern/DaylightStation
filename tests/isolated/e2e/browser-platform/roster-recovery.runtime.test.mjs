@@ -5,6 +5,8 @@ test.use({ serviceWorkers: 'block' });
 const adminCases = [
   {
     name: 'Member',
+    canCreateAfterInitialError: true,
+    link: 'Members',
     route: '/admin/household/members',
     roster: '/api/v1/admin/household',
     create: '/api/v1/admin/household/members',
@@ -14,10 +16,13 @@ const adminCases = [
     initial: { members: [] },
     updated: { members: [{ username: 'fixture', display_name: 'Fixture Member' }] },
     row: 'Fixture Member',
+    empty: 'No household members found. Add one to get started.',
     error: 'Household members failed to load',
   },
   {
     name: 'Scheduler',
+    canCreateAfterInitialError: true,
+    link: 'Scheduler',
     route: '/admin/system/scheduler',
     roster: '/api/v1/admin/scheduler/jobs',
     create: '/api/v1/admin/scheduler/jobs',
@@ -27,7 +32,23 @@ const adminCases = [
     initial: { jobs: [] },
     updated: { jobs: [{ id: 'fixture', name: 'Fixture Job', schedule: '0 * * * *' }] },
     row: 'Fixture Job',
+    empty: 'No scheduler jobs found. Create one to get started.',
     error: 'Scheduler jobs failed to load',
+  },
+  {
+    name: 'Device',
+    link: 'Devices',
+    route: '/admin/household/devices',
+    roster: '/api/v1/admin/household/devices',
+    create: '/api/v1/admin/household/devices',
+    open: 'Add Device',
+    submit: 'Add Device',
+    fields: { 'Device ID': 'fixture' },
+    initial: { devices: [] },
+    updated: { devices: [{ id: 'fixture', name: 'Fixture Device', type: 'shield-tv' }] },
+    row: 'Fixture Device',
+    empty: 'No devices found',
+    error: 'Devices failed to load',
   },
 ];
 
@@ -35,9 +56,15 @@ for (const width of [390, 1440]) {
   test.describe(`roster recovery at ${width}px`, () => {
     test.use({ viewport: { width, height: 850 } });
 
-    for (const fixture of adminCases) {
-      test(`${fixture.name} creation closes before revalidation and Retry only reads`, async ({ page }) => {
+    const scenarios = adminCases.map(fixture => ({ fixture, initialFailure: false }));
+    if (width === 390) {
+      scenarios.push(...adminCases.filter(fixture => fixture.canCreateAfterInitialError).map(fixture => ({ fixture, initialFailure: true })));
+    }
+    for (const { fixture, initialFailure } of scenarios) {
+      const entry = initialFailure ? ' after an initial roster error' : '';
+      test(`${fixture.name} creation closes before revalidation and Retry only reads${entry}`, async ({ page }) => {
         const requests = [];
+        const readErrorStatus = fixture.name === 'Device' ? 500 : 503;
         let failRefresh;
         const releaseRefresh = new Promise(resolve => { failRefresh = resolve; });
         await page.routeWebSocket('**/*', () => {});
@@ -50,10 +77,14 @@ for (const width of [390, 1440]) {
           }
           if (method === 'GET' && pathname === fixture.roster) {
             requests.push(method);
-            if (requests.join() === 'GET') return route.fulfill({ json: fixture.initial });
+            if (requests.length === 1) {
+              return initialFailure
+                ? route.fulfill({ status: readErrorStatus, json: { error: 'Initial roster unavailable' } })
+                : route.fulfill({ json: fixture.initial });
+            }
             if (requests.join() === 'GET,POST,GET') {
               await releaseRefresh;
-              return route.fulfill({ status: 503, json: { error: 'Roster unavailable' } });
+              return route.fulfill({ status: readErrorStatus, json: { error: 'Roster unavailable' } });
             }
             return route.fulfill({ json: fixture.updated });
           }
@@ -61,7 +92,10 @@ for (const width of [390, 1440]) {
         });
 
         await page.goto(fixture.route);
-        await page.getByRole('button', { name: fixture.open, exact: true }).click();
+        if (initialFailure) await expect(page.getByRole('alert')).toContainText(fixture.error);
+        else await expect(page.getByText(fixture.empty, { exact: true })).toBeVisible();
+        const opener = page.getByRole('button', { name: fixture.open, exact: true });
+        await opener.press('Enter');
         const dialog = page.getByRole('dialog');
         for (const [label, value] of Object.entries(fixture.fields)) {
           await dialog.getByLabel(label).fill(value);
@@ -70,12 +104,27 @@ for (const width of [390, 1440]) {
         try {
           await expect.poll(() => requests).toEqual(['GET', 'POST', 'GET']);
           await expect(dialog).toBeHidden();
+          await expect(opener).toBeFocused();
+          await opener.press('Enter');
+          const nextDraft = dialog.getByLabel(Object.keys(fixture.fields)[0]);
+          await expect(nextDraft).toHaveValue('');
+          await nextDraft.fill('next-draft');
+          const failedRead = page.waitForResponse(response => new URL(response.url()).pathname === fixture.roster
+            && response.request().method() === 'GET' && response.status() === readErrorStatus);
+          failRefresh();
+          await failedRead;
+          await expect(page.getByText(fixture.error, { exact: true })).toBeVisible();
+          await expect(nextDraft).toHaveValue('next-draft');
+          await expect(nextDraft).toBeFocused();
+          await nextDraft.press('Escape');
+          await expect(dialog).toBeHidden();
+          await expect(opener).toBeFocused();
         } finally {
           failRefresh();
         }
         await expect(page.getByRole('alert')).toContainText(fixture.error);
         await page.getByRole('button', { name: 'Retry', exact: true }).click();
-        await expect(page.getByRole('row').filter({ hasText: fixture.row })).toBeVisible();
+        await expect(page.getByText(fixture.row, { exact: true })).toBeVisible();
         expect(requests).toEqual(['GET', 'POST', 'GET', 'GET']);
       });
     }
@@ -206,7 +255,7 @@ test('Admin Devices leaves a slow enforcement poll alone while the visible statu
   expect(statusReads).toHaveLength(3);
 });
 
-for (const [fixture, removing] of [[adminCases[0], false], [adminCases[1], false], [adminCases[0], true]]) {
+for (const [fixture, removing] of [...adminCases.map(fixture => [fixture, false]), [adminCases[0], true]]) {
   test(`a confirmed ${fixture.name} ${removing ? 'removal' : 'creation'} refreshes the reopened roster without closing its new draft`, async ({ page }) => {
     const method = removing ? 'DELETE' : 'POST';
     const actionPath = removing ? fixture.create + '/fixture' : fixture.create;
@@ -230,13 +279,13 @@ for (const [fixture, removing] of [[adminCases[0], false], [adminCases[1], false
       return route.fulfill({ json: pathname.endsWith('/supervision/bootstrap') ? { enabled: false } : {} });
     });
 
-    await page.goto('/admin/household/devices');
-    const link = page.getByRole('link', { name: fixture.name === 'Scheduler' ? 'Scheduler' : 'Members', exact: true });
+    await page.goto(fixture.name === 'Device' ? '/admin/household/sessions' : '/admin/household/devices');
+    const link = page.getByRole('link', { name: fixture.link, exact: true });
     await link.click();
-    const row = page.getByRole('row').filter({ hasText: fixture.row });
+    const item = page.getByText(fixture.row, { exact: true });
     const dialog = page.getByRole('dialog');
     if (removing) {
-      await row.getByRole('button', { name: 'Remove' }).click();
+      await page.getByRole('row').filter({ hasText: fixture.row }).getByRole('button', { name: 'Remove' }).click();
       await dialog.getByRole('button', { name: 'Remove', exact: true }).click();
     } else {
       await page.getByRole('button', { name: fixture.open, exact: true }).click();
@@ -249,8 +298,8 @@ for (const [fixture, removing] of [[adminCases[0], false], [adminCases[1], false
       await page.goBack();
       await link.click();
       await expect.poll(() => requests).toEqual(['GET', method, 'GET']);
-      if (removing) await expect(row).toBeVisible();
-      else await expect(row).toHaveCount(0);
+      if (removing) await expect(item).toBeVisible();
+      else await expect(item).toHaveCount(0);
       await page.getByRole('button', { name: fixture.open, exact: true }).click();
       await draftField.fill('new-draft');
     } finally {
@@ -259,8 +308,8 @@ for (const [fixture, removing] of [[adminCases[0], false], [adminCases[1], false
     await expect.poll(() => requests).toEqual(['GET', method, 'GET', 'GET']);
     await expect(draftField).toHaveValue('new-draft');
     await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
-    if (removing) await expect(row).toHaveCount(0);
-    else await expect(row).toBeVisible();
+    if (removing) await expect(item).toHaveCount(0);
+    else await expect(item).toBeVisible();
     expect(requests).toEqual(['GET', method, 'GET', 'GET']);
   });
 }

@@ -39,7 +39,7 @@ function groupBadgeColor(group) {
 function MembersIndex() {
   const navigate = useNavigate();
   const { error, createMember, removeMember, clearError } = useAdminHousehold();
-  const { data, loading, error: readError, reload, refreshAfterWrite } = useAdminRoster(ADMIN_HOUSEHOLD_PATH);
+  const { data, loading, error: readError, reload, invalidateAfterWrite, refreshAfterWrite } = useAdminRoster(ADMIN_HOUSEHOLD_PATH);
   const household = data?.household;
   const members = data?.members ?? [];
 
@@ -76,7 +76,7 @@ function MembersIndex() {
   };
 
   const handleCreateSubmit = async () => {
-    if (!validateCreateForm()) return;
+    if (creating || !validateCreateForm()) return;
     clearError();
     setCreating(true);
     try {
@@ -97,9 +97,9 @@ function MembersIndex() {
         birthyear: null
       });
       setCreateErrors({});
-      await refreshAfterWrite();
+      invalidateAfterWrite();
     } catch {
-      // Command and roster errors are reported by their respective hooks.
+      // The command hook reports the write error.
     } finally {
       setCreating(false);
     }
@@ -128,8 +128,6 @@ function MembersIndex() {
   const handleRowClick = (username) => {
     navigate(`/admin/household/members/${username}`);
   };
-
-  if (loading && !data) return <LoadingState label="household members" />;
 
   return (
     <Stack gap="lg">
@@ -186,6 +184,7 @@ function MembersIndex() {
         </Alert>
       )}
       {readError && <ErrorState error={readError} label="Household members" onRetry={reload} />}
+      {loading && !data && <LoadingState label="household members" />}
 
       {/* Members table */}
       {members.length > 0 && (

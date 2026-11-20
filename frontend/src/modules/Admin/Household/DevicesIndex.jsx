@@ -8,7 +8,7 @@ import {
 import { IconPlus, IconAlertCircle } from '@tabler/icons-react';
 import {EnforcementStatus} from '../../../../../__app_modules/household/supervision/browser/index.js';
 import { useVisibleRefresh } from '../../../lib/hooks/useVisibleRefresh.js';
-import { useApiResource } from '../../../lib/hooks/useApiResource.js';
+import { useAdminRoster } from '../shared/useAdminRoster.js';
 import { useRefreshableRead } from '../../../lib/hooks/useRefreshableRead.js';
 import { DaylightAPI } from '../../../lib/api.mjs';
 
@@ -35,7 +35,7 @@ function typeBadgeColor(type) {
 function DevicesIndex() {
   const navigate = useNavigate();
   const [shutdown,setShutdown]=useState(null),[enforcementNow,setEnforcementNow]=useState(()=>Date.now());
-  const { data, loading, error, reload } = useApiResource(DEVICES_PATH);
+  const { data, loading, error, reload, invalidateAfterWrite } = useAdminRoster(DEVICES_PATH, { retryTransient: true });
   const devices = data?.devices || [];
 
   const [createModalOpen, setCreateModalOpen] = useState(false);
@@ -93,10 +93,10 @@ function DevicesIndex() {
         type: createForm.type
       };
       await DaylightAPI(DEVICES_PATH, payload, 'POST');
-      reload();
       setCreateModalOpen(false);
       setCreateForm({ id: '', type: 'shield-tv' });
       setCreateErrors({});
+      invalidateAfterWrite();
     } catch (err) {
       setCreateErrors({ submit: err.message || 'Could not add device. Try again.' });
     } finally {
@@ -104,8 +104,10 @@ function DevicesIndex() {
     }
   };
 
-  if (loading) return <LoadingState label="devices" />;
-  if (error) return <ErrorState label="Devices" error={error} onRetry={reload} />;
+  const rosterState = loading
+    ? <LoadingState label="devices" />
+    : error && <ErrorState label="Devices" error={error} onRetry={reload} />;
+  if (!data && rosterState) return rosterState;
 
   const closeCreate = () => {
     if (creating) return;
@@ -131,7 +133,7 @@ function DevicesIndex() {
         <EnforcementStatus {...shutdown?.enforcement} nowMs={enforcementNow}/>
       </Card>
 
-      {devices.length > 0 ? (
+      {rosterState || (devices.length > 0 ? (
         <SimpleGrid cols={{ base: 1, sm: 2, md: 3 }} spacing="md">
           {devices.map(device => (
             <Card
@@ -166,7 +168,7 @@ function DevicesIndex() {
         </SimpleGrid>
       ) : (
         <EmptyState title="No devices found" hint="Add a device to get started." />
-      )}
+      ))}
 
       {/* Add Device Modal */}
       <FormDialog
