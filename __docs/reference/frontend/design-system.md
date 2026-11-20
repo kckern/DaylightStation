@@ -333,6 +333,14 @@ mount. Explicit reload and invalidation still request fresh data. Use the same
 deadline across body parsing and transient retries. An explicit retry starts
 a new deadline.
 
+For a mixed prefetch queue, `timeoutMsForPath` returns the same timeout used
+by an observer of that path. A joined prefetch keeps the time remaining on
+its original read. Home entities and Health days use a 25-second timeout, so
+a stalled read can expire while the last accepted snapshot stays visible.
+The next foreground poll can start a fresh read at the existing cadence.
+[Home entities](../../../__app_modules/household/home/browser/entities/useHomeEntities.js) ·
+[Health day prefetch](../../../__app_modules/wellness/health/browser/today/useHealthDayPrefetch.js)
+
 In Admin lists, the row, image picker, capability check, combobox title,
 Display preview and Item Details use one descriptor key. Search picks
 provide immediate labels and images while the descriptor loads. Item Details

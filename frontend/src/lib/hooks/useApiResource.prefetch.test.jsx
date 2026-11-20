@@ -170,6 +170,42 @@ describe('prefetchApiResources', () => {
     expect(peekApiResource('j')).toEqual({ v: 'shared' });
   });
 
+  it('joins a bounded prefetch after three seconds and keeps its original deadline', async () => {
+    vi.useFakeTimers();
+    try {
+      const day = deferred();
+      const other = deferred();
+      const calls = [];
+      apiMock.mockImplementation((path, _body, _method, { signal }) => {
+        calls.push({ path, signal });
+        return path === 'day' ? day.promise : other.promise;
+      });
+      const timeoutMs = 25_000;
+      const onDone = vi.fn();
+      prefetchApiResources(['day', 'other'], {
+        timeoutMsForPath: path => path === 'day' ? timeoutMs : undefined,
+        onDone,
+      });
+      await act(async () => { await vi.advanceTimersByTimeAsync(20_000); });
+      const { result } = renderHook(() => useApiResource('day', { swr: true, timeoutMs }));
+      expect(calls.map(call => call.path)).toEqual(['day', 'other']);
+      expect(result.current.loading).toBe(true);
+
+      await act(async () => { await vi.advanceTimersByTimeAsync(5_000); });
+      expect(calls.map(call => call.signal.aborted)).toEqual([true, false]);
+      expect(result.current.loading).toBe(false);
+      expect(result.current.error?.message).toBe('Resource GET timed out');
+      expect(onDone).toHaveBeenCalledWith(result.current.error, 'day');
+
+      await act(async () => { day.resolve({ expired: true }); other.resolve({ accepted: true }); });
+      expect(peekApiResource('day')).toBeUndefined();
+      expect(peekApiResource('other')).toEqual({ accepted: true });
+      expect(isPrefetchIdle()).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('never overwrites a newer reader response', async () => {
     const slow = deferred();
     apiMock.mockReturnValueOnce(slow.promise).mockResolvedValueOnce({ v: 'reader' });

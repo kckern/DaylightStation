@@ -36,13 +36,14 @@ describe('useHealthDayPrefetch', () => {
     const { rerender } = renderHook(({ ready }) => useHealthDayPrefetch('2026-09-20', { ready }), { initialProps: { ready: false } });
     expect(prefetchApiResources).not.toHaveBeenCalled();
     rerender({ ready: true });
-    const paths = prefetchApiResources.mock.calls[0][0];
+    const [paths, { timeoutMsForPath }] = prefetchApiResources.mock.calls[0];
     expect(paths.slice(0, 3)).toEqual([
       'api/v1/health/day?date=2026-09-19',
       'api/v1/health/nutrition/pending?date=2026-09-19',
       'api/v1/health/nutrition/observations?date=2026-09-19',
     ]);
     expect(paths[3]).toBe('api/v1/health/day?date=2026-09-21');
+    expect(paths.slice(0, 4).map(timeoutMsForPath)).toEqual([25_000, undefined, undefined, 25_000]);
     expect(paths.findIndex(p => p.includes('catalog/suggest'))).toBe(6);
     expect(paths).toContain('api/v1/health/day?date=2026-09-13');
     expect(paths.every(p => typeof p === 'string' && !p.includes(','))).toBe(true);

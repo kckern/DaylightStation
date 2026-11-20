@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react';
 import { whileDocumentVisible } from '@/lib/hooks/useVisibleRefresh.js';
 import { peekApiResource, prefetchApiResources } from "../../../../../frontend/src/lib/hooks/useApiResource.js";
 import { createAppLogger } from "../../../../../frontend/src/lib/ui/createAppLogger.js";
-import { healthDayPaths, shortlistPath } from "../healthResources.js";
+import { healthDayPaths, healthDayTimeoutMs, shortlistPath } from "../healthResources.js";
 import { BUCKETS, localTodayISO } from "./mealBuckets.js";
 import { addDays, weekEnd } from "./WeekStrip.jsx";
 import { preloadFoodIcon } from "./FoodIcon.jsx";
@@ -74,6 +74,7 @@ export function useHealthDayPrefetch(date, { enabled = true, ready = true } = {}
       ];
       const queued = prefetchApiResources(paths, {
         signal: controller.signal,
+        timeoutMsForPath: healthDayTimeoutMs,
         onDone: (error, path) => {
           if (error) { logger.debug('prefetch.failed', { path, error: error.message }); return; }
           if (path.includes('catalog/suggest') || path.includes('health/day?')) preloadIcons(peekApiResource(path));

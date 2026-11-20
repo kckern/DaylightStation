@@ -5,7 +5,7 @@ import { useApiResource, peekApiResource, apiResourceReadToken } from "../../../
 import { createAppLogger } from "../../../../../frontend/src/lib/ui/createAppLogger.js";
 import { BUCKETS } from "./mealBuckets.js";
 import { noteVisibleRows } from "./addFlow.js";
-import { refreshHealthResources, pollHealthResources, healthDayPath, isProvisionalRow } from "../healthResources.js";
+import { refreshHealthResources, pollHealthResources, healthDayPath, healthDayTimeoutMs, isProvisionalRow } from "../healthResources.js";
 
 import { projectRowsBudget } from "./portionPreview.js";
 import { useHealthOperations } from "../operations/HealthOperationsProvider.jsx";
@@ -14,12 +14,13 @@ const logger = createAppLogger('health').child('use-health-day');
 
 export function useHealthDay(date, { enabled = true } = {}) {
   const operations = useHealthOperations();
+  const path = healthDayPath(date);
   // `day.view`: once per viewed date, whether the day painted from the swr
   // cache (a prefetch or an earlier visit) and how long it took to have data.
   // The cache is peeked BEFORE the reader below runs, so a hit is a real hit.
   const view = useRef(null);
   if (enabled && view.current?.date !== date) {
-    view.current = { date, startedAt: performance.now(), fromCache: peekApiResource(healthDayPath(date)) !== undefined, logged: false };
+    view.current = { date, startedAt: performance.now(), fromCache: peekApiResource(path) !== undefined, logged: false };
   }
   // swr:true — a cached day (nutrilist + budget) renders immediately with
   // loading:false on mount/date-change, and a mutation's reload() revalidates
@@ -27,7 +28,7 @@ export function useHealthDay(date, { enabled = true } = {}) {
   // This is what lets TodayView keep its headings/section frames mounted
   // permanently: `loading` only goes true on a genuine cold start (no cache
   // for this date yet), never on a refetch of a date already seen.
-  const list = useApiResource(healthDayPath(date), { deps: [date], enabled, label: 'health-day', logger, swr: true });
+  const list = useApiResource(path, { deps: [date], enabled, label: 'health-day', logger, swr: true, timeoutMs: healthDayTimeoutMs(path) });
 
   // The day's rows: the endpoint serves {message, data:[...], date, count};
   // also tolerate bare array or {items} for backward compatibility.

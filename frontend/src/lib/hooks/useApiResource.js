@@ -435,12 +435,12 @@ function finishPrefetchBatch() {
 
 function pumpPrefetch() {
   while (prefetchInFlight.size < PREFETCH_CONCURRENCY && prefetchBatch?.queue.length) {
-    const { queue, onDone, signal } = prefetchBatch;
+    const { queue, onDone, signal, timeoutMsForPath } = prefetchBatch;
     const path = queue.shift();
     const task = {};
     prefetchInFlight.set(path, task);
     const isCurrent = () => prefetchInFlight.get(path) === task;
-    task.read = readCachedResource(path, { prefetch: isCurrent });
+    task.read = readCachedResource(path, { prefetch: isCurrent, timeoutMs: timeoutMsForPath?.(path) });
     task.read.promise
       .then(() => {
         if (!isCurrent()) return;
@@ -524,14 +524,16 @@ export function patchApiResource(path, update, { create = false } = {}) {
  * Replace the prefetch queue with `paths`, in priority order. Paths already
  * fresh in the cache are skipped. The signal drops this batch's queued work
  * and callbacks on abort. Admitted reads can finish and warm the cache.
+ * A per-path timeout lets a mounted reader join an admitted read with the
+ * same timeout and its original deadline.
  * The latest active batch's `onIdle(stats)` runs once when all work drains.
  */
-export function prefetchApiResources(paths, { onDone, onIdle, signal } = {}) {
+export function prefetchApiResources(paths, { onDone, onIdle, signal, timeoutMsForPath } = {}) {
   if (signal?.aborted) return 0;
   discardPrefetchBatch();
   const queue = [...new Set(paths)].filter(path => path && !isApiResourceFresh(path) && !prefetchInFlight.has(path));
   const batch = {
-    queue, onDone, onIdle: typeof onIdle === 'function' ? onIdle : null, signal,
+    queue, onDone, onIdle: typeof onIdle === 'function' ? onIdle : null, signal, timeoutMsForPath,
     cancel: () => { if (prefetchBatch === batch) discardPrefetchBatch(); },
   };
   prefetchBatch = batch;

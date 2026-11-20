@@ -6,6 +6,7 @@ import homeLogger from '../homeLogger.js';
 
 const PATH = 'api/v1/home-dashboard/entities';
 const REFRESH_MS = 10_000;
+const READ_TIMEOUT_MS = 25_000;
 // How long a toggle's expected state is shown without the platform agreeing.
 // Zigbee/MQTT state lags the service call; a poll already in flight when the
 // switch was tapped answers with the old state.
@@ -22,7 +23,9 @@ export function canTurnOff(entity) {
  * that show the new state until the next reading confirms (or contradicts) it.
  */
 export function useHomeEntities({ active = true, refreshMs = REFRESH_MS } = {}) {
-  const { data, loading, error, reload, revalidating, poll } = useApiResource(active ? PATH : null, { label: 'home entities', logger, swr: true });
+  const { data, loading, error, reload, revalidating, poll } = useApiResource(active ? PATH : null, {
+    label: 'home entities', logger, swr: true, timeoutMs: READ_TIMEOUT_MS,
+  });
   // A null deadline represents a command whose acknowledgement is still pending.
   const [pending, setPending] = useState({});
   const submitting = useRef(new Set());

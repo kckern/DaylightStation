@@ -409,6 +409,60 @@ test('Health keeps an admitted day prefetch warm after visiting and leaving that
   }
 });
 
+test('Health opens a prefetched day with one GET and keeps the original deadline', async ({ page }) => {
+  const previous = '2026-11-21';
+  const date = '2026-11-22';
+  const day = (iso, name) => ({
+    date: iso, items: [{ uuid: iso, name, mealTime: 'morning', date: iso, calories: 120, grams: 100 }],
+    budget: { budget: 2000, remaining: 1880 },
+  });
+  const reads = [];
+  const prefetched = Promise.withResolvers();
+  const delivered = Promise.withResolvers();
+  await page.clock.install({ time: new Date(`${date}T18:00:00Z`) });
+  await page.route('**/health/context', route => route.fulfill({ json: { userId: 'alice' } }));
+  await page.route(`**/api/v1/health/day?date=${previous}`, route => route.fulfill({ json: day(previous, 'Current breakfast') }));
+  await page.route(`**/api/v1/health/day?date=${date}`, async route => {
+    const request = route.request();
+    if (reads.push(request) > 1) return route.fulfill({ json: day(date, 'Fresh breakfast') });
+    try {
+      await prefetched.promise;
+      await route.fulfill({ json: day(date, 'Expired breakfast') });
+    } catch (error) {
+      if (!request.failure()) throw error;
+    } finally {
+      delivered.resolve();
+    }
+  });
+
+  try {
+    await page.goto(`/health?date=${previous}`);
+    await expect(page.getByText('Current breakfast', { exact: true })).toBeVisible();
+    await expect.poll(() => reads.length).toBe(1);
+    await page.clock.fastForward(20_000);
+    await page.getByRole('button', { name: 'Next day', exact: true }).press('Enter');
+    await expect(page).toHaveURL(new RegExp(`date=${date}`));
+    await page.clock.runFor(150);
+    expect(reads.map(request => request.method())).toEqual(['GET']);
+    expect(reads[0].failure()).toBeNull();
+    await expect(page.getByRole('region', { name: 'Food log' })).toHaveAttribute('aria-busy', 'true');
+
+    await page.clock.fastForward(5_500);
+    await expect.poll(() => reads[0].failure()).not.toBeNull();
+    await expect(page.getByRole('alert')).toContainText('Resource GET timed out');
+    expect(reads).toHaveLength(1);
+    await page.getByRole('button', { name: 'Retry', exact: true }).press('Enter');
+    await expect(page.getByText('Fresh breakfast', { exact: true })).toBeVisible();
+
+    prefetched.resolve();
+    await delivered.promise;
+    await expect(page.getByText('Expired breakfast', { exact: true })).toHaveCount(0);
+    expect(reads.map(request => request.method())).toEqual(['GET', 'GET']);
+  } finally {
+    prefetched.resolve();
+  }
+});
+
 test('Health preserves the first confirmed shell and draft while its background revalidation waits', async ({ page }) => {
   const draft = 'Food draft entered as soon as Today appears';
   await page.addInitScript(draft => {
@@ -716,6 +770,77 @@ test('Home lets slow initial and periodic house reads finish across polling tick
   await expect(page.getByRole('switch', { name: 'Kitchen light: turn on' })).not.toBeChecked();
   expect(reads).toHaveLength(2);
 });
+
+for (const app of ['Home', 'Health']) {
+  test(`${app} resumes polling after a stalled read and keeps the accepted snapshot`, async ({ page }) => {
+    const home = app === 'Home';
+    const date = '2026-11-22';
+    const interval = home ? 10_000 : 15_000;
+    const endpoint = home ? '**/api/v1/home-dashboard/entities' : `**/api/v1/health/day?date=${date}`;
+    const snapshot = (state, name) => home ? house(state) : {
+      date, items: [{ uuid: 'row', name, mealTime: 'morning', date, calories: 120, grams: 100 }],
+      budget: { budget: 2000, remaining: 1880 },
+    };
+    let armed = false;
+    const reads = [];
+    const pending = Promise.withResolvers();
+    const delivered = Promise.withResolvers();
+
+    await page.clock.install({ time: new Date(`${date}T18:00:00Z`) });
+    await page.addInitScript(() => localStorage.setItem('home.view', 'rooms'));
+    await page.route('**/health/context', route => route.fulfill({ json: { userId: 'alice' } }));
+    await page.route(endpoint, async route => {
+      if (!armed) return route.fulfill({ json: snapshot('on', 'Accepted breakfast') });
+      const request = route.request();
+      if (reads.push(request) > 1) return route.fulfill({ json: snapshot('off', 'New breakfast') });
+      try {
+        await pending.promise;
+        await route.fulfill({ json: snapshot('on', 'Expired breakfast') });
+      } catch (error) {
+        if (!request.failure()) throw error;
+      } finally {
+        delivered.resolve();
+      }
+    });
+    const accepted = home ? page.getByRole('switch', { name: 'Kitchen light: turn off' })
+      : page.getByText('Accepted breakfast', { exact: true });
+    const current = home ? page.getByRole('switch', { name: 'Kitchen light: turn on' })
+      : page.getByText('New breakfast', { exact: true });
+    const refreshFailed = page.getByRole('button', { name: "Couldn't refresh · Retry" });
+
+    try {
+      await page.goto(home ? '/home' : `/health?date=${date}`);
+      if (home) await page.locator('[data-room-id="kitchen"] .home-room__row').click();
+      await expect(accepted).toBeAttached();
+      armed = true;
+      await page.clock.fastForward(interval + 250);
+      await expect.poll(() => reads.length).toBe(1);
+      await page.clock.fastForward(20_000);
+      expect(reads).toHaveLength(1);
+      expect(reads[0].failure()).toBeNull();
+      await expect(accepted).toBeAttached();
+      await expect(current).toHaveCount(0);
+
+      await page.clock.fastForward(5_500);
+      await expect.poll(() => reads[0].failure()).not.toBeNull();
+      expect(reads).toHaveLength(1);
+      await expect(accepted).toBeAttached();
+      if (!home) await expect(refreshFailed).toBeVisible();
+
+      await page.clock.fastForward(interval);
+      await expect(current).toBeAttached();
+      if (!home) await expect(refreshFailed).toHaveCount(0);
+      pending.resolve();
+      await delivered.promise;
+      await expect(accepted).toHaveCount(0);
+      await expect(current).toBeAttached();
+      await expect(page.getByText('Expired breakfast', { exact: true })).toHaveCount(0);
+      expect(reads.map(request => request.method())).toEqual(['GET', 'GET']);
+    } finally {
+      pending.resolve();
+    }
+  });
+}
 
 test('Home Mosaic keeps the tooltip and drawer reachable in its own frame', async ({ page }) => {
   const payload = house('on');

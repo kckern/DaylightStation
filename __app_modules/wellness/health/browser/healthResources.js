@@ -30,7 +30,10 @@ export const refreshHealthResourcesWithDashboard = () => invalidateApiResources(
 
 // The per-day resources Today reads. One home, so the readers and the
 // prefetcher build byte-identical cache keys.
-export const healthDayPath = date => `api/v1/health/day?date=${date}`;
+const DAY_PATH_PREFIX = 'api/v1/health/day?date=';
+const DAY_READ_TIMEOUT_MS = 25_000;
+export const healthDayPath = date => `${DAY_PATH_PREFIX}${date}`;
+export const healthDayTimeoutMs = path => path.startsWith(DAY_PATH_PREFIX) ? DAY_READ_TIMEOUT_MS : undefined;
 export const pendingReviewPath = date => `api/v1/health/nutrition/pending?date=${date}`;
 export const observationsPath = date => `api/v1/health/nutrition/observations?date=${date}`;
 export const healthDayPaths = date => [healthDayPath(date), pendingReviewPath(date), observationsPath(date)];

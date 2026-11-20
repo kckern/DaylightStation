@@ -77,7 +77,7 @@ describe('useHealthDay', () => {
     expect(result.current.budget.food).toBe(280);
   });
 
-  it('polls other mounted Health readers while an outstanding day read finishes', async () => {
+  it('polls other mounted Health readers while a day waits and recovers after the deadline', async () => {
     vi.useFakeTimers();
     const visibility = vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible');
     const date = '2026-09-02';
@@ -90,7 +90,7 @@ describe('useHealthDay', () => {
     apiMock.mockImplementation(path => {
       const read = (reads.get(path) ?? 0) + 1;
       reads.set(path, read);
-      if (path === dayPath) return dayResponse;
+      if (path === dayPath) return read === 1 ? dayResponse : Promise.resolve({ items: ROWS, revision: 2 });
       return Promise.resolve({ revision: read });
     });
     try {
@@ -103,16 +103,22 @@ describe('useHealthDay', () => {
       }), { initialProps: { enabled: true } });
       await act(async () => {});
       await act(async () => vi.advanceTimersByTimeAsync(15000));
-      await act(async () => vi.advanceTimersByTimeAsync(15000));
       expect(reads.get(dayPath)).toBe(1);
+      expect(reads.get(pendingPath)).toBe(2);
+      expect(result.current.pending.data.revision).toBe(2);
+      expect(result.current.day.loading).toBe(true);
+
+      await act(async () => vi.advanceTimersByTimeAsync(15000));
+      expect(reads.get(dayPath)).toBe(2);
       expect(reads.get(pendingPath)).toBe(3);
       expect(result.current.pending.data.revision).toBe(3);
       expect(result.current.anotherPendingReader.data.revision).toBe(3);
       expect(result.current.observations.data.revision).toBe(3);
       expect(result.current.dashboard.data.revision).toBe(1);
 
-      await act(async () => resolveDay({ items: ROWS, revision: 1 }));
+      await act(async () => resolveDay({ items: [], revision: 1 }));
       expect(result.current.day.items).toEqual(ROWS);
+      expect(result.current.day.revision).toBe(2);
       rerender({ enabled: false });
       await act(async () => vi.advanceTimersByTimeAsync(15000));
       expect(reads.get(pendingPath)).toBe(3);
