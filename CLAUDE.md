@@ -266,6 +266,7 @@ git rev-parse HEAD > {env.ops_docs}/docs-last-updated.txt
 | AI structured wire layer (TOON inside the gateway: classification, fallback, config) | `__docs/reference/core/ai-structured-wire-layer.md` |
 | OMR bubble-sheet reader (Chatsworth OMR-1100) | `__docs/reference/omr/README.md` |
 | Lifelog knowledge (verified loops, private reviews, question queue, default-off runtime) | `__docs/reference/lifelog/knowledge.md` |
+| Life triage (Now → guided Gmail + todo triage: never-auto rules, dry run vs live, login-bound writes, applying/in-doubt cards, undo log, `triage/config.yml`) | `__docs/reference/life/triage.md` |
 | Journalist domain (journaling bot) | `__docs/reference/journalist/journalist-domain.md` |
 | Quick-input intake (phone uploads to the Journalist and Nutribot: voice, text, photo routes; device binding, daily allowance, once-only processing, adding an intake to a bot) | `__docs/reference/core/quick-input.md` |
 | School / Portal homeschool | `__docs/reference/school/README.md` |
