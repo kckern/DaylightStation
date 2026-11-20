@@ -1,7 +1,8 @@
 import { useLayoutEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Stack, Paper, Text, Group, Badge, Button, Textarea, ActionIcon, Alert, Loader } from '@mantine/core';
+import { Stack, Paper, Text, Group, Badge, Button, Textarea, ActionIcon, Alert } from '@mantine/core';
 import { IconEdit, IconCheck, IconX } from '@tabler/icons-react';
+import { SubmitButton, useSheetSubmission } from '@/lib/ui';
 import { useLifePlan } from "../../hooks/useLifePlan.js";
 import { LifePage, LoadingState, ErrorState, EmptyState } from "../../components/index.js";
 import { formatDate, humanize } from "../../lib/format.js";
@@ -11,8 +12,10 @@ export function PurposeView({ username }) {
   const { plan, loading, error, refetch, setPurpose } = useLifePlan(username);
   const [editVisit, setEditVisit] = useState(null);
   const [draft, setDraft] = useState('');
-  const [saveError, setSaveError] = useState(null);
-  const [saving, setSaving] = useState(false);
+  const [submittedVisit, setSubmittedVisit] = useState(null);
+  const { run: submit, saving, failure } = useSheetSubmission(null);
+  const pendingHere = saving && submittedVisit === editVisit;
+  const saveError = submittedVisit === editVisit ? failure : null;
   const editButton = useRef(null);
   const editor = useRef(null);
   const returnFocus = useRef(false);
@@ -32,7 +35,6 @@ export function PurposeView({ username }) {
 
   const startEdit = () => {
     setDraft(purpose?.statement || '');
-    setSaveError(null);
     setEditVisit({});
   };
 
@@ -41,24 +43,20 @@ export function PurposeView({ username }) {
     setEditVisit(null);
   };
 
-  const saveEdit = async () => {
+  const saveEdit = () => {
     const submittedEditor = editor.current;
-    if (saving || !submittedEditor) return;
-    setSaving(true);
-    setSaveError(null);
-    try {
-      // POST /purpose is create-or-update, so it works even for a planless
-      // user whose first PATCH would 404 against a section that doesn't exist yet.
-      await setPurpose(draft);
-      if (editor.current === submittedEditor) {
-        returnFocus.current = submittedEditor.contains(submittedEditor.ownerDocument.activeElement);
-      }
-      setEditVisit(current => current === editVisit ? null : current);
-    } catch (err) {
-      if (editor.current === submittedEditor) setSaveError(err.message);
-    } finally {
-      setSaving(false);
-    }
+    return submit(() => {
+      setSubmittedVisit(editVisit);
+      return setPurpose(draft);
+    }, {
+      valid: Boolean(submittedEditor),
+      onSuccess: () => {
+        if (editor.current === submittedEditor) {
+          returnFocus.current = submittedEditor.contains(submittedEditor.ownerDocument.activeElement);
+        }
+        setEditVisit(current => current === editVisit ? null : current);
+      },
+    });
   };
 
   const actions = !editVisit && (
@@ -85,28 +83,30 @@ export function PurposeView({ username }) {
         {editVisit ? (
           <Stack ref={editor} gap="sm">
             {saveError && (
-              <Alert color="red" title="Couldn't save your purpose">{saveError}</Alert>
+              <Alert color="red" title="Couldn't save your purpose">{saveError.message}</Alert>
             )}
             <Textarea
               aria-label="Purpose statement"
               autoFocus
+              readOnly={pendingHere}
               value={draft}
               onChange={(e) => setDraft(e.currentTarget.value)}
               autosize
               minRows={2}
             />
             <Group>
-              <Button
+              <SubmitButton
+                as={Button}
+                type="button"
                 className="ds-touch-target"
                 size="xs"
-                leftSection={saving ? <Loader size={14} aria-hidden="true" /> : <IconCheck size={14} />}
-                aria-busy={saving}
-                aria-disabled={saving}
-                data-disabled={saving || undefined}
+                leftSection={<IconCheck size={14} />}
+                pending={pendingHere}
+                blocked={saving && !pendingHere}
                 onClick={saveEdit}
               >
                 Save
-              </Button>
+              </SubmitButton>
               <Button className="ds-touch-target" size="xs" variant="subtle" leftSection={<IconX size={14} />} onClick={cancelEdit}>
                 Cancel
               </Button>

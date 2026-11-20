@@ -813,7 +813,7 @@ for (const width of [390, 1440]) {
   });
 }
 
-for (const focusDestination of ['the opener', 'navigation', 'another member’s editor']) {
+for (const focusDestination of ['the opener', 'navigation', 'a replacement editor', 'another member’s editor']) {
   test(`Life Purpose leaves focus on ${focusDestination} after a pending save`, async ({ page }) => {
     await page.routeWebSocket('**/*', () => {});
     const members = [{ username: 'amy', displayName: 'Amy' }, { username: 'bob', displayName: 'Bob' }];
@@ -855,9 +855,22 @@ for (const focusDestination of ['the opener', 'navigation', 'another member’s 
     try {
       await save.press('Enter');
       await submitted.promise;
+      if (focusDestination === 'the opener') {
+        await expect(save).toBeFocused();
+        await expect(save).toHaveAttribute('aria-busy', 'true');
+        await expect(draft).toHaveAttribute('readonly', '');
+        await draft.focus();
+        await page.keyboard.insertText(' this would be lost');
+        await expect(draft).toHaveValue(saved);
+      }
       await save.press('Enter');
       if (focusDestination === 'navigation') {
         await purposeLink.focus();
+      } else if (focusDestination === 'a replacement editor') {
+        await page.getByRole('button', { name: 'Cancel', exact: true }).press('Enter');
+        await edit.press('Enter');
+        await draft.fill('New unsaved draft');
+        await expect(save).toBeDisabled();
       } else if (focusDestination === 'another member’s editor') {
         const switcher = page.getByRole('textbox', { name: 'Switch household member' });
         await switcher.click();
@@ -870,7 +883,11 @@ for (const focusDestination of ['the opener', 'navigation', 'another member’s 
       release.resolve();
     }
     await (await response).finished();
-    if (focusDestination === 'another member’s editor') {
+    if (focusDestination === 'a replacement editor') {
+      await expect(save).toBeEnabled();
+      await expect(draft).toHaveValue('New unsaved draft');
+      await expect(draft).toBeFocused();
+    } else if (focusDestination === 'another member’s editor') {
       await expect(draft).toHaveValue('Bob’s unsaved draft');
       await expect(draft).toBeFocused();
     } else {
