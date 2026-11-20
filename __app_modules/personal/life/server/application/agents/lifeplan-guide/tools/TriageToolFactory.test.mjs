@@ -14,6 +14,13 @@ describe('start_inbox_triage', () => {
     const out = await tool({ run: async () => ({ skipped: 'not_enrolled' }) }).execute({ userId: 'x' });
     expect(out).toEqual({ error: 'not_enrolled' });
   });
+  it('binds to the session user and refuses a different one', async () => {
+    const run = vi.fn(async () => ({ queued: {} }));
+    expect(await tool({ run }).execute({ userId: 'other' }, { userId: 'sample' })).toEqual({ error: 'wrong_user' });
+    expect(run).not.toHaveBeenCalled();
+    await tool({ run }).execute({}, { userId: 'sample' });
+    expect(run).toHaveBeenCalledWith({ username: 'sample', trigger: 'manual' });
+  });
   it('offers no tool when triage is not wired', () => {
     expect(new TriageToolFactory({}).createTools()).toEqual([]);
   });

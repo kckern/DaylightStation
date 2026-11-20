@@ -288,6 +288,14 @@ export function createRunTriagePass({
       ...logged.map((e) => seenKey(e.itemId, e.itemVersion)),
     ]);
 
+    // An unattended action the owner undid is never redone: that item is carded instead.
+    const undoneItems = new Set(logged.filter((e) => e.undoneAt && e.inverse && e.actor === 'system').map((e) => e.itemId));
+    const undoneCard = (item, proposal) => {
+      if (!proposal.preDo || !undoneItems.has(item.id)) return proposal;
+      logger?.info?.('triage.pass.undone_not_redone', { username, passId, itemId: item.id });
+      return { ...proposal, preDo: null, why: 'You undid this before \u2014 your call.' };
+    };
+
     const emails = await collectEmail(username, policy, ctx);
     const todos = await collectTodos(username, asOf);
 
@@ -337,7 +345,7 @@ export function createRunTriagePass({
     for (const item of emails ?? []) {
       if (seen.has(seenKey(item.id, item.version))) continue;
       const guard = emailGuardrails(item, { sentToCount: await knownSender(username, item.facts, senders) });
-      const proposal = await classifyEmail({ item, guard, policy, evaluate, logger });
+      const proposal = undoneCard(item, await classifyEmail({ item, guard, policy, evaluate, logger }));
       logger?.debug?.('triage.pass.item', { username, passId, itemId: item.id, kind: 'email', step: proposal.step, preDo: proposal.preDo?.action ?? null, rules: guard.rules });
       let card = proposal;
       if (proposal.preDo?.action === 'archive') card = await archiveOne({ username, item, proposal, policy, ctx, passId, asOf });
@@ -351,7 +359,7 @@ export function createRunTriagePass({
       const { item } = row;
       if (seen.has(seenKey(item.id, item.version))) continue;
       const autoClose = todoAutoClose(item, { openItems, asOf, overdueDays: policy.overdueDays });
-      const proposal = await classifyTodo({ item, autoClose, evaluate, capabilities: row.operations, logger, asOf });
+      const proposal = undoneCard(item, await classifyTodo({ item, autoClose, evaluate, capabilities: row.operations, logger, asOf }));
       logger?.debug?.('triage.pass.item', { username, passId, itemId: item.id, kind: 'todo', preDo: proposal.preDo?.action ?? null });
       let card = proposal;
       if (proposal.preDo?.action === 'complete') {

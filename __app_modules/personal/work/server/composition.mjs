@@ -134,13 +134,13 @@ function retainedAttention(options) {
     }
   };
 }
-/** Composition grants reads and local coordination only; commands arrive separately. */
 /** Wiring: selects the adapter class for a configured provider type; unknown types throw. */
 export function workProviderClass(binding) {
   if (binding?.type === 'todoist') return TodoistWorkProvider;
   if (binding?.type === 'clickup') return ClickUpWorkProvider;
   throw new TypeError('Unknown work provider type');
 }
+/** Composition grants reads and local coordination only; commands arrive separately. */
 export function createWorkRuntime(options = {}) {
   const {
     configuration = {},

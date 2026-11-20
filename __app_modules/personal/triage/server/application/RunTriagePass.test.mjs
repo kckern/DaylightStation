@@ -85,6 +85,36 @@ function setup({ mode = 'live', messages = [], todos = [], answers = {}, caps, w
 
 const ARCHIVE = { choice: 'archive', confidence: 0.95 };
 
+describe('RunTriagePass undo sticks', () => {
+  const undo = async (s) => {
+    const [e] = await s.log();
+    await s.store.markUndone('kc', e.id, NOW);
+  };
+  it('email: an undone auto-archive is carded, not redone, on the next pass', async () => {
+    const s = setup({ messages: [msg('m1')], answers: { 'Weekly newsletter m1': ARCHIVE } });
+    await s.pass.run({ username: 'kc', trigger: 'manual' });
+    await undo(s);
+    s.state.messages = [msg('m1', { version: 'v2' })];
+    await s.pass.run({ username: 'kc', trigger: 'manual' });
+    expect(s.mailbox.archive).toHaveBeenCalledTimes(1);
+    const cards = await s.queue();
+    expect(cards).toHaveLength(1);
+    expect(cards[0]).toMatchObject({ itemId: expect.any(String), suggested: 'archive', preDo: null, why: 'You undid this before \u2014 your call.' });
+  });
+  it('todo: an undone auto-close is carded, not redone, on the next pass', async () => {
+    const s = setup({ todos: [staleTask('t1')] });
+    await s.pass.run({ username: 'kc', trigger: 'manual' });
+    expect(s.work.commands.execute).toHaveBeenCalledTimes(1);
+    await undo(s);
+    s.state.todos = [{ ...staleTask('t1'), version: 'w2' }];
+    await s.pass.run({ username: 'kc', trigger: 'manual' });
+    expect(s.work.commands.execute).toHaveBeenCalledTimes(1);
+    const cards = await s.queue();
+    expect(cards).toHaveLength(1);
+    expect(cards[0]).toMatchObject({ kind: 'todo', preDo: null, why: 'You undid this before \u2014 your call.' });
+  });
+});
+
 describe('RunTriagePass', () => {
   it('live: archives a confident unblocked email once and logs a system entry', async () => {
     const s = setup({ messages: [msg('m1')], answers: { 'Weekly newsletter m1': ARCHIVE } });

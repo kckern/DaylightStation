@@ -1,8 +1,15 @@
+import { createHash } from 'node:crypto';
 import { MAILBOX_SCOPE_MISSING, MAILBOX_NOT_FOUND } from '../ports/IMailbox.mjs';
 
 const HEADERS = ['From', 'To', 'Subject', 'List-Unsubscribe', 'Precedence', 'Auto-Submitted', 'Date'];
 const NOREPLY = /^(no-?reply|do-?not-?reply|notifications?|mailer-daemon|bounce)/i;
 const SENT_CAP = 5;
+
+/** Version = what triage cares about: the labels, minus those that change when the owner just reads the mail. */
+function labelVersion(labelIds) {
+  const kept = (labelIds || []).filter((l) => l !== 'UNREAD' && l !== 'IMPORTANT' && !l.startsWith('CATEGORY_')).sort();
+  return createHash('sha256').update(kept.join('\n')).digest('hex').slice(0, 16);
+}
 
 const b64url = (s) => Buffer.from(s, 'utf8').toString('base64url');
 const fromB64url = (s) => Buffer.from(s || '', 'base64url').toString('utf8');
@@ -143,7 +150,7 @@ export class GmailMailbox {
     return {
       ref: { provider: 'gmail', accountId: username, kind: 'message', id: msg.id },
       threadId: msg.threadId,
-      version: String(msg.historyId ?? ''),
+      version: labelVersion(labels),
       from,
       to: splitAddresses(headers['to']),
       subject: headers['subject'] || '',
@@ -220,7 +227,7 @@ export class GmailMailbox {
     return this.#write(username, 'modify', op, async (gmail) => {
       const res = await gmail.users.messages.modify({ userId: 'me', id, requestBody: body });
       this.#logger.info?.(`triage.mailbox.${op}`, { username, id });
-      return { version: String(res.data?.historyId ?? '') };
+      return { version: labelVersion(res.data?.labelIds) };
     });
   }
 

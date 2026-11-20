@@ -25,7 +25,7 @@ describe('classifyTodo', () => {
   });
   it('describes long-overdue auto-close in plain words', async () => {
     const p = await classifyTodo({ item, autoClose: { eligible: true, reason: 'long_overdue' }, evaluate: vi.fn(), capabilities: all, asOf: ASOF });
-    expect(p.why).toBe('Overdue 49 days and untouched for 40');
+    expect(p.why).toBe('Overdue 49 days and untouched for 40 days');
   });
   it('falls through to Jev when auto-close is eligible but complete is unavailable', async () => {
     const evaluate = ev('push');

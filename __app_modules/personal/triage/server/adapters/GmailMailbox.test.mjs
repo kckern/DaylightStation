@@ -1,7 +1,9 @@
+import { createHash } from 'node:crypto';
 import { describe, it, expect, vi } from 'vitest';
 import { GmailMailbox } from './GmailMailbox.mjs';
 import { MAILBOX_NOT_FOUND } from '../ports/IMailbox.mjs';
 
+const ver = (...l) => createHash('sha256').update(l.sort().join('\n')).digest('hex').slice(0, 16);
 const hdrs = (o) => Object.entries(o).map(([name, value]) => ({ name, value }));
 const gmErr = (code, reason) => Object.assign(new Error('x'), { code, errors: [{ reason }] });
 
@@ -22,7 +24,7 @@ function fake({ messages = {}, threads = {}, attachIds = [], modify } = {}) {
           if (!messages[id]) throw gmErr(404, 'notFound');
           return { data: messages[id] };
         }),
-        modify: modify || vi.fn(async () => ({ data: { historyId: '100' } })),
+        modify: modify || vi.fn(async ({ requestBody: b }) => ({ data: { historyId: '100', labelIds: b.removeLabelIds?.includes('INBOX') ? [] : ['INBOX'] } })),
       },
       threads: { get: vi.fn(async ({ id }) => ({ data: threads[id] || { messages: [{ id: 'm1', labelIds: ['INBOX'] }] } })) },
       drafts: {
@@ -46,7 +48,7 @@ describe('GmailMailbox', () => {
     expect(out.find((m) => m.ref.id === 'b').automated).toBe(true);
     const p = out.find((m) => m.ref.id === 'p');
     expect(p.automated).toBe(false);
-    expect(p).toMatchObject({ from: { name: 'Pat', address: 'pat@x.com' }, to: ['me@x.com'], version: '99', receivedAt: 1700000000000 });
+    expect(p).toMatchObject({ from: { name: 'Pat', address: 'pat@x.com' }, to: ['me@x.com'], version: ver('INBOX'), receivedAt: 1700000000000 });
     expect(p.ref).toEqual({ provider: 'gmail', accountId: 'u', kind: 'message', id: 'p' });
   });
 
@@ -79,11 +81,20 @@ describe('GmailMailbox', () => {
     expect(m.sourceName).toBe('Gmail');
   });
 
+  it('reading the mail (UNREAD removed) keeps the version; leaving the inbox changes it', async () => {
+    const a = await make(fake({ messages: { m1: msg({ labelIds: ['INBOX', 'UNREAD', 'IMPORTANT', 'CATEGORY_PROMOTIONS'], historyId: '1' }) } })).getMessage('u', 'm1');
+    const b = await make(fake({ messages: { m1: msg({ labelIds: ['INBOX'], historyId: '2' }) } })).getMessage('u', 'm1');
+    const c = await make(fake({ messages: { m1: msg({ labelIds: ['UNREAD'], historyId: '3' }) } })).getMessage('u', 'm1');
+    expect(a.version).toBe(b.version);
+    expect(c.version).not.toBe(a.version);
+  });
+
   it('archive removes INBOX', async () => {
     const g = fake();
     const r = await make(g).archive('u', 'm1');
     expect(g.users.messages.modify).toHaveBeenCalledWith({ userId: 'me', id: 'm1', requestBody: { removeLabelIds: ['INBOX'] } });
-    expect(r).toEqual({ version: '100' });
+    expect(r).toEqual({ version: ver() });
+    expect((await make(fake()).unarchive('u', 'm1')).version).toBe(ver('INBOX'));
   });
 
   it('403 insufficientPermissions throws MAILBOX_SCOPE_MISSING and flips modify', async () => {

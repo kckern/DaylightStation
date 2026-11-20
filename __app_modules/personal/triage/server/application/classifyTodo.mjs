@@ -57,7 +57,7 @@ function autoCloseWhy(item, autoClose, asOf) {
   const w = item.facts ?? {};
   const due = dueMs(w.due);
   if (due !== null && Number.isFinite(w.modifiedAt)) {
-    return `Overdue ${span(days(asOf - due))} and untouched for ${days(asOf - w.modifiedAt)}`;
+    return `Overdue ${span(days(asOf - due))} and untouched for ${span(days(asOf - w.modifiedAt))}`;
   }
   return 'Long overdue and untouched';
 }

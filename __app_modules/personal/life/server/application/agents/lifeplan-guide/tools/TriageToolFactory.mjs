@@ -21,8 +21,13 @@ export class TriageToolFactory extends ToolFactory {
           properties: { userId: { type: 'string' } },
           required: ['userId'],
         },
-        execute: async ({ userId }) => {
-          const result = await triage.run({ username: userId, trigger: 'manual' });
+        execute: async ({ userId } = {}, context = {}) => {
+          // The session's own user is authoritative; a model-supplied different user is refused.
+          const own = context?.userId ?? null;
+          if (own && userId && userId !== own) return { error: 'wrong_user' };
+          const username = own ?? userId;
+          if (!username) return { error: 'no_user' };
+          const result = await triage.run({ username, trigger: 'manual' });
           if (result?.skipped === 'not_enrolled') return { error: 'not_enrolled' };
           if (result?.skipped) return { error: result.skipped };
           const queued = result?.queued ?? null;
