@@ -1,6 +1,6 @@
 import { act, fireEvent, render, renderHook, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import LearnLab from './LearnLab.jsx';
+import LearnLab, { learnPracticeRequirement } from './LearnLab.jsx';
 import { createClickScheduler } from './clickScheduler.js';
 import { useMetronomeClick } from './useMetronomeClick.js';
 
@@ -407,4 +407,22 @@ describe('LearnLab', () => {
     expect(screen.getByText('60 BPM')).toBeInTheDocument();
   });
 
+});
+
+describe('learnPracticeRequirement', () => {
+  const rung = (over) => ({ id: 'timed-60', mode: 'cued', tempoPercent: 60, effectiveParts: ['rh'], criteria: { completeness: 1, cleanliness: 0.8, placement: 0.8 }, ...over });
+  it('widens full timing credit on the slowed timed steps only', () => {
+    for (const percent of [50, 60, 75]) expect(learnPracticeRequirement(rung({ id: `timed-${percent}`, tempoPercent: percent })).policy).toEqual({ placementFullCreditShare: 0.6 });
+    // The pass bar itself is unchanged.
+    expect(learnPracticeRequirement(rung()).rubric.criteria.placement).toBe(0.8);
+  });
+  it('keeps score tempo, Gold, test-out and untimed steps on the strict curve', () => {
+    for (const over of [{ id: 'mastery', tempoPercent: 100 }, { tempoPercent: 100 }, { mastery: true }, { id: 'test-out', tempoPercent: 100, completion: 'tested-out' }, { mode: 'free', tempoPercent: null }]) {
+      expect(learnPracticeRequirement(rung(over)).policy?.placementFullCreditShare).toBeUndefined();
+    }
+  });
+  it('keeps hands-together onsets alongside the wider share', () => {
+    expect(learnPracticeRequirement(rung({ effectiveParts: ['rh', 'lh'] })).policy).toEqual({ requireConcurrentOnset: true, placementFullCreditShare: 0.6 });
+    expect(learnPracticeRequirement(rung({ effectiveParts: ['rh', 'lh'], mode: 'free' })).policy).toEqual({ requireConcurrentOnset: true });
+  });
 });

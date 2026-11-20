@@ -1930,12 +1930,35 @@
       color: rgba(255, 255, 255, 0.55);
       padding: 0 2px;
     }
+    // One row of three (Feedback | Controllers | Reload). At the 250px default
+    // sidebar a column is ~70px, too narrow for "🎮 Controllers" on one line,
+    // so each button stacks its glyph over its label and keeps the 48px row
+    // height: the stack still fits unscrolled at kiosk height. The label keeps
+    // the sidebar's 14px floor; measured in Roboto Condensed, "Controllers" is
+    // 61px against ~66px of room (gap and side padding trimmed to make it).
     .settings-tools {
       display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 8px;
-      .menu-item { text-align: center; padding: 0.5rem; white-space: nowrap; }
-      &.menu-section .menu-item { text-align: center; padding: 0.5rem; }
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 6px;
+      &.menu-section .menu-item {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 2px;
+        min-width: 0;
+        padding: 4px 1px;
+        text-align: center;
+        line-height: 1.1;
+      }
+      .tool-glyph { font-size: 1.1rem; line-height: 1; }
+      .tool-label {
+        max-width: 100%;
+        font-size: 14px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
     }
     .settings-divider { height: 1px; background: rgba(255, 255, 255, 0.12); margin: 2px 0; }
     .visibility-controls { gap: 8px; }

@@ -8,7 +8,7 @@
     "start": "node src/server.mjs",
     "dev": "node --env-file=.env.dev --watch src/server.mjs",
     "dev:legacy": "export $(cat .env.dev | xargs) && node --watch src/server.mjs",
-    "test": "node --test test/*.test.mjs"
+    "test": "node --test test/*.test.mjs && python3 -m unittest discover -s test -p 'test_*.py'"
   },
   "dependencies": {
     "express": "^4.18.2",
