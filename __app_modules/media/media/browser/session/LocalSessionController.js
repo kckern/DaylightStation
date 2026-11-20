@@ -447,6 +447,10 @@ export function createLocalSessionController({
     return node;
   };
 
+  const nativeContentPosition = (node, snapshot, entry) => typeof player.getContentTime === 'function'
+    ? player.getContentTime()
+    : readContentPosition(node.currentTime, snapshot.currentItem?.contentTimeline ?? entry?.contentTimeline);
+
   const getNativeObservation = () => {
     const node = ensureNativeBinding();
     if (!node || !nativeBinding || nativeBinding.node !== node) return null;
@@ -464,6 +468,7 @@ export function createLocalSessionController({
       operationId: nativeBinding.operationId,
       rendererToken: nativeBinding.rendererToken,
       identity: matchesCurrent ? { ...identity } : null,
+      contentSeconds: matchesCurrent ? nativeContentPosition(node, current, current.queue.items[current.queue.currentIndex]) : null,
       currentTime: Number.isFinite(node.currentTime) ? node.currentTime : 0,
       duration: Number.isFinite(node.duration) && node.duration > 0 ? node.duration : null,
       readyState: Number.isInteger(node.readyState) ? node.readyState : 0,
@@ -532,8 +537,7 @@ export function createLocalSessionController({
       && String(currentEntry?.contentId ?? '') === nativeBinding.resolvedContentId
       && nativeBinding.ownerPlaybackRevision === playbackRevision;
     const nativePosition = nativeMatchesCurrent
-      ? typeof player.getContentTime === 'function' ? player.getContentTime()
-        : readContentPosition(native.currentTime, current.currentItem?.contentTimeline ?? currentEntry?.contentTimeline)
+      ? nativeContentPosition(native, current, currentEntry)
       : null;
     const hotPosition = Number.isFinite(nativePosition) && nativePosition >= 0
       ? nativePosition

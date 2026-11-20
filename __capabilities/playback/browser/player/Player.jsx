@@ -48,6 +48,7 @@ import { seekToLiveEdge } from "../media/liveEdge.js";
 import { problemClearedByPlaying } from './lib/lastProblem.js';
 import { getActionBus } from "../../../../frontend/src/lib/input/ActionBus.js";
 import {
+  hasNativePlaybackRenderer,
   preparePlaybackOwnerAdoption,
   samePlaybackOwnerIdentity,
 } from '@shared-contracts/media/playback-owner.mjs';
@@ -69,7 +70,6 @@ const REMOUNT_BACKOFF_MAX_MS = 45000;
 // still reset per item. The guard re-arms one window after the skipping stops.
 const REMOUNT_STORM_MAX_MOUNTS = 10;
 const REMOUNT_STORM_WINDOW_MS = 30000;
-const RENDERER_BOUNDARY_FORMATS = new Set(['video', 'hls_video', 'dash_video', 'audio']);
 
 const prepareRendererBoundaryOperation = (request = {}) => {
   const expectedContentId = request.expectedContentId == null
@@ -80,7 +80,7 @@ const prepareRendererBoundaryOperation = (request = {}) => {
     return { ok: false, code: 'INVALID_RENDERER_OPERATION' };
   }
   if (request.isLive === true) return { ok: false, code: 'LIVE_EDGE_UNSUPPORTED' };
-  if (request.format != null && !RENDERER_BOUNDARY_FORMATS.has(request.format)) {
+  if (request.format != null && !hasNativePlaybackRenderer(request.format)) {
     return { ok: false, code: 'UNSUPPORTED_RENDERER_FORMAT' };
   }
   return {

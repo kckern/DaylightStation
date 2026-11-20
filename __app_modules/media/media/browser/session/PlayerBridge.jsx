@@ -31,8 +31,9 @@ import { registerTrackOwner, createTrackPreferenceStore, readContentPosition } f
 import { getLocalPlayerFeatures } from "./localPlayerFeatures.js";
 import { playLogOrigin } from "./playOrigin.js";
 
+import { hasNativePlaybackRenderer } from '@shared-contracts/media/playback-owner.mjs';
+
 const VOLUME_REAPPLY_EVENTS = ['loadedmetadata', 'loadeddata', 'canplay'];
-const RENDERER_BOUNDARY_FORMATS = new Set(['video', 'hls_video', 'dash_video', 'audio']);
 // Media waits out a refused (unreadable) file for 60 s, then lets the queue
 // move on; kiosks keep the Player's 30-minute default (RELY.5a ruling).
 export const MEDIA_SOURCE_UNAVAILABLE_MAX_MS = 60_000;
@@ -228,7 +229,7 @@ export function PlayerBridge() {
         playbackGenerationRef.current += 1;
         pendingInitialRendererOperationRef.current = null;
         if (action.type === 'ADOPT_SNAPSHOT' && next?.contentId && !playerRef.current
-          && next.isLive !== true && RENDERER_BOUNDARY_FORMATS.has(next.format)) {
+          && next.isLive !== true && hasNativePlaybackRenderer(next.format)) {
           prepareInitialRendererOperation(next, requestedStart, 'local-adopt_snapshot', action.autoplay !== false);
         }
         const mountedMatchesRequested = next?.contentId
@@ -468,6 +469,7 @@ export function PlayerBridge() {
           playerRef.current?.getNowPlaying?.()?.item?.contentTimeline ?? controller.getSnapshot().currentItem?.contentTimeline);
         if (Number.isFinite(contentSeconds)) controller.onPlayerPositionTick(contentSeconds, contentId);
       };
+      const observeReady = () => { observeNative('loadeddata'); };
       const observeTimeUpdate = () => { observeNative('timeupdate'); };
       const observeEnded = () => { observeNative('ended'); };
       const observeError = () => { observeNative('error'); };
@@ -476,6 +478,7 @@ export function PlayerBridge() {
       applyVolume();
       for (const type of VOLUME_REAPPLY_EVENTS) bound.addEventListener(type, applyVolume);
       bound.addEventListener('loadedmetadata', observeDuration);
+      bound.addEventListener('loadeddata', observeReady);
       bound.addEventListener('durationchange', observeDuration);
       bound.addEventListener('pause', observePaused);
       bound.addEventListener('playing', observePlaying);
@@ -489,6 +492,7 @@ export function PlayerBridge() {
       detach = () => {
         for (const type of VOLUME_REAPPLY_EVENTS) bound?.removeEventListener(type, applyVolume);
         bound?.removeEventListener('loadedmetadata', observeDuration);
+        bound?.removeEventListener('loadeddata', observeReady);
         bound?.removeEventListener('durationchange', observeDuration);
         bound?.removeEventListener('pause', observePaused);
         bound?.removeEventListener('playing', observePlaying);

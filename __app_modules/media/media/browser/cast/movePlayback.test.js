@@ -9,6 +9,16 @@ const snapshot = {
 };
 
 describe('failure-safe MoveRequest / MoveResult', () => {
+  it('rechecks destination evidence before starting source stop', async () => {
+    const request = createMoveRequest({ operationId: 'move-1', destinationId: 'local', snapshot });
+    const source = { getIdentity: vi.fn(), stopIfCurrent: vi.fn() };
+    const destination = { adopt: async () => ({ status: 'adopted', confirm: () => false }) };
+    await expect(executeMove(request, { source, destination })).resolves.toEqual({
+      status: 'uncertain', sourceStopped: false, reason: 'destination-changed',
+    });
+    expect(source.stopIfCurrent).not.toHaveBeenCalled();
+  });
+
   it('builds the exact source identity and explicit keep-source choice', () => {
     expect(createMoveRequest({
       operationId: 'move-1', destinationId: 'office-tv', snapshot, keepSource: false,

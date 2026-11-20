@@ -1033,9 +1033,10 @@ How the Media frontend consumes §2.4–2.9 (`frontend/src/modules/Media/househo
   so `nowOn`) carried the separate `ds_device_id` token until the app adopts its clientId as the
   request id; such a card shows no steering verbs rather than ones that cannot work.
 - **Move here** (one at a time per screen) adopts the fleet `device-state` snapshot of that screen through
-  `lifecycle.adoptSnapshot`, waits up to 20 s for native playing evidence of the same content
-  (`portability.getNativeObservation`), then stops the screen through its remote controller only
-  if `meta.playbackOwner` (owner + revision) is unchanged (`movePlayback.executeMove`).
+  `lifecycle.adoptSnapshot` and waits up to 20 s for native playback from that local visit and queue entry.
+  That evidence includes the rendered position for seekable media. `movePlayback.executeMove` checks
+  the destination again and compares the source owner's last published revision before sending Stop.
+  The outcome becomes confirmed after the source acknowledges.
 - **Progress**: every `play/log` carries `X-Daylight-Device`. When the session's `meta.origin` for
   the current item is a routine or another device, PlayerBridge puts it on the Player's play prop
   and `play/log` sends it as `origin` (`session/playOrigin.js`); this device's own default origin is
@@ -1411,10 +1412,13 @@ published snapshot with its spot carried forward; it must carry
 (`capture` → `start`); if that is refused outright (an idle screen answers
 `INVALID_CAPTURE`) or the capture never confirms, through
 `POST /device/:id/load` `{ mode: "adopt" }`, counted only once that screen
-reports the same item (45 s). This device adopts locally. Only after the
-destination is adopted and the source still has the same owner revision is
-the source stopped, by `POST /session/claim` (stop with `intent: "move"`, so
-the source shows "Moved by …"). Any other result leaves the source playing.
+reports the same item (45 s). This device uses the same local native confirmation
+as Move here for audio and video. A paused source waits for the decoder to be
+ready and paused at the captured spot. Slideshow and other non-native renderers
+use their existing local snapshot adoption path. After destination confirmation,
+the source can be claimed with `POST /session/claim` if its last published owner
+revision still matches. The move stays pending until the source acknowledges the
+claim, and ambiguous responses report an unconfirmed stop.
 
 **Fling: this device → a screen** (`shell/FlingButton.jsx`, on the handle and
 the local transport). The same destination as above through `useHandOff(id,

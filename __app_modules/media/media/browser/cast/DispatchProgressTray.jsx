@@ -164,6 +164,9 @@ function localCopy(d, phase, name) {
       secondary: d.reason ?? null,
     };
   }
+  if (d.kind === 'move' && (phase === 'running' || phase === 'sent')) {
+    return { primary: `Moving ${title} ${at.replace(/^on /, 'to ')}…`, secondary: null };
+  }
   if (d.kind === 'undo' && d.command?.undid === 'clear') {
     return { primary: `Put the queue back ${at}`, secondary: null };
   }

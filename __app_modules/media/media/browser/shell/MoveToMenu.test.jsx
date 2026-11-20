@@ -59,6 +59,12 @@ describe('MoveToMenu', () => {
     fireEvent.click(screen.getByTestId('peek-move-to'));
     expect(await screen.findByTestId('move-to-den')).toHaveTextContent('Den TV · Den');
     await act(async () => { fireEvent.click(screen.getByTestId('move-to-local')); });
+    expect(resolveLocal).not.toHaveBeenCalled();
+    expect(api).not.toHaveBeenCalled();
+    const decoder = { paused: true, seeking: false, ended: false, readyState: 4, currentTime: 61, duration: 420 };
+    local.setPlayerHandle({ getMediaElement: () => decoder, getMountedContentId: () => 'plex:1', getMountedMediaGeneration: () => 1 });
+    local.portability.getNativeObservation();
+    await act(async () => { local.onNativeObservationEvent(decoder, 'loadeddata'); });
     await waitFor(() => expect(resolveLocal).toHaveBeenCalled());
     expect(resolveLocal.mock.calls[0]).toEqual(['a1', { phase: 'confirmed' }]);
     expect(recordLocal).toHaveBeenCalledWith(expect.objectContaining({ kind: 'move', phase: 'running', targetId: 'local', item: { title: 'Hospital' }, command: expect.objectContaining({ sourceId: 'kitchen' }) }));

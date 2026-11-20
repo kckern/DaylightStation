@@ -12,6 +12,7 @@
 // up at the same moment.
 import { DaylightAPI } from "../../../../../frontend/src/lib/api.mjs";
 import { createMoveRequest, executeMove } from "./movePlayback.js";
+import { createLocalMoveDestination } from './localMoveDestination.js';
 import { createRemoteMoveDestination } from "./remoteMoveDestination.js";
 import { reportedSpot } from "./reportedSpot.js";
 import mediaLog from "../logging/mediaLog.js";
@@ -100,21 +101,6 @@ export function createScreenMoveDestination({ deviceId, fleetStore, http = Dayli
   };
 }
 
-/** This device as a move destination: adopt the snapshot in the local session. */
-export function createLocalMoveDestination({ localController }) {
-  return {
-    async adopt(request) {
-      if (!localController?.portability?.adopt) return { status: 'rejected', reason: 'no-local-session' };
-      const result = localController.portability.adopt(request.snapshot, {
-        autoplay: request.snapshot.state !== 'paused',
-      });
-      return result?.ok === false
-        ? { status: 'rejected', reason: result.code ?? 'local-adopt-failed' }
-        : { status: 'adopted' };
-    },
-  };
-}
-
 /**
  * @param {object} opts
  * @param {string} opts.sourceId         the screen playing now
@@ -158,7 +144,7 @@ export async function moveScreenPlayback({
         const claimed = await http(`api/v1/device/${sourceId}/session/claim`, {
           commandId: `${operationId}:claim`, ...(origin ? { origin } : {}),
         }, 'POST');
-        return claimed?.ok === false ? { ok: false, code: claimed.code ?? 'claim-refused' } : { ok: true };
+        return claimed?.ok === true ? { ok: true } : { ok: false, code: claimed?.code ?? 'claim-refused' };
       } catch (error) {
         return { ok: false, code: error?.message ?? 'claim-failed' };
       }
@@ -181,7 +167,7 @@ export function moveFailureReason(result) {
     case 'source-changed': return 'Something else started there first; both screens kept playing';
     case 'same-screen': return 'It is already playing there';
     default:
-      if (result?.status === 'adopted') return 'It started at the new screen, but the old one did not stop';
+      if (result?.status === 'adopted') return 'It started at the destination. Could not confirm the source stopped.';
       return 'The new screen did not confirm; the original kept playing';
   }
 }
