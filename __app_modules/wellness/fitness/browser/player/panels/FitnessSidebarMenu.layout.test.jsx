@@ -13,6 +13,7 @@ describe('Settings primary controls and interaction', () => {
     const order = [
       screen.getByRole('button', { name: /End current/ }),
       screen.getByRole('button', { name: 'Send feedback' }),
+      screen.getByRole('button', { name: 'Controllers' }),
       screen.getByRole('button', { name: /Hard-reload/ }),
       screen.getByRole('checkbox', { name: 'Sidebar Webcam' }),
       screen.getByRole('group', { name: 'Boost' }),
@@ -27,6 +28,14 @@ describe('Settings primary controls and interaction', () => {
     expect(screen.queryByText('More')).toBeNull();
     expect(container.querySelector('.sidebar-menu-footer .close-btn')).toBeTruthy();
     expect(container.querySelectorAll('#settings-video-volume-label')).toHaveLength(1);
+  });
+  it('Tools is one row of three: each button stacks its glyph over a short label', () => {
+    render(<FitnessSidebarMenu {...props()} />);
+    const tools = screen.getByRole('region', { name: 'Tools' });
+    const buttons = [...tools.querySelectorAll(':scope > button')];
+    expect(buttons.map((b) => b.getAttribute('aria-label'))).toEqual(['Send feedback', 'Controllers', 'Hard-reload the app (bypasses cache)']);
+    expect(buttons.map((b) => b.querySelector('.tool-label')?.textContent)).toEqual(['Feedback', 'Controllers', 'Reload']);
+    for (const b of buttons) expect(b.querySelector('.tool-glyph')?.getAttribute('aria-hidden')).toBe('true');
   });
   it('focuses Close on open without holding the menu open', () => {
     vi.useFakeTimers(); const p = props(); render(<FitnessSidebarMenu {...p} />);

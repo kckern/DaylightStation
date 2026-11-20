@@ -1,5 +1,8 @@
 import { describe, it, expect } from 'vitest';
-import { pairingGuides, buildPairTargets, pairingStatus, controllerOsState } from "./pairingGuide.js";
+import {
+  pairingGuides, buildPairTargets, pairingStatus, controllerOsState,
+  ADD_DEVICE_STEPS, otherBtDevices, deviceOsStatus,
+} from "./pairingGuide.js";
 
 const SFC30 = {
   id: '8bitdo_sfc30',
@@ -56,6 +59,17 @@ describe('controllerOsState', () => {
 });
 
 describe('pairingStatus', () => {
+  it('an outdated satellite wins over every later phase of the window', () => {
+    const want = {
+      busy: false, tone: 'error',
+      text: 'The garage box needs an update before it can add new devices. Pairing a listed controller still works.',
+      retry: false,
+    };
+    for (const phase of ['scanning', 'pairing', 'paired', 'error']) {
+      expect(pairingStatus({ phase, satelliteOutdated: true, device: { name: 'Pad' } }, 'add')).toEqual(want);
+    }
+    expect(pairingStatus({ phase: 'done', satelliteOutdated: true, paired: [{ name: 'Pad' }] }, 'add')).toEqual(want);
+  });
   it('idle → no text', () => {
     expect(pairingStatus(null)).toEqual({ busy: false, tone: 'idle', text: null, retry: false });
   });
@@ -75,5 +89,82 @@ describe('pairingStatus', () => {
     expect(pairingStatus({ phase: 'done', paired: [], reason: 'no-response' }).text).toMatch(/did not answer/);
     expect(pairingStatus({ phase: 'done', paired: [], reason: 'no-input' }).text).toMatch(/never came up/);
     expect(pairingStatus({ phase: 'done', paired: [], reason: 'pair-failed' }).text).toMatch(/would not pair/);
+  });
+});
+
+describe('pairingStatus — add mode wording', () => {
+  const add = (p) => pairingStatus(p, 'add');
+  it('speaks of a device, not a controller', () => {
+    expect(add({ phase: 'scanning', durationMs: 60000 }).text).toBe('Looking for the device… (up to 60s)');
+    expect(add({ phase: 'done', paired: [] }).text)
+      .toBe('No new device found. Check it is in pairing mode (light blinking fast), then try again.');
+    expect(add({ phase: 'done', paired: [], reason: 'no-input' }).text)
+      .toBe('Paired, but it never came up as an input device. Switch it off and on, then try again.');
+    expect(add({ phase: 'done', paired: [], reason: 'pair-failed' }).text).not.toMatch(/controller/);
+    expect(add({ phase: 'pairing' }).text).toBe('Pairing the device…');
+    expect(add({ phase: 'found', device: { name: 'R1' } }).text).toBe('Found R1 — pairing…');
+    expect(add({ phase: 'done', paired: [], reason: 'no-input' }).retry).toBe(true);
+  });
+  it('repair mode (and no mode) keeps the controller wording', () => {
+    for (const m of ['repair', undefined]) {
+      expect(pairingStatus({ phase: 'scanning', durationMs: 60000 }, m).text).toBe('Looking for the controller… (up to 60s)');
+      expect(pairingStatus({ phase: 'done', paired: [] }, m).text).toMatch(/^No controller found/);
+      expect(pairingStatus({ phase: 'done', paired: [], reason: 'no-input' }, m).text).toMatch(/never came up as a controller/);
+      expect(pairingStatus({ phase: 'pairing' }, m).text).toBe('Pairing the controller…');
+    }
+  });
+});
+
+describe('pairingStatus — already paired', () => {
+  it('does not claim a fresh pairing when the window short-circuited', () => {
+    const s = pairingStatus({ phase: 'done', reason: 'already-paired', paired: [{ name: '8Bitdo SFC30 GamePad' }] });
+    expect(s.tone).toBe('info');
+    expect(s.busy).toBe(false);
+    expect(s.text).toMatch(/already connected/);
+    expect(s.text).toMatch(/Add a new device/);
+  });
+});
+
+describe('ADD_DEVICE_STEPS', () => {
+  it('is a non-empty list of strings', () => {
+    expect(ADD_DEVICE_STEPS.length).toBeGreaterThan(1);
+    ADD_DEVICE_STEPS.forEach((s) => expect(typeof s).toBe('string'));
+  });
+});
+
+describe('otherBtDevices', () => {
+  const inv = [
+    { address: 'E4:17:D8:C6:54:F0', name: '8Bitdo SFC30 GamePad', connected: true, paired: true, input: true, kind: 'gamepad' },
+    { address: '11:22:33:44:55:66', name: 'R1', connected: true, paired: true, input: true, kind: 'keyboard', battery: 80 },
+    { address: 'AA:BB:CC:00:00:01', name: 'JBL Flip 5', connected: true, paired: true, input: false, kind: null },
+    { address: 'AA:BB:CC:00:00:02', name: 'Mystery', connected: false, paired: true, input: false, kind: 'mouse' },
+  ];
+  it('lists input devices that match no configured controller, with a status', () => {
+    const out = otherBtDevices([SFC30], inv);
+    expect(out.map((d) => d.address)).toEqual(['11:22:33:44:55:66', 'AA:BB:CC:00:00:02']);
+    expect(out[0].status).toBe('ready');
+    expect(out[1].status).toBe('asleep');
+  });
+  it('is empty without an inventory feed', () => {
+    expect(otherBtDevices([SFC30], null)).toEqual([]);
+  });
+  it('lists a sleeping HID device whose kind is unknown', () => {
+    const ring = { address: '11:22:33:44:55:77', name: 'Ring', kind: null, hid: true, input: false, paired: true, connected: false };
+    const out = otherBtDevices([], [ring]);
+    expect(out.map((d) => d.address)).toEqual(['11:22:33:44:55:77']);
+    expect(out[0].status).toBe('asleep');
+  });
+  it('leaves out a speaker whose AVRCP node shows as an input device', () => {
+    const speaker = { address: 'AA:BB:CC:00:00:03', name: 'JBL', kind: null, hid: false, input: true, paired: true, connected: true };
+    expect(otherBtDevices([], [speaker])).toEqual([]);
+  });
+});
+
+describe('deviceOsStatus', () => {
+  it('reads the lifecycle from one inventory row', () => {
+    expect(deviceOsStatus({ paired: false, connected: true })).toBe('unpaired');
+    expect(deviceOsStatus({ paired: true, connected: true, input: true })).toBe('ready');
+    expect(deviceOsStatus({ paired: true, connected: true, input: false })).toBe('connecting');
+    expect(deviceOsStatus({ paired: true, connected: false })).toBe('asleep');
   });
 });

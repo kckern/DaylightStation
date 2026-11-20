@@ -6,6 +6,7 @@ import { snapToTouchLevel, linearVolumeFromLevel, linearLevelFromVolume } from "
 import { buildGuestOptions, nextGenericGuestName, zonesMapToArray } from "../../lib/guestOptionsBuilder.js";
 import { genericGuestImageId } from "../../lib/guestPlaceholders.js";
 import FeedbackOverlay from '@/modules/Feedback/FeedbackOverlay.jsx';
+import ControllersOverlay from "./ControllersOverlay.jsx";
 import hardReload from "../../lib/hardReload.js";
 import "../FitnessSidebar.scss";
 import { menuFocusStops, nextFocusStop, rowNeighbour } from "./sidebarMenuFocus.js";
@@ -62,6 +63,10 @@ const FitnessSidebarMenu = ({
   const [feedbackOpen, setFeedbackOpen] = React.useState(false);
   const feedbackOpenRef = React.useRef(false);
   feedbackOpenRef.current = feedbackOpen;
+  const [controllersOpen, setControllersOpen] = React.useState(false);
+  const controllersOpenRef = React.useRef(false);
+  controllersOpenRef.current = controllersOpen;
+  const controllersButtonRef = React.useRef(null);
   const deviceAssignments = React.useMemo(
     () => fitnessContext?.deviceAssignments || [],
     [fitnessContext?.deviceAssignments],
@@ -147,7 +152,7 @@ const FitnessSidebarMenu = ({
     if (closeTimerRef.current) clearTimeout(closeTimerRef.current);
     closeTimerRef.current = setTimeout(() => {
       closeTimerRef.current = null;
-      if (!focusWithinRef.current && !feedbackOpenRef.current) onClose?.();
+      if (!focusWithinRef.current && !feedbackOpenRef.current && !controllersOpenRef.current) onClose?.();
     }, MENU_IDLE_CLOSE_MS);
   }, [onClose]);
 
@@ -177,12 +182,16 @@ const FitnessSidebarMenu = ({
       onWheel: scheduleIdleClose,
       onTouchMove: scheduleIdleClose,
       onScrollCapture: scheduleIdleClose,
-      onFocusCapture: () => {
+      onFocusCapture: (event) => {
         // Focusing Close on open is not a user's keyboard focus: no hold, no timer.
         if (programmaticFocusRef.current) return;
+        // Body-portalled dialogs (Feedback, Controllers) bubble focus through the
+        // React tree, but focus there is not focus in the menu.
+        if (!event.currentTarget.contains(event.target)) return;
         focusWithinRef.current = !pointerOriginRef.current; scheduleIdleClose();
       },
       onBlurCapture: (event) => {
+        if (!event.currentTarget.contains(event.target)) return;
         focusWithinRef.current = !pointerOriginRef.current && event.currentTarget.contains(event.relatedTarget);
         scheduleIdleClose();
       },
@@ -359,11 +368,14 @@ const FitnessSidebarMenu = ({
       )}
       <section className="menu-section settings-tools" aria-label="Tools">
         <button type="button" className="menu-item" aria-label="Send feedback" onClick={() => setFeedbackOpen(true)}>
-          💬 Feedback
+          <span className="tool-glyph" aria-hidden="true">💬</span><span className="tool-label">Feedback</span>
+        </button>
+        <button type="button" ref={controllersButtonRef} className="menu-item" aria-label="Controllers" onClick={() => setControllersOpen(true)}>
+          <span className="tool-glyph" aria-hidden="true">🎮</span><span className="tool-label">Controllers</span>
         </button>
         <button type="button" className="menu-item" onClick={handleReloadPage}
           aria-label="Hard-reload the app (bypasses cache)" title="Hard-reload the app — picks up new versions">
-          🔄 Reload
+          <span className="tool-glyph" aria-hidden="true">🔄</span><span className="tool-label">Reload</span>
         </button>
       </section>
       <div className="settings-divider" role="presentation" />
@@ -421,6 +433,7 @@ const FitnessSidebarMenu = ({
       )}
       <FeedbackOverlay open={feedbackOpen} app="fitness" onClose={() => { setFeedbackOpen(false); scheduleIdleClose(); }}
         onPauseMusic={onFeedbackPauseMusic} onResumeMusic={onFeedbackResumeMusic} />
+      <ControllersOverlay open={controllersOpen} onClose={closeControllers} />
     </div>
   );
 
@@ -538,6 +551,19 @@ const FitnessSidebarMenu = ({
 
   const isGuestMode = mode === 'guest';
 
+  // Closing the controllers overlay hands focus back to its opener, so the
+  // menu's keyboard and gamepad paths resume where they left off. Like the
+  // focus on open, it is programmatic: the menu then idles closed as it does
+  // after Feedback, unless the user touches it again.
+  const closeControllers = () => {
+    setControllersOpen(false);
+    programmaticFocusRef.current = true;
+    controllersButtonRef.current?.focus?.({ preventScroll: true });
+    programmaticFocusRef.current = false;
+    focusWithinRef.current = false;
+    scheduleIdleClose();
+  };
+
   // Close is focused on open, so a keyboard or gamepad user starts on the
   // most important control and presses Up to reach volume. Programmatic focus
   // is not "keyboard focus": it must not hold the menu open past idle.
@@ -556,6 +582,7 @@ const FitnessSidebarMenu = ({
   const handleRootKeyDown = (event) => {
     rootInteractionHandlers.onKeyDown(event);
     if (feedbackOpenRef.current) return; // the feedback dialog owns its keys
+    if (controllersOpenRef.current) return; // the controllers overlay owns its keys
     if (event.key === 'Escape') {
       event.preventDefault();
       if (confirmEndSession) setConfirmEndSession(false);
@@ -580,7 +607,7 @@ const FitnessSidebarMenu = ({
       target.focus();
     }
   };
-  useGamepadKeys(true, (key) => {
+  useGamepadKeys(!controllersOpen, (key) => {
     const root = rootRef.current;
     if (!root) return;
     const active = root.contains(document.activeElement) ? document.activeElement : closeRef.current;

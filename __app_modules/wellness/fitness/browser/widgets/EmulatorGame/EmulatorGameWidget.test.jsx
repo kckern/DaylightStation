@@ -45,7 +45,13 @@ vi.mock("../../../../../games/emulator/browser/EmulatorConsole.jsx", () => ({
         data-menu-open-at-launch={props.menuInitiallyOpen ? '1' : '0'}
         data-hold-paused={props.holdPaused ? '1' : '0'}
         data-menu-open-request={String(props.menuOpenRequest ?? 0)}
+        data-controllers={String(props.controllers?.length ?? 0)}
+        data-bt-count={String(props.btInventory?.length ?? -1)}
+        data-pair-phase={props.pairing?.phase || ''}
+        data-forget-address={props.controllerForget?.address || ''}
       />
+      <button data-testid="pair" onClick={() => props.onPairController?.({ mode: 'add' })}>pair</button>
+      <button data-testid="forget" onClick={() => props.onForgetController?.('AA:BB:CC:DD:EE:FF')}>forget</button>
       {props.menuSection && (
         <div data-testid="menu">
           {typeof props.menuSection === 'function'
@@ -748,4 +754,34 @@ it('does not treat a failed save-owner list as permission to claim over an unkno
   fireEvent.pointerDown(await screen.findByLabelText('Example Quest')); await screen.findByTestId('console');
   fireEvent.click(screen.getByText('Save as me')); await act(async () => {});
   expect(screen.getByTestId('console').getAttribute('data-persist')).toBe('0');
+});
+
+describe('EmulatorGameWidget in-game controllers panel', () => {
+  it('wires the in-game console to the fitness pairing path', async () => {
+    api.mockImplementation((path) => (path === 'api/v1/emulator/library'
+      ? Promise.resolve({ ...libraryWith('none'), input: { keyboard: {}, controllers: [{ id: 'sfc30', match: '8Bitdo' }] } })
+      : Promise.resolve({})));
+    const pairController = vi.fn();
+    const forgetController = vi.fn();
+    const ctx = {
+      ...fitnessContext,
+      pairController,
+      forgetController,
+      controllerPairing: { phase: 'scanning', mode: 'add', requestId: 'r' },
+      controllerForget: { address: 'AA:BB:CC:DD:EE:FF', success: true },
+      btInventory: [{ address: 'AA:BB:CC:DD:EE:FF', name: 'R1', paired: true }],
+    };
+    render(<EmulatorGameWidget fitnessContext={ctx} onClose={() => {}} config={{}} onMount={() => {}} />);
+    await waitFor(() => expect(screen.getByLabelText('Example Quest')).toBeTruthy());
+    fireEvent.pointerDown(screen.getByLabelText('Example Quest'));
+    const el = await screen.findByTestId('console');
+    expect(el.getAttribute('data-controllers')).toBe('1');
+    expect(el.getAttribute('data-bt-count')).toBe('1');
+    expect(el.getAttribute('data-pair-phase')).toBe('scanning');
+    expect(el.getAttribute('data-forget-address')).toBe('AA:BB:CC:DD:EE:FF');
+    fireEvent.click(screen.getByTestId('pair'));
+    expect(pairController).toHaveBeenCalledWith({ mode: 'add' });
+    fireEvent.click(screen.getByTestId('forget'));
+    expect(forgetController).toHaveBeenCalledWith('AA:BB:CC:DD:EE:FF');
+  });
 });

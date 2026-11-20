@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import React from 'react';
-import { render, act } from '@testing-library/react';
+import { render, act, fireEvent } from '@testing-library/react';
 import { ControllerStatus } from "./ControllerStatus.jsx";
 
 const controllers = [
@@ -230,6 +230,7 @@ describe('ControllerStatus', () => {
       expect(onPair).toHaveBeenCalledWith({
         controllerId: '8bitdo_sfc30',
         targets: [{ id: '8bitdo_sfc30', label: '8BitDo SFC30', name: '8Bitdo', macPrefix: 'E4:17:D8', pin: '0000' }],
+        mode: 'repair',
       });
     });
 
@@ -282,7 +283,8 @@ describe('ControllerStatus', () => {
             forgetResult={{ address: 'E4:17:D8:C6:54:F0', success: true }} />,
         ));
       });
-      expect(container.querySelector('.ccs-forget-result').textContent).toMatch(/pairing mode/);
+      expect(container.querySelector('.ccs-forget-result').textContent)
+        .toBe('Forgotten. To use it again, put the controller in pairing mode and press Pair controller.');
     });
   });
 
@@ -344,5 +346,261 @@ describe('ControllerStatus', () => {
       });
       expect(container.querySelector('[data-controller-id="xbox"] .ccs-forget-button')).toBeNull();
     });
+  });
+});
+
+describe('ControllerStatus — add a new device', () => {
+  const SFC30 = { id: '8bitdo_sfc30', label: '8BitDo SFC30', match: '8Bitdo', address: 'E4:17:D8:C6:54:F0',
+    pairing: { steps: ['Hold SELECT.'] } };
+
+  it('opens the generic steps and sends an add-mode request', () => {
+    const onPair = vi.fn();
+    const { getByRole, getByText } = render(
+      <ControllerStatus controllers={[SFC30]} getGamepads={() => []} btInventory={[]} canAdd onPair={onPair} />,
+    );
+    fireEvent.click(getByRole('button', { name: /Add a new device/ }));
+    expect(getByText(/put it in pairing mode/i)).toBeTruthy();
+    fireEvent.click(getByRole('button', { name: /Start search/ }));
+    expect(onPair).toHaveBeenCalledTimes(1);
+    expect(onPair.mock.calls[0][0].mode).toBe('add');
+    expect(onPair.mock.calls[0][0].controllerId).toBeNull();
+  });
+
+  it('keeps the add panel open while an add window runs', () => {
+    const { rerender, getByRole, container } = render(
+      <ControllerStatus controllers={[SFC30]} getGamepads={() => []} btInventory={[]} canAdd onPair={vi.fn()} />,
+    );
+    fireEvent.click(getByRole('button', { name: /Add a new device/ }));
+    fireEvent.click(getByRole('button', { name: /Start search/ }));
+    rerender(<ControllerStatus controllers={[SFC30]} getGamepads={() => []} btInventory={[]} canAdd onPair={vi.fn()}
+      pairing={{ phase: 'scanning', durationMs: 60000, mode: 'add' }} />);
+    expect(container.querySelector('.ccs-add-guide')).toBeTruthy();
+    expect(container.querySelector('.ccs-pair-guide:not(.ccs-add-guide)')).toBeNull();
+  });
+
+  it('offers no Add a new device without canAdd (the host cannot add)', () => {
+    const inv = [{ address: '11:22:33:44:55:66', name: 'R1', connected: true, paired: false, kind: 'keyboard' }];
+    const { container, queryByRole } = render(
+      <ControllerStatus controllers={[SFC30]} getGamepads={() => []} btInventory={inv} onPair={vi.fn()}
+        pairing={{ phase: 'scanning', mode: 'add', requestId: 'n' }} />,
+    );
+    expect(queryByRole('button', { name: /Add a new device/ })).toBeNull();
+    expect(queryByRole('button', { name: 'Add R1 again' })).toBeNull();
+    expect(container.querySelector('.ccs-add-guide')).toBeNull();
+  });
+
+  it('a fresh mount mid add-window shows the add panel, not the repair guide', () => {
+    const { container } = render(
+      <ControllerStatus controllers={[SFC30]} getGamepads={() => []} btInventory={[]} canAdd onPair={vi.fn()}
+        pairing={{ phase: 'found', mode: 'add', device: { name: 'R1' } }} />,
+    );
+    expect(container.querySelector('.ccs-add-guide')).toBeTruthy();
+    expect(container.querySelector('.ccs-pair-guide:not(.ccs-add-guide)')).toBeNull();
+  });
+
+  it('repair pairing still sends repair mode', () => {
+    const onPair = vi.fn();
+    const { getByRole } = render(
+      <ControllerStatus controllers={[SFC30]} getGamepads={() => []} btInventory={[]} canAdd onPair={onPair} />,
+    );
+    fireEvent.click(getByRole('button', { name: /Pair controller/ }));
+    fireEvent.click(getByRole('button', { name: /start pairing/ }));
+    expect(onPair.mock.calls[0][0].mode).toBe('repair');
+  });
+});
+
+describe('ControllerStatus — other Bluetooth devices', () => {
+  it('lists an unconfigured input device with status, battery and Forget', () => {
+    const onForget = vi.fn();
+    const inv = [{ address: '11:22:33:44:55:66', name: 'R1', connected: true, paired: true, input: true, kind: 'keyboard', battery: 80 }];
+    const { container, getByRole } = render(
+      <ControllerStatus controllers={[]} getGamepads={() => []} btInventory={inv} onForget={onForget} />,
+    );
+    const row = container.querySelector('.ccs-other-row[data-address="11:22:33:44:55:66"]');
+    expect(row).toBeTruthy();
+    expect(row.textContent).toContain('R1');
+    expect(row.textContent).toContain('Ready');
+    expect(row.textContent).toContain('80%');
+    fireEvent.click(getByRole('button', { name: 'Forget R1' }));
+    expect(onForget).toHaveBeenCalledWith('11:22:33:44:55:66');
+  });
+
+  it('renders no other-devices section without a BT feed', () => {
+    const { container } = render(<ControllerStatus controllers={[]} getGamepads={() => []} />);
+    expect(container.querySelector('.ccs-other')).toBeNull();
+  });
+});
+
+describe('ControllerStatus — panel state', () => {
+  const SFC30 = { id: '8bitdo_sfc30', label: '8BitDo SFC30', match: '8Bitdo', address: 'E4:17:D8:C6:54:F0',
+    pairing: { steps: ['Hold SELECT.'] } };
+  const OLD = { phase: 'done', reason: 'already-paired', requestId: 'old', paired: [{ name: '8Bitdo SFC30 GamePad' }] };
+
+  it('a newly opened add panel does not show the previous window\'s result', () => {
+    const { getByRole, container } = render(
+      <ControllerStatus controllers={[SFC30]} getGamepads={() => []} btInventory={[]} canAdd onPair={vi.fn()} pairing={OLD} />,
+    );
+    fireEvent.click(getByRole('button', { name: /Add a new device/ }));
+    const panel = container.querySelector('.ccs-add-guide');
+    expect(panel.querySelector('.ccs-pair-status')).toBeNull();
+    expect(panel.querySelector('.ccs-guide-start').textContent).toBe('Start search');
+  });
+
+  it('a newly opened repair guide does not show the previous window\'s retry', () => {
+    const failed = { phase: 'done', paired: [], requestId: 'old' };
+    const { getByRole, container } = render(
+      <ControllerStatus controllers={[SFC30]} getGamepads={() => []} btInventory={[]} canAdd onPair={vi.fn()} pairing={failed} />,
+    );
+    fireEvent.click(getByRole('button', { name: /Pair controller/ }));
+    const guide = container.querySelector('.ccs-pair-guide');
+    expect(guide.querySelector('.ccs-pair-status')).toBeNull();
+    expect(guide.querySelector('.ccs-guide-start').textContent).toMatch(/start pairing/);
+  });
+
+  it('shows the result of a window this panel started', () => {
+    const onPair = vi.fn(() => 'new');
+    const props = { controllers: [SFC30], getGamepads: () => [], btInventory: [], onPair, canAdd: true };
+    const { getByRole, container, rerender } = render(<ControllerStatus {...props} pairing={OLD} />);
+    fireEvent.click(getByRole('button', { name: /Add a new device/ }));
+    fireEvent.click(getByRole('button', { name: /Start search/ }));
+    rerender(<ControllerStatus {...props} pairing={{ phase: 'done', paired: [], requestId: 'new', mode: 'add' }} />);
+    expect(container.querySelector('.ccs-add-guide .ccs-pair-status').textContent).toMatch(/No new device found/);
+    expect(container.querySelector('.ccs-add-guide .ccs-guide-start').textContent).toBe('Try again');
+  });
+
+  it('Pair on an unpaired configured pad closes the add panel and opens its guide', () => {
+    const inv = [{ address: 'E4:17:D8:C6:54:F0', name: '8Bitdo SFC30 GamePad', connected: true, paired: false, attempting: true }];
+    const { getByRole, container } = render(
+      <ControllerStatus controllers={[SFC30]} getGamepads={() => []} btInventory={inv} canAdd onPair={vi.fn()} />,
+    );
+    fireEvent.click(getByRole('button', { name: /Add a new device/ }));
+    expect(container.querySelector('.ccs-add-guide')).toBeTruthy();
+    fireEvent.click(getByRole('button', { name: 'Pair 8BitDo SFC30' }));
+    expect(container.querySelector('.ccs-add-guide')).toBeNull();
+    expect(container.querySelector('.ccs-guide-steps').textContent).toContain('Hold SELECT.');
+  });
+
+  it('add-mode progress uses device wording', () => {
+    const { container } = render(
+      <ControllerStatus controllers={[SFC30]} getGamepads={() => []} btInventory={[]} canAdd onPair={vi.fn()}
+        pairing={{ phase: 'scanning', durationMs: 60000, mode: 'add', requestId: 'n' }} />,
+    );
+    expect(container.querySelector('.ccs-add-guide .ccs-pair-status').textContent).toMatch(/Looking for the device/);
+  });
+
+  it('forgetting an unconfigured device says to use Add a new device', () => {
+    const { container } = render(
+      <ControllerStatus controllers={[SFC30]} getGamepads={() => []} btInventory={[]} canAdd onPair={vi.fn()}
+        forgetResult={{ address: '11:22:33:44:55:66', success: true }} />,
+    );
+    expect(container.querySelector('.ccs-forget-result').textContent)
+      .toBe('Forgotten. To use it again, put it in pairing mode and press Add a new device.');
+  });
+
+  it('without Add, forgetting an unconfigured device does not point at a missing button', () => {
+    const { container } = render(
+      <ControllerStatus controllers={[SFC30]} getGamepads={() => []} btInventory={[]} onPair={vi.fn()}
+        forgetResult={{ address: '11:22:33:44:55:66', success: true }} />,
+    );
+    expect(container.querySelector('.ccs-forget-result').textContent).toBe('Forgotten.');
+  });
+
+  it('shows the last result next to the Pair button when there are no guides', () => {
+    const { container } = render(
+      <ControllerStatus controllers={[]} getGamepads={() => []} canAdd onPair={vi.fn()}
+        pairing={{ phase: 'done', reason: 'no-input', paired: [] }} />,
+    );
+    expect(container.querySelector('.ccs-pair .ccs-pair-status').textContent).toMatch(/never came up/);
+  });
+
+  it('does not repeat the Pair button label as a status line', () => {
+    const { container } = render(
+      <ControllerStatus controllers={[]} getGamepads={() => []} canAdd onPair={vi.fn()}
+        pairing={{ phase: 'error', message: 'bridge offline' }} />,
+    );
+    expect(container.querySelector('.ccs-pair .ccs-pair-status')).toBeNull();
+  });
+
+  it('the Add button is disabled while any window runs', () => {
+    const { getByRole } = render(
+      <ControllerStatus controllers={[]} getGamepads={() => []} canAdd onPair={vi.fn()}
+        pairing={{ phase: 'pairing', device: { name: 'X' } }} />,
+    );
+    expect(getByRole('button', { name: /Add a new device/ }).disabled).toBe(true);
+  });
+
+  it('the Pair button is disabled while a window runs, even in a phase the button itself does not know', () => {
+    const { container } = render(
+      <ControllerStatus controllers={controllers} getGamepads={() => []} onPair={vi.fn()}
+        pairing={{ phase: 'hid-wait', device: { name: 'X' } }} />,
+    );
+    expect(container.querySelector('.ccs-pair-button').disabled).toBe(true);
+  });
+
+  it('Forget buttons are disabled while a window runs', () => {
+    const ctrls = [{ id: 'pad', label: 'Pad', match: 'Pad', address: 'AA:BB:CC:DD:EE:01' }];
+    const inv = [
+      { address: 'AA:BB:CC:DD:EE:01', name: 'Pad', connected: true, paired: true },
+      { address: '11:22:33:44:55:66', name: 'R1', connected: true, paired: true, input: true, kind: 'keyboard' },
+    ];
+    const onForget = vi.fn();
+    const { getByRole, rerender } = render(
+      <ControllerStatus controllers={ctrls} getGamepads={() => []} btInventory={inv} onPair={vi.fn()} onForget={onForget}
+        pairing={{ phase: 'scanning', durationMs: 60000 }} />,
+    );
+    expect(getByRole('button', { name: 'Forget Pad' }).disabled).toBe(true);
+    expect(getByRole('button', { name: 'Forget R1' }).disabled).toBe(true);
+    rerender(
+      <ControllerStatus controllers={ctrls} getGamepads={() => []} btInventory={inv} onPair={vi.fn()} onForget={onForget}
+        pairing={{ phase: 'done', paired: [] , reason: 'none-found' }} />,
+    );
+    expect(getByRole('button', { name: 'Forget Pad' }).disabled).toBe(false);
+    expect(getByRole('button', { name: 'Forget R1' }).disabled).toBe(false);
+  });
+
+  it('a forget refused mid-window says to wait for the search', () => {
+    const inv = [{ address: '11:22:33:44:55:66', name: 'R1', connected: true, paired: true, input: true, kind: 'keyboard' }];
+    const { container } = render(
+      <ControllerStatus controllers={[]} getGamepads={() => []} btInventory={inv} onForget={vi.fn()}
+        forgetResult={{ address: '11:22:33:44:55:66', success: false, error: 'pairing-in-progress' }} />,
+    );
+    expect(container.querySelector('.ccs-forget-result').textContent)
+      .toBe('Could not forget it while a pairing search is running. Try again when it ends.');
+  });
+
+  it('labels a remote', () => {
+    const inv = [{ address: '11:22:33:44:55:66', name: 'R1', connected: true, paired: true, hid: true, kind: 'remote' }];
+    const { container } = render(<ControllerStatus controllers={[]} getGamepads={() => []} btInventory={inv} />);
+    expect(container.querySelector('.ccs-other-row .ccs-kind').textContent).toBe('Remote');
+  });
+
+  it('moves focus to the start button when a panel opens', () => {
+    const { getByRole } = render(
+      <ControllerStatus controllers={[SFC30]} getGamepads={() => []} btInventory={[]} canAdd onPair={vi.fn()} />,
+    );
+    fireEvent.click(getByRole('button', { name: /Add a new device/ }));
+    expect(document.activeElement).toBe(getByRole('button', { name: 'Start search' }));
+    fireEvent.click(getByRole('button', { name: 'Close' }));
+    fireEvent.click(getByRole('button', { name: /Pair controller/ }));
+    expect(document.activeElement).toBe(getByRole('button', { name: /start pairing/ }));
+  });
+
+  it('button emoji are hidden from the accessible name', () => {
+    const { getByRole } = render(
+      <ControllerStatus controllers={[SFC30]} getGamepads={() => []} btInventory={[]} canAdd onPair={vi.fn()} />,
+    );
+    expect(getByRole('button', { name: 'Add a new device' })).toBeTruthy();
+    expect(getByRole('button', { name: 'Pair controller' })).toBeTruthy();
+  });
+
+  it('an unpaired other device offers Add again, which opens the add panel', () => {
+    const inv = [{ address: '11:22:33:44:55:66', name: 'R1', connected: true, paired: false, kind: 'keyboard' }];
+    const { getByRole, container } = render(
+      <ControllerStatus controllers={[]} getGamepads={() => []} btInventory={inv} canAdd onPair={vi.fn()} onForget={vi.fn()} />,
+    );
+    const row = container.querySelector('.ccs-other-row');
+    expect(row.querySelector('.ccs-forget-button')).toBeNull();
+    fireEvent.click(getByRole('button', { name: 'Add R1 again' }));
+    expect(container.querySelector('.ccs-add-guide')).toBeTruthy();
   });
 });
