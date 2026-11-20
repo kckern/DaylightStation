@@ -178,7 +178,7 @@ function CoachSession({ score, title, plan, segment, coach, skipping = null, pol
       // (LearnLab `learnPracticeRequirement`), or null for the strict curve.
       placementShare,
       placement: roundScore(raw.criteria?.placement), completeness: roundScore(raw.criteria?.completeness), cleanliness: roundScore(raw.criteria?.cleanliness),
-      // A whole-beat shifted entry the run named on this take (+1 one beat late, −1 early), else 0.
+      // A whole-beat shifted entry the run tested for: ±k, 0 none named, null not tested.
       entryShiftBeats: entryShiftBeats(raw) });
     setLane(isGoldWork(played) ? 'gold' : null);
     coach.record(played, raw);

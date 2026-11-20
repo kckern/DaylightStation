@@ -936,7 +936,11 @@ export default function ExerciseRun({ instance, score, requirement = null, pract
         onsets: onsetLog.slice(0, 64).map((onset) => [onset.midi, Math.round(onset.t - snapshot.startedAt), onset.phase]),
       });
     }
-    const entryShiftEvidence = shift ? { entryShift: { beats: shift.beats, matched: shift.matched, possible: shift.possible } } : {};
+    // Tested: `entryShift` rides on the result, `{ beats: 0 }` when none was
+    // named. Untested (passed, untimed, outside Learn): absent. Consumers read
+    // absent as null ("not tested") and 0 as "tested, none".
+    const entryShiftEvidence = !shiftTested ? {}
+      : { entryShift: shift ? { beats: shift.beats, matched: shift.matched, possible: shift.possible } : { beats: 0 } };
     persist({ ...snapshot.result, ...entryShiftEvidence });
     if (!judged) return;
     // `traceEvent`, not a bare `logger.info`: this is the event that says how a
@@ -1240,16 +1244,24 @@ export default function ExerciseRun({ instance, score, requirement = null, pract
    * a runtime that moved on, drops the arming: the next key arms afresh.
    */
   const armStart = useCallback((onsets) => {
+    // The render can lag the runtime: at the one-second timeout the count-in
+    // has started while this commit still reads `prepared`. Never arm twice.
+    if (runtime?.getSnapshot().status !== 'prepared') return;
     const at = Date.now();
     const keys = [...activeNotesRef.current.keys()];
     armedRef.current = { at, keys };
     setArmed(armedRef.current);
     traceEvent('piano.exercise-armed', { at, held: keys, onsets, releaseWaitMs: ARM_RELEASE_MS,
       gapMs: Math.round(Math.min(countIn?.periodMs ?? START_GAP_MAX_MS, START_GAP_MAX_MS)) });
-  }, [countIn, traceEvent]);
+  }, [countIn, runtime, traceEvent]);
   useEffect(() => {
     if (!armed) return undefined;
     if (snapshot.paused || snapshot.status !== 'prepared') {
+      // A dropped arming leaves nothing behind: its onsets would otherwise
+      // widen the logged span of the take the NEXT key arms. (An arming that
+      // just began its count-in has cleared `armedRef` already; its render can
+      // still carry `armed` for one commit, and that log is the take's own.)
+      if (armedRef.current) onsetLogRef.current = [];
       armedRef.current = null;
       setArmed(null);
       return undefined;
@@ -1326,7 +1338,9 @@ export default function ExerciseRun({ instance, score, requirement = null, pract
     anchorMs: clickAnchorMs,
     gain: clickGain,
     leadMs: clickLead.leadMs,
-    enabled: !snapshot.paused && (((snapshot.status === 'running' || awaitingTimeline) && ['metronome', 'cued'].includes(snapshot.mode))
+    // The click keeps going while a late entry's last note is awaited: the child
+    // is still playing to it.
+    enabled: !snapshot.paused && (((snapshot.status === 'running' || awaitingTimeline || awaitingEntry) && ['metronome', 'cued'].includes(snapshot.mode))
       || (prePulse && !prePulseStopped)),
     // The tempo the attempt is GRADED at, which is not always `clickBpm`: a
     // cued rung carries no `gates.pace`, so a tempo-less single-event instance

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createCoachPlan, projectCoach, applyCoachEvent, coachFeedback, coachTaskKey } from './learnCoach.mjs';
+import { createCoachPlan, projectCoach, applyCoachEvent, coachFeedback, coachTaskKey, entryShiftBeats } from './learnCoach.mjs';
 
 const segments = [
   { id: 'opening', inMeasure: 0, outMeasure: 3, printedMeasures: ['1', '4'], playableParts: ['rh', 'lh'] },
@@ -136,6 +136,15 @@ describe('focused recovery and honest feedback', () => {
     const { entryShift: ignored, ...unnamed } = shifted;void ignored;
     const plain = outcome(outcome(undefined, plan, task, unnamed), plan, task, unnamed);
     expect(projection(plan, plain).goldResume.depth).toBe(1);
+  });
+
+  it('reads an entry shift as null when untested and 0 when tested and none was named', () => {
+    expect(entryShiftBeats(bad)).toBeNull();
+    expect(entryShiftBeats({ ...bad, entryShift: { beats: 0 } })).toBe(0);
+    expect(entryShiftBeats({ ...bad, entryShift: { beats: -1 } })).toBe(-1);
+    const plan = planOf();const task = choose(plan, 'timed-50');
+    const none = { ...bad, entryShift: { beats: 0 } };
+    expect(projection(plan, outcome(outcome(undefined, plan, task, none), plan, task, none)).goldResume.depth).toBe(1);
   });
 
   it('names a shifted entry in the feedback on a cued step, never on a passed take', () => {

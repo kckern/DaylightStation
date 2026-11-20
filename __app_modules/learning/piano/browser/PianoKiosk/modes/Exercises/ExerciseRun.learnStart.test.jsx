@@ -173,6 +173,15 @@ function armByTap() {
   return Date.now() + GAP; // the release instant + the gap
 }
 
+/** Play the passage at `offset` from each target (first target = first click + lead-in). */
+function playAt(firstClick, offset, pitches = PASSAGE) {
+  pitches.forEach((midi, index) => {
+    advance(firstClick + LEAD_IN + index * BEAT + offset - Date.now());
+    strike(midi);
+  });
+}
+const finish = () => advance(4 * BEAT);
+
 beforeEach(() => {
   document.body.innerHTML = '';
   h.activeNotes = new Map();
@@ -255,20 +264,78 @@ describe('a cued Learn passage counts up with the clicks (A2)', () => {
   });
 });
 
-describe('a cued Learn passage names a whole-beat shifted entry (A3)', () => {
-  /** Play the passage at `offset` from each target (first target = first click + lead-in). */
-  function playAt(firstClick, offset, pitches = PASSAGE) {
-    pitches.forEach((midi, index) => {
-      advance(firstClick + LEAD_IN + index * BEAT + offset - Date.now());
-      strike(midi);
-    });
-  }
-  const finish = () => advance(4 * BEAT);
+describe('a cued Learn passage arms safely around its own notes and controls', () => {
+  it('arms on the passage\'s first pitch held through the count-in, then takes it re-struck as note 1', async () => {
+    await mount();
+    hold([64]);
+    advance(ARM_RELEASE_MS + 10);
+    expect(events('piano.exercise-countdown-started')).toEqual([expect.objectContaining({ reason: 'armed-timeout' })]);
+    expect(events('piano.exercise-armed')).toHaveLength(1);
+    const firstClick = Date.now() - 10 + GAP;
+    advance(firstClick + LEAD_IN - 300 - Date.now());
+    hold([]);
+    PASSAGE.forEach((midi, index) => { advance(firstClick + LEAD_IN + index * BEAT + 20 - Date.now()); strike(midi); });
+    finish();
+    expect(events('piano.exercise-armed')).toHaveLength(1);
+    expect(events('piano.exercise-timing-summary').at(-1)).toMatchObject({ entryShiftBeats: null });
+    advance(1000);
+    expect(current.onPassed).toHaveBeenCalledTimes(1);
+    expect(current.onFailed).not.toHaveBeenCalled();
+  });
 
-  it('names a steady take one beat late (+1), with its last note retained', async () => {
+  it('drops an arming on pause, starts nothing while paused, and arms afresh on resume', async () => {
+    await mount();
+    hold([55]);
+    expect(run()).toHaveAttribute('data-start-armed', 'true');
+    act(() => { current = { ...current, paused: true }; rerender(); });
+    expect(run()).not.toHaveAttribute('data-start-armed');
+    hold([]);
+    advance(3000);
+    expect(events('piano.exercise-countdown-started')).toHaveLength(0);
+    act(() => { current = { ...current, paused: false }; rerender(); });
+    const firstClick = armByTap();
+    playAt(firstClick, 700, [61, 70, 58, 73]);
+    finish();
+    // The dropped arming's key is not in the take's log.
+    expect(events('piano.exercise-onset-log').at(-1).onsets.filter(([, , phase]) => phase === 'armed')).toHaveLength(1);
+  });
+
+  it('starts nothing after unmounting while armed', async () => {
+    await mount();
+    hold([55]);
+    view.unmount();
+    view = null;
+    advance(3000);
+    expect(events('piano.exercise-countdown-started')).toHaveLength(0);
+  });
+
+  it('does not delay the result of an ordinary failed take', async () => {
     await mount();
     const firstClick = armByTap();
-    playAt(firstClick, BEAT + 120);
+    PASSAGE.forEach((midi, index) => {
+      advance(firstClick + LEAD_IN + index * BEAT + 20 - Date.now());
+      strike(index === 1 ? 61 : midi);
+    });
+    advance(firstClick + LEAD_IN + 4 * BEAT + 100 - Date.now());
+    expect(document.querySelector('.piano-exercise-run__result')).not.toBeNull();
+    expect(events('piano.exercise-timing-summary').at(-1)).toMatchObject({ entryShiftBeats: 0 });
+  });
+});
+
+describe('a cued Learn passage names a whole-beat shifted entry (A3)', () => {
+
+  it('names a steady take one beat late (+1), waiting for its last note', async () => {
+    await mount();
+    const firstClick = armByTap();
+    playAt(firstClick, BEAT + 120, PASSAGE.slice(0, 3));
+    // The passage's own time is over (the last half note ends at target 3 + 1500)
+    // but the opening sat a beat late, so the result waits for the last note.
+    const timelineDone = firstClick + LEAD_IN + 4 * BEAT;
+    advance(timelineDone + 60 - Date.now());
+    expect(run()).toHaveAttribute('data-phase', 'running');
+    expect(document.querySelector('.piano-exercise-run__result')).toBeNull();
+    advance(firstClick + LEAD_IN + 3 * BEAT + BEAT + 120 - Date.now());
+    strike(PASSAGE[3]);
     finish();
     expect(screen.getByText('You started one beat late — start on the click after the count.')).toBeInTheDocument();
     expect(run()).toHaveAttribute('data-entry-shift', '1');

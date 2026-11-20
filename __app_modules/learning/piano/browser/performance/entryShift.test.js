@@ -123,3 +123,14 @@ describe('detectEntryShift names only a shift that explains the entry (repeated 
     expect(detectEntryShift(jingle(), jbAt(JB_BEATS.map((b) => b - 1)), jbSpan)).toMatchObject({ beats: -1 });
   });
 });
+
+describe('lateEntryWaitUntil on repeated pitches', () => {
+  it('waits for the last note of a one-beat-late opening on E E E', () => {
+    const lastTarget = 4 * JB_BEAT + 6 * JB_BEAT;
+    expect(lateEntryWaitUntil(jingle(), jbAt([1, 2, 3, 5, 6]), { beatMs: JB_BEAT })).toBe(lastTarget + JB_BEAT + 400);
+  });
+
+  it('does not wait for an on-time opening on E E E', () => {
+    expect(lateEntryWaitUntil(jingle(), jbAt([0, 1, 2, 4, 5]), { beatMs: JB_BEAT })).toBeNull();
+  });
+});

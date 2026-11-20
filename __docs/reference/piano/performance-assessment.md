@@ -142,10 +142,12 @@ k × beat for k ∈ {−2, −1, +1, +2}, to the nearest unused onset of its pit
 inside its normal window. A shift is named when it matches ≥ 75%
 (`ENTRY_SHIFT_SHARE`) of the notes the log could hold at that shift (shifted
 target inside the logged span, and at least N − |k| notes), the unshifted take
-matches below 75%, and the shift does strictly better than no shift; ties go to
-the smaller |k|. `lateEntryWaitUntil` says how long a finished take should wait
+matches below 75%, the shift does strictly better than no shift, and the shift
+explains the entry (the first note has an onset at its shifted target and no
+onset of it on time before that, so a rush or drag from an on-time start on
+repeated pitches is never named); ties go to the smaller |k|. `lateEntryWaitUntil` says how long a finished take should wait
 for a late entry's last note: only when the first two onsets after the first
-window opens each match a note at +1 or +2 beats and none at 0, until that last
+window match the first and second expected notes at +1 or +2 beats and not at 0, until that last
 note's shifted window closes (at most `ENTRY_SHIFT_MAX_LATE` = 2 beats after the
 last target), and not at all once it is in the log. ExerciseRun uses it on cued
 Learn passages only, with the count-in click period as the beat; the result

@@ -720,7 +720,7 @@ armed form the moment the key lands (`data-start-armed` on the run), and the
 standing line reads "Listen for the clicks." `piano.exercise-armed` records the
 arming; `piano.exercise-countdown-started` carries `reason` (`armed-released` or
 `armed-timeout`), `prerollMs`, `armedAt` and `waitedMs`. A pause or a new take
-drops the arming. Other cued callers (exercises, gates) still start their
+drops the arming and its onsets. Other cued callers (exercises, gates) still start their
 count-in on the arming key itself; `startOnReady` (no live caller) starts with no
 arming key and no armed state.
 
@@ -730,10 +730,14 @@ count-in onsets included and flagged `armed` / `countdown` / `running` / `after`
 A failed take is tested against the expectation shifted by k ∈ {−2, −1, +1, +2}
 clicks (`performance/entryShift.js`): a shift is named when it matches ≥ 75% of
 the notes the log could hold at that shift (and at least N − |k|), the unshifted
-take matches less than that, and the shift does strictly better than no shift.
+take matches less than that, the shift does strictly better than no shift, and
+the shift explains the **entry**: the first note was played at its shifted target,
+with no onset of it on time before that. (On repeated pitches such as Jingle
+Bells' E E E, a steady rush or drag from an on-time start would otherwise line up
+with a whole-beat shift.)
 "One beat" is one count-in click: at a tempo where the count-in coarsens to half
 notes, a quarter late is not a whole-beat shift. When the take's first two onsets
-already sit a click or two late, the result waits for the last note (until its
+already sit a click or two late (onset i against note i), the result waits for the last note (until its
 shifted window closes, at most two clicks after the last target); otherwise
 timing is unchanged. The card then reads "You started one beat late — start on
 the click after the count" or "… early — wait for the click after the count"
@@ -743,8 +747,12 @@ the click after the count" or "… early — wait for the click after the count"
 carries `entryShift: { beats, matched, possible }` into the saved attempt, and a
 named shift never triggers the smaller-task recovery: the coach offers the same
 step again. `piano.exercise-timing-summary`, `piano.learn.coach.take` and
-`piano.learn.terminal` gain `entryShiftBeats` (0 when none was named; null on the
-timing summary when the take was not tested), and `piano.exercise-onset-log`
+`piano.learn.terminal` gain `entryShiftBeats`: ±k for a named shift, `0` when the
+take was tested and none was named, `null` when it was not tested (a passed take,
+or a run outside cued Learn). A tested take's result carries `entryShift`
+(`{ beats: 0 }` when none was named); `entryShiftBeats(result)` in
+`shared/music/learnCoach.mjs` reads it the same way. The click keeps sounding
+while a late entry's last note is awaited, and `piano.exercise-onset-log`
 records the test and the onsets as `[midi, ms from the first click, phase]`. Timed assessment receives individual
 fresh MIDI attacks with original timestamps; held-set observations remain
 limited to the cursor/held contracts. Malformed timed input is an operational

@@ -346,12 +346,14 @@ export function coachSummary(projection, { now, state = projection.state }) {
 }
 
 /**
- * A whole-beat shifted entry the run named on a cued take (`result.entryShift`,
- * browser performance/entryShift.js): +k beats late, −k early, or 0 for none.
+ * A whole-beat shifted entry the run tested for on a failed cued take
+ * (`result.entryShift`, browser performance/entryShift.js): +k beats late, −k
+ * early, 0 when tested and none was named, null when the take was not tested.
  */
 export function entryShiftBeats(result) {
-  const beats = result?.entryShift?.beats;
-  return Number.isInteger(beats) && beats !== 0 && Math.abs(beats) <= 2 ? beats : 0;
+  if (!result?.entryShift) return null;
+  const beats = result.entryShift.beats;
+  return Number.isInteger(beats) && Math.abs(beats) <= 2 ? beats : 0;
 }
 const SHIFT_WORDS = Object.freeze({ 1: 'one beat', 2: 'two beats' });
 

@@ -6,6 +6,7 @@ import LearnTempoSheet from './LearnTempoSheet.jsx';
 import { TEMPO_STAGES, availableTempoStages, nearestTempoStage } from './tempoStages.js';
 import { CLICK_LEVELS, readClickLevel, writeClickLevel } from './clickLevel.js';
 import getLogger from '../../../../../../../frontend/src/lib/logging/Logger.js';
+import { entryShiftBeats } from '../../../../../../../shared/music/learnCoach.mjs';
 
 const handCode = (parts) => parts.length > 1 ? 'RL' : parts[0] === 'lh' ? 'L' : parts[0] === 'rh' ? 'R' : null;
 const clickStorage = () => {
@@ -175,7 +176,7 @@ export default function LearnLab({ score, revision, segment, segments = {}, rung
       status: 'passed', placementShare, creditEligible: takeCreditEligible, creditOutcome: takeCreditEligible ? (outcome ? 'recorded' : 'not-recorded') : 'ineligible',
       right: result?.diagnostics?.matched_notes ?? null, wrong: result?.diagnostics?.wrong_notes ?? null,
       missed: result?.diagnostics?.missed_notes ?? null, early: result?.diagnostics?.early_notes ?? null,
-      late: result?.diagnostics?.late_notes ?? null, entryShiftBeats: result?.entryShift?.beats ?? 0,
+      late: result?.diagnostics?.late_notes ?? null, entryShiftBeats: entryShiftBeats(result),
     });
     const nextPassCount = Math.min(rung.required, runPassCount + 1);
     setRunPassCount(nextPassCount);
@@ -226,8 +227,8 @@ export default function LearnLab({ score, revision, segment, segments = {}, rung
       right: result?.diagnostics?.matched_notes ?? null, wrong: result?.diagnostics?.wrong_notes ?? null,
       missed: result?.diagnostics?.missed_notes ?? null, early: result?.diagnostics?.early_notes ?? null,
       late: result?.diagnostics?.late_notes ?? null,
-      // A whole-beat shifted entry ExerciseRun named on a cued take, else 0.
-      entryShiftBeats: result?.entryShift?.beats ?? 0 });
+      // A whole-beat shifted entry ExerciseRun tested for: ±k, 0 none, null untested.
+      entryShiftBeats: entryShiftBeats(result) });
     if (launchSource !== 'recommended') onFinished?.(result);
   };
 

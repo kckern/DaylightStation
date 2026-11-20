@@ -128,7 +128,7 @@ export function detectEntryShift(attempt, onsets, { beatMs, from, to } = {}) {
  * How long a finished take should wait for a late entry's last notes.
  *
  * Only when the take's first two onsets after the count-in already look
- * shifted late (each matches an expected note at +k beats and none at 0) is
+ * shifted late (onset i matches expected note i at +k beats and not at 0) is
  * there anything to wait for. Then the result waits until the last note's
  * shifted target has passed (window included), capped at
  * ENTRY_SHIFT_MAX_LATE beats after the last target, and stops waiting as soon
@@ -143,8 +143,12 @@ export function lateEntryWaitUntil(attempt, onsets, { beatMs } = {}) {
   const opens = notes[0].target - notes[0].windowMs;
   const playing = onsets.filter((onset) => onset.t >= opens).slice(0, 2);
   if (playing.length < 2) return null;
-  const late = [1, 2].find((beats) => playing.every((onset) => notes.some((note) => matchesAt(note, onset, beats * beatMs))
-    && !notes.some((note) => matchesAt(note, onset, 0))));
+  // Onset i is judged against the i-th expected note (any note of its event,
+  // for a chord), not against any note: on repeated pitches a late onset always
+  // matches SOME note on time, which would hide the late opening.
+  const owed = (index) => notes.filter((note) => note.eventIndex === notes[index].eventIndex);
+  const late = [1, 2].find((beats) => playing.every((onset, index) => owed(index).some((note) => matchesAt(note, onset, beats * beatMs))
+    && !owed(index).some((note) => matchesAt(note, onset, 0))));
   if (!late) return null;
   const last = notes[notes.length - 1];
   const shiftMs = late * beatMs;
