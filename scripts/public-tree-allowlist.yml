@@ -83,6 +83,12 @@ largeText:
   - __docs/reference/health/README.md
   - __docs/reference/media/media-app-technical.md
   - __docs/reference/school/README.md
+  # Hand-written, grown past 100 KB (2026-11-20): the piano exercise run, the
+  # agenda status board's tests and two reference docs. Authored, not data.
+  - __app_modules/learning/piano/browser/PianoKiosk/modes/Exercises/ExerciseRun.jsx
+  - __app_modules/learning/school/browser/status/AgendaStatusBoard.test.jsx
+  - __docs/reference/android/phone.md
+  - __docs/reference/economy/economy.md
   - _extensions/playback-hub/playback-hub.sh
 
 # Tracked-but-scheduled-for-removal entries. Closed by task C6: must stay empty
