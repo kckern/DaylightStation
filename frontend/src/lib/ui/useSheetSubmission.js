@@ -13,15 +13,14 @@ export function useSheetSubmission(onClose, onError) {
     return () => { mounted.current = false; };
   }, []);
 
-  const submit = async (event, save, valid = true) => {
-    event.preventDefault();
+  const run = async (save, { valid = true, onSuccess = () => onClose() } = {}) => {
     if (!mounted.current || inFlight.current || !valid) return;
     inFlight.current = true;
     setSaving(true);
     setFailure(null);
     try {
-      await save();
-      if (mounted.current) onClose();
+      const result = await save();
+      if (mounted.current) onSuccess?.(result);
     } catch (error) {
       if (mounted.current) setFailure(error);
       onError?.(error);
@@ -30,5 +29,9 @@ export function useSheetSubmission(onClose, onError) {
       if (mounted.current) setSaving(false);
     }
   };
-  return { submit, saving, failure };
+  const submit = (event, save, valid = true) => {
+    event.preventDefault();
+    return run(save, { valid });
+  };
+  return { submit, run, saving, failure, clearFailure: () => setFailure(null) };
 }

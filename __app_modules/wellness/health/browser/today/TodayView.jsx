@@ -200,13 +200,11 @@ export function TodayView({ active = true, sidebarTarget, followUpTarget = null,
   // can hand the same id back on decode.
   const [barcodeTargetBucket, setBarcodeTargetBucket] = useState(null);
   const [unknownUpc, setUnknownUpc] = useState(null);
-  // bucketId | null — which meal's add row opened the template picker
-  // (PRD F6.3: one meals surface, and this is it).
-  const [templatesFor, setTemplatesFor] = useState(null);
+  const [templateVisit, setTemplateVisit] = useState(null);
+  useEffect(() => {
+    if (templateVisit && (!active || templateVisit.date !== date)) setTemplateVisit(null);
+  }, [active, date, templateVisit]);
   const [manageFoods, setManageFoods] = useState(false);
-  // template id | null — set when the add-combobox picked a MEAL suggestion,
-  // so the picker opens straight onto its variant step (PRD F8.2 → F6.1).
-  const [focusTemplateId, setFocusTemplateId] = useState(null);
   const [captureNotice, setCaptureNotice] = useState(null); // string | null — e.g. "no food detected"
   const [dayNotice, setDayNotice] = useState(null); // string | null — the day input's reply when it has no Undo
   const [undoDelete, setUndoDelete] = useState(null);
@@ -743,7 +741,7 @@ export function TodayView({ active = true, sidebarTarget, followUpTarget = null,
           renderAddRow={(bucket, label, meal) => <MealAddRow bucket={bucket} label={label} date={date} active={active}
             onVoiceCapture={meal?.onVoiceCapture} selectedCount={meal?.selectedIds?.length || 0} busy={false} onOrphanedRetry={keepOrphanedRecording}
             onAdded={() => day.reload()} onFoodAdded={offerAddedFood} onSentencePending={text => beginSentencePending(bucket, text)} onPhotoCapture={onPhotoCapture} onOpenBarcode={openBarcode}
-            onOpenTemplates={(target, templateId) => { setFocusTemplateId(templateId); setTemplatesFor(target); }}
+            onOpenTemplates={(bucketId, focusTemplateId) => setTemplateVisit({ date, bucketId, focusTemplateId })}
             onManageFoods={() => setManageFoods(true)} />} />
       </section>
       <NeedsReviewSection pending={pendingLogs} onChanged={day.reload} onConfirmed={(entry, placed) => offerAddedFood(
@@ -800,9 +798,10 @@ export function TodayView({ active = true, sidebarTarget, followUpTarget = null,
           if (err) setCaptureNotice(err.message);
         }} />
       <FoodCatalogManager open={manageFoods} active={active} onClose={() => setManageFoods(false)} onChanged={day.reload} />
-      <TemplatePicker open={active && Boolean(templatesFor)} bucketId={templatesFor} date={date} focusTemplateId={focusTemplateId}
-        onLogged={logged => { setTemplatesFor(null); setFocusTemplateId(null); day.reload(); offerAddedFood(logged, date, { added: true }); }}
-        onClose={() => { setTemplatesFor(null); setFocusTemplateId(null); }} />
+      <TemplatePicker open={active && templateVisit?.date === date} bucketId={templateVisit?.bucketId}
+        date={templateVisit?.date} focusTemplateId={templateVisit?.focusTemplateId}
+        onLogged={logged => offerAddedFood(logged, date, { added: true })}
+        onClose={() => setTemplateVisit(null)} />
     </div></PortionContext.Provider>
   );
 }

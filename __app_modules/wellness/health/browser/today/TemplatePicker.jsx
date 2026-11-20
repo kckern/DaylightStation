@@ -1,15 +1,18 @@
 import { useEffect, useRef, useState } from 'react';
 import { UnstyledButton, Button, Text } from '@mantine/core';
-import { Sheet, LoadingState, EmptyState, ErrorState } from '@/lib/ui';
-import { useApiResource } from "../../../../../frontend/src/lib/hooks/useApiResource.js";
+import { Sheet, LoadingState, EmptyState, ErrorState, useSheetSubmission } from '@/lib/ui';
+import { invalidateApiResources, useApiResource } from '../../../../../frontend/src/lib/hooks/useApiResource.js';
 import { DaylightAPI } from "../../../../../frontend/src/lib/api.mjs";
 import { createAppLogger } from "../../../../../frontend/src/lib/ui/createAppLogger.js";
 import { nutritionIconUrl } from "./iconUrl.js";
 import { TemplateEditor } from "./TemplateEditor.jsx";
 import { operationRequest } from "../capture/operationRequest.js";
+import { useHealthSessionGuard } from '../operations/HealthOperationsProvider.jsx';
+import { healthDayPath } from '../healthResources.js';
 import { FoodIcon } from "./FoodIcon.jsx";
 
 const logger = createAppLogger('health').child('template-picker');
+const templatesPath = 'api/v1/health/nutrition/templates?includeProposed=1';
 
 const coreOf = (template) => (template.components || []).filter((c) => c.role === 'core');
 const variantsOf = (template) => (template.components || []).filter((c) => c.role === 'variant');
@@ -31,38 +34,69 @@ const kcal = (components) => Math.round(components.reduce((s, c) => s + (Number(
  *   step rather than logging one silent arrangement of itself.
  */
 export function TemplatePicker({ open, onClose, onLogged, bucketId, date = null, focusTemplateId = null }) {
+  const operations = useRef(new Map());
+  const isSessionActive = useHealthSessionGuard();
+
+  const instantiate = (template, variantNames) => {
+    // A dismissed sheet and its replacement can have independent writes. An
+    // identical pending or unconfirmed request retains its operation ID.
+    const payload = {
+      ...(bucketId ? { mealTime: bucketId } : {}),
+      ...(date ? { date } : {}),
+      variantNames: [...variantNames].sort(),
+      templateId: template.id,
+    };
+    const key = JSON.stringify(payload);
+    const operation = operations.current.get(key) ?? { body: operationRequest({ current: null }, payload) };
+    if (operation.pending) return operation.pending;
+    operations.current.set(key, operation);
+    operation.pending = DaylightAPI(`api/v1/health/nutrition/templates/${template.id}/instantiate`, operation.body, 'POST').then(logged => {
+      operations.current.delete(key);
+      logger.info('template.logged', { id: template.id, bucket: bucketId ?? null, variants: variantNames.length });
+      if (isSessionActive() && (date || logged?.date)) {
+        const path = healthDayPath(logged?.date || date);
+        invalidateApiResources(candidate => candidate === path);
+      }
+      return logged;
+    }, error => {
+      operation.pending = null;
+      logger.error('template.log_failed', { id: template.id, error: error?.message });
+      throw error;
+    });
+    return operation.pending;
+  };
+
+  return open ? <TemplatePickerVisit key={JSON.stringify([date, bucketId, focusTemplateId])}
+    bucketId={bucketId} focusTemplateId={focusTemplateId} instantiate={instantiate}
+    isSessionActive={isSessionActive} onLogged={onLogged} onClose={onClose} /> : null;
+}
+
+function TemplatePickerVisit({ onClose, onLogged, bucketId, focusTemplateId, instantiate, isSessionActive }) {
   const { data, loading, reload, error: loadError } = useApiResource(
-    open ? 'api/v1/health/nutrition/templates?includeProposed=1' : null,
-    { deps: [open], label: 'meal-templates', logger },
+    templatesPath, { label: 'meal-templates', logger },
   );
   // template | null — the one whose variants are being chosen.
   const [chosen, setChosen] = useState(null);
   const [editing, setEditing] = useState(null);
   const [variants, setVariants] = useState(() => new Set());
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState(null);
-  const submitting = useRef(false);
-  const requestRef = useRef(null);
+  const { run, saving: busy, failure: error, clearFailure } = useSheetSubmission(onClose);
 
   const templates = data?.templates || [];
   // Honour `focusTemplateId` once per opening. A ref, not state derived from
   // props: re-running it on every render would fight the Back button.
   const focused = useRef(null);
   useEffect(() => {
-    if (!open) { focused.current = null; return; }
     if (!focusTemplateId || focused.current === focusTemplateId) return;
     const target = templates.find((t) => t.id === focusTemplateId && t.status !== 'proposed');
     if (!target) return;
     focused.current = focusTemplateId;
     openTemplate(target);
-  }, [open, focusTemplateId, templates]);
+  }, [focusTemplateId, templates]);
   const proposals = templates.filter((t) => t.status === 'proposed');
   const active = templates.filter((t) => t.status !== 'proposed');
 
-  const close = () => { setEditing(null); setChosen(null); setVariants(new Set()); setError(null); onClose(); };
-
   const openTemplate = (template) => {
-    setError(null);
+    clearFailure();
     // A template with nothing to choose has no decision in it, so it logs on
     // the first tap — the one-tap path the saved-meals sheet had.
     if (variantsOf(template).length === 0) { log(template, []); return; }
@@ -84,50 +118,38 @@ export function TemplatePicker({ open, onClose, onLogged, bucketId, date = null,
     ? [...coreOf(chosen), ...variantsOf(chosen).filter((c) => variants.has(c.name))]
     : [];
 
-  const log = async (template, variantNames) => {
-    if (submitting.current) return;
-    submitting.current = true;
-    setBusy(true); setError(null);
-    try {
-      const logged = await DaylightAPI(`api/v1/health/nutrition/templates/${template.id}/instantiate`,
-        // Instantiate onto the day being VIEWED. The route has always taken a
-      // `date`; nothing was sending one, so every template landed on today.
-      operationRequest(requestRef, { ...(bucketId ? { mealTime: bucketId } : {}), ...(date ? { date } : {}), variantNames, templateId: template.id }), 'POST');
-      requestRef.current = null;
-      logger.info('template.logged', { id: template.id, bucket: bucketId ?? null, variants: variantNames.length });
-      setChosen(null); setVariants(new Set());
+  const log = (template, variantNames) => run(() => instantiate(template, variantNames), {
+    onSuccess: logged => {
+      if (!isSessionActive()) return;
+      setChosen(null);
+      setVariants(new Set());
       onLogged(logged);
-    } catch (err) {
-      logger.error('template.log_failed', { id: template.id, error: err?.message });
-      setError(err);
-    } finally {
-      submitting.current = false;
-      setBusy(false);
-    }
-  };
+      onClose();
+    },
+  });
 
-  const decide = async (proposal, verdict) => {
-    setBusy(true); setError(null);
+  const refreshTemplates = () => {
+    if (isSessionActive()) invalidateApiResources(path => path === templatesPath);
+  };
+  const decide = (proposal, verdict) => run(async () => {
     try {
       await DaylightAPI(`api/v1/health/nutrition/templates/${proposal.id}/${verdict}`, {}, 'POST');
       logger.info('proposal.decided', { id: proposal.id, verdict });
-      reload();
+      refreshTemplates();
     } catch (err) {
       logger.error('proposal.decide_failed', { id: proposal.id, verdict, error: err?.message });
-      setError(err);
-    } finally {
-      setBusy(false);
+      throw err;
     }
-  };
+  }, { onSuccess: null });
 
   const icon = (template) => (template.icon ? nutritionIconUrl(template.icon) : null);
 
   return (
-    <Sheet open={open} onClose={close} title={chosen ? chosen.name : 'Meals & templates'}>
+    <Sheet open onClose={onClose} title={chosen ? chosen.name : 'Meals & templates'}>
       {error ? <p className="health-suggest__error">{error.message}</p> : null}
       {loadError ? <ErrorState error={loadError} onRetry={reload} label="Meals unavailable" /> : null}
 
-      {editing ? <TemplateEditor key={editing.id} template={editing} onCancel={() => setEditing(null)} onSaved={() => { setEditing(null); reload(); }} /> : chosen ? (
+      {editing ? <TemplateEditor key={editing.id} template={editing} onCancel={() => setEditing(null)} onSaved={() => { setEditing(null); refreshTemplates(); }} /> : chosen ? (
         <div className="health-templates__variants">
           <p className="health-templates__hint">
             {coreOf(chosen).length > 0
@@ -201,11 +223,12 @@ export function TemplatePicker({ open, onClose, onLogged, bucketId, date = null,
               </Text>
             </UnstyledButton>
             <Button size="compact-xs" variant="subtle" disabled={busy} onClick={() => setEditing(template)} aria-label={`Edit ${template.name}`}>Edit</Button>
-            <Button size="compact-xs" variant="subtle" color="red" disabled={busy} onClick={async () => {
+            <Button size="compact-xs" variant="subtle" color="red" disabled={busy} onClick={() => {
               if (!window.confirm(`Delete saved meal ${template.name}? Logged food will stay unchanged.`)) return;
-              setBusy(true);
-              try { await DaylightAPI(`api/v1/health/nutrition/templates/${template.id}`, {}, 'DELETE'); reload(); }
-              catch (err) { setError(err); } finally { setBusy(false); }
+              void run(async () => {
+                await DaylightAPI(`api/v1/health/nutrition/templates/${template.id}`, {}, 'DELETE');
+                refreshTemplates();
+              }, { onSuccess: null });
             }} aria-label={`Delete ${template.name}`}>Delete</Button>
             </div>
           ))}
