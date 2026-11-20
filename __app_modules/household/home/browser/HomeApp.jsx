@@ -94,7 +94,7 @@ function CameraGrid({ contentRef }) {
 }
 
 function HomeView({ view, house }) {
-  const { entities, rooms, types, mosaic, haUrl, summary, hasData, loading, error, reload, toggle, turnOff } = house;
+  const { entities, rooms, types, mosaic, haUrl, summary, hasData, loading, error, reload, toggle, turnOff, roomCommands } = house;
 
   if (!hasData && loading) return <LoadingState label="the house" rows={6} />;
   // A failed poll keeps the last good reading on screen; only a first load
@@ -102,7 +102,7 @@ function HomeView({ view, house }) {
   if (!hasData && error) return <ErrorState error={error} onRetry={reload} label="Home Assistant" />;
 
   const shared = { entities, rooms, haUrl, toggle };
-  if (view === 'rooms') return <RoomsView {...shared} types={types} summary={summary} turnOff={turnOff} />;
+  if (view === 'rooms') return <RoomsView {...shared} types={types} summary={summary} turnOff={turnOff} roomCommands={roomCommands} />;
   if (view === 'mosaic') return <MosaicView {...shared} mosaic={mosaic} summary={summary} />;
   return <TodayView {...shared} summary={summary} />;
 }

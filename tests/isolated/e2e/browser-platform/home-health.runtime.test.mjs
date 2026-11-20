@@ -1208,3 +1208,122 @@ test('Health refreshes repair history when an undo finishes across tabs for the 
   await expect.poll(session.historyReads).toBeGreaterThan(before);
   expect(session.writes.map(({ owner, route }) => [owner, route.request().method()])).toEqual([['alice', 'POST']]);
 });
+
+test('Home keeps group light commands in their room and retries only the failed lamps', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 850 });
+  const payload = house('on');
+  const [first] = payload.entities;
+  const second = { ...first, id: 'light.counter', name: 'Counter light' };
+  const third = { ...first, id: 'light.sink', name: 'Sink light', state: 'off', stateClass: 'off' };
+  payload.entities.push(second, third);
+  await page.route('**/home-dashboard/entities', route => route.fulfill({ json: payload }));
+  const writes = [];
+  await page.route('**/home-dashboard/toggle', route => { writes.push(route); });
+  const off = entity => ({ entityId: entity.id, desiredState: 'off' });
+  await page.goto('/home');
+  await page.getByRole('button', { name: 'Rooms', exact: true }).click();
+  const room = page.locator('[data-room-id="kitchen"]');
+  const header = room.locator('.home-room__row');
+  await header.press('Enter');
+  await room.getByRole('button', { name: 'Turn off all 2 lights in Kitchen' }).press('Enter');
+  await expect.poll(() => writes.length).toBe(2);
+  expect(writes.map(route => route.request().postDataJSON())).toEqual(expect.arrayContaining([off(first), off(second)]));
+  await expect(header).toBeFocused();
+  await expect(room.getByRole('status')).toContainText('Turning off');
+  await page.getByRole('button', { name: 'Mosaic', exact: true }).click();
+  await page.getByRole('button', { name: 'Rooms', exact: true }).click();
+  await header.press('Enter');
+  await expect(room.getByRole('status')).toContainText('Turning off');
+  first.state = first.stateClass = 'off';
+  third.state = third.stateClass = 'on';
+  const requestFor = id => writes.find(route => route.request().postDataJSON().entityId === id);
+  await requestFor(first.id).fulfill({ json: { ok: true } });
+  await requestFor(second.id).fulfill({ status: 503, json: { error: 'Unavailable' } });
+  await expect(room.getByRole('alert')).toContainText('Counter light');
+  await expect(room.getByRole('switch', { name: 'Kitchen light: turn on' })).not.toBeChecked();
+  await expect(room.getByRole('switch', { name: 'Sink light: turn off' })).toBeChecked();
+  const retry = room.getByRole('button', { name: /Retry/ });
+  await retry.press('Enter');
+  await expect.poll(() => writes.length).toBe(3);
+  expect(writes[2].request().postDataJSON()).toEqual(off(second));
+  await expect(header).toBeFocused();
+  const sink = room.getByRole('switch', { name: 'Sink light: turn off' });
+  await sink.focus();
+  second.state = second.stateClass = 'off';
+  await writes[2].fulfill({ json: { ok: true } });
+  await expect(room.getByRole('status')).toHaveCount(0);
+  await expect(room.getByRole('alert')).toHaveCount(0);
+  await expect(room.getByRole('switch', { name: 'Counter light: turn on' })).not.toBeChecked();
+  await expect(sink).toBeFocused();
+  expect(writes).toHaveLength(3);
+});
+
+async function openRoomGroup(page) {
+  const payload = house('on');
+  const first = payload.entities[0];
+  const lamps = ['Counter', 'Sink', 'Island'].map((name, i) => ({
+    ...first, id: 'light.' + name.toLowerCase(), name: name + ' light',
+    state: i === 0 ? 'on' : 'off', stateClass: i === 0 ? 'on' : 'off',
+  }));
+  payload.entities.push(...lamps);
+  await page.route('**/home-dashboard/entities', route => route.fulfill({ json: payload }));
+  const writes = [];
+  await page.route('**/home-dashboard/toggle', route => { writes.push(route); });
+  await page.goto('/home');
+  await page.getByRole('button', { name: 'Rooms', exact: true }).click();
+  const room = page.locator('[data-room-id="kitchen"]');
+  const header = room.locator('.home-room__row');
+  await header.press('Enter');
+  await room.getByRole('button', { name: 'Turn off all 2 lights in Kitchen' }).press('Enter');
+  await expect.poll(() => writes.length).toBe(2);
+  first.state = first.stateClass = 'off';
+  await writes.find(r => r.request().postDataJSON().entityId === first.id).fulfill({ json: { ok: true } });
+  const failure = writes.find(r => r.request().postDataJSON().entityId === lamps[0].id);
+  const refresh = async () => {
+    const response = page.waitForResponse(r => new URL(r.url()).pathname.endsWith('/home-dashboard/entities'));
+    await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
+    await (await response).finished();
+  };
+  return { room, header, lamps, failure, refresh, writes };
+}
+
+for (const [anotherGroup, ownsFocus] of [[false, true], [true, true], [true, false]]) {
+  test(`Home keeps focus on the ${ownsFocus ? 'room header' : 'selected switch'} when a confirmed retry ${anotherGroup ? 'becomes a broader action' : 'disappears'}`, async ({ page }) => {
+    const { room, header, lamps, failure, refresh, writes } = await openRoomGroup(page);
+    await failure.fulfill({ status: 503, json: { error: 'Unavailable' } });
+    const retry = room.getByRole('button', { name: /Retry/ });
+    await expect(retry).toBeVisible();
+    const selected = room.getByRole('switch', { name: 'Kitchen light: turn on' });
+    await (ownsFocus ? retry : selected).focus();
+    for (const lamp of lamps) lamp.state = lamp.stateClass = anotherGroup && lamp !== lamps[0] ? 'on' : 'off';
+    await refresh();
+    await expect(retry).toHaveCount(0);
+    await expect(ownsFocus ? header : selected).toBeFocused();
+    await expect(room.getByRole('button', { name: /Turn off all/ })).toHaveCount(anotherGroup ? 1 : 0);
+    if (ownsFocus) {
+      await page.keyboard.press('Enter');
+      await expect(header).toHaveAttribute('aria-expanded', 'false');
+    }
+    expect(writes).toHaveLength(2);
+  });
+}
+
+test('Home retires a confirmed room target even when its failed acknowledgement arrives later', async ({ page }) => {
+  const { room, lamps, failure, refresh, writes } = await openRoomGroup(page);
+  const [counter, sink] = lamps;
+  counter.state = counter.stateClass = 'off';
+  sink.state = sink.stateClass = 'on';
+  await refresh();
+  await expect(room.getByRole('switch', { name: 'Sink light: turn off' })).toBeChecked();
+  await expect(room.getByRole('status')).toContainText('Turning off');
+  counter.state = counter.stateClass = 'on';
+  sink.state = sink.stateClass = 'off';
+  await refresh();
+  await expect(room.getByRole('switch', { name: 'Sink light: turn on' })).not.toBeChecked();
+  await failure.fulfill({ status: 503, json: { error: 'Unavailable' } });
+  await expect(room.getByRole('status')).toHaveCount(0);
+  await expect(room.getByRole('switch', { name: 'Counter light: turn off' })).toBeChecked();
+  await expect(room.getByRole('button', { name: /Retry/ })).toHaveCount(0);
+  await expect(room.getByRole('alert')).toHaveCount(0);
+  expect(writes).toHaveLength(2);
+});

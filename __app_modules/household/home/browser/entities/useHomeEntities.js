@@ -13,6 +13,10 @@ const PENDING_MS = 5_000;
 
 const logger = homeLogger.child({ component: 'home-entities' });
 
+export function canTurnOff(entity) {
+  return entity.stateClass === 'on' && entity.controllable && !entity.pending;
+}
+
 /**
  * Live home entities: polled while the tab is visible, with optimistic toggles
  * that show the new state until the next reading confirms (or contradicts) it.
@@ -22,6 +26,7 @@ export function useHomeEntities({ active = true, refreshMs = REFRESH_MS } = {}) 
   // A null deadline represents a command whose acknowledgement is still pending.
   const [pending, setPending] = useState({});
   const submitting = useRef(new Set());
+  const [roomCommands, setRoomCommands] = useState({});
 
   useVisibleRefresh({ active, intervalMs: refreshMs, reload, poll });
 
@@ -89,12 +94,38 @@ export function useHomeEntities({ active = true, refreshMs = REFRESH_MS } = {}) 
   }, []);
 
   /** Turn off every entity given (a room's lit lamps); one request each, together. */
-  const turnOff = useCallback(async (list) => {
-    const lit = list.filter((e) => e.stateClass === 'on' && e.controllable && !e.pending);
+  const turnOff = useCallback(async (roomId, list) => {
+    const lit = list.filter(entity => canTurnOff(entity) && !submitting.current.has(entity.id));
+    if (!lit.length) return;
+    setRoomCommands(current => ({ ...current, [roomId]: { pending: true, ids: lit.map(entity => entity.id) } }));
     logger.info('home.entities.turn-off-many', { count: lit.length, entityIds: lit.map((e) => e.id) });
     const results = await Promise.all(lit.map((e) => toggle(e)));
-    return results.every(Boolean);
+    const failedIds = lit.filter((entity, i) => !results[i]).map(entity => entity.id);
+    setRoomCommands(current => {
+      const next = { ...current };
+      const remaining = current[roomId].ids.filter(id => failedIds.includes(id));
+      if (remaining.length) next[roomId] = { pending: false, ids: remaining };
+      else delete next[roomId];
+      return next;
+    });
+    return !failedIds.length;
   }, [toggle]);
+
+  // An off reading retires a target even if its transport acknowledgement is still pending.
+  useEffect(() => {
+    if (!data?.entities) return;
+    setRoomCommands(current => {
+      let next = current;
+      for (const [roomId, command] of Object.entries(current)) {
+        const remaining = command.ids.filter(id => data.entities.some(entity => entity.id === id && canTurnOff(entity)));
+        if (remaining.length === command.ids.length) continue;
+        if (next === current) next = { ...current };
+        if (command.pending || remaining.length) next[roomId] = { ...command, ids: remaining };
+        else delete next[roomId];
+      }
+      return next;
+    });
+  }, [data]);
 
   const entities = useMemo(() => (data?.entities || []).map((e) => (
     pending[e.id] ? { ...e, stateClass: pending[e.id].expected, state: pending[e.id].expected, pending: true } : e
@@ -111,7 +142,7 @@ export function useHomeEntities({ active = true, refreshMs = REFRESH_MS } = {}) 
     // Absent on an older server; the views degrade without it.
     summary: data?.summary || null,
     hasData: Boolean(data),
-    loading, error, revalidating, reload, toggle, turnOff,
+    loading, error, revalidating, reload, toggle, turnOff, roomCommands,
   };
 }
 
