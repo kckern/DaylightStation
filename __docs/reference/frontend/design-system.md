@@ -406,6 +406,10 @@ closing it releases the tracks and stops its meter and elapsed timer. A retired
 capture cannot publish a recording. The feature owns any transcription or
 submission that follows. [Recorder hook](../../../frontend/src/modules/VoiceCapture/useMediaRecorderCapture.js)
 
+Life Triage uses `ds-touch-target` for Record, Stop and Send on coarse pointers.
+The transcript fills the draft for review. Send submits the answer explicitly.
+[Triage answer](../../../__app_modules/personal/life/browser/views/now/triage/AnswerInput.jsx)
+
 ## The rules
 
 - New webapp UI is built from `@/lib/ui` and the token contract — not raw

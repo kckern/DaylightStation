@@ -96,13 +96,14 @@ export function AnswerInput({ value, onChange, onSubmit, placeholder = 'Or say w
           size="md"
         />
         {value.trim() ? (
-          <ActionIcon type="submit" size={42} radius="xl" variant="filled" aria-label="Send answer" disabled={disabled}>
+          <ActionIcon type="submit" size={42} className="ds-touch-target" radius="xl" variant="filled" aria-label="Send answer" disabled={disabled}>
             <IconArrowUp size={20} />
           </ActionIcon>
         ) : null}
         <ActionIcon
           type="button"
           size={42}
+          className="ds-touch-target"
           radius="xl"
           variant={isRecording ? 'filled' : 'light'}
           color={isRecording ? 'red' : undefined}

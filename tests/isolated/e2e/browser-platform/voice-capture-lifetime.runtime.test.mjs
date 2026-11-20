@@ -146,6 +146,40 @@ test('Life Triage transcribes captured bytes into the current answer draft for r
   }
 });
 
+test.describe('Life Triage touch targets', () => {
+  test.use({ hasTouch: true, viewport: { width: 390, height: 850 } });
+
+  test('uses the shared touch minimum for record, stop and send while preserving explicit submit', async ({ page }) => {
+    const { main, microphoneButton, commands, metrics, grant } = await triage(page);
+    const answer = main.getByRole('textbox', { name: 'Answer in your own words' });
+    const send = main.getByRole('button', { name: 'Send answer' });
+    const stop = main.getByRole('button', { name: 'Stop recording' });
+    const expectTarget = async control => {
+      await expect(control).toBeVisible();
+      const { width, height } = await control.boundingBox();
+      expect(width).toBeGreaterThanOrEqual(44);
+      expect(height).toBeGreaterThanOrEqual(44);
+    };
+    expect(await page.evaluate(() => matchMedia('(pointer: coarse)').matches)).toBe(true);
+    await answer.fill('My draft');
+    await expectTarget(microphoneButton);
+    await expectTarget(send);
+    await microphoneButton.tap({ position: { x: 1, y: 22 } });
+    await expect.poll(async () => (await metrics()).requests).toEqual([microphone]);
+    await grant(0);
+    await expectTarget(stop);
+    await stop.press('Enter');
+    await expect(answer).toHaveValue('My draft Synthetic transcript');
+    expect(commands.map(([path]) => path)).toEqual(['/api/v1/ai/transcribe']);
+
+    await send.press('Enter');
+    await expect.poll(() => commands).toEqual([
+      ['/api/v1/ai/transcribe', { audioBase64: Buffer.from(bytes).toString('base64') }],
+      [`/api/v1/triage/cards/${card.cardId}/answer`, { text: 'My draft Synthetic transcript' }],
+    ]);
+  });
+});
+
 for (const destination of ['the next card', 'another route']) {
   test(`Life Triage cancels a transcript while moving to ${destination}`, async ({ page }) => {
     const { main, microphoneButton, commands, metrics, grant, transcriptionStarted, transcript, canceled }
