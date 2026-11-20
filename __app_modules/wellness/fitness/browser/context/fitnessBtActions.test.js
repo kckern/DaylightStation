@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildPairRequest, buildRemoveRequest, PAIR_WINDOW_MS } from "./fitnessBtActions.js";
+import { buildPairRequest, buildRemoveRequest, mergePairingProgress, PAIR_WINDOW_MS } from "./fitnessBtActions.js";
 
 describe('fitnessBtActions', () => {
   it('builds a bt.pair.request with requestId + duration + targets', () => {
@@ -15,6 +15,18 @@ describe('fitnessBtActions', () => {
     expect(buildPairRequest({ requestId: 'r' }).mode).toBe('repair');
     expect(buildPairRequest({ requestId: 'r', mode: 'add' }).mode).toBe('add');
     expect(buildPairRequest({ requestId: 'r', mode: 'bogus' }).mode).toBe('repair');
+  });
+  it('mergePairingProgress keeps the window mode on later messages of the same request', () => {
+    const cur = { phase: 'scanning', requestId: 'p1', mode: 'add', optimistic: true };
+    expect(mergePairingProgress(cur, { phase: 'found', requestId: 'p1', device: { name: 'R1' } }))
+      .toEqual({ phase: 'found', requestId: 'p1', device: { name: 'R1' }, mode: 'add' });
+    // A message that carries its own mode wins.
+    expect(mergePairingProgress(cur, { phase: 'scanning', requestId: 'p1', mode: 'repair' }).mode).toBe('repair');
+    // Another request never inherits it.
+    expect(mergePairingProgress(cur, { phase: 'found', requestId: 'p2' }).mode).toBeUndefined();
+    expect(mergePairingProgress(null, { phase: 'found', requestId: 'p1' }).mode).toBeUndefined();
+    // Neither side has a requestId: nothing ties them together.
+    expect(mergePairingProgress({ phase: 'scanning', mode: 'add' }, { phase: 'found' }).mode).toBeUndefined();
   });
   it('builds a bt.remove for an address', () => {
     expect(buildRemoveRequest({ requestId: 'r1', address: 'AA:BB:CC:DD:EE:FF' }))

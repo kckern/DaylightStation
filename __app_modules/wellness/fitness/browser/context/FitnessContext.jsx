@@ -23,7 +23,7 @@ import { getModuleManifest } from "../index.js";
 import { VIBRATION_CONSTANTS } from "../widgets/VibrationApp/constants.js";
 import { buildSelectionConfig } from "../hooks/fitness/selectPrimaryMedia.js";
 import { applyEquipmentCatalogFromConfig, riderSelectorsFromConfig } from "./fitnessConfigBridge.js";
-import { buildPairRequest, buildRemoveRequest, PAIR_WINDOW_MS } from "./fitnessBtActions.js";
+import { buildPairRequest, buildRemoveRequest, mergePairingProgress, PAIR_WINDOW_MS } from "./fitnessBtActions.js";
 import { createTransportRecovery } from '../hooks/fitness/transportRecovery.js';
 import { endLiveSession } from "../hooks/fitness/endLiveSession.js";
 import { normalizeToast, dismissMatches } from "../player/overlays/fitnessToastSlot.js";
@@ -1653,7 +1653,7 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
               reason: data.reason,
               message: data.message,
             });
-            setControllerPairing(data);
+            setControllerPairing((cur) => mergePairingProgress(cur, data));
             return;
           }
           if (data?.topic === 'bt.remove.result') {

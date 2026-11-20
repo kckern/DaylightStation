@@ -22,6 +22,18 @@ export function buildPairRequest({ requestId, durationMs = PAIR_WINDOW_MS, targe
     mode: mode === 'add' ? 'add' : 'repair',
   };
 }
+/**
+ * Next pairing state for a `bt.pair.progress` message. Only the first message
+ * of a window carries `mode`, so later messages of the same request keep the
+ * mode already held; a different request never inherits it.
+ *
+ * @param {object|null} cur   current pairing state.
+ * @param {object} data       the progress message.
+ */
+export function mergePairingProgress(cur, data) {
+  const sameRequest = data?.requestId != null && cur?.requestId === data.requestId;
+  return { ...data, mode: data?.mode ?? (sameRequest ? cur?.mode : undefined) };
+}
 export function buildRemoveRequest({ requestId, address }) {
   return { topic: 'bt.remove', requestId, address };
 }

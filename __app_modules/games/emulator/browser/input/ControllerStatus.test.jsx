@@ -377,6 +377,15 @@ describe('ControllerStatus — add a new device', () => {
     expect(container.querySelector('.ccs-pair-guide:not(.ccs-add-guide)')).toBeNull();
   });
 
+  it('a fresh mount mid add-window shows the add panel, not the repair guide', () => {
+    const { container } = render(
+      <ControllerStatus controllers={[SFC30]} getGamepads={() => []} btInventory={[]} onPair={vi.fn()}
+        pairing={{ phase: 'found', mode: 'add', device: { name: 'R1' } }} />,
+    );
+    expect(container.querySelector('.ccs-add-guide')).toBeTruthy();
+    expect(container.querySelector('.ccs-pair-guide:not(.ccs-add-guide)')).toBeNull();
+  });
+
   it('repair pairing still sends repair mode', () => {
     const onPair = vi.fn();
     const { getByRole } = render(

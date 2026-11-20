@@ -84,8 +84,10 @@ export function ControllerStatus({ controllers = [], getGamepads, btInventory, o
   const status = pairingStatus(pairing);
   const [addOpen, setAddOpen] = useState(false);
   const [activeMode, setActiveMode] = useState('repair');
-  // The context echoes `mode` on its optimistic state; later progress messages
-  // don't carry it, so fall back to the last button pressed.
+  // The host keeps `mode` on every message of a window (FitnessContext's
+  // mergePairingProgress), so a remounted panel still knows an add window from
+  // a re-pair. The last button pressed is only the fallback for a host that
+  // does not send `mode`.
   const mode = pairing?.mode || activeMode;
   const showAdd = canPair && (addOpen || (status.busy && mode === 'add'));
   const showGuide = canPair && !showAdd && guides.length > 0 && (guideOpen || status.busy);
