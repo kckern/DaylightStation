@@ -1,5 +1,5 @@
 import { useCallback, useMemo } from 'react';
-import { useApiResource } from '@/lib/hooks/useApiResource.js';
+import { useDeviceConfig } from '@/lib/hooks/useDeviceConfig.js';
 
 function filterPlaybackSurfaces(rawDevices) {
   if (!rawDevices || typeof rawDevices !== 'object') return [];
@@ -9,11 +9,11 @@ function filterPlaybackSurfaces(rawDevices) {
 }
 
 export function useDevices() {
-  const { data, loading, error, refresh } = useApiResource('api/v1/device/config', {
+  const { devices: roster, loading, error, refresh } = useDeviceConfig({
     retryTransient: false,
     clearDataOnError: true,
   });
-  const devices = useMemo(() => filterPlaybackSurfaces(data?.devices), [data]);
+  const devices = useMemo(() => filterPlaybackSurfaces(roster), [roster]);
   // Socket recovery and visibility callbacks also call this without awaiting it.
   const refreshDevices = useCallback(async () => {
     try { await refresh(); } catch { /* The resource publishes the read error. */ }

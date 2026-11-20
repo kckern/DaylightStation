@@ -9,11 +9,13 @@ function logger() {
 
 /**
  * @param {Object} [options]
+ * @param {boolean} [options.enabled=true] - Start permission discovery and enumeration
  * @param {string} [options.preferredCameraPattern] - Regex pattern to match preferred camera label
  * @param {string} [options.preferredMicPattern] - Regex pattern to match preferred mic label
  */
 export const useMediaDevices = (options = {}) => {
-  const { preferredCameraPattern, preferredMicPattern } = options;
+  const { enabled = true, preferredCameraPattern, preferredMicPattern } = options;
+  const [hasEnumerated, setHasEnumerated] = useState(false);
   const [videoDevices, setVideoDevices] = useState([]);
   const [audioDevices, setAudioDevices] = useState([]);
   const [selectedVideoDevice, setSelectedVideoDevice] = useState(null);
@@ -26,14 +28,22 @@ export const useMediaDevices = (options = {}) => {
   micPrefRef.current = preferredMicPattern;
 
   useEffect(() => {
+    if (!enabled) {
+      setHasEnumerated(false);
+      return;
+    }
+    const mediaDevices = navigator.mediaDevices;
+    let active = true;
     const getDevices = async () => {
       try {
         // Must call getUserMedia first to grant permissions and get device labels
         // (Android WebView returns empty list from enumerateDevices without this)
-        const tempStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+        const tempStream = await mediaDevices.getUserMedia({ video: true, audio: true });
         tempStream.getTracks().forEach(t => t.stop());
+        if (!active) return;
 
-        const devicesList = await navigator.mediaDevices.enumerateDevices();
+        const devicesList = await mediaDevices.enumerateDevices();
+        if (!active) return;
         const vidDevices = devicesList.filter(d => d.kind === "videoinput");
         const audDevices = devicesList.filter(d => d.kind === "audioinput");
 
@@ -80,18 +90,21 @@ export const useMediaDevices = (options = {}) => {
           });
         }
       } catch (error) {
-        logger().warn('media-devices.enumerate-error', { error: error.message });
+        if (active) logger().warn('media-devices.enumerate-error', { error: error.message });
+      } finally {
+        if (active) setHasEnumerated(true);
       }
     };
 
     getDevices();
 
     // Listen for device changes
-    navigator.mediaDevices.addEventListener('devicechange', getDevices);
+    mediaDevices?.addEventListener('devicechange', getDevices);
     return () => {
-      navigator.mediaDevices.removeEventListener('devicechange', getDevices);
+      active = false;
+      mediaDevices?.removeEventListener('devicechange', getDevices);
     };
-  }, []); // Run once on mount
+  }, [enabled]);
 
   // Re-select when config patterns arrive after initial enumeration
   useEffect(() => {
@@ -159,6 +172,7 @@ export const useMediaDevices = (options = {}) => {
   };
 
   return {
+    ready: enabled && hasEnumerated,
     videoDevices,
     audioDevices,
     selectedVideoDevice,

@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useMemo, useState, useCallback } from "react";
 import { useMediaDevices } from "./hooks/useMediaDevices";
 import { useWebcamStream } from "./hooks/useWebcamStream";
-import { DaylightAPI } from "../../lib/api.mjs";
+import { useDeviceConfig } from "../../lib/hooks/useDeviceConfig.js";
 import getLogger from "../../lib/logging/Logger.js";
 
 // ── Strategy runners ─────────────────────────────────────────────────
@@ -430,26 +430,16 @@ function MeterRow({ name: _name, label, data }) {
 export default function WebcamApp() {
   const logger = useMemo(() => getLogger().child({ component: 'WebcamDiag' }), []);
 
-  // Fetch input preferences from device config
-  const [inputPrefs, setInputPrefs] = useState({});
-  useEffect(() => {
-    DaylightAPI('api/v1/device/config')
-      .then(config => {
-        const devices = config?.devices || config || {};
-        for (const dev of Object.values(devices)) {
-          if (dev.input) { setInputPrefs(dev.input); break; }
-        }
-      })
-      .catch(() => {});
-  }, []);
+  const { devices } = useDeviceConfig({ retryTransient: false });
+  const inputPrefs = Object.values(devices).find(device => device?.input)?.input;
 
   const {
     audioDevices,
     selectedVideoDevice, selectedAudioDevice,
     cycleVideoDevice, cycleAudioDevice,
   } = useMediaDevices({
-    preferredCameraPattern: inputPrefs.preferred_camera,
-    preferredMicPattern: inputPrefs.preferred_mic,
+    preferredCameraPattern: inputPrefs?.preferred_camera,
+    preferredMicPattern: inputPrefs?.preferred_mic,
   });
 
   // Video only — no audio device passed, we manage audio separately

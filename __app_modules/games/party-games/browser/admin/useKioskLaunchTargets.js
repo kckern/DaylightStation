@@ -1,8 +1,8 @@
 import { useMemo } from 'react';
 import { useApiResource } from '../../../../../frontend/src/lib/hooks/useApiResource.js';
+import { useDeviceConfig } from '../../../../../frontend/src/lib/hooks/useDeviceConfig.js';
 
 const LAUNCH_TARGETS_URL = '/api/v1/content/launch-targets/retroarch';
-const DEVICE_CONFIG_URL = '/api/v1/device/config';
 
 /**
  * Which devices a parent may launch a game on, and which titles on each.
@@ -31,15 +31,13 @@ const DEVICE_CONFIG_URL = '/api/v1/device/config';
  */
 export function useKioskLaunchTargets() {
   const roster = useApiResource(LAUNCH_TARGETS_URL);
-  const labels = useApiResource(DEVICE_CONFIG_URL);
-  const targets = useMemo(() => {
-    const devices = labels.data?.devices || labels.data || {};
-    return (roster.data?.targets || []).map(target => ({
+  const { devices } = useDeviceConfig();
+  const targets = useMemo(() =>
+    (roster.data?.targets || []).map(target => ({
       deviceId: target.deviceId,
       label: devices[target.deviceId]?.name || target.deviceId,
       allow: Array.isArray(target.allow) ? target.allow.filter(Boolean) : [],
-    }));
-  }, [roster.data, labels.data]);
+    })), [roster.data, devices]);
 
   return { targets, loading: roster.loading, error: roster.error, reload: roster.reload };
 }
