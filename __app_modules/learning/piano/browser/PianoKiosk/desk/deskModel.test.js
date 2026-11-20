@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { cardBadge, coinSize, lessonTitle, mapColumns, mapRows, nextStep, passageBars, passageFaded, pieceCount, pieceFocus, relativeTime, scoreHeading, shownCard, stripCards, stripGroups } from './deskModel.js';
+import { cardBadge, coinSize, lessonTitle, mapColumns, mapRows, nextStep, passageBars, passageFaded, pieceCount, pieceFocus, pieceLabel, relativeTime, scoreHeading, shownCard, stripCards, stripGroups } from './deskModel.js';
 
 const passages = [{ id: 'a', start: 0, end: 4, state: 'silver' }, { id: 'b', start: 5, end: 8, state: 'todo' }];
 const piece = { total: 2, silver: 1, gold: 0, practicedAt: '2026-11-18T10:00:00Z', next: { passageId: 'b' }, nextGoldPassageId: 'a', passages };
@@ -55,8 +55,16 @@ describe('deskModel', () => {
   it('badges a card by why it is there', () => {
     expect(cardBadge({ kind: 'piece', piece: { silver: 1, gold: 0, total: 3 } })).toEqual({ level: 'silver', label: 'Silver next' });
     expect(cardBadge({ kind: 'piece', piece: { silver: 3, gold: 1, total: 3 } })).toEqual({ level: 'gold', label: 'Gold next' });
-    expect(cardBadge({ kind: 'piece', piece: { silver: 3, gold: 3, total: 3 } })).toEqual({ level: 'gold', label: 'All Gold' });
+    expect(cardBadge({ kind: 'piece', piece: { silver: 3, gold: 3, total: 3 } })).toEqual({ level: 'gold', label: 'Polish next' });
     expect(cardBadge({ kind: 'course', course: {} })).toEqual({ level: 'lesson', label: 'Next lesson' });
+  });
+  it('once a piece is all Gold, badges the Polish goal: Polish next, Diamond next, then Diamond', () => {
+    const allGold = { silver: 3, gold: 3, total: 3 };
+    expect(cardBadge({ kind: 'piece', piece: { ...allGold, polish: { gem: false, diamond: false } } })).toEqual({ level: 'gold', label: 'Polish next' });
+    expect(cardBadge({ kind: 'piece', piece: { ...allGold, polish: { gem: true, diamond: false } } })).toEqual({ level: 'diamond', label: 'Diamond next' });
+    expect(cardBadge({ kind: 'piece', piece: { ...allGold, polish: { gem: true, diamond: true } } })).toEqual({ level: 'diamond', label: 'Diamond' });
+    // Awards on a piece that is no longer all Gold (a passage added) leave the ladder badge alone.
+    expect(cardBadge({ kind: 'piece', piece: { silver: 3, gold: 2, total: 3, polish: { gem: true, diamond: false } } })).toEqual({ level: 'gold', label: 'Gold next' });
   });
   it('names the next step: the bars up next, or the lesson number', () => {
     expect(nextStep({ kind: 'piece', focus: { start: 0, end: 3 } })).toBe('Bars 1–4');
@@ -81,6 +89,17 @@ describe('deskModel', () => {
     expect(coinSize(14)).toBe(17);
     expect(coinSize(20)).toBe(22);
     expect(coinSize(28)).toBe(17);
+  });
+  it('makes room for one more coin-sized slot when the row ends in a Polish stone', () => {
+    expect(coinSize(3, 1)).toBe(22);
+    expect(coinSize(12, 1)).toBe(19);
+    expect(coinSize(14, 1)).toBe(16);
+    expect(coinSize(28, 1)).toBe(16);
+  });
+  it('names a piece card with its Polish stone for a screen reader', () => {
+    expect(pieceLabel('Kid', { silver: 3, total: 3 })).toBe('Kid: 3 of 3 Silver');
+    expect(pieceLabel('Kid', { silver: 3, total: 3, polish: { gem: true, diamond: false } })).toBe('Kid: 3 of 3 Silver, Polish gem');
+    expect(pieceLabel('Kid', { silver: 3, total: 3, polish: { gem: true, diamond: true } })).toBe('Kid: 3 of 3 Silver, Polish diamond');
   });
   it('shows the chosen activity, else the most recent one', () => {
     const pieceCard = { kind: 'piece', at: '2026-11-18T10:00:00Z' };

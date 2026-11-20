@@ -7,7 +7,9 @@ import { usePianoUser } from '../PianoUserContext.jsx';
 import { titleFromScoreId } from '../modes/SheetMusic/scoreTitle.js';
 import PassageCoin from '../modes/SheetMusic/PassageCoin.jsx';
 import Icon from '../../ui/icons/Icon.jsx';
-import { cardBadge, coinSize, lessonTitle, mapColumns, mapRows, nextStep, passageFaded, pieceCount, scoreHeading, shownCard, stripGroups } from './deskModel.js';
+import GemIcon from '../../../../../../frontend/src/lib/icons/GemIcon.jsx';
+import { polishStone } from '../modes/SheetMusic/polishAwards.js';
+import { cardBadge, coinSize, lessonTitle, mapColumns, mapRows, nextStep, passageFaded, pieceLabel, scoreHeading, shownCard, stripGroups } from './deskModel.js';
 import './PianoHomeDesk.scss';
 
 const players = (response) => (Array.isArray(response?.players) ? response.players : []);
@@ -30,12 +32,18 @@ function usePrintedTitle(scoreId) {
 
 const sized = (url, w, h) => `${url}${url.includes('?') ? '&' : '?'}w=${w}&h=${h}`;
 
-/** The passage map: one coin per passage, in score order, the next one ringed. */
+/**
+ * The passage map: one coin per passage, in score order, the next one ringed.
+ * A piece holding a Polish gem or diamond ends the row with it, coin-sized,
+ * standing beside both rows of a two-row map.
+ */
 export function PassageMap({ piece, focusId }) {
   const columns = mapColumns(piece.passages.length);
-  const size = coinSize(piece.passages.length);
+  const stone = polishStone(piece.polish);
+  const size = coinSize(piece.passages.length, stone ? 1 : 0);
+  const track = `repeat(${columns}, minmax(0, ${size}px))${stone ? ` minmax(0, ${size}px)` : ''}`;
   return (
-    <span className="piano-desk__map" style={{ gridTemplateColumns: `repeat(${columns}, minmax(0, ${size}px))` }} aria-hidden="true">
+    <span className="piano-desk__map" style={{ gridTemplateColumns: track }} aria-hidden="true">
       {piece.passages.map((passage) => {
         const current = passage.id === focusId;
         return (
@@ -44,6 +52,11 @@ export function PassageMap({ piece, focusId }) {
           </i>
         );
       })}
+      {stone && (
+        <i data-stone={stone.kind} style={{ gridColumn: columns + 1, gridRow: `1 / span ${mapRows(piece.passages.length)}` }}>
+          <GemIcon size="100%" color={stone.color} />
+        </i>
+      )}
     </span>
   );
 }
@@ -185,7 +198,7 @@ export default function PianoHomeDesk({ disabled, onOpenPassage, onOpenCourse })
           </span>
           <button type="button" key={card.key} className="piano-desk__card" data-kind={card.kind} disabled={disabled}
             data-rows={card.kind === 'piece' && mapRows(card.piece.passages.length) > 1 ? 2 : undefined}
-            aria-label={card.kind === 'piece' ? `${card.name}: ${pieceCount(card.piece)}` : `${card.name}: ${card.course.next?.title ?? card.course.courseTitle}`}
+            aria-label={card.kind === 'piece' ? pieceLabel(card.name, card.piece) : `${card.name}: ${card.course.next?.title ?? card.course.courseTitle}`}
             onClick={() => open(card)}>
             {card.kind === 'piece' ? <PieceCard card={card} /> : <CourseCard card={card} />}
           </button>

@@ -95,6 +95,24 @@ export class PianoPolishReward {
     return result;
   }
 
+  /**
+   * The Polish gem and diamond a player's piece already holds, for screens
+   * that show them (the passage board reads this through the practice GET).
+   * Matched on the practice record's key, which is all that route knows.
+   * Never throws: an unreadable log answers nothing held.
+   * @returns {{gem: boolean, diamond: boolean}}
+   */
+  holdings({ userId, scoreKey }) {
+    if (!userId || userId === 'guest' || !scoreKey) return { gem: false, diamond: false };
+    try {
+      const mine = this.#pieceLog.list(userId).filter((entry) => typeof entry?.scoreId === 'string' && keyOfScore(entry.scoreId) === scoreKey);
+      return { gem: mine.some((e) => e.level === 'polish-gem'), diamond: mine.some((e) => e.level === 'polish-diamond') };
+    } catch (error) {
+      this.#logger?.warn?.('piano.polish.holdings-failed', { userId, scoreKey, error: error?.message ?? String(error) });
+      return { gem: false, diamond: false };
+    }
+  }
+
   #judge({ userId, scoreKey, scoreId, run, record }) {
     const quiet = { newGem: false, newDiamond: false };
     if (!userId || userId === 'guest') return { ...none('guest'), ...quiet };

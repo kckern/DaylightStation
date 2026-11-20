@@ -214,6 +214,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
   const {
     record: practice,
     loaded: practiceLoaded,
+    polishAwards,
     persistent: practicePersistent,
     recordCycle,
     recordTierBest,
@@ -2402,7 +2403,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
   }, [logger, scoreMeta.id]);
 
   if (roadmapLearn && selectedPassage) return <div className="piano-score-player piano-score-player--learn-launchpad">
-    <LearnCoach score={learnScore} title={meta.title} plan={coachPlan} segment={selectedPassage} coach={coach} skipping={learnPlan.skipping}
+    <LearnCoach score={learnScore} title={meta.title} plan={coachPlan} segment={selectedPassage} coach={coach} skipping={learnPlan.skipping} polish={polishAwards}
       tempo={{ ...learnPlan.settings.tempo, tempoSource: learnPlan.tempoSource, measureOnsets: layout.measures.map((measure) => layout.steps[measure.firstStep]?.onsetQuarter) }} feedback={learnPlan.settings.feedback}
       onBack={closeLearnPassage} onPassageChange={openLearnPassage}
       onListen={(task) => logger.info('piano.learn.listen', { scoreId: scoreMeta.id, passageId: task.passageId, parts: task.parts })} />
@@ -2580,7 +2581,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
       </div>
 
       {railVisible && passageBoard && (
-        <PassageBoard title={meta.title} model={rail} focusId={passageBoard.focusId} gemOffered={gemOffered}
+        <PassageBoard title={meta.title} model={rail} focusId={passageBoard.focusId} gemOffered={gemOffered} polish={polishAwards}
           review={Boolean(coach.projection.review)}
           onReview={() => { coach.selectTask(coach.projection.review); openLearnPassage(coach.projection.review.passageId); }}
           onSelect={(passageId) => selectRailPassage(passageId, 'board')} onClose={closePassageBoard} />

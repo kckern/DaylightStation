@@ -104,6 +104,7 @@
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
     &[data-level='silver'] { color: var(--piano-silver); }
     &[data-level='gold'] { color: var(--piano-gold); }
+    &[data-level='diamond'] { color: var(--piano-diamond); }
     &[data-level='lesson'] { color: var(--piano-accent-text); }
   }
   &__title {
@@ -135,6 +136,8 @@
     i[data-current] { box-shadow: 0 0 0 2px var(--piano-accent); }
     // A tomato nobody has started sits back; started ones and the one up next stay bright.
     i[data-faded] { opacity: 0.3; }
+    // The piece's Polish gem or diamond ends the row, a coin's size, centred beside both rows.
+    i[data-stone] { align-self: center; border-radius: 0; }
   }
 
   // Closed (curfew, a pending lesson): the child headers go grey with their cards.

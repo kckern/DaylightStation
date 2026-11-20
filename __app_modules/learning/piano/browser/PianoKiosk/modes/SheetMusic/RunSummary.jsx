@@ -1,6 +1,7 @@
 import React from 'react';
 import { tallyAssessmentGrades } from './assessmentProjections.js';
 import GemIcon from '../../../../../../../frontend/src/lib/icons/GemIcon.jsx';
+import { POLISH_DIAMOND_COLOR, POLISH_GEM_COLOR } from './polishAwards.js';
 
 const OVERALL_LABEL = { green: 'Nicely done', yellow: 'Getting there', red: 'Keep at it' };
 // The shared tally reports overall: null when nothing was graded. Say so plainly —
@@ -27,8 +28,8 @@ const NO_BEST = '—'; // em dash — this tier has never been run
 // Board's School colour, the piece gems' area; the diamond is a pale stone.
 // The diamond leads when both are new: it is the bigger news.
 const REWARD_LINES = [
-  { key: 'newDiamond', text: 'Diamond earned!', color: '#cfe8f7' },
-  { key: 'newGem', text: 'Gem earned!', color: '#f2c94c' },
+  { key: 'newDiamond', text: 'Diamond earned!', color: POLISH_DIAMOND_COLOR },
+  { key: 'newGem', text: 'Gem earned!', color: POLISH_GEM_COLOR },
 ];
 
 /**

@@ -177,6 +177,26 @@ describe('piano practice endpoints', () => {
     expect(r.body.measures['2']).toBeTruthy();
   });
 
+  describe('the Polish gem and diamond a piece holds', () => {
+    const holder = (held) => ({ calls: [], holdings(args) { this.calls.push(args); return held; } });
+
+    it('GET answers them as polishAwards beside a saved record', async () => {
+      const service = holder({ gem: true, diamond: false });
+      const a = app({ pianoPolishReward: service });
+      await request(a).put('/api/v1/piano/users/kc/practice/files-x').send({ fingerprint: { contentSha256: 'sha' } });
+      const r = await request(a).get('/api/v1/piano/users/kc/practice/files-x');
+      expect(r.body.polishAwards).toEqual({ gem: true, diamond: false });
+      expect(service.calls[0]).toEqual({ userId: 'kc', scoreKey: 'files-x' });
+    });
+
+    it('a fresh score stays {}, and polishAwards sent back on a PUT is never stored', async () => {
+      const a = app({ pianoPolishReward: holder({ gem: true, diamond: true }) });
+      expect((await request(a).get('/api/v1/piano/users/kc/practice/files-x')).body).toEqual({});
+      await request(a).put('/api/v1/piano/users/kc/practice/files-x').send({ fingerprint: { contentSha256: 'sha' }, polishAwards: { gem: true, diamond: true } });
+      expect(files['/data/users/kc/apps/piano/practice/files-x'].polishAwards).toBeUndefined();
+    });
+  });
+
   describe('a Polish run reported with the write', () => {
     const polishRun = { scoreId: 'files:x', tempoMult: 1, metronome: true, completed: true, mixed: false, parts: [0, 1], activeParts: [0, 1], base: 97 };
     const reward = () => {

@@ -1,4 +1,5 @@
 // deskModel.js — pure view rules for the progress strip above the home menu.
+import { polishStone } from '../modes/SheetMusic/polishAwards.js';
 
 export const passageBars = (passage) => (passage ? `Bars ${passage.start + 1}–${passage.end + 1}` : '');
 
@@ -87,11 +88,19 @@ export const lessonTitle = (title) => {
   return text.replace(LESSON_PREFIX, '').trim() || text;
 };
 
-/** Why a card is on the strip, as its badge: Silver next, Gold next, All Gold, or Next lesson. */
+/**
+ * Why a card is on the strip, as its badge: Silver next, Gold next, then the
+ * Polish goal once the piece is all Gold (Polish next, Diamond next after the
+ * gem, Diamond after the diamond), or Next lesson.
+ */
 export function cardBadge(card) {
   if (card.kind === 'course') return { level: 'lesson', label: 'Next lesson' };
-  const { silver, gold, total } = card.piece;
-  if (total > 0 && gold >= total) return { level: 'gold', label: 'All Gold' };
+  const { silver, gold, total, polish } = card.piece;
+  if (total > 0 && gold >= total) {
+    if (polish?.diamond === true) return { level: 'diamond', label: 'Diamond' };
+    if (polish?.gem === true) return { level: 'diamond', label: 'Diamond next' };
+    return { level: 'gold', label: 'Polish next' };
+  }
   if (total > 0 && silver >= total) return { level: 'gold', label: 'Gold next' };
   return { level: 'silver', label: 'Silver next' };
 }
@@ -120,10 +129,16 @@ const GAP = 2;
 export const mapColumns = (count) => (count > 14 ? Math.ceil(count / 2) : Math.max(1, count));
 export const mapRows = (count) => (count > 14 ? 2 : 1);
 
-/** Coin size in px: the row fills the card, never above 22px. */
-export const coinSize = (count) => {
-  const columns = mapColumns(count);
+/** Coin size in px: the row fills the card, never above 22px. `extra` slots (a Polish stone) share the row. */
+export const coinSize = (count, extra = 0) => {
+  const columns = mapColumns(count) + extra;
   return Math.min(22, Math.floor((ROW - (columns - 1) * GAP) / columns));
 };
 
 export const pieceCount = (piece) => `${piece.silver} of ${piece.total} Silver`;
+
+/** A piece card's name for a screen reader: the Silver count, and the Polish stone when it holds one. */
+export const pieceLabel = (name, piece) => {
+  const stone = polishStone(piece.polish);
+  return `${name}: ${pieceCount(piece)}${stone ? `, ${stone.label}` : ''}`;
+};

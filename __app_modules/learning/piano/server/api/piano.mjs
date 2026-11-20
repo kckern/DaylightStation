@@ -71,7 +71,9 @@ function attemptPolicyErrors(userId, body) {
  *   PUT    /users/:userId/preset             → { default?, favorites? }  (body merged)
  *
  *   Practice history (per-user, per-score sheet-music record; wave-3 §C):
- *   GET    /users/:userId/practice/:scoreKey → {} or the stored record
+ *   GET    /users/:userId/practice/:scoreKey → {} or the stored record, plus
+ *          `polishAwards` ({gem, diamond}: the piece's Polish awards from the
+ *          piece log, read-only; a PUT carrying it drops it)
  *   PUT    /users/:userId/practice/:scoreKey → merged record (measures per-key,
  *          polish per-bucket, updatedAt server-stamped; a changed fingerprint
  *          replaces the record instead of merging — see route for detail).
@@ -97,7 +99,7 @@ function attemptPolicyErrors(userId, body) {
  *
  *   Home desk:
  *   GET    /activity/recent                  → { players: [...] }  (per-player most-recent lesson-course progress)
- *   GET    /activity/desk                    → { players: [...] }  (per-player current piece, passages and next step)
+ *   GET    /activity/desk                    → { players: [...] }  (per-player current piece, passages, next step and Polish gem/diamond)
  *
  *   Game-time budget (server is the source of truth; unwired service fails open):
  *   GET    /users/:userId/game-budget                          → live balance ({enabled:false} if unwired/off)
@@ -1015,6 +1017,11 @@ export function createPianoRouter({ pianoContainer, schoolLearnerDirectory = nul
     if (!PRACTICE_KEY_RE.test(scoreKey)) return res.status(400).json({ error: 'Invalid score key' });
     const rec = ds.getPractice(userId, scoreKey);
     if (rec === null) return res.status(400).json({ error: 'Invalid user' });
+    // The piece's Polish gem and diamond ride along for the passage board;
+    // they live in the piece log, never in the record (a PUT drops them).
+    if (Object.keys(rec).length && typeof pianoPolishReward?.holdings === 'function') {
+      return res.json({ ...rec, polishAwards: pianoPolishReward.holdings({ userId, scoreKey }) });
+    }
     res.json(rec);
   });
 
@@ -1024,8 +1031,8 @@ export function createPianoRouter({ pianoContainer, schoolLearnerDirectory = nul
     const current = ds.getPractice(userId, scoreKey);
     if (current === null) return res.status(400).json({ error: 'Invalid user' });
     const incoming = req.body && typeof req.body === 'object' ? req.body : {};
-    const { learnCoach: ignoredCoach, learnCoachArchive: ignoredArchive, polishRun, polishReward: ignoredReward, ...body } = incoming;
-    void ignoredCoach; void ignoredArchive; void ignoredReward;
+    const { learnCoach: ignoredCoach, learnCoachArchive: ignoredArchive, polishRun, polishReward: ignoredReward, polishAwards: ignoredAwards, ...body } = incoming;
+    void ignoredCoach; void ignoredArchive; void ignoredReward; void ignoredAwards;
     // A different fingerprint means the score file changed shape — the old
     // per-measure record describes measures that no longer exist. Replace.
     const fpChanged = body.fingerprint && current.fingerprint

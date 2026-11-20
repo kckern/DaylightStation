@@ -111,3 +111,30 @@ describe('PianoPolishReward', () => {
     expect(logs[0][0]).toBe('piano.polish.reward-failed');
   });
 });
+
+describe('PianoPolishReward.holdings (what a piece already holds)', () => {
+  const entry = (level, scoreId = SCORE) => ({ at: '2026-11-19T20:00:00.000Z', scoreId, level });
+  const holdingsOf = (entries, args = { userId: 'kid', scoreKey: KEY }) => {
+    const logs = [];
+    const reward = new PianoPolishReward({ pieceLog: new PianoPieceLog({ store: memory(entries), clock }), logger: { warn: (event, data) => logs.push([event, data]) } });
+    return { result: reward.holdings(args), logs };
+  };
+
+  it('reads the gem and diamond the piece log holds for this score key', () => {
+    expect(holdingsOf([gold]).result).toEqual({ gem: false, diamond: false });
+    expect(holdingsOf([gold, entry('polish-gem')]).result).toEqual({ gem: true, diamond: false });
+    expect(holdingsOf([gold, entry('polish-gem'), entry('polish-diamond')]).result).toEqual({ gem: true, diamond: true });
+  });
+
+  it('another piece\'s awards and a guest hold nothing', () => {
+    expect(holdingsOf([entry('polish-gem', 'files:sheets/other.mxl')]).result).toEqual({ gem: false, diamond: false });
+    expect(holdingsOf([entry('polish-gem')], { userId: 'guest', scoreKey: KEY }).result).toEqual({ gem: false, diamond: false });
+  });
+
+  it('an unreadable log answers nothing held, and says so', () => {
+    const reward = new PianoPolishReward({ pieceLog: { list: () => { throw new Error('disk'); } }, logger: { warn: (event, data) => logs.push([event, data]) } });
+    const logs = [];
+    expect(reward.holdings({ userId: 'kid', scoreKey: KEY })).toEqual({ gem: false, diamond: false });
+    expect(logs[0][0]).toBe('piano.polish.holdings-failed');
+  });
+});

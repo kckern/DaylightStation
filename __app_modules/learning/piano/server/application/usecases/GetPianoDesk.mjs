@@ -4,8 +4,9 @@
  * its passages, and the next Silver step.
  *
  * The answer always comes from the same coaching policy Learn uses, so the home
- * screen and the score cannot disagree. It reads practice records only, with no
- * Plex or network dependency, so the home screen can paint quickly.
+ * screen and the score cannot disagree. It reads practice records, and the piece
+ * log for the piece's Polish gem and diamond, with no Plex or network
+ * dependency, so the home screen can paint quickly.
  */
 import { createCoachPlan, passageProgress, projectCoach } from '#shared/music/learnCoach.mjs';
 
@@ -36,10 +37,11 @@ function latestActivity(record) {
 }
 
 export class GetPianoDesk {
-  #datastore; #configProjection; #clock; #timezone; #logger;
+  #datastore; #configProjection; #pieceLog; #clock; #timezone; #logger;
 
-  constructor({ datastore, configProjection, clock = () => new Date(), timezone = null, logger = console }) {
+  constructor({ datastore, configProjection, pieceLog = null, clock = () => new Date(), timezone = null, logger = console }) {
     this.#datastore = datastore;
+    this.#pieceLog = pieceLog;
     this.#configProjection = configProjection;
     this.#clock = clock;
     this.#timezone = timezone;
@@ -74,6 +76,18 @@ export class GetPianoDesk {
     };
   }
 
+  /** The piece's Polish gem and diamond, from the piece log. Unreadable means none. */
+  #polish(userId, scoreId) {
+    if (!this.#pieceLog) return { gem: false, diamond: false };
+    try {
+      const mine = (this.#pieceLog.list(userId) ?? []).filter((entry) => entry?.scoreId === scoreId);
+      return { gem: mine.some((e) => e.level === 'polish-gem'), diamond: mine.some((e) => e.level === 'polish-diamond') };
+    } catch (error) {
+      this.#logger.warn?.('piano.desk.polish_unreadable', { userId, scoreId, error: error.message });
+      return { gem: false, diamond: false };
+    }
+  }
+
   #player(userId, scoreIds, dayKey) {
     const profile = this.#configProjection.profile(userId);
     const records = [...(this.#datastore.listPractice(userId) ?? [])]
@@ -85,6 +99,7 @@ export class GetPianoDesk {
       }
       if (piece) break;
     }
+    if (piece) piece = { ...piece, polish: this.#polish(userId, piece.scoreId) };
     return { userId, name: profile?.display_name || profile?.username || userId, piece };
   }
 

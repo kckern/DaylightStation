@@ -190,6 +190,29 @@ describe('usePracticeRecord', () => {
     expect(result.current.record.polish.both.full).toBe(98); // bests stay recordTierBest's job
   });
 
+  it('keeps the piece\'s Polish awards apart from the record, and takes a new gem from a run\'s reward', async () => {
+    store = { fingerprint: FP, polish: { both: { full: 98 } }, polishAwards: { gem: false, diamond: false } };
+    const { result } = renderHook(() => usePracticeRecord({ scoreId: 'files:x.musicxml', fingerprint: FP }));
+    await waitFor(() => expect(result.current.loaded).toBe(true));
+    expect(result.current.polishAwards).toEqual({ gem: false, diamond: false });
+    expect(result.current.record.polishAwards).toBeUndefined();
+    mockReward = { gem: true, diamond: false, newGem: true, newDiamond: false, reason: 'qualified' };
+    await act(async () => { await result.current.recordPolishRun({ scoreId: 'files:x.musicxml' }); });
+    expect(result.current.polishAwards).toEqual({ gem: true, diamond: false });
+  });
+
+  it('a record for another engraving still answers the piece\'s awards; a fresh score has none', async () => {
+    store = { fingerprint: { ...FP, contentSha256: 'b'.repeat(64) }, polishAwards: { gem: true, diamond: true } };
+    const { result } = renderHook(() => usePracticeRecord({ scoreId: 'files:x.musicxml', fingerprint: FP }));
+    await waitFor(() => expect(result.current.loaded).toBe(true));
+    expect(result.current.record).toEqual({});
+    expect(result.current.polishAwards).toEqual({ gem: true, diamond: true });
+    store = {};
+    const fresh = renderHook(() => usePracticeRecord({ scoreId: 'files:y.musicxml', fingerprint: FP }));
+    await waitFor(() => expect(fresh.result.current.loaded).toBe(true));
+    expect(fresh.result.current.polishAwards).toBeNull();
+  });
+
   it('recordPolishRun writes nothing for a guest and answers no reward', async () => {
     mockUser = 'guest';
     const { result } = renderHook(() => usePracticeRecord({ scoreId: 'files:x.musicxml', fingerprint: FP }));

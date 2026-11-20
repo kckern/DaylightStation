@@ -8,7 +8,8 @@ const segments = { 'm0-4': {}, 'm5-8': {}, 'm9-12': {} };
 // Real progress sits on the last passage, so the next step stays at the start.
 const PROGRESS = { 'm9-12': { rungs: { right: { passCount: 6 } } } };
 const record = (over = {}) => ({ fingerprint: { contentSha256: 'c' }, updatedAt: '2026-11-01T00:00:00Z', learn: { segments, passages: PROGRESS }, ...over });
-const deskFor = (byUser, { roster = Object.keys(byUser), ids = [SCORE] } = {}) => new GetPianoDesk({
+const deskFor = (byUser, { roster = Object.keys(byUser), ids = [SCORE], pieceLog = undefined, logger = undefined } = {}) => new GetPianoDesk({
+  pieceLog, ...(logger ? { logger } : {}),
   datastore: { listPractice: (user) => byUser[user] ?? [], listSheetMusicIds: () => ids },
   configProjection: { roster: () => roster, profile: (id) => ({ display_name: id.toUpperCase() }), raw: () => ({}) },
   clock: () => new Date('2026-11-18T20:00:00Z'), timezone: 'UTC',
@@ -119,3 +120,23 @@ test('carries the score poster when the library has one', () => {
   assert.equal(covered.execute().players[0].piece.cover, '/cover.jpg');
   assert.equal(deskFor({ a: [current] }).execute().players[0].piece.cover, null);
 });
+
+test('carries the Polish gem and diamond the piece log holds for the piece', () => {
+  const entries = { a: [{ scoreId: SCORE, level: 'gold' }, { scoreId: SCORE, level: 'polish-gem' }, { scoreId: 'files:other.mxl', level: 'polish-diamond' }] };
+  const pieceLog = { list: (user) => entries[user] ?? [] };
+  const { piece } = deskFor({ a: [{ scoreKey: KEY, record: record() }] }, { pieceLog }).execute().players[0];
+  assert.deepEqual(piece.polish, { gem: true, diamond: false });
+  entries.a.push({ scoreId: SCORE, level: 'polish-diamond' });
+  assert.deepEqual(deskFor({ a: [{ scoreKey: KEY, record: record() }] }, { pieceLog }).execute().players[0].piece.polish, { gem: true, diamond: true });
+});
+
+test('without a piece log, or when it cannot be read, a piece holds no Polish awards', () => {
+  const desk = (pieceLog, logger) => deskFor({ a: [{ scoreKey: KEY, record: record() }] }, { pieceLog, logger }).execute().players[0].piece;
+  assert.deepEqual(desk(undefined).polish, { gem: false, diamond: false });
+  const warned = [];
+  const piece = desk({ list: () => { throw new Error('disk'); } }, { warn: (event) => warned.push(event) });
+  assert.deepEqual(piece.polish, { gem: false, diamond: false });
+  assert.equal(piece.scoreId, SCORE);
+  assert.deepEqual(warned, ['piano.desk.polish_unreadable']);
+});
+

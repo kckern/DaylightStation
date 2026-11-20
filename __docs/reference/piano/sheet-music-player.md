@@ -536,7 +536,19 @@ A counter adds `earn a gem` only when a gem is really on offer: the Gem
 Board (`GET /api/v1/earnings/gems`, asked when the board first opens) reports
 `mode: live`, lists this player as a learner, and carries a `piano-piece` rule that
 is not switched off for them. A guest, an unreadable Gem Board or a missing rule
-gets the plain counter. No gem picture is drawn in the player.
+gets the plain counter.
+
+After the two counters, the board shows the piece's **Polish gem** once it is
+earned, and the **diamond** in its place after that (one `GemIcon`, the same
+colours as the run summary: `polishStone` in `polishAwards.js`). It comes from the
+practice record read: `GET /api/v1/piano/users/:userId/practice/:scoreKey`
+answers `polishAwards: { gem, diamond }` beside any saved record, read from the
+piece log (`PianoPolishReward.holdings`, matched on the score key). It is never
+stored in the record: `usePracticeRecord` keeps it apart from `record` (as
+`polishAwards`) and a PUT carrying it drops it. A Polish run that earns a stone
+updates it at once from the run's `polishReward`, so the board shows a new gem
+without reopening the score. The score view's board and Learn's board both take
+it (`polish` prop).
 
 The home strip above the piano menu draws the same icons and counters: one icon
 per passage of the child's piece in progress, with the next passage ringed.

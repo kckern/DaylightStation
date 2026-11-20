@@ -32,14 +32,22 @@ stand-in shows a ♪ and the title.
 
 - **Piece:** the score's `cover` (the same-name picture beside the score), the printed
   title, and the next passage's bars (`Bars 6–9`). The badge is **Silver next** while
-  any passage lacks Silver, **Gold next** once every passage has it, **All Gold** when
-  done (`cardBadge`). The progress row is the passage map in score order (a tomato, a
+  any passage lacks Silver, **Gold next** once every passage has it, then the Polish
+  goal once the piece is all Gold: **Polish next** (gold) until the piece's Polish gem,
+  **Diamond next** (pale diamond colour) after the gem, and **Diamond** once the diamond
+  is earned (`cardBadge`). The progress row is the passage map in score order (a tomato, a
   flower, a silver coin or a gold coin; the next passage ringed), one row of coins up
   to 22px sized to fill a 276px row (`coinSize`; a narrower card shrinks them further);
   a piece with more than 14 passages takes two equal
   rows (`mapColumns`, `mapRows`, `coinSize`). A tomato nobody has started sits back at
   30% opacity; a started tomato and the one up next are full colour (`passageFaded`).
-  No count: the coins show it. Tapping opens that child's next passage in Learn.
+  No count: the coins show it. A piece holding its Polish gem ends the coin row with
+  a coin-sized gem (`#f2c94c`); once the diamond is earned, the diamond (`#cfe8f7`)
+  takes its place (`polishStone` in `modes/SheetMusic/polishAwards.js`). The stone
+  takes one more column of the row, so the coins size for it (`coinSize(count, 1)`)
+  and the card never grows; on a two-row map it stands centred beside both rows. The
+  card's accessible name adds ", Polish gem" or ", Polish diamond" (`pieceLabel`).
+  Tapping opens that child's next passage in Learn.
 - **Course:** the child's enrolled course leads (School's `piano-course` assignment: the
   first unfinished course in its sequence, marked `enrolled`); otherwise the unfinished
   course furthest along. The poster is the course art. The title is the next lesson's,
@@ -54,7 +62,10 @@ a piece nor a course has no card.
 
 ## Data
 
-`GET /api/v1/piano/activity/desk` returns each roster child's current piece, with its `cover` when the library has one. Each piece is
+`GET /api/v1/piano/activity/desk` returns each roster child's current piece, with its `cover` when the library has one, and
+`polish: { gem, diamond }`: the piece's Polish awards, read from the piece log
+(`polish-gem` / `polish-diamond` entries; an unreadable log answers both false and
+logs `piano.desk.polish_unreadable`). Each piece is
 projected through `shared/music/learnCoach.mjs`, so the strip and Learn agree. Courses
 come from `GET /api/v1/piano/activity/recent`; each course's `next` is its first
 unwatched lesson (`id`, `title`, `thumbnail`, and `position`, its 1-based place among

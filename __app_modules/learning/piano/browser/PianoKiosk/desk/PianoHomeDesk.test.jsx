@@ -191,6 +191,50 @@ describe('PianoHomeDesk progress strip', () => {
     expect(document.querySelector('.piano-desk').hasAttribute('data-tall')).toBe(true);
   });
 
+  it('ends the coin row with the Polish gem, sized like a coin, and badges Diamond next', async () => {
+    const coins = piece.passages.map((passage) => ({ ...passage, state: 'gold' }));
+    h.desk.players[0].piece = { ...piece, silver: 3, gold: 3, passages: coins, polish: { gem: true, diamond: false } };
+    mount();
+    const card = await screen.findByRole('button', { name: 'Kid: 3 of 3 Silver, Polish gem' });
+    const map = card.querySelector('.piano-desk__map');
+    expect(map.style.gridTemplateColumns).toBe('repeat(3, minmax(0, 22px)) minmax(0, 22px)');
+    const stone = map.lastElementChild;
+    expect(stone.getAttribute('data-stone')).toBe('gem');
+    expect(stone.querySelector('svg.gem-icon')).not.toBeNull();
+    expect(map.querySelectorAll('[data-stone]')).toHaveLength(1);
+    expect(card.querySelector('.piano-desk__badge').textContent).toBe('Diamond next');
+    expect(card.querySelector('.piano-desk__badge').getAttribute('data-level')).toBe('diamond');
+  });
+
+  it('shows the diamond in the gem\'s place, and badges an all-Gold piece Polish next before either', async () => {
+    const coins = piece.passages.map((passage) => ({ ...passage, state: 'gold' }));
+    h.desk.players[0].piece = { ...piece, silver: 3, gold: 3, passages: coins, polish: { gem: true, diamond: true } };
+    mount();
+    const card = await screen.findByRole('button', { name: 'Kid: 3 of 3 Silver, Polish diamond' });
+    expect([...card.querySelectorAll('[data-stone]')].map((stone) => stone.getAttribute('data-stone'))).toEqual(['diamond']);
+    expect(card.querySelector('.piano-desk__badge').textContent).toBe('Diamond');
+  });
+
+  it('draws no stone before the gem, and keeps the row its usual width', async () => {
+    const coins = piece.passages.map((passage) => ({ ...passage, state: 'gold' }));
+    h.desk.players[0].piece = { ...piece, silver: 3, gold: 3, passages: coins, polish: { gem: false, diamond: false } };
+    mount();
+    const card = await screen.findByRole('button', { name: 'Kid: 3 of 3 Silver' });
+    expect(card.querySelector('[data-stone]')).toBeNull();
+    expect(card.querySelector('.piano-desk__map').style.gridTemplateColumns).toBe('repeat(3, minmax(0, 22px))');
+    expect(card.querySelector('.piano-desk__badge').textContent).toBe('Polish next');
+  });
+
+  it('stands the stone beside both rows of a two-row piece', async () => {
+    h.desk.players[0].piece = { ...piece, total: 20, polish: { gem: true, diamond: false },
+      passages: Array.from({ length: 20 }, (_, index) => ({ id: `p${index}`, start: index * 4, end: index * 4 + 3, state: 'gold' })) };
+    mount();
+    const card = await screen.findByRole('button', { name: 'Kid: 1 of 20 Silver, Polish gem' });
+    const stone = card.querySelector('[data-stone]');
+    expect(stone.style.gridColumn).toBe('11');
+    expect(stone.style.gridRow).toBe('1 / span 2');
+  });
+
   it('shows only the children, never the parents', async () => {
     h.recent.players.push({ userId: 'parent', name: 'Parent', courses: [course] });
     mount();

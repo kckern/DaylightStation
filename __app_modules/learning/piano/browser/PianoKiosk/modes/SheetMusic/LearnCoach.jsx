@@ -87,7 +87,7 @@ function OwnedCoach(props) {
  * passage to LearnLab as a drill of sets and reps, records each take, and puts
  * the passage rail and board under it. It draws no practice screen of its own.
  */
-function CoachSession({ score, title, plan, segment, coach, skipping = null, tempo = EMPTY, feedback, onBack, onPassageChange, onListen }) {
+function CoachSession({ score, title, plan, segment, coach, skipping = null, polish = null, tempo = EMPTY, feedback, onBack, onPassageChange, onListen }) {
   const logger = useMemo(() => getLogger().child({ component: 'piano-learn-coach' }), []);
   const [view, setView] = useState('play'); // play | listen
   const [selected, setSelected] = useState(null);
@@ -314,7 +314,7 @@ function CoachSession({ score, title, plan, segment, coach, skipping = null, tem
   const flips = useMemo(() => (!celebrated ? EMPTY : pieceDone ? Object.fromEntries(coach.projection.segments.map((item) => [item.id, celebrated])) : { [segment.id]: celebrated }),
     [celebrated, pieceDone, coach.projection.segments, segment.id]);
   const map = <>
-    {board && <PassageBoard title={title ?? barsOf(segment)} model={rail} focusId={board.focusId ?? segment.id} gemOffered={gemOffered}
+    {board && <PassageBoard title={title ?? barsOf(segment)} model={rail} focusId={board.focusId ?? segment.id} gemOffered={gemOffered} polish={polish}
       review={Boolean(coach.projection.review)}
       onReview={() => { const review = coach.projection.review; coach.selectTask(review); setBoard(null);
         if (review.passageId === segment.id) begin(review); else onPassageChange?.(review.passageId); }}

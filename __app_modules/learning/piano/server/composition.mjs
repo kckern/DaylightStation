@@ -124,6 +124,7 @@ export async function createPianoModule({configService, userService, rootLogger,
     // D1: the use case receives the Plex curriculum reader, never imports it.
     curriculumIndex: { getCurriculumIndex, mergeSeason },
     schoolAssignments: pianoSchoolAssignments,
+    pieceLog: pianoPieceLog,
     studioDatastore: pianoStudioDatastore,
     timezone: configService.getTimezone?.() ?? null,
     fitnessPlayableService,
