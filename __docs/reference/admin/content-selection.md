@@ -4,6 +4,8 @@ When creating list items (playlists, watchlists, workout queues), admins specify
 
 In the list editor, open **List actions** for settings that apply to the whole list. Each named section has its own actions menu and expand or collapse button. Pressing Escape returns focus to the menu button. The compact controls use the shared 44px touch target on coarse pointers. [Design-system reference](../frontend/design-system.md)
 
+Search results keep their original section and row positions. Editing or duplicating a result acts on its original section. **Split Below** starts the new section after that row in the full list, including items hidden by the search. If a saved change needs a fresh snapshot, the list offers a read-only Retry.
+
 The list editor checks whether the selected item supports its row’s action. Rows looking up the same item share pending capability and alternate reads. A confirmed mismatch can suggest another ID for the same content. A failed capability read leaves the row quiet, and a failed alternate read leaves the confirmed mismatch without a suggestion. Changing the row’s item or action retires an obsolete suggestion.
 
 ## Content ID Format

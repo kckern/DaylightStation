@@ -4,6 +4,7 @@
 // player bridge plus the URL-command / external-control / state-broadcast
 // hooks. Everything below the provider sees only the controller interface.
 import React, { useMemo, useEffect, useLayoutEffect, useRef } from 'react';
+import { browserPreference } from "@/lib/browserPreference.js";
 import { LocalSessionContext } from "./LocalSessionContext.js";
 import { PlayerHostProvider } from "./PlayerHostProvider.jsx";
 import { createLocalSessionController } from "./LocalSessionController.js";
@@ -23,6 +24,8 @@ import { usePlaybackStateBroadcast } from "../shared/usePlaybackStateBroadcast.j
 import { publish } from "../net/ws.js";
 import { useMediaSession } from "./useMediaSession.js";
 import mediaLog from "../logging/mediaLog.js";
+
+const legacyRecents = browserPreference('media-app.recents', null);
 
 function SessionSideEffects() {
   const identity = useClientIdentity();
@@ -66,7 +69,7 @@ export function LocalSessionProvider({ children }) {
     // their first mutations must be persisted/logged too.
     // The browser-only recents list is gone (Home's Recent is the
     // household's); drop its leftover key.
-    try { localStorage.removeItem('media-app.recents'); } catch { /* storage unavailable */ }
+    legacyRecents.clear();
     ctl.detachPersistence = attachPersistence(ctl.store, { write: writePersistedSession });
     ctl.detachers = [
       attachLogging(ctl.store),

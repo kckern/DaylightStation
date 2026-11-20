@@ -1,4 +1,8 @@
 import { expect, test } from '@playwright/test';
+import express from 'express';
+import request from 'supertest';
+import { createAdminContentRouter } from '../../../../__capabilities/content-catalog/server/api/admin/content.mjs';
+import { ListManagementService } from '../../../../__capabilities/content-catalog/server/application/services/ListManagementService.mjs';
 
 test.use({ serviceWorkers: 'block', viewport: { width: 1440, height: 850 } });
 
@@ -15,6 +19,100 @@ test.beforeEach(async ({ page, baseURL }) => {
     new URL(route.request().url()).origin === origin ? route.fallback() : route.abort()
   ));
   await page.routeWebSocket('**/*', () => {});
+});
+
+test('Admin list commands use confirmed positions through search, split, reorder and deletion', async ({ page }) => {
+  const path = `/api/v1${menuRoute}`;
+  const row = (uid, label) => ({ uid, label, input: `plex:${uid}`, action: 'Play' });
+  let stored = { sections: [
+    { title: 'Inbox', items: [row('inbox', 'Inbox item')] },
+    { title: 'Tonight', items: [row('first', 'Before match'), row('match', 'Needle match'), row('last', 'After match')] },
+  ] };
+  const service = new ListManagementService({
+    logger: {},
+    listStore: {
+      getList: () => structuredClone(stored),
+      saveList: (_type, _name, _household, value) => { stored = structuredClone(value); },
+    },
+  });
+  const api = express().use(express.json()).use('/api/v1/admin/content', createAdminContentRouter({
+    listManagementService: service, householdContext: { resolve: () => 'fixture' }, logger: {},
+  }));
+  const calls = [];
+  let failSplitRead = false;
+  await page.route('**/api/**', async route => {
+    const incoming = route.request();
+    const { pathname, search } = new URL(incoming.url());
+    if (pathname !== path && !pathname.startsWith(`${path}/`)) {
+      return route.fulfill({ json: pathname.endsWith('/supervision/bootstrap') ? { enabled: false } : {} });
+    }
+    const method = incoming.method();
+    const body = method === 'GET' ? null : incoming.postDataJSON();
+    const target = pathname + search;
+    calls.push([method, target, body]);
+    if (pathname === path && method === 'GET' && failSplitRead) {
+      failSplitRead = false;
+      return route.fulfill({ status: 409, json: { error: 'Split snapshot unavailable' } });
+    }
+    const command = request(api)[method.toLowerCase()](target);
+    const response = body == null ? await command : await command.send(body);
+    return route.fulfill({ status: response.status, json: response.body });
+  });
+
+  await page.goto(menuRoute);
+  const region = page.getByRole('region', { name: 'List contents' });
+  const search = page.getByPlaceholder('Search items...');
+  await expect(region.getByText('Needle match', { exact: true })).toBeVisible();
+  await search.fill('Needle match');
+  await expect(region.getByText('Inbox item', { exact: true })).toHaveCount(0);
+  await region.getByText('Needle match', { exact: true }).click();
+  const label = region.locator('.item-row:not(.empty-row) .col-label').getByRole('textbox');
+  await label.fill('Needle match revised');
+  await label.press('Enter');
+  await expect.poll(() => calls[1]).toEqual(['PUT', `${path}/items/1?section=1`, { label: 'Needle match revised' }]);
+  await expect(region.getByText('Needle match revised', { exact: true })).toBeVisible();
+
+  const source = page.getByTestId('item-row-1-1');
+  const rowActions = source.getByRole('button', { name: 'Actions for Needle match revised' });
+  await rowActions.press('Enter');
+  await page.getByRole('menuitem', { name: 'Duplicate', exact: true }).press('Enter');
+  await expect(region.getByText('Needle match revised', { exact: true })).toHaveCount(2);
+  expect(calls[3]).toEqual(['POST', `${path}/items?section=1`, expect.objectContaining({
+    label: 'Needle match revised', input: 'plex:match', action: 'Play', title: 'Needle match revised (copy)',
+  })]);
+
+  await rowActions.press('Enter');
+  failSplitRead = true;
+  await page.getByRole('menuitem', { name: 'Split Below', exact: true }).press('Enter');
+  const warning = region.getByRole('alert');
+  await expect(warning).toContainText('Change saved');
+  await expect(warning).toContainText('Split snapshot unavailable');
+  await warning.getByRole('button', { name: 'Retry', exact: true }).press('Enter');
+  await expect(region).toBeFocused();
+  await expect(warning).toHaveCount(0);
+  await search.fill('');
+  await expect(page.getByTestId('item-row-2-0')).toContainText('After match');
+  await expect(page.getByTestId('item-row-2-1')).toContainText('Needle match revised');
+
+  await page.getByRole('button', { name: 'Section actions for Section 3' }).press('Enter');
+  await page.getByRole('menuitem', { name: 'Move Up', exact: true }).press('Enter');
+  await expect(page.getByTestId('item-row-1-0')).toContainText('After match');
+  await page.getByRole('button', { name: 'Section actions for Inbox' }).press('Enter');
+  await page.getByRole('menuitem', { name: 'Delete Section', exact: true }).press('Enter');
+  await expect(page.getByText('Inbox item', { exact: true })).toHaveCount(0);
+  await expect(page.getByTestId('item-row-0-0')).toContainText('After match');
+  await expect(page.getByTestId('item-row-1-1')).toContainText('Needle match revised');
+  expect(calls).toEqual([
+    ['GET', path, null],
+    ['PUT', `${path}/items/1?section=1`, { label: 'Needle match revised' }], ['GET', path, null],
+    ['POST', `${path}/items?section=1`, expect.objectContaining({ input: 'plex:match' })], ['GET', path, null],
+    ['POST', `${path}/sections/split`, { sectionIndex: 1, afterItemIndex: 1 }], ['GET', path, null], ['GET', path, null],
+    ['PUT', `${path}/sections/reorder`, { order: [0, 2, 1] }], ['GET', path, null],
+    ['DELETE', `${path}/sections/0`, {}], ['GET', path, null],
+  ]);
+  expect(stored.sections.map(section => section.items.map(item => item.label))).toEqual([
+    ['After match', 'Needle match revised'], ['Before match', 'Needle match revised'],
+  ]);
 });
 
 test('Admin Menu editor keeps the newest snapshot across overlapping item saves', async ({ page }) => {

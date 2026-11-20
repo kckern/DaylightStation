@@ -468,34 +468,41 @@ function FolderEditor({ type, listName }) {
     }, { recover: true, refresh: action !== 'top' && action !== 'bottom' });
   };
 
-  const renderItems = (itemsToRender, sectionIndex) => (
+  const renderItems = (positions, addToSection) => (
     <Box className="items-container">
       <SortableContext
-        items={itemsToRender.map((_, i) => `row-${sectionIndex}-${i}`)}
+        items={positions.map(({ sectionIndex, itemIndex }) => `row-${sectionIndex}-${itemIndex}`)}
         strategy={verticalListSortingStrategy}
       >
-        {itemsToRender.map((item, idx) => (
-          <ListsItemRow
-            key={item.uid || `${sectionIndex}-${idx}`}
-            item={{ ...item, index: idx }}
-            onUpdate={(updates) => handleInlineUpdate(sectionIndex, idx, updates)}
-            onDelete={() => handleDeleteItem(sectionIndex, idx)}
-            onToggleActive={() => mutate('lists.toggle_active', 'Could not toggle item', () => toggleItemActive(sectionIndex, idx), { fieldEdit: true })}
-            onDuplicate={() => handleDuplicateItem(sectionIndex, item)}
-            isWatchlist={type === 'watchlists'}
-            onEdit={() => { setEditingItem({ ...item, sectionIndex, itemIndex: idx }); setEditorOpen(true); }}
-            onSplit={idx < itemsToRender.length - 1 ? () => mutate('lists.split', 'Could not split section', () => splitSection(sectionIndex, idx)) : undefined}
-            sectionIndex={sectionIndex}
-            sectionCount={sections.length}
-            sections={sections}
-            itemCount={itemsToRender.length}
-            onMoveItem={(action, targetSection) => handleMoveItem(sectionIndex, idx, action, targetSection)}
-            activeContentDrag={activeContentDrag}
-            swapFlashKey={swapFlash?.rows.includes(item.uid || `content-${sectionIndex}-${idx}`) ? swapFlash.sequence : null}
-          />
-        ))}
+        {positions.map(({ sectionIndex, itemIndex }) => {
+          const sectionItems = sections[sectionIndex].items;
+          const item = sectionItems[itemIndex];
+          const split = itemIndex < sectionItems.length - 1
+            ? () => mutate('lists.split', 'Could not split section', () => splitSection(sectionIndex, itemIndex))
+            : undefined;
+          return (
+            <ListsItemRow
+              key={item.uid || `${sectionIndex}-${itemIndex}`}
+              item={{ ...item, index: itemIndex }}
+              onUpdate={(updates) => handleInlineUpdate(sectionIndex, itemIndex, updates)}
+              onDelete={() => handleDeleteItem(sectionIndex, itemIndex)}
+              onToggleActive={() => mutate('lists.toggle_active', 'Could not toggle item', () => toggleItemActive(sectionIndex, itemIndex), { fieldEdit: true })}
+              onDuplicate={() => handleDuplicateItem(sectionIndex, item)}
+              isWatchlist={type === 'watchlists'}
+              onEdit={() => { setEditingItem({ ...item, sectionIndex, itemIndex }); setEditorOpen(true); }}
+              onSplit={split}
+              sectionIndex={sectionIndex}
+              sectionCount={sections.length}
+              sections={sections}
+              itemCount={sectionItems.length}
+              onMoveItem={(action, targetSection) => handleMoveItem(sectionIndex, itemIndex, action, targetSection)}
+              activeContentDrag={activeContentDrag}
+              swapFlashKey={swapFlash?.rows.includes(item.uid || `content-${sectionIndex}-${itemIndex}`) ? swapFlash.sequence : null}
+            />
+          );
+        })}
       </SortableContext>
-      <EmptyItemRow onAdd={(data) => handleAddItem(data, sectionIndex)} nextIndex={itemsToRender.length} isWatchlist={type === 'watchlists'} />
+      <EmptyItemRow onAdd={(data) => handleAddItem(data, addToSection)} nextIndex={sections[addToSection]?.items.length ?? 0} isWatchlist={type === 'watchlists'} />
     </Box>
   );
 
@@ -600,7 +607,7 @@ function FolderEditor({ type, listName }) {
                       itemCount={section.items.length}
                     />
                     <Collapse in={!collapsedSections.has(si)}>
-                      {renderItems(section.items, si)}
+                      {renderItems(section.items.map((_, itemIndex) => ({ sectionIndex: si, itemIndex })), si)}
                     </Collapse>
                   </Box>
                 ))}

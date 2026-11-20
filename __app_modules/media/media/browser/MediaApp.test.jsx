@@ -62,4 +62,14 @@ describe('MediaApp', () => {
     expect(screen.getByTestId('media-dock')).toBeInTheDocument();
     expect(screen.getByTestId('media-canvas')).toBeInTheDocument();
   });
+
+  it('removes the legacy local recents key on mount', () => {
+    localStorage.setItem('media-app.recents', '["plex:legacy-only"]');
+    localStorage.setItem('media-app.test-unrelated', 'preserve');
+
+    render(<MediaApp />);
+
+    expect(localStorage.getItem('media-app.recents')).toBeNull();
+    expect(localStorage.getItem('media-app.test-unrelated')).toBe('preserve');
+  });
 });
