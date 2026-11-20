@@ -71,6 +71,16 @@ describe('feedImageSrc: what an <img> in the feed may load', () => {
     }
   });
 
+  it('allows Komga only at the two image paths the feed emits', () => {
+    for (const path of ['/api/v1/proxy/komga/composite/b1/3', '/api/v1/proxy/komga/api/v1/books/b1/pages/12']) {
+      expect(feedImageSrc(path, app), path).toBe(path);
+    }
+    for (const path of ['/api/v1/proxy/komga/api/v1/books/b1/file', '/api/v1/proxy/komga/api/v1/books/b1/read-progress',
+      '/api/v1/proxy/komga/api/v1/libraries/l1/scan', '/api/v1/proxy/komga/api/v1/books/b1/pages/12/../../file', '/api/v1/proxy/komga']) {
+      expect(feedImageSrc(path, app), path).toBeNull();
+    }
+  });
+
   it('refuses any other path on the app\'s own origin, however it is spelled', () => {
     for (const path of ['/api/v1/home/script/run', '/API/v1/admin/x', '/admin', '/fitness', '//api/v1/x',
       '/api/v1/proxy/immich/assets/../../../admin/x', '/api/v1/proxy/immich/assets/%2e%2e/%2e%2e/%2e%2e/admin',

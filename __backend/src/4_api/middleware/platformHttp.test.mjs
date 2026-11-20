@@ -69,6 +69,15 @@ describe('platform HTTP middleware', () => {
         expect(res.headers['content-security-policy'], url).toBe("frame-ancestors 'self'");
       }
       expect((await request(app).get('/app.js')).headers['content-security-policy']).toBeUndefined();
+      // Every static HTML page, not only index.html (sim panel, arcade film, probes, labs).
+      fs.writeFileSync(path.join(dir, 'sim-panel.html'), '<!doctype html>');
+      fs.mkdirSync(path.join(dir, 'crt-lab'));
+      fs.writeFileSync(path.join(dir, 'crt-lab', 'verify.HTM'), '<!doctype html>');
+      for (const url of ['/sim-panel.html', '/crt-lab/verify.HTM']) {
+        const res = await request(app).get(url);
+        expect(res.status, url).toBe(200);
+        expect(res.headers['content-security-policy'], url).toBe("frame-ancestors 'self'");
+      }
       fs.rmSync(dir, { recursive: true, force: true });
     });
   });

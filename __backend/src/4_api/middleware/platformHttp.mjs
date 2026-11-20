@@ -53,6 +53,9 @@ export function createFrontendStaticRouter({ frontendPath, frameAncestors = null
   router.use(express.static(frontendPath, {
     setHeaders: (res, filePath) => {
       if (filePath.endsWith('index.html')) setFrontendDocumentHeaders(res, { frameAncestors });
+      // Every other static page (sim panel, arcade film, probes, labs) gets the
+      // same framing rule; 'self' keeps the app's own frames of them working.
+      else if (frameAncestors && /\.html?$/i.test(filePath)) res.setHeader('Content-Security-Policy', frameAncestors);
     },
   }));
   router.use((req, res, next) => {

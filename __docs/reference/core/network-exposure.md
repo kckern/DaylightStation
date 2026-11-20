@@ -393,7 +393,8 @@ http:
     - https://other-app.example.com
 ```
 
-**Framing.** The built frontend's pages are served with
+**Framing.** The built frontend's pages (the SPA and every static `.html`
+page beside it: sim panel, arcade film, probes, labs) are served with
 `Content-Security-Policy: frame-ancestors 'self'` plus `http.allowed_origins`
 (`setFrontendDocumentHeaders` in `4_api/middleware/platformHttp.mjs`), so another
 site cannot load the household's screens in a frame and lure clicks through
@@ -443,7 +444,8 @@ headline images) only absolute http(s) URLs outside `/api` and `/admin`, on
 any host, are kept. At render (`feedImageSrc`, through `safeImage` in the
 feed's `cards/utils.js`) a URL on the app's origin loads only if it is one of
 the read-only image endpoints the app's own sources use (`/api/v1/proxy/...`
-for Immich assets, Plex library metadata and photos, Komga, Reddit, ABS items,
+for Immich assets, Plex library metadata and photos, Komga composites and book
+page images (`.../books/<id>/pages/<n>` only), Reddit, ABS items,
 Libby covers and media; `/api/v1/static`; `/api/v1/feed/icon` and `/image`);
 an external URL whose path is under `/api` or `/admin` goes through the image
 proxy, whose SSRF guard refuses private targets.
