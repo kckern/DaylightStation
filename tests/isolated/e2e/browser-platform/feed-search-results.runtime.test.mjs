@@ -108,3 +108,234 @@ for (const keepFocus of [true, false]) {
     expect(queries).toHaveLength(4);
   });
 }
+
+test('two Feed Search tabs reconcile a queued change across their loaded filtered pages', async ({ page, context }) => {
+  const sibling = await context.newPage();
+  const pages = [page, sibling];
+  const releaseReplay = Promise.withResolvers();
+  const releasePeerRead = Promise.withResolvers();
+  const writes = [];
+  const requests = new Map();
+  const searchUrl = '/feed/search?q=birds&source=fixture&state=saved';
+  const item = (id, title) => ({ id, stateKey: id, title, source: 'fixture', state: { isSaved: true, isRead: false } });
+  const shared = item('shared', 'Shared saved bird');
+  const first = item('first', 'First stable bird');
+  const focused = item('focused', 'Focused second-page bird');
+  const last = item('last', 'Last second-page bird');
+  const replacement = item('replacement', 'New boundary bird');
+  let unsaved = false;
+  const row = (tab, name) => tab.getByRole('article').filter({ has: tab.getByRole('heading', { name, exact: true }) });
+  const pending = tab => tab.getByRole('button', { name: 'Retry 1 pending change' });
+
+  for (const tab of pages) {
+    const reads = [];
+    requests.set(tab, reads);
+    await tab.routeWebSocket('**/*', () => {});
+    await tab.route('**/api/**', async route => {
+      const request = route.request();
+      const { pathname, searchParams } = new URL(request.url());
+      if (pathname.endsWith('/feed/items/state')) {
+        const body = request.postDataJSON();
+        writes.push(body);
+        if (body.action === 'unsave') {
+          await releaseReplay.promise;
+          unsaved = true;
+          return route.fulfill({ json: { items: [{ id: shared.id, state: { isSaved: false, isRead: false } }] } });
+        }
+        return route.fulfill({ json: { items: [{ id: focused.id, state: { isSaved: true, isRead: true } }] } });
+      }
+      if (pathname.endsWith('/feed/search')) {
+        const cursor = searchParams.get('cursor');
+        reads.push([searchParams.get('q'), searchParams.get('source'), searchParams.get('state'), cursor]);
+        const items = unsaved ? (cursor ? [last, replacement] : [first, focused]) : (cursor ? [focused, last] : [shared, first]);
+        if (tab === sibling && unsaved && !cursor) await releasePeerRead.promise;
+        return route.fulfill({ json: { items, total: unsaved ? 5 : 6, nextCursor: cursor ? 'page-three' : 'page-two' } });
+      }
+      const json = pathname.endsWith('/supervision/bootstrap') ? { enabled: false }
+        : pathname.endsWith('/items/state/summary') ? { pendingSync: 0 }
+          : pathname.endsWith('/feed/workspace') ? { preferencesStored: true } : {};
+      return route.fulfill({ json });
+    });
+    await tab.goto(searchUrl);
+    await expect(row(tab, shared.title)).toBeVisible();
+    await tab.getByRole('button', { name: /Load more/ }).press('Enter');
+    await expect(row(tab, focused.title)).toBeVisible();
+    await tab.evaluate(() => Object.defineProperty(navigator, 'onLine', { configurable: true, value: false }));
+  }
+
+  try {
+    await page.bringToFront();
+    await row(page, shared.title).getByRole('button', { name: 'Saved', exact: true }).click();
+    await expect(pending(page)).toBeVisible();
+    await page.evaluate(() => {
+      delete navigator.onLine;
+      window.dispatchEvent(new Event('online'));
+    });
+    await expect.poll(() => writes).toEqual([{ action: 'unsave', itemIds: ['shared'] }]);
+    await sibling.bringToFront();
+    await expect(pending(sibling)).toBeVisible();
+    await expect(row(sibling, shared.title).getByRole('button', { name: 'Save', exact: true })).toBeVisible();
+    await expect(row(sibling, shared.title).getByText(/sync pending/)).toBeVisible();
+    await sibling.evaluate(() => { delete navigator.onLine; });
+    releaseReplay.resolve();
+    await expect.poll(() => requests.get(sibling).length).toBe(3);
+    await row(sibling, focused.title).getByRole('button', { name: 'Mark read', exact: true }).click();
+    await expect(row(sibling, focused.title).getByRole('button', { name: 'Mark unread', exact: true })).toBeFocused();
+  } finally {
+    releaseReplay.resolve();
+    releasePeerRead.resolve();
+  }
+
+  for (const tab of pages) {
+    await expect(pending(tab)).toHaveCount(0);
+    await expect(row(tab, shared.title)).toHaveCount(0);
+    await expect(row(tab, replacement.title)).toBeVisible();
+    await expect(tab.getByRole('button', { name: 'Load more (4 of 5)' })).toBeEnabled();
+    await expect(tab).toHaveURL(new RegExp(searchUrl.replace('?', '\\?') + '$'));
+    expect(requests.get(tab)).toEqual([
+      ['birds', 'fixture', 'saved', null], ['birds', 'fixture', 'saved', 'page-two'],
+      ['birds', 'fixture', 'saved', null], ['birds', 'fixture', 'saved', 'page-two'],
+    ]);
+  }
+  await expect(row(sibling, focused.title).getByRole('button', { name: 'Mark unread', exact: true })).toBeFocused();
+  expect(writes).toEqual([{ action: 'unsave', itemIds: ['shared'] }, { action: 'read', itemIds: ['focused'] }]);
+});
+
+for (const stalled of [false, true]) {
+  test(`Feed Search ${stalled ? 'times out a stalled refresh and cancels its retry on a new query' : 'retries reconciliation with a GET and cancels it on a new query'}`, async ({ page }) => {
+    const retryResponse = Promise.withResolvers();
+    const stalledResponse = Promise.withResolvers();
+    const calls = [];
+    const writes = [];
+    const bird = { id: 'bird', title: 'Saved bird' };
+    let birdReads = 0;
+    let stalledCancelled = false;
+    let retryCancelled = false;
+    let stalledRequest;
+    let retryRequest;
+    page.on('requestfailed', request => {
+      if (request === stalledRequest) stalledCancelled = true;
+      if (request === retryRequest) retryCancelled = true;
+    });
+    await page.routeWebSocket('**/*', () => {});
+    await page.route('**/api/**', async route => {
+      const request = route.request();
+      const { pathname, searchParams } = new URL(request.url());
+      if (pathname.endsWith('/feed/items/state')) {
+        writes.push(request.postDataJSON());
+        return route.fulfill({ json: { items: [{ id: bird.id, state: { isSaved: true } }] } });
+      }
+      if (pathname.endsWith('/feed/search')) {
+        const query = searchParams.get('q');
+        calls.push([request.method(), query, searchParams.get('cursor')]);
+        if (query === 'fish') return route.fulfill({ json: { items: [{ id: 'fish', title: 'Current fish' }], total: 1 } });
+        if (++birdReads === 2) {
+          if (stalled) {
+            stalledRequest = request;
+            await stalledResponse.promise;
+          }
+          return route.fulfill({ status: 503, json: { error: 'Unavailable' } });
+        }
+        if (birdReads === 3) {
+          retryRequest = request;
+          await retryResponse.promise;
+          return route.fulfill({ json: { items: [{ id: 'obsolete', title: 'Obsolete bird' }], total: 1 } });
+        }
+        return route.fulfill({ json: { items: [bird], total: 2, nextCursor: 'bird-next' } });
+      }
+      const json = pathname.endsWith('/supervision/bootstrap') ? { enabled: false }
+        : pathname.endsWith('/items/state/summary') ? { pendingSync: 0 }
+          : pathname.endsWith('/feed/workspace') ? { preferencesStored: true } : {};
+      return route.fulfill({ json });
+    });
+
+    try {
+      if (stalled) await page.clock.install();
+      await page.goto('/feed/search?q=birds');
+      const heading = page.getByRole('heading', { name: bird.title, exact: true });
+      await expect(heading).toBeVisible();
+      await page.evaluate(() => Object.defineProperty(navigator, 'onLine', { configurable: true, value: false }));
+      await page.getByRole('button', { name: 'Save', exact: true }).click();
+      await expect(page.getByRole('button', { name: 'Retry 1 pending change' })).toBeVisible();
+      await page.evaluate(() => {
+        delete navigator.onLine;
+        window.dispatchEvent(new Event('online'));
+      });
+      if (stalled) {
+        await expect.poll(() => birdReads).toBe(2);
+        await page.clock.fastForward(10_000);
+      }
+      const retry = page.getByRole('button', { name: 'Retry refresh', exact: true });
+      await expect(retry).toBeVisible();
+      if (stalled) await expect.poll(() => stalledCancelled).toBe(true);
+      await expect(heading).toBeVisible();
+      await expect(page.getByRole('button', { name: 'Saved', exact: true })).toBeVisible();
+      await expect(page.getByRole('button', { name: /Load more/ })).toBeDisabled();
+      await retry.click();
+      await expect.poll(() => birdReads).toBe(3);
+
+      const search = page.getByRole('textbox', { name: 'Search feed history' });
+      await search.fill('fish');
+      await search.press('Enter');
+      await expect(page.getByRole('heading', { name: 'Current fish' })).toBeVisible();
+      await expect.poll(() => retryCancelled).toBe(true);
+      await expect(retry).toHaveCount(0);
+    } finally {
+      stalledResponse.resolve();
+      retryResponse.resolve();
+    }
+    await expect(page.getByRole('heading', { name: 'Obsolete bird' })).toHaveCount(0);
+    expect(calls).toEqual([['GET', 'birds', null], ['GET', 'birds', null], ['GET', 'birds', null], ['GET', 'fish', null]]);
+    expect(writes).toEqual([{ action: 'save', itemIds: ['bird'] }]);
+  });
+}
+
+test('Feed Search retries its failed initial read once after replay has settled', async ({ page }) => {
+  const initial = Promise.withResolvers();
+  const replay = Promise.withResolvers();
+  const reads = [];
+  const writes = [];
+  await page.addInitScript(() => localStorage.setItem('feed:pending-mutations:household', JSON.stringify([
+    { id: 'queued-save', action: 'save', itemIds: ['bird'], createdAt: '2026-01-01T00:00:00.000Z' },
+  ])));
+  await page.routeWebSocket('**/*', () => {});
+  await page.route('**/api/**', async route => {
+    const request = route.request();
+    const { pathname, searchParams } = new URL(request.url());
+    if (pathname.endsWith('/feed/items/state')) {
+      writes.push(request.postDataJSON());
+      await replay.promise;
+      return route.fulfill({ json: { items: [{ id: 'bird', state: { isSaved: true } }] } });
+    }
+    if (pathname.endsWith('/feed/search')) {
+      if (reads.push([request.method(), searchParams.get('q'), searchParams.get('cursor')]) === 1) {
+        await initial.promise;
+        return route.fulfill({ status: 503, json: { error: 'Unavailable' } });
+      }
+      return route.fulfill({ json: { items: [{ id: 'bird', title: 'Recovered bird', state: { isSaved: true } }], total: 1 } });
+    }
+    const json = pathname.endsWith('/supervision/bootstrap') ? { enabled: false }
+      : pathname.endsWith('/items/state/summary') ? { pendingSync: 0 }
+        : pathname.endsWith('/feed/workspace') ? { preferencesStored: true } : {};
+    return route.fulfill({ json });
+  });
+
+  try {
+    await page.goto('/feed/search?q=birds');
+    await expect.poll(() => reads.length).toBe(1);
+    await expect.poll(() => writes.length).toBe(1);
+    const pending = page.getByRole('button', { name: 'Retry 1 pending change' });
+    await expect(pending).toBeVisible();
+    replay.resolve();
+    await expect(pending).toHaveCount(0);
+    initial.resolve();
+    await page.getByRole('button', { name: 'Retry', exact: true }).click();
+    await expect(page.getByRole('heading', { name: 'Recovered bird', exact: true })).toBeVisible();
+    await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+  } finally {
+    initial.resolve();
+    replay.resolve();
+  }
+  expect(reads).toEqual([['GET', 'birds', null], ['GET', 'birds', null]]);
+  expect(writes).toEqual([{ action: 'save', itemIds: ['bird'] }]);
+});

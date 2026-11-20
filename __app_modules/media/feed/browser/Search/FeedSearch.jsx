@@ -4,12 +4,31 @@ import { EmptyState, ErrorState, StateMessage } from '@/lib/ui/states.jsx';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { DaylightAPI } from "../../../../../frontend/src/lib/api.mjs";
+import { useRefreshableRead } from '@/lib/hooks/useRefreshableRead.js';
 import { useVisibleRefresh } from "@/lib/hooks/useVisibleRefresh.js";
 import { useFeedWorkspace } from "../FeedWorkspaceContext.jsx";
 import "../FeedShared.scss";
 
 const resultKey = item => item.stateKey || item.id;
 const NO_RESULTS = { items: [], nextCursor: null, total: 0, coverage: null };
+const reconcileTimeoutMs = 10_000;
+
+function reconcileRows(items, current, before, pending) {
+  const recent = new Map(current.filter(item => {
+    const key = resultKey(item);
+    return pending.has(key) || before.get(key) !== item;
+  }).map(item => [resultKey(item), item]));
+  const found = new Set(items.map(resultKey));
+  const rows = items.map(item => {
+    const local = recent.get(resultKey(item));
+    return local ? { ...item, state: local.state, isRead: local.isRead } : item;
+  });
+  current.forEach((item, index) => {
+    const key = resultKey(item);
+    if (recent.has(key) && !found.has(key)) rows.splice(index, 0, item);
+  });
+  return rows;
+}
 
 export default function FeedSearch() {
   const [params, setParams] = useSearchParams();
@@ -20,16 +39,27 @@ export default function FeedSearch() {
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [requestError, setRequestError] = useState(null);
-  const { mutateItems, applyPendingMutations } = useFeedWorkspace();
+  const [syncStatus, setSyncStatus] = useState(null);
+  const { mutateItems, applyPendingMutations, pendingItemOperations, itemSyncRevision } = useFeedWorkspace();
   const inputRef = useRef(null);
+  const resultsRef = useRef(null);
   const paginationRef = useRef(null);
+  const syncRetryRef = useRef(null);
   const appendedHeadingRef = useRef(null);
   const handledAppendFocus = useRef(null);
   const requestRef = useRef(null);
-  const writes = useRef({ pending: 0, generation: 0 });
+  const syncRequest = useRef(null);
+  const latestSync = useRef(itemSyncRevision);
+  latestSync.current = itemSyncRevision;
+  const requestedSync = useRef(itemSyncRevision);
+  const writes = useRef({ pending: new Set(), generation: 0 });
   const currentPage = resultPage?.requestKey === requestKey ? resultPage : null;
+  const displayedPage = useRef(null);
+  displayedPage.current = currentPage;
   const { items, nextCursor, total, coverage } = currentPage ?? NO_RESULTS;
   const failure = requestError?.requestKey === requestKey ? requestError : null;
+  const syncing = syncStatus?.requestKey === requestKey && syncStatus.pending;
+  const syncError = syncStatus?.requestKey === requestKey && syncStatus.error;
   const searching = loading || (!currentPage && !failure);
   const appendFocus = currentPage?.appendFocus;
 
@@ -37,7 +67,8 @@ export default function FeedSearch() {
     if (!appendFocus || handledAppendFocus.current === appendFocus) return;
     handledAppendFocus.current = appendFocus;
     if (document.activeElement === document.body) {
-      (appendedHeadingRef.current ?? inputRef.current)?.focus();
+      const target = appendFocus.target?.isConnected ? appendFocus.target : appendedHeadingRef.current ?? inputRef.current;
+      target?.focus();
     }
   }, [appendFocus]);
 
@@ -48,8 +79,15 @@ export default function FeedSearch() {
     setSource(current.get('source') || '');
   }, [requestKey]);
 
+  const readPage = useCallback((cursor, signal) => {
+    const api = new URLSearchParams(requestKey);
+    api.set('limit', '30');
+    if (cursor) api.set('cursor', cursor); else api.delete('cursor');
+    return DaylightAPI(`/api/v1/feed/search?${api}`, {}, 'GET', { signal });
+  }, [requestKey]);
+
   const runSearch = useCallback(async ({ append = false, cursor = null, refresh = false } = {}) => {
-    if (refresh && requestRef.current) return;
+    if (syncRequest.current || (refresh && requestRef.current)) return;
     requestRef.current?.abort();
     const writeGeneration = writes.current.generation;
     const controller = new AbortController();
@@ -57,27 +95,26 @@ export default function FeedSearch() {
     if (!refresh) {
       if (append) setLoadingMore(true);
       else {
+        // A full read started after replay already covers that revision.
+        requestedSync.current = latestSync.current;
         setLoading(true);
         setLoadingMore(false);
       }
       setRequestError(null);
     }
-    const api = new URLSearchParams(requestKey);
-    api.set('limit', '30');
-    if (cursor) api.set('cursor', cursor); else api.delete('cursor');
     try {
-      const result = await DaylightAPI(`/api/v1/feed/search?${api}`, {}, 'GET', { signal: controller.signal });
+      const result = await readPage(cursor, controller.signal);
       if (controller.signal.aborted) return;
       // A poll overlapping an optimistic action can still report index
       // progress. A later poll can apply authoritative state after settlement.
-      const overlappedWrite = writes.current.pending > 0 || writeGeneration !== writes.current.generation;
+      const overlappedWrite = writes.current.pending.size > 0 || writeGeneration !== writes.current.generation;
       const metadata = { total: result.total || 0, coverage: result.coverage || null };
       const incoming = refresh && overlappedWrite ? null : applyPendingMutations(result.items || []);
       const nextCursor = result.nextCursor || null;
       const moveFocus = append && !nextCursor && paginationRef.current?.matches(':focus');
       setResultPage(current => {
         if (!append && !refresh) {
-          return { requestKey, items: incoming, nextCursor, ...metadata, hasAppendedPage: false };
+          return { requestKey, items: incoming, nextCursor, ...metadata, pages: 1 };
         }
         if (current?.requestKey !== requestKey) return current;
         if (!incoming) return { ...current, ...metadata };
@@ -87,9 +124,9 @@ export default function FeedSearch() {
           const items = [...current.items, ...added];
           const focusItem = added[0] ?? items.at(-1);
           const appendFocus = moveFocus ? { key: focusItem && resultKey(focusItem) } : null;
-          return { ...current, ...metadata, items, nextCursor, hasAppendedPage: true, appendFocus };
+          return { ...current, ...metadata, items, nextCursor, pages: current.pages + 1, appendFocus };
         }
-        if (current.hasAppendedPage) {
+        if (current.pages > 1) {
           // Update visible rows without replacing the last page's continuation.
           const refreshed = new Map(incoming.map(item => [resultKey(item), item]));
           const items = current.items.map(item => refreshed.get(resultKey(item)) || item);
@@ -107,15 +144,79 @@ export default function FeedSearch() {
         if (!refresh && !controller.signal.aborted) { setLoading(false); setLoadingMore(false); }
       }
     }
-  }, [applyPendingMutations, requestKey]);
+  }, [applyPendingMutations, readPage, requestKey]);
+
+  const readSettledItems = useCallback(async (isCurrent, signal) => {
+    const window = displayedPage.current;
+    if (window?.requestKey !== requestKey) return;
+    const request = {};
+    syncRequest.current = request;
+    requestRef.current?.abort();
+    setSyncStatus(current => ({ requestKey, pending: true, error: current?.requestKey === requestKey && current.error }));
+    const before = new Map(window.items.map(item => [resultKey(item), item]));
+    const pending = new Set([...writes.current.pending].filter(edit => edit.requestKey === requestKey).map(edit => edit.key));
+
+    try {
+      // Search cursors are offsets into the current filtered query. Follow
+      // the refreshed sequence to fill the loaded window after membership changes.
+      const refreshed = new Map();
+      let result;
+      let cursor = null;
+      let pages = 0;
+      do {
+        result = await readPage(cursor, signal);
+        if (!isCurrent()) return;
+        for (const item of result.items || []) refreshed.set(resultKey(item), item);
+        cursor = result.nextCursor || null;
+        pages++;
+      } while (cursor && pages < window.pages);
+
+      const active = document.activeElement;
+      const restoreFocus = resultsRef.current?.contains(active) || active === paginationRef.current || active === syncRetryRef.current;
+      const incoming = [...refreshed.values()];
+      setResultPage(current => {
+        if (current?.requestKey !== requestKey) return current;
+        const items = applyPendingMutations(reconcileRows(incoming, current.items, before, pending));
+        return { ...current, items, pages, nextCursor: cursor, total: result.total || 0, coverage: result.coverage || null,
+          appendFocus: restoreFocus ? { target: active } : current.appendFocus };
+      });
+      setRequestError(null);
+      setSyncStatus(null);
+    } catch (err) {
+      if (isCurrent() && err.name !== 'AbortError') setSyncStatus({ requestKey, error: true });
+    } finally {
+      if (syncRequest.current === request) syncRequest.current = null;
+    }
+  }, [applyPendingMutations, readPage, requestKey]);
+  const onReconcileTimeout = useCallback(() => {
+    syncRequest.current = null;
+    setSyncStatus({ requestKey, error: true });
+  }, [requestKey]);
+  const { reload: refreshSettledItems } = useRefreshableRead(readSettledItems, {
+    timeoutMs: reconcileTimeoutMs, onTimeout: onReconcileTimeout,
+  });
 
   useEffect(() => {
+    syncRequest.current = null;
+    setSyncStatus(null);
     runSearch();
     return () => requestRef.current?.abort();
   }, [runSearch]);
 
+  useEffect(() => {
+    if (!pendingItemOperations?.length) return;
+    setResultPage(current => current?.requestKey === requestKey
+      ? { ...current, items: applyPendingMutations(current.items) } : current);
+  }, [applyPendingMutations, pendingItemOperations, requestKey]);
+
+  useEffect(() => {
+    if (!currentPage || loading || loadingMore || requestedSync.current === itemSyncRevision) return;
+    requestedSync.current = itemSyncRevision;
+    refreshSettledItems();
+  }, [currentPage, itemSyncRevision, loading, loadingMore, refreshSettledItems]);
+
   const refreshCoverage = useCallback(() => runSearch({ refresh: true }), [runSearch]);
-  useVisibleRefresh({ active: coverage?.status === 'running' && !failure, intervalMs: 2000, reload: refreshCoverage });
+  useVisibleRefresh({ active: coverage?.status === 'running' && !failure && !syncError, intervalMs: 2000, reload: refreshCoverage });
 
   const submit = event => {
     event.preventDefault();
@@ -125,15 +226,16 @@ export default function FeedSearch() {
     setParams(next);
   };
   const replace = updated => setResultPage(current => {
-    if (!current) return current;
+    if (current?.requestKey !== requestKey) return current;
     return { ...current, items: current.items.map(item => updated.find(value => value.id === item.id) || item) };
   });
   const actOnItem = async (item, action) => {
-    writes.current.pending++;
+    const edit = { requestKey, key: resultKey(item) };
+    writes.current.pending.add(edit);
     try {
       await mutateItems([item], action, { onApply: replace }).catch(() => {});
     } finally {
-      writes.current.pending--;
+      writes.current.pending.delete(edit);
       writes.current.generation++;
     }
   };
@@ -143,7 +245,8 @@ export default function FeedSearch() {
     setParams(next);
   };
   const appendFailure = failure?.append ? failure : null;
-  const paginationDisabled = searching || loadingMore;
+  const reading = searching || loadingMore || syncing;
+  const paginationDisabled = reading || syncError;
 
   return (
     <section className="feed-search" aria-labelledby="feed-search-title">
@@ -168,7 +271,7 @@ export default function FeedSearch() {
       {searching && <StateMessage state="loading" role="status" title="Searching…" />}
       {failure && !appendFailure && <ErrorState title={null} error={failure.error} onRetry={() => runSearch()} />}
       {!searching && !failure && items.length === 0 && <EmptyState title="No matching items in indexed history." />}
-      <div className="feed-search__results">
+      <div className="feed-search__results" ref={resultsRef}>
         {items.map(item => {
           const key = resultKey(item);
           const isFocusTarget = appendFocus?.key === key;
@@ -186,10 +289,19 @@ export default function FeedSearch() {
           </article>;
         })}
       </div>
+      {syncError && (
+        <div>
+          <StateMessage state="error" role="alert" detail="Search results could not be refreshed." />
+          <Button ref={syncRetryRef} density="compact" variant="secondary" aria-disabled={reading || undefined}
+            aria-busy={syncing || undefined} onClick={() => { if (!reading) refreshSettledItems(); }}>
+            Retry refresh
+          </Button>
+        </div>
+      )}
       {appendFailure && <StateMessage state="error" role="alert" detail={appendFailure.error.message} />}
       {nextCursor && (
         <Button ref={paginationRef} className="feed-search__more" density="compact" variant="secondary"
-          aria-disabled={paginationDisabled || undefined} aria-busy={loadingMore || undefined}
+          aria-disabled={paginationDisabled || undefined} aria-busy={loadingMore || syncing || undefined}
           onClick={() => {
             if (paginationDisabled) return;
             runSearch({ append: true, cursor: appendFailure?.cursor ?? nextCursor });

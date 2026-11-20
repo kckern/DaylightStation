@@ -428,6 +428,8 @@ Offline editions are a separate device concern. `feedOfflineStore.js` stores up 
 
 Search uses the URL query and filters to own its rows, result count and cursor. A replacement query shows its own loading or retry state. Indexing updates can refresh an appended result without replacing its continuation cursor.
 
+Open Search pages apply the current account’s queued state to loaded items. When replay settles, Search rereads its loaded page count from the beginning of the current URL query using the returned cursors. It keeps results mounted during the read and preserves newer item edits. A failed or stalled refresh retains the results and offers a read-only retry before continuing pagination.
+
 ### Scroll Navigation
 
 - **Card tap** → navigates to `/feed/scroll/{base64url(item.id)}`, saves scroll position
