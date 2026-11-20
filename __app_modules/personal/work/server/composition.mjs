@@ -22,7 +22,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { resolveWorkPolicy } from './adapters/WorkConfig.mjs';
-import { WorkWriteAuthority } from './adapters/WorkWriteAuthority.mjs';
+import { WorkWriteAuthority, matchesWriter } from './adapters/WorkWriteAuthority.mjs';
 import { JsonlWorkState } from './adapters/JsonlWorkState.mjs';
 import { WorkSourceReader } from './adapters/WorkSourceReader.mjs';
 import { WorkPrincipalAuthority } from './adapters/WorkPrincipalAuthority.mjs';
@@ -147,7 +147,8 @@ export function createWorkRuntime(options = {}) {
     clock = Date.now,
     logger,
     environment = process.env.DAYLIGHT_ENV || 'docker',
-    hostId = os.hostname()
+    hostId = os.hostname(),
+    isDocker = false
   } = options;
   const document = () => typeof configuration === 'function' ? configuration() : configuration;
   if (document()?.work?.enabled !== true) {
@@ -176,7 +177,7 @@ export function createWorkRuntime(options = {}) {
     authorities = new Map();
   const canWrite = username => {
     const p = policy(username);
-    return !stopped && p.enabled && p.writer.write && p.writer.writer_env === environment && p.writer.writer_host === hostId && process.platform === 'linux';
+    return !stopped && p.enabled && p.writer.write && matchesWriter(p.writer, { environment, hostId, isDocker });
   };
   const rootForUser = username => {
     assertWorkUser(username);
@@ -194,6 +195,7 @@ export function createWorkRuntime(options = {}) {
         },
         environment,
         hostId,
+        isDocker,
         logger
       });
       const authority = {

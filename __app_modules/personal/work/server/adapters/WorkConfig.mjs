@@ -32,7 +32,7 @@ export function resolveWorkPolicy({configuration={},username,timezone}){
   const rawAttention=structuredClone(merged.attention);
   const invalidAttention=!validateAttention(rawAttention)||rawAttention.housekeepingDomains.some(id=>!Object.hasOwn(merged.domains??{},id))||rawAttention.reviewWindows.some(w=>w.start>=w.end);
   if(invalidAttention){merged.attention=structuredClone(defaults.attention);merged.proactive=false;}
-  if(!validate(merged)||merged.write&&(!merged.writer_env||!merged.writer_host))return inert('invalid_work_config');
+  if(!validate(merged)||merged.write&&!merged.writer_env)return inert('invalid_work_config');
   const accounts=new Map();
   for(const p of Object.values(merged.providers)){if(accounts.has(p.type)&&accounts.get(p.type)!==JSON.stringify([p.accountId,p.authScope]))return inert('ambiguous_provider_account');accounts.set(p.type,JSON.stringify([p.accountId,p.authScope]));}
   for(const d of Object.values(merged.domains)){

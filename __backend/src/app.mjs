@@ -3478,7 +3478,7 @@ const { readingSessions, readingSessionInterceptor } = await createSchoolReading
   const workIdentityForUser=username=>({username,senderId:String(userIdentityService.resolvePlatformId('telegram',username)),conversationId:telegramIdentityAdapter.resolve('journalist',{username}).conversationIdString});
   const workEvidence=createAuthoredJournalEvidence({loadJournal:createJournalKnowledgeSource({userDirForUser:username=>configService.getUserDir(username)}),identityForUser:workIdentityForUser,timezoneForUser:workTimezone,logger:rootLogger.child({app:'work',module:'journal-evidence'})});
   workRuntime=createWorkRuntime({
-    configuration:workConfiguration,environment:process.env.DAYLIGHT_ENV||'docker',hostId:hostname(),dataDir:configService.getDataDir(),
+    configuration:workConfiguration,environment:process.env.DAYLIGHT_ENV||'docker',hostId:hostname(),isDocker,dataDir:configService.getDataDir(),
     rootForUser:username=>path.join(configService.getUserDir(username),'work'),activityRootForUser:username=>path.join(configService.getUserDir(username),'lifelog'),userTimezone:workTimezone,clock:Date.now,scheduler:new NodeApplicationScheduler(),
     readCurrent:(username,provider)=>dataService.user.read(`current/${provider}`,username),readHealth:(username,provider)=>dataService.user.read(`current/${provider}-health`,username),readHistory:(username,provider)=>dataService.user.read(`lifelog/${provider}`,username),
     identityForUser:workIdentityForUser,

@@ -3,12 +3,23 @@ import { spawn as spawnChild } from 'node:child_process';
 import * as FileIO from '#system/utils/FileIO.mjs';
 import { createLogger } from '#system/logging/logger.mjs';
 import { workError } from '../domain/workState.mjs';
+/**
+ * Is this backend the configured Work writer? writer_env must match exactly. A
+ * configured writer_host must match this host. Without one, the writer is the
+ * prod container: Linux with /.dockerenv, because a container's hostname is its
+ * id and changes on every deploy (same rule as LedgerWriterGate).
+ */
+export function matchesWriter({ writer_env, writer_host } = {}, { environment, hostId, platform = process.platform, isDocker = false } = {}) {
+  if (platform !== 'linux' || !writer_env || writer_env !== environment) return false;
+  return writer_host ? writer_host === hostId : isDocker === true;
+}
 /** Exact writer role plus a real kernel lease; the file alone is never a lock. */
 export class WorkWriteAuthority {
   #configuration;
   #environment;
   #hostId;
   #platform;
+  #isDocker;
   #spawn;
   #leases = new Map();
   #closed = false;
@@ -18,6 +29,7 @@ export class WorkWriteAuthority {
     environment,
     hostId,
     platform = process.platform,
+    isDocker = false,
     spawn = spawnChild,
     logger = createLogger({
       source: 'backend',
@@ -31,12 +43,13 @@ export class WorkWriteAuthority {
     this.#environment = environment;
     this.#hostId = hostId;
     this.#platform = platform;
+    this.#isDocker = isDocker;
     this.#spawn = spawn;
     this.#logger = logger;
   }
   get canWrite() {
     const c = this.#configuration;
-    return !this.#closed && c.enabled === true && c.write === true && !!c.writer_env && !!c.writer_host && c.writer_env === this.#environment && c.writer_host === this.#hostId && this.#platform === 'linux';
+    return !this.#closed && c.enabled === true && c.write === true && matchesWriter(c, { environment: this.#environment, hostId: this.#hostId, platform: this.#platform, isDocker: this.#isDocker });
   }
   get leaseLost() {
     return !this.#closed && [...this.#leases.values()].some(({

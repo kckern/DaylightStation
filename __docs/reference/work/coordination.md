@@ -38,6 +38,11 @@ Read adapters filter account, container and any configured assignee scope. Unkno
 Disabled Work performs no source reads, locks, timers or model work. An explicitly
 enrolled user can read context independently of KB maintenance. Local mutations
 require the configured Linux writer environment/host and a separate Work lease.
+`writer_env` must match `DAYLIGHT_ENV`. A configured `writer_host` must match the
+host name; leave it unset for the prod container (`writer_env: docker`), whose
+host name is its container id and changes on every deploy. With no
+`writer_host`, only a Linux backend with `/.dockerenv` qualifies (the same rule
+as the supervision ledger writer).
 Successful complete harvests can refresh backup context; unchanged semantic
 facts do not append another full snapshot. The optional `catchUp: true` setting
 enables missed-hook polling at `pollMinutes` only on an authorized local writer.
