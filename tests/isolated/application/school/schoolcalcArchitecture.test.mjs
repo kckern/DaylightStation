@@ -189,7 +189,10 @@ function importsFrom(files) {
       if (!/^\s*(?:import|export)\b/.test(lines[index])) continue;
       let statement = lines[index];
       while (!statement.includes(';') && index + 1 < lines.length) statement += `\n${lines[++index]}`;
-      const match = statement.match(/\bfrom\s*['"]([^'"]+)['"]/) ?? statement.match(/^\s*import\s*['"]([^'"]+)['"]/);
+      // `from` must belong to the statement itself: no `=`, quote or backtick
+      // before it. Otherwise `export const RUBRIC = \`…distinct from "Mom"…\``
+      // reads as an import of "Mom".
+      const match = statement.match(/^\s*(?:import|export)\b[^=`'"]*\bfrom\s*['"]([^'"]+)['"]/) ?? statement.match(/^\s*import\s*['"]([^'"]+)['"]/);
       if (match) imports.push({ file, specifier: match[1] });
     }
     return imports;
