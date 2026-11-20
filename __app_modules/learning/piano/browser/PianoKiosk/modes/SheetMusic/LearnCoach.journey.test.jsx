@@ -20,7 +20,7 @@ const stubs = [
  // The ceremony curtain reads the game registry only for the game gate; its lazy games are not part of Learn.
  [/browser\/gameRegistry\.js$/, `export const getGameEntry=()=>null;`],
  [/lib\/logging\/Logger\.js$/, `const L={}; for(const level of ['info','warn','error','debug','sampled']) L[level]=(event,data)=>{ (window.__logs??=[]).push({level,event,data,at:Date.now()}); }; L.child=()=>L; export default ()=>L; export const getLogger=()=>L;`],
- [/PianoKiosk\/PianoConfig\.jsx$/, `const config={ timezone:'America/Los_Angeles', keyboard:{startNote:21,endNote:108}, sheetmusic:{ defaultMode:'learn', learn:{} } }; export const usePianoKioskConfig=()=>({config}); export const usePianoKioskConfigOptional=()=>({config});`],
+ [/PianoKiosk\/PianoConfig\.jsx$/, `const config={ timezone:'America/Los_Angeles', keyboard:{startNote:21,endNote:108}, sheetmusic:{ defaultMode:'learn', learn:{ skipping:{ default:'open' } } } }; export const usePianoKioskConfig=()=>({config}); export const usePianoKioskConfigOptional=()=>({config});`],
  [/PianoKiosk\/PianoUserContext\.jsx$/, `import {useSyncExternalStore} from 'react'; let user='learner4'; const subs=new Set(); const sub=f=>{subs.add(f);return()=>subs.delete(f)}; window.__profile=id=>{user=id;for(const f of subs)f()}; export const usePianoUser=()=>({currentUser:useSyncExternalStore(sub,()=>user,()=>user)});`],
  [/PianoKiosk\/PianoMidiContext\.jsx$/, `import {useSyncExternalStore} from 'react'; import {flushSync} from 'react-dom'; let notes=new Map();const subs=new Set(),events=new Set();const sub=f=>{subs.add(f);return()=>subs.delete(f)}; const midi={connected:true,subscribe:f=>{events.add(f);return()=>events.delete(f)},subscribeRaw:()=>()=>{},pressNote:()=>{},releaseNote:()=>{},sendNoteAt:(note)=>{(window.__audio??=[]).push(note)},sendNoteOffAt:()=>{},sendPanic:()=>{}}; window.__hold=midis=>{const now=Date.now();const before=notes;flushSync(()=>{notes=new Map(midis.map(m=>[m,before.get(m)??{timestamp:now,velocity:80}]));for(const f of subs)f();});for(const midi of midis) if(!before.has(midi))for(const f of events)f({type:'note_on',note:midi,velocity:80,timeStamp:performance.now()});};export const usePianoMidi=()=>midi;export const usePianoMidiNotes=()=>({activeNotes:useSyncExternalStore(sub,()=>notes,()=>notes),noteHistory:[],sustainPedal:false});`],
  [/PianoKiosk\/PianoBreadcrumbContext\.jsx$/, `export const usePianoBreadcrumb=()=>{};`],
@@ -45,7 +45,7 @@ beforeAll(async () => {
 },180000);
 afterAll(async()=>{await browser?.close();});
 async function open(viewport={width:1280,height:800}){
- const f=pianoCoachFixture(); f.pieceNotes=[]; const service=new PianoLearnCoachService({...f,pieceLog:{note:(entry)=>{f.pieceNotes.push(entry);return entry;}}});const page=await browser.newPage({viewport});const errors=[];page.on('pageerror',e=>errors.push(e.message));
+ const f=pianoCoachFixture(); f.pieceNotes=[]; const service=new PianoLearnCoachService({...f,skipping:SKIPPING,pieceLog:{note:(entry)=>{f.pieceNotes.push(entry);return entry;}}});const page=await browser.newPage({viewport});const errors=[];page.on('pageerror',e=>errors.push(e.message));
  await page.exposeFunction('__request',async({url,body,method})=>{
   const [,user]=url.match(/users\/([^/]+)/)??[];
   if(f.offline && method==='POST')throw new Error('offline');
@@ -60,6 +60,8 @@ async function open(viewport={width:1280,height:800}){
  await page.evaluate(value=>{window.__xml=value},xml);await page.addScriptTag({content:js});
  return{page,f,errors};
 }
+// These journeys go straight to score tempo, which the default skipping mode holds behind Silver; kiosk and server agree on `open`.
+const SKIPPING={ default:'open' };
 const click=async(page,name)=>{await page.getByRole('button',{name,exact:true}).click({timeout:30000});};
 const armed=async(page)=>{await page.locator('.piano-exercise-run[data-armed="true"]').waitFor({timeout:15000});await page.waitForTimeout(600);};
 // Open the passage (the rail button), then tap a set of the drill to run that step.
@@ -86,7 +88,7 @@ describe('real Learn journey',()=>{
    expect(await page.locator('.piano-learn-lab__task').innerText()).toBe('Find the right-hand notes');
    expect(await page.locator('.piano-learn-lab__identity').innerText()).toBe('Bars 1–2');
    expect(await page.getByRole('button',{name:'Start practice'}).count()).toBe(0);
-   expect(await page.locator('.drill-cluster').count()).toBe(8);
+   expect(await page.locator('.drill-cluster').count()).toBe(9);
    expect(await page.locator('.piano-passage-rail__tile').count()).toBe(1);
    const text=await page.locator('.piano-learn-coach').innerText();
    for(const banned of ['Segment','Practicing as','Progress saved','previously earned','Connect the piano'])expect(text).not.toContain(banned);
@@ -158,7 +160,7 @@ describe('real Learn journey',()=>{
    await page.locator('.piano-passage-rail__tile[data-state="gold"]').waitFor({timeout:15000});await expect.poll(()=>f.attempts.size).toBe(2);
    await page.locator('.piano-passage-rail__go').waitFor({timeout:15000});
    await page.evaluate(()=>window.__mount());await page.getByRole('button',{name:'Practice bars 1–2',exact:true}).waitFor();await openPassage(page);
-   expect(await page.locator('.drill-cluster[data-done]').count()).toBe(8);expect(errors).toEqual([]);
+   expect(await page.locator('.drill-cluster[data-done]').count()).toBe(9);expect(errors).toEqual([]);
   }catch(error){fs.writeFileSync(path.join(ARTIFACTS,'failure.json'),JSON.stringify({errors,attempts:[...f.attempts.values()],text:await page.locator('body').innerText(),logs:await page.evaluate(()=>window.__logs)},null,2));await page.screenshot({path:path.join(ARTIFACTS,'failure.png'),fullPage:true});throw error;}finally{await page.close();}
  },90000);
  it('retries a saved musical success after offline failure without mixing profiles',async()=>{
@@ -198,7 +200,7 @@ describe('real Learn journey',()=>{
    // There is no practice chooser; a step is chosen from the sets, each a full touch target.
    expect(await page.getByRole('button',{name:'Change practice'}).count()).toBe(0);
    const sets=await page.locator('button.drill-cluster').evaluateAll(list=>list.map(el=>{const r=el.getBoundingClientRect();return{w:r.width,h:r.height,top:r.top,bottom:r.bottom,clip:el.querySelector('.drill-cluster__label').getBoundingClientRect().top>=el.closest('.piano-exercise-run__rail').getBoundingClientRect().top};}));
-   expect(sets).toHaveLength(8);expect(sets.every(set=>set.w>=64&&set.h>=56&&set.clip)).toBe(true);
+   expect(sets).toHaveLength(9);expect(new Set(sets.map(set=>Math.round(set.top))).size).toBe(1);expect(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth)).toBe(true);expect(sets.every(set=>set.w>=64&&set.h>=56&&set.clip)).toBe(true);
    expect(f.attempts.size).toBe(0);expect(errors).toEqual([]);
   }finally{await page.close();}
  },60000);

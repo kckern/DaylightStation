@@ -20,6 +20,7 @@ All SVGs use `fill="currentColor"` — set color via CSS `color:`.
 | menu | sheet-music | `menu/sheet-music.svg` | solar:notes-bold |
 | menu | game | `menu/game.svg` | solar:gamepad-bold |
 | menu | lessons | `menu/lessons.svg` | solar:square-academic-cap-2-bold |
+| learn | lock | `lock.svg` (generated) | solar:lock-keyhole-bold (a Learn step that cannot be started yet) |
 | menu | studio | `studio.svg` | grand-piano glyph — NOT a microphone. Was solar:microphone-bold; swapped for a solid grand piano in an earlier commit. The mic is `singalong`. |
 | menu | instruments | `menu/instruments.svg` | solar:tuning-2-bold (faders) |
 | menu | composers | `menu/composers.svg` | solar:book-2-bold (open book) |

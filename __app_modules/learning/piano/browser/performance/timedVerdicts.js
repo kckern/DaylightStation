@@ -79,6 +79,11 @@ export function verdictSummary(snapshot) {
  * about time (placement failed or some notes were off the beat).
  * 'notes': any other failure.
  */
+/** A criterion score for a log line: three decimals, or null when absent. */
+export function roundScore(value) {
+  return Number.isFinite(value) ? Math.round(value * 1000) / 1000 : null;
+}
+
 export function timedRunSummary(result, snapshot) {
   const notes = (snapshot?.expectation?.events || []).flatMap((event) => event.notes);
   const hits = snapshot?.hits || {};

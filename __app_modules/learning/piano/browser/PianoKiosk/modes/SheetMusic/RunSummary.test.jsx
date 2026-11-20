@@ -96,4 +96,23 @@ describe('RunSummary', () => {
     );
     expect(screen.queryByRole('button', { name: /drill worst section/i })).toBeNull();
   });
+
+  it('names a Polish gem or diamond the server confirms is new, and nothing otherwise', () => {
+    const base = { open: true, grades, measures, onClose: () => {}, onReplay: () => {} };
+    const { rerender } = render(<RunSummary {...base} reward={{ gem: true, diamond: false, newGem: true, newDiamond: false }} />);
+    expect(screen.getByRole('status')).toHaveTextContent('Gem earned!');
+    expect(screen.queryByText('Diamond earned!')).toBeNull();
+    expect(document.querySelector('.piano-score-run-reward .gem-icon')).toBeTruthy();
+
+    rerender(<RunSummary {...base} reward={{ gem: true, diamond: true, newGem: true, newDiamond: true }} />);
+    expect(screen.getByText('Diamond earned!')).toBeTruthy();
+    expect(screen.getByText('Gem earned!')).toBeTruthy();
+    // the diamond leads: it is the bigger news
+    expect([...document.querySelectorAll('.piano-score-run-reward__line')].map((n) => n.textContent)).toEqual(['Diamond earned!', 'Gem earned!']);
+
+    rerender(<RunSummary {...base} reward={{ gem: true, diamond: true, newGem: false, newDiamond: false }} />);
+    expect(screen.queryByRole('status')).toBeNull();
+    rerender(<RunSummary {...base} reward={null} />);
+    expect(screen.queryByRole('status')).toBeNull();
+  });
 });

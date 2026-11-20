@@ -214,9 +214,11 @@ export default function ScorePlayer({ score: scoreMeta }) {
   const {
     record: practice,
     loaded: practiceLoaded,
+    polishAwards,
     persistent: practicePersistent,
     recordCycle,
     recordTierBest,
+    recordPolishRun,
     recordLearnRep,
     recordAssessmentAttempt,
     saveCustomRange,
@@ -247,6 +249,9 @@ export default function ScorePlayer({ score: scoreMeta }) {
   }, []);
   const [mode, setMode] = useState(() => {
     if (autoplayMode) return autoplayMode;
+    // `?mode=` opens a mode without starting it (the home strip's Polish link).
+    const asked = searchParams.get('mode');
+    if (asked && VALID_MODES.includes(asked)) return asked;
     // A link to one passage is a link into Learn.
     if (searchParams.get('learnPassage') && VALID_MODES.includes('learn')) return 'learn';
     // With the roadmap on, a score opens on its passages: the rail is the game,
@@ -294,6 +299,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
   // so it is deliberately not a ref: the ticks have to appear as the drag starts.
   const [draggingEdge, setDraggingEdge] = useState(null);
   const [clickOn, setClickOn] = useState(() => restored.clickOn !== false); // Polish metronome — on unless turned off
+  const clickOnRef = useRef(clickOn); clickOnRef.current = clickOn;
   // Learn free-running metronome — explicit opt-in per session, NEVER persisted:
   // a walk-up user must not inherit a ticking room (audit M2).
   const [learnClick, setLearnClick] = useState(false);
@@ -332,6 +338,9 @@ export default function ScorePlayer({ score: scoreMeta }) {
   //    still be on screen (Play does not dismiss it). Reading live would silently
   //    re-label a finished run's report as the new run's tier.
   const [summaryRun, setSummaryRun] = useState(null);
+  // The server's Polish reward verdict, tagged with the run it judged: the answer
+  // arrives after the panel opens, and must never land on a later run's panel.
+  const [polishReward, setPolishReward] = useState(null);
   // ── Polish tempo tiers (wave-3 H) ───────────────────────────────────────────
   // The tier is decided by the tempo the run STARTED at and frozen there: a best
   // is only comparable against other runs of the same piece at the same speed.
@@ -340,6 +349,17 @@ export default function ScorePlayer({ score: scoreMeta }) {
   // and must not bank a best — live grades keep flowing regardless (the user still
   // gets their feedback; only persistence is withheld).
   const runMixedRef = useRef(false);
+  // The tempo the run STARTED at, and whether the metronome sounded for all of
+  // it: the Polish reward facts the server judges (gem at 50%, diamond at 90%,
+  // metronome on). A start from step 0 arms the metronome fact from the click; a
+  // resume can only keep it or clear it (see clickForStart), and a click toggle
+  // while a run is in flight or suspended clears it.
+  const runTempoRef = useRef(1);
+  const runClickRef = useRef(false);
+  // A fresh start from the top takes the click as it is; a resume mid-piece keeps
+  // the run's fact only if the click is on now too, so turning it on during a pause
+  // cannot make a run that began without it count as metronome-on.
+  const clickForStart = (startStep) => (startStep === 0 ? clickOnRef.current : runClickRef.current && clickOnRef.current);
   // Is the run in flight still a COMPLETED WHOLE-PIECE run in the making (design
   // §H)? `mixed` only catches a tempo move while the transport is actually running;
   // it does not catch a run that never started at the top, or one whose tempo/hands
@@ -628,6 +648,32 @@ export default function ScorePlayer({ score: scoreMeta }) {
         // of both rules) — calling only on 'banked' keeps this path from being a
         // second, drifting copy of them.
         if (reason === 'banked') recordTierBest({ bucket, tier: run.tier, score: run.score });
+        // Every completed whole-piece run is reported, not only a new best: the
+        // server judges it for the piece's Polish gem and diamond.
+        if (reason === 'banked' || reason === 'not-better') {
+          const polishRun = {
+            scoreId: scoreMeta.id,
+            tempoMult: runTempoRef.current,
+            metronome: runClickRef.current === true,
+            completed: true,
+            mixed: false,
+            parts: parts.map((p) => p.staff),
+            activeParts: parts.filter((p) => activeParts[p.staff]).map((p) => p.staff),
+            base: run.base,
+          };
+          Promise.resolve(recordPolishRun?.(polishRun))
+            .then((reward) => {
+              setPolishReward({ run, reward });
+              logger.info('score.polish.reward-shown', {
+                tempoPercent: Math.round(polishRun.tempoMult * 100),
+                metronome: polishRun.metronome,
+                base: run.base,
+                reason: reward?.reason ?? null,
+                newGem: reward?.newGem === true,
+                newDiamond: reward?.newDiamond === true,
+              });
+            });
+        }
         logger.info('score.polish.tier-best', {
           bucket,
           tier: run?.tier ?? null,
@@ -677,6 +723,8 @@ export default function ScorePlayer({ score: scoreMeta }) {
       // matching capture in toggleRun's play branch for the no-count-in modes.)
       runTierRef.current = tierOf(tempoMult);
       runMixedRef.current = false;
+      runTempoRef.current = tempoMult;
+      runClickRef.current = clickForStart(startStep);
       // One-way arm (see runEligibleRef): a start from the top makes this a
       // whole-piece run; a start from anywhere else leaves an earlier arm — or an
       // earlier clear — standing, which is what keeps a mid-piece RESUME of the
@@ -1860,7 +1908,12 @@ export default function ScorePlayer({ score: scoreMeta }) {
   const onToggleClick = useCallback(() => {
     if (mode === 'learn') setLearnClick((v) => !v); // free-run, session-local
     else if (mode === 'listen') setListenClick((v) => !v); // free-run, session-local (wave-3 G)
-    else setClickOn((v) => !v); // Polish arm state, persisted
+    else {
+      // A click toggled while a Polish run is in flight or suspended means the
+      // metronome did not sound for the whole run: no gem or diamond for it.
+      if (runActiveRef.current || resumeAfterRef.current || Object.keys(gradesRef.current).length > 0) runClickRef.current = false;
+      setClickOn((v) => !v); // Polish arm state, persisted
+    }
   }, [mode]);
   // Flip looping on/off IN PLACE — the range stays defined (its brackets keep
   // showing) but wrap/clamp/home-step stop treating it as a boundary. In Learn
@@ -1924,6 +1977,8 @@ export default function ScorePlayer({ score: scoreMeta }) {
         if (startStep !== stepRef.current) setStep(startStep);
         runTierRef.current = tierOf(tempoMult); // the no-count-in start path (wave-3 H)
         runMixedRef.current = false;
+        runTempoRef.current = tempoMult;
+        runClickRef.current = clickForStart(startStep);
         if (startStep === 0) runEligibleRef.current = true; // one-way arm — see runEligibleRef
         transport.seek((stepTimeline[startStep]?.t ?? 0) / tempoMult);
         setRunActive(true);
@@ -2357,7 +2412,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
   }, [logger, scoreMeta.id]);
 
   if (roadmapLearn && selectedPassage) return <div className="piano-score-player piano-score-player--learn-launchpad">
-    <LearnCoach score={learnScore} title={meta.title} plan={coachPlan} segment={selectedPassage} coach={coach}
+    <LearnCoach score={learnScore} title={meta.title} plan={coachPlan} segment={selectedPassage} coach={coach} skipping={learnPlan.skipping} polish={polishAwards}
       tempo={{ ...learnPlan.settings.tempo, tempoSource: learnPlan.tempoSource, measureOnsets: layout.measures.map((measure) => layout.steps[measure.firstStep]?.onsetQuarter) }} feedback={learnPlan.settings.feedback}
       onBack={closeLearnPassage} onPassageChange={openLearnPassage}
       onListen={(task) => logger.info('piano.learn.listen', { scoreId: scoreMeta.id, passageId: task.passageId, parts: task.parts })} />
@@ -2535,7 +2590,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
       </div>
 
       {railVisible && passageBoard && (
-        <PassageBoard title={meta.title} model={rail} focusId={passageBoard.focusId} gemOffered={gemOffered}
+        <PassageBoard title={meta.title} model={rail} focusId={passageBoard.focusId} gemOffered={gemOffered} polish={polishAwards}
           review={Boolean(coach.projection.review)}
           onReview={() => { coach.selectTask(coach.projection.review); openLearnPassage(coach.projection.review.passageId); }}
           onSelect={(passageId) => selectRailPassage(passageId, 'board')} onClose={closePassageBoard} />
@@ -2622,6 +2677,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
           tier={summaryRun?.tier || null}
           mixedTempo={!!summaryRun?.mixed}
           completed={!!summaryRun?.completed}
+          reward={summaryRun && polishReward?.run === summaryRun ? polishReward.reward : null}
           bucket={polishBucket}
           tierBests={practice?.polish?.[polishBucket] || {}}
         />

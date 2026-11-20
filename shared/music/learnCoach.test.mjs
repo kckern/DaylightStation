@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createCoachPlan, projectCoach, applyCoachEvent, coachFeedback } from './learnCoach.mjs';
+import { createCoachPlan, projectCoach, applyCoachEvent, coachFeedback, coachTaskKey } from './learnCoach.mjs';
 
 const segments = [
   { id: 'opening', inMeasure: 0, outMeasure: 3, printedMeasures: ['1', '4'], playableParts: ['rh', 'lh'] },
@@ -16,7 +16,7 @@ describe('guided musical progression', () => {
   it('offers a concrete first hand task and omits impossible hand stages for single-part music', () => {
     const plan = planOf();
     expect(projection(plan).recommended).toMatchObject({ skill: 'right', mode: 'free', parts: ['rh'], range: { start: 0, end: 3 } });
-    expect(plan.tasks.filter((task) => task.passageId === 'answer').map((task) => task.skill)).toEqual(['notes', 'silver', 'pulse', 'timed-60', 'timed-80', 'mastery']);
+    expect(plan.tasks.filter((task) => task.passageId === 'answer').map((task) => task.skill)).toEqual(['notes', 'silver', 'pulse', 'timed-50', 'timed-60', 'timed-75', 'mastery']);
   });
 
   it('advances the Gold path after two passes among three equivalent takes and never removes that achievement', () => {
@@ -25,7 +25,7 @@ describe('guided musical progression', () => {
     expect(projection(plan, state).gold.opening.skill).toBe('pulse');
     state = outcome(state, plan, task, bad);
     state = outcome(state, plan, task);
-    expect(projection(plan, state).gold.opening.skill).toBe('timed-60');
+    expect(projection(plan, state).gold.opening.skill).toBe('timed-50');
     state = outcome(state, plan, task, bad);
     expect(projection(plan, state).segments[0].skills.find((skill) => skill.skill === 'pulse').ready).toBe(true);
   });
@@ -117,7 +117,7 @@ describe('focused recovery and honest feedback', () => {
   });
 
   it('offers one slower stage for timing-only difficulty and shortens below the automatic floor', () => {
-    const plan = planOf();const task = choose(plan, 'timed-60');
+    const plan = planOf();const task = choose(plan, 'timed-50');
     const timing = { ...bad, criteria: { completeness: 1, cleanliness: 1, placement: 0.2 } };
     let state = outcome(outcome(undefined, plan, task, timing), plan, task, timing);
     expect(projection(plan, state).goldResume).toMatchObject({ tempoPercent: 40, range: { start: 0, end: 3 } });
@@ -202,7 +202,9 @@ describe('identity, authored requirements, review and legacy preservation', () =
     const plan=planOf();const legacy={learn:{passages:{opening:{rungs:{timed:{passCount:3}}},answer:{rungs:{right:{passCount:6}}}}}};
     const p=projection(plan,null,{legacy});
     expect(p.segments[0].skills.find(s=>s.skill==='timed-60')).toMatchObject({ready:true,provenance:'legacy'});
-    expect(p.segments[0].skills.find(s=>s.skill==='timed-80').ready).toBe(false);
+    expect(p.segments[0].skills.find(s=>s.skill==='timed-50').ready).toBe(true);
+    expect(p.segments[0].skills.find(s=>s.skill==='timed-75').ready).toBe(false);
+    expect(p.gold.opening.skill).toBe('timed-75');
     expect(p.segments[1].skills.find(s=>s.skill==='notes')).toMatchObject({ready:true,provenance:'legacy'});
   });
   it('offers optional full-tempo mastery without replacing an authored practice-plan quota', () => {
@@ -222,4 +224,112 @@ describe('identity, authored requirements, review and legacy preservation', () =
     expect(projection(plan,once).segments[0].complete).toBe(false);
   });
 
+});
+
+describe('Gold tempo ladder: 50, 60, 75, then score tempo', () => {
+  const gold = (plan, passageId = 'opening') => plan.tasks.filter((task) => task.passageId === passageId && task.track === 'gold');
+  const stateWith = (...keys) => ({ version: 1, scoreId: 'files:test.musicxml', fingerprint: 'content-a', revision: 3,
+    achievements: Object.fromEntries(keys.map((key) => [key, { at: '2026-10-01T18:00:00Z', dayKey: '2026-10-01', provenance: 'demonstrated' }])),
+    counts: {}, evidence: [], reviews: {}, resume: null });
+  // The keys a child earned under the old 60/80/100 ladder.
+  const oldKey = (plan, mode, tempoPercent) => coachTaskKey({ ...choose(plan, 'timed-60'), mode, tempoPercent });
+  const skillOf = (p, skill) => p.segments[0].skills.find((item) => item.skill === skill);
+
+  it('climbs a 50% beat, cued 50, 60 and 75, then score tempo', () => {
+    const plan = planOf();
+    expect(gold(plan).map(({ skill, mode, tempoPercent, label }) => [skill, mode, tempoPercent, label])).toEqual([
+      ['pulse', 'metronome', 50, 'Settle into a beat'],
+      ['timed-50', 'cued', 50, 'Play with the beat'],
+      ['timed-60', 'cued', 60, 'Play with the beat'],
+      ['timed-75', 'cued', 75, 'Play with the beat'],
+      ['mastery', 'cued', 100, 'Play at score tempo'],
+    ]);
+    expect(choose(plan, 'mastery')).toMatchObject({ mastery: true, completes: true });
+    expect(gold(plan).filter((task) => task.mastery || task.completes).map((task) => task.skill)).toEqual(['mastery']);
+  });
+
+  it('steps a timing-only miss down one rung: 75 to 60 and 50 to 40', () => {
+    const plan = planOf();
+    const timing = { ...bad, criteria: { completeness: 1, cleanliness: 1, placement: 0.2 } };
+    for (const [skill, slower] of [['timed-75', 60], ['timed-50', 40]]) {
+      const task = choose(plan, skill);
+      const state = outcome(outcome(undefined, plan, task, timing), plan, task, timing);
+      expect(projection(plan, state).goldResume).toMatchObject({ tempoPercent: slower, reason: 'slower-beat', depth: 1 });
+    }
+  });
+
+  it('a child who earned 60% and 80% keeps both and goes on to score tempo', () => {
+    const plan = planOf();
+    const p = projection(plan, stateWith(oldKey(plan, 'metronome', 60), oldKey(plan, 'cued', 60), oldKey(plan, 'cued', 80)));
+    for (const skill of ['pulse', 'timed-50', 'timed-60', 'timed-75']) expect(skillOf(p, skill).ready).toBe(true);
+    expect(skillOf(p, 'mastery').ready).toBe(false);
+    expect(p.gold.opening.skill).toBe('mastery');
+    expect(p.segments[0].certification.gold).toBeNull();
+  });
+
+  it('a child who earned only 60% has 50 and 60 and goes on to 75', () => {
+    const plan = planOf();
+    const p = projection(plan, stateWith(oldKey(plan, 'cued', 60)));
+    for (const skill of ['pulse', 'timed-50', 'timed-60']) expect(skillOf(p, skill).ready).toBe(true);
+    expect(skillOf(p, 'timed-75').ready).toBe(false);
+    expect(p.gold.opening.skill).toBe('timed-75');
+  });
+
+  it('carries over only the same bars and parts at an equal or faster tempo', () => {
+    const plan = planOf();
+    const other = coachTaskKey({ ...choose(plan, 'timed-60'), tempoPercent: 80, range: { start: 0, end: 1 } });
+    const oneHand = coachTaskKey({ ...choose(plan, 'timed-60'), tempoPercent: 80, parts: ['rh'] });
+    const slower = oldKey(plan, 'cued', 40);
+    const p = projection(plan, stateWith(other, oneHand, slower));
+    for (const skill of ['pulse', 'timed-50', 'timed-60', 'timed-75']) expect(skillOf(p, skill).ready).toBe(false);
+    expect(p.gold.opening.skill).toBe('pulse');
+  });
+
+  describe('a saved Gold step from the old 60/80/100 ladder', () => {
+    const select = (plan, task, state) => applyCoachEvent(state, { id: `sel-${task.key}`, type: 'selection', task }, { plan, now: '2026-10-26T18:00:00Z', dayKey: '2026-10-26' });
+    const oldTimed80 = (plan) => ({ ...choose(plan, 'timed-60'), skill: 'timed-80', tempoPercent: 80 });
+
+    it('no longer resumes; the next unready Gold step does', () => {
+      const plan = planOf();
+      const state = select(plan, oldTimed80(plan), stateWith(oldKey(plan, 'cued', 60)));
+      expect(state.goldResume).toMatchObject({ tempoPercent: 80, track: 'gold' });
+      const p = projection(plan, state);
+      expect(p.goldResume).toBeNull();
+      expect(p.gold.opening.skill).toBe('timed-75');
+    });
+
+    it('still resumes a slower-beat recovery drill below the ladder', () => {
+      const plan = planOf();
+      const drill = { ...choose(plan, 'timed-50'), tempoPercent: 40, depth: 1, parent: choose(plan, 'timed-50'), reason: 'slower-beat' };
+      expect(projection(plan, select(plan, drill)).goldResume).toMatchObject({ tempoPercent: 40, depth: 1 });
+    });
+
+    it('still resumes an explicit review, and a Gold step whose tempo is on the ladder', () => {
+      const plan = planOf();
+      const review = { ...oldTimed80(plan), review: true };
+      expect(projection(plan, select(plan, review)).goldResume).toMatchObject({ review: true, tempoPercent: 80 });
+      const edited = { ...choose(plan, 'timed-60'), criteria: { completeness: 1, cleanliness: 0.8, placement: 0.7 } };
+      expect(projection(plan, select(plan, edited)).goldResume).toMatchObject({ tempoPercent: 60 });
+    });
+
+    it('leaves an authored ladder\'s saved step alone', () => {
+      const plan = planOf({ authoredLadder: true, segments: [{ ...segments[0], ladder: [
+        { id: 'slow', label: 'Slow', effectiveParts: ['rh', 'lh'], mode: 'cued', tempoPercent: 50, sets: 1, reps: 2, completes: 'passage' },
+      ] }] });
+      // An authored step at a tempo the ladder no longer has, saved mid-practice.
+      const off = { ...choose(plan, 'slow'), tempoPercent: 70, depth: 1 };
+      expect(projection(plan, select(plan, off)).recommended).toMatchObject({ skill: 'slow', tempoPercent: 70 });
+    });
+  });
+
+  it('leaves authored ladders to their own steps', () => {
+    const plan = planOf({ authoredLadder: true, segments: [{ ...segments[0], ladder: [
+      { id: 'slow', label: 'Slow', effectiveParts: ['rh', 'lh'], mode: 'cued', tempoPercent: 50, sets: 1, reps: 2 },
+      { id: 'fast', label: 'Fast', effectiveParts: ['rh', 'lh'], mode: 'cued', tempoPercent: 80, sets: 1, reps: 2, completes: 'passage' },
+    ] }] });
+    const fast = choose(plan, 'fast');
+    const p = projection(plan, { ...stateWith(fast.key) });
+    expect(skillOf(p, 'fast').ready).toBe(true);
+    expect(skillOf(p, 'slow').ready).toBe(false);
+  });
 });

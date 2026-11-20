@@ -261,7 +261,7 @@ export function createRunTriagePass({
       mailbox: mailbox && (!caps.read || !caps.modify) ? 'reconnect_needed' : 'ok',
       canModify: caps.modify === true,
       canCompose: caps.compose === true,
-      preDone: { archived: 0, closed: 0 },
+      preDone: { archived: 0, closed: 0, kept: 0 },
       // The action (if any) already happened; a log write failure must not abort the pass,
       // and the full entry goes to the structured log so the action can still be traced and undone.
       appendLog: async ({ item, action, inverse, dryRun, uncertain }) => {
@@ -347,6 +347,13 @@ export function createRunTriagePass({
       const guard = emailGuardrails(item, { sentToCount: await knownSender(username, item.facts, senders) });
       const proposal = undoneCard(item, await classifyEmail({ item, guard, policy, evaluate, logger }));
       logger?.debug?.('triage.pass.item', { username, passId, itemId: item.id, kind: 'email', step: proposal.step, preDo: proposal.preDo?.action ?? null, rules: guard.rules });
+      if (proposal.preDo?.action === 'keep') {
+        // Keeping is a no-op on the mailbox, so it happens in both modes. The log entry
+        // (written after the queue, like dry-run entries) marks the item as seen.
+        ctx.preDone.kept += 1;
+        pendingDryRun.push({ item, action: 'keep', inverse: null, dryRun: false });
+        continue;
+      }
       let card = proposal;
       if (proposal.preDo?.action === 'archive') card = await archiveOne({ username, item, proposal, policy, ctx, passId, asOf });
       if (!card) continue;
@@ -432,7 +439,7 @@ export function createRunTriagePass({
     const summary = { passId, preDone: ctx.preDone, queued, mailbox: ctx.mailbox };
     logger?.info?.('triage.pass.completed', {
       username, trigger, passId, mode: policy.mode, mailbox: ctx.mailbox,
-      archived: ctx.preDone.archived, closed: ctx.preDone.closed, newCards: fresh.length, draftsCreated: drafts.created, draftsUpdated: drafts.updated, ...queued,
+      archived: ctx.preDone.archived, closed: ctx.preDone.closed, kept: ctx.preDone.kept, newCards: fresh.length, draftsCreated: drafts.created, draftsUpdated: drafts.updated, ...queued,
       emailRead: emails !== null, todosRead: todos !== null, todosComplete: todos?.complete ?? null,
     });
     return summary;

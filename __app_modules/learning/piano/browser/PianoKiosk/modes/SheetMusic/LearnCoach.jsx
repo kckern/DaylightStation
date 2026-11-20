@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { coachFeedback, isGoldWork, passageProgress } from '../../../../../../../shared/music/learnCoach.mjs';
+import { currentStep, passageAccess, resolveSkipMode } from '../../../../../../../shared/music/learnSkipping.mjs';
 import getLogger from '../../../../../../../frontend/src/lib/logging/Logger.js';
+import { roundScore } from '../../../performance/timedVerdicts.js';
 import useLearnCoach from './useLearnCoach.js';
 import usePieceGemOffer from './usePieceGemOffer.js';
 import LearnLab from './LearnLab.jsx';
@@ -17,18 +19,18 @@ import './LearnCoach.scss';
 const EMPTY = {};
 /** What a step is called under its pills: a set label, not a sentence. */
 const SET_NAMES = Object.freeze({ right: 'Right hand', left: 'Left hand', together: 'Together', notes: 'Notes', silver: 'On your own',
-  pulse: 'Beat', 'timed-60': '60%', 'timed-80': '80%', mastery: '100%' });
+  pulse: 'Beat', 'timed-50': '50%', 'timed-60': '60%', 'timed-75': '75%', mastery: '100%' });
 const setName = (task) => SET_NAMES[task.skill] ?? task.label;
 /**
  * What stands over a set's pills. A picture where one says it, so the row reads
- * without words: the hands, then the silver coin they earn; the beat, the two
+ * without words: the hands, then the silver coin they earn; the beat, the three
  * slower tempos, then the gold coin. A step with no picture keeps its words.
  */
 const SET_ICONS = Object.freeze({
   // Both hands are always drawn, in their places; the one that rests is unlit.
   right: <><Icon name="hand-left" className="is-resting" /><Icon name="hand-right" /></>, left: <><Icon name="hand-left" /><Icon name="hand-right" className="is-resting" /></>,
   together: <><Icon name="hand-left" /><Icon name="hand-right" /></>, notes: <Icon name="quarter-note" />,
-  silver: <PassageCoin state="silver" />, pulse: <Icon name="metronome" />, 'timed-60': <b>60%</b>, 'timed-80': <b>80%</b>, mastery: <PassageCoin state="gold" />,
+  silver: <PassageCoin state="silver" />, pulse: <Icon name="metronome" />, 'timed-50': <b>50%</b>, 'timed-60': <b>60%</b>, 'timed-75': <b>75%</b>, mastery: <PassageCoin state="gold" />,
 });
 /** A passage's coin holds the curtain for about two seconds; a finished piece, for more than three. */
 export const PASSAGE_CEREMONY_MS = 5000;
@@ -41,20 +43,28 @@ const lower = (label) => label.charAt(0).toLowerCase() + label.slice(1);
 const rootOf = (task) => { let at = task; while (at?.parent) at = at.parent; return at; };
 const freshId = () => `coach-${globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`}`;
 
+/** A step the child cannot start yet: its picture, dimmed, under a small lock. */
+const lockedIcon = (icon) => <span className="piano-learn-coach__locked">{icon}<Icon name="lock" className="piano-learn-coach__lock" /></span>;
+
 /**
  * A passage's steps as the drill surface draws a program: every Silver and
- * Gold step is a set, and the clean takes it needs are its reps.
+ * Gold step is a set, and the clean takes it needs are its reps. `access` (by
+ * step key, from the skipping policy) marks the steps that cannot be started;
+ * `showLocks` draws a lock on them, which a `strict` ladder does not need.
  */
 // eslint-disable-next-line react-refresh/only-export-components -- pure projection is exported for focused contract tests
-export function passageDrill(passage, task) {
+export function passageDrill(passage, task, { access = EMPTY, showLocks = false } = {}) {
   const current = rootOf(task)?.key ?? null;
   const steps = (passage?.skills ?? []).map((skill) => {
     // A step with no fixed count is earned by two good takes out of the last three.
     const reps = Math.max(1, skill.required ?? 2);
     const banked = skill.ready ? reps : Math.min(reps - 1, skill.successes ?? 0);
-    return { id: skill.key, title: skill.label, display: { key: setName(skill), hand: null, hand_label: null, icon: SET_ICONS[skill.skill] ?? null },
+    const locked = access[skill.key] === 'locked' && skill.key !== current;
+    const icon = SET_ICONS[skill.skill] ?? null;
+    return { id: skill.key, title: locked ? `${skill.label} (locked)` : skill.label,
+      display: { key: setName(skill), hand: null, hand_label: null, icon: locked && showLocks ? lockedIcon(icon ?? <b>{setName(skill)}</b>) : icon },
       requirement: { required_passes: reps }, pass_count: banked, passed: Boolean(skill.ready),
-      state: skill.ready ? 'complete' : skill.key === current ? 'current' : 'locked' };
+      state: skill.ready ? 'complete' : skill.key === current ? 'current' : 'locked', ...(locked ? { locked: true } : {}) };
   });
   return { projection: { id: `learn:${passage?.id}`, title: barsOf(passage), displaySingleStep: true, steps },
     stepId: steps.some((step) => step.id === current) ? current : null };
@@ -77,7 +87,7 @@ function OwnedCoach(props) {
  * passage to LearnLab as a drill of sets and reps, records each take, and puts
  * the passage rail and board under it. It draws no practice screen of its own.
  */
-function CoachSession({ score, title, plan, segment, coach, tempo = EMPTY, feedback, onBack, onPassageChange, onListen }) {
+function CoachSession({ score, title, plan, segment, coach, skipping = null, polish = null, tempo = EMPTY, feedback, onBack, onPassageChange, onListen }) {
   const logger = useMemo(() => getLogger().child({ component: 'piano-learn-coach' }), []);
   const [view, setView] = useState('play'); // play | listen
   const [selected, setSelected] = useState(null);
@@ -91,9 +101,14 @@ function CoachSession({ score, title, plan, segment, coach, tempo = EMPTY, feedb
   useEffect(() => { live.current = true; return () => { live.current = false; }; }, []);
 
   const projected = coach.projection.segments.find((item) => item.id === segment.id);
-  const recommended = coach.projection.recommended?.passageId === segment.id ? coach.projection.recommended : null;
+  // Which steps the child may start: the household's skipping policy for this child and piece.
+  const skipMode = resolveSkipMode({ skipping, userId: coach.profileId, scoreId: plan.scoreId, authored: Boolean(projected?.authoredLadder) });
+  const access = useMemo(() => passageAccess(projected, skipMode), [projected, skipMode]);
+  // A saved resume on a step the mode now locks (chosen under a looser mode) is not resumed.
+  const allowed = (wanted) => (wanted && access[rootOf(wanted).key] !== 'locked' ? wanted : null);
+  const recommended = allowed(coach.projection.recommended?.passageId === segment.id ? coach.projection.recommended : null);
   const certification = projected?.certification ?? {};
-  const goldDrill = coach.projection.goldResume?.passageId === segment.id ? coach.projection.goldResume : null;
+  const goldDrill = allowed(coach.projection.goldResume?.passageId === segment.id ? coach.projection.goldResume : null);
   const goldNext = coach.projection.gold?.[segment.id] ?? null;
   const silverTask = projected?.skills.find((skill) => skill.assist === 'none') ?? null;
   const silverNext = recommended ?? projected?.skills.find((task) => task.track === 'silver' && !task.ready);
@@ -117,7 +132,7 @@ function CoachSession({ score, title, plan, segment, coach, tempo = EMPTY, feedb
         tempoPercent: wanted.tempoPercent, criteria: wanted.criteria, sets: 1, reps: 1, required: 1, passCount: 0 } };
   // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on the task's identity, not the projection's fresh objects
   }, [plan, segment.barLabel, segment.inMeasure, segment.outMeasure, task?.key, runNumber]);
-  const drill = useMemo(() => passageDrill(projected, task), [projected, task]);
+  const drill = useMemo(() => passageDrill(projected, task, { access, showLocks: skipMode !== 'strict' }), [projected, task, access, skipMode]);
 
   useEffect(() => {
     logger.info('piano.learn.coach.step', { scoreId: score.id, passageId: segment.id, skill: task?.skill ?? null,
@@ -141,7 +156,10 @@ function CoachSession({ score, title, plan, segment, coach, tempo = EMPTY, feedb
     raw = { ...raw, assessmentId: raw.assessmentId ?? freshId() };
     const message = coachFeedback(raw, played);
     const passed = message.reason === 'silver' || message.reason === 'passed';
-    logger.info('piano.learn.coach.take', { scoreId: score.id, passageId: segment.id, skill: played.skill, depth: played.depth ?? 0, reason: message.reason, passed });
+    logger.info('piano.learn.coach.take', { scoreId: score.id, passageId: segment.id, skill: played.skill, depth: played.depth ?? 0, reason: message.reason, passed,
+      // The scores the take was judged on, so a timing failure can be read from the log alone.
+      tempoPercent: played.tempoPercent ?? 100,
+      placement: roundScore(raw.criteria?.placement), completeness: roundScore(raw.criteria?.completeness), cleanliness: roundScore(raw.criteria?.cleanliness) });
     setLane(isGoldWork(played) ? 'gold' : null);
     coach.record(played, raw);
     if (passed) { setMoment({ id: raw.assessmentId, task: played, raw, was: { silver: Boolean(certification.silver), gold: Boolean(certification.gold), flower: Boolean(projected?.flower) } }); setResult(null); }
@@ -250,11 +268,16 @@ function CoachSession({ score, title, plan, segment, coach, tempo = EMPTY, feedb
 
   const pickStep = useCallback((step) => {
     const wanted = projected?.skills.find((skill) => skill.key === step.id);
-    if (!wanted || wanted.key === taskRef.current?.key) return;
+    if (!wanted || wanted.key === taskRef.current?.key || access[wanted.key] === 'locked') return;
     logger.info('piano.learn.coach.pick', { scoreId: score.id, passageId: segment.id, skill: wanted.skill });
+    // Starting a step the ladder would not hand over next (a done step played again is no skip).
+    const from = currentStep(projected);
+    if (from && from.key !== wanted.key && !wanted.ready) {
+      logger.info('piano.learn.coach.skip', { userId: coach.profileId, scoreId: score.id, passageId: segment.id, from: from.skill, to: wanted.skill, mode: skipMode });
+    }
     setSelected(wanted); setRun(null); setResult(null); setMoment(null); setLane(isGoldWork(wanted) ? 'gold' : null);
     setRunNumber((number) => number + 1);
-  }, [projected, logger, score.id, segment.id]);
+  }, [projected, access, skipMode, coach.profileId, logger, score.id, segment.id]);
 
   // Save state is shown only when it needs a hand.
   const retrySave = async () => {
@@ -291,7 +314,7 @@ function CoachSession({ score, title, plan, segment, coach, tempo = EMPTY, feedb
   const flips = useMemo(() => (!celebrated ? EMPTY : pieceDone ? Object.fromEntries(coach.projection.segments.map((item) => [item.id, celebrated])) : { [segment.id]: celebrated }),
     [celebrated, pieceDone, coach.projection.segments, segment.id]);
   const map = <>
-    {board && <PassageBoard title={title ?? barsOf(segment)} model={rail} focusId={board.focusId ?? segment.id} gemOffered={gemOffered}
+    {board && <PassageBoard title={title ?? barsOf(segment)} model={rail} focusId={board.focusId ?? segment.id} gemOffered={gemOffered} polish={polish}
       review={Boolean(coach.projection.review)}
       onReview={() => { const review = coach.projection.review; coach.selectTask(review); setBoard(null);
         if (review.passageId === segment.id) begin(review); else onPassageChange?.(review.passageId); }}

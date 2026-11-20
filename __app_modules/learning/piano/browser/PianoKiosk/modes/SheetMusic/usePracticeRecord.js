@@ -5,6 +5,10 @@ import { usePianoUser } from '../../PianoUserContext.jsx';
 import { isPersistentUser } from '../../pianoUser.js';
 import { practiceKeyOf } from './practiceKey.js';
 import { pianoAttemptClient } from '../../../performance/attemptEvidence.js';
+import getLogger from '../../../../../../../frontend/src/lib/logging/Logger.js';
+
+let _logger;
+const logger = () => { if (!_logger) _logger = getLogger().child({ component: 'piano-practice-record' }); return _logger; };
 
 const fpMatches = (a, b) => !!a && !!b
   && typeof a.contentSha256 === 'string'
@@ -39,11 +43,15 @@ export default function usePracticeRecord({ scoreId, fingerprint }) {
   const key = useMemo(() => practiceKeyOf(scoreId), [scoreId]);
   const [record, setRecord] = useState({});
   const [loaded, setLoaded] = useState(false);
+  // The piece's Polish gem and diamond ({gem, diamond}), answered beside the
+  // record by the server from the piece log. Kept out of `record` so no write
+  // ever carries it; null until the server has said.
+  const [polishAwards, setPolishAwards] = useState(null);
   const recordRef = useRef(record); recordRef.current = record;
   const fpRef = useRef(fingerprint); fpRef.current = fingerprint;
 
   useEffect(() => {
-    setRecord({}); setLoaded(false);
+    setRecord({}); setLoaded(false); setPolishAwards(null);
     if (!isPersistentUser(currentUser)) {
       // Guest AND null (roster pending/failed) both run history-less but LOADED —
       // a false `loaded` here parks Learn's auto-range forever (it gates on it).
@@ -55,9 +63,12 @@ export default function usePracticeRecord({ scoreId, fingerprint }) {
     DaylightAPI(`api/v1/piano/users/${currentUser}/practice/${key}`)
       .then((res) => {
         if (cancelled) return;
+        const { polishAwards: awards = null, ...saved } = res || {};
+        // The awards belong to the piece, whichever engraving the record describes.
+        setPolishAwards(awards && typeof awards === 'object' ? { gem: awards.gem === true, diamond: awards.diamond === true } : null);
         // A record for a different engraving describes measures that no longer
         // exist — run history-less; the first write replaces it server-side.
-        setRecord(res && fpMatches(res.fingerprint, fpRef.current) ? res : {});
+        setRecord(res && fpMatches(saved.fingerprint, fpRef.current) ? saved : {});
         setLoaded(true);
       })
       .catch(() => { if (!cancelled) { setRecord({}); setLoaded(true); } });
@@ -98,6 +109,30 @@ export default function usePracticeRecord({ scoreId, fingerprint }) {
     setRecord(next);
     put({ fingerprint: fpRef.current, polish: { [bucket]: { [tier]: score } } });
   }, [put]);
+
+  /**
+   * Report one completed whole-piece Polish run (`run`: scoreId, tempoMult,
+   * metronome, completed, mixed, parts, activeParts, base). The server judges
+   * it for the piece's Polish gem and diamond and answers `polishReward`
+   * ({gem, diamond, newGem, newDiamond, reason}). Resolves null for a guest or a
+   * failed write. The tier best is still recordTierBest's job.
+   */
+  const recordPolishRun = useCallback(async (run) => {
+    if (!isPersistentUser(currentUser)) return null;
+    try {
+      const res = await DaylightAPI(`api/v1/piano/users/${currentUser}/practice/${key}`, { fingerprint: fpRef.current, polishRun: run }, 'PUT');
+      const reward = res?.polishReward ?? null;
+      // The reward answers what the piece now holds, so the board shows a new gem at once.
+      if (reward && (reward.gem === true || reward.diamond === true)) {
+        setPolishAwards((prev) => ({ gem: prev?.gem === true || reward.gem === true, diamond: prev?.diamond === true || reward.diamond === true }));
+      }
+      return reward;
+    } catch (error) {
+      logger().warn('score.polish.reward-failed', { scoreId: run?.scoreId ?? null, tempoMult: run?.tempoMult ?? null,
+        metronome: run?.metronome ?? null, status: error?.status ?? null, error: error?.message ?? String(error) });
+      return null;
+    }
+  }, [currentUser, key]);
 
   /** Bank one complete passage take into the config-defined Learn ladder. */
   const recordLearnRep = useCallback(({
@@ -155,5 +190,5 @@ export default function usePracticeRecord({ scoreId, fingerprint }) {
   // wasn't an improvement are indistinguishable — both leave the record empty and
   // both no-op silently. It is NOT a gate callers should re-implement; recordCycle
   // and recordTierBest already refuse to write on their own.
-  return { record, loaded, persistent: isPersistentUser(currentUser), recordCycle, recordTierBest, recordLearnRep, saveCustomRange, recordAssessmentAttempt };
+  return { record, loaded, polishAwards, persistent: isPersistentUser(currentUser), recordCycle, recordTierBest, recordPolishRun, recordLearnRep, saveCustomRange, recordAssessmentAttempt };
 }

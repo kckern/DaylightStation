@@ -7,7 +7,8 @@
 //    Space Invaders and must not change.
 //  - fraction (policy.windowFraction set): each event's window is a fraction
 //    of the gap to its nearest non-empty neighbour, clamped to
-//    [windowMinMs, windowMaxMs]. A right pitch outside the window but within
+//    [windowMinMs, windowMaxMs × 100 / tempoPercent] (the cap grows only
+//    below full tempo; policy.tempoPercent is the run's tempo). A right pitch outside the window but within
 //    the event's reach (the gap) is recorded on its OWN event as early/late,
 //    so a steady lag never cascades onto the next beat.
 //
@@ -41,10 +42,21 @@ export function isFractionPolicy(policy) {
   return policy?.windowFraction != null && Number.isFinite(fraction) && fraction > 0;
 }
 
+/**
+ * How much a slowed run widens the window cap: `100 / tempoPercent` below full
+ * tempo, 1 at or above it (or when the policy carries no tempo). The gap
+ * already grows as the tempo slows; without this the cap held a 40% run to
+ * the same 400 ms a full-tempo run gets, so slowing down bought no room.
+ */
+export function windowTempoFactor(policy) {
+  const percent = Number(policy?.tempoPercent);
+  return Number.isFinite(percent) && percent > 0 && percent < 100 ? 100 / percent : 1;
+}
+
 function windowBounds(policy) {
   const min = Number.isFinite(Number(policy.windowMinMs)) ? Number(policy.windowMinMs) : DEFAULT_WINDOW_MIN_MS;
-  const max = Number.isFinite(Number(policy.windowMaxMs)) ? Number(policy.windowMaxMs) : DEFAULT_WINDOW_MAX_MS;
-  return { min, max: Math.max(min, max) };
+  const cap = Number.isFinite(Number(policy.windowMaxMs)) ? Number(policy.windowMaxMs) : DEFAULT_WINDOW_MAX_MS;
+  return { min, max: Math.max(min, cap * windowTempoFactor(policy)) };
 }
 
 /**

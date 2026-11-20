@@ -1,6 +1,7 @@
 import sha256 from 'crypto-js/sha256.js';
 import { applicableLearnLadder, buildLearnPassages } from './learnRoadmap.js';
 import { resolveSheetMusicConfig, SHEET_MUSIC_DEFAULTS } from './sheetMusicConfig.js';
+import { normalizeSkipping } from '../../../../../../../shared/music/learnSkipping.mjs';
 import { partIdForStaff } from '../../../performance/partIdentity.js';
 
 const BLOCKED_KEYS = new Set(['__proto__', 'prototype', 'constructor']);
@@ -165,6 +166,9 @@ export function resolveLearnPlan({ defaults = SHEET_MUSIC_DEFAULTS.learn, catego
     navigation, segments, ladder, testOut, ...tempo,
     settings: { passages: normalized.passages, tempo: normalized.tempo, feedback: normalized.feedback },
     certification: normalized.certification,
+    // Household-only, exactly as the server reads it (`sheetmusic.learn.skipping`): a category or
+    // piece layer must not open steps the server would refuse.
+    skipping: normalizeSkipping(defaults?.skipping),
     configFallback: normalized.configFallback || (Array.isArray(merged.segments) && authored == null),
     authoredLadder,
   });

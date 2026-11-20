@@ -16,6 +16,7 @@ import { BankChallengePolicy } from "./application/BankChallengePolicy.mjs";
 import { PianoLearningService } from "./application/PianoLearningService.mjs";
 import { PianoLearnCoachService } from './application/PianoLearnCoachService.mjs';
 import { createPianoPieceLog } from './composition/pieceLog.mjs';
+import { PianoPolishReward } from './application/PianoPolishReward.mjs';
 import { YamlPianoLearnCoachStore } from './adapters/persistence/YamlPianoLearnCoachStore.mjs';
 import { JudgeNoteBurst } from './application/JudgeNoteBurst.mjs';
 import { NodeAsyncScheduler } from '#adapters/scheduling/NodeAsyncScheduler.mjs';
@@ -79,13 +80,19 @@ export async function createPianoModule({configService, userService, rootLogger,
   const pianoAttemptStore = new YamlPianoAttemptStore({
     usersDir: join(configService.getDataDir(), 'users'),
   });
+  // Dated whole-piece Silver/Gold and Polish gem/diamond, read by the gem
+  // economy's `piano-piece`, `piano-polish-gem` and `piano-polish-diamond` milestones.
+  const pianoPieceLog = createPianoPieceLog({ configService, logger: rootLogger.child({ module: 'piano-learn-coach' }) });
+  const pianoPolishReward = new PianoPolishReward({ pieceLog: pianoPieceLog, logger: rootLogger.child({ module: 'piano-polish-reward' }) });
+  const pianoConfigProjection = new PianoConfigProjection({ configService });
   const pianoLearnCoachService = new PianoLearnCoachService({
     datastore: pianoStudioDatastore,
     receiptStore: new YamlPianoLearnCoachStore({ usersDir: join(configService.getDataDir(), 'users') }),
     attemptStore: pianoAttemptStore, clock: () => new Date(), timezone: configService.getTimezone?.() ?? null,
     logger: rootLogger.child({ module: 'piano-learn-coach' }),
-    // Dated whole-piece Silver/Gold, read by the gem economy's `piano-piece` milestone.
-    pieceLog: createPianoPieceLog({ configService, logger: rootLogger.child({ module: 'piano-learn-coach' }) }),
+    pieceLog: pianoPieceLog,
+    // Which Learn steps a child may start (strict | open-to-silver | open), read per event.
+    skipping: () => pianoConfigProjection.raw()?.sheetmusic?.learn?.skipping,
   });
   // Exercise bank: seeds at data/content/music/, instances computed on demand.
   const exerciseBank = new YamlExerciseBank({ contentDir: contentPath });
@@ -117,12 +124,13 @@ export async function createPianoModule({configService, userService, rootLogger,
     // D1: the use case receives the Plex curriculum reader, never imports it.
     curriculumIndex: { getCurriculumIndex, mergeSeason },
     schoolAssignments: pianoSchoolAssignments,
+    pieceLog: pianoPieceLog,
     studioDatastore: pianoStudioDatastore,
     timezone: configService.getTimezone?.() ?? null,
     fitnessPlayableService,
     userVideoProgressStore: contentServices.userVideoProgressStore,
     composerSongStore,
-    configProjection: new PianoConfigProjection({ configService }),
+    configProjection: pianoConfigProjection,
     plexClient: pianoPlexClient,
     learningService: pianoLearningService,
     logger: rootLogger.child({ module: 'piano-api' })
@@ -200,6 +208,7 @@ export async function createPianoModule({configService, userService, rootLogger,
     schoolLearnerDirectory: { listLearners: () => schoolLearnerDirectory.listLearners() },
     pianoAttemptStore,
     pianoLearnCoachService,
+    pianoPolishReward,
     pianoLearningService,
     pianoGameBudgetService,
     pianoBoardGameDayService,

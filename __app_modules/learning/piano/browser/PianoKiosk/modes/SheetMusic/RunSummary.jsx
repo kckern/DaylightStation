@@ -1,5 +1,7 @@
 import React from 'react';
 import { tallyAssessmentGrades } from './assessmentProjections.js';
+import GemIcon from '../../../../../../../frontend/src/lib/icons/GemIcon.jsx';
+import { POLISH_DIAMOND_COLOR, POLISH_GEM_COLOR } from './polishAwards.js';
 
 const OVERALL_LABEL = { green: 'Nicely done', yellow: 'Getting there', red: 'Keep at it' };
 // The shared tally reports overall: null when nothing was graded. Say so plainly —
@@ -22,6 +24,13 @@ const TIER_CELLS = [
 // right-hand 84 is not a both-hands 84, so the panel must say which it shows.
 const BUCKET_LABEL = { both: 'both hands', rh: 'right hand', lh: 'left hand' };
 const NO_BEST = '—'; // em dash — this tier has never been run
+// Polish rewards (server-judged; see PianoPolishReward). The gem wears the Gem
+// Board's School colour, the piece gems' area; the diamond is a pale stone.
+// The diamond leads when both are new: it is the bigger news.
+const REWARD_LINES = [
+  { key: 'newDiamond', text: 'Diamond earned!', color: POLISH_DIAMOND_COLOR },
+  { key: 'newGem', text: 'Gem earned!', color: POLISH_GEM_COLOR },
+];
 
 /**
  * RunSummary — end-of-run report for Sheet Music "Polish" mode. Pure/presentational:
@@ -49,15 +58,19 @@ const NO_BEST = '—'; // em dash — this tier has never been run
  * @param {boolean} [p.completed] - this run played the whole piece (§H eligibility) —
  *   only a completed run's tier cell is marked current
  * @param {string} [p.bucket] - hands bucket the strip is scoped to
+ * @param {{newGem?: boolean, newDiamond?: boolean}|null} [p.reward] - the server's
+ *   Polish verdict for this run; only a NEW gem or diamond is announced
  */
 export default function RunSummary({
   open, grades = {}, measures = [], onClose, onReplay, drillable = false, onDrill,
   runScore = null, tier = null, tierBests = null, mixedTempo = false, completed = false, bucket = 'both',
+  reward = null,
 }) {
   if (!open) return null;
 
   const counts = tallyAssessmentGrades(grades);
   const overall = counts.overall;
+  const rewardLines = REWARD_LINES.filter(({ key }) => reward?.[key] === true);
 
   return (
     <div className="piano-score-run-summary" role="dialog" aria-label="Run summary">
@@ -68,6 +81,17 @@ export default function RunSummary({
           <span className={`piano-score-run-score__tier${mixedTempo ? ' piano-score-run-score__tier--mixed' : ''}`}>
             {mixedTempo ? MIXED_PHRASE : (TIER_PHRASE[tier] || TIER_PHRASE.full)}
           </span>
+        </div>
+      )}
+
+      {rewardLines.length > 0 && (
+        <div className="piano-score-run-reward" role="status">
+          {rewardLines.map(({ key, text, color }) => (
+            <div key={key} className="piano-score-run-reward__item">
+              <GemIcon size="1.6em" color={color} />
+              <span className="piano-score-run-reward__line">{text}</span>
+            </div>
+          ))}
         </div>
       )}
 

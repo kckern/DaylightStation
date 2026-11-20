@@ -8,6 +8,8 @@ vi.mock('../../../../../../../frontend/src/lib/api.mjs', () => ({
     calls.push({ path, data, method });
     if (method === 'GET' && Object.keys(data).length === 0) return { ...store };
     // PUT: shallow-merge measures/polish (mirrors the backend's per-key merge)
+    const { polishRun, ...rest } = data;
+    data = rest;
     const next = { ...store, ...data };
     if (data.measures) next.measures = { ...(store.measures || {}), ...data.measures };
     if (data.polish) {
@@ -26,11 +28,21 @@ vi.mock('../../../../../../../frontend/src/lib/api.mjs', () => ({
       }
     }
     store = next;
-    return { ...store };
+    return polishRun ? { ...store, polishReward: mockReward } : { ...store };
   }),
 }));
 
+const logged = [];
+vi.mock('../../../../../../../frontend/src/lib/logging/Logger.js', () => ({
+  default: () => ({ child: () => ({
+    info: (e, d) => logged.push(['info', e, d]),
+    warn: (e, d) => logged.push(['warn', e, d]),
+    debug: (e, d) => logged.push(['debug', e, d]),
+  }) }),
+}));
+
 let mockUser = 'kc';
+let mockReward = null;
 vi.mock('../../PianoUserContext.jsx', () => ({
   usePianoUser: () => ({ currentUser: mockUser }),
 }));
@@ -39,7 +51,7 @@ import usePracticeRecord, { compatibleLearnPassages } from './usePracticeRecord.
 
 const FP = { version: 2, measureCount: 40, xmlBytes: 12345, contentSha256: 'a'.repeat(64) };
 
-beforeEach(() => { calls.length = 0; store = {}; mockUser = 'kc'; });
+beforeEach(() => { calls.length = 0; store = {}; mockUser = 'kc'; mockReward = null; });
 
 describe('usePracticeRecord', () => {
   it('retains only segments whose boundary/ladder fingerprint is still compatible', () => {
@@ -172,6 +184,64 @@ describe('usePracticeRecord', () => {
     const put = calls.find((c) => c.method === 'PUT');
     expect(put).toBeTruthy();
     expect(put.data).toEqual({ fingerprint: FP, polish: { rh: { full: 97 } } });
+  });
+
+  it('recordPolishRun reports the run with the fingerprint and answers the server reward', async () => {
+    store = { fingerprint: FP, polish: { both: { full: 98 } } };
+    mockReward = { gem: true, diamond: true, newGem: false, newDiamond: true, reason: 'qualified' };
+    const { result } = renderHook(() => usePracticeRecord({ scoreId: 'files:x.musicxml', fingerprint: FP }));
+    await waitFor(() => expect(result.current.loaded).toBe(true));
+    const run = { scoreId: 'files:x.musicxml', tempoMult: 1, metronome: true, completed: true, mixed: false, parts: [0, 1], activeParts: [0, 1], base: 96 };
+    let reward;
+    await act(async () => { reward = await result.current.recordPolishRun(run); });
+    expect(reward).toEqual(mockReward);
+    expect(calls.find((c) => c.method === 'PUT').data).toEqual({ fingerprint: FP, polishRun: run });
+    expect(result.current.record.polish.both.full).toBe(98); // bests stay recordTierBest's job
+  });
+
+  it('keeps the piece\'s Polish awards apart from the record, and takes a new gem from a run\'s reward', async () => {
+    store = { fingerprint: FP, polish: { both: { full: 98 } }, polishAwards: { gem: false, diamond: false } };
+    const { result } = renderHook(() => usePracticeRecord({ scoreId: 'files:x.musicxml', fingerprint: FP }));
+    await waitFor(() => expect(result.current.loaded).toBe(true));
+    expect(result.current.polishAwards).toEqual({ gem: false, diamond: false });
+    expect(result.current.record.polishAwards).toBeUndefined();
+    mockReward = { gem: true, diamond: false, newGem: true, newDiamond: false, reason: 'qualified' };
+    await act(async () => { await result.current.recordPolishRun({ scoreId: 'files:x.musicxml' }); });
+    expect(result.current.polishAwards).toEqual({ gem: true, diamond: false });
+  });
+
+  it('a record for another engraving still answers the piece\'s awards; a fresh score has none', async () => {
+    store = { fingerprint: { ...FP, contentSha256: 'b'.repeat(64) }, polishAwards: { gem: true, diamond: true } };
+    const { result } = renderHook(() => usePracticeRecord({ scoreId: 'files:x.musicxml', fingerprint: FP }));
+    await waitFor(() => expect(result.current.loaded).toBe(true));
+    expect(result.current.record).toEqual({});
+    expect(result.current.polishAwards).toEqual({ gem: true, diamond: true });
+    store = {};
+    const fresh = renderHook(() => usePracticeRecord({ scoreId: 'files:y.musicxml', fingerprint: FP }));
+    await waitFor(() => expect(fresh.result.current.loaded).toBe(true));
+    expect(fresh.result.current.polishAwards).toBeNull();
+  });
+
+  it('recordPolishRun logs a failed report and answers no reward', async () => {
+    store = { fingerprint: FP };
+    const { DaylightAPI } = await import('../../../../../../../frontend/src/lib/api.mjs');
+    const { result } = renderHook(() => usePracticeRecord({ scoreId: 'files:x.musicxml', fingerprint: FP }));
+    await waitFor(() => expect(result.current.loaded).toBe(true));
+    DaylightAPI.mockRejectedValueOnce(Object.assign(new Error('HTTP 502: Bad Gateway'), { status: 502 }));
+    let reward = 'unset';
+    await act(async () => { reward = await result.current.recordPolishRun({ scoreId: 'files:x.musicxml', tempoMult: 1, metronome: true }); });
+    expect(reward).toBeNull();
+    expect(logged).toContainEqual(['warn', 'score.polish.reward-failed', expect.objectContaining({ error: 'HTTP 502: Bad Gateway', status: 502, scoreId: 'files:x.musicxml', tempoMult: 1, metronome: true })]);
+  });
+
+  it('recordPolishRun writes nothing for a guest and answers no reward', async () => {
+    mockUser = 'guest';
+    const { result } = renderHook(() => usePracticeRecord({ scoreId: 'files:x.musicxml', fingerprint: FP }));
+    await waitFor(() => expect(result.current.loaded).toBe(true));
+    let reward = 'unset';
+    await act(async () => { reward = await result.current.recordPolishRun({}); });
+    expect(reward).toBeNull();
+    expect(calls.filter((c) => c.method === 'PUT')).toHaveLength(0);
   });
 
   it('recordLearnRep banks cumulative reps and completes a passage at the configured requirement', async () => {

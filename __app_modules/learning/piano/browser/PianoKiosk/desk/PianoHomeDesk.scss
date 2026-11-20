@@ -1,10 +1,11 @@
-// The progress strip above the home menu: each child's avatar and name over
-// their piece and course cards. Fixed height, filled or empty, so the tiles
-// below never move. Three children with two cards each fit the 1216px row; a
-// crowded row shrinks its cards rather than scrolling or cutting one off.
+// The progress strip above the home menu: one panel per child, headed by their
+// avatar and name (and, for a child with a piece and a course, two tabs), over
+// one card. Fixed height, filled or empty, so the tiles below never move. The
+// panels share the row, up to 300px each: four children in the 1216px row get
+// about 292px apiece; a crowded row shrinks them rather than scrolling.
 .piano-desk {
   flex: 0 0 auto;
-  height: 234px;
+  height: 208px;
   width: 100%;
   box-sizing: border-box;
   display: flex;
@@ -13,22 +14,49 @@
   gap: 16px;
   overflow: hidden;
 
-  // A child's cards sit together; children are 16px apart.
-  &__child { flex: 0 1 auto; min-width: 0; display: flex; gap: 8px; }
+  // A child's header over their one card; children are 16px apart.
+  &__child { flex: 1 1 0; max-width: 300px; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+  &__head { flex: 0 0 32px; height: 32px; display: flex; align-items: center; justify-content: space-between; gap: 8px; min-width: 0; }
+  &__who {
+    flex: 1 1 auto; height: 32px; display: flex; align-items: center; gap: 8px; min-width: 0;
+    .piano-avatar { width: 32px; height: 32px; font-size: 0.75rem; flex: 0 0 auto; }
+  }
+  &__name { font-size: 17px; font-weight: 800; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
-  // One layout for both kinds of card, 193x234: whose it is (32), the picture
-  // of the next thing with a play badge (80), what it is (two lines), and the
-  // progress pinned to the bottom (56). Nothing left empty.
+  // Sheet music and video lesson: 32px tabs for small fingers. The shown one is
+  // filled with the accent, the other outlined. A tab only swaps the card.
+  &__tabs { flex: 0 0 auto; display: flex; gap: 6px; }
+  &__tab {
+    width: 32px; height: 32px; padding: 0; box-sizing: border-box;
+    display: flex; align-items: center; justify-content: center;
+    border: 2px solid var(--piano-accent); border-radius: 50%;
+    background: transparent; color: var(--piano-accent-text);
+    font: inherit; font-size: 16px; cursor: pointer;
+    &[aria-pressed='true'] { background: var(--piano-accent); color: var(--piano-accent-ink); }
+    &:disabled { cursor: default; border-color: var(--piano-muted); color: var(--piano-muted); }
+    &:disabled[aria-pressed='true'] { background: var(--piano-muted); color: var(--piano-surface); }
+    .piano-icon { display: flex; width: 16px; height: 16px; }
+    .piano-icon svg { width: 100%; height: 100%; }
+  }
+
+  // One layout for both kinds of card, the panel's width by 150: the 64x96
+  // poster with the badge, title and next step beside it, and the progress
+  // pinned under it (150 = 2 border + 16 padding + 96 + 10 gap + 26 progress).
+  // A piece with more than fourteen passages takes two coin rows and 170px
+  // (46px of progress: two 22px coins and a 2px gap). When any shown piece
+  // needs two rows, every card grows together so the row stays even.
+  &[data-tall] &__card { height: 170px; }
+
   &__card {
-    flex: 0 1 auto;
-    width: 193px;
+    flex: 0 0 auto;
+    width: 100%;
     min-width: 0;
-    height: 234px;
+    height: 150px;
     box-sizing: border-box;
     display: flex;
     flex-direction: column;
-    gap: 5px;
-    padding: 8px 8px 9px;
+    gap: 10px;
+    padding: 8px;
     border: 1px solid var(--piano-border);
     border-radius: var(--r-md);
     background: var(--piano-surface);
@@ -39,51 +67,68 @@
     overflow: hidden;
     &:active { background: var(--piano-surface-2); }
     &:disabled { cursor: default; color: var(--piano-muted); }
-    &:disabled .piano-avatar, &:disabled img { filter: grayscale(1); }
+    &:disabled img { filter: grayscale(1); }
   }
 
-  &__who {
-    flex: 0 0 32px; display: flex; align-items: center; gap: 8px; min-width: 0;
-    .piano-avatar { width: 32px; height: 32px; font-size: 0.75rem; flex: 0 0 auto; }
-  }
-  &__name { font-size: 17px; font-weight: 800; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  &__top { flex: 0 0 96px; display: flex; gap: 8px; min-width: 0; }
 
-  &__media {
-    position: relative; flex: 0 0 80px; border-radius: 6px; overflow: hidden; background: var(--piano-surface-2);
-    img { display: block; width: 100%; height: 100%; object-fit: cover; object-position: center 30%; }
+  // The tall poster: score cover or course art, or a tinted stand-in with a title.
+  &__poster {
+    position: relative; flex: 0 0 64px; width: 64px; height: 96px;
+    border-radius: 6px; overflow: hidden; background: var(--piano-surface-2);
+    img { display: block; width: 100%; height: 100%; object-fit: cover; }
+    &[data-stand-in] {
+      // The bottom 26px belong to the play disc, so the title stops above it.
+      display: flex; flex-direction: column; align-items: center; justify-content: flex-start; gap: 4px;
+      padding: 8px 4px 26px; box-sizing: border-box;
+      background: color-mix(in srgb, var(--piano-accent) 18%, var(--piano-surface-2));
+    }
   }
-  // The resume cue: a small solid play disc in the picture's corner.
-  &__play {
-    position: absolute; right: 6px; bottom: 6px; width: 28px; height: 28px; border-radius: 50%;
-    display: flex; align-items: center; justify-content: center;
-    color: var(--piano-accent-ink); background: var(--piano-accent); border: 2px solid var(--piano-surface);
-    svg { width: 16px; height: 16px; margin-left: 2px; }
-  }
-
-  &__text { flex: 0 0 38px; min-width: 0; display: flex; flex-direction: column; justify-content: center; gap: 2px; }
-  &__title {
-    font-size: 15px;
-    line-height: 1.2;
+  &__note { font-size: 22px; line-height: 1; color: var(--piano-accent-text); }
+  &__stand-in {
+    font-size: 11px; font-weight: 700; line-height: 1.15; text-align: center; color: var(--piano-muted);
+    overflow-wrap: anywhere;
     display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
   }
-  &__title--one { -webkit-line-clamp: 1; }
-  &__sub { display: flex; align-items: center; gap: 10px; min-width: 0; }
-  &__next { font-size: 15px; font-weight: 800; color: var(--piano-accent-text); white-space: nowrap; }
-  &__count {
-    display: flex; gap: 8px; font-size: 15px; font-weight: 800; font-variant-numeric: tabular-nums;
-    span { display: flex; align-items: center; gap: 3px; color: var(--piano-silver); }
-    span[data-level='gold'] { color: var(--piano-gold); }
-    svg { width: 16px; height: 16px; }
+  // The resume cue: a small solid play disc in the poster's corner.
+  &__play {
+    position: absolute; right: 4px; bottom: 4px; width: 22px; height: 22px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    color: var(--piano-accent-ink); background: var(--piano-accent); border: 2px solid var(--piano-surface);
+    svg { width: 13px; height: 13px; margin-left: 1px; }
   }
 
+  &__text { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 2px; overflow: hidden; }
+  &__badge {
+    font-size: 11px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.06em; line-height: 13px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    &[data-level='silver'] { color: var(--piano-silver); }
+    &[data-level='gold'] { color: var(--piano-gold); }
+    &[data-level='diamond'] { color: var(--piano-diamond); }
+    &[data-level='lesson'] { color: var(--piano-accent-text); }
+  }
+  &__title {
+    font-size: 15px; font-weight: 800; line-height: 1.2;
+    display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;
+  }
+  &__step { font-size: 14px; font-weight: 700; color: var(--piano-accent-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+  // Under the poster: the passage coins, or a course's bar and percent.
   &__progress { flex: 1 1 auto; min-height: 0; display: flex; align-items: center; gap: 8px; min-width: 0; }
-  &__course { font-size: 14px; font-weight: 700; color: var(--piano-muted); line-height: 1.2;
-    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  &__bar {
+    flex: 1; height: 6px; border-radius: 3px; background: var(--piano-surface-2); overflow: hidden;
+    i { display: block; height: 100%; background: var(--piano-accent); border-radius: 3px; }
+  }
+  &__pct { flex: none; font-size: 14px; font-weight: 800; font-variant-numeric: tabular-nums; }
 
   &__map {
     // One coin per passage: a tomato, a flower, a silver coin or a gold coin.
+    // The gap matches GAP in deskModel.js, which sizes the coins to fill the row.
+    // Coins shrink with a crowded card rather than spill past its edge.
     display: grid;
-    gap: 3px;
+    width: 100%;
+    min-width: 0;
+    gap: 2px;
     align-content: center;
     justify-content: start;
     i { display: grid; aspect-ratio: 1; border-radius: 50%; }
@@ -91,8 +136,10 @@
     i[data-current] { box-shadow: 0 0 0 2px var(--piano-accent); }
     // A tomato nobody has started sits back; started ones and the one up next stay bright.
     i[data-faded] { opacity: 0.3; }
+    // The piece's Polish gem or diamond ends the row, a coin's size, centred beside both rows.
+    i[data-stone] { align-self: center; border-radius: 0; }
   }
 
-  .psc-ring { flex: 0 0 auto; }
-  .psc-ring__c { font-size: 14px; font-weight: 800; font-family: inherit; }
+  // Closed (curfew, a pending lesson): the child headers go grey with their cards.
+  &.is-disabled .piano-avatar { filter: grayscale(1); }
 }

@@ -39,8 +39,8 @@ describe('certification policy', () => {
 describe('Silver and Gold tasks', () => {
   it('adds the Silver check after the note steps', () => {
     const plan = planOf();
-    expect(plan.tasks.filter((t) => t.passageId === 'one').map((t) => t.skill)).toEqual(['right', 'left', 'together', 'silver', 'pulse', 'timed-60', 'timed-80', 'mastery']);
-    expect(plan.tasks.filter((t) => t.passageId === 'solo').map((t) => t.skill)).toEqual(['notes', 'silver', 'pulse', 'timed-60', 'timed-80', 'mastery']);
+    expect(plan.tasks.filter((t) => t.passageId === 'one').map((t) => t.skill)).toEqual(['right', 'left', 'together', 'silver', 'pulse', 'timed-50', 'timed-60', 'timed-75', 'mastery']);
+    expect(plan.tasks.filter((t) => t.passageId === 'solo').map((t) => t.skill)).toEqual(['notes', 'silver', 'pulse', 'timed-50', 'timed-60', 'timed-75', 'mastery']);
     expect(task(plan, 'silver')).toMatchObject({ label: 'Play it on your own', mode: 'free', assist: 'none', track: 'silver', parts: ['rh', 'lh'] });
     expect(task(plan, 'pulse').track).toBe('gold');
   });

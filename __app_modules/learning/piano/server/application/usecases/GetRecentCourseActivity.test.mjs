@@ -363,7 +363,7 @@ test('each course names its next lesson: the first one not yet watched, with its
   };
   const { players } = await new GetRecentCourseActivity(deps).execute();
   const course = players.find((p) => p.userId === 'learner2').courses[0];
-  assert.deepEqual(course.next, { id: 'plex:10-e2', title: 'Lesson 2', thumbnail: '/api/still-2.jpg' });
+  assert.deepEqual(course.next, { id: 'plex:10-e2', title: 'Lesson 2', thumbnail: '/api/still-2.jpg', position: 2 });
 });
 
 test('a finished enrollment with nothing after it does not lead', async () => {
@@ -376,4 +376,19 @@ test('a finished enrollment with nothing after it does not lead', async () => {
   const courses = players.find((p) => p.userId === 'learner2').courses;
   assert.equal(courses[0].courseId, 'plex:11');
   assert.equal(courses.some((c) => c.enrolled), false);
+});
+
+test("a next lesson's position counts graded lessons only, reference units left out", async () => {
+  const deps = makeDeps({ summaries: { learner2: { 10: { completed: 1, total: 3, lastPlayedAt: '2026-07-20T00:00:00Z' } } }, itemCounts: { 10: 4 } });
+  PIANO_CFG.videos.reference_units = [{ courseId: 'plex:10', titlePatterns: ['practice tracks'] }];
+  const base = deps.fitnessPlayableService.getPlayableEpisodes;
+  deps.fitnessPlayableService.getPlayableEpisodes = async (id) => {
+    const r = await base(id);
+    return { ...r, items: r.items.map((it, i) => ({ ...it, id: `plex:${it.plex}`, title: i === 0 ? 'Practice Tracks' : `Lesson ${i}` })) };
+  };
+  const { players } = await new GetRecentCourseActivity(deps).execute();
+  const course = players.find((p) => p.userId === 'learner2').courses[0];
+  // Lesson 1 is watched; Lesson 2 is next, the second graded lesson, though the third item.
+  assert.equal(course.next.title, 'Lesson 2');
+  assert.equal(course.next.position, 2);
 });

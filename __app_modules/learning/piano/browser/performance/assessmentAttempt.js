@@ -543,13 +543,29 @@ function fixedPlacement(attempt, notes) {
 }
 
 // Fraction policy: 1 inside ±(0.4 × the event's window), linear to 0 at the
-// window edge; an off-beat (early/late) claim earns 0.
+// window edge. An off-beat (early/late) claim earns 0, except the take's FIRST
+// one in score order, which earns half: one stumble in a passage a child
+// otherwise played with the beat should not fail the take on timing alone.
+// "First" is over the whole expectation, so a span slice forgives the same
+// note the whole take does.
 const PLACEMENT_FULL_CREDIT_SHARE = 0.4;
+const FORGIVEN_OFFBEAT_CREDIT = 0.5;
+function forgivenOffbeatNoteId(attempt) {
+  for (const event of attempt.expectation.events) {
+    for (const note of event.notes) {
+      const hit = attempt.hits[note.id];
+      if (hit?.offbeat && Number.isFinite(hit.driftMs)) return note.id;
+    }
+  }
+  return null;
+}
 function fractionPlacement(attempt, notes) {
-  const scored = notes.map((note) => attempt.hits[note.id]).filter((hit) => hit && Number.isFinite(hit.driftMs));
+  const scored = notes.map((note) => ({ id: note.id, hit: attempt.hits[note.id] })).filter(({ hit }) => hit && Number.isFinite(hit.driftMs));
   if (!scored.length) return 0;
-  return scored.reduce((sum, hit) => {
-    if (hit.offbeat || !(hit.windowMs > 0)) return sum;
+  const forgiven = forgivenOffbeatNoteId(attempt);
+  return scored.reduce((sum, { id, hit }) => {
+    if (hit.offbeat) return sum + (id === forgiven ? FORGIVEN_OFFBEAT_CREDIT : 0);
+    if (!(hit.windowMs > 0)) return sum;
     const tolerance = PLACEMENT_FULL_CREDIT_SHARE * hit.windowMs;
     return sum + unit(1 - Math.max(0, Math.abs(hit.driftMs) - tolerance) / (hit.windowMs - tolerance));
   }, 0) / scored.length;

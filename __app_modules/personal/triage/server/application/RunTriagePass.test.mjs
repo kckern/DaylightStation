@@ -121,7 +121,7 @@ describe('RunTriagePass', () => {
     const r = await s.pass.run({ username: 'kc', trigger: 'manual' });
     expect(s.mailbox.archive).toHaveBeenCalledTimes(1);
     expect(s.mailbox.archive).toHaveBeenCalledWith('kc', 'm1');
-    expect(r.preDone).toEqual({ archived: 1, closed: 0 });
+    expect(r.preDone).toEqual({ archived: 1, closed: 0, kept: 0 });
     expect(r.mailbox).toBe('ok');
     const [e] = await s.log();
     expect(e).toMatchObject({ actor: 'system', action: 'archive', dryRun: false, undoneAt: null,
@@ -129,11 +129,36 @@ describe('RunTriagePass', () => {
     expect(await s.queue()).toEqual([]);
   });
 
+  it('a confident keep gets no card, is logged as kept (both modes) and is not asked again', async () => {
+    const s = setup({ mode: 'dryRun', messages: [msg('m1')], answers: { 'Weekly newsletter m1': { choice: 'keep', confidence: 0.9 } } });
+    const r = await s.pass.run({ username: 'kc', trigger: 'manual' });
+    expect(r.preDone).toEqual({ archived: 0, closed: 0, kept: 1 });
+    expect(await s.queue()).toEqual([]);
+    const [e] = await s.log();
+    expect(e).toMatchObject({ actor: 'system', action: 'keep', dryRun: false, inverse: null });
+    const calls = s.decisionGateway.evaluate.mock.calls.length;
+    await s.pass.run({ username: 'kc', trigger: 'manual' });
+    expect(s.decisionGateway.evaluate.mock.calls.length).toBe(calls);
+  });
+
+  it('an automated sign-in link that "expires" can be archived; Jev is told about the deadline', async () => {
+    const s = setup({ messages: [msg('m1', { snippet: 'This link expires in 24 hours' })], answers: { 'Weekly newsletter m1': ARCHIVE } });
+    const r = await s.pass.run({ username: 'kc', trigger: 'manual' });
+    expect(r.preDone.archived).toBe(1);
+    expect(s.decisionGateway.evaluate.mock.calls[0][0].mentions).toEqual(['a deadline or expiry']);
+  });
+
+  it('the same words from a person still block the archive', async () => {
+    const s = setup({ messages: [msg('m1', { automated: false, snippet: 'This link expires in 24 hours' })], answers: { 'Weekly newsletter m1': ARCHIVE } });
+    const r = await s.pass.run({ username: 'kc', trigger: 'manual' });
+    expect(r.preDone.archived).toBe(0);
+  });
+
   it('dryRun: never archives, logs dryRun:true and queues a "Would have archived" card', async () => {
     const s = setup({ mode: 'dryRun', messages: [msg('m1')], answers: { 'Weekly newsletter m1': ARCHIVE } });
     const r = await s.pass.run({ username: 'kc', trigger: 'manual' });
     expect(s.mailbox.archive).not.toHaveBeenCalled();
-    expect(r.preDone).toEqual({ archived: 0, closed: 0 });
+    expect(r.preDone).toEqual({ archived: 0, closed: 0, kept: 0 });
     const [e] = await s.log();
     expect(e).toMatchObject({ actor: 'system', action: 'archive', dryRun: true, inverse: null });
     const cards = await s.queue();
@@ -208,7 +233,7 @@ describe('RunTriagePass', () => {
     const evaluate = vi.fn(async () => { throw new Error('timeout'); });
     const s = setup({ messages: [msg('m1'), msg('m2')], todos: [task('t1')], evaluate });
     const r = await s.pass.run({ username: 'kc', trigger: 'manual' });
-    expect(r.preDone).toEqual({ archived: 0, closed: 0 });
+    expect(r.preDone).toEqual({ archived: 0, closed: 0, kept: 0 });
     expect(s.mailbox.archive).not.toHaveBeenCalled();
     expect(s.work.commands.propose).not.toHaveBeenCalled();
     const cards = await s.queue();

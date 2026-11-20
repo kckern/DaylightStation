@@ -169,6 +169,23 @@ describe('PassageBoard', () => {
     expect(screen.getByRole('list', { name: 'Goals for this piece' })).toHaveTextContent('2/20/2earn a gem');
   });
 
+  it('shows the piece\'s Polish gem beside the counters, and the diamond in its place once earned', () => {
+    const gold = [segment(0, 'gold'), segment(1, 'gold')];
+    const { rerender } = render(<PassageBoard title="T" model={modelOf(gold, null)} onClose={vi.fn()} />);
+    const goals = () => screen.getByRole('list', { name: 'Goals for this piece' });
+    expect(goals().querySelector('[data-level="polish"]')).toBeNull();
+    rerender(<PassageBoard title="T" model={modelOf(gold, null)} polish={{ gem: false, diamond: false }} onClose={vi.fn()} />);
+    expect(goals().querySelector('[data-level="polish"]')).toBeNull();
+    rerender(<PassageBoard title="T" model={modelOf(gold, null)} polish={{ gem: true, diamond: false }} onClose={vi.fn()} />);
+    const gem = within(goals()).getByRole('listitem', { name: 'Polish gem: earned' });
+    expect(gem).toHaveAttribute('data-stone', 'gem');
+    expect(gem.querySelector('svg.gem-icon')).not.toBeNull();
+    expect(goals().lastElementChild).toBe(gem);
+    rerender(<PassageBoard title="T" model={modelOf(gold, null)} polish={{ gem: true, diamond: true }} onClose={vi.fn()} />);
+    expect(within(goals()).getByRole('listitem', { name: 'Polish diamond: earned' })).toHaveAttribute('data-stone', 'diamond');
+    expect(goals().querySelectorAll('[data-level="polish"]')).toHaveLength(1);
+  });
+
   it('selects from a card, reviews, and closes only by its control or Escape', () => {
     const onSelect = vi.fn(); const onClose = vi.fn(); const onReview = vi.fn();
     render(<PassageBoard title="T" model={modelOf(four, 'p2')} review onReview={onReview} onSelect={onSelect} onClose={onClose} />);

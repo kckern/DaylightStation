@@ -1,6 +1,8 @@
 import { useEffect, useRef } from 'react';
 import PassageCoin from './PassageCoin.jsx';
 import { boardColumns } from './passageRail.js';
+import GemIcon from '../../../../../../../frontend/src/lib/icons/GemIcon.jsx';
+import { polishStone } from './polishAwards.js';
 
 const Close = () => <svg viewBox="0 0 16 16" width="18" height="18" aria-hidden="true"><path d="M3.5 3.5l9 9m0-9l-9 9" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" /></svg>;
 const Check = () => <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M3 8.5l3.2 3.2L13 5" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" /></svg>;
@@ -8,12 +10,14 @@ const Check = () => <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden=
 /**
  * The passage board: the piece's table of contents and trophy board. Every
  * passage is its state icon: a tomato, a flower, a silver coin or a gold coin.
- * Its header counts the two goals, each beside its coin. Its cards are shared
+ * Its header counts the two goals, each beside its coin, then the piece's
+ * Polish gem once earned (the diamond in its place after that; `polish` is
+ * `{ gem, diamond }` from the practice record GET). Its cards are shared
  * evenly between the rows (`boardColumns`), so no row ends in blank cells. It slides
  * over the score from the rail without moving the music, and closes only with
  * its own control. Tapping a card selects that passage on the score.
  */
-export default function PassageBoard({ title, model, focusId = null, gemOffered = false, review = false, onSelect, onReview, onClose }) {
+export default function PassageBoard({ title, model, focusId = null, gemOffered = false, polish = null, review = false, onSelect, onReview, onClose }) {
   const cards = useRef(null);
   const close = useRef(null);
   useEffect(() => { close.current?.focus?.({ preventScroll: true }); }, []);
@@ -27,6 +31,7 @@ export default function PassageBoard({ title, model, focusId = null, gemOffered 
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [onClose]);
+  const stone = polishStone(polish);
   return <section className="piano-passage-board" role="dialog" aria-label="Passage board">
     <header className="piano-passage-board__head">
       <h2 className="piano-passage-board__title">{title}</h2>
@@ -36,6 +41,9 @@ export default function PassageBoard({ title, model, focusId = null, gemOffered 
           <PassageCoin state={goal.level} /><strong>{goal.done}/{goal.total}</strong>{goal.reached && <Check />}
           {!goal.reached && gemOffered && <span>earn a gem</span>}
         </li>)}
+        {stone && <li data-level="polish" data-stone={stone.kind} aria-label={`${stone.label}: earned`}>
+          <GemIcon size="2.2rem" color={stone.color} />
+        </li>}
       </ul>
       {review && <button type="button" className="piano-passage-board__review" onClick={onReview}>Review a passage</button>}
       <button ref={close} type="button" className="piano-passage-board__close" onClick={onClose}><Close /><span>Close</span></button>

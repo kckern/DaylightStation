@@ -129,6 +129,7 @@ export function createTriageSession({
       counts: {
         archived: rows.filter((e) => e.action === 'archive' && !e.uncertain).length,
         closed: rows.filter((e) => e.action === 'complete' && !e.uncertain).length,
+        kept: rows.filter((e) => e.action === 'keep').length,
       },
       entries,
     };
@@ -458,7 +459,7 @@ export function createTriageSession({
       return {
         enrolled: policy.enrolled === true, mode: policy.mode ?? 'off',
         mailbox: q.mailbox ?? null, lastPassAt: q.builtAt ?? null,
-        preDone: { archived: q.preDone?.archived ?? 0, closed: q.preDone?.closed ?? 0 },
+        preDone: { archived: q.preDone?.archived ?? 0, closed: q.preDone?.closed ?? 0, kept: q.preDone?.kept ?? 0 },
         mailboxName: mailbox?.displayName ?? null,
         // Dry-run cards are counted under wouldHave, not again here.
         open: {
@@ -500,7 +501,7 @@ export function createTriageSession({
         if (seen < (q.builtAt ?? 0) && would.archived + would.closed > 0) {
           recap = {
             cardId: 'recap', kind: 'recap', step: 'recap', status: 'open', choices: RECAP_CHOICES.map((c) => ({ ...c })),
-            suggested: 'ok', why: 'What I would have done', source: null, counts: { archived: 0, closed: 0 }, wouldHave: would, entries: [],
+            suggested: 'ok', why: 'What I would have done', source: null, counts: { archived: 0, closed: 0, kept: 0 }, wouldHave: would, entries: [],
           };
         }
       }

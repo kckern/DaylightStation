@@ -218,3 +218,6 @@ button.drill-cluster,
 .piano-exercise-run button.drill-cluster {
   min-height: 0; margin: 0; padding: 0; border: 0; border-radius: 0; background: none; color: inherit; font: inherit; cursor: pointer;
 }
+// A set that cannot be chosen yet. Its look is the host's (a lock, or nothing).
+button.drill-cluster:disabled,
+.piano-exercise-run button.drill-cluster:disabled { cursor: default; opacity: 1; }

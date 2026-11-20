@@ -36,7 +36,8 @@ triage view.
 Whatever Jev's confidence, nothing is acted on unattended when the item:
 
 - is from a real person the owner has written to (only automated senders qualify);
-- mentions a deadline, a money amount, or legal / medical / school matters;
+- mentions legal / medical / school matters;
+- comes from a person (not an automated sender) and mentions a deadline or a money amount;
 - carries an attachment from a non-automated sender;
 - is starred, or sits in a thread the owner replied to.
 
@@ -46,8 +47,14 @@ list, both open, the newer one closes, and never both copies in one pass) or whe
 when the task read is complete. The keyword lists live in
 `server/domain/guardrails.mjs` and deliberately over-block. Missing facts block.
 
-Beyond the rules, mail is archived only when Jev answers *archive* with
-confidence ≥ `autoArchiveConfidence`.
+Deadline and money words in mail from an **automated** sender (sign-in links that
+"expire", receipts, statements) are not blocks: Jev is told the mail mentions them
+(`mentions` in its state) and weighs them. Beyond the rules, mail is archived only
+when Jev answers *archive* with confidence ≥ `autoArchiveConfidence`.
+
+When Jev answers *keep* with confidence ≥ 0.85 the mail gets no card: it stays in
+the inbox and the pass logs it as **Kept** (in both modes, since nothing changes in
+the mailbox). The recap counts it as *Left in inbox, no card needed*.
 
 ## Configuration
 

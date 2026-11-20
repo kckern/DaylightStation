@@ -91,11 +91,19 @@ the attempt only records its verdict. The policy picks one of two behaviours:
   default to 0.4 / 80 / 400): each event's window is
   `clamp(windowFraction × gap)`, where gap is the distance to the nearest
   non-empty neighbouring onset (a single-event ask uses `windowMaxMs`). Its
-  reach is the gap (never below the window).
+  reach is the gap (never below the window). When the policy carries a
+  `tempoPercent` below 100 (a score passage played slowed, as Learn's Gold
+  steps and timing recoveries are), the cap becomes
+  `windowMaxMs × 100 / tempoPercent`: 400 ms at full tempo, about 667 ms at
+  60%, 1000 ms at 40%. The gap already grows as the tempo slows; without this
+  the cap held a slowed run to the full-tempo window. `ExerciseRun`'s
+  `runAttemptPolicy` sets `tempoPercent` only for a score run below 100%; bank
+  exercises and every other surface carry none and keep the plain cap.
   - `hit`: right pitch inside the window.
   - `early` / `late`: right pitch outside the window but inside reach. It is
     stored on its own event as `hits[noteId] = { time, driftMs, windowMs,
-    offbeat }`, counts toward completeness, earns 0 placement, and emits
+    offbeat }`, counts toward completeness, earns 0 placement (the first
+    one in a take earns 0.5, see below), and emits
     `{ type: 'offbeat', eventId, noteIds, driftMs, side }`. A steady lag
     therefore never cascades onto the next beat.
   - `wrong`: anything else, charged to the nearest non-empty event by time.
@@ -104,7 +112,10 @@ the attempt only records its verdict. The policy picks one of two behaviours:
     missed at target + reach. The attempt completes only when every note is
     claimed or finally missed.
   - Placement per claimed note: 1 within ±0.4 × window, linear to 0 at the
-    window edge, 0 for off-beat claims. Result diagnostics add
+    window edge, 0 for off-beat claims. The take's first off-beat claim in
+    score order is forgiven to 0.5 (one stumble in an otherwise steady take
+    should not fail it on timing alone); every later one earns 0. A span
+    slice forgives the same note the whole take does. Result diagnostics add
     `offbeat_notes`, `early_notes`, `late_notes`, and `median_drift_ms`
     (signed median over claimed notes). `response_median_ms` includes
     off-beat claims, so it reflects real lateness.

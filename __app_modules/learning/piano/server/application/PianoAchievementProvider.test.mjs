@@ -27,7 +27,7 @@ describe('piano achievement provider', () => {
   it('names itself and its activities', () => {
     const p = provider();
     expect(p.name).toBe('piano');
-    expect(p.activities).toEqual(['board-game-level', 'piano-practice', 'piano-rung', 'piano-piece']);
+    expect(p.activities).toEqual(['board-game-level', 'piano-practice', 'piano-rung', 'piano-piece', 'piano-polish-gem', 'piano-polish-diamond']);
   });
 
   it('reports a first-ever win per level only when that first win is in the week', async () => {
@@ -129,11 +129,29 @@ describe('piano achievement provider', () => {
 
   it('an unreadable or missing piece log makes only piano-piece unavailable', async () => {
     const unreadable = await provider({ pieces: new Proxy({}, { get() { throw new Error('bad yaml'); } }) }).week(args);
-    expect(unreadable.unavailable).toEqual(['piano-piece']);
+    expect(unreadable.unavailable).toEqual(['piano-piece', 'piano-polish-gem', 'piano-polish-diamond']);
     expect(unreadable.learners.kidB.milestones['piano-rung']).toEqual([]);
     const missing = await createPianoAchievementProvider({
       gameHistory: { listGameSummaries: () => [] }, attemptStore: { listCreatedBetween: () => [] }, rungLog: { list: () => [] },
     }).week(args);
-    expect(missing.unavailable).toEqual(['piano-piece']);
+    expect(missing.unavailable).toEqual(['piano-piece', 'piano-polish-gem', 'piano-polish-diamond']);
+  });
+
+  it('reports a piece Polish gem and diamond once each, dated by the first, apart from piano-piece', async () => {
+    const out = await provider({ pieces: { kidB: [
+      { at: '2026-11-01T18:00:00Z', scoreId: 'files:sheets/minuet.mxl', level: 'gold' },
+      { at: '2026-10-30T18:00:00Z', scoreId: 'files:old/march.mxl', level: 'polish-gem' }, // before the week
+      { at: '2026-11-04T18:00:00Z', scoreId: 'files:sheets/minuet.mxl', level: 'polish-gem', tempoPercent: 60, score: 96 },
+      { at: '2026-11-06T18:00:00Z', scoreId: 'files:sheets/minuet.mxl', level: 'polish-gem' }, // a later duplicate never counts
+      { at: '2026-11-07T02:00:00Z', scoreId: 'files:sheets/minuet.mxl', level: 'polish-diamond', tempoPercent: 100, score: 97 },
+    ] } }).week(args);
+    expect(out.learners.kidB.milestones['piano-polish-gem']).toEqual([
+      { key: 'files:sheets/minuet.mxl', day: '2026-11-04', label: 'Minuet Polish gem' },
+    ]);
+    expect(out.learners.kidB.milestones['piano-polish-diamond']).toEqual([
+      { key: 'files:sheets/minuet.mxl', day: '2026-11-06', label: 'Minuet Polish diamond' },
+    ]);
+    expect(out.learners.kidB.milestones['piano-piece']).toEqual([]); // Gold was the week before; Polish entries never pay as piano-piece
+    expect(out.learners.kidC.milestones['piano-polish-gem']).toEqual([]);
   });
 });

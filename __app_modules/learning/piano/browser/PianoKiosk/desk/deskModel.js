@@ -1,4 +1,5 @@
 // deskModel.js — pure view rules for the progress strip above the home menu.
+import { polishStone } from '../modes/SheetMusic/polishAwards.js';
 
 export const passageBars = (passage) => (passage ? `Bars ${passage.start + 1}–${passage.end + 1}` : '');
 
@@ -26,6 +27,9 @@ export function relativeTime(iso, now = Date.now()) {
 }
 
 /** The passage a piece card points at, and what its button would do. */
+/** An all-Gold piece's next step is a whole-piece Polish run, not a passage. */
+export const piecePolishing = (piece) => piece?.total > 0 && piece.gold >= piece.total;
+
 export function pieceFocus(piece) {
   const byId = (id) => piece.passages.find((passage) => passage.id === id) ?? null;
   return byId(piece.next?.passageId) ?? byId(piece.nextGoldPassageId) ?? piece.passages[0] ?? null;
@@ -46,7 +50,7 @@ export function stripCards({ pieces, courses }) {
     const course = coursePlayer?.courses?.[0] ?? null;
     const name = deskPlayer?.name ?? coursePlayer?.name ?? userId;
     const cards = [];
-    if (piece) cards.push({ key: `${userId}:piece`, userId, name, kind: 'piece', at: piece.practicedAt ?? '', piece, focus: pieceFocus(piece) });
+    if (piece) cards.push({ key: `${userId}:piece`, userId, name, kind: 'piece', at: piece.practicedAt ?? '', piece, focus: piecePolishing(piece) ? null : pieceFocus(piece) });
     if (course) cards.push({ key: `${userId}:course`, userId, name, kind: 'course', at: course.lastPlayedAt ?? coursePlayer?.lastPlayedAt ?? '', course });
     return { latest: cards.map((card) => String(card.at)).sort().at(-1) ?? '', cards };
   }).filter((child) => child.cards.length)
@@ -54,7 +58,7 @@ export function stripCards({ pieces, courses }) {
     .flatMap((child) => child.cards);
 }
 
-/** The strip's cards grouped by child, so one avatar and name heads each child's cards. */
+/** The strip's cards grouped by child: one avatar and name heads each child, over one card. */
 export function stripGroups(sources) {
   const groups = [];
   for (const card of stripCards(sources)) {
@@ -65,19 +69,79 @@ export function stripGroups(sources) {
   return groups;
 }
 
-/** Passage coin size in px: the row fills the card's 175px, never above 26px. */
-export const coinSize = (count) => {
-  const columns = mapColumns(count);
-  return Math.min(26, Math.floor((175 - (columns - 1) * 3) / columns));
-};
+/**
+ * The one card a child's panel shows: the activity chosen on its tabs when the
+ * child has it, else the most recent one (a tie keeps the piece).
+ */
+export function shownCard(group, chosenKind) {
+  const cards = group?.cards ?? [];
+  const chosen = chosenKind ? cards.find((card) => card.kind === chosenKind) : null;
+  if (chosen) return chosen;
+  return cards.reduce((best, card) => (best && String(best.at) >= String(card.at) ? best : card), null);
+}
 
 /** A tomato nobody has started yet sits back, unless it is the one up next. */
 export const passageFaded = (passage, isCurrent) => !isCurrent && passage?.state === 'todo' && !(passage?.steps?.done > 0);
 
+const LESSON_PREFIX = /^lesson\s+(\d+)\s*[|:–—-]\s*/i;
+
+/** A lesson title without its leading "Lesson 51 |" / "Lesson 12:"; the next-step line carries the number. */
+export const lessonTitle = (title) => {
+  const text = String(title ?? '').trim();
+  return text.replace(LESSON_PREFIX, '').trim() || text;
+};
+
 /**
- * How many coins across a piece's map: up to six sit in one row; a longer
- * piece takes two equal rows.
+ * Why a card is on the strip, as its badge: Silver next, Gold next, then the
+ * Polish goal once the piece is all Gold (Polish next, Diamond next after the
+ * gem, Diamond after the diamond), or Next lesson.
  */
-export const mapColumns = (count) => (count > 6 ? Math.ceil(count / 2) : Math.max(1, count));
+export function cardBadge(card) {
+  if (card.kind === 'course') return { level: 'lesson', label: 'Next lesson' };
+  const { silver, gold, total, polish } = card.piece;
+  if (total > 0 && gold >= total) {
+    if (polish?.diamond === true) return { level: 'diamond', label: 'Diamond' };
+    if (polish?.gem === true) return { level: 'diamond', label: 'Diamond next' };
+    return { level: 'gold', label: 'Polish next' };
+  }
+  if (total > 0 && silver >= total) return { level: 'gold', label: 'Gold next' };
+  return { level: 'silver', label: 'Silver next' };
+}
+
+/**
+ * The line under a card's title: the bars up next, or the next lesson's number —
+ * the one printed in its title when there is one (the server's position counts
+ * graded lessons only), else its place in the course.
+ */
+export function nextStep(card) {
+  if (card.kind === 'piece') return piecePolishing(card.piece) ? 'Whole piece' : passageBars(card.focus);
+  const { course } = card;
+  if (!course.next) return '';
+  const title = String(course.next.title ?? '').trim();
+  // The number the title prints, with a separator ("Lesson 51 | …") or alone ("Lesson 3").
+  const printed = (LESSON_PREFIX.exec(title) ?? /^lesson\s+(\d+)$/i.exec(title))?.[1];
+  const position = printed ?? course.next.position ?? (Number.isFinite(course.completed) ? course.completed + 1 : null);
+  return position ? `Lesson ${position}` : '';
+}
+
+/** The card's inner width in px, which the coin row fills, and the gap between coins. */
+const ROW = 276;
+const GAP = 2;
+
+/** Coins across a piece's map: one row up to fourteen, else two equal rows. */
+export const mapColumns = (count) => (count > 14 ? Math.ceil(count / 2) : Math.max(1, count));
+export const mapRows = (count) => (count > 14 ? 2 : 1);
+
+/** Coin size in px: the row fills the card, never above 22px. `extra` slots (a Polish stone) share the row. */
+export const coinSize = (count, extra = 0) => {
+  const columns = mapColumns(count) + extra;
+  return Math.min(22, Math.floor((ROW - (columns - 1) * GAP) / columns));
+};
 
 export const pieceCount = (piece) => `${piece.silver} of ${piece.total} Silver`;
+
+/** A piece card's name for a screen reader: the Silver count, and the Polish stone when it holds one. */
+export const pieceLabel = (name, piece) => {
+  const stone = polishStone(piece.polish);
+  return `${name}: ${pieceCount(piece)}${stone ? `, ${stone.label}` : ''}`;
+};

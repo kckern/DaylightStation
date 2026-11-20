@@ -40,7 +40,7 @@ vi.mock('../../../performance/attemptEvidence.js', async (importOriginal) => {
   return { ...actual, pianoAttemptClient: { record: h.record } };
 });
 
-const { default: ExerciseRun, timingSentence, timedWindowOpen, CLICK_PREROLL_MS } = await import('./ExerciseRun.jsx');
+const { default: ExerciseRun, timingSentence, timedWindowOpen, runAttemptPolicy, CLICK_PREROLL_MS } = await import('./ExerciseRun.jsx');
 
 // Four quarters at 120 bpm: onsets 500 ms apart, so each beat's window is
 // 0.4 × 500 = 200 ms and a right note up to 500 ms off is claimed early/late.
@@ -65,6 +65,16 @@ describe('timed score tempo maps', () => {
     const source = [{ onsetQuarter: 0, bpm: 100 }, { onsetQuarter: 8, bpm: 80 }];
     expect(scaleScoreTempoMap(source, 60)).toEqual([{ onsetQuarter: 0, bpm: 60 }, { onsetQuarter: 8, bpm: 48 }]);
     expect(source).toEqual([{ onsetQuarter: 0, bpm: 100 }, { onsetQuarter: 8, bpm: 80 }]);
+  });
+});
+
+describe('runAttemptPolicy', () => {
+  it('carries a slowed score tempo to the judge, and nothing else does', () => {
+    expect(runAttemptPolicy(null, { tempoPercent: 60 })).toMatchObject({ windowFraction: 0.4, windowMaxMs: 400, tempoPercent: 60 });
+    expect(runAttemptPolicy({ policy: { windowMaxMs: 300 } }, { tempoPercent: 40 })).toMatchObject({ windowMaxMs: 300, tempoPercent: 40 });
+    expect(runAttemptPolicy(null, { tempoPercent: 100 })).not.toHaveProperty('tempoPercent');
+    expect(runAttemptPolicy(null, { id: 'score' })).not.toHaveProperty('tempoPercent');
+    expect(runAttemptPolicy(null, null)).not.toHaveProperty('tempoPercent');
   });
 });
 
@@ -168,6 +178,8 @@ describe('a timed run paints the judge, not the held key', () => {
     }));
     expect(h.log.info).toHaveBeenCalledWith('piano.exercise-timing-summary', expect.objectContaining({
       kind: 'timing', late: 4, early: 0, medianDriftMs: 450, windowMs: 200,
+      // The first off-beat note is forgiven to half credit: 0.5 of 4.
+      placement: 0.125, tempoPercent: 100,
     }));
   });
 

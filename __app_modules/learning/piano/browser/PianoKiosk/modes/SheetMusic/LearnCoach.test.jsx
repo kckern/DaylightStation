@@ -1,8 +1,10 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import LearnCoach, { passageDrill } from './LearnCoach.jsx';
-import { createCoachPlan, projectCoach } from '../../../../../../../shared/music/learnCoach.mjs';
-const h = vi.hoisted(() => ({ profile: 'guest', lab: null, labs: 0 }));
+import { applyCoachEvent, createCoachPlan, projectCoach } from '../../../../../../../shared/music/learnCoach.mjs';
+const h = vi.hoisted(() => ({ profile: 'guest', lab: null, labs: 0,
+  log: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn(), sampled: vi.fn() } }));
+vi.mock('../../../../../../../frontend/src/lib/logging/Logger.js', () => ({ default: () => ({ child: () => h.log }) }));
 vi.mock('../../PianoUserContext.jsx', () => ({ usePianoUser: () => ({ currentUser: h.profile }) }));
 vi.mock('../../PianoMidiContext.jsx', () => ({ usePianoMidi: () => ({ connected: true }) }));
 vi.mock('../../PianoConfig.jsx', () => ({ usePianoKioskConfigOptional: () => null }));
@@ -29,7 +31,7 @@ describe('LearnCoach', () => {
  it('hands the passage to the drill as sets and reps: one set per Silver and Gold step', () => {
   render(<LearnCoach {...props} />);
   const { projection, stepId } = h.lab.drill;
-  expect(projection.steps.map((step) => step.display.key)).toEqual(['Right hand', 'Left hand', 'Together', 'On your own', 'Beat', '60%', '80%', '100%']);
+  expect(projection.steps.map((step) => step.display.key)).toEqual(['Right hand', 'Left hand', 'Together', 'On your own', 'Beat', '50%', '60%', '75%', '100%']);
   expect(projection.steps[0]).toMatchObject({ id: stepId, state: 'current', requirement: { required_passes: 1 }, pass_count: 0, passed: false });
   expect(projection.steps[4].requirement.required_passes).toBe(2);
  });
@@ -66,7 +68,7 @@ describe('LearnCoach', () => {
  it('banks a passing take with the drill card and moves to the next step under it', async () => {
   render(<LearnCoach {...props} />);
   await outcome(passed);
-  expect(h.lab.card).toMatchObject({ setIndex: 1, setCount: 8, repIndex: 1, repCount: 1, setClear: true, next: { key: 'Left hand' } });
+  expect(h.lab.card).toMatchObject({ setIndex: 1, setCount: 9, repIndex: 1, repCount: 1, setClear: true, next: { key: 'Left hand' } });
   expect(h.lab.coachingTask.skill).toBe('left');
   act(() => h.lab.onCardDone());
   expect(h.lab.card).toBeNull();
@@ -113,7 +115,7 @@ describe('LearnCoach', () => {
  it('has no practice chooser: the sets are how a step is chosen', () => {
   render(<LearnCoach {...props} />);
   expect(h.lab.onChangePractice).toBeUndefined();
-  expect(h.lab.drill.projection.steps.map((step) => step.display.key)).toEqual(['Right hand', 'Left hand', 'Together', 'On your own', 'Beat', '60%', '80%', '100%']);
+  expect(h.lab.drill.projection.steps.map((step) => step.display.key)).toEqual(['Right hand', 'Left hand', 'Together', 'On your own', 'Beat', '50%', '60%', '75%', '100%']);
   // Each set is named by a picture; the words stay as its accessible name.
   expect(h.lab.drill.projection.steps.every((step) => step.display.icon && step.title)).toBe(true);
  });
@@ -133,13 +135,22 @@ describe('LearnCoach', () => {
   expect(screen.queryByText(/saved/i)).toBeNull();
  });
  it('names a timing recovery by its slower tempo', async () => {
-  render(<LearnCoach {...props} />);
+  render(<LearnCoach {...props} skipping={{ default: 'open' }} />);
   act(() => h.lab.onPickStep({ id: h.lab.drill.projection.steps.at(-1).id }));
   expect(h.lab.coachingTask).toMatchObject({ mode: 'cued', tempoPercent: 100 });
   const failed = { ...passed, criteria: { completeness: 1, cleanliness: 1, placement: .2 }, verdict: { passed: false } };
   await outcome(failed); await outcome({ ...failed, assessmentId: 'timing2' });
-  expect(screen.getByRole('button', { name: 'Try a little slower · 80%' })).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Try a little slower · 75%' })).toBeInTheDocument();
   expect(screen.queryByText('slower-beat')).not.toBeInTheDocument();
+ });
+ it('logs each take with its tempo and the scores it was judged on', async () => {
+  h.log.info.mockClear();
+  render(<LearnCoach {...props} skipping={{ default: 'open' }} />);
+  act(() => h.lab.onPickStep({ id: h.lab.drill.projection.steps.at(-2).id }));
+  await outcome({ ...passed, criteria: { completeness: 1, cleanliness: 0.93333, placement: 0.71234 }, verdict: { passed: false } });
+  expect(h.log.info).toHaveBeenCalledWith('piano.learn.coach.take', expect.objectContaining({
+   tempoPercent: 75, placement: 0.712, completeness: 1, cleanliness: 0.933, passed: false,
+  }));
  });
  it('puts the passage rail under the drill, and a tile changes passage', () => {
   const two = createCoachPlan({ scoreId: 'score', fingerprint: 'fp', segments: [
@@ -155,5 +166,54 @@ describe('LearnCoach', () => {
   expect(onPassageChange).toHaveBeenCalledWith('b');
   fireEvent.click(screen.getByRole('button', { name: /Open the passage board/ }));
   expect(screen.getByRole('dialog', { name: 'Passage board' })).toBeInTheDocument();
+ });
+
+ describe('skipping steps', () => {
+  const steps = () => h.lab.drill.projection.steps;
+  const named = (key) => steps().find((step) => step.display.key === key);
+  const lockShown = (step) => render(<div>{step.display.icon}</div>).container.querySelector('.piano-learn-coach__lock') !== null;
+  beforeEach(() => { h.log.info.mockClear(); });
+  it('by default opens the note steps and the check, and locks Gold behind Silver with a lock', () => {
+   render(<LearnCoach {...props} />);
+   expect(steps().map((step) => Boolean(step.locked))).toEqual([false, false, false, false, true, true, true, true, true]);
+   expect(lockShown(named('Beat'))).toBe(true);
+   expect(lockShown(named('Together'))).toBe(false);
+  });
+  it('does nothing when a locked step is tapped', () => {
+   render(<LearnCoach {...props} />);
+   act(() => h.lab.onPickStep({ id: named('100%').id }));
+   expect(h.lab.coachingTask.skill).toBe('right');
+   expect(h.log.info).not.toHaveBeenCalledWith('piano.learn.coach.skip', expect.anything());
+  });
+  it('starts an open step on a tap and logs the skip', () => {
+   render(<LearnCoach {...props} />);
+   act(() => h.lab.onPickStep({ id: named('Together').id }));
+   expect(h.lab.coachingTask).toMatchObject({ skill: 'together', parts: ['rh', 'lh'] });
+   expect(h.log.info).toHaveBeenCalledWith('piano.learn.coach.skip', { userId: 'guest', scoreId: 'score', passageId: 'a', from: 'right', to: 'together', mode: 'open-to-silver' });
+  });
+  it('strict leaves only the current step to start, and draws no locks', () => {
+   render(<LearnCoach {...props} skipping={{ default: 'strict' }} />);
+   expect(steps().map((step) => Boolean(step.locked))).toEqual([false, true, true, true, true, true, true, true, true]);
+   expect(steps().some(lockShown)).toBe(false);
+   act(() => h.lab.onPickStep({ id: named('Left hand').id }));
+   expect(h.lab.coachingTask.skill).toBe('right');
+  });
+  it('does not resume a saved step the mode now locks', () => {
+   const silver = plan.tasks.find((task) => task.skill === 'silver'); const mastery = plan.tasks.find((task) => task.skill === 'mastery');
+   const done = { status: 'completed', inputContractVersion: 'onsets-v1', criteria: { completeness: 1, cleanliness: 1 }, diagnostics: { expected_notes: 8, matched_notes: 8 }, spans: {} };
+   let state = applyCoachEvent(null, { id: 'check', type: 'outcome', task: silver, result: done }, { plan, now: '2026-11-19T18:00:00Z', dayKey: '2026-11-19' });
+   state = applyCoachEvent(state, { id: 'pick', type: 'selection', task: mastery }, { plan, now: '2026-11-19T18:01:00Z', dayKey: '2026-11-19' });
+   const coach = { profileId: 'learner4', loaded: true, projection: projectCoach({ plan, state, dayKey: '2026-11-19' }), state, saveStatus: 'saved', selectTask: vi.fn(), record: vi.fn() };
+   expect(coach.projection.goldResume.skill).toBe('mastery');
+   render(<LearnCoach {...props} coach={coach} skipping={{ default: 'strict' }} />);
+   expect(h.lab.coachingTask.skill).toBe('pulse');
+  });
+  it('a learner set to open may start score tempo first', () => {
+   render(<LearnCoach {...props} skipping={{ default: 'strict', learners: { guest: 'open' } }} />);
+   expect(steps().some((step) => step.locked)).toBe(false);
+   act(() => h.lab.onPickStep({ id: named('100%').id }));
+   expect(h.lab.coachingTask).toMatchObject({ skill: 'mastery', tempoPercent: 100 });
+   expect(h.log.info).toHaveBeenCalledWith('piano.learn.coach.skip', expect.objectContaining({ from: 'right', to: 'mastery', mode: 'open' }));
+  });
  });
 });

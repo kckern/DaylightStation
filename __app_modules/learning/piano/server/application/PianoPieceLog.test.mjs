@@ -21,6 +21,17 @@ describe('piano piece log', () => {
     expect(store.entries).toHaveLength(2);
   });
 
+  it('notes the Polish gem and diamond as their own levels, with the run detail', () => {
+    const store = memory(); const log = new PianoPieceLog({ store, clock });
+    expect(log.note({ userId: 'learner4', scoreId: 'files:a.mxl', level: 'polish-gem', fingerprint: 'f', detail: { tempoPercent: 60, score: 96 } }))
+      .toEqual({ at: '2026-11-18T20:00:00.000Z', scoreId: 'files:a.mxl', level: 'polish-gem', passages: null, fingerprint: 'f', tempoPercent: 60, score: 96 });
+    expect(log.note({ userId: 'learner4', scoreId: 'files:a.mxl', level: 'polish-diamond', detail: { at: 'x', level: 'gold', scoreId: 'y' } }))
+      .toMatchObject({ at: '2026-11-18T20:00:00.000Z', scoreId: 'files:a.mxl', level: 'polish-diamond' });
+    expect(log.note({ userId: 'learner4', scoreId: 'files:a.mxl', level: 'polish-gem' })).toBeNull();
+    expect(log.has('learner4', 'files:a.mxl', 'polish-gem')).toBe(true);
+    expect(log.has('learner4', 'files:a.mxl', 'gold')).toBe(false);
+  });
+
   it('never throws when the store fails', () => {
     const warned = [];
     const log = new PianoPieceLog({ store: { list: () => { throw new Error('unreadable'); }, append: () => true }, clock,

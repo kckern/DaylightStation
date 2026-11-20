@@ -23,7 +23,7 @@ import DrillProgress, { DrillPlacard } from './DrillProgress.jsx';
 import { deckSets, deckProjection, deckWindow } from './deckProgress.js';
 import ExerciseNotation from './ExerciseNotation.jsx';
 import { timedRunPresentation } from './timedRunPresentation.js';
-import { assessmentVerdicts, verdictSummary, timedRunSummary } from '../../../performance/timedVerdicts.js';
+import { assessmentVerdicts, verdictSummary, timedRunSummary, roundScore } from '../../../performance/timedVerdicts.js';
 import { timedTarget, timedWindowMs } from '../../../performance/timedJudge.js';
 import KeysAsk from './KeysAsk.jsx';
 import ScorePassage from './ScorePassage.jsx';
@@ -72,6 +72,20 @@ const DEFAULT_POLICY = Object.freeze({
   matchWindowMs: 220, missWindowMs: 420, timingToleranceMs: 80, timingWindowMs: 320,
   windowFraction: 0.4, windowMinMs: 80, windowMaxMs: 400,
 });
+
+/**
+ * The policy one attempt is judged with: the surface defaults, the
+ * requirement's own policy over them, and — for a score played below full
+ * tempo (Learn's slowed steps scale the score's tempo map) — that tempo, so
+ * the judge widens the window cap by 100 / tempoPercent. A bank instance, and
+ * a score at full tempo, keep the plain 400 ms cap.
+ */
+export function runAttemptPolicy(requirement, score = null) {
+  const policy = { ...DEFAULT_POLICY, ...(requirement?.policy ?? {}) };
+  const tempoPercent = Number(score?.tempoPercent);
+  if (Number.isFinite(tempoPercent) && tempoPercent > 0 && tempoPercent < 100) policy.tempoPercent = tempoPercent;
+  return policy;
+}
 
 /**
  * The two statuses that carry a JUDGED attempt — one a child played and this
@@ -553,7 +567,7 @@ export default function ExerciseRun({ instance, score, requirement = null, pract
     // `wrongWindow`, allow extras, or loosen the timing windows without this
     // component knowing which knob it turned. Practice is deliberately left on
     // the defaults, exactly as it already ignores a step's rubric and gates.
-    const policy = { ...DEFAULT_POLICY, ...(activeRequirement?.policy ?? {}) };
+    const policy = runAttemptPolicy(activeRequirement, instance ? null : score);
     try {
       if (!instance) {
         // The compiled passage IS the expectation — there is nothing for
@@ -835,7 +849,10 @@ export default function ExerciseRun({ instance, score, requirement = null, pract
         early: summary.early,
         offbeat: summary.offbeat,
         medianDriftMs: Number.isFinite(summary.medianDriftMs) ? Math.round(summary.medianDriftMs) : null,
+        // The first beat's window, as judged — already widened for a slowed run.
         windowMs: first >= 0 ? Math.round(timedWindowMs(snapshot, first)) : null,
+        placement: roundScore(snapshot.result.criteria?.placement),
+        tempoPercent: snapshot.policy?.tempoPercent ?? 100,
       });
     }
     // A judged attempt that did not clear its bar. `onPassed` stays

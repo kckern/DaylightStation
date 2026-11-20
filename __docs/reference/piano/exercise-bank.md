@@ -447,8 +447,10 @@ countdown note-on events and their reason; the arming key is recorded on
 `piano.exercise-countdown-started`. `piano.exercise-observation` carries the
 judge's `driftMs`, `side` (early/late) and `noteIds` for hits, off-beat claims
 and lapses, and `piano.exercise-timing-summary` closes every timed run with
-`kind`, `late`, `early`, `offbeat`, `medianDriftMs` and the first event's
-`windowMs`. Cursor telemetry describes the presentation
+`kind`, `late`, `early`, `offbeat`, `medianDriftMs`, the first event's
+`windowMs` (as judged, so widened on a slowed score run), the result's
+`placement` (3 decimals) and the run's `tempoPercent` (100 unless a slowed
+score run). Cursor telemetry describes the presentation
 state; browser geometry tests separately verify the visible yellow overlay.
 
 ### Run chrome

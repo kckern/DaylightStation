@@ -47,16 +47,19 @@ const SLOT_BUILDERS = {
 };
 const DEFAULT_SLOTS = ['top-incomplete-courses'];
 const PIANO_COURSE_PROGRAM = 'piano-course';
-// The lesson a child plays next: the first one not yet watched, in course order.
-// Its still only when it is a rooted proxy path a kiosk can fetch.
+// The lesson a child plays next: the first one not yet watched, in course order,
+// with its 1-based place in that order. Its still only when it is a rooted proxy
+// path a kiosk can fetch.
 const nextLesson = (enriched) => {
-  const item = enriched.find((it) => !it.userWatched);
-  if (!item) return null;
+  const index = enriched.findIndex((it) => !it.userWatched);
+  if (index < 0) return null;
+  const item = enriched[index];
   const still = String(item.thumbnail ?? item.image ?? item.metadata?.thumbnail ?? '').trim();
   return {
     id: item.id ?? (item.plex ? `plex:${item.plex}` : null),
     title: item.title ?? item.metadata?.title ?? null,
     thumbnail: still.startsWith('/') ? still : null,
+    position: index + 1,
   };
 };
 const courseKey = (id) => `plex:${String(id ?? '').replace(/^plex:/, '')}`;
