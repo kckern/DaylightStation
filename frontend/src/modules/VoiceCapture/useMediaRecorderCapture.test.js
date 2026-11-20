@@ -2,7 +2,7 @@
  * useMediaRecorderCapture — neutral one-shot mic→Blob recorder.
  * MediaRecorder + getUserMedia are mocked (jsdom has neither).
  */
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
 import { useMediaRecorderCapture } from './useMediaRecorderCapture.js';
 
@@ -28,6 +28,8 @@ beforeEach(() => {
   });
 });
 
+afterEach(() => vi.restoreAllMocks());
+
 describe('useMediaRecorderCapture', () => {
   it('starts recording then stops and resolves a blob with duration', async () => {
     const { result } = renderHook(() => useMediaRecorderCapture());
@@ -47,5 +49,53 @@ describe('useMediaRecorderCapture', () => {
     await act(async () => { await result.current.start(); });
     expect(result.current.isRecording).toBe(false);
     expect(result.current.error).toMatch(/permission/i);
+  });
+
+  it('retries an unavailable built-in mic with the same processing policy and keeps the negotiated bytes', async () => {
+    const { enumerateDevices, getUserMedia } = navigator.mediaDevices;
+    enumerateDevices.mockResolvedValue([
+      { kind: 'audioinput', label: 'Bluetooth headset', deviceId: 'bluetooth' },
+      { kind: 'audioinput', label: 'Internal mic', deviceId: 'internal' },
+    ]);
+    getUserMedia.mockRejectedValueOnce(Object.assign(new Error('disconnected'), { name: 'NotFoundError' }));
+    vi.spyOn(FakeMediaRecorder, 'isTypeSupported').mockImplementation(type => type === 'audio/mp4');
+    const { result } = renderHook(() => useMediaRecorderCapture());
+    await act(async () => { await result.current.start(); });
+    const processing = { echoCancellation: false, noiseSuppression: false, autoGainControl: false };
+    expect(getUserMedia.mock.calls).toEqual([
+      [{ audio: { ...processing, deviceId: { exact: 'internal' } } }], [{ audio: processing }],
+    ]);
+    let take;
+    await act(async () => { take = await result.current.stop(); });
+    expect(take).toMatchObject({ mimeType: 'audio/mp4', blob: { type: 'audio/mp4', size: 1 } });
+  });
+
+  it('foregoes the fallback when the owner leaves during the first permission request', async () => {
+    const pending = Promise.withResolvers();
+    const { getUserMedia } = navigator.mediaDevices;
+    getUserMedia.mockReturnValueOnce(pending.promise);
+    const { result, unmount } = renderHook(() => useMediaRecorderCapture());
+    let start;
+    act(() => { start = result.current.start(); });
+    await vi.waitFor(() => expect(getUserMedia).toHaveBeenCalledTimes(1));
+    unmount();
+    pending.reject(Object.assign(new Error('disconnected'), { name: 'NotFoundError' }));
+    await start;
+    expect(getUserMedia).toHaveBeenCalledTimes(1);
+  });
+
+  it('discards a take when the owner leaves before a requested recorder stop finishes', async () => {
+    let requestedStop;
+    vi.spyOn(FakeMediaRecorder.prototype, 'stop').mockImplementationOnce(function () {
+      this.state = 'inactive';
+      requestedStop = () => this.onstop?.();
+    });
+    const { result, unmount } = renderHook(() => useMediaRecorderCapture());
+    await act(async () => { await result.current.start(); });
+    const take = result.current.stop();
+    expect(requestedStop).toBeTypeOf('function');
+    unmount();
+    requestedStop();
+    await expect(take).resolves.toBeNull();
   });
 });

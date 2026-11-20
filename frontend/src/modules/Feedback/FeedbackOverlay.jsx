@@ -24,7 +24,7 @@ export default function FeedbackOverlay({
   open, app, context = {}, prompt = 'Found a bug or rough edge? Record a quick note.',
   onClose, onPauseMusic, onResumeMusic,
 }) {
-  const { isRecording, durationMs, levelRef, error: recError, start, stop } = useMediaRecorderCapture();
+  const { isRecording, durationMs, levelRef, error: recError, start, stop } = useMediaRecorderCapture({ active: open });
   // 'idle' | 'recording' | 'submitting' | 'transcribing' | 'review' | 'error'
   const [machine, setMachine] = useState('idle');
   const [item, setItem] = useState(null); // { id, transcript, transcriptStatus }

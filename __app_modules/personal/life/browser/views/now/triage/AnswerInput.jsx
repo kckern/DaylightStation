@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { ActionIcon, TextInput, Text, Loader } from '@mantine/core';
 import { IconMicrophone, IconPlayerStopFilled, IconArrowUp } from '@tabler/icons-react';
 import { useMediaRecorderCapture } from "../../../../../../../frontend/src/modules/VoiceCapture/useMediaRecorderCapture.js";
 import { DaylightAPI } from "../../../../../../../frontend/src/lib/api.mjs";
+import { useRefreshableRead } from "../../../../../../../frontend/src/lib/hooks/useRefreshableRead.js";
 import getLogger from "../../../../../../../frontend/src/lib/logging/Logger.js";
 
 function blobToBase64(blob) {
@@ -25,33 +26,51 @@ export function AnswerInput({ value, onChange, onSubmit, placeholder = 'Or say w
   const [transcribing, setTranscribing] = useState(false);
   const [voiceError, setVoiceError] = useState(null);
   const inputRef = useRef(null);
+  const takeRef = useRef(null);
+  const draftRef = useRef({ value, onChange });
+  useLayoutEffect(() => {
+    draftRef.current = { value, onChange };
+  }, [value, onChange]);
 
   // Focus on request (e.g. "What's the smaller next step?"), once the box is enabled again.
   useEffect(() => {
     if (focusKey && !disabled) inputRef.current?.focus();
   }, [focusKey, disabled]);
 
-  const toggleMic = async () => {
-    setVoiceError(null);
-    if (!isRecording) { await start(); return; }
-    const rec = await stop();
-    if (!rec?.blob || rec.blob.size === 0) { setVoiceError("Didn't hear anything — try again or type it."); return; }
+  const readTranscript = useCallback(async (isCurrent, signal) => {
+    const take = takeRef.current;
+    takeRef.current = null;
+    if (!take) return;
     setTranscribing(true);
     const t0 = performance.now();
     try {
-      const audioBase64 = await blobToBase64(rec.blob);
-      const out = await DaylightAPI('api/v1/ai/transcribe', { audioBase64 }, 'POST');
+      const audioBase64 = await blobToBase64(take.blob);
+      if (!isCurrent()) return;
+      const out = await DaylightAPI('api/v1/ai/transcribe', { audioBase64 }, 'POST', { signal });
+      if (!isCurrent()) return;
       const text = String(out?.text ?? '').trim();
-      logger.info('triage.voice.transcribed', { ms: Math.round(performance.now() - t0), chars: text.length, audioMs: rec.durationMs ?? null });
+      logger.info('triage.voice.transcribed', { ms: Math.round(performance.now() - t0), chars: text.length, audioMs: take.durationMs ?? null });
       if (!text) { setVoiceError("Couldn't make that out — try again or type it."); return; }
-      onChange(value ? `${value} ${text}` : text);
+      const draft = draftRef.current;
+      draft.onChange(draft.value ? `${draft.value} ${text}` : text);
       inputRef.current?.focus();
     } catch (err) {
+      if (!isCurrent()) return;
       logger.warn('triage.voice.failed', { error: err?.message, status: err?.status ?? null });
       setVoiceError("Couldn't transcribe that — type it instead.");
     } finally {
-      setTranscribing(false);
+      if (isCurrent()) setTranscribing(false);
     }
+  }, [logger]);
+  const { reload: transcribe } = useRefreshableRead(readTranscript);
+
+  const toggleMic = async () => {
+    setVoiceError(null);
+    if (!isRecording) { await start(); return; }
+    const take = await stop();
+    if (!take?.blob?.size) { setVoiceError("Didn't hear anything — try again or type it."); return; }
+    takeRef.current = take;
+    await transcribe();
   };
 
   const submit = (e) => {

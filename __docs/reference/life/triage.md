@@ -18,6 +18,10 @@ Three tiers:
 3. **Copilot.** Mail that needs a reply gets a draft to edit and send; tasks get
    *do this week / push to next month / drop / turn into a smaller next step*.
 
+A voice transcript is added to the current card’s draft for review. Moving to
+another card or leaving Triage cancels the pending transcript request. The
+answer is sent only when the person submits it.
+
 The session runs urgent replies first, then **Recap → Unsure → Replies → Todos**,
 skipping empty steps. Stopping part-way leaves the rest queued; nothing unreached
 is decided by default.

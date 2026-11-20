@@ -396,6 +396,15 @@ The Admin diagnostic uses `app:websocket/<topic>` and the same subscription
 contract as Media's external controls. Home Line signaling uses the
 credentialed `subscribeAuthorized` method. [WebSocket service](../../../frontend/src/services/WebSocketService.js)
 
+## One-shot microphone capture
+
+Use `useMediaRecorderCapture()` when a feature needs a recording as a blob.
+A mounted caller owns one capture through permission, recording and the final
+flush. If an overlay stays mounted when hidden, pass `{ active: open }` so
+closing it releases the tracks and stops its meter and elapsed timer. A retired
+capture cannot publish a recording. The feature owns any transcription or
+submission that follows. [Recorder hook](../../../frontend/src/modules/VoiceCapture/useMediaRecorderCapture.js)
+
 ## The rules
 
 - New webapp UI is built from `@/lib/ui` and the token contract — not raw

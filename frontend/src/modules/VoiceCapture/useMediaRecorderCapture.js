@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback, useEffect } from 'react';
+import { useState, useRef, useCallback, useLayoutEffect } from 'react';
 import getLogger from '../../lib/logging/Logger.js';
 
 let _logger;
@@ -41,124 +41,158 @@ async function preferBuiltInMic() {
   } catch { return null; }
 }
 
-export function useMediaRecorderCapture() {
+function stopTracks(stream) {
+  stream?.getTracks().forEach(track => track.stop());
+}
+
+function monitorLevel(capture, levelRef) {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    capture.context = ctx;
+    const analyser = ctx.createAnalyser();
+    analyser.fftSize = 256;
+    ctx.createMediaStreamSource(capture.stream).connect(analyser);
+    const buf = new Uint8Array(analyser.frequencyBinCount);
+    const sample = () => {
+      analyser.getByteTimeDomainData(buf);
+      let sum = 0;
+      for (const value of buf) {
+        const centered = (value - 128) / 128;
+        sum += centered * centered;
+      }
+      const rms = Math.sqrt(sum / buf.length);
+      const db = rms > 0 ? 20 * Math.log10(rms) : -60;
+      levelRef.current = Math.max(0, Math.min(1, (db + 60) / 60));
+      capture.frame = requestAnimationFrame(sample);
+    };
+    capture.frame = requestAnimationFrame(sample);
+  } catch (err) {
+    logger().warn('voice.capture.level-monitor-failed', { error: err.message });
+  }
+}
+
+export function useMediaRecorderCapture({ active = true } = {}) {
   const [isRecording, setIsRecording] = useState(false);
   const [durationMs, setDurationMs] = useState(0);
   const [error, setError] = useState(null);
   const levelRef = useRef(0); // 0..1, read by the VU meter via rAF
+  const ownerRef = useRef(null);
 
-  const mrRef = useRef(null);
-  const streamRef = useRef(null);
-  const chunksRef = useRef([]);
-  const startRef = useRef(0);
-  const timerRef = useRef(null);
-  const ctxRef = useRef(null);
-  const analyserRef = useRef(null);
-  const rafRef = useRef(null);
-  const mimeRef = useRef('audio/webm');
-  const resolveRef = useRef(null);
-
-  const teardown = useCallback(() => {
-    if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
-    if (rafRef.current) { cancelAnimationFrame(rafRef.current); rafRef.current = null; }
-    analyserRef.current = null;
-    if (ctxRef.current) { ctxRef.current.close?.().catch(() => {}); ctxRef.current = null; }
-    if (streamRef.current) { streamRef.current.getTracks().forEach((t) => t.stop()); streamRef.current = null; }
-    levelRef.current = 0;
-  }, []);
-
-  useEffect(() => teardown, [teardown]);
-
-  const monitorLevel = useCallback((stream) => {
-    try {
-      const ctx = new (window.AudioContext || window.webkitAudioContext)();
-      const analyser = ctx.createAnalyser();
-      analyser.fftSize = 256;
-      ctx.createMediaStreamSource(stream).connect(analyser);
-      ctxRef.current = ctx;
-      analyserRef.current = analyser;
-      const buf = new Uint8Array(analyser.frequencyBinCount);
-      const sample = () => {
-        if (!analyserRef.current) return;
-        analyserRef.current.getByteTimeDomainData(buf);
-        let sum = 0;
-        for (let i = 0; i < buf.length; i++) { const c = (buf[i] - 128) / 128; sum += c * c; }
-        const rms = Math.sqrt(sum / buf.length);
-        const db = rms > 0 ? 20 * Math.log10(rms) : -60;
-        levelRef.current = Math.max(0, Math.min(1, (db + 60) / 60));
-        rafRef.current = requestAnimationFrame(sample);
-      };
-      rafRef.current = requestAnimationFrame(sample);
-    } catch (err) {
-      logger().warn('voice.capture.level-monitor-failed', { error: err.message });
+  const release = useCallback((owner) => {
+    const capture = owner.capture;
+    owner.capture = null;
+    if (!capture) return;
+    if (capture.timer != null) clearInterval(capture.timer);
+    if (capture.frame != null) cancelAnimationFrame(capture.frame);
+    const recorder = capture.recorder;
+    if (recorder) {
+      recorder.ondataavailable = null;
+      recorder.onstop = null;
+      recorder.onerror = null;
+      if (recorder.state !== 'inactive') {
+        try { recorder.stop(); } catch { /* already stopped */ }
+      }
     }
+    stopTracks(capture.stream);
+    capture.context?.close?.().catch(() => {});
+    levelRef.current = 0;
+    capture.resolve?.(null);
   }, []);
+
+  useLayoutEffect(() => {
+    if (!active) {
+      setIsRecording(false);
+      return;
+    }
+    const owner = { capture: null };
+    ownerRef.current = owner;
+    return () => {
+      ownerRef.current = null;
+      release(owner);
+    };
+  }, [active, release]);
 
   const start = useCallback(async () => {
+    const owner = ownerRef.current;
+    if (!owner || owner.capture) return;
+    const capture = { chunks: [] };
+    owner.capture = capture;
+    const ownsCapture = () => ownerRef.current === owner && owner.capture === capture;
     setError(null);
-    chunksRef.current = [];
     try {
       // Pin the built-in mic and disable EC/NS/AGC so Android uses the MIC source
       // (not VOICE_COMMUNICATION → BT SCO, which captures a silent Bluetooth mic).
       const builtInId = await preferBuiltInMic();
-      const audioConstraints = {
+      if (!ownsCapture()) return;
+      const audio = {
         echoCancellation: false,
         noiseSuppression: false,
         autoGainControl: false,
-        ...(builtInId ? { deviceId: { exact: builtInId } } : {}),
       };
+      const preferredAudio = builtInId ? { ...audio, deviceId: { exact: builtInId } } : audio;
       logger().info('voice.capture.mic-select', { pinnedBuiltIn: !!builtInId });
       let stream;
       try {
-        stream = await navigator.mediaDevices.getUserMedia({ audio: audioConstraints });
+        stream = await navigator.mediaDevices.getUserMedia({ audio: preferredAudio });
       } catch (constraintErr) {
+        if (!ownsCapture()) return;
         // Exact-device constraint can fail (device vanished); retry permissively.
         logger().warn('voice.capture.mic-constraint-fallback', { error: constraintErr.name });
-        stream = await navigator.mediaDevices.getUserMedia({
-          audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false },
-        });
+        stream = await navigator.mediaDevices.getUserMedia({ audio });
       }
-      streamRef.current = stream;
+      // Permission may resolve after the capture owner has gone away.
+      if (!ownsCapture()) { stopTracks(stream); return; }
+      capture.stream = stream;
       const mimeType = pickMime();
-      mimeRef.current = mimeType;
-      const mr = new MediaRecorder(stream, { mimeType });
-      mrRef.current = mr;
-      mr.ondataavailable = (e) => { if (e.data && e.data.size) chunksRef.current.push(e.data); };
-      mr.onstop = () => {
-        const blob = new Blob(chunksRef.current, { type: mimeRef.current });
-        const dur = Date.now() - startRef.current;
-        teardown();
-        setIsRecording(false);
-        logger().info('voice.capture.recorded', { durationMs: dur, bytes: blob.size, mimeType: mimeRef.current });
-        const resolve = resolveRef.current;
-        resolveRef.current = null;
-        if (resolve) resolve({ blob, durationMs: dur, mimeType: mimeRef.current });
+      const recorder = new MediaRecorder(stream, { mimeType });
+      capture.recorder = recorder;
+      recorder.ondataavailable = (e) => {
+        if (ownsCapture() && e.data?.size) capture.chunks.push(e.data);
       };
-      mr.onerror = (e) => { logger().error('voice.capture.recorder-error', { error: e.error?.message || 'unknown' }); };
+      recorder.onstop = () => {
+        if (!ownsCapture()) return;
+        const blob = new Blob(capture.chunks, { type: mimeType });
+        const durationMs = Date.now() - capture.startedAt;
+        const resolve = capture.resolve;
+        capture.resolve = null;
+        release(owner);
+        setIsRecording(false);
+        logger().info('voice.capture.recorded', { durationMs, bytes: blob.size, mimeType });
+        resolve?.({ blob, durationMs, mimeType });
+      };
+      recorder.onerror = (e) => {
+        if (ownsCapture()) logger().error('voice.capture.recorder-error', { error: e.error?.message || 'unknown' });
+      };
 
-      monitorLevel(stream);
-      startRef.current = Date.now();
+      monitorLevel(capture, levelRef);
+      capture.startedAt = Date.now();
       setDurationMs(0);
-      mr.start();
+      recorder.start();
       setIsRecording(true);
-      timerRef.current = setInterval(() => setDurationMs(Date.now() - startRef.current), 200);
+      capture.timer = setInterval(() => setDurationMs(Date.now() - capture.startedAt), 200);
       logger().info('voice.capture.record-start', { mimeType });
     } catch (err) {
+      if (!ownsCapture()) return;
       logger().error('voice.capture.record-start-failed', { error: err.message, name: err.name });
       setError(err.name === 'NotAllowedError' ? 'Microphone permission denied.' : `Mic error: ${err.message}`);
-      teardown();
+      release(owner);
       setIsRecording(false);
     }
-  }, [monitorLevel, teardown]);
+  }, [release]);
 
   // Resolves with the finished recording once MediaRecorder flushes.
   const stop = useCallback(() => new Promise((resolve) => {
-    const mr = mrRef.current;
-    if (!mr || mr.state === 'inactive') { resolve(null); return; }
-    resolveRef.current = resolve;
-    try { mr.requestData(); } catch { /* ignore */ }
-    try { mr.stop(); } catch { resolve(null); }
-  }), []);
+    const owner = ownerRef.current;
+    const capture = owner?.capture;
+    const recorder = capture?.recorder;
+    if (!recorder || recorder.state === 'inactive' || capture.resolve) { resolve(null); return; }
+    capture.resolve = resolve;
+    try { recorder.requestData(); } catch { /* ignore */ }
+    try { recorder.stop(); } catch {
+      release(owner);
+      setIsRecording(false);
+    }
+  }), [release]);
 
   return { isRecording, durationMs, levelRef, error, start, stop };
 }

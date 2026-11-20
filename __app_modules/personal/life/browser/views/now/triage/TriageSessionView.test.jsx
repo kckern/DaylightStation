@@ -207,7 +207,9 @@ describe('TriageSessionView', () => {
     wrap();
     fireEvent.click(screen.getByRole('button', { name: /Stop recording/ }));
     await waitFor(() => expect(screen.getByLabelText('Answer in your own words')).toHaveValue('make a todo'));
-    expect(api).toHaveBeenCalledWith('api/v1/ai/transcribe', { audioBase64: expect.any(String) }, 'POST');
+    expect(api).toHaveBeenCalledWith('api/v1/ai/transcribe', { audioBase64: expect.any(String) }, 'POST', {
+      signal: expect.any(AbortSignal),
+    });
     expect(triage.answer).not.toHaveBeenCalled();
     recorder.isRecording = false;
   });
