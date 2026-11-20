@@ -10,6 +10,8 @@ $sm-seg-hues: (blue, grape, teal, orange, cyan, lime);
   .sm-seg-c#{$i} {
     --sm-seg: var(--mantine-color-#{$hue}-6);
     --sm-seg-tint: var(--mantine-color-#{$hue}-light);
+    // On the white paper the theme's -light tints read muddy; a thin wash of -6 does not.
+    --sm-seg-paper: color-mix(in srgb, var(--mantine-color-#{$hue}-6) 16%, transparent);
   }
 }
 
@@ -117,6 +119,30 @@ $sm-seg-hues: (blue, grape, teal, orange, cyan, lime);
     border-style: dashed;
   }
 
+  &__add {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    min-width: 0;
+    margin: 0 1px;
+    padding: 0 6px;
+    border: 1px dashed var(--mantine-color-yellow-6);
+    border-radius: 4px;
+    background: transparent;
+    color: var(--ds-text-secondary, inherit);
+    font: inherit;
+    font-size: 12px;
+    cursor: pointer;
+    overflow: hidden;
+
+    &:hover, &:focus-visible { color: var(--ds-text-primary, inherit); border-style: solid; }
+  }
+
+  &__handle--edge {
+    border-color: var(--mantine-color-yellow-6);
+    color: var(--mantine-color-yellow-5);
+  }
+
   &__band-text {
     white-space: nowrap;
     overflow: hidden;
@@ -131,7 +157,11 @@ $sm-seg-hues: (blue, grape, teal, orange, cyan, lime);
     background: #fff;
     border-radius: 4px;
     overflow-x: auto;
+    // Room above the first system for its segment labels, which sit above the bar.
+    padding-top: 18px;
   }
+
+  &__page { position: relative; }
 
   &__host { position: relative; }
 
@@ -144,7 +174,7 @@ $sm-seg-hues: (blue, grape, teal, orange, cyan, lime);
   &__box {
     position: absolute;
 
-    &--approved { background: var(--sm-seg-tint); opacity: 0.6; }
+    &--approved { background: var(--sm-seg-paper); }
     &--draft { border: 2px solid var(--sm-seg); border-radius: 3px; }
   }
 

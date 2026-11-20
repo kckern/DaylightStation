@@ -8,8 +8,8 @@ import getLogger from "../../../../../frontend/src/lib/logging/Logger.js";
 import { DaylightAPI, DaylightAPIText } from "../../../../../frontend/src/lib/api.mjs";
 import { osmdRender, buildMeasures, extractMeasureBounds } from "../../../../../__capabilities/music-notation/browser/renderers/osmdRender.js";
 import { parseMusicXml } from "../../../../../__capabilities/music-notation/browser/parseMusicXml.js";
-import { errors as editorErrors, initSegmentEditor, segmentEditorReducer, uncoveredBars } from "./segmentEditor.js";
-import { fillParts, generatedSegments } from "./scorePlan.js";
+import { errors as editorErrors, idForIndex, initSegmentEditor, segmentEditorReducer, uncoveredBars } from "./segmentEditor.js";
+import { fillParts, generatedSegments, householdOverridesSegments } from "./scorePlan.js";
 import MeasureStrip, { SEGMENT_COLORS, barsLabel, segmentLabel } from "./MeasureStrip.jsx";
 import ApproveDialog, { ADMIN_PATH, scoreQuery } from "./ApproveDialog.jsx";
 import "./SheetMusicScore.scss";
@@ -32,6 +32,7 @@ export const FORM_ERROR_MESSAGES = {
   empty: 'Add at least one segment before saving.',
   'bad-measure-count': 'The score has no bars to segment.',
   'not-array': 'The segments could not be read.',
+  'no-notes': 'A segment has no notes for the kiosk to play. Move its edges or remove it.',
 };
 
 const errorCode = (err) => (typeof err?.body?.error === 'string' ? err.body.error : null);
@@ -45,11 +46,18 @@ function pageReducer(state, action) {
 
 function describeError(e) {
   if (e.index === -1) return FORM_ERROR_MESSAGES[e.code] || `The segments are not valid (${e.code}).`;
-  const who = e.id ? `Segment ${e.id}` : `Segment ${e.index + 1}`;
+  // Errors index the sorted segment list, so the position is what a grown-up sees.
+  const who = `Segment ${e.index + 1}`;
   return `${who} ${SEGMENT_ERROR_MESSAGES[e.code] || `is not valid (${e.code})`}.`;
 }
 
-/** Tinted boxes over the engraving, one per layout measure, coloured per segment. */
+/**
+ * Tinted boxes over the engraving, one per layout measure, coloured per segment.
+ * A layout position maps to its engraved bar through `measures[i].index` (the source
+ * measure), which differs from `i` when an all-rest bar has no onsets or a repeat
+ * plays a bar twice. A repeated bar's positions share one engraved bar, so their
+ * boxes stack on the same spot.
+ */
 function SegmentOverlay({ segments, measures, bounds, variant }) {
   const boxes = [];
   segments.forEach((s, index) => {
@@ -63,7 +71,7 @@ function SegmentOverlay({ segments, measures, bounds, variant }) {
           className={`sm-score__box sm-score__box--${variant} sm-seg-c${index % SEGMENT_COLORS}`}
           style={{ left: b.left, top: b.top, width: b.right - b.left, height: b.bottom - b.top }}
         >
-          {i === s.start ? <span className="sm-score__box-label">{segmentLabel(s)}</span> : null}
+          {i === s.start ? <span className="sm-score__box-label">{segmentLabel(s, index)}</span> : null}
         </div>,
       );
     }
@@ -99,8 +107,11 @@ export default function SheetMusicScore() {
   const [dialog, setDialog] = useState(null);
   const [reloadKey, setReloadKey] = useState(0);
   const hostRef = useRef(null);
-  const alive = useRef(true);
-  useEffect(() => () => { alive.current = false; }, []);
+  const alive = useRef(false);
+  useEffect(() => {
+    alive.current = true;
+    return () => { alive.current = false; };
+  }, []);
 
   useEffect(() => { logger.info('admin.sheetmusic.score-mounted', { id }); }, [logger, id]);
 
@@ -186,7 +197,7 @@ export default function SheetMusicScore() {
     if (!score || pianoConfig === undefined) return null;
     try { return generatedSegments({ score, pianoConfig, scoreId: id }); } catch (err) {
       logger.warn('admin.sheetmusic.generate-failed', { id, error: err?.message });
-      return [];
+      return null;
     }
   }, [score, pianoConfig, id, logger]);
 
@@ -228,8 +239,14 @@ export default function SheetMusicScore() {
   const uncovered = editing ? uncoveredBars(editor) : [];
   const canWrite = editing && allErrors.length === 0 && Boolean(parts?.segments) && !busy;
 
+  const hasGenerated = Boolean(generated?.length);
+  const pieceOverride = useMemo(() => householdOverridesSegments(pianoConfig, id), [pianoConfig, id]);
+
   const startEdit = () => {
-    const source = hasApproved ? approved : (generated || []);
+    // Generated ids (`m0-3`) describe bars, which stop being true once edited; a
+    // draft starts from a, b, c like any hand-made one.
+    const source = hasApproved ? approved
+      : (generated || []).map((s, i) => ({ ...s, id: idForIndex(i) }));
     dispatch({ type: 'load', segments: source, measureCount });
     setBaseline(null);
     setEditing(true);
@@ -293,8 +310,10 @@ export default function SheetMusicScore() {
     if (revision) setNotice({ color: 'teal', text: 'Draft saved. The kiosk still plays the approved segments until you approve.' });
   };
 
-  // Approve always reviews what is on disk: save first, then show the impact.
+  // Approve reviews what is on disk: an unchanged stored draft goes straight to the
+  // impact; edits are saved first.
   const onApprove = async () => {
+    if (hasDraft && !dirty) { setDialog('approve'); return; }
     const revision = await saveDraft();
     if (revision) setDialog('approve');
   };
@@ -323,7 +342,7 @@ export default function SheetMusicScore() {
   const viewSegments = hasApproved ? approved : (generated || []);
   const viewTitle = !hasApproved ? 'Generated segments (what the kiosk plays now)'
     : learn?.stale ? 'Approved segments (stale: the kiosk ignores them)' : 'Approved segments (what the kiosk plays)';
-  const errorIds = segmentErrors.map((e) => e.id).filter(Boolean);
+  const errorIds = segmentErrors.map((e) => editor.segments[e.index]?.id).filter(Boolean);
 
   return (
     <Stack gap="sm" p="md" className="sm-score">
@@ -360,6 +379,13 @@ export default function SheetMusicScore() {
         </Alert>
       ) : null}
 
+      {pieceOverride ? (
+        <Alert color="orange" variant="light" icon={<IconAlertTriangle size={16} />} data-testid="piece-override">
+          Household config overrides approved segments for this piece (sheetmusic.learn.pieces). The kiosk plays those
+          segments whatever is approved here, until that entry is removed.
+        </Alert>
+      ) : null}
+
       {notice ? (
         <Alert color={notice.color} variant="light" withCloseButton onClose={() => setNotice(null)}>{notice.text}</Alert>
       ) : null}
@@ -379,12 +405,12 @@ export default function SheetMusicScore() {
               </Button>
             </>
           ) : (
-            <Button size="sm" leftSection={<IconPencil size={16} />} onClick={startEdit} disabled={!generated && !hasApproved}>
+            <Button size="sm" leftSection={<IconPencil size={16} />} onClick={startEdit} disabled={!hasGenerated && !hasApproved}>
               Edit
             </Button>
           )}
           {hasApproved ? (
-            <Button size="sm" variant="light" color="orange" leftSection={<IconArrowBackUp size={16} />} onClick={() => setDialog('revert')} disabled={Boolean(busy) || !generated}>
+            <Button size="sm" variant="light" color="orange" leftSection={<IconArrowBackUp size={16} />} onClick={() => setDialog('revert')} disabled={Boolean(busy) || !hasGenerated}>
               Revert to generated
             </Button>
           ) : null}
@@ -427,7 +453,6 @@ export default function SheetMusicScore() {
                 dispatch={dispatch}
                 variant="draft"
                 title="Draft"
-                uncovered={uncovered}
                 errorIds={errorIds}
                 selectedId={selectedId}
                 onSelect={setSelectedId}
@@ -440,7 +465,6 @@ export default function SheetMusicScore() {
               segments={viewSegments}
               variant={hasApproved ? 'approved' : 'generated'}
               title={viewTitle}
-              uncovered={uncoveredBars({ segments: viewSegments, measureCount })}
             />
           )}
         </Stack>
@@ -448,13 +472,15 @@ export default function SheetMusicScore() {
 
       {!loadFailed && !engraved ? <Skeleton height={320} radius="sm" data-testid="score-loading" /> : null}
       <div className="sm-score__sheet" style={engraved ? undefined : { visibility: 'hidden', height: 0, overflow: 'hidden' }}>
-        <div className="sm-score__host" ref={hostRef} data-testid="score-host" />
-        {engraved ? (
-          <div className="sm-score__overlay" aria-hidden="true">
-            <SegmentOverlay segments={editing ? approved : viewSegments} measures={measures} bounds={engraved.bounds} variant="approved" />
-            {editing ? <SegmentOverlay segments={editor.segments} measures={measures} bounds={engraved.bounds} variant="draft" /> : null}
-          </div>
-        ) : null}
+        <div className="sm-score__page">
+          <div className="sm-score__host" ref={hostRef} data-testid="score-host" />
+          {engraved ? (
+            <div className="sm-score__overlay" aria-hidden="true" data-testid="score-overlay">
+              <SegmentOverlay segments={editing ? approved : viewSegments} measures={measures} bounds={engraved.bounds} variant="approved" />
+              {editing ? <SegmentOverlay segments={editor.segments} measures={measures} bounds={engraved.bounds} variant="draft" /> : null}
+            </div>
+          ) : null}
+        </div>
       </div>
 
       <ApproveDialog

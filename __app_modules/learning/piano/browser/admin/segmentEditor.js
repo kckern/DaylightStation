@@ -127,6 +127,42 @@ function remove(state, id) {
   return withSegments(state, state.segments.filter((s) => s.id !== id));
 }
 
+/** A new segment over [start, end]; refused when it leaves the score or overlaps one. */
+function addSegment(state, start, end) {
+  const n = state.measureCount;
+  if (!Number.isInteger(start) || !Number.isInteger(end) || start > end) return state;
+  if (start < 0 || !Number.isInteger(n) || end >= n) return state;
+  if (state.segments.some((s) => s.start <= end && start <= s.end)) return state;
+  return withSegments(state, [...state.segments, { id: nextSegmentId(state.segments), start, end }]);
+}
+
+/**
+ * Moves one edge of a segment (`edge` 'start' or 'end') to `to`, clamped so the
+ * segment keeps one bar, stays inside the score and never reaches a neighbour.
+ * For an edge bordering uncovered bars; between touching segments use moveBoundary.
+ */
+function moveEdge(state, id, edge, to) {
+  if (!Number.isInteger(to) || (edge !== 'start' && edge !== 'end')) return state;
+  const idx = state.segments.findIndex((s) => s.id === id);
+  if (idx < 0) return state;
+  const seg = state.segments[idx];
+  const prev = state.segments[idx - 1];
+  const next = state.segments[idx + 1];
+  const n = Number.isInteger(state.measureCount) ? state.measureCount : seg.end + 1;
+  let moved;
+  if (edge === 'end') {
+    const max = next ? next.start - 1 : n - 1;
+    moved = { ...seg, end: Math.min(Math.max(to, seg.start), max) };
+  } else {
+    const min = prev ? prev.end + 1 : 0;
+    moved = { ...seg, start: Math.max(Math.min(to, seg.end), min) };
+  }
+  if (moved.start === seg.start && moved.end === seg.end) return state;
+  const list = [...state.segments];
+  list[idx] = moved;
+  return withSegments(state, list);
+}
+
 function cover(state) {
   const n = state.measureCount;
   if (!Number.isInteger(n) || n < 1) return { ...state, segments: [] };
@@ -143,6 +179,8 @@ export function segmentEditorReducer(state, action) {
     case 'replace': return { ...state, segments: normalizeSegments(a.segments) };
     case 'cover': return cover(state);
     case 'remove': return remove(state, a.id);
+    case 'addSegment': return addSegment(state, a.start, a.end);
+    case 'moveEdge': return moveEdge(state, a.id, a.edge, a.to);
     case 'setParts': return setParts(state, a.id, a.parts);
     default: return state;
   }

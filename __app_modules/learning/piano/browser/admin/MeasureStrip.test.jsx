@@ -8,7 +8,7 @@ import { initSegmentEditor, segmentEditorReducer } from "./segmentEditor.js";
 // Printed numbers start at 0 (a pickup) so labels and positions differ.
 const MEASURES = Array.from({ length: 8 }, (_, i) => ({ index: i, number: i, firstStep: i, lastStep: i }));
 
-function Harness({ segments, onAction, uncovered }) {
+function Harness({ segments, onAction }) {
   const [state, dispatch] = useReducer(segmentEditorReducer, { segments, measureCount: MEASURES.length }, initSegmentEditor);
   const [selectedId, setSelectedId] = useState(null);
   const spy = (action) => { onAction(action); dispatch(action); };
@@ -21,7 +21,6 @@ function Harness({ segments, onAction, uncovered }) {
         dispatch={spy}
         selectedId={selectedId}
         onSelect={setSelectedId}
-        uncovered={uncovered}
       />
       <output data-testid="state">{JSON.stringify(state.segments.map(({ id, start, end, name }) => [id, start, end, name ?? null]))}</output>
     </>
@@ -58,6 +57,7 @@ describe('MeasureStrip', () => {
   it('shows a boundary handle between touching segments, moved with the arrow keys', () => {
     const onAction = renderStrip([{ id: 'a', start: 0, end: 3 }, { id: 'b', start: 4, end: 7 }]);
     const handle = screen.getByRole('button', { name: 'Move boundary after bar 3' });
+    expect(handle.getAttribute('aria-keyshortcuts')).toBe('ArrowLeft ArrowRight');
     fireEvent.keyDown(handle, { key: 'ArrowRight' });
     expect(onAction).toHaveBeenLastCalledWith({ type: 'moveBoundary', leftId: 'a', newEnd: 4 });
     expect(state()).toEqual([['a', 0, 4, null], ['b', 5, 7, null]]);
@@ -91,14 +91,15 @@ describe('MeasureStrip', () => {
 
   it('band actions merge, rename and remove', () => {
     const onAction = renderStrip([{ id: 'a', start: 0, end: 3 }, { id: 'b', start: 4, end: 7 }]);
-    fireEvent.click(screen.getByRole('button', { name: 'Segment a, Bars 0-3' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Segment 1, Bars 0-3' }));
+    expect(document.activeElement).toBe(screen.getByLabelText('Name')); // keyboard lands on the actions
     fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Opening' } });
     fireEvent.keyDown(screen.getByLabelText('Name'), { key: 'Enter' });
     expect(onAction).toHaveBeenLastCalledWith({ type: 'rename', id: 'a', name: 'Opening' });
-    fireEvent.click(screen.getByRole('button', { name: 'Merge with Segment b' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Merge with Segment 2' }));
     expect(onAction).toHaveBeenLastCalledWith({ type: 'merge', id: 'a' });
     expect(state()).toEqual([['a', 0, 7, 'Opening']]);
-    fireEvent.click(screen.getByRole('button', { name: 'Remove segment a' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Remove segment 1' }));
     expect(onAction).toHaveBeenLastCalledWith({ type: 'remove', id: 'a' });
     expect(state()).toEqual([]);
   });
@@ -106,12 +107,49 @@ describe('MeasureStrip', () => {
   it('hatches uncovered bars and offers no controls when read-only', () => {
     render(
       <MantineProvider>
-        <MeasureStrip measures={MEASURES} segments={[{ id: 'a', start: 1, end: 7 }]} uncovered={[0]} variant="approved" />
+        <MeasureStrip measures={MEASURES} segments={[{ id: 'a', start: 1, end: 7 }]} variant="approved" />
       </MantineProvider>,
     );
     const cell = document.querySelector('[data-measure-cell="0"]');
     expect(cell.className).toContain('sm-strip__cell--uncovered');
     expect(screen.queryAllByRole('button')).toEqual([]);
-    expect(screen.getByRole('img', { name: 'Segment a, Bars 1-7' })).toBeTruthy();
+    expect(screen.getByRole('img', { name: 'Segment 1, Bars 1-7' })).toBeTruthy();
+  });
+
+  it('labels bands by position, with the name when there is one', () => {
+    renderStrip([{ id: 'q', start: 0, end: 3, name: 'Theme' }, { id: 'c', start: 4, end: 7 }]);
+    expect(screen.getByRole('button', { name: 'Theme, Bars 0-3' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Segment 2, Bars 4-7' })).toBeTruthy();
+  });
+
+  it('removes a segment and covers the gap again with Add segment', () => {
+    const onAction = renderStrip([{ id: 'a', start: 0, end: 3 }, { id: 'b', start: 4, end: 7 }]);
+    fireEvent.click(screen.getByRole('button', { name: 'Segment 2, Bars 4-7' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Remove segment 2' }));
+    expect(document.querySelector('[data-measure-cell="5"]').className).toContain('sm-strip__cell--uncovered');
+    fireEvent.click(screen.getByRole('button', { name: 'Add segment over bars 4-7' }));
+    expect(onAction).toHaveBeenLastCalledWith({ type: 'addSegment', start: 4, end: 7 });
+    expect(state()).toEqual([['a', 0, 3, null], ['b', 4, 7, null]]);
+  });
+
+  it('offers one Add segment over a fully empty strip', () => {
+    const onAction = renderStrip([]);
+    fireEvent.click(screen.getByRole('button', { name: 'Add segment over bars 0-7' }));
+    expect(onAction).toHaveBeenLastCalledWith({ type: 'addSegment', start: 0, end: 7 });
+    expect(state()).toEqual([['a', 0, 7, null]]);
+  });
+
+  it('moves a segment edge into and out of a neighbouring gap', () => {
+    const onAction = renderStrip([{ id: 'a', start: 0, end: 2 }, { id: 'b', start: 6, end: 7 }]);
+    expect(screen.getAllByRole('button', { name: 'Add segment over bars 3-5' })).toHaveLength(1);
+    const end = screen.getByRole('button', { name: 'Move end of segment 1 after bar 2' });
+    fireEvent.keyDown(end, { key: 'ArrowRight' });
+    expect(onAction).toHaveBeenLastCalledWith({ type: 'moveEdge', id: 'a', edge: 'end', to: 3 });
+    expect(state()).toEqual([['a', 0, 3, null], ['b', 6, 7, null]]);
+    expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Move end of segment 1 after bar 3' }));
+    const start = screen.getByRole('button', { name: 'Move start of segment 2 before bar 6' });
+    fireEvent.keyDown(start, { key: 'ArrowLeft' });
+    expect(onAction).toHaveBeenLastCalledWith({ type: 'moveEdge', id: 'b', edge: 'start', to: 5 });
+    expect(state()).toEqual([['a', 0, 3, null], ['b', 5, 7, null]]);
   });
 });

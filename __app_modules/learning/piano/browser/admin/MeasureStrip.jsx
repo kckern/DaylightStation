@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ActionIcon, Button, Group, Text, TextInput, Tooltip } from '@mantine/core';
-import { IconArrowsHorizontal, IconGitMerge, IconScissors, IconTrash } from '@tabler/icons-react';
+import { IconArrowsHorizontal, IconGitMerge, IconPlus, IconScissors, IconTrash } from '@tabler/icons-react';
 
 /** How many tint colours the strip and the engraving overlay cycle through. */
 export const SEGMENT_COLORS = 6;
@@ -15,14 +15,37 @@ export const barsLabel = (measures, start, end) => (start === end
   ? `Bar ${printedNumber(measures, start)}`
   : `Bars ${printedNumber(measures, start)}-${printedNumber(measures, end)}`);
 
-export const segmentLabel = (segment) => segment.name || `Segment ${segment.id}`;
+/**
+ * What a grown-up calls a segment: its name, else its position ("Segment 2"), the
+ * way the kiosk labels it. Ids stay internal to the editor.
+ */
+export const segmentLabel = (segment, index) => segment?.name || `Segment ${index + 1}`;
+
+/** Runs of consecutive measure positions no segment covers, as [start, end]. */
+export function uncoveredRuns(segments, measureCount) {
+  const covered = new Array(Math.max(measureCount, 0)).fill(false);
+  for (const s of segments) {
+    if (!Number.isInteger(s.start) || !Number.isInteger(s.end)) continue;
+    for (let i = Math.max(s.start, 0); i <= Math.min(s.end, measureCount - 1); i += 1) covered[i] = true;
+  }
+  const runs = [];
+  covered.forEach((c, i) => {
+    if (c) return;
+    const last = runs[runs.length - 1];
+    if (last && last[1] === i - 1) last[1] = i;
+    else runs.push([i, i]);
+  });
+  return runs;
+}
 
 /**
  * One cell per layout measure with the segments as bands. Editable strips put a
- * control in every barline gap: a split button inside a segment, a boundary handle
- * between two touching segments (drag it, or focus it and use the arrow keys).
- * Selecting a band opens its actions below the strip: rename, merge with the next
- * segment, remove. Every change goes out as a segmentEditor action via `dispatch`.
+ * control in every barline gap: a split button inside a segment, a handle between
+ * two touching segments, and a handle on a segment edge that borders uncovered bars
+ * (drag a handle, or focus it and use the arrow keys). Each run of uncovered bars
+ * gets an "Add segment" button that covers it. Selecting a band opens its actions
+ * below the strip: rename, merge with the next segment, remove. Every change goes
+ * out as a segmentEditor action via `dispatch`.
  */
 export default function MeasureStrip({
   measures = [],
@@ -31,28 +54,27 @@ export default function MeasureStrip({
   dispatch,
   variant = 'draft',
   title,
-  uncovered = [],
   errorIds = [],
   selectedId = null,
   onSelect,
 }) {
   const gridRef = useRef(null);
-  const [dragLeftId, setDragLeftId] = useState(null);
-  // A moved boundary renders its handle in another cell (a new element), so focus
-  // follows it by id after a keyboard move.
+  // { kind: 'boundary'|'end'|'start', id } while a handle is being dragged.
+  const [drag, setDrag] = useState(null);
+  // A moved edge renders its handle in another cell (a new element), so focus
+  // follows it by key after a keyboard move.
   const refocusRef = useRef(null);
-  const uncoveredSet = new Set(uncovered);
-  const errorSet = new Set(errorIds);
   const n = measures.length;
+  const runs = uncoveredRuns(segments, n);
+  const uncoveredSet = new Set(runs.flatMap(([a, b]) => Array.from({ length: b - a + 1 }, (_, k) => a + k)));
+  const errorSet = new Set(errorIds);
+  const position = (s) => segments.indexOf(s);
   const send = (action) => { if (editable && dispatch) dispatch(action); };
 
-  /** The touching pair whose boundary sits after measure `i`, or null. */
-  const boundaryAt = (i) => {
-    const left = segments.find((s) => s.end === i);
-    const right = left && segments.find((s) => s.start === i + 1);
-    return right ? left : null;
-  };
-  const spanning = (i) => segments.find((s) => s.start <= i && i < s.end);
+  /** The action that puts the dragged/keyed edge at the barline after measure k. */
+  const moveTo = (kind, id, k) => (kind === 'boundary'
+    ? { type: 'moveBoundary', leftId: id, newEnd: k }
+    : { type: 'moveEdge', id, edge: kind, to: kind === 'end' ? k : k + 1 });
 
   /** Nearest barline (the gap after measure k) to a pointer x, read from the cells. */
   const nearestBarline = useCallback((clientX) => {
@@ -68,73 +90,79 @@ export default function MeasureStrip({
   }, []);
 
   const onPointerMove = (event) => {
-    if (!dragLeftId) return;
+    if (!drag) return;
     const k = nearestBarline(event.clientX);
-    const left = segments.find((s) => s.id === dragLeftId);
-    if (k == null || !left || k === left.end) return;
-    send({ type: 'moveBoundary', leftId: dragLeftId, newEnd: k });
+    const seg = segments.find((s) => s.id === drag.id);
+    if (k == null || !seg) return;
+    const current = drag.kind === 'start' ? seg.start - 1 : seg.end;
+    if (k === current) return;
+    send(moveTo(drag.kind, drag.id, k));
   };
-  const endDrag = () => setDragLeftId(null);
 
-  // The handle under the pointer is replaced as the boundary moves, so the drag
-  // ends on the window's pointerup rather than on the element that started it.
+  // The handle under the pointer is replaced as the edge moves, so the drag ends on
+  // the window's pointerup rather than on the element that started it.
   useEffect(() => {
-    if (!dragLeftId) return undefined;
-    const stop = () => setDragLeftId(null);
+    if (!drag) return undefined;
+    const stop = () => setDrag(null);
     window.addEventListener('pointerup', stop);
     window.addEventListener('pointercancel', stop);
     return () => {
       window.removeEventListener('pointerup', stop);
       window.removeEventListener('pointercancel', stop);
     };
-  }, [dragLeftId]);
+  }, [drag]);
 
   useEffect(() => {
-    const id = refocusRef.current;
-    if (!id) return;
+    const key = refocusRef.current;
+    if (!key) return;
     refocusRef.current = null;
-    gridRef.current?.querySelector(`[data-boundary-left="${CSS.escape(id)}"]`)?.focus();
+    gridRef.current?.querySelector(`[data-handle="${CSS.escape(key)}"]`)?.focus();
   });
 
-  const handleKey = (left) => (event) => {
-    const step = event.key === 'ArrowLeft' ? -1 : event.key === 'ArrowRight' ? 1 : 0;
-    if (!step) return;
-    event.preventDefault();
-    refocusRef.current = left.id;
-    send({ type: 'moveBoundary', leftId: left.id, newEnd: left.end + step });
+  const handle = (kind, seg, k, label) => {
+    const key = `${kind}:${seg.id}`;
+    const onKeyDown = (event) => {
+      const step = event.key === 'ArrowLeft' ? -1 : event.key === 'ArrowRight' ? 1 : 0;
+      if (!step) return;
+      event.preventDefault();
+      refocusRef.current = key;
+      send(moveTo(kind, seg.id, k + step));
+    };
+    return (
+      <Tooltip label="Drag, or use the arrow keys" withArrow openDelay={400}>
+        <button
+          type="button"
+          className={`sm-strip__handle${kind === 'boundary' ? '' : ' sm-strip__handle--edge'}`}
+          data-handle={key}
+          aria-label={label}
+          aria-keyshortcuts="ArrowLeft ArrowRight"
+          onPointerDown={(event) => {
+            event.preventDefault();
+            event.currentTarget.setPointerCapture?.(event.pointerId);
+            setDrag({ kind, id: seg.id });
+          }}
+          onKeyDown={onKeyDown}
+        >
+          <IconArrowsHorizontal size={12} />
+        </button>
+      </Tooltip>
+    );
   };
 
   const gapControl = (i) => {
     if (!editable || i >= n - 1) return null;
-    const left = boundaryAt(i);
-    if (left) {
-      return (
-        <Tooltip label="Drag, or use the arrow keys" withArrow openDelay={400}>
-          <button
-            type="button"
-            className="sm-strip__handle"
-            data-boundary-left={left.id}
-            aria-label={`Move boundary after bar ${printedNumber(measures, i)}`}
-            onPointerDown={(event) => {
-              event.preventDefault();
-              event.currentTarget.setPointerCapture?.(event.pointerId);
-              setDragLeftId(left.id);
-            }}
-            onPointerUp={endDrag}
-            onPointerCancel={endDrag}
-            onKeyDown={handleKey(left)}
-          >
-            <IconArrowsHorizontal size={12} />
-          </button>
-        </Tooltip>
-      );
-    }
-    if (spanning(i)) {
+    const left = segments.find((s) => s.end === i);
+    const right = segments.find((s) => s.start === i + 1);
+    const bar = printedNumber(measures, i);
+    if (left && right) return handle('boundary', left, i, `Move boundary after bar ${bar}`);
+    if (left) return handle('end', left, i, `Move end of segment ${position(left) + 1} after bar ${bar}`);
+    if (right) return handle('start', right, i, `Move start of segment ${position(right) + 1} before bar ${printedNumber(measures, i + 1)}`);
+    if (segments.some((s) => s.start <= i && i < s.end)) {
       return (
         <button
           type="button"
           className="sm-strip__split"
-          aria-label={`Split after bar ${printedNumber(measures, i)}`}
+          aria-label={`Split after bar ${bar}`}
           onClick={() => send({ type: 'split', atBarline: i })}
         >
           <IconScissors size={11} />
@@ -145,7 +173,7 @@ export default function MeasureStrip({
   };
 
   const selected = segments.find((s) => s.id === selectedId) || null;
-  const selectedIndex = selected ? segments.indexOf(selected) : -1;
+  const selectedIndex = selected ? position(selected) : -1;
   const next = selected ? segments[selectedIndex + 1] : null;
   const canMerge = Boolean(next && next.start === selected.end + 1);
 
@@ -180,7 +208,7 @@ export default function MeasureStrip({
               s.id === selectedId ? 'sm-strip__band--selected' : '',
               errorSet.has(s.id) ? 'sm-strip__band--error' : '',
             ].filter(Boolean).join(' ');
-            const label = `${segmentLabel(s)}, ${barsLabel(measures, s.start, s.end)}`;
+            const label = `${segmentLabel(s, index)}, ${barsLabel(measures, s.start, s.end)}`;
             const style = { gridColumn: `${s.start + 1} / ${s.end + 2}`, gridRow: 2 };
             return editable ? (
               <button
@@ -192,23 +220,37 @@ export default function MeasureStrip({
                 aria-pressed={s.id === selectedId}
                 onClick={() => onSelect?.(s.id === selectedId ? null : s.id)}
               >
-                <span className="sm-strip__band-text">{segmentLabel(s)}</span>
+                <span className="sm-strip__band-text">{segmentLabel(s, index)}</span>
               </button>
             ) : (
               <div key={s.id} className={classes} style={style} aria-label={label} role="img">
-                <span className="sm-strip__band-text">{segmentLabel(s)}</span>
+                <span className="sm-strip__band-text">{segmentLabel(s, index)}</span>
               </div>
             );
           })}
+          {editable ? runs.map(([start, end]) => (
+            <button
+              key={`add-${start}`}
+              type="button"
+              className="sm-strip__add"
+              style={{ gridColumn: `${start + 1} / ${end + 2}`, gridRow: 2 }}
+              aria-label={`Add segment over ${barsLabel(measures, start, end).toLowerCase()}`}
+              onClick={() => send({ type: 'addSegment', start, end })}
+            >
+              <IconPlus size={12} />
+              <span className="sm-strip__band-text">Add segment</span>
+            </button>
+          )) : null}
         </div>
       </div>
       {editable && selected ? (
         <SegmentActions
           key={selected.id}
           segment={selected}
+          index={selectedIndex}
           measures={measures}
           canMerge={canMerge}
-          next={next}
+          nextLabel={next ? segmentLabel(next, selectedIndex + 1) : null}
           onRename={(name) => send({ type: 'rename', id: selected.id, name })}
           onMerge={() => send({ type: 'merge', id: selected.id })}
           onRemove={() => { send({ type: 'remove', id: selected.id }); onSelect?.(null); }}
@@ -218,14 +260,18 @@ export default function MeasureStrip({
   );
 }
 
-function SegmentActions({ segment, measures, canMerge, next, onRename, onMerge, onRemove }) {
+function SegmentActions({ segment, index, measures, canMerge, nextLabel, onRename, onMerge, onRemove }) {
   const [name, setName] = useState(segment.name || '');
+  const inputRef = useRef(null);
+  // Selecting a band moves the keyboard to its actions.
+  useEffect(() => { inputRef.current?.focus(); }, []);
   const commit = () => { if ((segment.name || '') !== name.trim()) onRename(name); };
   return (
     <Group className="sm-strip__actions" gap="xs" align="flex-end" mt="xs" wrap="wrap">
-      <Text size="sm" fw={600}>{`Segment ${segment.id}`}</Text>
+      <Text size="sm" fw={600}>{`Segment ${index + 1}`}</Text>
       <Text size="sm" c="dimmed">{barsLabel(measures, segment.start, segment.end)}</Text>
       <TextInput
+        ref={inputRef}
         size="xs"
         label="Name"
         placeholder="Optional"
@@ -241,9 +287,9 @@ function SegmentActions({ segment, measures, canMerge, next, onRename, onMerge, 
         disabled={!canMerge}
         onClick={onMerge}
       >
-        {canMerge ? `Merge with ${segmentLabel(next)}` : 'Merge with next'}
+        {canMerge ? `Merge with ${nextLabel}` : 'Merge with next'}
       </Button>
-      <ActionIcon variant="default" size="md" aria-label={`Remove segment ${segment.id}`} onClick={onRemove}>
+      <ActionIcon variant="default" size="md" aria-label={`Remove segment ${index + 1}`} onClick={onRemove}>
         <IconTrash size={14} />
       </ActionIcon>
     </Group>

@@ -273,3 +273,61 @@ describe('errors', () => {
     expect(errors(make([{ id: 'a', start: 0, end: 0 }], 0))).toEqual([{ code: 'bad-measure-count', id: null, index: -1 }]);
   });
 });
+
+describe('addSegment', () => {
+  it('covers a gap with a new segment under the next free id', () => {
+    const s = reduce(make([{ id: 'a', start: 0, end: 3 }, { id: 'c', start: 7, end: 9 }]), { type: 'addSegment', start: 4, end: 6 });
+    expect(ranges(s)).toEqual([['a', 0, 3], ['b', 4, 6], ['c', 7, 9]]);
+    expect(errors(s)).toEqual([]);
+  });
+  it('starts an empty editor', () => {
+    const s = reduce(make([], 6), { type: 'addSegment', start: 0, end: 5 });
+    expect(ranges(s)).toEqual([['a', 0, 5]]);
+    expect(uncoveredBars(s)).toEqual([]);
+  });
+  it('round-trips with remove', () => {
+    const start = make([{ id: 'a', start: 0, end: 4 }, { id: 'b', start: 5, end: 9 }]);
+    const removed = reduce(start, { type: 'remove', id: 'b' });
+    expect(uncoveredBars(removed)).toEqual([5, 6, 7, 8, 9]);
+    const added = reduce(removed, { type: 'addSegment', start: 5, end: 9 });
+    expect(ranges(added)).toEqual([['a', 0, 4], ['b', 5, 9]]);
+  });
+  it.each([
+    ['overlap', 3, 6],
+    ['reversed', 6, 5],
+    ['out of range', 8, 10],
+    ['negative', -1, 2],
+    ['not integers', 4.5, 6],
+  ])('is a no-op when %s', (_label, start, end) => {
+    const state = make([{ id: 'a', start: 0, end: 3 }]);
+    expect(reduce(state, { type: 'addSegment', start, end })).toBe(state);
+  });
+});
+
+describe('moveEdge', () => {
+  const gap = () => make([{ id: 'a', start: 0, end: 3 }, { id: 'b', start: 7, end: 9 }]);
+  it('extends an end into the gap, stopping at the neighbour', () => {
+    expect(ranges(reduce(gap(), { type: 'moveEdge', id: 'a', edge: 'end', to: 5 }))).toEqual([['a', 0, 5], ['b', 7, 9]]);
+    expect(ranges(reduce(gap(), { type: 'moveEdge', id: 'a', edge: 'end', to: 9 }))).toEqual([['a', 0, 6], ['b', 7, 9]]);
+  });
+  it('shrinks an end but keeps one bar', () => {
+    expect(ranges(reduce(gap(), { type: 'moveEdge', id: 'a', edge: 'end', to: -4 }))).toEqual([['a', 0, 0], ['b', 7, 9]]);
+  });
+  it('moves a start into the gap, stopping at the neighbour', () => {
+    expect(ranges(reduce(gap(), { type: 'moveEdge', id: 'b', edge: 'start', to: 5 }))).toEqual([['a', 0, 3], ['b', 5, 9]]);
+    expect(ranges(reduce(gap(), { type: 'moveEdge', id: 'b', edge: 'start', to: 0 }))).toEqual([['a', 0, 3], ['b', 4, 9]]);
+    expect(ranges(reduce(gap(), { type: 'moveEdge', id: 'b', edge: 'start', to: 12 }))).toEqual([['a', 0, 3], ['b', 9, 9]]);
+  });
+  it('clamps to the score', () => {
+    const s = make([{ id: 'a', start: 2, end: 5 }], 8);
+    expect(ranges(reduce(s, { type: 'moveEdge', id: 'a', edge: 'end', to: 20 }))).toEqual([['a', 2, 7]]);
+    expect(ranges(reduce(s, { type: 'moveEdge', id: 'a', edge: 'start', to: -3 }))).toEqual([['a', 0, 5]]);
+  });
+  it('is a no-op for unknown ids, bad edges and unchanged positions', () => {
+    const s = gap();
+    expect(reduce(s, { type: 'moveEdge', id: 'z', edge: 'end', to: 5 })).toBe(s);
+    expect(reduce(s, { type: 'moveEdge', id: 'a', edge: 'middle', to: 5 })).toBe(s);
+    expect(reduce(s, { type: 'moveEdge', id: 'a', edge: 'end', to: 3 })).toBe(s);
+    expect(reduce(s, { type: 'moveEdge', id: 'a', edge: 'end', to: 'x' })).toBe(s);
+  });
+});

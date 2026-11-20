@@ -5,6 +5,28 @@
  * tempoMap, tempo }` built from the same engraving.
  */
 import { resolveLearnPlan } from '../PianoKiosk/modes/SheetMusic/resolveLearnPlan.js';
+import { resolvePianoConfig } from '../PianoKiosk/pianoConfigModel.js';
+
+/**
+ * `sheetmusic.learn` as a kiosk would resolve it from the household piano config
+ * (`parsed` of the admin apps endpoint), through the kiosk's own resolvePianoConfig.
+ * The admin is not on a piano, so it reads as the single configured piano when there
+ * is exactly one under `pianos`, else as 'default' (the shared top level). A
+ * per-piano `sheetmusic` block replaces the shared one there too.
+ */
+export function householdLearnConfig(pianoConfig) {
+  if (!pianoConfig || typeof pianoConfig !== 'object') return undefined;
+  const ids = Object.keys(pianoConfig.pianos || {});
+  const pianoId = ids.length === 1 ? ids[0] : 'default';
+  const learn = resolvePianoConfig(pianoConfig, pianoId).sheetmusic?.learn;
+  return learn && typeof learn === 'object' ? learn : undefined;
+}
+
+/** True when household config sets this piece's segments, which win over an approved file. */
+export function householdOverridesSegments(pianoConfig, scoreId) {
+  const segments = householdLearnConfig(pianoConfig)?.pieces?.[scoreId]?.segments;
+  return Array.isArray(segments) && segments.length > 0;
+}
 
 const toEditorSegment = (s) => ({
   id: s.id,
@@ -17,13 +39,12 @@ const toEditorSegment = (s) => ({
 /**
  * The segments the kiosk plays with no approved Learn file: household
  * `sheetmusic.learn` defaults and the piece's own layer, nothing from the score file.
- * `pianoConfig` is the household piano config (`parsed` of the admin apps endpoint);
- * without one the kiosk's built-in defaults apply.
+ * Without household config the kiosk's built-in defaults apply.
  */
 export function generatedSegments({ score, pianoConfig, scoreId }) {
-  const learn = pianoConfig?.sheetmusic?.learn;
+  const learn = householdLearnConfig(pianoConfig);
   const plan = resolveLearnPlan({
-    ...(learn && typeof learn === 'object' ? { defaults: learn } : {}),
+    ...(learn ? { defaults: learn } : {}),
     piece: learn?.pieces?.[scoreId],
     score,
   });
