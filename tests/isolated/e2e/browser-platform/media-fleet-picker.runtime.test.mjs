@@ -24,6 +24,9 @@ test('Media Fleet Play picker owns Escape before Back while local audio persists
     if (path.endsWith('/device/config')) {
       return route.fulfill({ json: { devices: { fixture: { name: 'Fixture screen', fleet: true } } } });
     }
+    if (path === '/api/v1/content/query/search/stream') return route.fulfill({
+      contentType: 'text/event-stream', body: 'data: {"event":"complete"}\n\n',
+    });
     if (path.endsWith('/play/plex:42')) return route.fulfill({ json: {
       id: 'plex:42', contentId: 'plex:42', title: 'Persistent local fixture',
       format: 'audio', mediaType: 'audio', mediaUrl: '/fixture-audio.wav', duration: 30,
@@ -50,6 +53,10 @@ test('Media Fleet Play picker owns Escape before Back while local audio persists
   await expect.poll(playbackTime).toBeGreaterThan(beforeFleet);
 
   await opener.click();
+  await expect(input).toBeFocused();
+  await input.fill('no matching fixture');
+  await expect(page.getByTestId('search-empty'))
+    .toHaveText('No results for “no matching fixture”. Try a different word.');
   await expect(input).toBeFocused();
   await opener.click();
   await expect(input).toBeHidden();

@@ -139,12 +139,12 @@ describe('FleetPlayPicker', () => {
     expect(screen.queryByTestId('fleet-play-busy-livingroom-tv')).toBeNull();
   });
 
-  it('shows the friendly empty state (no raw errors) when a search finds nothing', () => {
+  it('offers a different search term when Fleet finds nothing', () => {
     search.value = baseSearch();
     renderPicker();
     typeQuery('zzzz');
-    expect(screen.getByTestId('search-empty'))
-      .toHaveTextContent('No results for “zzzz”');
+    expect(screen.getByTestId('search-empty')).toHaveTextContent('No results for “zzzz”. Try a different word.');
+    expect(screen.getByTestId('search-empty')).not.toHaveTextContent(/change the scope/i);
   });
 
   it('offers retry with friendly copy when the search errors', () => {
