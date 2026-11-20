@@ -133,6 +133,27 @@ early, medianDriftMs }`; `kind` is `timing` when a failed run claimed every
 note with the right pitch, cleanliness did not fail, and placement failed or
 some notes were off the beat. Any other failure is `notes`.
 
+**Entry shift.** `performance/entryShift.js` names a whole-beat shifted entry
+on a failed cued take without grading anything. From the attempt (target times
+via `timedTarget`, windows via `timedWindowMs`) and a raw onset log kept by the
+run outside the engine (`{ midi, t }` on the attempt clock, count-in onsets
+included), `detectEntryShift` greedily matches each expected note, shifted by
+k × beat for k ∈ {−2, −1, +1, +2}, to the nearest unused onset of its pitch
+inside its normal window. A shift is named when it matches ≥ 75%
+(`ENTRY_SHIFT_SHARE`) of the notes the log could hold at that shift (shifted
+target inside the logged span, and at least N − |k| notes), the unshifted take
+matches below 75%, and the shift does strictly better than no shift; ties go to
+the smaller |k|. `lateEntryWaitUntil` says how long a finished take should wait
+for a late entry's last note: only when the first two onsets after the first
+window opens each match a note at +1 or +2 beats and none at 0, until that last
+note's shifted window closes (at most `ENTRY_SHIFT_MAX_LATE` = 2 beats after the
+last target), and not at all once it is in the log. ExerciseRun uses it on cued
+Learn passages only, with the count-in click period as the beat; the result
+carries `entryShift: { beats, matched, possible }` (an extra field the record
+validation passes through) and pass/fail, score and criteria are unchanged.
+`shared/music/learnCoach.mjs` reads it (`entryShiftBeats`) to name the start in
+its feedback and to skip the smaller-task recovery.
+
 Free and metronome attempts are untimed and never produce placement. Cued mode
 requires a tempo map and timed matching. Metronome sound is presentation; it
 does not turn a wait-for-correct attempt into a timed one.
@@ -325,6 +346,7 @@ and Producer chord detection likewise remain outside assessment.
 | `assessmentAttempt.js` | Pure compiler, matchers, lifecycle, and result builder. |
 | `assessmentRuntime.js` | MIDI/timer external-store binding; no rendering or persistence. |
 | `attemptEvidence.js` | Portable evidence builder, browser client, and safe telemetry projection. |
+| `entryShift.js` | Names a whole-beat shifted entry from a raw onset log; never grades. |
 | `input/recognition.js` | Neutral held-set recognition with no assessment evidence. |
 | `shared/music/assessmentRecord.mjs` | Backend/frontend portable record validation and re-projection. |
 
@@ -336,7 +358,9 @@ The surfaces emit `score.learn.assessment`, `piano.exercise-assessment`, or
 matcher, mode, activity/challenge/attempt ids, purpose, terminal status,
 criteria, part weights, failure names, numeric note counts, rubric/provider
 versions, and persistence outcome/latency. They exclude raw MIDI, held sets,
-prompts, and expected/per-note event streams.
+prompts, and expected/per-note event streams. (The run's own traces are separate:
+ExerciseRun's `piano.exercise-midi-state` and, for a failed cued Learn take,
+`piano.exercise-onset-log` carry the onsets.)
 
 Retries must reuse the original attempt id. A sustained persistence failure or
 rejection burst is operationally actionable; a learner failing a musical gate
