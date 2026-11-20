@@ -94,6 +94,43 @@ describe('AnnotationPanel', () => {
     }), 'POST'));
   });
 
+  test('finds and centers the article highlight using the current motion preference', async () => {
+    let reducedMotion = true;
+    const matchMedia = window.matchMedia.bind(window);
+    const preference = vi.spyOn(window, 'matchMedia').mockImplementation(query => (
+      query === '(prefers-reduced-motion: reduce)' ? { matches: reducedMotion } : matchMedia(query)
+    ));
+    const selection = window.getSelection();
+    apiMock.mockResolvedValue({ annotations: [{
+      id: 'note-1',
+      itemId: 'one',
+      quote: 'selected passage',
+      color: 'yellow',
+      updatedAt: '2026-08-24T12:00:00.000Z',
+      locator: JSON.stringify({ type: 'TextQuoteSelector', exact: 'selected passage' }),
+    }] });
+    try {
+      render(<div className="article-expanded"><p>Before selected passage after.</p><AnnotationPanel item={{ id: 'one' }} /></div>);
+      const findHighlight = await screen.findByRole('button', { name: 'Find highlight' });
+      const passage = screen.getByText('Before selected passage after.');
+      passage.scrollIntoView = vi.fn();
+
+      fireEvent.click(findHighlight);
+      expect(selection.toString()).toBe('selected passage');
+      expect(selection.anchorNode).toBe(passage.firstChild);
+      expect(passage.scrollIntoView).toHaveBeenNthCalledWith(1, { block: 'center', behavior: 'instant' });
+
+      reducedMotion = false;
+      selection.removeAllRanges();
+      fireEvent.click(findHighlight);
+      expect(selection.toString()).toBe('selected passage');
+      expect(passage.scrollIntoView).toHaveBeenNthCalledWith(2, { block: 'center', behavior: 'smooth' });
+    } finally {
+      selection.removeAllRanges();
+      preference.mockRestore();
+    }
+  });
+
   test('shows online results with blocked storage and retains an offline draft on queue refusal', async () => {
     vi.stubGlobal('localStorage', undefined);
     try {

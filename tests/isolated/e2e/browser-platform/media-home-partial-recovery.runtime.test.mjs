@@ -1,6 +1,15 @@
 import { expect, test } from '@playwright/test';
 
-test.use({ viewport: { width: 1440, height: 850 }, serviceWorkers: 'block' });
+// Simulate a fine pointer with hover. Headless Firefox otherwise reports no pointer.
+const firefoxDesktopPointer = 6;
+test.use({
+  viewport: { width: 1440, height: 850 },
+  serviceWorkers: 'block',
+  launchOptions: { firefoxUserPrefs: {
+    'ui.primaryPointerCapabilities': firefoxDesktopPointer,
+    'ui.allPointerCapabilities': firefoxDesktopPointer,
+  } },
+});
 
 test('Media Home independently recovers delayed partial reads', async ({ page }) => {
   const suggestions = '/api/v1/media/suggestions';
@@ -172,3 +181,51 @@ for (const [kind, regionName, siblingTitle] of [
     });
   }
 }
+
+test('Media Home Recent steps follow the current browser motion preference', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.addInitScript(() => {
+    localStorage.setItem('media-app.first-use-done', 'done');
+    window.recentRailSteps = [];
+    const scrollBy = Element.prototype.scrollBy;
+    Element.prototype.scrollBy = function (...args) {
+      if (this.closest('[data-testid="home-row-recent"]') && this.matches('.home-row-scroll')) {
+        window.recentRailSteps.push(args[0]);
+      }
+      return scrollBy.apply(this, args);
+    };
+  });
+  await page.routeWebSocket('**/*', () => {});
+  await page.route('**/api/**', route => {
+    const { pathname } = new URL(route.request().url());
+    if (pathname === '/api/v1/media/suggestions') return route.fulfill({ json: { rows: [] } });
+    if (pathname === '/api/v1/media/household/carry-on') return route.fulfill({ json: { items: [], nowOn: [] } });
+    if (pathname === '/api/v1/media/household/recent') {
+      const items = Array.from({ length: 24 }, (_, index) => ({
+        contentId: `plex:${500 + index}`, title: `Recent film ${index + 1}`, type: 'movie', kind: 'item',
+      }));
+      return route.fulfill({ json: { items } });
+    }
+    return route.fulfill({ json: { enabled: false } });
+  });
+
+  await page.goto('/media');
+  const rail = page.getByTestId('home-row-recent').locator('.home-row-scroll');
+  const forward = page.getByRole('button', { name: 'Scroll Recent forward', exact: true });
+  const back = page.getByRole('button', { name: 'Scroll Recent back', exact: true });
+  const steps = () => page.evaluate(() => window.recentRailSteps);
+  const scrollLeft = () => rail.evaluate(element => element.scrollLeft);
+  const stepSize = await rail.evaluate(element => Math.max(120, element.clientWidth * 0.85));
+
+  await expect(forward).toBeEnabled();
+  await forward.press('Enter');
+  await expect.poll(steps).toEqual([{ left: stepSize, behavior: 'instant' }]);
+  await expect.poll(scrollLeft).toBeGreaterThan(0);
+  await expect(back).toBeEnabled();
+
+  await page.emulateMedia({ reducedMotion: 'no-preference' });
+  await back.press('Enter');
+  expect(await steps()).toEqual([{ left: stepSize, behavior: 'instant' }, { left: -stepSize, behavior: 'smooth' }]);
+  await expect.poll(scrollLeft).toBe(0);
+  await expect(back).toBeDisabled();
+});

@@ -4,6 +4,7 @@ import { NativeSelect } from '@mantine/core';
 import { useElementSize } from '@mantine/hooks';
 import { DaylightMediaPath } from '../../../lib/api.mjs';
 import { useApiResource } from '../../../lib/hooks/useApiResource.js';
+import { getPreferredScrollBehavior } from '../../../lib/ui/browserMotion.js';
 import { EmptyState, ErrorState, StateMessage } from '../../../lib/ui/states.jsx';
 import { Player as Player } from "../../../../../__app_modules/media/media/browser/playback.mjs";
 import { previewFrameVars } from './previewFrame.js';
@@ -77,8 +78,9 @@ export default function AdminPreviewPlayer({ contentId, action, volume, playback
 
   // Auto-scroll active item into view
   useEffect(() => {
-    if (activeRef.current) {
-      activeRef.current.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+    const activeItem = activeRef.current;
+    if (activeItem) {
+      activeItem.scrollIntoView({ behavior: getPreferredScrollBehavior(activeItem), block: 'nearest', inline: 'center' });
     }
   }, [currentIndex]);
 

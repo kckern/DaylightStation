@@ -1,6 +1,7 @@
 import { Select } from '@/lib/ui/Select.jsx';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRefreshableRead } from '@/lib/hooks/useRefreshableRead.js';
+import { getPreferredScrollBehavior } from '@/lib/ui/browserMotion.js';
 import { DaylightAPI } from "../../../../../frontend/src/lib/api.mjs";
 import getLogger from "../../../../../frontend/src/lib/logging/Logger.js";
 import {
@@ -100,7 +101,8 @@ function revealLocator(locator, scope) {
   const selection = window.getSelection();
   selection.removeAllRanges();
   selection.addRange(range);
-  startEntry.node.parentElement?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  const target = startEntry.node.parentElement;
+  target?.scrollIntoView({ block: 'center', behavior: getPreferredScrollBehavior(target) });
   return true;
 }
 

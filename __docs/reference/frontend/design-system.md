@@ -124,12 +124,13 @@ Seven semantic color roles: `background`, `surface`, `surfaceAlt`, `border`,
 `danger`, `info`, `live`. Motion tokens: `fast` (120ms), `base` (200ms),
 `reveal` (300ms), and a shared `easing` curve. The `md` and `lg` breakpoints drive JavaScript and Sass. After editing them in `tokens.mjs`, run `node frontend/scripts/generate-browser-breakpoints.mjs` to update the checked-in Sass variables.
 
-For JavaScript-driven scrolling, read the live browser preference through
-`getReducedMotionQuery(view)` when work starts. Keep the selected item in view
-with an immediate scroll when reduced motion is enabled. Ongoing frame
-animations can read the same query to finish immediately if the preference
-changes. Gate decorative CSS motion with `prefers-reduced-motion`.
-[Catalog keyboard highlight](../../../__capabilities/content-catalog/browser/combobox/ContentCombobox.jsx) · [Feed list shortcuts](../../../__app_modules/media/feed/browser/useFeedListShortcuts.js)
+For native scrolling, pass `getPreferredScrollBehavior(element)` as
+`behavior` when moving a rail or revealing a selected item. The feature
+supplies the scroll distance or alignment. For custom frame animations,
+read the live browser preference through `getReducedMotionQuery(view)` so
+an ongoing animation can finish immediately if the preference changes.
+Gate decorative CSS motion with `prefers-reduced-motion`.
+[Catalog keyboard highlight](../../../__capabilities/content-catalog/browser/combobox/ContentCombobox.jsx) · [Media Home rail](../../../__app_modules/media/media/browser/browse/HomeView.jsx) · [Feed list shortcuts](../../../__app_modules/media/feed/browser/useFeedListShortcuts.js)
 
 Cards, sheets and frame regions use `--ds-space-sm`, `--ds-space-md` and `--ds-space-lg` for 0.5, 0.75 and 1rem spacing. Caption, detail and heading text use the corresponding `--ds-type-*` roles. These preserve the existing visual sizes across app packs.
 

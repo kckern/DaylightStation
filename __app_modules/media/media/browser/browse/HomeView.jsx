@@ -22,6 +22,7 @@ import { EmptyState } from "../../../../../frontend/src/lib/ui/states.jsx";
 import { LoadErrorLine } from "../shared/LoadErrorLine.jsx";
 import Skeleton from '@/lib/ui/Skeleton.jsx';
 import { useRetryRegion } from '@/lib/ui/useRetryRegion.js';
+import { getPreferredScrollBehavior } from '@/lib/ui/browserMotion.js';
 import { useNav } from "../shell/NavProvider.jsx";
 import mediaLog from "../logging/mediaLog.js";
 import { HomeTile } from "./HomeTile.jsx";
@@ -91,7 +92,7 @@ function TileRow({ rowId, title, children }) {
   const step = (direction) => {
     const el = scrollRef.current;
     if (!el) return;
-    el.scrollBy({ left: direction * Math.max(120, el.clientWidth * STEP_FRACTION), behavior: 'smooth' });
+    el.scrollBy({ left: direction * Math.max(120, el.clientWidth * STEP_FRACTION), behavior: getPreferredScrollBehavior(el) });
     mediaLog.rowStepped({ row: rowId, direction: direction < 0 ? 'back' : 'forward' });
   };
   return (
