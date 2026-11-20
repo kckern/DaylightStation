@@ -1012,7 +1012,8 @@ A run qualifies only when **all** of these hold:
 
 - it is a completed whole-piece run (started at the top, one tempo, one pair of
   hands, not voided: the same rule that lets a run bank a tier best);
-- the metronome was on when the run started and was not toggled before it ended;
+- the metronome was on for the whole run: on when it started from the top, and not
+  toggled while it played or sat paused (a resume cannot turn it back on);
 - every staff was active (a one-hand run never qualifies; a single-staff piece
   has one part, and playing it counts);
 - its **base** score is 95 or more (the plain run score, never the overclocked
@@ -1036,8 +1037,18 @@ voided (banked or `not-better`) is reported with the practice record write,
                  "activeParts": [0, 1], "base": 97 } }
 ```
 
-The client reports facts, never "I earned a gem". `PianoPolishReward` judges
-them after the record is saved and answers `polishReward:
+**What protects the reward.** The server decides, from run facts the kiosk
+reports (base score, tempo at start, metronome, active hands, completed, mixed).
+The server's own checks are that the piece is all Gold, that each stone is paid
+once per piece, and the economy's weekly `cap` on the milestone rule. The run
+facts themselves are self-reported by the kiosk: they are trusted because the kiosk
+is a household device, not a hostile client, and nothing on the server replays the
+run to confirm them. The kiosk keeps them honest by voiding a run whose tempo or
+hands change, or that did not start from the top, and by clearing the metronome
+fact when the click is toggled while a run is in flight or paused; a resume never
+turns it back on.
+
+`PianoPolishReward` judges the facts after the record is saved and answers `polishReward:
 {gem, diamond, newGem, newDiamond, reason}` in the response; neither field is
 stored in the practice record. "All Gold" is read from the piece log's dated
 `gold` entry (the one the `piano-piece` milestone pays from) or, for a piece
@@ -1050,8 +1061,9 @@ as `polish-gem` / `polish-diamond`, which is how the economy's milestones date i
 
 **What the player sees.** The run summary announces **Diamond earned!** and/or
 **Gem earned!**, each led by a `GemIcon`, only when the server says it is new.
-The passage board and home strip show no gem or diamond badge: neither reads the
-piece log, and the board's goal counters come from the practice record.
+The passage board (from the practice record read's `polishAwards`) and the home
+strip (from the desk endpoint's `polish`) show the stone the piece holds; see
+[the passage board](#passage-rail-and-board) and [home-desk.md](home-desk.md).
 
 The rewards pay nothing until the household adds the two milestone rules (see
 [economy](../economy/economy.md#earn-rules)).
@@ -1059,7 +1071,9 @@ The rewards pay nothing until the household adds the two milestone rules (see
 Logs: `piano.polish.reward` (server, info: `userId, scoreId, tier, tempoPercent,
 score, reason, gem, diamond, newGem, newDiamond`), `piano.polish.reward-failed`
 (warn), `score.polish.reward-shown` (client, info: `tempoPercent, metronome, base,
-reason, newGem, newDiamond`).
+reason, newGem, newDiamond`), `score.polish.reward-failed` (client, warn: `scoreId,
+tempoMult, metronome, status, error`) when the PUT carrying `polishRun` fails; the
+run summary then shows no reward line, and the next qualifying run reports again.
 
 ## Perform
 
@@ -1151,6 +1165,7 @@ stamped to wall-clock by the framework. Math is in `scoreTelemetry.js`; collecti
 | `score.polish.silent-stop` | info | the run auto-stopped after N silent measures |
 | `score.polish.summary` | info | `greens, yellows, reds, overall` (at run end) |
 | `score.polish.reward-shown` | info | `tempoPercent, metronome, base, reason, newGem, newDiamond` — the server's Polish reward verdict for a reported run (see [Polish rewards](#polish-rewards-the-piece-gem-and-the-diamond)) |
+| `score.polish.reward-failed` | warn | `scoreId, tempoMult, metronome, status, error` — the practice PUT carrying a `polishRun` failed, so no verdict came back |
 | `score.polish.tier-best` | info | `bucket, tier, score, banked, reason` — the bank decision for a completed run, named either way: `banked`, or withheld as `nothing-graded` / `mixed` (tempo moved mid-run) / `partial` (not a whole-piece run) / `guest` / `not-better` |
 | `piano.practice.save` | info | (backend) a practice record PUT was persisted |
 | `score.transpose` | info | `semitones` |

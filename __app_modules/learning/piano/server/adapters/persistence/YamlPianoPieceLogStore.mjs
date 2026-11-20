@@ -11,10 +11,12 @@ export const PIECE_LOG_SCHEMA = 'piano.piece-log/v1';
  *   schema: piano.piece-log/v1
  *   entries:
  *     - { at: ISO, scoreId: 'files:…', level: silver|gold, passages: 12, fingerprint: '…' }
+ *     - { at: ISO, scoreId: 'files:…', level: polish-gem|polish-diamond, passages: null, fingerprint: '…', tempoPercent: 92, score: 97 }
  *
  * Append-only by contract. Passage certification is derived on every read and
  * carries no "the whole piece was finished on" date, so this file is the only
- * record of WHEN a piece first became all Silver or all Gold.
+ * record of WHEN a piece first became all Silver or all Gold, and of when it
+ * earned its Polish gem and diamond (written by PianoPolishReward).
  * See __docs/reference/piano/sheet-music-player.md (Piece log).
  */
 export class YamlPianoPieceLogStore {

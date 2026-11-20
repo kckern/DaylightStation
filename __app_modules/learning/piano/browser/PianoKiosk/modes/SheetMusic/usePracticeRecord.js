@@ -5,6 +5,10 @@ import { usePianoUser } from '../../PianoUserContext.jsx';
 import { isPersistentUser } from '../../pianoUser.js';
 import { practiceKeyOf } from './practiceKey.js';
 import { pianoAttemptClient } from '../../../performance/attemptEvidence.js';
+import getLogger from '../../../../../../../frontend/src/lib/logging/Logger.js';
+
+let _logger;
+const logger = () => { if (!_logger) _logger = getLogger().child({ component: 'piano-practice-record' }); return _logger; };
 
 const fpMatches = (a, b) => !!a && !!b
   && typeof a.contentSha256 === 'string'
@@ -123,7 +127,9 @@ export default function usePracticeRecord({ scoreId, fingerprint }) {
         setPolishAwards((prev) => ({ gem: prev?.gem === true || reward.gem === true, diamond: prev?.diamond === true || reward.diamond === true }));
       }
       return reward;
-    } catch {
+    } catch (error) {
+      logger().warn('score.polish.reward-failed', { scoreId: run?.scoreId ?? null, tempoMult: run?.tempoMult ?? null,
+        metronome: run?.metronome ?? null, status: error?.status ?? null, error: error?.message ?? String(error) });
       return null;
     }
   }, [currentUser, key]);

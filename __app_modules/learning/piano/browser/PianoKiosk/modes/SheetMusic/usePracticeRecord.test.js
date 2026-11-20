@@ -32,6 +32,15 @@ vi.mock('../../../../../../../frontend/src/lib/api.mjs', () => ({
   }),
 }));
 
+const logged = [];
+vi.mock('../../../../../../../frontend/src/lib/logging/Logger.js', () => ({
+  default: () => ({ child: () => ({
+    info: (e, d) => logged.push(['info', e, d]),
+    warn: (e, d) => logged.push(['warn', e, d]),
+    debug: (e, d) => logged.push(['debug', e, d]),
+  }) }),
+}));
+
 let mockUser = 'kc';
 let mockReward = null;
 vi.mock('../../PianoUserContext.jsx', () => ({
@@ -211,6 +220,18 @@ describe('usePracticeRecord', () => {
     const fresh = renderHook(() => usePracticeRecord({ scoreId: 'files:y.musicxml', fingerprint: FP }));
     await waitFor(() => expect(fresh.result.current.loaded).toBe(true));
     expect(fresh.result.current.polishAwards).toBeNull();
+  });
+
+  it('recordPolishRun logs a failed report and answers no reward', async () => {
+    store = { fingerprint: FP };
+    const { DaylightAPI } = await import('../../../../../../../frontend/src/lib/api.mjs');
+    const { result } = renderHook(() => usePracticeRecord({ scoreId: 'files:x.musicxml', fingerprint: FP }));
+    await waitFor(() => expect(result.current.loaded).toBe(true));
+    DaylightAPI.mockRejectedValueOnce(Object.assign(new Error('HTTP 502: Bad Gateway'), { status: 502 }));
+    let reward = 'unset';
+    await act(async () => { reward = await result.current.recordPolishRun({ scoreId: 'files:x.musicxml', tempoMult: 1, metronome: true }); });
+    expect(reward).toBeNull();
+    expect(logged).toContainEqual(['warn', 'score.polish.reward-failed', expect.objectContaining({ error: 'HTTP 502: Bad Gateway', status: 502, scoreId: 'files:x.musicxml', tempoMult: 1, metronome: true })]);
   });
 
   it('recordPolishRun writes nothing for a guest and answers no reward', async () => {
