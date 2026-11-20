@@ -74,7 +74,12 @@ describe('DS token contract', () => {
   it('keeps app typography in the shared theme pack and emits its CSS token', () => {
     expect(dsCssVars(PACKS.auto)['--ds-font-family']).toBe(PACKS.auto.fontFamily);
     expect(createAppTheme(PACKS.auto).fontFamily).toBe(PACKS.auto.fontFamily);
+    expect(createAppTheme(PACKS.home).fontFamily).toBe(PACKS.home.fontFamily);
+    expect(createAppTheme(PACKS.admin).fontFamily).toBe(PACKS.admin.fontFamily);
+    expect(createAppTheme(PACKS.admin).fontFamilyMonospace).toBe(PACKS.admin.fontFamilyMonospace);
+    expect(createAppTheme(PACKS.admin).headings).toMatchObject(PACKS.admin.headings);
     expect(dsCssVars(PACKS.health)['--ds-font-family']).toBeUndefined();
+    expect(dsCssVars(PACKS.admin)['--ds-font-family-monospace']).toBe(PACKS.admin.fontFamilyMonospace);
   });
 
   it('every pack has name, character, primaryColor, accent', () => {

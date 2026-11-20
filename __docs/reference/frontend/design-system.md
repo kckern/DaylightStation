@@ -165,12 +165,18 @@ therefore live in a shared place, never in whichever app happened to define
 it first:
 
 - **Tokens** belong in `lib/theme/tokens.mjs`.
+- **App typography** belongs in the app's theme pack (`fontFamily` and, when
+  needed, `fontFamilyMonospace` and `headings`). `createAppTheme()` applies
+  these settings to Mantine and `dsCssVars()` exposes the family tokens to
+  app SCSS. Home, Admin and Auto use this contract. Keep reading-mode and
+  player typography local to Feed and Media, where those choices are part of
+  the content or playback experience.
 - **Web fonts used by more than one app** belong in the single font `<link>`
   in `frontend/index.html`. Roboto Condensed, Inter, IBM Plex Sans and
   JetBrains Mono are there. A font only one module uses (ArtMode's
   Garamonds, the clock's Droid Sans Mono, School's Kongtext) stays with that
   module.
-- Admin's palette lives in its pack. `frontend/src/modules/Admin/Admin.variables.scss` defines scoped legacy aliases for editors. The provider encloses an Admin portal target so controls and dialogs inherit the same colors.
+- Admin's palette and typography live in its pack. `frontend/src/modules/Admin/Admin.variables.scss` defines scoped legacy aliases for editors. The provider encloses an Admin portal target so controls and dialogs inherit the same colors.
 - Admin’s navigation uses the shared `md` breakpoint. At 768px the focused link stays in the visible rail. At 767px the rail collapses and its toggle takes focus if that link was focused. [Keyboard and resize tests](../../../tests/live/flow/admin/admin-navigation.runtime.test.mjs)
 
 Before route splitting, one 11 MB bundle loaded every app's CSS on every

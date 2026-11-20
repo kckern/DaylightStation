@@ -9,6 +9,17 @@ export const PACKS = Object.freeze({
     character: 'Compact technical workspace with blue selection and elevated, bordered editors.',
     primaryColor: 'blue',
     accent: '#4A7BF7',
+    fontFamily: '"IBM Plex Sans", -apple-system, sans-serif',
+    fontFamilyMonospace: '"JetBrains Mono", "Fira Code", monospace',
+    headings: Object.freeze({
+      fontFamily: '"JetBrains Mono", monospace',
+      fontWeight: '600',
+      sizes: Object.freeze({
+        h1: Object.freeze({ fontSize: '24px', lineHeight: '1.3' }),
+        h2: Object.freeze({ fontSize: '20px', lineHeight: '1.35' }),
+        h3: Object.freeze({ fontSize: '16px', lineHeight: '1.4' }),
+      }),
+    }),
     colors: Object.freeze({
       background: '#0C0E14', surface: '#12141C', surfaceAlt: '#1A1D28', border: '#2A2E3D',
       textHigh: '#E8EAF0', textMid: '#8B90A0', textLow: '#555A6E',
@@ -44,6 +55,7 @@ export const PACKS = Object.freeze({
       + 'chrome, nothing demands interaction.',
     primaryColor: 'gray',
     accent: '#94a3b8',
+    fontFamily: '"IBM Plex Sans", system-ui, sans-serif',
   }),
   feed: Object.freeze({
     name: 'feed',

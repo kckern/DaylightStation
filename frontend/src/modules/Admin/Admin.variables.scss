@@ -19,8 +19,8 @@
   // Semantic
 
   // Typography
-  --ds-font-body:  'IBM Plex Sans', -apple-system, sans-serif;
-  --ds-font-mono:  'JetBrains Mono', 'Fira Code', monospace;
+  --ds-font-body:  var(--ds-font-family);
+  --ds-font-mono:  var(--ds-font-family-monospace);
 
   // Spacing (4px grid)
   --ds-space-1:  4px;

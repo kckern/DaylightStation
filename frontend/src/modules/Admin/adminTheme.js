@@ -7,17 +7,6 @@ const DS_BLUE = [
 
 const themeExtras = {
   primaryColor: 'ds-blue',
-  fontFamily: '"IBM Plex Sans", -apple-system, sans-serif',
-  fontFamilyMonospace: '"JetBrains Mono", "Fira Code", monospace',
-  headings: {
-    fontFamily: '"JetBrains Mono", monospace',
-    fontWeight: '600',
-    sizes: {
-      h1: { fontSize: '24px', lineHeight: '1.3' },
-      h2: { fontSize: '20px', lineHeight: '1.35' },
-      h3: { fontSize: '16px', lineHeight: '1.4' },
-    },
-  },
   defaultRadius: 'sm',
   components: {
     Portal: { defaultProps: { target: '#admin-portals' } },

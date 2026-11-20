@@ -13,6 +13,8 @@ export function createAppTheme(pack) {
   const base = {
     primaryColor: pack?.primaryColor || 'blue',
     ...(pack?.fontFamily ? { fontFamily: pack.fontFamily } : {}),
+    ...(pack?.fontFamilyMonospace ? { fontFamilyMonospace: pack.fontFamilyMonospace } : {}),
+    ...(pack?.headings ? { headings: pack.headings } : {}),
     colors: {
       ...pack?.colorRamps,
       background: ramp(colors.background),
