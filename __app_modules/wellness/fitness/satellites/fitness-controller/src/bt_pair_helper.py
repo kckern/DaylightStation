@@ -3,7 +3,10 @@
 bt_pair_helper — one controller-pairing window over BlueZ D-Bus.
 
 Spawned by btPairing.mjs with one JSON argument:
-  {"targets": [{"id","label","name","macPrefix","pin"}], "durationMs": 60000}
+  {"targets": [...], "durationMs": 60000, "mode": "repair"|"add"}
+
+`mode: add` searches classic and LE together, accepts any HID kind and never
+touches an existing bond. See bt_pair_match.py.
 
 Prints one JSON object per line, one per lifecycle transition, which the Node
 side relays as `bt.pair.progress`:
@@ -35,68 +38,27 @@ import dbus.mainloop.glib
 import dbus.service
 from gi.repository import GLib
 
+from bt_pair_match import (candidate_action, compile_targets, discovery_transport,
+                           input_device_present, match as match_rule)
+
 BUS_NAME = "org.bluez"
 ADAPTER = "/org/bluez/hci0"
 AGENT_PATH = "/net/daylight/btpair/agent"
 DEFAULT_PIN = "0000"
 HID_WAIT_S = 15
 RETRYABLE = re.compile(r"AuthenticationFailed|AuthenticationRejected|AuthenticationCanceled|ConnectionAttemptFailed|Rejected|AlreadyExists|InProgress", re.I)
-GAMEPAD_NAME = re.compile(r"8bitdo|xbox|dualshock|dualsense|pro controller|gamepad|controller|joy-?con", re.I)
 
 
 def emit(phase, **extra):
     print(json.dumps({"phase": phase, **extra}), flush=True)
 
 
-def has_input_device(mac):
-    want = mac.lower()
+def read_input_devices():
     try:
         with open("/proc/bus/input/devices", "r", encoding="utf-8") as f:
-            for line in f:
-                low = line.strip().lower()
-                if low.startswith("u: uniq=") and low[len("u: uniq="):].strip() == want:
-                    return True
+            return f.read()
     except OSError:
-        return False
-    return False
-
-
-def compile_targets(raw):
-    out = []
-    for t in raw or []:
-        if not isinstance(t, dict):
-            continue
-        name_re = None
-        if t.get("name"):
-            try:
-                name_re = re.compile(str(t["name"]), re.I)
-            except re.error:
-                name_re = None
-        prefix = str(t.get("macPrefix") or "").upper() or None
-        if not name_re and not prefix:
-            continue
-        pin = t.get("pin")
-        out.append({"id": t.get("id"), "label": t.get("label"), "name_re": name_re,
-                    "prefix": prefix, "pin": str(pin) if pin not in (None, "") else None})
-    return out
-
-
-def match(props, targets):
-    """Return the matched target dict, a generic {} for an unlisted gamepad, or None."""
-    addr = str(props.get("Address", "")).upper()
-    name = str(props.get("Name", props.get("Alias", "")))
-    for t in targets:
-        if t["prefix"] and addr.startswith(t["prefix"]):
-            return t
-        if t["name_re"] and name and t["name_re"].search(name):
-            return t
-    icon = str(props.get("Icon", ""))
-    cls = int(props.get("Class", 0) or 0)
-    if icon == "input-gaming" or (((cls >> 8) & 0x1F) == 0x05 and ((cls >> 2) & 0x0F) in (1, 2)):
-        return {"id": None, "label": None, "pin": None}
-    if name and GAMEPAD_NAME.search(name):
-        return {"id": None, "label": None, "pin": None}
-    return None
+        return ""
 
 
 class Agent(dbus.service.Object):
@@ -142,6 +104,11 @@ class Agent(dbus.service.Object):
 def main():
     args = json.loads(sys.argv[1]) if len(sys.argv) > 1 else {}
     targets = compile_targets(args.get("targets"))
+    mode = "add" if args.get("mode") == "add" else "repair"
+
+    def match(props, tgts):
+        return match_rule(props, tgts, mode)
+
     duration_s = max(5, int(args.get("durationMs", 60000)) // 1000)
 
     dbus.mainloop.glib.DBusGMainLoop(set_as_default=True)
@@ -190,8 +157,11 @@ def main():
                 emit("warn", message=f"StartDiscovery: {e}")
 
     def describe(props, target):
-        return {"address": str(props.get("Address", "")),
-                "name": str(props.get("Name", "") or (target or {}).get("label") or props.get("Address", ""))}
+        d = {"address": str(props.get("Address", "")),
+             "name": str(props.get("Name", "") or (target or {}).get("label") or props.get("Address", ""))}
+        if (target or {}).get("kind"):
+            d["kind"] = target["kind"]
+        return d
 
     def fail_device(path, device, cid, message):
         """Remove the half-made bond and retry once; second failure is final."""
@@ -216,7 +186,7 @@ def main():
         def poll():
             if state["result"] is not None:
                 return False
-            if has_input_device(device["address"]):
+            if input_device_present(read_input_devices(), device["address"], device.get("name")):
                 emit("paired", device=device, controllerId=cid, connected=True, input=True)
                 finish("paired", paired=[device])
                 return False
@@ -302,16 +272,16 @@ def main():
         if target is None:
             return
         state["seen"].add(path)
-        if bool(props.get("Paired", False)) and bool(props.get("Connected", False)):
-            # In use already — never break a working bond. Not a pairing candidate.
+        action = candidate_action(props, mode)
+        if action == "skip":
             return
         device = describe(props, target)
         state["candidates"] += 1
         emit("found", device=device, controllerId=target.get("id"))
-        if bool(props.get("Paired", False)) and path not in state["removed"]:
+        if action == "remove-stale" and path not in state["removed"]:
             # Only reached from a LIVE inquiry result (see on_changed/on_added):
             # a bonded pad that is discoverable and not connected is in pairing
-            # mode, i.e. it has forgotten us — the stored bond is stale.
+            # mode, i.e. it has forgotten us. The stored bond is stale.
             state["removed"].add(path)
             try:
                 adapter.RemoveDevice(path)
@@ -351,27 +321,27 @@ def main():
     except dbus.DBusException:
         pass
     try:
-        adapter.SetDiscoveryFilter({"Transport": "bredr"})
+        adapter.SetDiscoveryFilter({"Transport": discovery_transport(mode)})
     except dbus.DBusException as e:
         emit("warn", message=f"SetDiscoveryFilter: {e}")
-    emit("scanning", durationMs=duration_s * 1000)
+    emit("scanning", durationMs=duration_s * 1000, mode=mode)
     start_discovery()
 
     # Cached devices are NOT candidates on their cached properties (a cached
     # RSSI is stale, and acting on it once removed a working bond). They count
     # only when this discovery reports them live (RSSI change → on_changed).
-    # One exception: a configured pad that is already bonded, connected and
+    # One exception (repair mode only): a configured pad that is already bonded, connected and
     # up as an input device means there is nothing to do.
-    for path, ifaces in om.GetManagedObjects().items():
+    for path, ifaces in (om.GetManagedObjects().items() if mode == "repair" else []):
         if "org.bluez.Device1" in ifaces and str(path).startswith(ADAPTER + "/dev_"):
             props = ifaces["org.bluez.Device1"]
             t = match(props, targets)
             if t is not None and t.get("id") and props.get("Paired") and props.get("Connected") \
-                    and has_input_device(str(props.get("Address", ""))):
+                    and input_device_present(read_input_devices(), str(props.get("Address", ""))):
                 device = describe(props, t)
                 emit("already-paired", device=device, controllerId=t.get("id"))
                 emit("paired", device=device, controllerId=t.get("id"), connected=True, input=True)
-                finish("paired", paired=[device])
+                finish("paired", paired=[device], reason="already-paired")
                 break
 
     def timeout():
