@@ -90,3 +90,21 @@ it('notifies only the read that expires, once, after retiring it', async () => {
     vi.useRealTimers();
   }
 });
+
+it('passes the timed-out read’s own arguments to its read and timeout handler', async () => {
+  vi.useFakeTimers();
+  const first = { cursor: null };
+  const second = { cursor: 'next' };
+  const read = vi.fn(() => Promise.withResolvers().promise);
+  const onTimeout = vi.fn();
+  const { result, unmount } = renderHook(() => useRefreshableRead(read, { timeoutMs: 100, onTimeout }));
+  try {
+    act(() => { result.current.reload(first); result.current.poll(second); });
+    act(() => { result.current.reload(second); vi.advanceTimersByTime(100); });
+    expect(read.mock.calls.map(call => call[2])).toEqual([first, second]);
+    expect(onTimeout.mock.calls).toEqual([[second]]);
+  } finally {
+    unmount();
+    vi.useRealTimers();
+  }
+});

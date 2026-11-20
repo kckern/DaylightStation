@@ -49,13 +49,15 @@ test('Reader aborts a previous filter page and paginates the current stream', as
 
 test('Reader retains the first page and retries a failed cursor only when asked', async ({ page }) => {
   const reads = [];
-  await page.route('**/api/v1/feed/reader/stream?**', route => {
+  const release = Promise.withResolvers();
+  await page.route('**/api/v1/feed/reader/stream?**', async route => {
     const cursor = new URL(route.request().url()).searchParams.get('continuation');
     reads.push(cursor);
     if (reads.length === 1) return route.fulfill({
       json: { items: [article('first', 'First page article')], continuation: 'next' },
     });
     if (reads.length === 2) return route.fulfill({ status: 500, json: { error: 'Unavailable' } });
+    await release.promise;
     return route.fulfill({ json: { items: [article('second', 'Second page article')], exhausted: true } });
   });
 
@@ -66,10 +68,53 @@ test('Reader retains the first page and retries a failed cursor only when asked'
   await expect(failure).toBeVisible();
   await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
   expect(reads).toEqual([null, 'next']);
-  await failure.getByRole('button', { name: 'Retry' }).click();
-  await expect(existing).toBeVisible();
+  const inbox = page.getByRole('region', { name: 'Reader articles' });
+  const saved = page.getByRole('button', { name: 'saved', exact: true });
+  try {
+    await failure.getByRole('button', { name: 'Retry' }).press('Enter');
+    await expect.poll(() => reads).toEqual([null, 'next', 'next']);
+    await expect(inbox).toBeFocused();
+    await expect(inbox).toHaveAttribute('aria-busy', 'true');
+    await expect(existing).toBeVisible();
+    await saved.focus();
+  } finally {
+    release.resolve();
+  }
   await expect(page.getByText('Second page article', { exact: true })).toBeVisible();
+  await expect(saved).toBeFocused();
   expect(reads).toEqual([null, 'next', 'next']);
+});
+
+test('Reader cancels a stalled continuation and retries only that page', async ({ page }) => {
+  await page.clock.install();
+  const reads = [];
+  let stalled;
+  let canceled = false;
+  page.on('requestfailed', request => { if (request === stalled) canceled = true; });
+  await page.route('**/api/v1/feed/reader/stream?**', route => {
+    const cursor = new URL(route.request().url()).searchParams.get('continuation');
+    reads.push(cursor);
+    if (!cursor) return route.fulfill({ json: {
+      items: [article('first', 'Retained article')], continuation: 'stalled-next',
+    } });
+    if (reads.length === 2) {
+      stalled = route.request();
+      return;
+    }
+    return route.fulfill({ json: { items: [article('second', 'Recovered article')], exhausted: true } });
+  });
+
+  await page.goto('/feed/reader');
+  await expect.poll(() => Boolean(stalled)).toBe(true);
+  await page.clock.fastForward(10_000);
+  const error = page.getByRole('alert').filter({ hasText: 'More articles could not be loaded.' });
+  await expect(error).toBeVisible();
+  await expect.poll(() => canceled).toBe(true);
+  await expect(page.getByText('Retained article', { exact: true })).toBeVisible();
+  expect(reads).toEqual([null, 'stalled-next']);
+  await error.getByRole('button', { name: 'Retry' }).press('Enter');
+  await expect(page.getByText('Recovered article', { exact: true })).toBeVisible();
+  expect(reads).toEqual([null, 'stalled-next', 'stalled-next']);
 });
 
 test('Reader restores a saved position after its first page supplies the scrollable rows', async ({ page }) => {

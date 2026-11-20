@@ -34,6 +34,7 @@ import getLogger from "../../../../../frontend/src/lib/logging/Logger.js";
 import Skeleton from '@/lib/ui/Skeleton.jsx';
 import { Button } from '@/lib/ui/Button.jsx';
 import { UiIcon } from '@/lib/ui/UiIcon.jsx';
+import { useRetryRegion } from '@/lib/ui/useRetryRegion.js';
 import { StateMessage } from '@/lib/ui/states.jsx';
 import { ResultRow } from "../../../../../__capabilities/content-catalog/browser/result-row.mjs";
 import { ItemDestinationPicker } from "../actions/ItemDestinationPicker.jsx";
@@ -105,7 +106,8 @@ export function BrowseView({
   const { dispatchLeafVerb, playContainerAsQueue, addContainerToQueue } = useContentDispatch();
   const { extraActions, runHousehold } = useHouseholdResultActions();
   const log = useMemo(() => getLogger().child({ component: 'browse-view' }), []);
-  const rootRef = useRef(null);
+  const { regionProps, retry } = useRetryRegion(reload, loading);
+  const rootRef = regionProps.ref;
   const sentinelRef = useRef(null);
   const restoredEntryRef = useRef(null);
 
@@ -187,7 +189,7 @@ export function BrowseView({
   };
 
   return (
-    <Stack ref={rootRef} data-testid="browse-view" className="browse-view" gap="md" tabIndex={-1}>
+    <Stack role="region" aria-label="Browse results" {...regionProps} data-testid="browse-view" className="browse-view" gap="md">
       <nav className="browse-breadcrumb" aria-label="Breadcrumb">
         <button
           data-testid="browse-crumb-home"
@@ -259,7 +261,7 @@ export function BrowseView({
           {[0, 1, 2, 3, 4].map((i) => <Skeleton key={i} height={56} radius="sm" />)}
         </Stack>
       )}
-      {error && <LoadErrorLine kind="section" testId="browse-view-error" onRetry={reload} />}
+      {error && <LoadErrorLine kind="section" testId="browse-view-error" onRetry={retry} />}
       {!loading && !error && items.length === 0 && (
         <Text c="dimmed" data-testid="browse-empty" className="browse-empty">Nothing here yet.</Text>
       )}

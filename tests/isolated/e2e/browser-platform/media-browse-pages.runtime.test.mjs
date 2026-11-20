@@ -2,6 +2,41 @@ import { expect, test } from '@playwright/test';
 
 test.use({ serviceWorkers: 'block' });
 
+test('Media Browse keeps focus within the results during a first-page retry', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 850 });
+  await page.routeWebSocket('**/*', () => {});
+  const reads = [];
+  const release = Promise.withResolvers();
+  await page.route('**/api/**', async route => {
+    const { pathname, searchParams } = new URL(route.request().url());
+    if (pathname.endsWith('/supervision/bootstrap')) return route.fulfill({ json: { enabled: false } });
+    if (pathname !== '/api/v1/list/plex/fixture/expand') return route.fulfill({ json: {} });
+    reads.push(searchParams.get('skip'));
+    if (reads.length === 1) return route.fulfill({ status: 503, json: { error: 'Unavailable' } });
+    await release.promise;
+    return route.fulfill({ json: {
+      items: [{ id: 'plex:accepted', title: 'Accepted title', itemType: 'item' }], total: 1,
+    } });
+  });
+
+  await page.goto('/media?view=browse&path=plex%2Ffixture');
+  const browse = page.getByTestId('browse-view');
+  const home = browse.getByTestId('browse-crumb-home');
+  try {
+    await browse.getByRole('button', { name: 'Try again', exact: true }).press('Enter');
+    await expect.poll(() => reads).toEqual([null, null]);
+    await expect(browse).toBeFocused();
+    await expect(browse).toHaveAttribute('aria-busy', 'true');
+    await page.keyboard.press('Tab');
+    await expect(home).toBeFocused();
+  } finally {
+    release.resolve();
+  }
+  await expect(browse.getByText('Accepted title', { exact: true })).toBeVisible();
+  await expect(home).toBeFocused();
+  expect(reads).toEqual([null, null]);
+});
+
 test('Media Browse keeps loaded titles and retries the failed offset once', async ({ page }) => {
   await page.setViewportSize({ width: 440, height: 720 });
   await page.routeWebSocket('**/*', () => {});

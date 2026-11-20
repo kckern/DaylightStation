@@ -5,6 +5,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react
 import { useSearchParams } from 'react-router-dom';
 import { DaylightAPI } from "../../../../../frontend/src/lib/api.mjs";
 import { useRefreshableRead } from '@/lib/hooks/useRefreshableRead.js';
+import { useRetryRegion } from '@/lib/ui/useRetryRegion.js';
 import { useVisibleRefresh } from "@/lib/hooks/useVisibleRefresh.js";
 import { useFeedWorkspace } from "../FeedWorkspaceContext.jsx";
 import "../FeedShared.scss";
@@ -247,9 +248,10 @@ export default function FeedSearch() {
   const appendFailure = failure?.append ? failure : null;
   const reading = searching || loadingMore || syncing;
   const paginationDisabled = reading || syncError;
+  const { regionProps, retry } = useRetryRegion(() => runSearch(), searching);
 
   return (
-    <section className="feed-search" aria-labelledby="feed-search-title">
+    <section className="feed-search" aria-labelledby="feed-search-title" {...regionProps}>
       <h1 id="feed-search-title">Search your feed</h1>
       <form className="feed-search__form" onSubmit={submit} role="search">
         <input ref={inputRef} value={query} onChange={event => setQuery(event.target.value)} placeholder="Search headlines, sources, summaries…" aria-label="Search feed history" />
@@ -269,7 +271,7 @@ export default function FeedSearch() {
       </form>
       {coverage && <p className="feed-search__coverage" role="status">{total} result{total === 1 ? '' : 's'} · {coverage.retentionMonths}-month history{coverage.status === 'running' ? ` · indexing (${coverage.indexed || 0})` : coverage.status === 'failed' ? ' · backfill paused' : ''}</p>}
       {searching && <StateMessage state="loading" role="status" title="Searching…" />}
-      {failure && !appendFailure && <ErrorState title={null} error={failure.error} onRetry={() => runSearch()} />}
+      {failure && !appendFailure && <ErrorState title={null} error={failure.error} onRetry={retry} />}
       {!searching && !failure && items.length === 0 && <EmptyState title="No matching items in indexed history." />}
       <div className="feed-search__results" ref={resultsRef}>
         {items.map(item => {

@@ -3,12 +3,14 @@ import { useState, useEffect, useLayoutEffect, useCallback, useMemo, useRef } fr
 import { useMediaQuery } from '@mantine/hooks';
 import { DS_TOKENS } from '@/lib/theme/tokens.mjs';
 import { UiIcon } from '@/lib/ui/UiIcon.jsx';
+import { useRetryRegion } from '@/lib/ui/useRetryRegion.js';
 import { useDismissLayer } from '@/lib/ui/dismiss/useDismissLayer.js';
 import { useSearchParams } from 'react-router-dom';
 import { DaylightAPI } from "../../../../../frontend/src/lib/api.mjs";
 import getLogger from "../../../../../frontend/src/lib/logging/Logger.js";
 import { useFeedWorkspace } from "../FeedWorkspaceContext.jsx";
 import { useApiResource } from "../../../../../frontend/src/lib/hooks/useApiResource.js";
+import { useRefreshableRead } from '@/lib/hooks/useRefreshableRead.js';
 import ReaderSidebar from "./ReaderSidebar.jsx";
 import ArticleRow from "./ArticleRow.jsx";
 import { useVirtualFeedWindow } from "../Scroll/hooks/useVirtualFeedWindow.js";
@@ -18,6 +20,7 @@ import "./Reader.scss";
 const log = getLogger().child({ app: 'feed', module: 'reader' });
 const HISTORY_VIEWS = new Set(['unread', 'saved', 'archived']);
 const COMPACT_QUERY = `(max-width: ${DS_TOKENS.breakpoints.md - 1}px)`;
+const streamTimeoutMs = 10_000;
 
 function historyItemToArticle(item) {
   return {
@@ -197,10 +200,9 @@ export default function Reader() {
   const wasDrawerActive = useRef(false);
   const drawerOpenerRef = useRef(null);
   const sentinelRef = useRef(null);
-  const inboxRef = useRef(null);
   const listRef = useRef(null);
   const sidebarRef = useRef(null);
-  const requestRef = useRef(null);
+  const inFlightEdits = useRef(null);
   const loadedPages = useRef(1);
   const lastItemSync = useRef(itemSyncRevision);
   const streamFilter = useRef({
@@ -279,23 +281,32 @@ export default function Reader() {
     return { items: data.items || [], next: data.continuation || null, exhausted: !!data.exhausted };
   }, [activeFeeds, activeView]);
 
-  const fetchStream = useCallback(async (cont = null, pages = 1) => {
-    const append = cont !== null;
-    if (append && requestRef.current) return;
-    requestRef.current?.controller.abort();
-    const controller = new AbortController();
+  const finishStreamRead = useCallback(() => {
+    inFlightEdits.current = null;
+    setLoading(false);
+    setLoadingMore(false);
+  }, []);
+
+  const reportStreamError = useCallback((cursor, pages, error) => {
+    const append = cursor !== null;
+    log.warn('reader.stream.failed', { append, error });
+    setStreamError({ cursor, pages, message: append ? 'More articles could not be loaded.' : 'Articles could not be refreshed.' });
+  }, []);
+
+  const readStream = useCallback(async (isCurrent, signal, { cursor: startCursor = null, pages = 1 } = {}) => {
+    const append = startCursor !== null;
     const editedStates = new Map();
-    requestRef.current = { controller, editedStates };
+    inFlightEdits.current = editedStates;
     setLoading(!append);
     setLoadingMore(append);
     setStreamError(null);
     try {
-      let cursor = cont;
+      let cursor = startCursor;
       const results = [];
       let page;
       do {
-        page = await readPage(cursor, controller.signal);
-        if (controller.signal.aborted) return;
+        page = await readPage(cursor, signal);
+        if (!isCurrent()) return;
         results.push(page.items);
         cursor = page.next;
       } while (cursor && !page.exhausted && results.length < pages);
@@ -317,24 +328,37 @@ export default function Reader() {
       setContinuation(cursor);
       setExhausted(page.exhausted);
     } catch (err) {
-      if (!controller.signal.aborted && err.name !== 'AbortError') {
-        log.warn('reader.stream.failed', { append, error: err.message });
-        setStreamError({ cursor: cont, pages, message: append ? 'More articles could not be loaded.' : 'Articles could not be refreshed.' });
-      }
+      if (isCurrent() && err.name !== 'AbortError') reportStreamError(startCursor, pages, err.message);
     } finally {
-      if (!controller.signal.aborted) {
-        requestRef.current = null;
-        setLoading(false);
-        setLoadingMore(false);
-      }
+      if (isCurrent()) finishStreamRead();
     }
-  }, [activeView, applyPendingMutations, readPage]);
+  }, [activeView, applyPendingMutations, readPage, reportStreamError, finishStreamRead]);
+  const onStreamTimeout = useCallback(({ cursor = null, pages = 1 } = {}) => {
+    reportStreamError(cursor, pages, 'Reader request timed out');
+    finishStreamRead();
+  }, [reportStreamError, finishStreamRead]);
+  const { reload: reloadStream, poll: loadMore } = useRefreshableRead(readStream, {
+    timeoutMs: streamTimeoutMs, onTimeout: onStreamTimeout,
+  });
+
+  const retryArticles = () => {
+    if (activeView === 'offline') setOfflineAttempt(attempt => attempt + 1);
+    else if (streamError.cursor === null) reloadStream(streamError);
+    else loadMore(streamError);
+  };
+  const { regionProps: inboxRegion, retry } = useRetryRegion(
+    retryArticles, activeView === 'offline' ? offlineLoading : loading || loadingMore,
+  );
+  const inboxRef = inboxRegion.ref;
 
   // Initial load + reload on filter change
   useLayoutEffect(() => {
     const reconciled = lastItemSync.current !== itemSyncRevision;
     lastItemSync.current = itemSyncRevision;
-    if (activeView === 'offline') return undefined;
+    if (activeView === 'offline') {
+      inFlightEdits.current = null;
+      return;
+    }
     if (streamFilter.current.view !== activeView || streamFilter.current.feeds !== feedsParam) {
       streamFilter.current = { view: activeView, feeds: feedsParam };
       loadedPages.current = 1;
@@ -343,9 +367,8 @@ export default function Reader() {
       setExhausted(false);
     }
     // Keep every loaded page mounted until its canonical replacement is ready.
-    fetchStream(null, reconciled ? loadedPages.current : 1);
-    return () => requestRef.current?.controller.abort();
-  }, [activeView, feedsParam, fetchStream, itemSyncRevision]);
+    reloadStream({ pages: reconciled ? loadedPages.current : 1 });
+  }, [activeView, feedsParam, reloadStream, itemSyncRevision]);
 
   useEffect(() => {
     if (activeView !== 'offline') return;
@@ -388,7 +411,7 @@ export default function Reader() {
     const observer = new IntersectionObserver(
       ([entry]) => {
         if (active && entry.isIntersecting && continuation) {
-          fetchStream(continuation);
+          loadMore({ cursor: continuation });
         }
       },
       { rootMargin: '200px' }
@@ -398,7 +421,7 @@ export default function Reader() {
       active = false;
       observer.disconnect();
     };
-  }, [continuation, loading, loadingMore, streamError, fetchStream]);
+  }, [continuation, loading, loadingMore, streamError, loadMore]);
 
   // Sidebar filter toggle (single feed)
   const handleToggleFeed = (feedId, multiSelect) => {
@@ -443,7 +466,7 @@ export default function Reader() {
   // Mark as read (single article)
   const applyUpdatedItems = useCallback(updated => {
     // A read started before a local write can still update all other rows.
-    const edited = requestRef.current?.editedStates;
+    const edited = inFlightEdits.current;
     if (edited) for (const item of updated) edited.set(item.id, item.state);
     const apply = current => current.map(value => updated.find(item => item.id === value.id) || value);
     setArticles(apply);
@@ -535,10 +558,6 @@ export default function Reader() {
   };
 
   const errorMessage = activeView === 'offline' ? offlineError : streamError?.message;
-  const retryArticles = () => {
-    if (activeView === 'offline') setOfflineAttempt(attempt => attempt + 1);
-    else fetchStream(streamError.cursor, streamError.pages);
-  };
 
   return (
     <div className="reader-view">
@@ -566,7 +585,7 @@ export default function Reader() {
           onClearFilters={handleMobileClearFilters}
         />
       </aside>
-      <section className="reader-inbox" ref={inboxRef} inert={drawerActive ? '' : undefined}>
+      <section className="reader-inbox" aria-label="Reader articles" {...inboxRegion} inert={drawerActive ? '' : undefined}>
         <div className="reader-mobile-toolbar">
           <button ref={drawerOpenerRef} className="reader-hamburger" onClick={openDrawer} aria-label="Open subscriptions" aria-expanded={drawerActive} aria-controls="reader-subscriptions">
             <span /><span /><span />
@@ -581,9 +600,9 @@ export default function Reader() {
             if (view === 'all') params.delete('view'); else params.set('view', view);
             setSearchParams(params);
           }}>{view}</button>)}
-          {activeView !== 'offline' && <button onClick={() => fetchStream()} disabled={loading}>Refresh</button>}
+          {activeView !== 'offline' && <button onClick={() => reloadStream()} disabled={loading}>Refresh</button>}
         </div>
-        {errorMessage && <div className="reader-inline-error" role="alert">{errorMessage}<button onClick={retryArticles}>Retry</button></div>}
+        {errorMessage && <div className="reader-inline-error" role="alert">{errorMessage}<button onClick={retry}>Retry</button></div>}
         {(activeView === 'offline' ? offlineLoading : loading && !articles.length) ? (
           <div className="reader-loading">Loading...</div>
         ) : (

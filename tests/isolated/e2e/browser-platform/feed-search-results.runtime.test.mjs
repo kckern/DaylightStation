@@ -4,6 +4,7 @@ test.use({ serviceWorkers: 'block', viewport: { width: 390, height: 850 } });
 
 test('Feed Search retires the old query and cursor during a failed replacement', async ({ page }) => {
   const replacement = Promise.withResolvers();
+  const retryRead = Promise.withResolvers();
   const queries = [];
   const item = (id, title) => ({ id, stateKey: id, title });
   await page.routeWebSocket('**/*', () => {});
@@ -19,6 +20,7 @@ test('Feed Search retires the old query and cursor during a failed replacement',
       await replacement.promise;
       return route.fulfill({ status: 500, json: { error: 'Unavailable' } });
     }
+    await retryRead.promise;
     return route.fulfill({ json: { items: [item('fish', 'Fish match')], total: 1 } });
   });
 
@@ -40,8 +42,19 @@ test('Feed Search retires the old query and cursor during a failed replacement',
   const error = page.getByRole('alert').filter({ hasText: 'Search could not be completed.' });
   await expect(error).toBeVisible();
   await expect(more).toHaveCount(0);
-  await error.getByRole('button', { name: 'Retry' }).click();
+  const region = page.getByRole('region', { name: 'Search your feed' });
+  try {
+    await error.getByRole('button', { name: 'Retry' }).press('Enter');
+    await expect.poll(() => queries).toHaveLength(3);
+    await expect(region).toBeFocused();
+    await expect(region).toHaveAttribute('aria-busy', 'true');
+    await page.keyboard.press('Tab');
+    await expect(search).toBeFocused();
+  } finally {
+    retryRead.resolve();
+  }
   await expect(page.getByRole('heading', { name: 'Fish match' })).toBeVisible();
+  await expect(search).toBeFocused();
   expect(queries).toEqual([['birds', null], ['fish', null], ['fish', null]]);
 });
 
