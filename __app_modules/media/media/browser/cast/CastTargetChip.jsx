@@ -6,7 +6,7 @@
 // mode, persisted per browser. Inline cast pickers seed from these so a
 // configured household is one tap per cast. It absorbs the old cast icon; the
 // first-use naming popover anchors to it (identity/FirstUseCard.jsx).
-import React, { useState, useCallback, useContext, useEffect } from 'react';
+import React, { useState, useCallback, useContext, useEffect, useRef } from 'react';
 import { Popover, Text, UnstyledButton } from '@mantine/core';
 import { IconChevronDown } from '@tabler/icons-react';
 import { useDismissLayer } from "@/lib/ui/dismiss/useDismissLayer.js";
@@ -20,8 +20,12 @@ import "./Cast.scss";
 
 export function CastTargetChip() {
   const [open, setOpen] = useState(false);
-  const close = useCallback(() => setOpen(false), []);
-  useDismissLayer(open, close);
+  const trigger = useRef(null);
+  const dismissFromKeyboard = useCallback(() => {
+    setOpen(false);
+    trigger.current?.focus({ preventScroll: true });
+  }, []);
+  useDismissLayer(open, dismissFromKeyboard);
   const { mode, targetIds, setMode, toggleTarget } = useCastTarget();
   const { devices } = useFleetContext();
   const identity = useContext(ClientIdentityContext);
@@ -34,6 +38,7 @@ export function CastTargetChip() {
 
   const control = (
     <UnstyledButton
+      ref={trigger}
       data-testid="cast-target-chip"
       className="media-destination"
       aria-label={`Playing on ${name}. Change where things play`}

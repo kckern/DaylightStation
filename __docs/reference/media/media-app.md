@@ -818,8 +818,10 @@ and a **canvas** that shows exactly one view at a time:
 - the **destination control** — "Playing on <name> ⌄": where a plain Play goes
   (this browser's own name, "this device" when it has none, the named screen,
   or "Kitchen + Living Room"). It absorbs the old cast icon: tapping it opens
-  the cast preferences (preferred devices, move or keep playing here too), and
-  the same destination line ("Playing on …") opens the one destination picker
+  the cast preferences (preferred devices, move or keep playing here too).
+  Escape closes these preferences and focuses the destination control. Clicking
+  outside closes them while focus follows the click. The same destination line
+  ("Playing on …") opens the one destination picker
   in Search Mode, on Browse and Detail, and on **Now Playing**. A machine name
   ("Browser 4778f429") is never shown: an unnamed browser reads "this device"
   for its owner and "a browser" to everyone else. An

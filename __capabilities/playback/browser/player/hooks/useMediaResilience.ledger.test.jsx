@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
 import { useMediaResilience } from './useMediaResilience.js';
 import { createRecoveryLedger, _setSharedLedgerForTests } from '../lib/recoveryLedger.js';
-import { createRecoveryIdentity } from '../lib/recovery/recoveryIdentity.js';
+import { createRecoveryIdentity, recoverySessionKey } from '../lib/recovery/recoveryIdentity.js';
 import { makeFakeEl } from './__testHelpers/fakeMediaEl.js';
 import { STALL_JOLT_GRACE_MS, STALL_JOLT_STEP_MS } from '../lib/stallJolt.js';
 let fakeNow, ledger;
@@ -71,12 +71,23 @@ describe('useMediaResilience shared incident ownership', () => {
     for (let i = 0; i < 3; i++) { el.currentTime += 0.5; advance(500); }
     expect(ledger.snapshot(args.playbackSessionKey)).toMatchObject({ count: 0, rollingCount: 1 });
   });
-  it('keeps owner-managed budget on renderer hook unmount', () => {
-    installLedger(); const args = baseArgs({ recoveryIdentity: createRecoveryIdentity({ ownerId: 'test-owner' }) });
+  it('retires the superseded recovery action and keeps the owner-managed budget on renderer unmount', () => {
+    installLedger();
+    const identity = createRecoveryIdentity({ ownerId: 'test-owner' });
+    const sessionKey = recoverySessionKey(identity.getTarget());
+    const args = baseArgs({ recoveryIdentity: identity, playbackSessionKey: sessionKey,
+      onReload: vi.fn(({ target }) => identity.beginRenderer(target)) });
     const hook = renderHook(() => useMediaResilience(args));
-    spend(hook, args, 1);
+
+    act(() => hook.result.current._testTriggerRecovery('playback-stalled'));
+    const [{ actionId }] = args.onReload.mock.lastCall;
+    expect(ledger.snapshot(sessionKey)).toMatchObject({ count: 1, rollingCount: 1, inFlightActionId: actionId });
+
+    act(() => identity.acceptUserIntent('pause'));
+    expect(recoverySessionKey(identity.getTarget())).toBe(sessionKey);
+    expect(ledger.snapshot(sessionKey)).toMatchObject({ count: 1, rollingCount: 1, inFlightActionId: null });
     hook.unmount();
-    expect(ledger.snapshot(args.playbackSessionKey).count).toBe(1);
+    expect(ledger.snapshot(sessionKey).count).toBe(1);
   });
   it('explicit Retry debits a fresh incident but cannot erase six rolling actions', () => {
     installLedger(); const args = baseArgs(); const hook = renderHook(() => useMediaResilience(args));

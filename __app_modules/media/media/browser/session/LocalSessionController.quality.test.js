@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import { getRecoveryLedger, recoverySessionKey } from '../../../../../__capabilities/playback/browser/contracts.mjs';
 import { createLocalSessionController } from './LocalSessionController.js';
 
 vi.mock('../logging/mediaLog.js', () => ({ default: new Proxy({}, { get: () => () => {} }) }));
@@ -48,6 +49,9 @@ it('retains owner visit and incident accounting on quality adoption and starts a
   await controller.queue.playNow({ contentId: 'plex:42', format: 'video' });
   const identity = controller.recoveryIdentity;
   const before = identity.getTarget();
+  const ledger = getRecoveryLedger();
+  const visitKey = recoverySessionKey(before);
+  expect(ledger.reserveAction({ sessionKey: visitKey, actor: 'test', reason: 'stall' }).allowed).toBe(true);
   const queueItemId = controller.getSnapshot().queue.items[0].queueItemId;
   expect(await controller.quality.setOverrides({ contentId: 'plex:42', quality: { maxResolution: '480' } })).toMatchObject({ ok: true });
   const afterQuality = identity.getTarget();
@@ -55,8 +59,10 @@ it('retains owner visit and incident accounting on quality adoption and starts a
   expect(afterQuality.rendererGeneration).toBeGreaterThan(before.rendererGeneration);
   controller.transport.pause();
   expect(identity.getTarget().intentRevision).toBe(afterQuality.intentRevision + 1);
+  expect(ledger.snapshot(visitKey)).toMatchObject({ count: 1 });
   controller.config.setRepeat('one');
   controller.onPlayerEnded('plex:42');
+  expect(ledger.snapshot(visitKey)).toBeNull();
   expect(controller.getSnapshot().queue.items[0].queueItemId).toBe(queueItemId);
   expect(identity.getTarget().visitId).not.toBe(before.visitId);
 });

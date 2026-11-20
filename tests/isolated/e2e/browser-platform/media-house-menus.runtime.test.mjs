@@ -3,7 +3,7 @@ import { silentWave } from '../../../_fixtures/media/silentWave.mjs';
 
 test.use({ viewport: { width: 390, height: 850 }, serviceWorkers: 'block' });
 
-async function openMedia(page, baseURL) {
+async function openMedia(page, baseURL, { firstUse = false } = {}) {
   const origin = new URL(baseURL).origin;
   const audio = silentWave(30);
   const playbackCommands = [];
@@ -11,7 +11,7 @@ async function openMedia(page, baseURL) {
   await page.context().route('**/*', route => (
     new URL(route.request().url()).origin === origin ? route.fallback() : route.abort()
   ));
-  await page.addInitScript(() => localStorage.setItem('media-app.first-use-done', 'done'));
+  if (!firstUse) await page.addInitScript(() => localStorage.setItem('media-app.first-use-done', 'done'));
   await page.routeWebSocket('**/ws', socket => {
     connection = socket;
     socket.onMessage(raw => {
@@ -82,3 +82,57 @@ for (const fixture of openers) {
     expect(playbackCommands).toEqual([]);
   });
 }
+
+test('Media dismisses first-use and cast settings before Browse Back', async ({ page, baseURL }) => {
+  await page.setViewportSize({ width: 1440, height: 850 });
+  const { playbackTime, playbackCommands } = await openMedia(page, baseURL, { firstUse: true });
+  await page.getByRole('navigation', { name: 'Primary' }).getByRole('button', { name: 'Browse', exact: true }).click();
+  await expect(page).toHaveURL(/view=browse/);
+  const firstUse = page.getByRole('dialog', { name: 'What should we call this device?' });
+  await firstUse.getByRole('textbox', { name: 'Name for this device' }).focus();
+  const beforeEscape = await playbackTime();
+  await page.keyboard.press('Escape');
+  await expect(firstUse).toBeHidden();
+  await expect(page).toHaveURL(/view=browse/);
+
+  const cast = page.getByRole('button', { name: /Change where things play/ });
+  await cast.press('Enter');
+  const preferences = page.getByTestId('cast-popover');
+  await preferences.getByRole('radio', { name: 'Keep playing here too' }).focus();
+  await page.keyboard.press('Escape');
+  await expect(preferences).toBeHidden();
+  await expect(cast).toBeFocused();
+  await expect(page).toHaveURL(/view=browse/);
+
+  // Pointer dismissal should keep the focus chosen by the new click.
+  await cast.click();
+  await expect(preferences).toBeVisible();
+  const search = page.getByRole('textbox', { name: 'Search media…', exact: true });
+  await search.click();
+  await expect(preferences).toBeHidden();
+  await expect(search).toBeFocused();
+  await cast.press('Escape');
+  await expect(page.getByTestId('home-view')).toBeVisible();
+  await expect.poll(playbackTime).toBeGreaterThan(beforeEscape);
+  expect(playbackCommands).toEqual([]);
+});
+
+test('Media Play on a screen returns focus before Browse Back without sending a command', async ({ page, baseURL }) => {
+  const { playbackTime, playbackCommands } = await openMedia(page, baseURL);
+  await page.getByRole('navigation', { name: 'Primary' }).getByRole('button', { name: 'Browse', exact: true }).click();
+  await expect(page).toHaveURL(/view=browse/);
+  const opener = page.getByRole('button', { name: 'Play on a screen', exact: true });
+  await opener.press('Enter');
+  const panel = page.getByTestId('fling-panel');
+  await panel.getByRole('button', { name: 'Fixture screen' }).focus();
+  const beforeEscape = await playbackTime();
+  await page.keyboard.press('Escape');
+  await expect(panel).toBeHidden();
+  await expect(opener).toBeFocused();
+  await expect(page).toHaveURL(/view=browse/);
+
+  await page.keyboard.press('Escape');
+  await expect(page.getByTestId('home-view')).toBeVisible();
+  await expect.poll(playbackTime).toBeGreaterThan(beforeEscape);
+  expect(playbackCommands).toEqual([]);
+});

@@ -52,6 +52,18 @@ describe('local source wait', () => {
     expect(c.problems.get()).toBeNull();
   });
 
+  it('cancels the old source wait when the same content starts a new visit', () => {
+    const c = controller();
+    const originalVisit = c.recoveryIdentity.getTarget().visitId;
+    c.onPlayerSourceWait({ waiting: true, contentId: 'plex:1' });
+    vi.advanceTimersByTime(1_000);
+    c.queue.playNow({ contentId: 'plex:1', title: 'Arrival', format: 'video' });
+    expect(c.recoveryIdentity.getTarget().visitId).not.toBe(originalVisit);
+    expect(c.getSnapshot().currentItem.contentId).toBe('plex:1');
+    vi.advanceTimersByTime(2_100);
+    expect(c.problems.get()).toBeNull();
+  });
+
   it('holds an unavailable movie after the bounded wait', () => {
     const c = controller();
     c.onPlayerSourceWait({ waiting: true, since: Date.now(), contentId: 'plex:1' });

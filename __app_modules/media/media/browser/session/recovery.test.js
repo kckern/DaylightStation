@@ -60,6 +60,16 @@ describe('paused restore (RELY.7a)', () => {
     expect(listener).toHaveBeenCalledExactlyOnceWith(false, 'play');
   });
 
+  it('releases the restore hold when Stop commits and preserves the queue', () => {
+    const { controller } = makeController({ persistedSnapshot: persisted() });
+    const listener = vi.fn();
+    controller.restore.subscribe(listener);
+    controller.transport.stop();
+    expect(controller.restore.isHeld()).toBe(false);
+    expect(listener).toHaveBeenCalledExactlyOnceWith(false, 'stop');
+    expect(controller.getSnapshot().queue.items.map(entry => entry.contentId)).toEqual(['plex:1', 'plex:2']);
+  });
+
   it('a seek while held moves the restored spot without touching a player', () => {
     const { controller, player } = makeController({ persistedSnapshot: persisted() });
     controller.transport.seekAbs(40);
