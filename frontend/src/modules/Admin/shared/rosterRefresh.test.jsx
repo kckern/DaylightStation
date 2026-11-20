@@ -59,11 +59,12 @@ it.each([
   await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
   fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
   expect(await screen.findByText(row)).toBeVisible();
+  const rosterRead = [path, {}, 'GET', { signal: expect.any(AbortSignal) }];
   expect(api.mock.calls).toEqual([
-    [path],
+    rosterRead,
     [command, expect.any(Object), 'POST'],
-    [path],
-    [path],
+    rosterRead,
+    rosterRead,
   ]);
 });
 

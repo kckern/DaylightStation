@@ -81,7 +81,7 @@ describe('entry correction dialog', () => {
     await waitFor(() => expect(screen.getByRole('button', { name: 'favorite' }).getAttribute('aria-pressed')).toBe('true'));
     fireEvent.click(screen.getByRole('button', { name: 'favorite' }));
     await waitFor(() => expect(writes()).toHaveLength(1));
-    expect(apiMock).toHaveBeenCalledWith('api/v1/health/nutrition/catalog/f1');
+    expect(apiMock).toHaveBeenCalledWith('api/v1/health/nutrition/catalog/f1', {}, 'GET', expect.anything());
     expect(writes()[0][1]).toEqual({ id: 'f1', favorite: false });
   });
 

@@ -35,17 +35,13 @@ test('Health Today retires hidden workout enrichment and reads it when Today ret
   await expect(workout).toBeVisible();
   await expect.poll(() => reads).toEqual([date]);
 
+  const retired = page.waitForEvent('requestfailed', request => request === firstRead.request());
   await page.getByRole('link', { name: 'Progress', exact: true }).click();
   await expect(page).toHaveURL(/\/health\/progress$/);
   await expect(workout).toBeAttached();
   await expect(workout).toBeHidden();
 
-  const responded = page.waitForResponse(response => new URL(response.url()).pathname === fitnessPath);
-  await firstRead.fulfill({
-    json: { sessions: [{ sessionId: 'retired', segments: [{ sessionId: 'segment-1' }] }] },
-  });
-  await (await responded).finished();
-  await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+  await retired;
   await expect(oldLink).toHaveCount(0);
   expect(reads).toEqual([date]);
 

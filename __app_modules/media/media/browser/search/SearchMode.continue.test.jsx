@@ -59,7 +59,7 @@ async function mount(items) {
       <MantineProvider><CastTargetProvider><SearchProvider><SearchMode onClose={() => {}} /></SearchProvider></CastTargetProvider></MantineProvider>
     );
   });
-  expect(DaylightAPI.mock.calls.filter(([path]) => path !== configPath && path !== favouritesPath)).toEqual([[carryOnPath]]);
+  expect(DaylightAPI.mock.calls.filter(([path]) => path !== configPath && path !== favouritesPath)).toEqual([[carryOnPath, {}, 'GET', { signal: expect.any(AbortSignal) }]]);
 }
 
 beforeEach(() => {

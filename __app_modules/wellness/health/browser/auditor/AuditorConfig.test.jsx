@@ -22,7 +22,7 @@ beforeEach(() => {
     triggers: all(TRIGGERS), permissions: all(PERMISSIONS) }, runs: [], questions: [], nextEligibleAt: null,
     options: { models: ['gpt-4o', 'gpt-4.1', 'gpt-4.1-mini', 'gpt-5.6-luna'], triggers: TRIGGERS, permissions: PERMISSIONS, minGapMinutes: [0, 15, 30, 60], maxDailyCapUsd: 50 } };
   api.mockImplementation(async (path, body, method) => {
-    if (method) return {};
+    if (method === 'PATCH' || method === 'POST') return {};
     if (path.endsWith('/settings/log')) return { entries: [] };
     return structuredClone(status);
   });
@@ -152,7 +152,7 @@ describe('Auditor configuration', () => {
   });
   it('shows the value being saved and disables every control while the save is in flight', async () => {
     let finish;
-    api.mockImplementation((path, body, method) => (method ? new Promise(resolve => { finish = resolve; }) : Promise.resolve(structuredClone(status))));
+    api.mockImplementation((path, body, method) => (method === 'PATCH' ? new Promise(resolve => { finish = resolve; }) : Promise.resolve(structuredClone(status))));
     mount();
     fireEvent.click(screen.getByRole('switch', { name: /^Nutrient values/ }));
     await waitFor(() => expect(screen.getByRole('switch', { name: /^Nutrient values/ }).disabled).toBe(true));
@@ -178,7 +178,7 @@ describe('Auditor configuration', () => {
   });
   it('puts the cap back when saving it fails', async () => {
     api.mockImplementation(async (path, body, method) => {
-      if (method) throw Object.assign(new Error('HTTP 400: Bad Request - {"error":"Invalid daily cap"}'), { status: 400 });
+      if (method === 'PATCH') throw Object.assign(new Error('HTTP 400: Bad Request - {"error":"Invalid daily cap"}'), { status: 400 });
       return structuredClone(status);
     });
     mount();
@@ -190,7 +190,7 @@ describe('Auditor configuration', () => {
   });
   it('says settings changed and reloads on a version conflict', async () => {
     api.mockImplementation(async (path, body, method) => {
-      if (method) throw Object.assign(new Error('HTTP 409: Conflict - {"error":"Settings changed. Reload first."}'), { status: 409 });
+      if (method === 'PATCH') throw Object.assign(new Error('HTTP 409: Conflict - {"error":"Settings changed. Reload first."}'), { status: 409 });
       return structuredClone(status);
     });
     const res = mount();
@@ -200,7 +200,7 @@ describe('Auditor configuration', () => {
   });
   it('shows the server message on a bad request', async () => {
     api.mockImplementation(async (path, body, method) => {
-      if (method) throw Object.assign(new Error('HTTP 400: Bad Request - {"error":"Invalid daily cap"}'), { status: 400 });
+      if (method === 'PATCH') throw Object.assign(new Error('HTTP 400: Bad Request - {"error":"Invalid daily cap"}'), { status: 400 });
       return structuredClone(status);
     });
     mount();

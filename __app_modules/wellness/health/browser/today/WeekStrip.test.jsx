@@ -64,7 +64,7 @@ describe('WeekStrip', () => {
     strip();
     await waitFor(() => expect(document.querySelectorAll('.health-weekstrip__cell').length).toBe(7));
     expect(apiMock).toHaveBeenCalledTimes(1);
-    expect(apiMock).toHaveBeenCalledWith(RANGE_PATH);
+    expect(apiMock).toHaveBeenCalledWith(RANGE_PATH, {}, 'GET', expect.anything());
   });
 
   it('sets each bar height from the day/budget ratio, clamped at the overshoot cap', async () => {
@@ -197,7 +197,7 @@ describe('WeekStrip', () => {
   it('never reaches past today, even when the viewed date somehow has', async () => {
     strip({ date: '2026-12-25', today: '2026-09-06' });
     await waitFor(() => expect(apiMock).toHaveBeenCalledTimes(1));
-    expect(apiMock).toHaveBeenCalledWith(RANGE_PATH);
+    expect(apiMock).toHaveBeenCalledWith(RANGE_PATH, {}, 'GET', expect.anything());
   });
 
   it('tapping a cell jumps the viewed date', async () => {
@@ -238,6 +238,6 @@ describe('WeekStrip', () => {
     expect(screen.getByRole('button', { name: 'Next week' })).toBeDisabled();
     fireEvent.click(screen.getByRole('button', { name: 'Previous week' }));
     expect(onDateChange).not.toHaveBeenCalled();
-    await waitFor(() => expect(apiMock).toHaveBeenCalledWith('api/v1/health/budget/range?from=2026-08-24&to=2026-08-30'));
+    await waitFor(() => expect(apiMock).toHaveBeenCalledWith('api/v1/health/budget/range?from=2026-08-24&to=2026-08-30', {}, 'GET', expect.anything()));
   });
 });

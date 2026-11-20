@@ -211,6 +211,8 @@ test('Feed reads headline editions and Reader subscriptions for the replacement 
   const reads = { editions: [], subscriptions: [] };
   const workspaces = [];
   const oldReads = {};
+  const canceled = [];
+  page.on('requestfailed', request => canceled.push(request));
   const editions = owner => [{ id: owner + '-edition', label: owner + ' edition' }];
   const subscriptions = owner => [{ id: owner + '-feed', title: owner + ' feed', categories: [{ label: owner + ' subscriptions' }] }];
   await page.setViewportSize({ width: 1280, height: 800 });
@@ -224,7 +226,7 @@ test('Feed reads headline editions and Reader subscriptions for the replacement 
     if (resource) {
       reads[resource].push(owner);
       if (owner === 'amy') {
-        oldReads[resource] = route;
+        oldReads[resource] = route.request();
         return;
       }
       if (resource === 'subscriptions' && reads.subscriptions.filter(value => value === 'bob').length === 1) {
@@ -247,10 +249,7 @@ test('Feed reads headline editions and Reader subscriptions for the replacement 
   await expect.poll(() => reads).toEqual({ editions: ['amy'], subscriptions: ['amy'] });
   await switcher.evaluate(bob => localStorage.setItem('ds_token', bob), token('bob'));
   await expect.poll(() => workspaces).toContain('bob');
-  await Promise.all([
-    oldReads.editions.fulfill({ json: editions('amy') }),
-    oldReads.subscriptions.fulfill({ json: subscriptions('amy') }),
-  ]);
+  await expect.poll(() => canceled).toEqual(expect.arrayContaining([oldReads.editions, oldReads.subscriptions]));
 
   await expect(page.getByRole('link', { name: 'Headlines', exact: true })).toHaveAttribute('href', '/feed/headlines/bob-edition');
   await expect(page.getByRole('button', { name: 'amy subscriptions', exact: true })).toHaveCount(0);

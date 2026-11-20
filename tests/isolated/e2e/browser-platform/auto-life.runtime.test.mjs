@@ -7,7 +7,7 @@ test.beforeEach(async ({ page }) => {
   await page.route('**/supervision/bootstrap', route => route.fulfill({ json: { enabled: false } }));
 });
 
-test('Auto renders the selected vehicle’s records and discards a late document response from another car', async ({ page }) => {
+test('Auto renders the selected vehicle’s records and cancels the previous vehicle’s document read', async ({ page }) => {
   await page.routeWebSocket('**/*', () => {});
   const api = '/api/v1/automotive';
   const first = `${api}/vehicles/wagon`;
@@ -39,7 +39,7 @@ test('Auto renders the selected vehicle’s records and discards a late document
     const key = pathname + search;
     if (request.method() !== 'GET') return route.fulfill({ status: 405 });
     if (key === `${first}/documents`) {
-      pendingWagonDocuments = route;
+      pendingWagonDocuments = request;
       return;
     }
     const json = responses[key];
@@ -52,18 +52,13 @@ test('Auto renders the selected vehicle’s records and discards a late document
   await tab('Docs').click();
   await expect(page.getByLabel('Loading documents')).toBeVisible();
   await expect.poll(() => Boolean(pendingWagonDocuments)).toBe(true);
+  const wagonReadCanceled = page.waitForEvent('requestfailed', request => request === pendingWagonDocuments);
   await page.getByRole('button', { name: 'Back to garage' }).click();
+  await wagonReadCanceled;
   await page.getByRole('button', { name: 'City hatchback', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'City hatchback', exact: true })).toBeVisible();
   const cityRegistration = page.getByRole('link', { name: /City registration/ });
   await expect(cityRegistration).toHaveAttribute('href', `${api}/files/city-registration.pdf`);
-
-  const wagonResponse = page.waitForResponse(response => new URL(response.url()).pathname === `${first}/documents`);
-  await pendingWagonDocuments.fulfill({ json: { documents: [
-    { ...document, file: 'wagon-registration.pdf', label: 'Wagon registration' },
-  ] } });
-  expect(await (await wagonResponse).finished()).toBeNull();
-  await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
   await expect(cityRegistration).toBeVisible();
   await expect(page.getByRole('link', { name: /Wagon registration/ })).toHaveCount(0);
 

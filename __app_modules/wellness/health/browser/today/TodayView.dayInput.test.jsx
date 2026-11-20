@@ -25,7 +25,10 @@ const api = async (path, body) => {
   if (path === 'api/v1/health/nutrition/meal-undo') return mealUndo();
   if (path === 'api/v1/health/nutrition/foods-move') return foodsMove();
   if (path === 'api/v1/health/nutrition/input') return { transcribeFailed: true, audioRef: 'va_1', responseText: 'Your recording is saved.' };
-  if (path.includes('health/day?')) { dayReads += 1; return { items, budget: { budget: 2000, food: 0, exercise: 0, remaining: 2000, sessions: [] } }; }
+  if (path.includes('health/day?')) {
+    if (path === `api/v1/health/day?date=${today}`) dayReads += 1;
+    return { items, budget: { budget: 2000, food: 0, exercise: 0, remaining: 2000, sessions: [] } };
+  }
   if (path.includes('nutrition/pending')) return { pending: [] };
   if (path.includes('observations')) return { observations: [] };
   return {};

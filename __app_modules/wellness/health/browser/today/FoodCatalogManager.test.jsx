@@ -24,7 +24,7 @@ describe('future saved-food definitions', () => {
       return { items: [{ id: 'oats', name: 'Rolled oats', grams: 80 }] };
     });
     render(<MantineProvider><FoodCatalogManager open onClose={() => {}} onChanged={() => {}} /></MantineProvider>);
-    await waitFor(() => expect(api).toHaveBeenCalledWith(initialPath));
+    await waitFor(() => expect(api).toHaveBeenCalledWith(initialPath, {}, 'GET', expect.anything()));
     const query = screen.getByLabelText('Find a saved food');
     fireEvent.change(query, { target: { value: 'rolled oats' } });
     expect(await screen.findByRole('alert')).toHaveTextContent('Saved foods temporarily unavailable');
@@ -33,7 +33,9 @@ describe('future saved-food definitions', () => {
     await act(async () => first.resolve({ items: [{ id: 'apple', name: 'Apple', grams: 50 }] }));
     expect(screen.queryByRole('button', { name: /Apple/ })).toBeNull();
     expect(query).toHaveValue('rolled oats');
-    expect(api.mock.calls).toEqual([[initialPath], [searchPath], [searchPath]]);
+    expect(api.mock.calls.map(([path, , method]) => [path, method])).toEqual([
+      [initialPath, 'GET'], [searchPath, 'GET'], [searchPath, 'GET'],
+    ]);
   });
 
   it('edits a gram basis in one command without rewriting any logged entry', async () => {
@@ -47,12 +49,12 @@ describe('future saved-food definitions', () => {
     fireEvent.change(screen.getByLabelText('Nutrition basis in grams'), { target: { value: '90' } });
     fireEvent.click(screen.getByRole('button', { name: 'Save definition' }));
     await waitFor(() => expect(changed).toHaveBeenCalledOnce());
-    const writes = api.mock.calls.filter(([, , method]) => method);
+    const writes = api.mock.calls.filter(([, , method]) => method !== 'GET');
     expect(writes).toEqual([['api/v1/health/nutrition/catalog/oats', { name: 'My oats', grams: 90, nutrients: { calories: 300, fiber: 8 } }, 'PUT']]);
   });
   it('keeps the draft and shows a failed write for retry', async () => {
     api.mockImplementation(async (path, body, method) => {
-      if (method) throw new Error('Connection interrupted');
+      if (method === 'PUT') throw new Error('Connection interrupted');
       return { items: [{ id: 'oats', name: 'Oats', grams: 80, nutrients: { calories: 300 } }] };
     });
     render(<MantineProvider><FoodCatalogManager open onClose={() => {}} onChanged={() => {}} /></MantineProvider>);

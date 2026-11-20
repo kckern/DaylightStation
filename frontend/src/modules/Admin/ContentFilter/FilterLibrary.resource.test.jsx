@@ -35,5 +35,11 @@ it('refreshes the reopened library when a make request from its prior visit comm
   committed = true;
   await act(async () => job.resolve({ run: { id: 'r1' } }));
   expect(screen.getByText('Queued')).toBeInTheDocument();
-  expect(DaylightAPI.mock.calls).toEqual([[library], [make, { kind: 'make' }, 'POST'], [library], [library]]);
+  const libraryRead = [library, {}, 'GET', { signal: expect.any(AbortSignal) }];
+  expect(DaylightAPI.mock.calls).toEqual([
+    libraryRead,
+    [make, { kind: 'make' }, 'POST'],
+    libraryRead,
+    libraryRead,
+  ]);
 });

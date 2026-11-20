@@ -58,9 +58,8 @@ describe('ProgressView resource reads', () => {
 
     fireEvent.click(within(alert).getByRole('button', { name: 'Retry' }));
     expect(await screen.findByText('Target 155 lb · 0.5 lb/week · Floor 1500 kcal')).toBeVisible();
-    expect(apiMock.mock.calls.filter(([path]) => path === 'api/v1/health/goals')).toEqual([
-      ['api/v1/health/goals'], ['api/v1/health/goals'],
-    ]);
+    const goalsCalls = apiMock.mock.calls.filter(([path]) => path === 'api/v1/health/goals');
+    expect(goalsCalls.map(([, , method]) => method)).toEqual(['GET', 'GET']);
     fireEvent.click(screen.getByRole('button', { name: 'Edit goals' }));
     expect(await screen.findByLabelText('Target weight')).toHaveValue('155 lbs');
   });
@@ -75,7 +74,8 @@ describe('ProgressView resource reads', () => {
     render(<MantineProvider><ProgressView /></MantineProvider>);
     expect(await screen.findByText('Weight · as of 2026-09-10')).toBeVisible();
     expect(screen.getByText('171.6')).toBeVisible();
-    expect(apiMock.mock.calls.filter(([path]) => path === 'api/v1/health/weight')).toEqual([['api/v1/health/weight']]);
+    const weightCalls = apiMock.mock.calls.filter(([path]) => path === 'api/v1/health/weight');
+    expect(weightCalls.map(([, , method]) => method)).toEqual(['GET']);
   });
 });
 

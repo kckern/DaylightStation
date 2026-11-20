@@ -7,7 +7,7 @@ const { api } = vi.hoisted(() => ({ api: vi.fn() }));
 vi.mock('../../../lib/api.mjs', () => ({ DaylightAPI: (...args) => api(...args) }));
 import IntegrationsIndex from './IntegrationsIndex.jsx';
 
-const integrationsPath = '/api/v1/admin/integrations';
+const integrationsRead = ['/api/v1/admin/integrations', {}, 'GET', { signal: expect.any(AbortSignal) }];
 
 function renderIndex() {
   return render(
@@ -32,7 +32,7 @@ describe('IntegrationsIndex', () => {
 
     expect(await screen.findByRole('link', { name: /Plex/ })).toHaveAttribute('href', '/admin/system/integrations/plex');
     expect(screen.getByRole('link', { name: /Withings/ })).toHaveAttribute('href', '/admin/system/integrations/withings');
-    expect(api.mock.calls).toEqual([[integrationsPath]]);
+    expect(api.mock.calls).toEqual([integrationsRead]);
   });
 
   it('retries a failed roster read and waits for success before showing an empty list', async () => {
@@ -44,6 +44,6 @@ describe('IntegrationsIndex', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
     expect(await screen.findByText('No integrations found.')).toBeInTheDocument();
     expect(screen.queryByRole('alert')).toBeNull();
-    expect(api.mock.calls).toEqual([[integrationsPath], [integrationsPath]]);
+    expect(api.mock.calls).toEqual([integrationsRead, integrationsRead]);
   });
 });

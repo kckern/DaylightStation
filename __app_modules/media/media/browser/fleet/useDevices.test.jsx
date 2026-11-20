@@ -20,7 +20,7 @@ describe('useDevices', () => {
     });
     const { result } = renderHook(() => useDevices());
     await waitFor(() => expect(result.current.loading).toBe(false));
-    expect(apiMock).toHaveBeenCalledWith('api/v1/device/config');
+    expect(apiMock).toHaveBeenCalledWith('api/v1/device/config', {}, 'GET', { signal: expect.any(AbortSignal) });
     expect(result.current.devices.map((d) => d.id)).toEqual(['livingroom-tv', 'office-tv']);
     expect(result.current.error).toBeNull();
   });

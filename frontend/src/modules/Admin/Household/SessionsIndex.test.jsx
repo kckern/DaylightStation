@@ -10,6 +10,7 @@ vi.mock('../../../lib/api.mjs', () => ({ DaylightAPI: (...args) => api(...args) 
 const renderSessions = () => render(
   <MantineProvider><SessionRevocationProvider><SessionsIndex /></SessionRevocationProvider></MantineProvider>,
 );
+const sessionsRead = ['api/v1/auth/sessions', {}, 'GET', { signal: expect.any(AbortSignal) }];
 const phone = { id: 'phone-1', username: 'Sam', userAgent: 'iPhone Safari/1' };
 const laptop = { id: 'laptop-1', username: 'Sam', userAgent: 'Linux Firefox/1' };
 
@@ -22,7 +23,7 @@ it.each([
   renderSessions();
   expect(await screen.findByText(expected)).toBeVisible();
   expect(screen.queryByText(absent)).toBeNull();
-  expect(api.mock.calls).toEqual([['api/v1/auth/sessions']]);
+  expect(api.mock.calls).toEqual([sessionsRead]);
 });
 
 it('disables bulk sign-out during an individual revoke and re-enables it for the refreshed roster', async () => {
@@ -41,11 +42,14 @@ it('disables bulk sign-out during an individual revoke and re-enables it for the
     bulk.click();
   });
   expect(bulk).toBeDisabled();
-  expect(api.mock.calls).toEqual([['api/v1/auth/sessions'], ['api/v1/auth/sessions/phone-1', {}, 'DELETE']]);
+  expect(api.mock.calls).toEqual([
+    sessionsRead,
+    ['api/v1/auth/sessions/phone-1', {}, 'DELETE'],
+  ]);
 
   completeRevoke({ revoked: true });
   expect(await screen.findByRole('button', { name: 'Sign out 1 other' })).toBeEnabled();
-  expect(api.mock.calls[2]).toEqual(['api/v1/auth/sessions']);
+  expect(api.mock.calls[2]).toEqual(sessionsRead);
 });
 
 it('keeps the roster on refusal and supports a later sign-out attempt', async () => {
@@ -70,10 +74,10 @@ it('keeps the roster on refusal and supports a later sign-out attempt', async ()
   expect(await screen.findByText('Nobody is signed in')).toBeVisible();
   expect(await screen.findByText('Signed out everywhere else.')).toBeVisible();
   expect(api.mock.calls).toEqual([
-    ['api/v1/auth/sessions'],
+    sessionsRead,
     ['api/v1/auth/sessions/others', {}, 'DELETE'],
     ['api/v1/auth/sessions/others', {}, 'DELETE'],
-    ['api/v1/auth/sessions'],
+    sessionsRead,
   ]);
 });
 
@@ -102,11 +106,11 @@ it('releases the old revoke on an auth change without clearing the new revoke wh
   await act(async () => { newRevoke.resolve({ revoked: true }); });
   expect(await screen.findByText('Signed out Linux · Firefox.')).toBeVisible();
   expect(api.mock.calls).toEqual([
-    ['api/v1/auth/sessions'],
+    sessionsRead,
     ['api/v1/auth/sessions/phone-1', {}, 'DELETE'],
-    ['api/v1/auth/sessions'],
+    sessionsRead,
     ['api/v1/auth/sessions/laptop-1', {}, 'DELETE'],
-    ['api/v1/auth/sessions'],
+    sessionsRead,
   ]);
 });
 
@@ -120,7 +124,7 @@ it('reads the new account roster without joining an old account request', async 
   const { unmount } = renderSessions();
   expect(api).toHaveBeenCalledTimes(1);
   act(() => setToken('new-session-token'));
-  expect(api.mock.calls).toEqual([['api/v1/auth/sessions'], ['api/v1/auth/sessions']]);
+  expect(api.mock.calls).toEqual([sessionsRead, sessionsRead]);
   expect(await screen.findByRole('row', { name: /this device.*Linux/ })).toBeVisible();
 
   await act(async () => { oldRoster.resolve({ revocable: true, sessions: [{ ...phone, current: true }] }); });

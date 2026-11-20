@@ -16,7 +16,7 @@ beforeEach(() => {
       choices: [{ id: '0', label: 'Cod', repair: { updates: [{ id: 'fish', changes: { name: 'Cod' } }], createGroups: [] } }] },
   ] };
   api.mockImplementation(async (path, body, method) => {
-    if (method) return { status: 'resolved' };
+    if (method === 'POST') return { status: 'resolved' };
     if (path.includes('/history')) return { records: [], total: 0 };
     if (path.includes('/spend')) return { today: 0.02, ledgerTodayUsd: 0.04, week: 0.1, month: 0.3, capUsd: 1, cappedToday: false };
     return structuredClone(state);
@@ -34,7 +34,7 @@ describe('Health cleanup controls', () => {
   });
   it('supports free responses and keeps stale-answer feedback after the question closes', async () => {
     api.mockImplementation(async (_path, _body, method) => {
-      if (method) { state.questions = []; return { status: 'stale', outcome: { message: 'Food changed. Review it manually.' } }; }
+      if (method === 'POST') { state.questions = []; return { status: 'stale', outcome: { message: 'Food changed. Review it manually.' } }; }
       return structuredClone(state);
     });
     mount(<CleanupQuestions />); await screen.findByLabelText('Your answer');

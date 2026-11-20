@@ -371,7 +371,6 @@ test('Health drops the warm food and draft when a different owner is confirmed',
   const dayPath = `api/v1/health/day?date=${date}`;
   const contextReady = Promise.withResolvers();
   const aliceDayHeld = Promise.withResolvers();
-  const aliceDayReady = Promise.withResolvers();
   const bobDayHeld = Promise.withResolvers();
   const bobDayReady = Promise.withResolvers();
   let warm = false;
@@ -388,15 +387,15 @@ test('Health drops the warm food and draft when a different owner is confirmed',
     const requestOwner = owner;
     if (warm) {
       if (requestOwner === 'alice') {
-        aliceDayHeld.resolve();
-        await aliceDayReady.promise;
+        aliceDayHeld.resolve(route.request());
+        return;
       } else {
         bobDayHeld.resolve();
         await bobDayReady.promise;
       }
     }
     const row = { uuid: `${requestOwner}-fixture`, name: `${requestOwner} breakfast fixture`, mealTime: 'morning', date, calories: 120, grams: 100 };
-    return route.fulfill({ json: { date, items: [row], budget: { budget: 2000, remaining: 1880 } }, headers: { 'x-fixture-owner': requestOwner } });
+    return route.fulfill({ json: { date, items: [row], budget: { budget: 2000, remaining: 1880 } } });
   });
   const aliceFood = page.getByText('alice breakfast fixture', { exact: true });
   const bobFood = page.getByText('bob breakfast fixture', { exact: true });
@@ -407,27 +406,23 @@ test('Health drops the warm food and draft when a different owner is confirmed',
     await expect.poll(() => healthCacheValue(page, dayPath)).toMatchObject({ items: [{ uuid: 'alice-fixture' }] });
     warm = true;
     await page.reload();
-    await aliceDayHeld.promise;
+    const aliceRead = await aliceDayHeld.promise;
     await expect(aliceFood).toBeVisible();
     await field.fill('Alice draft');
 
+    const aliceCanceled = page.waitForEvent('requestfailed', request => request === aliceRead);
     contextReady.resolve();
     await bobDayHeld.promise;
+    await aliceCanceled;
     await expect(aliceFood).toHaveCount(0);
     await expect(field).toHaveValue('');
     bobDayReady.resolve();
     await expect(bobFood).toBeVisible();
 
-    const lateAlice = page.waitForResponse(response => response.url().endsWith(dayPath) && response.headers()['x-fixture-owner'] === 'alice');
-    aliceDayReady.resolve();
-    await lateAlice;
-    await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
-    await expect(bobFood).toBeVisible();
     await expect(aliceFood).toHaveCount(0);
     expect(warmContextReads).toBe(2);
   } finally {
     contextReady.resolve();
-    aliceDayReady.resolve();
     bobDayReady.resolve();
   }
 });
@@ -462,7 +457,7 @@ test('Health resets food log display after another tab clears local storage', as
   await expect(before).toBeChecked({ timeout: 4_000 });
 });
 
-test('Home keeps a confirmed toggle when an older poll finishes', async ({ page }) => {
+test('Home cancels an older poll after a toggle is acknowledged', async ({ page }) => {
   let reads = 0;
   let pendingPoll;
   const writes = [];
@@ -484,13 +479,13 @@ test('Home keeps a confirmed toggle when an older poll finishes', async ({ page 
   const light = page.getByRole('switch', { name: 'Kitchen light: turn off' });
   await expect(light).toBeChecked();
   await expect.poll(() => reads, { timeout: 15_000 }).toBe(2);
+  const retiredPoll = page.waitForEvent('requestfailed', request => request === pendingPoll.request());
   // Mantine's visible label activates the visually hidden checkbox.
   await page.locator(`label[for="${await light.getAttribute('id')}"]`).click();
   const switched = page.getByRole('switch', { name: 'Kitchen light: turn on' });
   await expect(switched).toBeEnabled();
   await expect.poll(() => reads).toBe(3);
-  await pendingPoll.fulfill({ json: house('on') });
-  await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+  await retiredPoll;
   await expect(switched).not.toBeChecked();
   await expect(switched).toBeEnabled();
   expect(writes).toEqual([{ entityId: 'light.kitchen', desiredState: 'off' }]);

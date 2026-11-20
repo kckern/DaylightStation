@@ -28,7 +28,7 @@ describe('useBudgetRange', () => {
     render(<Probe from="2026-09-01" to="2026-09-02" />);
     await waitFor(() => expect(seen.days).toHaveLength(2));
     expect(apiMock).toHaveBeenCalledTimes(1);
-    expect(apiMock).toHaveBeenCalledWith('api/v1/health/budget/range?from=2026-09-01&to=2026-09-02');
+    expect(apiMock).toHaveBeenCalledWith('api/v1/health/budget/range?from=2026-09-01&to=2026-09-02', {}, 'GET', expect.anything());
     expect(seen.byDate.get('2026-09-01').food).toBe(1000);
   });
 

@@ -26,10 +26,10 @@ describe('EntityDetailSheet history', () => {
   it('loads 24 h of history, switches to 7 d, and keeps the switch only for a controllable entity', async () => {
     apiMock.mockResolvedValue(line([{ t: 1, v: 70, max: 71 }]));
     wrap(<EntityDetailSheet entity={temperature} haUrl="https://ha.example" onClose={() => {}} />);
-    expect(apiMock).toHaveBeenCalledWith('api/v1/home-dashboard/entities/sensor.den_temperature/history?range=24h');
+    expect(apiMock).toHaveBeenCalledWith('api/v1/home-dashboard/entities/sensor.den_temperature/history?range=24h', {}, 'GET', { signal: expect.any(AbortSignal) });
     expect((await screen.findByTestId('history-chart')).dataset.kind).toBe('line');
     fireEvent.click(screen.getByText('7 d'));
-    await waitFor(() => expect(apiMock).toHaveBeenCalledWith('api/v1/home-dashboard/entities/sensor.den_temperature/history?range=7d'));
+    await waitFor(() => expect(apiMock).toHaveBeenCalledWith('api/v1/home-dashboard/entities/sensor.den_temperature/history?range=7d', {}, 'GET', { signal: expect.any(AbortSignal) }));
     expect(screen.queryByRole('switch')).toBeNull();
   });
 
@@ -93,7 +93,9 @@ describe('EntityDetailSheet history', () => {
     await waitFor(() => expect(chart().textContent).toBe('65'));
     fireEvent.click(screen.getByText('24 h'));
     expect(chart().textContent).toBe('70');
-    expect(apiMock.mock.calls).toEqual([[dailyPath], [weeklyPath], [dailyPath]]);
+    const dailyRead = [dailyPath, {}, 'GET', { signal: expect.any(AbortSignal) }];
+    const weeklyRead = [weeklyPath, {}, 'GET', { signal: expect.any(AbortSignal) }];
+    expect(apiMock.mock.calls).toEqual([dailyRead, weeklyRead, dailyRead]);
 
     await act(async () => { failRefresh(new Error('Connection lost')); });
     expect(screen.getByRole('alert').textContent).toContain('Connection lost');
@@ -103,7 +105,7 @@ describe('EntityDetailSheet history', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
     await waitFor(() => expect(chart().textContent).toBe('72'));
     expect(screen.queryByRole('alert')).toBeNull();
-    expect(apiMock.mock.calls).toEqual([[dailyPath], [weeklyPath], [dailyPath], [dailyPath]]);
+    expect(apiMock.mock.calls).toEqual([dailyRead, weeklyRead, dailyRead, dailyRead]);
   });
 
   it('a lamp keeps its switch; extra renders between the history and the link', async () => {

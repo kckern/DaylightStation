@@ -34,6 +34,14 @@ const activeCacheReads = new Map();
 const cacheReaders = new Map();
 const refreshListeners = new Set();
 
+function retireCachedRead(path) {
+  const read = activeCacheReads.get(path);
+  if (!read) return false;
+  activeCacheReads.delete(path);
+  if (!read.prefetch?.()) read.release();
+  return true;
+}
+
 function publishToReaders(path, kind, value) {
   for (const reader of cacheReaders.get(path) ?? []) reader.notify(kind, value);
 }
@@ -47,7 +55,7 @@ export function invalidateApiResources(matches = () => true) {
   }
   for (const path of inFlight.keys()) if (matches(path)) inFlight.delete(path);
   // The cache read can outlive its first transport, including during retry.
-  for (const path of activeCacheReads.keys()) if (matches(path)) activeCacheReads.delete(path);
+  for (const path of activeCacheReads.keys()) if (matches(path)) retireCachedRead(path);
   for (const notify of refreshListeners) notify(matches);
 }
 
@@ -140,8 +148,8 @@ export function registerResourcePersistence({ store, prefixes, owner, timeoutMs 
       swrCache.delete(path);
     }
     for (const path of inFlight.keys()) if (scope.matches(path)) inFlight.delete(path);
-    for (const path of activeCacheReads.keys()) if (scope.matches(path)) activeCacheReads.delete(path);
-    for (const path of prefetchInFlight.keys()) if (scope.matches(path)) prefetchInFlight.delete(path);
+    retirePrefetches(scope.matches);
+    for (const path of activeCacheReads.keys()) if (scope.matches(path)) retireCachedRead(path);
     if (prefetchBatch) prefetchBatch.queue = prefetchBatch.queue.filter(path => !scope.matches(path));
     if (isPrefetchIdle()) discardPrefetchBatch();
     pumpPrefetch();
@@ -226,11 +234,49 @@ function issueRequest(path) {
   const issuedEvent = nextApiResourceEvent();
   const issuedAt = Date.now();
   const scope = registrationFor(path);
-  const request = new Promise(resolve => resolve(DaylightAPI(path))).then(result => {
+  const controller = new AbortController();
+  const { signal } = controller;
+  let interests = 0;
+  let settled = false;
+  const request = new Promise(resolve => resolve(DaylightAPI(path, {}, 'GET', { signal }))).then(result => {
+    if (signal.aborted) throw new DOMException('Resource GET cancelled', 'AbortError');
     if (result && typeof result === 'object') networkStarts.set(result, issuedEvent);
     return result;
   });
-  return { request, issuedAt, issuedEvent, scope, cacheRead: null };
+  const forget = () => { if (inFlight.get(path) === transport) inFlight.delete(path); };
+  function retain() {
+    interests++;
+    return () => {
+      interests--;
+      if (interests || settled) return;
+      // React can replace observers in one commit, and an adjacent prefetch
+      // can claim the same GET. Release it after those synchronous changes.
+      queueMicrotask(() => {
+        if (interests || settled) return;
+        forget();
+        controller.abort();
+      });
+    };
+  }
+  const transport = { request, issuedAt, issuedEvent, scope, cacheRead: null, retain };
+  const settle = () => { settled = true; forget(); };
+  request.then(settle, settle);
+  return transport;
+}
+
+function createRequestLease() {
+  let release;
+  return {
+    take(transport) {
+      release?.();
+      release = transport.retain();
+      return transport.request;
+    },
+    dispose() {
+      release?.();
+      release = undefined;
+    },
+  };
 }
 
 function sharedRequest(path, { join = true, dedupe = true, canJoin } = {}) {
@@ -241,8 +287,6 @@ function sharedRequest(path, { join = true, dedupe = true, canJoin } = {}) {
     && (!canJoin || canJoin(current))) return current;
   const read = issueRequest(path);
   inFlight.set(path, read);
-  const settle = () => { if (inFlight.get(path) === read) inFlight.delete(path); };
-  read.request.then(settle, settle);
   return read;
 }
 
@@ -283,7 +327,16 @@ function readCachedResource(path, { join, dedupe, attach, prefetch, onRetry } = 
   if (dedupe === false) inFlight.delete(path);
   const { scope, issuedEvent } = first;
   const epoch = scope?.epoch;
-  const read = { issuedEvent, prefetch, accepted: false, promise: null };
+  const lease = createRequestLease();
+  let transport = first;
+  const read = {
+    issuedEvent, prefetch, accepted: false, promise: null,
+    release() {
+      if (transport.cacheRead === read) transport.cacheRead = null;
+      lease.dispose();
+    },
+  };
+  retireCachedRead(path);
   activeCacheReads.set(path, read);
   first.cacheRead = read;
   attach?.(read);
@@ -293,10 +346,9 @@ function readCachedResource(path, { join, dedupe, attach, prefetch, onRetry } = 
   const hasInterest = () => cacheReaders.has(path) || read.prefetch?.();
   const canRetry = () => ownsPath() && [...(cacheReaders.get(path) ?? [])].some(reader => reader.retryTransient);
   const getRequest = (joinAttempt, index) => {
-    if (index === 0) return first.request;
-    const attempt = sharedRequest(path, { join: joinAttempt, dedupe });
-    attempt.cacheRead = read;
-    return attempt.request;
+    if (index !== 0) transport = sharedRequest(path, { join: joinAttempt, dedupe });
+    transport.cacheRead = read;
+    return lease.take(transport);
   };
   const publish = (kind, value) => {
     if (!ownsPath() || !hasInterest()) return;
@@ -311,6 +363,7 @@ function readCachedResource(path, { join, dedupe, attach, prefetch, onRetry } = 
     publish('failure', error);
     throw error;
   }).finally(() => {
+    read.release();
     if (activeCacheReads.get(path) === read) activeCacheReads.delete(path);
   });
   return read;
@@ -326,6 +379,15 @@ const PREFETCH_CONCURRENCY = 2;
 const PREFETCH_FRESH_MS = 60_000;
 let prefetchBatch = null;
 const prefetchInFlight = new Map();
+
+function retirePrefetches(matches) {
+  for (const [path, task] of prefetchInFlight) {
+    if (!matches(path)) continue;
+    prefetchInFlight.delete(path);
+    task.read.release();
+  }
+}
+
 // Cumulative since page load (or the last reset): what the prefetcher was
 // asked to warm, and how it went. Read by callers that report on it.
 const prefetchStats = { queued: 0, completed: 0, failed: 0 };
@@ -350,7 +412,8 @@ function pumpPrefetch() {
     const task = {};
     prefetchInFlight.set(path, task);
     const isCurrent = () => prefetchInFlight.get(path) === task;
-    readCachedResource(path, { prefetch: isCurrent }).promise
+    task.read = readCachedResource(path, { prefetch: isCurrent });
+    task.read.promise
       .then(() => {
         if (!isCurrent()) return;
         prefetchStats.completed += 1;
@@ -414,7 +477,7 @@ export function patchApiResource(path, update, { create = false } = {}) {
   const next = update(cached?.value);
   if (next === undefined) return false;
   inFlight.delete(path);
-  activeCacheReads.delete(path);
+  retireCachedRead(path);
   cacheSet(path, next, { fetchedAt: cached?.fetchedAt });
   publishToReaders(path, 'patch', next);
   return true;
@@ -452,16 +515,16 @@ export function prefetchApiResources(paths, { onDone, onIdle, signal } = {}) {
 export function resetApiResourceCache(path) {
   if (path === undefined) {
     swrCache.clear();
-    activeCacheReads.clear();
+    retirePrefetches(() => true);
+    for (const key of activeCacheReads.keys()) retireCachedRead(key);
     inFlight.clear();
     for (const scope of registrations) scope.pending.clear();
     discardPrefetchBatch();
-    prefetchInFlight.clear();
     Object.assign(prefetchStats, { queued: 0, completed: 0, failed: 0 });
     return;
   }
   swrCache.delete(path);
-  if (activeCacheReads.delete(path)) publishToReaders(path, 'reset');
+  if (retireCachedRead(path)) publishToReaders(path, 'reset');
   inFlight.delete(path);
   schedulePersist(path, undefined);
 }
@@ -592,7 +655,12 @@ export function useApiResource(path, {
     cacheReaders.set(path, readers);
     return () => {
       readers.delete(reader);
-      if (!readers.size) cacheReaders.delete(path);
+      if (readers.size) return;
+      cacheReaders.delete(path);
+      queueMicrotask(() => {
+        const read = activeCacheReads.get(path);
+        if (!cacheReaders.has(path) && read && !read.prefetch?.()) retireCachedRead(path);
+      });
     };
   }, [path, enabled, swr, requestReload, clearDataOnError, retryTransient]);
 
@@ -605,6 +673,7 @@ export function useApiResource(path, {
     };
     if (!enabled || !path) { setLoading(false); return undefined; }
     let live = true;
+    const lease = swr ? null : createRequestLease();
     const scope = registrationFor(path);
     const epoch = scope?.epoch;
     const isCurrent = () => live && reloadRequest === requestedReload.current &&
@@ -614,6 +683,7 @@ export function useApiResource(path, {
     };
     const retireRead = () => {
       live = false;
+      lease?.dispose();
       releaseRead();
       takeRefresh()?.reject(refreshAbortError());
     };
@@ -644,7 +714,7 @@ export function useApiResource(path, {
     fetchedReload.current = reloadRequest;
     const startedAt = performance.now();
     const onRetry = (err, attempt) => logger.debug('api.retry', { resource: label || path, attempt, status: err?.status ?? null });
-    const getRequest = joinAttempt => sharedRequest(path, { join: joinAttempt, dedupe }).request;
+    const getRequest = joinAttempt => lease.take(sharedRequest(path, { join: joinAttempt, dedupe }));
     const cacheRead = swr ? readCachedResource(path, {
       join, dedupe, onRetry, attach: read => { readState.cacheRead = read; },
     }) : null;
@@ -674,7 +744,10 @@ export function useApiResource(path, {
         takeRefresh()?.reject(err);
         logger.warn('api.failed', { resource: label || path, error: err?.message });
       })
-      .finally(releaseRead);
+      .finally(() => {
+        lease?.dispose();
+        releaseRead();
+      });
 
     return retireRead;
     // eslint-disable-next-line react-hooks/exhaustive-deps

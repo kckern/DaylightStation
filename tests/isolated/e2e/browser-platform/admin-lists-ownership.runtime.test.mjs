@@ -7,7 +7,7 @@ const api = '/api/v1' + root;
 const lists = (...names) => ({ lists: names.map(name => ({ name, active: true })) });
 
 for (const width of [390, 1280]) {
-  test('keeps Watchlists active after a delayed Menus response and retries a committed create with one read at ' + width + 'px', async ({ page }) => {
+  test('keeps Watchlists active after cancelling the Menus read and retries a committed create with one read at ' + width + 'px', async ({ page }) => {
     await page.setViewportSize({ width, height: 850 });
     let pendingMenus;
     const calls = [];
@@ -36,10 +36,7 @@ for (const width of [390, 1280]) {
     }, root + 'watchlists');
     const current = page.getByRole('link', { name: /Todays Picks/ });
     await expect(current).toBeVisible();
-    const completed = page.waitForResponse(response => response.request() === pendingMenus.request());
-    await pendingMenus.fulfill({ json: lists('previous-menu') });
-    await (await completed).finished();
-    await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+    await expect.poll(() => pendingMenus.request().failure()).not.toBeNull();
     await expect(current).toHaveAttribute('href', root + 'watchlists/todays-picks');
     await expect(page.getByTestId('list-card-previous-menu')).toHaveCount(0);
 
@@ -126,7 +123,7 @@ test('Admin list rows share current capability reads and retire an obsolete alte
   const reads = [];
   const alternatives = [];
   const writes = [];
-  const releaseRetired = Promise.withResolvers();
+  let retiredInfo;
   await page.routeWebSocket('**/*', () => {});
   await page.route('**/api/**', async route => {
     const request = route.request();
@@ -144,7 +141,7 @@ test('Admin list rows share current capability reads and retire an obsolete alte
     if (path.startsWith(infoPath)) {
       const key = path.slice(infoPath.length);
       reads.push(key);
-      if (key === 'files/retired') await releaseRetired.promise;
+      if (key === 'files/retired') { retiredInfo = request; return; }
       if (key === 'files/missing') return route.fulfill({ status: 404, json: { error: 'Missing content' } });
       const capabilities = key.startsWith('canvas/') ? ['displayable'] : ['playable'];
       return route.fulfill({ json: { title: key, capabilities } });
@@ -165,23 +162,16 @@ test('Admin list rows share current capability reads and retire an obsolete alte
   const row = index => page.getByTestId(`item-row-0-${index}`);
   const warning = index => row(index).getByRole('alert').filter({ hasText: /(?:Display|Open) needs/ });
   await page.goto(root + 'menus/capabilities');
-  try {
-    await expect.poll(() => reads.includes('files/retired')).toBe(true);
-    await expect(warning(0)).toHaveCount(0);
-    await row(0).locator('.col-input .content-display').click();
-    const editor = row(0).getByRole('textbox', { name: 'Search content...' });
-    await editor.fill('canvas:current');
-    await editor.press('Enter');
-    await expect.poll(() => writes).toEqual([[0, 'canvas:current']]);
-    await expect.poll(() => reads.includes('canvas/current')).toBe(true);
+  await expect.poll(() => reads.includes('files/retired')).toBe(true);
+  await expect(warning(0)).toHaveCount(0);
+  await row(0).locator('.col-input .content-display').click();
+  const editor = row(0).getByRole('textbox', { name: 'Search content...' });
+  await editor.fill('canvas:current');
+  await editor.press('Enter');
+  await expect.poll(() => writes).toEqual([[0, 'canvas:current']]);
+  await expect.poll(() => reads.includes('canvas/current')).toBe(true);
 
-    const oldInfo = page.waitForResponse(response => decodeURIComponent(new URL(response.url()).pathname) === infoPath + 'files/retired');
-    releaseRetired.resolve();
-    await (await oldInfo).finished();
-    await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
-  } finally {
-    releaseRetired.resolve();
-  }
+  await expect.poll(() => retiredInfo.failure()).not.toBeNull();
 
   await expect(warning(0)).toHaveCount(0);
   await expect(warning(3)).toHaveCount(0);

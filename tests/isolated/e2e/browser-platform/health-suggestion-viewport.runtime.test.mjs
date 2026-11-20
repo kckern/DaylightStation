@@ -64,3 +64,48 @@ test('Health keeps suggestions and saved-food actions inside a shrunken visual v
   await expect(input).toBeFocused();
   expect(fixture.unexpected).toEqual([]);
 });
+
+test('Health aborts an abandoned food suggestion read and starts fresh on returning to its query', async ({ page, baseURL }) => {
+  const origin = new URL(baseURL).origin;
+  await page.context().route('**/*', route => (
+    new URL(route.request().url()).origin === origin ? route.fallback() : route.abort()
+  ));
+  await page.routeWebSocket('**/*', () => {});
+  await installHealthFixtures(page);
+  await page.route('**/supervision/bootstrap', route => route.fulfill({ json: { enabled: false } }));
+  const queries = [];
+  const first = Promise.withResolvers();
+  const respond = Promise.withResolvers();
+  await page.route('**/api/v1/health/nutrition/catalog/suggest?**', async route => {
+    const query = new URL(route.request().url()).searchParams.get('q');
+    if (!query) return route.fallback();
+    queries.push(query);
+    let name = query === 'pear' ? 'Fresh pear' : 'Whole plum';
+    if (queries.length === 1) {
+      first.resolve(route.request());
+      await respond.promise;
+      name = 'Old pear';
+    }
+    await route.fulfill({ json: { items: [{ id: name, name }] } }).catch(error => {
+      if (name !== 'Old pear') throw error;
+    });
+  });
+
+  await page.goto('/health');
+  const input = page.getByRole('combobox', { name: 'Add to Dinner' });
+  const list = page.getByRole('listbox', { name: 'Suggested foods' });
+  await input.click();
+  await input.fill('pear');
+  const original = await first.promise;
+  const retired = page.waitForEvent('requestfailed', { predicate: request => request === original, timeout: 5000 });
+  try {
+    await input.fill('plum');
+    await expect(list.getByRole('option', { name: /Whole plum/ })).toBeVisible();
+    await retired;
+    await input.fill('pear');
+    await expect(list.getByRole('option', { name: /Fresh pear/ })).toBeVisible();
+    expect(queries).toEqual(['pear', 'plum', 'pear']);
+  } finally {
+    respond.resolve();
+  }
+});

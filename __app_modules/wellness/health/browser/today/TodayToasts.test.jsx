@@ -31,15 +31,15 @@ describe('TodayToasts', () => {
   it('offers only the newest undo, and retires the older one rather than hiding it', async () => {
     const controls = { current: null };
     render(<Host controls={controls} />);
-    await waitFor(() => controls.current.setUndoDelete({ label: 'Eggs', entryIds: ['e1'] }));
+    act(() => controls.current.setUndoDelete({ label: 'Eggs', entryIds: ['e1'] }));
     expect(await screen.findByText('Eggs deleted.')).toBeTruthy();
 
-    await waitFor(() => controls.current.setMoveUndo('Moved Toast to Lunch'));
+    act(() => controls.current.setMoveUndo('Moved Toast to Lunch'));
     expect(await screen.findByRole('button', { name: 'Undo move' })).toBeTruthy();
     expect(screen.queryByText('Eggs deleted.')).toBeNull();
 
     // Dismissing the newer one must not resurrect the older.
-    await waitFor(() => controls.current.setMoveUndo(null));
+    act(() => controls.current.setMoveUndo(null));
     expect(screen.queryByText('Eggs deleted.')).toBeNull();
     expect(screen.queryAllByRole('button', { name: /undo/i })).toHaveLength(0);
   });

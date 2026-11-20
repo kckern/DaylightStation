@@ -36,7 +36,7 @@ describe('WeightChip', () => {
     r(<WeightChip />);
     expect(await screen.findByText('171.6')).toBeTruthy();
     expect(apiMock).toHaveBeenCalledTimes(1);
-    expect(apiMock).toHaveBeenCalledWith('api/v1/health/weight');
+    expect(apiMock).toHaveBeenCalledWith('api/v1/health/weight', {}, 'GET', expect.anything());
   });
 
   it('shows the 7-day delta with an arrow, not colour alone', async () => {

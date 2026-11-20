@@ -15,7 +15,7 @@ describe('useContentInfo', () => {
     apiMock.mockResolvedValueOnce({ title: 'The Lonesome Kicker', duration: 355 });
     const { result } = renderHook(() => useContentInfo('plex:587484'));
     await waitFor(() => expect(result.current.loading).toBe(false));
-    expect(apiMock).toHaveBeenCalledWith('api/v1/info/plex/587484');
+    expect(apiMock).toHaveBeenCalledWith('api/v1/info/plex/587484', {}, 'GET', { signal: expect.any(AbortSignal) });
     expect(result.current.info?.title).toBe('The Lonesome Kicker');
     expect(result.current.error).toBeNull();
   });
@@ -24,7 +24,7 @@ describe('useContentInfo', () => {
     apiMock.mockResolvedValueOnce({});
     renderHook(() => useContentInfo('hymn-library:198/second'));
     await waitFor(() => expect(apiMock).toHaveBeenCalled());
-    expect(apiMock).toHaveBeenCalledWith('api/v1/info/hymn-library/198/second');
+    expect(apiMock).toHaveBeenCalledWith('api/v1/info/hymn-library/198/second', {}, 'GET', { signal: expect.any(AbortSignal) });
   });
 
   it('no-op for null/invalid contentId', async () => {

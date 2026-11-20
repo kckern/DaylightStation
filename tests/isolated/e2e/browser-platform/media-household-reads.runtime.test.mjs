@@ -357,6 +357,8 @@ test('Media favourites revalidate once with Home and desktop search mounted', as
   const item = { contentId: 'plex:123', title: 'Fixture Film', type: 'movie' };
   const reads = [];
   const writes = [];
+  const canceled = [];
+  page.on('requestfailed', request => canceled.push(request));
   await page.route('**/api/**', route => {
     const request = route.request();
     const { pathname } = new URL(request.url());
@@ -383,7 +385,7 @@ test('Media favourites revalidate once with Home and desktop search mounted', as
   await expect.poll(() => reads.length).toBeGreaterThanOrEqual(2);
   expect(writes).toEqual([{ method: 'POST', body: { id: item.contentId, kind: 'item', title: item.title, type: item.type } }]);
 
-  await reads[0].fulfill({ json: { items: [] } });
+  await expect.poll(() => canceled.includes(reads[0].request())).toBe(true);
   await reads[1].fulfill({ json: { items: [{ id: item.contentId }] } });
   await openMenu();
   await expect(page.getByRole('menuitem', { name: 'Remove from favourites' })).toBeVisible();

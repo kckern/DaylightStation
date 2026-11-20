@@ -30,7 +30,7 @@ describe('AddCombobox', () => {
     // The combobox now also fetches on MOUNT (Task 9.2), and this mock answers
     // every path with the same payload — so waiting on the rendered row would
     // pass on the mount response alone. Wait for the QUERY request itself.
-    await waitFor(() => expect(apiMock).toHaveBeenCalledWith(expect.stringContaining('suggest?q=chick')));
+    await waitFor(() => expect(apiMock).toHaveBeenCalledWith(expect.stringContaining('suggest?q=chick'), {}, 'GET', expect.anything()));
     await waitFor(() => expect(screen.getByText('Chicken breast')).toBeTruthy());
     expect(screen.getByText('Chicken breast').closest('.health-suggest__item--fav')).toBeTruthy();
   });
@@ -246,7 +246,7 @@ describe('AddCombobox — zero-keystroke suggestions', () => {
       let resolveOld;
       apiMock.mockReturnValueOnce(new Promise(resolve => { resolveOld = resolve; }));
       const first = r(<AddCombobox bucketId="afternoon" />);
-      expect(apiMock).toHaveBeenCalledWith(pendingPath);
+      expect(apiMock).toHaveBeenCalledWith(pendingPath, {}, 'GET', expect.anything());
       first.unmount();
       registration.setOwner('bob');
       await act(async () => { resolveOld({ items: [{ id: 'old', name: 'Old member’s food' }] }); });
@@ -442,7 +442,7 @@ describe('AddCombobox inline', () => {
     expect(apiMock).not.toHaveBeenCalled();
     expect(screen.queryByRole('listbox')).toBeNull();
     fireEvent.focus(input);
-    await waitFor(() => expect(apiMock).toHaveBeenCalledWith(expect.stringContaining('bucket=evening&limit=16')));
+    await waitFor(() => expect(apiMock).toHaveBeenCalledWith(expect.stringContaining('bucket=evening&limit=16'), {}, 'GET', expect.anything()));
     expect(await screen.findByText('Chicken breast')).toBeTruthy();
   });
 
@@ -452,7 +452,7 @@ describe('AddCombobox inline', () => {
     inline();
     fireEvent.focus(screen.getByRole('combobox', { name: 'Add to Dinner' }));
     expect(screen.getByText('Chicken breast')).toBeTruthy();
-    expect(apiMock).toHaveBeenCalledWith(shortlistPath('evening'));
+    expect(apiMock).toHaveBeenCalledWith(shortlistPath('evening'), {}, 'GET', expect.anything());
   });
 
   it('Enter on free text parses into this meal and day, then clears and stays focused', async () => {

@@ -119,7 +119,7 @@ describe('HomeApp — Today', () => {
     render(<HomeApp />);
     await lanesShown();
     expect(statusLines()).toEqual([STATUS]);
-    expect(apiMock).toHaveBeenCalledWith('api/v1/home-dashboard/timeline?range=today');
+    expect(apiMock).toHaveBeenCalledWith('api/v1/home-dashboard/timeline?range=today', {}, 'GET', { signal: expect.any(AbortSignal) });
   });
 
   it('switches the visible timeline and restores the selected range on reopening Home', async () => {
@@ -127,7 +127,7 @@ describe('HomeApp — Today', () => {
     const first = render(<HomeApp />);
     await lanesShown();
     fireEvent.click(screen.getByRole('radio', { name: 'Yesterday' }));
-    await waitFor(() => expect(apiMock).toHaveBeenCalledWith('api/v1/home-dashboard/timeline?range=yesterday'));
+    await waitFor(() => expect(apiMock).toHaveBeenCalledWith('api/v1/home-dashboard/timeline?range=yesterday', {}, 'GET', { signal: expect.any(AbortSignal) }));
     expect(screen.getByRole('radio', { name: 'Yesterday' })).toBeChecked();
     first.unmount();
     render(<HomeApp />);

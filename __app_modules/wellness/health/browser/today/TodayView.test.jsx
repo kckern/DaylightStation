@@ -93,7 +93,7 @@ it('waits for the day before reading the coach line and refreshes it after coach
     return baseApi()(path);
   });
   r(<TodayView onSetupGoals={() => {}} onCoachTap={() => {}} />);
-  await waitFor(() => expect(apiMock).toHaveBeenCalledWith(`api/v1/health/day?date=${localTodayISO()}`));
+  await waitFor(() => expect(apiMock).toHaveBeenCalledWith(`api/v1/health/day?date=${localTodayISO()}`, {}, 'GET', expect.anything()));
   expect(dashboardReads()).toHaveLength(0);
   await act(async () => day.resolve({ items: [], budget: BUDGET }));
   expect(await screen.findByRole('button', { name: line })).toBeVisible();

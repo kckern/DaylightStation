@@ -66,7 +66,7 @@ describe('DayInputBar', () => {
     await waitFor(() => expect(onResult).toHaveBeenCalledWith(expect.objectContaining({ undoToken: 'meal-1' }), { date }));
     expect(apiMock.mock.calls[0]).toEqual(['api/v1/health/nutrition/day-input', expect.objectContaining({ type: 'text', content: 'move the tea to snacks', date }), 'POST']);
     expect(body(0).operationId).toBeTruthy();
-    expect(field().value).toBe('');
+    await waitFor(() => expect(field()).toHaveValue(''));
   });
   it('sends a recording as voice', async () => {
     apiMock.mockResolvedValue({ committed: true, outcome: 'committed' });

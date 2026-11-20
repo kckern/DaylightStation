@@ -98,7 +98,7 @@ describe('Auditor run timeline', () => {
     mount(<RunTimeline onOpen={() => {}} />);
     await screen.findByText('from transcript');
     fireEvent.click(screen.getByLabelText('Changed something'));
-    await waitFor(() => expect(api).toHaveBeenCalledWith(`${cleanupPath}/journal?changed=1`));
+    await waitFor(() => expect(api).toHaveBeenCalledWith(`${cleanupPath}/journal?changed=1`, {}, 'GET', expect.anything()));
     await waitFor(() => expect(screen.queryByText('from transcript')).toBeNull());
     expect(api.mock.calls.filter(([path]) => path.includes('offset=')).length).toBe(0);
   });
@@ -106,7 +106,7 @@ describe('Auditor run timeline', () => {
     mount(<RunTimeline onOpen={() => {}} />);
     await screen.findByText('from transcript');
     fireEvent.click(screen.getByRole('button', { name: 'Load more' }));
-    await waitFor(() => expect(api).toHaveBeenCalledWith(`${cleanupPath}/journal?offset=50`));
+    await waitFor(() => expect(api).toHaveBeenCalledWith(`${cleanupPath}/journal?offset=50`, {}, 'GET', expect.anything()));
     fireEvent.change(screen.getByLabelText('Min cost ($)'), { target: { value: '0.1' } });
     await waitFor(() => expect(screen.queryByText('$0.0123')).toBeNull());
     expect(screen.getByText('$0.2000')).toBeTruthy();
@@ -119,8 +119,8 @@ describe('Auditor run timeline', () => {
     await screen.findByText(/Sep 20/);
     api.mockClear();
     fireEvent.click(screen.getByLabelText('Changed something'));
-    await waitFor(() => expect(api).toHaveBeenCalledWith(`${cleanupPath}/journal?changed=1`));
-    expect(api).not.toHaveBeenCalledWith(`${cleanupPath}/journal?changed=1&offset=50`);
+    await waitFor(() => expect(api).toHaveBeenCalledWith(`${cleanupPath}/journal?changed=1`, {}, 'GET', expect.anything()));
+    expect(api.mock.calls.map(([path]) => path)).not.toContain(`${cleanupPath}/journal?changed=1&offset=50`);
   });
   it('hides Load more on the last page', async () => {
     mount(<RunTimeline onOpen={() => {}} />);
@@ -218,6 +218,6 @@ describe('Auditor page', () => {
     await screen.findByText('from transcript');
     fireEvent.click(screen.getAllByRole('button', { name: /New food captured/ })[0]);
     expect(await screen.findByText('Transcript expired')).toBeTruthy();
-    expect(api).toHaveBeenCalledWith(`${cleanupPath}/journal/run-a?at=${encodeURIComponent(run.at)}`);
+    expect(api).toHaveBeenCalledWith(`${cleanupPath}/journal/run-a?at=${encodeURIComponent(run.at)}`, {}, 'GET', expect.anything());
   });
 });

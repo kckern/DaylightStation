@@ -273,6 +273,12 @@ pending retry. An explicit `reload()` or `refresh()` starts its own read.
 Use `poll()` on a timer. It waits for the next tick if the reader already has
 a GET, a retry delay or a queued refresh.
 
+Each in-flight GET stays connected while a mounted reader or an admitted
+prefetch needs it. Departure releases that reader's interest. The final
+departure cancels the transport after the current turn so a synchronous
+observer replacement or prefetch can still adopt it. A later visit issues
+a fresh GET for the same path.
+
 With `swr: true`, each path has one current cacheable read. All mounted,
 enabled readers of that path display its accepted snapshot and receive its
 refresh status. Readers and admitted prefetches that share a pending GET use

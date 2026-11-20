@@ -10,6 +10,7 @@ vi.mock('../../../../../__app_modules/media/media/browser/playback.mjs', () => (
 const { ContentFilterReview } = await import('./ContentFilterAdmin.jsx');
 const firstFilm = 'api/v1/content-filter/77';
 const nextFilm = 'api/v1/content-filter/88';
+const reviewRead = (film) => [`${film}/review`, {}, 'GET', { signal: expect.any(AbortSignal) }];
 const show = () => render(
   <MantineProvider>
     <MemoryRouter initialEntries={['/admin/content/filter/77']}>
@@ -46,7 +47,7 @@ describe('review page send-back', () => {
     fireEvent.click(screen.getByRole('link', { name: 'Next film' }));
     expect(await screen.findByRole('checkbox', { name: 'Select damn' })).not.toBeChecked();
     expect(screen.queryByRole('button', { name: /Send back .* selected/ })).toBeNull();
-    expect(api.mock.calls).toEqual([[`${firstFilm}/review`], [`${nextFilm}/review`]]);
+    expect(api.mock.calls).toEqual([reviewRead(firstFilm), reviewRead(nextFilm)]);
   });
 
   it('submits once and leaves the next film alone when the prior request finishes', async () => {
@@ -64,9 +65,9 @@ describe('review page send-back', () => {
     expect(screen.getByRole('checkbox', { name: 'Select Billboard' })).toBeChecked();
     expect(screen.queryByText(/back to the pipeline/)).toBeNull();
     expect(api.mock.calls).toEqual([
-      [`${firstFilm}/review`],
+      reviewRead(firstFilm),
       [`${firstFilm}/jobs`, { kind: 'send-back', cues: ['a'] }, 'POST'],
-      [`${nextFilm}/review`],
+      reviewRead(nextFilm),
     ]);
   });
 });

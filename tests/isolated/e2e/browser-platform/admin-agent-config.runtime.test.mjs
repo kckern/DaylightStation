@@ -2,7 +2,7 @@ import { expect, test } from '@playwright/test';
 
 test.use({ serviceWorkers: 'block' });
 
-test('agent settings save the selected member’s goals after the previous read resolves', async ({ page }) => {
+test('agent settings save the selected member’s goals after the previous read is cancelled', async ({ page }) => {
   let pendingGoals;
   const writes = [];
   await page.routeWebSocket('**/*', () => {});
@@ -36,10 +36,7 @@ test('agent settings save the selected member’s goals after the previous read 
   const weight = page.getByLabel('Weight target (lbs)');
   await expect(weight).toHaveValue('175');
   await weight.fill('180');
-  const delivered = page.waitForResponse(res => res.request() === pendingGoals.request());
-  await pendingGoals.fulfill({ json: { parsed: { weight: { target_lbs: 150 }, owner: 'alpha' } } });
-  await (await delivered).finished();
-  await page.evaluate(() => new Promise(done => requestAnimationFrame(() => requestAnimationFrame(done))));
+  await expect.poll(() => pendingGoals.request().failure()).not.toBeNull();
   await expect(weight).toHaveValue('180');
   await page.getByRole('button', { name: 'Save Goals' }).click();
   await expect.poll(() => writes).toEqual([{

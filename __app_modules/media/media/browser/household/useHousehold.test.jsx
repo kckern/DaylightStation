@@ -94,7 +94,7 @@ describe('read hooks', () => {
     let resolveAfter;
     const before = new Promise(resolve => { resolveBefore = resolve; });
     const after = new Promise(resolve => { resolveAfter = resolve; });
-    const reads = () => apiMock.mock.calls.filter(args => args.length === 1 && args[0] === path).length;
+    const reads = () => apiMock.mock.calls.filter(([requested, , method]) => requested === path && method === 'GET').length;
     apiMock.mockImplementation((_path, _body, method) => method === 'POST'
       ? Promise.resolve({ ok: true })
       : reads() === 1 ? before : after);

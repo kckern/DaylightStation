@@ -50,10 +50,7 @@ test('Admin Agent Clear All retires an older working-memory read', async ({ page
   await page.getByRole('dialog', { name: 'Clear All Memory' }).getByRole('button', { name: 'Clear All', exact: true }).click();
   await expect.poll(() => cleared).toBe(true);
   await expect(page.getByText('No memory entries')).toBeVisible();
-  const late = page.waitForResponse(response => response.request() === held.request());
-  await held.fulfill({ json: { entries: { keep: { value: 'Memory entry to clear' } } } });
-  await (await late).finished();
-  await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+  await expect.poll(() => held.request().failure()).not.toBeNull();
   await expect(page.getByText('Memory entry to clear')).toHaveCount(0);
   expect(calls).toEqual([
     ['GET', memoryPath], ['DELETE', `${memoryPath}/note`], ['GET', memoryPath],

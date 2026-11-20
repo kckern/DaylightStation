@@ -73,8 +73,8 @@ describe('DetailView Play Now', () => {
     render(<MantineProvider><DetailView contentId="plex:55854" /></MantineProvider>);
     const play = screen.getByTestId('detail-play-now');
     await act(async () => {});
-    expect(apiMock).toHaveBeenCalledWith('api/v1/media/household/carry-on?limit=12');
-    expect(apiMock).toHaveBeenCalledWith('api/v1/media/household/recent?limit=24');
+    expect(apiMock).toHaveBeenCalledWith('api/v1/media/household/carry-on?limit=12', {}, 'GET', { signal: expect.any(AbortSignal) });
+    expect(apiMock).toHaveBeenCalledWith('api/v1/media/household/recent?limit=24', {}, 'GET', { signal: expect.any(AbortSignal) });
     expect(play).toBeDisabled();
     expect(screen.queryByTestId('detail-progress')).toBeNull();
     fireEvent.click(play);

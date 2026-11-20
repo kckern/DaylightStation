@@ -15,68 +15,58 @@ for (const editor of [
   { resource: 'devices', label: 'fixtureField', identity: 'id', fieldValue: id => 'Field ' + id,
     record: id => ({ device: { id, type: 'linux-pc', os_control: { fixtureField: 'Field ' + id } } }) },
 ]) {
-  for (const outcome of ['success', 'failure']) {
-    test(editor.resource + ' keeps the current draft and save target after a previous read settles with ' + outcome, async ({ page }) => {
-      const routeRoot = '/admin/household/' + editor.resource + '/';
-      const apiRoot = '/api/v1' + routeRoot;
-      let previousRead;
-      let currentReads = 0;
-      const writes = [];
-      await page.routeWebSocket('**/*', () => {});
-      await page.route('**/api/**', route => {
-        const request = route.request();
-        const path = new URL(request.url()).pathname;
-        if (path.startsWith(apiRoot) && request.method() === 'PUT') {
-          writes.push({ path, body: request.postDataJSON() });
-          return route.fulfill({ json: { ok: true } });
-        }
-        if (path === apiRoot + 'alpha') {
-          previousRead = route;
-          return;
-        }
-        if (path === apiRoot + 'beta') {
-          currentReads++;
-          return route.fulfill({ json: editor.record('beta') });
-        }
-        return route.fulfill({ json: path.endsWith('/supervision/bootstrap') ? { enabled: false } : {} });
-      });
-
-      await page.goto(routeRoot + 'beta');
-      const field = page.getByLabel(editor.label, { exact: true });
-      await expect(field).toHaveValue(editor.fieldValue('beta'));
-      // Seed a sibling entry on the same document so native Back changes the
-      // entity parameter without visiting the list index or reloading the app.
-      await enterSibling(page, routeRoot + 'alpha');
-      await expect.poll(() => Boolean(previousRead)).toBe(true);
-      await page.goBack();
-      await expect(page).toHaveURL(new RegExp(routeRoot + 'beta$'));
-      await expect.poll(() => currentReads).toBe(2);
-      await expect(field).toHaveValue(editor.fieldValue('beta'));
-      await field.fill('Beta draft');
-
-      // The response can also be aborted when a future reader disposes Alpha.
-      if (!previousRead.request().failure()) {
-        const completed = page.waitForResponse(response => response.request() === previousRead.request());
-        await previousRead.fulfill(outcome === 'success'
-          ? { json: editor.record('alpha') }
-          : { status: 503, json: { error: 'Previous record unavailable' } });
-        await (await completed).finished();
+  test(editor.resource + ' keeps the current draft and save target after cancelling the previous read', async ({ page }) => {
+    const routeRoot = '/admin/household/' + editor.resource + '/';
+    const apiRoot = '/api/v1' + routeRoot;
+    let previousRead;
+    let currentReads = 0;
+    const writes = [];
+    await page.routeWebSocket('**/*', () => {});
+    await page.route('**/api/**', route => {
+      const request = route.request();
+      const path = new URL(request.url()).pathname;
+      if (path.startsWith(apiRoot) && request.method() === 'PUT') {
+        writes.push({ path, body: request.postDataJSON() });
+        return route.fulfill({ json: { ok: true } });
       }
-      await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
-
-      await expect(field).toHaveValue('Beta draft');
-      await expect(page.getByRole('alert').filter({ hasText: /previous record unavailable|503/i })).toHaveCount(0);
-      await page.getByTestId('config-save-button').click();
-      await expect.poll(() => writes.length).toBe(1);
-      expect(writes[0].path).toBe(apiRoot + 'beta');
-      expect(writes[0].body[editor.identity]).toBe('beta');
-      if (editor.resource === 'members') {
-        expect(writes[0].body).toMatchObject({ display_name: 'Beta draft', email: 'beta@example.invalid' });
-      } else {
-        expect(writes[0].body.os_control.fixtureField).toBe('Beta draft');
+      if (path === apiRoot + 'alpha') {
+        previousRead = route;
+        return;
       }
+      if (path === apiRoot + 'beta') {
+        currentReads++;
+        return route.fulfill({ json: editor.record('beta') });
+      }
+      return route.fulfill({ json: path.endsWith('/supervision/bootstrap') ? { enabled: false } : {} });
     });
-  }
+
+    await page.goto(routeRoot + 'beta');
+    const field = page.getByLabel(editor.label, { exact: true });
+    await expect(field).toHaveValue(editor.fieldValue('beta'));
+    // Seed a sibling entry on the same document so native Back changes the
+    // entity parameter without visiting the list index or reloading the app.
+    await enterSibling(page, routeRoot + 'alpha');
+    await expect.poll(() => Boolean(previousRead)).toBe(true);
+    await page.goBack();
+    await expect(page).toHaveURL(new RegExp(routeRoot + 'beta$'));
+    await expect.poll(() => currentReads).toBe(2);
+    await expect(field).toHaveValue(editor.fieldValue('beta'));
+    await field.fill('Beta draft');
+
+    await expect.poll(() => previousRead.request().failure()).not.toBeNull();
+
+    await expect(field).toHaveValue('Beta draft');
+    await expect(page.getByRole('alert').filter({ hasText: /previous record unavailable|503/i })).toHaveCount(0);
+    await page.getByTestId('config-save-button').click();
+    await expect.poll(() => writes.length).toBe(1);
+    expect(writes[0].path).toBe(apiRoot + 'beta');
+    expect(writes[0].body[editor.identity]).toBe('beta');
+    if (editor.resource === 'members') {
+      expect(writes[0].body).toMatchObject({ display_name: 'Beta draft', email: 'beta@example.invalid' });
+    } else {
+      expect(writes[0].body.os_control.fixtureField).toBe('Beta draft');
+    }
+  });
 
   test(editor.resource + ' hides the previous record and its save action when the new read fails and retries the current record', async ({ page, baseURL }) => {
     const root = '/admin/household/' + editor.resource + '/';

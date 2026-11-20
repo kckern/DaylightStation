@@ -46,7 +46,10 @@ function observeSentinel() {
     observe() { callback = this.onIntersect; }
     disconnect() { callback = null; }
   });
-  return () => act(() => { callback?.([{ isIntersecting: true }]); });
+  return async ({ ifObserved = false } = {}) => {
+    if (!ifObserved) await waitFor(() => expect(callback).toBeTypeOf('function'));
+    act(() => { callback?.([{ isIntersecting: true }]); });
+  };
 }
 
 afterEach(() => {
@@ -111,7 +114,7 @@ describe('Reader history views', () => {
     const view = () => <MemoryRouter initialEntries={['/feed/reader?view=saved']}><Reader /></MemoryRouter>;
     const { rerender } = render(view());
     await screen.findByText('first');
-    intersect();
+    await intersect();
     await screen.findByText('previous');
 
     workspaceMock.itemSyncRevision = 1;
@@ -164,11 +167,11 @@ describe('Reader history views', () => {
     });
     mountReader('?view=saved');
     await screen.findByText('saved article');
-    intersect();
+    await intersect();
     expect(screen.getByText('Loading more...')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'all', exact: true }));
     await screen.findByText('recent article');
-    intersect();
+    await intersect();
     expect(screen.getByText('Loading more...')).toBeInTheDocument();
     await act(async () => {
       if (outcome === 'resolve') historyAppend.resolve({ items: [article('obsolete article')], nextCursor: null });
@@ -196,9 +199,9 @@ describe('Reader history views', () => {
     });
     mountReader();
     await screen.findByText('first page');
-    intersect();
+    await intersect();
     await screen.findByRole('alert');
-    intersect();
+    await intersect({ ifObserved: true });
     expect(pageRequests).toHaveLength(1);
     fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
     expect(screen.getByText('first page')).toBeInTheDocument();

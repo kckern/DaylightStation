@@ -98,7 +98,7 @@ describe('MosaicView', () => {
     fireEvent.click(square('Kitchen light'));
     const dialog = await screen.findByRole('dialog', { name: 'Kitchen light' });
     expect(within(dialog).getByText('Kitchen')).toBeTruthy();
-    await waitFor(() => expect(apiMock).toHaveBeenCalledWith(expect.stringContaining('light.kitchen')));
+    await waitFor(() => expect(apiMock).toHaveBeenCalledWith(expect.stringContaining('light.kitchen'), {}, 'GET', { signal: expect.any(AbortSignal) }));
   });
 
   it('uses the frame header edge even inside a class lookalike', () => {

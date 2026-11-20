@@ -111,6 +111,32 @@ describe('useApiResource persistence', () => {
     expect(result.current.data).toEqual({ who: 'second-user' });
   });
 
+  it('releases both a superseded prefetch and the foreground GET on owner change', async () => {
+    const path = 'api/v1/health/prefetch-takeover';
+    const background = deferred();
+    const foreground = deferred();
+    const fresh = deferred();
+    const onDone = vi.fn();
+    const registration = register(memoryStore({ owner: 'alice' }), { owner: 'alice' });
+    await registration.ready;
+    apiMock.mockReturnValueOnce(background.promise)
+      .mockReturnValueOnce(foreground.promise).mockReturnValueOnce(fresh.promise);
+    prefetchApiResources([path], { onDone });
+    const reader = renderHook(() => useApiResource(path, { swr: true }));
+    act(() => reader.result.current.reload());
+    await act(async () => {});
+    expect(apiMock.mock.calls.map(call => call[3]?.signal.aborted)).toEqual([false, false]);
+
+    await act(async () => { registration.setOwner('bob'); });
+    expect(apiMock.mock.calls.map(call => call[3]?.signal.aborted)).toEqual([true, true, false]);
+    await act(async () => { foreground.resolve('old foreground'); background.resolve('old prefetch'); });
+    expect(reader.result.current.data).toBeNull();
+    expect(onDone).not.toHaveBeenCalled();
+
+    await act(async () => { fresh.resolve('new owner'); });
+    expect(reader.result.current.data).toBe('new owner');
+  });
+
   it('the same owner, or a first claim, drops nothing', async () => {
     const store = memoryStore({ owner: 'first-user', entries: [{ path: 'api/v1/health/weight', value: [1] }] });
     const registration = register(store);
@@ -214,6 +240,31 @@ describe('useApiResource in-flight dedupe', () => {
     await waitFor(() => expect(b.result.current.data).toEqual([172]));
   });
 
+  it.each([
+    [false, false], [true, false], [false, true], [true, true],
+  ])('cancels the shared GET after the last reader leaves (cached: %s, %s)', async (firstCached, secondCached) => {
+    const retired = deferred();
+    apiMock.mockReturnValueOnce(retired.promise).mockResolvedValueOnce({ visit: 'new' });
+    const path = '/api/v1/shared-retired-read';
+    const first = renderHook(() => useApiResource(path, { swr: firstCached }));
+    const second = renderHook(() => useApiResource(path, { swr: secondCached }));
+    expect(apiMock).toHaveBeenCalledTimes(1);
+    const signal = apiMock.mock.calls[0][3]?.signal;
+
+    first.unmount();
+    await act(async () => {});
+    expect(signal?.aborted).toBe(false);
+    second.unmount();
+    await act(async () => {});
+    expect(signal?.aborted).toBe(true);
+
+    const next = renderHook(() => useApiResource(path, { swr: firstCached }));
+    await waitFor(() => expect(next.result.current.data).toEqual({ visit: 'new' }));
+    await act(async () => { retired.resolve({ visit: 'old' }); });
+    expect(next.result.current.data).toEqual({ visit: 'new' });
+    expect(apiMock).toHaveBeenCalledTimes(2);
+  });
+
   it('a reload after a write never joins the request issued before it', async () => {
     const before = deferred();
     apiMock.mockReturnValueOnce(before.promise).mockResolvedValueOnce({ v: 'after-write' });
@@ -233,6 +284,9 @@ describe('useApiResource in-flight dedupe', () => {
     reader.unmount(); // the user flipped to the next day mid-flight
     prefetchApiResources(['api/v1/health/day?date=2026-09-24']);
     expect(apiMock).toHaveBeenCalledTimes(1);
+    const signal = apiMock.mock.calls[0][3]?.signal;
+    await act(async () => {});
+    expect(signal?.aborted).toBe(false);
     await act(async () => { network.resolve({ day: 24 }); });
     expect(peekApiResource('api/v1/health/day?date=2026-09-24')).toEqual({ day: 24 });
   });

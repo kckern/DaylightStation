@@ -50,7 +50,7 @@ beforeEach(() => {
   resetApiResourceCache(); api.mockReset();
   rows = { 'run-a': live, 'run-b': expired, 'run-c': backfilled };
   api.mockImplementation(async (path, body, method) => {
-    if (method) return { status: 'undone' };
+    if (method === 'POST') return { status: 'undone' };
     const id = path.split('/journal/')[1].split('?')[0];
     return structuredClone(rows[id]);
   });
@@ -61,7 +61,7 @@ describe('Auditor run detail', () => {
   it('fetches by run id and start time and explains why it ran', async () => {
     mount({ runId: 'run-a', at });
     await screen.findByText('Tidied lunch');
-    expect(api).toHaveBeenCalledWith(`${cleanupPath}/journal/run-a?at=${encodeURIComponent(at)}`);
+    expect(api).toHaveBeenCalledWith(`${cleanupPath}/journal/run-a?at=${encodeURIComponent(at)}`, {}, 'GET', expect.anything());
     expect(screen.getByText('New food captured')).toBeTruthy();
     expect(screen.getByText('Run manually')).toBeTruthy();
     expect(screen.getByText('Started by hand · ran over the daily cap')).toBeTruthy();
@@ -117,7 +117,7 @@ describe('Auditor run detail', () => {
   it('undoes an applied change by its repair id, then reloads the detail', async () => {
     mount({ runId: 'run-a', at });
     await screen.findByText('Tidied lunch');
-    const reads = () => api.mock.calls.filter(([path, , method]) => !method && path.includes('/journal/run-a')).length;
+    const reads = () => api.mock.calls.filter(([path, , method]) => method === 'GET' && path.includes('/journal/run-a')).length;
     const before = reads();
     rows['run-a'] = { ...live, outcomes: live.outcomes.map(o => (o.operationId === 'run-a_0' ? { ...o, undoneAt: '2026-09-25T16:30:00.000Z' } : o)) };
     fireEvent.click(screen.getAllByRole('button', { name: 'Undo this change' })[0]);
@@ -127,7 +127,7 @@ describe('Auditor run detail', () => {
   });
   it('reports an undo failure and keeps the button', async () => {
     api.mockImplementation(async (path, body, method) => {
-      if (method) throw new Error('A later edit conflicts');
+      if (method === 'POST') throw new Error('A later edit conflicts');
       return structuredClone(live);
     });
     mount({ runId: 'run-a', at });
