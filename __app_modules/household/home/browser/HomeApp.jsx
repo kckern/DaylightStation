@@ -5,7 +5,7 @@ import { IconDoor, IconLayoutGrid, IconTimeline, IconVideo } from '@tabler/icons
 import '@mantine/core/styles.css';
 import {
   AppThemeProvider, AppChrome, DismissStackProvider, SectionCard, LoadingState, ErrorState, EmptyState,
-  useViewScroll,
+  useRetryRegion, useViewScroll,
 } from '@/lib/ui';
 import { useApiResource } from '@/lib/hooks/useApiResource.js';
 import CameraFeed from "../../camera/browser/feed.mjs";
@@ -81,30 +81,35 @@ function CameraCard({ camId }) {
 function CameraGrid({ contentRef }) {
   const { data, loading, error, reload } = useApiResource('api/v1/camera', { label: 'cameras', logger });
   const cameras = useMemo(() => sortCameras(data?.cameras || []), [data]);
-  if (loading) return <LoadingState label="cameras" rows={4} />;
-  if (error) return <ErrorState error={error} onRetry={reload} label="Cameras" />;
-  if (!cameras.length) {
-    return <EmptyState title="No cameras configured" hint="Add a camera in devices.yml to see it here." />;
+  const { regionProps, retry } = useRetryRegion(reload, loading);
+  let body;
+  if (loading) body = <LoadingState label="cameras" rows={4} />;
+  else if (error) body = <ErrorState error={error} onRetry={retry} label="Cameras" />;
+  else if (!cameras.length) {
+    body = <EmptyState title="No cameras configured" hint="Add a camera in devices.yml to see it here." />;
+  } else {
+    body = (
+      <div ref={contentRef} className="home-app__cameras">
+        {cameras.map((cam) => <CameraCard key={cam.id} camId={cam.id} />)}
+      </div>
+    );
   }
-  return (
-    <div ref={contentRef} className="home-app__cameras">
-      {cameras.map((cam) => <CameraCard key={cam.id} camId={cam.id} />)}
-    </div>
-  );
+  return <section aria-label="Cameras" {...regionProps}>{body}</section>;
 }
 
 function HomeView({ view, house }) {
   const { entities, rooms, types, mosaic, haUrl, summary, hasData, loading, error, reload, toggle, turnOff, roomCommands } = house;
-
-  if (!hasData && loading) return <LoadingState label="the house" rows={6} />;
-  // A failed poll keeps the last good reading on screen; only a first load
-  // with nothing to show is a dead end.
-  if (!hasData && error) return <ErrorState error={error} onRetry={reload} label="Home Assistant" />;
-
+  const waitingForHouse = !hasData && loading;
+  // Background house reads leave the accepted view and its independent reads available.
+  const { regionProps, retry } = useRetryRegion(reload, waitingForHouse);
   const shared = { entities, rooms, haUrl, toggle };
-  if (view === 'rooms') return <RoomsView {...shared} types={types} summary={summary} turnOff={turnOff} roomCommands={roomCommands} />;
-  if (view === 'mosaic') return <MosaicView {...shared} mosaic={mosaic} summary={summary} />;
-  return <TodayView {...shared} summary={summary} />;
+  let body;
+  if (waitingForHouse) body = <LoadingState label="the house" rows={6} />;
+  else if (!hasData && error) body = <ErrorState error={error} onRetry={retry} label="Home Assistant" />;
+  else if (view === 'rooms') body = <RoomsView {...shared} types={types} summary={summary} turnOff={turnOff} roomCommands={roomCommands} />;
+  else if (view === 'mosaic') body = <MosaicView {...shared} mosaic={mosaic} summary={summary} />;
+  else body = <TodayView {...shared} summary={summary} />;
+  return <section aria-label="Home Assistant" {...regionProps}>{body}</section>;
 }
 
 function HomeApp() {

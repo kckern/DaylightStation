@@ -1,7 +1,7 @@
 import { browserPreference } from '@/lib/browserPreference.js';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { SegmentedControl } from '@mantine/core';
-import { LoadingState, ErrorState, EmptyState } from '@/lib/ui';
+import { LoadingState, ErrorState, EmptyState, useRetryRegion } from '@/lib/ui';
 import { composeNow } from '../now/composeStatus.js';
 import homeLogger from '../homeLogger.js';
 import { useTimeline } from './useTimeline.js';
@@ -75,7 +75,8 @@ function Timeline({ timeline, onOpen }) {
 export function TodayView({ entities, rooms, summary, haUrl, toggle }) {
   const [range, setRange] = useState(rangePreference.read);
   const [openLaneId, setOpenLaneId] = useState(null);
-  const { timeline, loading, error, reload } = useTimeline(range);
+  const { timeline, loading, revalidating, error, reload } = useTimeline(range);
+  const { regionProps, retry } = useRetryRegion(reload, loading || revalidating);
   const sentence = useMemo(() => composeNow({ entities, rooms, summary }).sentences[0] || null, [entities, rooms, summary]);
 
   useEffect(() => {
@@ -99,7 +100,7 @@ export function TodayView({ entities, rooms, summary, haUrl, toggle }) {
   const shownLane = openLaneId && timeline ? timeline.lanes.find((l) => l.id === openLaneId) || null : null;
 
   let body;
-  if (!timeline && error) body = <ErrorState error={error} onRetry={reload} label="Timeline" />;
+  if (!timeline && error) body = <ErrorState error={error} onRetry={retry} label="Timeline" />;
   else if (!timeline) body = <LoadingState label="the timeline" rows={6} />;
   else if (!timeline.lanes?.length) {
     body = <EmptyState title="No timeline lanes" hint="Add lanes under timeline.lanes in household/home/dashboard.yml" />;
@@ -111,7 +112,7 @@ export function TodayView({ entities, rooms, summary, haUrl, toggle }) {
       <div className="home-today__range">
         <SegmentedControl size="sm" data={RANGES} value={range} onChange={changeRange} aria-label="Timeline range" />
       </div>
-      {body}
+      <section aria-label="Timeline" {...regionProps}>{body}</section>
       <LaneDetailSheet
         lane={shownLane}
         entities={entities}

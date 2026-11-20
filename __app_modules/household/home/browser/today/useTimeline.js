@@ -11,13 +11,13 @@ const REFRESH_MS = 60_000;
 export const timelinePath = (range) => `api/v1/home-dashboard/timeline?range=${range}`;
 
 /**
- * The house's day as lanes: `{timeline, loading, error, reload}`. Today is
+ * The house's day as lanes: `{timeline, loading, revalidating, error, reload}`. Today is
  * still being written, so it re-reads every minute while the page is
  * visible. Yesterday and Week revalidate on selection and keep their cached
  * range available when the user switches back.
  */
 export function useTimeline(range) {
-  const { data: timeline, loading, error, reload, poll } = useApiResource(timelinePath(range), { label: 'timeline', logger, swr: true });
+  const { data: timeline, loading, revalidating, error, reload, poll } = useApiResource(timelinePath(range), { label: 'timeline', logger, swr: true });
 
   useVisibleRefresh({ active: range === 'today', reload, poll, intervalMs: REFRESH_MS });
 
@@ -28,7 +28,7 @@ export function useTimeline(range) {
     if (error) logger.warn('home.timeline.failed', { range, error: error.message });
   }, [error, range]);
 
-  return { timeline: timeline || null, loading, error, reload };
+  return { timeline: timeline || null, loading, revalidating, error, reload };
 }
 
 export default useTimeline;
