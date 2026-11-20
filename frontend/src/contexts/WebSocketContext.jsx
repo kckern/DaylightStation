@@ -37,10 +37,10 @@ export const WebSocketProvider = ({ children }) => {
   // Function to restart WebSocket server as last resort
   const restartWebSocketServer = useCallback(async () => {
     try {
-      const isLocalhost = /localhost/.test(window.location.href);
-      const baseUrl = isLocalhost ? 'http://localhost:3112' : window.location.origin;
-      
-      const response = await fetch(`${baseUrl}/api/v1/admin/ws/restart`, {
+      // Same origin in dev too: Vite proxies /api to the backend. A direct call
+      // to the backend port would be a cross-origin write, which the backend
+      // refuses (crossSiteGuard).
+      const response = await fetch('/api/v1/admin/ws/restart', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

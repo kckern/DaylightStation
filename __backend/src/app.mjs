@@ -193,7 +193,7 @@ import { WakeScreenForBroadcast } from '#apps/devices/services/WakeScreenForBroa
 import { EventBusDeviceTransportGateway } from '#adapters/devices/EventBusDeviceTransportGateway.mjs';
 
 // HTTP middleware
-import { errorHandlerMiddleware, requestLoggerMiddleware, aiOriginMiddleware, withRequestContext, exceptPaths } from "./0_system/http/middleware/index.mjs";
+import { errorHandlerMiddleware, requestLoggerMiddleware, aiOriginMiddleware, withRequestContext, exceptPaths, crossSiteGuard, corsOptionsFor, originAllowList } from "./0_system/http/middleware/index.mjs";
 import { runWithOrigin } from "./0_system/runtime/aiContext.mjs";
 import { scopedGateway } from '#apps/common/ports/IAIGateway.mjs';
 import { createDevProxy } from '#api/v1/middleware/createDevProxy.mjs';
@@ -573,7 +573,16 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     '/api/v1/nutribot/upc',
     '/api/v1/nutribot/image',
   ]);
-  app.use(selfGuarded(cors()));
+  // Cross-site writes are refused before any body is read, and CORS answers
+  // only the configured extra origins (default none). Without these, any page
+  // a household member opened could write to the API as the LAN `sysadmin`
+  // (networkTrustResolver). __docs/reference/core/network-exposure.md.
+  const crossSiteLogger = createLogger({ source: 'backend', app: 'api' }).child({ module: 'cross-site-guard' });
+  let configuredOrigins = [];
+  try { configuredOrigins = configService.get('http.allowed_origins') || []; } catch { configuredOrigins = []; }
+  const allowedOrigins = originAllowList(configuredOrigins, { logger: crossSiteLogger });
+  app.use(selfGuarded(crossSiteGuard({ allowedOrigins, logger: crossSiteLogger })));
+  app.use(selfGuarded(cors(corsOptionsFor(allowedOrigins))));
   // Strava webhooks carry 64-bit ids (object_id, owner_id) from 2027-06-01;
   // plain JSON.parse would round them to a different activity. Parsed here,
   // ahead of the general parser, which then skips the already-read body.

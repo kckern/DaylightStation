@@ -127,7 +127,20 @@ logging:
     path: null            # Absolute path; default <mediaDir>/logs/backend.log
     maxSizeMb: 25         # Rotate at this size
     maxFiles: 8           # Generations kept, including the live file
+
+http:
+  allowed_origins: []     # Extra web origins allowed to write to the API and
+                          # get CORS headers (default none)
 ```
+
+**`http.allowed_origins`.** Web origins other than the app's own that may send
+`POST`/`PUT`/`PATCH`/`DELETE` to the API from a browser, and that get CORS
+headers. Each entry is `scheme://host[:port]`; a path is dropped and an entry
+that is not an http(s) origin is skipped with a `security.allowed-origin.invalid`
+warning. Empty by default: the app's own pages are allowed under any hostname
+without being listed, and non-browser callers are never affected. Read once at
+startup by `app.mjs`; see
+[network-exposure.md](network-exposure.md#cross-site-requests-application-layer).
 
 **`logging.fileSink`.** The durable general backend log — the sink that carries
 `http.response`, `plex.stream.mint` and every other backend event, and the one
