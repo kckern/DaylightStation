@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import {
   barlineFeatures, heuristicBoundaryP, partitionSegments, compactFeatures, FEATURE_KEYS,
-  pieceContext, boundaryProbabilities,
+  pieceContext, boundaryProbabilities, LENGTH_WEIGHT,
 } from './phraseSegments.mjs';
 
 /** The kiosk's buildMeasures, inlined so this test stays portable. */
@@ -29,6 +29,7 @@ function stepsFrom(bars, barLen = 4) {
 
 const rh = (midi) => ({ midi, staff: 0 });
 const lh = (midi) => ({ midi, staff: 1 });
+const round4 = (x) => Math.round(x * 1e4) / 1e4;
 const quarters = (midi) => [0, 1, 2, 3].map((b) => [b, [rh(midi)]]);
 
 describe('barlineFeatures', () => {
@@ -102,6 +103,54 @@ describe('barlineFeatures', () => {
     assert.equal(f[1].restBar, false);
   });
 
+  it('takes the bass from the lowest staff: voice + piano reads the left hand', () => {
+    // Staff 0 voice, 1 piano right hand, 2 piano left hand. The right hand falls a
+    // fifth (67 → 60) but the left hand moves a step (48 → 50).
+    const steps = stepsFrom([
+      [[0, [rh(72), { midi: 67, staff: 1 }, { midi: 48, staff: 2 }]]],
+      [[0, [rh(74), { midi: 60, staff: 1 }, { midi: 50, staff: 2 }]]],
+    ]);
+    const [f] = barlineFeatures({ measures: buildMeasures(steps), steps, beatsPerMeasure: 4 });
+    assert.equal(f.bassMotion, 2);
+  });
+
+  it('a single-staff melody has no bass', () => {
+    const steps = stepsFrom([quarters(67), quarters(60)]);
+    assert.equal(barlineFeatures({ measures: buildMeasures(steps), steps, beatsPerMeasure: 4 })[0].bassMotion, null);
+  });
+
+  it('flags only the first position with a section\'s printed number, as the kiosk does', () => {
+    const steps = stepsFrom([quarters(60), quarters(62), quarters(64), quarters(65)]);
+    // Printed numbers 1, 2, 2, 3 (a renumbered bar): the section at 2 starts at position 1.
+    const measures = buildMeasures(steps).map((m, i) => ({ ...m, number: [1, 2, 2, 3][i] }));
+    const f = barlineFeatures({ measures, steps, sections: [{ label: 'A', startMeasure: 2, endMeasure: 3 }], beatsPerMeasure: 4 });
+    assert.deepEqual(f.map((r) => r.sectionStart), [true, false, false]);
+  });
+
+  it('measures each bar by the score\'s own length across a 4/4 → 3/4 change', () => {
+    // Bars 0-1 in 4/4, bars 2-3 in 3/4 (starts 0, 4, 8, 11). Bar 2 holds a half
+    // note from beat 2 to its end; bar 3 starts after a quarter rest.
+    const steps = [
+      ...[0, 1, 2, 3].map((b) => ({ onsetQuarter: b, measure: 0, number: 1, notes: [rh(60)] })),
+      ...[4, 5, 6, 7].map((q) => ({ onsetQuarter: q, measure: 1, number: 2, notes: [rh(62)] })),
+      { onsetQuarter: 8, measure: 2, number: 3, notes: [rh(64)] },
+      { onsetQuarter: 9, measure: 2, number: 3, notes: [rh(65)] },
+      { onsetQuarter: 12, measure: 3, number: 4, notes: [rh(67)] },
+      { onsetQuarter: 13, measure: 3, number: 4, notes: [rh(65)] },
+    ];
+    const measureMap = [
+      { index: 0, onsetQuarter: 0, durationQuarters: 4 }, { index: 1, onsetQuarter: 4, durationQuarters: 4 },
+      { index: 2, onsetQuarter: 8, durationQuarters: 3 }, { index: 3, onsetQuarter: 11, durationQuarters: 3 },
+    ];
+    const f = barlineFeatures({ measures: buildMeasures(steps), steps, beatsPerMeasure: 4, measureMap });
+    assert.equal(f[2].tailGapQuarters, 3);
+    assert.equal(f[2].tailGapRatio, 1);
+    assert.equal(f[2].restBar, true);
+    assert.equal(f[1].restBar, false);
+    // Notes per beat use each bar's own length: 2 notes / 3 beats vs 4 / 4.
+    assert.equal(f[1].densityChange, round4(1 - 2 / 3));
+  });
+
   it('returns nothing for fewer than two measures', () => {
     const steps = stepsFrom([quarters(60)]);
     assert.deepEqual(barlineFeatures({ measures: buildMeasures(steps), steps, beatsPerMeasure: 4 }), []);
@@ -134,6 +183,12 @@ describe('heuristicBoundaryP', () => {
     // Rare (a few phrase ends): scaled by how rare it is.
     const rare = heuristicBoundaryP(f, { cadenceRate: 0.25 });
     assert.ok(rare > plain && rare < heuristicBoundaryP(f));
+  });
+
+  it('a cadential bass counts in any octave', () => {
+    const plain = heuristicBoundaryP({ tailGapRatio: 0.25, bassMotion: 2 });
+    for (const m of [5, -7, 17, -19]) assert.ok(heuristicBoundaryP({ tailGapRatio: 0.25, bassMotion: m }) > plain, String(m));
+    assert.equal(heuristicBoundaryP({ tailGapRatio: 0.25, bassMotion: 7 }), plain);
   });
 
   it('pieceContext measures how often the cadential bass fires among barlines with a bass', () => {
@@ -210,6 +265,55 @@ describe('partitionSegments', () => {
   it('never crosses a forced cut, even a long way from targetLen', () => {
     const segs = partitionSegments(12, pMap(12, 0.02, { 6: 1 }));
     assert.ok(segs.some((s) => s.end === 6));
+  });
+
+  it('matches an exhaustive search on random small cases (seeded)', () => {
+    // Every cut set over n-1 barlines, ranked as partitionSegments promises:
+    // fewest short segments, then highest likelihood − length penalty.
+    const clamp = (p) => Math.min(0.98, Math.max(0.02, p));
+    const evaluate = (n, p, mask, { minLen, maxLen, targetLen }) => {
+      let short = 0; let ll = 0; let dev = 0; let start = 0;
+      const close = (len) => {
+        if (len > maxLen) return false;
+        if (len < minLen) short += 1;
+        dev += Math.abs(len - targetLen);
+        return true;
+      };
+      for (let k = 0; k < n - 1; k += 1) {
+        const cut = (mask >> k) & 1;
+        if (!cut && p[k] >= 1) return null;
+        ll += cut ? Math.log(clamp(p[k])) : Math.log(1 - clamp(p[k]));
+        if (cut) { if (!close(k - start + 1)) return null; start = k + 1; }
+      }
+      if (!close(n - start)) return null;
+      return { short, score: ll - LENGTH_WEIGHT * dev };
+    };
+    let seed = 7;
+    const rnd = () => { seed = (seed * 1103515245 + 12345) % 2147483648; return seed / 2147483648; };
+    for (let t = 0; t < 3000; t += 1) {
+      const n = 1 + Math.floor(rnd() * 10);
+      const minLen = 1 + Math.floor(rnd() * 3);
+      const opts = { minLen, maxLen: Math.max(minLen, 2 + Math.floor(rnd() * 6)), targetLen: 1 + Math.floor(rnd() * 6) };
+      const p = Array.from({ length: n - 1 }, () => {
+        const r = rnd();
+        return r < 0.1 ? 1 : r < 0.2 ? 0.5 : r < 0.25 ? 0 : Math.round(rnd() * 100) / 100;
+      });
+      const segs = partitionSegments(n, new Map(p.map((v, k) => [k, v])), opts);
+      assert.equal(segs[0].start, 0);
+      assert.equal(segs[segs.length - 1].end, n - 1);
+      let mask = 0;
+      for (const s of segs.slice(0, -1)) mask |= 1 << s.end;
+      const got = evaluate(n, p, mask, opts);
+      let best = null;
+      for (let c = 0; c < 1 << (n - 1); c += 1) {
+        const e = evaluate(n, p, c, opts);
+        if (e && (!best || e.short < best.short || (e.short === best.short && e.score > best.score + 1e-9))) best = e;
+      }
+      const label = JSON.stringify({ n, opts, p });
+      assert.ok(got, label);
+      assert.equal(got.short, best.short, label);
+      assert.ok(Math.abs(got.score - best.score) < 1e-7, label);
+    }
   });
 
   it('accepts a plain object for pAfter', () => {

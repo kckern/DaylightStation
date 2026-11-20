@@ -119,6 +119,39 @@ const isThenable = (v) => v != null && typeof v.then === 'function';
 
 const hasProgress = (passage) => Boolean(passage?.silver || passage?.gold);
 
+const isRow = (row) => Array.isArray(row) && row.every((v) => v === null || Number.isFinite(v));
+
+/**
+ * A draft's `proposal` as stored: only the keys the admin and calibration read
+ * (`scorer, model, at, boundaries, featureKeys, features, edited, failedCalls,
+ * beatsPerMeasure`), with boundaries and feature rows limited to the score's
+ * barlines (one per barline, measureCount − 1). null when nothing usable is left.
+ */
+export function cleanProposal(raw, measureCount) {
+  if (!isObject(raw)) return null;
+  const n = Number.isInteger(measureCount) && measureCount > 0 ? measureCount : 0;
+  const out = {};
+  if (typeof raw.scorer === 'string' && raw.scorer) out.scorer = raw.scorer;
+  if (raw.model === null || typeof raw.model === 'string') out.model = raw.model;
+  if (typeof raw.at === 'string' && raw.at) out.at = raw.at;
+  if (typeof raw.edited === 'boolean') out.edited = raw.edited;
+  if (Number.isInteger(raw.failedCalls) && raw.failedCalls >= 0) out.failedCalls = raw.failedCalls;
+  if (Number.isFinite(raw.beatsPerMeasure) && raw.beatsPerMeasure > 0) out.beatsPerMeasure = raw.beatsPerMeasure;
+  if (isObject(raw.boundaries)) {
+    const boundaries = {};
+    for (const [key, p] of Object.entries(raw.boundaries)) {
+      const k = Number(key);
+      if (/^\d+$/.test(key) && k < n - 1 && Number.isFinite(p)) boundaries[k] = p;
+    }
+    if (Object.keys(boundaries).length) out.boundaries = boundaries;
+  }
+  if (Array.isArray(raw.featureKeys) && raw.featureKeys.every((k) => typeof k === 'string')) out.featureKeys = [...raw.featureKeys];
+  if (Array.isArray(raw.features) && raw.features.every(isRow) && raw.features.length) {
+    out.features = raw.features.slice(0, Math.max(n - 1, 0)).map((row) => [...row]);
+  }
+  return Object.keys(out).length ? out : null;
+}
+
 export class SheetMusicAdminService {
   #datastore;
   #scoreReader;
@@ -300,7 +333,8 @@ export class SheetMusicAdminService {
     // The score must exist, or the draft would be an orphan Learn file.
     await this.#scoreInfo(id);
     const stored = this.#storedFile(id);
-    const { draft } = normalizeLearnFile({ draft: { segments, ...(isObject(proposal) ? { proposal } : {}) } });
+    const clean = cleanProposal(proposal, measureCount);
+    const { draft } = normalizeLearnFile({ draft: { segments, ...(clean ? { proposal: clean } : {}) } });
     const next = { ...stored, version: 1, scoreId: stored.scoreId ?? id, draft };
     await this.#datastore.saveSheetMusicLearn(id, next);
     const revision = draftRevision(draft.segments);

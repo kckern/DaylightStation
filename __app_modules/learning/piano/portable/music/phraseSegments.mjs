@@ -6,17 +6,21 @@
  * Positions are the kiosk's `layout.measures` (`buildMeasures(steps)`): each entry
  * `{ index, number, firstStep, lastStep }`, where `index` is the source measure and
  * `number` the printed one. A barline "after k" sits between layout positions k and
- * k+1; a repeat can put the same source measure at two positions, so a barline can
- * jump backwards in the score.
+ * k+1. The kiosk's `buildSteps` merges onsets by time, so a repeat collapses into
+ * one pass (no source measure appears twice) and an all-rest bar has no position:
+ * consecutive positions can skip a source index but do not go backwards. The
+ * backward branch in `gapAcross` is kept for layouts built some other way.
  *
  * How a proposal is made (the heuristic baseline that calibration compares against):
  *
- * 1. Features per barline (`barlineFeatures`): melody tail gap as a fraction of the
- *    bar, rehearsal section start, bass motion into the next downbeat, change in
- *    notes per beat, and whether the next bar opens with a rest.
+ * 1. Features per barline (`barlineFeatures`): melody (staff 0) tail gap as a
+ *    fraction of bar k's length, rehearsal section start, bass (the piece's lowest
+ *    staff) motion into the next downbeat, change in notes per beat, and whether
+ *    the next bar opens with a rest. Bar starts and lengths come from the score's
+ *    `measureMap` when given (meter changes count), else from one meter.
  * 2. p(phrase ends) per barline (`heuristicBoundaryP`), a logistic over
  *      −1.2 + 2.2·min(tailGapRatio, 1)
- *           + 0.8·[bass falls a fifth or rises a fourth]·w
+ *           + 0.8·[bass falls a fifth or rises a fourth, any octave]·w
  *           + 0.4·min(densityChange, 2)
  *    with p = 1 at a section start. w = 1 − (share of the piece's barlines with a
  *    bass where that motion happens), and w = 0 once that share is over 40%: an
@@ -32,9 +36,9 @@
 
 const EPS = 1e-6;
 const MELODY_STAFF = 0;
-const BASS_STAFF = 1;
 
 const round = (x, places = 4) => (Number.isFinite(x) ? Math.round(x * 10 ** places) / 10 ** places : x);
+const staffOf = (note) => (Number.isInteger(note?.staff) ? note.staff : 0);
 
 function measureSteps(measure, steps) {
   const out = [];
@@ -43,20 +47,34 @@ function measureSteps(measure, steps) {
   return out;
 }
 
-const hasStaff = (step, staff) => (step.notes || []).some((n) => (Number.isInteger(n.staff) ? n.staff : 0) === staff);
+const hasStaff = (step, staff) => (step.notes || []).some((n) => staffOf(n) === staff);
 
 /**
- * Where each source measure starts, in quarters: anchor + index × barLen, with the
- * anchor the most common (first onset − index × barLen) across measures, so most
- * bars start on their first onset and a pickup shifts every bar alike. A guess for
- * a single meter; good enough to read a late first onset or bridge a repeat jump.
+ * The bass staff: the highest staff id in the piece, when there is one below the
+ * melody. On a piano score that is the left hand; on voice + piano (staves 0, 1, 2)
+ * it is the piano's left hand, not its right. The lowest note across all lower
+ * staves would follow the right hand whenever the left rests or holds, so the
+ * notated bottom staff is the steadier choice. null for a single-staff piece.
  */
-function measureStarts(measures, steps, barLen) {
+function bassStaffOf(steps) {
+  let top = -1;
+  for (const step of steps) for (const n of step.notes || []) top = Math.max(top, staffOf(n));
+  return top > MELODY_STAFF ? top : null;
+}
+
+/**
+ * Bar start and length (quarters) per source measure. From `measureMap`
+ * ([{ index, onsetQuarter, durationQuarters }], the score's own bar boundaries)
+ * when it covers the measure; otherwise one meter of `barLen`, anchored at the most
+ * common (first onset − index × barLen) so a pickup shifts every bar alike.
+ */
+function barGeometry(measures, steps, barLen, measureMap) {
+  const byIndex = new Map();
+  for (const m of Array.isArray(measureMap) ? measureMap : []) {
+    if (Number.isInteger(m?.index) && Number.isFinite(m.onsetQuarter) && m.durationQuarters > 0) byIndex.set(m.index, m);
+  }
   const counts = new Map();
-  const seen = new Set();
   for (const m of measures) {
-    if (seen.has(m.index)) continue;
-    seen.add(m.index);
     const first = steps[m.firstStep];
     if (!first) continue;
     const key = Math.round((first.onsetQuarter - m.index * barLen) * 1000);
@@ -67,17 +85,22 @@ function measureStarts(measures, steps, barLen) {
   for (const [key, n] of [...counts.entries()].sort((a, b) => a[0] - b[0])) {
     if (n > best) { best = n; anchor = key / 1000; }
   }
-  return (index) => Math.max(0, anchor + index * barLen);
+  return (index) => {
+    const known = byIndex.get(index);
+    if (known) return { start: known.onsetQuarter, length: known.durationQuarters };
+    return { start: Math.max(0, anchor + index * barLen), length: barLen };
+  };
 }
 
 /**
  * Onset gap across a barline. Forward in the score it is the plain difference; a
- * jump back (repeat) adds what is left of bar k to the lead-in of bar k+1.
+ * backward jump (not produced by the kiosk's steps, see the header) adds what is
+ * left of bar k to the lead-in of bar k+1.
  */
-function gapAcross(lastOnset, firstOnset, left, right, startOf, barLen) {
+function gapAcross(lastOnset, firstOnset, left, right) {
   if (lastOnset == null || firstOnset == null) return null;
   if (firstOnset > lastOnset + EPS) return firstOnset - lastOnset;
-  return Math.max(0, startOf(left.index) + barLen - lastOnset) + Math.max(0, firstOnset - startOf(right.index));
+  return Math.max(0, left.start + left.length - lastOnset) + Math.max(0, firstOnset - right.start);
 }
 
 /**
@@ -85,33 +108,43 @@ function gapAcross(lastOnset, firstOnset, left, right, startOf, barLen) {
  *   after           k
  *   tailGapQuarters onset gap from the last melody (staff 0) onset in k to the first in
  *                   k+1; over all staves when either side has no melody
- *   tailGapRatio    tailGapQuarters / beatsPerMeasure (>= 0.5 suggests a breath)
- *   sectionStart    a rehearsal section starts at k+1 (printed number, as sectionToRange)
- *   bassMotion      semitones from the lowest staff-1 note of k's last bass onset to
+ *   tailGapRatio    tailGapQuarters / bar k's length (>= 0.5 suggests a breath)
+ *   sectionStart    a rehearsal section starts at k+1: the first position whose printed
+ *                   number is the section's start, as the kiosk's sectionToRange finds it
+ *   bassMotion      semitones from the lowest bass-staff note of k's last bass onset to
  *                   k+1's first; null when either side has none
  *   densityChange   |notes per beat in k+1 − notes per beat in k|
- *   restBar         k+1's first onset falls after its downbeat (estimated)
- * @param {{ measures: Array, steps: Array, sections?: Array<{startMeasure:number}>, beatsPerMeasure?: number }} input
- *   `beatsPerMeasure` is in quarter notes (4 for 4/4, 3 for 6/8).
+ *   restBar         k+1's first onset falls after its downbeat
+ * @param {{ measures: Array, steps: Array, sections?: Array<{startMeasure:number}>,
+ *   beatsPerMeasure?: number, measureMap?: Array }} input
+ *   `beatsPerMeasure` is in quarter notes (4 for 4/4, 3 for 6/8), used for bars the
+ *   `measureMap` does not cover.
  */
-export function barlineFeatures({ measures = [], steps = [], sections = [], beatsPerMeasure = 4 } = {}) {
+export function barlineFeatures({ measures = [], steps = [], sections = [], beatsPerMeasure = 4, measureMap = null } = {}) {
   if (!Array.isArray(measures) || measures.length < 2) return [];
   const barLen = Number.isFinite(beatsPerMeasure) && beatsPerMeasure > 0 ? beatsPerMeasure : 4;
-  const startOf = measureStarts(measures, steps, barLen);
-  const sectionNumbers = new Set((sections || []).map((s) => s?.startMeasure).filter((n) => n != null));
+  const bar = barGeometry(measures, steps, barLen, measureMap);
+  const bassStaff = bassStaffOf(steps);
+  const sectionAt = new Set();
+  for (const s of sections || []) {
+    const at = measures.findIndex((m) => m.number === s?.startMeasure);
+    if (at > 0) sectionAt.add(at);
+  }
   const per = measures.map((m) => {
     const list = measureSteps(m, steps);
     const melody = list.filter((s) => hasStaff(s, MELODY_STAFF));
-    const bass = list.filter((s) => hasStaff(s, BASS_STAFF));
-    const lowestBass = (s) => Math.min(...s.notes.filter((n) => n.staff === BASS_STAFF).map((n) => n.midi));
+    const bass = bassStaff == null ? [] : list.filter((s) => hasStaff(s, bassStaff));
+    const lowestBass = (s) => Math.min(...s.notes.filter((n) => staffOf(n) === bassStaff).map((n) => n.midi));
+    const geometry = bar(m.index);
     return {
+      geometry,
       first: list[0]?.onsetQuarter ?? null,
       last: list[list.length - 1]?.onsetQuarter ?? null,
       melodyFirst: melody[0]?.onsetQuarter ?? null,
       melodyLast: melody[melody.length - 1]?.onsetQuarter ?? null,
       bassFirst: bass.length ? lowestBass(bass[0]) : null,
       bassLast: bass.length ? lowestBass(bass[bass.length - 1]) : null,
-      density: list.reduce((sum, s) => sum + (s.notes?.length || 0), 0) / barLen,
+      density: list.reduce((sum, s) => sum + (s.notes?.length || 0), 0) / geometry.length,
     };
   });
 
@@ -120,16 +153,16 @@ export function barlineFeatures({ measures = [], steps = [], sections = [], beat
     const a = per[k];
     const b = per[k + 1];
     const useMelody = a.melodyLast != null && b.melodyFirst != null;
-    const gap = gapAcross(useMelody ? a.melodyLast : a.last, useMelody ? b.melodyFirst : b.first, measures[k], measures[k + 1], startOf, barLen);
-    const lead = b.first == null ? 0 : b.first - startOf(measures[k + 1].index);
+    const gap = gapAcross(useMelody ? a.melodyLast : a.last, useMelody ? b.melodyFirst : b.first, a.geometry, b.geometry) ?? 0;
+    const lead = b.first == null ? 0 : b.first - b.geometry.start;
     out.push({
       after: k,
-      tailGapQuarters: round(gap ?? 0),
-      tailGapRatio: round((gap ?? 0) / barLen),
-      sectionStart: sectionNumbers.has(measures[k + 1].number),
+      tailGapQuarters: round(gap),
+      tailGapRatio: round(gap / a.geometry.length),
+      sectionStart: sectionAt.has(k + 1),
       bassMotion: a.bassLast != null && b.bassFirst != null ? b.bassFirst - a.bassLast : null,
       densityChange: round(Math.abs(b.density - a.density)),
-      restBar: lead > EPS && lead < barLen,
+      restBar: lead > EPS && lead < b.geometry.length,
     });
   }
   return out;
@@ -147,7 +180,8 @@ export function compactFeatures(records) {
   }));
 }
 
-const isCadentialBass = (motion) => motion === -7 || motion === 5;
+/** Bass falls a fifth or rises a fourth, in any octave (V→I with the bass displaced). */
+const isCadentialBass = (motion) => Number.isInteger(motion) && ((motion % 12) + 12) % 12 === 5;
 /** Above this share of barlines, a cadential bass motion is the texture, not a cadence. */
 export const CADENCE_RATE_LIMIT = 0.4;
 

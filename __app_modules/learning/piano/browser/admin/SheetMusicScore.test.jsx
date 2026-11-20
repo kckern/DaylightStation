@@ -30,6 +30,7 @@ vi.mock("../../../../../__capabilities/music-notation/browser/renderers/osmdRend
     osmdRender: (...a) => osmdRender(...a),
     buildMeasures: actual.buildMeasures,
     extractMeasureBounds: () => Array.from({ length: 8 }, (_, i) => ({ left: i * 50, right: i * 50 + 50, top: 0, bottom: 40 })),
+    extractMeasureMap: () => Array.from({ length: 8 }, (_, index) => ({ index, onsetQuarter: index * 4, durationQuarters: 4 })),
     extractPerStaffGeometry: () => [0, 1, 2].map((system) => ({ system, staff: 0, top: system * 100, left: 0, right: 400, lineSpacing: 5 })),
   };
 });
@@ -217,18 +218,123 @@ describe('SheetMusicScore', () => {
     expect(body.proposal.edited).toBeUndefined();
   });
 
-  it('marks a proposal edited when the grown-up changes it before saving', async () => {
+  const proposeNow = async () => {
+    fireEvent.click(await screen.findByRole('button', { name: 'Propose segments' }));
+    return screen.findByTestId('measure-strip-draft');
+  };
+  const mergeFirst = (strip) => {
+    fireEvent.click(within(strip).getAllByRole('button', { name: /^Segment 1, / })[0]);
+    fireEvent.click(within(strip).getByRole('button', { name: /^Merge with / }));
+  };
+
+  it('a rename does not mark a proposal edited; changing its cuts does', async () => {
     renderPage();
     await engravedReady();
-    fireEvent.click(await screen.findByRole('button', { name: 'Propose segments' }));
-    const strip = await screen.findByTestId('measure-strip-draft');
+    let strip = await proposeNow();
     fireEvent.click(within(strip).getAllByRole('button', { name: /^Segment 1, / })[0]);
     const name = within(strip).getByLabelText('Name');
     fireEvent.change(name, { target: { value: 'Opening' } });
     fireEvent.blur(name);
     fireEvent.click(screen.getByRole('button', { name: 'Save draft' }));
     await waitFor(() => expect(putCalls().length).toBe(1));
+    expect(putCalls()[0][1].proposal.edited).toBeUndefined();
+    expect(putCalls()[0][1].proposal.scorer).toBe('heuristic');
+
+    cleanup();
+    api.mockClear();
+    learn = learnFile();
+    renderPage();
+    await engravedReady();
+    strip = await proposeNow();
+    mergeFirst(strip);
+    fireEvent.click(screen.getByRole('button', { name: 'Save draft' }));
+    await waitFor(() => expect(putCalls().length).toBe(1));
     expect(putCalls()[0][1].proposal).toMatchObject({ scorer: 'heuristic', edited: true });
+  });
+
+  it('editing a saved proposal keeps its scorer, features and boundaries, marked edited', async () => {
+    renderPage();
+    await engravedReady();
+    await proposeNow();
+    fireEvent.click(screen.getByRole('button', { name: 'Save draft' }));
+    await waitFor(() => expect(putCalls().length).toBe(1));
+    await screen.findByText(/Draft saved/);
+    const saved = putCalls()[0][1].proposal;
+    mergeFirst(await screen.findByTestId('measure-strip-draft'));
+    fireEvent.click(screen.getByRole('button', { name: 'Save draft' }));
+    await waitFor(() => expect(putCalls().length).toBe(2));
+    const second = putCalls()[1][1].proposal;
+    expect(second).toMatchObject({ scorer: 'heuristic', edited: true, at: saved.at });
+    expect(second.features).toEqual(saved.features);
+    expect(second.boundaries).toEqual(saved.boundaries);
+  });
+
+  it('asks before a proposal replaces unsaved edits', async () => {
+    learn = learnFile({ draft: { segments: [{ id: 'a', start: 0, end: 7 }] }, draftRevision: 'r' });
+    renderPage();
+    await engravedReady();
+    fireEvent.click(await screen.findByRole('button', { name: 'Split after bar 2' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Propose segments' }));
+    const dialog = await screen.findByRole('dialog');
+    expect(within(dialog).getByText('Replace your current segments with a proposal?')).toBeTruthy();
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Keep my segments' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    const bands = () => within(screen.getByTestId('measure-strip-draft')).getAllByRole('button', { name: /^Segment \d+, / }).map((b) => b.getAttribute('aria-label'));
+    expect(bands()[0]).toBe('Segment 1, Bars 1-2');
+    expect(logged.some((l) => l.event === 'admin.sheetmusic.propose')).toBe(false);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Propose segments' }));
+    fireEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Replace' }));
+    await waitFor(() => expect(logged.find((l) => l.event === 'admin.sheetmusic.propose')?.data).toMatchObject({ replacedEdits: true }));
+    expect(bands()[0]).not.toBe('Segment 1, Bars 1-2');
+  });
+
+  it('proposes without asking when nothing would be lost', async () => {
+    renderPage();
+    await engravedReady();
+    await proposeNow();
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(logged.find((l) => l.event === 'admin.sheetmusic.propose')?.data).toMatchObject({ replacedEdits: false });
+  });
+
+  it('approve after a proposal saves it first, even when its cuts match the draft', async () => {
+    renderPage();
+    await engravedReady();
+    await proposeNow();
+    fireEvent.click(screen.getByRole('button', { name: 'Save draft' }));
+    await waitFor(() => expect(putCalls().length).toBe(1));
+    await screen.findByText(/Draft saved/);
+    const cuts = putCalls()[0][1].segments.map(({ start, end }) => [start, end]);
+    // Same cuts again, now as a fresh unsaved proposal.
+    fireEvent.click(screen.getByRole('button', { name: 'Propose segments' }));
+    expect(screen.queryByRole('dialog')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Approve' }));
+    await waitFor(() => expect(putCalls().length).toBe(2));
+    expect(putCalls()[1][1].segments.map(({ start, end }) => [start, end])).toEqual(cuts);
+    expect(putCalls()[1][1].action).toBe('draft');
+  });
+
+  it('hides a stored proposal\'s boundaries when the score has changed', async () => {
+    learn = learnFile({
+      segments: [{ id: 'a', start: 0, end: 7 }], approved: { at: 't' }, contentSha256: 'sha-old', stale: true,
+      draft: { segments: [{ id: 'a', start: 0, end: 7 }], proposal: { scorer: 'heuristic', boundaries: { 3: 0.9 } } },
+      draftRevision: 'r',
+    });
+    renderPage();
+    await engravedReady();
+    const strip = await screen.findByTestId('measure-strip-draft');
+    expect(strip.querySelectorAll('[data-boundary]')).toHaveLength(0);
+  });
+
+  it('generating a poster keeps unsaved segment edits', async () => {
+    uploadPoster.mockResolvedValue({ ok: true, result: { poster: 'generated' } });
+    learn = learnFile({ draft: { segments: [{ id: 'a', start: 0, end: 7 }] }, draftRevision: 'r' });
+    renderPage();
+    await engravedReady();
+    fireEvent.click(await screen.findByRole('button', { name: 'Split after bar 2' }));
+    fireEvent.click(screen.getByTestId('generate-poster'));
+    await screen.findByText(/Poster saved/);
+    expect(within(screen.getByTestId('measure-strip-draft')).getByRole('button', { name: 'Segment 1, Bars 1-2' })).toBeTruthy();
   });
 
   it('shows a saved proposal\'s boundaries on the draft strip', async () => {

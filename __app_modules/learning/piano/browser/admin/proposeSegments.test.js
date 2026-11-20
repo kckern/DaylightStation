@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { buildMeasures } from '../../../../../__capabilities/music-notation/browser/renderers/osmdRender.js';
-import { proposeSegments, proposalTargetLen, quartersPerMeasure } from './proposeSegments.js';
+import { cutsKey, firstTimeSig, proposeSegments, proposalTargetLen, quartersPerMeasure } from './proposeSegments.js';
 import { fillParts } from './scorePlan.js';
 
 const rh = (midi) => ({ midi, staff: 0 });
@@ -38,7 +38,7 @@ describe('proposeSegments', () => {
       { id: 'a', start: 0, end: 3 }, { id: 'b', start: 4, end: 7 },
       { id: 'c', start: 8, end: 11 }, { id: 'd', start: 12, end: 15 },
     ]);
-    expect(proposal).toMatchObject({ scorer: 'heuristic', model: null, at: 'T' });
+    expect(proposal).toMatchObject({ scorer: 'heuristic', model: null, at: 'T', beatsPerMeasure: 4 });
     expect(Object.keys(proposal.boundaries)).toHaveLength(15);
     // The bass rises G→C into every bar, so it earns nothing; the held notes decide.
     for (const k of [3, 7, 11]) expect(proposal.boundaries[k]).toBeGreaterThan(0.7);
@@ -68,5 +68,19 @@ describe('proposeSegments', () => {
     expect(quartersPerMeasure({ beats: 6, beatType: 8 })).toBe(3);
     expect(quartersPerMeasure({ beats: 3, beatType: 4 })).toBe(3);
     expect(quartersPerMeasure(undefined)).toBe(4);
+  });
+
+  it('reads the opening time signature, not the last one', () => {
+    const parsed = {
+      timeSig: { beats: 3, beatType: 4 },
+      parts: [{ measures: [{ attributes: { time: { beats: 4, beatType: 4 } } }, {}, { attributes: { time: { beats: 3, beatType: 4 } } }] }],
+    };
+    expect(firstTimeSig(parsed)).toEqual({ beats: 4, beatType: 4 });
+    expect(firstTimeSig({ timeSig: { beats: 6, beatType: 8 } })).toEqual({ beats: 6, beatType: 8 });
+  });
+
+  it('compares cuts without ids or names', () => {
+    expect(cutsKey([{ id: 'a', start: 4, end: 7, name: 'B' }, { id: 'z', start: 0, end: 3 }]))
+      .toBe(cutsKey([{ id: 'a', start: 0, end: 3 }, { id: 'b', start: 4, end: 7 }]));
   });
 });

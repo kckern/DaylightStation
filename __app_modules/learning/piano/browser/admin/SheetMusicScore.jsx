@@ -1,18 +1,18 @@
 import React, { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { Alert, Anchor, Badge, Button, Group, List, Skeleton, Stack, Text, Title } from '@mantine/core';
+import { Alert, Anchor, Badge, Button, Group, List, Modal, Skeleton, Stack, Text, Title } from '@mantine/core';
 import {
   IconAlertTriangle, IconArrowBackUp, IconCheck, IconChevronLeft, IconDeviceFloppy, IconPencil, IconPhoto, IconRefresh, IconSparkles, IconX,
 } from '@tabler/icons-react';
 import getLogger from "../../../../../frontend/src/lib/logging/Logger.js";
 import { DaylightAPI, DaylightAPIText } from "../../../../../frontend/src/lib/api.mjs";
-import { osmdRender, buildMeasures, extractMeasureBounds, extractPerStaffGeometry } from "../../../../../__capabilities/music-notation/browser/renderers/osmdRender.js";
+import { osmdRender, buildMeasures, extractMeasureBounds, extractMeasureMap, extractPerStaffGeometry } from "../../../../../__capabilities/music-notation/browser/renderers/osmdRender.js";
 import { parseMusicXml } from "../../../../../__capabilities/music-notation/browser/parseMusicXml.js";
 import { errors as editorErrors, idForIndex, initSegmentEditor, segmentEditorReducer, uncoveredBars } from "./segmentEditor.js";
 import { fillParts, generatedSegments, householdOverridesSegments } from "./scorePlan.js";
 import MeasureStrip, { SEGMENT_COLORS, barsLabel, segmentLabel } from "./MeasureStrip.jsx";
 import ApproveDialog, { ADMIN_PATH, scoreQuery } from "./ApproveDialog.jsx";
-import { proposeSegments, proposalTargetLen, quartersPerMeasure } from "./proposeSegments.js";
+import { cutsKey, firstTimeSig, proposeSegments, proposalTargetLen, quartersPerMeasure } from "./proposeSegments.js";
 import { POSTER_ERROR_MESSAGES, posterFromEngraving, uploadPoster } from "./posterJob.js";
 import "./SheetMusicScore.scss";
 
@@ -46,6 +46,21 @@ export function partsDrift(stored, filled) {
   if (!Array.isArray(filled)) return true;
   const want = new Map(filled.map((s) => [s.id, JSON.stringify(s.parts || [])]));
   return (stored || []).some((s) => want.get(s.id) !== JSON.stringify(s.parts || []));
+}
+
+/**
+ * The proposal to save with a draft. A proposal saved as proposed keeps its scorer;
+ * once its cuts are changed by hand (renames do not count) it is kept with
+ * `edited: true`, features and all, so calibration can tell it from both a
+ * scorer's own cut and a hand-made one. With no proposal, a draft is 'manual'.
+ */
+export function draftProposal({ pending, stored, storedSegments, segments, dirty }) {
+  if (pending) return cutsKey(segments) === pending.key ? pending.proposal : { ...pending.proposal, edited: true };
+  if (stored && typeof stored === 'object' && stored.scorer && stored.scorer !== 'manual') {
+    return cutsKey(segments) === cutsKey(storedSegments) ? stored : { ...stored, edited: true };
+  }
+  if (stored && !dirty) return stored;
+  return { scorer: 'manual', at: new Date().toISOString() };
 }
 
 function pageReducer(state, action) {
@@ -118,6 +133,13 @@ export default function SheetMusicScore() {
   // The unsaved proposal behind the editor's segments: { proposal, key } where key is
   // the segmentsKey it produced, so Save draft can tell an edited proposal apart.
   const [pending, setPending] = useState(null);
+  // A proposal waiting on "replace your current segments?" ({ segments, proposal, ms }).
+  const [confirmPropose, setConfirmPropose] = useState(null);
+  // Set once a poster is generated here; kept apart from `learn` so saving a poster
+  // does not reload the editor and drop unsaved segment edits.
+  const [posterSaved, setPosterSaved] = useState(null);
+  // segmentsKey of what Edit loaded, to tell whether an unsaved start was changed.
+  const [editStart, setEditStart] = useState(null);
   const hostRef = useRef(null);
   const alive = useRef(false);
   useEffect(() => {
@@ -144,6 +166,7 @@ export default function SheetMusicScore() {
   useEffect(() => {
     let cancelled = false;
     setXml(null); setXmlError(null); setLearn(null); setLearnError(null); setEngraved(null); setEngraveError(null);
+    setPosterSaved(null);
     (async () => {
       try {
         const text = await DaylightAPIText(`api/v1/proxy/media/stream/${encodeURIComponent(localId)}`);
@@ -187,7 +210,8 @@ export default function SheetMusicScore() {
         setEngraved({
           measures, bounds, steps: result.steps || [], sections: parsed?.sections || [],
           tempoMap: result.tempoEntries || [], tempo: parsed?.tempo, width: result.width, height: result.height,
-          beatsPerMeasure: quartersPerMeasure(parsed?.timeSig),
+          beatsPerMeasure: quartersPerMeasure(firstTimeSig(parsed)),
+          measureMap: extractMeasureMap(result.osmd),
           staffBoxes: extractPerStaffGeometry(result.osmd),
         });
         logger.info('admin.sheetmusic.engraved', { id, measures: measures.length });
@@ -232,12 +256,15 @@ export default function SheetMusicScore() {
     setSelectedId(null);
     setServerErrors(null);
     setPending(null);
+    setConfirmPropose(null);
   }, [learn, engraved]);
 
   const approved = Array.isArray(learn?.segments) ? learn.segments : [];
   const hasApproved = approved.length > 0;
   const hasDraft = Boolean(learn?.draft);
-  const dirty = editing && (baseline === null || segmentsKey(editor.segments) !== baseline);
+  // An unsaved proposal counts as a change even when its cuts match the draft, so
+  // Approve saves it (with its proposal) before reviewing.
+  const dirty = editing && (Boolean(pending) || baseline === null || segmentsKey(editor.segments) !== baseline);
 
   const validation = useMemo(() => (editing ? editorErrors(editor) : []), [editing, editor]);
   const parts = useMemo(() => {
@@ -264,33 +291,54 @@ export default function SheetMusicScore() {
       : (generated || []).map((s, i) => ({ ...s, id: idForIndex(i) }));
     dispatch({ type: 'load', segments: source, measureCount });
     setBaseline(null);
+    setEditStart(segmentsKey(initSegmentEditor({ segments: source, measureCount }).segments));
     setEditing(true);
     setSelectedId(null);
     setNotice(null);
     logger.info('admin.sheetmusic.edit-started', { id, from: hasApproved ? 'approved' : 'generated', segments: source.length });
   };
 
-  const onPropose = () => {
-    if (!engraved || !measureCount) return;
-    const t0 = performance.now();
-    const { segments, proposal } = proposeSegments(
-      { measures, steps: engraved.steps, sections: engraved.sections, beatsPerMeasure: engraved.beatsPerMeasure },
-      { targetLen: proposalTargetLen(pianoConfig) },
-    );
-    const ms = Math.round(performance.now() - t0);
+  const applyProposal = ({ segments, proposal, ms }, replacedEdits) => {
     if (editing) dispatch({ type: 'replace', segments });
-    else dispatch({ type: 'load', segments, measureCount });
-    if (!editing) setBaseline(null);
+    else {
+      dispatch({ type: 'load', segments, measureCount });
+      setBaseline(null);
+    }
     setEditing(true);
     setSelectedId(null);
     setNotice(null);
     setServerErrors(null);
-    setPending({ proposal, key: segmentsKey(segments) });
-    logger.info('admin.sheetmusic.propose', { id, scorer: proposal.scorer, segments: segments.length, ms });
+    setConfirmPropose(null);
+    setPending({ proposal, key: cutsKey(segments) });
+    logger.info('admin.sheetmusic.propose', { id, scorer: proposal.scorer, segments: segments.length, ms, replacedEdits });
+  };
+
+  const onPropose = () => {
+    if (!engraved || !measureCount) return;
+    const t0 = performance.now();
+    const result = proposeSegments(
+      {
+        measures, steps: engraved.steps, sections: engraved.sections,
+        beatsPerMeasure: engraved.beatsPerMeasure, measureMap: engraved.measureMap,
+      },
+      { targetLen: proposalTargetLen(pianoConfig) },
+    );
+    const next = { ...result, ms: Math.round(performance.now() - t0) };
+    // Ask before overwriting unsaved edits, or a stored draft the proposal would change.
+    const changedHere = pending
+      ? cutsKey(editor.segments) !== pending.key
+      : segmentsKey(editor.segments) !== (baseline ?? editStart);
+    const storedDiffers = !pending && hasDraft && cutsKey(learn.draft.segments) !== cutsKey(result.segments);
+    if (editing && (changedHere || storedDiffers)) {
+      setConfirmPropose(next);
+      return;
+    }
+    applyProposal(next, false);
   };
 
   const discard = () => {
     setPending(null);
+    setConfirmPropose(null);
     setNotice(null);
     setServerErrors(null);
     if (hasDraft) {
@@ -320,12 +368,9 @@ export default function SheetMusicScore() {
   /** Saves the editor as the draft, hands filled in; resolves the new draftRevision or null. */
   const saveDraft = async () => {
     if (!canWrite) return null;
-    const keepProposal = !dirty && learn?.draft?.proposal;
-    // A proposal saved as proposed keeps its scorer; one changed by hand says so, so
-    // calibration does not take it for the scorer's own cut or for a hand-made one.
-    const proposal = pending
-      ? (segmentsKey(editor.segments) === pending.key ? pending.proposal : { ...pending.proposal, edited: true })
-      : keepProposal ? learn.draft.proposal : { scorer: 'manual', at: new Date().toISOString() };
+    const proposal = draftProposal({
+      pending, stored: learn?.draft?.proposal, storedSegments: learn?.draft?.segments, segments: editor.segments, dirty,
+    });
     setBusy('save');
     setServerErrors(null);
     setNotice(null);
@@ -359,7 +404,7 @@ export default function SheetMusicScore() {
     if (revision) setDialog('approve');
   };
 
-  const posterKind = learn?.poster || 'none';
+  const posterKind = posterSaved || learn?.poster || 'none';
   const onGeneratePoster = async () => {
     if (!engraved || busy || posterKind === 'scan') return;
     setBusy('poster');
@@ -381,7 +426,7 @@ export default function SheetMusicScore() {
         return;
       }
       logger.info('admin.sheetmusic.poster-generated', { id, bytes: poster.bytes });
-      setLearn((prev) => (prev ? { ...prev, poster: 'generated' } : prev));
+      setPosterSaved('generated');
       setNotice({ color: 'teal', text: 'Poster saved. The kiosk shows it while this score loads and on the home desk.' });
     } finally {
       if (alive.current) setBusy(null);
@@ -413,7 +458,9 @@ export default function SheetMusicScore() {
   const viewTitle = !hasApproved ? 'Generated segments (what the kiosk plays now)'
     : learn?.stale ? 'Approved segments (stale: the kiosk ignores them)' : 'Approved segments (what the kiosk plays)';
   const errorIds = segmentErrors.map((e) => editor.segments[e.index]?.id).filter(Boolean);
-  const draftBoundaries = pending?.proposal?.boundaries ?? learn?.draft?.proposal?.boundaries ?? null;
+  // A stored proposal's p came from the score as it was; when the score has changed
+  // since approval (stale), its numbers are not shown.
+  const draftBoundaries = pending?.proposal?.boundaries ?? (learn?.stale ? null : learn?.draft?.proposal?.boundaries) ?? null;
 
   return (
     <Stack gap="sm" p="md" className="sm-score">
@@ -570,6 +617,23 @@ export default function SheetMusicScore() {
           ) : null}
         </div>
       </div>
+
+      <Modal
+        opened={confirmPropose != null}
+        onClose={() => setConfirmPropose(null)}
+        title="Replace your current segments with a proposal?"
+        centered
+      >
+        <Stack gap="sm">
+          <Text size="sm">
+            {dirty ? 'Your unsaved changes will be lost.' : 'The saved draft stays on disk until you save the proposal.'}
+          </Text>
+          <Group justify="flex-end" gap="xs">
+            <Button variant="default" onClick={() => setConfirmPropose(null)}>Keep my segments</Button>
+            <Button onClick={() => applyProposal(confirmPropose, true)}>Replace</Button>
+          </Group>
+        </Stack>
+      </Modal>
 
       <ApproveDialog
         opened={dialog != null}

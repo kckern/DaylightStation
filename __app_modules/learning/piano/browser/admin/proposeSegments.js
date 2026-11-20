@@ -28,17 +28,32 @@ export function quartersPerMeasure(timeSig) {
   return (beats * 4) / beatType;
 }
 
+/**
+ * The piece's opening time signature from a parseMusicXml result (its `timeSig` is
+ * the last one read, which is wrong for a piece that changes meter).
+ */
+export function firstTimeSig(parsed) {
+  const first = parsed?.parts?.[0]?.measures?.find((m) => m?.attributes?.time)?.attributes?.time;
+  return first || parsed?.timeSig;
+}
+
+/** A segment list's cuts, ignoring ids and names: renames do not change it. */
+export const cutsKey = (segments) => JSON.stringify((segments || []).map((s) => [s.start, s.end]).sort((a, b) => a[0] - b[0] || a[1] - b[1]));
+
 const round3 = (p) => Math.round(p * 1000) / 1000;
 
 /**
- * @param {{ measures: Array, steps: Array, sections?: Array, beatsPerMeasure?: number }} score
+ * @param {{ measures: Array, steps: Array, sections?: Array, beatsPerMeasure?: number, measureMap?: Array }} score
+ *   `measureMap` is the score's bar starts and lengths (osmdRender's extractMeasureMap);
+ *   `beatsPerMeasure` (quarters) covers bars it misses.
  * @param {{ targetLen?: number, now?: () => string }} [opts]
  * @returns {{ segments: Array<{id,start,end}>, proposal: object }}
  */
 export function proposeSegments(score, { targetLen = 4, now = () => new Date().toISOString() } = {}) {
   const measures = score?.measures || [];
   const features = barlineFeatures({
-    measures, steps: score?.steps || [], sections: score?.sections || [], beatsPerMeasure: score?.beatsPerMeasure,
+    measures, steps: score?.steps || [], sections: score?.sections || [],
+    beatsPerMeasure: score?.beatsPerMeasure, measureMap: score?.measureMap,
   });
   const pAfter = boundaryProbabilities(features);
   const segments = partitionSegments(measures.length, pAfter, { ...PROPOSAL_LIMITS, targetLen })
@@ -51,6 +66,7 @@ export function proposeSegments(score, { targetLen = 4, now = () => new Date().t
       model: null,
       at: now(),
       boundaries,
+      beatsPerMeasure: Number.isFinite(score?.beatsPerMeasure) ? score.beatsPerMeasure : 4,
       featureKeys: [...FEATURE_KEYS],
       features: compactFeatures(features),
     },

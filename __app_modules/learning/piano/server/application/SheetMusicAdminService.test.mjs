@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest';
-import { SheetMusicAdminService, draftRevision } from './SheetMusicAdminService.mjs';
+import { SheetMusicAdminService, cleanProposal, draftRevision } from './SheetMusicAdminService.mjs';
 import { practiceKeyOfScore } from '../../portable/music/practiceKey.mjs';
 
 const ID_A = 'files:docs/sheet-music/classical/fur-elise.musicxml';
@@ -180,10 +180,10 @@ describe('SheetMusicAdminService.saveDraft', () => {
     const approved = { version: 1, scoreId: ID_A, contentSha256: 'sha-1', segments: [seg('a', 0, 3)], approved: { at: '2026-11-01T00:00:00Z' } };
     const { service, saved, logs } = fixture({ scores: { [ID_A]: { xml: xmlOf(), sha: 'sha-1' } }, learn: { [ID_A]: approved } });
     const segments = [seg('a', 0, 1, { parts: ['rh'] }), seg('b', 2, 5, { name: 'Bridge' })];
-    const file = await service.saveDraft(ID_A, { segments, proposal: { source: 'kiosk' }, measureCount: 6 });
+    const file = await service.saveDraft(ID_A, { segments, proposal: { scorer: 'manual', at: 't' }, measureCount: 6 });
     expect(saved).toHaveLength(1);
     expect(saved[0].data).toMatchObject({ contentSha256: 'sha-1', segments: [seg('a', 0, 3)], approved: approved.approved });
-    expect(saved[0].data.draft).toEqual({ segments, proposal: { source: 'kiosk' } });
+    expect(saved[0].data.draft).toEqual({ segments, proposal: { scorer: 'manual', at: 't' } });
     expect(file.draft.segments).toEqual(segments);
     expect(file.segments).toEqual([seg('a', 0, 3)]);
     expect(logs.find((l) => l.event === 'piano.sheetmusic.learn-saved')).toMatchObject({ level: 'info', data: { id: ID_A, status: 'draft', segments: 2 } });
@@ -194,6 +194,30 @@ describe('SheetMusicAdminService.saveDraft', () => {
     await service.saveDraft(ID_A, { segments: [seg('a', 0, 1)], measureCount: 2 });
     expect(saved[0].data).toMatchObject({ version: 1, scoreId: ID_A, draft: { segments: [seg('a', 0, 1)] } });
     expect(saved[0].data.segments).toBeUndefined();
+  });
+
+  it('keeps only known proposal keys, and features no longer than the score', async () => {
+    const { service, saved } = fixture({ scores: { [ID_A]: { xml: xmlOf(), sha: '1' } } });
+    const proposal = {
+      scorer: 'heuristic', model: null, at: 't', edited: true, beatsPerMeasure: 3, failedCalls: 0,
+      boundaries: { 0: 0.2, 1: 0.9, 7: 0.5, x: 1, 2: 'no' },
+      featureKeys: ['after', 'tailGapRatio'],
+      features: [[0, 0.25], [1, 1], [2, null], [3, 0.5], [4, 0.1]],
+      source: 'kiosk', html: '<b>',
+    };
+    await service.saveDraft(ID_A, { segments: [seg('a', 0, 1), seg('b', 2, 3)], proposal, measureCount: 4 });
+    expect(saved[0].data.draft.proposal).toEqual({
+      scorer: 'heuristic', model: null, at: 't', edited: true, beatsPerMeasure: 3, failedCalls: 0,
+      boundaries: { 0: 0.2, 1: 0.9 },
+      featureKeys: ['after', 'tailGapRatio'],
+      features: [[0, 0.25], [1, 1], [2, null]],
+    });
+  });
+
+  it('drops a proposal with nothing known in it', () => {
+    expect(cleanProposal({ source: 'kiosk' }, 4)).toBeNull();
+    expect(cleanProposal('heuristic', 4)).toBeNull();
+    expect(cleanProposal({ scorer: 'heuristic', features: [['x']] }, 4)).toEqual({ scorer: 'heuristic' });
   });
 
   it('rejects invalid segments with the validation errors and writes nothing', async () => {
