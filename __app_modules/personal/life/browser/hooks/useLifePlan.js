@@ -25,7 +25,7 @@ function usePlanMember(username) {
 // Await the GET after a write. A read failure belongs to the retryable view,
 // while the caller still receives the successful write and closes its editor.
 function usePlanRead(path, user, label, swr = Boolean(user)) {
-  const { data, loading, error, refresh } = useApiResource(path, { swr, label, logger: logger() });
+  const { data, loading, revalidating, error, refresh } = useApiResource(path, { swr, label, logger: logger() });
   const refetch = useCallback(async () => {
     try { await refresh(); } catch { /* The resource exposes the GET error. */ }
   }, [refresh]);
@@ -38,7 +38,7 @@ function usePlanRead(path, user, label, swr = Boolean(user)) {
     invalidateApiResources(key => changed.has(key));
     await refetch();
   }, [path, user, refetch]);
-  return { data, loading, error: error?.message ?? null, refetch, afterWrite };
+  return { data, loading, revalidating, error: error?.message ?? null, refetch, afterWrite };
 }
 
 // A plan is "empty" when it has no substance yet: no object, no keys, or no
@@ -131,7 +131,7 @@ function useGoalTransition(user, afterWrite) {
  */
 export function useGoals(username, state) {
   const user = usePlanMember(username);
-  const { data, loading, error, refetch, afterWrite } = usePlanRead(goalListPath(user, state), user, 'life goals');
+  const { data, loading, revalidating, error, refetch, afterWrite } = usePlanRead(goalListPath(user, state), user, 'life goals');
   const transitionGoal = useGoalTransition(user, afterWrite);
 
   // Author a new goal. Throws on failure so the caller can surface the error
@@ -143,7 +143,7 @@ export function useGoals(username, state) {
     return goal;
   }, [user, afterWrite]);
 
-  return { goals: data?.goals || EMPTY_LIST, loading, error, refetch, transitionGoal, createGoal };
+  return { goals: data?.goals || EMPTY_LIST, loading, revalidating, error, refetch, transitionGoal, createGoal };
 }
 
 /**

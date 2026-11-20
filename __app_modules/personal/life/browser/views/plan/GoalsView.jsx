@@ -8,6 +8,7 @@ import { useGoals } from "../../hooks/useLifePlan.js";
 import { GoalProgressBar } from "../../widgets/GoalProgressBar.jsx";
 import { goalStateColor } from "../../theme/semantics.js";
 import { LifePage, LoadingState, ErrorState } from "../../components/index.js";
+import { useRetryRegion } from '@/lib/ui';
 import { formatDate } from "../../lib/format.js";
 import { PlanCreateSheet } from "./PlanCreateSheet.jsx";
 
@@ -80,13 +81,14 @@ function GoalCreateSheet({ onClose, createGoal }) {
 }
 
 export function GoalsView({ username }) {
-  const { goals, loading, error, refetch, createGoal } = useGoals(username);
+  const { goals, loading, revalidating, error, refetch, createGoal } = useGoals(username);
+  const { regionProps, retry } = useRetryRegion(refetch, loading || revalidating);
   const [opened, setOpened] = useState(false);
   const close = () => setOpened(false);
   const actions = (!loading || opened) && <Button onClick={() => setOpened(true)}>Add goal</Button>;
   let content;
   if (loading) content = <LoadingState />;
-  else if (error) content = <ErrorState label="Goals" error={error} onRetry={refetch} />;
+  else if (error) content = <ErrorState label="Goals" error={error} onRetry={retry} />;
   else if (goals.length === 0) {
     content = (
       <Paper p="lg" withBorder radius="md">
@@ -117,7 +119,9 @@ export function GoalsView({ username }) {
   return (
     <>
       <LifePage title="Goals" actions={actions} scrollReady={!loading && !error}>
-        {content}
+        <section {...regionProps} aria-label="Goals results">
+          {content}
+        </section>
       </LifePage>
       {opened && <GoalCreateSheet createGoal={createGoal} onClose={close} />}
     </>

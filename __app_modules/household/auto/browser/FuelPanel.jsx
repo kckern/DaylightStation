@@ -8,19 +8,20 @@
 // at a station you'll never visit again. A known place only labels the result.
 
 import { useState } from 'react';
-import { LoadingState, ErrorState, EmptyState } from '@/lib/ui';
+import { LoadingState, ErrorState, EmptyState, useRetryRegion } from '@/lib/ui';
 import { formatVolume, formatMoney, formatDistance, formatDay, litresToGallons } from "./format.js";
 import FuelSheet from "./FuelSheet.jsx";
 
-export default function FuelPanel({ vehicleId, fuel, loading, error, onReload }) {
+export default function FuelPanel({ vehicleId, fuel, loading, busy, error, onReload }) {
   const [sheet, setSheet] = useState(null);
+  const { regionProps, retry } = useRetryRegion(onReload, busy);
 
   const logs = fuel?.logs || [];
   const summary = fuel?.summary;
   const detected = fuel?.detected || [];
 
   const content = loading ? <LoadingState label="fill-ups" />
-    : error ? <ErrorState error={error} onRetry={onReload} label="Fill-ups" />
+    : error ? <ErrorState error={error} onRetry={retry} label="Fill-ups" />
     : <div className="auto-panel">
       <button type="button" className="auto-btn auto-btn--primary auto-btn--block" onClick={() => setSheet({})}>
         Log a fill-up
@@ -105,7 +106,9 @@ export default function FuelPanel({ vehicleId, fuel, loading, error, onReload })
 
   return (
     <>
-      {content}
+      <section {...regionProps} aria-label="Fill-ups">
+        {content}
+      </section>
       {sheet && (
         <FuelSheet
           vehicleId={vehicleId}

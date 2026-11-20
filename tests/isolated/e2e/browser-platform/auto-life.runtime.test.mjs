@@ -167,6 +167,7 @@ test('Auto saves one fuel entry at phone height and reopens on Car', async ({ pa
   await page.routeWebSocket('**/*', () => {});
   const writes = [];
   const readsAfterSave = [];
+  let pendingFuel;
   const car = '/api/v1/automotive/vehicles/sample';
   await page.route('**/automotive/**', route => {
     const request = route.request();
@@ -181,9 +182,8 @@ test('Auto saves one fuel entry at phone height and reopens on Car', async ({ pa
         if (readsAfterSave.filter(read => read === path).length === 1) {
           return route.fulfill({ status: 400, json: { error: 'Fuel log unavailable' } });
         }
-        return route.fulfill({ json: { logs: [
-          { id: 'saved', date: '2026-10-08', volume_l: 20.82, price_total: 19.50 },
-        ] } });
+        pendingFuel = route;
+        return;
       }
     }
     if (request.url().endsWith('/vehicles')) {
@@ -211,8 +211,17 @@ test('Auto saves one fuel entry at phone height and reopens on Car', async ({ pa
   await save.press('Enter');
   await expect(dialog).toBeHidden();
   await expect(page.getByRole('alert')).toBeVisible();
-  await page.getByRole('button', { name: 'Retry' }).click();
+  await page.getByRole('button', { name: 'Retry' }).press('Enter');
+  await expect.poll(() => Boolean(pendingFuel)).toBe(true);
+  const results = page.getByRole('region', { name: 'Fill-ups', exact: true });
+  await expect(results).toBeFocused();
+  await expect(results).toHaveAttribute('aria-busy', 'true');
+  await pendingFuel.fulfill({ json: { logs: [
+    { id: 'saved', date: '2026-10-08', volume_l: 20.82, price_total: 19.50 },
+  ] } });
   await expect(page.getByText('$19.50', { exact: true })).toBeVisible();
+  await expect(results).toBeFocused();
+  await expect(results).not.toHaveAttribute('aria-busy', 'true');
   expect([...readsAfterSave].sort()).toEqual([car, car + '/fuel', car + '/fuel']);
   expect(writes).toEqual([expect.objectContaining({ volumeGal: 5.5, priceTotal: 19.5 })]);
   await page.reload();
@@ -486,16 +495,35 @@ test('Life distinguishes unavailable goals from a successful empty list and retr
     if (new URL(route.request().url()).pathname.endsWith('/users')) return route.fallback();
     return route.fulfill({ json: member });
   });
-  let recovered = false;
-  await page.route('**/api/**/life/plan/goals*', route => recovered
-    ? route.fulfill({ json: { goals: [] } })
-    : route.fulfill({ status: 503, json: { message: 'Goals temporarily unavailable' } }));
+  let reads = 0;
+  let pendingRetry;
+  const refusal = { status: 500, json: { message: 'Goals temporarily unavailable' } };
+  await page.route('**/api/**/life/plan/goals*', route => {
+    if (++reads === 1) return route.fulfill(refusal);
+    pendingRetry = route;
+  });
   await page.goto('/life/plan/goals');
   await expect(page.getByRole('alert')).toContainText('Goals', { timeout: 10_000 });
   await expect(page.getByText(/No goals yet/)).toHaveCount(0);
-  recovered = true;
-  await page.getByRole('button', { name: 'Retry' }).click();
+  const retry = page.getByRole('button', { name: 'Retry' });
+  await retry.press('Enter');
+  await expect.poll(() => reads).toBe(2);
+  const results = page.getByRole('region', { name: 'Goals results', exact: true });
+  await expect(results).toBeFocused();
+  await expect(results).toHaveAttribute('aria-busy', 'true');
+  await pendingRetry.fulfill(refusal);
+  await expect(results.getByRole('alert')).toContainText('Goals');
+  await expect(results).toBeFocused();
+  await expect(results).not.toHaveAttribute('aria-busy', 'true');
+  await page.keyboard.press('Tab');
+  await expect(retry).toBeFocused();
+  await page.keyboard.press('Enter');
+  await expect.poll(() => reads).toBe(3);
+  await pendingRetry.fulfill({ json: { goals: [] } });
   await expect(page.getByText(/No goals yet/)).toBeVisible();
+  await expect(results).toBeFocused();
+  await expect(results).not.toHaveAttribute('aria-busy', 'true');
+  expect(reads).toBe(3);
 });
 
 test('Life keeps frame controls reachable beside an in-flow notice stack', async ({ page }) => {

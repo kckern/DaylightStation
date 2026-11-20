@@ -1,6 +1,6 @@
 import { lazy, Suspense, useState } from 'react';
 import { SegmentedControl } from '@mantine/core';
-import { Sheet, Skeleton, ErrorState } from '@/lib/ui';
+import { Sheet, Skeleton, ErrorState, useRetryRegion } from '@/lib/ui';
 import { EntitySwitch } from './EntitySwitch.jsx';
 import { displayName, formatEntityState, formatSince } from '../entities/formatEntityState.js';
 import { useEntityHistory } from '../history/useEntityHistory.js';
@@ -35,7 +35,8 @@ function defaultExtra(history) {
 }
 
 /** The history section: a 24 h / 7 d switch over the chart, or why there is none. */
-function EntityHistory({ entity, range, onRange, history, error, reload }) {
+function EntityHistory({ entity, range, onRange, history, busy, error, reload }) {
+  const { regionProps, retry } = useRetryRegion(reload, busy);
   const kind = history?.kind;
   const height = CHART_HEIGHT[kind] || CHART_HEIGHT.line;
   let body;
@@ -52,7 +53,7 @@ function EntityHistory({ entity, range, onRange, history, error, reload }) {
     );
   }
   return (
-    <section className="home-history" aria-label="History">
+    <section {...regionProps} className="home-history" aria-label="History">
       <div className="home-history__head">
         <h4 className="home-history__title">History</h4>
         <SegmentedControl
@@ -64,7 +65,7 @@ function EntityHistory({ entity, range, onRange, history, error, reload }) {
         />
       </div>
       {body}
-      {error ? <ErrorState error={error} onRetry={reload} label="History" title={history ? 'History could not refresh' : undefined} /> : null}
+      {error ? <ErrorState error={error} onRetry={retry} label="History" title={history ? 'History could not refresh' : undefined} /> : null}
     </section>
   );
 }
@@ -88,7 +89,7 @@ export function EntityDetailSheet({ entity, haUrl, onToggle, onClose, extra = nu
 
 function EntityDetailBody({ entity, haUrl, onToggle, extra }) {
   const [range, setRange] = useState('24h');
-  const { history, error, reload } = useEntityHistory(entity.id, range);
+  const { history, loading, revalidating, error, reload } = useEntityHistory(entity.id, range);
   const onRange = (next) => {
     logger.info('home.history.range', { entityId: entity.id, from: range, to: next });
     setRange(next);
@@ -104,7 +105,8 @@ function EntityDetailBody({ entity, haUrl, onToggle, extra }) {
         <span>{formatEntityState(entity)}</span>
         {entity.controllable ? <EntitySwitch entity={entity} onToggle={onToggle} size="lg" /> : null}
       </div>
-      <EntityHistory entity={entity} range={range} onRange={onRange} history={history} error={error} reload={reload} />
+      <EntityHistory entity={entity} range={range} onRange={onRange} history={history}
+        busy={loading || revalidating} error={error} reload={reload} />
       {below ? <div className="home-detail__extra">{below}</div> : null}
       {entity.room || since ? (
         <dl className="home-detail__facts">

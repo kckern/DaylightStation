@@ -205,6 +205,7 @@ function AutoAppShell() {
           vehicleId={vehicleId}
           fuel={fuel.data}
           loading={showLoading}
+          busy={fuel.loading || fuel.revalidating}
           error={fuel.error}
           onReload={fuel.reload}
         />

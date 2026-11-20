@@ -775,6 +775,13 @@ test('Home keeps the rendered history chart during a failed refresh and retries 
   await page.route('**/home-dashboard/entities', route => route.fulfill({ json: house('on') }));
   const reads = [];
   let pendingRefresh;
+  let pendingRetry;
+  const historyFor = range => ({
+    entityId: 'light.kitchen', range, kind: 'state', hasData: true,
+    sinceIso: range === '7d' ? '2026-11-11T00:00:00Z' : '2026-11-17T00:00:00Z',
+    endIso: '2026-11-18T00:00:00Z',
+    intervals: [{ from: Date.parse('2026-11-17T05:00:00Z'), to: Date.parse('2026-11-17T08:00:00Z') }],
+  });
   await page.route('**/home-dashboard/entities/light.kitchen/history?range=*', route => {
     const range = new URL(route.request().url()).searchParams.get('range');
     reads.push(range);
@@ -782,12 +789,11 @@ test('Home keeps the rendered history chart during a failed refresh and retries 
       pendingRefresh = route;
       return;
     }
-    return route.fulfill({ json: {
-      entityId: 'light.kitchen', range, kind: 'state', hasData: true,
-      sinceIso: range === '7d' ? '2026-11-11T00:00:00Z' : '2026-11-17T00:00:00Z',
-      endIso: '2026-11-18T00:00:00Z',
-      intervals: [{ from: Date.parse('2026-11-17T05:00:00Z'), to: Date.parse('2026-11-17T08:00:00Z') }],
-    } });
+    if (reads.length === 4) {
+      pendingRetry = route;
+      return;
+    }
+    return route.fulfill({ json: historyFor(range) });
   });
   await page.goto('/home');
   await page.getByRole('button', { name: 'Rooms', exact: true }).click();
@@ -810,9 +816,20 @@ test('Home keeps the rendered history chart during a failed refresh and retries 
   await expect(alert).toBeVisible();
   await expect(chart).toBeVisible();
   await expect(alert).toContainText('History could not refresh');
-  await alert.getByRole('button', { name: 'Retry' }).click();
+  const retry = alert.getByRole('button', { name: 'Retry' });
+  await retry.focus();
+  await page.keyboard.press('Enter');
   await expect.poll(() => reads).toEqual(['24h', '7d', '24h', '24h']);
   await expect(alert).toHaveCount(0);
+  await expect(history).toBeFocused();
+  await expect(history).toHaveAttribute('aria-busy', 'true');
+  await expect(chart).toBeVisible();
+  const day = history.getByRole('radio', { name: '24 h' });
+  await page.keyboard.press('Tab');
+  await expect(day).toBeFocused();
+  await pendingRetry.fulfill({ json: historyFor('24h') });
+  await expect(history).not.toHaveAttribute('aria-busy', 'true');
+  await expect(day).toBeFocused();
   await expect(chart).toBeVisible();
 });
 
