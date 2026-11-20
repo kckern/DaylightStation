@@ -1,6 +1,6 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import ExerciseRun, { CLICK_PREROLL_MS, REP_HOLD_MS, RESOLVE_HOLD_MS } from './ExerciseRun.jsx';
+import ExerciseRun, { CLICK_PREROLL_MS, REP_HOLD_MS, RESOLVE_HOLD_MS, RESULT_ARM_MS } from './ExerciseRun.jsx';
 import { BUILT_IN_FLOOR } from '../Games/gateRepertoire.js';
 import { requirementForLevel } from '../Games/gateAsk.js';
 import { keysInstance } from '../Games/gateMaterial.js';
@@ -601,7 +601,8 @@ describe('ExerciseRun shared assessment wiring', () => {
 
     await waitFor(() => expect(props.onFailed).toHaveBeenCalledTimes(1));
     expect(screen.getByText('Keep working')).toBeInTheDocument();
-    expect(screen.getByText(/Release the keys, then play any key to try again\./)).toBeInTheDocument();
+    // The piano retry is offered once the card has been up RESULT_ARM_MS.
+    expect(await screen.findByText(/Release the keys, then play any key to try again\./, {}, { timeout: RESULT_ARM_MS + 1000 })).toBeInTheDocument();
   });
 
   it('a host that took onFailed still gets the run’s own pass panel', async () => {
@@ -1922,6 +1923,78 @@ describe('ExerciseRun resolve hold', () => {
     expect(onPassed).toHaveBeenCalledTimes(1);
     expect(screen.getByText('Passed')).toBeInTheDocument();
     expect(h.log.info.mock.calls.slice(before).some(([name]) => name === 'piano.exercise-retry')).toBe(false);
+  });
+
+  /**
+   * A local result card whose host records the take in `onFailed` (Learn). The
+   * card's key used to be live from the moment the take was judged, so a key
+   * inside the hold repeated the take, the new runtime cancelled the hold, and
+   * the miss was never recorded nor the host's help step computed.
+   */
+  describe('a local result card waits for its host', () => {
+    const failLocally = async () => {
+      const onResultContinue = vi.fn();
+      const props = { instance: subject(), score: null, intent: 'challenge', requirement: withPassScore({ passScore: 0.8 }),
+        failurePresentation: 'local', resultPresentation: 'overlay', onExit: vi.fn(), onPassed: vi.fn() };
+      // The host records the miss and offers its step in the same callback.
+      props.onFailed = vi.fn(() => { props.resultLabel = 'Almost'; props.resultContinueLabel = 'try a little slower (75%)'; props.onResultContinue = onResultContinue; });
+      const view = render(<ExerciseRun {...props} />);
+      await screen.findByText('Play the first note to begin.');
+      for (const midi of [60, 61, 61, 61]) { setHeld(view, props, [midi]); setHeld(view, props, []); }
+      setHeld(view, props, [62]); setHeld(view, props, []);
+      return { view, props, onResultContinue };
+    };
+    const retries = () => h.log.info.mock.calls.filter(([name]) => name === 'piano.exercise-retry').map(([, data]) => data.action);
+    const tap = (view, props, midi = 72) => { setHeld(view, props, [midi]); setHeld(view, props, []); };
+
+    it('a key during the hold does not repeat the take, and the host still hears of it', async () => {
+      const { view, props, onResultContinue } = await failLocally();
+      const runtimes = h.createRuntime.mock.calls.length;
+      act(() => vi.advanceTimersByTime(100));
+      tap(view, props);
+      expect(retries()).toEqual([]);
+      expect(h.createRuntime.mock.calls.length).toBe(runtimes);
+      // No card over the score while its last verdict is being shown.
+      expect(view.container.querySelector('.piano-exercise-run__result')).toBeNull();
+      act(() => vi.advanceTimersByTime(RESOLVE_HOLD_MS));
+      expect(props.onFailed).toHaveBeenCalledTimes(1);
+      view.rerender(<ExerciseRun {...props} />);
+      expect(screen.getByRole('alertdialog', { name: 'Almost' })).not.toHaveAttribute('aria-modal');
+      act(() => vi.advanceTimersByTime(RESULT_ARM_MS));
+      tap(view, props);
+      expect(retries()).toEqual(['host']);
+      expect(onResultContinue).toHaveBeenCalledTimes(1);
+      expect(h.createRuntime.mock.calls.length).toBe(runtimes);
+    });
+
+    it('takes a key only once the card has been up RESULT_ARM_MS, and says so only then', async () => {
+      const { view, props, onResultContinue } = await failLocally();
+      act(() => vi.advanceTimersByTime(RESOLVE_HOLD_MS));
+      view.rerender(<ExerciseRun {...props} />);
+      expect(screen.queryByText(/play any key/)).toBeNull();
+      act(() => vi.advanceTimersByTime(200));
+      tap(view, props); // a note played on past the end of the take
+      expect(retries()).toEqual([]);
+      expect(view.container.querySelector('[data-result-armed]')).toBeNull();
+      act(() => vi.advanceTimersByTime(600)); // +800 ms
+      expect(screen.getByText('Release the keys, then play any key to try a little slower (75%). Hold the lowest and highest keys for two seconds to leave.')).toBeInTheDocument();
+      expect(h.log.info).toHaveBeenCalledWith('piano.exercise-result-armed', expect.objectContaining({ armMs: RESULT_ARM_MS, hostAction: true }));
+      tap(view, props);
+      expect(retries()).toEqual(['host']);
+      expect(onResultContinue).toHaveBeenCalledTimes(1);
+    });
+
+    it('a key still down when the card arms must be released first', async () => {
+      const { view, props, onResultContinue } = await failLocally();
+      act(() => vi.advanceTimersByTime(RESOLVE_HOLD_MS));
+      view.rerender(<ExerciseRun {...props} />);
+      setHeld(view, props, [72]);
+      act(() => vi.advanceTimersByTime(RESULT_ARM_MS));
+      setHeld(view, props, [72, 74]);
+      expect(onResultContinue).not.toHaveBeenCalled();
+      setHeld(view, props, []); tap(view, props, 76);
+      expect(onResultContinue).toHaveBeenCalledTimes(1);
+    });
   });
 });
 

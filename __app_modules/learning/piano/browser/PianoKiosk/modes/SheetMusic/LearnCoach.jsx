@@ -150,7 +150,7 @@ function CoachSession({ score, title, plan, segment, coach, skipping = null, pol
     setRun(playing); setResult(null);
     coach.selectTask(playing);
   };
-  const finish = (raw) => {
+  const finish = (raw, { placementShare = null } = {}) => {
     if (!live.current) return;
     const played = taskRef.current;
     raw = { ...raw, assessmentId: raw.assessmentId ?? freshId() };
@@ -159,6 +159,9 @@ function CoachSession({ score, title, plan, segment, coach, skipping = null, pol
     logger.info('piano.learn.coach.take', { scoreId: score.id, passageId: segment.id, skill: played.skill, depth: played.depth ?? 0, reason: message.reason, passed,
       // The scores the take was judged on, so a timing failure can be read from the log alone.
       tempoPercent: played.tempoPercent ?? 100,
+      // The wider full-credit share a below-score-tempo take is judged with
+      // (LearnLab `learnPracticeRequirement`), or null for the strict curve.
+      placementShare,
       placement: roundScore(raw.criteria?.placement), completeness: roundScore(raw.criteria?.completeness), cleanliness: roundScore(raw.criteria?.cleanliness) });
     setLane(isGoldWork(played) ? 'gold' : null);
     coach.record(played, raw);
@@ -268,7 +271,10 @@ function CoachSession({ score, title, plan, segment, coach, skipping = null, pol
   // Any key on the piano takes the primary button, so the help the card
   // recommends (a slower tempo, one hand) never needs a reach to the glass.
   const resultContinue = !result ? null : recovery ? () => begin(recovery) : () => begin(result.task);
-  const resultContinueLabel = !result ? null : recovery ? lower(recoveryAction) : 'try again';
+  // The onward line is a sentence ("play any key to try a little slower
+  // (75%)"), so the button's "·" separator is not carried into it.
+  const recoveryPhrase = !recovery ? null : recovery.reason === 'slower-beat' ? `try a little slower (${recovery.tempoPercent}%)` : lower(recoveryAction);
+  const resultContinueLabel = !result ? null : recovery ? recoveryPhrase : 'try again';
 
   const pickStep = useCallback((step) => {
     const wanted = projected?.skills.find((skill) => skill.key === step.id);

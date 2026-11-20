@@ -156,11 +156,20 @@ describe('real Learn journey',()=>{
    expect(await page.locator('.piano-exercise-run__result-onward').innerText()).toContain('play any key to try again');
    // Any key takes the primary button, so the child never has to reach for the glass.
    const key=()=>page.evaluate(async()=>{window.__hold([72]);await new Promise(r=>setTimeout(r,80));window.__hold([]);await new Promise(r=>setTimeout(r,80));});
+   const logged=(event)=>page.evaluate((name)=>window.__logs.filter(l=>l.event===name).map(l=>l.data),event);
+   // A key counts once the card has been up long enough to be read.
+   const cardArmed=()=>page.locator('.piano-exercise-run__result[data-result-armed="true"]').waitFor({timeout:15000});
+   await cardArmed();
    await key();await armed(page);expect(await page.locator('.piano-exercise-run__result').count()).toBe(0);
    expect(await stage()).toEqual(before);
    await playFree(page,miss);
+   // A key played on, ~100 ms after the take ended: no repeat, and the miss is still recorded.
+   await key();
+   expect((await logged('piano.exercise-retry')).length).toBe(1);
+   await expect.poll(async()=>(await logged('piano.learn.coach.take')).length,{timeout:15000}).toBe(2);
    await page.getByRole('button',{name:'Come back to this later'}).waitFor({timeout:15000});await page.screenshot({path:path.join(ARTIFACTS,'silver-second-miss.png')});
    expect(await page.getByRole('button',{name:/^Practice /}).count()).toBeGreaterThan(0);
+   await cardArmed();
    expect(await page.locator('.piano-exercise-run__result-onward').innerText()).toMatch(/play any key to practice /);
    const paper=await stage();expect(paper.height).toBeGreaterThan(300);
    // The key takes the recommended smaller practice, not a repeat of the take that missed.
