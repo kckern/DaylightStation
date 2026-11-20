@@ -1538,6 +1538,12 @@ first open of a fresh code each day asks nothing. It is a speed bump rather than
 a lock — identity here is a soft, self-declared tap and anyone can tap yes — but
 a child who walks away, times out, or says no has claimed nobody.
 
+A card whose only action is a program (Gratitude, Debrief, the reading shelf)
+never asks (since 2026-11-19): the code is already learner-scoped, the card
+opens the program directly (`presentation.openImmediately`), and the program's
+header names the child instead. Asking had turned a preschooler's re-entry after
+a break into three screens: the code, "Is this you?", then a Start/Exit card.
+
 None of this makes a code authentication. What is bounded is how much a single
 leaked code is worth, not who is holding it.
 

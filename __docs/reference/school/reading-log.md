@@ -288,9 +288,9 @@ own browser mount.
 The rule is narrow on purpose: exactly one action, and that action a `program`.
 A printing card also carries one button, and auto-running it would fire a
 thermal printer at a child who typed their code to see what was next. And it is
-never set alongside `confirmIdentity` — that question exists to ask whose paper
-this is *before* anything records against them, so a re-entered code still stops
-to ask.
+never set alongside `confirmIdentity`, but since 2026-11-19 a card whose only
+action is a program never carries `confirmIdentity`: a re-entered program code
+opens directly and the program's own header names the child.
 
 `useBookShelf.js` owns the whole state machine; the components paint. Its four
 rules, each earned:
