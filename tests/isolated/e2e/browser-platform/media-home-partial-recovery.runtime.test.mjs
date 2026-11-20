@@ -8,6 +8,7 @@ test('Media Home independently recovers delayed partial reads', async ({ page })
   const carryOn = '/api/v1/media/household/carry-on';
   const reads = { [suggestions]: 0, [recent]: 0, [carryOn]: 0 };
   const releaseSuggestions = Promise.withResolvers();
+  const releaseSuggestionRefresh = Promise.withResolvers();
   const item = (contentId, title) => ({ id: contentId, contentId, title, kind: 'item', type: 'movie' });
 
   await page.addInitScript(() => localStorage.setItem('media-app.first-use-done', 'done'));
@@ -18,7 +19,7 @@ test('Media Home independently recovers delayed partial reads', async ({ page })
     if (path in reads) reads[path]++;
     if (path === suggestions) {
       const first = reads[path] === 1;
-      if (first) await releaseSuggestions.promise;
+      await (first ? releaseSuggestions : releaseSuggestionRefresh).promise;
       const movie = item('plex:100', first ? 'Partial suggestion' : 'Recovered suggestion');
       return route.fulfill({ json: { degraded: first, rows: [{ id: 'new', title: 'New', items: [movie] }] } });
     }
@@ -44,11 +45,19 @@ test('Media Home independently recovers delayed partial reads', async ({ page })
     releaseSuggestions.resolve();
     await expect(page.getByText('Partial suggestion', { exact: true })).toBeVisible();
     await page.clock.fastForward(10_500);
+    await expect.poll(() => reads[suggestions]).toBe(2);
+    const suggestionRegion = page.getByRole('region', { name: 'Suggestions', exact: true });
+    await expect(suggestionRegion).toHaveAttribute('aria-busy', 'true');
+    await expect(suggestionRegion.getByText('Partial suggestion', { exact: true })).toBeVisible();
+    await expect(page.getByText('Updated recent result', { exact: true })).toBeVisible();
+    releaseSuggestionRefresh.resolve();
     await expect(page.getByText('Recovered suggestion', { exact: true })).toBeVisible();
+    await expect(suggestionRegion).not.toHaveAttribute('aria-busy', 'true');
     await page.clock.fastForward(20_000);
     expect(reads).toEqual({ [suggestions]: 2, [recent]: 2, [carryOn]: 1 });
   } finally {
     releaseSuggestions.resolve();
+    releaseSuggestionRefresh.resolve();
   }
 });
 
@@ -94,3 +103,72 @@ test('Media Home and Search use the same Continue episode after returning to Hom
   await expect(play).toHaveText('Continue S1E2');
   expect(reads).toBe(2);
 });
+
+for (const [kind, regionName, siblingTitle] of [
+  ['suggestions', 'Suggestions', 'Recent fixture'],
+  ['recent', 'Recent activity', 'Suggested fixture'],
+]) {
+  for (const width of [390, 1440]) {
+    test(`Media Home keeps ${kind} Retry local at ${width}px`, async ({ page }) => {
+      const suggestions = '/api/v1/media/suggestions';
+      const recent = '/api/v1/media/household/recent';
+      const carryOn = '/api/v1/media/household/carry-on';
+      const failedPath = kind === 'suggestions' ? suggestions : recent;
+      const reads = { [suggestions]: [], [recent]: [], [carryOn]: [] };
+      const payloads = {
+        [suggestions]: { rows: [{ id: 'new', title: 'New', items: [{ contentId: 'plex:100', title: 'Suggested fixture', type: 'movie' }] }] },
+        [recent]: { items: [{ contentId: 'plex:200', title: 'Recent fixture', type: 'movie' }] },
+        [carryOn]: { items: [], nowOn: [] },
+      };
+      const empty = kind === 'recent' && width === 390;
+      let recovery;
+      await page.setViewportSize({ width, height: 850 });
+      await page.addInitScript(() => localStorage.setItem('media-app.first-use-done', 'done'));
+      await page.routeWebSocket('**/*', () => {});
+      await page.route('**/api/**', route => {
+        const request = route.request();
+        const { pathname } = new URL(request.url());
+        if (!(pathname in reads)) return route.fulfill({ json: { enabled: false } });
+        reads[pathname].push({ url: request.url(), method: request.method() });
+        if (pathname !== failedPath) return route.fulfill({ json: payloads[pathname] });
+        if (reads[failedPath].length === 1) return route.fulfill({ status: 409, json: {} });
+        recovery = route;
+      });
+
+      await page.goto('/media');
+      const other = page.getByText(siblingTitle, { exact: true });
+      await expect(other).toBeVisible();
+      const retry = page.getByTestId(`home-${kind}-error`).getByRole('button', { name: 'Try again' });
+      await retry.press('Enter');
+      await expect.poll(() => recovery).toBeTruthy();
+      expect(await page.evaluate(() => document.activeElement.tagName)).not.toBe('BODY');
+      const region = page.getByRole('region', { name: regionName, exact: true });
+      await expect(region).toBeVisible();
+      await expect(region).toBeFocused();
+      await expect(region).toHaveAttribute('aria-busy', 'true');
+      await expect(other).toBeVisible();
+      const sibling = page.getByRole('region', {
+        name: kind === 'suggestions' ? 'Recent activity' : 'Suggestions', exact: true,
+      });
+      await expect(sibling).not.toHaveAttribute('aria-busy', 'true');
+      expect(reads[failedPath]).toEqual([reads[failedPath][0], reads[failedPath][0]]);
+      expect(reads[failedPath][0].method).toBe('GET');
+      expect(reads[kind === 'suggestions' ? recent : suggestions]).toHaveLength(1);
+      expect(reads[carryOn]).toHaveLength(1);
+
+      const leavesRegion = kind === 'recent' && width === 1440;
+      const browse = page.getByRole('button', { name: 'Browse everything' });
+      if (leavesRegion) {
+        await page.keyboard.press('Tab');
+        await expect(browse).toBeFocused();
+      }
+      await recovery.fulfill({ json: empty ? { items: [] } : payloads[failedPath] });
+      const result = empty ? region.getByTestId('home-recents-empty')
+        : region.getByText(kind === 'suggestions' ? 'Suggested fixture' : 'Recent fixture', { exact: true });
+      await expect(result).toBeVisible();
+      await expect(region).not.toHaveAttribute('aria-busy', 'true');
+      await expect(leavesRegion ? browse : region).toBeFocused();
+      await expect(other).toBeVisible();
+    });
+  }
+}

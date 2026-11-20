@@ -21,6 +21,7 @@ import { getDeviceId } from "../../../../../frontend/src/lib/deviceIdentity.js";
 import { EmptyState } from "../../../../../frontend/src/lib/ui/states.jsx";
 import { LoadErrorLine } from "../shared/LoadErrorLine.jsx";
 import Skeleton from '@/lib/ui/Skeleton.jsx';
+import { useRetryRegion } from '@/lib/ui/useRetryRegion.js';
 import { useNav } from "../shell/NavProvider.jsx";
 import mediaLog from "../logging/mediaLog.js";
 import { HomeTile } from "./HomeTile.jsx";
@@ -247,6 +248,8 @@ export function HomeView() {
   const suggestions = useApiResource(suggestionsPath(deviceId), { swr: true, label: 'media-suggestions', logger: householdResourceLogger });
   const carryOn = useApiResource(HOUSEHOLD_PATHS.carryOn, { swr: true, label: 'media-carry-on', logger: householdResourceLogger });
   const recent = useApiResource(HOUSEHOLD_PATHS.recent, { swr: true, label: 'media-recent', logger: householdResourceLogger });
+  const { regionProps: suggestionsRegion, retry: retrySuggestions } = useRetryRegion(suggestions.reload, suggestions.loading || suggestions.revalidating);
+  const { regionProps: recentRegion, retry: retryRecent } = useRetryRegion(recent.reload, recent.loading || recent.revalidating);
   useRetryDegradedResource(suggestions, deviceId);
   useRetryDegradedResource(carryOn, deviceId);
   useRetryDegradedResource(recent, deviceId);
@@ -318,7 +321,7 @@ export function HomeView() {
   let suggestionBody;
   if (suggestions.loading && !suggestions.data) suggestionBody = <RowSkeleton />;
   else if (suggestions.error && !suggestions.data) {
-    suggestionBody = <LoadErrorLine kind="suggestions" testId="home-suggestions-error" onRetry={suggestions.reload} />;
+    suggestionBody = <LoadErrorLine kind="suggestions" testId="home-suggestions-error" onRetry={retrySuggestions} />;
   } else if (suggestions.data?.empty === true || rows.length === 0) {
     suggestionBody = (
       <div data-testid="home-suggestions-empty">
@@ -338,49 +341,53 @@ export function HomeView() {
     ));
   }
 
+  let recentBody;
+  if (recent.loading && !recent.data) recentBody = <RowSkeleton />;
+  else if (recent.error && !recent.data) {
+    recentBody = <LoadErrorLine kind="recent" testId="home-recent-error" onRetry={retryRecent} />;
+  } else if (recentItems.length === 0) {
+    recentBody = <p className="home-recents-empty" data-testid="home-recents-empty">Things played on any screen will show up here.</p>;
+  } else {
+    recentBody = (
+      <TileRow rowId="recent" title="Recent">
+        {collapseEditions(recentItems, { idOf: entry => entry?.contentId ?? entry?.id }).map(({ entry, editions }) => {
+          const item = toItem(entry);
+          if (!item) return null;
+          const screens = nowOnIds.get(item.id);
+          const where = screens?.length ? `Now on ${nameFor(screens[0])}` : whereLine(entry, nameFor);
+          const collection = isCollection(item);
+          const editionItems = editions.length > 1 ? editions.map(toItem).filter(Boolean) : null;
+          const base = [playedAtLabel(entry.plays?.[0]?.startedAt ?? entry.lastPlayed), where].filter(Boolean).join(' · ');
+          const label = editionsLabel(editions.length);
+          const meta = label ? [base, label].filter(Boolean).join(' · ') : base;
+          return (
+            <HomeTile
+              key={item.id}
+              item={item}
+              title={presentTitle(entry)}
+              testId={tileTestId('recent', item.id)}
+              meta={meta || null}
+              progress={progressPercent(entry.percent ?? null, entry.finished === true)}
+              onPicture={() => run('tap', item, { entry })}
+              pictureLabel={collection ? `Open ${item.title ?? ''}`.trim() : `Play ${item.title ?? ''}`.trim()}
+              onVerb={kind => run(kind, item, { entry })}
+              favourite={favourites.has(item.id)}
+              watched={entry.finished === true}
+              removable
+              editions={editionItems}
+              onEdition={(edition) => { mediaLog.tileEditionOpened({ contentId: edition.id, editions: editions.length }); run('open', edition); }}
+            />
+          );
+        })}
+      </TileRow>
+    );
+  }
+
   return (
     <Stack data-testid="home-view" className="home-view" gap="lg">
       <NowOnRow entries={nowOn} nameFor={nameFor} run={run} favourites={favourites} />
-      {suggestionBody}
-      {recentItems.length > 0 && (
-        <TileRow rowId="recent" title="Recent">
-          {collapseEditions(recentItems, { idOf: entry => entry?.contentId ?? entry?.id }).map(({ entry, editions }) => {
-            const item = toItem(entry);
-            if (!item) return null;
-            const screens = nowOnIds.get(item.id);
-            const where = screens?.length ? `Now on ${nameFor(screens[0])}` : whereLine(entry, nameFor);
-            const collection = isCollection(item);
-            const editionItems = editions.length > 1 ? editions.map(toItem).filter(Boolean) : null;
-            const base = [playedAtLabel(entry.plays?.[0]?.startedAt ?? entry.lastPlayed), where].filter(Boolean).join(' · ');
-            const label = editionsLabel(editions.length);
-            const meta = label ? [base, label].filter(Boolean).join(' · ') : base;
-            return (
-              <HomeTile
-                key={item.id}
-                item={item}
-                title={presentTitle(entry)}
-                testId={tileTestId('recent', item.id)}
-                meta={meta || null}
-                progress={progressPercent(entry.percent ?? null, entry.finished === true)}
-                onPicture={() => run('tap', item, { entry })}
-                pictureLabel={collection ? `Open ${item.title ?? ''}`.trim() : `Play ${item.title ?? ''}`.trim()}
-                onVerb={kind => run(kind, item, { entry })}
-                favourite={favourites.has(item.id)}
-                watched={entry.finished === true}
-                removable
-                editions={editionItems}
-                onEdition={(edition) => { mediaLog.tileEditionOpened({ contentId: edition.id, editions: editions.length }); run('open', edition); }}
-              />
-            );
-          })}
-        </TileRow>
-      )}
-      {recent.error && !recent.data && (
-        <LoadErrorLine kind="recent" testId="home-recent-error" onRetry={recent.reload} />
-      )}
-      {!recent.loading && !recent.error && recentItems.length === 0 && suggestions.data && (
-        <p className="home-recents-empty" data-testid="home-recents-empty">Things played on any screen will show up here.</p>
-      )}
+      <Stack component="section" gap="lg" aria-label="Suggestions" {...suggestionsRegion}>{suggestionBody}</Stack>
+      <section aria-label="Recent activity" {...recentRegion}>{recentBody}</section>
       <Group justify="flex-start">
         <Button variant="subtle" color="gray" leftSection={<IconLayoutGrid size={16} aria-hidden />}
           data-testid="home-browse" onClick={() => goToArea('browse')}>
