@@ -36,22 +36,23 @@ history and returns to Android Home from its root. Health, Home, Lifelog and
 Media can show sign-in in place and reload the requested address after sign-in.
 Call uses the household network and opens local preview before screen selection.
 
-Choose **Add to home screen** beside a service or capture action. **Confirm in
-Android** means Daylight is waiting for the launcher. **Added** means the launcher
+Tap the named service or capture row marked **+** to request a shortcut.
+The row announces **Add to home screen** with its name in TalkBack. **Confirm
+in Android** means Daylight is waiting for the launcher. **Added** means the launcher
 reported success. Check Android Home for the icon. After 10 seconds without a
 callback, **Placement unconfirmed** lets you check your home screen and retry.
 Launchers such as Apex can also offer Daylight in their shortcut chooser. Choose
 a supported service or capture action there when assigning a gesture.
 
-Choose **Play a playlist** to pick a Plex playlist and add its named 1×1 widget.
+Tap **Play a playlist ›** to pick a Plex playlist and add its named 1×1 widget.
 If placement is unconfirmed or unavailable, choose **Place manually** beside that
 playlist in Daylight. Open Widgets on Android Home, add **Daylight playlist** and
 choose the playlist shown there. Each widget keeps its own assignment. If a late
 Android confirmation creates a second widget after manual placement, touch and hold
 the extra widget and choose **Remove**. Tap the widget to start playback and use
 Android media controls to pause or stop. The start attempt has a 15-second
-budget and counts as started once the player reaches playing state. Existing 1×1 Call widgets keep their
-assignments.
+budget and counts as started once the player reaches playing state. Existing
+1×1 Call widgets keep their assignments.
 
 ## What makes it a phone and not a kiosk
 

@@ -97,7 +97,7 @@ capture contents, credentials, private file contents and room URLs out of logs.
 
 | Case | Initial state and action | Intermediate view, outcome and exit |
 | --- | --- | --- |
-| Launcher placement | On Samsung launcher and Apex separately, open Daylight setup. Choose a named service and a capture. Confirm placement, repeat with Android confirmation dismissed, and let an unanswered request time out. | Expect **Confirm in Android** followed by launcher-reported **Added** or **Placement unconfirmed**. Check Android Home for a named icon separately. Remove and re-add each fixture. Cancel in setup and confirm the home screen still has the original set. Record each pin and launch separately. |
+| Launcher placement | On Samsung launcher and Apex separately, open Daylight setup. Tap a named service and a capture using their **+** rows. Confirm placement, repeat with Android confirmation dismissed, and let an unanswered request time out. | Expect **Confirm in Android** followed by launcher-reported **Added** or **Placement unconfirmed**. Check Android Home for a named icon separately. Remove and re-add each fixture. Cancel in setup and confirm the home screen still has the original set. Record each pin and launch separately. |
 | Apex app and gesture picker | Open Daylight from Apex Apps. Assign a gesture using Apex’s shortcut picker. Choose a supported service, then repeat with an assigned capture. Cancel a picker run. | The named chooser returns to Apex on selection. Canceled selection leaves the existing gesture assignment. Trigger each gesture warm and after a process restart. Service lands on its root. Capture opens the correct private editor and only explicit Send submits. Back returns to Apex. |
 | Service roots and stale auth | Start Health, Home, Lifelog, Media and Call from their own shortcuts cold. Navigate one level, then tap a second service from Home while the first is warm. Repeat with a disposable stale web session for each sign-in-enabled service. | Check the requested service and its own history. Back from a detail returns to that service root, and Back from the root returns to Android Home. Sign-in stays at the requested address and, after successful authentication, reloads the service including its original query. Call uses household network access. |
 | Health barcode review | Starting with the disposable meal row count recorded, enter from the **Meal barcode** shortcut. Grant Camera and scan a physical supported UPC. Repeat from the meal-row scanner. Use scanner sound where allowed by device volume and settings. | Watch the real camera read and listen for detection sound. Camera indicator ends at review. Check product, portion and selectable meal. Back or cancel before **Log item** leaves zero writes. On approval, verify one real meal row, the entry reference and Undo. Undo removes exactly that row. **Scan another** can deliberately log the same UPC as a second separate operation. **View in Health** opens the committed entry. **Done** from a new shortcut-origin run returns Home. The meal-row flow closes in Health. |
@@ -108,7 +108,7 @@ capture contents, credentials, private file contents and room URLs out of logs.
 | Delivery and retry | Use a matched backend and disposable capture. Send offline, reopen Capture status from Home and a single-item notification, restart, reconnect and retry only if offered. Exercise an unusable fixture separately. | Check queued or uncertain state on the same ID across restart. **Accepted** can remain when the intake has no final receipt. **Delivered** must resolve to one saved destination entry. **Replace capture** opens private review with no new upload until Send. Check the original and replacement IDs separately. |
 | Call permissions and exit | Launch from a trusted Call shortcut or widget. Test full grant, both denied, then each permission denied separately. Use a willing call partner for a real connect and hangup. Try Cancel from preview, Back while joined and a warm switch to another service. | Preview precedes screen choice. Settings and **Retry media** recover permission. From each exit check that local camera and microphone indicators stop, peer media ends and the screen becomes available again. Record reservation release or lease expiry on interrupted network. |
 | Named playlist widgets | Pick two distinct playlists and record each widget ID/title. Test pin, an unanswered placement and manual recovery; if a late callback creates an extra widget, remove only the extra. Test offline and rapid taps from both widgets. | Each button starts audibly playing its own track without opening a window. Verify the audible track or media title and control it with Pause and Stop. A failed or superseded start leaves no late playback and allows retry. Confirm the original two assignments survive restart and upgrade. |
-| TalkBack and enlarged text | On each physical launcher, enable TalkBack and large system text. Start from launcher focus and traverse setup, picker, draft review, permission controls, barcode review, status and widgets. | Record focus order, spoken action and destination labels, placement and status announcements, and where focus lands after dialog close or Back. Check that controls and confirmation text remain readable, scrollable and selectable. Record observed labels and any clipped or unreachable control. |
+| TalkBack and enlarged text | On each physical launcher, enable TalkBack and large system text. Start from launcher focus and traverse the named **+** rows, **Play a playlist ›**, picker, draft review, permission controls, barcode review, status and widgets. | Record focus order, spoken action and destination labels, placement and status announcements, and where focus lands after dialog close or Back. Check that controls and confirmation text remain readable, scrollable and selectable. Record observed labels and any clipped or unreachable control. |
 
 Full Journal needs a supported mobile destination. For cases needing stale
 authentication, a physical barcode, two safe playlists, a call partner, or the
@@ -514,37 +514,46 @@ it does, step 2 shows the "not allowed yet" notice instead of an upload (see ste
 16). The backend must also have the intakes of the quick-input contract deployed
 (`/api/v1/journalist/voice`, `/text`, `/api/v1/nutribot/voice`, `/text`, `/photo`).
 
+Use newly created disposable fixtures throughout F, F2 and F3. Before each
+attempt, record the relevant destination count and retain all existing queue and
+inbox entries. For each explicit Send, record the new capture ID from Capture
+status or queue metadata and check that ID against its final receipt. Use
+relative count changes to corroborate the fixture outcome. Other pending inputs
+can change aggregate counts during a test.
+
 The steps below use the Journal button. Step 18 repeats the first two for Meal.
 
 1. Tap "Journal voice". The first time, the phone asks for the microphone and then for
    notifications; both dialogs stay up long enough to answer. Speak for ten
    seconds, "Send memo".
 2. Within a few minutes the transcript and the Journalist's reply arrive in the
-   owner's Telegram conversation. `input-queue.json` shows `uploaded: 1` and no
-   input; the inbox is empty. Record the entry's time in the journal: it is the
-   time the recording started, not the upload time.
+   owner's Telegram conversation. Confirm **Delivered** for the new capture ID
+   and match the receipt to one new journal entry. The uploaded count
+   increases by one for the fixture, and its file leaves the inbox. Check
+   that the journal entry uses the recording start time.
 3. Record and cancel from the screen, from the notification, and with Android Back.
-   Each attempt releases the microphone and leaves the queue and upload counts
-   unchanged.
+   Each attempt releases the microphone and adds zero queue or upload entries
+   for that draft.
 4. While recording, tap a voice capture shortcut again. The current recording
    stays open with the original destination. Cancel it and verify no submission.
 5. While recording, more than two seconds in, turn the phone, and switch dark
    mode on and off. The record screen comes back showing the clock, and the
    recording goes on. (Before the fix this stopped and saved the memo.)
-6. Pull one recording from the inbox with airplane mode on and record how it
-   sounds and its size per minute. On Android 10 and later it is `<id>.journal.ogg`,
-   Opus at 16 kHz and 32 kbit/s; if logcat says the recorder did not start at
-   16000 Hz, the 48 kHz fallback was used.
-7. Airplane mode on. Record and Send two memos. Check that two are waiting. Airplane
-   mode off: both upload without opening the app, one after the other, and the
-   notice goes. Their journal entries carry the times they were recorded.
+6. With airplane mode on, record and Send a new disposable memo. Record its
+   capture ID and pull only the corresponding file. Note playback and size
+   per minute, then delete the local copy. Ogg/Opus normally uses 16 kHz and
+   32 kbit/s. Check recorder diagnostics for a 48 kHz or AAC fallback.
+   Restore connectivity and verify delivery by fixture ID.
+7. Airplane mode on. Record and Send two disposable memos. Confirm both new
+   IDs wait. Restore connectivity and verify each ID delivers once without
+   opening the app. Check the two journal entry times against recording start.
 8. Record and Send a memo with airplane mode on. Restart the phone and restore
    connectivity. Verify the same ID is delivered once.
 9. **Cut-off recording.** Start a memo, then force-stop Daylight. Reopen it and
    verify the private draft stays out of the upload inbox. Play a recoverable
    draft with **Resume draft** or record the interruption message.
 10. Take a phone call in the middle of a recording. Check that the memo stops
-    privately. Reopen its draft and confirm that the upload count is unchanged.
+    privately. Reopen its draft and confirm it contributes zero uploads.
 11. Let a recording run to thirty minutes. Check that it stops privately, then
     open playback before choosing Send or Discard.
 12. Deny the microphone: nothing is recorded and the app says so.
@@ -564,31 +573,30 @@ The steps below use the Journal button. Step 18 repeats the first two for Meal.
 16. **Device binding.** With the phone's key unbound in the household config for the Journalist,
     explicitly send a memo. A notice says "This phone
     is not allowed to send to Journal yet"; `input-queue.json` shows `attempts: 0`.
-    Bind the key; the memo uploads within the backoff and the notice goes. With the
+    Bind the key and verify the fixture ID delivers during the backoff cycle. With the
     key bound for the Journalist and not for Nutribot, a Meal input waits with the
     same notice naming Meal while a Journal input goes through.
 17. **Daily allowance.** If the allowance can be lowered for a test, exceed it for
     one bot: a notice says the allowance for that destination is used up and when
-    sending resumes; a tap on it does not send early; after the named time the
-    queue drains. While Journal is held, a Meal input still uploads: a limit on one
+    sending resumes; a tap on it does not send early; after the named time the held fixture ID delivers once. While Journal is held, a Meal input still uploads: a limit on one
     bot does not hold the other.
-18. **Meal by voice.** Tap "Meal voice", say what was eaten, "Send memo". The file in
-    the inbox is `<id>.meal.ogg`; Nutribot answers in its Telegram conversation as
-    it does for a Telegram voice message. During a Journal recording, tap
+18. **Meal by voice.** Tap "Meal voice", say what was eaten, "Send memo". Associate the newly sent ID with its meal receipt, inbox file if still queued,
+    and Nutribot reply. During a Journal recording, tap
     Meal voice and verify the current recording remains Journal. Cancel it.
-18b. **Meal by voice, offline.** Airplane mode on, tap "Meal voice", speak, "Send memo": the notice names Meal 1. Airplane mode off: it uploads without opening
-    the app, and Nutribot answers.
+18b. **Meal by voice, offline.** With airplane mode on, Send one fixture and verify
+    its ID is queued for Meal. Restore connectivity and verify the same ID
+    delivers once without opening the app.
 
 ## F2. Text inputs
 
 1. Tap "Journal text" (the fourth tile, or the long-press shortcut). A small
    window titled "Journal note" opens with the keyboard up, one field, Cancel and
-   Send. Nothing has been sent yet: `files/inputs/inbox` is empty.
+   Send. Opening the draft contributes zero queue or upload entries.
 2. Type two lines and tap Send. Capture status opens on the sent note.
-   Within a pass the Journalist files a journal entry with that text, as it does
-   for a Telegram text message, and `input-queue.json` shows `uploaded` one higher.
-3. Tap "Journal text", type, tap Cancel and confirm Discard. Nothing is in `files/inputs/inbox` and
-   nothing was sent. The same with the back button.
+   Match the fixture ID to one new journal entry and account for one upload
+   relative to the baseline.
+3. Type a disposable draft and confirm Discard from Cancel, then repeat from
+   Back. Confirm zero new inbox or upload entries for either attempt.
 4. Tap Send on an empty field, and on a field of spaces: "Nothing to send", and
    the window stays.
 5. Paste a long text (more than 16,384 bytes; a long Korean text reaches it at
@@ -597,14 +605,14 @@ The steps below use the Journal button. Step 18 repeats the first two for Meal.
 6. Type a draft, turn the phone: the draft is still in the field.
 7. Type a draft and open the recents screen: the window is not listed. Send, then
    open recents: no picture of the draft is there.
-8. Airplane mode on, send a note: the notice says one input is waiting (Journal
-   note 1). Force-stop the app, airplane mode off, open the app: it uploads.
+8. Send a disposable note with airplane mode on. Record its queued ID.
+   Force-stop, restore connectivity and reopen. Verify the same ID delivers once.
 9. With the phone locked, tap the Journal text tile: the unlock is asked for
    first, and the field is never shown over the lock screen.
 10. "Meal note" (from the action list; it has no tile by default): the same, to
     Nutribot.
-11. "Meal note" offline: airplane mode on, send a note; the notice names Meal note 1.
-    Airplane mode off: it uploads, and Nutribot answers.
+11. "Meal note" offline. Send a disposable note and record its queued ID. Restore
+    connectivity and match that ID to one final meal receipt.
 
 ## F3. Photo inputs
 
@@ -615,18 +623,19 @@ The steps below use the Journal button. Step 18 repeats the first two for Meal.
    Choose **Use photo**, then **Send**. Check Capture status and confirm the
    Nutribot receipt and resulting meal entry when the paired backend is running.
 3. With airplane mode on, choose Send and check the queued file:
-   `adb shell run-as net.kckern.daylight.phone ls -l files/inputs/inbox` shows one
-   `<id>.meal-photo.jpg` and no `.part` file. Pull that one file and read its
+   use `adb shell run-as net.kckern.daylight.phone ls -l files/inputs/inbox`
+   to check for the new fixture’s `<id>.meal-photo.jpg` and confirm no partial
+   file for that ID remains. Pull only that disposable fixture and read its
    metadata on the workstation (`exiftool` or `identify -verbose`): **no GPS
    fields, no camera model, no capture time**; its long edge is at most 2048
    pixels; it is upright. Delete the pulled copy. Do this once with the camera's
    location tagging turned ON in the camera app's settings, which is the case that
    matters. Then turn airplane mode off: the photo uploads without opening the app
-   and Nutribot answers.
+   and the same ID resolves to one final meal receipt.
 4. Take a photo holding the phone upright, on its left side and on its right
    side: each arrives upright.
 5. Open the camera with "Meal photo" and press back without taking a photo:
-   nothing is in `files/inputs/inbox`, nothing is queued, no message.
+   confirm zero new inbox, queue or upload entries for this attempt.
 6. Open the camera, take a photo, and reject it in the camera's own review (the
    retake or cancel control): the same as 5.
 7. Open the camera with "Meal photo", and with the camera in front run
@@ -649,7 +658,8 @@ The steps below use the Journal button. Step 18 repeats the first two for Meal.
    If the backend answers 422 for a recording with no speech in it, record a few
    seconds of nothing: the notice says one input could not be sent (Journal 1)
    and has a Discard action, and the audio is still in the inbox.
-3. Tap Discard: a message asks to tap again and nothing is deleted. Wait thirty
+3. Check bulk Discard only with an isolated queue containing disposable parked
+   fixtures. Tap Discard. A message asks to tap again and the fixtures remain. Wait thirty
    seconds and tap again: it asks again. Tap twice within twenty seconds: the
    input and its file are gone, and the notice goes.
 4. In the phone's notification settings the app has the channels "Uploads",
