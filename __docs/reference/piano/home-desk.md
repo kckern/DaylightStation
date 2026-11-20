@@ -31,7 +31,8 @@ the progress in a row along the bottom. The poster is the picture in a 2:3 frame
 stand-in shows a ♪ and the title.
 
 - **Piece:** the score's `cover` (the same-name picture beside the score), the printed
-  title, and the next passage's bars (`Bars 6–9`). The badge is **Silver next** while
+  title, and the next step: the next passage's bars (`Bars 6–9`), or **Whole piece** once
+  every passage is Gold (`piecePolishing`). The badge is **Silver next** while
   any passage lacks Silver, **Gold next** once every passage has it, then the Polish
   goal once the piece is all Gold: **Polish next** (gold) until the piece's Polish gem,
   **Diamond next** (pale diamond colour) after the gem, and **Diamond** once the diamond
@@ -47,7 +48,9 @@ stand-in shows a ♪ and the title.
   takes one more column of the row, so the coins size for it (`coinSize(count, 1)`)
   and the card never grows; on a two-row map it stands centred beside both rows. The
   card's accessible name adds ", Polish gem" or ", Polish diamond" (`pieceLabel`).
-  Tapping opens that child's next passage in Learn.
+  Tapping opens that child's next passage in Learn; an all-Gold piece opens in Polish
+  instead (`?mode=polish`: the mode is chosen, nothing starts), with no passage ringed
+  (log `piano.desk.open-polish`).
 - **Course:** the child's enrolled course leads (School's `piano-course` assignment: the
   first unfinished course in its sequence, marked `enrolled`); otherwise the unfinished
   course furthest along. The poster is the course art. The title is the next lesson's,
@@ -94,5 +97,5 @@ Curfew applies only on the piano's own tablet (the client whose kiosk device id 
 `screensaver.deviceId`); an ordinary browser stays usable. Curfew and a pending lesson
 check disable every card and tab. An owed video lesson replaces the tiles, but not the strip, with that lesson and a 224px column beside it: the child's latest piece (`LatestPieceCard`: poster, play disc, Silver count, title; one tap opens it at its next passage) over the Sheet Music tile (browse every score): sheet music is the one mode an owed lesson leaves open (owner, 2026-11-19), through that tile or a piece card on the strip. A PianoChallenge still takes the whole screen. The lesson is one card that is one button: the course poster on the left, then the lesson title over the lesson's still, which fills its area (cropping slightly rather than leaving a band), with a small play disc on it. There is no separate Start button, and no description, course or unit line.
 
-Logs: `piano.desk.view` (the cards shown), `piano.desk.tab`, `piano.desk.open-passage`, `piano.desk.open-course`, server
+Logs: `piano.desk.view` (the cards shown), `piano.desk.tab`, `piano.desk.open-passage`, `piano.desk.open-polish`, `piano.desk.open-course`, server
 `piano.desk.record_skipped`, `piano.desk.player_skipped`.

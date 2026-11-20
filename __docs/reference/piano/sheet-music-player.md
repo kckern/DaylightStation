@@ -82,8 +82,9 @@ the truth about what that job is:
 
 **Which mode a score opens in.** With Learn's roadmap on (`sheetmusic.learn.roadmap`,
 the default), a score opened from the library opens in **Learn**, so the passage rail
-is on screen from the first moment. A `?play=` launch opens the mode it names and a
-`learnPassage` link opens Learn. When the household names `sheetmusic.defaultMode`,
+is on screen from the first moment. A `?play=` launch opens the mode it names and starts
+it; a `?mode=` link opens the mode it names without starting anything (the home strip
+sends an all-Gold piece to `?mode=polish`); a `learnPassage` link opens Learn. When the household names `sheetmusic.defaultMode`,
 or the roadmap is off, a score opens in the mode it was last left in on this device,
 then in `defaultMode` (`listen` unless configured).
 

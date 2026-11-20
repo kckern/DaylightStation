@@ -27,6 +27,9 @@ export function relativeTime(iso, now = Date.now()) {
 }
 
 /** The passage a piece card points at, and what its button would do. */
+/** An all-Gold piece's next step is a whole-piece Polish run, not a passage. */
+export const piecePolishing = (piece) => piece?.total > 0 && piece.gold >= piece.total;
+
 export function pieceFocus(piece) {
   const byId = (id) => piece.passages.find((passage) => passage.id === id) ?? null;
   return byId(piece.next?.passageId) ?? byId(piece.nextGoldPassageId) ?? piece.passages[0] ?? null;
@@ -47,7 +50,7 @@ export function stripCards({ pieces, courses }) {
     const course = coursePlayer?.courses?.[0] ?? null;
     const name = deskPlayer?.name ?? coursePlayer?.name ?? userId;
     const cards = [];
-    if (piece) cards.push({ key: `${userId}:piece`, userId, name, kind: 'piece', at: piece.practicedAt ?? '', piece, focus: pieceFocus(piece) });
+    if (piece) cards.push({ key: `${userId}:piece`, userId, name, kind: 'piece', at: piece.practicedAt ?? '', piece, focus: piecePolishing(piece) ? null : pieceFocus(piece) });
     if (course) cards.push({ key: `${userId}:course`, userId, name, kind: 'course', at: course.lastPlayedAt ?? coursePlayer?.lastPlayedAt ?? '', course });
     return { latest: cards.map((card) => String(card.at)).sort().at(-1) ?? '', cards };
   }).filter((child) => child.cards.length)
@@ -111,7 +114,7 @@ export function cardBadge(card) {
  * graded lessons only), else its place in the course.
  */
 export function nextStep(card) {
-  if (card.kind === 'piece') return passageBars(card.focus);
+  if (card.kind === 'piece') return piecePolishing(card.piece) ? 'Whole piece' : passageBars(card.focus);
   const { course } = card;
   if (!course.next) return '';
   const title = String(course.next.title ?? '').trim();

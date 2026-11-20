@@ -9,7 +9,7 @@ import PassageCoin from '../modes/SheetMusic/PassageCoin.jsx';
 import Icon from '../../ui/icons/Icon.jsx';
 import GemIcon from '../../../../../../frontend/src/lib/icons/GemIcon.jsx';
 import { polishStone } from '../modes/SheetMusic/polishAwards.js';
-import { cardBadge, coinSize, lessonTitle, mapColumns, mapRows, nextStep, passageFaded, pieceLabel, scoreHeading, shownCard, stripGroups } from './deskModel.js';
+import { cardBadge, coinSize, lessonTitle, mapColumns, mapRows, nextStep, passageFaded, pieceLabel, scoreHeading, shownCard, stripGroups, piecePolishing } from './deskModel.js';
 import './PianoHomeDesk.scss';
 
 const players = (response) => (Array.isArray(response?.players) ? response.players : []);
@@ -167,7 +167,11 @@ export default function PianoHomeDesk({ disabled, onOpenPassage, onOpenCourse })
     setChosen((prev) => ({ ...prev, [userId]: kind }));
   };
   const open = (card) => {
-    if (card.kind === 'piece') {
+    if (card.kind === 'piece' && piecePolishing(card.piece)) {
+      // All Gold: the next thing is Polish, the whole piece with the metronome.
+      logger.info('piano.desk.open-polish', { userId: card.userId, scoreId: card.piece.scoreId });
+      onOpenPassage?.(card.userId, card.piece.scoreId, null, { mode: 'polish' });
+    } else if (card.kind === 'piece') {
       logger.info('piano.desk.open-passage', { userId: card.userId, scoreId: card.piece.scoreId, passageId: card.focus?.id ?? null });
       onOpenPassage?.(card.userId, card.piece.scoreId, card.focus?.id);
     } else {

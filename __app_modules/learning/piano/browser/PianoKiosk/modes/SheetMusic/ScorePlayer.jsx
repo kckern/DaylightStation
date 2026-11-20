@@ -249,6 +249,9 @@ export default function ScorePlayer({ score: scoreMeta }) {
   }, []);
   const [mode, setMode] = useState(() => {
     if (autoplayMode) return autoplayMode;
+    // `?mode=` opens a mode without starting it (the home strip's Polish link).
+    const asked = searchParams.get('mode');
+    if (asked && VALID_MODES.includes(asked)) return asked;
     // A link to one passage is a link into Learn.
     if (searchParams.get('learnPassage') && VALID_MODES.includes('learn')) return 'learn';
     // With the roadmap on, a score opens on its passages: the rail is the game,

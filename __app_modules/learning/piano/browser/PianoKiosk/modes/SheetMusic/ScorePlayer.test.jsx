@@ -336,6 +336,12 @@ describe('ScorePlayer — guided Learn composition', () => {
   expect(screen.getByTestId('renderer')).toBeInTheDocument();
   expect(screen.getByRole('button', { name: 'Practice bars 1–2' })).toBeInTheDocument();
  });
+ it('opens the mode a ?mode= link names, without starting a run', () => {
+  setup(); renderPlayer('/?mode=polish');
+  expect(h.crumbs[h.crumbs.length - 1]).toMatchObject({ label: 'Polish' });
+  expect(screen.getByRole('button', { name: /metronome/i })).toBeInTheDocument();
+  expect(h.learnLabProps).toBeNull();
+ });
  it('ignores a stale passage selection and keeps learning reachable', () => {
   setup(); renderPlayer('/?learnPassage=gone&learnRung=obsolete'); pickMode('Learn');
   expect(screen.getByRole('button', { name: 'Practice bars 1–2' })).toBeInTheDocument();

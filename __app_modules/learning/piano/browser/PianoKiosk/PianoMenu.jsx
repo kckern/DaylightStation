@@ -92,12 +92,14 @@ export function PianoMenu() {
     navigate(`${basePath}/${id}`);
   };
 
-  const openPassage = (userId, scoreId, passageId) => {
+  const openPassage = (userId, scoreId, passageId, { mode } = {}) => {
     // Tapping a child's card IS picking that child: their progress,
     // their credit (owner-requested 2026-07-28).
     if (userId) setCurrentUser(userId);
     if (curfew || pending) return; // the door the 2026-09-01 escape used
-    navigate(`${basePath}/sheetmusic/view/${scoreId}${passageId ? `?learnPassage=${encodeURIComponent(passageId)}` : ''}`);
+    // A passage opens Learn on it; an all-Gold piece opens Polish (ready, not started).
+    const query = passageId ? `?learnPassage=${encodeURIComponent(passageId)}` : mode ? `?mode=${encodeURIComponent(mode)}` : '';
+    navigate(`${basePath}/sheetmusic/view/${scoreId}${query}`);
   };
   const desk = (
     <PianoHomeDesk

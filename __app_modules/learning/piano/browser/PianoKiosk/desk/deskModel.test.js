@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { cardBadge, coinSize, lessonTitle, mapColumns, mapRows, nextStep, passageBars, passageFaded, pieceCount, pieceFocus, pieceLabel, relativeTime, scoreHeading, shownCard, stripCards, stripGroups } from './deskModel.js';
+import { piecePolishing, cardBadge, coinSize, lessonTitle, mapColumns, mapRows, nextStep, passageBars, passageFaded, pieceCount, pieceFocus, pieceLabel, relativeTime, scoreHeading, shownCard, stripCards, stripGroups } from './deskModel.js';
 
 const passages = [{ id: 'a', start: 0, end: 4, state: 'silver' }, { id: 'b', start: 5, end: 8, state: 'todo' }];
 const piece = { total: 2, silver: 1, gold: 0, practicedAt: '2026-11-18T10:00:00Z', next: { passageId: 'b' }, nextGoldPassageId: 'a', passages };
@@ -75,6 +75,13 @@ describe('deskModel', () => {
     expect(nextStep({ kind: 'course', course: { completed: 5, next: null } })).toBe('');
   // A bare "Lesson 3" title keeps its own number, whatever the position says.
   expect(nextStep({ kind: 'course', course: { completed: 4, next: { title: 'Lesson 3', position: 5 } } })).toBe('Lesson 3');
+  });
+  it('names the whole piece as the next step once every passage is Gold', () => {
+    const gold = { total: 3, silver: 3, gold: 3, passages: [] };
+    expect(piecePolishing(gold)).toBe(true);
+    expect(piecePolishing({ ...gold, gold: 2 })).toBe(false);
+    expect(nextStep({ kind: 'piece', piece: gold, focus: { start: 0, end: 3 } })).toBe('Whole piece');
+    expect(nextStep({ kind: 'piece', piece: { ...gold, gold: 0 }, focus: { start: 0, end: 3 } })).toBe('Bars 1–4');
   });
   it('lays coins in one row up to fourteen, else two equal rows', () => {
     expect(mapColumns(12)).toBe(12);

@@ -225,6 +225,17 @@ describe('PianoHomeDesk progress strip', () => {
     expect(card.querySelector('.piano-desk__badge').textContent).toBe('Polish next');
   });
 
+  it('sends an all-Gold piece to Polish: the whole piece, no passage ringed', async () => {
+    const coins = piece.passages.map((passage) => ({ ...passage, state: 'gold' }));
+    h.desk.players[0].piece = { ...piece, silver: 3, gold: 3, passages: coins, polish: { gem: false, diamond: false } };
+    const { onOpenPassage } = mount();
+    const card = await screen.findByRole('button', { name: 'Kid: 3 of 3 Silver' });
+    expect(card.querySelector('.piano-desk__step').textContent).toBe('Whole piece');
+    expect(card.querySelector('.piano-desk__map [data-current]')).toBeNull();
+    fireEvent.click(card);
+    expect(onOpenPassage).toHaveBeenCalledWith('kid', piece.scoreId, null, { mode: 'polish' });
+  });
+
   it('stands the stone beside both rows of a two-row piece', async () => {
     h.desk.players[0].piece = { ...piece, total: 20, polish: { gem: true, diamond: false },
       passages: Array.from({ length: 20 }, (_, index) => ({ id: `p${index}`, start: index * 4, end: index * 4 + 3, state: 'gold' })) };
