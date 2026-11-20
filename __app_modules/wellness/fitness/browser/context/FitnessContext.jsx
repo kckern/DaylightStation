@@ -23,7 +23,8 @@ import { getModuleManifest } from "../index.js";
 import { VIBRATION_CONSTANTS } from "../widgets/VibrationApp/constants.js";
 import { buildSelectionConfig } from "../hooks/fitness/selectPrimaryMedia.js";
 import { applyEquipmentCatalogFromConfig, riderSelectorsFromConfig } from "./fitnessConfigBridge.js";
-import { useFitnessBluetooth, BT_TOPICS } from "./useFitnessBluetooth.js";
+import { BT_TOPICS } from "./useFitnessBluetooth.js";
+import { FitnessBluetoothHost } from "./FitnessBluetoothContext.jsx";
 import { createTransportRecovery } from '../hooks/fitness/transportRecovery.js';
 import { endLiveSession } from "../hooks/fitness/endLiveSession.js";
 import { normalizeToast, dismissMatches } from "../player/overlays/fitnessToastSlot.js";
@@ -320,14 +321,16 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
   const vibrationStateRef = useRef({});
   // Live repetition totals and analog diagnostics, keyed by mat id.
   const pressureMatStateRef = useRef({});
-  // Bluetooth screen state + bus actions (useFitnessBluetooth.js).
+  // Bluetooth screen state + bus actions live in FitnessBluetoothHost (its own
+  // context), so a search's ~1 Hz progress never re-renders this provider.
+  // Only the inventory comes back up (EmulatorToasts and the arcade read it).
   const sendBtMessage = useCallback((msg) => {
     import("../../../../../frontend/src/services/WebSocketService.js").then(({ wsService }) => wsService.send(msg));
   }, []);
-  const { bluetooth, handleMessage: handleBtMessage, noteHealth: noteBtHealth, pairController } = useFitnessBluetooth({ send: sendBtMessage });
-  // The bus subscription effect below reads these through a ref, so it never re-subscribes.
+  const [btInventory, setBtInventory] = useState(null);
+  // The host registers its bus entry points here; the bus subscription effect
+  // below reads them through this ref, so it never re-subscribes.
   const btRef = useRef(null);
-  btRef.current = { handleBtMessage, noteBtHealth, requestInventory: bluetooth.requestInventory };
   const vibrationTimeoutRefs = useRef({});
   const guestAssignmentLedgerRef = useRef(new DeviceAssignmentLedger());
   const guestAssignmentServiceRef = useRef(null);
@@ -1707,6 +1710,7 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
         // Track reconnections: false→true transition = a reconnection event
         if (isConnected && !wasConnectedRef.current) {
           btRef.current?.requestInventory(); // bt_inventory is sent only on change
+          btRef.current?.onReconnect?.(); // a search's `done` may have been lost
           reconnectCountRef.current++;
 
           // Reset counter after 60 seconds of stability
@@ -3098,13 +3102,7 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     pressureMatState: pressureMatStateRef.current,
     pressureMatActivities,
     // Bluetooth (useFitnessBluetooth). btInventory also feeds EmulatorToasts.
-    btInventory: bluetooth.inventory,
-    bluetooth,
-    // Old Controllers panel names; removed in Task 15 with that panel.
-    controllerPairing: bluetooth.pairing,
-    controllerForget: bluetooth.forgetResult,
-    pairController,
-    forgetController: bluetooth.forget,
+    btInventory,
     fitnessDevices,
     // Expose allDevices for backward compatibility (prefer domain selectors below)
     allDevices,
@@ -3338,7 +3336,9 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
   return (
     <FitnessStoreContext.Provider value={fitnessStoreRef.current}>
       <FitnessContext.Provider value={value}>
-        {children}
+        <FitnessBluetoothHost send={sendBtMessage} registerRef={btRef} onInventory={setBtInventory}>
+          {children}
+        </FitnessBluetoothHost>
       </FitnessContext.Provider>
     </FitnessStoreContext.Provider>
   );

@@ -7,6 +7,7 @@ import { createPortal } from 'react-dom';
 import { DaylightAPI } from '@/lib/api.mjs';
 import getLogger from '@/lib/logging/Logger.js';
 import { useFitnessContext } from '../../context/FitnessContext.jsx';
+import { bluetoothLegacyFields, useFitnessBluetoothState } from '../../context/FitnessBluetoothContext.jsx';
 import { ControllerStatus } from '../../../../../games/emulator/browser/input/ControllerStatus.jsx';
 import { useGamepadKeys } from '../../lib/useGamepadKeys.js';
 import './ControllersOverlay.scss';
@@ -19,7 +20,9 @@ const enabledButtons = (root) => [...root.querySelectorAll('button:not([disabled
 
 export default function ControllersOverlay({ open, onClose }) {
   const titleId = useId();
-  const ctx = useFitnessContext() || {};
+  const mainCtx = useFitnessContext() || {};
+  const btState = useFitnessBluetoothState();
+  const ctx = { ...mainCtx, ...bluetoothLegacyFields(btState, mainCtx) };
   const [controllers, setControllers] = useState(null);
   const [loadError, setLoadError] = useState(null);
   const panelRef = useRef(null);
