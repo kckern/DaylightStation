@@ -8,6 +8,7 @@ import { describe, it, expect, vi, beforeAll, beforeEach } from 'vitest';
 import { render, act } from '@testing-library/react';
 import ContentScroller from './ContentScroller.jsx';
 import { DaylightAPI } from '../../../../../frontend/src/lib/api.mjs';
+import * as playbackLogs from '../lib/playbackLogger.js';
 
 vi.mock('../../../../../frontend/src/lib/api.mjs', async (importOriginal) => ({
   ...await importOriginal(),
@@ -60,5 +61,38 @@ describe('ContentScroller completion log', () => {
     endedAt(audio, 17);
     act(() => { audio.dispatchEvent(new Event('ended')); });
     expect(playLogCalls()).toHaveLength(1);
+  });
+
+  it('keeps periodic and completion progress precise when the completion write fails', async () => {
+    const now = vi.spyOn(Date, 'now').mockReturnValue(1000);
+    const log = vi.spyOn(playbackLogs, 'playbackLog');
+    try {
+      const onAdvance = vi.fn();
+      const { container } = renderPoem(onAdvance);
+      const audio = container.querySelector('audio');
+      Object.defineProperty(audio, 'duration', { configurable: true, value: 30 });
+      act(() => audio.dispatchEvent(new Event('loadedmetadata')));
+      now.mockReturnValue(12_000);
+      audio.currentTime = 12.5;
+      act(() => audio.dispatchEvent(new Event('timeupdate')));
+      audio.currentTime = 15;
+      act(() => audio.dispatchEvent(new Event('timeupdate')));
+      expect(playLogCalls()).toEqual([[
+        'api/v1/play/log',
+        { title: 'your Task', type: 'readalong', assetId: 'readalong:poetry/remedy/60', seconds: 13, percent: 42, listId: 'office-program' },
+      ]]);
+
+      DaylightAPI.mockRejectedValueOnce(new Error('Completion unavailable'));
+      endedAt(audio, 30);
+      expect(onAdvance).toHaveBeenCalledTimes(1);
+      await act(async () => {});
+      expect(playLogCalls()).toHaveLength(2);
+      expect(log).toHaveBeenCalledWith('play.log.failed', expect.objectContaining({
+        seconds: 30, percent: 100, completion: true, message: 'Completion unavailable',
+      }), { level: 'warn' });
+    } finally {
+      now.mockRestore();
+      log.mockRestore();
+    }
   });
 });

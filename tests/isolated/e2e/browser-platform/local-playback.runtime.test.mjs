@@ -80,6 +80,42 @@ test('Media Start fresh forgets a Play URL only after a full reset', async ({ pa
   expect(await token()).toBe(originalToken);
 });
 
+test('Media keeps its audio and saves fresh progress after a refused background write', async ({ page }) => {
+  const writes = [];
+  const pageErrors = [];
+  page.on('pageerror', error => pageErrors.push(error.message));
+  await page.routeWebSocket('**/ws', () => {});
+  await page.route('**/api/v1/play/log', route => {
+    writes.push(route.request().postDataJSON());
+    return writes.length === 1
+      ? route.fulfill({ status: 503, json: { message: 'Fixture progress write unavailable' } })
+      : route.fulfill({ json: {} });
+  });
+  await page.goto('/media?play=plex:42');
+  const clock = await originalClock(page);
+  const audio = await page.waitForFunction(() => [...document.querySelectorAll('audio')]
+    .find(node => node.currentSrc.includes('fixture-audio.wav') && !node.paused));
+  const start = Date.now();
+  const advanceClock = async (position, milliseconds) => {
+    await page.clock.setFixedTime(start + milliseconds);
+    await audio.evaluate((node, seconds) => {
+      node.currentTime = seconds;
+      node.dispatchEvent(new Event('timeupdate'));
+    }, position);
+  };
+
+  await advanceClock(15, 11_000);
+  await expect.poll(() => writes.length).toBe(1);
+  await expect.poll(clock).toBeGreaterThan(15);
+  await advanceClock(20, 22_000);
+  await expect.poll(() => writes.length).toBe(2);
+  await expect.poll(clock).toBeGreaterThan(20);
+
+  expect(writes.map(({ assetId }) => assetId)).toEqual(['plex:42', 'plex:42']);
+  expect(writes[1].seconds).toBeGreaterThan(writes[0].seconds);
+  expect(pageErrors).toEqual([]);
+});
+
 async function openFixtureSheet(page) {
   await page.routeWebSocket('**/ws', () => {});
   await page.goto('/feed/scroll');

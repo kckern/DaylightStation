@@ -3,6 +3,7 @@ import { DaylightAPI } from "../../../../frontend/src/lib/api.mjs";
 import { usePlayerKeyboard } from "../../../../frontend/src/lib/keyboard/keyboardManager.js";
 import { acquirePlayerKeyboard } from "./playerKeyboardOwnership.js";
 import { createMediaTransportAdapter } from "./mediaTransportAdapter.js";
+import { recordPlaybackProgress } from '../player/lib/recordPlaybackProgress.js';
 import { playbackLog } from "../contracts.mjs";
 import { getChildLogger } from "../../../../frontend/src/lib/logging/singleton.js";
 import { resolveContentId } from "../surround-segments.mjs";
@@ -236,8 +237,10 @@ export function useMediaKeyboardHandler(config) {
         const title = meta.title + (meta.grandparentTitle ? ` (${meta.grandparentTitle} - ${meta.parentTitle})` : '');
         const progressPercent = Number.isFinite(percent) ? percent : 100;
         const logType = meta.source || (meta.plex ? 'plex' : null) || type;
-        DaylightAPI('api/v1/play/log', { title, type: logType, assetId, seconds: currentTime, percent: progressPercent, listId: meta?.listId || null });
-        DaylightAPI('api/v1/harvest/watchlist');
+        recordPlaybackProgress({ title, type: logType, assetId, seconds: currentTime, percent: progressPercent, listId: meta?.listId || null });
+        DaylightAPI('api/v1/harvest/watchlist').catch((error) => {
+          playbackLog('watchlist.harvest.failed', { message: error?.message || 'unknown' }, { level: 'warn' });
+        });
       }
 
       onEnd && onEnd(1);
