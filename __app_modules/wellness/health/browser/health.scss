@@ -460,7 +460,7 @@ $health-aside-gap: 1.5rem;
 .health-suggest__field { display: flex; align-items: center; gap: 4px; > :first-child { flex: 1; min-width: 0; } }
 .health-meal__add-actions { display: inline-flex; align-items: center; gap: 0; color: var(--ds-text-low); }
 .health-meal__add-action { color: inherit; }
-// Compact under a mouse only; touch keeps the 44px floor below.
+// Compact under a fine pointer; coarse pointers use the shared touch target.
 @media (pointer: fine) {
   .health-meal__add-row .health-meal__capture-btn, .health-meal__add-row .health-meal__add-action { min-width: 26px; min-height: 26px; width: 26px; height: 26px; }
   .health-meal__add-row svg { width: 15px; height: 15px; }
@@ -472,11 +472,6 @@ $health-aside-gap: 1.5rem;
   .health-meal__add-row[data-selecting] .health-meal__add-actions { opacity: 1; color: var(--ds-text-mid); }
 }
 @media (prefers-reduced-motion: reduce) { .health-meal__add-actions { transition: none; } }
-// Phone widths are touch-first: the add row's photo / barcode / saved-meals
-// icons get the same 44px floor as `.health-meal__capture-btn`.
-@media (max-width: 760px) {
-  .health-meal__add-action { min-width: 44px; min-height: 44px; }
-}
 .health-portion { cursor: ew-resize; touch-action: pan-y; user-select: none; min-height: 28px; min-width: 44px; text-align: right; }
 .health-portion-error { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; color: var(--ds-danger); }
 // On the entry it is about (EntryRow), spanning the row's whole grid, and the

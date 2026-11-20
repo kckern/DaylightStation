@@ -5,22 +5,23 @@ import { useCallback, useLayoutEffect, useRef } from 'react';
  * callback by the scope it reads and pass its signal to the transport.
  * Check isCurrent() before publishing. Reload replaces the current read.
  * Poll starts only when the scope is idle. An optional timeout retires a
- * stalled request and releases the polling slot.
+ * stalled request, releases the polling slot, and calls the optional onTimeout.
+ * Memoize onTimeout with the same lifetime as the read.
  */
-export function useRefreshableRead(read, { timeoutMs } = {}) {
+export function useRefreshableRead(read, { timeoutMs, onTimeout } = {}) {
   const committed = useRef(null);
   useLayoutEffect(() => {
-    const scope = { read, timeoutMs, pending: null };
+    const scope = { read, timeoutMs, onTimeout, pending: null };
     committed.current = scope;
     return () => {
       committed.current = null;
       scope.pending?.cancel();
     };
-  }, [read, timeoutMs]);
+  }, [read, timeoutMs, onTimeout]);
 
   const reload = useCallback(async () => {
     const scope = committed.current;
-    if (!scope || scope.read !== read || scope.timeoutMs !== timeoutMs) return;
+    if (!scope || scope.read !== read || scope.timeoutMs !== timeoutMs || scope.onTimeout !== onTimeout) return;
     const previous = scope.pending;
     const controller = new AbortController();
     let deadline;
@@ -38,6 +39,7 @@ export function useRefreshableRead(read, { timeoutMs } = {}) {
         if (!isCurrent()) return;
         scope.pending = null;
         pending.cancel();
+        scope.onTimeout?.();
       }, timeoutMs);
     }
     try {
@@ -46,7 +48,7 @@ export function useRefreshableRead(read, { timeoutMs } = {}) {
       clearTimeout(deadline);
       if (isCurrent()) scope.pending = null;
     }
-  }, [read, timeoutMs]);
+  }, [read, timeoutMs, onTimeout]);
 
   const poll = useCallback(() => {
     if (!committed.current?.pending) return reload();

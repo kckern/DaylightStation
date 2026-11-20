@@ -61,3 +61,32 @@ it('expires a stalled read and admits the next poll even while the former transp
     vi.useRealTimers();
   }
 });
+
+it('notifies only the read that expires, once, after retiring it', async () => {
+  vi.useFakeTimers();
+  const calls = [];
+  const onTimeout = vi.fn(() => {
+    expect(calls.at(-1).signal.aborted).toBe(true);
+    expect(calls.at(-1).isCurrent()).toBe(false);
+  });
+  const read = (isCurrent, signal) => new Promise(resolve => { calls.push({ isCurrent, signal, resolve }); });
+  const { result, unmount } = renderHook(() => useRefreshableRead(read, { timeoutMs: 100, onTimeout }));
+  try {
+    act(() => { result.current.reload(); vi.advanceTimersByTime(50); });
+    act(() => { result.current.reload(); vi.advanceTimersByTime(50); });
+    expect(onTimeout).not.toHaveBeenCalled();
+    await act(async () => { calls[1].resolve(); });
+    act(() => { vi.advanceTimersByTime(100); });
+    expect(onTimeout).not.toHaveBeenCalled();
+
+    act(() => { result.current.reload(); vi.advanceTimersByTime(200); });
+    expect(onTimeout).toHaveBeenCalledTimes(1);
+    act(() => { result.current.reload(); });
+    unmount();
+    act(() => { vi.advanceTimersByTime(200); });
+    expect(onTimeout).toHaveBeenCalledTimes(1);
+  } finally {
+    await act(async () => { calls.forEach(call => call.resolve()); });
+    vi.useRealTimers();
+  }
+});

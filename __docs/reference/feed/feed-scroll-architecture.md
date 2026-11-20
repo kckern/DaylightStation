@@ -139,6 +139,8 @@ Uses `IntersectionObserver` on a sentinel div at the bottom of the card list. A 
 
 The active focus and filter own the current list request, including pagination. Changing either cancels the previous request and disconnects its sentinel. The new filter loads its own session before observing for the next page.
 
+Scroll applies queued item actions from the active account to its loaded cards. When replay settles, it resumes the current session with a GET and updates the loaded rows with the returned item state. The window keeps its position and cursor, and newer local edits are preserved. A failed refresh, including one that stalls for ten seconds, leaves the cards available with a retry for the same read. A stored session ID qualifies for reconciliation once its list has loaded. Changing the focus or filter cancels the refresh.
+
 “Continue 30 more” extends the reading boundary for the current filter visit. Retry keeps that extension. Switching filters or returning to a previous filter starts with the saved reading preference, including when resuming a server session that has already served more items.
 
 The Feed tab bar wraps when the available width narrows. Reading appearance opens

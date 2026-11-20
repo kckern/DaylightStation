@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { installHealthFixtures } from '../../../live/flow/health/healthFixtures.mjs';
 
 test.use({ hasTouch: true, serviceWorkers: 'block', viewport: { width: 390, height: 850 } });
 
@@ -46,6 +47,63 @@ test('Health reading sheet Close can be tapped at the edge of its full touch tar
   await close.tap({ position: { x: 2, y: 22 } });
   await expect(sheet).toBeHidden();
 });
+
+for (const [width, coarse] of [[390, true], [1440, true], [1440, false]]) {
+  test.describe(`Health meal add actions at ${width}px ${coarse ? 'with a coarse pointer' : 'without touch'}`, () => {
+    test.use({ hasTouch: coarse, viewport: { width, height: 850 }, timezoneId: 'UTC' });
+
+    test('keeps the capture and saved meals controls reachable', async ({ page }) => {
+      const date = '2026-11-22';
+      await page.clock.setFixedTime(new Date(date + 'T18:00:00Z'));
+      const fixture = await installHealthFixtures(page, {
+        items: [{ uuid: 'rice', name: 'Rice', mealTime: 'evening', calories: 120, grams: 100, date }],
+      });
+      await page.route('**/supervision/bootstrap', route => route.fulfill({ json: { enabled: false } }));
+      await page.goto('/health?date=' + date);
+      await expect(page.getByRole('button', { name: 'Edit Rice', exact: true })).toBeVisible({ timeout: 20_000 });
+      expect(await page.evaluate(() => matchMedia('(pointer: coarse)').matches)).toBe(coarse);
+      const finePointer = await page.evaluate(() => matchMedia('(pointer: fine)').matches);
+
+      const controls = page.getByRole('button', {
+        name: /^(Speak foods to Dinner|Photo to Dinner|Scan barcode to Dinner|Saved meals for Dinner)$/,
+      });
+      await expect(controls).toHaveCount(4);
+      const sizes = () => controls.evaluateAll(buttons => buttons.map(button => {
+        const { width, height } = button.getBoundingClientRect();
+        return [width, height];
+      }));
+      if (coarse) {
+        await expect.poll(async () => {
+          const current = await sizes();
+          return current.length === 4 ? Math.min(...current.flat()) : 0;
+        }).toBeGreaterThanOrEqual(44);
+      } else {
+        // Headless Firefox reports pointer:none when touch emulation is off.
+        const expectedSizes = finePointer ? [26, 26, 26, 26] : [34, 34, 22, 22];
+        await expect.poll(sizes).toEqual(expectedSizes.map(size => [size, size]));
+      }
+
+      const barcode = page.getByRole('button', { name: 'Scan barcode to Dinner', exact: true });
+      const templates = page.getByRole('button', { name: 'Saved meals for Dinner', exact: true });
+      for (const [opener, title] of [[barcode, 'Scan barcode'], [templates, 'Meals & templates']]) {
+        const sheet = page.getByRole('dialog', { name: title, exact: true });
+        if (coarse) {
+          await opener.tap({ position: { x: 42, y: 22 } });
+          await expect(sheet).toBeVisible();
+          await page.keyboard.press('Escape');
+          await expect(sheet).toBeHidden();
+        }
+        await opener.press('Enter');
+        await expect(sheet).toBeVisible();
+        await page.keyboard.press('Escape');
+        await expect(sheet).toBeHidden();
+        await expect(opener).toBeFocused();
+      }
+      expect(fixture.unexpected).toEqual([]);
+      expect(fixture.requests.filter(request => request.method !== 'GET')).toEqual([]);
+    });
+  });
+}
 
 test('Auto Back to garage has a full touch target and refocuses the selected vehicle', async ({ page }) => {
   await page.route('**/automotive/vehicles', route => route.fulfill({

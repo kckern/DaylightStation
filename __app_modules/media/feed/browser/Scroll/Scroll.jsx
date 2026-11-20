@@ -19,6 +19,10 @@ import { useFeedWorkspace } from "../FeedWorkspaceContext.jsx";
 import { getOfflineEdition } from "../offline/feedOfflineStore.js";
 import "./Scroll.scss";
 
+const reconcileTimeoutMs = 10_000;
+const scrollSessions = '/api/v1/feed/scroll/sessions';
+const scrollSessionPath = sessionId => `${scrollSessions}/${encodeURIComponent(sessionId)}`;
+
 /** Base64url-encode an item ID for use in the URL path (UTF-8 safe). */
 function encodeFeedItemId(id) {
   const bytes = new TextEncoder().encode(String(id));
@@ -149,7 +153,7 @@ export default function Scroll() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const location = useLocation();
-  const { getSnapshot, setSnapshot, getLastVisit, markVisited, mutateItems, readingPreferences, applyPendingMutations, checkpoints, sourcePreferences, setSourcePreference } = useFeedWorkspace();
+  const { getSnapshot, setSnapshot, getLastVisit, markVisited, mutateItems, readingPreferences, applyPendingMutations, checkpoints, sourcePreferences, setSourcePreference, pendingItemOperations, itemSyncRevision } = useFeedWorkspace();
   const initialSnapshot = useRef(getSnapshot('scroll'));
   const initialCheckpoint = useRef(checkpoints.scroll);
   const previousVisit = useRef(getLastVisit('scroll'));
@@ -165,6 +169,10 @@ export default function Scroll() {
   const [budgetOverride, setBudgetOverride] = useState(null);
   const [sessionId, setSessionId] = useState(initialSnapshot.current?.sessionId || null);
   const [error, setError] = useState(null);
+  const [syncError, setSyncError] = useState(false);
+  const lastItemSync = useRef(itemSyncRevision);
+  const latestItemSync = useRef(itemSyncRevision);
+  latestItemSync.current = itemSyncRevision;
   // focusSource is read into the ?focus= param; no UI currently sets it (F-29).
   const focusSource = searchParams.get('focus');
   const filterParam = searchParams.get('filter') || '';
@@ -242,6 +250,9 @@ export default function Scroll() {
     listRequestRef.current = controller;
     if (append) setLoadingMore(true);
     else {
+      // A session load started after settlement already reads canonical state.
+      lastItemSync.current = latestItemSync.current;
+      setSyncError(false);
       setLoadingMore(false);
       setLoading(true);
     }
@@ -263,24 +274,24 @@ export default function Scroll() {
       let result;
       if (append) {
         if (!requestedSession) throw new Error('Scroll session is unavailable');
-        result = await DaylightAPI(`/api/v1/feed/scroll/sessions/${encodeURIComponent(requestedSession)}?${params}`, {}, 'GET', { signal: controller.signal });
+        result = await DaylightAPI(`${scrollSessionPath(requestedSession)}?${params}`, {}, 'GET', { signal: controller.signal });
       } else if (requestedSession) {
         const resumeParams = new URLSearchParams(params);
         resumeParams.set('resume', '1');
         try {
-          result = await DaylightAPI(`/api/v1/feed/scroll/sessions/${encodeURIComponent(requestedSession)}?${resumeParams}`, {}, 'GET', { signal: controller.signal });
+          result = await DaylightAPI(`${scrollSessionPath(requestedSession)}?${resumeParams}`, {}, 'GET', { signal: controller.signal });
         } catch (resumeError) {
           if (controller.signal.aborted) throw resumeError;
           if (!String(resumeError.message).startsWith('HTTP 404:')) throw resumeError;
           storedSessionId.clear();
-          result = await DaylightAPI('/api/v1/feed/scroll/sessions', {
+          result = await DaylightAPI(scrollSessions, {
             focus: focusSource || null,
             filter: filterParam || null,
             limit: effectiveBudget > 0 ? Math.min(15, effectiveBudget) : undefined,
           }, 'POST', { signal: controller.signal });
         }
       } else {
-        result = await DaylightAPI('/api/v1/feed/scroll/sessions', {
+        result = await DaylightAPI(scrollSessions, {
           focus: focusSource || null,
           filter: filterParam || null,
           limit: effectiveBudget > 0 ? Math.min(15, effectiveBudget) : undefined,
@@ -351,6 +362,38 @@ export default function Scroll() {
     }
   }, [applyPendingMutations, effectiveBudget, filterParam, focusSource, searchParams, sessionId, storedSessionId]);
 
+  useEffect(() => {
+    if (pendingItemOperations?.length) setItems(applyPendingMutations);
+  }, [applyPendingMutations, pendingItemOperations]);
+
+  const readSettledItems = useCallback(async (isCurrent, signal) => {
+    if (!sessionId) return;
+    setSyncError(false);
+    const loadedAtRead = new Set(itemsRef.current);
+    const params = new URLSearchParams({ resume: '1' });
+    if (filterParam) params.set('filter', filterParam);
+    if (focusSource) params.set('focus', focusSource);
+    try {
+      // Resume reads the session's existing rows without advancing its cursor.
+      const result = await DaylightAPI(`${scrollSessionPath(sessionId)}?${params}`, {}, 'GET', { signal });
+      if (!isCurrent()) return;
+      const byId = new Map((result.items || []).map(item => [item.id, item.state]));
+      setItems(current => applyPendingMutations(current.map(item => {
+        const state = byId.get(item.id);
+        // A newer local edit may have replaced this row while the GET was pending.
+        return state && loadedAtRead.has(item) ? { ...item, state, isRead: state.isRead } : item;
+      })));
+    } catch (err) {
+      if (!isCurrent()) return;
+      feedLog.scroll('reconcileError', err.message);
+      setSyncError(true);
+    }
+  }, [applyPendingMutations, filterParam, focusSource, sessionId]);
+  const onReconcileTimeout = useCallback(() => setSyncError(true), []);
+  const { reload: syncSettledItems } = useRefreshableRead(readSettledItems, {
+    timeoutMs: reconcileTimeoutMs, onTimeout: onReconcileTimeout,
+  });
+
   useEffect(() => { markVisited('scroll', visitStarted.current); }, [markVisited]);
 
   const lastListOffset = useRef(initialSnapshot.current?.scrollTop ?? initialCheckpoint.current?.scrollOffset ?? 0);
@@ -413,7 +456,8 @@ export default function Scroll() {
   // Initial load + reset/refetch whenever the ?filter= identity changes. (F-11)
   useEffect(() => {
     const storedSession = storedSessionId.read();
-    setSessionId(storedSession);
+    // Only a successful list response establishes the session for reconciliation.
+    setSessionId(null);
     setItems([]);
     setHasMore(true);
     setError(null);
@@ -421,6 +465,12 @@ export default function Scroll() {
     return () => listRequestRef.current?.abort();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionStorageKey]);
+
+  useEffect(() => {
+    if (lastItemSync.current === itemSyncRevision || !sessionId || !items.length || loading || loadingMore || listRequestRef.current) return;
+    lastItemSync.current = itemSyncRevision;
+    syncSettledItems();
+  }, [itemSyncRevision, items.length, loading, loadingMore, sessionId, syncSettledItems]);
 
   // Infinite scroll via IntersectionObserver
   useEffect(() => {
@@ -821,10 +871,21 @@ export default function Scroll() {
             <span>Couldn’t load the feed.</span>
             <button
               className="scroll-load-more"
-              onClick={() => { setError(null); setHasMore(true); fetchItems(items.length > 0); }}
+              onClick={() => {
+                setError(null);
+                setHasMore(true);
+                if (items.length) fetchItems(true);
+                else fetchItems(false, storedSessionId.read());
+              }}
             >
               Retry
             </button>
+          </div>
+        )}
+        {syncError && (
+          <div className="scroll-error" role="alert">
+            <span>Couldn’t refresh feed changes.</span>
+            <button type="button" className="scroll-load-more" onClick={syncSettledItems}>Retry refresh</button>
           </div>
         )}
         {!error && !hasMore && items.length === 0 && (

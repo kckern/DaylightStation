@@ -5,6 +5,7 @@ import { PhotoCapture } from "../capture/PhotoCapture.jsx";
 import { VoiceCapture } from "../capture/VoiceCapture.jsx";
 
 const logger = createAppLogger('health').child('meal-add-row');
+const MEAL_ADD_ACTION_CLASS = 'health-meal__add-action ds-touch-target';
 
 const BarcodeIcon = () => (
   <svg width="16" height="16" viewBox="0 0 18 18" fill="none" aria-hidden="true">
@@ -34,13 +35,13 @@ export function MealAddRow({ bucket, label, date, focusRequest = 0, busy = false
       actions={<span className="health-meal__add-actions">
         {onVoiceCapture ? <VoiceCapture active={active} bucket={bucket} mealLabel={label}
           labelPrefix={selectedCount ? `Speak changes to ${selectedCount} selected` : 'Speak foods'}
-          busy={busy} className="health-meal__add-action" onCapture={onVoiceCapture}
+          busy={busy} className={MEAL_ADD_ACTION_CLASS} onCapture={onVoiceCapture}
           onOrphanedRetry={onOrphanedRetry ? (run, meta) => onOrphanedRetry(run, { ...meta, date }) : undefined} /> : null}
         <PhotoCapture bucket={bucket} mealLabel={label} labelPrefix="Photo" busy={busy}
-          className="health-meal__add-action" onCapture={onPhotoCapture} />
-        <ActionIcon variant="subtle" size="sm" className="health-meal__add-action" aria-label={`Scan barcode to ${label}`}
+          className={MEAL_ADD_ACTION_CLASS} onCapture={onPhotoCapture} />
+        <ActionIcon variant="subtle" size="sm" className={MEAL_ADD_ACTION_CLASS} aria-label={`Scan barcode to ${label}`}
           onClick={openBarcode}><BarcodeIcon /></ActionIcon>
-        <ActionIcon variant="subtle" size="sm" className="health-meal__add-action" aria-label={`Saved meals for ${label}`}
+        <ActionIcon variant="subtle" size="sm" className={MEAL_ADD_ACTION_CLASS} aria-label={`Saved meals for ${label}`}
           onClick={() => openTemplates(null)}><MealsIcon /></ActionIcon>
       </span>} />
   </div>;

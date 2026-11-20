@@ -8,7 +8,6 @@
 // reads from across the room. No words on the grid but the group names.
 
 $square: 22px;
-$square-coarse: 34px;
 $icon: 14px;
 $icon-coarse: 20px;
 $gap: 3px;
@@ -28,7 +27,6 @@ $gap-coarse: 4px;
   --home-tone-silent: color-mix(in srgb, var(--ds-danger) 40%, var(--ds-border));
 
   @media (pointer: coarse) {
-    --home-sq: #{$square-coarse};
     --home-sq-icon: #{$icon-coarse};
     --home-sq-gap: #{$gap-coarse};
   }

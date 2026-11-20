@@ -7,7 +7,7 @@
 // that warns spuriously (or that warns while still loading) is worse than no
 // warning, because it teaches you to ignore the colour.
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { renderHook, waitFor } from '@testing-library/react';
+import { act, renderHook, waitFor } from '@testing-library/react';
 
 const apiMock = vi.fn();
 vi.mock("../../../../frontend/src/lib/api.mjs", () => ({
@@ -22,7 +22,8 @@ vi.mock("../../../../frontend/src/lib/logging/Logger.js", () => {
   return { default: () => logger };
 });
 
-import { useActionCapabilityCheck, __resetCapabilityCache } from "./useActionCapabilityCheck.js";
+import { peekApiResource, resetApiResourceCache } from '../../../../frontend/src/lib/hooks/useApiResource.js';
+import { useActionCapabilityCheck } from "./useActionCapabilityCheck.js";
 
 const FILES_IMAGE = 'files:art/fhe/esther.jpg';
 
@@ -38,7 +39,7 @@ function route(map) {
 
 beforeEach(() => {
   apiMock.mockReset();
-  __resetCapabilityCache();
+  resetApiResourceCache();
 });
 
 describe('useActionCapabilityCheck', () => {
@@ -122,16 +123,26 @@ describe('useActionCapabilityCheck', () => {
     expect(apiMock).not.toHaveBeenCalled();
   });
 
-  it('looks a content id up once no matter how many rows ask', async () => {
-    // A long list re-renders constantly; one info request per row per render
-    // would be a self-inflicted load test on the API.
-    route({ '/info/': { capabilities: ['displayable'] } });
+  it('shares both pending reads without retaining advisory snapshots in the global cache', async () => {
+    const infoPath = '/api/v1/info/files/art%2Ffhe%2Festher.jpg';
+    const alternativesPath = '/api/v1/content/alternates/files/art%2Ffhe%2Festher.jpg';
+    const info = Promise.withResolvers();
+    const alternatives = Promise.withResolvers();
+    route({ [infoPath]: info.promise, [alternativesPath]: alternatives.promise });
 
-    const a = renderHook(() => useActionCapabilityCheck('canvas:fhe/esther.jpg', 'Display'));
-    const b = renderHook(() => useActionCapabilityCheck('canvas:fhe/esther.jpg', 'Display'));
+    const { result } = renderHook(() => [
+      useActionCapabilityCheck(FILES_IMAGE, 'Display'),
+      useActionCapabilityCheck(FILES_IMAGE, 'Display'),
+    ]);
+    expect(apiMock.mock.calls.map(([path]) => path)).toEqual([infoPath]);
+    await act(async () => info.resolve({ capabilities: ['playable'] }));
+    expect(apiMock.mock.calls.map(([path]) => path)).toEqual([infoPath, alternativesPath]);
+    await act(async () => alternatives.resolve({
+      alternates: [{ contentId: 'canvas:fhe/esther.jpg', capabilities: ['displayable'] }],
+    }));
 
-    await waitFor(() => expect(a.result.current.loading).toBe(false));
-    await waitFor(() => expect(b.result.current.loading).toBe(false));
-    expect(apiMock).toHaveBeenCalledTimes(1);
+    expect(result.current.map(row => row.suggestion)).toEqual(['canvas:fhe/esther.jpg', 'canvas:fhe/esther.jpg']);
+    expect(peekApiResource(infoPath)).toBeUndefined();
+    expect(peekApiResource(alternativesPath)).toBeUndefined();
   });
 });

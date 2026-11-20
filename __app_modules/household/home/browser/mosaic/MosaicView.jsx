@@ -42,7 +42,7 @@ function tipText(entity) {
 }
 
 function squareClass(tone) {
-  let cls = `home-square home-square--${tone.fill}`;
+  let cls = `home-square home-square--${tone.fill} ds-touch-target`;
   if (isLoudAttention(tone)) cls += ' home-square--attention';
   else if (tone.attention === 'silent') cls += ' home-square--silent';
   return cls;

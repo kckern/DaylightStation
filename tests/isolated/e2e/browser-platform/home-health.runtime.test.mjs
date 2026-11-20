@@ -440,21 +440,64 @@ test('Home Mosaic keeps the tooltip and drawer reachable in its own frame', asyn
 test.describe('Home Mosaic mixed input', () => {
   test.use({ hasTouch: true, viewport: { width: 390, height: 850 } });
 
+  test.beforeEach(async ({ page, baseURL }) => {
+    const origin = new URL(baseURL).origin;
+    await page.context().route('**/*', route => (
+      new URL(route.request().url()).origin === origin ? route.fallback() : route.abort()
+    ));
+    const payload = house('on');
+    const kitchen = payload.entities[0];
+    payload.entities.push(
+      { ...kitchen, id: 'light.hall', name: 'Hall light' },
+      ...Array.from({ length: 8 }, (_, index) => ({
+        ...kitchen, id: 'light.fixture_' + index, name: 'Fixture light ' + index,
+      })),
+    );
+    const group = { id: 'kitchen', label: 'Kitchen', entityIds: payload.entities.map(entity => entity.id) };
+    payload.mosaic = { byRoom: [group], byType: [group] };
+    await page.route('**/home-dashboard/entities', route => route.fulfill({ json: payload }));
+    // Keep pointer and keyboard activations in the same compatibility-event window.
+    await page.clock.setFixedTime(new Date('2026-11-22T19:00:00Z'));
+    await page.goto('/home');
+    await page.getByRole('button', { name: 'Mosaic', exact: true }).tap();
+  });
+
+  test('Home Mosaic keeps wrapped touch targets distinct and activates their edges', async ({ page }) => {
+    expect(await page.evaluate(() => matchMedia('(pointer: coarse)').matches)).toBe(true);
+    const group = page.getByRole('region', { name: 'Kitchen', exact: true });
+    const squares = group.getByRole('button');
+    await expect(squares).toHaveCount(10);
+    const bounds = await squares.evaluateAll(elements => elements.map(element => {
+      const { x, y, width, height } = element.getBoundingClientRect();
+      return { x, y, width, height };
+    }));
+    const groupBounds = await group.boundingBox();
+    expect(bounds.at(-1).y).toBeGreaterThan(bounds[0].y);
+    for (const [index, rect] of bounds.entries()) {
+      expect(rect.width).toBeGreaterThanOrEqual(44);
+      expect(rect.height).toBeGreaterThanOrEqual(44);
+      expect(rect.x + rect.width).toBeLessThanOrEqual(groupBounds.x + groupBounds.width);
+      const next = bounds[index + 1];
+      if (next?.y === rect.y) expect(rect.x + rect.width).toBeLessThan(next.x);
+    }
+
+    const [kitchen, hall] = bounds;
+    const tapHallEdge = () => page.touchscreen.tap(hall.x + 2, hall.y + 22);
+    await page.touchscreen.tap(kitchen.x + 42, kitchen.y + 22);
+    await expect(page.getByRole('tooltip')).toContainText('Kitchen light');
+    await tapHallEdge();
+    await expect(page.getByRole('tooltip')).toContainText('Hall light');
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+    await tapHallEdge();
+    const details = page.getByRole('dialog', { name: 'Hall light', exact: true });
+    await expect(details).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(details).toBeHidden();
+    await expect(group.getByRole('button', { name: 'Hall light: On', exact: true })).toBeFocused();
+  });
+
   for (const activation of ['Enter', 'Space', 'mouse']) {
-    test(`Home Mosaic opens another device by ${activation} immediately after a touch tooltip`, async ({ page, baseURL }) => {
-      const origin = new URL(baseURL).origin;
-      await page.context().route('**/*', route => (
-        new URL(route.request().url()).origin === origin ? route.fallback() : route.abort()
-      ));
-      const payload = house('on');
-      payload.entities.push({ ...payload.entities[0], id: 'light.hall', name: 'Hall light' });
-      const group = { id: 'kitchen', label: 'Kitchen', entityIds: ['light.kitchen', 'light.hall'] };
-      payload.mosaic = { byRoom: [group], byType: [group] };
-      await page.route('**/home-dashboard/entities', route => route.fulfill({ json: payload }));
-      // Keep pointer and keyboard activations in the same compatibility-event window.
-      await page.clock.setFixedTime(new Date('2026-11-22T19:00:00Z'));
-      await page.goto('/home');
-      await page.getByRole('button', { name: 'Mosaic', exact: true }).tap();
+    test(`Home Mosaic opens another device by ${activation} immediately after a touch tooltip`, async ({ page }) => {
       const kitchen = page.getByRole('button', { name: 'Kitchen light: On', exact: true });
       const hall = page.getByRole('button', { name: 'Hall light: On', exact: true });
 
