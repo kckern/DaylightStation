@@ -287,6 +287,9 @@ export function startBtInventoryBroadcast({
   const maybeReconnect = async (devices) => {
     if (!reconnect || reconnectPaused) return;
     for (const d of devices) {
+      // Each page can take ~8 s: a window or search that opened meanwhile
+      // stops the loop before the next one.
+      if (stopped || paused || reconnectPaused) return;
       if (!shouldReconnect(d)) continue;
       if (d.connected) { backoff.delete(d.address); continue; }
       const b = backoff.get(d.address) || { delayMs: 0, nextAt: 0 };
@@ -346,10 +349,15 @@ export function startBtInventoryBroadcast({
       if (reconnectOnly) reconnectPaused = true;
       else paused = true;
     },
-    /** Resume after a window or search; re-sends and resets reconnect backoff. */
-    resume() {
-      paused = false;
-      reconnectPaused = false;
+    /**
+     * Undo the matching pause: resume() ends a pairing window's pause,
+     * resume({ reconnectOnly: true }) ends a search's. Neither clears the
+     * other, so a search that ends while a pairing window is open leaves the
+     * window's pause in place. Re-sends and resets reconnect backoff.
+     */
+    resume({ reconnectOnly = false } = {}) {
+      if (reconnectOnly) reconnectPaused = false;
+      else paused = false;
       backoff.clear();
       lastJson = null;
       return tick();

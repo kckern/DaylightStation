@@ -27,17 +27,35 @@ function defaultSpawnHelper(argJson) {
   return nodeSpawn('python3', [HELPER_PATH, argJson], { stdio: ['ignore', 'pipe', 'pipe'] });
 }
 
-let active = null; // { requestId, child, closed }
+const KILL_GRACE_MS = 5000;
+
+let active = null; // { requestId, child, closed, close }
+// Bumped by every start and every applying stop: a start that finds the
+// generation moved on while it waited for the old helper to exit bails, so
+// two starts racing one stop never spawn two helpers.
+let generation = 0;
+let latestStartId; // requestId of the newest start, for `stop` matching
 
 export function isScanWindowOpen() {
   return active !== null;
 }
 
-/** Stop the running search, if any. Resolves once its helper has exited. */
-export function stopScanWindow() {
+/**
+ * Stop the running search, if any. Resolves once its helper has exited; a
+ * helper that ignores SIGTERM gets SIGKILL after `graceMs`, and the window is
+ * closed anyway shortly after that so a stop never hangs.
+ */
+export function stopScanWindow({ graceMs = KILL_GRACE_MS } = {}) {
   if (!active) return Promise.resolve();
-  const { child, closed } = active;
+  const entry = active;
+  const { child, closed } = entry;
   try { child.kill?.('SIGTERM'); } catch { /* already gone */ }
+  if (!entry.killTimer) {
+    entry.killTimer = setTimeout(() => {
+      try { child.kill?.('SIGKILL'); } catch { /* already gone */ }
+      entry.forceTimer = setTimeout(() => entry.close('stopped'), Math.min(graceMs, 1000));
+    }, graceMs);
+  }
   return closed;
 }
 
@@ -100,11 +118,14 @@ function startScanWindow({ spawnHelper, durationMs, send, logger, requestId, onW
   const close = (reason) => {
     if (closedOnce) return;
     closedOnce = true;
+    clearTimeout(entry.killTimer);
+    clearTimeout(entry.forceTimer);
     finish({ reason });
     if (active === entry) active = null;
     try { onWindow?.(false); } catch { /* best-effort */ }
     resolveClosed();
   };
+  entry.close = close;
   child.on?.('error', (err) => {
     logger?.error?.(`❌ bt.scan helper failed: ${err?.message}`);
     close('helper-failed');
@@ -123,17 +144,33 @@ export async function handleBtScanRequest(message, {
 } = {}) {
   const requestId = message?.requestId;
   if (message?.action === 'stop') {
+    // Stop only the search this requestId started (or anything, with none),
+    // so a stale page cannot end another page's search.
+    const applies = requestId == null || requestId === active?.requestId || requestId === latestStartId;
+    if (!applies) {
+      logger?.info?.(`🎮 bt.scan stop ignored (requestId=${requestId}, running=${active?.requestId ?? '-'})`);
+      return;
+    }
     logger?.info?.(`🎮 bt.scan stop (requestId=${requestId})`);
+    generation += 1;
     await stopScanWindow();
     return;
   }
-  if (isPairingOpen()) {
+  const refuseBusy = () => {
     logger?.warn?.(`⚠️  bt.scan.request ${requestId} refused — pairing window open`);
     try { send?.('bt.scan.progress', { requestId, phase: 'done', reason: 'busy' }); } catch { /* best-effort */ }
+  };
+  if (isPairingOpen()) return refuseBusy();
+  const durationMs = Math.min(Math.max(Number(message?.durationMs) || SCAN_DEFAULT_MS, SCAN_MIN_MS), SCAN_MAX_MS);
+  const mine = ++generation;
+  latestStartId = requestId;
+  await stopScanWindow();
+  if (mine !== generation) {
+    logger?.info?.(`🎮 bt.scan.request ${requestId} superseded before it started`);
     return;
   }
-  const durationMs = Math.min(Math.max(Number(message?.durationMs) || SCAN_DEFAULT_MS, SCAN_MIN_MS), SCAN_MAX_MS);
-  await stopScanWindow();
+  // A pairing window may have opened while the old search was stopping.
+  if (isPairingOpen()) return refuseBusy();
   logger?.info?.(`🎮 bt.scan.request received (requestId=${requestId}, durationMs=${durationMs})`);
   startScanWindow({ spawnHelper, durationMs, send, logger, requestId, onWindow });
 }

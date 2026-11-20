@@ -2,6 +2,7 @@ import { test, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
 import { handleBtScanRequest, stopScanWindow, isScanWindowOpen } from '../src/btScan.mjs';
+import { handleBtPairRequest, isPairingWindowOpen } from '../src/btPairing.mjs';
 
 const SILENT = { info() {}, warn() {}, error() {} };
 
@@ -99,4 +100,75 @@ test('a helper that dies reports helper-crashed exactly once', async () => {
   await tick(); await tick();
   assert.deepEqual(sent.filter((p) => p.phase === 'done'), [{ requestId: 'e', phase: 'done', reason: 'helper-crashed' }]);
   assert.equal(isScanWindowOpen(), false);
+});
+
+test('two starts during one stop: only the newest spawns, no helper is orphaned', async () => {
+  const h = fakeScanHelper([{ phase: 'scanning', durationMs: 60000 }]);
+  const deps = { spawnHelper: h.spawnHelper, send: () => {}, logger: SILENT };
+  await handleBtScanRequest({ requestId: 'a', action: 'start' }, deps);
+  await tick();
+  await Promise.all([
+    handleBtScanRequest({ requestId: 'b', action: 'start' }, deps),
+    handleBtScanRequest({ requestId: 'c', action: 'start' }, deps),
+  ]);
+  assert.equal(h.spawned.length, 2);
+  assert.equal(h.spawned[0].child.killed, true);
+  assert.equal(h.spawned[1].child.killed, false);
+  assert.equal(isScanWindowOpen(), true);
+});
+
+test('a scan restart racing a pair request: the pair wins and never overlaps a search', async () => {
+  const sent = [];
+  const h = fakeScanHelper([{ phase: 'scanning', durationMs: 60000 }]);
+  const scanDeps = { spawnHelper: h.spawnHelper, send: (t, p) => sent.push(p), logger: SILENT, isPairingOpen: isPairingWindowOpen };
+  await handleBtScanRequest({ requestId: 'a', action: 'start' }, scanDeps);
+  await tick();
+  const scanOpenAtPairSpawn = [];
+  const pairSpawn = () => {
+    scanOpenAtPairSpawn.push(isScanWindowOpen());
+    const child = new EventEmitter();
+    child.stdout = new EventEmitter();
+    child.stderr = new EventEmitter();
+    setImmediate(() => {
+      child.stdout.emit('data', Buffer.from(`${JSON.stringify({ phase: 'done', paired: [] })}\n`));
+      child.emit('close', 0);
+    });
+    return child;
+  };
+  await Promise.all([
+    handleBtScanRequest({ requestId: 'b', action: 'start' }, scanDeps),
+    handleBtPairRequest({ requestId: 'p', mode: 'address', address: 'AA:BB:CC:11:22:33' },
+      { spawnHelper: pairSpawn, send: () => {}, logger: SILENT, stopScan: stopScanWindow }),
+  ]);
+  assert.equal(h.spawned.length, 1);
+  assert.deepEqual(scanOpenAtPairSpawn, [false]);
+  assert.deepEqual(sent.filter((p) => p.requestId === 'b'), [{ requestId: 'b', phase: 'done', reason: 'busy' }]);
+});
+
+test('stop for another search is ignored; stop for this one ends it', async () => {
+  const h = fakeScanHelper([{ phase: 'scanning', durationMs: 60000 }]);
+  const deps = { spawnHelper: h.spawnHelper, send: () => {}, logger: SILENT };
+  await handleBtScanRequest({ requestId: 's7', action: 'start' }, deps);
+  await tick();
+  await handleBtScanRequest({ requestId: 'other', action: 'stop' }, deps);
+  assert.equal(h.spawned[0].child.killed, false);
+  await handleBtScanRequest({ requestId: 's7', action: 'stop' }, deps);
+  assert.equal(h.spawned[0].child.killed, true);
+});
+
+test('a helper that ignores SIGTERM is killed and the stop still resolves', async () => {
+  const sent = [];
+  const signals = [];
+  const spawnHelper = () => {
+    const child = new EventEmitter();
+    child.stdout = new EventEmitter();
+    child.stderr = new EventEmitter();
+    child.kill = (sig) => { signals.push(sig); return true; }; // never closes
+    return child;
+  };
+  await handleBtScanRequest({ requestId: 'k', action: 'start' }, { spawnHelper, send: (t, p) => sent.push(p), logger: SILENT });
+  await stopScanWindow({ graceMs: 10 });
+  assert.deepEqual(signals, ['SIGTERM', 'SIGKILL']);
+  assert.equal(isScanWindowOpen(), false);
+  assert.deepEqual(sent.filter((p) => p.phase === 'done').map((p) => p.reason), ['stopped']);
 });

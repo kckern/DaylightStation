@@ -257,7 +257,9 @@ async function handleWebSocketMessage(data) {
           send: (topic, payload) => sendBus(topic, payload),
           logger: console,
           isPairingOpen: isPairingWindowOpen,
-          onWindow: (open) => (open ? btInventoryBroadcast?.pause({ reconnectOnly: true }) : btInventoryBroadcast?.resume()),
+          onWindow: (open) => (open
+            ? btInventoryBroadcast?.pause({ reconnectOnly: true })
+            : btInventoryBroadcast?.resume({ reconnectOnly: true })),
         });
         return;
       }
