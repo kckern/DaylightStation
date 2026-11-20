@@ -36,7 +36,7 @@ import {
   getStats,
 } from "#system/utils/FileIO.mjs";
 import { encodeMidiFile } from './MidiFileCodec.mjs';
-import { practiceKeyOfScore } from '../../portable/music/practiceKey.mjs';
+import { libraryScoreLocalPath, practiceKeyOfScore } from '../../portable/music/practiceKey.mjs';
 import { ILoopManifestSource } from '../application/ports/ILoopManifestSource.mjs';
 
 export class YamlPianoStudioDatastore extends ILoopManifestSource {
@@ -228,7 +228,7 @@ export class YamlPianoStudioDatastore extends ILoopManifestSource {
    * score grid shows it. Null when there is none.
    */
   sheetMusicCover(scoreId) {
-    const local = this.#libraryLocal(scoreId);
+    const local = libraryScoreLocalPath(scoreId);
     if (!local) return null;
     const stem = local.slice(0, local.length - path.extname(local).length);
     const media = this.#configService.getMediaDir();
@@ -239,22 +239,9 @@ export class YamlPianoStudioDatastore extends ILoopManifestSource {
     return null;
   }
 
-  /**
-   * The media-relative path of a library score (`files:docs/sheet-music/…`), or
-   * null for anything else: a bare id, another folder, or a '..', '.' or empty
-   * path segment.
-   */
-  #libraryLocal(scoreId) {
-    const id = String(scoreId || '');
-    if (!id.startsWith('files:docs/sheet-music/')) return null;
-    const local = id.slice('files:'.length);
-    if (local.split('/').some((part) => part === '' || part === '.' || part === '..')) return null;
-    return local;
-  }
-
   /** Only library scores have a Learn file; anything else is refused. */
   #sheetMusicLearnPath(scoreId) {
-    if (!this.#libraryLocal(scoreId)) return null;
+    if (!libraryScoreLocalPath(scoreId)) return null;
     const key = practiceKeyOfScore(scoreId);
     return this.#configService.getHouseholdPath(path.join('piano', 'sheetmusic', key));
   }

@@ -12,3 +12,16 @@
  * Learn file. Practice records have always had this.
  */
 export const practiceKeyOfScore = (id) => String(id || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 120);
+
+/**
+ * The media-relative path of a library score (`files:docs/sheet-music/…`), or
+ * null for anything else: a bare id, another folder, or a '..', '.' or empty
+ * path segment. Every server path built from a score id goes through this.
+ */
+export const libraryScoreLocalPath = (scoreId) => {
+  const id = String(scoreId || '');
+  if (!id.startsWith('files:docs/sheet-music/')) return null;
+  const local = id.slice('files:'.length);
+  if (local.split('/').some((part) => part === '' || part === '.' || part === '..')) return null;
+  return local;
+};
