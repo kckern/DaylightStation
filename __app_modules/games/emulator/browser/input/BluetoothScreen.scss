@@ -1,0 +1,65 @@
+// BluetoothScreen — host-agnostic; the host supplies the panel around it.
+.bluetooth-screen {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+  font-family: 'Roboto Condensed', sans-serif;
+  color: #e8e8e8;
+
+  .bts-header { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
+  .bts-title { margin: 0; font-size: 1.2rem; font-weight: 600; }
+  .bts-heading { margin: 0 0 0.4rem; font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.08em; opacity: 0.7; }
+  .bts-section { display: flex; flex-direction: column; gap: 0.5rem; }
+  .bts-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.35rem; }
+  .bts-steps { margin: 0; padding-left: 1.4rem; display: flex; flex-direction: column; gap: 0.35rem; line-height: 1.35; }
+
+  .bts-row {
+    display: flex; flex-direction: column; gap: 0.35rem;
+    padding: 0.45rem 0.6rem; border-radius: 6px; background: rgba(255, 255, 255, 0.04);
+    &[data-status='connected'] { background: rgba(64, 200, 96, 0.12); }
+    &[data-status='needs-pairing'] { box-shadow: inset 0 0 0 1px rgba(255, 170, 60, 0.45); }
+    &.bts-highlight { box-shadow: inset 0 0 0 2px rgba(96, 165, 250, 0.7); }
+  }
+  .bts-row-main, .bts-pick { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.6rem; }
+  .bts-row-actions, .bts-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+  .bts-label { font-weight: 600; }
+  .bts-type, .bts-tail { opacity: 0.65; font-size: 0.9em; }
+  .bts-tail { font-variant-numeric: tabular-nums; }
+  .bts-status { margin-left: auto; font-size: 0.9em; }
+  .bts-status-connected { color: #4ade80; }
+  .bts-bars { letter-spacing: -0.1em; color: #93c5fd; }
+  .bts-badge { font-size: 0.8em; padding: 0.05rem 0.45rem; border-radius: 999px; background: rgba(255, 255, 255, 0.12); }
+  .bts-hint, .bts-notice, .bts-empty, .bts-result { margin: 0; opacity: 0.8; line-height: 1.35; }
+
+  .bts-status-line { margin: 0; font-size: 1.05rem; }
+  .bts-tone-ok { color: #4ade80; }
+  .bts-tone-error { color: #fca5a5; }
+  .bts-tone-warn { color: #fcd34d; }
+  .bts-tone-action { color: #fff; font-weight: 600; }
+  .bts-passkey { margin: 0.25rem 0; font-size: 3rem; font-weight: 700; letter-spacing: 0.2em; font-variant-numeric: tabular-nums; text-align: center; }
+
+  .bts-test-prompt { margin: 0; font-size: 1.3rem; font-weight: 600; }
+  .bts-test-events { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.2rem; font-variant-numeric: tabular-nums; }
+
+  .bts-button, .bts-pick {
+    font: inherit; color: inherit; cursor: pointer;
+    // Read and pressed from across the room: large targets.
+    min-height: 2.75rem; padding: 0.55rem 1rem; border-radius: 6px;
+    border: 1px solid rgba(255, 255, 255, 0.18); background: rgba(255, 255, 255, 0.06);
+    &:disabled { opacity: 0.45; cursor: default; }
+  }
+  .bts-pick { width: 100%; text-align: left; }
+  .bts-primary { background: rgba(59, 130, 246, 0.35); border-color: rgba(96, 165, 250, 0.6); align-self: flex-start; }
+  .bts-forget.bts-armed { background: rgba(239, 68, 68, 0.35); border-color: rgba(248, 113, 113, 0.8); }
+
+  // A gamepad user must always see where they are.
+  .bts-button:focus-visible, .bts-pick:focus-visible,
+  .bts-button:focus, .bts-pick:focus {
+    outline: 3px solid #facc15;
+    outline-offset: 2px;
+  }
+  // The key test captures every key, so its Done answers touch only: no ring
+  // that would suggest A or Enter presses it.
+  .bts-test-done:focus, .bts-test-done:focus-visible { outline: none; }
+  .bts-stale .bts-bars { opacity: 0.4; }
+}

@@ -23,7 +23,8 @@ import { getModuleManifest } from "../index.js";
 import { VIBRATION_CONSTANTS } from "../widgets/VibrationApp/constants.js";
 import { buildSelectionConfig } from "../hooks/fitness/selectPrimaryMedia.js";
 import { applyEquipmentCatalogFromConfig, riderSelectorsFromConfig } from "./fitnessConfigBridge.js";
-import { buildPairRequest, buildRemoveRequest, mergePairingProgress, PAIR_WINDOW_MS } from "./fitnessBtActions.js";
+import { BT_TOPICS } from "./useFitnessBluetooth.js";
+import { FitnessBluetoothHost } from "./FitnessBluetoothContext.jsx";
 import { createTransportRecovery } from '../hooks/fitness/transportRecovery.js';
 import { endLiveSession } from "../hooks/fitness/endLiveSession.js";
 import { normalizeToast, dismissMatches } from "../player/overlays/fitnessToastSlot.js";
@@ -320,11 +321,16 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
   const vibrationStateRef = useRef({});
   // Live repetition totals and analog diagnostics, keyed by mat id.
   const pressureMatStateRef = useRef({});
-  // Bluetooth game-controller management (Task 3.3)
+  // Bluetooth screen state + bus actions live in FitnessBluetoothHost (its own
+  // context), so a search's ~1 Hz progress never re-renders this provider.
+  // Only the inventory comes back up (EmulatorToasts and the arcade read it).
+  const sendBtMessage = useCallback((msg) => {
+    import("../../../../../frontend/src/services/WebSocketService.js").then(({ wsService }) => wsService.send(msg));
+  }, []);
   const [btInventory, setBtInventory] = useState(null);
-  const [controllerPairing, setControllerPairing] = useState(null);
-  const [controllerForget, setControllerForget] = useState(null);
-  const btReqRef = useRef(0);
+  // The host registers its bus entry points here; the bus subscription effect
+  // below reads them through this ref, so it never re-subscribes.
+  const btRef = useRef(null);
   const vibrationTimeoutRefs = useRef({});
   const guestAssignmentLedgerRef = useRef(new DeviceAssignmentLedger());
   const guestAssignmentServiceRef = useRef(null);
@@ -1618,13 +1624,14 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
 
       // Subscribe to fitness and vibration topics
       unsubscribe = wsService.subscribe(
-        ['fitness', 'fitness.transport.health', 'vibration', 'pressure-mat', 'rider_select', 'bt_inventory', 'bt.pair.progress', 'bt.remove.result'],
+        ['fitness', 'fitness.transport.health', 'vibration', 'pressure-mat', 'rider_select', ...BT_TOPICS],
         (data) => {
           // Guard against malformed or empty data during reconnect churn
           if (!data || typeof data !== 'object') return;
           if (data.topic === undefined && data.type === undefined) return;
 
           if (data?.topic === 'fitness.transport.health') {
+            btRef.current?.noteBtHealth();
             recovery.observeHealth(data);
             return;
           }
@@ -1639,39 +1646,7 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
             return;
           }
 
-          if (data?.topic === 'bt_inventory') {
-            setBtInventory(Array.isArray(data.devices) ? data.devices : []);
-            return;
-          }
-          if (data?.topic === 'bt.pair.progress') {
-            getLogger().info('fitness.bt.pair-progress', {
-              requestId: data.requestId,
-              phase: data.phase,
-              address: data.device?.address,
-              controllerId: data.controllerId,
-              attempt: data.attempt,
-              reason: data.reason,
-              message: data.message,
-              mode: data.mode,
-            });
-            setControllerPairing((cur) => {
-              const next = mergePairingProgress(cur, data);
-              if (next.satelliteOutdated && !cur?.satelliteOutdated) {
-                getLogger().warn('fitness.bt.satellite-outdated', {
-                  requestId: data.requestId,
-                  phase: data.phase,
-                  requestedMode: cur?.mode,
-                });
-              }
-              return next;
-            });
-            return;
-          }
-          if (data?.topic === 'bt.remove.result') {
-            getLogger().info('fitness.bt.remove-result', { address: data.address, success: data.success, error: data.error });
-            setControllerForget({ address: data.address, success: !!data.success, error: data.error || null });
-            return;
-          }
+          if (btRef.current?.handleBtMessage(data)) return;
 
           const session = fitnessSessionRef.current;
           if (!session) return;
@@ -1734,6 +1709,8 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
       unsubscribeStatus = wsService.onStatusChange(({ connected: isConnected }) => {
         // Track reconnections: false→true transition = a reconnection event
         if (isConnected && !wasConnectedRef.current) {
+          btRef.current?.requestInventory(); // bt_inventory is sent only on change
+          btRef.current?.onReconnect?.(); // a search's `done` may have been lost
           reconnectCountRef.current++;
 
           // Reset counter after 60 seconds of stability
@@ -1787,38 +1764,6 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
 
   const reconnectFitnessWebSocket = React.useCallback(() => {
     if (!transportStoppedRef.current) transportRecoveryRef.current?.requestReconnect();
-  }, []);
-
-  // Bluetooth game-controller management actions (Task 3.3)
-  // `targets` (from input.yml controllers) tell the garage box what to look
-  // for and which legacy PIN to answer with.
-  const pairController = useCallback(({ targets = [], controllerId = null, durationMs = PAIR_WINDOW_MS, mode = 'repair' } = {}) => {
-    const requestId = `pair-${Date.now().toString(36)}-${++btReqRef.current}`;
-    setControllerPairing({ phase: 'scanning', durationMs, requestId, optimistic: true, mode });
-    import("../../../../../frontend/src/services/WebSocketService.js").then(({ wsService }) => {
-      wsService.send(buildPairRequest({ requestId, durationMs, targets, mode }));
-    });
-    getLogger().info('fitness.bt.pair-request', { requestId, durationMs, controllerId, mode, targets: targets.length });
-    // The garage box answers within a second with its own `scanning`. Silence
-    // means it is offline — say so instead of spinning forever.
-    setTimeout(() => {
-      setControllerPairing((cur) => {
-        if (!cur || cur.requestId !== requestId || !cur.optimistic) return cur;
-        getLogger().warn('fitness.bt.pair-no-response', { requestId });
-        return { phase: 'done', paired: [], reason: 'no-response', requestId, mode: cur.mode };
-      });
-    }, 15000);
-    return requestId;
-  }, []);
-
-  const forgetController = useCallback((address) => {
-    setControllerForget(null);
-    const requestId = `forget-${++btReqRef.current}`;
-    import("../../../../../frontend/src/services/WebSocketService.js").then(({ wsService }) => {
-      wsService.send(buildRemoveRequest({ requestId, address }));
-    });
-    getLogger().info('fitness.bt.remove-request', { requestId, address });
-    return requestId;
   }, []);
 
   // ═══════════════════════════════════════════════════════════════
@@ -3156,12 +3101,8 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
     vibrationState: vibrationStateRef.current,
     pressureMatState: pressureMatStateRef.current,
     pressureMatActivities,
-    // Bluetooth game-controller management (Task 3.3)
+    // Bluetooth (useFitnessBluetooth). btInventory also feeds EmulatorToasts.
     btInventory,
-    controllerPairing,
-    controllerForget,
-    pairController,
-    forgetController,
     fitnessDevices,
     // Expose allDevices for backward compatibility (prefer domain selectors below)
     allDevices,
@@ -3395,7 +3336,9 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
   return (
     <FitnessStoreContext.Provider value={fitnessStoreRef.current}>
       <FitnessContext.Provider value={value}>
-        {children}
+        <FitnessBluetoothHost send={sendBtMessage} registerRef={btRef} onInventory={setBtInventory}>
+          {children}
+        </FitnessBluetoothHost>
       </FitnessContext.Provider>
     </FitnessStoreContext.Provider>
   );

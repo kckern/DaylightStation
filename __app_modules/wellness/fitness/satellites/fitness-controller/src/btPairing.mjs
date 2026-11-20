@@ -1,25 +1,49 @@
 /**
- * btPairing — controller pairing + forget, driven from the bus.
+ * btPairing — Bluetooth pairing + forget, driven from the bus.
  *
  * PAIR: the frontend publishes `bt.pair.request` { requestId, durationMs, mode,
- * targets } (relayed by the backend). `targets` come from the household
- * controller config (media/emulation/input.yml `controllers[].pairing`): name
- * regex, MAC prefix and legacy PIN per controller. This box spawns
- * `bt_pair_helper.py`, which owns the whole lifecycle over BlueZ D-Bus —
- * discovery (BR/EDR in `repair` mode, BR/EDR + LE in `add` mode), a PIN-answering default agent, Pair while discovering,
- * automatic remove-and-retry once, Trusted, Paired+Bonded check, Connect, and
- * waiting for the kernel INPUT DEVICE (disconnect/reconnect once). Each line
- * the helper prints is one transition, relayed as `bt.pair.progress`:
+ * targets, address } (relayed by the backend). This box spawns
+ * `bt_pair_helper.py`, which owns the whole lifecycle over BlueZ D-Bus. Two
+ * modes:
  *
- *   scanning → seen → found → [stale-bond-removed] → pairing → [retry]
- *            → bonded → connecting → hid-wait → [hid-retry] → paired → done
+ *   repair   (no `mode`, the default; `POST /api/v1/emulator/bt/pair` sends
+ *            none) re-pair a configured pad. `targets` come from the household
+ *            controller config (media/emulation/input.yml
+ *            `controllers[].pairing`): name regex, MAC prefix and legacy PIN.
+ *            BR/EDR discovery.
+ *   address  pair exactly one address the person picked from the Bluetooth
+ *            screen's nearby list. `targets` is reduced to one
+ *            { id, label, address, pin? } (the configured controller the
+ *            screen matched, if any). BR/EDR + LE discovery; an old bond is
+ *            tried before it is replaced.
+ *
+ * The blind `add` mode (pair the first input-looking device) was retired
+ * 2026-11-20: it, and any unknown mode, is refused with
+ * `done { reason: 'unsupported-mode' }`; a malformed address with
+ * `done { reason: 'invalid-address' }`. Neither spawns the helper.
+ *
+ * The helper does discovery, a PIN-answering default agent (which also
+ * reports a passkey or PIN the person must type on the device), Pair while
+ * discovering, automatic remove-and-retry once, Trusted, Paired+Bonded check,
+ * Connect, and waiting for the kernel INPUT DEVICE (disconnect/reconnect
+ * once). Each line it prints is one transition, relayed as `bt.pair.progress`:
+ *
+ *   scanning → seen → found → [stale-bond-removed] → pairing → [passkey|pincode]
+ *            → [retry] → bonded → connecting → hid-wait → [hid-retry] → paired → done
+ *
+ * `error` carries a short `code` (auth-failed, auth-canceled, timeout,
+ * unreachable, already-paired, busy, no-input, unknown) next to the raw
+ * `message`, which is for logs only.
  *
  * The window always ends with exactly one `done`, even if the helper crashes,
- * and only one window runs at a time. `onWindow(open)` lets the server pause
- * the inventory poll + reconnect loop while a window is open, so no other
+ * and only one window runs at a time. A running nearby search is stopped
+ * first (`stopScan`), and `onWindow(open)` lets the server pause the
+ * inventory poll + reconnect loop while a window is open, so no other
  * bluetoothctl client races the pairing.
  *
- * FORGET: `bt.remove` → `bluetoothctl remove <mac>`, result on `bt.remove.result`.
+ * FORGET: `bt.remove` → `bluetoothctl remove <mac>`, result on
+ * `bt.remove.result`; a failure reports `error: 'remove-failed'` (the raw
+ * text stays in this box's log).
  *
  * Every shell-out is injected (`spawnHelper`, `exec`) so the window is tested
  * with no hardware.
@@ -28,60 +52,29 @@
 import { exec as nodeExec, spawn as nodeSpawn } from 'child_process';
 import { promisify } from 'util';
 import { fileURLToPath } from 'url';
-import { parseConnectedDevices } from "./btInventory.mjs";
 
 const defaultExec = promisify(nodeExec);
 
 const HELPER_PATH = fileURLToPath(new URL("./bt_pair_helper.py", import.meta.url));
 
-const GAMEPAD_NAME_RE = /8bitdo|xbox|dualshock|dualsense|pro controller|gamepad|controller|joy-?con/i;
+const MAC_RE = /^([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}$/;
+
+const PAIR_MODES = new Set(['repair', 'address']);
 
 /**
- * Decide whether a `bluetoothctl info <mac>` blob describes a game controller.
- * True when ANY of:
- *   - `Icon: input-gaming`
- *   - a `Class:` whose major device class is Peripheral (0x05) AND the
- *     peripheral minor indicates a gamepad/joystick
- *   - the name matches the gamepad name regex
- *
- * @param {string} infoOutput
- * @returns {boolean}
+ * The one helper target for an address request: the picked address plus the
+ * configured controller's id, label and PIN when the screen matched one.
  */
-export function isLikelyGamepad(infoOutput) {
-  if (!infoOutput || typeof infoOutput !== 'string') return false;
-
-  if (/^\s*Icon:\s*input-gaming\s*$/im.test(infoOutput)) return true;
-
-  const nameMatch = infoOutput.match(/^\s*Name:\s*(.+?)\s*$/im);
-  if (nameMatch && GAMEPAD_NAME_RE.test(nameMatch[1])) return true;
-
-  const classMatch = infoOutput.match(/^\s*Class:\s*0x([0-9a-f]+)/im);
-  if (classMatch) {
-    const cls = parseInt(classMatch[1], 16);
-    if (Number.isFinite(cls)) {
-      // Major device class = bits 8..12. Peripheral = 0x05.
-      const major = (cls >> 8) & 0x1f;
-      // Peripheral minor = bits 2..7. Bits 6..7 are the major-minor category:
-      // 0b01 = keyboard, 0b10 = pointing, and the minor sub-field (bits 2..5)
-      // encodes joystick (0x01), gamepad (0x02), remote (0x03)...
-      const minor = (cls >> 2) & 0x3f;
-      const sub = minor & 0x0f;
-      if (major === 0x05 && (sub === 0x01 || sub === 0x02)) return true;
-    }
-  }
-
-  return false;
-}
-
-/**
- * Parse `bluetoothctl devices` output → [{address,name}]. Reuses the
- * `Device <MAC> <Name>` line parser from btInventory (identical line shape).
- *
- * @param {string} devicesOutput
- * @returns {Array<{ address: string, name: string }>}
- */
-export function parseDiscovered(devicesOutput) {
-  return parseConnectedDevices(devicesOutput);
+export function addressTarget(message) {
+  const t = Array.isArray(message?.targets) && message.targets[0] && typeof message.targets[0] === 'object'
+    ? message.targets[0] : {};
+  const out = {
+    id: t.id != null ? String(t.id) : null,
+    label: t.label != null ? String(t.label) : null,
+    address: String(message?.address || '').toUpperCase(),
+  };
+  if (t.pin != null && /^[0-9A-Za-z]{1,16}$/.test(String(t.pin))) out.pin = String(t.pin);
+  return out;
 }
 
 /**
@@ -139,7 +132,7 @@ function defaultSpawnHelper(argJson) {
  * @param {Function} opts.send           (topic, payload) => void — emits bt.pair.progress.
  * @param {object}   [opts.logger]       console-like.
  * @param {string}   [opts.requestId]    correlation id echoed into every progress event.
- * @param {'repair'|'add'} [opts.mode]   repair a configured pad (default) or add a new device.
+ * @param {'repair'|'address'} [opts.mode]  repair a configured pad (default) or pair one picked address.
  * @returns {Promise<Array<{address,name}>>} the devices that paired.
  */
 export function runPairingWindow({
@@ -172,10 +165,12 @@ export function runPairingWindow({
 
     let child;
     try {
-      child = spawnHelper(JSON.stringify({ targets: sanitizeTargets(targets), durationMs, mode: mode === 'add' ? 'add' : 'repair' }));
+      const helperMode = PAIR_MODES.has(mode) ? mode : 'repair';
+      const helperTargets = helperMode === 'address' ? targets : sanitizeTargets(targets);
+      child = spawnHelper(JSON.stringify({ targets: helperTargets, durationMs, mode: helperMode }));
     } catch (err) {
-      progress({ phase: 'scanning', durationMs });
-      progress({ phase: 'error', message: `pairing helper failed to start: ${err?.message}` });
+      progress({ phase: 'scanning', durationMs, mode });
+      progress({ phase: 'error', code: 'unknown', message: `pairing helper failed to start: ${err?.message}` });
       logger?.error?.(`❌ bt.pair helper failed to start: ${err?.message}`);
       finish({ reason: 'helper-failed' });
       return;
@@ -207,13 +202,13 @@ export function runPairingWindow({
       if (s) logger?.warn?.(`⚠️  bt.pair helper stderr: ${s.slice(0, 500)}`);
     });
     child.on?.('error', (err) => {
-      if (!sawScanning) progress({ phase: 'scanning', durationMs });
-      progress({ phase: 'error', message: `pairing helper failed: ${err?.message}` });
+      if (!sawScanning) progress({ phase: 'scanning', durationMs, mode });
+      progress({ phase: 'error', code: 'unknown', message: `pairing helper failed: ${err?.message}` });
       finish({ reason: 'helper-failed' });
     });
     child.on?.('close', (code) => {
       if (!doneSent) {
-        progress({ phase: 'error', message: `pairing helper exited (code ${code}) without finishing` });
+        progress({ phase: 'error', code: 'unknown', message: `pairing helper exited (code ${code}) without finishing` });
         finish({ reason: 'helper-crashed' });
       }
     });
@@ -229,24 +224,45 @@ export function isPairingWindowOpen() {
 
 /**
  * Bus entry point the server calls when it receives a `bt.pair.request` topic.
- * A request that arrives while a window is open is ignored — the open window's
- * progress already drives the UI.
+ * A request that arrives while a window is open is answered `done`/`busy`,
+ * unless it repeats the open window's own requestId (then it is ignored).
  *
  * @param {object} message                 the parsed bus message.
- * @param {object} deps                    { spawnHelper, send, logger, onWindow }.
+ * @param {object} deps                    { spawnHelper, send, logger, onWindow, stopScan }.
  * @returns {Promise<Array>}               the paired devices.
  */
-export async function handleBtPairRequest(message, { spawnHelper, send, logger = console, onWindow } = {}) {
+export async function handleBtPairRequest(message, { spawnHelper, send, logger = console, onWindow, stopScan } = {}) {
   const requestId = message?.requestId;
   const durationMs = Math.min(Math.max(Number(message?.durationMs) || 60000, 5000), 180000);
-  const targets = Array.isArray(message?.targets) ? message.targets : [];
-  const mode = message?.mode === 'add' ? 'add' : 'repair';
-  if (activeWindow) {
-    logger?.warn?.(`⚠️  bt.pair.request ${requestId} ignored — window ${activeWindow} already open`);
+  const mode = message?.mode == null ? 'repair' : message.mode;
+  const refuse = (reason) => {
+    try { send?.('bt.pair.progress', { requestId, phase: 'done', paired: [], reason }); }
+    catch (err) { logger?.error?.(`❌ bt.pair.progress send failed: ${err?.message}`); }
     return [];
+  };
+  if (!PAIR_MODES.has(mode)) {
+    logger?.warn?.(`⚠️  bt.pair.request ${requestId} refused — unsupported mode ${String(mode).slice(0, 20)}`);
+    return refuse('unsupported-mode');
   }
-  logger?.info?.(`🎮 bt.pair.request received (requestId=${requestId}, durationMs=${durationMs}, targets=${targets.length}, mode=${mode})`);
+  let targets = Array.isArray(message?.targets) ? message.targets : [];
+  if (mode === 'address') {
+    if (!MAC_RE.test(String(message?.address || ''))) {
+      logger?.warn?.(`⚠️  bt.pair.request ${requestId} refused — malformed address`);
+      return refuse('invalid-address');
+    }
+    targets = [addressTarget(message)];
+  }
+  if (activeWindow) {
+    logger?.warn?.(`⚠️  bt.pair.request ${requestId} refused — window ${activeWindow} already open`);
+    // A repeat of the open window's own request is ignored (its progress already
+    // drives the UI); a different request is answered so the browser does not
+    // read the silence as an offline satellite.
+    if (requestId != null && requestId === activeWindow) return [];
+    return refuse('busy');
+  }
+  logger?.info?.(`🎮 bt.pair.request received (requestId=${requestId}, durationMs=${durationMs}, targets=${targets.length}, mode=${mode}${mode === 'address' ? `, address=${targets[0].address}` : ''})`);
   activeWindow = requestId ?? 'anonymous';
+  try { await stopScan?.(); } catch { /* a search that will not stop must not block pairing */ }
   try { onWindow?.(true); } catch { /* pausing is best-effort */ }
   try {
     return await runPairingWindow({ spawnHelper, durationMs, targets, send, logger, requestId, mode });
@@ -255,8 +271,6 @@ export async function handleBtPairRequest(message, { spawnHelper, send, logger =
     try { onWindow?.(false); } catch { /* best-effort */ }
   }
 }
-
-const MAC_RE = /^([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}$/;
 
 /**
  * Forget/unpair a controller: `bluetoothctl remove <mac>`. Validates the MAC
@@ -292,6 +306,6 @@ export async function handleBtRemoveRequest(message, { exec = defaultExec, send,
     reply({ success: true });
   } catch (err) {
     logger?.warn?.(`⚠️  bt.remove failed for ${address}: ${err?.message}`);
-    reply({ success: false, error: err?.message || String(err) });
+    reply({ success: false, error: 'remove-failed' });
   }
 }

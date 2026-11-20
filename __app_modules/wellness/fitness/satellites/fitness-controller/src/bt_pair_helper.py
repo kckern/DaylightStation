@@ -3,17 +3,17 @@
 bt_pair_helper — one controller-pairing window over BlueZ D-Bus.
 
 Spawned by btPairing.mjs with one JSON argument:
-  {"targets": [...], "durationMs": 60000, "mode": "repair"|"add"}
+  {"targets": [...], "durationMs": 60000, "mode": "repair"|"address"}
 
-`mode: add` searches classic and LE together, accepts any HID kind and never
-touches an existing bond. See bt_pair_match.py.
+`mode: address` pairs exactly the one address in `targets[0].address` (picked
+from the Bluetooth screen's nearby list). See bt_pair_match.py.
 
 Prints one JSON object per line, one per lifecycle transition, which the Node
 side relays as `bt.pair.progress`:
 
-  scanning → seen* → found → [stale-bond-removed] → pairing → [retry]
-           → bonded → connecting → hid-wait → [hid-retry] → paired → done
-  any stage → error → done          nothing seen → done {reason:"none-found"}
+  scanning → seen* → found → [stale-bond-removed] → pairing → [passkey|pincode]
+           → [retry] → bonded → connecting → hid-wait → [hid-retry] → paired → done
+  any stage → error {code, message} → done      nothing seen → done {reason:"none-found"}
 
 Why D-Bus and not bluetoothctl: legacy-PIN pads (8BitDo SFC30) need an agent
 that answers RequestPinCode with the configured PIN. bluetoothctl's
@@ -37,9 +37,10 @@ import dbus.mainloop.glib
 import dbus.service
 from gi.repository import GLib
 
-from bt_pair_match import (candidate_action, compile_targets, discovery_transport,
-                           input_device_present, is_retryable, match as match_rule,
-                           may_remove_bond, paired_after_read_error)
+from bt_pair_match import (address_step, candidate_action, compile_targets, discovery_transport,
+                           error_code, format_passkey, input_device_present, is_retryable,
+                           match as match_rule, may_remove_bond, paired_after_read_error,
+                           remove_after_no_input)
 
 BUS_NAME = "org.bluez"
 ADAPTER = "/org/bluez/hci0"
@@ -60,12 +61,31 @@ def read_input_devices():
         return ""
 
 
-class Agent(dbus.service.Object):
-    """Default agent for the window: PIN from config, SSP just-works."""
+def replace_old_bond(adapter, path, device, cid, emit_fn=None):
+    """Address mode: the picked device's old bond did not come up, and it is
+    advertising, so it has forgotten us. Remove the old bond so discovery can
+    pair it fresh. True on success (reports stale-bond-removed); False when
+    RemoveDevice fails (reports an error; the raw text is for logs only)."""
+    emit_fn = emit_fn or emit
+    try:
+        adapter.RemoveDevice(path)
+    except dbus.DBusException as e:
+        emit_fn("error", device=device, controllerId=cid, code="unknown",
+                message=f"could not remove the old bond: {e}")
+        return False
+    emit_fn("stale-bond-removed", device=device, controllerId=cid)
+    return True
 
-    def __init__(self, bus, path, pin_for):
+
+class Agent(dbus.service.Object):
+    """Default agent for the window: PIN from config, SSP just-works. A code the
+    person must type on the device (DisplayPasskey / DisplayPinCode, used by
+    keyboards) is reported through on_display so the screen can show it."""
+
+    def __init__(self, bus, path, pin_for, on_display):
         super().__init__(bus, path)
         self.pin_for = pin_for
+        self.on_display = on_display
 
     @dbus.service.method("org.bluez.Agent1", in_signature="o", out_signature="s")
     def RequestPinCode(self, device):
@@ -82,6 +102,14 @@ class Agent(dbus.service.Object):
     @dbus.service.method("org.bluez.Agent1", in_signature="ou", out_signature="")
     def RequestConfirmation(self, device, passkey):
         emit("agent", request="confirm")
+
+    @dbus.service.method("org.bluez.Agent1", in_signature="ouq", out_signature="")
+    def DisplayPasskey(self, device, passkey, entered):
+        self.on_display(str(device), "passkey", format_passkey(passkey), int(entered))
+
+    @dbus.service.method("org.bluez.Agent1", in_signature="os", out_signature="")
+    def DisplayPinCode(self, device, pincode):
+        self.on_display(str(device), "pincode", str(pincode), 0)
 
     @dbus.service.method("org.bluez.Agent1", in_signature="o", out_signature="")
     def RequestAuthorization(self, device):
@@ -103,7 +131,7 @@ class Agent(dbus.service.Object):
 def main():
     args = json.loads(sys.argv[1]) if len(sys.argv) > 1 else {}
     targets = compile_targets(args.get("targets"))
-    mode = "add" if args.get("mode") == "add" else "repair"
+    mode = args.get("mode") if args.get("mode") in ("repair", "address") else "repair"
 
     def match(props, tgts):
         return match_rule(props, tgts, mode)
@@ -119,12 +147,16 @@ def main():
     om = dbus.Interface(bus.get_object(BUS_NAME, "/"), "org.freedesktop.DBus.ObjectManager")
 
     state = {"busy": None, "pins": {}, "attempts": {}, "seen": set(), "candidates": 0,
-             "result": None, "removed": set()}
+             "result": None, "removed": set(), "made": set(), "devices": {}, "replaced": set()}
 
     def pin_for(path):
         return state["pins"].get(path) or DEFAULT_PIN
 
-    Agent(bus, AGENT_PATH, pin_for)
+    def on_display(path, kind, passkey, entered):
+        emit(kind, device=state["devices"].get(path) or {"address": "", "name": ""},
+             passkey=passkey, entered=entered)
+
+    Agent(bus, AGENT_PATH, pin_for, on_display)
     mgr = dbus.Interface(bus.get_object(BUS_NAME, "/org/bluez"), "org.bluez.AgentManager1")
     try:
         mgr.UnregisterAgent(AGENT_PATH)
@@ -162,16 +194,16 @@ def main():
             d["kind"] = target["kind"]
         return d
 
-    def fail_device(path, device, cid, message, made_here=False):
+    def fail_device(path, device, cid, message, made_here=False, code="unknown"):
         """Remove the half-made bond and retry once; second failure is final.
 
         made_here: this window's own Pair() succeeded, so any bond is ours and
-        half-made. Otherwise (a Pair error), add mode re-reads Paired: it may
+        half-made. Otherwise (a Pair error), address mode re-reads Paired: it may
         have flipped since consider(), and a bond from before the window is
         never deleted.
         """
         n = state["attempts"].get(path, 0)
-        if mode == "add" and not made_here:
+        if mode == "address" and not made_here:
             try:
                 _, now = dev_props(path)
                 paired_now = bool(now.get("Paired", False))
@@ -180,8 +212,8 @@ def main():
                     e.get_dbus_name() if hasattr(e, "get_dbus_name") else None)
             if not may_remove_bond(mode, paired_now, made_here):
                 state["busy"] = None
-                emit("error", device=device, controllerId=cid,
-                     message="is paired now — left in place; use Forget if it does not work")
+                emit("error", device=device, controllerId=cid, code="already-paired",
+                     message="is paired now - left in place")
                 finish("failed", paired=[], reason="pair-failed")
                 return
         try:
@@ -191,13 +223,13 @@ def main():
         state["busy"] = None
         state["seen"].discard(path)
         if n < 2:
-            emit("retry", device=device, controllerId=cid, message=message, attempt=n + 1)
+            emit("retry", device=device, controllerId=cid, code=code, message=message, attempt=n + 1)
             start_discovery()
             return
-        emit("error", device=device, controllerId=cid, message=message)
+        emit("error", device=device, controllerId=cid, code=code, message=message)
         finish("failed", paired=[], reason="pair-failed")
 
-    def wait_for_hid(path, device, cid, dev_iface, reconnected, bt_name):
+    def wait_for_hid(path, device, cid, dev_iface, reconnected, bt_name, on_no_input=None):
         deadline = time.monotonic() + HID_WAIT_S
         emit("hid-wait", device=device, controllerId=cid, seconds=HID_WAIT_S)
 
@@ -211,8 +243,18 @@ def main():
             if time.monotonic() < deadline:
                 return True
             if reconnected:
-                emit("error", device=device, controllerId=cid,
-                     message="bonded, but the controller never came up as an input device - turn it off and on (START)")
+                if on_no_input is not None:
+                    on_no_input()
+                    return False
+                if remove_after_no_input(path in state["made"]):
+                    # This window's bond never became an input device: drop it
+                    # so the next try pairs from scratch instead of skipping it.
+                    try:
+                        adapter.RemoveDevice(path)
+                    except dbus.DBusException:
+                        pass
+                emit("error", device=device, controllerId=cid, code="no-input",
+                     message="bonded, but no input device appeared")
                 finish("failed", paired=[], reason="no-input")
                 return False
             emit("hid-retry", device=device, controllerId=cid)
@@ -220,27 +262,27 @@ def main():
                 dev_iface.Disconnect()
             except dbus.DBusException:
                 pass
-            GLib.timeout_add(2000, lambda: (connect(path, device, cid, dev_iface, True, bt_name), False)[1])
+            GLib.timeout_add(2000, lambda: (connect(path, device, cid, dev_iface, True, bt_name, on_no_input), False)[1])
             return False
 
         GLib.timeout_add(500, poll)
 
-    def connect(path, device, cid, dev_iface, reconnected, bt_name):
+    def connect(path, device, cid, dev_iface, reconnected, bt_name, on_no_input=None):
         emit("connecting", device=device, controllerId=cid, attempt=2 if reconnected else 1)
 
         def ok():
-            wait_for_hid(path, device, cid, dev_iface, reconnected, bt_name)
+            wait_for_hid(path, device, cid, dev_iface, reconnected, bt_name, on_no_input)
 
         def err(e):
-            # The pad may connect back on its own (it initiates on wake); the
-            # input-device wait is still the truth.
+            # The device may connect back on its own; the input-device wait is the truth.
             emit("warn", device=device, message=f"Connect: {e.get_dbus_name() if hasattr(e, 'get_dbus_name') else e}")
-            wait_for_hid(path, device, cid, dev_iface, reconnected, bt_name)
+            wait_for_hid(path, device, cid, dev_iface, reconnected, bt_name, on_no_input)
 
         dev_iface.Connect(reply_handler=ok, error_handler=err, timeout=30)
 
     def pair(path, props, target):
         device = describe(props, target)
+        state["devices"][path] = device
         # BlueZ's own Name, for the input-device name fallback. Never the
         # config label or the address that describe() may put in device["name"].
         bt_name = str(props.get("Name", "") or "") or None
@@ -255,6 +297,7 @@ def main():
              pinConfigured=bool(target.get("pin")))
 
         def ok():
+            state["made"].add(path)
             try:
                 dprops.Set("org.bluez.Device1", "Trusted", dbus.Boolean(True))
                 allp = dprops.GetAll("org.bluez.Device1")
@@ -264,8 +307,8 @@ def main():
             paired = bool(allp.get("Paired", False))
             bonded = bool(allp.get("Bonded", paired))
             if not (paired and bonded):
-                fail_device(path, device, cid, "paired but not bonded - the controller refused the PIN",
-                            made_here=True)
+                fail_device(path, device, cid, "paired but not bonded - PIN refused",
+                            made_here=True, code="auth-failed")
                 return
             emit("bonded", device=device, controllerId=cid, trusted=True)
             # An LE device matched by Appearance/UUID may have had no Name yet
@@ -280,13 +323,24 @@ def main():
         def err(e):
             name = e.get_dbus_name() if hasattr(e, "get_dbus_name") else str(e)
             msg = f"{name}: {e.get_dbus_message() if hasattr(e, 'get_dbus_message') else ''}".strip(": ")
+            code = error_code(name)
             if is_retryable(name, mode):
-                fail_device(path, device, cid, msg)
+                fail_device(path, device, cid, msg, code=code)
             else:
-                emit("error", device=device, controllerId=cid, message=msg)
+                emit("error", device=device, controllerId=cid, code=code, message=msg)
                 finish("failed", paired=[], reason="pair-failed")
 
         dev_iface.Pair(reply_handler=ok, error_handler=err, timeout=60)
+
+    def on_old_bond_no_input(path, props, target):
+        """connect-first did not bring the old bond up: replace it once."""
+        state["replaced"].add(path)
+        if not replace_old_bond(adapter, path, describe(props, target), target.get("id")):
+            finish("failed", paired=[], reason="pair-failed")
+            return
+        state["busy"] = None
+        state["seen"].discard(path)
+        start_discovery()
 
     def consider(path, props):
         if state["result"] is not None or state["busy"] or not path.startswith(ADAPTER + "/dev_"):
@@ -303,8 +357,36 @@ def main():
         device = describe(props, target)
         state["candidates"] += 1
         emit("found", device=device, controllerId=target.get("id"))
+        bt_name = str(props.get("Name", "") or "") or None
+        if mode == "address":
+            has_input = action == "already-connected" and \
+                input_device_present(read_input_devices(), device["address"], bt_name)
+            action = address_step(action, has_input, path in state["replaced"])
+        if action == "done-paired":
+            emit("already-paired", device=device, controllerId=target.get("id"))
+            emit("paired", device=device, controllerId=target.get("id"), connected=True, input=True)
+            finish("paired", paired=[device], reason="already-paired")
+            return
+        if action == "no-input":
+            # Connected, but no input device: leave the bond alone.
+            emit("error", device=device, controllerId=target.get("id"), code="no-input",
+                 message="connected, but no input device appeared")
+            finish("failed", paired=[], reason="no-input")
+            return
+        if action == "give-up":
+            emit("error", device=device, controllerId=target.get("id"), code="unknown",
+                 message="old bond still present after it was replaced")
+            finish("failed", paired=[], reason="pair-failed")
+            return
+        if action == "connect-first":
+            state["busy"] = path
+            state["devices"][path] = device
+            dev_iface = dbus.Interface(bus.get_object(BUS_NAME, path), "org.bluez.Device1")
+            connect(path, device, target.get("id"), dev_iface, True, bt_name,
+                    on_no_input=lambda: on_old_bond_no_input(path, props, target))
+            return
         if action == "remove-stale" and path not in state["removed"]:
-            # Only reached from a LIVE inquiry result (see on_changed/on_added):
+            # Repair mode only. Only reached from a LIVE inquiry result (see on_changed/on_added):
             # a bonded pad that is discoverable and not connected is in pairing
             # mode, i.e. it has forgotten us. The stored bond is stale.
             state["removed"].add(path)
@@ -352,11 +434,22 @@ def main():
     emit("scanning", durationMs=duration_s * 1000, mode=mode)
     start_discovery()
 
-    # Cached devices are NOT candidates on their cached properties (a cached
-    # RSSI is stale, and acting on it once removed a working bond). They count
-    # only when this discovery reports them live (RSSI change → on_changed).
-    # One exception (repair mode only): a configured pad that is already bonded, connected and
-    # up as an input device means there is nothing to do.
+    # Address mode: the person just saw this device live in the nearby list,
+    # so its cached object is acted on at once (an old bond is only ever tried
+    # first, never removed on cached state alone).
+    if mode == "address":
+        for path, ifaces in om.GetManagedObjects().items():
+            if "org.bluez.Device1" in ifaces and str(path).startswith(ADAPTER + "/dev_"):
+                if match(ifaces["org.bluez.Device1"], targets) is not None:
+                    consider(str(path), ifaces["org.bluez.Device1"])
+                    break
+
+    # Repair mode only: cached devices are NOT candidates on their cached
+    # properties (a cached RSSI is stale, and acting on it once removed a
+    # working bond). They count only when this discovery reports them live
+    # (RSSI change → on_changed). One exception: a configured pad that is
+    # already bonded, connected and up as an input device means there is
+    # nothing to do.
     for path, ifaces in (om.GetManagedObjects().items() if mode == "repair" else []):
         if "org.bluez.Device1" in ifaces and str(path).startswith(ADAPTER + "/dev_"):
             props = ifaces["org.bluez.Device1"]
@@ -395,6 +488,6 @@ if __name__ == "__main__":
     try:
         sys.exit(main())
     except Exception as e:  # never die silently: the UI waits on a done
-        emit("error", message=f"helper crashed: {e}")
+        emit("error", code="unknown", message=f"helper crashed: {e}")
         emit("done", paired=[], reason="helper-crashed")
         sys.exit(2)

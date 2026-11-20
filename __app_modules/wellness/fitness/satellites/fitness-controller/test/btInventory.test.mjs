@@ -9,6 +9,7 @@ import {
   startBtInventoryBroadcast,
   hasInputDevice,
   nextReconnectDelay,
+  shouldReconnect,
 } from "../src/btInventory.mjs";
 
 // ── parseConnectedDevices ─────────────────────────────────────────────────
@@ -297,4 +298,72 @@ test('pollBtInventory: input passes the device name for the blank-Uniq fallback'
   const table = 'I: Bus=0005 Vendor=1234 Product=5678 Version=0001\nN: Name="Ring Remote"\nU: Uniq=\n';
   const [d] = await pollBtInventory({ exec, readInputDevices: async () => table });
   assert.equal(d.input, true);
+});
+
+test('shouldReconnect: any trusted, bonded input device; never a speaker or an unbonded one', () => {
+  assert.equal(shouldReconnect({ trusted: true, gamepad: true }), true);
+  assert.equal(shouldReconnect({ trusted: true, kind: 'keyboard' }), true);
+  assert.equal(shouldReconnect({ trusted: true, hid: true }), true);           // BLE ring with no Icon
+  assert.equal(shouldReconnect({ trusted: false, kind: 'keyboard' }), false);
+  assert.equal(shouldReconnect({ trusted: true, kind: null, hid: false }), false); // speaker
+  assert.equal(shouldReconnect({ trusted: true, kind: 'keyboard', paired: false }), false);
+});
+
+test('startBtInventoryBroadcast: reconnects a trusted keyboard; pause({reconnectOnly}) keeps the poll, stops reconnects', async () => {
+  let t = 0;
+  const connects = [];
+  const sends = [];
+  const exec = async (cmd) => {
+    if (cmd.endsWith('devices Paired')) return { stdout: 'Device AA:BB:CC:11:22:33 R1' };
+    if (cmd.endsWith('devices Connected')) return { stdout: '' };
+    if (cmd.includes(' connect ')) { connects.push(t); throw new Error('not available'); }
+    return { stdout: '\tPaired: yes\n\tTrusted: yes\n\tIcon: input-keyboard\n\tConnected: no' };
+  };
+  const handle = startBtInventoryBroadcast({
+    intervalMs: 60000, exec, readInputDevices: NO_INPUT, now: () => t, logger: null, send: (topic) => { sends.push(topic); return true; },
+  });
+  await new Promise((r) => setImmediate(r));
+  await new Promise((r) => setImmediate(r));
+  assert.equal(connects.length, 1);
+  handle.pause({ reconnectOnly: true });
+  t = 500000;
+  await handle.resend();
+  assert.equal(connects.length, 1);               // no reconnect during a search
+  assert.equal(sends.filter((s) => s === 'bt_inventory').length, 2); // but the poll still sends
+  handle.stop();
+});
+
+test('startBtInventoryBroadcast: a search ending mid-pairing does not resume the paused poll', async () => {
+  const sends = [];
+  const exec = async (cmd) => (cmd.includes('devices') ? { stdout: '' } : { stdout: '' });
+  const handle = startBtInventoryBroadcast({
+    intervalMs: 60000, exec, readInputDevices: NO_INPUT, logger: null, send: (topic) => { sends.push(topic); return true; },
+  });
+  await new Promise((r) => setImmediate(r));
+  const before = sends.length;
+  handle.pause({ reconnectOnly: true });   // search
+  handle.pause();                           // pairing window
+  await handle.resume({ reconnectOnly: true }); // search stopped by the pairing window
+  await handle.resend();
+  assert.equal(sends.length, before);       // still paused for the pairing window
+  await handle.resume();
+  assert.equal(sends.length, before + 1);
+  handle.stop();
+});
+
+test('startBtInventoryBroadcast: a pause during the reconnect loop stops the next page', async () => {
+  const connects = [];
+  let handle;
+  const exec = async (cmd) => {
+    if (cmd.endsWith('devices Paired')) return { stdout: 'Device AA:BB:CC:11:22:33 P1\nDevice AA:BB:CC:11:22:34 P2' };
+    if (cmd.endsWith('devices Connected')) return { stdout: '' };
+    if (cmd.includes(' connect ')) { connects.push(cmd); handle.pause({ reconnectOnly: true }); throw new Error('not available'); }
+    return { stdout: '\tPaired: yes\n\tTrusted: yes\n\tIcon: input-gaming\n\tConnected: no' };
+  };
+  handle = startBtInventoryBroadcast({
+    intervalMs: 60000, exec, readInputDevices: NO_INPUT, now: () => 0, logger: null, send: () => true,
+  });
+  for (let i = 0; i < 6; i += 1) await new Promise((r) => setImmediate(r));
+  assert.equal(connects.length, 1);
+  handle.stop();
 });

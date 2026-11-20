@@ -6,7 +6,8 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 from bt_pair_match import (  # noqa: E402
     classify_hid, compile_targets, match, candidate_action,
     discovery_transport, input_device_present, may_remove_bond, is_retryable,
-    paired_after_read_error, hid_evidence,
+    paired_after_read_error, hid_evidence, error_code, format_passkey, remove_after_no_input,
+    address_step,
 )
 
 SFC30 = {"Address": "E4:17:D8:C6:54:F0", "Name": "8Bitdo SFC30 GamePad", "Icon": "input-gaming"}
@@ -52,40 +53,45 @@ class Match(unittest.TestCase):
         ring = {"Address": "11:22:33:44:55:66", "Name": "R1", "Icon": "input-keyboard"}
         self.assertIsNone(match(ring, TARGETS, "repair"))
 
-    def test_add_mode_accepts_unlisted_keyboard_with_kind(self):
-        ring = {"Address": "11:22:33:44:55:66", "Name": "R1", "Icon": "input-keyboard"}
-        t = match(ring, TARGETS, "add")
-        self.assertIsNone(t["id"])
-        self.assertEqual(t["kind"], "keyboard")
-
-    def test_add_mode_still_rejects_non_hid(self):
-        self.assertIsNone(match({"Address": "AA:BB:CC:00:00:01", "Name": "JBL Flip 5", "Icon": "audio-card"}, [], "add"))
-
     def test_repair_mode_accepts_combo_keyboard_gamepad_class(self):
         # Peripheral CoD with keyboard + gamepad minor: the pre-2026-11-20 rule accepted it.
         combo = {"Address": "AA:BB:CC:00:00:03", "Name": "Thing", "Icon": "input-keyboard", "Class": 0x002548}
         self.assertIsNotNone(match(combo, [], "repair"))
-
-    def test_repair_mode_keeps_gamepad_name_rule(self):
-        # An 8BitDo reporting a keyboard icon is still a pad in repair mode (old behaviour).
-        pad = {"Address": "AA:BB:CC:00:00:02", "Name": "8BitDo Zero 2", "Icon": "input-keyboard"}
-        self.assertIsNotNone(match(pad, [], "repair"))
-
-
-    def test_add_mode_name_alone_is_not_hid_evidence(self):
-        # A BLE light strip named "LED Controller" must never be paired by an add window.
-        self.assertIsNone(match({"Address": "AA:BB:CC:00:00:04", "Name": "LED Controller"}, [], "add"))
 
     def test_repair_mode_still_accepts_gamepad_name_alone(self):
         t = match({"Address": "AA:BB:CC:00:00:04", "Name": "LED Controller"}, [], "repair")
         self.assertIsNotNone(t)
         self.assertEqual(t["kind"], "gamepad")
 
-    def test_add_mode_gamepad_name_with_hid_evidence(self):
-        for extra in ({"Icon": "input-gaming"}, {"Class": 0x002508}, {"Appearance": 0x03C4},
-                      {"UUIDs": ["00001124-0000-1000-8000-00805f9b34fb"]}):
-            props = {"Address": "AA:BB:CC:00:00:05", "Name": "Xbox Wireless Controller", **extra}
-            self.assertIsNotNone(match(props, [], "add"), extra)
+    def test_repair_mode_keeps_generic_gamepad_name_rule(self):
+        # A pad reporting a keyboard icon is still a pad in repair mode when its name says so.
+        pad = {"Address": "AA:BB:CC:00:00:02", "Name": "Wireless Gamepad", "Icon": "input-keyboard"}
+        self.assertIsNotNone(match(pad, [], "repair"))
+
+    def test_gamepad_name_rule_names_no_brand(self):
+        # Code never names a controller: a brand alone is not a gamepad name.
+        self.assertIsNone(match({"Address": "AA:BB:CC:00:00:06", "Name": "8BitDo Zero 2"}, [], "repair"))
+
+
+ADDR_TARGETS = compile_targets([{"id": None, "label": "R1", "address": "aa:bb:cc:11:22:33", "pin": "1234"}])
+
+
+class AddressMode(unittest.TestCase):
+    def test_compile_keeps_an_address_only_target(self):
+        self.assertEqual(ADDR_TARGETS[0]["address"], "AA:BB:CC:11:22:33")
+        self.assertEqual(ADDR_TARGETS[0]["pin"], "1234")
+
+    def test_matches_exactly_that_address(self):
+        ring = {"Address": "AA:BB:CC:11:22:33", "Name": "R1", "Icon": "input-keyboard"}
+        self.assertEqual(match(ring, ADDR_TARGETS, "address")["label"], "R1")
+
+    def test_matches_nothing_else_even_a_gamepad(self):
+        self.assertIsNone(match(SFC30, ADDR_TARGETS, "address"))
+        self.assertIsNone(match({"Address": "AA:BB:CC:11:22:34", "Name": "R1", "Icon": "input-keyboard"},
+                                ADDR_TARGETS, "address"))
+
+    def test_no_targets_matches_nothing(self):
+        self.assertIsNone(match(SFC30, [], "address"))
 
 
 class HidEvidence(unittest.TestCase):
@@ -102,29 +108,46 @@ class HidEvidence(unittest.TestCase):
         self.assertFalse(hid_evidence({"Appearance": 0x0040}))
 
 class CandidateAction(unittest.TestCase):
-    def test_connected_bond_is_never_touched(self):
+    def test_repair_mode(self):
         self.assertEqual(candidate_action({"Paired": True, "Connected": True}, "repair"), "skip")
-        self.assertEqual(candidate_action({"Paired": True, "Connected": True}, "add"), "skip")
-
-    def test_unconnected_bond(self):
         self.assertEqual(candidate_action({"Paired": True, "Connected": False}, "repair"), "remove-stale")
-        self.assertEqual(candidate_action({"Paired": True, "Connected": False}, "add"), "skip")
-
-    def test_new_device(self):
-        self.assertEqual(candidate_action({"Paired": False}, "add"), "pair")
         self.assertEqual(candidate_action({}, "repair"), "pair")
+
+    def test_address_mode(self):
+        self.assertEqual(candidate_action({"Paired": True, "Connected": True}, "address"), "already-connected")
+        # An old bond is tried first; it is only replaced if it does not come up.
+        self.assertEqual(candidate_action({"Paired": True, "Connected": False}, "address"), "connect-first")
+        self.assertEqual(candidate_action({"Paired": False}, "address"), "pair")
+
+
+class AddressStep(unittest.TestCase):
+    def test_connected_with_input_is_done(self):
+        self.assertEqual(address_step("already-connected", True, False), "done-paired")
+
+    def test_connected_without_input_never_touches_the_bond(self):
+        # Connect() on a connected device fails AlreadyConnected; replacing the
+        # bond after the wait would delete a working one.
+        self.assertEqual(address_step("already-connected", False, False), "no-input")
+
+    def test_old_bond_is_tried_once(self):
+        self.assertEqual(address_step("connect-first", False, False), "connect-first")
+        self.assertEqual(address_step("connect-first", False, True), "give-up")
+
+    def test_fresh_device_pairs(self):
+        self.assertEqual(address_step("pair", False, False), "pair")
+        self.assertEqual(address_step("pair", False, True), "pair")
 
 
 class BondSafety(unittest.TestCase):
     def test_may_remove_bond(self):
         self.assertTrue(may_remove_bond("repair", True, False))
         self.assertTrue(may_remove_bond("repair", False, False))
-        self.assertTrue(may_remove_bond("add", False, False))
-        # A bond that was there before this window is never removed in add mode.
-        self.assertFalse(may_remove_bond("add", True, False))
+        self.assertTrue(may_remove_bond("address", False, False))
+        # A bond that was there before this window is never removed after a Pair error.
+        self.assertFalse(may_remove_bond("address", True, False))
 
     def test_half_made_bond_from_this_window_is_removed(self):
-        self.assertTrue(may_remove_bond("add", True, True))
+        self.assertTrue(may_remove_bond("address", True, True))
         self.assertTrue(may_remove_bond("repair", True, True))
 
     def test_read_error_fails_closed(self):
@@ -137,17 +160,41 @@ class BondSafety(unittest.TestCase):
 
     def test_is_retryable(self):
         self.assertTrue(is_retryable("org.bluez.Error.AlreadyExists", "repair"))
-        self.assertFalse(is_retryable("org.bluez.Error.AlreadyExists", "add"))
-        self.assertTrue(is_retryable("org.bluez.Error.AuthenticationFailed", "add"))
+        self.assertFalse(is_retryable("org.bluez.Error.AlreadyExists", "address"))
+        self.assertTrue(is_retryable("org.bluez.Error.AuthenticationFailed", "address"))
         self.assertTrue(is_retryable("org.bluez.Error.InProgress", "repair"))
         self.assertFalse(is_retryable("org.bluez.Error.Failed", "repair"))
-        self.assertFalse(is_retryable("", "add"))
+        self.assertFalse(is_retryable("", "address"))
+
+    def test_no_input_removes_only_this_windows_bond(self):
+        self.assertTrue(remove_after_no_input(True))
+        self.assertFalse(remove_after_no_input(False))
 
 
 class Transport(unittest.TestCase):
     def test_transport(self):
         self.assertEqual(discovery_transport("repair"), "bredr")
-        self.assertEqual(discovery_transport("add"), "auto")
+        self.assertEqual(discovery_transport("address"), "auto")
+
+
+class ErrorCode(unittest.TestCase):
+    def test_codes(self):
+        self.assertEqual(error_code("org.bluez.Error.AuthenticationFailed"), "auth-failed")
+        self.assertEqual(error_code("org.bluez.Error.AuthenticationRejected"), "auth-failed")
+        self.assertEqual(error_code("org.bluez.Error.AuthenticationCanceled"), "auth-canceled")
+        self.assertEqual(error_code("org.bluez.Error.AuthenticationTimeout"), "timeout")
+        self.assertEqual(error_code("org.freedesktop.DBus.Error.NoReply"), "timeout")
+        self.assertEqual(error_code("org.bluez.Error.ConnectionAttemptFailed"), "unreachable")
+        self.assertEqual(error_code("org.bluez.Error.AlreadyExists"), "already-paired")
+        self.assertEqual(error_code("org.bluez.Error.InProgress"), "busy")
+        self.assertEqual(error_code("org.bluez.Error.Failed"), "unknown")
+        self.assertEqual(error_code(None), "unknown")
+
+
+class Passkey(unittest.TestCase):
+    def test_zero_padded_six_digits(self):
+        self.assertEqual(format_passkey(4321), "004321")
+        self.assertEqual(format_passkey(123456), "123456")
 
 
 PROC = """I: Bus=0005 Vendor=2dc8 Product=2830 Version=0001
