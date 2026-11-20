@@ -23,7 +23,7 @@ export function calculateVirtualRange(items, getHeight, {
   let end = start;
   while (end < items.length && offsets[end] < max && end - start < maxMounted) end += 1;
   end = Math.max(end, Math.min(items.length, start + Math.min(12, maxMounted)));
-  return { start, end, paddingTop: offsets[start], paddingBottom: Math.max(0, offsets.at(-1) - offsets[end]) };
+  return { start, end, offsets, paddingTop: offsets[start], paddingBottom: Math.max(0, offsets.at(-1) - offsets[end]) };
 }
 
 function useScrollViewport(scrollRef, enabled) {
@@ -107,6 +107,7 @@ export function useVirtualFeedWindow(containerRef, items, enabled, options = {})
     return {
       items: items.slice(range.start, range.end),
       startIndex: range.start,
+      offsets: range.offsets,
       paddingTop: range.paddingTop,
       paddingBottom: range.paddingBottom,
       measureRef,

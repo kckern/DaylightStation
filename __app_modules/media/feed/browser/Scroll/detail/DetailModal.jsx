@@ -11,11 +11,6 @@ export default function DetailModal({ item, sections, ogImage, ogDescription, lo
   const usesDismissStack = useDismissLayer(true, onBack);
 
   useLayoutEffect(() => {
-    const opener = document.activeElement;
-    return () => opener?.focus?.({ preventScroll: true });
-  }, []);
-
-  useLayoutEffect(() => {
     // An adjacent item control can disappear at either end of the list.
     if (document.activeElement === document.body) {
       dialogRef.current?.querySelector('[data-autofocus]')?.focus({ preventScroll: true });

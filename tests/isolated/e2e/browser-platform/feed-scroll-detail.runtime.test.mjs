@@ -448,3 +448,159 @@ test('Feed detail retains a queued deletion when reopened offline', async ({ pag
   await expect(page.getByText('1 note change waiting to sync.')).toBeVisible();
   await expect(page.getByText('Remove this note')).toHaveCount(0);
 });
+
+for (const initialWidth of [1440, 390]) {
+  test(`Feed returns to the opening virtual card after detail changes layout from ${initialWidth}px`, async ({ page }) => {
+    await page.setViewportSize({ width: initialWidth, height: 850 });
+    const rows = Array.from({ length: 180 }, (_, index) => ({
+      ...article, id: 'reddit:layout-' + index, title: 'Layout article ' + index, state: { isRead: true },
+    }));
+    await page.route('**/scroll/sessions', route => route.fulfill({ json: { items: rows, sessionId: 'virtual', hasMore: false } }));
+    const reads = [];
+    await page.route('**/feed/detail/*', route => {
+      reads.push(decodeURIComponent(new URL(route.request().url()).pathname.split('/').at(-1)));
+      return route.fulfill({ json: { sections } });
+    });
+    await page.goto('/feed/scroll');
+    const feed = page.getByRole('main', { name: 'Feed' });
+    await expect.poll(() => feed.evaluate(el => el.scrollHeight)).toBeGreaterThan(5600);
+    await feed.evaluate(el => { el.scrollTop = 4500; });
+    const visibleOpener = () => feed.evaluate(el => {
+      const box = el.getBoundingClientRect();
+      const opener = [...el.querySelectorAll('.scroll-card-open')].find(node => {
+        const rect = node.getBoundingClientRect();
+        return rect.top > box.top + 80 && rect.bottom < box.bottom - 80 && rect.left >= box.left;
+      });
+      return opener?.closest('[data-feed-item-id]').dataset.feedItemId;
+    });
+    await expect.poll(visibleOpener).toMatch(/^reddit:layout-\d+$/);
+    const id = await visibleOpener();
+    const index = rows.findIndex(item => item.id === id);
+    expect(index).toBeGreaterThan(5);
+    const opener = feed.getByRole('button', { name: 'Open: ' + rows[index].title, exact: true });
+    await opener.focus();
+    const offset = await feed.evaluate(el => el.scrollTop);
+    await page.keyboard.press('Enter');
+    await expect(page.getByText(articleBody)).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(opener).toBeFocused();
+    await expect.poll(() => feed.evaluate(el => el.scrollTop)).toBe(offset);
+
+    await opener.press('Enter');
+    const back = page.getByRole('button', { name: 'Back to feed', exact: true });
+    await expect(back).toBeFocused();
+    await expect(page.getByText(articleBody)).toBeVisible();
+    await page.setViewportSize({ width: initialWidth === 1440 ? 390 : 1440, height: 850 });
+    await expect(page.getByRole('dialog')).toHaveCount(initialWidth === 1440 ? 0 : 1);
+    await expect(back).toBeFocused();
+    await page.keyboard.press('ArrowRight');
+    await expect(page).toHaveURL(scrollPath(rows[index + 1].id));
+    await expect(page.getByText(articleBody)).toBeVisible();
+    if (initialWidth === 1440) await back.press('Enter');
+    else await page.keyboard.press('Escape');
+    await expect(page).toHaveURL('/feed/scroll');
+    await expect(opener).toBeFocused();
+    await expect(opener).toBeInViewport();
+    expect(reads).toEqual([id, id, rows[index + 1].id]);
+  });
+}
+
+test('Feed returns focus to the list when the opening card is archived in detail', async ({ page }) => {
+  await page.route('**/feed/detail/*', route => route.fulfill({ json: { sections } }));
+  await page.route('**/feed/items/state', route => {
+    const { action } = route.request().postDataJSON();
+    return route.fulfill({ json: { items: [{ id: article.id, state: { isRead: true, isArchived: action === 'archive' } }] } });
+  });
+  await page.goto('/feed/scroll');
+  const opener = page.getByRole('button', { name: 'Open: ' + article.title, exact: true });
+  await opener.press('Enter');
+  await expect(page.getByText(articleBody)).toBeVisible();
+  await page.getByRole('button', { name: 'Archive', exact: true }).press('Enter');
+  await expect(page).toHaveURL('/feed/scroll');
+  await expect(opener).toHaveCount(0);
+  await expect(page.getByRole('main', { name: 'Feed' })).toBeFocused();
+});
+
+test('Feed desktop gallery activation returns focus to the card Open control', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 850 });
+  const image = '/fixture-gallery.jpg';
+  const item = { ...article, image, meta: { galleryImages: [{ url: image }, { url: image }] } };
+  await page.route('**/fixture-gallery.jpg', route => route.fulfill({ contentType: 'image/svg+xml', body: '<svg xmlns="http://www.w3.org/2000/svg" width="400" height="225"/>' }));
+  await page.route('**/scroll/sessions', route => route.fulfill({ json: { items: [item], sessionId: 'gallery', hasMore: false } }));
+  await page.route('**/feed/detail/*', route => route.fulfill({ json: { sections } }));
+  await page.goto('/feed/scroll');
+  const gallery = page.getByRole('region', { name: 'Image gallery, 1 of 2' });
+  await gallery.focus();
+  await gallery.click();
+  await expect(page.getByRole('dialog')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Back to feed' })).toBeFocused();
+  await page.keyboard.press('Escape');
+  await expect(page.getByRole('button', { name: 'Open: ' + article.title })).toBeFocused();
+});
+
+function settleListReturn(list) {
+  return list.evaluate(() => new Promise(resolve => {
+    let frames = 0;
+    const next = () => { if (++frames === 8) resolve(); else requestAnimationFrame(next); };
+    requestAnimationFrame(next);
+  }));
+}
+
+for (const input of ['wheel', 'touchstart', 'keydown']) {
+  test(`Feed retires a pending list return when the user sends ${input}`, async ({ page }) => {
+    const rows = Array.from({ length: 40 }, (_, i) => ({ ...article, id: 'reddit:input-' + i, title: 'Input ' + i }));
+    await page.route('**/scroll/sessions', route => route.fulfill({ json: { items: rows, sessionId: 'input', hasMore: false } }));
+    await page.route('**/feed/detail/*', route => route.fulfill({ json: { sections } }));
+    await page.goto('/feed/scroll');
+    const opener = page.getByRole('button', { name: 'Open: Input 20', exact: true });
+    await opener.press('Enter');
+    const feed = page.getByRole('main', { name: 'Feed' });
+    await expect(page.getByText(articleBody)).toBeVisible();
+    // Deliver input just after the list reappears, before its queued animation frames.
+    await feed.evaluate((el, type) => {
+      const observer = new MutationObserver(() => {
+        if (el.querySelector('.detail-view')) return;
+        observer.disconnect();
+        el.dispatchEvent(new Event(type, { bubbles: true }));
+        el.scrollTop = 300;
+      });
+      observer.observe(el, { childList: true, subtree: true });
+    }, input);
+    await page.keyboard.press('Escape');
+    await expect(page).toHaveURL('/feed/scroll');
+    await settleListReturn(feed);
+    expect(await feed.evaluate(el => el.scrollTop)).toBe(300);
+    await expect(opener).not.toBeFocused();
+
+    await page.goForward();
+    await expect(page.getByText(articleBody)).toBeVisible();
+    await page.goBack();
+    await expect(feed).toBeFocused();
+  });
+}
+
+test('Feed retires its warm checkpoint when a card opens before the first restore frame', async ({ page }) => {
+  const rows = Array.from({ length: 40 }, (_, i) => ({ ...article, id: 'reddit:warm-' + i, title: 'Warm ' + i }));
+  await page.route('**/feed/workspace', route => route.fulfill({ json: {
+    preferencesStored: true, checkpoints: { scroll: { scrollOffset: 1700 } },
+  } }));
+  await page.route('**/scroll/sessions', route => route.fulfill({ json: { items: rows, sessionId: 'warm', hasMore: false } }));
+  await page.route('**/feed/detail/*', route => route.fulfill({ json: { sections } }));
+  await page.addInitScript(() => {
+    const observer = new MutationObserver(() => {
+      const opener = document.querySelector('.scroll-card-open');
+      if (!opener) return;
+      observer.disconnect();
+      opener.click();
+    });
+    observer.observe(document, { subtree: true, childList: true });
+  });
+  await page.goto('/feed/scroll');
+  await expect(page.getByText(articleBody)).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(page).toHaveURL('/feed/scroll');
+  const list = page.getByRole('main', { name: 'Feed' });
+  await expect(list.getByRole('button', { name: 'Open: Warm 0', exact: true })).toBeFocused();
+  await settleListReturn(list);
+  expect(await list.evaluate(el => el.scrollTop)).toBe(0);
+});

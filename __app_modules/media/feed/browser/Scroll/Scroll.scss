@@ -68,7 +68,7 @@
     // scroll position doesn't depend on individual card heights.
     // NOT on mobile: flexbox flow relies on card heights for scroll position.
     content-visibility: auto;
-    contain-intrinsic-block-size: auto 300px;
+    contain-intrinsic-size: 320px 240px;
 
     .feed-card {
       border-radius: var(--feed-radius-md, 8px) !important;
@@ -231,11 +231,6 @@
     background: var(--feed-surface-2);
     box-shadow: 0 0.75rem 2rem rgba(0, 0, 0, 0.45);
   }
-}
-
-.scroll-item-wrapper {
-  content-visibility: auto;
-  contain-intrinsic-size: 320px 240px;
 }
 
 .scroll-card-surface { cursor: pointer; }

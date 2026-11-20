@@ -188,8 +188,7 @@ export default function Scroll() {
   const [colors, setColors] = useState({});
   const [assemblyBatches, setAssemblyBatches] = useState([]);
   const [assemblyFilter, setAssemblyFilter] = useState({ tiers: [], sources: [] });
-  const savedScrollRef = useRef(0);
-  const returnFocusId = useRef(null);
+  const listReturn = useRef(null);
   const wasOnDetail = useRef(false);
   const listRequestRef = useRef(null);
   const snapshotRef = useRef(null);
@@ -412,6 +411,7 @@ export default function Scroll() {
       restoringList.current = false;
     }
     function restore() {
+      if (!restoringList.current) return;
       el.scrollTop = wanted;
       stableFrames = el.scrollHeight === previousHeight ? stableFrames + 1 : 0;
       previousHeight = el.scrollHeight;
@@ -656,41 +656,6 @@ export default function Scroll() {
     if (fullId && !isDesktop && scrollRef?.current) scrollRef.current.scrollTop = 0;
   }, [detailKey, fullId, isDesktop, scrollRef, urlSlug]);
 
-  // Restore scroll position when navigating back to list
-  const scrollLog = useCallback(() => getLogger().child({ module: 'scroll-restore' }), []);
-  useEffect(() => {
-    if (!urlSlug) {
-      if (!wasOnDetail.current) return;
-      wasOnDetail.current = false;
-      const savedY = savedScrollRef.current;
-      const el = scrollRef?.current;
-      scrollLog().info('nav.backToList', { savedY, itemCount: items.length, scrollHeight: el?.scrollHeight || 0 });
-
-      // Restore scroll on .feed-content — retry if content hasn't laid out yet
-      let attempts = 0;
-      let frame;
-      const tryRestore = () => {
-        const scrollEl = scrollRef?.current;
-        if (!scrollEl) return;
-        scrollEl.scrollTop = savedY;
-        attempts++;
-        const actual = scrollEl.scrollTop;
-        scrollLog().info('nav.scrollRestore', { savedY, actualY: actual, attempt: attempts, scrollHeight: scrollEl.scrollHeight });
-        const card = [...(containerRef.current?.querySelectorAll('[data-feed-item-id]') || [])]
-          .find(node => node.dataset.feedItemId === returnFocusId.current)?.querySelector('.scroll-card-open');
-        if (attempts < 5 && (Math.abs(actual - savedY) > 50 || (returnFocusId.current && !card))) {
-          frame = requestAnimationFrame(tryRestore);
-        } else {
-          lastListOffset.current = actual;
-          (card || scrollEl).focus({ preventScroll: true });
-          returnFocusId.current = null;
-        }
-      };
-      frame = requestAnimationFrame(tryRestore);
-      return () => cancelAnimationFrame(frame);
-    }
-  }, [scrollRef, scrollLog, urlSlug]);
-
   // Lock the actual Feed scroller while the desktop modal is open.
   useEffect(() => {
     if (urlSlug && isDesktop) {
@@ -732,12 +697,77 @@ export default function Scroll() {
     paddingBottom: `${mobileWindow.paddingBottom}px`,
   };
 
+  // The virtual window may not have mounted the opener in the new layout yet.
+  const openerIndex = listReturn.current ? visibleItems.findIndex(item => item.id === listReturn.current.id) : -1;
+  const openerPosition = useRef(null);
+  openerPosition.current = {
+    available: openerIndex >= 0,
+    top: isDesktop ? getItemMetrics(listReturn.current?.id)?.top : mobileWindow.offsets?.[openerIndex],
+  };
+
+  useLayoutEffect(() => {
+    if (urlSlug || !wasOnDetail.current) return;
+    wasOnDetail.current = false;
+    const scroller = scrollRef.current;
+    if (!scroller) return;
+    const visit = listReturn.current;
+    const reflowed = visit && visit.width !== scroller.clientWidth;
+    let frame;
+    let previousTop;
+    let stableFrames = 0;
+    let attempts = 0;
+    function stop() {
+      cancelAnimationFrame(frame);
+      if (listReturn.current === visit) listReturn.current = null;
+      document.removeEventListener('wheel', stop, true);
+      document.removeEventListener('touchstart', stop, true);
+      document.removeEventListener('keydown', stop, true);
+    }
+    function restore() {
+      const container = containerRef.current;
+      const position = openerPosition.current;
+      const card = visit && container?.querySelector(`[data-feed-item-id="${CSS.escape(visit.id)}"] .scroll-card-open`);
+      const active = document.activeElement;
+      if (active !== document.body && active !== scroller && active !== card && active?.getClientRects().length) {
+        stop();
+        return;
+      }
+      let target = visit?.scrollTop ?? 0;
+      if (reflowed && position.available && container) {
+        const viewportTop = scroller.getBoundingClientRect().top;
+        if (card) {
+          target = scroller.scrollTop + card.getBoundingClientRect().top - viewportTop - scroller.clientHeight / 2;
+        } else if (position.top != null) {
+          target = scroller.scrollTop + container.getBoundingClientRect().top - viewportTop + position.top - scroller.clientHeight / 2;
+        }
+      }
+      scroller.scrollTop = target;
+      const actual = scroller.scrollTop;
+      stableFrames = previousTop === actual ? stableFrames + 1 : 0;
+      previousTop = actual;
+      // Let the destination window measure and settle around the requested row.
+      if (++attempts < 30 && ((position.available && !card) || stableFrames < 2)) {
+        frame = requestAnimationFrame(restore);
+        return;
+      }
+      lastListOffset.current = actual;
+      stop();
+      (card || scroller).focus({ preventScroll: true });
+    }
+    document.addEventListener('wheel', stop, { capture: true, passive: true });
+    document.addEventListener('touchstart', stop, { capture: true, passive: true });
+    document.addEventListener('keydown', stop, true);
+    frame = requestAnimationFrame(restore);
+    return stop;
+  }, [scrollRef, urlSlug]);
+
   const handleCardClick = useCallback((e, item) => {
     e.preventDefault();
     const el = scrollRef?.current;
     const scrollY = el ? el.scrollTop : 0;
-    savedScrollRef.current = scrollY;
-    returnFocusId.current = item.id;
+    // The opening card supersedes any initial checkpoint still settling.
+    restoringList.current = false;
+    listReturn.current = { id: item.id, scrollTop: scrollY, width: el?.clientWidth };
     getLogger().child({ module: 'scroll-restore' }).info('nav.saveScroll', {
       scrollY: Math.round(scrollY),
       scrollHeight: el ? el.scrollHeight : 0,
@@ -923,7 +953,7 @@ export default function Scroll() {
       )}
       {selectedItem && !isDesktop && (
         <DetailView
-          focusOnEntry={!wasOnDetail.current}
+          focusOnEntry
           item={selectedItem}
           sections={detailData?.sections || []}
           ogImage={detailData?.ogImage || null}
