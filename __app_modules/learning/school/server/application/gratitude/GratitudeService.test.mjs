@@ -3,13 +3,14 @@ import { GratitudeService } from './GratitudeService.mjs';
 import { GRATITUDE_FOLLOW_UP_FALLBACK, GRATITUDE_FOLLOW_UP_FALLBACK_KO } from './GratitudeFollowUpWriter.mjs';
 import { gratitudeConfigOf } from '../../domain/gratitude.mjs';
 
-function harness({ verdict='eligible', publishFailure=false, verdicts=null, writerFails=false, followUpEnabled=true, logger={}, followUpWriter=null }={}) {
+function harness({ verdict='eligible', publishFailure=false, verdicts=null, writerFails=false, followUpEnabled=true, logger={}, followUpWriter=null, transcript='My toys', judgeDelay=null, config=null }={}) {
   const days=new Map(), selections=new Map(); let now=new Date('2026-11-16T18:00:00Z'); let fail=publishFailure; let assessment=verdict; let calls=0;
   const queue=verdicts?[...verdicts]:[]; const judgeCalls=[]; const extracted=[];
   const store={ async read(id,day){return {status:days.has(day)?'ok':'missing',events:structuredClone(days.get(day)??[])};},async append(id,day,event){days.set(day,[...(days.get(day)??[]),structuredClone(event)]);},async listDays(){return [...days.keys()].sort();} };
   const deps={store,assignments:{get:async()=>({programs:[{programId:'gratitude',schedule:{daysOfWeek:[1,2,3,4,5]}}]})},clock:()=>now,timezone:'America/Los_Angeles',
-    config:gratitudeConfigOf({gratitude:{follow_up:{enabled:followUpEnabled}}}),
-    judge:{assess:async args=>{calls++;judgeCalls.push(args);const v=queue.length?queue.shift():assessment;return {verdict:v,confidence:.99,model:'test',rubricVersion:1,matchedId:v==='repetition'?'school-gratitude:child:2026-11-16':null};}},
+    config:config??gratitudeConfigOf({gratitude:{follow_up:{enabled:followUpEnabled}}}),
+    captureTake:async({onSaved})=>{const audioRef=`child/take-${days.size}-${Math.random().toString(36).slice(2,8)}.webm`;await onSaved({audioRef});return {audioRef,text:typeof transcript==='function'?transcript():transcript};},
+    judge:{assess:async args=>{calls++;if(judgeDelay)await judgeDelay();judgeCalls.push(args);const v=queue.length?queue.shift():assessment;return {verdict:v,confidence:.99,model:'test',rubricVersion:1,matchedId:v==='repetition'?'school-gratitude:child:2026-11-16':null};}},
     followUpWriter:followUpWriter??{write:async()=>writerFails?{question:GRATITUDE_FOLLOW_UP_FALLBACK,writer:'fallback'}:{question:'What about your mom are you grateful for today?',writer:'model'}},
     extractor:{extract:async({text})=>{extracted.push(text);return {subject:'Toys',model:'cheap'};}},publish:async body=>{selections.set(body.selectionId,body);if(fail)throw new Error('lost response');return {selectionId:body.selectionId,subject:body.subject};},logger};
   return {service:new GratitudeService(deps),restart:()=>new GratitudeService(deps),days,selections,setNow:value=>{now=new Date(value);},setVerdict:value=>{assessment=value;},restore:()=>{fail=false;},calls:()=>calls,judgeCalls:()=>judgeCalls,extracted:()=>extracted};
@@ -54,7 +55,8 @@ describe('School gratitude workflow',()=>{
   it('serializes competing tabs so a refusal prevents a queued new attempt',async()=>{
     const h=harness({verdict:'nonsense'});
     const outcomes=await Promise.allSettled([h.service.submit('child','2026-11-16',body),h.service.submit('child','2026-11-16',{...body,attemptId:'other-attempt'})]);
-    expect(outcomes[0].value.phase).toBe('cooldown');expect(outcomes[1].reason.status).toBe(429);expect(h.calls()).toBe(1);
+    // 2026-11-19: the queued one is a duplicate submit and gets the current state (the cooldown) instead of a 429.
+    expect(outcomes[0].value.phase).toBe('cooldown');expect(outcomes[1].value).toMatchObject({phase:'cooldown',attemptId:'attempt-1'});expect(h.calls()).toBe(1);
   });
   it('rejects borrowed audio and corrupt history without a cheating verdict',async()=>{
     const h=harness();
@@ -144,16 +146,45 @@ describe('School gratitude workflow',()=>{
     expect((await g.service.submit('child','2026-11-16',body)).followUp).toMatchObject({question:GRATITUDE_FOLLOW_UP_FALLBACK});
     expect(g.days.get('2026-11-16').find(e=>e.type==='follow-up-asked').writer).toBe('fallback');
   });
-  it('fills the retry box with both answers after an unclear follow-up answer',async()=>{
+  it('opens the retry box empty after an unclear follow-up answer',async()=>{
     const h=harness({verdicts:['general','uncertain']});
     await h.service.submit('child','2026-11-16',{...body,text:"I'm grateful for my mom"});
     const retry=await h.service.submit('child','2026-11-16',{...body,attemptId:'attempt-2',followUpOf:'attempt-1',text:'um'});
-    expect(retry).toMatchObject({phase:'retry',reason:'unclear',followUp:null,draft:{text:"I'm grateful for my mom\num"}});
+    expect(retry).toMatchObject({phase:'retry',reason:'unclear',followUp:null,draft:null});
   });
   it('still asks the follow-up for a general verdict stored before follow-ups were switched off',async()=>{
     const r=harness({followUpEnabled:false});
     r.days.set('2026-11-16',[{type:'opened',at:'2026-11-16T17:59:00Z'},{type:'submitted',at:'2026-11-16T17:59:10Z',...body},
       {type:'assessed',at:'2026-11-16T17:59:20Z',attemptId:'attempt-1',verdict:'general',confidence:.99,model:'test',rubricVersion:5,matchedId:null}]);
     expect((await r.restart().open('child','2026-11-16')).phase).toBe('follow-up');
+  });
+  it('rejects an empty take or the leaked transcription hint as unheard, keeping the draft',async()=>{
+    for(const transcript of [null,'   ','A child saying what they are grateful for, in English or Korean.','a child saying what they are grateful for in english or korean']){
+      const info=vi.fn();const h=harness({transcript,logger:{info}});
+      await h.service.saveDraft('child','2026-11-16',{text:'My dog',via:'typed'});
+      const result=await h.service.take('child','2026-11-16',{takeId:'take-1',buffer:Buffer.alloc(2000),mimeType:'audio/webm'});
+      expect(result).toMatchObject({takeId:'take-1',text:null,unheard:true});
+      expect(h.days.get('2026-11-16').at(-1)).toMatchObject({type:'take-unheard',takeId:'take-1'});
+      expect((await h.service.day('child','2026-11-16')).draft).toMatchObject({text:'My dog'});
+      expect(info).toHaveBeenCalledWith('school.gratitude.take-unheard',expect.objectContaining({learnerId:'child',day:'2026-11-16',takeId:'take-1'}));
+    }
+  });
+  it('replaces the draft with each heard take',async()=>{
+    const words=['Blah blah','Making cookies'];const h=harness({transcript:()=>words.shift()});
+    await h.service.take('child','2026-11-16',{takeId:'take-1',buffer:Buffer.alloc(2000)});
+    await h.service.take('child','2026-11-16',{takeId:'take-2',buffer:Buffer.alloc(2000)});
+    expect((await h.service.day('child','2026-11-16')).draft).toMatchObject({text:'Making cookies',takeId:'take-2'});
+  });
+  it('answers a submit made while an attempt is being judged with the current state, starting nothing',async()=>{
+    let release;const gate=new Promise(r=>{release=r;});
+    const h=harness({verdict:'uncertain',judgeDelay:()=>gate});
+    const first=h.service.submit('child','2026-11-16',body);
+    await new Promise(r=>setTimeout(r,0));
+    const taps=[2,3,4].map(n=>h.service.submit('child','2026-11-16',{...body,attemptId:`attempt-${n}`}));
+    release();
+    await first;const results=await Promise.all(taps);
+    expect(h.calls()).toBe(1);
+    expect(h.days.get('2026-11-16').filter(e=>e.type==='submitted')).toHaveLength(1);
+    for(const r of results)expect(r).toMatchObject({phase:'retry',attemptId:'attempt-1'});
   });
 });

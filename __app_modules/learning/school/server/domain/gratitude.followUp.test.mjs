@@ -46,15 +46,22 @@ describe('gratitude follow-up evidence',()=>{
   });
   it('a retry after an unclear combined answer starts fresh without followUpOf',()=>{
     const unclear={type:'assessed',at:t(5),attemptId:'a2',verdict:'uncertain',confidence:null,model:'jev',rubricVersion:5,matchedId:null};
-    // The retry box holds both answers, so the child edits the whole thing.
-    expect(deriveGratitudeState([...base,second,unclear])).toMatchObject({phase:'retry',draft:{text:"I'm grateful for my mom\nShe made me pancakes"}});
-    // A spoken follow-up's recording holds only the second line, so the joined text is marked edited.
+    // The retry box starts empty (2026-11-19 design: a refused or unclear answer never stays in the box).
+    expect(deriveGratitudeState([...base,second,unclear])).toMatchObject({phase:'retry',draft:null});
     const spoken={...second,via:'voice',audioRef:'child/k1.webm',edited:false};
     const take={type:'take-saved',at:t(3),takeId:'k1',audioRef:'child/k1.webm',text:'She made me pancakes'};
-    expect(deriveGratitudeState([...base,take,spoken,unclear]).draft).toMatchObject({text:"I'm grateful for my mom\nShe made me pancakes",via:'voice',audioRef:'child/k1.webm',edited:true,takeId:null});
+    expect(deriveGratitudeState([...base,take,spoken,unclear]).draft).toBeNull();
     const again={type:'submitted',at:t(6),attemptId:'a3',text:"I'm grateful for my mom\nShe read to me",via:'typed',audioRef:null,edited:true};
     const events=[...base,second,unclear,again];
     expect(validGratitudeEvidence(events)).toBe(true);
     expect(deriveGratitudeState(events)).toMatchObject({assessText:"I'm grateful for my mom\nShe read to me",followUpAsked:true});
+  });
+});
+describe('unheard takes in evidence',()=>{
+  it('accepts take-unheard only for a saved take of this answer',()=>{
+    const take={type:'take-saved',at:t(1),takeId:'k1',audioRef:'child/k1.webm',text:null};
+    expect(validGratitudeEvidence([{type:'opened',at:t(0)},take,{type:'take-unheard',at:t(2),takeId:'k1',audioRef:'child/k1.webm'}])).toBe(true);
+    expect(validGratitudeEvidence([{type:'opened',at:t(0)},take,{type:'take-unheard',at:t(2),takeId:'k2',audioRef:'child/k1.webm'}])).toBe(false);
+    expect(validGratitudeEvidence([{type:'opened',at:t(0)},take,{type:'take-unheard',at:t(2),takeId:'k1',audioRef:'child/other.webm'}])).toBe(false);
   });
 });

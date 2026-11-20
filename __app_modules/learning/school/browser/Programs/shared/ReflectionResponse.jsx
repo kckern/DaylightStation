@@ -9,7 +9,7 @@ import { useSchoolCommands } from '../../portal/useSchoolCommands.js';
 import './ReflectionResponse.scss';
 
 const NO_EVENTS = Object.freeze({});
-export default function ReflectionResponse({ prompt, initial = '', initialAudioRef = null, initialVia = null, initialEdited = false, onSubmit, onDraft, onBack = null, onTake, onRetryTake, submitLabel = 'Next', busy: parentBusy = false, floor = DEBRIEF_FLOOR, events = NO_EVENTS, fieldSpaceStartsRecording = false, focusOnOpen = true, focusAfterTake = true, transcribingLabel = null, afterTakeHint = null, describedBy = undefined }) {
+export default function ReflectionResponse({ prompt, initial = '', initialAudioRef = null, initialVia = null, initialEdited = false, onSubmit, onDraft, onBack = null, onTake, onRetryTake, submitLabel = 'Next', busy: parentBusy = false, floor = DEBRIEF_FLOOR, events = NO_EVENTS, fieldSpaceStartsRecording = false, focusOnOpen = true, focusAfterTake = true, transcribingLabel = null, afterTakeHint = null, describedBy = undefined, replaceOnTake = false }) {
   const [text, setText] = useState(initial);
   const [audioRef, setAudioRef] = useState(initialAudioRef);
   const [via, setVia] = useState(initialVia ?? (initial ? 'typed' : null));
@@ -33,12 +33,15 @@ export default function ReflectionResponse({ prompt, initial = '', initialAudioR
       if (!live.current) return;
       if(!result?.audioRef)throw new Error('Recording was not confirmed');
       setFailedBlob(null);
+      // Nothing of the child's was heard: say so and leave the box as it was.
+      if (result.unheard) { setNotice("I didn't hear you. Try again."); return; }
       if (result?.audioRef) { setAudioRef(result.audioRef); setVia('voice'); }
-      if (result?.text) { setText(t => t ? `${t} ${result.text}` : result.text); events.takeKept?.({ promptId: prompt.id }); if (afterTakeHint) setHint(afterTakeHint); if (focusAfterTake) field.current?.focus(); }
+      // `replaceOnTake` (Gratitude): each take is a whole new answer, never added to the last one.
+      if (result?.text) { setText(t => (t && !replaceOnTake) ? `${t} ${result.text}` : result.text); if (replaceOnTake) setEdited(false); events.takeKept?.({ promptId: prompt.id }); if (afterTakeHint) setHint(afterTakeHint); if (focusAfterTake) field.current?.focus(); }
       else setNotice(result?.audioRef ? 'Your recording is saved. Please type your answer or try recording again.' : "That recording didn't save. Please try again.");
     } catch { if (live.current) {setFailedBlob(blob??null);setNotice("We couldn't confirm your recording. Please try again.");} }
     finally { pending.current = false; if (live.current) setBusy(false); }
-  }, [onTake, onRetryTake, events, prompt.id, afterTakeHint, focusAfterTake]);
+  }, [onTake, onRetryTake, events, prompt.id, afterTakeHint, focusAfterTake, replaceOnTake]);
   const recorder = useTakeRecorder({ floor, onTake: uploadTake });
   const promptRef = useRef(prompt.id); promptRef.current = prompt.id;
   useEffect(() => {

@@ -7,6 +7,14 @@ export const GRATITUDE_PROGRAM_ID = 'gratitude';
 export const GRATITUDE_UNIT_ID = 'gratitude:daily';
 export const GRATITUDE_TITLE = 'Gratitude';
 export const GRATITUDE_PROMPT = Object.freeze({ id: 'gratitude', text: 'What are you grateful for today?', required: true });
+/** The transcription prompt. On silence or noise the transcriber can hand this hint back as the "words". */
+export const GRATITUDE_TRANSCRIPTION_HINT = 'A child saying what they are grateful for, in English or Korean.';
+const hintWords = text => String(text ?? '').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
+/** True when a take carries no words of the child's: empty, or the prompt hint leaking out. */
+export function isUnheardTranscript(text) {
+  const words = hintWords(text);
+  return !words || words.includes(hintWords(GRATITUDE_TRANSCRIPTION_HINT)) || words.includes('a child saying what they are grateful for');
+}
 export function validateGratitudeEnrollment(raw = {}) {
   const subject = raw.subject ?? 'scripture';
   if (!SUBJECT_IDS.includes(subject)) return { errors: ['gratitude subject must be a known School subject'] };
@@ -23,6 +31,7 @@ export function gratitudeConfigOf(config = {}) {
 }
 export const gratitudePublicationId = (learnerId, day) => `school-gratitude:${learnerId}:${day}`;
 
+const answerPhase = phase => phase === 'follow-up' ? 'follow-up' : 'draft';
 /** Event-derived evidence, separate from the browser view and all wall-clock policy. */
 export function deriveGratitudeState(events = [], { now = null } = {}) {
   if(!validGratitudeEvidence(events))throw new Error('Invalid Gratitude evidence');
@@ -32,12 +41,14 @@ export function deriveGratitudeState(events = [], { now = null } = {}) {
     switch (event.type) {
       case 'opened': if (state.phase === 'not-started') state.phase = 'draft'; break;
       case 'take-saved': {
-        if(!takeBases.has(event.takeId))takeBases.set(event.takeId,state.draft?.text??'');
-        const base=takeBases.get(event.takeId);
-        state.draft={text:event.text?(base?`${base} ${event.text}`:event.text):base,via:'voice',audioRef:event.audioRef,takeId:event.takeId,edited:false};
-        state.phase=state.phase==='follow-up'?'follow-up':'draft';break;
+        // A new take REPLACES the draft (2026-11-19: appended takes filled the box with refused words).
+        // The draft from before the take is kept so an unheard take can put it back.
+        if(!takeBases.has(event.takeId))takeBases.set(event.takeId,state.draft);
+        state.draft={text:event.text??'',via:'voice',audioRef:event.audioRef,takeId:event.takeId,edited:false};
+        state.phase=answerPhase(state.phase);break;
       }
-      case 'draft-saved': state.draft = {...event.draft,takeId:event.draft.audioRef===state.draft?.audioRef?state.draft?.takeId:null}; state.phase = state.phase === 'follow-up' ? 'follow-up' : 'draft'; break;
+      case 'take-unheard': state.draft=takeBases.get(event.takeId)??null; break;
+      case 'draft-saved': state.draft = {...event.draft,takeId:event.draft.audioRef===state.draft?.audioRef?state.draft?.takeId:null}; state.phase = answerPhase(state.phase); break;
       case 'submitted':
         state.assessText = event.followUpOf && state.followUp?.attemptId === event.followUpOf ? combineGratitudeAnswers(state.followUp.firstText, event.text) : event.text;
         state.followUp = null;
@@ -45,14 +56,10 @@ export function deriveGratitudeState(events = [], { now = null } = {}) {
       case 'follow-up-asked': state.followUp = { attemptId: event.attemptId, question: event.question, firstText: state.submitted?.text ?? '' }; state.followUpAsked = true; state.draft = null; state.phase = 'follow-up'; break;
       case 'assessed':
         state.assessment = event;
-        if (event.verdict === 'uncertain') {
-          state.phase = 'retry'; state.reason = 'unclear';
-          // After a follow-up the retry box holds both answers, so the child edits the whole thing.
-          // A spoken follow-up's recording holds only the second answer, so the joined text counts as edited.
-          if (state.submitted?.followUpOf && state.assessText !== state.submitted.text) state.draft = { ...state.draft, text: state.assessText, takeId: null, edited: true };
-        }
+        // A retried answer starts from an empty box.
+        if (event.verdict === 'uncertain') { state.phase = 'retry'; state.reason = 'unclear'; state.draft = null; }
         break;
-      case 'refused': state.phase = 'cooldown'; state.retryAt = event.retryAt; state.reason = event.reason; break;
+      case 'refused': state.phase = 'cooldown'; state.retryAt = event.retryAt; state.reason = event.reason; state.draft = null; break;
       case 'publication-pending': state.publication = event; state.subject = event.subject; state.selectionId = event.selectionId; state.phase = 'pending'; state.reason = 'publication'; break;
       case 'completed': state.phase = 'completed'; state.selectionId = event.selectionId ?? state.selectionId; state.reason = null; state.retryAt = null; break;
       default: break;

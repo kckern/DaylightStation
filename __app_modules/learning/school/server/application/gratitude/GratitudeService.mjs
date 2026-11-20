@@ -1,4 +1,4 @@
-import { GRATITUDE_PROMPT, deriveGratitudeState, recentGratitudeFacts, gratitudeConfigOf, gratitudePublicationId } from '../../domain/gratitude.mjs';
+import { GRATITUDE_PROMPT, isUnheardTranscript, deriveGratitudeState, recentGratitudeFacts, gratitudeConfigOf, gratitudePublicationId } from '../../domain/gratitude.mjs';
 import { studyDayForInstant, studyDayWindowForDate } from '../../domain/studyDay.mjs';
 import { scheduleVerdict } from '../../domain/schoolCalendar.mjs';
 import { followUpFallbackFor, normalizeFollowUpQuestion } from './GratitudeFollowUpWriter.mjs';
@@ -11,7 +11,7 @@ const sameAnswer = (a,b) => ['text','via','audioRef','edited','followUpOf'].ever
 
 /** Gratitude policy and durable recovery. All mutations for a learner share one queue. */
 export class GratitudeService {
-  #store; #assignments; #capture; #judge; #extractor; #followUpWriter; #publish; #clock; #timezone; #config; #logger; #queues = new Map(); #householdSchedule;
+  #store; #assignments; #capture; #judge; #extractor; #followUpWriter; #publish; #clock; #timezone; #config; #logger; #queues = new Map(); #submitting = new Map(); #householdSchedule;
   constructor({ store, assignments, captureTake = null, judge, extractor, followUpWriter = null, publish, clock = () => new Date(), timezone = null, config = gratitudeConfigOf(), logger = {}, householdSchedule = null }) {
     this.#store=store; this.#assignments=assignments; this.#capture=captureTake; this.#judge=judge; this.#extractor=extractor; this.#followUpWriter=followUpWriter; this.#publish=publish;
     this.#clock=clock; this.#timezone=timezone; this.#config=config; this.#logger=logger; this.#householdSchedule=householdSchedule;
@@ -110,25 +110,38 @@ export class GratitudeService {
       const result=await this.#capture({learnerId:id,studyDay:day,buffer,mimeType,savedAudioRef:prior?.audioRef??null,
         onSaved:async({audioRef})=>{if(!prior)await this.#append(id,day,{type:'take-saved',takeId,audioRef,text:null});},
       });
-      await this.#append(id,day,{type:'take-saved',takeId,...result});
-      return {takeId,...result};
+      const {transcribed,...saved}=result;
+      if(transcribed!==false && isUnheardTranscript(saved.text)){
+        // Nothing of the child's was heard: no words, or the transcription hint echoed back. Not judged.
+        await this.#append(id,day,{type:'take-unheard',takeId,audioRef:saved.audioRef});
+        this.#logger.info?.('school.gratitude.take-unheard',{learnerId:id,day,takeId,empty:!String(saved.text??'').trim()});
+        return {takeId,audioRef:saved.audioRef,text:null,unheard:true};
+      }
+      await this.#append(id,day,{type:'take-saved',takeId,...saved});
+      return {takeId,...saved};
     });
   }
   async submit(id,day,body) {
+    // A submit that arrives while another is still being judged (repeated taps, a second tab) is a duplicate.
+    const duplicate=this.#submitting.has(id);
+    this.#submitting.set(id,(this.#submitting.get(id)??0)+1);
+    const done=()=>{const left=this.#submitting.get(id)-1;if(left>0)this.#submitting.set(id,left);else this.#submitting.delete(id);};
     return this.#serial(id,async()=>{
       const answer=this.#body(body);await this.#enrolled(id);
       const records=await this.#records(id);const record=records.find(r=>r.studyDay===day);
       const prior=record?.events.find(e=>e.type==='submitted' && e.attemptId===answer.attemptId);
       if(prior){if(!sameAnswer(prior,answer))throw new GratitudeError('Please start a new attempt for a changed answer.',409);if(pending(this.#state(record)))await this.#resume(id,day,records);return this.day(id,day);}
+      const current=this.#state(record);
+      // Submit is locked while an attempt is out: a second one gets the current state and starts nothing.
+      if(duplicate || pending(current))return this.day(id,day);
       await this.#fresh(id,day,records);await this.#audio(id,day,answer.audioRef,records);
       // While a follow-up is open the answer must name it; otherwise none may.
-      const current=this.#state(record);
       if(current.phase==='follow-up' ? answer.followUpOf!==current.followUp.attemptId : answer.followUpOf!==undefined)
         throw new GratitudeError(current.phase==='follow-up'?'Please answer the follow-up question.':'There is no follow-up question to answer.',409);
       await this.#append(id,day,{type:'submitted',...answer});
       this.#logger.info?.('school.gratitude.submitted',{learnerId:id,day,attemptId:answer.attemptId,via:answer.via});
       await this.#resume(id,day,await this.#records(id));return this.day(id,day);
-    });
+    }).finally(done);
   }
   async retry(id,day,{attemptId}) {
     return this.#serial(id,async()=>{

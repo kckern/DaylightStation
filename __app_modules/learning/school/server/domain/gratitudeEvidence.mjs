@@ -17,6 +17,9 @@ export function validGratitudeEvidence(events,{learnerId=null,studyDay=null}={})
         if(!['draft','retry','refused','follow-up'].includes(phase) || !id(event.takeId) || typeof event.audioRef!=='string' || (learnerId && !event.audioRef.startsWith(learnerId+'/')) || (event.text!==null && typeof event.text!=='string'))return false;
         if(takes.has(event.takeId) && takes.get(event.takeId)!==event.audioRef)return false;
         takes.set(event.takeId,event.audioRef);break;
+      case 'take-unheard':
+        if(!['draft','retry','refused','follow-up'].includes(phase) || !takes.has(event.takeId) || takes.get(event.takeId)!==event.audioRef)return false;
+        break;
       case 'draft-saved':
         if(!['draft','retry','refused','follow-up'].includes(phase) || !answer(event.draft) || (event.draft.audioRef && ![...takes.values()].includes(event.draft.audioRef)))return false;
         break;
