@@ -1,0 +1,7 @@
+# The Dockerfile runs `npm install` itself; a host node_modules copied in by
+# `COPY . .` would overwrite it with modules built for the wrong platform.
+node_modules
+# Python bytecode from running the test suite on the host.
+__pycache__
+**/__pycache__
+.env
