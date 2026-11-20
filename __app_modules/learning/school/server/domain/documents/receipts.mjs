@@ -1142,6 +1142,9 @@ export function makeupDocument({
  * @param {{lines: {label: string, silver: number, gems: number}[], weekSilver: number}|null} [args.earned]
  *   the week's silver (a preview): what this grade added, rule by rule, then
  *   the running total (`earnedLines`). Null prints nothing.
+ * @param {{forDay: string, subject: string}|null} [args.makeup] the missed day
+ *   a makeup-sheet pass counted for (`makeup_claimed`). A pass prints one line
+ *   naming that day; a fail or ordinary work prints nothing.
  * @returns {object}
  */
 export function resultDocument({
@@ -1153,6 +1156,7 @@ export function resultDocument({
   learnerName = null, date = null, time = null, studentNo = null, hints = [],
   actions = [], reward = null, rewardSkipReason = null, unlockedTitle = null, notes = [],
   dayComplete = false, companionGate = null, teacherHold = null, earned = null,
+  makeup = null,
 } = {}) {
   const passed = result === 'passed';
   const held = !passed && Boolean(teacherHold);
@@ -1189,6 +1193,14 @@ export function resultDocument({
       }
       : {}),
   }];
+  // A makeup-sheet pass counts for the day it made up, and says so, so the
+  // child is not told later that today's subject is "already done"
+  // (2026-11-19 incident).
+  if (passed && makeup && isNonEmptyString(makeup.forDay) && isNonEmptyString(makeup.subject)) {
+    const weekday = new Date(`${makeup.forDay}T12:00:00.000Z`)
+      .toLocaleDateString('en-US', { weekday: 'long', timeZone: 'UTC' });
+    blocks.push(text(`Makeup: this counts for ${weekday}'s ${makeup.subject}.`));
+  }
   // THE RULE THAT ACTUALLY FAILED, FIRST (Task 10). A gate veto means the
   // answers were good enough and the finish-code row was not — so this goes
   // straight under the score, ahead of the review hints, which are about

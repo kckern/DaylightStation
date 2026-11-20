@@ -383,6 +383,31 @@ describe('the result receipt', () => {
     expect(text).toContain('5 coins');
   });
 
+  // Makeup claims (2026-11-19 incident): a lesson a makeup-sheet code claimed
+  // for an earlier day says on its receipt which day it counted for, and only
+  // while the claim holds (same rule as the agenda: after the day, by the
+  // claim's deadline, same week).
+  const claimedFor = async (forDay, deadline) => {
+    await graded();
+    await sessions.appendEvent(SID, {
+      type: 'makeup_claimed', at: clock.iso(), sessionId: SID, forDay, subject: 'math', deadline,
+    });
+    clock.advanceDays(1);
+  };
+  const makeupLines = (document) => document.blocks.map((b) => b.md ?? '').filter((md) => /Makeup/.test(md));
+
+  it('names the missed day a claimed pass counted for', async () => {
+    await claimedFor('2026-07-27', '2026-08-01');
+    const { document } = await close.execute({ sessionId: SID });
+    expect(makeupLines(document)).toEqual(["Makeup: this counts for Monday's math."]);
+  });
+
+  it('says nothing about makeup when the claim no longer holds', async () => {
+    await claimedFor('2026-07-27', '2026-07-27');
+    const { document } = await close.execute({ sessionId: SID });
+    expect(makeupLines(document)).toEqual([]);
+  });
+
   it('carries an OPAQUE retry ticket on a fail, and objectives to revisit', async () => {
     await graded({ percent: 20 });
     const result = await close.execute({ sessionId: SID });

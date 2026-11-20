@@ -51,7 +51,8 @@ import { resolveDayCompletion } from "../../domain/completion.mjs";
 import { PlanProjection } from "../PlanProjection.mjs";
 import { lessonProgressRows } from "../../domain/lessonProgress.mjs";
 import { courseDisplay, moduleDisplay } from "../../domain/curriculum/display.mjs";
-import { studyDayWindow } from "../../domain/studyDay.mjs";
+import { studyDayWindow, studyDayForInstant } from "../../domain/studyDay.mjs";
+import { honouredMakeupClaim } from "../../domain/makeup.mjs";
 import { formatPageSpans } from "../../domain/questionBankV2.mjs";
 import { REMEDIATION_COUNT_HEADROOM, remediationMaxRounds } from "../../domain/sessions/remediationLineage.mjs";
 import { remediationDepthOf, remediationRootOf } from "../remediationDepth.mjs";
@@ -486,6 +487,14 @@ export class CloseSessionOutcome {
       ...(state.studyDay && !resettling ? { studyDay: state.studyDay } : {}),
     });
     const passed = outcome.result === 'passed';
+    // MAKEUP CLAIM (2026-11-19). A pass a makeup-sheet code claimed counts for
+    // the missed day it names, by the same rule the agenda applies
+    // (`honouredMakeupClaim`: after that day, by the claim's deadline, in the
+    // same week). The receipt says so and offers the subject's own lesson for
+    // today, which is still owed.
+    const makeupForDay = passed
+      ? honouredMakeupClaim(state, studyDayForInstant(Date.parse(outcome.at ?? nowIso), { timezone: this.#timezone }))
+      : null;
     // The tablet hears of a lesson finished somewhere else (fitness, a TV
     // launch, the review queue) and plays its banner. Only a first, passing,
     // printing settle the caller did not opt out of: the scanner has its own
@@ -577,6 +586,7 @@ export class CloseSessionOutcome {
         subject: unit.subject,
         backlog: this.#backlogIn({ projected, subject: unit.subject }),
         unlocked,
+        passedWasMakeup: Boolean(makeupForDay),
       })
       : null;
     if (offer) {
@@ -738,6 +748,7 @@ export class CloseSessionOutcome {
       unlockedTitle: unlocked?.title ?? null,
       notes,
       earned: earnedLines(weekBefore ?? null, weekAfter),
+      makeup: makeupForDay ? { forDay: makeupForDay, subject: state.makeupSubject ?? unit?.subject ?? null } : null,
     });
 
     let receiptArtifact = null;

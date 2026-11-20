@@ -17,10 +17,14 @@
  * limitation is deliberate and documented in the spec (§4).
  */
 
-/** The subject just passed is not its own "next subject". */
-const isOfferableSection = (section, passedSubject) => (
+/**
+ * The subject just passed is not its own "next subject", unless the pass was
+ * makeup for an earlier day: then today's lesson in that subject is still
+ * owed, and it is the most useful next step.
+ */
+const isOfferableSection = (section, passedSubject, passedWasMakeup = false) => (
   section
-  && section.subject !== passedSubject
+  && (passedWasMakeup || section.subject !== passedSubject)
   && !section.servedToday
   && !!section.next
   && !section.next.program
@@ -35,13 +39,21 @@ const isOfferableSection = (section, passedSubject) => (
  * @param {{unitId: string, title: string, description?: string|null,
  *          taxonomy?: object}|null} args.unlocked
  *   the next lesson this pass opened up in `subject`, or null
+ * @param {boolean} [args.passedWasMakeup] the pass was claimed by a makeup
+ *   sheet for an earlier day, so `subject` is still owed today and is
+ *   offered first
  * @returns {{tier: number, subject: string, continueToday: boolean,
  *            eyebrow: string, title: string, description: string,
  *            icon: string, unitId: string|null, taxonomy: object|null}|null}
  */
-export function chooseForwardAction({ sections = [], subject, backlog = null, unlocked = null } = {}) {
-  const tier1 = (Array.isArray(sections) ? sections : [])
-    .find((section) => isOfferableSection(section, subject));
+export function chooseForwardAction({
+  sections = [], subject, backlog = null, unlocked = null, passedWasMakeup = false,
+} = {}) {
+  // After a makeup pass the passed subject goes first: its lesson for today
+  // is still owed.
+  const ordered = (Array.isArray(sections) ? sections : []).slice()
+    .sort((a, b) => Number(passedWasMakeup && b?.subject === subject) - Number(passedWasMakeup && a?.subject === subject));
+  const tier1 = ordered.find((section) => isOfferableSection(section, subject, passedWasMakeup));
   if (tier1) {
     return {
       tier: 1,
