@@ -164,6 +164,79 @@ for (const reducedMotion of ['reduce', 'no-preference']) {
   });
 }
 
+test('Admin picker reveals a late-layout item and clears a canceled wrap animation', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'no-preference' });
+  const tracks = (first, count) => Array.from({ length: count }, (_, index) =>
+    result('plex:' + (first + index), 'Track ' + (first + index))
+  );
+  await page.route('**/api/**', route => {
+    const { pathname } = new URL(route.request().url());
+    if (pathname === listPath) {
+      const [section] = adminList.sections;
+      return route.fulfill({ json: { ...adminList, sections: [{ items: [{ ...section.items[0], input: 'plex:71' }] }] } });
+    }
+    if (pathname === '/api/v1/siblings/plex/71') {
+      return route.fulfill({ json: { items: tracks(61, 21), referenceIndex: 10 } });
+    }
+    if (pathname === searchPath) return route.fulfill({ json: { items: tracks(1, 16) } });
+    return route.fulfill({ json: pathname.endsWith('/supervision/bootstrap') ? { enabled: false } : {} });
+  });
+
+  await page.goto(listRoute);
+  const row = page.getByTestId('item-row-0-0');
+  const opener = row.locator('.col-input .content-display');
+  await expect(opener).toBeVisible();
+  await page.evaluate(() => {
+    const selector = '[data-testid="combobox-option-plex:71"]';
+    const style = document.createElement('style');
+    style.textContent = selector + '{display:none !important}';
+    document.head.append(style);
+    window.hiddenPickerHeights = [];
+    const watcher = new MutationObserver(() => {
+      const option = document.querySelector(selector);
+      if (!option) return;
+      watcher.disconnect();
+      function sample() {
+        window.hiddenPickerHeights.push(option.offsetHeight);
+        if (window.hiddenPickerHeights.length === 3) style.remove();
+        else requestAnimationFrame(sample);
+      }
+      requestAnimationFrame(sample);
+    });
+    watcher.observe(document.body, { childList: true, subtree: true });
+  });
+  await opener.click();
+  await expect.poll(() => page.evaluate(() => window.hiddenPickerHeights)).toEqual([0, 0, 0]);
+  await expect(page.getByTestId('combobox-option-plex:71')).toBeInViewport();
+  const viewport = page.locator('.content-combobox-scroll .mantine-ScrollArea-viewport');
+  expect(await viewport.evaluate(element => element.scrollTop)).toBeGreaterThan(80);
+
+  await page.evaluate(() => {
+    window.pickerWrapEvents = [];
+    document.addEventListener('animationstart', event => {
+      if (event.animationName !== 'ccb-wrap-flash') return;
+      window.pickerWrapEvents.push('animationstart');
+      event.target.getAnimations().find(animation => animation.animationName === event.animationName)?.cancel();
+    });
+    for (const type of ['animationcancel', 'animationend']) {
+      document.addEventListener(type, event => {
+        if (event.animationName === 'ccb-wrap-flash') window.pickerWrapEvents.push(type);
+      });
+    }
+  });
+  const editor = row.getByRole('textbox', { name: 'Search content...' });
+  await editor.fill('keyboard results');
+  const first = page.getByTestId('combobox-option-plex:1');
+  const last = page.getByTestId('combobox-option-plex:16');
+  await expect(first).toBeVisible();
+  await editor.press('ArrowDown');
+  await expect(first).toHaveAttribute('data-highlighted', 'true');
+  await editor.press('ArrowUp');
+  await expect.poll(() => page.evaluate(() => window.pickerWrapEvents)).toEqual(['animationstart', 'animationcancel']);
+  await expect(last).not.toHaveClass(/wrap-flash/);
+  await expect(last).toHaveAttribute('data-highlighted', 'true');
+});
+
 test('Admin dismisses pending picker pagination and can page on reopening', async ({ page }) => {
   const siblingsPath = '/api/v1/siblings/plex/123';
   const pageReads = [];

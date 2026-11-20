@@ -209,11 +209,27 @@ describe('useContentCombobox', () => {
     expect(notifyWarning).toHaveBeenLastCalledWith(expect.objectContaining({ title: 'Unknown source “invented”' }));
   });
 
-  it('skips literal validation requests for a selection-only picker', async () => {
+  it('warms accepted sources only when freeform entry is enabled', async () => {
     resetKnownSources();
-    const { result } = setup({ allowFreeform: false });
+    fetchMock.mockImplementation(path => {
+      if (path === '/api/v1/content/sources') return jsonResponse({ sources: ['plex'] });
+      if (path === '/api/v1/content/aliases') return jsonResponse({ userDefined: ['fixture-cold'] });
+      return jsonResponse({ items: [] });
+    });
+    const reads = () => fetchMock.mock.calls.map(([path]) => path)
+      .filter(path => ['/api/v1/content/sources', '/api/v1/content/aliases'].includes(path));
+    const { result, rerender } = setup({ allowFreeform: false });
     await openBrowse(result);
-    expect(fetchMock.mock.calls.filter(([path]) => /^\/api\/v1\/content\/(sources|aliases)$/.test(path))).toEqual([]);
+    expect(reads()).toEqual([]);
+
+    rerender({ allowFreeform: true });
+    await waitFor(() => expect(isKnownSource('fixture-cold')).toBe(true));
+    expect(reads().sort()).toEqual(['/api/v1/content/aliases', '/api/v1/content/sources']);
+
+    rerender({ allowFreeform: false });
+    rerender({ allowFreeform: true });
+    await act(async () => {});
+    expect(reads()).toHaveLength(2);
   });
 
   it("handleClose('outside') with exploratory text calls onChange ZERO times and resets state", async () => {

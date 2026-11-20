@@ -94,6 +94,38 @@ describe('AgentChatSurface — basic rendering', () => {
     expect(onComplete).toHaveBeenCalledTimes(1);
   });
 
+  it('stops writing the transcript when its conversation owner leaves', () => {
+    const threadKey = 'daylight-station:agent-thread:fixture:persist-probe';
+    const transcriptKey = 'agent-session:fixture:persist-probe:fixture-thread';
+    localStorage.setItem(threadKey, 'fixture-thread');
+    try {
+      let thread;
+      function Conversation() {
+        const conversation = useAgentConversation({
+          agentId: 'fixture', userId: 'persist-probe', persistSession: true,
+        });
+        thread = conversation.runtime.thread;
+        return <AgentConversationProvider conversation={conversation}>
+          <AgentChatSurface variant="light" />
+        </AgentConversationProvider>;
+      }
+      const { unmount } = render(<MantineProvider><Conversation /></MantineProvider>);
+      act(() => thread.reset([{ role: 'assistant', content: 'Saved conversation' }]));
+      const saved = sessionStorage.getItem(transcriptKey);
+      expect(JSON.parse(saved)).toMatchObject([
+        { role: 'assistant', content: [{ type: 'text', text: 'Saved conversation' }] },
+      ]);
+
+      unmount();
+      act(() => thread.reset([{ role: 'assistant', content: 'Retired answer' }]));
+      expect(thread.getState().messages[0].content).toEqual([{ type: 'text', text: 'Retired answer' }]);
+      expect(sessionStorage.getItem(transcriptKey)).toBe(saved);
+    } finally {
+      localStorage.removeItem(threadKey);
+      sessionStorage.removeItem(transcriptKey);
+    }
+  });
+
   it('does not refresh app resources when a stream finishes after its conversation owner leaves', async () => {
     const onComplete = vi.fn();
     let finish;
