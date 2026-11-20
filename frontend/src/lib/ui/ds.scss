@@ -96,6 +96,24 @@
       animation: ds-sheet-in-side var(--ds-motion-base) var(--ds-motion-easing);
     }
   }
+
+  // placement="fullscreen": the panel owns the whole screen on every size, a
+  // black stage with the header floating over it. For a live camera view (a
+  // barcode scan), which a bottom sheet squeezed into a strip.
+  &--fullscreen &__panel {
+    inset: 0; transform: none; width: 100vw; height: 100dvh; max-height: none;
+    box-sizing: border-box; overflow: hidden;
+    border: 0; border-radius: 0; padding: 0;
+    background: #000; /* data-color: camera stage, not a palette color */
+    animation: none;
+  }
+  &--fullscreen &__header {
+    position: absolute; top: 0; left: 0; right: 0; z-index: 2; margin: 0;
+    padding: calc(0.5rem + env(safe-area-inset-top)) 0.75rem 0.5rem 1rem;
+    background: linear-gradient(rgba(0, 0, 0, 0.6), transparent); /* data-color: legibility shade */
+  }
+  &--fullscreen &__title, &--fullscreen &__header .mantine-ActionIcon-root { color: #fff; } /* data-color: on camera */
+  &--fullscreen &__body { position: absolute; inset: 0; }
 }
 
 @keyframes ds-sheet-in-side {

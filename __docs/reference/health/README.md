@@ -1645,8 +1645,11 @@ unavailable it skips **visibly**, never passing on nothing.
 
 `BarcodeCapture` decodes through the shared `useBarcodeScanner` hook
 (`frontend/src/lib/camera/`): the native `BarcodeDetector` API, falling back to a lazily
-loaded `@zxing/browser`, both limited to retail formats. The sheet always offers a
-manual-UPC text field as the same submit path (and the deterministic test seam). A decode calls `nutrition.submit('barcode', upc)`:
+loaded `@zxing/browser`, both limited to retail formats. The scanner is full screen
+(`Sheet placement="fullscreen"`), like a barcode app: the camera fills the screen with
+`object-fit: cover` (cropped, never squashed), an aiming box sits in the middle, and the
+close button floats at the top. It always offers a
+manual-UPC text field along the bottom as the same submit path (and the deterministic test seam). A decode calls `nutrition.submit('barcode', upc)`:
 
 - **Known UPC** (catalog or gateway hit) — proceeds through the portion-pick path above.
 - **Unknown UPC** (`result.unknownUpc === true`) — opens `CustomFoodSheet` with that UPC.

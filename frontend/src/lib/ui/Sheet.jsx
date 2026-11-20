@@ -46,7 +46,7 @@ export function Sheet({ open, onClose, title, children, placement = 'center' }) 
 
   if (!open) return null;
   return (
-    <div className={placement === 'side' ? 'ds-sheet ds-sheet--side' : 'ds-sheet'} role="dialog" aria-modal="true" aria-label={title}>
+    <div className={placement === 'center' ? 'ds-sheet' : `ds-sheet ds-sheet--${placement}`} role="dialog" aria-modal="true" aria-label={title}>
       <div className="ds-sheet__scrim" onClick={onClose} />
       <FocusTrap active={open}><div className="ds-sheet__panel" tabIndex={-1}>
         <header className="ds-sheet__header">

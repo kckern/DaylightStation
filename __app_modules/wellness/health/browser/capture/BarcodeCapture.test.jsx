@@ -37,6 +37,13 @@ describe('BarcodeCapture over the shared scanner', () => {
     await waitFor(() => expect(onDecode).toHaveBeenCalledWith('012345678905', 'lunch'));
   });
 
+  it('fills the screen with the camera, like a barcode app, with an aiming box', () => {
+    const { container } = wrap(<BarcodeCapture open onClose={vi.fn()} onDecode={vi.fn()} />);
+    expect(container.querySelector('.ds-sheet--fullscreen')).toBeTruthy();
+    expect(container.querySelector('video.health-barcode__video')).toBeTruthy();
+    expect(container.querySelector('.health-barcode__reticle')).toBeTruthy();
+  });
+
   it('shows a failed lookup and lets the number be tried again', async () => {
     const onDecode = vi.fn(async () => { throw new Error('Lookup failed. Try again.'); });
     wrap(<BarcodeCapture open onClose={vi.fn()} onDecode={onDecode} bucket="lunch" />);
