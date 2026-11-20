@@ -15,23 +15,28 @@ function logger() {
  * is never a safe transport. Registrations form a mount-order stack; only the
  * newest live Player receives a command, and removing it restores the prior
  * owner without letting a stale unregister clobber a newer one.
+ * A registration's onDeactivate callback retires work from that foreground visit.
  * An optional payload.onResult observes the handler's settled return value;
  * dispatch's boolean still reports only owner presence. Retry uses the result
  * to acknowledge guarded admission instead of optimistic command receipt.
  */
 export function createPlayerQueueOpRegistry() {
-  let nextToken = 0;
   const entries = [];
 
   return {
-    register(handler) {
+    register(handler, onDeactivate) {
       if (typeof handler !== 'function') return () => {};
-      const entry = { token: ++nextToken, handler };
+      const previous = entries.at(-1);
+      const entry = { handler, onDeactivate };
       entries.push(entry);
+      previous?.onDeactivate?.();
 
       return () => {
-        const index = entries.findIndex(({ token }) => token === entry.token);
-        if (index >= 0) entries.splice(index, 1);
+        const index = entries.indexOf(entry);
+        if (index < 0) return;
+        const wasForeground = index === entries.length - 1;
+        entries.splice(index, 1);
+        if (wasForeground) entry.onDeactivate?.();
       };
     },
 

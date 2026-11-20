@@ -3,7 +3,7 @@ import { createRecoveryIdentity, recoverySessionKey, sameRecoveryTarget } from '
 import { getRecoveryLedger } from './lib/recoveryLedger.js';
 import { createContentTimeline, toContentSeconds, readContentPosition, validateMovieCompletion } from './lib/recovery/contentTimeline.js';
 import { normalizePlaybackQuality, withPlaybackQuality, playbackQualityChange, supportsPlaybackQuality } from '@shared-contracts/media/playbackQuality.mjs';
-import React, { useRef, useCallback, useState, useEffect, useMemo, forwardRef, useImperativeHandle } from 'react';
+import React, { useRef, useCallback, useState, useEffect, useLayoutEffect, useMemo, forwardRef, useImperativeHandle } from 'react';
 import PropTypes from 'prop-types';
 import './styles/Player.scss';
 import { useQueueController } from './hooks/useQueueController.js';
@@ -98,6 +98,27 @@ const prepareRendererBoundaryOperation = (request = {}) => {
 // Shader aliases must match useQueueController's map. Hoisted to module scope
 // so identity is stable across renders (useEffect deps).
 const SHADER_ALIASES = { dark: 'blackout', minimal: 'focused', regular: 'default', screensaver: 'focused' };
+const PLAYBACK_START_QUEUE_OPS = ['play-now', 'play-next'];
+
+async function resolveQueueCommand(contentId, { clearRest, quality, signal }) {
+  if (clearRest) {
+    try {
+      const queue = await DaylightAPI(`api/v1/queue/${contentId}`, {}, 'GET', { signal });
+      if (signal.aborted) return null;
+      if (Array.isArray(queue?.items) && queue.items.length > 0) {
+        const items = queue.items.map(item => item.format === 'audio' || item.mediaType === 'audio'
+          ? item : withPlaybackQuality(item, quality));
+        return { queue: { items, audio: queue.audio || null } };
+      }
+    } catch {
+      // Leaf content may not expose a collection endpoint.
+    }
+  }
+  if (signal.aborted) return null;
+  const query = new URLSearchParams(quality).toString();
+  const info = await DaylightAPI(`api/v1/play/${contentId}${query ? `?${query}` : ''}`, {}, 'GET', { signal });
+  return { info };
+}
 
 const entryGuidCache = typeof WeakMap !== 'undefined' ? new WeakMap() : null;
 const ensureEntryGuid = (source) => {
@@ -189,6 +210,15 @@ const Player = forwardRef(function Player(props, ref) {
   const issuedOwnerRevisionsRef = useRef({ playbackRevision: 0, queueRevision: 0 });
   const itemActionStopRevisionRef = useRef(0);
   const ownerStoppedRef = useRef(false);
+  const pendingQueueLookupsRef = useRef(new Map());
+  const retireQueueLookups = useCallback((ops) => {
+    const lookups = pendingQueueLookupsRef.current;
+    for (const [controller, pendingOp] of lookups) {
+      if (ops && !ops.includes(pendingOp)) continue;
+      lookups.delete(controller);
+      controller.abort();
+    }
+  }, []);
   const queueNavigationGestureRef = useRef({ key: null, at: 0, longPressHandled: false });
   const issueOwnerRevision = useCallback(({ playback = false, queue = false } = {}) => {
     if (playback) issuedOwnerRevisionsRef.current.playbackRevision += 1;
@@ -263,6 +293,7 @@ const Player = forwardRef(function Player(props, ref) {
     advance: rawAdvance,
     queueAudio,
     queueSessionId,
+    queueSourceSignature,
     queueSnapshot,
     jumpTo: rawJumpTo,
     onDeck,
@@ -288,6 +319,8 @@ const Player = forwardRef(function Player(props, ref) {
     queueFetchTimeoutMs: 10_000,
     onOwnerRevision: issueOwnerRevision,
   });
+
+  useLayoutEffect(() => retireQueueLookups, [queueSourceSignature, recoveryIdentity, retireQueueLookups]);
 
   // A remote Shuffle on a running screen is a playback-order flag (applied as the queue's execution order by the
   // screen receiver), not a re-fetch of the queue: the queue controller's own `isShuffle` is a fetch-time input and
@@ -2311,6 +2344,8 @@ const Player = forwardRef(function Player(props, ref) {
     || null;
 
   const stopOwner = useCallback(() => {
+    // Stop retains the queue, so an independently requested Add can still append.
+    retireQueueLookups(PLAYBACK_START_QUEUE_OPS);
     acceptRecoveryIntent('stop');
     itemActionStopRevisionRef.current += 1;
     issueOwnerRevision({ playback: true });
@@ -2320,7 +2355,7 @@ const Player = forwardRef(function Player(props, ref) {
     try { el?.pause?.(); } catch { /* best-effort native Stop */ }
     try { if (el) el.currentTime = 0; } catch { /* non-seekable source */ }
     return { ok: true };
-  }, [cancelPendingRendererOperation, issueOwnerRevision, acceptRecoveryIntent]);
+  }, [cancelPendingRendererOperation, issueOwnerRevision, acceptRecoveryIntent, retireQueueLookups]);
 
   const playOwner = useCallback(() => {
     const restarting = ownerStoppedRef.current;
@@ -2433,7 +2468,10 @@ const Player = forwardRef(function Player(props, ref) {
     }
     if (['manual-quality', 'recovery-quality'].includes(options.reason)) {
       if (options.reason === 'manual-quality') acceptRecoveryIntent('manual-quality');
-    } else beginRecoveryVisit();
+    } else {
+      retireQueueLookups();
+      beginRecoveryVisit();
+    }
     if (!adoptedCurrent) stopOwner();
     else ownerStoppedRef.current = false;
     adoptQueueSnapshot(adopted);
@@ -2446,7 +2484,7 @@ const Player = forwardRef(function Player(props, ref) {
     setAdoptedConfigEpoch((epoch) => epoch + 1);
     if (boundaryRequest) beginRendererBoundary(boundaryRequest);
     return { ok: true };
-  }, [recoveryIdentity, inspectRendererBoundaryRequest, acceptRecoveryIntent, beginRecoveryVisit, stopOwner, adoptQueueSnapshot, setTargetTimeSeconds, beginRendererBoundary]);
+  }, [recoveryIdentity, inspectRendererBoundaryRequest, acceptRecoveryIntent, beginRecoveryVisit, stopOwner, adoptQueueSnapshot, setTargetTimeSeconds, beginRendererBoundary, retireQueueLookups]);
 
   const retryHeldPlayback = useCallback((expectedTarget) => {
     const current = recoveryIdentity.getTarget();
@@ -2731,41 +2769,40 @@ const Player = forwardRef(function Player(props, ref) {
       return;
     }
     if (!contentId) return;
-    if (op !== 'play-now' && op !== 'play-next' && op !== 'add') return;
+    if (op !== 'add' && !PLAYBACK_START_QUEUE_OPS.includes(op)) return;
 
+    if (op === 'play-now') retireQueueLookups(PLAYBACK_START_QUEUE_OPS);
     const quality = normalizePlaybackQuality(payload);
-    if (op === 'play-now' && payload.clearRest) {
-      try {
-        const resolvedQueue = await DaylightAPI(`api/v1/queue/${contentId}`);
-        if (Array.isArray(resolvedQueue?.items) && resolvedQueue.items.length > 0) {
-          ownerStoppedRef.current = false;
-          setQueueHasAdvanced(true);
-          replaceQueue(resolvedQueue.items.map(item => item.format === 'audio' || item.mediaType === 'audio'
-            ? item : withPlaybackQuality(item, quality)), { audio: resolvedQueue.audio || null });
-          const aliased = SHADER_ALIASES[requestedShader] ?? requestedShader;
-          if (aliased && classes.includes(aliased)) {
-            setShader(aliased);
-            setShaderUserCycled(true);
-          } else {
-            // Preserve item-level presentation such as focused slideshow videos.
-            setShader('default');
-            setShaderUserCycled(false);
-          }
-          return;
-        }
-      } catch {
-        // Leaf content may not expose a queue endpoint; fall through to /play.
-      }
+    const controller = new AbortController();
+    const { signal } = controller;
+    pendingQueueLookupsRef.current.set(controller, op);
+    const resolved = await resolveQueueCommand(contentId, { clearRest: op === 'play-now' && payload.clearRest, quality, signal })
+      .catch(() => null)
+      .finally(() => pendingQueueLookupsRef.current.delete(controller));
+    if (signal.aborted) {
+      const code = 'PLAYBACK_CHANGED';
+      payload.onError?.({ code, error: 'The playback owner changed before the queue command could be applied' });
+      return { ok: false, code };
+    }
+    if (!resolved) {
+      payload.onError?.({ code: 'CONTENT_RESOLVE_FAILED', error: 'Content could not be resolved' });
+      return;
     }
 
-    let info;
-    try {
-      const query = new URLSearchParams(quality).toString();
-      info = await DaylightAPI(`api/v1/play/${contentId}${query ? `?${query}` : ''}`);
-    } catch {
-      // Without a mediaUrl we can't safely play. Bail out rather than push
-      // a half-built item that will fail at the renderer.
-      payload.onError?.({ code: 'CONTENT_RESOLVE_FAILED', error: 'Content could not be resolved' });
+    const { queue: resolvedQueue, info } = resolved;
+    if (resolvedQueue) {
+      ownerStoppedRef.current = false;
+      setQueueHasAdvanced(true);
+      replaceQueue(resolvedQueue.items, { audio: resolvedQueue.audio });
+      const aliased = SHADER_ALIASES[requestedShader] ?? requestedShader;
+      if (aliased && classes.includes(aliased)) {
+        setShader(aliased);
+        setShaderUserCycled(true);
+      } else {
+        // Preserve item-level presentation such as focused slideshow videos.
+        setShader('default');
+        setShaderUserCycled(false);
+      }
       return;
     }
     const item = {
@@ -2842,7 +2879,7 @@ const Player = forwardRef(function Player(props, ref) {
     }
 
     pushOnDeck(item, { displaceToQueue: !!onDeckCfg?.displace_to_queue });
-  }, [queueSnapshot, applyQueueSnapshot, issueOwnerRevision, setRepeatMode, setIsContinuous, setOwnerVolume, playQueue, onDeck, onDeckCfg, pushOnDeck, flashOnDeck, playNow, replaceQueue, append, playerInstanceId, queueShader, classes, setShader, setShaderUserCycled, stopOwner, playOwner, pauseOwner, toggleOwner, seekOwner, seekOwnerRelative, advance, isQueue, singleAdvance, effectiveMeta?.isLive, activeSource?.isLive, beginRecoveryVisit, retryHeldPlayback]);
+  }, [queueSnapshot, applyQueueSnapshot, issueOwnerRevision, setRepeatMode, setIsContinuous, setOwnerVolume, playQueue, onDeck, onDeckCfg, pushOnDeck, flashOnDeck, playNow, replaceQueue, append, playerInstanceId, queueShader, classes, setShader, setShaderUserCycled, stopOwner, playOwner, pauseOwner, toggleOwner, seekOwner, seekOwnerRelative, advance, isQueue, singleAdvance, effectiveMeta?.isLive, activeSource?.isLive, beginRecoveryVisit, retryHeldPlayback, retireQueueLookups]);
 
   // Register once in mount order while the ref supplies the latest stateful
   // callback. Re-registering on every queue change would let a background
@@ -2850,7 +2887,7 @@ const Player = forwardRef(function Player(props, ref) {
   const queueOpHandlerRef = useRef(handleQueueOp);
   queueOpHandlerRef.current = handleQueueOp;
   useEffect(() => (auxiliary ? undefined : getPlayerQueueOpRegistry().register(
-    (payload) => queueOpHandlerRef.current?.(payload)
+    (payload) => queueOpHandlerRef.current?.(payload), retireQueueLookups
   // `auxiliary` is fixed for a Player's life (it is a role, not state).
   // eslint-disable-next-line react-hooks/exhaustive-deps
   )), []);

@@ -39,11 +39,30 @@ vi.mock('../../../../frontend/src/lib/api.mjs', () => ({
 }));
 
 import Player from './Player.jsx';
+import { DaylightAPI } from '../../../../frontend/src/lib/api.mjs';
 import { getActionBus, resetActionBus } from '../../../screen-host/browser/input/ActionBus.js';
+
+const defaultApi = DaylightAPI.getMockImplementation();
+
+function holdLookup(path) {
+  const held = Promise.withResolvers();
+  const previous = DaylightAPI.getMockImplementation();
+  DaylightAPI.mockImplementation((request, ...args) => request === path ? held.promise : previous(request, ...args));
+  return held;
+}
+
+const playDescriptor = contentId => ({ contentId, id: contentId, mediaUrl: '/fixture/movie.mp4', format: 'video' });
+
+async function dispatchQueueOp(payload) {
+  await act(async () => {
+    expect(getPlayerQueueOpRegistry().dispatch(payload)).toBe(true);
+  });
+}
 
 describe('Player queue-op ownership integration', () => {
   beforeEach(() => {
     __resetPlayerQueueOpRegistryForTests();
+    DaylightAPI.mockClear().mockImplementation(defaultApi);
     transport = { play: vi.fn(), pause: vi.fn(), toggle: vi.fn() };
   });
   afterEach(() => cleanup());
@@ -187,6 +206,142 @@ describe('Player queue-op ownership integration', () => {
       playbackRevision: before.playbackRevision,
       queueRevision: before.queueRevision + 1,
     });
+  });
+
+  it.each([false, true])('keeps a stopped owner stopped when a pending Play Now lookup completes (clearRest=%s)', async clearRest => {
+    const path = clearRest ? 'api/v1/queue/plex:pending' : 'api/v1/play/plex:pending';
+    const held = holdLookup(path);
+    const ref = createRef();
+    render(<Player ref={ref} play={[{ contentId: 'plex:current' }]} />);
+    await waitFor(() => expect(ref.current?.getQueueSnapshot().items).toHaveLength(1));
+
+    const onResult = vi.fn();
+    await dispatchQueueOp({ op: 'play-now', contentId: 'plex:pending', clearRest, onResult });
+    const request = DaylightAPI.mock.calls.find(([url]) => url === path);
+    expect(request?.[3].signal.aborted).toBe(false);
+    await dispatchQueueOp({ op: 'stop' });
+    expect(ref.current.getNowPlaying()).toMatchObject({ item: null, stopped: true });
+    expect(request[3].signal.aborted).toBe(true);
+
+    const item = playDescriptor('plex:pending');
+    await act(async () => held.resolve(clearRest ? { items: [item] } : item));
+    expect(ref.current.getNowPlaying()).toMatchObject({ item: null, stopped: true });
+    expect(ref.current.getQueueSnapshot().items[0].contentId).toBe('plex:current');
+    expect(onResult).toHaveBeenCalledWith({ ok: false, code: 'PLAYBACK_CHANGED' });
+  });
+
+  it('does not fall back to a content read after Stop retires a collection lookup', async () => {
+    const held = holdLookup('api/v1/queue/plex:pending');
+    const ref = createRef();
+    render(<Player ref={ref} play={[{ contentId: 'plex:current' }]} />);
+    await waitFor(() => expect(ref.current?.getQueueSnapshot().items).toHaveLength(1));
+
+    await dispatchQueueOp({ op: 'play-now', contentId: 'plex:pending', clearRest: true });
+    await dispatchQueueOp({ op: 'stop' });
+    await act(async () => held.reject(new Error('Collection unavailable')));
+
+    expect(DaylightAPI.mock.calls.some(([url]) => url === 'api/v1/play/plex:pending')).toBe(false);
+    expect(ref.current.getNowPlaying()).toMatchObject({ item: null, stopped: true });
+  });
+
+  it('keeps the collection-to-item fallback live across an equivalent source rerender', async () => {
+    const collection = holdLookup('api/v1/queue/plex:pending');
+    const item = holdLookup('api/v1/play/plex:pending');
+    const ref = createRef();
+    const { rerender } = render(<Player ref={ref} play={[{ contentId: 'plex:current' }]} />);
+    await waitFor(() => expect(ref.current?.getQueueSnapshot().items).toHaveLength(1));
+
+    await dispatchQueueOp({ op: 'play-now', contentId: 'plex:pending', clearRest: true });
+    rerender(<Player ref={ref} play={[{ contentId: 'plex:current' }]} />);
+    await act(async () => collection.resolve({ items: [] }));
+    await act(async () => item.resolve(playDescriptor('plex:pending')));
+
+    expect(ref.current.getNowPlaying().item.contentId).toBe('plex:pending');
+  });
+
+  it.each(['play-now', 'play-next'])('lets a newer Play Now supersede a pending %s while Add can finish', async op => {
+    const older = holdLookup('api/v1/play/plex:older');
+    const newer = holdLookup('api/v1/play/plex:newer');
+    const queued = holdLookup('api/v1/play/plex:queued');
+    const ref = createRef();
+    render(<Player ref={ref} play={[{ contentId: 'plex:current' }]} />);
+    await waitFor(() => expect(ref.current?.getQueueSnapshot().items).toHaveLength(1));
+
+    const onResult = vi.fn();
+    await dispatchQueueOp({ op, contentId: 'plex:older', onResult });
+    await dispatchQueueOp({ op: 'add', contentId: 'plex:queued' });
+    await dispatchQueueOp({ op: 'play-now', contentId: 'plex:newer' });
+
+    await act(async () => older.resolve(playDescriptor('plex:older')));
+    expect(ref.current.getNowPlaying().item.contentId).toBe('plex:current');
+    expect(onResult).toHaveBeenCalledWith({ ok: false, code: 'PLAYBACK_CHANGED' });
+    await act(async () => newer.resolve(playDescriptor('plex:newer')));
+    await act(async () => queued.resolve(playDescriptor('plex:queued')));
+
+    expect(ref.current.getNowPlaying().item.contentId).toBe('plex:newer');
+    expect(ref.current.getQueueSnapshot().items.map(item => item.contentId)).toEqual(['plex:newer', 'plex:queued']);
+  });
+
+  it('lets a pending Add finish in the retained queue after Stop', async () => {
+    const queued = holdLookup('api/v1/play/plex:queued');
+    const onApplied = vi.fn();
+    const ref = createRef();
+    render(<Player ref={ref} play={[{ contentId: 'plex:current' }]} />);
+    await waitFor(() => expect(ref.current?.getQueueSnapshot().items).toHaveLength(1));
+
+    await dispatchQueueOp({ op: 'add', contentId: 'plex:queued', onApplied });
+    await dispatchQueueOp({ op: 'stop' });
+    await act(async () => queued.resolve(playDescriptor('plex:queued')));
+
+    expect(onApplied).toHaveBeenCalledWith(expect.objectContaining({ contentId: 'plex:queued', queueLength: 2 }));
+    expect(ref.current.getNowPlaying()).toMatchObject({ item: null, stopped: true });
+  });
+
+  it('reports a retired Add when a different input takes ownership', async () => {
+    const queued = holdLookup('api/v1/play/plex:queued');
+    const onApplied = vi.fn();
+    const onError = vi.fn();
+    const ref = createRef();
+    const { rerender } = render(<Player ref={ref} play={[{ contentId: 'plex:current' }]} />);
+    await waitFor(() => expect(ref.current?.getQueueSnapshot().items).toHaveLength(1));
+
+    await dispatchQueueOp({ op: 'add', contentId: 'plex:queued', onApplied, onError });
+    rerender(<Player ref={ref} play={[{ contentId: 'plex:replacement' }]} />);
+    await waitFor(() => expect(ref.current.getNowPlaying().item.contentId).toBe('plex:replacement'));
+    await act(async () => queued.resolve(playDescriptor('plex:queued')));
+
+    expect(onApplied).not.toHaveBeenCalled();
+    expect(onError).toHaveBeenCalledWith(expect.objectContaining({ code: 'PLAYBACK_CHANGED' }));
+    expect(ref.current.getQueueSnapshot().items.map(item => item.contentId)).toEqual(['plex:replacement']);
+  });
+
+  it('retires a deferred Play Now when the same player receives a different input queue', async () => {
+    const held = holdLookup('api/v1/play/plex:pending');
+    const ref = createRef();
+    const { rerender } = render(<Player ref={ref} play={[{ contentId: 'plex:current' }]} />);
+    await waitFor(() => expect(ref.current?.getQueueSnapshot().items).toHaveLength(1));
+
+    await dispatchQueueOp({ op: 'play-now', contentId: 'plex:pending' });
+    rerender(<Player ref={ref} play={[{ contentId: 'plex:replacement' }]} />);
+    await waitFor(() => expect(ref.current.getNowPlaying().item.contentId).toBe('plex:replacement'));
+
+    await act(async () => held.resolve(playDescriptor('plex:pending')));
+    expect(ref.current.getNowPlaying().item.contentId).toBe('plex:replacement');
+  });
+
+  it('retires a deferred lookup when a newer player takes foreground ownership', async () => {
+    const held = holdLookup('api/v1/play/plex:pending');
+    const ref = createRef();
+    render(<Player ref={ref} play={[{ contentId: 'plex:current' }]} />);
+    await waitFor(() => expect(ref.current?.getQueueSnapshot().items).toHaveLength(1));
+
+    await dispatchQueueOp({ op: 'play-now', contentId: 'plex:pending' });
+    const overlay = render(<Player play={[{ contentId: 'plex:foreground' }]} />);
+    await waitFor(() => expect(overlay.container.querySelector('[data-content-id]')).toHaveAttribute('data-content-id', 'plex:foreground'));
+    overlay.unmount();
+
+    await act(async () => held.resolve(playDescriptor('plex:pending')));
+    expect(ref.current.getNowPlaying().item.contentId).toBe('plex:current');
   });
 
   it('stops the foreground owner while retaining its queue', async () => {
