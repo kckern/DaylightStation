@@ -91,7 +91,7 @@ const LAUNCH_OUTCOMES = Object.freeze({
 export class RunSelfServiceAction {
   #resolver; #sessions; #issue; #media; #remediation; #donow; #close; #launchers; #companions; #companionHandlers;
   #newSessionId; #clock; #logger; #tokens; #mountAcknowledgements; #mountReceiptIssuer;
-  #printMakeupAgenda;
+  #printMakeupAgenda; #claimMakeupLesson;
 
   /**
    * @param {object} deps
@@ -120,6 +120,9 @@ export class RunSelfServiceAction {
    *   for a missing dependency to fail.
    * @param {import('./PrintMakeupAgenda.mjs').PrintMakeupAgenda} [deps.printMakeupAgenda]
    *   prints the makeup sheet for a typed `makeup_print` code's Print button
+   * @param {import('./ClaimMakeupLesson.mjs').ClaimMakeupLesson} [deps.claimMakeupLesson]
+   *   pins a makeup-sheet ticket's session to its missed day; absent, makeup
+   *   work counts for today as before
    * @param {() => string} [deps.newSessionId]
    * @param {() => Date} [deps.clock]
    * @param {object} [deps.logger]
@@ -134,7 +137,7 @@ export class RunSelfServiceAction {
     issueDocument = null, dispatchMedia = null, openRemediation = null,
     donow = null, closeSessionOutcome = null, launchers = new Map(), companions = null, companionHandlers = null,
     tokens = null, mountAcknowledgements = false, mountReceiptIssuer = null,
-    printMakeupAgenda = null,
+    printMakeupAgenda = null, claimMakeupLesson = null,
     newSessionId = () => `ses_${shortId(8)}`,
     clock = () => new Date(), logger = console,
   } = {}) {
@@ -155,6 +158,7 @@ export class RunSelfServiceAction {
     this.#companions = companions;
     this.#companionHandlers = companionHandlers;
     this.#printMakeupAgenda = printMakeupAgenda;
+    this.#claimMakeupLesson = claimMakeupLesson;
     this.#newSessionId = newSessionId;
     this.#clock = clock;
     this.#logger = logger;
@@ -373,6 +377,11 @@ export class RunSelfServiceAction {
       return { outcome: 'failed', sentence: TELL_A_GROWN_UP };
     }
 
+    // A makeup-sheet ticket's work counts for the day it was printed for
+    // (`ClaimMakeupLesson`). Never on a retry: that opens a fresh session
+    // whose claim, if any, comes from its own ticket.
+    if (kind !== 'retry') await this.#claimMakeup({ record, sessionId });
+
     const learnerId = card.learner;
     switch (kind) {
       case 'print': return this.#print(sessionId);
@@ -389,6 +398,19 @@ export class RunSelfServiceAction {
         this.#logger.warn?.('school.selfservice.action.unhandled', { action: kind });
         return { outcome: 'refused', sentence: MOVED_ON };
     }
+  }
+
+  /**
+   * Claim the session for the missed day a makeup-sheet ticket names. Only a
+   * ticket whose subject carries a non-empty `makeupFor` claims; every other
+   * code leaves the lesson as today's. `ClaimMakeupLesson` never throws.
+   */
+  async #claimMakeup({ record, sessionId }) {
+    const forDays = record?.subject?.makeupFor;
+    if (!this.#claimMakeupLesson || !Array.isArray(forDays) || !forDays.length) return;
+    await this.#claimMakeupLesson.execute({
+      sessionId, learnerId: record.subject.learnerId, subject: record.subject.subject, forDays,
+    });
   }
 
   /**

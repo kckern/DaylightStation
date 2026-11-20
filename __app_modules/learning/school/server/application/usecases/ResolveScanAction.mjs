@@ -29,6 +29,7 @@ export class ResolveScanAction {
   #learningAction;
   #replaceLostAnswerSheet;
   #printMakeupAgenda;
+  #claimMakeupLesson;
 
   /**
    * @param {object} deps
@@ -65,6 +66,9 @@ export class ResolveScanAction {
    * @param {import('./PrintMakeupAgenda.mjs').PrintMakeupAgenda} [deps.printMakeupAgenda] -
    *   routes `makeup_print` tickets; absent, such a ticket degrades to the
    *   standard "could not use that ticket" slip.
+   * @param {import('./ClaimMakeupLesson.mjs').ClaimMakeupLesson} [deps.claimMakeupLesson] -
+   *   pins a makeup-sheet ticket's session to its missed day; absent, makeup
+   *   work counts for today as before.
    * @param {() => Date} [deps.clock]
    * @param {object} [deps.logger]
    */
@@ -77,6 +81,7 @@ export class ResolveScanAction {
     resolveLearningAction = null,
     replaceLostAnswerSheet = null,
     printMakeupAgenda = null,
+    claimMakeupLesson = null,
     clock = () => new Date(), logger = console,
   } = {}) {
     if (!tokens || !sessions || !curriculum || !resolvePersonalCard || !issueDocument
@@ -100,6 +105,7 @@ export class ResolveScanAction {
     this.#learningAction = resolveLearningAction;
     this.#replaceLostAnswerSheet = replaceLostAnswerSheet;
     this.#printMakeupAgenda = printMakeupAgenda;
+    this.#claimMakeupLesson = claimMakeupLesson;
     this.#clock = clock;
     this.#logger = logger;
   }
@@ -864,6 +870,9 @@ export class ResolveScanAction {
     // session was already ensured by `ResolveSubjectNext`; nothing here
     // re-reads events.
     if (r.move.kind === 'retry') return this.#retry(r.sessionId); // OpenRemediation: new session, fresh sheet
+    // A makeup-sheet ticket's work counts for the day it was printed for
+    // (`ClaimMakeupLesson`); never on the retry above.
+    if (r.sessionId) await this.#claimMakeup({ record, sessionId: r.sessionId });
     if (r.move.kind === 'print') return this.#print(r.sessionId, 'subject_next', r.state);
     if (r.move.kind === 'play') return this.#play(r.sessionId);
     if (r.move.kind === 'launch') {
@@ -883,6 +892,19 @@ export class ResolveScanAction {
     return this.#slip({
       status: 'wait', tokenClass: 'subject_next', id: `wait-${r.sessionId}`,
       headline: r.unit?.title ?? 'Keep going', lines: [r.move.label], message: r.move.label,
+    });
+  }
+
+  /**
+   * Claim the session for the missed day a makeup-sheet ticket names. Only a
+   * ticket whose subject carries a non-empty `makeupFor` claims; every other
+   * ticket leaves the lesson as today's. `ClaimMakeupLesson` never throws.
+   */
+  async #claimMakeup({ record, sessionId }) {
+    const forDays = record?.subject?.makeupFor;
+    if (!this.#claimMakeupLesson || !Array.isArray(forDays) || !forDays.length) return;
+    await this.#claimMakeupLesson.execute({
+      sessionId, learnerId: record.subject.learnerId, subject: record.subject.subject, forDays,
     });
   }
 
