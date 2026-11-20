@@ -119,7 +119,6 @@ public final class QuickInputCapability implements Capability {
     /** Where the text and photo screens leave what they captured. */
     File inputsInbox;
     private String lastAnnounced = "";
-    private final Map<String, String> announcedCaptures = new java.util.HashMap<>();
     private final java.util.Set<String> canceledCaptures = new java.util.HashSet<>();
     private int cutOffAnnounced;
     private File cutOffDir;
@@ -488,7 +487,6 @@ public final class QuickInputCapability implements Capability {
                 JSONArray rows = entry.getValue();
                 for (int i = 0; i < rows.length(); i++) {
                     String id = QueueNotice.captureId(entry.getKey(), rows.getJSONObject(i).getString("id"));
-                    announcedCaptures.remove(id);
                     if (!canceledCaptures.contains(id)) {
                         notices.cancel(id);
                         canceledCaptures.add(id);
@@ -504,16 +502,27 @@ public final class QuickInputCapability implements Capability {
                 String inputId = row.getString("id");
                 String id = QueueNotice.captureId(owner, inputId);
                 String state = row.getString("state");
-                if (state.equals(announcedCaptures.get(id))) continue;
+                String previous = q.captureNoticeState(id);
+                if (state.equals(previous)) continue;
                 String action = row.getString("action");
                 String link = QueueNotice.captureLink(owner, inputId, "");
                 String actionLink = "";
                 if ("Retry".equals(action)) actionLink = QueueNotice.captureLink(owner, inputId, "&do=retry");
                 if ("Replace capture".equals(action)) actionLink = QueueNotice.captureLink(owner, inputId, "&do=replace");
-                notices.post(id, LocalNotices.UPLOADS, row.getString("destination"), row.getString("message"), link,
-                        actionLink.isEmpty() ? "" : action, actionLink);
-                announcedCaptures.put(id, state);
-                canceledCaptures.remove(id);
+                // Record first so an interruption after post cannot replay a historical alert.
+                if (!q.rememberCaptureNotice(id, state)) return;
+                try {
+                    if (!owner.equals(captureOwner.get())) {
+                        q.rememberCaptureNotice(id, previous);
+                        return;
+                    }
+                    notices.post(id, LocalNotices.UPLOADS, row.getString("destination"), row.getString("message"), link,
+                            actionLink.isEmpty() ? "" : action, actionLink);
+                    canceledCaptures.remove(id);
+                } catch (RuntimeException unavailable) {
+                    q.rememberCaptureNotice(id, previous);
+                    throw unavailable;
+                }
             }
         } catch (Exception unavailable) {
             core.shell().note("INPUT", "could not show a capture notice");

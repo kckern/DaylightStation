@@ -637,4 +637,33 @@ public class QuickInputCapabilityTest {
         assertEquals(Collections.singletonList(id), uploads);
     }
 
+    @Test public void captureNoticesRememberTheLastPostedStateAcrossPayloadRestarts() throws Exception {
+        File state = tmp.newFolder();
+        String owner = InputUploader.currentScope(Backend.from(core));
+        File scoped = new File(inbox, "owner-" + owner);
+        assertTrue(scoped.mkdir());
+        String id = "1700000000000-ab12cd34";
+        Files.write(new File(scoped, id + ".ogg").toPath(), new byte[] { 42 });
+        List<String> posted = new ArrayList<>();
+        boolean[] online = { false, false, true, true };
+        for (boolean connected : online) {
+            CoreRuntime runtime = TestCore.create(tmp.newFolder());
+            QuickInputCapability payload = new QuickInputCapability(http, state, inbox, () -> now, () -> connected, screens);
+            runtime.add(payload);
+            runtime.prepare(new JSONObject());
+            runtime.settings().set(Backend.BASE_URL, "https://kiosk.example");
+            runtime.settings().set(Backend.USER, "example-user");
+            runtime.services().provide(LocalNotices.class, new LocalNotices() {
+                @Override public void post(String key, String channel, String title, String text, String link) {
+                    if (key.startsWith("capture-")) posted.add(text);
+                }
+                @Override public void cancel(String key) { }
+            });
+            payload.pumpOnce();
+            payload.stop();
+        }
+        assertEquals(java.util.Arrays.asList("Queued", "Accepted"), posted);
+        assertEquals(Collections.singletonList(id), uploads);
+    }
+
 }

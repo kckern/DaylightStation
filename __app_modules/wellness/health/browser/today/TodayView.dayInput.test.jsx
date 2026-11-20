@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, waitFor, cleanup, within, act } from '@testing-library/react';
 import { MantineProvider } from '@mantine/core';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, useLocation } from 'react-router-dom';
 
 const apiMock = vi.fn();
 const camera = vi.hoisted(() => ({ current: null, stop: () => {} }));
@@ -17,7 +17,7 @@ import { TodayView } from './TodayView.jsx';
 import { HealthOperationsProvider } from '../operations/HealthOperationsProvider.jsx';
 import { localTodayISO } from './mealBuckets.js';
 import { addDaysISO } from './moveDays.js';
-import { resetApiResourceCache } from '../../../../../frontend/src/lib/hooks/useApiResource.js';
+import { primeApiResource, resetApiResourceCache } from '../../../../../frontend/src/lib/hooks/useApiResource.js';
 import { RECONSTRUCTION_LOG_ID } from '../../portable/contracts/nutrition/reconstruction.mjs';
 
 const today = localTodayISO();
@@ -35,9 +35,10 @@ const api = async (path, body) => {
   if (path.includes('observations')) return { observations: [] };
   return {};
 };
+const LocationProbe = () => <output data-testid="health-location">{useLocation().search}</output>;
 const open = async ({ session = false, path = '/health' } = {}) => {
   const view = <TodayView onSetupGoals={() => {}} onCoachTap={() => {}} />;
-  render(<MemoryRouter initialEntries={[path]}><MantineProvider><DismissStackProvider>{session ? <HealthOperationsProvider userId="u" send={apiMock}>{view}</HealthOperationsProvider> : view}</DismissStackProvider></MantineProvider></MemoryRouter>);
+  render(<MemoryRouter initialEntries={[path]}><LocationProbe /><MantineProvider><DismissStackProvider>{session ? <HealthOperationsProvider userId="u" send={apiMock}>{view}</HealthOperationsProvider> : view}</DismissStackProvider></MantineProvider></MemoryRouter>);
   await waitFor(() => expect(dayReads).toBeGreaterThan(0));
   return screen.findByRole('textbox', { name: 'Log food or change this day' });
 };
@@ -424,5 +425,44 @@ describe('TodayView barcode review', () => {
     await act(async () => finish({ committed: true, undoToken: 'meal-scan', entryIds: ['granola'], items: [food('granola')] }));
     expect(screen.queryByText('Logged')).toBeNull();
     expect(calls(postPath)).toHaveLength(1);
+  });
+});
+
+describe('opening saved captures', () => {
+  it('keeps a saved-meal link through revalidation of a stale cached day', async () => {
+    const path = `api/v1/health/day?date=${today}`;
+    primeApiResource(path, { items: [food('Eggs')] });
+    let finishRead;
+    apiMock.mockImplementation((route, body) => {
+      if (route !== path) return api(route, body);
+      dayReads += 1;
+      return new Promise(resolve => { finishRead = resolve; });
+    });
+    await open({ path: `/health?date=${today}&mealLog=saved-meal` });
+    expect(screen.getByTestId('health-location').textContent).toContain('mealLog=saved-meal');
+    await act(async () => finishRead({ items: [food('Soup', { logId: 'saved-meal' })] }));
+    expect(await screen.findByRole('dialog', { name: 'Soup' })).toBeTruthy();
+    expect(screen.getByTestId('health-location').textContent).not.toContain('mealLog');
+  });
+
+  it('reports a missing saved meal after the day answers', async () => {
+    await open({ path: `/health?date=${today}&mealLog=removed` });
+    expect(await toasts().findByText('This saved meal was not found on this day.')).toBeTruthy();
+    expect(screen.getByTestId('health-location').textContent).not.toContain('mealLog');
+  });
+
+  it('closes Health capture status while taking an older barcode receipt to its date', async () => {
+    const date = addDaysISO(today, -3);
+    items = [food('Granola', { date })];
+    localStorage.setItem('daylight.health.barcode-receipts:u:receipt', JSON.stringify({
+      id: 'receipt', userId: 'u', kind: 'barcode-commit', date, bucket: 'morning', startedAt: 1,
+      receipt: { entryId: 'Granola', undoToken: 'token' },
+    }));
+    await open({ session: true, path: '/health?capture=status' });
+    fireEvent.click(await screen.findByRole('button', { name: 'View in Health' }));
+    await waitFor(() => expect(screen.getByTestId('health-location').textContent).toContain(`date=${date}`));
+    expect(screen.getByTestId('health-location').textContent).not.toContain('capture=');
+    expect(screen.queryByRole('dialog', { name: 'Health capture status' })).toBeNull();
+    expect(await screen.findByRole('dialog', { name: 'Granola' })).toBeTruthy();
   });
 });

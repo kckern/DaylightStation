@@ -95,6 +95,7 @@ final class InputQueue {
     private final Store store;
     private final List<Entry> memos = new ArrayList<>();
     private final Map<String, JSONArray> receipts = new LinkedHashMap<>();
+    private final Map<String, String> captureNoticeStates = new LinkedHashMap<>();
     private int uploaded;
     private int lost;
     private int discarded;
@@ -376,6 +377,18 @@ final class InputQueue {
         return "QUEUED";
     }
 
+    synchronized String captureNoticeState(String id) {
+        return captureNoticeStates.get(id);
+    }
+
+    synchronized boolean rememberCaptureNotice(String id, String state) {
+        if (closed || java.util.Objects.equals(state, captureNoticeStates.get(id))) return false;
+        if (state == null) captureNoticeStates.remove(id);
+        else captureNoticeStates.put(id, state);
+        persist();
+        return true;
+    }
+
     synchronized Map<String, JSONArray> otherCaptureStatuses(String current, long nowMs) {
         Map<String, JSONArray> other = new LinkedHashMap<>();
         java.util.Set<String> owners = new java.util.LinkedHashSet<>(receipts.keySet());
@@ -478,6 +491,7 @@ final class InputQueue {
             discarded = doc.optInt("discarded", 0);
             readHolds(doc);
             readReceipts(doc);
+            readCaptureNoticeStates(doc);
             for (JSONObject o : entriesOf(doc)) {
                 try {
                     Entry m = entryOf(o);
@@ -503,6 +517,7 @@ final class InputQueue {
             discarded = 0;
             holds.clear();
             receipts.clear();
+            captureNoticeStates.clear();
         }
         lastWritten = snapshot();
     }
@@ -554,6 +569,16 @@ final class InputQueue {
         }
     }
 
+    private void readCaptureNoticeStates(JSONObject doc) {
+        captureNoticeStates.clear();
+        JSONObject saved = doc.optJSONObject("captureNoticeStates");
+        if (saved == null) return;
+        for (Iterator<String> ids = saved.keys(); ids.hasNext();) {
+            String id = ids.next();
+            captureNoticeStates.put(id, saved.optString(id));
+        }
+    }
+
     /** The state as it is on disk: what a change that cannot be written is undone to. */
     private String lastWritten = "";
 
@@ -571,7 +596,9 @@ final class InputQueue {
                         .put("nextAttemptAtMs", m.nextAttemptAtMs).put("lastError", m.lastError));
             }
             return new JSONObject().put("uploaded", uploaded).put("lost", lost).put("discarded", discarded)
-                    .put("holds", new JSONObject(holds)).put("captureReceipts", new JSONObject(receipts)).put("inputs", unbound).put("ownedInputs", owned).toString();
+                    .put("holds", new JSONObject(holds)).put("captureReceipts", new JSONObject(receipts))
+                    .put("captureNoticeStates", new JSONObject(captureNoticeStates))
+                    .put("inputs", unbound).put("ownedInputs", owned).toString();
         } catch (JSONException impossible) {
             throw new IllegalStateException(impossible);
         }
@@ -587,6 +614,7 @@ final class InputQueue {
             discarded = doc.optInt("discarded", 0);
             readHolds(doc);
             readReceipts(doc);
+            readCaptureNoticeStates(doc);
             for (JSONObject o : entriesOf(doc)) {
                 Entry m = entryOf(o);
                 m.state = State.valueOf(o.optString("state", "QUEUED"));

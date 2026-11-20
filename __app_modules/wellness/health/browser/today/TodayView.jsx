@@ -177,15 +177,16 @@ export function TodayView({ active = true, sidebarTarget, followUpTarget = null,
   };
   const mealLog = searchParams.get('mealLog');
   useEffect(() => {
-    if (!active || day.loading || !mealLog) return;
+    if (!active || !mealLog || day.loading || day.revalidating || day.error || !day.authoritative) return;
     const row = day.items.find(item => (item.logId || item.logUuid) === mealLog);
     if (row) setEditingRow(row);
+    else setCaptureNotice('This saved meal was not found on this day.');
     setSearchParams(previous => {
       const next = new URLSearchParams(previous);
       next.delete('mealLog');
       return next;
     }, { replace: true });
-  }, [active, day.items, day.loading, mealLog, setSearchParams]);
+  }, [active, day.items, day.loading, day.revalidating, day.error, day.authoritative, mealLog, setSearchParams]);
   useEffect(() => {
     if (!selectedCapture || selectedCapture.date !== date) return;
     const row = day.items.find(item => selectedCapture.entryIds.includes(String(entryId(item))));
@@ -779,9 +780,16 @@ export function TodayView({ active = true, sidebarTarget, followUpTarget = null,
       {coachLine ? <Button variant="subtle" onClick={() => onCoachTap()}>{coachLine}</Button> : null}
       <BarcodeOperationStatus open={active && captureStatusOpen} onClose={closeHealthCaptureStatus}
         undoBusy={undoBusy} onUndo={undoMealChange} onView={receipt => {
-          closeHealthCaptureStatus();
           setSelectedCapture(receipt);
-          if (receipt.date !== date) setDate(receipt.date);
+          setSearchParams(previous => {
+            const next = new URLSearchParams(previous);
+            next.delete('capture');
+            if (receipt.date !== date) {
+              next.set('date', receipt.date);
+              next.set('week', weekEnd(receipt.date));
+            }
+            return next;
+          }, { replace: true });
         }} />
       <BarcodeCapture open={active && captureMode === 'barcode'} bucket={barcodeTargetBucket || currentMealBucketId()}
         meals={BUCKETS.map(meal => ({ value: meal.id, label: meal.label }))}
