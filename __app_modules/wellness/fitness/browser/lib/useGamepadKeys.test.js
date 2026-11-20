@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { gamepadKeyEdges } from './useGamepadKeys.js';
+import { gamepadKeyEdges, padShape } from './useGamepadKeys.js';
 
 const pad = (pressed) => ({ buttons: Array.from({ length: 16 }, (_, i) => ({ pressed: pressed.includes(i) })) });
 
@@ -14,5 +14,29 @@ describe('gamepadKeyEdges', () => {
   });
   it('ignores missing pads', () => {
     expect(gamepadKeyEdges(new Set(), [null, undefined]).edges).toEqual([]);
+  });
+});
+
+const stick = (x, y, mapping = '') => ({ mapping, buttons: [], axes: [x, y] });
+
+describe('gamepadKeyEdges — left stick', () => {
+  it('turns stick deflection past half into arrows, once per push', () => {
+    let s = gamepadKeyEdges(new Set(), [stick(-0.9, 0)]);
+    expect(s.edges).toEqual(['ArrowLeft']);
+    s = gamepadKeyEdges(s.pressed, [stick(-0.9, 0)]);
+    expect(s.edges).toEqual([]);
+    s = gamepadKeyEdges(s.pressed, [stick(0, 0)]);
+    s = gamepadKeyEdges(s.pressed, [stick(0, 0.8)]);
+    expect(s.edges).toEqual(['ArrowDown']);
+  });
+  it('ignores a resting or barely moved stick', () => {
+    expect(gamepadKeyEdges(new Set(), [stick(0.3, -0.2)]).edges).toEqual([]);
+  });
+});
+
+describe('padShape', () => {
+  it('summarises id, mapping and sizes', () => {
+    expect(padShape({ id: 'R1', mapping: '', buttons: [1, 2, 3], axes: [0, 0] }))
+      .toEqual({ id: 'R1', mapping: '', buttons: 3, axes: 2 });
   });
 });
