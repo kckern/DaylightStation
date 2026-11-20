@@ -426,7 +426,8 @@ function ListsItemRow({ item, onUpdate, onDelete, onToggleActive, onDuplicate, i
           {previewOpen && item.action === 'Display' && (
             <div style={{ height: 500 }}>
               <Displayer
-                display={{ id: item.input?.replace(/^(\w+):\s+/, '$1:').trim() }}
+                display={{ id: item.input }}
+                reuseRecentDescriptor
                 onClose={() => setPreviewOpen(false)}
               />
             </div>

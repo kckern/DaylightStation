@@ -56,9 +56,3 @@ export function splitContentId(contentId) {
     localId: contentId.slice(colonIndex + 1).trim(),
   };
 }
-
-/** The info endpoint accepts one encoded source and one encoded local identifier. */
-export function contentInfoPath(source, localId) {
-  if (!source || !localId) return null;
-  return `/api/v1/info/${encodeURIComponent(source)}/${encodeURIComponent(localId)}`;
-}

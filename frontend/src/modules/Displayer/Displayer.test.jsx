@@ -7,7 +7,7 @@
 // usable src is found wherever the info payload happens to carry it, and that
 // "no usable src" is a visible error rather than silence.
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 
 const apiMock = vi.fn();
 vi.mock('../../lib/api.mjs', () => ({
@@ -15,11 +15,13 @@ vi.mock('../../lib/api.mjs', () => ({
 }));
 
 import Displayer from './Displayer.jsx';
+import { resetApiResourceCache } from '../../lib/hooks/useApiResource.js';
 
 const ID = 'files:art/fhe/esther.jpg';
 
 beforeEach(() => {
   apiMock.mockReset();
+  resetApiResourceCache();
 });
 
 async function renderResolved(payload) {
@@ -34,6 +36,36 @@ describe('Displayer image source resolution', () => {
 
     expect(screen.getByRole('img')).toHaveAttribute('src', '/provided.jpg');
     expect(apiMock).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['42', '/api/v1/info/42'],
+    ['files/art/fhe/sea glass.jpg', '/api/v1/info/files/art/fhe/sea%20glass.jpg'],
+  ])('keeps server resolution for the legacy display ID %s', async (id, path) => {
+    apiMock.mockResolvedValue({ title: 'Legacy item', imageUrl: '/legacy.jpg' });
+    render(<Displayer display={{ id }} />);
+
+    expect(await screen.findByRole('img', { name: 'Legacy item' })).toHaveAttribute('src', '/legacy.jpg');
+    expect(apiMock).toHaveBeenCalledWith(path, {}, 'GET', { signal: expect.any(AbortSignal) });
+  });
+
+  it('shows a malformed qualified ID as an error', () => {
+    render(<Displayer display={{ id: 'canvas:' }} />);
+
+    expect(screen.getByRole('alert')).toHaveTextContent('Invalid display content ID');
+    expect(apiMock).not.toHaveBeenCalled();
+  });
+
+  it('revalidates a previously accepted descriptor for an ordinary menu display', async () => {
+    apiMock.mockResolvedValueOnce({ title: 'Previous image', imageUrl: '/previous.jpg' });
+    const first = render(<Displayer display={{ id: ID }} />);
+    await screen.findByRole('img', { name: 'Previous image' });
+    first.unmount();
+
+    apiMock.mockResolvedValueOnce({ title: 'Current image', imageUrl: '/current.jpg' });
+    render(<Displayer display={{ id: ID }} />);
+    expect(await screen.findByRole('img', { name: 'Current image' })).toHaveAttribute('src', '/current.jpg');
+    expect(apiMock).toHaveBeenCalledTimes(2);
   });
 
   it('uses imageUrl when the payload carries one', async () => {
@@ -99,9 +131,9 @@ describe('Displayer image source resolution', () => {
 
   it('loads the new item when the same display instance receives a different id', async () => {
     apiMock.mockImplementation(path => Promise.resolve({
-      title: path.endsWith('/second.jpg') ? 'second' : 'esther',
+      title: path.endsWith('%2Fsecond.jpg') ? 'second' : 'esther',
       mediaType: 'image',
-      imageUrl: path.endsWith('/second.jpg') ? '/second.jpg' : '/esther.jpg',
+      imageUrl: path.endsWith('%2Fsecond.jpg') ? '/second.jpg' : '/esther.jpg',
     }));
     const { rerender } = render(<Displayer display={{ id: ID }} />);
     await waitFor(() => expect(screen.getByRole('img')).toHaveAttribute('src', '/esther.jpg'));
@@ -109,6 +141,22 @@ describe('Displayer image source resolution', () => {
     rerender(<Displayer display={{ id: 'files:art/fhe/second.jpg' }} />);
 
     await waitFor(() => expect(screen.getByRole('img')).toHaveAttribute('src', '/second.jpg'), { timeout: 1000 });
-    expect(apiMock).toHaveBeenCalledWith('/api/v1/info/files/art/fhe/second.jpg');
+    expect(apiMock).toHaveBeenCalledWith('/api/v1/info/files/art%2Ffhe%2Fsecond.jpg', {}, 'GET', { signal: expect.any(AbortSignal) });
+  });
+
+  it('releases its pending descriptor when another item replaces it', async () => {
+    const previous = Promise.withResolvers();
+    apiMock.mockReturnValueOnce(previous.promise)
+      .mockResolvedValueOnce({ title: 'Next image', imageUrl: '/next.jpg' });
+    const { rerender } = render(<Displayer display={{ id: ID }} />);
+    const { signal } = apiMock.mock.calls[0][3];
+
+    rerender(<Displayer display={{ id: 'canvas:next.jpg' }} />);
+    await screen.findByRole('img', { name: 'Next image' });
+    expect(signal.aborted).toBe(true);
+
+    await act(async () => { previous.resolve({ title: 'Previous image', imageUrl: '/previous.jpg' }); });
+    expect(screen.getByRole('img')).toHaveAttribute('src', '/next.jpg');
+    expect(screen.queryByRole('img', { name: 'Previous image' })).toBeNull();
   });
 });

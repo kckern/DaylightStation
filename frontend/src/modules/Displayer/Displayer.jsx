@@ -1,6 +1,9 @@
 // frontend/src/modules/Displayer/Displayer.jsx
 import { useState, useEffect, useMemo } from "react";
 import { useApiResource } from "../../lib/hooks/useApiResource.js";
+import {
+  catalogDescriptorOptions, parseCatalogDescriptor, recentCatalogDescriptorOptions,
+} from '../../../../__capabilities/content-catalog/browser/descriptor.mjs';
 import getLogger from "../../lib/logging/Logger.js";
 import { resolveImageSrc } from "./resolveImageSrc.js";
 import "./Displayer.scss";
@@ -84,21 +87,18 @@ const MODE_FRAME_DEFAULTS = {
   card: 'none',
 };
 
-export default function Displayer({ display, onClose }) {
+export default function Displayer({ display, onClose, reuseRecentDescriptor = false }) {
   // A renderable payload from the caller is authoritative and needs no read.
   // Otherwise the request key follows the selected display ID.
   const providedData = resolveImageSrc(display) ? display : null;
   const displayId = typeof display?.id === 'string' ? display.id : '';
-  const [source, ...rest] = displayId.split(':');
-  const path = !providedData && displayId
-    ? `/api/v1/info/${source}/${rest.join(':')}`
-    : null;
+  const path = providedData ? null : parseCatalogDescriptor(displayId, { allowUnqualified: true })?.path;
   const { data: resolvedData, error: readError } = useApiResource(path, {
+    ...(reuseRecentDescriptor ? recentCatalogDescriptorOptions : catalogDescriptorOptions),
     label: `Display ${displayId || 'item'}`,
-    retryTransient: false,
   });
   const data = providedData || resolvedData;
-  const error = readError?.message || null;
+  const error = !data && (readError?.message || (displayId && !path ? 'Invalid display content ID' : null));
   const logger = useMemo(() => getLogger().child({ component: 'displayer' }), []);
 
   // Resolve mode via cascade: display.mode -> mode default

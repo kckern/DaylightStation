@@ -315,11 +315,14 @@ mount. Explicit reload and invalidation still request fresh data. Use the same
 deadline across body parsing and transient retries. An explicit retry starts
 a new deadline.
 
-In Admin lists, the row preview, image picker, capability check, combobox
-title and Item Details use one descriptor key. Search picks provide immediate
-labels and images while the descriptor loads. Item Details revalidates on
-open, can join an active read and publishes a successful Retry to the row.
-[Catalog read policy](../../../__capabilities/content-catalog/browser/lib/catalogDescriptor.js) · [Row projection](../../../__capabilities/content-catalog/browser/admin/catalogContentInfo.js)
+In Admin lists, the row, image picker, capability check, combobox title,
+Display preview and Item Details use one descriptor key. Search picks
+provide immediate labels and images while the descriptor loads. Item Details
+revalidates on open, can join an active read and publishes a successful Retry
+to the row. Display preview can reuse a recent snapshot on reopening.
+An ordinary menu display revalidates on mount. A caller that supplies a
+renderable image skips the read.
+[Catalog descriptor entry](../../../__capabilities/content-catalog/browser/descriptor.mjs) · [Row projection](../../../__capabilities/content-catalog/browser/admin/catalogContentInfo.js)
 
 Use `reload()` to retry one reader. Use `invalidateApiResources(matches)`
 when a write affects mounted readers of one or more shared resources. Use
