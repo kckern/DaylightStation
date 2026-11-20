@@ -21,7 +21,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import '@mantine/core/styles.css';
 import { ActionIcon } from '@mantine/core';
 import {
-  AppThemeProvider, AppChrome, DismissStackProvider, LoadingState, ErrorState, EmptyState, UiIcon, useViewScroll,
+  AppThemeProvider, AppChrome, DismissStackProvider, LoadingState, ErrorState, EmptyState, UiIcon, useRetryRegion, useViewScroll,
 } from '@/lib/ui';
 import {
   useVehicles, useOverview, useJourneys, useFuel, useService, useDocuments, useServiceTypes,
@@ -131,9 +131,14 @@ function AutoAppShell() {
   // These panels keep their records visible during a same-car refresh.
   const retainedContent = { drives: journeys.data?.journeys, fuel: fuel.data, service: service.data }[tab];
   const showLoading = activeResource.loading && !retainedContent;
+  const garageOpen = vehicles.loading || Boolean(vehicles.error) || !vehicles.data?.vehicles?.length || !vehicleId;
+  const shellResource = garageOpen ? vehicles : activeResource;
+  const { regionProps: shellRegion, retry: retryShell } = useRetryRegion(
+    shellResource.reload, shellResource.loading || shellResource.revalidating,
+  );
   useViewScroll({
     mainRef, viewKey: tab, owner: vehicleId,
-    ready: Boolean(vehicleId) && !showLoading && !activeResource.error,
+    ready: !garageOpen && !showLoading && !activeResource.error,
   });
 
   const vehicleLabel = useMemo(() => {
@@ -141,23 +146,45 @@ function AutoAppShell() {
     return found?.label || overview.data?.label || vehicleId || 'Vehicle';
   }, [vehicles.data, vehicleId, overview.data]);
 
-  let garageContent;
-  if (vehicles.loading) {
-    garageContent = <LoadingState label="garage" />;
-  } else if (vehicles.error) {
-    garageContent = <ErrorState error={vehicles.error} onRetry={vehicles.reload} label="Garage" />;
-  } else if (!vehicles.data?.vehicles?.length) {
-    garageContent = <EmptyState
-      title="No vehicles yet"
-      hint="A vehicle appears here once the in-car device uploads a trip, or once records are added under household/automotive/."
+  let shellContent;
+  let shellLabel;
+  if (garageOpen) {
+    shellLabel = 'Garage';
+    if (vehicles.loading) {
+      shellContent = <LoadingState label="garage" />;
+    } else if (vehicles.error) {
+      shellContent = <ErrorState error={vehicles.error} onRetry={retryShell} label="Garage" />;
+    } else if (!vehicles.data?.vehicles?.length) {
+      shellContent = <EmptyState
+        title="No vehicles yet"
+        hint="A vehicle appears here once the in-car device uploads a trip, or once records are added under household/automotive/."
+      />;
+    } else {
+      shellContent = <Garage vehicles={vehicles.data.vehicles} restoreFocus={garageFocus}
+        onPick={(id) => { setVehicleId(id); autoLog.debug('garage.picked', { vehicleId: id }); }} />;
+    }
+  } else if (tab === 'overview') {
+    shellLabel = 'Vehicle';
+    shellContent = <OverviewPanel
+      overview={overview.data}
+      loading={showLoading}
+      error={overview.error}
+      onReload={retryShell}
+      onGoTo={setTab}
+      vehicleDescription={describeVehicle(overview.data?.vehicle)}
     />;
-  } else if (!vehicleId) {
-    garageContent = <Garage vehicles={vehicles.data.vehicles} restoreFocus={garageFocus}
-      onPick={(id) => { setVehicleId(id); autoLog.debug('garage.picked', { vehicleId: id }); }} />;
+  } else if (tab === 'glove') {
+    shellLabel = 'Documents';
+    shellContent = <GlovePanel
+      documents={documents.data}
+      reminders={overview.data?.reminders}
+      loading={showLoading}
+      error={documents.error}
+      onReload={retryShell}
+    />;
   }
-  if (garageContent) return <AppChrome title="Garage">{garageContent}</AppChrome>;
 
-  const headerActions = vehicles.data.vehicles.length > 1
+  const headerActions = !garageOpen && vehicles.data.vehicles.length > 1
     ? [(
       <ActionIcon key="back" className="ds-touch-target" aria-label="Back to garage" variant="subtle" autoFocus onClick={() => {
         garageFocus.current = vehicleId;
@@ -170,37 +197,29 @@ function AutoAppShell() {
 
   return (
     <AppChrome
-      title={vehicleLabel}
+      title={garageOpen ? 'Garage' : vehicleLabel}
       mainRef={mainRef}
-      tabs={TABS}
+      tabs={garageOpen ? undefined : TABS}
       activeTab={tab}
       onTabChange={(id) => { setTab(id); autoLog.debug('tab.changed', { tab: id }); }}
       headerActions={headerActions}
     >
-      {tab === 'overview' && (
-        <OverviewPanel
-          overview={overview.data}
-          loading={showLoading}
-          error={overview.error}
-          onReload={overview.reload}
-          onGoTo={setTab}
-          vehicleDescription={describeVehicle(overview.data?.vehicle)}
-        />
-      )}
-      {tab === 'drives' && (
+      {shellContent && <section {...shellRegion} aria-label={shellLabel}>{shellContent}</section>}
+      {!garageOpen && tab === 'drives' && (
         <DrivesPanel
           vehicleId={vehicleId}
           journeys={journeys.data?.journeys}
           hidden={journeys.data?.hidden || 0}
           fuelLogs={fuel.data?.logs}
           loading={showLoading}
+          busy={journeys.loading || journeys.revalidating}
           error={journeys.error}
           onReload={journeys.reload}
           includeShuffles={includeShuffles}
           onToggleShuffles={() => setIncludeShuffles((v) => !v)}
         />
       )}
-      {tab === 'fuel' && (
+      {!garageOpen && tab === 'fuel' && (
         <FuelPanel
           vehicleId={vehicleId}
           fuel={fuel.data}
@@ -210,24 +229,16 @@ function AutoAppShell() {
           onReload={fuel.reload}
         />
       )}
-      {tab === 'service' && (
+      {!garageOpen && tab === 'service' && (
         <ServicePanel
           vehicleId={vehicleId}
           service={service.data}
           reminders={overview.data?.reminders}
           typeResource={serviceTypes}
           loading={showLoading}
+          busy={service.loading || service.revalidating}
           error={service.error}
           onReload={service.reload}
-        />
-      )}
-      {tab === 'glove' && (
-        <GlovePanel
-          documents={documents.data}
-          reminders={overview.data?.reminders}
-          loading={showLoading}
-          error={documents.error}
-          onReload={documents.reload}
         />
       )}
     </AppChrome>

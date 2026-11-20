@@ -10,7 +10,7 @@
 
 import { useState } from 'react';
 import { addCalendarDays, localDateKey } from '@/lib/calendarDay.js';
-import { LoadingState, ErrorState, EmptyState, Sheet, Select, useSheetSubmission } from '@/lib/ui';
+import { LoadingState, ErrorState, EmptyState, Sheet, Select, useRetryRegion, useSheetSubmission } from '@/lib/ui';
 import { AutoSheetActions } from './AutoSheetActions.jsx';
 import { formatDistance, formatDuration, formatDay, formatTime, formatSpeed } from "./format.js";
 import { autoApi } from "./useAutoApi.js";
@@ -20,12 +20,13 @@ import autoLog from "./autoLog.js";
 const PLACE_KINDS = ['home', 'school', 'church', 'work', 'fuel', 'store', 'service', 'other'];
 
 export default function DrivesPanel({
-  vehicleId, journeys, hidden, fuelLogs, loading, error, onReload,
+  vehicleId, journeys, hidden, fuelLogs, loading, busy, error, onReload,
   includeShuffles, onToggleShuffles,
 }) {
   const [naming, setNaming] = useState(null);
   const [fueling, setFueling] = useState(null);
   const [changedShortFilter, setChangedShortFilter] = useState(false);
+  const { regionProps, retry } = useRetryRegion(onReload, busy);
 
   const rows = journeys || [];
   // Keep the used filter available for this visit, including when its
@@ -37,7 +38,7 @@ export default function DrivesPanel({
   };
 
   const content = loading ? <LoadingState label="drives" />
-    : error ? <ErrorState error={error} onRetry={onReload} label="Drives" />
+    : error ? <ErrorState error={error} onRetry={retry} label="Drives" />
     : <>
       {rows.length === 0 ? (
         <EmptyState
@@ -65,7 +66,7 @@ export default function DrivesPanel({
 
   return (
     <>
-      <div className="auto-panel auto-panel--drives">
+      <section {...regionProps} className="auto-panel auto-panel--drives" aria-label="Drives">
         {showShortFilter && (
           <button type="button" className="auto-btn auto-btn--ghost auto-shuffle-toggle" onClick={toggleShortFilter}>
             {includeShuffles
@@ -76,7 +77,7 @@ export default function DrivesPanel({
           </button>
         )}
         {content}
-      </div>
+      </section>
       {fueling && (
         <FuelSheet
           vehicleId={vehicleId}

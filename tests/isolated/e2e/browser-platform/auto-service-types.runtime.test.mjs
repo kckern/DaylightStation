@@ -80,6 +80,8 @@ test('Auto waits for custom service types before starting a draft and saves its 
 test('Auto retries only missing service types and uses no repeat interval for a condition-based type', async ({ page, baseURL }) => {
   const { pending, posts, reads, historyReads, dialog } = await openService(page, baseURL, { failFirst: true });
   const what = dialog.getByRole('combobox', { name: 'What was done', exact: true });
+  const region = dialog.getByRole('region', { name: 'Service types', exact: true });
+  const history = page.getByRole('region', { name: 'Service history', exact: true });
   const save = dialog.getByRole('button', { name: 'Save', exact: true });
   try {
     const alert = dialog.getByRole('alert');
@@ -89,9 +91,17 @@ test('Auto retries only missing service types and uses no repeat interval for a 
     await alert.getByRole('button', { name: 'Retry', exact: true }).press('Enter');
     await expect.poll(() => reads).toEqual(['GET', 'GET']);
     await expect(dialog.getByLabel('Loading service types')).toBeVisible();
+    await expect(region).toBeFocused();
+    await expect(region).toHaveAttribute('aria-busy', 'true');
+    await expect(history).not.toHaveAttribute('aria-busy', 'true');
+    await expect(history.getByRole('dialog')).toHaveCount(0);
   } finally {
     pending.resolve();
   }
+  await expect(what).toHaveValue('cross-rotate');
+  await expect(region).toBeFocused();
+  await expect(region).not.toHaveAttribute('aria-busy', 'true');
+  await page.keyboard.press('Tab');
   await expect(what).toBeFocused();
   await what.selectOption('condition');
   await expect(dialog.getByLabel('Repeat (months)', { exact: true })).toHaveValue('');

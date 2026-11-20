@@ -7,9 +7,9 @@
 // an odometer the car isn't yet giving up. The field for miles exists in the
 // schema and is deliberately not on this form until it would do something.
 
-import { useEffect, useRef, useState } from 'react';
+import { useState } from 'react';
 import { localDateKey } from '@/lib/calendarDay.js';
-import { LoadingState, ErrorState, EmptyState, Sheet, Select, useSheetSubmission } from '@/lib/ui';
+import { LoadingState, ErrorState, EmptyState, Sheet, Select, useRetryRegion, useSheetSubmission } from '@/lib/ui';
 import { AutoSheetActions } from './AutoSheetActions.jsx';
 import { formatDay, formatMoney, formatDistance } from "./format.js";
 import { autoApi } from "./useAutoApi.js";
@@ -26,9 +26,13 @@ const FALLBACK_TYPES = [
 ];
 
 export default function ServicePanel({
-  vehicleId, service, reminders, typeResource, loading, error, onReload,
+  vehicleId, service, reminders, typeResource, loading, busy, error, onReload,
 }) {
   const [adding, setAdding] = useState(false);
+  const { regionProps: historyRegion, retry: retryHistory } = useRetryRegion(onReload, busy);
+  const { regionProps: typesRegion, retry: retryTypes } = useRetryRegion(
+    typeResource.reload, typeResource.loading || typeResource.revalidating,
+  );
   const close = () => setAdding(false);
   const serviceTypes = typeResource.data?.types;
   const types = serviceTypes?.length ? serviceTypes : FALLBACK_TYPES;
@@ -37,7 +41,7 @@ export default function ServicePanel({
   const due = (reminders || []).filter((r) => r.kind === 'service');
 
   const content = loading ? <LoadingState label="service history" />
-    : error ? <ErrorState error={error} onRetry={onReload} label="Service history" />
+    : error ? <ErrorState error={error} onRetry={retryHistory} label="Service history" />
     : <div className="auto-panel">
       <button type="button" className="auto-btn auto-btn--primary auto-btn--block" onClick={() => setAdding(true)}>
         Log service
@@ -89,14 +93,16 @@ export default function ServicePanel({
 
   return (
     <>
-      {content}
+      <section {...historyRegion} aria-label="Service history">{content}</section>
       {adding && (
         <Sheet open onClose={close} title="Log service">
-          {typeResource.data
-            ? <ServiceForm vehicleId={vehicleId} availableTypes={types} onClose={close} />
-            : typeResource.error
-              ? <ErrorState error={typeResource.error} label="Service types" onRetry={typeResource.reload} />
-              : <LoadingState label="service types" />}
+          <section {...typesRegion} aria-label="Service types">
+            {typeResource.data
+              ? <ServiceForm vehicleId={vehicleId} availableTypes={types} onClose={close} />
+              : typeResource.error
+                ? <ErrorState error={typeResource.error} label="Service types" onRetry={retryTypes} />
+                : <LoadingState label="service types" />}
+          </section>
         </Sheet>
       )}
     </>
@@ -121,7 +127,6 @@ function serviceTypeFields(type) {
 function ServiceForm({ vehicleId, availableTypes, onClose }) {
   // A form visit keeps the options it started with if configuration refreshes.
   const [types] = useState(availableTypes);
-  const selectRef = useRef(null);
   const [form, setForm] = useState(() => ({
     ...serviceTypeFields(types[0]),
     date: localDateKey(),
@@ -130,10 +135,6 @@ function ServiceForm({ vehicleId, availableTypes, onClose }) {
     odometerMi: '',
     notes: '',
   }));
-  useEffect(() => {
-    // The sheet stays mounted while a type read retries and replaces its button.
-    if (document.activeElement === document.body) selectRef.current?.focus({ preventScroll: true });
-  }, []);
   const { submit, saving, failure } = useSheetSubmission(onClose, error => {
     autoLog.warn('service.log_failed', { error: error?.message });
   });
@@ -166,7 +167,7 @@ function ServiceForm({ vehicleId, availableTypes, onClose }) {
     <form onSubmit={event => submit(event, save)} aria-label="Log service">
       <label className="auto-field">
         <span>What was done</span>
-        <Select ref={selectRef} density="compact" className="ds-input" value={form.type} onChange={setType}>
+        <Select density="compact" className="ds-input" value={form.type} onChange={setType}>
           {types.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
         </Select>
       </label>
