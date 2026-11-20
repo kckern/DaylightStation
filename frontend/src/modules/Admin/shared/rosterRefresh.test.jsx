@@ -68,11 +68,11 @@ it.each([
   ]);
 });
 
-it('keeps the newer scheduler run busy when its GET supersedes an older run’s GET', async () => {
-  const jobs = { jobs: [
+it('keeps parallel scheduler runs busy through the newer GET that confirms both writes', async () => {
+  const jobs = [
     { id: 'first', name: 'First Job', schedule: '0 * * * *' },
     { id: 'second', name: 'Second Job', schedule: '0 * * * *' },
-  ] };
+  ];
   let finishFirst;
   let finishSecond;
   api.mockResolvedValueOnce(jobs)
@@ -88,11 +88,14 @@ it('keeps the newer scheduler run busy when its GET supersedes an older run’s 
   await waitFor(() => expect(finishFirst).toBeTypeOf('function'));
   fireEvent.click(second);
   await waitFor(() => expect(finishSecond).toBeTypeOf('function'));
-  expect(first).toBeEnabled();
-  expect(second).toBeDisabled();
+  expect(first).toHaveAttribute('aria-busy', 'true');
+  expect(second).toHaveAttribute('aria-busy', 'true');
 
   await act(async () => finishFirst(jobs));
-  expect(second).toBeDisabled();
+  expect(first).toHaveAttribute('aria-busy', 'true');
+  expect(second).toHaveAttribute('aria-busy', 'true');
   await act(async () => finishSecond(jobs));
-  expect(second).toBeEnabled();
+  expect(first).not.toHaveAttribute('aria-disabled');
+  expect(second).not.toHaveAttribute('aria-disabled');
+  expect(api.mock.calls.map(([, , method]) => method)).toEqual(['GET', 'POST', 'GET', 'POST', 'GET']);
 });

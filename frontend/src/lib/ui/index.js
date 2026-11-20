@@ -6,7 +6,7 @@ export { Sheet } from './Sheet.jsx';
 export { ActionMenu } from './ActionMenu.jsx';
 export { useOverlayScrollLock } from './useOverlayScrollLock.js';
 export { useSheetSubmission } from './useSheetSubmission.js';
-export { useFocusRegion, useRetryRegion } from './useRetryRegion.js';
+export { useFocusAfterRemoval, useFocusRegion, useRetryRegion } from './useRetryRegion.js';
 export { DismissStackProvider } from './dismiss/DismissStackProvider.jsx';
 export { useDismissLayer } from './dismiss/useDismissLayer.js';
 export { LoadingState, ErrorState, EmptyState, StateMessage } from './states.jsx';

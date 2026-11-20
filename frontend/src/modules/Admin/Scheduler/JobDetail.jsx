@@ -1,15 +1,16 @@
 import React, { useLayoutEffect, useRef, useState, useCallback } from 'react';
 import { FormDialog } from '@/lib/ui/FormDialog.jsx';
-import { useParams, useNavigate } from 'react-router-dom';
+import { EmptyState, ErrorState, LoadingState, SubmitButton, useRetryRegion, useSheetSubmission } from '@/lib/ui';
+import { Link, useParams, useNavigate } from 'react-router-dom';
 import {
-  Stack, Group, Text, Badge, Button, Paper, Alert, Center, Loader,
+  Stack, Group, Text, Badge, Button, Paper, Alert,
   TextInput, NumberInput, Divider, Code, Anchor
 } from '@mantine/core';
 import {
   IconArrowBack, IconPlayerPlay, IconEdit, IconTrash, IconAlertCircle, IconClock
 } from '@tabler/icons-react';
 import { DaylightAPI } from '../../../lib/api.mjs';
-import { ADMIN_SCHEDULER_JOBS_PATH } from '../../../hooks/admin/useAdminScheduler.js';
+import { ADMIN_SCHEDULER_JOBS_PATH, schedulerJobPath, triggerSchedulerJob } from '../../../hooks/admin/useAdminScheduler.js';
 import { invalidateApiResources, useApiResource } from '../../../lib/hooks/useApiResource.js';
 import ConfirmModal from '../shared/ConfirmModal.jsx';
 import { notifySuccess, notifyFailure } from '../shared/feedback.js';
@@ -70,22 +71,26 @@ function JobDetail() {
 
 function JobDetailView({ jobId }) {
   const navigate = useNavigate();
-  const path = `${ADMIN_SCHEDULER_JOBS_PATH}/${encodeURIComponent(jobId)}`;
-  const { data, loading, error: readError, reload } = useApiResource(path);
-  const job = data?.job;
+  const path = schedulerJobPath(jobId);
+  const { data, loading, error: readError, reload, refresh } = useApiResource(path);
+  const { regionProps, retry } = useRetryRegion(reload, loading);
+  const job = data?.job ?? (data?.id ? data : null);
   const [actionError, setActionError] = useState(null);
-  const [dismissedError, setDismissedError] = useState(null);
-  const error = actionError || (readError !== dismissedError && readError?.message);
   const mounted = useRef(false);
-  const refreshTimer = useRef(null);
+  const cancelRunDelay = useRef(null);
   useLayoutEffect(() => {
     mounted.current = true;
     return () => {
       mounted.current = false;
-      clearTimeout(refreshTimer.current);
+      cancelRunDelay.current?.();
     };
   }, []);
-  const [runQueued, setRunQueued] = useState(false);
+  const { run: submitRun, saving: runQueued } = useSheetSubmission(null, error => {
+    if (!mounted.current) return;
+    const message = error.message || 'Failed to trigger job';
+    setActionError(message);
+    notifyFailure({ title: 'Trigger failed', message });
+  });
 
   // Edit modal state
   const [editOpen, setEditOpen] = useState(false);
@@ -97,26 +102,27 @@ function JobDetailView({ jobId }) {
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleteLoading, setDeleteLoading] = useState(false);
 
-  const handleRunNow = useCallback(async () => {
-    setRunQueued(true);
+  const handleRunNow = () => submitRun(async () => {
     setActionError(null);
+    await triggerSchedulerJob(jobId);
+    if (!mounted.current) return;
+    notifySuccess({ title: 'Job triggered', message: jobId });
+    // Allow runtime status to update before reading the queued job again.
+    await new Promise(resolve => {
+      const timer = setTimeout(resolve, 2000);
+      cancelRunDelay.current = () => {
+        clearTimeout(timer);
+        resolve();
+      };
+    });
+    cancelRunDelay.current = null;
+    if (!mounted.current) return;
     try {
-      await DaylightAPI(`${path}/run`, {}, 'POST');
-      if (!mounted.current) return;
-      notifySuccess({ title: 'Job triggered', message: jobId });
-      // Re-fetch to update runtime status after a short delay
-      refreshTimer.current = setTimeout(() => {
-        reload();
-        setRunQueued(false);
-      }, 2000);
-    } catch (err) {
-      if (!mounted.current) return;
-      const msg = err.message || 'Failed to trigger job';
-      setActionError(msg);
-      notifyFailure({ title: 'Trigger failed', message: msg });
-      setRunQueued(false);
+      await refresh({ followSuperseding: true });
+    } catch {
+      // The job reader reports a refused GET and offers its own Retry.
     }
-  }, [jobId, path, reload]);
+  }, { valid: !loading && !readError, onSuccess: null });
 
   const openEditModal = useCallback(() => {
     if (!job) return;
@@ -174,59 +180,20 @@ function JobDetailView({ jobId }) {
     }
   }, [path, jobId, navigate]);
 
-  // Loading state
-  if (loading && !job) {
-    return (
-      <Center h="60vh">
-        <Loader size="lg" />
-      </Center>
-    );
-  }
-
-  // Error / 404 state (no job loaded)
-  if (error && !job) {
-    return (
-      <Stack gap="md">
-        <Anchor
-          size="sm"
-          onClick={() => navigate('/admin/system/scheduler')}
-          style={{ cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 4 }}
-        >
-          <IconArrowBack size={14} /> Back to Scheduler
-        </Anchor>
-        <Alert icon={<IconAlertCircle size={16} />} color="red" title="Error">
-          {error}
-        </Alert>
-      </Stack>
-    );
-  }
-
-  if (!job) return null;
-
-  const runtime = job.runtime || null;
-
-  return (
-    <Stack gap="md">
-      {/* Header */}
-      <Anchor
-        size="sm"
-        onClick={() => navigate('/admin/system/scheduler')}
-        style={{ cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 4 }}
-      >
-        <IconArrowBack size={14} /> Back to Scheduler
-      </Anchor>
-
+  const runtime = job?.runtime || null;
+  const details = job && (
+    <>
       <Text size="xl" fw={700}>{job.name || job.id}</Text>
 
-      {error && (
+      {actionError && (
         <Alert
           icon={<IconAlertCircle size={16} />}
           color="red"
           title="Error"
           withCloseButton
-          onClose={() => { setActionError(null); setDismissedError(readError); }}
+          onClose={() => setActionError(null)}
         >
-          {error}
+          {actionError}
         </Alert>
       )}
 
@@ -295,14 +262,17 @@ function JobDetailView({ jobId }) {
       {/* Actions */}
       <Divider />
       <Group gap="sm">
-        <Button
+        <SubmitButton
+          as={Button}
+          type="button"
           leftSection={<IconPlayerPlay size={16} />}
           variant="light"
           onClick={handleRunNow}
-          disabled={runQueued}
+          pending={runQueued}
+          blocked={loading || Boolean(readError)}
         >
           {runQueued ? 'Queued' : 'Run Now'}
-        </Button>
+        </SubmitButton>
         <Button
           leftSection={<IconEdit size={16} />}
           variant="default"
@@ -383,6 +353,21 @@ function JobDetailView({ jobId }) {
         confirmLabel="Delete"
         loading={deleteLoading}
       />
+    </>
+  );
+
+  return (
+    <Stack gap="md">
+      <Anchor component={Link} to="/admin/system/scheduler" size="sm"
+        style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+        <IconArrowBack size={14} aria-hidden="true" /> Back to Scheduler
+      </Anchor>
+      <Stack component="section" gap="md" aria-label="Scheduler job" {...regionProps}>
+        {readError && <ErrorState error={readError} label="Scheduler job" onRetry={retry} />}
+        {!job && loading && <LoadingState label="scheduler job" />}
+        {!job && !loading && !readError && <EmptyState title="Scheduler job not found" />}
+        {details}
+      </Stack>
     </Stack>
   );
 }

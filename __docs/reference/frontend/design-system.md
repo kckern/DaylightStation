@@ -363,6 +363,11 @@ for an older read of the same key. A create or remove dialog should
 close when its write succeeds. If the roster GET then fails, let the
 resource show a Retry button that issues only the GET.
 
+A command can use `refresh({ followSuperseding: true })` when a replacement
+read of the same key can confirm its write. The waiter follows the latest
+read and takes its result or error. A change of key or storage owner, or
+unmounting the observer, retires the waiter. [Scheduler roster](../../../frontend/src/modules/Admin/Scheduler/SchedulerIndex.jsx)
+
 Life goal detail reads the selected member's goal and uses the same transition
 command as the list. An acknowledged transition invalidates that goal, the
 member's list and the full plan. The current detail waits for its GET, and

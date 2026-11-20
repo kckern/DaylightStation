@@ -110,17 +110,18 @@ All endpoints live under `/api/v1/admin/scheduler`.
 | DELETE | `/jobs/:id` | Remove a job |
 | POST | `/jobs/:id/run` | Request an immediate run |
 
-The data hook (`useAdminScheduler`) wraps the list and mutation calls with structured
-logging and shared `loading`/`error` state. The detail view calls the same endpoints
-directly.
+The roster uses `useAdminRoster` and the detail view uses `useApiResource`. The
+list GET returns an array and the detail GET returns one job object. Both use
+the job's `runtime` fields to display execution status. `triggerSchedulerJob`
+sends Run requests from both views. Each view keeps its readback and focus
+with the mounted owner. Retry after a refused read repeats only the GET.
 
 ### Run trigger
 
-`POST /jobs/:id/run` currently acknowledges the request with HTTP `202 Accepted`
-("Job queued for execution") and logs it, but does not itself execute the job —
-wiring it to the live scheduler is a known gap. Actual
-cron execution is owned by the system scheduler (`__backend/src/0_system/scheduling/`
-and `__backend/src/3_applications/scheduling/`), which also writes `cron-runtime.yml`.
+`POST /jobs/:id/run` delegates to the scheduler orchestrator and returns HTTP
+`202 Accepted` with execution details. The scheduler writes `cron-runtime.yml`.
+The roster refreshes after acknowledgement. Job detail waits two seconds
+before reading runtime status and cancels that delay when the view closes.
 
 ---
 

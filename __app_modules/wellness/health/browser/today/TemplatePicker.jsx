@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { UnstyledButton, Button, Text } from '@mantine/core';
-import { Sheet, SubmitButton, LoadingState, EmptyState, ErrorState, useRetryRegion, useSheetSubmission } from '@/lib/ui';
+import { Sheet, SubmitButton, LoadingState, EmptyState, ErrorState, useFocusAfterRemoval, useRetryRegion, useSheetSubmission } from '@/lib/ui';
 import { invalidateApiResources, useApiResource } from '../../../../../frontend/src/lib/hooks/useApiResource.js';
 import { DaylightAPI } from "../../../../../frontend/src/lib/api.mjs";
 import { createAppLogger } from "../../../../../frontend/src/lib/ui/createAppLogger.js";
@@ -83,29 +83,13 @@ function TemplatePickerVisit({ onClose, onLogged, bucketId, focusTemplateId, ins
   const reading = loading || revalidating;
   const listCommandsUnavailable = busy || reading || Boolean(loadError);
   const { regionProps, focus, retry } = useRetryRegion(reload, busy || reading);
+  const focusHandlers = useFocusAfterRemoval(focus);
   const scrollRef = useRef(null);
   const visitActive = useRef(false);
-  const lastFocusedControl = useRef(null);
   useLayoutEffect(() => {
     visitActive.current = true;
     return () => { visitActive.current = false; };
   }, []);
-
-  useLayoutEffect(() => {
-    const previous = lastFocusedControl.current;
-    if (!previous || previous.isConnected) return;
-    lastFocusedControl.current = null;
-    if (previous.ownerDocument.activeElement === previous.ownerDocument.body) focus();
-  });
-
-  function retireFocus(event) {
-    const previous = event.target;
-    // A normal blur leaves the control mounted. A read can remove it in the
-    // same commit, which gives the region a chance to recover its focus.
-    queueMicrotask(() => {
-      if (lastFocusedControl.current === previous && previous.isConnected) lastFocusedControl.current = null;
-    });
-  }
 
   function revealContent() {
     focus();
@@ -208,8 +192,7 @@ function TemplatePickerVisit({ onClose, onLogged, bucketId, focusTemplateId, ins
 
   return (
     <Sheet open onClose={onClose} title={chosen ? chosen.name : 'Meals & templates'} scrollRef={scrollRef}>
-      <section aria-label="Saved meals" {...regionProps}
-        onFocusCapture={event => { lastFocusedControl.current = event.target; }} onBlurCapture={retireFocus}>
+      <section aria-label="Saved meals" {...regionProps} {...focusHandlers}>
         {error ? <p className="health-suggest__error" role="alert">{error.message}</p> : null}
         {loadError ? <ErrorState error={loadError} onRetry={retry} label="Meals unavailable" /> : null}
 

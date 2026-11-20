@@ -607,20 +607,27 @@ export function useApiResource(path, {
   const cancelRefresh = useCallback(() => {
     const pending = pendingRefresh.current;
     pendingRefresh.current = null;
-    pending?.reject(refreshAbortError());
+    pending?.waiters.forEach(waiter => waiter.reject(refreshAbortError()));
   }, []);
   const requestReload = useCallback((waiter, join = false) => {
-    cancelRefresh();
     const next = { join };
+    const waiters = [];
+    for (const pending of pendingRefresh.current?.waiters ?? []) {
+      if (pending.followSuperseding) waiters.push(pending);
+      else pending.reject(refreshAbortError());
+    }
+    if (waiter) waiters.push(waiter);
+    pendingRefresh.current = waiters.length ? { request: next, waiters } : null;
     requestedReload.current = next;
-    if (waiter) pendingRefresh.current = { ...waiter, request: next };
     setReloadRequest(next);
-  }, [cancelRefresh]);
+  }, []);
   const reload = useCallback(() => { requestReload(); }, [requestReload]);
-  const refresh = useCallback(() => {
+  // An admitted write can wait for a newer read that supersedes its own on the
+  // same key. Retiring the key, reader or storage owner still cancels the wait.
+  const refresh = useCallback(({ followSuperseding = false } = {}) => {
     if (!enabled || !path || activePath.current !== path) return Promise.reject(refreshAbortError());
     return new Promise((resolve, reject) => {
-      requestReload({ resolve, reject });
+      requestReload({ resolve, reject, followSuperseding });
     });
   }, [enabled, path, requestReload]);
   const fetchedReload = useRef(reloadRequest);
@@ -642,6 +649,7 @@ export function useApiResource(path, {
     };
     const clearOwner = matches => {
       if (!path || !matches(path)) return;
+      cancelRefresh();
       setData(NO_RESULT);
       setError(null);
       if (enabled) requestReload(null, true);
@@ -706,11 +714,11 @@ export function useApiResource(path, {
   }, [path, enabled, swr, requestReload, clearDataOnError, retryTransient]);
 
   useEffect(() => {
-    const takeRefresh = () => {
+    const settleRefresh = (method, value) => {
       const pending = pendingRefresh.current;
       if (!pending || pending.request !== reloadRequest) return null;
       pendingRefresh.current = null;
-      return pending;
+      pending.waiters.forEach(waiter => waiter[method](value));
     };
     if (!enabled || !path) { setLoading(false); return undefined; }
     const { hit: cacheHit, value: cachedValue } = swr ? cacheGet(path) : { hit: false };
@@ -736,7 +744,7 @@ export function useApiResource(path, {
       live = false;
       lease?.dispose();
       releaseRead();
-      takeRefresh()?.reject(refreshAbortError());
+      settleRefresh('reject', refreshAbortError());
     };
     const readState = {
       cacheRead: null,
@@ -785,7 +793,7 @@ export function useApiResource(path, {
           setResultPath(path);
           setLoading(false);
         }
-        takeRefresh()?.resolve(result);
+        settleRefresh('resolve', result);
         logger.debug(cacheHit ? 'api.revalidated' : 'api.loaded', { resource: label || path, ms: Math.round(performance.now() - startedAt) });
       })
       .catch((err) => {
@@ -796,7 +804,7 @@ export function useApiResource(path, {
           setError(err);
           setLoading(false);
         }
-        takeRefresh()?.reject(err);
+        settleRefresh('reject', err);
         logger.warn('api.failed', { resource: label || path, error: err?.message });
       })
       .finally(() => {

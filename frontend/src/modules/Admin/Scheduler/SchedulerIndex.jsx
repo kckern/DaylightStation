@@ -1,12 +1,13 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef } from 'react';
 import { FormDialog } from '@/lib/ui/FormDialog.jsx';
-import { useNavigate } from 'react-router-dom';
-import { Stack, Text, Table, Badge, Button, Group, TextInput, Center, Alert }  from '@mantine/core';
+import { SubmitButton } from '@/lib/ui/SubmitButton.jsx';
+import { Link, useNavigate } from 'react-router-dom';
+import { Stack, Text, Table, Badge, Button, Group, TextInput, Center, Alert, Anchor }  from '@mantine/core';
 import { IconPlus, IconPlayerPlay, IconAlertCircle, IconClock } from '@tabler/icons-react';
 import { ADMIN_SCHEDULER_JOBS_PATH, useAdminScheduler } from '../../../hooks/admin/useAdminScheduler.js';
 import { useAdminRoster } from '../shared/useAdminRoster.js';
 import { ErrorState, LoadingState } from '../../../lib/ui/states.jsx';
-import { useRetryRegion } from '../../../lib/ui/useRetryRegion.js';
+import { useFocusAfterRemoval, useRetryRegion } from '../../../lib/ui/useRetryRegion.js';
 import { cronToHuman, formatDuration } from '../utils/formatters.js';
 
 /**
@@ -65,14 +66,17 @@ const BAND_LABELS = {
 function SchedulerIndex() {
   const navigate = useNavigate();
   const { error, createJob, triggerJob, clearError } = useAdminScheduler();
-  const { data, loading, error: readError, reload, invalidateAfterWrite, refreshAfterWrite } = useAdminRoster(ADMIN_SCHEDULER_JOBS_PATH);
-  const { regionProps, retry } = useRetryRegion(reload, loading);
-  const jobs = data?.jobs ?? EMPTY_JOBS;
+  const { data, loading, error: readError, refresh, invalidateAfterWrite, refreshAfterWrite } = useAdminRoster(ADMIN_SCHEDULER_JOBS_PATH);
+  const [retrying, setRetrying] = useState(false);
+  const { regionProps, focus, retry } = useRetryRegion(retryRoster, loading || retrying);
+  const focusHandlers = useFocusAfterRemoval(focus);
+  const jobs = Array.isArray(data) ? data : (data?.jobs ?? EMPTY_JOBS);
   const [createModalOpen, setCreateModalOpen] = useState(false);
   const [createForm, setCreateForm] = useState({ id: '', name: '', module: '', schedule: '' });
   const [createErrors, setCreateErrors] = useState({});
   const [creating, setCreating] = useState(false);
   const [triggeringIds, setTriggeringIds] = useState(() => new Set());
+  const pendingRuns = useRef(new Set());
 
   // Group jobs by frequency band
   const groupedJobs = useMemo(() => {
@@ -108,6 +112,17 @@ function SchedulerIndex() {
     return Object.keys(errors).length === 0;
   };
 
+  async function retryRoster() {
+    setRetrying(true);
+    try {
+      await refresh({ followSuperseding: true });
+    } catch {
+      // The read region presents its current error.
+    } finally {
+      setRetrying(false);
+    }
+  }
+
   const handleCreateSubmit = async () => {
     if (creating || !validateCreateForm()) return;
     clearError();
@@ -130,26 +145,20 @@ function SchedulerIndex() {
     }
   };
 
-  const handleTrigger = async (e, jobId) => {
-    e.stopPropagation();
+  const handleTrigger = async jobId => {
+    if (retrying || readError || pendingRuns.current.has(jobId)) return;
+    pendingRuns.current.add(jobId);
+    setTriggeringIds(new Set(pendingRuns.current));
     clearError();
-    setTriggeringIds(current => new Set(current).add(jobId));
     try {
       await triggerJob(jobId);
-      await refreshAfterWrite();
+      await refreshAfterWrite({ followSuperseding: true });
     } catch {
       // Command and roster errors are reported by their respective hooks.
     } finally {
-      setTriggeringIds(current => {
-        const next = new Set(current);
-        next.delete(jobId);
-        return next;
-      });
+      pendingRuns.current.delete(jobId);
+      setTriggeringIds(new Set(pendingRuns.current));
     }
-  };
-
-  const handleRowClick = (jobId) => {
-    navigate(`/admin/system/scheduler/${jobId}`);
   };
 
   return (
@@ -176,7 +185,7 @@ function SchedulerIndex() {
           {error.message || 'Failed to load scheduler jobs'}
         </Alert>
       )}
-      <Stack component="section" gap="lg" aria-label="Scheduler jobs" {...regionProps}>
+      <Stack component="section" gap="lg" aria-label="Scheduler jobs" {...regionProps} {...focusHandlers}>
         {readError && <ErrorState error={readError} label="Scheduler jobs" onRetry={retry} />}
         {loading && jobs.length === 0 && <LoadingState label="scheduler jobs" />}
 
@@ -202,19 +211,22 @@ function SchedulerIndex() {
               </Table.Thead>
               <Table.Tbody>
                 {group.jobs.map(job => {
-                  const status = job.lastRun?.status || job.status || null;
-                  const lastRunTime = job.lastRun?.completedAt || job.lastRun?.startedAt || job.lastRunAt || null;
-                  const durationMs = job.lastRun?.duration_ms ?? job.duration_ms ?? null;
-                  const errorMsg = status === 'failed' ? (job.lastRun?.error || job.error || null) : null;
+                  const jobLink = `/admin/system/scheduler/${encodeURIComponent(job.id)}`;
+                  const status = job.runtime?.status || job.lastRun?.status || job.status || null;
+                  const lastRunTime = job.runtime?.last_run || job.lastRun?.completedAt || job.lastRun?.startedAt || job.lastRunAt || null;
+                  const durationMs = job.runtime?.duration_ms ?? job.lastRun?.duration_ms ?? job.duration_ms ?? null;
+                  const errorMsg = status === 'failed' ? (job.runtime?.error || job.lastRun?.error || job.error || null) : null;
 
                   return (
                     <Table.Tr
                       key={job.id}
                       style={{ cursor: 'pointer' }}
-                      onClick={() => handleRowClick(job.id)}
+                      onClick={event => {
+                        if (!event.target.closest('a, button')) navigate(jobLink);
+                      }}
                     >
                       <Table.Td>
-                        <Text size="sm" fw={500}>{job.name || job.id}</Text>
+                        <Anchor component={Link} to={jobLink} c="inherit" size="sm" fw={500}>{job.name || job.id}</Anchor>
                         {errorMsg && (
                           <Text size="xs" c="red" lineClamp={1}>{errorMsg}</Text>
                         )}
@@ -238,15 +250,18 @@ function SchedulerIndex() {
                         <Text size="sm" c="dimmed">{formatDuration(durationMs)}</Text>
                       </Table.Td>
                       <Table.Td>
-                        <Button
+                        <SubmitButton
+                          as={Button}
+                          type="button"
                           size="xs"
                           variant="light"
                           leftSection={<IconPlayerPlay size={14} />}
-                          loading={triggeringIds.has(job.id)}
-                          onClick={(e) => handleTrigger(e, job.id)}
+                          pending={triggeringIds.has(job.id)}
+                          blocked={retrying || Boolean(readError)}
+                          onClick={() => handleTrigger(job.id)}
                         >
                           Run
-                        </Button>
+                        </SubmitButton>
                       </Table.Td>
                     </Table.Tr>
                   );

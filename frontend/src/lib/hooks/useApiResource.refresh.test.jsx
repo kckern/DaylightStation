@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const { api } = vi.hoisted(() => ({ api: vi.fn() }));
 vi.mock('../api.mjs', () => ({ DaylightAPI: (...args) => api(...args) }));
 
-import { registerResourcePersistence, resetApiResourceCache, useApiResource } from './useApiResource.js';
+import { invalidateApiResources, registerResourcePersistence, resetApiResourceCache, useApiResource } from './useApiResource.js';
 
 describe('useApiResource.refresh', () => {
   beforeEach(() => {
@@ -119,6 +119,53 @@ describe('useApiResource.refresh', () => {
       await expect(refreshed).resolves.toEqual({ value: 'fresh' });
     });
     expect(api).toHaveBeenCalledTimes(2);
+  });
+
+  it('carries opted-in refreshes through a newer same-key invalidation', async () => {
+    const firstRead = Promise.withResolvers();
+    const nextRead = Promise.withResolvers();
+    const latestRead = Promise.withResolvers();
+    api.mockResolvedValueOnce({ value: 'initial' })
+      .mockReturnValueOnce(firstRead.promise).mockReturnValueOnce(nextRead.promise).mockReturnValueOnce(latestRead.promise);
+    const { result } = renderHook(() => useApiResource('/records', { retryTransient: false }));
+    await waitFor(() => expect(result.current.data).toEqual({ value: 'initial' }));
+
+    const settled = vi.fn();
+    let first;
+    let next;
+    act(() => { first = result.current.refresh({ followSuperseding: true }).then(settled, settled); });
+    await waitFor(() => expect(api).toHaveBeenCalledTimes(2));
+    act(() => { next = result.current.refresh({ followSuperseding: true }).then(settled, settled); });
+    await waitFor(() => expect(api).toHaveBeenCalledTimes(3));
+    act(() => { invalidateApiResources(path => path === '/records'); });
+    await waitFor(() => expect(api).toHaveBeenCalledTimes(4));
+    await act(async () => {
+      firstRead.resolve({ value: 'obsolete' });
+      nextRead.resolve({ value: 'also obsolete' });
+    });
+    expect(settled).not.toHaveBeenCalled();
+    expect(result.current.data).toEqual({ value: 'initial' });
+
+    await act(async () => { latestRead.resolve({ value: 'latest' }); await Promise.all([first, next]); });
+    expect(settled.mock.calls).toEqual([[{ value: 'latest' }], [{ value: 'latest' }]]);
+    expect(result.current.data).toEqual({ value: 'latest' });
+  });
+
+  it('retires an opted-in waiter when the reader changes keys', async () => {
+    const started = Promise.withResolvers();
+    api.mockResolvedValueOnce({ value: 'initial' }).mockReturnValueOnce(started.promise)
+      .mockResolvedValueOnce({ value: 'replacement key' });
+    const { result, rerender } = renderHook(({ path }) => useApiResource(path, { retryTransient: false }), {
+      initialProps: { path: '/old' },
+    });
+    await waitFor(() => expect(result.current.data).toEqual({ value: 'initial' }));
+    const failed = vi.fn();
+    act(() => { void result.current.refresh({ followSuperseding: true }).catch(failed); });
+    await waitFor(() => expect(api).toHaveBeenCalledTimes(2));
+    rerender({ path: '/new' });
+    await waitFor(() => expect(failed).toHaveBeenCalledWith(expect.objectContaining({ name: 'AbortError' })));
+    await waitFor(() => expect(result.current.data).toEqual({ value: 'replacement key' }));
+    started.resolve({ value: 'obsolete' });
   });
 
   it('rejects a pending refresh on owner change without publishing its old snapshot', async () => {

@@ -17,17 +17,6 @@ export function useAdminHousehold() {
 
   const [error, setError] = useState(null);
 
-  const updateHousehold = useCallback(async (updates) => {
-    try {
-      const result = await DaylightAPI(ADMIN_HOUSEHOLD_PATH, updates, 'PUT');
-      logger.info('admin.household.updated');
-      return result;
-    } catch (err) {
-      setError(err);
-      throw err;
-    }
-  }, [logger]);
-
   const createMember = useCallback(async (memberData) => {
     try {
       const result = await DaylightAPI(`${ADMIN_HOUSEHOLD_PATH}/members`, memberData, 'POST');
@@ -64,7 +53,7 @@ export function useAdminHousehold() {
   const clearError = useCallback(() => setError(null), []);
 
   return {
-    error, updateHousehold, createMember, removeMember, generateInvite, clearError
+    error, createMember, removeMember, generateInvite, clearError
   };
 }
 

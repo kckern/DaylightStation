@@ -77,8 +77,4 @@ export const autoApi = {
     invalidateApiResources(path => /^api\/v1\/automotive\/vehicles\/[^/]+\/(?:fuel|journeys)(?:\?|$)/.test(path));
     return saved;
   },
-  deleteFuel: (vehicleId, logId) =>
-    DaylightAPI(`${vehiclePath(vehicleId)}/fuel/${logId}`, {}, 'DELETE'),
-  deleteService: (vehicleId, recordId) =>
-    DaylightAPI(`${vehiclePath(vehicleId)}/service/${recordId}`, {}, 'DELETE'),
 };

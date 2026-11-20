@@ -13,8 +13,8 @@ export function useAdminRoster(path, { retryTransient = false } = {}) {
     invalidateApiResources(key => key === path);
   }
 
-  function refreshAfterWrite() {
-    if (mounted.current) return resource.refresh();
+  function refreshAfterWrite(options) {
+    if (mounted.current) return resource.refresh(options);
     invalidateAfterWrite();
   }
 
