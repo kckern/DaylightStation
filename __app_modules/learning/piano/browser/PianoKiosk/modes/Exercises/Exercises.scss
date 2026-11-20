@@ -359,7 +359,10 @@
 
 // The count-in is for listening. Keep its numeral clear while the music and
 // keyboard wait in gray; filtering the stage itself would also dim the overlay.
-.piano-exercise-run.is-countdown {
+// A Learn passage counts UP in a band above the music instead
+// (`data-count-style="up"`), and the child is about to read the first notes, so
+// it keeps them in full colour.
+.piano-exercise-run.is-countdown:not([data-count-style="up"]) {
   .piano-exercise-run__stage > :not(.piano-score-countin),
   .piano-exercise-run__keys {
     filter: grayscale(1);

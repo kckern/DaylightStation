@@ -2708,12 +2708,40 @@
   }
 }
 .piano-exercise-run__stage > .piano-score-countin { position: absolute; }
+
+// Learn passage count-in: a band at the top of the stage, never over the notes.
+// One pip per count-in click, lit as each sounds; the first carries the accent.
+// Armed (before the first click) every pip is unlit and the cue says to listen.
+.piano-learn-countin {
+  position: absolute; top: 0.5rem; left: 50%; transform: translateX(-50%); z-index: 40;
+  pointer-events: none;
+  display: flex; align-items: center; gap: 1rem;
+  padding: 0.35rem 1rem; border-radius: var(--r-pill);
+  background: color-mix(in srgb, var(--piano-surface) 92%, transparent);
+  border: 1px solid var(--piano-border);
+  &__pips { display: flex; gap: 0.5rem; margin: 0; padding: 0; list-style: none; }
+  &__pip {
+    display: grid; place-content: center;
+    width: 2.25rem; height: 2.25rem; border-radius: 50%;
+    border: 2px solid var(--piano-border);
+    color: var(--piano-muted); font-size: 1.25rem; font-weight: 800; line-height: 1;
+    &.is-accent { border-width: 3px; }
+    &.is-lit { border-color: var(--piano-accent); color: var(--piano-fg); }
+    &.is-current {
+      background: var(--piano-accent); color: var(--piano-surface);
+      animation: piano-score-countin-pop calc(var(--ds-motion-base) * 1.5) var(--ds-motion-easing) both;
+    }
+  }
+  &__cue { min-width: 9rem; font-size: 1.1rem; font-weight: 750; color: var(--piano-fg); }
+  &[data-armed] &__cue { color: var(--piano-muted); }
+}
 @keyframes piano-score-countin-pop {
   from { transform: scale(1.35); opacity: 0.25; }
   to   { transform: scale(1); opacity: 1; }
 }
 @media (prefers-reduced-motion: reduce) {
   .piano-score-countin__beat { animation: none; }
+  .piano-learn-countin__pip.is-current { animation: none; }
   .piano-learn-passage-map.is-achievement { animation: none; }
 }
 
