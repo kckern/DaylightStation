@@ -241,6 +241,11 @@ export class YamlWorkSessionDatastore extends IWorkSessionRepository {
           gradedCorrectCount: state.gradedCorrectCount ?? null,
           gradedTotalCount: state.gradedTotalCount ?? null,
           evidenceInvalidated: state.evidenceInvalidated === true,
+          // `makeup_claimed`: the missed day this lesson counts for. The
+          // agenda reads it to keep the pass out of its own day's credit.
+          makeupFor: state.makeupFor ?? null,
+          makeupSubject: state.makeupSubject ?? null,
+          makeupDeadline: state.makeupDeadline ?? null,
         } });
       }
     }
@@ -282,6 +287,9 @@ export class YamlWorkSessionDatastore extends IWorkSessionRepository {
         gradedCorrectCount: row.gradedCorrectCount ?? null,
         gradedTotalCount: row.gradedTotalCount ?? null,
         evidenceInvalidated: row.evidenceInvalidated === true,
+        makeupFor: row.makeupFor ?? null,
+        makeupSubject: row.makeupSubject ?? null,
+        makeupDeadline: row.makeupDeadline ?? null,
       });
     }
     return facts;
