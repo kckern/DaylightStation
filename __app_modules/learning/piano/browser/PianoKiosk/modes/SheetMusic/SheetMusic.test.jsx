@@ -13,7 +13,8 @@ vi.mock('../../../../../../../frontend/src/lib/api.mjs', () => ({
 // only assert the right view mounts and the raw XML reaches it.
 vi.mock('./ScorePlayer.jsx', () => ({
   default: ({ score }) => (
-    <div data-testid="score-player" data-splash={score?.splashImage || ''}>player:{score?.musicXml}</div>
+    <div data-testid="score-player" data-splash={score?.splashImage || ''}
+      data-learn={JSON.stringify(score?.learnFile ?? null)}>player:{score?.musicXml}</div>
   ),
 }));
 
@@ -192,6 +193,83 @@ describe('SheetMusic mode', () => {
     // ...and it must NOT open another session file: a fresh sessionLog CHILD would
     // auto-emit session-log.start (Logger.js:217), fragmenting the run log.
     expect(recent('session-log.start').length).toBe(startsBefore);
+  });
+
+  describe('approved Learn segments', () => {
+    const SCORE_ID = 'files:docs/sheet-music/minuet.musicxml';
+    const LEARN_PATH = `api/v1/piano/sheet-music/learn?id=${encodeURIComponent(SCORE_ID)}`;
+    const deepLink = `/sheetmusic/view/${SCORE_ID}`;
+    // Route the api mock by URL: useScoreImage also calls DaylightAPI (info).
+    const routeApi = (learn) => api.mockImplementation((path) => {
+      if (path === LEARN_PATH) return learn();
+      return Promise.resolve({});
+    });
+    const learnCalls = () => api.mock.calls.filter(([p]) => p === LEARN_PATH).length;
+    const learnOf = (el) => JSON.parse(el.getAttribute('data-learn'));
+
+    it('fetches the score\'s Learn file and hands it to the player', async () => {
+      const file = { segments: [{ id: 'a', start: 1, end: 4, name: 'Opening' }], contentSha256: 'x' };
+      routeApi(() => Promise.resolve(file));
+      apiText.mockResolvedValue('<score-partwise/>');
+      renderSheet({ collection: 'files:docs/sheet-music' }, deepLink);
+      const player = await screen.findByTestId('score-player');
+      expect(learnOf(player)).toEqual(file);
+      expect(learnCalls()).toBe(1);
+    });
+
+    it('shows the retry screen and logs to the session file when the Learn fetch fails twice', async () => {
+      routeApi(() => Promise.reject(new Error('learn 500')));
+      apiText.mockResolvedValue('<score-partwise/>');
+      const startsBefore = recent('session-log.start').length;
+      renderSheet({ collection: 'files:docs/sheet-music' }, deepLink);
+      expect(await screen.findByText('Could not load this score.')).toBeTruthy();
+      expect(screen.queryByTestId('score-player')).toBeNull();
+      expect(learnCalls()).toBe(2);
+      const failures = recent('piano.score-learn-failed')
+        .filter((e) => e.data?.id === 'docs/sheet-music/minuet.musicxml');
+      expect(failures.length).toBe(1);
+      expect(failures[0].data).toMatchObject({ error: 'learn 500' });
+      expect(failures[0].context).toMatchObject({ app: 'piano-sheetmusic', sessionLog: true });
+      expect(recent('session-log.start').length).toBe(startsBefore);
+    });
+
+    it('retries the Learn fetch once, and {} opens the score with no segments', async () => {
+      let n = 0;
+      routeApi(() => (n++ === 0 ? Promise.reject(new Error('blip')) : Promise.resolve({})));
+      apiText.mockResolvedValue('<score-partwise/>');
+      renderSheet({ collection: 'files:docs/sheet-music' }, deepLink);
+      const player = await screen.findByTestId('score-player');
+      expect(learnOf(player)).toEqual({});
+      expect(learnCalls()).toBe(2);
+    });
+
+    it('holds the splash while the Learn fetch is pending, even once the XML is in', async () => {
+      let resolveLearn;
+      routeApi(() => new Promise((r) => { resolveLearn = r; }));
+      apiText.mockResolvedValue('<score-partwise/>');
+      renderSheet({ collection: 'files:docs/sheet-music' }, deepLink);
+      await waitFor(() => expect(apiText).toHaveBeenCalled());
+      await waitFor(() => expect(learnCalls()).toBe(1));
+      await new Promise((r) => setTimeout(r, 20));
+      expect(screen.queryByTestId('score-player')).toBeNull();
+      resolveLearn({});
+      expect(await screen.findByTestId('score-player')).toBeTruthy();
+    });
+
+    it('"Try again" after a Learn failure refetches both and opens the player', async () => {
+      let fail = true;
+      routeApi(() => (fail ? Promise.reject(new Error('down')) : Promise.resolve({ segments: [], contentSha256: 'x' })));
+      apiText.mockResolvedValue('<score-partwise/>');
+      renderSheet({ collection: 'files:docs/sheet-music' }, deepLink);
+      expect(await screen.findByText('Could not load this score.')).toBeTruthy();
+      const xmlCallsBefore = apiText.mock.calls.length;
+      fail = false;
+      fireEvent.click(screen.getByText('Try again'));
+      const player = await screen.findByTestId('score-player');
+      expect(learnOf(player)).toEqual({ segments: [], contentSha256: 'x' });
+      expect(apiText.mock.calls.length).toBe(xmlCallsBefore + 1);
+      expect(learnCalls()).toBe(3);
+    });
   });
 
   it('falls back to the page-image viewer for a non-notation (Plex) score', async () => {

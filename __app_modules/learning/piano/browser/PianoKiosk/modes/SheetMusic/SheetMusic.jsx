@@ -1,7 +1,7 @@
 import { useMemo, useState, useEffect, useRef } from 'react';
 import { Routes, Route, useNavigate, useParams } from 'react-router-dom';
 import getLogger from '../../../../../../../frontend/src/lib/logging/Logger.js';
-import { DaylightAPIText } from '../../../../../../../frontend/src/lib/api.mjs';
+import { DaylightAPI, DaylightAPIText } from '../../../../../../../frontend/src/lib/api.mjs';
 import { usePianoKioskConfig } from '../../PianoConfig.jsx';
 import PianoEmpty from '../../PianoEmpty.jsx';
 import { SkeletonStage } from '../../Skeleton.jsx';
@@ -86,10 +86,29 @@ function ScoreViewerRoute() {
  * A same-basename image sidecar (a curated scan, resolved via `useScoreImage`) is
  * passed through as a splash — shown right-sized while the raw XML fetches and while
  * ScorePlayer engraves, so the user sees the score's artwork instead of a blank stage.
+ *
+ * The score's approved Learn segments (`GET piano/sheet-music/learn`) are fetched
+ * alongside the XML, and the player does not open until both have settled. Child
+ * progress is keyed by bar range: opening with generated segments while approved
+ * ones exist (because this fetch failed) would let a saved take rewrite the
+ * child's stored summary to the generated ranges. So a Learn failure gets one
+ * immediate retry and then shows the same "Try again" screen as an XML failure.
+ * `{}` (no approved segments) is a success.
  */
+async function fetchLearnFile(contentId) {
+  const path = `api/v1/piano/sheet-music/learn?id=${encodeURIComponent(contentId)}`;
+  try {
+    return await DaylightAPI(path);
+  } catch {
+    return DaylightAPI(path); // one automatic retry; a second failure propagates
+  }
+}
+
 function NotationScore({ contentId }) {
   const logger = useMemo(() => getLogger().child({ component: 'piano-sheetmusic' }), []);
   const [xml, setXml] = useState(null); // null = loading, '' = failed
+  // undefined = loading, null = failed, object = the route's answer ({} = none)
+  const [learnFile, setLearnFile] = useState(undefined);
   const [retryKey, setRetryKey] = useState(0);
   const fetchMsRef = useRef(0); // raw-XML fetch time → ScorePlayer's score.load telemetry
   const localId = useMemo(() => contentId.replace(/^[a-z]+:/i, ''), [contentId]);
@@ -98,6 +117,7 @@ function NotationScore({ contentId }) {
   useEffect(() => {
     let cancelled = false;
     setXml(null);
+    setLearnFile(undefined);
     (async () => {
       try {
         logger.info('piano.score-open', { id: localId, kind: 'notation' });
@@ -119,12 +139,25 @@ function NotationScore({ contentId }) {
         if (!cancelled) setXml('');
       }
     })();
+    (async () => {
+      try {
+        const file = await fetchLearnFile(contentId);
+        if (!cancelled) setLearnFile(file && typeof file === 'object' ? file : {});
+      } catch (err) {
+        // Same session-log routing as piano.score-open-failed above (and for the
+        // same reason: tag the event's context, never make a sessionLog child).
+        logger.warn('piano.score-learn-failed', { id: localId, error: err?.message },
+          { context: { app: 'piano-sheetmusic', sessionLog: true } });
+        if (!cancelled) setLearnFile(null);
+      }
+    })();
     return () => { cancelled = true; };
-  }, [localId, logger, retryKey]);
+  }, [contentId, localId, logger, retryKey]);
 
-  if (xml === null) return <ScoreSplash image={splashImage} />;
-  if (xml === '') return <PianoEmpty message="Could not load this score." actionLabel="Try again" onAction={() => setRetryKey((k) => k + 1)} />;
-  return <ScorePlayer score={{ id: contentId, musicXml: xml, fetchMs: fetchMsRef.current, splashImage }} />;
+  const failed = xml === '' || learnFile === null;
+  if (failed) return <PianoEmpty message="Could not load this score." actionLabel="Try again" onAction={() => setRetryKey((k) => k + 1)} />;
+  if (xml === null || learnFile === undefined) return <ScoreSplash image={splashImage} />;
+  return <ScorePlayer score={{ id: contentId, musicXml: xml, fetchMs: fetchMsRef.current, splashImage, learnFile }} />;
 }
 
 /**

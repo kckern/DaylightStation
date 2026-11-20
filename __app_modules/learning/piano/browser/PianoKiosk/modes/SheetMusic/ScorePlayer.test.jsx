@@ -3,7 +3,8 @@ import { fileURLToPath } from 'url';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, act, cleanup, fireEvent, within, waitFor } from '@testing-library/react';
 import { MemoryRouter, useLocation } from 'react-router-dom';
-import getLogger from '../../../../../../../frontend/src/lib/logging/Logger.js';
+import getLogger, { getRecentEvents } from '../../../../../../../frontend/src/lib/logging/Logger.js';
+import sha256 from 'crypto-js/sha256.js';
 import { __resetRecorder, __snapshotForTest, KIND } from '../../../../../../../frontend/src/lib/logging/inputRecorder.js';
 
 // Shared holders (hoisted so the vi.mock factories can see them).
@@ -306,6 +307,51 @@ beforeEach(() => {
   h.config = { keyboard: { startNote: 21, endNote: 108 }, sheetmusic: { learn: { roadmap: false } } };
   h.learnLabProps = null;
   h.locationSearch = '';
+});
+
+describe('ScorePlayer — approved Learn file (sidecar)', () => {
+ const XML = '<score/>';
+ const SEGMENTS = [{ id: 'a', start: 0, end: 0, name: 'Opening' }, { id: 'b', start: 1, end: 1 }];
+ const setup = () => {
+  h.config = { keyboard: { startNote: 21, endNote: 108 }, sheetmusic: { learn: {} } };
+  h.layoutExtras = { measures: [{ number: 1, firstStep: 0, lastStep: 1 }, { number: 2, firstStep: 2, lastStep: 3 }],
+    measureBounds: [{ left: 80, right: 190, top: 10, bottom: 210 }, { left: 190, right: 310, top: 10, bottom: 210 }] };
+ };
+ const events = (name, scoreId) => getRecentEvents(500).filter((e) => e.event === name && e.data?.scoreId === scoreId);
+ const renderWith = (id, learnFile) => render(<MemoryRouter><LocationProbe />
+  <ScorePlayer score={{ id, title: 'Mary', musicXml: XML, learnFile }} /></MemoryRouter>);
+ const rail = () => within(screen.getByRole('navigation', { name: 'Passages in this piece' }));
+
+ it('applies approved segments whose sha matches the loaded XML', () => {
+  setup();
+  const id = 'files:sidecar-applied.musicxml';
+  renderWith(id, { segments: SEGMENTS, contentSha256: sha256(XML).toString() });
+  pickMode('Learn');
+  expect(rail().getByRole('button', { name: /^Opening.*Not started$|^Bars 1–1, Not started$/ })).toBeInTheDocument();
+  expect(rail().getByRole('button', { name: 'Bars 2–2, Not started' })).toBeInTheDocument();
+  expect(rail().queryByRole('button', { name: 'Bars 1–2, Not started' })).not.toBeInTheDocument();
+  expect(events('score.learn.sidecar-applied', id)).toEqual([expect.objectContaining({ data: { scoreId: id, segments: 2 } })]);
+  expect(events('score.learn.sidecar-stale', id)).toHaveLength(0);
+ });
+
+ it('ignores a Learn file written for different XML and warns that it is stale', () => {
+  setup();
+  const id = 'files:sidecar-stale.musicxml';
+  renderWith(id, { segments: SEGMENTS, contentSha256: 'not-this-xml' });
+  pickMode('Learn');
+  expect(rail().getByRole('button', { name: 'Bars 1–2, Not started' })).toBeInTheDocument();
+  expect(rail().queryByRole('button', { name: 'Bars 2–2, Not started' })).not.toBeInTheDocument();
+  expect(events('score.learn.sidecar-stale', id)).toHaveLength(1);
+  expect(events('score.learn.sidecar-applied', id)).toHaveLength(0);
+ });
+
+ it('logs nothing when the score has no Learn file', () => {
+  setup();
+  const id = 'files:sidecar-none.musicxml';
+  renderWith(id, {});
+  expect(events('score.learn.sidecar-applied', id)).toHaveLength(0);
+  expect(events('score.learn.sidecar-stale', id)).toHaveLength(0);
+ });
 });
 
 describe('ScorePlayer — guided Learn composition', () => {
