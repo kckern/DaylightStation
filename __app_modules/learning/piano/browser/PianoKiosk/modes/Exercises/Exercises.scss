@@ -565,8 +565,8 @@
 .piano-exercise-run[data-surface='learn-lab'] {
   // The rail and keyboard rows are named so the docked result card below can
   // cover exactly them. `max(2.5rem, 7vh)` is the rail's old
-  // `minmax(2.5rem, 7vh)`: beside a `1fr` score row that track always took
-  // its maximum, so the row is the same, and it is now a length.
+  // `minmax(2.5rem, 7vh)`: beside a `1fr` score row that track took its
+  // maximum whenever the run had room, and it is now a length.
   --run-rail-row: max(2.5rem, 7vh);
   --run-keys-row: clamp(4rem, 8vh, 4.75rem);
   --run-row-gap: 0.35rem;

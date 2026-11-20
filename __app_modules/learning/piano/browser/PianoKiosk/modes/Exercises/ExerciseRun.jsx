@@ -387,7 +387,10 @@ export function runPassed(result, { challenge = false, passScore = null } = {}) 
  * @param {'inline'|'docked'} [props.resultPresentation='inline'] Where the
  *   result card sits: in the rail row, or docked over the rail and keyboard
  *   rows (Exercises.scss `.is-docked`), so the score and its verdict marks
- *   stay in view and the run's rows never change when a take ends.
+ *   stay in view and the run's rows never change when a take ends. 'docked'
+ *   is sized from the row variables only the `learn-lab` surface defines
+ *   (`--run-rail-row` and friends); on other surfaces it falls back to fixed
+ *   heights, so use it with `surface="learn-lab"`.
  * @param {'timed'|'always'} [props.scoreCursorPolicy='timed'] Whether a score
  *   passage draws its position cursor only for clocked work or for every run.
  * @param {number|null} [props.incompleteAfterMs] Free practice only: end the take
@@ -790,11 +793,8 @@ export default function ExerciseRun({ instance, score, requirement = null, pract
   onPassedRef.current = onPassed;
   onFailedRef.current = onFailed;
   const [resolveHold, setResolveHold] = useState(null);
-  // The hold has run its course and the host has been told. A failed take
-  // reported to a host that keeps this run's result card (`failurePresentation:
-  // 'local'`) has nothing to act on before then: the host records the take and
-  // computes its next step inside `onFailed`, so a key that retried earlier
-  // would cancel the hold and the take would never be recorded.
+  // The hold has fired and the host has been told (and has recorded the take).
+  // A local result card's key waits for this; see RESULT_ARM_MS.
   const [resolveFired, setResolveFired] = useState(false);
   const resolveHeldRef = useRef(false);
   const resolveTimersRef = useRef([]);
@@ -1828,14 +1828,8 @@ export default function ExerciseRun({ instance, score, requirement = null, pract
           A disconnected piano is the one thing the pills cannot say, so it
           keeps its own line whatever the surface. */}
       {!bare && chromeDrawn && !connected && <span className="piano-exercise-run__waiting">Waiting for the piano…</span>}
-      {/* A docked card (over the rail and keyboard rows, never over the
-          score) waits out the resolve hold, then appears once with the
-          host's label and actions already in it, instead of flipping from
-          "try again" to the host's step while it is being read. An inline
-          card shows at once, without its onward line until a key would act
-          on it. `alertdialog` without `aria-modal`: it sits inside
-          LearnLab's own modal dialog, and it does not take focus from the
-          piano. */}
+      {/* A docked card waits out the hold and arrives once, with the host's actions;
+          its keys wait for RESULT_ARM_MS. Non-modal: it sits inside LearnLab's dialog. */}
       {phase === 'done' && result && !hostOwnsFailure && !(resultPresentation === 'docked' && (passed || !resultSettled)) && <section className={`piano-exercise-run__result${passed ? ' is-passed' : ' is-developing'}${resultPresentation === 'docked' ? ' is-docked' : ''}`} data-result-armed={localRetry && resultArmed ? 'true' : undefined} {...(resultPresentation === 'docked' ? { role: 'alertdialog', 'aria-label': resultLabel ?? 'Result' } : {})}>
         <div><span>{resultLabel ?? (passed ? 'Passed' : challenge ? 'Keep working' : 'Practice complete')}</span>{scoreReadout && <strong>{Math.round(result.score * 100)}%</strong>}</div>
         {/* A percentage is a reading task of its own, and the tiers below 2 are

@@ -1,6 +1,6 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import LearnCoach, { passageDrill } from './LearnCoach.jsx';
+import LearnCoach, { passageDrill, recoveryWording } from './LearnCoach.jsx';
 import { applyCoachEvent, createCoachPlan, projectCoach } from '../../../../../../../shared/music/learnCoach.mjs';
 const h = vi.hoisted(() => ({ profile: 'guest', lab: null, labs: 0,
   log: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn(), sampled: vi.fn() } }));
@@ -133,6 +133,13 @@ describe('LearnCoach', () => {
   render(<LearnCoach {...props} coach={coach} />);
   expect(h.lab.notice).toBeNull();
   expect(screen.queryByText(/saved/i)).toBeNull();
+ });
+ it('words each recovery once, for its button and its onward sentence', () => {
+  expect(recoveryWording({ reason: 'slower-beat', tempoPercent: 75 })).toEqual({ button: 'Try a little slower · 75%', sentence: 'try a little slower (75%)' });
+  expect(recoveryWording({ reason: 'slower-beat' })).toEqual({ button: 'Try a little slower', sentence: 'try a little slower' });
+  expect(recoveryWording({ reason: 'one-hand', parts: ['lh'] })).toEqual({ button: 'Practice the left hand', sentence: 'practice the left hand' });
+  expect(recoveryWording({ reason: 'smaller-span', range: { start: 1, end: 1 } }).sentence).toBe('practice bar 2');
+  expect(recoveryWording({ reason: 'smaller-span', range: { start: 0, end: 2 } }).button).toBe('Practice bars 1–3');
  });
  it('names a timing recovery by its slower tempo', async () => {
   render(<LearnCoach {...props} skipping={{ default: 'open' }} />);

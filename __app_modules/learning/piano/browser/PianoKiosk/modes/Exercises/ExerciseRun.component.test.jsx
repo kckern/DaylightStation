@@ -587,22 +587,33 @@ describe('ExerciseRun shared assessment wiring', () => {
   });
 
   it('can report a failure to its host while retaining the shared local retry experience', async () => {
-    const requirement = withPassScore({ passScore: 0.8 });
-    const props = {
-      instance: subject(), score: null, intent: 'challenge', requirement,
-      failurePresentation: 'local', onExit: vi.fn(), onPassed: vi.fn(), onFailed: vi.fn(),
-    };
-    const view = render(<ExerciseRun {...props} />);
-    await armFree(view, props);
-    press(view, props, 61);
-    press(view, props, 61);
-    press(view, props, 61);
-    press(view, props, 62);
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      const requirement = withPassScore({ passScore: 0.8 });
+      const props = {
+        instance: subject(), score: null, intent: 'challenge', requirement,
+        failurePresentation: 'local', onExit: vi.fn(), onPassed: vi.fn(), onFailed: vi.fn(),
+        resultActions: <button type="button">Host step</button>,
+      };
+      const view = render(<ExerciseRun {...props} />);
+      await armFree(view, props);
+      press(view, props, 61);
+      press(view, props, 61);
+      press(view, props, 61);
+      press(view, props, 62);
 
-    await waitFor(() => expect(props.onFailed).toHaveBeenCalledTimes(1));
-    expect(screen.getByText('Keep working')).toBeInTheDocument();
-    // The piano retry is offered once the card has been up RESULT_ARM_MS.
-    expect(await screen.findByText(/Release the keys, then play any key to try again\./, {}, { timeout: RESULT_ARM_MS + 1000 })).toBeInTheDocument();
+      // The inline card shows at once, but not the host's actions: they act on
+      // a take the host has not been told about until the hold fires.
+      expect(screen.getByText('Keep working')).toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'Host step' })).toBeNull();
+      act(() => vi.advanceTimersByTime(RESOLVE_HOLD_MS));
+      expect(props.onFailed).toHaveBeenCalledTimes(1);
+      expect(screen.getByRole('button', { name: 'Host step' })).toBeInTheDocument();
+      // The piano retry is offered once the card has been up RESULT_ARM_MS.
+      expect(screen.queryByText(/play any key/)).toBeNull();
+      act(() => vi.advanceTimersByTime(RESULT_ARM_MS));
+      expect(screen.getByText(/Release the keys, then play any key to try again\./)).toBeInTheDocument();
+    } finally { vi.useRealTimers(); }
   });
 
   it('a host that took onFailed still gets the run’s own pass panel', async () => {
@@ -1904,6 +1915,13 @@ describe('ExerciseRun resolve hold', () => {
     act(() => vi.advanceTimersByTime(5000));
     expect(onFailed).toHaveBeenCalledTimes(1);
     expect(onPassed).not.toHaveBeenCalled();
+  });
+
+  it('never draws a docked card on a pass', async () => {
+    const { view } = await passed({ failurePresentation: 'local', resultPresentation: 'docked', onFailed: vi.fn() });
+    expect(view.container.querySelector('.piano-exercise-run__result')).toBeNull();
+    act(() => vi.advanceTimersByTime(RESOLVE_HOLD_MS + RESULT_ARM_MS));
+    expect(view.container.querySelector('.piano-exercise-run__result')).toBeNull();
   });
 
   it('unmounting during the hold cancels the callback', async () => {
