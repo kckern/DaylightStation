@@ -175,7 +175,7 @@ export default function LearnLab({ score, revision, segment, segments = {}, rung
       status: 'passed', placementShare, creditEligible: takeCreditEligible, creditOutcome: takeCreditEligible ? (outcome ? 'recorded' : 'not-recorded') : 'ineligible',
       right: result?.diagnostics?.matched_notes ?? null, wrong: result?.diagnostics?.wrong_notes ?? null,
       missed: result?.diagnostics?.missed_notes ?? null, early: result?.diagnostics?.early_notes ?? null,
-      late: result?.diagnostics?.late_notes ?? null,
+      late: result?.diagnostics?.late_notes ?? null, entryShiftBeats: result?.entryShift?.beats ?? 0,
     });
     const nextPassCount = Math.min(rung.required, runPassCount + 1);
     setRunPassCount(nextPassCount);
@@ -225,7 +225,9 @@ export default function LearnLab({ score, revision, segment, segments = {}, rung
       creditOutcome: takeCreditEligible ? (outcome ? 'recorded' : 'not-recorded') : 'ineligible',
       right: result?.diagnostics?.matched_notes ?? null, wrong: result?.diagnostics?.wrong_notes ?? null,
       missed: result?.diagnostics?.missed_notes ?? null, early: result?.diagnostics?.early_notes ?? null,
-      late: result?.diagnostics?.late_notes ?? null });
+      late: result?.diagnostics?.late_notes ?? null,
+      // A whole-beat shifted entry ExerciseRun named on a cued take, else 0.
+      entryShiftBeats: result?.entryShift?.beats ?? 0 });
     if (launchSource !== 'recommended') onFinished?.(result);
   };
 

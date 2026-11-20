@@ -152,6 +152,19 @@ describe('LearnCoach', () => {
   // The piano's onward line says it as a sentence: "play any key to try a little slower (75%)".
   expect(h.lab.resultContinueLabel).toBe('try a little slower (75%)');
  });
+ it('keeps the same step after a shifted entry, names it on the card, and logs the shift', async () => {
+  h.log.info.mockClear();
+  render(<LearnCoach {...props} skipping={{ default: 'open' }} />);
+  act(() => h.lab.onPickStep({ id: h.lab.drill.projection.steps.at(-1).id }));
+  const late = { ...passed, criteria: { completeness: 0.25, cleanliness: 0.25, placement: 0 }, verdict: { passed: false }, entryShift: { beats: 1, matched: 4, possible: 4 } };
+  await outcome(late); await outcome({ ...late, assessmentId: 'late2' });
+  // No smaller task: the passage was played, the start missed the count.
+  expect(screen.queryByRole('button', { name: /slower|Practice/ })).not.toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Try again' })).toBeInTheDocument();
+  expect(h.lab.resultLabel).toBe('Start on the click');
+  expect(h.lab.resultContinueLabel).toBe('try again');
+  expect(h.log.info).toHaveBeenLastCalledWith('piano.learn.coach.take', expect.objectContaining({ reason: 'entry-late', entryShiftBeats: 1, passed: false }));
+ });
  it('logs each take with its tempo and the scores it was judged on', async () => {
   h.log.info.mockClear();
   render(<LearnCoach {...props} skipping={{ default: 'open' }} />);

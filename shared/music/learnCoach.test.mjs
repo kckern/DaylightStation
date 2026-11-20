@@ -127,6 +127,27 @@ describe('focused recovery and honest feedback', () => {
     expect(projection(plan, state).goldResume.range.end).toBeLessThan(3);
   });
 
+  it('keeps the same task after a named shifted entry: the start was wrong, not the passage', () => {
+    const plan = planOf();const task = choose(plan, 'timed-50');
+    const shifted = { ...bad, criteria: { completeness: 0.25, cleanliness: 0.25, placement: 0 }, entryShift: { beats: 1, matched: 4, possible: 4 } };
+    const state = outcome(outcome(undefined, plan, task, shifted), plan, task, shifted);
+    expect(projection(plan, state).goldResume).toMatchObject({ key: task.key, depth: 0 });
+    // Without the shift the same two takes step down to a smaller task.
+    const { entryShift: ignored, ...unnamed } = shifted;void ignored;
+    const plain = outcome(outcome(undefined, plan, task, unnamed), plan, task, unnamed);
+    expect(projection(plan, plain).goldResume.depth).toBe(1);
+  });
+
+  it('names a shifted entry in the feedback on a cued step, never on a passed take', () => {
+    const task = choose(planOf(), 'timed-50');
+    expect(coachFeedback({ ...bad, entryShift: { beats: 1 } }, task)).toMatchObject({ reason: 'entry-late', entryShiftBeats: 1,
+      title: 'Start on the click', detail: 'You started one beat late — start on the click after the count.' });
+    expect(coachFeedback({ ...bad, entryShift: { beats: -2 } }, task)).toMatchObject({ reason: 'entry-early', entryShiftBeats: -2,
+      title: 'Wait for the click', detail: 'You started two beats early — wait for the click after the count.' });
+    expect(coachFeedback({ ...good, entryShift: { beats: 1 } }, task).reason).toBe('passed');
+    expect(coachFeedback({ ...bad, entryShift: { beats: 1 } }, choose(planOf(), 'right')).reason).not.toMatch(/^entry-/);
+  });
+
   it('never describes metronome practice as measured timing accuracy', () => {
     const task = choose(planOf(), 'pulse');
     expect(coachFeedback(good, task).detail).not.toMatch(/timing|on time|rhythm mastered/i);
