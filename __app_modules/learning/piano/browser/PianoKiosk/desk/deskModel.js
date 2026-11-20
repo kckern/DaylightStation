@@ -54,7 +54,7 @@ export function stripCards({ pieces, courses }) {
     .flatMap((child) => child.cards);
 }
 
-/** The strip's cards grouped by child, so one avatar and name heads each child's cards. */
+/** The strip's cards grouped by child: one avatar and name heads each child, over one card. */
 export function stripGroups(sources) {
   const groups = [];
   for (const card of stripCards(sources)) {
@@ -63,6 +63,17 @@ export function stripGroups(sources) {
     else groups.push({ userId: card.userId, name: card.name, cards: [card] });
   }
   return groups;
+}
+
+/**
+ * The one card a child's panel shows: the activity chosen on its tabs when the
+ * child has it, else the most recent one (a tie keeps the piece).
+ */
+export function shownCard(group, chosenKind) {
+  const cards = group?.cards ?? [];
+  const chosen = chosenKind ? cards.find((card) => card.kind === chosenKind) : null;
+  if (chosen) return chosen;
+  return cards.reduce((best, card) => (best && String(best.at) >= String(card.at) ? best : card), null);
 }
 
 /** A tomato nobody has started yet sits back, unless it is the one up next. */
@@ -102,17 +113,17 @@ export function nextStep(card) {
 }
 
 /** The card's inner width in px, which the coin row fills, and the gap between coins. */
-const ROW = 175;
+const ROW = 276;
 const GAP = 2;
 
 /** Coins across a piece's map: one row up to fourteen, else two equal rows. */
 export const mapColumns = (count) => (count > 14 ? Math.ceil(count / 2) : Math.max(1, count));
 export const mapRows = (count) => (count > 14 ? 2 : 1);
 
-/** Coin size in px: the row fills the card, never above 20px. */
+/** Coin size in px: the row fills the card, never above 22px. */
 export const coinSize = (count) => {
   const columns = mapColumns(count);
-  return Math.min(20, Math.floor((ROW - (columns - 1) * GAP) / columns));
+  return Math.min(22, Math.floor((ROW - (columns - 1) * GAP) / columns));
 };
 
 export const pieceCount = (piece) => `${piece.silver} of ${piece.total} Silver`;

@@ -6,7 +6,8 @@ import usePianoList from '../usePianoList.js';
 import { usePianoUser } from '../PianoUserContext.jsx';
 import { titleFromScoreId } from '../modes/SheetMusic/scoreTitle.js';
 import PassageCoin from '../modes/SheetMusic/PassageCoin.jsx';
-import { cardBadge, coinSize, lessonTitle, mapColumns, mapRows, nextStep, passageFaded, pieceCount, scoreHeading, stripGroups } from './deskModel.js';
+import Icon from '../../ui/icons/Icon.jsx';
+import { cardBadge, coinSize, lessonTitle, mapColumns, mapRows, nextStep, passageFaded, pieceCount, scoreHeading, shownCard, stripGroups } from './deskModel.js';
 import './PianoHomeDesk.scss';
 
 const players = (response) => (Array.isArray(response?.players) ? response.players : []);
@@ -112,10 +113,18 @@ function CourseCard({ card }) {
   );
 }
 
+/** A child's two activities, as small tabs in their header. Pressing one only swaps the card. */
+const TABS = [
+  { kind: 'piece', label: 'Sheet music', icon: 'quarter-note' },
+  { kind: 'course', label: 'Video lesson', icon: 'play' },
+];
+
 /**
  * The progress strip above the home menu: one panel per child (school learners,
- * not parents), headed once by their avatar and name, holding a card for the
- * piece they are learning and one for their video course. Both cards share one
+ * not parents), headed by their avatar and name, holding one card: the piece
+ * they are learning or their video course. A child with both gets two tabs in
+ * the header, ♪ and ▶, defaulting to the most recent; the choice lasts while
+ * the strip is mounted. Both kinds share one
  * layout: a tall poster on the left, the badge, title and very next step beside
  * it, and the progress (passage coins, or a course bar and percent) underneath.
  * The strip keeps one height whether or not it has cards, so the menu below
@@ -132,11 +141,18 @@ export default function PianoHomeDesk({ disabled, onOpenPassage, onOpenCourse })
   // Both lists or neither: cards that arrived in two waves would reflow the strip.
   const loaded = pieces !== null && courses !== null;
   const groups = loaded ? stripGroups({ pieces, courses }).filter((group) => children.has(group.userId)) : [];
-  const cards = groups.flatMap((group) => group.cards);
+  // The tab each child last pressed, for as long as the strip is mounted.
+  const [chosen, setChosen] = useState({});
+  const shown = groups.map((group) => ({ group, card: shownCard(group, chosen[group.userId]) }));
+  const cards = shown.map(({ card }) => card);
   const tall = cards.some((card) => card.kind === 'piece' && mapRows(card.piece.passages.length) > 1);
   useEffect(() => {
     logger.debug('piano.desk.view', { cards: cards.map((card) => card.key) });
   }, [logger, cards.map((card) => card.key).join(',')]); // eslint-disable-line react-hooks/exhaustive-deps
+  const choose = (userId, kind) => {
+    logger.debug('piano.desk.tab', { userId, kind });
+    setChosen((prev) => ({ ...prev, [userId]: kind }));
+  };
   const open = (card) => {
     if (card.kind === 'piece') {
       logger.info('piano.desk.open-passage', { userId: card.userId, scoreId: card.piece.scoreId, passageId: card.focus?.id ?? null });
@@ -148,22 +164,31 @@ export default function PianoHomeDesk({ disabled, onOpenPassage, onOpenCourse })
   };
   return (
     <section className={`piano-desk${disabled ? ' is-disabled' : ''}`} data-tall={tall || undefined} aria-label="Recent progress">
-      {groups.map((group) => (
+      {shown.map(({ group, card }) => (
         <div key={group.userId} className="piano-desk__child">
-          <span className="piano-desk__who">
-            <ProfileAvatar id={group.userId} name={group.name} />
-            <span className="piano-desk__name">{group.name}</span>
+          <span className="piano-desk__head">
+            <span className="piano-desk__who">
+              <ProfileAvatar id={group.userId} name={group.name} />
+              <span className="piano-desk__name">{group.name}</span>
+            </span>
+            {group.cards.length > 1 && (
+              <span className="piano-desk__tabs">
+                {TABS.map((tab) => (
+                  <button type="button" key={tab.kind} className="piano-desk__tab" data-kind={tab.kind} disabled={disabled}
+                    aria-label={tab.label} aria-pressed={card.kind === tab.kind}
+                    onClick={() => choose(group.userId, tab.kind)}>
+                    <Icon name={tab.icon} />
+                  </button>
+                ))}
+              </span>
+            )}
           </span>
-          <span className="piano-desk__cards">
-            {group.cards.map((card) => (
-              <button type="button" key={card.key} className="piano-desk__card" data-kind={card.kind} disabled={disabled}
-                data-rows={card.kind === 'piece' && mapRows(card.piece.passages.length) > 1 ? 2 : undefined}
-                aria-label={card.kind === 'piece' ? `${card.name}: ${pieceCount(card.piece)}` : `${card.name}: ${card.course.next?.title ?? card.course.courseTitle}`}
-                onClick={() => open(card)}>
-                {card.kind === 'piece' ? <PieceCard card={card} /> : <CourseCard card={card} />}
-              </button>
-            ))}
-          </span>
+          <button type="button" key={card.key} className="piano-desk__card" data-kind={card.kind} disabled={disabled}
+            data-rows={card.kind === 'piece' && mapRows(card.piece.passages.length) > 1 ? 2 : undefined}
+            aria-label={card.kind === 'piece' ? `${card.name}: ${pieceCount(card.piece)}` : `${card.name}: ${card.course.next?.title ?? card.course.courseTitle}`}
+            onClick={() => open(card)}>
+            {card.kind === 'piece' ? <PieceCard card={card} /> : <CourseCard card={card} />}
+          </button>
         </div>
       ))}
     </section>

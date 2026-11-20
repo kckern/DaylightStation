@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { cardBadge, coinSize, lessonTitle, mapColumns, mapRows, nextStep, passageBars, passageFaded, pieceCount, pieceFocus, relativeTime, scoreHeading, stripCards, stripGroups } from './deskModel.js';
+import { cardBadge, coinSize, lessonTitle, mapColumns, mapRows, nextStep, passageBars, passageFaded, pieceCount, pieceFocus, relativeTime, scoreHeading, shownCard, stripCards, stripGroups } from './deskModel.js';
 
 const passages = [{ id: 'a', start: 0, end: 4, state: 'silver' }, { id: 'b', start: 5, end: 8, state: 'todo' }];
 const piece = { total: 2, silver: 1, gold: 0, practicedAt: '2026-11-18T10:00:00Z', next: { passageId: 'b' }, nextGoldPassageId: 'a', passages };
@@ -75,9 +75,26 @@ describe('deskModel', () => {
     expect(mapRows(14)).toBe(1);
     expect(mapRows(15)).toBe(2);
   });
-  it('sizes coins to fill the card row, never above 20px', () => {
-    expect(coinSize(3)).toBe(20);
-    expect(coinSize(12)).toBe(12);
-    expect(coinSize(20)).toBe(15);
+  it('sizes coins to fill the card row, never above 22px', () => {
+    expect(coinSize(3)).toBe(22);
+    expect(coinSize(12)).toBe(21);
+    expect(coinSize(14)).toBe(17);
+    expect(coinSize(20)).toBe(22);
+    expect(coinSize(28)).toBe(17);
+  });
+  it('shows the chosen activity, else the most recent one', () => {
+    const pieceCard = { kind: 'piece', at: '2026-11-18T10:00:00Z' };
+    const courseCard = { kind: 'course', at: '2026-11-18T11:00:00Z' };
+    const both = { userId: 'a', cards: [pieceCard, courseCard] };
+    expect(shownCard(both)).toBe(courseCard);
+    expect(shownCard(both, 'piece')).toBe(pieceCard);
+    expect(shownCard(both, 'course')).toBe(courseCard);
+    expect(shownCard({ userId: 'a', cards: [{ ...pieceCard, at: '2026-11-18T12:00:00Z' }, courseCard] }).kind).toBe('piece');
+    // A choice the child no longer has falls back to what they do have.
+    expect(shownCard({ userId: 'a', cards: [pieceCard] }, 'course')).toBe(pieceCard);
+    // A card with no time loses to one with a time; a tie keeps the piece.
+    expect(shownCard({ userId: 'a', cards: [{ kind: 'piece', at: '' }, courseCard] })).toBe(courseCard);
+    expect(shownCard({ userId: 'a', cards: [{ kind: 'piece', at: 'x' }, { kind: 'course', at: 'x' }] }).kind).toBe('piece');
+    expect(shownCard({ userId: 'a', cards: [] })).toBeNull();
   });
 });

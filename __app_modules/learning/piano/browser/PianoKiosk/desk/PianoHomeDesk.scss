@@ -1,8 +1,8 @@
-// The progress strip above the home menu: one panel per child, headed once by
-// their avatar and name, over their piece and course cards. Fixed height,
-// filled or empty, so the tiles below never move. Three children with two
-// cards each fit the 1216px row; a crowded row shrinks its cards rather than
-// scrolling or cutting one off.
+// The progress strip above the home menu: one panel per child, headed by their
+// avatar and name (and, for a child with a piece and a course, two tabs), over
+// one card. Fixed height, filled or empty, so the tiles below never move. The
+// panels share the row, up to 300px each: four children in the 1216px row get
+// about 292px apiece; a crowded row shrinks them rather than scrolling.
 .piano-desk {
   flex: 0 0 auto;
   height: 208px;
@@ -14,24 +14,42 @@
   gap: 16px;
   overflow: hidden;
 
-  // A child's header over their cards; children are 16px apart.
-  &__child { flex: 0 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+  // A child's header over their one card; children are 16px apart.
+  &__child { flex: 1 1 0; max-width: 300px; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+  &__head { flex: 0 0 32px; height: 32px; display: flex; align-items: center; justify-content: space-between; gap: 8px; min-width: 0; }
   &__who {
-    flex: 0 0 32px; height: 32px; display: flex; align-items: center; gap: 8px; min-width: 0;
+    flex: 1 1 auto; height: 32px; display: flex; align-items: center; gap: 8px; min-width: 0;
     .piano-avatar { width: 32px; height: 32px; font-size: 0.75rem; flex: 0 0 auto; }
   }
   &__name { font-size: 17px; font-weight: 800; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  &__cards { display: flex; gap: 8px; min-width: 0; }
 
-  // One layout for both kinds of card, 193x150: the poster with the badge,
-  // title and next step beside it (90), and the progress pinned under it. A
-  // piece with more than fourteen passages takes two coin rows and 170px.
-  // When any piece needs two coin rows, every card grows together so the row stays even.
+  // Sheet music and video lesson: 32px tabs for small fingers. The shown one is
+  // filled with the accent, the other outlined. A tab only swaps the card.
+  &__tabs { flex: 0 0 auto; display: flex; gap: 6px; }
+  &__tab {
+    width: 32px; height: 32px; padding: 0; box-sizing: border-box;
+    display: flex; align-items: center; justify-content: center;
+    border: 2px solid var(--piano-accent); border-radius: 50%;
+    background: transparent; color: var(--piano-accent-text);
+    font: inherit; font-size: 16px; cursor: pointer;
+    &[aria-pressed='true'] { background: var(--piano-accent); color: var(--piano-accent-ink); }
+    &:disabled { cursor: default; border-color: var(--piano-muted); color: var(--piano-muted); }
+    &:disabled[aria-pressed='true'] { background: var(--piano-muted); color: var(--piano-surface); }
+    .piano-icon { display: flex; width: 16px; height: 16px; }
+    .piano-icon svg { width: 100%; height: 100%; }
+  }
+
+  // One layout for both kinds of card, the panel's width by 150: the 64x96
+  // poster with the badge, title and next step beside it, and the progress
+  // pinned under it (150 = 2 border + 16 padding + 96 + 10 gap + 26 progress).
+  // A piece with more than fourteen passages takes two coin rows and 170px
+  // (46px of progress: two 22px coins and a 2px gap). When any shown piece
+  // needs two rows, every card grows together so the row stays even.
   &[data-tall] &__card { height: 170px; }
 
   &__card {
-    flex: 0 1 auto;
-    width: 193px;
+    flex: 0 0 auto;
+    width: 100%;
     min-width: 0;
     height: 150px;
     box-sizing: border-box;
@@ -52,11 +70,11 @@
     &:disabled img { filter: grayscale(1); }
   }
 
-  &__top { flex: 0 0 90px; display: flex; gap: 8px; min-width: 0; }
+  &__top { flex: 0 0 96px; display: flex; gap: 8px; min-width: 0; }
 
   // The tall poster: score cover or course art, or a tinted stand-in with a title.
   &__poster {
-    position: relative; flex: 0 0 60px; width: 60px; height: 90px;
+    position: relative; flex: 0 0 64px; width: 64px; height: 96px;
     border-radius: 6px; overflow: hidden; background: var(--piano-surface-2);
     img { display: block; width: 100%; height: 100%; object-fit: cover; }
     &[data-stand-in] {

@@ -26,15 +26,58 @@ describe('PianoHomeDesk progress strip', () => {
     h.recent = { players: [{ userId: 'kid', name: 'Kid', courses: [course] }, { userId: 'sib', name: 'Sib', courses: [course] }] };
   });
 
-  it('gives a child with both a piece card and a course card', async () => {
+  it('gives each child one card, the piece when it is their latest, and tabs only to a child with both', async () => {
     mount();
     expect(await screen.findByRole('button', { name: 'Kid: 1 of 3 Silver' })).toBeInTheDocument();
-    expect(await screen.findByRole('button', { name: 'Kid: Lesson 12: Swing' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Kid: Lesson 12: Swing' })).toBeNull();
     expect(await screen.findByRole('button', { name: 'Sib: Lesson 12: Swing' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Idle/ })).toBeNull();
+    const [kid, sib] = [...document.querySelectorAll('.piano-desk__child')];
+    const kidTabs = [...kid.querySelectorAll('.piano-desk__tab')];
+    expect(kidTabs.map((tab) => [tab.getAttribute('aria-label'), tab.getAttribute('aria-pressed')])).toEqual([['Sheet music', 'true'], ['Video lesson', 'false']]);
+    expect(sib.querySelectorAll('.piano-desk__tab')).toHaveLength(0);
     // The printed title, once on the card's title line (the poster stand-in repeats it).
     await screen.findAllByText('Jesu Joy');
     expect(screen.getByRole('button', { name: 'Kid: 1 of 3 Silver' }).querySelector('.piano-desk__title').textContent).toBe('Jesu Joy');
+  });
+
+  it('defaults to the course when it was played after the piece', async () => {
+    h.recent.players[0].courses = [{ ...course, lastPlayedAt: '2026-11-19T10:00:00Z' }];
+    mount();
+    expect(await screen.findByRole('button', { name: 'Kid: Lesson 12: Swing' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Kid: 1 of 3 Silver' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Video lesson' })).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  it('swaps the card on a tab press, and opens nothing', async () => {
+    const { onOpenPassage, onOpenCourse } = mount();
+    const card = await screen.findByRole('button', { name: 'Kid: 1 of 3 Silver' });
+    expect(card.querySelector('.piano-desk__badge').textContent).toBe('Silver next');
+    fireEvent.click(screen.getByRole('button', { name: 'Video lesson' }));
+    const shown = screen.getByRole('button', { name: 'Kid: Lesson 12: Swing' });
+    expect(shown.querySelector('.piano-desk__badge').textContent).toBe('Next lesson');
+    expect(shown.querySelector('.piano-desk__title').textContent).toBe('Swing');
+    expect(screen.queryByRole('button', { name: 'Kid: 1 of 3 Silver' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Video lesson' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('button', { name: 'Sheet music' })).toHaveAttribute('aria-pressed', 'false');
+    fireEvent.click(screen.getByRole('button', { name: 'Sheet music' }));
+    expect(screen.getByRole('button', { name: 'Kid: 1 of 3 Silver' })).toBeInTheDocument();
+    expect(onOpenPassage).not.toHaveBeenCalled();
+    expect(onOpenCourse).not.toHaveBeenCalled();
+    // The shown card still opens its own activity.
+    fireEvent.click(screen.getByRole('button', { name: 'Video lesson' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Kid: Lesson 12: Swing' }));
+    expect(onOpenCourse).toHaveBeenCalledWith('kid', 'plex:9', 'plex:91');
+  });
+
+  it('sizes the strip by the cards shown, not a piece behind the other tab', async () => {
+    h.desk.players[0].piece = { ...piece, total: 20, passages: Array.from({ length: 20 }, (_, index) => ({ id: `p${index}`, start: index * 4, end: index * 4 + 3, state: 'todo' })) };
+    h.recent.players[0].courses = [{ ...course, lastPlayedAt: '2026-11-19T10:00:00Z' }];
+    mount();
+    await screen.findByRole('button', { name: 'Kid: Lesson 12: Swing' });
+    expect(document.querySelector('.piano-desk').hasAttribute('data-tall')).toBe(false);
+    fireEvent.click(screen.getByRole('button', { name: 'Sheet music' }));
+    expect(document.querySelector('.piano-desk').hasAttribute('data-tall')).toBe(true);
   });
 
   it('draws a course as its title without the lesson number, the number below, and a bar', async () => {
@@ -53,7 +96,7 @@ describe('PianoHomeDesk progress strip', () => {
     await screen.findByRole('button', { name: 'Kid: 1 of 3 Silver' });
     const panels = [...document.querySelectorAll('.piano-desk__child')];
     expect(panels.map((panel) => panel.querySelector('.piano-desk__name').textContent)).toEqual(['Kid', 'Sib']);
-    expect(panels.map((panel) => panel.querySelectorAll('.piano-desk__card').length)).toEqual([2, 1]);
+    expect(panels.map((panel) => panel.querySelectorAll('.piano-desk__card').length)).toEqual([1, 1]);
     expect(document.querySelectorAll('.piano-desk__card .piano-avatar')).toHaveLength(0);
     expect(document.querySelector('.piano-desk').textContent).not.toMatch(/ago|just now/);
   });
@@ -61,6 +104,7 @@ describe('PianoHomeDesk progress strip', () => {
   it('puts the course art on the poster, and a stand-in when there is none', async () => {
     h.recent.players[0].courses = [{ ...course, thumbnail: '/api/course.jpg' }];
     mount();
+    fireEvent.click(await screen.findByRole('button', { name: 'Video lesson' }));
     const kid = await screen.findByRole('button', { name: 'Kid: Lesson 12: Swing' });
     expect(kid.querySelector('.piano-desk__poster img').getAttribute('src')).toBe('/api/course.jpg?w=120&h=180');
     const sib = screen.getByRole('button', { name: 'Sib: Lesson 12: Swing' });
@@ -133,7 +177,7 @@ describe('PianoHomeDesk progress strip', () => {
     h.desk.players[0].piece = { ...piece, total: 12, passages: Array.from({ length: 12 }, (_, index) => ({ id: `p${index}`, start: index * 4, end: index * 4 + 3, state: 'todo' })) };
     mount();
     const card = await screen.findByRole('button', { name: 'Kid: 1 of 12 Silver' });
-    expect(card.querySelector('.piano-desk__map').style.gridTemplateColumns).toBe('repeat(12, minmax(0, 12px))');
+    expect(card.querySelector('.piano-desk__map').style.gridTemplateColumns).toBe('repeat(12, minmax(0, 21px))');
     expect(card.hasAttribute('data-rows')).toBe(false);
     expect(document.querySelector('.piano-desk').hasAttribute('data-tall')).toBe(false);
   });
@@ -142,7 +186,7 @@ describe('PianoHomeDesk progress strip', () => {
     h.desk.players[0].piece = { ...piece, total: 20, passages: Array.from({ length: 20 }, (_, index) => ({ id: `p${index}`, start: index * 4, end: index * 4 + 3, state: 'todo' })) };
     mount();
     const card = await screen.findByRole('button', { name: 'Kid: 1 of 20 Silver' });
-    expect(card.querySelector('.piano-desk__map').style.gridTemplateColumns).toBe('repeat(10, minmax(0, 15px))');
+    expect(card.querySelector('.piano-desk__map').style.gridTemplateColumns).toBe('repeat(10, minmax(0, 22px))');
     expect(card.getAttribute('data-rows')).toBe('2');
     expect(document.querySelector('.piano-desk').hasAttribute('data-tall')).toBe(true);
   });
@@ -171,10 +215,14 @@ describe('PianoHomeDesk progress strip', () => {
     expect(await screen.findByRole('button', { name: 'Kid: 2 of 3 Silver' })).toBeInTheDocument();
   });
 
-  it('disables every card while closed', async () => {
+  it('disables every card and tab while closed', async () => {
     const { onOpenPassage } = mount({ disabled: true });
     const card = await screen.findByRole('button', { name: 'Kid: 1 of 3 Silver' });
     expect(card).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Sheet music' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Video lesson' })).toBeDisabled();
+    fireEvent.click(screen.getByRole('button', { name: 'Video lesson' }));
+    expect(screen.getByRole('button', { name: 'Kid: 1 of 3 Silver' })).toBeInTheDocument();
     fireEvent.click(card);
     expect(onOpenPassage).not.toHaveBeenCalled();
   });
