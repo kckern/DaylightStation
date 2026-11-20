@@ -35,8 +35,7 @@
 
         <!-- Not exported: started by this app only, when the payload has accepted a keyed
              input link. Opening it opens the system's camera app, so nothing outside this
-             app may open it. No window of its own; a change of orientation while the camera
-             is in front does not rebuild it. -->
+             app may open it. The owner reviews the confirmed capture in this window. -->
         <activity
             android:name="net.kckern.daylight.cap.quickinput.shell.PhotoCaptureActivity"
             android:exported="false"
@@ -44,7 +43,7 @@
             android:excludeFromRecents="true"
             android:label="Photo"
             android:taskAffinity=""
-            android:theme="@android:style/Theme.Translucent.NoTitleBar" />
+            android:theme="@android:style/Theme.DeviceDefault.Dialog" />
 
         <!-- Not exported. Gives the camera app the one file a capture is written to, by a
              grant the photo screen makes for that file alone; grants can be made for

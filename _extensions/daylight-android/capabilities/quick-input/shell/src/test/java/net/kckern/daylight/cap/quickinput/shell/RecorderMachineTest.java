@@ -75,15 +75,22 @@ public class RecorderMachineTest {
         assertEquals(RecorderMachine.Tap.SHOW, RecorderMachine.tap(5_000, 10_000, false));
     }
 
-    @Test public void phoneRecorderFinishesOnlyAfterExplicitSend() {
+    @Test public void phoneRecorderPreservesInterruptionsWithoutSending() {
         for (Event event : new Event[] { Event.STOP, Event.CANCEL, Event.CAP_REACHED, Event.FOCUS_LOST,
                 Event.RECORDER_ERROR, Event.SERVICE_DESTROYED }) {
             RecorderMachine phone = new RecorderMachine(true);
             phone.on(Event.START, 1);
             phone.began(2);
-            assertEquals(event.toString(), event == Event.STOP ? Action.FINISH : Action.DISCARD_AND_STOP,
+            assertEquals(event.toString(), event == Event.STOP ? Action.FINISH
+                    : event == Event.CANCEL ? Action.DISCARD_AND_STOP : Action.SAVE_DRAFT,
                     phone.on(event, 3));
         }
+    }
+
+    @Test public void aLateMicrophonePermissionCannotRestartCancelledCapture() {
+        assertFalse(RecorderMachine.canBeginAfterPermission(false, true));
+        assertFalse(RecorderMachine.canBeginAfterPermission(true, false));
+        assertTrue(RecorderMachine.canBeginAfterPermission(true, true));
     }
 
     @Test public void aTapStartsOrShowsAnActiveRecording() {

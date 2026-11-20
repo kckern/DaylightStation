@@ -6,7 +6,7 @@ package net.kckern.daylight.cap.quickinput.shell;
  *
  *   IDLE ──START──► STARTING ──began──► RECORDING ──any end──► IDLE
  *
- * Phone recordings finalize only on an explicit Send. Car capture uses its own
+ * Phone recordings publish only on an explicit Send. Car capture uses its own
  * end-of-recording policy and inbox.
  *
  * Public for the car screen's recorder (car-actions), which records through the car's
@@ -63,6 +63,8 @@ public final class RecorderMachine {
         BEGIN,
         /** Stop the recorder, decide on the file with keep(), stop the service. */
         FINISH,
+        /** Stop and finalize privately, without sending. */
+        SAVE_DRAFT,
         /** Release what was set up, delete the part file, stop the service. */
         DISCARD_AND_STOP,
         /** Nothing is recording: just stop the service. */
@@ -92,10 +94,14 @@ public final class RecorderMachine {
         state = State.IDLE;
         startedAtMs = 0;
         if (was == State.RECORDING) {
-            return event == Event.CANCEL || (explicitSendOnly && event != Event.STOP)
-                    ? Action.DISCARD_AND_STOP : Action.FINISH;
+            if (event == Event.CANCEL) return Action.DISCARD_AND_STOP;
+            return explicitSendOnly && event != Event.STOP ? Action.SAVE_DRAFT : Action.FINISH;
         }
         return was == State.STARTING ? Action.DISCARD_AND_STOP : Action.STOP_SERVICE;
+    }
+
+    static boolean canBeginAfterPermission(boolean waiting, boolean granted) {
+        return waiting && granted;
     }
 
     /** The recorder is running. */

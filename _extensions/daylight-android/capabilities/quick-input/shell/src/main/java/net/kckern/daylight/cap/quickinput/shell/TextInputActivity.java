@@ -1,6 +1,8 @@
 package net.kckern.daylight.cap.quickinput.shell;
 
 import android.app.Activity;
+import android.app.AlertDialog;
+import android.content.Intent;
 import android.os.Build;
 import android.os.Bundle;
 import android.text.Editable;
@@ -16,23 +18,16 @@ import android.widget.LinearLayout;
 import android.widget.TextView;
 import android.widget.Toast;
 
-import java.io.File;
-import java.security.SecureRandom;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 
-/**
- * The one screen of a typed quick input: a field, Send and Cancel. Nothing leaves the
- * screen until Send, which writes the text to a file of this app and hands it to the
- * upload queue like a recording; from there it survives the process being killed and
- * is sent when the backend can be reached.
- *
- * Not exported. It is opened by the payload when a keyed input link arrives, which only
- * this app's own surfaces can build. It is not shown over the lock screen. What is typed
- * is not logged, not put in a notice and not kept anywhere but the field until Send.
- *
- * Rule for editing this file: perform, do not decide. What may be typed and what is
- * sent is TextDraft's; what the file is called and where it goes is CaptureFiles'.
- */
+/** Edits a destination's private text draft until Send or confirmed Discard. */
 public class TextInputActivity extends Activity {
+    private CaptureDraftStore store;
+    private CaptureDraftStore.Draft draft;
+    private boolean completed;
+    private boolean loading;
     private String dest;
     private String label;
     private EditText field;
@@ -41,25 +36,51 @@ public class TextInputActivity extends Activity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        dest = MemoFiles.dest(getIntent() == null ? null : getIntent().getStringExtra(MemoFiles.EXTRA_DEST));
-        label = MemoFiles.label(getIntent() == null ? null : getIntent().getStringExtra(MemoFiles.EXTRA_LABEL));
+        store = new CaptureDraftStore(getFilesDir());
+        setFinishOnTouchOutside(false);
+        if (Build.VERSION.SDK_INT >= 33) setRecentsScreenshotEnabled(false);
+        getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_VISIBLE
+                | WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
+        open(getIntent(), savedInstanceState == null ? null : savedInstanceState.getString("draft"));
+    }
+
+    @Override protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        if (completed || isFinishing() || dest.equals(MemoFiles.dest(intent.getStringExtra(MemoFiles.EXTRA_DEST)))) return;
+        if (!save(field.getText().toString())) return;
+        setIntent(intent);
+        open(intent, null);
+    }
+
+    @Override protected void onSaveInstanceState(Bundle state) {
+        super.onSaveInstanceState(state);
+        if (draft != null) state.putString("draft", draft.id);
+    }
+
+    private void open(Intent intent, String restoredId) {
+        dest = MemoFiles.dest(intent.getStringExtra(MemoFiles.EXTRA_DEST));
+        label = MemoFiles.label(intent.getStringExtra(MemoFiles.EXTRA_LABEL));
         if (dest == null) {
-            // Started with nothing to send to: only this app can start it, so this is a mistake of its own.
             finish();
             return;
         }
         if (label == null) label = "Quick input";
-        setTitle(label);
-        // A touch beside the window does not close it: a draft is not lost to a stray tap.
-        setFinishOnTouchOutside(false);
-        // The task is kept out of the recents list (the manifest), and from Android 13 the
-        // system takes no picture of this window for it either. Screenshots are not blocked.
-        if (Build.VERSION.SDK_INT >= 33) setRecentsScreenshotEnabled(false);
-        getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_VISIBLE
-                | WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
-        build();
-        getWindow().setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
-        CaptureFiles.sweep(new File(getFilesDir(), CaptureFiles.INBOX), System.currentTimeMillis());
+        try {
+            draft = restoredId == null ? store.latest(dest, CaptureDraftStore.Kind.TEXT) : store.get(restoredId);
+            String text = draft != null && draft.hasContent()
+                    ? new String(Files.readAllBytes(draft.file.toPath()), StandardCharsets.UTF_8) : "";
+            if (draft != null) label = draft.label;
+            setTitle(label);
+            build();
+            loading = true;
+            field.setText(text);
+            field.setSelection(field.length());
+            loading = false;
+            getWindow().setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+        } catch (IOException e) {
+            say("Could not open the draft");
+            finish();
+        }
     }
 
     private void build() {
@@ -69,8 +90,8 @@ public class TextInputActivity extends Activity {
         layout.setPadding(pad, pad, pad, pad / 2);
 
         field = new EditText(this);
-        // An id, so Android keeps the draft when it builds the screen again (a rotation).
         field.setId(R.id.quick_input_text);
+        field.setSaveEnabled(false);
         field.setInputType(InputType.TYPE_CLASS_TEXT | InputType.TYPE_TEXT_FLAG_MULTI_LINE | InputType.TYPE_TEXT_FLAG_CAP_SENTENCES);
         field.setMinLines(3);
         field.setMaxLines(10);
@@ -85,7 +106,10 @@ public class TextInputActivity extends Activity {
         field.addTextChangedListener(new TextWatcher() {
             @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) { }
             @Override public void onTextChanged(CharSequence s, int start, int before, int count) { }
-            @Override public void afterTextChanged(Editable s) { counter.setText(TextDraft.counter(TextDraft.utf8Length(s, 0, s.length()))); }
+            @Override public void afterTextChanged(Editable s) {
+                counter.setText(TextDraft.counter(TextDraft.utf8Length(s, 0, s.length())));
+                if (!loading && !completed) save(s.toString());
+            }
         });
         layout.addView(field, new LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
 
@@ -98,7 +122,7 @@ public class TextInputActivity extends Activity {
         buttons.setGravity(Gravity.END);
         Button cancel = new Button(this);
         cancel.setText("Cancel");
-        cancel.setOnClickListener(v -> close());
+        cancel.setOnClickListener(v -> confirmDiscard());
         buttons.addView(cancel);
         Button send = new Button(this);
         send.setText("Send");
@@ -109,27 +133,63 @@ public class TextInputActivity extends Activity {
         field.requestFocus();
     }
 
-    private void send() {
-        byte[] body = TextDraft.body(field.getText().toString());
-        if (body == null) {
-            Toast.makeText(getApplicationContext(), "Nothing to send", Toast.LENGTH_SHORT).show();
-            return;
+    private boolean save(String value) {
+        if (draft == null && value.isEmpty()) return true;
+        try {
+            if (draft == null) draft = store.create(dest, label, CaptureDraftStore.Kind.TEXT);
+            store.writeText(draft.id, value);
+            return true;
+        } catch (IOException e) {
+            say("Could not save the draft");
+            return false;
         }
-        String id = MemoFiles.newId(System.currentTimeMillis(), new SecureRandom().nextLong());
-        File written = CaptureFiles.write(new File(getFilesDir(), CaptureFiles.INBOX), id, dest, CaptureFiles.TEXT, body);
-        if (written == null) {
-            // The draft stays in the field: nothing was queued and nothing is lost.
-            Toast.makeText(getApplicationContext(), "Could not save it. Nothing was sent.", Toast.LENGTH_LONG).show();
-            return;
-        }
-        CaptureFiles.tellPayload();
-        Toast.makeText(getApplicationContext(), "Sending to " + label, Toast.LENGTH_SHORT).show();
-        close();
     }
 
-    /** The field is emptied before the window goes, so no picture of the screen taken on the way out holds the draft. */
-    private void close() {
-        if (field != null) field.setText("");
-        finish();
+    private void send() {
+        if (completed) return;
+        byte[] body = TextDraft.body(field.getText().toString());
+        if (body == null) {
+            say("Nothing to send");
+            return;
+        }
+        if (!save(new String(body, StandardCharsets.UTF_8))) return;
+        try {
+            if (!store.send(draft.id)) return;
+            completed = true;
+            CaptureFiles.tellPayload();
+            say("Queued for " + label);
+            finish();
+        } catch (IOException e) {
+            say("Could not queue the draft. Check it and try again.");
+        }
+    }
+
+    private void confirmDiscard() {
+        if (completed) return;
+        if (field.length() == 0 && (draft == null || !draft.requiresDiscardConfirmation())) {
+            discard(false);
+            return;
+        }
+        new AlertDialog.Builder(this)
+                .setTitle("Discard this text draft?")
+                .setNegativeButton("Keep draft", null)
+                .setPositiveButton("Discard draft", (dialog, which) -> discard(true))
+                .show();
+    }
+
+    private void discard(boolean confirmed) {
+        try {
+            if (draft != null && !store.discard(draft.id, confirmed)) return;
+            completed = true;
+            finish();
+        } catch (IOException e) {
+            say("Could not discard the draft");
+        }
+    }
+
+    @Override public void onBackPressed() { confirmDiscard(); }
+
+    private void say(String message) {
+        Toast.makeText(getApplicationContext(), message, Toast.LENGTH_SHORT).show();
     }
 }

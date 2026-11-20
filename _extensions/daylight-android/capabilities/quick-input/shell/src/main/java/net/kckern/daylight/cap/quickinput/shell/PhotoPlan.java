@@ -95,6 +95,15 @@ final class PhotoPlan {
      * @return true when out is a JPEG within the intake's limit with no metadata in it
      */
     static boolean process(File raw, File out, Pixels pixels) {
+        try {
+            return prepare(raw, out, pixels);
+        } finally {
+            raw.delete();
+        }
+    }
+
+    /** Prepare confirmed camera output, retaining it until the draft has committed the JPEG. */
+    static boolean prepare(File raw, File out, Pixels pixels) {
         boolean ok = false;
         try {
             for (Step step : STEPS) {
@@ -108,7 +117,6 @@ final class PhotoPlan {
         } catch (Exception | OutOfMemoryError failed) {
             ok = false;
         } finally {
-            raw.delete();
             if (!ok) out.delete();
         }
         return ok;
