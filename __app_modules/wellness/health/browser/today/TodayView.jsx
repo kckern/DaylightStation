@@ -7,12 +7,12 @@ import { SHARED_LOG_IDS } from "../../portable/contracts/nutrition/sharedLogIds.
 import { useSearchParams } from 'react-router-dom';
 import { isISODate } from "../../portable/contracts/health/isoDate.mjs";
 import { ActionIcon, Button, Menu } from '@mantine/core';
-import { ErrorState, useDismissLayer } from '@/lib/ui';
+import { ErrorState, LoadingState, useDismissLayer, useRetryRegion } from '@/lib/ui';
 import { DaylightAPI } from "../../../../../frontend/src/lib/api.mjs";
 import { createAppLogger } from "../../../../../frontend/src/lib/ui/createAppLogger.js";
 import { useApiResource } from "../../../../../frontend/src/lib/hooks/useApiResource.js";
 import { useHealthDay } from "./useHealthDay.js";
-import { HEALTH_DASHBOARD_PATH, pendingReviewPath, observationsPath, healthDayPath } from "../healthResources.js";
+import { HEALTH_DASHBOARD_PATH, pendingReviewPath, observationsPath, healthDayPath, unavailableError } from "../healthResources.js";
 import { useHealthDayPrefetch } from "./useHealthDayPrefetch.js";
 import { useAddedRowHighlight } from "./addFlow.js";
 import { EquationStrip } from "./EquationStrip.jsx";
@@ -125,6 +125,29 @@ function MealActionsMenu({ label, children }) {
   </Menu>;
 }
 
+function FoodReviewRecovery({ resource, suppressError }) {
+  const [requestedRetry, setRequestedRetry] = useState(false);
+  const error = suppressError && !requestedRetry ? null : unavailableError(resource);
+  const busy = resource.loading || resource.revalidating;
+  const { regionProps, retry } = useRetryRegion(() => {
+    setRequestedRetry(true);
+    return resource.reload();
+  }, busy);
+
+  if (!error && !(requestedRetry && (busy || resource.data))) return null;
+  const count = resource.data?.pending?.length ?? 0;
+  return (
+    <section aria-label="Food review" {...regionProps} onBlur={event => {
+      if (!event.currentTarget.contains(event.relatedTarget)) setRequestedRetry(false);
+    }}>
+      {error ? <ErrorState error={error} onRetry={retry} label="Food review unavailable" />
+        : resource.data ? <p role="status">{count === 0 ? 'No food captures need review.'
+          : `${count} food ${count === 1 ? 'capture needs' : 'captures need'} review below.`}</p>
+        : <LoadingState label="food review" rows={1} />}
+    </section>
+  );
+}
+
 export function TodayView({ active = true, sidebarTarget, followUpTarget = null, onSetupGoals, onCoachTap }) {
   const pageRef = useRef(null);
   const [searchParams, setSearchParams] = useSearchParams();
@@ -134,6 +157,7 @@ export function TodayView({ active = true, sidebarTarget, followUpTarget = null,
   const weekParam = searchParams.get('week');
   const viewportEnd = isISODate(weekParam) && weekParam <= weekEnd(todayISO()) ? weekEnd(weekParam) : weekEnd(date);
   const day = useHealthDay(date, { enabled: active });
+  const { regionProps: foodLogRegion, retry: retryDay } = useRetryRegion(day.reload, day.loading || day.revalidating);
   const foodAPI = useFoodMutation(day.items);
   // Drag-to-meal moves wear their new meal from the drop until the day
   // reloads with them (mealDrag.jsx), so the portion overlay reads that view.
@@ -257,6 +281,9 @@ export function TodayView({ active = true, sidebarTarget, followUpTarget = null,
   // after a dismiss/pair revalidates quietly instead of blanking the section.
   const observations = useApiResource(observationsPath(date),
     { deps: [date], enabled: active, label: 'observations', logger, swr: true });
+  const { regionProps: measurementsRegion, retry: retryMeasurements } = useRetryRegion(
+    observations.reload, observations.loading || observations.revalidating,
+  );
   const observationRows = useMemo(() => observations.data?.observations || [], [observations.data]);
   // What is on screen stayed; the latest refresh of it did not land.
   const staleResources = [['day', day.loaded, day.error], ['pending-review', pendingReview.data, pendingReview.error],
@@ -675,6 +702,7 @@ export function TodayView({ active = true, sidebarTarget, followUpTarget = null,
       {/* Follow-ups arrive on their own schedule (a 15 s poll, a scale), so they
           take no room on the page: a bell in the header (followUpTarget). */}
       <FollowUpTray active={active} target={followUpTarget} observations={unmatched}
+        bellRegionProps={{ ...measurementsRegion, role: 'group', 'aria-label': 'Measurements' }}
         onObservationsChanged={() => observations.reload()} onChanged={day.reload} />
       {wideViewport && sidebarTarget ? createPortal(history, sidebarTarget) : null}
       <TodayToasts pageRef={pageRef} captureNotice={captureNotice} captureRetry={captureRetry} retryBusy={nutrition.busy}
@@ -694,28 +722,30 @@ export function TodayView({ active = true, sidebarTarget, followUpTarget = null,
           what is on screen and says so in one line. A panel only when there
           is nothing to show, and one per outage: when the day itself failed,
           the review and measurement failures are the same outage. */}
-      {day.error && !day.loaded ? <ErrorState error={day.error} onRetry={day.reload} label="Food log" /> : null}
-      {!day.error && pendingReview.error && !pendingReview.data ? <ErrorState error={pendingReview.error} onRetry={pendingReview.reload} label="Food review unavailable" /> : null}
-      {!day.error && observations.error && !observations.data ? <ErrorState error={observations.error} onRetry={observations.reload} label="Measurements unavailable" /> : null}
-      {refreshFailed ? <Button variant="subtle" size="compact-xs" color="gray" className="health-refresh-failed" onClick={day.reload}>
+      {day.error && !day.loaded ? <ErrorState error={day.error} onRetry={retryDay} label="Food log" /> : null}
+      <FoodReviewRecovery key={date} resource={pendingReview} suppressError={Boolean(day.error)} />
+      {!day.error && observations.error && !observations.data ? <ErrorState error={observations.error} onRetry={retryMeasurements} label="Measurements unavailable" /> : null}
+      {refreshFailed ? <Button variant="subtle" size="compact-xs" color="gray" className="health-refresh-failed" onClick={retryDay}>
         Couldn't refresh · Retry</Button> : null}
       <DayInputBar date={date} today={todayISO()} active={active} entries={dayEntries(movedDay.items)} onResult={handleDayInput}
         onMoveDay={(rows, iso, options) => moves.moveFromDay(rows, iso, null, options)} onClaimMove={setSheetMove} onMoveHandedBack={setHandedBackMove} />
-      <LogTable active={active} clarifications={mealClarifications} onClearClarification={clearMealClarification} byBucket={preview.byBucket} date={date} sessions={preview.budget?.sessions || []}
-        exerciseAvailable={Boolean(day.budget)}
-        fastedMeals={day.dayStatus?.fastedMeals || []} onMealFastChanged={day.reload}
-        coldLoading={coldLoading} capturePendingBuckets={[...capturePending.values()].filter(pending => pending.date === date).map(pending => pending.bucket)}
-        onRowTap={setEditingRow} onConfirm={day.reload} onRequestDelete={row => { setDeleteError(null); setPendingDelete(row); }}
-        bucketHeaderAction={bucketHeaderAction}
-        onVoiceCapture={onVoiceCapture} onTextCapture={onTextCapture}
-        onMealChanged={result=>handleCaptureResult(result)} captureTasks={[...capturePending.values()]}
-        hiddenIds={moves.hiddenIds} measuredByUuid={measuredByUuid} addedIds={addedIds} onMoveEntry={moves.move} onMoveMeal={moves.moveMeal} onMoveToDay={moves.moveToDay}
-        onNotice={message => { setCaptureRetry(null); setCaptureNotice(message); }}
-        renderAddRow={(bucket, label, meal) => <MealAddRow bucket={bucket} label={label} date={date} active={active}
-          onVoiceCapture={meal?.onVoiceCapture} selectedCount={meal?.selectedIds?.length || 0} busy={false} onOrphanedRetry={keepOrphanedRecording}
-          onAdded={() => day.reload()} onFoodAdded={offerAddedFood} onSentencePending={text => beginSentencePending(bucket, text)} onPhotoCapture={onPhotoCapture} onOpenBarcode={openBarcode}
-          onOpenTemplates={(target, templateId) => { setFocusTemplateId(templateId); setTemplatesFor(target); }}
-          onManageFoods={() => setManageFoods(true)} />} />
+      <section aria-label="Food log" {...foodLogRegion}>
+        <LogTable active={active} clarifications={mealClarifications} onClearClarification={clearMealClarification} byBucket={preview.byBucket} date={date} sessions={preview.budget?.sessions || []}
+          exerciseAvailable={Boolean(day.budget)}
+          fastedMeals={day.dayStatus?.fastedMeals || []} onMealFastChanged={day.reload}
+          coldLoading={coldLoading} capturePendingBuckets={[...capturePending.values()].filter(pending => pending.date === date).map(pending => pending.bucket)}
+          onRowTap={setEditingRow} onConfirm={day.reload} onRequestDelete={row => { setDeleteError(null); setPendingDelete(row); }}
+          bucketHeaderAction={bucketHeaderAction}
+          onVoiceCapture={onVoiceCapture} onTextCapture={onTextCapture}
+          onMealChanged={result=>handleCaptureResult(result)} captureTasks={[...capturePending.values()]}
+          hiddenIds={moves.hiddenIds} measuredByUuid={measuredByUuid} addedIds={addedIds} onMoveEntry={moves.move} onMoveMeal={moves.moveMeal} onMoveToDay={moves.moveToDay}
+          onNotice={message => { setCaptureRetry(null); setCaptureNotice(message); }}
+          renderAddRow={(bucket, label, meal) => <MealAddRow bucket={bucket} label={label} date={date} active={active}
+            onVoiceCapture={meal?.onVoiceCapture} selectedCount={meal?.selectedIds?.length || 0} busy={false} onOrphanedRetry={keepOrphanedRecording}
+            onAdded={() => day.reload()} onFoodAdded={offerAddedFood} onSentencePending={text => beginSentencePending(bucket, text)} onPhotoCapture={onPhotoCapture} onOpenBarcode={openBarcode}
+            onOpenTemplates={(target, templateId) => { setFocusTemplateId(templateId); setTemplatesFor(target); }}
+            onManageFoods={() => setManageFoods(true)} />} />
+      </section>
       <NeedsReviewSection pending={pendingLogs} onChanged={day.reload} onConfirmed={(entry, placed) => offerAddedFood(
         { committed: true, logId: entry.id, items: entry.items, date: placed.date || entry.date, mealTime: placed.mealTime }, date)} />
       {!wideViewport || !sidebarTarget ? <details className="health-history"><summary>Week &amp; weight history</summary>{history}</details> : null}

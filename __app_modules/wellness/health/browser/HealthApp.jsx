@@ -8,7 +8,7 @@ import { refreshHealthResourcesWithDashboard } from "./healthResources.js";
 import { claimHealthCacheOwner, healthCacheHeldByOther, HEALTH_CONTEXT_PATH, hydrateHealthCache, useHealthCacheHydrated } from "./healthCache.js";
 import '@mantine/core/styles.css';
 import {
-  AppThemeProvider, AppChrome, AppView, DismissStackProvider, LoadingState, ErrorState,
+  AppThemeProvider, AppChrome, AppView, DismissStackProvider, LoadingState, ErrorState, useRetryRegion,
 } from '@/lib/ui';
 import { useViewScroll } from '@/lib/ui/useViewScroll.js';
 import { useHotkey } from '@/lib/hooks/useHotkey.js';
@@ -63,11 +63,22 @@ const HealthGate = () => {
   // The server named someone other than whose snapshots the cache holds: do
   // not mount their shell on the other person's data; the claim above clears it.
   const heldByOther = healthCacheHeldByOther(context.data?.userId);
-  return context.data?.userId && !heldByOther ? <HealthDisplayPreferencesProvider key={context.data.userId} userId={context.data.userId}
-    densityLevels={context.data.densityLevels} densityRevision={context.data.densityRevision}>
-    <HealthOperationsProvider userId={context.data.userId}><HealthShell userId={context.data.userId} /></HealthOperationsProvider>
-  </HealthDisplayPreferencesProvider>
-    : <AppThemeProvider pack="health">{context.error ? <ErrorState error={context.error} onRetry={context.reload} label="Health" /> : <LoadingState label="Health" />}</AppThemeProvider>;
+  const canShowShell = Boolean(context.data?.userId) && !heldByOther;
+  const { regionProps, retry } = useRetryRegion(context.reload, !canShowShell && (context.loading || context.revalidating));
+  return (
+    <section aria-label="Health" {...regionProps}>
+      {canShowShell ? (
+        <HealthDisplayPreferencesProvider key={context.data.userId} userId={context.data.userId}
+          densityLevels={context.data.densityLevels} densityRevision={context.data.densityRevision}>
+          <HealthOperationsProvider userId={context.data.userId}><HealthShell userId={context.data.userId} /></HealthOperationsProvider>
+        </HealthDisplayPreferencesProvider>
+      ) : (
+        <AppThemeProvider pack="health">
+          {context.error ? <ErrorState error={context.error} onRetry={retry} label="Health" /> : <LoadingState label="Health" />}
+        </AppThemeProvider>
+      )}
+    </section>
+  );
 };
 
 function RouteReady({ route, onReady }) {

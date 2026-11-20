@@ -24,7 +24,7 @@ const LISTED = 5;
  * of what is waiting; picking an item opens its flow in a sheet (the question
  * card deck, starting at that question, or the unclaimed scale readings).
  */
-export function FollowUpTray({ active = true, target = null, observations = [], onObservationsChanged, onChanged }) {
+export function FollowUpTray({ active = true, target = null, observations = [], bellRegionProps, onObservationsChanged, onChanged }) {
   const cleanup = useCleanup(active);
   const bellRef = useRef(null);
   const [sheet, setSheet] = useState(null); // null | { startId }
@@ -58,7 +58,7 @@ export function FollowUpTray({ active = true, target = null, observations = [], 
   };
 
   const bell = (
-    <span className={`health-followups${empty ? ' health-followups--empty' : ''}`}>
+    <span className={`health-followups${empty ? ' health-followups--empty' : ''}`} {...bellRegionProps}>
       {/* The menu's non-trapping focus lets a picked action open its sheet
           without a competing aria-hider. */}
       <ActionMenu

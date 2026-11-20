@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Autocomplete, Button, Group, NumberInput, Stack, TextInput } from '@mantine/core';
-import { Button as SubmitButton, SectionCard, StatCard, Sheet, LoadingState, ErrorState, EmptyState, StateMessage, useSheetSubmission } from '@/lib/ui';
+import { Button as SubmitButton, SectionCard, StatCard, Sheet, LoadingState, ErrorState, EmptyState, StateMessage, useRetryRegion, useSheetSubmission } from '@/lib/ui';
 import { invalidateApiResources, useApiResource } from "../../../../../frontend/src/lib/hooks/useApiResource.js";
 import { unavailableError } from "../healthResources.js";
 import { DaylightAPI } from "../../../../../frontend/src/lib/api.mjs";
@@ -19,6 +19,7 @@ const emptyForm = () => ({ metric: '', value: '', value2: '', unit: '', date: lo
 /** Grouped medical readings (BP, labs, vitals) — manual entry, no interpretation. */
 export function MedicalView() {
   const med = useApiResource(medicalPath, { label: 'medical', logger });
+  const { regionProps, retry } = useRetryRegion(med.reload, med.loading);
   const [open, setOpen] = useState(false);
   const [removeError, setRemoveError] = useState(null);
 
@@ -39,14 +40,14 @@ export function MedicalView() {
   const metrics = med.data?.metrics || [];
 
   return (
-    <div className="health-medical">
+    <section className="health-medical" aria-label="Medical readings" {...regionProps}>
       {metrics.length ? <Group justify="flex-end" mb="sm">
         <Button size="xs" onClick={openAdd}>Add reading</Button>
       </Group> : null}
 
       {med.loading ? <LoadingState label="medical readings" rows={4} /> : null}
-      {unavailableError(med) ? <ErrorState error={med.error} onRetry={med.reload} label="Medical readings" /> : null}
-      {!open && removeError ? <ErrorState error={removeError} onRetry={() => { setRemoveError(null); med.reload(); }} label="Reading could not be deleted" /> : null}
+      {unavailableError(med) ? <ErrorState error={med.error} onRetry={retry} label="Medical readings" /> : null}
+      {!open && removeError ? <ErrorState error={removeError} onRetry={() => { setRemoveError(null); retry(); }} label="Reading could not be deleted" /> : null}
       {!med.loading && !unavailableError(med) && !metrics.length ? (
         <EmptyState title="No medical readings yet"
           hint="Add a blood pressure, glucose, or lab reading to start tracking."
@@ -69,7 +70,7 @@ export function MedicalView() {
       )) : null}
 
       {open && <MedicalReadingSheet onClose={() => setOpen(false)} />}
-    </div>
+    </section>
   );
 }
 
