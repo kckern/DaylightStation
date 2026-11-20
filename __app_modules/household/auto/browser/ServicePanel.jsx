@@ -8,6 +8,7 @@
 // schema and is deliberately not on this form until it would do something.
 
 import { useEffect, useRef, useState } from 'react';
+import { localDateKey } from '@/lib/calendarDay.js';
 import { LoadingState, ErrorState, EmptyState, Sheet, Select, useSheetSubmission } from '@/lib/ui';
 import { AutoSheetActions } from './AutoSheetActions.jsx';
 import { formatDay, formatMoney, formatDistance } from "./format.js";
@@ -121,14 +122,14 @@ function ServiceForm({ vehicleId, availableTypes, onClose }) {
   // A form visit keeps the options it started with if configuration refreshes.
   const [types] = useState(availableTypes);
   const selectRef = useRef(null);
-  const [form, setForm] = useState({
+  const [form, setForm] = useState(() => ({
     ...serviceTypeFields(types[0]),
-    date: new Date().toISOString().slice(0, 10),
+    date: localDateKey(),
     vendor: '',
     cost: '',
     odometerMi: '',
     notes: '',
-  });
+  }));
   useEffect(() => {
     // The sheet stays mounted while a type read retries and replaces its button.
     if (document.activeElement === document.body) selectRef.current?.focus({ preventScroll: true });

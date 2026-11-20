@@ -14,6 +14,7 @@
 // inventing a separate chore.
 
 import { useState } from 'react';
+import { localDateKey } from '@/lib/calendarDay.js';
 import { Sheet, useSheetSubmission } from '@/lib/ui';
 import { AutoSheetActions } from './AutoSheetActions.jsx';
 import { autoApi } from "./useAutoApi.js";
@@ -26,8 +27,8 @@ import autoLog from "./autoLog.js";
  *          partial?: boolean}} [props.initial] prefill from a detected fill-up
  */
 export default function FuelSheet({ vehicleId, initial = {}, onClose }) {
-  const [form, setForm] = useState({
-    date: initial.date || new Date().toISOString().slice(0, 10),
+  const [form, setForm] = useState(() => ({
+    date: initial.date || localDateKey(),
     odometerMi: '',
     // Estimated from the gauge rise when a tank capacity is configured. Left
     // editable rather than locked — the pump receipt is authoritative, and the
@@ -35,7 +36,7 @@ export default function FuelSheet({ vehicleId, initial = {}, onClose }) {
     volumeGal: initial.volumeGal || '',
     priceTotal: '',
     partial: Boolean(initial.partial),
-  });
+  }));
   const { submit, saving, failure } = useSheetSubmission(onClose, error => {
     autoLog.warn('fuel.log_failed', { error: error?.message });
   });

@@ -9,6 +9,7 @@
 // beside it is worth tapping.
 
 import { useState } from 'react';
+import { addCalendarDays, localDateKey } from '@/lib/calendarDay.js';
 import { LoadingState, ErrorState, EmptyState, Sheet, Select, useSheetSubmission } from '@/lib/ui';
 import { AutoSheetActions } from './AutoSheetActions.jsx';
 import { formatDistance, formatDuration, formatDay, formatTime, formatSpeed } from "./format.js";
@@ -134,19 +135,19 @@ function pendingFuelStop(journey, fuelLogs) {
 
   const when = stop.arrived_at || journey.started_at || journey.ended_at;
   if (!when) return null;
-  const day = when.slice(0, 10);
+  const instant = new Date(when);
+  if (Number.isNaN(instant.getTime())) return null;
+  const day = localDateKey(instant);
+  const matchingDays = [addCalendarDays(day, -1), day, addCalendarDays(day, 1)];
 
   const alreadyLogged = fuelLogs.some((log) => {
     if (log.place && stop.place_id && log.place !== stop.place_id) return false;
-    return Math.abs(daysBetween(log.date, day)) <= 1;
+    return matchingDays.includes(log.date);
   });
   if (alreadyLogged) return null;
 
   return { date: day, placeId: stop.place_id, placeLabel: stop.label };
 }
-
-const daysBetween = (a, b) =>
-  Math.round((new Date(`${a}T00:00:00`) - new Date(`${b}T00:00:00`)) / 86400000);
 
 function JourneyRow({ journey, onName, onLogFuel, fuelPrompt }) {
   const unnamed = [journey.origin, ...journey.stops, journey.destination]

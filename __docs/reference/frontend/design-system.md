@@ -97,6 +97,8 @@ Feed uses the shared native `Select` for reading preferences, edition, search mo
 
 A day navigator receives calendar keys in `YYYY-MM-DD` form. The shared `addCalendarDays` helper shifts these keys independently of the device time zone. Health and Weekly Review keep their own rules for selecting today and limiting the range.
 
+Use `localDateKey()` to initialize a date field with the browser's current calendar day. Preserve a stored `YYYY-MM-DD` value when displaying it. Convert a timestamp to a local calendar day before using it to prefill a date field. Auto uses these rules for fuel and service records and for fill-ups logged from a drive.
+
 ## Token contract
 
 `frontend/src/lib/theme/tokens.mjs` defines the base roles, motion values and control geometry. App packs in

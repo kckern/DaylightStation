@@ -8,6 +8,7 @@
 // at a station you'll never visit again. A known place only labels the result.
 
 import { useState } from 'react';
+import { localDateKey } from '@/lib/calendarDay.js';
 import { LoadingState, ErrorState, EmptyState, useRetryRegion } from '@/lib/ui';
 import { formatVolume, formatMoney, formatDistance, formatDay, litresToGallons } from "./format.js";
 import FuelSheet from "./FuelSheet.jsx";
@@ -18,7 +19,10 @@ export default function FuelPanel({ vehicleId, fuel, loading, busy, error, onRel
 
   const logs = fuel?.logs || [];
   const summary = fuel?.summary;
-  const detected = fuel?.detected || [];
+  const detected = (fuel?.detected || []).map(fill => {
+    const instant = new Date(fill.at ?? '');
+    return { ...fill, date: Number.isNaN(instant.getTime()) ? fill.date : localDateKey(instant) };
+  });
 
   const content = loading ? <LoadingState label="fill-ups" />
     : error ? <ErrorState error={error} onRetry={retry} label="Fill-ups" />

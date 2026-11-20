@@ -7,6 +7,122 @@ test.beforeEach(async ({ page }) => {
   await page.route('**/supervision/bootstrap', route => route.fulfill({ json: { enabled: false } }));
 });
 
+for (const width of [390, 1440]) {
+  test(`Auto wildcard opens Garage and reload resets the local tab at ${width}px`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 850 });
+    await page.routeWebSocket('**/*', () => {});
+    await page.route('**/automotive/vehicles', route => route.fulfill({ json: { vehicles: [
+      { id: 'wagon', label: 'Family wagon' }, { id: 'hatch', label: 'City hatchback' },
+    ] } }));
+    await page.route('**/automotive/vehicles/wagon', route => route.fulfill({ json: {
+      odometer: { km: 160 }, fuel: { needsMoreData: true },
+    } }));
+
+    const path = '/auto/unknown-fixture-route';
+    await page.goto(path);
+    const wagon = page.getByRole('button', { name: 'Family wagon', exact: true });
+    await expect(page.getByRole('heading', { name: 'Garage' })).toBeVisible();
+    await wagon.click();
+    const car = page.getByRole('button', { name: 'Car', exact: true });
+    const fuel = page.getByRole('button', { name: 'Fuel', exact: true });
+    await expect(car).toHaveAttribute('aria-current', 'page');
+    await fuel.press('Enter');
+    await expect(fuel).toHaveAttribute('aria-current', 'page');
+    await expect(page).toHaveURL(new URL(path, page.url()).href);
+    await page.reload();
+    await expect(page.getByRole('heading', { name: 'Garage' })).toBeVisible();
+    await wagon.click();
+    await expect(car).toHaveAttribute('aria-current', 'page');
+    await expect(page.getByRole('main')).toHaveCount(1);
+    await expect(page).toHaveURL(new URL(path, page.url()).href);
+  });
+}
+
+test.describe('Auto calendar dates', () => {
+  test.use({ timezoneId: 'America/Los_Angeles' });
+  const evening = '2026-11-20T02:00:00Z';
+  const localDay = '2026-11-19';
+
+  test.beforeEach(async ({ page }) => {
+    await page.clock.setFixedTime(new Date(evening));
+    await page.routeWebSocket('**/*', () => {});
+    await page.route('**/automotive/vehicles', route => route.fulfill({ json: { vehicles: [
+      { id: 'wagon', label: 'Family wagon' },
+    ] } }));
+    await page.route('**/automotive/vehicles/wagon', route => route.fulfill({ json: {
+      odometer: { km: 160 }, fuel: { needsMoreData: true },
+    } }));
+  });
+
+  for (const [tab, title] of [['Fuel', 'Log a fill-up'], ['Service', 'Log service']]) {
+    test(`Auto saves the local day from the ${tab} form after UTC midnight`, async ({ page }) => {
+      const writes = [];
+      await page.route(`**/automotive/vehicles/wagon/${tab.toLowerCase()}`, route => {
+        if (route.request().method() === 'POST') writes.push(route.request().postDataJSON());
+        return route.fulfill({ json: {} });
+      });
+
+      await page.goto('/auto');
+      await page.getByRole('button', { name: tab, exact: true }).click();
+      await page.getByRole('button', { name: title, exact: true }).press('Enter');
+      const dialog = page.getByRole('dialog', { name: title });
+      await expect(dialog.getByLabel('Date', { exact: true })).toHaveValue(localDay);
+      if (tab === 'Fuel') await dialog.getByLabel('Gallons').fill('5');
+      await dialog.getByRole('button', { name: 'Save', exact: true }).press('Enter');
+      await expect(dialog).toBeHidden();
+      expect(writes).toEqual([expect.objectContaining({ date: localDay })]);
+    });
+  }
+
+  test('Auto keeps stored calendar dates on their original day', async ({ page }) => {
+    await page.route('**/automotive/vehicles/wagon/fuel', route => route.fulfill({ json: { logs: [
+      { id: 'fuel', date: localDay, volume_l: 20 },
+    ] } }));
+    await page.route('**/automotive/vehicles/wagon/service', route => route.fulfill({ json: { records: [
+      { id: 'service', date: '2026-11-18', type: 'oil-change' },
+    ] } }));
+    await page.route('**/automotive/vehicles/wagon/documents', route => route.fulfill({ json: { documents: [
+      { id: 'insurance', file: 'insurance.pdf', label: 'Insurance', expires: '2026-12-03' },
+    ] } }));
+
+    await page.goto('/auto');
+    const main = page.getByRole('main');
+    await page.getByRole('button', { name: 'Fuel', exact: true }).click();
+    await expect(main.getByText('Today', { exact: true })).toBeVisible();
+    await page.getByRole('button', { name: 'Service', exact: true }).click();
+    await expect(main.getByText('Yesterday', { exact: true })).toBeVisible();
+    await page.getByRole('button', { name: 'Docs', exact: true }).click();
+    await expect(main.getByRole('link', { name: /Insurance/ })).toContainText(/Expires.*Thu.*(?:Dec.*3|3.*Dec)/);
+  });
+
+  test('Auto uses the displayed local drive date to prefill a fill-up', async ({ page }) => {
+    await page.route('**/automotive/vehicles/wagon/fuel', route => route.fulfill({ json: { logs: [] } }));
+    await page.route('**/automotive/vehicles/wagon/journeys', route => route.fulfill({ json: { journeys: [{
+      id: 'evening-drive', title: 'Evening drive', started_at: evening, clock_recoverable: true,
+      has_fuel_stop: true, stops: [{ is_fuel_stop: true, arrived_at: evening, place_id: 'station', label: 'Corner station' }],
+    }] } }));
+    await page.goto('/auto');
+    await page.getByRole('button', { name: 'Drives', exact: true }).click();
+    await expect(page.getByRole('main').getByText('Today', { exact: true })).toBeVisible();
+    await page.getByRole('button', { name: 'Log the fill-up' }).press('Enter');
+    const dialog = page.getByRole('dialog', { name: 'Log a fill-up' });
+    await expect(dialog.getByLabel('Date', { exact: true })).toHaveValue(localDay);
+  });
+
+  test('Auto shows and prefills the local day of a gauge-detected fill-up', async ({ page }) => {
+    await page.route('**/automotive/vehicles/wagon/fuel', route => route.fulfill({ json: { detected: [{
+      at: evening, date: '2026-11-20', from_pct: 20, to_pct: 100, filled_to_full: true, estimated_volume_l: 20,
+    }] } }));
+    await page.goto('/auto');
+    await page.getByRole('button', { name: 'Fuel', exact: true }).click();
+    const detected = page.getByRole('listitem').filter({ has: page.getByRole('button', { name: 'Log it' }) });
+    await expect(detected.getByText('Today', { exact: true })).toBeVisible();
+    await detected.getByRole('button', { name: 'Log it' }).press('Enter');
+    const dialog = page.getByRole('dialog', { name: 'Log a fill-up' });
+    await expect(dialog.getByLabel('Date', { exact: true })).toHaveValue(localDay);
+  });
+});
+
 test('Auto renders the selected vehicle’s records and cancels the previous vehicle’s document read', async ({ page }) => {
   await page.routeWebSocket('**/*', () => {});
   const api = '/api/v1/automotive';

@@ -11,6 +11,8 @@
 // The reason for the discipline: mixed units in a persistence layer is the kind
 // of bug that stays invisible until an odometer figure is quietly 1.6x wrong.
 
+import { addCalendarDays, localDateKey } from '@/lib/calendarDay.js';
+
 export const KM_PER_MILE = 1.609344;
 export const LITRES_PER_GALLON = 3.785411784;
 
@@ -69,14 +71,17 @@ export function formatDay(iso, now = new Date()) {
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return 'Date unknown';
 
-  const startOf = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
-  const days = Math.round((startOf(now) - startOf(date)) / 86400000);
-  if (days === 0) return 'Today';
-  if (days === 1) return 'Yesterday';
+  // Date-only records carry a calendar day. Instants use the viewer's local day.
+  const dateOnly = typeof iso === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(iso);
+  const day = dateOnly ? iso : localDateKey(date);
+  const today = localDateKey(now);
+  if (day === today) return 'Today';
+  if (day === addCalendarDays(today, -1)) return 'Yesterday';
 
   return date.toLocaleDateString(undefined, {
     weekday: 'short', day: 'numeric', month: 'short',
-    ...(date.getFullYear() === now.getFullYear() ? {} : { year: 'numeric' }),
+    ...(dateOnly ? { timeZone: 'UTC' } : {}),
+    ...(day.slice(0, 4) === today.slice(0, 4) ? {} : { year: 'numeric' }),
   });
 }
 
