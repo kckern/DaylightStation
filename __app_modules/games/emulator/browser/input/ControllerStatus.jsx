@@ -37,7 +37,7 @@ const OS_LABEL = {
   'not-paired': 'Not paired',
 };
 
-const KIND_LABEL = { gamepad: 'Controller', keyboard: 'Keyboard mode', mouse: 'Mouse mode', tablet: 'Tablet' };
+const KIND_LABEL = { gamepad: 'Controller', keyboard: 'Keyboard mode', mouse: 'Mouse mode', tablet: 'Tablet', remote: 'Remote' };
 const OTHER_LABEL = { ready: 'Ready', connecting: 'Connecting…', asleep: 'Not connected', unpaired: 'Not paired — trying to connect' };
 
 /**
@@ -195,7 +195,9 @@ export function ControllerStatus({
       ? (forgotConfigured
         ? 'Forgotten. To use it again, put the controller in pairing mode and press Pair controller.'
         : (addable ? 'Forgotten. To use it again, put it in pairing mode and press Add a new device.' : 'Forgotten.'))
-      : `Could not forget it — ${forgetResult.error || 'unknown error'}`)
+      : (forgetResult.error === 'pairing-in-progress'
+        ? 'Could not forget it while a pairing search is running. Try again when it ends.'
+        : `Could not forget it — ${forgetResult.error || 'unknown error'}`))
     : null;
 
   return (
@@ -229,6 +231,7 @@ export function ControllerStatus({
                       type="button"
                       className="ccs-forget-button"
                       aria-label={`Forget ${k.label}`}
+                      disabled={status.busy}
                       onClick={() => {
                         try {
                           logger().info('controller-status.forget-click', { id: k.id });
@@ -286,6 +289,7 @@ export function ControllerStatus({
                       type="button"
                       className="ccs-forget-button"
                       aria-label={`Forget ${label}`}
+                      disabled={status.busy}
                       onClick={() => {
                         logger().info('controller-status.forget-other-click', { address: d.address, kind: d.kind || null });
                         onForget(d.address);
@@ -332,7 +336,7 @@ export function ControllerStatus({
             type="button"
             className={`ccs-pair-button${btn.scanning ? ' ccs-pair-scanning' : ''}`}
             data-phase={pairing?.phase || 'idle'}
-            disabled={btn.disabled}
+            disabled={btn.disabled || status.busy}
             onClick={handlePairClick}
           >
             {guides.length > 0 && !btn.scanning

@@ -181,7 +181,7 @@ def main():
             if not may_remove_bond(mode, paired_now, made_here):
                 state["busy"] = None
                 emit("error", device=device, controllerId=cid,
-                     message="was already paired before this search — left untouched")
+                     message="is paired now — left in place; use Forget if it does not work")
                 finish("failed", paired=[], reason="pair-failed")
                 return
         try:

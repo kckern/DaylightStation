@@ -529,6 +529,51 @@ describe('ControllerStatus — panel state', () => {
     expect(getByRole('button', { name: /Add a new device/ }).disabled).toBe(true);
   });
 
+  it('the Pair button is disabled while a window runs, even in a phase the button itself does not know', () => {
+    const { container } = render(
+      <ControllerStatus controllers={controllers} getGamepads={() => []} onPair={vi.fn()}
+        pairing={{ phase: 'hid-wait', device: { name: 'X' } }} />,
+    );
+    expect(container.querySelector('.ccs-pair-button').disabled).toBe(true);
+  });
+
+  it('Forget buttons are disabled while a window runs', () => {
+    const ctrls = [{ id: 'pad', label: 'Pad', match: 'Pad', address: 'AA:BB:CC:DD:EE:01' }];
+    const inv = [
+      { address: 'AA:BB:CC:DD:EE:01', name: 'Pad', connected: true, paired: true },
+      { address: '11:22:33:44:55:66', name: 'R1', connected: true, paired: true, input: true, kind: 'keyboard' },
+    ];
+    const onForget = vi.fn();
+    const { getByRole, rerender } = render(
+      <ControllerStatus controllers={ctrls} getGamepads={() => []} btInventory={inv} onPair={vi.fn()} onForget={onForget}
+        pairing={{ phase: 'scanning', durationMs: 60000 }} />,
+    );
+    expect(getByRole('button', { name: 'Forget Pad' }).disabled).toBe(true);
+    expect(getByRole('button', { name: 'Forget R1' }).disabled).toBe(true);
+    rerender(
+      <ControllerStatus controllers={ctrls} getGamepads={() => []} btInventory={inv} onPair={vi.fn()} onForget={onForget}
+        pairing={{ phase: 'done', paired: [] , reason: 'none-found' }} />,
+    );
+    expect(getByRole('button', { name: 'Forget Pad' }).disabled).toBe(false);
+    expect(getByRole('button', { name: 'Forget R1' }).disabled).toBe(false);
+  });
+
+  it('a forget refused mid-window says to wait for the search', () => {
+    const inv = [{ address: '11:22:33:44:55:66', name: 'R1', connected: true, paired: true, input: true, kind: 'keyboard' }];
+    const { container } = render(
+      <ControllerStatus controllers={[]} getGamepads={() => []} btInventory={inv} onForget={vi.fn()}
+        forgetResult={{ address: '11:22:33:44:55:66', success: false, error: 'pairing-in-progress' }} />,
+    );
+    expect(container.querySelector('.ccs-forget-result').textContent)
+      .toBe('Could not forget it while a pairing search is running. Try again when it ends.');
+  });
+
+  it('labels a remote', () => {
+    const inv = [{ address: '11:22:33:44:55:66', name: 'R1', connected: true, paired: true, hid: true, kind: 'remote' }];
+    const { container } = render(<ControllerStatus controllers={[]} getGamepads={() => []} btInventory={inv} />);
+    expect(container.querySelector('.ccs-other-row .ccs-kind').textContent).toBe('Remote');
+  });
+
   it('moves focus to the start button when a panel opens', () => {
     const { getByRole } = render(
       <ControllerStatus controllers={[SFC30]} getGamepads={() => []} btInventory={[]} canAdd onPair={vi.fn()} />,

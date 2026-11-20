@@ -259,6 +259,27 @@ test('handleBtRemoveRequest: emits failure on exec error', async () => {
   assert.equal(sent[0][1].error, 'not found');
 });
 
+test('handleBtRemoveRequest: refuses while a pairing window is open', async () => {
+  const { spawnHelper } = fakeHelper([{ phase: 'scanning' }, { phase: 'done', paired: [] }]);
+  const window = handleBtPairRequest({ topic: 'bt.pair.request', requestId: 'p1', durationMs: 60000, targets: TARGETS },
+    { spawnHelper, send: () => {}, logger: SILENT_LOGGER });
+  assert.equal(isPairingWindowOpen(), true);
+  const calls = [];
+  const sent = [];
+  const warns = [];
+  await handleBtRemoveRequest(
+    { requestId: 'r9', address: 'AA:BB:CC:DD:EE:FF' },
+    { exec: async (cmd) => { calls.push(cmd); return { stdout: '' }; }, send: (t, p) => sent.push([t, p]),
+      logger: { ...SILENT_LOGGER, warn: (m) => warns.push(m) } },
+  );
+  await window;
+  assert.deepEqual(calls, []);
+  assert.deepEqual(sent, [
+    ['bt.remove.result', { requestId: 'r9', address: 'AA:BB:CC:DD:EE:FF', success: false, error: 'pairing-in-progress' }],
+  ]);
+  assert.equal(warns.length, 1);
+});
+
 test('handleBtRemoveRequest: rejects a malformed MAC without shelling out', async () => {
   const calls = [];
   const sent = [];

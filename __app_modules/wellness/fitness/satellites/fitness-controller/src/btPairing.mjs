@@ -278,6 +278,14 @@ export async function handleBtRemoveRequest(message, { exec = defaultExec, send,
     reply({ success: false, error: 'invalid-address' });
     return;
   }
+  // A remove mid-window would pull a bond out from under the pairing helper
+  // (or delete the bond it is making). The panel disables Forget while a
+  // window runs; this covers a stale panel or another client.
+  if (isPairingWindowOpen()) {
+    logger?.warn?.(`⚠️  bt.remove refused for ${address}: pairing window open (requestId=${requestId})`);
+    reply({ success: false, error: 'pairing-in-progress' });
+    return;
+  }
   try {
     await exec(`bluetoothctl --agent off remove ${address}`);
     logger?.info?.(`🎮 bt.remove removed ${address}`);

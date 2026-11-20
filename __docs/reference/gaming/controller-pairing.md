@@ -96,7 +96,8 @@ and report "no new device".
 - Opening the add panel or a guide over a finished window hides that window's
   result. Starting a new request shows results again.
 - When the add panel or a guide opens, its start button takes focus.
-- Pair, Add and Add again are disabled while a window runs.
+- Pair, Add, Add again and every Forget are disabled while a window runs
+  (`pairingStatus(...).busy`), whatever the phase.
 
 ## Lifecycle
 
@@ -113,7 +114,7 @@ and report "no new device".
 | Progress | Each transition is one JSON line, relayed as `bt.pair.progress`. `scanning` carries `mode`. The window always ends with exactly one `done`, even if the helper crashes or never starts. The frontend gives up after 15s if the box never answers (`reason: no-response`) | `btPairing.mjs` |
 | Reconnect | The satellite reconnects bonded, trusted gamepads (Icon `input-gaming`) that are not connected, with backoff of 30s doubling to a 10 min cap. A sleeping 8BitDo (asleep after 1 min unconnected or 15 min idle) wakes on START and reconnects by itself. Other kinds (a keyboard-mode remote, for example) are not in this loop | `btInventory.mjs` |
 | Pause | The inventory poll and reconnect loop pause for the whole window, so nothing else talks to BlueZ during a pair. One window runs at a time | `server.mjs` `onWindow` |
-| Forget | `bt.remove` → `bluetoothctl --agent off remove`. The panel then says how to pair again: Pair controller for a configured pad, Add a new device for anything else. Forget is offered only for a bond that exists | `handleBtRemoveRequest` |
+| Forget | `bt.remove` → `bluetoothctl --agent off remove`. The panel then says how to pair again: Pair controller for a configured pad, Add a new device for anything else. Forget is offered only for a bond that exists. While a pairing window is open the satellite refuses it (`success:false, error:'pairing-in-progress'`, logged as a warn) and the panel says to try again when the search ends | `handleBtRemoveRequest` |
 
 The matching rules live in `bt_pair_match.py`, which has no D-Bus imports so
 they are unit-tested (`test/test_bt_pair_match.py`). `npm test` in the
@@ -164,8 +165,11 @@ An add window never deletes a bond that existed before it:
 - `AlreadyExists` from `Pair` is final, not a retry.
 - On a `Pair` error, the helper re-reads `Paired` before removing anything,
   since it may have changed. If it is paired now, the window ends with
-  `pair-failed` and the message "was already paired before this search — left
-  untouched".
+  `pair-failed` and the message "is paired now — left in place; use Forget if
+  it does not work". `consider()` only pairs unpaired devices, so a bond seen
+  here is most likely this window's own, landing late after the error; it may
+  also be one made elsewhere in the meantime. Either way the helper cannot tell,
+  so it fails closed and leaves the bond for a person to Forget.
 - If that re-read fails, only `UnknownObject` or `UnknownMethod` (the device
   object is gone) count as "not paired". Any other D-Bus error, such as NoReply
   from a busy bluetoothd, counts as paired, so the device is left alone
@@ -184,7 +188,8 @@ From `bt_inventory`: all *bonded* devices, plus any device connected right now
 **without** a bond. Each row carries `address, name, connected, battery,
 paired, trusted, gamepad, kind, input, hid`:
 
-- `kind`: from the BlueZ `Icon` line. `input-gaming` → `gamepad`,
+- `kind`: from the BlueZ `Icon` line (the panel also labels a `remote` kind
+  "Remote"). `input-gaming` → `gamepad`,
   `input-keyboard` → `keyboard`, `input-mouse` → `mouse`, `input-tablet` →
   `tablet`, anything else `null`.
 - `hid`: true when `bluetoothctl info` lists a HID service UUID, classic
@@ -210,7 +215,7 @@ input device. Speakers and other non-input bonds stay out of the list, so
 nobody forgets them here.
 
 Each row shows the name (or address), the kind ("Controller", "Keyboard mode",
-"Mouse mode", "Tablet"), and a badge: Ready, Connecting…, Not connected, or
+"Mouse mode", "Tablet", "Remote"), and a badge: Ready, Connecting…, Not connected, or
 Not paired — trying to connect. A bonded row offers **Forget**. An unbonded row
 offers **Add again** (which opens the add panel) when the host can add.
 
