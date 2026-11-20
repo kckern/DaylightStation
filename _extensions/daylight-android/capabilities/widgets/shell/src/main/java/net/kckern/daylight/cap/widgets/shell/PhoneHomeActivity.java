@@ -9,16 +9,19 @@ import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.pm.ShortcutInfo;
 import android.content.pm.ShortcutManager;
+import android.content.res.ColorStateList;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
 import android.graphics.drawable.Icon;
+import android.graphics.drawable.RippleDrawable;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.view.Gravity;
 import android.view.View;
+import android.view.accessibility.AccessibilityNodeInfo;
 import android.widget.*;
 
 import net.kckern.daylight.api.PayloadPort;
@@ -45,7 +48,7 @@ public class PhoneHomeActivity extends Activity {
     private LinearLayout column;
     private LinearLayout placementPanel;
     private PlacementStore placements;
-    private final List<Button> setupButtons = new ArrayList<>();
+    private final List<View> setupRows = new ArrayList<>();
     private final List<Button> retryButtons = new ArrayList<>();
     private final Handler timer = new Handler(android.os.Looper.getMainLooper());
     private final Runnable placementTimeout = this::drawPlacement;
@@ -141,7 +144,7 @@ public class PhoneHomeActivity extends Activity {
     }
 
     private void draw() {
-        setupButtons.clear();
+        setupRows.clear();
         placementPanel = null;
         ScrollView scroll = new ScrollView(this);
         scroll.setFillViewport(true);
@@ -156,7 +159,11 @@ public class PhoneHomeActivity extends Activity {
         column.addView(title);
         column.addView(label(launcherPicker ? "Choose a shortcut" : "Add to your Android home screen", 16, INK));
         if (loading) { column.addView(label("Loading services…", 16, INK)); return; }
-        if (loadError != null) { row("Try again", loadError, "open", this::refresh); return; }
+        if (loadError != null) {
+            column.addView(label(loadError, 16, INK));
+            row("Try again", "Try again", "open", "›", this::refresh);
+            return;
+        }
         if (!launcherPicker) {
             placementPanel = new LinearLayout(this);
             placementPanel.setOrientation(LinearLayout.VERTICAL);
@@ -171,11 +178,12 @@ public class PhoneHomeActivity extends Activity {
                 // This result goes to the caller. Only stable, unkeyed page bookmarks may leave the app.
                 String id = page.optString("id");
                 if (java.util.Arrays.asList("health", "home", "lifelog", "media").contains(id)) {
-                    row(page.optString("label"), "Choose shortcut", page.optString("icon"),
+                    row(page.optString("label"), "Choose shortcut", page.optString("icon"), "›",
                             () -> returnLauncherShortcut(page));
                 }
             } else {
-                row(page.optString("label"), "Add to home screen", page.optString("icon"), () -> pinPage(page));
+                row(page.optString("label"), "Add to home screen", page.optString("icon"), "+",
+                        () -> pinPage(page));
             }
         }
         column.addView(label("Quick capture", 20, INK));
@@ -185,16 +193,16 @@ public class PhoneHomeActivity extends Activity {
             String id = action.optString("id");
             if (launcherPicker) {
                 if (!LauncherCaptureShortcut.supports(id)) continue;
-                row(action.optString("label"), "Choose shortcut", action.optString("icon"),
+                row(action.optString("label"), "Choose shortcut", action.optString("icon"), "›",
                         () -> returnCaptureShortcut(action));
             } else {
-                row(action.optString("label"), "Add to home screen", action.optString("icon"),
+                row(action.optString("label"), "Add to home screen", action.optString("icon"), "+",
                         () -> confirmShortcut(id, action.optString("label")));
             }
         }
         if (launcherPicker) return;
         column.addView(label("Play on demand", 20, INK));
-        row("Play a playlist", "Choose playlist", "play", () -> showMediaChoices(0));
+        row("Play a playlist", "Choose playlist", "play", "›", () -> showMediaChoices(0));
         drawPlacement();
     }
 
@@ -266,7 +274,7 @@ public class PhoneHomeActivity extends Activity {
     private void showMediaChoices(int cursor) {
         if (openingPlaylist || placementActive()) return;
         openingPlaylist = true;
-        updateSetupButtons(true);
+        updateSetupAvailability(true);
         call("media", request("playlists", "cursor", String.valueOf(cursor)).toString(), result -> {
             openingPlaylist = false;
             drawPlacement();
@@ -296,7 +304,7 @@ public class PhoneHomeActivity extends Activity {
         }, message -> {
             openingPlaylist = false;
             drawPlacement();
-            toast("Could not load playlists. Tap Choose playlist to retry.");
+            toast("Could not load playlists. Tap Play a playlist to retry.");
         });
     }
 
@@ -387,7 +395,7 @@ public class PhoneHomeActivity extends Activity {
             }
             addPlacementStatus(request, status);
         }
-        updateSetupButtons(active || openingPlaylist);
+        updateSetupAvailability(active || openingPlaylist);
     }
 
     private void addPlacementStatus(LauncherPlacement request, LauncherPlacement.Status status) {
@@ -411,12 +419,15 @@ public class PhoneHomeActivity extends Activity {
             placementPanel.addView(retry);
         }
         if (!request.playlist) {
-            placementPanel.addView(label("You can retry with Add to home screen or check your launcher's shortcuts.", 14, INK));
+            placementPanel.addView(label("Tap the item below to retry, or check your launcher's shortcuts.", 14, INK));
         }
     }
 
-    private void updateSetupButtons(boolean busy) {
-        for (Button button : setupButtons) button.setEnabled(!busy);
+    private void updateSetupAvailability(boolean busy) {
+        for (View row : setupRows) {
+            row.setEnabled(!busy);
+            row.setAlpha(busy ? 0.5f : 1f);
+        }
         for (Button button : retryButtons) button.setEnabled(!busy);
     }
 
@@ -425,30 +436,43 @@ public class PhoneHomeActivity extends Activity {
         return found == 0 ? android.R.drawable.ic_menu_view : found;
     }
 
-    private View row(String name, String detail, String glyph, Runnable click) {
+    private void row(String name, String action, String glyph, String indicator, Runnable click) {
         LinearLayout line = new LinearLayout(this);
         line.setGravity(Gravity.CENTER_VERTICAL);
-        line.setPadding(dp(16), dp(12), dp(14), dp(12));
-        line.setBackground(round(Color.WHITE, 16));
+        line.setMinimumHeight(dp(48));
+        line.setPaddingRelative(dp(10), dp(6), dp(12), dp(6));
+        line.setBackground(new RippleDrawable(ColorStateList.valueOf(0x30125b47),
+                round(Color.WHITE, 10), null));
+        line.setOnClickListener(v -> click.run());
+        line.setFocusable(true);
+        line.setContentDescription(action.equals(name) ? name : action + ", " + name);
+        line.setAccessibilityDelegate(new View.AccessibilityDelegate() {
+            @Override public void onInitializeAccessibilityNodeInfo(View host, AccessibilityNodeInfo info) {
+                super.onInitializeAccessibilityNodeInfo(host, info);
+                info.setClassName(Button.class.getName());
+            }
+        });
+
         ImageView icon = new ImageView(this);
-        icon.setBackground(round(GREEN, 14)); icon.setPadding(dp(9), dp(9), dp(9), dp(9));
+        icon.setBackground(round(GREEN, 8));
+        icon.setPadding(dp(6), dp(6), dp(6), dp(6));
         icon.setImageResource(drawable(glyph));
-        line.addView(icon, dp(40), dp(40));
-        LinearLayout words = new LinearLayout(this);
-        words.setOrientation(LinearLayout.VERTICAL);
-        words.setPadding(dp(14), 0, 0, 0);
-        TextView heading = label(name, 18, INK);
-        heading.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
-        words.addView(heading);
-        Button action = actionButton(detail, name, click);
-        words.addView(action);
-        if (!launcherPicker && placementPanel != null) setupButtons.add(action);
-        line.addView(words, new LinearLayout.LayoutParams(0, -2, 1));
-        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
-        lp.topMargin = dp(8);
-        column.addView(line, lp);
         icon.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
-        return line;
+        line.addView(icon, dp(28), dp(28));
+
+        TextView heading = label(name, 16, INK);
+        heading.setPaddingRelative(dp(10), 0, dp(8), 0);
+        heading.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+        line.addView(heading, new LinearLayout.LayoutParams(0, -2, 1));
+
+        TextView cue = label(indicator, 20, GREEN);
+        cue.setImportantForAccessibility(View.IMPORTANT_FOR_ACCESSIBILITY_NO);
+        line.addView(cue);
+
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
+        lp.topMargin = dp(4);
+        column.addView(line, lp);
+        if (placementPanel != null) setupRows.add(line);
     }
 
     private Button actionButton(String text, String item, Runnable click) {
