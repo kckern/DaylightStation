@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { UnstyledButton, Button, Text } from '@mantine/core';
-import { Sheet, LoadingState, EmptyState, ErrorState, useRetryRegion, useSheetSubmission } from '@/lib/ui';
+import { Sheet, SubmitButton, LoadingState, EmptyState, ErrorState, useRetryRegion, useSheetSubmission } from '@/lib/ui';
 import { invalidateApiResources, useApiResource } from '../../../../../frontend/src/lib/hooks/useApiResource.js';
 import { DaylightAPI } from "../../../../../frontend/src/lib/api.mjs";
 import { createAppLogger } from "../../../../../frontend/src/lib/ui/createAppLogger.js";
@@ -72,7 +72,7 @@ export function TemplatePicker({ open, onClose, onLogged, bucketId, date = null,
 }
 
 function TemplatePickerVisit({ onClose, onLogged, bucketId, focusTemplateId, instantiate, isSessionActive }) {
-  const { data, loading, revalidating, reload, error: loadError } = useApiResource(
+  const { data, loading, revalidating, reload, refresh, error: loadError } = useApiResource(
     templatesPath, { label: 'meal-templates', logger },
   );
   // template | null — the one whose variants are being chosen.
@@ -80,17 +80,43 @@ function TemplatePickerVisit({ onClose, onLogged, bucketId, focusTemplateId, ins
   const [editing, setEditing] = useState(null);
   const [variants, setVariants] = useState(() => new Set());
   const { run, saving: busy, failure: error, clearFailure } = useSheetSubmission(onClose);
-  const { regionProps, focus, retry } = useRetryRegion(reload, loading || revalidating);
+  const reading = loading || revalidating;
+  const listCommandsUnavailable = busy || reading || Boolean(loadError);
+  const { regionProps, focus, retry } = useRetryRegion(reload, busy || reading);
   const scrollRef = useRef(null);
+  const visitActive = useRef(false);
+  const lastFocusedControl = useRef(null);
+  useLayoutEffect(() => {
+    visitActive.current = true;
+    return () => { visitActive.current = false; };
+  }, []);
+
+  useLayoutEffect(() => {
+    const previous = lastFocusedControl.current;
+    if (!previous || previous.isConnected) return;
+    lastFocusedControl.current = null;
+    if (previous.ownerDocument.activeElement === previous.ownerDocument.body) focus();
+  });
+
+  function retireFocus(event) {
+    const previous = event.target;
+    // A normal blur leaves the control mounted. A read can remove it in the
+    // same commit, which gives the region a chance to recover its focus.
+    queueMicrotask(() => {
+      if (lastFocusedControl.current === previous && previous.isConnected) lastFocusedControl.current = null;
+    });
+  }
+
+  function revealContent() {
+    focus();
+    if (scrollRef.current) scrollRef.current.scrollTop = 0;
+  }
 
   function showEditor(template, { afterSave = false } = {}) {
     // The same region owns focus on either side of the editor transition.
     // If focus moved to the sheet controls during a save, leave it there.
     const region = regionProps.ref.current;
-    if (!afterSave || region?.contains(region.ownerDocument.activeElement)) {
-      focus();
-      if (scrollRef.current) scrollRef.current.scrollTop = 0;
-    }
+    if (!afterSave || region?.contains(region.ownerDocument.activeElement)) revealContent();
     setEditing(template);
   }
 
@@ -108,11 +134,12 @@ function TemplatePickerVisit({ onClose, onLogged, bucketId, focusTemplateId, ins
   const proposals = templates.filter((t) => t.status === 'proposed');
   const active = templates.filter((t) => t.status !== 'proposed');
 
-  const openTemplate = (template) => {
+  const openTemplate = (template, fromControl = false) => {
     clearFailure();
     // A template with nothing to choose has no decision in it, so it logs on
     // the first tap — the one-tap path the saved-meals sheet had.
-    if (variantsOf(template).length === 0) { log(template, []); return; }
+    if (variantsOf(template).length === 0) { log(template, [], fromControl); return; }
+    if (fromControl) revealContent();
     setChosen(template);
     const offered = new Set(variantsOf(template).map(component => component.name));
     setVariants(new Set((template.variantsByBucket?.[bucketId] || []).filter(name => offered.has(name))));
@@ -131,7 +158,10 @@ function TemplatePickerVisit({ onClose, onLogged, bucketId, focusTemplateId, ins
     ? [...coreOf(chosen), ...variantsOf(chosen).filter((c) => variants.has(c.name))]
     : [];
 
-  const log = (template, variantNames) => run(() => instantiate(template, variantNames), {
+  const log = (template, variantNames, fromControl) => run(() => {
+    if (fromControl) focus();
+    return instantiate(template, variantNames);
+  }, {
     onSuccess: logged => {
       if (!isSessionActive()) return;
       setChosen(null);
@@ -144,23 +174,43 @@ function TemplatePickerVisit({ onClose, onLogged, bucketId, focusTemplateId, ins
   const refreshTemplates = () => {
     if (isSessionActive()) invalidateApiResources(path => path === templatesPath);
   };
-  const decide = (proposal, verdict) => run(async () => {
+  const changeTemplates = command => run(async () => {
+    focus();
+    await command();
+    if (!isSessionActive()) return;
+    if (!visitActive.current) {
+      refreshTemplates();
+      return;
+    }
+    try {
+      await refresh();
+    } catch {
+      // The reader reports the refused GET and owns its Retry action.
+    }
+  }, { valid: !listCommandsUnavailable, onSuccess: null });
+
+  const decide = (proposal, verdict) => changeTemplates(async () => {
     try {
       await DaylightAPI(`api/v1/health/nutrition/templates/${proposal.id}/${verdict}`, {}, 'POST');
       logger.info('proposal.decided', { id: proposal.id, verdict });
-      refreshTemplates();
     } catch (err) {
       logger.error('proposal.decide_failed', { id: proposal.id, verdict, error: err?.message });
       throw err;
     }
-  }, { onSuccess: null });
+  });
+
+  const deleteTemplate = template => {
+    if (!window.confirm(`Delete saved meal ${template.name}? Logged food will stay unchanged.`)) return;
+    void changeTemplates(() => DaylightAPI(`api/v1/health/nutrition/templates/${template.id}`, {}, 'DELETE'));
+  };
 
   const icon = (template) => (template.icon ? nutritionIconUrl(template.icon) : null);
 
   return (
     <Sheet open onClose={onClose} title={chosen ? chosen.name : 'Meals & templates'} scrollRef={scrollRef}>
-      {error ? <p className="health-suggest__error">{error.message}</p> : null}
-      <section aria-label="Saved meals" {...regionProps}>
+      <section aria-label="Saved meals" {...regionProps}
+        onFocusCapture={event => { lastFocusedControl.current = event.target; }} onBlurCapture={retireFocus}>
+        {error ? <p className="health-suggest__error" role="alert">{error.message}</p> : null}
         {loadError ? <ErrorState error={loadError} onRetry={retry} label="Meals unavailable" /> : null}
 
         {editing ? (
@@ -191,10 +241,14 @@ function TemplatePickerVisit({ onClose, onLogged, bucketId, focusTemplateId, ins
             </ul>
             <div className="health-templates__actions">
               <Button size="sm" disabled={busy || selection.length === 0}
-                onClick={() => log(chosen, [...variants])}>
+                onClick={() => log(chosen, [...variants], true)}>
                 {`Log ${kcal(selection)} kcal`}
               </Button>
-              <Button size="sm" variant="subtle" disabled={busy} onClick={() => { setChosen(null); setVariants(new Set()); }}>
+              <Button size="sm" variant="subtle" disabled={busy} onClick={() => {
+                revealContent();
+                setChosen(null);
+                setVariants(new Set());
+              }}>
                 Back
               </Button>
             </div>
@@ -219,10 +273,12 @@ function TemplatePickerVisit({ onClose, onLogged, bucketId, focusTemplateId, ins
                       </Text>
                     </div>
                     <div className="health-templates__actions">
-                      <Button size="xs" disabled={busy} onClick={() => decide(proposal, 'approve')}>Keep</Button>
-                      <Button size="xs" variant="subtle" disabled={busy} onClick={() => decide(proposal, 'dismiss')}>
+                      <SubmitButton as={Button} type="button" size="xs" blocked={listCommandsUnavailable}
+                        onClick={() => decide(proposal, 'approve')}>Keep</SubmitButton>
+                      <SubmitButton as={Button} type="button" size="xs" variant="subtle" blocked={listCommandsUnavailable}
+                        onClick={() => decide(proposal, 'dismiss')}>
                         No thanks
-                      </Button>
+                      </SubmitButton>
                     </div>
                   </div>
                 ))}
@@ -232,7 +288,7 @@ function TemplatePickerVisit({ onClose, onLogged, bucketId, focusTemplateId, ins
             {active.map((template) => (
               <div key={template.id}>
                 <UnstyledButton className="health-suggest__item" disabled={busy}
-                  onClick={() => openTemplate(template)}>
+                  onClick={() => openTemplate(template, true)}>
                   <FoodIcon icon={template.icon} className="health-suggest__icon" />
                   <span>{template.name}</span>
                   <Text size="xs" c="dimmed" ml="auto">
@@ -240,13 +296,8 @@ function TemplatePickerVisit({ onClose, onLogged, bucketId, focusTemplateId, ins
                   </Text>
                 </UnstyledButton>
                 <Button size="compact-xs" variant="subtle" disabled={busy} onClick={() => showEditor(template)} aria-label={`Edit ${template.name}`}>Edit</Button>
-                <Button size="compact-xs" variant="subtle" color="red" disabled={busy} onClick={() => {
-                  if (!window.confirm(`Delete saved meal ${template.name}? Logged food will stay unchanged.`)) return;
-                  void run(async () => {
-                    await DaylightAPI(`api/v1/health/nutrition/templates/${template.id}`, {}, 'DELETE');
-                    refreshTemplates();
-                  }, { onSuccess: null });
-                }} aria-label={`Delete ${template.name}`}>Delete</Button>
+                <SubmitButton as={Button} type="button" size="compact-xs" variant="subtle" color="red" blocked={listCommandsUnavailable}
+                  onClick={() => deleteTemplate(template)} aria-label={`Delete ${template.name}`}>Delete</SubmitButton>
               </div>
             ))}
           </>

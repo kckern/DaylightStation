@@ -64,7 +64,9 @@ describe('TemplatePicker', () => {
     await waitFor(() => screen.getByText('Keep'));
     fireEvent.click(screen.getByText('Keep'));
     await waitFor(() => expect(apiMock.mock.calls.some(([p]) => p.endsWith('/p1/approve'))).toBe(true));
-    fireEvent.click(screen.getByText('No thanks'));
+    const dismiss = screen.getByRole('button', { name: 'No thanks' });
+    await waitFor(() => expect(dismiss.getAttribute('aria-disabled')).toBeNull());
+    fireEvent.click(dismiss);
     await waitFor(() => expect(apiMock.mock.calls.some(([p]) => p.endsWith('/p1/dismiss'))).toBe(true));
   });
 
