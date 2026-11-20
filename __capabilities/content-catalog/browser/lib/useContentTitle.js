@@ -1,10 +1,8 @@
-import { useEffect } from 'react';
 import { useApiResource } from '../../../../frontend/src/lib/hooks/useApiResource.js';
-import { contentInfoPath, splitContentId } from './contentSearchLogic.js';
+import { parseCatalogDescriptor, recentCatalogDescriptorOptions } from './catalogDescriptor.js';
 
 const TITLE_CACHE_MAX = 500;
-// Process-lifetime cache of contentId -> human title so the resolved-title
-// line renders instantly for items we've already seen.
+// Keep titles supplied by search picks available before a descriptor is read.
 const titleCache = new Map();
 
 export function clearTitleCache() {
@@ -18,12 +16,8 @@ export function rememberTitle(contentId, title) {
 }
 
 export function useContentTitle(contentId) {
-  const parsed = splitContentId(contentId);
   const cached = contentId ? titleCache.get(contentId) : null;
-  const path = cached ? null : contentInfoPath(parsed?.source, parsed?.localId);
-  const { data } = useApiResource(path);
-  useEffect(() => {
-    if (data?.title) rememberTitle(contentId, data.title);
-  }, [contentId, data]);
+  const path = cached ? null : parseCatalogDescriptor(contentId)?.path;
+  const { data } = useApiResource(path, { ...recentCatalogDescriptorOptions, retryTransient: true });
   return cached || data?.title || null;
 }

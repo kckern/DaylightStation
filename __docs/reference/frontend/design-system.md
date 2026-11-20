@@ -29,7 +29,7 @@ Admin, Health, Media, Feed, Home, Life and Auto share browser layout and interac
 | Apply playback settings to a replacement decoder | Keep the session's volume and temporary output fade with the playback owner. Apply their combined value when the native decoder binds, and release media readiness listeners with that decoder. | [Media player bridge](../../../__app_modules/media/media/browser/session/PlayerBridge.jsx) |
 | Measure the current playback surface | Bind decoder measurements and shader rendering to the mounted native video. Release its observation, timers and renderer together when the video changes. For cover art, measure the mounted image against its current source so a replacement begins without the prior image's blur. | [Video renderer](../../../__capabilities/playback/browser/player/renderers/VideoPlayer.jsx) · [Audio renderer](../../../__capabilities/playback/browser/player/renderers/AudioPlayer.jsx) |
 | Render a symbol or configured icon | `UiIcon` renders a semantic symbol and accepts `assetName` for an SVG under `media/img/icons`. The asset name can include the `.svg` extension. When the image is absent or fails to load, `name` selects a symbol from the shared set. The surrounding control supplies the accessible name. | [Fitness navigation rail](../../../__app_modules/wellness/fitness/browser/nav/FitnessNavbar.jsx) |
-| Read server data | Use `useApiResource(path)` when a component observes a JSON resource. Use `DaylightAPI` for an imperative JSON operation. | [Catalog title lookup](../../../__capabilities/content-catalog/browser/lib/useContentTitle.js) · [Health food icon picker](../../../__app_modules/wellness/health/browser/today/EntryEditor.jsx) · [Admin config editor](../../../frontend/src/modules/Admin/shared/ConfigFormWrapper.jsx) · [Admin member roster](../../../frontend/src/modules/Admin/Household/MembersIndex.jsx) |
+| Read server data | Use `useApiResource(path)` for a mounted JSON reader and `readApiResource(path)` for a one-time read that should warm or update the same shared cache. `DaylightAPI` supports standalone JSON operations and writes. | [Catalog title lookup](../../../__capabilities/content-catalog/browser/lib/useContentTitle.js) · [Catalog metadata](../../../__capabilities/content-catalog/browser/admin/catalogContentInfo.js) · [Admin member roster](../../../frontend/src/modules/Admin/Household/MembersIndex.jsx) |
 | Read an account-owned response at a shared URL | For a reader that mounts anew per account and keeps its response local, pass `dedupe: false` to `useApiResource`. The request bypasses in-flight sharing and retains the resource's retry behavior. Keep `swr` off for these readers. | [Feed headline pages](../../../__app_modules/media/feed/browser/FeedApp.jsx) · [Feed subscriptions](../../../__app_modules/media/feed/browser/Reader/Reader.jsx) · [Admin Sessions](../../../frontend/src/modules/Admin/Household/SessionsIndex.jsx) |
 | Show the result of loading a list | Use `LoadingState` while the initial read is pending, `ErrorState` with the resource's retry action when the read fails, and `EmptyState` for a confirmed empty result. Use `StateMessage` when a successful response reports that the service is unavailable. | [Admin integrations](../../../frontend/src/modules/Admin/System/IntegrationsIndex.jsx) · [Signed-in devices](../../../frontend/src/modules/Admin/Household/SessionsIndex.jsx) |
 | Recover a failed dashboard section | Give each independent read its own status and Retry. Keep successful sections visible during recovery and show empty copy only after a successful empty read. | [Life Dashboard](../../../__app_modules/personal/life/browser/views/now/Dashboard.jsx) |
@@ -294,8 +294,9 @@ pending retry. An explicit `reload()` or `refresh()` starts its own read.
 Use `poll()` on a timer. It waits for the next tick if the reader already has
 a GET, a retry delay or a queued refresh.
 
-Each in-flight GET stays connected while a mounted reader or an admitted
-prefetch needs it. Departure releases that reader's interest. The final
+Each in-flight GET stays connected while a mounted reader, an admitted
+prefetch or an imperative cache read needs it. Departure releases the mounted
+reader's interest. The final
 departure cancels the transport after the current turn so a synchronous
 observer replacement or prefetch can still adopt it. A later visit issues
 a fresh GET for the same path.
@@ -304,8 +305,21 @@ With `swr: true`, each path has one current cacheable read. All mounted,
 enabled readers of that path display its accepted snapshot and receive its
 refresh status. Readers and admitted prefetches that share a pending GET use
 the same read. An accepted result can still warm the cache if a joined reader
-leaves. The response is dropped if every reader leaves and no prefetch owns
-it. A timer tick leaves any current cacheable read or retry for that path alone.
+leaves. The response is dropped if every reader leaves and no prefetch or
+imperative cache read owns it. A timer tick leaves any current cacheable read
+or retry for that path alone.
+
+Set `freshMs` for a reader that can reuse a recently accepted snapshot on
+mount. Explicit reload and invalidation still request fresh data. Use the same
+`timeoutMs` for readers sharing a bounded resource. They share the original
+deadline across body parsing and transient retries. An explicit retry starts
+a new deadline.
+
+In Admin lists, the row preview, image picker, capability check, combobox
+title and Item Details use one descriptor key. Search picks provide immediate
+labels and images while the descriptor loads. Item Details revalidates on
+open, can join an active read and publishes a successful Retry to the row.
+[Catalog read policy](../../../__capabilities/content-catalog/browser/lib/catalogDescriptor.js) · [Row projection](../../../__capabilities/content-catalog/browser/admin/catalogContentInfo.js)
 
 Use `reload()` to retry one reader. Use `invalidateApiResources(matches)`
 when a write affects mounted readers of one or more shared resources. Use

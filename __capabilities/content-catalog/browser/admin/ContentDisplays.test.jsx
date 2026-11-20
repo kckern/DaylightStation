@@ -1,7 +1,10 @@
 import { afterEach, expect, it, vi } from 'vitest';
-import { act, render, screen } from '@testing-library/react';
+import { act, render, renderHook, screen } from '@testing-library/react';
 import { MantineProvider } from '@mantine/core';
-import { ContentValueCard, fetchContentMetadata } from './ContentDisplays.jsx';
+import { ContentValueCard } from './ContentDisplays.jsx';
+import { fetchContentMetadata } from './catalogContentInfo.js';
+import { useApiResource } from '../../../../frontend/src/lib/hooks/useApiResource.js';
+import { catalogDescriptorOptions } from '../lib/catalogDescriptor.js';
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -37,16 +40,45 @@ it('expires a shared metadata read during body parsing and lets the same key rec
 
   const recovered = await fetchContentMetadata(value);
   expect(recovered).toMatchObject({ value, title: 'Recovered title', unresolved: false });
-  expect(await fetchContentMetadata(value)).toBe(recovered);
+  expect(await fetchContentMetadata(value)).toEqual(recovered);
   expect(fetchMetadata).toHaveBeenCalledTimes(2);
+});
+
+it('keeps the original deadline when Item Details retries a transient descriptor failure', async () => {
+  vi.useFakeTimers();
+  const body = Promise.withResolvers();
+  const fetchMetadata = vi.fn()
+    .mockResolvedValueOnce(new Response(null, { status: 503 }))
+    .mockResolvedValueOnce({ ok: true, json: () => body.promise });
+  vi.stubGlobal('fetch', fetchMetadata);
+
+  const value = 'plex:metadata-retry-deadline';
+  const path = '/api/v1/info/plex/metadata-retry-deadline';
+  const useDetails = () => useApiResource(path, { ...catalogDescriptorOptions, retryTransient: true });
+  const first = renderHook(useDetails);
+  const warming = fetchContentMetadata(value);
+  await act(async () => { await vi.advanceTimersByTimeAsync(500); });
+
+  const second = renderHook(useDetails);
+  expect(fetchMetadata).toHaveBeenCalledOnce();
+  await act(async () => { await vi.advanceTimersByTimeAsync(4499); });
+  expect(fetchMetadata).toHaveBeenCalledTimes(2);
+  const retrySignal = fetchMetadata.mock.calls[1][1].signal;
+  expect(retrySignal.aborted).toBe(false);
+
+  await act(async () => { await vi.advanceTimersByTimeAsync(1); });
+  expect(retrySignal.aborted).toBe(true);
+  await expect(warming).resolves.toMatchObject({ value, unresolved: true });
+  expect(first.result.current.error?.message).toBe('Resource GET timed out');
+  expect(second.result.current.error).toBe(first.result.current.error);
+  body.resolve({ title: 'Late result' });
 });
 
 it('keeps the resolving label still while hidden and resumes elapsed time from the original lookup', () => {
   vi.useFakeTimers();
   const visibility = vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible');
-  const contentInfoMap = new Map();
   const view = render(<MantineProvider>
-    <ContentValueCard value="plex:42" contentInfoMap={contentInfoMap} />
+    <ContentValueCard value="plex:42" />
   </MantineProvider>);
   const label = screen.getByText('Resolving...');
   act(() => { vi.advanceTimersByTime(2000); });
@@ -62,6 +94,5 @@ it('keeps the resolving label still while hidden and resumes elapsed time from t
     document.dispatchEvent(new Event('visibilitychange'));
   });
   expect(label).toHaveTextContent('Resolving... 9s');
-  expect(contentInfoMap.size).toBe(0);
   view.unmount();
 });

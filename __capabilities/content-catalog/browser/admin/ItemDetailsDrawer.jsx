@@ -1,7 +1,7 @@
 import { useApiResource } from '../../../../frontend/src/lib/hooks/useApiResource.js';
 import { useOverlayFocusReturn } from '../../../../frontend/src/lib/ui/dismiss/useOverlayFocusReturn.js';
 import { ErrorState } from '../../../../frontend/src/lib/ui/states.jsx';
-import { contentInfoPath, splitContentId } from '../lib/contentSearchLogic.js';
+import { catalogDescriptorOptions, parseCatalogDescriptor } from '../lib/catalogDescriptor.js';
 import React, { useState, useMemo } from 'react';
 import {
   Text, ActionIcon, Loader, Group, Badge, Box, Drawer, Stack, UnstyledButton,
@@ -27,9 +27,10 @@ function ItemDetails({ contentValue }) {
   const log = useMemo(() => getChildLogger({ app: 'admin', component: 'ItemDetailsDrawer', sessionLog: true }), []);
   const [navStack, setNavStack] = useState([]);
   const currentId = navStack.at(-1)?.parentId ?? contentValue;
-  const parsed = splitContentId(currentId);
-  const path = contentInfoPath(parsed?.source, parsed?.localId);
-  const { data: itemInfo, loading, error, reload } = useApiResource(path, { label: 'Item details', logger: log });
+  const path = parseCatalogDescriptor(currentId)?.path;
+  const { data: itemInfo, loading, error, reload } = useApiResource(path, {
+    ...catalogDescriptorOptions, retryTransient: true, label: 'Item details', logger: log,
+  });
   const hasParent = itemInfo?.metadata?.parentRatingKey;
 
   function navigateToParent() {

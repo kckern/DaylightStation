@@ -18,16 +18,9 @@ import { useEffect, useMemo } from 'react';
 import { useApiResource } from "../../../../frontend/src/lib/hooks/useApiResource.js";
 import getLogger from "../../../../frontend/src/lib/logging/Logger.js";
 import { capabilityMismatch, ACTION_CAPABILITIES } from "./actionCapability.js";
-import { contentInfoPath } from '../lib/contentSearchLogic.js';
+import { recentCatalogDescriptorOptions, parseCatalogDescriptor } from '../lib/catalogDescriptor.js';
 
 const readOptions = { retryTransient: false };
-
-function splitContentId(input) {
-  const trimmed = String(input || '').trim();
-  const match = trimmed.match(/^([\w-]+):\s*(.+)$/);
-  if (!match) return null;
-  return { source: match[1], localId: match[2].trim() };
-}
 
 /**
  * @param {string} input - the row's content id, e.g. "files:art/fhe/esther.jpg"
@@ -37,13 +30,14 @@ function splitContentId(input) {
  */
 export function useActionCapabilityCheck(input, action) {
   const logger = useMemo(() => getLogger().child({ component: 'list-capability-check' }), []);
-  const parsed = splitContentId(input);
+  const parsed = parseCatalogDescriptor(input);
   const resolvedAction = action || 'Play';
-  const infoPath = Object.hasOwn(ACTION_CAPABILITIES, resolvedAction)
-    ? contentInfoPath(parsed?.source, parsed?.localId)
+  const infoPath = Object.hasOwn(ACTION_CAPABILITIES, resolvedAction) && /^[\w-]+$/.test(parsed?.source || '')
+    ? parsed.path
     : null;
-  const info = useApiResource(infoPath, readOptions);
-  const capabilities = !info.loading && !info.error ? info.data?.capabilities : null;
+  const info = useApiResource(infoPath, recentCatalogDescriptorOptions);
+  const loadingInfo = info.loading || info.revalidating;
+  const capabilities = !loadingInfo && !info.error ? info.data?.capabilities : null;
   const mismatch = useMemo(() => capabilityMismatch(resolvedAction, capabilities), [resolvedAction, capabilities]);
 
   // Only confirmed incompatibility for the current row needs an alternate.
@@ -51,7 +45,7 @@ export function useActionCapabilityCheck(input, action) {
     ? `/api/v1/content/alternates/${encodeURIComponent(parsed.source)}/${encodeURIComponent(parsed.localId)}`
     : null;
   const alternates = useApiResource(alternatesPath, readOptions);
-  const loading = info.loading || alternates.loading;
+  const loading = loadingInfo || alternates.loading;
   const choices = !loading && !alternates.error ? alternates.data?.alternates : null;
   const suggestion = mismatch && Array.isArray(choices)
     ? choices.find(alt => Array.isArray(alt?.capabilities)

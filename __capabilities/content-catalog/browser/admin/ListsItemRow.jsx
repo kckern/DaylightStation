@@ -19,9 +19,8 @@ import { isContentIdLike } from "../lib/contentSearchLogic.js";
 import ContentCombobox from "../combobox/ContentCombobox.jsx";
 import { useAutoResolve } from "../combobox/useAutoResolve.js";
 import { ShimmerAvatar } from "./ShimmerAvatar.jsx";
-import {
-  ContentValueCard, contentInfoFromPick, fetchContentMetadata,
-} from "./ContentDisplays.jsx";
+import { ContentValueCard, contentInfoFromPick } from './ContentDisplays.jsx';
+import { getCachedCatalogContentInfo, useCatalogContentInfo } from './catalogContentInfo.js';
 import { ItemDetailsDrawer } from "./ItemDetailsDrawer.jsx";
 import { AppParamPicker } from "./AppParamPicker.jsx";
 import { ActionChipSelect } from "./ActionChipSelect.jsx";
@@ -73,8 +72,8 @@ function ListsItemRow({ item, onUpdate, onDelete, onToggleActive, onDuplicate, i
   const [dragMenuOpen, setDragMenuOpen] = useState(false);
 
   // Resolve thumbnail for icon column: override image > UID image > input thumbnail
-  const cachedInfo = contentInfoMap.get(item.input);
-  const inheritedImage = cachedInfo?.thumbnail || null;
+  const contentInfo = useCatalogContentInfo(item.input, contentInfoMap.get(item.input));
+  const inheritedImage = contentInfo?.thumbnail || null;
   const uidImage = item.uid ? DaylightMediaPath(`/media/img/lists/${item.uid}.jpg`) : null;
   const explicitImage = item.image
     ? (item.image.startsWith('/media/') || item.image.startsWith('media/')
@@ -97,22 +96,11 @@ function ListsItemRow({ item, onUpdate, onDelete, onToggleActive, onDuplicate, i
     nearbyItems.forEach(nearbyItem => {
       if (!nearbyItem.input) return;
 
-      // Get or fetch content info
-      let info = nearbyItem.contentInfo || contentInfoMap.get(nearbyItem.input);
-
-      if (info && !info.unresolved) {
-        preloadSiblings(nearbyItem.input, info);
-      } else if (!contentInfoMap.has(nearbyItem.input)) {
-        // Fetch content info first, then preload
-        fetchContentMetadata(nearbyItem.input).then(fetchedInfo => {
-          if (fetchedInfo && !fetchedInfo.unresolved) {
-            setContentInfo(nearbyItem.input, fetchedInfo);
-            preloadSiblings(nearbyItem.input, fetchedInfo);
-          }
-        });
-      }
+      const info = nearbyItem.input === item.input ? contentInfo
+        : getCachedCatalogContentInfo(nearbyItem.input, contentInfoMap.get(nearbyItem.input));
+      preloadSiblings(nearbyItem.input, info);
     });
-  }, [item.input, item.index, getNearbyItems, contentInfoMap, setContentInfo]);
+  }, [item.input, item.index, getNearbyItems, contentInfo, contentInfoMap]);
 
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -200,9 +188,10 @@ function ListsItemRow({ item, onUpdate, onDelete, onToggleActive, onDuplicate, i
   // the background and replace the value only if it hasn't changed since.
   const { maybeResolve, cancel: cancelAutoResolve } = useAutoResolve({
     value: item.input,
-    onChange: (id) => commitInput(id),
-    setContentInfo,
-    fetchMetadata: fetchContentMetadata,
+    onChange: (id, choice) => {
+      if (choice?.title) setContentInfo(id, contentInfoFromPick(id, choice));
+      commitInput(id);
+    },
   });
 
   // Input (content) change handler — receives (id, item?) from ContentCombobox.
@@ -490,7 +479,7 @@ function ListsItemRow({ item, onUpdate, onDelete, onToggleActive, onDuplicate, i
             renderValue={({ onStartEdit }) => (
               <ContentValueCard
                 value={item.input}
-                contentInfoMap={contentInfoMap}
+                contentInfo={contentInfo}
                 onStartEdit={() => { cancelAutoResolve(); onStartEdit(); }}
               />
             )}

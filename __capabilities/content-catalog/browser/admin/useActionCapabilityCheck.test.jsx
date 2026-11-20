@@ -123,7 +123,7 @@ describe('useActionCapabilityCheck', () => {
     expect(apiMock).not.toHaveBeenCalled();
   });
 
-  it('shares both pending reads without retaining advisory snapshots in the global cache', async () => {
+  it('shares both pending reads and caches only the reusable descriptor', async () => {
     const infoPath = '/api/v1/info/files/art%2Ffhe%2Festher.jpg';
     const alternativesPath = '/api/v1/content/alternates/files/art%2Ffhe%2Festher.jpg';
     const info = Promise.withResolvers();
@@ -142,7 +142,7 @@ describe('useActionCapabilityCheck', () => {
     }));
 
     expect(result.current.map(row => row.suggestion)).toEqual(['canvas:fhe/esther.jpg', 'canvas:fhe/esther.jpg']);
-    expect(peekApiResource(infoPath)).toBeUndefined();
+    expect(peekApiResource(infoPath)).toEqual({ capabilities: ['playable'] });
     expect(peekApiResource(alternativesPath)).toBeUndefined();
   });
 });

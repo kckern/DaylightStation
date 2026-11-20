@@ -9,7 +9,8 @@ import { useListsContext } from "./ListsContext.js";
 import { isContentIdLike, shouldAutoAdd } from "../lib/contentSearchLogic.js";
 import ContentCombobox from "../combobox/ContentCombobox.jsx";
 import { useAutoResolve } from "../combobox/useAutoResolve.js";
-import { ContentValueCard, contentInfoFromPick, fetchContentMetadata } from "./ContentDisplays.jsx";
+import { ContentValueCard, contentInfoFromPick } from './ContentDisplays.jsx';
+import { getCachedCatalogContentInfo, useCatalogContentInfo } from './catalogContentInfo.js';
 import { AppParamPicker } from "./AppParamPicker.jsx";
 import { ActionChipSelect } from "./ActionChipSelect.jsx";
 
@@ -27,6 +28,7 @@ export function EmptyItemRow({ onAdd, nextIndex, isWatchlist }) {
   const [label, setLabel] = useState('');
   const [action, setAction] = useState('Play');
   const [input, setInput] = useState('');
+  const contentInfo = useCatalogContentInfo(input, contentInfoMap.get(input));
   const [pendingApp, setPendingApp] = useState(null); // {appId, param, options}
   const addedRef = useRef(false); // prevent double-add from rapid state changes
   const labelInputRef = useRef(null);
@@ -36,9 +38,10 @@ export function EmptyItemRow({ onAdd, nextIndex, isWatchlist }) {
   // chain: freeform stays staged, a real content id persists).
   const { maybeResolve, cancel: cancelAutoResolve } = useAutoResolve({
     value: input,
-    onChange: (id) => setInput(id),
-    setContentInfo,
-    fetchMetadata: fetchContentMetadata,
+    onChange: (id, choice) => {
+      if (choice?.title) setContentInfo(id, contentInfoFromPick(id, choice));
+      setInput(id);
+    },
   });
 
   // Combobox change handler — receives (id, item?) from ContentCombobox.
@@ -73,7 +76,7 @@ export function EmptyItemRow({ onAdd, nextIndex, isWatchlist }) {
     if (!currentInput) return;
     addedRef.current = true;
     // Derive label: explicit label > resolved content title > freeform input
-    const resolvedInfo = contentInfoMap.get(currentInput);
+    const resolvedInfo = getCachedCatalogContentInfo(currentInput, contentInfoMap.get(currentInput));
     const derivedLabel = currentLabel.trim()
       || resolvedInfo?.title
       || currentInput.replace(/^[^:]+:\s*/, '');
@@ -157,7 +160,7 @@ export function EmptyItemRow({ onAdd, nextIndex, isWatchlist }) {
             renderValue={({ onStartEdit }) => (
               <ContentValueCard
                 value={input}
-                contentInfoMap={contentInfoMap}
+                contentInfo={contentInfo}
                 onStartEdit={() => { cancelAutoResolve(); onStartEdit(); }}
               />
             )}

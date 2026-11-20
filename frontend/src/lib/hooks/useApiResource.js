@@ -230,15 +230,24 @@ export const apiResourceReadToken = value => value && typeof value === 'object' 
 const JOIN_WINDOW_MS = 3000;
 const inFlight = new Map(); // path -> physical request and its admission metadata
 
-function issueRequest(path) {
+function issueRequest(path, timeoutMs, deadline) {
   const issuedEvent = nextApiResourceEvent();
   const issuedAt = Date.now();
   const scope = registrationFor(path);
   const controller = new AbortController();
   const { signal } = controller;
+  const expiresAt = deadline ?? (timeoutMs === undefined ? undefined : issuedAt + timeoutMs);
   let interests = 0;
   let settled = false;
-  const request = new Promise(resolve => resolve(DaylightAPI(path, {}, 'GET', { signal }))).then(result => {
+  let timeout;
+  const network = new Promise(resolve => resolve(DaylightAPI(path, {}, 'GET', { signal })));
+  const response = expiresAt === undefined ? network : Promise.race([network, new Promise((_, reject) => {
+    timeout = setTimeout(() => {
+      reject(new Error('Resource GET timed out'));
+      controller.abort();
+    }, Math.max(0, expiresAt - Date.now()));
+  })]);
+  const request = response.then(result => {
     if (signal.aborted) throw new DOMException('Resource GET cancelled', 'AbortError');
     if (result && typeof result === 'object') networkStarts.set(result, issuedEvent);
     return result;
@@ -258,8 +267,12 @@ function issueRequest(path) {
       });
     };
   }
-  const transport = { request, issuedAt, issuedEvent, scope, cacheRead: null, retain };
-  const settle = () => { settled = true; forget(); };
+  const transport = { request, issuedAt, issuedEvent, scope, timeoutMs, expiresAt, cacheRead: null, retain };
+  const settle = () => {
+    if (timeout !== undefined) clearTimeout(timeout);
+    settled = true;
+    forget();
+  };
   request.then(settle, settle);
   return transport;
 }
@@ -279,13 +292,15 @@ function createRequestLease() {
   };
 }
 
-function sharedRequest(path, { join = true, dedupe = true, canJoin } = {}) {
-  if (!dedupe) return issueRequest(path);
+function sharedRequest(path, { join = true, dedupe = true, canJoin, timeoutMs, deadline } = {}) {
+  if (!dedupe) return issueRequest(path, timeoutMs, deadline);
   const current = inFlight.get(path);
   const scope = registrationFor(path);
-  if (join && current && current.scope === scope && Date.now() - current.issuedAt < JOIN_WINDOW_MS
+  if (join && current && current.scope === scope && current.timeoutMs === timeoutMs
+    && (deadline === undefined || current.expiresAt === deadline)
+    && Date.now() < (current.expiresAt ?? current.issuedAt + JOIN_WINDOW_MS)
     && (!canJoin || canJoin(current))) return current;
-  const read = issueRequest(path);
+  const read = issueRequest(path, timeoutMs, deadline);
   inFlight.set(path, read);
   return read;
 }
@@ -297,14 +312,16 @@ function sharedRequest(path, { join = true, dedupe = true, canJoin } = {}) {
 // it reports anything, and stops as soon as it is no longer current.
 export const TRANSIENT_RETRY_DELAYS_MS = [1000, 3000];
 
-function requestWithRetry(getRequest, { join, isCurrent, onRetry }) {
+function requestWithRetry(getRequest, { join, isCurrent, onRetry, getDeadline }) {
   const attempt = (index, joinThis) => getRequest(joinThis, index).catch(err => {
     const delay = TRANSIENT_RETRY_DELAYS_MS[index];
     if (!err?.transient || delay === undefined || !isCurrent()) throw err;
+    const deadline = getDeadline?.() ?? Infinity;
+    if (Date.now() + delay >= deadline) throw err;
     onRetry?.(err, index + 1);
     return new Promise((resolve, reject) => {
       setTimeout(() => {
-        if (!isCurrent()) { reject(err); return; }
+        if (!isCurrent() || Date.now() >= deadline) { reject(err); return; }
         // The failed request is already retired. A pending replacement is
         // fresh enough for readers recovering from the same failure.
         attempt(index + 1, true).then(resolve, reject);
@@ -314,12 +331,21 @@ function requestWithRetry(getRequest, { join, isCurrent, onRetry }) {
   return attempt(0, join);
 }
 
-function readCachedResource(path, { join, dedupe, attach, prefetch, onRetry } = {}) {
+function readCachedResource(path, { join, dedupe, attach, prefetch, warm = false, onRetry, timeoutMs } = {}) {
   const latest = activeCacheReads.get(path);
-  const first = sharedRequest(path, { join, dedupe, canJoin: candidate => candidate.cacheRead
+  // Bounded readers can join the same logical read during its transient retry delay.
+  if (join !== false && dedupe !== false && latest && timeoutMs !== undefined && latest.timeoutMs === timeoutMs
+    && Date.now() < latest.deadline && latest.ownsPath()) {
+    if (prefetch) latest.prefetch = prefetch;
+    if (warm) latest.warm = true;
+    attach?.(latest);
+    return latest;
+  }
+  const first = sharedRequest(path, { join, dedupe, timeoutMs, canJoin: candidate => candidate.cacheRead
     ? candidate.cacheRead === latest : !latest || candidate.issuedEvent >= latest.issuedEvent });
   if (first.cacheRead) {
     if (prefetch) first.cacheRead.prefetch = prefetch;
+    if (warm) first.cacheRead.warm = true;
     attach?.(first.cacheRead);
     return first.cacheRead;
   }
@@ -327,10 +353,12 @@ function readCachedResource(path, { join, dedupe, attach, prefetch, onRetry } = 
   if (dedupe === false) inFlight.delete(path);
   const { scope, issuedEvent } = first;
   const epoch = scope?.epoch;
+  const deadline = first.expiresAt;
   const lease = createRequestLease();
   let transport = first;
+  const ownsPath = () => activeCacheReads.get(path) === read && scope === registrationFor(path) && scope?.epoch === epoch;
   const read = {
-    issuedEvent, prefetch, accepted: false, promise: null,
+    issuedEvent, prefetch, warm, timeoutMs, deadline, ownsPath, accepted: false, promise: null,
     release() {
       if (transport.cacheRead === read) transport.cacheRead = null;
       lease.dispose();
@@ -342,11 +370,10 @@ function readCachedResource(path, { join, dedupe, attach, prefetch, onRetry } = 
   attach?.(read);
   publishToReaders(path, 'start', read);
 
-  const ownsPath = () => activeCacheReads.get(path) === read && scope === registrationFor(path) && scope?.epoch === epoch;
-  const hasInterest = () => cacheReaders.has(path) || read.prefetch?.();
+  const hasInterest = () => read.warm || cacheReaders.has(path) || read.prefetch?.();
   const canRetry = () => ownsPath() && [...(cacheReaders.get(path) ?? [])].some(reader => reader.retryTransient);
   const getRequest = (joinAttempt, index) => {
-    if (index !== 0) transport = sharedRequest(path, { join: joinAttempt, dedupe });
+    if (index !== 0) transport = sharedRequest(path, { join: joinAttempt, dedupe, timeoutMs, deadline });
     transport.cacheRead = read;
     return lease.take(transport);
   };
@@ -356,7 +383,7 @@ function readCachedResource(path, { join, dedupe, attach, prefetch, onRetry } = 
     if (kind === 'success') cacheSet(path, value);
     publishToReaders(path, kind, value);
   };
-  read.promise = requestWithRetry(getRequest, { join, isCurrent: canRetry, onRetry }).then(result => {
+  read.promise = requestWithRetry(getRequest, { join, isCurrent: canRetry, onRetry, getDeadline: () => deadline }).then(result => {
     publish('success', result);
     return result;
   }, error => {
@@ -449,6 +476,15 @@ export function isApiResourceFresh(path, maxAgeMs = PREFETCH_FRESH_MS) {
   return fetchedAt != null && Date.now() - fetchedAt < maxAgeMs;
 }
 
+/** Read one resource now and publish its accepted snapshot to mounted SWR readers. */
+export async function readApiResource(path, { freshMs = PREFETCH_FRESH_MS, timeoutMs } = {}) {
+  if (!activeCacheReads.has(path) && isApiResourceFresh(path, freshMs)) return cacheGet(path).value;
+  const read = readCachedResource(path, { warm: true, timeoutMs });
+  const result = await read.promise;
+  if (!read.accepted) throw refreshAbortError();
+  return result;
+}
+
 /** The cached payload for `path`, or undefined. Does not touch recency. */
 export function peekApiResource(path) {
   return swrCache.get(path)?.value;
@@ -538,6 +574,7 @@ function refreshAbortError() {
 export function useApiResource(path, {
   deps = [], enabled = true, label, logger = defaultLogger,
   swr = false, dedupe = true, retryTransient = true, clearDataOnError = false,
+  freshMs, timeoutMs,
 } = {}) {
   // Single shared cache lookup for the three lazy initializers below — each
   // useState initializer only runs once (on mount), and all three run inside
@@ -555,7 +592,8 @@ export function useApiResource(path, {
     if (!(enabled && path)) return false;
     return !getInitialCache().hit;
   });
-  const [revalidating, setRevalidating] = useState(() => getInitialCache().hit);
+  const isFresh = () => freshMs !== undefined && isApiResourceFresh(path, freshMs);
+  const [revalidating, setRevalidating] = useState(() => getInitialCache().hit && !isFresh());
   const [error, setError] = useState(null);
   const [reloadRequest, setReloadRequest] = useState(null);
   const requestedReload = useRef(reloadRequest);
@@ -659,7 +697,7 @@ export function useApiResource(path, {
       cacheReaders.delete(path);
       queueMicrotask(() => {
         const read = activeCacheReads.get(path);
-        if (!cacheReaders.has(path) && read && !read.prefetch?.()) retireCachedRead(path);
+        if (!cacheReaders.has(path) && read && !read.warm && !read.prefetch?.()) retireCachedRead(path);
       });
     };
   }, [path, enabled, swr, requestReload, clearDataOnError, retryTransient]);
@@ -672,6 +710,16 @@ export function useApiResource(path, {
       return pending;
     };
     if (!enabled || !path) { setLoading(false); return undefined; }
+    const { hit: cacheHit, value: cachedValue } = swr ? cacheGet(path) : { hit: false };
+    const automatic = fetchedReload.current === reloadRequest;
+    if (cacheHit && automatic && isFresh() && !activeCacheReads.has(path)) {
+      setData(cachedValue);
+      setResultPath(path);
+      setLoading(false);
+      setRevalidating(false);
+      setError(null);
+      return undefined;
+    }
     let live = true;
     const lease = swr ? null : createRequestLease();
     const scope = registrationFor(path);
@@ -695,7 +743,6 @@ export function useApiResource(path, {
     };
     activeRead.current = readState;
 
-    const { hit: cacheHit, value: cachedValue } = swr ? cacheGet(path) : { hit: false };
     if (cacheHit) {
       setData(cachedValue);
       setResultPath(path);
@@ -710,16 +757,21 @@ export function useApiResource(path, {
       setError(null);
     }
 
-    const join = fetchedReload.current === reloadRequest || reloadRequest?.join;
+    const join = automatic || reloadRequest?.join;
     fetchedReload.current = reloadRequest;
     const startedAt = performance.now();
     const onRetry = (err, attempt) => logger.debug('api.retry', { resource: label || path, attempt, status: err?.status ?? null });
-    const getRequest = joinAttempt => lease.take(sharedRequest(path, { join: joinAttempt, dedupe }));
+    let deadline;
+    const getRequest = joinAttempt => {
+      const transport = sharedRequest(path, { join: joinAttempt, dedupe, timeoutMs, deadline });
+      deadline = transport.expiresAt;
+      return lease.take(transport);
+    };
     const cacheRead = swr ? readCachedResource(path, {
-      join, dedupe, onRetry, attach: read => { readState.cacheRead = read; },
+      join, dedupe, onRetry, timeoutMs, attach: read => { readState.cacheRead = read; },
     }) : null;
     const request = cacheRead?.promise ?? (retryTransient
-      ? requestWithRetry(getRequest, { join, isCurrent, onRetry })
+      ? requestWithRetry(getRequest, { join, isCurrent, onRetry, getDeadline: () => deadline })
       : getRequest(join));
     request
       .then((result) => {
@@ -751,7 +803,7 @@ export function useApiResource(path, {
 
     return retireRead;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [path, enabled, reloadRequest, swr, dedupe, retryTransient, clearDataOnError, ...deps]);
+  }, [path, enabled, reloadRequest, swr, dedupe, retryTransient, clearDataOnError, freshMs, timeoutMs, ...deps]);
 
   // Effects run after render: conceal the previous key synchronously, not
   // just after the new request starts, so stale rows are never actionable.
@@ -760,7 +812,7 @@ export function useApiResource(path, {
   // flash a day flip used to show before the effect copied the cache over.
   const matches = resultPath === path;
   if (!matches && swr && enabled && path && swrCache.has(path)) {
-    return { data: peekApiResource(path), resourceKey: path, loading: false, error: null, revalidating: true, reload, refresh, poll };
+    return { data: peekApiResource(path), resourceKey: path, loading: false, error: null, revalidating: !isFresh(), reload, refresh, poll };
   }
   return { data: matches ? data : null, resourceKey: path,
     loading: matches ? loading : Boolean(enabled && path),

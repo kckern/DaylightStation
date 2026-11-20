@@ -23,7 +23,7 @@ import ListsItemRow from "./ListsItemRow.jsx";
 import { useRetryRegion } from '../../../../frontend/src/lib/ui/useRetryRegion.js';
 import { ActionMenu } from "../../../../frontend/src/lib/ui/ActionMenu.jsx";
 import { EmptyItemRow } from "./EmptyItemRow.jsx";
-import { fetchContentMetadata } from "./ContentDisplays.jsx";
+import { useCatalogContentInfo } from './catalogContentInfo.js';
 import { swapContentPayloads } from "./listConstants.js";
 
 let _log;
@@ -78,6 +78,16 @@ function dualCollisionDetection(args) {
 function ListsFolder() {
   const { type, name: listName } = useParams();
   return <FolderEditor key={JSON.stringify([type, listName])} type={type} listName={listName} />;
+}
+
+function ContentDragPreview({ value, pickedInfo }) {
+  const info = useCatalogContentInfo(value, pickedInfo);
+  return (
+    <div className="content-drag-overlay">
+      <Text size="xs" fw={500} truncate style={{ maxWidth: 200 }}>{info?.title || value || 'Content'}</Text>
+      {info?.source && <Text size="xs" c="dimmed">{info.source.toUpperCase()}</Text>}
+    </div>
+  );
 }
 
 function FolderEditor({ type, listName }) {
@@ -143,6 +153,7 @@ function FolderEditor({ type, listName }) {
   };
 
   // Content info cache for preloading
+  // Search picks can paint immediately while the mounted row reads its descriptor.
   const [contentInfoMap, setContentInfoMap] = useState(new Map());
 
   const setContentInfo = useCallback((contentId, info) => {
@@ -159,23 +170,8 @@ function FolderEditor({ type, listName }) {
     return flatItems.slice(start, end + 1).map((item, i) => ({
       ...item,
       index: start + i,
-      contentInfo: contentInfoMap.get(item.input)
     }));
-  }, [flatItems, contentInfoMap]);
-
-  // Preload content info for all items — single source of truth for children
-  // Siblings preloading is deferred to row hover (ListsItemRow.handleRowHover)
-  useEffect(() => {
-    flatItems.forEach(item => {
-      if (item.input && !contentInfoMap.has(item.input)) {
-        fetchContentMetadata(item.input).then(info => {
-          if (info) {
-            setContentInfo(item.input, info);
-          }
-        });
-      }
-    });
-  }, [flatItems]); // eslint-disable-line react-hooks/exhaustive-deps -- contentInfoMap intentionally omitted: re-running on every cache update would loop; setContentInfo is stable (useCallback)
+  }, [flatItems]);
 
   const sensors = useSensors(
     useSensor(PointerSensor),
@@ -618,20 +614,8 @@ function FolderEditor({ type, listName }) {
         </div>
 
         <DragOverlay dropAnimation={null}>
-          {activeContentDrag && (() => {
-            const { item } = activeContentDrag;
-            const info = contentInfoMap.get(item.input);
-            return (
-              <div className="content-drag-overlay">
-                <Text size="xs" fw={500} truncate style={{ maxWidth: 200 }}>
-                  {info?.title || item.input || 'Content'}
-                </Text>
-                {info?.source && (
-                  <Text size="xs" c="dimmed">{info.source.toUpperCase()}</Text>
-                )}
-              </div>
-            );
-          })()}
+          {activeContentDrag && <ContentDragPreview value={activeContentDrag.item.input}
+            pickedInfo={contentInfoMap.get(activeContentDrag.item.input)} />}
         </DragOverlay>
       </DndContext>
 
