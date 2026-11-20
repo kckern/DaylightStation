@@ -209,6 +209,7 @@ export function pairView(pairing, name) {
     if (pairing.reason === 'invalid-address') return view(false, 'error', cap(`${who} could not be paired from here.`), 'Search again and pick it.');
     if (pairing.reason === 'none-found') return view(false, 'error', cap(`${who} did not show up.`), 'Put it in pairing mode and keep it close, then search again.');
     if (pairing.reason === 'no-response') return view(false, 'error', NO_ANSWER, 'Search again in a minute.');
+    if (pairing.reason === 'interrupted') return view(false, 'error', 'Lost touch with the garage Bluetooth service.', 'Search again.');
     if (['helper-crashed', 'helper-failed', 'timeout'].includes(pairing.reason)) return view(false, 'error', 'Bluetooth stopped unexpectedly.', 'Try again.');
     return failure(pairing.code || (pairing.reason === 'no-input' ? 'no-input' : null), who);
   }

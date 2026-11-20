@@ -4,14 +4,20 @@
  *
  * Owns the keys while it is up (window capture listener): every key is shown,
  * none acts, so a keyboard-mode device's arrows and Enter do not drive the
- * screen. Escape finishes. A gamepad's B held for HOLD_BACK_MS finishes (a
- * short B press is shown like any button). It also finishes after IDLE_MS with
+ * screen. Escape finishes (a held Escape's repeats are ignored). Holding a
+ * press key (Enter, Space, a remote's play/pause) or a pad's back or select
+ * button (useArcadeInput's mapping: B; A or Start) for HOLD_BACK_MS finishes;
+ * a short press is shown like any other. It also finishes after IDLE_MS with
  * no input. Gamepad input carries no Bluetooth address, so pad presses count
  * toward the verdict only when the tested device is a gamepad (or of unknown
  * kind); each event shows the pad's own id.
  */
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { gameKeySet, keyLabel, normalizeKey, padChanges, testVerdict } from './keyTestModel.js';
+import { BACK_BUTTONS, SELECT_BUTTONS } from '../ui/useArcadeInput.js';
+
+const HOLD_TO_FINISH_KEYS = new Set(['Enter', ' ', 'MediaPlayPause']);
+const HOLD_TO_FINISH_BUTTONS = [...BACK_BUTTONS, ...SELECT_BUTTONS];
 
 const MAX_EVENTS = 8;
 const IDLE_MS = 20000;
@@ -51,18 +57,29 @@ export function KeyTest({ name, kind, keyboardMap, getGamepads, onDone, note = n
   };
 
   useEffect(() => {
+    let holdKey = null;
     const handler = (e) => {
       e.preventDefault();
-      e.stopPropagation();
+      e.stopImmediatePropagation();
+      if (e.repeat) {
+        // A held press key: long enough finishes, like holding the pad's back button.
+        if (holdKey && holdKey.key === e.key && Date.now() - holdKey.since >= holdBackMs) finishRef.current();
+        return;
+      }
       if (e.key === 'Escape') { finishRef.current(); return; }
-      if (e.repeat) return;
+      holdKey = HOLD_TO_FINISH_KEYS.has(e.key) ? { key: e.key, since: Date.now() } : null;
       tally.current = { ...tally.current, keys: [...tally.current.keys, normalizeKey(e.key)] };
       setKeys(tally.current.keys);
       addEvent(keyLabel(e));
     };
+    const up = (e) => { if (holdKey?.key === e.key) holdKey = null; };
     window.addEventListener('keydown', handler, true);
-    return () => window.removeEventListener('keydown', handler, true);
-  }, []);
+    window.addEventListener('keyup', up, true);
+    return () => {
+      window.removeEventListener('keydown', handler, true);
+      window.removeEventListener('keyup', up, true);
+    };
+  }, [holdBackMs]);
 
   useEffect(() => {
     const read = getGamepads
@@ -84,7 +101,7 @@ export function KeyTest({ name, kind, keyboardMap, getGamepads, onDone, note = n
         }
         addEvent(`${ev.input} (${ev.padId})`);
       }
-      if (pads.some((p) => p.buttons?.[1]?.pressed)) {
+      if (pads.some((p) => HOLD_TO_FINISH_BUTTONS.some((i) => p.buttons?.[i]?.pressed))) {
         bSince ??= Date.now();
         if (Date.now() - bSince >= holdBackMs) { finishRef.current(); return; }
       } else {
@@ -110,8 +127,12 @@ export function KeyTest({ name, kind, keyboardMap, getGamepads, onDone, note = n
       <ul className="bts-test-events" aria-label="What arrived">
         {events.map((e) => <li key={e.id}>{e.text}</li>)}
       </ul>
-      <p className="bts-hint">Press Escape, or hold B, to finish. It also finishes after 20 seconds with no presses.</p>
-      <button type="button" className="bts-button" ref={doneButton} onClick={() => finishRef.current()}>Done</button>
+      <p className="bts-hint">
+        Press Escape, or hold the back or Start button, to finish. It also finishes after {Math.round(idleMs / 1000)} seconds with no presses.
+      </p>
+      {/* For touch. It holds focus (so focus never falls to the page) but shows
+          no focus ring: keys here are captured, so A or Enter would not press it. */}
+      <button type="button" className="bts-button bts-test-done" ref={doneButton} onClick={() => finishRef.current()}>Done</button>
     </section>
   );
 }

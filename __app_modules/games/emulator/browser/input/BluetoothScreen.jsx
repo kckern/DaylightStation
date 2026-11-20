@@ -30,6 +30,7 @@ const logger = () => (_logger ||= getLogger().child({ component: 'bluetooth-scre
 
 const TITLE = { list: 'Bluetooth', guide: 'How to pair', search: 'Search for devices', pairing: 'Pairing', test: 'Test' };
 const EMPTY = [];
+const FORGET_MSG_MS = 6000;
 
 export function BluetoothScreen({
   controllers = EMPTY, keyboardMap = null, bluetooth = null, getGamepads, onClose, titleId, host = 'unknown', notice = null,
@@ -126,6 +127,14 @@ export function BluetoothScreen({
     defaultFocus(rootRef.current)?.focus();
   }, [view.name, pv.busy]);
 
+  // "Forgotten…" is a moment's news: it goes after FORGET_MSG_MS or with the view.
+  useEffect(() => {
+    if (!forgetMsg) return undefined;
+    const t = setTimeout(() => setForgetAsked(null), FORGET_MSG_MS);
+    return () => clearTimeout(t);
+  }, [forgetMsg]);
+  useEffect(() => { setForgetAsked(null); }, [view.name]);
+
   const startSearch = (highlightId = null) => {
     setShowAll(false);
     setView({ name: 'search', highlightId });
@@ -138,6 +147,9 @@ export function BluetoothScreen({
     bt.stopScan?.(reason);
   };
   const pick = (row) => {
+    // The satellite also stops a search before it pairs; stopping it here
+    // first keeps the screen's own search state honest.
+    stopSearch('pick');
     logger().info('bluetooth-screen.pick', { address: row.address, controllerId: row.controllerId, paired: !!row.paired, kind: row.kind || null });
     const requestId = bt.pairAddress?.({ address: row.address, controllerId: row.controllerId, label: row.name, pin: row.pin });
     setView({ name: 'pairing', requestId, address: row.address, label: row.name, kind: row.kind });
@@ -191,9 +203,15 @@ export function BluetoothScreen({
               />
             ) : <p className="bts-empty">Checking Bluetooth…</p>}
             {forgetMsg ? <p className="bts-result">{forgetMsg}</p> : null}
+            {/* A pairing started elsewhere (another screen, the backend route)
+                disables Forget and Pair again: say why. */}
+            {pairBusy ? (
+              <p className="bts-status-line bts-tone-info">{pairView(bt.pairing, bt.pairing.device?.name || 'a device').text}</p>
+            ) : null}
           </section>
           {hints.length > 0 && (
             <section className="bts-section" aria-label="How to pair">
+              <h4 className="bts-heading">Set up a controller</h4>
               <ul className="bts-list">
                 {hints.map((h) => (
                   <li key={h.id}>
@@ -226,7 +244,7 @@ export function BluetoothScreen({
             <p className="bts-hint">{hints.find((h) => h.id === view.highlightId)?.troubleshoot}</p>
           ) : null}
           {sv.tone === 'error' && nearby.length === 0 && !showAll ? null : (
-            <NearbyList rows={nearby} hidden={hidden} showAll={showAll} onToggleShowAll={() => setShowAll((v) => !v)} onPick={pick} busy={pairBusy} />
+            <NearbyList rows={nearby} hidden={hidden} showAll={showAll} onToggleShowAll={() => setShowAll((v) => !v)} onPick={pick} busy={pairBusy} ended={!scanning} />
           )}
           {scanning
             ? <button type="button" className="bts-button" data-autofocus onClick={() => stopSearch('user')}>Stop</button>

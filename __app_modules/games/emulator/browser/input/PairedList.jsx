@@ -41,6 +41,8 @@ export function PairedList({ rows, busy, onForget, onArm, onTest, onPairAgain, a
                   className={`bts-button bts-forget${isArmed ? ' bts-armed' : ''}`}
                   aria-label={isArmed ? `Press again to forget ${r.name}` : `Forget ${r.name}`}
                   disabled={busy}
+                  // Moving away disarms it, so a later stray press starts over.
+                  onBlur={() => { if (isArmed) setArmed(null); }}
                   onClick={() => {
                     if (isArmed) { setArmed(null); onForget(r); return; }
                     setArmed(r.address);

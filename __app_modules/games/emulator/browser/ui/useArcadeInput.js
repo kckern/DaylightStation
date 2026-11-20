@@ -11,7 +11,10 @@ import { useEffect, useRef } from 'react';
 
 const AXIS_DEADZONE = 0.5;
 // Standard-mapping button indices.
-const BTN = { A: 0, B: 1, START: 9, UP: 12, DOWN: 13, LEFT: 14, RIGHT: 15 };
+export const BTN = { A: 0, B: 1, SELECT: 8, START: 9, UP: 12, DOWN: 13, LEFT: 14, RIGHT: 15 };
+/** Buttons that mean back / select (press) on every arcade surface. */
+export const BACK_BUTTONS = [BTN.B];
+export const SELECT_BUTTONS = [BTN.A, BTN.START];
 
 const KEY_INTENT = {
   ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right',
@@ -77,8 +80,8 @@ export function useArcadeInput({ onIntent, enabled = true, getGamepads, primeOnS
           down: pressed(BTN.DOWN) || ax[1] > AXIS_DEADZONE,
           left: pressed(BTN.LEFT) || ax[0] < -AXIS_DEADZONE,
           right: pressed(BTN.RIGHT) || ax[0] > AXIS_DEADZONE,
-          select: pressed(BTN.A) || pressed(BTN.START),
-          back: pressed(BTN.B),
+          select: SELECT_BUTTONS.some(pressed),
+          back: BACK_BUTTONS.some(pressed),
         };
         if (primeOnStart && !primed.has(gp.index)) {
           primed.add(gp.index);

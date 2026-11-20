@@ -58,4 +58,8 @@
     outline: 3px solid #facc15;
     outline-offset: 2px;
   }
+  // The key test captures every key, so its Done answers touch only: no ring
+  // that would suggest A or Enter presses it.
+  .bts-test-done:focus, .bts-test-done:focus-visible { outline: none; }
+  .bts-stale .bts-bars { opacity: 0.4; }
 }

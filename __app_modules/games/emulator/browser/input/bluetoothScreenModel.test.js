@@ -141,4 +141,7 @@ describe('satellite answers the plan did not cover', () => {
   it('a search refused while pairing', () => {
     expect(scanView({ phase: 'done', reason: 'busy' }, 0).text).toBe('Bluetooth is busy pairing. Search again in a moment.');
   });
+  it('a pairing cut off by a dropped connection says so', () => {
+    expect(pairView({ phase: 'done', paired: [], reason: 'interrupted' }, 'R1')).toMatchObject({ tone: 'error', text: 'Lost touch with the garage Bluetooth service.', next: 'Search again.' });
+  });
 });

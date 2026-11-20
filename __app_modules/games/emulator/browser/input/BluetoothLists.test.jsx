@@ -74,3 +74,22 @@ describe('NearbyList', () => {
     expect(screen.getByRole('button', { name: 'Show input devices only' }).getAttribute('aria-pressed')).toBe('true');
   });
 });
+
+describe('review follow-ups', () => {
+  it('an armed Forget disarms when focus leaves it', () => {
+    const onForget = vi.fn();
+    render(<PairedList rows={[ROW]} busy={false} onForget={onForget} onArm={vi.fn()} onTest={vi.fn()} onPairAgain={vi.fn()} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Forget R1' }));
+    fireEvent.blur(screen.getByRole('button', { name: 'Press again to forget R1' }));
+    expect(screen.getByRole('button', { name: 'Forget R1' })).toBeTruthy();
+    expect(onForget).not.toHaveBeenCalled();
+  });
+  it('after a search: rows are marked last heard, and the empty text drops "yet"', () => {
+    const NEAR = { address: 'AA:BB:CC:11:22:33', name: 'R1', typeLabel: 'Keyboard', tail: '…22:33', bars: 3, paired: false, highlight: false };
+    const { rerender } = render(<NearbyList rows={[NEAR]} hidden={0} showAll={false} onToggleShowAll={vi.fn()} onPick={vi.fn()} busy={false} ended />);
+    expect(document.querySelector('[data-address="AA:BB:CC:11:22:33"]').className).toContain('bts-stale');
+    expect(screen.getByText('Last heard in this search.')).toBeTruthy();
+    rerender(<NearbyList rows={[]} hidden={0} showAll={false} onToggleShowAll={vi.fn()} onPick={vi.fn()} busy={false} ended />);
+    expect(screen.getByText('Nothing found. Put the device in pairing mode and keep it close, then search again.')).toBeTruthy();
+  });
+});

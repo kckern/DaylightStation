@@ -229,4 +229,39 @@ describe('BluetoothScreen', () => {
     rerender(ui({ ...bt, pairing: { requestId: 'pair-1', phase: 'passkey', passkey: '000123' } }));
     expect(inside()).toBe(true);
   });
+
+  it('the How to pair list has a heading', () => {
+    render(ui(makeBt({ inventory: [RING] })));
+    expect(screen.getByRole('heading', { name: 'Set up a controller' })).toBeTruthy();
+  });
+
+  it('picking a device stops the running search first', () => {
+    const bt = makeBt();
+    const { rerender } = render(ui(bt));
+    fireEvent.click(screen.getByRole('button', { name: 'Search for devices' }));
+    rerender(ui({ ...bt, scan: scanning([NEAR_RING]) }));
+    fireEvent.click(screen.getByRole('button', { name: 'Pair R2' }));
+    expect(bt.stopScan).toHaveBeenCalledWith('pick');
+    expect(bt.stopScan.mock.invocationCallOrder[0]).toBeLessThan(bt.pairAddress.mock.invocationCallOrder[0]);
+  });
+
+  it('the list says a pairing is running when one started elsewhere', () => {
+    render(ui(makeBt({ pairing: { requestId: 'other', phase: 'pairing', device: { address: 'AA:BB:CC:11:22:99', name: 'Pad' } } })));
+    expect(screen.getByText('Pairing Pad…')).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'Forget R1' }).disabled).toBe(true);
+  });
+
+  it('the Forgotten message goes away after a few seconds and on a view change', () => {
+    vi.useFakeTimers();
+    try {
+      const bt = makeBt();
+      const { rerender } = render(ui(bt));
+      fireEvent.click(screen.getByRole('button', { name: 'Forget R1' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Press again to forget R1' }));
+      rerender(ui({ ...bt, inventory: [PAD], forgetResult: { address: 'AA:BB:CC:11:22:33', success: true } }));
+      expect(screen.getByText(/^Forgotten/)).toBeTruthy();
+      act(() => { vi.advanceTimersByTime(6500); });
+      expect(screen.queryByText(/^Forgotten/)).toBeNull();
+    } finally { vi.useRealTimers(); }
+  });
 });

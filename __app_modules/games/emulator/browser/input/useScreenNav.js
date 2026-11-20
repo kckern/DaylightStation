@@ -5,7 +5,8 @@
  * Keys are read at the window in the capture phase, so they work wherever
  * focus is (even on <body>) and never reach the page behind: arrows and Tab
  * move between enabled buttons (wrapping), Enter presses, Escape/Backspace go
- * back. The gamepad (D-pad/left stick, A or Start, B) comes through
+ * back (a held Enter or Escape acts once), and a media remote's next/previous
+ * track and play/pause move and press. The gamepad (D-pad/left stick, A or Start, B) comes through
  * useArcadeInput with primeOnStart, so the press that opened the screen does
  * not also act in it. After every render, focus that left the screen or sits
  * on a disabled control goes back to the default ([data-autofocus], else the
@@ -18,6 +19,8 @@ import { useArcadeInput } from '../ui/useArcadeInput.js';
 const KEY_INTENT = {
   ArrowUp: 'up', ArrowLeft: 'left', ArrowDown: 'down', ArrowRight: 'right',
   Enter: 'select', Escape: 'back', Backspace: 'back',
+  // A ring or media remote in keyboard mode often has only these.
+  MediaTrackNext: 'down', MediaTrackPrevious: 'up', MediaPlayPause: 'select',
 };
 
 export function focusables(root) {
@@ -67,7 +70,10 @@ export function useScreenNav({ rootRef, active = true, onBack, getGamepads, onRe
       const name = e.key === 'Tab' ? (e.shiftKey ? 'up' : 'down') : KEY_INTENT[e.key];
       if (!name) return;
       e.preventDefault();
-      e.stopPropagation();
+      e.stopImmediatePropagation();
+      // A held Enter or Escape repeats: only the first press acts, so holding
+      // it never presses Forget twice or backs out of every level.
+      if (e.repeat && (name === 'select' || name === 'back')) return;
       intent(name);
     };
     window.addEventListener('keydown', handler, true);

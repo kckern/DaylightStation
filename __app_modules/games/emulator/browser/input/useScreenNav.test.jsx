@@ -72,4 +72,40 @@ describe('useScreenNav', () => {
     fireEvent.keyDown(document.body, { key: 'Escape' });
     expect(onBack).not.toHaveBeenCalled();
   });
+
+  it('a held Enter or Escape (key repeat) never acts again', () => {
+    const onClick = vi.fn();
+    const onBack = vi.fn();
+    render(<Harness onClick={onClick} onBack={onBack} />);
+    fireEvent.keyDown(document.activeElement, { key: 'Enter' });
+    fireEvent.keyDown(document.activeElement, { key: 'Enter', repeat: true });
+    fireEvent.keyDown(document.activeElement, { key: 'Escape' });
+    fireEvent.keyDown(document.activeElement, { key: 'Escape', repeat: true });
+    expect(onClick).toHaveBeenCalledTimes(1);
+    expect(onBack).toHaveBeenCalledTimes(1);
+    // Arrows still repeat.
+    fireEvent.keyDown(document.activeElement, { key: 'ArrowDown' });
+    fireEvent.keyDown(document.activeElement, { key: 'ArrowDown', repeat: true });
+    expect(focused()).toBe('One');
+  });
+
+  it('remote media keys navigate: next/previous track move, play/pause presses', () => {
+    const onClick = vi.fn();
+    render(<Harness onClick={onClick} />);
+    fireEvent.keyDown(document.activeElement, { key: 'MediaTrackNext' });
+    expect(focused()).toBe('Three');
+    fireEvent.keyDown(document.activeElement, { key: 'MediaTrackPrevious' });
+    expect(focused()).toBe('Two');
+    fireEvent.keyDown(document.activeElement, { key: 'MediaPlayPause' });
+    expect(onClick).toHaveBeenCalledWith('two');
+  });
+
+  it('other capture listeners on the window never see a handled key', () => {
+    const other = vi.fn();
+    render(<Harness />);
+    window.addEventListener('keydown', other, true);
+    fireEvent.keyDown(document.activeElement, { key: 'ArrowDown' });
+    window.removeEventListener('keydown', other, true);
+    expect(other).not.toHaveBeenCalled();
+  });
 });
