@@ -1,6 +1,6 @@
 import { useEffect, useMemo } from 'react';
 import { Group, Text, Button } from '@mantine/core';
-import { useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { IconCheck, IconCircleFilled, IconPencil, IconAlertCircle } from '@tabler/icons-react';
 import { SectionCard } from "../../components/index.js";
 import getLogger from "../../../../../../frontend/src/lib/logging/Logger.js";
@@ -12,7 +12,6 @@ const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
  * for a user who is not enrolled. `summary` is the /api/v1/triage/summary body.
  */
 export function TriageSummaryCard({ summary, error = null, onRetry = null }) {
-  const navigate = useNavigate();
   const logger = useMemo(() => getLogger().child({ component: 'triage-summary-card' }), []);
   const enrolled = summary?.enrolled === true;
   useEffect(() => {
@@ -52,11 +51,6 @@ export function TriageSummaryCard({ summary, error = null, onRetry = null }) {
   parts.push({ key: 'call', icon: icon(IconCircleFilled, 'var(--mantine-color-orange-6)'), text: `${needCall} need your call` });
   parts.push({ key: 'drafted', icon: icon(IconPencil, 'var(--mantine-color-dimmed)'), text: `${plural(drafted, 'reply', 'replies')} drafted` });
 
-  const start = () => {
-    logger.info('life.triage.card.start', { open: total });
-    navigate('/life/now/triage');
-  };
-
   return (
     <SectionCard title="Triage">
       <Group justify="space-between" align="center" wrap="wrap" gap="sm">
@@ -65,7 +59,8 @@ export function TriageSummaryCard({ summary, error = null, onRetry = null }) {
             <Group key={p.key} gap={4} wrap="nowrap">{p.icon}<Text size="sm">{p.text}</Text></Group>
           ))}
         </Group>
-        <Button size="xs" onClick={start}>Start triage →</Button>
+        <Button component={Link} to="/life/now/triage" className="ds-touch-target" size="xs"
+          onClick={() => logger.info('life.triage.card.start', { open: total })}>Start triage →</Button>
       </Group>
       {reconnect && <Text size="sm" c="red" mt="xs">Reconnect {summary.mailboxName || 'your mailbox'}: mail can&apos;t be archived until it is reconnected.</Text>}
     </SectionCard>

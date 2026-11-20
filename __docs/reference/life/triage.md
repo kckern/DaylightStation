@@ -22,6 +22,11 @@ The session runs urgent replies first, then **Recap → Unsure → Replies → T
 skipping empty steps. Stopping part-way leaves the rest queued; nothing unreached
 is decided by default.
 
+**Start triage** links from Now to `/life/now/triage`. **Stop for now** and
+**Back to Now** return to `/life/now`. The Now destination stays selected
+throughout the session, and switching household members opens the new member's
+triage view.
+
 ## Never-auto rules
 
 Whatever Jev's confidence, nothing is acted on unattended when the item:
@@ -124,6 +129,16 @@ built yet.
 | `POST /api/v1/triage/cards/:id/resolve` | login | `{ happened }` for an in-doubt card |
 | `GET /api/v1/triage/log?sinceDays=7` | login | what was done |
 | `POST /api/v1/triage/log/:entryId/undo` | login | undo one action |
+
+The browser scopes each read to the view that displays it. Leaving Now or Triage
+aborts that view's pending read, and closing Review aborts its log read. Each
+read flow has a 10-second deadline. The guided session shares its deadline
+between the enrollment summary and the authenticated session read. After a
+timeout, Retry repeats only the affected GET flow.
+
+A current protected read or command that receives `401 login_required` opens
+sign-in. Signing in reloads the guided session for the selected Life member.
+Triage commands keep their own outcome and retry controls.
 
 ## Logs
 

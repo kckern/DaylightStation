@@ -32,6 +32,6 @@ describe('useTriage', () => {
     await waitFor(() => expect(result.current.loading).toBe(false));
     api.mockResolvedValueOnce({ outcome: 'reopened' });
     await act(async () => { await result.current.resolve('c1', false); });
-    expect(api).toHaveBeenLastCalledWith('api/v1/triage/cards/c1/resolve?username=alice', { happened: false }, 'POST');
+    expect(api).toHaveBeenLastCalledWith('api/v1/triage/cards/c1/resolve?username=alice', { happened: false }, 'POST', undefined);
   });
 });

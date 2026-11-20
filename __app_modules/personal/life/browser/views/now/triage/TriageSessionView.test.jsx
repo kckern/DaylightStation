@@ -3,9 +3,6 @@ import { render, screen, fireEvent, waitFor, act } from '@testing-library/react'
 import { MantineProvider } from '@mantine/core';
 import { MemoryRouter } from 'react-router-dom';
 
-const navigate = vi.fn();
-vi.mock('react-router-dom', async (orig) => ({ ...(await orig()), useNavigate: () => navigate }));
-
 let triage;
 vi.mock("../../../hooks/useTriage.js", () => ({ useTriage: () => triage, default: () => triage }));
 vi.mock("../../../../../../../frontend/src/modules/Auth/LoginScreen.jsx", () => ({
@@ -43,7 +40,7 @@ function makeTriage(over = {}) {
 }
 const wrap = () => render(<MantineProvider><MemoryRouter><TriageSessionView /></MemoryRouter></MantineProvider>);
 
-beforeEach(() => { navigate.mockReset(); api.mockReset(); triage = makeTriage(); });
+beforeEach(() => { api.mockReset(); triage = makeTriage(); });
 
 describe('TriageSessionView', () => {
   it('renders the first card with the progress "1 / N"', () => {
@@ -173,7 +170,7 @@ describe('TriageSessionView', () => {
     expect(screen.getByText('Archived')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Review' }));
     await waitFor(() => expect(screen.getByText('Receipt #42')).toBeInTheDocument());
-    expect(triage.log).toHaveBeenCalledWith(7);
+    expect(triage.log).toHaveBeenCalledWith(7, { signal: expect.any(AbortSignal) });
     expect(screen.getByText('Re: Deck quote')).toBeInTheDocument();
     expect(screen.getByText('auto')).toBeInTheDocument();
     expect(screen.getByText('you')).toBeInTheDocument();
@@ -198,10 +195,9 @@ describe('TriageSessionView', () => {
     expect(screen.getByText(/Dry run — nothing was done automatically; your taps are real\./)).toBeInTheDocument();
   });
 
-  it('Stop for now returns to Now', () => {
+  it('links back to Now from Stop for now', () => {
     wrap();
-    fireEvent.click(screen.getByRole('button', { name: /Stop for now/ }));
-    expect(navigate).toHaveBeenCalledWith('/life/now');
+    expect(screen.getByRole('link', { name: /Stop for now/ })).toHaveAttribute('href', '/life/now');
   });
 
   it('voice: the transcript lands in the answer box without submitting', async () => {

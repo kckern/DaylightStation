@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Badge, Button, Loader, Text } from '@mantine/core';
 import getLogger from "../../../../../../../frontend/src/lib/logging/Logger.js";
+import { useRefreshableRead } from "../../../../../../../frontend/src/lib/hooks/useRefreshableRead.js";
 
 const ACTION_WORDS = { archive: 'Archived', complete: 'Closed', send: 'Sent', create_task: 'Made a todo', update_task: 'Rescheduled', keep: 'Kept' };
 const actionWord = (a) => ACTION_WORDS[a] ?? a;
@@ -15,7 +16,7 @@ const UNDO_RESULT = {
 /**
  * Everything triage did lately, the automatic actions and the owner's own taps, each tagged
  * "auto" or "you", with Undo where the entry has an inverse and is not undone.
- * `loadLog()` resolves to the /log body ({ entries: [{ id, actor, action, title, dryRun,
+ * `loadLog({ signal })` resolves to the /log body ({ entries: [{ id, actor, action, title, dryRun,
  * uncertain, undoneAt, undoable }] }).
  */
 export function ActionLog({ loadLog, onUndo }) {
@@ -27,19 +28,26 @@ export function ActionLog({ loadLog, onUndo }) {
   const loadRef = useRef(loadLog);
   loadRef.current = loadLog;
 
-  const load = useCallback(async () => {
+  const read = useCallback(async (isCurrent, signal) => {
     setLoadError(null);
     try {
-      const out = await loadRef.current();
+      const out = await loadRef.current({ signal });
+      if (!isCurrent()) return;
       setEntries(out?.entries ?? []);
       logger.debug('triage.log.loaded', { count: out?.entries?.length ?? 0 });
     } catch (err) {
+      if (!isCurrent()) return;
       logger.warn('triage.log.load_failed', { code: err?.code ?? null, error: err?.message });
       setLoadError(err?.code === 'pass_running' || err?.code === 'busy'
         ? 'Triage is updating — try again in a moment.'
         : "Couldn't load what was done.");
     }
   }, [logger]);
+  const onTimeout = useCallback(() => {
+    setLoadError("Couldn't load what was done.");
+    logger.warn('triage.log.read_timeout');
+  }, [logger]);
+  const { reload: load } = useRefreshableRead(read, { timeoutMs: 10000, onTimeout });
 
   useEffect(() => { load(); }, [load]);
 

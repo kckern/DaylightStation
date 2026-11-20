@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Button, Group, Text, Title } from '@mantine/core';
-import { useNavigate } from 'react-router-dom';
+import { Link } from 'react-router-dom';
 import { IconAlertCircle, IconCircleCheck } from '@tabler/icons-react';
 import { useTriage } from "../../../hooks/useTriage.js";
 import { LoadingState } from "../../../components/index.js";
@@ -23,7 +23,6 @@ const FAILED_REASONS = {
  */
 export function TriageSessionView() {
   const logger = useMemo(() => getLogger().child({ component: 'triage-session' }), []);
-  const navigate = useNavigate();
   const t = useTriage({ withSession: true });
   const { session, summary, needsLogin } = t;
 
@@ -136,7 +135,7 @@ export function TriageSessionView() {
   if (needsLogin) {
     return (
       <div className="life-triage">
-        <SessionHeader onStop={() => navigate('/life/now')} />
+        <SessionHeader />
         <Text size="sm" c="dimmed" ta="center">Sign in to answer triage cards.</Text>
         <div className="life-triage__login"><LoginScreen onLogin={() => t.refetch()} /></div>
       </div>
@@ -146,7 +145,7 @@ export function TriageSessionView() {
   if (!session) {
     return (
       <div className="life-triage">
-        <SessionHeader onStop={() => navigate('/life/now')} />
+        <SessionHeader />
         {summary && summary.enrolled !== true ? (
           <Text c="dimmed">Triage isn&apos;t set up for this person.</Text>
         ) : (
@@ -184,7 +183,7 @@ export function TriageSessionView() {
 
   return (
     <div className="life-triage">
-      <SessionHeader onStop={() => navigate('/life/now')} />
+      <SessionHeader />
       {summary?.mode === 'dryRun' && !hasRecap && <Text size="xs" c="dimmed">{DRY_RUN_NOTE}</Text>}
       <StepStrip steps={steps} currentStep={card ? stepId : null} stepPos={stepPos} position={card ? position : total} total={total} />
       {notice && (
@@ -210,7 +209,7 @@ export function TriageSessionView() {
           onSkip={onSkip}
           onResolve={onResolve}
           onUndo={(entryId) => t.undo(entryId)}
-          onLoadLog={() => t.log(7)}
+          onLoadLog={(options) => t.log(7, options)}
           wouldHave={summary?.wouldHave ?? null}
         />
       ) : (
@@ -219,14 +218,15 @@ export function TriageSessionView() {
           <Text size="sm" c="dimmed">
             {tally.answered} answered{tally.skipped ? ` · ${tally.skipped} skipped for later` : ''}
           </Text>
-          <Button size="sm" className="life-triage__end-action" onClick={() => navigate('/life/now')}>Back to Now</Button>
+          <Button component={Link} to="/life/now" size="sm"
+            className="life-triage__end-action ds-touch-target">Back to Now</Button>
         </article>
       )}
     </div>
   );
 }
 
-function SessionHeader({ onStop }) {
+function SessionHeader() {
   const day = new Date().toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
   return (
     <Group justify="space-between" align="center" wrap="nowrap">
@@ -234,7 +234,8 @@ function SessionHeader({ onStop }) {
         <Title order={3}>Triage</Title>
         <Text size="xs" c="dimmed">{day}</Text>
       </div>
-      <Button variant="subtle" size="compact-sm" color="gray" onClick={onStop}>Stop for now</Button>
+      <Button component={Link} to="/life/now" variant="subtle" size="compact-sm" color="gray"
+        className="ds-touch-target">Stop for now</Button>
     </Group>
   );
 }
