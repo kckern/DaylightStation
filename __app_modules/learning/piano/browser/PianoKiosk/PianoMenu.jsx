@@ -19,6 +19,7 @@ import usePianoLessonGate, { PENDING_CAPTION } from './usePianoLessonGate.js';
 import TodaysLessonGate from './TodaysLessonGate.jsx';
 import { openPianoCourseLesson } from './pianoContentOpen.js';
 import { PIANO_MODES } from './pianoModes.js';
+import { scoreViewPath } from './modes/SheetMusic/sheetMusicModel.js';
 
 /**
  * PianoMenu — the touch-first home screen for a piano. Tiles route to each mode.
@@ -99,7 +100,8 @@ export function PianoMenu() {
     if (curfew || pending) return; // the door the 2026-09-01 escape used
     // A passage opens Learn on it; an all-Gold piece opens Polish (ready, not started).
     const query = passageId ? `?learnPassage=${encodeURIComponent(passageId)}` : mode ? `?mode=${encodeURIComponent(mode)}` : '';
-    navigate(`${basePath}/sheetmusic/view/${scoreId}${query}`);
+    // Encoded per path segment: an id with # or ? would otherwise cut the route short.
+    navigate(`${basePath}/sheetmusic/${scoreViewPath(scoreId)}${query}`);
   };
   const desk = (
     <PianoHomeDesk

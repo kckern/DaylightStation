@@ -13,17 +13,22 @@
  * Nothing is earned until the piece is all Gold for this player: the piece
  * log's dated `gold` entry (the same entry the `piano-piece` milestone pays
  * from), or, for a piece finished before the log existed, the saved coach
- * summary showing every passage Gold.
+ * summary showing every passage Gold. When the score has admin-approved Learn
+ * segments for the XML the child practised, that summary is re-read against
+ * them (the same projection the home strip uses), so a passage the admin cut
+ * differently has to be earned again before the piece is all Gold.
  *
  * Best effort, like the piece log: `evaluate()` never throws, because a reward
  * check must never cost the child the practice write it rides on.
  * See __docs/reference/piano/sheet-music-player.md (Polish rewards).
  */
+import { practiceKeyOfScore as keyOfScore } from '../../portable/music/practiceKey.mjs';
+import { projectRecord, recordFingerprint, recordSegments } from './coachRecordProjection.mjs';
+
 export const POLISH_REWARD_MIN_SCORE = 95;
 export const POLISH_GEM_TEMPO_PERCENT = 50;
 export const POLISH_DIAMOND_TEMPO_PERCENT = 90;
 
-const keyOfScore = (id) => String(id).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 120);
 const isPart = (p) => (typeof p === 'number' && Number.isInteger(p)) || (typeof p === 'string' && p.length > 0 && p.length <= 64);
 
 /** Same buckets as the browser's polishTiers.tierOf; for the log only. */
@@ -61,18 +66,34 @@ export function judgePolishRun(run) {
   return { reason: 'qualified', gem: true, diamond: tempoPercent >= POLISH_DIAMOND_TEMPO_PERCENT, ...facts };
 }
 
-function coachAllGold(record, scoreId) {
+/**
+ * Gold on every passage. With approved segments it projects the record onto
+ * them; certification only shapes the Silver steps and dayKey only the review
+ * and set-aside queues, so neither changes which passages are Gold.
+ */
+function coachAllGold(record, scoreId, authored = null, certification = undefined, dayKey = undefined) {
   const coach = record?.learnCoach;
+  if (coach?.scoreId !== scoreId) return false;
+  if (authored?.length) {
+    const { piece } = projectRecord({ record, scoreId, segments: recordSegments(record, authored), certification, dayKey });
+    return piece.total > 0 && piece.gold === piece.total;
+  }
   const summary = coach?.summary;
-  return coach?.scoreId === scoreId && Number.isInteger(summary?.total) && summary.total > 0 && summary.gold === summary.total;
+  return Number.isInteger(summary?.total) && summary.total > 0 && summary.gold === summary.total;
 }
 
 export class PianoPolishReward {
-  #pieceLog; #logger;
+  #pieceLog; #learnSegments; #logger;
 
-  constructor({ pieceLog, logger = null }) {
+  /**
+   * @param {object} deps
+   * @param {(scoreId: string, contentSha256: string) => Array<{id, start, end, parts?}>|null} [deps.learnSegments]
+   *   the score's admin-approved Learn segments for that content, or null
+   */
+  constructor({ pieceLog, learnSegments = null, logger = null }) {
     if (!pieceLog) throw new Error('PianoPolishReward requires a piece log');
     this.#pieceLog = pieceLog;
+    this.#learnSegments = learnSegments;
     this.#logger = logger;
   }
 
@@ -113,6 +134,12 @@ export class PianoPolishReward {
     }
   }
 
+  #allGold(record, scoreId) {
+    const fingerprint = recordFingerprint(record);
+    const authored = fingerprint && this.#learnSegments ? this.#learnSegments(scoreId, fingerprint) : null;
+    return coachAllGold(record, scoreId, authored);
+  }
+
   #judge({ userId, scoreKey, scoreId, run, record }) {
     const quiet = { newGem: false, newDiamond: false };
     if (!userId || userId === 'guest') return { ...none('guest'), ...quiet };
@@ -122,7 +149,7 @@ export class PianoPolishReward {
     try {
       const entries = this.#pieceLog.list(userId);
       const holds = (level) => entries.some((e) => e?.scoreId === scoreId && e?.level === level);
-      if (!holds('gold') && !coachAllGold(record, scoreId)) return { ...none('not-all-gold', judged), ...quiet };
+      if (!holds('gold') && !this.#allGold(record, scoreId)) return { ...none('not-all-gold', judged), ...quiet };
       const fingerprint = record?.fingerprint?.contentSha256 ?? null;
       const detail = { tempoPercent: judged.tempoPercent, score: judged.score };
       const earn = (level) => !holds(level)

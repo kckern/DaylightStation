@@ -139,6 +139,17 @@ describe('PianoMenu with an owed lesson', () => {
     expect(navigate).toHaveBeenCalledWith('/piano/sheetmusic/view/files:docs/sheet-music/jesu.mxl?learnPassage=b');
   });
 
+  it('encodes a score id with # and ? into the route, so the passage query survives', async () => {
+    gateState = GATED;
+    const scoreId = 'files:docs/sheet-music/odd #1 ?50%.musicxml';
+    const piece = { scoreId, cover: null, practicedAt: '2026-08-21T11:00:00Z', total: 1, silver: 0, gold: 0,
+      next: { passageId: 'a' }, nextGoldPassageId: null, passages: [{ id: 'a', start: 0, end: 4, state: 'todo' }] };
+    activityResponse = { players: [{ ...ACTIVITY.players[0], piece }] };
+    renderMenu();
+    fireEvent.click(await screen.findByRole('button', { name: /^Play / }));
+    expect(navigate).toHaveBeenCalledWith(`/piano/sheetmusic/view/files:docs/sheet-music/${encodeURIComponent('odd #1 ?50%.musicxml')}?learnPassage=a`);
+  });
+
   it('leaves a PianoChallenge its whole screen, with no strip or tile', () => {
     gateState = { ...GATED, challenge: { id: 'c', ask: { id: 'a' }, materialSpec: {}, framing: null } };
     renderMenu();

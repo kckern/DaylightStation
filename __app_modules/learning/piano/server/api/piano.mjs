@@ -5,6 +5,7 @@ import { musicXmlToNotes } from "../../../../../__capabilities/music-notation/po
 import { countInstances, expandSeed, instanceId, instanceIds, materializeById, searchBank } from "../../portable/music/exerciseBank.mjs";
 import { validateAssessment } from "../../portable/music/assessmentRecord.mjs";
 import { buildExerciseCatalog } from "../../portable/music/exerciseCatalog.mjs";
+import { approvedSegments, normalizeLearnFile } from "../../portable/music/sheetMusicLearnFile.mjs";
 
 const ATTEMPT_WRITER_ROLES = new Set(['sysadmin', 'parent', 'kiosk', 'piano-instructor', 'gaming-host']);
 const GUEST_ATTEMPT_SURFACES = new Set(['piano-challenge']);
@@ -953,6 +954,28 @@ export function createPianoRouter({ pianoContainer, schoolLearnerDirectory = nul
     const merged = { ...current, ...(req.body && typeof req.body === 'object' ? req.body : {}) };
     ds.savePreset(req.params.userId, merged);
     res.json(merged);
+  }));
+
+  // ── Sheet music Learn file (kiosk read) ─────────────────────────────────────
+  // The approved segments of a library score, or {} when it has none. Only
+  // `segments` and `contentSha256` leave the server: the admin draft and the
+  // approval metadata stay behind. The kiosk compares contentSha256 with the
+  // XML it loaded, so this route never reads the score. A datastore failure is
+  // not swallowed into {}: it goes to asyncHandler as a 500 so the kiosk shows
+  // a retry instead of quietly playing the piece without its approved segments.
+  router.get('/sheet-music/learn', asyncHandler((req, res) => {
+    const scoreId = String(req.query.id || '');
+    const file = ds.getSheetMusicLearn(scoreId);
+    const segments = approvedSegments(file);
+    if (!segments) {
+      // Stored segments that do not validate (overlap, bad ids, …) are a corrupt
+      // file, not an absent one; make that visible.
+      if (Array.isArray(file?.segments) && file.segments.length) {
+        logger.warn?.('piano.sheetmusic.learn-invalid', { scoreId });
+      }
+      return res.json({});
+    }
+    res.json({ segments, contentSha256: normalizeLearnFile(file).contentSha256 });
   }));
 
   // ── Practice history (per-user, per-score sheet-music record) ───────────────

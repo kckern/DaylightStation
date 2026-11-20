@@ -55,7 +55,8 @@ Pictures are asked for at about 1.5 times their drawn size for the tablet's scre
 or long-pressed out of the card.
 
 - **Piece:** top to bottom beside the score's `cover` (the same-name picture beside the
-  score): the badge, the printed title, the next step (the next passage's bars, `Bars
+  score: a raster scan, else a generated `.svg` poster, see
+  [Posters](sheet-music-player.md#posters)): the badge, the printed title, the next step (the next passage's bars, `Bars
   6–9`, or **Whole piece** once every passage is Gold, `piecePolishing`), then what to do
   in them: the coach's next skill, `piece.next.label` ("Settle into a beat"; `nextSkill`),
   left out when the desk gives none and while polishing. The badge is **Silver next** while
@@ -108,7 +109,20 @@ a piece nor a course has no card.
 `polish: { gem, diamond }`: the piece's Polish awards, read from the piece log
 (`polish-gem` / `polish-diamond` entries; an unreadable log answers both false and
 logs `piano.desk.polish_unreadable`). Each piece is
-projected through `shared/music/learnCoach.mjs`, so the strip and Learn agree. Courses
+projected through `shared/music/learnCoach.mjs`, so the strip and Learn agree. Its
+passages are the score's admin-approved Learn segments when it has them (the
+per-score Learn file, matched on the content sha the child practised, so a file cut
+against different XML is ignored); otherwise the passages saved in the record's
+`learnCoach.summary`. Progress is keyed by bar range, so after an admin re-cuts a
+piece the strip shows it straight away: unchanged ranges keep their Silver and
+Gold, changed ones start over, without waiting for the child's next take. An
+A segment's hands are the `parts` the admin set on it; else those of the saved
+passage on the same range; else the hands every saved passage agrees on (a
+one-hand piece stays one-hand); else both. An unreadable Learn file, or one whose
+segments do not validate, falls back to the saved passages and logs
+`piano.sheetmusic.learn-read-failed` or `piano.sheetmusic.learn-invalid` (warn,
+once per score per process). The Polish reward reads the same projection
+(`application/coachRecordProjection.mjs`). Courses
 come from `GET /api/v1/piano/activity/recent`; each course's `next` is its first
 unwatched lesson (`id`, `title`, `thumbnail`, and `position`, its 1-based place among
 the graded lessons, reference units left out). The desk list is rechecked every time the
@@ -142,4 +156,4 @@ Curfew applies only on the piano's own tablet (the client whose kiosk device id 
 check disable every card and tab. An owed video lesson replaces the tiles, but not the strip, with that lesson and a 224px column beside it: the child's latest piece (`LatestPieceCard`: poster, play disc, Silver count, title; one tap opens it at its next passage) over the Sheet Music tile (browse every score): sheet music is the one mode an owed lesson leaves open (owner, 2026-11-19), through that tile or a piece card on the strip. A PianoChallenge still takes the whole screen. The lesson is one card that is one button: the course poster on the left, then the lesson title over the lesson's still, which fills its area (cropping slightly rather than leaving a band), with a small play disc on it. There is no separate Start button, and no description, course or unit line.
 
 Logs: `piano.desk.view` (the cards shown), `piano.desk.tab`, `piano.desk.swipe`, `piano.desk.open-passage`, `piano.desk.open-polish`, `piano.desk.open-course`, server
-`piano.desk.record_skipped`, `piano.desk.player_skipped`.
+`piano.desk.record_skipped`, `piano.desk.player_skipped`, `piano.sheetmusic.learn-read-failed`, `piano.sheetmusic.learn-invalid`.

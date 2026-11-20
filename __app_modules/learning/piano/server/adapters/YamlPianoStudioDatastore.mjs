@@ -5,6 +5,7 @@
  *   - Per-user studio takes            data/users/{id}/apps/piano/studio/{takeId}.yml
  *   - Per-user preferences/progress    data/users/{id}/apps/piano/{preferences,progress}.yml
  *   - Household producer pool          <householdDataDir>/apps/piano/producer/{family}/{id}.yml
+ *   - Sheet music Learn files          <householdDataDir>/piano/sheetmusic/{practiceKey}.yml
  *   - Lesson drills (read-only)        <mediaDir>/docs/piano-lessons/{collection}/{index,id}.yml
  *   - Always-on MIDI history (.mid)    <mediaDir>/midi/piano/log/{userId}/{date}/{takeId}.mid
  *   - Effect-audit clips + manifest    <mediaDir>/logs/piano/effect-audit/{runId}/…
@@ -35,6 +36,7 @@ import {
   getStats,
 } from "#system/utils/FileIO.mjs";
 import { encodeMidiFile } from './MidiFileCodec.mjs';
+import { libraryScoreLocalPath, practiceKeyOfScore } from '../../portable/music/practiceKey.mjs';
 import { ILoopManifestSource } from '../application/ports/ILoopManifestSource.mjs';
 
 export class YamlPianoStudioDatastore extends ILoopManifestSource {
@@ -226,14 +228,39 @@ export class YamlPianoStudioDatastore extends ILoopManifestSource {
    * score grid shows it. Null when there is none.
    */
   sheetMusicCover(scoreId) {
-    const local = String(scoreId || '').replace(/^files:/, '');
-    if (!local.startsWith('docs/sheet-music/') || local.split('/').includes('..')) return null;
+    const local = libraryScoreLocalPath(scoreId);
+    if (!local) return null;
     const stem = local.slice(0, local.length - path.extname(local).length);
     const media = this.#configService.getMediaDir();
-    for (const ext of ['.jpg', '.jpeg', '.png', '.webp']) {
+    // Raster first: a curated scan wins over a generated svg poster.
+    for (const ext of ['.jpg', '.jpeg', '.png', '.webp', '.svg']) {
       if (getStats(path.join(media, stem + ext))) return `/api/v1/proxy/media/stream/${encodeURIComponent(stem + ext)}`;
     }
     return null;
+  }
+
+  /** Only library scores have a Learn file; anything else is refused. */
+  #sheetMusicLearnPath(scoreId) {
+    if (!libraryScoreLocalPath(scoreId)) return null;
+    const key = practiceKeyOfScore(scoreId);
+    return this.#configService.getHouseholdPath(path.join('piano', 'sheetmusic', key));
+  }
+
+  /** The admin-approved Learn file for a library score, or null when it has none. */
+  getSheetMusicLearn(scoreId) {
+    const file = this.#sheetMusicLearnPath(scoreId);
+    return file ? (loadYaml(file) || null) : null;
+  }
+
+  /**
+   * Written atomically and durably, like practice records: a torn write of an
+   * approved file would drop the piece's segments.
+   */
+  saveSheetMusicLearn(scoreId, data) {
+    const file = this.#sheetMusicLearnPath(scoreId);
+    if (!file) throw new Error(`Not a sheet music score: ${scoreId}`);
+    saveYamlToPathAtomic(`${file}.yml`, data, { durable: true });
+    return true;
   }
 
   savePractice(userId, scoreKey, record) {

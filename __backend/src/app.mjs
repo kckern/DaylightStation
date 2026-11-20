@@ -2331,9 +2331,10 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   // PianoContainer (persistence + the two course algorithms), inject the
   // container into the thin router. fitnessPlayableService provides Plex
   // enrichment for the /courses/:id/playable + /courses/progress endpoints.
-  const { router: pianoRouter, pianoStudioDatastore, composerSongStore, pianoContainer, pianoGameBudgetService, pianoDayActivity, pianoChallengeProfileService, schoolPianoChallengeCompletionService, schoolTeacherGate } = await createPianoModule({
+  const { router: pianoRouter, sheetMusicAdminService, pianoStudioDatastore, composerSongStore, pianoContainer, pianoGameBudgetService, pianoDayActivity, pianoChallengeProfileService, schoolPianoChallengeCompletionService, schoolTeacherGate } = await createPianoModule({
     configService, userService, rootLogger, contentRegistry, householdId, contentPath, fitnessPlayableService, contentServices, eventBus, shortId, pianoBoardGameDayService, PianoConfigProjection,
     legitDecisionGateway: scopedGateway(decisionGateway, { app: 'piano', feature: 'lesson-legit-notes' }),
+    segmentDecisionGateway: scopedGateway(decisionGateway, { app: 'piano', feature: 'sheetmusic-segments' }),
     schoolLearnerDirectory: { listLearners: () => schoolLearnerDirectory.listLearners() },
   });
   v1Routers.piano = pianoRouter;
@@ -4415,6 +4416,7 @@ const { readingSessions, readingSessionInterceptor } = await createSchoolReading
     listManagementService,
     adminArtService,
     adminImageService,
+    sheetMusicAdminService,
     adminNotificationOperations,
     householdAdminService,
     deviceRemoteAdministrationService,

@@ -2177,17 +2177,28 @@ export default function ScorePlayer({ score: scoreMeta }) {
     [parts, activeParts],
   );
 
+  // The score's approved Learn file (fetched by NotationScore before this mounts).
+  // Its segments apply only to the exact XML they were approved against: a file
+  // written for another revision of the score falls back to generated segments.
+  const learnFileSegments = scoreMeta.learnFile?.segments;
+  const learnFileHasSegments = Array.isArray(learnFileSegments) && learnFileSegments.length > 0;
+  const learnFileMatches = learnFileHasSegments && scoreMeta.learnFile.contentSha256 === fingerprint.contentSha256;
+  const scoreFile = useMemo(
+    () => (learnFileMatches ? { segments: learnFileSegments } : undefined),
+    [learnFileMatches, learnFileSegments],
+  );
   const learnPlan = useMemo(() => resolveLearnPlan({
     defaults: config?.sheetmusic?.learn,
     category: config?.sheetmusic?.learn?.categories?.[scoreMeta.category],
-    piece: scoreMeta.learn ?? config?.sheetmusic?.learn?.pieces?.[scoreMeta.id],
+    scoreFile,
+    piece: config?.sheetmusic?.learn?.pieces?.[scoreMeta.id],
     user: config?.user?.piano?.learn,
     userPiece: config?.user?.piano?.learn?.pieces?.[scoreMeta.id],
     score: {
       id: scoreMeta.id, measures: layout.measures, steps: layout.steps, sections,
       tempoMap: layout.tempoEntries, tempo: parsed?.tempo,
     },
-  }), [config, layout.measures, layout.steps, layout.tempoEntries, parsed?.tempo, scoreMeta.category, scoreMeta.id, scoreMeta.learn, sections]);
+  }), [config, layout.measures, layout.steps, layout.tempoEntries, parsed?.tempo, scoreFile, scoreMeta.category, scoreMeta.id, sections]);
   const coachPlan = useMemo(() => createCoachPlan({ scoreId: scoreMeta.id, fingerprint,
     segments: learnPlan.segments, authoredLadder: learnPlan.authoredLadder, tempoMap: learnPlan.tempoMap, certification: learnPlan.certification }),
     [scoreMeta.id, fingerprint, learnPlan]);
@@ -2289,6 +2300,17 @@ export default function ScorePlayer({ score: scoreMeta }) {
   useEffect(() => {
     if (learnPlan.configFallback) logger.warn('score.learn.config-fallback', { scoreId: scoreMeta.id });
   }, [logger, scoreMeta.id, learnPlan.configFallback]);
+
+  // Once per score open: the verdict and count change only with the Learn file.
+  const learnFileVerdict = !learnFileHasSegments ? null : learnFileMatches ? 'applied' : 'stale';
+  const learnFileCount = learnFileHasSegments ? learnFileSegments.length : 0;
+  useEffect(() => {
+    if (learnFileVerdict === 'applied') {
+      logger.info('score.learn.sidecar-applied', { scoreId: scoreMeta.id, segments: learnFileCount });
+    } else if (learnFileVerdict === 'stale') {
+      logger.warn('score.learn.sidecar-stale', { scoreId: scoreMeta.id });
+    }
+  }, [logger, scoreMeta.id, learnFileVerdict, learnFileCount]);
 
   const learnScore = useMemo(() => ({ id: scoreMeta.id, title: meta.title, musicXml: scoreMeta.musicXml }), [meta.title, scoreMeta.id, scoreMeta.musicXml]);
   const learnSegmentMetadata = useMemo(() => Object.fromEntries(

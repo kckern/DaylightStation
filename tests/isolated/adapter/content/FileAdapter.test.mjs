@@ -2,6 +2,8 @@
 import { vi } from 'vitest';
 import { FileAdapter } from '#adapters/content/media/files/FileAdapter.mjs';
 import path from 'path';
+import fs from 'node:fs';
+import os from 'node:os';
 import { fileURLToPath } from 'url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -122,6 +124,39 @@ describe('FileAdapter', () => {
       // The notation tile carries the sidecar poster.
       const notation = list.find((i) => i.id === 'files:docs/sheet-music/song.musicxml');
       expect(notation.thumbnail).toContain('song.jpg');
+    });
+
+    describe('generated .svg posters', () => {
+      let tmp;
+      let svgAdapter;
+      const stream = (local) => `/api/v1/proxy/media/stream/${encodeURIComponent(local)}`;
+
+      beforeEach(() => {
+        tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'file-adapter-svg-'));
+        const dir = path.join(tmp, 'docs/sheet-music');
+        fs.mkdirSync(dir, { recursive: true });
+        fs.writeFileSync(path.join(dir, 'piece.musicxml'), '<score-partwise/>');
+        fs.writeFileSync(path.join(dir, 'piece.svg'), '<svg xmlns="http://www.w3.org/2000/svg"/>');
+        fs.writeFileSync(path.join(dir, 'scanned.musicxml'), '<score-partwise/>');
+        fs.writeFileSync(path.join(dir, 'scanned.svg'), '<svg xmlns="http://www.w3.org/2000/svg"/>');
+        fs.writeFileSync(path.join(dir, 'scanned.png'), 'png');
+        svgAdapter = new FileAdapter({ mediaBasePath: tmp });
+      });
+
+      afterEach(() => fs.rmSync(tmp, { recursive: true, force: true }));
+
+      test('a score with an .svg beside it lists as one tile with the svg as its thumbnail', async () => {
+        const list = await svgAdapter.getList('docs/sheet-music');
+        const ids = list.map((i) => i.id).sort();
+        expect(ids).toEqual(['files:docs/sheet-music/piece.musicxml', 'files:docs/sheet-music/scanned.musicxml']);
+        const piece = list.find((i) => i.id === 'files:docs/sheet-music/piece.musicxml');
+        expect(piece.thumbnail).toBe(stream('docs/sheet-music/piece.svg'));
+      });
+
+      test('a raster scan wins over a generated svg', async () => {
+        const item = await svgAdapter.getItem('docs/sheet-music/scanned.musicxml');
+        expect(item.thumbnail).toBe(stream('docs/sheet-music/scanned.png'));
+      });
     });
   });
 

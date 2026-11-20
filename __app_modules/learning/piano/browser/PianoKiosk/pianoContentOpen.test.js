@@ -46,13 +46,20 @@ describe('isSheetMusicContentId', () => {
 });
 
 describe('sheetMusicViewPath', () => {
-  it('builds the absolute SheetMusic view route, id used verbatim', () => {
+  it('builds the absolute SheetMusic view route', () => {
     expect(sheetMusicViewPath('/piano', 'hymn:12')).toBe('/piano/sheetmusic/view/hymn:12');
   });
 
   it('preserves slashes in the id (a file path)', () => {
     expect(sheetMusicViewPath('/piano/yellow-room', 'files:docs/sheet-music/fur-elise.musicxml'))
       .toBe('/piano/yellow-room/sheetmusic/view/files:docs/sheet-music/fur-elise.musicxml');
+  });
+});
+
+describe('sheetMusicViewPath encoding', () => {
+  it('encodes # and ? in the id so they stay in the path', () => {
+    expect(sheetMusicViewPath('/piano', 'files:docs/sheet-music/etude #3?.musicxml'))
+      .toBe('/piano/sheetmusic/view/files:docs/sheet-music/etude%20%233%3F.musicxml');
   });
 });
 

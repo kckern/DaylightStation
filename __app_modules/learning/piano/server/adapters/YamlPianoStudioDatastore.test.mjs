@@ -9,6 +9,10 @@ let files = {};
 vi.mock('../../../../../__backend/src/0_system/utils/FileIO.mjs', () => ({
   loadYaml: (p) => (Object.prototype.hasOwnProperty.call(files, p) ? files[p] : null),
   saveYaml: (p, data) => { files[p] = data; },
+  // The real atomic writer takes the full file path; loadYaml takes it without
+  // the extension, so store under the extension-less key to keep both in step.
+  saveYamlToPathAtomic: vi.fn((p, data) => { files[p.replace(/\.ya?ml$/, '')] = data; }),
+  getStats: (p) => (Object.prototype.hasOwnProperty.call(files, p) ? { isFile: () => true } : null),
   listYamlFiles: () => [],
   deleteYaml: () => false,
   ensureDir: vi.fn(),
@@ -16,6 +20,7 @@ vi.mock('../../../../../__backend/src/0_system/utils/FileIO.mjs', () => ({
 }));
 
 import { YamlPianoStudioDatastore } from './YamlPianoStudioDatastore.mjs';
+import { saveYamlToPathAtomic } from '../../../../../__backend/src/0_system/utils/FileIO.mjs';
 
 const configService = {
   getUserDir: (id) => `/data/users/${id}`,
@@ -25,7 +30,7 @@ const configService = {
   getMediaDir: () => '/data/media',
 };
 
-beforeEach(() => { files = {}; });
+beforeEach(() => { files = {}; vi.clearAllMocks(); });
 
 describe('YamlPianoStudioDatastore — preset', () => {
   it('save→get round-trips a { default, favorites } blob for a known user', () => {
@@ -49,5 +54,78 @@ describe('YamlPianoStudioDatastore — preset', () => {
   it('returns {} for a known user with no preset saved yet', () => {
     const ds = new YamlPianoStudioDatastore({ configService });
     expect(ds.getPreset('kc')).toEqual({});
+  });
+});
+
+describe('sheet music Learn file', () => {
+  const ID = 'files:docs/sheet-music/classical/fur-elise.musicxml';
+  it('round-trips under household piano/sheetmusic keyed by practice key', () => {
+    const ds = new YamlPianoStudioDatastore({ configService });
+    ds.saveSheetMusicLearn(ID, { version: 1, scoreId: ID, segments: [{ id: 'a', start: 0, end: 3 }] });
+    const key = Object.keys(files).find((p) => p.includes('piano/sheetmusic/'));
+    expect(key.endsWith('files-docs-sheet-music-classical-fur-elise-musicxml')).toBe(true);
+    expect(key.startsWith('/data/household/piano/sheetmusic/')).toBe(true);
+    expect(ds.getSheetMusicLearn(ID).segments).toEqual([{ id: 'a', start: 0, end: 3 }]);
+  });
+  it('writes atomically and durably', () => {
+    const ds = new YamlPianoStudioDatastore({ configService });
+    ds.saveSheetMusicLearn(ID, { version: 1, scoreId: ID, segments: [] });
+    expect(saveYamlToPathAtomic).toHaveBeenCalledWith(
+      expect.stringMatching(/\/piano\/sheetmusic\/files-docs-sheet-music-classical-fur-elise-musicxml\.yml$/),
+      expect.any(Object),
+      { durable: true },
+    );
+  });
+  it('returns null when a library score has no Learn file yet', () => {
+    const ds = new YamlPianoStudioDatastore({ configService });
+    expect(ds.getSheetMusicLearn(ID)).toBeNull();
+  });
+  it('returns null for an id outside the sheet music tree', () => {
+    const ds = new YamlPianoStudioDatastore({ configService });
+    expect(ds.getSheetMusicLearn('files:docs/other/x.mxl')).toBeNull();
+    expect(() => ds.saveSheetMusicLearn('files:../x.mxl', {})).toThrow();
+    expect(() => ds.saveSheetMusicLearn('files:docs/sheet-music/../x.mxl', {})).toThrow();
+    expect(() => ds.saveSheetMusicLearn('files:docs/other/x.mxl', {})).toThrow();
+  });
+  it('refuses a look-alike folder, a bare id, and dot or empty segments', () => {
+    const ds = new YamlPianoStudioDatastore({ configService });
+    for (const bad of [
+      'files:docs/sheet-music-evil/x.mxl',
+      'docs/sheet-music/a.mxl',
+      'files:docs/sheet-music/./a.mxl',
+      'files:docs/sheet-music//a.mxl',
+    ]) {
+      expect(ds.getSheetMusicLearn(bad)).toBeNull();
+      expect(() => ds.saveSheetMusicLearn(bad, {})).toThrow();
+    }
+    expect(saveYamlToPathAtomic).not.toHaveBeenCalled();
+  });
+});
+
+describe('sheetMusicCover', () => {
+  const ID = 'files:docs/sheet-music/classical/fur-elise.musicxml';
+  const STEM = '/data/media/docs/sheet-music/classical/fur-elise';
+  const url = (rel) => `/api/v1/proxy/media/stream/${encodeURIComponent(rel)}`;
+  it('serves an svg poster when it is the only picture', () => {
+    files[`${STEM}.svg`] = true;
+    const ds = new YamlPianoStudioDatastore({ configService });
+    expect(ds.sheetMusicCover(ID)).toBe(url('docs/sheet-music/classical/fur-elise.svg'));
+  });
+  it('prefers a raster scan over the svg', () => {
+    files[`${STEM}.svg`] = true;
+    files[`${STEM}.jpg`] = true;
+    const ds = new YamlPianoStudioDatastore({ configService });
+    expect(ds.sheetMusicCover(ID)).toBe(url('docs/sheet-music/classical/fur-elise.jpg'));
+  });
+  it('refuses a bare id and dot segments even when a picture exists', () => {
+    files['/data/media/docs/sheet-music/a.jpg'] = true;
+    const ds = new YamlPianoStudioDatastore({ configService });
+    expect(ds.sheetMusicCover('files:docs/sheet-music/a.mxl')).toBe(url('docs/sheet-music/a.jpg'));
+    expect(ds.sheetMusicCover('docs/sheet-music/a.mxl')).toBeNull();
+    expect(ds.sheetMusicCover('files:docs/sheet-music/./a.mxl')).toBeNull();
+  });
+  it('returns null with no picture', () => {
+    const ds = new YamlPianoStudioDatastore({ configService });
+    expect(ds.sheetMusicCover(ID)).toBeNull();
   });
 });
