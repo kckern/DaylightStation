@@ -1092,7 +1092,7 @@ describe('persisted reading on the board', () => {
     try {
       render(<AgendaStatusBoard kids={kids} />);
       expect(await screen.findByRole('img', { name: 'Reading: done, 2 books, 2 finishes, 3 progress entries' })).toBeInTheDocument();
-      expect(schoolApi.teacherDay).toHaveBeenCalledWith();
+      expect(schoolApi.teacherDay).toHaveBeenCalledWith(null, { learnerId: 'learner1' });
       expect(schoolApi.agendaPreview).toHaveBeenCalledWith('learner1', '2026-09-07');
       const count = schoolApi.teacherDay.mock.calls.length;
       await act(async () => wsHandlers.filter(h => h.topic === 'school').at(-1).cb({ event: 'story-read', learnerId: 'learner1', studyDay: '2026-09-07' }));

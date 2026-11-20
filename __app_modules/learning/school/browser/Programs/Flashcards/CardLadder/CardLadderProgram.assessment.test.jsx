@@ -45,9 +45,11 @@ it('does not fetch assessments in test mode even after events and focus',()=>{
 });
 it('refreshes when the item ID changes with the same type and source',async()=>{
  const localApi={...api,respond:vi.fn(async()=>({ok:true,data:{item:{id:'summary-2',type:'summary',source:'practice'},progress:{}}}))};
+ // A quiz ready to print holds the summary (it otherwise closes itself, 2026-11-20).
+ state.progress={...ready,stage:'quiz_ready'};
  render(<CardLadderProgram descriptor={descriptor} api={localApi}/>);
  fireEvent.click(screen.getByRole('button',{name:/start/i})); await screen.findByRole('button',{name:/Practise more/i});
- await screen.findByText(/waiting to be graded/);
+ await screen.findByText(/ready to print/);
  state.progress={...ready,stage:'completed'};
  fireEvent.click(screen.getByRole('button',{name:/Practise more/i}));
  expect(await screen.findByText('Lesson complete')).toBeInTheDocument();

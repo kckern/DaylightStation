@@ -78,6 +78,26 @@ export function writeBoardCache({ studyDay, learners = {}, rings, earnings, gold
   }
 }
 
+/**
+ * The day gate just turned satisfied for this learner (2026-11-20): mark the
+ * painted card done NOW, so the home board a child returns to shows the check
+ * at once instead of the pre-finish picture until its re-read lands. Only a
+ * snapshot of the SAME study day is touched, and only a card it already holds;
+ * the board's own read replaces it as soon as it arrives.
+ */
+export function markDayDoneInBoardCache(learnerId, studyDay, storage = safeStorage()) {
+  if (!learnerId || !studyDay) return false;
+  try {
+    const previous = readBoardCache(storage);
+    const summary = previous?.studyDay === studyDay ? previous.learners?.[learnerId]?.summary : null;
+    if (!summary || typeof summary !== 'object') return false;
+    writeBoardCache({ studyDay, learners: { [learnerId]: { summary: { ...summary, serverDone: true } } } }, storage);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function safeStorage() {
   try {
     return typeof window !== 'undefined' ? window.localStorage : null;

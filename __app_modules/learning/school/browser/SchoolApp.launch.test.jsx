@@ -713,7 +713,7 @@ describe('SchoolApp — the reading code at the locked panel opens the shelf', (
     await act(async () => { bookShelfProps.mock.calls.at(-1)[0].onExit('done'); });
     expect(await screen.findByRole('img', { name: 'Reading: done, 1 book, 1 progress entry' })).toBeInTheDocument();
     expect(schoolApi.teacherDay.mock.calls.length).toBeGreaterThan(readsBeforeExit);
-    expect(schoolApi.teacherDay).toHaveBeenLastCalledWith();
+    expect(schoolApi.teacherDay).toHaveBeenLastCalledWith(null, { learnerId: 'kid1' });
     expect(schoolApi.agendaPreview).toHaveBeenCalledWith('kid1', '2026-09-07');
 
     expect(screen.queryByRole('heading', { name: 'Reading' })).toBeNull();

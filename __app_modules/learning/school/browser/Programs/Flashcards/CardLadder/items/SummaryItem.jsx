@@ -15,6 +15,8 @@ const CHEERS = Object.freeze({ ko: '잘했어요!' });
 
 /** How long the cheer is read before the card turns to English. */
 const TURN_AFTER_MS = 1200;
+/** The cheer, the turn, a beat on "Great job!" — then the day closes by itself. */
+export const AUTO_EXIT_MS = 3200;
 
 const reducedMotion = () => typeof window !== 'undefined'
   && typeof window.matchMedia === 'function'
@@ -32,13 +34,22 @@ const reducedMotion = () => typeof window !== 'undefined'
  * uses — the Portal is an FKB WebView), the success tone the scan ceremony
  * uses plays once, and Done is the one big thing to press.
  *
- * Practise more sends `{done:true}` — the server marks the summary seen and
+ * IT CLOSES BY ITSELF (owner, 2026-11-20). On the Portal the child was left on
+ * this screen with nothing to do but find Done — "a tiny little done button
+ * that served no purpose" — and coming back to flashcards after finishing
+ * showed it again. So once the cheer has played (AUTO_EXIT_MS) the sitting
+ * exits on its own, exactly as Done did; there are no buttons to press. The
+ * week's dictation (its drill, or its review once ready) and a printed quiz waiting
+ * to be printed or reviewed (`hold`) are the real choices left, so while one is offered
+ * the card keeps its buttons and waits, as before.
+ *
+ * (With the drill offered:) Practise more sends `{done:true}` — the server marks the summary seen and
  * answers with the practice menu. Learn more words (ruling 2026-09-23) asks
  * for one more guided round while the server says new words remain
  * (`item.learnMore`), on 2. Done closes the sitting (goal / cap) and exits on
  * Space/Enter — and on 2 when there is nothing more to learn.
  */
-export default function SummaryItem({ item, langs = null, onRespond = () => {}, onLearnMore = null, onExit, busy = false, dictation = null, onDictation = null }) {
+export default function SummaryItem({ item, langs = null, onRespond = () => {}, onLearnMore = null, onExit, busy = false, dictation = null, onDictation = null, hold = false }) {
   // The week's dictation (UX audit placement 1): the day-done card is where
   // the child reliably lands, so while words are left the drill is the big
   // button above Done; once the week is ready it is a line, and Done leads.
@@ -49,6 +60,21 @@ export default function SummaryItem({ item, langs = null, onRespond = () => {}, 
   const canLearnMore = Number(item.learnMore) > 0 && typeof onLearnMore === 'function';
   const learnMore = () => { if (!busy) onLearnMore('summary'); };
   useCardLadderKeys({ ' ': drill ?? onExit, enter: drill ?? onExit, 1: more, 2: canLearnMore ? learnMore : onExit, ...((drill ?? review) ? { d: drill ?? review } : {}) });
+
+  // No drill on offer: nothing to choose, so the day closes itself once cheered.
+  // `hold`: the printed-quiz panel beside this card has something to do (print, retry, review).
+  const choice = Boolean(drill ?? review) || hold;
+  const autoExit = !choice && typeof onExit === 'function';
+  const exitedRef = useRef(false);
+  useEffect(() => {
+    if (!autoExit) return undefined;
+    const timer = setTimeout(() => {
+      if (exitedRef.current) return;
+      exitedRef.current = true;
+      onExit();
+    }, AUTO_EXIT_MS);
+    return () => clearTimeout(timer);
+  }, [autoExit, onExit]);
 
   const cheer = CHEERS[langs?.target] ?? null;
   const [turned, setTurned] = useState(false);
@@ -95,13 +121,17 @@ export default function SummaryItem({ item, langs = null, onRespond = () => {}, 
           point at the one button that gets them now (2026-09-26). */}
       {item.newWordsHeld && <p className="wl-summary__held">{canLearnMore ? 'New words next time — or tap Learn more words.' : 'New words next time.'}</p>}
       {offer && offer.kind !== 'drill' && <p className="wl-summary__dictation" role="status">{offer.text}</p>}
-      {drill && <TouchButton variant="primary" keyHint="Space" className="wl-summary__dictation-go" disabled={busy} onClick={drill}>{offer.text}</TouchButton>}
-      <TouchButton variant={drill ? 'secondary' : 'primary'} keyHint={drill ? null : 'Space'} className="wl-summary__done" onClick={onExit}>Done</TouchButton>
-      <div className="wl-controls wl-controls--minor">
-        <TouchButton variant="secondary" keyHint="1" disabled={busy} onClick={more}>Practise more</TouchButton>
-        {canLearnMore && <TouchButton variant="secondary" keyHint="2" disabled={busy} onClick={learnMore}>Learn more words</TouchButton>}
-        {review && <TouchButton variant="secondary" keyHint="D" disabled={busy} onClick={review}>{offer.action}</TouchButton>}
-      </div>
+      {choice && (
+        <>
+          {drill && <TouchButton variant="primary" keyHint="Space" className="wl-summary__dictation-go" disabled={busy} onClick={drill}>{offer.text}</TouchButton>}
+          <TouchButton variant={drill ? 'secondary' : 'primary'} keyHint={drill ? null : 'Space'} className="wl-summary__done" onClick={onExit}>Done</TouchButton>
+          <div className="wl-controls wl-controls--minor">
+            <TouchButton variant="secondary" keyHint="1" disabled={busy} onClick={more}>Practise more</TouchButton>
+            {canLearnMore && <TouchButton variant="secondary" keyHint="2" disabled={busy} onClick={learnMore}>Learn more words</TouchButton>}
+            {review && <TouchButton variant="secondary" keyHint="D" disabled={busy} onClick={review}>{offer.action}</TouchButton>}
+          </div>
+        </>
+      )}
     </section>
   );
 }
