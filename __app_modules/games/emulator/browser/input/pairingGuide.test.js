@@ -81,6 +81,29 @@ describe('pairingStatus', () => {
   });
 });
 
+describe('pairingStatus — add mode wording', () => {
+  const add = (p) => pairingStatus(p, 'add');
+  it('speaks of a device, not a controller', () => {
+    expect(add({ phase: 'scanning', durationMs: 60000 }).text).toBe('Looking for the device… (up to 60s)');
+    expect(add({ phase: 'done', paired: [] }).text)
+      .toBe('No new device found. Check it is in pairing mode (light blinking fast), then try again.');
+    expect(add({ phase: 'done', paired: [], reason: 'no-input' }).text)
+      .toBe('Paired, but it never came up as an input device. Switch it off and on, then try again.');
+    expect(add({ phase: 'done', paired: [], reason: 'pair-failed' }).text).not.toMatch(/controller/);
+    expect(add({ phase: 'pairing' }).text).toBe('Pairing the device…');
+    expect(add({ phase: 'found', device: { name: 'R1' } }).text).toBe('Found R1 — pairing…');
+    expect(add({ phase: 'done', paired: [], reason: 'no-input' }).retry).toBe(true);
+  });
+  it('repair mode (and no mode) keeps the controller wording', () => {
+    for (const m of ['repair', undefined]) {
+      expect(pairingStatus({ phase: 'scanning', durationMs: 60000 }, m).text).toBe('Looking for the controller… (up to 60s)');
+      expect(pairingStatus({ phase: 'done', paired: [] }, m).text).toMatch(/^No controller found/);
+      expect(pairingStatus({ phase: 'done', paired: [], reason: 'no-input' }, m).text).toMatch(/never came up as a controller/);
+      expect(pairingStatus({ phase: 'pairing' }, m).text).toBe('Pairing the controller…');
+    }
+  });
+});
+
 describe('pairingStatus — already paired', () => {
   it('does not claim a fresh pairing when the window short-circuited', () => {
     const s = pairingStatus({ phase: 'done', reason: 'already-paired', paired: [{ name: '8Bitdo SFC30 GamePad' }] });

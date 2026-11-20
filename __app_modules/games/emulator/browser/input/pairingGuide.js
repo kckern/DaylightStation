@@ -152,22 +152,26 @@ const PHASE_TEXT = {
  * What the guide's status line says for a `bt.pair.progress` message.
  *
  * @param {object|null|undefined} pairing  latest progress ({ phase, device, message, paired, reason, durationMs }).
+ * @param {'repair'|'add'} [mode]  `add` words everything for any device; anything else keeps the
+ *   controller wording of a configured pad's re-pair.
  * @returns {{ busy: boolean, tone: 'idle'|'info'|'ok'|'error', text: string|null, retry: boolean }}
  */
-export function pairingStatus(pairing) {
+export function pairingStatus(pairing, mode) {
   const phase = pairing?.phase;
   const name = pairing?.device?.name;
+  const add = mode === 'add';
+  const noun = add ? 'device' : 'controller';
   if (!phase) return { busy: false, tone: 'idle', text: null, retry: false };
   if (BUSY.has(phase)) {
     if (phase === 'scanning') {
       const secs = Math.round((Number(pairing?.durationMs) || 30000) / 1000);
-      return { busy: true, tone: 'info', text: `Looking for the controller… (up to ${secs}s)`, retry: false };
+      return { busy: true, tone: 'info', text: `Looking for the ${noun}… (up to ${secs}s)`, retry: false };
     }
     const fmt = PHASE_TEXT[phase] || PHASE_TEXT.pairing;
-    return { busy: true, tone: 'info', text: fmt(name || 'the controller'), retry: false };
+    return { busy: true, tone: 'info', text: fmt(name || `the ${noun}`), retry: false };
   }
   if (phase === 'paired') {
-    return { busy: true, tone: 'ok', text: `Paired ${name || 'controller'} ✓`, retry: false };
+    return { busy: true, tone: 'ok', text: `Paired ${name || noun} ✓`, retry: false };
   }
   if (phase === 'error') {
     return { busy: !!pairing?.device, tone: 'error', text: `Pairing failed — ${pairing?.message || 'unknown error'}`, retry: !pairing?.device };
@@ -180,12 +184,20 @@ export function pairingStatus(pairing) {
     const n = Array.isArray(pairing?.paired) ? pairing.paired.length : 0;
     if (n > 0) {
       const names = pairing.paired.map((d) => d?.name).filter(Boolean).join(', ');
-      return { busy: false, tone: 'ok', text: `Paired ${names || `${n} controller${n === 1 ? '' : 's'}`} ✓`, retry: false };
+      return { busy: false, tone: 'ok', text: `Paired ${names || `${n} ${noun}${n === 1 ? '' : 's'}`} ✓`, retry: false };
     }
     if (pairing?.reason === 'no-response') {
       return { busy: false, tone: 'error', text: 'The garage box did not answer. Check it is on, then try again.', retry: true };
     }
     if (pairing?.reason === 'no-input') {
+      if (add) {
+        return {
+          busy: false,
+          tone: 'error',
+          text: 'Paired, but it never came up as an input device. Switch it off and on, then try again.',
+          retry: true,
+        };
+      }
       return {
         busy: false,
         tone: 'error',
@@ -197,10 +209,26 @@ export function pairingStatus(pairing) {
       return { busy: false, tone: 'error', text: 'The pairing service stopped unexpectedly. Try again.', retry: true };
     }
     if (pairing?.reason === 'pair-failed') {
+      if (add) {
+        return {
+          busy: false,
+          tone: 'error',
+          text: 'Found the device but it would not pair. Switch it off, put it back in pairing mode, and try again.',
+          retry: true,
+        };
+      }
       return {
         busy: false,
         tone: 'error',
         text: 'Found the controller but it would not pair. Turn it off, put it back in pairing mode, and try again.',
+        retry: true,
+      };
+    }
+    if (add) {
+      return {
+        busy: false,
+        tone: 'error',
+        text: 'No new device found. Check it is in pairing mode (light blinking fast), then try again.',
         retry: true,
       };
     }
