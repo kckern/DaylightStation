@@ -35,7 +35,7 @@ it('keeps loading, failure, and a successful empty garage inside one main', asyn
 it('preserves one main when selecting a car and returning to the garage', async () => {
   const cars = [{ id: 'first', label: 'First car' }, { id: 'second', label: 'Second car' }];
   DaylightAPI.mockImplementation(path => Promise.resolve(path.endsWith('/vehicles')
-    ? { vehicles: cars } : { odometer: { km: 120 }, fuel: { needsMoreData: true }, trip_count: 0 }));
+    ? { vehicles: cars } : { odometer: { km: 120 }, fuel: { needsMoreData: true }, trip_count: 0, reminders: [] }));
   render(<AutoApp />);
   const car = await screen.findByRole('button', { name: 'First car' });
   expectMainFor(car);
@@ -62,7 +62,7 @@ it.each([
   DaylightAPI.mockImplementation(path => {
     if (path === vehicles) return Promise.resolve({ vehicles: [{ id: 'wagon', label: 'Family wagon' }] });
     if (path === `${vehicles}/wagon`) return Promise.resolve({
-      odometer: { km: 320 }, fuel: { needsMoreData: true, fillCount: 0 }, trip_count: 0,
+      odometer: { km: 320 }, fuel: { needsMoreData: true, fillCount: 0 }, trip_count: 0, reminders: [],
     });
     if (path === `${vehicles}/wagon/fuel`) return fuel;
     if (path === `${vehicles}/wagon/journeys`) return Promise.resolve({ journeys: [{
@@ -103,7 +103,7 @@ function mockGarage({ failingResource, holdWrite, writeError } = {}) {
       return Promise.reject(Object.assign(new Error('Unavailable'), { status: 400 }));
     }
     if ([vehiclesPath + '/wagon%20%232', vehiclesPath + '/wagon-xl'].includes(path)) return Promise.resolve({
-      odometer: { km: 320 }, fuel: { needsMoreData: true }, trip_count: 0,
+      odometer: { km: 320 }, fuel: { needsMoreData: true }, trip_count: 0, reminders: [],
     });
     if (path.includes('/journeys')) return Promise.resolve({ hidden: 1, journeys: [{
       id: 'drive', title: 'Morning drive', origin: { fix: { lat: 1, lon: 2 } },

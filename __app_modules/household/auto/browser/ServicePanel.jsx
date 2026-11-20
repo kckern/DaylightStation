@@ -11,6 +11,7 @@ import { useState } from 'react';
 import { localDateKey } from '@/lib/calendarDay.js';
 import { LoadingState, ErrorState, EmptyState, Sheet, Select, useRetryRegion, useSheetSubmission } from '@/lib/ui';
 import { AutoSheetActions } from './AutoSheetActions.jsx';
+import VehicleReminderStatus from './VehicleReminderStatus.jsx';
 import { formatDay, formatMoney, formatDistance } from "./format.js";
 import { autoApi } from "./useAutoApi.js";
 import autoLog from "./autoLog.js";
@@ -26,7 +27,7 @@ const FALLBACK_TYPES = [
 ];
 
 export default function ServicePanel({
-  vehicleId, service, reminders, typeResource, loading, busy, error, onReload,
+  vehicleId, service, overview, reminders, typeResource, loading, busy, error, onReload,
 }) {
   const [adding, setAdding] = useState(false);
   const { regionProps: historyRegion, retry: retryHistory } = useRetryRegion(onReload, busy);
@@ -46,6 +47,7 @@ export default function ServicePanel({
       <button type="button" className="auto-btn auto-btn--primary auto-btn--block" onClick={() => setAdding(true)}>
         Log service
       </button>
+      <VehicleReminderStatus overview={overview} reminders={reminders} />
 
       {due.length > 0 && (
         <section className="auto-card">

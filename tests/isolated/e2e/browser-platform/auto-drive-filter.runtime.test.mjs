@@ -25,7 +25,7 @@ for (const width of [390, 1440]) {
     await page.route('**/api/**', route => {
       const { pathname, search } = new URL(route.request().url());
       if (pathname === vehicles) return route.fulfill({ json: { vehicles: [{ id: 'wagon', label: 'Family wagon' }] } });
-      if (pathname === wagon) return route.fulfill({ json: { odometer: { km: 100 }, fuel: { needsMoreData: true, fillCount: 0 }, trip_count: 0 } });
+      if (pathname === wagon) return route.fulfill({ json: { odometer: { km: 100 }, fuel: { needsMoreData: true, fillCount: 0 }, trip_count: 0, reminders: [] } });
       if (pathname === journeys) {
         paths.push(search);
         if (search === '?shuffles=1' && !held) { held = route; return; }

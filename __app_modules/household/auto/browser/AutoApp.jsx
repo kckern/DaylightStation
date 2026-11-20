@@ -71,6 +71,7 @@ function AutoAppShell() {
   const activeTab = garageOpen ? null : tab;
   // The selected car header, Service and Docs all use the overview.
   const overview = useOverview(garageOpen ? null : vehicleId);
+  const overviewReminders = Array.isArray(overview.data?.reminders) ? overview.data.reminders : null;
   const journeys = useJourneys(vehicleId, { includeShuffles, enabled: activeTab === 'drives' });
   const fuel = useFuel(vehicleId, { enabled: activeTab === 'drives' || activeTab === 'fuel' });
   const service = useService(vehicleId, { enabled: activeTab === 'service' });
@@ -116,6 +117,8 @@ function AutoAppShell() {
     shellLabel = 'Vehicle';
     shellContent = <OverviewPanel
       overview={overview.data}
+      overviewResource={overview}
+      reminders={overviewReminders}
       loading={showLoading}
       error={overview.error}
       onReload={retryShell}
@@ -126,7 +129,8 @@ function AutoAppShell() {
     shellLabel = 'Documents';
     shellContent = <GlovePanel
       documents={documents.data}
-      reminders={overview.data?.reminders}
+      overview={overview}
+      reminders={overviewReminders}
       loading={showLoading}
       error={documents.error}
       onReload={retryShell}
@@ -182,7 +186,8 @@ function AutoAppShell() {
         <ServicePanel
           vehicleId={vehicleId}
           service={service.data}
-          reminders={overview.data?.reminders}
+          overview={overview}
+          reminders={overviewReminders}
           typeResource={serviceTypes}
           loading={showLoading}
           busy={activeReadBusy}

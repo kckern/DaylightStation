@@ -4,16 +4,24 @@
 // stand behind, or an explicit statement that it doesn't have one.
 
 import { LoadingState, ErrorState } from '@/lib/ui';
+import VehicleReminderStatus from './VehicleReminderStatus.jsx';
 import {
   formatDistance, formatDay, formatTime, formatMoney, describeOdometerSource,
 } from "./format.js";
 
-export default function OverviewPanel({ overview, loading, error, onReload, onGoTo, vehicleDescription }) {
+const emptyOverviewError = new Error('The vehicle overview response was empty.');
+
+export default function OverviewPanel({
+  overview, overviewResource, reminders, loading, error, onReload, onGoTo, vehicleDescription,
+}) {
   if (loading) return <LoadingState label="vehicle" />;
   if (error) return <ErrorState error={error} onRetry={onReload} label="Vehicle" />;
-  if (!overview) return null;
+  if (!overview && (overviewResource.loading || overviewResource.revalidating)) {
+    return <LoadingState label="vehicle" />;
+  }
+  if (!overview) return <ErrorState error={emptyOverviewError} onRetry={onReload} label="Vehicle" />;
 
-  const { odometer, last_snapshot: snap, fuel, reminders, recorded_distance_km: recorded } = overview;
+  const { odometer, last_snapshot: snap, fuel, recorded_distance_km: recorded } = overview;
   const attention = (reminders || []).filter((r) => r.status !== 'ok');
 
   return (
@@ -62,6 +70,7 @@ export default function OverviewPanel({ overview, loading, error, onReload, onGo
           </ul>
         </section>
       )}
+      <VehicleReminderStatus overview={overviewResource} reminders={reminders} />
 
       <section className="auto-card">
         <h2 className="auto-card__label">Last reported</h2>

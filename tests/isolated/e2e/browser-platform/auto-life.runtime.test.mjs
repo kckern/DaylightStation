@@ -15,7 +15,7 @@ for (const width of [390, 1440]) {
       { id: 'wagon', label: 'Family wagon' }, { id: 'hatch', label: 'City hatchback' },
     ] } }));
     await page.route('**/automotive/vehicles/wagon', route => route.fulfill({ json: {
-      odometer: { km: 160 }, fuel: { needsMoreData: true },
+      odometer: { km: 160 }, fuel: { needsMoreData: true }, reminders: [],
     } }));
 
     const path = '/auto/unknown-fixture-route';
@@ -50,7 +50,7 @@ test.describe('Auto calendar dates', () => {
       { id: 'wagon', label: 'Family wagon' },
     ] } }));
     await page.route('**/automotive/vehicles/wagon', route => route.fulfill({ json: {
-      odometer: { km: 160 }, fuel: { needsMoreData: true },
+      odometer: { km: 160 }, fuel: { needsMoreData: true }, reminders: [],
     } }));
   });
 
@@ -75,6 +75,11 @@ test.describe('Auto calendar dates', () => {
   }
 
   test('Auto keeps stored calendar dates on their original day', async ({ page }) => {
+    await page.route('**/automotive/vehicles/wagon', route => route.fulfill({ json: {
+      odometer: { km: 160 }, fuel: { needsMoreData: true }, reminders: [
+        { id: 'insurance-expiry', kind: 'document', sourceId: 'insurance', status: 'ok', daysUntilDue: 14 },
+      ],
+    } }));
     await page.route('**/automotive/vehicles/wagon/fuel', route => route.fulfill({ json: { logs: [
       { id: 'fuel', date: localDay, volume_l: 20 },
     ] } }));
@@ -130,7 +135,7 @@ test('Auto renders the selected vehicle’s records and cancels the previous veh
   const selected = `${api}/vehicles/hatchback`;
   const document = { id: 'registration', kind: 'Registration' };
   const journey = { id: 'river', title: 'Drive to the river', stops: [] };
-  const overview = { fuel: { needsMoreData: true, fillCount: 0 }, trip_count: 0 };
+  const overview = { fuel: { needsMoreData: true, fillCount: 0 }, trip_count: 0, reminders: [] };
   const responses = {
     [`${api}/vehicles`]: { vehicles: [
       { id: 'wagon', label: 'Family wagon' },
@@ -212,7 +217,7 @@ for (const width of [390, 1440]) {
         ] } });
       }
       if (/\/vehicles\/(wagon|hatchback)$/.test(pathname)) {
-        return route.fulfill({ json: { odometer: { km: 160 }, fuel: { needsMoreData: true, fillCount: 0 } } });
+        return route.fulfill({ json: { odometer: { km: 160 }, fuel: { needsMoreData: true, fillCount: 0 }, reminders: [] } });
       }
       if (pathname.endsWith('/fuel')) {
         if (request.method() === 'POST') {
@@ -306,7 +311,7 @@ test('Auto saves one fuel entry at phone height and reopens on Car', async ({ pa
       return route.fulfill({ json: { vehicles: [{ id: 'sample', label: 'Sample' }] } });
     }
     if (request.url().endsWith('/vehicles/sample')) {
-      return route.fulfill({ json: { odometer: { km: 123 }, fuel: { needsMoreData: true, fillCount: 0 }, trip_count: 0 } });
+      return route.fulfill({ json: { odometer: { km: 123 }, fuel: { needsMoreData: true, fillCount: 0 }, trip_count: 0, reminders: [] } });
     }
     return route.fulfill({ json: {} });
   });
@@ -356,7 +361,7 @@ test('Auto announces a rejected fuel save and lets the keyboard user retry the d
       return route.fulfill({ json: { vehicles: [{ id: 'sample', label: 'Sample' }] } });
     }
     if (pathname === car) {
-      return route.fulfill({ json: { odometer: { km: 123 }, fuel: { needsMoreData: true, fillCount: 0 }, trip_count: 0 } });
+      return route.fulfill({ json: { odometer: { km: 123 }, fuel: { needsMoreData: true, fillCount: 0 }, trip_count: 0, reminders: [] } });
     }
     if (pathname === fuelPath && request.method() === 'POST') {
       writes.push(request.postDataJSON());
@@ -400,7 +405,7 @@ test('Auto preserves a reopened fuel draft when the earlier save is acknowledged
       return route.fulfill({ json: { vehicles: [{ id: 'sample', label: 'Sample' }] } });
     }
     if (path === car) {
-      return route.fulfill({ json: { odometer: { km: 123 }, fuel: { needsMoreData: true }, trip_count: 0 } });
+      return route.fulfill({ json: { odometer: { km: 123 }, fuel: { needsMoreData: true }, trip_count: 0, reminders: [] } });
     }
     if (path === car + '/fuel') {
       const logs = saved ? [{ id: 'saved', date: '2026-10-08', volume_l: 20.82, price_total: 19.50 }] : [];
@@ -438,7 +443,7 @@ test('Auto place naming focuses the name and returns focus to the journey action
   const car = `${root}/sample`;
   const fixtures = {
     [root]: { vehicles: [{ id: 'sample', label: 'Sample' }] },
-    [car]: { odometer: { km: 123 }, fuel: { needsMoreData: true }, trip_count: 1 },
+    [car]: { odometer: { km: 123 }, fuel: { needsMoreData: true }, trip_count: 1, reminders: [] },
     [`${car}/journeys`]: { journeys: [{ id: 'drive', title: 'Morning drive', origin: { fix: { lat: 1, lon: 2 } }, stops: [] }] },
     [`${car}/fuel`]: { logs: [] },
   };
@@ -463,7 +468,7 @@ test('Auto keeps fuel Save reachable when only the visual viewport shrinks', asy
     json: { vehicles: [{ id: 'sample', label: 'Sample' }] },
   }));
   await page.route('**/automotive/vehicles/sample', route => route.fulfill({
-    json: { odometer: { km: 123 }, fuel: { needsMoreData: true, fillCount: 0 }, trip_count: 0 },
+    json: { odometer: { km: 123 }, fuel: { needsMoreData: true, fillCount: 0 }, trip_count: 0, reminders: [] },
   }));
   await page.goto('/auto');
   await page.getByRole('button', { name: 'Fuel', exact: true }).click();

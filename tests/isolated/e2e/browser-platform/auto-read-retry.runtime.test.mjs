@@ -3,7 +3,7 @@ import { expect, test } from '@playwright/test';
 test.use({ serviceWorkers: 'block' });
 
 const vehicles = { vehicles: [{ id: 'sample', label: 'Sample car' }] };
-const overview = { odometer: { km: 160 }, fuel: { needsMoreData: true, fillCount: 0 } };
+const overview = { odometer: { km: 160 }, fuel: { needsMoreData: true, fillCount: 0 }, reminders: [] };
 const cases = [
   { label: 'Garage', path: '/vehicles', width: 390, response: vehicles, result: 'Odometer' },
   { label: 'Vehicle', path: '/vehicles/sample', tab: 'Car', width: 1440, response: overview, result: 'Odometer' },
@@ -180,4 +180,225 @@ test('Auto treats a completed no-content Docs read as empty', async ({ page }) =
   await requests.find(({ path }) => path === documents).route.fulfill({ status: 204 });
   await expect(region.getByText('Glove box is empty', { exact: true })).toBeVisible();
   await expect(region).not.toHaveAttribute('aria-busy', 'true');
+});
+
+for (const view of [
+  { tab: 'Docs', primaryPath: '/vehicles/sample/documents', primary: { documents: [
+    { id: 'insurance', kind: 'Insurance', label: 'Proof of insurance', file: 'proof.pdf', expires: '2026-11-17' },
+  ] } },
+  { tab: 'Service', primaryPath: '/vehicles/sample/service', primary: {
+    records: [{ id: 'repair', date: '2026-11-01', type: 'other', vendor: 'Fixture garage' }],
+  } },
+]) {
+  test(`Auto ${view.tab} keeps primary records available and retries only vehicle reminders`, async ({ page }) => {
+    const root = '/api/v1/automotive';
+    const overviewPath = `${root}/vehicles/sample`;
+    const primaryReads = [];
+    const overviewReads = [];
+    const writes = [];
+    const retryResponse = Promise.withResolvers();
+    let overviewPhase = 'holding';
+    const overdueReminders = [
+      { id: 'insurance-expiry', kind: 'document', sourceId: 'insurance', status: 'overdue', daysUntilDue: -3 },
+      { id: 'oil-change', kind: 'service', status: 'overdue', daysUntilDue: -4, label: 'Oil change' },
+    ];
+    await page.routeWebSocket('**/*', () => {});
+    await page.route('**/api/**', async route => {
+      const request = route.request();
+      const { pathname } = new URL(request.url());
+      if (request.method() !== 'GET') writes.push(request.method());
+      if (pathname.endsWith('/supervision/bootstrap')) return route.fulfill({ json: { enabled: false } });
+      if (pathname === `${root}/vehicles`) return route.fulfill({ json: vehicles });
+      if (pathname === overviewPath) {
+        overviewReads.push(route);
+        if (overviewPhase !== 'retrying') return;
+        await retryResponse.promise;
+        return route.fulfill({ json: { ...overview, reminders: overdueReminders } });
+      }
+      if (pathname === `${root}${view.primaryPath}`) {
+        primaryReads.push(request.method());
+        return route.fulfill({ json: view.primary });
+      }
+      if (pathname === `${root}/service-types`) return route.fulfill({ json: { types: [] } });
+      return route.fulfill({ json: {} });
+    });
+
+    await page.goto('/auto');
+    await page.getByRole('button', { name: view.tab, exact: true }).press('Enter');
+    const main = page.getByRole('main');
+    if (view.tab === 'Docs') {
+      const doc = main.getByRole('link', { name: /Proof of insurance/ });
+      await expect(doc).toBeVisible();
+      await expect(doc).toContainText(/Expiry date/);
+    } else {
+      await expect(main.getByText('Fixture garage', { exact: true })).toBeVisible();
+      await expect(main.getByText('Coming up', { exact: true })).toHaveCount(0);
+    }
+
+    overviewPhase = 'rejected';
+    await Promise.all(overviewReads.map(route => route.fulfill({ status: 409, json: { error: 'Vehicle reminders unavailable' } })));
+    const status = main.getByRole('region', { name: 'Vehicle reminder status', exact: true });
+    const retry = status.getByRole('button', { name: 'Retry', exact: true });
+    await expect(status.getByRole('alert')).toContainText('Vehicle reminders unavailable');
+    if (view.tab === 'Docs') {
+      const doc = main.getByRole('link', { name: /Proof of insurance/ });
+      await expect(doc).toBeVisible();
+      await expect(doc).toContainText(/Expiry date/);
+    } else {
+      await expect(main.getByText('Fixture garage', { exact: true })).toBeVisible();
+    }
+
+    const overviewReadsBeforeRetry = overviewReads.length;
+    overviewPhase = 'retrying';
+    await retry.press('Enter');
+    await expect.poll(() => overviewReads.length).toBe(overviewReadsBeforeRetry + 1);
+    await expect(status).toBeFocused();
+    await expect(status).toHaveAttribute('aria-busy', 'true');
+    retryResponse.resolve();
+    await expect(status).not.toHaveAttribute('aria-busy', 'true');
+    await expect(status).toBeFocused();
+    if (view.tab === 'Docs') {
+      const doc = main.getByRole('link', { name: /Proof of insurance/ });
+      await expect(doc).toContainText(/Expired/);
+      await expect(doc).toHaveAttribute('href', '/api/v1/automotive/files/proof.pdf');
+    } else {
+      await expect(main.getByText('Fixture garage', { exact: true })).toBeVisible();
+      await expect(main.getByText('Coming up', { exact: true })).toBeVisible();
+      await expect(main.getByText('4d overdue', { exact: true })).toBeVisible();
+    }
+    expect(overviewReads.every(item => item.request().method() === 'GET')).toBe(true);
+    expect(primaryReads).toEqual(['GET']);
+    expect(writes).toEqual([]);
+  });
+}
+
+test('Auto Docs offers retry for an empty overview response and accepts a valid empty reminder list', async ({ page }) => {
+  const root = '/api/v1/automotive';
+  const overviewReads = [];
+  const invalidRetry = Promise.withResolvers();
+  const validRetry = Promise.withResolvers();
+  await page.routeWebSocket('**/*', () => {});
+  await page.route('**/api/**', async route => {
+    const request = route.request();
+    const { pathname } = new URL(request.url());
+    if (pathname.endsWith('/supervision/bootstrap')) return route.fulfill({ json: { enabled: false } });
+    if (pathname === `${root}/vehicles`) return route.fulfill({ json: vehicles });
+    if (pathname === `${root}/vehicles/sample`) {
+      overviewReads.push(request);
+      if (overviewReads.length === 1) return route.fulfill({ status: 204 });
+      if (overviewReads.length === 2) {
+        await invalidRetry.promise;
+        return route.fulfill({ json: { ...overview, reminders: {} } });
+      }
+      await validRetry.promise;
+      return route.fulfill({ json: { ...overview, reminders: [] } });
+    }
+    if (pathname === `${root}/vehicles/sample/documents`) {
+      return route.fulfill({ json: { documents: [
+        { id: 'insurance', kind: 'Insurance', label: 'Proof of insurance', file: 'proof.pdf', expires: '2026-11-17' },
+      ] } });
+    }
+    return route.fulfill({ json: {} });
+  });
+
+  await page.goto('/auto');
+  await page.getByRole('button', { name: 'Docs', exact: true }).press('Enter');
+  const main = page.getByRole('main');
+  const doc = main.getByRole('link', { name: /Proof of insurance/ });
+  const status = main.getByRole('region', { name: 'Vehicle reminder status', exact: true });
+  await expect(doc).toContainText(/Expiry date/);
+  await expect(status.getByRole('alert')).toBeVisible();
+  const retry = status.getByRole('button', { name: 'Retry', exact: true });
+  await retry.press('Enter');
+  await expect.poll(() => overviewReads.length).toBe(2);
+  await expect(status).toBeFocused();
+  await expect(status).toHaveAttribute('aria-busy', 'true');
+  invalidRetry.resolve();
+  await expect(status.getByRole('alert')).toBeVisible();
+  await expect(doc).toContainText(/Expiry date/);
+
+  await status.getByRole('button', { name: 'Retry', exact: true }).press('Enter');
+  await expect.poll(() => overviewReads.length).toBe(3);
+  await expect(status).toBeFocused();
+  await expect(status).toHaveAttribute('aria-busy', 'true');
+  validRetry.resolve();
+  await expect(status).not.toHaveAttribute('aria-busy', 'true');
+  await expect(status.getByRole('alert')).toHaveCount(0);
+  await expect(doc).toContainText(/Expiry date/);
+  expect(overviewReads.map(request => request.method())).toEqual(['GET', 'GET', 'GET']);
+});
+
+test('Auto Car retries a malformed reminder list without hiding the vehicle overview', async ({ page }) => {
+  const root = '/api/v1/automotive';
+  const overviewReads = [];
+  const retryPending = Promise.withResolvers();
+  await page.routeWebSocket('**/*', () => {});
+  await page.route('**/api/**', async route => {
+    const request = route.request();
+    const { pathname } = new URL(request.url());
+    if (pathname.endsWith('/supervision/bootstrap')) return route.fulfill({ json: { enabled: false } });
+    if (pathname === `${root}/vehicles`) return route.fulfill({ json: vehicles });
+    if (pathname === `${root}/vehicles/sample`) {
+      overviewReads.push(request);
+      if (overviewReads.length === 1) return route.fulfill({ json: { ...overview, reminders: {} } });
+      await retryPending.promise;
+      return route.fulfill({ json: { ...overview, reminders: [
+        { id: 'oil-change', kind: 'service', label: 'Oil change', status: 'overdue', daysUntilDue: -4 },
+      ] } });
+    }
+    return route.fulfill({ json: {} });
+  });
+
+  await page.goto('/auto');
+  const main = page.getByRole('main');
+  const status = main.getByRole('region', { name: 'Vehicle reminder status', exact: true });
+  await expect(main.getByText('Odometer', { exact: true })).toBeVisible();
+  await expect(status.getByRole('alert')).toBeVisible();
+  await status.getByRole('button', { name: 'Retry', exact: true }).press('Enter');
+  await expect.poll(() => overviewReads.length).toBe(2);
+  await expect(status).toBeFocused();
+  await expect(status).toHaveAttribute('aria-busy', 'true');
+  await expect(main.getByText('Odometer', { exact: true })).toBeVisible();
+  retryPending.resolve();
+  await expect(status.getByRole('alert')).toHaveCount(0);
+  await expect(main.getByText('Needs attention', { exact: true })).toBeVisible();
+  await expect(main.getByText('4d overdue', { exact: true })).toBeVisible();
+  await expect(status).toBeFocused();
+  expect(overviewReads.map(request => request.method())).toEqual(['GET', 'GET']);
+});
+
+test('Auto Car retries an empty overview response in place', async ({ page }) => {
+  const root = '/api/v1/automotive';
+  const overviewReads = [];
+  const retryPending = Promise.withResolvers();
+  await page.routeWebSocket('**/*', () => {});
+  await page.route('**/api/**', async route => {
+    const request = route.request();
+    const { pathname } = new URL(request.url());
+    if (pathname.endsWith('/supervision/bootstrap')) return route.fulfill({ json: { enabled: false } });
+    if (pathname === `${root}/vehicles`) return route.fulfill({ json: vehicles });
+    if (pathname === `${root}/vehicles/sample`) {
+      overviewReads.push(request);
+      if (overviewReads.length === 1) return route.fulfill({ status: 204 });
+      await retryPending.promise;
+      return route.fulfill({ json: overview });
+    }
+    return route.fulfill({ json: {} });
+  });
+
+  await page.goto('/auto');
+  const main = page.getByRole('main');
+  const vehicle = main.getByRole('region', { name: 'Vehicle', exact: true });
+  await expect(vehicle.getByRole('alert')).toBeVisible();
+  const retry = vehicle.getByRole('button', { name: 'Retry', exact: true });
+  await retry.press('Enter');
+  await expect.poll(() => overviewReads.length).toBe(2);
+  await expect(vehicle).toBeFocused();
+  await expect(vehicle).toHaveAttribute('aria-busy', 'true');
+  await expect(vehicle.getByRole('button', { name: 'Retry', exact: true })).toHaveCount(0);
+  retryPending.resolve();
+  await expect(main.getByText('Odometer', { exact: true })).toBeVisible();
+  await expect(vehicle).not.toHaveAttribute('aria-busy', 'true');
+  await expect(vehicle).toBeFocused();
+  expect(overviewReads.map(request => request.method())).toEqual(['GET', 'GET']);
 });

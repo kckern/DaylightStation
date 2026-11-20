@@ -6,7 +6,7 @@ const root = '/api/v1/automotive';
 const car = `${root}/vehicles/sample`;
 const fixtures = {
   [`${root}/vehicles`]: { vehicles: [{ id: 'sample', label: 'Sample' }] },
-  [car]: { odometer: { km: 123 }, fuel: { needsMoreData: true }, trip_count: 1 },
+  [car]: { odometer: { km: 123 }, fuel: { needsMoreData: true }, trip_count: 1, reminders: [] },
   [`${car}/journeys`]: { journeys: [{ id: 'drive', title: 'Morning drive', origin: { fix: { lat: 1, lon: 2 } }, stops: [] }] },
   [`${car}/fuel`]: { logs: [] },
   [`${car}/service`]: { records: [] },

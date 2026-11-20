@@ -24,7 +24,7 @@ async function openService(page, baseURL, { failFirst = false } = {}) {
     if (pathname.endsWith('/supervision/bootstrap')) json = { enabled: false };
     if (pathname.endsWith('/automotive/vehicles')) json = { vehicles: [{ id: 'sample', label: 'Sample' }] };
     if (pathname.endsWith('/vehicles/sample')) {
-      json = { odometer: { km: 123 }, fuel: { needsMoreData: true, fillCount: 0 }, trip_count: 0 };
+      json = { odometer: { km: 123 }, fuel: { needsMoreData: true, fillCount: 0 }, trip_count: 0, reminders: [] };
     }
     if (pathname.endsWith('/service-types')) {
       reads.push(request.method());
