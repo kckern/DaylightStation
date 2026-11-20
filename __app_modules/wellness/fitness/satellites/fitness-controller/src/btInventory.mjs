@@ -85,6 +85,7 @@ export function parseIsGamepad(infoOutput) {
   return /^\s*Icon:\s*input-gaming\s*$/im.test(String(infoOutput || ''));
 }
 
+// Same map as ICON_KIND in bt_pair_match.py; keep the two in step.
 const ICON_KIND = { 'input-gaming': 'gamepad', 'input-keyboard': 'keyboard', 'input-mouse': 'mouse', 'input-tablet': 'tablet' };
 
 /** `Icon: input-*` in a `bluetoothctl info` blob → 'gamepad'|'keyboard'|'mouse'|'tablet', else null. */

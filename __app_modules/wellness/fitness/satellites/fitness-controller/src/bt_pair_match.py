@@ -15,9 +15,17 @@ import re
 GAMEPAD_NAME = re.compile(r"8bitdo|xbox|dualshock|dualsense|pro controller|gamepad|controller|joy-?con", re.I)
 HID_UUIDS = {"00001812-0000-1000-8000-00805f9b34fb",  # HID over GATT (LE)
              "00001124-0000-1000-8000-00805f9b34fb"}  # HID (classic)
+RETRYABLE = re.compile(r"AuthenticationFailed|AuthenticationRejected|AuthenticationCanceled|ConnectionAttemptFailed|Rejected|AlreadyExists|InProgress", re.I)
+# Same map as ICON_KIND in btInventory.mjs; keep the two in step.
 ICON_KIND = {"input-gaming": "gamepad", "input-keyboard": "keyboard",
              "input-mouse": "mouse", "input-tablet": "tablet"}
 APPEARANCE_KIND = {0x03C1: "keyboard", 0x03C2: "mouse", 0x03C3: "gamepad", 0x03C4: "gamepad"}
+
+
+def _peripheral_gamepad_class(props):
+    """Classic CoD: major peripheral with a joystick/gamepad minor (combo pads included)."""
+    cls = int(props.get("Class", 0) or 0)
+    return ((cls >> 8) & 0x1F) == 0x05 and ((cls >> 2) & 0x0F) in (1, 2)
 
 
 def _name(props):
@@ -83,7 +91,8 @@ def match(props, targets, mode="repair"):
     kind = classify_hid(props)
     if kind is None:
         return None
-    if mode == "add" or kind == "gamepad" or (name and GAMEPAD_NAME.search(name)):
+    if mode == "add" or kind == "gamepad" or _peripheral_gamepad_class(props) \
+            or (name and GAMEPAD_NAME.search(name)):
         return {"id": None, "label": None, "pin": None, "kind": kind}
     return None
 
@@ -98,6 +107,20 @@ def candidate_action(props, mode):
     return "pair"
 
 
+def may_remove_bond(mode, paired_now):
+    """Whether a failed attempt may RemoveDevice: add mode never deletes a live bond."""
+    return mode == "repair" or not paired_now
+
+
+def is_retryable(error_name, mode):
+    """A Pair error worth remove-and-retry. In add mode AlreadyExists means the
+    device is bonded already, so it is final (a retry would delete that bond)."""
+    name = str(error_name or "")
+    if not RETRYABLE.search(name):
+        return False
+    return not (mode == "add" and "alreadyexists" in name.lower())
+
+
 def discovery_transport(mode):
     return "auto" if mode == "add" else "bredr"
 
@@ -105,21 +128,24 @@ def discovery_transport(mode):
 def input_device_present(proc_text, mac, name=None):
     """True when /proc/bus/input/devices lists an input device for this MAC.
 
-    Falls back to an exact Name match only for a block whose Uniq is blank:
-    some BLE (HID-over-GATT) stacks leave Uniq empty (unverified for the ring
-    until it is checked on the garage box).
+    Falls back to an exact match on BlueZ's Name only for a Bluetooth block
+    (`I: Bus=0005`) whose Uniq is blank or missing: some BLE (HID-over-GATT)
+    stacks leave Uniq empty (unverified for the ring until it is checked on
+    the garage box).
     """
     want = str(mac or "").lower()
     for block in str(proc_text or "").split("\n\n"):
-        uniq, dev_name = None, None
+        uniq, dev_name, bluetooth = None, None, False
         for line in block.splitlines():
             s = line.strip()
-            if s.lower().startswith("u: uniq="):
+            if s.startswith("I:"):
+                bluetooth = "bus=0005" in s.lower()
+            elif s.lower().startswith("u: uniq="):
                 uniq = s[len("u: uniq="):].strip().lower()
             elif s.startswith('N: Name="') and s.endswith('"'):
                 dev_name = s[len('N: Name="'):-1]
         if uniq and uniq == want:
             return True
-        if not uniq and name and dev_name == name:
+        if not uniq and bluetooth and name and dev_name == name:
             return True
     return False

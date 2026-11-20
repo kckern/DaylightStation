@@ -5,7 +5,7 @@ import unittest
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 from bt_pair_match import (  # noqa: E402
     classify_hid, compile_targets, match, candidate_action,
-    discovery_transport, input_device_present,
+    discovery_transport, input_device_present, may_remove_bond, is_retryable,
 )
 
 SFC30 = {"Address": "E4:17:D8:C6:54:F0", "Name": "8Bitdo SFC30 GamePad", "Icon": "input-gaming"}
@@ -60,6 +60,11 @@ class Match(unittest.TestCase):
     def test_add_mode_still_rejects_non_hid(self):
         self.assertIsNone(match({"Address": "AA:BB:CC:00:00:01", "Name": "JBL Flip 5", "Icon": "audio-card"}, [], "add"))
 
+    def test_repair_mode_accepts_combo_keyboard_gamepad_class(self):
+        # Peripheral CoD with keyboard + gamepad minor: the pre-2026-11-20 rule accepted it.
+        combo = {"Address": "AA:BB:CC:00:00:03", "Name": "Thing", "Icon": "input-keyboard", "Class": 0x002548}
+        self.assertIsNotNone(match(combo, [], "repair"))
+
     def test_repair_mode_keeps_gamepad_name_rule(self):
         # An 8BitDo reporting a keyboard icon is still a pad in repair mode (old behaviour).
         pad = {"Address": "AA:BB:CC:00:00:02", "Name": "8BitDo Zero 2", "Icon": "input-keyboard"}
@@ -78,6 +83,22 @@ class CandidateAction(unittest.TestCase):
     def test_new_device(self):
         self.assertEqual(candidate_action({"Paired": False}, "add"), "pair")
         self.assertEqual(candidate_action({}, "repair"), "pair")
+
+
+class BondSafety(unittest.TestCase):
+    def test_may_remove_bond(self):
+        self.assertTrue(may_remove_bond("repair", True))
+        self.assertTrue(may_remove_bond("repair", False))
+        self.assertTrue(may_remove_bond("add", False))
+        self.assertFalse(may_remove_bond("add", True))
+
+    def test_is_retryable(self):
+        self.assertTrue(is_retryable("org.bluez.Error.AlreadyExists", "repair"))
+        self.assertFalse(is_retryable("org.bluez.Error.AlreadyExists", "add"))
+        self.assertTrue(is_retryable("org.bluez.Error.AuthenticationFailed", "add"))
+        self.assertTrue(is_retryable("org.bluez.Error.InProgress", "repair"))
+        self.assertFalse(is_retryable("org.bluez.Error.Failed", "repair"))
+        self.assertFalse(is_retryable("", "add"))
 
 
 class Transport(unittest.TestCase):
@@ -105,6 +126,14 @@ class InputDevicePresent(unittest.TestCase):
     def test_name_fallback_only_when_uniq_blank(self):
         self.assertTrue(input_device_present(PROC, "11:22:33:44:55:66", "R1"))
         self.assertFalse(input_device_present(PROC, "11:22:33:44:55:66", "8Bitdo SFC30 GamePad"))
+
+    def test_name_fallback_needs_bluetooth_bus(self):
+        usb = 'I: Bus=0003 Vendor=0000 Product=0000 Version=0000\nN: Name="R1"\nU: Uniq=\nH: Handlers=kbd event7\n'
+        self.assertFalse(input_device_present(usb, "11:22:33:44:55:66", "R1"))
+
+    def test_name_fallback_when_no_uniq_line(self):
+        bt = 'I: Bus=0005 Vendor=0000 Product=0000 Version=0000\nN: Name="R1"\nH: Handlers=kbd event7\n'
+        self.assertTrue(input_device_present(bt, "11:22:33:44:55:66", "R1"))
 
     def test_absent(self):
         self.assertFalse(input_device_present(PROC, "11:22:33:44:55:66"))

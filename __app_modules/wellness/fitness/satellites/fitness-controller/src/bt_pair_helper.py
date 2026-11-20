@@ -29,7 +29,6 @@ bonded device, so the helper disconnects and reconnects once if the input
 device does not appear.
 """
 import json
-import re
 import sys
 import time
 
@@ -39,14 +38,14 @@ import dbus.service
 from gi.repository import GLib
 
 from bt_pair_match import (candidate_action, compile_targets, discovery_transport,
-                           input_device_present, match as match_rule)
+                           input_device_present, is_retryable, match as match_rule,
+                           may_remove_bond)
 
 BUS_NAME = "org.bluez"
 ADAPTER = "/org/bluez/hci0"
 AGENT_PATH = "/net/daylight/btpair/agent"
 DEFAULT_PIN = "0000"
 HID_WAIT_S = 15
-RETRYABLE = re.compile(r"AuthenticationFailed|AuthenticationRejected|AuthenticationCanceled|ConnectionAttemptFailed|Rejected|AlreadyExists|InProgress", re.I)
 
 
 def emit(phase, **extra):
@@ -166,6 +165,18 @@ def main():
     def fail_device(path, device, cid, message):
         """Remove the half-made bond and retry once; second failure is final."""
         n = state["attempts"].get(path, 0)
+        if mode == "add":
+            # Paired may have flipped since consider(): add mode never deletes a bond.
+            try:
+                _, now = dev_props(path)
+                paired_now = bool(now.get("Paired", False))
+            except dbus.DBusException:
+                paired_now = False  # no device object left, so no bond to protect
+            if not may_remove_bond(mode, paired_now):
+                state["busy"] = None
+                emit("error", device=device, controllerId=cid, message="already paired — left untouched")
+                finish("failed", paired=[], reason="pair-failed")
+                return
         try:
             adapter.RemoveDevice(path)
         except dbus.DBusException:
@@ -179,14 +190,14 @@ def main():
         emit("error", device=device, controllerId=cid, message=message)
         finish("failed", paired=[], reason="pair-failed")
 
-    def wait_for_hid(path, device, cid, dev_iface, reconnected):
+    def wait_for_hid(path, device, cid, dev_iface, reconnected, bt_name):
         deadline = time.monotonic() + HID_WAIT_S
         emit("hid-wait", device=device, controllerId=cid, seconds=HID_WAIT_S)
 
         def poll():
             if state["result"] is not None:
                 return False
-            if input_device_present(read_input_devices(), device["address"], device.get("name")):
+            if input_device_present(read_input_devices(), device["address"], bt_name):
                 emit("paired", device=device, controllerId=cid, connected=True, input=True)
                 finish("paired", paired=[device])
                 return False
@@ -202,27 +213,30 @@ def main():
                 dev_iface.Disconnect()
             except dbus.DBusException:
                 pass
-            GLib.timeout_add(2000, lambda: (connect(path, device, cid, dev_iface, True), False)[1])
+            GLib.timeout_add(2000, lambda: (connect(path, device, cid, dev_iface, True, bt_name), False)[1])
             return False
 
         GLib.timeout_add(500, poll)
 
-    def connect(path, device, cid, dev_iface, reconnected):
+    def connect(path, device, cid, dev_iface, reconnected, bt_name):
         emit("connecting", device=device, controllerId=cid, attempt=2 if reconnected else 1)
 
         def ok():
-            wait_for_hid(path, device, cid, dev_iface, reconnected)
+            wait_for_hid(path, device, cid, dev_iface, reconnected, bt_name)
 
         def err(e):
             # The pad may connect back on its own (it initiates on wake); the
             # input-device wait is still the truth.
             emit("warn", device=device, message=f"Connect: {e.get_dbus_name() if hasattr(e, 'get_dbus_name') else e}")
-            wait_for_hid(path, device, cid, dev_iface, reconnected)
+            wait_for_hid(path, device, cid, dev_iface, reconnected, bt_name)
 
         dev_iface.Connect(reply_handler=ok, error_handler=err, timeout=30)
 
     def pair(path, props, target):
         device = describe(props, target)
+        # BlueZ's own Name, for the input-device name fallback. Never the
+        # config label or the address that describe() may put in device["name"].
+        bt_name = str(props.get("Name", "") or "") or None
         cid = target.get("id")
         state["busy"] = path
         state["pins"][path] = target.get("pin") or DEFAULT_PIN
@@ -250,12 +264,12 @@ def main():
                 adapter.StopDiscovery()
             except dbus.DBusException:
                 pass
-            GLib.timeout_add(1000, lambda: (connect(path, device, cid, dev_iface, False), False)[1])
+            GLib.timeout_add(1000, lambda: (connect(path, device, cid, dev_iface, False, bt_name), False)[1])
 
         def err(e):
             name = e.get_dbus_name() if hasattr(e, "get_dbus_name") else str(e)
             msg = f"{name}: {e.get_dbus_message() if hasattr(e, 'get_dbus_message') else ''}".strip(": ")
-            if RETRYABLE.search(name or ""):
+            if is_retryable(name, mode):
                 fail_device(path, device, cid, msg)
             else:
                 emit("error", device=device, controllerId=cid, message=msg)
