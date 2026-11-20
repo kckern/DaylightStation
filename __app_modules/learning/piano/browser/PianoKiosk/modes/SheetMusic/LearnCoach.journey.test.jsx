@@ -204,6 +204,34 @@ describe('real Learn journey',()=>{
    expect(await page.locator('.drill-cluster[data-done]').count()).toBe(9);expect(errors).toEqual([]);
   }catch(error){fs.writeFileSync(path.join(ARTIFACTS,'failure.json'),JSON.stringify({errors,attempts:[...f.attempts.values()],text:await page.locator('body').innerText(),logs:await page.evaluate(()=>window.__logs)},null,2));await page.screenshot({path:path.join(ARTIFACTS,'failure.png'),fullPage:true});throw error;}finally{await page.close();}
  },90000);
+ // The field take of 2026-11-20 (Jingle Bells bar 3 at 56 bpm): steady, in order, every note one click late and then
+ // +0.20/+0.11/+0.11/+0.08 s of it (1.07 s between notes). Replayed here at the same share of this passage's note
+ // spacing (250 ms). At 240 bpm the count-in clicks every half note, so "one beat late" is one click: 500 ms.
+ it('names the field take one beat late on the card, and offers the same step again',async()=>{
+  const{page,f,errors}=await open();try{
+   await openStep(page,'100%');
+   const before=await page.evaluate(()=>window.__logs.filter(l=>l.event==='piano.exercise-countdown-started').length);
+   await page.evaluate(async()=>{window.__hold([72]);await new Promise(r=>setTimeout(r,60));window.__hold([]);});
+   await page.waitForFunction((n)=>window.__logs.filter(l=>l.event==='piano.exercise-countdown-started').length>n,before);
+   await page.evaluate(async()=>{const log=window.__logs.filter(l=>l.event==='piano.exercise-countdown-started').at(-1);const downbeat=log.at+log.data.countdownRemainingMs;
+    const late=[0.20,0.11,0.11,0.08].map(s=>Math.round(s/1.07*250));
+    for(let i=0;i<8;i++){await new Promise(r=>setTimeout(r,Math.max(0,downbeat+500+i*250+late[i%4]-Date.now())));window.__hold([[60,48],[62,50],[64,52],[65,53]][i%4]);await new Promise(r=>setTimeout(r,75));window.__hold([]);}});
+   const result=page.locator('.piano-exercise-run__result.is-docked');
+   await result.filter({hasText:'Start on the click'}).waitFor({timeout:15000});await page.screenshot({path:path.join(ARTIFACTS,'entry-late.png')});
+   expect(await result.locator('.piano-exercise-run__result-copy').innerText()).toBe('You started one beat late — start on the click after the count.');
+   expect(await page.locator('.piano-exercise-run').getAttribute('data-entry-shift')).toBe('1');
+   const logs=await page.evaluate(()=>window.__logs);
+   expect(logs.filter(l=>l.event==='piano.exercise-onset-log').at(-1).data).toMatchObject({entryShiftBeats:1,matched:16,possible:16});
+   await expect.poll(async()=>(await page.evaluate(()=>window.__logs)).filter(l=>l.event==='piano.learn.coach.take').length,{timeout:15000}).toBe(1);
+   expect((await page.evaluate(()=>window.__logs)).find(l=>l.event==='piano.learn.coach.take').data).toMatchObject({reason:'entry-late',entryShiftBeats:1,passed:false});
+   // The attempt the server saw carries the shift; the step is offered again, not a smaller task.
+   await expect.poll(()=>f.attempts.size,{timeout:15000}).toBe(1);
+   expect([...f.attempts.values()][0].entryShift).toMatchObject({beats:1});
+   expect(await page.getByRole('button',{name:'Try again',exact:true}).count()).toBe(1);
+   expect(await page.getByRole('button',{name:/slower|^Practice /}).count()).toBe(0);
+   expect(errors).toEqual([]);
+  }catch(error){fs.writeFileSync(path.join(ARTIFACTS,'failure.json'),JSON.stringify({errors,text:await page.locator('body').innerText(),logs:await page.evaluate(()=>window.__logs)},null,2));await page.screenshot({path:path.join(ARTIFACTS,'failure.png'),fullPage:true});throw error;}finally{await page.close();}
+ },90000);
  it('retries a saved musical success after offline failure without mixing profiles',async()=>{
   const{page,f,errors}=await open();try{
    await openStep(page,'100%'); f.offline=true; await playTimed(page);
