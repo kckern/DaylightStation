@@ -5,7 +5,7 @@ import { extractMusicXmlFromMxl, MAX_MXL_XML_BYTES } from '../../../../../__capa
 
 /**
  * The admin sheet music service (library rows, Learn draft/approve/revert,
- * uploads). The reader's media dir is `configService.getMediaDir()`: the same
+ * uploads, generated posters). The reader's media dir is `configService.getMediaDir()`: the same
  * value app.mjs passes as `mediaBasePath` to the files content adapter that
  * `/api/v1/proxy/media/stream/<local>` reads through, so the admin hashes and
  * writes the bytes the kiosk fetches.
@@ -31,6 +31,7 @@ export function createSheetMusicAdminService({ configService, pianoStudioDatasto
     fileSignature: (id) => scoreReader.signature(id),
     extractMxl: (buffer) => extractMusicXmlFromMxl(buffer, { maxXmlBytes: MAX_MXL_XML_BYTES }),
     writeScoreExclusive: (id, buffer) => scoreReader.writeScoreExclusive(id, buffer),
+    writePoster: (id, svgText) => scoreReader.writePoster(id, svgText),
     // Re-read each call so a config reload changes the allowed folders.
     collectionRefs: () => sheetMusicCollectionRefs(configService.getHouseholdAppConfig?.(null, 'piano')?.sheetmusic),
     logger: rootLogger.child({ module: 'piano-sheetmusic-admin' }),

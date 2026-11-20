@@ -72,4 +72,17 @@ describe('createSheetMusicAdminService (composition)', () => {
     const again = await service.upload({ buffer, originalName: 'x.mxl', folder: 'classical', filename: 'fresh.mxl' }).then(() => null, (e) => e);
     expect(again?.code).toBe('basename-exists');
   });
+  it('saves a generated poster beside the score, and the library row then reads generated', async () => {
+    const service = createSheetMusicAdminService({ configService, pianoStudioDatastore: datastore, rootLogger: logger });
+    const id = 'files:docs/sheet-music/classical/tiny.musicxml';
+    expect((await service.library()).find((row) => row.id === id).poster).toBe('none');
+    const svg = '<svg xmlns="http://www.w3.org/2000/svg" data-daylight-poster="generated"><path d="M0 0L1 1"/></svg>';
+    const result = await service.savePoster(id, svg);
+    expect(result.url).toBe(`/api/v1/proxy/media/stream/${encodeURIComponent('docs/sheet-music/classical/tiny.svg')}`);
+    expect(fs.readFileSync(path.join(configService.getMediaDir(), 'docs/sheet-music/classical/tiny.svg'), 'utf8')).toBe(svg);
+    expect((await service.library()).find((row) => row.id === id).poster).toBe('generated');
+    // A scan dropped in later wins, and a fresh generate is refused.
+    fs.writeFileSync(path.join(configService.getMediaDir(), 'docs/sheet-music/classical/tiny.jpg'), 'jpeg');
+    await expect(service.savePoster(id, svg)).rejects.toMatchObject({ code: 'has-scan' });
+  });
 });

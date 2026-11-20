@@ -26,6 +26,7 @@ const sheetMusicAdminService = {
   revert: async () => ({}),
   draftImpact: async () => ({}),
   impact: async () => [],
+  savePoster: async () => ({}),
 };
 
 function appWith(services) {

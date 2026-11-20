@@ -20,11 +20,19 @@
  * existing file fails with `code: 'EEXIST'`, any other failure with
  * SCORE_UNWRITABLE.
  *
+ * `writePoster` writes a generated SVG poster as `<basename>.svg` beside the
+ * score, atomically. It replaces only an earlier generated poster (one carrying
+ * POSTER_MARKER); a hand-made svg, a symlink or a folder at that path fails with
+ * POSTER_EXISTS, any other failure with POSTER_UNWRITABLE.
+ *
  * Layer: ADAPTER. All filesystem access through FileIO.
  */
 import path from 'node:path';
 import { createHash } from 'node:crypto';
-import { ensureDirAsync, getFileStatsAsync, readBinaryFromPathAsync, writeBinaryExclusiveAsync } from '#system/utils/FileIO.mjs';
+import {
+  ensureDirAsync, getFileStatsAsync, getLinkStatsAsync, readBinaryFromPathAsync, readTextFromPathAsync,
+  writeBinaryExclusiveAsync, writeFileAtomic,
+} from '#system/utils/FileIO.mjs';
 import { extractMusicXmlFromMxl, MAX_MXL_XML_BYTES } from '../../../../../__capabilities/music-notation/server/mxlArchive.mjs';
 import { libraryScoreLocalPath } from '../../portable/music/practiceKey.mjs';
 
@@ -32,6 +40,11 @@ import { libraryScoreLocalPath } from '../../portable/music/practiceKey.mjs';
 export const MAX_MXL_ARCHIVE_BYTES = 16 * 1024 * 1024;
 
 const BOM = '\uFEFF';
+
+/** The root attribute the admin's poster serializer stamps on every generated poster. */
+export const POSTER_MARKER = 'data-daylight-poster="generated"';
+/** How much of an existing svg is read to look for the marker on its root element. */
+const MARKER_SCAN_CHARS = 4096;
 const MXL_RE = /\.mxl$/i;
 
 export class ScoreReadError extends Error {
@@ -144,6 +157,43 @@ export class SheetMusicScoreReader {
       }
       throw unwritable(error);
     }
+  }
+
+  /**
+   * Write a generated poster beside the score.
+   * @returns {Promise<string>} the poster's local path (relative to the media dir)
+   */
+  async writePoster(scoreId, svgText) {
+    const local = this.#local(scoreId);
+    const posterLocal = `${local.slice(0, local.length - path.extname(local).length)}.svg`;
+    const file = path.join(this.#mediaDir, posterLocal);
+    let existing = null;
+    try {
+      existing = await getLinkStatsAsync(file);
+    } catch (error) {
+      if (error?.code !== 'ENOENT') {
+        throw new ScoreReadError('POSTER_UNWRITABLE', scoreId, `Poster could not be written: ${scoreId}`, error);
+      }
+    }
+    if (existing) {
+      let generated = false;
+      if (existing.isFile()) {
+        try {
+          generated = (await readTextFromPathAsync(file)).slice(0, MARKER_SCAN_CHARS).includes(POSTER_MARKER);
+        } catch {
+          generated = false;
+        }
+      }
+      if (!generated) {
+        throw new ScoreReadError('POSTER_EXISTS', scoreId, `A poster that was not generated already sits beside ${scoreId}`);
+      }
+    }
+    try {
+      writeFileAtomic(file, svgText);
+    } catch (error) {
+      throw new ScoreReadError('POSTER_UNWRITABLE', scoreId, `Poster could not be written: ${scoreId}`, error);
+    }
+    return posterLocal;
   }
 
   #local(scoreId) {

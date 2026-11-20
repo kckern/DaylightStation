@@ -18,8 +18,9 @@ class FakeReadError extends Error {
   constructor(code, scoreId) { super(`${code}: ${scoreId}`); this.name = 'ScoreReadError'; this.code = code; this.scoreId = scoreId; }
 }
 
-function fixture({ scores = {}, learn = {}, covers = {}, practice = {}, learners = ['learner1', 'learner2'], datastoreOverrides = {} } = {}) {
+function fixture({ scores = {}, learn = {}, covers = {}, practice = {}, learners = ['learner1', 'learner2'], datastoreOverrides = {}, writePoster } = {}) {
   const reads = [];
+  const posters = [];
   const saved = [];
   const logs = [];
   const signatures = new Map(Object.keys(scores).map((id) => [id, 'sig-1']));
@@ -56,8 +57,12 @@ function fixture({ scores = {}, learn = {}, covers = {}, practice = {}, learners
     fileSignature: (id) => signatures.get(id) ?? null,
     clock: () => new Date('2026-11-20T10:00:00.000Z'),
     logger,
+    writePoster: writePoster ?? (async (id, text) => {
+      posters.push({ id, text });
+      return `${id.replace(/^files:/, '').replace(/\.[^.]+$/, '')}.svg`;
+    }),
   });
-  return { service, reads, saved, logs, signatures, learnFiles };
+  return { service, reads, saved, logs, signatures, learnFiles, posters };
 }
 
 const seg = (id, start, end, extra = {}) => ({ id, start, end, ...extra });
@@ -693,5 +698,67 @@ describe('SheetMusicAdminService.uploadFolders', () => {
 
   it('is empty when no refs reader is wired', async () => {
     expect(await new SheetMusicAdminService(base).uploadFolders()).toEqual([]);
+  });
+});
+
+describe('SheetMusicAdminService.savePoster', () => {
+  const SVG = '<svg xmlns="http://www.w3.org/2000/svg" data-daylight-poster="generated"><path d="M0 0L1 1"/></svg>';
+  const scores = { [ID_A]: { xml: xmlOf({ work: 'Für Elise' }), sha: 'sha-now' } };
+  const stream = (local) => `/api/v1/proxy/media/stream/${encodeURIComponent(local)}`;
+  const codeOf = (promise) => promise.then(() => null, (e) => e?.code);
+
+  it('checks the svg, writes it beside the score and logs poster-saved', async () => {
+    const { service, posters, logs } = fixture({ scores });
+    const result = await service.savePoster(ID_A, SVG);
+    expect(posters).toEqual([{ id: ID_A, text: SVG }]);
+    expect(result).toEqual({
+      id: ID_A, poster: 'generated', url: stream('docs/sheet-music/classical/fur-elise.svg'), bytes: SVG.length,
+    });
+    expect(logs).toContainEqual({ level: 'info', event: 'piano.sheetmusic.poster-saved', data: { id: ID_A, bytes: SVG.length, replaced: false } });
+  });
+
+  it('replaces an earlier generated poster', async () => {
+    const { service, posters, logs } = fixture({ scores, covers: { [ID_A]: stream('docs/sheet-music/classical/fur-elise.svg') } });
+    await service.savePoster(ID_A, SVG);
+    expect(posters).toHaveLength(1);
+    expect(logs.find((l) => l.event === 'piano.sheetmusic.poster-saved').data.replaced).toBe(true);
+  });
+
+  it('refuses unsafe svg with the checker code and logs poster-rejected', async () => {
+    const { service, posters, logs } = fixture({ scores });
+    expect(await codeOf(service.savePoster(ID_A, SVG.replace('<path', '<script/><path')))).toBe('script');
+    expect(await codeOf(service.savePoster(ID_A, SVG.replace('<path', '<g onclick="x()"/><path')))).toBe('event-handler');
+    expect(await codeOf(service.savePoster(ID_A, `<svg xmlns="http://www.w3.org/2000/svg"><path d="${'M0 0'.repeat(80000)}"/></svg>`))).toBe('too-large');
+    expect(await codeOf(service.savePoster(ID_A, 'not xml'))).toBe('not-svg');
+    expect(posters).toEqual([]);
+    const rejected = logs.filter((l) => l.event === 'piano.sheetmusic.poster-rejected').map((l) => l.data.code);
+    expect(rejected).toEqual(['script', 'event-handler', 'too-large', 'not-svg']);
+  });
+
+  it('refuses when a raster scan exists', async () => {
+    const { service, posters } = fixture({ scores, covers: { [ID_A]: stream('docs/sheet-music/classical/fur-elise.jpg') } });
+    expect(await codeOf(service.savePoster(ID_A, SVG))).toBe('has-scan');
+    expect(posters).toEqual([]);
+  });
+
+  it('refuses a missing score, a non-library id and a non-string body', async () => {
+    const { service, posters } = fixture({ scores });
+    expect(await codeOf(service.savePoster(ID_B, SVG))).toBe('SCORE_NOT_FOUND');
+    expect(await codeOf(service.savePoster('files:docs/other/x.musicxml', SVG))).toBe('NOT_LIBRARY_SCORE');
+    expect(await codeOf(service.savePoster(ID_A, undefined))).toBe('invalid-request');
+    expect(posters).toEqual([]);
+  });
+
+  it('maps a hand-made poster at the path to poster-exists', async () => {
+    const error = Object.assign(new Error('exists'), { code: 'POSTER_EXISTS' });
+    const { service } = fixture({ scores, writePoster: async () => { throw error; } });
+    expect(await codeOf(service.savePoster(ID_A, SVG))).toBe('poster-exists');
+  });
+
+  it('getLearn reports the poster kind', async () => {
+    const { service } = fixture({ scores, covers: { [ID_A]: stream('docs/sheet-music/classical/fur-elise.png') } });
+    expect((await service.getLearn(ID_A)).poster).toBe('scan');
+    const { service: none } = fixture({ scores });
+    expect((await none.getLearn(ID_A)).poster).toBe('none');
   });
 });

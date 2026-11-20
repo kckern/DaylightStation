@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import express from 'express';
 import request from 'supertest';
 import http from 'node:http';
-import { createAdminSheetMusicRouter, MAX_SEGMENTS, MAX_UPLOAD_BYTES } from './sheetMusic.mjs';
+import { createAdminSheetMusicRouter, MAX_POSTER_BODY_BYTES, MAX_SEGMENTS, MAX_UPLOAD_BYTES } from './sheetMusic.mjs';
 
 const ID = 'files:docs/sheet-music/classical/fur elise.musicxml';
 const coded = (code, extra = {}) => Object.assign(new Error(`secret detail for ${code}`), { code, ...extra });
@@ -22,6 +22,7 @@ function harness(overrides = {}) {
     revert: record('revert', { file: { scoreId: ID }, impact: null, changed: true }),
     draftImpact: record('draftImpact', { draftRevision: 'rev1', impact: [] }),
     impact: record('impact', [{ userId: 'learner1' }]),
+    savePoster: record('savePoster', (id, text) => ({ id, poster: 'generated', url: '/u', bytes: text.length })),
     ...overrides,
   };
   const logger = {
@@ -342,5 +343,50 @@ describe('createAdminSheetMusicRouter: logs', () => {
     const failed = logs.filter((l) => l.event === 'admin.sheetmusic.request-failed');
     expect(failed).toEqual([{ level: 'error', event: 'admin.sheetmusic.request-failed', data: { route: 'POST /upload', code: 'SCORE_UNWRITABLE' } }]);
     expect(JSON.stringify(failed)).not.toContain('secret');
+  });
+});
+
+describe('createAdminSheetMusicRouter: POST /poster', () => {
+  const SVG = '<svg xmlns="http://www.w3.org/2000/svg"><path d="M0 0"/></svg>';
+
+  it.each(['image/svg+xml', 'text/plain'])('forwards a %s body as text and answers 201', async (type) => {
+    const { app, calls } = harness();
+    const res = await request(app).post(`/sheet-music/poster?${q}`).set('Content-Type', type).send(SVG);
+    expect(res.status).toBe(201);
+    expect(res.body).toEqual({ id: ID, poster: 'generated', url: '/u', bytes: SVG.length });
+    expect(calls.find((c) => c.name === 'savePoster').args).toEqual([ID, SVG]);
+  });
+
+  it('a JSON or missing body is 400 and never reaches the service', async () => {
+    const { app, calls } = harness();
+    expect((await request(app).post(`/sheet-music/poster?${q}`).send({ svg: SVG })).status).toBe(400);
+    expect((await request(app).post(`/sheet-music/poster?${q}`)).status).toBe(400);
+    expect(calls.some((c) => c.name === 'savePoster')).toBe(false);
+  });
+
+  it('a body over the cap is 413 too-large and never reaches the service', async () => {
+    const { app, calls } = harness();
+    const big = `<svg>${'x'.repeat(MAX_POSTER_BODY_BYTES)}</svg>`;
+    const res = await request(app).post(`/sheet-music/poster?${q}`).set('Content-Type', 'image/svg+xml').send(big);
+    expect(res.status).toBe(413);
+    expect(res.body).toEqual({ error: 'too-large' });
+    expect(calls.some((c) => c.name === 'savePoster')).toBe(false);
+  });
+
+  it('without an id is 400', async () => {
+    const { app } = harness();
+    const res = await request(app).post('/sheet-music/poster').set('Content-Type', 'image/svg+xml').send(SVG);
+    expect(res.status).toBe(400);
+  });
+
+  it.each([
+    ['too-large', 413], ['has-scan', 409], ['poster-exists', 409], ['not-svg', 422], ['script', 422],
+    ['foreign-object', 422], ['style', 422], ['event-handler', 422], ['external-href', 422], ['doctype', 422],
+    ['processing-instruction', 422], ['invalid-request', 400], ['NOT_LIBRARY_SCORE', 400], ['SCORE_NOT_FOUND', 404],
+  ])('%s → %i', async (codeName, status) => {
+    const { app } = harness({ savePoster: async () => { throw coded(codeName); } });
+    const res = await request(app).post(`/sheet-music/poster?${q}`).set('Content-Type', 'image/svg+xml').send(SVG);
+    expect(res.status).toBe(status);
+    expect(res.body).toEqual({ error: codeName });
   });
 });

@@ -28,6 +28,14 @@
  * `bad-filename`, `basename-exists`, `slug-collides`, `slug-too-long`. The bytes
  * are stored as uploaded (an .mxl stays an archive) and never overwrite a file.
  *
+ * `savePoster` stores an SVG poster the admin browser cut from the engraving, as
+ * `<basename>.svg` beside the score (the score grid and home desk show it when
+ * there is no raster scan). Refusals: `invalid-request`, the svgSafety codes
+ * (`not-svg`, `too-large`, `doctype`, `processing-instruction`, `script`,
+ * `foreign-object`, `style`, `event-handler`, `external-href`), `has-scan` (a
+ * raster scan wins, so the poster would never show), `poster-exists` (a svg that
+ * was not generated sits at that path), plus the score reader's codes.
+ *
  * Layer: APPLICATION. Everything external is injected.
  */
 import { approvalImpact, normalizeLearnFile, validateSegments } from '../../portable/music/sheetMusicLearnFile.mjs';
@@ -44,6 +52,7 @@ import {
   scoreHeader,
   suggestFilename,
 } from '../../portable/music/musicXmlUpload.mjs';
+import { checkSvg } from '../../portable/music/svgSafety.mjs';
 
 const READ_CONCURRENCY = 4;
 const LEARN_SAVED = 'piano.sheetmusic.learn-saved';
@@ -121,12 +130,13 @@ export class SheetMusicAdminService {
   #extractMxl;
   #writeScoreExclusive;
   #collectionRefs;
+  #writePoster;
   /** id → { signature, title, composer, contentSha256 } */
   #headerCache = new Map();
 
   constructor({
     datastore, scoreReader, listScores, listLearners, fileSignature, clock = () => new Date(), logger,
-    extractMxl, writeScoreExclusive, collectionRefs,
+    extractMxl, writeScoreExclusive, collectionRefs, writePoster,
   } = {}) {
     if (!datastore) throw new Error('SheetMusicAdminService requires datastore');
     if (!scoreReader) throw new Error('SheetMusicAdminService requires scoreReader');
@@ -142,6 +152,7 @@ export class SheetMusicAdminService {
     this.#extractMxl = extractMxl;
     this.#writeScoreExclusive = writeScoreExclusive;
     this.#collectionRefs = collectionRefs;
+    this.#writePoster = writePoster;
   }
 
   /**
@@ -209,6 +220,37 @@ export class SheetMusicAdminService {
     return { id, title: checked.title ?? titleFromFile(name), composer: checked.composer, filename: name };
   }
 
+  /**
+   * Store a generated SVG poster beside the score.
+   * @returns {Promise<{ id: string, poster: 'generated', url: string, bytes: number }>}
+   */
+  async savePoster(id, svgText) {
+    const reject = (code, message = `Poster refused: ${code}`) => {
+      this.#logger?.warn?.('piano.sheetmusic.poster-rejected', { id: logValue(id), code });
+      return codedError(code, message);
+    };
+    if (typeof this.#writePoster !== 'function') throw new Error('SheetMusicAdminService.savePoster requires writePoster');
+    requireLibrary(id);
+    if (typeof svgText !== 'string') throw reject('invalid-request', 'savePoster requires the svg text');
+    const checked = checkSvg(svgText);
+    if (!checked.ok) throw reject(checked.code);
+    const before = posterKind(await this.#datastore.sheetMusicCover(id));
+    if (before === 'scan') throw reject('has-scan', `${id} has a scanned poster, which wins over a generated one`);
+    // The score must exist, or the poster would be an orphan beside nothing.
+    await this.#scoreInfo(id);
+    let local;
+    try {
+      local = await this.#writePoster(id, svgText);
+    } catch (error) {
+      if (error?.code === 'POSTER_EXISTS') throw reject('poster-exists');
+      this.#logger?.error?.('piano.sheetmusic.poster-failed', { id, code: error?.code ?? null, causeCode: error?.cause?.code ?? null });
+      throw error;
+    }
+    const bytes = new TextEncoder().encode(svgText).length;
+    this.#logger?.info?.('piano.sheetmusic.poster-saved', { id, bytes, replaced: before === 'generated' });
+    return { id, poster: 'generated', url: `/api/v1/proxy/media/stream/${encodeURIComponent(local)}`, bytes };
+  }
+
   /** The library folders an upload may name, from the current config. */
   async uploadFolders() {
     if (typeof this.#collectionRefs !== 'function') return [];
@@ -235,8 +277,15 @@ export class SheetMusicAdminService {
     requireLibrary(id);
     const file = normalizeLearnFile(this.#storedFile(id));
     const { contentSha256 } = await this.#scoreInfo(id);
+    let poster = 'none';
+    try {
+      poster = posterKind(await this.#datastore.sheetMusicCover(id));
+    } catch (error) {
+      this.#logger?.warn?.('piano.sheetmusic.cover-unreadable', { id, error: error?.message });
+    }
     return {
       ...file,
+      poster,
       scoreId: file.scoreId ?? id,
       currentSha256: contentSha256,
       stale: file.segments.length > 0 && file.contentSha256 !== contentSha256,

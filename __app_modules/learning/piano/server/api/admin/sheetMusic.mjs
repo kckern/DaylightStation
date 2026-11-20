@@ -10,6 +10,7 @@
  *   PUT  /learn               → body { action: 'draft'|'approve'|'revert', ... }
  *   GET  /learn/draft-impact  → { draftRevision, impact }
  *   POST /impact              → { impact }  body { segments } (revert impact against the generated plan)
+ *   POST /poster              → 201 { id, poster, url, bytes }  body: the SVG text (image/svg+xml or text/plain)
  *
  * Coded refusals from the injected SheetMusicAdminService become
  * `{ error: code }` (plus `errors` for invalid-segments, `draftRevision` for
@@ -19,15 +20,20 @@
  * string-shape error handler, which answers 500 without the message.
  *
  * Malformed requests are refused before the service: an unparseable or
- * truncated multipart body, `/impact` without a `segments` array, and more than
+ * truncated multipart body, a poster body that is not SVG/plain text (400) or is
+ * over MAX_POSTER_BODY_BYTES (413 too-large), `/impact` without a `segments` array, and more than
  * MAX_SEGMENTS segments in a draft or impact request.
  */
 import express from 'express';
 import multer from 'multer';
 import { asyncHandler, errorHandlerMiddleware } from '#system/http/middleware/index.mjs';
+import { MAX_POSTER_BYTES } from '../../../portable/music/svgSafety.mjs';
 
 /** Multer's cap; the service applies the per-format limits (16 MB .mxl, 32 MB .musicxml). */
 export const MAX_UPLOAD_BYTES = 32 * 1024 * 1024;
+
+/** The poster body cap: the svgSafety limit, so an oversized body never reaches the service. */
+export const MAX_POSTER_BODY_BYTES = MAX_POSTER_BYTES;
 
 /** Most segments a draft or impact request may carry; a score has far fewer passages. */
 export const MAX_SEGMENTS = 500;
@@ -44,7 +50,10 @@ const STATUS_BY_CODE = {
   'draft-changed': 409,
   'basename-exists': 409,
   'slug-collides': 409,
+  'has-scan': 409,
+  'poster-exists': 409,
   SCORE_TOO_LARGE: 413,
+  'too-large': 413,
   'bad-extension': 415,
   'invalid-segments': 422,
   'bad-mxl': 422,
@@ -54,11 +63,20 @@ const STATUS_BY_CODE = {
   'no-notes': 422,
   'slug-too-long': 422,
   SCORE_UNREADABLE: 422,
+  // svgSafety refusals
+  'not-svg': 422,
+  doctype: 422,
+  'processing-instruction': 422,
+  script: 422,
+  'foreign-object': 422,
+  style: 422,
+  'event-handler': 422,
+  'external-href': 422,
 };
 
 const ACTIONS = new Set(['draft', 'approve', 'revert']);
 
-const SERVICE_METHODS = ['library', 'uploadFolders', 'upload', 'getLearn', 'saveDraft', 'approve', 'revert', 'draftImpact', 'impact'];
+const SERVICE_METHODS = ['library', 'uploadFolders', 'upload', 'getLearn', 'saveDraft', 'approve', 'revert', 'draftImpact', 'impact', 'savePoster'];
 
 function refusal(code) {
   return Object.assign(new Error(`Request refused: ${code}`), { code });
@@ -69,6 +87,7 @@ export function createAdminSheetMusicRouter({ service, logger = console } = {}) 
     throw new Error('createAdminSheetMusicRouter requires service');
   }
   const router = express.Router();
+  const posterText = express.text({ type: ['image/svg+xml', 'text/plain'], limit: MAX_POSTER_BODY_BYTES });
   const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: MAX_UPLOAD_BYTES, files: 1 } });
 
   /** Answers a coded refusal; false when the error is not one (the caller rethrows). */
@@ -122,6 +141,14 @@ export function createAdminSheetMusicRouter({ service, logger = console } = {}) 
     });
   });
 
+  /** The SVG body as text; an oversized body is too-large, any other parser failure invalid-request. */
+  const receivePoster = (req, res) => new Promise((resolve, reject) => {
+    posterText(req, res, (error) => {
+      if (!error) return resolve();
+      reject(refusal(error?.type === 'entity.too.large' ? 'too-large' : 'invalid-request'));
+    });
+  });
+
   router.get('/', handle('GET /', async (req, res) => {
     const [scores, folders] = await Promise.all([service.library(), service.uploadFolders()]);
     res.json({ scores, folders });
@@ -170,6 +197,13 @@ export function createAdminSheetMusicRouter({ service, logger = console } = {}) 
     const segments = req.body?.segments;
     checkSegments(segments, { required: true });
     res.json({ impact: await service.impact(id, segments) });
+  }));
+
+  router.post('/poster', handle('POST /poster', async (req, res) => {
+    const id = scoreId(req);
+    await receivePoster(req, res);
+    if (typeof req.body !== 'string' || req.body === '') throw refusal('invalid-request');
+    res.status(201).json(await service.savePoster(id, req.body));
   }));
 
   router.use(errorHandlerMiddleware({ shape: 'string' }));

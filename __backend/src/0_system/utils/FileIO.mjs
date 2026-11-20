@@ -447,6 +447,11 @@ export async function getFileStatsAsync(filePath) {
   return fs.promises.stat(filePath);
 }
 
+/** Asynchronously lstat a path (a symlink is reported as itself, not followed). */
+export async function getLinkStatsAsync(filePath) {
+  return fs.promises.lstat(filePath);
+}
+
 /** Asynchronously test for a path while treating only absence as false. */
 export async function fileExistsAsync(filePath) {
   try {

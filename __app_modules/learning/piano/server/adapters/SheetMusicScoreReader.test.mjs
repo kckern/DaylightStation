@@ -6,7 +6,7 @@ import path from 'node:path';
 import { createHash } from 'node:crypto';
 import AdmZip from 'adm-zip';
 import sha256 from 'crypto-js/sha256.js';
-import { SheetMusicScoreReader, ScoreReadError } from './SheetMusicScoreReader.mjs';
+import { SheetMusicScoreReader, ScoreReadError, POSTER_MARKER } from './SheetMusicScoreReader.mjs';
 
 const FIXTURE = path.join(path.dirname(new URL(import.meta.url).pathname), '__fixtures__', 'tiny.musicxml');
 const nodeSha = (text) => createHash('sha256').update(text, 'utf8').digest('hex');
@@ -248,5 +248,56 @@ describe('SheetMusicScoreReader.signature', () => {
     expect(await reader.signature('files:docs/sheet-music/sig/missing.musicxml')).toBeNull();
     expect(await reader.signature('files:docs/sheet-music/sig/dir.musicxml')).toBeNull();
     expect(await reader.signature('files:docs/other/x.musicxml')).toBeNull();
+  });
+});
+
+describe('SheetMusicScoreReader.writePoster', () => {
+  let tmp;
+  let reader;
+  let dir;
+  const generated = (body = '') => `<svg xmlns="http://www.w3.org/2000/svg" ${POSTER_MARKER}>${body}</svg>`;
+  const codeOf = (promise) => promise.then(() => null, (e) => e?.code);
+
+  beforeAll(() => {
+    tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'score-poster-'));
+    dir = path.join(tmp, 'docs', 'sheet-music', 'p');
+    fs.mkdirSync(dir, { recursive: true });
+    reader = new SheetMusicScoreReader({ mediaDir: tmp });
+  });
+
+  afterAll(() => fs.rmSync(tmp, { recursive: true, force: true }));
+
+  it('writes <basename>.svg beside the score and returns its local path', async () => {
+    const local = await reader.writePoster('files:docs/sheet-music/p/air.mxl', generated('<g/>'));
+    expect(local).toBe('docs/sheet-music/p/air.svg');
+    expect(fs.readFileSync(path.join(dir, 'air.svg'), 'utf8')).toBe(generated('<g/>'));
+    expect(fs.readdirSync(dir).filter((f) => f.includes('.tmp-'))).toEqual([]);
+  });
+
+  it('replaces an earlier generated poster', async () => {
+    await reader.writePoster('files:docs/sheet-music/p/again.musicxml', generated('<g/>'));
+    await reader.writePoster('files:docs/sheet-music/p/again.musicxml', generated('<rect/>'));
+    expect(fs.readFileSync(path.join(dir, 'again.svg'), 'utf8')).toBe(generated('<rect/>'));
+  });
+
+  it('never replaces a hand-made svg, a symlink or a folder', async () => {
+    fs.writeFileSync(path.join(dir, 'hand.svg'), '<svg xmlns="http://www.w3.org/2000/svg"/>');
+    expect(await codeOf(reader.writePoster('files:docs/sheet-music/p/hand.musicxml', generated()))).toBe('POSTER_EXISTS');
+    expect(fs.readFileSync(path.join(dir, 'hand.svg'), 'utf8')).toBe('<svg xmlns="http://www.w3.org/2000/svg"/>');
+
+    const target = path.join(tmp, 'outside.svg');
+    fs.writeFileSync(target, generated());
+    fs.symlinkSync(target, path.join(dir, 'link.svg'));
+    expect(await codeOf(reader.writePoster('files:docs/sheet-music/p/link.musicxml', generated('<g/>')))).toBe('POSTER_EXISTS');
+    expect(fs.readFileSync(target, 'utf8')).toBe(generated());
+
+    fs.mkdirSync(path.join(dir, 'dir.svg'));
+    expect(await codeOf(reader.writePoster('files:docs/sheet-music/p/dir.musicxml', generated()))).toBe('POSTER_EXISTS');
+  });
+
+  it('refuses ids outside the library', async () => {
+    expect(await codeOf(reader.writePoster('files:docs/other/x.musicxml', generated()))).toBe('NOT_LIBRARY_SCORE');
+    expect(await codeOf(reader.writePoster('files:docs/sheet-music/../x.musicxml', generated()))).toBe('NOT_LIBRARY_SCORE');
+    expect(fs.existsSync(path.join(tmp, 'docs', 'other', 'x.svg'))).toBe(false);
   });
 });
