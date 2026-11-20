@@ -86,10 +86,46 @@ export function controllerOsState(controller, btInventory) {
     || btInventory.find((d) => d && re && re.test(d.name || ''))
     || null;
   if (!device) return { status: 'not-paired', device: null };
-  if (device.paired === false) return { status: 'unpaired', device };
-  if (device.connected && device.input !== false) return { status: 'ready', device };
-  if (device.connected) return { status: 'connecting', device };
-  return { status: 'asleep', device };
+  return { status: deviceOsStatus(device), device };
+}
+
+/** Lifecycle of one bt_inventory row: 'unpaired' | 'ready' | 'connecting' | 'asleep'. */
+export function deviceOsStatus(device) {
+  if (device?.paired === false) return 'unpaired';
+  if (device?.connected && device.input !== false) return 'ready';
+  if (device?.connected) return 'connecting';
+  return 'asleep';
+}
+
+/** Shown in the "Add a new device" panel. Generic: true of any Bluetooth input device. */
+export const ADD_DEVICE_STEPS = Object.freeze([
+  'Switch the device on and put it in pairing mode. On most devices you hold the power or pairing button until a light blinks fast.',
+  'If it has a mode button (often marked M), choose the mode you want first. A device can show up differently in each mode.',
+  'Keep it close to the garage box, then press Start search. The search runs for up to a minute.',
+]);
+
+const INPUT_KINDS = new Set(['gamepad', 'keyboard', 'mouse', 'tablet']);
+
+/**
+ * bt_inventory rows that no configured controller claims and that are input
+ * devices (a known input kind, or up as an input device now). Speakers and
+ * other bonded non-input devices are left out, so nobody forgets them here.
+ *
+ * @param {Array<object>} controllers  input.yml `controllers` entries.
+ * @param {Array<object>|null|undefined} btInventory
+ * @returns {Array<object>} inventory rows plus `status` (see deviceOsStatus).
+ */
+export function otherBtDevices(controllers, btInventory) {
+  if (!Array.isArray(btInventory)) return [];
+  const claimed = new Set();
+  for (const c of Array.isArray(controllers) ? controllers : []) {
+    const { device } = controllerOsState(c, btInventory);
+    if (device?.address) claimed.add(device.address.toUpperCase());
+  }
+  return btInventory
+    .filter((d) => d && typeof d.address === 'string' && !claimed.has(d.address.toUpperCase()))
+    .filter((d) => INPUT_KINDS.has(d.kind) || d.input === true)
+    .map((d) => ({ ...d, status: deviceOsStatus(d) }));
 }
 
 const BUSY = new Set(['scanning', 'seen', 'found', 'stale-bond-removed', 'pairing', 'agent', 'retry', 'bonded', 'connecting', 'hid-wait', 'hid-retry', 'warn', 'already-paired']);
@@ -134,6 +170,10 @@ export function pairingStatus(pairing) {
     return { busy: !!pairing?.device, tone: 'error', text: `Pairing failed — ${pairing?.message || 'unknown error'}`, retry: !pairing?.device };
   }
   if (phase === 'done') {
+    if (pairing?.reason === 'already-paired') {
+      const who = pairing.paired?.[0]?.name || 'That controller';
+      return { busy: false, tone: 'info', text: `${who} is already connected. To add a different device, use Add a new device.`, retry: false };
+    }
     const n = Array.isArray(pairing?.paired) ? pairing.paired.length : 0;
     if (n > 0) {
       const names = pairing.paired.map((d) => d?.name).filter(Boolean).join(', ');

@@ -1,5 +1,8 @@
 import { describe, it, expect } from 'vitest';
-import { pairingGuides, buildPairTargets, pairingStatus, controllerOsState } from "./pairingGuide.js";
+import {
+  pairingGuides, buildPairTargets, pairingStatus, controllerOsState,
+  ADD_DEVICE_STEPS, otherBtDevices, deviceOsStatus,
+} from "./pairingGuide.js";
 
 const SFC30 = {
   id: '8bitdo_sfc30',
@@ -75,5 +78,49 @@ describe('pairingStatus', () => {
     expect(pairingStatus({ phase: 'done', paired: [], reason: 'no-response' }).text).toMatch(/did not answer/);
     expect(pairingStatus({ phase: 'done', paired: [], reason: 'no-input' }).text).toMatch(/never came up/);
     expect(pairingStatus({ phase: 'done', paired: [], reason: 'pair-failed' }).text).toMatch(/would not pair/);
+  });
+});
+
+describe('pairingStatus — already paired', () => {
+  it('does not claim a fresh pairing when the window short-circuited', () => {
+    const s = pairingStatus({ phase: 'done', reason: 'already-paired', paired: [{ name: '8Bitdo SFC30 GamePad' }] });
+    expect(s.tone).toBe('info');
+    expect(s.busy).toBe(false);
+    expect(s.text).toMatch(/already connected/);
+    expect(s.text).toMatch(/Add a new device/);
+  });
+});
+
+describe('ADD_DEVICE_STEPS', () => {
+  it('is a non-empty list of strings', () => {
+    expect(ADD_DEVICE_STEPS.length).toBeGreaterThan(1);
+    ADD_DEVICE_STEPS.forEach((s) => expect(typeof s).toBe('string'));
+  });
+});
+
+describe('otherBtDevices', () => {
+  const inv = [
+    { address: 'E4:17:D8:C6:54:F0', name: '8Bitdo SFC30 GamePad', connected: true, paired: true, input: true, kind: 'gamepad' },
+    { address: '11:22:33:44:55:66', name: 'R1', connected: true, paired: true, input: true, kind: 'keyboard', battery: 80 },
+    { address: 'AA:BB:CC:00:00:01', name: 'JBL Flip 5', connected: true, paired: true, input: false, kind: null },
+    { address: 'AA:BB:CC:00:00:02', name: 'Mystery', connected: false, paired: true, input: false, kind: 'mouse' },
+  ];
+  it('lists input devices that match no configured controller, with a status', () => {
+    const out = otherBtDevices([SFC30], inv);
+    expect(out.map((d) => d.address)).toEqual(['11:22:33:44:55:66', 'AA:BB:CC:00:00:02']);
+    expect(out[0].status).toBe('ready');
+    expect(out[1].status).toBe('asleep');
+  });
+  it('is empty without an inventory feed', () => {
+    expect(otherBtDevices([SFC30], null)).toEqual([]);
+  });
+});
+
+describe('deviceOsStatus', () => {
+  it('reads the lifecycle from one inventory row', () => {
+    expect(deviceOsStatus({ paired: false, connected: true })).toBe('unpaired');
+    expect(deviceOsStatus({ paired: true, connected: true, input: true })).toBe('ready');
+    expect(deviceOsStatus({ paired: true, connected: true, input: false })).toBe('connecting');
+    expect(deviceOsStatus({ paired: true, connected: false })).toBe('asleep');
   });
 });
