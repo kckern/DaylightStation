@@ -2,15 +2,19 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { act, render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { MantineProvider } from '@mantine/core';
 import { Link, MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
+import { clearToken, setToken } from '../../../lib/auth.js';
 
 const calls = [];
 const log = { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn(), sampled: vi.fn(), child: () => log };
-const reload = vi.fn();
+const reload = vi.fn(async () => {});
 let payload;
 let failNext = null;
 let pendingWrite;
 vi.mock('../../../lib/logging/Logger.js', () => ({ default: () => log }));
-vi.mock('../../../lib/hooks/useApiResource.js', () => ({ useApiResource: () => ({ data: payload, loading: false, error: null, reload }) }));
+vi.mock('../../../lib/hooks/useApiResource.js', () => ({
+  useApiResource: () => ({ data: payload, loading: false, error: null, reload, refresh: reload }),
+  invalidateApiResources: vi.fn(),
+}));
 vi.mock('../../../lib/api.mjs', () => ({ DaylightAPI: async (path, body, method) => {
   calls.push({ path, body, method });
   if (failNext && failNext(path, method)) throw new Error('nope');
@@ -26,7 +30,7 @@ const base = (rows) => ({ title: 'F', certification: { level: 'machine' }, audit
 const three = () => base([row('cue:w1', 'alpha', { in: 10, out: 10.5 }), row('cue:w2', 'bravo', { in: 20, out: 20.5 }), row('subject:p1', 'poster', { kind: 'picture', modality: 'shown', effect: 'blur', in: 30, out: 34, members: ['p1'] })]);
 function FilmNavigation() {
   const { pathname } = useLocation();
-  return <><Link to="/admin/content/filter/88">Next film</Link><span aria-label="Review path">{pathname}</span></>;
+  return <><Link to="/admin/content/filter/88">Next film</Link><Link to="/admin/content/filter/77">Previous film</Link><span aria-label="Review path">{pathname}</span></>;
 }
 const show = (path = '/admin/content/filter/77') => render(<MantineProvider><MemoryRouter initialEntries={[path]}><FilmNavigation /><Routes><Route path="/admin/content/filter/:ratingKey/:rowId?" element={<ContentFilterReview />} /></Routes></MemoryRouter></MantineProvider>);
 const press = (key, init = {}, target = document.body) => fireEvent.keyDown(target, { key, ...init });
@@ -232,6 +236,7 @@ describe('bleep level keys', () => {
   const settingsPuts = () => calls.filter((c) => c.path.endsWith('/77/settings'));
   it('] and [ step the per-film level by 0.05, one debounced write, replaying the cue', async () => {
     payload = { ...three(), bleepLevel: { film: null, profile: 0.3 } };
+    previewStore.bind({ refresh: async () => true });
     const jump = vi.spyOn(previewStore, 'jumpToCue');
     show();
     press('ArrowRight');
@@ -273,10 +278,141 @@ describe('bleep level keys', () => {
     await waitFor(() => expect(refresh).toHaveBeenCalledTimes(1));
     fireEvent.click(screen.getByRole('link', { name: 'Next film' }));
     jump.mockClear();
+    reload.mockClear();
     await act(async () => { finish(); });
     expect(jump).not.toHaveBeenCalled();
     expect(reload).not.toHaveBeenCalled();
     expect(settingsPuts()).toHaveLength(1);
+  });
+  it('keeps the newer cursor when the saved preview refresh returns', async () => {
+    const held = Promise.withResolvers();
+    const refresh = vi.fn(() => held.promise);
+    previewStore.bind({ refresh });
+    const jump = vi.spyOn(previewStore, 'jumpToCue');
+    show();
+    press('ArrowRight');
+    press(']');
+    await waitFor(() => expect(refresh).toHaveBeenCalledTimes(1));
+    press('ArrowRight');
+    expect(selected()).toBe('cue:w2');
+    jump.mockClear();
+    await act(async () => { held.resolve(true); });
+    expect(jump).not.toHaveBeenCalled();
+    expect(settingsPuts()).toHaveLength(1);
+  });
+  it('serializes another settings write behind a held write', async () => {
+    vi.useFakeTimers();
+    try {
+      const held = Promise.withResolvers();
+      pendingWrite = held.promise;
+      const refresh = vi.fn(async () => true);
+      previewStore.bind({ refresh });
+      show();
+      press('ArrowRight');
+      press(']');
+      await act(async () => { await vi.advanceTimersByTimeAsync(400); });
+      expect(settingsPuts().map(request => request.body.settings.bleepLevel)).toEqual([0.3]);
+      press(']');
+      await act(async () => { await vi.advanceTimersByTimeAsync(400); });
+      expect(settingsPuts()).toHaveLength(1);
+      expect(refresh).not.toHaveBeenCalled();
+      pendingWrite = null;
+      await act(async () => { held.resolve({}); });
+      expect(settingsPuts().map(request => request.body.settings.bleepLevel)).toEqual([0.3, 0.35]);
+      expect(refresh).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+  it('continues stepping from the saved level while the review read is pending', async () => {
+    vi.useFakeTimers();
+    const held = Promise.withResolvers();
+    try {
+      reload.mockReturnValueOnce(held.promise);
+      previewStore.bind({ refresh: async () => true });
+      show();
+      press('ArrowRight');
+      press(']');
+      await act(async () => { await vi.advanceTimersByTimeAsync(400); });
+      expect(reload).toHaveBeenCalledTimes(1);
+      press(']');
+      await act(async () => { await vi.advanceTimersByTimeAsync(400); });
+      expect(settingsPuts().map(request => request.body.settings.bleepLevel)).toEqual([0.3, 0.35]);
+    } finally {
+      await act(async () => { held.resolve(); });
+      vi.useRealTimers();
+    }
+  });
+  it('reads back the earlier commit when a newer bleep write fails', async () => {
+    vi.useFakeTimers();
+    const held = Promise.withResolvers();
+    try {
+      pendingWrite = held.promise;
+      const refresh = vi.fn(async () => true);
+      previewStore.bind({ refresh });
+      const jump = vi.spyOn(previewStore, 'jumpToCue');
+      show();
+      press('ArrowRight');
+      jump.mockClear();
+      press(']');
+      await act(async () => { await vi.advanceTimersByTimeAsync(400); });
+      press(']');
+      await act(async () => { await vi.advanceTimersByTimeAsync(400); });
+      failNext = path => path.endsWith('/77/settings');
+      await act(async () => { held.resolve({}); });
+      expect(settingsPuts().map(request => request.body.settings.bleepLevel)).toEqual([0.3, 0.35]);
+      expect(reload).toHaveBeenCalledTimes(1);
+      expect(refresh).toHaveBeenCalledTimes(1);
+      expect(jump).not.toHaveBeenCalled();
+    } finally {
+      held.resolve({});
+      vi.useRealTimers();
+    }
+  });
+  it('keeps settings writes ordered after reopening the same film', async () => {
+    vi.useFakeTimers();
+    const held = Promise.withResolvers();
+    try {
+      pendingWrite = held.promise;
+      show();
+      press(']');
+      await act(async () => { await vi.advanceTimersByTimeAsync(400); });
+      press(']');
+      await act(async () => { await vi.advanceTimersByTimeAsync(400); });
+      fireEvent.click(screen.getByRole('link', { name: 'Next film' }));
+      payload = { ...three(), bleepLevel: { film: 0.4 } };
+      fireEvent.click(screen.getByRole('link', { name: 'Previous film' }));
+      press(']');
+      await act(async () => { await vi.advanceTimersByTimeAsync(400); });
+      expect(settingsPuts().map(request => request.body.settings.bleepLevel)).toEqual([0.3]);
+      pendingWrite = null;
+      await act(async () => { held.resolve({}); });
+      expect(settingsPuts().map(request => request.body.settings.bleepLevel)).toEqual([0.3, 0.35, 0.45]);
+    } finally {
+      await act(async () => { held.resolve({}); });
+      vi.useRealTimers();
+    }
+  });
+  it('leaves a queued prior-owner level out of the new session', async () => {
+    vi.useFakeTimers();
+    const held = Promise.withResolvers();
+    try {
+      setToken('first-fixture-session');
+      pendingWrite = held.promise;
+      show();
+      press(']');
+      await act(async () => { await vi.advanceTimersByTimeAsync(400); });
+      press(']');
+      await act(async () => { await vi.advanceTimersByTimeAsync(400); });
+      setToken('second-fixture-session');
+      await act(async () => { held.resolve({}); });
+      expect(settingsPuts().map(request => request.body.settings.bleepLevel)).toEqual([0.3]);
+      expect(reload).not.toHaveBeenCalled();
+    } finally {
+      await act(async () => { held.resolve({}); });
+      clearToken();
+      vi.useRealTimers();
+    }
   });
   it('starts from the film level, else the household level, else 0.25, and clamps', async () => {
     payload = { ...three(), bleepLevel: { film: 0.98, profile: 0.3 } };

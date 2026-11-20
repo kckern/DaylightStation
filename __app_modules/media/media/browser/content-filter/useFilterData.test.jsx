@@ -77,7 +77,7 @@ describe('useFilterData — reload', () => {
     const seen = [];
     const p = result.current.reload();
     seen.push(result.current.data);
-    await p;
+    await expect(p).resolves.toBe(true);
     await waitFor(() => expect(result.current.data.edl.n).toBe(2));
     expect(seen[0].edl.n).toBe(1);
     expect(result.current.status).toBe('ready');
@@ -94,10 +94,21 @@ describe('useFilterData — reload', () => {
     const { result } = renderHook(() => useFilterData('plex:1', { retryDelayMs: 0 }));
     await waitFor(() => expect(result.current.status).toBe('ready'));
     const before = result.current.data;
-    await expect(result.current.reload()).resolves.toBeUndefined();
+    await expect(result.current.reload()).resolves.toBe(false);
     expect(result.current.data).toBe(before);
     expect(result.current.status).toBe('ready');
     expect(mockLogger.warn).toHaveBeenCalledWith('content-filter.reload.failed', expect.objectContaining({ ratingKey: '1' }));
+  });
+
+  it('publishes a confirmed missing filter without accepting it for cue replay', async () => {
+    vi.stubGlobal('fetch', vi.fn()
+      .mockResolvedValueOnce(Response.json({ edl: { cues: [] } }))
+      .mockResolvedValueOnce(new Response(null, { status: 404 })));
+    const { result } = renderHook(() => useFilterData('plex:1'));
+    await waitFor(() => expect(result.current.status).toBe('ready'));
+    await act(async () => { await expect(result.current.reload()).resolves.toBe(false); });
+    expect(result.current.status).toBe('none');
+    expect(result.current.data).toBeNull();
   });
 });
 

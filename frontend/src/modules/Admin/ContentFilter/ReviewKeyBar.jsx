@@ -14,14 +14,14 @@ const KEYMAP = [
   ['D', 'Redo, then 1 edges, 2 category, 3 action, 4 timing, Enter no reason'], ['U', 'Undo the last verdict'], ['Shift+D', 'Rework every row flagged redo'],
   ['F', 'Cycle the kind: all, words, picture, scenes'], ['M / P', 'Words: mute / bleep'],
   ['B / K', 'Picture: blur / skip. Scenes: hide picture / skip'], ['W', 'Widen 0.5 s each edge'],
-  ['[ / ]', 'Bleep level down / up'], ['?', 'This list'], ['Esc', 'Close'],
+  ['[ / ]', 'Bleep level down / up'], ['Enter', 'Retry an unavailable preview'], ['?', 'This list'], ['Esc', 'Close'],
 ];
 
 const Key = ({ k, children }) => (
   <span className="cf-keybar__item"><kbd className="cf-keybar__key" data-key={k}>{k}</kbd> {children}</span>
 );
 
-export function ReviewKeyBar({ row = null, tally = { done: 0, total: 0, redo: 0 }, canUndo = false, redoOpen = false, helpOpen = false, onToggleHelp, onCloseHelp, message = null, bleepLevel = null }) {
+export function ReviewKeyBar({ row = null, tally = { done: 0, total: 0, redo: 0 }, canUndo = false, redoOpen = false, helpOpen = false, onToggleHelp, onCloseHelp, message = null, bleepLevel = null, previewRecovery = null }) {
   const tallyText = `${tally.done}/${tally.total}${tally.redo ? ` · ${tally.redo} redo` : ''}`;
   return (
     <div className="cf-keybar">
@@ -51,6 +51,13 @@ export function ReviewKeyBar({ row = null, tally = { done: 0, total: 0, redo: 0 
         )}
       </Group>
       {message ? <Text size="sm" role="status" className="cf-keybar__message">{message}</Text> : null}
+      {previewRecovery ? (
+        <Group gap="xs">
+          <Text size="sm" role="status">{previewRecovery.message}</Text>
+          <Button density="compact" variant="secondary" keyHint="Enter" aria-keyshortcuts="Enter" aria-disabled={previewRecovery.retrying}
+            aria-busy={previewRecovery.retrying} onClick={previewRecovery.retry}>Retry preview</Button>
+        </Group>
+      ) : null}
       <Sheet open={helpOpen} onClose={onCloseHelp} title="Review keys">
         <Stack gap="xs">
           {KEYMAP.map(([k, what]) => (

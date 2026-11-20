@@ -43,7 +43,7 @@ export function ReviewPage() {
 function FilmReview({ ratingKey, rowId }) {
   const navigate = useNavigate();
   const url = `${API}/${encodeURIComponent(ratingKey)}/review`;
-  const { data, loading, error, reload, poll } = useApiResource(url, { label: 'review', logger });
+  const { data, loading, error, reload, refresh, poll } = useApiResource(url, { label: 'review', logger });
   const [selected, setSelected] = useState(null);
   const [picked, setPicked] = useState(() => new Set());
   const [notice, setNotice] = useState(null);
@@ -81,7 +81,7 @@ function FilmReview({ ratingKey, rowId }) {
   // The keyboard station: the cursor is `selected`; scope, verdicts and stepping live in the hook.
   // Not matched to Plex: a key that still holds household work shows its review; runs are refused.
   const notMatched = data?.match === 'unmatched';
-  const station = useReviewStation({ ratingKey, data, reload, selected, select, activeView, runBusy: running || notMatched });
+  const station = useReviewStation({ ratingKey, data, reload, refreshReview: refresh, selected, select, activeView, runBusy: running || notMatched });
   const { redoOpen } = useReviewKeys(station.handlers, { enabled: Boolean(data?.rows) });
   useVisibleRefresh({ active: Boolean(waiting), intervalMs: POLL_MS, reload, poll });
 
@@ -137,7 +137,7 @@ function FilmReview({ ratingKey, rowId }) {
         {data.rows.length ? <ReviewTimeline rows={station.scoped} selectedId={row?.id ?? null} onSelect={(r) => station.pick(r)} /> : null}
         <ReviewKeyBar row={row} tally={station.tally} canUndo={station.canUndo} redoOpen={redoOpen}
           helpOpen={station.helpOpen} onToggleHelp={station.handlers.help} onCloseHelp={station.handlers.escape}
-          message={station.message} bleepLevel={station.bleepLevel} />
+          message={station.message} bleepLevel={station.bleepLevel} previewRecovery={station.previewRecovery} />
         <div className="cf-review">
           <Stack gap="sm" className="cf-review__side">
             <ReviewPlayer ratingKey={ratingKey} />

@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { DaylightAPI } from '../../../lib/api.mjs';
+import { getToken } from '../../../lib/auth.js';
+import { invalidateApiResources } from '../../../lib/hooks/useApiResource.js';
 import { createAppLogger } from '../../../lib/ui/index.js';
 import { previewStore } from '../../../../../__app_modules/media/media/browser/content-filter/adminWorkspace.mjs';
 import { DEFAULT_SCOPE, WIDEN_STEP, actionKeysFor, hasVerdict, nextKind, rowAction, scopeRows, stepFrom } from './reviewScope.js';
@@ -18,8 +20,28 @@ const SCENE_EFFECTS = new Set(['skip', 'blackout']);
 // A held [ or ] changes the level many times a second; the film's setting is written once it settles.
 const LEVEL_DEBOUNCE_MS = 400;
 const REWORK_ARM_MS = 4000;
+const levelWrites = new Map();
 
-export function useReviewStation({ ratingKey, data, reload, selected, select, activeView, runBusy = false }) {
+function levelWriteOwner() {
+  try { return getToken(); } catch { return null; }
+}
+
+function enqueueLevelWrite(path, owner, value) {
+  const key = JSON.stringify([path, owner]);
+  const previous = levelWrites.get(key);
+  const send = async () => {
+    if (levelWriteOwner() !== owner) return false;
+    await DaylightAPI(path, { settings: { bleepLevel: value } }, 'PUT');
+    return true;
+  };
+  const pending = previous ? previous.then(send, send) : Promise.resolve().then(send);
+  levelWrites.set(key, pending);
+  const release = () => { if (levelWrites.get(key) === pending) levelWrites.delete(key); };
+  void pending.then(release, release);
+  return pending;
+}
+
+export function useReviewStation({ ratingKey, data, reload, refreshReview, selected, select, activeView, runBusy = false }) {
   const rk = String(ratingKey);
   const rows = data?.rows;
   const [scope, setScopeState] = useState(DEFAULT_SCOPE);
@@ -205,36 +227,72 @@ export function useReviewStation({ ratingKey, data, reload, selected, select, ac
   // (shown in the key bar); one debounced write saves it, then the player re-reads its profile and
   // the cue replays so the reviewer hears the change.
   const [pendingLevel, setPendingLevel] = useState(null);
-  const levelRef = useRef({ value: null, timer: null });
+  const [previewRecovery, setPreviewRecovery] = useState(null);
+  const levelRef = useRef({ value: null, rowId: null, owner: null, timer: null, revision: 0, retrying: false });
   const savedLevel = data?.bleepLevel?.film ?? data?.bleepLevel?.profile ?? BLEEP_LEVEL_DEFAULT;
   const bleepLevel = pendingLevel ?? savedLevel;
+  const refreshLevelPreview = useCallback(async (attempt) => {
+    const st = levelRef.current;
+    const accepted = await previewStore.refresh().catch(() => false);
+    if (!activeView.current || st.revision !== attempt.revision || levelWriteOwner() !== attempt.owner) return;
+    st.retrying = false;
+    if (!accepted) {
+      setPreviewRecovery(attempt);
+      return;
+    }
+    setPreviewRecovery(null);
+    if (latest.current.selectedId !== attempt.rowId) return;
+    const selectedRow = latest.current.rows?.find((row) => row.id === attempt.rowId);
+    if (selectedRow) previewStore.jumpToCue({ in: selectedRow.in });
+  }, [activeView]);
+
   const saveLevel = useCallback(async () => {
     const st = levelRef.current;
-    clearTimeout(st.timer); st.timer = null;
-    const value = st.value;
+    clearTimeout(st.timer);
+    st.timer = null;
+    const { value, revision, rowId, owner } = st;
     if (value == null) return;
     st.value = null;
+    const base = `${API}/${encodeURIComponent(rk)}`;
+    const latestEdit = () => activeView.current && st.revision === revision;
+    const isCurrent = () => latestEdit() && levelWriteOwner() === owner;
+    const readBack = (cueId, saved) => {
+      void refreshReview().catch(() => {}).finally(() => { if (isCurrent()) setPendingLevel(null); });
+      void refreshLevelPreview({ revision, rowId: cueId, owner, saved });
+    };
     try {
-      await DaylightAPI(`${API}/${encodeURIComponent(rk)}/settings`, { settings: { bleepLevel: value } }, 'PUT');
+      if (!await enqueueLevelWrite(`${base}/settings`, owner, value)) {
+        if (latestEdit()) setPendingLevel(null);
+        return;
+      }
       logger.info('content_filter.review.bleep_level', { rk, level: value });
-      if (!activeView.current) return;
-      await previewStore.refresh();
-      if (!activeView.current) return;
-      reload();
-      const r = latest.current.rows?.find((x) => x.id === latest.current.selectedId);
-      if (r) previewStore.jumpToCue({ in: r.in });
+      if (isCurrent()) readBack(rowId, true);
+      else if (levelWriteOwner() === owner) invalidateApiResources(path => path === `${base}/review`);
     } catch (err) {
       logger.warn('content_filter.review.bleep_level_failed', { rk, level: value, error: err.message });
-      if (!activeView.current) return;
-      setMessage(err.message || 'The bleep level did not save.');
-    } finally {
-      if (activeView.current && st.value == null) setPendingLevel(current => current === value ? null : current);
+      if (isCurrent()) {
+        setMessage(err.message || 'The bleep level did not save.');
+        // A prior write can have committed while this newer edit was queued.
+        readBack(null, false);
+      }
     }
-  }, [rk, reload, activeView]);
+  }, [rk, refreshReview, activeView, refreshLevelPreview]);
+  const retryPreview = () => {
+    const st = levelRef.current;
+    if (!previewRecovery || st.retrying || levelWriteOwner() !== previewRecovery.owner) return;
+    st.retrying = true;
+    setPreviewRecovery({ ...previewRecovery, retrying: true });
+    void refreshLevelPreview(previewRecovery);
+  };
   const changeBleepLevel = (delta) => {
     const st = levelRef.current;
     const from = st.value ?? bleepLevel;
     const next = clampBleepLevel(from + delta);
+    st.revision++;
+    st.rowId = latest.current.selectedId;
+    st.owner = levelWriteOwner();
+    st.retrying = false;
+    setPreviewRecovery(null);
     st.value = next; setPendingLevel(next);
     setMessage(`Bleep level ${Math.round(next * 100)}%`);
     clearTimeout(st.timer);
@@ -256,10 +314,18 @@ export function useReviewStation({ ratingKey, data, reload, selected, select, ac
     next: () => step(1), prev: () => step(-1), replay, rework: reworkKey, helpOpen, verdict, undo, effect, widen,
     cycleKind: () => setScope({ ...scope, kind: nextKind(scope.kind) }),
     bleepLevel: changeBleepLevel,
+    retryPreview: previewRecovery ? retryPreview : null,
     help: () => setHelpOpen((v) => !v),
     escape: () => { if (helpOpen) { setHelpOpen(false); return true; } return false; },
   };
-  return { scope, setScope, scoped, row, pick, handlers, message: saving ? 'Saving…' : message, helpOpen, canUndo, tally, bleepLevel, flagged: flagged.length, rework };
+  return {
+    scope, setScope, scoped, row, pick, handlers, message: saving ? 'Saving…' : message, helpOpen, canUndo, tally,
+    bleepLevel, flagged: flagged.length, rework,
+    previewRecovery: previewRecovery ? {
+      message: previewRecovery.saved ? 'Bleep level saved. The preview could not refresh.' : 'The preview could not refresh.',
+      retry: retryPreview, retrying: Boolean(previewRecovery.retrying),
+    } : null,
+  };
 }
 
 export default useReviewStation;

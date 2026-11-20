@@ -12,9 +12,8 @@
  *              again; logged as `content-filter.load.failed`
  *
  * `reload()` refetches the same title WITHOUT clearing `data` first, so filtering
- * keeps running while a preview edit is re-read; it resolves once the new data is
- * set (or, on failure, once the current data has been kept and the failure logged
- * as `content-filter.reload.failed`). It never rejects.
+ * keeps running while a preview edit is re-read. It resolves true when the
+ * current read receives a cascade for playback.
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { getChildLogger } from "../../../../../frontend/src/lib/logging/singleton.js";
@@ -53,22 +52,24 @@ export function useFilterData(contentId, { profile = 'family', enabled = true, r
       const { signal } = controller;
       try {
         const next = await readFilter(url, signal);
-        if (signal.aborted) return;
+        if (signal.aborted) return false;
         setState({ url, ...next });
         if (next.status === 'none') logger().debug?.('content-filter.load.none', { ratingKey });
         else logger().info?.(refresh ? 'content-filter.reloaded' : 'content-filter.loaded', {
           ratingKey, cues: next.data?.edl?.cues?.length || 0, profile: next.data?.profile?.name || null, attempt,
         });
+        return next.status === 'ready' && Boolean(next.data?.edl);
       } catch (error) {
-        if (signal.aborted) return;
+        if (signal.aborted) return false;
         if (!refresh && attempt === 0) {
           logger().debug?.('content-filter.load.retry', { ratingKey, error: error.message, retryDelayMs });
           timer = setTimeout(() => read(false, 1), retryDelayMs);
-          return;
+          return false;
         }
         setState(previous => previous.url === url && previous.status === 'loading'
           ? { url, data: null, status: 'failed' } : previous);
         logger().warn?.(refresh ? 'content-filter.reload.failed' : 'content-filter.load.failed', { ratingKey, error: error.message });
+        return false;
       }
     }
 
@@ -81,7 +82,7 @@ export function useFilterData(contentId, { profile = 'family', enabled = true, r
     };
   }, [url, ratingKey, retryDelayMs]);
 
-  const reload = useCallback(async () => { await activeRead.current?.(true); }, []);
+  const reload = useCallback(async () => activeRead.current?.(true) ?? false, []);
 
   if (state.url !== url) return { data: null, status: url ? 'loading' : 'idle', reload };
   return { data: state.data, status: state.status, reload };
