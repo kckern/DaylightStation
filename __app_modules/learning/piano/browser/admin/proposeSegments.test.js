@@ -8,8 +8,8 @@ const lh = (midi) => ({ midi, staff: 1 });
 
 /**
  * A Jingle-Bells-shaped 16 bars in 4/4: four 4-bar phrases of steady melody quarters
- * over a left hand on beats 1 and 3, each phrase closing on a whole note whose bass
- * rises G→C into the next phrase. One step per onset, the kiosk's shape.
+ * over an oom-pah left hand (C on beat 1, G on beat 3, so the bass rises G→C into
+ * every bar), each phrase closing on a whole note. One step per onset, the kiosk's shape.
  */
 function jingleSteps() {
   const tune = [64, 64, 64, 64, 64, 64, 64, 67, 60, 62, 64, 64, 65, 65, 65, 65];
@@ -22,7 +22,7 @@ function jingleSteps() {
     } else {
       at(0, [rh(tune[m]), lh(48)]);
       at(1, [rh(tune[m] + 2)]);
-      at(2, [rh(tune[m]), lh(52)]);
+      at(2, [rh(tune[m]), lh(43)]);
       at(3, [rh(tune[m] - 1)]);
     }
   }
@@ -40,8 +40,9 @@ describe('proposeSegments', () => {
     ]);
     expect(proposal).toMatchObject({ scorer: 'heuristic', model: null, at: 'T' });
     expect(Object.keys(proposal.boundaries)).toHaveLength(15);
-    for (const k of [3, 7, 11]) expect(proposal.boundaries[k]).toBeGreaterThan(0.8);
-    expect(proposal.boundaries[0]).toBeLessThan(0.5);
+    // The bass rises G→C into every bar, so it earns nothing; the held notes decide.
+    for (const k of [3, 7, 11]) expect(proposal.boundaries[k]).toBeGreaterThan(0.7);
+    for (const k of [0, 1, 4, 8, 12]) expect(proposal.boundaries[k]).toBeLessThan(0.45);
     expect(proposal.features).toHaveLength(15);
     expect(proposal.features[0]).toHaveLength(proposal.featureKeys.length);
     expect(proposal.features.flat().every((v) => v === null || typeof v === 'number')).toBe(true);

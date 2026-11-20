@@ -5,7 +5,7 @@
  * with the draft when a grown-up clicks Save draft.
  */
 import {
-  barlineFeatures, compactFeatures, FEATURE_KEYS, heuristicBoundaryP, partitionSegments,
+  barlineFeatures, boundaryProbabilities, compactFeatures, FEATURE_KEYS, partitionSegments,
 } from '../../portable/music/phraseSegments.mjs';
 import { idForIndex } from './segmentEditor.js';
 import { householdLearnConfig } from './scorePlan.js';
@@ -40,7 +40,7 @@ export function proposeSegments(score, { targetLen = 4, now = () => new Date().t
   const features = barlineFeatures({
     measures, steps: score?.steps || [], sections: score?.sections || [], beatsPerMeasure: score?.beatsPerMeasure,
   });
-  const pAfter = new Map(features.map((f) => [f.after, heuristicBoundaryP(f)]));
+  const pAfter = boundaryProbabilities(features);
   const segments = partitionSegments(measures.length, pAfter, { ...PROPOSAL_LIMITS, targetLen })
     .map((s, i) => ({ id: idForIndex(i), start: s.start, end: s.end }));
   const boundaries = Object.fromEntries([...pAfter].map(([k, p]) => [k, round3(p)]));

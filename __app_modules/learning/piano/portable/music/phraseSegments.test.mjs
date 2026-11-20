@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import {
   barlineFeatures, heuristicBoundaryP, partitionSegments, compactFeatures, FEATURE_KEYS,
+  pieceContext, boundaryProbabilities,
 } from './phraseSegments.mjs';
 
 /** The kiosk's buildMeasures, inlined so this test stays portable. */
@@ -124,6 +125,22 @@ describe('heuristicBoundaryP', () => {
     assert.ok(steady < 0.5 && held > 0.6 && cadence > held);
     assert.ok(held < 1 && cadence < 1);
   });
+
+  it('a cadential bass that fires on most barlines earns nothing', () => {
+    const f = { tailGapRatio: 0.25, bassMotion: 5, densityChange: 0 };
+    const plain = heuristicBoundaryP({ ...f, bassMotion: 2 });
+    assert.equal(heuristicBoundaryP(f, { cadenceRate: 0.9 }), plain);
+    assert.equal(heuristicBoundaryP(f, { cadenceRate: 0.5 }), plain);
+    // Rare (a few phrase ends): scaled by how rare it is.
+    const rare = heuristicBoundaryP(f, { cadenceRate: 0.25 });
+    assert.ok(rare > plain && rare < heuristicBoundaryP(f));
+  });
+
+  it('pieceContext measures how often the cadential bass fires among barlines with a bass', () => {
+    const ctx = pieceContext([{ bassMotion: 5 }, { bassMotion: -7 }, { bassMotion: 2 }, { bassMotion: null }]);
+    assert.equal(ctx.cadenceRate, 2 / 3);
+    assert.equal(pieceContext([{ bassMotion: null }]).cadenceRate, 0);
+  });
 });
 
 const lens = (segs) => segs.map((s) => s.end - s.start + 1);
@@ -153,6 +170,17 @@ describe('partitionSegments', () => {
       assert.equal(segs[segs.length - 1].end, 19);
       segs.slice(1).forEach((s, i) => assert.equal(s.start, segs[i].end + 1));
     }
+  });
+
+  it('steady music with no phrase signal lands on targetLen, not maxLen', () => {
+    assert.deepEqual(lens(partitionSegments(16, pMap(16, 0.34))), [4, 4, 4, 4]);
+    assert.deepEqual(lens(partitionSegments(16, pMap(16, 0.2))), [4, 4, 4, 4]);
+    assert.deepEqual(lens(partitionSegments(18, pMap(18, 0.34), { targetLen: 6 })), [6, 6, 6]);
+  });
+
+  it('clear phrase marks still win over the target length', () => {
+    const segs = partitionSegments(18, pMap(18, 0.34, { 5: 0.9, 11: 0.9 }));
+    assert.deepEqual(segs.map((s) => s.end), [5, 11, 17]);
   });
 
   it('is deterministic', () => {
@@ -189,7 +217,29 @@ describe('partitionSegments', () => {
   });
 });
 
-describe('a Jingle-Bells-like 16 bars through the whole pipeline', () => {
+/** Steps for 16 bars of 4/4 in 4-bar phrases; `bass(m, beat)` gives the left hand. */
+function phrasePiece({ normalBass, endBass }) {
+  const bars = Array.from({ length: 16 }, (_, m) => {
+    if (m % 4 === 3) return [[0, [rh(64), ...endBass[0]]], ...(endBass[1] ? [[2, endBass[1]]] : [])];
+    return [[0, [rh(64), ...normalBass[0]]], [1, [rh(64)]], [2, [rh(64), ...normalBass[1]]], [3, [rh(67)]]];
+  });
+  return stepsFrom(bars);
+}
+const proposeEnds = (steps, opts) => {
+  const features = barlineFeatures({ measures: buildMeasures(steps), steps, beatsPerMeasure: 4 });
+  return partitionSegments(16, boundaryProbabilities(features), opts).map((s) => s.end);
+};
+
+describe('synthetic 16-bar phrase pieces through the whole pipeline', () => {
+  it('a whole note closing every 4th bar, melody only, gives 4-bar segments', () => {
+    assert.deepEqual(proposeEnds(phrasePiece({ normalBass: [[], []], endBass: [[]] })), [3, 7, 11, 15]);
+  });
+
+  it('an oom-pah left hand rising G to C into every bar does not fragment it', () => {
+    const steps = phrasePiece({ normalBass: [[lh(48)], [lh(43)]], endBass: [[lh(48)], [lh(43)]] });
+    assert.deepEqual(proposeEnds(steps), [3, 7, 11, 15]);
+  });
+
   it('cuts at 4, 8 and 12', () => {
     // Steady quarters with a left hand on beats 1 and 3 (C, E); each phrase's last
     // bar holds a whole note over C then G, so the bass rises a fourth (G up to C)
@@ -200,8 +250,7 @@ describe('a Jingle-Bells-like 16 bars through the whole pipeline', () => {
     });
     const steps = stepsFrom(bars);
     const features = barlineFeatures({ measures: buildMeasures(steps), steps, beatsPerMeasure: 4 });
-    const p = new Map(features.map((f) => [f.after, heuristicBoundaryP(f)]));
-    const segs = partitionSegments(16, p, { targetLen: 4 });
+    const segs = partitionSegments(16, boundaryProbabilities(features), { targetLen: 4 });
     assert.deepEqual(segs.map((s) => s.end), [3, 7, 11, 15]);
   });
 });

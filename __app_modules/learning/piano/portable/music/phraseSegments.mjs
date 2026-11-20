@@ -8,6 +8,26 @@
  * `number` the printed one. A barline "after k" sits between layout positions k and
  * k+1; a repeat can put the same source measure at two positions, so a barline can
  * jump backwards in the score.
+ *
+ * How a proposal is made (the heuristic baseline that calibration compares against):
+ *
+ * 1. Features per barline (`barlineFeatures`): melody tail gap as a fraction of the
+ *    bar, rehearsal section start, bass motion into the next downbeat, change in
+ *    notes per beat, and whether the next bar opens with a rest.
+ * 2. p(phrase ends) per barline (`heuristicBoundaryP`), a logistic over
+ *      −1.2 + 2.2·min(tailGapRatio, 1)
+ *           + 0.8·[bass falls a fifth or rises a fourth]·w
+ *           + 0.4·min(densityChange, 2)
+ *    with p = 1 at a section start. w = 1 − (share of the piece's barlines with a
+ *    bass where that motion happens), and w = 0 once that share is over 40%: an
+ *    oom-pah figure that rises G→C into every bar says nothing about phrases.
+ *    `restBar` is recorded but not scored (the tail gap already counts the rest).
+ * 3. Segments (`partitionSegments`): over every way to cut the bars, minimize the
+ *    number of segments shorter than minLen, then maximize
+ *      Σ log p (cuts) + Σ log(1 − p) (barlines left whole) − 0.6·Σ |len − targetLen|
+ *    with p clamped to [0.02, 0.98], p = 1 always cut and no segment over maxLen.
+ *    The length term keeps music with no phrase signal at targetLen instead of
+ *    drifting to maxLen; a clear phrase mark (p ≈ 0.9) still outweighs it.
  */
 
 const EPS = 1e-6;
@@ -127,33 +147,65 @@ export function compactFeatures(records) {
   }));
 }
 
-/** p(phrase ends after this barline) from features. Hand-tuned; calibrated in Task 16d. */
-export function heuristicBoundaryP(f) {
+const isCadentialBass = (motion) => motion === -7 || motion === 5;
+/** Above this share of barlines, a cadential bass motion is the texture, not a cadence. */
+export const CADENCE_RATE_LIMIT = 0.4;
+
+/**
+ * What the boundary scorer needs to know about the whole piece: `cadenceRate`, the
+ * share of barlines with a bass on both sides where it falls a fifth or rises a fourth.
+ */
+export function pieceContext(features) {
+  const withBass = (features || []).filter((f) => f?.bassMotion != null);
+  const cadences = withBass.filter((f) => isCadentialBass(f.bassMotion)).length;
+  return { cadenceRate: withBass.length ? cadences / withBass.length : 0 };
+}
+
+/**
+ * p(phrase ends after this barline) from features. Hand-tuned; calibrated in Task 16d.
+ * `context.cadenceRate` (from pieceContext) discounts a bass motion the piece repeats.
+ */
+export function heuristicBoundaryP(f, context = {}) {
   if (f?.sectionStart) return 1;
   let score = -1.2;
   score += Math.min(Math.max(f?.tailGapRatio ?? 0, 0), 1) * 2.2;
-  if (f?.bassMotion === -7 || f?.bassMotion === 5) score += 0.8;
+  if (isCadentialBass(f?.bassMotion)) {
+    const rate = Number.isFinite(context?.cadenceRate) ? context.cadenceRate : 0;
+    score += rate > CADENCE_RATE_LIMIT ? 0 : 0.8 * (1 - rate);
+  }
   score += Math.min(f?.densityChange ?? 0, 2) * 0.4;
   return 1 / (1 + Math.exp(-score));
 }
 
+/** Barline-after-k → p for a whole piece's features, with the piece's context. */
+export function boundaryProbabilities(features) {
+  const context = pieceContext(features);
+  return new Map((features || []).map((f) => [f.after, heuristicBoundaryP(f, context)]));
+}
+
 const clampP = (p) => Math.min(0.98, Math.max(0.02, p));
 
-/** Lexicographic: fewer short segments, then higher likelihood, then closer to target. */
+/** Weight of the per-segment |len − targetLen| penalty against the log-likelihood. */
+export const LENGTH_WEIGHT = 0.6;
+
+/** Fewer short segments, then the higher score (likelihood − length penalty), then closer to target. */
 function better(a, b) {
   if (!b) return true;
   if (a.short !== b.short) return a.short < b.short;
-  if (Math.abs(a.ll - b.ll) > 1e-9) return a.ll > b.ll;
+  const sa = a.ll - LENGTH_WEIGHT * a.dev;
+  const sb = b.ll - LENGTH_WEIGHT * b.dev;
+  if (Math.abs(sa - sb) > 1e-9) return sa > sb;
   return a.dev < b.dev - 1e-9;
 }
 
 /**
  * Cut `measureCount` layout positions into contiguous segments covering them all.
  * Maximizes Σ log p over cuts + Σ log(1 − p) over barlines left whole (p clamped to
- * [0.02, 0.98]; a missing p is 0.5). A barline with p >= 1 is always cut. No segment
+ * [0.02, 0.98]; a missing p is 0.5) − LENGTH_WEIGHT · Σ |len − targetLen| over
+ * segments. A barline with p >= 1 is always cut. No segment
  * is longer than maxLen. A segment shorter than minLen appears only where forced cuts
- * or the ends of the piece leave no other way, and then as few as possible. Ties go to
- * the partition whose lengths sit closest to targetLen. Deterministic.
+ * or the ends of the piece leave no other way, and then as few as possible. Exact ties
+ * go to the partition whose lengths sit closest to targetLen. Deterministic.
  * @param {number} measureCount
  * @param {Map<number, number>|Record<number, number>} pAfter  barline-after-k → p
  * @returns {Array<{start:number,end:number}>}
