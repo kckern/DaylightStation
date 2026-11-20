@@ -163,8 +163,8 @@ test('runPairingWindow: the full lifecycle is relayed in order with the requestI
   ]);
   assert.ok(calls.every((c) => c.topic === 'bt.pair.progress' && c.payload.requestId === 'pair-9'));
   assert.equal(calls.filter((c) => c.payload.phase === 'done').length, 1);
-  // The helper got the sanitized targets (PIN included) and the window length.
-  assert.deepEqual(args[0], { targets: TARGETS, durationMs: 60000 });
+  // The helper got the sanitized targets (PIN included), the window length and the mode.
+  assert.deepEqual(args[0], { targets: TARGETS, durationMs: 60000, mode: 'repair' });
 });
 
 test('runPairingWindow: nothing seen → done reason none-found is passed through', async () => {
@@ -268,4 +268,22 @@ test('handleBtRemoveRequest: rejects a malformed MAC without shelling out', asyn
   );
   assert.equal(calls.length, 0);
   assert.equal(sent[0][1].success, false);
+});
+
+test('runPairingWindow: passes mode to the helper (default repair)', async () => {
+  const a = fakeHelper([{ phase: 'scanning' }, { phase: 'done', paired: [] }]);
+  await runPairingWindow({ spawnHelper: a.spawnHelper, send: () => {}, logger: SILENT_LOGGER });
+  assert.equal(a.args[0].mode, 'repair');
+  const b = fakeHelper([{ phase: 'scanning' }, { phase: 'done', paired: [] }]);
+  await runPairingWindow({ spawnHelper: b.spawnHelper, send: () => {}, logger: SILENT_LOGGER, mode: 'add' });
+  assert.equal(b.args[0].mode, 'add');
+});
+
+test('handleBtPairRequest: only "add" selects add mode', async () => {
+  const a = fakeHelper([{ phase: 'scanning' }, { phase: 'done', paired: [] }]);
+  await handleBtPairRequest({ requestId: 'r1', mode: 'add' }, { spawnHelper: a.spawnHelper, send: () => {}, logger: SILENT_LOGGER });
+  assert.equal(a.args[0].mode, 'add');
+  const b = fakeHelper([{ phase: 'scanning' }, { phase: 'done', paired: [] }]);
+  await handleBtPairRequest({ requestId: 'r2', mode: 'rm -rf' }, { spawnHelper: b.spawnHelper, send: () => {}, logger: SILENT_LOGGER });
+  assert.equal(b.args[0].mode, 'repair');
 });

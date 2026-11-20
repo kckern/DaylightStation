@@ -1,12 +1,12 @@
 /**
  * btPairing — controller pairing + forget, driven from the bus.
  *
- * PAIR: the frontend publishes `bt.pair.request` { requestId, durationMs,
+ * PAIR: the frontend publishes `bt.pair.request` { requestId, durationMs, mode,
  * targets } (relayed by the backend). `targets` come from the household
  * controller config (media/emulation/input.yml `controllers[].pairing`): name
  * regex, MAC prefix and legacy PIN per controller. This box spawns
  * `bt_pair_helper.py`, which owns the whole lifecycle over BlueZ D-Bus —
- * BR/EDR discovery, a PIN-answering default agent, Pair while discovering,
+ * discovery (BR/EDR in `repair` mode, BR/EDR + LE in `add` mode), a PIN-answering default agent, Pair while discovering,
  * automatic remove-and-retry once, Trusted, Paired+Bonded check, Connect, and
  * waiting for the kernel INPUT DEVICE (disconnect/reconnect once). Each line
  * the helper prints is one transition, relayed as `bt.pair.progress`:
@@ -139,6 +139,7 @@ function defaultSpawnHelper(argJson) {
  * @param {Function} opts.send           (topic, payload) => void — emits bt.pair.progress.
  * @param {object}   [opts.logger]       console-like.
  * @param {string}   [opts.requestId]    correlation id echoed into every progress event.
+ * @param {'repair'|'add'} [opts.mode]   repair a configured pad (default) or add a new device.
  * @returns {Promise<Array<{address,name}>>} the devices that paired.
  */
 export function runPairingWindow({
@@ -148,6 +149,7 @@ export function runPairingWindow({
   send,
   logger = console,
   requestId,
+  mode = 'repair',
 } = {}) {
   const progress = (extra) => {
     try {
@@ -170,7 +172,7 @@ export function runPairingWindow({
 
     let child;
     try {
-      child = spawnHelper(JSON.stringify({ targets: sanitizeTargets(targets), durationMs }));
+      child = spawnHelper(JSON.stringify({ targets: sanitizeTargets(targets), durationMs, mode: mode === 'add' ? 'add' : 'repair' }));
     } catch (err) {
       progress({ phase: 'scanning', durationMs });
       progress({ phase: 'error', message: `pairing helper failed to start: ${err?.message}` });
@@ -238,15 +240,16 @@ export async function handleBtPairRequest(message, { spawnHelper, send, logger =
   const requestId = message?.requestId;
   const durationMs = Math.min(Math.max(Number(message?.durationMs) || 60000, 5000), 180000);
   const targets = Array.isArray(message?.targets) ? message.targets : [];
+  const mode = message?.mode === 'add' ? 'add' : 'repair';
   if (activeWindow) {
     logger?.warn?.(`⚠️  bt.pair.request ${requestId} ignored — window ${activeWindow} already open`);
     return [];
   }
-  logger?.info?.(`🎮 bt.pair.request received (requestId=${requestId}, durationMs=${durationMs}, targets=${targets.length})`);
+  logger?.info?.(`🎮 bt.pair.request received (requestId=${requestId}, durationMs=${durationMs}, targets=${targets.length}, mode=${mode})`);
   activeWindow = requestId ?? 'anonymous';
   try { onWindow?.(true); } catch { /* pausing is best-effort */ }
   try {
-    return await runPairingWindow({ spawnHelper, durationMs, targets, send, logger, requestId });
+    return await runPairingWindow({ spawnHelper, durationMs, targets, send, logger, requestId, mode });
   } finally {
     activeWindow = null;
     try { onWindow?.(false); } catch { /* best-effort */ }
