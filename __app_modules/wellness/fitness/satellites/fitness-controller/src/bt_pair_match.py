@@ -59,6 +59,23 @@ def classify_hid(props):
     return None
 
 
+def hid_evidence(props):
+    """True when BlueZ reports something that makes a device an input device:
+    an `input-*` Icon, a peripheral Class of Device, an LE HID Appearance or a
+    HID service UUID. A name alone is not evidence: a BLE light strip called
+    "LED Controller" matches GAMEPAD_NAME."""
+    if str(props.get("Icon", "") or "").startswith("input-"):
+        return True
+    cls = int(props.get("Class", 0) or 0)
+    if ((cls >> 8) & 0x1F) == 0x05:
+        return True
+    appearance = int(props.get("Appearance", 0) or 0)
+    if 0x03C0 <= appearance <= 0x03FF:
+        return True
+    uuids = {str(u).lower() for u in (props.get("UUIDs") or [])}
+    return bool(uuids & HID_UUIDS)
+
+
 def compile_targets(raw):
     out = []
     for t in raw or []:
@@ -91,7 +108,13 @@ def match(props, targets, mode="repair"):
     kind = classify_hid(props)
     if kind is None:
         return None
-    if mode == "add" or kind == "gamepad" or _peripheral_gamepad_class(props) \
+    if mode == "add":
+        # classify_hid falls back to the name; add mode accepts any HID kind,
+        # so it needs real HID evidence first (repair mode keeps the name rule).
+        if not hid_evidence(props):
+            return None
+        return {"id": None, "label": None, "pin": None, "kind": kind}
+    if kind == "gamepad" or _peripheral_gamepad_class(props) \
             or (name and GAMEPAD_NAME.search(name)):
         return {"id": None, "label": None, "pin": None, "kind": kind}
     return None

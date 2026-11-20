@@ -58,7 +58,7 @@ hand-commented, and a YAML round-trip loses the comments.
 | Steps shown | The controller's `steps` from `input.yml` | Generic steps (`ADD_DEVICE_STEPS`): pairing mode, pick the mode first if it has a mode button, keep it close |
 | `targets` | The chosen controller's name regex, MAC prefix, PIN | Every configured controller's (so a configured model's PIN still applies) |
 | Search | Classic Bluetooth only (`Transport: bredr`) | Classic and Low Energy together (`Transport: auto`) |
-| Unlisted devices accepted | Gamepads only: Icon `input-gaming`, a peripheral gamepad/joystick Class (even when the Icon says keyboard), or a gamepad-like name | Any HID kind: gamepad, keyboard, mouse, tablet, remote |
+| Unlisted devices accepted | Gamepads only: Icon `input-gaming`, a peripheral gamepad/joystick Class (even when the Icon says keyboard), or a gamepad-like name | Any HID kind (gamepad, keyboard, mouse, tablet, remote), but only with HID evidence: an `input-*` Icon, a peripheral Class, an LE HID Appearance or a HID service UUID (`hid_evidence`). A gamepad-like name alone is not enough, so a BLE light strip called "LED Controller" is never paired |
 | Existing bond | A bonded pad that turns up discoverable and unconnected has forgotten us, so its stale bond is removed | Never touched (see Bond guard) |
 | Already up | A configured pad that is bonded, connected and up as an input device ends the window at once: `done.reason: already-paired`. The panel says it is already connected and points at Add a new device | No short-circuit |
 
@@ -105,7 +105,7 @@ and report "no new device".
 | Guide | Pair shows the config `steps` first. "It's blinking — start pairing" opens a window. Add shows the generic steps; "Start search" opens a window | `ControllerStatus.jsx`, `pairingGuide.js` |
 | Request | `bt.pair.request {requestId, durationMs: 60000, mode, targets}`. `targets` = name regex, MAC prefix and optional PIN for each controller | `FitnessContext.pairController`, `fitnessBtActions.js` |
 | Discover | The satellite spawns `bt_pair_helper.py` with `{targets, durationMs, mode}`. Discovery transport is `bredr` for repair and `auto` (classic + LE) for add. It considers only devices reported live in this discovery, never a cached RSSI | `satellites/fitness-controller/src/bt_pair_helper.py` |
-| Match | Which device a window may touch (`match`, `classify_hid`, `candidate_action`). A device that is paired *and* connected is skipped in both modes | `bt_pair_match.py` |
+| Match | Which device a window may touch (`match`, `classify_hid`, `hid_evidence`, `candidate_action`). A device that is paired *and* connected is skipped in both modes | `bt_pair_match.py` |
 | Agent | A D-Bus `org.bluez.Agent1` is the default agent for the window. It accepts `AuthorizeService` (HID 0x1124: if refused, HID never comes up), confirms SSP, and answers `RequestPinCode` with the target's `pin` (fallback `0000`) | helper |
 | Pair | `Device1.Pair` while discovery is live. On AuthenticationFailed/Rejected/Canceled, ConnectionAttemptFailed, InProgress or AlreadyExists it removes the device, rediscovers and retries **once**. In add mode AlreadyExists is final, since the device is already bonded. In repair mode a bonded pad that turns up discoverable and unconnected has its stale bond removed first | helper, `is_retryable` |
 | Bond + trust | `Trusted = dbus.Boolean(True)` (a plain bool fails with signature `ssb`). It then requires `Paired` AND `Bonded` | helper |
