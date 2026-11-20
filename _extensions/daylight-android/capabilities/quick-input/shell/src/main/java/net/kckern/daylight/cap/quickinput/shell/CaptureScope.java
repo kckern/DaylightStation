@@ -11,7 +11,7 @@ import java.util.regex.Pattern;
 /** Binding shared by the installed capture screens and the active inputs payload. */
 public final class CaptureScope {
     public static final String EXTRA = "capture-owner";
-    private static final String PREFIX = "owner-";
+    public static final String DIRECTORY_PREFIX = "owner-";
     private static final Pattern KEY = Pattern.compile("[0-9a-f]{64}");
     private static final AtomicReference<Supplier<String>> ACTIVE = new AtomicReference<>();
 
@@ -50,13 +50,13 @@ public final class CaptureScope {
 
     public static File inbox(File base, String key) {
         if (!valid(key)) throw new IllegalArgumentException("Invalid capture owner");
-        return new File(base, PREFIX + key);
+        return new File(base, DIRECTORY_PREFIX + key);
     }
 
     /** Legacy flat inbox files have no binding. Malformed owner directories fail closed. */
     public static boolean allowsFile(File file, String current) {
         String directory = file.getParentFile() == null ? "" : file.getParentFile().getName();
-        return !directory.startsWith(PREFIX) || valid(current) && directory.equals(PREFIX + current);
+        return !directory.startsWith(DIRECTORY_PREFIX) || valid(current) && directory.equals(DIRECTORY_PREFIX + current);
     }
 
 }

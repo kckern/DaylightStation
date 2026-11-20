@@ -149,7 +149,7 @@ final class InputUploader implements UploadPump.Sender {
             return CaptureScope.allowsFile(file, owner);
         } catch (LinkageError olderShell) {
             File directory = file.getParentFile();
-            return directory == null || !directory.getName().startsWith("owner-");
+            return directory == null || !directory.getName().startsWith(CaptureScope.DIRECTORY_PREFIX);
         }
     }
 

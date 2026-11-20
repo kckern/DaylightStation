@@ -11,20 +11,15 @@ final class TextDraftWriter {
     final String id;
     private final CaptureDraftStore store;
     private final Executor disk;
-    private final String dest;
-    private final String label;
     private final Consumer<IOException> writeFailed;
     private String pending;
     private boolean scheduled;
     private boolean sealed;
 
-    TextDraftWriter(CaptureDraftStore store, Executor disk, String id, String dest, String label,
-                    Consumer<IOException> writeFailed) {
+    TextDraftWriter(CaptureDraftStore store, Executor disk, String id, Consumer<IOException> writeFailed) {
         this.store = store;
         this.disk = disk;
         this.id = id;
-        this.dest = dest;
-        this.label = label;
         this.writeFailed = writeFailed;
     }
 
@@ -66,7 +61,6 @@ final class TextDraftWriter {
                 }
             }
             try {
-                if (store.get(id) == null) store.create(id, dest, label, CaptureDraftStore.Kind.TEXT);
                 store.writeText(id, text);
             } catch (IOException e) {
                 synchronized (this) {

@@ -17,11 +17,12 @@ public class TextDraftWriterTest {
     @Test public void latestEditFlushesInOrderBeforeSendAndCannotRecreateSentDraft() throws Exception {
         CaptureDraftStore store = new CaptureDraftStore(files.getRoot(), CaptureScope.key("https://home.example", "alice"));
         Deque<Runnable> work = new ArrayDeque<>();
-        TextDraftWriter writer = new TextDraftWriter(store, work::addLast, CaptureDraftStore.nextId(), "journal", "Journal",
+        CaptureDraftStore.Draft draft = store.create("journal", "Journal", CaptureDraftStore.Kind.TEXT);
+        TextDraftWriter writer = new TextDraftWriter(store, work::addLast, draft.id,
                 failure -> { throw new AssertionError(failure); });
         writer.edit("Earlier");
         writer.edit("Latest");
-        assertNull(store.get(writer.id));
+        assertFalse(store.get(writer.id).hasContent());
         writer.complete(() -> {
             assertEquals("Latest", new String(Files.readAllBytes(store.get(writer.id).file.toPath()), StandardCharsets.UTF_8));
             assertTrue(store.send(writer.id));
@@ -29,5 +30,17 @@ public class TextDraftWriterTest {
         writer.edit("Late callback");
         while (!work.isEmpty()) work.removeFirst().run();
         assertNull(store.get(writer.id));
+    }
+
+    @Test public void staleEditorCannotRecreateConsumedDraftFromAnEarlierActivityState() throws Exception {
+        CaptureDraftStore store = new CaptureDraftStore(files.getRoot(), CaptureScope.key("https://home.example", "alice"));
+        CaptureDraftStore.Draft draft = store.create("journal", "Journal", CaptureDraftStore.Kind.TEXT);
+        store.writeText(draft.id, "Sent");
+        assertTrue(store.send(draft.id));
+        java.util.List<java.io.IOException> failures = new java.util.ArrayList<>();
+        TextDraftWriter stale = new TextDraftWriter(store, Runnable::run, draft.id, failures::add);
+        stale.edit("State from before Send");
+        assertEquals(1, failures.size());
+        assertNull(store.get(draft.id));
     }
 }

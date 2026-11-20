@@ -1,6 +1,7 @@
 package net.kckern.daylight.cap.quickinput;
 
 import net.kckern.daylight.cap.quickinput.Destinations.Kind;
+import net.kckern.daylight.cap.quickinput.shell.CaptureScope;
 import net.kckern.daylight.core.backend.Backoff;
 
 import org.json.JSONArray;
@@ -340,11 +341,9 @@ final class InputQueue {
             lost = doc.optInt("lost", 0);
             discarded = doc.optInt("discarded", 0);
             readHolds(doc);
-            JSONArray list = entriesOf(doc);
-            for (int i = 0; list != null && i < list.length(); i++) {
+            for (JSONObject o : entriesOf(doc)) {
                 try {
-                    Entry m = entryOf(list.getJSONObject(i));
-                    JSONObject o = list.getJSONObject(i);
+                    Entry m = entryOf(o);
                     State stored = State.valueOf(o.optString("state", "QUEUED"));
                     // The process ended mid-upload. The backend answers a repeated id as a duplicate.
                     m.state = stored == State.UPLOADING ? State.QUEUED : stored;
@@ -370,10 +369,19 @@ final class InputQueue {
         lastWritten = snapshot();
     }
 
-    /** "inputs"; "memos" in a file written before there were destinations. */
-    private static JSONArray entriesOf(JSONObject doc) {
-        JSONArray list = doc.optJSONArray("inputs");
-        return list != null ? list : doc.optJSONArray("memos");
+    /** Earlier readers see only flat inputs. A scoped-aware reader loads both arrays. */
+    private static List<JSONObject> entriesOf(JSONObject doc) {
+        JSONArray unbound = doc.optJSONArray("inputs");
+        if (unbound == null) unbound = doc.optJSONArray("memos");
+        List<JSONObject> entries = new ArrayList<>();
+        for (JSONArray list : new JSONArray[] { unbound, doc.optJSONArray("ownedInputs") }) {
+            if (list == null) continue;
+            for (int i = 0; i < list.length(); i++) {
+                JSONObject entry = list.optJSONObject(i);
+                if (entry != null) entries.add(entry);
+            }
+        }
+        return entries;
     }
 
     /** An entry written before there were destinations has neither: it is a voice memo for the journal. */
@@ -402,15 +410,19 @@ final class InputQueue {
 
     private String snapshot() {
         try {
-            JSONArray list = new JSONArray();
+            JSONArray unbound = new JSONArray();
+            JSONArray owned = new JSONArray();
             for (Entry m : memos) {
+                File directory = new File(m.file).getParentFile();
+                JSONArray list = directory != null && directory.getName().startsWith(CaptureScope.DIRECTORY_PREFIX)
+                        ? owned : unbound;
                 list.put(new JSONObject().put("id", m.id).put("file", m.file).put("recordedAtMs", m.recordedAtMs)
                         .put("dest", m.dest).put("kind", m.kind.word).put("contentType", m.contentType)
                         .put("state", m.state.name()).put("attempts", m.attempts).put("failures", m.failures)
                         .put("nextAttemptAtMs", m.nextAttemptAtMs).put("lastError", m.lastError));
             }
             return new JSONObject().put("uploaded", uploaded).put("lost", lost).put("discarded", discarded)
-                    .put("holds", new JSONObject(holds)).put("inputs", list).toString();
+                    .put("holds", new JSONObject(holds)).put("inputs", unbound).put("ownedInputs", owned).toString();
         } catch (JSONException impossible) {
             throw new IllegalStateException(impossible);
         }
@@ -425,9 +437,7 @@ final class InputQueue {
             lost = doc.optInt("lost", 0);
             discarded = doc.optInt("discarded", 0);
             readHolds(doc);
-            JSONArray list = entriesOf(doc);
-            for (int i = 0; list != null && i < list.length(); i++) {
-                JSONObject o = list.getJSONObject(i);
+            for (JSONObject o : entriesOf(doc)) {
                 Entry m = entryOf(o);
                 m.state = State.valueOf(o.optString("state", "QUEUED"));
                 m.attempts = o.optInt("attempts", 0);

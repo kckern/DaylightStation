@@ -22,6 +22,35 @@ public class InputQueueTest {
 
     @Before public void setUp() throws Exception { state = new File(tmp.newFolder(), "memo-queue.json"); }
 
+    @Test public void rollbackReaderCannotClaimAlreadyIndexedScopedCapture() throws Exception {
+        String legacyId = "1700000000000-ab12cd34";
+        String ownedId = "1700000001000-ab12cd34";
+        String scope = net.kckern.daylight.cap.quickinput.shell.CaptureScope.key("https://home.example", "alice");
+        File inbox = tmp.newFolder("inbox");
+        File ownedInbox = new File(inbox, "owner-" + scope);
+        assertTrue(ownedInbox.mkdir());
+        File owned = new File(ownedInbox, ownedId + ".journal.ogg");
+        Files.write(owned.toPath(), new byte[] { 1 });
+        InputQueue queue = new InputQueue(state);
+        queue.add(legacyId, new File(inbox, legacyId + ".ogg").getPath(), 1700000000000L);
+        queue.add(ownedId, owned.getPath(), 1700000001000L);
+        queue.park(ownedId, "known refusal");
+        JSONObject saved = new JSONObject(new String(Files.readAllBytes(state.toPath()), StandardCharsets.UTF_8));
+        assertEquals(1, saved.getJSONArray("inputs").length());
+        assertEquals(legacyId, saved.getJSONArray("inputs").getJSONObject(0).getString("id"));
+        InputQueue reopened = new InputQueue(state);
+        assertEquals(1, reopened.parked());
+
+        // Older code writes only its known fields. The file remains private to the
+        // scoped scanner and can still be re-indexed under exactly its original ID.
+        JSONObject rewrittenByOlderPayload = new JSONObject().put("inputs", saved.getJSONArray("inputs"));
+        Files.write(state.toPath(), rewrittenByOlderPayload.toString().getBytes(StandardCharsets.UTF_8));
+        InputQueue afterRollback = new InputQueue(state);
+        assertEquals(0, InputInbox.scan(inbox, afterRollback));
+        assertEquals(1, InputInbox.scan(ownedInbox, afterRollback));
+        assertEquals(ownedId, afterRollback.describe().getJSONArray("inputs").getJSONObject(1).getString("id"));
+    }
+
     @Test public void addingTheSameMemoTwiceQueuesItOnce() {
         InputQueue q = new InputQueue(state);
         assertTrue(q.add("1000-a", "/inbox/1000-a.m4a", 1000));

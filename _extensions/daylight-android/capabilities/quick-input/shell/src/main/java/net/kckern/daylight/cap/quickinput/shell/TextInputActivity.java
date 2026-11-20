@@ -97,7 +97,6 @@ public class TextInputActivity extends Activity {
         super.onSaveInstanceState(state);
         if (writer == null) return;
         state.putString("draft", writer.id);
-        state.putBoolean("finishing-draft", finishingDraft);
         if (!finishingDraft && CaptureScope.currentIs(owner)) state.putString("text", field.getText().toString());
     }
 
@@ -121,30 +120,39 @@ public class TextInputActivity extends Activity {
         getWindow().setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         String restoredId = state == null ? null : state.getString("draft");
         String restoredBody = state == null ? null : state.getString("text");
-        boolean restoringHandoff = state != null && state.getBoolean("finishing-draft");
         DISK.execute(() -> {
             try {
-                CaptureDraftStore.Draft draft = restoredId == null
+                CaptureDraftStore.Draft stored = restoredId == null
                         ? selectedStore.latest(selectedDest, CaptureDraftStore.Kind.TEXT) : selectedStore.get(restoredId);
-                String id = draft != null ? draft.id : restoredId != null ? restoredId : CaptureDraftStore.nextId();
-                String text = draft != null && draft.file.isFile()
-                        ? new String(Files.readAllBytes(draft.file.toPath()), StandardCharsets.UTF_8)
+                if (restoredId != null && (stored == null || stored.kind != CaptureDraftStore.Kind.TEXT
+                        || !selectedDest.equals(stored.dest))) {
+                    // An earlier Android state can outlive a completed Send or Discard.
+                    runOnUiThread(() -> {
+                        if (store == selectedStore && !isDestroyed()) finish();
+                    });
+                    return;
+                }
+                CaptureDraftStore.Draft draft = stored != null ? stored
+                        : selectedStore.create(selectedDest, selectedLabel == null ? "Quick input" : selectedLabel,
+                                CaptureDraftStore.Kind.TEXT);
+                boolean hasFile = draft.file.isFile();
+                String text = hasFile ? new String(Files.readAllBytes(draft.file.toPath()), StandardCharsets.UTF_8)
                         : restoredBody == null ? "" : restoredBody;
                 runOnUiThread(() -> {
                     if (isDestroyed() || isFinishing() || store != selectedStore) return;
-                    if (!CaptureScope.currentIs(selectedOwner) || restoringHandoff && draft == null) {
+                    if (!CaptureScope.currentIs(selectedOwner)) {
                         finish();
                         return;
                     }
-                    if (draft != null) label = draft.label;
+                    label = draft.label;
                     setTitle(label);
-                    writer = new TextDraftWriter(selectedStore, DISK, id, selectedDest, label, this::reportWriteFailure);
+                    writer = new TextDraftWriter(selectedStore, DISK, draft.id, this::reportWriteFailure);
                     loading = true;
                     field.setText(text);
                     field.setSelection(field.length());
                     loading = false;
                     setBusy(false);
-                    if (draft == null && !text.isEmpty()) writer.edit(text);
+                    if (!hasFile && !text.isEmpty()) writer.edit(text);
                 });
             } catch (IOException error) {
                 runOnUiThread(() -> {
