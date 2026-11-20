@@ -1,42 +1,62 @@
 import { useEffect, useRef, useState } from 'react';
-import { Button, TextInput, Text } from '@mantine/core';
+import { Button, Group, NativeSelect, TextInput, Text } from '@mantine/core';
 import { Sheet } from '@/lib/ui';
 import { createAppLogger } from "../../../../../frontend/src/lib/ui/createAppLogger.js";
 import { useBarcodeScanner } from "../../../../../frontend/src/lib/camera/useBarcodeScanner.js";
 
 const logger = createAppLogger('health').child('barcode-capture');
 
-/**
- * Camera barcode scan with a manual-UPC field that is ALWAYS present —
- * it is the permission-denied fallback and the test seam: both paths call
- * the same onDecode(upc, bucket).
- *
- * The camera itself (native detector, zxing fallback, stream lifecycle) is
- * the shared `useBarcodeScanner`; this sheet owns the manual field, the
- * lookup and its error.
- *
- * `bucket` names which meal launched this scan (set by the caller before
- * opening the sheet); it is forwarded back unchanged on decode so the
- * caller can apply it without needing to track "which button opened this
- * modal" itself. Undefined for the footer's clock-based launch.
- */
-export function BarcodeCapture({ open, onClose, onDecode, busy, bucket }) {
+export function BarcodeCapture({ open, ...props }) {
+  return open ? <BarcodeSession {...props} /> : null;
+}
+
+function BarcodeSession({ onClose, onDecode, onConfirm, onDone, onView, onUnknown, onUndo, undoBusy, undoError, bucket, meals }) {
   const videoRef = useRef(null);
-  const [manualUpc, setManualUpc] = useState('');
-  const [error, setError] = useState(null);
-  const [detected, setDetected] = useState(false);
   const audio = useRef(null);
-  const callback = useRef(onDecode);
-  callback.current = onDecode;
-  const bucketRef = useRef(bucket);
-  bucketRef.current = bucket;
-  const submitted = useRef(false);
-  const decodeRef = useRef(null);
+  const live = useRef(false);
+  const lookup = useRef(null);
+  const armed = useRef(true);
+  const saving = useRef(false);
+  const scanGeneration = useRef(0);
+  const commitRequest = useRef(null);
+  const [manualUpc, setManualUpc] = useState('');
+  const [phase, setPhase] = useState('scanning');
+  const [error, setError] = useState(null);
+  const [read, setRead] = useState(null);
+  const [result, setResult] = useState(null);
+  const [undone, setUndone] = useState(false);
+  const [target, setTarget] = useState(bucket);
+  const [generation, setGeneration] = useState(0);
 
   const { cameraState, stop } = useBarcodeScanner({
-    active: Boolean(open), videoRef, logger,
-    onDecode: (upc) => decodeRef.current?.(upc, bucketRef.current, true),
+    active: phase === 'scanning', restartKey: generation, videoRef, logger,
+    onDecode: upc => { if (live.current && scanGeneration.current === generation && armed.current) void decode(upc, true); },
   });
+
+  useEffect(() => {
+    live.current = true;
+    const pause = () => {
+      if (!armed.current) return;
+      armed.current = false;
+      stop();
+      setPhase('paused');
+    };
+    const onVisibility = () => { if (document.hidden) pause(); };
+    document.addEventListener('visibilitychange', onVisibility);
+    document.addEventListener('freeze', pause);
+    window.addEventListener('pagehide', pause);
+    onVisibility();
+    return () => {
+      live.current = false;
+      lookup.current?.abort();
+      const context = audio.current;
+      audio.current = null;
+      if (context) void context.close().catch(() => {});
+      document.removeEventListener('visibilitychange', onVisibility);
+      document.removeEventListener('freeze', pause);
+      window.removeEventListener('pagehide', pause);
+    };
+  }, [stop]);
 
   const unlockSound = () => {
     try {
@@ -63,35 +83,76 @@ export function BarcodeCapture({ open, onClose, onDecode, busy, bucket }) {
     } catch { /* Audio feedback is optional. */ }
   };
 
-  const decode = async (upc, targetBucket, fromCamera = false) => {
-    if (submitted.current) return;
-    submitted.current = true;
+  const close = () => {
+    live.current = false;
+    lookup.current?.abort();
+    stop();
+    onClose();
+  };
+
+  async function decode(upc, fromCamera = false) {
+    if (lookup.current || !live.current) return;
+    armed.current = false;
     stop();
     setError(null);
-    setDetected(true);
+    setManualUpc(upc);
+    setPhase('looking-up');
     if (fromCamera) beep();
-    try { await callback.current(upc, targetBucket); }
-    catch (err) { setError(err?.message || 'Lookup failed. Try again.'); submitted.current = false; setDetected(false); setManualUpc(upc); }
-  };
-  decodeRef.current = decode;
+    const controller = new AbortController();
+    lookup.current = controller;
+    try {
+      const found = await onDecode(upc, target, controller.signal);
+      if (!live.current || controller.signal.aborted || !found) return;
+      setRead(found);
+      setPhase(found.product ? 'review' : 'unknown');
+    } catch (err) {
+      if (!live.current || controller.signal.aborted) return;
+      setError(err?.body?.error || 'Could not look up the barcode. Try again.');
+      setPhase('lookup-error');
+    } finally {
+      if (lookup.current === controller) lookup.current = null;
+    }
+  }
 
-  useEffect(() => {
-    if (!open) return;
-    submitted.current = false;
-    setError(null);
+  const scanAnother = () => {
+    armed.current = true;
+    scanGeneration.current += 1;
+    setGeneration(scanGeneration.current);
+    commitRequest.current = null;
     setManualUpc('');
-    setDetected(false);
-    return () => {
-      const context = audio.current;
-      audio.current = null;
-      if (context) void context.close().catch(() => {});
-    };
-  }, [open]);
+    setError(null);
+    setRead(null);
+    setResult(null);
+    setUndone(false);
+    setPhase('scanning');
+  };
+
+  const confirm = async () => {
+    if (saving.current) return;
+    saving.current = true;
+    setError(null);
+    setPhase('committing');
+    commitRequest.current ??= { operationId: crypto.randomUUID(), upc: read.upc, product: read.product, bucket: target };
+    try {
+      const confirmed = await onConfirm(commitRequest.current);
+      if (!live.current) return;
+      setResult(confirmed);
+      setPhase('logged');
+    } catch (err) {
+      if (!live.current) return;
+      const refusal = err?.status >= 400 && err.status < 500 && ![408, 425, 429].includes(err.status);
+      if (refusal) commitRequest.current = null;
+      setError(refusal ? err?.body?.error || "Couldn't log this food." : 'Could not confirm this barcode log. Try again to check its result.');
+      setPhase(refusal ? 'review' : 'uncertain');
+    } finally {
+      saving.current = false;
+    }
+  };
 
   return (
-    <Sheet open={open} onClose={onClose} title="Scan barcode">
-      {error ? <Text role="alert" c="red" size="sm">{error}</Text> : null}
-      {cameraState !== 'denied' ? (
+    <Sheet open onClose={close} title="Scan barcode">
+      {error && <Text role="alert" c="red" size="sm">{error}</Text>}
+      {phase === 'scanning' && (cameraState !== 'denied' ? (
         <div onPointerDown={unlockSound} style={{ position: 'relative', overflow: 'hidden', borderRadius: 14,
           background: '#12211b', aspectRatio: '4 / 3' }}>
           <video ref={videoRef} muted playsInline
@@ -104,18 +165,43 @@ export function BarcodeCapture({ open, onClose, onDecode, busy, bucket }) {
         </div>
       ) : (
         <Text size="sm" c="dimmed">Camera unavailable — enter the barcode number instead.</Text>
-      )}
+      ))}
       <Text size="sm" c="dimmed" role="status">
-        {detected ? 'Barcode read. Looking up food…'
-          : cameraState === 'denied' ? '' : 'Center the barcode inside the guide.'}
+        {phase === 'looking-up' && 'Barcode read. Looking up food…'}
+        {phase === 'review' && 'Barcode read. Review the food and meal.'}
+        {phase === 'scanning' && cameraState !== 'denied' && 'Center the barcode inside the guide.'}
+        {phase === 'committing' && 'Logging item…'}
+        {phase === 'logged' && (undone ? 'Log undone' : 'Logged')}
+        {phase === 'paused' && 'Camera paused.'}
       </Text>
-      <div className="health-barcode__manual">
-        <TextInput size="sm" className="health-barcode__manual-input" inputMode="numeric" placeholder="UPC number"
-          value={manualUpc} onChange={(e) => setManualUpc(e.target.value)}
-          aria-label="Manual UPC entry" />
-        <Button size="sm" loading={busy} disabled={!manualUpc.trim()}
-          onClick={() => decode(manualUpc.trim(), bucket)}>Look up</Button>
-      </div>
+      {['scanning', 'paused', 'lookup-error'].includes(phase) && (
+        <div className="health-barcode__manual">
+          <TextInput size="sm" className="health-barcode__manual-input" inputMode="numeric" placeholder="UPC number"
+            value={manualUpc} onChange={event => setManualUpc(event.target.value)} aria-label="Manual UPC entry" />
+          <Button size="sm" disabled={!manualUpc.trim()} onClick={() => decode(manualUpc.trim())}>Look up</Button>
+        </div>
+      )}
+      {phase === 'review' && <>
+        <Text fw={600}>{read.product.name}</Text>
+        <Text>{read.product.amount} {read.product.unit} · {read.product.calories} kcal</Text>
+        <NativeSelect label="Meal" data={meals} value={target} onChange={event => setTarget(event.target.value)} />
+      </>}
+      {phase === 'unknown' && <Text>No food with a usable portion was found for this barcode.</Text>}
+      {phase === 'logged' && undoError && <Text role="alert" c="red" size="sm">{undoError}</Text>}
+      <Group mt="md">
+        {(['scanning', 'review', 'unknown', 'lookup-error', 'paused'].includes(phase)) && <Button variant="subtle" onClick={close}>Cancel</Button>}
+        {(['looking-up', 'committing', 'uncertain'].includes(phase)) && <Button variant="subtle" onClick={close}>Back</Button>}
+        {phase === 'review' && <Button onClick={confirm}>Log item</Button>}
+        {phase === 'uncertain' && <Button onClick={confirm}>Retry log</Button>}
+        {phase === 'unknown' && <Button onClick={() => onUnknown(read.upc, target)}>Enter food details</Button>}
+        {(['logged', 'unknown', 'lookup-error', 'paused'].includes(phase)) && <Button variant="default" onClick={scanAnother}>Scan another</Button>}
+        {phase === 'logged' && <>
+          {!undone && <Button variant="subtle" onClick={() => onView(result)}>View in Health</Button>}
+          {!undone && result.undoToken && <Button variant="subtle" aria-label="Undo logged item" loading={undoBusy}
+            onClick={async () => { if (await onUndo(result.undoToken) && live.current) setUndone(true); }}>Undo</Button>}
+          <Button onClick={onDone}>Done</Button>
+        </>}
+      </Group>
     </Sheet>
   );
 }

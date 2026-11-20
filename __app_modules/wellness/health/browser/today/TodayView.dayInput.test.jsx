@@ -4,12 +4,15 @@ import { MantineProvider } from '@mantine/core';
 import { MemoryRouter } from 'react-router-dom';
 
 const apiMock = vi.fn();
+const camera = vi.hoisted(() => ({ current: null, stop: () => {} }));
 vi.mock('../../../../../frontend/src/lib/api.mjs', () => ({ DaylightAPI: (...args) => apiMock(...args) }));
 vi.mock('../capture/PhotoCapture.jsx', () => ({ PhotoCapture: () => null }));
 vi.mock('../capture/VoiceCapture.jsx', () => ({ VoiceCapture: ({ bucket, onCapture }) => (bucket === 'morning' ? <button onClick={() => onCapture('data:audio/webm;base64,zzz', bucket)}>Record breakfast</button> : null) }));
-vi.mock('../capture/BarcodeCapture.jsx', () => ({ BarcodeCapture: () => null }));
-vi.mock('../capture/CustomFoodSheet.jsx', () => ({ CustomFoodSheet: () => null }));
+vi.mock('../../../../../frontend/src/lib/camera/useBarcodeScanner.js', () => ({
+  useBarcodeScanner: args => { camera.current = args; return { cameraState: 'live', stop: camera.stop }; },
+}));
 
+import { DismissStackProvider } from '@/lib/ui/dismiss/DismissStackProvider.jsx';
 import { TodayView } from './TodayView.jsx';
 import { HealthOperationsProvider } from '../operations/HealthOperationsProvider.jsx';
 import { localTodayISO } from './mealBuckets.js';
@@ -19,20 +22,22 @@ import { RECONSTRUCTION_LOG_ID } from '../../portable/contracts/nutrition/recons
 
 const today = localTodayISO();
 const food = (uuid, extra = {}) => ({ uuid, name: uuid, date: today, mealTime: 'morning', calories: 10, version: 1, ...extra });
-let items, dayInput, dayReads, foodsMove, mealUndo;
+let items, dayInput, dayReads, foodsMove, mealUndo, lookupBarcode, commitBarcode;
 const api = async (path, body) => {
   if (path === 'api/v1/health/nutrition/day-input') return dayInput(body);
-  if (path === 'api/v1/health/nutrition/meal-undo') return mealUndo();
+  if (path === 'api/v1/health/nutrition/meal-undo') return mealUndo(body);
   if (path === 'api/v1/health/nutrition/foods-move') return foodsMove();
+  if (path.includes('/nutrition/barcode-lookup?')) return lookupBarcode();
+  if (path === 'api/v1/health/nutrition/barcode-commit') return commitBarcode(body);
   if (path === 'api/v1/health/nutrition/input') return { transcribeFailed: true, audioRef: 'va_1', responseText: 'Your recording is saved.' };
   if (path.includes('health/day?')) { dayReads += 1; return { items, budget: { budget: 2000, food: 0, exercise: 0, remaining: 2000, sessions: [] } }; }
   if (path.includes('nutrition/pending')) return { pending: [] };
   if (path.includes('observations')) return { observations: [] };
   return {};
 };
-const open = async ({ session = false } = {}) => {
+const open = async ({ session = false, path = '/health' } = {}) => {
   const view = <TodayView onSetupGoals={() => {}} onCoachTap={() => {}} />;
-  render(<MemoryRouter><MantineProvider>{session ? <HealthOperationsProvider userId="u" send={api}>{view}</HealthOperationsProvider> : view}</MantineProvider></MemoryRouter>);
+  render(<MemoryRouter initialEntries={[path]}><MantineProvider><DismissStackProvider>{session ? <HealthOperationsProvider userId="u" send={apiMock}>{view}</HealthOperationsProvider> : view}</DismissStackProvider></MantineProvider></MemoryRouter>);
   await waitFor(() => expect(dayReads).toBeGreaterThan(0));
   return screen.findByRole('textbox', { name: 'Log food or change this day' });
 };
@@ -45,6 +50,7 @@ const toasts = () => within(screen.getByRole('region', { name: 'Food log notific
 const calls = path => apiMock.mock.calls.filter(call => call[0] === path);
 
 beforeEach(() => {
+  localStorage.clear();
   resetApiResourceCache(); apiMock.mockReset(); apiMock.mockImplementation(api);
   items = [food('Eggs')]; dayReads = 0; dayInput = async () => ({});
   mealUndo = async () => ({ committed: true, affectedIds: [], affectedDates: [] });
@@ -280,5 +286,116 @@ describe('TodayView day input', () => {
     items = [];
     await open();
     expect(screen.queryByRole('button', { name: "Move this day's food" })).toBeNull();
+  });
+});
+
+describe('TodayView barcode review', () => {
+  const upc = '012345678905';
+  const product = { name: 'Granola', amount: 40, unit: 'g', grams: 40, calories: 170 };
+  const postPath = 'api/v1/health/nutrition/barcode-commit';
+  const detect = async () => {
+    fireEvent.click(screen.getByRole('button', { name: 'Scan barcode to Breakfast' }));
+    await act(async () => { camera.current.onDecode(upc); });
+  };
+  beforeEach(() => {
+    lookupBarcode = async () => ({ upc, product });
+    commitBarcode = async ({ bucket }) => ({
+      committed: true, undoToken: 'meal-scan', entryIds: ['granola'], items: [food('granola', { name: 'Granola', mealTime: bucket })],
+    });
+  });
+  it('readRequiresConfirmation', async () => {
+    await open({ session: true });
+    await detect();
+    expect(await screen.findByText('Granola')).toBeTruthy();
+    expect(calls(postPath)).toHaveLength(0);
+    expect(calls('api/v1/health/nutrition/input')).toHaveLength(0);
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(calls(postPath)).toHaveLength(0);
+    await detect();
+    fireEvent.change(await screen.findByLabelText('Meal'), { target: { value: 'evening' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Log item' }));
+    expect(await screen.findByText('Logged')).toBeTruthy();
+    expect(calls(postPath)).toHaveLength(1);
+    expect(calls(postPath)[0][1]).toMatchObject({ upc, bucket: 'evening', product });
+    fireEvent.click(screen.getByRole('button', { name: 'Undo logged item' }));
+    await waitFor(() => expect(calls('api/v1/health/nutrition/meal-undo')[0][1]).toMatchObject({ undoToken: 'meal-scan' }));
+    expect(screen.getByRole('button', { name: 'Scan another' })).toBeTruthy();
+  });
+  it('retries an uncertain reply with the same payload and uses a new ID for another scan', async () => {
+    const success = commitBarcode;
+    commitBarcode = vi.fn().mockRejectedValueOnce(new Error('Lost response')).mockImplementation(success);
+    await open({ session: true });
+    await detect();
+    fireEvent.click(await screen.findByRole('button', { name: 'Log item' }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Retry log' }));
+    expect(await screen.findByText('Logged')).toBeTruthy();
+    expect(calls(postPath)[1][1]).toEqual(calls(postPath)[0][1]);
+    fireEvent.click(screen.getByRole('button', { name: 'Scan another' }));
+    await act(async () => { camera.current.onDecode(upc); });
+    fireEvent.click(await screen.findByRole('button', { name: 'Log item' }));
+    expect(await screen.findByText('Logged')).toBeTruthy();
+    expect(calls(postPath)[2][1]).toMatchObject({ upc, operationId: expect.any(String) });
+    expect(calls(postPath)[2][1].operationId).not.toBe(calls(postPath)[0][1].operationId);
+    fireEvent.click(screen.getByRole('button', { name: 'Done' }));
+    expect(screen.queryByRole('dialog', { name: 'Scan barcode' })).toBeNull();
+    expect(screen.getByRole('textbox', { name: 'Log food or change this day' })).toBeTruthy();
+  });
+  it('sends the shortcut host its finish event only when the person taps Done', async () => {
+    const finish = vi.fn();
+    window.addEventListener('daylight:barcode-shortcut-done', finish);
+    try {
+      await open({ session: true, path: '/health?capture=barcode' });
+      await act(async () => { camera.current.onDecode(upc); });
+      fireEvent.click(await screen.findByRole('button', { name: 'Log item' }));
+      expect(await screen.findByText('Logged')).toBeTruthy();
+      expect(finish).not.toHaveBeenCalled();
+      fireEvent.click(screen.getByRole('button', { name: 'Done' }));
+      expect(finish).toHaveBeenCalledTimes(1);
+    } finally {
+      window.removeEventListener('daylight:barcode-shortcut-done', finish);
+    }
+  });
+  it('offers manual food details for an unknown UPC without writing', async () => {
+    lookupBarcode = async () => ({ upc, product: null });
+    await open({ session: true });
+    await detect();
+    fireEvent.click(await screen.findByRole('button', { name: 'Enter food details' }));
+    expect(screen.getByRole('dialog', { name: 'New food' })).toBeTruthy();
+    expect(calls(postPath)).toHaveLength(0);
+    expect(calls('api/v1/health/nutrition/catalog')).toHaveLength(0);
+  });
+  it('opens the confirmed entry only after View in Health', async () => {
+    await open({ session: true });
+    await detect();
+    fireEvent.click(await screen.findByRole('button', { name: 'Log item' }));
+    const viewEntry = await screen.findByRole('button', { name: 'View in Health' });
+    expect(screen.queryByRole('dialog', { name: 'Granola' })).toBeNull();
+    fireEvent.click(viewEntry);
+    expect(screen.getByRole('dialog', { name: 'Granola' })).toBeTruthy();
+  });
+  it('ignores a stale lookup after Back', async () => {
+    let answer;
+    lookupBarcode = () => new Promise(resolve => { answer = resolve; });
+    await open({ session: true });
+    await detect();
+    fireEvent.click(screen.getByRole('button', { name: 'Back' }));
+    await act(async () => answer({ upc, product }));
+    expect(screen.queryByRole('button', { name: 'Log item' })).toBeNull();
+    expect(calls(postPath)).toHaveLength(0);
+  });
+  it('keeps the prepared operation when Back leaves a commit in flight', async () => {
+    let finish;
+    commitBarcode = () => new Promise(resolve => { finish = resolve; });
+    await open({ session: true });
+    await detect();
+    fireEvent.click(await screen.findByRole('button', { name: 'Log item' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Back' }));
+    expect(calls(postPath)).toHaveLength(1);
+    const body = calls(postPath)[0][1];
+    const record = JSON.parse(localStorage.getItem(`daylight.health.barcode-operations:u:${body.operationId}`));
+    expect(record).toMatchObject({ kind: 'barcode-commit', phase: 'pending', request: { body } });
+    await act(async () => finish({ committed: true, undoToken: 'meal-scan', entryIds: ['granola'], items: [food('granola')] }));
+    expect(screen.queryByText('Logged')).toBeNull();
+    expect(calls(postPath)).toHaveLength(1);
   });
 });

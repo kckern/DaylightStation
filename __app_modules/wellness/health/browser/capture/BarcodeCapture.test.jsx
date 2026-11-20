@@ -23,8 +23,40 @@ describe('BarcodeCapture over the shared scanner', () => {
     const onDecode = vi.fn(async () => {});
     wrap(<BarcodeCapture open onClose={vi.fn()} onDecode={onDecode} bucket="breakfast" />);
     await act(async () => { scanner.args.onDecode('012345678905'); });
-    await waitFor(() => expect(onDecode).toHaveBeenCalledWith('012345678905', 'breakfast'));
+    await waitFor(() => expect(onDecode).toHaveBeenCalledWith('012345678905', 'breakfast', expect.any(AbortSignal)));
     expect(scanner.stop).toHaveBeenCalled();
+  });
+
+  it('lateDecodeCannotReplaceReview', async () => {
+    const onDecode = vi.fn(async upc => ({ upc, product: { name: 'Granola', amount: 40, unit: 'g', calories: 170 } }));
+    const sheet = open => <MantineProvider><DismissStackProvider><BarcodeCapture open={open} onClose={() => {}} onDecode={onDecode} /></DismissStackProvider></MantineProvider>;
+    const { rerender } = render(sheet(true));
+    const detected = scanner.args.onDecode;
+    await act(async () => { detected('012345678905'); detected('042100005264'); });
+    expect(onDecode).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole('status').textContent).toContain('Barcode read');
+    expect(screen.getByText('Granola')).toBeTruthy();
+    expect(scanner.args.active).toBe(false);
+    rerender(sheet(false));
+    rerender(sheet(true));
+    await act(async () => { detected('042100005264'); });
+    expect(onDecode).toHaveBeenCalledTimes(1);
+    expect(screen.queryByText('Granola')).toBeNull();
+  });
+
+  it('releases the camera on freeze and only rearms through Scan another', () => {
+    const onDecode = vi.fn();
+    wrap(<BarcodeCapture open onClose={() => {}} onDecode={onDecode} />);
+    const previousDecode = scanner.args.onDecode;
+    fireEvent(document, new Event('freeze'));
+    expect(scanner.stop).toHaveBeenCalled();
+    expect(scanner.args.active).toBe(false);
+    fireEvent(document, new Event('visibilitychange'));
+    expect(scanner.args.active).toBe(false);
+    fireEvent.click(screen.getByRole('button', { name: 'Scan another' }));
+    expect(scanner.args.active).toBe(true);
+    previousDecode('012345678905');
+    expect(onDecode).not.toHaveBeenCalled();
   });
 
   it('keeps the manual field as the fallback when the camera is denied', async () => {
@@ -34,7 +66,7 @@ describe('BarcodeCapture over the shared scanner', () => {
     expect(screen.getByText(/Camera unavailable/)).toBeTruthy();
     fireEvent.change(screen.getByLabelText('Manual UPC entry'), { target: { value: '012345678905' } });
     fireEvent.click(screen.getByRole('button', { name: 'Look up' }));
-    await waitFor(() => expect(onDecode).toHaveBeenCalledWith('012345678905', 'lunch'));
+    await waitFor(() => expect(onDecode).toHaveBeenCalledWith('012345678905', 'lunch', expect.any(AbortSignal)));
   });
 
   it('shows a failed lookup and lets the number be tried again', async () => {

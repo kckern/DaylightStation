@@ -34,3 +34,29 @@ it('allows a batch child inside its own reservation while excluding every other 
  store.discard('batch');
  expect(store.isReserved(['a'])).toBe(true);
 });
+
+it('restores unresolved barcode commands per user without overwriting a concurrent intent', () => {
+  const userId = 'barcode-test';
+  const options = { userId, durableStorage: localStorage };
+  const prepare = id => ({ ...intent(id, []), kind: 'barcode-commit',
+    request: { path: 'api/v1/health/nutrition/barcode-commit', method: 'POST', body: { operationId: id, upc: '012345678905' } } });
+  const first = createHealthOperations(options);
+  const second = createHealthOperations(options);
+  try {
+    first.begin(prepare('first'));
+    second.begin(prepare('second'));
+    first.dispose();
+    second.dispose();
+    const restored = createHealthOperations(options);
+    expect([...restored.getSnapshot().operations.values()]).toMatchObject([
+      { id: 'first', phase: 'error', request: prepare('first').request },
+      { id: 'second', phase: 'error', request: prepare('second').request },
+    ]);
+    expect(createHealthOperations({ ...options, userId: 'another' }).getSnapshot().operations.size).toBe(0);
+    restored.transition('first', { phase: 'succeeded' });
+    expect([...createHealthOperations(options).getSnapshot().operations.keys()]).toEqual(['second']);
+  } finally {
+    localStorage.removeItem('daylight.health.barcode-operations:barcode-test:first');
+    localStorage.removeItem('daylight.health.barcode-operations:barcode-test:second');
+  }
+});

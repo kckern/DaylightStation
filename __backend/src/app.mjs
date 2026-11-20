@@ -1600,6 +1600,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   const { createWebNutribotProxy } = await import("../../__app_modules/wellness/nutribot/server/composition/webNutribotProxy.mjs");
   const webNutribotAdapterProxy = createWebNutribotProxy();
 
+  let healthBarcodeGateway = null;
   let nutritionCleanup = null;
   let nutritionReceiptPublisher = null;
   // Health domain router
@@ -1612,6 +1613,10 @@ export async function createApp({ server, logger, configPaths, configExists, ena
     lifePlanRepository: lifeplanResult.container.getLifePlanStore(),
     catalogService: healthServices.catalogService,
     webNutribotAdapter: webNutribotAdapterProxy,
+    barcodeLookup: upc => {
+      if (!healthBarcodeGateway) throw new Error('Barcode provider is not ready');
+      return healthBarcodeGateway.lookup(upc, { strict: true });
+    },
     cleanupProvider: () => nutritionCleanup,
     artworkProvider: () => nutritionCleanup?.artwork ?? null,
     receiptPublisherProvider: () => nutritionReceiptPublisher,
@@ -3372,6 +3377,7 @@ const { readingSessions, readingSessionInterceptor } = await createSchoolReading
   notificationTelegram.adapter = null;
 
   const upcGateway = createHealthNutritionLookup({ rootLogger, nutribotConfig });
+  healthBarcodeGateway = upcGateway;
 
   // Create conversation state store for nutribot (persists lastReportMessageId for cleanup)
   // Per-user storage: users/{username}/conversations/nutribot/

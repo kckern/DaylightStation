@@ -1,3 +1,8 @@
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
+import { HealthOperations } from '../../application/health/HealthOperations.mjs';
+import { YamlNutriListDatastore } from '../../adapters/persistence/yaml/YamlNutriListDatastore.mjs';
 import { describe, it, expect, vi } from 'vitest';
 import express from 'express';
 import request from 'supertest';
@@ -169,4 +174,87 @@ describe('meal command HTTP adapter',()=>{
    }
   });
  });
+});
+
+describe('confirmed barcode', () => {
+ const upc = '012345678905';
+ const date = '2026-09-06';
+ const product = { name: 'Granola', amount: 40, unit: 'g', grams: 40, calories: 170, protein: 4, carbs: 29, fat: 5 };
+ const logger = { info() {}, warn() {}, error() {}, debug() {} };
+ async function fixture(run) {
+  const root = await mkdtemp(path.join(tmpdir(), 'barcode-ledger-'));
+  const catalogService = { getByUpc: async (code, username) => {
+   if (code === '036000291452') throw new Error('catalog offline');
+   if (code !== upc || username !== 'u') return null;
+   const { name, amount, unit, grams, ...nutrients } = product;
+   return { name, proposedPortion: () => ({ amount, unit, grams, nutrients }) };
+  } };
+  const open = ({ loseReply, failAfterMutation = false } = {}) => {
+   const store = new YamlNutriListDatastore({ dataService: { user: { resolveDir: (dir, user) => path.join(root, user, dir) } }, logger });
+   if (failAfterMutation) {
+    const mutate = store.mutateEntries.bind(store);
+    store.mutateEntries = async (...args) => {
+     await mutate(...args);
+     throw new Error('Interrupted after the ledger transaction');
+    };
+   }
+   const healthOperations = new HealthOperations({ nutritionItems: store, resolveDefaultUsername: () => 'u', today: () => date });
+   const app = express();
+   if (loseReply) app.use((req, res, next) => {
+    if (req.path === '/nutrition/barcode-commit') res.json = body => {
+     if (body.committed) { loseReply(body); res.destroy(); return res; }
+     return express.response.json.call(res, body);
+    };
+    next();
+   });
+   app.use(createHealthRouter({ healthOperations, catalogService, logger }));
+   return { app, store };
+  };
+  try { await run(open); }
+  finally { await rm(root, { recursive: true, force: true }); }
+ }
+ it('looks up household catalog products without creating entries, including unknown and offline results', () => fixture(async open => {
+  const { app, store } = open();
+  const lookup = code => request(app).get('/nutrition/barcode-lookup').query({ upc: code, username: 'another-user' });
+  expect((await lookup(upc)).body).toEqual({ upc, product });
+  expect((await lookup('042100005264')).body).toEqual({ upc: '042100005264', product: null });
+  expect((await lookup('036000291452')).status).toBe(503);
+  expect(await store.findByDate('u', date)).toEqual([]);
+ }));
+ it('confirmedBarcodeCommitReplaysAfterLostResponse', () => fixture(async open => {
+  const body = { operationId: 'scan-1', date, bucket: 'evening', upc, product };
+  let dropped;
+  const first = open({ loseReply: result => { dropped = result; } });
+  const commit = (app, payload) => request(app).post('/nutrition/barcode-commit').send(payload);
+  await expect(commit(first.app, body)).rejects.toThrow();
+  expect(dropped).toMatchObject({ committed: true, entryIds: [expect.any(String)], undoToken: expect.any(String) });
+  const restarted = open();
+  const replies = await Promise.all([commit(restarted.app, body), commit(restarted.app, body)]);
+  for (const reply of replies) {
+   expect(reply.status).toBe(200);
+   expect(reply.body).toMatchObject({ entryIds: dropped.entryIds, undoToken: dropped.undoToken });
+  }
+  expect(await restarted.store.findByDate('u', date)).toMatchObject([{ uuid: dropped.entryIds[0], mealTime: 'evening', name: 'Granola' }]);
+  expect((await commit(restarted.app, { ...body, bucket: 'morning' })).status).toBe(409);
+  const again = await commit(restarted.app, { ...body, operationId: 'scan-2' });
+  expect(again.status).toBe(200);
+  expect(again.body.entryIds).not.toEqual(dropped.entryIds);
+  expect(await restarted.store.findByDate('u', date)).toHaveLength(2);
+  const undone = await request(restarted.app).post('/nutrition/meal-undo').send({ operationId: 'undo-scan', undoToken: dropped.undoToken });
+  expect(undone.status).toBe(200);
+  expect(await restarted.store.findByDate('u', date)).toMatchObject([{ uuid: again.body.entryIds[0] }]);
+ }));
+ it('recovers the Undo and entry IDs if the operation is interrupted after the ledger commit', () => fixture(async open => {
+  const body = { operationId: 'interrupted', date, bucket: 'evening', upc, product };
+  const first = open({ failAfterMutation: true });
+  expect((await request(first.app).post('/nutrition/barcode-commit').send(body)).status).toBe(500);
+  const restarted = open();
+  const rows = await restarted.store.findByDate('u', date);
+  expect(rows).toHaveLength(1);
+  const replay = await request(restarted.app).post('/nutrition/barcode-commit').send(body);
+  expect(replay.status).toBe(200);
+  expect(replay.body).toMatchObject({ entryIds: [rows[0].uuid], undoToken: expect.any(String) });
+  expect(await restarted.store.findByDate('u', date)).toHaveLength(1);
+ }));
+
 });
