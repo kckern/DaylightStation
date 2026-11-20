@@ -11,32 +11,53 @@ const card = {
   choices: [{ key: 'keep', label: 'Keep in inbox' }],
 };
 
-async function installTriage(page, { holdBen } = {}) {
+const benCard = {
+  ...card, cardId: 'ben-fixture',
+  display: { ...card.display, title: "Ben’s fixture inbox subject" },
+};
+const sessionToken = username => username + '-fixture-session';
+
+async function installTriage(page, { holdBen, requireOwner = false } = {}) {
   const reads = [];
   const commands = [];
+  const signIns = [];
   const benSummary = Promise.withResolvers();
   await page.routeWebSocket('**/*', () => {});
   await page.route('**/api/**', async route => {
-    const { pathname, searchParams } = new URL(route.request().url());
+    const request = route.request();
+    const { pathname, searchParams } = new URL(request.url());
     const username = searchParams.get('username');
     if (pathname.endsWith('/supervision/bootstrap')) return route.fulfill({ json: { enabled: false } });
     if (pathname.endsWith('/life/users')) return route.fulfill({ json: { users: [amy, ben] } });
     if (pathname.endsWith('/life/user')) return route.fulfill({ json: username === 'ben' ? ben : amy });
     if (pathname.endsWith('/life/plan/')) return route.fulfill({ json: { purpose: { statement: 'Fixture plan' } } });
     if (pathname.endsWith('/life/now')) return route.fulfill({ json: { priorities: [], dashboard: {} } });
+    if (pathname.endsWith('/auth/token') && requireOwner) {
+      const { username: owner } = request.postDataJSON();
+      signIns.push(owner);
+      return route.fulfill({ json: { token: sessionToken(owner) } });
+    }
     if (!pathname.includes('/triage/')) return route.fulfill({ json: {} });
     const operation = pathname.slice('/api/v1/triage/'.length);
-    if (route.request().method() !== 'GET') {
-      commands.push({ username, operation, body: route.request().postDataJSON() });
+    if (requireOwner && operation !== 'summary') {
+      const authorization = request.headers().authorization;
+      if (!authorization) return route.fulfill({ status: 401, json: { error: 'login_required' } });
+      if (authorization !== 'Bearer ' + sessionToken(username)) {
+        reads.push([username, operation]);
+        return route.fulfill({ status: 403, json: { error: 'session_user_mismatch' } });
+      }
+    }
+    if (request.method() !== 'GET') {
+      commands.push({ username, operation, body: request.postDataJSON() });
       return route.fulfill({ json: { outcome: 'applied' } });
     }
     reads.push([username, operation]);
     if (operation === 'summary' && username === 'ben' && holdBen) await benSummary.promise;
-    if (operation === 'summary') return route.fulfill({ json: username === 'ben' ? { enrolled: false } : summary });
-    if (operation === 'session') return route.fulfill({ json: { steps: [{ id: 'unsure', count: 1 }], cards: [card], total: 1, done: 0 } });
+    if (operation === 'summary') return route.fulfill({ json: username === 'ben' && !requireOwner ? { enrolled: false } : summary });
+    if (operation === 'session') return route.fulfill({ json: { steps: [{ id: 'unsure', count: 1 }], cards: [username === 'ben' ? benCard : card], total: 1, done: 0 } });
     return route.fulfill({ json: { entries: [] } });
   });
-  return { reads, commands, benSummary };
+  return { reads, commands, signIns, benSummary };
 }
 
 for (const width of [390, 1440]) {
@@ -85,3 +106,33 @@ for (const width of [390, 1440]) {
     }
   });
 }
+
+test('Life triage asks for the selected owner sign-in when another member is signed in', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 850 });
+  await page.addInitScript(token => localStorage.setItem('ds_token', token), sessionToken(amy.username));
+  const { reads, commands, signIns } = await installTriage(page, { requireOwner: true });
+  const main = page.getByRole('main');
+  await page.goto('/life/now/triage');
+  await expect(main.getByText(card.display.title)).toBeVisible();
+  await page.getByRole('textbox', { name: 'Switch household member' }).click();
+  await page.getByRole('option', { name: 'Ben', exact: true }).click();
+
+  await expect(main.getByText('Sign in as Ben to answer their triage cards.')).toBeVisible();
+  await expect(main.getByText(card.display.title)).toHaveCount(0);
+  expect(await page.evaluate(() => localStorage.getItem('ds_token'))).toBe(sessionToken(amy.username));
+  expect(signIns).toEqual([]);
+  expect(commands).toEqual([]);
+
+  await main.getByRole('textbox', { name: 'Username' }).fill(ben.username);
+  await main.getByLabel('Password', { exact: true }).fill('fixture-password');
+  await main.getByRole('button', { name: 'Sign In', exact: true }).press('Enter');
+  await expect(main.getByText(benCard.display.title)).toBeVisible();
+  expect(signIns).toEqual([ben.username]);
+  expect(reads.filter(([username]) => username === ben.username)).toEqual([
+    [ben.username, 'summary'], [ben.username, 'session'], [ben.username, 'summary'], [ben.username, 'session'],
+  ]);
+  await main.getByRole('button', { name: 'Keep in inbox', exact: false }).press('Enter');
+  await expect.poll(() => commands).toEqual([
+    { username: ben.username, operation: 'cards/ben-fixture/answer', body: { choice: 'keep' } },
+  ]);
+});

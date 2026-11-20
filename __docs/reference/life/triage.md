@@ -137,8 +137,10 @@ between the enrollment summary and the authenticated session read. After a
 timeout, Retry repeats only the affected GET flow.
 
 A current protected read or command that receives `401 login_required` opens
-sign-in. Signing in reloads the guided session for the selected Life member.
-Triage commands keep their own outcome and retry controls.
+sign-in. If someone else is signed in, `403 session_user_mismatch` names the
+selected member and offers the same sign-in form. Choosing a household member
+leaves the signed-in account in place. Signing in reloads the selected member's
+guided session. Triage commands keep their own outcome and retry controls.
 
 ## Logs
 

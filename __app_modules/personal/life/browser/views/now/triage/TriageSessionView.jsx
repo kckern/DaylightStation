@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { Button, Group, Text, Title } from '@mantine/core';
 import { Link } from 'react-router-dom';
 import { IconAlertCircle, IconCircleCheck } from '@tabler/icons-react';
 import { useTriage } from "../../../hooks/useTriage.js";
+import { LifeUserContext } from "../../../hooks/useLifeUser.js";
 import { LoadingState } from "../../../components/index.js";
 import LoginScreen from "../../../../../../../frontend/src/modules/Auth/LoginScreen.jsx";
 import getLogger from "../../../../../../../frontend/src/lib/logging/Logger.js";
@@ -24,7 +25,8 @@ const FAILED_REASONS = {
 export function TriageSessionView() {
   const logger = useMemo(() => getLogger().child({ component: 'triage-session' }), []);
   const t = useTriage({ withSession: true });
-  const { session, summary, needsLogin } = t;
+  const { session, summary, needsLogin, signInReason } = t;
+  const selectedMember = useContext(LifeUserContext);
 
   const [cards, setCards] = useState([]);
   const [idx, setIdx] = useState(0);
@@ -72,7 +74,7 @@ export function TriageSessionView() {
   const handleError = (err, retry, current) => {
     const code = err?.code ?? null;
     logger.warn('triage.card.error', { cardId: current?.cardId ?? null, code, status: err?.status ?? null });
-    if (code === 'login_required') return; // the login screen takes the card's place
+    if (err?.signInReason) return; // the login screen takes the card's place
     if (code === 'pass_running' || code === 'busy') { setNotice({ text: BUSY_LINE, retry }); return; }
     if (code === 'answer_in_doubt') { replaceCard({ ...current, status: 'applying', applying: true }); return; }
     if (code === 'card_not_open' || code === 'card_not_found') {
@@ -133,10 +135,15 @@ export function TriageSessionView() {
   }, [logger]);
 
   if (needsLogin) {
+    const ownerName = selectedMember?.displayName || selectedMember?.username;
     return (
       <div className="life-triage">
         <SessionHeader />
-        <Text size="sm" c="dimmed" ta="center">Sign in to answer triage cards.</Text>
+        <Text size="sm" c="dimmed" ta="center" role="status">
+          {signInReason === 'session_user_mismatch' && ownerName
+            ? `Sign in as ${ownerName} to answer their triage cards.`
+            : 'Sign in to answer triage cards.'}
+        </Text>
         <div className="life-triage__login"><LoginScreen onLogin={() => t.refetch()} /></div>
       </div>
     );

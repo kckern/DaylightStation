@@ -14,12 +14,16 @@ const BASE = 'api/v1/triage';
 
 /** The API error code for a failed call: the body's `error` when there is one. */
 const codeOf = (err) => err?.body?.error ?? null;
-const isLoginRequired = (status, code) => status === 401 && code === 'login_required';
+function signInReasonFor(status, code) {
+  const signedOut = status === 401 && code === 'login_required';
+  const wrongOwner = status === 403 && code === 'session_user_mismatch';
+  return signedOut || wrongOwner ? code : null;
+}
 
 /**
  * Triage for the selected Life user: the summary (open to read), the guided session
- * (needs the user's login) and the writes. A 401 `login_required` sets `needsLogin`.
- * Write calls resolve to the response body, or throw an Error carrying `.code` and `.status`.
+ * (needs the user's login) and the writes. A refused owner session sets `needsLogin`
+ * with its `signInReason`. Write errors carry their code, status and any sign-in reason.
  */
 export function useTriage({ withSession = false } = {}) {
   const username = useLifeUsername();
@@ -27,7 +31,7 @@ export function useTriage({ withSession = false } = {}) {
   const [session, setSession] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [needsLogin, setNeedsLogin] = useState(false);
+  const [signInReason, setSignInReason] = useState(null);
 
   const url = useCallback((path) => `${BASE}/${path}${username ? `${path.includes('?') ? '&' : '?'}username=${encodeURIComponent(username)}` : ''}`, [username]);
 
@@ -41,13 +45,14 @@ export function useTriage({ withSession = false } = {}) {
     } catch (err) {
       if (signal?.aborted) throw err;
       const code = codeOf(err);
-      if (isLoginRequired(err?.status, code)) {
-        if (reportLogin) setNeedsLogin(true);
-        logger().info('life.triage.login_required', { call: name });
+      const signInReason = signInReasonFor(err?.status, code);
+      if (signInReason) {
+        if (reportLogin) setSignInReason(signInReason);
+        logger().info('life.triage.login_required', { call: name, reason: signInReason });
       } else {
         logger().warn('life.triage.error', { call: name, status: err?.status ?? null, code, error: err?.message });
       }
-      throw Object.assign(new Error(code ?? err?.message ?? 'triage_failed'), { code, status: err?.status ?? null });
+      throw Object.assign(new Error(code ?? err?.message ?? 'triage_failed'), { code, status: err?.status ?? null, signInReason });
     }
   }, [url]);
 
@@ -64,13 +69,13 @@ export function useTriage({ withSession = false } = {}) {
         : null;
       if (!isCurrent()) return;
       setSession(nextSession);
-      setNeedsLogin(false);
+      setSignInReason(null);
     } catch (err) {
       if (!isCurrent()) return;
       setSession(null);
-      const loginRequired = withSession && isLoginRequired(err.status, err.code);
-      setNeedsLogin(loginRequired);
-      if (!loginRequired) setError(err.message);
+      const signInReason = withSession ? err.signInReason : null;
+      setSignInReason(signInReason);
+      if (!signInReason) setError(err.message);
     } finally {
       if (isCurrent()) setLoading(false);
     }
@@ -78,7 +83,7 @@ export function useTriage({ withSession = false } = {}) {
 
   const onTimeout = useCallback(() => {
     setSession(null);
-    setNeedsLogin(false);
+    setSignInReason(null);
     setError('Triage read timed out');
     setLoading(false);
     logger().warn('life.triage.read_timeout');
@@ -97,7 +102,7 @@ export function useTriage({ withSession = false } = {}) {
     return out;
   }, [call, refetch]);
 
-  return { summary, session, loading, error, refetch, answer, skip, resolve, undo, log, run, needsLogin };
+  return { summary, session, loading, error, refetch, answer, skip, resolve, undo, log, run, needsLogin: Boolean(signInReason), signInReason };
 }
 
 export default useTriage;
