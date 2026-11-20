@@ -146,6 +146,10 @@ A successful pair ends with `done` carrying `paired` and no reason.
   The fallback never uses the config label or the address. Some LE
   (HID-over-GATT) stacks leave Uniq empty.
 
+The inventory's `input` field (`hasInputDevice` in `btInventory.mjs`) applies
+the same rule, with the device's BlueZ name from the inventory, so a device the
+helper called paired is not shown as "not up". Change both or neither.
+
 The repair-mode short-circuit uses the MAC check only.
 
 Unverified, to be checked on the garage box: whether a BLE ring remote's input
@@ -185,7 +189,8 @@ paired, trusted, gamepad, kind, input, hid`:
   `tablet`, anything else `null`.
 - `hid`: true when `bluetoothctl info` lists a HID service UUID, classic
   (`0x1124`) or HID over GATT (`0x1812`). It holds while the device sleeps.
-- `input`: a kernel input node exists for the MAC right now.
+- `input`: a kernel input node exists for the device right now, by the
+  HID-up check's rule (Uniq = MAC, or the blank-Uniq Bluetooth name fallback).
 
 | Badge | Meaning |
 |---|---|

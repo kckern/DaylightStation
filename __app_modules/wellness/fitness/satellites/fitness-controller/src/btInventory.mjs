@@ -107,12 +107,33 @@ export function parseHasHidService(infoOutput) {
     .some((l) => /^\s*uuid:/.test(l) && HID_UUIDS.some((u) => l.includes(u)));
 }
 
-/** True when the kernel input table (/proc/bus/input/devices) lists this MAC. */
-export function hasInputDevice(inputDevicesText, mac) {
+/**
+ * True when the kernel input table (/proc/bus/input/devices) lists an input
+ * device for this MAC. A block whose `U: Uniq=` equals the MAC counts.
+ * Fallback: a Bluetooth block (`I: Bus=0005`) whose Uniq is blank or missing
+ * counts when its `N: Name=` equals BlueZ's `name` exactly, since some LE
+ * (HID-over-GATT) stacks leave Uniq empty.
+ *
+ * Twin of `input_device_present` in bt_pair_match.py (the pairing helper's
+ * success check). Keep the two rules the same, or a device the helper calls
+ * paired shows here as not up.
+ */
+export function hasInputDevice(inputDevicesText, mac, name = null) {
   const want = String(mac || '').toLowerCase();
-  if (!want) return false;
-  return String(inputDevicesText || '').toLowerCase().split('\n')
-    .some((l) => /^u:\s*uniq=/.test(l) && l.replace(/^u:\s*uniq=/, '').trim() === want);
+  for (const block of String(inputDevicesText || '').split('\n\n')) {
+    let uniq = null;
+    let devName = null;
+    let bluetooth = false;
+    for (const line of block.split('\n')) {
+      const s = line.trim();
+      if (s.startsWith('I:')) bluetooth = s.toLowerCase().includes('bus=0005');
+      else if (s.toLowerCase().startsWith('u: uniq=')) uniq = s.slice('u: uniq='.length).trim().toLowerCase();
+      else if (s.startsWith('N: Name="') && s.endsWith('"')) devName = s.slice('N: Name="'.length, -1);
+    }
+    if (uniq && want && uniq === want) return true;
+    if (!uniq && bluetooth && name && devName === name) return true;
+  }
+  return false;
 }
 
 async function defaultReadInputDevices() {
@@ -181,7 +202,7 @@ export async function pollBtInventory({ exec = defaultExec, readInputDevices = d
       trusted: parseTrusted(info),
       gamepad: parseIsGamepad(info),
       kind: parseDeviceKind(info),
-      input: hasInputDevice(inputTable, dev.address),
+      input: hasInputDevice(inputTable, dev.address, dev.name),
       hid: parseHasHidService(info),
     });
   }

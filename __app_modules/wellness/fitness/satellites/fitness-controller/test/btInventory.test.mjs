@@ -268,3 +268,33 @@ test('startBtInventoryBroadcast: a failed send is retried, not recorded as sent'
   assert.equal(sent.length, 2);
   handle.stop();
 });
+
+test('hasInputDevice: same rule as the pairing helper (input_device_present)', () => {
+  const blankUniqBt = 'I: Bus=0005 Vendor=1234 Product=5678 Version=0001\nN: Name="Ring Remote"\nU: Uniq=\n';
+  const missingUniqBt = 'I: Bus=0005 Vendor=1234 Product=5678 Version=0001\nN: Name="Ring Remote"\n';
+  const usb = 'I: Bus=0003 Vendor=1234 Product=5678 Version=0001\nN: Name="Ring Remote"\nU: Uniq=\n';
+  const byUniq = 'I: Bus=0005 Vendor=2dc8 Product=ab21 Version=0001\nN: Name="8Bitdo SFC30 GamePad"\nU: Uniq=e4:17:d8:c6:54:f0\n';
+  // Blank or missing Uniq on a Bluetooth block: exact name match counts.
+  assert.equal(hasInputDevice(blankUniqBt, 'AA:BB:CC:DD:EE:FF', 'Ring Remote'), true);
+  assert.equal(hasInputDevice(missingUniqBt, 'AA:BB:CC:DD:EE:FF', 'Ring Remote'), true);
+  // Name must be exact, and must be given.
+  assert.equal(hasInputDevice(blankUniqBt, 'AA:BB:CC:DD:EE:FF', 'Ring'), false);
+  assert.equal(hasInputDevice(blankUniqBt, 'AA:BB:CC:DD:EE:FF'), false);
+  // A USB block (Bus=0003) never matches by name.
+  assert.equal(hasInputDevice(usb, 'AA:BB:CC:DD:EE:FF', 'Ring Remote'), false);
+  // Uniq match still works; a Uniq for another MAC does not fall back to the name.
+  assert.equal(hasInputDevice(byUniq, 'E4:17:D8:C6:54:F0', 'whatever'), true);
+  assert.equal(hasInputDevice(byUniq, 'AA:BB:CC:DD:EE:FF', '8Bitdo SFC30 GamePad'), false);
+  // Blocks are separate: a name in one block and a blank Uniq in another do not combine.
+  assert.equal(hasInputDevice(`${usb}\n${byUniq}`, 'AA:BB:CC:DD:EE:FF', 'Ring Remote'), false);
+});
+
+test('pollBtInventory: input passes the device name for the blank-Uniq fallback', async () => {
+  const exec = makeExec({
+    'bluetoothctl --agent off devices Paired': 'Device AA:BB:CC:DD:EE:FF Ring Remote',
+    'bluetoothctl --agent off info AA:BB:CC:DD:EE:FF': '\tTrusted: yes\n\tIcon: input-keyboard\n\tConnected: yes',
+  });
+  const table = 'I: Bus=0005 Vendor=1234 Product=5678 Version=0001\nN: Name="Ring Remote"\nU: Uniq=\n';
+  const [d] = await pollBtInventory({ exec, readInputDevices: async () => table });
+  assert.equal(d.input, true);
+});
