@@ -19,13 +19,13 @@ export function useFitnessBluetoothState() {
 }
 
 export function FitnessBluetoothHost({ send, registerRef, onInventory, children }) {
-  const { bluetooth, handleMessage, noteHealth, resetScan } = useFitnessBluetooth({ send });
+  const { bluetooth, handleMessage, noteHealth, resetAfterReconnect } = useFitnessBluetooth({ send });
   if (registerRef) {
     registerRef.current = {
       handleBtMessage: handleMessage,
       noteBtHealth: noteHealth,
       requestInventory: bluetooth.requestInventory,
-      onReconnect: resetScan,
+      onReconnect: resetAfterReconnect,
     };
   }
   const inventory = bluetooth.inventory;

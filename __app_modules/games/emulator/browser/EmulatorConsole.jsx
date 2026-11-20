@@ -800,6 +800,14 @@ export function EmulatorConsole({
     setBtOpen(true);
     logger.info('emulator.console.bluetooth-open', { game: game?.id, via });
   }, [logger, game?.id]);
+  // The pause comes from the menu: if the menu closes (a touch on ✕ or the
+  // backdrop), Bluetooth closes with it, so the game never runs under it.
+  useEffect(() => {
+    if (!settingsOpen && btOpen) {
+      setBtOpen(false);
+      logger.info('emulator.console.bluetooth-close', { game: game?.id, via: 'menu-closed' });
+    }
+  }, [settingsOpen, btOpen, logger, game?.id]);
   const closeBluetooth = useCallback(() => {
     setBtOpen(false);
     logger.info('emulator.console.bluetooth-close', { game: game?.id });

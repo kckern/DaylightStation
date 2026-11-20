@@ -711,6 +711,15 @@ describe('EmulatorConsole', () => {
       expect(container.ownerDocument.querySelector('.emulator-settings-modal')).toBeTruthy();
     });
 
+    it('closing the game menu (touch on ✕ or the backdrop) also closes Bluetooth, so the game never runs under it', async () => {
+      const { container } = renderConsole({ props: { getGamepads: noPads, bluetooth: bt(), menuInitiallyOpen: true } });
+      await act(async () => {});
+      act(() => { screen.getByRole('button', { name: 'Bluetooth' }).click(); });
+      expect(container.ownerDocument.querySelector('.bluetooth-screen')).toBeTruthy();
+      act(() => { screen.getByRole('button', { name: 'Close menu' }).click(); });
+      expect(container.ownerDocument.querySelector('.bluetooth-screen')).toBeNull();
+    });
+
     it('no Bluetooth button without a host bluetooth object', async () => {
       renderConsole({ props: { getGamepads: noPads, menuInitiallyOpen: true } });
       await act(async () => {});

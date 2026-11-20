@@ -92,9 +92,9 @@ describe('useFitnessBluetooth', () => {
     let id;
     act(() => { id = result.current.bluetooth.startScan(); });
     act(() => { result.current.handleMessage({ topic: 'bt.scan.progress', requestId: id, phase: 'scanning', durationMs: 60000 }); });
-    act(() => result.current.resetScan());
+    act(() => result.current.resetAfterReconnect());
     expect(result.current.bluetooth.scan).toMatchObject({ phase: 'done', reason: 'interrupted' });
-    act(() => result.current.resetScan());
+    act(() => result.current.resetAfterReconnect());
     expect(result.current.bluetooth.scan.reason).toBe('interrupted');
   });
 
@@ -159,5 +159,38 @@ describe('useFitnessBluetooth', () => {
     expect(sent[0]).toMatchObject({ topic: 'bt.remove', address: 'AA:BB:CC:11:22:33' });
     act(() => { result.current.handleMessage({ topic: 'bt.remove.result', address: 'AA:BB:CC:11:22:33', success: true }); });
     expect(result.current.bluetooth.forgetResult).toEqual({ address: 'AA:BB:CC:11:22:33', success: true, error: null });
+  });
+
+  it('a pairing whose done never arrives ends after its window plus grace (busy forever otherwise)', () => {
+    const { result } = setup();
+    let id;
+    act(() => { id = result.current.bluetooth.pairAddress({ address: 'AA:BB:CC:11:22:33' }); });
+    act(() => { result.current.handleMessage({ topic: 'bt.pair.progress', requestId: id, phase: 'scanning', mode: 'address', durationMs: 30000 }); });
+    act(() => { result.current.handleMessage({ topic: 'bt.pair.progress', requestId: id, phase: 'pairing', mode: 'address' }); });
+    // The helper's own cap is its window + 120 s; the browser waits 10 s more.
+    act(() => { vi.advanceTimersByTime(30000 + 129000); });
+    expect(result.current.bluetooth.pairing.phase).toBe('pairing');
+    act(() => { vi.advanceTimersByTime(2000); });
+    expect(result.current.bluetooth.pairing).toMatchObject({ phase: 'done', reason: 'no-response', requestId: id });
+    expect(warn).toHaveBeenCalledWith('fitness.bt.pair-no-done', expect.objectContaining({ requestId: id }));
+  });
+
+  it('a finished pairing is left alone by the watchdog', () => {
+    const { result } = setup();
+    let id;
+    act(() => { id = result.current.bluetooth.pairAddress({ address: 'AA:BB:CC:11:22:33' }); });
+    act(() => { result.current.handleMessage({ topic: 'bt.pair.progress', requestId: id, phase: 'scanning', mode: 'address' }); });
+    act(() => { result.current.handleMessage({ topic: 'bt.pair.progress', requestId: id, phase: 'done', paired: [{ address: 'AA:BB:CC:11:22:33' }] }); });
+    act(() => { vi.advanceTimersByTime(200000); });
+    expect(result.current.bluetooth.pairing).toMatchObject({ phase: 'done', paired: [{ address: 'AA:BB:CC:11:22:33' }] });
+  });
+
+  it('a bus reconnect ends an unfinished pairing too', () => {
+    const { result } = setup();
+    let id;
+    act(() => { id = result.current.bluetooth.pairAddress({ address: 'AA:BB:CC:11:22:33' }); });
+    act(() => { result.current.handleMessage({ topic: 'bt.pair.progress', requestId: id, phase: 'pairing', mode: 'address' }); });
+    act(() => result.current.resetAfterReconnect());
+    expect(result.current.bluetooth.pairing).toMatchObject({ phase: 'done', reason: 'interrupted' });
   });
 });

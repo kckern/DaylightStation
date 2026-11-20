@@ -14,6 +14,9 @@ import {
 
 export const BT_TOPICS = ['bt_inventory', 'bt.pair.progress', 'bt.remove.result', 'bt.scan.progress'];
 const PAIR_ANSWER_MS = 15000;
+// The pairing helper ends every window by its own cap (window + 120 s); a
+// pairing still open 10 s after that lost its `done` on the way.
+const PAIR_DONE_GRACE_MS = 130000;
 
 let _logger;
 function logger() {
@@ -108,12 +111,17 @@ export function useFitnessBluetooth({ send }) {
     later(check, Math.max(0, (Number(endsAt) || Date.now()) + SCAN_END_GRACE_MS - Date.now()));
   }
 
-  /** The bus reconnected: a search still running here may have lost its `done`. */
-  const resetScan = useCallback(() => {
+  /** The bus reconnected: a search or a pairing still running here may have lost its `done`. */
+  const resetAfterReconnect = useCallback(() => {
     setScan((cur) => {
       if (!cur || cur.phase === 'done') return cur;
       logger().info('fitness.bt.scan-reset', { requestId: cur.requestId, phase: cur.phase });
       return { ...cur, phase: 'done', optimistic: false, reason: 'interrupted', devices: [] };
+    });
+    setPairing((cur) => {
+      if (!cur || cur.phase === 'done') return cur;
+      logger().info('fitness.bt.pair-reset', { requestId: cur.requestId, phase: cur.phase });
+      return { phase: 'done', paired: [], reason: 'interrupted', requestId: cur.requestId, mode: cur.mode, device: cur.device };
     });
   }, []);
 
@@ -172,6 +180,15 @@ export function useFitnessBluetooth({ send }) {
         return { phase: 'done', paired: [], reason: 'no-response', requestId, mode: cur.mode, device: cur.device };
       });
     }, PAIR_ANSWER_MS);
+    // Answered but never finished: without this the screen stays busy (Forget,
+    // Pair again and picks disabled) until the page reloads.
+    later(() => {
+      setPairing((cur) => {
+        if (!cur || cur.requestId !== requestId || cur.phase === 'done') return cur;
+        logger().warn('fitness.bt.pair-no-done', { requestId, phase: cur.phase, mode: cur.mode });
+        return { phase: 'done', paired: [], reason: 'no-response', requestId, mode: cur.mode, device: cur.device };
+      });
+    }, durationMs + PAIR_DONE_GRACE_MS);
     return requestId;
   }, []);
 
@@ -192,5 +209,5 @@ export function useFitnessBluetooth({ send }) {
     inventory, scan, pairing, forgetResult, requestInventory, startScan, stopScan, pairAddress, forget,
   }), [inventory, scan, pairing, forgetResult, requestInventory, startScan, stopScan, pairAddress, forget]);
 
-  return { bluetooth, handleMessage, noteHealth, pairController, resetScan };
+  return { bluetooth, handleMessage, noteHealth, pairController, resetAfterReconnect };
 }

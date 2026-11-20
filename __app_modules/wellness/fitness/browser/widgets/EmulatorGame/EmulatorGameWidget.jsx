@@ -52,9 +52,19 @@ function resolveControllerGamepad(controllers) {
  * The console + engine lifecycle lives in EmulatorConsole; this widget owns
  * the session unlock, identity surface, and save decisions.
  */
-export default function EmulatorGameWidget({ fitnessContext, deviceId = null, onClose, config, onMount, registerCloseGuard }) {
-  // The Bluetooth screen's state + actions live in FitnessBluetoothContext (not fitnessContext).
+// The Bluetooth screen's state + actions live in FitnessBluetoothContext (not
+// fitnessContext). Only the components that render the screen read it, so a
+// running search re-renders them and not this whole widget.
+function ArcadeShellWithBluetooth(props) {
   const bluetooth = useFitnessBluetoothState()?.bluetooth || null;
+  return <ArcadeShell {...props} bluetooth={bluetooth} />;
+}
+function EmulatorConsoleWithBluetooth(props) {
+  const bluetooth = useFitnessBluetoothState()?.bluetooth || null;
+  return <EmulatorConsole {...props} bluetooth={bluetooth} />;
+}
+
+export default function EmulatorGameWidget({ fitnessContext, deviceId = null, onClose, config, onMount, registerCloseGuard }) {
   const logger = useMemo(() => getLogger().child({ component: 'fitness-emulator' }), []);
   const { registerIdentify, registerAdmin, clearUnlock, unlockState, unlockedUser } = useIdentity();
 
@@ -593,7 +603,7 @@ export default function EmulatorGameWidget({ fitnessContext, deviceId = null, on
         btInventory={fitnessContext?.btInventory}
         controllers={library.input?.controllers || []}
       />
-      <ArcadeShell
+      <ArcadeShellWithBluetooth
         consoles={library.consoles}
         games={library.games}
         systems={library.systems}
@@ -602,7 +612,6 @@ export default function EmulatorGameWidget({ fitnessContext, deviceId = null, on
         resolveMediaUrl={(p) => DaylightMediaPath(p)}
         inputEnabled={view === 'arcade'}
         controllers={library.input?.controllers || []}
-        bluetooth={bluetooth}
         keyboardMap={library.input?.keyboard || null}
       />
       {notice && createPortal(
@@ -625,7 +634,7 @@ export default function EmulatorGameWidget({ fitnessContext, deviceId = null, on
       {view !== 'arcade' && launch && createPortal(
         <div className={fullscreenClass(isKioskEnv())}>
 
-          <EmulatorConsole
+          <EmulatorConsoleWithBluetooth
             key={launch.key}
             game={launch.game}
             engineConfig={launch.engineConfig}
@@ -649,7 +658,6 @@ export default function EmulatorGameWidget({ fitnessContext, deviceId = null, on
             menuOpenRequest={menuOpenNonce}
             holdPaused={view === 'identify'}
             controllers={library.input?.controllers || []}
-            bluetooth={bluetooth}
             keyboardMap={library.input?.keyboard || null}
           />
         </div>,
