@@ -393,6 +393,15 @@ http:
     - https://other-app.example.com
 ```
 
+**Framing.** The built frontend's pages are served with
+`Content-Security-Policy: frame-ancestors 'self'` plus `http.allowed_origins`
+(`setFrontendDocumentHeaders` in `4_api/middleware/platformHttp.mjs`), so another
+site cannot load the household's screens in a frame and lure clicks through
+them. Nothing in the household was found framing the app (Home Assistant's
+dashboards do not reference it; Homarr's database could not be read).
+`http.frame_ancestors: false` turns the header off
+([configuration.md](configuration.md#systemyml-base-configuration)).
+
 **The event-bus WebSocket (`/ws`)** checks the handshake in `verifyClient`
 (`WebSocketEventBus`, using `webSocketOriginRefusal` from the same file).
 Browsers let any page open a WebSocket to any host, so without it a page on

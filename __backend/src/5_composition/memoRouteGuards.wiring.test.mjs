@@ -70,3 +70,11 @@ describe('app.mjs mounts the event bus admin router only behind /api/v1', () => 
     expect(app).not.toMatch(/app\.use\(\s*['"]\/admin\/ws['"]/);
   });
 });
+
+describe('app.mjs serves frontend documents with frame-ancestors', () => {
+  it('serves the built frontend through createFrontendStaticRouter with the policy', () => {
+    expect(app).toMatch(/createFrontendStaticRouter\(\{ frontendPath, frameAncestors \}\)/);
+    expect(app).toMatch(/frameAncestorsPolicy\(\{/);
+    expect(app).toMatch(/configService\.get\('http\.frame_ancestors'\)/);
+  });
+});

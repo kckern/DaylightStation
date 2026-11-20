@@ -131,6 +131,8 @@ logging:
 http:
   allowed_origins: []     # Extra web origins allowed to write to the API and
                           # get CORS headers (default none)
+  frame_ancestors: true   # Send `frame-ancestors 'self' <allowed_origins>` on
+                          # the app's pages; false turns it off
 ```
 
 **`http.allowed_origins`.** Web origins other than the app's own that may send
@@ -141,6 +143,13 @@ warning. Empty by default: the app's own pages are allowed under any hostname
 without being listed, and non-browser callers are never affected. Read once at
 startup by `app.mjs`; see
 [network-exposure.md](network-exposure.md#cross-site-requests-application-layer).
+
+**`http.frame_ancestors`.** On by default: every page of the built frontend is
+served with `Content-Security-Policy: frame-ancestors 'self'` plus the
+`http.allowed_origins` entries, so no other site can frame the app. Set it to
+`false` only if a dashboard on another origin must frame the app and cannot be
+listed. Read once at startup; production (Docker) only, since Vite serves the
+pages in dev.
 
 **`logging.fileSink`.** The durable general backend log — the sink that carries
 `http.response`, `plex.stream.mint` and every other backend event, and the one
