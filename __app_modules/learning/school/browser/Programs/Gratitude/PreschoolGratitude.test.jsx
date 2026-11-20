@@ -18,7 +18,8 @@ beforeEach(() => {
   Object.values(api).forEach(fn => fn.mockReset());
   Object.values(log).forEach(fn => fn.mockClear());
   recorder.phase = 'idle'; recorder.verdict = null; recorder.start.mockClear();
-  window.speechSynthesis = { cancel: () => {}, speak: u => spoken.push(u.text) };
+  window.speechSynthesis = { cancel: vi.fn(() => spoken.push('<cancel>')), speak: u => spoken.push(u.text) };
+  recorder.start.mockImplementation(() => { spoken.push('<record>'); });
   globalThis.SpeechSynthesisUtterance = function Utterance(text) { this.text = text; };
 });
 
@@ -158,4 +159,16 @@ it('waits out the break on screen instead of closing for being idle', async () =
     await act(async () => { vi.advanceTimersByTime(6 * 60_000); });
     expect(exit).not.toHaveBeenCalled();
   } finally { vi.useRealTimers(); }
+});
+
+it('stops talking before it listens, so it never records its own voice', async () => {
+  api.open.mockResolvedValue({ ok: true, data: base });
+  const view = mount();
+  fireEvent.click(await screen.findByRole('button', { name: 'Family' }));
+  expect(spoken.slice(-2)).toEqual(['<cancel>', 'What about Mom?']);
+  fireEvent.click(screen.getByRole('button', { name: 'Tell me' }));
+  expect(spoken.slice(-2)).toEqual(['<cancel>', '<record>']);
+  window.speechSynthesis.cancel.mockClear();
+  view.unmount();
+  expect(window.speechSynthesis.cancel).toHaveBeenCalled();
 });

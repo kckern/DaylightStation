@@ -18,6 +18,8 @@ export const PRESCHOOL_LINES = Object.freeze({
   red: "Let's take a break and try again soon.",
 });
 const RING_RADIUS = 45;
+/** Stop any spoken line now: the mic must never record the screen's own voice. */
+function hush() { try { window.speechSynthesis?.cancel(); } catch { /* optional browser facility */ } }
 const RING_LENGTH = 2 * Math.PI * RING_RADIUS;
 
 /** Which full-screen state a preschooler sees. One big action each. */
@@ -44,7 +46,7 @@ export default function PreschoolGratitude({ view, learnerId, learnerName = null
   const [level, setLevel] = useState(0);
   const meter = useRef(null);
   const live = useRef(true);
-  useEffect(() => { live.current = true; return () => { live.current = false; }; }, []);
+  useEffect(() => { live.current = true; return () => { live.current = false; hush(); }; }, []);
 
   const receive = useCallback(async ({ blob }) => {
     setUploading(true);
@@ -80,6 +82,7 @@ export default function PreschoolGratitude({ view, learnerId, learnerName = null
   const listen = () => {
     if (busy || hearing) return;
     if (listening) { recorder.stop(); return; }
+    hush();
     setNotice(null); setHeard(null);
     meter.current = createVoiceMeter(performance.now());
     recorder.start();
