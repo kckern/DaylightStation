@@ -30,7 +30,9 @@ import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -299,7 +301,20 @@ public class PhoneHomeActivity extends Activity {
     }
 
     private void pinWidget(String contentId, String title) {
-        LauncherPlacement placement = beginPlacement(contentId, title, true);
+        requestPinWidget(beginPlacement(contentId, title, true));
+    }
+
+    private void retryWidget(LauncherPlacement previous) {
+        if (placementActive()) return;
+        LauncherPlacement retry = placements.retry(previous);
+        if (retry == null) {
+            toast("Could not prepare placement. Try again.");
+            return;
+        }
+        requestPinWidget(retry);
+    }
+
+    private void requestPinWidget(LauncherPlacement placement) {
         if (placement == null) return;
         AppWidgetManager manager = AppWidgetManager.getInstance(this);
         try {
@@ -342,7 +357,7 @@ public class PhoneHomeActivity extends Activity {
 
     private boolean placementActive() {
         long now = System.currentTimeMillis();
-        return placements.recent().stream().anyMatch(request -> request.status(now) == LauncherPlacement.Status.CONFIRM);
+        return placements.requests().stream().anyMatch(request -> request.status(now) == LauncherPlacement.Status.CONFIRM);
     }
 
     private void showManualPlacement(LauncherPlacement placement) {
@@ -359,14 +374,17 @@ public class PhoneHomeActivity extends Activity {
         retryButtons.clear();
         long now = System.currentTimeMillis();
         boolean active = false;
-        int displayed = 0;
-        for (LauncherPlacement request : placements.recent()) {
+        List<LauncherPlacement> requests = placements.requests();
+        Set<String> guided = new HashSet<>();
+        for (LauncherPlacement request : LauncherPlacement.visible(requests, now)) {
             LauncherPlacement.Status status = request.status(now);
             if (status == LauncherPlacement.Status.CONFIRM) {
                 active = true;
                 timer.postDelayed(placementTimeout, Math.max(1, request.startedAt + LauncherPlacement.TIMEOUT_MS - now));
             }
-            if (displayed++ >= 5 && status != LauncherPlacement.Status.CONFIRM) continue;
+            if (request.hasExtraWidget(requests)) {
+                status = guided.add(request.lineageId) ? LauncherPlacement.Status.EXTRA_WIDGET : LauncherPlacement.Status.ADDED;
+            }
             addPlacementStatus(request, status);
         }
         updateSetupButtons(active || openingPlaylist);
@@ -379,7 +397,7 @@ public class PhoneHomeActivity extends Activity {
             case UNCONFIRMED: message = "Placement unconfirmed. Check Android Home before trying again."; break;
             case REFUSED: message = "Android placement is unavailable."; break;
             case EXTRA_WIDGET:
-                message = "Added manually and through Android. If you see two widgets, touch and hold the extra one, then choose Remove.";
+                message = "Two widgets were added for this placement. If both are still on Android Home, touch and hold the extra widget, then choose Remove.";
                 break;
             default: message = "Added";
         }
@@ -388,7 +406,7 @@ public class PhoneHomeActivity extends Activity {
         if (request.playlist && request.manualWidget == 0) {
             placementPanel.addView(actionButton("Place manually", request.title, () -> showManualPlacement(request)));
             Button retry = actionButton("Retry widget placement", request.title,
-                    () -> pinWidget(request.contentId, request.title));
+                    () -> retryWidget(request));
             retryButtons.add(retry);
             placementPanel.addView(retry);
         }

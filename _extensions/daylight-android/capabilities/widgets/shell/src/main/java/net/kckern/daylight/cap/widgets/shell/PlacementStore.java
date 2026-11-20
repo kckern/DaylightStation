@@ -7,7 +7,6 @@ import org.json.JSONException;
 import org.json.JSONObject;
 
 import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.List;
 import java.util.UUID;
 
@@ -28,18 +27,22 @@ final class PlacementStore {
         return write(request, 0) ? request : null;
     }
 
+    LauncherPlacement retry(LauncherPlacement previous) {
+        LauncherPlacement request = previous.retry(UUID.randomUUID().toString(), System.currentTimeMillis());
+        return write(request, 0) ? request : null;
+    }
+
     LauncherPlacement get(String requestId) {
         return decode(requestId, prefs.getString(REQUEST + requestId, ""));
     }
 
-    List<LauncherPlacement> recent() {
+    List<LauncherPlacement> requests() {
         List<LauncherPlacement> requests = new ArrayList<>();
         prefs.getAll().forEach((key, value) -> {
             if (!key.startsWith(REQUEST) || !(value instanceof String)) return;
             LauncherPlacement request = decode(key.substring(REQUEST.length()), (String) value);
             if (request != null) requests.add(request);
         });
-        requests.sort(Comparator.comparingLong((LauncherPlacement request) -> request.startedAt).reversed());
         return requests;
     }
 
@@ -53,13 +56,15 @@ final class PlacementStore {
 
     boolean write(LauncherPlacement request, int widgetId) {
         if (request == null) return false;
+        request = request.updatedAt(System.currentTimeMillis());
         try {
             JSONObject record = new JSONObject()
+                    .put("lineageId", request.lineageId)
                     .put("contentId", request.contentId)
                     .put("title", request.title)
                     .put("playlist", request.playlist)
                     .put("startedAt", request.startedAt)
-                    .put("updatedAt", System.currentTimeMillis())
+                    .put("updatedAt", request.updatedAt)
                     .put("refused", request.refused)
                     .put("shortcutConfirmed", request.shortcutConfirmed)
                     .put("manualWidget", request.manualWidget)
@@ -79,9 +84,9 @@ final class PlacementStore {
         if (stored.isEmpty()) return null;
         try {
             JSONObject record = new JSONObject(stored);
-            return new LauncherPlacement(requestId, record.getString("contentId"), record.getString("title"),
-                    record.getBoolean("playlist"), record.getLong("startedAt"), record.getLong("updatedAt"),
-                    record.getBoolean("refused"),
+            return new LauncherPlacement(requestId, record.optString("lineageId", requestId),
+                    record.getString("contentId"), record.getString("title"), record.getBoolean("playlist"),
+                    record.getLong("startedAt"), record.getLong("updatedAt"), record.getBoolean("refused"),
                     record.getBoolean("shortcutConfirmed"), record.getInt("manualWidget"), record.getInt("callbackWidget"));
         } catch (JSONException invalid) {
             return null;
