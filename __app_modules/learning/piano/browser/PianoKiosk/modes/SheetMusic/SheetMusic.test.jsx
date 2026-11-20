@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor, fireEvent } from '@testing-library/react';
+import { render, screen, waitFor, fireEvent, act } from '@testing-library/react';
 import { MemoryRouter, Routes, Route } from 'react-router-dom';
 
 const api = vi.fn();
@@ -254,6 +254,30 @@ describe('SheetMusic mode', () => {
       expect(screen.queryByTestId('score-player')).toBeNull();
       resolveLearn({});
       expect(await screen.findByTestId('score-player')).toBeTruthy();
+    });
+
+    it('backs off before retrying a transient Learn failure, and logs status + transient', async () => {
+      vi.useFakeTimers({ shouldAdvanceTime: false, toFake: ['setTimeout', 'clearTimeout'] });
+      try {
+        const transientErr = () => Object.assign(new Error('HTTP 503'), { status: 503, transient: true });
+        routeApi(() => Promise.reject(transientErr()));
+        apiText.mockResolvedValue('<score-partwise/>');
+        renderSheet({ collection: 'files:docs/sheet-music' }, deepLink);
+        await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+        expect(learnCalls()).toBe(1);
+        await act(async () => { await vi.advanceTimersByTimeAsync(700); });
+        expect(learnCalls()).toBe(1); // still waiting out the back-off
+        await act(async () => { await vi.advanceTimersByTimeAsync(100); });
+        expect(learnCalls()).toBe(2);
+        expect(screen.getByText('Could not load this score.')).toBeTruthy();
+        const failures = recent('piano.score-learn-failed')
+          .filter((e) => e.data?.id === 'docs/sheet-music/minuet.musicxml' && e.data?.status === 503);
+        expect(failures.at(-1).data).toEqual({
+          id: 'docs/sheet-music/minuet.musicxml', error: 'HTTP 503', status: 503, transient: true,
+        });
+      } finally {
+        vi.useRealTimers();
+      }
     });
 
     it('a score closed while its Learn fetch is pending stays quiet: no retry, no failure log', async () => {

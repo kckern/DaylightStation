@@ -2301,7 +2301,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
     if (learnPlan.configFallback) logger.warn('score.learn.config-fallback', { scoreId: scoreMeta.id });
   }, [logger, scoreMeta.id, learnPlan.configFallback]);
 
-  // Once per score open (and again only if the applied/stale verdict changes).
+  // Once per score open: the verdict and count change only with the Learn file.
   const learnFileVerdict = !learnFileHasSegments ? null : learnFileMatches ? 'applied' : 'stale';
   const learnFileCount = learnFileHasSegments ? learnFileSegments.length : 0;
   useEffect(() => {
@@ -2310,8 +2310,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
     } else if (learnFileVerdict === 'stale') {
       logger.warn('score.learn.sidecar-stale', { scoreId: scoreMeta.id });
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- count rides with the verdict
-  }, [logger, scoreMeta.id, learnFileVerdict]);
+  }, [logger, scoreMeta.id, learnFileVerdict, learnFileCount]);
 
   const learnScore = useMemo(() => ({ id: scoreMeta.id, title: meta.title, musicXml: scoreMeta.musicXml }), [meta.title, scoreMeta.id, scoreMeta.musicXml]);
   const learnSegmentMetadata = useMemo(() => Object.fromEntries(

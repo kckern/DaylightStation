@@ -95,12 +95,18 @@ function ScoreViewerRoute() {
  * immediate retry and then shows the same "Try again" screen as an XML failure.
  * `{}` (no approved segments) is a success.
  */
+const LEARN_RETRY_BACKOFF_MS = 750;
+
 async function fetchLearnFile(contentId, isCancelled) {
   const path = `api/v1/piano/sheet-music/learn?id=${encodeURIComponent(contentId)}`;
   try {
     return await DaylightAPI(path);
   } catch (err) {
+    // A 404 stays a failure, never {}: a missing route must not drop approved
+    // segments unnoticed, and frontend and backend ship in one image.
     if (isCancelled()) throw err; // a closed score makes no second request
+    if (err?.transient) await new Promise((resolve) => setTimeout(resolve, LEARN_RETRY_BACKOFF_MS));
+    if (isCancelled()) throw err;
     return DaylightAPI(path); // one automatic retry; a second failure propagates
   }
 }
@@ -151,7 +157,8 @@ function NotationScore({ contentId }) {
         if (cancelled) return; // same as above: a cancelled open logs nothing
         // Same session-log routing as piano.score-open-failed above (and for the
         // same reason: tag the event's context, never make a sessionLog child).
-        logger.warn('piano.score-learn-failed', { id: localId, error: err?.message },
+        logger.warn('piano.score-learn-failed',
+          { id: localId, error: err?.message, status: err?.status, transient: err?.transient },
           { context: { app: 'piano-sheetmusic', sessionLog: true } });
         setLearnFile(null);
       }
