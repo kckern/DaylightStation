@@ -4,7 +4,7 @@ import { useDismissLayer } from '@/lib/ui/dismiss/useDismissLayer.js';
 import DetailView from "./DetailView.jsx";
 import "./DetailView.scss";
 
-export default function DetailModal({ item, sections, ogImage, ogDescription, loading, error, onRetry, onBack, onNext, onPrev, onPlay, activeMedia, playback, onNavigateToItem, onStateAction }) {
+export default function DetailModal({ item, sections, detailActions, ogImage, ogDescription, loading, error, onRetry, onBack, onNext, onPrev, onPlay, activeMedia, playback, onNavigateToItem, onStateAction }) {
   const dialogRef = useRef(null);
   const usesDismissStack = useDismissLayer(true, onBack);
   const handleDialogKeys = useDialogFocus(true, dialogRef, dialogRef);
@@ -73,6 +73,7 @@ export default function DetailModal({ item, sections, ogImage, ogDescription, lo
       renderDialog={renderDialog}
       item={item}
       sections={sections}
+      detailActions={detailActions}
       ogImage={ogImage}
       ogDescription={ogDescription}
       loading={loading}

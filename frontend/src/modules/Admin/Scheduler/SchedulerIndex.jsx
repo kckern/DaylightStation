@@ -1,6 +1,7 @@
-import React, { useLayoutEffect, useState, useMemo, useRef } from 'react';
+import React, { useLayoutEffect, useState, useMemo } from 'react';
 import { FormDialog } from '@/lib/ui/FormDialog.jsx';
 import { SubmitButton } from '@/lib/ui/SubmitButton.jsx';
+import { useKeyedSubmission } from '@/lib/ui/useKeyedSubmission.js';
 import { Link, useLocation, useNavigate, useNavigationType } from 'react-router-dom';
 import { Stack, Text, Table, Badge, Button, Group, TextInput, Center, Alert, Anchor }  from '@mantine/core';
 import { IconPlus, IconPlayerPlay, IconAlertCircle, IconClock } from '@tabler/icons-react';
@@ -82,8 +83,7 @@ function SchedulerIndex() {
   const [createForm, setCreateForm] = useState({ id: '', name: '', module: '', schedule: '' });
   const [createErrors, setCreateErrors] = useState({});
   const [creating, setCreating] = useState(false);
-  const [triggeringIds, setTriggeringIds] = useState(() => new Set());
-  const pendingRuns = useRef(new Set());
+  const { pending: triggeringIds, run: submitRun } = useKeyedSubmission();
 
   // Group jobs by frequency band
   const groupedJobs = useMemo(() => {
@@ -152,20 +152,17 @@ function SchedulerIndex() {
     }
   };
 
-  const handleTrigger = async jobId => {
-    if (retrying || readError || pendingRuns.current.has(jobId)) return;
-    pendingRuns.current.add(jobId);
-    setTriggeringIds(new Set(pendingRuns.current));
-    clearError();
-    try {
-      await triggerJob(jobId);
-      await refreshAfterWrite({ followSuperseding: true });
-    } catch {
-      // Command and roster errors are reported by their respective hooks.
-    } finally {
-      pendingRuns.current.delete(jobId);
-      setTriggeringIds(new Set(pendingRuns.current));
-    }
+  const handleTrigger = jobId => {
+    if (retrying || readError) return;
+    return submitRun(jobId, async () => {
+      clearError();
+      try {
+        await triggerJob(jobId);
+        await refreshAfterWrite({ followSuperseding: true });
+      } catch {
+        // Command and roster errors are reported by their respective hooks.
+      }
+    });
   };
 
   return (

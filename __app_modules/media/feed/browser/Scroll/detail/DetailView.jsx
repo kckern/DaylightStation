@@ -9,7 +9,7 @@ import AnnotationPanel from "../../Annotations/AnnotationPanel.jsx";
 import OfflineEditionButton from "../../offline/OfflineEditionButton.jsx";
 import "./DetailView.scss";
 
-export default function DetailView({ renderDialog, focusOnEntry = false, item, sections, ogImage, ogDescription, loading, error, onRetry, onBack, onNext, onPrev, onPlay, activeMedia, playback, onNavigateToItem, onStateAction }) {
+export default function DetailView({ renderDialog, focusOnEntry = false, item, sections, detailActions, ogImage, ogDescription, loading, error, onRetry, onBack, onNext, onPrev, onPlay, activeMedia, playback, onNavigateToItem, onStateAction }) {
   const inModal = Boolean(renderDialog);
   const usesDismissStack = useDismissLayer(!inModal, onBack);
   const sourceName = item.meta?.sourceName || item.source || '';
@@ -300,7 +300,7 @@ export default function DetailView({ renderDialog, focusOnEntry = false, item, s
 
         {!loading && sections.map((section, i) => (
           <div key={i} className="detail-section">
-            {renderSection(section, { onPlay, activeMedia, playback, item, onNavigateToItem })}
+            {renderSection(section, { onPlay, activeMedia, playback, item, onNavigateToItem, detailActions })}
           </div>
         ))}
 

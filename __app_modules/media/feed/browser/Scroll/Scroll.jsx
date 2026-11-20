@@ -6,6 +6,7 @@ import { useRefreshableRead } from "@/lib/hooks/useRefreshableRead.js";
 import { renderFeedCard } from "./cards/index.jsx";
 import DetailView from "./detail/DetailView.jsx";
 import DetailModal from "./detail/DetailModal.jsx";
+import { useDetailActions } from './detail/useDetailActions.js';
 import { useFeedPlayer } from "../players/FeedPlayerContext.jsx";
 import { useMasonryLayout } from "./hooks/useMasonryLayout.js";
 import { usePerfMonitor } from "./hooks/usePerfMonitor.js";
@@ -229,6 +230,7 @@ export default function Scroll() {
 
   // Decode URL slug to full item ID
   const fullId = urlSlug ? decodeFeedItemId(urlSlug) : null;
+  const detailActions = useDetailActions(fullId);
   const detailKey = urlSlug ? `${urlSlug}:${detailRetry}` : null;
   const detail = settledDetail?.key === detailKey ? settledDetail : null;
   const detailData = detail?.data;
@@ -936,6 +938,7 @@ export default function Scroll() {
       {selectedItem && isDesktop && (
         <DetailModal
           item={selectedItem}
+          detailActions={detailActions}
           sections={detailData?.sections || []}
           ogImage={detailData?.ogImage || null}
           ogDescription={detailData?.ogDescription || null}
@@ -956,6 +959,7 @@ export default function Scroll() {
         <DetailView
           focusOnEntry
           item={selectedItem}
+          detailActions={detailActions}
           sections={detailData?.sections || []}
           ogImage={detailData?.ogImage || null}
           ogDescription={detailData?.ogDescription || null}

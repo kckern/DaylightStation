@@ -237,7 +237,7 @@ Adapters return sections with these types, rendered by matching React components
 | `embed` | `EmbedSection` | Embedded iframe (YouTube videos) |
 | `media` | `MediaSection` | Image gallery with captions |
 | `player` | `PlayerSection` | Playback controller — play button (idle) or scrubber/controls (active). Actual Player lives in PersistentPlayer at Scroll level |
-| `actions` | `ActionsSection` | Action buttons |
+| `actions` | `ActionsSection` | Shared pending buttons for supplied action descriptors. Scroll owns each in-flight action across phone and desktop layouts and presents refusals in the submitting article visit. |
 | `gallery` | `GallerySection` | Photo gallery with navigation |
 | `scripture` | `ScriptureSection` | Scripture verse display |
 | `timeline` | `TimelineSection` | Timeline/history display |

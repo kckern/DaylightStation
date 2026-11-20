@@ -210,6 +210,16 @@
   padding: 0 1rem 0.75rem;
 }
 
+.detail-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  padding-top: 0.5rem;
+
+  &__error { flex-basis: 100%; color: var(--ds-danger); }
+  &__danger { border-color: var(--ds-danger); color: var(--ds-danger); }
+}
+
 // ─── Inline iframe for items with no content sections ───
 .detail-iframe-wrap {
   margin: 0 -1rem;  // bleed to edges

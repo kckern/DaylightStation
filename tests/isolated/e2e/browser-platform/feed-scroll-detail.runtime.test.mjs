@@ -33,6 +33,110 @@ test.beforeEach(async ({ page }) => {
   await page.route('**/fixture-publisher', route => route.fulfill({ body: 'Original publisher fallback' }));
 });
 
+test('Feed detail actions keep independent pending commands across a responsive switch', async ({ page }) => {
+  const endpoint = '/api/v1/feed/fixture-detail-action';
+  const started = Promise.withResolvers();
+  const release = Promise.withResolvers();
+  const writes = [];
+  const action = { id: 'bookmark', label: 'Bookmark article', endpoint, style: 'primary', body: { bookmark: true } };
+  const other = { ...action, label: 'Dismiss suggestion', style: 'danger', method: 'PATCH', body: { dismiss: true } };
+  await page.route(url => url.pathname === detailPath(article.id), route => route.fulfill({ json: { sections: [
+    ...sections,
+    { type: 'actions', data: { items: [action] } },
+    { type: 'actions', data: { items: [other] } },
+  ] } }));
+  await page.route(url => url.pathname === endpoint, async route => {
+    const request = route.request();
+    writes.push([request.method(), request.postDataJSON()]);
+    if (request.method() === 'POST' && writes.length === 1) {
+      started.resolve();
+      await release.promise;
+      return route.fulfill({ status: 409, json: { error: 'Fixture refused the bookmark' } });
+    }
+    return route.fulfill({ json: { ok: true } });
+  });
+  await page.goto('/feed/scroll');
+  await page.getByRole('button', { name: `Open: ${article.title}` }).click();
+  const bookmark = page.getByRole('button', { name: action.label, exact: true });
+  try {
+    await bookmark.press('Enter');
+    await started.promise;
+    await expect(bookmark).toBeFocused();
+    await expect(bookmark).toHaveAttribute('aria-busy', 'true');
+    await page.keyboard.press('Enter');
+
+    await page.setViewportSize({ width: 1440, height: 850 });
+    const dialog = page.getByRole('dialog');
+    await expect(dialog.getByRole('button', { name: action.label, exact: true })).toHaveAttribute('aria-busy', 'true');
+    await bookmark.press('Enter');
+    await dialog.getByRole('button', { name: other.label, exact: true }).press('Enter');
+    await expect.poll(() => writes).toEqual([['POST', { bookmark: true }], ['PATCH', { dismiss: true }]]);
+  } finally {
+    release.resolve();
+  }
+  await expect(page.getByRole('alert').filter({ hasText: 'Could not bookmark article.' })).toBeVisible();
+  await expect(bookmark).toBeEnabled();
+  await bookmark.press('Enter');
+  await expect.poll(() => writes).toEqual([
+    ['POST', { bookmark: true }], ['PATCH', { dismiss: true }], ['POST', { bookmark: true }],
+  ]);
+  await expect(page.getByRole('alert').filter({ hasText: 'Could not bookmark article.' })).toHaveCount(0);
+});
+
+test('Feed detail action feedback stays with the article visit that submitted it', async ({ page }) => {
+  const second = { ...article, id: 'reddit:next-action-article', title: 'Next Feed action fixture' };
+  const endpoint = '/api/v1/feed/fixture-detail-action';
+  const started = Promise.withResolvers();
+  const release = Promise.withResolvers();
+  const writes = [];
+  let firstReads = 0;
+  await page.route('**/scroll/sessions', route => route.fulfill({ json: {
+    items: [article, second], sessionId: 'two-action-articles', hasMore: false,
+  } }));
+  for (const item of [article, second]) {
+    await page.route(url => url.pathname === detailPath(item.id), route => {
+      const refreshed = item === article && ++firstReads > 1;
+      const detail = refreshed ? [{ type: 'article', data: { html: '<p>Context returned on revisit.</p>' } }, ...sections] : sections;
+      const body = refreshed ? { saved: true, id: item.id } : { id: item.id, saved: true };
+      return route.fulfill({ json: { sections: [
+        ...detail, { type: 'actions', data: { items: [{ id: 'bookmark', label: 'Bookmark article', endpoint, body }] } },
+      ] } });
+    });
+  }
+  await page.route(url => url.pathname === endpoint, async route => {
+    writes.push(route.request().postDataJSON());
+    if (writes.length === 1) {
+      started.resolve();
+      await release.promise;
+      return route.fulfill({ status: 409, json: { error: 'Departed article refused' } });
+    }
+    return route.fulfill({ json: { ok: true } });
+  });
+  await page.goto('/feed/scroll');
+  await page.getByRole('button', { name: `Open: ${article.title}` }).click();
+  const bookmark = page.getByRole('button', { name: 'Bookmark article', exact: true });
+  await bookmark.press('Enter');
+  await started.promise;
+  try {
+    const navigation = page.getByRole('navigation', { name: 'Article navigation' });
+    await navigation.getByRole('button', { name: 'Next', exact: true }).click();
+    await expect(page).toHaveURL(new RegExp(`${scrollPath(second.id)}$`));
+    await expect(bookmark).toBeEnabled();
+    await bookmark.press('Enter');
+    await expect.poll(() => writes).toEqual([{ id: article.id, saved: true }, { id: second.id, saved: true }]);
+    await navigation.getByRole('button', { name: 'Previous', exact: true }).click();
+    await expect(page).toHaveURL(new RegExp(`${scrollPath(article.id)}$`));
+    await expect(page.getByText('Context returned on revisit.', { exact: true })).toBeVisible();
+    await expect(bookmark).toHaveAttribute('aria-busy', 'true');
+    await bookmark.press('Enter');
+  } finally {
+    release.resolve();
+  }
+  await expect(bookmark).toBeEnabled();
+  expect(writes).toEqual([{ id: article.id, saved: true }, { id: second.id, saved: true }]);
+  await expect(page.getByRole('alert').filter({ hasText: 'Could not bookmark article.' })).toHaveCount(0);
+});
+
 for (const cold of [false, true]) {
   test(`Feed keeps the ${cold ? 'cold history' : 'in-batch'} detail GET across a layout switch`, async ({ page }) => {
     const id = cold ? 'reddit:outside-batch' : article.id;
