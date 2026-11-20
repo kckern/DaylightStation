@@ -363,7 +363,7 @@ test('each course names its next lesson: the first one not yet watched, with its
   };
   const { players } = await new GetRecentCourseActivity(deps).execute();
   const course = players.find((p) => p.userId === 'learner2').courses[0];
-  assert.deepEqual(course.next, { id: 'plex:10-e2', title: 'Lesson 2', thumbnail: '/api/still-2.jpg' });
+  assert.deepEqual(course.next, { id: 'plex:10-e2', title: 'Lesson 2', thumbnail: '/api/still-2.jpg', position: 2 });
 });
 
 test('a finished enrollment with nothing after it does not lead', async () => {
