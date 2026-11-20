@@ -88,3 +88,38 @@ describe('entryShiftSentence', () => {
     expect(entryShiftReason(-1)).toBe('entry-early');
   });
 });
+
+// Jingle Bells bars 1–2 at 56 bpm: E E E(half) | E E E(half). Every note is the
+// same pitch, so a whole-beat shift lines up with a steady rush or drag of the
+// same notes; only the ENTRY tells them apart (review 2026-11-20).
+const JB_BEAT = 60000 / 56;
+const jingle = () => ({
+  startedAt: 0, leadInMs: 4 * JB_BEAT, originQuarter: 0,
+  policy: { windowFraction: 0.4, windowMinMs: 80, windowMaxMs: 400 },
+  expectation: {
+    tempoMap: [{ onsetQuarter: 0, bpm: 56 }],
+    events: [[0, 1], [1, 1], [2, 2], [4, 1], [5, 1], [6, 2]].map(([onsetQuarter, durationQuarters], i) => (
+      { id: `e${i}`, onsetQuarter, durationQuarters, notes: [{ id: `n${i}`, midi: 64 }] })),
+  },
+});
+const JB_BEATS = [0, 1, 2, 4, 5, 6];
+const jbAt = (beats) => beats.map((beat) => ({ midi: 64, t: 4 * JB_BEAT + beat * JB_BEAT }));
+const jbSpan = { beatMs: JB_BEAT, from: 0, to: 4 * JB_BEAT + 9 * JB_BEAT };
+
+describe('detectEntryShift names only a shift that explains the entry (repeated pitches)', () => {
+  it('names nothing for an on-time start rushed ×1.25 (the first onset sits on the click)', () => {
+    expect(detectEntryShift(jingle(), jbAt(JB_BEATS.map((b) => b * 0.8)), jbSpan)).toBeNull();
+  });
+
+  it('names nothing for an on-time start dragged ×0.8', () => {
+    expect(detectEntryShift(jingle(), jbAt(JB_BEATS.map((b) => b * 1.25)), jbSpan)).toBeNull();
+  });
+
+  it('names a true one-beat-late entry on the same bars', () => {
+    expect(detectEntryShift(jingle(), jbAt(JB_BEATS.map((b) => b + 1)), jbSpan)).toMatchObject({ beats: 1 });
+  });
+
+  it('names a true one-beat-early entry on the same bars', () => {
+    expect(detectEntryShift(jingle(), jbAt(JB_BEATS.map((b) => b - 1)), jbSpan)).toMatchObject({ beats: -1 });
+  });
+});

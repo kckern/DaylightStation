@@ -69,12 +69,30 @@ function reachable(notes, shiftMs, from, to) {
 }
 
 /**
+ * Does shift `shiftMs` explain the take's ENTRY? The first expected note must be
+ * played at its shifted target (an onset of its pitch inside its window there),
+ * and no onset may match it unshifted before that onset. Without this, a piece
+ * of repeated pitches (Jingle Bells: E E E | E E E) lets a steady rush or drag
+ * from an on-time start line up with a whole-beat shift: the rusher's first
+ * onset sits on the click, so the shift does not explain how they began.
+ */
+function explainsEntry(notes, onsets, shiftMs) {
+  const first = notes[0];
+  const entry = onsets
+    .filter((onset) => matchesAt(first, onset, shiftMs))
+    .sort((a, b) => Math.abs(a.t - (first.target + shiftMs)) - Math.abs(b.t - (first.target + shiftMs)))[0];
+  if (!entry) return false;
+  return !onsets.some((onset) => onset !== entry && onset.t < entry.t && matchesAt(first, onset, 0));
+}
+
+/**
  * Name a whole-beat shifted entry, or return null.
  *
  * A shift k is named when it matches at least ENTRY_SHIFT_SHARE of the notes
  * the log could contain at that shift (and that is at least N − |k| of the N
  * notes), the unshifted take matches less than that share, and the shift does
- * strictly better than no shift. Ties between shifts go to the smaller |k|.
+ * strictly better than no shift. The shift must also explain the entry
+ * (`explainsEntry`). Ties between shifts go to the smaller |k|.
  *
  * @param {object} attempt the attempt snapshot (startedAt, leadInMs, expectation, policy)
  * @param {{midi:number, t:number}[]} onsets the raw onset log, attempt clock
@@ -94,6 +112,7 @@ export function detectEntryShift(attempt, onsets, { beatMs, from, to } = {}) {
     const shiftMs = beats * beatMs;
     const candidates = reachable(notes, shiftMs, start, end);
     if (candidates.length < 2 || candidates.length < notes.length - Math.abs(beats)) continue;
+    if (!explainsEntry(notes, onsets, shiftMs)) continue;
     const matched = matchShifted(candidates, onsets, shiftMs);
     const share = matched / candidates.length;
     if (share < ENTRY_SHIFT_SHARE || share <= unshifted) continue;
