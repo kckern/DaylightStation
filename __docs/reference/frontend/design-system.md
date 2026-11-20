@@ -284,7 +284,7 @@ between asymmetric device insets.
 
 ## Data fetching
 
-`frontend/src/lib/hooks/useApiResource.js` is the house `{ data, loading,
+`frontend/src/lib/hooks/useApiResource.js` is the house `{ data, hasResult, loading,
 error, revalidating, reload, refresh, poll }` fetch hook — a GET-backed request wrapped in
 the loading/error bookkeeping every app needs, so no screen hand-rolls its
 own. In its default mode it behaves like any plain fetch-on-mount hook:
@@ -307,6 +307,16 @@ reader's interest. The final
 departure cancels the transport after the current turn so a synchronous
 observer replacement or prefetch can still adopt it. A later visit issues
 a fresh GET for the same path.
+
+For a mounted app with local tabs, pass `enabled` for the active consumers of
+each read and keep the resource path tied to its owner. A non-SWR reader keeps
+its last accepted same-path result within that mount. Auto's selected car
+overview feeds the header and reminders across views. Drives and Fuel share
+one fuel reader, Service loads its history and type labels, and Docs releases
+its documents read on departure. Use `hasResult` when the view must distinguish
+its first read from an accepted result such as an HTTP 204. Restore scroll
+after the active view can render its accepted result.
+[Auto tabs](../../../__app_modules/household/auto/browser/AutoApp.jsx)
 
 With `swr: true`, each path has one current cacheable read. All mounted,
 enabled readers of that path display its accepted snapshot and receive its

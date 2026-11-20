@@ -21,6 +21,7 @@ import { DaylightAPI } from '../api.mjs';
 import { createAppLogger } from '../ui/createAppLogger.js';
 
 const defaultLogger = createAppLogger('ds');
+const NO_RESULT = Symbol('no accepted result');
 
 // Bound growth: this cache is process-lifetime, not per-session-cleared. The
 // realistic worst case today is date-keyed paths (health nutrilist/budget per
@@ -585,7 +586,7 @@ export function useApiResource(path, {
 
   const [data, setData] = useState(() => {
     const { hit, value } = getInitialCache();
-    return hit ? value : null;
+    return hit ? value : NO_RESULT;
   });
   const [resultPath, setResultPath] = useState(path);
   const [loading, setLoading] = useState(() => {
@@ -639,7 +640,7 @@ export function useApiResource(path, {
     };
     const clearOwner = matches => {
       if (!path || !matches(path)) return;
-      setData(null);
+      setData(NO_RESULT);
       setError(null);
       if (enabled) requestReload(null, true);
     };
@@ -679,7 +680,7 @@ export function useApiResource(path, {
       if (kind !== 'failure') {
         setData(value);
         setResultPath(path);
-      } else if (clearDataOnError) setData(null);
+      } else if (clearDataOnError) setData(NO_RESULT);
       if (kind === 'patch') {
         requestReload(null, true);
         return;
@@ -750,7 +751,7 @@ export function useApiResource(path, {
       setLoading(false);
       setError(null);
     } else {
-      if (resultPath !== path) setData(null);
+      if (resultPath !== path) setData(NO_RESULT);
       setResultPath(path);
       setRevalidating(false);
       setLoading(true);
@@ -789,7 +790,7 @@ export function useApiResource(path, {
         if (!isCurrent()) return;
         if (cacheRead && !cacheRead.accepted) { retireRead(); return; }
         if (!cacheRead) {
-          if (clearDataOnError) setData(null);
+          if (clearDataOnError) setData(NO_RESULT);
           setError(err);
           setLoading(false);
         }
@@ -812,9 +813,11 @@ export function useApiResource(path, {
   // flash a day flip used to show before the effect copied the cache over.
   const matches = resultPath === path;
   if (!matches && swr && enabled && path && swrCache.has(path)) {
-    return { data: peekApiResource(path), resourceKey: path, loading: false, error: null, revalidating: !isFresh(), reload, refresh, poll };
+    return { data: peekApiResource(path), hasResult: true, resourceKey: path, loading: false, error: null,
+      revalidating: !isFresh(), reload, refresh, poll };
   }
-  return { data: matches ? data : null, resourceKey: path,
+  const hasResult = matches && data !== NO_RESULT;
+  return { data: hasResult ? data : null, hasResult, resourceKey: path,
     loading: matches ? loading : Boolean(enabled && path),
     error: matches ? error : null, revalidating: matches && revalidating, reload, refresh, poll };
 }

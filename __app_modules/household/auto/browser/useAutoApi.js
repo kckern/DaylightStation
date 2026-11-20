@@ -1,12 +1,7 @@
 // frontend/src/modules/Auto/useAutoApi.js
 //
-// Data access for the Auto app. One hook per resource, each returning the same
-// { data, loading, error, reload } shape so the panels stay uniform.
-//
-// The fetch primitive itself is the house `useApiResource` (lib/hooks) — this
-// module was its donor (same discard-stale-request-on-unmount semantics), so
-// promoting to the shared import changes nothing behaviorally; each resource
-// hook just passes `logger: autoLog` to keep the app.auto tag on its events.
+// Auto's endpoint keys and write invalidation. The shared resource owns request
+// lifetime. A stable key keeps the accepted same-vehicle result on a tab revisit.
 
 import { invalidateApiResources, useApiResource } from '@/lib/hooks/useApiResource.js';
 import { DaylightAPI } from "../../../../frontend/src/lib/api.mjs";
@@ -26,25 +21,25 @@ export function useOverview(vehicleId) {
   );
 }
 
-export function useJourneys(vehicleId, { includeShuffles = false } = {}) {
+export function useJourneys(vehicleId, { includeShuffles = false, enabled = true } = {}) {
   const query = includeShuffles ? '?shuffles=1' : '';
   return useApiResource(
     vehicleId ? `${vehiclePath(vehicleId)}/journeys${query}` : null,
-    { enabled: Boolean(vehicleId), deps: [includeShuffles], label: 'journeys', logger: autoLog },
+    { enabled: enabled && Boolean(vehicleId), label: 'journeys', logger: autoLog },
   );
 }
 
-export function useFuel(vehicleId) {
+export function useFuel(vehicleId, { enabled = true } = {}) {
   return useApiResource(
     vehicleId ? `${vehiclePath(vehicleId)}/fuel` : null,
-    { enabled: Boolean(vehicleId), label: 'fuel', logger: autoLog },
+    { enabled: enabled && Boolean(vehicleId), label: 'fuel', logger: autoLog },
   );
 }
 
-export function useService(vehicleId) {
+export function useService(vehicleId, { enabled = true } = {}) {
   return useApiResource(
     vehicleId ? `${vehiclePath(vehicleId)}/service` : null,
-    { enabled: Boolean(vehicleId), label: 'service', logger: autoLog },
+    { enabled: enabled && Boolean(vehicleId), label: 'service', logger: autoLog },
   );
 }
 
@@ -52,14 +47,14 @@ export function useService(vehicleId) {
  * The maintenance vocabulary. Household-scoped and config-driven, so the form's
  * options can be extended in vehicles.yml without a frontend deploy.
  */
-export function useServiceTypes() {
-  return useApiResource('api/v1/automotive/service-types', { label: 'service-types', logger: autoLog });
+export function useServiceTypes({ enabled = true } = {}) {
+  return useApiResource('api/v1/automotive/service-types', { enabled, label: 'service-types', logger: autoLog });
 }
 
-export function useDocuments(vehicleId) {
+export function useDocuments(vehicleId, { enabled = true } = {}) {
   return useApiResource(
     vehicleId ? `${vehiclePath(vehicleId)}/documents` : null,
-    { enabled: Boolean(vehicleId), label: 'documents', logger: autoLog },
+    { enabled: enabled && Boolean(vehicleId), label: 'documents', logger: autoLog },
   );
 }
 

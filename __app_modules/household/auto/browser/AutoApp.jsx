@@ -103,7 +103,6 @@ function AutoAppShell() {
   const [includeShuffles, setIncludeShuffles] = useState(false);
 
   const vehicles = useVehicles();
-  const serviceTypes = useServiceTypes();
 
   // With exactly one vehicle the garage screen is a list of one, which is a
   // pointless tap — so it's skipped. With two or more it becomes the landing
@@ -122,19 +121,23 @@ function AutoAppShell() {
     if (vehicleId) autoLog.debug('vehicle.selected', { vehicleId });
   }, [vehicleId]);
 
-  const overview = useOverview(vehicleId);
-  const journeys = useJourneys(vehicleId, { includeShuffles });
-  const fuel = useFuel(vehicleId);
-  const service = useService(vehicleId);
-  const documents = useDocuments(vehicleId);
-  const activeResource = { overview, drives: journeys, fuel, service, glove: documents }[tab];
-  // These panels keep their records visible during a same-car refresh.
-  const retainedContent = { drives: journeys.data?.journeys, fuel: fuel.data, service: service.data }[tab];
-  const showLoading = activeResource.loading && !retainedContent;
   const garageOpen = vehicles.loading || Boolean(vehicles.error) || !vehicles.data?.vehicles?.length || !vehicleId;
+  const activeTab = garageOpen ? null : tab;
+  // The selected car header, Service and Docs all use the overview.
+  const overview = useOverview(garageOpen ? null : vehicleId);
+  const journeys = useJourneys(vehicleId, { includeShuffles, enabled: activeTab === 'drives' });
+  const fuel = useFuel(vehicleId, { enabled: activeTab === 'drives' || activeTab === 'fuel' });
+  const service = useService(vehicleId, { enabled: activeTab === 'service' });
+  const serviceTypes = useServiceTypes({ enabled: activeTab === 'service' });
+  const documents = useDocuments(vehicleId, { enabled: activeTab === 'glove' });
+  const activeResource = { overview, drives: journeys, fuel, service, glove: documents }[tab];
+  // Reads can start after the tab's first render. Wait for a cold result before
+  // restoring its scroll, and keep accepted rows visible on a same-car refresh.
+  const showLoading = !activeResource.hasResult && !activeResource.error;
+  const activeReadBusy = showLoading || activeResource.loading || activeResource.revalidating;
   const shellResource = garageOpen ? vehicles : activeResource;
   const { regionProps: shellRegion, retry: retryShell } = useRetryRegion(
-    shellResource.reload, shellResource.loading || shellResource.revalidating,
+    shellResource.reload, garageOpen ? vehicles.loading || vehicles.revalidating : activeReadBusy,
   );
   useViewScroll({
     mainRef, viewKey: tab, owner: vehicleId,
@@ -212,7 +215,7 @@ function AutoAppShell() {
           hidden={journeys.data?.hidden || 0}
           fuelLogs={fuel.data?.logs}
           loading={showLoading}
-          busy={journeys.loading || journeys.revalidating}
+          busy={activeReadBusy}
           error={journeys.error}
           onReload={journeys.reload}
           includeShuffles={includeShuffles}
@@ -224,7 +227,7 @@ function AutoAppShell() {
           vehicleId={vehicleId}
           fuel={fuel.data}
           loading={showLoading}
-          busy={fuel.loading || fuel.revalidating}
+          busy={activeReadBusy}
           error={fuel.error}
           onReload={fuel.reload}
         />
@@ -236,7 +239,7 @@ function AutoAppShell() {
           reminders={overview.data?.reminders}
           typeResource={serviceTypes}
           loading={showLoading}
-          busy={service.loading || service.revalidating}
+          busy={activeReadBusy}
           error={service.error}
           onReload={service.reload}
         />

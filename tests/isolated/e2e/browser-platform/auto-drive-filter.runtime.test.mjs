@@ -17,6 +17,7 @@ for (const width of [390, 1440]) {
     const paths = [];
     let held;
     let returnRead;
+    let revisitRead;
     await page.context().route('**/*', route => (
       new URL(route.request().url()).origin === origin ? route.fallback() : route.abort()
     ));
@@ -29,6 +30,7 @@ for (const width of [390, 1440]) {
         paths.push(search);
         if (search === '?shuffles=1' && !held) { held = route; return; }
         if (!search && paths.length > 1 && !returnRead) { returnRead = route; return; }
+        if (!search && returnRead && !revisitRead) { revisitRead = route; return; }
         return route.fulfill({ json: { journeys: search ? [...recorded, short] : recorded, hidden: search ? 0 : 1 } });
       }
       return route.fulfill({ json: pathname.endsWith('/supervision/bootstrap') ? { enabled: false } : {} });
@@ -69,9 +71,15 @@ for (const width of [390, 1440]) {
     await expect(showWithoutCount).toBeFocused();
     await expect(showWithoutCount).toBeInViewport();
     await page.getByRole('button', { name: 'Car', exact: true }).click();
-    await page.getByRole('button', { name: 'Drives', exact: true }).click();
+    const drives = page.getByRole('button', { name: 'Drives', exact: true });
+    await drives.press('Enter');
+    await expect.poll(() => Boolean(revisitRead)).toBe(true);
+    await expect(main.getByRole('region', { name: 'Drives' })).toHaveAttribute('aria-busy', 'true');
     await expect(main.getByText('Morning drive')).toBeVisible();
     await expect(showWithoutCount).toHaveCount(0);
-    expect(paths).toEqual(['', '?shuffles=1', '?shuffles=1', '']);
+    await revisitRead.fulfill({ json: { journeys: [{ ...recorded[0], title: 'Updated morning drive' }, ...recorded.slice(1)], hidden: 0 } });
+    await expect(main.getByText('Updated morning drive')).toBeVisible();
+    await expect(drives).toBeFocused();
+    expect(paths).toEqual(['', '?shuffles=1', '?shuffles=1', '', '']);
   });
 }

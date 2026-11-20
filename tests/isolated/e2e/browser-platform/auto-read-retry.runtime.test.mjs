@@ -65,3 +65,119 @@ for (const { label, path, tab, width, response, result } of cases) {
     expect(reads).toEqual(['GET', 'GET']);
   });
 }
+
+async function openCar(page, { responses = {}, held = [] } = {}) {
+  const requests = [];
+  await page.routeWebSocket('**/*', () => {});
+  await page.route('**/api/**', route => {
+    const request = route.request();
+    const { pathname, search } = new URL(request.url());
+    const root = '/api/v1/automotive';
+    if (!pathname.startsWith(root + '/')) {
+      return route.fulfill({ json: pathname.endsWith('/supervision/bootstrap') ? { enabled: false } : {} });
+    }
+    const path = pathname.slice(root.length) + search;
+    requests.push({ path, request, route });
+    if (held.includes(path)) return;
+    const json = path === '/vehicles' ? vehicles : path === '/vehicles/sample' ? overview : responses[path] ?? {};
+    return route.fulfill({ json });
+  });
+  await page.goto('/auto');
+  await expect(page.getByRole('button', { name: 'Car', exact: true })).toHaveAttribute('aria-current', 'page');
+  await expect(page.getByText('Odometer', { exact: true })).toBeVisible();
+  return requests;
+}
+
+test('Auto reads the active views and shares the pending fuel read between Drives and Fuel', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 850 });
+  const car = '/vehicles/sample';
+  const fuel = car + '/fuel';
+  const journeys = car + '/journeys';
+  const service = car + '/service';
+  const requests = await openCar(page, {
+    held: [fuel],
+    responses: {
+      [journeys]: { journeys: [{ id: 'river', title: 'Drive to the river', stops: [] }] },
+      [service]: { records: [{ id: 'repair', date: '2026-11-01', type: 'fixture', vendor: 'Fixture garage' }] },
+      '/service-types': { types: [{ value: 'fixture', label: 'Custom inspection' }] },
+    },
+  });
+  const reads = () => requests.map(({ path }) => path).sort();
+  const tab = name => page.getByRole('button', { name, exact: true });
+  const overviewReads = ['/vehicles', car];
+  expect(reads()).toEqual(overviewReads);
+
+  await tab('Drives').press('Enter');
+  await expect(page.getByText('Drive to the river', { exact: true })).toBeVisible();
+  const driveReads = [...overviewReads, fuel, journeys].sort();
+  await expect.poll(reads).toEqual(driveReads);
+  const fuelRead = requests.find(entry => entry.path === fuel);
+  await tab('Fuel').press('Enter');
+  await expect(page.getByRole('region', { name: 'Fill-ups', exact: true })).toHaveAttribute('aria-busy', 'true');
+  expect(reads()).toEqual(driveReads);
+  expect(fuelRead.request.failure()).toBeNull();
+  await fuelRead.route.fulfill({ json: { logs: [{ id: 'fill', date: '2026-11-02', price_total: 24 }] } });
+  await expect(page.getByText('$24.00', { exact: true })).toBeVisible();
+
+  await tab('Service').press('Enter');
+  await expect(page.getByText('Fixture garage', { exact: true })).toBeVisible();
+  await expect(page.getByText('Custom inspection', { exact: true })).toBeVisible();
+  expect(reads()).toEqual([...driveReads, '/service-types', service].sort());
+  expect(requests.map(({ request }) => request.method())).toEqual(Array(6).fill('GET'));
+});
+
+test('Auto retires a departed Docs read and keeps accepted documents through the next refresh', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 850 });
+  const car = '/vehicles/sample';
+  const documents = car + '/documents';
+  const requests = await openCar(page, { held: [documents] });
+  const documentReads = () => requests.filter(({ path }) => path === documents);
+  const carTab = page.getByRole('button', { name: 'Car', exact: true });
+  const docs = page.getByRole('button', { name: 'Docs', exact: true });
+  const region = page.getByRole('region', { name: 'Documents', exact: true });
+  const doc = (label, file) => ({ documents: [{ id: 'insurance', kind: 'Insurance', label, file }] });
+  await docs.press('Enter');
+  await expect(page.getByLabel('Loading documents')).toBeVisible();
+  await expect.poll(() => documentReads().length).toBe(1);
+  const [departed] = documentReads();
+  await carTab.press('Enter');
+  await expect(carTab).toHaveAttribute('aria-current', 'page');
+  await expect.poll(() => departed.request.failure(), { timeout: 2_000 }).not.toBeNull();
+
+  await docs.press('Enter');
+  await expect.poll(() => documentReads().length).toBe(2);
+  await documentReads()[1].route.fulfill({ json: doc('Current proof', 'current.pdf') });
+  const current = region.getByRole('link', { name: /Current proof/ });
+  await expect(current).toHaveAttribute('href', '/api/v1/automotive/files/current.pdf');
+  await departed.route.fulfill({ json: doc('Superseded proof', 'old.pdf') }).catch(error => {
+    if (!departed.request.failure()) throw error;
+  });
+  await expect(current).toBeVisible();
+  await expect(region.getByRole('link', { name: /Superseded proof/ })).toHaveCount(0);
+
+  await carTab.press('Enter');
+  await docs.press('Enter');
+  await expect.poll(() => documentReads().length).toBe(3);
+  await expect(region).toHaveAttribute('aria-busy', 'true');
+  await expect(current).toBeVisible();
+  await expect(docs).toBeFocused();
+  await documentReads()[2].route.fulfill({ json: doc('Renewed proof', 'renewed.pdf') });
+  await expect(region.getByRole('link', { name: /Renewed proof/ })).toBeVisible();
+  await expect(region).not.toHaveAttribute('aria-busy', 'true');
+  await expect(docs).toBeFocused();
+  expect(requests.map(({ path, request }) => [request.method(), path])).toEqual([
+    ['GET', '/vehicles'], ['GET', car], ['GET', documents], ['GET', documents], ['GET', documents],
+  ]);
+});
+
+test('Auto treats a completed no-content Docs read as empty', async ({ page }) => {
+  const documents = '/vehicles/sample/documents';
+  const requests = await openCar(page, { held: [documents] });
+  await page.getByRole('button', { name: 'Docs', exact: true }).press('Enter');
+  const region = page.getByRole('region', { name: 'Documents', exact: true });
+  await expect(region.getByLabel('Loading documents')).toBeVisible();
+  await expect.poll(() => requests.filter(({ path }) => path === documents).length).toBe(1);
+  await requests.find(({ path }) => path === documents).route.fulfill({ status: 204 });
+  await expect(region.getByText('Glove box is empty', { exact: true })).toBeVisible();
+  await expect(region).not.toHaveAttribute('aria-busy', 'true');
+});

@@ -25,6 +25,33 @@ describe('useApiResource', () => {
     expect(result.current.error).toBeNull();
   });
 
+  it.each([false, true])('distinguishes an accepted null from a cold read (swr: %s)', async swr => {
+    const response = heldResponse();
+    apiMock.mockReturnValueOnce(response.promise);
+    const path = `/api/v1/nullable/${swr}`;
+    const { result, rerender } = renderHook(({ resource, enabled }) => useApiResource(resource, { enabled, swr }), {
+      initialProps: { resource: path, enabled: false },
+    });
+    expect(result.current.data).toBeNull();
+    expect(result.current.hasResult).toBe(false);
+    expect(apiMock).not.toHaveBeenCalled();
+
+    rerender({ resource: path, enabled: true });
+    expect(result.current.loading).toBe(true);
+    expect(result.current.hasResult).toBe(false);
+    await act(async () => response.resolve(null));
+    expect(result.current.data).toBeNull();
+    expect(result.current.hasResult).toBe(true);
+    expect(result.current.loading).toBe(false);
+
+    rerender({ resource: path, enabled: false });
+    expect(result.current.hasResult).toBe(true);
+    rerender({ resource: path + '/other', enabled: false });
+    expect(result.current.hasResult).toBe(false);
+    expect(result.current.data).toBeNull();
+    expect(apiMock).toHaveBeenCalledTimes(1);
+  });
+
   it('captures errors', async () => {
     // mockRejectedValueOnce, not mockRejectedValue: a *persistent* rejecting
     // implementation left armed past this test's own await — combined with the
