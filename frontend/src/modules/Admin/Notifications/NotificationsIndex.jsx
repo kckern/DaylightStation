@@ -2,6 +2,7 @@ import { useRef, useState } from 'react';
 import { Stack, Paper, Title, Group, Switch, TextInput, Table, Button, Badge, NumberInput, Text, Loader } from '@mantine/core';
 import { useApiResource } from '../../../lib/hooks/useApiResource.js';
 import { ErrorState } from '../../../lib/ui/states.jsx';
+import { useRetryRegion } from '../../../lib/ui/useRetryRegion.js';
 import { DaylightAPI } from '../../../lib/api.mjs';
 import SaveBar from '../shared/SaveBar.jsx';
 import { useUnsavedGuard } from '../shared/useUnsavedGuard.js';
@@ -26,12 +27,15 @@ const editsSince = (draft, submitted) => Object.fromEntries(
 export function NotificationsIndex() {
   const settings = useApiResource(settingsPath);
   const ledger = useApiResource('/api/v1/admin/notifications/ledger?limit=50');
+  const { regionProps, retry } = useRetryRegion(settings.reload, !settings.data && settings.loading);
 
   return (
     <Stack gap="md" p="md">
-      <Title order={3}>Notifications</Title>
-      {settings.error && <ErrorState label="Notification settings" error={settings.error} onRetry={settings.reload} />}
-      {settings.loading && <Loader />}
+      <Stack component="section" gap="md" aria-label="Notification settings" {...regionProps}>
+        <Title order={3}>Notifications</Title>
+        {settings.error && <ErrorState label="Notification settings" error={settings.error} onRetry={retry} />}
+        {settings.loading && <Loader />}
+      </Stack>
       {settings.data && <NotificationSettings initial={settings.data} />}
       <ActivityLedger ledger={ledger} />
     </Stack>
@@ -111,13 +115,14 @@ function NotificationSettings({ initial }) {
 }
 
 function ActivityLedger({ ledger }) {
+  const { regionProps, retry } = useRetryRegion(ledger.reload, ledger.loading);
   const events = ledger.data?.events || [];
   return (
-    <Paper p="md" withBorder>
+    <Paper component="section" p="md" withBorder aria-label="Recent activity" {...regionProps}>
       <Group justify="space-between" mb="sm"><Title order={5}>Recent activity</Title>
-        {!ledger.error && <Button size="xs" variant="light" onClick={ledger.reload} disabled={ledger.loading}>Refresh</Button>}
+        {!ledger.error && <Button size="xs" variant="light" onClick={retry} disabled={ledger.loading}>Refresh</Button>}
       </Group>
-      {ledger.error && <ErrorState label="Recent activity" error={ledger.error} onRetry={ledger.reload} />}
+      {ledger.error && <ErrorState label="Recent activity" error={ledger.error} onRetry={retry} />}
       {ledger.loading && <Loader />}
       <Table>
         <Table.Thead><Table.Tr><Table.Th>When</Table.Th><Table.Th>User</Table.Th><Table.Th>Category</Table.Th><Table.Th>Result</Table.Th></Table.Tr></Table.Thead>
