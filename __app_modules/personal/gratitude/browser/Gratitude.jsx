@@ -302,6 +302,7 @@ function SelectedColumn({
           />
         </div>
         <span className="item-text">{item.text}</span>
+        {item.pending && <span className="selection-status" role="status">Saving…</span>}
       </div>
     );
   };
@@ -385,6 +386,28 @@ function GratitudeApp({
   const keyDownActiveRef = useRef(false); // Track if keydown started in this component
   const lastActionTimeRef = useRef(0); // Debounce protection
   const animatingRef = useRef(false); // Ref to track animation state for callbacks
+
+  const dropProvisionalSelection = useCallback((itemCategory, provisionalId) => {
+    setSelected(prev => ({
+      ...prev,
+      [itemCategory]: (prev[itemCategory] || []).filter(selection => selection.id !== provisionalId),
+    }));
+  }, []);
+  const persistProvisionalSelection = useCallback(async (itemCategory, provisionalId, userId, option) => {
+    const response = await DaylightAPI(`/api/v1/gratitude/selections/${itemCategory}`, {
+      userId,
+      item: { id: option.id, text: option.text },
+    }, 'POST');
+    const selectionId = response?.selection?.id;
+    if (!selectionId) throw new Error('Selection acknowledgement did not include an ID.');
+
+    setSelected(prev => ({
+      ...prev,
+      [itemCategory]: (prev[itemCategory] || []).map(selection =>
+        selection.id === provisionalId ? { ...selection, id: selectionId, pending: false } : selection
+      ),
+    }));
+  }, []);
   
   // Focus container on mount
   useEffect(() => {
@@ -450,6 +473,7 @@ function GratitudeApp({
         userId,
         userName,
         datetime: persistedSelection?.datetime || now,
+        pending: persistIncoming,
       };
     }).filter(item => item.id);
 
@@ -483,27 +507,15 @@ function GratitudeApp({
     if (persistIncoming) {
       newItems.forEach(async item => {
         try {
-          const response = await DaylightAPI(`/api/v1/gratitude/selections/${itemCategory}`, {
-            userId,
-            item: { id: item.optionId, text: item.text }
-          }, 'POST');
-
-          const selectionId = response?.selection?.id;
-          if (selectionId) {
-            setSelected(prev => ({
-              ...prev,
-              [itemCategory]: (prev[itemCategory] || []).map(selection =>
-                selection.id === item.id ? { ...selection, id: selectionId } : selection
-              )
-            }));
-          }
+          await persistProvisionalSelection(itemCategory, item.id, userId, { id: item.optionId, text: item.text });
         } catch (err) {
           logger.error('gratitude.websocket.persist.failed', { error: err.message });
+          dropProvisionalSelection(itemCategory, item.id);
         }
       });
     }
     
-  }, [users]);
+  }, [users, dropProvisionalSelection, persistProvisionalSelection]);
 
   useWebSocketSubscription('gratitude', handleWebSocketPayload, [handleWebSocketPayload]);
 
@@ -541,6 +553,7 @@ function GratitudeApp({
         userId: currentUser?.id,
         userName: getUserLabel(currentUser),
         datetime: new Date().toISOString(),
+        pending: true,
       };
       
       setSelected(prev => ({
@@ -557,25 +570,26 @@ function GratitudeApp({
       
       // Persist to backend
       try {
-        const response = await DaylightAPI(`/api/v1/gratitude/selections/${category}`, {
-          userId: currentUser?.id,
-          item: { id: item.id, text: item.text }
-        }, 'POST');
-        
-        // Update with server-confirmed ID
-        if (response?.selection?.id) {
-          setSelected(prev => ({
-            ...prev,
-            [category]: prev[category].map(s => 
-              s.optionId === item.id ? { ...s, id: response.selection.id } : s
-            )
-          }));
-        }
+        await persistProvisionalSelection(category, newSelection.id, currentUser?.id, item);
       } catch (err) {
         logger.error('gratitude.select.failed', { error: err.message });
+        dropProvisionalSelection(category, newSelection.id);
+        if (item.discarded) {
+          setSessionDiscarded(prev => {
+            const current = prev[category] || [];
+            if (current.some(discarded => discarded.id === item.id)) return prev;
+            return { ...prev, [category]: [...current, { ...item, discarded: true }] };
+          });
+        } else {
+          setQueue(prev => {
+            const current = prev[category] || [];
+            if (current.some(queued => queued.id === item.id)) return prev;
+            return { ...prev, [category]: [{ ...item }, ...current] };
+          });
+        }
       }
     }, 300);
-  }, [category, currentUser]);
+  }, [category, currentUser, dropProvisionalSelection, persistProvisionalSelection]);
 
   const handleDismiss = useCallback(async (item) => {
     if (animatingRef.current) return;
@@ -621,7 +635,7 @@ function GratitudeApp({
   }, [category]);
 
   const handleRemove = useCallback(async (selection) => {
-    if (animatingRef.current) return;
+    if (animatingRef.current || selection.pending) return;
     
     animatingRef.current = true;
     setAnimatingItem(selection);

@@ -431,6 +431,166 @@ test('Admin Gratitude preview removes persisted events by selection ID and resol
   expect(bootstrapReads).toBe(2);
 });
 
+test('Admin Gratitude preview waits for selection acknowledgement before removal', async ({ page }) => {
+  await installFixtures(page);
+  await page.route('**/api/v1/admin/content/lists/menus/gratitude-ack-fixture', route => route.fulfill({
+    json: {
+      name: 'gratitude-ack-fixture',
+      sections: [{ items: [{ uid: 'gratitude-ack', label: 'Gratitude ack fixture', action: 'Open', input: 'app:gratitude' }] }],
+    },
+  }));
+
+  const backendSelections = [];
+  const writes = [];
+  const deletes = [];
+  let bootstrapReads = 0;
+  let pendingPost;
+  let postBody;
+  await page.route('**/api/v1/gratitude/**', async route => {
+    const request = route.request();
+    const { pathname } = new URL(request.url());
+    if (pathname.endsWith('/bootstrap')) {
+      bootstrapReads++;
+      return route.fulfill({ json: {
+        users: [{ id: 'alice', name: 'Alice' }],
+        options: { gratitude: [], hopes: [] },
+        selections: { gratitude: [...backendSelections], hopes: [] },
+      } });
+    }
+    if (pathname.endsWith('/selections/gratitude') && request.method() === 'POST') {
+      postBody = request.postDataJSON();
+      writes.push(postBody);
+      if (writes.length > 1) return route.fulfill({ status: 422, json: { error: 'Selection refused' } });
+      pendingPost = route;
+      return;
+    }
+    if (pathname.startsWith('/api/v1/gratitude/selections/gratitude/')) {
+      const selectionId = pathname.split('/').at(-1);
+      deletes.push(selectionId);
+      const index = backendSelections.findIndex(selection => selection.id === selectionId);
+      const [removed] = index < 0 ? [] : backendSelections.splice(index, 1);
+      return route.fulfill({ status: removed ? 200 : 404, json: { removed } });
+    }
+    return route.fulfill({ json: {} });
+  });
+
+  let gratitudeSocket;
+  const subscriptionActions = [];
+  await page.routeWebSocket(url => url.pathname === '/ws', socket => {
+    gratitudeSocket = socket;
+    socket.onMessage(raw => {
+      const message = JSON.parse(raw);
+      if (message.type === 'bus_command' && message.topics?.includes('gratitude')) {
+        subscriptionActions.push(message.action);
+      }
+    });
+  });
+  await page.goto('/admin/content/lists/menus/gratitude-ack-fixture');
+  const preview = page.getByTitle('Preview app', { exact: true });
+  await preview.click();
+  const dialog = page.getByRole('dialog', { name: 'Gratitude ack fixture' });
+  await expect(dialog).toBeVisible();
+  await expect.poll(() => Boolean(gratitudeSocket && subscriptionActions.includes('subscribe'))).toBe(true);
+  gratitudeSocket.send(JSON.stringify({
+    topic: 'gratitude', action: 'item_added', userId: 'alice', userName: 'Alice',
+    category: 'gratitude', source: 'legacy',
+    items: [{ id: 'uncommitted-option', text: 'Newly selected idea' }],
+  }));
+  const row = dialog.locator('.selected-column .selected-item').filter({ hasText: 'Newly selected idea' });
+  await expect(row).toBeVisible();
+  await expect(row.getByRole('status')).toHaveText('Saving…');
+  await expect.poll(() => writes.length).toBe(1);
+
+  await page.keyboard.press('ArrowRight');
+  await page.keyboard.press('Enter');
+  await page.waitForTimeout(350);
+  await expect(row).toBeVisible();
+  expect(deletes).toEqual([]);
+
+  const committedId = 'server-assigned-selection-uuid';
+  backendSelections.push({
+    id: committedId, userId: postBody.userId, userName: 'Alice',
+    item: postBody.item, datetime: '2026-11-20T12:00:00.000Z',
+  });
+  await pendingPost.fulfill({ status: 201, json: { selection: { id: committedId } } });
+  await expect(row.getByRole('status')).toHaveCount(0);
+  await page.keyboard.press('ArrowRight');
+  await page.keyboard.press('Enter');
+  await expect.poll(() => deletes).toEqual([committedId]);
+  await expect(dialog.locator('.selected-column .item-text')).toHaveCount(0);
+
+  gratitudeSocket.send(JSON.stringify({
+    topic: 'gratitude', action: 'item_added', userId: 'alice', userName: 'Alice',
+    category: 'gratitude', source: 'legacy',
+    items: [{ id: 'refused-option', text: 'Refused idea' }],
+  }));
+  await expect.poll(() => writes.length).toBe(2);
+  await expect(dialog.locator('.selected-column .item-text')).toHaveCount(0);
+
+  await page.keyboard.press('Escape');
+  await expect(dialog).toBeHidden();
+  await preview.click();
+  await expect.poll(() => bootstrapReads).toBe(2);
+  await expect(dialog.locator('.selected-column')).toBeVisible();
+  await expect(dialog.locator('.selected-column .item-text')).toHaveCount(0);
+  expect(writes).toEqual([
+    expect.objectContaining({ item: { id: 'uncommitted-option', text: 'Newly selected idea' } }),
+    expect.objectContaining({ item: { id: 'refused-option', text: 'Refused idea' } }),
+  ]);
+  expect(deletes).toEqual([committedId]);
+});
+
+test('Admin Gratitude preview restores discarded state after a refused manual selection', async ({ page }) => {
+  await installFixtures(page);
+  await page.route('**/api/v1/admin/content/lists/menus/gratitude-rollback-fixture', route => route.fulfill({
+    json: {
+      name: 'gratitude-rollback-fixture',
+      sections: [{ items: [{ uid: 'gratitude-rollback', label: 'Gratitude rollback fixture', action: 'Open', input: 'app:gratitude' }] }],
+    },
+  }));
+
+  const discardWrites = [];
+  const selectionWrites = [];
+  await page.route('**/api/v1/gratitude/**', async route => {
+    const request = route.request();
+    const { pathname } = new URL(request.url());
+    if (pathname.endsWith('/bootstrap')) return route.fulfill({ json: {
+      users: [{ id: 'alice', name: 'Alice' }],
+      options: { gratitude: [{ id: 'discarded-option', text: 'Previously discarded idea' }], hopes: [] },
+      selections: { gratitude: [], hopes: [] },
+    } });
+    if (pathname.endsWith('/discarded/gratitude') && request.method() === 'POST') {
+      discardWrites.push(request.postDataJSON());
+      return route.fulfill({ json: { ok: true } });
+    }
+    if (pathname.endsWith('/selections/gratitude') && request.method() === 'POST') {
+      selectionWrites.push(request.postDataJSON());
+      return route.fulfill({ status: 422, json: { error: 'Selection refused' } });
+    }
+    return route.fulfill({ json: {} });
+  });
+
+  await page.goto('/admin/content/lists/menus/gratitude-rollback-fixture');
+  await page.getByTitle('Preview app', { exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: 'Gratitude rollback fixture' });
+  await expect(dialog).toBeVisible();
+  await expect(dialog.locator('.queue-column .queue-item')).toContainText('Previously discarded idea');
+  await dialog.locator('.gratitude-app-inner').focus();
+
+  await page.keyboard.press('ArrowLeft');
+  await expect.poll(() => discardWrites.length).toBe(1);
+  await page.keyboard.press('Enter');
+  await expect.poll(() => selectionWrites.length).toBe(1);
+  const discardedRow = dialog.locator('.queue-column .discarded').filter({ hasText: 'Previously discarded idea' });
+  await expect(discardedRow).toBeVisible();
+  await expect(dialog.locator('.selected-column .item-text')).toHaveCount(0);
+
+  await page.keyboard.press('ArrowLeft');
+  await page.waitForTimeout(300);
+  expect(discardWrites).toHaveLength(1);
+  await expect(discardedRow).toBeVisible();
+});
+
 test('Admin Gratitude preview retries bootstrap reads and retires them when closed', async ({ page }) => {
   await installFixtures(page);
   await page.route('**/api/v1/admin/content/lists/menus/gratitude-retry-fixture', route => route.fulfill({
