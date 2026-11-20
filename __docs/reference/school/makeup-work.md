@@ -22,7 +22,7 @@ makeup:
 
 | Key | Meaning |
 |---|---|
-| `enabled` | `true` turns makeup on. Absent or `false` keeps the old rule: a past day is settled when its window closes. |
+| `enabled` | `true` turns makeup on. Absent or `false` keeps the old rule: a past day is settled when its window closes. A lesson a makeup sheet already claimed still counts for the day it was done (see Restitution). |
 | `deadline` | A weekday name (`monday` … `sunday`) or ISO number 1–7. Makeup for a day counts only on days from the next day through this weekday of the same Monday→Sunday week. |
 | `subjects` | Limits makeup to these subject ids. |
 
@@ -32,8 +32,9 @@ read at boot, so restart the backend after you edit it.
 
 ## What counts as making it up
 
-Makeup is **derived** and never stored, following the school convention. Each
-day's term-grid row keeps a per-section `ledger` of the required work done
+Makeup credit is derived on every read. The one stored fact is a session's
+`makeup_claimed` annotation, saying which missed day a makeup-sheet lesson is
+for. Each day's term-grid row keeps a per-section `ledger` of the required work done
 that day, split by track:
 
 - `lessons`: required curriculum lessons passed that day;
@@ -44,10 +45,32 @@ that day, split by track:
 - `asked`: whether the calendar asked for the section that day at all. A
   Saturday section that was worked reads `served`, so its state alone cannot
   say whether the work was owed.
+- `makeupClaims`: required lessons passed that day that a makeup-sheet code
+  claimed for an earlier day, one entry each, naming that day. A claimed pass
+  is not in `lessons`. The agenda reads it against the subject's whole
+  curriculum, so a date-bound swap or a day-off keep-list cannot drop it.
 
 `TermVerdictService` reads the week and moves **spare** work from a later day
 onto an earlier missed section (`domain/makeup.mjs` `foldMakeup`):
 
+- **Claims.** A lesson opened or reprinted from a makeup-sheet code is claimed
+  for the oldest owed day the ticket names (`ClaimMakeupLesson`, event
+  `makeup_claimed`). The claim holds while the pass falls after that day, no
+  later than the claim's deadline, and in the same week
+  (`honouredMakeupClaim`). A held claim never serves the day it was done on,
+  and it does not stop that day's own lesson from being offered. It credits
+  the day it names before any ordinary spare. If that day no longer needs it,
+  it becomes ordinary spare for any other missed day.
+- **Restitution.** A claim nothing could spend is paid back to the day it was
+  done on, so a real lesson always counts for some day. This covers makeup
+  turned off, a subject the policy leaves out, a policy deadline moved earlier
+  than the claim's own, and a missed day that still lacks a program. The
+  pass day's section must lack only that lesson. It reads `served` with
+  `makeup: {servedOn: <that day>, restituted: true}`; the row is not stamped
+  `timeliness: makeup`, is not listed in the row's `makeup`, and the economy
+  counts the section on time. A day holding its own unspent claim takes it
+  back before it may borrow anyone else's spare. Restitution runs even with
+  makeup off.
 - **Lessons.** A day's passes beyond the one the day itself asked for are
   spare. On a day that did not ask for the section (a Saturday, a holiday),
   every pass is spare. Two math lessons on Thursday make up one missed math
@@ -64,8 +87,11 @@ onto an earlier missed section (`domain/makeup.mjs` `foldMakeup`):
 The cache keeps the raw replay. The credit is laid over the rows on every read
 (`read`, `dayRow`), so a missed Tuesday turns green as soon as Thursday's row
 is recomputed. No past row needs invalidating. While a week's makeup window is
-open, a cached row that was computed before its own day closed, or that lacks
-a ledger, is refreshed in the background.
+open, a cached row is refreshed in the background when it was computed before
+its own day closed, when a served or obligated section lacks a ledger, or when
+a ledger has no `makeupClaims` key (a row cached before claims existed, or
+before a repair claimed one of its sessions). Rows older than yesterday come
+from the cache, so this rule is what lets a claim reach them.
 
 ## What a reader sees
 
@@ -77,7 +103,15 @@ Each term-grid day carries:
 | `makeup` | `[{subject, servedOn}]`, each section credited and the day the work was actually done |
 | `makeupOpen` | An unfinished (`partial`/`none`) day that can still be made up |
 
-With `detail`, a credited section carries `makeup: {servedOn}`.
+With `detail`, a credited section carries `makeup: {servedOn}`, and a
+restituted one `makeup: {servedOn, restituted: true}`.
+
+**Result receipt.** A pass that a held claim moved to an earlier day prints
+`Makeup: this counts for <Weekday>'s <subject>.` under the score
+(`resultDocument` `makeup`, `CloseSessionOutcome`). Its Next-up offers that
+subject's own lesson for today first, since today's lesson is still owed
+(`chooseForwardAction` `passedWasMakeup`). A claim that no longer holds prints
+nothing extra.
 
 **Economy.** `SchoolEarningEvidence` passes `timeliness` and `makeupOpen`
 through on day and section facts. A `makeupOpen` day is not settled, so a
@@ -111,7 +145,13 @@ panel code when self-service is on.
   `subject_next` code with `continueToday: true`, plus `program` when the
   subject's next entry is a program, so it opens the next lesson even when
   today's lesson in that subject is already done. A subject owed twice says so
-  and asks for a second scan after the first lesson.
+  and asks for a second scan after the first lesson. The ticket also carries
+  `makeupFor: [days]`. Acting on it (typed code or QR, any action but retry)
+  claims the session it opens or reprints (`ClaimMakeupLesson`). A session
+  already settled is never claimed by a scan; moving settled credit is a
+  repair job. The header's "Each lesson counts for the day you missed" now
+  holds whether the makeup lesson is done before or after today's own lesson
+  in that subject.
 - **Only work that can earn credit today is listed.** A missed lesson always
   can. A missed program is left off on a day that owes that same program,
   because today's sitting is today's own. It appears again on a day that does
@@ -121,7 +161,11 @@ panel code when self-service is on.
   {deadline, items}`, or `null` when nothing is owed.
 - **Status board.** It shows `Makeup work: print your makeup sheet (due Sat)`.
 - **Logs.** `school.agenda.makeup.minted` and `school.makeup.printed` record
-  the learner, the subjects and the days.
+  the learner, the subjects and the days. `school.makeup.claimed` records a
+  claim (learner, session, subject, `forDay`, deadline, unit).
+  `school.makeup.claim-failed` (warn) means a claim could not be read or
+  written; the sheet still prints and the lesson counts for the day it is
+  done. `school.makeup.claim-invalid` means the event failed validation.
 
 ## Relation to Saturday catch-up
 
@@ -139,3 +183,9 @@ Before makeup existed it only counted toward weekly gems.
   cannot be made up.
 - `dayRow` (the parent digest's look-back) reads later days from the cache.
   The board's `read` is the exact answer.
+- A term-grid row older than yesterday that was cached before claims existed
+  has no `makeupClaims`. It is refreshed only while its week's makeup window is
+  open (see above) or by a rebuild. With makeup off, staleness is not checked,
+  so such a row keeps its old reading until it is rebuilt.
+- Turning makeup off mid-week moves a claimed lesson's credit back to the day
+  it was done on (restitution); the missed day it named reads missed again.
