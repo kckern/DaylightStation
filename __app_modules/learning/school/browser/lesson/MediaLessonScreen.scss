@@ -15,6 +15,17 @@
  * the kiosk WebView drops frames under transitions (same rule as School.scss).
  */
 
+/* THE LAYER. The school surface wrapper (2026-11-17) sizes itself to 100% of its
+   parent, and on the living-room screen that parent is a layout slot beside a
+   `grow: 1` menu: zero tall. This panel used to resolve `inset: 0` against the
+   screen itself; inside the wrapper it resolved against a 0px box with
+   `overflow: hidden` and vanished, so a card opened a session the child never
+   saw (2026-11-20). This layer restores the whole-screen box the wrapper fills. */
+.media-lesson-layer {
+  position: absolute;
+  inset: 0;
+}
+
 /**
  * The overlay-slot root. It exists for ONE reason: `.checkpoint-quiz` is
  * `position: absolute; inset: 0`, so it needs a positioned ancestor that is the

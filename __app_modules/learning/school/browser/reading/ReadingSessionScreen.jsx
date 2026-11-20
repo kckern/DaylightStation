@@ -770,9 +770,9 @@ export function ReadingSessionScreen({ location = 'livingroom', confirmMs = DEFA
   if (view === 'idle') {
     if (!notice) return null;
     return (
-      <SchoolSurfaceProvider surfaceId="reading" density="touch"><div className="reading-session reading-session--idle" data-testid="reading-session" data-view="idle">
+      <div className="reading-session-layer"><SchoolSurfaceProvider surfaceId="reading" density="touch"><div className="reading-session reading-session--idle" data-testid="reading-session" data-view="idle">
         <Notice notice={notice} compact />
-      </div></SchoolSurfaceProvider>
+      </div></SchoolSurfaceProvider></div>
     );
   }
   if (view === 'playing') return null;
@@ -783,7 +783,7 @@ export function ReadingSessionScreen({ location = 'livingroom', confirmMs = DEFA
     : 0;
 
   return (
-    <SchoolSurfaceProvider surfaceId="reading" density="touch"><div className={`reading-session reading-session--${view}`} data-testid="reading-session" data-view={view}>
+    <div className="reading-session-layer"><SchoolSurfaceProvider surfaceId="reading" density="touch"><div className={`reading-session reading-session--${view}`} data-testid="reading-session" data-view={view}>
       <Notice notice={notice} />
 
       {view === 'picking' && pick ? (
@@ -878,7 +878,7 @@ export function ReadingSessionScreen({ location = 'livingroom', confirmMs = DEFA
           <h1 className="reading-session__ask">Finishing up…</h1>
         </div>
       ) : null}
-    </div></SchoolSurfaceProvider>
+    </div></SchoolSurfaceProvider></div>
   );
 }
 
