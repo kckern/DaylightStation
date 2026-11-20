@@ -113,8 +113,10 @@ the attempt only records its verdict. The policy picks one of two behaviours:
     claimed or finally missed.
   - Placement per claimed note: 1 within ±share × window, linear to 0 at the
     window edge, 0 for off-beat claims. The share is 0.4 unless the policy
-    sets `placementFullCreditShare` (0 < share < 1); Sheet Music Learn's
-    slowed timed steps use 0.6. The take's first off-beat claim in
+    sets `placementFullCreditShare` (0 < share < 1); Sheet Music Learn uses
+    0.6 on any cued step below score tempo (the 50/60/75% steps, slower-beat
+    recoveries, authored slower stages), judged by the tempo the take is
+    played at. The take's first off-beat claim in
     score order is forgiven to 0.5 (one stumble in an otherwise steady take
     should not fail it on timing alone); every later one earns 0. A span
     slice forgives the same note the whole take does. Result diagnostics add

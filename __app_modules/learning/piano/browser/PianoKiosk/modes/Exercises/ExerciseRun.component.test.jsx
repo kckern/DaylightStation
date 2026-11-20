@@ -1935,7 +1935,7 @@ describe('ExerciseRun resolve hold', () => {
     const failLocally = async () => {
       const onResultContinue = vi.fn();
       const props = { instance: subject(), score: null, intent: 'challenge', requirement: withPassScore({ passScore: 0.8 }),
-        failurePresentation: 'local', resultPresentation: 'overlay', onExit: vi.fn(), onPassed: vi.fn() };
+        failurePresentation: 'local', resultPresentation: 'docked', onExit: vi.fn(), onPassed: vi.fn() };
       // The host records the miss and offers its step in the same callback.
       props.onFailed = vi.fn(() => { props.resultLabel = 'Almost'; props.resultContinueLabel = 'try a little slower (75%)'; props.onResultContinue = onResultContinue; });
       const view = render(<ExerciseRun {...props} />);

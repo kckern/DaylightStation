@@ -38,12 +38,12 @@ export function learnDrillProjection(segment, rung) {
 }
 
 // eslint-disable-next-line react-refresh/only-export-components -- pure adapter is exported for focused contract tests
-export function learnPracticeRequirement(rung) {
+export function learnPracticeRequirement(rung, tempoPercent = rung.tempoPercent) {
   const criteria = { ...(rung.criteria || {}) };
   if (rung.mode === 'free' && criteria.cleanliness == null) criteria.cleanliness = 0.8;
   const policy = {
     ...((rung.effectiveParts?.length ?? 0) > 1 ? { requireConcurrentOnset: true } : {}),
-    ...(learningTempoRung(rung) ? { placementFullCreditShare: LEARNING_PLACEMENT_SHARE } : {}),
+    ...(learningTempoTake(rung, tempoPercent) ? { placementFullCreditShare: LEARNING_PLACEMENT_SHARE } : {}),
   };
   return {
     mode: rung.mode,
@@ -53,19 +53,24 @@ export function learnPracticeRequirement(rung) {
 }
 
 /**
- * The slowed timed steps (50 / 60 / 75%) are where a child learns to play with
- * the click, and they were grading a steady 190 ms lag at 84 bpm (a quarter of
- * a beat, every note inside its window) as a fail. Full credit there reaches
+ * A cued take below score tempo (the 50 / 60 / 75% steps, a slower-beat
+ * recovery, an authored slower stage) is where a child learns to play with the
+ * click, and those takes were grading a steady 190 ms lag at 84 bpm (a quarter
+ * of a beat, every note inside its window) as a fail. Full credit there reaches
  * 60% of each note's window instead of 40%; a note outside the window still
  * earns nothing. Score tempo (Gold) and test-out keep the strict curve.
+ *
+ * The tempo is the one the take is PLAYED at (`tempoPercent`), not the rung's
+ * configured one: a rung set per set (`tempoPercents`), a coached task's own
+ * tempo, or a stage the child picked all change it.
  * ops:docs/_wip/audits/2026-11-20-sheetmusic-learn-take-ux-audit.md
  */
 const LEARNING_PLACEMENT_SHARE = 0.6;
-function learningTempoRung(rung) {
+function learningTempoTake(rung, tempoPercent) {
   if (rung.mode !== 'cued') return false;
   if (rung.mastery === true || rung.completion === 'tested-out' || rung.id === 'mastery' || rung.id === 'test-out') return false;
-  const percent = Number(rung.tempoPercent);
-  return Number.isFinite(percent) && percent < 100;
+  const percent = Number(tempoPercent);
+  return tempoPercent != null && Number.isFinite(percent) && percent < 100;
 }
 
 export default function LearnLab({ score, revision, segment, segments = {}, rung, creditRung = rung, tempo = {}, feedback = SHEET_MUSIC_DEFAULTS.learn.feedback, launchSource = 'recommended', creditEligible = true, startOnReady = false, coachingTask = null, drill = null, card = null, ceremony = null, onCardDone, notice = null, extraControls = null, resultLabel = null, resultActions = null, resultContinueLabel = null, onResultContinue = null, onPickStep = null, onListen = null, onStarted, onOutcome, onRecord, onClose, onChangePractice, onRungPassed, onMastered, onFinished, onUnavailable }) {
@@ -73,7 +78,7 @@ export default function LearnLab({ score, revision, segment, segments = {}, rung
   const reactRunId = useId();
   const runIdRef = useRef(`learn-${reactRunId.replace(/[^a-z0-9_-]/gi, '')}`);
   const outcomeReported = useRef(false);
-  const reportOutcome = (result) => { if (!outcomeReported.current) { outcomeReported.current = true; onOutcome?.(result); } };
+  const reportOutcome = (result, meta) => { if (!outcomeReported.current) { outcomeReported.current = true; onOutcome?.(result, meta); } };
   const [take, setTake] = useState(0);
   const [success, setSuccess] = useState(null);
   const [repCard, setRepCard] = useState(null);
@@ -117,7 +122,10 @@ export default function LearnLab({ score, revision, segment, segments = {}, rung
   // A coached passage brings its own sets: one per Silver or Gold step.
   const ownProjection = useMemo(() => learnDrillProjection(segment, runRung), [segment, runRung]);
   const projection = drill?.projection ?? ownProjection;
-  const requirement = useMemo(() => learnPracticeRequirement(rung), [rung]);
+  const requirement = useMemo(() => learnPracticeRequirement(rung, tempoPercent), [rung, tempoPercent]);
+  // Recorded with each take, so placement scores judged on the wider share can
+  // be told from those judged on the strict curve. Null when not applied.
+  const placementShare = requirement.policy?.placementFullCreditShare ?? null;
   const partsKey = (rung.effectiveParts ?? []).join('\u0000');
   const runScore = useMemo(() => ({
     ...score,
@@ -159,12 +167,12 @@ export default function LearnLab({ score, revision, segment, segments = {}, rung
     segments,
   }) : null, [takeCreditEligible, creditRung, onRecord, revision, segment.id, segments]);
   const settle = useCallback((result) => {
-    if (coachingTask) { reportOutcome(result); return; }
+    if (coachingTask) { reportOutcome(result, { placementShare }); return; }
     const outcome = recordResult(result);
     logger.info('piano.learn.terminal', {
       runId: runIdRef.current, scoreId: score.id, revision, passageId: segment.id, rungId: rung.id,
       mode: rung.mode, parts: [...(rung.effectiveParts ?? [])], tempoStage: stage.id, tempoPercent,
-      status: 'passed', creditEligible: takeCreditEligible, creditOutcome: takeCreditEligible ? (outcome ? 'recorded' : 'not-recorded') : 'ineligible',
+      status: 'passed', placementShare, creditEligible: takeCreditEligible, creditOutcome: takeCreditEligible ? (outcome ? 'recorded' : 'not-recorded') : 'ineligible',
       right: result?.diagnostics?.matched_notes ?? null, wrong: result?.diagnostics?.wrong_notes ?? null,
       missed: result?.diagnostics?.missed_notes ?? null, early: result?.diagnostics?.early_notes ?? null,
       late: result?.diagnostics?.late_notes ?? null,
@@ -196,7 +204,7 @@ export default function LearnLab({ score, revision, segment, segments = {}, rung
       });
       setTake((value) => value + 1);
     }
-  }, [coachingTask, onOutcome, launchSource, logger, onClose, onFinished, onMastered, onRungPassed, recordResult, returnAfterSuccess, revision, rung, runPassCount, score.id, segment.id, segment.label, setIndex, stage.id, takeCreditEligible, tempoPercent]);
+  }, [coachingTask, onOutcome, placementShare, launchSource, logger, onClose, onFinished, onMastered, onRungPassed, recordResult, returnAfterSuccess, revision, rung, runPassCount, score.id, segment.id, segment.label, setIndex, stage.id, takeCreditEligible, tempoPercent]);
   const scoreBpm = Number(tempo.tempoMap?.[0]?.bpm);
   const effectiveBpm = scoreBpm > 0 ? Math.round(scoreBpm * tempoPercent / 100) : null;
   const controlContext = { runId: runIdRef.current, take, scoreId: score.id, revision, passageId: segment.id, rungId: rung.id,
@@ -211,9 +219,9 @@ export default function LearnLab({ score, revision, segment, segments = {}, rung
   const closeLab = () => { abandonTake('back'); onClose(); };
   const togglePaused = () => setPaused((value) => { logControl(value ? 'resume' : 'pause'); return !value; });
   const failTake = (result) => {
-    if (coachingTask) { reportOutcome(result); return; }
+    if (coachingTask) { reportOutcome(result, { placementShare }); return; }
     const outcome = recordResult(result);
-    logger.info('piano.learn.terminal', { ...controlContext, status: 'failed',
+    logger.info('piano.learn.terminal', { ...controlContext, status: 'failed', placementShare,
       creditOutcome: takeCreditEligible ? (outcome ? 'recorded' : 'not-recorded') : 'ineligible',
       right: result?.diagnostics?.matched_notes ?? null, wrong: result?.diagnostics?.wrong_notes ?? null,
       missed: result?.diagnostics?.missed_notes ?? null, early: result?.diagnostics?.early_notes ?? null,
@@ -261,7 +269,7 @@ export default function LearnLab({ score, revision, segment, segments = {}, rung
       persistInterrupted={false} persistAssessment={!coachingTask}
       scoreCursorPolicy="always" keyboardHintPolicy={coachingTask?.assist === 'none' ? 'never' : 'after-wrong'}
       incompleteAfterMs={coachingTask?.assist === 'none' && coachingTask.stallSeconds ? coachingTask.stallSeconds * 1000 : null}
-      failurePresentation="local" resultPresentation="overlay" resultLabel={resultLabel} resultActions={resultActions} resultContinueLabel={resultContinueLabel} onResultContinue={onResultContinue} onPickStep={onPickStep} onStarted={takeStarted} onExit={onClose} onPassed={settle}
+      failurePresentation="local" resultPresentation="docked" resultLabel={resultLabel} resultActions={resultActions} resultContinueLabel={resultContinueLabel} onResultContinue={onResultContinue} onPickStep={onPickStep} onStarted={takeStarted} onExit={onClose} onPassed={settle}
       onFailed={failTake}
       onUnavailable={(reason, detail) => onUnavailable?.(detail || reason)}
     />

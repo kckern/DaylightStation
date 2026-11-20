@@ -384,6 +384,10 @@ export function runPassed(result, { challenge = false, passScore = null } = {}) 
  *   player on a dead end. Both callbacks are optional and additive: omit them
  *   and the surface behaves exactly as it did before.
  * @param {'default'|'learn-lab'} [props.surface='default'] Host presentation.
+ * @param {'inline'|'docked'} [props.resultPresentation='inline'] Where the
+ *   result card sits: in the rail row, or docked over the rail and keyboard
+ *   rows (Exercises.scss `.is-docked`), so the score and its verdict marks
+ *   stay in view and the run's rows never change when a take ends.
  * @param {'timed'|'always'} [props.scoreCursorPolicy='timed'] Whether a score
  *   passage draws its position cursor only for clocked work or for every run.
  * @param {number|null} [props.incompleteAfterMs] Free practice only: end the take
@@ -1824,15 +1828,15 @@ export default function ExerciseRun({ instance, score, requirement = null, pract
           A disconnected piano is the one thing the pills cannot say, so it
           keeps its own line whatever the surface. */}
       {!bare && chromeDrawn && !connected && <span className="piano-exercise-run__waiting">Waiting for the piano…</span>}
-      {/* An overlay card waits out the resolve hold: the hold is there so the
-          last note's verdict is seen on the score, and the card would cover
-          it. It then appears once, with the host's label and actions already
-          in it, instead of flipping from "try again" to the host's step while
-          it is being read. An inline card keeps the score in view and shows
-          at once, without its onward line until a key would act on it.
-          `alertdialog` without `aria-modal`: it sits inside LearnLab's own
-          modal dialog, and it does not take focus from the piano. */}
-      {phase === 'done' && result && !hostOwnsFailure && !(resultPresentation === 'overlay' && (passed || !resultSettled)) && <section className={`piano-exercise-run__result${passed ? ' is-passed' : ' is-developing'}${resultPresentation === 'overlay' ? ' is-overlay' : ''}`} data-result-armed={localRetry && resultArmed ? 'true' : undefined} {...(resultPresentation === 'overlay' ? { role: 'alertdialog', 'aria-label': resultLabel ?? 'Result' } : {})}>
+      {/* A docked card (over the rail and keyboard rows, never over the
+          score) waits out the resolve hold, then appears once with the
+          host's label and actions already in it, instead of flipping from
+          "try again" to the host's step while it is being read. An inline
+          card shows at once, without its onward line until a key would act
+          on it. `alertdialog` without `aria-modal`: it sits inside
+          LearnLab's own modal dialog, and it does not take focus from the
+          piano. */}
+      {phase === 'done' && result && !hostOwnsFailure && !(resultPresentation === 'docked' && (passed || !resultSettled)) && <section className={`piano-exercise-run__result${passed ? ' is-passed' : ' is-developing'}${resultPresentation === 'docked' ? ' is-docked' : ''}`} data-result-armed={localRetry && resultArmed ? 'true' : undefined} {...(resultPresentation === 'docked' ? { role: 'alertdialog', 'aria-label': resultLabel ?? 'Result' } : {})}>
         <div><span>{resultLabel ?? (passed ? 'Passed' : challenge ? 'Keep working' : 'Practice complete')}</span>{scoreReadout && <strong>{Math.round(result.score * 100)}%</strong>}</div>
         {/* A percentage is a reading task of its own, and the tiers below 2 are
             for children who have not been given it yet. They are told the same

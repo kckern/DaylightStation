@@ -345,7 +345,7 @@ describe('LearnLab', () => {
     render(<LearnLab {...base} coachingTask={{ key: 'task' }} onOutcome={onOutcome} onRecord={onRecord} />);
     const result = { assessmentId: 'original', status: 'completed', verdict: { passed: false } };
     act(() => { exercise.props.onFailed(result); exercise.props.onFailed(result); });
-    expect(onOutcome).toHaveBeenCalledExactlyOnceWith(result);
+    expect(onOutcome).toHaveBeenCalledExactlyOnceWith(result, { placementShare: null });
     expect(onRecord).not.toHaveBeenCalled();
   });
 
@@ -400,6 +400,29 @@ describe('LearnLab', () => {
     vi.useRealTimers();
   });
 
+  it('grades the coached take at the tempo it is played at, and reports the share it used', () => {
+    const onOutcome = vi.fn();
+    const timed = { ...base.rung, mode: 'cued', tempoPercent: 60 };
+    const view = render(<LearnLab {...base} rung={timed} coachingTask={{ key: 'task', tempoPercent: 100 }} onOutcome={onOutcome} />);
+    expect(exercise.props.practiceRequirement.policy).toBeUndefined();
+    const miss = { assessmentId: 'one', status: 'completed', verdict: { passed: false } };
+    act(() => { exercise.props.onFailed(miss); });
+    expect(onOutcome).toHaveBeenLastCalledWith(miss, { placementShare: null });
+    view.unmount();
+    render(<LearnLab {...base} rung={{ ...timed, tempoPercent: 100 }} coachingTask={{ key: 'task', tempoPercent: 75 }} onOutcome={onOutcome} />);
+    expect(exercise.props.practiceRequirement.policy).toEqual({ placementFullCreditShare: 0.6 });
+    act(() => { exercise.props.onFailed({ ...miss, assessmentId: 'two' }); });
+    expect(onOutcome).toHaveBeenLastCalledWith({ ...miss, assessmentId: 'two' }, { placementShare: 0.6 });
+  });
+
+  it('records the placement share on an uncoached take\'s terminal log', () => {
+    render(<LearnLab {...base} rung={{ ...base.rung, mode: 'cued', tempoPercent: 60, reps: 3, required: 6 }} />);
+    act(() => { exercise.props.onFailed({ status: 'completed', verdict: { passed: false } }); });
+    expect(log.info).toHaveBeenCalledWith('piano.learn.terminal', expect.objectContaining({ status: 'failed', tempoPercent: 60, placementShare: 0.6 }));
+    fireEvent.click(screen.getByRole('button', { name: 'Finish take' }));
+    expect(log.info).toHaveBeenCalledWith('piano.learn.terminal', expect.objectContaining({ status: 'passed', placementShare: 0.6 }));
+  });
+
   it('keeps a coached toolbar to what a child acts on', () => {
     render(<LearnLab {...base} rung={{ ...base.rung, mode: 'cued', tempoPercent: 60 }} coachingTask={{ key: 'task', tempoPercent: 60 }} tempo={{ tempoMap: [{ bpm: 100 }], tempoSource: 'musicxml' }} onOutcome={vi.fn()} />);
     expect(screen.queryByRole('button', { name: 'Change practice' })).toBeNull();
@@ -420,6 +443,14 @@ describe('learnPracticeRequirement', () => {
     for (const over of [{ id: 'mastery', tempoPercent: 100 }, { tempoPercent: 100 }, { mastery: true }, { id: 'test-out', tempoPercent: 100, completion: 'tested-out' }, { mode: 'free', tempoPercent: null }]) {
       expect(learnPracticeRequirement(rung(over)).policy?.placementFullCreditShare).toBeUndefined();
     }
+  });
+  it('follows the tempo the take is played at, not the one the rung was configured with', () => {
+    // Configured below score tempo, played at it: the strict curve.
+    expect(learnPracticeRequirement(rung({ tempoPercent: 60 }), 100).policy).toBeUndefined();
+    // A rung that sets its tempo per set, played at 60%: the wider share.
+    expect(learnPracticeRequirement(rung({ tempoPercent: undefined, tempoPercents: [50, 60, 75] }), 60).policy).toEqual({ placementFullCreditShare: 0.6 });
+    // Any cued step below score tempo, whatever put it there.
+    expect(learnPracticeRequirement(rung({ id: 'slower-beat', tempoPercent: 100 }), 90).policy).toEqual({ placementFullCreditShare: 0.6 });
   });
   it('keeps hands-together onsets alongside the wider share', () => {
     expect(learnPracticeRequirement(rung({ effectiveParts: ['rh', 'lh'] })).policy).toEqual({ requireConcurrentOnset: true, placementFullCreditShare: 0.6 });
