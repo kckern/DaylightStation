@@ -302,3 +302,31 @@ describe('CardLadderTypedJudge — cache and re-grade keys use the script normal
     });
   });
 });
+
+describe('spelling cards (1.4 dictation: owner ruling 2026-11-20)', () => {
+  const strict = () => {
+    const decisionGateway = { isConfigured: () => true, evaluate: vi.fn(async () => { throw new Error('Jev must not grade spelling'); }) };
+    return { decisionGateway, judge: new CardLadderTypedJudge({ decisionGateway, cache: makeCache(), logger: { info() {}, warn() {} } }) };
+  };
+  const ko = { targetScript: 'hangul', targetLanguage: 'Korean' };
+
+  it('only the exact spelling passes', async () => {
+    const { judge } = strict();
+    const v = await judge.judge({ pkg: 'p', entry: entry('만들다', 'to make', 'word'), typed: '만들다', spelling: true, ...ko });
+    expect(v).toMatchObject({ pass: true, judge: 'exact', score: 10 });
+  });
+
+  it('a one-jamo slip (만돌다 for 만들다) is near, not a pass, and never asks Jev', async () => {
+    const { judge, decisionGateway } = strict();
+    const v = await judge.judge({ pkg: 'p', entry: entry('만들다', 'to make', 'word'), typed: '만돌다', spelling: true, ...ko });
+    expect(v).toMatchObject({ pass: false, near: true, judge: 'spelling' });
+    expect(decisionGateway.evaluate).not.toHaveBeenCalled();
+  });
+
+  it('a far miss is not near', async () => {
+    const { judge } = strict();
+    const v = await judge.judge({ pkg: 'p', entry: entry('만들다', 'to make', 'word'), typed: '가방', spelling: true, ...ko });
+    expect(v.pass).toBe(false);
+    expect(v.near).toBeUndefined();
+  });
+});

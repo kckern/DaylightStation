@@ -848,8 +848,8 @@ export class CardLadderSittingService {
       ].filter((other) => other.term);
       // The target side's script and language: the judge's one script seam.
       verdict = await this.#judge.judge({
-        // 1.4: the child heard the word (dictation sign-off), not its meaning.
-        pkg, entry, typed: response.typed, otherWords, heard: item.task === '1.4',
+        // 1.4: the child heard the word (dictation sign-off): spelling is the test.
+        pkg, entry, typed: response.typed, otherWords, heard: item.task === '1.4', spelling: item.task === '1.4',
         targetScript: lexicon.targetScript ?? scriptFor(lexicon.language?.code), targetLanguage: (lexicon.targetLanguage ?? lexicon.language)?.name ?? null,
       });
     }

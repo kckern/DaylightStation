@@ -507,8 +507,22 @@ whose match is `different`, or a fail whose match is `identical` / `synonym` /
 `jev: unsure` with `unsure: low-confidence | contradiction`. With the
 guardrails the same replay changes exactly one grade, the 게워 sentence.
 
-The **1.4 sign-off** tells Jev the child *heard* the word read aloud; 3.3 says
-it was asked for. The rubric is the same (owner: a synonym is right).
+**The 1.4 sign-off is a spelling test** (owner ruling 2026-11-20, replacing
+"the rubric is the same"): the child heard the word and types it, so meaning
+has no say and Jev is never asked. Only the exact spelling (the script's
+`normalize`) passes. A letter slip whose distance band is **≥ 6** (one jamo on a
+short word, ≤ 20% of the units on a longer one) is a **near miss**: `judge:
+spelling`, `pass: false`, `near: true`. It is not credit and not a drop back:
+the word is left exactly as it was (no transition; the day's
+`rechecks.answered` row carries `near: true`) and comes round at its next
+re-check. Anything further is a plain miss (`judge: spelling`, or `guard` /
+`wrong-script` / `number`) and drops the word back as before. 만돌다 for 만들다
+passed as `distance` 6 and signed the word off before this. 3.3 (from a cue)
+keeps the meaning rubric.
+
+The result screen's three colours (same day): **green** a pass, **yellow** a
+near miss — *So close!*, *You typed* theirs, *It's spelled:* the word, Listen —
+and **red** a real miss (*Not quite*).
 
 Jev's state is the target, its meaning (`gloss`), `kind`, the attempt **as
 typed** (spaces and word order intact, NFC, ≤ 80 chars — the normalized form is

@@ -809,7 +809,7 @@ function gradeQuizTask(ctx, round, task, correct) {
 }
 
 function gradedResult(ctx, item, correct, verdict) {
-  return { correct, answer: answerFor(ctx, item), ...(verdict ? { score: verdict.score, judge: verdict.judge, ...(verdict.match ? { match: verdict.match } : {}) } : {}) };
+  return { correct, answer: answerFor(ctx, item), ...(verdict ? { score: verdict.score, judge: verdict.judge, ...(verdict.match ? { match: verdict.match } : {}), ...(verdict.near ? { near: true } : {}) } : {}) };
 }
 
 // Practice never grades except a Quiz me task (rule 1). Sorts obey rule 2 via
@@ -1008,8 +1008,11 @@ function applyResponse(ctx, item, itemId, response, { at, verdict }) {
     ctx.dayFile.summarySeen = true;
   } else if (item.id.startsWith('rc:')) {
     const correct = gradedCorrect(ctx, item, response, verdict);
-    ctx.status.words[item.wordId] = applyGraded(wordOf(ctx.status, item.wordId), { source: 'recheck', correct, day: ctx.day, task: item.task, settings: gradedSettings(ctx.settings) });
-    ctx.dayFile.rechecks.answered[item.wordId] = { task: item.task, correct };
+    // A near miss on a spelling card (owner 2026-11-20): not credit, not a drop
+    // back either — the word is left exactly as it was and comes round again.
+    const near = !correct && verdict?.near === true;
+    if (!near) ctx.status.words[item.wordId] = applyGraded(wordOf(ctx.status, item.wordId), { source: 'recheck', correct, day: ctx.day, task: item.task, settings: gradedSettings(ctx.settings) });
+    ctx.dayFile.rechecks.answered[item.wordId] = { task: item.task, correct, ...(near ? { near: true } : {}) };
     result = gradedResult(ctx, item, correct, verdict);
   } else {
     const round = openRound(ctx);
