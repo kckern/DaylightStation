@@ -7,9 +7,14 @@ import { nowTs } from '#system/utils/index.mjs';
  * Create admin eventbus router for WebSocket server management
  *
  * Endpoints:
- * - GET/POST /restart - Restart the WebSocket server
- * - GET/POST /broadcast - Broadcast message to all clients
+ * - POST /restart - Restart the WebSocket server
+ * - POST /broadcast (or POST /) - Broadcast message to all clients
  * - GET /status - Get WebSocket server status and metrics
+ *
+ * State changes are POST only. A GET can be sent by any page a household
+ * member opens (an <img>, a link), and the cross-site guard lets GETs through,
+ * so a GET must never restart the bus or broadcast.
+ * __docs/reference/core/network-exposure.md (Cross-site requests).
  *
  * @param {Object} config
  * @param {Object} config.eventBusAdministration
@@ -21,7 +26,7 @@ export function createEventBusRouter(config) {
   const router = express.Router();
 
   /**
-   * POST /restart or GET /restart
+   * POST /restart
    * Restart the WebSocket server
    */
   async function handleRestart(req, res) {
@@ -52,13 +57,12 @@ export function createEventBusRouter(config) {
   }
 
   router.post('/restart', handleRestart);
-  router.get('/restart', handleRestart);
 
   /**
-   * POST /broadcast or GET /broadcast
+   * POST /broadcast
    * Broadcast a message to all connected WebSocket clients
    */
-  router.all('/broadcast', (req, res) => {
+  function handleBroadcast(req, res) {
     try {
       if (!eventBusAdministration?.available) {
         return res.status(503).json({
@@ -67,12 +71,10 @@ export function createEventBusRouter(config) {
         });
       }
 
-      // Accept payload from body, query, or params
+      // Payload from the body, else the query string of the POST
       const payload = Object.keys(req.body || {}).length
         ? req.body
-        : (Object.keys(req.query || {}).length
-          ? req.query
-          : (req.params || {}));
+        : (req.query || {});
 
       const message = {
         timestamp: nowTs(),
@@ -91,21 +93,11 @@ export function createEventBusRouter(config) {
       logger.error?.('admin.eventbus.broadcast.failed', { error: error.message });
       sendInternalError(res, { error: error.message || 'Failed to broadcast' });
     }
-  });
+  }
 
-  /**
-   * Legacy alias: /ws broadcasts directly (for /exe/ws parity)
-   */
-  router.all('/', (req, res, next) => {
-    // If this is a request to the root of /admin/ws, treat it as broadcast
-    if (req.method === 'GET' && Object.keys(req.query).length === 0) {
-      // Just a status check, delegate to /status
-      return next();
-    }
-    // Otherwise, treat as broadcast
-    req.url = '/broadcast';
-    return router.handle(req, res, next);
-  });
+  router.post('/broadcast', handleBroadcast);
+  // Legacy alias: POST to the root broadcasts (for /exe/ws parity)
+  router.post('/', handleBroadcast);
 
   /**
    * GET /status

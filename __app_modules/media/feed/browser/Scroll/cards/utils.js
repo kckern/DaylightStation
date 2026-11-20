@@ -1,6 +1,7 @@
 /**
  * Shared utilities for feed card components.
  */
+import { webLink, feedImageSrc } from '../../../shared/webLink.mjs';
 
 /**
  * Format a timestamp into a compact relative age string.
@@ -26,8 +27,9 @@ export function formatAge(timestamp) {
  */
 export function proxyIcon(rawUrl) {
   if (!rawUrl) return null;
-  if (rawUrl.startsWith('/api/')) return rawUrl;
-  return `/api/v1/feed/icon?url=${encodeURIComponent(rawUrl)}`;
+  const external = webLink(rawUrl);
+  if (external && !isOwnOrigin(external)) return `/api/v1/feed/icon?url=${encodeURIComponent(external)}`;
+  return safeImage(rawUrl);
 }
 
 /**
@@ -39,9 +41,29 @@ export function proxyIcon(rawUrl) {
  * @returns {string|null}
  */
 export function proxyImage(rawUrl) {
-  if (!rawUrl) return null;
-  if (rawUrl.startsWith('/api/')) return null;
-  return `/api/v1/feed/image?url=${encodeURIComponent(rawUrl)}`;
+  const external = webLink(rawUrl);
+  if (!external || isOwnOrigin(external)) return null;
+  return `/api/v1/feed/image?url=${encodeURIComponent(external)}`;
+}
+
+function pageOrigin() {
+  return typeof window !== 'undefined' ? window.location.origin : '';
+}
+
+function isOwnOrigin(link) {
+  try { return new URL(link).origin === new URL(pageOrigin()).origin; } catch { return false; }
+}
+
+/**
+ * The URL an <img> in the feed may load, or null. Feed images are other
+ * people's data and a same-origin <img> carries the household member's
+ * trust: on this app's origin only the read-only image endpoints load
+ * (feedImageSrc in feed/shared/webLink.mjs).
+ * @param {string} rawUrl
+ * @returns {string|null}
+ */
+export function safeImage(rawUrl) {
+  return feedImageSrc(rawUrl, pageOrigin());
 }
 
 /**

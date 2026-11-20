@@ -10,6 +10,7 @@
  */
 
 import { sanitizeFeedHtml } from "./htmlSanitizer.mjs";
+import { webLink } from '../../shared/webLink.mjs';
 
 const GREADER_BASE = '/api/greader.php/reader/api/0';
 
@@ -102,7 +103,8 @@ export class FreshRSSFeedAdapter {
       id: item.id,
       title: item.title,
       content: sanitizeFeedHtml(item.summary?.content || ''),
-      link: item.canonical?.[0]?.href || item.alternate?.[0]?.href || '',
+      // http(s) only: the link becomes an anchor and an iframe src in the app.
+      link: webLink(item.canonical?.[0]?.href || item.alternate?.[0]?.href) || '',
       published: item.published ? new Date(item.published * 1000) : null,
       author: item.author || null,
       feedTitle: item.origin?.title || null,

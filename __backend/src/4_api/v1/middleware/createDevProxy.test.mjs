@@ -13,6 +13,15 @@ function build(forwarder) {
 }
 
 describe('createDevProxy HTTP contract', () => {
+  it('toggles only on POST: a GET (an <img> or link on any page) changes nothing', async () => {
+    const { app, proxy } = build({ getTargetHost: () => 'dev.local:3112', forward: vi.fn() });
+    for (const method of ['get', 'put', 'delete']) {
+      const res = await request(app)[method]('/dev/proxy_toggle');
+      expect(res.status, method).toBe(404);
+    }
+    expect(proxy.getState().proxyEnabled).toBe(false);
+  });
+
   it('preserves status response and toggle envelopes', async () => {
     const { app } = build({ getTargetHost: () => 'dev.local:3112', forward: vi.fn() });
 

@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
-import { proxyImage } from "../Scroll/cards/utils.js";
+import { proxyImage, safeImage } from "../Scroll/cards/utils.js";
 import { feedLog } from "../Scroll/feedLog.js";
 import { useFeedPlayer, SPEED_STEPS } from "./FeedPlayerContext.jsx";
 import "./FeedPlayerSheet.scss";
@@ -137,9 +137,8 @@ export default function FeedPlayerSheet({ open, onClose, item, playback }) {
   }, [open, scrubbing, currentTime, duration]);
 
   // --- Cover art ---
-  const thumb = item?.image
-    ? (item.image.startsWith('/api/') ? item.image : proxyImage(item.image))
-    : null;
+  // The app's own image endpoints load directly; external images go through the proxy.
+  const thumb = proxyImage(item?.image) || safeImage(item?.image);
 
   if (!item) return null;
 

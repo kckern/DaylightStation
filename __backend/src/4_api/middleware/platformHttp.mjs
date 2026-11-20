@@ -22,24 +22,47 @@ export function createMissingConfigRouter() {
   return router;
 }
 
-function setFrontendDocumentHeaders(res) {
-  res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
-  res.setHeader('Document-Policy', 'js-profiling');
+/**
+ * `Content-Security-Policy: frame-ancestors` for the app's pages: only the app
+ * itself (and `http.allowed_origins`) may frame them, so another site cannot
+ * put the household's screens in a frame and click through them.
+ * __docs/reference/core/network-exposure.md (Cross-site requests).
+ * @param {object} [options]
+ * @param {boolean} [options.enabled=true] - `http.frame_ancestors: false` turns it off
+ * @param {Iterable<string>} [options.allowedOrigins] - normalized origins
+ * @returns {string|null}
+ */
+export function frameAncestorsPolicy({ enabled = true, allowedOrigins = [] } = {}) {
+  if (enabled === false) return null;
+  return ["frame-ancestors 'self'", ...allowedOrigins].join(' ');
 }
 
-export function createFrontendStaticRouter({ frontendPath }) {
+/** Headers for the SPA's HTML document (index.html and every SPA route). */
+export function setFrontendDocumentHeaders(res, { frameAncestors = null } = {}) {
+  // index.html must never be cached so location.reload() gets fresh script tags
+  res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+  // window.Profiler (JS Self-Profiling API) for on-device renderer profiling
+  res.setHeader('Document-Policy', 'js-profiling');
+  if (frameAncestors) res.setHeader('Content-Security-Policy', frameAncestors);
+}
+
+export function createFrontendStaticRouter({ frontendPath, frameAncestors = null }) {
   if (!frontendPath) throw new Error('createFrontendStaticRouter requires frontendPath');
   const router = express.Router();
+  // Hashed asset filenames are immutable; only the document gets these headers.
   router.use(express.static(frontendPath, {
     setHeaders: (res, filePath) => {
-      if (filePath.endsWith('index.html')) setFrontendDocumentHeaders(res);
+      if (filePath.endsWith('index.html')) setFrontendDocumentHeaders(res, { frameAncestors });
+      // Every other static page (sim panel, arcade film, probes, labs) gets the
+      // same framing rule; 'self' keeps the app's own frames of them working.
+      else if (frameAncestors && /\.html?$/i.test(filePath)) res.setHeader('Content-Security-Policy', frameAncestors);
     },
   }));
   router.use((req, res, next) => {
     if (req.path.startsWith('/api/v1') || req.path.startsWith('/ws')) return next();
     const lastSegment = req.path.slice(req.path.lastIndexOf('/') + 1);
     if (STATIC_ASSET_EXTENSION.test(lastSegment)) return next();
-    setFrontendDocumentHeaders(res);
+    setFrontendDocumentHeaders(res, { frameAncestors });
     return res.sendFile(`${frontendPath}/index.html`);
   });
   return router;

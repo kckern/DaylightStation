@@ -197,8 +197,8 @@ import { errorHandlerMiddleware, requestLoggerMiddleware, aiOriginMiddleware, wi
 import { runWithOrigin } from "./0_system/runtime/aiContext.mjs";
 import { scopedGateway } from '#apps/common/ports/IAIGateway.mjs';
 import { createDevProxy } from '#api/v1/middleware/createDevProxy.mjs';
+import { createFrontendStaticRouter, frameAncestorsPolicy } from '#api/middleware/platformHttp.mjs';
 import { DevRequestForwarder } from '#adapters/http/DevRequestForwarder.mjs';
-import { createEventBusRouter } from "./4_api/v1/routers/admin/eventbus.mjs";
 import { createAdminRouter } from "./4_api/v1/routers/admin/index.mjs";
 import { createOAuthRouter } from "./4_api/v1/routers/admin/oauth.mjs";
 // Admin app-services (constructed HERE at the composition root and injected into
@@ -815,7 +815,10 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   const eventBus = await createEventBus({
     httpServer: server,
     path: '/ws',
-    logger: rootLogger
+    logger: rootLogger,
+    // Same allow-list as the HTTP cross-site guard: pages from other sites
+    // may not open the bus. __docs/reference/core/network-exposure.md.
+    allowedOrigins,
   });
 
   // DoNow's household-level composition module isn't constructed until well
@@ -999,8 +1002,8 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   const agendaOwnership=createConfiguredMigrationOwnership(configService);
   const { fingerprintProfileWriter } = await createFitnessIdentityRuntime({ eventBus, YamlUserProfileDatastore, configService, assertIdentityWritable:agendaOwnership.assertSharedWritable });
 
-  // EventBus admin router (requires eventBus to be created first)
-  app.use('/admin/ws', createEventBusRouter({ eventBus, logger: rootLogger }));
+  // The event bus admin router (restart, broadcast, status) is mounted only at
+  // /api/v1/admin/ws, behind the auth pipeline (see 4_api/v1/routers/admin).
 
   // Content domain
   // Get media library credentials (currently Plex, could be Jellyfin, etc.)
@@ -4628,43 +4631,14 @@ const { readingSessions, readingSessionInterceptor } = await createSchoolReading
     const frontendExists = assetProbe.exists(frontendPath);
 
     if (frontendExists) {
-      // Serve static assets (JS, CSS, images) — hashed filenames are immutable
-      app.use(express.static(frontendPath, {
-        setHeaders: (res, filePath) => {
-          // index.html must never be cached so location.reload() always gets fresh script tags
-          if (filePath.endsWith('index.html')) {
-            res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
-            // Enable the JS Self-Profiling API (window.Profiler) for on-device
-            // renderer CPU profiling on the kiosk tablets (no DevTools/adb needed).
-            res.setHeader('Document-Policy', 'js-profiling');
-          }
-        }
-      }));
-
-      // For SPA routes, serve index.html (but NOT for API or WebSocket paths)
-      // This catch-all must be BEFORE the API router
-      app.use((req, res, next) => {
-        // Skip API paths (they go to the API router below)
-        if (req.path.startsWith('/api/v1') || req.path.startsWith('/ws')) {
-          return next();
-        }
-        // Skip genuine static-asset requests (already tried by express.static
-        // above). Match a known asset extension on the FINAL path segment only
-        // — a dot inside a SPA deep-link segment must NOT divert the request.
-        // SPA content ids can carry dots (e.g. a sheet-music score route
-        // /piano/sheetmusic/view/files:docs/sheet-music/song.musicxml); a broad
-        // `req.path.includes('.')` skip sent those past this handler to a
-        // dead-end (no route matches → the request hangs).
-        const lastSeg = req.path.slice(req.path.lastIndexOf('/') + 1);
-        if (/\.(js|mjs|cjs|css|map|json|png|jpe?g|gif|svg|webp|avif|ico|bmp|woff2?|ttf|otf|eot|mp[34]|m4a|ogg|oga|wav|webm|mov|pdf|wasm|txt|zip)$/i.test(lastSeg)) {
-          return next();
-        }
-        // SPA route - serve index.html with no-cache so deploys take effect on reload
-        res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
-        // Enable window.Profiler (JS Self-Profiling API) for on-device renderer profiling.
-        res.setHeader('Document-Policy', 'js-profiling');
-        res.sendFile(join(frontendPath, 'index.html'));
-      });
+      // Static assets, then index.html for every SPA route (never /api/v1 or
+      // /ws). Documents are uncached and carry `frame-ancestors`: only the app
+      // and http.allowed_origins may frame them (http.frame_ancestors: false
+      // turns it off). __docs/reference/core/network-exposure.md.
+      let frameAncestorsSetting = true;
+      try { frameAncestorsSetting = configService.get('http.frame_ancestors') ?? true; } catch { frameAncestorsSetting = true; }
+      const frameAncestors = frameAncestorsPolicy({ enabled: frameAncestorsSetting !== false, allowedOrigins });
+      app.use(createFrontendStaticRouter({ frontendPath, frameAncestors }));
       rootLogger.info('frontend.static.mounted', { path: frontendPath });
     } else {
       rootLogger.warn('frontend.not_found', { path: frontendPath });

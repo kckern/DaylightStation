@@ -89,6 +89,21 @@ describe('FreshRSSFeedAdapter', () => {
       expect(items[0].title).toBe('Test Article');
       expect(items[0].link).toBe('https://example.com/article');
     });
+
+    test('drops a link that is not http(s), keeping the item', async () => {
+      mockFetch.mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({
+          items: [
+            { id: 'a', title: 'Script', canonical: [{ href: 'javascript:alert(1)' }] },
+            { id: 'b', title: 'Data', alternate: [{ href: 'data:text/html,<script>1</script>' }] },
+            { id: 'c', title: 'Relative', canonical: [{ href: '/api/v1/admin/ws/restart' }] },
+          ],
+        }),
+      });
+      const { items } = await adapter.getItems('feed/1', 'user_1');
+      expect(items.map((item) => [item.id, item.link])).toEqual([['a', ''], ['b', ''], ['c', '']]);
+    });
   });
 
   describe('markRead', () => {

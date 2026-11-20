@@ -1,5 +1,5 @@
 import { useRef } from 'react';
-import { proxyImage } from "../Scroll/cards/utils.js";
+import { proxyImage, safeImage } from "../Scroll/cards/utils.js";
 import { feedLog } from "../Scroll/feedLog.js";
 import { useFeedPlayer } from "./FeedPlayerContext.jsx";
 
@@ -20,9 +20,8 @@ export default function FeedPlayerMiniBar({ item, playback, onOpen, onClose }) {
   const { playing, currentTime, duration, toggle, seek, progressElRef } = playback || {};
 
   // Use image directly if already an API path; otherwise proxy external URLs
-  const thumb = item.image
-    ? (item.image.startsWith('/api/') ? item.image : proxyImage(item.image))
-    : null;
+  // The app's own image endpoints load directly; external images go through the proxy.
+  const thumb = proxyImage(item.image) || safeImage(item.image);
   const handleBarTouchStart = (e) => { touchRef.current.startY = e.touches[0].clientY; };
   const handleBarTouchEnd = (e) => {
     const dy = e.changedTouches[0].clientY - touchRef.current.startY;

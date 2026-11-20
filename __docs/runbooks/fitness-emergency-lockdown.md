@@ -220,7 +220,7 @@ so a state transition can always be traced to its cause.
   `curl -s https://daylightlocal.{env.domain}/api/v1/fitness/emergency`. Release via
   an admin fingerprint (3s hold on the LOCKED screen → `/emergency/release`, which
   deletes the file AND broadcasts `fitness.emergency.released`); the admin
-  `/admin/ws/broadcast` shim can't send that topic. Release does not re-run
+  `/api/v1/admin/ws/broadcast` shim can't send that topic. Release does not re-run
   `garage_deactivate` — reactivate garage devices separately if needed.
 - **Press-and-hold to release does nothing / reader feels dead while LOCKED.**
   The detector stands down during a lockdown, so the reader is only armed for the
