@@ -1,7 +1,8 @@
 import React, { useCallback, useEffect, useState } from 'react';
+import { FormDialog } from '@/lib/ui/FormDialog.jsx';
 import { useNavigate } from 'react-router-dom';
 import {
-  Stack, Text, SimpleGrid, Card, Badge, Button, Group, Modal,
+  Stack, Text, SimpleGrid, Card, Badge, Button, Group,
   TextInput, Select, Alert
 } from '@mantine/core';
 import { IconPlus, IconAlertCircle } from '@tabler/icons-react';
@@ -168,7 +169,7 @@ function DevicesIndex() {
       )}
 
       {/* Add Device Modal */}
-      <Modal
+      <FormDialog
         opened={createModalOpen}
         onClose={closeCreate}
         title="Add Device"
@@ -200,7 +201,7 @@ function DevicesIndex() {
             </Button>
           </Group>
         </Stack>
-      </Modal>
+      </FormDialog>
     </Stack>
   );
 }

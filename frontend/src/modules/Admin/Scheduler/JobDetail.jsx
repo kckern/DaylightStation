@@ -1,8 +1,9 @@
 import React, { useLayoutEffect, useRef, useState, useCallback } from 'react';
+import { FormDialog } from '@/lib/ui/FormDialog.jsx';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   Stack, Group, Text, Badge, Button, Paper, Alert, Center, Loader,
-  Modal, TextInput, NumberInput, Divider, Code, Anchor
+  TextInput, NumberInput, Divider, Code, Anchor
 } from '@mantine/core';
 import {
   IconArrowBack, IconPlayerPlay, IconEdit, IconTrash, IconAlertCircle, IconClock
@@ -320,7 +321,7 @@ function JobDetailView({ jobId }) {
       </Group>
 
       {/* Edit Modal */}
-      <Modal
+      <FormDialog
         opened={editOpen}
         onClose={() => setEditOpen(false)}
         title="Edit Job"
@@ -370,7 +371,7 @@ function JobDetailView({ jobId }) {
             </Button>
           </Group>
         </Stack>
-      </Modal>
+      </FormDialog>
 
       {/* Delete Confirmation */}
       <ConfirmModal

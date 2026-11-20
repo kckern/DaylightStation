@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
+import { FormDialog } from '@/lib/ui/FormDialog.jsx';
 import { useNavigate } from 'react-router-dom';
-import { Stack, Text, Table, Badge, Button, Group, Modal, TextInput, Select, NumberInput, Center, Alert, Paper, Divider }  from '@mantine/core';
+import { Stack, Text, Table, Badge, Button, Group, TextInput, Select, NumberInput, Center, Alert, Paper, Divider }  from '@mantine/core';
 import { IconPlus, IconAlertCircle, IconUsers, IconTrash } from '@tabler/icons-react';
 import { ADMIN_HOUSEHOLD_PATH, useAdminHousehold } from '../../../hooks/admin/useAdminHousehold.js';
 import { useAdminRoster } from '../shared/useAdminRoster.js';
@@ -262,7 +263,7 @@ function MembersIndex() {
       )}
 
       {/* Add Member Modal */}
-      <Modal
+      <FormDialog
         opened={createModalOpen}
         onClose={() => {
           setCreateModalOpen(false);
@@ -314,7 +315,7 @@ function MembersIndex() {
             </Button>
           </Group>
         </Stack>
-      </Modal>
+      </FormDialog>
 
       {/* Remove Member Confirmation */}
       <ConfirmModal

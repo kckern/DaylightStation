@@ -10,6 +10,12 @@
   --browser-safe-area-left: env(safe-area-inset-left, 0px);
 }
 
+@mixin fit-keyboard-viewport {
+  top: max(var(--browser-safe-area-top), var(--keyboard-viewport-top));
+  bottom: auto;
+  height: max(0px, calc(var(--keyboard-viewport-height) - max(0px, var(--browser-safe-area-top) - var(--keyboard-viewport-top))));
+}
+
 // Mantine mounts these surfaces outside the padded frame.
 html[data-browser-app-viewport] {
   :is(.mantine-Modal-inner, .mantine-Drawer-inner) {
@@ -20,6 +26,15 @@ html[data-browser-app-viewport] {
 
   .mantine-Modal-content {
     --modal-content-max-height: calc(100dvh - var(--browser-safe-area-top) - var(--browser-safe-area-bottom) - 2 * var(--modal-inner-y-offset, var(--modal-y-offset)));
+  }
+
+  .mantine-Modal-root[data-keyboard-viewport] {
+    .mantine-Modal-inner {
+      @include fit-keyboard-viewport;
+      --modal-inner-y-offset: min(var(--modal-y-offset), 0.75rem);
+    }
+
+    .mantine-Modal-content { --modal-content-max-height: 100%; }
   }
 
   .mantine-Notifications-root {
@@ -171,9 +186,7 @@ html[data-browser-app-viewport] {
   }
 
   &[data-keyboard-viewport] {
-    top: max(var(--browser-safe-area-top), var(--sheet-viewport-top));
-    bottom: auto;
-    height: max(0px, calc(var(--sheet-viewport-height) - max(0px, var(--browser-safe-area-top) - var(--sheet-viewport-top))));
+    @include fit-keyboard-viewport;
 
     .ds-sheet__panel { max-height: 100%; }
   }
@@ -181,9 +194,9 @@ html[data-browser-app-viewport] {
   // The camera fills the viewport. Overlay controls apply the safe insets.
   &--fullscreen { inset: 0; }
   &--fullscreen[data-keyboard-viewport] {
-    top: var(--sheet-viewport-top);
+    top: var(--keyboard-viewport-top);
     bottom: auto;
-    height: var(--sheet-viewport-height);
+    height: var(--keyboard-viewport-height);
   }
   &--fullscreen &__panel {
     inset: 0; transform: none; width: auto; max-height: none;
@@ -194,7 +207,7 @@ html[data-browser-app-viewport] {
   }
   &--fullscreen &__header {
     position: absolute; top: 0; left: 0; right: 0; z-index: 2; margin: 0;
-    padding: calc(0.5rem + max(0px, var(--browser-safe-area-top) - var(--sheet-viewport-top, 0px)))
+    padding: calc(0.5rem + max(0px, var(--browser-safe-area-top) - var(--keyboard-viewport-top, 0px)))
       calc(0.75rem + var(--browser-safe-area-right)) 0.5rem calc(1rem + var(--browser-safe-area-left));
     background: linear-gradient(rgba(0, 0, 0, 0.6), transparent); /* data-color: legibility shade */
   }

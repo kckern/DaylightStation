@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react';
+import { FormDialog } from '@/lib/ui/FormDialog.jsx';
 import { useNavigate } from 'react-router-dom';
-import { Stack, Text, Table, Badge, Button, Group, Modal, TextInput, Center, Alert }  from '@mantine/core';
+import { Stack, Text, Table, Badge, Button, Group, TextInput, Center, Alert }  from '@mantine/core';
 import { IconPlus, IconPlayerPlay, IconAlertCircle, IconClock } from '@tabler/icons-react';
 import { ADMIN_SCHEDULER_JOBS_PATH, useAdminScheduler } from '../../../hooks/admin/useAdminScheduler.js';
 import { useAdminRoster } from '../shared/useAdminRoster.js';
@@ -263,7 +264,7 @@ function SchedulerIndex() {
       )}
 
       {/* Create Job Modal */}
-      <Modal
+      <FormDialog
         opened={createModalOpen}
         onClose={() => {
           setCreateModalOpen(false);
@@ -311,7 +312,7 @@ function SchedulerIndex() {
             </Button>
           </Group>
         </Stack>
-      </Modal>
+      </FormDialog>
     </Stack>
   );
 }
