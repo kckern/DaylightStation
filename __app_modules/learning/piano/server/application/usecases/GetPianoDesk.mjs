@@ -7,6 +7,12 @@
  * screen and the score cannot disagree. It reads practice records, and the piece
  * log for the piece's Polish gem and diamond, with no Plex or network
  * dependency, so the home screen can paint quickly.
+ *
+ * When an admin has approved Learn segments for the score (cut against the same
+ * XML the child practised), they replace the passages saved on the record, so
+ * the strip follows a new segmentation at once instead of at the child's next
+ * take. Achievements are keyed by bar range, so unchanged ranges keep their
+ * progress and changed ones start over, exactly as Learn shows them.
  */
 import { createCoachPlan, passageProgress, projectCoach } from '#shared/music/learnCoach.mjs';
 import { practiceKeyOfScore } from '../../../portable/music/practiceKey.mjs';
@@ -32,16 +38,50 @@ function passageRanges(record) {
   return planned.map((passage) => ({ ...passage, playableParts: DEFAULT_PARTS })).sort((x, y) => x.inMeasure - y.inMeasure);
 }
 
+/** The hands a stored passage on exactly this range has, or both hands. */
+function partsForRange(record, { start, end }) {
+  const saved = record?.learnCoach?.summary?.passages;
+  const same = Array.isArray(saved) ? saved.find((passage) => passage?.start === start && passage?.end === end) : null;
+  return Array.isArray(same?.parts) && same.parts.length ? same.parts : DEFAULT_PARTS;
+}
+
+/** The content sha the child practised. */
+export function recordFingerprint(record) {
+  return record?.fingerprint?.contentSha256 ?? record?.learnCoach?.fingerprint ?? null;
+}
+
+/** Coach segments for a record: the approved ones when given, else those saved on the record. */
+export function recordSegments(record, authored = null) {
+  return Array.isArray(authored) && authored.length
+    ? authored.map((segment) => ({ id: segment.id, inMeasure: segment.start, outMeasure: segment.end, playableParts: partsForRange(record, segment) }))
+    : passageRanges(record);
+}
+
+/**
+ * The coach projection of one practice record: the one rule the home strip and
+ * the Polish reward both read, so they cannot disagree.
+ */
+export function projectRecord({ record, scoreId, segments, certification, dayKey }) {
+  const plan = createCoachPlan({ scoreId, fingerprint: recordFingerprint(record), segments, certification });
+  return projectCoach({ plan, state: record?.learnCoach ?? null, legacy: record ?? {}, dayKey });
+}
+
 function latestActivity(record) {
   return [record?.learnCoach?.evidence?.at?.(-1)?.at, record?.learnCoach?.summary?.updatedAt, record?.updatedAt]
     .filter(Boolean).map(String).sort().at(-1) ?? '';
 }
 
 export class GetPianoDesk {
-  #datastore; #configProjection; #pieceLog; #clock; #timezone; #logger;
+  #datastore; #configProjection; #pieceLog; #learnSegments; #clock; #timezone; #logger;
 
-  constructor({ datastore, configProjection, pieceLog = null, clock = () => new Date(), timezone = null, logger = console }) {
+  /**
+   * @param {object} deps
+   * @param {(scoreId: string, contentSha256: string) => Array<{id, start, end}>|null} [deps.learnSegments]
+   *   the score's admin-approved Learn segments for that content, or null
+   */
+  constructor({ datastore, configProjection, pieceLog = null, learnSegments = null, clock = () => new Date(), timezone = null, logger = console }) {
     this.#datastore = datastore;
+    this.#learnSegments = learnSegments;
     this.#pieceLog = pieceLog;
     this.#configProjection = configProjection;
     this.#clock = clock;
@@ -57,12 +97,12 @@ export class GetPianoDesk {
 
   #piece({ scoreKey, record }, scoreIds, dayKey) {
     const scoreId = record?.learnCoach?.scoreId ?? scoreIds().get(scoreKey);
-    const fingerprint = record?.fingerprint?.contentSha256 ?? record?.learnCoach?.fingerprint;
-    const segments = passageRanges(record);
-    if (!scoreId || !fingerprint || !segments.length) return null;
+    const fingerprint = recordFingerprint(record);
+    if (!scoreId || !fingerprint) return null;
+    const segments = recordSegments(record, this.#learnSegments?.(scoreId, fingerprint));
+    if (!segments.length) return null;
     const certification = this.#configProjection.raw?.()?.sheetmusic?.learn?.certification;
-    const plan = createCoachPlan({ scoreId, fingerprint, segments, certification });
-    const projection = projectCoach({ plan, state: record.learnCoach ?? null, legacy: record, dayKey });
+    const projection = projectRecord({ record, scoreId, segments, certification, dayKey });
     const passages = projection.segments.map(passageProgress);
     // A piece someone only opened or tried is not one they are learning.
     if (!passages.some((passage) => passage.steps.done > 0 || passage.state === 'silver' || passage.state === 'gold')) return null;

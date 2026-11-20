@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { GetPianoDesk, practiceKeyOfScore } from './GetPianoDesk.mjs';
+import { createCoachPlan } from '#shared/music/learnCoach.mjs';
 
 const SCORE = 'files:docs/sheet-music/christmas/piece.mxl';
 const KEY = practiceKeyOfScore(SCORE);
@@ -140,3 +141,34 @@ test('without a piece log, or when it cannot be read, a piece holds no Polish aw
   assert.deepEqual(warned, ['piano.desk.polish_unreadable']);
 });
 
+
+// A coached record whose passages are all Gold: the score-tempo step earned on each range.
+function goldRecord(ranges, { sha = 'c' } = {}) {
+  const plan = createCoachPlan({ scoreId: SCORE, fingerprint: sha,
+    segments: ranges.map(([start, end]) => ({ id: `m${start}-${end}`, inMeasure: start, outMeasure: end, playableParts: ['rh', 'lh'] })) });
+  const achievements = Object.fromEntries(plan.tasks.filter((task) => task.mastery).map((task) => [task.key, { at: '2026-11-10T00:00:00Z', dayKey: '2026-11-10', provenance: 'demonstrated' }]));
+  const summary = { total: ranges.length, silver: ranges.length, gold: ranges.length,
+    passages: ranges.map(([start, end]) => ({ id: `m${start}-${end}`, start, end, parts: ['rh', 'lh'], silver: 'x', gold: 'x' })) };
+  return { fingerprint: { contentSha256: sha }, updatedAt: '2026-11-10T00:00:00Z',
+    learnCoach: { version: 1, scoreId: SCORE, fingerprint: sha, revision: 1, achievements, counts: {}, evidence: [], reviews: {}, resume: null, summary } };
+}
+const learnDesk = (r, learnSegments) => new GetPianoDesk({
+  learnSegments,
+  datastore: { listPractice: () => [{ scoreKey: KEY, record: r }], listSheetMusicIds: () => [SCORE] },
+  configProjection: { roster: () => ['a'], profile: (id) => ({ display_name: id }), raw: () => ({}) },
+  clock: () => new Date('2026-11-18T20:00:00Z'), timezone: 'UTC',
+}).execute().players[0].piece;
+
+test('approved segments replace the stored passages: kept ranges keep Gold, changed ones start over', () => {
+  const calls = [];
+  const piece = learnDesk(goldRecord([[0, 3], [4, 7]]), (id, sha) => { calls.push([id, sha]); return [{ id: 'a', start: 0, end: 3 }, { id: 'b', start: 4, end: 9 }]; });
+  assert.deepEqual(calls, [[SCORE, 'c']]);
+  assert.deepEqual(piece.passages.map((p) => [p.id, p.start, p.end, p.state]), [['a', 0, 3, 'gold'], ['b', 4, 9, 'todo']]);
+  assert.deepEqual({ gold: piece.gold, total: piece.total }, { gold: 1, total: 2 });
+});
+
+test('without approved segments the stored passages stand', () => {
+  const r = goldRecord([[0, 3], [4, 7]]);
+  assert.deepEqual(learnDesk(r, () => null), learnDesk(r, undefined));
+  assert.deepEqual({ gold: learnDesk(r, () => null).gold, total: learnDesk(r, () => null).total }, { gold: 2, total: 2 });
+});

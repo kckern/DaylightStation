@@ -16,6 +16,7 @@ import { BankChallengePolicy } from "./application/BankChallengePolicy.mjs";
 import { PianoLearningService } from "./application/PianoLearningService.mjs";
 import { PianoLearnCoachService } from './application/PianoLearnCoachService.mjs';
 import { createPianoPieceLog } from './composition/pieceLog.mjs';
+import { createLearnSegmentsReader } from './composition/learnSegments.mjs';
 import { PianoPolishReward } from './application/PianoPolishReward.mjs';
 import { YamlPianoLearnCoachStore } from './adapters/persistence/YamlPianoLearnCoachStore.mjs';
 import { JudgeNoteBurst } from './application/JudgeNoteBurst.mjs';
@@ -83,7 +84,12 @@ export async function createPianoModule({configService, userService, rootLogger,
   // Dated whole-piece Silver/Gold and Polish gem/diamond, read by the gem
   // economy's `piano-piece`, `piano-polish-gem` and `piano-polish-diamond` milestones.
   const pianoPieceLog = createPianoPieceLog({ configService, logger: rootLogger.child({ module: 'piano-learn-coach' }) });
-  const pianoPolishReward = new PianoPolishReward({ pieceLog: pianoPieceLog, logger: rootLogger.child({ module: 'piano-polish-reward' }) });
+  // Admin-approved Learn segments, so the home strip and the Polish reward
+  // follow a new segmentation at once rather than at each child's next take.
+  const pianoLearnSegments = createLearnSegmentsReader({
+    datastore: pianoStudioDatastore, logger: rootLogger.child({ module: 'piano-learn-segments' }),
+  });
+  const pianoPolishReward = new PianoPolishReward({ pieceLog: pianoPieceLog, learnSegments: pianoLearnSegments, logger: rootLogger.child({ module: 'piano-polish-reward' }) });
   const pianoConfigProjection = new PianoConfigProjection({ configService });
   const pianoLearnCoachService = new PianoLearnCoachService({
     datastore: pianoStudioDatastore,
@@ -125,6 +131,7 @@ export async function createPianoModule({configService, userService, rootLogger,
     curriculumIndex: { getCurriculumIndex, mergeSeason },
     schoolAssignments: pianoSchoolAssignments,
     pieceLog: pianoPieceLog,
+    learnSegments: pianoLearnSegments,
     studioDatastore: pianoStudioDatastore,
     timezone: configService.getTimezone?.() ?? null,
     fitnessPlayableService,
