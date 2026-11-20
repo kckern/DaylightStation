@@ -2,6 +2,7 @@ import { useState, useRef } from 'react';
 import { DaylightAPI } from "../../../../../frontend/src/lib/api.mjs";
 import getLogger from "../../../../../frontend/src/lib/logging/Logger.js";
 import "./Headlines.scss";
+import { webLink } from "../../shared/webLink.mjs";
 
 // Default neutral color palette (used if no col_colors in config)
 const DEFAULT_COL_COLORS = [
@@ -64,7 +65,7 @@ export function SourcePanel({ source, col, totalCols, paywallProxy, onRefresh, o
         ) : (
           <span className="source-favicon-fallback">{source.label.charAt(0)}</span>
         )}
-        <a className="source-label" href={siteUrl} target="_blank" rel="noopener noreferrer">{source.label}</a>
+        <a className="source-label" href={webLink(siteUrl) ?? undefined} target="_blank" rel="noopener noreferrer">{source.label}</a>
         <span className="source-meta">
           {source.lastHarvest ? formatTime(source.lastHarvest) : ''}
         </span>
@@ -83,7 +84,8 @@ export function SourcePanel({ source, col, totalCols, paywallProxy, onRefresh, o
           {items.map((item, i) => {
             const previewId = item.id || i;
             const link = stripTracking((item.link || '').trim());
-            const href = isPaywalled ? paywallProxy + link : link;
+            // http(s) only: a feed link is other people's data. No href = plain text.
+            const href = webLink(isPaywalled ? paywallProxy + link : link) ?? undefined;
             const desc = item.desc && item.desc !== item.title ? item.desc : null;
             return (
               <li key={item.stateKey || item.id || href || i} className="source-headline"

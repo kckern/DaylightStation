@@ -3,6 +3,7 @@ import { useSearchParams } from 'react-router-dom';
 import { DaylightAPI } from "../../../../../frontend/src/lib/api.mjs";
 import { useFeedWorkspace } from "../FeedWorkspaceContext.jsx";
 import "../FeedShared.scss";
+import { webLink } from "../../shared/webLink.mjs";
 
 export default function FeedSearch() {
   const [params, setParams] = useSearchParams();
@@ -102,7 +103,7 @@ export default function FeedSearch() {
         {items.map(item => (
           <article className="feed-result" key={item.stateKey || item.id}>
             <div className="feed-result__meta">{item.sourceInfo?.label || item.source} · {item.publishedAt ? new Date(item.publishedAt).toLocaleDateString() : ''}{item.state?.syncStatus === 'pending' ? ' · sync pending' : ''}</div>
-            <h2>{item.url ? <a href={item.url} target="_blank" rel="noreferrer">{item.title}</a> : item.title}</h2>
+            <h2>{webLink(item.url) ? <a href={webLink(item.url)} target="_blank" rel="noreferrer">{item.title}</a> : item.title}</h2>
             {item.summary && <p>{item.summary}</p>}
             <div className="feed-item-actions">
               <button aria-pressed={!!item.state?.isSaved} onClick={() => mutateItems([item], item.state?.isSaved ? 'unsave' : 'save', { onApply: replace })}>{item.state?.isSaved ? 'Saved' : 'Save'}</button>

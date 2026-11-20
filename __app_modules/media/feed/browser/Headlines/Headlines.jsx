@@ -6,6 +6,7 @@ import { DaylightAPI } from "../../../../../frontend/src/lib/api.mjs";
 import { useFeedWorkspace } from "../FeedWorkspaceContext.jsx";
 import { buildHeadlineGrid } from "./buildHeadlineGrid.js";
 import "./Headlines.scss";
+import { webLink } from "../../shared/webLink.mjs";
 
 export default function Headlines({ pageId }) {
   const [pages, setPages] = useState({});
@@ -109,16 +110,16 @@ export default function Headlines({ pageId }) {
           {(data?.briefing || []).filter(story => !story.state?.isArchived).map((story, index) => (
             <article className={`briefing-story ${index === 0 ? 'briefing-story--lead' : ''}`} key={story.id}>
               <div className="briefing-story__eyebrow">{!!previousVisit.current && new Date(story.publishedAt || 0).getTime() > new Date(previousVisit.current).getTime() && <span className="briefing-story__new">New · </span>}{story.sourceCount > 1 ? `${story.sourceCount} outlets` : story.leadSource}{story.publishedAt ? ` · ${formatTime(story.publishedAt)}` : ''}</div>
-              <h2><a href={story.coverage?.[0]?.url} target="_blank" rel="noreferrer">{story.title}</a></h2>
+              <h2><a href={webLink(story.coverage?.[0]?.url) ?? undefined} target="_blank" rel="noreferrer">{story.title}</a></h2>
               {story.excerpt && <p>{story.excerpt}</p>}
               {story.coverage?.[0] && <HeadlineStateActions item={story.coverage[0]} onAction={updateHeadlineState} />}
               <details>
                 <summary>{story.sourceCount > 1 ? 'Compare coverage' : 'Source'}</summary>
-                <ul>{story.coverage?.map(item => <li key={`${item.sourceId}:${item.id}`}><a href={item.url} target="_blank" rel="noreferrer"><strong>{item.sourceLabel}:</strong> {item.title}</a></li>)}</ul>
+                <ul>{story.coverage?.map(item => <li key={`${item.sourceId}:${item.id}`}><a href={webLink(item.url) ?? undefined} target="_blank" rel="noreferrer"><strong>{item.sourceLabel}:</strong> {item.title}</a></li>)}</ul>
               </details>
               {story.timeline?.length > 1 && <details className="briefing-story__timeline">
                 <summary>Story timeline</summary>
-                <ol>{story.timeline.map(item => <li key={`timeline:${item.sourceId}:${item.id}`}><time dateTime={item.publishedAt}>{formatTimelineTime(item.publishedAt)}</time><span className={`briefing-story__event briefing-story__event--${item.kind}`}>{item.kind}</span><a href={item.url} target="_blank" rel="noreferrer">{item.sourceLabel}: {item.title}</a></li>)}</ol>
+                <ol>{story.timeline.map(item => <li key={`timeline:${item.sourceId}:${item.id}`}><time dateTime={item.publishedAt}>{formatTimelineTime(item.publishedAt)}</time><span className={`briefing-story__event briefing-story__event--${item.kind}`}>{item.kind}</span><a href={webLink(item.url) ?? undefined} target="_blank" rel="noreferrer">{item.sourceLabel}: {item.title}</a></li>)}</ol>
               </details>}
             </article>
           ))}

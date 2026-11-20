@@ -7,6 +7,7 @@
  */
 
 import { Headline } from "../domain/entities/Headline.mjs";
+import { webLink } from '../../shared/webLink.mjs';
 
 /**
  * Known generic default/placeholder image URLs used by specific news sources.
@@ -41,12 +42,14 @@ export class RssHeadlineHarvester {
         try {
           const feed = await this.#rssParser.parseURL(url);
           for (const item of feed.items) {
-            if (!item.title?.trim() || !item.link?.trim()) continue;
+            // http(s) links only: the link becomes an anchor and an iframe src.
+            const link = webLink(item.link);
+            if (!item.title?.trim() || !link) continue;
             const headline = Headline.create({
               source: source.id,
               title: this.#stripHtml(item.title),
               desc: this.#extractDesc(item),
-              link: item.link.trim(),
+              link,
               timestamp: this.#parseDate(item),
             });
             const entry = this.#dehydrate(headline);
