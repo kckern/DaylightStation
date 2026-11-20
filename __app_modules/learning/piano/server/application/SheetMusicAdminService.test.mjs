@@ -220,6 +220,20 @@ describe('SheetMusicAdminService.saveDraft', () => {
     expect(cleanProposal({ scorer: 'heuristic', features: [['x']] }, 4)).toEqual({ scorer: 'heuristic' });
   });
 
+  it('keeps the score version a proposal was computed on', () => {
+    expect(cleanProposal({ scorer: 'heuristic', contentSha256: 'abc' }, 4)).toEqual({ scorer: 'heuristic', contentSha256: 'abc' });
+    expect(cleanProposal({ scorer: 'heuristic', contentSha256: 7 }, 4)).toEqual({ scorer: 'heuristic' });
+  });
+
+  it('feature rows are no longer than featureKeys, and exactly as long when keys are given', () => {
+    const keys = ['after', 'gap'];
+    expect(cleanProposal({ scorer: 'h', featureKeys: keys, features: [[0, 1], [1, 2]] }, 4).features).toEqual([[0, 1], [1, 2]]);
+    expect(cleanProposal({ scorer: 'h', featureKeys: keys, features: [[0, 1], [1]] }, 4).features).toBeUndefined();
+    expect(cleanProposal({ scorer: 'h', featureKeys: keys, features: [[0, 1, 9]] }, 4).features).toBeUndefined();
+    // Without keys, rows still may not run past the longest known row (FEATURE_KEYS).
+    expect(cleanProposal({ scorer: 'h', features: [Array.from({ length: 40 }, () => 1)] }, 4).features).toBeUndefined();
+  });
+
   it('rejects invalid segments with the validation errors and writes nothing', async () => {
     const { service, saved } = fixture({ scores: { [ID_A]: { xml: xmlOf(), sha: '1' } } });
     const err = await service.saveDraft(ID_A, { segments: [seg('a', 0, 9)], measureCount: 4 }).catch((e) => e);

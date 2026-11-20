@@ -314,6 +314,24 @@ describe('SheetMusicScore', () => {
     expect(putCalls()[1][1].action).toBe('draft');
   });
 
+  it('stamps a proposal with the score version, and hides stored boundaries from another version', async () => {
+    renderPage();
+    await engravedReady();
+    fireEvent.click(await screen.findByRole('button', { name: 'Propose segments' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Save draft' }));
+    await waitFor(() => expect(putCalls().length).toBe(1));
+    expect(putCalls()[0][1].proposal.contentSha256).toBe('sha-now');
+
+    cleanup();
+    learn = learnFile({
+      draft: { segments: [{ id: 'a', start: 0, end: 7 }], proposal: { scorer: 'heuristic', contentSha256: 'sha-old', boundaries: { 3: 0.9 } } },
+      draftRevision: 'r',
+    });
+    renderPage();
+    await engravedReady();
+    expect((await screen.findByTestId('measure-strip-draft')).querySelectorAll('[data-boundary]')).toHaveLength(0);
+  });
+
   it('hides a stored proposal\'s boundaries when the score has changed', async () => {
     learn = learnFile({
       segments: [{ id: 'a', start: 0, end: 7 }], approved: { at: 't' }, contentSha256: 'sha-old', stale: true,

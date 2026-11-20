@@ -54,6 +54,7 @@ import {
   suggestFilename,
 } from '../../portable/music/musicXmlUpload.mjs';
 import { checkSvg } from '../../portable/music/svgSafety.mjs';
+import { FEATURE_KEYS } from '../../portable/music/phraseSegments.mjs';
 
 const READ_CONCURRENCY = 4;
 const LEARN_SAVED = 'piano.sheetmusic.learn-saved';
@@ -121,12 +122,17 @@ const isThenable = (v) => v != null && typeof v.then === 'function';
 const hasProgress = (passage) => Boolean(passage?.silver || passage?.gold);
 
 const isRow = (row) => Array.isArray(row) && row.every((v) => v === null || Number.isFinite(v));
+/** The longest feature row a proposal may store with no featureKeys of its own. */
+const MAX_FEATURE_ROW = FEATURE_KEYS.length;
 
 /**
  * A draft's `proposal` as stored: only the keys the admin and calibration read
  * (`scorer, model, at, boundaries, featureKeys, features, edited, failedCalls,
- * beatsPerMeasure`), with boundaries and feature rows limited to the score's
- * barlines (one per barline, measureCount − 1). null when nothing usable is left.
+ * beatsPerMeasure, contentSha256`), with boundaries and feature rows limited to the
+ * score's barlines (one per barline, measureCount − 1). Each feature row is exactly
+ * featureKeys long when keys are given, else no longer than FEATURE_KEYS; one bad
+ * row drops them all. `contentSha256` is the score version the proposal was
+ * computed on. null when nothing usable is left.
  */
 export function cleanProposal(raw, measureCount) {
   if (!isObject(raw)) return null;
@@ -138,6 +144,7 @@ export function cleanProposal(raw, measureCount) {
   if (typeof raw.edited === 'boolean') out.edited = raw.edited;
   if (Number.isInteger(raw.failedCalls) && raw.failedCalls >= 0) out.failedCalls = raw.failedCalls;
   if (Number.isFinite(raw.beatsPerMeasure) && raw.beatsPerMeasure > 0) out.beatsPerMeasure = raw.beatsPerMeasure;
+  if (typeof raw.contentSha256 === 'string' && /^[0-9a-zA-Z-]{1,128}$/.test(raw.contentSha256)) out.contentSha256 = raw.contentSha256;
   if (isObject(raw.boundaries)) {
     const boundaries = {};
     for (const [key, p] of Object.entries(raw.boundaries)) {
@@ -147,7 +154,10 @@ export function cleanProposal(raw, measureCount) {
     if (Object.keys(boundaries).length) out.boundaries = boundaries;
   }
   if (Array.isArray(raw.featureKeys) && raw.featureKeys.every((k) => typeof k === 'string')) out.featureKeys = [...raw.featureKeys];
-  if (Array.isArray(raw.features) && raw.features.every(isRow) && raw.features.length) {
+  const rowFits = out.featureKeys
+    ? (row) => row.length === out.featureKeys.length
+    : (row) => row.length <= MAX_FEATURE_ROW;
+  if (Array.isArray(raw.features) && raw.features.length && raw.features.every((row) => isRow(row) && rowFits(row))) {
     out.features = raw.features.slice(0, Math.max(n - 1, 0)).map((row) => [...row]);
   }
   return Object.keys(out).length ? out : null;

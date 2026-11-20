@@ -63,6 +63,18 @@ export function draftProposal({ pending, stored, storedSegments, segments, dirty
   return { scorer: 'manual', at: new Date().toISOString() };
 }
 
+/**
+ * True when the stored draft's proposal was computed on the score as it is now:
+ * its `contentSha256` matches, or (older drafts without one) the approved
+ * segments are not stale.
+ */
+export function storedProposalCurrent(learn) {
+  const proposal = learn?.draft?.proposal;
+  if (!proposal || typeof proposal !== 'object') return false;
+  if (typeof proposal.contentSha256 === 'string') return proposal.contentSha256 === learn.currentSha256;
+  return !learn.stale;
+}
+
 function pageReducer(state, action) {
   if (action?.type === 'load') return initSegmentEditor({ segments: action.segments, measureCount: action.measureCount });
   return segmentEditorReducer(state, action);
@@ -323,7 +335,11 @@ export default function SheetMusicScore() {
       },
       { targetLen: proposalTargetLen(pianoConfig) },
     );
-    const next = { ...result, ms: Math.round(performance.now() - t0) };
+    const next = {
+      ...result,
+      proposal: { ...result.proposal, ...(learn?.currentSha256 ? { contentSha256: learn.currentSha256 } : {}) },
+      ms: Math.round(performance.now() - t0),
+    };
     // Ask before overwriting unsaved edits, or a stored draft the proposal would change.
     const changedHere = pending
       ? cutsKey(editor.segments) !== pending.key
@@ -460,7 +476,8 @@ export default function SheetMusicScore() {
   const errorIds = segmentErrors.map((e) => editor.segments[e.index]?.id).filter(Boolean);
   // A stored proposal's p came from the score as it was; when the score has changed
   // since approval (stale), its numbers are not shown.
-  const draftBoundaries = pending?.proposal?.boundaries ?? (learn?.stale ? null : learn?.draft?.proposal?.boundaries) ?? null;
+  const draftBoundaries = pending?.proposal?.boundaries
+    ?? (storedProposalCurrent(learn) ? learn.draft.proposal.boundaries : null) ?? null;
 
   return (
     <Stack gap="sm" p="md" className="sm-score">
