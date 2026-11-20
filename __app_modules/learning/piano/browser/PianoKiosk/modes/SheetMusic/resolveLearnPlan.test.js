@@ -133,3 +133,32 @@ describe('certification policy', () => {
     expect(tuned.revision).toBe(base.revision);
   });
 });
+
+describe('score-file layer (admin-approved Learn file)', () => {
+  const SCORE_4_BARS = score(4);
+  it('uses score-file segments when no config piece layer exists', () => {
+    const plan = resolveLearnPlan({ scoreFile: { segments: [{ id: 'a', start: 0, end: 1 }, { id: 'b', start: 2, end: 3 }] }, score: SCORE_4_BARS });
+    expect(plan.segments.map((s) => s.id)).toEqual(['a', 'b']);
+  });
+  it('lets a config piece layer override score-file segments', () => {
+    const plan = resolveLearnPlan({ scoreFile: { segments: [{ id: 'a', start: 0, end: 3 }] }, piece: { segments: [{ id: 'p', start: 0, end: 1 }] }, score: SCORE_4_BARS });
+    expect(plan.segments.map((s) => s.id)).toEqual(['p']);
+  });
+  it('replaces a longer score-file segment list wholesale rather than merging by index', () => {
+    const plan = resolveLearnPlan({
+      scoreFile: { segments: [{ id: 'a', start: 0, end: 0, name: 'Intro' }, { id: 'b', start: 1, end: 2 }, { id: 'c', start: 3, end: 3 }] },
+      piece: { segments: [{ id: 'p', start: 0, end: 1 }] },
+      score: SCORE_4_BARS,
+    });
+    expect(plan.segments).toHaveLength(1);
+    expect(plan.segments[0]).toMatchObject({ id: 'p', inMeasure: 0, outMeasure: 1, name: null });
+  });
+  it('treats a score-file ladder as authored', () => {
+    const plan = resolveLearnPlan({ scoreFile: { ladder: [{ id: 'one', label: 'One', parts: ['rh'], mode: 'free', sets: 1, reps: 4 }] }, score: SCORE_4_BARS });
+    expect(plan.authoredLadder).toBe(true);
+  });
+  it('leaves the plan unchanged when the score file is absent', () => {
+    expect(resolveLearnPlan({ scoreFile: undefined, score: SCORE_4_BARS }).revision)
+      .toBe(resolveLearnPlan({ score: SCORE_4_BARS }).revision);
+  });
+});
