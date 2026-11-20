@@ -53,6 +53,23 @@ export default function ControllersOverlay({ open, onClose }) {
     if (open) closeRef.current?.focus();
   }, [open]);
 
+  // A pairing phase change can disable the focused button (Start search, the
+  // guide's start, the panel's inner Close), and the browser then drops focus
+  // to <body>, out of reach of this dialog's keys. Put it back on Close, but
+  // only when focus is outside the panel or on a disabled control: a panel
+  // that just focused its own enabled start button keeps it.
+  const pairingPhase = ctx.controllerPairing?.phase;
+  useEffect(() => {
+    if (!open) return;
+    const active = document.activeElement;
+    const root = panelRef.current;
+    if (!root) return;
+    if (!root.contains(active) || active?.disabled) {
+      closeRef.current?.focus();
+      logger().debug('controllers-overlay.focus-recovered', { phase: pairingPhase || null });
+    }
+  }, [open, pairingPhase]);
+
   // One navigation path for the gamepad and the keyboard: arrows move between
   // enabled buttons (wrapping), Enter presses, Escape closes. Returns whether
   // the key was handled.

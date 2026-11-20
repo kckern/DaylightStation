@@ -5,8 +5,9 @@ import { beforeEach, describe, it, expect, vi } from 'vitest';
 const apiSpy = vi.fn();
 vi.mock('@/lib/api.mjs', () => ({ DaylightAPI: (...a) => apiSpy(...a), DaylightMediaPath: (p) => p }));
 const pairController = vi.fn();
+const pairingState = { current: null };
 vi.mock('../../context/FitnessContext.jsx', () => ({
-  useFitnessContext: () => ({ btInventory: [], controllerPairing: null, pairController, forgetController: vi.fn(), controllerForget: null }),
+  useFitnessContext: () => ({ btInventory: [], controllerPairing: pairingState.current, pairController, forgetController: vi.fn(), controllerForget: null }),
 }));
 // Capture the overlay's gamepad handler and whether it is active.
 const gamepad = { active: null, onKey: null };
@@ -24,6 +25,7 @@ describe('ControllersOverlay', () => {
   beforeEach(() => {
     apiSpy.mockReset();
     pairController.mockReset();
+    pairingState.current = null;
     gamepad.active = null;
     gamepad.onKey = null;
   });
@@ -165,6 +167,24 @@ describe('ControllersOverlay', () => {
       expect(document.activeElement).toBe(buttons[0]);
       fireEvent.keyDown(document.activeElement, { key: 'Tab', shiftKey: true });
       expect(document.activeElement).toBe(buttons[buttons.length - 1]);
+    });
+
+    it('pairing disables the focused start button: focus moves to Close and keys still work', async () => {
+      const onClose = vi.fn();
+      apiSpy.mockResolvedValueOnce(library());
+      const { rerender } = render(<ControllersOverlay open onClose={onClose} />);
+      await waitFor(() => expect(screen.getByRole('button', { name: /Add a new device/ })).toBeTruthy());
+      fireEvent.click(screen.getByRole('button', { name: /Add a new device/ }));
+      const start = screen.getByRole('button', { name: /Start search/ });
+      expect(document.activeElement).toBe(start); // the panel's own focus is left alone
+      fireEvent.click(start);
+      pairingState.current = { phase: 'scanning', mode: 'add', requestId: pairController.mock.calls[0][0].requestId };
+      rerender(<ControllersOverlay open onClose={onClose} />);
+      expect(start.disabled).toBe(true);
+      const close = screen.getByRole('button', { name: 'Close controllers' });
+      expect(document.activeElement).toBe(close);
+      fireEvent.keyDown(document.activeElement, { key: 'Escape' });
+      expect(onClose).toHaveBeenCalledTimes(1);
     });
   });
 });
