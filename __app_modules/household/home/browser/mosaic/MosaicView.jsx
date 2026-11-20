@@ -12,6 +12,7 @@ import './MosaicView.scss';
 
 const logger = homeLogger.child({ component: 'mosaic' });
 
+const EMPTY_ENTITIES = [];
 const MODES = [{ value: 'room', label: 'By room' }, { value: 'type', label: 'By type' }];
 const modePreference = browserPreference('home.mosaic.mode', 'room', saved =>
   MODES.some(option => option.value === saved) ? saved : 'room');
@@ -121,17 +122,18 @@ function MosaicTooltip({ id, tip, text, boxRef }) {
  * first tap on a touch screen) and opens its drawer on a click (or a second
  * tap).
  */
-export function MosaicView({ entities, mosaic, summary, haUrl, toggle }) {
+export function MosaicView({ entities, mosaic, summary, haUrl, toggle, getFallbackFocusTarget }) {
   const mainRef = useAppMainRef();
   const [mode, setMode] = useState(modePreference.read);
   const [tip, setTip] = useState(null);
   const boxRef = useRef(null);
   const tipIdRef = useRef(null);
   const touchRef = useRef({ at: 0, entityId: null, tipBefore: null });
-  const detail = useEntityDetail(entities || []);
+  const readings = entities ?? EMPTY_ENTITIES;
+  const detail = useEntityDetail(mosaic ? readings : EMPTY_ENTITIES);
   const tipDomId = useId();
 
-  const byId = useMemo(() => new Map((entities || []).map((e) => [e.id, e])), [entities]);
+  const byId = useMemo(() => new Map(readings.map(entity => [entity.id, entity])), [readings]);
   const flags = useMemo(() => toneFlags(summary), [summary]);
   const groups = useMemo(
     () => (mosaic ? buildGroups(mode === 'type' ? mosaic.byType : mosaic.byRoom, byId, flags) : []),
@@ -276,6 +278,7 @@ export function MosaicView({ entities, mosaic, summary, haUrl, toggle }) {
         haUrl={haUrl}
         onToggle={toggle}
         onClose={detail.close}
+        getFallbackFocusTarget={getFallbackFocusTarget}
       />
     </div>
   );

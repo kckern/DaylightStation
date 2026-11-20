@@ -34,6 +34,14 @@ a lamp off all day draws a flat band, a door kept shut the same, and a doorbell
 nobody rang an empty axis over "No rings in this range". Highcharts is lazy-loaded, so it stays out of the home
 bundle until a drawer opens.
 
+Rooms and Mosaic keep the drawer on the currently selected device through
+polls. A failed poll keeps the accepted reading and focus. If a successful
+poll removes the device, the drawer closes and focus returns to the expanded
+room header when present, or to the Home Assistant region. A device that
+returns can be opened again from its row or square. If Mosaic's grouping is
+unavailable, the board and its drawer close until grouping returns and a
+device is selected again.
+
 Tapping a **lane** opens the same drawer for the lane's primary entity, plus
 what the lane adds below the history: the Power lane gets **where the power
 goes** (the draw, today's and this month's kWh in a sentence, then the top

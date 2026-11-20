@@ -15,14 +15,14 @@ import './ds.scss';
  * `placement="fullscreen"` for an edge-to-edge camera stage. A visible sheet
  * registers on the dismiss stack and locks its frame and the document.
  */
-export function Sheet({ open, onClose, title, children, placement = 'center', returnFocusRef }) {
+export function Sheet({ open, onClose, title, children, placement = 'center', returnFocusRef, getFallbackFocusTarget }) {
   const overlaysActive = useViewOverlaysActive();
   const visible = open && overlaysActive;
   const sheetRef = useKeyboardViewport(visible);
   const panelRef = useRef(null);
   const closeRef = useRef(null);
   useDismissLayer(open, onClose, { isActive: () => visible });
-  useOverlayFocusReturn(open, returnFocusRef);
+  useOverlayFocusReturn(open, returnFocusRef, getFallbackFocusTarget);
   useOverlayScrollLock(visible);
   const handleKeys = useDialogFocus(visible, panelRef, closeRef);
 

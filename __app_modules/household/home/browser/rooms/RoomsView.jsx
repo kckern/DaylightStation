@@ -24,11 +24,12 @@ function plural(n, one, many = `${one}s`) {
  * One row per room: name, lights, temperature, last motion. Tap to open the
  * room in place; its readings sit behind "Show all".
  */
-export function RoomsView({ entities, rooms, types, summary, haUrl, toggle, turnOff, roomCommands }) {
+export function RoomsView({ entities, rooms, types, summary, haUrl, toggle, turnOff, roomCommands, getFallbackFocusTarget }) {
   const staleMs = (summary?.thresholds?.motionStaleHours ?? Infinity) * 3_600_000;
   const summaries = useMemo(() => summarizeRooms(entities, rooms, { staleMs }), [entities, rooms, staleMs]);
   const [openId, setOpenId] = useState(null);
   const openHeader = useRef(null);
+  const getDetailFallback = useCallback(() => openHeader.current ?? getFallbackFocusTarget?.(), [getFallbackFocusTarget]);
   const actionButton = useRef(null);
   const bindAction = useCallback(node => {
     if (!node && actionButton.current === document.activeElement) openHeader.current?.focus({ preventScroll: true });
@@ -124,7 +125,8 @@ export function RoomsView({ entities, rooms, types, summary, haUrl, toggle, turn
           </div>
         );
       })}
-      <EntityDetailSheet entity={detail.selected} haUrl={haUrl} onToggle={toggle} onClose={detail.close} />
+      <EntityDetailSheet entity={detail.selected} haUrl={haUrl} onToggle={toggle} onClose={detail.close}
+        getFallbackFocusTarget={getDetailFallback} />
     </div>
   );
 }

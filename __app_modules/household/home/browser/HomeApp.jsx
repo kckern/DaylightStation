@@ -1,5 +1,5 @@
 import { browserPreference } from '@/lib/browserPreference.js';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActionIcon } from '@mantine/core';
 import { IconDoor, IconLayoutGrid, IconTimeline, IconVideo } from '@tabler/icons-react';
 import '@mantine/core/styles.css';
@@ -102,12 +102,15 @@ function HomeView({ view, house }) {
   const waitingForHouse = !hasData && loading;
   // Background house reads leave the accepted view and its independent reads available.
   const { regionProps, retry } = useRetryRegion(reload, waitingForHouse);
+  const regionRef = regionProps.ref;
+  const getFallbackFocusTarget = useCallback(() => regionRef.current, [regionRef]);
   const shared = { entities, rooms, haUrl, toggle };
   let body;
   if (waitingForHouse) body = <LoadingState label="the house" rows={6} />;
   else if (!hasData && error) body = <ErrorState error={error} onRetry={retry} label="Home Assistant" />;
-  else if (view === 'rooms') body = <RoomsView {...shared} types={types} summary={summary} turnOff={turnOff} roomCommands={roomCommands} />;
-  else if (view === 'mosaic') body = <MosaicView {...shared} mosaic={mosaic} summary={summary} />;
+  else if (view === 'rooms') body = <RoomsView {...shared} types={types} summary={summary} turnOff={turnOff} roomCommands={roomCommands}
+    getFallbackFocusTarget={getFallbackFocusTarget} />;
+  else if (view === 'mosaic') body = <MosaicView {...shared} mosaic={mosaic} summary={summary} getFallbackFocusTarget={getFallbackFocusTarget} />;
   else body = <TodayView {...shared} summary={summary} />;
   return <section aria-label="Home Assistant" {...regionProps}>{body}</section>;
 }

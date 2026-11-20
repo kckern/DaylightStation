@@ -270,6 +270,13 @@ compose its returned `onKeyDown` with feature-specific keys.
 [Media phone search](../../../__app_modules/media/media/browser/search/SearchMode.jsx) ·
 [Home camera](../../../__app_modules/household/camera/browser/CameraViewport.jsx)
 
+Use `Sheet`'s `getFallbackFocusTarget` when a live update can remove the
+opening control. Return a mounted control or a named focusable region.
+The sheet tries its explicit `returnFocusRef` or original opener first and
+uses the fallback if focus is still on the document body. Home Rooms offers
+the expanded room header and Home Assistant region as destinations.
+[Home detail sheet](../../../__app_modules/household/home/browser/ui/EntityDetailSheet.jsx)
+
 The seven browser app routes opt into the edge-to-edge viewport. Mantine
 dialog sizing follows the same safe rectangle, including body portals.
 For centered notifications, set `data-safe-area-center` so they center

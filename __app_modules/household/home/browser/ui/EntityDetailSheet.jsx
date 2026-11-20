@@ -77,11 +77,11 @@ function EntityHistory({ entity, range, onRange, history, busy, error, reload })
  * a lane drawer's own detail), its room (italic when guessed from the id) and
  * when it last changed, the link into Home Assistant, and its id, muted, last.
  */
-export function EntityDetailSheet({ entity, haUrl, onToggle, onClose, extra = null }) {
+export function EntityDetailSheet({ entity, haUrl, onToggle, onClose, getFallbackFocusTarget, extra = null }) {
   const open = Boolean(entity);
   if (!open) return null;
   return (
-    <Sheet open={open} onClose={onClose} title={displayName(entity)} placement="side">
+    <Sheet open={open} onClose={onClose} title={displayName(entity)} placement="side" getFallbackFocusTarget={getFallbackFocusTarget}>
       <EntityDetailBody key={entity.id} entity={entity} haUrl={haUrl} onToggle={onToggle} extra={extra} />
     </Sheet>
   );

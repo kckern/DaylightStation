@@ -166,6 +166,93 @@ function house(state) {
   };
 }
 
+for (const width of [390, 1440]) {
+  for (const view of ['Rooms', 'Mosaic']) {
+    test(`Home ${view} retires a removed entity's detail visit at ${width}px`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 850 });
+      await page.clock.install();
+      const group = { id: 'kitchen', label: 'Kitchen', entityIds: ['light.kitchen'] };
+      const mosaic = { byRoom: [group], byType: [group] };
+      let snapshot = { status: 200, json: { ...house('on'), mosaic } };
+      const reads = [];
+      await page.route('**/home-dashboard/entities', route => {
+        reads.push(snapshot.status);
+        return route.fulfill(snapshot);
+      });
+      await page.route('**/home-dashboard/entities/light.kitchen/history?range=*', route => (
+        route.fulfill({ json: { kind: 'state', hasData: false } })
+      ));
+
+      async function poll(next) {
+        snapshot = next;
+        const pending = page.waitForResponse(response => new URL(response.url()).pathname.endsWith('/home-dashboard/entities'));
+        await page.clock.fastForward(10_001);
+        const response = await pending;
+        expect(response.status()).toBe(next.status);
+        await response.finished();
+        await page.clock.runFor(32);
+      }
+
+      await page.goto('/home');
+      await page.getByRole('button', { name: view, exact: true }).click();
+      const kitchen = page.getByRole('button', { name: /^Kitchen(?: 1 on)?$/ });
+      if (view === 'Rooms') await kitchen.press('Enter');
+      const device = state => page.getByRole('button', {
+        name: `Kitchen light${view === 'Rooms' ? ',' : ':'} ${state}`, exact: true,
+      });
+      const sheet = page.getByRole('dialog', { name: 'Kitchen light', exact: true });
+      const close = sheet.getByRole('button', { name: 'Close', exact: true });
+      await device('On').press('Enter');
+      await expect(close).toBeFocused();
+
+      await poll({ status: 409, json: { error: 'Fixture refused the poll' } });
+      await expect(close).toBeFocused();
+      await poll({ status: 200, json: { ...house('off'), mosaic } });
+      await expect(sheet.getByText('Off', { exact: true })).toBeVisible();
+      await expect(close).toBeFocused();
+
+      const removeGrouping = width === 1440;
+      const missing = house('off');
+      const entry = { ...missing.entities[0], id: 'light.counter', name: 'Counter light' };
+      const remaining = { ...group, entityIds: [entry.id] };
+      missing.entities = removeGrouping ? [] : [entry];
+      missing.rooms = removeGrouping ? [] : missing.rooms;
+      missing.mosaic = removeGrouping ? null : { byRoom: [remaining], byType: [remaining] };
+      await poll({ status: 200, json: missing });
+      await expect(sheet).toBeHidden();
+      await expect(device('Off')).toHaveCount(0);
+      const fallback = view === 'Rooms' && !removeGrouping
+        ? kitchen : page.getByRole('region', { name: 'Home Assistant', exact: true });
+      await expect.soft(fallback).toBeFocused();
+      const keepFocus = removeGrouping ? fallback : page.getByRole('button', { name: 'Cameras', exact: true });
+      if (!removeGrouping) await keepFocus.focus();
+
+      await poll({ status: 200, json: { ...house('on'), mosaic } });
+      await expect(device('On')).toBeVisible();
+      await expect(sheet, 'a returning entity waits for a new open gesture').toBeHidden();
+      await expect(keepFocus).toBeFocused();
+      expect(reads).toEqual([200, 409, 200, 200, 200]);
+
+      await device('On').press('Enter');
+      await expect(close).toBeFocused();
+      await page.keyboard.press('Escape');
+      await expect(sheet).toBeHidden();
+      await expect(device('On')).toBeFocused();
+
+      if (view === 'Mosaic' && removeGrouping) {
+        await device('On').press('Enter');
+        await expect(close).toBeFocused();
+        await poll({ status: 200, json: house('on') });
+        await expect(sheet).toBeHidden();
+        await expect(fallback).toBeFocused();
+        await poll({ status: 200, json: { ...house('on'), mosaic } });
+        await expect(device('On')).toBeVisible();
+        await expect(sheet, 'restoring the board waits for a new open gesture').toBeHidden();
+      }
+    });
+  }
+}
+
 test.describe('Home room detail on a coarse pointer', () => {
   test.use({ hasTouch: true, viewport: { width: 390, height: 850 } });
 

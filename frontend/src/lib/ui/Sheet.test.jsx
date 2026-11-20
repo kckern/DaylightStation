@@ -148,4 +148,33 @@ describe('Sheet', () => {
     fireEvent.keyDown(document, { key: 'Escape' });
     await waitFor(() => expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Open task' })));
   });
+
+  it('carries a fallback through a replacement when the original opener is gone', async () => {
+    function Flow() {
+      const [step, setStep] = useState(null);
+      const fallback = useRef(null);
+      return <>
+        {step === 'next' ? null : <button onClick={() => setStep('entry')}>Open entry</button>}
+        <button ref={fallback}>Entries</button>
+        {step === 'entry' ? <Sheet open title="Entry" onClose={() => setStep(null)} getFallbackFocusTarget={() => fallback.current}>
+          <button onClick={() => setStep('next')}>Open next</button>
+        </Sheet> : null}
+        {step === 'next' ? <Sheet open title="Next" onClose={() => setStep('done')}>Next entry</Sheet> : null}
+      </>;
+    }
+    wrap(<Flow />);
+    const opener = screen.getByRole('button', { name: 'Open entry' });
+    opener.focus();
+    fireEvent.click(opener);
+    const next = screen.getByRole('button', { name: 'Open next' });
+    next.focus();
+    fireEvent.click(next);
+    expect(opener.isConnected).toBe(false);
+    const replacement = screen.getByRole('dialog', { name: 'Next' });
+    const close = replacement.querySelector('button[aria-label="Close"]');
+    await waitFor(() => expect(document.activeElement).toBe(close), { timeout: 800 });
+    fireEvent.keyDown(document, { key: 'Escape' });
+    const entries = screen.getByRole('button', { name: 'Entries' });
+    await waitFor(() => expect(document.activeElement).toBe(entries), { timeout: 800 });
+  });
 });
