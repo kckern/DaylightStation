@@ -160,6 +160,16 @@ describe('BluetoothScreen', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Search for devices' }));
     rerender(ui({ ...bt, scan: { phase: 'done', requestId: 'scan-1', reason: 'satellite-outdated', devices: [] } }));
     expect(screen.getByRole('status').textContent).toBe('The garage Bluetooth service needs an update.');
+    // No "Nothing found yet… keep it close" under it: that is not what went wrong.
+    expect(screen.queryByText(/Nothing found yet/)).toBeNull();
+  });
+
+  it('the countdown never shows more than the search has left', () => {
+    const bt = makeBt();
+    const { rerender } = render(ui(bt));
+    fireEvent.click(screen.getByRole('button', { name: 'Search for devices' }));
+    rerender(ui({ ...bt, scan: { phase: 'scanning', requestId: 'scan-1', endsAt: Date.now() + 60000, devices: [] } }));
+    expect(screen.getByRole('status').textContent).toBe('Searching… 60 s');
   });
 
   it('Test on a connected row opens the key test; Escape there returns to the list', () => {

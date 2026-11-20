@@ -64,7 +64,9 @@ export function BluetoothScreen({
   const pairingNow = view.name === 'pairing' && bt.pairing?.requestId === view.requestId ? bt.pairing : null;
   const pv = pairView(pairingNow || (view.name === 'pairing' ? { phase: 'scanning', optimistic: true } : null), view.label);
   const pairBusy = !!bt.pairing && pairView(bt.pairing, '').busy;
-  const sv = scanView(scan, now);
+  // `now` only drives the 1 s tick; the countdown reads the clock itself, so a
+  // fresh search never shows more seconds than it has.
+  const sv = scanView(scan, Math.max(now, Date.now()));
   const forgetMsg = forgetAsked && bt.forgetResult?.address === forgetAsked ? forgetText(bt.forgetResult) : null;
 
   // Mount: log, and ask for the inventory (it is otherwise sent only on change).
@@ -223,7 +225,9 @@ export function BluetoothScreen({
           {!scanning && view.highlightId ? (
             <p className="bts-hint">{hints.find((h) => h.id === view.highlightId)?.troubleshoot}</p>
           ) : null}
-          <NearbyList rows={nearby} hidden={hidden} showAll={showAll} onToggleShowAll={() => setShowAll((v) => !v)} onPick={pick} busy={pairBusy} />
+          {sv.tone === 'error' && nearby.length === 0 && !showAll ? null : (
+            <NearbyList rows={nearby} hidden={hidden} showAll={showAll} onToggleShowAll={() => setShowAll((v) => !v)} onPick={pick} busy={pairBusy} />
+          )}
           {scanning
             ? <button type="button" className="bts-button" data-autofocus onClick={() => stopSearch('user')}>Stop</button>
             : <button type="button" className="bts-button bts-primary" data-autofocus onClick={() => startSearch(view.highlightId || null)}>Search again</button>}
