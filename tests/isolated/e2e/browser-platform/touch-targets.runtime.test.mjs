@@ -125,6 +125,7 @@ test('Health settings opens from the edge of its full touch target', async ({ pa
   await page.route('**/health/context', route => route.fulfill({ json: { userId: 'alice' } }));
   await page.route('**/api/v1/health/medical', route => route.fulfill({ json: { metrics: [] } }));
   await page.goto('/health/medical');
+  await expect(page.getByText('No medical readings yet', { exact: true })).toBeVisible();
   const settings = page.getByRole('button', { name: 'Health settings', exact: true });
   await expectFullTouchTarget(settings);
   await settings.tap({ position: { x: 2, y: 22 } });

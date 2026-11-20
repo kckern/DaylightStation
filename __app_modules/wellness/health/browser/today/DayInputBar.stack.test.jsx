@@ -84,6 +84,7 @@ const seedDish = () => store.saveMany([
 ]);
 
 beforeEach(() => {
+  // The undo label is relative to the clock. Keep it on the fixture's local day.
   vi.useFakeTimers({ toFake: ['Date'] });
   vi.setSystemTime(new Date(`${date}T12:00:00`));
   root = fs.mkdtempSync(path.join(os.tmpdir(), 'day-input-stack-'));

@@ -54,19 +54,30 @@ export function BarcodeCapture({ open, onClose, onDecode, busy, bucket }) {
   }, [open]);
 
   return (
-    <Sheet open={open} onClose={onClose} title="Scan barcode">
-      {error ? <Text role="alert" c="red" size="sm">{error}</Text> : null}
-      {cameraState !== 'denied' ? (
-        <video ref={videoRef} muted playsInline style={{ width: '100%', borderRadius: 9 }} />
-      ) : (
-        <Text size="sm" c="dimmed">Camera unavailable — enter the barcode number instead.</Text>
-      )}
-      <div className="health-barcode__manual">
-        <TextInput size="sm" className="health-barcode__manual-input" inputMode="numeric" placeholder="UPC number"
-          value={manualUpc} onChange={(e) => setManualUpc(e.target.value)}
-          aria-label="Manual UPC entry" />
-        <Button size="sm" loading={busy} disabled={!manualUpc.trim()}
-          onClick={() => decode(manualUpc.trim(), bucket)}>Look up</Button>
+    // Full screen, like a barcode app: the camera fills the stage (cropped,
+    // never stretched), an aiming box sits in the middle, and the typed
+    // fallback rides along the bottom.
+    <Sheet open={open} onClose={onClose} title="Scan barcode" placement="fullscreen">
+      <div className="health-barcode">
+        {cameraState !== 'denied' ? (
+          <>
+            <video ref={videoRef} className="health-barcode__video" muted playsInline />
+            <div className="health-barcode__reticle" aria-hidden="true" />
+            <Text className="health-barcode__aim">Point at the barcode</Text>
+          </>
+        ) : (
+          <Text className="health-barcode__denied">Camera unavailable — enter the barcode number instead.</Text>
+        )}
+        <div className="health-barcode__bottom">
+          {error ? <Text role="alert" className="health-barcode__error">{error}</Text> : null}
+          <div className="health-barcode__manual">
+            <TextInput size="md" className="health-barcode__manual-input" inputMode="numeric" placeholder="UPC number"
+              value={manualUpc} onChange={(e) => setManualUpc(e.target.value)}
+              aria-label="Manual UPC entry" />
+            <Button size="md" className="ds-touch-target" loading={busy} disabled={!manualUpc.trim()}
+              onClick={() => decode(manualUpc.trim(), bucket)}>Look up</Button>
+          </div>
+        </div>
       </div>
     </Sheet>
   );

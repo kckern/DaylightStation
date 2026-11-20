@@ -58,6 +58,76 @@ test('Health focuses the custom food name and returns to the barcode launcher', 
   await expect(opener).toBeFocused();
 });
 
+for (const size of [{ width: 390, height: 850 }, { width: 844, height: 390 }]) {
+  test(`Health barcode controls stay inside the safe area and keyboard viewport at ${size.width}px`, async ({ page }) => {
+    const insets = { top: 30, right: 27, bottom: 24, left: 40 };
+    await page.setViewportSize(size);
+    await page.addInitScript(() => {
+      Object.defineProperty(navigator.mediaDevices, 'getUserMedia', {
+        value: async () => { throw new DOMException('Fixture denies the camera', 'NotAllowedError'); },
+      });
+    });
+    await page.route('**/health/context', route => route.fulfill({ json: { userId: 'alice' } }));
+    await page.route('**/api/v1/health/day?**', route => route.fulfill({
+      json: { items: [], budget: { budget: 2000, remaining: 2000 } },
+    }));
+    await page.goto('/health');
+    await page.evaluate(edges => {
+      for (const [edge, pixels] of Object.entries(edges)) {
+        document.documentElement.style.setProperty(`--browser-safe-area-${edge}`, `${pixels}px`);
+      }
+    }, insets);
+    const ownerOverflow = () => page.getByRole('main').evaluate(main => [
+      document.body.style.overflow, getComputedStyle(main).overflowY,
+    ]);
+    const opener = page.getByRole('button', { name: 'Scan barcode to Breakfast', exact: true });
+    const restingOverflow = ['', 'auto'];
+    await expect.poll(ownerOverflow).toEqual(restingOverflow);
+    await opener.press('Enter');
+    const scanner = page.getByRole('dialog', { name: 'Scan barcode' });
+    const field = scanner.getByRole('textbox', { name: 'Manual UPC entry' });
+    const lookup = scanner.getByRole('button', { name: 'Look up' });
+    const close = scanner.getByRole('button', { name: 'Close' });
+    await expect(scanner.getByText(/Camera unavailable/)).toBeVisible();
+    await expect.poll(ownerOverflow).toEqual(['hidden', 'hidden']);
+    const stageBounds = () => scanner.locator('.ds-sheet__panel').evaluate(panel => {
+      const { x, y, width, height } = panel.getBoundingClientRect();
+      return [x, y, width, height];
+    });
+    await expect.poll(stageBounds).toEqual([0, 0, size.width, size.height]);
+    await expect.poll(() => field.evaluate(element => parseFloat(getComputedStyle(element).fontSize)))
+      .toBeGreaterThanOrEqual(16);
+    const expectControlsInside = async (top, bottom) => {
+      for (const control of [close, field, lookup]) {
+        await expect.poll(() => control.evaluate((element, edges) => {
+          const box = element.getBoundingClientRect();
+          const hit = document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2);
+          return box.left >= edges.left && box.right <= innerWidth - edges.right
+            && box.top >= edges.top && box.bottom <= edges.bottom && element.contains(hit);
+        }, { ...insets, top, bottom })).toBe(true);
+      }
+    };
+    await field.fill('012345678905');
+    await expectControlsInside(insets.top, size.height - insets.bottom);
+    const keyboard = { width: size.width, height: size.height - 180, offsetTop: 42, scale: 1 };
+    const setVisualViewport = values => page.evaluate(viewportValues => {
+      const viewport = window.visualViewport;
+      for (const [key, value] of Object.entries(viewportValues)) {
+        Object.defineProperty(viewport, key, { configurable: true, value });
+      }
+      viewport.dispatchEvent(new Event('resize'));
+    }, values);
+    await setVisualViewport(keyboard);
+    await expect.poll(stageBounds).toEqual([0, keyboard.offsetTop, size.width, keyboard.height]);
+    await expectControlsInside(keyboard.offsetTop, keyboard.offsetTop + keyboard.height - insets.bottom);
+    await lookup.click({ trial: true });
+    await field.press('Escape');
+    await expect(scanner).toBeHidden();
+    await expect(opener).toBeFocused();
+    await expect.poll(ownerOverflow).toEqual(restingOverflow);
+  });
+}
+
 test('Health returns focus to the day input after cancelling a clarification', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 850 });
   await page.route('**/health/context', route => route.fulfill({ json: { userId: 'alice' } }));

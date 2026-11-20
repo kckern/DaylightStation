@@ -38,6 +38,11 @@ describe('Sheet', () => {
     expect(container.querySelector('.ds-sheet').className).toBe('ds-sheet');
   });
 
+  it('placement="fullscreen" marks the root, for a camera view that owns the whole screen', () => {
+    const { container } = wrap(<Sheet open onClose={() => {}} title="T" placement="fullscreen">x</Sheet>);
+    expect(container.querySelector('.ds-sheet').className).toBe('ds-sheet ds-sheet--fullscreen');
+  });
+
   it('locks body scroll while open and restores on unmount', () => {
     const { unmount } = wrap(<Sheet open onClose={() => {}} title="T">x</Sheet>);
     expect(document.body.style.overflow).toBe('hidden');

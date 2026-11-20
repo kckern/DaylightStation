@@ -10,9 +10,9 @@ import './ds.scss';
 
 /**
  * The house overlay: bottom sheet on mobile; on desktop a centered dialog by
- * default, or — `placement="side"` — a full-height panel on the right edge, for
- * a drill-in that sits beside the page it came from (CSS). Registers on the dismiss stack (Escape), closes on scrim click, locks
- * body scroll while open.
+ * default. Use `placement="side"` for a desktop drill-in or
+ * `placement="fullscreen"` for an edge-to-edge camera stage. A visible sheet
+ * registers on the dismiss stack and locks its frame and the document.
  */
 export function Sheet({ open, onClose, title, children, placement = 'center', returnFocusRef }) {
   const sheetRef = useRef(null);
@@ -29,8 +29,10 @@ export function Sheet({ open, onClose, title, children, placement = 'center', re
   }, [visible]);
 
   if (!open) return null;
+  const className = placement === 'side' || placement === 'fullscreen'
+    ? `ds-sheet ds-sheet--${placement}` : 'ds-sheet';
   return (
-    <div ref={sheetRef} className={placement === 'side' ? 'ds-sheet ds-sheet--side' : 'ds-sheet'} hidden={!visible} role="dialog" aria-modal={visible || undefined} aria-label={title}>
+    <div ref={sheetRef} className={className} hidden={!visible} role="dialog" aria-modal={visible || undefined} aria-label={title}>
       <div className="ds-sheet__scrim" onClick={onClose} />
       <FocusTrap active={visible}><div className="ds-sheet__panel" tabIndex={-1}>
         <header className="ds-sheet__header">

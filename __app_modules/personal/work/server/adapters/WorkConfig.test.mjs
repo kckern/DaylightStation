@@ -37,6 +37,7 @@ describe('work configuration boundaries',()=>{
  ])('fails closed for unsafe, unknown or unbounded policy',change=>{
   const c=base();change(c);expect(resolve(c)).toMatchObject({enabled:false,reason:'invalid_work_config'});
  });
+ it('accepts a writer with writer_env and no writer_host (the container writer)',()=>{const c=base();c.work.write=true;c.work.writer_env='docker';expect(resolve(c)).toMatchObject({enabled:true,writer:{write:true,writer_env:'docker',writer_host:null}});});
  it('rejects an absent/invalid timezone rather than using process timezone',()=>expect(resolveWorkPolicy({configuration:base(),username:'sample',timezone:'bad/timezone'})).toMatchObject({enabled:false,reason:'invalid_work_timezone'}));
  it('keeps an explicitly disabled config inert even if obsolete provider fields exist',()=>expect(resolve({work:{enabled:false,providers:{retired:{type:'unknown'}}}}).enabled).toBe(false));
 });

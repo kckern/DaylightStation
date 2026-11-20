@@ -177,6 +177,29 @@ html[data-browser-app-viewport] {
 
     .ds-sheet__panel { max-height: 100%; }
   }
+
+  // The camera fills the viewport. Overlay controls apply the safe insets.
+  &--fullscreen { inset: 0; }
+  &--fullscreen[data-keyboard-viewport] {
+    top: var(--sheet-viewport-top);
+    bottom: auto;
+    height: var(--sheet-viewport-height);
+  }
+  &--fullscreen &__panel {
+    inset: 0; transform: none; width: auto; max-height: none;
+    box-sizing: border-box; overflow: hidden;
+    border: 0; border-radius: 0; padding: 0;
+    background: #000; /* data-color: camera stage, not a palette color */
+    animation: none;
+  }
+  &--fullscreen &__header {
+    position: absolute; top: 0; left: 0; right: 0; z-index: 2; margin: 0;
+    padding: calc(0.5rem + max(0px, var(--browser-safe-area-top) - var(--sheet-viewport-top, 0px)))
+      calc(0.75rem + var(--browser-safe-area-right)) 0.5rem calc(1rem + var(--browser-safe-area-left));
+    background: linear-gradient(rgba(0, 0, 0, 0.6), transparent); /* data-color: legibility shade */
+  }
+  &--fullscreen &__title, &--fullscreen &__header .mantine-ActionIcon-root { color: #fff; } /* data-color: on camera */
+  &--fullscreen &__body { position: absolute; inset: 0; }
 }
 
 @keyframes ds-sheet-in-side {

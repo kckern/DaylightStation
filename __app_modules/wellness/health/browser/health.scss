@@ -529,9 +529,31 @@ $health-aside-gap: 1.5rem;
 .health-refresh-failed { display: block; margin: 0 auto 0.25rem; color: var(--ds-text-mid); font-weight: 400; }
 .health-edit__advanced summary { cursor: pointer; color: var(--ds-text-mid); font-size: 0.8rem; padding: 0.5rem 0; }
 
+// The scanner fills a fullscreen Sheet (`ds-sheet--fullscreen`). The video is
+// `object-fit: cover`: cropped to the screen, never squashed to its box.
 .health-barcode {
-  &__manual { display: flex; gap: 0.4rem; margin-top: 0.5rem; }
-  &__manual-input { flex: 1; }
+  position: absolute; inset: 0;
+  &__video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+  &__reticle {
+    position: absolute; left: 50%; top: 45%; transform: translate(-50%, -50%);
+    width: min(78vw, 22rem); aspect-ratio: 2 / 1;
+    border: 3px solid #fff; border-radius: 14px; /* data-color: on camera */
+    box-shadow: 0 0 0 100vmax rgba(0, 0, 0, 0.35); /* data-color: dim outside the box */
+  }
+  &__aim {
+    position: absolute; left: 0; right: 0; top: calc(45% + min(39vw, 11rem) / 2 + 1.5rem);
+    text-align: center; color: #fff; font-weight: 600; /* data-color: on camera */
+  }
+  &__denied { position: absolute; left: 1.5rem; right: 1.5rem; top: 40%; text-align: center; color: #fff; } /* data-color: on camera */
+  &__bottom {
+    position: absolute; left: 0; right: 0; bottom: 0;
+    padding: 1rem calc(1rem + var(--browser-safe-area-right))
+      calc(1rem + var(--browser-safe-area-bottom)) calc(1rem + var(--browser-safe-area-left));
+    background: linear-gradient(transparent, rgba(0, 0, 0, 0.7)); /* data-color: legibility shade */
+  }
+  &__error { color: #ffb4a8; font-size: 0.85rem; margin-bottom: 0.4rem; } /* data-color: error on camera */
+  &__manual { display: flex; gap: 0.4rem; }
+  &__manual-input { flex: 1; min-width: 0; }
 }
 
 .health-meal {
