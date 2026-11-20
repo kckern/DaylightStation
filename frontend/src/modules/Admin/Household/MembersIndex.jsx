@@ -6,6 +6,7 @@ import { IconPlus, IconAlertCircle, IconUsers, IconTrash } from '@tabler/icons-r
 import { ADMIN_HOUSEHOLD_PATH, useAdminHousehold } from '../../../hooks/admin/useAdminHousehold.js';
 import { useAdminRoster } from '../shared/useAdminRoster.js';
 import { ErrorState, LoadingState } from '../../../lib/ui/states.jsx';
+import { useRetryRegion } from '../../../lib/ui/useRetryRegion.js';
 import ConfirmModal from '../shared/ConfirmModal.jsx';
 
 const TYPE_OPTIONS = [
@@ -40,6 +41,7 @@ function MembersIndex() {
   const navigate = useNavigate();
   const { error, createMember, removeMember, clearError } = useAdminHousehold();
   const { data, loading, error: readError, reload, invalidateAfterWrite, refreshAfterWrite } = useAdminRoster(ADMIN_HOUSEHOLD_PATH);
+  const { regionProps, retry } = useRetryRegion(reload, loading);
   const household = data?.household;
   const members = data?.members ?? [];
 
@@ -183,83 +185,85 @@ function MembersIndex() {
           {error.message || 'Failed to load household data'}
         </Alert>
       )}
-      {readError && <ErrorState error={readError} label="Household members" onRetry={reload} />}
-      {loading && !data && <LoadingState label="household members" />}
+      <Stack component="section" gap="lg" aria-label="Household members" {...regionProps}>
+        {readError && <ErrorState error={readError} label="Household members" onRetry={retry} />}
+        {loading && members.length === 0 && <LoadingState label="household members" />}
 
-      {/* Members table */}
-      {members.length > 0 && (
-        <Table highlightOnHover withTableBorder withColumnBorders={false}>
-          <Table.Thead>
-            <Table.Tr>
-              <Table.Th>Display Name</Table.Th>
-              <Table.Th>Username</Table.Th>
-              <Table.Th>Type</Table.Th>
-              <Table.Th>Group</Table.Th>
-              <Table.Th style={{ width: 100 }}>Actions</Table.Th>
-            </Table.Tr>
-          </Table.Thead>
-          <Table.Tbody>
-            {members.map(member => (
-              <Table.Tr
-                key={member.username}
-                style={{ cursor: 'pointer' }}
-                onClick={() => handleRowClick(member.username)}
-              >
-                <Table.Td>
-                  <Text size="sm" fw={500}>
-                    {member.display_name || member.username}
-                  </Text>
-                  {member.birthyear && (
-                    <Text size="xs" c="dimmed">Born {member.birthyear}</Text>
-                  )}
-                </Table.Td>
-                <Table.Td>
-                  <Text size="sm" c="dimmed">{member.username}</Text>
-                </Table.Td>
-                <Table.Td>
-                  <Badge
-                    color={typeBadgeColor(member.type)}
-                    variant="light"
-                    size="sm"
-                  >
-                    {member.type === 'family_member' ? 'Family Member' : member.type || 'unknown'}
-                  </Badge>
-                </Table.Td>
-                <Table.Td>
-                  <Badge
-                    color={groupBadgeColor(member.group)}
-                    variant="light"
-                    size="sm"
-                  >
-                    {member.group_label || member.group || 'unknown'}
-                  </Badge>
-                </Table.Td>
-                <Table.Td>
-                  <Button
-                    size="xs"
-                    variant="light"
-                    color="red"
-                    leftSection={<IconTrash size={14} />}
-                    onClick={(e) => handleRemoveClick(e, member)}
-                    disabled={removing}
-                  >
-                    Remove
-                  </Button>
-                </Table.Td>
+        {/* Members table */}
+        {members.length > 0 && (
+          <Table highlightOnHover withTableBorder withColumnBorders={false}>
+            <Table.Thead>
+              <Table.Tr>
+                <Table.Th>Display Name</Table.Th>
+                <Table.Th>Username</Table.Th>
+                <Table.Th>Type</Table.Th>
+                <Table.Th>Group</Table.Th>
+                <Table.Th style={{ width: 100 }}>Actions</Table.Th>
               </Table.Tr>
-            ))}
-          </Table.Tbody>
-        </Table>
-      )}
+            </Table.Thead>
+            <Table.Tbody>
+              {members.map(member => (
+                <Table.Tr
+                  key={member.username}
+                  style={{ cursor: 'pointer' }}
+                  onClick={() => handleRowClick(member.username)}
+                >
+                  <Table.Td>
+                    <Text size="sm" fw={500}>
+                      {member.display_name || member.username}
+                    </Text>
+                    {member.birthyear && (
+                      <Text size="xs" c="dimmed">Born {member.birthyear}</Text>
+                    )}
+                  </Table.Td>
+                  <Table.Td>
+                    <Text size="sm" c="dimmed">{member.username}</Text>
+                  </Table.Td>
+                  <Table.Td>
+                    <Badge
+                      color={typeBadgeColor(member.type)}
+                      variant="light"
+                      size="sm"
+                    >
+                      {member.type === 'family_member' ? 'Family Member' : member.type || 'unknown'}
+                    </Badge>
+                  </Table.Td>
+                  <Table.Td>
+                    <Badge
+                      color={groupBadgeColor(member.group)}
+                      variant="light"
+                      size="sm"
+                    >
+                      {member.group_label || member.group || 'unknown'}
+                    </Badge>
+                  </Table.Td>
+                  <Table.Td>
+                    <Button
+                      size="xs"
+                      variant="light"
+                      color="red"
+                      leftSection={<IconTrash size={14} />}
+                      onClick={(e) => handleRemoveClick(e, member)}
+                      disabled={removing}
+                    >
+                      Remove
+                    </Button>
+                  </Table.Td>
+                </Table.Tr>
+              ))}
+            </Table.Tbody>
+          </Table>
+        )}
 
-      {members.length === 0 && !loading && !readError && (
-        <Center h="40vh">
-          <Stack align="center">
-            <IconUsers size={48} stroke={1} color="gray" />
-            <Text c="dimmed">No household members found. Add one to get started.</Text>
-          </Stack>
-        </Center>
-      )}
+        {members.length === 0 && !loading && !readError && (
+          <Center h="40vh">
+            <Stack align="center">
+              <IconUsers size={48} stroke={1} color="gray" />
+              <Text c="dimmed">No household members found. Add one to get started.</Text>
+            </Stack>
+          </Center>
+        )}
+      </Stack>
 
       {/* Add Member Modal */}
       <FormDialog

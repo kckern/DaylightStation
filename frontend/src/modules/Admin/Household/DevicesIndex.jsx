@@ -13,6 +13,7 @@ import { useRefreshableRead } from '../../../lib/hooks/useRefreshableRead.js';
 import { DaylightAPI } from '../../../lib/api.mjs';
 
 import { EmptyState, ErrorState, LoadingState } from '../../../lib/ui/states.jsx';
+import { useRetryRegion } from '../../../lib/ui/useRetryRegion.js';
 
 const DEVICES_PATH = '/api/v1/admin/household/devices';
 
@@ -36,6 +37,7 @@ function DevicesIndex() {
   const navigate = useNavigate();
   const [shutdown,setShutdown]=useState(null),[enforcementNow,setEnforcementNow]=useState(()=>Date.now());
   const { data, loading, error, reload, invalidateAfterWrite } = useAdminRoster(DEVICES_PATH, { retryTransient: true });
+  const { regionProps, retry } = useRetryRegion(reload, loading);
   const devices = data?.devices || [];
 
   const [createModalOpen, setCreateModalOpen] = useState(false);
@@ -106,8 +108,8 @@ function DevicesIndex() {
 
   const rosterState = loading
     ? <LoadingState label="devices" />
-    : error && <ErrorState label="Devices" error={error} onRetry={reload} />;
-  if (!data && rosterState) return rosterState;
+    : error && <ErrorState label="Devices" error={error} onRetry={retry} />;
+  const showManagement = Boolean(data) || !rosterState;
 
   const closeCreate = () => {
     if (creating) return;
@@ -117,93 +119,98 @@ function DevicesIndex() {
 
   return (
     <Stack gap="lg">
-      <Group justify="space-between" className="ds-page-header">
-        <span className="ds-page-title">Devices</span>
-        <Button
-          leftSection={<IconPlus size={16} />}
-          onClick={() => setCreateModalOpen(true)}
+      {showManagement && (<>
+        <Group justify="space-between" className="ds-page-header">
+          <span className="ds-page-title">Devices</span>
+          <Button
+            leftSection={<IconPlus size={16} />}
+            onClick={() => setCreateModalOpen(true)}
+          >
+            Add Device
+          </Button>
+        </Group>
+
+        <Card padding="lg" withBorder>
+          <Text fw={600}>Kiosk Stop enforcement</Text>
+          {shutdown?.mode==='legacy' && <Text>{shutdown.locked?'Timed Stop requested':'No active timed Stop'}</Text>}
+          <EnforcementStatus {...shutdown?.enforcement} nowMs={enforcementNow}/>
+        </Card>
+      </>)}
+
+      <section aria-label="Devices" {...regionProps}>
+        {rosterState || (devices.length > 0 ? (
+          <SimpleGrid cols={{ base: 1, sm: 2, md: 3 }} spacing="md">
+            {devices.map(device => (
+              <Card
+                key={device.id}
+                padding="lg"
+                radius="md"
+                withBorder
+                style={{ cursor: 'pointer' }}
+                onClick={() => navigate(`/admin/household/devices/${device.id}`)}
+              >
+                <Stack gap="sm">
+                  <Group justify="space-between" align="center">
+                    {/* A kebab id is the canonical key, never what a person reads.
+                        devices.yml has carried `name` and `icon` from the start and
+                        the API serves both; this card showed the raw slug anyway —
+                        the same defect CallApp.jsx:218 records as "the defect that
+                        put 'yellow-room-tablet' on screen". */}
+                    <Text size="md" fw={600}>
+                      {device.icon ? `${device.icon} ` : ''}{device.name || device.id}
+                    </Text>
+                    <Badge
+                      color={typeBadgeColor(device.type)}
+                      variant="light"
+                      size="sm"
+                    >
+                      {device.type || 'unknown'}
+                    </Badge>
+                  </Group>
+                </Stack>
+              </Card>
+            ))}
+          </SimpleGrid>
+        ) : (
+          <EmptyState title="No devices found" hint="Add a device to get started." />
+        ))}
+      </section>
+
+      {showManagement && (
+        <FormDialog
+          opened={createModalOpen}
+          onClose={closeCreate}
+          title="Add Device"
         >
-          Add Device
-        </Button>
-      </Group>
-
-      <Card padding="lg" withBorder>
-        <Text fw={600}>Kiosk Stop enforcement</Text>
-        {shutdown?.mode==='legacy' && <Text>{shutdown.locked?'Timed Stop requested':'No active timed Stop'}</Text>}
-        <EnforcementStatus {...shutdown?.enforcement} nowMs={enforcementNow}/>
-      </Card>
-
-      {rosterState || (devices.length > 0 ? (
-        <SimpleGrid cols={{ base: 1, sm: 2, md: 3 }} spacing="md">
-          {devices.map(device => (
-            <Card
-              key={device.id}
-              padding="lg"
-              radius="md"
-              withBorder
-              style={{ cursor: 'pointer' }}
-              onClick={() => navigate(`/admin/household/devices/${device.id}`)}
-            >
-              <Stack gap="sm">
-                <Group justify="space-between" align="center">
-                  {/* A kebab id is the canonical key, never what a person reads.
-                      devices.yml has carried `name` and `icon` from the start and
-                      the API serves both; this card showed the raw slug anyway —
-                      the same defect CallApp.jsx:218 records as "the defect that
-                      put 'yellow-room-tablet' on screen". */}
-                  <Text size="md" fw={600}>
-                    {device.icon ? `${device.icon} ` : ''}{device.name || device.id}
-                  </Text>
-                  <Badge
-                    color={typeBadgeColor(device.type)}
-                    variant="light"
-                    size="sm"
-                  >
-                    {device.type || 'unknown'}
-                  </Badge>
-                </Group>
-              </Stack>
-            </Card>
-          ))}
-        </SimpleGrid>
-      ) : (
-        <EmptyState title="No devices found" hint="Add a device to get started." />
-      ))}
-
-      {/* Add Device Modal */}
-      <FormDialog
-        opened={createModalOpen}
-        onClose={closeCreate}
-        title="Add Device"
-      >
-        <Stack component="form" gap="md" onSubmit={handleCreateSubmit}>
-          <TextInput
-            label="Device ID"
-            placeholder="living-room-shield"
-            required
-            disabled={creating}
-            value={createForm.id}
-            onChange={(e) => handleCreateFormChange('id', e.currentTarget.value)}
-            error={createErrors.id}
-          />
-          <Select
-            label="Type"
-            disabled={creating}
-            data={DEVICE_TYPE_OPTIONS}
-            value={createForm.type}
-            onChange={(value) => handleCreateFormChange('type', value)}
-          />
-          {createErrors.submit && <Alert role="alert" color="red" icon={<IconAlertCircle size={16} />}>{createErrors.submit}</Alert>}
-          <Group justify="flex-end">
-            <Button type="button" variant="default" disabled={creating} onClick={closeCreate}>
-              Cancel
-            </Button>
-            <Button type="submit" loading={creating}>
-              Add Device
-            </Button>
-          </Group>
-        </Stack>
-      </FormDialog>
+          <Stack component="form" gap="md" onSubmit={handleCreateSubmit}>
+            <TextInput
+              label="Device ID"
+              placeholder="living-room-shield"
+              required
+              disabled={creating}
+              value={createForm.id}
+              onChange={(e) => handleCreateFormChange('id', e.currentTarget.value)}
+              error={createErrors.id}
+            />
+            <Select
+              label="Type"
+              disabled={creating}
+              data={DEVICE_TYPE_OPTIONS}
+              value={createForm.type}
+              onChange={(value) => handleCreateFormChange('type', value)}
+            />
+            {createErrors.submit && <Alert role="alert" color="red" icon={<IconAlertCircle size={16} />}>{createErrors.submit}</Alert>}
+            <Group justify="flex-end">
+              <Button type="button" variant="default" disabled={creating} onClick={closeCreate}>
+                Cancel
+              </Button>
+              <Button type="submit" loading={creating}>
+                Add Device
+              </Button>
+            </Group>
+          </Stack>
+        </FormDialog>
+      )}
     </Stack>
   );
 }

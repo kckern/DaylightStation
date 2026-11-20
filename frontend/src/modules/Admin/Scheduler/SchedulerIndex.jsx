@@ -6,6 +6,7 @@ import { IconPlus, IconPlayerPlay, IconAlertCircle, IconClock } from '@tabler/ic
 import { ADMIN_SCHEDULER_JOBS_PATH, useAdminScheduler } from '../../../hooks/admin/useAdminScheduler.js';
 import { useAdminRoster } from '../shared/useAdminRoster.js';
 import { ErrorState, LoadingState } from '../../../lib/ui/states.jsx';
+import { useRetryRegion } from '../../../lib/ui/useRetryRegion.js';
 import { cronToHuman, formatDuration } from '../utils/formatters.js';
 
 /**
@@ -65,6 +66,7 @@ function SchedulerIndex() {
   const navigate = useNavigate();
   const { error, createJob, triggerJob, clearError } = useAdminScheduler();
   const { data, loading, error: readError, reload, invalidateAfterWrite, refreshAfterWrite } = useAdminRoster(ADMIN_SCHEDULER_JOBS_PATH);
+  const { regionProps, retry } = useRetryRegion(reload, loading);
   const jobs = data?.jobs ?? EMPTY_JOBS;
   const [createModalOpen, setCreateModalOpen] = useState(false);
   const [createForm, setCreateForm] = useState({ id: '', name: '', module: '', schedule: '' });
@@ -174,93 +176,95 @@ function SchedulerIndex() {
           {error.message || 'Failed to load scheduler jobs'}
         </Alert>
       )}
-      {readError && <ErrorState error={readError} label="Scheduler jobs" onRetry={reload} />}
-      {loading && !data && <LoadingState label="scheduler jobs" />}
+      <Stack component="section" gap="lg" aria-label="Scheduler jobs" {...regionProps}>
+        {readError && <ErrorState error={readError} label="Scheduler jobs" onRetry={retry} />}
+        {loading && jobs.length === 0 && <LoadingState label="scheduler jobs" />}
 
-      {groupedJobs.map(group => (
-        <Stack key={group.band} gap="xs">
-          <Group gap="xs">
-            <IconClock size={16} stroke={1.5} />
-            <Text size="sm" fw={600} c="dimmed" tt="uppercase">
-              {group.label}
-            </Text>
-          </Group>
+        {groupedJobs.map(group => (
+          <Stack key={group.band} gap="xs">
+            <Group gap="xs">
+              <IconClock size={16} stroke={1.5} />
+              <Text size="sm" fw={600} c="dimmed" tt="uppercase">
+                {group.label}
+              </Text>
+            </Group>
 
-          <Table highlightOnHover withTableBorder withColumnBorders={false}>
-            <Table.Thead>
-              <Table.Tr>
-                <Table.Th>Name</Table.Th>
-                <Table.Th>Schedule</Table.Th>
-                <Table.Th>Last Run</Table.Th>
-                <Table.Th>Status</Table.Th>
-                <Table.Th>Duration</Table.Th>
-                <Table.Th style={{ width: 100 }}>Actions</Table.Th>
-              </Table.Tr>
-            </Table.Thead>
-            <Table.Tbody>
-              {group.jobs.map(job => {
-                const status = job.lastRun?.status || job.status || null;
-                const lastRunTime = job.lastRun?.completedAt || job.lastRun?.startedAt || job.lastRunAt || null;
-                const durationMs = job.lastRun?.duration_ms ?? job.duration_ms ?? null;
-                const errorMsg = status === 'failed' ? (job.lastRun?.error || job.error || null) : null;
+            <Table highlightOnHover withTableBorder withColumnBorders={false}>
+              <Table.Thead>
+                <Table.Tr>
+                  <Table.Th>Name</Table.Th>
+                  <Table.Th>Schedule</Table.Th>
+                  <Table.Th>Last Run</Table.Th>
+                  <Table.Th>Status</Table.Th>
+                  <Table.Th>Duration</Table.Th>
+                  <Table.Th style={{ width: 100 }}>Actions</Table.Th>
+                </Table.Tr>
+              </Table.Thead>
+              <Table.Tbody>
+                {group.jobs.map(job => {
+                  const status = job.lastRun?.status || job.status || null;
+                  const lastRunTime = job.lastRun?.completedAt || job.lastRun?.startedAt || job.lastRunAt || null;
+                  const durationMs = job.lastRun?.duration_ms ?? job.duration_ms ?? null;
+                  const errorMsg = status === 'failed' ? (job.lastRun?.error || job.error || null) : null;
 
-                return (
-                  <Table.Tr
-                    key={job.id}
-                    style={{ cursor: 'pointer' }}
-                    onClick={() => handleRowClick(job.id)}
-                  >
-                    <Table.Td>
-                      <Text size="sm" fw={500}>{job.name || job.id}</Text>
-                      {errorMsg && (
-                        <Text size="xs" c="red" lineClamp={1}>{errorMsg}</Text>
-                      )}
-                    </Table.Td>
-                    <Table.Td>
-                      <Text size="sm">{cronToHuman(job.schedule)}</Text>
-                    </Table.Td>
-                    <Table.Td>
-                      <Text size="sm" c="dimmed">{formatLastRun(lastRunTime)}</Text>
-                    </Table.Td>
-                    <Table.Td>
-                      {status ? (
-                        <Badge color={statusBadgeColor(status)} variant="light" size="sm">
-                          {status}
-                        </Badge>
-                      ) : (
-                        <Badge color="gray" variant="light" size="sm">never run</Badge>
-                      )}
-                    </Table.Td>
-                    <Table.Td>
-                      <Text size="sm" c="dimmed">{formatDuration(durationMs)}</Text>
-                    </Table.Td>
-                    <Table.Td>
-                      <Button
-                        size="xs"
-                        variant="light"
-                        leftSection={<IconPlayerPlay size={14} />}
-                        loading={triggeringIds.has(job.id)}
-                        onClick={(e) => handleTrigger(e, job.id)}
-                      >
-                        Run
-                      </Button>
-                    </Table.Td>
-                  </Table.Tr>
-                );
-              })}
-            </Table.Tbody>
-          </Table>
-        </Stack>
-      ))}
-
-      {jobs.length === 0 && !loading && !readError && (
-        <Center h="40vh">
-          <Stack align="center">
-            <IconClock size={48} stroke={1} color="gray" />
-            <Text c="dimmed">No scheduler jobs found. Create one to get started.</Text>
+                  return (
+                    <Table.Tr
+                      key={job.id}
+                      style={{ cursor: 'pointer' }}
+                      onClick={() => handleRowClick(job.id)}
+                    >
+                      <Table.Td>
+                        <Text size="sm" fw={500}>{job.name || job.id}</Text>
+                        {errorMsg && (
+                          <Text size="xs" c="red" lineClamp={1}>{errorMsg}</Text>
+                        )}
+                      </Table.Td>
+                      <Table.Td>
+                        <Text size="sm">{cronToHuman(job.schedule)}</Text>
+                      </Table.Td>
+                      <Table.Td>
+                        <Text size="sm" c="dimmed">{formatLastRun(lastRunTime)}</Text>
+                      </Table.Td>
+                      <Table.Td>
+                        {status ? (
+                          <Badge color={statusBadgeColor(status)} variant="light" size="sm">
+                            {status}
+                          </Badge>
+                        ) : (
+                          <Badge color="gray" variant="light" size="sm">never run</Badge>
+                        )}
+                      </Table.Td>
+                      <Table.Td>
+                        <Text size="sm" c="dimmed">{formatDuration(durationMs)}</Text>
+                      </Table.Td>
+                      <Table.Td>
+                        <Button
+                          size="xs"
+                          variant="light"
+                          leftSection={<IconPlayerPlay size={14} />}
+                          loading={triggeringIds.has(job.id)}
+                          onClick={(e) => handleTrigger(e, job.id)}
+                        >
+                          Run
+                        </Button>
+                      </Table.Td>
+                    </Table.Tr>
+                  );
+                })}
+              </Table.Tbody>
+            </Table>
           </Stack>
-        </Center>
-      )}
+        ))}
+
+        {jobs.length === 0 && !loading && !readError && (
+          <Center h="40vh">
+            <Stack align="center">
+              <IconClock size={48} stroke={1} color="gray" />
+              <Text c="dimmed">No scheduler jobs found. Create one to get started.</Text>
+            </Stack>
+          </Center>
+        )}
+      </Stack>
 
       {/* Create Job Modal */}
       <FormDialog

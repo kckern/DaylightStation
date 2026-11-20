@@ -14,10 +14,13 @@ const adminCases = [
     submit: 'Add Member',
     fields: { Username: 'fixture' },
     initial: { members: [] },
+    previous: { members: [{ username: 'previous', display_name: 'Previous Member' }] },
+    previousRow: 'Previous Member',
     updated: { members: [{ username: 'fixture', display_name: 'Fixture Member' }] },
     row: 'Fixture Member',
     empty: 'No household members found. Add one to get started.',
     error: 'Household members failed to load',
+    region: 'Household members',
   },
   {
     name: 'Scheduler',
@@ -30,10 +33,13 @@ const adminCases = [
     submit: 'Create',
     fields: { ID: 'fixture', Name: 'Fixture Job', Schedule: '0 * * * *' },
     initial: { jobs: [] },
+    previous: { jobs: [{ id: 'previous', name: 'Previous Job', schedule: '0 * * * *' }] },
+    previousRow: 'Previous Job',
     updated: { jobs: [{ id: 'fixture', name: 'Fixture Job', schedule: '0 * * * *' }] },
     row: 'Fixture Job',
     empty: 'No scheduler jobs found. Create one to get started.',
     error: 'Scheduler jobs failed to load',
+    region: 'Scheduler jobs',
   },
   {
     name: 'Device',
@@ -45,16 +51,57 @@ const adminCases = [
     submit: 'Add Device',
     fields: { 'Device ID': 'fixture' },
     initial: { devices: [] },
+    previous: { devices: [{ id: 'previous', name: 'Previous Device', type: 'shield-tv' }] },
+    previousRow: 'Previous Device',
     updated: { devices: [{ id: 'fixture', name: 'Fixture Device', type: 'shield-tv' }] },
     row: 'Fixture Device',
     empty: 'No devices found',
     error: 'Devices failed to load',
+    region: 'Devices',
   },
 ];
 
 for (const width of [390, 1440]) {
   test.describe(`roster recovery at ${width}px`, () => {
     test.use({ viewport: { width, height: 850 } });
+
+    for (const fixture of adminCases) {
+      test(`${fixture.name} cold Retry keeps focus through the first accepted roster`, async ({ page }) => {
+        const requests = [];
+        let pending;
+        await page.routeWebSocket('**/*', () => {});
+        await page.route('**/api/**', route => {
+          const request = route.request();
+          const { pathname, search } = new URL(request.url());
+          if (pathname !== fixture.roster && pathname !== fixture.create) {
+            return route.fulfill({ json: pathname.endsWith('/supervision/bootstrap') ? { enabled: false } : {} });
+          }
+          requests.push([request.method(), pathname + search]);
+          if (requests.length === 1) return route.fulfill({ status: 409, json: { error: 'Initial roster unavailable' } });
+          pending = route;
+        });
+
+        await page.goto(fixture.route);
+        const opener = page.getByRole('button', { name: fixture.open, exact: true });
+        const retry = page.getByRole('button', { name: 'Retry', exact: true });
+        await expect(page.getByRole('alert')).toContainText(fixture.error);
+        await retry.press('Enter');
+        await expect.poll(() => Boolean(pending)).toBe(true);
+        await expect(retry).toHaveCount(0);
+        expect(await page.evaluate(() => document.activeElement.tagName)).not.toBe('BODY');
+        const region = page.getByRole('region', { name: fixture.region, exact: true });
+        await expect(region).toBeFocused();
+        await expect(region).toHaveAttribute('aria-busy', 'true');
+        if (fixture.canCreateAfterInitialError) await expect(opener).toBeEnabled();
+        else await expect(opener).toHaveCount(0);
+        await pending.fulfill({ json: fixture.updated });
+        await expect(region.getByText(fixture.row, { exact: true })).toBeVisible();
+        await expect(region).not.toHaveAttribute('aria-busy', 'true');
+        await expect(region).toBeFocused();
+        await expect(opener).toBeEnabled();
+        expect(requests).toEqual([['GET', fixture.roster], ['GET', fixture.roster]]);
+      });
+    }
 
     const scenarios = adminCases.map(fixture => ({ fixture, initialFailure: false }));
     if (width === 390) {
@@ -65,6 +112,9 @@ for (const width of [390, 1440]) {
       test(`${fixture.name} creation closes before revalidation and Retry only reads${entry}`, async ({ page }) => {
         const requests = [];
         const readErrorStatus = fixture.name === 'Device' ? 500 : 503;
+        const startWithRows = width === 1440;
+        const keepsPreviousRows = startWithRows && fixture.name !== 'Device';
+        let pendingRetry;
         let failRefresh;
         const releaseRefresh = new Promise(resolve => { failRefresh = resolve; });
         await page.routeWebSocket('**/*', () => {});
@@ -80,19 +130,22 @@ for (const width of [390, 1440]) {
             if (requests.length === 1) {
               return initialFailure
                 ? route.fulfill({ status: readErrorStatus, json: { error: 'Initial roster unavailable' } })
-                : route.fulfill({ json: fixture.initial });
+                : route.fulfill({ json: startWithRows ? fixture.previous : fixture.initial });
             }
             if (requests.join() === 'GET,POST,GET') {
               await releaseRefresh;
               return route.fulfill({ status: readErrorStatus, json: { error: 'Roster unavailable' } });
             }
-            return route.fulfill({ json: fixture.updated });
+            pendingRetry = route;
+            return;
           }
           return route.fulfill({ json: pathname.endsWith('/supervision/bootstrap') ? { enabled: false } : {} });
         });
 
         await page.goto(fixture.route);
+        const previousRow = page.getByText(fixture.previousRow, { exact: true });
         if (initialFailure) await expect(page.getByRole('alert')).toContainText(fixture.error);
+        else if (startWithRows) await expect(previousRow).toBeVisible();
         else await expect(page.getByText(fixture.empty, { exact: true })).toBeVisible();
         const opener = page.getByRole('button', { name: fixture.open, exact: true });
         await opener.press('Enter');
@@ -123,8 +176,40 @@ for (const width of [390, 1440]) {
           failRefresh();
         }
         await expect(page.getByRole('alert')).toContainText(fixture.error);
-        await page.getByRole('button', { name: 'Retry', exact: true }).click();
+        if (keepsPreviousRows) await expect(previousRow).toBeVisible();
+        else await expect(previousRow).toHaveCount(0);
+        const retry = page.getByRole('button', { name: 'Retry', exact: true });
+        await retry.press('Enter');
+        await expect.poll(() => Boolean(pendingRetry)).toBe(true);
+        await expect(retry).toHaveCount(0);
+        expect(await page.evaluate(() => document.activeElement.tagName)).not.toBe('BODY');
+        const region = page.getByRole('region', { name: fixture.region, exact: true });
+        await expect(region).toBeFocused();
+        await expect(region).toHaveAttribute('aria-busy', 'true');
+        await expect(region).toBeVisible();
+        if (keepsPreviousRows) await expect(previousRow).toBeVisible();
+        else await expect(previousRow).toHaveCount(0);
+        await expect(opener).toBeEnabled();
+
+        if (startWithRows) {
+          await opener.press('Enter');
+          const draft = dialog.getByLabel(Object.keys(fixture.fields)[0]);
+          await draft.fill('while-retrying');
+          await pendingRetry.fulfill({ json: fixture.updated });
+          await expect(page.getByText(fixture.row, { exact: true })).toBeVisible();
+          await expect(draft).toHaveValue('while-retrying');
+          await expect(draft).toBeFocused();
+          await draft.press('Escape');
+          await expect(dialog).toBeHidden();
+          await expect(opener).toBeFocused();
+        } else {
+          await pendingRetry.fulfill({ json: fixture.updated });
+          await expect(region.getByText(fixture.row, { exact: true })).toBeVisible();
+          await expect(region).toBeFocused();
+        }
+        await expect(region).not.toHaveAttribute('aria-busy', 'true');
         await expect(page.getByText(fixture.row, { exact: true })).toBeVisible();
+        await expect(previousRow).toHaveCount(0);
         expect(requests).toEqual(['GET', 'POST', 'GET', 'GET']);
       });
     }
