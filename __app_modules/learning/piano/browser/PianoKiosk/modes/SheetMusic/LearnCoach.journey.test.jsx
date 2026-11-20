@@ -140,7 +140,7 @@ describe('real Learn journey',()=>{
    const before=await stage();
    await playFree(page,miss);await page.locator('.piano-exercise-run__result').filter({hasText:'Almost on your own'}).waitFor({timeout:15000});await page.screenshot({path:path.join(ARTIFACTS,'silver-miss.png')});
    expect(await page.locator('.rep-card').count()).toBe(0);
-   // The result is a card OVER the score: the music does not move or resize when a take ends.
+   // The result is docked over the rail and keyboard: the music does not move or resize when a take ends.
    expect(await stage()).toEqual(before);
    // Every verdict mark is on the paper, beside a notehead: never under a stem tip, never past the edge.
    const marks=await page.evaluate(()=>{const svg=document.querySelector('.piano-exercise-run__stage .musicxml-renderer__svg svg');const paper=svg.getBoundingClientRect();
@@ -150,17 +150,35 @@ describe('real Learn journey',()=>{
      return{inside:b.top>=paper.top-0.5&&b.bottom<=paper.bottom+0.5,near,space:heads[0]?heads[0].height:10};});});
    expect(marks.length).toBeGreaterThan(0);
    for(const mark of marks){expect(mark.inside).toBe(true);expect(mark.near).toBeLessThan(mark.space*2);}
-   const overlay=await page.locator('.piano-exercise-run__result.is-overlay').boundingBox();
-   expect(overlay.y).toBeLessThanOrEqual(before.y);expect(overlay.y+overlay.height).toBeGreaterThanOrEqual(before.y+before.height);
-   expect((await page.getByRole('button',{name:'Try again'}).boundingBox()).height).toBeGreaterThanOrEqual(100);
+   // The card never covers the score: it sits under the stage, inside the kiosk's 800 px, with nothing scrolled out of
+   // sight, and every verdict mark is still the topmost thing at its own position.
+   const docked=async()=>{const card=await page.locator('.piano-exercise-run__result.is-docked').boundingBox();
+    expect(card.y).toBeGreaterThanOrEqual(before.y+before.height-0.5);expect(card.y+card.height).toBeLessThanOrEqual(800.5);
+    expect(await page.locator('.piano-exercise-run__result.is-docked').evaluate(el=>el.scrollHeight<=el.clientHeight+1)).toBe(true);
+    const seen=await page.evaluate(()=>[...document.querySelectorAll('.piano-exercise-run__stage .piano-score-passage__drift')].map(m=>{const b=m.getBoundingClientRect();
+     const hit=document.elementFromPoint((b.left+b.right)/2,(b.top+b.bottom)/2);return Boolean(hit&&(hit===m||m.contains(hit)||hit.closest('.piano-exercise-run__stage')));}));
+    expect(seen.length).toBeGreaterThan(0);expect(seen.every(Boolean)).toBe(true);
+    const primary=await page.locator('.piano-exercise-run__result-actions button.is-primary').boundingBox();
+    expect(primary.height).toBeGreaterThanOrEqual(64);expect(primary.y).toBeGreaterThanOrEqual(card.y-0.5);expect(primary.y+primary.height).toBeLessThanOrEqual(card.y+card.height+0.5);};
+   await docked();
+   expect(await page.getByRole('button',{name:'Try again'}).count()).toBe(1);
    expect(await page.locator('.piano-exercise-run__result-onward').innerText()).toContain('play any key to try again');
    // Any key takes the primary button, so the child never has to reach for the glass.
    const key=()=>page.evaluate(async()=>{window.__hold([72]);await new Promise(r=>setTimeout(r,80));window.__hold([]);await new Promise(r=>setTimeout(r,80));});
+   const logged=(event)=>page.evaluate((name)=>window.__logs.filter(l=>l.event===name).map(l=>l.data),event);
+   // A key counts once the card has been up long enough to be read.
+   const cardArmed=()=>page.locator('.piano-exercise-run__result[data-result-armed="true"]').waitFor({timeout:15000});
+   await cardArmed();
    await key();await armed(page);expect(await page.locator('.piano-exercise-run__result').count()).toBe(0);
    expect(await stage()).toEqual(before);
    await playFree(page,miss);
+   // A key played on, ~100 ms after the take ended: no repeat, and the miss is still recorded.
+   await key();
+   expect((await logged('piano.exercise-retry')).length).toBe(1);
+   await expect.poll(async()=>(await logged('piano.learn.coach.take')).length,{timeout:15000}).toBe(2);
    await page.getByRole('button',{name:'Come back to this later'}).waitFor({timeout:15000});await page.screenshot({path:path.join(ARTIFACTS,'silver-second-miss.png')});
    expect(await page.getByRole('button',{name:/^Practice /}).count()).toBeGreaterThan(0);
+   await cardArmed();await docked();
    expect(await page.locator('.piano-exercise-run__result-onward').innerText()).toMatch(/play any key to practice /);
    const paper=await stage();expect(paper.height).toBeGreaterThan(300);
    // The key takes the recommended smaller practice, not a repeat of the take that missed.

@@ -330,20 +330,34 @@ the drill. It draws no practice screen of its own.
   turns with it. It lasts 7.6 seconds (`PIECE_CEREMONY_MS`). Silver parts onto
   `Next: Go for Gold`; Gold parts onto the piece's title. The screen then returns
   to the score, which celebrates nothing itself.
-- **A miss** opens the drill's result as a card over the run
-  (`ExerciseRun resultPresentation="overlay"`). The run's rows never change
-  when a take ends, so the score does not move or resize under the child. The
-  card holds the coach's short verdict (`Almost on your own`,
-  `Bar 2 is the tricky spot`), the take's numbers, and the next moves. The
-  primary button is large (at least 7rem tall) and is the smaller practice the
+- **A miss** opens the drill's result as a card docked over the run's rail and
+  keyboard rows, under the score (`ExerciseRun resultPresentation="docked"`,
+  Exercises.scss `.is-docked`; `role="alertdialog"` without `aria-modal`,
+  since it sits inside the lab's own dialog). The engraved take and its
+  verdict marks stay in view while the card is up. The card's height is the
+  two rows' (`--run-rail-row`, `--run-row-gap`, `--run-keys-row` on the
+  learn-lab run), so it fits the 1280×800 kiosk, and anything taller scrolls
+  inside it rather than reaching the score. The card waits out the resolve
+  hold (`RESOLVE_HOLD_MS`, 700 ms) and arrives once, already holding the
+  coach's verdict and actions. The run's rows never change when a take ends,
+  so the score does not move or resize under the child. The card holds the
+  coach's short verdict (`Almost on your own`, `Bar 2 is the tricky spot`)
+  and the take's numbers on the left, and the next moves on the right. The
+  primary button is the largest (4.5rem tall) and is the smaller practice the
   coach recommends after two misses (`Practice bar 2`, `Practice the left hand`,
   `Try a little slower · 75%`), otherwise **Try again**. **Come back to this
   later** follows when it is on offer. **Releasing the keys and playing any key
   takes the primary button** (`onResultContinue`), and the card says so
-  ("play any key to practice bar 2"), so a child never has to reach for the
-  glass to take the help. `piano.exercise-retry` logs `via: 'piano'` with
-  `action: 'host'` (the coach's primary) or `'repeat'` (a run with no host
-  action).
+  ("play any key to practice bar 2", "play any key to try a little slower
+  (75%)"), so a child never has to reach for the glass to take the help.
+  A key counts only once the card has been up `RESULT_ARM_MS` (700 ms) after
+  the hold fired, and only after every key has been released: a key during the
+  hold would have repeated the take before the coach recorded the miss, and a
+  note played on past the end would switch the child onto the help step. The
+  "play any key" line appears when a key would act on it, and the card then
+  carries `data-result-armed="true"` (`piano.exercise-result-armed` logs it).
+  `piano.exercise-retry` logs `via: 'piano'` with `action: 'host'` (the
+  coach's primary) or `'repeat'` (a run with no host action).
 - **Listen** demonstrates the step's bars and parts in the same chrome with one
   control, **Stop listening**, and records nothing.
 - **Rail and board.** The same rail as the score view sits under the drill, with
@@ -357,12 +371,18 @@ under the stem tip, and the passage's ink-fitted viewBox cut off the ones under
 low notes. The viewBox keeps two staff spaces of air above and below the ink
 (`passageLayout.js`) so a mark beside the highest or lowest notehead fits.
 
-**Timing on the slowed steps.** The 50 / 60 / 75% timed steps grade with
+**Timing on the slowed steps.** Any cued step below score tempo (the 50/60/75%
+steps, slower-beat recoveries, authored slower stages) grades with
 `placementFullCreditShare: 0.6` (`learnPracticeRequirement` in `LearnLab.jsx`):
-full placement credit reaches 60% of each note's window instead of 40%. The
-pass bar (placement 0.8) and the window itself do not change, and a note
-outside its window still earns nothing. Score tempo (Gold), test-out and
-untimed steps keep the 0.4 curve. See `performance-assessment.md`.
+full placement credit reaches 60% of each note's window instead of 40%. What
+counts is the tempo the take is played at (the coached task's tempo, the set's
+entry in `tempoPercents`, or the picked stage), not the rung's configured
+`tempoPercent`. The pass bar (placement 0.8) and the window itself do not
+change, and a note outside its window still earns nothing. Score tempo (Gold),
+test-out and untimed steps keep the 0.4 curve. `piano.learn.coach.take` and
+`piano.learn.terminal` carry `placementShare` (0.6, or null on the strict
+curve), so placement scores from before and after the wider share can be told
+apart. See `performance-assessment.md`.
 
 The engraved passage is contained in the stage at every size: the passage,
 renderer, the engraver's own wrapper around its SVG, and the SVG each hold one

@@ -137,6 +137,14 @@ const HINT_REVEAL_MS = 12000;
  * only then does the host hear about it.
  */
 export const RESOLVE_HOLD_MS = 700;
+/**
+ * How long a failed take's result card must have been on screen before a key
+ * takes its action. The host's action (a slower tempo, one hand, fewer bars)
+ * arrives with the card, when the hold above has fired; a child who plays on
+ * past the last note would otherwise be switched onto the help step by a note
+ * that was never an answer to the card. Counted from the hold firing.
+ */
+export const RESULT_ARM_MS = 700;
 /** The swell on the confirmed notes lasts this long, then the notes settle. */
 const RESOLVE_PULSE_MS = 280;
 
@@ -376,6 +384,13 @@ export function runPassed(result, { challenge = false, passScore = null } = {}) 
  *   player on a dead end. Both callbacks are optional and additive: omit them
  *   and the surface behaves exactly as it did before.
  * @param {'default'|'learn-lab'} [props.surface='default'] Host presentation.
+ * @param {'inline'|'docked'} [props.resultPresentation='inline'] Where the
+ *   result card sits: in the rail row, or docked over the rail and keyboard
+ *   rows (Exercises.scss `.is-docked`), so the score and its verdict marks
+ *   stay in view and the run's rows never change when a take ends. 'docked'
+ *   is sized from the row variables only the `learn-lab` surface defines
+ *   (`--run-rail-row` and friends); on other surfaces it falls back to fixed
+ *   heights, so use it with `surface="learn-lab"`.
  * @param {'timed'|'always'} [props.scoreCursorPolicy='timed'] Whether a score
  *   passage draws its position cursor only for clocked work or for every run.
  * @param {number|null} [props.incompleteAfterMs] Free practice only: end the take
@@ -778,6 +793,9 @@ export default function ExerciseRun({ instance, score, requirement = null, pract
   onPassedRef.current = onPassed;
   onFailedRef.current = onFailed;
   const [resolveHold, setResolveHold] = useState(null);
+  // The hold has fired and the host has been told (and has recorded the take).
+  // A local result card's key waits for this; see RESULT_ARM_MS.
+  const [resolveFired, setResolveFired] = useState(false);
   const resolveHeldRef = useRef(false);
   const resolveTimersRef = useRef([]);
   const cancelResolveHold = useCallback(() => {
@@ -785,6 +803,7 @@ export default function ExerciseRun({ instance, score, requirement = null, pract
     resolveTimersRef.current = [];
     resolveHeldRef.current = false;
     setResolveHold(null);
+    setResolveFired(false);
   }, []);
   const holdResolve = useCallback((outcome, fire, active) => {
     if (!active) return;
@@ -793,7 +812,7 @@ export default function ExerciseRun({ instance, score, requirement = null, pract
     logger.info('piano.exercise-resolve-held', { ...traceFieldsRef.current, outcome, holdMs: RESOLVE_HOLD_MS });
     resolveTimersRef.current = [
       globalThis.setTimeout(() => setResolveHold((hold) => (hold ? { ...hold, settled: true } : hold)), RESOLVE_PULSE_MS),
-      globalThis.setTimeout(() => { resolveHeldRef.current = false; fire(); }, RESOLVE_HOLD_MS),
+      globalThis.setTimeout(() => { resolveHeldRef.current = false; fire(); setResolveFired(true); }, RESOLVE_HOLD_MS),
     ];
   }, [logger]);
   useEffect(() => () => {
@@ -878,6 +897,22 @@ export default function ExerciseRun({ instance, score, requirement = null, pract
     ? Boolean(onPassed)
     : Boolean(onFailed) && failurePresentation !== 'local';
   const localRetry = Boolean(judgedResult && !hostOwnsResult);
+  // A local result card whose take the host is still to be told about (the
+  // failure hold above). Until the hold fires, and for RESULT_ARM_MS after,
+  // the card takes no key: see RESULT_ARM_MS. A run with no `onFailed` has no
+  // hold and keeps its immediate piano retry.
+  const resultHoldBacked = localRetry && !resultPassed && Boolean(onFailed);
+  const resultSettled = !resultHoldBacked || resolveFired;
+  const [resultArmedRaw, setResultArmed] = useState(false);
+  const resultArmed = !resultHoldBacked || (resolveFired && resultArmedRaw);
+  useEffect(() => {
+    if (!resultHoldBacked || !resolveFired) { setResultArmed(false); return undefined; }
+    const timer = globalThis.setTimeout(() => {
+      setResultArmed(true);
+      logger.info('piano.exercise-result-armed', { ...traceFieldsRef.current, armMs: RESULT_ARM_MS, hostAction: Boolean(onResultContinueRef.current) });
+    }, RESULT_ARM_MS);
+    return () => globalThis.clearTimeout(timer);
+  }, [resultHoldBacked, resolveFired, logger]);
   useEffect(() => {
     passTakenRef.current = false;
     cancelResolveHold();
@@ -892,7 +927,7 @@ export default function ExerciseRun({ instance, score, requirement = null, pract
   }, [judgedResult, resultPassed, onPassed, logger, holdResolve]);
   const { exitHeld } = usePianoExitGesture({
     activeNotes, keyboard: keyboardConfig, onExit, enabled: Boolean(onExit) || localRetry,
-    continueEnabled: localRetry, resetKey: runtime,
+    continueEnabled: localRetry && resultArmed, resetKey: runtime,
     onContinue: () => {
       // A host that offers a next step (a slower tempo, one hand, fewer bars)
       // gets the key press for it, so the child never has to reach for the
@@ -1793,7 +1828,9 @@ export default function ExerciseRun({ instance, score, requirement = null, pract
           A disconnected piano is the one thing the pills cannot say, so it
           keeps its own line whatever the surface. */}
       {!bare && chromeDrawn && !connected && <span className="piano-exercise-run__waiting">Waiting for the piano…</span>}
-      {phase === 'done' && result && !hostOwnsFailure && !(resultPresentation === 'overlay' && passed) && <section className={`piano-exercise-run__result${passed ? ' is-passed' : ' is-developing'}${resultPresentation === 'overlay' ? ' is-overlay' : ''}`} {...(resultPresentation === 'overlay' ? { role: 'dialog', 'aria-modal': 'true', 'aria-label': resultLabel ?? 'Result' } : {})}>
+      {/* A docked card waits out the hold and arrives once, with the host's actions;
+          its keys wait for RESULT_ARM_MS. Non-modal: it sits inside LearnLab's dialog. */}
+      {phase === 'done' && result && !hostOwnsFailure && !(resultPresentation === 'docked' && (passed || !resultSettled)) && <section className={`piano-exercise-run__result${passed ? ' is-passed' : ' is-developing'}${resultPresentation === 'docked' ? ' is-docked' : ''}`} data-result-armed={localRetry && resultArmed ? 'true' : undefined} {...(resultPresentation === 'docked' ? { role: 'alertdialog', 'aria-label': resultLabel ?? 'Result' } : {})}>
         <div><span>{resultLabel ?? (passed ? 'Passed' : challenge ? 'Keep working' : 'Practice complete')}</span>{scoreReadout && <strong>{Math.round(result.score * 100)}%</strong>}</div>
         {/* A percentage is a reading task of its own, and the tiers below 2 are
             for children who have not been given it yet. They are told the same
@@ -1801,8 +1838,8 @@ export default function ExerciseRun({ instance, score, requirement = null, pract
         {scoreReadout
           ? <>{timingCopy && <p className="piano-exercise-run__result-copy">{timingCopy}</p>}<dl><div><dt>All notes</dt><dd>{Math.round((result.criteria.completeness ?? 0) * 100)}%</dd></div><div><dt>Clean notes</dt><dd>{Math.round((result.criteria.cleanliness ?? 0) * 100)}%</dd></div>{Number.isFinite(result.criteria.placement) && <div><dt>On the beat</dt><dd>{Math.round(result.criteria.placement * 100)}%</dd></div>}</dl></>
           : <p className="piano-exercise-run__result-copy">{passed ? 'You played every note that was asked for.' : timingCopy ?? 'Some of the notes are still missing. Have another go.'}</p>}
-        {localRetry && <p className="piano-exercise-run__result-onward">Release the keys, then play any key to {resultContinueLabel ?? 'try again'}.{onExit && ' Hold the lowest and highest keys for two seconds to leave.'}</p>}
-        {resultActions && <div className="piano-exercise-run__result-actions">{resultActions}</div>}
+        {localRetry && resultArmed && <p className="piano-exercise-run__result-onward">Release the keys, then play any key to {resultContinueLabel ?? 'try again'}.{onExit && ' Hold the lowest and highest keys for two seconds to leave.'}</p>}
+        {resultActions && resultSettled && <div className="piano-exercise-run__result-actions">{resultActions}</div>}
       </section>}
       </div>
       {keyboardFooter && (

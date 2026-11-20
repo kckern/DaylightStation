@@ -39,6 +39,21 @@ export const PIECE_CEREMONY_MS = 7600;
 const pieceMarkSize = (count) => (count <= 8 ? '6rem' : count <= 12 ? '4.6rem' : count <= 24 ? '4rem' : count <= 48 ? '3rem' : '2rem');
 const barsOf = (passage) => passage?.barLabel ?? passage?.label ?? '';
 const lower = (label) => label.charAt(0).toLowerCase() + label.slice(1);
+/** A recovery step's button label and onward-line sentence, from one place. A
+ * slower step without a known tempo says so without a number. */
+// eslint-disable-next-line react-refresh/only-export-components -- pure wording is exported for focused contract tests
+export function recoveryWording(recovery) {
+  if (recovery.reason === 'slower-beat') {
+    const percent = Number(recovery.tempoPercent);
+    return Number.isFinite(percent) && recovery.tempoPercent != null
+      ? { button: `Try a little slower · ${percent}%`, sentence: `try a little slower (${percent}%)` }
+      : { button: 'Try a little slower', sentence: 'try a little slower' };
+  }
+  const button = recovery.reason === 'one-hand' ? `Practice the ${recovery.parts?.[0] === 'lh' ? 'left' : 'right'} hand`
+    : recovery.range.start === recovery.range.end ? `Practice bar ${recovery.range.start + 1}`
+      : `Practice bars ${recovery.range.start + 1}–${recovery.range.end + 1}`;
+  return { button, sentence: lower(button) };
+}
 /** The plan step a task belongs to: itself, or the step a recovery drill came from. */
 const rootOf = (task) => { let at = task; while (at?.parent) at = at.parent; return at; };
 const freshId = () => `coach-${globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`}`;
@@ -150,7 +165,7 @@ function CoachSession({ score, title, plan, segment, coach, skipping = null, pol
     setRun(playing); setResult(null);
     coach.selectTask(playing);
   };
-  const finish = (raw) => {
+  const finish = (raw, { placementShare = null } = {}) => {
     if (!live.current) return;
     const played = taskRef.current;
     raw = { ...raw, assessmentId: raw.assessmentId ?? freshId() };
@@ -159,6 +174,9 @@ function CoachSession({ score, title, plan, segment, coach, skipping = null, pol
     logger.info('piano.learn.coach.take', { scoreId: score.id, passageId: segment.id, skill: played.skill, depth: played.depth ?? 0, reason: message.reason, passed,
       // The scores the take was judged on, so a timing failure can be read from the log alone.
       tempoPercent: played.tempoPercent ?? 100,
+      // The wider full-credit share a below-score-tempo take is judged with
+      // (LearnLab `learnPracticeRequirement`), or null for the strict curve.
+      placementShare,
       placement: roundScore(raw.criteria?.placement), completeness: roundScore(raw.criteria?.completeness), cleanliness: roundScore(raw.criteria?.cleanliness) });
     setLane(isGoldWork(played) ? 'gold' : null);
     coach.record(played, raw);
@@ -248,10 +266,10 @@ function CoachSession({ score, title, plan, segment, coach, skipping = null, pol
 
   // After a miss the drill's own result panel offers the smaller practice and the way out.
   const recovery = result && next && next.depth > 0 && next.key !== result.task.key ? next : null;
-  const recoveryAction = !recovery ? null : recovery.reason === 'slower-beat' ? `Try a little slower · ${recovery.tempoPercent}%`
-    : recovery.reason === 'one-hand' ? `Practice the ${recovery.parts[0] === 'lh' ? 'left' : 'right'} hand`
-      : recovery.range.start === recovery.range.end ? `Practice bar ${recovery.range.start + 1}`
-        : `Practice bars ${recovery.range.start + 1}–${recovery.range.end + 1}`;
+  // One wording per recovery: the button, and the sentence the onward line
+  // finishes ("play any key to try a little slower (75%)").
+  const recoveryWords = recovery ? recoveryWording(recovery) : null;
+  const recoveryAction = recoveryWords?.button ?? null;
   const canSetAside = coach.projection.canSetAside?.[segment.id] === true;
   const comeBackLater = () => {
     const target = coach.projection.afterSetAside?.[segment.id];
@@ -268,7 +286,7 @@ function CoachSession({ score, title, plan, segment, coach, skipping = null, pol
   // Any key on the piano takes the primary button, so the help the card
   // recommends (a slower tempo, one hand) never needs a reach to the glass.
   const resultContinue = !result ? null : recovery ? () => begin(recovery) : () => begin(result.task);
-  const resultContinueLabel = !result ? null : recovery ? lower(recoveryAction) : 'try again';
+  const resultContinueLabel = !result ? null : recovery ? recoveryWords.sentence : 'try again';
 
   const pickStep = useCallback((step) => {
     const wanted = projected?.skills.find((skill) => skill.key === step.id);
