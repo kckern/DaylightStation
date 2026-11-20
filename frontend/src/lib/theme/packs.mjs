@@ -36,6 +36,7 @@ export const PACKS = Object.freeze({
       + 'amber-green accent for OK states; built for a phone held in one hand.',
     primaryColor: 'teal',
     accent: '#2dd4bf',
+    fontFamily: '"Roboto Condensed", system-ui, sans-serif',
   }),
   home: Object.freeze({
     name: 'home',

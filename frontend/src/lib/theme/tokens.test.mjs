@@ -71,6 +71,12 @@ describe('DS token contract', () => {
     expect(vars['--ds-accent']).toBe(PACKS.health.accent);
   });
 
+  it('keeps app typography in the shared theme pack and emits its CSS token', () => {
+    expect(dsCssVars(PACKS.auto)['--ds-font-family']).toBe(PACKS.auto.fontFamily);
+    expect(createAppTheme(PACKS.auto).fontFamily).toBe(PACKS.auto.fontFamily);
+    expect(dsCssVars(PACKS.health)['--ds-font-family']).toBeUndefined();
+  });
+
   it('every pack has name, character, primaryColor, accent', () => {
     for (const [key, pack] of Object.entries(PACKS)) {
       expect(pack.name, key).toBeTruthy();

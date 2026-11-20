@@ -12,6 +12,7 @@ export function createAppTheme(pack) {
   const colors = { ...DS_TOKENS.colors, ...(pack?.colors || {}) };
   const base = {
     primaryColor: pack?.primaryColor || 'blue',
+    ...(pack?.fontFamily ? { fontFamily: pack.fontFamily } : {}),
     colors: {
       ...pack?.colorRamps,
       background: ramp(colors.background),

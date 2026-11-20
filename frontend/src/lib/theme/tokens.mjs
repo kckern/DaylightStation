@@ -67,6 +67,7 @@ export function dsCssVars(pack = null) {
   vars['--ds-motion-reveal'] = DS_TOKENS.motion.reveal;
   vars['--ds-motion-easing'] = DS_TOKENS.motion.easing;
   vars['--ds-accent'] = pack?.accent || DS_TOKENS.accent;
+  if (pack?.fontFamily) vars['--ds-font-family'] = pack.fontFamily;
   return vars;
 }
 

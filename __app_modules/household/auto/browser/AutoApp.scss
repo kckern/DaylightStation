@@ -1,10 +1,8 @@
 // frontend/src/Apps/AutoApp.scss
 //
 // Mobile-first. The base rules ARE the phone layout; media queries only widen.
-// Roboto Condensed throughout (house typeface) — emphasis comes from colour and
-// weight, never from introducing a second family. Kept as an app-level rule
-// (no raw colors) rather than a pack `font` field — see AutoApp.jsx header
-// comment for why.
+// Roboto Condensed comes from the Auto theme pack. This file keeps only the
+// app's font size and garage-specific layouts.
 //
 // Colors are var(--ds-*) tokens only (AppThemeProvider pack 'auto' sets them),
 // per the audit:ui gate. Chrome (header/tabs), the Loading/Error/Empty triad,
@@ -13,7 +11,6 @@
 // form layouts a garage screen actually needs.
 
 .auto-app {
-  font-family: 'Roboto Condensed', system-ui, sans-serif;
   font-size: 16px;
 }
 

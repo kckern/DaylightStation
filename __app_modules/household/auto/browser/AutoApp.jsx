@@ -12,10 +12,8 @@
 // becomes CSS-side, rather than a TV layout squeezed down.
 //
 // Design: ops:docs/_wip/plans/2026-08-12-auto-app-design.md
-// DS migration (Task M2): ops:docs/superpowers/... — pack 'auto' (teal), Roboto
-// Condensed kept via an app-level font-family rule (no raw colors) rather
-// than a pack `font` field, since AppThemeProvider/createAppTheme don't yet
-// read one and a single scoped rule is the smaller, reversible change.
+// The auto theme pack carries its Roboto Condensed typography through the
+// shared theme provider.
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import '@mantine/core/styles.css';
