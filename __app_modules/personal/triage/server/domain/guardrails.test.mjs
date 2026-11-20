@@ -75,6 +75,7 @@ describe('todos', () => {
     const n = todoAutoClose(newer, { openItems: open, asOf: ASOF, overdueDays: 60 });
     expect(n).toMatchObject({ eligible: true, reason: 'exact_duplicate' });
     expect(n.duplicateOf.id).toBe('a');
+    expect(n.duplicateOf.title).toBe('Buy filters');
     expect(todoAutoClose(older, { openItems: open, asOf: ASOF, overdueDays: 60 }).eligible).toBe(false);
   });
   it('does not dedupe across containers or closed tasks', () => {
