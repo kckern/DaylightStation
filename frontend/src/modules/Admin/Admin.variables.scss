@@ -36,7 +36,6 @@
   // Transitions
   --ds-transition-fast: 100ms ease;
   --ds-transition-base: 150ms ease;
-  --ds-transition-slow: 250ms ease;
 
   // Radii
   --ds-radius-sm: 4px;
@@ -60,12 +59,7 @@
   --ds-form-max:     720px;
 
   // Z-index layers
-  --ds-z-base:     0;
   --ds-z-sticky:   10;
-  --ds-z-dropdown: 100;
-  --ds-z-overlay:  200;
-  --ds-z-modal:    300;
-  --ds-z-toast:    400;
 }
 
 // Reduced motion support
@@ -73,7 +67,6 @@
   .admin-theme {
     --ds-transition-fast: 0ms;
     --ds-transition-base: 0ms;
-    --ds-transition-slow: 0ms;
   }
 }
 

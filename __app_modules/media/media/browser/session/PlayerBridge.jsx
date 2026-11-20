@@ -277,10 +277,7 @@ export function PlayerBridge() {
       });
     };
     check(controller.getSnapshot());
-    if (controller.store?.onTransition) {
-      return controller.store.onTransition((_prev, next, action) => check(next, action));
-    }
-    return controller.subscribe(check);
+    return controller.store.onTransition((_prev, next, action) => check(next, action));
   }, [controller, prepareInitialRendererOperation]);
 
   // Reset per-item progress gating when the current item changes.

@@ -1078,6 +1078,8 @@ off-screen park and was then remounted by the arriving claim; recovery fell to
 the 15s stall watchdog, 19s after the tap. Guarded by
 `PlayerBridge.test.jsx`.
 
+The bridge initializes from the local controller’s snapshot and observes its session-store transitions. The action identifies an explicit restart even when the content ID stays the same.
+
 `contentId` is the bridge's playback identity. Resolved metadata, duration,
 position, and native paused/playing state are reconciled into the current
 session and matching queue entry without replacing the active Player item.
