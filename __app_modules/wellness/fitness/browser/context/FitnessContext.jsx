@@ -1781,13 +1781,13 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
   // Bluetooth game-controller management actions (Task 3.3)
   // `targets` (from input.yml controllers) tell the garage box what to look
   // for and which legacy PIN to answer with.
-  const pairController = useCallback(({ targets = [], controllerId = null, durationMs = PAIR_WINDOW_MS } = {}) => {
+  const pairController = useCallback(({ targets = [], controllerId = null, durationMs = PAIR_WINDOW_MS, mode = 'repair' } = {}) => {
     const requestId = `pair-${Date.now().toString(36)}-${++btReqRef.current}`;
-    setControllerPairing({ phase: 'scanning', durationMs, requestId, optimistic: true });
+    setControllerPairing({ phase: 'scanning', durationMs, requestId, optimistic: true, mode });
     import("../../../../../frontend/src/services/WebSocketService.js").then(({ wsService }) => {
-      wsService.send(buildPairRequest({ requestId, durationMs, targets }));
+      wsService.send(buildPairRequest({ requestId, durationMs, targets, mode }));
     });
-    getLogger().info('fitness.bt.pair-request', { requestId, durationMs, controllerId, targets: targets.length });
+    getLogger().info('fitness.bt.pair-request', { requestId, durationMs, controllerId, mode, targets: targets.length });
     // The garage box answers within a second with its own `scanning`. Silence
     // means it is offline — say so instead of spinning forever.
     setTimeout(() => {
