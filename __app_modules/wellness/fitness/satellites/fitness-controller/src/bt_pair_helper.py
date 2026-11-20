@@ -37,7 +37,7 @@ import dbus.mainloop.glib
 import dbus.service
 from gi.repository import GLib
 
-from bt_pair_match import (candidate_action, compile_targets, discovery_transport,
+from bt_pair_match import (address_step, candidate_action, compile_targets, discovery_transport,
                            error_code, format_passkey, input_device_present, is_retryable,
                            match as match_rule, may_remove_bond, paired_after_read_error,
                            remove_after_no_input)
@@ -59,6 +59,22 @@ def read_input_devices():
             return f.read()
     except OSError:
         return ""
+
+
+def replace_old_bond(adapter, path, device, cid, emit_fn=None):
+    """Address mode: the picked device's old bond did not come up, and it is
+    advertising, so it has forgotten us. Remove the old bond so discovery can
+    pair it fresh. True on success (reports stale-bond-removed); False when
+    RemoveDevice fails (reports an error; the raw text is for logs only)."""
+    emit_fn = emit_fn or emit
+    try:
+        adapter.RemoveDevice(path)
+    except dbus.DBusException as e:
+        emit_fn("error", device=device, controllerId=cid, code="unknown",
+                message=f"could not remove the old bond: {e}")
+        return False
+    emit_fn("stale-bond-removed", device=device, controllerId=cid)
+    return True
 
 
 class Agent(dbus.service.Object):
@@ -131,7 +147,7 @@ def main():
     om = dbus.Interface(bus.get_object(BUS_NAME, "/"), "org.freedesktop.DBus.ObjectManager")
 
     state = {"busy": None, "pins": {}, "attempts": {}, "seen": set(), "candidates": 0,
-             "result": None, "removed": set(), "made": set(), "devices": {}}
+             "result": None, "removed": set(), "made": set(), "devices": {}, "replaced": set()}
 
     def pin_for(path):
         return state["pins"].get(path) or DEFAULT_PIN
@@ -316,16 +332,12 @@ def main():
 
         dev_iface.Pair(reply_handler=ok, error_handler=err, timeout=60)
 
-    def replace_old_bond(path, props, target):
-        """Address mode: the picked device has an old bond that did not come
-        up. It is advertising, so it has forgotten us: remove the old bond and
-        pair it fresh when discovery reports it again."""
-        device = describe(props, target)
-        try:
-            adapter.RemoveDevice(path)
-        except dbus.DBusException:
-            pass
-        emit("stale-bond-removed", device=device, controllerId=target.get("id"))
+    def on_old_bond_no_input(path, props, target):
+        """connect-first did not bring the old bond up: replace it once."""
+        state["replaced"].add(path)
+        if not replace_old_bond(adapter, path, describe(props, target), target.get("id")):
+            finish("failed", paired=[], reason="pair-failed")
+            return
         state["busy"] = None
         state["seen"].discard(path)
         start_discovery()
@@ -346,19 +358,32 @@ def main():
         state["candidates"] += 1
         emit("found", device=device, controllerId=target.get("id"))
         bt_name = str(props.get("Name", "") or "") or None
-        if action == "already-connected":
-            if input_device_present(read_input_devices(), device["address"], bt_name):
-                emit("already-paired", device=device, controllerId=target.get("id"))
-                emit("paired", device=device, controllerId=target.get("id"), connected=True, input=True)
-                finish("paired", paired=[device], reason="already-paired")
-                return
-            action = "connect-first"  # connected, but no input device yet
+        if mode == "address":
+            has_input = action == "already-connected" and \
+                input_device_present(read_input_devices(), device["address"], bt_name)
+            action = address_step(action, has_input, path in state["replaced"])
+        if action == "done-paired":
+            emit("already-paired", device=device, controllerId=target.get("id"))
+            emit("paired", device=device, controllerId=target.get("id"), connected=True, input=True)
+            finish("paired", paired=[device], reason="already-paired")
+            return
+        if action == "no-input":
+            # Connected, but no input device: leave the bond alone.
+            emit("error", device=device, controllerId=target.get("id"), code="no-input",
+                 message="connected, but no input device appeared")
+            finish("failed", paired=[], reason="no-input")
+            return
+        if action == "give-up":
+            emit("error", device=device, controllerId=target.get("id"), code="unknown",
+                 message="old bond still present after it was replaced")
+            finish("failed", paired=[], reason="pair-failed")
+            return
         if action == "connect-first":
             state["busy"] = path
             state["devices"][path] = device
             dev_iface = dbus.Interface(bus.get_object(BUS_NAME, path), "org.bluez.Device1")
             connect(path, device, target.get("id"), dev_iface, True, bt_name,
-                    on_no_input=lambda: replace_old_bond(path, props, target))
+                    on_no_input=lambda: on_old_bond_no_input(path, props, target))
             return
         if action == "remove-stale" and path not in state["removed"]:
             # Repair mode only. Only reached from a LIVE inquiry result (see on_changed/on_added):

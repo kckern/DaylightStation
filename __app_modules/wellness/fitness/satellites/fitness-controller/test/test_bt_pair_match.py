@@ -7,6 +7,7 @@ from bt_pair_match import (  # noqa: E402
     classify_hid, compile_targets, match, candidate_action,
     discovery_transport, input_device_present, may_remove_bond, is_retryable,
     paired_after_read_error, hid_evidence, error_code, format_passkey, remove_after_no_input,
+    address_step,
 )
 
 SFC30 = {"Address": "E4:17:D8:C6:54:F0", "Name": "8Bitdo SFC30 GamePad", "Icon": "input-gaming"}
@@ -117,6 +118,24 @@ class CandidateAction(unittest.TestCase):
         # An old bond is tried first; it is only replaced if it does not come up.
         self.assertEqual(candidate_action({"Paired": True, "Connected": False}, "address"), "connect-first")
         self.assertEqual(candidate_action({"Paired": False}, "address"), "pair")
+
+
+class AddressStep(unittest.TestCase):
+    def test_connected_with_input_is_done(self):
+        self.assertEqual(address_step("already-connected", True, False), "done-paired")
+
+    def test_connected_without_input_never_touches_the_bond(self):
+        # Connect() on a connected device fails AlreadyConnected; replacing the
+        # bond after the wait would delete a working one.
+        self.assertEqual(address_step("already-connected", False, False), "no-input")
+
+    def test_old_bond_is_tried_once(self):
+        self.assertEqual(address_step("connect-first", False, False), "connect-first")
+        self.assertEqual(address_step("connect-first", False, True), "give-up")
+
+    def test_fresh_device_pairs(self):
+        self.assertEqual(address_step("pair", False, False), "pair")
+        self.assertEqual(address_step("pair", False, True), "pair")
 
 
 class BondSafety(unittest.TestCase):

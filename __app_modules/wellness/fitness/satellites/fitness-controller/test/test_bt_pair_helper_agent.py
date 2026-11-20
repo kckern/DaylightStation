@@ -86,5 +86,39 @@ class AgentSignatures(unittest.TestCase):
                                 ("/org/bluez/hci0/dev_AA", "pincode", "012345", 0)])
 
 
+class FakeAdapter:
+    def __init__(self, fail=None):
+        self.fail = fail
+        self.removed = []
+
+    def RemoveDevice(self, path):
+        if self.fail:
+            raise helper.dbus.DBusException(self.fail)
+        self.removed.append(path)
+
+
+DEVICE = {"address": "AA:BB:CC:11:22:33", "name": "R1"}
+
+
+class ReplaceOldBond(unittest.TestCase):
+    def test_success_reports_the_removal(self):
+        events = []
+        adapter = FakeAdapter()
+        ok = helper.replace_old_bond(adapter, "/dev_x", DEVICE, "pad",
+                                     lambda phase, **kw: events.append((phase, kw)))
+        self.assertTrue(ok)
+        self.assertEqual(adapter.removed, ["/dev_x"])
+        self.assertEqual([e[0] for e in events], ["stale-bond-removed"])
+
+    def test_failure_reports_an_error_not_a_removal(self):
+        events = []
+        ok = helper.replace_old_bond(FakeAdapter(fail="org.bluez.Error.Failed: busy"), "/dev_x", DEVICE, "pad",
+                                     lambda phase, **kw: events.append((phase, kw)))
+        self.assertFalse(ok)
+        self.assertEqual([e[0] for e in events], ["error"])
+        self.assertEqual(events[0][1]["code"], "unknown")
+        self.assertIn("busy", events[0][1]["message"])
+
+
 if __name__ == "__main__":
     unittest.main()

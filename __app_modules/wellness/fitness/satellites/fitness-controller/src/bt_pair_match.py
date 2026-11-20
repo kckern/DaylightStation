@@ -145,6 +145,24 @@ def candidate_action(props, mode):
     return "remove-stale" if paired else "pair"
 
 
+def address_step(action, has_input, replaced):
+    """Address mode: what the window does with the picked device once found.
+
+    'done-paired'    bonded, connected and up as an input device already
+    'no-input'       connected but no input device: fail and remove nothing
+                     (Connect() would only fail AlreadyConnected, and
+                     replacing the bond would delete a working one)
+    'connect-first'  bonded, not connected: try the old bond once
+    'give-up'        that old bond was already replaced in this window
+    'pair'           not bonded: pair it
+    """
+    if action == "already-connected":
+        return "done-paired" if has_input else "no-input"
+    if action == "connect-first":
+        return "give-up" if replaced else "connect-first"
+    return action
+
+
 def may_remove_bond(mode, paired_now, made_here):
     """Whether a failed attempt may RemoveDevice.
 
