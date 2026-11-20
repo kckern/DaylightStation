@@ -66,3 +66,21 @@ export function approvedSegments(file, contentSha256) {
   if (contentSha256 !== undefined && f.contentSha256 !== contentSha256) return null;
   return f.segments;
 }
+
+const sameRange = (a, b) => a.start === b.start && a.end === b.end;
+
+/** What approving `segments` does to one learner's stored coach summary. */
+export function approvalImpact(summary, segments) {
+  const passages = Array.isArray(summary?.passages) ? summary.passages : [];
+  const kept = passages.filter((p) => segments.some((s) => sameRange(s, p)));
+  const orphaned = passages.filter((p) => !segments.some((s) => sameRange(s, p)));
+  const wasAllGold = Number.isInteger(summary?.total) && summary.total > 0 && summary.gold === summary.total;
+  const allGoldAfter = segments.length > 0
+    && segments.every((s) => kept.some((p) => sameRange(s, p) && p.gold));
+  return {
+    kept, orphaned,
+    lostSilver: orphaned.filter((p) => p.silver).length,
+    lostGold: orphaned.filter((p) => p.gold).length,
+    wasAllGold, allGoldAfter,
+  };
+}

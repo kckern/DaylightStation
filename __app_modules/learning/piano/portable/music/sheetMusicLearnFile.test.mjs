@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { normalizeLearnFile, validateSegments, approvedSegments } from './sheetMusicLearnFile.mjs';
+import { normalizeLearnFile, validateSegments, approvedSegments, approvalImpact } from './sheetMusicLearnFile.mjs';
 
 const SHA = 'a'.repeat(64);
 
@@ -41,5 +41,25 @@ describe('approvedSegments', () => {
   });
   it('ignores the content check when no sha is given (server readers without the XML)', () => {
     assert.deepEqual(approvedSegments(file, undefined), [{ id: 'a', start: 0, end: 3 }]);
+  });
+});
+
+describe('approvalImpact', () => {
+  const summary = { total: 3, gold: 3, passages: [
+    { id: 'm0-3', start: 0, end: 3, silver: 't', gold: 't' },
+    { id: 'm4-7', start: 4, end: 7, silver: 't', gold: 't' },
+    { id: 'm8-9', start: 8, end: 9, silver: null, gold: null },
+  ] };
+  it('keeps identical ranges and orphans the rest', () => {
+    const impact = approvalImpact(summary, [{ id: 'a', start: 0, end: 3 }, { id: 'b', start: 4, end: 9 }]);
+    assert.deepEqual(impact.kept.map((p) => p.id), ['m0-3']);
+    assert.deepEqual(impact.orphaned.map((p) => p.id), ['m4-7', 'm8-9']);
+    assert.equal(impact.lostSilver, 1);
+    assert.equal(impact.lostGold, 1);
+    assert.equal(impact.wasAllGold, true);
+    assert.equal(impact.allGoldAfter, false);
+  });
+  it('reports nothing for a learner with no summary', () => {
+    assert.deepEqual(approvalImpact(null, [{ id: 'a', start: 0, end: 3 }]), { kept: [], orphaned: [], lostSilver: 0, lostGold: 0, wasAllGold: false, allGoldAfter: false });
   });
 });
