@@ -69,20 +69,23 @@ function reachable(notes, shiftMs, from, to) {
 }
 
 /**
- * Does shift `shiftMs` explain the take's ENTRY? The first expected note must be
- * played at its shifted target (an onset of its pitch inside its window there),
- * and no onset may match it unshifted before that onset. Without this, a piece
+ * Does shift `shiftMs` explain the take's ENTRY? A note of the first expected
+ * event must be played at its shifted target (an onset of its pitch inside its
+ * window there), and no onset may match that event unshifted before it. Without this, a piece
  * of repeated pitches (Jingle Bells: E E E | E E E) lets a steady rush or drag
  * from an on-time start line up with a whole-beat shift: the rusher's first
  * onset sits on the click, so the shift does not explain how they began.
  */
 function explainsEntry(notes, onsets, shiftMs) {
-  const first = notes[0];
+  // Any note of the opening event will do: a chord whose lowest note was missed
+  // still opened where its other notes landed.
+  const opening = notes.filter((note) => note.eventIndex === notes[0].eventIndex);
+  const target = notes[0].target + shiftMs;
   const entry = onsets
-    .filter((onset) => matchesAt(first, onset, shiftMs))
-    .sort((a, b) => Math.abs(a.t - (first.target + shiftMs)) - Math.abs(b.t - (first.target + shiftMs)))[0];
+    .filter((onset) => opening.some((note) => matchesAt(note, onset, shiftMs)))
+    .sort((a, b) => Math.abs(a.t - target) - Math.abs(b.t - target))[0];
   if (!entry) return false;
-  return !onsets.some((onset) => onset !== entry && onset.t < entry.t && matchesAt(first, onset, 0));
+  return !onsets.some((onset) => onset !== entry && onset.t < entry.t && opening.some((note) => matchesAt(note, onset, 0)));
 }
 
 /**

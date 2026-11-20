@@ -134,3 +134,20 @@ describe('lateEntryWaitUntil on repeated pitches', () => {
     expect(lateEntryWaitUntil(jingle(), jbAt([0, 1, 2, 4, 5]), { beatMs: JB_BEAT })).toBeNull();
   });
 });
+
+describe('detectEntryShift on a chord opening', () => {
+  // Four two-note chords (C3+C4, D3+D4, E3+E4, F3+F4) one beat apart.
+  const chords = () => ({
+    ...attempt(),
+    expectation: {
+      tempoMap: [{ onsetQuarter: 0, bpm: 60 }],
+      events: [60, 62, 64, 65].map((midi, i) => ({ id: `c${i}`, onsetQuarter: i, durationQuarters: 1,
+        notes: [{ id: `l${i}`, midi: midi - 12 }, { id: `u${i}`, midi }] })),
+    },
+  });
+  it('names a chord opening one beat late that misses its lowest note', () => {
+    const onsets = [60, 62, 64, 65].flatMap((midi, i) => (i === 0 ? [midi] : [midi - 12, midi])
+      .map((m) => ({ midi: m, t: target(i) + BEAT + 60 })));
+    expect(detectEntryShift(chords(), onsets, { beatMs: BEAT, from: 0, to: target(3) + BEAT + 400 })).toMatchObject({ beats: 1 });
+  });
+});
