@@ -1,0 +1,276 @@
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import {
+  Alert, Badge, Button, FileInput, Group, Modal, SegmentedControl, Select,
+  Skeleton, Stack, Table, Text, TextInput, Title, Tooltip,
+} from '@mantine/core';
+import { notifications } from '@mantine/notifications';
+import { IconAlertTriangle, IconRefresh, IconUpload } from '@tabler/icons-react';
+import getLogger from "../../../../../frontend/src/lib/logging/Logger.js";
+import { useSheetMusicLibrary, uploadScore } from "./useSheetMusicLibrary.js";
+
+/** Readable copy for every code POST /upload can answer with. */
+export const UPLOAD_ERROR_MESSAGES = {
+  'invalid-request': 'The upload was not understood. Choose a file and a folder, then try again.',
+  'bad-extension': 'Only .musicxml and .mxl files can be uploaded.',
+  SCORE_TOO_LARGE: 'That file is too large to upload.',
+  'bad-mxl': 'That .mxl file is not a readable compressed MusicXML archive.',
+  'not-xml': 'That file is not readable XML.',
+  timewise: 'That score is timewise MusicXML. Export it as partwise and upload again.',
+  'not-partwise': 'That file is not a partwise MusicXML score.',
+  'no-notes': 'That score has no notes in it.',
+  'slug-too-long': 'That file name is too long. Choose a shorter one.',
+  'bad-folder': 'Choose one of the listed folders.',
+  'bad-filename': 'File names may use lowercase letters, numbers and hyphens, starting with a letter or number, and must keep the uploaded file\'s extension.',
+  'basename-exists': 'That folder already has a score with that file name. Choose a different file name.',
+  'slug-collides': 'Another score in the library would share this one\'s practice key. Choose a different file name.',
+  network: 'The server could not be reached. Check the connection and try again.',
+};
+const GENERIC_UPLOAD_ERROR = 'The upload failed. Try again, or check the server logs.';
+
+const FILTERS = [
+  { value: 'all', label: 'All', test: () => true },
+  { value: 'no-poster', label: 'No poster', test: (s) => s.poster === 'none' },
+  { value: 'no-segments', label: 'No segments', test: (s) => s.learn === 'none' },
+  { value: 'draft', label: 'Draft pending', test: (s) => s.learn === 'draft' || s.learn === 'approved+draft' },
+  { value: 'stale', label: 'Stale', test: (s) => s.learn === 'stale' },
+];
+
+const FORMAT_LABEL = { musicxml: 'MusicXML', mxl: 'MXL' };
+const POSTER_COLOR = { scan: 'teal', generated: 'blue', none: 'gray' };
+const LEARN_BADGE = {
+  none: { label: 'none', color: 'gray' },
+  draft: { label: 'draft', color: 'yellow' },
+  approved: { label: 'approved', color: 'green' },
+  'approved+draft': { label: 'approved + draft', color: 'lime' },
+  stale: { label: 'stale', color: 'orange' },
+};
+
+/** Content ids keep their slashes as path segments; each segment is encoded. */
+export const scorePath = (id) => `view/${String(id).split('/').map(encodeURIComponent).join('/')}`;
+
+function LearnBadge({ learn }) {
+  const spec = learn == null ? { label: 'unreadable', color: 'red' } : (LEARN_BADGE[learn] || { label: String(learn), color: 'gray' });
+  return <Badge variant="light" color={spec.color}>{spec.label}</Badge>;
+}
+
+function Learners({ learners }) {
+  const list = Array.isArray(learners) ? learners : [];
+  if (list.length === 0) return <Text size="sm" c="dimmed">none</Text>;
+  const label = (
+    <Stack gap={0}>
+      {list.map((l) => <Text key={l.userId} size="xs">{l.userId}: {l.passagesWithProgress} passages</Text>)}
+    </Stack>
+  );
+  return (
+    <Tooltip label={label} withArrow>
+      <Text size="sm" style={{ cursor: 'help' }}>{list.length} {list.length === 1 ? 'learner' : 'learners'}</Text>
+    </Tooltip>
+  );
+}
+
+function ScoreRow({ score, onOpen }) {
+  return (
+    <Table.Tr onClick={() => onOpen(score)} style={{ cursor: 'pointer' }}>
+      <Table.Td>
+        <Text size="sm" fw={500}>{score.title || score.file}</Text>
+        <Text size="xs" c="dimmed">{score.file}</Text>
+      </Table.Td>
+      <Table.Td><Text size="sm">{score.composer || ''}</Text></Table.Td>
+      <Table.Td><Badge variant="outline" color="gray">{FORMAT_LABEL[score.format] || score.format}</Badge></Table.Td>
+      <Table.Td><Badge variant="light" color={POSTER_COLOR[score.poster] || 'gray'}>{score.poster}</Badge></Table.Td>
+      <Table.Td><LearnBadge learn={score.learn} /></Table.Td>
+      <Table.Td><Learners learners={score.learners} /></Table.Td>
+      <Table.Td>{score.error ? <Badge color="red" variant="filled">{score.error}</Badge> : null}</Table.Td>
+    </Table.Tr>
+  );
+}
+
+function LoadingSkeleton() {
+  return (
+    <Stack gap="xs" data-testid="sheet-music-loading">
+      {[0, 1, 2, 3, 4].map((i) => <Skeleton key={i} height={36} radius="sm" />)}
+    </Stack>
+  );
+}
+
+/** Lowercases what the user types; the extension is added on submit when missing. */
+const withExtension = (name, file) => {
+  const trimmed = name.trim();
+  if (!trimmed) return '';
+  if (/\.(musicxml|mxl)$/.test(trimmed)) return trimmed;
+  const ext = /\.(musicxml|mxl)$/i.exec(file?.name || '')?.[1]?.toLowerCase();
+  return ext ? `${trimmed}.${ext}` : trimmed;
+};
+
+function UploadModal({ opened, onClose, folders, logger, onUploaded }) {
+  const [file, setFile] = useState(null);
+  const [folder, setFolder] = useState(null);
+  const [filename, setFilename] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState(null);
+
+  useEffect(() => {
+    if (!opened) {
+      setFile(null); setFolder(null); setFilename(''); setBusy(false); setMessage(null);
+    }
+  }, [opened]);
+
+  const submit = async (event) => {
+    event?.preventDefault?.();
+    if (!file || !folder || busy) return;
+    const name = withExtension(filename, file);
+    setBusy(true);
+    setMessage(null);
+    logger.info('admin.sheetmusic.upload-start', { folder, bytes: file.size ?? null, named: Boolean(name) });
+    const outcome = await uploadScore({ file, folder, filename: name });
+    setBusy(false);
+    if (outcome.ok) {
+      logger.info('admin.sheetmusic.upload-done', { id: outcome.result.id });
+      onUploaded(outcome.result);
+      return;
+    }
+    logger.warn('admin.sheetmusic.upload-failed', { code: outcome.code, status: outcome.status });
+    setMessage(UPLOAD_ERROR_MESSAGES[outcome.code] || GENERIC_UPLOAD_ERROR);
+  };
+
+  return (
+    <Modal opened={opened} onClose={onClose} title="Upload a score" centered>
+      <form onSubmit={submit}>
+        <Stack gap="sm">
+          <FileInput
+            label="Score file"
+            placeholder="Choose a .musicxml or .mxl file"
+            accept=".musicxml,.mxl"
+            value={file}
+            onChange={setFile}
+            required
+            clearable
+          />
+          <Select
+            label="Folder"
+            placeholder="Choose a folder"
+            data={folders}
+            value={folder}
+            onChange={setFolder}
+            required
+            comboboxProps={{ withinPortal: false }}
+          />
+          <TextInput
+            label="File name"
+            description="Optional. Lowercase letters, numbers and hyphens."
+            placeholder="suggested from the score title"
+            value={filename}
+            onChange={(e) => setFilename(e.currentTarget.value.toLowerCase())}
+          />
+          {message ? (
+            <Alert color="red" icon={<IconAlertTriangle size={16} />} variant="light">{message}</Alert>
+          ) : null}
+          <Group justify="flex-end">
+            <Button variant="default" onClick={onClose} disabled={busy}>Cancel</Button>
+            <Button type="submit" loading={busy} disabled={!file || !folder}>Upload</Button>
+          </Group>
+        </Stack>
+      </form>
+    </Modal>
+  );
+}
+
+export default function SheetMusicLibrary() {
+  const logger = useMemo(() => getLogger().child({ component: 'admin-sheet-music' }), []);
+  const navigate = useNavigate();
+  const { scores, folders, loading, error, reload } = useSheetMusicLibrary();
+  const [filter, setFilter] = useState('all');
+  const [uploadOpen, setUploadOpen] = useState(false);
+
+  useEffect(() => { logger.info('admin.sheetmusic.mounted'); }, [logger]);
+
+  const counts = useMemo(() => Object.fromEntries(
+    FILTERS.map((f) => [f.value, scores.filter(f.test).length]),
+  ), [scores]);
+
+  const groups = useMemo(() => {
+    const test = (FILTERS.find((f) => f.value === filter) || FILTERS[0]).test;
+    const visible = scores.filter(test);
+    const order = [...folders];
+    visible.forEach((s) => { if (!order.includes(s.folder)) order.push(s.folder); });
+    return order
+      .map((name) => ({ name, rows: visible.filter((s) => s.folder === name) }))
+      .filter((g) => g.rows.length > 0);
+  }, [scores, folders, filter]);
+
+  const openScore = useCallback((score) => {
+    logger.info('admin.sheetmusic.open', { id: score.id });
+    navigate(scorePath(score.id));
+  }, [logger, navigate]);
+
+  const onUploaded = useCallback((result) => {
+    setUploadOpen(false);
+    notifications.show({ color: 'green', title: 'Score uploaded', message: result.title || result.filename || result.id });
+    navigate(scorePath(result.id));
+  }, [navigate]);
+
+  return (
+    <Stack gap="md" p="md">
+      <Group justify="space-between">
+        <Title order={3}>Sheet music</Title>
+        <Button leftSection={<IconUpload size={16} />} onClick={() => setUploadOpen(true)} disabled={loading && !scores.length && !folders.length}>
+          Upload
+        </Button>
+      </Group>
+
+      <SegmentedControl
+        value={filter}
+        onChange={setFilter}
+        data={FILTERS.map((f) => ({ value: f.value, label: `${f.label} (${counts[f.value] ?? 0})` }))}
+      />
+
+      {loading && scores.length === 0 ? <LoadingSkeleton /> : null}
+
+      {error ? (
+        <Alert color="red" icon={<IconAlertTriangle size={16} />} title="Could not load the library">
+          <Stack gap="xs" align="flex-start">
+            <Text size="sm">{error}</Text>
+            <Button size="xs" variant="light" leftSection={<IconRefresh size={14} />} onClick={reload}>Retry</Button>
+          </Stack>
+        </Alert>
+      ) : null}
+
+      {!loading && !error && groups.length === 0 ? (
+        <Text c="dimmed" size="sm">No scores match this filter.</Text>
+      ) : null}
+
+      {groups.length > 0 ? (
+        <Table highlightOnHover verticalSpacing="xs">
+          <Table.Thead>
+            <Table.Tr>
+              <Table.Th>Title</Table.Th>
+              <Table.Th>Composer</Table.Th>
+              <Table.Th>Format</Table.Th>
+              <Table.Th>Poster</Table.Th>
+              <Table.Th>Learn</Table.Th>
+              <Table.Th>Learners</Table.Th>
+              <Table.Th>Issues</Table.Th>
+            </Table.Tr>
+          </Table.Thead>
+          {groups.map((g) => (
+            <Table.Tbody key={g.name}>
+              <Table.Tr>
+                <Table.Th colSpan={7}><Text size="sm" fw={700} c="dimmed">{g.name}</Text></Table.Th>
+              </Table.Tr>
+              {g.rows.map((s) => <ScoreRow key={s.id} score={s} onOpen={openScore} />)}
+            </Table.Tbody>
+          ))}
+        </Table>
+      ) : null}
+
+      <UploadModal
+        opened={uploadOpen}
+        onClose={() => setUploadOpen(false)}
+        folders={folders}
+        logger={logger}
+        onUploaded={onUploaded}
+      />
+    </Stack>
+  );
+}
