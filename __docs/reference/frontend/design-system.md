@@ -270,12 +270,20 @@ pending retry. An explicit `reload()` or `refresh()` starts its own read.
 Use `poll()` on a timer. It waits for the next tick if the reader already has
 a GET, a retry delay or a queued refresh.
 
+With `swr: true`, each path has one current cacheable read. All mounted,
+enabled readers of that path display its accepted snapshot and receive its
+refresh status. Readers and admitted prefetches that share a pending GET use
+the same read. An accepted result can still warm the cache if a joined reader
+leaves. The response is dropped if every reader leaves and no prefetch owns
+it. A timer tick leaves any current cacheable read or retry for that path alone.
+
 Use `reload()` to retry one reader. Use `invalidateApiResources(matches)`
 when a write affects mounted readers of one or more shared resources. Use
 `await refresh()` when a workflow must wait for its fresh GET to settle.
 It resolves with the response accepted by this reader, rejects with the
 read error, and rejects with `AbortError` if the request is superseded or
-the reader changes scope or unmounts. A create or remove dialog should
+the reader changes scope or unmounts. A fresh SWR read supersedes waiters
+for an older read of the same key. A create or remove dialog should
 close when its write succeeds. If the roster GET then fails, let the
 resource show a Retry button that issues only the GET.
 
@@ -352,12 +360,10 @@ successful `data` and the current `error`. Keep the selected snapshot visible
 and offer `reload()` through `ErrorState` with a refresh-specific `title`, as
 in the [Home history drawer](../../../__app_modules/household/home/browser/ui/EntityDetailSheet.jsx).
 
-Cache writes are race-protected: a response is only allowed to overwrite its
-path's cached value if it is still the most-recently-issued request for that
-path by the time it resolves. This covers both an overlapping reload on one
-component and two separately mounted components requesting the same path — in
-either case, a slower, superseded response can never clobber a fresher answer
-that already landed.
+Only the current cacheable read can update the stored and displayed snapshot.
+A fresh read retires the earlier read and its scheduled retries. A retry
+continues the same read. Resetting a single cache key cancels its pending
+cacheable read and preserves the last displayed value until revalidation.
 
 **Persisting across page loads (opt-in, per app).**
 `registerResourcePersistence({ store, prefixes })` returns a handle with `ready`, `setOwner`, and `dispose`. Independent consumers register disjoint path prefixes. Each registration backs the `swr` cache

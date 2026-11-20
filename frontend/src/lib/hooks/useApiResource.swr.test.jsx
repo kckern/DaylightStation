@@ -309,14 +309,7 @@ describe('useApiResource swr mode', () => {
     freshA.unmount();
   });
 
-  // Cross-instance race — the `live` flag alone can't see this: it tracks a
-  // single effect run's own lifecycle, not "is some OTHER request for this
-  // path newer than mine". Two separately mounted components on the same
-  // path (e.g. a day view and a sidebar both showing today's data) each get
-  // their own `live`, which stays true for both as long as neither unmounts
-  // — so out-of-order resolution between them needed the per-path generation
-  // guard, not `live`.
-  it('two separately mounted components on the same path: an older request that resolves LAST does not win the cache over a newer one that already resolved', async () => {
+  it('publishes the newest accepted snapshot to both readers and ignores the older reply', async () => {
     let resolveA;
     apiMock.mockReturnValueOnce(new Promise((r) => { resolveA = r; })); // A's request — issued FIRST
     const a = renderHook(() => useApiResource('api/v1/thing', { swr: true }));
@@ -335,26 +328,136 @@ describe('useApiResource swr mode', () => {
 
     // B, issued SECOND, resolves FIRST with the fresh value.
     await act(async () => { resolveB({ from: 'B-fresh' }); await Promise.resolve(); });
-    await waitFor(() => expect(b.result.current.data).toEqual({ from: 'B-fresh' }));
+    expect(b.result.current.data).toEqual({ from: 'B-fresh' });
+    expect(a.result.current.data).toBe(b.result.current.data);
+    expect(a.result.current.loading).toBe(false);
 
     // A, issued FIRST, resolves LAST with the stale value. Neither component
     // unmounts or changes path — both `live` flags stay true throughout.
     await act(async () => { resolveA({ from: 'A-slow-stale' }); await Promise.resolve(); });
-    await waitFor(() => expect(a.result.current.data).toEqual({ from: 'A-slow-stale' }));
+    expect(a.result.current.data).toBe(b.result.current.data);
+    expect(apiMock).toHaveBeenCalledTimes(2);
 
     a.unmount();
     b.unmount();
 
-    // The real assertion is the CACHE's contents, read via a fresh mount's
-    // synchronous initial value — not either component's on-screen state.
-    // An on-screen assertion would pass even with the bug: `a` and `b` each
-    // correctly show whatever their own request returned regardless of the
-    // cache: `live` (unchanged, still correct) governs that, not this guard.
     apiMock.mockResolvedValue({ from: 'B-fresh' }); // harmless value for the fresh mount's own background revalidation
     const fresh = renderHook(() => useApiResource('api/v1/thing', { swr: true }));
     expect(fresh.result.current.data).toEqual({ from: 'B-fresh' });
     expect(fresh.result.current.loading).toBe(false);
     await act(async () => { await Promise.resolve(); });
     fresh.unmount();
+  });
+
+  it('warms the cache with one shared GET when its last joiner leaves', async () => {
+    const held = Promise.withResolvers();
+    apiMock.mockReturnValue(held.promise);
+    const path = '/shared';
+    const first = renderHook(() => useApiResource(path, { swr: true }));
+    const second = renderHook(() => useApiResource(path, { swr: true }));
+    expect(apiMock).toHaveBeenCalledTimes(1);
+    second.unmount();
+    const value = { from: 'shared' };
+    await act(async () => held.resolve(value));
+    expect(first.result.current.data).toBe(value);
+    expect(peekApiResource(path)).toBe(value);
+  });
+
+  it.each([false, true])('publishes the newer failure to both cold readers if the older success settles first: %s', async olderFirst => {
+    const held = Promise.withResolvers();
+    const latest = Promise.withResolvers();
+    const error = new Error('Resource unavailable');
+    apiMock.mockReturnValueOnce(held.promise).mockReturnValueOnce(latest.promise);
+    const path = '/cold';
+    const first = renderHook(() => useApiResource(path, { swr: true }));
+    const second = renderHook(() => useApiResource(path, { swr: true }));
+    act(() => second.result.current.reload());
+
+    if (olderFirst) await act(async () => held.resolve({ value: 'superseded' }));
+    await act(async () => latest.reject(error));
+    if (!olderFirst) await act(async () => held.resolve({ value: 'superseded' }));
+
+    for (const reader of [first, second]) {
+      expect(reader.result.current).toMatchObject({ error, data: null, loading: false, revalidating: false });
+    }
+    expect(peekApiResource(path)).toBeUndefined();
+    expect(apiMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('cancels a superseded refresh waiter and keeps its pending replacement through a poll or departure', async () => {
+    const initial = Promise.withResolvers();
+    const older = Promise.withResolvers();
+    const latest = Promise.withResolvers();
+    const clock = vi.spyOn(Date, 'now');
+    const path = '/polled';
+    apiMock.mockReturnValueOnce(initial.promise).mockReturnValueOnce(older.promise).mockReturnValueOnce(latest.promise);
+    const first = renderHook(() => useApiResource(path, { swr: true }));
+    const second = renderHook(() => useApiResource(path, { swr: true }));
+    try {
+      await act(async () => initial.resolve({ version: 1 }));
+      let previous;
+      act(() => { previous = first.result.current.refresh().catch(error => error); });
+      clock.mockReturnValue(5000);
+      act(() => second.result.current.reload());
+      await expect(previous).resolves.toMatchObject({ name: 'AbortError' });
+      expect(first.result.current.data).toEqual({ version: 1 });
+      expect(first.result.current.revalidating).toBe(true);
+      expect(second.result.current.revalidating).toBe(true);
+
+      second.unmount();
+      clock.mockReturnValue(9000);
+      act(() => first.result.current.poll());
+      expect(apiMock).toHaveBeenCalledTimes(3);
+
+      await act(async () => latest.resolve({ version: 3 }));
+      await act(async () => older.resolve({ version: 2 }));
+      expect(first.result.current.data).toEqual({ version: 3 });
+      expect(first.result.current.revalidating).toBe(false);
+      expect(apiMock).toHaveBeenCalledTimes(3);
+    } finally {
+      clock.mockRestore();
+    }
+  });
+
+  it('keeps an older transient backoff from starting another request after supersession', async () => {
+    vi.useFakeTimers();
+    try {
+      const before = Promise.withResolvers();
+      const after = Promise.withResolvers();
+      apiMock.mockReturnValueOnce(before.promise).mockReturnValueOnce(after.promise);
+      const first = renderHook(() => useApiResource('/retry', { swr: true }));
+      const second = renderHook(() => useApiResource('/retry', { swr: true }));
+      await act(async () => before.reject(Object.assign(new Error('Restarting'), { transient: true })));
+      act(() => second.result.current.reload());
+      await act(async () => after.resolve({ value: 'recovered' }));
+      await act(async () => vi.advanceTimersByTimeAsync(5000));
+      expect(first.result.current).toMatchObject({ data: { value: 'recovered' }, error: null });
+      expect(second.result.current.data).toBe(first.result.current.data);
+      expect(apiMock).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('ends a pending refresh on an explicit cache reset and fences its late response', async () => {
+    const pending = Promise.withResolvers();
+    const replacement = Promise.withResolvers();
+    const path = '/reset-during-refresh';
+    apiMock.mockResolvedValueOnce({ version: 1 }).mockReturnValueOnce(pending.promise).mockReturnValueOnce(replacement.promise);
+    const { result } = renderHook(() => useApiResource(path, { swr: true }));
+    await waitFor(() => expect(result.current.data).toEqual({ version: 1 }));
+    let refused;
+    act(() => { result.current.refresh().catch(error => { refused = error; }); });
+    await act(async () => resetApiResourceCache(path));
+    expect(refused).toMatchObject({ name: 'AbortError' });
+    expect(result.current.revalidating).toBe(false);
+
+    await act(async () => pending.resolve({ version: 2 }));
+    expect(peekApiResource(path)).toBeUndefined();
+    expect(result.current.data).toEqual({ version: 1 });
+    act(() => result.current.reload());
+    await act(async () => replacement.resolve({ version: 3 }));
+    expect(result.current.data).toEqual({ version: 3 });
+    expect(peekApiResource(path)).toEqual({ version: 3 });
   });
 });

@@ -12,18 +12,10 @@
 // can pass `dedupe: false` to issue independent requests. SWR entries still
 // use the path as their cache key.
 //
-// Cache writes go through two independent guards that do different jobs:
-//   - `live` (per effect run) discards a response whose OWN component/effect
-//     run is no longer current — unmount, path change, or an overlapping
-//     older `reload()` on the SAME hook instance.
-//   - a per-path generation token discards a response that is stale
-//     RELATIVE TO ANOTHER REQUEST for the same path, including one issued by
-//     a completely different mounted hook instance (e.g. two components
-//     showing the same day's data side by side). `live` alone can't see
-//     that: instance A's own effect stays "live" the whole time even while
-//     instance B's later, faster request for the same path resolves first.
-// See the "overlapping reloads" and "two mounts, same path" tests in
-// useApiResource.swr.test.jsx.
+// One cacheable read owns the next outcome for a path. Joined readers and
+// prefetch share that read. It publishes once to the cache and to every
+// enabled SWR reader of that path. Each hook still owns its refresh waiter
+// and disposes it when the hook changes scope or its read is superseded.
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { DaylightAPI } from '../api.mjs';
 import { createAppLogger } from '../ui/createAppLogger.js';
@@ -38,13 +30,13 @@ const defaultLogger = createAppLogger('ds');
 const MAX_CACHE_ENTRIES = 100;
 const swrCache = new Map();
 
-// A response can write to the cache while it holds the path's latest token.
-// Unique tokens prevent an older read from regaining ownership after eviction.
-// LRU eviction removes the corresponding token. A path that never writes to
-// the cache can retain one token until the cache is reset.
-const pathGenerations = new Map();
+const activeCacheReads = new Map();
+const cacheReaders = new Map();
 const refreshListeners = new Set();
-const patchListeners = new Set();
+
+function publishToReaders(path, kind, value) {
+  for (const reader of cacheReaders.get(path) ?? []) reader.notify(kind, value);
+}
 
 /** Revalidate mounted readers together without blanking same-key snapshots. */
 export function invalidateApiResources(matches = () => true) {
@@ -54,8 +46,8 @@ export function invalidateApiResources(matches = () => true) {
     if (entry.fetchedAt != null && matches(path)) entry.fetchedAt = null;
   }
   for (const path of inFlight.keys()) if (matches(path)) inFlight.delete(path);
-  // A prefetch can outlive a later request that replaced it in inFlight.
-  for (const path of prefetchInFlight.keys()) if (matches(path)) claimGeneration(path);
+  // The cache read can outlive its first transport, including during retry.
+  for (const path of activeCacheReads.keys()) if (matches(path)) activeCacheReads.delete(path);
   for (const notify of refreshListeners) notify(matches);
 }
 
@@ -81,7 +73,6 @@ function cacheSet(path, value, { persist = true, fetchedAt = Date.now() } = {}) 
   if (swrCache.size > MAX_CACHE_ENTRIES) {
     const oldestKey = swrCache.keys().next().value;
     swrCache.delete(oldestKey);
-    pathGenerations.delete(oldestKey);
   }
 }
 
@@ -147,9 +138,9 @@ export function registerResourcePersistence({ store, prefixes, owner, timeoutMs 
       if (!scope.matches(path)) continue;
       dropped = true;
       swrCache.delete(path);
-      pathGenerations.delete(path);
     }
     for (const path of inFlight.keys()) if (scope.matches(path)) inFlight.delete(path);
+    for (const path of activeCacheReads.keys()) if (scope.matches(path)) activeCacheReads.delete(path);
     for (const path of prefetchInFlight.keys()) if (scope.matches(path)) prefetchInFlight.delete(path);
     if (prefetchBatch) prefetchBatch.queue = prefetchBatch.queue.filter(path => !scope.matches(path));
     if (isPrefetchIdle()) discardPrefetchBatch();
@@ -229,26 +220,30 @@ const networkStarts = new WeakMap();
 export const nextApiResourceEvent = () => ++resourceEvent;
 export const apiResourceReadToken = value => value && typeof value === 'object' ? networkStarts.get(value) ?? -1 : -1;
 const JOIN_WINDOW_MS = 3000;
-const inFlight = new Map(); // path -> { request, issuedAt, scope }
+const inFlight = new Map(); // path -> physical request and its admission metadata
 
 function issueRequest(path) {
   const issuedEvent = nextApiResourceEvent();
-  return new Promise(resolve => resolve(DaylightAPI(path))).then(result => {
+  const issuedAt = Date.now();
+  const scope = registrationFor(path);
+  const request = new Promise(resolve => resolve(DaylightAPI(path))).then(result => {
     if (result && typeof result === 'object') networkStarts.set(result, issuedEvent);
     return result;
   });
+  return { request, issuedAt, issuedEvent, scope, cacheRead: null };
 }
 
-function sharedRequest(path, { join = true, dedupe = true } = {}) {
+function sharedRequest(path, { join = true, dedupe = true, canJoin } = {}) {
   if (!dedupe) return issueRequest(path);
   const current = inFlight.get(path);
   const scope = registrationFor(path);
-  if (join && current && current.scope === scope && Date.now() - current.issuedAt < JOIN_WINDOW_MS) return current.request;
-  const request = issueRequest(path);
-  inFlight.set(path, { request, issuedAt: Date.now(), scope });
-  const settle = () => { if (inFlight.get(path)?.request === request) inFlight.delete(path); };
-  request.then(settle, settle);
-  return request;
+  if (join && current && current.scope === scope && Date.now() - current.issuedAt < JOIN_WINDOW_MS
+    && (!canJoin || canJoin(current))) return current;
+  const read = issueRequest(path);
+  inFlight.set(path, read);
+  const settle = () => { if (inFlight.get(path) === read) inFlight.delete(path); };
+  read.request.then(settle, settle);
+  return read;
 }
 
 // ---- Transient retry -----------------------------------------------------------
@@ -258,11 +253,11 @@ function sharedRequest(path, { join = true, dedupe = true } = {}) {
 // it reports anything, and stops as soon as it is no longer current.
 export const TRANSIENT_RETRY_DELAYS_MS = [1000, 3000];
 
-function requestWithRetry(path, { join, dedupe, isCurrent, onRetry }) {
-  const attempt = (index, joinThis) => sharedRequest(path, { join: joinThis, dedupe }).catch(err => {
+function requestWithRetry(getRequest, { join, isCurrent, onRetry }) {
+  const attempt = (index, joinThis) => getRequest(joinThis, index).catch(err => {
     const delay = TRANSIENT_RETRY_DELAYS_MS[index];
     if (!err?.transient || delay === undefined || !isCurrent()) throw err;
-    onRetry(err, index + 1);
+    onRetry?.(err, index + 1);
     return new Promise((resolve, reject) => {
       setTimeout(() => {
         if (!isCurrent()) { reject(err); return; }
@@ -275,17 +270,50 @@ function requestWithRetry(path, { join, dedupe, isCurrent, onRetry }) {
   return attempt(0, join);
 }
 
-// Claims a new generation token for `path` — call this once per issued
-// request, at issue time, and keep the returned number to check against
-// `isNewestGeneration` when that request resolves.
-function claimGeneration(path) {
-  const next = Symbol();
-  pathGenerations.set(path, next);
-  return next;
-}
+function readCachedResource(path, { join, dedupe, attach, prefetch, onRetry } = {}) {
+  const latest = activeCacheReads.get(path);
+  const first = sharedRequest(path, { join, dedupe, canJoin: candidate => candidate.cacheRead
+    ? candidate.cacheRead === latest : !latest || candidate.issuedEvent >= latest.issuedEvent });
+  if (first.cacheRead) {
+    if (prefetch) first.cacheRead.prefetch = prefetch;
+    attach?.(first.cacheRead);
+    return first.cacheRead;
+  }
+  // An independent cacheable read supersedes an earlier shareable transport.
+  if (dedupe === false) inFlight.delete(path);
+  const { scope, issuedEvent } = first;
+  const epoch = scope?.epoch;
+  const read = { issuedEvent, prefetch, accepted: false, promise: null };
+  activeCacheReads.set(path, read);
+  first.cacheRead = read;
+  attach?.(read);
+  publishToReaders(path, 'start', read);
 
-function isNewestGeneration(path, generation) {
-  return pathGenerations.get(path) === generation;
+  const ownsPath = () => activeCacheReads.get(path) === read && scope === registrationFor(path) && scope?.epoch === epoch;
+  const hasInterest = () => cacheReaders.has(path) || read.prefetch?.();
+  const canRetry = () => ownsPath() && [...(cacheReaders.get(path) ?? [])].some(reader => reader.retryTransient);
+  const getRequest = (joinAttempt, index) => {
+    if (index === 0) return first.request;
+    const attempt = sharedRequest(path, { join: joinAttempt, dedupe });
+    attempt.cacheRead = read;
+    return attempt.request;
+  };
+  const publish = (kind, value) => {
+    if (!ownsPath() || !hasInterest()) return;
+    read.accepted = true;
+    if (kind === 'success') cacheSet(path, value);
+    publishToReaders(path, kind, value);
+  };
+  read.promise = requestWithRetry(getRequest, { join, isCurrent: canRetry, onRetry }).then(result => {
+    publish('success', result);
+    return result;
+  }, error => {
+    publish('failure', error);
+    throw error;
+  }).finally(() => {
+    if (activeCacheReads.get(path) === read) activeCacheReads.delete(path);
+  });
+  return read;
 }
 
 // ---- Prefetch --------------------------------------------------------------
@@ -320,13 +348,11 @@ function pumpPrefetch() {
     const { queue, onDone, signal } = prefetchBatch;
     const path = queue.shift();
     const task = {};
-    const generation = claimGeneration(path);
     prefetchInFlight.set(path, task);
     const isCurrent = () => prefetchInFlight.get(path) === task;
-    sharedRequest(path)
-      .then(result => {
+    readCachedResource(path, { prefetch: isCurrent }).promise
+      .then(() => {
         if (!isCurrent()) return;
-        if (isNewestGeneration(path, generation)) cacheSet(path, result);
         prefetchStats.completed += 1;
         if (!signal?.aborted) onDone?.(null, path);
       })
@@ -388,9 +414,9 @@ export function patchApiResource(path, update, { create = false } = {}) {
   const next = update(cached?.value);
   if (next === undefined) return false;
   inFlight.delete(path);
-  claimGeneration(path);
+  activeCacheReads.delete(path);
   cacheSet(path, next, { fetchedAt: cached?.fetchedAt });
-  for (const notify of patchListeners) notify(path, next);
+  publishToReaders(path, 'patch', next);
   return true;
 }
 
@@ -426,7 +452,7 @@ export function prefetchApiResources(paths, { onDone, onIdle, signal } = {}) {
 export function resetApiResourceCache(path) {
   if (path === undefined) {
     swrCache.clear();
-    pathGenerations.clear();
+    activeCacheReads.clear();
     inFlight.clear();
     for (const scope of registrations) scope.pending.clear();
     discardPrefetchBatch();
@@ -435,7 +461,8 @@ export function resetApiResourceCache(path) {
     return;
   }
   swrCache.delete(path);
-  pathGenerations.delete(path);
+  if (activeCacheReads.delete(path)) publishToReaders(path, 'reset');
+  inFlight.delete(path);
   schedulePersist(path, undefined);
 }
 
@@ -497,9 +524,10 @@ export function useApiResource(path, {
   // effect alone. An explicit or foreground reload may still supersede them.
   const poll = useCallback(() => {
     if (!path || activePath.current !== path || activeRead.current
+      || (swr && activeCacheReads.has(path))
       || fetchedReload.current !== requestedReload.current) return;
     requestReload(null, true);
-  }, [path, requestReload]);
+  }, [path, requestReload, swr]);
 
   useEffect(() => {
     activePath.current = enabled ? path : null;
@@ -524,19 +552,49 @@ export function useApiResource(path, {
     };
   }, [path, enabled, requestReload, cancelRefresh, poll]);
 
-  // Adopt a patch now, then revalidate. The reload also retires this hook's
-  // in-flight request (its `live` flag), which predates the patch.
+  // Cached snapshots and their outcomes are shared by enabled readers. An
+  // observer still owns its own awaitable refresh and error clearing policy.
   useEffect(() => {
-    if (!swr) return undefined;
-    const notify = (patched, value) => {
-      if (!enabled || patched !== path) return;
-      setData(value);
-      setResultPath(path);
-      requestReload(null, true);
+    if (!swr || !enabled || !path) return undefined;
+    const reader = { retryTransient, notify: (kind, value) => {
+      if (kind === 'reset') {
+        activeRead.current?.supersede(null);
+        setLoading(false);
+        setRevalidating(false);
+        return;
+      }
+      if (kind === 'start') {
+        activeRead.current?.supersede(value);
+        const cached = swrCache.get(path);
+        if (cached) {
+          setData(cached.value);
+          setResultPath(path);
+        }
+        setError(null);
+        setLoading(!cached);
+        setRevalidating(Boolean(cached));
+        return;
+      }
+      if (kind !== 'failure') {
+        setData(value);
+        setResultPath(path);
+      } else if (clearDataOnError) setData(null);
+      if (kind === 'patch') {
+        requestReload(null, true);
+        return;
+      }
+      setError(kind === 'failure' ? value : null);
+      setLoading(false);
+      setRevalidating(false);
+    } };
+    const readers = cacheReaders.get(path) ?? new Set();
+    readers.add(reader);
+    cacheReaders.set(path, readers);
+    return () => {
+      readers.delete(reader);
+      if (!readers.size) cacheReaders.delete(path);
     };
-    patchListeners.add(notify);
-    return () => patchListeners.delete(notify);
-  }, [path, enabled, swr, requestReload]);
+  }, [path, enabled, swr, requestReload, clearDataOnError, retryTransient]);
 
   useEffect(() => {
     const takeRefresh = () => {
@@ -551,10 +609,21 @@ export function useApiResource(path, {
     const epoch = scope?.epoch;
     const isCurrent = () => live && reloadRequest === requestedReload.current &&
       scope === registrationFor(path) && scope?.epoch === epoch;
-    activeRead.current = isCurrent;
     const releaseRead = () => {
-      if (activeRead.current === isCurrent) activeRead.current = null;
+      if (activeRead.current === readState) activeRead.current = null;
     };
+    const retireRead = () => {
+      live = false;
+      releaseRead();
+      takeRefresh()?.reject(refreshAbortError());
+    };
+    const readState = {
+      cacheRead: null,
+      supersede(next) {
+        if (readState.cacheRead && readState.cacheRead !== next) retireRead();
+      },
+    };
+    activeRead.current = readState;
 
     const { hit: cacheHit, value: cachedValue } = swr ? cacheGet(path) : { hit: false };
     if (cacheHit) {
@@ -571,59 +640,43 @@ export function useApiResource(path, {
       setError(null);
     }
 
-    // Claimed at issue time (not resolve time) so "which request is newest
-    // for this path" reflects issue order, matching the state-write side's
-    // "last-issued wins" semantics for the single-instance case.
-    const myGeneration = swr ? claimGeneration(path) : null;
-
     const join = fetchedReload.current === reloadRequest || reloadRequest?.join;
     fetchedReload.current = reloadRequest;
     const startedAt = performance.now();
-    const request = retryTransient
-      ? requestWithRetry(path, { join, dedupe, isCurrent,
-        onRetry: (err, attempt) => logger.debug('api.retry', { resource: label || path, attempt, status: err?.status ?? null }) })
-      : sharedRequest(path, { join, dedupe });
+    const onRetry = (err, attempt) => logger.debug('api.retry', { resource: label || path, attempt, status: err?.status ?? null });
+    const getRequest = joinAttempt => sharedRequest(path, { join: joinAttempt, dedupe }).request;
+    const cacheRead = swr ? readCachedResource(path, {
+      join, dedupe, onRetry, attach: read => { readState.cacheRead = read; },
+    }) : null;
+    const request = cacheRead?.promise ?? (retryTransient
+      ? requestWithRetry(getRequest, { join, isCurrent, onRetry })
+      : getRequest(join));
     request
       .then((result) => {
-        // Two independent guards here, doing different jobs:
-        //   - `live` is THIS effect run's own liveness — false on unmount or
-        //     on any dependency change that tears this run down (path
-        //     change, `reload()`, swr/enabled/deps change). It protects
-        //     STATE: a component whose own request/effect is superseded
-        //     should not paint a response it no longer represents.
-        //   - the generation check protects the CACHE specifically: it's
-        //     false when some OTHER request for the same path — possibly
-        //     from a different mounted instance whose own `live` is still
-        //     true — was issued more recently and hasn't necessarily
-        //     resolved yet. Without it, two components mounted on the same
-        //     path could race and let whichever response happens to resolve
-        //     last win the cache, even if it was issued first (i.e. is
-        //     actually the staler answer).
         if (!isCurrent()) return;
-        if (swr && isNewestGeneration(path, myGeneration)) cacheSet(path, result);
-        setData(result);
-        setResultPath(path);
-        setLoading(false);
-        if (swr) setRevalidating(false);
+        if (cacheRead && !cacheRead.accepted) { retireRead(); return; }
+        if (!cacheRead) {
+          setData(result);
+          setResultPath(path);
+          setLoading(false);
+        }
         takeRefresh()?.resolve(result);
         logger.debug(cacheHit ? 'api.revalidated' : 'api.loaded', { resource: label || path, ms: Math.round(performance.now() - startedAt) });
       })
       .catch((err) => {
         if (!isCurrent()) return;
-        if (clearDataOnError) setData(null);
-        setError(err);
-        setLoading(false);
-        if (swr) setRevalidating(false);
+        if (cacheRead && !cacheRead.accepted) { retireRead(); return; }
+        if (!cacheRead) {
+          if (clearDataOnError) setData(null);
+          setError(err);
+          setLoading(false);
+        }
         takeRefresh()?.reject(err);
         logger.warn('api.failed', { resource: label || path, error: err?.message });
       })
       .finally(releaseRead);
 
-    return () => {
-      live = false;
-      releaseRead();
-      takeRefresh()?.reject(refreshAbortError());
-    };
+    return retireRead;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [path, enabled, reloadRequest, swr, dedupe, retryTransient, clearDataOnError, ...deps]);
 

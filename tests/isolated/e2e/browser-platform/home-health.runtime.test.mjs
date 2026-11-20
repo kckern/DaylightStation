@@ -273,6 +273,55 @@ async function healthCacheValue(page, path) {
   }, path);
 }
 
+test('Health keeps an admitted day prefetch warm after visiting and leaving that day', async ({ page }) => {
+  const today = '2026-11-19';
+  const earlier = '2026-11-18';
+  const earlierPath = `api/v1/health/day?date=${earlier}`;
+  const prefetch = Promise.withResolvers();
+  const revalidate = Promise.withResolvers();
+  let earlierReads = 0;
+  const day = (date, name) => ({
+    date, items: [{ uuid: date, name, mealTime: 'morning', date, calories: 120, grams: 100 }],
+    budget: { budget: 2000, remaining: 1880 },
+  });
+  await page.setViewportSize({ width: 390, height: 850 });
+  await page.clock.setFixedTime(new Date(`${today}T18:00:00Z`));
+  await page.route('**/health/context', route => route.fulfill({ json: { userId: 'alice' } }));
+  await page.route(`**/api/v1/health/day?date=${today}`, route => route.fulfill({ json: day(today, 'Current breakfast') }));
+  await page.route(`**/${earlierPath}`, async route => {
+    if (++earlierReads === 1) {
+      await prefetch.promise;
+      return route.fulfill({ json: day(earlier, 'Prefetched breakfast') });
+    }
+    await revalidate.promise;
+    return route.fulfill({ json: day(earlier, 'Updated breakfast') });
+  });
+
+  try {
+    await page.goto('/health');
+    await expect(page.getByText('Current breakfast', { exact: true })).toBeVisible();
+    await expect.poll(() => earlierReads).toBe(1);
+    const previousDay = page.getByRole('button', { name: 'Previous day' });
+    await previousDay.press('Enter');
+    await expect(page).toHaveURL(/date=2026-11-18/);
+    await page.getByRole('button', { name: 'Next day' }).press('Enter');
+    await expect(page.getByText('Current breakfast', { exact: true })).toBeVisible();
+    expect(earlierReads).toBe(1);
+
+    prefetch.resolve();
+    await expect.poll(() => healthCacheValue(page, earlierPath))
+      .toMatchObject({ items: [{ name: 'Prefetched breakfast' }] });
+    await previousDay.press('Enter');
+    await expect(page.getByText('Prefetched breakfast', { exact: true })).toBeVisible();
+    await expect.poll(() => earlierReads).toBe(2);
+    revalidate.resolve();
+    await expect(page.getByText('Updated breakfast', { exact: true })).toBeVisible();
+  } finally {
+    prefetch.resolve();
+    revalidate.resolve();
+  }
+});
+
 test('Health preserves the first confirmed shell and draft while its background revalidation waits', async ({ page }) => {
   const draft = 'Food draft entered as soon as Today appears';
   await page.addInitScript(draft => {

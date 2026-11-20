@@ -27,7 +27,7 @@ it.each([['beliefs', 'beliefs'], ['ceremonies', 'cadence']])(
       reads.push(path);
       return endpoint === 'beliefs'
         ? { beliefs: [{ id: 'b', if_hypothesis: 'Bob marker' }] }
-        : { config: { ceremonies: { unit_intention: { enabled: true, streak: 18 } } } };
+        : { ceremonies: { unit_intention: { enabled: true, streak: 18 } } };
     });
     render(<MemoryRouter initialEntries={['/life/plan/' + route]}><Routes>
       <Route path="/life/*" element={<LifeApp />} />

@@ -143,6 +143,21 @@ describe('prefetchApiResources', () => {
     expect(apiMock).toHaveBeenCalledTimes(3);
   });
 
+  it('a reader can leave a shared prefetch pending without dropping its admitted result', async () => {
+    const pending = deferred();
+    apiMock.mockReturnValue(pending.promise);
+    prefetchApiResources(['future-day']);
+    const reader = renderHook(() => useApiResource('future-day', { swr: true }));
+    expect(apiMock).toHaveBeenCalledTimes(1);
+    reader.unmount();
+
+    const day = { entries: ['breakfast'] };
+    pending.resolve(day);
+    await flush();
+    expect(peekApiResource('future-day')).toBe(day);
+    expect(getPrefetchStats()).toEqual({ queued: 1, completed: 1, failed: 0 });
+  });
+
   it('a reader mounting during a prefetch joins it instead of requesting again', async () => {
     const slow = deferred();
     apiMock.mockReturnValueOnce(slow.promise);
