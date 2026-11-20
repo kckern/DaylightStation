@@ -23,7 +23,7 @@ import { getModuleManifest } from "../index.js";
 import { VIBRATION_CONSTANTS } from "../widgets/VibrationApp/constants.js";
 import { buildSelectionConfig } from "../hooks/fitness/selectPrimaryMedia.js";
 import { applyEquipmentCatalogFromConfig, riderSelectorsFromConfig } from "./fitnessConfigBridge.js";
-import { buildPairRequest, buildRemoveRequest, PAIR_WINDOW_MS } from "./fitnessBtActions.js";
+import { buildPairRequest, buildRemoveRequest, mergePairingProgress, PAIR_WINDOW_MS } from "./fitnessBtActions.js";
 import { createTransportRecovery } from '../hooks/fitness/transportRecovery.js';
 import { endLiveSession } from "../hooks/fitness/endLiveSession.js";
 import { normalizeToast, dismissMatches } from "../player/overlays/fitnessToastSlot.js";
@@ -1652,8 +1652,19 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
               attempt: data.attempt,
               reason: data.reason,
               message: data.message,
+              mode: data.mode,
             });
-            setControllerPairing(data);
+            setControllerPairing((cur) => {
+              const next = mergePairingProgress(cur, data);
+              if (next.satelliteOutdated && !cur?.satelliteOutdated) {
+                getLogger().warn('fitness.bt.satellite-outdated', {
+                  requestId: data.requestId,
+                  phase: data.phase,
+                  requestedMode: cur?.mode,
+                });
+              }
+              return next;
+            });
             return;
           }
           if (data?.topic === 'bt.remove.result') {
@@ -1781,20 +1792,20 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
   // Bluetooth game-controller management actions (Task 3.3)
   // `targets` (from input.yml controllers) tell the garage box what to look
   // for and which legacy PIN to answer with.
-  const pairController = useCallback(({ targets = [], controllerId = null, durationMs = PAIR_WINDOW_MS } = {}) => {
+  const pairController = useCallback(({ targets = [], controllerId = null, durationMs = PAIR_WINDOW_MS, mode = 'repair' } = {}) => {
     const requestId = `pair-${Date.now().toString(36)}-${++btReqRef.current}`;
-    setControllerPairing({ phase: 'scanning', durationMs, requestId, optimistic: true });
+    setControllerPairing({ phase: 'scanning', durationMs, requestId, optimistic: true, mode });
     import("../../../../../frontend/src/services/WebSocketService.js").then(({ wsService }) => {
-      wsService.send(buildPairRequest({ requestId, durationMs, targets }));
+      wsService.send(buildPairRequest({ requestId, durationMs, targets, mode }));
     });
-    getLogger().info('fitness.bt.pair-request', { requestId, durationMs, controllerId, targets: targets.length });
+    getLogger().info('fitness.bt.pair-request', { requestId, durationMs, controllerId, mode, targets: targets.length });
     // The garage box answers within a second with its own `scanning`. Silence
     // means it is offline — say so instead of spinning forever.
     setTimeout(() => {
       setControllerPairing((cur) => {
         if (!cur || cur.requestId !== requestId || !cur.optimistic) return cur;
         getLogger().warn('fitness.bt.pair-no-response', { requestId });
-        return { phase: 'done', paired: [], reason: 'no-response', requestId };
+        return { phase: 'done', paired: [], reason: 'no-response', requestId, mode: cur.mode };
       });
     }, 15000);
     return requestId;

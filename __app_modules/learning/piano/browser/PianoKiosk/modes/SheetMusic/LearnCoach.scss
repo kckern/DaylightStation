@@ -46,20 +46,16 @@
   }
   // The connection is announced once, by the app's banner.
   .piano-exercise-run__waiting, .piano-exercise-run__ready span { display: none; }
-  // The drill's result panel carries the next move after a miss: one row, in
-  // the place of the reference keyboard, so the music keeps its size.
-  .piano-exercise-run[data-surface='learn-lab'][data-phase='done'] { grid-template-rows: 0 minmax(0, 1fr) auto; padding-block-end: 0.5rem; }
-  .piano-exercise-run[data-phase='done'] .piano-exercise-run__keys { display: none; }
-  .piano-exercise-run[data-phase='done'] .piano-exercise-run__rail { gap: 0.5rem; }
-  .piano-exercise-run__result { grid-template-columns: auto auto minmax(0, 1fr); height: auto; }
-  .piano-exercise-run__result > div:first-child span { font-size: 1.05rem; letter-spacing: 0.04em; }
-  .piano-exercise-run__result dt { font-size: 0.95rem; }
-  .piano-exercise-run__result-onward { display: none; }
-  .piano-exercise-run__result-actions { justify-content: flex-end; gap: 0.6rem; }
-  .piano-exercise-run__result-actions button {
-    min-height: 4rem; padding: 0.5rem 1.2rem; border: 1px solid var(--piano-border); border-radius: var(--r-md);
-    background: var(--piano-surface); color: var(--piano-fg); font: inherit; font-size: 1.1rem; font-weight: 750; white-space: nowrap; cursor: pointer;
-    &.is-primary { background: var(--piano-accent); border-color: var(--piano-accent); color: var(--piano-accent-ink); }
+  // The drill's result after a miss is a card OVER the run (Exercises.scss
+  // `.piano-exercise-run__result.is-overlay`). Nothing here may change the
+  // run's rows when a take ends: this block used to swap the keyboard row for
+  // an auto-height result row, so the score re-fitted and jumped after every
+  // take. It also hid the "play any key" line, the one instruction that lets
+  // a child stay on the keys.
+  .piano-exercise-run__result.is-overlay .piano-exercise-run__result-actions button {
+    border: 1px solid var(--piano-border); border-radius: var(--r-md);
+    font: inherit; font-weight: 750; white-space: nowrap; cursor: pointer;
+    &.is-primary { border-color: var(--piano-accent); font-size: 2.2rem; font-weight: 800; }
   }
 
   // A finished piece on the curtain: every passage, turning into its coin in a wave.

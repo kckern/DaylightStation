@@ -136,13 +136,36 @@ describe('real Learn journey',()=>{
  it('offers a retry, then a drill and a way out, after missed Silver checks',async()=>{
   const{page,errors}=await open();try{
    await openStep(page,'On your own');const miss=[[60,48],[],...[[62,50],[64,52],[65,53],[60,48],[62,50],[64,52],[65,53]].flatMap((pair)=>[[70],[],[71],[],pair,[]])];
+   const stage=()=>page.locator('.piano-exercise-run__stage').boundingBox();
+   const before=await stage();
    await playFree(page,miss);await page.locator('.piano-exercise-run__result').filter({hasText:'Almost on your own'}).waitFor({timeout:15000});await page.screenshot({path:path.join(ARTIFACTS,'silver-miss.png')});
    expect(await page.locator('.rep-card').count()).toBe(0);
-   await click(page,'Try again');await armed(page);await playFree(page,miss);
+   // The result is a card OVER the score: the music does not move or resize when a take ends.
+   expect(await stage()).toEqual(before);
+   // Every verdict mark is on the paper, beside a notehead: never under a stem tip, never past the edge.
+   const marks=await page.evaluate(()=>{const svg=document.querySelector('.piano-exercise-run__stage .musicxml-renderer__svg svg');const paper=svg.getBoundingClientRect();
+    const heads=[...svg.querySelectorAll('.vf-notehead')].map(h=>h.getBoundingClientRect());
+    return [...svg.querySelectorAll('.piano-score-passage__drift')].map(m=>{const b=m.getBoundingClientRect();const cy=(b.top+b.bottom)/2;
+     const near=Math.min(...heads.filter(h=>Math.abs((h.left+h.right)/2-(b.left+b.right)/2)<b.width+4).map(h=>Math.min(Math.abs(cy-h.top),Math.abs(cy-h.bottom))));
+     return{inside:b.top>=paper.top-0.5&&b.bottom<=paper.bottom+0.5,near,space:heads[0]?heads[0].height:10};});});
+   expect(marks.length).toBeGreaterThan(0);
+   for(const mark of marks){expect(mark.inside).toBe(true);expect(mark.near).toBeLessThan(mark.space*2);}
+   const overlay=await page.locator('.piano-exercise-run__result.is-overlay').boundingBox();
+   expect(overlay.y).toBeLessThanOrEqual(before.y);expect(overlay.y+overlay.height).toBeGreaterThanOrEqual(before.y+before.height);
+   expect((await page.getByRole('button',{name:'Try again'}).boundingBox()).height).toBeGreaterThanOrEqual(100);
+   expect(await page.locator('.piano-exercise-run__result-onward').innerText()).toContain('play any key to try again');
+   // Any key takes the primary button, so the child never has to reach for the glass.
+   const key=()=>page.evaluate(async()=>{window.__hold([72]);await new Promise(r=>setTimeout(r,80));window.__hold([]);await new Promise(r=>setTimeout(r,80));});
+   await key();await armed(page);expect(await page.locator('.piano-exercise-run__result').count()).toBe(0);
+   expect(await stage()).toEqual(before);
+   await playFree(page,miss);
    await page.getByRole('button',{name:'Come back to this later'}).waitFor({timeout:15000});await page.screenshot({path:path.join(ARTIFACTS,'silver-second-miss.png')});
    expect(await page.getByRole('button',{name:/^Practice /}).count()).toBeGreaterThan(0);
-   const paper=await page.locator('.piano-exercise-run__stage').boundingBox();expect(paper.height).toBeGreaterThan(300);
-   await page.getByRole('button',{name:/^Practice /}).click();await armed(page);
+   expect(await page.locator('.piano-exercise-run__result-onward').innerText()).toMatch(/play any key to practice /);
+   const paper=await stage();expect(paper.height).toBeGreaterThan(300);
+   // The key takes the recommended smaller practice, not a repeat of the take that missed.
+   await key();await armed(page);
+   expect((await page.evaluate(()=>window.__logs)).filter(l=>l.event==='piano.exercise-retry').map(l=>l.data.action)).toEqual(['host','host']);
    expect(await page.locator('.piano-learn-lab__identity').innerText()).toMatch(/^Bars? \d/);expect(errors).toEqual([]);
   }finally{await page.close();}
  },90000);

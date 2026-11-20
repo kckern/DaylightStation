@@ -39,8 +39,9 @@ describe('passage layout policy', () => {
       staffBoxes: [{ system: 0, staff: 0, top: 220, left: 160, right: 850, lineSpacing: 10 }, { system: 1, staff: 0, top: 440, left: 160, right: 600, lineSpacing: 10 }],
       measureBounds: [{ left: 160, right: 850, top: 200, bottom: 280 }, { left: 160, right: 600, top: 420, bottom: 500 }] };
     const framed = resolvePassageLayout({ layout: loose, viewport: { width: 1200, height: 440 }, keepWholePassage: true });
-    // One and a half staff spaces of air around the ink, and nothing else.
-    expect(framed.viewBox).toEqual({ x: 135, y: 175, width: 730, height: 350 });
+    // One and a half staff spaces of air beside the ink, two above and below
+    // (room for a verdict mark at the highest and lowest noteheads), and nothing else.
+    expect(framed.viewBox).toEqual({ x: 135, y: 170, width: 730, height: 360 });
     const unmeasured = resolvePassageLayout({ layout: { ...loose, ink: null }, viewport: { width: 1200, height: 440 }, keepWholePassage: true });
     expect(framed.projectedStaffSpacePx).toBeGreaterThan(unmeasured.projectedStaffSpacePx * 1.5);
     // Ink that the staves and bars outrun (a stale measurement) never crops them.

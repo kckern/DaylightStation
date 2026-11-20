@@ -160,7 +160,12 @@ export function EmulatorConsole({
   controllers = [],
   btInventory,
   pairing,
+  // Host pairing handler. When given, it must honour `mode` ('repair'|'add'),
+  // e.g. the fitness WebSocket path; without it the console falls back to its
+  // own POST, which can only re-pair.
   onPairController,
+  onForgetController,
+  controllerForget,
   getGamepads,
   // Show the dual gamepad-activity LED on the chrome (browser-seen vs
   // emulator-consumed) and emit the matching diagnostic logs. Default on — it's
@@ -1508,6 +1513,9 @@ export function EmulatorConsole({
             getGamepads={getGamepads}
             pairing={effectivePairing}
             onPair={effectiveOnPair}
+            canAdd={typeof onPairController === 'function'}
+            onForget={onForgetController}
+            forgetResult={controllerForget}
           />
         </div>
       )}

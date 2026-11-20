@@ -114,6 +114,7 @@ export function ArcadeShell({
               getGamepads={getGamepads}
               pairing={controllerPairing}
               onPair={onPairController}
+              canAdd={typeof onPairController === 'function'}
               onForget={onForgetController}
               forgetResult={controllerForget}
             />

@@ -648,6 +648,12 @@ export default function EmulatorGameWidget({ fitnessContext, deviceId = null, on
             menuInitiallyOpen={!!launch.askAtLaunch}
             menuOpenRequest={menuOpenNonce}
             holdPaused={view === 'identify'}
+            controllers={library.input?.controllers || []}
+            btInventory={fitnessContext?.btInventory}
+            pairing={fitnessContext?.controllerPairing}
+            onPairController={fitnessContext?.pairController}
+            onForgetController={fitnessContext?.forgetController}
+            controllerForget={fitnessContext?.controllerForget}
           />
         </div>,
         document.body,

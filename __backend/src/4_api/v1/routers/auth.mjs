@@ -26,7 +26,11 @@ export function createAuthRouter({ authService, jwtSecret, jwtConfig, authPublic
       + `; HttpOnly; SameSite=Lax${secure ? '; Secure' : ''}`;
   };
 
-  /** Issue the token AND set it as the browser session. Every path that mints a
+  /** Issue the token AND set it as the browser session. Returns the session token;
+   *  callers return THAT in the body, because the browser stores the body token and
+   *  sends it as a Bearer header, which wins over the cookie — a body token without
+   *  the sid fails every live-session check (triage looped on its login screen).
+   *  Every path that mints a
    *  token signs the person in; returning one without the cookie is what left
    *  each app to store and attach it itself. */
   const issueSession = (req, res, user, token) => {
@@ -81,9 +85,9 @@ export function createAuthRouter({ authService, jwtSecret, jwtConfig, authPublic
       { issuer: authConfig.jwt.issuer, expiresIn: authConfig.jwt.expiry, algorithm: authConfig.jwt.algorithm }
     );
 
-    issueSession(req, res, user, token);
+    const sessionToken = issueSession(req, res, user, token);
     logger.info('auth.setup.complete', { username });
-    res.json({ token });
+    res.json({ token: sessionToken });
   }));
 
   // POST /auth/token — login
@@ -99,9 +103,9 @@ export function createAuthRouter({ authService, jwtSecret, jwtConfig, authPublic
     }
 
     const token = issueToken(user);
-    issueSession(req, res, user, token);
+    const sessionToken = issueSession(req, res, user, token);
     logger.info('auth.token.issued', { username });
-    res.json({ token });
+    res.json({ token: sessionToken });
   }));
 
   // POST /auth/logout — drop the browser session.
@@ -167,9 +171,9 @@ export function createAuthRouter({ authService, jwtSecret, jwtConfig, authPublic
       freshAuthConfig.jwt.secret,
       { issuer: freshAuthConfig.jwt.issuer, expiresIn: freshAuthConfig.jwt.expiry, algorithm: freshAuthConfig.jwt.algorithm }
     );
-    issueSession(req, res, user, token);
+    const sessionToken = issueSession(req, res, user, token);
     logger.info('auth.claim.complete', { username });
-    res.json({ token });
+    res.json({ token: sessionToken });
   }));
 
   // GET /auth/context — public household info for login screen
@@ -222,9 +226,9 @@ export function createAuthRouter({ authService, jwtSecret, jwtConfig, authPublic
     try {
       const user = await authService.acceptInvite(req.params.token, { password, displayName });
       const token = issueToken(user);
-      issueSession(req, res, user, token);
+      const sessionToken = issueSession(req, res, user, token);
       logger.info('auth.invite.accepted', { username: user.username });
-      res.json({ token });
+      res.json({ token: sessionToken });
     } catch (err) {
       return res.status(404).json({ error: 'Invalid or expired invite' });
     }

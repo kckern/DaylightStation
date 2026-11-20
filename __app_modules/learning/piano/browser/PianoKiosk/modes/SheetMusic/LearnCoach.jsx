@@ -265,6 +265,10 @@ function CoachSession({ score, title, plan, segment, coach, skipping = null, pol
     <button type="button" className={recovery ? '' : 'is-primary'} onClick={() => begin(result.task)}>Try again</button>
     {laterButton}
   </> : null;
+  // Any key on the piano takes the primary button, so the help the card
+  // recommends (a slower tempo, one hand) never needs a reach to the glass.
+  const resultContinue = !result ? null : recovery ? () => begin(recovery) : () => begin(result.task);
+  const resultContinueLabel = !result ? null : recovery ? lower(recoveryAction) : 'try again';
 
   const pickStep = useCallback((step) => {
     const wanted = projected?.skills.find((skill) => skill.key === step.id);
@@ -331,7 +335,7 @@ function CoachSession({ score, title, plan, segment, coach, skipping = null, pol
   return <div className="piano-learn-coach piano-learn-coach--running" data-save={coach.saveStatus} data-level={certification.gold ? 'gold' : certification.silver ? 'silver' : undefined}>
     {loaded && material ? <LearnLab key={`${runNumber}:${task.key}`} score={score} revision={plan.fingerprint} segment={material.segment} rung={material.rung}
       coachingTask={task} drill={drill} card={card} ceremony={ceremony} onCardDone={momentDone} notice={notice}
-      resultLabel={result?.message.title ?? null} resultActions={resultActions}
+      resultLabel={result?.message.title ?? null} resultActions={resultActions} resultContinueLabel={resultContinueLabel} onResultContinue={resultContinue}
       extraControls={result ? null : laterButton}
       onPickStep={pickStep} onStarted={started} onOutcome={finish}
       onListen={() => { onListen?.(task); setView('listen'); }}

@@ -85,12 +85,55 @@ export function parseIsGamepad(infoOutput) {
   return /^\s*Icon:\s*input-gaming\s*$/im.test(String(infoOutput || ''));
 }
 
-/** True when the kernel input table (/proc/bus/input/devices) lists this MAC. */
-export function hasInputDevice(inputDevicesText, mac) {
+// Same map as ICON_KIND in bt_pair_match.py; keep the two in step.
+const ICON_KIND = { 'input-gaming': 'gamepad', 'input-keyboard': 'keyboard', 'input-mouse': 'mouse', 'input-tablet': 'tablet' };
+
+/** `Icon: input-*` in a `bluetoothctl info` blob → 'gamepad'|'keyboard'|'mouse'|'tablet', else null. */
+export function parseDeviceKind(infoOutput) {
+  const m = /^\s*Icon:\s*(\S+)\s*$/im.exec(String(infoOutput || ''));
+  return m ? (ICON_KIND[m[1]] || null) : null;
+}
+
+const HID_UUIDS = ['00001124-0000-1000-8000-00805f9b34fb', '00001812-0000-1000-8000-00805f9b34fb'];
+
+/**
+ * True when a `bluetoothctl info` blob advertises a HID service: classic HID
+ * (0x1124) or HID over GATT (0x1812, Bluetooth Low Energy). Unlike `input`
+ * (a kernel input node exists now), this holds while the device sleeps, and a
+ * speaker's AVRCP remote-control node never sets it.
+ */
+export function parseHasHidService(infoOutput) {
+  return String(infoOutput || '').toLowerCase().split('\n')
+    .some((l) => /^\s*uuid:/.test(l) && HID_UUIDS.some((u) => l.includes(u)));
+}
+
+/**
+ * True when the kernel input table (/proc/bus/input/devices) lists an input
+ * device for this MAC. A block whose `U: Uniq=` equals the MAC counts.
+ * Fallback: a Bluetooth block (`I: Bus=0005`) whose Uniq is blank or missing
+ * counts when its `N: Name=` equals BlueZ's `name` exactly, since some LE
+ * (HID-over-GATT) stacks leave Uniq empty.
+ *
+ * Twin of `input_device_present` in bt_pair_match.py (the pairing helper's
+ * success check). Keep the two rules the same, or a device the helper calls
+ * paired shows here as not up.
+ */
+export function hasInputDevice(inputDevicesText, mac, name = null) {
   const want = String(mac || '').toLowerCase();
-  if (!want) return false;
-  return String(inputDevicesText || '').toLowerCase().split('\n')
-    .some((l) => /^u:\s*uniq=/.test(l) && l.replace(/^u:\s*uniq=/, '').trim() === want);
+  for (const block of String(inputDevicesText || '').split('\n\n')) {
+    let uniq = null;
+    let devName = null;
+    let bluetooth = false;
+    for (const line of block.split('\n')) {
+      const s = line.trim();
+      if (s.startsWith('I:')) bluetooth = s.toLowerCase().includes('bus=0005');
+      else if (s.toLowerCase().startsWith('u: uniq=')) uniq = s.slice('u: uniq='.length).trim().toLowerCase();
+      else if (s.startsWith('N: Name="') && s.endsWith('"')) devName = s.slice('N: Name="'.length, -1);
+    }
+    if (uniq && want && uniq === want) return true;
+    if (!uniq && bluetooth && name && devName === name) return true;
+  }
+  return false;
 }
 
 async function defaultReadInputDevices() {
@@ -109,9 +152,11 @@ async function defaultReadInputDevices() {
  * @param {object} [opts]
  * @param {Function} [opts.exec] - injected promisified exec ({stdout,stderr}).
  * @param {Function} [opts.readInputDevices] - async () => /proc/bus/input/devices text.
- * @returns {Promise<Array<{ address, name, connected, battery, paired, trusted, gamepad, input }>>}
+ * @returns {Promise<Array<{ address, name, connected, battery, paired, trusted, gamepad, kind, input, hid }>>}
  *   Bonded devices (paired:true) plus any device connected right now WITHOUT a
  *   bond (paired:false — a pad dialing in on a bond this host dropped).
+ *   `kind` is 'gamepad'|'keyboard'|'mouse'|'tablet' from the Icon line, else null.
+ *   `hid` is true when the device advertises a HID service (see parseHasHidService).
  */
 export async function pollBtInventory({ exec = defaultExec, readInputDevices = defaultReadInputDevices } = {}) {
   let listOut;
@@ -156,7 +201,9 @@ export async function pollBtInventory({ exec = defaultExec, readInputDevices = d
       paired: dev.paired,
       trusted: parseTrusted(info),
       gamepad: parseIsGamepad(info),
-      input: hasInputDevice(inputTable, dev.address),
+      kind: parseDeviceKind(info),
+      input: hasInputDevice(inputTable, dev.address, dev.name),
+      hid: parseHasHidService(info),
     });
   }
   return results;

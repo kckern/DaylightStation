@@ -4,6 +4,8 @@ import {
   parseConnectedDevices,
   parseBattery,
   pollBtInventory,
+  parseDeviceKind,
+  parseHasHidService,
   startBtInventoryBroadcast,
   hasInputDevice,
   nextReconnectDelay,
@@ -77,6 +79,29 @@ test('parseBattery: empty/nullish → not connected, null battery', () => {
   assert.deepEqual(parseBattery(null), { connected: false, battery: null });
 });
 
+test('parseDeviceKind: maps the bluetoothctl Icon line to a kind', () => {
+  assert.equal(parseDeviceKind('\tIcon: input-gaming'), 'gamepad');
+  assert.equal(parseDeviceKind('\tIcon: input-keyboard'), 'keyboard');
+  assert.equal(parseDeviceKind('\tIcon: input-mouse'), 'mouse');
+  assert.equal(parseDeviceKind('\tIcon: input-tablet'), 'tablet');
+  assert.equal(parseDeviceKind('\tIcon: audio-card'), null);
+  assert.equal(parseDeviceKind(''), null);
+});
+
+test('parseHasHidService: true for a HID or HID-over-GATT UUID line, case-insensitive', () => {
+  assert.equal(parseHasHidService('\tUUID: Human Interface Device... (00001124-0000-1000-8000-00805f9b34fb)'), true);
+  assert.equal(parseHasHidService('\tUUID: Human Interface Device (00001812-0000-1000-8000-00805F9B34FB)'), true);
+  // A speaker: AVRCP + audio sink, no HID.
+  assert.equal(parseHasHidService([
+    '\tUUID: Audio Sink                (0000110b-0000-1000-8000-00805f9b34fb)',
+    '\tUUID: A/V Remote Control        (0000110e-0000-1000-8000-00805f9b34fb)',
+  ].join('\n')), false);
+  // The HID UUID outside a UUID: line does not count.
+  assert.equal(parseHasHidService('\tModalias: 00001124-0000-1000-8000-00805f9b34fb'), false);
+  assert.equal(parseHasHidService(''), false);
+  assert.equal(parseHasHidService(null), false);
+});
+
 // ── pollBtInventory ───────────────────────────────────────────────────────
 
 const NO_INPUT = async () => "";
@@ -101,8 +126,8 @@ test('pollBtInventory: merges connected list with per-device battery info', asyn
   });
   const devices = await pollBtInventory({ exec, readInputDevices: NO_INPUT });
   assert.deepEqual(devices, [
-    { address: 'AA:BB:CC:DD:EE:FF', name: '8BitDo SN30 Pro', connected: true, battery: 75, paired: true, trusted: false, gamepad: false, input: false },
-    { address: '11:22:33:44:55:66', name: 'Xbox', connected: true, battery: null, paired: true, trusted: false, gamepad: false, input: false },
+    { address: 'AA:BB:CC:DD:EE:FF', name: '8BitDo SN30 Pro', connected: true, battery: 75, paired: true, trusted: false, gamepad: false, kind: null, input: false, hid: false },
+    { address: '11:22:33:44:55:66', name: 'Xbox', connected: true, battery: null, paired: true, trusted: false, gamepad: false, kind: null, input: false, hid: false },
   ]);
 });
 
@@ -116,18 +141,18 @@ test('pollBtInventory: a failing info call does not sink the whole poll', async 
   });
   const devices = await pollBtInventory({ exec, readInputDevices: NO_INPUT });
   assert.deepEqual(devices, [
-    { address: 'AA:BB:CC:DD:EE:FF', name: 'Good', connected: true, battery: 100, paired: true, trusted: false, gamepad: false, input: false },
-    { address: '11:22:33:44:55:66', name: 'Bad', connected: false, battery: null, paired: true, trusted: false, gamepad: false, input: false },
+    { address: 'AA:BB:CC:DD:EE:FF', name: 'Good', connected: true, battery: 100, paired: true, trusted: false, gamepad: false, kind: null, input: false, hid: false },
+    { address: '11:22:33:44:55:66', name: 'Bad', connected: false, battery: null, paired: true, trusted: false, gamepad: false, kind: null, input: false, hid: false },
   ]);
 });
 
 test('pollBtInventory: a paired pad that is asleep reports connected:false (trusted gamepad, no input)', async () => {
   const exec = makeExec({
     'bluetoothctl --agent off devices Paired': 'Device E4:17:D8:C6:54:F0 8Bitdo SFC30 GamePad',
-    'bluetoothctl --agent off info E4:17:D8:C6:54:F0': '\tPaired: yes\n\tTrusted: yes\n\tIcon: input-gaming\n\tConnected: no',
+    'bluetoothctl --agent off info E4:17:D8:C6:54:F0': '\tPaired: yes\n\tTrusted: yes\n\tIcon: input-gaming\n\tConnected: no\n\tUUID: Human Interface Device... (00001124-0000-1000-8000-00805f9b34fb)',
   });
   assert.deepEqual(await pollBtInventory({ exec, readInputDevices: NO_INPUT }), [
-    { address: 'E4:17:D8:C6:54:F0', name: '8Bitdo SFC30 GamePad', connected: false, battery: null, paired: true, trusted: true, gamepad: true, input: false },
+    { address: 'E4:17:D8:C6:54:F0', name: '8Bitdo SFC30 GamePad', connected: false, battery: null, paired: true, trusted: true, gamepad: true, kind: 'gamepad', input: false, hid: true },
   ]);
 });
 
@@ -242,4 +267,34 @@ test('startBtInventoryBroadcast: a failed send is retried, not recorded as sent'
   await handle.resend(); // unchanged + already delivered → resend() still forces it
   assert.equal(sent.length, 2);
   handle.stop();
+});
+
+test('hasInputDevice: same rule as the pairing helper (input_device_present)', () => {
+  const blankUniqBt = 'I: Bus=0005 Vendor=1234 Product=5678 Version=0001\nN: Name="Ring Remote"\nU: Uniq=\n';
+  const missingUniqBt = 'I: Bus=0005 Vendor=1234 Product=5678 Version=0001\nN: Name="Ring Remote"\n';
+  const usb = 'I: Bus=0003 Vendor=1234 Product=5678 Version=0001\nN: Name="Ring Remote"\nU: Uniq=\n';
+  const byUniq = 'I: Bus=0005 Vendor=2dc8 Product=ab21 Version=0001\nN: Name="8Bitdo SFC30 GamePad"\nU: Uniq=e4:17:d8:c6:54:f0\n';
+  // Blank or missing Uniq on a Bluetooth block: exact name match counts.
+  assert.equal(hasInputDevice(blankUniqBt, 'AA:BB:CC:DD:EE:FF', 'Ring Remote'), true);
+  assert.equal(hasInputDevice(missingUniqBt, 'AA:BB:CC:DD:EE:FF', 'Ring Remote'), true);
+  // Name must be exact, and must be given.
+  assert.equal(hasInputDevice(blankUniqBt, 'AA:BB:CC:DD:EE:FF', 'Ring'), false);
+  assert.equal(hasInputDevice(blankUniqBt, 'AA:BB:CC:DD:EE:FF'), false);
+  // A USB block (Bus=0003) never matches by name.
+  assert.equal(hasInputDevice(usb, 'AA:BB:CC:DD:EE:FF', 'Ring Remote'), false);
+  // Uniq match still works; a Uniq for another MAC does not fall back to the name.
+  assert.equal(hasInputDevice(byUniq, 'E4:17:D8:C6:54:F0', 'whatever'), true);
+  assert.equal(hasInputDevice(byUniq, 'AA:BB:CC:DD:EE:FF', '8Bitdo SFC30 GamePad'), false);
+  // Blocks are separate: a name in one block and a blank Uniq in another do not combine.
+  assert.equal(hasInputDevice(`${usb}\n${byUniq}`, 'AA:BB:CC:DD:EE:FF', 'Ring Remote'), false);
+});
+
+test('pollBtInventory: input passes the device name for the blank-Uniq fallback', async () => {
+  const exec = makeExec({
+    'bluetoothctl --agent off devices Paired': 'Device AA:BB:CC:DD:EE:FF Ring Remote',
+    'bluetoothctl --agent off info AA:BB:CC:DD:EE:FF': '\tTrusted: yes\n\tIcon: input-keyboard\n\tConnected: yes',
+  });
+  const table = 'I: Bus=0005 Vendor=1234 Product=5678 Version=0001\nN: Name="Ring Remote"\nU: Uniq=\n';
+  const [d] = await pollBtInventory({ exec, readInputDevices: async () => table });
+  assert.equal(d.input, true);
 });

@@ -386,7 +386,7 @@ export function runPassed(result, { challenge = false, passScore = null } = {}) 
  *   `onFailed` consumer replaces the result screen or records it while the run
  *   retains its standard feedback and piano-driven retry.
  */
-export default function ExerciseRun({ instance, score, requirement = null, practiceRequirement = null, intent = 'practice', practiceMode = 'free', programId = null, stepId = null, drillProjection = null, framing = null, bare = false, hideHeading = false, ask = null, askTuple = null, tier = null, traceContext = null, surface = 'default', scoreCursorPolicy = 'timed', scoreLayoutPolicy = 'readable-system', keyboardHintPolicy = 'always', incompleteAfterMs = null, failurePresentation = 'host', clickGain, paused = false, resumeDelayMs = 1000, persistInterrupted = true, persistAssessment = true, startOnReady = false, resultLabel = null, resultActions = null, onPickStep = null, onStarted, onExit, onPassed, onFailed, onUnavailable }) {
+export default function ExerciseRun({ instance, score, requirement = null, practiceRequirement = null, intent = 'practice', practiceMode = 'free', programId = null, stepId = null, drillProjection = null, framing = null, bare = false, hideHeading = false, ask = null, askTuple = null, tier = null, traceContext = null, surface = 'default', scoreCursorPolicy = 'timed', scoreLayoutPolicy = 'readable-system', keyboardHintPolicy = 'always', incompleteAfterMs = null, failurePresentation = 'host', clickGain, paused = false, resumeDelayMs = 1000, persistInterrupted = true, persistAssessment = true, startOnReady = false, resultLabel = null, resultActions = null, resultPresentation = 'inline', resultContinueLabel = null, onResultContinue = null, onPickStep = null, onStarted, onExit, onPassed, onFailed, onUnavailable }) {
   const logger = useMemo(() => getLogger().child({ component: 'piano-exercise-run' }), []);
   const { currentUser } = usePianoUser();
   const { activeNotes } = usePianoMidiNotes();
@@ -870,6 +870,8 @@ export default function ExerciseRun({ instance, score, requirement = null, pract
   // Completion belongs to the host whenever it supplied a callback. Every
   // host advances automatically; this piano surface has no pointer controls.
   const passTakenRef = useRef(false);
+  const onResultContinueRef = useRef(onResultContinue);
+  onResultContinueRef.current = onResultContinue;
   const judgedResult = resultReady && JUDGED_STATUSES.has(snapshot.result?.status) ? snapshot.result : null;
   const resultPassed = runPassed(judgedResult, { challenge, passScore: runRequirement?.passScore });
   const hostOwnsResult = resultPassed
@@ -892,8 +894,13 @@ export default function ExerciseRun({ instance, score, requirement = null, pract
     activeNotes, keyboard: keyboardConfig, onExit, enabled: Boolean(onExit) || localRetry,
     continueEnabled: localRetry, resetKey: runtime,
     onContinue: () => {
-      logger.info('piano.exercise-retry', { ...traceFieldsRef.current, via: 'piano' });
-      installRuntime();
+      // A host that offers a next step (a slower tempo, one hand, fewer bars)
+      // gets the key press for it, so the child never has to reach for the
+      // glass to take the help the result card recommends.
+      const hostAction = onResultContinueRef.current;
+      logger.info('piano.exercise-retry', { ...traceFieldsRef.current, via: 'piano', action: hostAction ? 'host' : 'repeat' });
+      if (hostAction) hostAction();
+      else installRuntime();
     },
   });
 
@@ -1786,7 +1793,7 @@ export default function ExerciseRun({ instance, score, requirement = null, pract
           A disconnected piano is the one thing the pills cannot say, so it
           keeps its own line whatever the surface. */}
       {!bare && chromeDrawn && !connected && <span className="piano-exercise-run__waiting">Waiting for the piano…</span>}
-      {phase === 'done' && result && !hostOwnsFailure && <section className={`piano-exercise-run__result${passed ? ' is-passed' : ' is-developing'}`}>
+      {phase === 'done' && result && !hostOwnsFailure && !(resultPresentation === 'overlay' && passed) && <section className={`piano-exercise-run__result${passed ? ' is-passed' : ' is-developing'}${resultPresentation === 'overlay' ? ' is-overlay' : ''}`} {...(resultPresentation === 'overlay' ? { role: 'dialog', 'aria-modal': 'true', 'aria-label': resultLabel ?? 'Result' } : {})}>
         <div><span>{resultLabel ?? (passed ? 'Passed' : challenge ? 'Keep working' : 'Practice complete')}</span>{scoreReadout && <strong>{Math.round(result.score * 100)}%</strong>}</div>
         {/* A percentage is a reading task of its own, and the tiers below 2 are
             for children who have not been given it yet. They are told the same
@@ -1794,7 +1801,7 @@ export default function ExerciseRun({ instance, score, requirement = null, pract
         {scoreReadout
           ? <>{timingCopy && <p className="piano-exercise-run__result-copy">{timingCopy}</p>}<dl><div><dt>All notes</dt><dd>{Math.round((result.criteria.completeness ?? 0) * 100)}%</dd></div><div><dt>Clean notes</dt><dd>{Math.round((result.criteria.cleanliness ?? 0) * 100)}%</dd></div>{Number.isFinite(result.criteria.placement) && <div><dt>On the beat</dt><dd>{Math.round(result.criteria.placement * 100)}%</dd></div>}</dl></>
           : <p className="piano-exercise-run__result-copy">{passed ? 'You played every note that was asked for.' : timingCopy ?? 'Some of the notes are still missing. Have another go.'}</p>}
-        {localRetry && <p className="piano-exercise-run__result-onward">Release the keys, then play any key to try again.{onExit && ' Hold the lowest and highest keys for two seconds to leave.'}</p>}
+        {localRetry && <p className="piano-exercise-run__result-onward">Release the keys, then play any key to {resultContinueLabel ?? 'try again'}.{onExit && ' Hold the lowest and highest keys for two seconds to leave.'}</p>}
         {resultActions && <div className="piano-exercise-run__result-actions">{resultActions}</div>}
       </section>}
       </div>

@@ -8,7 +8,7 @@ describe('start_inbox_triage', () => {
     const run = vi.fn(async () => ({ preDone: { archived: 3, closed: 1 }, queued: { unsure: 2 }, mailbox: 'ok' }));
     const out = await tool({ run }).execute({ userId: 'sample' });
     expect(run).toHaveBeenCalledWith({ username: 'sample', trigger: 'manual' });
-    expect(out).toEqual({ preDone: { archived: 3, closed: 1 }, queued: { unsure: 2 }, mailbox: 'ok', sessionPath: '/life/now/triage' });
+    expect(out).toEqual({ preDone: { archived: 3, closed: 1 }, queued: { unsure: 2 }, mailbox: 'ok', sessionPath: '/life/now/triage', link: '[Go through the cards](/life/now/triage)' });
   });
   it('returns not_enrolled when the pass is skipped for that reason', async () => {
     const out = await tool({ run: async () => ({ skipped: 'not_enrolled' }) }).execute({ userId: 'x' });

@@ -151,6 +151,17 @@ describe('judgeTimedOnset (fraction policy)', () => {
     expect(at(200)).toBe(0);
   });
 
+  it('widens full credit to the policy\'s own share, and still reaches 0 at the window edge', () => {
+    const at = (lag, share) => finalizeAssessmentAttempt(play(start({ ...FRACTION_POLICY, placementFullCreditShare: share }), run(lag)).attempt).result.criteria.placement;
+    // 200 ms window: full credit to ±120 ms at 0.6, linear to 0 at ±200 ms.
+    expect(at(120, 0.6)).toBe(1);
+    expect(at(140, 0.6)).toBeCloseTo(0.75);
+    expect(at(160, 0.6)).toBeCloseTo(0.5);
+    expect(at(200, 0.6)).toBe(0);
+    // A share that is not a fraction of the window is ignored: the 0.4 curve.
+    for (const bad of [0, 1, -0.2, 'wide', null]) expect(at(140, bad)).toBeCloseTo(0.5);
+  });
+
   it('charges one wrong pitch to its own beat without shifting later notes', () => {
     const onsets = run(0);
     onsets[3] = { midi: 73, time: 1500 };

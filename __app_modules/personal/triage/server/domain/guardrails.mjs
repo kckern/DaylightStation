@@ -116,7 +116,7 @@ export function todoAutoClose(item, { openItems = [], asOf, overdueDays } = {}) 
       const o = other?.facts ?? other;
       if (!o || o === w || (o.ref?.id === w.ref?.id && o.ref?.provider === w.ref?.provider)) continue;
       if (!isOpen(o) || normTitle(o.title) !== title || !sameContainer(o.containerRef, w.containerRef)) continue;
-      if (isNewer(w, o)) return { eligible: true, reason: 'exact_duplicate', duplicateOf: o.ref };
+      if (isNewer(w, o)) return { eligible: true, reason: 'exact_duplicate', duplicateOf: { ...o.ref, title: o.title ?? null } };
     }
   }
 

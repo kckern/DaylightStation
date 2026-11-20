@@ -45,12 +45,16 @@ function contentBox(layout) {
   const ink = layout.ink;
   if (ink && [ink.x, ink.y, ink.width, ink.height].every(finite) && ink.width > 0 && ink.height > 0) {
     const air = spacing * 1.5;
+    // Above and below, room for a verdict mark (ScorePassage `verdictMark`,
+    // 12 units tall) beside the highest and lowest noteheads; at 1.5 spaces a
+    // mark under a low note was cut off by the edge of the paper.
+    const airY = spacing * 2;
     const left = Math.min(ink.x, ...staves.map((staff) => staff.left).filter(finite), ...measures.map((measure) => measure.left).filter(finite));
     const top = Math.min(ink.y, ...staves.map((staff) => staff.top).filter(finite), ...measures.map((measure) => measure.top).filter(finite));
     const right = Math.max(ink.x + ink.width, ...staves.map((staff) => staff.right).filter(finite), ...measures.map((measure) => measure.right).filter(finite));
     const bottom = Math.max(ink.y + ink.height, ...staves.map((staff) => staff.top + staff.lineSpacing * 4).filter(finite), ...measures.map((measure) => measure.bottom).filter(finite));
-    const x = Math.max(0, left - air); const y = Math.max(0, top - air);
-    return { x, y, width: right + air - x, height: bottom + air - y };
+    const x = Math.max(0, left - air); const y = Math.max(0, top - airY);
+    return { x, y, width: right + air - x, height: bottom + airY - y };
   }
   // The engraver does not stretch a short last (or only) system across the
   // page. When every system stops short, the page ends where the ink does, so
