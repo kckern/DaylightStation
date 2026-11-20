@@ -190,6 +190,33 @@ already was.
 [The tricky-word drill](#the-tricky-word-drill-spec-3-drill-path) below).
 Code: `__app_modules/learning/school/server/domain/cardLadder/mastery.mjs`.
 
+## Card variety: see-and-type (`cards: see-and-type`)
+
+A lexicon header `cards: see-and-type` (default `standard`) gives a package
+one card, used everywhere: the target on screen, its `term.mp3` played on show
+when the entry has one, and the learner types it. It is for learning a script
+and its keyboard before any vocabulary (e.g. Hangul jamo, then syllables).
+Code: `domain/cardLadder/seeAndType.mjs`.
+
+| | standard | see-and-type |
+|---|---|---|
+| Lexicon | `gloss`, decoys, anchor block required | all optional (the anchor block defaults to the target's) |
+| Round | Learn (flash › copy › say) › Sort › Quiz › Match | Learn (copy, ungraded, retry until it matches; this is the introduction) › Quiz |
+| Quiz / rechecks | 3.1, 2.2; typed sign-off 3.3 / 1.4 | **K.1**: a `copy` item with `task: 'K.1'`, `graded: true`, judged exactly under the script's `normalize` (no Jev), first attempt only. An empty answer is a *Don't know* miss |
+| Carry round | sort stream, then quiz | straight to the quiz |
+| Match, sort, drill, offer | yes | none |
+| Practice menu | all modes | Write (with help) and Quiz me |
+| Printed quiz | yes | refused (no meanings to ask about) |
+
+Mastery: K.1 is in `SIGN_OFF_TASKS` (not `TYPED_TASKS`, which lists the judged
+answers a grown-up may re-grade). A K.1 verify pass is Recognised (mastered
+stage 0); the first K.1 recheck pass signs the card off (Mastered); a recheck
+miss keeps it mastered at stage 1, due the next study day, like a typed miss.
+`progress.cards` and the open response's `cards` carry the variety; the
+header trail shows Learn › Quiz and the hints use the see-and-type wording
+(`stepHint`). Audio is optional per entry: a card with no `term.mp3` plays
+nothing and shows no *Hear it*.
+
 ## Rounds and the three piles
 
 A **round** is up to `round.size` (default 5) quizzable words; a word is a

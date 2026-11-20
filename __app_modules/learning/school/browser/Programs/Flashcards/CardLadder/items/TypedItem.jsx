@@ -82,13 +82,16 @@ export default function TypedItem({ item, mode, langs, resolveAssetUrl, onRespon
   // A dictation run's items carry the term clip in `assets.audio` (copy too).
   const termAudioId = hearsTerm ? item.assets?.audio : (word?.media?.audio ?? (item.source === 'dictation' ? item.assets?.audio : null));
   const termAudio = termAudioId ? resolveAssetUrl(termAudioId) : null;
+  // A see-and-type quiz / review card (task K.1): the copy prompt, graded on
+  // the first try — its verdict held until Next, like any graded item.
+  const gradedCopy = mode === 'copy' && item.graded === true;
   // graded + practice: cue prompt, verdict held until Next. copy + dictation: retry until it matches.
-  const graded = mode === 'graded' || mode === 'practice' || (dictation && pending);
+  const graded = mode === 'graded' || mode === 'practice' || (dictation && pending) || gradedCopy;
   const showsMe = mode === 'practice' || (mode === 'graded' && item.graded === false);
   // Dictation after its second miss shows the word ("It's 가위 — type it"): a copy now.
   const copying = mode === 'copy' || (dictation && Boolean(result?.answer));
   // In dictation a give-up steps the word back, so it is never "Skip" (final review M9).
-  const giveUpLabel = showsMe ? 'Show me' : copying && item.source !== 'dictation' ? 'Skip' : "Don't know";
+  const giveUpLabel = showsMe ? 'Show me' : copying && !gradedCopy && item.source !== 'dictation' ? 'Skip' : "Don't know";
   // Answered = a final verdict is on screen. Busy only disables the field: the
   // keypad and its toggle stay mounted through a submit (no flicker, no lost
   // open state), and go only once there is nothing left to type.
@@ -251,12 +254,12 @@ export default function TypedItem({ item, mode, langs, resolveAssetUrl, onRespon
   return (
     <section
       className={`wl-item wl-typed${keypadShowing ? ' wl-typed--keypad' : ''}`}
-      aria-label={hearsTerm ? 'Write what you hear' : graded ? 'Type the word' : 'Copy the word'}
+      aria-label={hearsTerm ? 'Write what you hear' : gradedCopy ? 'Type what you see' : graded ? 'Type the word' : 'Copy the word'}
     >
       <div className="wl-prompt">
         {mode === 'copy' && <FitText role="term" text={word?.term ?? ''} lang={langs.target} onFit={onLayout} />}
         {hearsTerm && !answered && <TouchButton variant="secondary" keyHint="Tab" onClick={() => termAudio && playClip(termAudio, 'term')}><Icon name="volume" /> Listen</TouchButton>}
-        {graded && !heardSignOff && <AnchorCue item={item} resolveAssetUrl={resolveAssetUrl} lang={langs.anchor} keyHint={answerAudio ? null : 'Tab'} />}
+        {graded && !heardSignOff && !gradedCopy && <AnchorCue item={item} resolveAssetUrl={resolveAssetUrl} lang={langs.anchor} keyHint={answerAudio ? null : 'Tab'} />}
       </div>
       {!answered && (
         <input
