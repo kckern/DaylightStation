@@ -161,22 +161,16 @@ describe('AgentChatSurface — no mentions when prop omitted', () => {
 
 describe('AgentChatSurface — mentions prop wiring', () => {
   let originalFetch;
-  let fetchCalls;
   beforeEach(() => {
     originalFetch = globalThis.fetch;
-    fetchCalls = [];
     globalThis.fetch = vi.fn(async (url) => {
-      fetchCalls.push(url);
       if (typeof url === 'string' && url.includes('/health/mentions/')) {
-        return {
-          ok: true,
-          json: async () => ({
-            suggestions: [
-              { slug: 'last_30d', label: 'Last 30 days', description: 'rolling', group: 'period' },
-              { slug: 'weight_lbs', label: 'Weight (lbs)', description: 'metric', group: 'metric_snapshot' },
-            ],
-          }),
-        };
+        return Response.json({
+          suggestions: [
+            { slug: 'last_30d', label: 'Last 30 days', description: 'rolling', group: 'period' },
+            { slug: 'weight_lbs', label: 'Weight (lbs)', description: 'metric', group: 'metric_snapshot' },
+          ],
+        });
       }
       return { ok: true, json: async () => ({ output: '', toolCalls: [] }) };
     });
@@ -200,7 +194,7 @@ describe('AgentChatSurface — mentions prop wiring', () => {
     expect(container.querySelector('.coach-chat__mention-popover, [data-mention-popover]')).toBeTruthy();
   });
 
-  it('fetches the mention suggestions URL on mount when mentions prop is present', async () => {
+  it('loads mention suggestions through the authenticated API on mount', async () => {
     const mentions = {
       fetchUrl: '/api/v1/health/mentions/all?user=kc',
       categories: [{ key: 'period', label: 'Period', icon: null }],
@@ -211,8 +205,15 @@ describe('AgentChatSurface — mentions prop wiring', () => {
         <AgentChatSurface agentId="health-coach" userId="kc" mentions={mentions} />
       </MantineProvider>
     );
-    await new Promise(r => setTimeout(r, 10));
-    expect(fetchCalls.some(u => typeof u === 'string' && u.includes('/health/mentions/'))).toBe(true);
+    await waitFor(() => expect(globalThis.fetch).toHaveBeenCalledWith(
+      expect.stringContaining(mentions.fetchUrl),
+      expect.objectContaining({
+        method: 'GET',
+        headers: expect.objectContaining({ 'X-Daylight-Device': expect.any(String) }),
+        signal: expect.any(AbortSignal),
+      }),
+    ));
+    expect(globalThis.fetch.mock.calls[0][1]).not.toHaveProperty('body');
   });
 
   it('does not fetch suggestions when mentions prop is absent', async () => {
@@ -221,7 +222,6 @@ describe('AgentChatSurface — mentions prop wiring', () => {
         <AgentChatSurface agentId="lifeplan-guide" userId="default" />
       </MantineProvider>
     );
-    await new Promise(r => setTimeout(r, 10));
-    expect(fetchCalls.filter(u => typeof u === 'string' && u.includes('/mentions/'))).toHaveLength(0);
+    expect(globalThis.fetch).not.toHaveBeenCalled();
   });
 });

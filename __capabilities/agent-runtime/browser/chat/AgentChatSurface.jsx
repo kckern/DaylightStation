@@ -7,8 +7,9 @@ import {
   MessagePrimitive,
   unstable_useMentionAdapter,
 } from '@assistant-ui/react';
-import { createContext, useContext, useMemo, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { createContext, useContext, useMemo, useEffect, useLayoutEffect, useRef } from 'react';
 import { browserPreference } from '../../../../frontend/src/lib/browserPreference.js';
+import { useApiResource } from '../../../../frontend/src/lib/hooks/useApiResource.js';
 import "./AgentChatSurface.scss";
 import { createAgentRuntime, getOrCreateThreadId } from "./runtime.js";
 import { MarkdownText } from "./MarkdownText.jsx";
@@ -24,7 +25,7 @@ import { ToolCallAttribution } from "./ToolCallAttribution.jsx";
  * @param {'light'|'overlay'} [props.variant='light']
  * @param {object} [props.style]
  * @param {object} [props.mentions]  — optional mention-popover config:
- *   { fetchUrl: string, loadSuggestions?: (url, { signal }) => Promise<object>, categories: Array<{key, label, icon}>, buildAttachment: fn }
+ *   { fetchUrl: string, categories: Array<{key, label, icon}>, buildAttachment: fn }
  *   When present, wraps the composer in Unstable_TriggerPopoverRoot and
  *   fetches suggestions on mount. When absent, the bare composer renders.
  */
@@ -165,61 +166,37 @@ function ComposerPlain({ cancelOnEscape }) {
 
 // ── Composer with @-mention trigger popover ───────────────────────────────────
 
-async function fetchMentionData(url, { signal }) {
-  const response = await fetch(url, { signal });
-  return response.ok ? response.json() : null;
-}
-
 function ComposerWithMentions({ mentions, pendingMentionsRef, cancelOnEscape }) {
-  const { fetchUrl, loadSuggestions = fetchMentionData, categories, buildAttachment } = mentions;
-  const [loaded, setLoaded] = useState(null);
-
-  useEffect(() => {
-    if (!fetchUrl) return;
-    const controller = new AbortController();
-
-    async function load() {
-      try {
-        const data = await loadSuggestions(fetchUrl, { signal: controller.signal });
-        if (!data || controller.signal.aborted) return;
-        const suggestions = data.suggestions || [];
-
-        // Group flat suggestions by `group` field; preserve display order
-        // declared in the categories prop.
-        const byGroup = new Map();
-        for (const s of suggestions) {
-          const key = s.group || 'other';
-          if (!byGroup.has(key)) byGroup.set(key, []);
-          byGroup.get(key).push(s);
-        }
-
-        const cats = categories
-          .filter(c => byGroup.has(c.key))
-          .map(c => ({
-            id: c.key,
-            label: c.label,
-            items: byGroup.get(c.key).map(s => ({
-              id: `${c.key}:${s.slug}`,
-              type: c.key,
-              label: s.label,
-              description: s.description,
-              icon: c.icon,
-              metadata: buildAttachment({ ...s, group: c.key }),
-            })),
-          }));
-
-        setLoaded({ url: fetchUrl, categories: cats });
-      } catch {
-        // Non-fatal — mention popover will be empty, chat still works.
-      }
+  const { fetchUrl, categories, buildAttachment } = mentions;
+  const { data } = useApiResource(fetchUrl, { label: 'Coach mention suggestions', retryTransient: false });
+  const mentionCategories = useMemo(() => {
+    if (!Array.isArray(data?.suggestions)) return [];
+    const byGroup = new Map();
+    for (const suggestion of data.suggestions) {
+      if (!suggestion?.slug || !suggestion.label) continue;
+      const key = suggestion.group || 'other';
+      if (!byGroup.has(key)) byGroup.set(key, []);
+      byGroup.get(key).push(suggestion);
     }
 
-    load();
-    return () => controller.abort();
-  }, [fetchUrl, loadSuggestions, categories, buildAttachment]);
+    return categories
+      .filter(category => byGroup.has(category.key))
+      .map(category => ({
+        id: category.key,
+        label: category.label,
+        items: byGroup.get(category.key).map(suggestion => ({
+          id: `${category.key}:${suggestion.slug}`,
+          type: category.key,
+          label: suggestion.label,
+          description: suggestion.description,
+          icon: category.icon,
+          metadata: buildAttachment({ ...suggestion, group: category.key }),
+        })),
+      }));
+  }, [data, categories, buildAttachment]);
 
   const mention = unstable_useMentionAdapter({
-    categories: loaded && loaded.url === fetchUrl ? loaded.categories : [],
+    categories: mentionCategories,
     includeModelContextTools: false,
     onInserted: (item) => {
       if (item?.metadata) {

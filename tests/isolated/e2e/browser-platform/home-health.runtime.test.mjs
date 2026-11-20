@@ -1135,6 +1135,35 @@ test('Health Coach yields Mod+K to its composer and restores the shortcut opener
   await expect(opener).toBeFocused();
 });
 
+test('Health Coach sends the selected mention as an attachment for its member', async ({ page }) => {
+  await page.route('**/health/context', route => route.fulfill({ json: { userId: 'alice' } }));
+  const period = { rolling: 'last_30d' };
+  await page.route('**/health/mentions/all?user=alice', route => route.fulfill({
+    json: { suggestions: [{ slug: 'last_30d', label: 'Last 30 days', group: 'period', value: period }] },
+  }));
+  await page.route('**/agents/health-coach/run-stream', route => route.fulfill({
+    contentType: 'text/event-stream',
+    body: 'data: {"type":"text-delta","text":"Reviewing the selected period"}\n\ndata: {"type":"done"}\n\n',
+  }));
+
+  await page.goto('/health/coach');
+  const main = page.getByRole('main');
+  const composer = main.getByPlaceholder(/^Ask…/);
+  await composer.press('@');
+  const suggestions = main.getByRole('listbox', { name: 'Suggestions' });
+  await suggestions.getByRole('option', { name: 'Period', exact: true }).click();
+  await suggestions.getByRole('option', { name: 'Last 30 days', exact: true }).click();
+  await expect(composer).toHaveValue(/Last 30 days/);
+
+  const sent = page.waitForRequest(request => request.url().includes('/agents/health-coach/run-stream'));
+  await main.getByRole('button', { name: 'Send message' }).click();
+  expect((await sent).postDataJSON().context).toMatchObject({
+    userId: 'alice',
+    attachments: [{ type: 'period', value: period, label: 'Last 30 days' }],
+  });
+  await expect(main.getByText('Reviewing the selected period', { exact: true })).toBeVisible();
+});
+
 test('Health Coach restores its tab transcript when local thread writes are unavailable', async ({ page }) => {
   await page.addInitScript(() => {
     const setItem = Storage.prototype.setItem;

@@ -1,9 +1,6 @@
 // frontend/src/modules/Health/CoachChat/index.jsx
-import { DaylightAPI } from "@/lib/api.mjs";
 import { FALLBACK_SUGGEST_ENDPOINT, MENTION_CATEGORIES, buildAttachment } from "./mentions/vocabulary.config.js";
 import { AgentChatSurface } from "../../../../../__capabilities/agent-runtime/browser/chat.mjs";
-
-const loadSuggestions = (path, options) => DaylightAPI(path, {}, 'GET', options);
 
 /**
  * Health-coach chat surface — thin wrapper around <AgentChatSurface> that
@@ -19,7 +16,6 @@ const loadSuggestions = (path, options) => DaylightAPI(path, {}, 'GET', options)
 export function CoachChat({ userId, variant = 'light', style, conversation }) {
   const mentions = userId
     ? {
-        loadSuggestions,
         fetchUrl: `${FALLBACK_SUGGEST_ENDPOINT}?user=${encodeURIComponent(userId)}`,
         categories: MENTION_CATEGORIES,
         buildAttachment,
