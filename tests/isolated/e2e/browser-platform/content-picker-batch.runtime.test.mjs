@@ -91,6 +91,79 @@ test('Admin Content picker retires batch searches on typing and Escape', async (
   ]);
 });
 
+for (const reducedMotion of ['reduce', 'no-preference']) {
+  test(`Admin picker honors ${reducedMotion} when revealing the keyboard highlight`, async ({ page }) => {
+    await page.emulateMedia({ reducedMotion });
+    await page.addInitScript(() => {
+      window.catalogWrapFlashes = [];
+      document.addEventListener('animationstart', event => {
+        if (event.animationName === 'ccb-wrap-flash') window.catalogWrapFlashes.push(event.target.dataset.testid);
+      });
+    });
+    await page.route('**/api/**', route => {
+      const { pathname } = new URL(route.request().url());
+      if (pathname === listPath) return route.fulfill({ json: adminList });
+      if (pathname === searchPath) {
+        return route.fulfill({ json: { items: Array.from({ length: 16 }, (_, i) =>
+          result(`plex:${i + 1}`, `Keyboard result ${i + 1}`)) } });
+      }
+      return route.fulfill({ json: pathname.endsWith('/supervision/bootstrap') ? { enabled: false } : {} });
+    });
+
+    await page.goto(listRoute);
+    const row = page.getByTestId('item-row-0-0');
+    await row.locator('.col-input .content-display').click();
+    const editor = row.getByRole('textbox', { name: 'Search content...' });
+    await editor.fill('keyboard results');
+    const first = page.getByTestId('combobox-option-plex:1');
+    const second = page.getByTestId('combobox-option-plex:2');
+    const last = page.getByTestId('combobox-option-plex:16');
+    const viewport = page.locator('.content-combobox-scroll .mantine-ScrollArea-viewport');
+    await expect(first).toBeVisible();
+
+    await editor.press('ArrowDown');
+    await expect(first).toHaveAttribute('data-highlighted', 'true');
+    await editor.press('ArrowUp');
+    await expect(last).toHaveAttribute('data-highlighted', 'true');
+    await expect(last).toBeInViewport();
+    const flash = reducedMotion === 'reduce' ? 'none' : 'ccb-wrap-flash';
+    await expect(last).toHaveCSS('animation-name', flash);
+    const painted = () => page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+    await painted();
+    await editor.press('ArrowDown');
+    await expect(first).toHaveAttribute('data-highlighted', 'true');
+    await expect(first).toBeInViewport();
+    await expect(first).toHaveCSS('animation-name', flash);
+    await expect(last).toHaveCSS('animation-name', 'none');
+    await painted();
+    const flashes = await page.evaluate(() => window.catalogWrapFlashes);
+    expect(flashes).toEqual(reducedMotion === 'reduce' ? [] : ['combobox-option-plex:16', 'combobox-option-plex:1']);
+    await expect(first).not.toHaveClass(/wrap-flash/);
+
+    await page.clock.install({ time: new Date('2026-11-20T17:00:00Z') });
+    await page.clock.pauseAt(new Date('2026-11-20T17:00:01Z'));
+    const scrollTop = () => viewport.evaluate(element => element.scrollTop);
+    const bottom = await viewport.evaluate(element => {
+      element.scrollTop = element.scrollHeight;
+      return element.scrollTop;
+    });
+    expect(bottom).toBeGreaterThan(0);
+    await editor.press('ArrowDown');
+    await expect(second).toHaveAttribute('data-highlighted', 'true');
+    if (reducedMotion === 'no-preference') {
+      expect(await scrollTop()).toBe(bottom);
+      await page.clock.runFor(32);
+      const duringScroll = await scrollTop();
+      expect(duringScroll).toBeGreaterThan(0);
+      expect(duringScroll).toBeLessThan(bottom);
+      await page.emulateMedia({ reducedMotion: 'reduce' });
+      await page.clock.runFor(17);
+    }
+    await expect.poll(scrollTop).toBe(0);
+    await expect(second).toBeInViewport();
+  });
+}
+
 test('Admin dismisses pending picker pagination and can page on reopening', async ({ page }) => {
   const siblingsPath = '/api/v1/siblings/plex/123';
   const pageReads = [];

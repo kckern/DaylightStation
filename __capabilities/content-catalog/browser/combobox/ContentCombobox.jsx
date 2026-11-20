@@ -18,6 +18,8 @@
 //     order === items order; no current search transport emits `group`)
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useDismissLayer } from '@/lib/ui/dismiss/useDismissLayer.js';
+import { getReducedMotionQuery } from '@/lib/ui/browserMotion.js';
+import { DS_TOKENS } from '@/lib/theme/tokens.mjs';
 import {
   Combobox, TextInput, ScrollArea, Group, Text, Avatar, Badge, Loader, Button,
   Stack, ActionIcon, Box, useCombobox,
@@ -57,6 +59,7 @@ const TYPE_ICONS = {
 };
 
 const OPTION_CLASS = 'content-combobox-option';
+const SCROLL_DURATION_MS = Number.parseFloat(DS_TOKENS.motion.fast);
 
 function getIcon(item) {
   const type = item.type || item.metadata?.type || item.mediaType;
@@ -179,7 +182,6 @@ export function ContentCombobox({
   const moreMenuActionKindRef = useRef(null);
   const viewportRef = useRef(null);
   const prevIdxRef = useRef(-1);
-  const scrollAnimRef = useRef(null);
   const paginationScrollGuardRef = useRef(null); // window whose prepend or append owns scroll placement
   const loadCooldownRef = useRef(null);
   const currentPaginationWindow = useRef(paginationWindow);
@@ -469,83 +471,71 @@ export function ContentCombobox({
     };
     rafId = requestAnimationFrame(attempt);
     return () => { if (rafId) cancelAnimationFrame(rafId); };
-  }, [levelKey, highlightIdx, items.length]);  
+  }, [levelKey, highlightIdx, items.length]);
 
-  // ── Scroll-to-highlighted: ONE writer. Eased snap on navigation, instant
-  // jump + wrap-flash on pac-man wrap, skip entirely during pagination. ──
+  // Keep the keyboard highlight in view without overriding page anchoring.
   useEffect(() => {
-    if (scrollAnimRef.current) cancelAnimationFrame(scrollAnimRef.current);
-
+    const prevIdx = prevIdxRef.current;
     const decision = shouldRunScrollToHighlighted({
       highlightedIdx: highlightIdx,
-      prevIdx: prevIdxRef.current,
+      prevIdx,
       paginationInFlight: Boolean(paginationWindow && paginationScrollGuardRef.current === paginationWindow),
     });
-
-    if (decision.reason === 'pagination') {
-      paginationScrollGuardRef.current = null;
-      prevIdxRef.current = highlightIdx;
-      return undefined;
-    }
-    if (!decision.run) {
-      prevIdxRef.current = highlightIdx;
-      return undefined;
-    }
+    prevIdxRef.current = highlightIdx;
+    if (decision.reason === 'pagination') paginationScrollGuardRef.current = null;
+    if (!decision.run) return;
 
     const viewport = viewportRef.current;
-    if (!viewport) {
-      prevIdxRef.current = highlightIdx;
-      return undefined;
-    }
-    const option = viewport.querySelectorAll(`.${OPTION_CLASS}`)[highlightIdx];
-    if (!option) {
-      prevIdxRef.current = highlightIdx;
-      return undefined;
-    }
+    const option = viewport?.querySelectorAll(`.${OPTION_CLASS}`)[highlightIdx];
+    if (!option) return;
 
-    const prevIdx = prevIdxRef.current;
+    const motion = getReducedMotionQuery(viewport.ownerDocument.defaultView);
     const itemCount = items.length;
     const isWrap = (prevIdx === itemCount - 1 && highlightIdx === 0)
       || (prevIdx === 0 && highlightIdx === itemCount - 1);
 
     if (isWrap) {
-      // Instant jump — no animation — then flash to draw the eye.
       viewport.scrollTop = highlightIdx === 0 ? 0 : viewport.scrollHeight - viewport.clientHeight;
+      if (motion?.matches) return;
+      const clearFlash = event => {
+        if (event && event.target !== option) return;
+        option.classList.remove('wrap-flash');
+        option.removeEventListener('animationend', clearFlash);
+        option.removeEventListener('animationcancel', clearFlash);
+      };
+      option.addEventListener('animationend', clearFlash);
+      option.addEventListener('animationcancel', clearFlash);
       option.classList.add('wrap-flash');
-      const onEnd = () => { option.classList.remove('wrap-flash'); option.removeEventListener('animationend', onEnd); };
-      option.addEventListener('animationend', onEnd);
-    } else {
-      // Reserve ~2.5 rows of padding at the top so the item isn't jammed
-      // against the dropdown header (breadcrumb / pending strip).
-      const headerPad = option.offsetHeight * 2.5;
-      const optTop = optionTopIn(viewport, option);
-      const optBot = optTop + option.offsetHeight;
-      const visTop = viewport.scrollTop;
-      const visBot = visTop + viewport.clientHeight;
-
-      let target = null;
-      if (optTop < visTop + headerPad) target = Math.max(0, optTop - headerPad);
-      else if (optBot > visBot) target = optBot - viewport.clientHeight;
-
-      if (target !== null) {
-        const start = viewport.scrollTop;
-        const delta = target - start;
-        const duration = 120;
-        const t0 = performance.now();
-        const step = (now) => {
-          const p = Math.min((now - t0) / duration, 1);
-          const ease = 1 - (1 - p) * (1 - p); // ease-out quad
-          viewport.scrollTop = start + delta * ease;
-          if (p < 1) scrollAnimRef.current = requestAnimationFrame(step);
-        };
-        scrollAnimRef.current = requestAnimationFrame(step);
-      }
+      return clearFlash;
     }
 
-    prevIdxRef.current = highlightIdx;
-    return () => {
-      if (scrollAnimRef.current) cancelAnimationFrame(scrollAnimRef.current);
+    // Leave room below the dropdown header when revealing a row above it.
+    const headerPad = option.offsetHeight * 2.5;
+    const optTop = optionTopIn(viewport, option);
+    const optBot = optTop + option.offsetHeight;
+    const start = viewport.scrollTop;
+    const viewBottom = start + viewport.clientHeight;
+    let target;
+    if (optTop < start + headerPad) target = Math.max(0, optTop - headerPad);
+    else if (optBot > viewBottom) target = optBot - viewport.clientHeight;
+    if (target === undefined || target === start) return;
+
+    if (motion?.matches) {
+      viewport.scrollTop = target;
+      return;
+    }
+
+    const delta = target - start;
+    const started = performance.now();
+    let frame;
+    const step = now => {
+      const progress = motion?.matches ? 1 : Math.min((now - started) / SCROLL_DURATION_MS, 1);
+      const ease = 1 - (1 - progress) * (1 - progress);
+      viewport.scrollTop = start + delta * ease;
+      if (progress < 1) frame = requestAnimationFrame(step);
     };
+    frame = requestAnimationFrame(step);
+    return () => cancelAnimationFrame(frame);
   }, [highlightIdx, items.length, paginationWindow]);
 
   // ── Option row (standalone renderer + twin highlight/current classes) ──

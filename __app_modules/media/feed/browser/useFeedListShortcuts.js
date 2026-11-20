@@ -1,4 +1,5 @@
 import { useHotkey } from '@/lib/hooks/useHotkey.js';
+import { getReducedMotionQuery } from '@/lib/ui/browserMotion.js';
 
 export function useFeedListShortcuts(containerRef, focusSelector, enabled) {
   const move = event => {
@@ -7,8 +8,10 @@ export function useFeedListShortcuts(containerRef, focusSelector, enabled) {
     if (!rows.length) return false;
     const index = rows.indexOf(document.activeElement);
     const next = event.key === 'j' ? Math.min(rows.length - 1, index + 1) : Math.max(0, index - 1);
-    rows[next].focus({ preventScroll: true });
-    rows[next].scrollIntoView({ block: 'center', behavior: 'smooth' });
+    const row = rows[next];
+    const reducedMotion = getReducedMotionQuery(row.ownerDocument.defaultView)?.matches;
+    row.focus({ preventScroll: true });
+    row.scrollIntoView({ block: 'center', behavior: reducedMotion ? 'instant' : 'smooth' });
   };
 
   useHotkey('j', move, { allowRepeat: true });

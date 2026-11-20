@@ -247,6 +247,38 @@ describe('Reader history views', () => {
     expect(row.scrollIntoView).toHaveBeenCalledOnce();
   });
 
+  test('centers the focused article using the current motion preference', async () => {
+    let reducedMotion = true;
+    const matchMedia = window.matchMedia.bind(window);
+    vi.spyOn(window, 'matchMedia').mockImplementation(query => (
+      query === '(prefers-reduced-motion: reduce)'
+        ? { get matches() { return reducedMotion; } }
+        : matchMedia(query)
+    ));
+    apiMock.mockImplementation(async path => {
+      if (path === '/api/v1/feed/reader/feeds') return [];
+      if (path.startsWith('/api/v1/feed/search?')) {
+        return { items: [article('First article'), article('Second article')], nextCursor: null };
+      }
+      return {};
+    });
+
+    mountReader('?view=saved');
+    const first = (await screen.findByText('First article')).closest('button');
+    const second = screen.getByText('Second article').closest('button');
+    first.scrollIntoView = vi.fn();
+    second.scrollIntoView = vi.fn();
+
+    fireEvent.keyDown(document, { key: 'j' });
+    expect(first).toHaveFocus();
+    expect(first.scrollIntoView).toHaveBeenCalledExactlyOnceWith({ block: 'center', behavior: 'instant' });
+
+    reducedMotion = false;
+    fireEvent.keyDown(first, { key: 'j' });
+    expect(second).toHaveFocus();
+    expect(second.scrollIntoView).toHaveBeenCalledExactlyOnceWith({ block: 'center', behavior: 'smooth' });
+  });
+
   test('keeps article shortcuts inactive while subscriptions has modal focus', async () => {
     vi.spyOn(window, 'matchMedia').mockReturnValue({ matches: true, addEventListener() {}, removeEventListener() {} });
     mountReader('?view=saved');
