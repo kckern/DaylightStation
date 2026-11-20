@@ -171,13 +171,18 @@ const LAYOUTS = [
   { rows: 3, width: COLUMN, most: 14, countBeside: false },
 ];
 
+/** More rows (which make every card on the strip tall) must win coins this much bigger (px). */
+const MORE_ROWS_GAIN = 3;
+
 /**
- * How a piece's coins are laid out: whichever arrangement gives the biggest coin,
- * the fewer rows on a tie (more than one row makes the strip's cards tall). Each
- * arrangement's coin only shrinks as passages are added, so the best of them does
- * too: a longer piece never gets bigger coins. Three rows keep coins at 12px or
- * more up to 36 passages; past that they shrink further rather than hiding
- * passages. `extra` slots (a Polish stone) take one more column, beside every row.
+ * How a piece's coins are laid out. Among one-row arrangements the biggest coin
+ * wins; more rows win only when their coin is at least 3px bigger, so eight
+ * passages stay on one row (20px) and nine take two. A coin is never bigger than
+ * the one a piece with one passage fewer gets, so a longer piece never gets
+ * bigger coins: nine passages on two rows keep eight's 20px. Three rows keep coins
+ * at 12px or more up to 36 passages; past that they shrink further rather than
+ * hiding passages. `extra` slots (a Polish stone) take one more column, beside
+ * every row.
  */
 export function coinLayout(count, extra = 0) {
   const n = Math.max(1, count);
@@ -186,8 +191,10 @@ export function coinLayout(count, extra = 0) {
     const columns = Math.ceil(n / layout.rows);
     const slots = columns + extra;
     const size = Math.min(layout.most, Math.floor((layout.width - (slots - 1) * GAP) / slots));
-    if (!best || size > best.size) best = { rows: layout.rows, columns, size, countBeside: layout.countBeside };
+    const wins = !best || (layout.rows === best.rows ? size > best.size : size >= best.size + MORE_ROWS_GAIN);
+    if (wins) best = { rows: layout.rows, columns, size, countBeside: layout.countBeside };
   }
+  if (n > 1) best.size = Math.min(best.size, coinLayout(n - 1, extra).size);
   return best;
 }
 

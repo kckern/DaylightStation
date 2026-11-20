@@ -88,7 +88,8 @@ export default function useCardSwipe({ enabled, onSwipe }) {
   const onLost = (event) => { if (event.target === event.currentTarget) onCancel(event); };
 
   const onPointerLeave = () => {
-    // Without a capture (no sideways drag yet), a finger leaving the card ends the gesture.
+    // Mouse only (a touch is captured to the card until it lifts, so it never leaves):
+    // without the deck's capture (no sideways drag yet), leaving the card ends the gesture.
     if (start.current && start.current.axis !== 'x') start.current = null;
   };
 

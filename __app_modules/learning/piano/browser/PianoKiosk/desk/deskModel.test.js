@@ -97,11 +97,15 @@ describe('deskModel', () => {
     expect(coinLayout(6)).toEqual({ rows: 1, columns: 6, size: 24, countBeside: false });
     expect(coinLayout(7)).toEqual({ rows: 1, columns: 7, size: 23, countBeside: false });
   });
-  it('takes two rows when they give bigger coins, and three for a very long piece', () => {
-    expect(coinLayout(8)).toEqual({ rows: 2, columns: 4, size: 22, countBeside: false });
-    expect(coinLayout(10)).toEqual({ rows: 2, columns: 5, size: 22, countBeside: false });
+  it('takes more rows only when they give coins 3px bigger, and three for a very long piece', () => {
+    // Eight stay on one row: two rows would win only 2px, not worth tall cards.
+    expect(coinLayout(8)).toEqual({ rows: 1, columns: 8, size: 20, countBeside: false });
+    // Nine take two rows, their coins held to eight's size so a longer piece never gets bigger ones.
+    expect(coinLayout(9)).toEqual({ rows: 2, columns: 5, size: 20, countBeside: false });
+    expect(coinLayout(10)).toEqual({ rows: 2, columns: 5, size: 20, countBeside: false });
     expect(coinLayout(20)).toEqual({ rows: 2, columns: 10, size: 15, countBeside: false });
-    expect(coinLayout(24)).toEqual({ rows: 3, columns: 8, size: 14, countBeside: false });
+    expect(coinLayout(24)).toEqual({ rows: 2, columns: 12, size: 12, countBeside: false });
+    expect(coinLayout(26)).toEqual({ rows: 3, columns: 9, size: 12, countBeside: false });
     // Three rows keep coins at 12px or more up to 36 passages.
     expect(coinLayout(36).size).toBe(12);
     expect(mapRows(5)).toBe(1);

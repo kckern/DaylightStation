@@ -81,14 +81,28 @@ describe('PianoHomeDesk progress strip', () => {
     expect(onOpenCourse).toHaveBeenCalledWith('kid', 'plex:9', 'plex:91');
   });
 
-  it('sizes the strip by the cards shown, not a piece behind the other tab', async () => {
+  it('sizes the strip by every card, shown or not, so switching never resizes the row', async () => {
     h.desk.players[0].piece = { ...piece, total: 20, passages: Array.from({ length: 20 }, (_, index) => ({ id: `p${index}`, start: index * 4, end: index * 4 + 3, state: 'todo' })) };
     h.recent.players[0].courses = [{ ...course, lastPlayedAt: '2026-11-19T10:00:00Z' }];
     mount();
     await screen.findByRole('button', { name: 'Kid: Lesson 12: Swing' });
-    expect(document.querySelector('.piano-desk').hasAttribute('data-tall')).toBe(false);
+    // The long piece is behind the other tab, and the strip is already tall.
+    expect(document.querySelector('.piano-desk').hasAttribute('data-tall')).toBe(true);
     fireEvent.click(screen.getByRole('button', { name: 'Kid: Sheet music' }));
     expect(document.querySelector('.piano-desk').hasAttribute('data-tall')).toBe(true);
+    const deck = screen.getByRole('button', { name: 'Kid: 1 of 20 Silver' }).closest('.piano-desk__deck');
+    const card = deck.querySelector('.piano-desk__card');
+    fireEvent.pointerDown(card, { pointerId: 1, clientX: 100, clientY: 50, button: 0 });
+    fireEvent.pointerMove(card, { pointerId: 1, clientX: 40, clientY: 50 });
+    fireEvent.pointerUp(card, { pointerId: 1, clientX: 40, clientY: 50 });
+    expect(screen.getByRole('button', { name: 'Kid: Lesson 12: Swing' })).toBeInTheDocument();
+    expect(document.querySelector('.piano-desk').hasAttribute('data-tall')).toBe(true);
+  });
+
+  it('keeps the strip short when no child has a piece needing two rows', async () => {
+    mount();
+    await screen.findByRole('button', { name: 'Kid: 1 of 3 Silver' });
+    expect(document.querySelector('.piano-desk').hasAttribute('data-tall')).toBe(false);
   });
 
   it('draws a course as its title without the lesson number, the number by the episode still, and a bar', async () => {

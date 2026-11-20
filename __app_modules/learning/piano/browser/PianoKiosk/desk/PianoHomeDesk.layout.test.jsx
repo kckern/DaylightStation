@@ -49,7 +49,7 @@ const courseOf = (title, still, extra = {}) => ({
 
 const KIDS = {
   ada: { name: 'Ada', piece: pieceOf('jingle', 2, (i) => (i === 0 ? 'silver' : 'learning'), { cover: '/img/jingle.svg' }), course: courseOf('Lesson 51 | Jingle Bells', '/img/still-a.svg') },
-  ben: { name: 'Benjamin', piece: pieceOf('prelude', 20, (i) => (i < 4 ? 'gold' : i < 9 ? 'silver' : i === 9 ? 'learning' : 'todo'), { next: { passageId: 'p9', skill: 'notes', label: 'Find the right-hand notes', start: 36, end: 39 } }) },
+  ben: { name: 'Benjamin', piece: pieceOf('prelude', 20, (i) => (i < 4 ? 'gold' : i < 9 ? 'silver' : i === 9 ? 'learning' : 'todo'), { next: { passageId: 'p9', skill: 'notes', label: 'Find the right-hand notes', start: 36, end: 39 } }), course: courseOf('Lesson 12 | Swing Time', '/img/still-a.svg') },
   cleo: { name: 'Cleo', course: courseOf('Lesson 101 | Counting Rhythms with Our Rhythm Challenge - Eighth Rests', '/img/still-c.svg') },
   dot: { name: 'Dot', course: courseOf('Lesson 3 | Hot Cross Buns', null, { completed: 2, total: 40 }) },
   fay: { name: 'Fay', piece: pieceOf('nocturne', 3, () => 'gold', { cover: '/img/minuet.svg', polish: { gem: true, diamond: false }, next: { passageId: 'p1', skill: 'pulse', label: 'Settle into a beat with both hands', start: 4, end: 7 } }) },
@@ -174,6 +174,18 @@ describe('the progress strip at 1280x800', () => {
     const ratios = await page.evaluate(() => [...document.querySelectorAll('.piano-desk__poster')].map((p) => { const r = p.getBoundingClientRect(); return Math.round((r.width / r.height) * 100) / 100; }));
     for (const ratio of ratios) expect(ratio).toBeCloseTo(0.67, 1);
     await shot(page, 'four-children-tall');
+    // Benjamin's long piece makes the row tall; swiping him to his course leaves every card 170px.
+    const ben = page.locator('.piano-desk__child').nth(1).locator('.piano-desk__card');
+    const box = await ben.boundingBox();
+    await page.mouse.move(box.x + box.width - 30, box.y + 60);
+    await page.mouse.down();
+    await page.mouse.move(box.x + 60, box.y + 60, { steps: 8 });
+    await page.mouse.up();
+    await page.waitForTimeout(400);
+    expect(await page.locator('.piano-desk__child').nth(1).locator('.piano-desk__card').getAttribute('data-kind')).toBe('course');
+    expect(await page.evaluate(() => [...document.querySelectorAll('.piano-desk__card')].map((c) => Math.round(c.getBoundingClientRect().height)))).toEqual([170, 170, 170, 170]);
+    expect(await spills(page)).toEqual([]);
+    await shot(page, 'four-children-tall-ben-swiped-to-course');
     expect(errors).toEqual([]);
     await page.close();
   });

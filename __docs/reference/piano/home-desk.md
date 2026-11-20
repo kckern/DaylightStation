@@ -64,17 +64,18 @@ or long-pressed out of the card.
   **Diamond next** (pale diamond colour) after the gem, and **Diamond** once the diamond
   is earned (`cardBadge`). Pinned at the bottom of the column: the passage map in score
   order (a tomato, a flower, a silver coin or a gold coin; the next passage ringed) with
-  the Silver count (and the Gold count once there is one, `PieceCount`). The coins take
-  whichever arrangement gives the biggest coin, the fewer rows on a tie (`coinLayout`):
-  one row with the count stacked beside it (at least 40px), filling the 128px left,
-  up to 36px (1–5 passages: 2–3 get 36px, 4 get 30px); one row under the count line
-  across the whole 176px column, up to 24px (6–7 passages); two rows under the count,
-  up to 22px (8–23 passages); or three rows, up to 14px (24 and more). Every arrangement
-  only shrinks as passages are added, so a longer piece never gets bigger coins. Three
-  rows keep coins at 12px or more up to 36 passages; a longer piece shrinks them further
-  rather than hiding passages behind a "+N" (no piece in the library comes close, and
-  every passage stays tappable-looking and countable). Two or three rows make the cards
-  tall. A narrower card shrinks the coins further.
+  the Silver count (and the Gold count once there is one, `PieceCount`). The coins'
+  arrangement (`coinLayout`): one row with the count stacked beside it (at least 40px),
+  filling the 128px left, up to 36px (1–5 passages: 2–3 get 36px, 4 get 30px); one row
+  under the count line across the whole 176px column, up to 24px (6–8 passages); two
+  rows under the count, up to 22px (9–24 passages); or three rows, up to 14px (25 and
+  more). Among one-row arrangements the biggest coin wins; more rows win only when their
+  coin is at least 3px bigger, since they make every card tall. A coin is never bigger
+  than a piece with one passage fewer gets, so a longer piece never gets bigger coins
+  (nine passages on two rows keep eight's 20px). Three rows keep coins at 12px or more up
+  to 36 passages; a longer piece shrinks them further rather than hiding passages behind
+  a "+N" (no piece in the library comes close, and every passage stays visible and
+  counted). A narrower card shrinks the coins further.
   A tomato nobody has started sits back at
   30% opacity; a started tomato and the one up next are full colour (`passageFaded`).
   A piece holding its Polish gem ends the coin row with
@@ -125,10 +126,10 @@ the owed lesson) is centred in the rest; the pending and curfew captions float; 
 connection banner floats at the foot of the screen, over the on-screen keyboard.
 It is 208px tall: the 32px header, a 6px gap and a card. A card is 150px: 2px of
 border, 16px of padding and 132px of content (the poster, and the right column: badge,
-two title lines, bars, skill, and one row of coins with the count beside it). When any piece shown
-on the strip needs two coin rows, every card grows to 170px together (`data-tall`; the
-posters grow with it at 2:3) so the row stays even; a long piece behind a child's other
-tab does not count. `PianoHomeDesk.layout.test.jsx` renders the strip in Chromium at
+two title lines, bars, skill, and one row of coins with the count beside it). When any child's piece
+needs two or three coin rows, every card grows to 170px together (`data-tall`; the
+posters grow with it at 2:3) so the row stays even. A piece behind a child's other card
+counts too, so switching a card never changes the row's height. `PianoHomeDesk.layout.test.jsx` renders the strip in Chromium at
 1280x800 (two and four children, short and long titles (two-line piece titles with a skill line at 150px), 2, 3, 4, 7 and 20 passages, a missing
 episode still, a 10/10 count, closed), checks that nothing spills out of a card, swipes a
 card with a real mouse and with real touch (CDP touch events: a tap straight after a

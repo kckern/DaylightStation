@@ -181,7 +181,8 @@ function ChildPanel({ group, card, disabled, onChoose, onSwipe, onOpen }) {
       onSwipe(group.userId, card.kind, target.kind);
     },
   });
-  const rows = card.kind === 'piece' && pieceCoins(card.piece).rows > 1 ? pieceCoins(card.piece).rows : undefined;
+  const coinRows = card.kind === 'piece' ? pieceCoins(card.piece).rows : 1;
+  const rows = coinRows > 1 ? coinRows : undefined;
   return (
     <div className="piano-desk__child">
       <span className="piano-desk__head">
@@ -239,7 +240,8 @@ export default function PianoHomeDesk({ disabled, onOpenPassage, onOpenCourse })
   const [chosen, setChosen] = useState({});
   const shown = groups.map((group) => ({ group, card: shownCard(group, chosen[group.userId]) }));
   const cards = shown.map(({ card }) => card);
-  const tall = cards.some((card) => card.kind === 'piece' && pieceCoins(card.piece).rows > 1);
+  // Every card counts, shown or not, so switching a child's card never resizes the row.
+  const tall = groups.some((group) => group.cards.some((card) => card.kind === 'piece' && pieceCoins(card.piece).rows > 1));
   useEffect(() => {
     logger.debug('piano.desk.view', { cards: cards.map((card) => card.key) });
   }, [logger, cards.map((card) => card.key).join(',')]); // eslint-disable-line react-hooks/exhaustive-deps
