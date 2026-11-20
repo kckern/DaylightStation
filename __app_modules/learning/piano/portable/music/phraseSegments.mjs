@@ -195,6 +195,48 @@ export function pieceContext(features) {
   return { cadenceRate: withBass.length ? cadences / withBass.length : 0 };
 }
 
+const BOOLEAN_FEATURES = new Set(['sectionStart', 'restBar']);
+
+/**
+ * Stored rows (compactFeatures) back to feature records, read by `featureKeys` so
+ * a file written with another key order still reads. Booleans come back from 0/1.
+ */
+export function recordsFromRows(featureKeys, rows) {
+  if (!Array.isArray(featureKeys) || !Array.isArray(rows)) return [];
+  return rows.map((row) => {
+    const record = {};
+    for (const key of FEATURE_KEYS) {
+      const at = featureKeys.indexOf(key);
+      const value = at >= 0 && Array.isArray(row) ? row[at] : null;
+      record[key] = BOOLEAN_FEATURES.has(key) ? value === 1 || value === true : value ?? null;
+    }
+    return record;
+  });
+}
+
+/** Barlines a segment list cuts at (each segment's end but the last). */
+const cutsOf = (segments) => new Set(
+  [...(segments || [])].sort((a, b) => a.start - b.start).slice(0, -1).map((s) => s.end),
+);
+
+/**
+ * How a proposal's cuts agree with reference segments (a grown-up's): true and
+ * false positives, misses, precision and recall (null when undefined).
+ */
+export function boundaryAgreement(proposed, reference) {
+  const got = cutsOf(proposed);
+  const want = cutsOf(reference);
+  let tp = 0;
+  for (const k of got) if (want.has(k)) tp += 1;
+  const fp = got.size - tp;
+  const fn = want.size - tp;
+  return {
+    tp, fp, fn,
+    precision: got.size ? tp / got.size : null,
+    recall: want.size ? tp / want.size : null,
+  };
+}
+
 /**
  * p(phrase ends after this barline) from features. Hand-tuned; calibrated in Task 16d.
  * `context.cadenceRate` (from pieceContext) discounts a bass motion the piece repeats.

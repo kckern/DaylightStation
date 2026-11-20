@@ -86,3 +86,39 @@ describe('createSheetMusicAdminService (composition)', () => {
     await expect(service.savePoster(id, svg)).rejects.toMatchObject({ code: 'has-scan' });
   });
 });
+
+const JEV_ID = 'files:docs/sheet-music/classical/x.musicxml';
+function jevDeps({ config = {}, gateway = null } = {}) {
+  const jevLogger = { child: () => jevLogger, info: () => {}, warn: () => {}, error: () => {}, debug: () => {} };
+  return {
+    configService: { getMediaDir: () => '/media', getHouseholdAppConfig: () => config },
+    pianoStudioDatastore: { listSheetMusicIds: () => [], getRoster: () => [], getSheetMusicLearn: () => null },
+    rootLogger: jevLogger,
+    segmentDecisionGateway: gateway,
+  };
+}
+
+describe('createSheetMusicAdminService: Jev proposals', () => {
+  it('reads sheetmusic.admin.boundaryScorer on each call', () => {
+    const config = {};
+    const service = createSheetMusicAdminService(jevDeps({ config }));
+    expect(service.boundaryScorer()).toBe('heuristic');
+    config.sheetmusic = { admin: { boundaryScorer: 'jev' } };
+    expect(service.boundaryScorer()).toBe('jev');
+  });
+
+  it('has no proposer without a configured gateway', async () => {
+    const config = { sheetmusic: { admin: { boundaryScorer: 'jev' } } };
+    const off = createSheetMusicAdminService(jevDeps({ config, gateway: { isConfigured: () => false, evaluate: async () => ({}) } }));
+    await expect(off.propose(JEV_ID, {})).rejects.toMatchObject({ code: 'jev-unavailable' });
+    const none = createSheetMusicAdminService(jevDeps({ config }));
+    await expect(none.propose(JEV_ID, {})).rejects.toMatchObject({ code: 'jev-unavailable' });
+  });
+
+  it('wires a proposer when the gateway is configured', async () => {
+    const config = { sheetmusic: { admin: { boundaryScorer: 'jev' } } };
+    const service = createSheetMusicAdminService(jevDeps({ config, gateway: { isConfigured: () => true, evaluate: async () => ({}) } }));
+    // Past the gateway check, the input is validated next.
+    await expect(service.propose(JEV_ID, { features: [], measureCount: 4 })).rejects.toMatchObject({ code: 'invalid-request' });
+  });
+});

@@ -24,7 +24,7 @@ import { NodeAsyncScheduler } from '#adapters/scheduling/NodeAsyncScheduler.mjs'
 import { createSheetMusicAdminService } from './composition/sheetMusicAdmin.mjs';
 
 /** Installed Piano assembly; callers supply cross-product contracts explicitly. */
-export async function createPianoModule({configService, userService, rootLogger, contentRegistry, householdId, contentPath, fitnessPlayableService, contentServices, eventBus, shortId, pianoBoardGameDayService, schoolLearnerDirectory, PianoConfigProjection, legitDecisionGateway = null}) {
+export async function createPianoModule({configService, userService, rootLogger, contentRegistry, householdId, contentPath, fitnessPlayableService, contentServices, eventBus, shortId, pianoBoardGameDayService, schoolLearnerDirectory, PianoConfigProjection, legitDecisionGateway = null, segmentDecisionGateway = null}) {
   const pianoStudioDatastore = new YamlPianoStudioDatastore({
     configService,
     userService,
@@ -234,7 +234,8 @@ export async function createPianoModule({configService, userService, rootLogger,
     logger: rootLogger.child({ module: 'piano-api' })
   });
 
-  const sheetMusicAdminService = createSheetMusicAdminService({ configService, pianoStudioDatastore, rootLogger });
+  // `segmentDecisionGateway` arrives scoped to { app: 'piano', feature: 'sheetmusic-segments' }.
+  const sheetMusicAdminService = createSheetMusicAdminService({ configService, pianoStudioDatastore, rootLogger, segmentDecisionGateway });
 
   return {router, sheetMusicAdminService, pianoStudioDatastore, composerSongStore, pianoContainer, pianoGameBudgetService, pianoDayActivity, pianoChallengeProfileService, schoolPianoChallengeCompletionService, schoolTeacherGate};
 }

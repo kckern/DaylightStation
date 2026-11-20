@@ -11,6 +11,13 @@
  *   GET  /learn/draft-impact  → { draftRevision, impact }
  *   POST /impact              → { impact }  body { segments } (revert impact against the generated plan)
  *   POST /poster              → 201 { id, poster, url, bytes }  body: the SVG text (image/svg+xml only)
+ *   POST /propose             → { segments, proposal, comparison? }  Jev's Learn segment proposal; multipart:
+ *                               `features` (JSON { features, measureCount, targetLen }) and one PNG per
+ *                               barline Jev judges as `crop_<k>`. 409 jev-disabled unless
+ *                               `sheetmusic.admin.boundaryScorer: jev`; 502 proposal-failed when Jev fails
+ *                               on too many barlines.
+ *
+ * `GET /` also reports `boundaryScorer` ('heuristic' | 'jev') so the admin offers Jev only when enabled.
  *
  * Coded refusals from the injected SheetMusicAdminService become
  * `{ error: code }` (plus `errors` for invalid-segments, `draftRevision` for
@@ -35,6 +42,12 @@ export const MAX_UPLOAD_BYTES = 32 * 1024 * 1024;
 /** The poster body cap: the svgSafety limit, so an oversized body never reaches the service. */
 export const MAX_POSTER_BODY_BYTES = MAX_POSTER_BYTES;
 
+/** One crop PNG's cap (Jev takes at most 1568 px per side); and how many a request may carry. */
+export const MAX_CROP_BYTES = 4 * 1024 * 1024;
+export const MAX_CROPS = 500;
+/** The features field's cap (one small record per barline). */
+const MAX_FEATURES_BYTES = 1024 * 1024;
+
 /** Most segments a draft or impact request may carry; a score has far fewer passages. */
 export const MAX_SEGMENTS = 500;
 
@@ -52,6 +65,10 @@ const STATUS_BY_CODE = {
   'slug-collides': 409,
   'has-scan': 409,
   'poster-exists': 409,
+  'jev-disabled': 409,
+  'jev-unavailable': 503,
+  'proposal-failed': 502,
+  'bad-crop': 422,
   SCORE_TOO_LARGE: 413,
   'too-large': 413,
   'bad-extension': 415,
@@ -93,6 +110,10 @@ export function createAdminSheetMusicRouter({ service, logger = console } = {}) 
   const router = express.Router();
   const posterText = express.text({ type: 'image/svg+xml', limit: MAX_POSTER_BODY_BYTES });
   const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: MAX_UPLOAD_BYTES, files: 1 } });
+  const cropUpload = multer({
+    storage: multer.memoryStorage(),
+    limits: { fileSize: MAX_CROP_BYTES, files: MAX_CROPS, fields: 4, fieldSize: MAX_FEATURES_BYTES },
+  });
 
   /** Answers a coded refusal; false when the error is not one (the caller rethrows). */
   const loggedId = (req) => (typeof req.query.id === 'string' ? req.query.id.slice(0, MAX_LOGGED_ID) : null);
@@ -153,9 +174,19 @@ export function createAdminSheetMusicRouter({ service, logger = console } = {}) 
     });
   });
 
+  /** The propose body: features JSON plus crop_<k> PNGs; parser failures are the client's. */
+  const receiveCrops = (req, res) => new Promise((resolve, reject) => {
+    cropUpload.any()(req, res, (error) => {
+      if (!error) return resolve();
+      reject(refusal(error?.code === 'LIMIT_FILE_SIZE' ? 'too-large' : 'invalid-request'));
+    });
+  });
+
+  const boundaryScorer = () => (typeof service.boundaryScorer === 'function' ? service.boundaryScorer() : 'heuristic');
+
   router.get('/', handle('GET /', async (req, res) => {
     const [scores, folders] = await Promise.all([service.library(), service.uploadFolders()]);
-    res.json({ scores, folders });
+    res.json({ scores, folders, boundaryScorer: boundaryScorer() });
   }));
 
   router.post('/upload', handle('POST /upload', async (req, res) => {
@@ -208,6 +239,25 @@ export function createAdminSheetMusicRouter({ service, logger = console } = {}) 
     await receivePoster(req, res);
     if (typeof req.body !== 'string' || req.body === '') throw refusal('invalid-request');
     res.status(201).json(await service.savePoster(id, req.body));
+  }));
+
+  router.post('/propose', handle('POST /propose', async (req, res) => {
+    const id = scoreId(req);
+    if (!req.is('multipart/form-data')) throw refusal('invalid-request');
+    await receiveCrops(req, res);
+    let parsed;
+    try { parsed = JSON.parse(req.body?.features ?? ''); } catch { throw refusal('invalid-request'); }
+    if (!parsed || typeof parsed !== 'object' || !Array.isArray(parsed.features)) throw refusal('invalid-request');
+    const crops = new Map();
+    for (const file of req.files || []) {
+      const match = /^crop_(\d{1,4})$/.exec(file.fieldname);
+      if (!match || crops.has(Number(match[1]))) throw refusal('invalid-request');
+      crops.set(Number(match[1]), file.buffer);
+    }
+    if (typeof service.propose !== 'function') throw refusal('jev-disabled');
+    res.json(await service.propose(id, {
+      features: parsed.features, crops, measureCount: parsed.measureCount, targetLen: parsed.targetLen,
+    }));
   }));
 
   router.use(errorHandlerMiddleware({ shape: 'string' }));

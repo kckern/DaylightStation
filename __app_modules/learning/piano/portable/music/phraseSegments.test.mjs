@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import {
   barlineFeatures, heuristicBoundaryP, partitionSegments, compactFeatures, FEATURE_KEYS,
-  pieceContext, boundaryProbabilities, LENGTH_WEIGHT,
+  pieceContext, boundaryProbabilities, LENGTH_WEIGHT, recordsFromRows, boundaryAgreement,
 } from './phraseSegments.mjs';
 
 /** The kiosk's buildMeasures, inlined so this test stays portable. */
@@ -356,5 +356,36 @@ describe('synthetic 16-bar phrase pieces through the whole pipeline', () => {
     const features = barlineFeatures({ measures: buildMeasures(steps), steps, beatsPerMeasure: 4 });
     const segs = partitionSegments(16, boundaryProbabilities(features), { targetLen: 4 });
     assert.deepEqual(segs.map((s) => s.end), [3, 7, 11, 15]);
+  });
+});
+
+describe('recordsFromRows', () => {
+  it('turns stored rows back into feature records', () => {
+    const records = [
+      { after: 0, tailGapQuarters: 1, tailGapRatio: 0.25, sectionStart: false, bassMotion: null, densityChange: 0, restBar: false },
+      { after: 1, tailGapQuarters: 4, tailGapRatio: 1, sectionStart: true, bassMotion: 5, densityChange: 0.5, restBar: true },
+    ];
+    assert.deepEqual(recordsFromRows(FEATURE_KEYS, compactFeatures(records)), records);
+  });
+  it('reads by key name, so a reordered or older key list still works', () => {
+    const [r] = recordsFromRows(['tailGapRatio', 'after'], [[0.5, 3]]);
+    assert.equal(r.after, 3);
+    assert.equal(r.tailGapRatio, 0.5);
+    assert.equal(r.sectionStart, false);
+  });
+  it('gives [] for missing input', () => {
+    assert.deepEqual(recordsFromRows(null, [[1]]), []);
+  });
+});
+
+describe('boundaryAgreement', () => {
+  const seg = (start, end) => ({ start, end });
+  it('counts shared cuts; the end of the piece is not a cut', () => {
+    const got = boundaryAgreement([seg(0, 3), seg(4, 7), seg(8, 11)], [seg(0, 3), seg(4, 5), seg(6, 11)]);
+    assert.deepEqual(got, { tp: 1, fp: 1, fn: 1, precision: 0.5, recall: 0.5 });
+  });
+  it('is null-safe when one side has no cuts', () => {
+    assert.deepEqual(boundaryAgreement([seg(0, 7)], [seg(0, 7)]), { tp: 0, fp: 0, fn: 0, precision: null, recall: null });
+    assert.deepEqual(boundaryAgreement([seg(0, 7)], [seg(0, 3), seg(4, 7)]), { tp: 0, fp: 0, fn: 1, precision: null, recall: 0 });
   });
 });

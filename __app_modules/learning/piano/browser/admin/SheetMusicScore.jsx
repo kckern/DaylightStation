@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { Alert, Anchor, Badge, Button, Group, List, Modal, Skeleton, Stack, Text, Title } from '@mantine/core';
+import { Alert, Anchor, Badge, Button, Group, List, Modal, SegmentedControl, Skeleton, Stack, Text, Title } from '@mantine/core';
 import {
   IconAlertTriangle, IconArrowBackUp, IconCheck, IconChevronLeft, IconDeviceFloppy, IconPencil, IconPhoto, IconRefresh, IconSparkles, IconX,
 } from '@tabler/icons-react';
@@ -12,7 +12,10 @@ import { errors as editorErrors, idForIndex, initSegmentEditor, segmentEditorRed
 import { fillParts, generatedSegments, householdOverridesSegments } from "./scorePlan.js";
 import MeasureStrip, { SEGMENT_COLORS, barsLabel, segmentLabel } from "./MeasureStrip.jsx";
 import ApproveDialog, { ADMIN_PATH, scoreQuery } from "./ApproveDialog.jsx";
-import { cutsKey, firstTimeSig, proposeSegments, proposalTargetLen, quartersPerMeasure } from "./proposeSegments.js";
+import {
+  cutsKey, featureSnapshot, firstTimeSig, proposeSegments, proposalTargetLen, quartersPerMeasure, scoreFeatures,
+} from "./proposeSegments.js";
+import { cropBox, renderCrops, requestJevProposal } from "./jevCrops.js";
 import { POSTER_ERROR_MESSAGES, posterFromEngraving, uploadPoster } from "./posterJob.js";
 import "./SheetMusicScore.scss";
 
@@ -30,6 +33,26 @@ export const SEGMENT_ERROR_MESSAGES = {
   overlap: 'overlaps another segment',
   'no-notes': 'has no notes for the kiosk to play',
 };
+/** Readable copy for POST /propose refusals (the Jev scorer). */
+export const PROPOSE_ERROR_MESSAGES = {
+  'jev-disabled': 'Jev proposals are turned off for this household (sheetmusic.admin.boundaryScorer).',
+  'jev-unavailable': 'No Jev connection is configured on the server.',
+  'proposal-failed': 'Jev could not judge enough of the barlines. Try again in a minute, or use the heuristic.',
+  'bad-crop': 'The score pictures for Jev came out the wrong size. Reload the page and try again.',
+  'crop-failed': 'The score could not be turned into pictures for Jev.',
+  'too-large': 'The score pictures for Jev are too large to send.',
+  network: 'The server could not be reached.',
+};
+
+const pct = (x) => (x == null ? 'n/a' : `${Math.round(x * 100)}%`);
+/** One line comparing Jev and the heuristic with the approved cuts. */
+export function comparisonText(comparison) {
+  if (!comparison?.jev || !comparison?.heuristic) return null;
+  const { jev, heuristic } = comparison;
+  return `Against the approved cuts: Jev precision ${pct(jev.precision)}, recall ${pct(jev.recall)}; `
+    + `heuristic precision ${pct(heuristic.precision)}, recall ${pct(heuristic.recall)}.`;
+}
+
 export const FORM_ERROR_MESSAGES = {
   empty: 'Add at least one segment before saving.',
   'bad-measure-count': 'The score has no bars to segment.',
@@ -54,13 +77,14 @@ export function partsDrift(stored, filled) {
  * `edited: true`, features and all, so calibration can tell it from both a
  * scorer's own cut and a hand-made one. With no proposal, a draft is 'manual'.
  */
-export function draftProposal({ pending, stored, storedSegments, segments, dirty }) {
+export function draftProposal({ pending, stored, storedSegments, segments, dirty, snapshot = null }) {
   if (pending) return cutsKey(segments) === pending.key ? pending.proposal : { ...pending.proposal, edited: true };
   if (stored && typeof stored === 'object' && stored.scorer && stored.scorer !== 'manual') {
     return cutsKey(segments) === cutsKey(storedSegments) ? stored : { ...stored, edited: true };
   }
   if (stored && !dirty) return stored;
-  return { scorer: 'manual', at: new Date().toISOString() };
+  // A hand-made draft carries the score's features too: calibration re-scores them.
+  return { scorer: 'manual', at: new Date().toISOString(), ...(snapshot || {}) };
 }
 
 /**
@@ -152,6 +176,8 @@ export default function SheetMusicScore() {
   const [posterSaved, setPosterSaved] = useState(null);
   // segmentsKey of what Edit loaded, to tell whether an unsaved start was changed.
   const [editStart, setEditStart] = useState(null);
+  // Which scorer Propose uses; Jev is offered only when the household enables it.
+  const [scorer, setScorer] = useState('heuristic');
   const hostRef = useRef(null);
   const alive = useRef(false);
   useEffect(() => {
@@ -241,6 +267,7 @@ export default function SheetMusicScore() {
   const score = useMemo(() => (engraved ? {
     id, measures: engraved.measures, steps: engraved.steps, sections: engraved.sections,
     tempoMap: engraved.tempoMap, tempo: engraved.tempo,
+    beatsPerMeasure: engraved.beatsPerMeasure, measureMap: engraved.measureMap,
   } : null), [engraved, id]);
 
   const generated = useMemo(() => {
@@ -310,7 +337,7 @@ export default function SheetMusicScore() {
     logger.info('admin.sheetmusic.edit-started', { id, from: hasApproved ? 'approved' : 'generated', segments: source.length });
   };
 
-  const applyProposal = ({ segments, proposal, ms }, replacedEdits) => {
+  const applyProposal = ({ segments, proposal, ms, comparison = null }, replacedEdits) => {
     if (editing) dispatch({ type: 'replace', segments });
     else {
       dispatch({ type: 'load', segments, measureCount });
@@ -323,33 +350,71 @@ export default function SheetMusicScore() {
     setConfirmPropose(null);
     setPending({ proposal, key: cutsKey(segments) });
     logger.info('admin.sheetmusic.propose', { id, scorer: proposal.scorer, segments: segments.length, ms, replacedEdits });
+    const compared = comparisonText(comparison);
+    if (compared) setNotice({ color: 'blue', text: compared });
   };
 
-  const onPropose = () => {
-    if (!engraved || !measureCount) return;
-    const t0 = performance.now();
-    const result = proposeSegments(
-      {
-        measures, steps: engraved.steps, sections: engraved.sections,
-        beatsPerMeasure: engraved.beatsPerMeasure, measureMap: engraved.measureMap,
-      },
-      { targetLen: proposalTargetLen(pianoConfig) },
-    );
-    const next = {
-      ...result,
-      proposal: { ...result.proposal, ...(learn?.currentSha256 ? { contentSha256: learn.currentSha256 } : {}) },
-      ms: Math.round(performance.now() - t0),
-    };
-    // Ask before overwriting unsaved edits, or a stored draft the proposal would change.
+  /** Applies a proposal, or asks first when it would replace unsaved edits or a stored draft. */
+  const offerProposal = (next) => {
     const changedHere = pending
       ? cutsKey(editor.segments) !== pending.key
       : segmentsKey(editor.segments) !== (baseline ?? editStart);
-    const storedDiffers = !pending && hasDraft && cutsKey(learn.draft.segments) !== cutsKey(result.segments);
+    const storedDiffers = !pending && hasDraft && cutsKey(learn.draft.segments) !== cutsKey(next.segments);
     if (editing && (changedHere || storedDiffers)) {
       setConfirmPropose(next);
       return;
     }
     applyProposal(next, false);
+  };
+
+  const stamp = (proposal) => ({ ...proposal, ...(learn?.currentSha256 ? { contentSha256: learn.currentSha256 } : {}) });
+  const useJev = scorer === 'jev' && learn?.boundaryScorer === 'jev';
+
+  const proposeWithJev = async () => {
+    const t0 = performance.now();
+    setBusy('propose');
+    setNotice(null);
+    try {
+      const features = scoreFeatures(score);
+      const boxes = new Map();
+      for (const f of features) {
+        if (f.sectionStart) continue;
+        const box = cropBox(measures, engraved.bounds, f.after);
+        if (box) boxes.set(f.after, box);
+      }
+      let crops;
+      try {
+        crops = await renderCrops(hostRef.current?.querySelector('svg'), boxes);
+      } catch (err) {
+        logger.warn('admin.sheetmusic.propose-failed', { id, scorer: 'jev', code: err?.code || 'crop-failed', error: err?.message });
+        setNotice({ color: 'red', text: PROPOSE_ERROR_MESSAGES['crop-failed'] });
+        return;
+      }
+      const outcome = await requestJevProposal({
+        id, features, crops, measureCount, targetLen: proposalTargetLen(pianoConfig),
+      });
+      if (!alive.current) return;
+      if (!outcome.ok) {
+        logger.warn('admin.sheetmusic.propose-failed', { id, scorer: 'jev', code: outcome.code, status: outcome.status });
+        setNotice({ color: 'red', text: PROPOSE_ERROR_MESSAGES[outcome.code] || `Jev could not propose segments${outcome.code ? ` (${outcome.code})` : ''}.` });
+        return;
+      }
+      const { segments: cut = [], proposal, comparison } = outcome.result;
+      const segments = cut.map((seg, i) => ({ id: idForIndex(i), start: seg.start, end: seg.end }));
+      offerProposal({
+        segments, proposal: stamp(proposal), ms: Math.round(performance.now() - t0), comparison: comparison || null,
+      });
+    } finally {
+      if (alive.current) setBusy(null);
+    }
+  };
+
+  const onPropose = () => {
+    if (!engraved || !measureCount) return;
+    if (useJev) { proposeWithJev(); return; }
+    const t0 = performance.now();
+    const result = proposeSegments(score, { targetLen: proposalTargetLen(pianoConfig) });
+    offerProposal({ ...result, proposal: stamp(result.proposal), ms: Math.round(performance.now() - t0) });
   };
 
   const discard = () => {
@@ -386,6 +451,7 @@ export default function SheetMusicScore() {
     if (!canWrite) return null;
     const proposal = draftProposal({
       pending, stored: learn?.draft?.proposal, storedSegments: learn?.draft?.segments, segments: editor.segments, dirty,
+      snapshot: score ? { ...featureSnapshot(scoreFeatures(score), engraved?.beatsPerMeasure), ...(learn?.currentSha256 ? { contentSha256: learn.currentSha256 } : {}) } : null,
     });
     setBusy('save');
     setServerErrors(null);
@@ -544,7 +610,24 @@ export default function SheetMusicScore() {
               Edit
             </Button>
           )}
-          <Button size="sm" variant="light" leftSection={<IconSparkles size={16} />} onClick={onPropose} disabled={Boolean(busy) || !measureCount}>
+          {learn?.boundaryScorer === 'jev' ? (
+            <SegmentedControl
+              size="xs"
+              value={scorer}
+              onChange={setScorer}
+              data={[{ label: 'Heuristic', value: 'heuristic' }, { label: 'Jev', value: 'jev' }]}
+              aria-label="Proposal scorer"
+              disabled={Boolean(busy)}
+            />
+          ) : null}
+          <Button
+            size="sm"
+            variant="light"
+            leftSection={<IconSparkles size={16} />}
+            onClick={onPropose}
+            disabled={Boolean(busy) || !measureCount}
+            loading={busy === 'propose'}
+          >
             Propose segments
           </Button>
           <Button

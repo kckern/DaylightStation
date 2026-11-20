@@ -2325,6 +2325,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   const { router: pianoRouter, sheetMusicAdminService, pianoStudioDatastore, composerSongStore, pianoContainer, pianoGameBudgetService, pianoDayActivity, pianoChallengeProfileService, schoolPianoChallengeCompletionService, schoolTeacherGate } = await createPianoModule({
     configService, userService, rootLogger, contentRegistry, householdId, contentPath, fitnessPlayableService, contentServices, eventBus, shortId, pianoBoardGameDayService, PianoConfigProjection,
     legitDecisionGateway: scopedGateway(decisionGateway, { app: 'piano', feature: 'lesson-legit-notes' }),
+    segmentDecisionGateway: scopedGateway(decisionGateway, { app: 'piano', feature: 'sheetmusic-segments' }),
     schoolLearnerDirectory: { listLearners: () => schoolLearnerDirectory.listLearners() },
   });
   v1Routers.piano = pianoRouter;

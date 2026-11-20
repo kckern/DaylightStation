@@ -18,7 +18,7 @@ class FakeReadError extends Error {
   constructor(code, scoreId) { super(`${code}: ${scoreId}`); this.name = 'ScoreReadError'; this.code = code; this.scoreId = scoreId; }
 }
 
-function fixture({ scores = {}, learn = {}, covers = {}, practice = {}, learners = ['learner1', 'learner2'], datastoreOverrides = {}, writePoster } = {}) {
+function fixture({ scores = {}, learn = {}, covers = {}, practice = {}, learners = ['learner1', 'learner2'], datastoreOverrides = {}, writePoster, boundaryScorer, proposer } = {}) {
   const reads = [];
   const posters = [];
   const saved = [];
@@ -57,6 +57,8 @@ function fixture({ scores = {}, learn = {}, covers = {}, practice = {}, learners
     fileSignature: (id) => signatures.get(id) ?? null,
     clock: () => new Date('2026-11-20T10:00:00.000Z'),
     logger,
+    boundaryScorer,
+    proposer,
     writePoster: writePoster ?? (async (id, text) => {
       posters.push({ id, text });
       return `${id.replace(/^files:/, '').replace(/\.[^.]+$/, '')}.svg`;
@@ -274,7 +276,8 @@ describe('SheetMusicAdminService.impact and approve', () => {
     const written = saved[0].data;
     expect(written.segments).toEqual(draftSegments);
     expect(written.contentSha256).toBe('sha-now');
-    expect(written.approved).toEqual({ at: '2026-11-20T10:00:00.000Z' });
+    expect(written.approved).toEqual({ at: '2026-11-20T10:00:00.000Z', proposal: { by: 'kiosk' } });
+    expect(written.draft).toBeUndefined();
     expect('draft' in written).toBe(false);
     expect(file).toMatchObject({ segments: draftSegments, draft: null, contentSha256: 'sha-now' });
     expect(impact).toHaveLength(1);
@@ -815,5 +818,106 @@ describe('SheetMusicAdminService.savePoster', () => {
     expect((await service.getLearn(ID_A)).poster).toBe('scan');
     const { service: none } = fixture({ scores });
     expect((await none.getLearn(ID_A)).poster).toBe('none');
+  });
+});
+
+/** A PNG header of the given size. */
+function pngOf(width = 400, height = 300) {
+  const buf = Buffer.alloc(33);
+  Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]).copy(buf, 0);
+  buf.writeUInt32BE(13, 8);
+  buf.write('IHDR', 12, 'ascii');
+  buf.writeUInt32BE(width, 16);
+  buf.writeUInt32BE(height, 20);
+  return buf;
+}
+
+describe('SheetMusicAdminService: proposals and calibration provenance', () => {
+  const record = (after, extra = {}) => ({
+    after, tailGapQuarters: 1, tailGapRatio: 0.25, sectionStart: false, bassMotion: null, densityChange: 0, restBar: false, ...extra,
+  });
+  const proposeInput = (n = 4, { sections = [], crops } = {}) => {
+    const features = Array.from({ length: n - 1 }, (_, k) => record(k, sections.includes(k) ? { sectionStart: true } : {}));
+    return {
+      features,
+      measureCount: n,
+      targetLen: 4,
+      crops: crops ?? new Map(features.filter((f) => !f.sectionStart).map((f) => [f.after, pngOf()])),
+    };
+  };
+  const fakeProposer = () => {
+    const calls = [];
+    return { calls, execute: async (input) => { calls.push(input); return { segments: [{ start: 0, end: input.measureCount - 1 }], proposal: { scorer: 'jev' } }; } };
+  };
+
+  it('approve keeps the draft\'s proposal with the approval, for calibration', async () => {
+    const proposal = { scorer: 'manual', at: 't', featureKeys: ['after'], features: [[0], [1], [2]] };
+    const { service, saved } = fixture({
+      scores: { [ID_A]: { xml: xmlOf(), sha: 'sha-1' } },
+      learn: { [ID_A]: { version: 1, scoreId: ID_A, draft: { segments: [seg('a', 0, 3)], proposal } } },
+    });
+    const revision = draftRevision([seg('a', 0, 3)]);
+    await service.approve(ID_A, { measureCount: 4, expectedDraftRevision: revision });
+    expect(saved[0].data.approved).toEqual({ at: '2026-11-20T10:00:00.000Z', proposal });
+  });
+
+  it('reports the configured boundary scorer, heuristic unless jev', async () => {
+    expect(fixture({}).service.boundaryScorer()).toBe('heuristic');
+    expect(fixture({ boundaryScorer: () => 'jev' }).service.boundaryScorer()).toBe('jev');
+    expect(fixture({ boundaryScorer: () => 'gpt' }).service.boundaryScorer()).toBe('heuristic');
+    const { service } = fixture({ scores: { [ID_A]: { xml: xmlOf(), sha: '1' } }, boundaryScorer: () => 'jev' });
+    expect((await service.getLearn(ID_A)).boundaryScorer).toBe('jev');
+  });
+
+  it('propose refuses unless jev is configured, and without a gateway', async () => {
+    const scores = { [ID_A]: { xml: xmlOf(), sha: '1' } };
+    await expect(fixture({ scores, proposer: fakeProposer() }).service.propose(ID_A, proposeInput()))
+      .rejects.toMatchObject({ code: 'jev-disabled' });
+    await expect(fixture({ scores, boundaryScorer: () => 'jev' }).service.propose(ID_A, proposeInput()))
+      .rejects.toMatchObject({ code: 'jev-unavailable' });
+  });
+
+  it('propose checks features against the bar count and every crop it needs', async () => {
+    const scores = { [ID_A]: { xml: xmlOf(), sha: '1' } };
+    const { service } = fixture({ scores, boundaryScorer: () => 'jev', proposer: fakeProposer() });
+    await expect(service.propose(ID_A, { ...proposeInput(), measureCount: 9 })).rejects.toMatchObject({ code: 'invalid-request' });
+    await expect(service.propose(ID_A, proposeInput(4, { crops: new Map([[0, pngOf()], [1, pngOf()]]) })))
+      .rejects.toMatchObject({ code: 'bad-crop' });
+    await expect(service.propose(ID_A, proposeInput(4, { crops: new Map([[0, pngOf()], [1, pngOf()], [2, pngOf(200, 300)]]) })))
+      .rejects.toMatchObject({ code: 'bad-crop' });
+    await expect(service.propose(ID_A, proposeInput(4, { crops: new Map([[0, pngOf()], [1, pngOf()], [2, pngOf(1600, 300)]]) })))
+      .rejects.toMatchObject({ code: 'bad-crop' });
+  });
+
+  it('propose runs the proposer, with the hand-made approved cuts as reference', async () => {
+    const proposer = fakeProposer();
+    const approvedFile = {
+      version: 1, scoreId: ID_A, contentSha256: '1', segments: [seg('a', 0, 1), seg('b', 2, 3)],
+      approved: { at: 'x', proposal: { scorer: 'manual' } },
+    };
+    const { service } = fixture({ scores: { [ID_A]: { xml: xmlOf(), sha: '1' } }, learn: { [ID_A]: approvedFile }, boundaryScorer: () => 'jev', proposer });
+    const result = await service.propose(ID_A, proposeInput(4, { sections: [1] }));
+    expect(result.segments).toEqual([{ start: 0, end: 3 }]);
+    const [call] = proposer.calls;
+    expect(call).toMatchObject({ id: ID_A, measureCount: 4, limits: { targetLen: 4 } });
+    expect(call.reference).toEqual([{ start: 0, end: 1 }, { start: 2, end: 3 }]);
+    // A section start needs no crop.
+    expect([...call.crops.keys()]).toEqual([0, 2]);
+  });
+
+  it('propose gives no reference when the approved cuts were a scorer\'s own or are stale', async () => {
+    for (const approved of [
+      { contentSha256: '1', approved: { at: 'x', proposal: { scorer: 'heuristic' } } },
+      { contentSha256: 'old', approved: { at: 'x', proposal: { scorer: 'manual' } } },
+    ]) {
+      const proposer = fakeProposer();
+      const { service } = fixture({
+        scores: { [ID_A]: { xml: xmlOf(), sha: '1' } },
+        learn: { [ID_A]: { version: 1, scoreId: ID_A, segments: [seg('a', 0, 3)], ...approved } },
+        boundaryScorer: () => 'jev', proposer,
+      });
+      await service.propose(ID_A, proposeInput());
+      expect(proposer.calls[0].reference).toBeNull();
+    }
   });
 });

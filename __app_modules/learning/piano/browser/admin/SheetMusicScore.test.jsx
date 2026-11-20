@@ -34,6 +34,12 @@ vi.mock("../../../../../__capabilities/music-notation/browser/renderers/osmdRend
     extractPerStaffGeometry: () => [0, 1, 2].map((system) => ({ system, staff: 0, top: system * 100, left: 0, right: 400, lineSpacing: 5 })),
   };
 });
+const jevRequest = vi.fn();
+const renderCrops = vi.fn();
+vi.mock("./jevCrops.js", async () => {
+  const actual = await vi.importActual("./jevCrops.js");
+  return { ...actual, renderCrops: (...a) => renderCrops(...a), requestJevProposal: (...a) => jevRequest(...a) };
+});
 const uploadPoster = vi.fn();
 vi.mock("./posterJob.js", async () => {
   const actual = await vi.importActual("./posterJob.js");
@@ -87,6 +93,8 @@ const putCalls = () => api.mock.calls.filter(([, , method]) => method === 'PUT')
 
 beforeEach(() => {
   api.mockReset(); apiText.mockReset(); osmdRender.mockReset(); uploadPoster.mockReset(); logged.length = 0;
+  jevRequest.mockReset(); renderCrops.mockReset();
+  renderCrops.mockImplementation(async (svg, boxes) => new Map([...boxes.keys()].map((k) => [k, new Blob(['png'])])));
   ID = DEFAULT_ID;
   learn = learnFile();
   pianoConfig = {};
@@ -364,6 +372,68 @@ describe('SheetMusicScore', () => {
     await engravedReady();
     const strip = await screen.findByTestId('measure-strip-draft');
     expect([...strip.querySelectorAll('[data-boundary]')].map((el) => el.getAttribute('data-boundary'))).toEqual(['3', '4']);
+  });
+
+  it('a hand-made draft carries the score\'s features for calibration', async () => {
+    learn = learnFile({ draft: { segments: [{ id: 'a', start: 0, end: 7 }] }, draftRevision: 'r' });
+    renderPage();
+    await engravedReady();
+    fireEvent.click(await screen.findByRole('button', { name: 'Split after bar 4' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Save draft' }));
+    await waitFor(() => expect(putCalls().length).toBe(1));
+    const { proposal } = putCalls()[0][1];
+    expect(proposal).toMatchObject({ scorer: 'manual', beatsPerMeasure: 4, contentSha256: 'sha-now' });
+    expect(proposal.features).toHaveLength(7);
+    expect(proposal.featureKeys.length).toBe(proposal.features[0].length);
+  });
+
+  describe('Jev proposals', () => {
+    it('offers Jev only when the household enables it', async () => {
+      renderPage();
+      await engravedReady();
+      await screen.findByRole('button', { name: 'Propose segments' });
+      expect(screen.queryByRole('radio', { name: 'Jev' })).toBeNull();
+    });
+
+    it('sends features and crops, applies Jev\'s cuts and shows the comparison', async () => {
+      learn = learnFile({ boundaryScorer: 'jev' });
+      jevRequest.mockResolvedValue({
+        ok: true,
+        result: {
+          segments: [{ start: 0, end: 3 }, { start: 4, end: 7 }],
+          proposal: { scorer: 'jev', model: 'jev-1', boundaries: { 3: 0.9 } },
+          comparison: { jev: { precision: 1, recall: 0.5 }, heuristic: { precision: 0.5, recall: 0.5 } },
+        },
+      });
+      renderPage();
+      await engravedReady();
+      fireEvent.click(await screen.findByRole('radio', { name: 'Jev' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Propose segments' }));
+      await waitFor(() => expect(jevRequest).toHaveBeenCalledTimes(1));
+      const [req] = jevRequest.mock.calls[0];
+      expect(req).toMatchObject({ id: DEFAULT_ID, measureCount: 8, targetLen: 4 });
+      expect(req.features).toHaveLength(7);
+      expect([...req.crops.keys()]).toEqual([0, 1, 2, 3, 4, 5, 6]);
+      expect([...renderCrops.mock.calls[0][1].values()][0]).toMatchObject({ markerX: 50 });
+      expect(await screen.findByText(/Jev precision 100%, recall 50%; heuristic precision 50%/)).toBeTruthy();
+      fireEvent.click(screen.getByRole('button', { name: 'Save draft' }));
+      await waitFor(() => expect(putCalls().length).toBe(1));
+      expect(putCalls()[0][1].segments.map(({ id, start, end }) => [id, start, end])).toEqual([['a', 0, 3], ['b', 4, 7]]);
+      expect(putCalls()[0][1].proposal).toMatchObject({ scorer: 'jev', model: 'jev-1', contentSha256: 'sha-now' });
+      expect(logged.find((l) => l.event === 'admin.sheetmusic.propose')?.data).toMatchObject({ scorer: 'jev', segments: 2 });
+    });
+
+    it('says why when Jev fails, and leaves the segments alone', async () => {
+      learn = learnFile({ boundaryScorer: 'jev', draft: { segments: [{ id: 'a', start: 0, end: 7 }] }, draftRevision: 'r' });
+      jevRequest.mockResolvedValue({ ok: false, code: 'proposal-failed', status: 502 });
+      renderPage();
+      await engravedReady();
+      fireEvent.click(await screen.findByRole('radio', { name: 'Jev' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Propose segments' }));
+      expect(await screen.findByText(/Jev could not judge enough of the barlines/)).toBeTruthy();
+      expect(within(screen.getByTestId('measure-strip-draft')).getByRole('button', { name: 'Segment 1, Bars 1-8' })).toBeTruthy();
+      expect(logged.find((l) => l.event === 'admin.sheetmusic.propose-failed')?.data).toMatchObject({ code: 'proposal-failed' });
+    });
   });
 
   it('shows validation errors live and disables Save and Approve', async () => {

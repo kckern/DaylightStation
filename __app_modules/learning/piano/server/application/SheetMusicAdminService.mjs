@@ -55,6 +55,21 @@ import {
 } from '../../portable/music/musicXmlUpload.mjs';
 import { checkSvg } from '../../portable/music/svgSafety.mjs';
 import { FEATURE_KEYS } from '../../portable/music/phraseSegments.mjs';
+import { pngDimensions } from './ProposeLearnSegments.mjs';
+
+/** Jev's image limits (JevAdapter refuses anything outside): px per side. */
+export const CROP_MIN_SIDE = 280;
+export const CROP_MAX_SIDE = 1568;
+const BOUNDARY_SCORERS = new Set(['heuristic', 'jev']);
+
+/**
+ * True when approved cuts were made by a grown-up: a manual draft, or a proposal
+ * whose cuts were changed by hand. Only these are evidence for calibration.
+ */
+export function handMadeApproval(approved) {
+  const proposal = isObject(approved) && isObject(approved.proposal) ? approved.proposal : null;
+  return Boolean(proposal && (proposal.scorer === 'manual' || proposal.edited === true));
+}
 
 const READ_CONCURRENCY = 4;
 const LEARN_SAVED = 'piano.sheetmusic.learn-saved';
@@ -175,12 +190,14 @@ export class SheetMusicAdminService {
   #writeScoreExclusive;
   #collectionRefs;
   #writePoster;
+  #boundaryScorer;
+  #proposer;
   /** id → { signature, title, composer, contentSha256 } */
   #headerCache = new Map();
 
   constructor({
     datastore, scoreReader, listScores, listLearners, fileSignature, clock = () => new Date(), logger,
-    extractMxl, writeScoreExclusive, collectionRefs, writePoster,
+    extractMxl, writeScoreExclusive, collectionRefs, writePoster, boundaryScorer, proposer = null,
   } = {}) {
     if (!datastore) throw new Error('SheetMusicAdminService requires datastore');
     if (!scoreReader) throw new Error('SheetMusicAdminService requires scoreReader');
@@ -197,6 +214,53 @@ export class SheetMusicAdminService {
     this.#writeScoreExclusive = writeScoreExclusive;
     this.#collectionRefs = collectionRefs;
     this.#writePoster = writePoster;
+    this.#boundaryScorer = typeof boundaryScorer === 'function' ? boundaryScorer : () => 'heuristic';
+    this.#proposer = proposer && typeof proposer.execute === 'function' ? proposer : null;
+  }
+
+  /** `sheetmusic.admin.boundaryScorer` as configured now: 'jev' or 'heuristic' (the default). */
+  boundaryScorer() {
+    let value;
+    try { value = this.#boundaryScorer(); } catch { value = null; }
+    return BOUNDARY_SCORERS.has(value) ? value : 'heuristic';
+  }
+
+  /**
+   * Jev's proposal for a score's Learn segments (spec §5). Nothing is saved.
+   * Refusals: `jev-disabled` (config is not jev), `jev-unavailable` (no decision
+   * gateway), `invalid-request` (features do not match the bar count), `bad-crop`
+   * (a barline Jev must judge has no PNG crop inside Jev's size limits), plus the
+   * score reader's codes and the proposer's `proposal-failed`.
+   * When the approved cuts are a grown-up's and still current, they go along as
+   * the reference for the Jev-vs-heuristic comparison.
+   * @param {string} id
+   * @param {{ features: Array<object>, crops: Map<number, Buffer>, measureCount: number, targetLen?: number }} input
+   */
+  async propose(id, { features, crops, measureCount, targetLen } = {}) {
+    requireLibrary(id);
+    if (this.boundaryScorer() !== 'jev') throw codedError('jev-disabled', 'The Jev boundary scorer is not enabled');
+    if (!this.#proposer) throw codedError('jev-unavailable', 'No decision gateway is configured');
+    if (!Number.isInteger(measureCount) || measureCount < 2 || !Array.isArray(features) || features.length !== measureCount - 1
+      || features.some((f, k) => !isObject(f) || f.after !== k)) {
+      throw codedError('invalid-request', 'features must hold one record per barline, in order');
+    }
+    const cropMap = crops instanceof Map ? crops : new Map();
+    const needed = new Map();
+    for (const f of features) {
+      if (f.sectionStart === true) continue;
+      const size = pngDimensions(cropMap.get(f.after));
+      if (!size || Math.min(size.width, size.height) < CROP_MIN_SIDE || Math.max(size.width, size.height) > CROP_MAX_SIDE) {
+        throw codedError('bad-crop', `Barline ${f.after} needs a PNG crop of ${CROP_MIN_SIDE}-${CROP_MAX_SIDE} px per side`);
+      }
+      needed.set(f.after, cropMap.get(f.after));
+    }
+    const { contentSha256 } = await this.#scoreInfo(id);
+    const stored = normalizeLearnFile(this.#storedFile(id));
+    const reference = stored.segments.length && stored.contentSha256 === contentSha256 && handMadeApproval(stored.approved)
+      ? stored.segments.map(({ start, end }) => ({ start, end }))
+      : null;
+    const target = Number.isInteger(targetLen) && targetLen >= 1 && targetLen <= 8 ? targetLen : 4;
+    return this.#proposer.execute({ id, features, crops: needed, measureCount, limits: { targetLen: target }, reference });
   }
 
   /**
@@ -342,6 +406,7 @@ export class SheetMusicAdminService {
       currentSha256: contentSha256,
       stale: file.segments.length > 0 && file.contentSha256 !== contentSha256,
       draftRevision: file.draft ? draftRevision(file.draft.segments) : null,
+      boundaryScorer: this.boundaryScorer(),
     };
   }
 
@@ -402,7 +467,9 @@ export class SheetMusicAdminService {
       scoreId: stored.scoreId ?? id,
       contentSha256,
       segments: draft.segments,
-      approved: { at: this.#clock().toISOString() },
+      // The draft's proposal goes with the approval: how these cuts were made, and
+      // the features calibration re-scores them from.
+      approved: { at: this.#clock().toISOString(), ...(draft.proposal ? { proposal: draft.proposal } : {}) },
     };
     const write = this.#datastore.saveSheetMusicLearn(id, next);
     if (isThenable(write)) await write;

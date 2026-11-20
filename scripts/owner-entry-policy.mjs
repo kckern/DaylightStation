@@ -39,6 +39,7 @@ export const OWNER_ENTRY_POLICY = Object.freeze({
   '__app_modules/learning/piano/cli/piano-play.cli.mjs': null,
   '__app_modules/learning/piano/cli/piano-producer-catalog.cli.mjs': null,
   '__app_modules/learning/piano/cli/piano-producer-prefabs.cli.mjs': null,
+  '__app_modules/learning/piano/cli/piano-segment-calibrate.cli.mjs': null,
   '__app_modules/learning/piano/cli/piano-voice-sweep-analyze.cli.mjs': null,
   '__app_modules/learning/piano/cli/piano-voice-sweep-slice.cli.mjs': null,
   '__app_modules/learning/school/cli/booklog.cli.mjs': null,

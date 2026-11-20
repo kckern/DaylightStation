@@ -42,6 +42,26 @@ export const cutsKey = (segments) => JSON.stringify((segments || []).map((s) => 
 
 const round3 = (p) => Math.round(p * 1000) / 1000;
 
+/** barlineFeatures records for an engraved score (the page's `score` shape). */
+export function scoreFeatures(score) {
+  return barlineFeatures({
+    measures: score?.measures || [], steps: score?.steps || [], sections: score?.sections || [],
+    beatsPerMeasure: score?.beatsPerMeasure, measureMap: score?.measureMap,
+  });
+}
+
+/**
+ * The features as a draft stores them, for calibration: every draft carries them,
+ * hand-made ones included, so the calibration CLI can re-score the cuts offline.
+ */
+export function featureSnapshot(records, beatsPerMeasure) {
+  return {
+    beatsPerMeasure: Number.isFinite(beatsPerMeasure) ? beatsPerMeasure : 4,
+    featureKeys: [...FEATURE_KEYS],
+    features: compactFeatures(records),
+  };
+}
+
 /**
  * @param {{ measures: Array, steps: Array, sections?: Array, beatsPerMeasure?: number, measureMap?: Array }} score
  *   `measureMap` is the score's bar starts and lengths (osmdRender's extractMeasureMap);
@@ -51,10 +71,7 @@ const round3 = (p) => Math.round(p * 1000) / 1000;
  */
 export function proposeSegments(score, { targetLen = 4, now = () => new Date().toISOString() } = {}) {
   const measures = score?.measures || [];
-  const features = barlineFeatures({
-    measures, steps: score?.steps || [], sections: score?.sections || [],
-    beatsPerMeasure: score?.beatsPerMeasure, measureMap: score?.measureMap,
-  });
+  const features = scoreFeatures(score);
   const pAfter = boundaryProbabilities(features);
   const segments = partitionSegments(measures.length, pAfter, { ...PROPOSAL_LIMITS, targetLen })
     .map((s, i) => ({ id: idForIndex(i), start: s.start, end: s.end }));
@@ -66,9 +83,7 @@ export function proposeSegments(score, { targetLen = 4, now = () => new Date().t
       model: null,
       at: now(),
       boundaries,
-      beatsPerMeasure: Number.isFinite(score?.beatsPerMeasure) ? score.beatsPerMeasure : 4,
-      featureKeys: [...FEATURE_KEYS],
-      features: compactFeatures(features),
+      ...featureSnapshot(features, score?.beatsPerMeasure),
     },
   };
 }

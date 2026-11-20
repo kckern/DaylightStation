@@ -40,7 +40,7 @@ describe('createAdminRouter /sheet-music', () => {
   it('mounts the sheet music router when the service is given', async () => {
     const res = await request(appWith({ ...baseServices, sheetMusicAdminService })).get('/admin/sheet-music/');
     expect(res.status).toBe(200);
-    expect(res.body).toEqual({ scores: [{ id: 'files:docs/sheet-music/classical/a.musicxml' }], folders: ['classical'] });
+    expect(res.body).toEqual({ scores: [{ id: 'files:docs/sheet-music/classical/a.musicxml' }], folders: ['classical'], boundaryScorer: 'heuristic' });
   });
 
   it('leaves /sheet-music unmounted without the service', async () => {
