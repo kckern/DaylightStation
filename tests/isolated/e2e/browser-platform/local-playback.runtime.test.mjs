@@ -91,17 +91,18 @@ test('Media keeps its audio and saves fresh progress after a refused background 
       ? route.fulfill({ status: 503, json: { message: 'Fixture progress write unavailable' } })
       : route.fulfill({ json: {} });
   });
+  // Begin below the logging interval so native startup updates leave it unused.
+  const start = 1000;
+  await page.clock.setFixedTime(start);
   await page.goto('/media?play=plex:42');
   const clock = await originalClock(page);
   const audio = await page.waitForFunction(() => [...document.querySelectorAll('audio')]
     .find(node => node.currentSrc.includes('fixture-audio.wav') && !node.paused));
-  const start = Date.now();
   const advanceClock = async (position, milliseconds) => {
+    await audio.evaluate((node, seconds) => { node.currentTime = seconds; }, position);
+    await expect.poll(clock).toBeGreaterThanOrEqual(position);
     await page.clock.setFixedTime(start + milliseconds);
-    await audio.evaluate((node, seconds) => {
-      node.currentTime = seconds;
-      node.dispatchEvent(new Event('timeupdate'));
-    }, position);
+    await audio.evaluate(node => node.dispatchEvent(new Event('timeupdate')));
   };
 
   await advanceClock(15, 11_000);
