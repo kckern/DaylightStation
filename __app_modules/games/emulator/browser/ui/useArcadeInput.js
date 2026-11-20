@@ -27,14 +27,16 @@ const KEY_INTENT = {
  * @param {boolean} [opts.primeOnStart=false]  treat whatever a pad is already
  *   pressing when polling starts as "held", not as a new press — so the A press
  *   that opened a surface does not also activate its first button.
+ * @param {boolean} [opts.keyboard=true]  false = gamepad only (a screen that
+ *   handles keys itself).
  */
-export function useArcadeInput({ onIntent, enabled = true, getGamepads, primeOnStart = false } = {}) {
+export function useArcadeInput({ onIntent, enabled = true, getGamepads, primeOnStart = false, keyboard = true } = {}) {
   const onIntentRef = useRef(onIntent);
   onIntentRef.current = onIntent;
 
   // Keyboard.
   useEffect(() => {
-    if (!enabled) return undefined;
+    if (!enabled || !keyboard) return undefined;
     const handler = (e) => {
       const intent = KEY_INTENT[e.key];
       if (!intent) return;
@@ -43,7 +45,7 @@ export function useArcadeInput({ onIntent, enabled = true, getGamepads, primeOnS
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [enabled]);
+  }, [enabled, keyboard]);
 
   // Gamepad — rAF poll with per-button edge detection.
   useEffect(() => {
