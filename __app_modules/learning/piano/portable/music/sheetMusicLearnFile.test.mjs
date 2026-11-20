@@ -63,3 +63,48 @@ describe('approvalImpact', () => {
     assert.deepEqual(approvalImpact(null, [{ id: 'a', start: 0, end: 3 }]), { kept: [], orphaned: [], lostSilver: 0, lostGold: 0, wasAllGold: false, allGoldAfter: false });
   });
 });
+
+describe('validateSegments edge cases', () => {
+  it('catches overlaps nested inside an earlier long segment', () => {
+    const errors = validateSegments([{ id: 'a', start: 0, end: 10 }, { id: 'b', start: 2, end: 3 }, { id: 'c', start: 5, end: 6 }], 12);
+    assert.deepEqual(errors.map((e) => [e.code, e.id]), [['overlap', 'b'], ['overlap', 'c']]);
+  });
+  it('reports a non-numeric bound once, without a false overlap', () => {
+    const errors = validateSegments([{ id: 'b', start: 5, end: 8 }, { id: 'x', start: 'zz', end: 1 }, { id: 'a', start: 0, end: 3 }], 10);
+    assert.deepEqual(errors, [{ code: 'not-integer', id: 'x', index: 1 }]);
+  });
+  it('flags fractional bounds as not-integer', () => {
+    assert.deepEqual(validateSegments([{ id: 'a', start: 0.5, end: 2 }], 4), [{ code: 'not-integer', id: 'a', index: 0 }]);
+  });
+  it('rejects a missing or invalid measure count', () => {
+    const expected = [{ code: 'bad-measure-count', id: null, index: -1 }];
+    assert.deepEqual(validateSegments([{ id: 'a', start: 0, end: 1 }], undefined), expected);
+    assert.deepEqual(validateSegments([{ id: 'a', start: 0, end: 1 }], NaN), expected);
+  });
+  it('rejects non-array segments instead of throwing', () => {
+    assert.deepEqual(validateSegments(null, 4), [{ code: 'not-array', id: null, index: -1 }]);
+  });
+  it('gives every error the same shape', () => {
+    const [err] = validateSegments([{ id: ' ', start: 0, end: 1 }], 4);
+    assert.deepEqual(err, { code: 'missing-id', id: null, index: 0 });
+  });
+});
+
+describe('approvedSegments structure checks', () => {
+  it('returns null when stored segments overlap', () => {
+    const file = { contentSha256: SHA, segments: [{ id: 'a', start: 0, end: 4 }, { id: 'b', start: 3, end: 6 }] };
+    assert.equal(approvedSegments(file, SHA), null);
+  });
+  it('returns valid unsorted segments sorted by start', () => {
+    const file = { contentSha256: SHA, segments: [{ id: 'b', start: 4, end: 6 }, { id: 'a', start: 0, end: 3 }] };
+    assert.deepEqual(approvedSegments(file, SHA).map((s) => s.id), ['a', 'b']);
+  });
+});
+
+describe('approvalImpact with no segments', () => {
+  it('is never all gold after approving nothing', () => {
+    const summary = { total: 1, gold: 1, passages: [{ id: 'm0-3', start: 0, end: 3, silver: 't', gold: 't' }] };
+    assert.equal(approvalImpact(summary, []).allGoldAfter, false);
+    assert.equal(approvalImpact(summary, null).allGoldAfter, false);
+  });
+});

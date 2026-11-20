@@ -15,27 +15,36 @@ function cleanSegment(raw) {
 
 const cleanSegments = (list) => (Array.isArray(list) ? list.map(cleanSegment).filter(Boolean) : []);
 
-/** Errors as [{ code, id, index }]. Empty array = valid. */
+/**
+ * Errors as [{ code, id, index }], where `id` is the trimmed segment id or null and
+ * `index` is the position in the input array (-1 for whole-input errors such as
+ * `not-array` and `bad-measure-count`). A segment can carry several errors. Per-segment
+ * errors come back in input order; overlap errors follow. Empty array = valid.
+ */
 export function validateSegments(segments, measureCount) {
+  if (!Array.isArray(segments)) return [{ code: 'not-array', id: null, index: -1 }];
+  if (!Number.isInteger(measureCount) || measureCount < 1) return [{ code: 'bad-measure-count', id: null, index: -1 }];
   const errors = [];
   const seen = new Set();
-  const sorted = [...segments].map((s, index) => ({ ...s, index })).sort((a, b) => a.start - b.start);
   const wellFormed = [];
-  for (const s of sorted) {
+  segments.forEach((raw, index) => {
+    const s = isObject(raw) ? raw : {};
     const id = typeof s.id === 'string' ? s.id.trim() : '';
-    if (!id) errors.push({ code: 'missing-id', index: s.index });
-    else if (seen.has(id)) errors.push({ code: 'duplicate-id', id, index: s.index });
+    if (!id) errors.push({ code: 'missing-id', id: null, index });
+    else if (seen.has(id)) errors.push({ code: 'duplicate-id', id, index });
     if (id) seen.add(id);
-    if (!Number.isInteger(s.start) || !Number.isInteger(s.end)) { errors.push({ code: 'not-integer', id, index: s.index }); continue; }
-    if (s.end < s.start) { errors.push({ code: 'reversed', id, index: s.index }); continue; }
-    if (s.start < 0 || s.end >= measureCount) errors.push({ code: 'out-of-range', id, index: s.index });
-    wellFormed.push(s);
-  }
-  // Overlap is judged among well-formed ranges only; a reversed range is already an error.
-  for (let i = 1; i < wellFormed.length; i += 1) {
-    if (wellFormed[i].start <= wellFormed[i - 1].end) {
-      errors.push({ code: 'overlap', id: wellFormed[i].id, index: wellFormed[i].index });
-    }
+    if (!Number.isInteger(s.start) || !Number.isInteger(s.end)) { errors.push({ code: 'not-integer', id: id || null, index }); return; }
+    if (s.end < s.start) { errors.push({ code: 'reversed', id: id || null, index }); return; }
+    if (s.start < 0 || s.end >= measureCount) errors.push({ code: 'out-of-range', id: id || null, index });
+    wellFormed.push({ id: id || null, start: s.start, end: s.end, index });
+  });
+  // Overlap among well-formed ranges only; compare against the furthest end so far so a
+  // long segment catches every range nested inside it.
+  wellFormed.sort((a, b) => a.start - b.start || a.end - b.end);
+  let maxEnd = -Infinity;
+  for (const s of wellFormed) {
+    if (s.start <= maxEnd) errors.push({ code: 'overlap', id: s.id, index: s.index });
+    maxEnd = Math.max(maxEnd, s.end);
   }
   return errors;
 }
@@ -64,16 +73,21 @@ export function approvedSegments(file, contentSha256) {
   const f = normalizeLearnFile(file);
   if (!f.segments.length) return null;
   if (contentSha256 !== undefined && f.contentSha256 !== contentSha256) return null;
-  return f.segments;
+  // Structural errors (ids, integers, reversed, overlap) make the file unplayable.
+  if (validateSegments(f.segments, Number.MAX_SAFE_INTEGER).length) return null;
+  return [...f.segments].sort((a, b) => a.start - b.start);
 }
 
 const sameRange = (a, b) => a.start === b.start && a.end === b.end;
 
 /** What approving `segments` does to one learner's stored coach summary. */
-export function approvalImpact(summary, segments) {
+export function approvalImpact(summary, rawSegments) {
+  const segments = Array.isArray(rawSegments) ? rawSegments : [];
   const passages = Array.isArray(summary?.passages) ? summary.passages : [];
   const kept = passages.filter((p) => segments.some((s) => sameRange(s, p)));
   const orphaned = passages.filter((p) => !segments.some((s) => sameRange(s, p)));
+  // wasAllGold reads the summary counters (what the server's Polish check uses today);
+  // allGoldAfter reads the passages themselves.
   const wasAllGold = Number.isInteger(summary?.total) && summary.total > 0 && summary.gold === summary.total;
   const allGoldAfter = segments.length > 0
     && segments.every((s) => kept.some((p) => sameRange(s, p) && p.gold));
