@@ -55,7 +55,7 @@ keyboard:                              # key names the games use
 
 | View | What it does |
 |---|---|
-| List | Paired devices on top, then the **Search** action and a How to pair entry per configured controller |
+| List | Paired devices on top (with "Pairing <name>…" while a pairing started elsewhere is running), a **Set up a controller** list with a How to pair entry per configured controller, then **Search for devices** |
 | How to pair | The controller's `steps` from `input.yml`, then **Search for it** |
 | Search | Live nearby devices; pick one to pair it |
 | Pairing | Progress for the one picked address; the passkey in large digits when the device asks for one |
@@ -76,7 +76,8 @@ status, **Test** (connected only), **Forget** and **Pair again** (dropped bond).
 | Needs pairing again | The device is dialing in on a bond this box dropped. The kernel logs `Rejected connection from !bonded device`. Held 120 s, since each attempt lasts only a moment |
 
 **Forget** needs two presses within 4 s: the first arms it, the second sends
-`bt.remove`. While a pairing window is open the satellite refuses a remove
+`bt.remove`. Moving focus away disarms it, and a held Enter presses it only
+once. "Forgotten. …" shows for 6 s or until the view changes. While a pairing window is open the satellite refuses a remove
 (`success:false, error:'pairing-in-progress'`). A failed remove reports
 `error:'remove-failed'`; the raw text stays in the satellite log.
 
@@ -84,7 +85,11 @@ status, **Test** (connected only), **Forget** and **Pair again** (dropped bond).
 
 `bt.scan.request {requestId, action:'start', durationMs}` starts a nearby
 search (default 60 s, shown as a countdown with **Stop**); `{action:'stop'}`
-ends it. Closing the screen or going Back stops it. **A search never pairs.**
+ends it. Closing the screen, going Back or picking a device stops it. **A search never
+pairs.** When it ends, the rows it heard stay pickable, dimmed and marked
+"Last heard in this search." A search whose `done` never arrives ends 5 s
+after its end time (`fitness.bt.scan-no-done`, warn), and a bus reconnect ends
+a running search (`reason: interrupted`).
 
 The satellite streams `bt.scan.progress`: `{phase:'scanning', durationMs}`,
 then `{phase:'nearby', devices:[{address, name, kind, hid, rssi, paired,
@@ -99,17 +104,21 @@ devices with input evidence (`hid`, or an input `kind`) are listed;
 A device counts as nearby only while BlueZ reports it live in this discovery
 (a new object, or a change to its RSSI or advertising data) and drops out 15 s
 after the last report. A cached BlueZ device is listed only once it is heard,
-never on its cached RSSI (`bt_nearby.py`).
+never on its cached RSSI (`bt_nearby.py`). A new `nearby` snapshot is sent only when
+the set of devices, a name, kind, paired or connected flag, or a signal level in
+5 dB steps changes; signal jitter and reordering alone send nothing.
 
 The reconnect loop pauses during a search; the inventory poll keeps going.
 Search and pairing never overlap: a pair request stops a running search first,
 and a search request that arrives mid pairing window is answered `busy`.
 
-An old satellite does not know the topic and never answers. After 5 s without
+An old satellite does not know the topic and never answers. After 8 s without
 a `bt.scan.progress` the screen says "The garage Bluetooth service needs an
 update." when `fitness.transport.health` arrived in the last 15 s (the
 satellite is alive), otherwise that the service did not answer. The frontend
-logs `fitness.bt.scan-no-response` (warn, with `reason`).
+logs `fitness.bt.scan-no-response` (warn, with `reason`). The wait is longer
+than the satellite's 5 s grace for killing a stuck search, and a **Stop**
+pressed before any answer ends as stopped, never as an outdated satellite.
 
 ## Pairing one device (`mode: 'address'`)
 
@@ -157,7 +166,12 @@ never shown. `<name>` is the device's name.
 
 An error line is always followed by the window's one `done`; the screen stays
 busy until then. The frontend gives up after 15 s if the box never answers a
-pair request (`done.reason: no-response`).
+pair request (`done.reason: no-response`). A pairing that was answered but
+whose `done` never arrives ends 130 s after its window (the helper's own cap is
+window + 120 s; `fitness.bt.pair-no-done`, warn), and a bus reconnect ends it
+(`reason: interrupted`, "Lost touch with the garage Bluetooth service."), so
+Forget, Pair again and the picks are never disabled for good. Progress for an
+older request never overwrites the one the screen waits on.
 
 Request modes: `address` (above), `repair` and anything else. A request with
 no `mode` is `repair`: the blind, configured-targets window that the backend
@@ -184,16 +198,21 @@ with the controller's `pin`.
 ## Key test
 
 Opened after a successful pair or with **Test** on a connected row. It shows
-what arrives: keyboard `key` values (including media keys such as
-AudioVolumeUp and MediaPlayPause), and gamepad buttons and stick directions
-with the pad's `id`. The verdict:
+what arrives in short words: keys ("X", "Up arrow", "Volume up", "Play/pause"),
+and gamepad presses ("A", "B", "D-pad up", "Stick left", else "Button N") with
+the pad's name shortened (no vendor/product suffix). The verdict:
 
 - gamepad input: "Games can use this as a controller."
 - keys listed in `input.yml` `keyboard:`: "Games can use these keys: …"
 - other keys only: "Games can't use these keys yet."
 
 The test owns the keys while it is open, so nothing else acts on them. It ends
-with Escape, holding B for 1.5 s, **Done**, or 20 s with no presses. A browser
+with Escape (a held Escape's repeats are ignored), holding a press key (Enter,
+Space, a remote's play/pause) or the pad's back or select button
+(`useArcadeInput`'s `BACK_BUTTONS` / `SELECT_BUTTONS`: B; A or Start) for
+1.5 s, a touch on **Done**, or 20 s with no presses; the hint says so with the
+real idle time. **Done** shows no focus ring: keys are captured there, so A or
+Enter would not press it. A browser
 gamepad has no Bluetooth address, so pad presses count only when the tested
 device is a gamepad.
 
@@ -201,8 +220,11 @@ device is a gamepad.
 
 `useScreenNav` owns all navigation inside the screen, the same in every host:
 
-- window-level capture-phase keys: arrows and Tab move with wrap, Enter
-  presses, Escape and Backspace go back;
+- window-level capture-phase keys (`stopImmediatePropagation`, so no other
+  listener sees them): arrows and Tab move with wrap, Enter presses, Escape and
+  Backspace go back; a held Enter or Escape acts once (key repeats are
+  ignored); a media remote's next / previous track move and play/pause
+  presses;
 - gamepad through `useArcadeInput` (D-pad or left stick, A or Start presses,
   B goes back), with the opening press ignored, so the B that closed one
   screen does not also act on the next. A stick axis counts only after it has
@@ -212,7 +234,12 @@ device is a gamepad.
   the page body or on a disabled control, so focus never falls to `<body>`.
 
 A host switches its own input off while the screen is open (arcade grid, game
-menu, fitness sidebar and menu gamepad hook). The fitness overlay
+menu, fitness sidebar and menu gamepad hook). In a game the screen opens over
+the paused game menu; closing that menu (✕ or the backdrop) closes the screen
+too, so the game never runs under it. The fitness host reads the `bluetooth`
+object from `FitnessBluetoothContext` (`useFitnessBluetoothState()`), its own
+context, so a search's progress re-renders only the screen; the main fitness
+context keeps only `btInventory`. The fitness overlay
 (`ControllersOverlay`) is a body-portalled dialog at z-index 2250: above the
 player, sidebar and toasts (2200), below the lock and unlock screens (2300) and
 the emergency lockdown (4000).
@@ -290,13 +317,15 @@ rules `bt_pair_match.py` and `bt_nearby.py` have no D-Bus imports).
 - Frontend (component `fitness-bluetooth`): `fitness.bt.scan-request`,
   `.scan-progress`, `.scan-nearby` (sampled), `.scan-stop`, `.scan-no-response`
   (warn), `.inventory-request` (debug), `.pair-request` (with `address`),
-  `.pair-progress` (with `code`), `.pair-no-response`, `.satellite-outdated`
+  `.pair-progress` (with `code`), `.pair-no-response`, `.pair-no-done` (warn),
+  `.pair-reset`, `.scan-no-done` (warn), `.scan-reset`, `.satellite-outdated`
   (warn), `.remove-request`, `.remove-result`.
 - Screen (component `bluetooth-screen`): `.mount` (host, controllers,
   inventory, available), `.unmount`, `.scan-start`, `.scan-stop` (reason),
   `.nearby` (sampled: heard, shown), `.pick`, `.pair-result` (outcome, code,
   reason), `.test-start`, `.test-result` (keys, distinctKeys, padInputs,
   verdict), `.forget-arm`, `.forget-confirm`, `.focus-recovered` (debug).
+- Screen also logs `.view` on every view change.
 - Hosts: `arcade.bluetooth-open/close/toggle`;
   `emulator.console.bluetooth-open/close`.
 - Example LogsQL: `query=context.component:bluetooth-screen AND _time:1h`.
