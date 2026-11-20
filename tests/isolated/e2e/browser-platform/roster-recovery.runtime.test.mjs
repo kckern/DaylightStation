@@ -125,6 +125,46 @@ for (const width of [390, 1440]) {
   });
 }
 
+test('Media Fleet reads its configured roster once when the tab returns to the foreground', async ({ page }) => {
+  let reads = 0;
+  let screen = 'previous';
+  await page.addInitScript(() => {
+    localStorage.setItem('media-app.first-use-done', 'done');
+    window.rosterFixtureVisible = true;
+    Object.defineProperty(document, 'visibilityState', {
+      get: () => window.rosterFixtureVisible ? 'visible' : 'hidden',
+    });
+  });
+  await page.routeWebSocket('**/*', () => {});
+  await page.route('**/api/**', route => {
+    const { pathname } = new URL(route.request().url());
+    if (pathname.endsWith('/device/config')) {
+      reads++;
+      return route.fulfill({ json: { devices: { [screen]: { name: `${screen} screen`, fleet: true } } } });
+    }
+    return route.fulfill({ json: pathname.endsWith('/supervision/bootstrap') ? { enabled: false } : {} });
+  });
+
+  await page.goto('/media');
+  await page.getByRole('button', { name: 'Devices', exact: true }).click();
+  const current = page.getByTestId('fleet-peek-previous');
+  await expect(current).toBeVisible();
+  const setVisibility = visible => page.evaluate(value => {
+    window.rosterFixtureVisible = value;
+    document.dispatchEvent(new Event('visibilitychange'));
+  }, visible);
+
+  screen = 'replacement';
+  await setVisibility(false);
+  await expect(current).toBeVisible();
+  expect(reads).toBe(1);
+
+  await setVisibility(true);
+  await expect(page.getByTestId('fleet-peek-replacement')).toBeVisible();
+  await expect(current).toHaveCount(0);
+  expect(reads).toBe(2);
+});
+
 test('Admin Devices leaves a slow enforcement poll alone while the visible status ages', async ({ page }) => {
   const now = new Date('2026-11-19T12:00:00Z');
   await page.setViewportSize({ width: 1440, height: 850 });

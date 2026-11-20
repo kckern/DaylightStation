@@ -37,6 +37,8 @@ vi.mock('../../../../../frontend/src/lib/logging/Logger.js', () => {
 
 import { VideoPlayer } from './VideoPlayer.jsx';
 import { requestDashErrorRecovery } from '../lib/dashErrorRecovery.js';
+import { createRecoveryIdentity, recoverySessionKey } from '../lib/recovery/recoveryIdentity.js';
+import { createRecoveryLedger, getRecoveryLedger, _setSharedLedgerForTests } from '../lib/recoveryLedger.js';
 
 const dashProps = (media) => ({
   media: { mediaType: 'dash_video', title: 'Introduction to Singing', mediaUrl: '/a.mpd', ...media },
@@ -210,16 +212,48 @@ describe('dash.api-never-ready — the storm signature', () => {
   });
 });
 
-describe('dash.error-recovery-budget-denied is visible at production level', () => {
-  /** Fires a dash.js error through the handler VideoPlayer subscribed. */
-  const fireDashError = (api) => {
-    const handler = api.on.mock.calls.find(([name]) => name === 'error')?.[1];
-    expect(handler).toBeTypeOf('function');
-    act(() => {
-      handler({ error: { code: 27, message: 'segment unavailable' } });
-    });
-  };
+/** Fires a dash.js error through the handler VideoPlayer subscribed. */
+const fireDashError = (api) => {
+  const handler = api.on.mock.calls.find(([name]) => name === 'error')?.[1];
+  expect(handler).toBeTypeOf('function');
+  act(() => {
+    handler({ error: { code: 27, message: 'segment unavailable' } });
+  });
+};
 
+it('releases the pending DASH refresh on Pause after fallback to native video', async () => {
+  const { requestDashErrorRecovery: reserveDash } = await vi.importActual('../lib/dashErrorRecovery.js');
+  const previousLedger = getRecoveryLedger();
+  const ledger = createRecoveryLedger();
+  const identity = createRecoveryIdentity({ ownerId: 'video-player' });
+  const sessionKey = recoverySessionKey(identity.getTarget());
+  const props = { ...dashProps(), resilienceBridge: { recoveryIdentity: identity, playbackSessionKey: sessionKey } };
+  let view;
+  _setSharedLedgerForTests(ledger);
+  try {
+    requestDashErrorRecovery.mockImplementation(reserveDash);
+    view = render(<VideoPlayer {...props} />);
+    const api = runningApi();
+    attachApi(view.container, api);
+    fireDashError(api);
+    const pending = ledger.snapshot(sessionKey);
+    expect(pending).toMatchObject({ count: 1, rollingCount: 1, inFlightActionId: expect.any(String) });
+
+    view.rerender(<VideoPlayer {...props} media={{ mediaType: 'video', mediaUrl: '/native.mp4' }} />);
+    expect(view.container.querySelector('dash-video')).toBeNull();
+    expect(view.container.querySelector('video')?.getAttribute('src')).toBe('/native.mp4');
+    expect(ledger.snapshot(sessionKey)?.inFlightActionId).toBe(pending.inFlightActionId);
+
+    act(() => identity.acceptUserIntent('pause'));
+    expect(ledger.snapshot(sessionKey)).toMatchObject({ count: 1, rollingCount: 1, inFlightActionId: null });
+  } finally {
+    view?.unmount();
+    identity.dispose();
+    _setSharedLedgerForTests(previousLedger);
+  }
+});
+
+describe('dash.error-recovery-budget-denied is visible at production level', () => {
   it('warns when the ledger denies a refresh, rather than dropping to debug', () => {
     requestDashErrorRecovery.mockReturnValue({
       fire: false,

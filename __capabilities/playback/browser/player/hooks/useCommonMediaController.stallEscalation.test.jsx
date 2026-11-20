@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import React, { useEffect } from 'react';
 import { render, act } from '@testing-library/react';
 import { useCommonMediaController } from './useCommonMediaController.js';
-import { createRecoveryIdentity } from '../lib/recovery/recoveryIdentity.js';
+import { createRecoveryIdentity, recoverySessionKey } from '../lib/recovery/recoveryIdentity.js';
 import * as Logger from '../../../../../frontend/src/lib/logging/Logger.js';
 import { createRecoveryLedger, _setSharedLedgerForTests } from '../lib/recoveryLedger.js';
 import { registerPlaybackLinkProbe } from '../lib/linkProbe.js';
@@ -157,12 +157,13 @@ describe('useCommonMediaController stall detection + ledger-gated nudge', () => 
   });
 
   // Arms detection with a progress baseline, then freezes the playhead past softMs.
-  function renderStalled({ recoverySessionKey = SESSION_KEY } = {}) {
+  function renderStalled({ recoverySessionKey = SESSION_KEY, recoveryIdentity } = {}) {
     const ctrlRef = { current: null };
     const apiRef = { current: null };
     const video = makeFakeVideo({ currentTime: 100 });
     render(
-      <Harness ctrlRef={ctrlRef} apiRef={apiRef} video={video} recoverySessionKey={recoverySessionKey} />
+      <Harness ctrlRef={ctrlRef} apiRef={apiRef} video={video} recoverySessionKey={recoverySessionKey}
+        recoveryIdentity={recoveryIdentity} />
     );
     expect(ctrlRef.current.getMediaEl()).toBe(video);
     act(() => { video._ct = 100.5; video.fire('timeupdate'); video.fire('playing'); });
@@ -317,6 +318,19 @@ describe('useCommonMediaController stall detection + ledger-gated nudge', () => 
       const row = events.find(([e]) => e === 'playback.stalled.link')?.[1];
       expect(row).toEqual(expect.objectContaining({ mediaKey: 'plex:1', link: { rssi: -78, linkSpeedMbps: 6 } }));
     } finally { off(); }
+  });
+
+  it('releases a pending nudge when the owner accepts a seek before native progress', () => {
+    const identity = createRecoveryIdentity({ ownerId: 'controller' });
+    const sessionKey = recoverySessionKey(identity.getTarget());
+    renderStalled({ recoverySessionKey: sessionKey, recoveryIdentity: identity });
+    act(() => { vi.advanceTimersByTime(HARD_STALL_MS); });
+    expect(strategiesFired()).toEqual(['nudge']);
+    expect(ledger.snapshot(sessionKey)).toMatchObject({ count: 1, rollingCount: 1, inFlightActionId: expect.any(String) });
+
+    act(() => identity.acceptUserIntent('seek'));
+    expect(recoverySessionKey(identity.getTarget())).toBe(sessionKey);
+    expect(ledger.snapshot(sessionKey)).toMatchObject({ count: 1, rollingCount: 1, inFlightActionId: null });
   });
 
   it('genuine forward advance completes its own action while retaining incident history', () => {
