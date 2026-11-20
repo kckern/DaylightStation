@@ -1,4 +1,5 @@
 import { GRATITUDE_PROMPT, isUnheardTranscript, deriveGratitudeState, recentGratitudeFacts, gratitudeConfigOf, gratitudePublicationId } from '../../domain/gratitude.mjs';
+import { validGratitudeEvidence } from '../../domain/gratitudeEvidence.mjs';
 import { studyDayForInstant, studyDayWindowForDate } from '../../domain/studyDay.mjs';
 import { scheduleVerdict } from '../../domain/schoolCalendar.mjs';
 import { followUpFallbackFor, normalizeFollowUpQuestion } from './GratitudeFollowUpWriter.mjs';
@@ -138,7 +139,9 @@ export class GratitudeService {
       if(prior){if(!sameAnswer(prior,answer))throw new GratitudeError('Please start a new attempt for a changed answer.',409);if(pending(this.#state(record)))await this.#resume(id,day,records);return this.day(id,day);}
       const current=this.#state(record);
       // Submit is locked while an attempt is out: a second one gets the current state and starts nothing.
-      if(duplicate || pending(current))return this.day(id,day);
+      if(duplicate)return this.day(id,day);
+      // An attempt left assessing (a crash, an outage) is retried first, so a child is never turned away for good.
+      if(pending(current)){await this.#resume(id,day,records);return this.day(id,day);}
       await this.#fresh(id,day,records);await this.#audio(id,day,answer.audioRef,records);
       // While a follow-up is open the answer must name it; otherwise none may.
       if(current.phase==='follow-up' ? answer.followUpOf!==current.followUp.attemptId : answer.followUpOf!==undefined)
@@ -177,8 +180,19 @@ export class GratitudeService {
     if(['nonsense','rude'].includes(decision.verdict)){await this.#refuse(id,day,attempt,decision,ladder.cooldownMs);return true;}
     return false;
   }
+  /**
+   * A verdict the evidence chain would refuse must never be appended: the append would throw and leave the
+   * attempt assessing for good. Fall back to doubt, which is always valid (green+flag for preschool).
+   */
+  #appendable(record,attempt,decision,preschool) {
+    const at=this.#now();
+    if(validGratitudeEvidence([...(record?.events??[]),{type:'assessed',at,attemptId:attempt.attemptId,...decision}]))return decision;
+    this.#logger.warn?.('school.gratitude.verdict-invalid',{attemptId:attempt.attemptId,verdict:decision.verdict});
+    return preschool?{...decision,verdict:'eligible',matchedId:null,judged:decision.judged??decision.verdict,flagged:'uncertain'}:{...decision,verdict:'uncertain',matchedId:null,judged:decision.verdict};
+  }
   async #resume(id,day,records) {
-    let state=this.#state(records.find(r=>r.studyDay===day));
+    const record=records.find(r=>r.studyDay===day);
+    let state=this.#state(record);
     if(!pending(state))return;
     const attempt=state.submitted;
     try {
@@ -189,18 +203,20 @@ export class GratitudeService {
         const history=recentGratitudeFacts(records,{learnerId:id,studyDay:day,spacingDays:this.#config.spacingDays});
         // One follow-up a day: after it, any good-faith answer is accepted as is.
         // Preschool has no follow-up; the same question decides a blue steer, until the blue limit.
-        const allowFollowUp=preschool ? state.blueRun<ladder.blueLimit : this.#config.followUp?.enabled!==false && !state.followUpAsked;
+        const allowFollowUp=preschool ? !state.followUpAsked && state.blueRun<ladder.blueLimit : this.#config.followUp?.enabled!==false && !state.followUpAsked;
         decision=await this.#judge.assess({text:state.assessText,history,allowFollowUp,askRude:preschool});
         if(decision.verdict==='unavailable')return;
-        if(decision.verdict==='general' && !allowFollowUp)decision={...decision,verdict:'eligible'};
+        if(decision.verdict==='general' && !allowFollowUp)decision={...decision,verdict:'eligible',...(preschool?{judged:'general',flagged:state.blueRun>=ladder.blueLimit?'blue-limit':'general'}:{})};
         if(decision.verdict==='repetition' && !history.some(h=>h.id===decision.matchedId))decision={...decision,verdict:'uncertain'};
         if(preschool){
           // Only green earns credit, and doubt is green: an undecided answer, or one more good-faith answer
           // after the blue limit, is accepted and flagged for the teacher.
           if(['general','repetition'].includes(decision.verdict) && state.blueRun>=ladder.blueLimit)decision={...decision,verdict:'eligible',judged:decision.verdict,flagged:'blue-limit'};
           else if(decision.verdict==='uncertain')decision={...decision,verdict:'eligible',judged:'uncertain',flagged:'uncertain'};
+          // Any answer accepted after the blue limit is flagged, whatever the judge said.
+          else if(decision.verdict==='eligible' && !decision.flagged && state.blueRun>=ladder.blueLimit)decision={...decision,flagged:'blue-limit'};
         }
-        decision=await this.#append(id,day,{type:'assessed',attemptId:attempt.attemptId,...decision});
+        decision=await this.#append(id,day,{type:'assessed',attemptId:attempt.attemptId,...this.#appendable(record,attempt,decision,preschool)});
         if(decision.flagged)this.#logger.info?.('school.gratitude.flagged',{learnerId:id,day,attemptId:attempt.attemptId,reason:decision.flagged});
       }
       if(preschool && await this.#ladderStep(id,day,state,attempt,decision))return;

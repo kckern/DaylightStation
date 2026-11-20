@@ -2,11 +2,12 @@ import { describe,it,expect,vi } from 'vitest';
 import { GratitudeService } from './GratitudeService.mjs';
 import { GRATITUDE_FOLLOW_UP_FALLBACK, GRATITUDE_FOLLOW_UP_FALLBACK_KO } from './GratitudeFollowUpWriter.mjs';
 import { gratitudeConfigOf } from '../../domain/gratitude.mjs';
+import { validGratitudeEvidence } from '../../domain/gratitudeEvidence.mjs';
 
 function harness({ verdict='eligible', publishFailure=false, verdicts=null, writerFails=false, followUpEnabled=true, logger={}, followUpWriter=null, transcript='My toys', judgeDelay=null, config=null }={}) {
   const days=new Map(), selections=new Map(); let now=new Date('2026-11-16T18:00:00Z'); let fail=publishFailure; let assessment=verdict; let calls=0;
   const queue=verdicts?[...verdicts]:[]; const judgeCalls=[]; const extracted=[];
-  const store={ async read(id,day){return {status:days.has(day)?'ok':'missing',events:structuredClone(days.get(day)??[])};},async append(id,day,event){days.set(day,[...(days.get(day)??[]),structuredClone(event)]);},async listDays(){return [...days.keys()].sort();} };
+  const store={ async read(id,day){return {status:days.has(day)?'ok':'missing',events:structuredClone(days.get(day)??[])};},async append(id,day,event){const next=[...(days.get(day)??[]),structuredClone(event)];if(!validGratitudeEvidence(next))throw new Error('Invalid Gratitude evidence');days.set(day,next);},async listDays(){return [...days.keys()].sort();} };
   const deps={store,assignments:{get:async()=>({programs:[{programId:'gratitude',schedule:{daysOfWeek:[1,2,3,4,5]}}]})},clock:()=>now,timezone:'America/Los_Angeles',
     config:config??gratitudeConfigOf({gratitude:{follow_up:{enabled:followUpEnabled}}}),
     captureTake:async({onSaved})=>{const audioRef=`child/take-${days.size}-${Math.random().toString(36).slice(2,8)}.webm`;await onSaved({audioRef});return {audioRef,text:typeof transcript==='function'?transcript():transcript};},
@@ -256,5 +257,35 @@ describe('preschool verdict ladder',()=>{
     const u=pre({verdicts:['uncertain']});
     expect((await u.service.submit('child','2026-11-16',body)).phase).toBe('retry');
     expect(u.judgeCalls()[0].askRude).toBe(false);
+  });
+  const followedUp=()=>[{type:'opened',at:'2026-11-16T17:50:00Z'},{type:'submitted',at:'2026-11-16T17:50:01Z',attemptId:'f1',text:'my mom',via:'typed',audioRef:null,edited:false},
+    {type:'assessed',at:'2026-11-16T17:50:02Z',attemptId:'f1',verdict:'general'},{type:'follow-up-asked',at:'2026-11-16T17:50:03Z',attemptId:'f1',question:'What about your mom are you grateful for today?',writer:'fallback'},
+    {type:'submitted',at:'2026-11-16T17:50:04Z',attemptId:'f2',followUpOf:'f1',text:'um',via:'typed',audioRef:null,edited:false},{type:'assessed',at:'2026-11-16T17:50:05Z',attemptId:'f2',verdict:'uncertain'}];
+  it('never sticks in Checking on a day that already had its follow-up',async()=>{
+    const h=pre({verdict:'general'});h.days.set('2026-11-16',followedUp());
+    const done=await say(h,3,'mom');
+    expect(done).toMatchObject({phase:'completed',flagged:true});
+    expect(h.judgeCalls().at(-1)).toMatchObject({allowFollowUp:false});
+    expect(h.days.get('2026-11-16').filter(e=>e.type==='assessed').at(-1)).toMatchObject({verdict:'eligible',flagged:'general',judged:'general'});
+  });
+  it('a verdict the evidence would refuse falls back to a valid one instead of locking the child out',async()=>{
+    // A judge that answers general although no follow-up was allowed (the 2026-11-19 failure shape).
+    const h=harness({verdict:'general'});h.days.set('2026-11-16',followedUp());
+    const result=await h.service.submit('child','2026-11-16',{...body,attemptId:'s3',text:'my dad'});
+    expect(['completed','retry']).toContain(result.phase);
+    expect(result.phase).not.toBe('pending');
+  });
+  it('a fresh answer retries a stuck attempt first rather than being turned away for good',async()=>{
+    const h=pre({verdict:'eligible'});
+    h.days.set('2026-11-16',[{type:'opened',at:'2026-11-16T17:50:00Z'},{type:'submitted',at:'2026-11-16T17:50:01Z',attemptId:'stuck',text:'cookies',via:'typed',audioRef:null,edited:false}]);
+    const result=await say(h,4,'my dog');
+    expect(result.phase).toBe('completed');
+    expect(h.days.get('2026-11-16').find(e=>e.type==='completed').attemptId).toBe('stuck');
+  });
+  it('flags any answer accepted after the blue limit',async()=>{
+    const h=pre({verdicts:['repetition','repetition','eligible']});seed(h);
+    await say(h,1);await say(h,2);
+    expect(await say(h,3,'my new bike')).toMatchObject({phase:'completed',flagged:true});
+    expect(h.days.get('2026-11-16').filter(e=>e.type==='assessed').at(-1)).toMatchObject({verdict:'eligible',flagged:'blue-limit'});
   });
 });
