@@ -1360,7 +1360,10 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   });
 
   // Lifeplan domain
+  // Triage is built much later in boot; the coach's handle resolves it at call time.
+  let triageRuntime = null;
   const lifeplanResult = bootstrapLifeplan({
+    triage: { run: (input) => (triageRuntime ? triageRuntime.pass.run(input) : Promise.resolve({ skipped: 'not_ready' })) },
     dataPath: path.join(dataBasePath, 'users'),
     aggregator: lifelogServices.lifelogAggregator,
     notificationService: notificationStack.notificationService,
@@ -3510,7 +3513,7 @@ const { readingSessions, readingSessionInterceptor } = await createSchoolReading
   process.once('SIGTERM',()=>{void knowledgeRuntime.dispose().catch(error=>rootLogger.warn?.('lifelog.knowledge.dispose-failed',{reason:error.code??'shutdown_failed'}));});
   process.once('SIGTERM',()=>{void workRuntime.dispose().catch(error=>rootLogger.warn?.('work.dispose.failed',{reason:error.code??'shutdown_failed'}));});
 
-  const triageRuntime = createTriageRuntime({
+  triageRuntime = createTriageRuntime({
     configuration: () => configService.getHouseholdAppConfig(householdId, 'triage') ?? {},
     defaultUsername: configService.getHeadOfHousehold(),
     isKnownUser: (username) => (configService.getHouseholdUsers(householdId) || [])

@@ -37,12 +37,13 @@ import { createNoOpNotificationService } from '#adapters/integrations/noops.mjs'
  * @param {Object} [deps.clock] - Injectable clock
  * @param {Object} [deps.logger] - Logger instance
  * @param {Object} [deps.decisionGateway] - IDecisionGateway for the life-event judge (optional)
+ * @param {Object} [deps.triage] - { run } handle the coach uses to start an inbox pass (resolved lazily by the host)
  * @param {Object} [deps.lifeEventSignals] - { mode: shadow|decide|off, min_confidence }
  * @returns {Object} { router, container, ceremonyScheduler, services }
  */
 export function bootstrapLifeplan(deps) {
   const { dataPath, aggregator, notificationService, userService, listHouseholdUsers, defaultUsername, timezone, clock, logger,
-    decisionGateway = null, lifeEventSignals = {} } = deps;
+    decisionGateway = null, lifeEventSignals = {}, triage = null } = deps;
 
   // Validate the household timezone at the composition seam (the domain has no
   // logger; CadenceService itself falls back to UTC on an invalid zone).
@@ -187,6 +188,7 @@ export function bootstrapLifeplan(deps) {
       retroService,
       driftService,
       alignmentService,
+      triage,
     },
   };
 }

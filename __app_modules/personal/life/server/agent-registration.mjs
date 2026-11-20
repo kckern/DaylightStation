@@ -45,6 +45,7 @@ export function registerLifeplanGuide({ config, dataService, logger, mediaDir, d
       feedbackService: config.lifeplanServices.services.feedbackService,
       planAuthoringService: config.lifeplanServices.services.planAuthoringService,
       lifeEventSuggester: config.lifeplanServices.services.lifeEventSuggester,
+      triage: config.lifeplanServices.services.triage,
       clock: { now: () => new Date() },
       aggregator: config.lifeplanServices.aggregator,
       metricsStore: config.lifeplanServices.container.getMetricsStore(),
