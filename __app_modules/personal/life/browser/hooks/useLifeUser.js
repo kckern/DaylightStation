@@ -36,10 +36,13 @@ export function useLifeUsername() {
  * Select.
  *
  * @returns {{ user: object|null, users: Array<{username,displayName}>,
- *   setUsername: (username: string|null) => void, loading: boolean, error: string|null }}
+ *   setUsername: (username: string|null) => void, loading: boolean, error: string|null,
+ *   rosterError: Error|null, rosterLoading: boolean, rosterRetrying: boolean,
+ *   retryRoster: () => Promise<void> }}
  */
 export function useLifeUser() {
   const [selected, setSelected] = useState(memberPreference.read);
+  const [rosterRetrying, setRosterRetrying] = useState(false);
   const roster = useApiResource('api/v1/life/users', { label: 'Life household roster', logger: logger() });
   const users = Array.isArray(roster.data?.users) ? roster.data.users : EMPTY_USERS;
   const qs = selected ? `?username=${encodeURIComponent(selected)}` : '';
@@ -67,5 +70,15 @@ export function useLifeUser() {
     logger().info('life.user.switched', { username });
   }, []);
 
-  return { user, users, setUsername, loading: identity.loading, error, retry: identity.reload };
+  const retryRoster = useCallback(async () => {
+    setRosterRetrying(true);
+    try { await roster.refresh(); }
+    catch { /* The resource exposes the read error to the header. */ }
+    finally { setRosterRetrying(false); }
+  }, [roster.refresh]);
+
+  return {
+    user, users, setUsername, loading: identity.loading, error, retry: identity.reload,
+    rosterError: roster.error, rosterLoading: roster.loading, rosterRetrying, retryRoster,
+  };
 }

@@ -46,10 +46,22 @@ it.each([['beliefs', 'beliefs'], ['ceremonies', 'cadence']])(
 
 it('keeps the saved member and their screen available when the optional switcher roster fails', async () => {
   localStorage.setItem('life.username', 'bob');
+  const member = { username: 'bob', displayName: 'Bob' };
+  let resolveRosterRetry;
+  let rosterReads = 0;
+  let identityReads = 0;
+  let contentReads = 0;
   DaylightAPI.mockImplementation(async path => {
-    if (path === 'api/v1/life/users') throw new Error('Roster unavailable');
-    if (path === 'api/v1/life/user?username=bob') return { username: 'bob', displayName: 'Bob' };
-    if (path === '/api/v1/life/plan/beliefs?username=bob') return { beliefs: [{ id: 'b', if_hypothesis: 'Bob marker' }] };
+    if (path === 'api/v1/life/users') {
+      rosterReads += 1;
+      if (rosterReads === 1) throw new Error('Roster unavailable');
+      return new Promise(resolve => { resolveRosterRetry = resolve; });
+    }
+    if (path === 'api/v1/life/user?username=bob') { identityReads += 1; return member; }
+    if (path === '/api/v1/life/plan/beliefs?username=bob') {
+      contentReads += 1;
+      return { beliefs: [{ id: 'b', if_hypothesis: 'Bob marker' }] };
+    }
     throw new Error('Unexpected fixture request ' + path);
   });
   render(<MemoryRouter initialEntries={['/life/plan/beliefs']}><Routes>
@@ -58,4 +70,22 @@ it('keeps the saved member and their screen available when the optional switcher
   expect(await screen.findByText('If Bob marker')).toBeVisible();
   expect(screen.queryByRole('alert')).toBeNull();
   expect(localStorage.getItem('life.username')).toBe('bob');
+  expect(rosterReads).toBe(1);
+  expect(identityReads).toBe(1);
+  expect(contentReads).toBe(1);
+
+  const retry = screen.getByRole('button', { name: 'Retry household members' });
+  fireEvent.click(retry);
+  await waitFor(() => expect(rosterReads).toBe(2));
+  expect(screen.getByText('If Bob marker')).toBeVisible();
+  expect(identityReads).toBe(1);
+  expect(contentReads).toBe(1);
+  expect(localStorage.getItem('life.username')).toBe('bob');
+
+  await act(async () => resolveRosterRetry({ users: [member, { username: 'amy', displayName: 'Amy' }] }));
+  const switcher = await screen.findByRole('textbox', { name: 'Switch household member' });
+  expect(switcher).toHaveValue('Bob');
+  expect(identityReads).toBe(1);
+  expect(contentReads).toBe(1);
+  expect(rosterReads).toBe(2);
 });

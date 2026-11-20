@@ -603,6 +603,77 @@ test('Life retires previous-member plans and notifications on household switches
   await expect(switcher).toHaveValue('AMY');
 });
 
+const lifeMember = { username: 'bob', displayName: 'Bob' };
+for (const recoveredUsers of [
+  [lifeMember, { username: 'amy', displayName: 'Amy' }],
+  [lifeMember],
+]) {
+test(`Life recovers the ${recoveredUsers.length}-member roster in place`, async ({ page }) => {
+  const member = lifeMember;
+  let rosterReads = 0;
+  let identityReads = 0;
+  let contentReads = 0;
+  let pendingRoster;
+  const writes = [];
+  await page.addInitScript(() => localStorage.setItem('life.username', 'bob'));
+  await page.route('**/api/v1/life/**', async route => {
+    const request = route.request();
+    const { pathname } = new URL(request.url());
+    if (request.method() !== 'GET') writes.push({ pathname, method: request.method() });
+    if (pathname === '/api/v1/life/users') {
+      rosterReads++;
+      if (rosterReads === 1) return route.fulfill({ status: 400, json: { error: 'Roster unavailable' } });
+      pendingRoster = route;
+      return;
+    }
+    if (pathname === '/api/v1/life/user') {
+      identityReads++;
+      return route.fulfill({ json: member });
+    }
+    if (pathname === '/api/v1/life/plan/beliefs') {
+      contentReads++;
+      return route.fulfill({ json: { beliefs: [{ id: 'b', if_hypothesis: 'Bob marker' }] } });
+    }
+    return route.fulfill({ json: {} });
+  });
+
+  await page.goto('/life/plan/beliefs');
+  await expect(page.getByText('If Bob marker')).toBeVisible();
+  const retry = page.getByRole('button', { name: 'Retry household members' });
+  await retry.focus();
+  await page.keyboard.press('Enter');
+  await expect.poll(() => rosterReads).toBe(2);
+  await expect.poll(() => Boolean(pendingRoster)).toBe(true);
+  await expect(retry).toBeDisabled();
+  await expect(page.locator('#life-page-content')).toBeFocused();
+  await page.keyboard.press('Tab');
+  const focusBeforeRecovery = await page.evaluate(() => document.activeElement?.getAttribute('href'));
+  expect(focusBeforeRecovery).toBeTruthy();
+  await expect(page.getByText('If Bob marker')).toBeVisible();
+  expect(identityReads).toBe(1);
+  expect(contentReads).toBe(1);
+  expect(writes).toEqual([]);
+
+  await pendingRoster.fulfill({ json: { users: recoveredUsers } });
+  await expect(retry).toHaveCount(0);
+  await expect.poll(() => page.evaluate(() => document.activeElement?.getAttribute('href'))).toBe(focusBeforeRecovery);
+  const switcher = page.getByRole('textbox', { name: 'Switch household member' });
+  if (recoveredUsers.length > 1) {
+    await expect(switcher).toHaveValue('Bob');
+    await switcher.press('ArrowDown');
+    await expect(page.getByRole('option', { name: 'Amy', exact: true })).toBeVisible();
+  } else {
+    await expect(switcher).toHaveCount(0);
+  }
+  await expect(page.getByText('If Bob marker')).toBeVisible();
+  expect(rosterReads).toBe(2);
+  expect(identityReads).toBe(1);
+  expect(contentReads).toBe(1);
+  expect(writes).toEqual([]);
+  expect(await page.evaluate(() => localStorage.getItem('life.username'))).toBe('bob');
+});
+}
+
 test('Life distinguishes unavailable goals from a successful empty list and retries the read', async ({ page }) => {
   await page.routeWebSocket('**/*', () => {});
   const member = { username: 'amy', displayName: 'Amy' };

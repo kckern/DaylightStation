@@ -5,7 +5,7 @@ import { Routes, Route, Link, Navigate, useNavigate, useLocation, useParams } fr
 import '@mantine/core/styles.css';
 import '@mantine/notifications/styles.css';
 import "./LifeApp.scss";
-import { AppThemeProvider, AppChrome, DismissStackProvider, LoadingState, createAppLogger, UiIcon, useViewScroll } from '@/lib/ui';
+import { AppThemeProvider, AppChrome, Button, DismissStackProvider, LoadingState, createAppLogger, UiIcon, useFocusRegion, useViewScroll } from '@/lib/ui';
 import { configure } from "../../../../frontend/src/lib/logging/Logger.js";
 import useDocumentTitle from "../../../../frontend/src/hooks/useDocumentTitle.js";
 import { ErrorState } from './components/ErrorState.jsx';
@@ -108,7 +108,8 @@ function LifeAppShell() {
   useDocumentTitle('Life');
   const navigate = useNavigate();
   const location = useLocation();
-  const { user: lifeUser, users: lifeUsers, setUsername, error: identityError, retry: retryIdentity } = useLifeUser();
+  const { user: lifeUser, users: lifeUsers, setUsername, error: identityError, retry: retryIdentity,
+    rosterError, rosterLoading, rosterRetrying, retryRoster } = useLifeUser();
 
   // Render the in-app fallback channel for the notification service. Most
   // household members have no Telegram/HA push, so this WS toast is the only
@@ -149,9 +150,13 @@ function LifeAppShell() {
   const managedPage = activeTab === 'plan' || activeTab === 'log';
   useViewScroll({ mainRef, owner, viewKey, ready: managedPage && readyScope === scrollScope });
 
-  const headerActions = lifeUsers.length > 1 ? [(
+  const { regionProps: pageFocusRegion, focus: focusLifePage } = useFocusRegion(false);
+  const retryRosterFromHeader = useCallback(() => {
+    focusLifePage();
+    return retryRoster();
+  }, [focusLifePage, retryRoster]);
+  const memberAction = lifeUsers.length > 1 ? (
     <Select
-      key="user-switch"
       size="xs"
       w={150}
       aria-label="Switch household member"
@@ -160,6 +165,13 @@ function LifeAppShell() {
       value={lifeUser?.username || null}
       onChange={(val) => { if (val) setUsername(val); }}
     />
+  ) : (rosterError || rosterRetrying) ? (
+    <Button density="compact" variant="secondary" busy={rosterLoading || rosterRetrying} onClick={retryRosterFromHeader}>
+      Retry household members
+    </Button>
+  ) : null;
+  const headerActions = memberAction ? [(
+    <div key="member-action">{memberAction}</div>
   )] : undefined;
 
   return (
@@ -178,7 +190,7 @@ function LifeAppShell() {
         />}
       >
         <LifePageScrollRef.Provider value={managedPage ? registerPage : null}>
-          <div className="life-app-root">
+          <div id="life-page-content" className="life-app-root" role="region" aria-label="Life page content" {...pageFocusRegion}>
             {activeTab === 'plan' && <PlanSecondaryNav pathname={location.pathname} />}
             {identityError ? <ErrorState label="Household member" error={identityError} onRetry={retryIdentity} />
               : !lifeUser ? <LoadingState label="household member" />
