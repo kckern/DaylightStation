@@ -43,6 +43,29 @@ describe('Media Session binding', () => {
     expect(ms.setPositionState).toHaveBeenCalledWith({ duration: 420, position: 0, playbackRate: 1 });
   });
 
+  it('publishes hot position ticks to the system at five-second intervals until unbound', () => {
+    const ms = fakeMediaSession();
+    const c = controller();
+    c.queue.playNow({ contentId: 'plex:1', format: 'audio', duration: 200 });
+    let now = 10_000;
+    const unbind = bindMediaSession(c, { mediaSession: ms, MediaMetadataCtor: FakeMetadata, now: () => now });
+    ms.setPositionState.mockClear();
+
+    now += 4_999;
+    c.onPlayerPositionTick(14);
+    expect(ms.setPositionState).not.toHaveBeenCalled();
+    now += 1;
+    c.onPlayerPositionTick(15);
+    expect(c.getSnapshot().position).toBe(0);
+    expect(ms.setPositionState).toHaveBeenCalledTimes(1);
+    expect(ms.setPositionState).toHaveBeenCalledWith({ duration: 200, position: 15, playbackRate: 1 });
+
+    unbind();
+    now += 5_000;
+    c.onPlayerPositionTick(20);
+    expect(ms.setPositionState).toHaveBeenCalledTimes(1);
+  });
+
   it('routes system presses to the same session controls, and logs them', () => {
     const ms = fakeMediaSession();
     const c = controller();

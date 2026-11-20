@@ -8,7 +8,7 @@ import { ClientIdentityProvider, FIRST_USE_KEY } from "./ClientIdentityProvider.
 import { useClientIdentity } from "./useClientIdentity.js";
 import { HouseApiError } from "../house/houseApi.js";
 import { STORAGE_KEYS } from "../constants.js";
-import { getDeviceId } from "../../../../../frontend/src/lib/deviceIdentity.js";
+import { getDeviceId, _resetDeviceIdForTests } from "../../../../../frontend/src/lib/deviceIdentity.js";
 
 vi.mock("../externalControl/useControlRegistration.js", () => ({ useControlRegistration: () => ({ ready: false }) }));
 
@@ -54,12 +54,33 @@ describe('ClientIdentityProvider and the screen registry', () => {
   });
 
   it('sends the previous header token on announce until the registry has folded it', async () => {
+    const previousKey = 'media-app.previous-device-id';
+    const previousId = 'browser:0123456789abcdef';
+    const id = 'browser:aaaa1111-2222';
+    localStorage.setItem('ds_device_id', '0123456789abcdef');
     localStorage.setItem(STORAGE_KEYS.DISPLAY_NAME, 'Kitchen tab');
-    localStorage.setItem('media-app.previous-device-id', 'browser:0123456789abcdef');
-    const houseApi = api();
-    render(<ClientIdentityProvider api={houseApi}><Probe /></ClientIdentityProvider>);
-    await waitFor(() => expect(houseApi.announceScreen).toHaveBeenCalledWith(expect.objectContaining({ previousId: 'browser:0123456789abcdef' })));
-    await waitFor(() => expect(localStorage.getItem('media-app.previous-device-id')).toBe(null));
+    _resetDeviceIdForTests();
+    const first = Promise.withResolvers();
+    const retry = Promise.withResolvers();
+    const houseApi = api({ announceScreen: vi.fn()
+      .mockReturnValueOnce(first.promise)
+      .mockReturnValueOnce(retry.promise) });
+    const view = <ClientIdentityProvider api={houseApi}><Probe /></ClientIdentityProvider>;
+
+    const mounted = render(view);
+    expect(localStorage.getItem(previousKey)).toBe(previousId);
+    expect(houseApi.announceScreen).toHaveBeenNthCalledWith(1, expect.objectContaining({ id, previousId }));
+    await act(async () => { first.reject(new Error('Registry unavailable')); });
+    expect(localStorage.getItem(previousKey)).toBe(previousId);
+    mounted.unmount();
+
+    _resetDeviceIdForTests();
+    render(view);
+    expect(houseApi.announceScreen).toHaveBeenNthCalledWith(2, expect.objectContaining({ id, previousId }));
+    expect(localStorage.getItem(previousKey)).toBe(previousId);
+    await act(async () => { retry.resolve({ screen: { id, name: 'Kitchen tab' } }); });
+    expect(localStorage.getItem(previousKey)).toBeNull();
+    expect(houseApi.announceScreen).toHaveBeenCalledTimes(2);
   });
 
   it('makes every request name this browser by its registry id (X-Daylight-Device)', () => {

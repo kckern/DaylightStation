@@ -620,12 +620,18 @@ describe('RemoteSessionController', () => {
     vi.useFakeTimers();
     try {
       const { fleetStore, ctl } = setup();
-      fleetStore.receive({ deviceId: 'tv', snapshot: { state: 'playing', position: 100 } });
       const seen = [];
       const unsub = ctl.position.subscribe((p) => seen.push(p.seconds));
+      fleetStore.receive({ deviceId: 'tv', snapshot: { state: 'playing', position: 100 } });
       vi.advanceTimersByTime(2100);
-      expect(ctl.position.get().seconds).toBeGreaterThanOrEqual(102);
+      expect(seen).toEqual([100, 101, 102]);
       unsub();
+
+      vi.advanceTimersByTime(2000);
+      expect(ctl.position.get().seconds).toBe(102);
+      fleetStore.receive({ deviceId: 'tv', snapshot: { state: 'paused', position: 77 } });
+      expect(ctl.position.get().seconds).toBe(77);
+      expect(seen).toEqual([100, 101, 102]);
     } finally {
       vi.useRealTimers();
     }
