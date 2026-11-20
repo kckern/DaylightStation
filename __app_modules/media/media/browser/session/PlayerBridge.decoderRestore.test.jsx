@@ -181,7 +181,10 @@ describe('PlayerBridge decoder restoration', () => {
     expect(hlsEngine.instances.at(-1).loadSource).toHaveBeenCalledWith(expect.stringContaining('audioStreamID=8'));
     expect(hlsEngine.instances.at(-1).loadSource).toHaveBeenCalledWith(expect.stringContaining('subtitleStreamID=9'));
     expect(getLocalPlayerFeatures().getState().tracks.selected).toEqual({ audio: '8', subtitle: '9' });
-    expect(DaylightAPI).toHaveBeenCalledWith(expect.stringMatching(/play\/plex:42.*maxResolution=720.*maxVideoBitrate=4000.*adaptive=false/));
+    expect(DaylightAPI).toHaveBeenCalledWith(
+      expect.stringMatching(/play\/plex:42.*maxResolution=720.*maxVideoBitrate=4000.*adaptive=false/),
+      {}, 'GET', { signal: expect.any(AbortSignal) },
+    );
   });
 
 });

@@ -3,6 +3,7 @@ import { foodPortion } from "../../portable/contracts/health/foodQuantity.mjs";
 import { numericFoodPatches, numericFoodValue } from "../../portable/contracts/health/foodNumericEdit.mjs";
 import { useHealthOperations } from "../operations/HealthOperationsProvider.jsx";
 import { foodOperationScope } from "../operations/foodOperationScope.js";
+import { healthDayPath } from '../healthResources.js';
 import { BUCKETS } from "./mealBuckets.js";
 import { entryId, entryError, isEntryConflict, updateEntry } from "./entryCommands.js";
 import { projectPortions } from "./portionPreview.js";
@@ -82,7 +83,8 @@ export function usePortionDraft(day, date) {
         // unseen membership. Require a fresh snapshot before resubmitting.
         try {
           const { DaylightAPI } = await import("../../../../../frontend/src/lib/api.mjs");
-          const fresh = await DaylightAPI(`api/v1/health/day?date=${state.date}`);
+          const fresh = await DaylightAPI(healthDayPath(state.date));
+          if (session && !session.isActive()) return;
           const row = fresh.items?.find(row => entryId(row) === entryId(state.row));
           if (!row) throw new Error('The entry is no longer on this day. Discard this draft and choose the correct entry.');
           const children = row.kind === 'group' ? fresh.items.filter(child => child.parentId != null && [row.id, row.uuid].includes(child.parentId)) : [];
@@ -97,9 +99,11 @@ export function usePortionDraft(day, date) {
           const operationId = crypto.randomUUID();
           session?.store.discard(state.operationId);
           session?.store.begin({ id: operationId, kind: 'numeric', phase: 'editing', date: state.date, targetIds: scope });
-          write({ ...state, row: { ...row, children }, operationId, conflict: false });
+          write({ ...state, row: { ...row, children }, operationId });
         } catch (error) {
-          if (current.current?.operationId === state.operationId) write({ ...state, error: error.message });
+          if ((!session || session.isActive()) && current.current?.operationId === state.operationId) {
+            write({ ...state, error: error.message });
+          }
           return;
         }
       }

@@ -144,6 +144,8 @@ export default {
       // _deleteme/"). A probe test parked here still got collected, inflating
       // counts and tearing down noisily mid-sweep.
       '**/_deleteme/**',
+      // The browser-platform Playwright config owns these runtime specs.
+      'tests/isolated/e2e/browser-platform/**/*.runtime.test.mjs',
       // `__backend/shared` and `__backend/shared-contracts` are SYMLINKS up to
       // `shared/`. Every spec under them is the same file twice, and vitest
       // treats a path passed on the command line as a FILTER rather than a

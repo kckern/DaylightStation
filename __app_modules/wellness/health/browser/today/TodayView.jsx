@@ -7,7 +7,7 @@ import { SHARED_LOG_IDS } from "../../portable/contracts/nutrition/sharedLogIds.
 import { useSearchParams } from 'react-router-dom';
 import { isISODate } from "../../portable/contracts/health/isoDate.mjs";
 import { ActionIcon, Button, Menu } from '@mantine/core';
-import { ErrorState, LoadingState, useDismissLayer, useRetryRegion } from '@/lib/ui';
+import { ErrorState, LoadingState, useDismissLayer, useFocusAfterRemoval, useRetryRegion } from '@/lib/ui';
 import { DaylightAPI } from "../../../../../frontend/src/lib/api.mjs";
 import { createAppLogger } from "../../../../../frontend/src/lib/ui/createAppLogger.js";
 import { useApiResource } from "../../../../../frontend/src/lib/hooks/useApiResource.js";
@@ -157,7 +157,8 @@ export function TodayView({ active = true, sidebarTarget, followUpTarget = null,
   const weekParam = searchParams.get('week');
   const viewportEnd = isISODate(weekParam) && weekParam <= weekEnd(todayISO()) ? weekEnd(weekParam) : weekEnd(date);
   const day = useHealthDay(date, { enabled: active });
-  const { regionProps: foodLogRegion, retry: retryDay } = useRetryRegion(day.reload, day.loading || day.revalidating);
+  const { regionProps: foodLogRegion, focus: focusFoodLog, retry: retryDay } = useRetryRegion(day.reload, day.loading || day.revalidating);
+  const foodLogFocus = useFocusAfterRemoval(focusFoodLog);
   const foodAPI = useFoodMutation(day.items);
   // Drag-to-meal moves wear their new meal from the drop until the day
   // reloads with them (mealDrag.jsx), so the portion overlay reads that view.
@@ -727,7 +728,11 @@ export function TodayView({ active = true, sidebarTarget, followUpTarget = null,
         Couldn't refresh · Retry</Button> : null}
       <DayInputBar date={date} today={todayISO()} active={active} entries={dayEntries(movedDay.items)} onResult={handleDayInput}
         onMoveDay={(rows, iso, options) => moves.moveFromDay(rows, iso, null, options)} onClaimMove={setSheetMove} onMoveHandedBack={setHandedBackMove} />
-      <section aria-label="Food log" {...foodLogRegion}>
+      <section aria-label="Food log" {...foodLogRegion}
+        onFocusCapture={event => {
+          if (event.target.hasAttribute('data-portion-retry')) foodLogFocus.onFocusCapture(event);
+        }}
+        onBlurCapture={foodLogFocus.onBlurCapture}>
         <LogTable active={active} clarifications={mealClarifications} onClearClarification={clearMealClarification} byBucket={preview.byBucket} date={date} sessions={preview.budget?.sessions || []}
           exerciseAvailable={Boolean(day.budget)}
           fastedMeals={day.dayStatus?.fastedMeals || []} onMealFastChanged={day.reload}

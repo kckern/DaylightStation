@@ -180,6 +180,7 @@
     "audit:links": "node scripts/audit-esm-links.mjs",
     "test:file": "vitest run --config tests/_infrastructure/config/vitest.config.mjs",
     "test:browser": "playwright test --config tests/_infrastructure/config/playwright.config.mjs",
+    "test:browser-platform": "playwright test --config tests/_infrastructure/config/playwright.browser-platform.config.mjs",
     "test:jest": "NODE_OPTIONS=--experimental-vm-modules jest --config tests/_infrastructure/config/jest.config.cjs"
   },
   "overrides": {
