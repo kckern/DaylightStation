@@ -50,6 +50,18 @@ import { useHouseholdResultActions } from "../household/useHouseholdResultAction
 import "./Search.scss";
 import "../shell/SessionControls.scss";
 
+function SearchResultRow({ onAction, ...props }) {
+  const moreTriggerRef = useRef(null);
+  return (
+    <ResultRow
+      {...props}
+      MoreMenu={ActionMenu}
+      moreTriggerRef={moreTriggerRef}
+      onAction={({ kind, item }) => onAction(kind, item, moreTriggerRef)}
+    />
+  );
+}
+
 // `addTo` ({ deviceId, name }) opens this search for ONE addition to that
 // screen's queue (STEER.1b/AC7, RQ-STEER-22): every pick is added there, the
 // aim is untouched, and the surface closes once the addition is sent.
@@ -63,6 +75,7 @@ export function SearchMode({ onClose, addTo = null, restoreSearchFocus }) {
   const { push } = useNav();
   const log = useMemo(() => getLogger().child({ component: 'search-mode' }), []);
   const dialogRef = useFocusTrap();
+  const searchInputRef = useRef(null);
   const priorFocusRef = useRef(typeof document !== 'undefined' ? document.activeElement : null);
   const priorScrollRef = useRef(typeof window !== 'undefined' ? window.scrollY : 0);
   // Guards against a close path AND the popstate it triggers both firing a
@@ -172,13 +185,22 @@ export function SearchMode({ onClose, addTo = null, restoreSearchFocus }) {
   // Trailing ⋯ on a leaf row: Play Now / Play Next / Up Next / Add to Queue
   // / Open detail. Reuses the exact appliers BrowseView rows use (queueOps
   // via LocalSessionController) — see resultRowVerbs.js.
-  const handleMore = useCallback((action, item) => {
+  const handleMore = useCallback((action, item, moreTriggerRef) => {
     const id = item?.id;
     if (!id) return;
     log.info('row_action', { contentId: id, action });
     if (addTo && action !== 'detail' && action !== 'details') { addOnce(id, item, action); return; }
     if (runHousehold(action, item)) return;
-    if (action === 'playOn' || action === 'addOn') { setOneShotAction({ kind: action, item }); return; }
+    if (action === 'playOn' || action === 'addOn') {
+      const returnFocusRef = {
+        get current() {
+          const trigger = moreTriggerRef.current;
+          return trigger?.isConnected ? trigger : searchInputRef.current;
+        },
+      };
+      setOneShotAction({ kind: action, item, returnFocusRef });
+      return;
+    }
     if (action !== 'detail' && action !== 'details') {
       dispatchLeafVerb(action === 'upNext' ? 'playFirst' : action, id, item);
       return;
@@ -274,6 +296,7 @@ export function SearchMode({ onClose, addTo = null, restoreSearchFocus }) {
           <UiIcon name="close" size={22} />
         </button>
         <input
+          ref={searchInputRef}
           data-autofocus
           type="search"
           className="search-mode-input"
@@ -336,7 +359,7 @@ export function SearchMode({ onClose, addTo = null, restoreSearchFocus }) {
         )}
         {results.map((item) => (
           <li key={item.id} className="result-row">
-            <ResultRow
+            <SearchResultRow
               item={item}
               title={displayTitle(item)}
               subtitle={rowLabelsFor(item)?.subtitle ?? resultSubtitle(item)}
@@ -348,16 +371,18 @@ export function SearchMode({ onClose, addTo = null, restoreSearchFocus }) {
               onTap={() => handleChange(item.id, item)}
               onPlayAll={() => handlePlayAll(item)}
               rowLabels={rowLabelsFor(item)}
-              MoreMenu={ActionMenu}
-              onMore={(action) => handleMore(action, item)}
-              onAction={({ kind }) => handleMore(kind, item)}
+              onAction={handleMore}
               extraActions={extraActions}
               testId={`search-mode-result-${item.id}`}
             />
           </li>
         ))}
       </ul>
-      <ItemDestinationPicker action={oneShotAction} onClose={() => setOneShotAction(null)} />
+      <ItemDestinationPicker
+        action={oneShotAction}
+        onClose={() => setOneShotAction(null)}
+        returnFocusRef={oneShotAction?.returnFocusRef}
+      />
     </div>
   );
 }

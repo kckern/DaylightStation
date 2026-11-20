@@ -50,12 +50,13 @@ function CatalogMoreMenu({ trigger, dropdownProps, children, ...menuProps }) {
  */
 export function ResultRowActions({
   item, isContainerItem, onPlayAll, onDetails, detailsTestId, onMore, onAction, testId, extraActions = null,
-  playLabel = null, playOnLabel = null, MoreMenu = CatalogMoreMenu,
+  playLabel = null, playOnLabel = null, MoreMenu = CatalogMoreMenu, moreTriggerRef: suppliedMoreTriggerRef,
   onMoreMenuPointerDown, onMoreMenuChange, onMoreMenuAction, onMoreMenuTriggerFocus, onMoreBoundaryBlur,
 }) {
   const container = isContainerItem ?? (item ? isContainer(item) : false);
   const idPart = testId ?? item?.id ?? 'row';
-  const moreTriggerRef = React.useRef(null);
+  const localMoreTriggerRef = React.useRef(null);
+  const moreTriggerRef = suppliedMoreTriggerRef ?? localMoreTriggerRef;
   // PLAY.5a/AC3: pressing and holding Play Next offers "At the very front".
   const hold = usePressHoldOffer();
 
@@ -216,11 +217,12 @@ export function ResultRowActions({
  * @param {(action: string) => void} [props.onMore] - leaf-only: the ⋯ verb
  * @param {string} [props.testId] - testid for the tap button (defaults to `result-row-${item.id}`)
  * @param {React.ComponentType} [props.MoreMenu] - renders the shared trigger and items and owns dismissal and focus
+ * @param {React.RefObject} [props.moreTriggerRef] - persistent More button for focus return from a follow-up surface
  * @param {(opened: boolean) => void} [props.onMenuOpenChange] - the default menu's lifecycle notification
  * @param {(item: object) => Array<{kind: string, label: string}>} [props.extraActions] - additive
  *   menu verbs, delivered through onAction({ kind, item }) (onAction contract only)
  */
-export function ResultRow({ item, title, subtitle, thumbnail, leading = null, onTap, onPlayAll, onDetails, detailsTestId, onMore, onAction, testId, focusId, extraActions = null, rowLabels = null, MoreMenu, onMenuOpenChange }) {
+export function ResultRow({ item, title, subtitle, thumbnail, leading = null, onTap, onPlayAll, onDetails, detailsTestId, onMore, onAction, testId, focusId, extraActions = null, rowLabels = null, MoreMenu, moreTriggerRef, onMenuOpenChange }) {
   const container = item ? isContainer(item) : false;
   const idPart = item?.id ?? 'row';
   const rowTestId = testId ?? `result-row-${idPart}`;
@@ -257,7 +259,7 @@ export function ResultRow({ item, title, subtitle, thumbnail, leading = null, on
           item={item} isContainerItem={container} onPlayAll={onPlayAll} onDetails={onDetails} detailsTestId={detailsTestId}
           onMore={onMore} onAction={onAction} testId={idPart} extraActions={extraActions}
           playLabel={rowLabels?.play ?? null} playOnLabel={rowLabels?.playOn ?? null}
-          MoreMenu={MoreMenu} onMoreMenuChange={onMenuOpenChange}
+          MoreMenu={MoreMenu} moreTriggerRef={moreTriggerRef} onMoreMenuChange={onMenuOpenChange}
         />
       </span>
     </>

@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { startSseServer, streamItem } from '../../../live/flow/media/lib/sseServer.mjs';
 
 test.use({ serviceWorkers: 'block' });
 
@@ -191,6 +192,16 @@ test('desktop Media closes slideshow music search and dialog before leaving Now 
   await expect(page).toHaveURL(/view=fleet/);
 });
 
+async function openSearchPlayOnWithKeyboard(page) {
+  await page.keyboard.press('Enter');
+  for (let step = 0; step < 4; step++) await page.keyboard.press('ArrowDown');
+  await expect(page.getByRole('menuitem', { name: 'Play on…', exact: true })).toBeFocused();
+  await page.keyboard.press('Enter');
+  const picker = page.getByRole('dialog', { name: 'Play on…', exact: true });
+  await expect(picker).toBeVisible();
+  return picker;
+}
+
 test('phone Media gives More native Tab order and lets the destination picker dismiss before Search', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 850 });
   const item = await installMediaSearchResult(page);
@@ -241,10 +252,7 @@ test('phone Media gives More native Tab order and lets the destination picker di
   await expect(more).toBeFocused();
   await expect(search).toHaveValue(item.title);
 
-  await more.click();
-  await playOn.click();
-  const picker = page.getByRole('dialog', { name: 'Play on…', exact: true });
-  await expect(picker).toBeVisible();
+  const picker = await openSearchPlayOnWithKeyboard(page);
   await expect(menu).toBeHidden();
   await expect(picker.locator(':focus')).toHaveCount(1);
   await page.keyboard.press('Shift+Tab');
@@ -253,8 +261,11 @@ test('phone Media gives More native Tab order and lets the destination picker di
   await expect(picker.locator(':focus')).toHaveCount(1);
   await page.keyboard.press('Escape');
   await expect(picker).toBeHidden();
+  await expect(more).toBeFocused();
   await expect(search).toHaveValue(item.title);
   expect(await page.evaluate(() => history.state.mediaSearchMode)).toBe(true);
+  await page.keyboard.press('Tab');
+  await expect(close).toBeFocused();
 
   await page.keyboard.press('Escape');
   await expect(search).toBeHidden();
@@ -263,4 +274,55 @@ test('phone Media gives More native Tab order and lets the destination picker di
   await expect.poll(() => page.evaluate(() => !!history.state.mediaSearchMode)).toBe(false);
   await page.goBack();
   await expect(home).toHaveAttribute('aria-current', 'page');
+});
+
+test('phone Media gives focus to Search when the picked row is replaced during streaming', async ({ page }) => {
+  const server = await startSseServer();
+  try {
+    const title = 'Recorded story';
+    const incoming = streamItem({ id: 'abs:7', title, source: 'abs', type: 'audiobook' });
+    const preferred = streamItem({ id: 'plex:43', title, type: 'audiobook' });
+    server.script(async stream => {
+      stream.send({ event: 'results', source: 'abs', items: [incoming], pending: ['plex'] });
+      await stream.gate('plex');
+      stream.send({ event: 'results', source: 'plex', items: [preferred], pending: [] });
+      stream.send({ event: 'complete' });
+      stream.end();
+    });
+    await server.install(page);
+    await page.setViewportSize({ width: 390, height: 850 });
+    await page.goto('/media');
+    const launcher = page.getByTestId('app-tab-search');
+    await launcher.press('Enter');
+    const search = page.getByRole('searchbox', { name: 'Search media' });
+    await search.fill(title);
+    const initialMore = page.getByTestId('result-more-abs:7');
+    const preferredMore = page.getByTestId('result-more-plex:43');
+    await expect(initialMore).toBeVisible();
+    await page.keyboard.press('Shift+Tab');
+    await page.keyboard.press('Shift+Tab');
+    await expect(initialMore).toBeFocused();
+    const picker = await openSearchPlayOnWithKeyboard(page);
+
+    server.release('plex');
+    await expect(initialMore).toHaveCount(0);
+    await expect(preferredMore).toBeVisible();
+    await expect(picker).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(picker).toBeHidden();
+    await expect(search).toBeFocused();
+    await expect(search).toHaveValue(title);
+
+    await page.keyboard.press('Shift+Tab');
+    await page.keyboard.press('Shift+Tab');
+    await expect(preferredMore).toBeFocused();
+    await openSearchPlayOnWithKeyboard(page);
+    await page.goBack();
+    await expect(picker).toBeHidden();
+    await expect(search).toBeHidden();
+    await expect(launcher).toBeFocused();
+    await expect.poll(() => page.evaluate(() => !!history.state?.mediaSearchMode)).toBe(false);
+  } finally {
+    await server.close();
+  }
 });
