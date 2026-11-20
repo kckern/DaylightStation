@@ -6,7 +6,7 @@ import {
   readBinaryFromPathAsync,
 } from '#system/utils/FileIO.mjs';
 import { IProxyMediaRepository } from "../../../../__capabilities/content-catalog/server/application/proxy/ports/IProxyMediaRepository.mjs";
-import { extractMusicXmlFromMxl } from "../../../../__capabilities/music-notation/portable/mxlArchive.mjs";
+import { extractMusicXmlFromMxl } from "../../../../__capabilities/music-notation/server/mxlArchive.mjs";
 
 const LOCAL_MIME_TYPES = Object.freeze({
   '.mp3': 'audio/mpeg', '.m4a': 'audio/mp4', '.mp4': 'video/mp4',

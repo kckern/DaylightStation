@@ -141,3 +141,49 @@ describe('Proxy Router — media tree revalidation', () => {
     expect(Buffer.from(after.body).toString()).toBe('new fireball whoosh');
   });
 });
+
+// .mxl scores are ZIPs; the kiosk fetches them as text and hashes what it gets,
+// so the stream route must hand back the root file's XML, not the archive.
+describe('Proxy Router — compressed MusicXML', () => {
+  let app;
+  let mediaDir;
+  const xml = '<?xml version="1.0" encoding="UTF-8"?><score-partwise><work><work-title>Für Élise</work-title></work></score-partwise>';
+
+  beforeAll(async () => {
+    const { default: AdmZip } = await import('adm-zip');
+    mediaDir = fs.mkdtempSync(path.join(os.tmpdir(), 'daylight-mxl-'));
+    fs.mkdirSync(path.join(mediaDir, 'docs/sheet-music'), { recursive: true });
+    const zip = new AdmZip();
+    zip.addFile('META-INF/container.xml', Buffer.from(
+      '<container><rootfiles><rootfile full-path="score.xml"/></rootfiles></container>', 'utf8'));
+    zip.addFile('score.xml', Buffer.from(xml, 'utf8'));
+    fs.writeFileSync(path.join(mediaDir, 'docs/sheet-music/tiny.mxl'), zip.toBuffer());
+    fs.writeFileSync(path.join(mediaDir, 'docs/sheet-music/broken.mxl'), 'not a zip');
+
+    const files = {
+      async getItem(relativePath) {
+        const filePath = path.join(mediaDir, relativePath);
+        return fs.existsSync(filePath) ? { metadata: { filePath, mimeType: 'application/vnd.recordare.musicxml' } } : null;
+      },
+    };
+    const registry = { get: (name) => (name === 'files' ? files : null) };
+    const repository = new FilesystemProxyMediaRepository({ registry, mediaBasePath: mediaDir, logger: { warn() {} } });
+    app = express();
+    app.use('/proxy', createProxyRouter({
+      proxyMediaService: new ProxyMediaService({ repository }),
+      mintPlaybackStream: new MintPlaybackStream({ gateway: new RegistryPlaybackStreamGateway({ registry }) }),
+    }));
+  });
+
+  afterAll(() => fs.rmSync(mediaDir, { recursive: true, force: true }));
+
+  test('streams an .mxl as its inner MusicXML text', async () => {
+    const res = await request(app).get('/proxy/media/stream/docs/sheet-music/tiny.mxl').expect(200);
+    expect(res.headers['content-type']).toMatch(/musicxml\+xml; charset=utf-8/);
+    expect(res.text).toBe(xml);
+  });
+
+  test('answers an archive that will not open with 422', async () => {
+    await request(app).get('/proxy/media/stream/docs/sheet-music/broken.mxl').expect(422);
+  });
+});

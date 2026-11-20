@@ -6,10 +6,41 @@ import path from 'node:path';
 import { createHash } from 'node:crypto';
 import AdmZip from 'adm-zip';
 import sha256 from 'crypto-js/sha256.js';
-import { SheetMusicScoreReader } from './SheetMusicScoreReader.mjs';
+import { SheetMusicScoreReader, ScoreReadError } from './SheetMusicScoreReader.mjs';
 
 const FIXTURE = path.join(path.dirname(new URL(import.meta.url).pathname), '__fixtures__', 'tiny.musicxml');
 const nodeSha = (text) => createHash('sha256').update(text, 'utf8').digest('hex');
+const BOM_BYTES = Buffer.from([0xef, 0xbb, 0xbf]);
+
+/** Rewrites the declared uncompressed size in every local and central header. */
+function withDeclaredSize(buffer, size) {
+  const out = Buffer.from(buffer);
+  for (let i = 0; i <= out.length - 4; i += 1) {
+    const signature = out.readUInt32LE(i);
+    if (signature === 0x04034b50) out.writeUInt32LE(size, i + 22);
+    if (signature === 0x02014b50) out.writeUInt32LE(size, i + 24);
+  }
+  return out;
+}
+
+function mxlOf(xml) {
+  const zip = new AdmZip();
+  zip.addFile('META-INF/container.xml', Buffer.from(
+    '<?xml version="1.0" encoding="UTF-8"?><container><rootfiles>'
+    + '<rootfile full-path="score/tiny.xml" media-type="application/vnd.recordare.musicxml+xml"/>'
+    + '</rootfiles></container>', 'utf8'));
+  zip.addFile('score/tiny.xml', Buffer.from(xml, 'utf8'));
+  return zip.toBuffer();
+}
+
+/** Expects read() to reject with a ScoreReadError of this code for this id. */
+async function expectCode(reader, scoreId, code) {
+  const error = await reader.read(scoreId).then(() => null, (e) => e);
+  expect(error, `${scoreId} should reject`).toBeInstanceOf(ScoreReadError);
+  expect(error.code).toBe(code);
+  expect(error.scoreId).toBe(scoreId);
+  return error;
+}
 
 describe('SheetMusicScoreReader', () => {
   let tmp;
@@ -23,22 +54,24 @@ describe('SheetMusicScoreReader', () => {
     fs.copyFileSync(FIXTURE, path.join(dir, 'tiny.musicxml'));
     fixtureXml = fs.readFileSync(FIXTURE, 'utf8');
 
-    const zip = new AdmZip();
-    zip.addFile('META-INF/container.xml', Buffer.from(
-      '<?xml version="1.0" encoding="UTF-8"?><container><rootfiles>'
-      + '<rootfile full-path="score/tiny.xml" media-type="application/vnd.recordare.musicxml+xml"/>'
-      + '</rootfiles></container>', 'utf8'));
-    zip.addFile('score/tiny.xml', Buffer.from(fixtureXml, 'utf8'));
-    fs.writeFileSync(path.join(dir, 'tiny.mxl'), zip.toBuffer());
-
-    const bomZip = new AdmZip();
-    bomZip.addFile('score.musicxml', Buffer.concat([
-      Buffer.from([0xef, 0xbb, 0xbf]), Buffer.from(fixtureXml, 'utf8')]));
-    fs.writeFileSync(path.join(dir, 'bom.mxl'), bomZip.toBuffer());
+    fs.writeFileSync(path.join(dir, 'tiny.mxl'), mxlOf(fixtureXml));
 
     // A file saved by an editor that writes a UTF-8 byte-order mark.
-    fs.writeFileSync(path.join(dir, 'bom.musicxml'), Buffer.concat([
-      Buffer.from([0xef, 0xbb, 0xbf]), Buffer.from(fixtureXml, 'utf8')]));
+    fs.writeFileSync(path.join(dir, 'bom.musicxml'), Buffer.concat([BOM_BYTES, Buffer.from(fixtureXml, 'utf8')]));
+    const bomZip = new AdmZip();
+    bomZip.addFile('score.musicxml', Buffer.concat([BOM_BYTES, Buffer.from(fixtureXml, 'utf8')]));
+    fs.writeFileSync(path.join(dir, 'bom.mxl'), bomZip.toBuffer());
+
+    fs.writeFileSync(path.join(dir, 'broken.mxl'), 'not a zip archive at all');
+    fs.writeFileSync(path.join(dir, 'bomb.mxl'), withDeclaredSize(mxlOf(fixtureXml), 0xfffffff0));
+    fs.mkdirSync(path.join(dir, 'folder.musicxml'));
+
+    // Real scores outside the library, so a missing guard would read them.
+    const other = path.join(tmp, 'docs', 'other');
+    fs.mkdirSync(other, { recursive: true });
+    fs.writeFileSync(path.join(other, 'x.mxl'), mxlOf(fixtureXml));
+    fs.copyFileSync(FIXTURE, path.join(other, 'x.musicxml'));
+    fs.copyFileSync(FIXTURE, path.join(tmp, 'docs', 'sheet-musical.musicxml'));
 
     reader = new SheetMusicScoreReader({ mediaDir: tmp });
   });
@@ -77,23 +110,51 @@ describe('SheetMusicScoreReader', () => {
     expect(SheetMusicScoreReader.hash(text)).toBe(sha256(text).toString());
   });
 
-  it('refuses paths outside docs/sheet-music', async () => {
-    await expect(reader.read('files:docs/other/x.mxl')).rejects.toThrow();
-    await expect(reader.read('docs/sheet-music/t/tiny.musicxml')).rejects.toThrow();
-  });
-
-  it('refuses empty, . and .. path segments', async () => {
+  it('refuses ids outside docs/sheet-music with NOT_LIBRARY_SCORE, though the files exist', async () => {
     for (const id of [
+      'files:docs/other/x.mxl',
+      'files:docs/sheet-musical.musicxml',
+      'docs/sheet-music/t/tiny.musicxml',
       'files:docs/sheet-music/../other/x.musicxml',
       'files:docs/sheet-music/./t/tiny.musicxml',
       'files:docs/sheet-music//t/tiny.musicxml',
       'files:docs/sheet-music/',
     ]) {
-      await expect(reader.read(id), id).rejects.toThrow();
+      const error = await expectCode(reader, id, 'NOT_LIBRARY_SCORE');
+      expect(error.message).toMatch(/Not a sheet music score/);
     }
   });
 
-  it('rejects a missing score', async () => {
-    await expect(reader.read('files:docs/sheet-music/t/none.musicxml')).rejects.toThrow();
+  it('reports a missing score, or a folder where a score should be, as SCORE_NOT_FOUND', async () => {
+    const missing = await expectCode(reader, 'files:docs/sheet-music/t/none.musicxml', 'SCORE_NOT_FOUND');
+    expect(missing.cause?.code).toBe('ENOENT');
+    await expectCode(reader, 'files:docs/sheet-music/t/folder.musicxml', 'SCORE_NOT_FOUND');
+  });
+
+  it('reports an archive that will not open as SCORE_UNREADABLE, with the cause', async () => {
+    const error = await expectCode(reader, 'files:docs/sheet-music/t/broken.mxl', 'SCORE_UNREADABLE');
+    expect(error.cause).toBeInstanceOf(Error);
+  });
+
+  it('refuses an archive entry that declares a huge size as SCORE_TOO_LARGE', async () => {
+    await expectCode(reader, 'files:docs/sheet-music/t/bomb.mxl', 'SCORE_TOO_LARGE');
+  });
+
+  it('refuses files over the size caps as SCORE_TOO_LARGE before reading them', async () => {
+    const small = new SheetMusicScoreReader({ mediaDir: tmp, maxArchiveBytes: 16, maxXmlBytes: 16 });
+    await expectCode(small, 'files:docs/sheet-music/t/tiny.mxl', 'SCORE_TOO_LARGE');
+    await expectCode(small, 'files:docs/sheet-music/t/tiny.musicxml', 'SCORE_TOO_LARGE');
+  });
+
+  it('never puts the absolute media path in an error message', async () => {
+    for (const [id] of [
+      ['files:docs/sheet-music/t/none.musicxml'],
+      ['files:docs/sheet-music/t/broken.mxl'],
+      ['files:docs/sheet-music/t/bomb.mxl'],
+      ['files:docs/other/x.mxl'],
+    ]) {
+      const error = await reader.read(id).then(() => null, (e) => e);
+      expect(error.message).not.toContain(tmp);
+    }
   });
 });

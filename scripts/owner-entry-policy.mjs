@@ -341,7 +341,7 @@ export const OWNER_ENTRY_POLICY = Object.freeze({
   '__capabilities/music-notation/portable/loopScheduler.mjs': null,
   '__capabilities/music-notation/portable/melodyFit.mjs': null,
   '__capabilities/music-notation/portable/musicXmlToNotes.mjs': null,
-  '__capabilities/music-notation/portable/mxlArchive.mjs': null,
+  '__capabilities/music-notation/server/mxlArchive.mjs': null,
   '__capabilities/music-notation/portable/percussion.mjs': null,
   '__capabilities/music-notation/portable/romanAnalysis.mjs': null,
   '__capabilities/music-notation/portable/transpose.mjs': null,

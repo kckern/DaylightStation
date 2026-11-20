@@ -12,22 +12,43 @@
  * TextDecoder is that same algorithm, so .musicxml bytes go through it here, and
  * the .mxl text loses a leading BOM the same way.
  *
+ * Failures are ScoreReadError with a `code` (NOT_LIBRARY_SCORE, SCORE_NOT_FOUND,
+ * SCORE_UNREADABLE, SCORE_TOO_LARGE), the `scoreId`, and the original error as
+ * `cause`. Messages name the score id, never the absolute media path.
+ *
  * Layer: ADAPTER. All filesystem access through FileIO.
  */
 import path from 'node:path';
 import { createHash } from 'node:crypto';
-import { readBinaryFromPathAsync } from '#system/utils/FileIO.mjs';
-import { extractMusicXmlFromMxl } from '../../../../../__capabilities/music-notation/portable/mxlArchive.mjs';
+import { getFileStatsAsync, readBinaryFromPathAsync } from '#system/utils/FileIO.mjs';
+import { extractMusicXmlFromMxl, MAX_MXL_XML_BYTES } from '../../../../../__capabilities/music-notation/server/mxlArchive.mjs';
 import { libraryScoreLocalPath } from '../../portable/music/practiceKey.mjs';
 
-const BOM = '﻿';
+/** Largest .mxl file read: compressed scores are rarely over 1 MB. */
+export const MAX_MXL_ARCHIVE_BYTES = 16 * 1024 * 1024;
+
+const BOM = '\uFEFF';
+const MXL_RE = /\.mxl$/i;
+
+export class ScoreReadError extends Error {
+  constructor(code, scoreId, message, cause) {
+    super(message, cause ? { cause } : undefined);
+    this.name = 'ScoreReadError';
+    this.code = code;
+    this.scoreId = scoreId;
+  }
+}
 
 export class SheetMusicScoreReader {
   #mediaDir;
+  #maxArchiveBytes;
+  #maxXmlBytes;
 
-  constructor({ mediaDir } = {}) {
+  constructor({ mediaDir, maxArchiveBytes = MAX_MXL_ARCHIVE_BYTES, maxXmlBytes = MAX_MXL_XML_BYTES } = {}) {
     if (!mediaDir) throw new Error('SheetMusicScoreReader requires mediaDir');
     this.#mediaDir = mediaDir;
+    this.#maxArchiveBytes = maxArchiveBytes;
+    this.#maxXmlBytes = maxXmlBytes;
   }
 
   /** sha256 hex of the text's UTF-8 bytes: what crypto-js computes in the kiosk. */
@@ -35,20 +56,54 @@ export class SheetMusicScoreReader {
     return createHash('sha256').update(xml, 'utf8').digest('hex');
   }
 
-  /** Absolute file path of a library score; throws for any id the guard refuses. */
+  /** Absolute file path of a library score; throws NOT_LIBRARY_SCORE for any id the guard refuses. */
   localPath(scoreId) {
-    const local = libraryScoreLocalPath(scoreId);
-    if (!local) throw new Error(`Not a sheet music score: ${scoreId}`);
-    return path.join(this.#mediaDir, local);
+    return path.join(this.#mediaDir, this.#local(scoreId));
   }
 
   /** @returns {Promise<{ xml: string, contentSha256: string }>} */
   async read(scoreId) {
-    const buffer = await readBinaryFromPathAsync(this.localPath(scoreId));
-    const xml = /\.mxl$/i.test(scoreId)
-      ? stripBom(await extractMusicXmlFromMxl(buffer))
-      : new TextDecoder('utf-8').decode(buffer);
+    const local = this.#local(scoreId);
+    const file = path.join(this.#mediaDir, local);
+    const isMxl = MXL_RE.test(local);
+    const maxFileBytes = isMxl ? this.#maxArchiveBytes : this.#maxXmlBytes;
+
+    let stats;
+    try {
+      stats = await getFileStatsAsync(file);
+    } catch (error) {
+      if (error?.code === 'ENOENT' || error?.code === 'ENOTDIR') {
+        throw new ScoreReadError('SCORE_NOT_FOUND', scoreId, `Sheet music score not found: ${scoreId}`, error);
+      }
+      throw new ScoreReadError('SCORE_UNREADABLE', scoreId, `Sheet music score could not be read: ${scoreId}`, error);
+    }
+    if (!stats.isFile()) {
+      throw new ScoreReadError('SCORE_NOT_FOUND', scoreId, `Sheet music score is not a file: ${scoreId}`);
+    }
+    if (stats.size > maxFileBytes) {
+      throw new ScoreReadError('SCORE_TOO_LARGE', scoreId,
+        `Sheet music score is too large: ${scoreId} (${stats.size} bytes, limit ${maxFileBytes})`);
+    }
+
+    let xml;
+    try {
+      const buffer = await readBinaryFromPathAsync(file);
+      xml = isMxl
+        ? stripBom(await extractMusicXmlFromMxl(buffer, { maxXmlBytes: this.#maxXmlBytes }))
+        : new TextDecoder('utf-8').decode(buffer);
+    } catch (error) {
+      if (error?.code === 'MXL_TOO_LARGE') {
+        throw new ScoreReadError('SCORE_TOO_LARGE', scoreId, `Sheet music score is too large once decompressed: ${scoreId}`, error);
+      }
+      throw new ScoreReadError('SCORE_UNREADABLE', scoreId, `Sheet music score could not be read: ${scoreId}`, error);
+    }
     return { xml, contentSha256: SheetMusicScoreReader.hash(xml) };
+  }
+
+  #local(scoreId) {
+    const local = libraryScoreLocalPath(scoreId);
+    if (!local) throw new ScoreReadError('NOT_LIBRARY_SCORE', scoreId, `Not a sheet music score: ${scoreId}`);
+    return local;
   }
 }
 
