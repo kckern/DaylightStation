@@ -84,12 +84,15 @@ export async function createPianoModule({configService, userService, rootLogger,
   // economy's `piano-piece`, `piano-polish-gem` and `piano-polish-diamond` milestones.
   const pianoPieceLog = createPianoPieceLog({ configService, logger: rootLogger.child({ module: 'piano-learn-coach' }) });
   const pianoPolishReward = new PianoPolishReward({ pieceLog: pianoPieceLog, logger: rootLogger.child({ module: 'piano-polish-reward' }) });
+  const pianoConfigProjection = new PianoConfigProjection({ configService });
   const pianoLearnCoachService = new PianoLearnCoachService({
     datastore: pianoStudioDatastore,
     receiptStore: new YamlPianoLearnCoachStore({ usersDir: join(configService.getDataDir(), 'users') }),
     attemptStore: pianoAttemptStore, clock: () => new Date(), timezone: configService.getTimezone?.() ?? null,
     logger: rootLogger.child({ module: 'piano-learn-coach' }),
     pieceLog: pianoPieceLog,
+    // Which Learn steps a child may start (strict | open-to-silver | open), read per event.
+    skipping: () => pianoConfigProjection.raw()?.sheetmusic?.learn?.skipping,
   });
   // Exercise bank: seeds at data/content/music/, instances computed on demand.
   const exerciseBank = new YamlExerciseBank({ contentDir: contentPath });
@@ -126,7 +129,7 @@ export async function createPianoModule({configService, userService, rootLogger,
     fitnessPlayableService,
     userVideoProgressStore: contentServices.userVideoProgressStore,
     composerSongStore,
-    configProjection: new PianoConfigProjection({ configService }),
+    configProjection: pianoConfigProjection,
     plexClient: pianoPlexClient,
     learningService: pianoLearningService,
     logger: rootLogger.child({ module: 'piano-api' })

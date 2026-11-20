@@ -167,7 +167,8 @@ describe('acknowledged piano coaching', () => {
       segments: [{ id: 'a', inMeasure: 0, outMeasure: 1, playableParts: ['rh', 'lh'] }, { id: 'b', inMeasure: 2, outMeasure: 3, playableParts: ['rh', 'lh'] }] });
     const setup = () => {
       const f = pianoCoachFixture(); const plan = twoPassages(f); const notes = []; const info = [];
-      const service = new PianoLearnCoachService({ ...f, pieceLog: { note: (entry) => { notes.push(entry); return entry; } },
+      // `open`: these takes go straight to score tempo, which the default mode holds behind Silver.
+      const service = new PianoLearnCoachService({ ...f, skipping: { default: 'open' }, pieceLog: { note: (entry) => { notes.push(entry); return entry; } },
         logger: { info: (name, data) => info.push([name, data]), warn() {} } });
       const take = (id, passage, skill) => { const body = f.outcome(id, { task: plan.tasks.find((task) => task.passageId === passage && task.skill === skill) }); return { ...body, plan }; };
       return { f, plan, notes, info, service, take };
@@ -216,6 +217,46 @@ describe('acknowledged piano coaching', () => {
       const f = pianoCoachFixture(); const service = new PianoLearnCoachService(f);
       const saved = await service.record('learner4', SCORE, f.outcome('silver-take', { task: f.plan.tasks.find((task) => task.skill === 'silver') }));
       expect(saved.state.summary.silver).toBe(1);
+    });
+  });
+
+  describe('skipping steps', () => {
+    const logged = (f, skipping) => { const warn = []; return { warn, service: new PianoLearnCoachService({ ...f, skipping: () => skipping, logger: { info() {}, warn: (name, data) => warn.push([name, data]) } }) }; };
+    const of = (f, skill) => f.plan.tasks.find((task) => task.skill === skill);
+    const select = (f, id, task) => ({ plan: f.plan, event: { id, type: 'selection', profileId: 'learner4', task } });
+
+    it('rejects a Gold step before Silver by default, with a structured warning, and saves nothing', async () => {
+      const f = pianoCoachFixture(); const { service, warn } = logged(f, undefined);
+      await expect(service.record('learner4', SCORE, f.outcome('early-gold', { task: of(f, 'timed-75') }))).rejects.toMatchObject({ status: 403 });
+      await expect(service.record('learner4', SCORE, select(f, 'pick-gold', of(f, 'mastery')))).rejects.toMatchObject({ status: 403 });
+      expect(f.records.get(`learner4/${SCORE}`)?.learnCoach).toBeUndefined();
+      expect(warn).toEqual([
+        ['piano.learn.coach.locked', { userId: 'learner4', scoreId: 'files:test.musicxml', passageId: 'opening', skill: 'timed-75', type: 'outcome', mode: 'open-to-silver' }],
+        ['piano.learn.coach.locked', expect.objectContaining({ skill: 'mastery', type: 'selection' })],
+      ]);
+    });
+
+    it('accepts a skip to a later note step, and Gold once the passage has Silver', async () => {
+      const f = pianoCoachFixture(); const { service, warn } = logged(f, { default: 'open-to-silver' });
+      await service.record('learner4', SCORE, select(f, 'pick-together', of(f, 'together')));
+      await service.record('learner4', SCORE, f.outcome('check', { task: of(f, 'silver') }));
+      await service.record('learner4', SCORE, f.outcome('gold-75', { task: of(f, 'timed-75') }));
+      expect(f.records.get(`learner4/${SCORE}`).learnCoach.evidence).toHaveLength(2);
+      expect(warn).toEqual([]);
+    });
+
+    it('holds a strict learner to the current step, but lets a drill of it through', async () => {
+      const f = pianoCoachFixture(); const { service } = logged(f, { learners: { learner4: 'strict' } });
+      await expect(service.record('learner4', SCORE, select(f, 'pick-left', of(f, 'left')))).rejects.toMatchObject({ status: 403 });
+      const right = of(f, 'right');
+      await service.record('learner4', SCORE, select(f, 'pick-right', right));
+      await service.record('learner4', SCORE, select(f, 'pick-drill', { ...right, key: 'drill', range: { start: 0, end: 1 }, depth: 1, parent: right }));
+    });
+
+    it('lets an open learner start score tempo from nothing', async () => {
+      const f = pianoCoachFixture(); const { service } = logged(f, { default: 'strict', learners: { learner4: 'open' } });
+      await service.record('learner4', SCORE, f.outcome('straight-to-gold', { task: of(f, 'mastery') }));
+      expect(f.records.get(`learner4/${SCORE}`).learnCoach.evidence).toHaveLength(1);
     });
   });
 });

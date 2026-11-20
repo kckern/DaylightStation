@@ -71,11 +71,14 @@ function Cluster({ step, isCurrent, noteProgress, labels, onPick = null }) {
   const icon = labels ? (step.display?.icon ?? null) : null;
 
   // A host whose sets can be chosen (a passage's steps) makes each one a button.
+  // A set the host has `locked` is still drawn as a button, disabled: it cannot be chosen yet.
+  const locked = Boolean(onPick && step.locked);
   const Tag = onPick ? 'button' : 'div';
-  const pick = onPick ? { type: 'button', 'aria-label': step.title ?? label, 'aria-current': isCurrent ? 'step' : undefined, onClick: () => onPick(step) } : {};
+  const pick = onPick ? { type: 'button', 'aria-label': step.title ?? label, 'aria-current': isCurrent ? 'step' : undefined,
+    disabled: locked || undefined, onClick: locked ? undefined : () => onPick(step) } : {};
   const named = icon && !onPick ? { role: 'group', 'aria-label': step.title ?? label } : {};
   return (
-    <Tag className="drill-cluster" data-active={isCurrent || undefined} data-done={done || undefined} {...named} {...pick}>
+    <Tag className="drill-cluster" data-active={isCurrent || undefined} data-done={done || undefined} data-locked={locked || undefined} {...named} {...pick}>
       {/* A SET WITH NOTHING TO SAY SAYS NOTHING. A reading deck declares no
           label on purpose — naming the pitch under a staff a child is being
           asked to read hands them the answer — and an empty label row here

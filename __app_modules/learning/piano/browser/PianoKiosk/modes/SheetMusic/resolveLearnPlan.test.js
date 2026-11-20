@@ -114,6 +114,15 @@ describe('resolveLearnPlan', () => {
   });
 });
 
+describe('skipping policy', () => {
+  it('reads the household policy only, so a category or piece layer cannot open steps the server refuses', () => {
+    expect(resolveLearnPlan({ score: score() }).skipping).toEqual({ default: 'open-to-silver', learners: {}, pieces: {} });
+    const plan = resolveLearnPlan({ score: score(), defaults: { skipping: { default: 'strict', learners: { a: 'open', b: 'wide' } } },
+      category: { skipping: { default: 'open' } }, piece: { skipping: { default: 'open' } } });
+    expect(plan.skipping).toEqual({ default: 'strict', learners: { a: 'open' }, pieces: {} });
+  });
+});
+
 describe('certification policy', () => {
   it('resolves through the configuration layers without changing the plan revision', () => {
     const base = resolveLearnPlan({ score: score() });

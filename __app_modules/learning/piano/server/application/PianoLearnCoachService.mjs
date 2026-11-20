@@ -1,4 +1,5 @@
-import { applyCoachEvent, coachSummary, createCoachPlan, coachTaskKey, projectCoach, COACH_VERSION } from '#shared/music/learnCoach.mjs';
+import { applyCoachEvent, coachSummary, createCoachPlan, coachTaskKey, isGoldWork, projectCoach, COACH_VERSION } from '#shared/music/learnCoach.mjs';
+import { resolveSkipMode, stepAccess } from '#shared/music/learnSkipping.mjs';
 
 const ID = /^[a-zA-Z0-9][a-zA-Z0-9_-]{0,127}$/;
 const SCORE = /^[a-z0-9-]{1,120}$/;
@@ -10,10 +11,36 @@ const fail = (message, status = 400) => { throw Object.assign(new Error(message)
 
 export class PianoLearnCoachService {
   #queues = new Map();
-  constructor({ datastore, receiptStore, attemptStore, clock, timezone, logger, pieceLog = null }) {
+  /** `skipping` reads the household's `sheetmusic.learn.skipping` policy on each call, so a config reload applies. */
+  constructor({ datastore, receiptStore, attemptStore, clock, timezone, logger, pieceLog = null, skipping = null }) {
     if (!datastore || !receiptStore || !attemptStore || typeof clock !== 'function') throw new Error('Coaching persistence requires stores and clock');
     this.datastore = datastore;this.receiptStore = receiptStore;this.attemptStore = attemptStore;
     this.clock = clock;this.timezone = timezone;this.logger = logger;this.pieceLog = pieceLog;
+    this.skipping = typeof skipping === 'function' ? skipping : () => skipping;
+  }
+  /**
+   * A chosen or played step must be one the child's skipping mode allows, judged on the
+   * projection before this event. A recovery drill is judged by the step it came from, and
+   * a review of a mastered passage is always allowed. A task that is no plan step (an old
+   * saved tempo) only has to respect the Silver gate on Gold work.
+   */
+  #allowed({ userId, plan, event, before }) {
+    if (event.type !== 'selection' && event.type !== 'outcome') return;
+    let root = event.task;
+    while (root?.parent) root = root.parent;
+    if (root.review) return;
+    const segment = before.segments.find((item) => item.id === root.passageId);
+    if (!segment) return;
+    let mode;
+    try { mode = resolveSkipMode({ skipping: this.skipping(), userId, scoreId: plan.scoreId, authored: segment.authoredLadder }); }
+    catch { mode = resolveSkipMode({ userId, scoreId: plan.scoreId, authored: segment.authoredLadder }); }
+    const key = coachTaskKey(root);
+    const step = segment.skills.find((skill) => skill.key === key);
+    const open = step ? stepAccess(segment, step, mode) === 'open'
+      : mode === 'open' || !isGoldWork(root) || Boolean(segment.certification.silver);
+    if (open) return;
+    this.logger?.warn?.('piano.learn.coach.locked', { userId, scoreId: plan.scoreId, passageId: segment.id, skill: root.skill ?? null, type: event.type, mode });
+    fail('This step is locked until an earlier step is done', 403);
   }
   /**
    * The whole piece became all Silver or all Gold because of this one saved take.
@@ -145,6 +172,7 @@ export class PianoLearnCoachService {
       const now = at.toISOString();
       const previous = this.#state(record, plan);
       const before = projectCoach({ plan, state: previous, legacy: record, dayKey });
+      this.#allowed({ userId, plan, event, before });
       const applied = applyCoachEvent(previous, { ...event, result }, { plan, now, dayKey, legacy: record });
       const after = projectCoach({ plan, state: applied, legacy: record, dayKey });
       const state = { ...applied, summary: coachSummary(after, { now, state: applied }) };

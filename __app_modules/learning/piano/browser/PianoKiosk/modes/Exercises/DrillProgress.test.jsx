@@ -155,6 +155,18 @@ describe('DrillProgress', () => {
     expect(container.querySelectorAll('div.drill-cluster')).toHaveLength(2);
   });
 
+  it('draws a locked set as a disabled button that picks nothing', () => {
+    const onPick = vi.fn();
+    const program = { id: 'p', steps: [step(1, { state: 'current' }), step(2, { locked: true })] };
+    render(<DrillProgress program={program} stepId="scale-set-1" onPick={onPick} />);
+    const [open, locked] = screen.getAllByRole('button');
+    expect(open).not.toBeDisabled();
+    expect(locked).toBeDisabled();
+    expect(locked).toHaveAttribute('data-locked');
+    locked.click();
+    expect(onPick).not.toHaveBeenCalled();
+  });
+
   it("names a set with the host's picture and keeps its words as the accessible name", () => {
     const pictured = (n, over) => step(n, { title: `Step ${n}`, display: { key: `Words ${n}`, hand: null, icon: <svg data-testid={`icon-${n}`} /> }, ...over });
     const program = { id: 'p', steps: [pictured(1, { state: 'current' }), pictured(2), step(3)] };

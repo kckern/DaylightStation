@@ -233,6 +233,22 @@ function carryGold(state, skills) {
   }
 }
 
+/**
+ * A generated note step the child has already proven by playing more of it: a ready note
+ * step at the same bars whose parts include this step's parts. "Together" covers each hand
+ * alone. Readiness only; no achievement is written, and the Silver check (the only way to
+ * Silver) still has to be played. Mutates the projected `skills` in place.
+ */
+function carrySilver(skills) {
+  const notes = skills.filter((skill) => skill.track === 'silver' && skill.assist !== 'none' && skill.mode === 'free');
+  for (const skill of notes) {
+    if (skill.ready) continue;
+    const proof = notes.find((other) => other !== skill && other.ready && sameRange(other.range, skill.range)
+      && other.parts.length > skill.parts.length && skill.parts.every((part) => other.parts.includes(part)));
+    if (proof) Object.assign(skill, { ready: true, provenance: skill.provenance ?? 'demonstrated' });
+  }
+}
+
 function segmentProjection(plan, state, legacy, segment) {
   const masteredAt = [segment.demonstration].filter(Boolean).filter((task) => task.mastery).map((task) => state.achievements[task.key]).find(Boolean);
   const old = legacy?.learn?.passages?.[segment.id];
@@ -255,7 +271,7 @@ function segmentProjection(plan, state, legacy, segment) {
       provenance: state.achievements[task.key]?.provenance ?? (inherited ? 'legacy' : mastered || certified ? 'demonstrated' : null),
       successes: state.counts[task.key]?.passes ?? 0 };
   });
-  if (!segment.authoredLadder) carryGold(state, skills);
+  if (!segment.authoredLadder) { carrySilver(skills); carryGold(state, skills); }
   const completed = skills.find((task) => task.completes && task.ready);
   if (!silver && segment.authoredLadder && completed) silver = certificate(state.achievements[completed.key], 'demonstrated');
   return { ...segment, skills, flower: !silver && partway(plan, segment, skills), mastered, complete: legacyComplete || (!segment.authoredLadder && mastered) || Boolean(completed),

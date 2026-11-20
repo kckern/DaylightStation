@@ -302,9 +302,12 @@ the drill. It draws no practice screen of its own.
   a timed take counts in on any key, exactly as in Exercises. The coach hears that
   a step was chosen (`selection`) when the take begins, not when the passage opens.
 - **Choosing a step.** Tapping a set runs that step, and it is the only chooser:
-  each set is a full touch target. This is how a child goes straight to the
-  Silver check (the silver coin) or to the full passage at score tempo (the gold
-  coin). There is no separate "change practice" screen.
+  each set is a full touch target. This is how a child goes straight to "together"
+  or the Silver check (the silver coin), and after Silver to the full passage at
+  score tempo (the gold coin). There is no separate "change practice" screen.
+  Which sets can be tapped depends on the [skipping mode](#skipping-steps); a set
+  that cannot be started yet is a disabled button, and outside `strict` its picture
+  is dimmed under a small lock (the piano `lock` icon).
 - **Chrome.** One toolbar row: Back (to the score), the printed bars, the step's
   instruction (`Join the hands`), then for a timed step its tempo (`40 BPM`) and
   click loudness, and **Listen**, **Pause** and **Start over**. A drill on part of the passage
@@ -362,7 +365,8 @@ engraved note, which is what keeps them together.
 Logs (`piano-learn-coach`): `piano.learn.coach.step`, `piano.learn.coach.take`
 (`reason`, `passed`, `tempoPercent`, and the result's `placement`,
 `completeness` and `cleanliness` to 3 decimals; `placement` is null on an
-unpaced take), `piano.learn.coach.pick`, `piano.learn.coach.certified`
+unpaced take), `piano.learn.coach.pick`, `piano.learn.coach.skip` (see
+[Skipping steps](#skipping-steps)), `piano.learn.coach.certified`
 (`level`, `piece`, `next`), `piano.learn.coach.set-aside`,
 `piano.learn.coach.unavailable`, `piano.learn.celebrate` (`scope: passage|piece`,
 `level`, `passages`, `sounded`; logged as the verdict lands), and `piano.learn.rail.select` with
@@ -413,6 +417,67 @@ Each saved coaching event stores `learnCoach.summary` in the practice record:
 with `id`, `start`, `end`, `silver` and `gold`. Certification values are timestamps,
 `legacy`, or null. Logs: `piano.learn.silver-check`, `piano.learn.certified`,
 `piano.learn.set-aside`.
+
+### Skipping steps
+
+The generated ladder runs right hand, left hand, together, the Silver check, the
+beat (50%, metronome), cued 50%, 60%, 75%, then score tempo (Gold). The current step
+is the first one not yet ready. `sheetmusic.learn.skipping` says which other steps a
+child may start:
+
+- `strict`: only the current step. A step already ready can be played again.
+- `open-to-silver` (the default): any Silver-track step (each hand, together, the
+  Silver check) in any order. The beat and tempo steps are locked until the passage
+  has Silver; then any of them may be started.
+- `open`: any step, Gold included, from the start.
+
+```yaml
+sheetmusic:
+  learn:
+    skipping:
+      default: open-to-silver        # strict | open-to-silver | open
+      learners:
+        learner-a: open
+      pieces:
+        "files:docs/sheet-music/carol-of-the-bells.mxl": strict
+```
+
+The mode is resolved per child and passage: the piece's entry, then the learner's,
+then `default`. A value that is not one of the three modes is ignored and the next
+level applies. A passage with an **authored ladder** is `strict` unless the piece
+has an entry (a learner entry does not open it). The policy is household-only: it is
+read from the household piano config and does not resolve through the category or
+piece Learn layers, so the kiosk and the server agree. `resolveSkipMode`,
+`stepAccess` and `passageAccess` in `shared/music/learnSkipping.mjs` are used by both.
+
+**Higher passes cover lower steps.** When a step becomes ready, the lower steps it
+covers show ready too. This is worked out when progress is projected; no stored
+achievement is rewritten.
+
+| Ready step | Also ready |
+|---|---|
+| Together | Right hand and left hand (`carrySilver`) |
+| Silver check | Every note step of the passage (Silver certifies them) |
+| A cued tempo (say 75%) | The slower cued steps and the beat (`carryGold`) |
+| Score tempo (mastery) | Every Gold step |
+
+Certificates do not change: Silver comes only from the Silver check (or Gold, or
+legacy completion), Gold only from score tempo. One hand alone covers nothing above
+it. Authored ladders do not carry over.
+
+Recovery drills (slower beat, one hand, focus bars) work as before on whichever step
+was chosen.
+
+**Server check.** `PianoLearnCoachService` refuses a `selection` or `outcome` for a
+step the child's mode locks, judged on the progress before the event, with HTTP 403
+and a warn `piano.learn.coach.locked` (`userId`, `scoreId`, `passageId`, `skill`,
+`type`, `mode`). A recovery drill is judged by the step it came from, and a review
+of a mastered passage is always allowed. A task that is no step of the plan (an old
+saved tempo) only has to respect the Silver gate on Gold work.
+
+**Log.** `piano.learn.coach.skip` (info, kiosk) when a child starts a step that is
+not the current one and is not already ready: `{ userId, scoreId, passageId, from,
+to, mode }`, where `from` and `to` are step skills (`right`, `together`, `timed-75`).
 
 ### Passage rail and board
 
@@ -558,8 +623,9 @@ a Gold beat or cued step is ready when a later, faster step of the same passage 
 ready, or when an earned achievement covers the same bars and parts in cued work at
 an equal or faster tempo (a beat step also accepts earned beat work). So a child who
 earned the old 60% and 80% steps resumes at score tempo, and one who earned only 60%
-resumes at 75%. Authored ladders and Silver steps do not carry over this way
-(`carryGold` in `shared/music/learnCoach.mjs`). A saved Gold resume from the
+resumes at 75%. Authored ladders do not carry over this way
+(`carryGold` in `shared/music/learnCoach.mjs`). On the Silver track "together"
+covers each hand (`carrySilver`; see [Skipping steps](#skipping-steps)). A saved Gold resume from the
 old ladder (say `timed-80`) is dropped when no step of the passage's current
 ladder has its mode and tempo, so the coach falls through to the next unready
 Gold step; recovery drills (they carry a `parent`), explicit reviews and
