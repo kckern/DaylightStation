@@ -15,7 +15,9 @@
  * Absent or `enabled: false` is the old behaviour exactly: a past day is
  * settled when its window closes.
  *
- * DERIVED, NEVER STORED. Nothing here writes. Each day's row already carries
+ * DERIVED FROM THE LOG. Nothing here writes. The one stored fact is a
+ * session's makeup_claimed annotation (which day a makeup-sheet lesson is
+ * for); every credit is still worked out on read. Each day's row already carries
  * a per-section `ledger` (what the day's work amounted to, by track); this
  * fold reads a week of rows and moves SPARE work from a later day onto an
  * earlier missed one. Cached rows stay the raw replay; the credit is laid
@@ -30,6 +32,9 @@
  *   - programs: a required program done on a day that did not ask for it.
  *     A program reports done at most once a day, so on a day it is owed it
  *     never has a spare; a Saturday flashcard sitting does.
+ *   - claimed lessons (`ledger.makeupClaims`, from a makeup-sheet code):
+ *     spent on the day they name before any ordinary spare; one its day did
+ *     not need turns into ordinary spare afterwards.
  * Electives never count: an elective pass must never make up required work.
  *
  * A missed section is credited only when EVERY track it lacked is covered by
@@ -129,14 +134,20 @@ function lacking(section) {
 /** The spare work a section's day leaves over for an earlier one. */
 function spareOf(section) {
   const ledger = section?.ledger;
-  if (!isObject(ledger)) return { lessons: 0, programs: new Set() };
+  if (!isObject(ledger)) return { lessons: 0, programs: new Set(), claims: new Map() };
   // `ledger.asked`: whether the calendar asked for the section at all that
   // day. A served Saturday section reads `served` like any other, so its
   // state cannot say whether the work was owed.
   const owed = typeof ledger.asked === 'boolean' ? ledger.asked : asked(section);
   const lessons = Math.max(0, (ledger.lessons ?? 0) - (owed && ledger.needsLesson === true ? 1 : 0));
   const needs = new Set(owed ? (ledger.needsPrograms ?? []) : []);
-  return { lessons, programs: new Set((ledger.programsDone ?? []).filter((key) => !needs.has(key))) };
+  // Claimed lessons (`makeupClaims`) are not the day's own and never paid
+  // for it, so every one is spare, earmarked for the day it names.
+  const claims = new Map();
+  (Array.isArray(ledger.makeupClaims) ? ledger.makeupClaims : [])
+    .filter((day) => typeof day === 'string')
+    .forEach((day) => claims.set(day, (claims.get(day) ?? 0) + 1));
+  return { lessons, programs: new Set((ledger.programsDone ?? []).filter((key) => !needs.has(key))), claims };
 }
 
 function rejudge(row, sections) {
@@ -171,42 +182,66 @@ export function foldMakeup(rows, { policy = DEFAULT_MAKEUP_POLICY, today } = {})
     }
     return spare.get(key);
   };
-  for (const day of days) {
-    // The deadline day (and a Sunday after it) has no later day to borrow from.
-    if (day >= makeupDeadline(day, policy)) continue;
-    const row = out[day];
-    if (!row || !['partial', 'none'].includes(row.state)) continue;
-    const deadline = makeupDeadline(day, policy);
-    const later = days.filter((d) => d > day && d <= deadline && d <= today);
-    if (!later.length) continue;
-    let sections = row.sections ?? [];
-    const credited = [];
-    sections = sections.map((section) => {
-      if (section?.state !== 'obligated' || !subjectAllowed(policy, section.subject)) return section;
-      const need = lacking(section);
-      if (!need || (!need.lesson && !need.programs.length)) return section;
-      // Find every lacking track in later days before spending any of it.
-      const plan = [];
-      let lessonFrom = null;
-      if (need.lesson) {
-        lessonFrom = later.find((d) => spareFor(d, section.subject).lessons > 0) ?? null;
-        if (!lessonFrom) return section;
-      }
-      for (const key of need.programs) {
-        const from = later.find((d) => spareFor(d, section.subject).programs.has(key));
-        if (!from) return section;
-        plan.push({ key, from });
-      }
-      if (lessonFrom) spareFor(lessonFrom, section.subject).lessons -= 1;
-      plan.forEach(({ key, from }) => spareFor(from, section.subject).programs.delete(key));
-      const servedOn = [lessonFrom, ...plan.map((p) => p.from)].filter(Boolean).sort().at(-1);
-      credited.push({ subject: section.subject, servedOn });
-      credits.push({ day, subject: section.subject, servedOn });
-      return { ...section, state: 'served', reason: null, makeup: { servedOn } };
-    });
-    if (!credited.length) continue;
-    out[day] = { ...rejudge(row, sections), makeup: credited, timeliness: MAKEUP_TIMELINESS };
-  }
+  const creditPass = () => {
+    for (const day of days) {
+      // The deadline day (and a Sunday after it) has no later day to borrow from.
+      if (day >= makeupDeadline(day, policy)) continue;
+      const row = out[day];
+      if (!row || !['partial', 'none'].includes(row.state)) continue;
+      const deadline = makeupDeadline(day, policy);
+      const later = days.filter((d) => d > day && d <= deadline && d <= today);
+      if (!later.length) continue;
+      let sections = row.sections ?? [];
+      const credited = [];
+      sections = sections.map((section) => {
+        if (section?.state !== 'obligated' || !subjectAllowed(policy, section.subject)) return section;
+        const need = lacking(section);
+        if (!need || (!need.lesson && !need.programs.length)) return section;
+        // Find every lacking track in later days before spending any of it.
+        // A lesson claimed for THIS day is spent before ordinary spare.
+        const plan = [];
+        let lessonFrom = null;
+        let lessonClaimed = false;
+        if (need.lesson) {
+          lessonFrom = later.find((d) => (spareFor(d, section.subject).claims.get(day) ?? 0) > 0) ?? null;
+          lessonClaimed = Boolean(lessonFrom);
+          if (!lessonFrom) lessonFrom = later.find((d) => spareFor(d, section.subject).lessons > 0) ?? null;
+          if (!lessonFrom) return section;
+        }
+        for (const key of need.programs) {
+          const from = later.find((d) => spareFor(d, section.subject).programs.has(key));
+          if (!from) return section;
+          plan.push({ key, from });
+        }
+        if (lessonFrom) {
+          const pool = spareFor(lessonFrom, section.subject);
+          if (lessonClaimed) pool.claims.set(day, pool.claims.get(day) - 1);
+          else pool.lessons -= 1;
+        }
+        plan.forEach(({ key, from }) => spareFor(from, section.subject).programs.delete(key));
+        const servedOn = [lessonFrom, ...plan.map((p) => p.from)].filter(Boolean).sort().at(-1);
+        credited.push({ subject: section.subject, servedOn });
+        credits.push({ day, subject: section.subject, servedOn });
+        return { ...section, state: 'served', reason: null, makeup: { servedOn } };
+      });
+      if (!credited.length) continue;
+      out[day] = {
+        ...rejudge(row, sections),
+        makeup: [...(Array.isArray(row.makeup) ? row.makeup : []), ...credited],
+        timeliness: MAKEUP_TIMELINESS,
+      };
+    }
+  };
+  creditPass();
+  // A claim its day did not need (served some other way, or still lacking a
+  // program) is still a lesson done: it becomes ordinary spare for any other
+  // missed day, rather than counting for nothing.
+  let leftover = false;
+  spare.forEach((pool) => {
+    pool.claims.forEach((count) => { if (count > 0) { pool.lessons += count; leftover = true; } });
+    pool.claims.clear();
+  });
+  if (leftover) creditPass();
   return { rows: out, credits };
 }
 

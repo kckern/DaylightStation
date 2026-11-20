@@ -167,3 +167,49 @@ describe('honouredMakeupClaim', () => {
     expect(honouredMakeupClaim({ makeupFor: WED, makeupDeadline: '2026-11-24' }, '2026-11-23')).toBeNull();
   });
 });
+
+describe('foldMakeup with claims', () => {
+  const claimLedger = (lessons, claims) => ({ ...lessonLedger(lessons), makeupClaims: claims });
+
+  it('a Thursday claim for Wednesday credits Wednesday and leaves Thursday owed', () => {
+    const rows = {
+      [WED]: row([section('math', 'obligated', lessonLedger(0))]),
+      [THU]: row([section('math', 'obligated', claimLedger(0, [WED]))]),
+    };
+    const { rows: out, credits } = foldMakeup(rows, { policy: ON, today: THU });
+    expect(credits).toEqual([{ day: WED, subject: 'math', servedOn: THU }]);
+    expect(out[WED].state).toBe('met');
+    expect(out[THU].sections[0].state).toBe('obligated');
+  });
+
+  it('a claim goes to the day it names, not the oldest missed day', () => {
+    const rows = {
+      [MON]: row([section('math', 'obligated', lessonLedger(0))]),
+      [WED]: row([section('math', 'obligated', lessonLedger(0))]),
+      [THU]: row([section('math', 'served', claimLedger(1, [WED]))]),
+    };
+    const { rows: out } = foldMakeup(rows, { policy: ON, today: THU });
+    expect(out[MON].sections[0].state).toBe('obligated');
+    expect(out[WED].sections[0]).toMatchObject({ state: 'served', makeup: { servedOn: THU } });
+  });
+
+  it('a claim whose day was already served becomes ordinary spare', () => {
+    const rows = {
+      [MON]: row([section('math', 'obligated', lessonLedger(0))]),
+      [WED]: row([section('math', 'served', lessonLedger(1))]),
+      [THU]: row([section('math', 'served', claimLedger(1, [WED]))]),
+    };
+    const { rows: out } = foldMakeup(rows, { policy: ON, today: THU });
+    expect(out[MON].sections[0]).toMatchObject({ state: 'served', makeup: { servedOn: THU } });
+  });
+
+  it('a row credited in both passes keeps both credits', () => {
+    const rows = {
+      [MON]: row([section('math', 'obligated', lessonLedger(0)), section('science', 'obligated', lessonLedger(0))]),
+      [TUE]: row([section('math', 'served', claimLedger(1, [WED])), section('science', 'served', lessonLedger(2))]),
+      [WED]: row([section('math', 'served', lessonLedger(1))]),
+    };
+    const { rows: out } = foldMakeup(rows, { policy: ON, today: WED });
+    expect(out[MON].makeup.map((m) => m.subject).sort()).toEqual(['math', 'science']);
+  });
+});
