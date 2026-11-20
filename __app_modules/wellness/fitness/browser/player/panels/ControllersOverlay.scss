@@ -1,10 +1,12 @@
-// Above the fitness player (z-index 1000+), the sidebar (1100), toasts (2200)
-// and the unlock prompt (2300); below the emergency lockdown (4000). A modal at
-// 200 renders under the player.
+// Above the fitness player (z-index 1000+), the sidebar (1100) and toasts
+// (2200); below the lock and unlock layers (CycleLockScreen, UnlockPrompt,
+// FingerprintManager at 2300) and the emergency lockdown (4000), so a lock
+// that comes up while the panel is open is never hidden behind it. A modal
+// at 200 renders under the player.
 .fitness-controllers-overlay {
   position: fixed;
   inset: 0;
-  z-index: 3000;
+  z-index: 2250;
   background: rgba(0, 0, 0, 0.6);
   display: flex;
   align-items: center;

@@ -223,7 +223,9 @@ offers **Add again** (which opens the add panel) when the host can add.
 
 The Tools row of the fitness Settings menu is one row of three: Feedback,
 Controllers, Reload. **🎮 Controllers** opens `ControllersOverlay`, a
-body-portalled dialog at z-index 3000 (above the player, sidebar and toasts).
+body-portalled dialog at z-index 2250: above the player, sidebar and toasts
+(2200), below the lock and unlock screens (2300) and the emergency lockdown
+(4000), so a lock is never hidden behind it.
 It loads `input.controllers` from `GET /api/v1/emulator/library` and mounts the
 same `ControllerStatus` with the fitness context's inventory, pairing state,
 `pairController` and `forgetController`. If the library fails to load it says
