@@ -56,7 +56,7 @@ export function planIsEmpty(plan) {
 export function useLifePlan(username) {
   const user = usePlanMember(username);
   const qs = memberQuery(user);
-  const { data: plan, loading, error: readError, refetch: fetchPlan, afterWrite: refreshPlan } = usePlanRead(`${API_BASE}/${qs}`, user, 'life plan');
+  const { data: plan, loading, revalidating, error: readError, refetch: fetchPlan, afterWrite: refreshPlan } = usePlanRead(`${API_BASE}/${qs}`, user, 'life plan');
   const [section, setSection] = useState({ user, error: null });
   if (section.user !== user) setSection({ user, error: null });
   const setSectionError = useCallback(error => {
@@ -106,7 +106,7 @@ export function useLifePlan(username) {
   }, [qs, afterWrite]);
 
   return {
-    plan, isEmpty: planIsEmpty(plan), loading, readError, error: readError ?? section.error,
+    plan, isEmpty: planIsEmpty(plan), loading, revalidating, readError, error: readError ?? section.error,
     refetch, updateSection, setPurpose, createValue,
   };
 }

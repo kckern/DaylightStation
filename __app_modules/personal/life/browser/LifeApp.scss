@@ -8,6 +8,11 @@
 
 .life-dashboard-link { border-radius: var(--ds-control-compact-radius); }
 
+.life-plan-status--quiet:not(:focus-within),
+.life-dashboard-summary:not(:focus-within) > .life-summary-read-status {
+  display: none;
+}
+
 .life-priority {
   position: relative;
 

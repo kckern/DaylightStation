@@ -2,6 +2,7 @@ import { useMemo, useEffect } from 'react';
 import { Stack, Paper, Title, Text, Group, SimpleGrid, Button, Anchor } from '@mantine/core';
 import { Link } from 'react-router-dom';
 import { IconCircleCheck, IconCircle } from '@tabler/icons-react';
+import { useRetryRegion } from '@/lib/ui';
 import { useAlignment } from "../../hooks/useAlignment.js";
 import { useLifePlan } from "../../hooks/useLifePlan.js";
 import { CadenceIndicator } from "../../widgets/CadenceIndicator.jsx";
@@ -29,8 +30,15 @@ export function Dashboard() {
   const logger = useMemo(() => getLogger().child({ component: 'life-dashboard' }), []);
   const priorityRead = useAlignment('priorities');
   const summaryRead = useAlignment('dashboard');
-  const { summary: triageSummary, error: triageError, refetch: refetchTriage } = useTriage();
-  const { isEmpty: planIsEmpty, loading: planLoading, error: planError, refetch: refetchPlan } = useLifePlan();
+  const { summary: triageSummary, loading: triageLoading, error: triageError, refetch: refetchTriage } = useTriage();
+  const { isEmpty: planIsEmpty, loading: planLoading, revalidating: planRevalidating, error: planError, refetch: refetchPlan } = useLifePlan();
+  const { regionProps: planRegion, retry: retryPlan } = useRetryRegion(refetchPlan, planLoading || planRevalidating);
+  const { regionProps: priorityRegion, retry: retryPriorities } = useRetryRegion(
+    priorityRead.refetch, priorityRead.loading,
+  );
+  const { regionProps: summaryRegion, retry: retrySummary } = useRetryRegion(
+    summaryRead.refetch, summaryRead.loading,
+  );
   const dashboard = summaryRead.data?.dashboard;
   const stage = dashboard?.stage;
   const completeness = dashboard?.completeness;
@@ -53,15 +61,20 @@ export function Dashboard() {
     }
   }, [priorityRead.loading, priorityRead.error, priorityRead.data, summaryRead.loading, summaryRead.error, dashboard, planLoading, planError, planIsEmpty, logger]);
 
-  if (planLoading) {
-    return <LoadingState />;
-  }
-
-  if (planError) return <ErrorState label="Life plan" error={planError} onRetry={refetchPlan} />;
+  const planBlocked = planLoading || Boolean(planError);
+  const planStatus = (
+    <section aria-label="Life plan" {...planRegion} className={planBlocked ? undefined : 'life-plan-status--quiet'}>
+      {planLoading ? <LoadingState /> : planError
+        ? <ErrorState label="Life plan" error={planError} onRetry={retryPlan} />
+        : <Text role="status" size="sm" c="dimmed">{planRevalidating ? 'Refreshing life plan…' : 'Life plan loaded.'}</Text>}
+    </section>
+  );
+  if (planBlocked) return <Stack gap="md">{planStatus}</Stack>;
 
   return (
     <Stack gap="md">
-      <TriageSummaryCard summary={triageSummary} error={triageError} onRetry={refetchTriage} />
+      {planStatus}
+      <TriageSummaryCard summary={triageSummary} loading={triageLoading} error={triageError} onRetry={refetchTriage} />
 
       {planIsEmpty && (
         <SectionCard>
@@ -96,16 +109,16 @@ export function Dashboard() {
       )}
 
       <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="md">
-        <Paper p="md" withBorder>
+        <Paper component="section" aria-label="Priorities" {...priorityRegion} p="md" withBorder>
           <Title order={5} mb="sm">Priorities</Title>
           {priorityRead.loading ? <LoadingState label="priorities" rows={2} /> : priorityRead.error ? (
-            <ErrorState label="Priorities" error={priorityRead.error} onRetry={priorityRead.refetch} />
+            <ErrorState label="Priorities" error={priorityRead.error} onRetry={retryPriorities} />
           ) : <PriorityList priorities={priorityRead.data?.priorities ?? []} />}
         </Paper>
 
-        <Stack gap="md">
+        <Stack component="section" aria-label="Dashboard summary" {...summaryRegion} className="life-dashboard-summary" gap="md">
           {summaryRead.loading && <LoadingState label="dashboard summary" rows={2} />}
-          {summaryRead.error && <ErrorState label="Dashboard summary" error={summaryRead.error} onRetry={summaryRead.refetch} />}
+          {summaryRead.error && <ErrorState label="Dashboard summary" error={summaryRead.error} onRetry={retrySummary} />}
           {dashboard?.valueDrift && (
             <Paper p="md" withBorder>
               <DriftGauge
@@ -116,6 +129,9 @@ export function Dashboard() {
                 <ValueAllocationChart allocation={dashboard.valueDrift.allocation} />
               )}
             </Paper>
+          )}
+          {!dashboard?.valueDrift && summaryRead.data && !summaryRead.loading && !summaryRead.error && (
+            <Text className="life-summary-read-status" role="status" size="sm" c="dimmed">Dashboard summary loaded.</Text>
           )}
         </Stack>
       </SimpleGrid>

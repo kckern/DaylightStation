@@ -14,6 +14,7 @@ describe('TriageSummaryCard', () => {
   it('renders nothing for a user who is not enrolled', () => {
     wrap(<TriageSummaryCard summary={{ ...base, enrolled: false }} />);
     expect(screen.queryByText('Triage')).not.toBeInTheDocument();
+    expect(screen.queryByRole('region', { name: 'Triage summary' })).not.toBeInTheDocument();
     expect(screen.queryByRole('link')).not.toBeInTheDocument();
     wrap(<TriageSummaryCard summary={null} />);
     expect(screen.queryByRole('link')).not.toBeInTheDocument();
