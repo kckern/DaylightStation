@@ -13,34 +13,13 @@ import { useFitnessBluetooth } from './useFitnessBluetooth.js';
 
 export const FitnessBluetoothContext = createContext(null);
 
-/** `{ bluetooth, pairController }` from the nearest fitness host, or null outside one. */
+/** `{ bluetooth }` from the nearest fitness host, or null outside one. */
 export function useFitnessBluetoothState() {
   return useContext(FitnessBluetoothContext);
 }
 
-/**
- * The old Controllers panel's prop names, from the host's state; `fallback`
- * (a context-shaped object) fills them outside a host. Goes with that panel.
- */
-export function bluetoothLegacyFields(state, fallback = null) {
-  if (!state?.bluetooth) {
-    return {
-      controllerPairing: fallback?.controllerPairing ?? null,
-      controllerForget: fallback?.controllerForget ?? null,
-      pairController: fallback?.pairController,
-      forgetController: fallback?.forgetController,
-    };
-  }
-  return {
-    controllerPairing: state.bluetooth.pairing,
-    controllerForget: state.bluetooth.forgetResult,
-    pairController: state.pairController,
-    forgetController: state.bluetooth.forget,
-  };
-}
-
 export function FitnessBluetoothHost({ send, registerRef, onInventory, children }) {
-  const { bluetooth, handleMessage, noteHealth, pairController, resetScan } = useFitnessBluetooth({ send });
+  const { bluetooth, handleMessage, noteHealth, resetScan } = useFitnessBluetooth({ send });
   if (registerRef) {
     registerRef.current = {
       handleBtMessage: handleMessage,
@@ -51,7 +30,7 @@ export function FitnessBluetoothHost({ send, registerRef, onInventory, children 
   }
   const inventory = bluetooth.inventory;
   useEffect(() => { onInventory?.(inventory); }, [inventory, onInventory]);
-  const value = useMemo(() => ({ bluetooth, pairController }), [bluetooth, pairController]);
+  const value = useMemo(() => ({ bluetooth }), [bluetooth]);
   return <FitnessBluetoothContext.Provider value={value}>{children}</FitnessBluetoothContext.Provider>;
 }
 

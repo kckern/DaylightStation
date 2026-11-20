@@ -19,7 +19,7 @@ import { fullscreenClass } from "./emulatorGameWidgetLayout.js";
 import { wsService } from "../../../../../../frontend/src/services/WebSocketService.js";
 import { formatClock, useArcadeGameBudget } from "./useArcadeGameBudget.js";
 import { findDirectLaunchGame } from "./directLaunch.js";
-import { bluetoothLegacyFields, useFitnessBluetoothState } from "../../context/FitnessBluetoothContext.jsx";
+import { useFitnessBluetoothState } from "../../context/FitnessBluetoothContext.jsx";
 
 const ENGINE_PATH = '/api/v1/emulator/engine/';
 const DEFAULT_AUTOSAVE_SECONDS = 15;
@@ -53,8 +53,8 @@ function resolveControllerGamepad(controllers) {
  * the session unlock, identity surface, and save decisions.
  */
 export default function EmulatorGameWidget({ fitnessContext, deviceId = null, onClose, config, onMount, registerCloseGuard }) {
-  // Pairing state lives in the fitness Bluetooth context (not fitnessContext).
-  const btLegacy = bluetoothLegacyFields(useFitnessBluetoothState(), fitnessContext);
+  // The Bluetooth screen's state + actions live in FitnessBluetoothContext (not fitnessContext).
+  const bluetooth = useFitnessBluetoothState()?.bluetooth || null;
   const logger = useMemo(() => getLogger().child({ component: 'fitness-emulator' }), []);
   const { registerIdentify, registerAdmin, clearUnlock, unlockState, unlockedUser } = useIdentity();
 
@@ -602,11 +602,8 @@ export default function EmulatorGameWidget({ fitnessContext, deviceId = null, on
         resolveMediaUrl={(p) => DaylightMediaPath(p)}
         inputEnabled={view === 'arcade'}
         controllers={library.input?.controllers || []}
-        btInventory={fitnessContext?.btInventory}
-        controllerPairing={btLegacy.controllerPairing}
-        onPairController={btLegacy.pairController}
-        onForgetController={btLegacy.forgetController}
-        controllerForget={btLegacy.controllerForget}
+        bluetooth={bluetooth}
+        keyboardMap={library.input?.keyboard || null}
       />
       {notice && createPortal(
         <div className="fitness-emulator-notice" role="status">{notice}</div>,
@@ -652,11 +649,8 @@ export default function EmulatorGameWidget({ fitnessContext, deviceId = null, on
             menuOpenRequest={menuOpenNonce}
             holdPaused={view === 'identify'}
             controllers={library.input?.controllers || []}
-            btInventory={fitnessContext?.btInventory}
-            pairing={btLegacy.controllerPairing}
-            onPairController={btLegacy.pairController}
-            onForgetController={btLegacy.forgetController}
-            controllerForget={btLegacy.controllerForget}
+            bluetooth={bluetooth}
+            keyboardMap={library.input?.keyboard || null}
           />
         </div>,
         document.body,

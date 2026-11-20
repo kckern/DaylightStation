@@ -48,6 +48,10 @@
     &:focus-visible { outline: none; box-shadow: 0 0 0 0.3vh rgba(124, 131, 255, 0.4); }
   }
 
+  // Reached from the grid with Up (a pad has no Tab): the same yellow ring the
+  // Bluetooth screen uses, so it is seen from across the room.
+  .emu-controller-chip.is-focused { outline: 0.4vh solid #facc15; outline-offset: 0.3vh; }
+
   // Connected: green text + glow.
   &[data-connected='1'] .emu-controller-chip {
     color: #4ade80;
@@ -63,8 +67,8 @@
   top: calc(100% + 1vh);
   right: 0;
   z-index: 30;
-  min-width: 34vh;
-  max-width: 80vw;
+  // Wide enough for the Bluetooth screen's rows and buttons.
+  width: min(80vw, 90vh);
   max-height: 70vh;
   overflow: auto;
   padding: 1.6vh 1.8vh;

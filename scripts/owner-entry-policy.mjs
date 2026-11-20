@@ -198,7 +198,6 @@ export const OWNER_ENTRY_POLICY = Object.freeze({
   '__app_modules/games/emulator/browser/ui/ArcadeShell.jsx': null,
   '__app_modules/games/emulator/browser/ui/PlayerPanel.jsx': null,
   '__app_modules/games/emulator/browser/ui/EmulatorToasts.jsx': null,
-  '__app_modules/games/emulator/browser/input/ControllerStatus.jsx': null,
   '__app_modules/games/emulator/browser/input/BluetoothScreen.jsx': null,
   '__app_modules/games/emulator/browser/input/buildEjsControls.js': null,
   '__app_modules/games/emulator/browser/core/saveClient.js': null,
