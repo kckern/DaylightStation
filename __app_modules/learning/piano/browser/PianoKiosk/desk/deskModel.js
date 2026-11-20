@@ -65,19 +65,52 @@ export function stripGroups(sources) {
   return groups;
 }
 
-/** Passage coin size in px: the row fills the card's 175px, never above 26px. */
-export const coinSize = (count) => {
-  const columns = mapColumns(count);
-  return Math.min(26, Math.floor((175 - (columns - 1) * 3) / columns));
-};
-
 /** A tomato nobody has started yet sits back, unless it is the one up next. */
 export const passageFaded = (passage, isCurrent) => !isCurrent && passage?.state === 'todo' && !(passage?.steps?.done > 0);
 
+const LESSON_PREFIX = /^lesson\s+(\d+)\s*[|:–—-]\s*/i;
+
+/** A lesson title without its leading "Lesson 51 |" / "Lesson 12:"; the next-step line carries the number. */
+export const lessonTitle = (title) => {
+  const text = String(title ?? '').trim();
+  return text.replace(LESSON_PREFIX, '').trim() || text;
+};
+
+/** Why a card is on the strip, as its badge: Silver next, Gold next, All Gold, or Next lesson. */
+export function cardBadge(card) {
+  if (card.kind === 'course') return { level: 'lesson', label: 'Next lesson' };
+  const { silver, gold, total } = card.piece;
+  if (total > 0 && gold >= total) return { level: 'gold', label: 'All Gold' };
+  if (total > 0 && silver >= total) return { level: 'gold', label: 'Gold next' };
+  return { level: 'silver', label: 'Silver next' };
+}
+
 /**
- * How many coins across a piece's map: up to six sit in one row; a longer
- * piece takes two equal rows.
+ * The line under a card's title: the bars up next, or the next lesson's number —
+ * the one printed in its title when there is one (the server's position counts
+ * graded lessons only), else its place in the course.
  */
-export const mapColumns = (count) => (count > 6 ? Math.ceil(count / 2) : Math.max(1, count));
+export function nextStep(card) {
+  if (card.kind === 'piece') return passageBars(card.focus);
+  const { course } = card;
+  if (!course.next) return '';
+  const printed = LESSON_PREFIX.exec(String(course.next.title ?? '').trim())?.[1];
+  const position = printed ?? course.next.position ?? (Number.isFinite(course.completed) ? course.completed + 1 : null);
+  return position ? `Lesson ${position}` : '';
+}
+
+/** The card's inner width in px, which the coin row fills, and the gap between coins. */
+const ROW = 175;
+const GAP = 2;
+
+/** Coins across a piece's map: one row up to fourteen, else two equal rows. */
+export const mapColumns = (count) => (count > 14 ? Math.ceil(count / 2) : Math.max(1, count));
+export const mapRows = (count) => (count > 14 ? 2 : 1);
+
+/** Coin size in px: the row fills the card, never above 20px. */
+export const coinSize = (count) => {
+  const columns = mapColumns(count);
+  return Math.min(20, Math.floor((ROW - (columns - 1) * GAP) / columns));
+};
 
 export const pieceCount = (piece) => `${piece.silver} of ${piece.total} Silver`;
