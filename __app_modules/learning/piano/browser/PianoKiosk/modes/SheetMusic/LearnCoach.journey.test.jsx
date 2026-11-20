@@ -86,7 +86,7 @@ describe('real Learn journey',()=>{
    expect(await page.locator('.piano-learn-lab__task').innerText()).toBe('Find the right-hand notes');
    expect(await page.locator('.piano-learn-lab__identity').innerText()).toBe('Bars 1–2');
    expect(await page.getByRole('button',{name:'Start practice'}).count()).toBe(0);
-   expect(await page.locator('.drill-cluster').count()).toBe(8);
+   expect(await page.locator('.drill-cluster').count()).toBe(9);
    expect(await page.locator('.piano-passage-rail__tile').count()).toBe(1);
    const text=await page.locator('.piano-learn-coach').innerText();
    for(const banned of ['Segment','Practicing as','Progress saved','previously earned','Connect the piano'])expect(text).not.toContain(banned);
@@ -158,7 +158,7 @@ describe('real Learn journey',()=>{
    await page.locator('.piano-passage-rail__tile[data-state="gold"]').waitFor({timeout:15000});await expect.poll(()=>f.attempts.size).toBe(2);
    await page.locator('.piano-passage-rail__go').waitFor({timeout:15000});
    await page.evaluate(()=>window.__mount());await page.getByRole('button',{name:'Practice bars 1–2',exact:true}).waitFor();await openPassage(page);
-   expect(await page.locator('.drill-cluster[data-done]').count()).toBe(8);expect(errors).toEqual([]);
+   expect(await page.locator('.drill-cluster[data-done]').count()).toBe(9);expect(errors).toEqual([]);
   }catch(error){fs.writeFileSync(path.join(ARTIFACTS,'failure.json'),JSON.stringify({errors,attempts:[...f.attempts.values()],text:await page.locator('body').innerText(),logs:await page.evaluate(()=>window.__logs)},null,2));await page.screenshot({path:path.join(ARTIFACTS,'failure.png'),fullPage:true});throw error;}finally{await page.close();}
  },90000);
  it('retries a saved musical success after offline failure without mixing profiles',async()=>{
@@ -198,7 +198,7 @@ describe('real Learn journey',()=>{
    // There is no practice chooser; a step is chosen from the sets, each a full touch target.
    expect(await page.getByRole('button',{name:'Change practice'}).count()).toBe(0);
    const sets=await page.locator('button.drill-cluster').evaluateAll(list=>list.map(el=>{const r=el.getBoundingClientRect();return{w:r.width,h:r.height,top:r.top,bottom:r.bottom,clip:el.querySelector('.drill-cluster__label').getBoundingClientRect().top>=el.closest('.piano-exercise-run__rail').getBoundingClientRect().top};}));
-   expect(sets).toHaveLength(8);expect(sets.every(set=>set.w>=64&&set.h>=56&&set.clip)).toBe(true);
+   expect(sets).toHaveLength(9);expect(new Set(sets.map(set=>Math.round(set.top))).size).toBe(1);expect(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth)).toBe(true);expect(sets.every(set=>set.w>=64&&set.h>=56&&set.clip)).toBe(true);
    expect(f.attempts.size).toBe(0);expect(errors).toEqual([]);
   }finally{await page.close();}
  },60000);

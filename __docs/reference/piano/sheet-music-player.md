@@ -292,7 +292,7 @@ the drill. It draws no practice screen of its own.
   drill's progress row, and the clean takes it needs are its reps. A set is named
   by a picture, not a word: the two hands with the resting one unlit (right hand,
   left hand, together), the **silver coin** over the Silver check, a metronome,
-  `60%`, `80%`, and the **gold coin** over the step at score tempo. So the row
+  `50%`, `60%`, `75%`, and the **gold coin** over the step at score tempo. So the row
   reads as the way to each coin. A step with no picture (an authored ladder)
   keeps its words. The words stay as each set's accessible name. A Gold step
   with no fixed count (two good takes out of the last three) shows two reps.
@@ -329,7 +329,7 @@ the drill. It draws no practice screen of its own.
 - **A miss** leaves the drill's result panel in the keyboard's place: the coach's
   short verdict (`Almost on your own`, `Bar 2 is the tricky spot`), the take's
   numbers, and the next moves: the smaller practice the coach recommends after two
-  misses (`Practice bar 2`, `Practice the left hand`, `Try a little slower · 80%`),
+  misses (`Practice bar 2`, `Practice the left hand`, `Try a little slower · 75%`),
   **Try again**, and **Come back to this later** when it is on offer. Playing any
   key also tries again.
 - **Listen** demonstrates the step's bars and parts in the same chrome with one
@@ -526,8 +526,8 @@ The standard path is:
 | Find the left-hand notes | Pitch, LH | Unpaced |
 | Join the hands / Find the notes | Pitch, all playable parts | Unpaced |
 | Play it on your own (Silver) | Pitch, all playable parts, no hints | Unpaced |
-| Settle into a beat | Pitch with a guide click; timing is not graded | 60% |
-| Play with the beat | Pitch and placement | 60%, then 80% |
+| Settle into a beat | Pitch with a guide click; timing is not graded | 50% |
+| Play with the beat | Pitch and placement | 50%, then 60%, then 75% |
 | Play at score tempo | Pitch and placement, full passage and every playable part | 100% |
 
 Single-part passages omit separate-hand and coordination tasks. Silver steps need
@@ -542,7 +542,13 @@ A stronger timed demonstration can establish easier skills without redundant
 practice. Equivalent custom takes contribute regardless of their launch source.
 Shortened, slower or single-hand work never proves a stronger full-passage skill.
 Earned readiness and mastery are permanent. A failed review or easier practice
-cannot remove them. One mastered passage can be offered for review on a later
+cannot remove them. A change to the generated Gold tempos cannot remove them either:
+a Gold beat or cued step is ready when a later, faster step of the same passage is
+ready, or when an earned achievement covers the same bars and parts in cued work at
+an equal or faster tempo (a beat step also accepts earned beat work). So a child who
+earned the old 60% and 80% steps resumes at score tempo, and one who earned only 60%
+resumes at 75%. Authored ladders and Silver steps do not carry over this way
+(`carryGold` in `shared/music/learnCoach.mjs`). One mastered passage can be offered for review on a later
 household-local day, alongside continuing the unfinished work.
 
 Each deliberate start installs one take in the existing LearnLab/ExerciseRun.
@@ -572,7 +578,7 @@ After two equivalent valid failures, offer a smaller task deliberately. Prioriti
 missing/extra notes in the measure with the greatest normalized burden, breaking
 ties by earlier score order; without spans use the first half. Continued
 coordination difficulty can narrow to a hand. Timing-only difficulty steps down a
-named tempo stage, with an automatic floor of 40%, then shortens the range. There
+named tempo stage (100, 75, 60, 50, 40), with an automatic floor of 40%, then shortens the range. There
 are at most two recovery levels. Two successful recovery takes recommend the
 parent again without completing its quota. Manual tempo choices under Change
 practice remain available at 15, 25, 40, 60, 80 and 100 percent. Preparation shows

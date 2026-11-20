@@ -314,7 +314,7 @@ describe('ScorePlayer — guided Learn composition', () => {
   setup(); renderPlayer('/?learnPassage=m0-1&learnRung=right');
   expect(h.learnLabProps.coachingTask).toMatchObject({ passageId: 'm0-1', skill: 'right' });
   expect(h.learnLabProps.segment.barLabel).toBe('Bars 1–2');
-  expect(h.learnLabProps.drill.projection.steps).toHaveLength(8);
+  expect(h.learnLabProps.drill.projection.steps).toHaveLength(9);
   expect(screen.getByRole('navigation', { name: 'Passages in this piece' })).toHaveAttribute('data-bare', 'true');
   expect(screen.queryByRole('button', { name: /Start practice/ })).not.toBeInTheDocument();
  });

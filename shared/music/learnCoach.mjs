@@ -10,6 +10,10 @@ export const CERTIFICATION_DEFAULTS = Object.freeze({
 });
 export const FLOWER_AFTER = Object.freeze(['both-hands', 'together', 'first-step']);
 const LEGACY_STEP_PASSES = 6;
+/** The cued Gold steps below score tempo. The ladder was 60/80 until 2026-11; earned keys at other tempos carry over. */
+const GOLD_TEMPOS = Object.freeze([50, 60, 75]);
+/** Where a timing-only miss steps down to, one rung at a time. */
+const SLOWER_TEMPOS = Object.freeze([40, ...GOLD_TEMPOS, 100]);
 const MAX_POLICY_PASSES = 20;
 const wholeIn = (value, fallback) => (Number.isInteger(value) && value >= 1 && value <= MAX_POLICY_PASSES ? value : fallback);
 
@@ -96,8 +100,8 @@ export function createCoachPlan({ scoreId, fingerprint, segments = [], authoredL
       { skill: parts.length > 1 ? 'together' : 'notes', label: parts.length > 1 ? 'Join the hands' : 'Find the notes', parts, mode: 'free', ...noteStep },
       { skill: 'silver', label: 'Play it on your own', parts, mode: 'free', track: 'silver', assist: 'none', required: policy.silver.checkPasses, stallSeconds: policy.silver.stallSeconds,
         criteria: { completeness: 1, cleanliness: policy.silver.cleanliness } },
-      { skill: 'pulse', label: 'Settle into a beat', parts, mode: 'metronome', tempoPercent: 60, track: 'gold' },
-      ...[60, 80, 100].map((tempoPercent) => ({ track: 'gold', skill: tempoPercent === 100 ? 'mastery' : `timed-${tempoPercent}`,
+      { skill: 'pulse', label: 'Settle into a beat', parts, mode: 'metronome', tempoPercent: GOLD_TEMPOS[0], track: 'gold' },
+      ...[...GOLD_TEMPOS, 100].map((tempoPercent) => ({ track: 'gold', skill: tempoPercent === 100 ? 'mastery' : `timed-${tempoPercent}`,
         label: tempoPercent === 100 ? 'Play at score tempo' : 'Play with the beat', parts, mode: 'cued', tempoPercent,
         mastery: tempoPercent === 100, completes: tempoPercent === 100 })),
     ];
@@ -203,6 +207,32 @@ export function passageProgress(segment) {
 }
 const certificate = (achievement, provenance) => ({ at: achievement?.at ?? null, provenance });
 
+/**
+ * A generated Gold step the child has already proven, at its bars and parts, at an equal or
+ * faster tempo: a later (faster) step of the ladder is ready, or an earned achievement covers it.
+ * The achievement can belong to a step the ladder no longer has (the old 80%), so a change of
+ * tempos never takes back a rung. A beat step is proven by any beat or cued work; a cued step
+ * by cued work only. Mutates the projected `skills` in place.
+ */
+function carryGold(state, skills) {
+  const earned = Object.keys(state.achievements).map((key) => { try { return JSON.parse(key); } catch { return null; } })
+    .filter((key) => Array.isArray(key) && key[0] !== 'silver-check')
+    .map(([scoreId, fingerprint, start, end, parts, mode, tempoPercent]) => ({ scoreId, fingerprint, range: { start, end }, parts, mode, tempoPercent }));
+  const covers = (proof, task) => proof.scoreId === task.scoreId && proof.fingerprint === task.fingerprint
+    && sameRange(proof.range, task.range) && sameParts(proof.parts, task.parts)
+    && (proof.mode === 'cued' || (task.mode === 'metronome' && proof.mode === 'metronome'))
+    && Number.isFinite(proof.tempoPercent) && proof.tempoPercent >= task.tempoPercent;
+  let faster = null;
+  for (const skill of [...skills].reverse()) {
+    if (skill.track !== 'gold' || (skill.mode !== 'cued' && skill.mode !== 'metronome')) continue;
+    if (!skill.ready) {
+      const proof = (faster && covers(faster, skill) ? faster : null) ?? earned.find((key) => covers(key, skill));
+      if (proof) Object.assign(skill, { ready: true, provenance: skill.provenance ?? proof.provenance ?? 'demonstrated' });
+    }
+    if (skill.ready && skill.mode === 'cued' && (!faster || skill.tempoPercent > faster.tempoPercent)) faster = skill;
+  }
+}
+
 function segmentProjection(plan, state, legacy, segment) {
   const masteredAt = [segment.demonstration].filter(Boolean).filter((task) => task.mastery).map((task) => state.achievements[task.key]).find(Boolean);
   const old = legacy?.learn?.passages?.[segment.id];
@@ -225,6 +255,7 @@ function segmentProjection(plan, state, legacy, segment) {
       provenance: state.achievements[task.key]?.provenance ?? (inherited ? 'legacy' : mastered || certified ? 'demonstrated' : null),
       successes: state.counts[task.key]?.passes ?? 0 };
   });
+  if (!segment.authoredLadder) carryGold(state, skills);
   const completed = skills.find((task) => task.completes && task.ready);
   if (!silver && segment.authoredLadder && completed) silver = certificate(state.achievements[completed.key], 'demonstrated');
   return { ...segment, skills, flower: !silver && partway(plan, segment, skills), mastered, complete: legacyComplete || (!segment.authoredLadder && mastered) || Boolean(completed),
@@ -294,7 +325,7 @@ function recovery(plan, task, result) {
   const timingOnly = task.mode === 'cued' && result.criteria?.completeness >= task.criteria.completeness
     && result.criteria?.cleanliness >= task.criteria.cleanliness;
   if (timingOnly && tempoPercent > 40) {
-    tempoPercent = [40, 60, 80, 100].filter((value) => value < tempoPercent).at(-1) ?? 40;
+    tempoPercent = SLOWER_TEMPOS.filter((value) => value < tempoPercent).at(-1) ?? 40;
   } else if (range.end > range.start) {
     // An unfinished take has every unreached bar fully missed, so the place it stopped is the first gap.
     const unfinished = task.mode === 'free' && (result.criteria?.completeness ?? 1) < 1;

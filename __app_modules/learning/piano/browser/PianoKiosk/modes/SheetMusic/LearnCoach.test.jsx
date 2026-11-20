@@ -29,7 +29,7 @@ describe('LearnCoach', () => {
  it('hands the passage to the drill as sets and reps: one set per Silver and Gold step', () => {
   render(<LearnCoach {...props} />);
   const { projection, stepId } = h.lab.drill;
-  expect(projection.steps.map((step) => step.display.key)).toEqual(['Right hand', 'Left hand', 'Together', 'On your own', 'Beat', '60%', '80%', '100%']);
+  expect(projection.steps.map((step) => step.display.key)).toEqual(['Right hand', 'Left hand', 'Together', 'On your own', 'Beat', '50%', '60%', '75%', '100%']);
   expect(projection.steps[0]).toMatchObject({ id: stepId, state: 'current', requirement: { required_passes: 1 }, pass_count: 0, passed: false });
   expect(projection.steps[4].requirement.required_passes).toBe(2);
  });
@@ -66,7 +66,7 @@ describe('LearnCoach', () => {
  it('banks a passing take with the drill card and moves to the next step under it', async () => {
   render(<LearnCoach {...props} />);
   await outcome(passed);
-  expect(h.lab.card).toMatchObject({ setIndex: 1, setCount: 8, repIndex: 1, repCount: 1, setClear: true, next: { key: 'Left hand' } });
+  expect(h.lab.card).toMatchObject({ setIndex: 1, setCount: 9, repIndex: 1, repCount: 1, setClear: true, next: { key: 'Left hand' } });
   expect(h.lab.coachingTask.skill).toBe('left');
   act(() => h.lab.onCardDone());
   expect(h.lab.card).toBeNull();
@@ -113,7 +113,7 @@ describe('LearnCoach', () => {
  it('has no practice chooser: the sets are how a step is chosen', () => {
   render(<LearnCoach {...props} />);
   expect(h.lab.onChangePractice).toBeUndefined();
-  expect(h.lab.drill.projection.steps.map((step) => step.display.key)).toEqual(['Right hand', 'Left hand', 'Together', 'On your own', 'Beat', '60%', '80%', '100%']);
+  expect(h.lab.drill.projection.steps.map((step) => step.display.key)).toEqual(['Right hand', 'Left hand', 'Together', 'On your own', 'Beat', '50%', '60%', '75%', '100%']);
   // Each set is named by a picture; the words stay as its accessible name.
   expect(h.lab.drill.projection.steps.every((step) => step.display.icon && step.title)).toBe(true);
  });
@@ -138,7 +138,7 @@ describe('LearnCoach', () => {
   expect(h.lab.coachingTask).toMatchObject({ mode: 'cued', tempoPercent: 100 });
   const failed = { ...passed, criteria: { completeness: 1, cleanliness: 1, placement: .2 }, verdict: { passed: false } };
   await outcome(failed); await outcome({ ...failed, assessmentId: 'timing2' });
-  expect(screen.getByRole('button', { name: 'Try a little slower · 80%' })).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: 'Try a little slower · 75%' })).toBeInTheDocument();
   expect(screen.queryByText('slower-beat')).not.toBeInTheDocument();
  });
  it('puts the passage rail under the drill, and a tile changes passage', () => {
