@@ -66,7 +66,7 @@ export function PosterArt({ src, title }) {
   if (!src || failed) {
     return (
       <span className="piano-desk__poster" data-stand-in="">
-        <span className="piano-desk__note" aria-hidden="true">♪</span>
+        <span className="piano-desk__note" aria-hidden="true"><Icon name="quarter-note" /></span>
         <span className="piano-desk__stand-in">{title}</span>
         {PLAY}
       </span>
@@ -123,7 +123,7 @@ const TABS = [
  * The progress strip above the home menu: one panel per child (school learners,
  * not parents), headed by their avatar and name, holding one card: the piece
  * they are learning or their video course. A child with both gets two tabs in
- * the header, ♪ and ▶, defaulting to the most recent; the choice lasts while
+ * the header (a note and a play icon), defaulting to the most recent; the choice lasts while
  * the strip is mounted. Both kinds share one
  * layout: a tall poster on the left, the badge, title and very next step beside
  * it, and the progress (passage coins, or a course bar and percent) underneath.
