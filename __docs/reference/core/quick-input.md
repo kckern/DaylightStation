@@ -63,7 +63,7 @@ The two Journalist voice routes also carry the id as `memoId`. The `/memo` alias
 
 Refusals are decided in this order, all before the body is read: `cross_origin`, `unavailable`, `user_required`, `device_not_allowed`, `unknown_user`, `invalid_input_id`, `unsupported_media_type`, `too_large` (from the declared length), `daily_limit`. Then the body is read (`too_large` again for an upload with no declared length, `unreadable_body`), then `empty_body`, then for a photo the check that the bytes begin as the declared image type does. Nothing is said about a user to a device that may not send for them.
 
-No response from these routes carries an `Access-Control-Allow-*` header. The app-wide CORS handler and body parsers are kept off their paths (`exceptPaths` in `app.mjs`), which is what lets the refusals come before any body is read; a JSON-typed body is refused without being parsed.
+No response from these routes carries an `Access-Control-Allow-*` header. The app-wide cross-site guard, CORS handler and body parsers are kept off their paths (`exceptPaths` in `app.mjs`), which is what lets the refusals come before any body is read; a JSON-typed body is refused without being parsed.
 
 ## Who may send
 

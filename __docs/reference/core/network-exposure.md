@@ -312,6 +312,69 @@ curl -X POST ".../access/apps/$APP_ID/policies" \
 
 ---
 
+### Cross-site requests (application layer)
+
+The firewall and access policies decide who may reach the app. They do not stop
+a household member's own browser from being used against it: any page they open
+(another site, an ad, an embedded frame) can send requests to the app's hostname,
+and those requests arrive through the reverse proxy from a private address, which
+`networkTrustResolver` treats as `sysadmin`. Two pieces of app-wide middleware in
+`app.mjs` close that, both from `0_system/http/middleware/crossSiteGuard.mjs`:
+
+**`crossSiteGuard`** runs before CORS, the body parsers and every router. For
+`POST`, `PUT`, `PATCH` and `DELETE` it decides from the headers alone:
+
+| Request | Result |
+|---------|--------|
+| `Origin` is on `http.allowed_origins` | allowed |
+| `Sec-Fetch-Site: same-origin` (the app's own page) or `none` (typed or bookmarked) | allowed |
+| `Sec-Fetch-Site: same-site` or `cross-site` | `403 { "error": "cross-site-refused" }` |
+| No `Sec-Fetch-Site`, `Origin` names the host the request was sent to | allowed |
+| No `Sec-Fetch-Site`, `Origin` names another host or port, or is `null` | `403` |
+| Neither header | allowed |
+
+`Sec-Fetch-Site` is set by the browser and page script cannot change it; every
+current browser and WebView sends it. The `Origin` comparison is the fallback
+for older WebViews. It uses the request's own `Host`, so every hostname the app
+is reached by (LAN IP, local DNS name, proxied hostname) works for its own pages
+with nothing to configure; `X-Forwarded-Host` counts only when Express's
+`trust proxy` trusts the peer. The reverse proxy must pass `Host` through (Nginx
+Proxy Manager does by default); one that rewrites `Host` to the container name
+would make older WebViews' writes fail this check.
+
+Non-browser callers (CLIs, Home Assistant `rest_command`s, the playback hub,
+relay firmware, the Android app's native code, Telegram/Strava webhooks) send
+neither header and are not affected. `GET`, `HEAD` and `OPTIONS` are not checked,
+so read routes must keep having no side effects.
+
+Each refusal logs `security.cross-site-refused` (warn, sampled at 20 a minute)
+with `method`, `path`, `origin`, `secFetchSite` and `reason`
+(`sec-fetch-site`, `origin-null`, `origin-mismatch`).
+
+**CORS** answers only the origins on `http.allowed_origins` (default: none).
+Same-origin pages need no CORS headers. Before 2026-11-20 the handler was
+`cors()` with defaults, which sent `Access-Control-Allow-Origin: *` to every
+site, so any page could also read API responses from a household browser.
+
+The quick-input routes (`selfGuarded` in `app.mjs`) are skipped by both: they
+refuse other origins themselves, in their own response shape
+([quick-input.md](quick-input.md)).
+
+To let a page on another origin call the API, list it in `system.yml`
+(see [configuration.md](configuration.md#systemyml-base-configuration)):
+
+```yaml
+http:
+  allowed_origins:
+    - https://other-app.example.com
+```
+
+Not covered: the event-bus WebSocket (`/ws`) does not check the handshake's
+origin. It is a separate surface with its own callers (relay firmware sends
+`Origin: file://`), and is out of this middleware's reach.
+
+---
+
 ## Patterns
 
 ### Webhook Integration
