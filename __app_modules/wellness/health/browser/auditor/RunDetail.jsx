@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { Badge, Button, Group, Stack, Text } from '@mantine/core';
-import { Sheet, LoadingState, ErrorState } from "../../../../../frontend/src/lib/ui/index.js";
+import { Sheet, LoadingState, ErrorState, useRetryRegion } from "../../../../../frontend/src/lib/ui/index.js";
 import { useApiResource } from "../../../../../frontend/src/lib/hooks/useApiResource.js";
 import { DaylightAPI } from "../../../../../frontend/src/lib/api.mjs";
 import getLogger from "../../../../../frontend/src/lib/logging/Logger.js";
@@ -169,10 +169,13 @@ export function RunDetail({ run, onClose }) {
   const logger = useMemo(() => getLogger().child({ component: 'health-auditor' }), []);
   const path = `${cleanupPath}/journal/${encodeURIComponent(run.runId)}${run.at ? `?at=${encodeURIComponent(run.at)}` : ''}`;
   const entry = useApiResource(path, { swr: true });
+  const { regionProps, retry } = useRetryRegion(entry.reload, !entry.data && entry.loading);
   return <Sheet open title={`Run at ${formatWhen(run.at)}`} onClose={onClose}>
-    {entry.data ? <Detail row={entry.data} logger={logger} />
-      : entry.error ? <ErrorState error={entry.error} onRetry={entry.reload} label="Run detail" />
-      : <LoadingState label="Run detail" />}
+    <section {...regionProps} aria-label="Run detail">
+      {entry.data ? <Detail row={entry.data} logger={logger} />
+        : entry.error ? <ErrorState error={entry.error} onRetry={retry} label="Run detail" />
+        : <LoadingState label="Run detail" />}
+    </section>
   </Sheet>;
 }
 

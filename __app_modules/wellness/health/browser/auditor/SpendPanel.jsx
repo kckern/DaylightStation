@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Stack, Table, Text } from '@mantine/core';
-import { SectionCard, LoadingState, ErrorState, EmptyState } from "../../../../../frontend/src/lib/ui/index.js";
+import { SectionCard, LoadingState, ErrorState, EmptyState, useRetryRegion } from "../../../../../frontend/src/lib/ui/index.js";
 import { formatUsd, triggerLabel } from "./auditorFormat.js";
 
 // Chart geometry in viewBox units; the SVG scales to its container's width.
@@ -108,10 +108,18 @@ function CostTable({ label, first, rows }) {
  * model. `spend` is useAuditorSpend's resource; `capUsd`, when given, is the
  * cap from the status poll (current the moment a setting is saved).
  */
-export function SpendPanel({ spend, capUsd: statusCap }) {
-  if (!spend.data) return spend.error ? <ErrorState error={spend.error} onRetry={spend.reload} label="Auditor spend" /> : <LoadingState label="Auditor spend" />;
-  const { days = [], byTrigger = [], byModel = [] } = spend.data;
-  const capUsd = statusCap !== undefined ? statusCap : (spend.data.capUsd ?? null);
+export function SpendPanel({ spend, capUsd }) {
+  const { data } = spend;
+  const { regionProps, retry } = useRetryRegion(spend.reload, !data && spend.loading);
+  return <section {...regionProps} aria-label="Auditor spend">
+    {data ? <SpendContents data={data} capUsd={capUsd !== undefined ? capUsd : (data.capUsd ?? null)} />
+      : spend.error ? <ErrorState error={spend.error} onRetry={retry} label="Auditor spend" />
+      : <LoadingState label="Auditor spend" />}
+  </section>;
+}
+
+function SpendContents({ data, capUsd }) {
+  const { days = [], byTrigger = [], byModel = [] } = data;
   const runs = days.reduce((sum, day) => sum + day.runs, 0);
   if (!runs) return <SectionCard title="Spend"><EmptyState title="No auditor runs in the last 30 days" /></SectionCard>;
   const total = days.reduce((sum, day) => sum + day.costUsd, 0);

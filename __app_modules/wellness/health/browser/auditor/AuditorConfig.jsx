@@ -1,6 +1,6 @@
 import { useEffect, useId, useMemo, useState } from 'react';
 import { Button, Checkbox, NumberInput, SegmentedControl, Select, SimpleGrid, Stack, Switch, Text } from '@mantine/core';
-import { SectionCard, LoadingState, ErrorState } from "../../../../../frontend/src/lib/ui/index.js";
+import { SectionCard, LoadingState, ErrorState, useRetryRegion } from "../../../../../frontend/src/lib/ui/index.js";
 import { DaylightAPI } from "../../../../../frontend/src/lib/api.mjs";
 import { invalidateApiResources, patchApiResource } from "../../../../../frontend/src/lib/hooks/useApiResource.js";
 import getLogger from "../../../../../frontend/src/lib/logging/Logger.js";
@@ -46,6 +46,7 @@ export function AuditorConfig({ resource, spend }) {
   const [pending, setPending] = useState(null);
   const [error, setError] = useState(null);
   const saved = resource.data?.settings;
+  const { regionProps, retry } = useRetryRegion(resource.reload, !saved && resource.loading);
   // While a save is in flight the control shows the value being saved; the
   // server's answer replaces it as soon as it arrives.
   const settings = saved && pending ? withChange(saved, pending) : saved;
@@ -107,7 +108,9 @@ export function AuditorConfig({ resource, spend }) {
     save('dailyCapUsd', { dailyCapUsd: next });
   };
 
-  if (!settings) return resource.error ? <ErrorState error={resource.error} onRetry={resource.reload} label="Auditor settings" /> : <LoadingState label="Auditor settings" />;
+  if (!settings) return <section {...regionProps} aria-label="Auditor settings">
+    {resource.error ? <ErrorState error={resource.error} onRetry={retry} label="Auditor settings" /> : <LoadingState label="Auditor settings" />}
+  </section>;
   const disabled = !!busy;
   const running = (resource.data.runs || []).some(run => ['queued', 'running', 'retry'].includes(run.status));
   const byModel = Object.fromEntries((spend?.data?.byModel || []).map(row => [row.model, row]));
@@ -117,7 +120,7 @@ export function AuditorConfig({ resource, spend }) {
     label: `${model} · ${!byModel[model]?.runs ? 'no runs yet' : byModel[model].avgUsd == null ? 'cost unknown' : `≈ ${formatUsd(byModel[model].avgUsd, 3)} / run`}`,
   }));
 
-  return <SectionCard title="Auditor settings">
+  const card = <SectionCard title="Auditor settings">
     <Stack gap="md">
       {error ? <Text size="sm" className="health-auditor__error" role="alert">{error}</Text> : null}
       <Stack gap="xs">
@@ -155,6 +158,7 @@ export function AuditorConfig({ resource, spend }) {
       </Stack>
     </Stack>
   </SectionCard>;
+  return <section {...regionProps} aria-label="Auditor settings">{card}</section>;
 }
 
 export default AuditorConfig;

@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Button, Stack, Text } from '@mantine/core';
-import { SectionCard, LoadingState, ErrorState } from "../../../../../frontend/src/lib/ui/index.js";
+import { SectionCard, LoadingState, ErrorState, useRetryRegion } from "../../../../../frontend/src/lib/ui/index.js";
 import { useApiResource } from "../../../../../frontend/src/lib/hooks/useApiResource.js";
 import { cleanupPath } from "../cleanup/CleanupQuestions.jsx";
 import { formatUsd, formatWhen, gapLabel, permissionLabel, triggerLabel } from "./auditorFormat.js";
@@ -31,15 +31,18 @@ export const logLine = entry => `${fieldLabel(entry.field)}: ${valueText(entry.f
 /** Who changed which auditor setting, newest first; the first ten shown until "Show all". */
 export function SettingsLog() {
   const log = useApiResource(settingsLogPath, { swr: true });
+  const { regionProps, retry } = useRetryRegion(log.reload, !log.data && log.loading);
   const [all, setAll] = useState(false);
   const entries = log.data?.entries || [];
   return <SectionCard title="Settings changes">
-    {!log.data ? (log.error ? <ErrorState error={log.error} onRetry={log.reload} label="Settings changes" /> : <LoadingState label="Settings changes" rows={2} />)
-      : !entries.length ? <Text size="sm" c="dimmed">No settings changes yet.</Text>
-      : <Stack gap={4}>
-        {(all ? entries : entries.slice(0, COLLAPSED)).map((entry, i) => <Text size="sm" key={`${entry.at}:${entry.field}:${i}`}>{logLine(entry)}</Text>)}
-        {!all && entries.length > COLLAPSED ? <Button variant="subtle" size="xs" onClick={() => setAll(true)}>Show all ({entries.length})</Button> : null}
-      </Stack>}
+    <section {...regionProps} aria-label="Settings changes">
+      {!log.data ? (log.error ? <ErrorState error={log.error} onRetry={retry} label="Settings changes" /> : <LoadingState label="Settings changes" rows={2} />)
+        : !entries.length ? <Text size="sm" c="dimmed">No settings changes yet.</Text>
+        : <Stack gap={4}>
+          {(all ? entries : entries.slice(0, COLLAPSED)).map((entry, i) => <Text size="sm" key={`${entry.at}:${entry.field}:${i}`}>{logLine(entry)}</Text>)}
+          {!all && entries.length > COLLAPSED ? <Button variant="subtle" size="xs" onClick={() => setAll(true)}>Show all ({entries.length})</Button> : null}
+        </Stack>}
+    </section>
   </SectionCard>;
 }
 
