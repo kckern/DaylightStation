@@ -6,21 +6,8 @@ package net.kckern.daylight.cap.quickinput.shell;
  *
  *   IDLE ──START──► STARTING ──began──► RECORDING ──any end──► IDLE
  *
- * Every end is the same end: the stop button, the notification's Stop, the tile or
- * widget tapped again, the thirty-minute cap, a call or another app taking the
- * microphone (loss of audio focus), an error from the recorder, the service being
- * destroyed. The recorder is stopped and what it wrote is kept or discarded by one
- * rule (keep).
- *
- * A recording whose process was killed leaves a .part file and no chance to run any
- * of this. What becomes of it is MemoRecovery's: an Ogg file plays up to where it
- * stops and becomes a memo; an MP4 without its index is kept aside. Nothing is deleted.
- *
- * The container is chosen so that a cut-off recording is still a memo, and so that
- * one recording is one memo: Ogg/Opus where the phone can write it (Android 10 and
- * later). Before that only MP4 exists, which is unplayable without the index written
- * at the end, so the recording is written as five-minute segments, each a whole file
- * and a memo of its own; a kill then loses at most the last five minutes.
+ * Phone recordings finalize only on an explicit Send. Car capture uses its own
+ * end-of-recording policy and inbox.
  *
  * Public for the car screen's recorder (car-actions), which records through the car's
  * microphone by these same rules into the same inbox.
@@ -32,8 +19,6 @@ public final class RecorderMachine {
     public static final long MAX_FILE_BYTES = 24L * 1024 * 1024;
     /** Under this a recording is a slip of the finger and is discarded. */
     public static final long MIN_DURATION_MS = 1000;
-    /** A second tap this soon after the first is the same tap, and does not stop the recording. */
-    static final long DOUBLE_TAP_MS = 1500;
 
     /** How a recording is written. */
     public enum Format { OGG_OPUS, MP4_SEGMENTS }
@@ -70,7 +55,7 @@ public final class RecorderMachine {
 
     public static final Profile[] PROFILES = { new Profile(16_000, 32_000), new Profile(44_100, 64_000) };
 
-    public enum Event { START, STOP, CAP_REACHED, FOCUS_LOST, RECORDER_ERROR, SERVICE_DESTROYED }
+    public enum Event { START, STOP, CANCEL, CAP_REACHED, FOCUS_LOST, RECORDER_ERROR, SERVICE_DESTROYED }
 
     public enum Action {
         NONE,
@@ -84,9 +69,15 @@ public final class RecorderMachine {
         STOP_SERVICE
     }
 
-    enum Tap { START, STOP, SHOW, CLOSE }
+    enum Tap { START, SHOW, CLOSE }
 
     private enum State { IDLE, STARTING, RECORDING }
+
+    private final boolean explicitSendOnly;
+
+    public RecorderMachine() { this(false); }
+
+    RecorderMachine(boolean explicitSendOnly) { this.explicitSendOnly = explicitSendOnly; }
 
     private State state = State.IDLE;
     private long startedAtMs;
@@ -100,7 +91,10 @@ public final class RecorderMachine {
         State was = state;
         state = State.IDLE;
         startedAtMs = 0;
-        if (was == State.RECORDING) return Action.FINISH;
+        if (was == State.RECORDING) {
+            return event == Event.CANCEL || (explicitSendOnly && event != Event.STOP)
+                    ? Action.DISCARD_AND_STOP : Action.FINISH;
+        }
         return was == State.STARTING ? Action.DISCARD_AND_STOP : Action.STOP_SERVICE;
     }
 
@@ -167,7 +161,6 @@ public final class RecorderMachine {
      */
     static Tap tap(long startedAtMs, long nowMs, boolean fromNotification) {
         if (startedAtMs <= 0) return fromNotification ? Tap.CLOSE : Tap.START;
-        if (fromNotification || nowMs - startedAtMs < DOUBLE_TAP_MS) return Tap.SHOW;
-        return Tap.STOP;
+        return Tap.SHOW;
     }
 }

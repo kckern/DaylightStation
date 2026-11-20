@@ -41,13 +41,15 @@ import java.security.SecureRandom;
  */
 public class MemoRecorderService extends Service {
     static final String ACTION_START = "net.kckern.daylight.memo.START";
-    static final String ACTION_STOP = "net.kckern.daylight.memo.STOP";
+    static final String ACTION_SEND = "net.kckern.daylight.memo.SEND";
+    private static final String ACTION_CANCEL = "net.kckern.daylight.memo.CANCEL";
+    private static final String DRAFTS = "phone-memo-drafts";
     private static final String TAG = "Daylight-Memo";
     private static final String CHANNEL_ID = "daylight_recording";
     private static final int NOTIFICATION_ID = 31;
 
     /** One machine for the process: the record screen reads whether a recording is under way. */
-    private static final RecorderMachine MACHINE = new RecorderMachine();
+    private static final RecorderMachine MACHINE = new RecorderMachine(true);
 
     private final Handler main = new Handler(Looper.getMainLooper());
     private final Runnable cap = () -> handle(Event.CAP_REACHED);
@@ -82,8 +84,7 @@ public class MemoRecorderService extends Service {
             if (!MACHINE.recording() && recorder == null) dest = MemoFiles.dest(intent.getStringExtra(MemoFiles.EXTRA_DEST));
             handle(Event.START);
         } else {
-            // STOP, and anything else: a restart with no intent has nothing to record.
-            handle(Event.STOP);
+            handle(ACTION_SEND.equals(action) ? Event.STOP : Event.CANCEL);
         }
         return START_NOT_STICKY;
     }
@@ -131,20 +132,20 @@ public class MemoRecorderService extends Service {
             NotificationManager manager = getSystemService(NotificationManager.class);
             manager.createNotificationChannel(new NotificationChannel(CHANNEL_ID, "Voice memo recording", NotificationManager.IMPORTANCE_LOW));
             PendingIntent stop = PendingIntent.getService(this, 0,
-                    new Intent(this, MemoRecorderService.class).setAction(ACTION_STOP),
+                    new Intent(this, MemoRecorderService.class).setAction(ACTION_CANCEL),
                     PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
             PendingIntent show = PendingIntent.getActivity(this, 1,
                     new Intent(this, RecordActivity.class).putExtra(RecordActivity.EXTRA_SHOW, true).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
                     PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
             Notification notification = new Notification.Builder(this, CHANNEL_ID)
                     .setContentTitle("Recording a voice memo")
-                    .setContentText("Tap Stop to finish and save it. The memo tile or widget button, tapped again, does the same.")
+                    .setContentText("Open the recorder to send, or cancel this recording.")
                     .setSmallIcon(R.drawable.ic_memo_mic)
                     .setOngoing(true)
                     .setUsesChronometer(true)
                     .setWhen(System.currentTimeMillis())
                     .setContentIntent(show)
-                    .addAction(new Notification.Action.Builder(null, "Stop", stop).build())
+                    .addAction(new Notification.Action.Builder(null, "Cancel recording", stop).build())
                     .build();
             if (Build.VERSION.SDK_INT >= 30) {
                 startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE);
@@ -164,19 +165,14 @@ public class MemoRecorderService extends Service {
             Log.w(TAG, "no microphone permission");
             return false;
         }
-        File inbox = new File(getFilesDir(), MemoFiles.INBOX);
+        File inbox = new File(getFilesDir(), DRAFTS);
         if (!inbox.isDirectory() && !inbox.mkdirs()) {
-            Log.e(TAG, "cannot create the inbox");
+            Log.e(TAG, "cannot create the draft directory");
             return false;
         }
-        // No recording is under way, so every .part here was cut off. None is deleted:
-        // what can be played becomes a memo, the rest is kept aside (MemoRecovery).
-        MemoRecovery.live(null);
-        MemoRecovery.Found cutOff = MemoRecovery.recover(inbox, new File(getFilesDir(), MemoFiles.CUT_OFF), null);
-        if (cutOff.recovered + cutOff.unplayable > 0) {
-            Log.w(TAG, "cut-off recordings: " + cutOff.recovered + " recovered, " + cutOff.unplayable + " kept aside as unplayable");
-            if (cutOff.recovered > 0) tellPayload();
-        }
+        // Interrupted phone drafts are kept outside recovery and upload paths.
+        File[] interrupted = inbox.listFiles();
+        if (interrupted != null) for (File draft : interrupted) if (draft.isFile()) draft.delete();
         memoId = MemoFiles.newId(System.currentTimeMillis(), new SecureRandom().nextLong());
         format = RecorderMachine.format(Build.VERSION.SDK_INT);
         segment = 0;
@@ -201,13 +197,12 @@ public class MemoRecorderService extends Service {
                     // when this size is near; the thirty-minute cap is the timer's.
                     r.setOutputFormat(MediaRecorder.OutputFormat.MPEG_4);
                     r.setAudioEncoder(MediaRecorder.AudioEncoder.AAC);
-                    r.setMaxFileSize(RecorderMachine.segmentBytes(profile.bitRate));
+                    r.setMaxFileSize(RecorderMachine.MAX_FILE_BYTES);
                 }
                 r.setAudioChannels(profile.channels);
                 r.setAudioSamplingRate(profile.sampleRate);
                 r.setAudioEncodingBitRate(profile.bitRate);
-                final File inboxDir = inbox;
-                r.setOnInfoListener((mr, what, extra) -> main.post(() -> onRecorderInfo(mr, what, inboxDir)));
+                r.setOnInfoListener((mr, what, extra) -> main.post(() -> onRecorderInfo(mr, what)));
                 r.setOnErrorListener((mr, what, extra) -> main.post(() -> handle(Event.RECORDER_ERROR)));
                 r.setOutputFile(part.getPath());
                 r.prepare();
@@ -227,31 +222,11 @@ public class MemoRecorderService extends Service {
     }
 
     /** Main thread. The caps, and for MP4 the move from one segment file to the next. */
-    private void onRecorderInfo(MediaRecorder mr, int what, File inbox) {
+    private void onRecorderInfo(MediaRecorder mr, int what) {
         if (mr != recorder) return;
-        boolean segmented = format == RecorderMachine.Format.MP4_SEGMENTS;
-        if (what == MediaRecorder.MEDIA_RECORDER_INFO_MAX_DURATION_REACHED) {
+        if (what == MediaRecorder.MEDIA_RECORDER_INFO_MAX_DURATION_REACHED
+                || what == MediaRecorder.MEDIA_RECORDER_INFO_MAX_FILESIZE_REACHED) {
             handle(Event.CAP_REACHED);
-        } else if (what == MediaRecorder.MEDIA_RECORDER_INFO_MAX_FILESIZE_REACHED) {
-            // For a segmented recording this means no next file could be handed over.
-            handle(Event.CAP_REACHED);
-        } else if (segmented && what == MediaRecorder.MEDIA_RECORDER_INFO_MAX_FILESIZE_APPROACHING) {
-            try {
-                nextPart = MemoFiles.part(inbox, MemoFiles.stem(MemoFiles.segmentId(memoId, segment + 1), dest), MemoFiles.M4A);
-                mr.setNextOutputFile(nextPart);
-            } catch (Exception e) {
-                nextPart = null;
-                Log.w(TAG, "could not set the next segment: " + e.getClass().getSimpleName());
-            }
-        } else if (segmented && what == MediaRecorder.MEDIA_RECORDER_INFO_NEXT_OUTPUT_FILE_STARTED && nextPart != null) {
-            // The segment before is whole now: it becomes a memo of its own, with its own start time.
-            File whole = MemoFiles.finishSegment(part, segmentStartMs);
-            Log.i(TAG, "segment " + segment + " of " + memoId + (whole == null ? " could not be finished" : " saved"));
-            part = nextPart;
-            nextPart = null;
-            segment++;
-            segmentStartMs = System.currentTimeMillis();
-            if (whole != null) tellPayload();
         }
     }
 
@@ -286,10 +261,18 @@ public class MemoRecorderService extends Service {
         if (finished == null) {
             // A slip of the finger, or nothing captured. With earlier segments saved, only this last piece goes.
             written.delete();
+            android.widget.Toast.makeText(this, "Recording was too short or could not be saved. Nothing sent.",
+                    android.widget.Toast.LENGTH_LONG).show();
             Log.i(TAG, "discarded " + memoId + (ogg ? "" : " segment " + segment) + " after " + why + ": " + durationMs + " ms, " + bytes + " bytes");
             return;
         }
         Log.i(TAG, "saved " + memoId + (ogg ? "" : " segment " + segment) + " after " + why + ": " + durationMs + " ms, " + bytes + " bytes");
+        File inbox = new File(getFilesDir(), MemoFiles.INBOX);
+        if ((!inbox.isDirectory() && !inbox.mkdirs()) || !finished.renameTo(new File(inbox, finished.getName()))) {
+            android.widget.Toast.makeText(this, "Could not queue memo. Please record it again.", android.widget.Toast.LENGTH_LONG).show();
+            return;
+        }
+        android.widget.Toast.makeText(this, "Memo queued for sending", android.widget.Toast.LENGTH_SHORT).show();
         tellPayload();
     }
 

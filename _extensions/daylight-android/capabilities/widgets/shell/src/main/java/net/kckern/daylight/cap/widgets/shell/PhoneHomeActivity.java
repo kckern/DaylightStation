@@ -22,6 +22,7 @@ import android.widget.*;
 import net.kckern.daylight.api.PayloadPort;
 import net.kckern.daylight.shellkit.ShellStart;
 import net.kckern.daylight.shellkit.SurfaceCache;
+import net.kckern.daylight.shellkit.LauncherCaptureShortcut;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -38,10 +39,13 @@ public class PhoneHomeActivity extends Activity {
     private JSONArray configuredActions = new JSONArray();
     private LinearLayout column;
     private boolean loading = true;
+    private boolean launcherPicker;
     private String loadError;
 
     @Override protected void onCreate(Bundle state) {
         super.onCreate(state);
+        launcherPicker = Intent.ACTION_CREATE_SHORTCUT.equals(getIntent().getAction());
+        if (launcherPicker) setResult(RESULT_CANCELED);
         getWindow().setStatusBarColor(PAPER);
         getWindow().setNavigationBarColor(PAPER);
         getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR
@@ -110,26 +114,65 @@ public class PhoneHomeActivity extends Activity {
         TextView title = label("Daylight", 32, INK);
         title.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
         column.addView(title);
-        column.addView(label("Add to your Android home screen", 16, INK));
+        column.addView(label(launcherPicker ? "Choose a shortcut" : "Add to your Android home screen", 16, INK));
         if (loading) { column.addView(label("Loading services…", 16, INK)); return; }
         if (loadError != null) { row("Try again", loadError, "open", this::refresh); return; }
         column.addView(label("Services", 20, INK));
         for (int i = 0; i < pages.length(); i++) {
             JSONObject page = pages.optJSONObject(i);
             if (page == null) continue;
-            row(page.optString("label"), "Add to home screen", page.optString("icon"), () -> pinPage(page));
+            if (launcherPicker) {
+                // This result goes to the caller. Only stable, unkeyed page bookmarks may leave the app.
+                String id = page.optString("id");
+                if (java.util.Arrays.asList("health", "home", "lifelog", "media").contains(id)) {
+                    row(page.optString("label"), "Choose shortcut", page.optString("icon"),
+                            () -> returnLauncherShortcut(page));
+                }
+            } else {
+                row(page.optString("label"), "Add to home screen", page.optString("icon"), () -> pinPage(page));
+            }
         }
         column.addView(label("Quick capture", 20, INK));
         for (int i = 0; i < configuredActions.length(); i++) {
             JSONObject action = configuredActions.optJSONObject(i);
-            if (action == null || !"INPUT".equals(action.optString("kind"))) continue;
+            if (action == null || !("INPUT".equals(action.optString("kind")) || "meal-barcode".equals(action.optString("id")))) continue;
             String id = action.optString("id");
-            row(action.optString("label"), "Add to home screen", action.optString("icon"),
-                    () -> call("phone-pin-action", id, result -> {}));
+            if (launcherPicker) {
+                if (!LauncherCaptureShortcut.supports(id)) continue;
+                row(action.optString("label"), "Choose shortcut", action.optString("icon"),
+                        () -> returnCaptureShortcut(action));
+            } else {
+                row(action.optString("label"), "Add to home screen", action.optString("icon"),
+                        () -> confirmShortcut(id, action.optString("label")));
+            }
         }
+        if (launcherPicker) return;
         column.addView(label("Play on demand", 20, INK));
         row("Play a playlist", "Choose a playlist for a one-tap widget", "play",
                 () -> showMediaChoices(0));
+    }
+
+    private void returnCaptureShortcut(JSONObject action) {
+        try {
+            returnShortcut(action, LauncherCaptureShortcut.issue(this, action.optString("id")));
+        } catch (RuntimeException unavailable) {
+            toast("Could not save the capture shortcut. Try again.");
+        }
+    }
+
+    private void returnLauncherShortcut(JSONObject page) {
+        returnShortcut(page, "daylight://bookmark/" + page.optString("id"));
+    }
+
+    private void returnShortcut(JSONObject page, String link) {
+        Intent open = SurfaceCache.viewIntent(this, link)
+                .setClassName(this, "net.kckern.daylight.cap.notifications.shell.LinkActivity");
+        Intent result = new Intent().putExtra(Intent.EXTRA_SHORTCUT_NAME, page.optString("label"))
+                .putExtra(Intent.EXTRA_SHORTCUT_INTENT, open)
+                .putExtra(Intent.EXTRA_SHORTCUT_ICON_RESOURCE,
+                        Intent.ShortcutIconResource.fromContext(this, drawable(page.optString("icon"))));
+        setResult(RESULT_OK, result);
+        finish();
     }
 
     private void pinPage(JSONObject page) {
@@ -137,13 +180,31 @@ public class PhoneHomeActivity extends Activity {
         ShortcutManager sm = getSystemService(ShortcutManager.class);
         if (sm == null || !sm.isRequestPinShortcutSupported()) { toast("This launcher cannot pin bookmarks."); return; }
         if (!id.startsWith("saved-")) {
-            call("phone-pin-action", id, result -> {});
+            confirmShortcut(id, page.optString("label"));
             return;
         }
         ShortcutInfo shortcut = new ShortcutInfo.Builder(this, "bookmark-" + id)
                 .setShortLabel(page.optString("label")).setIcon(Icon.createWithResource(this, drawable("star")))
                 .setIntent(SurfaceCache.viewIntent(this, "daylight://bookmark/" + id)).build();
         if (!sm.requestPinShortcut(shortcut, null)) toast("The launcher could not add this bookmark.");
+    }
+
+    private void confirmShortcut(String id, String label) {
+        ShortcutManager shortcuts = getSystemService(ShortcutManager.class);
+        if (shortcuts == null || !shortcuts.isRequestPinShortcutSupported()) {
+            toast("Your Android launcher does not support adding shortcuts from Daylight.");
+            return;
+        }
+        if (shortcuts.getPinnedShortcuts().stream().anyMatch(shortcut -> shortcut.getId().equals("pin-" + id))) {
+            new AlertDialog.Builder(this).setTitle(label + " is already on your home screen")
+                    .setPositiveButton("OK", null).show();
+            return;
+        }
+        new AlertDialog.Builder(this).setTitle("Add " + label + " to home screen?")
+                .setNegativeButton("Cancel", null)
+                .setPositiveButton("Continue", (dialog, which) -> call("phone-pin-action", id, result ->
+                        toast("Confirm placement in Android. If no prompt appears, check your Home screen layout settings.")))
+                .show();
     }
 
     private void showMediaChoices(int cursor) {
@@ -189,7 +250,17 @@ public class PhoneHomeActivity extends Activity {
         boolean requested;
         try { requested = manager.requestPinAppWidget(provider, null, confirmed); }
         catch (RuntimeException unavailable) { requested = false; }
-        if (!requested) toast("Android could not add the playlist widget. Return to Daylight and try Add widget again.");
+        if (!requested) {
+            showManualPlacement(label);
+        } else {
+            toast("Confirm in Android. If the button does not appear, add Daylight playlist from Android Widgets.");
+        }
+    }
+
+    private void showManualPlacement(String title) {
+        new AlertDialog.Builder(this).setTitle("Place the playlist widget")
+                .setMessage("On Android Home, open Widgets, add Daylight playlist, then choose Play " + title + ".")
+                .setPositiveButton("OK", null).show();
     }
 
     private int drawable(String name) {
@@ -216,6 +287,8 @@ public class PhoneHomeActivity extends Activity {
         LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, -2);
         lp.topMargin = dp(8);
         column.addView(line, lp);
+        line.setContentDescription(name + ", " + detail);
+        line.setFocusable(true);
         line.setOnClickListener(v -> click.run());
         return line;
     }

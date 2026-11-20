@@ -10,11 +10,7 @@ import android.widget.ArrayAdapter;
 import android.widget.ListView;
 import android.widget.TextView;
 
-import net.kckern.daylight.api.SurfaceKeys;
-import net.kckern.daylight.shellkit.ShellStart;
-import net.kckern.daylight.shellkit.SurfaceCache;
 
-import java.util.List;
 
 /**
  * The step Android shows when a one-action button is placed: pick the action.
@@ -52,26 +48,22 @@ public class ButtonWidgetConfigActivity extends Activity {
             finish();
             return;
         }
-        // Visible, so the shell service may be started: the payload then writes the
-        // actions for the next time. This screen shows what is in the cache now.
-        ShellStart.ensure(this);
-        setTitle("Daylight button");
-
-        final List<ButtonFace.Choice> choices = ButtonFace.choices(SurfaceCache.get(this, SurfaceKeys.ACTION_IDS),
-                key -> SurfaceCache.get(this, key));
-        if (choices.isEmpty()) {
-            TextView none = new TextView(this);
-            int pad = (int) (24 * getResources().getDisplayMetrics().density);
-            none.setPadding(pad, pad, pad, pad);
-            none.setText("Daylight has no actions to show yet. Open the app once, then add the button again.");
-            none.setOnClickListener(v -> finish());
-            setContentView(none);
+        setTitle("Daylight playlist");
+        String playlist = ButtonWidgetProvider.selectedPlaylist(this);
+        String playlistTitle = ButtonWidgetProvider.selectedPlaylistTitle(this);
+        if (!playlist.startsWith("c:")) {
+            TextView message = new TextView(this);
+            int padding = (int) (24 * getResources().getDisplayMetrics().density);
+            message.setPadding(padding, padding, padding, padding);
+            message.setText("Choose a playlist in Daylight → Play a playlist, then add this widget again.");
+            setContentView(message);
             return;
         }
         ListView list = new ListView(this);
-        list.setAdapter(new ArrayAdapter<>(this, android.R.layout.simple_list_item_1, choices));
+        list.setAdapter(new ArrayAdapter<>(this, android.R.layout.simple_list_item_1,
+                java.util.Collections.singletonList("Play " + playlistTitle)));
         list.setOnItemClickListener((parent, view, position, id) -> {
-            ButtonWidgetProvider.choose(this, widgetId, choices.get(position).id);
+            ButtonWidgetProvider.choosePlaylist(this, widgetId, playlist, playlistTitle);
             try {
                 manager.updateAppWidget(widgetId, ButtonWidgetProvider.render(this, widgetId));
             } catch (RuntimeException e) {

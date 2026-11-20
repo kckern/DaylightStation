@@ -82,7 +82,6 @@ test('the one-action button added one exported component, its chooser, and no pe
   assert.deepEqual(own.map(([key, row]) => `${key} exported=${row.exported} permission=${row.permission}`).sort(), [
     'activity net.kckern.daylight.cap.widgets.shell.ButtonWidgetConfigActivity exported=true permission=null',
     'activity net.kckern.daylight.cap.widgets.shell.PhoneHomeActivity exported=true permission=null',
-    'receiver net.kckern.daylight.cap.widgets.shell.ActionWidgetProvider exported=false permission=null',
     'receiver net.kckern.daylight.cap.widgets.shell.ButtonWidgetProvider exported=false permission=null',
   ]);
 });

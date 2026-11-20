@@ -8,6 +8,7 @@ import android.widget.Toast;
 
 import net.kckern.daylight.api.PayloadPort;
 import net.kckern.daylight.shellkit.ShellStart;
+import net.kckern.daylight.shellkit.LauncherCaptureShortcut;
 
 /**
  * Receives a link (daylight://, or an https link of the household site), hands it to
@@ -42,7 +43,13 @@ public class LinkActivity extends Activity {
         new Thread(() -> {
             LinkAnswer answer;
             try {
-                answer = LinkAnswer.of(PayloadPort.named(PayloadPort.LINKS).call(LinkRequest.body(link), WAIT_FOR_PAYLOAD_MS));
+                if (LauncherCaptureShortcut.isCaptureLink(link)) {
+                    String id = LauncherCaptureShortcut.authorizedId(this, link);
+                    answer = id == null ? LinkAnswer.of("{\"ok\":false,\"message\":\"Add this shortcut again from your launcher.\"}")
+                            : LinkAnswer.of(PayloadPort.named(LauncherCaptureShortcut.PORT).call(id, WAIT_FOR_PAYLOAD_MS));
+                } else {
+                    answer = LinkAnswer.of(PayloadPort.named(PayloadPort.LINKS).call(LinkRequest.body(link), WAIT_FOR_PAYLOAD_MS));
+                }
             } catch (PayloadPort.NotReadyException noPayload) {
                 answer = LinkAnswer.notReady();
             } catch (Throwable failed) {

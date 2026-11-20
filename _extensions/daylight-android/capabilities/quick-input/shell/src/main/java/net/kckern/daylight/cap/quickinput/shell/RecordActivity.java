@@ -2,32 +2,36 @@ package net.kckern.daylight.cap.quickinput.shell;
 
 import android.Manifest;
 import android.app.Activity;
+import android.app.AlertDialog;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.pm.PackageManager;
+import android.content.res.ColorStateList;
+import android.content.res.Configuration;
+import android.graphics.Color;
+import android.graphics.Typeface;
+import android.graphics.drawable.ColorDrawable;
+import android.graphics.drawable.GradientDrawable;
+import android.graphics.drawable.RippleDrawable;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.SystemClock;
 import android.view.Gravity;
+import android.view.Window;
+import android.view.WindowManager;
 import android.widget.Button;
 import android.widget.Chronometer;
 import android.widget.LinearLayout;
+import android.widget.ImageButton;
+import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
 
 /**
- * The one screen of a voice memo. Opening it is the owner's "record": it starts a
- * recording at once and has one button. Opened again while a memo is being recorded
- * (the tile or the widget tapped a second time) it stops and saves that memo.
- *
- * Not exported. It is opened by the payload when a keyed memo link arrives, which
- * only this app's own surfaces can build, and by the recording's own notification.
- * Nothing a web page can do reaches it.
- *
- * Leaving the screen does not stop the recording; the button here and the
- * notification's Stop action do.
+ * Records a phone memo. A second shortcut tap shows the active recording.
+ * Send is the only control that submits it; leaving discards the draft.
  */
 public class RecordActivity extends Activity {
     /** Set by the recording's notification: show the screen, do not treat the open as a tap. */
@@ -35,15 +39,8 @@ public class RecordActivity extends Activity {
     private static final int REQUEST_PERMISSIONS = 1;
     private static final String PREFS = "daylight_memo";
     private static final String ASKED_NOTIFICATIONS = "asked_notifications";
-    /**
-     * What is true with notifications off: Android then shows no recording notice in
-     * the shade (the system's own list of running apps still names Daylight), and the
-     * recording runs all the same. It is stopped from this screen, or by tapping the
-     * memo tile, widget button or shortcut a second time. The tile and the widget do
-     * not change while a memo is being recorded.
-     */
-    static final String NOTIFICATIONS_OFF = "Notifications are off for Daylight, so there is no recording notice. "
-            + "The recording still runs. Stop it here, or tap the memo tile, widget button or shortcut again.";
+    static final String NOTIFICATIONS_OFF = "Notifications are off for Daylight. "
+            + "You can send or cancel this recording here.";
 
     private final Handler main = new Handler(Looper.getMainLooper());
     private TextView status;
@@ -52,6 +49,9 @@ public class RecordActivity extends Activity {
     private Chronometer clock;
     private Button stop;
     private boolean sawRecording;
+    private boolean recordingRequested;
+    private boolean completed;
+    private String destinationLabel = "Journal";
     private final Runnable watch = new Runnable() {
         @Override public void run() {
             long startedAt = MemoRecorderService.startedAtMs();
@@ -73,13 +73,16 @@ public class RecordActivity extends Activity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        build();
+        requestWindowFeature(Window.FEATURE_NO_TITLE);
         // Where this recording goes, by its destination's label. A title and nothing more.
         String label = MemoFiles.label(getIntent() == null ? null : getIntent().getStringExtra(MemoFiles.EXTRA_LABEL));
-        if (label != null) setTitle(label);
+        if (label != null) destinationLabel = label;
+        setTitle(destinationLabel);
+        build();
+        setFinishOnTouchOutside(false);
         // The intent is acted on once, when the owner opened the screen. When Android
         // builds the screen again (a rotation, a theme or font change) the same intent
-        // is still there; acting on it again would stop and save the recording.
+        // is still there; acting on it again would start another recording.
         boolean rebuilt = savedInstanceState != null;
         asking = rebuilt && savedInstanceState.getBoolean(STATE_ASKING, false);
         act(getIntent(), rebuilt);
@@ -100,9 +103,6 @@ public class RecordActivity extends Activity {
     private void act(Intent intent, boolean rebuilt) {
         boolean fromNotification = intent != null && intent.getBooleanExtra(EXTRA_SHOW, false);
         switch (RecorderMachine.open(rebuilt, MemoRecorderService.startedAtMs(), System.currentTimeMillis(), fromNotification, asking)) {
-            case STOP:
-                stopAndSave();
-                break;
             case CLOSE:
                 finish();
                 break;
@@ -146,6 +146,7 @@ public class RecordActivity extends Activity {
     public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
         if (requestCode != REQUEST_PERMISSIONS) return;
         asking = false;
+        if (completed || isFinishing() || isDestroyed()) return;
         boolean notificationsOff = Build.VERSION.SDK_INT >= 33
                 && checkSelfPermission(PermissionAsk.NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED;
         hint.setText(notificationsOff ? NOTIFICATIONS_OFF : "");
@@ -164,6 +165,7 @@ public class RecordActivity extends Activity {
         try {
             // This screen is visible, which is what lets a microphone foreground service start.
             // The destination travels as its id; the recorder puts it in the file's name.
+            recordingRequested = true;
             startForegroundService(new Intent(this, MemoRecorderService.class).setAction(MemoRecorderService.ACTION_START)
                     .putExtra(MemoFiles.EXTRA_DEST, MemoFiles.dest(getIntent() == null ? null : getIntent().getStringExtra(MemoFiles.EXTRA_DEST))));
             status.setText("Starting…");
@@ -185,48 +187,153 @@ public class RecordActivity extends Activity {
     private void showRecording(long startedAtMs) {
         sawRecording = true;
         status.setText("Recording");
+        stop.setBackground(buttonBackground(0xff165c49, 15));
+        stop.setTextColor(Color.WHITE);
         stop.setEnabled(true);
         clock.setBase(SystemClock.elapsedRealtime() - Math.max(0, System.currentTimeMillis() - startedAtMs));
         clock.start();
     }
 
-    private void stopAndSave() {
+    private void send() {
+        if (completed || MemoRecorderService.startedAtMs() == 0) return;
         try {
-            startService(new Intent(this, MemoRecorderService.class).setAction(MemoRecorderService.ACTION_STOP));
-            Toast.makeText(getApplicationContext(), "Memo saved", Toast.LENGTH_SHORT).show();
+            startService(new Intent(this, MemoRecorderService.class).setAction(MemoRecorderService.ACTION_SEND));
+            completed = true;
+            finish();
         } catch (RuntimeException e) {
-            Toast.makeText(getApplicationContext(), "Use Stop on the notification", Toast.LENGTH_LONG).show();
+            Toast.makeText(this, "Could not send. Try again or cancel.", Toast.LENGTH_LONG).show();
         }
-        finish();
+    }
+
+    private void discardDraft() {
+        if (completed) return;
+        completed = true;
+        if (recordingRequested || MemoRecorderService.startedAtMs() > 0) {
+            stopService(new Intent(this, MemoRecorderService.class));
+        }
+    }
+
+    private void confirmDiscard() {
+        if (completed) return;
+        if (!recordingRequested && MemoRecorderService.startedAtMs() == 0) {
+            discardDraft();
+            finish();
+            return;
+        }
+        new AlertDialog.Builder(this)
+                .setTitle("Discard this recording?")
+                .setMessage("The audio will be lost.")
+                .setNegativeButton("Keep recording", null)
+                .setPositiveButton("Discard recording", (dialog, which) -> {
+                    discardDraft();
+                    finish();
+                }).show();
+    }
+
+    @Override public void onBackPressed() {
+        confirmDiscard();
+    }
+
+    @Override protected void onStop() {
+        super.onStop();
+        // The permission dialog is part of this interaction. Rotation keeps the draft.
+        if (!isChangingConfigurations() && !asking) {
+            discardDraft();
+            finish();
+        }
     }
 
     private void build() {
+        boolean dark = (getResources().getConfiguration().uiMode & Configuration.UI_MODE_NIGHT_MASK)
+                == Configuration.UI_MODE_NIGHT_YES;
+        int surface = dark ? 0xff172521 : 0xfffbfdfb;
+        int ink = dark ? 0xffedf7f1 : 0xff142c24;
+        int secondary = dark ? 0xffb5ccc0 : 0xff49655a;
+        int control = dark ? 0xff2b4038 : 0xffe7efea;
+
         LinearLayout layout = new LinearLayout(this);
         layout.setOrientation(LinearLayout.VERTICAL);
-        layout.setGravity(Gravity.CENTER_HORIZONTAL);
-        int pad = (int) (24 * getResources().getDisplayMetrics().density);
-        layout.setPadding(pad, pad, pad, pad);
+        layout.setPadding(dp(24), dp(18), dp(24), dp(24));
+        layout.setBackground(rounded(surface, 24));
 
-        status = new TextView(this);
-        status.setTextSize(18);
-        layout.addView(status);
+        LinearLayout header = new LinearLayout(this);
+        header.setGravity(Gravity.CENTER_VERTICAL);
+        TextView title = text(destinationLabel, 23, ink);
+        title.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        header.addView(title, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1));
+        ImageButton close = new ImageButton(this);
+        close.setImageResource(R.drawable.ic_memo_close);
+        close.setImageTintList(ColorStateList.valueOf(ink));
+        close.setBackground(buttonBackground(control, 24));
+        close.setContentDescription("Close recorder");
+        close.setOnClickListener(v -> confirmDiscard());
+        header.addView(close, new LinearLayout.LayoutParams(dp(48), dp(48)));
+        layout.addView(header);
 
         clock = new Chronometer(this);
-        clock.setTextSize(32);
-        clock.setPadding(0, pad / 2, 0, pad);
+        clock.setTextSize(48);
+        clock.setTextColor(ink);
+        clock.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
+        clock.setFontFeatureSettings("tnum");
+        clock.setGravity(Gravity.CENTER);
+        clock.setPadding(0, dp(22), 0, 0);
         layout.addView(clock);
 
-        hint = new TextView(this);
-        hint.setTextSize(14);
-        hint.setPadding(0, 0, 0, pad / 2);
+        status = text("Preparing recorder…", 15, secondary);
+        status.setGravity(Gravity.CENTER);
+        status.setPadding(0, dp(4), 0, dp(24));
+        layout.addView(status);
+
+        hint = text("", 14, secondary);
         layout.addView(hint);
 
         stop = new Button(this);
-        stop.setText("Stop and save");
+        stop.setAllCaps(false);
+        stop.setText("Send memo");
+        stop.setTextSize(17);
+        stop.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        stop.setTextColor(secondary);
+        stop.setBackground(rounded(control, 15));
+        stop.setMinHeight(dp(54));
         stop.setEnabled(false);
-        stop.setOnClickListener(v -> stopAndSave());
-        layout.addView(stop);
-        setContentView(layout);
+        stop.setOnClickListener(v -> send());
+        layout.addView(stop, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
+
+        ScrollView scroll = new ScrollView(this);
+        scroll.setClipToOutline(true);
+        scroll.setBackground(rounded(surface, 24));
+        scroll.addView(layout);
+        setContentView(scroll);
+        Window window = getWindow();
+        window.setBackgroundDrawable(new ColorDrawable(Color.TRANSPARENT));
+        window.addFlags(WindowManager.LayoutParams.FLAG_DIM_BEHIND);
+        window.setDimAmount(0.45f);
+        int available = getResources().getConfiguration().screenWidthDp;
+        window.setLayout(dp(Math.min(440, available - 32)), WindowManager.LayoutParams.WRAP_CONTENT);
+    }
+
+    private TextView text(String value, int size, int color) {
+        TextView view = new TextView(this);
+        view.setText(value);
+        view.setTextSize(size);
+        view.setTextColor(color);
+        return view;
+    }
+
+    private GradientDrawable rounded(int color, int radius) {
+        GradientDrawable shape = new GradientDrawable();
+        shape.setColor(color);
+        shape.setCornerRadius(dp(radius));
+        return shape;
+    }
+
+    private RippleDrawable buttonBackground(int color, int radius) {
+        return new RippleDrawable(ColorStateList.valueOf(0x24889990), rounded(color, radius), null);
+    }
+
+    private int dp(int value) {
+        return Math.round(value * getResources().getDisplayMetrics().density);
     }
 
     @Override

@@ -737,9 +737,13 @@ final class KioskSession implements KioskController, KioskSurface, net.kckern.da
     private final List<PermissionRequest> callRequests = new ArrayList<>();
 
     private boolean callPage(PermissionRequest request) {
-        return activity != null && web != null && !errorPage && origins.allows(mainUrl)
-                && CallCapturePolicy.allows(startUrl(), web.getUrl(), String.valueOf(request.getOrigin()),
-                        trust.openedFromOutside());
+        if (activity == null || web == null || errorPage || !origins.allows(mainUrl)) return false;
+        String requester = String.valueOf(request.getOrigin());
+        boolean external = trust.openedFromOutside();
+        if (CallCapturePolicy.allows(startUrl(), web.getUrl(), requester, external)) return true;
+        String[] resources = request.getResources();
+        return resources.length == 1 && PermissionRequest.RESOURCE_VIDEO_CAPTURE.equals(resources[0])
+                && CallCapturePolicy.allowsBarcode(startUrl(), web.getUrl(), requester, external);
     }
 
     private static String callPermission(String resource) {

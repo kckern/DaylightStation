@@ -9,7 +9,7 @@ abis: []
 # all. Its installed components (the link activity, the tiles, the widget) reach the
 # payload in-process. Debugging is over adb: logcat, and run-as for its files.
 control: { port: 8780, lifelinePort: 8781, bind: none }
-shell: { versionCode: 43, versionName: "0.1-phone" }
+shell: { versionCode: 49, versionName: "0.1-phone" }
 # The household site's host, so an https link to it (in a relayed push, say) can open in
 # the app. Private: resolved from `placeholders:` when this device's manifest is built.
 appLinks: { host: "{phone_link_host}" }
@@ -41,7 +41,7 @@ defaults:
   webview.backButton: "history"
   # Pages of the site that an action, or a link without the install key, may open. Each
   # is "id|label|icon|path"; a path is a page of the site, never an API route.
-  bookmarks.1: "media|Media Browse|play|/media"
+  bookmarks.1: "media|Media|play|/media"
   bookmarks.3: "health|Health|health|/health"
   bookmarks.2: "call|Call|call|/call"
   bookmarks.4: "home|Home|home|/home"
@@ -56,21 +56,22 @@ defaults:
   # widget. Each is "id|label|icon|target"; a target is input:<voice|text|photo>:<destination id>,
   # open:/page, bookmark:<id>, media:<content id> or api:/api/... (an empty POST to that
   # path) or location:share. memo:new still means input:voice:journal.
-  # A voice action opens the recorder; tapped again while a recording is under way, it
-  # stops and saves it. A text action opens a field with Send; a photo action opens the
+  # A voice action opens the recorder; only Send memo queues a recording.
+  # A text action opens a field with Send; a photo action opens the
   # camera. Each needs this install's link key, which only the app's own surfaces have.
   actions.1: "journal|Journal voice|mic|input:voice:journal"
   actions.2: "meal|Meal voice|mic|input:voice:meal"
   actions.3: "meal-photo|Meal photo|camera|input:photo:meal-photo"
   actions.4: "journal-note|Journal text|note|input:text:journal-note"
   actions.5: "meal-note|Meal text|note|input:text:meal-note"
-  actions.6: "media|Media Browse|play|bookmark:media"
+  actions.6: "media|Media|play|bookmark:media"
   actions.7: "call|Call|call|bookmark:call"
   # PLACEHOLDER: "On my way". A tap says location sharing is not built yet and does
   # nothing else; the phone asks for no location permission. On no surface by default:
   # add its id to a list below (or a one-action button) to place it.
   actions.9: "health|Health|health|bookmark:health"
   actions.10: "home|Home|home|bookmark:home"
+  actions.12: "meal-barcode|Meal barcode|camera|open:/health?capture=barcode"
   actions.11: "lifelog|Lifelog|lifelog|bookmark:lifelog"
   actions.8: "omw|On my way|bolt|location:share"
   # Launcher (long-press) shortcuts, in order, and the action of each quick-settings

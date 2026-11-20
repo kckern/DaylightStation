@@ -444,14 +444,16 @@ The steps below use the Journal button. Step 18 repeats the first two for Meal.
 
 1. Tap "Journal voice". The first time, the phone asks for the microphone and then for
    notifications; both dialogs stay up long enough to answer. Speak for ten
-   seconds, "Stop and save".
+   seconds, "Send memo".
 2. Within a few minutes the transcript and the Journalist's reply arrive in the
    owner's Telegram conversation. `input-queue.json` shows `uploaded: 1` and no
    input; the inbox is empty. Record the entry's time in the journal: it is the
    time the recording started, not the upload time.
-3. While recording: the notification is up and shows a running clock; its Stop
-   action ends and saves the memo with the record screen closed.
-4. While recording, tap the memo tile again: the memo stops and is saved.
+3. Record and cancel from the screen, from the notification, and with Android Back.
+   Each attempt releases the microphone and leaves the queue and upload counts
+   unchanged.
+4. While recording, tap a voice capture shortcut again. The current recording
+   stays open with the original destination. Cancel it and verify no submission.
 5. While recording, more than two seconds in, turn the phone, and switch dark
    mode on and off. The record screen comes back showing the clock, and the
    recording goes on. (Before the fix this stopped and saved the memo.)
@@ -464,14 +466,9 @@ The steps below use the Journal button. Step 18 repeats the first two for Meal.
    notice goes. Their journal entries carry the times they were recorded.
 8. Record a memo with airplane mode on, restart the phone, airplane mode off: the
    memo uploads.
-9. **Cut-off recording.** Start a memo, speak for thirty seconds, and force-stop
-   the app (`adb shell am force-stop net.kckern.daylight.phone`). The inbox holds
-   `<id>.journal.ogg.part`. Open the app again. Within a pass the file is `<id>.journal.ogg`,
-   it uploads, and the transcript holds what was said before the stop, journaled
-   at the time the recording started. Logcat and the shell log say "cut-off
-   recordings: 1 recovered". If the intake refuses the file (422 or 415), record
-   that: the truncated Ogg is not accepted and the design needs another look.
-   Nothing is deleted either way.
+9. **Cut-off recording.** Start a memo, then force-stop Daylight. Reopen it and
+   verify the private draft does not enter the upload inbox. Record again to
+   clear the interrupted draft.
 10. Take a phone call in the middle of a recording: the memo stops and what was
     said before the call is uploaded.
 11. Let a recording run to thirty minutes: it stops by itself and uploads as one
@@ -502,14 +499,11 @@ The steps below use the Journal button. Step 18 repeats the first two for Meal.
     sending resumes; a tap on it does not send early; after the named time the
     queue drains. While Journal is held, a Meal input still uploads: a limit on one
     bot does not hold the other.
-18. **Meal by voice.** Tap "Meal voice", say what was eaten, "Stop and save". The file in
+18. **Meal by voice.** Tap "Meal voice", say what was eaten, "Send memo". The file in
     the inbox is `<id>.meal.ogg`; Nutribot answers in its Telegram conversation as
-    it does for a Telegram voice message. While a Journal recording is under way,
-    tap "Meal voice": the Journal recording stops and is saved (any capture button
-    tapped during a recording stops it), and no Meal recording starts until it is
-    tapped again.
-18b. **Meal by voice, offline.** Airplane mode on, tap "Meal voice", speak, "Stop and
-    save": the notice names Meal 1. Airplane mode off: it uploads without opening
+    it does for a Telegram voice message. During a Journal recording, tap
+    Meal voice and verify the current recording remains Journal. Cancel it.
+18b. **Meal by voice, offline.** Airplane mode on, tap "Meal voice", speak, "Send memo": the notice names Meal 1. Airplane mode off: it uploads without opening
     the app, and Nutribot answers.
 
 ## F2. Text inputs

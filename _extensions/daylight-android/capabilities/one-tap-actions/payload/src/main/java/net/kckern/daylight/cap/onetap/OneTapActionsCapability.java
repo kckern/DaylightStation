@@ -164,6 +164,7 @@ public final class OneTapActionsCapability implements Capability, ActionList {
         }
         pinPort.attach(onPinConfirmed);
         actionPinPort.attach(onActionPin);
+        launcherCapturePort.attach(onLauncherCapture);
         List<String> problems = new ArrayList<>();
         try {
             publish(problems);
@@ -177,6 +178,7 @@ public final class OneTapActionsCapability implements Capability, ActionList {
     @Override public void stop() {
         pinPort.detach(onPinConfirmed);
         actionPinPort.detach(onActionPin);
+        launcherCapturePort.detach(onLauncherCapture);
         ExecutorService w = worker;
         worker = null;
         if (w != null) w.shutdownNow();
@@ -235,6 +237,15 @@ public final class OneTapActionsCapability implements Capability, ActionList {
     private final java.util.LinkedHashMap<String, PendingPin> pendingPins = new java.util.LinkedHashMap<>();
     private final java.util.ArrayDeque<Long> acceptedAt = new java.util.ArrayDeque<>();
     volatile java.util.function.LongSupplier clock = System::currentTimeMillis;
+    private final net.kckern.daylight.api.PayloadPort launcherCapturePort = net.kckern.daylight.api.PayloadPort.named("launcher-capture");
+    private final net.kckern.daylight.api.PayloadPort.Handler onLauncherCapture = id -> {
+        Action action = catalog(null).find(id);
+        if (action != null && (action.kind == Kind.INPUT || ("meal-barcode".equals(id)
+                && action.kind == Kind.OPEN && "/health?capture=barcode".equals(action.value)))) {
+            return run(id).toString();
+        }
+        return LinkEffect.toast("This capture shortcut is unavailable. Add it again from your launcher.").toString();
+    };
     private final net.kckern.daylight.api.PayloadPort actionPinPort = net.kckern.daylight.api.PayloadPort.named("phone-pin-action");
     private final net.kckern.daylight.api.PayloadPort.Handler onActionPin = id -> {
         if (id.isEmpty()) {

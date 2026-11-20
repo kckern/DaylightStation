@@ -31,14 +31,16 @@ under "What the phone does not have".
 
 ## Phone home
 
-The Daylight app icon opens setup. Choose Health, Home, Lifelog, Media Browse or
+The Daylight app icon opens setup. Choose Health, Home, Lifelog, Media or
 Call to add its own shortcut to Android Home. Journal and Meal capture shortcuts
 open the recorder, text form or camera directly from Android Home. Full Journal
 needs a supported mobile destination before it can be offered.
 
 Choose **Play a playlist** to pick a Plex playlist and add its named 1×1 widget.
-Tap it from Android Home to start playback. Android media controls pause or stop
-playback. Existing Call widgets keep their assignments.
+Tap it from Android Home to start playback. If One UI does not place it from
+Daylight, add **Daylight playlist** in Android Widgets and tap the selected
+playlist. The phone widget picker offers a 1×1 playlist button. Android media controls pause or stop
+playback. Existing 1×1 Call widgets keep their assignments.
 
 ## What makes it a phone and not a kiosk
 
@@ -317,7 +319,7 @@ characters.
 |---|---|
 | `open:/path` | Opens that page of the site in the app |
 | `bookmark:<id>` | Opens a bookmark |
-| `input:<kind>:<destination id>` | A quick input: `input:voice:journal` opens the recorder (tapped again while one is being recorded, it stops and saves it), `input:text:journal-note` opens the text screen, `input:photo:meal-photo` opens the camera. In a build with no `quick-input` it is a stand-in that opens the app at `actions.memoFallbackPath` and `GET /actions` marks it `placeholder: true`. A per-device test fails a phone build where that is so, or where an action names a destination that is not configured or does not take its kind |
+| `input:<kind>:<destination id>` | A quick input: `input:voice:journal` opens the recorder (another tap shows the current draft), `input:text:journal-note` opens the text screen, `input:photo:meal-photo` opens the camera. In a build with no `quick-input` it is a stand-in that opens the app at `actions.memoFallbackPath` and `GET /actions` marks it `placeholder: true`. A per-device test fails a phone build where that is so, or where an action names a destination that is not configured or does not take its kind |
 | `memo:new` | The earlier name of `input:voice:journal`. Still accepted |
 | `media:<contentId>` | Plays that household item natively (`media-service`) |
 | `api:/api/...` | Sends an empty `POST` to that backend path and shows the outcome |
@@ -1247,7 +1249,7 @@ photo is still prepared.
 
 | Piece | Installed (shell half) | Payload | With no payload loaded |
 |---|---|---|---|
-| `RecordActivity` (not exported) | Asks for the microphone, starts the recorder, shows a clock and "Stop and save" | Opens it, on a keyed `input/voice` link, after checking the destination and that `identity.user` and `identity.device` are usable | Not reached through a link: the link activity waited for the payload. From the recording's notification it works as always |
+| `RecordActivity` (not exported) | Asks for the microphone, starts the recorder, shows a clock and "Send memo" and "Cancel recording" | Opens it, on a keyed `input/voice` link, after checking the destination and that `identity.user` and `identity.device` are usable | Not reached through a link: the link activity waited for the payload. From the recording's notification it works as always |
 | `MemoRecorderService` (not exported; foreground service of type `microphone`) | Records into `<files>/memos/inbox/`, to a file ending `.part` that is renamed when whole | Told over the `inputs` port | Recording does not need the payload. The file waits in the inbox for the payload's next scan |
 | `TextInputActivity` (not exported) | The field; writes `<files>/inputs/inbox/<id>.<destination>.txt` on Send | Opens it, on a keyed `input/text` link; told over the `inputs` port | As above: the file waits for the next scan |
 | `PhotoCaptureActivity` (not exported) and `InputFileProvider` (not exported) | Opens the camera app, prepares the photo, writes `<files>/inputs/inbox/<id>.<destination>.jpg` | Opens it, on a keyed `input/photo` link; told over the `inputs` port | As above |
@@ -1259,59 +1261,14 @@ not available in the installed app" and nothing else happens.
 
 ### Recording
 
-- What can start a recording is under "Who can start a capture" above.
-- The record screen's button, the notification's Stop, and the memo tile, widget
-  button or shortcut tapped again all stop and save. A second tap within 1.5
-  seconds of the start is taken as the same tap.
-- The screen acts on its intent once. When Android builds the screen again (the
-  phone is turned, the theme or the font size changes) it shows the recording
-  under way and does nothing else. Before, that rebuild was read as a second tap
-  and stopped the memo.
-- Hard cap: 30 minutes (and 24 MB), then it stops and saves.
-- A call, or another app taking audio focus, stops the recording and saves what
-  was said so far. So does an error from the recorder.
-- Discarded: a recording under one second, and an empty file.
-- A memo's id is `<start ms>-<8 hex>`. Files are in the app's private storage.
-
-**With notifications denied.** A foreground service's notification is then not
-shown in the shade, so there is no "Recording a voice memo" notice and no Stop
-action. The recording runs all the same. It is stopped from the record screen,
-or by tapping the memo tile, widget button or shortcut again; the record screen
-says so when notifications are off. The tile and the widget do not change their
-look while a memo is being recorded. Android's own list of running apps (the
-"active apps" entry in the shade on Android 13 and later) still names Daylight.
-
-### The container, and a recording that is cut off
-
-One recording is one memo, and a recording whose process is killed is still a
-memo. The container is chosen for that:
-
-| Android | Written as | When the app is killed mid-recording |
-|---|---|---|
-| 10 and later (API 29) | One Ogg/Opus file, `<id>.<destination>.ogg`, mono: 16 kHz at 32 kbit/s, and where the encoder refuses that, 48 kHz at 64 kbit/s. Sent as `audio/ogg` | Ogg is a stream of pages with its headers first, so the file plays up to where it stops. It becomes a finished memo, queued with its real start time, and is uploaded |
-| 8 and 9 (API 26 to 28) | MP4/AAC in five-minute segments (the recorder moves to the next file by size, `setNextOutputFile`), each a whole file `<id>-<nn>.<destination>@<segment start ms>.m4a`. Sent as `audio/mp4`, each segment a memo of its own with the id `<id>-<nn>` and its own start time | Every finished segment is already a memo. The segment being written has no index and cannot be played; it is kept aside. At most the last five minutes are lost |
-
-Why Ogg and not segments everywhere: the intake takes one body per memo id and
-allows 60 memos a user a day. A thirty-minute memo is one of the sixty as Ogg and
-six as five-minute segments. MP4 cannot be made to survive a kill at all (its
-index is written at the end), and Ogg/Opus is only written by `MediaRecorder`
-from Android 10, so the segments are the fallback and nothing more.
-
-Recovery is `MemoRecovery`, in the installed half, because only the recorder
-knows whether a recording is under way. It runs before each new recording and at
-each pass of the upload queue (at payload start, when a network comes up, and at
-least every fifteen minutes):
-
-- `<id>.<destination>.ogg.part` with no recorder writing it becomes
-  `<id>.<destination>.ogg` and is queued for that destination.
-- A cut-off `.m4a.part`, and an Ogg file under 4 KiB (headers and less than a
-  second), is moved to `<files>/memos/cutoff/` and kept. A notice says how many
-  recordings are kept there and that they are not sent.
-- **Nothing that holds audio is deleted.** Only an empty file is removed.
-
-Unproven on a phone: that a cut-off Ogg file from this phone's encoder is
-accepted and transcribed by the intake, that the recorder accepts 16 kHz Opus,
-and everything about the segment fallback, which needs a phone on Android 8 or 9.
+- Open a voice shortcut to record. Another tap returns to the current recording.
+- **Send memo** queues the audio for upload. The top-right **×** and Android Back
+  ask before discarding. The notification can reopen the recorder.
+- Rotation keeps the recording. Loss of audio focus, recorder failure, service
+  shutdown or the recording limit ends the draft without queuing it.
+- Phone drafts are stored apart from the upload inbox. A process kill leaves an
+  unsubmitted draft that the next recording clears. Audio uses Ogg/Opus on API
+  29 and later and MP4/AAC on API 26–28.
 
 ### The upload queue
 

@@ -24,6 +24,8 @@ export function BarcodeCapture({ open, onClose, onDecode, busy, bucket }) {
   const videoRef = useRef(null);
   const [manualUpc, setManualUpc] = useState('');
   const [error, setError] = useState(null);
+  const [detected, setDetected] = useState(false);
+  const audio = useRef(null);
   const callback = useRef(onDecode);
   callback.current = onDecode;
   const bucketRef = useRef(bucket);
@@ -33,16 +35,43 @@ export function BarcodeCapture({ open, onClose, onDecode, busy, bucket }) {
 
   const { cameraState, stop } = useBarcodeScanner({
     active: Boolean(open), videoRef, logger,
-    onDecode: (upc) => decodeRef.current?.(upc, bucketRef.current),
+    onDecode: (upc) => decodeRef.current?.(upc, bucketRef.current, true),
   });
 
-  const decode = async (upc, targetBucket) => {
+  const unlockSound = () => {
+    try {
+      if (!window.AudioContext) return;
+      audio.current ??= new window.AudioContext();
+      if (audio.current.state === 'suspended') void audio.current.resume().catch(() => {});
+    } catch { /* The scan confirmation still appears on screen. */ }
+  };
+
+  const beep = () => {
+    const context = audio.current;
+    if (context?.state !== 'running') return;
+    try {
+      const oscillator = context.createOscillator();
+      const volume = context.createGain();
+      const now = context.currentTime;
+      oscillator.frequency.value = 960;
+      volume.gain.setValueAtTime(0.07, now);
+      volume.gain.exponentialRampToValueAtTime(0.001, now + 0.12);
+      oscillator.connect(volume);
+      volume.connect(context.destination);
+      oscillator.start(now);
+      oscillator.stop(now + 0.12);
+    } catch { /* Audio feedback is optional. */ }
+  };
+
+  const decode = async (upc, targetBucket, fromCamera = false) => {
     if (submitted.current) return;
     submitted.current = true;
     stop();
     setError(null);
+    setDetected(true);
+    if (fromCamera) beep();
     try { await callback.current(upc, targetBucket); }
-    catch (err) { setError(err?.message || 'Lookup failed. Try again.'); submitted.current = false; setManualUpc(upc); }
+    catch (err) { setError(err?.message || 'Lookup failed. Try again.'); submitted.current = false; setDetected(false); setManualUpc(upc); }
   };
   decodeRef.current = decode;
 
@@ -51,16 +80,35 @@ export function BarcodeCapture({ open, onClose, onDecode, busy, bucket }) {
     submitted.current = false;
     setError(null);
     setManualUpc('');
+    setDetected(false);
+    return () => {
+      const context = audio.current;
+      audio.current = null;
+      if (context) void context.close().catch(() => {});
+    };
   }, [open]);
 
   return (
     <Sheet open={open} onClose={onClose} title="Scan barcode">
       {error ? <Text role="alert" c="red" size="sm">{error}</Text> : null}
       {cameraState !== 'denied' ? (
-        <video ref={videoRef} muted playsInline style={{ width: '100%', borderRadius: 9 }} />
+        <div onPointerDown={unlockSound} style={{ position: 'relative', overflow: 'hidden', borderRadius: 14,
+          background: '#12211b', aspectRatio: '4 / 3' }}>
+          <video ref={videoRef} muted playsInline
+            style={{ width: '100%', height: '100%', display: 'block', objectFit: 'cover' }} />
+          <div aria-hidden="true" style={{ position: 'absolute', inset: '35% 10%',
+            border: '2px solid white', borderRadius: 10, boxShadow: '0 0 0 100vmax #0006',
+            pointerEvents: 'none' }} />
+          <div aria-hidden="true" style={{ position: 'absolute', top: '50%', left: '10%',
+            right: '10%', height: 2, background: '#6deab0', pointerEvents: 'none' }} />
+        </div>
       ) : (
         <Text size="sm" c="dimmed">Camera unavailable — enter the barcode number instead.</Text>
       )}
+      <Text size="sm" c="dimmed" role="status">
+        {detected ? 'Barcode read. Looking up food…'
+          : cameraState === 'denied' ? '' : 'Center the barcode inside the guide.'}
+      </Text>
       <div className="health-barcode__manual">
         <TextInput size="sm" className="health-barcode__manual-input" inputMode="numeric" placeholder="UPC number"
           value={manualUpc} onChange={(e) => setManualUpc(e.target.value)}

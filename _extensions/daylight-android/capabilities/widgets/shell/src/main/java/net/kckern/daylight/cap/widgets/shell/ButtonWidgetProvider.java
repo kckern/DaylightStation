@@ -42,14 +42,31 @@ public class ButtonWidgetProvider extends AppWidgetProvider {
         android.appwidget.AppWidgetProviderInfo info = manager.getAppWidgetInfo(id);
         if (info == null || !new android.content.ComponentName(context, ButtonWidgetProvider.class).equals(info.provider)
                 || action == null || !action.startsWith("c:")) return;
-        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
-                .putString(ButtonFace.storeKey(id), action)
-                .putString(ButtonFace.storeKey(id) + ".label", intent.getStringExtra(EXTRA_PLAYLIST_LABEL)).commit();
+        choosePlaylist(context, id, action, intent.getStringExtra(EXTRA_PLAYLIST_LABEL));
         manager.updateAppWidget(id, render(context, id));
     }
 
     /** This module's own file: the payload writes the surface cache and never this. */
     private static final String PREFS = "daylight_buttons";
+
+    static void rememberPlaylist(Context context, String id, String title) {
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
+                .putString("selected_playlist", id).putString("selected_playlist_title", title).apply();
+    }
+
+    static String selectedPlaylist(Context context) {
+        return context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString("selected_playlist", "");
+    }
+
+    static String selectedPlaylistTitle(Context context) {
+        return context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString("selected_playlist_title", "Playlist");
+    }
+
+    static void choosePlaylist(Context context, int widgetId, String playlist, String label) {
+        String key = ButtonFace.storeKey(widgetId);
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
+                .putString(key, playlist).putString(key + ".label", label).commit();
+    }
 
     @Override
     public void onUpdate(Context context, AppWidgetManager manager, int[] widgetIds) {

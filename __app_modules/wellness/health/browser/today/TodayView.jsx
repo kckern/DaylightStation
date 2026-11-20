@@ -156,7 +156,7 @@ export function TodayView({ active = true, sidebarTarget, followUpTarget = null,
   };
   const mealUndoOperation = useRef(null);   // bucketId | null — F5 renders the combobox here
   const [editingRow, setEditingRow] = useState(null); // row | null — F6 renders the edit sheet
-  const [captureMode, setCaptureMode] = useState(null); // 'barcode' | null
+  const [captureMode, setCaptureMode] = useState(() => searchParams.get("capture") === "barcode" ? "barcode" : null); // 'barcode' | null
   // bucketId | null — which meal's add-row barcode button opened the
   // sheet (null = an unlabeled launch). Forwarded to BarcodeCapture so it
   // can hand the same id back on decode.
