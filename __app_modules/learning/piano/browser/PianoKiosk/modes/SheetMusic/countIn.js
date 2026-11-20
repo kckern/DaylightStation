@@ -138,6 +138,27 @@ export function countdownPresentation({ clicks, elapsedMs, leadInMs }) {
 }
 
 /**
+ * THE LEARN PASSAGE COUNT: up, with the clicks, and the cue BEFORE the beat.
+ *
+ * The countdown above counts 4-3-2-1 while the music counts 1-2-3-4, and its
+ * PLAY lands exactly when the first note is due — a beginner who reads PLAY and
+ * then plays is a beat late every time (2026-11-20: a steady take one beat late
+ * scored 0/4). On Learn passages the numerals follow the clicks, and the last
+ * click carries "next click: play" so the instruction arrives before the beat.
+ *
+ * @returns {{count:number, clicks:number, last:boolean}|null} count 0 = armed or
+ *   pre-roll (no click has sounded yet); 1..clicks = the click now sounding;
+ *   null once the first beat arrives (nothing to show, no PLAY).
+ */
+export function countUpPresentation({ clicks, elapsedMs, leadInMs }) {
+  if (!(clicks > 0) || !(leadInMs > 0)) return null;
+  if (!Number.isFinite(elapsedMs) || elapsedMs < 0) return { count: 0, clicks, last: false };
+  if (elapsedMs >= leadInMs) return null;
+  const count = Math.min(clicks, Math.floor(elapsedMs / (leadInMs / clicks)) + 1);
+  return { count, clicks, last: count === clicks };
+}
+
+/**
  * HOW FAST THE ASK ACTUALLY IS, relative to the clicks the child is about to
  * hear — because "play at that speed" is not always true and, when it is not,
  * it is the only instruction they get.
@@ -189,4 +210,4 @@ export function countInSentence(clicks, pace) {
   return `${lead}, then play at that speed.`;
 }
 
-export default { countInPlan, exerciseCountInPlan, countdownPresentation, askPulseQuarters, askPace, countInSentence };
+export default { countInPlan, exerciseCountInPlan, countdownPresentation, countUpPresentation, askPulseQuarters, askPace, countInSentence };

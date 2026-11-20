@@ -13,13 +13,18 @@ import { getLogger } from '../../../../../frontend/src/lib/logging/Logger.js';
  * @param {function} options.onFpsUpdate - Optional callback invoked with current FPS value
  * @param {number} options.telemetryIntervalMs - How often to emit telemetry (default: 5000ms)
  * @param {Object} options.mediaContext - Optional context for telemetry (title, show, etc.)
+ * @param {Function} [options.getMediaEl] - Returns the media element. When it is paused or
+ *   ended no telemetry is emitted: the player's own paused flag can read false while the
+ *   element sits at 0:00 behind "Tap to Retry", and the deploy gate reads every
+ *   `playback.render_fps` line as somebody watching (office screen, 2026-11-20, hours).
  * @returns {number|null} Current render FPS (null if not yet measured or disabled)
  */
 export function useRenderFpsMonitor({
   enabled = true,
   onFpsUpdate,
   telemetryIntervalMs = 5000,
-  mediaContext = {}
+  mediaContext = {},
+  getMediaEl = null
 } = {}) {
   const [currentFps, setCurrentFps] = useState(null);
 
@@ -30,6 +35,8 @@ export function useRenderFpsMonitor({
   const enabledRef = useRef(enabled);
   const onFpsUpdateRef = useRef(onFpsUpdate);
   const mediaContextRef = useRef(mediaContext);
+  const getMediaElRef = useRef(getMediaEl);
+  getMediaElRef.current = getMediaEl;
 
   // Keep refs in sync with props
   useEffect(() => {
@@ -72,6 +79,8 @@ export function useRenderFpsMonitor({
    * Emit telemetry with current render FPS
    */
   const emitTelemetry = useCallback((fps) => {
+    const el = typeof getMediaElRef.current === 'function' ? getMediaElRef.current() : null;
+    if (el && (el.paused || el.ended)) return;
     const logger = getLogger();
     const context = mediaContextRef.current || {};
 

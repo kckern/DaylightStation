@@ -47,7 +47,9 @@ import { useMetronomeClick } from '../SheetMusic/useMetronomeClick.js';
 import { resolveClickLead, logClickAnchored } from '../SheetMusic/clickLead.js';
 import { audioContext } from '../SheetMusic/click.js';
 import CountInOverlay from '../SheetMusic/CountInOverlay.jsx';
-import { exerciseCountInPlan, countdownPresentation, askPace, countInSentence } from '../SheetMusic/countIn.js';
+import CountUpOverlay from '../SheetMusic/CountUpOverlay.jsx';
+import { exerciseCountInPlan, countdownPresentation, countUpPresentation, askPace, countInSentence } from '../SheetMusic/countIn.js';
+import { detectEntryShift, lateEntryWaitUntil, entryShiftSentence, entryShiftReason } from '../../../performance/entryShift.js';
 import Icon from '../../../ui/icons/Icon.jsx';
 import './Exercises.scss';
 
@@ -68,6 +70,18 @@ const EMPTY_SNAPSHOT = Object.freeze({ status: 'prepared', result: null, musical
  */
 /** Scheduler headroom before the first anchored click (tick 100 ms + margin). */
 export const CLICK_PREROLL_MS = 150;
+/**
+ * A LEARN PASSAGE'S START IS SEPARATED FROM THE KEY THAT ARMED IT.
+ *
+ * The first click used to sound ~150 ms after the arming key, under the child's
+ * own key press, so the count a beginner heard began on "two" (2026-11-20). On a
+ * cued Learn passage the arming key puts the run in an ARMED state: the count-in
+ * starts once every key held at arming is released, or ARM_RELEASE_MS after
+ * arming, whichever is first, and then waits min(one click, START_GAP_MAX_MS)
+ * before the first click. Onsets while armed are ignored and do not re-arm.
+ */
+export const ARM_RELEASE_MS = 1000;
+export const START_GAP_MAX_MS = 600;
 const DEFAULT_POLICY = Object.freeze({
   matchWindowMs: 220, missWindowMs: 420, timingToleranceMs: 80, timingWindowMs: 320,
   windowFraction: 0.4, windowMinMs: 80, windowMaxMs: 400,
@@ -137,6 +151,14 @@ const HINT_REVEAL_MS = 12000;
  * only then does the host hear about it.
  */
 export const RESOLVE_HOLD_MS = 700;
+/**
+ * How long a failed take's result card must have been on screen before a key
+ * takes its action. The host's action (a slower tempo, one hand, fewer bars)
+ * arrives with the card, when the hold above has fired; a child who plays on
+ * past the last note would otherwise be switched onto the help step by a note
+ * that was never an answer to the card. Counted from the hold firing.
+ */
+export const RESULT_ARM_MS = 700;
 /** The swell on the confirmed notes lasts this long, then the notes settle. */
 const RESOLVE_PULSE_MS = 280;
 
@@ -376,6 +398,13 @@ export function runPassed(result, { challenge = false, passScore = null } = {}) 
  *   player on a dead end. Both callbacks are optional and additive: omit them
  *   and the surface behaves exactly as it did before.
  * @param {'default'|'learn-lab'} [props.surface='default'] Host presentation.
+ * @param {'inline'|'docked'} [props.resultPresentation='inline'] Where the
+ *   result card sits: in the rail row, or docked over the rail and keyboard
+ *   rows (Exercises.scss `.is-docked`), so the score and its verdict marks
+ *   stay in view and the run's rows never change when a take ends. 'docked'
+ *   is sized from the row variables only the `learn-lab` surface defines
+ *   (`--run-rail-row` and friends); on other surfaces it falls back to fixed
+ *   heights, so use it with `surface="learn-lab"`.
  * @param {'timed'|'always'} [props.scoreCursorPolicy='timed'] Whether a score
  *   passage draws its position cursor only for clocked work or for every run.
  * @param {number|null} [props.incompleteAfterMs] Free practice only: end the take
@@ -423,6 +452,17 @@ export default function ExerciseRun({ instance, score, requirement = null, pract
   const [lastWrong, setLastWrong] = useState(null);
   const [clockNow, setClockNow] = useState(() => Date.now());
   const countdownHeldRef = useRef(new Set());
+  // A cued Learn passage between its arming key and its count-in (see
+  // ARM_RELEASE_MS): `{ at, keys }`, the time and the keys down at arming.
+  const [armed, setArmed] = useState(null);
+  const armedRef = useRef(null);
+  // THE RAW ONSET LOG of one cued Learn take, independent of the engine:
+  // `{ midi, t, phase }` on the attempt's clock (the MIDI timestamp), from the
+  // arming key until the result shows, count-in onsets included and flagged by
+  // `phase`. It is what a whole-beat shifted entry is named from.
+  const onsetLogRef = useRef([]);
+  const onsetLogOpenRef = useRef(true);
+  const [entryShift, setEntryShift] = useState(null);
   const [unrunnable, setUnrunnable] = useState(null);
   /**
    * WHAT THE DRILL IS CALLED — the run's title, when there is a drill to name.
@@ -669,6 +709,11 @@ export default function ExerciseRun({ instance, score, requirement = null, pract
     });
     setLastWrong(null);
     countdownHeldRef.current.clear();
+    armedRef.current = null;
+    setArmed(null);
+    onsetLogRef.current = [];
+    onsetLogOpenRef.current = true;
+    setEntryShift(null);
     setClockNow(Date.now());
     // A fresh attempt is a fresh stall clock and a fresh pre-pulse budget:
     // Retry/Again must give a child the same run they were given the first
@@ -698,7 +743,43 @@ export default function ExerciseRun({ instance, score, requirement = null, pract
     else runtime.resume({ delayMs: resumeDelayMs, held: activeNotesRef.current });
   }, [paused, resumeDelayMs, runtime]);
 
+  const held = useMemo(() => [...activeNotes.keys()].sort((a, b) => a - b), [activeNotes]);
+  const heldKey = held.join(',');
+  const clickBpm = Number(runRequirement?.gates?.pace?.target_bpm ?? instance?.tempo?.start_bpm);
+  // This fallback sizes the lead-in only. Visual bar accents use the compiled
+  // measure map and never infer common time when musical metadata is absent.
+  const beatsPerMeasure = useMemo(() => {
+    const beats = Number(String(instance?.meter ?? '').split('/')[0]);
+    return Number.isInteger(beats) && beats > 0 ? beats : 4;
+  }, [instance?.meter]);
+  /**
+   * Count at most four pulses on the grid the attempt is graded against.
+   * The lead-in ends on that selected pulse, so the anchored metronome can
+   * continue across the grading boundary without changing phase or rate.
+   */
+  const countIn = useMemo(() => {
+    // The attempt's own tempo map is the tempo the engine GRADES against, and
+    // it is not always `clickBpm`: a single-event cued instance carrying no
+    // tempo is given the engine's default. Counting a child in at one tempo and
+    // marking them against another is the one thing this must not do.
+    const graded = Number(snapshot.expectation?.tempoMap?.[0]?.bpm);
+    const bpm = graded > 0 ? graded : clickBpm;
+    if (!(bpm > 0)) return null;
+    const plan = exerciseCountInPlan({
+      beatsPerMeasure,
+      gradedBpm: bpm,
+      onsetQuarters: (snapshot.expectation?.events ?? []).map((event) => event.onsetQuarter),
+    });
+    return plan ? { ...plan, gradedBpm: bpm } : null;
+  }, [beatsPerMeasure, clickBpm, snapshot.expectation]);
+
   const timed = snapshot.matcher === 'timed';
+  /**
+   * A CUED LEARN PASSAGE: the segment Learn run (`surface="learn-lab"` on score
+   * material) in cued mode. Only it gets the armed start, the count-up and the
+   * shifted-entry naming; every other caller keeps the behaviour it had.
+   */
+  const learnCued = surface === 'learn-lab' && Boolean(score) && snapshot.mode === 'cued';
   /**
    * THE RECORD, for every renderer of a timed run. The staff used to judge for
    * itself — green whenever the held key matched the clock cursor's note, and
@@ -715,16 +796,23 @@ export default function ExerciseRun({ instance, score, requirement = null, pract
   // The matcher may finish early. Its result must not end the musical display
   // before the authored time has elapsed.
   const awaitingTimeline = timed && snapshot.status === 'completed' && !clockPosition.timelineDone;
-  const timeline = awaitingTimeline ? { ...clockPosition, phase: 'running' } : clockPosition;
-  const resultReady = !awaitingTimeline;
+  // A LATE ENTRY'S LAST NOTES. When the take's first two onsets already sit a
+  // whole beat or two late, the result waits (at most two beats after the last
+  // target) for the note that would otherwise fall after it, so a shifted take
+  // can be named with its last note in the log. Otherwise timing is unchanged.
+  const lateEntryWait = learnCued && timed && snapshot.status === 'completed' && !awaitingTimeline && countIn
+    ? lateEntryWaitUntil(snapshot, onsetLogRef.current, { beatMs: countIn.periodMs }) : null;
+  const awaitingEntry = lateEntryWait != null && presentationNow < lateEntryWait;
+  const timeline = awaitingTimeline || awaitingEntry ? { ...clockPosition, phase: 'running' } : clockPosition;
+  const resultReady = !awaitingTimeline && !awaitingEntry;
   const resuming = snapshot.status === 'running'
     && Number(snapshot.resumingUntil) > Math.max(clockNow, Date.now());
   useEffect(() => {
-    if (snapshot.paused || ((!timed || (snapshot.status !== 'running' && !awaitingTimeline)) && !resuming)) return undefined;
+    if (snapshot.paused || ((!timed || (snapshot.status !== 'running' && !awaitingTimeline && !awaitingEntry)) && !resuming)) return undefined;
     setClockNow(Date.now());
     const timer = globalThis.setInterval(() => setClockNow(Date.now()), 50);
     return () => globalThis.clearInterval(timer);
-  }, [runtime, timed, snapshot.status, snapshot.paused, awaitingTimeline, resuming]);
+  }, [runtime, timed, snapshot.status, snapshot.paused, awaitingTimeline, awaitingEntry, resuming]);
   const countingDown = timeline?.phase === 'countdown';
   const feedbackNotes = timed
     ? timeline.phase !== 'running' ? NO_FEEDBACK_NOTES
@@ -778,6 +866,9 @@ export default function ExerciseRun({ instance, score, requirement = null, pract
   onPassedRef.current = onPassed;
   onFailedRef.current = onFailed;
   const [resolveHold, setResolveHold] = useState(null);
+  // The hold has fired and the host has been told (and has recorded the take).
+  // A local result card's key waits for this; see RESULT_ARM_MS.
+  const [resolveFired, setResolveFired] = useState(false);
   const resolveHeldRef = useRef(false);
   const resolveTimersRef = useRef([]);
   const cancelResolveHold = useCallback(() => {
@@ -785,6 +876,7 @@ export default function ExerciseRun({ instance, score, requirement = null, pract
     resolveTimersRef.current = [];
     resolveHeldRef.current = false;
     setResolveHold(null);
+    setResolveFired(false);
   }, []);
   const holdResolve = useCallback((outcome, fire, active) => {
     if (!active) return;
@@ -793,7 +885,7 @@ export default function ExerciseRun({ instance, score, requirement = null, pract
     logger.info('piano.exercise-resolve-held', { ...traceFieldsRef.current, outcome, holdMs: RESOLVE_HOLD_MS });
     resolveTimersRef.current = [
       globalThis.setTimeout(() => setResolveHold((hold) => (hold ? { ...hold, settled: true } : hold)), RESOLVE_PULSE_MS),
-      globalThis.setTimeout(() => { resolveHeldRef.current = false; fire(); }, RESOLVE_HOLD_MS),
+      globalThis.setTimeout(() => { resolveHeldRef.current = false; fire(); setResolveFired(true); }, RESOLVE_HOLD_MS),
     ];
   }, [logger]);
   useEffect(() => () => {
@@ -814,12 +906,43 @@ export default function ExerciseRun({ instance, score, requirement = null, pract
     // its own real one — leaving a genuinely-played run with nowhere to go.
     // Bail out whenever the runtime has already moved on from this snapshot.
     if (runtimeRef.current?.getStoreSnapshot?.() !== snapshot) return;
-    persist(snapshot.result);
     // A JUDGED attempt: completed, or stalled after real input. An `aborted`
-    // one is persisted above and reported nowhere — there is nothing in it to
+    // one is persisted below and reported nowhere — there is nothing in it to
     // judge, and a host counting failures must not count a walk-away.
-    if (!JUDGED_STATUSES.has(snapshot.result.status)) return;
-    const passed = runPassed(snapshot.result, { challenge, passScore: runRequirement?.passScore });
+    const judged = JUDGED_STATUSES.has(snapshot.result.status);
+    const passed = judged && runPassed(snapshot.result, { challenge, passScore: runRequirement?.passScore });
+    // THE SHIFTED ENTRY. A failed cued Learn take is tested against the
+    // expectation shifted by whole beats (performance/entryShift.js); a steady
+    // take one beat late is named rather than reported as "timing". The log
+    // closes here: the result is what it is judged at. Pass/fail and every
+    // score stay the engine's.
+    onsetLogOpenRef.current = false;
+    const shiftTested = judged && learnCued && timed && !passed && Boolean(countIn);
+    const onsetLog = onsetLogRef.current;
+    const shift = shiftTested ? detectEntryShift(snapshot, onsetLog, {
+      beatMs: countIn.periodMs,
+      from: Math.min(onsetLog[0]?.t ?? Infinity, snapshot.startedAt ?? Infinity),
+      to: Date.now(),
+    }) : null;
+    const entryShiftBeats = shiftTested ? shift?.beats ?? 0 : null;
+    if (shiftTested) {
+      setEntryShift(shift);
+      // The take as played, for reading a timing failure from the log alone:
+      // each onset as [midi, ms from the first count-in click, phase].
+      traceEvent('piano.exercise-onset-log', {
+        id: subject?.id ?? null, entryShiftBeats, reason: shift ? entryShiftReason(shift.beats) : null,
+        matched: shift?.matched ?? null, possible: shift?.possible ?? null, unshiftedShare: shift?.unshiftedShare ?? null,
+        beatMs: Math.round(countIn.periodMs), leadInMs: snapshot.leadInMs ?? 0,
+        onsets: onsetLog.slice(0, 64).map((onset) => [onset.midi, Math.round(onset.t - snapshot.startedAt), onset.phase]),
+      });
+    }
+    // Tested: `entryShift` rides on the result, `{ beats: 0 }` when none was
+    // named. Untested (passed, untimed, outside Learn): absent. Consumers read
+    // absent as null ("not tested") and 0 as "tested, none".
+    const entryShiftEvidence = !shiftTested ? {}
+      : { entryShift: shift ? { beats: shift.beats, matched: shift.matched, possible: shift.possible } : { beats: 0 } };
+    persist({ ...snapshot.result, ...entryShiftEvidence });
+    if (!judged) return;
     // `traceEvent`, not a bare `logger.info`: this is the event that says how a
     // run ENDED, and without the trace fields it said so about nobody. See the
     // note in `persist`.
@@ -853,6 +976,9 @@ export default function ExerciseRun({ instance, score, requirement = null, pract
         windowMs: first >= 0 ? Math.round(timedWindowMs(snapshot, first)) : null,
         placement: roundScore(snapshot.result.criteria?.placement),
         tempoPercent: snapshot.policy?.tempoPercent ?? 100,
+        // A whole-beat shifted entry on a failed cued Learn take: +1 one beat
+        // late, −1 one beat early, 0 none found; null when not tested.
+        entryShiftBeats,
       });
     }
     // A judged attempt that did not clear its bar. `onPassed` stays
@@ -862,10 +988,10 @@ export default function ExerciseRun({ instance, score, requirement = null, pract
     // happened. Reported AFTER the resolve hold, so the last note's verdict is
     // on screen first.
     if (!passed) {
-      const result = { ...snapshot.result, assessmentId: assessmentIdRef.current };
+      const result = { ...snapshot.result, assessmentId: assessmentIdRef.current, ...entryShiftEvidence };
       holdResolve('failed', () => onFailedRef.current?.(result), Boolean(onFailedRef.current));
     }
-  }, [challenge, traceEvent, persist, resultReady, runRequirement, snapshot, subject, holdResolve]);
+  }, [challenge, traceEvent, persist, resultReady, runRequirement, snapshot, subject, holdResolve, learnCued, timed, countIn]);
 
   // Completion belongs to the host whenever it supplied a callback. Every
   // host advances automatically; this piano surface has no pointer controls.
@@ -878,6 +1004,22 @@ export default function ExerciseRun({ instance, score, requirement = null, pract
     ? Boolean(onPassed)
     : Boolean(onFailed) && failurePresentation !== 'local';
   const localRetry = Boolean(judgedResult && !hostOwnsResult);
+  // A local result card whose take the host is still to be told about (the
+  // failure hold above). Until the hold fires, and for RESULT_ARM_MS after,
+  // the card takes no key: see RESULT_ARM_MS. A run with no `onFailed` has no
+  // hold and keeps its immediate piano retry.
+  const resultHoldBacked = localRetry && !resultPassed && Boolean(onFailed);
+  const resultSettled = !resultHoldBacked || resolveFired;
+  const [resultArmedRaw, setResultArmed] = useState(false);
+  const resultArmed = !resultHoldBacked || (resolveFired && resultArmedRaw);
+  useEffect(() => {
+    if (!resultHoldBacked || !resolveFired) { setResultArmed(false); return undefined; }
+    const timer = globalThis.setTimeout(() => {
+      setResultArmed(true);
+      logger.info('piano.exercise-result-armed', { ...traceFieldsRef.current, armMs: RESULT_ARM_MS, hostAction: Boolean(onResultContinueRef.current) });
+    }, RESULT_ARM_MS);
+    return () => globalThis.clearTimeout(timer);
+  }, [resultHoldBacked, resolveFired, logger]);
   useEffect(() => {
     passTakenRef.current = false;
     cancelResolveHold();
@@ -892,7 +1034,7 @@ export default function ExerciseRun({ instance, score, requirement = null, pract
   }, [judgedResult, resultPassed, onPassed, logger, holdResolve]);
   const { exitHeld } = usePianoExitGesture({
     activeNotes, keyboard: keyboardConfig, onExit, enabled: Boolean(onExit) || localRetry,
-    continueEnabled: localRetry, resetKey: runtime,
+    continueEnabled: localRetry && resultArmed, resetKey: runtime,
     onContinue: () => {
       // A host that offers a next step (a slower tempo, one hand, fewer bars)
       // gets the key press for it, so the child never has to reach for the
@@ -1017,34 +1159,6 @@ export default function ExerciseRun({ instance, score, requirement = null, pract
     logger.warn('piano.exercise-tier-invalid', { tier, type: typeof tier });
   }, [logger, tier, tierUsable]);
 
-  const held = useMemo(() => [...activeNotes.keys()].sort((a, b) => a - b), [activeNotes]);
-  const clickBpm = Number(runRequirement?.gates?.pace?.target_bpm ?? instance?.tempo?.start_bpm);
-  // This fallback sizes the lead-in only. Visual bar accents use the compiled
-  // measure map and never infer common time when musical metadata is absent.
-  const beatsPerMeasure = useMemo(() => {
-    const beats = Number(String(instance?.meter ?? '').split('/')[0]);
-    return Number.isInteger(beats) && beats > 0 ? beats : 4;
-  }, [instance?.meter]);
-  /**
-   * Count at most four pulses on the grid the attempt is graded against.
-   * The lead-in ends on that selected pulse, so the anchored metronome can
-   * continue across the grading boundary without changing phase or rate.
-   */
-  const countIn = useMemo(() => {
-    // The attempt's own tempo map is the tempo the engine GRADES against, and
-    // it is not always `clickBpm`: a single-event cued instance carrying no
-    // tempo is given the engine's default. Counting a child in at one tempo and
-    // marking them against another is the one thing this must not do.
-    const graded = Number(snapshot.expectation?.tempoMap?.[0]?.bpm);
-    const bpm = graded > 0 ? graded : clickBpm;
-    if (!(bpm > 0)) return null;
-    const plan = exerciseCountInPlan({
-      beatsPerMeasure,
-      gradedBpm: bpm,
-      onsetQuarters: (snapshot.expectation?.events ?? []).map((event) => event.onsetQuarter),
-    });
-    return plan ? { ...plan, gradedBpm: bpm } : null;
-  }, [beatsPerMeasure, clickBpm, snapshot.expectation]);
 
   /**
    * WHAT THE CLICKS ACTUALLY MEAN for this ask.
@@ -1072,6 +1186,13 @@ export default function ExerciseRun({ instance, score, requirement = null, pract
   }) : null;
   // Null during the pre-roll (the first anchored click has not sounded yet).
   const countInBeat = countingDown && countdownElapsedMs >= 0 ? countdown?.remaining ?? null : null;
+  // A cued Learn passage counts UP with the clicks instead (countUpPresentation):
+  // its armed form from the arming key until the first click, then 1..N, the
+  // last carrying "next click: play". Nothing on the first beat.
+  const countUp = learnCued && countIn
+    ? armed ? { count: 0, clicks: countIn.clicks, last: false }
+      : countingDown ? countUpPresentation({ clicks: countIn.clicks, elapsedMs: countdownElapsedMs, leadInMs: countIn.leadInMs }) : null
+    : null;
 
   // Resolved once per config: see the anchored click below.
   const clickLead = useMemo(() => resolveClickLead(kioskConfig, audioContext()), [kioskConfig]);
@@ -1083,7 +1204,7 @@ export default function ExerciseRun({ instance, score, requirement = null, pract
    * shifted), which is exactly why the metronome below needs no special case:
    * its clicks and the first played beat are one uninterrupted grid.
    */
-  const startCountIn = useCallback(() => {
+  const startCountIn = useCallback(({ gapMs = 0, reason = 'arming-key', armedAt = null } = {}) => {
     if (!runtime) return;
     // No usable tempo to count at — start anyway. A key that does nothing is a
     // dead surface, and a child cannot tell that apart from a broken piano.
@@ -1092,21 +1213,70 @@ export default function ExerciseRun({ instance, score, requirement = null, pract
     // the first click would already be in the past and be skipped, and a child
     // counting "one" would hear the count begin on "two". So the grading clock
     // starts a pre-roll later: the lead plus room for the scheduler's tick.
-    const prerollMs = Math.max(0, clickLead.leadMs) + CLICK_PREROLL_MS;
+    // A Learn passage's armed start asks for a longer gap before the first
+    // click (see ARM_RELEASE_MS); the pre-roll is still the floor.
+    const prerollMs = Math.max(gapMs, Math.max(0, clickLead.leadMs) + CLICK_PREROLL_MS);
     runtime.start({ time: Date.now() + prerollMs, leadInMs: countIn?.leadInMs ?? 0, clock: 'date-now' });
     countdownHeldRef.current = new Set(activeNotesRef.current.keys());
     setClockNow(Date.now());
     traceEvent('piano.exercise-countdown-started', {
       ...timedRunPresentation(runtime.getSnapshot(), Date.now()),
       pulseCount: countIn?.clicks ?? 0, pulseBpm: countIn?.pulseBpm ?? null,
-      leadInMs: countIn?.leadInMs ?? 0,
-      ignored: [...activeNotesRef.current.keys()], reason: 'arming-key',
+      leadInMs: countIn?.leadInMs ?? 0, prerollMs,
+      armedAt, waitedMs: Number.isFinite(armedAt) ? Date.now() - armedAt : null,
+      ignored: [...activeNotesRef.current.keys()], reason,
     });
   }, [clickLead, countIn, runtime, traceEvent]);
 
+  /**
+   * `startOnReady` (no live caller today) starts the count-in as soon as the
+   * run is ready, with no arming key — and so with no armed state either, even
+   * on a Learn passage: there is no key press for the first click to hide under.
+   */
   useEffect(() => {
     if (startOnReady && runtime && snapshot.status === 'prepared' && snapshot.mode === 'cued' && !snapshot.paused) startCountIn();
   }, [startOnReady, runtime, snapshot.status, snapshot.mode, snapshot.paused, startCountIn]);
+
+  /**
+   * THE ARMED STATE (cued Learn passages only; see ARM_RELEASE_MS). The count-in
+   * starts when every key held at arming is up, or a second after arming, then
+   * waits min(one click, START_GAP_MAX_MS) before its first click. A pause, or
+   * a runtime that moved on, drops the arming: the next key arms afresh.
+   */
+  const armStart = useCallback((onsets) => {
+    // The render can lag the runtime: at the one-second timeout the count-in
+    // has started while this commit still reads `prepared`. Never arm twice.
+    if (runtime?.getSnapshot().status !== 'prepared') return;
+    const at = Date.now();
+    const keys = [...activeNotesRef.current.keys()];
+    armedRef.current = { at, keys };
+    setArmed(armedRef.current);
+    traceEvent('piano.exercise-armed', { at, held: keys, onsets, releaseWaitMs: ARM_RELEASE_MS,
+      gapMs: Math.round(Math.min(countIn?.periodMs ?? START_GAP_MAX_MS, START_GAP_MAX_MS)) });
+  }, [countIn, runtime, traceEvent]);
+  useEffect(() => {
+    if (!armed) return undefined;
+    if (snapshot.paused || snapshot.status !== 'prepared') {
+      // A dropped arming leaves nothing behind: its onsets would otherwise
+      // widen the logged span of the take the NEXT key arms. (An arming that
+      // just began its count-in has cleared `armedRef` already; its render can
+      // still carry `armed` for one commit, and that log is the take's own.)
+      if (armedRef.current) onsetLogRef.current = [];
+      armedRef.current = null;
+      setArmed(null);
+      return undefined;
+    }
+    const begin = (reason) => {
+      armedRef.current = null;
+      setArmed(null);
+      startCountIn({ gapMs: Math.min(countIn?.periodMs ?? START_GAP_MAX_MS, START_GAP_MAX_MS), reason, armedAt: armed.at });
+    };
+    if (!armed.keys.some((midi) => held.includes(midi))) { begin('armed-released'); return undefined; }
+    const timer = globalThis.setTimeout(() => begin('armed-timeout'), Math.max(0, armed.at + ARM_RELEASE_MS - Date.now()));
+    return () => globalThis.clearTimeout(timer);
+  // `held` is read through `heldKey`, its stable signature.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [armed, heldKey, snapshot.paused, snapshot.status, countIn, startCountIn]);
 
   // Tell the host once per take that the child has begun it (the arming note
   // or key), so a host can tell a take that was opened from one that was played.
@@ -1168,7 +1338,9 @@ export default function ExerciseRun({ instance, score, requirement = null, pract
     anchorMs: clickAnchorMs,
     gain: clickGain,
     leadMs: clickLead.leadMs,
-    enabled: !snapshot.paused && (((snapshot.status === 'running' || awaitingTimeline) && ['metronome', 'cued'].includes(snapshot.mode))
+    // The click keeps going while a late entry's last note is awaited: the child
+    // is still playing to it.
+    enabled: !snapshot.paused && (((snapshot.status === 'running' || awaitingTimeline || awaitingEntry) && ['metronome', 'cued'].includes(snapshot.mode))
       || (prePulse && !prePulseStopped)),
     // The tempo the attempt is GRADED at, which is not always `clickBpm`: a
     // cued rung carries no `gates.pace`, so a tempo-less single-event instance
@@ -1182,7 +1354,6 @@ export default function ExerciseRun({ instance, score, requirement = null, pract
       ? (countIn?.gradedBpm > 0 ? timeline.bpm * (countIn.pulseBpm / countIn.gradedBpm) : timeline.bpm)
       : countIn?.pulseBpm ?? clickBpm,
   });
-  const heldKey = held.join(',');
   useEffect(() => {
     if (!runtime) return;
     const previousHeld = previousNotesRef.current;
@@ -1200,6 +1371,18 @@ export default function ExerciseRun({ instance, score, requirement = null, pract
       time,
     });
     for (const midi of releases) countdownHeldRef.current.delete(midi);
+    // The raw onset log of a cued Learn take (see `onsetLogRef`): every onset,
+    // whatever the engine makes of it, at its own MIDI time.
+    if (learnCued && onsetLogOpenRef.current && onsets.length) {
+      const logState = runtime.getSnapshot();
+      const logPhase = logState.status === 'prepared' ? 'armed'
+        : logState.status !== 'running' ? 'after'
+          : timedRunPresentation(logState, time).phase === 'countdown' ? 'countdown' : 'running';
+      for (const midi of onsets) {
+        const stamped = activeNotes.get(midi)?.timestamp;
+        onsetLogRef.current.push({ midi, t: Number.isFinite(stamped) ? stamped : time, phase: logPhase });
+      }
+    }
     if (exitHeld) return;
     // Resolve hold: the attempt is decided; a key still down is not an answer.
     if (resolveHeldRef.current) return;
@@ -1247,7 +1430,17 @@ export default function ExerciseRun({ instance, score, requirement = null, pract
     if (onsets.length) setNoteOnTick((tick) => tick + 1);
     if (snapshot.status === 'prepared') {
       if (!onsets.length) return;
-      if (snapshot.mode === 'cued') { startCountIn(); return; }
+      if (snapshot.mode === 'cued') {
+        if (!learnCued) { startCountIn(); return; }
+        // Armed already: the count-in is on its way. A key now is a child
+        // settling their hands — ignored, and it does not re-arm.
+        if (armedRef.current) {
+          traceEvent('piano.exercise-input-ignored', { displayedCursor: -1, ignored: onsets, reason: 'armed', held });
+          return;
+        }
+        armStart(onsets);
+        return;
+      }
       // A note this ask did not want is a child finding their hands, not a
       // wrong answer: it starts nothing and is never counted against them.
       const arming = onsets.find((midi) => armingPitches.has(midi));
@@ -1298,7 +1491,7 @@ export default function ExerciseRun({ instance, score, requirement = null, pract
       return;
     }
     for (const midi of graded) runtime.observe({ midi, time: onsetTime(midi), clock: 'date-now' });
-  }, [activeNotes, armingPitches, exitHeld, held, heldKey, runtime, snapshot.cursor, snapshot.matcher, snapshot.mode, snapshot.status, startCountIn, traceEvent]);
+  }, [activeNotes, armingPitches, armStart, exitHeld, held, heldKey, learnCued, runtime, snapshot.cursor, snapshot.matcher, snapshot.mode, snapshot.status, startCountIn, traceEvent]);
 
   useEffect(() => () => {
     // NOTHING TO TEAR DOWN IS NOT A TEARDOWN. This cleanup re-runs whenever
@@ -1424,8 +1617,10 @@ export default function ExerciseRun({ instance, score, requirement = null, pract
   const passed = runPassed(result, { challenge, passScore: runRequirement?.passScore });
   // A timed run that failed on TIMING says so, in the child's terms. Anything
   // else (a missing or wrong note) keeps the copy below.
+  // A named whole-beat shifted entry (cued Learn passages) says which way the
+  // start was off and what to do about it, instead of the generic timing line.
   const timingCopy = timed && result && !passed
-    ? timingSentence(timedRunSummary(result, snapshot), expected.length)
+    ? (entryShift ? entryShiftSentence(entryShift.beats) : null) ?? timingSentence(timedRunSummary(result, snapshot), expected.length)
     : null;
   // A host handling failures normally owns the next screen. A recording-only
   // host explicitly keeps this panel and the run's piano-driven retry.
@@ -1551,7 +1746,7 @@ export default function ExerciseRun({ instance, score, requirement = null, pract
   // where there are no pills, there is simply nothing under the music.
   const standingInstruction = bare ? null : (
     <>
-      {phase === 'ready' && <div className="piano-exercise-run__ready"><p>{!runtime ? 'Getting the music ready…' : snapshot.mode === 'cued' ? countInSentence(countIn?.clicks ?? beatsPerMeasure, cuedPace) : 'Play the first note to begin.'}</p>{!connected && <span>Waiting for the piano…</span>}</div>}
+      {phase === 'ready' && <div className="piano-exercise-run__ready"><p>{!runtime ? 'Getting the music ready…' : armed ? 'Listen for the clicks.' : snapshot.mode === 'cued' ? countInSentence(countIn?.clicks ?? beatsPerMeasure, cuedPace) : 'Play the first note to begin.'}</p>{!connected && <span>Waiting for the piano…</span>}</div>}
       {phase === 'paused' && <p className="piano-exercise-run__status" role="status">Paused. Your place is saved.</p>}
       {phase === 'resume-countdown' && <p className="piano-exercise-run__status" role="status">Get ready…</p>}
       {['countdown', 'running'].includes(phase) && <p className={`piano-exercise-run__status${isWrong ? ' is-wrong' : ''}`} role="status">{phase === 'countdown' ? 'Listen to the count-in.' : huntSentence ?? (isWrong ? 'That note was not expected — keep going.' : stage === 'recall' ? 'Play the named music from memory.' : snapshot.matcher === 'held' ? 'Play the complete chord.' : 'Follow the highlighted notes.')}{onExit && ' Hold the lowest and highest keys for two seconds to leave.'}</p>}
@@ -1625,7 +1820,7 @@ export default function ExerciseRun({ instance, score, requirement = null, pract
     && Number.isFinite(result?.score);
 
   return (
-    <section className={`piano-exercise-run is-${intent} is-${phase} is-tier-${runTier}${resolveHold ? ` is-resolve-held is-resolve-${resolveHold.outcome}${resolveHold.settled ? ' is-resolve-settled' : ''}` : ''}`} data-tier={runTier} data-stage={stage} data-surface={surface} data-phase={phase} data-armed={runtime ? 'true' : undefined} data-expected-cursor={timeline?.expectedCursor ?? eventIndex} data-displayed-cursor={visualCursor.index} data-hunting={countingDown ? undefined : huntHelp ?? undefined}
+    <section className={`piano-exercise-run is-${intent} is-${phase} is-tier-${runTier}${resolveHold ? ` is-resolve-held is-resolve-${resolveHold.outcome}${resolveHold.settled ? ' is-resolve-settled' : ''}` : ''}`} data-tier={runTier} data-stage={stage} data-surface={surface} data-phase={phase} data-count-style={learnCued ? 'up' : undefined} data-start-armed={armed ? 'true' : undefined} data-entry-shift={entryShift ? String(entryShift.beats) : undefined} data-armed={runtime ? 'true' : undefined} data-expected-cursor={timeline?.expectedCursor ?? eventIndex} data-displayed-cursor={visualCursor.index} data-hunting={countingDown ? undefined : huntHelp ?? undefined}
       data-beat-pulse={beatPulse ?? undefined} data-downbeat={beatPulse == null || timeline.downbeat == null ? undefined : String(timeline.downbeat)}>
       <header className="piano-exercise-run__head">
         {/* WHY YOU ARE HERE, AND NOTHING ELSE, WHEN THERE IS CHROME.
@@ -1771,8 +1966,10 @@ export default function ExerciseRun({ instance, score, requirement = null, pract
         {beatPulse != null && <span key={beatInMeasure == null ? beatPulse : `${timeline.measureIndex}:${beatInMeasure}`} className="piano-exercise-run__beat" aria-hidden="true">
           <span className="piano-exercise-run__beat-marker">{beatInMeasure ?? beatPulse}</span>
         </span>}
-        <CountInOverlay active={(countingDown && countInBeat != null) || playHandoff}
-          remaining={countdown?.remaining} progress={countdown?.progress} play={countdown?.play} />
+        {learnCued
+          ? <CountUpOverlay active={Boolean(countUp)} clicks={countUp?.clicks} count={countUp?.count} last={countUp?.last} />
+          : <CountInOverlay active={(countingDown && countInBeat != null) || playHandoff}
+            remaining={countdown?.remaining} progress={countdown?.progress} play={countdown?.play} />}
         <CountInOverlay active={resuming} remaining={resumeRemaining} progress={null} play={false} />
       </div>
       {/* No button: the piano starts the run. A cued ask arms on any key and
@@ -1793,7 +1990,9 @@ export default function ExerciseRun({ instance, score, requirement = null, pract
           A disconnected piano is the one thing the pills cannot say, so it
           keeps its own line whatever the surface. */}
       {!bare && chromeDrawn && !connected && <span className="piano-exercise-run__waiting">Waiting for the piano…</span>}
-      {phase === 'done' && result && !hostOwnsFailure && !(resultPresentation === 'overlay' && passed) && <section className={`piano-exercise-run__result${passed ? ' is-passed' : ' is-developing'}${resultPresentation === 'overlay' ? ' is-overlay' : ''}`} {...(resultPresentation === 'overlay' ? { role: 'dialog', 'aria-modal': 'true', 'aria-label': resultLabel ?? 'Result' } : {})}>
+      {/* A docked card waits out the hold and arrives once, with the host's actions;
+          its keys wait for RESULT_ARM_MS. Non-modal: it sits inside LearnLab's dialog. */}
+      {phase === 'done' && result && !hostOwnsFailure && !(resultPresentation === 'docked' && (passed || !resultSettled)) && <section className={`piano-exercise-run__result${passed ? ' is-passed' : ' is-developing'}${resultPresentation === 'docked' ? ' is-docked' : ''}`} data-result-armed={localRetry && resultArmed ? 'true' : undefined} {...(resultPresentation === 'docked' ? { role: 'alertdialog', 'aria-label': resultLabel ?? 'Result' } : {})}>
         <div><span>{resultLabel ?? (passed ? 'Passed' : challenge ? 'Keep working' : 'Practice complete')}</span>{scoreReadout && <strong>{Math.round(result.score * 100)}%</strong>}</div>
         {/* A percentage is a reading task of its own, and the tiers below 2 are
             for children who have not been given it yet. They are told the same
@@ -1801,8 +2000,8 @@ export default function ExerciseRun({ instance, score, requirement = null, pract
         {scoreReadout
           ? <>{timingCopy && <p className="piano-exercise-run__result-copy">{timingCopy}</p>}<dl><div><dt>All notes</dt><dd>{Math.round((result.criteria.completeness ?? 0) * 100)}%</dd></div><div><dt>Clean notes</dt><dd>{Math.round((result.criteria.cleanliness ?? 0) * 100)}%</dd></div>{Number.isFinite(result.criteria.placement) && <div><dt>On the beat</dt><dd>{Math.round(result.criteria.placement * 100)}%</dd></div>}</dl></>
           : <p className="piano-exercise-run__result-copy">{passed ? 'You played every note that was asked for.' : timingCopy ?? 'Some of the notes are still missing. Have another go.'}</p>}
-        {localRetry && <p className="piano-exercise-run__result-onward">Release the keys, then play any key to {resultContinueLabel ?? 'try again'}.{onExit && ' Hold the lowest and highest keys for two seconds to leave.'}</p>}
-        {resultActions && <div className="piano-exercise-run__result-actions">{resultActions}</div>}
+        {localRetry && resultArmed && <p className="piano-exercise-run__result-onward">Release the keys, then play any key to {resultContinueLabel ?? 'try again'}.{onExit && ' Hold the lowest and highest keys for two seconds to leave.'}</p>}
+        {resultActions && resultSettled && <div className="piano-exercise-run__result-actions">{resultActions}</div>}
       </section>}
       </div>
       {keyboardFooter && (

@@ -365,20 +365,34 @@ the drill. It draws no practice screen of its own.
   turns with it. It lasts 7.6 seconds (`PIECE_CEREMONY_MS`). Silver parts onto
   `Next: Go for Gold`; Gold parts onto the piece's title. The screen then returns
   to the score, which celebrates nothing itself.
-- **A miss** opens the drill's result as a card over the run
-  (`ExerciseRun resultPresentation="overlay"`). The run's rows never change
-  when a take ends, so the score does not move or resize under the child. The
-  card holds the coach's short verdict (`Almost on your own`,
-  `Bar 2 is the tricky spot`), the take's numbers, and the next moves. The
-  primary button is large (at least 7rem tall) and is the smaller practice the
+- **A miss** opens the drill's result as a card docked over the run's rail and
+  keyboard rows, under the score (`ExerciseRun resultPresentation="docked"`,
+  Exercises.scss `.is-docked`; `role="alertdialog"` without `aria-modal`,
+  since it sits inside the lab's own dialog). The engraved take and its
+  verdict marks stay in view while the card is up. The card's height is the
+  two rows' (`--run-rail-row`, `--run-row-gap`, `--run-keys-row` on the
+  learn-lab run), so it fits the 1280×800 kiosk, and anything taller scrolls
+  inside it rather than reaching the score. The card waits out the resolve
+  hold (`RESOLVE_HOLD_MS`, 700 ms) and arrives once, already holding the
+  coach's verdict and actions. The run's rows never change when a take ends,
+  so the score does not move or resize under the child. The card holds the
+  coach's short verdict (`Almost on your own`, `Bar 2 is the tricky spot`)
+  and the take's numbers on the left, and the next moves on the right. The
+  primary button is the largest (4.5rem tall) and is the smaller practice the
   coach recommends after two misses (`Practice bar 2`, `Practice the left hand`,
   `Try a little slower · 75%`), otherwise **Try again**. **Come back to this
   later** follows when it is on offer. **Releasing the keys and playing any key
   takes the primary button** (`onResultContinue`), and the card says so
-  ("play any key to practice bar 2"), so a child never has to reach for the
-  glass to take the help. `piano.exercise-retry` logs `via: 'piano'` with
-  `action: 'host'` (the coach's primary) or `'repeat'` (a run with no host
-  action).
+  ("play any key to practice bar 2", "play any key to try a little slower
+  (75%)"), so a child never has to reach for the glass to take the help.
+  A key counts only once the card has been up `RESULT_ARM_MS` (700 ms) after
+  the hold fired, and only after every key has been released: a key during the
+  hold would have repeated the take before the coach recorded the miss, and a
+  note played on past the end would switch the child onto the help step. The
+  "play any key" line appears when a key would act on it, and the card then
+  carries `data-result-armed="true"` (`piano.exercise-result-armed` logs it).
+  `piano.exercise-retry` logs `via: 'piano'` with `action: 'host'` (the
+  coach's primary) or `'repeat'` (a run with no host action).
 - **Listen** demonstrates the step's bars and parts in the same chrome with one
   control, **Stop listening**, and records nothing.
 - **Rail and board.** The same rail as the score view sits under the drill, with
@@ -392,12 +406,18 @@ under the stem tip, and the passage's ink-fitted viewBox cut off the ones under
 low notes. The viewBox keeps two staff spaces of air above and below the ink
 (`passageLayout.js`) so a mark beside the highest or lowest notehead fits.
 
-**Timing on the slowed steps.** The 50 / 60 / 75% timed steps grade with
+**Timing on the slowed steps.** Any cued step below score tempo (the 50/60/75%
+steps, slower-beat recoveries, authored slower stages) grades with
 `placementFullCreditShare: 0.6` (`learnPracticeRequirement` in `LearnLab.jsx`):
-full placement credit reaches 60% of each note's window instead of 40%. The
-pass bar (placement 0.8) and the window itself do not change, and a note
-outside its window still earns nothing. Score tempo (Gold), test-out and
-untimed steps keep the 0.4 curve. See `performance-assessment.md`.
+full placement credit reaches 60% of each note's window instead of 40%. What
+counts is the tempo the take is played at (the coached task's tempo, the set's
+entry in `tempoPercents`, or the picked stage), not the rung's configured
+`tempoPercent`. The pass bar (placement 0.8) and the window itself do not
+change, and a note outside its window still earns nothing. Score tempo (Gold),
+test-out and untimed steps keep the 0.4 curve. `piano.learn.coach.take` and
+`piano.learn.terminal` carry `placementShare` (0.6, or null on the strict
+curve), so placement scores from before and after the wider share can be told
+apart. See `performance-assessment.md`.
 
 The engraved passage is contained in the stage at every size: the passage,
 renderer, the engraver's own wrapper around its SVG, and the SVG each hold one
@@ -722,7 +742,53 @@ household-local day, alongside continuing the unfinished work.
 Each deliberate start installs one take in the existing LearnLab/ExerciseRun.
 Free practice waits for and counts the first expected note. Timed practice starts
 its visible, audible count-in without a sacrificial arming note. During the
-count-in, input is excluded from grading. Timed assessment receives individual
+count-in, input is excluded from grading.
+
+**A clear start (cued Learn passages).** Any key **arms** the take; it is never
+graded. The count-in starts when every key held at arming is released, or 1 s
+after arming (`ARM_RELEASE_MS`), whichever is first, and then waits
+`min(one click, 600 ms)` (`START_GAP_MAX_MS`, never less than the click pre-roll)
+before the first click — so the first click is not hidden under the arming key
+press. Keys pressed while armed are ignored and do not re-arm
+(`piano.exercise-input-ignored`, `reason: 'armed'`). The count band appears in its
+armed form the moment the key lands (`data-start-armed` on the run), and the
+standing line reads "Listen for the clicks." `piano.exercise-armed` records the
+arming; `piano.exercise-countdown-started` carries `reason` (`armed-released` or
+`armed-timeout`), `prerollMs`, `armedAt` and `waitedMs`. A pause or a new take
+drops the arming and its onsets. Other cued callers (exercises, gates) still start their
+count-in on the arming key itself; `startOnReady` (no live caller) starts with no
+arming key and no armed state.
+
+**Shifted entry (cued Learn passages).** ExerciseRun keeps a raw onset log of the
+take (`{ midi, t, phase }`, MIDI timestamps, from the arming key until the result,
+count-in onsets included and flagged `armed` / `countdown` / `running` / `after`).
+A failed take is tested against the expectation shifted by k ∈ {−2, −1, +1, +2}
+clicks (`performance/entryShift.js`): a shift is named when it matches ≥ 75% of
+the notes the log could hold at that shift (and at least N − |k|), the unshifted
+take matches less than that, the shift does strictly better than no shift, and
+the shift explains the **entry**: the first note was played at its shifted target,
+with no onset of it on time before that. (On repeated pitches such as Jingle
+Bells' E E E, a steady rush or drag from an on-time start would otherwise line up
+with a whole-beat shift.)
+"One beat" is one count-in click: at a tempo where the count-in coarsens to half
+notes, a quarter late is not a whole-beat shift. When the take's first two onsets
+already sit a click or two late (onset i against note i), the result waits for the last note (until its
+shifted window closes, at most two clicks after the last target); otherwise
+timing is unchanged. The card then reads "You started one beat late — start on
+the click after the count" or "… early — wait for the click after the count"
+("two beats" for |k| = 2) in place of the timing line, and the coached title is
+**Start on the click** / **Wait for the click** (`coachFeedback` reasons
+`entry-late` / `entry-early`). Pass/fail and every score are unchanged. The result
+carries `entryShift: { beats, matched, possible }` into the saved attempt, and a
+named shift never triggers the smaller-task recovery: the coach offers the same
+step again. `piano.exercise-timing-summary`, `piano.learn.coach.take` and
+`piano.learn.terminal` gain `entryShiftBeats`: ±k for a named shift, `0` when the
+take was tested and none was named, `null` when it was not tested (a passed take,
+or a run outside cued Learn). A tested take's result carries `entryShift`
+(`{ beats: 0 }` when none was named); `entryShiftBeats(result)` in
+`shared/music/learnCoach.mjs` reads it the same way. The click keeps sounding
+while a late entry's last note is awaited, and `piano.exercise-onset-log`
+records the test and the onsets as `[midi, ms from the first click, phase]`. Timed assessment receives individual
 fresh MIDI attacks with original timestamps; held-set observations remain
 limited to the cursor/held contracts. Malformed timed input is an operational
 failure, never an extra wrong note.
@@ -788,6 +854,15 @@ level is stored under `piano.learn.click-level`; unavailable browser storage
 still permits a selection for the current lab visit. Changing loudness updates
 future scheduled clicks without recreating the scheduler, restarting the take,
 or moving its anchored beat grid. Callers outside Learn keep the default gain.
+
+On a **cued Learn passage** the count-in counts **up** with the clicks: a band
+across the top of the stage (`CountUpOverlay`, `countUpPresentation`) holds one
+numbered pip per click, lit as each click sounds, the first accented; during the
+last click it says **next click: play**, so the cue arrives before the first beat
+rather than on it. Nothing is shown on the first beat (no PLAY), and the music is
+not greyed (`data-count-style="up"`), because the child is about to read the first
+notes. The clicks are the plan's (`exerciseCountInPlan`, ≤ 4), whatever the meter.
+Everything below about the countdown describes every other timed run.
 
 The timed run counts at most four pulses on the ask's selected musical grid,
 then displays a brief **PLAY** cue at the first graded beat. The stage-bounded
@@ -1710,6 +1785,7 @@ during an active run so the judge and falling highway cannot jump timelines.
 | `NoteHighlightLayer.jsx` / `MeasureGradeLayer.jsx` | per-notehead chips / per-measure R/Y/G washes |
 | `FocusRangeLayer.jsx` | loop range's per-system tint band |
 | `countIn.js` / `useCountIn.js` | count-in beats before a run |
+| `CountUpOverlay.jsx` | Learn passage count-in band: pips 1..N, "next click: play" on the last click, armed form |
 | `clickScheduler.js` | look-ahead scheduling for the metronome click; anchored grid (`anchorEpochMs`/`leadMs`) + `epochToContextMap` |
 | `clickLead.js` | `resolveClickLead` (config › browser › none) and the `piano.click.anchored` log helper |
 | `RunSummary.jsx` | Polish end-of-run summary, extended with run score/tier + tier-best strip |

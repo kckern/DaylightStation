@@ -238,3 +238,27 @@ describe('the sentence a child is given', () => {
     expect(countInSentence(1, null)).toContain('1 click,');
   });
 });
+
+describe('countUpPresentation (Learn passages)', () => {
+  it('counts up one numeral per click and cues the last click, never the beat', async () => {
+    const { countUpPresentation } = await import('./countIn.js');
+    const plan = { clicks: 4, leadInMs: 4000 };
+    // Armed, or the pre-roll before the first click: no numeral yet.
+    expect(countUpPresentation({ ...plan, elapsedMs: -300 })).toEqual({ count: 0, clicks: 4, last: false });
+    expect(countUpPresentation({ ...plan, elapsedMs: null })).toEqual({ count: 0, clicks: 4, last: false });
+    expect([0, 999, 1000, 2500, 3000, 3999].map((elapsedMs) => countUpPresentation({ ...plan, elapsedMs })))
+      .toEqual([
+        { count: 1, clicks: 4, last: false }, { count: 1, clicks: 4, last: false },
+        { count: 2, clicks: 4, last: false }, { count: 3, clicks: 4, last: false },
+        { count: 4, clicks: 4, last: true }, { count: 4, clicks: 4, last: true },
+      ]);
+    // The first beat: the count is over, and there is no PLAY.
+    expect(countUpPresentation({ ...plan, elapsedMs: 4000 })).toBeNull();
+    expect(countUpPresentation({ clicks: 0, leadInMs: 0, elapsedMs: 0 })).toBeNull();
+  });
+
+  it('follows the plan\'s clicks whatever the meter (three clicks in 3/4)', async () => {
+    const { countUpPresentation } = await import('./countIn.js');
+    expect(countUpPresentation({ clicks: 3, leadInMs: 1800, elapsedMs: 1300 })).toEqual({ count: 3, clicks: 3, last: true });
+  });
+});

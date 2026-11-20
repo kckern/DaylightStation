@@ -92,12 +92,12 @@ export const lessonTitle = (title) => {
 };
 
 /**
- * Why a card is on the strip, as its badge: Silver next, Gold next, then the
- * Polish goal once the piece is all Gold (Polish next, Diamond next after the
- * gem, Diamond after the diamond), or Next lesson.
+ * Why a piece card is on the strip, as its badge: Silver next, Gold next, then
+ * the Polish goal once the piece is all Gold (Polish next, Diamond next after
+ * the gem, Diamond after the diamond). Course cards have no badge: the next
+ * episode's still says which lesson is next.
  */
 export function cardBadge(card) {
-  if (card.kind === 'course') return { level: 'lesson', label: 'Next lesson' };
   const { silver, gold, total, polish } = card.piece;
   if (total > 0 && gold >= total) {
     if (polish?.diamond === true) return { level: 'diamond', label: 'Diamond' };
@@ -109,34 +109,99 @@ export function cardBadge(card) {
 }
 
 /**
- * The line under a card's title: the bars up next, or the next lesson's number —
- * the one printed in its title when there is one (the server's position counts
- * graded lessons only), else its place in the course.
+ * The next lesson's number: the one printed in its title when there is one (the
+ * server's position counts graded lessons only), else its place in the course.
  */
-export function nextStep(card) {
-  if (card.kind === 'piece') return piecePolishing(card.piece) ? 'Whole piece' : passageBars(card.focus);
-  const { course } = card;
-  if (!course.next) return '';
+export function lessonNumber(course) {
+  if (!course?.next) return '';
   const title = String(course.next.title ?? '').trim();
   // The number the title prints, with a separator ("Lesson 51 | …") or alone ("Lesson 3").
   const printed = (LESSON_PREFIX.exec(title) ?? /^lesson\s+(\d+)$/i.exec(title))?.[1];
   const position = printed ?? course.next.position ?? (Number.isFinite(course.completed) ? course.completed + 1 : null);
-  return position ? `Lesson ${position}` : '';
+  return position ? String(position) : '';
 }
 
-/** The card's inner width in px, which the coin row fills, and the gap between coins. */
-const ROW = 276;
+/** The line under a card's title: the bars up next, or "Lesson 51". */
+export function nextStep(card) {
+  if (card.kind === 'piece') return piecePolishing(card.piece) ? 'Whole piece' : passageBars(card.focus);
+  const number = lessonNumber(card.course);
+  return number ? `Lesson ${number}` : '';
+}
+
+/**
+ * What to do in those bars: the coach's next skill ("Settle into a beat"), from
+ * the desk's `piece.next`. Nothing while polishing: the card opens Polish, not that skill.
+ */
+export const nextSkill = (card) => (card.kind === 'piece' && !piecePolishing(card.piece) ? String(card.piece?.next?.label ?? '').trim() : '');
+
+/**
+ * The card a swipe brings in: a swipe left shows the next card, right the one
+ * before, wrapping like a carousel. Null when the child has only one card.
+ */
+export function swipeTarget(cards, kind, direction) {
+  const list = cards ?? [];
+  if (list.length < 2) return null;
+  const at = Math.max(0, list.findIndex((card) => card.kind === kind));
+  const step = direction === 'left' ? 1 : -1;
+  return list[(at + step + list.length) % list.length];
+}
+
+/**
+ * The right column is 176px wide at a 292px panel (four children): 292 - 2 border
+ * - 16 padding - 88 poster - 10 gap. GAP is the map's CSS gap.
+ */
+const COLUMN = 176;
+/** The count stacked beside one row of coins: 40px and an 8px gap. */
+const BESIDE = 48;
 const GAP = 2;
 
-/** Coins across a piece's map: one row up to fourteen, else two equal rows. */
-export const mapColumns = (count) => (count > 14 ? Math.ceil(count / 2) : Math.max(1, count));
-export const mapRows = (count) => (count > 14 ? 2 : 1);
+/**
+ * The ways a piece's coins can sit at the bottom of the column, each with the
+ * largest coin its height allows. A 150px card leaves 40px under a two-line
+ * title, the bars and the skill line; a 170px (tall) card leaves 62px.
+ *  - one row with the count stacked beside it: up to 36px, in 128px of width;
+ *  - one row under the count line (16px): up to 24px, the full width;
+ *  - two rows under the count (tall card): up to 22px;
+ *  - three rows under the count (tall card): up to 14px.
+ */
+const LAYOUTS = [
+  { rows: 1, width: COLUMN - BESIDE, most: 36, countBeside: true },
+  { rows: 1, width: COLUMN, most: 24, countBeside: false },
+  { rows: 2, width: COLUMN, most: 22, countBeside: false },
+  { rows: 3, width: COLUMN, most: 14, countBeside: false },
+];
 
-/** Coin size in px: the row fills the card, never above 22px. `extra` slots (a Polish stone) share the row. */
-export const coinSize = (count, extra = 0) => {
-  const columns = mapColumns(count) + extra;
-  return Math.min(22, Math.floor((ROW - (columns - 1) * GAP) / columns));
-};
+/** More rows (which make every card on the strip tall) must win coins this much bigger (px). */
+const MORE_ROWS_GAIN = 3;
+
+/**
+ * How a piece's coins are laid out. Among one-row arrangements the biggest coin
+ * wins; more rows win only when their coin is at least 3px bigger, so eight
+ * passages stay on one row (20px) and nine take two. A coin is never bigger than
+ * the one a piece with one passage fewer gets, so a longer piece never gets
+ * bigger coins: nine passages on two rows keep eight's 20px. Three rows keep coins
+ * at 12px or more up to 36 passages; past that they shrink further rather than
+ * hiding passages. `extra` slots (a Polish stone) take one more column, beside
+ * every row.
+ */
+export function coinLayout(count, extra = 0) {
+  const n = Math.max(1, count);
+  let best = null;
+  for (const layout of LAYOUTS) {
+    const columns = Math.ceil(n / layout.rows);
+    const slots = columns + extra;
+    const size = Math.min(layout.most, Math.floor((layout.width - (slots - 1) * GAP) / slots));
+    const wins = !best || (layout.rows === best.rows ? size > best.size : size >= best.size + MORE_ROWS_GAIN);
+    if (wins) best = { rows: layout.rows, columns, size, countBeside: layout.countBeside };
+  }
+  if (n > 1) best.size = Math.min(best.size, coinLayout(n - 1, extra).size);
+  return best;
+}
+
+/** Coins across a piece's map, its rows, and the coin size in px. */
+export const mapColumns = (count, extra = 0) => coinLayout(count, extra).columns;
+export const mapRows = (count, extra = 0) => coinLayout(count, extra).rows;
+export const coinSize = (count, extra = 0) => coinLayout(count, extra).size;
 
 export const pieceCount = (piece) => `${piece.silver} of ${piece.total} Silver`;
 
