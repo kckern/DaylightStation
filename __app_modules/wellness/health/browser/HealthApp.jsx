@@ -9,6 +9,7 @@ import { claimHealthCacheOwner, healthCacheHeldByOther, HEALTH_CONTEXT_PATH, hyd
 import '@mantine/core/styles.css';
 import {
   AppThemeProvider, AppChrome, AppView, DismissStackProvider, LoadingState, ErrorState, useRetryRegion,
+  UiIcon,
 } from '@/lib/ui';
 import { useViewScroll } from '@/lib/ui/useViewScroll.js';
 import { useHotkey } from '@/lib/hooks/useHotkey.js';
@@ -25,16 +26,11 @@ const MedicalView = lazy(() => import("./medical/MedicalView.jsx").then(module =
 const HealthSettings = lazy(() => import("./cleanup/HealthSettings.jsx").then(module => ({ default: module.HealthSettings })));
 const AuditorPage = lazy(() => import("./auditor/AuditorPage.jsx").then(module => ({ default: module.AuditorPage })));
 
-const Icon = ({ d }) => (
-  <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
-    <path d={d} stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
-  </svg>
-);
 const TABS = [
-  { id: 'today', href: '/health', label: 'Today', icon: <Icon d="M4 10h12M10 4v12" /> },
-  { id: 'progress', href: '/health/progress', label: 'Progress', icon: <Icon d="M3 15l4-6 4 3 6-8" /> },
-  { id: 'health', href: '/health/medical', label: 'Medical', icon: <Icon d="M10 17s-6-3.5-6-8a3.5 3.5 0 016-2.4A3.5 3.5 0 0116 9c0 4.5-6 8-6 8z" /> },
-  { id: 'coach', href: '/health/coach', label: 'Coach', icon: <Icon d="M3 5h14v9H8l-4 3v-3H3z" /> },
+  { id: 'today', href: '/health', label: 'Today', icon: <UiIcon name="plus" size={20} /> },
+  { id: 'progress', href: '/health/progress', label: 'Progress', icon: <UiIcon name="chart" size={20} /> },
+  { id: 'health', href: '/health/medical', label: 'Medical', icon: <UiIcon name="heart" size={20} /> },
+  { id: 'coach', href: '/health/coach', label: 'Coach', icon: <UiIcon name="coach" size={20} /> },
 ];
 
 function tabForPath(pathname) {
@@ -124,7 +120,7 @@ const HealthShell = ({ userId }) => {
               <span key="follow-ups" ref={setFollowUpTarget} className="health-followups-slot" />,
               <ActionIcon key="settings" className="ds-touch-target" aria-label="Health settings"
                 variant="subtle" onClick={() => navigate('/health/settings')}>
-                <Icon d="M4 5h12M4 10h12M4 15h12M7 3v4M13 8v4M9 13v4" />
+                <UiIcon name="settings" size={20} />
               </ActionIcon>,
              ]}>
             {/* Keep the logging session (drafts, pending requests, retry bytes)

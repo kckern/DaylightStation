@@ -2,14 +2,10 @@ import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } fro
 import { Select } from '@mantine/core';
 import { Notifications } from '@mantine/notifications';
 import { Routes, Route, Link, Navigate, useNavigate, useLocation, useParams } from 'react-router-dom';
-import {
-  IconDashboard, IconTimeline, IconTarget, IconHeart, IconBrain, IconDiamond, IconShield,
-  IconCalendarEvent, IconMessageCircle,
-} from '@tabler/icons-react';
 import '@mantine/core/styles.css';
 import '@mantine/notifications/styles.css';
 import "./LifeApp.scss";
-import { AppThemeProvider, AppChrome, DismissStackProvider, LoadingState, createAppLogger, useViewScroll } from '@/lib/ui';
+import { AppThemeProvider, AppChrome, DismissStackProvider, LoadingState, createAppLogger, UiIcon, useViewScroll } from '@/lib/ui';
 import { configure } from "../../../../frontend/src/lib/logging/Logger.js";
 import useDocumentTitle from "../../../../frontend/src/hooks/useDocumentTitle.js";
 import { ErrorState } from './components/ErrorState.jsx';
@@ -38,10 +34,10 @@ const TriageSessionView = lazy(() => import('./views/now/triage/TriageSessionVie
 // see PLAN_LINKS below — so this list matches the four things that used to be
 // directly clickable from the root of the old navbar (Now / Log / Plan / Coach).
 const TABS = [
-  { id: 'now', href: '/life/now', label: 'Now', icon: <IconDashboard size={20} /> },
-  { id: 'log', href: '/life/log', label: 'Log', icon: <IconTimeline size={20} /> },
-  { id: 'plan', href: '/life/plan', label: 'Plan', icon: <IconTarget size={20} /> },
-  { id: 'coach', href: '/life/coach', label: 'Coach', icon: <IconMessageCircle size={20} /> },
+  { id: 'now', href: '/life/now', label: 'Now', icon: <UiIcon name="dashboard" size={20} /> },
+  { id: 'log', href: '/life/log', label: 'Log', icon: <UiIcon name="timeline" size={20} /> },
+  { id: 'plan', href: '/life/plan', label: 'Plan', icon: <UiIcon name="target" size={20} /> },
+  { id: 'coach', href: '/life/coach', label: 'Coach', icon: <UiIcon name="coach" size={20} /> },
 ];
 
 // The old navbar's nested "Plan" NavLink group, ported to an in-view secondary
@@ -50,12 +46,12 @@ const TABS = [
 // identical: Purpose only lights up for the bare /life/plan path (every other
 // child route also starts with /life/plan and would otherwise always match it).
 const PLAN_LINKS = [
-  { path: '/life/plan', label: 'Purpose', icon: <IconHeart size={14} />, match: (p) => p === '/life/plan' },
-  { path: '/life/plan/goals', label: 'Goals', icon: <IconTarget size={14} />, match: (p) => p.startsWith('/life/plan/goals') },
-  { path: '/life/plan/beliefs', label: 'Beliefs', icon: <IconBrain size={14} />, match: (p) => p.startsWith('/life/plan/beliefs') },
-  { path: '/life/plan/values', label: 'Values', icon: <IconDiamond size={14} />, match: (p) => p.startsWith('/life/plan/values') },
-  { path: '/life/plan/qualities', label: 'Qualities', icon: <IconShield size={14} />, match: (p) => p.startsWith('/life/plan/qualities') },
-  { path: '/life/plan/ceremonies', label: 'Ceremonies', icon: <IconCalendarEvent size={14} />, match: (p) => p.startsWith('/life/plan/ceremonies') },
+  { path: '/life/plan', label: 'Purpose', icon: <UiIcon name="heart" size={14} />, match: (p) => p === '/life/plan' },
+  { path: '/life/plan/goals', label: 'Goals', icon: <UiIcon name="target" size={14} />, match: (p) => p.startsWith('/life/plan/goals') },
+  { path: '/life/plan/beliefs', label: 'Beliefs', icon: <UiIcon name="brain" size={14} />, match: (p) => p.startsWith('/life/plan/beliefs') },
+  { path: '/life/plan/values', label: 'Values', icon: <UiIcon name="diamond" size={14} />, match: (p) => p.startsWith('/life/plan/values') },
+  { path: '/life/plan/qualities', label: 'Qualities', icon: <UiIcon name="shield" size={14} />, match: (p) => p.startsWith('/life/plan/qualities') },
+  { path: '/life/plan/ceremonies', label: 'Ceremonies', icon: <UiIcon name="calendar" size={14} />, match: (p) => p.startsWith('/life/plan/ceremonies') },
 ];
 
 function PlanSecondaryNav({ pathname }) {

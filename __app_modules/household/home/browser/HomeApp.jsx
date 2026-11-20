@@ -1,11 +1,10 @@
 import { browserPreference } from '@/lib/browserPreference.js';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActionIcon } from '@mantine/core';
-import { IconDoor, IconLayoutGrid, IconTimeline, IconVideo } from '@tabler/icons-react';
 import '@mantine/core/styles.css';
 import {
   AppThemeProvider, AppChrome, DismissStackProvider, SectionCard, LoadingState, ErrorState, EmptyState,
-  useRetryRegion, useViewScroll,
+  useRetryRegion, useViewScroll, UiIcon,
 } from '@/lib/ui';
 import { useApiResource } from '@/lib/hooks/useApiResource.js';
 import CameraFeed from "../../camera/browser/feed.mjs";
@@ -19,12 +18,11 @@ import './HomeApp.scss';
 
 const logger = homeLogger;
 
-const icon = (Icon) => <Icon size={20} stroke={1.75} aria-hidden="true" />;
 const TABS = [
-  { id: 'today', label: 'Today', icon: icon(IconTimeline) },
-  { id: 'mosaic', label: 'Mosaic', icon: icon(IconLayoutGrid) },
-  { id: 'rooms', label: 'Rooms', icon: icon(IconDoor) },
-  { id: 'cameras', label: 'Cameras', icon: icon(IconVideo) },
+  { id: 'today', label: 'Today', icon: <UiIcon name="timeline" size={20} stroke={1.75} /> },
+  { id: 'mosaic', label: 'Mosaic', icon: <UiIcon name="mosaic" size={20} stroke={1.75} /> },
+  { id: 'rooms', label: 'Rooms', icon: <UiIcon name="home" size={20} stroke={1.75} /> },
+  { id: 'cameras', label: 'Cameras', icon: <UiIcon name="video" size={20} stroke={1.75} /> },
 ];
 const VIEW_KEY = 'home.view';
 // Views that lived under the old tab ids open where their content went.

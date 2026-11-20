@@ -1,8 +1,38 @@
 import { useState } from 'react';
-import { IconChevronLeft, IconDeviceTv, IconSearch, IconX } from '@tabler/icons-react';
+import {
+  IconAdjustmentsHorizontal, IconBrain, IconCalendarEvent, IconCar, IconChartLine, IconChevronLeft, IconDiamond,
+  IconDeviceTv, IconDoor, IconFolder, IconGasStation, IconHeart, IconLayoutGrid,
+  IconMapPin, IconMessageCircle, IconPlus, IconSearch, IconShield, IconTarget,
+  IconTimeline, IconTool, IconVideo, IconX, IconDashboard,
+} from '@tabler/icons-react';
 import { DaylightImagePath } from '../api.mjs';
 
-const icons = { back: IconChevronLeft, close: IconX, search: IconSearch, television: IconDeviceTv };
+const icons = {
+  back: IconChevronLeft,
+  brain: IconBrain,
+  calendar: IconCalendarEvent,
+  car: IconCar,
+  chart: IconChartLine,
+  close: IconX,
+  dashboard: IconDashboard,
+  diamond: IconDiamond,
+  folder: IconFolder,
+  fuel: IconGasStation,
+  heart: IconHeart,
+  home: IconDoor,
+  mosaic: IconLayoutGrid,
+  pin: IconMapPin,
+  plus: IconPlus,
+  search: IconSearch,
+  settings: IconAdjustmentsHorizontal,
+  service: IconTool,
+  shield: IconShield,
+  target: IconTarget,
+  timeline: IconTimeline,
+  coach: IconMessageCircle,
+  video: IconVideo,
+  television: IconDeviceTv,
+};
 
 function ImageIcon({ src, size, className, fallback: FallbackIcon, ...props }) {
   const [failed, setFailed] = useState(false);

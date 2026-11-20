@@ -33,64 +33,12 @@ import autoLog from "./autoLog.js";
 import { describeVehicle } from "./autoAppVehicleLabel.js";
 import "./AutoApp.scss";
 
-const TabIcon = ({ children }) => (
-  <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-    {children}
-  </svg>
-);
-
 const TABS = [
-  {
-    id: 'overview',
-    label: 'Car',
-    icon: (
-      <TabIcon>
-        <path d="M3 12l1.3-4.2a2 2 0 011.9-1.4h7.6a2 2 0 011.9 1.4L17 12" />
-        <path d="M2.5 12h15v2.5a1 1 0 01-1 1h-1a1 1 0 01-1-1V14h-8v.5a1 1 0 01-1 1h-1a1 1 0 01-1-1V12z" />
-        <circle cx="6" cy="14.5" r="1" fill="currentColor" stroke="none" />
-        <circle cx="14" cy="14.5" r="1" fill="currentColor" stroke="none" />
-      </TabIcon>
-    ),
-  },
-  {
-    id: 'drives',
-    label: 'Drives',
-    icon: (
-      <TabIcon>
-        <path d="M10 17.5s5.2-5.7 5.2-9.5a5.2 5.2 0 10-10.4 0c0 3.8 5.2 9.5 5.2 9.5z" />
-        <circle cx="10" cy="8" r="1.8" />
-      </TabIcon>
-    ),
-  },
-  {
-    id: 'fuel',
-    label: 'Fuel',
-    icon: (
-      <TabIcon>
-        <path d="M4.5 17V4.5a1 1 0 011-1h4a1 1 0 011 1V17" />
-        <path d="M3.5 17h8" />
-        <path d="M10.5 8h1.3a1.5 1.5 0 011.5 1.5V14a1 1 0 001 1v0a1 1 0 001-1V8.8l-2-2" />
-      </TabIcon>
-    ),
-  },
-  {
-    id: 'service',
-    label: 'Service',
-    icon: (
-      <TabIcon>
-        <path d="M13.4 6.6a2.7 2.7 0 10-3.8 3.8L4 16l1 1 5.6-5.6a2.7 2.7 0 003.8-3.8l-1.7 1.7-1.4-1.4z" />
-      </TabIcon>
-    ),
-  },
-  {
-    id: 'glove',
-    label: 'Docs',
-    icon: (
-      <TabIcon>
-        <path d="M3 6.5a1 1 0 011-1h4l1.5 2H16a1 1 0 011 1v7a1 1 0 01-1 1H4a1 1 0 01-1-1v-9z" />
-      </TabIcon>
-    ),
-  },
+  { id: 'overview', label: 'Car', icon: <UiIcon name="car" size={20} stroke={1.5} /> },
+  { id: 'drives', label: 'Drives', icon: <UiIcon name="pin" size={20} stroke={1.5} /> },
+  { id: 'fuel', label: 'Fuel', icon: <UiIcon name="fuel" size={20} stroke={1.5} /> },
+  { id: 'service', label: 'Service', icon: <UiIcon name="service" size={20} stroke={1.5} /> },
+  { id: 'glove', label: 'Docs', icon: <UiIcon name="folder" size={20} stroke={1.5} /> },
 ];
 
 function AutoAppShell() {
