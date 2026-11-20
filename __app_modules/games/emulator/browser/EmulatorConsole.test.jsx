@@ -776,6 +776,48 @@ describe('EmulatorConsole', () => {
       expect(onPairController).toHaveBeenCalledTimes(1);
       expect(fetchSpy).not.toHaveBeenCalled();
     });
+
+    it('offers no Add a new device on the built-in pairing path (it cannot add)', async () => {
+      const { container } = renderConsole({ props: { getGamepads: noPads } });
+      await act(async () => {});
+      act(() => container.querySelector('.emulator-controller-toggle').click());
+      expect(container.querySelector('.ccs-pair-button')).toBeTruthy();
+      expect(container.querySelector('.ccs-add-button')).toBeNull();
+    });
+
+    it('a host onPairController offers Add a new device and gets an add-mode request', async () => {
+      const fetchSpy = vi.fn(() => Promise.resolve({ ok: true, status: 202 }));
+      const onPairController = vi.fn();
+      const { container } = renderConsole({
+        props: { getGamepads: noPads, fetchImpl: () => fetchSpy, onPairController },
+      });
+      await act(async () => {});
+      act(() => container.querySelector('.emulator-controller-toggle').click());
+      act(() => container.querySelector('.ccs-add-button').click());
+      await act(async () => {
+        container.querySelector('.ccs-add-guide .ccs-guide-start').click();
+      });
+      expect(onPairController).toHaveBeenCalledTimes(1);
+      expect(onPairController.mock.calls[0][0]).toMatchObject({ mode: 'add', controllerId: null });
+      expect(fetchSpy).not.toHaveBeenCalled();
+    });
+
+    it('passes the host forget handler and result through to the panel', async () => {
+      const onForgetController = vi.fn();
+      const controllers = [{ id: 'sfc30', label: 'SFC30', match: '8Bitdo', address: 'E4:17:D8:C6:54:F0' }];
+      const btInventory = [{ address: 'E4:17:D8:C6:54:F0', name: '8Bitdo SFC30 GamePad', connected: false, paired: true }];
+      const { container } = renderConsole({
+        props: {
+          getGamepads: noPads, controllers, btInventory, onPairController: vi.fn(), onForgetController,
+          controllerForget: { address: 'E4:17:D8:C6:54:F0', success: true },
+        },
+      });
+      await act(async () => {});
+      act(() => container.querySelector('.emulator-controller-toggle').click());
+      act(() => container.querySelector('.ccs-forget-button').click());
+      expect(onForgetController).toHaveBeenCalledWith('E4:17:D8:C6:54:F0');
+      expect(container.querySelector('.ccs-forget-result').textContent).toMatch(/^Forgotten/);
+    });
   });
 });
 

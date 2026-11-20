@@ -1794,7 +1794,7 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
       setControllerPairing((cur) => {
         if (!cur || cur.requestId !== requestId || !cur.optimistic) return cur;
         getLogger().warn('fitness.bt.pair-no-response', { requestId });
-        return { phase: 'done', paired: [], reason: 'no-response', requestId };
+        return { phase: 'done', paired: [], reason: 'no-response', requestId, mode: cur.mode };
       });
     }, 15000);
     return requestId;

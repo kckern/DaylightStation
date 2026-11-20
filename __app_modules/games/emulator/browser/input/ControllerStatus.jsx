@@ -50,12 +50,17 @@ const OTHER_LABEL = { ready: 'Ready', connecting: 'Connecting…', asleep: 'Not 
  *   This component is host-agnostic: it never imports FitnessContext.
  * @param {Function} [props.onPair]            ({ targets, controllerId, mode: 'repair'|'add' }) => void | Promise<void>.
  *   When provided, render the pairing affordance (re-pair and "Add a new device").
+ * @param {boolean} [props.canAdd=false]     the host's onPair honours `mode: 'add'` (the garage
+ *   satellite's WebSocket path). Only then render "Add a new device" and "Add again"; a host
+ *   whose pairing ignores `mode` would run a re-pair window and report "no new device".
  * @param {object} [props.pairing]             latest `bt.pair.progress` message (may carry `mode`).
  * @param {Function} [props.onForget]          (address: string) => void | Promise<void>.
  *   When provided, render a "Forget" button on bonded rows (configured and other devices).
  * @param {object} [props.forgetResult]        latest `bt.remove.result` ({ address, success, error }).
  */
-export function ControllerStatus({ controllers = [], getGamepads, btInventory, onPair, pairing, onForget, forgetResult }) {
+export function ControllerStatus({
+  controllers = [], getGamepads, btInventory, onPair, canAdd = false, pairing, onForget, forgetResult,
+}) {
   const { connected, known } = useGamepadStatus(controllers, { getGamepads, btInventory });
 
   // Show the OS column only when a BT inventory feed is actually present.
@@ -80,6 +85,7 @@ export function ControllerStatus({ controllers = [], getGamepads, btInventory, o
 
   const hasConnected = connected.length > 0;
   const canPair = typeof onPair === 'function';
+  const addable = canPair && canAdd;
   const btn = pairButtonState(pairing);
   const [addOpen, setAddOpen] = useState(false);
   const [activeMode, setActiveMode] = useState('repair');
@@ -89,7 +95,7 @@ export function ControllerStatus({ controllers = [], getGamepads, btInventory, o
   // does not send `mode`.
   const mode = pairing?.mode || activeMode;
   const status = pairingStatus(pairing, mode);
-  const showAdd = canPair && (addOpen || (status.busy && mode === 'add'));
+  const showAdd = addable && (addOpen || (status.busy && mode === 'add'));
   const showGuide = canPair && !showAdd && guides.length > 0 && (guideOpen || status.busy);
   const others = useMemo(() => otherBtDevices(controllers, btInventory), [controllers, btInventory]);
 
@@ -188,7 +194,7 @@ export function ControllerStatus({ controllers = [], getGamepads, btInventory, o
     ? (forgetResult.success
       ? (forgotConfigured
         ? 'Forgotten. To use it again, put the controller in pairing mode and press Pair controller.'
-        : 'Forgotten. To use it again, put it in pairing mode and press Add a new device.')
+        : (addable ? 'Forgotten. To use it again, put it in pairing mode and press Add a new device.' : 'Forgotten.'))
       : `Could not forget it — ${forgetResult.error || 'unknown error'}`)
     : null;
 
@@ -264,7 +270,7 @@ export function ControllerStatus({ controllers = [], getGamepads, btInventory, o
                   <span className={`ccs-os-badge ccs-os-${d.status}${d.status === 'ready' ? ' ccs-os-on' : ' ccs-os-off'}`}>
                     {OTHER_LABEL[d.status]}{d.status === 'ready' && d.battery != null ? ` · ${d.battery}%` : ''}
                   </span>
-                  {canPair && d.paired === false ? (
+                  {addable && d.paired === false ? (
                     <button
                       type="button"
                       className="ccs-pair-button ccs-add-again-button"
@@ -333,9 +339,11 @@ export function ControllerStatus({ controllers = [], getGamepads, btInventory, o
               ? <><span aria-hidden="true">🎮</span> Pair controller</>
               : btn.label}
           </button>
-          <button type="button" className="ccs-pair-button ccs-add-button" disabled={status.busy} onClick={openAdd}>
-            <span aria-hidden="true">➕</span> Add a new device
-          </button>
+          {addable && (
+            <button type="button" className="ccs-pair-button ccs-add-button" disabled={status.busy} onClick={openAdd}>
+              <span aria-hidden="true">➕</span> Add a new device
+            </button>
+          )}
           {btn.scanning && <span className="ccs-pair-progress" aria-hidden="true" />}
           {status.text && !status.busy && (guides.length > 0 || status.text !== btn.label) ? (
             <span className={`ccs-pair-status ccs-tone-${status.tone}`} role="status">{status.text}</span>
