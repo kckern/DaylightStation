@@ -67,6 +67,32 @@ a single collection gets the tabless grid unchanged. The last tab a player
 picked is remembered per device, so returning to Sheet Music opens where they
 left off.
 
+### Posters
+
+A score's poster is the same-name picture beside it in the library
+(`fur-elise.jpg` next to `fur-elise.musicxml`). The tile, the loading splash and
+the home desk all use it, and it is hidden from the listing as the score's
+sidecar. Raster scans win: `.jpg`, `.jpeg`, `.png`, `.webp`, then `.svg`. With no
+poster the grid draws its engraved plate stand-in.
+
+A score without a scan can get a **generated** SVG poster from the admin
+(Content → Sheet music): **Generate poster** on a score's page cuts the first two
+systems from the engraving on screen, and **Generate missing posters** on the
+library page walks the visible scores that have none, one engraving at a time in
+an off-screen host, with a progress line, Stop, and a list of failures. Both
+upload to `POST /api/v1/admin/sheet-music/poster?id=<score id>` (body: the SVG
+text, `image/svg+xml`, at most 300 KB), which writes `<basename>.svg` beside the
+score. The server reads the upload as XML and refuses scripts,
+`<foreignObject>`, `<style>`, `on*` attributes, DOCTYPE/ENTITY declarations and
+any `href` or `url()` that leaves the document; it refuses a score that has a
+scan (`has-scan`, it would never show) and never replaces an SVG it did not
+generate (`poster-exists`; generated posters carry
+`data-daylight-poster="generated"` on the root). The stream route sends
+`Content-Security-Policy: sandbox; default-src 'none'; style-src 'unsafe-inline'; img-src data:`
+with every SVG, so opening one directly runs nothing. Logs:
+`piano.sheetmusic.poster-saved`, `.poster-rejected`; admin
+`admin.sheetmusic.poster-generated`, `.poster-failed`, `.posters-start|done|cancelled`.
+
 ## Modes — a learning progression
 
 Four modes, **Listen · Learn · Polish · Perform**, selected from the header's

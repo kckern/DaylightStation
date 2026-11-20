@@ -2,17 +2,18 @@ import React, { useCallback, useEffect, useMemo, useReducer, useRef, useState } 
 import { Link, useParams } from 'react-router-dom';
 import { Alert, Anchor, Badge, Button, Group, List, Skeleton, Stack, Text, Title } from '@mantine/core';
 import {
-  IconAlertTriangle, IconArrowBackUp, IconCheck, IconChevronLeft, IconDeviceFloppy, IconPencil, IconRefresh, IconSparkles, IconX,
+  IconAlertTriangle, IconArrowBackUp, IconCheck, IconChevronLeft, IconDeviceFloppy, IconPencil, IconPhoto, IconRefresh, IconSparkles, IconX,
 } from '@tabler/icons-react';
 import getLogger from "../../../../../frontend/src/lib/logging/Logger.js";
 import { DaylightAPI, DaylightAPIText } from "../../../../../frontend/src/lib/api.mjs";
-import { osmdRender, buildMeasures, extractMeasureBounds } from "../../../../../__capabilities/music-notation/browser/renderers/osmdRender.js";
+import { osmdRender, buildMeasures, extractMeasureBounds, extractPerStaffGeometry } from "../../../../../__capabilities/music-notation/browser/renderers/osmdRender.js";
 import { parseMusicXml } from "../../../../../__capabilities/music-notation/browser/parseMusicXml.js";
 import { errors as editorErrors, idForIndex, initSegmentEditor, segmentEditorReducer, uncoveredBars } from "./segmentEditor.js";
 import { fillParts, generatedSegments, householdOverridesSegments } from "./scorePlan.js";
 import MeasureStrip, { SEGMENT_COLORS, barsLabel, segmentLabel } from "./MeasureStrip.jsx";
 import ApproveDialog, { ADMIN_PATH, scoreQuery } from "./ApproveDialog.jsx";
 import { proposeSegments, proposalTargetLen, quartersPerMeasure } from "./proposeSegments.js";
+import { POSTER_ERROR_MESSAGES, posterFromEngraving, uploadPoster } from "./posterJob.js";
 import "./SheetMusicScore.scss";
 
 const LIBRARY_ROUTE = '/admin/content/sheet-music';
@@ -187,6 +188,7 @@ export default function SheetMusicScore() {
           measures, bounds, steps: result.steps || [], sections: parsed?.sections || [],
           tempoMap: result.tempoEntries || [], tempo: parsed?.tempo, width: result.width, height: result.height,
           beatsPerMeasure: quartersPerMeasure(parsed?.timeSig),
+          staffBoxes: extractPerStaffGeometry(result.osmd),
         });
         logger.info('admin.sheetmusic.engraved', { id, measures: measures.length });
       } catch (err) {
@@ -357,6 +359,35 @@ export default function SheetMusicScore() {
     if (revision) setDialog('approve');
   };
 
+  const posterKind = learn?.poster || 'none';
+  const onGeneratePoster = async () => {
+    if (!engraved || busy || posterKind === 'scan') return;
+    setBusy('poster');
+    setNotice(null);
+    try {
+      let poster;
+      try {
+        poster = posterFromEngraving({ svg: hostRef.current?.querySelector('svg'), staffBoxes: engraved.staffBoxes });
+      } catch (err) {
+        logger.warn('admin.sheetmusic.poster-failed', { id, code: err?.code ?? null, error: err?.message });
+        setNotice({ color: 'red', text: POSTER_ERROR_MESSAGES[err?.code] || `The poster could not be made (${err?.code || 'error'}).` });
+        return;
+      }
+      const outcome = await uploadPoster(id, poster.text);
+      if (!alive.current) return;
+      if (!outcome.ok) {
+        logger.warn('admin.sheetmusic.poster-failed', { id, code: outcome.code, status: outcome.status });
+        setNotice({ color: 'red', text: POSTER_ERROR_MESSAGES[outcome.code] || `The poster did not save${outcome.code ? ` (${outcome.code})` : ''}.` });
+        return;
+      }
+      logger.info('admin.sheetmusic.poster-generated', { id, bytes: poster.bytes });
+      setLearn((prev) => (prev ? { ...prev, poster: 'generated' } : prev));
+      setNotice({ color: 'teal', text: 'Poster saved. The kiosk shows it while this score loads and on the home desk.' });
+    } finally {
+      if (alive.current) setBusy(null);
+    }
+  };
+
   const onDialogDone = (mode, result) => {
     setDialog(null);
     if (mode === 'approve') {
@@ -451,6 +482,19 @@ export default function SheetMusicScore() {
           )}
           <Button size="sm" variant="light" leftSection={<IconSparkles size={16} />} onClick={onPropose} disabled={Boolean(busy) || !measureCount}>
             Propose segments
+          </Button>
+          <Button
+            size="sm"
+            variant="light"
+            color="gray"
+            leftSection={<IconPhoto size={16} />}
+            onClick={onGeneratePoster}
+            disabled={Boolean(busy) || posterKind === 'scan'}
+            loading={busy === 'poster'}
+            title={posterKind === 'scan' ? 'This score has a scanned poster, which the kiosk shows instead.' : undefined}
+            data-testid="generate-poster"
+          >
+            {posterKind === 'generated' ? 'Regenerate poster' : 'Generate poster'}
           </Button>
           {hasApproved ? (
             <Button size="sm" variant="light" color="orange" leftSection={<IconArrowBackUp size={16} />} onClick={() => setDialog('revert')} disabled={Boolean(busy) || !hasGenerated}>

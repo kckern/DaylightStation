@@ -30,7 +30,8 @@ the progress in a row along the bottom. The poster is the picture in a 2:3 frame
 (cropped to fit only when its own shape differs), never squeezed into a wide band. With no picture, or one that fails to load, a tinted
 stand-in shows a ♪ and the title.
 
-- **Piece:** the score's `cover` (the same-name picture beside the score), the printed
+- **Piece:** the score's `cover` (the same-name picture beside the score: a raster scan, else a
+  generated `.svg` poster, see [Posters](sheet-music-player.md#posters)), the printed
   title, and the next step: the next passage's bars (`Bars 6–9`), or **Whole piece** once
   every passage is Gold (`piecePolishing`). The badge is **Silver next** while
   any passage lacks Silver, **Gold next** once every passage has it, then the Polish

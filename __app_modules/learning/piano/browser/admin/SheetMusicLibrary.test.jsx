@@ -5,8 +5,10 @@ import { MantineProvider } from '@mantine/core';
 import { MemoryRouter, Routes, Route, useParams, useNavigate } from 'react-router-dom';
 
 const api = vi.fn();
+const apiText = vi.fn();
 vi.mock("../../../../../frontend/src/lib/api.mjs", () => ({
   DaylightAPI: (...a) => api(...a),
+  DaylightAPIText: (...a) => apiText(...a),
   buildHeaders: (token, withContentType) => ({
     'X-Test': 'headers',
     withContentType: String(withContentType),
@@ -18,6 +20,12 @@ vi.mock("../../../../../frontend/src/lib/logging/Logger.js", () => {
   const rec = (level) => (event, data) => logged.push({ level, event, data });
   return { default: () => ({ child: () => ({ info: rec('info'), debug: rec('debug'), warn: rec('warn'), error: rec('error') }) }) };
 });
+const engrave = vi.fn();
+vi.mock("../../../../../__capabilities/music-notation/browser/renderers/osmdRender.js", () => ({
+  osmdEngrave: (...a) => engrave(...a),
+  extractPerStaffGeometry: () => [{ system: 0, staff: 0, top: 0, left: 0, right: 400, lineSpacing: 5 }],
+}));
+const ENGRAVED = '<svg xmlns="http://www.w3.org/2000/svg" width="400" height="100"><g class="staffline"><path d="M0 0L400 0"/></g></svg>';
 const notify = vi.fn();
 vi.mock('@mantine/notifications', () => ({ notifications: { show: (...a) => notify(...a) } }));
 
@@ -61,6 +69,10 @@ const jsonResponse = (status, body) => ({ ok: status >= 200 && status < 300, sta
 
 beforeEach(() => {
   api.mockReset();
+  apiText.mockReset();
+  engrave.mockReset();
+  apiText.mockImplementation(async (path) => `<score-partwise path="${path}"/>`);
+  engrave.mockImplementation(async (host) => { host.innerHTML = ENGRAVED; return { osmd: {} }; });
   notify.mockReset();
   logged.length = 0;
   api.mockResolvedValue(LIBRARY);
@@ -290,5 +302,80 @@ describe('scorePath', () => {
     );
     fireEvent.click(screen.getByText('go'));
     await waitFor(() => expect(screen.getByTestId('echo').textContent).toBe(id));
+  });
+
+  describe('Generate missing posters', () => {
+    const MISSING = ['nocturne', 'gavotte', 'bourree'].map((name) => ({
+      id: `files:docs/sheet-music/classical/${name}.musicxml`, folder: 'classical', file: `${name}.musicxml`, format: 'musicxml',
+      title: name[0].toUpperCase() + name.slice(1), composer: null, poster: 'none', learn: 'none', learners: [],
+    }));
+    const posterCalls = () => global.fetch.mock.calls.filter(([url]) => String(url).startsWith('/api/v1/admin/sheet-music/poster'));
+
+    it('walks the scores without a poster one at a time, then reloads the library', async () => {
+      api.mockResolvedValue({ ...LIBRARY, scores: [...LIBRARY.scores, ...MISSING] });
+      let active = 0;
+      let maxActive = 0;
+      engrave.mockImplementation(async (host) => {
+        active += 1; maxActive = Math.max(maxActive, active);
+        await new Promise((r) => setTimeout(r, 1));
+        active -= 1;
+        host.innerHTML = ENGRAVED;
+        return { osmd: {} };
+      });
+      global.fetch.mockResolvedValue(jsonResponse(201, { poster: 'generated' }));
+      renderLib();
+      const button = await screen.findByTestId('generate-missing-posters');
+      expect(button.textContent).toBe('Generate missing posters (4)'); // Minuet + the three above
+      fireEvent.click(button);
+      await waitFor(() => expect(screen.getByTestId('poster-run-status').textContent).toBe('Generated 4 of 4 posters.'));
+      expect(maxActive).toBe(1);
+      const ids = posterCalls().map(([url]) => decodeURIComponent(String(url).split('?id=')[1]));
+      expect(ids).toEqual(['files:docs/sheet-music/classical/minuet-in-g.mxl', ...MISSING.map((m) => m.id)]);
+      expect(posterCalls()[0][1].body).toContain('data-daylight-poster="generated"');
+      expect(apiText).toHaveBeenCalledWith(`api/v1/proxy/media/stream/${encodeURIComponent('docs/sheet-music/classical/minuet-in-g.mxl')}`);
+      await waitFor(() => expect(api).toHaveBeenCalledTimes(2)); // reloaded
+      expect(logged.find((l) => l.event === 'admin.sheetmusic.posters-done')?.data).toMatchObject({ total: 4, saved: 4, failed: 0 });
+    });
+
+    it('lists the failures by title and keeps going', async () => {
+      api.mockResolvedValue({ ...LIBRARY, scores: [...LIBRARY.scores, ...MISSING] });
+      global.fetch.mockImplementation(async (url) => (String(url).includes('gavotte')
+        ? jsonResponse(409, { error: 'has-scan' }) : jsonResponse(201, {})));
+      renderLib();
+      fireEvent.click(await screen.findByTestId('generate-missing-posters'));
+      await waitFor(() => expect(screen.getByTestId('poster-run-status').textContent).toBe('Generated 3 of 4 posters. 1 failed.'));
+      const failures = screen.getByTestId('poster-run-failures');
+      expect(failures.textContent).toContain('Gavotte: This score has a scanned poster');
+    });
+
+    it('stops when asked, between scores', async () => {
+      api.mockResolvedValue({ ...LIBRARY, scores: [...LIBRARY.scores, ...MISSING] });
+      let release;
+      engrave.mockImplementationOnce(async (host, xml, opts) => {
+        await new Promise((r) => { release = r; });
+        if (opts.shouldAbort()) return null;
+        host.innerHTML = ENGRAVED;
+        return { osmd: {} };
+      });
+      global.fetch.mockResolvedValue(jsonResponse(201, {}));
+      renderLib();
+      fireEvent.click(await screen.findByTestId('generate-missing-posters'));
+      await waitFor(() => expect(release).toBeTypeOf('function'));
+      expect(screen.getByTestId('generate-missing-posters').disabled).toBe(true);
+      fireEvent.click(screen.getByRole('button', { name: 'Stop' }));
+      release();
+      await waitFor(() => expect(screen.getByTestId('poster-run-status').textContent).toBe('Stopped after 0 of 4.'));
+      expect(posterCalls()).toHaveLength(0);
+      expect(engrave).toHaveBeenCalledTimes(1);
+    });
+
+    it('is disabled when every score has a poster', async () => {
+      api.mockResolvedValue({ ...LIBRARY, scores: LIBRARY.scores.filter((s) => s.poster !== 'none') });
+      renderLib();
+      await screen.findByText('Fur Elise');
+      const button = screen.getByTestId('generate-missing-posters');
+      expect(button.textContent).toBe('Generate missing posters (0)');
+      expect(button.disabled).toBe(true);
+    });
   });
 });

@@ -1,14 +1,17 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import {
-  Alert, Anchor, Badge, Button, FileInput, Group, Modal, SegmentedControl, Select,
+  Alert, Anchor, Badge, Button, FileInput, Group, List, Modal, SegmentedControl, Select,
   Skeleton, Stack, Table, Text, TextInput, Title, Tooltip,
 } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
-import { IconAlertTriangle, IconRefresh, IconUpload } from '@tabler/icons-react';
+import { IconAlertTriangle, IconPhoto, IconPlayerStop, IconRefresh, IconUpload } from '@tabler/icons-react';
 import getLogger from "../../../../../frontend/src/lib/logging/Logger.js";
 import { useSheetMusicLibrary, uploadScore } from "./useSheetMusicLibrary.js";
 import { scoreViewPath } from "../PianoKiosk/modes/SheetMusic/sheetMusicModel.js";
+import { DaylightAPIText } from "../../../../../frontend/src/lib/api.mjs";
+import { osmdEngrave } from "../../../../../__capabilities/music-notation/browser/renderers/osmdRender.js";
+import { POSTER_ENGRAVE_WIDTH, POSTER_ERROR_MESSAGES, generateMissingPosters } from "./posterJob.js";
 
 /** Readable copy for every code POST /upload can answer with. */
 export const UPLOAD_ERROR_MESSAGES = {
@@ -92,6 +95,48 @@ function ScoreRow({ score, onOpen }) {
       <Table.Td><Learners learners={score.learners} /></Table.Td>
       <Table.Td>{score.error ? <Badge color="red" variant="filled">{score.error}</Badge> : null}</Table.Td>
     </Table.Tr>
+  );
+}
+
+/** `files:docs/x.mxl` → its stream URL path, as the score page fetches it. */
+const fetchScoreXml = (id) => DaylightAPIText(`api/v1/proxy/media/stream/${encodeURIComponent(id.replace(/^[a-z]+:/i, ''))}`);
+
+/** Progress, cancel and the failure list of a "Generate missing posters" run. */
+function PosterRun({ run, titles, onCancel, onDismiss }) {
+  if (!run) return null;
+  const { running, index, total, saved, failed, cancelled } = run;
+  const status = running
+    ? `Generating posters: ${Math.min(index + 1, total)} of ${total}`
+    : cancelled
+      ? `Stopped after ${saved} of ${total}. ${failed.length ? `${failed.length} failed.` : ''}`
+      : `Generated ${saved} of ${total} posters.${failed.length ? ` ${failed.length} failed.` : ''}`;
+  return (
+    <Alert
+      color={running ? 'blue' : failed.length ? 'yellow' : 'teal'}
+      variant="light"
+      icon={<IconPhoto size={16} />}
+      withCloseButton={!running}
+      onClose={onDismiss}
+      data-testid="poster-run"
+    >
+      <Stack gap="xs">
+        <Group justify="space-between">
+          <Text size="sm" data-testid="poster-run-status">{status.trim()}</Text>
+          {running ? (
+            <Button size="xs" variant="default" leftSection={<IconPlayerStop size={14} />} onClick={onCancel} disabled={run.cancelling}>
+              {run.cancelling ? 'Stopping…' : 'Stop'}
+            </Button>
+          ) : null}
+        </Group>
+        {failed.length ? (
+          <List size="sm" spacing={0} data-testid="poster-run-failures">
+            {failed.map((f) => (
+              <List.Item key={f.id}>{`${titles[f.id] || f.id}: ${POSTER_ERROR_MESSAGES[f.code] || f.code}`}</List.Item>
+            ))}
+          </List>
+        ) : null}
+      </Stack>
+    </Alert>
   );
 }
 
@@ -205,6 +250,14 @@ export default function SheetMusicLibrary() {
   const { scores, folders, loading, error, reload } = useSheetMusicLibrary(logger);
   const [filter, setFilter] = useState('all');
   const [uploadOpen, setUploadOpen] = useState(false);
+  const [posterRun, setPosterRun] = useState(null);
+  const posterHostRef = useRef(null);
+  const cancelPostersRef = useRef(false);
+  const alive = useRef(true);
+  useEffect(() => {
+    alive.current = true;
+    return () => { alive.current = false; cancelPostersRef.current = true; };
+  }, []);
 
   useEffect(() => { logger.info('admin.sheetmusic.mounted'); }, [logger]);
 
@@ -222,6 +275,43 @@ export default function SheetMusicLibrary() {
       .filter((g) => g.rows.length > 0);
   }, [scores, folders, filter]);
 
+  const missingPosters = useMemo(
+    () => groups.flatMap((g) => g.rows).filter((s) => s.poster === 'none' && !s.error),
+    [groups],
+  );
+  const titles = useMemo(() => Object.fromEntries(scores.map((s) => [s.id, s.title || s.file])), [scores]);
+  const postersRunning = Boolean(posterRun?.running);
+
+  const generatePosters = useCallback(async () => {
+    if (postersRunning || !missingPosters.length || !posterHostRef.current) return;
+    const rows = missingPosters.map(({ id }) => ({ id }));
+    cancelPostersRef.current = false;
+    setPosterRun({ running: true, index: 0, total: rows.length, saved: 0, failed: [], cancelled: false });
+    logger.info('admin.sheetmusic.posters-start', { total: rows.length, filter });
+    const result = await generateMissingPosters({
+      rows,
+      host: posterHostRef.current,
+      fetchXml: fetchScoreXml,
+      engrave: osmdEngrave,
+      isCancelled: () => cancelPostersRef.current,
+      onProgress: ({ index }) => { if (alive.current) setPosterRun((prev) => (prev ? { ...prev, index } : prev)); },
+      logger,
+    });
+    logger.info('admin.sheetmusic.posters-done', {
+      total: rows.length, saved: result.saved.length, failed: result.failed.length, cancelled: result.cancelled,
+    });
+    if (!alive.current) return;
+    setPosterRun({
+      running: false, index: rows.length, total: rows.length, saved: result.saved.length, failed: result.failed, cancelled: result.cancelled,
+    });
+    if (result.saved.length) reload();
+  }, [postersRunning, missingPosters, logger, filter, reload]);
+
+  const cancelPosters = useCallback(() => {
+    cancelPostersRef.current = true;
+    setPosterRun((prev) => (prev ? { ...prev, cancelling: true } : prev));
+  }, []);
+
   const openScore = useCallback((score) => {
     logger.info('admin.sheetmusic.open', { id: score.id });
     navigate(scorePath(score.id));
@@ -237,18 +327,38 @@ export default function SheetMusicLibrary() {
     <Stack gap="md" p="md">
       <Group justify="space-between">
         <Title order={3}>Sheet music</Title>
-        <Tooltip
-          label={loading ? 'Loading folders' : 'Folders could not be loaded. Retry first.'}
-          disabled={folders.length > 0}
-          withArrow
-        >
-          <span>
-            <Button leftSection={<IconUpload size={16} />} onClick={() => setUploadOpen(true)} disabled={folders.length === 0}>
-              Upload
-            </Button>
-          </span>
-        </Tooltip>
+        <Group gap="xs">
+          <Button
+            variant="light"
+            leftSection={<IconPhoto size={16} />}
+            onClick={generatePosters}
+            disabled={postersRunning || missingPosters.length === 0}
+            data-testid="generate-missing-posters"
+          >
+            {`Generate missing posters (${missingPosters.length})`}
+          </Button>
+          <Tooltip
+            label={loading ? 'Loading folders' : 'Folders could not be loaded. Retry first.'}
+            disabled={folders.length > 0}
+            withArrow
+          >
+            <span>
+              <Button leftSection={<IconUpload size={16} />} onClick={() => setUploadOpen(true)} disabled={folders.length === 0}>
+                Upload
+              </Button>
+            </span>
+          </Tooltip>
+        </Group>
       </Group>
+
+      <PosterRun run={posterRun} titles={titles} onCancel={cancelPosters} onDismiss={() => setPosterRun(null)} />
+      {/* Off-screen but laid out: OSMD measures the host while it engraves. */}
+      <div
+        ref={posterHostRef}
+        aria-hidden="true"
+        data-testid="poster-host"
+        style={{ position: 'absolute', left: -100000, top: 0, width: POSTER_ENGRAVE_WIDTH, visibility: 'hidden', pointerEvents: 'none' }}
+      />
 
       <SegmentedControl
         value={filter}

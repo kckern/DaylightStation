@@ -30,8 +30,17 @@ vi.mock("../../../../../__capabilities/music-notation/browser/renderers/osmdRend
     osmdRender: (...a) => osmdRender(...a),
     buildMeasures: actual.buildMeasures,
     extractMeasureBounds: () => Array.from({ length: 8 }, (_, i) => ({ left: i * 50, right: i * 50 + 50, top: 0, bottom: 40 })),
+    extractPerStaffGeometry: () => [0, 1, 2].map((system) => ({ system, staff: 0, top: system * 100, left: 0, right: 400, lineSpacing: 5 })),
   };
 });
+const uploadPoster = vi.fn();
+vi.mock("./posterJob.js", async () => {
+  const actual = await vi.importActual("./posterJob.js");
+  return { ...actual, uploadPoster: (...a) => uploadPoster(...a) };
+});
+/** What OSMD leaves in the host: one staffline group per system. */
+const ENGRAVED_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="400" height="300" viewBox="0 0 500 375">${
+  [0, 1, 2].map((i) => `<g class="staffline"><path d="M0 ${i * 125}L500 ${i * 125}"/></g>`).join('')}</svg>`;
 vi.mock("../../../../../__capabilities/music-notation/browser/parseMusicXml.js", () => ({
   parseMusicXml: () => ({ sections: [], tempo: 96 }),
 }));
@@ -76,13 +85,16 @@ const engravedReady = () => waitFor(() => expect(screen.queryByTestId('score-loa
 const putCalls = () => api.mock.calls.filter(([, , method]) => method === 'PUT');
 
 beforeEach(() => {
-  api.mockReset(); apiText.mockReset(); osmdRender.mockReset(); logged.length = 0;
+  api.mockReset(); apiText.mockReset(); osmdRender.mockReset(); uploadPoster.mockReset(); logged.length = 0;
   ID = DEFAULT_ID;
   learn = learnFile();
   pianoConfig = {};
   api.mockImplementation(route);
   apiText.mockResolvedValue('<score-partwise/>');
-  osmdRender.mockResolvedValue({ steps: STEPS, osmd: {}, tempoEntries: [{ onsetQuarter: 0, bpm: 96 }], width: 400, height: 200 });
+  osmdRender.mockImplementation(async (host) => {
+    host.innerHTML = ENGRAVED_SVG;
+    return { steps: STEPS, osmd: {}, tempoEntries: [{ onsetQuarter: 0, bpm: 96 }], width: 400, height: 200 };
+  });
 });
 afterEach(cleanup);
 
@@ -312,5 +324,45 @@ describe('SheetMusicScore', () => {
     };
     renderPage();
     expect(await screen.findByTestId('piece-override')).toBeTruthy();
+  });
+
+  describe('Generate poster', () => {
+    it('cuts the first two systems from the engraving on screen and uploads them', async () => {
+      uploadPoster.mockResolvedValue({ ok: true, result: { poster: 'generated' } });
+      renderPage();
+      await engravedReady();
+      const button = await screen.findByTestId('generate-poster');
+      expect(button.textContent).toBe('Generate poster');
+      fireEvent.click(button);
+      await waitFor(() => expect(uploadPoster).toHaveBeenCalledTimes(1));
+      const [id, text] = uploadPoster.mock.calls[0];
+      expect(id).toBe(ID);
+      expect(text).toContain('data-daylight-poster="generated"');
+      expect((text.match(/<path/g) || []).length).toBe(2);
+      // system 1 bottom 100+20=120, system 2 top 200 → cut at 160 px = 200 units
+      expect(text).toContain('viewBox="0 0 500 200"');
+      expect(await screen.findByText(/Poster saved/)).toBeTruthy();
+      expect(screen.getByTestId('generate-poster').textContent).toBe('Regenerate poster');
+      expect(logged.some((l) => l.event === 'admin.sheetmusic.poster-generated')).toBe(true);
+    });
+
+    it('is disabled when a scan exists, since the kiosk would never show it', async () => {
+      learn = learnFile({ poster: 'scan' });
+      renderPage();
+      await engravedReady();
+      const button = await screen.findByTestId('generate-poster');
+      expect(button.disabled).toBe(true);
+      fireEvent.click(button);
+      expect(uploadPoster).not.toHaveBeenCalled();
+    });
+
+    it('says why the server refused', async () => {
+      uploadPoster.mockResolvedValue({ ok: false, code: 'poster-exists', status: 409 });
+      renderPage();
+      await engravedReady();
+      fireEvent.click(await screen.findByTestId('generate-poster'));
+      expect(await screen.findByText(/hand-made SVG poster/)).toBeTruthy();
+      expect(logged.find((l) => l.event === 'admin.sheetmusic.poster-failed')?.data).toMatchObject({ code: 'poster-exists' });
+    });
   });
 });
