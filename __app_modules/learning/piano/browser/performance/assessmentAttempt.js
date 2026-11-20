@@ -546,8 +546,10 @@ function fixedPlacement(attempt, notes) {
 // window edge. The share is 0.4 unless the policy names its own
 // (`placementFullCreditShare`, 0 < share < 1): Learn's slowed steps use a wider
 // one, because a child several notes into a new piece who sits a steady fifth
-// of a beat off the click is playing WITH the beat for that stage. An off-beat (early/late) claim earns 0, except the take's FIRST
-// one in score order, which earns half: one stumble in a passage a child
+// of a beat off the click is playing WITH the beat for that stage.
+//
+// An off-beat (early/late) claim earns 0, except the take's FIRST one in
+// score order, which earns half: one stumble in a passage a child
 // otherwise played with the beat should not fail the take on timing alone.
 // "First" is over the whole expectation, so a span slice forgives the same
 // note the whole take does.

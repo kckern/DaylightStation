@@ -223,6 +223,7 @@ export function VideoPlayer({
   // quality HUD was deleted — audit 2026-07-09 §4.4)
   useRenderFpsMonitor({
     enabled: displayReady && !isPaused,
+    getMediaEl,
     mediaContext: {
       title: media?.title,
       grandparentTitle: media?.grandparentTitle,

@@ -1,6 +1,6 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import LearnCoach, { passageDrill } from './LearnCoach.jsx';
+import LearnCoach, { passageDrill, recoveryWording } from './LearnCoach.jsx';
 import { applyCoachEvent, createCoachPlan, projectCoach } from '../../../../../../../shared/music/learnCoach.mjs';
 const h = vi.hoisted(() => ({ profile: 'guest', lab: null, labs: 0,
   log: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn(), sampled: vi.fn() } }));
@@ -134,6 +134,13 @@ describe('LearnCoach', () => {
   expect(h.lab.notice).toBeNull();
   expect(screen.queryByText(/saved/i)).toBeNull();
  });
+ it('words each recovery once, for its button and its onward sentence', () => {
+  expect(recoveryWording({ reason: 'slower-beat', tempoPercent: 75 })).toEqual({ button: 'Try a little slower · 75%', sentence: 'try a little slower (75%)' });
+  expect(recoveryWording({ reason: 'slower-beat' })).toEqual({ button: 'Try a little slower', sentence: 'try a little slower' });
+  expect(recoveryWording({ reason: 'one-hand', parts: ['lh'] })).toEqual({ button: 'Practice the left hand', sentence: 'practice the left hand' });
+  expect(recoveryWording({ reason: 'smaller-span', range: { start: 1, end: 1 } }).sentence).toBe('practice bar 2');
+  expect(recoveryWording({ reason: 'smaller-span', range: { start: 0, end: 2 } }).button).toBe('Practice bars 1–3');
+ });
  it('names a timing recovery by its slower tempo', async () => {
   render(<LearnCoach {...props} skipping={{ default: 'open' }} />);
   act(() => h.lab.onPickStep({ id: h.lab.drill.projection.steps.at(-1).id }));
@@ -142,15 +149,20 @@ describe('LearnCoach', () => {
   await outcome(failed); await outcome({ ...failed, assessmentId: 'timing2' });
   expect(screen.getByRole('button', { name: 'Try a little slower · 75%' })).toBeInTheDocument();
   expect(screen.queryByText('slower-beat')).not.toBeInTheDocument();
+  // The piano's onward line says it as a sentence: "play any key to try a little slower (75%)".
+  expect(h.lab.resultContinueLabel).toBe('try a little slower (75%)');
  });
  it('logs each take with its tempo and the scores it was judged on', async () => {
   h.log.info.mockClear();
   render(<LearnCoach {...props} skipping={{ default: 'open' }} />);
   act(() => h.lab.onPickStep({ id: h.lab.drill.projection.steps.at(-2).id }));
-  await outcome({ ...passed, criteria: { completeness: 1, cleanliness: 0.93333, placement: 0.71234 }, verdict: { passed: false } });
+  await act(async () => { h.lab.onStarted(); h.lab.onOutcome({ ...passed, criteria: { completeness: 1, cleanliness: 0.93333, placement: 0.71234 }, verdict: { passed: false } }, { placementShare: 0.6 }); });
   expect(h.log.info).toHaveBeenCalledWith('piano.learn.coach.take', expect.objectContaining({
-   tempoPercent: 75, placement: 0.712, completeness: 1, cleanliness: 0.933, passed: false,
+   tempoPercent: 75, placement: 0.712, completeness: 1, cleanliness: 0.933, passed: false, placementShare: 0.6,
   }));
+  // A take judged without the wider share says so: null, not absent.
+  await outcome({ ...passed, assessmentId: 'strict', verdict: { passed: false }, criteria: { completeness: 1, cleanliness: 1, placement: 0.5 } });
+  expect(h.log.info).toHaveBeenLastCalledWith('piano.learn.coach.take', expect.objectContaining({ placementShare: null }));
  });
  it('puts the passage rail under the drill, and a tile changes passage', () => {
   const two = createCoachPlan({ scoreId: 'score', fingerprint: 'fp', segments: [
