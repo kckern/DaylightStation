@@ -113,3 +113,36 @@ test('Auto retries only missing service types and uses no repeat interval for a 
   })]);
   await expect(dialog).toBeHidden();
 });
+
+test('Auto keeps keyboard traversal in the service sheet while Retry waits', async ({ page, baseURL }) => {
+  const { pending, reads, opener, dialog } = await openService(page, baseURL, { failFirst: true });
+  const close = dialog.getByRole('button', { name: 'Close', exact: true });
+  const retry = dialog.getByRole('button', { name: 'Retry', exact: true });
+  const region = dialog.getByRole('region', { name: 'Service types', exact: true });
+  try {
+    await expect(close).toBeFocused();
+    await page.keyboard.press('Tab');
+    await expect(retry).toBeFocused();
+    await page.keyboard.press('Enter');
+    await expect.poll(() => reads).toEqual(['GET', 'GET']);
+    await expect(region).toBeFocused();
+    await page.keyboard.press('Tab');
+    await expect(close).toBeFocused();
+    await page.keyboard.press('Shift+Tab');
+    await expect(close).toBeFocused();
+  } finally {
+    pending.resolve();
+  }
+
+  const what = dialog.getByRole('combobox', { name: 'What was done', exact: true });
+  const save = dialog.getByRole('button', { name: 'Save', exact: true });
+  await expect(what).toHaveValue('cross-rotate');
+  await expect(close).toBeFocused();
+  await page.keyboard.press('Shift+Tab');
+  await expect(save).toBeFocused();
+  await page.keyboard.press('Tab');
+  await expect(close).toBeFocused();
+  await page.keyboard.press('Escape');
+  await expect(dialog).toBeHidden();
+  await expect(opener).toBeFocused();
+});

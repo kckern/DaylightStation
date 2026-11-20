@@ -1,12 +1,13 @@
 // frontend/src/lib/ui/Sheet.test.jsx
 import { describe, it, expect, vi } from 'vitest';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { act, render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { useRef, useState } from 'react';
 import { MantineProvider } from '@mantine/core';
 import { DismissStackProvider } from './dismiss/DismissStackProvider.jsx';
 import { AppFrame } from './AppFrame.jsx';
 import { Sheet } from './Sheet.jsx';
 import { useOverlayScrollLock } from './useOverlayScrollLock.js';
+import { useRetryRegion } from './useRetryRegion.js';
 
 // Sheet uses Mantine's ActionIcon, which throws without a MantineProvider in
 // the tree (see states.test.jsx for the same pattern).
@@ -48,6 +49,33 @@ describe('Sheet', () => {
     expect(document.body.style.overflow).toBe('hidden');
     unmount();
     expect(document.body.style.overflow).toBe('');
+  });
+
+  it('keeps focus in the recovery region when Retry runs during sheet opening', () => {
+    function Recovery() {
+      const [pending, setPending] = useState(false);
+      const { regionProps, retry } = useRetryRegion(() => setPending(true), pending);
+      return <Sheet open title="Task" onClose={() => {}}>
+        <section {...regionProps} aria-label="Result">
+          {pending ? 'Loading' : <button onClick={retry}>Retry</button>}
+        </section>
+      </Sheet>;
+    }
+
+    vi.useFakeTimers();
+    try {
+      wrap(<Recovery />);
+      const retry = screen.getByRole('button', { name: 'Retry' });
+      const region = screen.getByRole('region', { name: 'Result' });
+      retry.focus();
+      fireEvent.click(retry);
+      expect(document.activeElement).toBe(region);
+      expect(region.getAttribute('aria-busy')).toBe('true');
+      act(() => { vi.runOnlyPendingTimers(); });
+      expect(document.activeElement).toBe(region);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('locks only the owning frame and keeps it locked across different overlay types', () => {

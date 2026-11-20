@@ -257,9 +257,12 @@ before opening. Media's Start fresh dialog returns to the Settings button.
 [Media settings](../../../__app_modules/media/media/browser/shell/SettingsMenu.jsx) ·
 [Feed Scroll detail](../../../__app_modules/media/feed/browser/Scroll/detail/DetailModal.jsx)
 
-In `Sheet`, mark the initial input with `data-autofocus`. The focus trap
-then focuses the input after the sheet records the original trigger.
-[Auto place naming](../../../__app_modules/household/auto/browser/DrivesPanel.jsx)
+In `Sheet`, mark the initial input with `data-autofocus`. Once the sheet
+records the opener, it moves focus to that input or Close if focus is still
+outside the panel. Tab and Shift+Tab stay in the sheet, including when an
+action has moved focus to a loading region.
+[Auto place naming](../../../__app_modules/household/auto/browser/DrivesPanel.jsx) ·
+[Auto service types](../../../__app_modules/household/auto/browser/ServicePanel.jsx)
 
 The seven browser app routes opt into the edge-to-edge viewport. Mantine
 dialog sizing follows the same safe rectangle, including body portals.
