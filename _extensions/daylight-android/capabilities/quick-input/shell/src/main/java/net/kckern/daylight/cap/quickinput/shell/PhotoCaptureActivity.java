@@ -11,6 +11,7 @@ import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.provider.MediaStore;
+import android.util.Log;
 import android.widget.Button;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
@@ -25,6 +26,7 @@ import java.util.Map;
 
 /** Reviews the system camera's confirmed output before the user explicitly sends it. */
 public class PhotoCaptureActivity extends Activity {
+    private static final String TAG = "Daylight-Input";
     private static final int REQUEST_CAPTURE = 1;
     private static final int REQUEST_CAMERA = 2;
     private static final int GRANT = Intent.FLAG_GRANT_WRITE_URI_PERMISSION | Intent.FLAG_GRANT_READ_URI_PERMISSION;
@@ -36,6 +38,7 @@ public class PhotoCaptureActivity extends Activity {
     private CaptureDraftStore store;
     private String owner;
     private String sessionKey;
+    private final CaptureScopeWait bindingWait = new CaptureScopeWait();
     private final DraftDiscard confirmation = new DraftDiscard();
     private AlertDialog discardDialog;
     private CaptureDraftStore.Draft draft;
@@ -45,14 +48,20 @@ public class PhotoCaptureActivity extends Activity {
     private boolean asking;
     private boolean used;
     private boolean preparing;
+    private boolean preparationAttempted;
     private boolean completed;
+    private boolean launchCamera;
+    private boolean resumed;
 
     @Override protected void onCreate(Bundle state) {
         super.onCreate(state);
         dest = MemoFiles.dest(getIntent().getStringExtra(MemoFiles.EXTRA_DEST));
         label = MemoFiles.label(getIntent().getStringExtra(MemoFiles.EXTRA_LABEL));
         owner = getIntent().getStringExtra(CaptureScope.EXTRA);
-        if (dest == null || !CaptureScope.currentIs(owner)) { finish(); return; }
+        if (dest == null || !CaptureScope.canOpenCameraSession(owner, state != null)) {
+            bindingUnavailable();
+            return;
+        }
         sessionKey = owner + ":" + dest;
         PhotoCaptureActivity previous = OPEN.get(sessionKey);
         if (previous != null && !previous.isFinishing() && !previous.isDestroyed()) {
@@ -71,22 +80,62 @@ public class PhotoCaptureActivity extends Activity {
             finish();
             return;
         }
+        if (draft != null && (!dest.equals(draft.dest) || draft.kind != CaptureDraftStore.Kind.PHOTO)) draft = null;
         if (draft != null) label = draft.label;
-        setTitle(label);
         if (state != null) {
-            String raw = state.getString("raw");
-            rawName = CaptureFiles.idOf(raw) == null || !rawFile(raw).isFile() ? null : raw;
+            rawName = store.pendingCameraName(draft, state.getString("raw"));
             asking = state.getBoolean("asking");
             used = state.getBoolean("used");
         }
+        launchCamera = state == null && draft == null;
         render();
-        if (rawName == null && draft != null && draft.confirmedPhoto().isFile()) prepare();
-        else if (state == null && draft == null) requestCamera();
     }
 
     @Override protected void onResume() {
         super.onResume();
-        if (!isFinishing() && !CaptureScope.currentIs(owner)) finish();
+        resumed = true;
+        if (isFinishing()) return;
+        refreshBinding();
+    }
+
+    @Override protected void onPause() {
+        resumed = false;
+        bindingWait.cancel();
+        super.onPause();
+    }
+
+    private void refreshBinding() {
+        if (CaptureScope.currentIs(owner)) {
+            showAuthorizedDraft();
+        } else {
+            render();
+            bindingWait.await(this, owner, this::showAuthorizedDraft, this::bindingUnavailable);
+        }
+    }
+
+    private void showAuthorizedDraft() {
+        if (!CaptureScope.currentIs(owner)) {
+            bindingUnavailable();
+            return;
+        }
+        render();
+        if (!preparationAttempted && rawName == null && draft != null && draft.confirmedPhoto().isFile()) {
+            prepare();
+        } else if (launchCamera) {
+            launchCamera = false;
+            requestCamera();
+        }
+    }
+
+    private void bindingUnavailable() {
+        // A pending system-camera result can still be delivered after recreation, even
+        // when the current pairing has already changed. Retain it for its original owner.
+        if (rawName != null) {
+            render();
+            return;
+        }
+        say(CaptureScopeWait.UNAVAILABLE);
+        finish();
     }
 
     @Override protected void onSaveInstanceState(Bundle state) {
@@ -133,7 +182,7 @@ public class PhotoCaptureActivity extends Activity {
                 .path(CaptureFiles.uriPath(name)).build();
     }
 
-    private File rawFile(String name) { return new File(new File(getFilesDir(), CaptureDraftStore.CAMERA_DIR), name); }
+    private File rawFile(String name) { return store.cameraFile(name); }
 
     private void openCamera() {
         try {
@@ -177,53 +226,62 @@ public class PhotoCaptureActivity extends Activity {
         final String name = rawName;
         rawName = null;
         revokeCamera(name);
-        File raw = rawFile(name);
-        if (completed || draft == null) {
-            raw.delete();
-            return;
-        }
+        if (completed || draft == null) return;
         try {
-            if (store.retainCameraOutput(draft.id, raw, resultCode == RESULT_OK)) {
+            if (store.retainCameraResult(draft.id, name, resultCode == RESULT_OK)) {
                 used = false;
-                prepare();
-            } else {
-                render();
+                preparationAttempted = false;
             }
         } catch (IOException failed) {
+            Log.w(TAG, "Could not stage confirmed camera output");
             say("Could not save camera output");
-            render();
         }
+        if (resumed) refreshBinding();
     }
 
     private void prepare() {
+        if (!CaptureScope.currentIs(owner) || preparing) return;
         preparing = true;
+        preparationAttempted = true;
         used = false;
         render();
         CaptureDraftStore.Draft selected = draft;
         new Thread(() -> {
-            boolean ready = false;
+            PhotoPlan.Preparation result;
             File encoded = null;
             try {
                 encoded = File.createTempFile("photo-", ".tmp", selected.directory);
-                if (PhotoPlan.prepare(selected.confirmedPhoto(), encoded, new AndroidPixels())) {
-                    ready = store.acceptPhoto(selected.id, encoded, true);
+                result = PhotoPlan.prepare(selected.confirmedPhoto(), encoded, new AndroidPixels());
+                if (result == PhotoPlan.Preparation.READY && !store.acceptPhoto(selected.id, encoded, true)) {
+                    result = PhotoPlan.Preparation.DRAFT_STORAGE;
                 }
-            } catch (IOException ignored) {
-                // The confirmed camera output remains private and can be tried again.
+            } catch (IOException failed) {
+                result = PhotoPlan.Preparation.DRAFT_STORAGE;
             } finally {
                 if (encoded != null) encoded.delete();
             }
-            boolean success = ready;
+            PhotoPlan.Preparation outcome = result;
+            if (outcome != PhotoPlan.Preparation.READY) Log.w(TAG, "Photo preparation failed: " + outcome.name());
             runOnUiThread(() -> {
                 if (isDestroyed() || isFinishing()) return;
                 preparing = false;
-                if (!success) say("The photo could not be prepared. Nothing was sent.");
+                if (outcome != PhotoPlan.Preparation.READY && CaptureScope.currentIs(owner)) {
+                    say(outcome.message + " Nothing was sent.");
+                }
                 render();
             });
         }, "Daylight-photo").start();
     }
 
     private void render() {
+        if (!CaptureScope.currentIs(owner)) {
+            setTitle("Photo");
+            TextView checking = new TextView(this);
+            checking.setText(CaptureScopeWait.CHECKING);
+            setContentView(checking);
+            return;
+        }
+        setTitle(label);
         LinearLayout layout = new LinearLayout(this);
         layout.setOrientation(LinearLayout.VERTICAL);
         int pad = Math.round(20 * getResources().getDisplayMetrics().density);
@@ -325,6 +383,7 @@ public class PhotoCaptureActivity extends Activity {
     }
 
     @Override protected void onDestroy() {
+        bindingWait.cancel();
         invalidateDiscard();
         if (sessionKey != null && OPEN.get(sessionKey) == this) OPEN.remove(sessionKey);
         super.onDestroy();

@@ -7,6 +7,7 @@ import android.media.ExifInterface;
 
 import java.io.File;
 import java.io.FileOutputStream;
+import java.io.IOException;
 
 /**
  * The pixel work of a photo: decode, turn upright, scale, write as JPEG. Every decision
@@ -23,7 +24,8 @@ final class AndroidPixels implements PhotoPlan.Pixels {
         BitmapFactory.decodeFile(raw.getPath(), bounds);
         if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return false;
         // Read before the camera's file is gone: the orientation is the one thing of its EXIF that is used.
-        int orientation = new ExifInterface(raw.getPath()).getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL);
+        int orientation = PhotoPlan.readOrientation(() -> new ExifInterface(raw.getPath())
+                .getAttributeInt(ExifInterface.TAG_ORIENTATION, ExifInterface.ORIENTATION_NORMAL));
         PhotoPlan.Turn turn = PhotoPlan.turn(orientation);
 
         BitmapFactory.Options options = new BitmapFactory.Options();
@@ -46,8 +48,12 @@ final class AndroidPixels implements PhotoPlan.Pixels {
             if (turn.mirror) m.postScale(-1, 1);
             upright = Bitmap.createBitmap(decoded, 0, 0, decoded.getWidth(), decoded.getHeight(), m, true);
             try (FileOutputStream stream = new FileOutputStream(out)) {
-                if (!upright.compress(Bitmap.CompressFormat.JPEG, step.quality, stream)) return false;
+                if (!upright.compress(Bitmap.CompressFormat.JPEG, step.quality, stream)) {
+                    throw new PhotoPlan.WriteFailure();
+                }
                 stream.getFD().sync();
+            } catch (IOException failed) {
+                throw new PhotoPlan.WriteFailure();
             }
             return true;
         } finally {

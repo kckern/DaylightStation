@@ -85,6 +85,7 @@ public class RecordActivity extends Activity {
         if (Build.VERSION.SDK_INT >= 33) setRecentsScreenshotEnabled(false);
         owner = getIntent().getStringExtra(CaptureScope.EXTRA);
         if (!CaptureScope.currentIs(owner)) {
+            say(CaptureScopeWait.UNAVAILABLE);
             finish();
             return;
         }

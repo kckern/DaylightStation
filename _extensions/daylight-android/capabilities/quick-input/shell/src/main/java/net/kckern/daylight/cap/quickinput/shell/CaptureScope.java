@@ -29,6 +29,11 @@ public final class CaptureScope {
 
     static boolean currentIs(String key) { return valid(key) && key.equals(current()); }
 
+    /** A restored camera request may stage its result privately before setup is available. */
+    static boolean canOpenCameraSession(String owner, boolean restored) {
+        return valid(owner) && (restored || currentIs(owner));
+    }
+
     static boolean valid(String key) { return key != null && KEY.matcher(key).matches(); }
 
     /** Callers pass the canonical origin and configured user from the same settings snapshot. */

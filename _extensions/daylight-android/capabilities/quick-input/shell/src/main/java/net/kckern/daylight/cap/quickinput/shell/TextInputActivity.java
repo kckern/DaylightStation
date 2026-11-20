@@ -20,7 +20,6 @@ import android.widget.Toast;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -32,10 +31,12 @@ public class TextInputActivity extends Activity {
         return thread;
     });
 
+    private final CaptureScopeWait bindingWait = new CaptureScopeWait();
     private final DraftDiscard confirmation = new DraftDiscard();
     private AlertDialog discardDialog;
     private CaptureDraftStore store;
     private TextDraftWriter writer;
+    private Bundle deferredState;
     private boolean completed;
     private boolean loading;
     private boolean busy;
@@ -54,17 +55,44 @@ public class TextInputActivity extends Activity {
         if (Build.VERSION.SDK_INT >= 33) setRecentsScreenshotEnabled(false);
         getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_VISIBLE
                 | WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
-        open(getIntent(), savedInstanceState);
+        owner = getIntent().getStringExtra(CaptureScope.EXTRA);
+        if (savedInstanceState != null && CaptureScope.valid(owner) && CaptureScope.current() == null) {
+            deferredState = savedInstanceState;
+            TextView checking = new TextView(this);
+            checking.setText(CaptureScopeWait.CHECKING);
+            setContentView(checking);
+        } else {
+            open(getIntent(), savedInstanceState);
+        }
     }
 
     @Override protected void onResume() {
         super.onResume();
-        if (!isFinishing() && !CaptureScope.currentIs(owner)) finish();
+        if (isFinishing()) return;
+        if (deferredState != null) {
+            bindingWait.await(this, owner, () -> {
+                Bundle selected = deferredState;
+                deferredState = null;
+                open(getIntent(), selected);
+            }, this::bindingUnavailable);
+        } else if (!CaptureScope.currentIs(owner)) {
+            bindingUnavailable();
+        }
+    }
+
+    @Override protected void onPause() {
+        bindingWait.cancel();
+        super.onPause();
+    }
+
+    private void bindingUnavailable() {
+        say(CaptureScopeWait.UNAVAILABLE);
+        finish();
     }
 
     @Override protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
-        if (completed || isFinishing() || finishingDraft) return;
+        if (completed || isFinishing() || finishingDraft || deferredState != null) return;
         String nextOwner = intent.getStringExtra(CaptureScope.EXTRA);
         if (!CaptureScope.currentIs(nextOwner)) return;
         String nextDest = MemoFiles.dest(intent.getStringExtra(MemoFiles.EXTRA_DEST));
@@ -95,16 +123,25 @@ public class TextInputActivity extends Activity {
 
     @Override protected void onSaveInstanceState(Bundle state) {
         super.onSaveInstanceState(state);
+        if (deferredState != null) {
+            state.putString("draft", deferredState.getString("draft"));
+            state.putString("text", deferredState.getString("text"));
+            state.putLong("revision", deferredState.getLong("revision"));
+            return;
+        }
         if (writer == null) return;
         state.putString("draft", writer.id);
-        if (!finishingDraft && CaptureScope.currentIs(owner)) state.putString("text", field.getText().toString());
+        if (!finishingDraft && CaptureScope.currentIs(owner)) {
+            state.putString("text", field.getText().toString());
+            state.putLong("revision", writer.revision());
+        }
     }
 
     private void open(Intent intent, Bundle state) {
         String selectedOwner = intent.getStringExtra(CaptureScope.EXTRA);
         String selectedDest = MemoFiles.dest(intent.getStringExtra(MemoFiles.EXTRA_DEST));
         if (selectedDest == null || !CaptureScope.currentIs(selectedOwner)) {
-            finish();
+            bindingUnavailable();
             return;
         }
         owner = selectedOwner;
@@ -120,6 +157,8 @@ public class TextInputActivity extends Activity {
         getWindow().setLayout(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT);
         String restoredId = state == null ? null : state.getString("draft");
         String restoredBody = state == null ? null : state.getString("text");
+        TextDraft.Snapshot saved = restoredBody == null ? null
+                : new TextDraft.Snapshot(restoredBody, state.getLong("revision"));
         DISK.execute(() -> {
             try {
                 CaptureDraftStore.Draft stored = restoredId == null
@@ -135,24 +174,21 @@ public class TextInputActivity extends Activity {
                 CaptureDraftStore.Draft draft = stored != null ? stored
                         : selectedStore.create(selectedDest, selectedLabel == null ? "Quick input" : selectedLabel,
                                 CaptureDraftStore.Kind.TEXT);
-                boolean hasFile = draft.file.isFile();
-                String text = hasFile ? new String(Files.readAllBytes(draft.file.toPath()), StandardCharsets.UTF_8)
-                        : restoredBody == null ? "" : restoredBody;
+                TextDraft.Snapshot selected = selectedStore.restoreText(draft.id, saved);
                 runOnUiThread(() -> {
                     if (isDestroyed() || isFinishing() || store != selectedStore) return;
-                    if (!CaptureScope.currentIs(selectedOwner)) {
+                    if (!CaptureScope.currentIs(selectedOwner) || selected == null) {
                         finish();
                         return;
                     }
                     label = draft.label;
                     setTitle(label);
-                    writer = new TextDraftWriter(selectedStore, DISK, draft.id, this::reportWriteFailure);
+                    writer = new TextDraftWriter(selectedStore, DISK, draft.id, selected.revision, this::reportWriteFailure);
                     loading = true;
-                    field.setText(text);
+                    field.setText(selected.body);
                     field.setSelection(field.length());
                     loading = false;
                     setBusy(false);
-                    if (!hasFile && !text.isEmpty()) writer.edit(text);
                 });
             } catch (IOException error) {
                 runOnUiThread(() -> {
@@ -305,6 +341,7 @@ public class TextInputActivity extends Activity {
     @Override public void onBackPressed() { confirmDiscard(); }
 
     @Override protected void onDestroy() {
+        bindingWait.cancel();
         invalidateDiscard();
         super.onDestroy();
     }

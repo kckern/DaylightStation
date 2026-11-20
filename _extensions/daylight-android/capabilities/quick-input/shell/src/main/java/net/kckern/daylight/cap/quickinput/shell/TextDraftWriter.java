@@ -12,26 +12,31 @@ final class TextDraftWriter {
     private final CaptureDraftStore store;
     private final Executor disk;
     private final Consumer<IOException> writeFailed;
-    private String pending;
+    private TextDraft.Snapshot pending;
+    private long revision;
     private boolean scheduled;
     private boolean sealed;
 
-    TextDraftWriter(CaptureDraftStore store, Executor disk, String id, Consumer<IOException> writeFailed) {
+    TextDraftWriter(CaptureDraftStore store, Executor disk, String id, long revision, Consumer<IOException> writeFailed) {
         this.store = store;
         this.disk = disk;
         this.id = id;
+        this.revision = revision;
         this.writeFailed = writeFailed;
     }
 
     synchronized void edit(String text) {
         if (sealed) return;
-        pending = text;
+        revision = Math.max(System.currentTimeMillis(), revision + 1);
+        pending = new TextDraft.Snapshot(text, revision);
         if (scheduled) return;
         scheduled = true;
         disk.execute(() -> {
             try { flush(); } catch (IOException e) { writeFailed.accept(e); }
         });
     }
+
+    synchronized long revision() { return revision; }
 
     synchronized void complete(Action operation, Consumer<IOException> done) {
         if (sealed) return;
@@ -51,20 +56,20 @@ final class TextDraftWriter {
 
     private void flush() throws IOException {
         while (true) {
-            String text;
+            TextDraft.Snapshot snapshot;
             synchronized (this) {
-                text = pending;
+                snapshot = pending;
                 pending = null;
-                if (text == null) {
+                if (snapshot == null) {
                     scheduled = false;
                     return;
                 }
             }
             try {
-                store.writeText(id, text);
+                store.writeText(id, snapshot);
             } catch (IOException e) {
                 synchronized (this) {
-                    if (pending == null) pending = text;
+                    if (pending == null) pending = snapshot;
                     scheduled = false;
                 }
                 throw e;

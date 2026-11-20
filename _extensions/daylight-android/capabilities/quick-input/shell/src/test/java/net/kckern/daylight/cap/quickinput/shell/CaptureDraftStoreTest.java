@@ -158,6 +158,60 @@ public class CaptureDraftStoreTest {
         }
     }
 
+    @Test public void coldCameraReturnStoresConfirmedOutputBeforeOwnerIsAvailable() throws Exception {
+        CaptureDraftStore first = store();
+        CaptureDraftStore.Draft opened = first.create(FIRST, "journal", "Journal", CaptureDraftStore.Kind.PHOTO);
+        String rawName = SECOND + ".journal.raw.part";
+        File raw = new File(files.getRoot(), "inputs/camera-private/" + rawName);
+        assertTrue(raw.getParentFile().mkdirs());
+        Files.write(raw.toPath(), new byte[] { 1, 2, 3 });
+
+        CaptureDraftStore recreated = store();
+        assertNull(CaptureScope.current());
+        assertFalse(CaptureScope.canOpenCameraSession(OWNER, false));
+        assertTrue(CaptureScope.canOpenCameraSession(OWNER, true));
+        assertFalse(CaptureScope.canOpenCameraSession(null, true));
+        assertFalse(CaptureScope.currentIs(OWNER));
+        CaptureDraftStore.Draft restored = recreated.get(opened.id);
+        assertEquals(rawName, recreated.pendingCameraName(restored, rawName));
+        assertTrue(recreated.retainCameraResult(restored.id, rawName, true));
+        assertFalse(raw.exists());
+        assertArrayEquals(new byte[] { 1, 2, 3 }, Files.readAllBytes(restored.confirmedPhoto().toPath()));
+        assertFalse(recreated.sendForCurrentOwner(restored.id));
+        assertInbox();
+        CaptureDraftStore anotherAccount = new CaptureDraftStore(files.getRoot(),
+                CaptureScope.key("https://home.example", "bob"));
+        assertNull(anotherAccount.get(restored.id));
+
+        String otherOwner = CaptureScope.key("https://home.example", "bob");
+        java.util.function.Supplier<String> attached = () -> otherOwner;
+        CaptureScope.attach(attached);
+        try {
+            assertFalse(CaptureScope.currentIs(OWNER));
+            assertFalse(recreated.sendForCurrentOwner(restored.id));
+            assertTrue(restored.confirmedPhoto().isFile());
+        } finally {
+            CaptureScope.detach(attached);
+        }
+    }
+
+    @Test public void textRestoresNewestRevisionAndDoesNotReviveAConsumedId() throws Exception {
+        CaptureDraftStore store = store();
+        store.create(FIRST, "journal", "Journal", CaptureDraftStore.Kind.TEXT);
+        store.writeText(FIRST, new TextDraft.Snapshot("older disk", 100));
+        TextDraft.Snapshot newer = new TextDraft.Snapshot("newer Bundle", 200);
+        assertEquals("newer Bundle", store.restoreText(FIRST, newer).body);
+        store = store();
+        assertEquals(200, store.restoreText(FIRST, null).revision);
+        store.writeText(FIRST, new TextDraft.Snapshot("latest disk", 300));
+        assertEquals("latest disk", store.restoreText(FIRST, newer).body);
+
+        assertTrue(store.send(FIRST));
+        assertTrue(new File(inbox(), FIRST + ".journal.txt").delete());
+        assertNull(store().restoreText(FIRST, new TextDraft.Snapshot("stale Bundle", 400)));
+        assertNull(store().get(FIRST));
+    }
+
     private CaptureDraftStore interrupted(boolean afterMove) throws Exception {
         CaptureDraftStore store = new CaptureDraftStore(files.getRoot(), OWNER, moved -> {
             if (moved == afterMove) throw new IOException("simulated process interruption");

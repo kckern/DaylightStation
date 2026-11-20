@@ -10,6 +10,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.StandardCopyOption;
 import java.nio.file.StandardOpenOption;
+import java.nio.file.attribute.FileTime;
 import java.security.SecureRandom;
 import java.util.Objects;
 import java.util.Properties;
@@ -172,24 +173,74 @@ final class CaptureDraftStore {
         }
     }
 
-    void writeText(String id, String text) throws IOException {
+    /** Reconcile a saved Android editor state only when the private draft still exists. */
+    TextDraft.Snapshot restoreText(String id, TextDraft.Snapshot saved) throws IOException {
         synchronized (LOCK) {
             Draft draft = get(id);
-            if (draft == null || draft.kind != Kind.TEXT) throw new IOException("No text draft");
-            File temp = new File(draft.directory, "text.tmp");
-            try (FileOutputStream output = new FileOutputStream(temp)) {
-                output.write(text.getBytes(StandardCharsets.UTF_8));
-                output.getFD().sync();
+            if (draft == null || draft.kind != Kind.TEXT) return null;
+            long revision = textRevision(draft);
+            if (saved != null && saved.revision > revision) {
+                writeText(draft, saved);
+                return saved;
             }
-            move(temp, draft.file);
-            syncDirectory(draft.directory);
+            String text = draft.file.isFile()
+                    ? new String(Files.readAllBytes(draft.file.toPath()), StandardCharsets.UTF_8) : "";
+            return new TextDraft.Snapshot(text, revision);
         }
     }
 
-    boolean retainCameraOutput(String id, File raw, boolean cameraConfirmed) throws IOException {
+    void writeText(String id, String text) throws IOException {
+        synchronized (LOCK) {
+            Draft draft = requireText(id);
+            long revised = Math.max(System.currentTimeMillis(), textRevision(draft) + 1);
+            writeText(draft, new TextDraft.Snapshot(text, revised));
+        }
+    }
+
+    void writeText(String id, TextDraft.Snapshot snapshot) throws IOException {
+        synchronized (LOCK) {
+            Draft draft = requireText(id);
+            if (snapshot.revision > textRevision(draft)) writeText(draft, snapshot);
+        }
+    }
+
+    private Draft requireText(String id) throws IOException {
+        Draft draft = get(id);
+        if (draft == null || draft.kind != Kind.TEXT) throw new IOException("No text draft");
+        return draft;
+    }
+
+    /** The file's modification time carries the revision through the same rename as its text. */
+    private static long textRevision(Draft draft) throws IOException {
+        return draft.file.isFile() ? Files.getLastModifiedTime(draft.file.toPath()).toMillis() : 0;
+    }
+
+    private static void writeText(Draft draft, TextDraft.Snapshot snapshot) throws IOException {
+        File temp = new File(draft.directory, "text.tmp");
+        try (FileOutputStream output = new FileOutputStream(temp)) {
+            output.write(snapshot.body.getBytes(StandardCharsets.UTF_8));
+            Files.setLastModifiedTime(temp.toPath(), FileTime.fromMillis(snapshot.revision));
+            output.getFD().sync();
+        }
+        move(temp, draft.file);
+        syncDirectory(draft.directory);
+    }
+
+    String pendingCameraName(Draft draft, String rawName) {
+        if (draft == null || draft.kind != Kind.PHOTO || !draft.dest.equals(CaptureFiles.destOf(rawName))) return null;
+        return cameraFile(rawName).isFile() ? rawName : null;
+    }
+
+    File cameraFile(String name) { return new File(new File(filesDir, CAMERA_DIR), name); }
+
+    boolean retainCameraResult(String id, String rawName, boolean cameraConfirmed) throws IOException {
         synchronized (LOCK) {
             Draft draft = get(id);
-            if (draft == null || draft.kind != Kind.PHOTO || !PhotoPlan.captured(cameraConfirmed, raw.length())) {
+            // The returning system-camera result belongs to the existing scoped draft,
+            // regardless of whether the payload has reattached in the new process.
+            if (pendingCameraName(draft, rawName) == null) return false;
+            File raw = cameraFile(rawName);
+            if (!PhotoPlan.captured(cameraConfirmed, raw.length())) {
                 Files.deleteIfExists(raw.toPath());
                 return false;
             }

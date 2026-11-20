@@ -18,7 +18,7 @@ public class TextDraftWriterTest {
         CaptureDraftStore store = new CaptureDraftStore(files.getRoot(), CaptureScope.key("https://home.example", "alice"));
         Deque<Runnable> work = new ArrayDeque<>();
         CaptureDraftStore.Draft draft = store.create("journal", "Journal", CaptureDraftStore.Kind.TEXT);
-        TextDraftWriter writer = new TextDraftWriter(store, work::addLast, draft.id,
+        TextDraftWriter writer = new TextDraftWriter(store, work::addLast, draft.id, 0,
                 failure -> { throw new AssertionError(failure); });
         writer.edit("Earlier");
         writer.edit("Latest");
@@ -38,7 +38,7 @@ public class TextDraftWriterTest {
         store.writeText(draft.id, "Sent");
         assertTrue(store.send(draft.id));
         java.util.List<java.io.IOException> failures = new java.util.ArrayList<>();
-        TextDraftWriter stale = new TextDraftWriter(store, Runnable::run, draft.id, failures::add);
+        TextDraftWriter stale = new TextDraftWriter(store, Runnable::run, draft.id, 0, failures::add);
         stale.edit("State from before Send");
         assertEquals(1, failures.size());
         assertNull(store.get(draft.id));
