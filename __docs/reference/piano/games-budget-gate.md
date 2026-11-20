@@ -105,17 +105,36 @@ and opens SchoolLock (progress plus Print). That is intended, not the gate faili
 Before the economy is `live` no pass can be bought: the bank offers nothing and
 `POST …/passes` answers `PASS_NOT_SOLD`.
 
-**The lock screen** (`SchoolLock.jsx`) keeps each lock reason's copy. In the plain
-incomplete case it adds:
+**The lock screen** (`SchoolLock.jsx`) is drawn, not written: the child's avatar
+(`ProfileAvatar`, the same picture as the user chip) with an amber lock badge, the
+heading "Games are locked" and each lock reason's one-line copy. In the plain
+incomplete case it adds, top to bottom:
 
-- "School: X of Y done today", from `GET /api/v1/school/lifecycle/learners/:id/completion`
-  (sections `served` against `served` plus `obligated`);
-- one "Spend N silver: one game" / "Spend N gold: one game" button per affordable offer;
-- "Sneak used today — finish school to play more." when the cap is used (`passCapUsed`);
-- "Print my next sheet (Math 4-02)" from School's `GET …/self-service/learners/:id/next`.
-  The "+N silver · " / "+N gem(s) · " prefix appears only when the reward names it, the
-  same words as the Portal bank screen's ways to earn; `reward` is null unless the economy is `live`. A 404
-  (self-service off) shows no button. After a print the label is read again.
+- **Today's subjects** as tiles, under "School today: X of Y done", from
+  `GET /api/v1/school/lifecycle/learners/:id/completion` (`schoolSections`: each
+  `served` or `obligated` section in plan order; `excused` ones are not drawn). A done
+  subject is a green tile with a check, one still to do an amber outlined tile. The
+  icons are School's subject icons (`school/browser/home/icons`), so they match the
+  Portal.
+- **The next sheet** as one big card from School's `GET …/self-service/learners/:id/next`
+  (`nextSheetCard`): the subject's icon, "Next Math sheet", the unit's title, the reward
+  with its coin ("+1 silver") only when the reward names it, and a green Print badge.
+  `reward` is null unless the economy is `live`. Its accessible name is still
+  "Print my next sheet (+N silver · Math 4-02)" (`nextSheetLabel`). A 404 (self-service
+  off) shows no card. After a print the card is read again.
+- **After a print**, the child reads the kiosk's own words: "Printing! Go get it from
+  the printer." on `outcome: 'done'`, "Already printing — check the printer." on
+  `debounced` (`printResult`). The reply's sentence is shown only for a refusal or a
+  failure, where it says why. The success sentences are written for the Portal and
+  grown-ups: an exact reprint answers "Regenerating that worksheet with the current
+  print layout.", which is what the piano showed a child on 2026-11-20.
+- **Coins, as a small "or"** under the card: one "Spend N silver: one game" /
+  "Spend N gold: one game" button with its coin per affordable offer, and
+  "Sneak used today — finish school to play more." when the cap is used
+  (`passCapUsed`). Paper comes first; coins never compete with the sheet.
+
+The relock screen after an early-pass game uses the same avatar header ("Good game!")
+and the same sheet card.
 
 A buy asks first, in a labelled group ("One game, then games lock until school is done")
 that moves focus to "Not now". It posts `POST …/passes {privilege, coin}` and re-reads

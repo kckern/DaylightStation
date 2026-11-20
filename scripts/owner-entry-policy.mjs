@@ -14,6 +14,7 @@ export const OWNER_ENTRY_POLICY = Object.freeze({
   '__capabilities/playback/browser/volume/TouchVolumeButtons.jsx': null,
   '__capabilities/playback/browser/volume/touchVolumeModel.js': null,
   '__app_modules/learning/school/browser/teacher-panel.mjs': null,
+  '__app_modules/learning/school/browser/subject-identity.mjs': null,
   '__app_modules/learning/piano/browser/teacher-programs.mjs': null,
   '__capabilities/playback/server/domain/streamUrlCodec.mjs': 'domain',
   '__app_modules/media/media/browser/playback.mjs': null,
