@@ -267,10 +267,22 @@ function missedTwice(state, segment) {
   return recent.length === 2 && recent.every((item) => !item.passedCredits.includes(item.task.key));
 }
 
+/**
+ * A saved generated-ladder Gold step (not a recovery drill, an authored ladder
+ * or an explicit review) at a tempo the passage's current ladder has no step
+ * for. The ladder was 60/80/100 until 2026-11; a child saved on `timed-80`
+ * would otherwise resume it forever, since it is not a plan task.
+ */
+function offLadderGoldStep(segment, task) {
+  if (task.review || task.parent || task.track !== 'gold' || !segment || segment.authoredLadder) return false;
+  return !segment.tasks.some((step) => step.track === 'gold' && step.mode === task.mode && step.tempoPercent === task.tempoPercent);
+}
+
 function liveResume(plan, segments, task) {
   if (!validTask(plan, task)) return null;
   const canonical = plan.tasks.find((item) => item.key === task.key);
   const parent = segments.find((item) => item.id === task.passageId);
+  if (!canonical && offLadderGoldStep(plan.segments.find((item) => item.id === task.passageId), task)) return null;
   return task.review || !canonical || !parent?.skills.find((item) => item.key === canonical.key)?.ready ? task : null;
 }
 

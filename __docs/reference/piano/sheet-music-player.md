@@ -553,7 +553,11 @@ ready, or when an earned achievement covers the same bars and parts in cued work
 an equal or faster tempo (a beat step also accepts earned beat work). So a child who
 earned the old 60% and 80% steps resumes at score tempo, and one who earned only 60%
 resumes at 75%. Authored ladders and Silver steps do not carry over this way
-(`carryGold` in `shared/music/learnCoach.mjs`). One mastered passage can be offered for review on a later
+(`carryGold` in `shared/music/learnCoach.mjs`). A saved Gold resume from the
+old ladder (say `timed-80`) is dropped when no step of the passage's current
+ladder has its mode and tempo, so the coach falls through to the next unready
+Gold step; recovery drills (they carry a `parent`), explicit reviews and
+authored ladders still resume as saved (`offLadderGoldStep`). One mastered passage can be offered for review on a later
 household-local day, alongside continuing the unfinished work.
 
 Each deliberate start installs one take in the existing LearnLab/ExerciseRun.

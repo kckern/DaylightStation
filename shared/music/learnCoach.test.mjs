@@ -285,6 +285,43 @@ describe('Gold tempo ladder: 50, 60, 75, then score tempo', () => {
     expect(p.gold.opening.skill).toBe('pulse');
   });
 
+  describe('a saved Gold step from the old 60/80/100 ladder', () => {
+    const select = (plan, task, state) => applyCoachEvent(state, { id: `sel-${task.key}`, type: 'selection', task }, { plan, now: '2026-10-26T18:00:00Z', dayKey: '2026-10-26' });
+    const oldTimed80 = (plan) => ({ ...choose(plan, 'timed-60'), skill: 'timed-80', tempoPercent: 80 });
+
+    it('no longer resumes; the next unready Gold step does', () => {
+      const plan = planOf();
+      const state = select(plan, oldTimed80(plan), stateWith(oldKey(plan, 'cued', 60)));
+      expect(state.goldResume).toMatchObject({ tempoPercent: 80, track: 'gold' });
+      const p = projection(plan, state);
+      expect(p.goldResume).toBeNull();
+      expect(p.gold.opening.skill).toBe('timed-75');
+    });
+
+    it('still resumes a slower-beat recovery drill below the ladder', () => {
+      const plan = planOf();
+      const drill = { ...choose(plan, 'timed-50'), tempoPercent: 40, depth: 1, parent: choose(plan, 'timed-50'), reason: 'slower-beat' };
+      expect(projection(plan, select(plan, drill)).goldResume).toMatchObject({ tempoPercent: 40, depth: 1 });
+    });
+
+    it('still resumes an explicit review, and a Gold step whose tempo is on the ladder', () => {
+      const plan = planOf();
+      const review = { ...oldTimed80(plan), review: true };
+      expect(projection(plan, select(plan, review)).goldResume).toMatchObject({ review: true, tempoPercent: 80 });
+      const edited = { ...choose(plan, 'timed-60'), criteria: { completeness: 1, cleanliness: 0.8, placement: 0.7 } };
+      expect(projection(plan, select(plan, edited)).goldResume).toMatchObject({ tempoPercent: 60 });
+    });
+
+    it('leaves an authored ladder\'s saved step alone', () => {
+      const plan = planOf({ authoredLadder: true, segments: [{ ...segments[0], ladder: [
+        { id: 'slow', label: 'Slow', effectiveParts: ['rh', 'lh'], mode: 'cued', tempoPercent: 50, sets: 1, reps: 2, completes: 'passage' },
+      ] }] });
+      // An authored step at a tempo the ladder no longer has, saved mid-practice.
+      const off = { ...choose(plan, 'slow'), tempoPercent: 70, depth: 1 };
+      expect(projection(plan, select(plan, off)).recommended).toMatchObject({ skill: 'slow', tempoPercent: 70 });
+    });
+  });
+
   it('leaves authored ladders to their own steps', () => {
     const plan = planOf({ authoredLadder: true, segments: [{ ...segments[0], ladder: [
       { id: 'slow', label: 'Slow', effectiveParts: ['rh', 'lh'], mode: 'cued', tempoPercent: 50, sets: 1, reps: 2 },
