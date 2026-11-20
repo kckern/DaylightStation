@@ -228,8 +228,8 @@ export class YamlPianoStudioDatastore extends ILoopManifestSource {
    * score grid shows it. Null when there is none.
    */
   sheetMusicCover(scoreId) {
-    const local = String(scoreId || '').replace(/^files:/, '');
-    if (!local.startsWith('docs/sheet-music/') || local.split('/').includes('..')) return null;
+    const local = this.#libraryLocal(scoreId);
+    if (!local) return null;
     const stem = local.slice(0, local.length - path.extname(local).length);
     const media = this.#configService.getMediaDir();
     // Raster first: a curated scan wins over a generated svg poster.
@@ -239,10 +239,22 @@ export class YamlPianoStudioDatastore extends ILoopManifestSource {
     return null;
   }
 
+  /**
+   * The media-relative path of a library score (`files:docs/sheet-music/…`), or
+   * null for anything else: a bare id, another folder, or a '..', '.' or empty
+   * path segment.
+   */
+  #libraryLocal(scoreId) {
+    const id = String(scoreId || '');
+    if (!id.startsWith('files:docs/sheet-music/')) return null;
+    const local = id.slice('files:'.length);
+    if (local.split('/').some((part) => part === '' || part === '.' || part === '..')) return null;
+    return local;
+  }
+
   /** Only library scores have a Learn file; anything else is refused. */
   #sheetMusicLearnPath(scoreId) {
-    const local = String(scoreId || '').replace(/^files:/, '');
-    if (!local.startsWith('docs/sheet-music/') || local.split('/').includes('..')) return null;
+    if (!this.#libraryLocal(scoreId)) return null;
     const key = practiceKeyOfScore(scoreId);
     return this.#configService.getHouseholdPath(path.join('piano', 'sheetmusic', key));
   }

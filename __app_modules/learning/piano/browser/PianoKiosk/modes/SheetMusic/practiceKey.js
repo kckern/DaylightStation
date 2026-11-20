@@ -1,15 +1,11 @@
 /**
  * practiceKey — identity + hands-bucket helpers for the practice record (§C).
- * The slug must satisfy the backend's /^[a-z0-9-]{1,120}$/ (dots corrupt YAML
- * filenames — FileIO appends .yml by inspecting the trailing extension).
+ * The slug is the shared one from portable/music/practiceKey.mjs, so the kiosk
+ * and the server always file a score under the same key.
  */
-export function practiceKeyOf(contentId) {
-  return String(contentId || '')
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 120);
-}
+import { practiceKeyOfScore as practiceKeyOf } from '../../../../portable/music/practiceKey.mjs';
+
+export { practiceKeyOf };
 
 /** Hands bucket for the practice record: non-grand-staff collapses to 'both'. */
 export function bucketOf(grandStaff, activeParts) {

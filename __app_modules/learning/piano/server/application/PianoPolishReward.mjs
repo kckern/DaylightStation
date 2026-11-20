@@ -19,11 +19,12 @@
  * check must never cost the child the practice write it rides on.
  * See __docs/reference/piano/sheet-music-player.md (Polish rewards).
  */
+import { practiceKeyOfScore as keyOfScore } from '../../portable/music/practiceKey.mjs';
+
 export const POLISH_REWARD_MIN_SCORE = 95;
 export const POLISH_GEM_TEMPO_PERCENT = 50;
 export const POLISH_DIAMOND_TEMPO_PERCENT = 90;
 
-const keyOfScore = (id) => String(id).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 120);
 const isPart = (p) => (typeof p === 'number' && Number.isInteger(p)) || (typeof p === 'string' && p.length > 0 && p.length <= 64);
 
 /** Same buckets as the browser's polishTiers.tierOf; for the log only. */
