@@ -1,5 +1,6 @@
-import { describe, expect, it } from 'vitest';
-import { gamepadKeyEdges, padShape } from './useGamepadKeys.js';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { renderHook } from '@testing-library/react';
+import { gamepadKeyEdges, padShape, useGamepadKeys } from './useGamepadKeys.js';
 
 const pad = (pressed) => ({ buttons: Array.from({ length: 16 }, (_, i) => ({ pressed: pressed.includes(i) })) });
 
@@ -38,5 +39,26 @@ describe('padShape', () => {
   it('summarises id, mapping and sizes', () => {
     expect(padShape({ id: 'R1', mapping: '', buttons: [1, 2, 3], axes: [0, 0] }))
       .toEqual({ id: 'R1', mapping: '', buttons: 3, axes: 2 });
+  });
+});
+
+describe('useGamepadKeys — activation', () => {
+  afterEach(() => { vi.unstubAllGlobals(); });
+
+  it('a button already held when the hook turns on fires only after a release and a new press', () => {
+    let frames = [];
+    vi.stubGlobal('requestAnimationFrame', (fn) => { frames.push(fn); return frames.length; });
+    vi.stubGlobal('cancelAnimationFrame', () => {});
+    let pads = [pad([1])]; // B held over the hand-off from another screen
+    Object.defineProperty(navigator, 'getGamepads', { configurable: true, value: () => pads });
+    const tick = () => { const f = frames; frames = []; f.forEach((fn) => fn()); };
+    const onKey = vi.fn();
+    renderHook(() => useGamepadKeys(true, onKey));
+    tick(); tick();
+    expect(onKey).not.toHaveBeenCalled();
+    pads = [pad([])]; tick();
+    pads = [pad([1])]; tick();
+    expect(onKey).toHaveBeenCalledWith('Escape');
+    expect(onKey).toHaveBeenCalledTimes(1);
   });
 });

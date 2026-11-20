@@ -6,6 +6,7 @@ import { snapToTouchLevel, linearVolumeFromLevel, linearLevelFromVolume } from "
 import { buildGuestOptions, nextGenericGuestName, zonesMapToArray } from "../../lib/guestOptionsBuilder.js";
 import { genericGuestImageId } from "../../lib/guestPlaceholders.js";
 import FeedbackOverlay from '@/modules/Feedback/FeedbackOverlay.jsx';
+import ControllersOverlay from "./ControllersOverlay.jsx";
 import hardReload from "../../lib/hardReload.js";
 import "../FitnessSidebar.scss";
 import { menuFocusStops, nextFocusStop, rowNeighbour } from "./sidebarMenuFocus.js";
@@ -62,6 +63,9 @@ const FitnessSidebarMenu = ({
   const [feedbackOpen, setFeedbackOpen] = React.useState(false);
   const feedbackOpenRef = React.useRef(false);
   feedbackOpenRef.current = feedbackOpen;
+  const [controllersOpen, setControllersOpen] = React.useState(false);
+  const controllersOpenRef = React.useRef(false);
+  controllersOpenRef.current = controllersOpen;
   const deviceAssignments = React.useMemo(
     () => fitnessContext?.deviceAssignments || [],
     [fitnessContext?.deviceAssignments],
@@ -147,7 +151,7 @@ const FitnessSidebarMenu = ({
     if (closeTimerRef.current) clearTimeout(closeTimerRef.current);
     closeTimerRef.current = setTimeout(() => {
       closeTimerRef.current = null;
-      if (!focusWithinRef.current && !feedbackOpenRef.current) onClose?.();
+      if (!focusWithinRef.current && !feedbackOpenRef.current && !controllersOpenRef.current) onClose?.();
     }, MENU_IDLE_CLOSE_MS);
   }, [onClose]);
 
@@ -361,6 +365,9 @@ const FitnessSidebarMenu = ({
         <button type="button" className="menu-item" aria-label="Send feedback" onClick={() => setFeedbackOpen(true)}>
           💬 Feedback
         </button>
+        <button type="button" className="menu-item" aria-label="Controllers" onClick={() => setControllersOpen(true)}>
+          🎮 Controllers
+        </button>
         <button type="button" className="menu-item" onClick={handleReloadPage}
           aria-label="Hard-reload the app (bypasses cache)" title="Hard-reload the app — picks up new versions">
           🔄 Reload
@@ -421,6 +428,7 @@ const FitnessSidebarMenu = ({
       )}
       <FeedbackOverlay open={feedbackOpen} app="fitness" onClose={() => { setFeedbackOpen(false); scheduleIdleClose(); }}
         onPauseMusic={onFeedbackPauseMusic} onResumeMusic={onFeedbackResumeMusic} />
+      <ControllersOverlay open={controllersOpen} onClose={() => { setControllersOpen(false); scheduleIdleClose(); }} />
     </div>
   );
 
@@ -556,6 +564,7 @@ const FitnessSidebarMenu = ({
   const handleRootKeyDown = (event) => {
     rootInteractionHandlers.onKeyDown(event);
     if (feedbackOpenRef.current) return; // the feedback dialog owns its keys
+    if (controllersOpenRef.current) return; // the controllers overlay owns its keys
     if (event.key === 'Escape') {
       event.preventDefault();
       if (confirmEndSession) setConfirmEndSession(false);
@@ -580,7 +589,7 @@ const FitnessSidebarMenu = ({
       target.focus();
     }
   };
-  useGamepadKeys(true, (key) => {
+  useGamepadKeys(!controllersOpen, (key) => {
     const root = rootRef.current;
     if (!root) return;
     const active = root.contains(document.activeElement) ? document.activeElement : closeRef.current;

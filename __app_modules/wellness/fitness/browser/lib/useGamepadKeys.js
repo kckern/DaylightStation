@@ -8,6 +8,7 @@ import getLogger from '@/lib/logging/Logger.js';
 // browser, and one resting at -1 would hold an arrow down forever.
 // While active, the hook logs `gamepad-shape` (id, mapping, button and axis
 // counts) once per pad, so an unfamiliar pad's layout is measured, not guessed.
+// A button held when the hook turns on does not fire until it is pressed again.
 const BUTTON_KEYS = { 12: 'ArrowUp', 13: 'ArrowDown', 14: 'ArrowLeft', 15: 'ArrowRight', 0: 'Enter', 1: 'Escape' };
 const STICK_THRESHOLD = 0.5;
 
@@ -49,7 +50,10 @@ export function useGamepadKeys(active, onKey) {
   useEffect(() => {
     if (!active || typeof navigator === 'undefined' || typeof navigator.getGamepads !== 'function') return undefined;
     let raf = null;
-    let previous = new Set();
+    // null until the first poll: a button already held when the hook turns on
+    // (B that just closed another screen, A that just opened this one) is
+    // treated as held, and fires only after a release and a new press.
+    let previous = null;
     const shapesLogged = new Set();
     const poll = () => {
       let pads = [];
@@ -58,7 +62,9 @@ export function useGamepadKeys(active, onKey) {
         const key = `${pad.id}|${pad.index}`;
         if (!shapesLogged.has(key)) { shapesLogged.add(key); logger().info('gamepad-shape', padShape(pad)); }
       }
-      const { pressed, edges } = gamepadKeyEdges(previous, pads);
+      const { pressed, edges } = previous === null
+        ? { pressed: gamepadKeyEdges(new Set(), pads).pressed, edges: [] }
+        : gamepadKeyEdges(previous, pads);
       previous = pressed;
       for (const key of edges) {
         logger().debug('gamepad-key', { key });
