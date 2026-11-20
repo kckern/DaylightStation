@@ -34,10 +34,11 @@
  *     A program reports done at most once a day, so on a day it is owed it
  *     never has a spare; a Saturday flashcard sitting does.
  *   - claimed lessons (`ledger.makeupClaims`, from a makeup-sheet code):
- *     spent on the day they name before any ordinary spare; one its day did
- *     not need turns into ordinary spare afterwards, and one nothing else
- *     takes is paid back to the day it was done on (restitution), even with
- *     makeup off or for a subject the policy leaves out.
+ *     spent on the day they name first (phase A, before any ordinary spare
+ *     moves). One still unspent is paid back to the day it was done on when
+ *     that day lacks it (restitution, even with makeup off or for a subject
+ *     the policy leaves out); otherwise it joins the ordinary spare
+ *     (phase B).
  * Electives never count: an elective pass must never make up required work.
  *
  * A missed section is credited only when EVERY track it lacked is covered by
@@ -188,8 +189,10 @@ export function foldMakeup(rows, { policy = DEFAULT_MAKEUP_POLICY, today } = {})
     }
     return spare.get(key);
   };
-  // Credit one missed day from spare work later in its window.
-  const creditDay = (day) => {
+  // Credit one missed day from work later in its window. `claimsOnly`
+  // (phase A): a lesson may come only from a claim naming this day; a
+  // section that lacks no lesson waits for phase B.
+  const creditDay = (day, { claimsOnly = false } = {}) => {
     // The deadline day (and a Sunday after it) has no later day to borrow from.
     if (day >= makeupDeadline(day, policy)) return;
     const row = out[day];
@@ -208,10 +211,11 @@ export function foldMakeup(rows, { policy = DEFAULT_MAKEUP_POLICY, today } = {})
       const plan = [];
       let lessonFrom = null;
       let lessonClaimed = false;
+      if (claimsOnly && !need.lesson) return section;
       if (need.lesson) {
         lessonFrom = later.find((d) => (spareFor(d, section.subject).claims.get(day) ?? 0) > 0) ?? null;
         lessonClaimed = Boolean(lessonFrom);
-        if (!lessonFrom) lessonFrom = later.find((d) => spareFor(d, section.subject).lessons > 0) ?? null;
+        if (!lessonFrom && !claimsOnly) lessonFrom = later.find((d) => spareFor(d, section.subject).lessons > 0) ?? null;
         if (!lessonFrom) return section;
       }
       for (const key of need.programs) {
@@ -237,7 +241,11 @@ export function foldMakeup(rows, { policy = DEFAULT_MAKEUP_POLICY, today } = {})
       timeliness: MAKEUP_TIMELINESS,
     };
   };
-  if (crediting) days.forEach(creditDay);
+  // PHASE A: claims are spent on the days they name, and nothing else is.
+  // Ordinary spare waits until every day has taken back its own unspent
+  // claim, or a day could borrow a later lesson while its own claimed lesson
+  // counted nowhere (and on-time work read, and was charged, as makeup).
+  if (crediting) days.forEach((day) => creditDay(day, { claimsOnly: true }));
   // Every (day, subject) holding a claim gets its pool now, so what follows
   // never depends on which pools pass 1 happened to open.
   days.forEach((day) => (out[day]?.sections ?? []).forEach((section) => {
@@ -248,22 +256,17 @@ export function foldMakeup(rows, { policy = DEFAULT_MAKEUP_POLICY, today } = {})
   // A claim its day did not need (served some other way, or still lacking a
   // program) is still a lesson done: it becomes ordinary spare for any other
   // missed day, rather than counting for nothing.
-  let leftover = false;
   spare.forEach((pool) => {
     pool.unspentClaims = 0;
     pool.claims.forEach((count) => {
-      if (count > 0) { pool.lessons += count; pool.unspentClaims += count; leftover = true; }
+      if (count > 0) { pool.lessons += count; pool.unspentClaims += count; }
     });
     pool.claims.clear();
   });
-  // Pass 2, oldest day first: a day whose own claim is still unspent is paid
-  // back by it before it may borrow anyone else's spare. Borrowing first
-  // would spend another day's lesson on it and leave its own counting for
-  // nothing.
-  days.forEach((day) => {
-    restituteDay(out, day, spare);
-    if (leftover && crediting) creditDay(day);
-  });
+  // RESTITUTION: a day whose own claim is still unspent takes it back.
+  days.forEach((day) => restituteDay(out, day, spare));
+  // PHASE B: ordinary spare, with leftover claims among it.
+  if (crediting) days.forEach((day) => creditDay(day));
   return { rows: out, credits };
 }
 
@@ -272,8 +275,10 @@ export function foldMakeup(rows, { policy = DEFAULT_MAKEUP_POLICY, today } = {})
  * away from the day it was done on; the fold above pays it to the missed day
  * only when it can (makeup on, the subject allowed, the missed day inside the
  * policy's window, every other track covered). A claim still unspent after
- * pass 1, and not taken as spare by an older missed day in pass 2, is paid
- * back to its own day's section, so a real lesson never counts for no day. It runs with makeup off and for excluded subjects too.
+ * phase A is paid back to its own day's section before any ordinary spare
+ * moves, so a real lesson never counts for no day and a day never borrows a
+ * later lesson while its own sits unused. A leftover its own day does not
+ * need joins the ordinary spare for phase B. It runs with makeup off and for excluded subjects too.
  * The section must lack only the lesson; the row is rejudged but not stamped
  * `timeliness: 'makeup'` (the work was done that day), and no credit is
  * reported.

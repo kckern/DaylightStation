@@ -280,15 +280,15 @@ describe('foldMakeup restitution: no claimed lesson is lost', () => {
     expect(out[THU].sections[0].makeup).toBeUndefined();
   });
 
-  it('a claim spent as ordinary spare on another missed day is not also paid back', () => {
+  it('a claim its named day did not need goes back to its own day before an older missed day', () => {
     const rows = {
       [MON]: row([section('math', 'obligated', lessonLedger(0))]),
       [WED]: row([section('math', 'served', lessonLedger(1))]),
       [THU]: row([section('math', 'obligated', claimLedger(0, [WED]))]),
     };
     const { rows: out } = foldMakeup(rows, { policy: ON, today: THU });
-    expect(out[MON].sections[0]).toMatchObject({ state: 'served', makeup: { servedOn: THU } });
-    expect(out[THU].sections[0].state).toBe('obligated');
+    restituted(out, THU);
+    expect(out[MON].sections[0].state).toBe('obligated');
   });
 
   it('a pass day still lacking a program of its own is not restituted', () => {
@@ -298,5 +298,50 @@ describe('foldMakeup restitution: no claimed lesson is lost', () => {
     };
     const { rows: out } = foldMakeup(rows, { policy: ON, today: THU });
     expect(out[THU].sections[0].state).toBe('obligated');
+  });
+});
+
+// Pre-merge review, 2026-11-19: a day must take back its own unspent claim
+// before it may borrow a later day's ordinary spare. Otherwise its own
+// claimed lesson counts nowhere and on-time work is stamped (and charged) as
+// makeup.
+describe('foldMakeup: claims first, restitution before ordinary spare', () => {
+  const claimLedger = (lessons, claims) => ({ ...lessonLedger(lessons), makeupClaims: claims });
+  const lacksProgram = (lessons = 0) => ({ ...lessonLedger(lessons), needsPrograms: ['flashcards::'] });
+
+  it('Wednesday keeps its own claimed lesson; Thursday\'s spare stays free', () => {
+    const rows = {
+      [TUE]: row([section('math', 'obligated', lacksProgram())]),
+      [WED]: row([section('math', 'obligated', claimLedger(0, [TUE]))]),
+      [THU]: row([section('math', 'served', lessonLedger(2))]),
+    };
+    const { rows: out, credits } = foldMakeup(rows, { policy: ON, today: THU });
+    expect(out[WED].sections[0]).toMatchObject({ state: 'served', makeup: { servedOn: WED, restituted: true } });
+    expect(out[WED].timeliness).toBeUndefined();
+    expect(out[TUE].sections[0].state).toBe('obligated');
+    expect(credits).toEqual([]);
+  });
+
+  it('once Tuesday\'s program is covered, the claim pays Tuesday and Thursday\'s spare pays Wednesday', () => {
+    const rows = {
+      [TUE]: row([section('math', 'obligated', lacksProgram())]),
+      [WED]: row([section('math', 'obligated', claimLedger(0, [TUE]))]),
+      [THU]: row([section('math', 'served', { ...lessonLedger(2), asked: true, programsDone: ['flashcards::'] })]),
+    };
+    const { rows: out, credits } = foldMakeup(rows, { policy: ON, today: THU });
+    expect(out[TUE].sections[0]).toMatchObject({ state: 'served', makeup: { servedOn: THU } });
+    expect(out[WED].sections[0]).toMatchObject({ state: 'served', makeup: { servedOn: THU } });
+    expect(credits).toEqual([{ day: TUE, subject: 'math', servedOn: THU }, { day: WED, subject: 'math', servedOn: THU }]);
+  });
+
+  it('Thursday\'s spare credits Tuesday when Tuesday lacks only the lesson and the claim went elsewhere', () => {
+    const rows = {
+      [MON]: row([section('math', 'obligated', lessonLedger(0))]),
+      [TUE]: row([section('math', 'obligated', claimLedger(0, [MON]))]),
+      [THU]: row([section('math', 'served', lessonLedger(2))]),
+    };
+    const { rows: out } = foldMakeup(rows, { policy: ON, today: THU });
+    expect(out[MON].sections[0]).toMatchObject({ state: 'served', makeup: { servedOn: TUE } });
+    expect(out[TUE].sections[0]).toMatchObject({ state: 'served', makeup: { servedOn: THU } });
   });
 });
