@@ -2,8 +2,6 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
 import {
-  isLikelyGamepad,
-  parseDiscovered,
   sanitizeTargets,
   parseHelperLine,
   runPairingWindow,
@@ -11,78 +9,6 @@ import {
   handleBtRemoveRequest,
   isPairingWindowOpen,
 } from "../src/btPairing.mjs";
-
-// ── isLikelyGamepad ───────────────────────────────────────────────────────
-
-test('isLikelyGamepad: Icon input-gaming → true', () => {
-  const info = [
-    'Device AA:BB:CC:DD:EE:FF (public)',
-    '\tName: Some Pad',
-    '\tIcon: input-gaming',
-  ].join('\n');
-  assert.equal(isLikelyGamepad(info), true);
-});
-
-test('isLikelyGamepad: 8BitDo name → true', () => {
-  const info = '\tName: 8BitDo SN30 Pro\n\tIcon: input-keyboard';
-  assert.equal(isLikelyGamepad(info), true);
-});
-
-test('isLikelyGamepad: Xbox / DualSense / Pro Controller names → true', () => {
-  assert.equal(isLikelyGamepad('\tName: Xbox Wireless Controller'), true);
-  assert.equal(isLikelyGamepad('\tName: DualSense Wireless Controller'), true);
-  assert.equal(isLikelyGamepad('\tName: Pro Controller'), true);
-  assert.equal(isLikelyGamepad('\tName: Joy-Con (L)'), true);
-});
-
-test('isLikelyGamepad: peripheral/gamepad major class → true', () => {
-  // Class major device class = Peripheral (0x05), minor gamepad.
-  const info = '\tName: Generic\n\tClass: 0x00002508';
-  assert.equal(isLikelyGamepad(info), true);
-});
-
-test('isLikelyGamepad: HR strap → false', () => {
-  const info = [
-    'Device 11:22:33:44:55:66 (public)',
-    '\tName: Polar H10',
-    '\tIcon: heart-rate',
-    '\tClass: 0x00000918',
-  ].join('\n');
-  assert.equal(isLikelyGamepad(info), false);
-});
-
-test('isLikelyGamepad: headphones → false', () => {
-  const info = [
-    '\tName: WH-1000XM4',
-    '\tIcon: audio-headphones',
-    '\tClass: 0x00240404',
-  ].join('\n');
-  assert.equal(isLikelyGamepad(info), false);
-});
-
-test('isLikelyGamepad: empty/nullish → false', () => {
-  assert.equal(isLikelyGamepad(''), false);
-  assert.equal(isLikelyGamepad(null), false);
-  assert.equal(isLikelyGamepad(undefined), false);
-});
-
-// ── parseDiscovered ───────────────────────────────────────────────────────
-
-test('parseDiscovered: parses bluetoothctl devices lines', () => {
-  const out = [
-    'Device AA:BB:CC:DD:EE:FF 8BitDo SN30 Pro',
-    'Device 11:22:33:44:55:66 Polar H10',
-  ].join('\n');
-  assert.deepEqual(parseDiscovered(out), [
-    { address: 'AA:BB:CC:DD:EE:FF', name: '8BitDo SN30 Pro' },
-    { address: '11:22:33:44:55:66', name: 'Polar H10' },
-  ]);
-});
-
-test('parseDiscovered: empty/nullish → []', () => {
-  assert.deepEqual(parseDiscovered(''), []);
-  assert.deepEqual(parseDiscovered(null), []);
-});
 
 // ── targets + helper output ───────────────────────────────────────────────
 
@@ -256,7 +182,7 @@ test('handleBtRemoveRequest: emits failure on exec error', async () => {
   );
   assert.equal(sent[0][0], 'bt.remove.result');
   assert.equal(sent[0][1].success, false);
-  assert.equal(sent[0][1].error, 'not found');
+  assert.equal(sent[0][1].error, 'remove-failed');
 });
 
 test('handleBtRemoveRequest: refuses while a pairing window is open', async () => {
@@ -296,15 +222,62 @@ test('runPairingWindow: passes mode to the helper (default repair)', async () =>
   await runPairingWindow({ spawnHelper: a.spawnHelper, send: () => {}, logger: SILENT_LOGGER });
   assert.equal(a.args[0].mode, 'repair');
   const b = fakeHelper([{ phase: 'scanning' }, { phase: 'done', paired: [] }]);
-  await runPairingWindow({ spawnHelper: b.spawnHelper, send: () => {}, logger: SILENT_LOGGER, mode: 'add' });
-  assert.equal(b.args[0].mode, 'add');
+  await runPairingWindow({ spawnHelper: b.spawnHelper, send: () => {}, logger: SILENT_LOGGER, mode: 'address' });
+  assert.equal(b.args[0].mode, 'address');
 });
 
-test('handleBtPairRequest: only "add" selects add mode', async () => {
-  const a = fakeHelper([{ phase: 'scanning' }, { phase: 'done', paired: [] }]);
-  await handleBtPairRequest({ requestId: 'r1', mode: 'add' }, { spawnHelper: a.spawnHelper, send: () => {}, logger: SILENT_LOGGER });
-  assert.equal(a.args[0].mode, 'add');
+test('handleBtPairRequest: address mode sends one exact-address target, with the PIN', async () => {
+  const a = fakeHelper([{ phase: 'scanning', mode: 'address' }, { phase: 'done', paired: [] }]);
+  await handleBtPairRequest(
+    { requestId: 'a1', mode: 'address', address: 'aa:bb:cc:11:22:33', targets: [{ id: 'pad', label: 'Pad', pin: '1234', name: '.*' }] },
+    { spawnHelper: a.spawnHelper, send: () => {}, logger: SILENT_LOGGER },
+  );
+  assert.equal(a.args[0].mode, 'address');
+  assert.deepEqual(a.args[0].targets, [{ id: 'pad', label: 'Pad', address: 'AA:BB:CC:11:22:33', pin: '1234' }]);
+});
+
+test('handleBtPairRequest: address mode with a malformed address never spawns', async () => {
+  const a = fakeHelper([]);
+  const { send, calls } = makeSendSpy();
+  await handleBtPairRequest({ requestId: 'a2', mode: 'address', address: 'AA:BB; rm -rf /' }, { spawnHelper: a.spawnHelper, send, logger: SILENT_LOGGER });
+  assert.equal(a.args.length, 0);
+  assert.deepEqual(calls, [{ topic: 'bt.pair.progress', payload: { requestId: 'a2', phase: 'done', paired: [], reason: 'invalid-address' } }]);
+});
+
+test('handleBtPairRequest: the retired add mode and unknown modes are refused', async () => {
+  for (const mode of ['add', 'rm -rf']) {
+    const a = fakeHelper([]);
+    const { send, calls } = makeSendSpy();
+    await handleBtPairRequest({ requestId: 'm', mode }, { spawnHelper: a.spawnHelper, send, logger: SILENT_LOGGER });
+    assert.equal(a.args.length, 0, mode);
+    assert.equal(calls[0].payload.reason, 'unsupported-mode', mode);
+  }
+  // No mode at all is repair (the backend route sends none).
   const b = fakeHelper([{ phase: 'scanning' }, { phase: 'done', paired: [] }]);
-  await handleBtPairRequest({ requestId: 'r2', mode: 'rm -rf' }, { spawnHelper: b.spawnHelper, send: () => {}, logger: SILENT_LOGGER });
+  await handleBtPairRequest({ requestId: 'n' }, { spawnHelper: b.spawnHelper, send: () => {}, logger: SILENT_LOGGER });
   assert.equal(b.args[0].mode, 'repair');
+});
+
+test('handleBtPairRequest: a running search is stopped before the window opens', async () => {
+  const order = [];
+  const a = fakeHelper([{ phase: 'scanning', mode: 'address' }, { phase: 'done', paired: [] }]);
+  await handleBtPairRequest(
+    { requestId: 'a3', mode: 'address', address: 'AA:BB:CC:11:22:33' },
+    {
+      spawnHelper: (j) => { order.push('spawn'); return a.spawnHelper(j); },
+      stopScan: async () => { order.push('stop-scan'); },
+      onWindow: (open) => order.push(open ? 'pause' : 'resume'),
+      send: () => {}, logger: SILENT_LOGGER,
+    },
+  );
+  assert.deepEqual(order, ['stop-scan', 'pause', 'spawn', 'resume']);
+});
+
+test('handleBtRemoveRequest: a failed remove reports a code, not the shell text', async () => {
+  const sent = [];
+  await handleBtRemoveRequest(
+    { requestId: 'r9', address: 'AA:BB:CC:11:22:33' },
+    { exec: async () => { throw new Error('Command failed: bluetoothctl --agent off remove AA:BB:CC:11:22:33'); }, send: (t, p) => sent.push(p), logger: SILENT_LOGGER },
+  );
+  assert.deepEqual(sent, [{ requestId: 'r9', address: 'AA:BB:CC:11:22:33', success: false, error: 'remove-failed' }]);
 });
