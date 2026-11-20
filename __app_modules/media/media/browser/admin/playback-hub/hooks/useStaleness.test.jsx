@@ -56,6 +56,25 @@ describe('useStaleness', () => {
     expect(vi.getTimerCount()).toBe(0);
   });
 
+  it('samples a display clock before its first tick when a snapshot arrives', () => {
+    vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible');
+    const fetchedAt = new Date('2026-05-27T12:00:00.000Z');
+    vi.setSystemTime(fetchedAt);
+    const { result, rerender, unmount } = renderHook(({ at }) => useStaleness(at), {
+      initialProps: { at: null },
+    });
+
+    act(() => { vi.advanceTimersByTime(12000); });
+    expect(result.current.secondsSinceUpdate).toBeNull();
+    expect(vi.getTimerCount()).toBe(0);
+
+    rerender({ at: fetchedAt });
+    expect(result.current).toEqual({ isStale: true, secondsSinceUpdate: 12 });
+    expect(vi.getTimerCount()).toBe(1);
+    unmount();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
   it('updates secondsSinceUpdate as time passes', () => {
     const t0 = new Date('2026-05-27T12:00:00.000Z');
     vi.setSystemTime(t0);
