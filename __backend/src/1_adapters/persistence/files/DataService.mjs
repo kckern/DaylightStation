@@ -26,6 +26,7 @@ import { InfrastructureError } from '#system/utils/errors/index.mjs';
 import {
   fileExists,
   loadYamlFromPath,
+  readYamlFromPath,
   saveYamlToPath,
   saveYamlToPathAtomic,
   getStats,
@@ -166,6 +167,27 @@ export class DataService {
       write(relativePath, data, username = null) {
         const fullPath = this.resolvePath(relativePath, username);
         return writeYamlFile(fullPath, data);
+      },
+
+      /**
+       * Read user data file without hiding failures: absent -> null; an
+       * unreadable or unparseable file throws (unreadable is not absent).
+       */
+      readStrict(relativePath, username = null) {
+        try {
+          return readYamlFromPath(this.resolvePath(relativePath, username)) ?? null;
+        } catch (err) {
+          if (err?.code === 'ENOENT') return null;
+          throw err;
+        }
+      },
+
+      /** Confirmed atomic replacement; the old document survives a failed write. */
+      writeAtomic(relativePath, data, username = null) {
+        try {
+          saveYamlToPathAtomic(this.resolvePath(relativePath, username), data, { durable: true, lineWidth: -1, quotingType: '"' });
+          return true;
+        } catch { return false; }
       },
     };
   }

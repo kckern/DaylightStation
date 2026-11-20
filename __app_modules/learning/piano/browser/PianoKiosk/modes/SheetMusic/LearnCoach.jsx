@@ -1,21 +1,64 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { coachFeedback, isGoldWork, makeCoachTask } from '../../../../../../../shared/music/learnCoach.mjs';
+import { coachFeedback, isGoldWork, passageProgress } from '../../../../../../../shared/music/learnCoach.mjs';
+import getLogger from '../../../../../../../frontend/src/lib/logging/Logger.js';
 import useLearnCoach from './useLearnCoach.js';
-import { usePianoMidi } from '../../PianoMidiContext.jsx';
+import usePieceGemOffer from './usePieceGemOffer.js';
 import LearnLab from './LearnLab.jsx';
 import LearnListen from './LearnListen.jsx';
-import LearnLaunchpad from './LearnLaunchpad.jsx';
-import ScorePassage from '../Exercises/ScorePassage.jsx';
+import PassageRail from './PassageRail.jsx';
+import PassageBoard from './PassageBoard.jsx';
+import PassageCoin, { PassageTurn } from './PassageCoin.jsx';
+import { playPassageChime } from './passageChime.js';
+import GateCeremony, { hostVerdictAt as verdictAt } from '../Games/GateCeremony.jsx';
+import Icon from '../../../ui/icons/Icon.jsx';
+import { railModel } from './passageRail.js';
 import './LearnCoach.scss';
 
 const EMPTY = {};
-const earlierBars = (id) => { const match = /^m(\d+)-(\d+)$/.exec(id); return match ? `Bars ${Number(match[1]) + 1}–${Number(match[2]) + 1}` : 'Earlier passage'; };
-const earlierSkill = (id) => ({ right: 'Right hand', left: 'Left hand', together: 'Hands together', timed: 'With the beat', 'test-out': 'Full passage' })[id] ?? 'Earlier skill';
-const passageName = (passage) => passage?.barLabel ?? passage?.label;
-const criteriaCopy = (task) => task.assist === 'none' ? 'Play every note at your own pace. The keys will not light up to help.' : task.mode === 'cued'
-  ? 'Find every note, with few extra notes, and place them with the beat.'
-  : task.mode === 'metronome' ? 'Find every note with few extra notes. The click is a guide; timing is not graded.'
-    : 'Find every note with few extra notes. Take the time you need.';
+/** What a step is called under its pills: a set label, not a sentence. */
+const SET_NAMES = Object.freeze({ right: 'Right hand', left: 'Left hand', together: 'Together', notes: 'Notes', silver: 'On your own',
+  pulse: 'Beat', 'timed-60': '60%', 'timed-80': '80%', mastery: '100%' });
+const setName = (task) => SET_NAMES[task.skill] ?? task.label;
+/**
+ * What stands over a set's pills. A picture where one says it, so the row reads
+ * without words: the hands, then the silver coin they earn; the beat, the two
+ * slower tempos, then the gold coin. A step with no picture keeps its words.
+ */
+const SET_ICONS = Object.freeze({
+  // Both hands are always drawn, in their places; the one that rests is unlit.
+  right: <><Icon name="hand-left" className="is-resting" /><Icon name="hand-right" /></>, left: <><Icon name="hand-left" /><Icon name="hand-right" className="is-resting" /></>,
+  together: <><Icon name="hand-left" /><Icon name="hand-right" /></>, notes: <Icon name="quarter-note" />,
+  silver: <PassageCoin state="silver" />, pulse: <Icon name="metronome" />, 'timed-60': <b>60%</b>, 'timed-80': <b>80%</b>, mastery: <PassageCoin state="gold" />,
+});
+/** A passage's coin holds the curtain for about two seconds; a finished piece, for more than three. */
+export const PASSAGE_CEREMONY_MS = 5000;
+export const PIECE_CEREMONY_MS = 7600;
+/** Every passage of a finished piece on the curtain, sized so any piece fits in the stage. */
+const pieceMarkSize = (count) => (count <= 8 ? '6rem' : count <= 12 ? '4.6rem' : count <= 24 ? '4rem' : count <= 48 ? '3rem' : '2rem');
+const barsOf = (passage) => passage?.barLabel ?? passage?.label ?? '';
+const lower = (label) => label.charAt(0).toLowerCase() + label.slice(1);
+/** The plan step a task belongs to: itself, or the step a recovery drill came from. */
+const rootOf = (task) => { let at = task; while (at?.parent) at = at.parent; return at; };
+const freshId = () => `coach-${globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`}`;
+
+/**
+ * A passage's steps as the drill surface draws a program: every Silver and
+ * Gold step is a set, and the clean takes it needs are its reps.
+ */
+// eslint-disable-next-line react-refresh/only-export-components -- pure projection is exported for focused contract tests
+export function passageDrill(passage, task) {
+  const current = rootOf(task)?.key ?? null;
+  const steps = (passage?.skills ?? []).map((skill) => {
+    // A step with no fixed count is earned by two good takes out of the last three.
+    const reps = Math.max(1, skill.required ?? 2);
+    const banked = skill.ready ? reps : Math.min(reps - 1, skill.successes ?? 0);
+    return { id: skill.key, title: skill.label, display: { key: setName(skill), hand: null, hand_label: null, icon: SET_ICONS[skill.skill] ?? null },
+      requirement: { required_passes: reps }, pass_count: banked, passed: Boolean(skill.ready),
+      state: skill.ready ? 'complete' : skill.key === current ? 'current' : 'locked' };
+  });
+  return { projection: { id: `learn:${passage?.id}`, title: barsOf(passage), displaySingleStep: true, steps },
+    stepId: steps.some((step) => step.id === current) ? current : null };
+}
 
 // The key makes profile/passage transitions dispose the old lab and its resolve hold.
 export default function LearnCoach(props) {
@@ -29,190 +72,250 @@ function OwnedCoach(props) {
   return <LearnCoach {...props} coach={coach} />;
 }
 
-function CoachSession({ score, plan, segment, coach, tempo = EMPTY, feedback, onBack, onPassageChange, onListen }) {
-  const { connected } = usePianoMidi();
-  const [previewAttempt, setPreviewAttempt] = useState(0);
-  const [view, setView] = useState('prepare');
-  const [choice, setChoice] = useState(null);
+/**
+ * Glue between the coach and the drill surface. It chooses the step, hands the
+ * passage to LearnLab as a drill of sets and reps, records each take, and puts
+ * the passage rail and board under it. It draws no practice screen of its own.
+ */
+function CoachSession({ score, title, plan, segment, coach, tempo = EMPTY, feedback, onBack, onPassageChange, onListen }) {
+  const logger = useMemo(() => getLogger().child({ component: 'piano-learn-coach' }), []);
+  const [view, setView] = useState('play'); // play | listen
+  const [selected, setSelected] = useState(null);
+  const [lane, setLane] = useState(null); // 'gold' once the child is working on Gold here
+  const [run, setRun] = useState(null); // the task of a take that has begun
+  const [result, setResult] = useState(null); // the last finished take, until the next one begins
+  const [moment, setMoment] = useState(null); // the pass being celebrated
+  const [runNumber, setRunNumber] = useState(0);
+  const [board, setBoard] = useState(null); // null, or { focusId }
+  const live = useRef(true);
+  useEffect(() => { live.current = true; return () => { live.current = false; }; }, []);
+
   const projected = coach.projection.segments.find((item) => item.id === segment.id);
   const recommended = coach.projection.recommended?.passageId === segment.id ? coach.projection.recommended : null;
   const certification = projected?.certification ?? {};
   const goldDrill = coach.projection.goldResume?.passageId === segment.id ? coach.projection.goldResume : null;
   const goldNext = coach.projection.gold?.[segment.id] ?? null;
   const silverTask = projected?.skills.find((skill) => skill.assist === 'none') ?? null;
-  const next = recommended ?? projected?.skills.find((task) => task.track === 'silver' && !task.ready) ?? goldDrill ?? goldNext
-    ?? projected?.skills.find((task) => !task.ready) ?? segment.tasks.at(-1);
-  const [selected, setSelected] = useState(null);
-  const task = selected ?? next;
-  const [result, setResult] = useState(null);
-  const [run, setRun] = useState(null);
-  const [readyKey, setReadyKey] = useState(null);
-  const [musicError, setMusicError] = useState(null);
-  const [runNumber, setRunNumber] = useState(0);
-  const live = useRef(true);
-  useEffect(() => { live.current = true; return () => { live.current = false; }; }, []);
+  const silverNext = recommended ?? projected?.skills.find((task) => task.track === 'silver' && !task.ready);
+  const next = (lane === 'gold' ? goldDrill ?? goldNext : null) ?? silverNext ?? goldDrill ?? goldNext
+    ?? projected?.skills.find((task) => !task.ready) ?? segment.tasks?.at(-1) ?? null;
+  const task = run ?? selected ?? next;
+  const taskRef = useRef(task); taskRef.current = task;
+  const piece = coach.projection.piece;
+  const loaded = coach.loaded !== false;
+
   // Save acknowledgements change the projection, never the material of a live take.
-  const takeMaterial = useMemo(() => {
-    if (!run) return null;
-    const canonical = plan.segments.find((item) => item.id === run.passageId);
-    return { segment: { ...canonical, inMeasure: run.range.start, outMeasure: run.range.end },
-      rung: { id: run.skill, label: run.label, effectiveParts: run.parts, mode: run.mode,
-        tempoPercent: run.tempoPercent, criteria: run.criteria, sets: 1, reps: 1, required: 1, passCount: 0 } };
-  }, [plan, run]);
-  const activeTask = view === 'result' ? (result?.task ?? task) : task;
-  const range = useMemo(() => activeTask?.range, [activeTask]);
-  const parts = useMemo(() => activeTask?.parts, [activeTask]);
-  const ready = useCallback(() => { setReadyKey(task?.key); setMusicError(null); }, [task?.key]);
-  const unavailable = useCallback((reason) => setMusicError(reason), []);
-  const preview = task && <ScorePassage key={`${task.key}:${previewAttempt}`} musicXml={score.musicXml} sourceId={score.id}
-    rangeIndices={range} activeParts={parts} keepWholePassage onExpectation={ready} onUnrunnable={unavailable} />;
-  const start = (wanted = task) => {
-    if (!wanted) return;
-    setRun(wanted); setResult(null); setRunNumber((number) => number + 1); setView('run');
-    coach.selectTask(wanted);
+  const material = useMemo(() => {
+    const wanted = taskRef.current;
+    if (!wanted) return null;
+    const canonical = plan.segments.find((item) => item.id === wanted.passageId) ?? segment;
+    // A drill on part of the passage is named by the bars it covers.
+    const whole = wanted.range.start === segment.inMeasure && wanted.range.end === segment.outMeasure;
+    const barLabel = whole ? segment.barLabel : wanted.range.start === wanted.range.end ? `Bar ${wanted.range.start + 1}` : `Bars ${wanted.range.start + 1}–${wanted.range.end + 1}`;
+    return { segment: { ...canonical, barLabel, inMeasure: wanted.range.start, outMeasure: wanted.range.end },
+      rung: { id: wanted.skill, label: wanted.label, effectiveParts: wanted.parts, mode: wanted.mode,
+        tempoPercent: wanted.tempoPercent, criteria: wanted.criteria, sets: 1, reps: 1, required: 1, passCount: 0 } };
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- keyed on the task's identity, not the projection's fresh objects
+  }, [plan, segment.barLabel, segment.inMeasure, segment.outMeasure, task?.key, runNumber]);
+  const drill = useMemo(() => passageDrill(projected, task), [projected, task]);
+
+  useEffect(() => {
+    logger.info('piano.learn.coach.step', { scoreId: score.id, passageId: segment.id, skill: task?.skill ?? null,
+      mode: task?.mode ?? null, depth: task?.depth ?? 0, view });
+  }, [logger, score.id, segment.id, task?.key, task?.skill, task?.mode, task?.depth, view]);
+
+  const begin = (wanted) => {
+    setSelected(wanted ?? null); setRun(null); setResult(null); setMoment(null);
+    if (wanted) setLane(isGoldWork(wanted) ? 'gold' : null);
+    setRunNumber((number) => number + 1); setView('play');
+  };
+  const started = () => {
+    const playing = taskRef.current;
+    if (!playing) return;
+    setRun(playing); setResult(null);
+    coach.selectTask(playing);
   };
   const finish = (raw) => {
     if (!live.current) return;
-    raw = { ...raw, assessmentId: raw.assessmentId ?? `coach-${globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`}` };
-    setResult({ task: run, raw }); setView('result'); setSelected(null);
-    coach.record(run, raw);
+    const played = taskRef.current;
+    raw = { ...raw, assessmentId: raw.assessmentId ?? freshId() };
+    const message = coachFeedback(raw, played);
+    const passed = message.reason === 'silver' || message.reason === 'passed';
+    logger.info('piano.learn.coach.take', { scoreId: score.id, passageId: segment.id, skill: played.skill, depth: played.depth ?? 0, reason: message.reason, passed });
+    setLane(isGoldWork(played) ? 'gold' : null);
+    coach.record(played, raw);
+    if (passed) { setMoment({ id: raw.assessmentId, task: played, raw, was: { silver: Boolean(certification.silver), gold: Boolean(certification.gold), flower: Boolean(projected?.flower) } }); setResult(null); }
+    else setResult({ task: played, raw, message });
   };
-  const operational = () => finish({ status: 'error', validity: 'invalid', error: 'music-unavailable', diagnostics: {} });
-  const baseMessage = result ? coachFeedback(result.raw, result.task) : null;
-  const checkPassed = baseMessage?.reason === 'silver';
-  const silverJustEarned = checkPassed && (Boolean(certification.silver) || (result.task.required ?? 1) <= 1);
-  const passedTakes = projected?.skills.find((skill) => skill.key === result?.task.key)?.successes ?? 0;
-  const message = checkPassed && !silverJustEarned
-    ? { title: 'Good take', detail: `${passedTakes} of ${result.task.required} passing takes for Silver.`, reason: 'check-progress' } : baseMessage;
-  const earned = result && (projected?.skills.find((skill) => skill.key === result.task.key)?.ready || (result.task.mastery && projected?.mastered));
-  const after = result && isGoldWork(result.task) ? goldDrill ?? goldNext ?? next : next;
-  const recovery = after?.depth > 0 && after.key !== result?.task.key;
-  const recoveryAction = after?.reason === 'slower-beat' ? `Try a little slower · ${after.tempoPercent}%`
-    : after?.reason === 'one-hand' ? `Practice the ${after.parts[0] === 'lh' ? 'left' : 'right'} hand`
-      : after?.range.start === after?.range.end ? `Practice bar ${(after?.range.start ?? 0) + 1}`
-        : `Practice bars ${(after?.range.start ?? 0) + 1}–${(after?.range.end ?? 0) + 1}`;
-  const recoveryDetail = after?.reason === 'slower-beat' ? 'Keep the same notes and give yourself more time between beats.'
-    : after?.reason === 'one-hand' ? 'Work on this hand, then return to the hands together.'
-      : after?.range.start === after?.range.end ? 'Work on this bar, then return to the whole passage.' : 'Work on these bars, then return to the whole passage.';
-  const openingQuarter = tempo.measureOnsets?.[task?.range.start] ?? 0;
-  const baseBpm = plan.tempoMap.filter((entry) => entry.onsetQuarter <= openingQuarter).at(-1)?.bpm;
-  const effectiveBpm = baseBpm > 0 ? Math.round(baseBpm * (task?.tempoPercent ?? 100) / 100) : null;
+
+  // What the pass amounts to, read from the projection the take has just changed.
+  const celebrated = moment ? (!moment.was.gold && certification.gold ? 'gold' : !moment.was.silver && certification.silver ? 'silver' : null) : null;
   const followingId = coach.projection.recommended?.passageId;
   const nextPassage = followingId && followingId !== segment.id ? coach.projection.segments.find((item) => item.id === followingId) : null;
-  const wholePieceSilver = coach.projection.piece.total > 0 && coach.projection.piece.silver === coach.projection.piece.total;
-  const goldHere = goldDrill ?? goldNext;
-  const nextGoldId = coach.projection.piece.nextGoldPassageId;
-  const goForGold = goldHere ? () => { setSelected(goldHere); setResult(null); setView('prepare'); }
-    : nextGoldId && nextGoldId !== segment.id && onPassageChange ? () => onPassageChange(nextGoldId) : null;
+  const nextGoldId = piece.nextGoldPassageId;
+  const nextGold = nextGoldId && nextGoldId !== segment.id ? coach.projection.segments.find((item) => item.id === nextGoldId) : null;
+  const pieceDone = celebrated && piece.total > 0 && piece[celebrated] >= piece.total;
+  const leaveFor = celebrated === 'silver' ? (pieceDone ? null : nextPassage) : celebrated === 'gold' ? (pieceDone ? null : nextGold) : null;
+  // A pass that does not certify moves straight on, the way a drill's next rep
+  // arrives under its card. A Silver or Gold stays on the finished take.
+  useEffect(() => {
+    if (!moment || celebrated || moment.advanced) return;
+    setMoment({ ...moment, advanced: true });
+    // A chosen step stays chosen until its set is clear, so its next rep follows.
+    const played = moment.task;
+    const cleared = (played.depth ?? 0) > 0 || projected?.skills.find((skill) => skill.key === played.key)?.ready === true;
+    setSelected(cleared ? null : played); setRun(null); setRunNumber((number) => number + 1);
+  }, [moment, celebrated, projected]);
+  const momentDone = () => {
+    if (!live.current) return;
+    const finished = celebrated;
+    setMoment(null);
+    if (!finished) return;
+    logger.info('piano.learn.coach.certified', { scoreId: score.id, passageId: segment.id, level: finished, piece: Boolean(pieceDone), next: leaveFor?.id ?? null });
+    if (leaveFor && onPassageChange) onPassageChange(leaveFor.id);
+    else onBack?.();
+  };
+  const card = useMemo(() => {
+    if (!moment) return null;
+    const { task: played, raw, id } = moment;
+    if (celebrated) return null;
+    const steps = drill.projection.steps;
+    const index = steps.findIndex((step) => step.id === rootOf(played).key);
+    const step = (played.depth ?? 0) === 0 ? steps[index] : null;
+    const upNext = task && task.key !== played.key ? task : null;
+    if (!step) return { id, score: raw.score ?? null,
+      copy: { eyebrow: barsOf(segment), headline: Number.isFinite(raw.score) ? `${Math.round(raw.score * 100)}%` : 'Passed', line: upNext ? `Next: ${setName(rootOf(upNext))}` : 'Again' } };
+    const repCount = step.requirement.required_passes;
+    return { id, score: raw.score ?? null, setIndex: index + 1, setCount: steps.length, repIndex: Math.max(1, step.pass_count), repCount,
+      setClear: step.passed, next: { key: step.passed && upNext ? setName(rootOf(upNext)) : step.display.key, hand: null } };
+  }, [moment, celebrated, segment, drill, task]);
+
+  // Silver and Gold are the drill's big moment: its curtain closes on the take,
+  // the passage's icon turns into the coin on it, and it parts onto what is next.
+  // The take that finishes the piece puts every passage on the curtain.
+  const ceremonyMs = pieceDone ? PIECE_CEREMONY_MS : PASSAGE_CEREMONY_MS;
+  const celebrating = celebrated ? moment.id : null;
+  useEffect(() => {
+    if (!celebrating) return undefined;
+    const timer = setTimeout(() => {
+      const sounded = playPassageChime({ level: celebrated, piece: Boolean(pieceDone) });
+      logger.info('piano.learn.celebrate', { scoreId: score.id, scope: pieceDone ? 'piece' : 'passage', level: celebrated, passages: [segment.id], sounded });
+    }, verdictAt(ceremonyMs));
+    return () => clearTimeout(timer);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- one chime per celebrated take
+  }, [celebrating]);
+  const ceremony = (() => {
+    if (!celebrating) return null;
+    const metal = celebrated === 'gold' ? 'Gold' : 'Silver';
+    const turnDelay = { '--turn-delay': `${verdictAt(ceremonyMs)}ms` };
+    if (pieceDone) {
+      const passages = coach.projection.segments;
+      const columns = Math.ceil(passages.length / Math.ceil(passages.length / 12));
+      const stagger = Math.min(45, 900 / passages.length);
+      return <GateCeremony key={celebrating} durationMs={ceremonyMs} word={`All ${metal}!`} announce={`Your whole piece is ${metal}!`}
+        mark={<span className="piano-learn-coach__piece-mark" style={{ gridTemplateColumns: `repeat(${columns}, auto)`, fontSize: pieceMarkSize(passages.length) }}>
+          {passages.map((item, index) => <span key={item.id} style={{ '--turn-delay': `${Math.round(verdictAt(ceremonyMs) + index * stagger)}ms` }}>
+            <PassageTurn from={celebrated === 'gold' ? 'silver' : 'learning'} to={celebrated} /></span>)}
+        </span>}
+        behind={celebrated === 'silver' ? { mark: <PassageCoin state="gold" />, eyebrow: 'Next', label: 'Go for Gold' }
+          : { mark: <PassageCoin state="gold" />, eyebrow: 'All Gold', label: title ?? barsOf(segment) }}
+        onDone={momentDone} />;
+    }
+    return <GateCeremony key={celebrating} durationMs={ceremonyMs} word={`${metal}!`} announce={`${barsOf(segment)}. ${metal}!${leaveFor ? ` Next: ${lower(barsOf(leaveFor))}.` : ''}`}
+      mark={<span style={turnDelay}><PassageTurn from={celebrated === 'gold' ? 'silver' : moment.was.flower ? 'learning' : 'todo'} to={celebrated} /></span>}
+      behind={leaveFor ? { mark: <PassageCoin state={passageProgress(leaveFor).state} />, eyebrow: 'Next', label: barsOf(leaveFor) }
+        : { mark: <PassageCoin state={celebrated} />, eyebrow: barsOf(segment), label: metal }}
+      onDone={momentDone} />;
+  })();
+
+  // After a miss the drill's own result panel offers the smaller practice and the way out.
+  const recovery = result && next && next.depth > 0 && next.key !== result.task.key ? next : null;
+  const recoveryAction = !recovery ? null : recovery.reason === 'slower-beat' ? `Try a little slower · ${recovery.tempoPercent}%`
+    : recovery.reason === 'one-hand' ? `Practice the ${recovery.parts[0] === 'lh' ? 'left' : 'right'} hand`
+      : recovery.range.start === recovery.range.end ? `Practice bar ${recovery.range.start + 1}`
+        : `Practice bars ${recovery.range.start + 1}–${recovery.range.end + 1}`;
   const canSetAside = coach.projection.canSetAside?.[segment.id] === true;
   const comeBackLater = () => {
     const target = coach.projection.afterSetAside?.[segment.id];
+    logger.info('piano.learn.coach.set-aside', { scoreId: score.id, passageId: segment.id, next: target ?? null });
     coach.setAside(silverTask ?? task);
     if (target && onPassageChange) onPassageChange(target); else onBack?.();
   };
-  const nextPassageButton = (primary) => nextPassage && onPassageChange
-    ? <button className={primary ? 'is-primary' : ''} onClick={() => onPassageChange(nextPassage.id)}>Next passage: {passageName(nextPassage)}</button> : null;
-  const laterButton = canSetAside ? <button onClick={comeBackLater}>Come back to this later</button> : null;
-  const showCertified = view === 'prepare' && !selected && Boolean(certification.silver) && !goldDrill?.review;
-  const skillList = (track, name) => {
-    const skills = projected?.skills.filter((skill) => (track === 'silver' ? skill.track === 'silver' : skill.track !== 'silver')) ?? [];
-    return skills.length ? <div className="piano-learn-coach__track"><h3>{track === 'silver' ? 'Silver' : 'Gold'}</h3>
-      <ul className="piano-learn-coach__skills" aria-label={name}>{skills.map((skill) => <li key={skill.key} data-earned={skill.ready}>
-        <span aria-hidden="true">{skill.ready ? '✓' : '○'}</span> {skill.label}{skill.mode === 'cued' ? ` · ${skill.tempoPercent}%` : ''}{skill.provenance === 'legacy' ? ' · previously earned' : ''}
-      </li>)}</ul></div> : null;
+  const laterButton = canSetAside ? <button type="button" onClick={comeBackLater}>Come back to this later</button> : null;
+  const resultActions = result ? <>
+    {recovery && <button type="button" className="is-primary" onClick={() => begin(recovery)}>{recoveryAction}</button>}
+    <button type="button" className={recovery ? '' : 'is-primary'} onClick={() => begin(result.task)}>Try again</button>
+    {laterButton}
+  </> : null;
+
+  const pickStep = useCallback((step) => {
+    const wanted = projected?.skills.find((skill) => skill.key === step.id);
+    if (!wanted || wanted.key === taskRef.current?.key) return;
+    logger.info('piano.learn.coach.pick', { scoreId: score.id, passageId: segment.id, skill: wanted.skill });
+    setSelected(wanted); setRun(null); setResult(null); setMoment(null); setLane(isGoldWork(wanted) ? 'gold' : null);
+    setRunNumber((number) => number + 1);
+  }, [projected, logger, score.id, segment.id]);
+
+  // Save state is shown only when it needs a hand.
+  const retrySave = async () => {
+    await coach.retry().catch(() => {});
+    const again = result ?? moment;
+    if (again && live.current) coach.record(again.task, again.raw);
   };
-  const progress = <div className="piano-learn-coach__save" role="status">
-    <span>{coach.profileId === 'guest' ? 'Choose your name to save. This practice counts for this visit.' : `Practicing as ${coach.profileId}`}</span>
-    {coach.saveStatus === 'error' ? <><strong>Progress not saved</strong><button type="button" onClick={async () => {
-      await coach.retry().catch(() => {});
-      if (result && live.current) coach.record(result.task, result.raw);
-    }}>Retry saving</button></> : coach.saveStatus === 'pending' ? <span>Saving progress…</span> : coach.saveStatus === 'saved' ? <span>Progress saved</span> : null}
-    {coach.recoveryError && <><span role="alert">{coach.recoveryError}</span><button type="button" onClick={() => {
-      const link = document.createElement('a'); const url = URL.createObjectURL(new Blob([coach.recoveryData()], { type: 'application/json' }));
-      link.href = url; link.download = 'piano-earlier-practice.json'; link.click(); URL.revokeObjectURL(url);
-    }}>Export earlier practice</button></>}
-    {coach.storageError && <span>Keep this page open until progress is saved.</span>}
-  </div>;
-  if (!task) return <section className="piano-learn-coach"><h2>No playable notes in this passage</h2><button onClick={onBack}>Back to score</button></section>;
-  if (view === 'listen') return <LearnListen score={score} task={task} tempoMap={plan.tempoMap} onDone={() => setView('prepare')} />;
-  if (view === 'run') {
-    return <div className="piano-learn-coach piano-learn-coach--running">
-      <LearnLab key={runNumber} score={score} revision={plan.fingerprint} segment={takeMaterial.segment} rung={takeMaterial.rung}
-        coachingTask={run} onOutcome={finish} startOnReady tempo={{ ...tempo, tempoMap: plan.tempoMap, adjustable: false }} feedback={feedback}
-        onClose={() => { setSelected(run); setView('prepare'); }} onChangePractice={() => setView('custom')} onUnavailable={operational} />
-      {progress}
-    </div>;
-  }
-  if (view === 'custom') return <div className="piano-learn-coach">
-    <LearnLaunchpad segment={segment} initialView="custom" customOnly initialChoice={choice} onChoiceChange={setChoice}
-      preview={preview} onBack={() => setView('prepare')} onLaunch={(launch) => {
-        const custom = makeCoachTask(plan, { passageId: segment.id, skill: 'custom', label: 'Your practice',
-          range: { start: segment.inMeasure, end: segment.outMeasure }, parts: launch.parts, mode: launch.mode,
-          tempoPercent: launch.tempoPercent, criteria: { ...plan.criteria, ...launch.rung.criteria }, source: 'custom' });
-        setSelected(custom); setView('prepare');
-      }} />{progress}</div>;
-  return <section className="piano-learn-coach" aria-label={`${segment.label} learning`}>
-    <header className="piano-learn-coach__header"><button type="button" onClick={onBack}>‹ Back to score</button>
-      <div><strong>{segment.label}</strong><span>{segment.barLabel}</span></div>
-      {certification.silver && <strong className="piano-learn-coach__medal" data-level="silver">Silver</strong>}
-      {certification.gold && <strong className="piano-learn-coach__medal" data-level="gold">Gold</strong>}
-      {(projected?.complete || projected?.mastered) && <strong>{projected.mastered ? (projected.masteredAt ? 'Played at score tempo' : 'Previously completed') : 'Practice plan complete'}</strong>}
-    </header>
-    {progress}
-    <div className="piano-learn-coach__body">
-      <div className="piano-learn-coach__music piano-exercise-run__score" aria-label="Passage music">{preview}</div>
-      <div className="piano-learn-coach__task" aria-live="polite">
-        {view === 'result' ? <>
-          <h2>{message.title}</h2><p>{message.detail}</p>
-          {silverJustEarned && wholePieceSilver && <p>Your whole piece is Silver.</p>}
-          {silverJustEarned ? null : earned ? <p className="piano-learn-coach__earned">✓ Skill earned · {result.task.label}</p>
-            : message.reason === 'passed' && <p>{result.task.required ? 'A successful take added to your practice plan.' : 'One more successful take will make this skill ready.'}</p>}
-          {recovery && <p>{recoveryDetail}</p>}
-          {silverJustEarned ? <>
-            {nextPassageButton(true)}
-            {goForGold && <button className={wholePieceSilver ? 'is-primary' : ''} onClick={goForGold}>Go for Gold</button>}
-          </> : recovery ? <button className="is-primary" onClick={() => start(after)}>{recoveryAction}</button>
-            : certification.silver && !isGoldWork(result.task) ? nextPassageButton(true)
-              : after && after.key !== result.task.key
-                ? <button className="is-primary" onClick={() => start(after)}>Next: {after.label}</button> : null}
-          <button className={recovery || earned || silverJustEarned ? '' : 'is-primary'} onClick={() => start(result.task)}>{result.task.assist === 'none' && !checkPassed ? 'Try again' : 'Play again'}</button>
-          {laterButton}
-          <button onClick={() => setView('custom')}>Change practice</button>
-          <button onClick={onBack}>Finish for now</button>
-        </> : showCertified ? <>
-          <h2>You have this one</h2>
-          <p>{wholePieceSilver ? 'Your whole piece is Silver.' : 'Your notes are certified. Keep going with the next passage.'}</p>
-          {nextPassageButton(true)}
-          {goForGold && <button className={nextPassage ? '' : 'is-primary'} onClick={goForGold}>Go for Gold</button>}
-          <button onClick={() => setSelected(silverTask ?? next)}>Practice again</button>
-          <button onClick={onBack}>Finish for now</button>
-        </> : <>
-          <h2>{task.label}</h2>
-          <p>{task.parts.length > 1 ? 'Both hands' : task.parts[0] === 'lh' ? 'Left hand' : 'Right hand'}{task.mode !== 'free' ? ` · ${task.tempoPercent}% of score tempo${effectiveBpm ? ` · starts at ${effectiveBpm} BPM` : ''}` : ''} · Bars {task.range.start + 1}–{task.range.end + 1}</p>
-          <p>{criteriaCopy(task)}</p>
-          {task.required == null ? <p>Two successful takes out of your last three earn this skill.</p>
-            : task.required > 1 && <p>{projected?.skills.find((item) => item.key === task.key)?.successes ?? 0} of {task.required} successful takes</p>}
-          {musicError ? <><p role="alert">The music could not be prepared. Return to the score or try again.</p><button onClick={() => { setReadyKey(null); setMusicError(null); setPreviewAttempt((value) => value + 1); }}>Retry music</button></>
-            : readyKey !== task.key && <p role="status">Preparing the music…</p>}
-          {coach.loaded === false && <p role="status">Loading your practice…</p>}
-          {connected === false && <p role="alert">Connect the piano before starting. Your progress is safe.</p>}
-          <button className="is-primary" disabled={readyKey !== task.key || Boolean(musicError) || connected === false || coach.loaded === false} onClick={() => start()}>Start practice</button>
-          <button onClick={() => { onListen?.(task); setView('listen'); }}>Listen</button>
-          <button onClick={() => setView('custom')}>Change practice</button>
-          {silverTask && task.key !== silverTask.key && !certification.silver && <button onClick={() => { setSelected(silverTask); setMusicError(null); }}>Play it on your own</button>}
-          {segment.demonstration && <button onClick={() => {
-            setSelected(segment.demonstration); setMusicError(null);
-          }}>Try the full passage</button>}
-          {laterButton}
-        </>}
-        {Object.values(coach.projection.retainedLegacy?.passages ?? {}).some((passage) => passage.complete || Object.values(passage.rungs ?? {}).some((rung) => rung.passCount > 0)) && <details className="piano-learn-coach__earlier">
-          <summary>Earlier practice retained</summary>
-          {!coach.projection.retainedLegacy.compatible && <p>This score has changed. Your earlier achievements are kept separately.</p>}
-          <ul>{Object.entries(coach.projection.retainedLegacy.passages).flatMap(([id, passage]) => Object.entries(passage.rungs ?? {}).filter(([, rung]) => rung.passCount > 0).map(([skill, rung]) => <li key={`${id}:${skill}`}>{earlierBars(id)} · {earlierSkill(skill)} · {rung.passCount} successful takes</li>))}</ul>
-        </details>}
-        {view !== 'result' && skillList('silver', 'Silver steps')}
-        {view !== 'result' && skillList('gold', 'Gold steps')}
-      </div>
-    </div>
+  const exportEarlier = () => {
+    const link = document.createElement('a'); const url = URL.createObjectURL(new Blob([coach.recoveryData()], { type: 'application/json' }));
+    link.href = url; link.download = 'piano-earlier-practice.json'; link.click(); URL.revokeObjectURL(url);
+  };
+  const notice = coach.saveStatus === 'error' || coach.recoveryError ? <div className="piano-learn-coach__save" role="status">
+    {coach.saveStatus === 'error' && <><strong>Progress not saved</strong><button type="button" onClick={retrySave}>Retry saving</button></>}
+    {coach.recoveryError && <button type="button" aria-label={coach.recoveryError} onClick={exportEarlier}>Export earlier practice</button>}
+  </div> : null;
+
+  // The same rail and board as the score view: every passage of the piece, this one outlined.
+  const rail = useMemo(() => railModel({ segments: coach.projection.segments, projection: coach.projection, selectedId: segment.id }),
+    [coach.projection, segment.id]);
+  const gemOffered = usePieceGemOffer({ userId: coach.profileId, enabled: Boolean(board) });
+  const goToPassage = (passageId, source) => {
+    setBoard(null);
+    if (passageId === segment.id) return;
+    logger.info('piano.learn.rail.select', { scoreId: score.id, passageId, source });
+    onPassageChange?.(passageId);
+  };
+  const toggleBoard = (focusId) => {
+    const open = board && focusId == null ? null : { focusId: focusId ?? null };
+    logger.info(open ? 'piano.learn.board.open' : 'piano.learn.board.close', { scoreId: score.id, ...(open ? { passageId: open.focusId } : { by: 'count' }) });
+    setBoard(open);
+  };
+  // The rail answers the curtain: this passage's tile turns as the verdict
+  // lands, and a finished piece turns every tile in a wave.
+  const flips = useMemo(() => (!celebrated ? EMPTY : pieceDone ? Object.fromEntries(coach.projection.segments.map((item) => [item.id, celebrated])) : { [segment.id]: celebrated }),
+    [celebrated, pieceDone, coach.projection.segments, segment.id]);
+  const map = <>
+    {board && <PassageBoard title={title ?? barsOf(segment)} model={rail} focusId={board.focusId ?? segment.id} gemOffered={gemOffered}
+      review={Boolean(coach.projection.review)}
+      onReview={() => { const review = coach.projection.review; coach.selectTask(review); setBoard(null);
+        if (review.passageId === segment.id) begin(review); else onPassageChange?.(review.passageId); }}
+      onSelect={(passageId) => goToPassage(passageId, 'learn-board')}
+      onClose={() => { logger.info('piano.learn.board.close', { scoreId: score.id, by: 'close' }); setBoard(null); }} />}
+    <PassageRail model={rail} flips={flips} flipDelayMs={verdictAt(ceremonyMs)} wave={Boolean(pieceDone)} boardOpen={Boolean(board)} onSelect={(passageId) => goToPassage(passageId, 'learn-rail')} onOpenBoard={toggleBoard} />
+  </>;
+
+  if (!task) return <section className="piano-learn-coach"><h2>No playable notes in this passage</h2><button type="button" onClick={onBack}>Back to score</button>{map}</section>;
+  if (view === 'listen') return <section className="piano-learn-coach" aria-label={`${barsOf(segment)} demonstration`}>
+    <LearnListen score={score} task={task} tempoMap={plan.tempoMap} passageName={barsOf(segment)} onDone={() => { setRunNumber((number) => number + 1); setView('play'); }} />
+    {map}
   </section>;
+  return <div className="piano-learn-coach piano-learn-coach--running" data-save={coach.saveStatus} data-level={certification.gold ? 'gold' : certification.silver ? 'silver' : undefined}>
+    {loaded && material ? <LearnLab key={`${runNumber}:${task.key}`} score={score} revision={plan.fingerprint} segment={material.segment} rung={material.rung}
+      coachingTask={task} drill={drill} card={card} ceremony={ceremony} onCardDone={momentDone} notice={notice}
+      resultLabel={result?.message.title ?? null} resultActions={resultActions}
+      extraControls={result ? null : laterButton}
+      onPickStep={pickStep} onStarted={started} onOutcome={finish}
+      onListen={() => { onListen?.(task); setView('listen'); }}
+      tempo={{ ...tempo, tempoMap: plan.tempoMap, adjustable: false }} feedback={feedback}
+      onClose={onBack}
+      onUnavailable={(reason) => logger.warn('piano.learn.coach.unavailable', { scoreId: score.id, passageId: segment.id, skill: task.skill, reason: String(reason) })} />
+      : <div className="piano-learn-coach__loading" role="status" aria-label="Loading your practice" />}
+    {map}
+  </div>;
 }

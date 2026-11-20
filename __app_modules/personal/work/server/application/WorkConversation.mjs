@@ -14,6 +14,7 @@ export class WorkConversation {
   #scheduler;
   #clock;
   #deliver;
+  #describe;
   #logger;
   #timers = new Map();
   #principals = new Map();
@@ -31,9 +32,11 @@ export class WorkConversation {
     scheduler,
     clock,
     deliver = null,
+    describeProvider,
     logger
   }) {
     if (!state?.read || !state?.transact || !context?.execute || !commands?.propose || !decisions?.prepare || !principalAuthority?.verify || !evidence?.readByRefs || !evidence?.readForMessage || !intentExtractor?.extract || !scheduler?.after || typeof resolvePolicy !== 'function' || typeof clock !== 'function') throw new TypeError('Work conversation dependencies required');
+    if (typeof describeProvider !== 'function') throw new TypeError('Work provider descriptor required');
     this.#state = state;
     this.#context = context;
     this.#commands = commands;
@@ -45,6 +48,7 @@ export class WorkConversation {
     this.#scheduler = scheduler;
     this.#clock = clock;
     this.#deliver = deliver;
+    this.#describe = describeProvider;
     this.#logger = logger;
   }
   capturePrincipal(input) {
@@ -627,7 +631,7 @@ export class WorkConversation {
       const binding = policy.providers[domain.provider];
       payload = {
         ...payload,
-        ...(binding.type === 'todoist' ? {
+        ...(this.#describe(binding).assigneeField === 'single' ? {
           assigneeId
         } : {
           assigneeIds: [assigneeId]
@@ -784,7 +788,7 @@ export class WorkConversation {
     asOf = this.#clock()
   }) {
     const p = !this.#closed && this.#principal.verify(principal);
-    if (!p?.authored || !['tasks', 'projects', 'create_task', 'create_container'].includes(flow)) throw workError('WORK_PRINCIPAL_REQUIRED');
+    if (!p?.authored || p.platform !== 'telegram' || !['tasks', 'projects', 'create_task', 'create_container'].includes(flow)) throw workError('WORK_PRINCIPAL_REQUIRED');
     if (['create_task', 'create_container'].includes(flow)) return {
       decisionId: null,
       text: `Send “Create ${flow === 'create_task' ? 'task' : 'project'} <title>” with the title you want. Then choose and confirm its configured destination.`,

@@ -42,28 +42,49 @@ beforeEach(() => {
 });
 
 describe('TodaysLessonGate', () => {
-  it('names the lesson, its course and unit, and its blurb', () => {
-    mount();
-    expect(screen.getByText(/Lesson 5: Broken Chords/)).toBeInTheDocument();
-    expect(screen.getByText(/Hoffman Academy/)).toBeInTheDocument();
-    expect(screen.getByText(/Unit 3/)).toBeInTheDocument();
-    expect(screen.getByText(/Practice broken chords/)).toBeInTheDocument();
+  it('is the picture, the title and one start action, with nothing only to be read', () => {
+    const { container } = mount();
+    expect(screen.getByText('Lesson 5: Broken Chords')).toBeInTheDocument();
+    expect(screen.getAllByRole('button')).toHaveLength(1);
+    // No word "Start": the way in is a play disc on the still, not a slab of a button.
+    expect(container.querySelector('.piano-lesson-gate').textContent).toBe('Lesson 5: Broken Chords');
+    expect(screen.queryByText(/Practice broken chords/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Hoffman Academy/)).not.toBeInTheDocument();
+    expect(container.querySelector('p')).toBeNull();
   });
 
   it('renders the still when there is one', () => {
-    mount();
-    expect(screen.getByRole('presentation')).toHaveAttribute('src', '/api/img.jpg');
+    const { container } = mount();
+    expect(container.querySelector('.piano-lesson-gate__thumb')).toHaveAttribute('src', '/api/img.jpg');
+  });
+
+  it('stands the course poster on the left, then the title over the still with the play disc on it', () => {
+    const { container } = mount({ course: { ...COURSE, thumbnail: '/api/poster.jpg' } });
+    const button = startButton();
+    const poster = container.querySelector('.piano-lesson-gate__poster');
+    expect(poster).toHaveAttribute('src', '/api/poster.jpg');
+    expect(button.firstElementChild).toBe(poster);
+    const side = button.querySelector('.piano-lesson-gate__side');
+    expect(side.firstElementChild).toHaveClass('piano-lesson-gate__title');
+    expect(side.querySelector('.piano-lesson-gate__still .piano-lesson-gate__play')).not.toBeNull();
+  });
+
+  it('leaves the poster out when the course has none', () => {
+    const { container } = mount();
+    expect(container.querySelector('.piano-lesson-gate__poster')).toBeNull();
   });
 
   it('renders without a thumbnail rather than a broken image', () => {
-    mount({ lesson: { id: 'plex:2', title: 'Bare lesson' } });
-    expect(screen.queryByRole('presentation')).not.toBeInTheDocument();
+    const { container } = mount({ lesson: { id: 'plex:2', title: 'Bare lesson' } });
+    expect(container.querySelector('.piano-lesson-gate__thumb')).toBeNull();
+    // The play disc still has somewhere to sit.
+    expect(container.querySelector('.piano-lesson-gate__still .piano-lesson-gate__play')).not.toBeNull();
     expect(screen.getByText('Bare lesson')).toBeInTheDocument();
   });
 
   it('renders with no unit (an unstructured course)', () => {
     mount({ unit: null });
-    expect(screen.getByText(/Hoffman Academy/)).toBeInTheDocument();
+    expect(startButton()).toBeInTheDocument();
   });
 
   // The tap happens on the tablet already showing the menu, so it navigates

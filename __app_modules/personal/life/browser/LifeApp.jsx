@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Select } from '@mantine/core';
 import { Notifications } from '@mantine/notifications';
 import { Routes, Route, Link, Navigate, useNavigate, useLocation, useParams } from 'react-router-dom';
@@ -31,6 +31,7 @@ import { LifeUserContext, useLifeUser } from "./hooks/useLifeUser.js";
 import { useAppNotifications } from "./hooks/useAppNotifications.js";
 
 const logger = createAppLogger('life');
+const TriageSessionView = lazy(() => import('./views/now/triage/TriageSessionView.jsx'));
 
 // Top-level tabs. Every child that used to live under the navbar's "Plan"
 // disclosure group now lives one level down, inside the Plan tab's own body —
@@ -188,6 +189,11 @@ function LifeAppShell() {
               : <Routes key={lifeUser.username}>
                 <Route index element={<Navigate to="now" />} />
                 <Route path="now" element={<Dashboard />} />
+                <Route path="now/triage" element={
+                  <Suspense fallback={<LoadingState label="inbox triage" />}>
+                    <TriageSessionView />
+                  </Suspense>
+                } />
                 <Route path="log" element={<LogBrowser />} />
                 <Route path="log/:date" element={<LogDayRoute />} />
                 <Route path="log/category/:category" element={<LogCategoryRoute />} />

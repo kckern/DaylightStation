@@ -4,10 +4,8 @@ import { passageProgress } from '../../../../../../../shared/music/learnCoach.mj
 /** The narrowest tile a child can reliably tap, plus the gap beside it. */
 export const TILE_MIN_PX = 44;
 export const TILE_GAP_PX = 4;
-/** Above this many tiles the medal word no longer fits under the bar number. */
-const WORD_LIMIT = 14;
 
-export const STATE_WORDS = Object.freeze({ todo: 'Not started', learning: 'Learning', silver: 'Silver', gold: 'Gold' });
+export const STATE_WORDS = Object.freeze({ todo: 'Not started', learning: 'Partway', silver: 'Silver', gold: 'Gold' });
 
 const printedStart = (segment) => {
   const printed = segment.printedMeasures?.[0];
@@ -20,9 +18,11 @@ const lowerBars = (label) => label.charAt(0).toLowerCase() + label.slice(1);
 export function passageTile(segment) {
   const progress = passageProgress(segment);
   const bars = barsOf(segment);
-  const detail = progress.state === 'learning' ? `Learning, ${progress.steps.done} of ${progress.steps.total} steps` : STATE_WORDS[progress.state];
+  // Steps are counted on any passage that is under way and not yet Silver, tomato or flower.
+  const underway = (progress.state === 'todo' || progress.state === 'learning') && progress.steps.done > 0;
+  const detail = underway ? `${progress.state === 'learning' ? 'Partway' : 'Started'}, ${progress.steps.done} of ${progress.steps.total} steps` : STATE_WORDS[progress.state];
   return { id: segment.id, startLabel: printedStart(segment), bars, barCount: Math.max(1, segment.outMeasure - segment.inMeasure + 1),
-    state: progress.state, steps: progress.steps, detail, label: `${bars}, ${detail}` };
+    state: progress.state, steps: progress.steps, underway, detail, label: `${bars}, ${detail}` };
 }
 
 /**
@@ -49,42 +49,26 @@ export function railModel({ segments = [], projection, selectedId = null }) {
     buttonLabel: !target ? null : target.kind === 'gold' ? `Go for Gold: ${lowerBars(target.tile.bars)}` : `Practice ${lowerBars(target.tile.bars)}`,
     count: { level: lap, done, total: piece.total, text: `${done}/${piece.total}`,
       label: `${done} of ${piece.total} ${lap === 'gold' ? 'Gold' : 'Silver'}` },
-    summary: `${piece.silver} of ${piece.total} Silver${piece.gold > 0 ? `, ${piece.gold} Gold` : ''}`,
-    goals: [{ level: 'silver', label: 'All Silver', reached: allSilver }, { level: 'gold', label: 'All Gold', reached: allGold }],
-    showWords: tiles.length <= WORD_LIMIT,
+    goals: [{ level: 'silver', label: 'All Silver', done: piece.silver, total: piece.total, reached: allSilver },
+      { level: 'gold', label: 'All Gold', done: piece.gold, total: piece.total, reached: allGold }],
   };
+}
+
+/**
+ * How many cards across the passage board. Rows hold up to seven cards (eight
+ * on a long piece), and the cards are shared evenly between the rows: twelve
+ * passages are six and six, never seven and five with blank cells.
+ */
+export function boardColumns(count) {
+  if (!(count > 0)) return 1;
+  const rows = Math.ceil(count / (count > 21 ? 8 : 7));
+  return Math.ceil(count / rows);
 }
 
 /** Whether every tile keeps a usable touch target in a track this wide. */
 export function railFits(tileCount, trackWidth) {
   if (!(tileCount > 0) || !(trackWidth > 0)) return true;
   return tileCount * TILE_MIN_PX + (tileCount - 1) * TILE_GAP_PX <= trackWidth;
-}
-
-const RANK = { silver: 1, gold: 2 };
-
-/** What a certification projection amounts to, for spotting a change. */
-export function certificationSnapshot(projection) {
-  const levels = {};
-  for (const segment of projection?.segments ?? []) {
-    levels[segment.id] = segment.certification?.gold ? 'gold' : segment.certification?.silver ? 'silver' : null;
-  }
-  const piece = projection?.piece ?? {};
-  return { levels, total: piece.total ?? 0, silver: piece.silver ?? 0, gold: piece.gold ?? 0 };
-}
-
-/**
- * The passages that rose to Silver or Gold between two snapshots, and whether
- * the whole piece finished a level. A piece that was already finished never
- * finishes again.
- */
-export function celebrationBetween(before, after) {
-  const flips = {};
-  for (const [id, level] of Object.entries(after.levels)) {
-    if ((RANK[level] ?? 0) > (RANK[before.levels[id]] ?? 0)) flips[id] = level;
-  }
-  const finished = (level) => after.total > 0 && after[level] >= after.total && before[level] < before.total;
-  return { flips, piece: finished('gold') ? 'gold' : finished('silver') ? 'silver' : null };
 }
 
 /**

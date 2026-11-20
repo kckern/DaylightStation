@@ -40,7 +40,7 @@
  * what put this file here; `shared/contracts/media/` is the same pattern.
  */
 // New opt-in owners do not inherit accidental legacy app configuration.
-export const COLOCATED_ONLY_HOUSEHOLD_APPS = Object.freeze(['agenda', 'work']);
+export const COLOCATED_ONLY_HOUSEHOLD_APPS = Object.freeze(['agenda', 'work', 'triage']);
 
 export const HOUSEHOLD_APP_CONFIGS = Object.freeze({
   agents:           'agents/config',
@@ -71,6 +71,7 @@ export const HOUSEHOLD_APP_CONFIGS = Object.freeze({
   livestream:       'livestream/config',
   lifelog:          'lifelog/config',
   work:             'work/config',
+  triage:           'triage/config',
   // `media` is the DOMAIN (plex host, protocol, infinity board ids) and
   // `media-app` is the MediaApp SURFACE (browse menu, searchScopes). The files
   // on disk were named the other way round before this migration.

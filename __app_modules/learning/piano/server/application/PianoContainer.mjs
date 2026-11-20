@@ -122,6 +122,7 @@ export class PianoContainer {
         configProjection: this.#configProjection,
         plexClient: this.#plexClient,
         logger: this.#logger,
+        schoolAssignments: this.#schoolAssignments,
       });
     }
     return this.#getRecentCourseActivity;

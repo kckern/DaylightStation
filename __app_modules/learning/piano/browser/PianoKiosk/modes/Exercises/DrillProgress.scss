@@ -103,6 +103,15 @@
     transition: color 300ms ease;
   }
 
+  // A set named by a picture. It keeps the label's colour states; a coin keeps
+  // its own metal. Short numerals ("60%") sit in the same row at reading size.
+  &__label--icon {
+    height: 1.6rem; gap: 0.1rem; font-size: 1.6rem; line-height: 1; letter-spacing: 0; text-transform: none;
+    b { font-size: 1.1rem; font-weight: 800; font-variant-numeric: tabular-nums; }
+    // A part of the picture that is not in play (the hand that rests): solid, unlit.
+    .is-resting { color: var(--drill-track); }
+  }
+
   // RH / LH / RH+LH. Text, not a clef glyph: U+1D11E tofus in the kiosk
   // WebView, and two letters read faster than a glyph at this size anyway.
   &__badge {
@@ -201,4 +210,11 @@
   }
   .drill-pill__ring,
   .drill-cluster__rollup i { transition-duration: 1ms !important; }
+}
+
+// As a button (a host whose sets can be chosen) a set keeps the same face. The
+// selectors outrank the run's own button styling.
+button.drill-cluster,
+.piano-exercise-run button.drill-cluster {
+  min-height: 0; margin: 0; padding: 0; border: 0; border-radius: 0; background: none; color: inherit; font: inherit; cursor: pointer;
 }

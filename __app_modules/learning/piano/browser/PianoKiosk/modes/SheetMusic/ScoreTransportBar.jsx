@@ -144,9 +144,8 @@ const ScorePracticeCluster = memo(function ScorePracticeCluster({
  */
 const ScoreViewControls = memo(function ScoreViewControls({
   mode,
-  flow,
-  onToggleFlow,
   scale,
+  maxScale,
   onScale,
   tempoMult = 1,
   onTempo,
@@ -261,9 +260,8 @@ const ScoreViewControls = memo(function ScoreViewControls({
         <ViewSheet
           open={viewOpen}
           onClose={() => setViewOpen(false)}
-          flow={flow}
-          onToggleFlow={onToggleFlow}
           scale={scale}
+          maxScale={maxScale}
           onScale={onScale}
           keyboardVisible={keyboardVisible}
           onToggleKeyboard={onToggleKeyboard}
@@ -330,9 +328,8 @@ export default function ScoreTransportBar({
   total,
   measure,
   measureTotal,
-  flow,
-  onToggleFlow,
   scale,
+  maxScale,
   onScale,
   // NOTE: threaded-only props are intentionally NOT defaulted here. Object/array
   // defaults (e.g. `parts = []`, `activeParts = {}`) mint a FRESH reference every
@@ -421,9 +418,8 @@ export default function ScoreTransportBar({
       {/* Right — parts, key, tempo & view controls (memoized; step-independent) */}
       <ScoreViewControls
         mode={mode}
-        flow={flow}
-        onToggleFlow={onToggleFlow}
         scale={scale}
+        maxScale={maxScale}
         onScale={onScale}
         tempoMult={tempoMult}
         onTempo={onTempo}

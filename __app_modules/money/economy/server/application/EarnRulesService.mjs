@@ -61,12 +61,16 @@ export class EarnRulesService {
    * Replace the household rules. Learner overrides are kept unless the new
    * document names its own `users`; a kept override naming a removed rule is
    * refused by validation, so a rule cannot vanish under someone's rates.
+   * The household makeup penalty is kept the same way: an editor that does
+   * not know the block cannot wipe it; a document naming `makeup` (even null)
+   * sets it.
    */
   async replace({ doc, actorId }) {
     this.#requireActor(actorId);
     return this.#serialize(async () => {
       const current = await this.get();
-      const next = validateRuleset({ ...doc, users: doc?.users ?? current.users });
+      const makeup = doc && Object.hasOwn(doc, 'makeup') ? doc.makeup : current.makeup;
+      const next = validateRuleset({ ...doc, users: doc?.users ?? current.users, makeup });
       return this.#commit(current, next, actorId, { rules: next.rules.length });
     });
   }

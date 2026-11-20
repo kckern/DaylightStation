@@ -6,7 +6,7 @@ Config sources of truth (no IPs reproduced here — check the live file):
 | Device | Config |
 |---|---|
 | Kitchen laser printer, Portal kiosk, barcode/NFC scanner, kitchen-relay board | `data/household/hardware/devices.yml` |
-| Thermal printer(s) — named locations, timeouts, codepage | `data/system/config/adapters.yml` → `thermal_printers` |
+| Thermal printer(s) — named locations, fallbacks, timeouts, codepage | `data/system/config/adapters.yml` → `thermal_printers` (boot-cached) |
 | Which thermal printer School uses, `teachers:`, lifecycle switch | `data/household/school/school.yml` (**boot-cached** — restart after any edit) |
 | OMR reader | `config/omr-readers.yml` — **does not exist in the live data tree**; see §3 |
 
@@ -86,8 +86,20 @@ are actively printing.
 |---|---|---|
 | Blank paper cut and dispensed, but the caller/log said "refused" | A zombie job: the connect timeout fired and abandoned the job, but the eventual late connect still wrote init+footer+cut with no content (2026-08-25 RC-4, fixed — socket is now destroyed on timeout so a late connect can't resurrect a deleted scratch file) | If you see this on an OLD build, the fix is destroying the socket and setting an aborted flag the late callback checks — confirm the build includes it |
 | Connects refused for several seconds, then several jobs complete at once | The printer's single connection slot was held by a stuck prior job | Check for a preceding `thermalPrinter.timeout`/zombie; don't assume the printer itself is broken |
+| School prints come out of the other thermal printer | Routing: the named printer did not take the job (offline or refused at preflight), so it went to its `fallback`. Look for `thermalPrinter.route.failover` (where it printed, what was tried) and `thermalPrinter.route.down` (why the first was skipped). A printer stays skipped for 2 minutes after failing, then is tried first again (`route.restored`). | Fix or power-cycle the named printer; nothing to undo in config |
 | Accented characters print as garbage | Wrong codepage — this specific unit ignores `ESC t 16` (win1252); `cp858` is the configured default that actually renders correctly | Check `thermal_printers` defaults in `adapters.yml` |
 | A receipt "definitely" printed but the console shows unprinted | `postjob` verification came back `faulted`, not `unverified` — only `faulted` is recorded as not-printed | Check the specific job's `thermalPrinter.postjob.*` log line |
+
+### Thermal printer routing
+
+Each entry under `thermal_printers` may name `fallback: [other]`. Consumers resolve a
+printer once at boot (School by `school.yml` `receiptPrinter`, others by the default), and
+the registry hands back a `RoutedThermalPrinter` for any printer with fallbacks, so no
+consumer changes. A job moves to the next printer only when it provably never left the
+server (`dispatched: false`: connect failure, or a preflight refusal such as paper out).
+A job that was sent, even unconfirmed, is never resent, so a fallback cannot duplicate a
+quiz card. The result carries `printedOn`, `failedOver` and `tried`. Job building is
+printer-independent; each printer applies its own codepage and orientation.
 
 ## 3. OMR bubble-sheet reader (Chatsworth OMR-1100)
 

@@ -18,6 +18,9 @@ async function setup() {
     trusted = new WeakSet(),
     writes = [];
   let version = 'item-v1';
+  const time = {
+    now: AS_OF
+  };
   const actor = patch => {
     const p = Object.freeze({
       username: 'sample',
@@ -117,7 +120,7 @@ async function setup() {
     context,
     resolvePolicy: () => policy,
     verifyPrincipal,
-    clock: () => AS_OF
+    clock: () => time.now
   });
   const tokens = createWorkCallbackTokens();
   const options = {
@@ -126,9 +129,13 @@ async function setup() {
     context,
     resolvePolicy: () => policy,
     verifyPrincipal,
-    clock: () => AS_OF,
+    clock: () => time.now,
     nextId: randomUUID,
-    tokens
+    tokens,
+    describeProvider: () => ({
+      containerNoun: 'project',
+      assigneeField: 'single'
+    })
   };
   decisions = new WorkDecisions(options);
   const proposed = await commands.propose({
@@ -157,7 +164,9 @@ async function setup() {
     ...patch
   });
   return {
+    time,
     h,
+    actor,
     state,
     decisions,
     options,
@@ -527,4 +536,320 @@ it('presents a separately named Archive task confirmation', async () => {
     asOf: AS_OF
   });
   expect(page.choices[0][0].text).toBe('Archive task');
+});
+it.each([['List', 'Archive List'], ['project', 'Archive project']])('labels container operations with the descriptor noun %s, not a provider type', async (containerNoun, expected) => {
+  const x = await setup(),
+    s = await x.state.read({
+      username: 'sample'
+    });
+  x.policy.providers.p.type = 'tasks-x';
+  const record = s.commands[x.commandId];
+  const command = {
+    ...record.command,
+    id: 'command.' + 'e'.repeat(64),
+    operation: 'archive_container'
+  };
+  await x.state.transact({
+    username: 'sample',
+    id: 'archive-container-fixture',
+    expectedRevision: s.revision,
+    asOf: AS_OF,
+    events: [{
+      type: 'command.queued',
+      record: {
+        ...record,
+        command
+      }
+    }]
+  });
+  const decisions = new WorkDecisions({
+    ...x.options,
+    describeProvider: () => ({
+      containerNoun,
+      assigneeField: 'single'
+    })
+  });
+  const page = await decisions.prepare({
+    principal: x.principal,
+    commandId: command.id,
+    asOf: AS_OF
+  });
+  expect(page.choices[0][0].text).toBe(expected);
+});
+
+async function webSetup() {
+  const x = await setup();
+  const web = x.actor({
+    platform: 'web',
+    kind: 'session',
+    sessionId: 'sid',
+    receiptId: 'req-1',
+    senderId: undefined,
+    conversationId: undefined,
+    messageId: undefined
+  });
+  const proposed = await x.commands.propose({
+    principal: web,
+    intent: {
+      operation: 'complete',
+      domainId: 'personal',
+      ref,
+      payload: {},
+      mode: 'manual'
+    },
+    asOf: AS_OF
+  });
+  return {
+    ...x,
+    web,
+    command: proposed.command
+  };
+}
+it('a web grant is single-use: the second verifyConfirmation fails', async () => {
+  const x = await webSetup();
+  const {
+    confirmationId
+  } = await x.decisions.confirmWeb({
+    principal: x.web,
+    commandId: x.command.id,
+    expectedVersion: x.command.expectedVersion,
+    asOf: AS_OF
+  });
+  const check = () => x.decisions.verifyConfirmation({
+    principal: x.web,
+    command: x.command,
+    confirmationId,
+    asOf: AS_OF
+  });
+  expect(await check()).toBe(true);
+  expect(await check()).toBe(false);
+});
+it('a web grant is bound to expectedVersion', async () => {
+  const x = await webSetup();
+  expect(x.command.expectedVersion).toBe('item-v1');
+  await expect(x.decisions.confirmWeb({
+    principal: x.web,
+    commandId: x.command.id,
+    expectedVersion: 'item-v0',
+    asOf: AS_OF
+  })).rejects.toThrow('WORK_SELECTION_CHANGED');
+  const {
+    confirmationId
+  } = await x.decisions.confirmWeb({
+    principal: x.web,
+    commandId: x.command.id,
+    expectedVersion: 'item-v1',
+    asOf: AS_OF
+  });
+  expect(await x.decisions.verifyConfirmation({
+    principal: x.web,
+    command: {
+      ...x.command,
+      expectedVersion: 'item-v2'
+    },
+    confirmationId,
+    asOf: AS_OF
+  })).toBe(false);
+});
+it('a web grant presented with a Telegram principal fails, and the grant survives for its owner', async () => {
+  const x = await webSetup();
+  const {
+    confirmationId
+  } = await x.decisions.confirmWeb({
+    principal: x.web,
+    commandId: x.command.id,
+    expectedVersion: 'item-v1',
+    asOf: AS_OF
+  });
+  expect(await x.decisions.verifyConfirmation({
+    principal: x.principal,
+    command: x.command,
+    confirmationId,
+    asOf: AS_OF
+  })).toBe(false);
+  expect(await x.decisions.verifyConfirmation({
+    principal: x.actor({
+      platform: 'web',
+      kind: 'session',
+      username: 'other',
+      receiptId: 'req-9'
+    }),
+    command: x.command,
+    confirmationId,
+    asOf: AS_OF
+  })).toBe(false);
+  // Another request from the same user (a later tap) may present it.
+  expect(await x.decisions.verifyConfirmation({
+    principal: x.actor({
+      platform: 'web',
+      kind: 'session',
+      sessionId: 'sid',
+      receiptId: 'req-2'
+    }),
+    command: x.command,
+    confirmationId,
+    asOf: AS_OF
+  })).toBe(true);
+});
+it('a web grant expires after five minutes', async () => {
+  const x = await webSetup();
+  const {
+    confirmationId
+  } = await x.decisions.confirmWeb({
+    principal: x.web,
+    commandId: x.command.id,
+    expectedVersion: 'item-v1',
+    asOf: AS_OF
+  });
+  x.time.now = AS_OF + 5 * 60000;
+  expect(await x.decisions.verifyConfirmation({
+    principal: x.web,
+    command: x.command,
+    confirmationId,
+    asOf: AS_OF
+  })).toBe(false);
+});
+it('a web grant expiry follows the injected clock, not the caller asOf', async () => {
+  const x = await webSetup();
+  const {
+    confirmationId
+  } = await x.decisions.confirmWeb({
+    principal: x.web,
+    commandId: x.command.id,
+    expectedVersion: 'item-v1',
+    asOf: AS_OF
+  });
+  x.time.now = AS_OF + 5 * 60000 + 1;
+  expect(await x.decisions.verifyConfirmation({
+    principal: x.web,
+    command: x.command,
+    confirmationId,
+    asOf: AS_OF
+  })).toBe(false);
+});
+it('a caller-supplied future asOf cannot extend a grant issued now', async () => {
+  const x = await webSetup();
+  const {
+    confirmationId
+  } = await x.decisions.confirmWeb({
+    principal: x.web,
+    commandId: x.command.id,
+    expectedVersion: 'item-v1',
+    asOf: AS_OF + 3600000
+  });
+  x.time.now = AS_OF + 5 * 60000;
+  expect(await x.decisions.verifyConfirmation({
+    principal: x.web,
+    command: x.command,
+    confirmationId,
+    asOf: AS_OF
+  })).toBe(false);
+});
+it('confirmWeb refuses a Telegram principal and a Telegram-queued command', async () => {
+  const x = await webSetup();
+  await expect(x.decisions.confirmWeb({
+    principal: x.principal,
+    commandId: x.command.id,
+    expectedVersion: 'item-v1',
+    asOf: AS_OF
+  })).rejects.toThrow('WORK_PRINCIPAL_REQUIRED');
+  await expect(x.decisions.confirmWeb({
+    principal: x.web,
+    commandId: x.commandId,
+    expectedVersion: 'item-v1',
+    asOf: AS_OF
+  })).rejects.toThrow('WORK_COMMAND_UNAVAILABLE');
+});
+it('a web principal executes its own command end to end through confirmWeb', async () => {
+  const x = await webSetup();
+  const {
+    confirmationId
+  } = await x.decisions.confirmWeb({
+    principal: x.web,
+    commandId: x.command.id,
+    expectedVersion: 'item-v1',
+    asOf: AS_OF
+  });
+  expect((await x.commands.execute({
+    principal: x.web,
+    commandId: x.command.id,
+    asOf: AS_OF
+  })).reason).toBe('bound_confirmation_required');
+  expect((await x.commands.execute({
+    principal: x.web,
+    commandId: x.command.id,
+    confirmationId,
+    asOf: AS_OF
+  })).outcome).toBe('applied');
+  expect(x.writes).toHaveLength(1);
+  expect(x.writes[0].confirmationId).toBe(confirmationId);
+});
+it('a system grant covers only complete and only system principals', async () => {
+  const x = await webSetup();
+  const job = x.actor({
+    platform: 'system',
+    kind: 'job',
+    job: 'triage-overnight',
+    receiptId: 'system:triage-overnight:1',
+    authored: false
+  });
+  const proposed = await x.commands.propose({
+    principal: job,
+    intent: {
+      operation: 'complete',
+      domainId: 'personal',
+      ref,
+      payload: {},
+      mode: 'manual'
+    },
+    asOf: AS_OF
+  });
+  await expect(x.decisions.confirmSystem({
+    principal: x.web,
+    commandId: proposed.command.id,
+    expectedVersion: 'item-v1',
+    asOf: AS_OF
+  })).rejects.toThrow('WORK_PRINCIPAL_REQUIRED');
+  await expect(x.decisions.confirmSystem({
+    principal: job,
+    commandId: x.command.id,
+    expectedVersion: 'item-v1',
+    asOf: AS_OF
+  })).rejects.toThrow('WORK_COMMAND_UNAVAILABLE');
+  const {
+    confirmationId
+  } = await x.decisions.confirmSystem({
+    principal: job,
+    commandId: proposed.command.id,
+    expectedVersion: 'item-v1',
+    asOf: AS_OF
+  });
+  // A web principal cannot spend a system grant.
+  expect(await x.decisions.verifyConfirmation({
+    principal: x.web,
+    command: proposed.command,
+    confirmationId,
+    asOf: AS_OF
+  })).toBe(false);
+  expect((await x.commands.execute({
+    principal: job,
+    commandId: proposed.command.id,
+    confirmationId,
+    asOf: AS_OF
+  })).outcome).toBe('applied');
+});
+it('a web principal cannot open a Telegram decision page', async () => {
+  const x = await webSetup();
+  await expect(x.decisions.prepare({
+    principal: x.web,
+    commandId: x.command.id,
+    asOf: AS_OF
+  })).rejects.toThrow('WORK_PRINCIPAL_REQUIRED');
+});
+it('requires a provider descriptor function', async () => {
+  const x = await setup();
+  expect(() => new WorkDecisions({
+    ...x.options,
+    describeProvider: undefined
+  })).toThrow('Work provider descriptor required');
 });

@@ -29,7 +29,7 @@ vi.mock('./PianoConfig.jsx', () => ({
 }));
 const kiosk = vi.hoisted(() => ({ id: 'piano-tablet' }));
 vi.mock('./kioskDeviceIdentity.js', () => ({ get KIOSK_DEVICE_ID() { return kiosk.id; } }));
-vi.mock('./PianoUserContext.jsx', () => ({ usePianoUser: () => ({ currentUser: 'guest', setCurrentUser: () => {} }) }));
+vi.mock('./PianoUserContext.jsx', () => ({ usePianoUser: () => ({ currentUser: 'guest', setCurrentUser: () => {}, users: [{ id: 'guest', schoolLearner: true }] }) }));
 vi.mock('./PianoMidiContext.jsx', () => ({
   usePianoMidi: () => ({ pressNote: () => {}, releaseNote: () => {} }),
 }));

@@ -3,6 +3,7 @@ import { PlanToolFactory } from "./tools/PlanToolFactory.mjs";
 import { LifelogToolFactory } from "./tools/LifelogToolFactory.mjs";
 import { CeremonyToolFactory } from "./tools/CeremonyToolFactory.mjs";
 import { NotificationToolFactory } from "./tools/NotificationToolFactory.mjs";
+import { TriageToolFactory } from "./tools/TriageToolFactory.mjs";
 import { CoachingToolFactory } from "./tools/CoachingToolFactory.mjs";
 import { CadenceCheck } from "./assignments/CadenceCheck.mjs";
 import { systemPrompt } from "./prompts/system.mjs";
@@ -79,7 +80,7 @@ export class LifeplanGuideAgent extends BaseAgent {
       aggregator, metricsStore, driftService,
       ceremonyService, ceremonyRecordStore, cadenceService,
       notificationService,
-      conversationStore, workingMemory,
+      conversationStore, workingMemory, triage,
     } = this.deps;
 
     this.addToolFactory(new PlanToolFactory({
@@ -102,6 +103,8 @@ export class LifeplanGuideAgent extends BaseAgent {
     this.addToolFactory(new CoachingToolFactory({
       conversationStore, workingMemory,
     }));
+
+    this.addToolFactory(new TriageToolFactory({ triage }));
 
     this.registerAssignment(new CadenceCheck());
   }

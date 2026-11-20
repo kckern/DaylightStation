@@ -790,6 +790,22 @@ export function planDailyAgenda({
       } : null,
       suppressed: null,
       obligation,
+      // MAKEUP LEDGER (2026-11-19, `domain/makeup.mjs`). What this day's
+      // required work in the section amounted to, by track, so spare work on
+      // a later day of the week can be credited to an earlier missed one.
+      // Required work only: an elective pass never makes up a required lesson.
+      // `asked` is the calendar's answer (a served Saturday section reads
+      // `served`, so the state alone cannot say whether the work was owed).
+      ledger: {
+        asked: !(noSchoolToday || tierDropsSection) || (weekendTrack.length > 0 && !sundayRest && !householdOff && !tierDropsSection),
+        lessons: nonElectiveList.filter((e) => !e.program && passedTodayIds.has(e.unitId)).length,
+        programsDone: nonElectiveList.filter((e) => {
+          const status = e.program ? programStatusFor(programStatuses, e) : null;
+          return status && status.error !== true && status.doneToday === true && status.excused !== true;
+        }).map(programStatusKey),
+        needsLesson: hasRequiredCurriculum,
+        needsPrograms: requiredPrograms.map(programStatusKey),
+      },
       _subjectPosition: subjectPosition,
       // Internal, like _subjectPosition: the focus pass below needs to know
       // which sections are off today. Deleted before the sections are

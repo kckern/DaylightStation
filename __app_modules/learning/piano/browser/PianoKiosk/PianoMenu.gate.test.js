@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { createElement } from 'react';
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { PianoMenu } from './PianoMenu.jsx';
 import { __clearPianoListCache } from './usePianoList.js';
@@ -26,7 +26,7 @@ vi.mock('react-router-dom', async () => {
   const actual = await vi.importActual('react-router-dom');
   return { ...actual, useNavigate: () => navigate };
 });
-vi.mock('../../../../../frontend/src/lib/api.mjs', () => ({ DaylightAPI: vi.fn(() => Promise.resolve(activityResponse)) }));
+vi.mock('../../../../../frontend/src/lib/api.mjs', () => ({ DaylightAPI: vi.fn(() => Promise.resolve(activityResponse)), DaylightAPIText: vi.fn(() => Promise.resolve('<work-title>Jesu Joy</work-title>')) }));
 vi.mock('./PianoConfig.jsx', () => ({
   usePianoKioskConfig: () => ({
     pianoId: 'test-piano',
@@ -36,7 +36,7 @@ vi.mock('./PianoConfig.jsx', () => ({
 }));
 vi.mock('./kioskDeviceIdentity.js', () => ({ KIOSK_DEVICE_ID: 'piano-tablet' }));
 vi.mock('./PianoUserContext.jsx', () => ({
-  usePianoUser: () => ({ currentUser, setCurrentUser: () => {} }),
+  usePianoUser: () => ({ currentUser, setCurrentUser: () => {}, users: [{ id: 'learner2', schoolLearner: true }, { id: 'parent1', schoolLearner: false }] }),
 }));
 vi.mock('./PianoMidiContext.jsx', () => ({
   usePianoMidi: () => ({ pressNote: () => {}, releaseNote: () => {} }),
@@ -51,6 +51,7 @@ vi.mock('./usePianoLessonGate.js', async () => ({
   ...(await vi.importActual('./usePianoLessonGate.js')),
   default: () => gateState,
 }));
+vi.mock('../ask/AskSession.jsx', () => ({ default: () => createElement('div', { 'data-testid': 'ask-session' }) }));
 vi.mock('../../../../../frontend/src/lib/logging/Logger.js', () => ({
   default: () => ({ child: () => ({ info() {}, debug() {}, warn() {}, error() {} }) }),
 }));
@@ -109,19 +110,48 @@ beforeEach(() => {
 afterEach(() => { vi.useRealTimers(); });
 
 describe('PianoMenu with an owed lesson', () => {
-  it('shows only the lesson card — no tile grid, no activity strip', () => {
+  // Sheet music is the exception (owner, 2026-11-19): a child who owes the video
+  // lesson can still reach their pieces, through the strip's piece card or the
+  // one Sheet Music tile beside the lesson. Every other mode stays behind it.
+  it('keeps the lesson card, the progress strip and only the Sheet Music tile', async () => {
     gateState = GATED;
     renderMenu();
     expect(screen.getByText('Lesson 5: Broken Chords')).toBeTruthy();
+    expect(document.querySelector('.piano-desk')).not.toBeNull();
+    expect(tiles()).toHaveLength(1);
+    expect(tiles()[0].textContent).toMatch(/Sheet Music/);
+    fireEvent.click(tiles()[0]);
+    expect(navigate).toHaveBeenCalledWith('/piano/sheetmusic');
+    // The strip's own cards stay live: a course card here belongs to this child.
+    expect(await screen.findByRole('button', { name: /learner2: Course B/ })).not.toBeDisabled();
+  });
+
+  it('puts the child latest piece above the Sheet Music tile, opening straight into it', async () => {
+    gateState = GATED;
+    const piece = { scoreId: 'files:docs/sheet-music/jesu.mxl', cover: '/api/cover.jpg', practicedAt: '2026-08-21T11:00:00Z', total: 2, silver: 1, gold: 0,
+      next: { passageId: 'b' }, nextGoldPassageId: 'a', passages: [{ id: 'a', start: 0, end: 4, state: 'silver' }, { id: 'b', start: 5, end: 8, state: 'todo' }] };
+    activityResponse = { players: [{ ...ACTIVITY.players[0], piece }] };
+    renderMenu();
+    const latest = await screen.findByRole('button', { name: /^Play / });
+    expect(latest.querySelector('img')).toHaveAttribute('src', '/api/cover.jpg');
+    expect(latest.closest('.piano-home__side').querySelector('.piano-tile')).not.toBeNull();
+    fireEvent.click(latest);
+    expect(navigate).toHaveBeenCalledWith('/piano/sheetmusic/view/files:docs/sheet-music/jesu.mxl?learnPassage=b');
+  });
+
+  it('leaves a PianoChallenge its whole screen, with no strip or tile', () => {
+    gateState = { ...GATED, challenge: { id: 'c', ask: { id: 'a' }, materialSpec: {}, framing: null } };
+    renderMenu();
     expect(tiles()).toHaveLength(0);
     expect(document.querySelector('.piano-desk')).toBeNull();
   });
 
-  it('names the course and unit the lesson belongs to', () => {
+  // Arcade standard: the card is the course poster, the lesson title and a play disc on its still.
+  it('carries the lesson title and one start action, and nothing only to be read', () => {
     gateState = GATED;
     renderMenu();
-    expect(screen.getByText(/Hoffman Academy/)).toBeTruthy();
-    expect(screen.getByText(/Unit 3/)).toBeTruthy();
+    expect(document.querySelector('.piano-lesson-gate').textContent).toBe('Lesson 5: Broken Chords');
+    expect(screen.getByRole('button', { name: /start today.s lesson/i })).toBeTruthy();
   });
 
   it('restores the ordinary menu once the day is discharged', () => {
@@ -155,7 +185,7 @@ describe('PianoMenu with an owed lesson', () => {
   it('clears live when School says the lesson landed — no reload', async () => {
     gateState = GATED;
     const view = renderMenu();
-    expect(tiles()).toHaveLength(0);
+    expect(tiles()).toHaveLength(1);
 
     gateState = NOT_GATED;
     view.rerender(createElement(MemoryRouter, null, createElement(PianoMenu)));

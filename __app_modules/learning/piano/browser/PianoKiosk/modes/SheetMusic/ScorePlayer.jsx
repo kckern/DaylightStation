@@ -12,7 +12,6 @@ import { usePianoBreadcrumb } from '../../PianoBreadcrumbContext.jsx';
 import useReloadGuard from '../../useReloadGuard.js';
 import { buildTempoMap, buildStepTimeline, scaleTimeline } from "../../../../../../../__capabilities/music-notation/browser/scoreTimeline.js";
 import { useScoreTransport } from '../../score/useScoreTransport.js';
-import { tweenScrollTo, cancelScrollTween } from './scrollTween.js';
 import { partsOf, buildPlayTimeline } from './playParts.js';
 import { staffLabels, defaultActiveParts, expectedMidisAtStep } from './activeParts.js';
 import { rangeSteps, clampStepToRange, sectionToRange, homeStep } from './focusRange.js';
@@ -37,8 +36,10 @@ import LearnPassageLayer from './LearnPassageLayer.jsx';
 import { segmentNavigationState } from './LearnSegmentRail.jsx';
 import PassageRail from './PassageRail.jsx';
 import PassageBoard from './PassageBoard.jsx';
+import ScorePager from './ScorePager.jsx';
+import useSystemPaging from './useSystemPaging.js';
+import { SIZE_STEPS } from './ViewSheet.jsx';
 import { railModel } from './passageRail.js';
-import usePassageCelebration from './usePassageCelebration.js';
 import usePieceGemOffer from './usePieceGemOffer.js';
 import LearnLaunchpad from './LearnLaunchpad.jsx';
 import { buildRungLaunch, creditEligibleRung, learnLaunchpadProjection } from './learnLaunch.js';
@@ -159,7 +160,7 @@ const attemptId = () => `attempt-${globalThis.crypto?.randomUUID?.() || `${Date.
  *  Listen  — the kiosk performs the ACTIVE hands through the piano; an inactive
  *            hand is simply muted (one hands model — wave-3 A: no play-along
  *            highlighting, no "your part").
- *  Perform — no awareness; config-defined pedals + tap-to-scroll turn the page.
+ *  Perform — no awareness; config-defined pedals, a tap, a swipe or the pager turn the page.
  *
  * Chrome lives in a pinned bottom {@link ScoreTransportBar}; the top bar shows the
  * breadcrumb (score title). Per-notehead light-up is drawn by {@link NoteHighlightLayer}
@@ -248,6 +249,10 @@ export default function ScorePlayer({ score: scoreMeta }) {
     if (autoplayMode) return autoplayMode;
     // A link to one passage is a link into Learn.
     if (searchParams.get('learnPassage') && VALID_MODES.includes('learn')) return 'learn';
+    // With the roadmap on, a score opens on its passages: the rail is the game,
+    // and a child who lands in Listen never sees it. Naming `sheetmusic.defaultMode`
+    // in the household config keeps the old order (where it was left, then that mode).
+    if (config?.sheetmusic?.learn?.roadmap !== false && !VALID_MODES.includes(config?.sheetmusic?.defaultMode)) return 'learn';
     const m = restored.mode;
     return VALID_MODES.includes(m) ? m : (VALID_MODES.includes(smCfg.defaultMode) ? smCfg.defaultMode : 'learn');
   });
@@ -295,7 +300,10 @@ export default function ScorePlayer({ score: scoreMeta }) {
   // Listen free-running metronome — session-local, mirrors learnClick: explicit
   // opt-in per session, NEVER persisted (wave-3 G, audit M2 discipline).
   const [listenClick, setListenClick] = useState(false);
-  const [flow, setFlow] = useState('wrapped');
+  // The score is always engraved down the page and shown as pages of whole
+  // systems. The one-line "Across" layout is retired: it could only be read by
+  // scrolling, and it cut bars at both edges of the screen.
+  const flow = 'wrapped';
   const [scale, setScale] = useState(1);
   const [transpose, setTranspose] = useState(0); // Listen key transpose (semitones)
   const [tempoMult, setTempoMult] = useState(() => { // Listen/Polish tempo: 1 = written, 0.5 = half
@@ -360,6 +368,11 @@ export default function ScorePlayer({ score: scoreMeta }) {
   // `runActive` as a dependency (onTempo's void check — wave-3 H).
   const runActiveRef = useRef(runActive); runActiveRef.current = runActive;
   const scrollRef = useRef(null);
+  // The page turner (useSystemPaging, further down) for handlers declared above it.
+  const pagingRef = useRef(null);
+  const showTopRef = useRef(() => pagingRef.current?.followMeasure(0));
+  const maxScaleRef = useRef(Infinity);
+  const onScaleStepRef = useRef(null);
   const cursorRef = useRef(null);
   const prevTopRef = useRef(null);
   const wrongTimer = useRef(null);
@@ -633,7 +646,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
       const home = homeStep(rangeRef.current);
       setStep(home);
       setStruck(() => new Set());
-      if (home === 0) scrollRef.current?.scrollTo({ top: 0, left: 0 });
+      if (home === 0) showTopRef.current();
     },
   });
   const transportRef = useRef(null); transportRef.current = transport; // read latest transport inside the tick closure
@@ -1170,31 +1183,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
   const flushPlaybackRef = useRef(flushPlaybackNow); flushPlaybackRef.current = flushPlaybackNow;
   useEffect(() => () => { if (pendingPlaybackRef.current) flushPlaybackRef.current(); }, []);
 
-  // Auto-follow the cursor: retargetable tween on the scroll container only
-  // (native smooth scrollIntoView self-cancels at per-note cadence and drags
-  // ancestor scrollers with it). Skipped while the reported layout belongs to
-  // the other flow (mid re-engrave — coordinates would be stale).
-  useEffect(() => {
-    if (mode === 'perform' || !current) return;
-    if (!layoutFresh) return;
-    const el = scrollRef.current;
-    const rdr = el?.querySelector('.musicxml-renderer');
-    if (!el || !rdr) return;
-    const elRect = el.getBoundingClientRect();
-    const rdrRect = rdr.getBoundingClientRect();
-    const rdrLeft = rdrRect.left - elRect.left + el.scrollLeft;
-    const rdrTop = rdrRect.top - elRect.top + el.scrollTop;
-    if (flow === 'horizontal') {
-      tweenScrollTo(el, { left: rdrLeft + current.x - el.clientWidth / 2 });
-    } else {
-      const mid = rdrTop + (current.top + current.bottom) / 2;
-      const targetTop = mid - el.clientHeight / 2;
-      // Re-center only when the cursor drifts out of the comfortable band —
-      // avoids a vertical micro-scroll on every step within a system.
-      if (Math.abs(targetTop - el.scrollTop) > el.clientHeight * 0.18) tweenScrollTo(el, { top: targetTop });
-    }
-  }, [step, flow, mode, current, layoutFresh]);
-  useEffect(() => () => cancelScrollTween(scrollRef.current), []);
+  // (The page follows the cursor further down, beside the page turner.)
 
   // Resume a rebuild-pause once the engraving matches the current flow/scale.
   // For a part change `layoutFresh` is already true, so this fires on the very
@@ -1234,16 +1223,12 @@ export default function ScorePlayer({ score: scoreMeta }) {
     requestAnimationFrame(() => record(KIND.TAP, id, Math.round(performance.now() - t0), 0, 0));
   }, []);
 
-  // Scroll the score by ~0.85 of a viewport (forward or back) along the flow axis.
-  const pageBy = useCallback((dir) => {
-    const el = scrollRef.current;
-    if (!el) return;
-    const horiz = flow === 'horizontal';
-    const amount = (horiz ? el.clientWidth : el.clientHeight) * 0.85 * (dir === 'back' ? -1 : 1);
-    el.scrollBy({ [horiz ? 'left' : 'top']: amount, behavior: 'smooth' });
-    logger.info('score.perform.pageturn', { dir });
+  // Perform's page turn, by pedal or by tap: one whole page of systems.
+  const pageBy = useCallback((dir, by = 'pedal') => {
+    if (dir === 'back') pagingRef.current?.prev(by); else pagingRef.current?.next(by);
+    logger.info('score.perform.pageturn', { dir, by });
     tapIntent('pageturn');
-  }, [flow, logger, tapIntent]);
+  }, [logger, tapIntent]);
 
   // Raw-input telemetry: mirror every raw MIDI message into the zero-alloc input
   // recorder ring buffer (notes, sustain, CC), tagged with the current cursor
@@ -1447,7 +1432,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
     setArming(null);
   }, []);
 
-  // Tap: Learn/Polish → move the cursor to the nearest note; Perform → scroll it into view.
+  // Tap: Learn/Polish → move the cursor to the nearest note; Perform → turn the page.
   const onScoreClick = useCallback((e) => {
     const el = scrollRef.current;
     const rdr = el?.querySelector('.musicxml-renderer');
@@ -1456,15 +1441,10 @@ export default function ScorePlayer({ score: scoreMeta }) {
     if (countIn.active) { countIn.cancel(); logger.info('score.countin.cancel', { via: 'tap' }); return; }
     setLearnDone(false); // any tap-to-seek re-opens practice — close the completion card
     if (mode === 'perform') {
+      // A tap turns the page: the lower half forward, the upper half back. Logged
+      // (pageBy), so a silent music-stand session does not read as abandonment (T1).
       const r = el.getBoundingClientRect();
-      const dy = e.clientY - (r.top + el.clientHeight / 2);
-      const dx = e.clientX - (r.left + el.clientWidth / 2);
-      el.scrollBy(flow === 'horizontal' ? { left: dx, behavior: 'smooth' } : { top: dy, behavior: 'smooth' });
-      // Perform's tap-scroll was unlogged, so a silent music-stand session read as
-      // abandonment: the audit first concluded Perform was "entered twice and
-      // abandoned" when it had been entered five times, once for 15m50s (T1).
-      logger.info('score.perform.tapscroll', { axis: flow === 'horizontal' ? 'x' : 'y' });
-      tapIntent('perform-scroll');
+      pageBy(e.clientY < r.top + r.height / 2 ? 'back' : 'fwd', 'tap');
       return;
     }
     if (!rdr || !events.length) return;
@@ -1539,7 +1519,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
     // Transport timeline is tempo-scaled (playTimeline uses factor 1/tempoMult);
     // seek positions come from the unscaled stepTimeline, so scale to match.
     transport.seek((stepTimeline[target]?.t ?? 0) / tempoMult);
-  }, [mode, sendsAudio, flow, events, transport, stepTimeline, silenceScheduled, tempoMult, arming, commitEndpoint, layout.measures, range, logger, countIn, scale, tapIntent, voidCycle, roadmapLearn, selectionPhase, selectionAnchor, armedSelectionEdge, measureRects, practice, saveCustomRange]);
+  }, [mode, sendsAudio, pageBy, events, transport, stepTimeline, silenceScheduled, tempoMult, arming, commitEndpoint, layout.measures, range, logger, countIn, scale, tapIntent, voidCycle, roadmapLearn, selectionPhase, selectionAnchor, armedSelectionEdge, measureRects, practice, saveCustomRange]);
 
   // Single unmount teardown: immediate silence + one delayed panic (see the
   // silenceScheduled note above), so a note-on already dispatched into the
@@ -1720,7 +1700,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
     if (id === 'learn') {
       const home = homeStep(rangeRef.current);
       setStep(home);
-      if (home === 0) scrollRef.current?.scrollTo({ top: 0, left: 0 });
+      if (home === 0) showTopRef.current();
     }
     setMode(id); // keyboard visibility follows the new mode automatically (M2)
     logMode({ mode: id });
@@ -1789,7 +1769,9 @@ export default function ScorePlayer({ score: scoreMeta }) {
   }, [logTranspose, pauseForViewChange, tapIntent, voidCycle]);
 
   // Zoom (Size) — pause a running transport before the re-engrave (H2).
-  const onScaleStep = useCallback((v) => { pauseForViewChange(); setScale(v); }, [pauseForViewChange]);
+  // Never past the largest size that shows a whole system (maxScale, further down).
+  const onScaleStep = useCallback((v) => { pauseForViewChange(); setScale(Math.min(v, maxScaleRef.current)); }, [pauseForViewChange]);
+  onScaleStepRef.current = onScaleStep;
 
   const reset = useCallback(() => {
     resumeAfterRef.current = null; // Restart supersedes a pending rebuild-resume
@@ -1814,9 +1796,9 @@ export default function ScorePlayer({ score: scoreMeta }) {
     setGrades({});          // a fresh run clears the previous grades…
     setSummaryOpen(false);  // …and closes any open summary
     setSummaryRun(null);    // …and forgets the run that summary reported
-    // The auto-follow effect scrolls to the new step; only a true top-of-piece
-    // reset should force-scroll to the origin.
-    if (home === 0) scrollRef.current?.scrollTo({ top: 0, left: 0 });
+    // The cursor-follow effect turns to the new step; a reset that leaves the
+    // step where it was (already at the top) still turns back to the first page.
+    if (home === 0) showTopRef.current();
   }, [transport, mode, sendsAudio, silenceScheduled, flushPlaybackNow, countIn, logger, tapIntent]);
 
   // Run summary Replay: reset the run (clears grades + closes the panel).
@@ -1825,7 +1807,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
 
   // Learn completion card actions: another pass (reset, stay in Learn) or move up
   // the ladder to Polish (any practice range carries via J3).
-  const onLearnReplay = useCallback(() => { setLearnDone(false); setStep(0); setStruck(() => new Set()); scrollRef.current?.scrollTo({ top: 0, left: 0 }); }, []);
+  const onLearnReplay = useCallback(() => { setLearnDone(false); setStep(0); setStruck(() => new Set()); showTopRef.current(); }, []);
   const onLearnPolish = useCallback(() => { setLearnDone(false); onMode('polish'); }, [onMode]);
 
   // Run summary "Drill worst section": set the practice range to the heaviest
@@ -1871,7 +1853,6 @@ export default function ScorePlayer({ score: scoreMeta }) {
   // defeat React.memo on the bar's expensive body (parts/chips/popovers), so the
   // whole bar would reconcile on every cursor-step advance. Functional updaters →
   // empty deps → stable identity → the memoized body bails per step.
-  const onToggleFlow = useCallback(() => { pauseForViewChange(); setFlow((f) => (f === 'wrapped' ? 'horizontal' : 'wrapped')); }, [pauseForViewChange]);
   const onToggleKeyboard = useCallback(() => {
     kbOverrideRef.current[mode] = !keyboardVisible; // remember the explicit choice for THIS mode
     setKbTick((t) => t + 1);
@@ -2177,7 +2158,6 @@ export default function ScorePlayer({ score: scoreMeta }) {
   const [learnLaunchNonce, setLearnLaunchNonce] = useState(0);
   const [learnLaunchpadView, setLearnLaunchpadView] = useState('home');
   const [learnChoice, setLearnChoice] = useState(null);
-  const [restoreLearnAnchor, setRestoreLearnAnchor] = useState(null);
   const [learnAchievement, setLearnAchievement] = useState(null);
   const [learnNotice, setLearnNotice] = useState(null);
   const customRange = practiceLoaded && validBarRange(practice?.customRange, layout.measures?.length ?? 0) ? practice.customRange : null;
@@ -2199,7 +2179,6 @@ export default function ScorePlayer({ score: scoreMeta }) {
     setRailPassageId(null); setPassageBoard(null);
     setSelectionPhase(null);
     setArmedSelectionEdge(null);
-    setRestoreLearnAnchor(scrollRef.current?.scrollTop ?? 0);
     setLearnLaunch(null); setLearnResult(null); setLearnLaunchpadView('home');
     updateLearnSelection(passageId, null);
   }, [updateLearnSelection]);
@@ -2298,36 +2277,68 @@ export default function ScorePlayer({ score: scoreMeta }) {
     />
   ) : null;
 
+  // The passage numbers sit above the staff: ink a page cut must not run through.
+  const passageNumberInk = useMemo(() => (roadmapLearn ? coachedPassages.map((passage) => {
+    const band = notationRangeBands(layout.measures, selectionStepBoxes, passage, measureRects)[0];
+    return band ? [Math.max(0, band.top - 58), band.top] : null;
+  }).filter(Boolean) : null), [roadmapLearn, coachedPassages, layout.measures, selectionStepBoxes, measureRects]);
+  // Every mode shows the score as pages of whole systems; nothing scrolls.
+  const paging = useSystemPaging({
+    enabled: true, scrollRef, layout, measureRects, overlayInk: passageNumberInk,
+    onTurn: (turn) => logger.info('score.page.turn', { scoreId: scoreMeta.id, mode, ...turn }),
+  });
+  pagingRef.current = paging;
+  // The page follows the cursor (Listen, Polish, the direct-practice Learn). It
+  // turns to a cursor that is off the page; while the music runs it also turns
+  // AHEAD of it, as the cursor reaches the last system showing, so the next
+  // systems are read before they are needed and the cursor never leaves the
+  // screen. A page turned by hand stays until the cursor next moves. Skipped
+  // while the reported layout is stale (mid re-engrave).
+  const cursorMeasure = current ? (layout.steps?.[step]?.measure ?? null) : null;
+  const followAhead = running || learnGate;
+  const followMeasure = paging.followMeasure;
   useEffect(() => {
-    if (learnSessionOpen || restoreLearnAnchor == null) return undefined;
-    const frame = requestAnimationFrame(() => {
-      if (scrollRef.current) scrollRef.current.scrollTop = restoreLearnAnchor;
-      setRestoreLearnAnchor(null);
-    });
-    return () => cancelAnimationFrame(frame);
-  }, [learnSessionOpen, restoreLearnAnchor]);
-
+    if (mode === 'perform' || roadmapLearn || cursorMeasure == null || !layoutFresh) return;
+    followMeasure(cursorMeasure, { ahead: followAhead });
+  }, [step, mode, roadmapLearn, cursorMeasure, layoutFresh, followAhead, followMeasure, paging.viewport]);
+  // The largest size at which one whole system still fits the window. Systems
+  // grow with the size, so it is read off the engraving on screen. The View
+  // sheet offers no size past it, and a size that stops fitting (the keyboard
+  // taking the room) steps down to it. Deferred a tick so it composes with a
+  // resume that the same engraving has just started.
+  const engravedScale = layout.scale ?? scale;
+  const maxScale = useMemo(() => {
+    if (!(paging.tallest > 0) || !(paging.viewport > 0)) return Infinity;
+    const fitting = SIZE_STEPS.map((item) => item.value).filter((value) => (paging.tallest * value) / engravedScale <= paging.viewport);
+    return fitting.length ? fitting[fitting.length - 1] : SIZE_STEPS[0].value;
+  }, [paging.tallest, paging.viewport, engravedScale]);
+  maxScaleRef.current = maxScale;
+  useEffect(() => {
+    if (!(scale > maxScale) || !layoutFresh) return undefined;
+    const timer = setTimeout(() => {
+      logger.info('score.size.fit', { scoreId: scoreMeta.id, mode, from: scale, to: maxScale });
+      onScaleStepRef.current(maxScale);
+    }, 0);
+    return () => clearTimeout(timer);
+  }, [scale, maxScale, layoutFresh]); // eslint-disable-line react-hooks/exhaustive-deps
   const railVisible = Boolean(roadmapLearn && practiceLoaded && (layout.measures?.length ?? 0) > 0 && !selectedPassage);
   const rail = useMemo(() => railModel({ segments: coachedPassages, projection: coach.projection, selectedId: railPassageId }),
     [coachedPassages, coach.projection, railPassageId]);
-  const celebration = usePassageCelebration({ scopeKey: `${coach.profileId}:${scoreMeta.id}:${fingerprint.contentSha256}`,
-    ready: Boolean(roadmapLearn && practiceLoaded && coach.loaded !== false), projection: coach.projection,
-    evidenceId: coach.state?.evidence?.at(-1)?.id ?? null, visible: railVisible, scoreId: scoreMeta.id });
   const gemOffered = usePieceGemOffer({ userId: coach.profileId, enabled: Boolean(passageBoard) });
   const selectRailPassage = useCallback((passageId, source) => {
     const passage = coachedPassages.find((item) => item.id === passageId);
     if (!passage) return;
     setRailPassageId(passageId); setPassageBoard(null);
     logger.info('piano.learn.rail.select', { scoreId: scoreMeta.id, passageId, source });
-    const el = scrollRef.current;
-    const rdr = el?.querySelector('.musicxml-renderer');
-    const band = notationRangeBands(layout.measures, selectionStepBoxes, passage, measureRects)[0];
-    if (!el || !rdr || !band) return;
-    const elRect = el.getBoundingClientRect();
-    const rdrRect = rdr.getBoundingClientRect();
-    if (flow === 'horizontal') tweenScrollTo(el, { left: rdrRect.left - elRect.left + el.scrollLeft + band.left - 48 }, { duration: 320 });
-    else tweenScrollTo(el, { top: rdrRect.top - elRect.top + el.scrollTop + band.top - Math.max(48, el.clientHeight * 0.18) }, { duration: 320 });
-  }, [coachedPassages, logger, scoreMeta.id, layout.measures, selectionStepBoxes, measureRects, flow]);
+    paging.showMeasures(passage.inMeasure, passage.outMeasure);
+  }, [coachedPassages, logger, scoreMeta.id, paging.showMeasures]);
+  // The score opens on, and after a drill turns to, the passage the rail's button names.
+  const railTargetId = rail.target?.passageId ?? null;
+  const pageCount = paging.page?.pages ?? 0;
+  useEffect(() => {
+    const passage = pageCount && roadmapLearn ? coachedPassages.find((item) => item.id === railTargetId) : null;
+    if (passage) paging.showMeasures(passage.inMeasure, passage.outMeasure);
+  }, [railTargetId, pageCount, roadmapLearn]); // eslint-disable-line react-hooks/exhaustive-deps
   const practiceRailPassage = useCallback(() => {
     if (!rail.target) return;
     logger.info('piano.learn.rail.practice', { scoreId: scoreMeta.id, passageId: rail.target.passageId, target: rail.target.kind });
@@ -2346,7 +2357,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
   }, [logger, scoreMeta.id]);
 
   if (roadmapLearn && selectedPassage) return <div className="piano-score-player piano-score-player--learn-launchpad">
-    <LearnCoach score={learnScore} plan={coachPlan} segment={selectedPassage} coach={coach}
+    <LearnCoach score={learnScore} title={meta.title} plan={coachPlan} segment={selectedPassage} coach={coach}
       tempo={{ ...learnPlan.settings.tempo, tempoSource: learnPlan.tempoSource, measureOnsets: layout.measures.map((measure) => layout.steps[measure.firstStep]?.onsetQuarter) }} feedback={learnPlan.settings.feedback}
       onBack={closeLearnPassage} onPassageChange={openLearnPassage}
       onListen={(task) => logger.info('piano.learn.listen', { scoreId: scoreMeta.id, passageId: task.passageId, parts: task.parts })} />
@@ -2392,7 +2403,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
           <img className="piano-score-splash__img" src={scoreMeta.splashImage} alt="" decoding="async" />
         </div>
       )}
-      <div className={`piano-score-player__scroll piano-score-player__scroll--${flow}`} ref={scrollRef} onClick={onScoreClick}>
+      <div className={`piano-score-player__scroll${paging.page ? ' piano-score-player__scroll--paged' : ''}${paging.turning ? ' piano-score-player__scroll--turning' : ''}`} ref={scrollRef} onClick={onScoreClick} style={paging.style} {...paging.handlers}>
         <MusicXmlRenderer score={parsed} musicXml={scoreMeta.musicXml} flow={flow} scale={scale} transpose={transpose} onLayout={onLayout} onReady={onReady} holdExtraction={running}>
           {mode !== 'perform' && layoutFresh && (
             /* container is the ELEMENT, not a ref: React commits layout effects
@@ -2478,7 +2489,6 @@ export default function ScorePlayer({ score: scoreMeta }) {
               onArm={onArm}
               onCommit={commitEndpoint}
               onPreview={onHandlePreview}
-              scrollRef={scrollRef}
               scale={scale}
             />
           )}
@@ -2514,11 +2524,11 @@ export default function ScorePlayer({ score: scoreMeta }) {
               labelPrefix="Selection"
               onArm={(edge) => setArmedSelectionEdge(edge)}
               onCommit={commitCustomEdge}
-              scrollRef={scrollRef}
               scale={scale}
             />
           )}
         </MusicXmlRenderer>
+        <ScorePager page={paging.page} onPrev={paging.prev} onNext={paging.next} />
         <CountInOverlay active={countIn.active} beat={countIn.beat} />
         <SelectBanner edge={arming} rejects={armRejects} onCancel={onCancelArm} />
         <StuckPrompt open={stuckOpen && mode === 'learn' && !roadmapLearn} onPick={onStuckPick} onDismiss={onStuckDismiss} />
@@ -2531,9 +2541,9 @@ export default function ScorePlayer({ score: scoreMeta }) {
           onSelect={(passageId) => selectRailPassage(passageId, 'board')} onClose={closePassageBoard} />
       )}
       {railVisible && (
-        <PassageRail model={rail} flips={celebration.flips} piece={celebration.piece} boardOpen={Boolean(passageBoard)}
+        <PassageRail model={rail} boardOpen={Boolean(passageBoard)}
           onSelect={(passageId) => selectRailPassage(passageId, 'rail')} onPractice={practiceRailPassage}
-          onOpenBoard={togglePassageBoard} onDismissPiece={celebration.dismissPiece} />
+          onOpenBoard={togglePassageBoard} />
       )}
 
       {keyboardVisible && !roadmapLearn && (
@@ -2566,9 +2576,8 @@ export default function ScorePlayer({ score: scoreMeta }) {
         total={events.length}
         measure={(layout.steps?.[step]?.measure ?? 0) + 1}
         measureTotal={layout.measures?.length ?? 0}
-        flow={flow}
-        onToggleFlow={onToggleFlow}
         scale={scale}
+        maxScale={maxScale}
         onScale={onScaleStep}
         tempoMult={tempoMult}
         onTempo={onTempo}

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import stuck from './__fixtures__/learnCoachStuckLearner.json';
-import { applyCoachEvent, coachFeedback, coachSummary, coachTaskKey, createCoachPlan, normalizeCertification, projectCoach } from './learnCoach.mjs';
+import { applyCoachEvent, coachFeedback, coachSummary, coachTaskKey, createCoachPlan, normalizeCertification, passageProgress, projectCoach } from './learnCoach.mjs';
 
 const DAY = '2026-11-18';
 const segments = [
@@ -19,7 +19,7 @@ const unassisted = ({ assist: _assist, key: _key, ...rest }) => rest;
 
 describe('certification policy', () => {
   it('defaults and rejects invalid values', () => {
-    expect(normalizeCertification()).toEqual({ silver: { stepPasses: 1, checkPasses: 1, cleanliness: 0.8, stallSeconds: 30 } });
+    expect(normalizeCertification()).toEqual({ silver: { stepPasses: 1, checkPasses: 1, cleanliness: 0.8, stallSeconds: 30 }, flower: { after: 'both-hands' } });
     expect(normalizeCertification({ silver: { stepPasses: 0, checkPasses: 2.5, cleanliness: 4, stallSeconds: -1 } }).silver)
       .toEqual({ stepPasses: 1, checkPasses: 1, cleanliness: 0.8, stallSeconds: 30 });
   });
@@ -214,5 +214,46 @@ describe('Silver check feedback', () => {
     const plan = planOf({ certification: { silver: { stallSeconds: 45 } } });
     expect(task(plan, 'silver').stallSeconds).toBe(45);
     expect(task(plan, 'right').stallSeconds).toBeUndefined();
+  });
+});
+
+describe('flower policy: when an uncertified passage counts as partway', () => {
+  const stateOf = (plan, state, id = 'one') => passageProgress(view(plan, state).segments.find((segment) => segment.id === id)).state;
+  const earn = (plan, skills, id = 'one') => skills.reduce((state, skill) => play(state, plan, task(plan, skill, id)), null);
+
+  it('accepts the three values and falls back to both-hands', () => {
+    for (const after of ['both-hands', 'together', 'first-step']) expect(normalizeCertification({ flower: { after } }).flower).toEqual({ after });
+    for (const raw of [{ flower: { after: 'any' } }, { flower: {} }, { flower: 'together' }, {}, null]) expect(normalizeCertification(raw).flower).toEqual({ after: 'both-hands' });
+  });
+  it('by default stays a tomato with one hand and flowers with both hands or the hands together', () => {
+    const plan = planOf();
+    expect(stateOf(plan, null)).toBe('todo');
+    expect(stateOf(plan, earn(plan, ['right']))).toBe('todo');
+    expect(stateOf(plan, earn(plan, ['left']))).toBe('todo');
+    expect(stateOf(plan, earn(plan, ['right', 'left']))).toBe('learning');
+    expect(stateOf(plan, earn(plan, ['together']))).toBe('learning');
+    expect(view(plan, earn(plan, ['right'])).segments[0].flower).toBe(false);
+  });
+  it('a one-part passage flowers when its notes step is earned', () => {
+    const plan = planOf();
+    expect(stateOf(plan, null, 'solo')).toBe('todo');
+    expect(stateOf(plan, earn(plan, ['notes'], 'solo'), 'solo')).toBe('learning');
+  });
+  it('`together` waits for the hands together; `first-step` flowers on any note step', () => {
+    const together = planOf({ certification: { flower: { after: 'together' } } });
+    expect(stateOf(together, earn(together, ['right', 'left']))).toBe('todo');
+    expect(stateOf(together, earn(together, ['together']))).toBe('learning');
+    const first = planOf({ certification: { flower: { after: 'first-step' } } });
+    expect(stateOf(first, earn(first, ['left']))).toBe('learning');
+  });
+  it('counts the steps a tomato has earned, and a certified passage is never a flower', () => {
+    const plan = planOf();
+    expect(passageProgress(view(plan, earn(plan, ['right'])).segments[0])).toMatchObject({ state: 'todo', steps: { done: 1, total: 4 } });
+    const silver = view(plan, earn(plan, ['right', 'left', 'together', 'silver'])).segments[0];
+    expect(silver.flower).toBe(false);
+    expect(passageProgress(silver).state).toBe('silver');
+  });
+  it('carries the policy in the plan the server rebuilds', () => {
+    expect(planOf({ certification: { flower: { after: 'together' } } }).certification.flower).toEqual({ after: 'together' });
   });
 });

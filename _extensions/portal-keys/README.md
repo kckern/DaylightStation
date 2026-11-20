@@ -409,8 +409,25 @@ lock-task features, and applies status-bar, uninstall, app-control, safe-boot,
 factory-reset restrictions. It clears `DISALLOW_CREATE_WINDOWS`, which otherwise
 breaks Fully's required overlay permission. It starts Fully in true lock task
 using the Android 9 device-owner launch API. Extra Chrome apps are hidden unless
-they provide the active WebView engine. It reasserts policy at startup and every
-five seconds and checks actual lock-task state on the one-second watchdog tick.
+they provide the active WebView engine. It writes the whole policy once at startup
+(and after any failed pass), then every five seconds **reads each setting back and
+writes only what drifted** (`PolicyReconciler`); `/kiosk-home` reports
+`enforcement.driftRepairs` and `lastDrift`. Status bar, keyguard and organization
+name cannot be read back by a device owner on API 28 (`getOrganizationName` throws
+`SecurityException` outside a managed profile), so they are written only on that
+first pass. A readback that throws skips that one setting for the pass; it must
+never fail the pass, because a failed pass rewrites everything on the next
+one-second tick (p7.2 did exactly that and was rolled back). It checks actual
+lock-task state on the one-second watchdog tick.
+
+Do not go back to rewriting the policy blindly on a timer. Through p10 every pass
+rewrote everything; each pass cost Fully a ~1.6 s main-thread stall (Android logged
+`Activity pause timeout` and skipped frames, and Fully's REST server stopped
+answering). That is longer than the Fully guard's 1.5 s `deviceInfo` timeout, so
+the guard reported `fkb-lost` and then `fkb-restored` 2 s later, every 20-35 s. It
+started a few hours after boot and grew to ~100 false breaches an hour
+(2026-11-18/19). The lock itself never dropped: every failed check was a
+`SocketTimeoutException`.
 After a native task loss it recreates Fully's task on the first repair launch;
 launching an existing unpinned task does not apply lock-task options on this ROM.
 

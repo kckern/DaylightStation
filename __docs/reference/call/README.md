@@ -57,6 +57,17 @@ should have to know about. `--u` is 1 on a normal phone. `call.surface` reports
 controls do not — and the same two bands carry the lobby, the connecting state
 and the live call, so nothing jumps between them.
 
+In a live call the TV's picture joins above the self-view at exactly its own
+shape: a landscape band across the top of a portrait phone, sized from the
+remote video's `videoWidth`/`videoHeight` (`--remote-aspect`, 16:9 until the
+first frame, capped at 55% of the height). The self-view keeps everything
+else, so it stays the portrait picture it was in the lobby, only shorter. It
+must never become a fixed-height strip: `object-fit: cover` fills a wide strip
+by cropping a portrait face to a letterbox, which is what callers saw until
+2026-11-19. Sideways (landscape, height ≤ 500px) the two pictures split the
+free width evenly. `media.remote.dimensions` logs the far end's size whenever
+it changes.
+
 Colours come from the design-system tokens (`AppThemeProvider`, pack `home`);
 the stylesheet defines no raw values. Green marks the one action that places a
 call, red marks leaving or ending, and nothing else is coloured. Chrome icons
@@ -215,6 +226,7 @@ the caller was off the network. Neither has a `callId`, so start from the event:
 _time:24h AND _msg:"homeline.call.denied"        # cause: off_network
 _time:24h AND _msg:"devices.loaded"              # offered / withheld / unnamed
 _time:24h AND _msg:"call.surface"                # viewport, DPR, zoom, orientation
+_time:24h AND _msg:"media.remote.dimensions"     # the TV picture's size, per change
 _time:24h AND _msg:"connection-state"            # peer connection, warn on failed
 ```
 

@@ -30,7 +30,8 @@ import { TodoistWorkProvider } from './adapters/TodoistWorkProvider.mjs';
 import { ClickUpWorkProvider } from './adapters/ClickUpWorkProvider.mjs';
 import { ReadWorkContext } from './application/ReadWorkContext.mjs';
 import { accountKey, assertWorkUser, workError, workHash } from './domain/workState.mjs';
-import { keyOf } from './domain/workModel.mjs';
+import { keyOf, WORK_OPERATIONS } from './domain/workModel.mjs';
+import { routeWork } from './domain/workPolicy.mjs';
 import { NodeApplicationScheduler } from '#adapters/scheduling/NodeApplicationScheduler.mjs';
 import { WorkBackfillJob } from './application/WorkBackfillJob.mjs';
 import { WorkBackfillFiles } from './adapters/WorkBackfillFiles.mjs';
@@ -133,6 +134,12 @@ function retainedAttention(options) {
     }
   };
 }
+/** Wiring: selects the adapter class for a configured provider type; unknown types throw. */
+export function workProviderClass(binding) {
+  if (binding?.type === 'todoist') return TodoistWorkProvider;
+  if (binding?.type === 'clickup') return ClickUpWorkProvider;
+  throw new TypeError('Unknown work provider type');
+}
 /** Composition grants reads and local coordination only; commands arrive separately. */
 export function createWorkRuntime(options = {}) {
   const {
@@ -219,6 +226,8 @@ export function createWorkRuntime(options = {}) {
     readHealth: options.readHealth
   });
   const providers = new Map();
+  const providerClassFor = workProviderClass;
+  const describeProvider = binding => providerClassFor(binding).descriptor;
   const scopedAuth = (service, username) => {
     const p = policy(username),
       bindings = p.enabled ? Object.values(p.providers).filter(binding => binding.type === service) : [];
@@ -232,7 +241,7 @@ export function createWorkRuntime(options = {}) {
         accountId: binding.accountId
       });
       if (!providers.has(key)) {
-        const Provider = binding.type === 'todoist' ? TodoistWorkProvider : ClickUpWorkProvider;
+        const Provider = providerClassFor(binding);
         providers.set(key, new Provider({
           accountId: binding.accountId,
           loadCurrent: (u, p) => source.current(u, p),
@@ -242,6 +251,7 @@ export function createWorkRuntime(options = {}) {
             httpClient: options.httpClient,
             getUserAuth: scopedAuth,
             clock,
+            timezone,
             canSend: ({
               username
             }) => canWrite(username)
@@ -258,7 +268,18 @@ export function createWorkRuntime(options = {}) {
       return identity && policy(identity.username).enabled ? identity : null;
     },
     webhookSecret: options.webhookSecret,
-    clock
+    clock,
+    // Without isActiveSession the authority never produces web principals (fail closed).
+    isActiveSession: typeof options.isActiveSession === 'function' ? (sid, username) => !stopped && options.isActiveSession(sid, username) === true : null,
+    isEnrolled: username => {
+      if (stopped) return false;
+      try {
+        return policy(username).enabled === true;
+      } catch {
+        return false;
+      }
+    },
+    logger
   });
   const reader = new ReadWorkContext({
     state,
@@ -282,6 +303,56 @@ export function createWorkRuntime(options = {}) {
         ...input,
         expectedRevision: input.expectedRevision ?? current.revision
       });
+    },
+    /** Read-only: each in-scope item with its domain, a display `source` (container title) and the write operations a command could use on it now. */
+    actionableItems: async ({
+      username,
+      asOf
+    }) => {
+      ensureProviders();
+      const result = await reader.execute({
+        username,
+        asOf
+      });
+      const p = policy(username);
+      if (!p.enabled) return {
+        items: [],
+        coverage: result.coverage
+      };
+      const writable = canWrite(username);
+      const items = [];
+      for (const item of result.items) {
+        // Same domain choice as the conversation path: first configured domain holding the item.
+        const domainId = Object.keys(p.domains).find(id => {
+          const d = p.domains[id],
+            b = p.providers[d.provider];
+          return b && b.type === item.ref.provider && b.accountId === item.ref.accountId && item.containerRef?.id === d.containerId && (!d.assigneeIds || d.assigneeIds.some(a => item.assigneeIds.includes(a)));
+        });
+        if (!domainId) continue;
+        const binding = p.providers[p.domains[domainId].provider],
+          caps = writable ? providers.get(accountKey({
+            provider: binding.type,
+            accountId: binding.accountId
+          }))?.capabilities({
+            username
+          }) ?? {} : {};
+        const container = result.containers?.find(c => item.containerRef && c.ref?.id === item.containerRef.id && c.ref?.provider === item.containerRef.provider && c.ref?.accountId === item.containerRef.accountId);
+        items.push({
+          item,
+          domainId,
+          // Display name for the item's source: its container's title, else the domain id.
+          source: container?.title ?? container?.name ?? domainId,
+          operations: WORK_OPERATIONS.filter(op => op !== 'read' && caps[op] === true && !routeWork({
+            policy: p,
+            domainId,
+            operation: op
+          }).denied)
+        });
+      }
+      return {
+        items,
+        coverage: result.coverage
+      };
     },
     getItem: input => {
       ensureProviders();
@@ -532,13 +603,17 @@ export function createWorkRuntime(options = {}) {
     verifyPrincipal: p => principal.verify(p),
     clock,
     nextId: options.nextId ?? randomUUID,
-    tokens: createWorkCallbackTokens()
+    tokens: createWorkCallbackTokens(),
+    describeProvider,
+    logger
   });
   const decisions = {
     prepare: input => track(decisionService.prepare(input)),
     recordDelivery: input => track(decisionService.recordDelivery(input)),
     recordFailure: input => track(decisionService.recordFailure(input)),
-    reply: input => track(decisionService.reply(input))
+    reply: input => track(decisionService.reply(input)),
+    confirmWeb: input => track(decisionService.confirmWeb(input)),
+    confirmSystem: input => track(decisionService.confirmSystem(input))
   };
   const selector = new SelectWorkFlow({
     state,
@@ -591,6 +666,7 @@ export function createWorkRuntime(options = {}) {
       evidence: options.journalEvidence,
       intentExtractor: extractor,
       resolvePolicy: policy,
+      describeProvider,
       scheduler: {
         after: (delay, work) => scheduler.after(delay, () => track(Promise.resolve().then(work)))
       },

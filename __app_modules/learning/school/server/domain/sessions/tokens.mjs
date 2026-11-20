@@ -24,13 +24,16 @@ export const TOKEN_PREFIX = 'sch:';
 export const TOKEN_CLASSES = Object.freeze([
   'identify', 'select_unit', 'issue_document', 'media_action', 'remediation', 'recovery',
   'subject_next', 'learning_action', 'answer_sheet_lost', 'worksheet_companion',
-  'agenda_print',
+  'agenda_print', 'makeup_print',
 ]);
 
 /**
  * 32 unambiguous uppercase characters: no O/0 and no I/1, because the fallback
  * when a barcode will not scan is a grown-up keying the code in by hand.
  */
+/** The classes whose records may carry a six-digit panel code. */
+const ACCESS_CODE_CLASSES = Object.freeze(['subject_next', 'worksheet_companion', 'agenda_print', 'makeup_print']);
+
 const BODY_CHARSET = '23456789ABCDEFGHJKLMNPQRSTUVWXYZ';
 const BODY_LENGTH = 16;
 const TOKEN_PATTERN = new RegExp(`^${TOKEN_PREFIX}[${BODY_CHARSET}]{${BODY_LENGTH}}$`);
@@ -172,16 +175,24 @@ export function createTokenRecord({
         code: 'SCHOOL_TOKEN_SUBJECT_INVALID', details: { caller, tokenClass },
       });
     }
+  } else if (tokenClass === 'makeup_print') {
+    // `{ learnerId }` only, ON PURPOSE: a scan recomputes what is still owed,
+    // so a stale sheet never prints work that has since been made up.
+    if (!isNonEmptyString(subject.learnerId)) {
+      throw new ValidationError(`${caller}: makeup_print subject requires a learnerId`, {
+        code: 'SCHOOL_TOKEN_SUBJECT_INVALID', details: { caller, tokenClass },
+      });
+    }
   } else if (!isNonEmptyString(subject.sessionId)) {
     throw new Error(`${caller}: ${tokenClass} subject requires a sessionId`);
   }
   // Class-specific too, and deliberately a whitelist: a panel code belongs to a
-  // subject_next, worksheet_companion, or agenda_print action. These classes
+  // subject_next, worksheet_companion, agenda_print or makeup_print action. These classes
   // have an `expiresAt` for the code's clock to be shorter than —
   // `identify` and `learning_action` forbid an expiry outright, so a code on
   // those could never be held to the outlives-its-token rule below.
-  if (accessCode != null && !['subject_next', 'worksheet_companion', 'agenda_print'].includes(tokenClass)) {
-    throw new ValidationError(`${caller}: only subject_next, worksheet_companion, or agenda_print tokens carry an access code`, {
+  if (accessCode != null && !ACCESS_CODE_CLASSES.includes(tokenClass)) {
+    throw new ValidationError(`${caller}: only subject_next, worksheet_companion, agenda_print, or makeup_print tokens carry an access code`, {
       code: 'SCHOOL_ACCESS_CODE_WRONG_CLASS', details: { caller, tokenClass },
     });
   }
@@ -333,7 +344,7 @@ export function isAccessCodeLive(record, { now } = {}) {
   // `subject_next` SHAPE — a subject carrying both a learner and a subject. An
   // `identify` card wearing a code would resolve to a record with no
   // `subject.subject` at all, which is a lesson nobody can open.
-  if (!['subject_next', 'worksheet_companion', 'agenda_print'].includes(record.tokenClass)) return false;
+  if (!ACCESS_CODE_CLASSES.includes(record.tokenClass)) return false;
   if (!isAccessCodeShaped(record.accessCode)) return false;
   if (!isIsoTimestamp(record.accessCodeExpiresAt) || !isIsoTimestamp(now)) return false;
   // At the rollover it is already dead: the boundary belongs to the next day.
@@ -433,6 +444,11 @@ const SEMANTICS = {
     alreadyDone: () => false,
     readyMessage: 'Printing your sheets.',
   },
+  makeup_print: {
+    actionable: () => true,
+    alreadyDone: () => false,
+    readyMessage: 'Printing your makeup sheet.',
+  },
 };
 
 /**
@@ -465,7 +481,7 @@ export function resolveTokenState(record, { sessionState = null, now } = {}) {
   if (record.expiresAt && isIsoTimestamp(now) && Date.parse(now) > Date.parse(record.expiresAt)) {
     return { status: 'expired', message: 'That ticket is out of date. Scan your card for a new one.' };
   }
-  if (['subject_next', 'learning_action', 'answer_sheet_lost', 'agenda_print'].includes(record.tokenClass)) {
+  if (['subject_next', 'learning_action', 'answer_sheet_lost', 'agenda_print', 'makeup_print'].includes(record.tokenClass)) {
     // Sessionless, unlike identify it can still expire (checked above) — but it
     // never names a session, so there is no sessionState to require here.
     return { status: 'actionable', message: semantics.readyMessage };

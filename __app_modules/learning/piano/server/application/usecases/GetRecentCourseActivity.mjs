@@ -46,16 +46,31 @@ const SLOT_BUILDERS = {
   'top-polish': () => [],                 // placeholder — not yet implemented
 };
 const DEFAULT_SLOTS = ['top-incomplete-courses'];
+const PIANO_COURSE_PROGRAM = 'piano-course';
+// The lesson a child plays next: the first one not yet watched, in course order.
+// Its still only when it is a rooted proxy path a kiosk can fetch.
+const nextLesson = (enriched) => {
+  const item = enriched.find((it) => !it.userWatched);
+  if (!item) return null;
+  const still = String(item.thumbnail ?? item.image ?? item.metadata?.thumbnail ?? '').trim();
+  return {
+    id: item.id ?? (item.plex ? `plex:${item.plex}` : null),
+    title: item.title ?? item.metadata?.title ?? null,
+    thumbnail: still.startsWith('/') ? still : null,
+  };
+};
+const courseKey = (id) => `plex:${String(id ?? '').replace(/^plex:/, '')}`;
 
 export class GetRecentCourseActivity {
-  #fitnessPlayableService; #userVideoProgressStore; #configProjection; #plexClient; #logger;
+  #fitnessPlayableService; #userVideoProgressStore; #configProjection; #plexClient; #schoolAssignments; #logger;
   #cache = null; // { key, at, result }
 
-  constructor({ fitnessPlayableService, userVideoProgressStore, configProjection, plexClient, logger = console } = {}) {
+  constructor({ fitnessPlayableService, userVideoProgressStore, configProjection, plexClient, schoolAssignments = null, logger = console } = {}) {
     this.#fitnessPlayableService = fitnessPlayableService;
     this.#userVideoProgressStore = userVideoProgressStore;
     this.#configProjection = configProjection;
     this.#plexClient = plexClient;
+    this.#schoolAssignments = schoolAssignments;
     this.#logger = logger;
   }
 
@@ -82,9 +97,33 @@ export class GetRecentCourseActivity {
     return { collectionIds: flat.map(strip), showIds: [] };
   }
 
+  /**
+   * Each child's enrolled piano courses, in sequence order (`courseId`, then
+   * `then:`), from School's assignments. An unreadable assignment is no
+   * enrollment: the card falls back to its ordinary order.
+   */
+  async #enrollments(roster) {
+    const out = {};
+    if (!this.#schoolAssignments?.get) return out;
+    for (const userId of roster) {
+      try {
+        // eslint-disable-next-line no-await-in-loop -- a handful of small files.
+        const programs = (await this.#schoolAssignments.get(userId))?.programs ?? [];
+        const ids = programs.filter((row) => row?.programId === PIANO_COURSE_PROGRAM)
+          .flatMap((row) => [row.courseId ?? row.corpusId, ...(Array.isArray(row.then) ? row.then : [])])
+          .filter(Boolean).map(courseKey);
+        if (ids.length) out[userId] = ids;
+      } catch (error) {
+        this.#logger.warn?.('piano.activity.enrollment_unreadable', { userId, error: error?.message ?? String(error) });
+      }
+    }
+    return out;
+  }
+
   async execute() {
     const roster = this.#configProjection.roster();
-    const key = roster.map((id) => `${id}:${this.#userVideoProgressStore.progressFileMtime(id)}`).join('|');
+    const enrollments = await this.#enrollments(roster);
+    const key = roster.map((id) => `${id}:${this.#userVideoProgressStore.progressFileMtime(id)}:${(enrollments[id] ?? []).join(',')}`).join('|');
     if (this.#cache && this.#cache.key === key && Date.now() - this.#cache.at < HARD_TTL_MS) {
       return this.#cache.result;
     }
@@ -237,6 +276,7 @@ export class GetRecentCourseActivity {
           percent,
           units: unitStates,
           courseCompleted: enriched.length > 0 && courseCompleted >= enriched.length,
+          next: nextLesson(enriched),
         });
       }
       if (!touched.length) continue;
@@ -251,11 +291,22 @@ export class GetRecentCourseActivity {
         units: e.units,
         courseCompleted: e.courseCompleted,
         lastPlayedAt: e.lastPlayedAt,
+        next: e.next,
       }));
 
       // Fill the card from the configured slots in order, dedupe by course.
+      // The enrolled course leads: the first unfinished course in the child's
+      // enrolled sequence. When all are finished, the ordinary order stands.
       const courses = [];
       const seenCourseIds = new Set();
+      const enrolledIds = enrollments[userId] ?? [];
+      const enrolledTouched = enrolledIds.map((id) => allCourses.find((c) => c.courseId === id)).filter(Boolean);
+      // A finished enrollment has nothing next, so it leads nothing.
+      const lead = enrolledTouched.find((c) => !c.courseCompleted) ?? null;
+      if (lead) {
+        courses.push({ ...lead, enrolled: true });
+        seenCourseIds.add(lead.courseId);
+      }
       for (const slot of slots) {
         const builder = SLOT_BUILDERS[slot];
         if (!builder) {

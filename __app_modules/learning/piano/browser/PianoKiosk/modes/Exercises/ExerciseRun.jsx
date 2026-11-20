@@ -372,7 +372,7 @@ export function runPassed(result, { challenge = false, passScore = null } = {}) 
  *   `onFailed` consumer replaces the result screen or records it while the run
  *   retains its standard feedback and piano-driven retry.
  */
-export default function ExerciseRun({ instance, score, requirement = null, practiceRequirement = null, intent = 'practice', practiceMode = 'free', programId = null, stepId = null, drillProjection = null, framing = null, bare = false, hideHeading = false, ask = null, askTuple = null, tier = null, traceContext = null, surface = 'default', scoreCursorPolicy = 'timed', scoreLayoutPolicy = 'readable-system', keyboardHintPolicy = 'always', incompleteAfterMs = null, failurePresentation = 'host', clickGain, paused = false, resumeDelayMs = 1000, persistInterrupted = true, persistAssessment = true, startOnReady = false, onExit, onPassed, onFailed, onUnavailable }) {
+export default function ExerciseRun({ instance, score, requirement = null, practiceRequirement = null, intent = 'practice', practiceMode = 'free', programId = null, stepId = null, drillProjection = null, framing = null, bare = false, hideHeading = false, ask = null, askTuple = null, tier = null, traceContext = null, surface = 'default', scoreCursorPolicy = 'timed', scoreLayoutPolicy = 'readable-system', keyboardHintPolicy = 'always', incompleteAfterMs = null, failurePresentation = 'host', clickGain, paused = false, resumeDelayMs = 1000, persistInterrupted = true, persistAssessment = true, startOnReady = false, resultLabel = null, resultActions = null, onPickStep = null, onStarted, onExit, onPassed, onFailed, onUnavailable }) {
   const logger = useMemo(() => getLogger().child({ component: 'piano-exercise-run' }), []);
   const { currentUser } = usePianoUser();
   const { activeNotes } = usePianoMidiNotes();
@@ -1084,6 +1084,17 @@ export default function ExerciseRun({ instance, score, requirement = null, pract
     if (startOnReady && runtime && snapshot.status === 'prepared' && snapshot.mode === 'cued' && !snapshot.paused) startCountIn();
   }, [startOnReady, runtime, snapshot.status, snapshot.mode, snapshot.paused, startCountIn]);
 
+  // Tell the host once per take that the child has begun it (the arming note
+  // or key), so a host can tell a take that was opened from one that was played.
+  const onStartedRef = useRef(onStarted);
+  onStartedRef.current = onStarted;
+  const startedRuntimeRef = useRef(null);
+  useEffect(() => {
+    if (!runtime || snapshot.status === 'prepared' || startedRuntimeRef.current === runtime) return;
+    startedRuntimeRef.current = runtime;
+    onStartedRef.current?.();
+  }, [runtime, snapshot.status]);
+
   /**
    * The notes that can arm a free ask: the pitches of the event the cursor is
    * sitting on. For a single-note ask that is "the first expected note". For a
@@ -1549,6 +1560,7 @@ export default function ExerciseRun({ instance, score, requirement = null, pract
       fallback={standingInstruction}
       labels={!bare}
       onPlacard={takePlacard}
+      onPick={onPickStep}
     />
   ) : deckProgram ? (
     <DrillProgress program={deckProgram} phase={phase} fallback={standingInstruction} labels={!bare} onPlacard={takePlacard} />
@@ -1758,7 +1770,7 @@ export default function ExerciseRun({ instance, score, requirement = null, pract
           keeps its own line whatever the surface. */}
       {!bare && chromeDrawn && !connected && <span className="piano-exercise-run__waiting">Waiting for the piano…</span>}
       {phase === 'done' && result && !hostOwnsFailure && <section className={`piano-exercise-run__result${passed ? ' is-passed' : ' is-developing'}`}>
-        <div><span>{passed ? 'Passed' : challenge ? 'Keep working' : 'Practice complete'}</span>{scoreReadout && <strong>{Math.round(result.score * 100)}%</strong>}</div>
+        <div><span>{resultLabel ?? (passed ? 'Passed' : challenge ? 'Keep working' : 'Practice complete')}</span>{scoreReadout && <strong>{Math.round(result.score * 100)}%</strong>}</div>
         {/* A percentage is a reading task of its own, and the tiers below 2 are
             for children who have not been given it yet. They are told the same
             thing in words: what happened, and what to do about it. */}
@@ -1766,6 +1778,7 @@ export default function ExerciseRun({ instance, score, requirement = null, pract
           ? <>{timingCopy && <p className="piano-exercise-run__result-copy">{timingCopy}</p>}<dl><div><dt>All notes</dt><dd>{Math.round((result.criteria.completeness ?? 0) * 100)}%</dd></div><div><dt>Clean notes</dt><dd>{Math.round((result.criteria.cleanliness ?? 0) * 100)}%</dd></div>{Number.isFinite(result.criteria.placement) && <div><dt>On the beat</dt><dd>{Math.round(result.criteria.placement * 100)}%</dd></div>}</dl></>
           : <p className="piano-exercise-run__result-copy">{passed ? 'You played every note that was asked for.' : timingCopy ?? 'Some of the notes are still missing. Have another go.'}</p>}
         {localRetry && <p className="piano-exercise-run__result-onward">Release the keys, then play any key to try again.{onExit && ' Hold the lowest and highest keys for two seconds to leave.'}</p>}
+        {resultActions && <div className="piano-exercise-run__result-actions">{resultActions}</div>}
       </section>}
       </div>
       {keyboardFooter && (

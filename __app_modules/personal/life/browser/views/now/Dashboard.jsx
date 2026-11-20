@@ -9,6 +9,8 @@ import { DriftGauge } from "../../widgets/DriftGauge.jsx";
 import { GoalProgressBar } from "../../widgets/GoalProgressBar.jsx";
 import { BeliefConfidenceChip } from "../../widgets/BeliefConfidenceChip.jsx";
 import { ValueAllocationChart } from "../../widgets/ValueAllocationChart.jsx";
+import { TriageSummaryCard } from "./TriageSummaryCard.jsx";
+import { useTriage } from "../../hooks/useTriage.js";
 import { PriorityList } from "./PriorityList.jsx";
 import { LoadingState, ErrorState, SectionCard } from "../../components/index.js";
 import getLogger from "../../../../../../frontend/src/lib/logging/Logger.js";
@@ -27,6 +29,7 @@ export function Dashboard() {
   const logger = useMemo(() => getLogger().child({ component: 'life-dashboard' }), []);
   const priorityRead = useAlignment('priorities');
   const summaryRead = useAlignment('dashboard');
+  const { summary: triageSummary, error: triageError, refetch: refetchTriage } = useTriage();
   const { isEmpty: planIsEmpty, loading: planLoading, error: planError, refetch: refetchPlan } = useLifePlan();
   const dashboard = summaryRead.data?.dashboard;
   const stage = dashboard?.stage;
@@ -58,6 +61,8 @@ export function Dashboard() {
 
   return (
     <Stack gap="md">
+      <TriageSummaryCard summary={triageSummary} error={triageError} onRetry={refetchTriage} />
+
       {planIsEmpty && (
         <SectionCard>
           <Stack gap="sm">

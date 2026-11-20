@@ -7,6 +7,7 @@ import { usePianoMidi } from './PianoMidiContext.jsx';
 import { usePianoUser } from './PianoUserContext.jsx';
 import PianoTile from './PianoTile.jsx';
 import PianoHomeDesk from './desk/PianoHomeDesk.jsx';
+import LatestPieceCard from './desk/LatestPieceCard.jsx';
 import { KIOSK_DEVICE_ID } from './kioskDeviceIdentity.js';
 import LiveKeyboard from './LiveKeyboard.jsx';
 import { balancedColumns } from './tileGridLayout.js';
@@ -16,6 +17,7 @@ import useKaraokeSchoolAccess from './useKaraokeSchoolAccess.js';
 import { canBuyPass, canEnterLock } from './earlyPass.js';
 import usePianoLessonGate, { PENDING_CAPTION } from './usePianoLessonGate.js';
 import TodaysLessonGate from './TodaysLessonGate.jsx';
+import { openPianoCourseLesson } from './pianoContentOpen.js';
 import { PIANO_MODES } from './pianoModes.js';
 
 /**
@@ -90,37 +92,61 @@ export function PianoMenu() {
     navigate(`${basePath}/${id}`);
   };
 
+  const openPassage = (userId, scoreId, passageId) => {
+    // Tapping a child's card IS picking that child: their progress,
+    // their credit (owner-requested 2026-07-28).
+    if (userId) setCurrentUser(userId);
+    if (curfew || pending) return; // the door the 2026-09-01 escape used
+    navigate(`${basePath}/sheetmusic/view/${scoreId}${passageId ? `?learnPassage=${encodeURIComponent(passageId)}` : ''}`);
+  };
+  const desk = (
+    <PianoHomeDesk
+      disabled={curfew || pending}
+      onOpenPassage={openPassage}
+      onOpenCourse={(userId, courseId, lessonId) => {
+        if (userId) setCurrentUser(userId);
+        if (curfew || pending) return;
+        // Straight into the lesson the card shows; the course page when that cannot resolve.
+        if (lessonId && openPianoCourseLesson({ courseId, lessonId, basePath, navigate })) return;
+        navigate(`${basePath}/videos/${String(courseId).replace(/^plex:/, '')}`);
+      }}
+    />
+  );
+  const lessonCard = (
+    <TodaysLessonGate
+      lesson={lessonGate.lesson}
+      unit={lessonGate.unit}
+      course={lessonGate.course}
+      challenge={lessonGate.challenge}
+      learnerId={currentUser}
+      onCompleted={lessonGate.refresh}
+      basePath={basePath}
+      navigate={navigate}
+    />
+  );
+  // Sheet music is the exception to an owed video lesson (owner, 2026-11-19):
+  // the strip's piece card and one Sheet Music tile stay open beside the
+  // lesson. A PianoChallenge keeps its whole screen; its ask session is the work.
+  const sheetMusic = PIANO_MODES.find((m) => m.id === 'sheetmusic');
+
   return (
     <main className={`piano-home${curfew ? ' is-curfew' : ''}`}>
       <div className="piano-home__body">
-        {gated ? (
-          <TodaysLessonGate
-            lesson={lessonGate.lesson}
-            unit={lessonGate.unit}
-            course={lessonGate.course}
-            challenge={lessonGate.challenge}
-            learnerId={currentUser}
-            onCompleted={lessonGate.refresh}
-            basePath={basePath}
-            navigate={navigate}
-          />
+        {gated && lessonGate.challenge ? lessonCard : gated ? (
+          <>
+            {desk}
+            <div className="piano-home__owed">
+              {lessonCard}
+              {/* The child's latest piece goes straight in; the tile browses every score. */}
+              <div className="piano-home__side">
+                <LatestPieceCard userId={currentUser} onOpen={(scoreId, passageId) => openPassage(currentUser, scoreId, passageId)} />
+                <PianoTile icon={sheetMusic.icon} label={sheetMusic.label} blurb={sheetMusic.blurb} onClick={() => open(sheetMusic.id)} />
+              </div>
+            </div>
+          </>
         ) : (
           <>
-          <PianoHomeDesk
-            disabled={curfew || pending}
-            onOpenPassage={(userId, scoreId, passageId) => {
-              // Tapping a child's card IS picking that child: their progress,
-              // their credit (owner-requested 2026-07-28).
-              if (userId) setCurrentUser(userId);
-              if (curfew || pending) return; // the door the 2026-09-01 escape used
-              navigate(`${basePath}/sheetmusic/view/${scoreId}${passageId ? `?learnPassage=${encodeURIComponent(passageId)}` : ''}`);
-            }}
-            onOpenCourse={(userId, courseId) => {
-              if (userId) setCurrentUser(userId);
-              if (curfew || pending) return;
-              navigate(`${basePath}/videos/${String(courseId).replace(/^plex:/, '')}`);
-            }}
-          />
+          {desk}
           <ul className="piano-menu__tiles" style={{ '--tile-cols': cols }}>
             {PIANO_MODES.map((m) => {
               const gamesOffTile = m.id === 'games' && gamesOff;

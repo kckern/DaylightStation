@@ -105,6 +105,8 @@
 
 .piano-chrome {
   flex: 0 0 auto;
+  height: 61px;
+  box-sizing: border-box;
   display: flex;
   align-items: center;
   gap: 1rem;
@@ -290,6 +292,11 @@
 }
 
 .piano-linkbanner {
+  // A notification never takes page space and never covers the work: it floats
+  // at the foot of the screen, over the on-screen keyboard, so nothing moves
+  // when it appears and the progress strip stays readable.
+  position: absolute; bottom: 0; left: 0; right: 0; z-index: 40;
+  border-top: 1px solid var(--piano-border);
   display: flex;
   align-items: center;
   gap: var(--sp-3);
@@ -385,16 +392,32 @@
   display: flex;
   flex-direction: column;
 
-  // Strip and tile wall share the vertical space evenly (space-around), with
-  // breathing room at the left/right screen edges.
+  // Every height here is fixed before data arrives, so nothing jolts on load:
+  // the strip sits 16px under the header in every state, and the tile wall
+  // (or the owed lesson) takes the rest, centred. Captions float, never in flow.
   &__body {
+    position: relative;
     flex: 1 1 auto;
     min-height: 0;
     display: flex;
     align-items: center;
     flex-direction: column;
-    justify-content: space-around;
-    padding: 0 var(--sp-6, 3rem) var(--sp-3);
+    justify-content: flex-start;
+    padding: 16px var(--sp-6, 3rem) var(--sp-3);
+    .piano-menu__tiles { margin-block: auto; }
+  }
+
+  // An owed video lesson under the strip, with a 224px column beside it: the
+  // child's latest piece (straight in) over the Sheet Music tile (browse all).
+  &__owed {
+    flex: 1 1 auto; min-height: 0; width: 100%; padding-top: 16px; box-sizing: border-box;
+    display: flex; align-items: stretch; gap: 16px;
+    .piano-lesson-gate { flex: 1 1 auto; min-width: 0; padding: 0; }
+  }
+  &__side {
+    flex: 0 0 224px; width: 224px; min-height: 0;
+    display: flex; flex-direction: column; justify-content: center; gap: 16px;
+    > .piano-tile { flex: 0 0 auto; width: 224px; }
   }
 
   &__keyboard {
@@ -410,96 +433,81 @@
   // which greys the menu for the same reason: nothing here is tappable *yet*.
   &__curfew,
   &__pending {
+    position: absolute; left: 0; right: 0; bottom: 2px;
     margin: 0;
-    padding-top: var(--sp-3);
     font-size: 1.1rem;
     color: var(--piano-muted);
     text-align: center;
   }
 }
 
-// The one owed lesson, standing in for the whole tile wall. It is the ONLY
-// thing on the body, so it centres rather than tiling — a single card a child
-// walks up to and taps. Deliberately warmer and larger than a tile: the tile
-// wall is a menu of equals, this is the one thing to do right now.
+// The one owed lesson, standing in for the whole tile wall: its picture, its
+// name and one way in. It fills the body the wall filled.
 .piano-lesson-gate {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  text-align: center;
-  gap: var(--sp-2);
-  // Sized for a wall tablet a child walks up to: this REPLACES the tile wall,
-  // so it has to hold the screen the way the wall did, not float in it.
-  width: min(46rem, 100%);
-  padding: var(--sp-5) var(--sp-6, 3rem) var(--sp-5);
-  background: var(--piano-surface);
-  border: 1px solid var(--piano-border);
-  border-radius: var(--r-lg);
+  align-self: stretch; flex: 1 1 auto; min-height: 0;
+  display: flex; flex-direction: column; align-items: center; text-align: center; gap: var(--sp-2);
+  padding: var(--sp-3) 0 0;
 
-  &__thumb {
-    width: 20rem;
-    max-width: 100%;
-    aspect-ratio: 16 / 9;
-    object-fit: cover;
-    border-radius: var(--r-md);
-    margin-bottom: var(--sp-2);
+  // The challenge keeps its own column: the ask session is the action there.
+  &--challenge {
+    align-self: center; flex: 0 1 auto; width: min(46rem, 100%);
+    padding: var(--sp-5) var(--sp-6, 3rem) var(--sp-5);
+    background: var(--piano-surface); border: 1px solid var(--piano-border); border-radius: var(--r-lg);
   }
 
-  // `--piano-accent-text`, not `--piano-accent`: this is accent used AS TEXT
-  // on a charcoal surface, which is the AA-safe pair.
-  &__eyebrow {
-    margin: 0;
-    font-size: 0.85rem;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-    color: var(--piano-accent-text);
+  // The whole card is the button: a child presses the picture. Course poster on
+  // the left at the card's full height; the lesson title over its still on the right.
+  &__start {
+    flex: 1 1 auto; min-height: 0; width: 100%; box-sizing: border-box; padding: var(--sp-3);
+    display: flex; align-items: stretch; gap: var(--sp-4, 16px);
+    font: inherit; color: var(--piano-fg); text-align: left; cursor: pointer;
+    background: var(--piano-surface); border: 2px solid var(--piano-border); border-bottom-width: 6px; border-radius: var(--r-lg);
+    transition: transform 0.12s ease, filter 0.12s ease;
+    &:active { transform: translateY(3px); border-bottom-width: 3px; filter: brightness(0.94); }
   }
 
-  &__context {
-    margin: 0;
-    font-size: 1rem;
-    color: var(--piano-muted);
+  &__poster {
+    flex: 0 0 auto; height: 100%; min-height: 0; aspect-ratio: 2 / 3; object-fit: cover;
+    border-radius: var(--r-md); background: var(--piano-bg);
   }
+
+  &__side { flex: 1 1 auto; min-width: 0; min-height: 0; display: flex; flex-direction: column; gap: var(--sp-3); }
 
   &__title {
-    margin: 0;
-    font-size: 2.3rem;
-    line-height: 1.2;
+    flex: 0 0 auto; margin: 0; font-size: 2.1rem; line-height: 1.2; font-weight: 800;
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
   }
 
-  // The blurb is context, not instruction — clamped so a long Hoffman summary
-  // can never push the start button off a short kiosk screen.
+  // The still fills whatever the title leaves it, cropping a little rather
+  // than leaving an empty band beside it.
+  &__still {
+    position: relative; flex: 1 1 auto; min-height: 0;
+    border-radius: var(--r-md); background: var(--piano-bg); overflow: hidden;
+  }
+
+  &__thumb { display: block; width: 100%; height: 100%; object-fit: cover; }
+
+  // A small play disc on the still: the way in, without a button of its own.
+  &__play {
+    position: absolute; left: 50%; top: 50%;
+    transform: translate(-50%, -50%);
+    width: 5.5rem; height: 5.5rem; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    color: var(--piano-accent-ink); background: var(--piano-accent);
+    border: 4px solid var(--piano-surface);
+    svg { width: 2.8rem; height: 2.8rem; margin-left: 0.25rem; }
+  }
+
+  // `--piano-accent-text`, not `--piano-accent`: accent used AS TEXT on charcoal.
+  &__eyebrow { margin: 0; font-size: 0.85rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--piano-accent-text); }
+  &__context { margin: 0; font-size: 1rem; color: var(--piano-muted); }
   &__description {
-    margin: 0;
-    font-size: 1rem;
-    color: var(--piano-muted);
-    display: -webkit-box;
-    -webkit-line-clamp: 3;
-    -webkit-box-orient: vertical;
-    overflow: hidden;
-  }
-
-  // The single action on the screen, so it takes the accent FILL rather than
-  // a tile's outline — nothing else here competes with it.
-  &__start {
-    margin-top: var(--sp-3);
-    padding: var(--sp-3) var(--sp-5);
-    font: inherit;
-    font-size: 1.4rem;
-    font-weight: 600;
-    color: var(--piano-accent-ink);
-    background: var(--piano-accent);
-    border: none;
-    border-radius: var(--r-lg);
-    cursor: pointer;
-    transition: transform 0.12s ease, filter 0.12s ease;
-
-    &:active { transform: scale(0.97); filter: brightness(0.92); }
+    margin: 0; font-size: 1rem; color: var(--piano-muted);
+    display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;
   }
 }
 
 @media (orientation: portrait) {
-  .piano-lesson-gate__thumb { width: 15rem; }
   .piano-lesson-gate__title { font-size: 1.9rem; }
 }
 
@@ -2398,11 +2406,47 @@
   padding: 1.25rem 0.5rem 4rem;
   -webkit-overflow-scrolling: touch; touch-action: pan-x pan-y;
 }
-.piano-score-player__scroll--wrapped { overflow-x: hidden; overflow-y: auto; }
-.piano-score-player__scroll--horizontal {
-  overflow-x: auto; overflow-y: hidden;
-  display: flex; align-items: center;
-  .musicxml-renderer { margin: 0; margin-top: auto; margin-bottom: auto; }
+// The score in every mode: pages of whole systems. Nothing scrolls; the engraving
+// is moved to the page and cut between systems, so no staff is ever sliced at an
+// edge. (Unpaged only until the engraving has reported its systems.)
+.piano-score-player__scroll--paged {
+  position: relative; overflow: hidden; padding-top: 0; padding-bottom: 0;
+  touch-action: none; overscroll-behavior: none;
+  .musicxml-renderer {
+    // Moved left as well: the turner stands in the right margin, clear of the staff.
+    transform: translate(-0.875rem, var(--page-shift, 0px));
+    clip-path: inset(var(--page-top, 0px) 0 calc(100% - var(--page-bottom, 100%)) 0);
+  }
+}
+// A turn made for the cursor slides, so the eye can follow the system it is
+// reading to the top. Transform only: the notation is not repainted per frame.
+// 260ms is GLIDE_MS in useSystemPaging.js.
+.piano-score-player__scroll--turning .musicxml-renderer {
+  transition: transform 260ms cubic-bezier(0.2, 0.7, 0.2, 1);
+  @media (prefers-reduced-motion: reduce) { transition: none; }
+}
+// The page turner, in the paper's right margin.
+.piano-score-pager {
+  position: absolute; z-index: 8; top: 0.5rem; bottom: 0.5rem; right: 0.25rem; width: 3rem;
+  display: flex; flex-direction: column; align-items: stretch; gap: 0.5rem;
+  &__turn {
+    flex: 1 1 0; min-height: 0; padding: 0; display: grid; place-items: center; cursor: pointer;
+    border: 2px solid var(--piano-border); border-bottom-width: 5px; border-radius: var(--r-md, 10px);
+    background: var(--piano-surface-2, #26262f); color: var(--piano-fg);
+    &:active:not(:disabled) { transform: translateY(2px); border-bottom-width: 3px; background: var(--piano-accent); color: var(--piano-accent-ink); }
+    &:disabled { background: var(--piano-surface-1, #1c1c23); color: var(--piano-border); cursor: default; }
+  }
+  &__pips {
+    flex: 0 0 auto; list-style: none; margin: 0; padding: 0.4rem 0; display: grid; justify-items: center; gap: 0.4rem;
+    li { width: 0.7rem; height: 0.7rem; border-radius: 50%; box-sizing: border-box; border: 2px solid var(--piano-surface-2, #26262f); }
+    li[aria-current='page'] { background: var(--piano-accent); border-color: var(--piano-accent); width: 1rem; height: 1rem; }
+  }
+  // A long piece (more pages than pips fit): where the page is, as a marker on a track.
+  &__track {
+    flex: 0 0 6rem; position: relative; align-self: center; width: 0.5rem; margin: 0.4rem 0;
+    border-radius: 0.25rem; background: var(--piano-surface-2, #26262f);
+    span { position: absolute; left: 0; right: 0; min-height: 0.5rem; border-radius: 0.25rem; background: var(--piano-accent); }
+  }
 }
 
 .piano-learn-roadmap {
@@ -3283,4 +3327,31 @@
   .piano-engagement-gate__heading { margin: 0; color: #fff; font-size: 1.5rem; font-weight: 800; text-align: center; }
   .piano-engagement-gate__drill { flex: 1 1 auto; width: 100%; min-height: 0; display: flex; }
   .piano-engagement-gate__drill > * { flex: 1 1 auto; }
+}
+
+// The child's latest piece beside an owed lesson: poster, play disc and Silver
+// count, with the title beneath. Wider than tall, like every button here.
+.piano-latest-piece {
+  flex: 1 1 auto; min-height: 0; max-height: 190px; width: 224px; box-sizing: border-box;
+  display: flex; flex-direction: column; gap: 8px; padding: 10px;
+  font: inherit; color: var(--piano-fg); text-align: left; cursor: pointer;
+  background: var(--piano-surface); border: 1px solid var(--piano-border); border-radius: var(--r-lg);
+  &:active { background: var(--piano-surface-2); }
+
+  &__top { flex: 1 1 auto; min-height: 0; display: flex; gap: 12px; }
+  &__poster { height: 100%; aspect-ratio: 2 / 3; object-fit: cover; border-radius: 6px; background: var(--piano-surface-2); }
+  &__side { display: flex; flex-direction: column; justify-content: center; gap: 12px; }
+  &__play {
+    width: 44px; height: 44px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    color: var(--piano-accent-ink); background: var(--piano-accent);
+    svg { width: 24px; height: 24px; margin-left: 3px; }
+  }
+  &__title { flex: 0 0 auto; font-size: 16px; line-height: 1.2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+  // The strip's counter, reused at this size.
+  .piano-desk__count { display: flex; gap: 10px; font-size: 16px; font-weight: 800; font-variant-numeric: tabular-nums;
+    span { display: flex; align-items: center; gap: 4px; color: var(--piano-silver); }
+    span[data-level='gold'] { color: var(--piano-gold); }
+    svg { width: 18px; height: 18px; } }
 }

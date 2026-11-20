@@ -546,6 +546,27 @@ describe('PianoCourseProgramLauncher lesson media', () => {
     expect('thumbnail' in lesson).toBe(false);
   });
 
+  // The owed-lesson card stands the course poster beside the lesson still.
+  const courseOf = async (result) => {
+    const launcher = launcherFor(result, '2026-08-25T20:00:00Z');
+    return (await launcher.status({ userId: 'learner3', programInstance: COURSE })).context.course;
+  };
+
+  it('carries the course poster as the course thumbnail', async () => {
+    const result = episode();
+    result.info.image = '/api/v1/proxy/plex/library/metadata/675689/thumb/1782427020';
+    const course = await courseOf(result);
+    expect(course.thumbnail).toBe('/api/v1/proxy/plex/library/metadata/675689/thumb/1782427020');
+    expect(course.title).toBe('Hoffman Academy');
+  });
+
+  it('omits a course poster the kiosk could not fetch, or one that is missing', async () => {
+    expect('thumbnail' in await courseOf(episode())).toBe(false);
+    const result = episode();
+    result.info.image = 'http://10.0.0.5:32400/library/metadata/1/thumb';
+    expect('thumbnail' in await courseOf(result)).toBe(false);
+  });
+
   it('treats a summary of pure whitespace as no summary at all', async () => {
     const lesson = await lessonOf(episode({ metadata: { summary: '  \r\n \r\n ' }, thumbnail: '   ' }));
     expect('description' in lesson).toBe(false);

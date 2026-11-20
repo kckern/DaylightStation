@@ -86,6 +86,7 @@ export function createApiRouter(config) {
     '/info': 'info',  // Action-based metadata (unified ID format)
     '/display': 'display',  // Action-based images (unified ID format)
     '/config': 'config',
+    '/triage': 'triage',
     '/content': 'content',
     '/proxy': 'proxy',
     '/list': 'list',

@@ -42,8 +42,9 @@ remains presentation-only.
   modal sheets**, not popovers: tapping the button opens a centered modal
   sheet with its own scrim, a direct-pick ladder of steps, and a close
   affordance — one tap commits and dismisses, so there's no separate "confirm"
-  step. The **View** menu is the same sheet shell — layout, size, and
-  keyboard-visibility controls only, no metadata list; keyboard visibility is
+  step. The **View** menu is the same sheet shell — size and
+  keyboard-visibility controls only, no metadata list and no layout choice (see
+  "The page" below); keyboard visibility is
   a switch (`ToggleSwitch` — a real `role="switch"` track, not a checkbox);
   size is a discrete tap-commit stepper, so the score repaints once per step.
   **Volume** opens the same volume sheet every player in the kiosk uses —
@@ -77,7 +78,14 @@ the truth about what that job is:
 | **Listen** | Pure playback — a jukebox that performs the score | Restart/Play · metronome (session-local, off by default) · hand toggles · Key/Tempo/View/Volume. No looping. |
 | **Learn** | Open passage roadmap with a config-defined hand/timing ladder | Score roadmap plus passage ladder; a selected rung opens a dedicated `ExerciseRun` |
 | **Polish** | Real-time scored runs, always whole-piece | Play + count-in · metronome (on by default, persisted) · hand toggles · settings. No looping. |
-| **Perform** | The music stand | Zero chrome; the left pedal turns pages |
+| **Perform** | The music stand | No transport bar; the pedals, the page turner, a swipe or a tap turn pages |
+
+**Which mode a score opens in.** With Learn's roadmap on (`sheetmusic.learn.roadmap`,
+the default), a score opened from the library opens in **Learn**, so the passage rail
+is on screen from the first moment. A `?play=` launch opens the mode it names and a
+`learnPassage` link opens Learn. When the household names `sheetmusic.defaultMode`,
+or the roadmap is off, a score opens in the mode it was last left in on this device,
+then in `defaultMode` (`listen` unless configured).
 
 A practice **loop/range is Learn-only state**: leaving Learn for Listen or
 Polish clears it, and re-entering Learn re-derives a fresh one from practice
@@ -132,6 +140,59 @@ drop-shadow — a fixed color, independent of mode or the current-step ink, so
 "hit" always reads the same regardless of what's playing. It reads as ink
 rather than as the kiosk's accent green, which keeps the page looking engraved
 instead of lit up like a game.
+
+## The page: whole systems in every mode
+
+The score never scrolls, in Listen, Learn, Polish or Perform. A window shorter
+than the piece would always slice a staff at its edge, so the score is shown as
+**pages of whole systems** (`systemPaging.js`, `useSystemPaging.js`).
+
+- **What a page holds.** As many whole systems as fit the window, fitted to their
+  ink (with a 10px margin) and centred. Everything above and below the page is cut
+  away between systems, in the widest strip that carries no ink, so a page never
+  shows a sliver of its neighbour. The last page is always a full one, so it may
+  repeat a system of the page before it.
+- **The page turner** (`ScorePager`) stands in the paper's right margin in every
+  mode: a tall up button, a tall down button and one pip per page, with no words.
+  A swipe up or left turns forward, down or right turns back.
+- **The page follows the cursor** (Listen, Polish, and Learn's direct practice).
+  A cursor that is off the page is turned to, with its system at the top. While
+  the music runs the page also turns **ahead** of the cursor, like a page-turner
+  at a music stand: when the cursor reaches the last system showing and more
+  follow, that system slides to the top and the next ones come into view, so they
+  can be read before they are needed and the cursor never leaves the screen. A
+  turn that would bring nothing new into view waits. With one system to a page the
+  turn comes as the cursor crosses to the next system. Stopped, a tap on the last
+  system seeks there and the page stays.
+- **A page turned by hand** stays until the cursor next moves, so the piece can be
+  browsed while stopped; while it plays, the page returns to the cursor on its
+  next note.
+- **A turn is view state only.** It moves and clips the engraving and touches no
+  clock: the transport, the count-in, the metronome grid and its click lead, and
+  Polish's grading all run exactly as they do without one. The slide of a cursor
+  turn is a 260ms transform of the already-painted notation (no repaint per
+  frame; none at all under `prefers-reduced-motion`); for that moment the cut is
+  the union of both pages. Turns by button, swipe, pedal, tap or passage are
+  immediate.
+- **Size.** The View sheet's size steps re-engrave and re-page. A size at which a
+  single system is taller than the window cannot show a whole system, so the
+  largest size is the largest at which one still fits, read off the engraving on
+  screen: larger steps are disabled in place, and a size that stops fitting
+  (the keyboard switched on) steps down to it (`score.size.fit`, with `from`
+  and `to`).
+- **Many pages.** Past twelve pages the pips give way to one track with a marker.
+- **No "Across" layout.** The one-line layout could only be read by scrolling and
+  cut bars at both edges of the screen, so the layout choice is retired and the
+  score is always engraved down the page. It was a per-visit toggle and was never
+  saved, so no stored choice is lost.
+- **Before the systems are known** (the moment between the first paint and the
+  geometry walk) the sheet is not yet paged.
+
+Logs: `score.page.turn` (`mode`, `from`, `to` as system indexes,
+`by: button|swipe|passage|cursor|pedal|tap`).
+
+Scanned page-image scores (`ScoreViewer`) are a different viewer and still
+scroll their page images.
 
 ## Listen
 
@@ -216,19 +277,94 @@ five). The [passage rail](#passage-rail-and-board) under the score names the nex
 passage and shows every passage of the piece. A stale passage URL shows an
 explanation and the available choices.
 
-Selecting a passage opens preparation with its engraved excerpt, printed bar
-range, selected profile, earned skills, one musical task, and a plain success
-condition. **Start practice** becomes available after notation and its assessment
-expectation are ready. Preparation failures offer **Retry music**. A disconnected
-piano is explained separately. Routes, reloads, and profile restoration always
-prepare; they never start a graded run.
+A child uses two screens in Learn: the score with its rail and board, and the
+**drill screen**. There is no preparation page and no result page.
 
-**Listen** demonstrates only the selected passage and parts using the existing
-score transport, returns to the unchanged preparation, and records no assessment.
-**Change practice** retains hands, beat and named tempo choices; **Use this setup**
-returns to preparation. **Try the full passage** prepares a full-tempo timed
-demonstration when the passage has a timed mastery task. The learner can attempt
-it before completing the easier skills.
+#### The drill screen
+
+Opening a passage lands on the Exercises run surface (`ExerciseRun` inside
+`LearnLab`), on the passage's current step, ready to play. `LearnCoach` is glue:
+it chooses the step, hands the passage to the drill as sets and reps, records each
+take with the coach, and stacks the [passage rail](#passage-rail-and-board) under
+the drill. It draws no practice screen of its own.
+
+- **Sets and reps.** Every Silver and Gold step of the passage is one set in the
+  drill's progress row, and the clean takes it needs are its reps. A set is named
+  by a picture, not a word: the two hands with the resting one unlit (right hand,
+  left hand, together), the **silver coin** over the Silver check, a metronome,
+  `60%`, `80%`, and the **gold coin** over the step at score tempo. So the row
+  reads as the way to each coin. A step with no picture (an authored ladder)
+  keeps its words. The words stay as each set's accessible name. A Gold step
+  with no fixed count (two good takes out of the last three) shows two reps.
+  `passageDrill()` in `LearnCoach.jsx` builds this projection; `DrillProgress`
+  draws `display.icon` when a set carries one.
+- **Starting.** Nothing is pressed. A free take arms on its first correct note and
+  a timed take counts in on any key, exactly as in Exercises. The coach hears that
+  a step was chosen (`selection`) when the take begins, not when the passage opens.
+- **Choosing a step.** Tapping a set runs that step, and it is the only chooser:
+  each set is a full touch target. This is how a child goes straight to the
+  Silver check (the silver coin) or to the full passage at score tempo (the gold
+  coin). There is no separate "change practice" screen.
+- **Chrome.** One toolbar row: Back (to the score), the printed bars, the step's
+  instruction (`Join the hands`), then for a timed step its tempo (`40 BPM`) and
+  click loudness, and **Listen**, **Pause** and **Start over**. A drill on part of the passage
+  is named by the bars it covers (`Bar 2`). Saving is mentioned only when it
+  failed (**Progress not saved**, **Retry saving**). A lost piano is announced once,
+  by the app's banner.
+- **A pass** shows the drill's own rep card (`RepInterstitial`): `Set 3 of 8
+  clear`, the score, `Next: On your own`. The next step is already mounted under it.
+- **Silver and Gold.** The take that certifies the passage closes the drill's
+  curtain (`GateCeremony`, the game gate's) over the stage. On the closed curtain
+  the passage's icon turns over into its silver or gold coin above `Silver!` or
+  `Gold!`, a short chime sounds and the passage's rail tile turns at the same
+  moment. The curtain then parts onto what is next (`Next`, the next passage's
+  icon and bars) and the screen moves there. It lasts five seconds
+  (`PASSAGE_CEREMONY_MS`), with the verdict held for about two.
+- **The whole piece.** When that take finishes the piece, the curtain carries
+  every passage instead: one coin per passage, turning in a wave above
+  `All Silver!` or `All Gold!`, with the longer chime, while every rail tile
+  turns with it. It lasts 7.6 seconds (`PIECE_CEREMONY_MS`). Silver parts onto
+  `Next: Go for Gold`; Gold parts onto the piece's title. The screen then returns
+  to the score, which celebrates nothing itself.
+- **A miss** leaves the drill's result panel in the keyboard's place: the coach's
+  short verdict (`Almost on your own`, `Bar 2 is the tricky spot`), the take's
+  numbers, and the next moves: the smaller practice the coach recommends after two
+  misses (`Practice bar 2`, `Practice the left hand`, `Try a little slower · 80%`),
+  **Try again**, and **Come back to this later** when it is on offer. Playing any
+  key also tries again.
+- **Listen** demonstrates the step's bars and parts in the same chrome with one
+  control, **Stop listening**, and records nothing.
+- **Rail and board.** The same rail as the score view sits under the drill, with
+  this passage outlined and no practice button. A tile opens that passage; the
+  count opens the board over the drill, and a card opens its passage.
+
+The engraved passage is contained in the stage at every size: the passage,
+renderer, the engraver's own wrapper around its SVG, and the SVG each hold one
+definite grid cell, so a two-system grand staff can never grow past the paper.
+(The engraver's wrapper once sized itself to the page, and a two-system grand
+staff was cropped top and bottom on the tablet.) A passage that takes two systems
+is engraved once more with its last system justified (`stretchLastSystem`), so
+the second line runs the width of the first and never stops halfway across blank
+paper; a one-system passage is left alone and scaled up to the stage. The stage frames the **measured ink**, not
+the engraver's page: `ScorePassage` reads the engraving's bounding box and
+`passageLayout.js` shows it with one and a half staff spaces of air on every
+side, so a passage is as large as its stage allows (a two-system grand staff is
+about a fifth larger than on the engraver's page). Staves and bars are always
+inside the frame, whatever was measured. Without a measurement the page is used,
+trimmed where every system stops short. This applies to every `ScorePassage`, in
+Exercises too.
+
+Stems and noteheads were checked in the drill at 1280x800 and 1280x748 across all
+twelve passages of a real score, through the ready, playing, resolve and result
+states: every stem touches a notehead. The drill puts no CSS transform on an
+engraved note, which is what keeps them together.
+
+Logs (`piano-learn-coach`): `piano.learn.coach.step`, `piano.learn.coach.take`
+(`reason`, `passed`), `piano.learn.coach.pick`, `piano.learn.coach.certified`
+(`level`, `piece`, `next`), `piano.learn.coach.set-aside`,
+`piano.learn.coach.unavailable`, `piano.learn.celebrate` (`scope: passage|piece`,
+`level`, `passages`, `sounded`; logged as the verdict lands), and `piano.learn.rail.select` with
+`source: learn-rail|learn-board`.
 
 ### Silver and Gold
 
@@ -260,6 +396,8 @@ sheetmusic:
         checkPasses: 1     # passing Silver checks required
         cleanliness: 0.8   # share of played notes that must be correct
         stallSeconds: 30   # time without a new correct note
+      flower:
+        after: both-hands  # when a passage is partway: both-hands | together | first-step
 ```
 
 Invalid values use these defaults. Policy changes never remove earned credit.
@@ -279,15 +417,32 @@ with `id`, `start`, `end`, `silver` and `gold`. Certification values are timesta
 Learn is a game played over the whole piece: turn every passage Silver, then go
 round again for Gold. The score stays the main thing on screen.
 
+**The score is pages of whole systems** (see [The page](#the-page-whole-systems-in-every-mode)),
+so a staff is never sliced at the rail. The score opens on the page that holds the
+passage the rail's button names, and turns to the next one when that changes after
+a drill or when Learn is entered from another mode.
+
 **The rail** is one 64px row under the score:
 
 `[Practice bars 1–5] | passage tiles | 3/12`
 
 - **Tiles.** Every passage of the piece, always, with no scrolling. Widths follow
-  bar counts and each tile shows the printed number of its first bar. A passage
-  is not started, learning (one mark per Silver step), Silver or Gold. State is
-  fill, border and marks, never opacity, and never `CoinIcon`.
-- **Tapping a tile selects it.** The score moves to those bars and boxes them. It
+  bar counts and each tile shows the passage's state icon and the printed number
+  of its first bar. The icons are a crowd answering a stage act
+  (`PassageCoin.jsx`): a **tomato** (not started), a **flower** (partway), a
+  **silver coin** and a **gold coin**. The coins are the household `CoinIcon`;
+  `TomatoIcon` and `FlowerIcon` sit beside it in `frontend/src/lib/icons/`.
+  Opacity never shows state.
+- **Flower.** An uncertified passage becomes a flower by
+  `certification.flower.after`: `both-hands` (the default: each hand alone is
+  earned, or the hands together; a one-part passage when its notes step is
+  earned), `together` (the hands together only) or `first-step` (any note step).
+  Invalid values use the default. `projectCoach` computes it (`segment.flower`,
+  and `passageProgress().state === 'learning'`), so the home strip, the rail, the
+  board and the drill agree.
+- **Tapping a tile selects it.** The score turns to the page that holds those bars
+  whole and boxes them: the page it is on when they are already there, else a fixed
+  page that holds them all, else the page that starts at their first system. It
   does not open practice. Tapping a passage on the score itself still opens it.
 - **The button** opens the selected passage in Learn (`Practice bars 14–17`). With
   nothing selected it opens the recommended passage. When every passage is Silver
@@ -299,37 +454,38 @@ round again for Gold. The score stays the main thing on screen.
   fit at that width the tiles become a plain map of the piece (still every
   passage, no numbers) and a tap on it opens the board at that passage's card.
 
-**The board** slides over the score from the rail without moving the music. It is
-the table of contents and the trophy board: the piece's title, `3 of 12 Silver`,
-one card per passage with its bars and progress, and the two goals **All Silver**
-and **All Gold**. Tapping a card selects that passage as a tile does and closes the
+**The board** slides up from the rail and covers the whole stage above it, without
+moving the music underneath; no staff is left sliced behind it. Its cards fill
+it: they are shared evenly between the rows (`boardColumns`: twelve passages are
+six and six), the rows share the height, and each card's icon is half the card.
+It is the table of contents and the trophy board: the piece's title, the two goals as
+counters (a silver coin with `3/12` and a gold coin with `1/12`, ticked when
+reached), and one card per passage with its state icon, its bars and, while it is
+under way, one mark per Silver step. Tapping a card selects that passage as a tile does and closes the
 board. Otherwise it closes with **Close** (or Escape). **Review a passage** appears
 in its header when a review is due.
 
-A goal reads `All Silver: earn a gem` only when a gem is really on offer: the Gem
+A counter adds `earn a gem` only when a gem is really on offer: the Gem
 Board (`GET /api/v1/earnings/gems`, asked when the board first opens) reports
 `mode: live`, lists this player as a learner, and carries a `piano-piece` rule that
 is not switched off for them. A guest, an unreadable Gem Board or a missing rule
-gets the plain goal. No gem picture is drawn in the player.
+gets the plain counter. No gem picture is drawn in the player.
 
-**Celebration.** When a passage turns Silver or Gold its tile flips with a short
-chime. When the whole piece turns Silver or Gold every tile flips in a wave, a
-banner sits above the rail (it covers no music the child is reading and leaves on a
-tap or after seven seconds) and a longer chime plays. The sound is synthesized on
-the player's WebAudio context (`passageChime.js`), best effort.
+The home strip above the piano menu draws the same icons and counters: one icon
+per passage of the child's piece in progress, with the next passage ringed.
 
-A celebration answers a **change seen while the player is open**: the first
-projection after the coach state and the practice record have both loaded is the
-baseline, and a later one counts only when a new take was recorded since. Opening
-a piece that is already Silver, or legacy credit arriving late, celebrates nothing,
-so a whole piece is celebrated once. A change earned inside Learn waits until the
-rail is back on screen.
+**Celebration.** Silver and Gold are celebrated on the drill screen, where they
+are earned (see [the drill screen](#the-drill-screen)). The score view shows the
+result and celebrates nothing: no banner, no sentence and no second chime. The
+chime is synthesized on the player's WebAudio context (`passageChime.js`), best
+effort. A tile's turn is held until the ceremony's verdict (`flipDelayMs`) and a
+finished piece turns its tiles as a wave (`wave`).
 
-Logs (`piano-score-player`, `piano-passage-celebration`, `piano-passage-board`):
+Logs (`piano-score-player`, `piano-passage-board`):
 `piano.learn.rail.select` (`passageId`, `source: rail|board`),
 `piano.learn.rail.practice` (`passageId`, `target: selected|next|gold|again`),
-`piano.learn.board.open`, `piano.learn.board.close`, `piano.learn.celebrate`
-(`scope: passage|piece`, `level`, `passages`, `sounded`), `piano.learn.gem-offer`.
+`piano.learn.board.open`, `piano.learn.board.close`, `piano.learn.gem-offer`.
+A page turn logs `score.page.turn` (see [The page](#the-page-whole-systems-in-every-mode)).
 
 ### Piece log and the piece gems
 
@@ -399,7 +555,8 @@ failure, never an extra wrong note.
 
 Notation, the assessment cursor and verdicts remain dominant in the lab. Wrong
 pitches reveal the still-owed keyboard notes until the cursor advances. **Pause**,
-**Start over**, **Change practice**, and **Back** remain visible. Pause freezes the
+**Start over** and **Back** remain visible (a lab outside the coached drill also
+keeps **Change practice**). Pause freezes the
 clock, miss windows and click; resume supplies a short count-in. Restart and
 setup changes affect the current take, preserving achievements. Save responses
 cannot replace the material of an active take or interrupt its verdict hold.
@@ -618,10 +775,9 @@ score (≥48px touch targets, replacing the older bracket-only markers as the
 range's visual boundary — the range tint band stays). A press that barely
 moves is a tap (arms the edge, same as the bar button); a press that moves is
 a drag, tracked sub-measure under the finger and committed to the nearest
-whole measure on release. Dragging near the top or bottom edge of the score's
-scroll container auto-scrolls, so a range can be dragged across a page without
-lifting the finger; the drag never hijacks the page scroll itself (pointer
-capture is scoped to the handle alone). Section starts render as snap markers
+whole measure on release. A drag stays on the page it started on (the score does
+not scroll); a range that runs past the page is set by turning the page and
+tapping the other end. Section starts render as snap markers
 while an endpoint is being armed or dragged, and rehearsal sections in the
 Loop sheet still offer a one-tap "loop this section" shortcut.
 
@@ -719,7 +875,7 @@ mixed-tempo run can't quietly overwrite a real personal best.
 **"Whole piece" means started at the top and played through**, at one tempo on
 one pair of hands. A run that begins from a tap-seek into the middle, or whose
 tempo or hands changed anywhere along the way — including while it was paused
-or waiting on a zoom/flow/key re-engrave — reaches the end of the piece but
+or waiting on a zoom/key re-engrave — reaches the end of the piece but
 banks nothing; the summary still shows its score. Pausing itself is fine:
 picking the same run back up at the same tempo on the same hands is still one
 whole-piece run. Because a best only ever improves, an inflated one would be
@@ -728,12 +884,13 @@ its reason in the log.
 
 ## Perform
 
-Zero chrome, by design — nothing on screen but the engraved page. The left
-pedal turns pages forward, the other back (config-driven CC numbers, rising-
-edge detected so a held pedal doesn't repeat-page); a tap can also scroll the
-page into view. There is no page indicator and no other control surface —
-mode-switching still works through the header's mode crumb, the one thing
-that's never hidden.
+Nothing on screen but the page and its turner: no transport bar, no cursor, no
+keyboard. The pedals turn one whole page: `advancePedalCC` forward and
+`backPedalCC` back (config-driven CC numbers, rising-edge detected so a held or
+continuous pedal turns once). The page turner's buttons and a swipe work as in
+every mode, and a tap on the lower half of the page turns forward, on the upper
+half back. Mode-switching still works through the header's mode crumb. Logs:
+`score.perform.pageturn` (`dir: fwd|back`, `by: pedal|tap`).
 
 ## Key transpose (Listen · Learn · Polish)
 
@@ -931,7 +1088,7 @@ pianos:
 Resolved (with defaults) by `sheetMusicConfig.resolveSheetMusicConfig`:
 ```yaml
 sheetmusic:
-  defaultMode: learn
+  defaultMode: listen   # optional; naming it turns off "open in Learn" (see Modes)
   perform: { advancePedalCC: 67, backPedalCC: 66 }
   scoring:
     silentMeasuresToStop: 4     # Polish auto-stop
@@ -1015,9 +1172,9 @@ during an active run so the judge and falling highway cannot jump timelines.
 | `HandsControl.jsx` | icon-only left/right-hand toggle, one semantic in every mode (grand-staff scores) |
 | `StaffDimLayer.jsx` | fades deselected staves by classing the engraving's own per-staff group |
 | `learnRange.js` | pure auto-range heuristic for the Learn landing (frontier → section → density → fallback) |
-| `passageRail.js` | pure rules for the passage rail and board: tiles, the button's target, the count, the celebration diff, the gem offer |
+| `passageRail.js` | pure rules for the passage rail and board: tiles, the button's target, the count, the goal counters, the gem offer |
 | `PassageRail.jsx` / `PassageBoard.jsx` / `PassageRail.scss` | the rail under the score and the board that slides over it |
-| `usePassageCelebration.js` / `passageChime.js` | the tile flip and whole-piece moment, and their sound |
+| `passageChime.js` | the chime for a passage or a whole piece turning Silver or Gold, played by the drill's ceremony |
 | `usePieceGemOffer.js` | asks the Gem Board whether a piece gem is on offer |
 | `server/application/PianoPieceLog.mjs` | dated whole-piece Silver and Gold, read by the `piano-piece` milestone |
 | `usePracticeRecord.js` / `practiceKey.js` | per-user practice-history hook + score-key/hands-bucket helpers |
@@ -1030,7 +1187,8 @@ during an active run so the judge and falling highway cannot jump timelines.
 | `RangeHandleLayer.jsx` | draggable in/out range handles on the score (tap-to-arm or drag) |
 | `../../transport/LoopGroup.jsx` | shared mark-in/mark-out/toggle/clear loop cluster (also used by the video chrome) |
 | `../../transport/ToggleSwitch.jsx` | shared switch primitive (View sheet's keyboard row) |
-| `ViewSheet.jsx` | layout/size/keyboard-visibility sheet (controls only, no metadata) |
+| `ViewSheet.jsx` | size/keyboard-visibility sheet (controls only, no metadata) |
+| `systemPaging.js` / `useSystemPaging.js` / `ScorePager.jsx` | the score as pages of whole systems: the cuts, the page that follows the cursor, and the turner |
 | `../../transport/` | shared transport primitives: the button, sheet shell, direct-pick step ladder, and the Key/Tempo/Volume sheets themselves |
 | `../../icons/Icon.jsx` | shared inline-SVG icon set for all chrome buttons |
 | `nearestEvent.js` | tap→note mapping used for cursor seek |

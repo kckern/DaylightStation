@@ -142,6 +142,54 @@ A provider actor stays explicitly attributed; shared project changes do not
 silently become the journal owner's actions. Incoming events never dispatch
 commands or reactivate the relevance overlay.
 
+## Web and system principals
+
+Besides the Telegram sender, the principal authority produces two more trusted
+principal kinds. Both are tracked in the same private trust set, so a copied or
+hand-built object grants nothing, and both are re-checked on every `verify`.
+
+- **Web** (`principal.web({ session: { username, sid }, requestId })`): the
+  owner's own login session. The authority itself asks the host's
+  `isActiveSession(sid, username)` (the app passes a check that the session row
+  exists in the auth session store *and* belongs to that username) and that the
+  user is enrolled in Work. Without an `isActiveSession` dependency no web
+  principal is ever produced. Revoking the session in Admin → Household →
+  Sessions stops a principal mid-flow, including at dispatch.
+- **System** (`principal.system({ username, job })`): an unattended job acting
+  for an enrolled user. `job` must be in `SYSTEM_JOBS` (`triage-overnight`). It
+  is not authored, and `WorkCommands` allows it only `complete`: anything else
+  is `denied` with `system_operation_not_allowed` before any provider read or
+  write, on both `propose` and `execute`.
+
+Neither kind has a Telegram source record. Their source is the request itself:
+at proposal the intent's `sourceReceipt` must be the principal's own receipt
+(it defaults to it), `auto` mode is refused, and the queued command is stamped
+with `sourcePlatform`. At execution only a principal of the same user and the
+same kind may execute it, so a web or system principal can never run a command
+queued from Telegram and a Telegram confirmation can never run one queued from
+the web or a job.
+
+Every web or system command still requires a confirmation. `decisions.confirmWeb`
+(web) and `decisions.confirmSystem` (system, `complete` only) take
+`{ principal, commandId, expectedVersion }` and return `{ confirmationId }`. The
+grant is single-use, expires after 5 minutes, and is bound to the username, the
+command (its full hash) and `expectedVersion`; a grant is refused at issue if the
+queued command's version already differs. Grants are held in memory: a restart
+only means the owner taps again. Telegram grants are unchanged.
+
+Callers outside Work that need to act on items (the triage pass) read them with
+`context.actionableItems({ username, asOf })`. It returns
+`{ items: [{ item, domainId, source, operations }], coverage }`: the same items
+`context.execute` returns, each with the first configured domain that holds it
+(the conversation path's rule), a display name for where it lives (`source`: its
+container's title, else the domain id) and the write operations a command could use on
+it now (provider capability, the domain's route, and this host being the
+writer; empty otherwise). Items in no domain are left out. It is read-only.
+
+Logs: `work.principal.web.captured|rejected`,
+`work.principal.system.captured|rejected` (with `reason`),
+`work.confirmation.granted`, and `work.command.denied` with `reason`.
+
 ## Attributed activity and linked KB outcomes
 
 Canonical provider occurrences project idempotently to `lifelog/work.yml`,

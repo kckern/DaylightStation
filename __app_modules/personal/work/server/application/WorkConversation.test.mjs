@@ -6,7 +6,7 @@ const resources = [];
 afterEach(async () => {
   for (const h of resources.splice(0)) await h.close();
 });
-function setup() {
+function setup(extra = {}) {
   const h = harness();
   resources.push(h);
   const state = h.make(),
@@ -38,6 +38,7 @@ function setup() {
     conversationId: dto.conversationId,
     messageId: '99',
     receiptId: 'receipt-1',
+    platform: 'telegram',
     sourceRevision: 'identity-v1',
     kind: 'text',
     authored: true,
@@ -147,7 +148,12 @@ function setup() {
     resolvePolicy: () => policy,
     scheduler,
     clock: () => now,
-    deliver
+    deliver,
+    describeProvider: () => ({
+      containerNoun: 'project',
+      assigneeField: 'single'
+    }),
+    ...extra
   });
   const save = () => service.onEntrySaved({
     principal,
@@ -162,6 +168,7 @@ function setup() {
     asOf: now
   });
   return {
+    trust: p => trusted.add(p),
     h,
     state,
     service,
@@ -376,4 +383,86 @@ it.each(['substring', 'duplicate'])('does not save ambiguous %s observations as 
     username: 'sample'
   });
   expect(Object.values(snapshot.sources)[0].observations).toHaveLength(0);
+});
+it('open refuses a non-Telegram principal', async () => {
+  const x = setup(),
+    web = Object.freeze({
+      ...x.principal,
+      platform: 'web',
+      kind: 'session',
+      sessionId: 'sid-1',
+      authored: true
+    });
+  x.trust(web);
+  await expect(x.service.open({
+    principal: web,
+    flow: 'tasks',
+    asOf: AS_OF
+  })).rejects.toThrow('WORK_PRINCIPAL_REQUIRED');
+  await expect(x.service.open({
+    principal: x.principal,
+    flow: 'create_task',
+    asOf: AS_OF
+  })).resolves.toMatchObject({
+    decisionId: null
+  });
+});
+it.each([['single', {
+  assigneeId: 'u1'
+}], ['multiple', {
+  assigneeIds: ['u1']
+}]])('shapes the create-task assignee as %s from the provider descriptor, not the provider type', async (assigneeField, expected) => {
+  const x = setup({
+    describeProvider: () => ({
+      containerNoun: 'project',
+      assigneeField
+    })
+  });
+  x.policy.providers.p.type = 'tasks-x';
+  x.policy.domains.personal.assigneeIds = ['u1'];
+  const target = item({
+    ref: {
+      provider: 'tasks-x',
+      accountId: 'personal',
+      kind: 'container',
+      id: 'sample-project'
+    }
+  });
+  x.context.getItem = async () => target;
+  x.setIntents([{
+    operation: 'create_task',
+    domainId: 'personal',
+    title: 'New thing',
+    quote: 'Create task New thing'
+  }]);
+  await x.save();
+  await x.advance(15 * 60000);
+  const source = Object.values((await x.state.read({
+    username: 'sample'
+  })).sources)[0];
+  const result = await x.service.applyFlowChoice({
+    principal: x.principal,
+    flowState: {
+      flowType: 'create_task',
+      offerId: source.intents[0].id,
+      sourceReceipt: source.id
+    },
+    choice: {
+      action: 'choose',
+      value: {
+        domainId: 'personal',
+        assigneeId: 'u1',
+        ref: target.ref,
+        expectedVersion: target.version
+      }
+    },
+    asOf: x.now()
+  });
+  expect(result.status).toBe('confirmation');
+  expect(x.commands.propose.mock.calls.at(-1)[0].intent.payload).toMatchObject(expected);
+});
+it('requires a provider descriptor function', () => {
+  expect(() => setup({
+    describeProvider: undefined
+  })).toThrow('Work provider descriptor required');
 });

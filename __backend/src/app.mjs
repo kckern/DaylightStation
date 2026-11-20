@@ -1,5 +1,7 @@
 import {hostname} from 'node:os';
 import {createKnowledgeRuntime,createAuthoredJournalEvidence,createJournalKnowledgeSource} from '../../__app_modules/personal/lifelog/server/knowledge-runtime.mjs';
+import { createTriageRuntime } from '../../__app_modules/personal/triage/server/composition.mjs';
+import { GoogleGmailClientFactory } from '#adapters/google/GoogleGmailClientFactory.mjs';
 import {createWorkRuntime,resolveWorkHarvestScope} from '../../__app_modules/personal/work/server/runtime.mjs';
 import {createConfiguredMigrationOwnership} from '../../__app_modules/household/agenda/server/composition.mjs';
 import {installParticipantRuntime} from './5_composition/participants/installedRuntime.mjs';
@@ -1358,7 +1360,10 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   });
 
   // Lifeplan domain
+  // Triage is built much later in boot; the coach's handle resolves it at call time.
+  let triageRuntime = null;
   const lifeplanResult = bootstrapLifeplan({
+    triage: { run: (input) => (triageRuntime ? triageRuntime.pass.run(input) : Promise.resolve({ skipped: 'not_ready' })) },
     dataPath: path.join(dataBasePath, 'users'),
     aggregator: lifelogServices.lifelogAggregator,
     notificationService: notificationStack.notificationService,
@@ -1947,7 +1952,7 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   const printersConfig = adaptersConfig.thermal_printers || {};
   const printerDefaults = adaptersConfig.thermal_printer_defaults || {};
 
-  const printerRegistry = new ThermalPrinterRegistry();
+  const printerRegistry = new ThermalPrinterRegistry({ logger: hardwareLogger });
   for (const [name, cfg] of Object.entries(printersConfig)) {
     if (!cfg?.host) {
       hardwareLogger.warn('thermalPrinter.skipNoHost', { name });
@@ -1964,13 +1969,17 @@ export async function createApp({ server, logger, configPaths, configExists, ena
       },
       { logger: hardwareLogger }
     );
-    printerRegistry.register(name, adapter, { isDefault: cfg.default === true });
+    // `fallback: [other]` routes a job this printer never took to the next one.
+    printerRegistry.register(name, adapter, {
+      isDefault: cfg.default === true,
+      fallback: Array.isArray(cfg.fallback) ? cfg.fallback : (cfg.fallback ? [cfg.fallback] : []),
+    });
   }
 
   const registeredPrinters = printerRegistry.list();
   if (registeredPrinters.length > 0) {
     const summary = registeredPrinters
-      .map(p => `${p.name} (${p.host}:${p.port}${p.isDefault ? ', default' : ''})`)
+      .map(p => `${p.name} (${p.host}:${p.port}${p.isDefault ? ', default' : ''}${p.fallback?.length ? `, then ${p.fallback.join(' > ')}` : ''})`)
       .join(', ');
     hardwareLogger.info('thermalPrinter.registered', { count: registeredPrinters.length, summary });
   } else {
@@ -3482,6 +3491,8 @@ const { readingSessions, readingSessionInterceptor } = await createSchoolReading
     getUserAuth:(service,username)=>configService.getUserAuth(service,username),getHouseholdAuth:service=>configService.getHouseholdAuth(service,householdId),send:knowledgeSend,
     knowledgeBridge:{applyProviderEvent:input=>knowledgeRuntime?.workBridge?knowledgeRuntime.workBridge.applyProviderEvent(input):Promise.resolve({applied:false,reason:knowledgeRuntime?'kb_disabled':'kb_starting',pending:!knowledgeRuntime})},
     harvesterService:harvesterServices.harvesterService,webhookSecret:systemBots.journalist?.telegram?.secret_token||'',
+    // Web principals (triage): the login session must be live AND belong to the user it claims.
+    isActiveSession:(sid,username)=>Boolean(sid)&&authSessionStore.list().some(row=>row.id===sid&&row.username===username),
     identityForSender:senderId=>{const username=userIdentityService.resolveUsername('telegram',senderId);if(!username)return null;try{return workIdentityForUser(username);}catch{return null;}},
     logger:rootLogger.child({app:'work',module:'coordination'}),
   });
@@ -3501,6 +3512,26 @@ const { readingSessions, readingSessionInterceptor } = await createSchoolReading
   for(const username of Object.keys(workConfiguration()?.work?.users??{}))await workRuntime.activities?.flush({username,asOf:Date.now()}).catch(error=>rootLogger.warn?.('work.activity.start-pending',{reason:error.code??'projection_failed'}));
   process.once('SIGTERM',()=>{void knowledgeRuntime.dispose().catch(error=>rootLogger.warn?.('lifelog.knowledge.dispose-failed',{reason:error.code??'shutdown_failed'}));});
   process.once('SIGTERM',()=>{void workRuntime.dispose().catch(error=>rootLogger.warn?.('work.dispose.failed',{reason:error.code??'shutdown_failed'}));});
+
+  triageRuntime = createTriageRuntime({
+    configuration: () => configService.getHouseholdAppConfig(householdId, 'triage') ?? {},
+    defaultUsername: configService.getHeadOfHousehold(),
+    isKnownUser: (username) => (configService.getHouseholdUsers(householdId) || [])
+      .map((u) => (typeof u === 'string' ? u : (u?.username || u?.userId || u?.name)))
+      .includes(username),
+    dataService, work: workRuntime,
+    createMailClient: new GoogleGmailClientFactory({ configService }).create,
+    decisionGateway: scopedGateway(decisionGateway, { app: 'life', feature: 'triage' }),
+    aiGateway: scopedGateway(sharedAiGateway, { app: 'life', feature: 'triage' }),
+    ownerName: (username) => { const p = configService.getUserProfile(username); return p?.display_name || p?.name || username; },
+    userTimezone: workTimezone,
+    // The schedule is registered below, once agentsServices.scheduler exists.
+    agentsScheduler: null, clock: Date.now,
+    logger: rootLogger.child({ app: 'triage' }),
+  });
+  await triageRuntime.start();
+  v1Routers.triage = triageRuntime.router;
+  process.once('SIGTERM', () => { void triageRuntime.dispose().catch((error) => rootLogger.warn?.('triage.dispose.failed', { reason: error.code ?? 'shutdown_failed' })); });
 
   const journalistServices = createJournalistServices({
     knowledgeRuntime,knowledgeSend,workRuntime,workSend:knowledgeSend,userTimezone:knowledgeTimezone,clock:Date.now,
@@ -3879,6 +3910,7 @@ const { readingSessions, readingSessionInterceptor } = await createSchoolReading
   registerHealthMaintenance({ healthServices, rootLogger, scheduler: agentsServices.scheduler });
 
   registerLifeplanMaintenance({ agentsServices, lifeplanResult, rootLogger });
+  triageRuntime.registerSchedule(agentsServices.scheduler);
 
   // Fitness recap sweep — safety net that recaps sessions ended via the common
   // paths (inactivity, closed tab, crash) that never fire a per-event trigger,

@@ -266,6 +266,7 @@ git rev-parse HEAD > {env.ops_docs}/docs-last-updated.txt
 | AI structured wire layer (TOON inside the gateway: classification, fallback, config) | `__docs/reference/core/ai-structured-wire-layer.md` |
 | OMR bubble-sheet reader (Chatsworth OMR-1100) | `__docs/reference/omr/README.md` |
 | Lifelog knowledge (verified loops, private reviews, question queue, default-off runtime) | `__docs/reference/lifelog/knowledge.md` |
+| Life triage (Now → guided Gmail + todo triage: never-auto rules, dry run vs live, login-bound writes, applying/in-doubt cards, undo log, `triage/config.yml`) | `__docs/reference/life/triage.md` |
 | Journalist domain (journaling bot) | `__docs/reference/journalist/journalist-domain.md` |
 | Quick-input intake (phone uploads to the Journalist and Nutribot: voice, text, photo routes; device binding, daily allowance, once-only processing, adding an intake to a bot) | `__docs/reference/core/quick-input.md` |
 | School / Portal homeschool | `__docs/reference/school/README.md` |
@@ -274,6 +275,7 @@ git rev-parse HEAD > {env.ops_docs}/docs-last-updated.txt
 | Reading log (physical books: child shelf, printed card, teacher admin, v2 store) | `__docs/reference/school/reading-log.md` |
 | Living-room reading sessions (card → launch card → book → credit; cold-wake delivery, mid-story adoption) | `__docs/reference/school/reading-sessions.md` |
 | School term grid (per-day verdicts, past-day replay, weekly cadence, household calendar) | `__docs/reference/school/term-grid.md` |
+| School makeup work (missed work made up later in the same week: `makeup:` config, spare-work ledger, read-time credit, `timeliness: makeup`, the makeup sheet, economy `makeupOpen`) | `__docs/reference/school/makeup-work.md` |
 | School day-off tiers (holiday tiers normal/stay-home/enrichment/major-holiday/away, `dayOffTiers` keep-lists, date-bound `onDays` units + placeholders, weekend scripture, Green Week vs Scripture coin) | `__docs/reference/school/day-off-tiers.md` |
 | School status board coins (coin cell → bank screen, coin ceremony, coin.mp3) | `__docs/reference/school/agenda-and-completion.md` |
 | School media lessons (living-room video/audio with hard comprehension checkpoints) | `__docs/reference/school/media-lessons.md` |

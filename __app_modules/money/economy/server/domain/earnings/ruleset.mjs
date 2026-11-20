@@ -100,6 +100,27 @@ export function normalizeReward(reward, field = 'reward') {
   return { silver: nonNegativeInt(reward.silver ?? 0, `${field}.silver`), gems: nonNegativeInt(reward.gems ?? 0, `${field}.gems`) };
 }
 
+/**
+ * The silver penalty for school work made up later in the week (School
+ * makeup, taxonomy D14), charged once per made-up day a line relies on:
+ * `{percent: P}` takes P% of what that day was worth to the line (a per-day
+ * rule: that day's pay; a weekly rule: the week's silver), `{silver: N}`
+ * takes N silver. Never below zero; gems are never taken, so a made-up Green
+ * Week keeps its gem. `null` is no penalty.
+ */
+export function normalizeMakeupPenalty(raw, field = 'makeup') {
+  if (raw == null) return null;
+  if (typeof raw !== 'object' || Array.isArray(raw)) fail(`${field} must be {percent} or {silver}`, field);
+  const keys = Object.keys(raw);
+  if (keys.length !== 1 || !['percent', 'silver'].includes(keys[0])) fail(`${field} must name exactly one of percent or silver`, field);
+  if (keys[0] === 'percent') {
+    const p = raw.percent;
+    if (!Number.isInteger(p) || p < 0 || p > 100) fail(`${field}.percent must be a whole number from 0 to 100`, `${field}.percent`);
+    return { percent: p };
+  }
+  return { silver: nonNegativeInt(raw.silver, `${field}.silver`) };
+}
+
 /** `{rings: N, silver: M}` — M silver per whole N rings. */
 function normalizeRate(rate, field) {
   if (rate == null) return { rings: 1, silver: 0 };
@@ -196,6 +217,9 @@ function normalizeRule(rule, i) {
   if (effective) out.effective = effective;
   const gem = normalizeGem(rule.gem, `${field}.gem`, rule.id);
   if (gem) out.gem = gem;
+  // A rule's own makeup penalty replaces the household one (`{percent: 0}`
+  // exempts the rule).
+  if (rule.makeup != null) out.makeup = normalizeMakeupPenalty(rule.makeup, `${field}.makeup`);
   if (rule.kind === 'ring-threshold') {
     out.rate = normalizeRate(rule.rate, `${field}.rate`);
     out.thresholds = normalizeThresholds(rule.thresholds, `${field}.thresholds`);
@@ -286,6 +310,8 @@ export function validateRuleset(doc) {
     revisedAt: doc.revisedAt ?? null,
     revisedBy: doc.revisedBy ?? null,
     currency: 'silver',
+    // Household-wide makeup penalty; see `normalizeMakeupPenalty`.
+    ...(doc.makeup != null ? { makeup: normalizeMakeupPenalty(doc.makeup, 'makeup') } : {}),
     rules,
     users: normalizeUsers(doc.users, ids),
   };

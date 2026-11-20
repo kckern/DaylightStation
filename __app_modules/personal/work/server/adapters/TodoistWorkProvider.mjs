@@ -19,6 +19,11 @@ const failed = response => response.status === 401 || response.status === 403 ? 
 }) : response.status >= 500 ? result('uncertain', 'provider_unavailable') : result('failed', 'provider_rejected');
 /** Cached observations and live, independently authorized command dispatch. */
 export class TodoistWorkProvider extends IWorkProvider {
+  /** Provider vocabulary the application layer reads instead of keying on a provider type. */
+  static descriptor = Object.freeze({
+    containerNoun: 'project',
+    assigneeField: 'single'
+  });
   #options;
   #client;
   #verify;
@@ -186,7 +191,7 @@ export class TodoistWorkProvider extends IWorkProvider {
     if (command.operation === 'reopen') return live.item.status?.category === 'open' && live.item.version !== command.expectedVersion;
     if (command.operation === 'archive_container') return live.item.archived === true;
     if (command.operation === 'rename_container') return live.item.title === command.payload.title;
-    if (command.operation === 'update_task') return Object.entries(command.payload).every(([key, value]) => key === 'title' ? live.item.title === value : key === 'description' ? live.item.description === value : key === 'dueDate' ? live.item.due?.date === value : key === 'assigneeId' ? live.item.assigneeIds.includes(value) : false);
+    if (command.operation === 'update_task') return Object.entries(command.payload).every(([key, value]) => key === 'title' ? live.item.title === value : key === 'description' ? live.item.description === value : key === 'dueDate' ? (live.item.due?.date ?? null) === value : key === 'assigneeId' ? live.item.assigneeIds.includes(value) : false);
     return false;
   }
   async execute({

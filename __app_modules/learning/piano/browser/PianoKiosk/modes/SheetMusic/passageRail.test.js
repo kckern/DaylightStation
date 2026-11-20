@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createCoachPlan, projectCoach, applyCoachEvent } from '../../../../../../../shared/music/learnCoach.mjs';
-import { celebrationBetween, certificationSnapshot, passageTile, pieceGemOffered, railFits, railModel } from './passageRail.js';
+import { boardColumns, passageTile, pieceGemOffered, railFits, railModel } from './passageRail.js';
 
 const segment = (index, bars = 4, parts = ['rh', 'lh']) => ({ id: `m${index * 4}-${index * 4 + bars - 1}`, inMeasure: index * 4, outMeasure: index * 4 + bars - 1,
   printedMeasures: [index * 4 + 1, index * 4 + bars], barLabel: `Bars ${index * 4 + 1}–${index * 4 + bars}`, playableParts: parts });
@@ -15,12 +15,17 @@ describe('passage rail model', () => {
   it('shows every passage by its printed starting bar, with its state', () => {
     const plan = planOf(3); let state = earn(plan, null, 'm0-3', 'silver', 'a');
     state = earn(plan, state, 'm4-7', 'right', 'b');
+    // One hand is still a tomato, with its step counted; both hands make a flower.
+    const started = model(plan, state);
+    expect(started.tiles[1]).toMatchObject({ state: 'todo', underway: true, steps: { done: 1, total: 4 }, label: 'Bars 5–8, Started, 1 of 4 steps' });
+    expect(started.tiles[2]).toMatchObject({ state: 'todo', underway: false, label: 'Bars 9–12, Not started' });
+    state = earn(plan, state, 'm4-7', 'left', 'b2');
     const rail = model(plan, state);
     expect(rail.tiles.map((tile) => [tile.startLabel, tile.state, tile.barCount])).toEqual([['1', 'silver', 4], ['5', 'learning', 4], ['9', 'todo', 4]]);
-    expect(rail.tiles[1]).toMatchObject({ steps: { done: 1, total: 4 }, label: 'Bars 5–8, Learning, 1 of 4 steps' });
+    expect(rail.tiles[1]).toMatchObject({ underway: true, steps: { done: 2, total: 4 }, label: 'Bars 5–8, Partway, 2 of 4 steps' });
     expect(rail.tiles[0].label).toBe('Bars 1–4, Silver');
     expect(rail.count).toEqual({ level: 'silver', done: 1, total: 3, text: '1/3', label: '1 of 3 Silver' });
-    expect(rail.summary).toBe('1 of 3 Silver');
+    expect(rail.goals).toEqual([{ level: 'silver', label: 'All Silver', done: 1, total: 3, reached: false }, { level: 'gold', label: 'All Gold', done: 0, total: 3, reached: false }]);
   });
 
   it('uses the printed number when the piece starts on a pickup bar', () => {
@@ -40,10 +45,10 @@ describe('passage rail model', () => {
     const plan = planOf(2); let state = earn(plan, null, 'm0-3', 'silver', 'a'); state = earn(plan, state, 'm4-7', 'silver', 'b');
     const silver = model(plan, state);
     expect(silver).toMatchObject({ buttonLabel: 'Go for Gold: bars 1–4', target: { passageId: 'm0-3', kind: 'gold' }, count: { level: 'gold', text: '0/2', label: '0 of 2 Gold' } });
-    expect(silver.goals).toEqual([{ level: 'silver', label: 'All Silver', reached: true }, { level: 'gold', label: 'All Gold', reached: false }]);
+    expect(silver.goals).toEqual([{ level: 'silver', label: 'All Silver', done: 2, total: 2, reached: true }, { level: 'gold', label: 'All Gold', done: 0, total: 2, reached: false }]);
     for (const [passage, ids] of [['m0-3', ['c', 'd']], ['m4-7', ['e', 'f']]]) for (const id of ids) state = earn(plan, state, passage, 'mastery', id);
     const gold = model(plan, state);
-    expect(gold).toMatchObject({ buttonLabel: 'Practice bars 1–4', target: { kind: 'again' }, count: { text: '2/2' }, summary: '2 of 2 Silver, 2 Gold' });
+    expect(gold).toMatchObject({ buttonLabel: 'Practice bars 1–4', target: { kind: 'again' }, count: { text: '2/2' } });
     expect(gold.goals.every((goal) => goal.reached)).toBe(true);
   });
 
@@ -58,32 +63,6 @@ describe('passage rail model', () => {
     expect(railFits(19, 900)).toBe(false);
     expect(railFits(40, 900)).toBe(false);
     expect(railFits(0, 900)).toBe(true);
-    expect(model(planOf(15), null).showWords).toBe(false);
-    expect(model(planOf(14), null).showWords).toBe(true);
-  });
-});
-
-describe('celebration between two projections', () => {
-  const plan = planOf(2);
-  const snap = (state) => certificationSnapshot(project(plan, state));
-  it('flips a passage that rose and finishes the piece exactly once', () => {
-    const one = earn(plan, null, 'm0-3', 'silver', 'a'); const two = earn(plan, one, 'm4-7', 'silver', 'b');
-    expect(celebrationBetween(snap(null), snap(one))).toEqual({ flips: { 'm0-3': 'silver' }, piece: null });
-    expect(celebrationBetween(snap(one), snap(two))).toEqual({ flips: { 'm4-7': 'silver' }, piece: 'silver' });
-    expect(celebrationBetween(snap(two), snap(two))).toEqual({ flips: {}, piece: null });
-    expect(celebrationBetween(snap(two), snap(earn(plan, two, 'm0-3', 'right', 'c')))).toEqual({ flips: {}, piece: null });
-  });
-  it('reports Gold over Silver when one take earns both', () => {
-    let state = earn(plan, null, 'm0-3', 'mastery', 'a'); state = earn(plan, state, 'm0-3', 'mastery', 'b');
-    expect(celebrationBetween(snap(null), snap(state)).flips).toEqual({ 'm0-3': 'gold' });
-    let all = earn(plan, state, 'm4-7', 'mastery', 'c'); const before = snap(all); all = earn(plan, all, 'm4-7', 'mastery', 'd');
-    expect(celebrationBetween(before, snap(all))).toEqual({ flips: { 'm4-7': 'gold' }, piece: 'gold' });
-  });
-  it('never celebrates a lost certificate or an empty piece', () => {
-    const one = earn(plan, null, 'm0-3', 'silver', 'a');
-    expect(celebrationBetween(snap(one), snap(null))).toEqual({ flips: {}, piece: null });
-    const empty = certificationSnapshot(null);
-    expect(celebrationBetween(empty, empty)).toEqual({ flips: {}, piece: null });
   });
 });
 
@@ -101,5 +80,17 @@ describe('gem offer', () => {
     expect(pieceGemOffered(board({ cells: { piano: { kid: { state: 'disabled', parts: [{ ruleId: 'piano-piece', state: 'disabled' }] } } } }), 'kid')).toBe(false);
     expect(pieceGemOffered(board({ cells: {} }), 'kid')).toBe(false);
     expect(pieceGemOffered(null, 'kid')).toBe(false);
+  });
+});
+
+describe('boardColumns', () => {
+  it('fills every row of the board evenly, so a row never ends in blank cells it could have shared', () => {
+    expect(boardColumns(4)).toBe(4);
+    expect(boardColumns(7)).toBe(7);
+    expect(boardColumns(12)).toBe(6);
+    expect(boardColumns(13)).toBe(7);
+    expect(boardColumns(15)).toBe(5);
+    expect(boardColumns(30)).toBe(8);
+    expect(boardColumns(0)).toBe(1);
   });
 });

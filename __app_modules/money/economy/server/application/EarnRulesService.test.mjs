@@ -91,4 +91,12 @@ describe('EarnRulesService', () => {
     const { service } = build(store);
     await expect(service.get()).rejects.toThrow(/kind/);
   });
+
+  it('replace keeps the makeup penalty unless the document names it', async () => {
+    const { service } = build();
+    const rules = [{ id: 'green-day', kind: 'day-met', reward: 3 }];
+    await service.replace({ doc: { rules, makeup: { percent: 25 } }, actorId: 'parent' });
+    expect((await service.replace({ doc: { rules }, actorId: 'parent' })).makeup).toEqual({ percent: 25 });
+    expect((await service.replace({ doc: { rules, makeup: null }, actorId: 'parent' })).makeup).toBeUndefined();
+  });
 });

@@ -22,7 +22,7 @@ vi.mock('./PianoConfig.jsx', () => ({
   }),
 }));
 vi.mock('./PianoUserContext.jsx', () => ({
-  usePianoUser: () => ({ currentUser: 'learner1', setCurrentUser: () => {} }),
+  usePianoUser: () => ({ currentUser: 'learner1', setCurrentUser: () => {}, users: [{ id: 'learner1', schoolLearner: true }, { id: 'parent1', schoolLearner: false }] }),
 }));
 vi.mock('./useSchoolGameAccess.js', () => ({
   default: () => schoolGate,

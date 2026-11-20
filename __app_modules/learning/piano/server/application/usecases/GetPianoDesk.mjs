@@ -66,6 +66,7 @@ export class GetPianoDesk {
     const next = projection.recommended;
     return {
       scoreId, scoreKey, practicedAt: latestActivity(record) || null,
+      cover: this.#datastore.sheetMusicCover?.(scoreId) ?? null,
       total: projection.piece.total, silver: projection.piece.silver, gold: projection.piece.gold,
       next: next ? { passageId: next.passageId, skill: next.skill, label: next.label, start: next.range.start, end: next.range.end } : null,
       nextGoldPassageId: projection.piece.nextGoldPassageId,

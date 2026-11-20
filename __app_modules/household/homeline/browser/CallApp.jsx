@@ -180,6 +180,9 @@ export default function CallApp() {
   const [hardConfirm, setHardConfirm] = useState(false);
   const [muted, setMuted] = useState({ audio: false, video: false });
   const [countdown, setCountdown] = useState(5);
+  // The far end's own picture shape, so its panel can be exactly that shape
+  // and the self-view keeps the rest (see `--connected` in CallApp.scss).
+  const [remoteAspect, setRemoteAspect] = useState(null);
   const resumeCheckedRef = useRef(false);
   const controller = useCallController({ peer, mediaStatus: media.status, remoteVideoRef });
   const { state } = controller;
@@ -244,7 +247,25 @@ export default function CallApp() {
         } else logger.error('media.playback.failed', { reason: error.name });
       });
     void play();
-    return () => clearTimeout(retry);
+    // `resize` fires when the sender changes resolution or rotates mid-call,
+    // not only on the first frame.
+    const measure = () => {
+      const { videoWidth: width, videoHeight: height } = element;
+      if (!width || !height) return;
+      setRemoteAspect(previous => {
+        const next = `${width} / ${height}`;
+        if (previous !== next) logger.info('media.remote.dimensions', { width, height });
+        return next;
+      });
+    };
+    element.addEventListener('loadedmetadata', measure);
+    element.addEventListener('resize', measure);
+    measure();
+    return () => {
+      clearTimeout(retry);
+      element.removeEventListener('loadedmetadata', measure);
+      element.removeEventListener('resize', measure);
+    };
   }, [logger, peer.remoteStream]);
 
   useEffect(() => { primaryActionRef.current?.focus(); }, [state.value, hardConfirm]);
@@ -288,7 +309,7 @@ export default function CallApp() {
 
   return (
     <AppThemeProvider pack="home">
-      <main style={{ '--u': layoutScale }}
+      <main style={{ '--u': layoutScale, ...(remoteAspect ? { '--remote-aspect': remoteAspect } : null) }}
         className={`call-app ${inCall ? 'call-app--connected' : active ? 'call-app--connecting' : 'call-app--lobby'}`}>
         {/* The caller's own camera is the surface, not a thumbnail parked in
             dead space. It fills everything the controls do not need, so the

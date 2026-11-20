@@ -32,25 +32,52 @@ export function pieceFocus(piece) {
 }
 
 /**
- * One card per child with something to show, newest first. A child's piece in
- * progress always wins; the server only offers pieces with a step earned, so a
- * piece someone merely opened never displaces their course.
+ * Up to two cards per child: the piece they are learning and their video
+ * course, side by side. Children are ordered by their latest activity. The
+ * server only offers pieces with a step earned, so a piece someone merely
+ * opened never gets a card.
  */
 export function stripCards({ pieces, courses }) {
   const ids = [...new Set([...(pieces ?? []).map((p) => p.userId), ...(courses ?? []).map((c) => c.userId)])];
-  return ids.flatMap((userId) => {
+  return ids.map((userId) => {
     const deskPlayer = pieces?.find((p) => p.userId === userId);
     const coursePlayer = courses?.find((c) => c.userId === userId);
     const piece = deskPlayer?.piece ?? null;
     const course = coursePlayer?.courses?.[0] ?? null;
-    if (!piece && !course) return [];
-    const pieceAt = piece?.practicedAt ?? '';
-    const courseAt = course?.lastPlayedAt ?? coursePlayer?.lastPlayedAt ?? '';
     const name = deskPlayer?.name ?? coursePlayer?.name ?? userId;
-    return piece
-      ? [{ userId, name, kind: 'piece', at: pieceAt, piece, focus: pieceFocus(piece) }]
-      : [{ userId, name, kind: 'course', at: courseAt, course }];
-  }).sort((a, b) => String(b.at).localeCompare(String(a.at)));
+    const cards = [];
+    if (piece) cards.push({ key: `${userId}:piece`, userId, name, kind: 'piece', at: piece.practicedAt ?? '', piece, focus: pieceFocus(piece) });
+    if (course) cards.push({ key: `${userId}:course`, userId, name, kind: 'course', at: course.lastPlayedAt ?? coursePlayer?.lastPlayedAt ?? '', course });
+    return { latest: cards.map((card) => String(card.at)).sort().at(-1) ?? '', cards };
+  }).filter((child) => child.cards.length)
+    .sort((x, y) => y.latest.localeCompare(x.latest))
+    .flatMap((child) => child.cards);
 }
+
+/** The strip's cards grouped by child, so one avatar and name heads each child's cards. */
+export function stripGroups(sources) {
+  const groups = [];
+  for (const card of stripCards(sources)) {
+    const group = groups.at(-1);
+    if (group?.userId === card.userId) group.cards.push(card);
+    else groups.push({ userId: card.userId, name: card.name, cards: [card] });
+  }
+  return groups;
+}
+
+/** Passage coin size in px: the row fills the card's 175px, never above 26px. */
+export const coinSize = (count) => {
+  const columns = mapColumns(count);
+  return Math.min(26, Math.floor((175 - (columns - 1) * 3) / columns));
+};
+
+/** A tomato nobody has started yet sits back, unless it is the one up next. */
+export const passageFaded = (passage, isCurrent) => !isCurrent && passage?.state === 'todo' && !(passage?.steps?.done > 0);
+
+/**
+ * How many coins across a piece's map: up to six sit in one row; a longer
+ * piece takes two equal rows.
+ */
+export const mapColumns = (count) => (count > 6 ? Math.ceil(count / 2) : Math.max(1, count));
 
 export const pieceCount = (piece) => `${piece.silver} of ${piece.total} Silver`;

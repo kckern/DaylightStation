@@ -395,7 +395,7 @@ Learn progress unlocks choices; it never removes them. Opening a segment, includ
 offers Right hand, Left hand, or Together with No beat, Keep a beat, or Play on time. Beat modes
 include an Extra slow 15% stage.
 
-The lab always exposes 64px-or-larger Pause/Resume, Start over, and Change practice controls.
+The lab always exposes 64px-or-larger Pause/Resume and Start over controls (and Change practice outside the coached drill, whose sets are its chooser).
 Pause freezes the assessment clock, MIDI observations, timeouts, misses, and click. Resume keeps
 the exact score position and gives a visible two-beat count-in. Restart and configuration changes
 discard only the active take; they do not bank a rep or record a failure.

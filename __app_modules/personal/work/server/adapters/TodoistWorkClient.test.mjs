@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { TodoistWorkClient } from './TodoistWorkClient.mjs';
+import { TodoistWorkClient, todoistRequest } from './TodoistWorkClient.mjs';
 const ref = {
   provider: 'todoist',
   accountId: 'personal',
@@ -167,4 +167,9 @@ it('checks a synchronous send guard after awaited credentials before mutation HT
     payload: {}
   })).rejects.toThrow();
   expect(httpClient.requestRaw).not.toHaveBeenCalled();
+});
+
+it('clears a due date through due_string when update_task carries dueDate null', () => {
+  const r = todoistRequest({ operation: 'update_task', ref: { provider: 'todoist', accountId: 'personal', kind: 'task', id: '1' }, payload: { dueDate: null } });
+  expect(r.body).toEqual({ due_string: 'no date' });
 });

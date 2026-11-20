@@ -50,6 +50,12 @@ piano-games gate reads, then through a fixed ladder:
 8. served everything asked → `met`; some → `partial`; none → `none`
 
 Work done on an exempt day still reads `met`: the calendar never un-serves.
+
+**Makeup** (`school.yml → makeup`, off by default) is the one exception to
+"a past day is settled": spare work done later in the same week, up to the
+deadline, is laid over the replayed rows on read and turns a missed section
+served, stamped `timeliness: makeup`. The cache keeps the raw replay. See
+[Makeup work](./makeup-work.md).
 A tier day that still asked for work (scripture on a stay-home day) reads
 `met` / `partial` / `none` like any other day.
 

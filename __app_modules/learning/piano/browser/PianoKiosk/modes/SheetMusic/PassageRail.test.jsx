@@ -1,5 +1,5 @@
 import { act, fireEvent, render, renderHook, screen, within } from '@testing-library/react';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { readFileSync } from 'fs';
 import { resolve } from 'path';
 
@@ -7,43 +7,54 @@ vi.mock('../../../../../../../frontend/src/lib/logging/Logger.js', () => {
   const logger = { info: vi.fn(), warn: vi.fn(), debug: vi.fn(), child: () => logger };
   return { default: () => logger, getLogger: () => logger };
 });
-const chime = vi.hoisted(() => ({ play: vi.fn(() => true) }));
-vi.mock('./passageChime.js', () => ({ playPassageChime: chime.play, default: chime.play }));
 const api = vi.hoisted(() => ({ call: vi.fn() }));
 vi.mock('../../../../../../../frontend/src/lib/api.mjs', () => ({ DaylightAPI: api.call }));
 
 import PassageRail from './PassageRail.jsx';
 import PassageBoard from './PassageBoard.jsx';
-import usePassageCelebration from './usePassageCelebration.js';
 import usePieceGemOffer from './usePieceGemOffer.js';
 import { railModel } from './passageRail.js';
 
 const segment = (index, state, done = 0) => ({ id: `p${index}`, inMeasure: index * 4, outMeasure: index * 4 + 3, barLabel: `Bars ${index * 4 + 1}–${index * 4 + 4}`,
   printedMeasures: [index * 4 + 1, index * 4 + 4],
   certification: { silver: state === 'silver' || state === 'gold' ? { at: 'x' } : null, gold: state === 'gold' ? { at: 'x' } : null },
+  flower: state === 'learning',
   skills: Array.from({ length: 4 }, (_, step) => ({ track: 'silver', ready: state === 'silver' || state === 'gold' || step < done, successes: 0 })) });
 const projectionOf = (segments, recommended) => ({ segments, recommended: recommended ? { passageId: recommended } : null,
   piece: { total: segments.length, silver: segments.filter((item) => item.certification.silver).length, gold: segments.filter((item) => item.certification.gold).length,
     nextGoldPassageId: segments.find((item) => !item.certification.gold)?.id ?? null } });
 const modelOf = (segments, recommended, selectedId = null) => railModel({ segments, projection: projectionOf(segments, recommended), selectedId });
 const widthOf = (px) => vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(px);
-afterEach(() => { vi.restoreAllMocks(); chime.play.mockClear(); api.call.mockReset(); });
+afterEach(() => { vi.restoreAllMocks(); api.call.mockReset(); });
 
 describe('PassageRail', () => {
   const four = [segment(0, 'gold'), segment(1, 'silver'), segment(2, 'learning', 2), segment(3, 'todo')];
 
   it('shows every passage by starting bar with its state, and never the word Segment', () => {
     widthOf(900);
-    render(<PassageRail model={modelOf(four, 'p2')} />);
+    render(<PassageRail model={modelOf(four, 'p2')} onPractice={vi.fn()} />);
     const rail = screen.getByRole('navigation', { name: 'Passages in this piece' });
     const tiles = within(rail).getAllByRole('listitem').map((item) => within(item).getByRole('button'));
-    expect(tiles.map((tile) => [tile.textContent, tile.dataset.state])).toEqual([['1gold', 'gold'], ['5silver', 'silver'], ['9', 'learning'], ['13', 'todo']]);
-    expect(tiles[2].querySelectorAll('i[data-done="true"]')).toHaveLength(2);
-    expect(tiles[2].querySelectorAll('i')).toHaveLength(4);
+    expect(tiles.map((tile) => [tile.textContent, tile.dataset.state])).toEqual([['1', 'gold'], ['5', 'silver'], ['9', 'learning'], ['13', 'todo']]);
+    // A passage is its icon: a gold coin, a silver coin, a flower, a tomato.
+    expect(tiles.map((tile) => tile.querySelector('svg').getAttribute('class') + (tile.querySelector('svg').dataset.metal ?? ''))).toEqual(['coin-icongold', 'coin-iconsilver', 'flower-icon', 'tomato-icon']);
     expect(tiles[2]).toHaveAttribute('aria-current', 'step');
     expect(rail.textContent).not.toMatch(/Segment/);
     expect(screen.getByRole('button', { name: 'Practice bars 9–12' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '2 of 4 Silver. Open the passage board' })).toHaveTextContent('2/4');
+    expect(screen.getByRole('button', { name: '2 of 4 Silver. Open the passage board' }).querySelector('.coin-icon[data-metal="silver"]')).not.toBeNull();
+  });
+
+  it('is only the map and the count when the host has its own controls', () => {
+    widthOf(900);
+    const onSelect = vi.fn();
+    render(<PassageRail model={modelOf(four, null, 'p1')} onSelect={onSelect} />);
+    const rail = screen.getByRole('navigation', { name: 'Passages in this piece' });
+    expect(rail).toHaveAttribute('data-bare', 'true');
+    expect(rail.querySelector('.piano-passage-rail__go')).toBeNull();
+    expect(within(rail).getAllByRole('listitem')).toHaveLength(4);
+    fireEvent.click(screen.getByRole('button', { name: 'Bars 13–16, Not started' }));
+    expect(onSelect).toHaveBeenCalledWith('p3');
   });
 
   it('selects on a tile tap and practices only from the button', () => {
@@ -81,23 +92,41 @@ describe('PassageRail', () => {
     expect(onSelect).not.toHaveBeenCalled();
   });
 
-  it('flips the tiles that were just earned and shows the whole-piece moment', () => {
+  it('turns the tiles that were just earned, held until the ceremony announces them', () => {
     widthOf(900);
     const done = [segment(0, 'silver'), segment(1, 'silver')];
-    const onDismissPiece = vi.fn();
-    render(<PassageRail model={modelOf(done, null)} flips={{ p0: 'silver', p1: 'silver' }} piece="silver" onDismissPiece={onDismissPiece} />);
-    expect(screen.getByRole('button', { name: 'Bars 1–4, Silver' })).toHaveAttribute('data-flip', 'silver');
-    expect(screen.getByRole('status')).toHaveTextContent('Your whole piece is Silver!');
-    expect(screen.getByRole('button', { name: 'Go for Gold: bars 1–4' })).toHaveAttribute('data-kind', 'gold');
-    fireEvent.click(screen.getByRole('status'));
-    expect(onDismissPiece).toHaveBeenCalled();
+    render(<PassageRail model={modelOf(done, null)} flips={{ p0: 'silver' }} flipDelayMs={1200} />);
+    const earned = screen.getByRole('button', { name: 'Bars 1–4, Silver' });
+    expect(earned).toHaveAttribute('data-flip', 'silver');
+    expect(earned.style.getPropertyValue('--turn-delay')).toBe('1200ms');
+    // The earned tile's icon turns over: the flower leaves and the silver coin lands.
+    const turn = earned.querySelector('.piano-passage-turn');
+    expect([...turn.children].map((icon) => icon.getAttribute('class') + (icon.dataset.metal ?? ''))).toEqual(['flower-icon', 'coin-iconsilver']);
+    expect(screen.getByRole('button', { name: 'Bars 5–8, Silver' }).querySelector('.piano-passage-turn')).toBeNull();
   });
 
-  it('carries state without opacity and never uses the coin icon', () => {
+  it('turns a finished piece as a wave, with no banner and no sentence', () => {
+    widthOf(900);
+    const done = [segment(0, 'silver'), segment(1, 'silver'), segment(2, 'silver')];
+    render(<PassageRail model={modelOf(done, null)} flips={{ p0: 'silver', p1: 'silver', p2: 'silver' }} flipDelayMs={1000} wave onPractice={vi.fn()} />);
+    const delays = screen.getAllByRole('button', { name: /Bars .*, Silver/ }).map((tile) => parseInt(tile.style.getPropertyValue('--turn-delay'), 10));
+    expect(delays).toEqual([1000, 1045, 1090]);
+    expect(screen.queryByRole('status')).toBeNull();
+    expect(screen.queryByText(/whole piece/i)).toBeNull();
+    expect(screen.getByRole('button', { name: 'Go for Gold: bars 1–4' })).toHaveAttribute('data-kind', 'gold');
+  });
+
+  it('writes the turn delay into the animation itself, so a later rule cannot reset it', () => {
+    const source = readFileSync(resolve(__dirname, 'PassageRail.scss'), 'utf8');
+    expect(source.match(/animation: piano-passage-turn-(out|in) [^;]*var\(--turn-delay, 0ms\)[^;]*;/g)).toHaveLength(2);
+    expect(source).not.toMatch(/animation-delay/);
+  });
+
+  it('carries state without opacity, and draws it with the one passage icon', () => {
     const source = readFileSync(resolve(__dirname, 'PassageRail.scss'), 'utf8');
     expect(source).not.toMatch(/opacity\s*:/);
     expect(source).not.toMatch(/transparent|rgba\(|filter\s*:/);
-    for (const file of ['PassageRail.jsx', 'PassageBoard.jsx']) expect(readFileSync(resolve(__dirname, file), 'utf8')).not.toMatch(/CoinIcon/);
+    for (const file of ['PassageRail.jsx', 'PassageBoard.jsx']) expect(readFileSync(resolve(__dirname, file), 'utf8')).toMatch(/PassageCoin/);
   });
 });
 
@@ -107,21 +136,37 @@ describe('PassageBoard', () => {
     render(<PassageBoard title="Minuet in G" model={modelOf(four, 'p2')} gemOffered onClose={vi.fn()} />);
     const board = screen.getByRole('dialog', { name: 'Passage board' });
     expect(within(board).getByRole('heading', { name: 'Minuet in G' })).toBeInTheDocument();
-    expect(within(board).getByText('2 of 4 Silver, 1 Gold')).toBeInTheDocument();
-    expect(within(board).getByRole('list', { name: 'Goals for this piece' })).toHaveTextContent('All Silver: earn a gemAll Gold: earn a gem');
-    expect(within(board).getByRole('button', { name: 'Bars 9–12, Learning, 2 of 4 steps' })).toHaveTextContent('Bars 9–122 of 4 steps');
-    expect(within(board).getByRole('button', { name: 'Bars 9–12, Learning, 2 of 4 steps' })).toHaveAttribute('aria-current', 'step');
-    expect(within(board).getByRole('button', { name: 'Bars 1–4, Gold' })).toHaveAttribute('data-state', 'gold');
+    const goals = within(board).getByRole('list', { name: 'Goals for this piece' });
+    expect(goals).toHaveTextContent('2/4earn a gem1/4earn a gem');
+    expect(within(goals).getByRole('listitem', { name: 'All Silver: 2 of 4, earn a gem' })).toBeInTheDocument();
+    expect(board.querySelector('p')).toBeNull();
+    const partway = within(board).getByRole('button', { name: 'Bars 9–12, Partway, 2 of 4 steps' });
+    expect(partway).toHaveTextContent('Bars 9–12');
+    expect(partway.querySelector('.flower-icon')).not.toBeNull();
+    expect(partway.querySelectorAll('i[data-done="true"]')).toHaveLength(2);
+    expect(partway.querySelectorAll('i')).toHaveLength(4);
+    expect(partway).toHaveAttribute('aria-current', 'step');
+    expect(within(board).getByRole('button', { name: 'Bars 1–4, Gold' }).querySelector('.coin-icon[data-metal="gold"]')).not.toBeNull();
+    expect(within(board).getByRole('button', { name: 'Bars 13–16, Not started' }).querySelector('.tomato-icon')).not.toBeNull();
+    expect(within(board).getByRole('button', { name: 'Bars 13–16, Not started' }).querySelectorAll('i')).toHaveLength(0);
+    expect(within(board).getByRole('list', { name: 'Goals for this piece' }).querySelectorAll('.coin-icon')).toHaveLength(2);
     expect(within(board).queryByRole('button', { name: 'Review a passage' })).not.toBeInTheDocument();
+  });
+
+  it('shares its cards evenly between the rows', () => {
+    const twelve = Array.from({ length: 12 }, (_, index) => segment(index, 'todo'));
+    render(<PassageBoard title="T" model={modelOf(twelve, null)} onClose={vi.fn()} />);
+    expect(screen.getByRole('dialog', { name: 'Passage board' }).querySelector('.piano-passage-board__cards').style.gridTemplateColumns).toBe('repeat(6, minmax(0, 1fr))');
   });
 
   it('promises a gem only when one is on offer, and marks a reached goal done', () => {
     const silver = [segment(0, 'silver'), segment(1, 'silver')];
     const { rerender } = render(<PassageBoard title="T" model={modelOf(silver, null)} onClose={vi.fn()} />);
-    expect(screen.getByRole('list', { name: 'Goals for this piece' })).toHaveTextContent('All Silver: doneAll Gold');
+    expect(screen.getByRole('list', { name: 'Goals for this piece' })).toHaveTextContent('2/20/2');
+    expect(screen.getByRole('listitem', { name: 'All Silver: done' })).toHaveAttribute('data-reached', 'true');
     expect(screen.queryByText(/gem/)).not.toBeInTheDocument();
     rerender(<PassageBoard title="T" model={modelOf(silver, null)} gemOffered onClose={vi.fn()} />);
-    expect(screen.getByRole('list', { name: 'Goals for this piece' })).toHaveTextContent('All Silver: doneAll Gold: earn a gem');
+    expect(screen.getByRole('list', { name: 'Goals for this piece' })).toHaveTextContent('2/20/2earn a gem');
   });
 
   it('selects from a card, reviews, and closes only by its control or Escape', () => {
@@ -135,54 +180,6 @@ describe('PassageBoard', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Close' }));
     fireEvent.keyDown(window, { key: 'Escape' });
     expect(onClose).toHaveBeenCalledTimes(2);
-  });
-});
-
-describe('usePassageCelebration', () => {
-  beforeEach(() => vi.useFakeTimers());
-  afterEach(() => vi.useRealTimers());
-  const none = projectionOf([segment(0, 'todo'), segment(1, 'silver')]);
-  const all = projectionOf([segment(0, 'silver'), segment(1, 'silver')]);
-  const run = (props) => renderHook((current) => usePassageCelebration(current), { initialProps: { scopeKey: 'kid:score:f', ready: true, visible: true, scoreId: 'score', ...props } });
-
-  it('celebrates nothing for a piece that is already finished when it loads', () => {
-    const hook = run({ ready: false, projection: projectionOf([]), evidenceId: null });
-    hook.rerender({ scopeKey: 'kid:score:f', ready: true, visible: true, projection: all, evidenceId: 'old' });
-    expect(hook.result.current).toMatchObject({ flips: {}, piece: null });
-    expect(chime.play).not.toHaveBeenCalled();
-  });
-
-  it('waits for the rail, then flips the passage and celebrates the piece once', () => {
-    const hook = run({ projection: none, evidenceId: 'a' });
-    hook.rerender({ scopeKey: 'kid:score:f', ready: true, visible: false, projection: all, evidenceId: 'b' });
-    expect(hook.result.current.piece).toBeNull();
-    hook.rerender({ scopeKey: 'kid:score:f', ready: true, visible: true, projection: all, evidenceId: 'b' });
-    expect(hook.result.current).toMatchObject({ flips: { p0: 'silver', p1: 'silver' }, piece: 'silver' });
-    expect(chime.play).toHaveBeenCalledWith({ level: 'silver', piece: true });
-    act(() => { vi.advanceTimersByTime(8000); });
-    expect(hook.result.current).toMatchObject({ flips: {}, piece: null });
-    hook.rerender({ scopeKey: 'kid:score:f', ready: true, visible: true, projection: { ...all }, evidenceId: 'c' });
-    expect(hook.result.current.piece).toBeNull();
-    expect(chime.play).toHaveBeenCalledTimes(1);
-  });
-
-  it('flips one passage without the whole-piece moment', () => {
-    const before = projectionOf([segment(0, 'todo'), segment(1, 'todo'), segment(2, 'todo')]);
-    const after = projectionOf([segment(0, 'silver'), segment(1, 'todo'), segment(2, 'todo')]);
-    const hook = run({ projection: before, evidenceId: null });
-    hook.rerender({ scopeKey: 'kid:score:f', ready: true, visible: true, projection: after, evidenceId: 'a' });
-    expect(hook.result.current).toMatchObject({ flips: { p0: 'silver' }, piece: null });
-    expect(chime.play).toHaveBeenCalledWith({ level: 'silver', piece: false });
-  });
-
-  it('ignores a change with no new take, and another player or score', () => {
-    const hook = run({ projection: none, evidenceId: 'a' });
-    hook.rerender({ scopeKey: 'kid:score:f', ready: true, visible: true, projection: all, evidenceId: 'a' }); // legacy credit arrived late
-    expect(hook.result.current.piece).toBeNull();
-    hook.rerender({ scopeKey: 'other:score:f', ready: true, visible: true, projection: none, evidenceId: 'z' });
-    hook.rerender({ scopeKey: 'kid:score:f', ready: true, visible: true, projection: all, evidenceId: 'b' });
-    expect(hook.result.current).toMatchObject({ flips: {}, piece: null });
-    expect(chime.play).not.toHaveBeenCalled();
   });
 });
 

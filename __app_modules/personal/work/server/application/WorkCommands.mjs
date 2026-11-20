@@ -11,6 +11,10 @@ const outcome = (value, reason) => ({
   retryAfter: null
 });
 const terminal = new Set(['applied', 'conflict', 'denied', 'failed']);
+// Web (owner's login session) and system (unattended job) principals carry their own source:
+// the authority re-checks the session/job on every verify, so no Telegram source record exists.
+const OWN_SOURCE = new Set(['web', 'system']);
+const SYSTEM_OPERATIONS = new Set(['complete']);
 /** External effects occur only after the canonical log records a dispatch attempt. */
 export class WorkCommands {
   #state;
@@ -72,8 +76,16 @@ export class WorkCommands {
   }
   #actor(principal) {
     const actor = this.#verify(principal);
-    if (!actor?.authored) throw workError('WORK_PRINCIPAL_REQUIRED');
+    // A system principal is trusted but not authored; it is held to SYSTEM_OPERATIONS below.
+    if (!actor || !(actor.authored || actor.platform === 'system' && actor.authored === false)) throw workError('WORK_PRINCIPAL_REQUIRED');
     return actor;
+  }
+  #deny(reason, operation = null) {
+    this.#logger?.warn?.('work.command.denied', {
+      reason,
+      operation
+    });
+    return outcome('denied', reason);
   }
   #provider(record) {
     const p = this.#policy(record.command.username).providers?.[this.#policy(record.command.username).domains?.[record.command.domainId]?.provider];
@@ -93,6 +105,15 @@ export class WorkCommands {
     })?.[record.command.operation] === true;
   }
   async #source(principal, record, asOf) {
+    const p = this.#verify(principal);
+    if (OWN_SOURCE.has(p?.platform)) {
+      if (record.intent?.mode === 'auto') return false;
+      if (p.platform === 'system' && !SYSTEM_OPERATIONS.has(record.command?.operation ?? record.intent?.operation)) return false;
+      // Proposal: the intent must be this request's own. Execution: same user, same kind of sender.
+      return record.command ? record.command.username === p.username && record.sourcePlatform === p.platform : record.intent?.sourceReceipt === p.receiptId;
+    }
+    // Telegram sources never authorize a command a web or system principal queued.
+    if (record.sourcePlatform) return false;
     if (typeof this.#context.verifySource !== 'function') return false;
     return (await this.#context.verifySource({
       principal,
@@ -109,6 +130,11 @@ export class WorkCommands {
     const actor = this.#actor(principal),
       username = actor.username,
       policy = this.#policy(username);
+    if (actor.platform === 'system' && !SYSTEM_OPERATIONS.has(intent?.operation)) return this.#deny('system_operation_not_allowed', typeof intent?.operation === 'string' ? intent.operation : null);
+    if (OWN_SOURCE.has(actor.platform) && intent && intent.sourceReceipt === undefined) intent = {
+      ...intent,
+      sourceReceipt: actor.receiptId
+    };
     if (!(await this.#source(principal, {
       intent,
       command: null
@@ -167,6 +193,9 @@ export class WorkCommands {
       policyRevision: policy.revision,
       intent: structuredClone(intent),
       sourceActorReceipt: actor.receiptId,
+      ...(OWN_SOURCE.has(actor.platform) ? {
+        sourcePlatform: actor.platform
+      } : {}),
       destination: structuredClone(target),
       display: {
         title: item.title,
@@ -255,7 +284,7 @@ export class WorkCommands {
     try {
       actor = this.#actor(principal);
     } catch {
-      return outcome('denied', 'principal_required');
+      return this.#deny('principal_required');
     }
     const username = actor.username;
     let record,
@@ -265,18 +294,20 @@ export class WorkCommands {
         username
       });
       record = initial.commands[commandId];
-      if (!initial.health.available || !record) return outcome('denied', 'command_unavailable');
+      if (!initial.health.available || !record) return this.#deny('command_unavailable');
+      // Checked before anything else about the record: no provider effect for a system principal outside complete.
+      if (actor.platform === 'system' && !SYSTEM_OPERATIONS.has(record.command.operation)) return this.#deny('system_operation_not_allowed', record.command.operation);
       if (terminal.has(record.status)) return record.result;
       if (record.status === 'dispatching' || record.status === 'uncertain') return outcome('uncertain', 'reconciliation_required');
-      if (!this.#allowed(record) || !(await this.#source(principal, record, asOf))) return outcome('denied', 'route_or_source_revoked');
+      if (!this.#allowed(record) || !(await this.#source(principal, record, asOf))) return this.#deny('route_or_source_revoked', record.command.operation);
       if (record.requiresConfirmation) {
         if (typeof this.#context.verifyConfirmation !== 'function' || !(await this.#context.verifyConfirmation({
           principal,
           command: record.command,
           confirmationId,
           asOf
-        }))) return outcome('denied', 'bound_confirmation_required');
-      } else if (actor.receiptId !== record.sourceActorReceipt) return outcome('denied', 'wrong_source_principal');
+        }))) return this.#deny('bound_confirmation_required', record.command.operation);
+      } else if (actor.receiptId !== record.sourceActorReceipt) return this.#deny('wrong_source_principal', record.command.operation);
       let reserved = false;
       const state = await this.#change(username, 'dispatch:' + commandId, asOf, current => {
         reserved = false;

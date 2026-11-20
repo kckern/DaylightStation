@@ -12,7 +12,8 @@ function logger() {
 
 /**
  * TodaysLessonGate — what the kiosk menu becomes while a learner still owes
- * their assigned piano lesson: one card, one thing to do.
+ * their assigned piano lesson: one card, one thing to do. The card is the
+ * lesson's picture, its title and Start; it carries no description.
  *
  * It REPLACES the tile grid rather than greying it out. That is deliberately
  * not the curfew treatment (which disables tiles in place and explains why):
@@ -91,21 +92,25 @@ export default function TodaysLessonGate({
     );
   }
 
+  // Arcade standard: the course poster, then the lesson's name over its still,
+  // with a play disc on the still. The whole card is the button, and nothing on
+  // it is there only to be read.
   return (
     <section className="piano-lesson-gate">
-      {lesson?.thumbnail && (
-        <img className="piano-lesson-gate__thumb" src={lesson.thumbnail} alt="" role="presentation" />
-      )}
-      <p className="piano-lesson-gate__eyebrow">Today&apos;s lesson</p>
-      <p className="piano-lesson-gate__context">
-        {course?.title}{unit?.title ? ` · ${unit.title}` : ''}
-      </p>
-      <h2 className="piano-lesson-gate__title">{lesson?.title}</h2>
-      {lesson?.description && (
-        <p className="piano-lesson-gate__description">{lesson.description}</p>
-      )}
-      <button type="button" className="piano-lesson-gate__start" onClick={onLaunch}>
-        Start today&apos;s lesson
+      <button type="button" className="piano-lesson-gate__start" aria-label={`Start today's lesson: ${lesson?.title ?? ''}`} onClick={onLaunch}>
+        {course?.thumbnail && (
+          <img className="piano-lesson-gate__poster" src={course.thumbnail} alt="" decoding="async" />
+        )}
+        <span className="piano-lesson-gate__side">
+          <strong className="piano-lesson-gate__title">{lesson?.title}</strong>
+          {/* The way in is a play disc on the lesson's still, never a slab of a button. */}
+          <span className="piano-lesson-gate__still">
+            {lesson?.thumbnail && <img className="piano-lesson-gate__thumb" src={lesson.thumbnail} alt="" decoding="async" />}
+            <span className="piano-lesson-gate__play" aria-hidden="true">
+              <svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z" fill="currentColor" /></svg>
+            </span>
+          </span>
+        </span>
       </button>
     </section>
   );

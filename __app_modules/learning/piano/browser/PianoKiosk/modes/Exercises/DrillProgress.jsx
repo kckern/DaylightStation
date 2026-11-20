@@ -60,20 +60,27 @@ function Pill({ state, progress }) {
   );
 }
 
-function Cluster({ step, isCurrent, noteProgress, labels }) {
+function Cluster({ step, isCurrent, noteProgress, labels, onPick = null }) {
   const required = step.requirement?.required_passes ?? 1;
   const banked = Math.min(step.pass_count ?? 0, required);
   const done = step.passed;
   const label = labels ? (step.display?.key ?? step.title ?? '') : '';
   const badge = labels ? (HAND_BADGE[step.display?.hand] ?? null) : null;
+  // A host may name a set with a picture (a hand, a metronome, the coin the set
+  // earns). The words stay as the set's accessible name.
+  const icon = labels ? (step.display?.icon ?? null) : null;
 
+  // A host whose sets can be chosen (a passage's steps) makes each one a button.
+  const Tag = onPick ? 'button' : 'div';
+  const pick = onPick ? { type: 'button', 'aria-label': step.title ?? label, 'aria-current': isCurrent ? 'step' : undefined, onClick: () => onPick(step) } : {};
+  const named = icon && !onPick ? { role: 'group', 'aria-label': step.title ?? label } : {};
   return (
-    <div className="drill-cluster" data-active={isCurrent || undefined} data-done={done || undefined}>
+    <Tag className="drill-cluster" data-active={isCurrent || undefined} data-done={done || undefined} {...named} {...pick}>
       {/* A SET WITH NOTHING TO SAY SAYS NOTHING. A reading deck declares no
           label on purpose — naming the pitch under a staff a child is being
           asked to read hands them the answer — and an empty label row here
           would still have reserved its line and its gap. */}
-      {(badge || label) && (
+      {icon ? <div className="drill-cluster__label drill-cluster__label--icon" aria-hidden="true">{icon}</div> : (badge || label) && (
         <div className="drill-cluster__label">
           {badge && <span className="drill-cluster__badge">{badge}</span>}
           {label && <span>{label}</span>}
@@ -88,7 +95,7 @@ function Cluster({ step, isCurrent, noteProgress, labels }) {
       <div className="drill-cluster__rollup">
         <i style={{ width: `${(done ? required : banked) / required * 100}%` }} />
       </div>
-    </div>
+    </Tag>
   );
 }
 
@@ -116,7 +123,7 @@ function Cluster({ step, isCurrent, noteProgress, labels }) {
 export default function DrillProgress({
   programId, stepId, userId, program: suppliedProgram = null,
   noteProgress = 0, phase = 'playing', reloadKey = 0, fallback = null, labels = true,
-  onPlacard = null,
+  onPlacard = null, onPick = null,
 }) {
   const [fetched, setFetched] = useState(null);
   // A host that supplies a projection OWNS it — including when it changes. The
@@ -206,6 +213,7 @@ export default function DrillProgress({
             isCurrent={step.id === current?.id}
             noteProgress={noteProgress}
             labels={labels}
+            onPick={onPick}
           />
         ))}
       </div>

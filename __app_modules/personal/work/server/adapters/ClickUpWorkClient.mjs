@@ -1,3 +1,4 @@
+import moment from 'moment-timezone';
 import { validateWorkRef } from '../domain/workModel.mjs';
 export const CLICKUP_WORK_OPERATIONS = Object.freeze(['read', 'transition', 'complete', 'reopen', 'create_task', 'update_task', 'archive_task', 'delete_task', 'create_container', 'rename_container']);
 const invalid = () => {
@@ -8,7 +9,8 @@ const title = value => typeof value === 'string' && value.trim() && value.length
 export function clickUpRequest({
   operation,
   ref,
-  payload = {}
+  payload = {},
+  timezone = null
 }) {
   if (!CLICKUP_WORK_OPERATIONS.includes(operation) || !payload || typeof payload !== 'object' || Array.isArray(payload)) invalid();
   if (ref) {
@@ -24,12 +26,13 @@ export function clickUpRequest({
     complete: ['status'],
     reopen: ['status'],
     create_task: ['title', 'description', 'containerId', 'assigneeIds'],
-    update_task: ['title', 'description'],
+    update_task: ['title', 'description', 'dueDate'],
     create_container: ['title', 'parentId'],
     rename_container: ['title']
   }[operation] ?? [];
   if (Object.keys(payload).some(k => !fields.includes(k))) invalid();
   if ((create || operation === 'rename_container') && !title(payload.title) || payload.title !== undefined && !title(payload.title) || payload.description !== undefined && (typeof payload.description !== 'string' || payload.description.length > 16384) || operation === 'update_task' && !Object.keys(payload).length) invalid();
+  if (payload.dueDate !== undefined && payload.dueDate !== null && (typeof payload.dueDate !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(payload.dueDate) || !moment(payload.dueDate, 'YYYY-MM-DD', true).isValid() || typeof timezone !== 'string' || !moment.tz.zone(timezone))) invalid();
   if (['transition', 'complete', 'reopen'].includes(operation) && !title(payload.status)) invalid();
   if (operation === 'create_task' && !opaque(payload.containerId) || operation === 'create_container' && !opaque(payload.parentId)) invalid();
   if (payload.assigneeIds !== undefined && (!Array.isArray(payload.assigneeIds) || !payload.assigneeIds.every(id => typeof id === 'string' && /^\d+$/.test(id) && Number.isSafeInteger(Number(id))))) invalid();
@@ -42,6 +45,10 @@ export function clickUpRequest({
     description: 'description',
     status: 'status'
   })) if (Object.hasOwn(payload, key)) body[wire] = payload[key];
+  if (Object.hasOwn(payload, 'dueDate')) {
+    body.due_date = payload.dueDate === null ? null : moment.tz(payload.dueDate, 'YYYY-MM-DD', timezone).valueOf();
+    body.due_date_time = false;
+  }
   if (operation === 'archive_task') body.archived = true;
   if (operation === 'create_task') {
     body.check_required_custom_fields = true;
@@ -59,17 +66,20 @@ export class ClickUpWorkClient {
   #auth;
   #clock;
   #canSend;
+  #timezone;
   constructor({
     httpClient,
     getUserAuth,
     clock,
-    canSend = () => true
+    canSend = () => true,
+    timezone = () => null
   }) {
     if (typeof httpClient?.requestRaw !== 'function' || typeof getUserAuth !== 'function' || typeof clock !== 'function') throw new TypeError('ClickUp work transport dependencies required');
     this.#http = httpClient;
     this.#auth = getUserAuth;
     this.#clock = clock;
     this.#canSend = canSend;
+    this.#timezone = timezone;
   }
   async request({
     username,
@@ -81,7 +91,8 @@ export class ClickUpWorkClient {
     const request = clickUpRequest({
       operation,
       ref,
-      payload
+      payload,
+      timezone: typeof payload?.dueDate === 'string' && typeof username === 'string' ? this.#timezone(username) : null
     });
     if (typeof username !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(username)) invalid();
     const auth = await this.#auth('clickup', username);

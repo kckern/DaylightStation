@@ -91,6 +91,7 @@ const LAUNCH_OUTCOMES = Object.freeze({
 export class RunSelfServiceAction {
   #resolver; #sessions; #issue; #media; #remediation; #donow; #close; #launchers; #companions; #companionHandlers;
   #newSessionId; #clock; #logger; #tokens; #mountAcknowledgements; #mountReceiptIssuer;
+  #printMakeupAgenda;
 
   /**
    * @param {object} deps
@@ -117,6 +118,8 @@ export class RunSelfServiceAction {
    *   below: absent, codes simply are not spent — the panel keeps working and
    *   the cap is the thing that stops applying, which is the right direction
    *   for a missing dependency to fail.
+   * @param {import('./PrintMakeupAgenda.mjs').PrintMakeupAgenda} [deps.printMakeupAgenda]
+   *   prints the makeup sheet for a typed `makeup_print` code's Print button
    * @param {() => string} [deps.newSessionId]
    * @param {() => Date} [deps.clock]
    * @param {object} [deps.logger]
@@ -131,6 +134,7 @@ export class RunSelfServiceAction {
     issueDocument = null, dispatchMedia = null, openRemediation = null,
     donow = null, closeSessionOutcome = null, launchers = new Map(), companions = null, companionHandlers = null,
     tokens = null, mountAcknowledgements = false, mountReceiptIssuer = null,
+    printMakeupAgenda = null,
     newSessionId = () => `ses_${shortId(8)}`,
     clock = () => new Date(), logger = console,
   } = {}) {
@@ -150,6 +154,7 @@ export class RunSelfServiceAction {
     this.#launchers = launchers instanceof Map ? launchers : new Map();
     this.#companions = companions;
     this.#companionHandlers = companionHandlers;
+    this.#printMakeupAgenda = printMakeupAgenda;
     this.#newSessionId = newSessionId;
     this.#clock = clock;
     this.#logger = logger;
@@ -330,6 +335,10 @@ export class RunSelfServiceAction {
       return this.#bulkPrint(resolution);
     }
 
+    if (resolution?.kind === 'makeup_print' && kind === 'print') {
+      return this.#makeupPrint(resolution);
+    }
+
     if (!NEEDS_SESSION.has(kind) || resolution?.kind !== 'move') {
       // Only reachable if `offeredActions` grows a kind this file has not been
       // taught. Say something rather than fall off the end.
@@ -391,6 +400,26 @@ export class RunSelfServiceAction {
    */
   async #print(sessionId) {
     return printSessionSheet({ issueDocument: this.#issue, sessionId, logger: this.#logger });
+  }
+
+  /**
+   * The makeup sheet, recomputed at the press (`PrintMakeupAgenda`): a subject
+   * made up between the card and the tap is not printed.
+   */
+  async #makeupPrint({ learnerId }) {
+    if (!this.#printMakeupAgenda) return { outcome: 'failed', sentence: TELL_A_GROWN_UP };
+    let result;
+    try {
+      result = await this.#printMakeupAgenda.execute({ learnerId });
+    } catch (error) {
+      this.#logger.error?.('school.selfservice.makeup.print-failed', { learnerId, error: error?.message ?? String(error) });
+      return { outcome: 'failed', sentence: 'The printer did not answer. Try that again in a minute.' };
+    }
+    if (result?.printed) return { outcome: 'done', sentence: 'Printing your makeup sheet.', sessionId: null, effect: result };
+    if (result?.reason === 'nothing_to_make_up') {
+      return { outcome: 'refused', sentence: 'Nothing to make up. Well done!', sessionId: null, effect: result };
+    }
+    return { outcome: 'failed', sentence: 'The printer did not answer. Try that again in a minute.', sessionId: null, effect: result };
   }
 
   /**

@@ -1,6 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, waitFor } from '@testing-library/react';
 import fourBars from './__fixtures__/fourBars.musicxml?raw';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 
 /**
  * The engraver is DOUBLED here, and that is not a shortcut taken to move
@@ -31,6 +33,8 @@ const h = vi.hoisted(() => ({
   engravedXml: null,
   systems: 1,
   scales: [],
+  /** Whether each engraving was asked to justify its last system. */
+  stretches: [],
 }));
 
 /** A notehead the engraver would have produced, attached so classes are findable. */
@@ -53,10 +57,11 @@ const fourBarSteps = () => [60, 62, 64, 65, 67, 69, 71, 72].map((midi, index) =>
 vi.mock("../../../../../../../__capabilities/music-notation/browser/renderers/MusicXmlRenderer.jsx", async () => {
   const { useEffect } = await import('react');
   return {
-    MusicXmlRenderer: ({ musicXml, scale = 1, onLayout, onReady, onFailed, children }) => {
+    MusicXmlRenderer: ({ musicXml, scale = 1, stretchLastSystem = false, onLayout, onReady, onFailed, children }) => {
       useEffect(() => {
         h.engravedXml = musicXml;
         h.scales.push(scale);
+        h.stretches.push(stretchLastSystem);
         if (!musicXml) return;
         // The real renderer's terminal failure: it raises its placeholder and
         // NEVER calls onLayout. That is the exact state real OSMD reaches under
@@ -86,7 +91,7 @@ vi.mock("../../../../../../../__capabilities/music-notation/browser/renderers/Mu
         // ref precisely so an unstable error callback can never re-trigger an
         // engrave. The double mirrors that contract.
         // eslint-disable-next-line react-hooks/exhaustive-deps
-      }, [musicXml, onLayout, onReady, scale]);
+      }, [musicXml, onLayout, onReady, scale, stretchLastSystem]);
       return <div data-testid="engraver" className="musicxml-renderer"><div className="musicxml-renderer__svg" />{children}</div>;
     },
   };
@@ -128,6 +133,7 @@ beforeEach(() => {
   h.engravedXml = null;
   h.systems = 1;
   h.scales = [];
+  h.stretches = [];
   h.steps = fourBarSteps();
 });
 
@@ -199,6 +205,29 @@ describe('ScorePassage layout fitting', () => {
 
     await waitFor(() => expect(onExpectation).toHaveBeenCalled());
     expect(h.scales).toEqual(expect.arrayContaining([1, 0.67]));
+  });
+
+  it('justifies the last system of a two-system passage before publishing, so the second line is never half blank', async () => {
+    h.systems = 2;
+    const onExpectation = vi.fn();
+    renderPassage({ onExpectation });
+
+    await waitFor(() => expect(onExpectation).toHaveBeenCalled());
+    expect(h.stretches).toEqual([false, true]);
+    expect(onExpectation).toHaveBeenCalledTimes(1);
+  });
+
+  it('leaves a one-system passage unstretched: it is scaled up to its stage instead', async () => {
+    const onExpectation = vi.fn();
+    renderPassage({ onExpectation });
+
+    await waitFor(() => expect(onExpectation).toHaveBeenCalled());
+    expect(h.stretches).toEqual([false]);
+  });
+
+  it('gives the engraver wrapper the whole stage, so a tall engraving is fitted and never cropped', () => {
+    const scss = readFileSync(resolve(__dirname, 'Exercises.scss'), 'utf8');
+    expect(scss).toMatch(/\.musicxml-renderer__svg > div\s*\{[^}]*height: 100%/);
   });
 
   it('reports a passage that cannot fit two systems at the minimum readable scale', async () => {

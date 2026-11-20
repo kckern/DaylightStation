@@ -52,8 +52,10 @@ export function repCardCopy({ score, setIndex, setCount, repIndex, repCount, set
   };
 }
 
-export default function RepInterstitial({ score = null, setIndex, setCount, repIndex, repCount, setClear = false, next = null, onDone }) {
-  const copy = repCardCopy({ score, setIndex, setCount, repIndex, repCount, setClear, next });
+export default function RepInterstitial({ score = null, setIndex, setCount, repIndex, repCount, setClear = false, next = null, copy: hostCopy = null, onDone }) {
+  // A host whose rep is not a set of a program (a passage's recovery drill)
+  // hands the three lines down; the card and its timing are the same.
+  const copy = hostCopy ?? repCardCopy({ score, setIndex, setCount, repIndex, repCount, setClear, next });
 
   // Armed once, on mount — the same rule as GateCeremony, for the same reason:
   // the gate re-renders on every MIDI note, and a timer keyed on a fresh

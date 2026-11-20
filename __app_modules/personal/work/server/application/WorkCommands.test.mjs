@@ -671,3 +671,201 @@ it('durably advances read-only reconciliation time so bounded refreshes can rota
   })).commands[proposed.command.id].lastReconciledAt).toBe(AS_OF + 2000);
   expect(x.provider.execute).toHaveBeenCalledTimes(1);
 });
+describe('web and system principals', () => {
+  async function withPrincipals() {
+    const x = await setup();
+    const trusted = new Set([x.principal]);
+    const own = patch => {
+      const p = Object.freeze({
+        username: 'sample',
+        receivedAt: AS_OF,
+        ...patch
+      });
+      trusted.add(p);
+      return p;
+    };
+    const system = own({
+      platform: 'system',
+      kind: 'job',
+      job: 'triage-overnight',
+      receiptId: 'system:triage-overnight:1',
+      authored: false
+    });
+    const web = own({
+      platform: 'web',
+      kind: 'session',
+      sessionId: 'sid',
+      receiptId: 'req-1',
+      authored: true
+    });
+    const logs = [];
+    x.provider.getItem = vi.fn(x.provider.getItem);
+    const service = new WorkCommands({
+      state: x.state,
+      providers: new Map([['["todoist","personal"]', x.provider]]),
+      context: {
+        ...x.context,
+        verifySource: vi.fn(async () => true),
+        verifyConfirmation: vi.fn(async () => true)
+      },
+      resolvePolicy: () => x.policy,
+      verifyPrincipal: p => trusted.has(p) ? p : null,
+      clock: () => AS_OF,
+      logger: {
+        info() {},
+        warn: (event, data) => logs.push([event, data])
+      }
+    });
+    const dispatchChecks = [];
+    x.provider.execute = vi.fn(async ({
+      command
+    }) => {
+      dispatchChecks.push(await service.verifyDispatch({
+        username: 'sample',
+        command,
+        asOf: AS_OF
+      }));
+      return {
+        outcome: 'applied',
+        ref,
+        item: item({
+          status: {
+            native: 'done',
+            category: 'done'
+          },
+          completedAt: AS_OF,
+          version: 'done-v2'
+        }),
+        observation: x.event,
+        reason: null,
+        retryAfter: null
+      };
+    });
+    return {
+      ...x,
+      service,
+      system,
+      web,
+      logs,
+      dispatchChecks
+    };
+  }
+  const manual = (patch = {}) => ({
+    domainId: 'personal',
+    operation: 'complete',
+    ref,
+    payload: {},
+    mode: 'manual',
+    ...patch
+  });
+  it('denies a system principal proposing update_task before any provider read', async () => {
+    const x = await withPrincipals();
+    const result = await x.service.propose({
+      principal: x.system,
+      intent: manual({
+        operation: 'update_task',
+        payload: {
+          title: 'x'
+        }
+      }),
+      asOf: AS_OF
+    });
+    expect(result).toMatchObject({
+      outcome: 'denied',
+      reason: 'system_operation_not_allowed'
+    });
+    expect(x.provider.getItem).not.toHaveBeenCalled();
+    expect(x.logs).toContainEqual(['work.command.denied', {
+      reason: 'system_operation_not_allowed',
+      operation: 'update_task'
+    }]);
+  });
+  it('lets a system principal propose and, with a confirmation, execute complete', async () => {
+    const x = await withPrincipals();
+    const proposed = await x.service.propose({
+      principal: x.system,
+      intent: manual(),
+      asOf: AS_OF
+    });
+    expect(proposed.requiresConfirmation).toBe(true);
+    expect(proposed.command.sourceReceipt).toBe(x.system.receiptId);
+    // The Telegram source checker is never consulted for a system or web principal.
+    const result = await x.service.execute({
+      principal: x.system,
+      commandId: proposed.command.id,
+      confirmationId: 'confirm.system.1',
+      asOf: AS_OF
+    });
+    expect(result.outcome).toBe('applied');
+    expect(x.provider.execute).toHaveBeenCalledTimes(1);
+    expect(x.dispatchChecks).toEqual([true]);
+  });
+  it('refuses auto mode and a foreign source receipt for web and system principals', async () => {
+    const x = await withPrincipals();
+    await expect(x.service.propose({
+      principal: x.system,
+      intent: manual({
+        mode: 'auto',
+        statement: 'I finished Contact Sample'
+      }),
+      asOf: AS_OF
+    })).rejects.toThrow('WORK_SOURCE_REQUIRED');
+    await expect(x.service.propose({
+      principal: x.web,
+      intent: manual({
+        sourceReceipt: 'someone-else'
+      }),
+      asOf: AS_OF
+    })).rejects.toThrow('WORK_SOURCE_REQUIRED');
+  });
+  it('denies a system principal executing a non-complete command, and crossing between sender kinds', async () => {
+    const x = await withPrincipals();
+    x.policy.providers.p.operations.push('update_task');
+    const caps = x.provider.capabilities;
+    x.provider.capabilities = () => ({
+      ...caps(),
+      update_task: true
+    });
+    const webUpdate = await x.service.propose({
+      principal: x.web,
+      intent: manual({
+        operation: 'update_task',
+        payload: {
+          title: 'Renamed'
+        }
+      }),
+      asOf: AS_OF
+    });
+    expect((await x.service.execute({
+      principal: x.system,
+      commandId: webUpdate.command.id,
+      confirmationId: 'c',
+      asOf: AS_OF
+    })).reason).toBe('system_operation_not_allowed');
+    const telegram = await x.service.propose({
+      principal: x.principal,
+      intent: x.intent,
+      asOf: AS_OF
+    });
+    // A web principal cannot execute a command queued from Telegram ...
+    expect((await x.service.execute({
+      principal: x.web,
+      commandId: telegram.command.id,
+      confirmationId: 'c',
+      asOf: AS_OF
+    })).reason).toBe('route_or_source_revoked');
+    const webComplete = await x.service.propose({
+      principal: x.web,
+      intent: manual(),
+      asOf: AS_OF
+    });
+    // ... and a Telegram principal cannot execute one queued from the web.
+    expect((await x.service.execute({
+      principal: x.principal,
+      commandId: webComplete.command.id,
+      confirmationId: 'c',
+      asOf: AS_OF
+    })).reason).toBe('route_or_source_revoked');
+    expect(x.provider.execute).not.toHaveBeenCalled();
+  });
+});
