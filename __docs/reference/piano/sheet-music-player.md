@@ -330,17 +330,39 @@ the drill. It draws no practice screen of its own.
   turns with it. It lasts 7.6 seconds (`PIECE_CEREMONY_MS`). Silver parts onto
   `Next: Go for Gold`; Gold parts onto the piece's title. The screen then returns
   to the score, which celebrates nothing itself.
-- **A miss** leaves the drill's result panel in the keyboard's place: the coach's
-  short verdict (`Almost on your own`, `Bar 2 is the tricky spot`), the take's
-  numbers, and the next moves: the smaller practice the coach recommends after two
-  misses (`Practice bar 2`, `Practice the left hand`, `Try a little slower · 75%`),
-  **Try again**, and **Come back to this later** when it is on offer. Playing any
-  key also tries again.
+- **A miss** opens the drill's result as a card over the run
+  (`ExerciseRun resultPresentation="overlay"`). The run's rows never change
+  when a take ends, so the score does not move or resize under the child. The
+  card holds the coach's short verdict (`Almost on your own`,
+  `Bar 2 is the tricky spot`), the take's numbers, and the next moves. The
+  primary button is large (at least 7rem tall) and is the smaller practice the
+  coach recommends after two misses (`Practice bar 2`, `Practice the left hand`,
+  `Try a little slower · 75%`), otherwise **Try again**. **Come back to this
+  later** follows when it is on offer. **Releasing the keys and playing any key
+  takes the primary button** (`onResultContinue`), and the card says so
+  ("play any key to practice bar 2"), so a child never has to reach for the
+  glass to take the help. `piano.exercise-retry` logs `via: 'piano'` with
+  `action: 'host'` (the coach's primary) or `'repeat'` (a run with no host
+  action).
 - **Listen** demonstrates the step's bars and parts in the same chrome with one
   control, **Stop listening**, and records nothing.
 - **Rail and board.** The same rail as the score view sits under the drill, with
   this passage outlined and no practice button. A tile opens that passage; the
   count opens the board over the drill, and a card opens its passage.
+
+**Verdict marks** (✓ ◂ ▸ ○ ×) hang off the noteheads, on the side away from
+the stem: under a stem-up note, above a stem-down one (`verdictAnchor` in
+`Exercises/ScorePassage.jsx`). Placed under the whole stavenote group they sat
+under the stem tip, and the passage's ink-fitted viewBox cut off the ones under
+low notes. The viewBox keeps two staff spaces of air above and below the ink
+(`passageLayout.js`) so a mark beside the highest or lowest notehead fits.
+
+**Timing on the slowed steps.** The 50 / 60 / 75% timed steps grade with
+`placementFullCreditShare: 0.6` (`learnPracticeRequirement` in `LearnLab.jsx`):
+full placement credit reaches 60% of each note's window instead of 40%. The
+pass bar (placement 0.8) and the window itself do not change, and a note
+outside its window still earns nothing. Score tempo (Gold), test-out and
+untimed steps keep the 0.4 curve. See `performance-assessment.md`.
 
 The engraved passage is contained in the stage at every size: the passage,
 renderer, the engraver's own wrapper around its SVG, and the SVG each hold one

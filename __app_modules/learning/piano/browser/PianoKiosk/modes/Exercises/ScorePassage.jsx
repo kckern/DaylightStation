@@ -519,30 +519,57 @@ const VERDICT_KIND = Object.freeze({ hit: 'hit', early: 'early', late: 'late', l
 const VERDICT_MARK = Object.freeze({ hit: '\u2713', early: '\u25C2', late: '\u25B8', unplayed: '\u25CB', wrong: '\u00D7' });
 
 /**
- * A ◂/▸ tick under an engraved note, in its SVG's own coordinates (the same
- * screen-to-user mapping the cursor uses). Returns the inserted element, or
- * null where there is no geometry (happy-dom, a detached note).
+ * A verdict mark (✓ ◂ ▸ ○ ×) beside an engraved note, in its SVG's own
+ * coordinates (the same screen-to-user mapping the cursor uses). Returns the
+ * inserted element, or null where there is no geometry (happy-dom, a detached
+ * note).
+ *
+ * `el` is the engraver's whole stavenote group: noteheads, stem and flag. The
+ * mark is placed off the NOTEHEADS, on the side away from the stem. Placed
+ * under the group's box, a stem-down note's mark sat under the stem tip,
+ * three and a half spaces below the note it judged and past the bottom of a
+ * low note's stave, where the passage's ink-fitted viewBox cut it off.
  */
 function verdictMark(el, side) {
   if (!VERDICT_MARK[side]) return null;
   const svg = el?.ownerSVGElement;
   const matrix = svg?.getScreenCTM?.();
   if (!matrix) return null;
-  const bounds = el.getBoundingClientRect();
-  if (!bounds.width || !bounds.height) return null;
+  const { bounds, stemDown } = verdictAnchor(el);
+  if (!bounds) return null;
   const point = svg.createSVGPoint();
-  point.x = bounds.left + bounds.width / 2; point.y = bounds.bottom;
+  point.x = bounds.left + bounds.width / 2; point.y = stemDown ? bounds.top : bounds.bottom;
   const at = point.matrixTransform(matrix.inverse());
   const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
   text.setAttribute('class', `piano-score-passage__drift piano-score-passage__drift--${side}`);
   text.setAttribute('x', at.x);
-  text.setAttribute('y', at.y + 12);
+  text.setAttribute('y', stemDown ? at.y - 3 : at.y + 12);
   text.setAttribute('text-anchor', 'middle');
   text.setAttribute('font-size', 12);
   text.setAttribute('aria-hidden', 'true');
   text.textContent = VERDICT_MARK[side];
   svg.appendChild(text);
   return text;
+}
+
+/**
+ * Where a verdict mark hangs: the union of the group's noteheads (falling back
+ * to the whole group when the engraver drew none we can find), and whether its
+ * stem points down, so the mark goes above the heads instead of onto the stem.
+ */
+export function verdictAnchor(el) {
+  const rect = (node) => { const box = node?.getBoundingClientRect?.(); return box && box.width && box.height ? box : null; };
+  const heads = [...(el?.querySelectorAll?.('.vf-notehead') ?? [])].map(rect).filter(Boolean);
+  const whole = rect(el);
+  const bounds = heads.length ? heads.reduce((acc, box) => ({
+    left: Math.min(acc.left, box.left), right: Math.max(acc.right, box.right),
+    top: Math.min(acc.top, box.top), bottom: Math.max(acc.bottom, box.bottom),
+  }), { left: Infinity, right: -Infinity, top: Infinity, bottom: -Infinity }) : whole;
+  if (!bounds) return { bounds: null, stemDown: false };
+  const sized = { ...bounds, width: bounds.right - bounds.left, height: bounds.bottom - bounds.top };
+  const stem = rect(el?.querySelector?.('.vf-stem'));
+  const stemDown = Boolean(heads.length && stem && (stem.top + stem.bottom) / 2 > (sized.top + sized.bottom) / 2);
+  return { bounds: sized, stemDown };
 }
 
 /** The owed note, when something else was played. */

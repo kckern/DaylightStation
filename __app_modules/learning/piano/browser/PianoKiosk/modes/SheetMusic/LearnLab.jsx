@@ -41,14 +41,34 @@ export function learnDrillProjection(segment, rung) {
 export function learnPracticeRequirement(rung) {
   const criteria = { ...(rung.criteria || {}) };
   if (rung.mode === 'free' && criteria.cleanliness == null) criteria.cleanliness = 0.8;
+  const policy = {
+    ...((rung.effectiveParts?.length ?? 0) > 1 ? { requireConcurrentOnset: true } : {}),
+    ...(learningTempoRung(rung) ? { placementFullCreditShare: LEARNING_PLACEMENT_SHARE } : {}),
+  };
   return {
     mode: rung.mode,
     rubric: { id: 'sheet-music-learn-passage', version: '2', criteria },
-    ...((rung.effectiveParts?.length ?? 0) > 1 ? { policy: { requireConcurrentOnset: true } } : {}),
+    ...(Object.keys(policy).length ? { policy } : {}),
   };
 }
 
-export default function LearnLab({ score, revision, segment, segments = {}, rung, creditRung = rung, tempo = {}, feedback = SHEET_MUSIC_DEFAULTS.learn.feedback, launchSource = 'recommended', creditEligible = true, startOnReady = false, coachingTask = null, drill = null, card = null, ceremony = null, onCardDone, notice = null, extraControls = null, resultLabel = null, resultActions = null, onPickStep = null, onListen = null, onStarted, onOutcome, onRecord, onClose, onChangePractice, onRungPassed, onMastered, onFinished, onUnavailable }) {
+/**
+ * The slowed timed steps (50 / 60 / 75%) are where a child learns to play with
+ * the click, and they were grading a steady 190 ms lag at 84 bpm (a quarter of
+ * a beat, every note inside its window) as a fail. Full credit there reaches
+ * 60% of each note's window instead of 40%; a note outside the window still
+ * earns nothing. Score tempo (Gold) and test-out keep the strict curve.
+ * ops:docs/_wip/audits/2026-11-20-sheetmusic-learn-take-ux-audit.md
+ */
+const LEARNING_PLACEMENT_SHARE = 0.6;
+function learningTempoRung(rung) {
+  if (rung.mode !== 'cued') return false;
+  if (rung.mastery === true || rung.completion === 'tested-out' || rung.id === 'mastery' || rung.id === 'test-out') return false;
+  const percent = Number(rung.tempoPercent);
+  return Number.isFinite(percent) && percent < 100;
+}
+
+export default function LearnLab({ score, revision, segment, segments = {}, rung, creditRung = rung, tempo = {}, feedback = SHEET_MUSIC_DEFAULTS.learn.feedback, launchSource = 'recommended', creditEligible = true, startOnReady = false, coachingTask = null, drill = null, card = null, ceremony = null, onCardDone, notice = null, extraControls = null, resultLabel = null, resultActions = null, resultContinueLabel = null, onResultContinue = null, onPickStep = null, onListen = null, onStarted, onOutcome, onRecord, onClose, onChangePractice, onRungPassed, onMastered, onFinished, onUnavailable }) {
   const logger = useMemo(() => getLogger().child({ component: 'piano-learn-lab' }), []);
   const reactRunId = useId();
   const runIdRef = useRef(`learn-${reactRunId.replace(/[^a-z0-9_-]/gi, '')}`);
@@ -241,7 +261,7 @@ export default function LearnLab({ score, revision, segment, segments = {}, rung
       persistInterrupted={false} persistAssessment={!coachingTask}
       scoreCursorPolicy="always" keyboardHintPolicy={coachingTask?.assist === 'none' ? 'never' : 'after-wrong'}
       incompleteAfterMs={coachingTask?.assist === 'none' && coachingTask.stallSeconds ? coachingTask.stallSeconds * 1000 : null}
-      failurePresentation="local" resultLabel={resultLabel} resultActions={resultActions} onPickStep={onPickStep} onStarted={takeStarted} onExit={onClose} onPassed={settle}
+      failurePresentation="local" resultPresentation="overlay" resultLabel={resultLabel} resultActions={resultActions} resultContinueLabel={resultContinueLabel} onResultContinue={onResultContinue} onPickStep={onPickStep} onStarted={takeStarted} onExit={onClose} onPassed={settle}
       onFailed={failTake}
       onUnavailable={(reason, detail) => onUnavailable?.(detail || reason)}
     />
