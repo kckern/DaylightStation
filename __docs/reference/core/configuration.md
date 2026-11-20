@@ -225,7 +225,12 @@ harvest's LLM tagger and its Jev category judge, both narrowed in
 `createFinanceServices`), `feed`, `lifeplan`, `fitness` (`voice-memo`),
 `harvester` (`shopping`), `feedback` (`transcription`), `gaming`,
 `piano-games` (`opponent-dialogue`, the gpt-5.6-luna table talk, narrowed in
-`__app_modules/learning/piano/server/composition/pianoGames.mjs`), `school` (`card-ladder`,
+`__app_modules/learning/piano/server/composition/pianoGames.mjs`), `piano`
+(`lesson-good-faith`, `lesson-legit-notes`, and `sheetmusic-segments`: the Jev
+boundary scorer for Learn segment proposals, which spends nothing unless the
+household piano config sets `sheetmusic.admin.boundaryScorer` to `calibrate` or
+`jev`; see `__docs/reference/piano/sheet-music-player.md`, Admin: sheet music),
+`school` (`card-ladder`,
 `language`), `trigger`, `agents` (paged-media-toc rows are
 `media/paged-media-toc`), `weekly-review`, `ai-console`.
 `5_composition/aiUsageAttribution.consumers.test.mjs` drives a real call
