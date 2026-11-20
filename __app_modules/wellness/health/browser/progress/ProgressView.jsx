@@ -44,6 +44,8 @@ export function ProgressView() {
   }, []);
 
   const weightRes = useApiResource('api/v1/health/weight', { label: 'weight', logger });
+  const weightError = unavailableError(weightRes);
+  const { regionProps: weightRegion, retry: retryWeight } = useRetryRegion(weightRes.reload, weightRes.loading || weightRes.revalidating);
   const goalsRes = useApiResource(goalsPath, { label: 'goals', logger });
   const goalsError = unavailableError(goalsRes);
   const { regionProps: goalsRegion, retry: retryGoals } = useRetryRegion(goalsRes.reload, goalsRes.loading || goalsRes.revalidating);
@@ -59,6 +61,8 @@ export function ProgressView() {
   const adherence = useBudgetRange(addDays(today, -13), today);
   // 30 days of intake vs burn, its own range because it is a different window.
   const intakeBurn = useBudgetRange(addDays(today, -29), today);
+  const { regionProps: adherenceRegion, retry: retryAdherence } = useRetryRegion(adherence.reload, adherence.loading || adherence.revalidating);
+  const { regionProps: intakeBurnRegion, retry: retryIntakeBurn } = useRetryRegion(intakeBurn.reload, intakeBurn.loading || intakeBurn.revalidating);
 
   const entries = useMemo(() => normalizeWeightEntries(weightRes.data), [weightRes.data]);
 
@@ -118,53 +122,60 @@ export function ProgressView() {
                 <Button variant="light" onClick={() => { setForm(goalsRes.data?.goals || emptyGoals()); setSaveError(null); setEditingGoals(true); }}>Edit goals</Button></div>}
         </section>
       </SectionCard>
-      {weightRes.loading ? <LoadingState label="weight history" rows={5} /> : null}
-      {unavailableError(weightRes) ? <ErrorState error={weightRes.error} onRetry={weightRes.reload} label="Weight history" /> : null}
-      {!weightRes.loading && !unavailableError(weightRes) ? (
-        <SectionCard title="Weight">
-          {chartOptions ? <HighchartsReact highcharts={Highcharts} options={chartOptions} /> : null}
-          {latest ? (
-            <div className="health-progress__stats">
-              <StatCard label={`Weight · as of ${latest.date}`}
-                value={fmtLbs(latest.avg ?? latest.lbs)} unit="lbs" emphasis />
-              <StatCard label="Composition"
-                value={latest.fatPct != null ? Math.round(latest.fatPct * 10) / 10 : '—'} unit="%" />
-              <StatCard label={`Trend · ${weightTrend.trendDays ?? 7} days`}
-                value={weightTrend.deltaLbs == null ? 'no trend yet' : (
-                  <span className={`health-progress__trend health-progress__trend--${weightTrend.direction}`}>
-                    <span aria-hidden="true">{TREND_ARROWS[weightTrend.direction]}</span> {fmtDelta(weightTrend.deltaLbs)}
-                  </span>
-                )} unit={weightTrend.deltaLbs == null ? '' : 'lb'} />
-              {/* Zero is BALANCED, not a missing figure — and an absent
-                  calorie_balance is the missing one. */}
-              <StatCard label="Daily calories"
-                value={latest.calorieBalance == null ? '—' : (latest.calorieBalance === 0 ? 'Balanced' : `${latest.calorieBalance > 0 ? '+' : '−'}${Math.abs(latest.calorieBalance)}`)}
-                unit={latest.calorieBalance ? 'kcal' : ''} />
-              <StatCard label={`Days to ${targetBodyFatPct}%`}
-                value={projection.days == null ? PROJECTION_BLOCKED[projection.reason] : (projection.days === 0 ? 'reached' : projection.days)}
-                unit={projection.days ? goalDate(latest.date, projection.days) || '' : ''} />
-            </div>
-          ) : null}
-        </SectionCard>
-      ) : null}
+      <section {...weightRegion} aria-label="Weight history">
+        {weightError ? <ErrorState error={weightError} onRetry={retryWeight} label="Weight history" />
+          : weightRes.loading && weightRes.data == null ? <LoadingState label="weight history" rows={5} /> : (
+            <SectionCard title="Weight">
+              {chartOptions ? <HighchartsReact highcharts={Highcharts} options={chartOptions} /> : null}
+              {latest ? (
+                <div className="health-progress__stats">
+                  <StatCard label={`Weight · as of ${latest.date}`}
+                    value={fmtLbs(latest.avg ?? latest.lbs)} unit="lbs" emphasis />
+                  <StatCard label="Composition"
+                    value={latest.fatPct != null ? Math.round(latest.fatPct * 10) / 10 : '—'} unit="%" />
+                  <StatCard label={`Trend · ${weightTrend.trendDays ?? 7} days`}
+                    value={weightTrend.deltaLbs == null ? 'no trend yet' : (
+                      <span className={`health-progress__trend health-progress__trend--${weightTrend.direction}`}>
+                        <span aria-hidden="true">{TREND_ARROWS[weightTrend.direction]}</span> {fmtDelta(weightTrend.deltaLbs)}
+                      </span>
+                    )} unit={weightTrend.deltaLbs == null ? '' : 'lb'} />
+                  {/* Zero is BALANCED, not a missing figure — and an absent
+                      calorie_balance is the missing one. */}
+                  <StatCard label="Daily calories"
+                    value={latest.calorieBalance == null ? '—' : (latest.calorieBalance === 0 ? 'Balanced' : `${latest.calorieBalance > 0 ? '+' : '−'}${Math.abs(latest.calorieBalance)}`)}
+                    unit={latest.calorieBalance ? 'kcal' : ''} />
+                  <StatCard label={`Days to ${targetBodyFatPct}%`}
+                    value={projection.days == null ? PROJECTION_BLOCKED[projection.reason] : (projection.days === 0 ? 'reached' : projection.days)}
+                    unit={projection.days ? goalDate(latest.date, projection.days) || '' : ''} />
+                </div>
+              ) : null}
+            </SectionCard>
+          )}
+      </section>
 
       {/* MonthBlock is the same bar block the Today sidebar draws — one
           component, one arithmetic, one honesty rule (a hole is hollow), rather
           than a second local copy that can drift from it. */}
       <SectionCard title="Logged intake — last 14 days · current goals">
-        {unavailableError(adherence) ? <ErrorState error={adherence.error} onRetry={adherence.reload} label="Logged intake" /> : adherence.loading ? <LoadingState label="adherence" rows={2} /> : (
-          <MonthBlock days={adherence.days} loading={adherence.loading} title={null} />
-        )}
+        <section {...adherenceRegion} aria-label="Logged intake">
+          {unavailableError(adherence) ? <ErrorState error={adherence.error} onRetry={retryAdherence} label="Logged intake" />
+            : adherence.loading ? <LoadingState label="adherence" rows={2} /> : (
+              <MonthBlock days={adherence.days} loading={adherence.loading} title={null} />
+            )}
+        </section>
       </SectionCard>
 
       <SectionCard title="Intake vs burn — last 30 days">
-        {unavailableError(intakeBurn) ? <ErrorState error={intakeBurn.error} onRetry={intakeBurn.reload} label="Intake vs burn" /> : intakeBurn.loading ? <LoadingState label="intake vs burn" rows={2} /> : (
-          <IntakeBurnChart days={intakeBurn.days} loading={intakeBurn.loading} title={null} />
-        )}
+        <section {...intakeBurnRegion} aria-label="Intake vs burn">
+          {unavailableError(intakeBurn) ? <ErrorState error={intakeBurn.error} onRetry={retryIntakeBurn} label="Intake vs burn" />
+            : intakeBurn.loading ? <LoadingState label="intake vs burn" rows={2} /> : (
+              <IntakeBurnChart days={intakeBurn.days} loading={intakeBurn.loading} title={null} />
+            )}
+        </section>
       </SectionCard>
 
       <Sheet open={editingGoals} onClose={() => { if (!saving) { setEditingGoals(false); setForm(goalsRes.data?.goals || null); } }} title="Edit goals">
-        {goalsError ? <ErrorState error={goalsError} onRetry={goalsRes.reload} label="Goals" /> : !form ? <LoadingState label="goals" rows={4} /> : (
+        {form && (
           <Stack gap="sm">
             {saveError ? <Text size="sm" c="red">{goalSaveMessage(saveError)}</Text> : null}
             <SegmentedControl aria-label="Sex for budget calculation" value={form.sex || 'male'} onChange={(v) => setForm({ ...form, sex: v })}
