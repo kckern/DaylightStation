@@ -17,13 +17,19 @@ const OSMD_LIKE = `<svg xmlns="http://www.w3.org/2000/svg" width="800" height="2
       <rect x="1" y="1" width="2" height="2" fill="black" fill-opacity="1" stroke-width="0.3" stroke="black"/>
       <text stroke-width="0.3" fill="black" stroke="none" stroke-dasharray="none" font-family="'Times New Roman', serif"
         font-size="12px" font-weight="normal" font-style="normal" x="12" y="30">1 &amp; 2 &#9837;</text>
-      <g visibility="hidden" pointer-events="none"><use href="#a"/><use xlink:href="#a" ${XL}/></g>
-      <g clip-path="url(#clip1)"><path d="M0 0"/></g>
+      <g visibility="hidden" pointer-events="none"><path d="M0 0"/></g>
     </g>
   </g>
 </svg>`;
 
 const code = (text) => checkSvg(text).code ?? 'ok';
+
+/** The review's "billion laughs" poster: each level a group of `fan` <use>s of the level below. */
+function useBomb(levels, fan) {
+  let s = `<svg ${NS} width="200" height="200"><defs><g id="a0"><path d="M0 0h1v1z"/></g>`;
+  for (let k = 1; k <= levels; k += 1) s += `<g id="a${k}">${`<use href="#a${k - 1}"/>`.repeat(fan)}</g>`;
+  return `${s}</defs><use href="#a${levels}"/></svg>`;
+}
 
 /** Every case from the security review's bypass harness: all must be refused. */
 const BYPASSES = [
@@ -80,6 +86,10 @@ const BYPASSES = [
   ['set attributeName=onmouseover', w('<rect><set attributeName="onmouseover" to="alert(1)"/></rect>')],
   ['animate to=data:text/html', w('<a href="#x"><animate attributeName="href" to="data:text/html,%3Cscript%3Ealert(1)%3C/script%3E"/><text>x</text></a>')],
   ['too large', w('<g/>'.padEnd(310000, ' '))],
+  ['7-level <use> bomb (10^7 paths from ~1 KB)', useBomb(7, 10)],
+  ['<use> to a local id', w('<defs><g id="a"><path d="M0 0"/></g></defs><use href="#a"/>')],
+  ['<symbol>', w('<symbol id="s"><path d="M0 0"/></symbol>')],
+  ['clip-path reference', w('<defs><clipPath id="c"><rect width="1" height="1"/></clipPath></defs><g clip-path="url(#c)"/>')],
 ];
 
 describe('checkSvg: what passes', () => {
@@ -132,12 +142,16 @@ describe('checkSvg: specific codes', () => {
     assert.equal(code(w('<g xml:space="preserve"/>')), 'attribute');
   });
 
-  it('allows local references only', () => {
-    assert.equal(code(w('<use href="#ok"/>')), 'ok');
-    assert.equal(code(w('<use href="#"/>')), 'external-href');
-    assert.equal(code(w('<use href="x#ok"/>')), 'external-href');
-    assert.equal(code(w('<g clip-path="url(#c)"/>')), 'ok');
-    assert.equal(code(w('<g clip-path="url(http://x/#c)"/>')), 'external-href');
+  it('allows no references at all: no <use>, href or clip-path, no url()', () => {
+    const bomb = useBomb(7, 10);
+    assert.ok(bomb.length < 1600, `the bomb is ${bomb.length} bytes`);
+    assert.equal(code(bomb), 'element');
+    assert.equal(code(w('<use/>')), 'element');
+    assert.equal(code(w('<symbol/>')), 'element');
+    assert.equal(code(w('<clipPath/>')), 'element');
+    assert.equal(code(w('<g href="#ok"/>')), 'attribute');
+    assert.equal(code(w('<g xlink:href="#ok"/>')), 'attribute');
+    assert.equal(code(w('<g clip-path="url(#c)"/>')), 'attribute');
     assert.equal(code(w('<g fill="url(#grad)"/>')), 'external-href');
     assert.equal(code(w('<g fill="URL(#grad)"/>')), 'external-href');
   });
@@ -147,6 +161,15 @@ describe('checkSvg: specific codes', () => {
     assert.equal(code(w('<text>&nbsp;</text>')), 'entity');
     assert.equal(code(w('<text>&amp;&lt;&gt;&quot;&apos;&#9837;&#x266D;</text>')), 'ok');
     assert.equal(code(w('<text>a & b</text>')), 'entity');
+  });
+
+  it('refuses numeric references to characters the raw text may not hold', () => {
+    for (const ref of ['&#0;', '&#x0;', '&#27;', '&#x1B;', '&#xFEFF;', '&#xFFFE;', '&#65535;', '&#xD800;', '&#xDFFF;', '&#x110000;', '&#9999999;']) {
+      assert.equal(code(w(`<text>${ref}</text>`)), 'entity', ref);
+    }
+    for (const ref of ['&#9;', '&#10;', '&#13;', '&#32;', '&#x266D;', '&#x1D11E;']) {
+      assert.equal(code(w(`<text>${ref}</text>`)), 'ok', ref);
+    }
   });
 
   it('is UTF-8 text only: no declaration, BOM or control characters', () => {
@@ -174,7 +197,9 @@ describe('checkSvg: specific codes', () => {
     assert.equal(elementAllowed('image'), false);
     assert.equal(attributeAllowed('path', 'd', 'M0 0'), true);
     assert.equal(attributeAllowed('g', 'class', 'x'), false);
-    assert.equal(attributeAllowed('use', 'href', 'http://x'), false);
+    assert.equal(attributeAllowed('use', 'href', '#a'), false);
+    assert.equal(attributeAllowed('g', 'href', '#a'), false);
+    assert.equal(elementAllowed('use'), false);
   });
 });
 

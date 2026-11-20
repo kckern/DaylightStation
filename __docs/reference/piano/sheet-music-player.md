@@ -87,8 +87,9 @@ static SVG by allow-list (`portable/music/svgSafety.mjs`): UTF-8 text with no XM
 declaration, byte-order mark or control characters; an `<svg>` root in the SVG
 namespace, and no namespace but SVG and XLink; only the shape, text and grouping
 elements VexFlow draws with; only presentation and geometry attributes (no
-`style`, no `on*`), with no character references in their values; references
-only to a local `#id` (`href`, `clip-path="url(#id)"`). It refuses a score that
+`style`, no `on*`), with no character references in their values; and no
+references at all (no `<use>`, `href` or `clip-path`: a kilobyte of nested
+`<use>` can hang the kiosk's browser, and VexFlow never draws one). It refuses a score that
 has a scan (`has-scan`, it would never show) and never replaces an SVG it did not
 generate (`poster-exists`; a generated poster carries
 `data-daylight-poster="generated"` on its root element). The browser serializer

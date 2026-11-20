@@ -22,9 +22,12 @@ export const POSTER_SYSTEMS = 2;
 export const POSTER_MARKER_ATTR = 'data-daylight-poster';
 const POSTER_MARKER_VALUE = 'generated';
 const SVG_NS = 'http://www.w3.org/2000/svg';
-// C0 controls other than tab/LF/CR, and the noncharacters svgSafety refuses.
+// C0 controls other than tab/LF/CR, the noncharacters and lone surrogates svgSafety refuses.
 // eslint-disable-next-line no-control-regex
-const BAD_TEXT_RE = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\uFEFF\uFFFE\uFFFF]/g;
+const BAD_TEXT_RE = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\uFEFF\uFFFE\uFFFF]|[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g;
+// What XMLSerializer escapes in an attribute value (&quot;, &amp;, &lt;, &gt;, &#9; ...),
+// all of which svgSafety refuses there.
+const ESCAPED_IN_ATTRIBUTE_RE = /["&<>]/;
 
 const round = (n) => Math.round(n * 100) / 100;
 
@@ -52,20 +55,6 @@ export function posterCrop(staffBoxes, { systems = POSTER_SYSTEMS } = {}) {
   };
 }
 
-/** Ids something inside the svg points at (href="#x", clip-path="url(#x)"); those keep their id. */
-function referencedIds(root) {
-  const ids = new Set();
-  for (const el of [root, ...root.querySelectorAll('*')]) {
-    for (const attr of [...el.attributes]) {
-      const href = /^#(.+)$/.exec(attr.value);
-      if ((attr.name === 'href' || attr.name === 'xlink:href') && href) ids.add(href[1]);
-      const clip = /^url\(#(.+)\)$/.exec(attr.value);
-      if (attr.name === 'clip-path' && clip) ids.add(clip[1]);
-    }
-  }
-  return ids;
-}
-
 const isPlainSvgElement = (el) => el.namespaceURI === SVG_NS && !el.prefix && elementAllowed(el.localName);
 
 /** Cut the clone down to what svgSafety accepts. */
@@ -81,13 +70,23 @@ function sanitize(root) {
   for (const el of [...root.querySelectorAll('*')]) {
     if (root.contains(el) && !isPlainSvgElement(el)) el.remove();
   }
-  const keepIds = referencedIds(root);
   for (const el of [root, ...root.querySelectorAll('*')]) {
     for (const attr of [...el.attributes]) {
       const name = attr.name;
-      const keep = (name === 'id' ? keepIds.has(attr.value) : true)
-        && attributeAllowed(el.localName, name, attr.value);
-      if (!keep) el.removeAttributeNode(attr);
+      if (name === 'xmlns' || name.startsWith('xmlns:')) {
+        if (!attributeAllowed(el.localName, name, attr.value)) el.removeAttributeNode(attr);
+        continue;
+      }
+      // Nothing references anything in a poster, so ids are noise.
+      if (name === 'id') { el.removeAttributeNode(attr); continue; }
+      // Whitespace characters serialize as &#9;/&#10;/&#13;; quotes in a font list as &quot;.
+      let value = attr.value.replace(/[\t\n\r]/g, ' ').replace(BAD_TEXT_RE, '');
+      if (name === 'font-family') value = value.replace(/"/g, '');
+      if (ESCAPED_IN_ATTRIBUTE_RE.test(value) || !attributeAllowed(el.localName, name, value)) {
+        el.removeAttributeNode(attr);
+        continue;
+      }
+      if (value !== attr.value) el.setAttribute(name, value);
     }
   }
 }

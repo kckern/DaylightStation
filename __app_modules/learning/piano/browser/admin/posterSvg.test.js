@@ -21,9 +21,9 @@ function engraving() {
       id="osmdSvgPage1" style="width: 800px; height: 450px">
     <defs><clipPath id="page"><rect x="0" y="0" width="1600" height="900"/></clipPath><linearGradient id="ink"><stop offset="0"/></linearGradient></defs>
     <!-- engraved by OSMD -->
-    <text stroke-width="0.3" fill="black" stroke="none" stroke-dasharray="none" font-family="Times New Roman" font-size="10pt"
+    <text stroke-width="0.3" fill="black" stroke="none" stroke-dasharray="none" font-family='"Times New Roman",&#10;serif' font-size="10pt"
       font-weight="normal" font-style="normal" x="10" y="20" class="vf-measure-number">1 &amp; 2</text>
-    <g clip-path="url(#page)" style="fill: red"><rect fill="url(#ink)" fill-opacity="0.5" x="0" y="0" width="1" height="1"/></g>
+    <g clip-path="url(#page)" style="fill: red" transform="translate(1,&#9;2)"><use href="#page"/><rect fill="url(#ink)" fill-opacity="0.5" x="0" y="0" width="1" height="1"/></g>
     <a href="https://evil.example/"><text>link</text></a>
     <animate attributeName="href" to="javascript:alert(1)"/>
     ${[0, 1, 2].flatMap((s) => [staff(s, 0), staff(s, 1)]).join('')}
@@ -85,9 +85,21 @@ describe('posterSvg', () => {
       'linearGradient', 'url(#ink)', ' style=', '<!--', ' class=', ' font=']) {
       expect(text, banned).not.toContain(banned);
     }
-    expect(text).toContain('id="page"');
-    expect(text).toContain('clip-path="url(#page)"');
+    for (const banned of ['clipPath', 'clip-path', '<use', 'href', ' id=', '&quot;', '&#10;', '&#9;', '&#xA;', '&#x9;']) {
+      expect(text, banned).not.toContain(banned);
+    }
+    // Whitespace characters become spaces and the font list loses its quotes.
+    expect(text).toContain('font-family="Times New Roman, serif"');
+    expect(text).toContain('transform="translate(1, 2)"');
     expect(text).toContain('1 &amp; 2'); // the BEL is gone, the entity kept
+    expect(checkSvg(text)).toEqual({ ok: true });
+  });
+
+  it('drops lone surrogates and control characters from text, keeping real pairs', () => {
+    const svg = engraving();
+    svg.querySelector('text').textContent = 'a\uD800b\uDC00c\u0001d\uD834\uDD1E';
+    const { text } = posterSvg(svg, posterCrop(boxes));
+    expect(text).toContain('>abcd\uD834\uDD1E</text>');
     expect(checkSvg(text)).toEqual({ ok: true });
   });
 

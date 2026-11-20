@@ -19,10 +19,13 @@
  *   grouping VexFlow draws with. No `a`, `image`, animation, `style`, `script`,
  *   `foreignObject` or anything else.
  * - Attributes from ATTRIBUTES only. Values carry no `&` (character references
- *   could spell anything), no `\` and no `url(`; the two reference attributes are
- *   local only: `href`/`xlink:href` exactly `#id`, `clip-path` exactly `url(#id)`.
- *   There is no `style` attribute and no `on*` attribute.
- * - Text may use the five XML entities and numeric character references only.
+ *   could spell anything), no `\` and no `url(`. There is no `style` attribute,
+ *   no `on*` attribute, and no reference of any kind: no `<use>`/`<symbol>`, no
+ *   `href`/`xlink:href`, no `clip-path`. A local `<use>` is not script, but ~1 KB
+ *   of nested `<use>`s draws 10^7 shapes and hangs the kiosk's browser for tens of
+ *   seconds; VexFlow never emits one, so posters need none.
+ * - Text may use the five XML entities and numeric character references, and a
+ *   numeric reference may not name a character the raw text may not hold.
  *
  * No XML parser is a dependency here, so this is a single forward scan: every
  * search starts where the last one ended and nothing backtracks, so the cost is
@@ -39,8 +42,9 @@
  *   element                 any other element off the allow-list
  *   event-handler           an attribute named on*
  *   attribute               any other attribute off the allow-list (style included)
- *   external-href           a reference that is not a local #id
- *   entity                  a character reference in an attribute, or an unknown entity in text
+ *   external-href           a url(...) in an attribute value
+ *   entity                  a character reference in an attribute, an unknown entity in
+ *                           text, or a numeric reference to a refused character
  *
  * Layer: PORTABLE (pure).
  */
@@ -54,7 +58,7 @@ export const XLINK_NS = 'http://www.w3.org/1999/xlink';
 /** What VexFlow draws with (svg, g, path, rect, text), plus inert structure. */
 const ELEMENTS = new Set([
   'svg', 'g', 'path', 'rect', 'line', 'polyline', 'polygon', 'circle', 'ellipse',
-  'text', 'tspan', 'defs', 'use', 'symbol', 'clipPath', 'title', 'desc',
+  'text', 'tspan', 'defs', 'title', 'desc',
 ]);
 
 /** Presentation and geometry attributes; values are checked separately. */
@@ -63,15 +67,14 @@ const ATTRIBUTES = new Set([
   'x1', 'y1', 'x2', 'y2', 'dx', 'dy', 'transform',
   'fill', 'fill-opacity', 'fill-rule', 'stroke', 'stroke-width', 'stroke-linecap',
   'stroke-linejoin', 'stroke-dasharray', 'stroke-dashoffset', 'stroke-miterlimit',
-  'stroke-opacity', 'opacity', 'clip-path', 'clip-rule', 'visibility', 'pointer-events',
+  'stroke-opacity', 'opacity', 'clip-rule', 'visibility', 'pointer-events',
   'font-family', 'font-size', 'font-weight', 'font-style', 'text-anchor', 'dominant-baseline',
-  'viewBox', 'preserveAspectRatio', 'version', 'id', 'clipPathUnits',
+  'viewBox', 'preserveAspectRatio', 'version', 'id',
   'data-daylight-poster',
 ]);
 
-const LOCAL_ID_RE = /^#[A-Za-z_][\w.-]{0,127}$/;
-const LOCAL_URL_RE = /^url\(#[A-Za-z_][\w.-]{0,127}\)$/;
-const TEXT_ENTITY_RE = /^(?:amp|lt|gt|quot|apos|#[0-9]{1,7}|#x[0-9A-Fa-f]{1,6})$/;
+const NAMED_ENTITIES = new Set(['amp', 'lt', 'gt', 'quot', 'apos']);
+const NUMERIC_ENTITY_RE = /^#(?:([0-9]{1,7})|x([0-9A-Fa-f]{1,6}))$/;
 const MAX_ENTITY_NAME = 10;
 
 const fail = (code) => ({ ok: false, code });
@@ -90,11 +93,9 @@ export function elementAllowed(name) {
 function attributeProblem(name, value) {
   const lower = name.toLowerCase();
   if (lower.startsWith('on')) return 'event-handler';
-  if (name === 'href' || name === 'xlink:href') return LOCAL_ID_RE.test(value) ? null : 'external-href';
   if (!ATTRIBUTES.has(name)) return 'attribute';
   if (value.includes('&')) return 'entity';
   if (value.includes('\\')) return 'attribute';
-  if (name === 'clip-path') return LOCAL_URL_RE.test(value) ? null : 'external-href';
   if (value.toLowerCase().includes('url(')) return 'external-href';
   return null;
 }
@@ -104,6 +105,22 @@ export function attributeAllowed(element, name, value) {
   if (name === 'xmlns') return value === SVG_NS;
   if (name === 'xmlns:xlink') return value === XLINK_NS;
   return elementAllowed(element) && attributeProblem(name, String(value)) === null;
+}
+
+/** A code point the poster's text may not hold, raw or as a reference (as scanChars). */
+function badCodePoint(cp) {
+  if (cp < 0x20) return cp !== 0x09 && cp !== 0x0a && cp !== 0x0d;
+  if (cp >= 0xd800 && cp <= 0xdfff) return true;
+  return cp === 0xfeff || cp === 0xfffe || cp === 0xffff || cp > 0x10ffff;
+}
+
+/** `amp`, `#9837`, `#x266D`: one of the five XML entities or a numeric reference to an allowed character. */
+function entityAllowed(body) {
+  if (NAMED_ENTITIES.has(body)) return true;
+  const m = NUMERIC_ENTITY_RE.exec(body);
+  if (!m) return false;
+  const cp = m[1] !== undefined ? Number.parseInt(m[1], 10) : Number.parseInt(m[2], 16);
+  return !badCodePoint(cp);
 }
 
 /**
@@ -138,7 +155,7 @@ function textProblem(text, from, to) {
     let semi = at + 1;
     const limit = Math.min(to, at + 2 + MAX_ENTITY_NAME);
     while (semi < limit && text.charCodeAt(semi) !== 0x3b /* ; */) semi += 1;
-    if (semi >= limit || !TEXT_ENTITY_RE.test(text.slice(at + 1, semi))) return 'entity';
+    if (semi >= limit || !entityAllowed(text.slice(at + 1, semi))) return 'entity';
     at = semi;
   }
   return null;
