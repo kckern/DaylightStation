@@ -1,15 +1,5 @@
-import { useEffect } from "react";
-import { DaylightAPI } from "../../../../../../frontend/src/lib/api.mjs";
-import "./WrapUp.scss";
+import PowerOffAction from '../PowerOffAction.jsx';
 
 export default function WrapUp({ clear }) {
-  useEffect(() => {
-    DaylightAPI("api/v1/home/tv/off").then(() => {
-      const event = new KeyboardEvent("keydown", { key: "Escape" });
-      window.dispatchEvent(event);
-      clear();
-    });
-  }, [clear]);
-
-  return null;
+  return <PowerOffAction path="api/v1/home/tv/off" target="the living room TV" clear={clear} />;
 }
