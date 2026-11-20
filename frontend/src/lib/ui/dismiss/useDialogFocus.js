@@ -4,11 +4,11 @@ import { tabbable } from 'tabbable';
 
 const dialogSelector = 'dialog, [role="dialog"], [role="alertdialog"]';
 
-function keepTabInPanel(event) {
+function keepTabInPanel(event, panel = event.currentTarget) {
   if (event.key !== 'Tab' || event.defaultPrevented || event.altKey || event.ctrlKey || event.metaKey) return;
-  const panel = event.currentTarget;
-  const focused = event.target;
-  if (!panel.contains(focused) || focused.closest(dialogSelector) !== panel.closest(dialogSelector)) return;
+  // A menu can restore focus to its trigger before the Tab event reaches the panel.
+  const focused = panel.ownerDocument.activeElement;
+  if (!focused || !panel.contains(focused) || focused.closest(dialogSelector) !== panel.closest(dialogSelector)) return;
 
   const stops = tabbable(panel);
   const backwards = event.shiftKey;
@@ -35,8 +35,14 @@ export function useDialogFocus(active, panelRef, fallbackRef) {
       panel.querySelector('[data-autofocus]')?.focus({ preventScroll: true });
       if (!panel.contains(owner.activeElement)) fallbackRef.current?.focus({ preventScroll: true });
     }, 0);
+    // A portaled menu's Tab may never reach the panel, even after it returns focus.
+    const handlePortaledTab = event => {
+      if (!panel.contains(event.target)) keepTabInPanel(event, panel);
+    };
+    owner.addEventListener('keydown', handlePortaledTab);
     return () => {
       clearTimeout(opening);
+      owner.removeEventListener('keydown', handlePortaledTab);
       unhide?.();
     };
   }, [active, panelRef, fallbackRef]);

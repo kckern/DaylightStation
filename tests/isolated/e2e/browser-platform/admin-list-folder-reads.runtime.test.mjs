@@ -80,3 +80,102 @@ test('Admin Program editor retires its pending detail read when leaving', async 
   await expect(page.getByRole('link', { name: /Fixture Menu/ })).toBeVisible();
   await expect.poll(() => retired).toBe(true);
 });
+
+for (const draft of [null, 'row label', 'section title']) {
+  const scenario = draft ? `label edit with a pending ${draft}` : 'section addition';
+  test(`Admin retries only the list read after a committed ${scenario}`, async ({ page }) => {
+    const path = `/api/v1${menuRoute}`;
+    const saved = list('fixture-menu', ['First item', 'Second item']);
+    saved.sections[0].title = 'Existing section';
+    const followup = Promise.withResolvers();
+    const writes = [];
+    const errors = [];
+    const release = Promise.withResolvers();
+    let reads = 0;
+    page.on('pageerror', error => errors.push(error.message));
+    await page.route('**/api/**', async route => {
+      const request = route.request();
+      const url = new URL(request.url());
+      if (url.pathname === path && request.method() === 'GET') {
+        reads++;
+        if (reads === 2) {
+          await followup.promise;
+          return route.fulfill({ status: 409, json: { error: 'Snapshot unavailable' } });
+        }
+        if (reads === 3) await release.promise;
+        return route.fulfill({ json: saved });
+      }
+      if (url.pathname === path + '/sections' && request.method() === 'POST') {
+        writes.push(request.postDataJSON());
+        saved.sections.push({ ...writes[0], items: [] });
+        return route.fulfill({ status: 201, json: { ok: true, sectionIndex: 1 } });
+      }
+      const row = saved.sections[0].items.findIndex((_, index) => url.pathname === `${path}/items/${index}`);
+      if (row >= 0 && url.searchParams.get('section') === '0' && request.method() === 'PUT') {
+        const payload = request.postDataJSON();
+        writes.push(payload);
+        Object.assign(saved.sections[0].items[row], payload);
+        return route.fulfill({ json: { ok: true } });
+      }
+      if (url.pathname === path + '/sections/0' && request.method() === 'PUT') {
+        const payload = request.postDataJSON();
+        writes.push(payload);
+        Object.assign(saved.sections[0], payload);
+        return route.fulfill({ json: { ok: true } });
+      }
+      return route.fulfill({ json: url.pathname.endsWith('/supervision/bootstrap') ? { enabled: false } : {} });
+    });
+    await page.goto(menuRoute);
+    const add = page.getByRole('button', { name: 'Add Section' });
+    const label = page.getByTestId('item-row-0-0').locator('.col-label');
+    await expect(label).toHaveText('First item');
+    const region = page.getByRole('region', { name: 'List contents' });
+    const draftCell = draft === 'row label' ? page.getByTestId('item-row-0-1').locator('.col-label') : region.locator('.section-header').first();
+    try {
+      if (draft) {
+        await label.getByText('First item').click();
+        const input = label.getByRole('textbox');
+        await input.fill('Updated label');
+        await input.press('Enter');
+        await expect.poll(() => reads).toBe(2);
+        await draftCell.getByText(draft === 'row label' ? 'Second item' : 'Existing section', { exact: true }).click();
+        await draftCell.getByRole('textbox').fill('Unsubmitted draft');
+      } else {
+        await add.press('Enter');
+      }
+      followup.resolve();
+      const alert = region.getByRole('alert');
+      await expect(alert).toContainText('Change saved');
+      await expect(alert).toContainText('Snapshot unavailable');
+      await expect(page.getByText('Could not save change', { exact: true })).toHaveCount(0);
+      await expect(region.locator('button').filter({ hasText: 'Add Section' })).toBeDisabled();
+      await alert.getByRole('button', { name: 'Retry' }).press('Enter');
+      await expect.poll(() => reads).toBe(3);
+      await expect(region).toHaveAttribute('aria-busy', 'true');
+      await expect(region).toBeFocused();
+      await expect(region.locator('button').filter({ hasText: 'Add Section' })).toBeDisabled();
+    } finally {
+      followup.resolve();
+      release.resolve();
+    }
+    await expect(region.getByRole('alert')).toHaveCount(0);
+    await expect(add).toBeEnabled();
+    await expect(region).toBeFocused();
+    if (draft) {
+      await expect(label).toHaveText('Updated label');
+      const input = draftCell.getByRole('textbox');
+      await expect(input).toHaveValue('Unsubmitted draft');
+      expect(writes).toEqual([{ label: 'Updated label' }]);
+      // A deliberate blur still saves the recovered draft.
+      await input.focus();
+      await input.press('Tab');
+      await expect.poll(() => writes).toEqual([{ label: 'Updated label' }, {
+        [draft === 'row label' ? 'label' : 'title']: 'Unsubmitted draft',
+      }]);
+    } else {
+      await expect(region.getByText('Section 2', { exact: true })).toBeVisible();
+      expect(writes).toEqual([{ title: 'Section 2' }]);
+    }
+    expect(errors).toEqual([]);
+  });
+}

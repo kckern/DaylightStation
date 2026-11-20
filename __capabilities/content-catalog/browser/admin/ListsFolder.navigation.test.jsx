@@ -85,3 +85,87 @@ it.each(['menus', 'watchlists'])('refreshes only the deleted collection when %s 
   expect(screen.getByTestId(type === 'menus' ? 'list-card-updated' : 'list-card-original')).toBeInTheDocument();
   expect(DaylightAPI.mock.calls.filter(([path]) => path === collection)).toHaveLength(type === 'menus' ? 2 : 1);
 });
+
+it('keeps the committed section and retries only its list read', async () => {
+  const sections = [{ title: 'Existing', items: [] }];
+  let reads = 0;
+  const followup = Promise.withResolvers();
+  const retry = Promise.withResolvers();
+  const writes = [];
+  DaylightAPI.mockImplementation(async (path, body, method) => {
+    if (method === 'POST' && path === api + '/first/sections') {
+      writes.push(body);
+      sections.push({ ...body, items: [] });
+      return { ok: true, sectionIndex: 1 };
+    }
+    if (path === api + '/first') {
+      reads++;
+      if (reads === 2) await followup.promise;
+      if (reads === 3) await retry.promise;
+      return { sections: [...sections] };
+    }
+    return {};
+  });
+  openFolder();
+  await screen.findByText('Existing');
+  const add = screen.getByRole('button', { name: 'Add Section' });
+  fireEvent.click(add);
+  await waitFor(() => expect(reads).toBe(2));
+  expect(add).toBeDisabled();
+  fireEvent.click(add);
+  expect(writes).toHaveLength(1);
+  await act(async () => followup.reject(new Error('List read failed')));
+  const region = await screen.findByRole('region', { name: 'List contents' });
+  await within(region).findByText('Change saved. Could not refresh the list.');
+  fireEvent.click(within(region).getByRole('button', { name: 'Retry' }));
+  expect(region).toHaveFocus();
+  expect(region).toHaveAttribute('aria-busy', 'true');
+  await act(async () => retry.resolve());
+  expect(region).toHaveFocus();
+  expect(within(region).getByText('Section 2')).toBeInTheDocument();
+  expect(within(region).queryByRole('alert')).toBeNull();
+  expect(writes).toEqual([{ title: 'Section 2' }]);
+  expect(reads).toBe(3);
+});
+
+it('leaves a refused section add available for correction without refreshing the list', async () => {
+  DaylightAPI.mockImplementation(async (path, body, method) => {
+    if (method === 'POST') throw new Error('Section title rejected');
+    return { sections: [{ title: 'Existing', items: [] }] };
+  });
+  openFolder();
+  await screen.findByText('Existing');
+  const add = screen.getByRole('button', { name: 'Add Section' });
+  fireEvent.click(add);
+  await screen.findByText('Section title rejected');
+  expect(add).toBeEnabled();
+  expect(screen.queryByText(/Change saved/)).toBeNull();
+  expect(screen.queryByRole('button', { name: 'Retry' })).toBeNull();
+  expect(DaylightAPI.mock.calls.map(([, , method]) => method)).toEqual(['GET', 'POST']);
+});
+
+it('moves to the newly created section index before refreshing the compound change', async () => {
+  const summary = [];
+  DaylightAPI.mockImplementation(async (path, body, method) => {
+    if (path === api + '/first') {
+      summary.push(method);
+      return { sections: [{ title: 'Existing', items: [{ uid: 'a', label: 'First item' }] }] };
+    }
+    if (path.endsWith('/sections')) {
+      summary.push([method, body]);
+      return { ok: true, sectionIndex: 3 };
+    }
+    if (path.endsWith('/items/move')) summary.push([method, body]);
+    return {};
+  });
+  openFolder();
+  const row = await screen.findByTestId('item-row-0-0');
+  fireEvent.contextMenu(row.querySelector('.drag-handle'));
+  fireEvent.click(await screen.findByRole('menuitem', { name: 'New Section' }));
+  await waitFor(() => expect(summary).toEqual([
+    'GET',
+    ['POST', { title: 'Section 2' }],
+    ['PUT', { from: { section: 0, index: 0 }, to: { section: 3, index: 0 } }],
+    'GET',
+  ]));
+});

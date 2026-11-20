@@ -375,15 +375,10 @@ export async function fetchContentMetadata(value) {
     if (!parsed?.source || !parsed.localId) return { value, unresolved: true };
     const { source: normalizedSource, localId } = parsed;
 
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 5000);
     try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 5000);
-      let response;
-      try {
-        response = await daylightApiResponse(contentInfoPath(normalizedSource, localId), { signal: controller.signal });
-      } finally {
-        clearTimeout(timeoutId);
-      }
+      const response = await daylightApiResponse(contentInfoPath(normalizedSource, localId), { signal: controller.signal });
       if (response.ok) {
         const data = await response.json();
         const info = {
@@ -411,6 +406,8 @@ export async function fetchContentMetadata(value) {
       adminLog('fetchContentMetadata').error('content_info.fetch_error', { value, error: err.message });
       // Return unresolved on network/parse failure
       return { value, title: localId, source: normalizedSource, type: null, unresolved: true };
+    } finally {
+      clearTimeout(timeoutId);
     }
   })().finally(() => inflightRequests.delete(value));
 

@@ -13,6 +13,21 @@ afterEach(() => {
 });
 
 describe('camera state ownership', () => {
+  it('keeps focus on a camera control selected before opening focus runs', async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal('fetch', async url => Response.json(new URL(url).pathname.endsWith('/controls')
+      ? { controls: [{ id: 'light', type: 'light', label: 'Camera light', state: 'off' }] }
+      : { detections: [] }));
+    render(<CameraFeed cameraId="porch" renderHeader={open => <button onClick={open}>Open camera</button>} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Open camera' }));
+    await act(async () => {});
+    const light = screen.getByRole('button', { name: 'Camera light' });
+    light.focus();
+    expect(light).toHaveFocus();
+    act(() => { vi.advanceTimersByTime(0); });
+    expect(light).toHaveFocus();
+  });
+
   it('shares detection polls between Home and fullscreen, pauses the timer in the background and confirms a command once', async () => {
     vi.useFakeTimers();
     const visibility = vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible');

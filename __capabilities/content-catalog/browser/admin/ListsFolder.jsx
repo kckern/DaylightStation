@@ -20,6 +20,7 @@ import { getChildLogger } from "../../../../frontend/src/lib/logging/singleton.j
 import { runWithFeedback, showUndoToast } from "../../../../frontend/src/modules/Admin/shared/feedback.js";
 import ConfirmModal from "../../../../frontend/src/modules/Admin/shared/ConfirmModal.jsx";
 import ListsItemRow from "./ListsItemRow.jsx";
+import { useRetryRegion } from '../../../../frontend/src/lib/ui/useRetryRegion.js';
 import { ActionMenu } from "../../../../frontend/src/lib/ui/ActionMenu.jsx";
 import { EmptyItemRow } from "./EmptyItemRow.jsx";
 import { fetchContentMetadata } from "./ContentDisplays.jsx";
@@ -82,7 +83,7 @@ function ListsFolder() {
 function FolderEditor({ type, listName }) {
   const navigate = useNavigate();
   const {
-    sections, setSections, flatItems, loading, error, listMetadata,
+    sections, setSections, flatItems, reading, error, readError, canEditList, listMetadata,
     fetchList, addItem, updateItem, swapItems, deleteItem, reorderItems, toggleItemActive,
     deleteList, updateListSettings, addSection, updateSection, deleteSection, reorderSections, moveItem, splitSection
   } = useAdminLists(type, listName);
@@ -92,7 +93,6 @@ function FolderEditor({ type, listName }) {
     active.current = true;
     return () => { active.current = false; };
   }, []);
-  const swapInProgressRef = useRef(false);
   const [swapFlash, setSwapFlash] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [editorOpen, setEditorOpen] = useState(false);
@@ -100,23 +100,36 @@ function FolderEditor({ type, listName }) {
   const [deleteListOpen, setDeleteListOpen] = useState(false);
   const [deletingList, setDeletingList] = useState(false);
 
-  // Run a list mutation with user-visible failure feedback + state recovery
-  // (audit C3). Success is silent (no toast per keystroke). On failure the
-  // hook has already thrown before its own re-sync refetch, so `recover`
-  // re-fetches the list to discard any stale optimistic local update.
-  const mutate = useCallback((eventName, failureTitle, fn, { recover = false } = {}) =>
-    runWithFeedback(fn, {
-      logger: mutationLog(),
-      eventName,
-      failureTitle,
-      logContext: { type, list: listName },
-    }).then((res) => {
-      if (!res.ok && recover) {
-        fetchList().catch(() => {});
+  const commands = useRef({ count: 0, structural: false });
+  const [pending, setPending] = useState(commands.current);
+  const loading = pending.count > 0 || reading;
+  const setCommands = useCallback(next => {
+    commands.current = next;
+    setPending(next);
+  }, []);
+
+  // Independent field edits can overlap. Changes to row or section positions
+  // need the last confirmed list until their command and refresh both finish.
+  const mutate = useCallback(async (eventName, failureTitle, fn, {
+    recover = false, refresh = true, fieldEdit = false,
+  } = {}) => {
+    const current = commands.current;
+    if (!canEditList() || current.structural || (current.count && !fieldEdit)) return { ok: false };
+    setCommands({ count: current.count + 1, structural: !fieldEdit });
+    try {
+      const result = await runWithFeedback(fn, {
+        logger: mutationLog(), eventName, failureTitle, logContext: { type, list: listName },
+      });
+      // A failed snapshot has its own recovery and cannot undo an acknowledged write.
+      if ((result.ok && refresh) || (!result.ok && recover)) {
+        await fetchList(result.ok).catch(() => {});
       }
-      return res;
-    }),
-  [type, listName, fetchList]);
+      return result;
+    } finally {
+      setCommands({ count: commands.current.count - 1, structural: false });
+    }
+  }, [type, listName, canEditList, fetchList, setCommands]);
+
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [sectionSettingsOpen, setSectionSettingsOpen] = useState(null);
   const [collapsedSections, setCollapsedSections] = useState(new Set());
@@ -169,9 +182,9 @@ function FolderEditor({ type, listName }) {
     useSensor(KeyboardSensor)
   );
 
-  useEffect(() => {
+  const loadFolder = useCallback(afterSave => {
     if (type && listName) {
-      fetchList().catch(error => {
+      return fetchList(afterSave).catch(error => {
         const target = error?.body?.adminUrl;
         if (active.current && error?.body?.code === 'resource_moved' && typeof target === 'string'
           && /^\/admin\/content\/agendas\/[A-Za-z0-9_.-]+$/.test(target)) {
@@ -180,6 +193,8 @@ function FolderEditor({ type, listName }) {
       });
     }
   }, [type, listName, fetchList, navigate]);
+  useEffect(() => { loadFolder(false); }, [loadFolder]);
+  const { regionProps, retry } = useRetryRegion(() => loadFolder(readError?.afterSave), reading);
 
   // Filter items by search query
   const filteredItems = useMemo(() => {
@@ -192,6 +207,10 @@ function FolderEditor({ type, listName }) {
   }, [flatItems, searchQuery]);
 
   const handleDragEnd = async (event) => {
+    if (!canEditList() || commands.current.count) {
+      setActiveContentDrag(null);
+      return;
+    }
     const { active, over } = event;
     if (!over || active.id === over.id) {
       dndLog().debug('drag.cancel', { activeId: String(active.id), reason: !over ? 'no_target' : 'same_item' });
@@ -206,13 +225,6 @@ function FolderEditor({ type, listName }) {
     if (activeId.startsWith('content-')) {
       if (!overId.startsWith('content-')) {
         dndLog().debug('drag.cancel', { activeId, overId, reason: 'invalid_target_type' });
-        setActiveContentDrag(null);
-        return;
-      }
-
-      // Lock: prevent concurrent swaps
-      if (swapInProgressRef.current) {
-        dndLog().debug('drag.cancel', { activeId, overId, reason: 'swap_in_progress' });
         setActiveContentDrag(null);
         return;
       }
@@ -234,8 +246,6 @@ function FolderEditor({ type, listName }) {
         dst: { section: dstSi, index: dstIdx, input: dstItem.input },
       });
 
-      swapInProgressRef.current = true;
-
       // Optimistic local update: swap content fields immediately
       const { updatesForA, updatesForB } = swapContentPayloads(srcItem, dstItem);
       setSections(prev => {
@@ -251,7 +261,6 @@ function FolderEditor({ type, listName }) {
         () => swapItems(srcSi, srcIdx, dstSi, dstIdx),
         { recover: true }
       );
-      swapInProgressRef.current = false;
 
       if (result.ok) {
         setSwapFlash(previous => ({
@@ -278,7 +287,7 @@ function FolderEditor({ type, listName }) {
       const sectionItems = sections[activeSi]?.items || [];
       const reordered = arrayMove(sectionItems, activeIdx, overIdx);
       await mutate('lists.reorder', 'Could not reorder rows — reloading the list',
-        () => reorderItems(activeSi, reordered), { recover: true });
+        () => reorderItems(activeSi, reordered), { recover: true, refresh: false });
     }
   };
 
@@ -312,13 +321,14 @@ function FolderEditor({ type, listName }) {
 
   
   const handleSaveItem = async (itemData) => {
+    const oldSection = editingItem?.sectionIndex ?? 0;
+    const newSection = itemData.sectionIndex ?? oldSection;
+    const moving = Boolean(editingItem && newSection !== oldSection);
     const res = await mutate('lists.save_item', 'Could not save item', async () => {
       if (editingItem) {
-        const oldSection = editingItem.sectionIndex ?? 0;
-        const newSection = itemData.sectionIndex ?? oldSection;
         const { sectionIndex: _sectionIndex, ...cleanData } = itemData;
 
-        if (newSection !== oldSection) {
+        if (moving) {
           await moveItem(
             { section: oldSection, index: editingItem.itemIndex },
             { section: newSection, index: 0 }
@@ -331,7 +341,7 @@ function FolderEditor({ type, listName }) {
         const { sectionIndex, ...cleanData } = itemData;
         await addItem(sectionIndex ?? 0, cleanData);
       }
-    });
+    }, { recover: moving });
     // Keep the editor open on failure so the user can retry without losing input
     if (res.ok) {
       setEditorOpen(false);
@@ -350,7 +360,7 @@ function FolderEditor({ type, listName }) {
 
   const handleDeleteList = async () => {
     setDeletingList(true);
-    const res = await mutate('lists.delete_list', 'Could not delete list', () => deleteList(type, listName));
+    const res = await mutate('lists.delete_list', 'Could not delete list', () => deleteList(type, listName), { refresh: false });
     if (!active.current) return;
     setDeletingList(false);
     if (res.ok) {
@@ -365,7 +375,7 @@ function FolderEditor({ type, listName }) {
     const removed = sections[sectionIndex]?.items?.[itemIndex];
     const preCount = sections[sectionIndex]?.items?.length ?? 0;
     const res = await mutate('lists.delete_item', 'Could not delete item', () => deleteItem(sectionIndex, itemIndex));
-    if (!res.ok || !removed) return;
+    if (!res.ok || !removed || !canEditList()) return;
     const { sectionIndex: _sectionIndex, itemIndex: _itemIndex, sectionTitle: _sectionTitle, index: _index, ...payload } = removed;
     showUndoToast({
       id: `undo-delete-${removed.uid || `${sectionIndex}-${itemIndex}`}`,
@@ -382,7 +392,7 @@ function FolderEditor({ type, listName }) {
             { section: sectionIndex, index: itemIndex }
           );
         }
-      }),
+      }, { recover: true }),
     });
   };
 
@@ -401,7 +411,7 @@ function FolderEditor({ type, listName }) {
     inUseImages,
   }), [sections, flatItems, contentInfoMap, setContentInfo, getNearbyItems, inUseImages]);
 
-  if (loading && sections.length === 0) {
+  if (reading && !readError && !listMetadata) {
     return (
       <Center h="60vh">
         <Loader size="lg" />
@@ -412,7 +422,7 @@ function FolderEditor({ type, listName }) {
   const listTitle = listName.replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
   const typeLabel = TYPE_LABELS[type] || type;
   const handleInlineUpdate = async (sectionIndex, itemIndex, updates) => {
-    await mutate('lists.update', 'Could not save change', () => updateItem(sectionIndex, itemIndex, updates));
+    await mutate('lists.update', 'Could not save change', () => updateItem(sectionIndex, itemIndex, updates), { fieldEdit: true });
   };
 
   const handleDuplicateItem = async (sectionIndex, item) => {
@@ -446,15 +456,13 @@ function FolderEditor({ type, listName }) {
           { section: targetSection, index: targetItems.length }
         );
       } else if (action === 'new-section') {
-        const newSectionIndex = sections.length;
-        await addSection({ title: `Section ${newSectionIndex + 1}` });
-        // After adding, move the item to the newly created section (last index)
+        const { sectionIndex: newSectionIndex } = await addSection({ title: `Section ${sections.length + 1}` });
         await moveItem(
           { section: sectionIndex, index: itemIndex },
           { section: newSectionIndex, index: 0 }
         );
       }
-    }, { recover: true });
+    }, { recover: true, refresh: action !== 'top' && action !== 'bottom' });
   };
 
   const renderItems = (itemsToRender, sectionIndex) => (
@@ -469,11 +477,11 @@ function FolderEditor({ type, listName }) {
             item={{ ...item, index: idx }}
             onUpdate={(updates) => handleInlineUpdate(sectionIndex, idx, updates)}
             onDelete={() => handleDeleteItem(sectionIndex, idx)}
-            onToggleActive={() => mutate('lists.toggle_active', 'Could not toggle item', () => toggleItemActive(sectionIndex, idx))}
+            onToggleActive={() => mutate('lists.toggle_active', 'Could not toggle item', () => toggleItemActive(sectionIndex, idx), { fieldEdit: true })}
             onDuplicate={() => handleDuplicateItem(sectionIndex, item)}
             isWatchlist={type === 'watchlists'}
             onEdit={() => { setEditingItem({ ...item, sectionIndex, itemIndex: idx }); setEditorOpen(true); }}
-            onSplit={idx < itemsToRender.length - 1 ? () => splitSection(sectionIndex, idx) : undefined}
+            onSplit={idx < itemsToRender.length - 1 ? () => mutate('lists.split', 'Could not split section', () => splitSection(sectionIndex, idx)) : undefined}
             sectionIndex={sectionIndex}
             sectionCount={sections.length}
             sections={sections}
@@ -506,8 +514,8 @@ function FolderEditor({ type, listName }) {
             onChange={(e) => setSearchQuery(e.target.value)}
             className="lists-folder-search"
           />
-          <ActionMenu position="bottom-end" trigger={
-            <ActionIcon className="ds-touch-target" variant="subtle" aria-label="List actions" data-testid="list-menu-button">
+          <ActionMenu position="bottom-end" disabled={Boolean(readError) || pending.structural} trigger={
+            <ActionIcon className="ds-touch-target" variant="subtle" aria-label="List actions" disabled={Boolean(readError) || pending.structural} data-testid="list-menu-button">
               <IconDotsVertical size={20} aria-hidden="true" />
             </ActionIcon>
           }>
@@ -562,37 +570,51 @@ function FolderEditor({ type, listName }) {
         onDragStart={handleDragStart}
         onDragEnd={handleDragEnd}
       >
-        <div className="sections-scroll">
-          {filteredItems ? (
-            renderItems(filteredItems, 0)
-          ) : (
-            <Stack gap="md">
-              {sections.map((section, si) => (
-                <Box key={si} className="section-container">
-                  <SectionHeader
-                    section={section}
-                    sectionIndex={si}
-                    collapsed={collapsedSections.has(si)}
-                    onToggleCollapse={toggleCollapse}
-                    onUpdate={(idx, updates) => updates ? updateSection(idx, updates) : setSectionSettingsOpen(idx)}
-                    onDelete={deleteSection}
-                    onMoveUp={(idx) => handleMoveSection(idx, -1)}
-                    onMoveDown={(idx) => handleMoveSection(idx, 1)}
-                    isFirst={si === 0}
-                    isLast={si === sections.length - 1}
-                    itemCount={section.items.length}
-                  />
-                  <Collapse in={!collapsedSections.has(si)}>
-                    {renderItems(section.items, si)}
-                  </Collapse>
-                </Box>
-              ))}
-              <Button variant="light" leftSection={<IconPlus size={16} />}
-                onClick={() => addSection({ title: `Section ${sections.length + 1}` })}>
-                Add Section
-              </Button>
-            </Stack>
+        <div className="sections-scroll" role="region" aria-label="List contents" {...regionProps}>
+          {readError && (
+            <Alert icon={<IconAlertCircle size={16} />} color="red"
+              title={readError.afterSave ? 'Change saved. Could not refresh the list.' : 'Could not load the list'}>
+              <Text>{readError.error.message}</Text>
+              {reading ? <Text>Loading list…</Text> : <Button variant="light" onClick={retry}>Retry</Button>}
+            </Alert>
           )}
+          <div inert={readError || pending.structural ? '' : undefined} onBlurCapture={event => {
+            // Suspending the controls blurs an active inline editor. Keep its
+            // draft until the snapshot recovers and the user finishes editing.
+            if (event.currentTarget.inert) event.stopPropagation();
+          }}>
+            {filteredItems ? (
+              renderItems(filteredItems, 0)
+            ) : (
+              <Stack gap="md">
+                {sections.map((section, si) => (
+                  <Box key={si} className="section-container">
+                    <SectionHeader
+                      section={section}
+                      sectionIndex={si}
+                      collapsed={collapsedSections.has(si)}
+                      onToggleCollapse={toggleCollapse}
+                      onUpdate={(idx, updates) => updates ? mutate('lists.update_section', 'Could not update section', () => updateSection(idx, updates)) : setSectionSettingsOpen(idx)}
+                      onDelete={idx => mutate('lists.delete_section', 'Could not delete section', () => deleteSection(idx))}
+                      onMoveUp={(idx) => handleMoveSection(idx, -1)}
+                      onMoveDown={(idx) => handleMoveSection(idx, 1)}
+                      isFirst={si === 0}
+                      isLast={si === sections.length - 1}
+                      itemCount={section.items.length}
+                    />
+                    <Collapse in={!collapsedSections.has(si)}>
+                      {renderItems(section.items, si)}
+                    </Collapse>
+                  </Box>
+                ))}
+                <Button variant="light" leftSection={<IconPlus size={16} />}
+                  disabled={loading || Boolean(readError)}
+                  onClick={() => mutate('lists.add_section', 'Could not add section', () => addSection({ title: `Section ${sections.length + 1}` }))}>
+                  Add Section
+                </Button>
+              </Stack>
+            )}
+          </div>
         </div>
 
         <DragOverlay dropAnimation={null}>
@@ -629,7 +651,7 @@ function FolderEditor({ type, listName }) {
         onClose={() => { setEditorOpen(false); setEditingItem(null); }}
         onSave={handleSaveItem}
         item={editingItem}
-        loading={loading}
+        loading={loading || Boolean(readError)}
         sections={sections}
       />
 
@@ -638,10 +660,11 @@ function FolderEditor({ type, listName }) {
         onClose={() => setSettingsOpen(false)}
         metadata={listMetadata}
         onSave={async (settings) => {
-          await updateListSettings(settings);
-          setSettingsOpen(false);
+          const result = await mutate('lists.settings', 'Could not save list settings',
+            () => updateListSettings(settings), { refresh: false });
+          if (result.ok) setSettingsOpen(false);
         }}
-        loading={loading}
+        loading={loading || Boolean(readError)}
       />
 
       <SectionSettingsModal
@@ -650,10 +673,10 @@ function FolderEditor({ type, listName }) {
         section={sectionSettingsOpen !== null ? sections[sectionSettingsOpen] : null}
         sectionIndex={sectionSettingsOpen}
         onSave={async (idx, updates) => {
-          await updateSection(idx, updates);
-          setSectionSettingsOpen(null);
+          const result = await mutate('lists.update_section', 'Could not save section settings', () => updateSection(idx, updates));
+          if (result.ok) setSectionSettingsOpen(null);
         }}
-        loading={loading}
+        loading={loading || Boolean(readError)}
       />
 
       <ConfirmModal

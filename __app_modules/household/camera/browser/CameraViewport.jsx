@@ -1,8 +1,8 @@
 // frontend/src/modules/CameraFeed/CameraViewport.jsx
 import { useRef, useState, useEffect, useMemo, useCallback } from 'react';
-import { useFocusTrap } from '@mantine/hooks';
 import usePanZoom from "./usePanZoom.js";
 import { UiIcon } from '../../../../frontend/src/lib/ui/UiIcon.jsx';
+import { useDialogFocus } from '../../../../frontend/src/lib/ui/dismiss/useDialogFocus.js';
 import { useDismissLayer } from '../../../../frontend/src/lib/ui/dismiss/useDismissLayer.js';
 import { useOverlayFocusReturn } from '../../../../frontend/src/lib/ui/dismiss/useOverlayFocusReturn.js';
 import { useOverlayScrollLock } from '../../../../frontend/src/lib/ui/useOverlayScrollLock.js';
@@ -24,10 +24,11 @@ import "./CameraViewport.scss";
  */
 export default function CameraViewport({ cameraId, mode, snapshotSrc: externalSnapshotSrc, detections = [], onClose }) {
   const logger = useMemo(() => getChildLogger({ component: 'CameraViewport', cameraId }), [cameraId]);
-  const trap = useFocusTrap();
+  const dialogRef = useRef(null);
   const stackHandlesEscape = useDismissLayer(true, onClose);
   useOverlayFocusReturn(true);
   useOverlayScrollLock(true);
+  const handleDialogKeys = useDialogFocus(true, dialogRef, dialogRef);
   const cameraLabel = cameraId.replace(/-/g, ' ');
   const containerRef = useRef(null);
   const mediaRef = useRef(null);
@@ -182,7 +183,7 @@ export default function CameraViewport({ cameraId, mode, snapshotSrc: externalSn
   };
 
   return (
-    <div ref={trap} className="camera-viewport" role="dialog" aria-modal="true" aria-label={`Camera: ${cameraLabel}`} onMouseMove={onMouseMove}>
+    <div ref={dialogRef} className="camera-viewport" role="dialog" aria-modal="true" aria-label={`Camera: ${cameraLabel}`} tabIndex={-1} onKeyDown={handleDialogKeys} onMouseMove={onMouseMove}>
       {/* Top bar */}
       <div className="camera-viewport__top-bar">
         <div className="camera-viewport__title">

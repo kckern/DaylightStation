@@ -145,6 +145,21 @@ describe('SearchMode', () => {
     await waitFor(() => expect(screen.getByTestId('search-mode-input')).toHaveFocus());
   });
 
+  it('keeps focus on Close when the opening focus callback runs after keyboard interaction', () => {
+    vi.useFakeTimers();
+    try {
+      const view = render(<Harness />);
+      const close = screen.getByRole('button', { name: 'Close search' });
+      act(() => close.focus());
+
+      act(() => vi.advanceTimersByTime(0));
+      expect(close).toHaveFocus();
+      view.unmount();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('logs search.mode_entered on open', async () => {
     render(<Harness />);
     await waitFor(() => expect(mediaLog.searchModeEntered).toHaveBeenCalledWith({}));

@@ -11,6 +11,7 @@ vi.mock('../../../../frontend/src/lib/api.mjs', () => ({ DaylightAPI: vi.fn() })
 
 const menus = '/api/v1/admin/content/lists/menus';
 const watchlists = '/api/v1/admin/content/lists/watchlists';
+const get = path => [path, {}, 'GET', { signal: expect.any(AbortSignal) }];
 const collection = name => ({ lists: [{ name, active: true }] });
 
 function openMenus() {
@@ -39,7 +40,7 @@ it('keeps watchlist cards when a departed menus read settles', async () => {
   const pending = Promise.withResolvers();
   DaylightAPI.mockImplementation(path => path === menus ? pending.promise : Promise.resolve(collection('watchlist')));
   openMenus();
-  await waitFor(() => expect(DaylightAPI).toHaveBeenCalledWith(menus));
+  await waitFor(() => expect(DaylightAPI).toHaveBeenCalledWith(...get(menus)));
   fireEvent.click(screen.getByText('Browse watchlists'));
   await screen.findByTestId('list-card-watchlist');
   await act(async () => pending.resolve(collection('menu')));
@@ -59,7 +60,7 @@ it('closes a committed create and retries a failed refresh with just a GET', asy
   await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
   fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
   await screen.findByTestId('list-card-new-menu');
-  expect(DaylightAPI.mock.calls).toEqual([[menus], [menus, { name: 'new-menu' }, 'POST'], [menus], [menus]]);
+  expect(DaylightAPI.mock.calls).toEqual([get(menus), [menus, { name: 'new-menu' }, 'POST'], get(menus), get(menus)]);
 });
 
 it('leaves the new route draft intact when a departed create settles', async () => {
@@ -75,7 +76,7 @@ it('leaves the new route draft intact when a departed create settles', async () 
   await enterName('new draft');
   await act(async () => pending.resolve({ list: 'old draft' }));
   expect(screen.getByTestId('list-name-input')).toHaveValue('new draft');
-  expect(DaylightAPI.mock.calls).toEqual([[menus], [menus, { name: 'old draft' }, 'POST'], [watchlists]]);
+  expect(DaylightAPI.mock.calls).toEqual([get(menus), [menus, { name: 'old draft' }, 'POST'], get(watchlists)]);
 });
 
 it('revalidates the current menus reader when an earlier menus visit commits', async () => {
@@ -108,5 +109,5 @@ it('keeps a rejected name editable in its create dialog', async () => {
   await screen.findByText('Name already taken');
   expect(screen.getByTestId('list-name-input')).toHaveValue('existing');
   expect(screen.getByTestId('create-list-submit')).toBeEnabled();
-  expect(DaylightAPI.mock.calls).toEqual([[menus], [menus, { name: 'existing' }, 'POST']]);
+  expect(DaylightAPI.mock.calls).toEqual([get(menus), [menus, { name: 'existing' }, 'POST']]);
 });

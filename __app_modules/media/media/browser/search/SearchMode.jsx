@@ -26,7 +26,6 @@ import { LoadErrorLine } from "../shared/LoadErrorLine.jsx";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { IconAlertTriangle } from '@tabler/icons-react';
 import { Button } from '@mantine/core';
-import { useFocusTrap } from '@mantine/hooks';
 import { UiIcon } from '@/lib/ui/UiIcon.jsx';
 import { ActionMenu } from '@/lib/ui/ActionMenu.jsx';
 import { useContentCombobox } from "../../../../../__capabilities/content-catalog/browser/picker-controller.mjs";
@@ -44,6 +43,7 @@ import { useRowLabels } from "./useRowLabels.js";
 import { displayTitle, resultSubtitle } from "./resultPresentation.js";
 import getLogger from "../../../../../frontend/src/lib/logging/Logger.js";
 import mediaLog from "../logging/mediaLog.js";
+import { useDialogFocus } from '@/lib/ui/dismiss/useDialogFocus.js';
 import { useDismissLayer } from '@/lib/ui/dismiss/useDismissLayer.js';
 import { ItemDestinationPicker } from "../actions/ItemDestinationPicker.jsx";
 import { useHouseholdResultActions } from "../household/useHouseholdResultActions.js";
@@ -74,8 +74,9 @@ export function SearchMode({ onClose, addTo = null, restoreSearchFocus }) {
   const { queue } = useSessionController('local');
   const { push } = useNav();
   const log = useMemo(() => getLogger().child({ component: 'search-mode' }), []);
-  const dialogRef = useFocusTrap();
+  const dialogRef = useRef(null);
   const searchInputRef = useRef(null);
+  const handleDialogKeys = useDialogFocus(true, dialogRef, searchInputRef);
   const priorFocusRef = useRef(typeof document !== 'undefined' ? document.activeElement : null);
   const priorScrollRef = useRef(typeof window !== 'undefined' ? window.scrollY : 0);
   // Guards against a close path AND the popstate it triggers both firing a
@@ -284,7 +285,7 @@ export function SearchMode({ onClose, addTo = null, restoreSearchFocus }) {
   const showWideningNotice = fellBackToAll && !isSearching && !streamError;
 
   return (
-    <div ref={dialogRef} className="search-mode" data-testid="search-mode" role="dialog" aria-modal="true" aria-label="Search media">
+    <div ref={dialogRef} onKeyDown={handleDialogKeys} className="search-mode" data-testid="search-mode" role="dialog" aria-modal="true" aria-label="Search media">
       <div className="search-mode-header">
         <button
           type="button"
