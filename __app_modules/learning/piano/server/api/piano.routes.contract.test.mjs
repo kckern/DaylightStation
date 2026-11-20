@@ -28,6 +28,7 @@ const routeInventory = [
   ]),
   ['get', '/users/:userId/preferences'], ['put', '/users/:userId/preferences'],
   ['get', '/users/:userId/preset'], ['put', '/users/:userId/preset'],
+  ['get', '/sheet-music/learn'],
   // Coaching outcomes (b2f71d8b04), registered before the general practice route.
   ['get', '/users/:userId/practice/:scoreKey/coach'], ['post', '/users/:userId/practice/:scoreKey/coach'],
   ['get', '/users/:userId/practice/:scoreKey'], ['put', '/users/:userId/practice/:scoreKey'],
@@ -49,7 +50,7 @@ function subject() {
   const studioDatastore = {
     isKnownUser: () => true, getRoster: () => [], getLoopManifest: () => [],
     listStudioTakes: () => [], getStudioTake: () => ({ id: 'take' }),
-    getPreferences: () => ({}), getPreset: () => ({}), getPractice: () => ({}), getProgress: () => ({}),
+    getPreferences: () => ({}), getPreset: () => ({}), getPractice: () => ({}), getSheetMusicLearn: () => null, getProgress: () => ({}),
     getLessonIndex: () => ({}), getLessonDrill: () => ({}),
     listProducer: () => [], getProducer: (_family, id) => ({ id }),
   };
@@ -112,7 +113,7 @@ describe('piano route contract', () => {
       '/users/u/studio', '/users/u/studio/take', '/users/u/compositions', '/users/u/compositions/song',
       '/compositions/shared', '/producer/loops', '/producer/loops/id', '/producer/crate', '/producer/crate/id',
       '/producer/songs', '/producer/songs/id', '/users/u/preferences', '/users/u/preset',
-      '/users/u/practice/score-key', '/users/u/progress', '/bank', '/bank/catalog', '/bank/search',
+      '/sheet-music/learn?id=x', '/users/u/practice/score-key', '/users/u/progress', '/bank', '/bank/catalog', '/bank/search',
       '/bank/chords', '/lessons/basics', '/lessons/basics/one', '/courses/progress',
       '/courses/course/playable?userId=u', '/activity/recent', '/activity/desk',
     ];
