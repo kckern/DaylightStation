@@ -85,10 +85,14 @@ export async function createPianoModule({configService, userService, rootLogger,
   // Dated whole-piece Silver/Gold and Polish gem/diamond, read by the gem
   // economy's `piano-piece`, `piano-polish-gem` and `piano-polish-diamond` milestones.
   const pianoPieceLog = createPianoPieceLog({ configService, logger: rootLogger.child({ module: 'piano-learn-coach' }) });
-  // Admin-approved Learn segments, so the home strip and the Polish reward
-  // follow a new segmentation at once rather than at each child's next take.
+  // The segments the kiosk teaches (a household override, else the admin-approved
+  // Learn file), so the home strip and the Polish reward follow a new
+  // segmentation at once rather than at each child's next take.
   const pianoLearnSegments = createLearnSegmentsReader({
-    datastore: pianoStudioDatastore, logger: rootLogger.child({ module: 'piano-learn-segments' }),
+    datastore: pianoStudioDatastore,
+    // Read per call, so a config reload's segment override reaches the desk at once.
+    pianoConfig: () => configService.getHouseholdAppConfig?.(null, 'piano') ?? null,
+    logger: rootLogger.child({ module: 'piano-learn-segments' }),
   });
   const pianoPolishReward = new PianoPolishReward({ pieceLog: pianoPieceLog, learnSegments: pianoLearnSegments, logger: rootLogger.child({ module: 'piano-polish-reward' }) });
   const pianoConfigProjection = new PianoConfigProjection({ configService });

@@ -55,3 +55,39 @@ test('each reader keeps its own latch', () => {
   reader(fail, warnings)(SCORE, 'c');
   assert.equal(warnings.length, 2);
 });
+
+const overrideReader = (pianoConfig, getSheetMusicLearn = () => file, warnings = []) => createLearnSegmentsReader({
+  datastore: { getSheetMusicLearn },
+  pianoConfig: () => pianoConfig,
+  logger: { warn: (event, data) => warnings.push([event, data]) },
+});
+
+test('a household segment override wins over the approved file, with no sha check', () => {
+  const config = { sheetmusic: { learn: { pieces: { [SCORE]: { segments: [
+    { id: 'y', inMeasure: 2, outMeasure: 5, name: 'Middle' }, { id: 'x', start: 0, end: 1 },
+  ] } } } } };
+  const read = overrideReader(config);
+  assert.deepEqual(read(SCORE, 'other-sha'), [{ id: 'x', start: 0, end: 1 }, { id: 'y', start: 2, end: 5, name: 'Middle' }]);
+  // Another piece still reads its approved file.
+  assert.equal(read('files:docs/sheet-music/else.mxl', 'c').length, 2);
+});
+
+test('the single configured piano\'s own sheetmusic.learn is the one read, as the kiosk resolves it', () => {
+  const config = {
+    sheetmusic: { learn: { pieces: { [SCORE]: { segments: [{ id: 'shared', start: 0, end: 7 }] } } } },
+    pianos: { one: { sheetmusic: { learn: { pieces: { [SCORE]: { segments: [{ id: 'own', start: 0, end: 3 }] } } } } } },
+  };
+  assert.deepEqual(overrideReader(config)(SCORE, 'c').map((s) => s.id), ['own']);
+  // A piano without its own sheetmusic.learn inherits the shared one.
+  assert.deepEqual(overrideReader({ ...config, pianos: { one: { sheetmusic: { collections: [] } } } })(SCORE, 'c').map((s) => s.id), ['shared']);
+});
+
+test('no override reads the approved file as before; an invalid override answers null and warns once', () => {
+  assert.deepEqual(overrideReader({ sheetmusic: {} })(SCORE, 'c').map((s) => s.id), ['a', 'b']);
+  assert.deepEqual(overrideReader(null)(SCORE, 'c').map((s) => s.id), ['a', 'b']);
+  const warnings = [];
+  const bad = overrideReader({ sheetmusic: { learn: { pieces: { [SCORE]: { segments: [{ id: 'x', start: 0, end: 4 }, { id: 'y', start: 3, end: 6 }] } } } } }, () => file, warnings);
+  assert.equal(bad(SCORE, 'c'), null);
+  assert.equal(bad(SCORE, 'c'), null);
+  assert.deepEqual(warnings, [['piano.sheetmusic.override-invalid', { scoreId: SCORE }]]);
+});
