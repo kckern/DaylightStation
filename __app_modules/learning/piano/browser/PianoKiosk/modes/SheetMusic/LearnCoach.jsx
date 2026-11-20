@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { coachFeedback, isGoldWork, passageProgress } from '../../../../../../../shared/music/learnCoach.mjs';
 import getLogger from '../../../../../../../frontend/src/lib/logging/Logger.js';
+import { roundScore } from '../../../performance/timedVerdicts.js';
 import useLearnCoach from './useLearnCoach.js';
 import usePieceGemOffer from './usePieceGemOffer.js';
 import LearnLab from './LearnLab.jsx';
@@ -141,7 +142,10 @@ function CoachSession({ score, title, plan, segment, coach, tempo = EMPTY, feedb
     raw = { ...raw, assessmentId: raw.assessmentId ?? freshId() };
     const message = coachFeedback(raw, played);
     const passed = message.reason === 'silver' || message.reason === 'passed';
-    logger.info('piano.learn.coach.take', { scoreId: score.id, passageId: segment.id, skill: played.skill, depth: played.depth ?? 0, reason: message.reason, passed });
+    logger.info('piano.learn.coach.take', { scoreId: score.id, passageId: segment.id, skill: played.skill, depth: played.depth ?? 0, reason: message.reason, passed,
+      // The scores the take was judged on, so a timing failure can be read from the log alone.
+      tempoPercent: played.tempoPercent ?? 100,
+      placement: roundScore(raw.criteria?.placement), completeness: roundScore(raw.criteria?.completeness), cleanliness: roundScore(raw.criteria?.cleanliness) });
     setLane(isGoldWork(played) ? 'gold' : null);
     coach.record(played, raw);
     if (passed) { setMoment({ id: raw.assessmentId, task: played, raw, was: { silver: Boolean(certification.silver), gold: Boolean(certification.gold), flower: Boolean(projected?.flower) } }); setResult(null); }

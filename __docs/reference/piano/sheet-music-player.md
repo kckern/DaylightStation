@@ -360,7 +360,9 @@ states: every stem touches a notehead. The drill puts no CSS transform on an
 engraved note, which is what keeps them together.
 
 Logs (`piano-learn-coach`): `piano.learn.coach.step`, `piano.learn.coach.take`
-(`reason`, `passed`), `piano.learn.coach.pick`, `piano.learn.coach.certified`
+(`reason`, `passed`, `tempoPercent`, and the result's `placement`,
+`completeness` and `cleanliness` to 3 decimals; `placement` is null on an
+unpaced take), `piano.learn.coach.pick`, `piano.learn.coach.certified`
 (`level`, `piece`, `next`), `piano.learn.coach.set-aside`,
 `piano.learn.coach.unavailable`, `piano.learn.celebrate` (`scope: passage|piece`,
 `level`, `passages`, `sounded`; logged as the verdict lands), and `piano.learn.rail.select` with
@@ -533,7 +535,10 @@ The standard path is:
 Single-part passages omit separate-hand and coordination tasks. Silver steps need
 `stepPasses` clean takes, one by default. Gold-path readiness requires two successful
 valid equivalent completed takes among the latest three. Default criteria are completeness 1 and cleanliness at least 0.8;
-timed work also requires placement at least 0.8. An explicitly authored ladder
+timed work also requires placement at least 0.8. Below full tempo the timing
+window grows with the slowdown (cap `400 ms × 100 / tempoPercent`), and the first
+off-beat note in a take earns half placement credit instead of none (see
+performance-assessment.md, "Fraction"). An explicitly authored ladder
 retains its order, criteria, repetition quota and consecutive-pass requirements.
 Authored per-set tempos remain distinct ordered requirements; repeating a slower set cannot finish a faster one. Its terminal achievement is **Practice plan complete** unless the work establishes
 the full timed achievement, labeled **Played at score tempo**.

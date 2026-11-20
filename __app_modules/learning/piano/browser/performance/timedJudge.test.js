@@ -120,7 +120,8 @@ describe('judgeTimedOnset (fraction policy)', () => {
     const result = finalizeAssessmentAttempt(attempt).result;
     expect(result.criteria.completeness).toBe(1);
     expect(result.criteria.cleanliness).toBe(1);
-    expect(result.criteria.placement).toBe(0);
+    // The first off-beat note is forgiven to half credit; the other seven earn 0.
+    expect(result.criteria.placement).toBeCloseTo(0.5 / 8);
     expect(result.verdict.passed).toBe(false);
     expect(result.verdict.failed_criteria).toEqual(['placement']);
     expect(result.diagnostics).toMatchObject({ offbeat_notes: 8, late_notes: 8, early_notes: 0, median_drift_ms: 450, response_median_ms: 450, wrong_notes: 0 });
@@ -231,5 +232,106 @@ describe('judgeTimedOnset (fixed policy)', () => {
     const { attempt } = play(start({}), run(10));
     expect(attempt.hits['e0-rh-67-1']).toEqual({ time: 10, driftMs: 10 });
     expect(finalizeAssessmentAttempt(attempt).result.diagnostics).not.toHaveProperty('offbeat_notes');
+  });
+});
+
+// Whole notes at 60 bpm: the gap is 4000 ms, so 0.4 × gap (1600 ms) never
+// binds and the window is the (tempo-scaled) cap.
+const wholeNotes = (count, policy) => startAssessmentAttempt(createAssessmentAttempt({
+  expectation: compileAssessmentExpectation({
+    source: { kind: 'exercise', id: 'whole' },
+    events: Array.from({ length: count }, (_, index) => ({ id: `w${index}`, onsetQuarter: index * 4, durationQuarters: 4, notes: [{ midi: 60 + index }] })),
+    tempoMap: [{ onsetQuarter: 0, bpm: 60 }],
+  }),
+  matcher: 'timed', mode: 'cued', requirement: REQUIREMENT, policy,
+}), { time: 0 });
+
+describe('the window cap grows as the tempo slows', () => {
+  it('keeps windowMaxMs at full tempo, or with no tempoPercent', () => {
+    expect(timedWindowMs(wholeNotes(2, FRACTION_POLICY), 0)).toBe(400);
+    expect(timedWindowMs(wholeNotes(2, { ...FRACTION_POLICY, tempoPercent: 100 }), 0)).toBe(400);
+    expect(timedWindowMs(wholeNotes(2, { ...FRACTION_POLICY, tempoPercent: 120 }), 0)).toBe(400);
+  });
+
+  it('scales the cap by 100 / tempoPercent below full tempo', () => {
+    expect(timedWindowMs(wholeNotes(2, { ...FRACTION_POLICY, tempoPercent: 60 }), 0)).toBeCloseTo(666.667, 2);
+    expect(timedWindowMs(wholeNotes(2, { ...FRACTION_POLICY, tempoPercent: 40 }), 0)).toBe(1000);
+  });
+
+  it('still applies the fraction of the gap under the scaled cap', () => {
+    // Eighths at 60 bpm: gap 500 ms → 200 ms, whatever the cap.
+    expect(timedWindowMs(start({ ...FRACTION_POLICY, tempoPercent: 40 }), 0)).toBe(200);
+  });
+
+  it('leaves the fixed policy alone', () => {
+    expect(timedWindowMs(start({ tempoPercent: 40 }), 3)).toBe(220);
+  });
+});
+
+describe('one off-beat note per take is forgiven', () => {
+  it('gives the first off-beat claim 0.5 and the second 0', () => {
+    const onsets = run(0);
+    onsets[2] = { midi: 71, time: 1000 + 300 };
+    const one = finalizeAssessmentAttempt(play(start(), onsets).attempt).result;
+    expect(one.diagnostics.offbeat_notes).toBe(1);
+    expect(one.criteria.placement).toBeCloseTo(7.5 / 8);
+    onsets[5] = { midi: 76, time: 2500 + 300 };
+    const two = finalizeAssessmentAttempt(play(start(), onsets).attempt).result;
+    expect(two.diagnostics.offbeat_notes).toBe(2);
+    expect(two.criteria.placement).toBeCloseTo(7.5 / 8 - 1 / 8);
+  });
+
+  it('forgives the first off-beat note in score order, not in play order', () => {
+    // Event 5 is played early (claimed before event 2 is played late); the
+    // forgiven note is still event 2's, so a span over e0-e3 sees the 0.5.
+    const onsets = run(0);
+    onsets[2] = { midi: 71, time: 1000 + 300 };
+    onsets[5] = { midi: 76, time: 2500 - 300 };
+    const { attempt } = play(start(), onsets.sort((a, b) => a.time - b.time));
+    const hits = attempt.hits;
+    expect(hits['e2-rh-71-1'].offbeat).toBe('late');
+    expect(hits['e5-rh-76-1'].offbeat).toBe('early');
+    expect(finalizeAssessmentAttempt(attempt).result.criteria.placement).toBeCloseTo(6.5 / 8);
+  });
+
+  it('does not change the fixed policy', () => {
+    const { attempt } = play(start({}), run(10));
+    expect(finalizeAssessmentAttempt(attempt).result.criteria.placement).toBe(1);
+  });
+});
+
+describe('the failing 60% take from 2026-11-19, reconstructed', () => {
+  // 15 notes, all found, one off the beat. The rest drift up to ±300 ms, which the
+  // old 400 ms cap (full credit only inside ±160 ms) scored at about 0.61.
+  const DRIFTS = [20, -40, 280, -280, 300, 30, -300, 0, 260, -290, 300, -30, 280, -300];
+  const take = (tempoPercent) => {
+    const onsets = Array.from({ length: 15 }, (_, index) => ({ midi: 60 + index, time: index * 4000 }));
+    DRIFTS.forEach((drift, index) => { onsets[index < 7 ? index : index + 1].time += drift; });
+    onsets[7].time += 1200; // the one off-beat note: past even the widened window
+    const policy = tempoPercent == null ? FRACTION_POLICY : { ...FRACTION_POLICY, tempoPercent };
+    return finalizeAssessmentAttempt(play(wholeNotes(15, policy), onsets).attempt).result;
+  };
+
+  it('fails on timing under the old 400 ms cap, even with the forgiven note', () => {
+    const old = take(null);
+    expect(old.diagnostics.offbeat_notes).toBe(1);
+    expect(old.criteria.placement).toBeLessThan(0.8);
+  });
+
+  it('passes at 60% with the grown window and the forgiven note', () => {
+    const result = take(60);
+    expect(result.criteria.completeness).toBe(1);
+    expect(result.diagnostics.offbeat_notes).toBe(1);
+    expect(result.criteria.placement).toBeGreaterThanOrEqual(0.8);
+    expect(result.verdict.passed).toBe(true);
+  });
+
+  it('passes with every other note within ±160 ms, even at full tempo', () => {
+    const onsets = Array.from({ length: 15 }, (_, index) => ({ midi: 60 + index, time: index * 4000 + (index % 2 ? -150 : 150) }));
+    onsets[7].time = 7 * 4000 + 1200;
+    const result = finalizeAssessmentAttempt(play(wholeNotes(15, FRACTION_POLICY), onsets).attempt).result;
+    expect(result.diagnostics.offbeat_notes).toBe(1);
+    expect(result.criteria.placement).toBeCloseTo(14.5 / 15);
+    expect(result.verdict.passed).toBe(true);
   });
 });
