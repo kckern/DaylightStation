@@ -405,8 +405,8 @@ send client messages.
 | `null` (sandboxed frame, `data:` page) | `403` |
 | any other non-http(s) value | allowed: arduinoWebSockets, the library in every relay firmware (barcode, kitchen, OMR, pressure mat, OBD, TI calculator), sends `Origin: file://` |
 | on `http.allowed_origins` | allowed |
-| http(s), with `Sec-Fetch-Site` | allowed only when `same-origin` |
-| http(s), no `Sec-Fetch-Site` | allowed when its host is the handshake's `Host` or first `X-Forwarded-Host` (the WebSocket API lets a page set neither) |
+| http(s), `Sec-Fetch-Site: same-origin` | allowed |
+| any other http(s) | allowed when its host is the handshake's `Host`, or the first `X-Forwarded-Host` if the peer is loopback, link-local or private (the reverse proxy; the same peers Express's `trust proxy` trusts). The browser sets `Origin` and the WebSocket API lets a page set no headers, so the match cannot be forged |
 
 The frontend connects to `/ws` on its own origin; in dev Vite's `/ws` proxy
 keeps the browser's `Host`. Refusals log `security.ws-origin-refused` (warn,

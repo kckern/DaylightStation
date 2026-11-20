@@ -271,14 +271,22 @@ describe('webSocketOriginRefusal', () => {
     expect(webSocketOriginRefusal(upgrade({ host: 'localhost:3111', origin: 'http://localhost:3111' }))).toBeNull();
   });
 
-  it('accepts a proxied page whose host arrives as X-Forwarded-Host (no page can set that header on a WebSocket)', () => {
-    expect(webSocketOriginRefusal(upgrade({ host: 'daylight-station:3111', 'x-forwarded-host': HOST, origin: `https://${HOST}` }))).toBeNull();
+  it('honours X-Forwarded-Host only from a loopback or private peer (the reverse proxy), like trust proxy', () => {
+    const proxied = (ip) => ({ ...upgrade({ host: 'daylight-station:3111', 'x-forwarded-host': HOST, origin: `https://${HOST}` }), socket: { remoteAddress: ip } });
+    for (const ip of ['127.0.0.1', '::1', '::ffff:127.0.0.1', '10.0.0.5', '172.18.0.2', '192.168.1.4', 'fd00::1', 'fe80::1']) {
+      expect(webSocketOriginRefusal(proxied(ip)), ip).toBeNull();
+    }
+    for (const ip of ['203.0.113.9', '::ffff:198.51.100.2', '2001:db8::1', undefined]) {
+      expect(webSocketOriginRefusal(proxied(ip)), String(ip)).toBe('origin-mismatch');
+    }
   });
 
-  it('accepts Sec-Fetch-Site: same-origin and refuses any other Sec-Fetch-Site', () => {
+  it('accepts Sec-Fetch-Site: same-origin; any other value falls through to the host match', () => {
     expect(webSocketOriginRefusal(upgrade({ host: 'daylight-station:3111', origin: `https://${HOST}`, 'sec-fetch-site': 'same-origin' }))).toBeNull();
-    expect(webSocketOriginRefusal(upgrade({ host: HOST, origin: 'https://evil.example', 'sec-fetch-site': 'cross-site' }))).toBe('sec-fetch-site');
-    expect(webSocketOriginRefusal(upgrade({ host: HOST, origin: 'https://other.example.test', 'sec-fetch-site': 'same-site' }))).toBe('sec-fetch-site');
+    expect(webSocketOriginRefusal(upgrade({ host: HOST, origin: 'https://evil.example', 'sec-fetch-site': 'cross-site' }))).toBe('origin-mismatch');
+    expect(webSocketOriginRefusal(upgrade({ host: HOST, origin: 'https://other.example.test', 'sec-fetch-site': 'same-site' }))).toBe('origin-mismatch');
+    // A browser that calls the app's own page same-site (scheme or alias quirks) still connects when the host matches.
+    expect(webSocketOriginRefusal(upgrade({ host: HOST, origin: `https://${HOST}`, 'sec-fetch-site': 'same-site' }))).toBeNull();
   });
 
   it('refuses another site, or another port on the same host', () => {

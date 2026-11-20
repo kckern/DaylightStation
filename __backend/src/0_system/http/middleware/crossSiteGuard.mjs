@@ -131,6 +131,18 @@ function crossSiteReadRefusal(req) {
   return NESTED_DESTINATIONS.has(lowerHeader(req, 'Sec-Fetch-Dest')) ? 'cross-site-frame' : null;
 }
 
+// The peers `trust proxy: 'loopback, linklocal, uniquelocal'` trusts in app.mjs.
+const TRUSTED_PROXY_PEERS = [
+  /^127\./, /^::1$/,                                       // loopback
+  /^169\.254\./, /^fe[89ab][0-9a-f]:/i,                    // link-local
+  /^10\./, /^172\.(1[6-9]|2\d|3[01])\./, /^192\.168\./, /^f[cd][0-9a-f]{2}:/i, // unique local
+];
+
+function isTrustedProxyPeer(address) {
+  const ip = String(address || '').trim().toLowerCase().replace(/^::ffff:(?=\d+\.)/, '');
+  return Boolean(ip) && TRUSTED_PROXY_PEERS.some((pattern) => pattern.test(ip));
+}
+
 /**
  * Why a WebSocket upgrade is refused, or null when it may connect.
  *
@@ -144,13 +156,16 @@ function crossSiteReadRefusal(req) {
  *      firmware's library, sends `Origin: file://` on every handshake. A
  *      browser never sends one for a web page.
  *   4. `Origin` on the allow-list: allowed.
- *   5. `Sec-Fetch-Site` present: allowed only as `same-origin`.
- *   6. Otherwise allowed only when the Origin's host is the Host the upgrade
- *      was sent to, or the first `X-Forwarded-Host`. The WebSocket API lets a
- *      page set no request headers, so a page cannot forge either.
+ *   5. `Sec-Fetch-Site: same-origin`: allowed.
+ *   6. Otherwise (no or another `Sec-Fetch-Site`) allowed only when the
+ *      Origin's host is the Host the upgrade was sent to, or the first
+ *      `X-Forwarded-Host` when the peer is the reverse proxy (loopback,
+ *      link-local or private, the same peers Express's `trust proxy` trusts).
+ *      A browser sets `Origin` itself and the WebSocket API lets a page set no
+ *      request headers, so a page cannot forge the match.
  * Works on a bare IncomingMessage (what `ws` passes to verifyClient).
  *
- * @returns {null | 'origin-null' | 'sec-fetch-site' | 'origin-mismatch'}
+ * @returns {null | 'origin-null' | 'origin-mismatch'}
  */
 export function webSocketOriginRefusal(req, allowed = new Set()) {
   const headers = req?.headers || {};
@@ -163,12 +178,14 @@ export function webSocketOriginRefusal(req, allowed = new Set()) {
   if (allowed.has(normalized)) return null;
 
   const site = String(headers['sec-fetch-site'] ?? '').trim().toLowerCase();
-  if (site) return site === 'same-origin' ? null : 'sec-fetch-site';
+  if (site === 'same-origin') return null;
 
   const url = new URL(normalized);
   const hosts = requestHosts(req, url.protocol);
-  const forwarded = hostKey(String(headers['x-forwarded-host'] ?? '').split(',')[0], url.protocol);
-  if (forwarded) hosts.add(forwarded);
+  if (isTrustedProxyPeer(req?.socket?.remoteAddress)) {
+    const forwarded = hostKey(String(headers['x-forwarded-host'] ?? '').split(',')[0], url.protocol);
+    if (forwarded) hosts.add(forwarded);
+  }
   return hosts.has(hostKey(url.host, url.protocol)) ? null : 'origin-mismatch';
 }
 
