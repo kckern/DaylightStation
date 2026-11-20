@@ -26,47 +26,4 @@
     border-radius: 10px;
     box-shadow: 0 12px 32px rgba(0, 0, 0, 0.6);
   }
-
-  &__header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 1rem;
-    margin-bottom: 0.75rem;
-
-    h3 {
-      margin: 0;
-      font-size: 1.2rem;
-      font-weight: 600;
-    }
-  }
-
-  &__close {
-    padding: 0.4rem 0.9rem;
-    font-size: 1rem;
-    color: #fff;
-    background: rgba(255, 255, 255, 0.12);
-    border: 1px solid rgba(255, 255, 255, 0.2);
-    border-radius: 6px;
-    cursor: pointer;
-
-    &:focus-visible,
-    &:focus {
-      outline: 2px solid #ffd43b;
-      outline-offset: 2px;
-    }
-  }
-
-  &__error {
-    margin: 0 0 0.75rem;
-    padding: 0.5rem 0.75rem;
-    background: rgba(220, 53, 69, 0.25);
-    border: 1px solid rgba(220, 53, 69, 0.6);
-    border-radius: 6px;
-  }
-
-  &__loading {
-    margin: 0;
-    opacity: 0.7;
-  }
 }
