@@ -198,7 +198,6 @@ import { runWithOrigin } from "./0_system/runtime/aiContext.mjs";
 import { scopedGateway } from '#apps/common/ports/IAIGateway.mjs';
 import { createDevProxy } from '#api/v1/middleware/createDevProxy.mjs';
 import { DevRequestForwarder } from '#adapters/http/DevRequestForwarder.mjs';
-import { createEventBusRouter } from "./4_api/v1/routers/admin/eventbus.mjs";
 import { createAdminRouter } from "./4_api/v1/routers/admin/index.mjs";
 import { createOAuthRouter } from "./4_api/v1/routers/admin/oauth.mjs";
 // Admin app-services (constructed HERE at the composition root and injected into
@@ -999,8 +998,8 @@ export async function createApp({ server, logger, configPaths, configExists, ena
   const agendaOwnership=createConfiguredMigrationOwnership(configService);
   const { fingerprintProfileWriter } = await createFitnessIdentityRuntime({ eventBus, YamlUserProfileDatastore, configService, assertIdentityWritable:agendaOwnership.assertSharedWritable });
 
-  // EventBus admin router (requires eventBus to be created first)
-  app.use('/admin/ws', createEventBusRouter({ eventBus, logger: rootLogger }));
+  // The event bus admin router (restart, broadcast, status) is mounted only at
+  // /api/v1/admin/ws, behind the auth pipeline (see 4_api/v1/routers/admin).
 
   // Content domain
   // Get media library credentials (currently Plex, could be Jellyfin, etc.)

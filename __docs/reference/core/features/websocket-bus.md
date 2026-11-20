@@ -449,7 +449,7 @@ If the WebSocket server becomes unresponsive, it can be restarted via API:
 
 ```javascript
 const restartWebSocketServer = async () => {
-  await fetch('/exe/ws/restart', { method: 'POST' });
+  await fetch('/api/v1/admin/ws/restart', { method: 'POST' });
 };
 ```
 
