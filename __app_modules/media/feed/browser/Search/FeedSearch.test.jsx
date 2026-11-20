@@ -2,10 +2,14 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 
-const mocks = vi.hoisted(() => ({ api: vi.fn(), mutate: vi.fn(), applyPending: items => items }));
+const mocks = vi.hoisted(() => ({ api: vi.fn(), mutate: vi.fn(), applyPending: items => items, revision: 0 }));
 
 vi.mock("../../../../../frontend/src/lib/api.mjs", () => ({ DaylightAPI: mocks.api }));
-vi.mock("../FeedWorkspaceContext.jsx", () => ({ useFeedWorkspace: () => ({ mutateItems: mocks.mutate, applyPendingMutations: mocks.applyPending }) }));
+vi.mock("../FeedWorkspaceContext.jsx", () => ({
+  useFeedWorkspace: () => ({
+    mutateItems: mocks.mutate, applyPendingMutations: mocks.applyPending, itemSyncRevision: mocks.revision,
+  }),
+}));
 
 import FeedSearch from "./FeedSearch.jsx";
 
@@ -13,6 +17,7 @@ describe('FeedSearch', () => {
   beforeEach(() => {
     mocks.api.mockReset();
     mocks.mutate.mockReset();
+    mocks.revision = 0;
     mocks.api.mockImplementation(url => Promise.resolve(url.includes('cursor=')
       ? { items: [{ id: 'two', stateKey: 'two', title: 'Second result', state: {} }], total: 2, nextCursor: null, coverage: { retentionMonths: 12, status: 'complete' } }
       : { items: [{ id: 'one', stateKey: 'one', title: 'Saved result', state: { isSaved: true } }], total: 2, nextCursor: 'MQ', coverage: { retentionMonths: 12, status: 'complete' } }));
@@ -53,6 +58,10 @@ describe('FeedSearch', () => {
     expect(screen.getByRole('button', { name: 'Saved' })).toHaveAttribute('aria-pressed', 'true');
 
     fireEvent.click(screen.getByRole('button', { name: 'Load more (1 of 4)' }));
+    visibility.mockReturnValue('hidden');
+    fireEvent(document, new Event('visibilitychange'));
+    visibility.mockReturnValue('visible');
+    fireEvent(document, new Event('visibilitychange'));
     await act(() => vi.advanceTimersByTimeAsync(4500));
     expect(mocks.api).toHaveBeenCalledTimes(3);
     expect(mocks.api.mock.lastCall[3].signal.aborted).toBe(false);
@@ -96,6 +105,98 @@ describe('FeedSearch', () => {
     expect(screen.queryByText('Late match')).toBeNull();
     expect(mocks.api).toHaveBeenCalledTimes(3);
     expect(mocks.api.mock.lastCall[0]).toContain('q=new');
+  });
+
+  test('a stalled indexing poll releases the slot silently and cannot publish a late reply', async () => {
+    vi.useFakeTimers();
+    vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible');
+    const page = (title, status) => ({
+      items: [{ id: title, title }], total: 1, coverage: { status, indexed: 1, retentionMonths: 12 },
+    });
+    const stalled = Promise.withResolvers();
+    mocks.api.mockResolvedValueOnce(page('Initial match', 'running'))
+      .mockReturnValueOnce(stalled.promise)
+      .mockResolvedValue(page('Accepted match', 'complete'));
+    await act(async () => render(<MemoryRouter><FeedSearch /></MemoryRouter>));
+    await act(() => vi.advanceTimersByTimeAsync(2000));
+    const signal = mocks.api.mock.lastCall[3].signal;
+    await act(() => vi.advanceTimersByTimeAsync(8000));
+    expect(mocks.api).toHaveBeenCalledTimes(2);
+    expect(signal.aborted).toBe(false);
+    await act(() => vi.advanceTimersByTimeAsync(4000));
+    expect(signal.aborted).toBe(true);
+    expect(mocks.api).toHaveBeenCalledTimes(3);
+    await act(async () => stalled.resolve(page('Expired match', 'running')));
+    expect(screen.getByRole('heading', { name: 'Accepted match' })).toBeVisible();
+    expect(screen.queryByText('Expired match')).toBeNull();
+    expect(screen.queryByRole('alert')).toBeNull();
+  });
+
+  test('replay reconciliation replaces indexing and an obsolete reconciliation', async () => {
+    vi.useFakeTimers();
+    const visibility = vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('visible');
+    const snapshot = (title, status = 'running') => ({
+      items: [{ id: 'bird', title }], total: 1, coverage: { status, retentionMonths: 12 },
+    });
+    const indexing = Promise.withResolvers();
+    const firstReplay = Promise.withResolvers();
+    mocks.api.mockResolvedValueOnce(snapshot('Original birds'))
+      .mockReturnValueOnce(indexing.promise)
+      .mockReturnValueOnce(firstReplay.promise)
+      .mockResolvedValueOnce(snapshot('Latest birds', 'complete'));
+    const search = () => <MemoryRouter><FeedSearch /></MemoryRouter>;
+    const view = await act(async () => render(search()));
+    await act(() => vi.advanceTimersByTimeAsync(2000));
+    const indexingSignal = mocks.api.mock.lastCall[3].signal;
+    await act(async () => { mocks.revision = 1; view.rerender(search()); });
+    const replaySignal = mocks.api.mock.lastCall[3].signal;
+    expect(mocks.api).toHaveBeenCalledTimes(3);
+    expect(indexingSignal.aborted).toBe(true);
+    visibility.mockReturnValue('hidden');
+    fireEvent(document, new Event('visibilitychange'));
+    visibility.mockReturnValue('visible');
+    fireEvent(document, new Event('visibilitychange'));
+    await act(() => vi.advanceTimersByTimeAsync(2000));
+    expect(mocks.api).toHaveBeenCalledTimes(3);
+    expect(replaySignal.aborted).toBe(false);
+    await act(async () => { mocks.revision = 2; view.rerender(search()); });
+    expect(replaySignal.aborted).toBe(true);
+    expect(mocks.api).toHaveBeenCalledTimes(4);
+    await act(async () => {
+      indexing.resolve(snapshot('Retired indexing'));
+      firstReplay.reject(new Error('Retired reconciliation'));
+    });
+    expect(screen.getByRole('heading', { name: 'Latest birds' })).toBeVisible();
+    expect(screen.queryByText('Retired indexing')).toBeNull();
+    expect(screen.queryByRole('alert')).toBeNull();
+  });
+
+  test('replay waits for a stalled append to expire and supplies the next accepted cursor', async () => {
+    vi.useFakeTimers();
+    const snapshot = (title, nextCursor = null) => ({ items: [{ id: title, title }], total: 2, nextCursor });
+    const append = Promise.withResolvers();
+    mocks.api.mockResolvedValueOnce(snapshot('Original bird', 'original-cursor'))
+      .mockReturnValueOnce(append.promise)
+      .mockResolvedValueOnce(snapshot('Reconciled bird', 'accepted-cursor'))
+      .mockResolvedValueOnce(snapshot('More birds'));
+    const search = () => <MemoryRouter initialEntries={['/feed/search?state=saved']}><FeedSearch /></MemoryRouter>;
+    const view = await act(async () => render(search()));
+    fireEvent.click(screen.getByRole('button', { name: 'Load more (1 of 2)' }));
+    const expiredSignal = mocks.api.mock.lastCall[3].signal;
+    await act(async () => { mocks.revision = 1; view.rerender(search()); });
+    expect(mocks.api).toHaveBeenCalledTimes(2);
+    expect(expiredSignal.aborted).toBe(false);
+    await act(() => vi.advanceTimersByTimeAsync(10_000));
+    expect(expiredSignal.aborted).toBe(true);
+    expect(mocks.api).toHaveBeenCalledTimes(3);
+    expect(mocks.api.mock.lastCall[0]).not.toContain('cursor=');
+    expect(screen.getByRole('heading', { name: 'Reconciled bird' })).toBeVisible();
+    expect(screen.queryByRole('alert')).toBeNull();
+    await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Load more (1 of 2)' })));
+    expect(mocks.api.mock.lastCall[0]).toContain('cursor=accepted-cursor');
+    await act(async () => append.resolve(snapshot('Expired bird')));
+    expect(screen.getByRole('heading', { name: 'More birds' })).toBeVisible();
+    expect(screen.queryByText('Expired bird')).toBeNull();
   });
 
   test('browses filtered history without requiring a query and paginates', async () => {

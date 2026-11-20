@@ -12,7 +12,7 @@ import "../FeedShared.scss";
 
 const resultKey = item => item.stateKey || item.id;
 const NO_RESULTS = { items: [], nextCursor: null, total: 0, coverage: null };
-const reconcileTimeoutMs = 10_000;
+const searchTimeoutMs = 10_000;
 
 function reconcileRows(items, current, before, pending) {
   const recent = new Map(current.filter(item => {
@@ -37,8 +37,7 @@ export default function FeedSearch() {
   const [query, setQuery] = useState(params.get('q') || '');
   const [source, setSource] = useState(params.get('source') || '');
   const [resultPage, setResultPage] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [loadingMore, setLoadingMore] = useState(false);
+  const [foreground, setForeground] = useState('initial');
   const [requestError, setRequestError] = useState(null);
   const [syncStatus, setSyncStatus] = useState(null);
   const { mutateItems, applyPendingMutations, pendingItemOperations, itemSyncRevision } = useFeedWorkspace();
@@ -48,8 +47,6 @@ export default function FeedSearch() {
   const syncRetryRef = useRef(null);
   const appendedHeadingRef = useRef(null);
   const handledAppendFocus = useRef(null);
-  const requestRef = useRef(null);
-  const syncRequest = useRef(null);
   const latestSync = useRef(itemSyncRevision);
   latestSync.current = itemSyncRevision;
   const requestedSync = useRef(itemSyncRevision);
@@ -61,7 +58,8 @@ export default function FeedSearch() {
   const failure = requestError?.requestKey === requestKey ? requestError : null;
   const syncing = syncStatus?.requestKey === requestKey && syncStatus.pending;
   const syncError = syncStatus?.requestKey === requestKey && syncStatus.error;
-  const searching = loading || (!currentPage && !failure);
+  const loadingMore = foreground === 'append';
+  const searching = foreground === 'initial' || (!currentPage && !failure);
   const appendFocus = currentPage?.appendFocus;
 
   useLayoutEffect(() => {
@@ -87,25 +85,72 @@ export default function FeedSearch() {
     return DaylightAPI(`/api/v1/feed/search?${api}`, {}, 'GET', { signal });
   }, [requestKey]);
 
-  const runSearch = useCallback(async ({ append = false, cursor = null, refresh = false } = {}) => {
-    if (syncRequest.current || (refresh && requestRef.current)) return;
-    requestRef.current?.abort();
+  const readSettledItems = useCallback(async (isCurrent, signal) => {
+    const window = displayedPage.current;
+    if (window?.requestKey !== requestKey) return;
+    setSyncStatus(current => ({ requestKey, pending: true, error: current?.requestKey === requestKey && current.error }));
+    const before = new Map(window.items.map(item => [resultKey(item), item]));
+    const pending = new Set([...writes.current.pending].filter(edit => edit.requestKey === requestKey).map(edit => edit.key));
+
+    // Search cursors are offsets into the current filtered query. Follow
+    // the refreshed sequence to fill the loaded window after membership changes.
+    const refreshed = new Map();
+    let result;
+    let cursor = null;
+    let pages = 0;
+    do {
+      result = await readPage(cursor, signal);
+      if (!isCurrent()) return;
+      for (const item of result.items || []) refreshed.set(resultKey(item), item);
+      cursor = result.nextCursor || null;
+      pages++;
+    } while (cursor && pages < window.pages);
+
+    const active = document.activeElement;
+    const restoreFocus = resultsRef.current?.contains(active) || active === paginationRef.current || active === syncRetryRef.current;
+    const incoming = [...refreshed.values()];
+    setResultPage(current => {
+      if (current?.requestKey !== requestKey) return current;
+      const items = applyPendingMutations(reconcileRows(incoming, current.items, before, pending));
+      return { ...current, items, pages, nextCursor: cursor, total: result.total || 0, coverage: result.coverage || null,
+        appendFocus: restoreFocus ? { target: active } : current.appendFocus };
+    });
+    setRequestError(null);
+    setSyncStatus(null);
+  }, [applyPendingMutations, readPage, requestKey]);
+
+  const finishRead = useCallback((kind, cursor, failed) => {
+    if (kind === 'coverage') return;
+    if (kind === 'reconcile') {
+      if (failed) setSyncStatus({ requestKey, error: true });
+      return;
+    }
+    if (failed) {
+      setRequestError({ requestKey, append: kind === 'append', cursor, error: new Error('Search could not be completed.') });
+    }
+    setForeground(null);
+  }, [requestKey]);
+
+  const readSearch = useCallback(async (isCurrent, signal, kind = 'initial', cursor = null) => {
+    const append = kind === 'append';
+    const refresh = kind === 'coverage';
     const writeGeneration = writes.current.generation;
-    const controller = new AbortController();
-    requestRef.current = controller;
-    if (!refresh) {
-      if (append) setLoadingMore(true);
-      else {
-        // A full read started after replay already covers that revision.
-        requestedSync.current = latestSync.current;
-        setLoading(true);
-        setLoadingMore(false);
-      }
+    if (kind === 'initial') {
+      // A full read started after replay already covers that revision.
+      requestedSync.current = latestSync.current;
+    }
+    if (kind === 'initial' || append) {
+      setForeground(kind);
       setRequestError(null);
     }
+    let failed = false;
     try {
-      const result = await readPage(cursor, controller.signal);
-      if (controller.signal.aborted) return;
+      if (kind === 'reconcile') {
+        await readSettledItems(isCurrent, signal);
+        return;
+      }
+      const result = await readPage(cursor, signal);
+      if (!isCurrent()) return;
       // A poll overlapping an optimistic action can still report index
       // progress. A later poll can apply authoritative state after settlement.
       const overlappedWrite = writes.current.pending.size > 0 || writeGeneration !== writes.current.generation;
@@ -136,73 +181,20 @@ export default function FeedSearch() {
         return { ...current, ...metadata, items: incoming, nextCursor };
       });
     } catch (err) {
-      if (!refresh && !controller.signal.aborted && err.name !== 'AbortError') {
-        setRequestError({ requestKey, append, cursor, error: new Error('Search could not be completed.') });
-      }
+      failed = err.name !== 'AbortError';
     } finally {
-      if (requestRef.current === controller) {
-        requestRef.current = null;
-        if (!refresh && !controller.signal.aborted) { setLoading(false); setLoadingMore(false); }
-      }
+      if (isCurrent()) finishRead(kind, cursor, failed);
     }
-  }, [applyPendingMutations, readPage, requestKey]);
-
-  const readSettledItems = useCallback(async (isCurrent, signal) => {
-    const window = displayedPage.current;
-    if (window?.requestKey !== requestKey) return;
-    const request = {};
-    syncRequest.current = request;
-    requestRef.current?.abort();
-    setSyncStatus(current => ({ requestKey, pending: true, error: current?.requestKey === requestKey && current.error }));
-    const before = new Map(window.items.map(item => [resultKey(item), item]));
-    const pending = new Set([...writes.current.pending].filter(edit => edit.requestKey === requestKey).map(edit => edit.key));
-
-    try {
-      // Search cursors are offsets into the current filtered query. Follow
-      // the refreshed sequence to fill the loaded window after membership changes.
-      const refreshed = new Map();
-      let result;
-      let cursor = null;
-      let pages = 0;
-      do {
-        result = await readPage(cursor, signal);
-        if (!isCurrent()) return;
-        for (const item of result.items || []) refreshed.set(resultKey(item), item);
-        cursor = result.nextCursor || null;
-        pages++;
-      } while (cursor && pages < window.pages);
-
-      const active = document.activeElement;
-      const restoreFocus = resultsRef.current?.contains(active) || active === paginationRef.current || active === syncRetryRef.current;
-      const incoming = [...refreshed.values()];
-      setResultPage(current => {
-        if (current?.requestKey !== requestKey) return current;
-        const items = applyPendingMutations(reconcileRows(incoming, current.items, before, pending));
-        return { ...current, items, pages, nextCursor: cursor, total: result.total || 0, coverage: result.coverage || null,
-          appendFocus: restoreFocus ? { target: active } : current.appendFocus };
-      });
-      setRequestError(null);
-      setSyncStatus(null);
-    } catch (err) {
-      if (isCurrent() && err.name !== 'AbortError') setSyncStatus({ requestKey, error: true });
-    } finally {
-      if (syncRequest.current === request) syncRequest.current = null;
-    }
-  }, [applyPendingMutations, readPage, requestKey]);
-  const onReconcileTimeout = useCallback(() => {
-    syncRequest.current = null;
-    setSyncStatus({ requestKey, error: true });
-  }, [requestKey]);
-  const { reload: refreshSettledItems } = useRefreshableRead(readSettledItems, {
-    timeoutMs: reconcileTimeoutMs, onTimeout: onReconcileTimeout,
+  }, [applyPendingMutations, finishRead, readPage, readSettledItems, requestKey]);
+  const onTimeout = useCallback((kind = 'initial', cursor = null) => finishRead(kind, cursor, true), [finishRead]);
+  const { reload, poll } = useRefreshableRead(readSearch, {
+    timeoutMs: searchTimeoutMs, onTimeout,
   });
 
-  useEffect(() => {
-    syncRequest.current = null;
+  useLayoutEffect(() => {
     setSyncStatus(null);
-    runSearch();
-    return () => requestRef.current?.abort();
-  }, [runSearch]);
+    reload();
+  }, [reload]);
 
   useEffect(() => {
     if (!pendingItemOperations?.length) return;
@@ -210,13 +202,13 @@ export default function FeedSearch() {
       ? { ...current, items: applyPendingMutations(current.items) } : current);
   }, [applyPendingMutations, pendingItemOperations, requestKey]);
 
-  useEffect(() => {
-    if (!currentPage || loading || loadingMore || requestedSync.current === itemSyncRevision) return;
+  useLayoutEffect(() => {
+    if (!currentPage || foreground || requestedSync.current === itemSyncRevision) return;
     requestedSync.current = itemSyncRevision;
-    refreshSettledItems();
-  }, [currentPage, itemSyncRevision, loading, loadingMore, refreshSettledItems]);
+    reload('reconcile');
+  }, [currentPage, itemSyncRevision, foreground, reload]);
 
-  const refreshCoverage = useCallback(() => runSearch({ refresh: true }), [runSearch]);
+  const refreshCoverage = useCallback(() => poll('coverage'), [poll]);
   useVisibleRefresh({ active: coverage?.status === 'running' && !failure && !syncError, intervalMs: 2000, reload: refreshCoverage });
 
   const submit = event => {
@@ -248,7 +240,7 @@ export default function FeedSearch() {
   const appendFailure = failure?.append ? failure : null;
   const reading = searching || loadingMore || syncing;
   const paginationDisabled = reading || syncError;
-  const { regionProps, retry } = useRetryRegion(() => runSearch(), searching);
+  const { regionProps, retry } = useRetryRegion(reload, searching);
 
   return (
     <section className="feed-search" aria-labelledby="feed-search-title" {...regionProps}>
@@ -295,7 +287,7 @@ export default function FeedSearch() {
         <div>
           <StateMessage state="error" role="alert" detail="Search results could not be refreshed." />
           <Button ref={syncRetryRef} density="compact" variant="secondary" aria-disabled={reading || undefined}
-            aria-busy={syncing || undefined} onClick={() => { if (!reading) refreshSettledItems(); }}>
+            aria-busy={syncing || undefined} onClick={() => { if (!reading) reload('reconcile'); }}>
             Retry refresh
           </Button>
         </div>
@@ -306,7 +298,7 @@ export default function FeedSearch() {
           aria-disabled={paginationDisabled || undefined} aria-busy={loadingMore || syncing || undefined}
           onClick={() => {
             if (paginationDisabled) return;
-            runSearch({ append: true, cursor: appendFailure?.cursor ?? nextCursor });
+            reload('append', appendFailure?.cursor ?? nextCursor);
           }}>
           {loadingMore ? 'Loading…' : appendFailure ? 'Retry' : `Load more (${items.length} of ${total})`}
         </Button>

@@ -2,6 +2,54 @@ import { expect, test } from '@playwright/test';
 
 test.use({ serviceWorkers: 'block', viewport: { width: 390, height: 850 } });
 
+for (const cursor of [null, 'page-two']) {
+  test(`Feed Search cancels a stalled ${cursor ? 'continuation' : 'first page'} and retries its exact GET`, async ({ page }) => {
+    await page.clock.install();
+    const reads = [];
+    let stalled;
+    let canceled = false;
+    page.on('requestfailed', request => { if (request === stalled) canceled = true; });
+    await page.routeWebSocket('**/*', () => {});
+    await page.route('**/api/**', route => {
+      const request = route.request();
+      const { pathname, searchParams } = new URL(request.url());
+      if (pathname.endsWith('/supervision/bootstrap')) return route.fulfill({ json: { enabled: false } });
+      if (pathname !== '/api/v1/feed/search') return route.fulfill({ json: {} });
+      const requestedCursor = searchParams.get('cursor');
+      reads.push([request.method(), searchParams.get('q'), searchParams.get('state'), requestedCursor]);
+      if (requestedCursor === cursor && !stalled) {
+        stalled = request;
+        return;
+      }
+      if (cursor && !requestedCursor) return route.fulfill({ json: {
+        items: [{ id: 'first', title: 'Retained bird' }], nextCursor: cursor, total: 2,
+      } });
+      return route.fulfill({ json: { items: [{ id: 'recovered', title: 'Recovered bird' }], total: cursor ? 2 : 1 } });
+    });
+
+    await page.goto('/feed/search?q=birds&state=saved');
+    const retained = page.getByRole('heading', { name: 'Retained bird' });
+    if (cursor) {
+      await expect(retained).toBeVisible();
+      await page.getByRole('button', { name: /Load more/ }).press('Enter');
+    }
+    await expect.poll(() => Boolean(stalled)).toBe(true);
+    await page.clock.fastForward(10_000);
+    const failure = page.getByRole('alert').filter({ hasText: 'Search could not be completed.' });
+    await expect(failure).toBeVisible();
+    await expect.poll(() => canceled).toBe(true);
+    if (cursor) await expect(retained).toBeVisible();
+    const prefix = cursor ? [['GET', 'birds', 'saved', null]] : [];
+    const failedRead = ['GET', 'birds', 'saved', cursor];
+    expect(reads).toEqual([...prefix, failedRead]);
+    await page.getByRole('button', { name: 'Retry', exact: true }).press('Enter');
+    const recovered = page.getByRole('heading', { name: 'Recovered bird' });
+    await expect(recovered).toBeVisible();
+    if (cursor) await expect(recovered).toBeFocused();
+    expect(reads).toEqual([...prefix, failedRead, failedRead]);
+  });
+}
+
 test('Feed Search retires the old query and cursor during a failed replacement', async ({ page }) => {
   const replacement = Promise.withResolvers();
   const retryRead = Promise.withResolvers();
