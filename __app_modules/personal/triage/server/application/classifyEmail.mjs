@@ -4,6 +4,8 @@ import { choice, yesNo } from '#apps/common/ports/IDecisionGateway.mjs';
 
 const TIMEOUT_MS = 20000;
 const URGENT_P = 0.7;
+// A confident "keep" needs no card: the mail stays in the inbox and the pass logs it as kept.
+export const KEEP_CONFIDENCE = 0.85;
 
 export const EMAIL_CHOICES = Object.freeze([
   { key: 'archive', label: 'Archive' },
@@ -26,9 +28,10 @@ const RULE_WORDS = {
 const joinWords = (ws) => (ws.length < 2 ? ws.join('') : `${ws.slice(0, -1).join(', ')} and ${ws[ws.length - 1]}`);
 const pct = (p) => `${Math.round(p * 100)}%`;
 
-export function emailState(item) {
+export function emailState(item, { mentions = [] } = {}) {
   const m = item.facts ?? {};
   return {
+    ...(mentions.length ? { mentions } : {}),
     from: { name: m.from?.name ?? '', address: m.from?.address ?? '' },
     automated: !!m.automated,
     subject: m.subject ?? '',
@@ -56,9 +59,11 @@ export async function classifyEmail({ item, guard, policy, evaluate, logger }) {
     }),
     urgent: yesNo('A person is waiting on the owner and the reply matters today.'),
   };
+  const soft = Array.isArray(guard?.soft) ? guard.soft : [];
+  const mentions = soft.map((r) => (r === 'deadline' ? 'a deadline or expiry' : r === 'money' ? 'money' : r));
   let disp; let urg;
   try {
-    const res = await evaluate(emailState(item), questions, { timeout: TIMEOUT_MS });
+    const res = await evaluate(emailState(item, { mentions }), questions, { timeout: TIMEOUT_MS });
     disp = res?.answers?.disposition;
     urg = res?.answers?.urgent;
     if (!disp || disp.type !== 'choice' || !KEYS.has(disp.choice)) throw new Error('malformed disposition answer');
@@ -72,15 +77,21 @@ export async function classifyEmail({ item, guard, policy, evaluate, logger }) {
   const threshold = policy?.autoArchiveConfidence;
   const step = disp.choice === 'reply' ? 'reply' : 'unsure';
   const urgent = step === 'reply' && urg?.type === 'yesNo' && urg.probability >= URGENT_P;
-  const preDo = disp.choice === 'archive' && Number.isFinite(threshold) && confidence >= threshold && !blocked
-    ? { action: 'archive', reason: 'confident archive' } : null;
+  let preDo = null;
+  if (disp.choice === 'archive' && Number.isFinite(threshold) && confidence >= threshold && !blocked) {
+    preDo = { action: 'archive', reason: 'confident archive' };
+  } else if (disp.choice === 'keep' && confidence >= KEEP_CONFIDENCE) {
+    preDo = { action: 'keep', reason: 'confident keep' };
+  }
 
   let why;
   if (blocked && disp.choice === 'archive') {
     const rules = guard?.rules?.length ? guard.rules : ['missing_facts'];
     why = `Not auto-archived: mentions ${joinWords(rules.map((r) => RULE_WORDS[r] ?? r))}`;
-  } else if (preDo) {
+  } else if (preDo?.action === 'archive') {
     why = `Archived: ${pct(confidence)} sure nothing is needed`;
+  } else if (preDo?.action === 'keep') {
+    why = `Kept in inbox: ${pct(confidence)} sure it is reference`;
   } else {
     const top = Object.entries(disp.probabilities ?? {}).filter(([k, p]) => KEYS.has(k) && Number.isFinite(p))
       .sort((a, b) => b[1] - a[1]).slice(0, 2);

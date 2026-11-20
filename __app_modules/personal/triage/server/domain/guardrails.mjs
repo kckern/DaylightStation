@@ -58,16 +58,24 @@ function contentRules(text) {
   return rules;
 }
 
+// Deadline and money words in mail from an automated sender (sign-in links that "expire",
+// receipts) are weighed by the decision, not hard blocks: they come back as `soft` and the
+// classifier tells Jev about them. From a person they still block.
+const SOFT_WHEN_AUTOMATED = new Set(['deadline', 'money']);
+
 export function emailGuardrails(item, { sentToCount = 0 } = {}) {
-  if (!item || !item.facts || typeof item.facts !== 'object') return { blocked: true, rules: ['missing_facts'] };
+  if (!item || !item.facts || typeof item.facts !== 'object') return { blocked: true, rules: ['missing_facts'], soft: [] };
   const m = item.facts;
   const rules = [];
+  const soft = [];
   if (!m.automated && sentToCount > 0) rules.push('known_person');
-  rules.push(...contentRules(`${m.subject ?? ''}\n${m.snippet ?? ''}`));
+  for (const r of contentRules(`${m.subject ?? ''}\n${m.snippet ?? ''}`)) {
+    (m.automated === true && SOFT_WHEN_AUTOMATED.has(r) ? soft : rules).push(r);
+  }
   if (m.hasAttachments && !m.automated) rules.push('attachment_from_person');
   if (m.starred) rules.push('starred');
   if (m.ownerRepliedInThread) rules.push('replied_thread');
-  return { blocked: rules.length > 0, rules };
+  return { blocked: rules.length > 0, rules, soft };
 }
 
 export function todoGuardrails(item) {

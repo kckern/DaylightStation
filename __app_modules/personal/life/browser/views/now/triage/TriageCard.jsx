@@ -118,6 +118,8 @@ function RecapBody({ card, mode, wouldHave, busy, onChoice, onUndo, onLoadLog })
   const rows = dry
     ? [['Would have archived', wouldHave?.archived ?? 0], ['Would have closed', wouldHave?.closed ?? 0]]
     : [['Archived', card.counts?.archived ?? 0], ['Closed stale todos', card.counts?.closed ?? 0]];
+  // Kept mail is real in both modes (nothing changes in the mailbox), so it is never "would have".
+  if (card.counts?.kept) rows.push(['Left in inbox, no card needed', card.counts.kept]);
   return (
     <>
       <div className="life-triage__stats">

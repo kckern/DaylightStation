@@ -403,7 +403,7 @@ describe('summary and log', () => {
       cards: [emailCard('a'), emailCard('b', { step: 'reply', draftBody: 'x' }), emailCard('c', { step: 'reply' }), todoCard('t'), emailCard('d', { status: 'answered' })] });
     expect(await make({ store }).summary({ username: 'sample' })).toEqual({
       enrolled: true, mode: 'live', mailbox: 'reconnect_needed', lastPassAt: NOW - 1000,
-      preDone: { archived: 3, closed: 1 }, open: { unsure: 1, reply: 2, todo: 1 }, wouldHave: { archived: 0, closed: 0 }, mailboxName: null, draftsReady: 1,
+      preDone: { archived: 3, closed: 1, kept: 0 }, open: { unsure: 1, reply: 2, todo: 1 }, wouldHave: { archived: 0, closed: 0 }, mailboxName: null, draftsReady: 1,
     });
   });
 

@@ -7,7 +7,7 @@ const ASOF = Date.UTC(2026, 10, 19);
 const mail = (o = {}) => itemFromMail({
   ref: { provider: 'mail-a', accountId: 'sample', kind: 'message', id: 'm1' }, threadId: 't', version: '1',
   from: { name: 'X', address: 'x@example.com' }, to: [], subject: 'Hello', snippet: '', receivedAt: 1, labels: [],
-  starred: false, hasAttachments: false, automated: true, ownerRepliedInThread: false, ...o,
+  starred: false, hasAttachments: false, automated: false, ownerRepliedInThread: false, ...o,
 });
 const task = (id, o = {}) => itemFromWork({
   ref: { provider: 'tasks-a', accountId: 'sample', kind: 'task', id }, title: 'Buy filters', description: null,
@@ -16,19 +16,32 @@ const task = (id, o = {}) => itemFromWork({
 });
 
 describe('emailGuardrails', () => {
+  it('deadline and money from an automated sender are soft, not blocks', () => {
+    const r = emailGuardrails(mail({ automated: true, subject: 'Your secure sign-in link', snippet: 'This link expires in 24 hours. We charged $16.00' }), { sentToCount: 0 });
+    expect(r).toEqual({ blocked: false, rules: [], soft: ['deadline', 'money'] });
+  });
+  it('legal, medical and school matters still block automated mail', () => {
+    const r = emailGuardrails(mail({ automated: true, subject: 'Appointment reminder: due Friday' }), { sentToCount: 0 });
+    expect(r.blocked).toBe(true);
+    expect(r.rules).toEqual(['sensitive_topic']);
+    expect(r.soft).toEqual(['deadline']);
+  });
+  it('deadline and money from a person still block', () => {
+    expect(emailGuardrails(mail({ subject: 'Invoice $1,240 due Friday' }), { sentToCount: 0 }).blocked).toBe(true);
+  });
   it('blocks invoice with amount and deadline', () => {
     expect(emailGuardrails(mail({ subject: 'Invoice $1,240 due Friday' }), { sentToCount: 0 }))
-      .toEqual({ blocked: true, rules: ['deadline', 'money'] });
+      .toEqual({ blocked: true, rules: ['deadline', 'money'], soft: [] });
   });
   it('does not block a plain shipping receipt', () => {
-    const r = emailGuardrails(mail({ from: { name: '', address: 'no-reply@shop.com' }, subject: 'Your order has shipped', snippet: 'Track your package. Thanks for shopping with us!' }), { sentToCount: 0 });
-    expect(r).toEqual({ blocked: false, rules: [] });
+    const r = emailGuardrails(mail({ automated: true, from: { name: '', address: 'no-reply@shop.com' }, subject: 'Your order has shipped', snippet: 'Track your package. Thanks for shopping with us!' }), { sentToCount: 0 });
+    expect(r).toEqual({ blocked: false, rules: [], soft: [] });
   });
   it('blocks known person', () => {
     expect(emailGuardrails(mail({ automated: false }), { sentToCount: 2 }).rules).toEqual(['known_person']);
   });
   it('does not treat automated sender as known person', () => {
-    expect(emailGuardrails(mail(), { sentToCount: 3 }).rules).toEqual([]);
+    expect(emailGuardrails(mail({ automated: true }), { sentToCount: 3 }).rules).toEqual([]);
   });
   it('blocks starred', () => {
     expect(emailGuardrails(mail({ starred: true }), { sentToCount: 0 }).rules).toEqual(['starred']);
@@ -38,7 +51,7 @@ describe('emailGuardrails', () => {
   });
   it('blocks attachment from a person but not from automated', () => {
     expect(emailGuardrails(mail({ automated: false, hasAttachments: true }), { sentToCount: 0 }).rules).toEqual(['attachment_from_person']);
-    expect(emailGuardrails(mail({ hasAttachments: true }), { sentToCount: 0 }).blocked).toBe(false);
+    expect(emailGuardrails(mail({ automated: true, hasAttachments: true }), { sentToCount: 0 }).blocked).toBe(false);
   });
   it('blocks replied thread', () => {
     expect(emailGuardrails(mail({ ownerRepliedInThread: true }), { sentToCount: 0 }).rules).toEqual(['replied_thread']);
@@ -116,7 +129,7 @@ describe('fix round 1: inflections, stems, phrasing, fail-closed', () => {
   });
   it('fails closed on missing item or facts', () => {
     for (const bad of [null, undefined, {}, { facts: null }]) {
-      expect(emailGuardrails(bad, {})).toEqual({ blocked: true, rules: ['missing_facts'] });
+      expect(emailGuardrails(bad, {})).toEqual({ blocked: true, rules: ['missing_facts'], soft: [] });
       expect(todoGuardrails(bad)).toEqual({ blocked: true, rules: ['missing_facts'] });
     }
   });
