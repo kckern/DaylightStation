@@ -68,6 +68,12 @@ export function streamMediaResourceWithRanges(req, res, resource, extraHeaders =
     throw new TypeError('streamMediaResourceWithRanges requires an opaque media resource');
   }
 
+  // An SVG opened directly (not through <img>) is a document that would run its
+  // scripts same-origin. Sandbox it: no scripts, nothing loaded from elsewhere.
+  if (isSvgMimeType(resource.mimeType)) {
+    extraHeaders = { ...extraHeaders, 'Content-Security-Policy': SVG_CSP };
+  }
+
   // A resource that knows its mtime gets validators, and a matching conditional
   // request is answered 304 with no body. Without these, a revalidating cache
   // policy would re-download the whole file every time.
@@ -109,6 +115,13 @@ export function streamMediaResourceWithRanges(req, res, resource, extraHeaders =
 
     resource.open().pipe(res);
   }
+}
+
+/** CSP for every streamed SVG (generated sheet music posters among them). */
+export const SVG_CSP = "sandbox; default-src 'none'; style-src 'unsafe-inline'; img-src data:";
+
+function isSvgMimeType(mimeType) {
+  return typeof mimeType === 'string' && mimeType.trim().toLowerCase().startsWith('image/svg+xml');
 }
 
 /** Weak ETag from size + mtime: changes whenever the file is replaced. */
