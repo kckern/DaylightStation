@@ -3,7 +3,7 @@ import { shouldRelayBtTopic, BT_RELAY_TOPICS } from '#apps/eventbus/ClientRelayP
 
 describe('shouldRelayBtTopic', () => {
   it('relays the bt control topics (both directions)', () => {
-    ['bt.pair.request','bt.pair.progress','bt_inventory','bt.remove','bt.remove.result']
+    ['bt.pair.request','bt.pair.progress','bt_inventory','bt.remove','bt.remove.result','bt.scan.request','bt.scan.progress','bt.inventory.request']
       .forEach((t) => expect(shouldRelayBtTopic(t)).toBe(true));
   });
   it('does not relay unrelated topics', () => {
@@ -12,6 +12,6 @@ describe('shouldRelayBtTopic', () => {
   });
   it('exposes the whitelist as a Set', () => {
     expect(BT_RELAY_TOPICS instanceof Set).toBe(true);
-    expect(BT_RELAY_TOPICS.size).toBe(5);
+    expect(BT_RELAY_TOPICS.size).toBe(8);
   });
 });
