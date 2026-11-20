@@ -1,20 +1,6 @@
 import { ToolFactory } from "../../../../../../../../__capabilities/agent-runtime/server/application/framework/ToolFactory.mjs";
 import { createTool } from "../../../../../../../../__capabilities/agent-runtime/server/application/ports/ITool.mjs";
-import { DEFAULT_ENABLED } from "../../../../domain/services/CeremonyDueResolver.mjs";
-
-const CEREMONY_TYPES = ['unit_intention', 'unit_capture', 'cycle_retro', 'phase_review', 'season_alignment', 'era_vision'];
-const CEREMONY_CADENCE_MAP = {
-  unit_intention: 'unit', unit_capture: 'unit',
-  cycle_retro: 'cycle', phase_review: 'phase',
-  season_alignment: 'season', era_vision: 'era',
-};
-// Ceremony type → CadenceService timing string (mirrors CEREMONY_TIMING in
-// 3_applications/lifeplan/services/CeremonyScheduler.mjs)
-const CEREMONY_TIMING_MAP = {
-  unit_intention: 'start_of_unit', unit_capture: 'end_of_unit',
-  cycle_retro: 'end_of_cycle', phase_review: 'end_of_phase',
-  season_alignment: 'end_of_season', era_vision: 'end_of_era',
-};
+import { CEREMONY_TIMING, CEREMONY_CADENCE_MAP, ceremonyEnabled } from "../../../../domain/services/CeremonyDueResolver.mjs";
 
 export class CeremonyToolFactory extends ToolFactory {
   static domain = 'ceremony';
@@ -77,14 +63,12 @@ export class CeremonyToolFactory extends ToolFactory {
           const position = cadenceService.resolve(plan.cadence || {}, now);
           const ceremonies = [];
 
-          for (const type of CEREMONY_TYPES) {
-            const config = plan.ceremonies?.[type];
-            const enabled = config?.enabled ?? DEFAULT_ENABLED.includes(type);
-            if (!enabled) continue;
+          for (const [type, timing] of Object.entries(CEREMONY_TIMING)) {
+            if (!ceremonyEnabled(plan, type)) continue;
 
             const level = CEREMONY_CADENCE_MAP[type];
             const periodId = position?.[level]?.periodId;
-            const isDue = cadenceService.isCeremonyDue(CEREMONY_TIMING_MAP[type], plan.cadence || {}, now, null);
+            const isDue = cadenceService.isCeremonyDue(timing, plan.cadence || {}, now, null);
             const isCompleted = periodId ? ceremonyRecordStore.hasRecord(userId, type, periodId) : false;
 
             ceremonies.push({

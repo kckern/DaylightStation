@@ -30,12 +30,12 @@ Pure business logic — no I/O, no external dependencies.
 
 #### CeremonyDueResolver (`services/CeremonyDueResolver.mjs`)
 
-The SSOT for ceremony **dueness logic** — which ceremonies are due today for a plan, independent of delivery hour. Exports `CEREMONY_TIMING` (per-type timing keyword, e.g. `start_of_unit`/`end_of_cycle`), `CEREMONY_CADENCE_MAP` (type → cadence level), `DEFAULT_ENABLED` (`['unit_intention', 'unit_capture', 'cycle_retro', 'phase_review']`), and `CEREMONY_TITLES` (terse card labels), plus a `listDue({ plan, cadencePosition, cadenceConfig, today, hasRecord })` method that walks every ceremony type, checks `plan.ceremonies.<type>.enabled` (falling back to `DEFAULT_ENABLED`), skips types with no resolved `periodId` or an existing completion record, and delegates the actual due-check to `CadenceService.isCeremonyDue`.
+`CeremonyDueResolver` defines ceremony timing and cadence levels. Its `ceremonyEnabled(plan, type)` function resolves the canonical setting, an older saved toggle, then the ceremony default. `listDue({ plan, cadencePosition, cadenceConfig, today, hasRecord })` applies that policy, skips types with no period or an existing completion record, and uses `CadenceService.isCeremonyDue` to check the date.
 
-It has two consumers, deliberately sharing constants but not presentation:
+The same policy serves three workflows.
 - **AlignmentService** (dashboard) — calls `listDue()` with no time-of-day gate, to surface a `ceremony_due` priority as soon as the period opens.
-- **CeremonyToolFactory** (coach) — same resolver, for the `check_ceremony_status` tool.
-- **CeremonyScheduler** (notification sender) — imports only the shared constants (`CEREMONY_TIMING`/`CEREMONY_CADENCE_MAP`/`DEFAULT_ENABLED`) and additionally hour-gates delivery; it keeps its **own** `TITLES` map for push/Telegram copy ("Monthly Deep Review" vs. the dashboard's terse "Phase review") — two surfaces, one dueness SSOT, by design. See `__backend/src/3_applications/lifeplan/services/CeremonyScheduler.mjs:9-39`.
+- **CeremonyToolFactory** (coach) — uses the shared timing and enablement rules for `check_ceremony_status`.
+- **CeremonyScheduler** (notification sender) — applies the shared timing and enablement rules, household delivery hours and notification copy.
 
 #### Honesty pass — which domain services actually run
 
@@ -147,7 +147,8 @@ Default routing: `ceremony` → telegram+push+app, `drift_alert` → telegram+ap
 | `POST /plan/purpose` | plan.mjs | Set or replace the purpose statement; **planless-safe** — creates the plan first via `planAuthoringService.setPurpose` if none exists, same as the goal/value/belief authoring routes. Returns the purpose (201) |
 | `/plan/...` | plan.mjs | Section updates, goal transitions, belief evidence, ceremony endpoints |
 | `GET /plan/ceremony/:type` | plan.mjs | Ceremony content; `404 { code: NO_PLAN }` when no plan exists, `400` for an unknown ceremony type |
-| `GET /plan/cadence` | plan.mjs | Resolved cadence for the current instant (unit/cycle/phase/season/era) |
+| `GET /plan/cadence` | plan.mjs | Cadence config, resolved position, and effective ceremony settings |
+| `PATCH /plan/ceremonies/:type` | plan.mjs | Set one ceremony's `enabled` boolean for the selected member while preserving its other settings |
 | `/now` | now.mjs | Alignment data, drift snapshots |
 | `/log` | log.mjs | Lifelog aggregation (day, range, scope, category) |
 | `/schedule` | schedule.mjs | Ceremony schedule export (rrule formats) |
@@ -156,6 +157,8 @@ Default routing: `ceremony` → telegram+push+app, `drift_alert` → telegram+ap
 | `/health` | (in life.mjs) | System health check |
 
 **User identity:** every life route resolves the user via `life/identity.mjs`: `?username=` query param, else the configured default (head of household from `configService.getHeadOfHousehold()`). Usernames are validated against `UserService.getProfile()` — unknown users get 404. Log routes validate their `:username` path param the same way.
+
+Plan → Ceremonies uses the effective `ceremonies` map returned by the cadence read. The settings page, Now and the notification scheduler use the same enablement policy. An explicit entry under `ceremonies.<type>.enabled` takes precedence. A boolean saved by an older settings page under `cadence.ceremonies.<type>.enabled` supplies the choice if the canonical field is absent. New toggles write the canonical field. The view keeps the switches in place while the accepted changes are read back. Retry after an accepted change only reloads the cadence resource.
 
 `GET /users` backs the household **user switcher** in the LifeApp header (lets a shared display switch whose plan is shown). The switcher only renders when the roster has more than one member. The roster is drawn from `households.<hid>.users` in `system.yml`, which **must be configured as a YAML array**; when it is a bare string (current state in some environments) the roster resolves empty and the switcher stays hidden. `GET /user` (singular) drives `useLifeUser`/`LifeUserContext`, which also keys CoachChat agent memory to the real user.
 

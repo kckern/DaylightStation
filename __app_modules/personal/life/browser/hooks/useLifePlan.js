@@ -189,16 +189,19 @@ export function useBeliefs(username) {
  */
 export function useCeremonyConfig(username) {
   const user = usePlanMember(username);
-  const path = `${API_BASE}/cadence${memberQuery(user)}`;
+  const qs = memberQuery(user);
+  const path = `${API_BASE}/cadence${qs}`;
   const { data, loading, error, refetch, afterWrite } = usePlanRead(path, user, 'life cadence');
-  const updateCadence = useCallback(async (updates) => {
-    await DaylightAPI(path, updates, 'PATCH');
+  const setCeremonyEnabled = useCallback(async (type, enabled) => {
+    await DaylightAPI(`${API_BASE}/ceremonies/${encodeURIComponent(type)}${qs}`, { enabled }, 'PATCH');
     await afterWrite();
-  }, [path, afterWrite]);
+  }, [qs, afterWrite]);
 
   return {
-    config: data ? data.config || EMPTY_CONFIG : null,
+    ceremonies: data?.ceremonies || EMPTY_CONFIG,
     current: data ? data.current || EMPTY_CONFIG : null,
-    loading, error, refetch, updateCadence,
+    loading: loading && !data,
+    readingBack: loading && Boolean(data),
+    error, refetch, setCeremonyEnabled,
   };
 }

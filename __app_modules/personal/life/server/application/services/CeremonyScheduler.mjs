@@ -6,11 +6,7 @@
  * a missed hour (server down) simply skips that day's nudge.
  */
 
-import { CEREMONY_TIMING, CEREMONY_CADENCE_MAP, DEFAULT_ENABLED } from "../../domain/services/CeremonyDueResolver.mjs";
-
-// Ceremonies with a completed UI flow default to enabled; the rest require an
-// explicit plan.ceremonies[type].enabled = true. (DEFAULT_ENABLED is the
-// shared SSOT, imported above from CeremonyDueResolver.)
+import { CEREMONY_TIMING, CEREMONY_CADENCE_MAP, ceremonyEnabled } from "../../domain/services/CeremonyDueResolver.mjs";
 
 // Household-local hour (0-23) each ceremony's nudge is delivered at, unless
 // overridden by plan.ceremonies[type].at ('HH:00'). The hourly scheduled task
@@ -36,7 +32,7 @@ const DEFAULT_TZ = 'UTC';
 // review", "Weekly retrospective") than the compact card label ("Phase
 // review", "Weekly retro"). Two surfaces, two appropriate copies — not a
 // stale duplicate. The dueness LOGIC is the shared SSOT (via the resolver's
-// CEREMONY_TIMING/CADENCE_MAP/DEFAULT_ENABLED), not the presentational titles.
+// timing, cadence map and enabled policy), not the presentational titles.
 const TITLES = {
   unit_intention: 'Set your intentions',
   unit_capture: 'Capture your day',
@@ -97,9 +93,8 @@ export class CeremonyScheduler {
     const sent = [];
 
     for (const [type, timing] of Object.entries(CEREMONY_TIMING)) {
+      if (!ceremonyEnabled(plan, type)) continue;
       const config = plan.ceremonies?.[type];
-      const enabled = config?.enabled ?? DEFAULT_ENABLED.includes(type);
-      if (!enabled) continue;
 
       // Hour gate: only nudge at the ceremony's household-local delivery hour
       // ('09:00' parseInt → 9; missing, unparseable, or out-of-range `at`

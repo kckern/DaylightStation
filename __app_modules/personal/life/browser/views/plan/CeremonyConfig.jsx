@@ -1,3 +1,4 @@
+import { useRef, useState } from 'react';
 import { Stack, Paper, Text, Group, Badge, Switch } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
 import { IconCalendarEvent, IconFlame } from '@tabler/icons-react';
@@ -14,8 +15,33 @@ const CEREMONY_TYPES = [
   { id: 'era_vision', label: 'Era Vision', description: 'Long-term purpose and direction review' },
 ];
 
+function CeremonySwitch({ type, enabled, readingBack, save }) {
+  const control = useRef(null);
+  const pending = useRef(false);
+  const [saving, setSaving] = useState(false);
+
+  const change = async event => {
+    if (pending.current || readingBack) return;
+    const input = event.currentTarget;
+    pending.current = true;
+    setSaving(true);
+    try {
+      await save(type.id, input.checked);
+    } catch (err) {
+      if (control.current === input) {
+        notifications.show({ color: 'red', title: "Couldn't update ceremony", message: err.message });
+      }
+    } finally {
+      pending.current = false;
+      if (control.current === input) setSaving(false);
+    }
+  };
+
+  return <Switch ref={control} aria-label={type.label} aria-disabled={saving || readingBack} checked={enabled} onChange={change} />;
+}
+
 export function CeremonyConfig({ username }) {
-  const { config, current, loading, error, refetch, updateCadence } = useCeremonyConfig(username);
+  const { ceremonies, current, loading, readingBack, error, refetch, setCeremonyEnabled } = useCeremonyConfig(username);
 
   if (loading) return <LoadingState />;
   if (error) return (
@@ -23,23 +49,6 @@ export function CeremonyConfig({ username }) {
       <ErrorState label="Ceremonies" error={error} onRetry={refetch} />
     </LifePage>
   );
-
-  const ceremonies = config?.ceremonies || {};
-
-  const toggleCeremony = async (type, enabled) => {
-    const updated = {
-      ...config,
-      ceremonies: {
-        ...ceremonies,
-        [type]: { ...(ceremonies[type] || {}), enabled },
-      },
-    };
-    try {
-      await updateCadence(updated);
-    } catch (err) {
-      notifications.show({ color: 'red', title: "Couldn't update ceremony", message: err.message });
-    }
-  };
 
   return (
     <LifePage title="Ceremonies">
@@ -64,7 +73,7 @@ export function CeremonyConfig({ username }) {
       <Stack gap="sm">
         {CEREMONY_TYPES.map(type => {
           const ceremonyConfig = ceremonies[type.id] || {};
-          const enabled = ceremonyConfig.enabled !== false;
+          const enabled = ceremonyConfig.enabled === true;
 
           return (
             <Paper key={type.id} p="sm" withBorder>
@@ -73,10 +82,7 @@ export function CeremonyConfig({ username }) {
                   <Text size="sm" fw={500}>{type.label}</Text>
                   <Text size="xs" c="dimmed">{type.description}</Text>
                 </Stack>
-                <Switch
-                  checked={enabled}
-                  onChange={(e) => toggleCeremony(type.id, e.currentTarget.checked)}
-                />
+                <CeremonySwitch type={type} enabled={enabled} readingBack={readingBack} save={setCeremonyEnabled} />
               </Group>
 
               {enabled && (

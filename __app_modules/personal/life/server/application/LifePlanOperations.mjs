@@ -1,8 +1,4 @@
-const CEREMONY_CADENCE = {
-  unit_intention: 'unit', unit_capture: 'unit',
-  cycle_retro: 'cycle', phase_review: 'phase',
-  season_alignment: 'season', era_vision: 'era',
-};
+import { CEREMONY_CADENCE_MAP, CEREMONY_TIMING, ceremonyEnabled } from '../domain/services/CeremonyDueResolver.mjs';
 
 const RECURRENCE = {
   day: 'FREQ=DAILY', week: 'FREQ=WEEKLY', month: 'FREQ=MONTHLY',
@@ -96,8 +92,12 @@ export class LifePlanOperations {
   }
 
   readCadence(username) {
-    const config = this.plans.load(username)?.cadence || {};
-    return { config, current: this.cadence.resolve(config, new Date()) };
+    const plan = this.plans.load(username);
+    const config = plan?.cadence || {};
+    const ceremonies = Object.fromEntries(Object.keys(CEREMONY_TIMING).map(type => [type, {
+      ...plan?.ceremonies?.[type], enabled: ceremonyEnabled(plan, type),
+    }]));
+    return { config, current: this.cadence.resolve(config, new Date()), ceremonies };
   }
 
   updateCadence(username, changes) {
@@ -106,6 +106,15 @@ export class LifePlanOperations {
     plan.cadence = { ...(plan.cadence || {}), ...changes };
     this.plans.save(username, plan);
     return true;
+  }
+
+  updateCeremonyEnabled(username, type, enabled) {
+    if (!Object.hasOwn(CEREMONY_TIMING, type)) return { kind: 'unknown-ceremony' };
+    const plan = this.plans.load(username);
+    if (!plan) return { kind: 'missing-plan' };
+    plan.ceremonies[type] = { ...plan.ceremonies[type], enabled };
+    this.plans.save(username, plan);
+    return { kind: 'updated' };
   }
 
   readCeremony(username, type) {
@@ -128,7 +137,7 @@ export class LifePlanOperations {
     const cadenceConfig = plan.cadence || {};
     return Object.entries(plan.ceremonies || {}).flatMap(([type, config]) => {
       if (!config.enabled) return [];
-      const level = CEREMONY_CADENCE[type];
+      const level = CEREMONY_CADENCE_MAP[type];
       const cadenceUnit = cadenceConfig[level] || level;
       return [{ type, level, cadenceUnit, rrule: RECURRENCE[cadenceUnit] || null }];
     });

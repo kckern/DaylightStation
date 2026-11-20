@@ -47,14 +47,15 @@ it('retries beliefs, retains a rejected creation draft, and shows the committed 
 });
 
 it('requires a successful cadence read before a toggle and retries a failed post-commit read without rewriting', async () => {
-  const config = { timezone: 'test', ceremonies: { unit_intention: { enabled: true, notes: 'keep' } } };
-  const updated = { ...config, ceremonies: { unit_intention: { enabled: false, notes: 'keep' } } };
+  const config = { timezone: 'test' };
+  const ceremonies = { unit_intention: { enabled: true, notes: 'keep' } };
+  const updated = { unit_intention: { enabled: false, notes: 'keep' } };
   DaylightAPI.mockReset()
     .mockRejectedValueOnce(new Error('Offline'))
-    .mockResolvedValueOnce({ config })
+    .mockResolvedValueOnce({ config, ceremonies })
     .mockResolvedValueOnce({})
     .mockRejectedValueOnce(new Error('Refresh failed'))
-    .mockResolvedValueOnce({ config: updated });
+    .mockResolvedValueOnce({ config, ceremonies: updated });
   render(page('ceremonies'));
   expect(await screen.findByRole('alert')).toHaveTextContent('Ceremonies failed to load');
   expect(screen.queryByRole('switch')).toBeNull();
@@ -64,8 +65,72 @@ it('requires a successful cadence read before a toggle and retries a failed post
   fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
   expect((await screen.findAllByRole('switch'))[0]).not.toBeChecked();
   expect(DaylightAPI.mock.calls.filter(([, , method]) => method === 'PATCH')).toEqual([
-    ['/api/v1/life/plan/cadence?username=amy', updated, 'PATCH'],
+    ['/api/v1/life/plan/ceremonies/unit_intention?username=amy', { enabled: false }, 'PATCH'],
   ]);
+});
+
+it('saves two ceremony switches independently when the second commits first', async () => {
+  const ceremonies = {
+    unit_intention: { enabled: true, at: '08:00' }, unit_capture: { enabled: true, at: '20:00' },
+  };
+  const pending = [];
+  DaylightAPI.mockReset().mockImplementation((url, input, method) => {
+    if (method !== 'PATCH') return Promise.resolve({ ceremonies: structuredClone(ceremonies) });
+    const type = url.split('?')[0].split('/').at(-1);
+    return new Promise(resolve => pending.push(() => {
+      if (Object.hasOwn(ceremonies, type)) Object.assign(ceremonies[type], input);
+      resolve({});
+    }));
+  });
+  render(page('ceremonies'));
+  const [intention, capture] = await screen.findAllByRole('switch');
+  fireEvent.click(intention);
+  fireEvent.click(capture);
+  expect(DaylightAPI.mock.calls.filter(([, , method]) => method === 'PATCH')).toEqual([
+    ['/api/v1/life/plan/ceremonies/unit_intention?username=amy', { enabled: false }, 'PATCH'],
+    ['/api/v1/life/plan/ceremonies/unit_capture?username=amy', { enabled: false }, 'PATCH'],
+  ]);
+  await act(async () => pending[1]());
+  expect(capture).not.toBeChecked();
+  expect(intention).toBeChecked();
+  await act(async () => pending[0]());
+  expect(intention).not.toBeChecked();
+  expect(capture).not.toBeChecked();
+  expect(ceremonies).toEqual({
+    unit_intention: { enabled: false, at: '08:00' }, unit_capture: { enabled: false, at: '20:00' },
+  });
+});
+
+it('keeps an acknowledged switch guarded if another write supersedes its readback', async () => {
+  const ceremonies = { unit_intention: { enabled: true }, unit_capture: { enabled: true } };
+  const writes = [];
+  const readbacks = [];
+  DaylightAPI.mockReset().mockResolvedValueOnce({ ceremonies }).mockImplementation((url, _, method) => {
+    const pending = Promise.withResolvers();
+    if (method === 'PATCH') writes.push(pending);
+    else readbacks.push(pending);
+    return pending.promise;
+  });
+  render(page('ceremonies'));
+  const intention = await screen.findByRole('switch', { name: 'Unit Intention' });
+  const capture = screen.getByRole('switch', { name: 'Daily Capture' });
+  fireEvent.click(intention);
+  fireEvent.click(capture);
+  await act(async () => writes[0].resolve({}));
+  await waitFor(() => expect(readbacks).toHaveLength(1));
+  await act(async () => writes[1].resolve({}));
+  await waitFor(() => expect(readbacks).toHaveLength(2));
+
+  expect(intention).toBeChecked();
+  expect(intention).toHaveAttribute('aria-disabled', 'true');
+  fireEvent.click(intention);
+  expect(writes).toHaveLength(2);
+  const confirmed = { ceremonies: { unit_intention: { enabled: false }, unit_capture: { enabled: false } } };
+  await act(async () => readbacks[1].resolve(confirmed));
+  await act(async () => readbacks[0].resolve(ceremonies));
+  expect(intention).not.toBeChecked();
+  expect(capture).not.toBeChecked();
+  expect(intention).toHaveAttribute('aria-disabled', 'false');
 });
 
 it.each(['beliefs', 'ceremonies'])('discards a late failed %s read after switching household members', async path => {

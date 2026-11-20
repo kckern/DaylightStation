@@ -1,4 +1,10 @@
 import { expect, test } from '@playwright/test';
+import express from 'express';
+import request from 'supertest';
+import createPlanRouter from '../../../../__app_modules/personal/life/server/api/life/plan.mjs';
+import { YamlLifePlanStore } from '../../../../__app_modules/personal/life/server/adapters/persistence/YamlLifePlanStore.mjs';
+import { LifePlanOperations } from '../../../../__app_modules/personal/life/server/application/LifePlanOperations.mjs';
+import { CadenceService } from '../../../../__app_modules/personal/life/server/domain/services/CadenceService.mjs';
 
 test.use({ serviceWorkers: 'block' });
 
@@ -63,3 +69,74 @@ test('Life Ceremony recovery links to Plan and Coach without submitting', async 
   expect(requests.length).toBeGreaterThan(0);
   expect(requests.every(request => request.method === 'GET')).toBe(true);
 });
+
+for (const width of [390, 1440]) {
+  test(`Life ceremony switches keep focus and persist independent changes at ${width}px`, async ({ page }, testInfo) => {
+    await page.setViewportSize({ width, height: 850 });
+    const plans = new YamlLifePlanStore({ basePath: testInfo.outputPath('plans') });
+    plans.save('amy', {
+      cadence: { unit: 'day' },
+      ceremonies: { unit_intention: { at: '08:00' }, unit_capture: { at: '20:00' } },
+    });
+    const planApi = express();
+    planApi.use(express.json());
+    planApi.use(createPlanRouter({ lifePlanOperations: new LifePlanOperations({ plans, cadence: new CadenceService() }) }));
+    const writes = [];
+    const member = { username: 'amy', displayName: 'Amy' };
+    await page.routeWebSocket('**/*', () => {});
+    await page.route('**/api/**', async route => {
+      const outgoing = route.request();
+      const { pathname, search } = new URL(outgoing.url());
+      if (pathname.endsWith('/supervision/bootstrap')) return route.fulfill({ json: { enabled: false } });
+      if (pathname.endsWith('/life/users')) return route.fulfill({ json: { users: [member] } });
+      if (pathname.endsWith('/life/user')) return route.fulfill({ json: member });
+      const base = '/api/v1/life/plan';
+      if (!pathname.startsWith(`${base}/`)) return route.fulfill({ json: {} });
+      const path = pathname.slice(base.length) + search;
+      if (outgoing.method() === 'PATCH') {
+        const ready = Promise.withResolvers();
+        const body = outgoing.postDataJSON();
+        writes.push({ path, body, allow: ready.resolve });
+        await ready.promise;
+        const response = await request(planApi).patch(path).send(body);
+        return route.fulfill({ status: response.status, json: response.body });
+      }
+      const response = await request(planApi).get(path);
+      return route.fulfill({ status: response.status, json: response.body });
+    });
+
+    await page.goto('/life/plan/ceremonies');
+    const intention = page.getByRole('switch', { name: 'Unit Intention' });
+    const capture = page.getByRole('switch', { name: 'Daily Capture' });
+    await expect(intention).toBeChecked();
+    await expect(capture).toBeChecked();
+    await expect(page.getByRole('switch', { name: 'Season Alignment' })).not.toBeChecked();
+    await intention.press('Space');
+    await expect(intention).toHaveAttribute('aria-disabled', 'true');
+    await intention.press('Space');
+    await capture.press('Space');
+    await expect.poll(() => writes.map(({ path, body }) => ({ path, body }))).toEqual([
+      { path: '/ceremonies/unit_intention?username=amy', body: { enabled: false } },
+      { path: '/ceremonies/unit_capture?username=amy', body: { enabled: false } },
+    ]);
+
+    writes[1].allow();
+    await expect(capture).not.toBeChecked();
+    await expect(capture).toBeFocused();
+    await expect(intention).toBeChecked();
+    writes[0].allow();
+    await expect(intention).not.toBeChecked();
+    await expect(capture).toBeFocused();
+
+    await page.reload();
+    await expect(intention).toHaveCount(1);
+    await expect(capture).toHaveCount(1);
+    await expect(intention).not.toBeChecked();
+    await expect(capture).not.toBeChecked();
+    expect(writes).toHaveLength(2);
+    expect(plans.load('amy').ceremonies).toEqual({
+      unit_intention: { enabled: false, at: '08:00' },
+      unit_capture: { enabled: false, at: '20:00' },
+    });
+  });
+}

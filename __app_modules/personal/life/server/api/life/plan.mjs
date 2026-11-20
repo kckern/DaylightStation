@@ -169,6 +169,20 @@ export default function createPlanRouter(config) {
     } catch (error) { next(error); }
   });
 
+  router.patch('/ceremonies/:type', (req, res, next) => {
+    try {
+      const { enabled } = req.body || {};
+      if (typeof enabled !== 'boolean') return res.status(400).json({ error: 'enabled must be a boolean' });
+      const { type } = req.params;
+      const username = getUsername(req);
+      const result = lifePlanOperations.updateCeremonyEnabled(username, type, enabled);
+      if (result.kind === 'unknown-ceremony') return res.status(400).json({ error: `Unknown ceremony type: ${type}` });
+      if (result.kind === 'missing-plan') return res.status(404).json({ error: 'Plan not found' });
+      logger.info('life.plan.ceremony-enabled', { username, ceremonyType: type, enabled });
+      res.json({ ok: true });
+    } catch (error) { next(error); }
+  });
+
   // GET /ceremony/:type — get ceremony content
   router.get('/ceremony/:type', async (req, res, next) => {
     try {

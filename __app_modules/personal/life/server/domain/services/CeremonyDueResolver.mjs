@@ -12,7 +12,15 @@ export const CEREMONY_CADENCE_MAP = {
   phase_review: 'phase', season_alignment: 'season', era_vision: 'era',
 };
 
-export const DEFAULT_ENABLED = ['unit_intention', 'unit_capture', 'cycle_retro', 'phase_review'];
+const DEFAULT_ENABLED = ['unit_intention', 'unit_capture', 'cycle_retro', 'phase_review'];
+
+export function ceremonyEnabled(plan, type) {
+  const enabled = plan?.ceremonies?.[type]?.enabled;
+  if (enabled != null) return Boolean(enabled);
+  // Older versions of Plan → Ceremonies stored the switch under cadence.
+  const legacyEnabled = plan?.cadence?.ceremonies?.[type]?.enabled;
+  return typeof legacyEnabled === 'boolean' ? legacyEnabled : DEFAULT_ENABLED.includes(type);
+}
 
 export const CEREMONY_TITLES = {
   unit_intention: 'Set your intention',
@@ -35,9 +43,7 @@ export class CeremonyDueResolver {
   listDue({ plan, cadencePosition, cadenceConfig, today, hasRecord }) {
     const due = [];
     for (const [type, timing] of Object.entries(CEREMONY_TIMING)) {
-      const cfg = plan?.ceremonies?.[type];
-      const enabled = cfg?.enabled ?? DEFAULT_ENABLED.includes(type);
-      if (!enabled) continue;
+      if (!ceremonyEnabled(plan, type)) continue;
       const periodId = cadencePosition?.[CEREMONY_CADENCE_MAP[type]]?.periodId;
       if (!periodId) continue;
       if (hasRecord(type, periodId)) continue;
