@@ -40,12 +40,25 @@ function decodeXml(text) {
 
 /** Header reads look only at the text before the first part, at most this much. */
 const HEADER_MAX = 256 * 1024;
-/** The root element sits at the top: root checks read at most this much. */
+/**
+ * The root element sits at the top: root checks read at most this much. A file
+ * with more than 64 KiB of prolog, DOCTYPE or comments before `<score-partwise`
+ * is therefore refused: not-partwise when some element shows in the prefix,
+ * not-xml when nothing but prolog and comments does.
+ */
 const ROOT_PREFIX_MAX = 64 * 1024;
 const TAG_ATTRS_MAX = 512;
 const TAG_TEXT_MAX = 4096;
 
 const isTagEnd = (ch) => ch === '>' || ch === '/' || ch === ' ' || ch === '\t' || ch === '\n' || ch === '\r';
+
+/** Index of the next `token` whose following character ends the tag name (so `</note` is not `</notehead`), or -1. */
+function tagAt(text, token, from) {
+  for (let at = text.indexOf(token, from); at !== -1; at = text.indexOf(token, at + token.length)) {
+    if (isTagEnd(text[at + token.length])) return at;
+  }
+  return -1;
+}
 
 /** ASCII-lowercased copy, same length, so indexes carry over to the original. */
 const asciiLower = (text) => text.replace(/[A-Z]+/g, (run) => run.toLowerCase());
@@ -79,7 +92,7 @@ function tagText(text, lower, name, attrsOk = () => true) {
     if (gt - after > TAG_ATTRS_MAX || lower[gt - 1] === '/') continue;
     if (!attrsOk(lower.slice(after, gt))) continue;
     const contentStart = gt + 1;
-    if (closeAt < contentStart) closeAt = lower.indexOf(close, contentStart);
+    if (closeAt < contentStart) closeAt = tagAt(lower, close, contentStart);
     if (closeAt === -1) return null;
     if (closeAt - contentStart > TAG_TEXT_MAX) continue;
     const value = contentText(text.slice(contentStart, closeAt));
@@ -128,26 +141,20 @@ function hasSoundingNote(xml) {
     if (gt === -1) return false;
     if (xml[gt - 1] === '/') continue; // <note/> is empty
     const contentStart = gt + 1;
-    if (closeAt < contentStart) closeAt = xml.indexOf('</note', contentStart);
+    if (closeAt < contentStart) closeAt = tagAt(xml, '</note', contentStart);
     if (closeAt === -1) return false;
-    if (restAt !== -1 && restAt < contentStart) restAt = nextRest(xml, contentStart);
+    if (restAt !== -1 && restAt < contentStart) restAt = tagAt(xml, '<rest', contentStart);
     if (restAt === -1 || restAt > closeAt) return true;
     at = closeAt; // continue after this note
   }
   return false;
 }
 
-function nextRest(xml, from) {
-  for (let at = xml.indexOf('<rest', from); at !== -1; at = xml.indexOf('<rest', at + 5)) {
-    if (isTagEnd(xml[at + 5])) return at;
-  }
-  return -1;
-}
-
 /** The text from the first non-space character (after a BOM), at most `max` long. */
 function trimmedPrefix(text, max) {
-  let start = text.charCodeAt(0) === 0xFEFF ? 1 : 0;
-  while (start < text.length && /\s/.test(text[start])) start += 1;
+  const NON_SPACE = /\S/g;
+  NON_SPACE.lastIndex = text.charCodeAt(0) === 0xFEFF ? 1 : 0;
+  const start = NON_SPACE.exec(text)?.index ?? text.length;
   return text.slice(start, start + max);
 }
 

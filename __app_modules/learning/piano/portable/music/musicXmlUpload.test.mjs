@@ -251,3 +251,34 @@ describe('scoreHeader bounds', () => {
     assert.deepEqual(scoreHeader('<work-titles>No</work-titles><creatorx type="composer">No</creatorx>'), { title: null, composer: null });
   });
 });
+
+describe('exact close tags and leading whitespace', () => {
+  it('does not take </notehead> for the close of a note', () => {
+    assert.deepEqual(checkUploadXml('<score-partwise><note><notehead>x</notehead><rest/></note></score-partwise>'),
+      { ok: false, code: 'no-notes' });
+    assert.equal(checkUploadXml('<score-partwise><note><notehead>x</notehead><pitch/></note></score-partwise>').ok, true);
+  });
+
+  it('does not take </work-titles> for the close of a work title', () => {
+    assert.equal(scoreHeader('<work-title>A<work-titles>B</work-titles>C</work-title>').title, 'ABC');
+  });
+
+  it('skips 32 MB of leading whitespace quickly', (t) => {
+    const xml = `﻿${' \n\t'.repeat(32 * 1024 * 1024 / 3)}<score-partwise><note><pitch/></note></score-partwise>`;
+    const start = performance.now();
+    const result = checkUploadXml(xml);
+    const ms = performance.now() - start;
+    t.diagnostic(`32 MB leading whitespace: ${ms.toFixed(1)} ms`);
+    assert.ok(ms < 100, `${ms.toFixed(0)} ms`);
+    assert.equal(result.ok, true);
+  });
+
+  it('refuses a root pushed past the 64 KiB prefix', () => {
+    const tail = '<score-partwise><note><pitch/></note></score-partwise>';
+    // Only prolog and a comment in the prefix: no element at all.
+    assert.deepEqual(checkUploadXml(`<?xml version="1.0"?><!--${'x'.repeat(70 * 1024)}-->${tail}`), { ok: false, code: 'not-xml' });
+    // An element in the prefix, but the root is beyond it.
+    assert.deepEqual(checkUploadXml(`<?xml version="1.0"?><!DOCTYPE x [<!ELEMENT a ANY>]>${'<a/>'.repeat(20 * 1024)}${tail}`),
+      { ok: false, code: 'not-partwise' });
+  });
+});
