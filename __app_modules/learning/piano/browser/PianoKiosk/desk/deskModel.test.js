@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { piecePolishing, cardBadge, coinSize, lessonNumber, lessonTitle, nextSkill, swipeTarget, mapColumns, mapRows, nextStep, passageBars, passageFaded, pieceCount, pieceFocus, pieceLabel, relativeTime, scoreHeading, shownCard, stripCards, stripGroups } from './deskModel.js';
+import { piecePolishing, cardBadge, coinLayout, coinSize, lessonNumber, lessonTitle, nextSkill, swipeTarget, mapColumns, mapRows, nextStep, passageBars, passageFaded, pieceCount, pieceFocus, pieceLabel, relativeTime, scoreHeading, shownCard, stripCards, stripGroups } from './deskModel.js';
 
 const passages = [{ id: 'a', start: 0, end: 4, state: 'silver' }, { id: 'b', start: 5, end: 8, state: 'todo' }];
 const piece = { total: 2, silver: 1, gold: 0, practicedAt: '2026-11-18T10:00:00Z', next: { passageId: 'b' }, nextGoldPassageId: 'a', passages };
@@ -83,28 +83,36 @@ describe('deskModel', () => {
     expect(nextStep({ kind: 'piece', piece: gold, focus: { start: 0, end: 3 } })).toBe('Whole piece');
     expect(nextStep({ kind: 'piece', piece: { ...gold, gold: 0 }, focus: { start: 0, end: 3 } })).toBe('Bars 1–4');
   });
-  it('lays coins in one row up to ten, else two equal rows', () => {
-    expect(mapColumns(3)).toBe(3);
-    expect(mapColumns(10)).toBe(10);
-    expect(mapColumns(11)).toBe(6);
-    expect(mapColumns(20)).toBe(10);
-    expect(mapRows(10)).toBe(1);
-    expect(mapRows(11)).toBe(2);
+  it('never gives a longer piece bigger coins, with or without a Polish stone', () => {
+    for (const extra of [0, 1]) {
+      for (let n = 1; n <= 30; n += 1) expect(coinSize(n + 1, extra), `n=${n} extra=${extra}`).toBeLessThanOrEqual(coinSize(n, extra));
+    }
   });
-  it('grows a short piece\'s coins up to 36px beside the count, and keeps two rows at 22px', () => {
-    expect(coinSize(2)).toBe(36);
-    expect(coinSize(3)).toBe(36);
-    expect(coinSize(4)).toBe(30);
-    expect(coinSize(7)).toBe(16);
-    expect(coinSize(10)).toBe(11);
-    expect(coinSize(12)).toBe(22);
+  it('puts the count beside a short piece\'s coins, so two to four passages get big ones', () => {
+    expect(coinLayout(2)).toEqual({ rows: 1, columns: 2, size: 36, countBeside: true });
+    expect(coinLayout(3).size).toBe(36);
+    expect(coinLayout(4).size).toBe(30);
+    expect(coinLayout(4).countBeside).toBe(true);
+  });
+  it('moves the count above a one-row map once the row needs its full width', () => {
+    expect(coinLayout(6)).toEqual({ rows: 1, columns: 6, size: 24, countBeside: false });
+    expect(coinLayout(7)).toEqual({ rows: 1, columns: 7, size: 23, countBeside: false });
+  });
+  it('takes two rows when they give bigger coins, and three for a very long piece', () => {
+    expect(coinLayout(8)).toEqual({ rows: 2, columns: 4, size: 22, countBeside: false });
+    expect(coinLayout(10)).toEqual({ rows: 2, columns: 5, size: 22, countBeside: false });
+    expect(coinLayout(20)).toEqual({ rows: 2, columns: 10, size: 15, countBeside: false });
+    expect(coinLayout(24)).toEqual({ rows: 3, columns: 8, size: 14, countBeside: false });
+    // Three rows keep coins at 12px or more up to 36 passages.
+    expect(coinLayout(36).size).toBe(12);
+    expect(mapRows(5)).toBe(1);
+    expect(mapRows(20)).toBe(2);
+    expect(mapColumns(20)).toBe(10);
     expect(coinSize(20)).toBe(15);
-    expect(coinSize(28)).toBe(10);
   });
   it('makes room for one more coin-sized slot when the row ends in a Polish stone', () => {
-    expect(coinSize(3, 1)).toBe(30);
-    expect(coinSize(10, 1)).toBe(9);
-    expect(coinSize(28, 1)).toBe(9);
+    expect(coinLayout(3, 1)).toEqual({ rows: 1, columns: 3, size: 30, countBeside: true });
+    expect(coinSize(10, 1)).toBeLessThanOrEqual(coinSize(10));
   });
   it('reads the coach\'s next skill as the piece card\'s what-to-do line, never while polishing', () => {
     const piece = { total: 3, gold: 0, next: { passageId: 'a', skill: 'pulse', label: 'Settle into a beat' } };

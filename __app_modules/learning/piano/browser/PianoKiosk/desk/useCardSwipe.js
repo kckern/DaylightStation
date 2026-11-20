@@ -2,36 +2,49 @@ import { useRef, useState } from 'react';
 
 /** A swipe this far (px), mostly sideways, switches the card. */
 export const SWIPE_THRESHOLD = 40;
-/** Movement under this (px) is still a tap. */
-const SLOP = 8;
+/** Movement under this (px) is still a tap: a child's tap wanders. */
+const SLOP = 12;
 /** How far the card follows the finger: half the finger's travel, at most this (px). */
 const FOLLOW_CAP = 32;
 /** Sideways means the horizontal travel beats the vertical by this factor. */
 const MOSTLY = 1.5;
 /** The click a browser sends after a drag lands within this window (ms). */
 const CLICK_WINDOW = 600;
+/** The CSS variable on the deck the card's follow offset is written to. */
+export const DRAG_VAR = '--piano-desk-drag';
 
 /**
  * Sideways swipes on one card: the card follows the finger a little while it
  * drags, and a swipe past the threshold calls `onSwipe('left' | 'right')`.
  * Vertical gestures and small wobbles are left alone, so a tap still taps and
- * the page still scrolls. The click a browser sends after a drag is swallowed,
- * so a swipe never also opens the card. Pointer events cover touch on the
- * kiosk WebView and the mouse in tests.
+ * the page still scrolls. Pointer events cover touch on the kiosk WebView and
+ * the mouse in tests.
  *
- * Returns the handlers for the card, its follow offset in px, and whether a
- * drag is under way (the card animates back only once it is not).
+ * The click a browser may send after a swipe (or a sideways drag of at least
+ * half a swipe) is swallowed, so a swipe never also opens the card. The Android
+ * WebView sends none after a drag, so the next pointerdown disarms it: a real
+ * tap straight after a swipe still opens.
+ *
+ * Only the first finger counts: a second pointer, or a new one while a gesture
+ * is under way, is ignored. A lost pointer capture ends the gesture like a cancel.
+ *
+ * The follow offset is written straight to `--piano-desk-drag` on the element
+ * holding `ref`, so a drag does not re-render the card on every move; only
+ * `dragging` (the card animates back once it is false) is React state.
  */
 export default function useCardSwipe({ enabled, onSwipe }) {
+  const ref = useRef(null);
   const start = useRef(null);
   const swallowUntil = useRef(0);
-  const [offset, setOffset] = useState(0);
   const [dragging, setDragging] = useState(false);
 
-  const reset = () => { start.current = null; setOffset(0); setDragging(false); };
+  const follow = (px) => { ref.current?.style.setProperty(DRAG_VAR, `${px}px`); };
+  const reset = () => { start.current = null; follow(0); setDragging(false); };
 
   const onPointerDown = (event) => {
-    if (!enabled || (event.button !== undefined && event.button > 0)) return;
+    // Any new touch disarms a swallow left over from a drag that got no click.
+    if (event.isPrimary !== false) swallowUntil.current = 0;
+    if (!enabled || start.current || event.isPrimary === false || event.button > 0) return;
     start.current = { x: event.clientX, y: event.clientY, id: event.pointerId, axis: null };
   };
 
@@ -42,15 +55,17 @@ export default function useCardSwipe({ enabled, onSwipe }) {
     const dy = event.clientY - at.y;
     if (!at.axis) {
       if (Math.abs(dx) < SLOP && Math.abs(dy) < SLOP) return;
-      at.axis = Math.abs(dx) > Math.abs(dy) * MOSTLY ? 'x' : 'y';
-      if (at.axis === 'x') {
-        // Keep the finger's moves even when it leaves the card.
-        try { event.currentTarget.setPointerCapture?.(event.pointerId); } catch { /* not capturable */ }
-        setDragging(true);
+      if (Math.abs(dx) <= Math.abs(dy) * MOSTLY) {
+        // Vertical: the page's, not ours. Let go of the gesture entirely.
+        start.current = null;
+        return;
       }
+      at.axis = 'x';
+      // Keep the finger's moves even when it leaves the card.
+      try { event.currentTarget.setPointerCapture?.(event.pointerId); } catch { /* not capturable */ }
+      setDragging(true);
     }
-    if (at.axis !== 'x') return;
-    setOffset(Math.max(-FOLLOW_CAP, Math.min(FOLLOW_CAP, dx / 2)));
+    follow(Math.max(-FOLLOW_CAP, Math.min(FOLLOW_CAP, dx / 2)));
   };
 
   const onPointerUp = (event) => {
@@ -61,9 +76,17 @@ export default function useCardSwipe({ enabled, onSwipe }) {
     const sideways = at.axis === 'x';
     reset();
     if (!sideways) return;
-    // A drag, swipe or not, is not a tap.
-    swallowUntil.current = Date.now() + CLICK_WINDOW;
-    if (enabled && Math.abs(dx) >= SWIPE_THRESHOLD && Math.abs(dx) > Math.abs(dy) * MOSTLY) onSwipe(dx < 0 ? 'left' : 'right');
+    const swiped = enabled && Math.abs(dx) >= SWIPE_THRESHOLD && Math.abs(dx) > Math.abs(dy) * MOSTLY;
+    // A swipe, or a sideways drag of half a swipe or more, is not a tap; a wobble is.
+    if (swiped || Math.abs(dx) >= SWIPE_THRESHOLD / 2) swallowUntil.current = Date.now() + CLICK_WINDOW;
+    if (swiped) onSwipe(dx < 0 ? 'left' : 'right');
+  };
+
+  const onLost = () => { if (start.current) reset(); };
+
+  const onPointerLeave = () => {
+    // Without a capture (no sideways drag yet), a finger leaving the card ends the gesture.
+    if (start.current && start.current.axis !== 'x') start.current = null;
   };
 
   const onClickCapture = (event) => {
@@ -75,8 +98,8 @@ export default function useCardSwipe({ enabled, onSwipe }) {
   };
 
   return {
-    handlers: { onPointerDown, onPointerMove, onPointerUp, onPointerCancel: reset, onClickCapture },
-    offset,
+    ref,
+    handlers: { onPointerDown, onPointerMove, onPointerUp, onPointerCancel: onLost, onLostPointerCapture: onLost, onPointerLeave, onClickCapture },
     dragging,
   };
 }

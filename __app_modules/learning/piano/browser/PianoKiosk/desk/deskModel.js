@@ -148,31 +148,53 @@ export function swipeTarget(cards, kind, direction) {
 
 /**
  * The right column is 176px wide at a 292px panel (four children): 292 - 2 border
- * - 16 padding - 88 poster - 10 gap. One row of coins shares it with the count
- * (stacked at its right, 40px with an 8px gap), leaving 128px; two rows sit under
- * the count and take the whole column. GAP is the map's CSS gap.
+ * - 16 padding - 88 poster - 10 gap. GAP is the map's CSS gap.
  */
-const ROW_BESIDE_COUNT = 128;
-const ROW_FULL = 176;
+const COLUMN = 176;
+/** The count stacked beside one row of coins: 40px and an 8px gap. */
+const BESIDE = 48;
 const GAP = 2;
-/** One row up to ten coins, else two equal rows. */
-const ONE_ROW = 10;
-
-/** Coins across a piece's map. */
-export const mapColumns = (count) => (count > ONE_ROW ? Math.ceil(count / 2) : Math.max(1, count));
-export const mapRows = (count) => (count > ONE_ROW ? 2 : 1);
 
 /**
- * Coin size in px: the row fills its width. One row grows up to 36px, the height
- * left under a two-line title, the bars and the skill line, so a short piece gets
- * big coins; two rows stay at most 22px (the tall card's height). `extra` slots
- * (a Polish stone) share the row.
+ * The ways a piece's coins can sit at the bottom of the column, each with the
+ * largest coin its height allows. A 150px card leaves 40px under a two-line
+ * title, the bars and the skill line; a 170px (tall) card leaves 62px.
+ *  - one row with the count stacked beside it: up to 36px, in 128px of width;
+ *  - one row under the count line (16px): up to 24px, the full width;
+ *  - two rows under the count (tall card): up to 22px;
+ *  - three rows under the count (tall card): up to 14px.
  */
-export const coinSize = (count, extra = 0) => {
-  const columns = mapColumns(count) + extra;
-  const [row, most] = mapRows(count) > 1 ? [ROW_FULL, 22] : [ROW_BESIDE_COUNT, 36];
-  return Math.min(most, Math.floor((row - (columns - 1) * GAP) / columns));
-};
+const LAYOUTS = [
+  { rows: 1, width: COLUMN - BESIDE, most: 36, countBeside: true },
+  { rows: 1, width: COLUMN, most: 24, countBeside: false },
+  { rows: 2, width: COLUMN, most: 22, countBeside: false },
+  { rows: 3, width: COLUMN, most: 14, countBeside: false },
+];
+
+/**
+ * How a piece's coins are laid out: whichever arrangement gives the biggest coin,
+ * the fewer rows on a tie (more than one row makes the strip's cards tall). Each
+ * arrangement's coin only shrinks as passages are added, so the best of them does
+ * too: a longer piece never gets bigger coins. Three rows keep coins at 12px or
+ * more up to 36 passages; past that they shrink further rather than hiding
+ * passages. `extra` slots (a Polish stone) take one more column, beside every row.
+ */
+export function coinLayout(count, extra = 0) {
+  const n = Math.max(1, count);
+  let best = null;
+  for (const layout of LAYOUTS) {
+    const columns = Math.ceil(n / layout.rows);
+    const slots = columns + extra;
+    const size = Math.min(layout.most, Math.floor((layout.width - (slots - 1) * GAP) / slots));
+    if (!best || size > best.size) best = { rows: layout.rows, columns, size, countBeside: layout.countBeside };
+  }
+  return best;
+}
+
+/** Coins across a piece's map, its rows, and the coin size in px. */
+export const mapColumns = (count, extra = 0) => coinLayout(count, extra).columns;
+export const mapRows = (count, extra = 0) => coinLayout(count, extra).rows;
+export const coinSize = (count, extra = 0) => coinLayout(count, extra).size;
 
 export const pieceCount = (piece) => `${piece.silver} of ${piece.total} Silver`;
 

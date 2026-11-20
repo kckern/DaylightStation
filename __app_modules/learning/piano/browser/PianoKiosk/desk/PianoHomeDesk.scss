@@ -55,8 +55,8 @@
 
   // Both cards, the panel's width by 150: a full-height 2:3 poster on the left
   // (88x132 inside 2px of border and 16px of padding), the right column beside
-  // it (176px wide at four children). A piece with more than ten passages takes
-  // two coin rows and 170px; when any shown piece needs two rows, every card
+  // it (176px wide at four children). A piece whose coins are biggest on two or
+  // three rows (eight passages or more) takes 170px; when any shown piece needs two rows, every card
   // grows together so the row stays even, and the posters grow with it (2:3).
   &[data-tall] &__card { height: 170px; }
 
@@ -95,7 +95,7 @@
   &__poster {
     position: relative; flex: 0 0 auto; height: 100%; aspect-ratio: 2 / 3;
     border-radius: 6px; overflow: hidden; background: var(--piano-surface-2);
-    img { display: block; width: 100%; height: 100%; object-fit: cover; -webkit-user-drag: none; }
+    img { display: block; width: 100%; height: 100%; object-fit: cover; -webkit-user-drag: none; -webkit-touch-callout: none; }
     &[data-stand-in] {
       // The bottom 30px belong to the play disc, so the title stops above it.
       display: flex; flex-direction: column; align-items: center; justify-content: flex-start; gap: 6px;
@@ -142,7 +142,7 @@
   &__still {
     flex: 0 0 auto; width: 96px; aspect-ratio: 16 / 9; border-radius: 4px; overflow: hidden;
     background: var(--piano-surface-2);
-    img { display: block; width: 100%; height: 100%; object-fit: cover; -webkit-user-drag: none; }
+    img { display: block; width: 100%; height: 100%; object-fit: cover; -webkit-user-drag: none; -webkit-touch-callout: none; }
     &[data-stand-in] {
       display: flex; align-items: center; justify-content: center;
       background: color-mix(in srgb, var(--piano-accent) 18%, var(--piano-surface-2));
@@ -159,10 +159,11 @@
 
   // Pinned to the bottom of the right column: a piece's count over its coins, or a course's bar and percent.
   &__progress { flex: none; margin-top: auto; padding-top: 2px; display: flex; min-width: 0; }
-  // A piece's progress: one row of coins with the count stacked at its right
-  // (Silver over Gold, 40px wide), or the count over two rows of coins.
+  // A piece's progress (coinLayout in deskModel.js): a short piece's one row of
+  // coins with the count stacked at its right (Silver over Gold, 40px or more),
+  // or the count over one, two or three rows of coins across the whole column.
   &__progress[data-kind='piece'] { flex-direction: row; align-items: center; gap: 8px; }
-  &__progress[data-kind='piece'][data-rows='2'] { flex-direction: column-reverse; align-items: stretch; gap: 2px; }
+  &__progress[data-count='above'] { flex-direction: column-reverse; align-items: stretch; gap: 2px; }
   &__progress[data-kind='course'] { align-items: center; gap: 8px; height: 18px; }
   &__count {
     flex: none; display: flex; gap: 10px; font-size: 12px; font-weight: 800; line-height: 14px; font-variant-numeric: tabular-nums;
@@ -170,7 +171,7 @@
     span[data-level='gold'] { color: var(--piano-gold); }
     svg { width: 12px; height: 12px; }
   }
-  &__progress[data-rows='1'] &__count { flex-direction: column; align-items: flex-end; gap: 2px; width: 40px; margin-left: auto; }
+  &__progress[data-count='beside'] &__count { flex-direction: column; align-items: flex-end; gap: 2px; min-width: 40px; margin-left: auto; }
   &__bar {
     flex: 1; height: 6px; border-radius: 3px; background: var(--piano-surface-2); overflow: hidden;
     i { display: block; height: 100%; background: var(--piano-accent); border-radius: 3px; }

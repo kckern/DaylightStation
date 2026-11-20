@@ -9,7 +9,7 @@ import PassageCoin from '../modes/SheetMusic/PassageCoin.jsx';
 import Icon from '../../ui/icons/Icon.jsx';
 import GemIcon from '../../../../../../frontend/src/lib/icons/GemIcon.jsx';
 import { polishStone } from '../modes/SheetMusic/polishAwards.js';
-import { cardBadge, coinSize, lessonNumber, lessonTitle, mapColumns, mapRows, nextSkill, nextStep, passageFaded, pieceLabel, scoreHeading, shownCard, stripGroups, piecePolishing, swipeTarget } from './deskModel.js';
+import { cardBadge, coinLayout, lessonNumber, lessonTitle, nextSkill, nextStep, passageFaded, pieceLabel, scoreHeading, shownCard, stripGroups, piecePolishing, swipeTarget } from './deskModel.js';
 import useCardSwipe from './useCardSwipe.js';
 import './PianoHomeDesk.scss';
 
@@ -38,10 +38,12 @@ const sized = (url, w, h) => `${url}${url.includes('?') ? '&' : '?'}w=${w}&h=${h
  * A piece holding a Polish gem or diamond ends the row with it, coin-sized,
  * standing beside both rows of a two-row map.
  */
+/** How this piece's coins sit: rows, columns, coin size, and whether the count stands beside them. */
+const pieceCoins = (piece) => coinLayout(piece.passages.length, polishStone(piece.polish) ? 1 : 0);
+
 export function PassageMap({ piece, focusId }) {
-  const columns = mapColumns(piece.passages.length);
   const stone = polishStone(piece.polish);
-  const size = coinSize(piece.passages.length, stone ? 1 : 0);
+  const { columns, rows, size } = pieceCoins(piece);
   const track = `repeat(${columns}, minmax(0, ${size}px))${stone ? ` minmax(0, ${size}px)` : ''}`;
   return (
     <span className="piano-desk__map" style={{ gridTemplateColumns: track }} aria-hidden="true">
@@ -54,7 +56,7 @@ export function PassageMap({ piece, focusId }) {
         );
       })}
       {stone && (
-        <i data-stone={stone.kind} style={{ gridColumn: columns + 1, gridRow: `1 / span ${mapRows(piece.passages.length)}` }}>
+        <i data-stone={stone.kind} style={{ gridColumn: columns + 1, gridRow: `1 / span ${rows}` }}>
           <GemIcon size="100%" color={stone.color} />
         </i>
       )}
@@ -86,7 +88,7 @@ export function PosterArt({ src, title }) {
       </span>
     );
   }
-  return <span className="piano-desk__poster"><img src={sized(src, 120, 180)} alt="" decoding="async" onError={() => setFailed(true)} />{PLAY}</span>;
+  return <span className="piano-desk__poster"><img src={sized(src, 180, 270)} alt="" decoding="async" onError={() => setFailed(true)} />{PLAY}</span>;
 }
 
 /** The next episode's own still, 16:9, so the child knows the lesson by its picture; a tinted play frame when there is none or it fails. */
@@ -95,7 +97,7 @@ export function EpisodeStill({ src }) {
   if (!src || failed) {
     return <span className="piano-desk__still" data-stand-in=""><Icon name="play" /></span>;
   }
-  return <span className="piano-desk__still"><img src={src} alt="" decoding="async" onError={() => setFailed(true)} /></span>;
+  return <span className="piano-desk__still"><img src={sized(src, 192, 108)} alt="" decoding="async" onError={() => setFailed(true)} /></span>;
 }
 
 /**
@@ -107,6 +109,7 @@ function PieceCard({ card }) {
   const title = usePrintedTitle(card.piece.scoreId);
   const badge = cardBadge(card);
   const skill = nextSkill(card);
+  const coins = pieceCoins(card.piece);
   return (
     <>
       {/* Keyed by its picture, so a new picture starts fresh after an old one failed. */}
@@ -116,8 +119,8 @@ function PieceCard({ card }) {
         <strong className="piano-desk__title">{title}</strong>
         <span className="piano-desk__step">{nextStep(card)}</span>
         {skill && <span className="piano-desk__skill">{skill}</span>}
-        {/* One row of coins has the count beside it, at its right; two rows sit under the count. */}
-        <span className="piano-desk__progress" data-kind="piece" data-rows={mapRows(card.piece.passages.length)}>
+        {/* A short piece's one row of coins has the count beside it, at its right; otherwise the coins sit under the count. */}
+        <span className="piano-desk__progress" data-kind="piece" data-rows={coins.rows} data-count={coins.countBeside ? 'beside' : 'above'}>
           <PassageMap piece={card.piece} focusId={card.focus?.id} />
           <PieceCount piece={card.piece} />
         </span>
@@ -178,7 +181,7 @@ function ChildPanel({ group, card, disabled, onChoose, onSwipe, onOpen }) {
       onSwipe(group.userId, card.kind, target.kind);
     },
   });
-  const rows = card.kind === 'piece' && mapRows(card.piece.passages.length) > 1 ? 2 : undefined;
+  const rows = card.kind === 'piece' && pieceCoins(card.piece).rows > 1 ? pieceCoins(card.piece).rows : undefined;
   return (
     <div className="piano-desk__child">
       <span className="piano-desk__head">
@@ -199,8 +202,8 @@ function ChildPanel({ group, card, disabled, onChoose, onSwipe, onOpen }) {
         )}
       </span>
       {/* The deck holds the swipe: it outlives the card, so the click after a swipe is caught here. */}
-      <span className="piano-desk__deck" data-swipe={many || undefined} data-dragging={swipe.dragging || undefined}
-        style={{ '--piano-desk-drag': `${swipe.offset}px` }} {...swipe.handlers}>
+      <span className="piano-desk__deck" ref={swipe.ref} data-swipe={many || undefined} data-dragging={swipe.dragging || undefined}
+        {...swipe.handlers}>
         <button type="button" key={card.key} className="piano-desk__card" data-kind={card.kind} disabled={disabled}
           data-rows={rows} data-enter={enter || undefined}
           aria-label={card.kind === 'piece' ? pieceLabel(card.name, card.piece) : `${card.name}: ${card.course.next?.title ?? card.course.courseTitle}`}
@@ -236,7 +239,7 @@ export default function PianoHomeDesk({ disabled, onOpenPassage, onOpenCourse })
   const [chosen, setChosen] = useState({});
   const shown = groups.map((group) => ({ group, card: shownCard(group, chosen[group.userId]) }));
   const cards = shown.map(({ card }) => card);
-  const tall = cards.some((card) => card.kind === 'piece' && mapRows(card.piece.passages.length) > 1);
+  const tall = cards.some((card) => card.kind === 'piece' && pieceCoins(card.piece).rows > 1);
   useEffect(() => {
     logger.debug('piano.desk.view', { cards: cards.map((card) => card.key) });
   }, [logger, cards.map((card) => card.key).join(',')]); // eslint-disable-line react-hooks/exhaustive-deps

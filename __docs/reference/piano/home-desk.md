@@ -17,13 +17,17 @@ A child with both switches between them with a **sideways swipe on the card**: l
 shows the next card, right the one before, wrapping like a carousel (`swipeTarget`;
 works for any number of cards, two today). The swipe uses pointer events
 (`useCardSwipe.js`): a drag counts once it is mostly sideways (horizontal travel over
-1.5 times the vertical) and past 8px; while it drags the card follows the finger at
+1.5 times the vertical) and past 12px; while it drags the card follows the finger at
 half its travel, at most 32px (`--piano-desk-drag` on the `.piano-desk__deck` wrapper,
 `touch-action: pan-y` so vertical moves still scroll), and springs back on release. A
 release 40px or more sideways switches the card, which slides in from that side
-(`data-enter`). Any sideways drag, switching or not, swallows the click the browser
-sends after it, so a swipe never also opens the card; vertical gestures and small
-wobbles are ignored, so a tap still opens. A swipe logs `piano.desk.swipe` (debug,
+(`data-enter`). A swipe, or a sideways drag of 20px or more, swallows the click the
+browser may send after it, so a swipe never also opens the card; the next pointerdown
+disarms that (the Android WebView sends no click after a drag), so a tap straight after
+a swipe opens. Vertical gestures and wobbles under 12px are ignored, so a jittery tap
+still opens. Only the first finger counts: a second pointer, or a new one during a
+gesture, is ignored, and a lost pointer capture ends the drag like a cancel. The follow
+offset is written straight to the CSS variable, so a drag does not re-render the card. A swipe logs `piano.desk.swipe` (debug,
 `{ userId, from, to }`). With `prefers-reduced-motion` the card neither follows nor
 slides; it swaps in place. Closed (curfew, a pending lesson) there is no swiping.
 
@@ -45,6 +49,9 @@ or about 103x154 on a tall card), with a small play disc in its corner; the righ
 (owner, 2026-11-20). The poster is the picture cropped to fit only when its own shape
 differs. With no picture, or one that fails to load, a tinted stand-in shows a ♪ and
 the title. Titles wrap to two lines, then end in an ellipsis.
+Pictures are asked for at about 1.5 times their drawn size for the tablet's screen
+(`?w=180&h=270` for posters, `?w=192&h=108` for episode stills), and cannot be dragged
+or long-pressed out of the card.
 
 - **Piece:** top to bottom beside the score's `cover` (the same-name picture beside the
   score): the badge, the printed title, the next step (the next passage's bars, `Bars
@@ -56,13 +63,17 @@ the title. Titles wrap to two lines, then end in an ellipsis.
   **Diamond next** (pale diamond colour) after the gem, and **Diamond** once the diamond
   is earned (`cardBadge`). Pinned at the bottom of the column: the passage map in score
   order (a tomato, a flower, a silver coin or a gold coin; the next passage ringed) with
-  the Silver count (and the Gold count once there is one, `PieceCount`). Up to ten
-  passages make one row of coins with the count stacked at its right (40px); the coins
-  fill the 128px left beside it and grow up to 36px, the height left under a two-line
-  title, the bars and the skill line, so a short piece gets big coins (2–3 passages 36px,
-  4 passages 30px, 10 passages 11px; `coinSize`; a narrower card shrinks them further). A
-  piece with more than ten passages takes two equal rows of coins up to 22px across the
-  whole 176px column, under the count (`mapColumns`, `mapRows`, `coinSize`).
+  the Silver count (and the Gold count once there is one, `PieceCount`). The coins take
+  whichever arrangement gives the biggest coin, the fewer rows on a tie (`coinLayout`):
+  one row with the count stacked beside it (at least 40px), filling the 128px left,
+  up to 36px (1–5 passages: 2–3 get 36px, 4 get 30px); one row under the count line
+  across the whole 176px column, up to 24px (6–7 passages); two rows under the count,
+  up to 22px (8–23 passages); or three rows, up to 14px (24 and more). Every arrangement
+  only shrinks as passages are added, so a longer piece never gets bigger coins. Three
+  rows keep coins at 12px or more up to 36 passages; a longer piece shrinks them further
+  rather than hiding passages behind a "+N" (no piece in the library comes close, and
+  every passage stays tappable-looking and countable). Two or three rows make the cards
+  tall. A narrower card shrinks the coins further.
   A tomato nobody has started sits back at
   30% opacity; a started tomato and the one up next are full colour (`passageFaded`).
   A piece holding its Polish gem ends the coin row with
