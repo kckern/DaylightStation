@@ -23,13 +23,15 @@ function hush() { try { window.speechSynthesis?.cancel(); } catch { /* optional 
 const RING_LENGTH = 2 * Math.PI * RING_RADIUS;
 
 /** Which full-screen state a preschooler sees. One big action each. */
-export function preschoolScreen({ phase, busy, listening, hearing, heard }) {
+export function preschoolScreen({ phase, busy, listening, hearing, heard, error = null }) {
+  if (error && !busy && !hearing) return 'error';
   if (phase === 'completed') return 'green';
   if (phase === 'cooldown') return 'red';
   if (busy || hearing || ['pending', 'assessing'].includes(phase)) return 'checking';
   if (listening) return 'listening';
   if (heard) return 'confirm';
-  if (phase === 'steered') return 'blue';
+  // A follow-up left open from before the switch to preschool is asked as a blue screen.
+  if (phase === 'steered' || phase === 'follow-up') return 'blue';
   if (phase === 'warned') return 'yellow';
   return 'ask';
 }
@@ -39,7 +41,7 @@ export function preschoolScreen({ phase, busy, listening, hearing, heard }) {
  * "Did you say…?" → Checking → a green, blue, yellow or red result.
  * The server owns every verdict; this screen only speaks and shows it.
  */
-export default function PreschoolGratitude({ view, learnerId, learnerName = null, busy = false, remaining = 0, onTake, onSubmit, onRetry, onClose }) {
+export default function PreschoolGratitude({ view, learnerId, learnerName = null, busy = false, error = null, onDismissError, remaining = 0, onTake, onSubmit, onRetry, onClose }) {
   const [heard, setHeard] = useState(null);
   const [uploading, setUploading] = useState(false);
   const [notice, setNotice] = useState(null);
@@ -63,7 +65,8 @@ export default function PreschoolGratitude({ view, learnerId, learnerName = null
   const recorder = useTakeRecorder({ floor: DEBRIEF_FLOOR, onTake: receive });
   const listening = recorder.phase === 'recording';
   const hearing = recorder.phase === 'saving' || uploading;
-  const screen = preschoolScreen({ phase: view.phase, busy, listening, hearing, heard });
+  const screen = preschoolScreen({ phase: view.phase, busy, listening, hearing, heard, error });
+  const followUp = view.phase === 'follow-up' ? view.followUp : null;
 
   useEffect(() => { if (recorder.verdict) setNotice(PRESCHOOL_LINES.unheard); }, [recorder.verdict]);
   useEffect(() => { gratitudeLog.screen({ screen }); }, [screen]);
@@ -74,7 +77,8 @@ export default function PreschoolGratitude({ view, learnerId, learnerName = null
     if (screen === 'ask') speak(notice ?? PRESCHOOL_LINES.ask);
     else if (screen === 'confirm') speak(`Did you say: ${heard?.text}?`);
     else if (screen === 'green') { playScanCeremonyTone('success'); speak(`Thank you! I'll remember: ${subject.toLowerCase()}.`); }
-    else if (screen === 'blue') speak(notice ?? steerLine(view.steer));
+    else if (screen === 'blue') speak(notice ?? (followUp ? followUp.question : steerLine(view.steer)));
+    else if (screen === 'error') speak('Something went wrong. Tap to try again.');
     else if (screen === 'yellow') speak(notice ?? PRESCHOOL_LINES.yellow);
     else if (screen === 'red') speak(PRESCHOOL_LINES.red);
   }, [screen, view.attemptId, notice]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -93,7 +97,7 @@ export default function PreschoolGratitude({ view, learnerId, learnerName = null
     // Stops by itself after the child goes quiet (the shared speech floor).
     if (meter.current && meterLevel(meter.current, value, performance.now()) === 'auto-stop') recorder.stop();
   }, [recorder]);
-  const yes = () => { if (!heard || busy) return; const answer = heard; setHeard(null); onSubmit({ text: answer.text, via: 'voice', audioRef: answer.audioRef, edited: false }); };
+  const yes = () => { if (!heard || busy) return; const answer = heard; setHeard(null); onSubmit({ text: answer.text, via: 'voice', audioRef: answer.audioRef, edited: false, ...(view.phase === 'follow-up' ? { followUpOf: view.attemptId } : {}) }); };
   const again = () => { setHeard(null); listen(); };
 
   const name = learnerName ?? learnerId;
@@ -102,6 +106,7 @@ export default function PreschoolGratitude({ view, learnerId, learnerName = null
       <Icon name="microphone" />
     </SchoolButton>
   );
+  const micMissing = recorder.unavailable && <p className="preschool-gratitude__notice" role="status">The microphone is not working. Ask a grown-up.</p>;
   const hints = (list) => (
     <div className="preschool-gratitude__hints">
       {list.map((hint) => (
@@ -117,7 +122,7 @@ export default function PreschoolGratitude({ view, learnerId, learnerName = null
     <Icon name="heart" className="preschool-gratitude__picture" />
     <h2>{PRESCHOOL_LINES.ask}</h2>
     {notice && <p className="preschool-gratitude__notice" role="status">{notice}</p>}
-    {recorder.unavailable && <p className="preschool-gratitude__notice" role="status">The microphone is not working. Ask a grown-up.</p>}
+    {micMissing}
     {hints(PRESCHOOL_HINTS)}
     {mic()}
   </>;
@@ -152,12 +157,22 @@ export default function PreschoolGratitude({ view, learnerId, learnerName = null
       <h2>Thank you!</h2>
       <p className="preschool-gratitude__subject"><Icon name={hint?.icon ?? 'heart'} /><span>{subject}</span></p>
     </>;
-  } else if (screen === 'blue') {
+  } else if (screen === 'blue' && followUp) body = <>
+    <Icon name="idea" className="preschool-gratitude__picture" />
+    <h2>{followUp.question}</h2>
+    <p className="preschool-gratitude__used-plain">You said: “{followUp.firstText}”</p>
+    {notice && <p className="preschool-gratitude__notice" role="status">{notice}</p>}
+    {micMissing}
+    {mic('Tell me')}
+  </>;
+  else if (screen === 'blue') {
     const used = view.steer?.used ?? null;
     body = <>
       <Icon name="idea" className="preschool-gratitude__picture" />
       <h2>Try something new</h2>
       {used && <p className="preschool-gratitude__used"><span>{used.subject}</span><small>already used</small></p>}
+      {notice && <p className="preschool-gratitude__notice" role="status">{notice}</p>}
+      {micMissing}
       {hints(unusedHints([...(view.steer?.recent ?? []), ...(used ? [used.subject] : [])]))}
       {mic('Try again')}
     </>;
@@ -165,7 +180,14 @@ export default function PreschoolGratitude({ view, learnerId, learnerName = null
     <Icon name="warning" className="preschool-gratitude__picture" />
     <h2>That was silly</h2>
     <p>Tell me one real thing you liked today.</p>
+    {notice && <p className="preschool-gratitude__notice" role="status">{notice}</p>}
+    {micMissing}
     {mic('Try again')}
+  </>;
+  else if (screen === 'error') body = <>
+    <Icon name="warning" className="preschool-gratitude__picture" />
+    <h2>Something went wrong</h2>
+    <SchoolButton variant="plain" type="button" className="preschool-gratitude__choice" onClick={onDismissError}><Icon name="restart" /><span>Tap to try again</span></SchoolButton>
   </>;
   else {
     const total = view.cooldownMs > 0 ? view.cooldownMs : Math.max(remaining, 1);
@@ -185,7 +207,7 @@ export default function PreschoolGratitude({ view, learnerId, learnerName = null
   return <section className={`preschool-gratitude preschool-gratitude--${screen}`} data-screen={screen}>
     <header className="preschool-gratitude__header">
       <span className="preschool-gratitude__learner"><ProfileAvatar id={learnerId} name={name} size={256} /><span>{name}</span></span>
-      <SchoolButton variant="plain" type="button" className="preschool-gratitude__close" aria-label="Close" onClick={onClose}><Icon name="close" /></SchoolButton>
+      <SchoolButton variant="plain" type="button" className="preschool-gratitude__close" aria-label="Close" disabled={screen === 'checking'} onClick={onClose}><Icon name="close" /></SchoolButton>
     </header>
     <div className="preschool-gratitude__body">{body}</div>
   </section>;

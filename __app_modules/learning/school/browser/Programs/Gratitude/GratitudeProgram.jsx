@@ -13,7 +13,8 @@ import { gratitudeLog } from './gratitudeLog.js';
 import './GratitudeProgram.scss';
 const IDLE_THRESHOLDS=[45_000,120_000,300_000];
 // Phases in which the answer box is open and a draft may be saved.
-const ANSWER_PHASES=new Set(['draft','not-started','retry','follow-up']);
+// `steered`/`warned` come from the preschool ladder; if a learner leaves preschool mode they read as a retry.
+const ANSWER_PHASES=new Set(['draft','not-started','retry','follow-up','steered','warned']);
 
 export default function GratitudeProgram({learnerId,learnerName=null,gratitudeGrant,today,onExit}){
   const api=useGratitudeApi({learnerId,grant:gratitudeGrant});
@@ -61,15 +62,16 @@ export default function GratitudeProgram({learnerId,learnerName=null,gratitudeGr
   const retry=async()=>{if(sending.current)return;sending.current=true;setBusy(true);try{const result=await api.retry(view.studyDay,{attemptId:view.attemptId});if(apply(result)&&result.data.phase!=='pending')lastBody.current=null;if(result.ok&&result.data.phase==='completed'&&view.studyDay!==today)await open();}finally{sending.current=false;if(live.current)setBusy(false);}};
   const saveDraft=async body=>{if(sending.current||!ANSWER_PHASES.has(phaseRef.current))return;await api.draft(view.studyDay,body);};
   const close=()=>{gratitudeLog.closed({phase:view?.phase??null});onExit?.();};
-  useProgramKeys({arrowleft:close,...(view?.phase==='completed'?{enter:onExit}:{})});
+  // Preschool screens ignore the keyboard: only the big buttons do anything.
+  useProgramKeys({arrowleft:close,...(view?.phase==='completed'?{enter:onExit}:{})},{enabled:view?.mode!=='preschool'});
   if(!gratitudeGrant||!learnerId)return <section className="gratitude-program"><p>Open Gratitude from your School agenda.</p><TouchButton onClick={onExit}>Back to School</TouchButton></section>;
   // A preschooler gets the picture-and-voice screens; the server decides the mode.
-  if(view?.mode==='preschool')return <PreschoolGratitude view={view} learnerId={learnerId} learnerName={learnerName} busy={busy} remaining={remaining} onTake={take} onSubmit={submit} onRetry={retry} onClose={close}/>;
+  if(view?.mode==='preschool')return <PreschoolGratitude view={view} learnerId={learnerId} learnerName={learnerName} busy={busy} error={error} onDismissError={()=>{setError(null);open();}} remaining={remaining} onTake={take} onSubmit={submit} onRetry={retry} onClose={close}/>;
   return <section className="gratitude-program">
     <header className="gratitude-program__header"><h1>Gratitude</h1><span className="gratitude-program__learner"><ProfileAvatar id={learnerId} name={learnerName??learnerId} size={160}/><span>{learnerName??learnerId}</span></span><SchoolButton variant="plain" type="button" className="gratitude-program__close" aria-label="Close" onClick={close}><Icon name="close"/></SchoolButton></header>
     {error&&<p role="alert">{error}</p>}
     {!view&&<>{!error&&<p role="status">Opening Gratitude…</p>}{error&&<ProgramRetryButton onRetry={open}/>}</>}
-    {view&&['draft','not-started','retry'].includes(view.phase)&&<>
+    {view&&['draft','not-started','retry','steered','warned'].includes(view.phase)&&<>
       {view.reason==='unclear'&&<p role="status">Please make your gratitude a little clearer and try again.</p>}
       <ReflectionResponse key={`${view.studyDay}:${view.attemptId??'new'}`} prompt={view.prompt} initial={view.draft?.text??''} initialAudioRef={view.draft?.audioRef??null} initialVia={view.draft?.via??null} initialEdited={view.draft?.edited??false} busy={busy} onDraft={saveDraft} onTake={take} onRetryTake={view.draft?.takeId?retryTake:undefined} onSubmit={submit} submitLabel="Submit" events={gratitudeLog} focusOnOpen={false} focusAfterTake={false} transcribingLabel="Writing down what you said…" afterTakeHint="Check your words, then tap Submit." replaceOnTake/>
     </>}

@@ -17,7 +17,7 @@ beforeEach(() => {
   spoken.length = 0;
   Object.values(api).forEach(fn => fn.mockReset());
   Object.values(log).forEach(fn => fn.mockClear());
-  recorder.phase = 'idle'; recorder.verdict = null; recorder.start.mockClear();
+  recorder.phase = 'idle'; recorder.verdict = null; recorder.unavailable = false; recorder.start.mockClear();
   window.speechSynthesis = { cancel: vi.fn(() => spoken.push('<cancel>')), speak: u => spoken.push(u.text) };
   recorder.start.mockImplementation(() => { spoken.push('<record>'); });
   globalThis.SpeechSynthesisUtterance = function Utterance(text) { this.text = text; };
@@ -34,7 +34,7 @@ it('asks with pictures and one mic, no text box, and says the question aloud', a
   expect(screen.queryByRole('textbox')).toBeNull();
   expect(screen.getByRole('button', { name: 'Tell me' })).toBeVisible();
   for (const name of ['Family', 'Food', 'Toys', 'Outside']) expect(screen.getByRole('button', { name })).toBeVisible();
-  expect(spoken).toContain('What made you happy today?');
+  await waitFor(() => expect(spoken).toContain('What made you happy today?'));
   fireEvent.click(screen.getByRole('button', { name: 'Family' }));
   expect(spoken.at(-1)).toBe('What about Mom?');
   expect(screen.getByRole('banner')).toHaveTextContent('Kid');
@@ -171,4 +171,69 @@ it('stops talking before it listens, so it never records its own voice', async (
   window.speechSynthesis.cancel.mockClear();
   view.unmount();
   expect(window.speechSynthesis.cancel).toHaveBeenCalled();
+});
+
+const answer = async () => {
+  fireEvent.click(await screen.findByRole('button', { name: 'Tell me' }));
+  await act(async () => { await receiveTake({ blob: new Blob(['a']) }); });
+  fireEvent.click(screen.getByRole('button', { name: /Yes/ }));
+};
+
+it('shows a clear error screen instead of dropping back to Ask, and tapping tries again', async () => {
+  api.open.mockResolvedValue({ ok: true, data: base });
+  api.take.mockResolvedValue({ ok: true, data: { takeId: 't1', audioRef: 'kid/t1.webm', text: 'cookies' } });
+  api.submit.mockResolvedValue({ ok: false, status: 500, data: { error: 'Your answer could not be processed. Please try again.' } });
+  mount();
+  await answer();
+  await waitFor(() => expect(screenOf()).toBe('error'));
+  expect(screen.getByText('Something went wrong')).toBeVisible();
+  expect(log.screen).toHaveBeenCalledWith({ screen: 'error' });
+  fireEvent.click(screen.getByRole('button', { name: /Tap to try again/ }));
+  await waitFor(() => expect(screenOf()).toBe('ask'));
+  expect(api.open).toHaveBeenCalledTimes(2);
+});
+
+it('ignores the keyboard and locks Close while checking', async () => {
+  api.open.mockResolvedValue({ ok: true, data: base });
+  api.take.mockResolvedValue({ ok: true, data: { takeId: 't1', audioRef: 'kid/t1.webm', text: 'cookies' } });
+  let finish; api.submit.mockReturnValue(new Promise(r => { finish = r; }));
+  const exit = vi.fn();
+  render(<GratitudeProgram learnerId="kid" learnerName="Kid" gratitudeGrant="grant" today="2026-11-19" onExit={exit} />);
+  await answer();
+  await waitFor(() => expect(screenOf()).toBe('checking'));
+  expect(screen.getByRole('button', { name: 'Close' })).toBeDisabled();
+  await act(async () => { finish({ ok: true, data: { ...base, phase: 'completed', subject: 'Cookies', attemptId: 'a1' } }); });
+  fireEvent.keyDown(window, { key: 'Enter' });
+  fireEvent.keyDown(window, { key: 'ArrowLeft' });
+  expect(exit).not.toHaveBeenCalled();
+  expect(screen.getByRole('button', { name: 'Close' })).toBeEnabled();
+});
+
+it('asks a follow-up left open before the switch to preschool, and answers it as one', async () => {
+  api.open.mockResolvedValue({ ok: true, data: { ...base, phase: 'follow-up', attemptId: 'f1', followUp: { question: 'What about your mom are you grateful for today?', firstText: 'my mom' } } });
+  api.take.mockResolvedValue({ ok: true, data: { takeId: 't1', audioRef: 'kid/t1.webm', text: 'She made pancakes' } });
+  api.submit.mockResolvedValue({ ok: true, data: { ...base, phase: 'completed', subject: 'Mom making pancakes', attemptId: 'a2' } });
+  mount();
+  expect(await screen.findByText('What about your mom are you grateful for today?')).toBeVisible();
+  expect(screenOf()).toBe('blue');
+  expect(spoken).toContain('What about your mom are you grateful for today?');
+  await answer();
+  await waitFor(() => expect(api.submit).toHaveBeenCalled());
+  expect(api.submit.mock.calls[0][1]).toMatchObject({ text: 'She made pancakes', followUpOf: 'f1' });
+});
+
+it('says the mic is not working on the blue and yellow screens too', async () => {
+  recorder.unavailable = true;
+  api.open.mockResolvedValue({ ok: true, data: { ...base, phase: 'warned', attemptId: 'a1' } });
+  mount();
+  expect(await screen.findByText('The microphone is not working. Ask a grown-up.')).toBeVisible();
+});
+
+it('the text-box screen treats a steered or warned day as a retry', async () => {
+  for (const phase of ['steered', 'warned']) {
+    api.open.mockResolvedValue({ ok: true, data: { ...base, mode: 'standard', phase, attemptId: 'a1' } });
+    const view = mount();
+    expect(await screen.findByRole('textbox')).toBeVisible();
+    view.unmount();
+  }
 });
