@@ -42,6 +42,8 @@ import { FoodCatalogManager } from "./FoodCatalogManager.jsx";
 import { localTodayISO as todayISO, currentMealBucketId, bucketLabel, BUCKETS } from "./mealBuckets.js";
 import { useNutritionInput } from "../capture/useNutritionInput.js";
 import { BarcodeCapture } from "../capture/BarcodeCapture.jsx";
+import { BarcodeOperationStatus } from '../operations/BarcodeOperationStatus.jsx';
+import { useHealthOperations } from '../operations/HealthOperationsProvider.jsx';
 import { CustomFoodSheet } from "../capture/CustomFoodSheet.jsx";
 
 const logger = createAppLogger('health').child('today');
@@ -156,6 +158,42 @@ export function TodayView({ active = true, sidebarTarget, followUpTarget = null,
   };
   const mealUndoOperations = useRef(new Map());
   const [editingRow, setEditingRow] = useState(null); // row | null — F6 renders the edit sheet
+  const healthOperations = useHealthOperations();
+  const [selectedCapture, setSelectedCapture] = useState(null);
+  const captureStatusOpen = searchParams.get('capture') === 'status';
+  const showHealthCaptureStatus = () => {
+    setSearchParams(previous => {
+      const next = new URLSearchParams(previous);
+      next.set('capture', 'status');
+      return next;
+    }, { replace: true });
+  };
+  const closeHealthCaptureStatus = () => {
+    setSearchParams(previous => {
+      const next = new URLSearchParams(previous);
+      next.delete('capture');
+      return next;
+    }, { replace: true });
+  };
+  const mealLog = searchParams.get('mealLog');
+  useEffect(() => {
+    if (!active || day.loading || !mealLog) return;
+    const row = day.items.find(item => (item.logId || item.logUuid) === mealLog);
+    if (row) setEditingRow(row);
+    setSearchParams(previous => {
+      const next = new URLSearchParams(previous);
+      next.delete('mealLog');
+      return next;
+    }, { replace: true });
+  }, [active, day.items, day.loading, mealLog, setSearchParams]);
+  useEffect(() => {
+    if (!selectedCapture || selectedCapture.date !== date) return;
+    const row = day.items.find(item => selectedCapture.entryIds.includes(String(entryId(item))));
+    if (row) {
+      setEditingRow(row);
+      setSelectedCapture(null);
+    }
+  }, [date, day.items, selectedCapture]);
   const [captureMode, setCaptureMode] = useState(() => searchParams.get('capture') === 'barcode' ? 'barcode' : null);
   const barcodeShortcut = useRef(searchParams.get('capture') === 'barcode');
   useEffect(() => {
@@ -613,11 +651,14 @@ export function TodayView({ active = true, sidebarTarget, followUpTarget = null,
   // `day.loading` false the whole time, so it never re-triggers this.
   const coldLoading = day.loading && !day.items.length;
 
-  const undoMealChange = async (tokenToUndo, reportFailure) => {
+  const undoMealChange = async (tokenToUndo, reportFailure, stableOperationId) => {
     const token = typeof tokenToUndo === 'string' ? tokenToUndo : mealUndo?.token;
     if (undoPending.current || !token) return false;
     undoPending.current = true; setUndoBusy(true);
-    const operationId = mealUndoOperations.current.get(token) || crypto.randomUUID();
+    const barcodeReceipt = [...(healthOperations?.snapshot.operations.values() || [])].find(op =>
+      op.kind === 'barcode-commit' && (op.receipt?.undoToken || op.response?.undoToken) === token);
+    const operationId = mealUndoOperations.current.get(token) || stableOperationId
+      || (barcodeReceipt ? `undo-${barcodeReceipt.id}` : crypto.randomUUID());
     mealUndoOperations.current.set(token, operationId);
     const onThisUndo = change => setCaptureToasts(state => (state.undo?.token === token ? { ...state, undo: change(state.undo) } : state));
     onThisUndo(undo => ({ ...undo, failure: null }));
@@ -626,6 +667,7 @@ export function TodayView({ active = true, sidebarTarget, followUpTarget = null,
       await foodAPI.withContinuation('api/v1/health/nutrition/meal-undo', { undoToken: token, operationId }, 'POST', () => {
         mealUndoOperations.current.delete(token);
         setCaptureToasts(state => afterMealUndo(state, token));
+        healthOperations?.store.markBarcodeUndone(token);
         day.reload();
       });
       return true;
@@ -735,10 +777,16 @@ export function TodayView({ active = true, sidebarTarget, followUpTarget = null,
         { committed: true, logId: entry.id, items: entry.items, date: placed.date || entry.date, mealTime: placed.mealTime }, date)} />
       {!wideViewport || !sidebarTarget ? <details className="health-history"><summary>Week &amp; weight history</summary>{history}</details> : null}
       {coachLine ? <Button variant="subtle" onClick={() => onCoachTap()}>{coachLine}</Button> : null}
+      <BarcodeOperationStatus open={active && captureStatusOpen} onClose={closeHealthCaptureStatus}
+        undoBusy={undoBusy} onUndo={undoMealChange} onView={receipt => {
+          closeHealthCaptureStatus();
+          setSelectedCapture(receipt);
+          if (receipt.date !== date) setDate(receipt.date);
+        }} />
       <BarcodeCapture open={active && captureMode === 'barcode'} bucket={barcodeTargetBucket || currentMealBucketId()}
         meals={BUCKETS.map(meal => ({ value: meal.id, label: meal.label }))}
         undoBusy={undoBusy} onUndo={undoMealChange}
-        onClose={closeBarcode}
+        onClose={closeBarcode} onStatus={showHealthCaptureStatus}
         onDecode={(upc, _bucket, signal) => nutrition.lookupBarcode(upc, signal)}
         onConfirm={prepared => nutrition.commitBarcode({ ...prepared, date: barcodeDate }, result => {
           offerAddedFood(result, barcodeDate, { added: true });

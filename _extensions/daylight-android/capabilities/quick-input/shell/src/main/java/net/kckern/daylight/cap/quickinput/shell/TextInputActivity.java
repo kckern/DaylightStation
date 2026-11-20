@@ -272,14 +272,13 @@ public class TextInputActivity extends Activity {
         }
         TextDraftWriter selected = writer;
         CaptureDraftStore selectedStore = store;
-        String destinationLabel = label;
         String selectedOwner = owner;
         finishDraft(selected, () -> {
             if (!CaptureScope.currentIs(selectedOwner)) throw new IOException("The draft belongs to another account");
             selectedStore.writeText(selected.id, new String(body, StandardCharsets.UTF_8));
             if (!selectedStore.sendForCurrentOwner(selected.id)) throw new IOException("Draft cannot be sent");
             CaptureFiles.tellPayload();
-        }, "Queued for " + destinationLabel, "Could not queue the draft. Check it and try again.");
+        }, () -> CaptureStatusActivity.open(this, selectedOwner, selected.id), "Could not queue the draft. Check it and try again.");
     }
 
     private void confirmDiscard() {
@@ -320,7 +319,7 @@ public class TextInputActivity extends Activity {
         }, null, "Could not discard the draft");
     }
 
-    private void finishDraft(TextDraftWriter selected, TextDraftWriter.Action action, String message, String errorMessage) {
+    private void finishDraft(TextDraftWriter selected, TextDraftWriter.Action action, Runnable onComplete, String errorMessage) {
         invalidateDiscard();
         finishingDraft = true;
         setBusy(true);
@@ -333,7 +332,7 @@ public class TextInputActivity extends Activity {
                 return;
             }
             completed = true;
-            if (message != null) say(message);
+            if (onComplete != null) onComplete.run();
             finish();
         }));
     }

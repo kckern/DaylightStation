@@ -10,7 +10,7 @@ export function BarcodeCapture({ open, ...props }) {
   return open ? <BarcodeSession {...props} /> : null;
 }
 
-function BarcodeSession({ onClose, onDecode, onConfirm, onDone, onView, onUnknown, onUndo, undoBusy, bucket, meals }) {
+function BarcodeSession({ onClose, onDecode, onConfirm, onDone, onView, onUnknown, onUndo, onStatus, undoBusy, bucket, meals }) {
   const videoRef = useRef(null);
   const audio = useRef(null);
   const live = useRef(false);
@@ -156,7 +156,7 @@ function BarcodeSession({ onClose, onDecode, onConfirm, onDone, onView, onUnknow
     setUndoFeedback(null);
     const success = await onUndo(token, error => {
       if (live.current) setUndoFeedback({ token, error });
-    });
+    }, `undo-${commitRequest.current.operationId}`);
     if (success && live.current) setUndoFeedback({ token, undone: true });
   };
 
@@ -206,6 +206,8 @@ function BarcodeSession({ onClose, onDecode, onConfirm, onDone, onView, onUnknow
         {phase === 'uncertain' && <Button onClick={confirm}>Retry log</Button>}
         {phase === 'unknown' && <Button onClick={() => onUnknown(read.upc, target)}>Enter food details</Button>}
         {(['logged', 'unknown', 'lookup-error', 'paused'].includes(phase)) && <Button variant="default" onClick={scanAnother}>Scan another</Button>}
+        {onStatus && ['scanning', 'committing', 'uncertain', 'logged'].includes(phase)
+          && <Button variant="subtle" onClick={() => { close(); onStatus(); }}>Health status</Button>}
         {phase === 'logged' && <>
           {!undone && <Button variant="subtle" onClick={() => onView(result)}>View in Health</Button>}
           {!undone && result.undoToken && <Button variant="subtle" aria-label="Undo logged item" loading={undoBusy}

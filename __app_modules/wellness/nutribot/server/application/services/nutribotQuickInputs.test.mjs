@@ -194,7 +194,7 @@ describe('durable Nutribot recovery', () => {
         const views = new Map();
         const owner = 'user_1';
         const chat = 'telegram:test';
-        const input = { ...command(), conversationId: chat, recordedAt: now };
+        const input = { ...command(), conversationId: chat, recordedAt: now, wantsFinalReceipt: true };
         const fiber = kind === 'photo' ? 0 : 2;
         const answer = vi.fn(async () => JSON.stringify({ items: [{ name: 'Toast', grams: 40, calories: 110, fiber }] }));
         const logger = { info() {}, warn() {}, debug() {}, error() {} };
@@ -243,7 +243,7 @@ describe('durable Nutribot recovery', () => {
           const router = new NutribotInputRouter({
             getLogFoodFromText: () => text, getLogFoodFromImage: () => image, getLogFoodFromVoice: () => voice,
             getAcceptFoodLog: () => accept, getFoodLogReview: () => reviewService,
-            getReceiptPublisher: () => publisher, getFoodLogStore: () => logs,
+            getReceiptPublisher: () => publisher, getFoodLogStore: () => logs, getNutriListStore: () => items,
           }, { logger });
           const save = logs.save.bind(logs);
           logs.save = async log => {
@@ -282,7 +282,10 @@ describe('durable Nutribot recovery', () => {
           expect(message).toBe(originalMessageCount);
           expect(answer).toHaveBeenCalledTimes(1);
           const cold = start();
-          expect(await cold.endpoints[kind].submit(input)).toMatchObject({ kind: 'duplicate', receiptDelivery: terminal || 'delivered' });
+          expect(await cold.endpoints[kind].submit(input)).toMatchObject({
+            kind: 'duplicate', receiptDelivery: terminal || 'delivered',
+            finalReceipt: { entryId: original.id, date: original.meal.date },
+          });
           expect(await cold.logs.findAll(owner)).toHaveLength(2);
           const meal = await cold.logs.findByUuid(original.id, owner);
           expect(meal).toMatchObject({ status: 'accepted', meal: original.meal, metadata: {

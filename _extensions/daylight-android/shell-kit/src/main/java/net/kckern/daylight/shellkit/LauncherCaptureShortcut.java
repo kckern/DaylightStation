@@ -17,7 +17,7 @@ public final class LauncherCaptureShortcut {
 
     public static boolean supports(String id) {
         return "journal".equals(id) || "journal-note".equals(id) || "meal".equals(id)
-                || "meal-note".equals(id) || "meal-photo".equals(id) || "meal-barcode".equals(id);
+                || "capture-status".equals(id) || "meal-note".equals(id) || "meal-photo".equals(id) || "meal-barcode".equals(id);
     }
 
     public static synchronized String issue(Context context, String id) {

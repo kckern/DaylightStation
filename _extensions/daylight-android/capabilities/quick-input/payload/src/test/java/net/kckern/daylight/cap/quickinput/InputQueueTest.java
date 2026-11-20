@@ -403,4 +403,19 @@ public class InputQueueTest {
         assertEquals("{meal-photo=1, journal=1}", q.waitingByDest().toString());
         assertEquals("{journal=1}", q.parkedByDest().toString());
     }
+
+    @Test public void statusPersistsOwnerScopedAcceptanceAndRefusesASecondSubmission() throws Exception {
+        String owner = net.kckern.daylight.cap.quickinput.shell.CaptureScope.key("https://home.example", "alice");
+        String other = net.kckern.daylight.cap.quickinput.shell.CaptureScope.key("https://home.example", "bob");
+        InputQueue queue = new InputQueue(state);
+        String file = "/inputs/owner-" + owner + "/original.journal.ogg";
+        queue.add("original", file, 1000);
+        queue.uploaded("original");
+        InputQueue reopened = new InputQueue(state);
+        JSONObject row = reopened.captureStatus(owner, 5).getJSONObject(0);
+        assertEquals("ACCEPTED", row.getString("state"));
+        assertEquals(0, reopened.captureStatus(other, 5).length());
+        assertFalse(reopened.retryCapture("original", owner, 5));
+        assertFalse(reopened.add("original", file, 1000));
+    }
 }

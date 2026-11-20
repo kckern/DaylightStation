@@ -366,7 +366,7 @@ public class PhotoCaptureActivity extends Activity {
             if (!store.sendForCurrentOwner(draft.id)) return;
             completed = true;
             CaptureFiles.tellPayload();
-            say("Queued for " + label);
+            CaptureStatusActivity.open(this, owner, draft.id);
             finish();
         } catch (IOException e) {
             say("Could not queue the photo. Check the draft and try again.");

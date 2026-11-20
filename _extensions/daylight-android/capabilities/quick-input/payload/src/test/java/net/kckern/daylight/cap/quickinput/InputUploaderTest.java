@@ -454,4 +454,22 @@ public class InputUploaderTest {
             assertEquals(before, calls);
         }
     }
+
+    @Test public void intakeReceiptWithoutAnEntryReferenceIsAccepted() throws Exception {
+        Result result = upload();
+        assertEquals("ACCEPTED", result.receiptState);
+        assertNull(result.entryId);
+    }
+    @Test public void deviceDeliveryRequiresTheDestinationReferenceAndMatchingInputId() throws Exception {
+        body = "{\"ok\":true,\"inputId\":\"" + CAPTURE_ID + "\",\"duplicate\":true,"
+                + "\"receiptDelivery\":\"delivered\"}";
+        assertEquals("ACCEPTED", upload().receiptState);
+        body = body.substring(0, body.length() - 1) + ",\"finalReceipt\":{\"entryId\":\"memo:" + CAPTURE_ID + "\"}}";
+        Result receipt = upload();
+        assertEquals("DELIVERED", receipt.receiptState);
+        assertEquals("memo:" + CAPTURE_ID, receipt.entryId);
+        body = body.replace("\"inputId\":\"" + CAPTURE_ID, "\"inputId\":\"other");
+        assertEquals(Outcome.RETRY_UNCOUNTED, upload().outcome);
+    }
+
 }

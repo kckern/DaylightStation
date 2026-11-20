@@ -4,23 +4,44 @@ const reserved = operation => ['editing', 'pending', 'reconciling', 'error', 'co
 /** Session-owned intents. Reservations are synchronous, independent of React renders. */
 export function createHealthOperations({ userId, durableStorage }) {
   const storagePrefix = `daylight.health.barcode-operations:${encodeURIComponent(userId)}:`;
+  const receiptPrefix = `daylight.health.barcode-receipts:${encodeURIComponent(userId)}:`;
   const restored = new Map();
+  const restoreReceipt = (key, op) => {
+    if (key === receiptPrefix + op?.id && op?.userId === userId && op.kind === 'barcode-commit'
+      && typeof op.receipt?.entryId === 'string' && op.receipt.entryId) {
+      restored.set(op.id, { ...op, phase: 'succeeded', targetIds: [] });
+    }
+  };
   try {
     for (let index = 0; index < (durableStorage?.length || 0); index++) {
       const key = durableStorage.key(index);
-      if (!key?.startsWith(storagePrefix)) continue;
+      if (!key?.startsWith(storagePrefix) && !key?.startsWith(receiptPrefix)) continue;
       let operation;
       try { operation = JSON.parse(durableStorage.getItem(key)); }
       catch { continue; }
+      if (key.startsWith(receiptPrefix)) { restoreReceipt(key, operation); continue; }
+      if (restored.get(operation?.id)?.phase === 'succeeded') continue;
       if (operation?.userId !== userId || operation.kind !== 'barcode-commit' || key !== storagePrefix + operation.id ||
         operation.request?.path !== 'api/v1/health/nutrition/barcode-commit' ||
         operation.request?.method !== 'POST' || operation.request.body?.operationId !== operation.id) continue;
       restored.set(operation.id, { ...operation, phase: 'error', error: 'Could not confirm this barcode log. Retry to check its result.' });
     }
+    for (const operation of restored.values()) {
+      if (operation.phase === 'succeeded') durableStorage?.removeItem(storagePrefix + operation.id);
+    }
   } catch { /* Inaccessible storage will prevent the next durable intent from dispatching. */ }
   const persist = operation => {
     if (!durableStorage) throw new Error('Saving this barcode operation requires device storage.');
     durableStorage.setItem(storagePrefix + operation.id, JSON.stringify(operation));
+  };
+  const saveReceipt = operation => {
+    const { id, date, bucket, startedAt, reversed, response, receipt, kind } = operation;
+    const entryId = receipt?.entryId ?? response?.entryIds?.[0];
+    const undoToken = receipt?.undoToken ?? response?.undoToken;
+    if (typeof entryId !== 'string' || !entryId) return;
+    durableStorage?.setItem(receiptPrefix + id, JSON.stringify({
+      userId, id, date, bucket, startedAt, reversed, kind, receipt: { entryId, undoToken },
+    }));
   };
   const forget = id => durableStorage?.removeItem(storagePrefix + id);
   let disposed = false;
@@ -48,6 +69,13 @@ export function createHealthOperations({ userId, durableStorage }) {
       publish(operations);
       return { ok: true, operationId: op.id };
     },
+    markBarcodeUndone(token) {
+      for (const op of snapshot.operations.values()) {
+        if (op.kind === 'barcode-commit' && (op.receipt?.undoToken || op.response?.undoToken) === token) {
+          this.transition(op.id, { reversed: true });
+        }
+      }
+    },
     transition(id, patch) {
       if (disposed || !snapshot.operations.has(id)) return;
       const operations = new Map(snapshot.operations);
@@ -56,9 +84,19 @@ export function createHealthOperations({ userId, durableStorage }) {
       operations.set(id, next);
       // Retain active/uncertain work; bound only fully retired history.
       const retired = [...operations.values()].filter(op => op.phase === 'succeeded');
-      retired.slice(0, Math.max(0, retired.length - 50)).forEach(op => operations.delete(op.id));
+      retired.sort((a, b) => a.startedAt - b.startedAt).slice(0, Math.max(0, retired.length - 50)).forEach(op => {
+        operations.delete(op.id);
+        if (op.kind === 'barcode-commit') {
+          try { durableStorage?.removeItem(receiptPrefix + op.id); } catch { /* The receipt remains readable. */ }
+        }
+      });
       if (next.kind === 'barcode-commit') {
-        try { if (next.phase === 'succeeded') forget(id); else persist(next); } catch { /* The original request remains safe to replay. */ }
+        try {
+          if (next.phase === 'succeeded') {
+            if (operations.has(id)) saveReceipt(next);
+            forget(id);
+          } else persist(next);
+        } catch { /* The original request remains safe to replay. */ }
       }
       publish(operations);
     },
@@ -72,7 +110,7 @@ export function createHealthOperations({ userId, durableStorage }) {
       removed.forEach(key => next.delete(key));
       for (const key of removed) {
         if (snapshot.operations.get(key)?.kind !== 'barcode-commit') continue;
-        try { forget(key); } catch { /* The original request remains safe to replay. */ }
+        try { forget(key); durableStorage?.removeItem(receiptPrefix + key); } catch { /* The original request remains safe to replay. */ }
       }
       publish(next);
     },

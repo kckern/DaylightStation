@@ -28,7 +28,7 @@ import java.util.function.Predicate;
  * method returns, so the queue survives the process being killed and the phone being
  * restarted. No Android types.
  *
- *   QUEUED ──claim──► UPLOADING ──200──► gone (the audio is deleted by the pump)
+ *   QUEUED ──claim──► UPLOADING ──200──► receipt saved, capture file removed
  *     ▲                  │ no answer, or an answer that may change: wait 5 s, 10 s ... 1 h
  *     └──────────────────┘
  *                        │ refused for good (400, 413, 415, 422), or the 20th counted failure
@@ -94,6 +94,7 @@ final class InputQueue {
     private final File stateFile;
     private final Store store;
     private final List<Entry> memos = new ArrayList<>();
+    private final Map<String, JSONArray> receipts = new LinkedHashMap<>();
     private int uploaded;
     private int lost;
     private int discarded;
@@ -117,7 +118,18 @@ final class InputQueue {
     /** @return false when an input with this id is already known. */
     synchronized boolean add(String id, String file, long recordedAtMs, String dest, Kind kind) {
         if (closed || find(id) != null) return false;
-        memos.add(new Entry(id, file, recordedAtMs, dest, kind));
+        Entry entry = new Entry(id, file, recordedAtMs, dest, kind);
+        JSONArray completed = receipts.get(owner(entry));
+        if (completed != null) {
+            for (int i = 0; i < completed.length(); i++) {
+                JSONObject prior = completed.optJSONObject(i);
+                if (prior != null && id.equals(prior.optString("id"))) {
+                    new File(file).delete();
+                    return false;
+                }
+            }
+        }
+        memos.add(entry);
         persist();
         return true;
     }
@@ -130,12 +142,16 @@ final class InputQueue {
      *             in a way every other input for them would be answered too
      */
     synchronized Entry claim(long nowMs, Set<String> skip) {
+        return claim(nowMs, skip, entry -> true);
+    }
+
+    synchronized Entry claim(long nowMs, Set<String> skip, Predicate<Entry> allowed) {
         if (closed) return null;
         Entry oldest = null;
         for (Entry m : memos) {
             if (m.state == State.UPLOADING) return null;
-            if (m.state != State.QUEUED || m.nextAttemptAtMs > nowMs) continue;
-            if (held(m.dest) > nowMs || skip.contains(m.dest)) continue;
+            if (m.state != State.QUEUED || m.nextAttemptAtMs > nowMs || !allowed.test(m)) continue;
+            if (held(m) > nowMs || skip.contains(holdKey(m))) continue;
             if (oldest == null || m.recordedAtMs < oldest.recordedAtMs) oldest = m;
         }
         if (oldest == null) return null;
@@ -145,24 +161,46 @@ final class InputQueue {
     }
 
     /** The backend accepted it. */
-    synchronized void uploaded(String id) {
+    synchronized boolean uploaded(String id) {
+        return finish(id, "ACCEPTED", null, null);
+    }
+
+    synchronized boolean finish(String id, String state, String entryId, String entryDate) {
         Entry m = find(id);
-        if (closed || m == null) return;
+        if (closed || m == null) return false;
+        String owner = owner(m);
+        if (owner != null) {
+            JSONObject receipt = row(m, state);
+            try {
+                receipt.put("entryId", entryId).put("entryDate", entryDate);
+            } catch (JSONException invalid) {
+                throw new IllegalStateException(invalid);
+            }
+            receipts.computeIfAbsent(owner, ignored -> new JSONArray()).put(receipt);
+        }
         memos.remove(m);
-        uploaded++;
+        if ("LOST".equals(state)) lost++;
+        else uploaded++;
         persist();
+        return true;
     }
 
     /** Its recording is no longer on the phone: there is nothing to send. */
     synchronized void lost(String id) {
-        Entry m = find(id);
-        if (closed || m == null) return;
-        memos.remove(m);
-        lost++;
-        persist();
+        finish(id, "LOST", null, null);
     }
 
     /** It was not tried (no identity, no site): due at once, and no attempt is counted. */
+    /** A failed disk write ends the caller's claim. The disk still replays the same ID after a restart. */
+    synchronized void releaseInterruptedClaim(String id, long nowMs) {
+        Entry entry = find(id);
+        if (!closed && entry != null && entry.state == State.UPLOADING) {
+            entry.state = State.QUEUED;
+            entry.lastError = "timeout";
+            entry.nextAttemptAtMs = nowMs + BASE_DELAY_MS;
+        }
+    }
+
     synchronized void release(String id) {
         Entry m = find(id);
         if (closed || m == null) return;
@@ -205,9 +243,16 @@ final class InputQueue {
         if (closed || m == null) return;
         m.state = State.QUEUED;
         m.lastError = error == null ? "" : error;
-        holds.put(m.dest, Math.max(held(m.dest), untilMs));
+        holds.put(holdKey(m), Math.max(held(m), untilMs));
         persist();
     }
+
+    static String holdKey(Entry entry) {
+        String owner = owner(entry);
+        return owner == null ? entry.dest : owner + ":" + entry.dest;
+    }
+
+    private long held(Entry entry) { return held(holdKey(entry)); }
 
     private long held(String dest) {
         Long until = holds.get(dest);
@@ -224,7 +269,7 @@ final class InputQueue {
     /** The destinations held now, each with the time sending to it resumes. */
     synchronized Map<String, Long> holds(long nowMs) {
         Map<String, Long> out = new LinkedHashMap<>();
-        for (Map.Entry<String, Long> h : holds.entrySet()) if (h.getValue() > nowMs) out.put(h.getKey(), h.getValue());
+        for (Map.Entry<String, Long> h : holds.entrySet()) if (h.getValue() > nowMs && !h.getKey().contains(":")) out.put(h.getKey(), h.getValue());
         return out;
     }
 
@@ -258,11 +303,11 @@ final class InputQueue {
         persist();
     }
 
-    /** Waiting and parked memos are all due now, each with a fresh count. */
+    /** The installed bulk action applies to the historical flat queue. */
     synchronized void retryAll(long nowMs) {
         if (closed) return;
         for (Entry m : memos) {
-            if (m.state == State.UPLOADING) continue;
+            if (m.state == State.UPLOADING || owner(m) != null) continue;
             m.state = State.QUEUED;
             m.attempts = 0;
             m.failures = 0;
@@ -271,12 +316,96 @@ final class InputQueue {
         persist();
     }
 
+    static String owner(Entry entry) {
+        File folder = new File(entry.file).getParentFile();
+        if (folder == null || !folder.getName().startsWith(CaptureScope.DIRECTORY_PREFIX)) return null;
+        return folder.getName().substring(CaptureScope.DIRECTORY_PREFIX.length());
+    }
+
+    private static boolean canRetry(Entry entry) {
+        if (entry.state == State.UPLOADING) return false;
+        return entry.state != State.PARKED || entry.attempts >= MAX_ATTEMPTS
+                && !terminalRefusal(entry.lastError);
+    }
+
+    private static boolean terminalRefusal(String detail) {
+        return detail.startsWith("HTTP 400 ") || detail.startsWith("HTTP 413 ")
+                || detail.startsWith("HTTP 415 ") || detail.startsWith("HTTP 422 ")
+                || "too large to send".equals(detail) || "unknown destination".equals(detail)
+                || detail.startsWith("destination does not take ");
+    }
+
+    synchronized boolean retryCapture(String id, String owner, long nowMs) {
+        Entry entry = find(id);
+        if (closed || owner == null || entry == null || !owner.equals(owner(entry)) || !canRetry(entry)) return false;
+        if (held(entry) > nowMs) return false;
+        entry.state = State.QUEUED;
+        entry.attempts = 0;
+        entry.failures = 0;
+        entry.nextAttemptAtMs = nowMs;
+        entry.lastError = "";
+        persist();
+        return true;
+    }
+
+    synchronized JSONArray captureStatus(String owner, long nowMs) {
+        JSONArray rows = new JSONArray();
+        if (owner == null) return rows;
+        for (Entry entry : memos) {
+            if (!owner.equals(owner(entry))) continue;
+            rows.put(row(entry, captureState(entry, nowMs)));
+        }
+        JSONArray completed = receipts.get(owner);
+        if (completed != null) {
+            for (int i = completed.length() - 1; i >= 0; i--) {
+                JSONObject prior = completed.optJSONObject(i);
+                if (prior != null) rows.put(prior);
+            }
+        }
+        return rows;
+    }
+
+    private String captureState(Entry entry, long nowMs) {
+        if (entry.state == State.UPLOADING) return "PROCESSING";
+        if ("HTTP 422 unusable_input".equals(entry.lastError)) return "UNUSABLE";
+        if ("HTTP 403 device_not_allowed".equals(entry.lastError)) return "DENIED";
+        if (held(entry) > nowMs) return "WAIT";
+        if (entry.state == State.PARKED) return canRetry(entry) ? "RETRY" : "REJECTED";
+        if ("timeout".equals(entry.lastError)) return "UNCERTAIN";
+        if (entry.failures > 0 && !"no connection".equals(entry.lastError)) return "RETRY";
+        return "QUEUED";
+    }
+
+    synchronized Map<String, JSONArray> otherCaptureStatuses(String current, long nowMs) {
+        Map<String, JSONArray> other = new LinkedHashMap<>();
+        java.util.Set<String> owners = new java.util.LinkedHashSet<>(receipts.keySet());
+        for (Entry entry : memos) {
+            String owner = owner(entry);
+            if (owner != null) owners.add(owner);
+        }
+        for (String owner : owners) {
+            if (!owner.equals(current)) other.put(owner, captureStatus(owner, nowMs));
+        }
+        return other;
+    }
+
+    private static JSONObject row(Entry entry, String state) {
+        try {
+            return new JSONObject().put("id", entry.id).put("dest", entry.dest).put("kind", entry.kind.word)
+                    .put("state", state).put("recordedAtMs", entry.recordedAtMs);
+        } catch (JSONException invalid) {
+            throw new IllegalStateException(invalid);
+        }
+    }
+
     /** When the next queued input is due, its destination's hold included; -1 when nothing is queued. */
-    synchronized long nextAttemptAtMs() {
+    synchronized long nextAttemptAtMs() { return nextAttemptAtMs(entry -> true); }
+
+    synchronized long nextAttemptAtMs(Predicate<Entry> allowed) {
         long next = -1;
         for (Entry m : memos) {
-            if (m.state != State.QUEUED) continue;
-            long due = Math.max(m.nextAttemptAtMs, held(m.dest));
+            if (m.state != State.QUEUED || !allowed.test(m)) continue;
+            long due = Math.max(m.nextAttemptAtMs, held(m));
             if (next < 0 || due < next) next = due;
         }
         return next;
@@ -291,7 +420,7 @@ final class InputQueue {
     private Map<String, Integer> byDest(boolean parked) {
         Map<String, Integer> out = new LinkedHashMap<>();
         for (Entry m : memos) {
-            if ((m.state == State.PARKED) != parked) continue;
+            if (owner(m) != null || (m.state == State.PARKED) != parked) continue;
             Integer n = out.get(m.dest);
             out.put(m.dest, n == null ? 1 : n + 1);
         }
@@ -316,16 +445,23 @@ final class InputQueue {
     synchronized void close() { closed = true; }
 
     /** Ids, kinds, destinations, states and counts. No path, and nothing of what an input holds. */
-    synchronized JSONObject describe() throws JSONException {
+    synchronized JSONObject describe() throws JSONException { return describe(null, true); }
+
+    synchronized JSONObject describe(String owner, boolean all) throws JSONException {
         JSONArray list = new JSONArray();
+        int waiting = 0;
+        int parked = 0;
         for (Entry m : memos) {
+            if (!all && owner(m) != null && !owner(m).equals(owner)) continue;
+            if (m.state == State.PARKED) parked++;
+            else waiting++;
             list.put(new JSONObject().put("id", m.id).put("kind", m.kind.word).put("dest", m.dest)
                     .put("recordedAtMs", m.recordedAtMs).put("state", m.state.name())
                     .put("attempts", m.attempts).put("nextAttemptAtMs", m.nextAttemptAtMs).put("lastError", m.lastError));
         }
-        return new JSONObject().put("ok", true).put("waiting", waiting()).put("parked", parked())
+        return new JSONObject().put("ok", true).put("waiting", waiting).put("parked", parked)
                 .put("uploaded", uploaded).put("lost", lost).put("discarded", discarded)
-                .put("holds", new JSONObject(holds)).put("inputs", list);
+                .put("holds", new JSONObject(holds(Long.MIN_VALUE))).put("inputs", list);
     }
 
     private Entry find(String id) {
@@ -341,6 +477,7 @@ final class InputQueue {
             lost = doc.optInt("lost", 0);
             discarded = doc.optInt("discarded", 0);
             readHolds(doc);
+            readReceipts(doc);
             for (JSONObject o : entriesOf(doc)) {
                 try {
                     Entry m = entryOf(o);
@@ -365,6 +502,7 @@ final class InputQueue {
             lost = 0;
             discarded = 0;
             holds.clear();
+            receipts.clear();
         }
         lastWritten = snapshot();
     }
@@ -405,6 +543,17 @@ final class InputQueue {
         if (old > 0) holds.put(Destinations.MEMO_DESTINATION, Math.max(old, held(Destinations.MEMO_DESTINATION)));
     }
 
+    private void readReceipts(JSONObject doc) {
+        receipts.clear();
+        JSONObject saved = doc.optJSONObject("captureReceipts");
+        if (saved == null) return;
+        for (Iterator<String> owners = saved.keys(); owners.hasNext();) {
+            String owner = owners.next();
+            JSONArray list = saved.optJSONArray(owner);
+            if (list != null) receipts.put(owner, list);
+        }
+    }
+
     /** The state as it is on disk: what a change that cannot be written is undone to. */
     private String lastWritten = "";
 
@@ -422,7 +571,7 @@ final class InputQueue {
                         .put("nextAttemptAtMs", m.nextAttemptAtMs).put("lastError", m.lastError));
             }
             return new JSONObject().put("uploaded", uploaded).put("lost", lost).put("discarded", discarded)
-                    .put("holds", new JSONObject(holds)).put("inputs", unbound).put("ownedInputs", owned).toString();
+                    .put("holds", new JSONObject(holds)).put("captureReceipts", new JSONObject(receipts)).put("inputs", unbound).put("ownedInputs", owned).toString();
         } catch (JSONException impossible) {
             throw new IllegalStateException(impossible);
         }
@@ -437,6 +586,7 @@ final class InputQueue {
             lost = doc.optInt("lost", 0);
             discarded = doc.optInt("discarded", 0);
             readHolds(doc);
+            readReceipts(doc);
             for (JSONObject o : entriesOf(doc)) {
                 Entry m = entryOf(o);
                 m.state = State.valueOf(o.optString("state", "QUEUED"));

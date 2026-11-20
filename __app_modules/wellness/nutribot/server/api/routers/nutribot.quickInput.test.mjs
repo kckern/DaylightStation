@@ -36,9 +36,7 @@ function capturingLogger() {
 }
 
 function build({ items = ITEMS, transcript = NOTE, aiFails = 0, limits, logger = nullLogger, aiAvailable = true,
-  devices = { phone: { quick_input: { nutribot: ['user_1', 'stranger'] } } } } = {}) {
-  const ledgerFiles = new Map();
-  const logs = new Map();
+  devices = { phone: { quick_input: { nutribot: ['user_1', 'stranger'] } } }, ledgerFiles = new Map(), logs = new Map(), rows = new Map() } = {}) {
   const foodLogStore = {
     logs,
     save: async (log) => { logs.set(log.id, log); return log; },
@@ -50,7 +48,11 @@ function build({ items = ITEMS, transcript = NOTE, aiFails = 0, limits, logger =
     },
     findPending: async () => [],
   };
-  const nutriListStore = { saveMany: async () => {}, removeByLogId: async () => 0 };
+  const nutriListStore = {
+    saveMany: async (items) => { for (const item of items) rows.set(item.uuid || item.id, item); },
+    findByLogId: async (userId, logId) => [...rows.values()].filter(row => row.userId === userId && row.logUuid === logId),
+    removeByLogId: async () => 0,
+  };
   const telegram = { messages: [], photos: [], transcribed: [], updates: [] };
   const ai = { text: 0, image: 0, failures: aiFails };
   const messagingGateway = {
@@ -126,16 +128,28 @@ function build({ items = ITEMS, transcript = NOTE, aiFails = 0, limits, logger =
     logger,
   });
   const app = express();
+  let lostReply;
+  app.use((req, res, next) => {
+    if (req.get('X-Fixture-Drop-Reply') === 'yes') {
+      res.json = body => {
+        lostReply = body;
+        req.socket.destroy();
+        return res;
+      };
+    }
+    next();
+  });
   app.use('/api/v1/nutribot', createNutribotRouter(nutribotApi, { logger, quickInput: quick.endpoints, directInput }));
-  return { app, telegram, ai, logs, legacy, receipts };
+  return { app, get lostReply() { return lostReply; }, telegram, ai, logs, legacy, receipts, ledgerFiles, rows };
 }
 
 const TYPES = { voice: 'audio/ogg', text: 'text/plain; charset=utf-8', photo: 'image/jpeg' };
 const BODIES = { voice: Buffer.from('opus bytes'), text: NOTE, photo: JPEG };
-const send = (app, kind, { id = '1700000000000-0a1b2c3d', user = 'user_1', recordedAt = null, device = 'fleet:phone', type = TYPES[kind], body = BODIES[kind] } = {}) => request(app)
+const send = (app, kind, { id = '1700000000000-0a1b2c3d', user = 'user_1', recordedAt = null, device = 'fleet:phone', type = TYPES[kind], body = BODIES[kind], receipt = false, dropReply = false } = {}) => request(app)
   .post(`/api/v1/nutribot/${kind}`).query({ user })
   .set(device ? { 'X-Daylight-Device': device } : {})
-  .set('X-Daylight-Input-Id', id).set(recordedAt ? { 'X-Daylight-Recorded-At': String(recordedAt) } : {})
+  .set('X-Daylight-Input-Id', id).set(receipt ? { 'X-Daylight-Capture-Receipt': '1' } : {})
+  .set(dropReply ? { 'X-Fixture-Drop-Reply': 'yes' } : {}).set(recordedAt ? { 'X-Daylight-Recorded-At': String(recordedAt) } : {})
   .set('Content-Type', type).send(body);
 
 const only = (logs) => { expect(logs.size).toBe(1); return [...logs.values()][0]; };
@@ -354,4 +368,19 @@ describe('every Nutribot quick-input route', () => {
     };
     logger.events.forEach((e) => walk(e.data, e.event));
   });
+});
+
+it.each(['voice', 'text', 'photo'])('replays the same saved %s meal receipt in a restarted API', async kind => {
+  const first = build();
+  await expect(send(first.app, kind, { receipt: true, dropReply: true })).rejects.toMatchObject({ code: 'ECONNRESET' });
+  const restarted = build({ ledgerFiles: first.ledgerFiles, logs: first.logs, rows: first.rows });
+  const replay = await send(restarted.app, kind, { receipt: true });
+  expect(replay.body).toMatchObject({
+    duplicate: true, receiptDelivery: 'uncertain',
+    finalReceipt: { entryId: only(restarted.logs).id, date: only(restarted.logs).meal.date },
+  });
+  expect(replay.body.finalReceipt).toEqual(first.lostReply.finalReceipt);
+  expect([...restarted.rows.values()].every(row => row.userId === 'user_1')).toBe(true);
+  expect(restarted.rows.size).toBe(ITEMS.length);
+  expect(restarted.ai.text + restarted.ai.image).toBe(0);
 });

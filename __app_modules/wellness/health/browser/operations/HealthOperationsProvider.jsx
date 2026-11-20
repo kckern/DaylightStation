@@ -73,7 +73,7 @@ function Session({ userId, children, send }) {
       if (onResult) continuations.current.set(id, onResult);
       if (running.current.has(id)) return running.current.get(id);
       const op = store.getSnapshot().operations.get(id);
-      if (!op || store.disposed) return Promise.resolve();
+      if (!op || store.disposed || (op.kind === 'barcode-commit' && op.phase === 'succeeded')) return Promise.resolve(op?.response);
       const owner = lease.current;
       const submittedEpoch = op.submittedEpoch ?? reconciliation.beginRead();
       const submitted = { ...op, submittedEpoch };

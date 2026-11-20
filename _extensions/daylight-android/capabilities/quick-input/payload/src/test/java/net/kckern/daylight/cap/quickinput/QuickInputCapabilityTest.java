@@ -265,7 +265,7 @@ public class QuickInputCapabilityTest {
         cap.pumpOnce();
         net.kckern.daylight.core.testing.FakeShell shell = (net.kckern.daylight.core.testing.FakeShell) core.shell();
         assertEquals(1, shell.notes.size());
-        assertEquals("INPUT uploaded 1700000000000-ab12cd34 voice journal 32 bytes", shell.notes.get(0));
+        assertEquals("INPUT 1 capture(s) accepted", shell.notes.get(0));
     }
 
     // ── the intake's device binding and daily allowance ──────────────────────
@@ -453,10 +453,7 @@ public class QuickInputCapabilityTest {
                 "https://kiosk.example/api/v1/nutribot/voice?user=example-user"), urls);
         assertEquals(java.util.Arrays.asList("text/plain; charset=utf-8", "image/jpeg", "audio/ogg"), types);
         net.kckern.daylight.core.testing.FakeShell shell = (net.kckern.daylight.core.testing.FakeShell) core.shell();
-        assertEquals("ids, kinds, destinations and sizes, and nothing of what was typed or photographed",
-                java.util.Arrays.asList("INPUT uploaded 1700000000000-ab12cd34 text meal-note 12 bytes",
-                        "INPUT uploaded 1700000001000-ab12cd34 photo meal-photo 300 bytes",
-                        "INPUT uploaded 1700000002000-ab12cd34 voice meal 40 bytes"), shell.notes);
+        assertEquals(java.util.Collections.singletonList("INPUT 3 capture(s) accepted"), shell.notes);
     }
 
     @Test public void aDailyLimitOnOneDestinationDoesNotHoldTheOthersAndTheNoticeNamesIt() throws Exception {
@@ -594,4 +591,50 @@ public class QuickInputCapabilityTest {
         assertTrue("a recording that was cut off is the recorder's to recover, however old", recording.exists());
         assertTrue(uploads.isEmpty());
     }
+    @Test public void scopedCaptureStatusWorksWithoutNoticeProviderAndRetryTargetsOneCurrentItem() throws Exception {
+        CoreRuntime noNotices = TestCore.create(tmp.newFolder());
+        File memoInbox = tmp.newFolder();
+        QuickInputCapability quiet = new QuickInputCapability(http, tmp.newFolder(), memoInbox,
+                () -> now, () -> false, screens);
+        noNotices.add(quiet);
+        noNotices.prepare(new JSONObject());
+        noNotices.settings().set(Backend.BASE_URL, "https://kiosk.example");
+        noNotices.settings().set(Backend.USER, "example-user");
+        String owner = InputUploader.currentScope(Backend.from(noNotices));
+        File scoped = new File(memoInbox, "owner-" + owner);
+        assertTrue(scoped.mkdir());
+        String id = "1700000000000-ab12cd34";
+        Files.write(new File(scoped, id + ".ogg").toPath(), new byte[] { 42 });
+        quiet.pumpOnce();
+        assertEquals("Queued", TestCore.get(noNotices, "/input/status").getJSONArray("inputs")
+                .getJSONObject(0).getString("message"));
+        Map<String, String> query = Collections.singletonMap("id", id);
+        assertTrue(TestCore.call(noNotices, "POST", "/input/status/retry", query, "{}").getBoolean("ok"));
+        assertTrue(uploads.isEmpty());
+
+        noNotices.settings().set(Backend.USER, "someone-else");
+        assertEquals(0, TestCore.get(noNotices, "/input/status").getJSONArray("inputs").length());
+        assertFalse(TestCore.call(noNotices, "POST", "/input/status/retry", query, "{}").getBoolean("ok"));
+        quiet.stop();
+    }
+
+    @Test public void unusableMealShowsAReplacementNoticeAndDoesNotResubmit() throws Exception {
+        String owner = InputUploader.currentScope(Backend.from(core));
+        File scoped = new File(inbox, "owner-" + owner);
+        assertTrue(scoped.mkdir());
+        String id = "1700000000000-ab12cd34";
+        Files.write(new File(scoped, id + ".meal.ogg").toPath(), new byte[] { 42 });
+        status = 422;
+        answer = "{\"ok\":false,\"error\":\"unusable_input\",\"message\":\"private input\",\"inputId\":\"" + id + "\"}";
+        cap.pumpOnce();
+        JSONObject row = TestCore.get(core, "/input/status").getJSONArray("inputs").getJSONObject(0);
+        assertEquals("Couldn’t identify food", row.getString("message"));
+        assertEquals("Replace capture", row.getString("action"));
+        assertTrue(notices.stream().anyMatch(notice -> notice.contains("Couldn’t identify food")));
+        assertFalse(notices.toString().contains("private input"));
+        assertFalse(TestCore.call(core, "POST", "/input/status/retry", Collections.singletonMap("id", id), "{}").getBoolean("ok"));
+        cap.pumpOnce();
+        assertEquals(Collections.singletonList(id), uploads);
+    }
+
 }

@@ -92,13 +92,23 @@ final class InputUploader implements UploadPump.Sender {
     static final class Result {
         final Outcome outcome;
         final String detail;
+        final String receiptState;
+        final String entryId;
+        final String entryDate;
         /** For WAIT: how long before anything is sent again. */
         final long waitMs;
 
         Result(Outcome outcome, String detail) { this(outcome, detail, 0); }
 
         Result(Outcome outcome, String detail, long waitMs) {
+            this(outcome, detail, waitMs, null, null);
+        }
+
+        Result(Outcome outcome, String detail, long waitMs, String entryId, String entryDate) {
             this.outcome = outcome;
+            this.receiptState = outcome == Outcome.UPLOADED ? (entryId == null ? "ACCEPTED" : "DELIVERED") : null;
+            this.entryId = entryId;
+            this.entryDate = entryDate;
             this.detail = detail;
             this.waitMs = waitMs;
         }
@@ -182,6 +192,7 @@ final class InputUploader implements UploadPump.Sender {
         if (file.length() > memo.kind.maxBytes) return new Result(Outcome.REJECTED, "too large to send");
         Map<String, String> headers = new HashMap<>();
         headers.put("X-Daylight-Input-Id", memo.id);
+        if (InputQueue.owner(memo) != null) headers.put("X-Daylight-Capture-Receipt", "1");
         // When the recording started, as kept in the queue entry: the backend files the
         // journal entry under it, however much later the upload is.
         headers.put("X-Daylight-Recorded-At", String.valueOf(memo.recordedAtMs));
@@ -198,9 +209,7 @@ final class InputUploader implements UploadPump.Sender {
         int s = reply.status;
         if (s == 200) {
             // Only a receipt for this capture permits the pump to delete its file.
-            return accepted(reply.body, memo.id, LEGACY_MEMO_ROUTE.equals(dest.route))
-                    ? new Result(Outcome.UPLOADED, "")
-                    : new Result(Outcome.RETRY_UNCOUNTED, "unexpected answer");
+            return receipt(reply.body, memo, dest.route);
         }
         String code = intakeError(s, reply.body);
         String detail = "HTTP " + s + (code == null ? "" : " " + code);
@@ -236,17 +245,29 @@ final class InputUploader implements UploadPump.Sender {
         return Math.max(MIN_WAIT_MS, Math.min(seconds * 1000L, MAX_WAIT_MS));
     }
 
-    private static boolean accepted(String body, String expectedId, boolean legacyMemoRoute) {
+    private static Result receipt(String body, InputQueue.Entry entry, String route) {
         try {
             JSONObject receipt = IntakeJson.parse(body);
             Object id = receipt.opt("inputId");
-            if (legacyMemoRoute && !receipt.has("inputId")) id = receipt.opt("memoId");
-            return Boolean.TRUE.equals(receipt.opt("ok"))
-                    && receipt.opt("duplicate") instanceof Boolean
-                    && expectedId.equals(id);
+            if (LEGACY_MEMO_ROUTE.equals(route) && !receipt.has("inputId")) id = receipt.opt("memoId");
+            if (Boolean.TRUE.equals(receipt.opt("ok")) && receipt.opt("duplicate") instanceof Boolean && entry.id.equals(id)) {
+                JSONObject saved = receipt.optJSONObject("finalReceipt");
+                if (saved == null) return new Result(Outcome.UPLOADED, "");
+                String entryId = saved.optString("entryId", "");
+                String date = saved.optString("date", "");
+                boolean meal = (route.equals("/api/v1/nutribot/voice") || route.equals("/api/v1/nutribot/text")
+                        || route.equals("/api/v1/nutribot/photo"))
+                        && entryId.matches("[0-9a-f-]{36}") && date.matches("[0-9]{4}-[0-9]{2}-[0-9]{2}");
+                boolean journal = ((route.equals("/api/v1/journalist/voice") || LEGACY_MEMO_ROUTE.equals(route))
+                        && entryId.equals("memo:" + entry.id))
+                        || (route.equals("/api/v1/journalist/text") && entryId.equals("note:" + entry.id));
+                return meal || journal ? new Result(Outcome.UPLOADED, "", 0, entryId, meal ? date : null)
+                        : new Result(Outcome.UPLOADED, "");
+            }
         } catch (JSONException notJson) {
-            return false;
+            // Leave the original capture available under its existing input ID.
         }
+        return new Result(Outcome.RETRY_UNCOUNTED, "unexpected answer");
     }
 
     /** The intake's own refusal, identified by the documented status and error code. */

@@ -39,7 +39,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
 /**
- * One-tap actions. The list is settings (actions.1 to actions.12); every surface
+ * One-tap actions. The list is settings (actions.1 to actions.13); every surface
  * (launcher shortcuts, pinned shortcuts, tiles, and the widget through ActionList) is
  * built from it and launches the same keyed link, daylight://action/<id>#k=<key>.
  *
@@ -48,7 +48,7 @@ import java.util.concurrent.TimeoutException;
  * the method, the path or the body.
  */
 public final class OneTapActionsCapability implements Capability, ActionList {
-    static final int SLOTS = 12;
+    static final int SLOTS = 13;
     static final String WORKER = "Daylight-action";
     private static final String MEMO_FALLBACK = "actions.memoFallbackPath";
     private static final String SHORTCUTS = "actions.shortcuts";

@@ -45,6 +45,13 @@
             android:taskAffinity=""
             android:theme="@android:style/Theme.DeviceDefault.Dialog" />
 
+        <activity
+            android:name="net.kckern.daylight.cap.quickinput.shell.CaptureStatusActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:label="Capture status"
+            android:theme="@android:style/Theme.DeviceDefault" />
+
         <!-- Not exported. Gives the camera app the one file a capture is written to, by a
              grant the photo screen makes for that file alone; grants can be made for
              /capture/ and for nothing else. See InputFileProvider and CaptureFiles.served. -->

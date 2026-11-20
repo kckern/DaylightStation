@@ -192,5 +192,6 @@ test('the setup screen has direct destinations for Home and Lifelog', () => {
   for (const [id, target] of Object.entries({
     journal: 'input:voice:journal', 'journal-note': 'input:text:journal-note',
     meal: 'input:voice:meal', 'meal-note': 'input:text:meal-note', 'meal-photo': 'input:photo:meal-photo',
+    'capture-status': 'input:status',
   })) assert.equal(actions[id], target);
 });

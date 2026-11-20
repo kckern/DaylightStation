@@ -74,6 +74,7 @@ defaults:
   actions.12: "meal-barcode|Meal barcode|camera|open:/health?capture=barcode"
   actions.11: "lifelog|Lifelog|lifelog|bookmark:lifelog"
   actions.8: "omw|On my way|bolt|location:share"
+  actions.13: "capture-status|Capture status|note|input:status"
   # Launcher (long-press) shortcuts, in order, and the action of each quick-settings
   # slot ("Daylight 1" to "Daylight 4"; an empty entry leaves a slot unassigned).
   actions.shortcuts: "journal,meal,meal-photo,journal-note"

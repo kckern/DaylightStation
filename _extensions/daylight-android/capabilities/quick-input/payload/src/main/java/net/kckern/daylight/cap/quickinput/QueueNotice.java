@@ -76,6 +76,46 @@ final class QueueNotice {
         return new QueueNotice(TITLE, inputs(waitingCount) + " waiting to upload" + breakdown(waiting));
     }
 
+    static final String STATUS = "daylight://input/status";
+
+    static String captureId(String owner, String inputId) {
+        return "capture-" + java.util.UUID.nameUUIDFromBytes((owner + ":" + inputId)
+                .getBytes(java.nio.charset.StandardCharsets.UTF_8)).toString().replace("-", "");
+    }
+
+    static String captureLink(String owner, String inputId, String action) {
+        return STATUS + "?owner=" + owner + "&id=" + inputId + action;
+    }
+
+    static String captureMessage(String state) {
+        switch (state) {
+            case "UNUSABLE": return "Couldn’t identify food";
+            case "REJECTED": return "Capture could not be used";
+            case "DENIED": return "This phone isn’t allowed to send this capture";
+            case "WAIT": return "Queued until the daily allowance renews";
+            case "RETRY": return "Waiting to retry";
+            case "UNCERTAIN": return "Waiting to confirm delivery";
+            case "PROCESSING": return "Processing";
+            case "ACCEPTED": return "Accepted";
+            case "DELIVERED": return "Delivered";
+            case "LOST": return "Capture file is missing";
+            default: return "Queued";
+        }
+    }
+
+    static String captureAction(String state) {
+        switch (state) {
+            case "UNUSABLE":
+            case "REJECTED":
+            case "LOST": return "Replace capture";
+            case "RETRY":
+            case "UNCERTAIN":
+            case "DENIED":
+            case "QUEUED": return "Retry";
+            default: return "";
+        }
+    }
+
     private static int total(Map<String, Integer> counts) {
         int n = 0;
         if (counts != null) for (int c : counts.values()) n += c;

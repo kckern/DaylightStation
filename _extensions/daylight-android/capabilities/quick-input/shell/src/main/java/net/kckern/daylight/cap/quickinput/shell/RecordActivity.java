@@ -331,6 +331,7 @@ public class RecordActivity extends Activity {
         if (draft != null && sending) {
             try {
                 if (store.get(draft.id) == null) {
+                    CaptureStatusActivity.open(this, owner, draft.id);
                     finish();
                     return;
                 }
@@ -394,7 +395,7 @@ public class RecordActivity extends Activity {
             }
             if (store.sendForCurrentOwner(draft.id)) {
                 CaptureFiles.tellPayload();
-                say("Memo queued for sending");
+                CaptureStatusActivity.open(this, owner, draft.id);
                 completed = true;
                 finish();
             }
