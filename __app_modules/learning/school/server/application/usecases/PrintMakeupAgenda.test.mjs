@@ -46,12 +46,13 @@ describe('PrintMakeupAgenda', () => {
     const math = put.find((r) => r.subject.subject === 'math');
     expect(math).toMatchObject({
       tokenClass: 'subject_next',
-      subject: { learnerId: 'kid', subject: 'math', continueToday: true },
+      subject: { learnerId: 'kid', subject: 'math', continueToday: true, makeupFor: [MON, WED] },
       // Sat 2026-09-12 study day ends Sun 04:00 PDT = 11:00Z.
       expiresAt: '2026-09-13T11:00:00.000Z',
       accessCodeExpiresAt: '2026-09-13T11:00:00.000Z',
       maxUses: 6,
     });
+    expect(put.find((r) => r.subject.subject === 'english').subject.makeupFor).toEqual([WED]);
     expect(math.accessCode).toMatch(/^\d{6}$/);
     expect(put[0].accessCode).not.toBe(put[1].accessCode);
     const doc = receipts.print.mock.calls[0][0];
