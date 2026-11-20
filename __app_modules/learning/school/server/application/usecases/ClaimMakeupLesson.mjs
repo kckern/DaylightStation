@@ -6,8 +6,9 @@
  * Called by the two paths that act on a ticket, `RunSelfServiceAction`
  * (typed code) and `ResolveScanAction` (scanned QR), after the session is
  * ensured and before the work is handed out. It claims the OLDEST day the
- * ticket names that is still owed in the subject (`GetMakeupWork`) and that
- * no other open session already claims. When nothing qualifies the lesson
+ * ticket names that still lacks a LESSON in the subject (`GetMakeupWork`
+ * `lacksLesson`; a claim moves a lesson, so a day owing only a program is
+ * never claimed) and that no other open session already claims. When nothing qualifies the lesson
  * stays today's, the old behaviour.
  *
  * Never throws: a claim that cannot be written costs the attribution, never
@@ -59,7 +60,7 @@ export class ClaimMakeupLesson {
 
     const { deadline, items } = await this.#getMakeupWork.execute({ learnerId });
     const owed = (items ?? [])
-      .filter((item) => item.subject === subject && days.includes(item.day))
+      .filter((item) => item.subject === subject && item.lacksLesson === true && days.includes(item.day))
       .map((item) => item.day)
       .sort();
     if (!owed.length || !deadline) return { claimed: null, reason: 'nothing_owed' };

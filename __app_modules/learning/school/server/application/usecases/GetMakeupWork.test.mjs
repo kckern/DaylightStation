@@ -23,7 +23,7 @@ describe('GetMakeupWork', () => {
     expect(termVerdicts.read).toHaveBeenCalledWith('kid', { detail: true });
     expect(out).toEqual({
       deadline: '2026-09-12',
-      items: [{ day: MON, subject: 'math' }, { day: WED, subject: 'english' }],
+      items: [{ day: MON, subject: 'math', lacksLesson: true }, { day: WED, subject: 'english', lacksLesson: true }],
     });
   });
 
@@ -31,7 +31,7 @@ describe('GetMakeupWork', () => {
     const out = await new GetMakeupWork({
       termVerdicts: verdicts(days), makeupPolicy: { ...ON, subjects: ['english'] }, logger: silent,
     }).execute({ learnerId: 'kid' });
-    expect(out.items).toEqual([{ day: WED, subject: 'english' }]);
+    expect(out.items).toEqual([{ day: WED, subject: 'english', lacksLesson: true }]);
   });
 
   it('is empty when the policy is off, without reading verdicts', async () => {
@@ -81,6 +81,25 @@ describe('GetMakeupWork — only work that can earn credit today', () => {
   it('lists it on a day that does not owe it', async () => {
     const out = await new GetMakeupWork({ termVerdicts: read(cards({ asked: false, needsPrograms: [] })), makeupPolicy: ON, logger: silent })
       .execute({ learnerId: 'kid' });
-    expect(out.items).toEqual([{ day: WED, subject: 'language' }]);
+    expect(out.items).toEqual([{ day: WED, subject: 'language', lacksLesson: false }]);
+  });
+});
+
+// Pre-merge review, 2026-11-19: a makeup claim moves a LESSON, so the claimer
+// must know which missed sections still lack one.
+describe('GetMakeupWork — lacksLesson', () => {
+  const ledger = (extra) => ({ asked: true, lessons: 0, programsDone: [], needsLesson: true, needsPrograms: [], ...extra });
+  it('says whether each missed section still lacks its lesson', async () => {
+    const termVerdicts = verdicts([day(WED, true, [
+      { subject: 'math', state: 'obligated', ledger: ledger() },
+      { subject: 'english', state: 'obligated', ledger: ledger({ lessons: 1, needsPrograms: ['book-log::shelf'] }) },
+      { subject: 'science', state: 'obligated' },
+    ])]);
+    const out = await new GetMakeupWork({ termVerdicts, makeupPolicy: ON, logger: silent }).execute({ learnerId: 'kid' });
+    expect(out.items).toEqual([
+      { day: WED, subject: 'math', lacksLesson: true },
+      { day: WED, subject: 'english', lacksLesson: false },
+      { day: WED, subject: 'science', lacksLesson: true },
+    ]);
   });
 });
