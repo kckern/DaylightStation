@@ -3,12 +3,16 @@ package net.kckern.daylight.cap.mediaservice.shell;
 import net.kckern.daylight.shellkit.PackageFacts;
 
 import android.os.Build;
+import android.os.Bundle;
 import android.os.Process;
 import android.util.Log;
 
 import androidx.media3.common.C;
 import androidx.media3.common.MediaItem;
 import androidx.media3.session.LibraryResult;
+import androidx.media3.session.CommandButton;
+import androidx.media3.session.SessionCommand;
+import androidx.media3.session.SessionResult;
 import androidx.media3.session.MediaLibraryService.LibraryParams;
 import androidx.media3.session.MediaLibraryService.MediaLibrarySession;
 import androidx.media3.session.MediaSession;
@@ -38,6 +42,12 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * again once a payload attaches. A play request then fails; nothing crashes.
  */
 final class LibraryCallback implements MediaLibrarySession.Callback {
+    private static final String STOP_ACTION = "net.kckern.daylight.media.STOP";
+
+    static CommandButton stopButton() {
+        return new CommandButton.Builder().setSessionCommand(new SessionCommand(STOP_ACTION, Bundle.EMPTY))
+                .setIconResId(android.R.drawable.ic_menu_close_clear_cancel).setDisplayName("Stop").build();
+    }
     private static final String TAG = "Daylight-Media";
     /** How long a browse waits for a payload after a cold start. Short: a car gives up on a slow answer. */
     private static final long BROWSE_WAIT_MS = 4000;
@@ -51,15 +61,17 @@ final class LibraryCallback implements MediaLibrarySession.Callback {
     private final PackageFacts facts;
     /** The pinned controllers as the payload last cached them; read at each connection. */
     private final java.util.function.Supplier<String> pinCache;
+    private final Runnable stopPlayback;
     private final AtomicBoolean waitingForPayload = new AtomicBoolean();
 
     LibraryCallback(PayloadMedia media, ExecutorService io, String myPackage, PackageFacts facts,
-                    java.util.function.Supplier<String> pinCache) {
+                    java.util.function.Supplier<String> pinCache, Runnable stopPlayback) {
         this.media = media;
         this.io = io;
         this.myPackage = myPackage;
         this.facts = facts;
         this.pinCache = pinCache;
+        this.stopPlayback = stopPlayback;
     }
 
     @Override
@@ -73,7 +85,19 @@ final class LibraryCallback implements MediaLibrarySession.Callback {
             Log.w(TAG, decision.logLine(String.valueOf(controller.getPackageName())));
             return MediaSession.ConnectionResult.reject();
         }
-        return MediaLibrarySession.Callback.super.onConnect(session, controller);
+        return new MediaSession.ConnectionResult.AcceptedResultBuilder(session)
+                .setAvailableSessionCommands(MediaSession.ConnectionResult.DEFAULT_SESSION_AND_LIBRARY_COMMANDS
+                        .buildUpon().add(new SessionCommand(STOP_ACTION, Bundle.EMPTY)).build())
+                .build();
+    }
+
+    @Override
+    public ListenableFuture<SessionResult> onCustomCommand(MediaSession session, MediaSession.ControllerInfo controller,
+                                                            SessionCommand command, Bundle arguments) {
+        if (!STOP_ACTION.equals(command.customAction))
+            return MediaLibrarySession.Callback.super.onCustomCommand(session, controller, command, arguments);
+        stopPlayback.run();
+        return Futures.immediateFuture(new SessionResult(SessionResult.RESULT_SUCCESS));
     }
 
     @Override

@@ -25,6 +25,26 @@ final class PlayStart {
         FAIL
     }
 
+    /** A widget start may be replaced or time out while the payload is resolving it. */
+    static final class Attempt {
+        final String playlist;
+        final long startedAt;
+        private boolean cancelled, played;
+
+        Attempt(String playlist, long startedAt) {
+            this.playlist = playlist;
+            this.startedAt = startedAt;
+        }
+
+        void cancel() { cancelled = true; }
+
+        void recordPlaying(long nowMs) { if (canApply(nowMs)) played = true; }
+
+        boolean played() { return played; }
+
+        boolean canApply(long nowMs) { return !cancelled && nowMs - startedAt < GIVE_UP_MS; }
+    }
+
     private PlayStart() { }
 
     /**

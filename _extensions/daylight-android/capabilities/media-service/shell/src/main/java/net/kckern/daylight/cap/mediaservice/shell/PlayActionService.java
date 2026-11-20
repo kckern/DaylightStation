@@ -3,6 +3,7 @@ package net.kckern.daylight.cap.mediaservice.shell;
 import android.app.Notification;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
+import android.app.PendingIntent;
 import android.app.Service;
 import android.content.ComponentName;
 import android.content.Intent;
@@ -15,9 +16,6 @@ import android.os.SystemClock;
 import android.util.Log;
 import android.widget.Toast;
 
-import androidx.media3.common.MediaItem;
-import androidx.media3.common.PlaybackException;
-import androidx.media3.common.Player;
 import androidx.media3.session.MediaController;
 import androidx.media3.session.SessionToken;
 
@@ -25,12 +23,13 @@ import com.google.common.util.concurrent.ListenableFuture;
 
 import net.kckern.daylight.api.DirectPlay;
 import net.kckern.daylight.shellkit.ShellStart;
+import net.kckern.daylight.shellkit.DirectPlayIntents;
 
 /**
  * Plays a media action with no window: a tap on a widget button or a tile starts this
  * service in the foreground (PendingIntent.getForegroundService, or startForegroundService
- * from a tile), and it plays the action through a MediaController, as PlayActivity does
- * for a keyed media link, without bringing the app to the front.
+ * from a tile). Connecting a MediaController starts the media session. The session resolves
+ * and starts the selected action only while the widget start is still current.
  *
  * Not exported: only this app's own PendingIntents and tiles reach it. It reads one
  * thing from its intent, an action id (DirectPlay.actionFrom), and never content. The
@@ -45,19 +44,33 @@ import net.kckern.daylight.shellkit.ShellStart;
 public class PlayActionService extends Service {
     private static final String TAG = "Daylight-Media";
     private static final String CHANNEL = "daylight_play_start";
+    private static final String STOP = "net.kckern.daylight.media.STOP_START";
     private static final int NOTICE_ID = 0x0da7;
     private static final long PAYLOAD_WAIT_MS = 8000;
     private static final long POLL_MS = 500;
 
+    private static PlayActionService current;
+
     private final Handler main = new Handler(Looper.getMainLooper());
     private ListenableFuture<MediaController> pending;
     private MediaController controller;
-    private long startedAt;
+    private PlayStart.Attempt attempt;
+    private int currentStartId;
+    private final Runnable poll = this::step;
     private boolean failed;
-    private boolean playedOnce;
-    private boolean busy;
 
     @Override public IBinder onBind(Intent intent) { return null; }
+
+    @Override public void onCreate() {
+        super.onCreate();
+        current = this;
+    }
+
+    /** A media session Stop cancels any pending widget request on the same main looper. */
+    static void cancelCurrentStart() {
+        PlayActionService service = current;
+        if (service != null && service.attempt != null) service.finish(null, service.currentStartId);
+    }
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
@@ -70,35 +83,41 @@ public class PlayActionService extends Service {
             stopSelf();
             return START_NOT_STICKY;
         }
-        final String actionId = DirectPlay.actionFrom(intent == null ? null : intent.getStringExtra(DirectPlay.EXTRA_ACTION));
-        final String playlist = intent == null ? null
-                : intent.getStringExtra(net.kckern.daylight.shellkit.DirectPlayIntents.EXTRA_PLAYLIST);
-        if ((actionId == null && (playlist == null || !playlist.startsWith("c:"))) || busy) {
-            // A second tap while one is starting is dropped: the first one plays.
-            if (!busy) finish(null);
+        if (intent != null && STOP.equals(intent.getAction())) {
+            if (attempt != null) DaylightMediaService.stopShortcut(attempt);
+            finish(null, startId);
             return START_NOT_STICKY;
         }
-        busy = true;
-        startedAt = SystemClock.elapsedRealtime();
-        // The payload may not be loaded (a tap in a cold process). This service is in the
-        // foreground, so starting the shell service is a start from a foreground app.
+        final String actionId = DirectPlay.actionFrom(intent == null ? null : intent.getStringExtra(DirectPlay.EXTRA_ACTION));
+        final String playlist = intent == null ? null : intent.getStringExtra(DirectPlayIntents.EXTRA_PLAYLIST);
+        if (actionId == null && (playlist == null || !playlist.startsWith("c:"))) {
+            if (attempt == null) finish(null, startId);
+            else currentStartId = startId;
+            return START_NOT_STICKY;
+        }
+        releaseAttempt();
+        currentStartId = startId;
+        failed = false;
+        PlayStart.Attempt requested = new PlayStart.Attempt(actionId == null ? playlist : null, SystemClock.elapsedRealtime());
+        attempt = requested;
         ShellStart.ensure(this);
         Thread ask = new Thread(() -> {
             String mediaId;
             try {
-                mediaId = actionId == null ? playlist : PlayStart.mediaId(new PayloadMedia().action(actionId, PAYLOAD_WAIT_MS));
+                mediaId = actionId == null ? requested.playlist
+                        : PlayStart.mediaId(new PayloadMedia().action(actionId, PAYLOAD_WAIT_MS));
             } catch (Throwable notReadyOrRefused) {
                 mediaId = null;
             }
             final String id = mediaId;
             main.post(() -> {
-                if (id == null) { failed = true; step(); } else play(id);
+                if (!isCurrent(requested)) return;
+                if (id == null) fail(requested); else connect(requested, id);
             });
         }, "Daylight-play-action");
         ask.setDaemon(true);
         ask.start();
-        main.postDelayed(this::step, POLL_MS);
-        // Only the action id is logged: content and links never are.
+        main.postDelayed(poll, POLL_MS);
         Log.i(TAG, "play action " + actionId);
         return START_NOT_STICKY;
     }
@@ -108,76 +127,88 @@ public class PlayActionService extends Service {
         if (nm != null && nm.getNotificationChannel(CHANNEL) == null) {
             nm.createNotificationChannel(new NotificationChannel(CHANNEL, "Starting playback", NotificationManager.IMPORTANCE_LOW));
         }
+        PendingIntent stop = PendingIntent.getService(this, 0,
+                new Intent(this, PlayActionService.class).setAction(STOP), PendingIntent.FLAG_IMMUTABLE);
         Notification notice = new Notification.Builder(this, CHANNEL)
                 .setSmallIcon(android.R.drawable.ic_media_play)
                 .setContentTitle("Starting playback")
                 .setOngoing(true)
+                .addAction(new Notification.Action.Builder(null, "Stop", stop).build())
                 .build();
         if (Build.VERSION.SDK_INT >= 29) startForeground(NOTICE_ID, notice, ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK);
         else startForeground(NOTICE_ID, notice);
     }
 
-    private void play(final String mediaId) {
+    private boolean isCurrent(PlayStart.Attempt requested) {
+        return requested == attempt && requested.canApply(SystemClock.elapsedRealtime());
+    }
+
+    private void connect(PlayStart.Attempt requested, String mediaId) {
         try {
             SessionToken token = new SessionToken(this, new ComponentName(this, DaylightMediaService.class));
-            pending = new MediaController.Builder(this, token).buildAsync();
-            pending.addListener(() -> {
+            ListenableFuture<MediaController> connecting = new MediaController.Builder(this, token).buildAsync();
+            pending = connecting;
+            connecting.addListener(() -> {
+                if (!isCurrent(requested)) return;
                 try {
-                    controller = pending.get();
-                    controller.addListener(new Player.Listener() {
-                        @Override public void onIsPlayingChanged(boolean isPlaying) {
-                            if (isPlaying) playedOnce = true;
-                            step();
-                        }
-                        @Override public void onPlayerError(PlaybackException error) { failed = true; step(); }
-                    });
-                    controller.setMediaItem(new MediaItem.Builder().setMediaId(mediaId).build());
-                    controller.prepare();
-                    controller.play();
+                    controller = connecting.get();
+                    DaylightMediaService.playShortcut(requested, mediaId, () -> fail(requested));
                 } catch (Exception e) {
                     Log.w(TAG, "no media controller: " + e.getClass().getSimpleName());
-                    failed = true;
-                    step();
+                    fail(requested);
                 }
             }, main::post);
         } catch (RuntimeException e) {
             Log.w(TAG, "could not reach the media service: " + e.getClass().getSimpleName());
-            failed = true;
-            step();
+            fail(requested);
         }
+    }
+
+    private void fail(PlayStart.Attempt requested) {
+        if (attempt != requested) return;
+        failed = true;
+        step();
     }
 
     /** Main thread. */
     private void step() {
-        if (!busy) return;
-        main.removeCallbacksAndMessages(null);
-        MediaController c = controller;
-        PlayStart.Step next = PlayStart.next(SystemClock.elapsedRealtime() - startedAt, failed, playedOnce,
-                c != null && c.isPlaying(), DaylightMediaService.inForeground());
+        if (attempt == null) return;
+        main.removeCallbacks(poll);
+        boolean playing = DaylightMediaService.shortcutPlaying(attempt);
+        long elapsed = SystemClock.elapsedRealtime() - attempt.startedAt;
+        PlayStart.Step next = PlayStart.next(elapsed, failed || DaylightMediaService.shortcutFailed(attempt),
+                attempt.played(), playing, DaylightMediaService.inForeground());
         switch (next) {
-            case FAIL: finish("Could not start playback. Tap the button again to retry."); return;
-            case RELEASE: finish(null); return;
-            default: main.postDelayed(this::step, POLL_MS);
+            case FAIL: finish("Could not start playback. Tap the button again to retry.", currentStartId); return;
+            case RELEASE: finish(null, currentStartId); return;
+            default: main.postDelayed(poll, attempt.played() ? POLL_MS : Math.min(POLL_MS, PlayStart.GIVE_UP_MS - elapsed));
         }
     }
 
-    /** Once. Releasing the controller does not stop playback: the session keeps the player. */
-    private void finish(String message) {
-        busy = false;
-        main.removeCallbacksAndMessages(null);
+    private void finish(String message, int startId) {
+        releaseAttempt();
         if (message != null) Toast.makeText(getApplicationContext(), message, Toast.LENGTH_SHORT).show();
-        if (controller != null) { controller.release(); controller = null; }
-        else if (pending != null) MediaController.releaseFuture(pending);
-        pending = null;
         stopForeground(STOP_FOREGROUND_REMOVE);
-        stopSelf();
+        stopSelfResult(startId);
     }
 
-    @Override
-    public void onDestroy() {
-        main.removeCallbacksAndMessages(null);
-        if (controller != null) { controller.release(); controller = null; }
+    private void releaseAttempt() {
+        main.removeCallbacks(poll);
+        if (attempt != null) {
+            attempt.cancel();
+            if (!attempt.played())
+                DaylightMediaService.stopShortcut(attempt);
+            attempt = null;
+        }
+        if (controller != null) controller.release();
         else if (pending != null) MediaController.releaseFuture(pending);
+        controller = null;
+        pending = null;
+    }
+
+    @Override public void onDestroy() {
+        if (current == this) current = null;
+        releaseAttempt();
         super.onDestroy();
     }
 }

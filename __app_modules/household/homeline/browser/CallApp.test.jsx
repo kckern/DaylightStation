@@ -38,6 +38,7 @@ describe('CallApp presentation', () => {
     mocks.api.mockReset(); mocks.start.mockReset(); mocks.end.mockReset(); mocks.dispatch.mockReset(); mocks.retryMedia.mockReset(); mocks.loggerConfigure.mockReset();
     mocks.state = { value: 'idle', media: { audio: false, video: false }, controlConnected: true };
     mocks.media = { status: 'ready', stream: null, errors: {}, retry: vi.fn() };
+    mocks.media.stop = vi.fn();
     sessionStorage.clear();
   });
   afterEach(() => vi.useRealTimers());
@@ -99,6 +100,22 @@ describe('CallApp presentation', () => {
     render(<CallApp />);
     expect(await screen.findByRole('button', { name: /Yellow Room Tablet/ })).toBeTruthy();
     expect(screen.queryByText('yellow-room-tablet')).toBeNull();
+  });
+
+  it('releases the preview when the caller cancels during setup', async () => {
+    mocks.state.value = 'reserving';
+    mocks.api.mockResolvedValue({ devices: [] });
+    render(<CallApp />);
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(mocks.media.stop).toHaveBeenCalledOnce();
+  });
+
+  it('offers a retry for denied microphone even when the camera is ready', async () => {
+    mocks.media.errors = { audio: 'permission_denied' };
+    mocks.api.mockResolvedValue({ devices: [] });
+    render(<CallApp />);
+    fireEvent.click(screen.getByRole('button', { name: 'Retry media' }));
+    expect(mocks.media.retry).toHaveBeenCalledOnce();
   });
 
   it('distinguishes device fetch failure and provides a retry', async () => {

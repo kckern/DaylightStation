@@ -45,6 +45,23 @@ describe('useCallController cancellation and budgets', () => {
     expect(result.current.state.value).toBe('probing');
   }
 
+  it('ends a late reservation without opening signaling after the caller cancels', async () => {
+    const reserve = deferred();
+    mocks.api.mockImplementation(path => path.endsWith('/end') ? Promise.resolve({ ok: true }) : reserve.promise);
+    const localPeer = peer();
+    const { result } = renderHook(() => useCallController({ peer: localPeer, mediaStatus: 'ready',
+      remoteVideoRef: { current: null } }));
+    await act(async () => result.current.start({ id: 'tv' }));
+    const resets = localPeer.reset.mock.calls.length;
+    act(() => result.current.end('user_cancelled'));
+    expect(localPeer.reset.mock.calls.length).toBeGreaterThan(resets);
+    await act(async () => reserve.resolve(reserveBody));
+    expect(mocks.api).toHaveBeenCalledWith('api/v1/homeline/calls/call-1/end',
+      { reason: 'user_cancelled' }, 'POST', { keepalive: true });
+    expect(result.current.state.value).toBe('ended');
+    expect(sessionStorage.getItem('homeline.activeCall')).toBeNull();
+  });
+
   it('cancels during probe without starting a wake', async () => {
     mocks.api.mockImplementation(async path => path.endsWith('/end') ? { ok: true } : reserveBody);
     const localPeer = peer();
@@ -285,7 +302,7 @@ describe('useCallController cancellation and budgets', () => {
     act(() => mocks.onSignalEvent({ type: 'tv-ready' }));
     await act(async () => { await vi.advanceTimersByTimeAsync(10_000); });
     act(() => result.current.end('user_cancelled')); await flush();
-    expect(mocks.api).toHaveBeenCalledWith('api/v1/homeline/calls/call-1/end', { reason: 'user_cancelled' }, 'POST');
+    expect(mocks.api).toHaveBeenCalledWith('api/v1/homeline/calls/call-1/end', { reason: 'user_cancelled' }, 'POST', { keepalive: true });
     await act(async () => { await vi.advanceTimersByTimeAsync(30_000); });
     expect(result.current.state.value).toBe('ended');
     expect(mocks.api.mock.calls.some(([path]) => path.endsWith('/recover'))).toBe(false);

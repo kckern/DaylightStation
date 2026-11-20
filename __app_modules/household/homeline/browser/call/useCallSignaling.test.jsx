@@ -73,6 +73,16 @@ describe('useCallSignaling reconnect behavior', () => {
     expect(offers[1].sequence).toBeGreaterThan(offers[0].sequence);
   });
 
+  it('drops an offer that resolves after leaving the call', async () => {
+    let resolve;
+    const localPeer = peer({ createOffer: vi.fn(() => new Promise(yes => { resolve = yes; })) });
+    const { unmount } = renderHook(() => useCallSignaling({ role: 'phone', session, peer: localPeer, onEvent: vi.fn() }));
+    const pending = waiting();
+    unmount();
+    await act(async () => { resolve({ type: 'offer' }); await pending; });
+    expect(mocks.sent).toEqual([]);
+  });
+
   it('ignores a stray waiting after an accepted answer while ICE is still connecting', async () => {
     const localPeer = peer({ connectionState: 'connecting' });
     const onEvent = vi.fn();

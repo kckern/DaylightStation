@@ -18,38 +18,57 @@ const classify = error => {
 export function useIndependentMedia() {
   const [result, setResult] = useState({ status: 'loading', stream: null, errors: {} });
   const generation = useRef(0);
-  const streamRef = useRef(null);
+  const tracksRef = useRef([]);
   const loggerRef = useRef(getLogger().child({ component: 'useIndependentMedia' }));
 
+  const release = useCallback(() => {
+    generation.current++;
+    tracksRef.current.forEach(track => track.stop());
+    tracksRef.current = [];
+  }, []);
+
+  const stop = useCallback(() => {
+    release();
+    setResult({ status: 'idle', stream: null, errors: {} });
+  }, [release]);
+
   const acquire = useCallback(async () => {
-    const current = ++generation.current;
-    streamRef.current?.getTracks().forEach(track => track.stop());
+    release();
+    const current = generation.current;
     setResult({ status: 'loading', stream: null, errors: {} });
-    const tracks = [];
+    const tracks = tracksRef.current;
     const errors = {};
+    function keep(captured) {
+      if (current === generation.current) tracks.push(...captured.getTracks());
+      else captured.getTracks().forEach(track => track.stop());
+    }
+
     try {
-      const audio = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
-      tracks.push(...audio.getAudioTracks());
+      keep(await navigator.mediaDevices.getUserMedia({ audio: true, video: false }));
     } catch (error) { errors.audio = classify(error); loggerRef.current.warn('media.audio.failed', { reason: errors.audio }); }
+    if (current !== generation.current) return;
+
     let videoError = null;
     for (const video of VIDEO_TIERS) {
       try {
-        const captured = await navigator.mediaDevices.getUserMedia({ audio: false, video });
-        tracks.push(...captured.getVideoTracks()); videoError = null; break;
-      } catch (error) { videoError = error; }
+        keep(await navigator.mediaDevices.getUserMedia({ audio: false, video }));
+        videoError = null;
+        break;
+      } catch (error) {
+        videoError = error;
+        if (current !== generation.current || classify(error) !== 'constraints_failed') break;
+      }
     }
+    if (current !== generation.current) return;
     if (videoError) { errors.video = classify(videoError); loggerRef.current.warn('media.video.failed', { reason: errors.video }); }
-    if (current !== generation.current) { tracks.forEach(track => track.stop()); return; }
     const stream = new MediaStream(tracks);
-    streamRef.current = stream;
     setResult({ status: tracks.length ? 'ready' : 'failed', stream, errors });
     loggerRef.current.info('media.acquired', { audio: stream.getAudioTracks().length, video: stream.getVideoTracks().length });
-  }, []);
+  }, [release]);
 
   useEffect(() => {
-    const generationRef = generation;
-    acquire();
-    return () => { generationRef.current++; streamRef.current?.getTracks().forEach(track => track.stop()); };
-  }, [acquire]);
-  return { ...result, retry: acquire };
+    void acquire();
+    return release;
+  }, [acquire, release]);
+  return { ...result, retry: acquire, stop };
 }

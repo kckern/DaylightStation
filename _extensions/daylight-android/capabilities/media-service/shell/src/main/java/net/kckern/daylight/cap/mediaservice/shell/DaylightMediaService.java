@@ -5,9 +5,17 @@ import net.kckern.daylight.shellkit.AndroidPackageFacts;
 import android.app.PendingIntent;
 import android.content.Intent;
 import android.util.Log;
+import android.os.Handler;
+import android.os.Looper;
+import android.os.SystemClock;
+
+import java.util.Collections;
+import java.util.List;
 
 import androidx.media3.common.AudioAttributes;
 import androidx.media3.common.C;
+import androidx.media3.common.MediaItem;
+import androidx.media3.common.Player;
 import androidx.media3.exoplayer.ExoPlayer;
 import androidx.media3.session.MediaLibraryService;
 import androidx.media3.session.MediaSession;
@@ -36,7 +44,12 @@ import java.util.concurrent.Executors;
 public class DaylightMediaService extends MediaLibraryService {
     private static final String TAG = "Daylight-Media";
 
+    // The non-exported start service and this Media3 service share the app process and main looper.
+    private static DaylightMediaService current;
+
     private ExoPlayer player;
+    private PayloadMedia media;
+    private PlayStart.Attempt shortcutOwner;
     private MediaLibrarySession session;
     private PlaybackEvents events;
     private ExecutorService io;
@@ -50,7 +63,7 @@ public class DaylightMediaService extends MediaLibraryService {
             t.setDaemon(true);
             return t;
         });
-        PayloadMedia media = new PayloadMedia();
+        media = new PayloadMedia();
 
         // Audio focus and "headphones unplugged" are the player's: it pauses for a call,
         // ducks for a prompt and stops when the output goes away. The wake mode holds the
@@ -62,9 +75,19 @@ public class DaylightMediaService extends MediaLibraryService {
                 .setWakeMode(C.WAKE_MODE_NETWORK)
                 .build();
 
+        player.addListener(new Player.Listener() {
+            @Override public void onIsPlayingChanged(boolean playing) {
+                PlayStart.Attempt attempt = shortcutOwner;
+                if (playing && attempt != null && ownsPlaylist(attempt)) {
+                    attempt.recordPlaying(SystemClock.elapsedRealtime());
+                }
+            }
+        });
+
         MediaLibrarySession.Builder builder = new MediaLibrarySession.Builder(this, player,
                 new LibraryCallback(media, io, getPackageName(), new AndroidPackageFacts(getPackageManager()),
-                        () -> SurfaceCache.get(this, ControllerPins.KEY)));
+                        () -> SurfaceCache.get(this, ControllerPins.KEY), this::stopPlayback));
+        builder.setCustomLayout(Collections.singletonList(LibraryCallback.stopButton()));
         // A tap on the media notification opens this app's own window. Nothing from a
         // controller is in the intent.
         Intent open = getPackageManager().getLaunchIntentForPackage(getPackageName());
@@ -83,7 +106,77 @@ public class DaylightMediaService extends MediaLibraryService {
 
         events = new PlaybackEvents(player, media, io);
         events.attach();
+        current = this;
         Log.i(TAG, "media service created");
+    }
+
+    /**
+     * Resolve through the same payload as car and phone browsing. The attempt is checked on the
+     * player's thread before changing anything, so a late lookup cannot prepare or play a queue.
+     */
+    static void playShortcut(PlayStart.Attempt attempt, String mediaId, Runnable failed) {
+        DaylightMediaService service = current;
+        if (service == null) { failed.run(); return; }
+        service.io.execute(() -> {
+            TrackAnswer tracks;
+            try {
+                tracks = service.media.resolveShortcut(mediaId, 8000);
+            } catch (Exception failure) {
+                tracks = null;
+            }
+            TrackAnswer answer = tracks;
+            new Handler(Looper.getMainLooper()).post(() -> {
+                if (current != service || !attempt.canApply(SystemClock.elapsedRealtime())) return;
+                if (answer == null) { failed.run(); return; }
+                try {
+                    List<MediaItem> items = NodeItems.tracks(answer.tracks);
+                    items.set(0, items.get(0).buildUpon().setTag(attempt).build());
+                    service.shortcutOwner = attempt;
+                    ExoPlayer player = service.player;
+                    player.pause();
+                    player.setMediaItems(items, answer.startIndex, answer.startPositionMs > 0
+                            ? answer.startPositionMs : C.TIME_UNSET);
+                    player.prepare();
+                    player.play();
+                } catch (RuntimeException failure) {
+                    failed.run();
+                }
+            });
+        });
+    }
+
+    private void stopPlayback() {
+        PlayActionService.cancelCurrentStart();
+        player.pause();
+        player.stop();
+        player.clearMediaItems();
+        shortcutOwner = null;
+    }
+
+    private boolean ownsPlaylist(PlayStart.Attempt attempt) {
+        if (shortcutOwner != attempt || player.getMediaItemCount() == 0) return false;
+        MediaItem.LocalConfiguration first = player.getMediaItemAt(0).localConfiguration;
+        return first != null && first.tag == attempt;
+    }
+
+    static boolean shortcutPlaying(PlayStart.Attempt attempt) {
+        DaylightMediaService service = current;
+        return service != null && service.ownsPlaylist(attempt) && service.player.isPlaying();
+    }
+
+    static boolean shortcutFailed(PlayStart.Attempt attempt) {
+        DaylightMediaService service = current;
+        return service != null && service.ownsPlaylist(attempt) && service.player.getPlayerError() != null;
+    }
+
+    static void stopShortcut(PlayStart.Attempt attempt) {
+        DaylightMediaService service = current;
+        if (service != null && service.ownsPlaylist(attempt)) {
+            service.player.pause();
+            service.player.stop();
+            service.player.clearMediaItems();
+            service.shortcutOwner = null;
+        }
     }
 
     /** Whether the media service holds the foreground state now. Read by PlayActionService, in process. */
@@ -101,8 +194,8 @@ public class DaylightMediaService extends MediaLibraryService {
      */
     @Override
     public void onUpdateNotification(MediaSession session, boolean startInForegroundRequired) {
-        super.onUpdateNotification(session, startInForegroundRequired);
         foreground = startInForegroundRequired;
+        super.onUpdateNotification(session, startInForegroundRequired);
     }
 
     @Override
@@ -119,6 +212,7 @@ public class DaylightMediaService extends MediaLibraryService {
 
     @Override
     public void onDestroy() {
+        if (current == this) current = null;
         clearListener();
         if (events != null) { events.detach(); events = null; }
         if (session != null) { session.release(); session = null; }

@@ -47,6 +47,7 @@ function BarcodeSession({ onClose, onDecode, onConfirm, onDone, onView, onUnknow
     document.addEventListener('visibilitychange', onVisibility);
     document.addEventListener('freeze', pause);
     window.addEventListener('pagehide', pause);
+    window.addEventListener('daylight:hidden', pause);
     onVisibility();
     return () => {
       live.current = false;
@@ -57,6 +58,7 @@ function BarcodeSession({ onClose, onDecode, onConfirm, onDone, onView, onUnknow
       document.removeEventListener('visibilitychange', onVisibility);
       document.removeEventListener('freeze', pause);
       window.removeEventListener('pagehide', pause);
+      window.removeEventListener('daylight:hidden', pause);
     };
   }, [stop]);
 

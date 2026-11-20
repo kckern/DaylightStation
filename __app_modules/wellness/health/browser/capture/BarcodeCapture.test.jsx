@@ -59,6 +59,13 @@ describe('BarcodeCapture over the shared scanner', () => {
     expect(onDecode).not.toHaveBeenCalled();
   });
 
+  it('stops detection when the Android window is hidden', () => {
+    wrap(<BarcodeCapture open onClose={() => {}} onDecode={vi.fn()} />);
+    fireEvent(window, new Event('daylight:hidden'));
+    expect(scanner.stop).toHaveBeenCalled();
+    expect(scanner.args.active).toBe(false);
+  });
+
   it('keeps the manual field as the fallback when the camera is denied', async () => {
     scanner.cameraState = 'denied';
     const onDecode = vi.fn(async () => {});

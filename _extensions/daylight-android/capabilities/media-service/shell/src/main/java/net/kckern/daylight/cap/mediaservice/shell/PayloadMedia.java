@@ -1,10 +1,13 @@
 package net.kckern.daylight.cap.mediaservice.shell;
 
+import androidx.media3.common.C;
+
 import net.kckern.daylight.api.PayloadPort;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
 
+import java.util.Collections;
 import java.util.List;
 
 /**
@@ -23,6 +26,10 @@ final class PayloadMedia {
     String browse(String parent, int page, int pageSize, long waitMs) throws Exception {
         return port.call(new JSONObject().put("op", "browse").put("parent", parent).put("page", page)
                 .put("pageSize", pageSize).toString(), waitMs);
+    }
+
+    TrackAnswer resolveShortcut(String mediaId, long waitMs) throws Exception {
+        return TrackAnswer.parse(resolve(Collections.singletonList(mediaId), C.INDEX_UNSET, false, waitMs));
     }
 
     String resolve(List<String> mediaIds, int startIndex, boolean explicitPosition, long waitMs) throws Exception {

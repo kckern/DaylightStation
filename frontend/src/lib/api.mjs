@@ -47,10 +47,12 @@ export const DaylightAPI = async (path, data = {}, method = 'GET', requestOption
     const baseUrl = getBaseUrl();
 
     const token = localStorage.getItem('ds_token');
+    const requestPage = window.location.pathname;
     const options = {
         method,
         headers: buildHeaders(token),
         signal: requestOptions.signal,
+        ...(requestOptions.keepalive ? { keepalive: true } : {}),
     };
 
     if (method !== 'GET') {
@@ -69,6 +71,11 @@ export const DaylightAPI = async (path, data = {}, method = 'GET', requestOption
     }
 
     if (!response.ok) {
+        if (response.status === 401 && window.daylight?.deviceId === 'phone'
+            && requestPage === window.location.pathname && !path.startsWith('api/v1/auth/')
+            && token === localStorage.getItem('ds_token')) {
+            window.dispatchEvent(new Event('daylight:phone-sign-in-needed'));
+        }
         const errorText = await response.text().catch(() => '');
         const transient = TRANSIENT_STATUSES.has(response.status);
         getLogger()[transient ? 'warn' : 'error']('api.response.error', { path, status: response.status, statusText: response.statusText });

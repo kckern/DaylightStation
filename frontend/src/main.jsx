@@ -10,6 +10,7 @@ import '@mantine/core/styles.css';
 import './styles/utilities.scss';
 import { installRootTokens } from './lib/theme/installRootTokens.js';
 import { createAppTheme } from './lib/theme/createAppTheme.js';
+import PhoneServiceAuth from './modules/Auth/PhoneServiceAuth.jsx';
 import { OfficeRedirect, TVRedirect, SchoolDeepLinkRedirect, TeacherNextRedirect } from './routeRedirects.jsx';
 import { WebSocketProvider } from './contexts/WebSocketContext.jsx';
 // Every route is its own chunk: a page downloads the app it shows, not all
@@ -197,7 +198,7 @@ ReactDOM.createRoot(document.getElementById('root')).render(
       <SupervisedRoutes>
       <Routes>
         <Route path="/" element={<AdminApp />} />
-        <Route path="/home" element={<HomeApp />} />
+        <Route path="/home" element={<PhoneServiceAuth><HomeApp /></PhoneServiceAuth>} />
         <Route path="/office" element={<OfficeRedirect />} />
         <Route path="/office/*" element={<OfficeRedirect />} />
         <Route path="/budget" element={<FinanceApp />} />
@@ -219,10 +220,10 @@ ReactDOM.createRoot(document.getElementById('root')).render(
         <Route path="/app/:appId" element={<AppDirectRoute />} />
         <Route path="/tv/*" element={<TVRedirect />} />
         <Route path="/tv" element={<TVRedirect />} />
-        <Route path="/media" element={<MediaApp />} />
+        <Route path="/media" element={<PhoneServiceAuth><MediaApp /></PhoneServiceAuth>} />
         <Route path="/media/channels/*" element={<LiveStreamApp />} />
-        <Route path="/health" element={<HealthApp />} />
-        <Route path="/health/*" element={<HealthApp />} />
+        <Route path="/health" element={<PhoneServiceAuth><HealthApp /></PhoneServiceAuth>} />
+        <Route path="/health/*" element={<PhoneServiceAuth><HealthApp /></PhoneServiceAuth>} />
         {/* Vehicle record system — mobile-first; see ops:docs/_wip/plans/2026-08-12-auto-app-design.md */}
         <Route path="/auto" element={<AutoApp />} />
         <Route path="/auto/*" element={<AutoApp />} />
@@ -232,7 +233,7 @@ ReactDOM.createRoot(document.getElementById('root')).render(
         <Route path="/dev/game-presentation-harness" element={<React.Suspense fallback={null}><GamePresentationHarness /></React.Suspense>} />
         <Route path="/dev/ds-gallery" element={<React.Suspense fallback={null}><DsGallery /></React.Suspense>} />
         <Route path="/dev/decoder-swatches" element={<React.Suspense fallback={null}><DecoderSwatches /></React.Suspense>} />
-        <Route path="/life/*" element={<LifeApp />} />
+        <Route path="/life/*" element={<PhoneServiceAuth><LifeApp /></PhoneServiceAuth>} />
         <Route path="/admin/*" element={<AdminApp />} />
         {["/screen/:screenId/*", "/screens/:screenId/*"].map(p => <Route key={p} path={p} element={<WebSocketProvider><ScreenRenderer /></WebSocketProvider>} />)}
         {/* Host companion talks to the singleton wsService directly (auto-connects on

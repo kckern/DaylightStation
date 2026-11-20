@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { renderHook, waitFor } from '@testing-library/react';
+import { act, renderHook, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { useIndependentMedia } from './useIndependentMedia.js';
 
@@ -14,6 +14,24 @@ const captured = kind => new FakeMediaStream([{ kind, stop: vi.fn() }]);
 
 describe('useIndependentMedia', () => {
   beforeEach(() => { globalThis.MediaStream = FakeMediaStream; });
+
+  it('stops the acquired microphone immediately and drops a late camera after exit', async () => {
+    let resolveCamera;
+    const audio = captured('audio');
+    const video = captured('video');
+    const camera = new Promise(resolve => { resolveCamera = resolve; });
+    navigator.mediaDevices = {
+      getUserMedia: vi.fn().mockResolvedValueOnce(audio).mockReturnValueOnce(camera),
+    };
+    const { result } = renderHook(() => useIndependentMedia());
+    await waitFor(() => expect(navigator.mediaDevices.getUserMedia).toHaveBeenCalledTimes(2));
+    act(() => result.current.stop());
+    expect(audio.getTracks()[0].stop).toHaveBeenCalledOnce();
+    await act(async () => resolveCamera(video));
+    expect(video.getTracks()[0].stop).toHaveBeenCalledOnce();
+    expect(result.current.status).toBe('idle');
+    expect(result.current.stream).toBeNull();
+  });
 
   it('keeps video when microphone permission is denied', async () => {
     navigator.mediaDevices = { getUserMedia: vi.fn(async constraints => {

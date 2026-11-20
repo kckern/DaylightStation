@@ -28,6 +28,9 @@ import net.kckern.daylight.shellkit.LauncherCaptureShortcut;
 public class LinkActivity extends Activity {
     private static final String TAG = "Daylight-Link";
     private static final long WAIT_FOR_PAYLOAD_MS = 8000;
+    // Port dispatch and its posted front effect keep the order Android delivered the taps.
+    private static final java.util.concurrent.ExecutorService LINKS =
+            java.util.concurrent.Executors.newSingleThreadExecutor(r -> new Thread(r, "Daylight-link"));
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -40,7 +43,7 @@ public class LinkActivity extends Activity {
             return;
         }
         ShellStart.ensure(this);
-        new Thread(() -> {
+        LINKS.execute(() -> {
             LinkAnswer answer;
             try {
                 if (LauncherCaptureShortcut.isCaptureLink(link)) {
@@ -62,7 +65,7 @@ public class LinkActivity extends Activity {
                 perform(result);
                 finish();
             });
-        }, "Daylight-link").start();
+        });
     }
 
     private void perform(LinkAnswer answer) {
