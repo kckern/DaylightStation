@@ -28,6 +28,16 @@ describe('normalizeLearnFile', () => {
     assert.deepEqual(file.segments, [{ id: 'a', start: 0, end: 3, name: 'Intro' }]);
     assert.equal('extra' in file, false);
   });
+  it('keeps a segment\'s parts when they are a non-empty list of hand names', () => {
+    const file = normalizeLearnFile({ segments: [
+      { id: 'a', start: 0, end: 3, parts: ['rh'] },
+      { id: 'b', start: 4, end: 7, parts: [] },
+      { id: 'c', start: 8, end: 9, parts: ['rh', 2] },
+      { id: 'd', start: 10, end: 11, parts: 'rh' },
+    ] });
+    assert.deepEqual(file.segments.map((s) => s.parts ?? null), [['rh'], null, null, null]);
+    assert.deepEqual(approvedSegments({ contentSha256: SHA, segments: [{ id: 'a', start: 0, end: 3, parts: ['rh'] }] }, SHA), [{ id: 'a', start: 0, end: 3, parts: ['rh'] }]);
+  });
 });
 
 describe('approvedSegments', () => {

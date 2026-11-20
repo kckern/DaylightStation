@@ -1,6 +1,7 @@
 /**
  * The per-score Learn file: approved segments the kiosk plays, plus an admin-only
  * draft. `start`/`end` are positions in the kiosk's layout.measures array, inclusive.
+ * A segment is `{ id, start, end, name?, parts?, ladder? }`; `parts` names its hands.
  * See __docs/reference/piano/sheet-music-player.md ("Learn file").
  */
 const isObject = (v) => v != null && typeof v === 'object' && !Array.isArray(v);
@@ -9,6 +10,10 @@ function cleanSegment(raw) {
   if (!isObject(raw)) return null;
   const out = { id: typeof raw.id === 'string' ? raw.id.trim() : '', start: raw.start, end: raw.end };
   if (typeof raw.name === 'string' && raw.name.trim()) out.name = raw.name.trim();
+  // The hands this segment takes; absent means the learner's usual hands.
+  if (Array.isArray(raw.parts) && raw.parts.length && raw.parts.every((p) => typeof p === 'string' && p.trim())) {
+    out.parts = raw.parts.map((p) => p.trim());
+  }
   if (Array.isArray(raw.ladder)) out.ladder = raw.ladder;
   return out;
 }

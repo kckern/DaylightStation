@@ -23,7 +23,7 @@
  * See __docs/reference/piano/sheet-music-player.md (Polish rewards).
  */
 import { practiceKeyOfScore as keyOfScore } from '../../portable/music/practiceKey.mjs';
-import { projectRecord, recordFingerprint, recordSegments } from './usecases/GetPianoDesk.mjs';
+import { projectRecord, recordFingerprint, recordSegments } from './coachRecordProjection.mjs';
 
 export const POLISH_REWARD_MIN_SCORE = 95;
 export const POLISH_GEM_TEMPO_PERCENT = 50;
@@ -87,7 +87,7 @@ export class PianoPolishReward {
 
   /**
    * @param {object} deps
-   * @param {(scoreId: string, contentSha256: string) => Array<{id, start, end}>|null} [deps.learnSegments]
+   * @param {(scoreId: string, contentSha256: string) => Array<{id, start, end, parts?}>|null} [deps.learnSegments]
    *   the score's admin-approved Learn segments for that content, or null
    */
   constructor({ pieceLog, learnSegments = null, logger = null }) {

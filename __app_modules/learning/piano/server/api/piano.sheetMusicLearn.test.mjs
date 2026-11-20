@@ -70,6 +70,12 @@ describe('GET /sheet-music/learn', () => {
     });
   });
 
+  it('passes a segment\'s hands through to the kiosk', async () => {
+    files[learnKey(SCORE)] = { contentSha256: 'abc', segments: [{ id: 'a', start: 0, end: 3, parts: ['rh'] }, { id: 'b', start: 4, end: 7 }] };
+    const r = await request(app()).get(url(SCORE));
+    expect(r.body.segments).toEqual([{ id: 'a', start: 0, end: 3, parts: ['rh'] }, { id: 'b', start: 4, end: 7 }]);
+  });
+
   it('answers {} for an id outside the sheet music library', async () => {
     const other = 'files:docs/other/song.mxl';
     files[learnKey(other)] = { contentSha256: 'z', segments: [{ id: 'a', start: 0, end: 3 }] };

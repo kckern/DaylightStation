@@ -1056,9 +1056,11 @@ finished before the log existed, the saved coach summary showing every passage
 Gold. When the score has admin-approved Learn segments for the XML the child
 practised, that second check projects the record onto them instead of trusting
 the saved summary (the same projection as the [home strip](home-desk.md#data)):
-a passage the admin cut differently must be earned again. A dated `gold` entry
-already in the piece log still counts. What was earned is appended to the [piece log](#piece-log-and-the-piece-gems)
-as `polish-gem` / `polish-diamond`, which is how the economy's milestones date it.
+a passage the admin cut differently must be earned again. A piece Gold already
+recorded in the piece log survives re-segmentation: earned credit is never taken
+back. What was earned is appended to the
+[piece log](#piece-log-and-the-piece-gems) as `polish-gem` / `polish-diamond`,
+which is how the economy's milestones date it.
 `reason` names the verdict: `qualified`, `guest`, `invalid-run`, `wrong-score`,
 `incomplete`, `metronome-off`, `one-hand`, `low-score`, `slow-tempo`,
 `not-all-gold` or `log-unavailable`. The check never fails the write it rides on.

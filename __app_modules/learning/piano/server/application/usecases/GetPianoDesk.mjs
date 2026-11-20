@@ -11,60 +11,14 @@
  * When an admin has approved Learn segments for the score (cut against the same
  * XML the child practised), they replace the passages saved on the record, so
  * the strip follows a new segmentation at once instead of at the child's next
- * take. Achievements are keyed by bar range, so unchanged ranges keep their
- * progress and changed ones start over, exactly as Learn shows them.
+ * take. The projection lives in ../coachRecordProjection.mjs, shared with the
+ * Polish reward.
  */
-import { createCoachPlan, passageProgress, projectCoach } from '#shared/music/learnCoach.mjs';
+import { passageProgress } from '#shared/music/learnCoach.mjs';
+import { projectRecord, recordFingerprint, recordSegments } from '../coachRecordProjection.mjs';
 import { practiceKeyOfScore } from '../../../portable/music/practiceKey.mjs';
 
 export { practiceKeyOfScore };
-
-const DEFAULT_PARTS = ['rh', 'lh'];
-
-function passageRanges(record) {
-  const saved = record?.learnCoach?.summary?.passages;
-  if (Array.isArray(saved) && saved.length) {
-    return saved.filter((passage) => Number.isInteger(passage?.start) && Number.isInteger(passage?.end)).map((passage) => ({
-      id: passage.id, inMeasure: passage.start, outMeasure: passage.end,
-      playableParts: Array.isArray(passage.parts) && passage.parts.length ? passage.parts : DEFAULT_PARTS,
-    }));
-  }
-  const planned = Object.keys(record?.learn?.segments ?? {}).flatMap((id) => {
-    const match = /^m(\d+)-(\d+)$/.exec(id);
-    return match ? [{ id, inMeasure: Number(match[1]), outMeasure: Number(match[2]) }] : [];
-  });
-  // Older records do not say which hands a passage has. Two hands is right for
-  // nearly the whole library, and the next save stores the real parts.
-  return planned.map((passage) => ({ ...passage, playableParts: DEFAULT_PARTS })).sort((x, y) => x.inMeasure - y.inMeasure);
-}
-
-/** The hands a stored passage on exactly this range has, or both hands. */
-function partsForRange(record, { start, end }) {
-  const saved = record?.learnCoach?.summary?.passages;
-  const same = Array.isArray(saved) ? saved.find((passage) => passage?.start === start && passage?.end === end) : null;
-  return Array.isArray(same?.parts) && same.parts.length ? same.parts : DEFAULT_PARTS;
-}
-
-/** The content sha the child practised. */
-export function recordFingerprint(record) {
-  return record?.fingerprint?.contentSha256 ?? record?.learnCoach?.fingerprint ?? null;
-}
-
-/** Coach segments for a record: the approved ones when given, else those saved on the record. */
-export function recordSegments(record, authored = null) {
-  return Array.isArray(authored) && authored.length
-    ? authored.map((segment) => ({ id: segment.id, inMeasure: segment.start, outMeasure: segment.end, playableParts: partsForRange(record, segment) }))
-    : passageRanges(record);
-}
-
-/**
- * The coach projection of one practice record: the one rule the home strip and
- * the Polish reward both read, so they cannot disagree.
- */
-export function projectRecord({ record, scoreId, segments, certification, dayKey }) {
-  const plan = createCoachPlan({ scoreId, fingerprint: recordFingerprint(record), segments, certification });
-  return projectCoach({ plan, state: record?.learnCoach ?? null, legacy: record ?? {}, dayKey });
-}
 
 function latestActivity(record) {
   return [record?.learnCoach?.evidence?.at?.(-1)?.at, record?.learnCoach?.summary?.updatedAt, record?.updatedAt]
@@ -76,7 +30,7 @@ export class GetPianoDesk {
 
   /**
    * @param {object} deps
-   * @param {(scoreId: string, contentSha256: string) => Array<{id, start, end}>|null} [deps.learnSegments]
+   * @param {(scoreId: string, contentSha256: string) => Array<{id, start, end, parts?}>|null} [deps.learnSegments]
    *   the score's admin-approved Learn segments for that content, or null
    */
   constructor({ datastore, configProjection, pieceLog = null, learnSegments = null, clock = () => new Date(), timezone = null, logger = console }) {

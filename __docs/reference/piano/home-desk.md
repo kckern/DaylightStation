@@ -76,9 +76,13 @@ against different XML is ignored); otherwise the passages saved in the record's
 `learnCoach.summary`. Progress is keyed by bar range, so after an admin re-cuts a
 piece the strip shows it straight away: unchanged ranges keep their Silver and
 Gold, changed ones start over, without waiting for the child's next take. An
-unreadable Learn file falls back to the saved passages and logs
-`piano.sheetmusic.learn-read-failed` (warn). The Polish reward reads the same
-projection (`projectRecord` in `GetPianoDesk.mjs`). Courses
+A segment's hands are the `parts` the admin set on it; else those of the saved
+passage on the same range; else the hands every saved passage agrees on (a
+one-hand piece stays one-hand); else both. An unreadable Learn file, or one whose
+segments do not validate, falls back to the saved passages and logs
+`piano.sheetmusic.learn-read-failed` or `piano.sheetmusic.learn-invalid` (warn,
+once per score per process). The Polish reward reads the same projection
+(`application/coachRecordProjection.mjs`). Courses
 come from `GET /api/v1/piano/activity/recent`; each course's `next` is its first
 unwatched lesson (`id`, `title`, `thumbnail`, and `position`, its 1-based place among
 the graded lessons, reference units left out). The desk list is rechecked every time the
@@ -107,4 +111,4 @@ Curfew applies only on the piano's own tablet (the client whose kiosk device id 
 check disable every card and tab. An owed video lesson replaces the tiles, but not the strip, with that lesson and a 224px column beside it: the child's latest piece (`LatestPieceCard`: poster, play disc, Silver count, title; one tap opens it at its next passage) over the Sheet Music tile (browse every score): sheet music is the one mode an owed lesson leaves open (owner, 2026-11-19), through that tile or a piece card on the strip. A PianoChallenge still takes the whole screen. The lesson is one card that is one button: the course poster on the left, then the lesson title over the lesson's still, which fills its area (cropping slightly rather than leaving a band), with a small play disc on it. There is no separate Start button, and no description, course or unit line.
 
 Logs: `piano.desk.view` (the cards shown), `piano.desk.tab`, `piano.desk.open-passage`, `piano.desk.open-polish`, `piano.desk.open-course`, server
-`piano.desk.record_skipped`, `piano.desk.player_skipped`, `piano.sheetmusic.learn-read-failed`.
+`piano.desk.record_skipped`, `piano.desk.player_skipped`, `piano.sheetmusic.learn-read-failed`, `piano.sheetmusic.learn-invalid`.

@@ -114,12 +114,12 @@ describe('PianoPolishReward', () => {
 });
 
 // A coached record all Gold on `ranges`: the score-tempo step earned on each.
-function goldRecord(ranges) {
+function goldRecord(ranges, parts = ['rh', 'lh']) {
   const plan = createCoachPlan({ scoreId: SCORE, fingerprint: 'sha',
-    segments: ranges.map(([start, end]) => ({ id: `m${start}-${end}`, inMeasure: start, outMeasure: end, playableParts: ['rh', 'lh'] })) });
+    segments: ranges.map(([start, end]) => ({ id: `m${start}-${end}`, inMeasure: start, outMeasure: end, playableParts: parts })) });
   const achievements = Object.fromEntries(plan.tasks.filter((task) => task.mastery).map((task) => [task.key, { at: '2026-11-10T00:00:00Z', provenance: 'demonstrated' }]));
   const summary = { total: ranges.length, silver: ranges.length, gold: ranges.length,
-    passages: ranges.map(([start, end]) => ({ id: `m${start}-${end}`, start, end, parts: ['rh', 'lh'], silver: 'x', gold: 'x' })) };
+    passages: ranges.map(([start, end]) => ({ id: `m${start}-${end}`, start, end, parts, silver: 'x', gold: 'x' })) };
   return { fingerprint: { contentSha256: 'sha' },
     learnCoach: { version: 1, scoreId: SCORE, fingerprint: 'sha', revision: 1, achievements, counts: {}, evidence: [], reviews: {}, resume: null, summary } };
 }
@@ -141,6 +141,12 @@ describe('PianoPolishReward with approved Learn segments', () => {
   it('approved ranges the child already holds Gold on still qualify', () => {
     const { result } = evaluateWith(goldRecord([[0, 3], [4, 7]]), () => [{ id: 'a', start: 0, end: 3 }, { id: 'b', start: 4, end: 7 }]);
     expect(result).toMatchObject({ reason: 'qualified', newGem: true });
+  });
+
+  it('a one-hand piece qualifies on unchanged ranges and not after a re-cut', () => {
+    const record = goldRecord([[0, 3], [4, 7]], ['rh']);
+    expect(evaluateWith(record, () => [{ id: 'a', start: 0, end: 3 }, { id: 'b', start: 4, end: 7 }]).result.reason).toBe('qualified');
+    expect(evaluateWith(record, () => [{ id: 'a', start: 0, end: 3 }, { id: 'b', start: 4, end: 9 }]).result.reason).toBe('not-all-gold');
   });
 
   it('without approved segments the saved summary decides, as before', () => {

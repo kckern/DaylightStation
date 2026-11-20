@@ -9,10 +9,13 @@ const reader = (getSheetMusicLearn, warnings = []) => createLearnSegmentsReader(
 });
 
 test('reads the approved segments for the content the child practised', () => {
-  const read = reader((id) => (id === SCORE ? file : null));
+  const warnings = [];
+  const read = reader((id) => (id === SCORE ? file : null), warnings);
   assert.deepEqual(read(SCORE, 'c').map((s) => [s.id, s.start, s.end]), [['a', 0, 3], ['b', 4, 7]]);
   assert.equal(read(SCORE, 'other-sha'), null);
   assert.equal(read('files:none.mxl', 'c'), null);
+  // A file cut against other XML, or no file, is normal: no warning.
+  assert.deepEqual(warnings, []);
 });
 
 test('without a content sha there is nothing to match, so nothing is read', () => {
@@ -23,9 +26,32 @@ test('without a content sha there is nothing to match, so nothing is read', () =
   assert.equal(reads, 0);
 });
 
-test('an unreadable Learn file answers null and warns', () => {
+test('an unreadable Learn file answers null and warns once per score', () => {
   const warnings = [];
   const read = reader(() => { throw new Error('bad yaml'); }, warnings);
   assert.equal(read(SCORE, 'c'), null);
-  assert.deepEqual(warnings, [['piano.sheetmusic.learn-read-failed', { scoreId: SCORE, error: 'bad yaml' }]]);
+  assert.equal(read(SCORE, 'c'), null);
+  assert.equal(read('files:other.mxl', 'c'), null);
+  assert.deepEqual(warnings, [
+    ['piano.sheetmusic.learn-read-failed', { scoreId: SCORE, error: 'bad yaml' }],
+    ['piano.sheetmusic.learn-read-failed', { scoreId: 'files:other.mxl', error: 'bad yaml' }],
+  ]);
+});
+
+test('a matching file whose segments do not validate answers null and warns once per score', () => {
+  const warnings = [];
+  const broken = { contentSha256: 'c', segments: [{ id: 'a', start: 0, end: 5 }, { id: 'b', start: 3, end: 8 }] };
+  const read = reader(() => broken, warnings);
+  assert.equal(read(SCORE, 'c'), null);
+  assert.equal(read(SCORE, 'c'), null);
+  assert.equal(read(SCORE, 'other-sha'), null);
+  assert.deepEqual(warnings, [['piano.sheetmusic.learn-invalid', { scoreId: SCORE }]]);
+});
+
+test('each reader keeps its own latch', () => {
+  const warnings = [];
+  const fail = () => { throw new Error('x'); };
+  reader(fail, warnings)(SCORE, 'c');
+  reader(fail, warnings)(SCORE, 'c');
+  assert.equal(warnings.length, 2);
 });
