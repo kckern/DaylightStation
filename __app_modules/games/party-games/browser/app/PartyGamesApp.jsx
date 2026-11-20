@@ -140,6 +140,7 @@ export default function PartyGamesApp({ dismiss, clear, definitionId, param, app
   const [bootAttempt, setBootAttempt] = useState(0);
   const [confirmExit, setConfirmExit] = useState(false);
   const [confirmReset, setConfirmReset] = useState(false);
+  const [reconciledSession, setReconciledSession] = useState(null);
   const logger = useMemo(() => getLogger().child({ component: 'party-games' }), []);
   const backActionRef = useRef(null);
   const forwardActionRef = useRef(null);
@@ -203,6 +204,7 @@ export default function PartyGamesApp({ dismiss, clear, definitionId, param, app
     creation.current = null;
     backActionRef.current = null; forwardActionRef.current = null; remoteActionRef.current = null;
     setConfirmExit(false);
+    setReconciledSession(null);
     dispatchFlow({type: 'SESSION_RESTARTING'});
     setAttachment({diagnosticSessionId: replacement.startsWith('diagnostic:') ? replacement : null, sessionId: replacement.startsWith('diagnostic:') ? null : replacement, savedSession: false});
   }, [flow.sessionId, flow.buzzerBindings, flow.seats, attachment, logger]);
@@ -216,7 +218,10 @@ export default function PartyGamesApp({ dismiss, clear, definitionId, param, app
     if (!reconnected || !flow.sessionId) return;
     let cancelled = false;
     fetchSession(flow.sessionId).then(session => {
-      if (!cancelled) followReplacement(flow.sessionId, session.replacementSessionId, session);
+      if (!cancelled) {
+        if (session.replacementSessionId) followReplacement(flow.sessionId, session.replacementSessionId, session);
+        else setReconciledSession(session);
+      }
     }).catch(error => {
       if (cancelled) return;
       logger.warn('party-games.restart-reconcile-failed', { sessionId: flow.sessionId, message: error.message });
@@ -427,6 +432,7 @@ export default function PartyGamesApp({ dismiss, clear, definitionId, param, app
               setId={flow.setId}
               seats={flow.seats}
               sessionId={flow.sessionId}
+              reconciledSession={reconciledSession?.header?.session_id === flow.sessionId ? reconciledSession : null}
               buzzerBindings={buzzerBindings}
               config={flow.config}
               audio={audio}

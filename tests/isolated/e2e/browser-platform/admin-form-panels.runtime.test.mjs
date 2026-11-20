@@ -271,3 +271,57 @@ test('an Admin app preview owns its exact WebSocket topic while open', async ({ 
   expect(topicSockets.size).toBe(1);
   for (const socket of topicSockets) expect(closedSockets.has(socket)).toBe(false);
 });
+
+test('an Admin Party Games preview refreshes its active projection from the shared gaming topic', async ({ page }) => {
+  await installFixtures(page);
+  await page.route('**/api/v1/admin/content/lists/menus/party-game-fixture', route => route.fulfill({
+    json: {
+      name: 'party-game-fixture',
+      sections: [{ title: 'Games', items: [{ uid: 'dice-preview', label: 'Dice preview', action: 'Open', input: 'app:party-games/dice:fixture?autostart=true&participants=alice' }] }],
+    },
+  }));
+  await page.route('**/api/v1/gaming/environments/party-games/profile', route => route.fulfill({
+    json: { household_members: [{ id: 'alice', name: 'Alice' }], team_presets: [] },
+  }));
+  await page.route('**/api/v1/gaming/environments/party-games/catalog', route => route.fulfill({
+    json: { entries: [{ content_id: 'dice:fixture', definition_id: 'dice:fixture', experience_id: 'polyhedral-dice', presenter_id: 'polyhedral-dice', setup: 'individuals', setup_profile: { kind: 'individuals' }, launch: { autostart: true, participants: ['alice'] }, valid: true }] },
+  }));
+  const stateForRead = (read) => ({
+    header: { session_id: 'game:fixture', revision: read, experience: { id: 'polyhedral-dice' }, seats: [{ id: 'alice', name: 'Alice' }] },
+    definition: { id: 'dice:fixture', title: 'Dice fixture', presets: ['1d6'], default_notation: '1d6' },
+    state: { notation: '1d6', roll_count: read, outcome: read > 1 ? { notation: '1d6', total: 7 } : null },
+  });
+  let reads = 0;
+  await page.route('**/api/v1/gaming/sessions', route => {
+    if (route.request().method() !== 'POST') return route.fallback();
+    return route.fulfill({ json: stateForRead(0) });
+  });
+  await page.route('**/api/v1/gaming/sessions/game:fixture', route => {
+    reads += 1;
+    return route.fulfill({ json: stateForRead(reads) });
+  });
+
+  let gamingSocket;
+  await page.routeWebSocket(url => url.pathname === '/ws', socket => {
+    gamingSocket = socket;
+    socket.onMessage(raw => {
+      const message = JSON.parse(raw);
+      if (message.type === 'bus_command' && message.action === 'subscribe' && message.topics?.includes('gaming')) {
+        socket.send(JSON.stringify({ topic: 'gaming', kind: 'session-updated', sessionId: 'game:fixture' }));
+      }
+    });
+  });
+
+  await page.goto('/admin/content/lists/menus/party-game-fixture');
+  await page.getByTitle('Preview app', { exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: 'Dice preview' });
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByRole('status')).toContainText('7');
+  expect(reads).toBeGreaterThanOrEqual(2);
+  expect(gamingSocket).toBeTruthy();
+  const notation = dialog.getByRole('textbox', { name: 'Custom dice notation' });
+  await notation.fill('2d20');
+  gamingSocket.send(JSON.stringify({ topic: 'gaming', kind: 'session-updated', sessionId: 'game:fixture' }));
+  await expect.poll(() => reads).toBeGreaterThanOrEqual(3);
+  await expect(notation).toHaveValue('2d20');
+});

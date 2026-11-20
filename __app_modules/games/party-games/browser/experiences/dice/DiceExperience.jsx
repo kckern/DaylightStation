@@ -1,6 +1,6 @@
-import React, { useCallback, useEffect, useState } from 'react';
-import { useWebSocketSubscription } from '@/hooks/useWebSocket.js';
-import { fetchSession, finishSession, sendRuleCommand } from "../../../../../../__capabilities/gaming/browser/platform/api/sessionClient.js";
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { finishSession, sendRuleCommand } from "../../../../../../__capabilities/gaming/browser/platform/api/sessionClient.js";
+import { useGamingSession } from "../../../../../../__capabilities/gaming/browser/session-projection.mjs";
 import PolyhedralDice from "./PolyhedralDice.jsx";
 import { OptionalRendererBoundary } from "../../../../../../__capabilities/gaming/browser/platform/ui/OptionalRendererBoundary.jsx";
 import ShowHeader from "../../../../../../__capabilities/gaming/browser/platform/ui/ShowHeader.jsx";
@@ -8,11 +8,18 @@ import GameButton from "../../../../../../__capabilities/gaming/browser/platform
 import StageActions from "../../../../../../__capabilities/gaming/browser/platform/ui/StageActions.jsx";
 import "./DiceExperience.scss";
 
-export default function DiceExperience({ sessionId, onComplete, gamingServices }) {
-  const [state, setState] = useState(null); const [definition, setDefinition] = useState(null); const [notation, setNotation] = useState('1d6'); const [error, setError] = useState(null); const [rolling, setRolling] = useState(false);
-  useEffect(() => { fetchSession(sessionId).then((result) => { setState(result.state); setDefinition(result.definition); setNotation(result.state.notation); }).catch((cause) => setError(cause.message)); }, [sessionId]);
-  useWebSocketSubscription('gaming', (message) => { if (message?.kind === 'session-updated' && message.sessionId === sessionId) fetchSession(sessionId).then((result) => setState(result.state)).catch((cause) => setError(cause.message)); }, [sessionId]);
-  const roll = useCallback(async () => { if (rolling) return; setRolling(true); try { const committed = await sendRuleCommand(sessionId, { type: 'dice.roll', notation }); setState(committed.state); gamingServices?.audio?.play('roll'); setError(null); } catch (cause) { setError(cause.message); } finally { setRolling(false); } }, [gamingServices?.audio, notation, rolling, sessionId]);
+export default function DiceExperience({ sessionId, onComplete, gamingServices, reconciledSession }) {
+  const { session, error: readError, acceptSession } = useGamingSession(sessionId, reconciledSession);
+  const state = session?.state;
+  const definition = session?.definition;
+  const [notation, setNotation] = useState('1d6'); const [error, setError] = useState(null); const [rolling, setRolling] = useState(false);
+  const initializedSession = useRef(null);
+  useEffect(() => {
+    if (!session || initializedSession.current === sessionId) return;
+    initializedSession.current = sessionId;
+    setNotation(session.state?.notation || '1d6');
+  }, [session, sessionId]);
+  const roll = useCallback(async () => { if (rolling) return; setRolling(true); try { const committed = await sendRuleCommand(sessionId, { type: 'dice.roll', notation }); acceptSession(committed); gamingServices?.audio?.play('roll'); setError(null); } catch (cause) { setError(cause.message); } finally { setRolling(false); } }, [acceptSession, gamingServices?.audio, notation, rolling, sessionId]);
   const done = useCallback(async () => {
     if (rolling) return;
     setRolling(true);
@@ -32,7 +39,7 @@ export default function DiceExperience({ sessionId, onComplete, gamingServices }
         <label>Custom roll <input aria-label="Custom dice notation" value={notation} onChange={(event) => setNotation(event.target.value)} /></label>
         <StageActions><GameButton className="dice-roll" tone="primary" busy={rolling} onClick={roll}>{rolling ? 'Committing…' : state?.outcome ? 'Roll again' : 'Roll dice'}</GameButton>{state?.outcome && <GameButton tone="quiet" disabled={rolling} onClick={done}>Done</GameButton>}</StageActions>
       </div>
-      {error && <p className="dice-experience__error" role="alert">{error}</p>}
+      {(error || readError) && <p className="dice-experience__error" role="alert">{error || readError.message}</p>}
     </section>
   </main>;
 }

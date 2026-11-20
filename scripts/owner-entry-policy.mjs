@@ -415,6 +415,7 @@ export const OWNER_ENTRY_POLICY = Object.freeze({
   '__app_modules/media/media/server/domain/validateMediaSearchQuery.mjs': 'domain',
   '__capabilities/device-dispatch/server/application/scheduleCheck.mjs': 'application',
   '__capabilities/gaming/browser/platform/api/sessionClient.js': null,
+  '__capabilities/gaming/browser/session-projection.mjs': null,
   '__capabilities/gaming/browser/platform/authority/createCheckpointedLocalAuthority.js': null,
   '__capabilities/gaming/browser/platform/authority/createEphemeralLocalAuthority.js': null,
   '__capabilities/gaming/browser/platform/input/DrawingTabletAdapter.js': null,
