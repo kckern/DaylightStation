@@ -126,6 +126,19 @@ describe('crossSiteGuard', () => {
       expect(preflight.status).toBe(204);
     });
 
+    it('refuses every spelling Express routes the same way (case, double slash, encoding)', async () => {
+      const app = express();
+      app.use(crossSiteGuard({}));
+      const router = express.Router();
+      router.get('/admin/thing', (req, res) => res.json({ ok: true }));
+      app.use('/api/v1', router);
+      app.get('/admin', (req, res) => res.json({ ok: true }));
+      for (const path of ['/API/v1/admin/thing', '/Api/V1/admin/thing', '/api/v1/ADMIN/thing', '/ADMIN', '/api/v1/admin/thing/', '//api/v1/admin/thing', '/%61pi/v1/admin/thing']) {
+        const res = await request(app).get(path).set('Sec-Fetch-Site', 'cross-site').set('Sec-Fetch-Mode', 'no-cors').set('Sec-Fetch-Dest', 'image');
+        expect(res.status, path).toBe(403);
+      }
+    });
+
     it('does not take /administrator or /apis for /admin or /api', async () => {
       for (const path of ['/administrator', '/apis']) {
         const res = await request(build()).get(path).set('Sec-Fetch-Site', 'cross-site').set('Sec-Fetch-Mode', 'no-cors');

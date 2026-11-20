@@ -1,4 +1,5 @@
 // __backend/src/4_api/middleware/permissionGate.mjs
+import { routePathWithin } from '#system/http/routePath.mjs';
 
 export function expandRolesToApps(userRoles, roleDefinitions) {
   const apps = new Set();
@@ -13,13 +14,13 @@ export function expandRolesToApps(userRoles, roleDefinitions) {
 }
 
 export function resolveRouteApp(routePath, appRoutes) {
-  // Strip leading slash for matching
-  const path = routePath.replace(/^\//, '');
+  // Compared canonically: Express routes `/ADMIN/x` to the `/admin` router, so
+  // a case-sensitive match left the route unmapped, i.e. unrestricted.
   for (const [app, patterns] of Object.entries(appRoutes)) {
     for (const pattern of patterns) {
-      // Convert 'admin/*' to regex that matches 'admin/anything'
-      const prefix = pattern.replace(/\/\*$/, '');
-      if (path === prefix || path.startsWith(prefix + '/')) {
+      // 'admin/*' covers 'admin' and everything below it
+      const prefix = `/${String(pattern).replace(/\/\*$/, '')}`;
+      if (routePathWithin(routePath, prefix)) {
         return app;
       }
     }

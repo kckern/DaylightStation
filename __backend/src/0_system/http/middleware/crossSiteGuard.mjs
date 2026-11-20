@@ -33,6 +33,8 @@
  * Reference: __docs/reference/core/network-exposure.md (Cross-site requests).
  */
 
+import { routePathWithin } from '../routePath.mjs';
+
 const UNSAFE_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 const ALLOWED_SITES = new Set(['same-origin', 'none']);
 const FOREIGN_SITES = new Set(['cross-site', 'same-site']);
@@ -48,9 +50,10 @@ function lowerHeader(req, name) {
   return String(header(req, name) ?? '').trim().toLowerCase();
 }
 
+// Compared canonically: Express routes `/API/v1/...` to the same handler as
+// `/api/v1/...`, so a case-sensitive check could be stepped around.
 function isIsolatedPath(path) {
-  const value = String(path || '');
-  return ISOLATED_PREFIXES.some((prefix) => value === prefix || value.startsWith(`${prefix}/`));
+  return ISOLATED_PREFIXES.some((prefix) => routePathWithin(path, prefix));
 }
 
 /** `scheme://host[:port]`, lower-case, default port dropped; null when not a usable origin. */
