@@ -212,6 +212,49 @@ public class CaptureDraftStoreTest {
         assertNull(store().get(FIRST));
     }
 
+    @Test public void confirmedCameraStagingThatFailsBeforeOrAfterMoveCanBeRetriedAfterReopen() throws Exception {
+        for (boolean afterMove : new boolean[] { false, true }) {
+            assertCameraStagingRetry(afterMove, true);
+        }
+    }
+
+    @Test public void confirmedCameraStagingCanBeRetriedInTheSameActivitySession() throws Exception {
+        assertCameraStagingRetry(false, false);
+    }
+
+    private void assertCameraStagingRetry(boolean afterMove, boolean reopen) throws Exception {
+        File root = files.newFolder();
+        java.util.concurrent.atomic.AtomicBoolean fail = new java.util.concurrent.atomic.AtomicBoolean(true);
+        CaptureDraftStore interrupted = new CaptureDraftStore(root, OWNER, moved -> { }, moved -> {
+            if (moved == afterMove && fail.get()) throw new IOException("simulated staging interruption");
+        });
+        CaptureDraftStore.Draft draft = interrupted.create(FIRST, "journal", "Journal", CaptureDraftStore.Kind.PHOTO);
+        File previous = new File(root, "previous-photo");
+        Files.write(previous.toPath(), new byte[] { 4, 5, 6 });
+        assertTrue(interrupted.acceptPhoto(draft.id, previous, true));
+
+        String rawName = SECOND + ".journal.raw.part";
+        File raw = interrupted.cameraFile(rawName);
+        assertTrue(raw.getParentFile().mkdirs());
+        Files.write(raw.toPath(), new byte[] { 3, 2, 1 });
+        assertThrows(IOException.class, () -> interrupted.retainCameraResult(draft.id, rawName, true));
+        assertEquals(!afterMove, raw.isFile());
+        fail.set(false);
+
+        CaptureDraftStore retry = reopen ? new CaptureDraftStore(root, OWNER) : interrupted;
+        CaptureDraftStore.Draft recovered = retry.latest("journal", CaptureDraftStore.Kind.PHOTO);
+        assertNotNull(recovered);
+        assertEquals(rawName, retry.confirmedCameraName(recovered));
+        assertTrue(recovered.requiresDiscardConfirmation());
+        assertTrue(recovered.hasContent());
+        assertFalse(retry.send(recovered.id));
+        assertTrue(retry.retainCameraResult(recovered.id, rawName, true));
+        assertNull(retry.confirmedCameraName(recovered));
+        assertFalse(raw.exists());
+        assertArrayEquals(new byte[] { 3, 2, 1 }, Files.readAllBytes(recovered.confirmedPhoto().toPath()));
+        assertFalse(new File(root, "inputs/inbox").exists());
+    }
+
     private CaptureDraftStore interrupted(boolean afterMove) throws Exception {
         CaptureDraftStore store = new CaptureDraftStore(files.getRoot(), OWNER, moved -> {
             if (moved == afterMove) throw new IOException("simulated process interruption");

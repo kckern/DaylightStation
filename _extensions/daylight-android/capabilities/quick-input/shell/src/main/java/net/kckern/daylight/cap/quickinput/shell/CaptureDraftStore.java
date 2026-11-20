@@ -63,31 +63,39 @@ final class CaptureDraftStore {
 
         File fragment() { return new File(directory, file.getName() + ".part"); }
         File confirmedPhoto() { return new File(directory, "camera-confirmed"); }
+        File cameraResult() { return new File(directory, "camera-result"); }
         File interruption() { return new File(directory, "interrupted"); }
         boolean hasContent() { return file.isFile() && file.length() > 0; }
         boolean requiresDiscardConfirmation() {
-            return hasContent() || fragment().length() > 0 || interruption().isFile() || confirmedPhoto().isFile();
+            return hasContent() || fragment().length() > 0 || interruption().isFile()
+                    || confirmedPhoto().isFile() || cameraResult().isFile();
         }
     }
 
-    interface SendCheckpoint { void reached(boolean moved) throws IOException; }
+    interface MoveCheckpoint { void reached(boolean moved) throws IOException; }
     interface AudioCheck { boolean playable(File fragment); }
 
     private final File filesDir;
     private final File root;
-    private final SendCheckpoint checkpoint;
+    private final MoveCheckpoint checkpoint;
+    private final MoveCheckpoint cameraCheckpoint;
     private final String owner;
 
     CaptureDraftStore(File filesDir) { this(filesDir, null, moved -> { }); }
 
     CaptureDraftStore(File filesDir, String owner) { this(filesDir, owner, moved -> { }); }
 
-    CaptureDraftStore(File filesDir, String owner, SendCheckpoint checkpoint) {
+    CaptureDraftStore(File filesDir, String owner, MoveCheckpoint checkpoint) {
+        this(filesDir, owner, checkpoint, moved -> { });
+    }
+
+    CaptureDraftStore(File filesDir, String owner, MoveCheckpoint checkpoint, MoveCheckpoint cameraCheckpoint) {
         if (owner != null && !CaptureScope.valid(owner)) throw new IllegalArgumentException("Invalid capture owner");
         this.owner = owner;
         this.filesDir = filesDir;
         this.root = new File(filesDir, DIRECTORY);
         this.checkpoint = checkpoint;
+        this.cameraCheckpoint = cameraCheckpoint;
     }
 
     static String nextId() { return MemoFiles.newId(System.currentTimeMillis(), new SecureRandom().nextLong()); }
@@ -166,7 +174,8 @@ final class CaptureDraftStore {
                 Draft draft = get(entry.getName());
                 if (draft == null || !(draft.kind == kind || kind.voice() && draft.kind.voice())
                         || !sameDestination(dest, draft.dest, kind.voice())
-                        || !(draft.hasContent() || draft.interruption().isFile() || draft.confirmedPhoto().isFile())) continue;
+                        || !(draft.hasContent() || draft.interruption().isFile()
+                                || draft.confirmedPhoto().isFile() || draft.cameraResult().isFile())) continue;
                 if (latest == null || draft.timestamp > latest.timestamp) latest = draft;
             }
             return latest;
@@ -233,18 +242,50 @@ final class CaptureDraftStore {
 
     File cameraFile(String name) { return new File(new File(filesDir, CAMERA_DIR), name); }
 
+    String confirmedCameraName(Draft draft) throws IOException {
+        if (draft == null || draft.kind != Kind.PHOTO || !draft.cameraResult().isFile()) return null;
+        String name = new String(Files.readAllBytes(draft.cameraResult().toPath()), StandardCharsets.UTF_8);
+        if (!draft.dest.equals(CaptureFiles.destOf(name))) throw new IOException("Invalid camera result");
+        return name;
+    }
+
     boolean retainCameraResult(String id, String rawName, boolean cameraConfirmed) throws IOException {
         synchronized (LOCK) {
             Draft draft = get(id);
-            // The returning system-camera result belongs to the existing scoped draft,
-            // regardless of whether the payload has reattached in the new process.
-            if (pendingCameraName(draft, rawName) == null) return false;
+            if (draft == null || draft.kind != Kind.PHOTO || !draft.dest.equals(CaptureFiles.destOf(rawName))) return false;
             File raw = cameraFile(rawName);
-            if (!PhotoPlan.captured(cameraConfirmed, raw.length())) {
-                Files.deleteIfExists(raw.toPath());
+            String recorded = confirmedCameraName(draft);
+            if (recorded == null) {
+                if (!PhotoPlan.captured(cameraConfirmed, raw.length())) {
+                    Files.deleteIfExists(raw.toPath());
+                    return false;
+                }
+                // Record the result before touching the camera file. The receipt stays
+                // after failures on either side of the move, including after a restart.
+                File pending = new File(draft.directory, "camera-result.tmp");
+                try (FileOutputStream output = new FileOutputStream(pending)) {
+                    output.write(rawName.getBytes(StandardCharsets.UTF_8));
+                    output.getFD().sync();
+                }
+                move(pending, draft.cameraResult());
+            } else if (!cameraConfirmed || !rawName.equals(recorded)) {
                 return false;
             }
-            commitFile(raw, draft.confirmedPhoto());
+            syncDirectory(draft.directory);
+
+            if (raw.isFile()) {
+                cameraCheckpoint.reached(false);
+                syncFile(raw);
+                move(raw, draft.confirmedPhoto());
+                cameraCheckpoint.reached(true);
+            } else if (!draft.confirmedPhoto().isFile()) {
+                throw new IOException("Confirmed camera output is missing");
+            }
+            syncDirectory(draft.directory);
+            if (raw.getParentFile().isDirectory()) syncDirectory(raw.getParentFile());
+            Files.delete(draft.cameraResult().toPath());
+            // The confirmed output is durable. If a crash restores the receipt, retry
+            // recognizes the already-moved source and removes the receipt again.
             return true;
         }
     }
@@ -252,7 +293,8 @@ final class CaptureDraftStore {
     boolean acceptPhoto(String id, File candidate, boolean cameraConfirmed) throws IOException {
         synchronized (LOCK) {
             Draft draft = get(id);
-            if (draft == null || draft.kind != Kind.PHOTO || !PhotoPlan.captured(cameraConfirmed, candidate.length())) {
+            if (draft == null || draft.kind != Kind.PHOTO || draft.cameraResult().isFile()
+                    || !PhotoPlan.captured(cameraConfirmed, candidate.length())) {
                 Files.deleteIfExists(candidate.toPath());
                 return false;
             }
@@ -338,7 +380,7 @@ final class CaptureDraftStore {
         if (owner == null) return false;
         synchronized (LOCK) {
             Draft draft = get(id);
-            if (draft == null || !draft.hasContent() || draft.confirmedPhoto().isFile()) return false;
+            if (draft == null || !draft.hasContent() || draft.confirmedPhoto().isFile() || draft.cameraResult().isFile()) return false;
             File inbox = CaptureScope.inbox(new File(filesDir, draft.kind.inbox), owner);
             ensureDirectory(inbox);
             File target = new File(inbox, draft.file.getName());
@@ -361,7 +403,12 @@ final class CaptureDraftStore {
 
     private static boolean validId(String id) { return id != null && ANY_DRAFT_ID.matcher(id).matches(); }
 
-    private static void removeDraft(Draft draft) throws IOException {
+    private void removeDraft(Draft draft) throws IOException {
+        String rawName = confirmedCameraName(draft);
+        if (rawName != null) {
+            File raw = cameraFile(rawName);
+            if (Files.deleteIfExists(raw.toPath())) syncDirectory(raw.getParentFile());
+        }
         // Remove metadata last, after content. During Send, keep the intent until the
         // metadata is gone so cleanup can never turn a submitted draft into an empty draft.
         File[] entries = draft.directory.listFiles();

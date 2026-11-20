@@ -45,6 +45,7 @@ public class PhotoCaptureActivity extends Activity {
     private String dest;
     private String label;
     private String rawName;
+    private boolean cameraApproved;
     private boolean asking;
     private boolean used;
     private boolean preparing;
@@ -75,15 +76,20 @@ public class PhotoCaptureActivity extends Activity {
         if (Build.VERSION.SDK_INT >= 33) setRecentsScreenshotEnabled(false);
         try {
             draft = state == null ? store.latest(dest, CaptureDraftStore.Kind.PHOTO) : store.get(state.getString("draft"));
+            if (draft != null && (!dest.equals(draft.dest) || draft.kind != CaptureDraftStore.Kind.PHOTO)) draft = null;
+            rawName = store.confirmedCameraName(draft);
         } catch (IOException e) {
             say("Could not open the photo draft");
             finish();
             return;
         }
-        if (draft != null && (!dest.equals(draft.dest) || draft.kind != CaptureDraftStore.Kind.PHOTO)) draft = null;
         if (draft != null) label = draft.label;
+        cameraApproved = rawName != null;
         if (state != null) {
-            rawName = store.pendingCameraName(draft, state.getString("raw"));
+            if (rawName == null) {
+                rawName = store.pendingCameraName(draft, state.getString("raw"));
+                cameraApproved = rawName != null && state.getBoolean("camera-approved");
+            }
             asking = state.getBoolean("asking");
             used = state.getBoolean("used");
         }
@@ -130,7 +136,7 @@ public class PhotoCaptureActivity extends Activity {
     private void bindingUnavailable() {
         // A pending system-camera result can still be delivered after recreation, even
         // when the current pairing has already changed. Retain it for its original owner.
-        if (rawName != null) {
+        if (rawName != null && (!cameraApproved || !draft.cameraResult().isFile())) {
             render();
             return;
         }
@@ -142,6 +148,7 @@ public class PhotoCaptureActivity extends Activity {
         super.onSaveInstanceState(state);
         if (draft != null) state.putString("draft", draft.id);
         state.putString("raw", rawName);
+        state.putBoolean("camera-approved", cameraApproved);
         state.putBoolean("asking", asking);
         state.putBoolean("used", used);
     }
@@ -159,14 +166,19 @@ public class PhotoCaptureActivity extends Activity {
 
     @Override public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
-        if (requestCode != REQUEST_CAMERA || !asking || completed || isFinishing() || isDestroyed()
-                || !CaptureScope.currentIs(owner)) return;
+        if (requestCode != REQUEST_CAMERA) return;
+        boolean ownerVerified = CaptureScope.currentIs(owner);
+        CameraAsk.Reply reply = CameraAsk.afterReply(asking, CameraAsk.granted(permissions, grantResults), ownerVerified);
         asking = false;
-        if (CameraAsk.granted(permissions, grantResults)) openCamera();
-        else {
-            say("No camera permission. No photo was taken.");
-            render();
+        if (reply == CameraAsk.Reply.IGNORE || completed || isFinishing() || isDestroyed()) return;
+        if (reply == CameraAsk.Reply.OPEN) {
+            openCamera();
+            return;
         }
+        if (reply == CameraAsk.Reply.DENIED && ownerVerified) say("No camera permission. No photo was taken.");
+        // A cold reply is consumed. Once the account is verified, the regular
+        // Open camera or Retake control lets the user continue explicitly.
+        render();
     }
 
     private String[] declaredPermissions() {
@@ -185,6 +197,10 @@ public class PhotoCaptureActivity extends Activity {
     private File rawFile(String name) { return store.cameraFile(name); }
 
     private void openCamera() {
+        if (!CaptureScope.currentIs(owner)) {
+            render();
+            return;
+        }
         try {
             if (draft == null) draft = store.create(dest, label, CaptureDraftStore.Kind.PHOTO);
             String id = MemoFiles.newId(System.currentTimeMillis(), new SecureRandom().nextLong());
@@ -214,6 +230,7 @@ public class PhotoCaptureActivity extends Activity {
         revokeCamera(rawName);
         rawFile(rawName).delete();
         rawName = null;
+        cameraApproved = false;
     }
 
     private void revokeCamera(String name) {
@@ -222,21 +239,33 @@ public class PhotoCaptureActivity extends Activity {
 
     @Override protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
-        if (requestCode != REQUEST_CAPTURE || rawName == null) return;
-        final String name = rawName;
-        rawName = null;
-        revokeCamera(name);
-        if (completed || draft == null) return;
-        try {
-            if (store.retainCameraResult(draft.id, name, resultCode == RESULT_OK)) {
-                used = false;
-                preparationAttempted = false;
-            }
-        } catch (IOException failed) {
-            Log.w(TAG, "Could not stage confirmed camera output");
-            say("Could not save camera output");
+        if (requestCode != REQUEST_CAPTURE || rawName == null || cameraApproved) return;
+        if (completed || draft == null || resultCode != RESULT_OK) {
+            clearCamera();
+        } else {
+            revokeCamera(rawName);
+            cameraApproved = true;
+            used = false;
+            stageCameraResult();
         }
         if (resumed) refreshBinding();
+    }
+
+    private void stageCameraResult() {
+        try {
+            if (store.retainCameraResult(draft.id, rawName, true)) preparationAttempted = false;
+            rawName = null;
+            cameraApproved = false;
+        } catch (IOException failed) {
+            Log.w(TAG, "Could not stage confirmed camera output");
+            if (CaptureScope.currentIs(owner)) say("Could not save camera output. Try saving it again.");
+        }
+    }
+
+    private void retryCameraStaging() {
+        if (!CaptureScope.currentIs(owner) || !cameraApproved || rawName == null) return;
+        stageCameraResult();
+        showAuthorizedDraft();
     }
 
     private void prepare() {
@@ -290,8 +319,8 @@ public class PhotoCaptureActivity extends Activity {
         destination.setText(label);
         destination.setTextSize(22);
         layout.addView(destination);
-        boolean review = draft != null && draft.hasContent();
-        boolean busy = preparing || asking || rawName != null;
+        boolean review = !cameraApproved && draft != null && draft.hasContent();
+        boolean busy = preparing || asking || rawName != null && !cameraApproved;
         boolean awaitingPreparation = draft != null && draft.confirmedPhoto().isFile();
         if (review) {
             ImageView preview = new ImageView(this);
@@ -302,7 +331,9 @@ public class PhotoCaptureActivity extends Activity {
             preview.setScaleType(ImageView.ScaleType.FIT_CENTER);
             layout.addView(preview, new LinearLayout.LayoutParams(-1, Math.round(240 * getResources().getDisplayMetrics().density)));
         }
-        if (busy) {
+        if (cameraApproved) {
+            addButton(layout, "Try saving photo again", this::retryCameraStaging);
+        } else if (busy) {
             TextView status = new TextView(this);
             status.setText(preparing ? "Preparing photo…" : asking ? "Waiting for permission…" : "Camera is open");
             layout.addView(status);
@@ -329,7 +360,7 @@ public class PhotoCaptureActivity extends Activity {
     }
 
     private void send() {
-        if (!used || draft == null || completed || preparing || draft.confirmedPhoto().isFile()
+        if (!used || draft == null || completed || preparing || rawName != null || draft.confirmedPhoto().isFile()
                 || !CaptureScope.currentIs(owner)) return;
         try {
             if (!store.sendForCurrentOwner(draft.id)) return;
@@ -344,7 +375,7 @@ public class PhotoCaptureActivity extends Activity {
 
     private void confirmDiscard() {
         if (completed || !CaptureScope.currentIs(owner)) return;
-        if (draft == null || !(preparing || draft.requiresDiscardConfirmation())) {
+        if (draft == null || !(preparing || cameraApproved || draft.requiresDiscardConfirmation())) {
             discard(draft == null ? null : draft.id, false);
             return;
         }
