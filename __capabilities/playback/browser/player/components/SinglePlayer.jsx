@@ -4,7 +4,9 @@ import PropTypes from 'prop-types';
 import AppContainer from '../../../../../frontend/src/modules/AppContainer/AppContainer.jsx';
 import { getRenderer, isMediaFormat } from '../lib/registry.js';
 import { fetchMediaInfo } from '../lib/api.js';
+import { playbackLog } from '../lib/playbackLogger.js';
 import { DaylightAPI } from '../../../../../frontend/src/lib/api.mjs';
+import { useRefreshableRead } from '../../../../../frontend/src/lib/hooks/useRefreshableRead.js';
 import { AudioPlayer } from '../renderers/AudioPlayer.jsx';
 import { VideoPlayer } from '../renderers/VideoPlayer.jsx';
 import { ImageFrame } from '../renderers/ImageFrame.jsx';
@@ -248,7 +250,7 @@ export function SinglePlayer(props = {}) {
     }
   }, [playbackSessionKey, setWatchedDurationValue]);
 
-  const fetchVideoInfoCallback = useCallback(async () => {
+  const readVideoInfo = useCallback(async (isCurrent, signal) => {
     setIsReady(false);
 
     // Direct-play bypass: if the play prop already contains mediaUrl and a media format,
@@ -300,18 +302,26 @@ export function SinglePlayer(props = {}) {
       return;
     }
 
-    const info = await fetchMediaInfo({
-      contentId: effectiveContentId,
-      plex,
-      media,
-      shuffle,
-      maxVideoBitrate: play?.maxVideoBitrate,
-      maxResolution: play?.maxResolution,
-      transcode: play?.transcode,
-      adaptive: play?.adaptive,
-      session: plexClientSession,
-      resume: play?.resume
-    });
+    let info;
+    try {
+      info = await fetchMediaInfo({
+        contentId: effectiveContentId,
+        plex,
+        media,
+        shuffle,
+        maxVideoBitrate: play?.maxVideoBitrate,
+        maxResolution: play?.maxResolution,
+        transcode: play?.transcode,
+        adaptive: play?.adaptive,
+        session: plexClientSession,
+        resume: play?.resume,
+        signal,
+      });
+    } catch (error) {
+      if (isCurrent()) throw error;
+      return;
+    }
+    if (!isCurrent()) return;
 
     if (info) {
       // Detect if this is a collection/folder (format: "list", or no mediaUrl/playable mediaType)
@@ -322,7 +332,8 @@ export function SinglePlayer(props = {}) {
       if (!isPlayable && effectiveContentId) {
         // This is a collection - fetch first playable item
         try {
-          const { items } = await DaylightAPI(`/api/v1/queue/${effectiveContentId}?limit=1`);
+          const { items } = await DaylightAPI(`/api/v1/queue/${effectiveContentId}?limit=1`, {}, 'GET', { signal });
+          if (!isCurrent()) return;
           if (items && items.length > 0) {
             const firstItem = items[0];
             const firstItemId = firstItem.contentId || firstItem.id;
@@ -336,26 +347,16 @@ export function SinglePlayer(props = {}) {
                 maxResolution: play?.maxResolution,
                 transcode: play?.transcode,
                 adaptive: play?.adaptive,
-                session: plexClientSession
+                session: plexClientSession,
+                signal,
               });
-              if (playableInfo) {
-                const withCap = {
-                  ...playableInfo,
-                  continuous,
-                  maxVideoBitrate: play?.maxVideoBitrate ?? null,
-                  maxResolution: play?.maxResolution ?? null
-                };
-                if (play?.seconds !== undefined) withCap.seconds = play.seconds;
-                if (play?.resume !== undefined) withCap.resume = play.resume;
-                if (play?.origin) withCap.origin = play.origin;
-                setMediaInfo(withTracks(withCap));
-                setIsReady(true);
-                return;
-              }
+              if (!isCurrent()) return;
+              if (playableInfo) info = playableInfo;
             }
           }
-        } catch (err) {
-          console.error('[SinglePlayer] Failed to expand collection:', err);
+        } catch (error) {
+          if (!isCurrent()) return;
+          playbackLog('collection-expansion-failed', { contentId: effectiveContentId, error: error?.message }, { level: 'error' });
         }
       }
 
@@ -389,15 +390,17 @@ export function SinglePlayer(props = {}) {
   // object literal from parents, and depending on it directly reproduces a
   // documented incident (2026-08-16) where object-identity churn on `play`
   // caused runaway remounts and 495 Plex transcode sessions in four minutes.
-  // The four `play?.*` fields above are the ones this effect actually branches
-  // on; the rest (id/contentId/assetId/resumePosition) are read only inside the
-  // direct-play bypass's early-return branch.
+  // Keep this scoped to the stable lookup inputs. The direct-media bypass and
+  // presentation metadata also read values from the committed play snapshot.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [effectiveContentId, plex, media, open, shuffle, continuous, play?.maxVideoBitrate, play?.maxResolution, play?.transcode, play?.adaptive, play?.seconds, play?.resume, plexClientSession, remountDiagnostics]);
 
+  const { reload: fetchVideoInfo } = useRefreshableRead(readVideoInfo);
   useEffect(() => {
-    fetchVideoInfoCallback();
-  }, [fetchVideoInfoCallback]);
+    // The descriptor transport logs genuine request failures. The initial read
+    // has no caller awaiting its rejection.
+    void fetchVideoInfo().catch(() => {});
+  }, [fetchVideoInfo]);
 
   useEffect(() => {
     if (!isReady || (!mediaInfo?.mediaType && !mediaInfo?.format)) {
@@ -521,7 +524,7 @@ export function SinglePlayer(props = {}) {
           classes={classes}
           playbackKeys={playbackKeys}
           queuePosition={queuePosition}
-          fetchVideoInfo={fetchVideoInfoCallback}
+          fetchVideoInfo={fetchVideoInfo}
           ignoreKeys={ignoreKeys}
           onProgress={handleProgress}
           onMediaRef={onMediaRef}

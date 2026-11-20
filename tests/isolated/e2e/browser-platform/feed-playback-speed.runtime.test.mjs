@@ -106,3 +106,76 @@ test('Feed resumes both interrupted tracks at their captured positions', async (
   await expect.poll(() => playingSettings(page, '42')).not.toBeNull();
   expect(await audio('42').evaluate(el => el.currentTime)).toBeGreaterThanOrEqual(3);
 });
+
+const collectionReads = [
+  { stage: 'descriptor', path: '/api/v1/play/plex:41', response: { id: 'plex:41', format: 'list' } },
+  { stage: 'queue', path: '/api/v1/queue/plex:41', response: { items: [{ contentId: 'plex:43' }] } },
+  { stage: 'child', path: '/api/v1/play/plex:43', response: {
+    id: 'plex:43', title: 'Child track', format: 'audio', mediaType: 'audio', duration: 30, mediaUrl: '/feed-speed-43.wav',
+  } },
+];
+
+async function routeCollection(page, heldStage) {
+  const reads = [];
+  const release = Promise.withResolvers();
+  const settled = Promise.withResolvers();
+  let heldRequest;
+  let canceled = false;
+  page.on('requestfailed', request => {
+    if (request === heldRequest) canceled = true;
+  });
+  await page.route('**/api/**', async route => {
+    const request = route.request();
+    const url = new URL(request.url());
+    const limit = url.searchParams.get('limit');
+    const read = collectionReads.find(({ path, stage }) => path === decodeURIComponent(url.pathname)
+      && (stage !== 'queue' || limit === '1'));
+    if (!read) return route.fallback();
+    reads.push({ stage: read.stage, method: request.method(), limit });
+    if (read.stage !== heldStage) return route.fulfill({ json: read.response });
+    heldRequest = request;
+    await release.promise;
+    try {
+      await route.fulfill({ json: read.response });
+    } catch (error) {
+      if (!canceled) throw error;
+    } finally {
+      settled.resolve();
+    }
+  });
+  return { reads, release: release.resolve, settled: settled.promise, isCanceled: () => canceled };
+}
+
+test('Feed plays the first child of an active collection', async ({ page }) => {
+  const { reads } = await routeCollection(page);
+  await page.goto('/feed/scroll');
+  await playTrack(page, '41');
+  await expect.poll(() => playingSettings(page, '43')).not.toBeNull();
+  expect(reads).toEqual([
+    { stage: 'descriptor', method: 'GET', limit: null },
+    { stage: 'queue', method: 'GET', limit: '1' },
+    { stage: 'child', method: 'GET', limit: null },
+  ]);
+});
+
+for (const [stageIndex, { stage }] of collectionReads.entries()) {
+  test(`Feed cancels a replaced collection's ${stage} read while its successor plays`, async ({ page }) => {
+    const { reads, release, settled, isCanceled } = await routeCollection(page, stage);
+    const errors = [];
+    page.on('pageerror', error => errors.push(error.message));
+    try {
+      await page.goto('/feed/scroll');
+      await playTrack(page, '41');
+      await expect.poll(() => reads.at(-1)?.stage).toBe(stage);
+      await playTrack(page, '42');
+      await expect.poll(() => playingSettings(page, '42')).not.toBeNull();
+      await expect.poll(isCanceled).toBe(true);
+    } finally {
+      release();
+    }
+    await settled;
+    expect(reads.map(read => read.stage)).toEqual(collectionReads.slice(0, stageIndex + 1).map(read => read.stage));
+    expect(await playingSettings(page, '42')).not.toBeNull();
+    expect(errors).toEqual([]);
+  });
+}
