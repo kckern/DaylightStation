@@ -6,9 +6,8 @@
 //   - the inline twin in ListsItemRow.jsx: fully-owned keyboard model (machine
 //     holds highlight), select-after-colon open behavior, isCurrent bolding,
 //     eased scroll-to-highlight with pac-man wrap flash.
-// All state transitions live in comboboxMachine.js; all side effects live in
-// useContentCombobox.js. This file is presentation + DOM-only concerns (focus,
-// selection ranges, scroll positioning).
+// comboboxMachine.js owns state transitions and useContentCombobox.js owns
+// requests. This file owns presentation, focus and viewport positioning.
 //
 // Deliberate omissions (unified design, see 2026-07-09 audit):
 //   - parent-subtitle click navigation (§3.1-8 — mouse-only bad affordance)
@@ -16,7 +15,7 @@
 //   - app-param picker and ItemDetailsDrawer (stay in ListsItemRow, Task 13)
 //   - result grouping by `group` field (index-owned highlight requires DOM
 //     order === items order; no current search transport emits `group`)
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Component, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useDismissLayer } from '@/lib/ui/dismiss/useDismissLayer.js';
 import { getReducedMotionQuery } from '@/lib/ui/browserMotion.js';
 import { DS_TOKENS } from '@/lib/theme/tokens.mjs';
@@ -29,7 +28,7 @@ import {
   IconMusic, IconVideo, IconPhoto, IconFile, IconList, IconPencil, IconX,
 } from '@tabler/icons-react';
 import { getChildLogger } from "../../../../frontend/src/lib/logging/singleton.js";
-import { shouldRunScrollToHighlighted, computeScrollRestore, shouldPositionLevel } from "./comboboxScroll.js";
+import { shouldRunScrollToHighlighted, shouldPositionLevel } from "./comboboxScroll.js";
 import { useContentCombobox } from "./useContentCombobox.js";
 import { Modes, isContainer } from "./comboboxMachine.js";
 import { StreamStatusLine } from "./StreamStatusLine.jsx";
@@ -72,6 +71,31 @@ const normalizeValue = (v) => v?.replace(/:\s+/g, ':');
 /** Option top relative to the scroll viewport (offsetParent-independent). */
 function optionTopIn(viewport, option) {
   return option.getBoundingClientRect().top - viewport.getBoundingClientRect().top + viewport.scrollTop;
+}
+
+// Compare the same keyed option across the prepend commit so the newest
+// scroll position is preserved even if the user moved during the request.
+class PickerScrollAnchor extends Component {
+  getSnapshotBeforeUpdate(previous) {
+    const { owner, offset, viewportRef } = this.props;
+    if (!owner || owner !== previous.owner || !(offset < previous.offset)) return null;
+
+    const viewport = viewportRef.current;
+    const anchor = viewport?.querySelector(`.${OPTION_CLASS}`);
+    if (!anchor) return null;
+    return { viewport, anchor, top: optionTopIn(viewport, anchor), scrollTop: viewport.scrollTop };
+  }
+
+  componentDidUpdate(_previousProps, _previousState, snapshot) {
+    if (!snapshot) return;
+    const { viewport, anchor, top, scrollTop } = snapshot;
+    if (viewport !== this.props.viewportRef.current || !viewport.contains(anchor)) return;
+    viewport.scrollTop = scrollTop + optionTopIn(viewport, anchor) - top;
+  }
+
+  render() {
+    return this.props.children;
+  }
 }
 
 /**
@@ -165,6 +189,7 @@ export function ContentCombobox({
   const pagination = state.browse.pagination;
   const browseLoading = state.browse.loading;
   const highlightIdx = state.highlight.idx;
+  const highlightedId = items[highlightIdx]?.id;
   const normalizedValue = normalizeValue(value);
 
   const localInputRef = useRef(null);
@@ -181,13 +206,24 @@ export function ContentCombobox({
   const moreMenuActionRef = useRef(false);
   const moreMenuActionKindRef = useRef(null);
   const viewportRef = useRef(null);
-  const prevIdxRef = useRef(-1);
-  const paginationScrollGuardRef = useRef(null); // window whose prepend or append owns scroll placement
-  const loadCooldownRef = useRef(null);
-  const currentPaginationWindow = useRef(paginationWindow);
-  currentPaginationWindow.current = paginationWindow;
+  const previousHighlightRef = useRef(null);
   const [loadingPage, setLoadingPage] = useState(null);
-  const loadingDirection = loadingPage?.owner === paginationWindow ? loadingPage?.direction : null;
+  const activePage = loadingPage?.owner === paginationWindow ? loadingPage : null;
+  const loadingDirection = activePage && activePage.pagination === pagination && !activePage.failed
+    ? activePage.direction : null;
+
+  // Keep scroll events from re-paging until the accepted rows or dismissed
+  // loader have settled. A replaced view cancels this window's frames.
+  useLayoutEffect(() => {
+    if (!activePage || loadingDirection) return;
+    let frame = requestAnimationFrame(() => {
+      frame = requestAnimationFrame(() => {
+        setLoadingPage(current => current === activePage ? null : current);
+      });
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [activePage, loadingDirection]);
+
   const handleMoreMenuPointerDown = useCallback((trigger, isPortaledMenu = false) => {
     moreMenuOpenRef.current = true;
     moreMenuInternalPointerRef.current = isPortaledMenu;
@@ -379,51 +415,22 @@ export function ContentCombobox({
   const runPaginate = async (direction) => {
     const request = paginate(direction);
     if (!request) return;
-    const owner = paginationWindow;
-    setLoadingPage({ owner, direction });
-    paginationScrollGuardRef.current = owner;
     const viewport = viewportRef.current;
-    const isCurrent = () => currentPaginationWindow.current === owner && viewportRef.current === viewport;
-    const prevScrollHeight = direction === 'before' ? (viewport?.scrollHeight || 0) : 0;
-    const prevScrollTop = direction === 'before' ? (viewport?.scrollTop || 0) : 0;
+    const page = { owner: paginationWindow, pagination, direction };
+    setLoadingPage(page);
+
+    let accepted = false;
     try {
-      const dispatched = await request;
-      if (!isCurrent()) return;
-      if (!dispatched) paginationScrollGuardRef.current = null;
-      if (dispatched && direction === 'before' && viewport) {
-        // Maintain scroll position after prepending. overflowAnchor:none disables
-        // native scroll-anchoring, so this manual restore is the only safeguard.
-        // Double-rAF (mirroring the cooldown below) defers the write until AFTER
-        // React commits the prepended rows + browser layout — a single rAF can
-        // fire while scrollHeight is still stale, under-compensating and yanking
-        // the viewport upward.
-        requestAnimationFrame(() => {
-          requestAnimationFrame(() => {
-            if (!isCurrent()) return;
-            viewport.scrollTop = computeScrollRestore({
-              prevScrollHeight,
-              newScrollHeight: viewport.scrollHeight,
-              prevScrollTop,
-            });
-          });
-        });
-      }
+      accepted = await request;
     } finally {
-      if (isCurrent()) {
-        setLoadingPage(null);
-        // Let appended items settle before accepting another scroll event.
-        loadCooldownRef.current = owner;
-        requestAnimationFrame(() => {
-          requestAnimationFrame(() => {
-            if (loadCooldownRef.current === owner) loadCooldownRef.current = null;
-          });
-        });
+      if (!accepted && viewport === viewportRef.current) {
+        setLoadingPage(current => current === page ? { ...page, failed: true } : current);
       }
     }
   };
 
   const handleScrollPosition = ({ y }) => {
-    if (!paginationWindow || loadingDirection || loadCooldownRef.current === paginationWindow) return;
+    if (!paginationWindow || activePage) return;
     const viewport = viewportRef.current;
     if (!viewport) return;
     const { scrollHeight, clientHeight } = viewport;
@@ -441,7 +448,7 @@ export function ContentCombobox({
   // pinned at scrollTop 0, hiding the selected item).
   const levelKey = isBrowse ? `b:${breadcrumbs.map((b) => b.id).join('>')}` : null;
   const positionedLevelRef = useRef(null);
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (levelKey == null) { positionedLevelRef.current = null; return undefined; }
 
     const decision = shouldPositionLevel({
@@ -455,7 +462,7 @@ export function ContentCombobox({
     // Reset the navigation writer's prev-index so it hits its 'initial-render'
     // guard and defers to us for this level's first placement (prevents a
     // cross-level drill misreading as a pac-man wrap: bogus wrap-flash + jump).
-    prevIdxRef.current = -1;
+    previousHighlightRef.current = null;
 
     let rafId;
     let tries = 0;
@@ -474,15 +481,15 @@ export function ContentCombobox({
   }, [levelKey, highlightIdx, items.length]);
 
   // Keep the keyboard highlight in view without overriding page anchoring.
-  useEffect(() => {
-    const prevIdx = prevIdxRef.current;
+  useLayoutEffect(() => {
+    const previous = previousHighlightRef.current;
+    const prevIdx = previous?.index ?? -1;
     const decision = shouldRunScrollToHighlighted({
       highlightedIdx: highlightIdx,
       prevIdx,
-      paginationInFlight: Boolean(paginationWindow && paginationScrollGuardRef.current === paginationWindow),
+      hasSameHighlight: highlightedId != null && highlightedId === previous?.id,
     });
-    prevIdxRef.current = highlightIdx;
-    if (decision.reason === 'pagination') paginationScrollGuardRef.current = null;
+    previousHighlightRef.current = { index: highlightIdx, id: highlightedId };
     if (!decision.run) return;
 
     const viewport = viewportRef.current;
@@ -536,7 +543,7 @@ export function ContentCombobox({
     };
     frame = requestAnimationFrame(step);
     return () => cancelAnimationFrame(frame);
-  }, [highlightIdx, items.length, paginationWindow]);
+  }, [highlightIdx, highlightedId, items.length, paginationWindow]);
 
   // ── Option row (standalone renderer + twin highlight/current classes) ──
   const renderOption = (item, idx) => {
@@ -881,59 +888,56 @@ export function ContentCombobox({
             seen. Hidden while the widened search is still in flight
             (isSearching) so it doesn't flash "0 results" before they arrive. */}
         <Combobox.Options className="content-combobox-options">
-          <ScrollArea.Autosize
-            className="content-combobox-scroll"
-            mah={300}
-            style={{ overflow: 'hidden' }}
-            viewportRef={viewportRef}
-            viewportProps={{ style: { overflowAnchor: 'none' } }}
-            onScrollPositionChange={handleScrollPosition}
-          >
-            {loadingDirection === 'before' && (
-              <Group justify="center" py={4}>
-                <Loader size="xs" role="status" aria-label="Loading more items" />
-              </Group>
-            )}
-            {(isSearching || browseLoading) && items.length === 0 ? (
-              <Combobox.Empty>
-                <Group justify="center" p="md" data-testid="combobox-loading">
-                  <Loader size="sm" />
-                  <Text size="sm" c="dimmed">{browseLoading ? 'Loading...' : 'Searching...'}</Text>
+          <PickerScrollAnchor owner={paginationWindow} offset={pagination?.offset} viewportRef={viewportRef}>
+            <ScrollArea.Autosize
+              className="content-combobox-scroll"
+              mah={300}
+              style={{ overflow: 'hidden' }}
+              viewportRef={viewportRef}
+              viewportProps={{ style: { overflowAnchor: 'none' } }}
+              onScrollPositionChange={handleScrollPosition}
+            >
+              {(isSearching || browseLoading) && items.length === 0 ? (
+                <Combobox.Empty>
+                  <Group justify="center" p="md" data-testid="combobox-loading">
+                    <Loader size="sm" />
+                    <Text size="sm" c="dimmed">{browseLoading ? 'Loading...' : 'Searching...'}</Text>
+                  </Group>
+                </Combobox.Empty>
+              ) : items.length === 0 && !streamError && !hasUnresolvedSourceFailures ? (
+                <Combobox.Empty>
+                  {isBrowse
+                    ? 'No items in this container'
+                    : (!search || search.length < 2)
+                      ? 'Type to search...'
+                      // fellBackToAll: the notice above already named the scope and
+                      // said the wider search came up empty too — don't repeat it.
+                      : fellBackToAll
+                        ? 'No results'
+                        : (allowFreeform
+                            ? 'No results — select “Use as raw value” or press Enter'
+                            : 'No results')}
+                </Combobox.Empty>
+              ) : items.length > 0 ? (
+                items.map(renderOption)
+              ) : null}
+              {showFreeform && (
+                <Combobox.Option value="__freeform__" key="__freeform__" data-testid="freeform-commit-option">
+                  <Group gap="xs"><IconPencil size={14} /><Text size="sm">Use “{search}” as raw value</Text></Group>
+                </Combobox.Option>
+              )}
+              {!isBrowse && !isSearching && truncatedAt && items.length >= truncatedAt && (
+                <Group justify="center" py={6} data-testid="results-truncated">
+                  <Text size="xs" c="dimmed">Showing first {truncatedAt} — refine your search</Text>
                 </Group>
-              </Combobox.Empty>
-            ) : items.length === 0 && !streamError && !hasUnresolvedSourceFailures ? (
-              <Combobox.Empty>
-                {isBrowse
-                  ? 'No items in this container'
-                  : (!search || search.length < 2)
-                    ? 'Type to search...'
-                    // fellBackToAll: the notice above already named the scope and
-                    // said the wider search came up empty too — don't repeat it.
-                    : fellBackToAll
-                      ? 'No results'
-                      : (allowFreeform
-                          ? 'No results — select “Use as raw value” or press Enter'
-                          : 'No results')}
-              </Combobox.Empty>
-            ) : items.length > 0 ? (
-              items.map(renderOption)
-            ) : null}
-            {showFreeform && (
-              <Combobox.Option value="__freeform__" key="__freeform__" data-testid="freeform-commit-option">
-                <Group gap="xs"><IconPencil size={14} /><Text size="sm">Use “{search}” as raw value</Text></Group>
-              </Combobox.Option>
-            )}
-            {loadingDirection === 'after' && (
-              <Group justify="center" py={4}>
-                <Loader size="xs" role="status" aria-label="Loading more items" />
-              </Group>
-            )}
-            {!isBrowse && !isSearching && truncatedAt && items.length >= truncatedAt && (
-              <Group justify="center" py={6} data-testid="results-truncated">
-                <Text size="xs" c="dimmed">Showing first {truncatedAt} — refine your search</Text>
-              </Group>
-            )}
-          </ScrollArea.Autosize>
+              )}
+            </ScrollArea.Autosize>
+          </PickerScrollAnchor>
+          {loadingDirection && (
+            <Box className="content-combobox-page-loader" data-direction={loadingDirection}>
+              <Loader size="xs" role="status" aria-label="Loading more items" />
+            </Box>
+          )}
         </Combobox.Options>
       </Combobox.Dropdown>
     </Combobox>

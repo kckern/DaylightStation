@@ -217,6 +217,99 @@ test('Admin dismisses pending picker pagination and can page on reopening', asyn
   expect(pageReads).toEqual([pageRequest, pageRequest]);
 });
 
+for (const width of [390, 1440]) {
+  test(`Admin keeps the latest viewport when a previous picker page arrives at ${width}px`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 850 });
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    const siblingsPath = '/api/v1/siblings/plex/71';
+    const previousPage = '?offset=19&limit=21';
+    const olderPage = '?offset=0&limit=19';
+    const pageReads = [];
+    const held = Promise.withResolvers();
+    const refused = Promise.withResolvers();
+    const tracks = first => Array.from({ length: 21 }, (_, index) => result(`plex:${first + index}`, `Track ${first + index}`));
+    await page.route('**/api/**', route => {
+      const request = route.request();
+      const { pathname, search } = new URL(request.url());
+      if (pathname === listPath) {
+        const [section] = adminList.sections;
+        return route.fulfill({ json: { ...adminList, sections: [{ items: [{ ...section.items[0], input: 'plex:71' }] }] } });
+      }
+      if (pathname === siblingsPath && !search) {
+        return route.fulfill({ json: {
+          items: tracks(61), referenceIndex: 10,
+          pagination: { offset: 40, window: 21, total: 61, hasBefore: true, hasAfter: false },
+        } });
+      }
+      if (pathname === siblingsPath) {
+        pageReads.push([request.method(), search]);
+        if (search === previousPage && pageReads.length === 1) {
+          held.resolve(route);
+          return;
+        }
+        if (search === olderPage && pageReads.length === 2) {
+          refused.resolve(route);
+          return;
+        }
+      }
+      return route.fulfill({ json: pathname.endsWith('/supervision/bootstrap') ? { enabled: false } : {} });
+    });
+
+    await page.goto(listRoute);
+    const row = page.getByTestId('item-row-0-0');
+    const editor = row.getByRole('textbox', { name: 'Search content...' });
+    await row.locator('.col-input .content-display').click();
+    const viewport = page.locator('.content-combobox-scroll .mantine-ScrollArea-viewport');
+    const scrollTop = () => viewport.evaluate(element => element.scrollTop);
+    const current = page.getByTestId('combobox-option-plex:71');
+    const anchor = page.getByTestId('combobox-option-plex:72');
+    const anchorTop = (option = anchor) => option.evaluate(element =>
+      element.getBoundingClientRect().top - element.closest('.mantine-ScrollArea-viewport').getBoundingClientRect().top);
+    await expect(current).toBeInViewport();
+    await expect.poll(scrollTop).toBeGreaterThan(80);
+
+    const first = page.getByTestId('combobox-option-plex:61');
+    const pageLoader = page.getByRole('status', { name: 'Loading more items' });
+    const beforeLoading = await first.evaluate(element => {
+      const viewport = element.closest('.mantine-ScrollArea-viewport');
+      viewport.scrollTop = 20;
+      return element.getBoundingClientRect().top - viewport.getBoundingClientRect().top;
+    });
+    await expect.poll(() => pageReads).toEqual([['GET', previousPage]]);
+    await expect(pageLoader).toBeVisible();
+    await expect.poll(async () => Math.abs(await anchorTop(first) - beforeLoading)).toBeLessThan(1);
+    const previous = await held.promise;
+    const bottom = await viewport.evaluate(element => {
+      element.scrollTop = element.scrollHeight;
+      return element.scrollTop;
+    });
+    await editor.press('ArrowDown');
+    await expect(anchor).toHaveAttribute('data-highlighted', 'true');
+    await expect.poll(scrollTop, { message: 'Arrow navigation should reveal the row while the page is pending' }).toBeLessThan(bottom);
+
+    const before = await anchorTop();
+    await previous.fulfill({ json: { items: tracks(40) } });
+    await expect(page.getByTestId('combobox-option-plex:40')).toBeAttached();
+    await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(() => requestAnimationFrame(resolve)))));
+    await expect.poll(async () => Math.abs(await anchorTop() - before)).toBeLessThan(1);
+    await expect(anchor).toHaveAttribute('data-highlighted', 'true');
+    expect(pageReads).toEqual([['GET', previousPage]]);
+
+    await viewport.evaluate(element => { element.scrollTop = 20; });
+    await expect.poll(() => pageReads).toEqual([['GET', previousPage], ['GET', olderPage]]);
+    const failure = await refused.promise;
+    await expect(pageLoader).toBeAttached();
+    await viewport.evaluate(element => { element.scrollTop = 430; });
+    const visibleBeforeFailure = page.getByTestId('combobox-option-plex:50');
+    await expect(visibleBeforeFailure).toBeInViewport();
+    const beforeFailure = await anchorTop(visibleBeforeFailure);
+    await failure.fulfill({ status: 503, json: {} });
+    await expect(pageLoader).toBeHidden();
+    await expect.poll(async () => Math.abs(await anchorTop(visibleBeforeFailure) - beforeFailure)).toBeLessThan(1);
+    expect(pageReads).toEqual([['GET', previousPage], ['GET', olderPage]]);
+  });
+}
+
 test('Media Content picker retires a prior scope and does not search again when Escape resets the scope', async ({ page }) => {
   const reads = [];
   const canceled = [];
