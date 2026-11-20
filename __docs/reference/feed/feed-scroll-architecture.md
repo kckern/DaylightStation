@@ -139,7 +139,7 @@ Uses `IntersectionObserver` on a sentinel div at the bottom of the card list. A 
 
 The active focus and filter own the current list request, including pagination. Changing either cancels the previous request and disconnects its sentinel. The new filter loads its own session before observing for the next page.
 
-Closing detail restores the opener and the previous pixel offset at the same list width. After the layout changes width, Scroll locates the original card in the destination virtual window and returns keyboard focus to it. Wheel, touch, or keyboard input ends a pending return. Opening a card supersedes an unfinished initial checkpoint restoration.
+Closing detail restores the opener and the previous pixel offset at the same list width. After the layout changes width, Scroll locates the original card in the destination virtual window and returns keyboard focus to it. Wheel, touch, keyboard input, or moving focus to another visible control ends a pending return. A persistent control that already held focus when detail closed allows the opener to regain focus. Opening a card supersedes an unfinished initial checkpoint restoration.
 
 Scroll applies queued item actions from the active account to its loaded cards. When replay settles, it resumes the current session with a GET and updates the loaded rows with the returned item state. The window keeps its position and cursor, and newer local edits are preserved. A failed refresh, including one that stalls for ten seconds, leaves the cards available with a retry for the same read. A stored session ID qualifies for reconciliation once its list has loaded. Changing the focus or filter cancels the refresh.
 

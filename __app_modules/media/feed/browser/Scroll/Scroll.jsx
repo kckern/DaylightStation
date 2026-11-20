@@ -712,6 +712,7 @@ export default function Scroll() {
     if (!scroller) return;
     const visit = listReturn.current;
     const reflowed = visit && visit.width !== scroller.clientWidth;
+    const focusAtReturn = document.activeElement;
     let frame;
     let previousTop;
     let stableFrames = 0;
@@ -728,7 +729,7 @@ export default function Scroll() {
       const position = openerPosition.current;
       const card = visit && container?.querySelector(`[data-feed-item-id="${CSS.escape(visit.id)}"] .scroll-card-open`);
       const active = document.activeElement;
-      if (active !== document.body && active !== scroller && active !== card && active?.getClientRects().length) {
+      if (active !== focusAtReturn && active !== document.body && active?.getClientRects().length) {
         stop();
         return;
       }

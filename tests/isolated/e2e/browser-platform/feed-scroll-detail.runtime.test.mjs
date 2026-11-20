@@ -546,7 +546,7 @@ function settleListReturn(list) {
   }));
 }
 
-for (const input of ['wheel', 'touchstart', 'keydown']) {
+for (const input of ['wheel', 'touchstart', 'keydown', 'focus']) {
   test(`Feed retires a pending list return when the user sends ${input}`, async ({ page }) => {
     const rows = Array.from({ length: 40 }, (_, i) => ({ ...article, id: 'reddit:input-' + i, title: 'Input ' + i }));
     await page.route('**/scroll/sessions', route => route.fulfill({ json: { items: rows, sessionId: 'input', hasMore: false } }));
@@ -561,7 +561,8 @@ for (const input of ['wheel', 'touchstart', 'keydown']) {
       const observer = new MutationObserver(() => {
         if (el.querySelector('.detail-view')) return;
         observer.disconnect();
-        el.dispatchEvent(new Event(type, { bubbles: true }));
+        if (type === 'focus') el.querySelector('.scroll-controls > button').focus({ preventScroll: true });
+        else el.dispatchEvent(new Event(type, { bubbles: true }));
         el.scrollTop = 300;
       });
       observer.observe(el, { childList: true, subtree: true });
@@ -571,6 +572,7 @@ for (const input of ['wheel', 'touchstart', 'keydown']) {
     await settleListReturn(feed);
     expect(await feed.evaluate(el => el.scrollTop)).toBe(300);
     await expect(opener).not.toBeFocused();
+    if (input === 'focus') await expect(feed.getByRole('button', { name: 'For you' })).toBeFocused();
 
     await page.goForward();
     await expect(page.getByText(articleBody)).toBeVisible();
