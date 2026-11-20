@@ -63,6 +63,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useWebSocketSubscription } from "../../../../../frontend/src/hooks/useWebSocket.js";
 import { schoolLog } from "../schoolLog.js";
+import { markDayDoneInBoardCache } from "../status/boardCache.js";
 import getLogger from "../../../../../frontend/src/lib/logging/Logger.js";
 
 const TOPIC = 'omr';
@@ -528,6 +529,8 @@ export function useScanCeremony({ autoClearMs = AUTO_CLEAR_MS, rosterIds = null,
       if (scope.studyDay && shownDay && scope.studyDay !== shownDay) return;
     }
     const day = dayCompleted(payload);
+    // The board this child goes back to paints from its snapshot: tick it now.
+    if (day) markDayDoneInBoardCache(day.learnerId, day.studyDay);
     if (day?.key) {
       if (celebratedRef.current.has(day.key)) return;
       celebratedRef.current.add(day.key);

@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import FlashcardItem from "./FlashcardItem.jsx";
 import ChoiceItem from "./ChoiceItem.jsx";
 import TypedItem from "./TypedItem.jsx";
-import SummaryItem from "./SummaryItem.jsx";
+import SummaryItem, { AUTO_EXIT_MS } from "./SummaryItem.jsx";
 import { playClip } from "../cardLadderAudio.js";
 import { cardLadderLog } from "../cardLadderLog.js";
 import { modeForLanguage } from "../../../../ime/languages.js";
@@ -434,9 +434,25 @@ describe('SummaryItem', () => {
     r.rerender(<SummaryItem item={{ quizzed: 7 }} onExit={() => {}} />);
     expect(h.tones).toEqual(['success']);
   });
-  it('makes Done the one primary action, and the others secondary', () => {
-    render(<SummaryItem item={{ quizzed: 7, learnMore: 2 }} onExit={() => {}} onLearnMore={() => {}} onRespond={() => {}} />);
-    expect(screen.getByRole('button', { name: /^done/i })).toHaveClass('ds-touch--primary');
+  it('with nothing to choose it has no buttons and closes itself after the cheer (owner 2026-11-20)', () => {
+    vi.useFakeTimers();
+    try {
+      const onExit = vi.fn();
+      render(<SummaryItem item={{ quizzed: 7, learnMore: 2 }} onExit={onExit} onLearnMore={() => {}} onRespond={() => {}} />);
+      expect(screen.queryByRole('button')).toBeNull();
+      act(() => { vi.advanceTimersByTime(AUTO_EXIT_MS - 1); });
+      expect(onExit).not.toHaveBeenCalled();
+      act(() => { vi.advanceTimersByTime(1); });
+      expect(onExit).toHaveBeenCalledTimes(1);
+    } finally { vi.useRealTimers(); }
+  });
+  it('a printed quiz to act on holds the card with its buttons', () => {
+    render(<SummaryItem item={{ quizzed: 7 }} onExit={() => {}} onRespond={() => {}} hold />);
+    expect(screen.getByRole('button', { name: /^done/i })).toBeInTheDocument();
+  });
+  it('with the dictation drill offered, Done is secondary and the drill leads', () => {
+    render(<SummaryItem item={{ quizzed: 7, learnMore: 2 }} onExit={() => {}} onLearnMore={() => {}} onRespond={() => {}} dictation={{ remaining: 2 }} onDictation={() => {}} />);
+    expect(screen.getByRole('button', { name: /^done/i })).toHaveClass('ds-touch--secondary');
     expect(screen.getByRole('button', { name: /practise more/i })).toHaveClass('ds-touch--secondary');
     expect(screen.getByRole('button', { name: /learn more words/i })).toHaveClass('ds-touch--secondary');
   });

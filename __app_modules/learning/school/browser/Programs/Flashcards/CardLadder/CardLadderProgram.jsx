@@ -754,6 +754,7 @@ export default function CardLadderProgram({ descriptor, api: injected = null, re
         <SummaryItem
           key={key} item={item} langs={session.langs} onRespond={respond} onLearnMore={learnMore} busy={busy} onExit={done}
           dictation={intro?.dictation ?? null} onDictation={startDictation}
+          hold={['quiz_ready', 'retry_ready', 'review'].includes(assessment?.stage)}
         />
       );
     }

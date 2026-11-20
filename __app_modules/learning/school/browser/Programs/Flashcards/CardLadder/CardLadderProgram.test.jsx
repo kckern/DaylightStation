@@ -365,23 +365,23 @@ describe('CardLadderProgram', () => {
     expect(api.close).toHaveBeenCalledWith('s', { userId: 'test-learner', reason: 'leave' });
   });
 
-  it('summary Done closes as goal when under the cap', async () => {
+  it('the summary closes itself as goal when under the cap', async () => {
     const api = fakeApi();
     const onExit = vi.fn();
     api.open.mockResolvedValue({ ...openWith({ id: 'summary', type: 'summary', quizzed: 4, doneToday: true }), data: { ...openWith(null).data, item: { id: 'summary', type: 'summary', quizzed: 4, doneToday: true }, progress: { phase: 'summary', rechecksLeft: 0, round: null, activeMs: 300000, capMs: 900000 } } });
     renderStarted(<CardLadderProgram descriptor={{ deckId: 'd', userId: 'test-learner' }} api={api} onExit={onExit} />);
-    fireEvent.click(await screen.findByRole('button', { name: /done/i }));
-    await waitFor(() => expect(onExit).toHaveBeenCalled());
+    await screen.findByTestId('summary-card');
+    await waitFor(() => expect(onExit).toHaveBeenCalled(), { timeout: 5000 });
     expect(api.close).toHaveBeenCalledWith('s', { userId: 'test-learner', reason: 'goal' });
   });
 
-  it('summary Done closes as cap when the time cap was reached', async () => {
+  it('the summary closes itself as cap when the time cap was reached', async () => {
     const api = fakeApi();
     const onExit = vi.fn();
     api.open.mockResolvedValue({ ...openWith(null), data: { ...openWith(null).data, item: { id: 'summary', type: 'summary', quizzed: 4, doneToday: true }, progress: { phase: 'summary', rechecksLeft: 0, round: null, activeMs: 900000, capMs: 900000 } } });
     renderStarted(<CardLadderProgram descriptor={{ deckId: 'd', userId: 'test-learner' }} api={api} onExit={onExit} />);
-    fireEvent.click(await screen.findByRole('button', { name: /done/i }));
-    await waitFor(() => expect(onExit).toHaveBeenCalled());
+    await screen.findByTestId('summary-card');
+    await waitFor(() => expect(onExit).toHaveBeenCalled(), { timeout: 5000 });
     expect(api.close).toHaveBeenCalledWith('s', { userId: 'test-learner', reason: 'cap' });
     expect(api.close).toHaveBeenCalledTimes(1);
   });
@@ -445,6 +445,8 @@ describe('CardLadderProgram — dispatches every item type', () => {
 
   it('summary Practise more sends {done:true} and shows the menu', async () => {
     const api = fakeApi();
+    // The summary stays (with its buttons) only while a real choice is offered: the week's dictation.
+    api.intro = vi.fn(async () => ({ ok: true, status: 200, data: { ...INTRO, dictation: { remaining: 2 } } }));
     api.open.mockResolvedValue(openWith({ id: 'summary', type: 'summary', quizzed: 2, doneToday: true }));
     api.respond.mockResolvedValue({ ok: true, status: 200, data: { result: { ok: true }, item: { id: 'menu', type: 'menu', modes: ['match'], quizzed: 2 }, progress } });
     renderStarted(<CardLadderProgram descriptor={{ deckId: 'd', userId: 'test-learner' }} api={api} />);
@@ -457,6 +459,8 @@ describe('CardLadderProgram — dispatches every item type', () => {
     // 2026-09-25: both buttons were tapped through a container restart. Status
     // 0 used to return silently, so the child saw dead buttons and gave up.
     const api = fakeApi();
+    // The summary stays (with its buttons) only while a real choice is offered: the week's dictation.
+    api.intro = vi.fn(async () => ({ ok: true, status: 200, data: { ...INTRO, dictation: { remaining: 2 } } }));
     api.open.mockResolvedValue(openWith({ id: 'summary', type: 'summary', quizzed: 2, doneToday: true, learnMore: 3 }));
     api.respond.mockResolvedValueOnce({ ok: false, status: 0, data: null });
     // A restart behind the proxy answers 502, not 0 — the real 2026-09-25 shape.

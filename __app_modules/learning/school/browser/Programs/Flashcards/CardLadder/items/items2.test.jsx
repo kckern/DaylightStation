@@ -459,7 +459,7 @@ describe('SummaryItem', () => {
   it('Practise more sends {done:true}; Done exits', () => {
     const onRespond = vi.fn();
     const onExit = vi.fn();
-    render(<SummaryItem item={{ id: 'summary', type: 'summary', quizzed: 3 }} onRespond={onRespond} onExit={onExit} />);
+    render(<SummaryItem item={{ id: 'summary', type: 'summary', quizzed: 3 }} onRespond={onRespond} onExit={onExit} hold />);
     fireEvent.click(screen.getByRole('button', { name: /practise more/i }));
     expect(onRespond).toHaveBeenCalledWith({ done: true });
     act(() => { fireEvent.click(screen.getByRole('button', { name: /^done/i })); });
@@ -489,10 +489,10 @@ describe('Learn more words (ruling 2026-09-23: never block extra learning)', () 
     expect(onLearnMore).not.toHaveBeenCalled();
   });
 
-  it('the Done summary offers it on 2; Space is still Done', () => {
+  it('a held Done summary offers it on 2; Space is still Done', () => {
     const onLearnMore = vi.fn();
     const onExit = vi.fn();
-    render(<SummaryItem item={{ id: 'summary', type: 'summary', quizzed: 3, learnMore: 2 }} onRespond={vi.fn()} onLearnMore={onLearnMore} onExit={onExit} />);
+    render(<SummaryItem item={{ id: 'summary', type: 'summary', quizzed: 3, learnMore: 2 }} onRespond={vi.fn()} onLearnMore={onLearnMore} onExit={onExit} hold />);
     expect(screen.getByRole('button', { name: /learn more words/i }).querySelector('.ds-touch__key')).toHaveTextContent('2');
     fireEvent.keyDown(window, { key: '2', code: 'Digit2' });
     expect(onLearnMore).toHaveBeenCalledTimes(1);
