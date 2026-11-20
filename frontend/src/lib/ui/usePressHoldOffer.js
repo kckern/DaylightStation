@@ -15,6 +15,7 @@ export const SWALLOW_MS = 300;
 
 export function usePressHoldOffer({ holdMs = HOLD_MS, offerMs = OFFER_MS, onOffered = null } = {}) {
   const [offered, setOffered] = useState(false);
+  const pressing = useRef(null); // pointer id or 'space'
   const timer = useRef(null);
   const offerTimer = useRef(null);
   const heldRef = useRef(false); // a hold completed and is still pressed
@@ -23,6 +24,7 @@ export function usePressHoldOffer({ holdMs = HOLD_MS, offerMs = OFFER_MS, onOffe
   onOfferedRef.current = onOffered;
 
   const clear = useCallback(() => {
+    pressing.current = null;
     if (timer.current) { clearTimeout(timer.current); timer.current = null; }
     if (heldRef.current) {
       heldRef.current = false;
@@ -35,9 +37,9 @@ export function usePressHoldOffer({ holdMs = HOLD_MS, offerMs = OFFER_MS, onOffe
   }, []);
   useEffect(() => () => { clear(); if (offerTimer.current) clearTimeout(offerTimer.current); }, [clear]);
 
-  const start = useCallback(() => {
-    clear();
-    heldRef.current = false;
+  const start = useCallback(input => {
+    if (pressing.current !== null) return;
+    pressing.current = input;
     swallowUntilRef.current = 0;
     timer.current = setTimeout(() => {
       timer.current = null;
@@ -47,22 +49,33 @@ export function usePressHoldOffer({ holdMs = HOLD_MS, offerMs = OFFER_MS, onOffe
       if (offerTimer.current) clearTimeout(offerTimer.current);
       offerTimer.current = setTimeout(() => { offerTimer.current = null; setOffered(false); }, offerMs);
     }, holdMs);
-  }, [clear, holdMs, offerMs]);
+  }, [holdMs, offerMs]);
 
-  // Enter is deliberately not a hold key: native buttons and menu items fire
-  // click on Enter keydown, so Play next has already run by the time a hold
-  // could complete. Space (click on keyup) keeps the hold.
-  const isHoldKey = (e) => e.key === ' ' && !e.repeat;
+  const clearPointer = event => {
+    if (pressing.current === event.pointerId) clear();
+  };
+  const clearSpace = () => {
+    if (pressing.current === 'space') clear();
+  };
 
   const bind = {
-    onPointerDown: () => start(),
-    onPointerUp: clear,
-    onPointerLeave: clear,
-    onPointerCancel: clear,
+    onPointerDown: event => {
+      if (event.isPrimary && event.button === 0) start(event.pointerId);
+    },
+    onPointerUp: clearPointer,
+    onPointerLeave: clearPointer,
+    onPointerCancel: clearPointer,
     // A long press must not open the browser's context menu on touch.
     onContextMenu: (e) => { if (heldRef.current || timer.current || Date.now() < swallowUntilRef.current) e.preventDefault(); },
-    onKeyDown: (e) => { if (isHoldKey(e)) start(); },
-    onKeyUp: clear,
+    // Mantine Menu.Item owns bubble keydown for menu navigation. Capture Space
+    // here and let the native short-press click still happen on keyup.
+    onKeyDownCapture: event => {
+      if (event.key === ' ' && !event.repeat) start('space');
+    },
+    onKeyUp: event => {
+      if (event.key === ' ') clearSpace();
+    },
+    onBlur: clearSpace,
   };
 
   /** Wrap the ordinary click: a click that ends a hold is swallowed (once). */

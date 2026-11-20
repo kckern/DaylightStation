@@ -5,6 +5,10 @@ import { render, screen, fireEvent, act } from '@testing-library/react';
 import { MantineProvider } from '@mantine/core';
 import { ItemMenu } from "./ItemMenu.jsx";
 
+function firePointer(target, type, button = 0) {
+  fireEvent(target, Object.assign(new MouseEvent(type, { bubbles: true, button }), { pointerId: 1, isPrimary: true }));
+}
+
 function open(props) {
   const onVerb = vi.fn();
   render(<MantineProvider><ItemMenu testId="t" onVerb={onVerb} {...props} /></MantineProvider>);
@@ -45,13 +49,47 @@ describe('ItemMenu', () => {
     const next = await screen.findByTestId('t-verb-playNext');
     vi.useFakeTimers();
     try {
-      fireEvent.pointerDown(next);
+      firePointer(next, 'pointerdown');
       await act(async () => vi.advanceTimersByTime(500));
-      fireEvent.pointerUp(next);
+      firePointer(next, 'pointerup');
       fireEvent.click(next);
       expect(onVerb).not.toHaveBeenCalled();
       fireEvent.click(screen.getByTestId('t-verb-playNextFront'));
       expect(onVerb.mock.calls).toEqual([['playFirst']]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('offers the alternate action after holding Space through an unrelated key release', async () => {
+    const onVerb = open({ item: { id: 'plex:1', title: 'Arrival', itemType: 'leaf' } });
+    const next = await screen.findByTestId('t-verb-playNext');
+    vi.useFakeTimers();
+    try {
+      fireEvent.keyDown(next, { key: ' ' });
+      fireEvent.keyUp(next, { key: 'Shift' });
+      await act(async () => vi.advanceTimersByTime(500));
+      const front = screen.getByTestId('t-verb-playNextFront');
+      fireEvent.keyUp(next, { key: ' ' });
+      fireEvent.click(next);
+      expect(onVerb).not.toHaveBeenCalled();
+      fireEvent.click(front);
+      expect(onVerb.mock.calls).toEqual([['playFirst']]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('leaves the secondary mouse button to its native context menu', async () => {
+    const onVerb = open({ item: { id: 'plex:1', title: 'Arrival', itemType: 'leaf' } });
+    const next = await screen.findByTestId('t-verb-playNext');
+    vi.useFakeTimers();
+    try {
+      firePointer(next, 'pointerdown', 2);
+      expect(fireEvent.contextMenu(next, { button: 2 })).toBe(true);
+      await act(async () => vi.advanceTimersByTime(500));
+      expect(screen.queryByTestId('t-verb-playNextFront')).toBeNull();
+      expect(onVerb).not.toHaveBeenCalled();
     } finally {
       vi.useRealTimers();
     }

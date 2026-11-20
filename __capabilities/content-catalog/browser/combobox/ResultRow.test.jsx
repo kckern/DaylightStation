@@ -165,15 +165,20 @@ describe('ResultRow — FIND.8b labelled inline play and Show on…', () => {
 });
 
 describe('ResultRow — PLAY.5a/AC3 press and hold Play Next', () => {
-  it('a quick press is Play Next; holding offers "At the very front" and does not run Play Next', async () => {
+  it.each(['pointer', 'Space'])('a %s hold offers "At the very front" without running Play Next', async input => {
     const onAction = vi.fn();
     renderWithProvider(<ResultRow item={leafItem} title="Bluey" onTap={() => {}} onAction={onAction} />);
     fireEvent.click(screen.getByRole('button', { name: 'More actions' }));
     const next = await screen.findByRole('menuitem', { name: 'Play Next', exact: true });
     // Hold: press, wait past the hold time, release (the click that ends a hold is swallowed).
-    fireEvent.pointerDown(next);
+    const firePointer = type => fireEvent(next, Object.assign(new MouseEvent(type, { bubbles: true }), {
+      pointerId: 1, isPrimary: true,
+    }));
+    if (input === 'pointer') firePointer('pointerdown');
+    else fireEvent.keyDown(next, { key: ' ' });
     const front = await screen.findByRole('menuitem', { name: 'At the very front' }, { timeout: 2000 });
-    fireEvent.pointerUp(next);
+    if (input === 'pointer') firePointer('pointerup');
+    else fireEvent.keyUp(next, { key: ' ' });
     fireEvent.click(next);
     expect(onAction).not.toHaveBeenCalled();
     fireEvent.click(front);

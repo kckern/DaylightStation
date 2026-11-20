@@ -3,7 +3,7 @@ import { silentWave } from '../../../_fixtures/media/silentWave.mjs';
 
 test.use({ viewport: { width: 1440, height: 850 }, serviceWorkers: 'block' });
 
-test('Media Home item menu owns Escape before Back and returns focus from Quality', async ({ page, baseURL }) => {
+async function installItemMenuFixtures(page, baseURL) {
   const origin = new URL(baseURL).origin;
   const audio = silentWave(30);
   const item = {
@@ -41,6 +41,11 @@ test('Media Home item menu owns Escape before Back and returns focus from Qualit
     return route.fulfill({ json: {} });
   });
 
+  return { playRequests, remoteCommands };
+}
+
+test('Media Home item menu owns Escape before Back and returns focus from Quality', async ({ page, baseURL }) => {
+  const { playRequests, remoteCommands } = await installItemMenuFixtures(page, baseURL);
   await page.goto('/media?play=plex%3A42');
   const original = await page.waitForFunction(() => [...document.querySelectorAll('audio,video')]
     .find(media => media.currentSrc.includes('fixture-audio.wav') && !media.paused && media.currentTime > 0));
@@ -86,6 +91,74 @@ test('Media Home item menu owns Escape before Back and returns focus from Qualit
   await page.keyboard.press('Escape');
   await expect(page.getByTestId('home-view')).toBeVisible();
 
+  expect(playRequests).toEqual(['/api/v1/play/plex:42']);
+  expect(remoteCommands).toEqual([]);
+});
+
+test('Media Home Play next shares native short presses and an exclusive long press', async ({ page, baseURL }) => {
+  const { playRequests, remoteCommands } = await installItemMenuFixtures(page, baseURL);
+  await page.goto('/media?play=plex%3A42');
+  await expect(page.getByTestId('mini-state')).toHaveText('Playing on this device');
+  await page.clock.install();
+
+  const name = 'More actions for Item menu fixture film';
+  const opener = page.getByRole('button', { name });
+  const menu = page.getByRole('menu', { name });
+  const next = menu.getByRole('menuitem', { name: 'Play next', exact: true });
+  const front = menu.getByRole('menuitem', { name: 'At the very front', exact: true });
+  const count = page.getByTestId('mini-queue-count');
+  const openNext = async () => {
+    await opener.press('Enter');
+    await expect(menu.locator(':focus')).toHaveCount(1);
+    await next.focus();
+    await expect(next).toBeFocused();
+  };
+
+  await openNext();
+  await next.press('Space');
+  await expect(menu).toBeHidden();
+  await expect(count).toHaveText('1/2');
+
+  await openNext();
+  await next.press('Enter');
+  await expect(menu).toBeHidden();
+  await expect(count).toHaveText('1/3');
+
+  await openNext();
+  await page.keyboard.down('Space');
+  await page.keyboard.down('Shift');
+  await page.keyboard.up('Shift');
+  await page.clock.runFor(510);
+  await expect(front).toBeVisible();
+  await page.keyboard.up('Space');
+  await expect(front).toBeVisible();
+  await expect(next).toBeFocused();
+  await expect(count).toHaveText('1/3');
+  await next.press('ArrowDown');
+  await expect(front).toBeFocused();
+  await front.press('Enter');
+  await expect(menu).toBeHidden();
+  await expect(count).toHaveText('1/4');
+
+  await openNext();
+  await next.hover();
+  await page.mouse.down();
+  await page.clock.runFor(510);
+  await expect(front).toBeVisible();
+  await page.mouse.up();
+  await expect(front).toBeVisible();
+  await expect(count).toHaveText('1/4');
+  await page.keyboard.press('Escape');
+  await expect(menu).toBeHidden();
+  await expect(opener).toBeFocused();
+
+  await openNext();
+  await next.hover();
+  await page.mouse.down({ button: 'right' });
+  await page.clock.runFor(510);
+  await expect(front).toBeHidden();
+  await page.mouse.up({ button: 'right' });
+  await expect(count).toHaveText('1/4');
   expect(playRequests).toEqual(['/api/v1/play/plex:42']);
   expect(remoteCommands).toEqual([]);
 });
