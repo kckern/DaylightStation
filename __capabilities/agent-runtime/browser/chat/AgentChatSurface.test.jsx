@@ -66,6 +66,26 @@ describe('AgentChatSurface — basic rendering', () => {
     expect(input.value).toBe('Keep this draft');
   });
 
+  it('shows the submitted message and expandable tool attribution in the conversation', async () => {
+    const frames = [
+      { type: 'tool-start', toolName: 'verify_fixture', args: { record: 'session' } },
+      { type: 'tool-end', toolName: 'verify_fixture', result: { checked: true }, latencyMs: 12 },
+      { type: 'text-delta', text: 'Recorded answer' },
+      { type: 'done' },
+    ];
+    const body = frames.map(frame => 'data: ' + JSON.stringify(frame) + '\n\n').join('');
+    globalThis.fetch = vi.fn(async () => new Response(body, { headers: { 'Content-Type': 'text/event-stream' } }));
+    render(<MantineProvider><AgentChatSurface agentId="fixture" userId="fixture" /></MantineProvider>);
+    const composer = screen.getByRole('textbox');
+    fireEvent.change(composer, { target: { value: 'Verify the stored record' } });
+    fireEvent.submit(composer.closest('form'));
+    expect(await screen.findByText('Verify the stored record')).toBeVisible();
+    expect(await screen.findByText('Recorded answer')).toBeVisible();
+    fireEvent.click(await screen.findByText('verify_fixture'));
+    expect(screen.getByText(/"record": "session"/)).toBeVisible();
+    expect(screen.getByText(/"checked": true/)).toBeVisible();
+  });
+
   it('preserves a real thread while its view is closed and replaced', async () => {
     const onComplete = vi.fn();
     globalThis.fetch = vi.fn(async () => new Response(

@@ -75,7 +75,7 @@
 // ──────────────────────────────────────────────
 
 .admin-content {
-  padding: var(--ds-space-6) var(--ds-space-8);
+  padding: var(--ds-space-xxl) var(--ds-space-8);
 
   @media (max-width: 768px) {
     padding: var(--ds-space-4);
@@ -118,8 +118,8 @@
 // ──────────────────────────────────────────────
 
 .ds-page-header {
-  padding-bottom: var(--ds-space-5);
-  margin-bottom: var(--ds-space-6);
+  padding-bottom: var(--ds-space-xl);
+  margin-bottom: var(--ds-space-xxl);
   border-bottom: 1px solid var(--ds-border);
 
   .ds-page-title {
