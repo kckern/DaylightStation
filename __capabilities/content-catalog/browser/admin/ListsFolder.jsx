@@ -21,6 +21,7 @@ import { runWithFeedback, showUndoToast } from "../../../../frontend/src/modules
 import ConfirmModal from "../../../../frontend/src/modules/Admin/shared/ConfirmModal.jsx";
 import ListsItemRow from "./ListsItemRow.jsx";
 import { useRetryRegion } from '../../../../frontend/src/lib/ui/useRetryRegion.js';
+import { ListReadError } from './ListReadError.jsx';
 import { ActionMenu } from "../../../../frontend/src/lib/ui/ActionMenu.jsx";
 import { EmptyItemRow } from "./EmptyItemRow.jsx";
 import { useCatalogContentInfo } from './catalogContentInfo.js';
@@ -132,7 +133,11 @@ function FolderEditor({ type, listName }) {
       });
       // A failed snapshot has its own recovery and cannot undo an acknowledged write.
       if ((result.ok && refresh) || (!result.ok && recover)) {
-        await fetchList(result.ok).catch(() => {});
+        try {
+          await fetchList(result.ok);
+        } catch {
+          if (result.ok) return { ...result, snapshotFailed: true };
+        }
       }
       return result;
     } finally {
@@ -190,7 +195,9 @@ function FolderEditor({ type, listName }) {
     }
   }, [type, listName, fetchList, navigate]);
   useEffect(() => { loadFolder(false); }, [loadFolder]);
-  const { regionProps, retry } = useRetryRegion(() => loadFolder(readError?.afterSave), reading);
+  const retryRead = () => loadFolder(readError?.afterSave);
+  const { regionProps, retry } = useRetryRegion(retryRead, reading);
+  const settingsRead = { error: readError, loading: reading, retry: retryRead };
 
   // Filter items by search query
   const filteredItems = useMemo(() => {
@@ -567,13 +574,7 @@ function FolderEditor({ type, listName }) {
         onDragEnd={handleDragEnd}
       >
         <div className="sections-scroll" role="region" aria-label="List contents" {...regionProps}>
-          {readError && (
-            <Alert icon={<IconAlertCircle size={16} />} color="red"
-              title={readError.afterSave ? 'Change saved. Could not refresh the list.' : 'Could not load the list'}>
-              <Text>{readError.error.message}</Text>
-              {reading ? <Text>Loading list…</Text> : <Button variant="light" onClick={retry}>Retry</Button>}
-            </Alert>
-          )}
+          <ListReadError error={readError} reading={reading} onRetry={retry} />
           <div inert={readError || pending.structural ? '' : undefined} onBlurCapture={event => {
             // Suspending the controls blurs an active inline editor. Keep its
             // draft until the snapshot recovers and the user finishes editing.
@@ -643,24 +644,20 @@ function FolderEditor({ type, listName }) {
         opened={settingsOpen === true}
         onClose={() => setSettingsOpen(false)}
         metadata={listMetadata}
-        onSave={async (settings) => {
-          const result = await mutate('lists.settings', 'Could not save list settings',
-            () => updateListSettings(settings), { refresh: false });
-          if (result.ok) setSettingsOpen(false);
-        }}
-        loading={loading || Boolean(readError)}
+        onSave={settings => mutate('lists.settings', 'Could not save list settings',
+          () => updateListSettings(settings), { refresh: false })}
+        loading={loading}
+        read={settingsRead}
       />
 
       <SectionSettingsModal
         opened={sectionSettingsOpen !== null}
         onClose={() => setSectionSettingsOpen(null)}
         section={sectionSettingsOpen !== null ? sections[sectionSettingsOpen] : null}
-        sectionIndex={sectionSettingsOpen}
-        onSave={async (idx, updates) => {
-          const result = await mutate('lists.update_section', 'Could not save section settings', () => updateSection(idx, updates));
-          if (result.ok) setSectionSettingsOpen(null);
-        }}
-        loading={loading || Boolean(readError)}
+        onSave={updates => mutate('lists.update_section', 'Could not save section settings',
+          () => updateSection(sectionSettingsOpen, updates))}
+        loading={loading}
+        read={settingsRead}
       />
 
       <ConfirmModal

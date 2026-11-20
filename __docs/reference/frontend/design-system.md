@@ -391,6 +391,11 @@ the Revert baseline for the submitted draft. Keep edits made after submission
 in the current draft and leave the Unsaved indicator visible. Admin notification
 settings replaces its draft with the server response only when the submitted
 draft is still current. Later edits stay in the form until the next Save.
+
+List and Section Settings keep Save focusable while `useSheetSubmission` guards
+activation. The open visit overlays later field edits on the accepted settings.
+If the confirmation read fails, the dialog exposes a GET-only Retry and keeps
+both the acknowledged fields and the draft visible. [Admin settings form](../../../__capabilities/content-catalog/browser/admin/SettingsDialogForm.jsx)
 [Admin notification settings](../../../frontend/src/modules/Admin/Notifications/NotificationsIndex.jsx)
 
 A panel can keep an open editor mounted alongside its resource feedback.
