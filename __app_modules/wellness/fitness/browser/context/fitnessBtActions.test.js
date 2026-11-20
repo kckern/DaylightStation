@@ -28,6 +28,26 @@ describe('fitnessBtActions', () => {
     // Neither side has a requestId: nothing ties them together.
     expect(mergePairingProgress({ phase: 'scanning', mode: 'add' }, { phase: 'found' }).mode).toBeUndefined();
   });
+  it('mergePairingProgress flags an outdated satellite: add request answered by a scanning with no mode', () => {
+    const cur = { phase: 'scanning', requestId: 'p1', mode: 'add', optimistic: true };
+    const old = mergePairingProgress(cur, { phase: 'scanning', requestId: 'p1', durationMs: 60000 });
+    expect(old.satelliteOutdated).toBe(true);
+    expect(old.mode).toBe('add');
+    // The flag holds for later messages of the same request, even a "paired".
+    const later = mergePairingProgress(old, { phase: 'paired', requestId: 'p1', device: { name: 'Pad' } });
+    expect(later.satelliteOutdated).toBe(true);
+    const done = mergePairingProgress(later, { phase: 'done', requestId: 'p1', paired: [{ name: 'Pad' }] });
+    expect(done.satelliteOutdated).toBe(true);
+    // A new satellite carries mode on scanning: no flag.
+    expect(mergePairingProgress(cur, { phase: 'scanning', requestId: 'p1', mode: 'add' }).satelliteOutdated).toBeUndefined();
+    // A repair request answered without mode is fine.
+    const rep = { phase: 'scanning', requestId: 'p2', mode: 'repair', optimistic: true };
+    expect(mergePairingProgress(rep, { phase: 'scanning', requestId: 'p2' }).satelliteOutdated).toBeUndefined();
+    // A different request never inherits the flag.
+    expect(mergePairingProgress(old, { phase: 'scanning', requestId: 'p3', mode: 'add' }).satelliteOutdated).toBeUndefined();
+    // A later non-scanning message without mode does not set it.
+    expect(mergePairingProgress(cur, { phase: 'found', requestId: 'p1' }).satelliteOutdated).toBeUndefined();
+  });
   it('builds a bt.remove for an address', () => {
     expect(buildRemoveRequest({ requestId: 'r1', address: 'AA:BB:CC:DD:EE:FF' }))
       .toEqual({ topic: 'bt.remove', requestId: 'r1', address: 'AA:BB:CC:DD:EE:FF' });

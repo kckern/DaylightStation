@@ -27,12 +27,24 @@ export function buildPairRequest({ requestId, durationMs = PAIR_WINDOW_MS, targe
  * of a window carries `mode`, so later messages of the same request keep the
  * mode already held; a different request never inherits it.
  *
+ * A current satellite's `scanning` always carries `mode`. When an `add`
+ * request is answered by a `scanning` with no `mode`, the garage box runs an
+ * older satellite that ignores `mode` and is running a re-pair window, so its
+ * "paired" would be false. That sets `satelliteOutdated`, which then holds
+ * for every later message of the same request.
+ *
  * @param {object|null} cur   current pairing state.
  * @param {object} data       the progress message.
  */
 export function mergePairingProgress(cur, data) {
   const sameRequest = data?.requestId != null && cur?.requestId === data.requestId;
-  return { ...data, mode: data?.mode ?? (sameRequest ? cur?.mode : undefined) };
+  const next = { ...data, mode: data?.mode ?? (sameRequest ? cur?.mode : undefined) };
+  const outdated = sameRequest && (
+    cur?.satelliteOutdated === true
+    || (cur?.mode === 'add' && data?.phase === 'scanning' && data?.mode == null)
+  );
+  if (outdated) next.satelliteOutdated = true;
+  return next;
 }
 export function buildRemoveRequest({ requestId, address }) {
   return { topic: 'bt.remove', requestId, address };

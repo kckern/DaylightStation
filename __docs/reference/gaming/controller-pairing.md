@@ -85,6 +85,14 @@ and report "no new device".
   re-pair. FitnessContext's `mergePairingProgress` keeps `mode` on every
   message of a window (only the first carries it), so a remounted panel still
   knows which kind of window is running. A different request never inherits it.
+- A garage box running an older satellite ignores `mode` and runs a re-pair
+  window for an add request, so its "Paired …" would be false. A current
+  satellite's `scanning` always carries `mode`; when an add request is
+  answered by a `scanning` without one, `mergePairingProgress` sets
+  `satelliteOutdated` and keeps it for the rest of that request. The panel then
+  says "The garage box needs an update before it can add new devices. Pairing a
+  listed controller still works." whatever phase follows, and the frontend logs
+  `fitness.bt.satellite-outdated` (warn).
 - Opening the add panel or a guide over a finished window hides that window's
   result. Starting a new request shows results again.
 - When the add panel or a guide opens, its start button takes focus.
@@ -245,7 +253,8 @@ fires, so the B that closed one screen does not also close the next.
 - Log store, frontend:
   - `fitness.bt.pair-request` (requestId, durationMs, controllerId, `mode`,
     targets), `fitness.bt.pair-progress` (phase, address, attempt, reason,
-    message), `fitness.bt.pair-no-response`, `fitness.bt.remove-request`,
+    message, `mode`), `fitness.bt.satellite-outdated` (warn: an add request
+    met a satellite without add mode), `fitness.bt.pair-no-response`, `fitness.bt.remove-request`,
     `fitness.bt.remove-result`.
   - From the panel: `controller-status.pair-*`, `controller-status.add-open`,
     `controller-status.add-start` (mode, targets), `controller-status.add-close`,

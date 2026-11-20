@@ -1652,8 +1652,19 @@ export const FitnessProvider = ({ children, fitnessConfiguration, fitnessPlayQue
               attempt: data.attempt,
               reason: data.reason,
               message: data.message,
+              mode: data.mode,
             });
-            setControllerPairing((cur) => mergePairingProgress(cur, data));
+            setControllerPairing((cur) => {
+              const next = mergePairingProgress(cur, data);
+              if (next.satelliteOutdated && !cur?.satelliteOutdated) {
+                getLogger().warn('fitness.bt.satellite-outdated', {
+                  requestId: data.requestId,
+                  phase: data.phase,
+                  requestedMode: cur?.mode,
+                });
+              }
+              return next;
+            });
             return;
           }
           if (data?.topic === 'bt.remove.result') {

@@ -162,6 +162,16 @@ export function pairingStatus(pairing, mode) {
   const add = mode === 'add';
   const noun = add ? 'device' : 'controller';
   if (!phase) return { busy: false, tone: 'idle', text: null, retry: false };
+  // An add request answered by a satellite that predates add mode (see
+  // mergePairingProgress): whatever it reports next is a re-pair window's.
+  if (pairing?.satelliteOutdated) {
+    return {
+      busy: false,
+      tone: 'error',
+      text: 'The garage box needs an update before it can add new devices. Pairing a listed controller still works.',
+      retry: false,
+    };
+  }
   if (BUSY.has(phase)) {
     if (phase === 'scanning') {
       const secs = Math.round((Number(pairing?.durationMs) || 30000) / 1000);

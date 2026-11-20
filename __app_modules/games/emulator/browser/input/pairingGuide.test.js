@@ -59,6 +59,17 @@ describe('controllerOsState', () => {
 });
 
 describe('pairingStatus', () => {
+  it('an outdated satellite wins over every later phase of the window', () => {
+    const want = {
+      busy: false, tone: 'error',
+      text: 'The garage box needs an update before it can add new devices. Pairing a listed controller still works.',
+      retry: false,
+    };
+    for (const phase of ['scanning', 'pairing', 'paired', 'error']) {
+      expect(pairingStatus({ phase, satelliteOutdated: true, device: { name: 'Pad' } }, 'add')).toEqual(want);
+    }
+    expect(pairingStatus({ phase: 'done', satelliteOutdated: true, paired: [{ name: 'Pad' }] }, 'add')).toEqual(want);
+  });
   it('idle → no text', () => {
     expect(pairingStatus(null)).toEqual({ busy: false, tone: 'idle', text: null, retry: false });
   });
