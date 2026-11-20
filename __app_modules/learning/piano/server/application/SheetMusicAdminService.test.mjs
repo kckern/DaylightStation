@@ -865,6 +865,7 @@ describe('SheetMusicAdminService: proposals and calibration provenance', () => {
     expect(fixture({}).service.boundaryScorer()).toBe('heuristic');
     expect(fixture({ boundaryScorer: () => 'jev' }).service.boundaryScorer()).toBe('jev');
     expect(fixture({ boundaryScorer: () => 'gpt' }).service.boundaryScorer()).toBe('heuristic');
+    expect(fixture({ boundaryScorer: () => 'calibrate' }).service.boundaryScorer()).toBe('calibrate');
     const { service } = fixture({ scores: { [ID_A]: { xml: xmlOf(), sha: '1' } }, boundaryScorer: () => 'jev' });
     expect((await service.getLearn(ID_A)).boundaryScorer).toBe('jev');
   });
@@ -898,6 +899,7 @@ describe('SheetMusicAdminService: proposals and calibration provenance', () => {
     const { service } = fixture({ scores: { [ID_A]: { xml: xmlOf(), sha: '1' } }, learn: { [ID_A]: approvedFile }, boundaryScorer: () => 'jev', proposer });
     const result = await service.propose(ID_A, proposeInput(4, { sections: [1] }));
     expect(result.segments).toEqual([{ start: 0, end: 3 }]);
+    expect(result.mode).toBe('jev');
     const [call] = proposer.calls;
     expect(call).toMatchObject({ id: ID_A, measureCount: 4, limits: { targetLen: 4 } });
     expect(call.reference).toEqual([{ start: 0, end: 1 }, { start: 2, end: 3 }]);
@@ -908,6 +910,7 @@ describe('SheetMusicAdminService: proposals and calibration provenance', () => {
   it('propose gives no reference when the approved cuts were a scorer\'s own or are stale', async () => {
     for (const approved of [
       { contentSha256: '1', approved: { at: 'x', proposal: { scorer: 'heuristic' } } },
+      { contentSha256: '1', approved: { at: 'x', proposal: { scorer: 'heuristic', edited: true } } },
       { contentSha256: 'old', approved: { at: 'x', proposal: { scorer: 'manual' } } },
     ]) {
       const proposer = fakeProposer();
@@ -919,5 +922,39 @@ describe('SheetMusicAdminService: proposals and calibration provenance', () => {
       await service.propose(ID_A, proposeInput());
       expect(proposer.calls[0].reference).toBeNull();
     }
+  });
+});
+
+describe('SheetMusicAdminService: calibrate mode', () => {
+  const record = (after) => ({ after, tailGapQuarters: 1, tailGapRatio: 0.25, sectionStart: false, bassMotion: null, densityChange: 0, restBar: false });
+  const input = () => ({ features: [0, 1, 2].map(record), measureCount: 4, crops: new Map([0, 1, 2].map((k) => [k, pngOf()])) });
+  const proposer = () => ({ execute: async () => ({ segments: [{ start: 0, end: 3 }], proposal: { scorer: 'jev' } }) });
+  const manualFile = { version: 1, scoreId: ID_A, contentSha256: '1', segments: [seg('a', 0, 1), seg('b', 2, 3)], approved: { at: 'x', proposal: { scorer: 'manual' } } };
+  const scores = { [ID_A]: { xml: xmlOf(), sha: '1' } };
+
+  it('offers Jev only on pieces with current hand-cut approvals', async () => {
+    const on = fixture({ scores, learn: { [ID_A]: manualFile }, boundaryScorer: () => 'calibrate', proposer: proposer() });
+    expect((await on.service.getLearn(ID_A)).jevOffered).toBe(true);
+    const edited = fixture({ scores, learn: { [ID_A]: { ...manualFile, approved: { at: 'x', proposal: { scorer: 'heuristic', edited: true } } } }, boundaryScorer: () => 'calibrate', proposer: proposer() });
+    expect((await edited.service.getLearn(ID_A)).jevOffered).toBe(false);
+    const none = fixture({ scores, boundaryScorer: () => 'calibrate', proposer: proposer() });
+    expect((await none.service.getLearn(ID_A)).jevOffered).toBe(false);
+    const jev = fixture({ scores, boundaryScorer: () => 'jev', proposer: proposer() });
+    expect((await jev.service.getLearn(ID_A)).jevOffered).toBe(true);
+    const heuristic = fixture({ scores, learn: { [ID_A]: manualFile }, proposer: proposer() });
+    expect((await heuristic.service.getLearn(ID_A)).jevOffered).toBe(false);
+    const noGateway = fixture({ scores, boundaryScorer: () => 'jev' });
+    expect((await noGateway.service.getLearn(ID_A)).jevOffered).toBe(false);
+  });
+
+  it('refuses a piece without a reference, and marks results as calibration', async () => {
+    const without = fixture({ scores, boundaryScorer: () => 'calibrate', proposer: proposer() });
+    await expect(without.service.propose(ID_A, input())).rejects.toMatchObject({ code: 'no-reference' });
+    const withRef = fixture({ scores, learn: { [ID_A]: manualFile }, boundaryScorer: () => 'calibrate', proposer: proposer() });
+    expect((await withRef.service.propose(ID_A, input())).mode).toBe('calibrate');
+  });
+
+  it('keeps failedBarlines on a stored proposal', () => {
+    expect(cleanProposal({ scorer: 'jev', failedBarlines: 2, failedCalls: 1 }, 4)).toEqual({ scorer: 'jev', failedBarlines: 2, failedCalls: 1 });
   });
 });

@@ -214,26 +214,55 @@ export function recordsFromRows(featureKeys, rows) {
   });
 }
 
-/** Barlines a segment list cuts at (each segment's end but the last). */
-const cutsOf = (segments) => new Set(
-  [...(segments || [])].sort((a, b) => a.start - b.start).slice(0, -1).map((s) => s.end),
-);
+/**
+ * Barlines a segment list marks as boundaries: before every segment that does not
+ * start the piece and after every one that does not end it, so a gap (bars no
+ * segment covers) counts on both sides.
+ */
+function boundariesOf(segments, measureCount) {
+  const out = new Set();
+  for (const s of segments || []) {
+    if (s.start > 0) out.add(s.start - 1);
+    if (s.end < measureCount - 1) out.add(s.end);
+  }
+  return out;
+}
+
+/** One-to-one matches between two boundary sets within `tolerance` bars, nearest first. */
+function tolerantMatches(got, want, tolerance) {
+  const free = new Set(want);
+  let matched = 0;
+  for (const k of [...got].sort((a, b) => a - b)) {
+    let best = null;
+    for (const w of free) {
+      if (Math.abs(w - k) <= tolerance && (best == null || Math.abs(w - k) < Math.abs(best - k) || (Math.abs(w - k) === Math.abs(best - k) && w < best))) best = w;
+    }
+    if (best != null) { free.delete(best); matched += 1; }
+  }
+  return matched;
+}
 
 /**
- * How a proposal's cuts agree with reference segments (a grown-up's): true and
- * false positives, misses, precision and recall (null when undefined).
+ * How a proposal's boundaries agree with reference segments (a grown-up's): exact
+ * true/false positives and misses with precision and recall (null when undefined),
+ * plus `tolerant`, where a boundary one bar off still counts (each reference
+ * boundary matched at most once).
+ * @param {Array<{start,end}>} proposed
+ * @param {Array<{start,end}>} reference
+ * @param {number} measureCount
  */
-export function boundaryAgreement(proposed, reference) {
-  const got = cutsOf(proposed);
-  const want = cutsOf(reference);
+export function boundaryAgreement(proposed, reference, measureCount) {
+  const n = Number.isInteger(measureCount) ? measureCount : Infinity;
+  const got = boundariesOf(proposed, n);
+  const want = boundariesOf(reference, n);
   let tp = 0;
   for (const k of got) if (want.has(k)) tp += 1;
-  const fp = got.size - tp;
-  const fn = want.size - tp;
+  const near = tolerantMatches(got, want, 1);
   return {
-    tp, fp, fn,
+    tp, fp: got.size - tp, fn: want.size - tp,
     precision: got.size ? tp / got.size : null,
     recall: want.size ? tp / want.size : null,
+    tolerant: { tp: near, precision: got.size ? near / got.size : null, recall: want.size ? near / want.size : null },
   };
 }
 

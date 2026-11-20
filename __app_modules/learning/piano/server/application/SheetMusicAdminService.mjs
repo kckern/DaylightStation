@@ -60,15 +60,21 @@ import { pngDimensions } from './ProposeLearnSegments.mjs';
 /** Jev's image limits (JevAdapter refuses anything outside): px per side. */
 export const CROP_MIN_SIDE = 280;
 export const CROP_MAX_SIDE = 1568;
-const BOUNDARY_SCORERS = new Set(['heuristic', 'jev']);
+/**
+ * `sheetmusic.admin.boundaryScorer`: `heuristic` (default) proposes in the browser;
+ * `calibrate` offers Jev only on pieces with hand-cut approved segments, and only
+ * as a comparison against them; `jev` lets Jev propose drafts anywhere.
+ */
+const BOUNDARY_SCORERS = new Set(['heuristic', 'calibrate', 'jev']);
 
 /**
- * True when approved cuts were made by a grown-up: a manual draft, or a proposal
- * whose cuts were changed by hand. Only these are evidence for calibration.
+ * True when approved cuts were made by a grown-up from scratch (a manual draft).
+ * An edited scorer proposal is not: its cuts started as a scorer's, so it would
+ * favour that scorer in a comparison.
  */
 export function handMadeApproval(approved) {
   const proposal = isObject(approved) && isObject(approved.proposal) ? approved.proposal : null;
-  return Boolean(proposal && (proposal.scorer === 'manual' || proposal.edited === true));
+  return Boolean(proposal && proposal.scorer === 'manual');
 }
 
 const READ_CONCURRENCY = 4;
@@ -143,7 +149,7 @@ const MAX_FEATURE_ROW = FEATURE_KEYS.length;
 /**
  * A draft's `proposal` as stored: only the keys the admin and calibration read
  * (`scorer, model, at, boundaries, featureKeys, features, edited, failedCalls,
- * beatsPerMeasure, contentSha256`), with boundaries and feature rows limited to the
+ * failedBarlines, beatsPerMeasure, contentSha256`), with boundaries and feature rows limited to the
  * score's barlines (one per barline, measureCount − 1). Each feature row is exactly
  * featureKeys long when keys are given, else no longer than FEATURE_KEYS; one bad
  * row drops them all. `contentSha256` is the score version the proposal was
@@ -158,6 +164,7 @@ export function cleanProposal(raw, measureCount) {
   if (typeof raw.at === 'string' && raw.at) out.at = raw.at;
   if (typeof raw.edited === 'boolean') out.edited = raw.edited;
   if (Number.isInteger(raw.failedCalls) && raw.failedCalls >= 0) out.failedCalls = raw.failedCalls;
+  if (Number.isInteger(raw.failedBarlines) && raw.failedBarlines >= 0) out.failedBarlines = raw.failedBarlines;
   if (Number.isFinite(raw.beatsPerMeasure) && raw.beatsPerMeasure > 0) out.beatsPerMeasure = raw.beatsPerMeasure;
   if (typeof raw.contentSha256 === 'string' && /^[0-9a-zA-Z-]{1,128}$/.test(raw.contentSha256)) out.contentSha256 = raw.contentSha256;
   if (isObject(raw.boundaries)) {
@@ -218,7 +225,7 @@ export class SheetMusicAdminService {
     this.#proposer = proposer && typeof proposer.execute === 'function' ? proposer : null;
   }
 
-  /** `sheetmusic.admin.boundaryScorer` as configured now: 'jev' or 'heuristic' (the default). */
+  /** `sheetmusic.admin.boundaryScorer` as configured now: 'heuristic' (the default), 'calibrate' or 'jev'. */
   boundaryScorer() {
     let value;
     try { value = this.#boundaryScorer(); } catch { value = null; }
@@ -227,18 +234,23 @@ export class SheetMusicAdminService {
 
   /**
    * Jev's proposal for a score's Learn segments (spec §5). Nothing is saved.
-   * Refusals: `jev-disabled` (config is not jev), `jev-unavailable` (no decision
+   * In `calibrate` mode only pieces with current hand-cut approved segments may be
+   * proposed (else `no-reference`), and the result says `mode: 'calibrate'` so the
+   * admin shows it as a comparison and never applies it.
+   * Refusals: `jev-disabled` (config is heuristic), `jev-unavailable` (no decision
    * gateway), `invalid-request` (features do not match the bar count), `bad-crop`
    * (a barline Jev must judge has no PNG crop inside Jev's size limits), plus the
    * score reader's codes and the proposer's `proposal-failed`.
    * When the approved cuts are a grown-up's and still current, they go along as
    * the reference for the Jev-vs-heuristic comparison.
    * @param {string} id
-   * @param {{ features: Array<object>, crops: Map<number, Buffer>, measureCount: number, targetLen?: number }} input
+   * @param {{ features: Array<object>, crops: Map<number, Buffer>, measureCount: number, targetLen?: number,
+   *   signal?: AbortSignal }} input
    */
-  async propose(id, { features, crops, measureCount, targetLen } = {}) {
+  async propose(id, { features, crops, measureCount, targetLen, signal = null } = {}) {
     requireLibrary(id);
-    if (this.boundaryScorer() !== 'jev') throw codedError('jev-disabled', 'The Jev boundary scorer is not enabled');
+    const mode = this.boundaryScorer();
+    if (mode === 'heuristic') throw codedError('jev-disabled', 'The Jev boundary scorer is not enabled');
     if (!this.#proposer) throw codedError('jev-unavailable', 'No decision gateway is configured');
     if (!Number.isInteger(measureCount) || measureCount < 2 || !Array.isArray(features) || features.length !== measureCount - 1
       || features.some((f, k) => !isObject(f) || f.after !== k)) {
@@ -254,13 +266,22 @@ export class SheetMusicAdminService {
       }
       needed.set(f.after, cropMap.get(f.after));
     }
+    const reference = await this.#calibrationReference(id);
+    if (mode === 'calibrate' && !reference) {
+      throw codedError('no-reference', `${id} has no current hand-cut approved segments to compare Jev with`);
+    }
+    const target = Number.isInteger(targetLen) && targetLen >= 1 && targetLen <= 8 ? targetLen : 4;
+    const result = await this.#proposer.execute({ id, features, crops: needed, measureCount, limits: { targetLen: target }, reference, signal });
+    return { ...result, mode };
+  }
+
+  /** The approved segments as calibration evidence: current, and cut by hand from scratch; else null. */
+  async #calibrationReference(id) {
     const { contentSha256 } = await this.#scoreInfo(id);
     const stored = normalizeLearnFile(this.#storedFile(id));
-    const reference = stored.segments.length && stored.contentSha256 === contentSha256 && handMadeApproval(stored.approved)
+    return stored.segments.length && stored.contentSha256 === contentSha256 && handMadeApproval(stored.approved)
       ? stored.segments.map(({ start, end }) => ({ start, end }))
       : null;
-    const target = Number.isInteger(targetLen) && targetLen >= 1 && targetLen <= 8 ? targetLen : 4;
-    return this.#proposer.execute({ id, features, crops: needed, measureCount, limits: { targetLen: target }, reference });
   }
 
   /**
@@ -391,6 +412,7 @@ export class SheetMusicAdminService {
 
   async getLearn(id) {
     requireLibrary(id);
+    const mode = this.boundaryScorer();
     const file = normalizeLearnFile(this.#storedFile(id));
     const { contentSha256 } = await this.#scoreInfo(id);
     let poster = 'none';
@@ -406,7 +428,11 @@ export class SheetMusicAdminService {
       currentSha256: contentSha256,
       stale: file.segments.length > 0 && file.contentSha256 !== contentSha256,
       draftRevision: file.draft ? draftRevision(file.draft.segments) : null,
-      boundaryScorer: this.boundaryScorer(),
+      boundaryScorer: mode,
+      // Whether the admin may ask Jev about this piece: always in jev mode; in
+      // calibrate mode only with hand-cut approved segments to compare against.
+      jevOffered: Boolean(this.#proposer) && (mode === 'jev' || (mode === 'calibrate'
+        && file.segments.length > 0 && file.contentSha256 === contentSha256 && handMadeApproval(file.approved))),
     };
   }
 

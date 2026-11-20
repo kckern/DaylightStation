@@ -396,7 +396,7 @@ describe('SheetMusicScore', () => {
     });
 
     it('sends features and crops, applies Jev\'s cuts and shows the comparison', async () => {
-      learn = learnFile({ boundaryScorer: 'jev' });
+      learn = learnFile({ boundaryScorer: 'jev', jevOffered: true });
       jevRequest.mockResolvedValue({
         ok: true,
         result: {
@@ -414,7 +414,7 @@ describe('SheetMusicScore', () => {
       expect(req).toMatchObject({ id: DEFAULT_ID, measureCount: 8, targetLen: 4 });
       expect(req.features).toHaveLength(7);
       expect([...req.crops.keys()]).toEqual([0, 1, 2, 3, 4, 5, 6]);
-      expect([...renderCrops.mock.calls[0][1].values()][0]).toMatchObject({ markerX: 50 });
+      expect([...renderCrops.mock.calls[0][1].values()][0]).toMatchObject({ marker: { x: 50 } });
       expect(await screen.findByText(/Jev precision 100%, recall 50%; heuristic precision 50%/)).toBeTruthy();
       fireEvent.click(screen.getByRole('button', { name: 'Save draft' }));
       await waitFor(() => expect(putCalls().length).toBe(1));
@@ -423,8 +423,41 @@ describe('SheetMusicScore', () => {
       expect(logged.find((l) => l.event === 'admin.sheetmusic.propose')?.data).toMatchObject({ scorer: 'jev', segments: 2 });
     });
 
+    it('in calibrate mode compares with Jev and never applies its cuts', async () => {
+      learn = learnFile({ boundaryScorer: 'calibrate', jevOffered: true, draft: { segments: [{ id: 'a', start: 0, end: 7 }] }, draftRevision: 'r' });
+      jevRequest.mockResolvedValue({
+        ok: true,
+        result: {
+          mode: 'calibrate',
+          segments: [{ start: 0, end: 3 }, { start: 4, end: 7 }],
+          proposal: { scorer: 'jev', model: 'jev-1' },
+          comparison: {
+            jev: { precision: 1, recall: 1, tolerant: { precision: 1, recall: 1 } },
+            heuristic: { precision: 0, recall: 0, tolerant: { precision: 0.5, recall: 0.5 } },
+          },
+        },
+      });
+      renderPage();
+      await engravedReady();
+      expect(screen.queryByRole('radio', { name: 'Jev' })).toBeNull();
+      fireEvent.click(await screen.findByRole('button', { name: 'Compare with Jev' }));
+      expect(await screen.findByText(/Jev precision 100%, recall 100% \(within a bar: 100% \/ 100%\); heuristic precision 0%/)).toBeTruthy();
+      expect(within(screen.getByTestId('measure-strip-draft')).getByRole('button', { name: 'Segment 1, Bars 1-8' })).toBeTruthy();
+      expect(screen.queryByText('unsaved changes')).toBeNull();
+      expect(logged.find((l) => l.event === 'admin.sheetmusic.propose-compared')?.data).toMatchObject({ jevRecall: 1, heuristicRecall: 0 });
+      expect(logged.some((l) => l.event === 'admin.sheetmusic.propose')).toBe(false);
+    });
+
+    it('offers nothing Jev when the piece is not eligible', async () => {
+      learn = learnFile({ boundaryScorer: 'calibrate', jevOffered: false });
+      renderPage();
+      await engravedReady();
+      await screen.findByRole('button', { name: 'Propose segments' });
+      expect(screen.queryByRole('button', { name: 'Compare with Jev' })).toBeNull();
+    });
+
     it('says why when Jev fails, and leaves the segments alone', async () => {
-      learn = learnFile({ boundaryScorer: 'jev', draft: { segments: [{ id: 'a', start: 0, end: 7 }] }, draftRevision: 'r' });
+      learn = learnFile({ boundaryScorer: 'jev', jevOffered: true, draft: { segments: [{ id: 'a', start: 0, end: 7 }] }, draftRevision: 'r' });
       jevRequest.mockResolvedValue({ ok: false, code: 'proposal-failed', status: 502 });
       renderPage();
       await engravedReady();

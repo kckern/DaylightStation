@@ -2,9 +2,8 @@
  * Crops of the engraved score for the Jev boundary scorer, and the request that
  * sends them (POST /api/v1/admin/sheet-music/propose).
  *
- * One PNG per barline Jev judges: up to two bars either side (layout positions
- * k-1..k+2, each mapped to its engraved bar through `measures[i].index`), with a
- * red triangle over the barline after bar k, drawn from the engraving on screen.
+ * One PNG per barline Jev judges: up to two bars either side, from the barline's
+ * own system (see cropPlan), with a red triangle over the barline after bar k.
  * Jev takes 280-1568 px per side and its adapter throws outside that, so each
  * crop is scaled to fit 1568 and padded with white up to 280.
  *
@@ -25,27 +24,68 @@ const PAD_X = 6;
 const PAD_Y = 24;
 const MARKER = 9;
 
-/**
- * The region of the engraving to show for the barline after layout position k.
- * @param {Array<{index:number}>} measures - layout.measures
- * @param {Array<{left,right,top,bottom}|null>} bounds - per engraved bar (extractMeasureBounds)
- * @returns {{ x:number, y:number, width:number, height:number, markerX:number }|null}
- */
-export function cropBox(measures, bounds, k) {
-  const n = measures?.length || 0;
-  if (!Number.isInteger(k) || k < 0 || k >= n - 1) return null;
+const GAP = 16;
+
+const sameSystem = (b, ref) => Boolean(b && ref && b.top < ref.bottom && b.bottom > ref.top);
+
+function union(list, bounds, measures) {
   let left = Infinity; let right = -Infinity; let top = Infinity; let bottom = -Infinity;
-  for (let i = Math.max(0, k - 1); i <= Math.min(n - 1, k + 2); i += 1) {
-    const b = bounds?.[measures[i]?.index];
-    if (!b) continue;
+  for (const i of list) {
+    const b = bounds[measures[i].index];
     left = Math.min(left, b.left); right = Math.max(right, b.right);
     top = Math.min(top, b.top); bottom = Math.max(bottom, b.bottom);
   }
-  const at = bounds?.[measures[k]?.index];
-  if (!at || !(right > left) || !(bottom > top)) return null;
   const x = Math.max(0, left - PAD_X);
   const y = Math.max(0, top - PAD_Y);
-  return { x, y, width: right + PAD_X - x, height: bottom + PAD_Y - y, markerX: at.right };
+  return { x, y, width: right + PAD_X - x, height: bottom + PAD_Y - y };
+}
+
+/**
+ * What to show for the barline after layout position k: up to two bars either
+ * side, taken only from bars on the same engraved system and in engraved order
+ * (consecutive `measures[i].index`). When the barline ends a system, or the next
+ * position is not the next engraved bar (an all-rest bar skipped, a jump), the
+ * two sides are separate strips drawn side by side with the marker at the seam.
+ * Coordinates are the engraving's px; `dx` places each strip in the composite.
+ * @param {Array<{index:number}>} measures - layout.measures
+ * @param {Array<{left,right,top,bottom}|null>} bounds - per engraved bar (extractMeasureBounds)
+ * @returns {{ strips: Array<{x,y,width,height,dx}>, width: number, height: number,
+ *   marker: { x: number, y: number } }|null} null when bounds are missing
+ */
+export function cropPlan(measures, bounds, k) {
+  const n = measures?.length || 0;
+  if (!Number.isInteger(k) || k < 0 || k >= n - 1) return null;
+  const boundOf = (i) => bounds?.[measures[i]?.index] || null;
+  const at = boundOf(k);
+  const next = boundOf(k + 1);
+  if (!at || !next) return null;
+  const consecutive = (i) => measures[i + 1].index === measures[i].index + 1;
+  const left = [k];
+  if (k - 1 >= 0 && consecutive(k - 1) && sameSystem(boundOf(k - 1), at)) left.unshift(k - 1);
+  const right = [k + 1];
+  if (k + 2 < n && consecutive(k + 1) && sameSystem(boundOf(k + 2), next)) right.push(k + 2);
+
+  if (consecutive(k) && sameSystem(next, at)) {
+    const strip = { ...union([...left, ...right], bounds, measures), dx: 0 };
+    return { strips: [strip], width: strip.width, height: strip.height, marker: { x: at.right - strip.x, y: at.top - strip.y } };
+  }
+  const a = { ...union(left, bounds, measures), dx: 0 };
+  const b = { ...union(right, bounds, measures), dx: 0 };
+  b.dx = a.width + GAP;
+  return {
+    strips: [a, b],
+    width: a.width + GAP + b.width,
+    height: Math.max(a.height, b.height),
+    marker: { x: a.width + GAP / 2, y: at.top - a.y },
+  };
+}
+
+/** True when every sampled pixel is (near) white or transparent: the crop shows nothing. */
+export function isBlank(data, { step = 16, threshold = 245 } = {}) {
+  for (let i = 0; i + 3 < data.length; i += 4 * step) {
+    if (data[i + 3] > 0 && (data[i] < threshold || data[i + 1] < threshold || data[i + 2] < threshold)) return false;
+  }
+  return true;
 }
 
 /**
@@ -86,51 +126,72 @@ const toPng = (canvas) => new Promise((resolve, reject) => {
   canvas.toBlob((blob) => (blob ? resolve(blob) : reject(Object.assign(new Error('toBlob gave nothing'), { code: 'crop-failed' }))), 'image/png');
 });
 
+const cropError = (message, k) => Object.assign(new Error(message), { code: 'crop-failed', barline: k });
+const PLACEHOLDER = { width: '__CROP_W__', height: '__CROP_H__', viewBox: '__CROP_VB__' };
+
 /**
- * PNG crops of the engraving, one per barline in `boxes` (k → cropBox).
+ * PNG crops of the engraving, one per barline in `plans` (k → cropPlan). Each
+ * strip is rasterized on its own from a copy of the SVG whose viewBox is just that
+ * strip, at the size it is drawn, so no image is ever the size of the whole score.
+ * A crop that comes out blank (white) is an error: Jev would be judging nothing.
  * @param {SVGSVGElement} svg - the engraving on screen (not modified)
- * @param {Map<number, object>} boxes
+ * @param {Map<number, object>} plans
  * @returns {Promise<Map<number, Blob>>}
+ * @throws {Error} code `crop-failed` (with `barline`)
  */
-export async function renderCrops(svg, boxes) {
-  if (!svg) throw Object.assign(new Error('No engraved svg'), { code: 'crop-failed' });
+export async function renderCrops(svg, plans) {
+  if (!svg) throw cropError('No engraved svg');
   const declaredWidth = Number(svg.getAttribute('width')) || svg.clientWidth || 0;
-  const text = new XMLSerializer().serializeToString(svg);
-  const url = URL.createObjectURL(new Blob([text], { type: 'image/svg+xml' }));
-  try {
-    const img = await loadImage(url);
-    const ratio = declaredWidth > 0 ? img.naturalWidth / declaredWidth : 1;
-    const out = new Map();
-    for (const [k, box] of boxes) {
-      const size = cropCanvasSize(box.width, box.height);
-      if (!size) continue;
-      const canvas = document.createElement('canvas');
-      canvas.width = size.width;
-      canvas.height = size.height;
-      const ctx = canvas.getContext('2d');
-      ctx.fillStyle = '#ffffff';
-      ctx.fillRect(0, 0, size.width, size.height);
-      ctx.drawImage(
-        img,
-        box.x * ratio, box.y * ratio, box.width * ratio, box.height * ratio,
-        size.offsetX, size.offsetY, size.contentWidth, size.contentHeight,
-      );
-      // The barline in question: a red triangle above it, pointing down.
-      const mx = size.offsetX + (box.markerX - box.x) * size.scale;
-      const my = size.offsetY + 2;
-      ctx.fillStyle = '#e03131';
-      ctx.beginPath();
-      ctx.moveTo(mx - MARKER, my);
-      ctx.lineTo(mx + MARKER, my);
-      ctx.lineTo(mx, my + MARKER * 1.6);
-      ctx.closePath();
-      ctx.fill();
-      out.set(k, await toPng(canvas));
+  const declaredHeight = Number(svg.getAttribute('height')) || svg.clientHeight || 0;
+  if (!(declaredWidth > 0) || !(declaredHeight > 0)) throw cropError('The engraved svg has no size');
+  const vb = String(svg.getAttribute('viewBox') || '').trim().split(/[\s,]+/).map(Number);
+  const [vx, vy, vw] = vb.length === 4 && vb.every(Number.isFinite) && vb[2] > 0 ? vb : [0, 0, declaredWidth];
+  const unitsPerPx = vw / declaredWidth;
+  const clone = svg.cloneNode(true);
+  clone.removeAttribute('style');
+  for (const [name, value] of Object.entries(PLACEHOLDER)) clone.setAttribute(name, value);
+  const template = new XMLSerializer().serializeToString(clone);
+  const r = (n) => Math.round(n * 1000) / 1000;
+
+  const out = new Map();
+  for (const [k, plan] of plans) {
+    const size = cropCanvasSize(plan.width, plan.height);
+    if (!size) throw cropError(`Barline ${k} has an empty crop`, k);
+    const canvas = document.createElement('canvas');
+    canvas.width = size.width;
+    canvas.height = size.height;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, size.width, size.height);
+    for (const strip of plan.strips) {
+      const w = Math.max(1, Math.round(strip.width * size.scale));
+      const h = Math.max(1, Math.round(strip.height * size.scale));
+      const text = template
+        .replace(`width="${PLACEHOLDER.width}"`, `width="${w}"`)
+        .replace(`height="${PLACEHOLDER.height}"`, `height="${h}"`)
+        .replace(`viewBox="${PLACEHOLDER.viewBox}"`, `viewBox="${r(vx + strip.x * unitsPerPx)} ${r(vy + strip.y * unitsPerPx)} ${r(strip.width * unitsPerPx)} ${r(strip.height * unitsPerPx)}"`);
+      const url = URL.createObjectURL(new Blob([text], { type: 'image/svg+xml' }));
+      try {
+        const img = await loadImage(url);
+        ctx.drawImage(img, size.offsetX + strip.dx * size.scale, size.offsetY, w, h);
+      } finally {
+        URL.revokeObjectURL(url);
+      }
     }
-    return out;
-  } finally {
-    URL.revokeObjectURL(url);
+    if (isBlank(ctx.getImageData(0, 0, size.width, size.height).data)) throw cropError(`Barline ${k} rendered blank`, k);
+    // The barline in question: a red triangle above it, pointing down at the staff.
+    const mx = size.offsetX + plan.marker.x * size.scale;
+    const tip = Math.max(MARKER * 1.6, size.offsetY + plan.marker.y * size.scale - 2);
+    ctx.fillStyle = '#e03131';
+    ctx.beginPath();
+    ctx.moveTo(mx - MARKER, tip - MARKER * 1.6);
+    ctx.lineTo(mx + MARKER, tip - MARKER * 1.6);
+    ctx.lineTo(mx, tip);
+    ctx.closePath();
+    ctx.fill();
+    out.set(k, await toPng(canvas));
   }
+  return out;
 }
 
 /**

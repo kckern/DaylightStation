@@ -17,7 +17,7 @@ const manual = (extra = {}) => ({ scorer: 'manual', at: 't', featureKeys: [...FE
 describe('piano-segment-calibrate', () => {
   it('counts only hand-made approvals that kept their features', () => {
     expect(eligibility(learnFile(manual()))).toBe('eligible');
-    expect(eligibility(learnFile({ ...manual(), scorer: 'heuristic', edited: true }))).toBe('eligible');
+    expect(eligibility(learnFile({ ...manual(), scorer: 'heuristic', edited: true }))).toBe('edited-proposal');
     expect(eligibility(learnFile({ ...manual(), scorer: 'heuristic' }))).toBe('scorer-cut');
     expect(eligibility(learnFile(null))).toBe('no-provenance');
     expect(eligibility(learnFile({ scorer: 'manual', at: 't' }))).toBe('no-features');
@@ -30,10 +30,17 @@ describe('piano-segment-calibrate', () => {
       { name: 'agrees.yml', file: learnFile(manual()) },
       { name: 'differs.yml', file: learnFile(manual(), [{ id: 'a', start: 0, end: 1 }, { id: 'b', start: 2, end: 7 }]) },
       { name: 'auto.yml', file: learnFile({ ...manual(), scorer: 'heuristic' }) },
+      { name: 'edited.yml', file: learnFile({ ...manual(), scorer: 'heuristic', edited: true }) },
     ]);
     expect(result.pieces.map((p) => [p.name, p.tp, p.fp, p.fn])).toEqual([['agrees.yml', 1, 0, 0], ['differs.yml', 0, 1, 1]]);
-    expect(result.overall).toEqual({ tp: 1, fp: 1, fn: 1, precision: 0.5, recall: 0.5 });
-    expect(result.skipped).toEqual({ 'scorer-cut': 1 });
+    expect(result.overall).toEqual({ tp: 1, fp: 1, fn: 1, precision: 0.5, recall: 0.5, nearPrecision: 0.5, nearRecall: 0.5 });
+    expect(result.edited.map((p) => p.name)).toEqual(['edited.yml']);
+    expect(result.skipped).toEqual({ 'scorer-cut': 1, 'edited-proposal': 1 });
+  });
+
+  it('counts a gap in the hand-cut segments as boundaries on both sides', () => {
+    const result = calibrate([{ name: 'gap.yml', file: learnFile(manual(), [{ id: 'a', start: 0, end: 3 }, { id: 'b', start: 6, end: 7 }]) }]);
+    expect(result.pieces[0]).toMatchObject({ tp: 1, fp: 0, fn: 1 });
   });
 
   it('exits 3 with a clear message when fewer than 4 pieces qualify', async () => {

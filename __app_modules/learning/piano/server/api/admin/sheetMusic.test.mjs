@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import express from 'express';
 import request from 'supertest';
 import http from 'node:http';
-import { createAdminSheetMusicRouter, MAX_CROP_BYTES, MAX_POSTER_BODY_BYTES, MAX_SEGMENTS, MAX_UPLOAD_BYTES } from './sheetMusic.mjs';
+import { createAdminSheetMusicRouter, MAX_CROP_BYTES, MAX_POSTER_BODY_BYTES, MAX_PROPOSE_BODY_BYTES, MAX_SEGMENTS, MAX_UPLOAD_BYTES } from './sheetMusic.mjs';
 
 const ID = 'files:docs/sheet-music/classical/fur elise.musicxml';
 const coded = (code, extra = {}) => Object.assign(new Error(`secret detail for ${code}`), { code, ...extra });
@@ -409,8 +409,10 @@ describe('createAdminSheetMusicRouter: POST /propose', () => {
   const body = JSON.stringify({ features, measureCount: 4, targetLen: 4 });
   const proposeResult = { segments: [{ start: 0, end: 3 }], proposal: { scorer: 'jev' } };
 
+  const jevOn = { boundaryScorer: () => 'jev' };
+
   it('parses the features and crops and forwards them', async () => {
-    const { app, calls } = harness({ propose: async (...args) => { calls.push({ name: 'propose', args }); return proposeResult; } });
+    const { app, calls } = harness({ ...jevOn, propose: async (...args) => { calls.push({ name: 'propose', args }); return proposeResult; } });
     const res = await request(app).post(`/sheet-music/propose?${q}`)
       .field('features', body)
       .attach('crop_0', Buffer.from('png-0'), { filename: 'crop_0.png', contentType: 'image/png' })
@@ -422,17 +424,54 @@ describe('createAdminSheetMusicRouter: POST /propose', () => {
     expect(input).toMatchObject({ features, measureCount: 4, targetLen: 4 });
     expect([...input.crops.keys()]).toEqual([0, 2]);
     expect(input.crops.get(2).toString()).toBe('png-2');
+    expect(input.signal).toBeInstanceOf(AbortSignal);
+  });
+
+  it('refuses before reading the body while the scorer is heuristic', async () => {
+    const { app, calls } = harness({ boundaryScorer: () => 'heuristic', propose: async () => proposeResult });
+    const res = await request(app).post(`/sheet-music/propose?${q}`).field('features', body);
+    expect(res.status).toBe(409);
+    expect(res.body).toEqual({ error: 'jev-disabled' });
+    expect(calls.some((c) => c.name === 'propose')).toBe(false);
+  });
+
+  it('refuses a body with no Content-Length or one over the cap', async () => {
+    const { app } = harness({ ...jevOn, propose: async () => proposeResult });
+    const server = app.listen(0);
+    try {
+      const { port } = server.address();
+      const send = (headers) => new Promise((resolve, reject) => {
+        const r = http.request({ port, method: 'POST', path: `/sheet-music/propose?${q}`, headers }, (res) => {
+          let text = '';
+          res.on('data', (c) => { text += c; });
+          res.on('end', () => resolve({ status: res.statusCode, body: text }));
+        });
+        r.on('error', reject);
+        r.end('--x--\r\n');
+      });
+      const chunked = await send({ 'Content-Type': 'multipart/form-data; boundary=x', 'Transfer-Encoding': 'chunked' });
+      expect(chunked.status).toBe(413);
+      expect(JSON.parse(chunked.body)).toEqual({ error: 'too-large' });
+      const huge = await send({ 'Content-Type': 'multipart/form-data; boundary=x', 'Content-Length': String(MAX_PROPOSE_BODY_BYTES + 1) });
+      expect(huge.status).toBe(413);
+    } finally {
+      server.close();
+    }
+  });
+
+  it('caps each crop at 1 MB', () => {
+    expect(MAX_CROP_BYTES).toBe(1024 * 1024);
   });
 
   it('without a propose method it is 409 jev-disabled', async () => {
-    const { app } = harness();
+    const { app } = harness(jevOn);
     const res = await request(app).post(`/sheet-music/propose?${q}`).field('features', body);
     expect(res.status).toBe(409);
     expect(res.body).toEqual({ error: 'jev-disabled' });
   });
 
   it('features that are not JSON, or a stray file field, are 400', async () => {
-    const { app, calls } = harness({ propose: async () => proposeResult });
+    const { app, calls } = harness({ ...jevOn, propose: async () => proposeResult });
     expect((await request(app).post(`/sheet-music/propose?${q}`).field('features', '{nope')).status).toBe(400);
     expect((await request(app).post(`/sheet-music/propose?${q}`).field('features', body)
       .attach('poster', Buffer.from('x'), 'x.png')).status).toBe(400);
@@ -441,7 +480,7 @@ describe('createAdminSheetMusicRouter: POST /propose', () => {
   });
 
   it('a crop over the cap is 413 too-large', async () => {
-    const { app } = harness({ propose: async () => proposeResult });
+    const { app } = harness({ ...jevOn, propose: async () => proposeResult });
     const res = await request(app).post(`/sheet-music/propose?${q}`).field('features', body)
       .attach('crop_0', Buffer.alloc(MAX_CROP_BYTES + 1), 'crop_0.png');
     expect(res.status).toBe(413);
@@ -449,11 +488,41 @@ describe('createAdminSheetMusicRouter: POST /propose', () => {
   });
 
   it('maps the proposal codes', async () => {
-    for (const [code, status] of [['jev-disabled', 409], ['jev-unavailable', 503], ['proposal-failed', 502], ['bad-crop', 422]]) {
-      const { app } = harness({ propose: async () => { throw coded(code); } });
+    for (const [code, status] of [['jev-disabled', 409], ['no-reference', 409], ['jev-unavailable', 503], ['proposal-failed', 502], ['bad-crop', 422]]) {
+      const { app } = harness({ ...jevOn, propose: async () => { throw coded(code); } });
       const res = await request(app).post(`/sheet-music/propose?${q}`).field('features', body);
       expect(res.status, code).toBe(status);
       expect(res.body).toEqual({ error: code });
+    }
+  });
+});
+
+describe('createAdminSheetMusicRouter: POST /propose when the client leaves', () => {
+  it('aborts the run and writes nothing', async () => {
+    let seen;
+    let release;
+    const started = new Promise((r) => { release = r; });
+    const { app } = harness({
+      boundaryScorer: () => 'calibrate',
+      propose: (id, input) => new Promise((resolve, reject) => {
+        seen = input.signal;
+        release();
+        input.signal.addEventListener('abort', () => reject(Object.assign(new Error('aborted'), { code: 'aborted' })));
+      }),
+    });
+    const server = app.listen(0);
+    try {
+      const { port } = server.address();
+      const payload = `--x\r\nContent-Disposition: form-data; name="features"\r\n\r\n${JSON.stringify({ features: [], measureCount: 2 })}\r\n--x--\r\n`;
+      const r = http.request({ port, method: 'POST', path: `/sheet-music/propose?${q}`, headers: { 'Content-Type': 'multipart/form-data; boundary=x', 'Content-Length': Buffer.byteLength(payload) } });
+      r.on('error', () => {});
+      r.end(payload);
+      await started;
+      r.destroy();
+      await new Promise((resolve) => { const tick = () => (seen.aborted ? resolve() : setTimeout(tick, 5)); tick(); });
+      expect(seen.aborted).toBe(true);
+    } finally {
+      server.close();
     }
   });
 });

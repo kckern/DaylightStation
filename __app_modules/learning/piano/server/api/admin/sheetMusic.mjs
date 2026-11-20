@@ -13,9 +13,12 @@
  *   POST /poster              → 201 { id, poster, url, bytes }  body: the SVG text (image/svg+xml only)
  *   POST /propose             → { segments, proposal, comparison? }  Jev's Learn segment proposal; multipart:
  *                               `features` (JSON { features, measureCount, targetLen }) and one PNG per
- *                               barline Jev judges as `crop_<k>`. 409 jev-disabled unless
- *                               `sheetmusic.admin.boundaryScorer: jev`; 502 proposal-failed when Jev fails
- *                               on too many barlines.
+ *                               barline Jev judges as `crop_<k>` (≤ 1 MB each, body ≤ 64 MB with a
+ *                               Content-Length, else 413 too-large). 409 jev-disabled while
+ *                               `sheetmusic.admin.boundaryScorer` is heuristic (checked before the body is
+ *                               read); 409 no-reference in calibrate mode for a piece with no hand-cut
+ *                               approved segments; 502 proposal-failed when Jev fails on too many
+ *                               barlines. The run stops (no more Jev calls) if the client disconnects.
  *
  * `GET /` also reports `boundaryScorer` ('heuristic' | 'jev') so the admin offers Jev only when enabled.
  *
@@ -42,9 +45,15 @@ export const MAX_UPLOAD_BYTES = 32 * 1024 * 1024;
 /** The poster body cap: the svgSafety limit, so an oversized body never reaches the service. */
 export const MAX_POSTER_BODY_BYTES = MAX_POSTER_BYTES;
 
-/** One crop PNG's cap (Jev takes at most 1568 px per side); and how many a request may carry. */
-export const MAX_CROP_BYTES = 4 * 1024 * 1024;
+/** One crop PNG's cap (Jev takes at most 1568 px per side; score crops compress well); and how many. */
+export const MAX_CROP_BYTES = 1024 * 1024;
 export const MAX_CROPS = 500;
+/**
+ * The whole propose body's cap. It must declare a Content-Length within it (no
+ * chunked bodies): Node's parser never delivers more than the declared length, so
+ * the check bounds what multer buffers. The bytes are counted while parsing too.
+ */
+export const MAX_PROPOSE_BODY_BYTES = 64 * 1024 * 1024;
 /** The features field's cap (one small record per barline). */
 const MAX_FEATURES_BYTES = 1024 * 1024;
 
@@ -66,6 +75,7 @@ const STATUS_BY_CODE = {
   'has-scan': 409,
   'poster-exists': 409,
   'jev-disabled': 409,
+  'no-reference': 409,
   'jev-unavailable': 503,
   'proposal-failed': 502,
   'bad-crop': 422,
@@ -243,8 +253,19 @@ export function createAdminSheetMusicRouter({ service, logger = console } = {}) 
 
   router.post('/propose', handle('POST /propose', async (req, res) => {
     const id = scoreId(req);
+    if (typeof service.propose !== 'function' || boundaryScorer() === 'heuristic') throw refusal('jev-disabled');
     if (!req.is('multipart/form-data')) throw refusal('invalid-request');
-    await receiveCrops(req, res);
+    const declared = Number(req.headers['content-length']);
+    if (!Number.isFinite(declared) || declared > MAX_PROPOSE_BODY_BYTES) throw refusal('too-large');
+    let received = 0;
+    const count = (chunk) => { received += chunk.length; };
+    req.on('data', count);
+    try {
+      await receiveCrops(req, res);
+    } finally {
+      req.off('data', count);
+    }
+    if (received > MAX_PROPOSE_BODY_BYTES) throw refusal('too-large');
     let parsed;
     try { parsed = JSON.parse(req.body?.features ?? ''); } catch { throw refusal('invalid-request'); }
     if (!parsed || typeof parsed !== 'object' || !Array.isArray(parsed.features)) throw refusal('invalid-request');
@@ -254,10 +275,25 @@ export function createAdminSheetMusicRouter({ service, logger = console } = {}) 
       if (!match || crops.has(Number(match[1]))) throw refusal('invalid-request');
       crops.set(Number(match[1]), file.buffer);
     }
-    if (typeof service.propose !== 'function') throw refusal('jev-disabled');
-    res.json(await service.propose(id, {
-      features: parsed.features, crops, measureCount: parsed.measureCount, targetLen: parsed.targetLen,
-    }));
+    // A client that leaves stops the run: no Jev spend nobody will see.
+    const controller = new AbortController();
+    const onClose = () => { if (!res.writableFinished) controller.abort(); };
+    res.on('close', onClose);
+    try {
+      const result = await service.propose(id, {
+        features: parsed.features, crops, measureCount: parsed.measureCount, targetLen: parsed.targetLen,
+        signal: controller.signal,
+      });
+      if (!controller.signal.aborted) res.json(result);
+    } catch (error) {
+      if (error?.code === 'aborted' || controller.signal.aborted) {
+        logger.info?.('admin.sheetmusic.propose-abandoned', { id: loggedId(req) });
+        return;
+      }
+      throw error;
+    } finally {
+      res.off('close', onClose);
+    }
   }));
 
   router.use(errorHandlerMiddleware({ shape: 'string' }));

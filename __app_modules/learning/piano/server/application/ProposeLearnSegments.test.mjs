@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ProposeLearnSegments, pngDimensions, JEV_BATCH_SIZE } from './ProposeLearnSegments.mjs';
+import { ProposeLearnSegments, pngDimensions, measurementsOf, JEV_BATCH_SIZE, CALL_TIMEOUT_MS } from './ProposeLearnSegments.mjs';
 
 /** A PNG header with the given size (enough for pngDimensions and the adapter's check). */
 function png(width = 400, height = 300) {
@@ -28,9 +28,9 @@ function fakeGateway({ pOf = () => 0.1, fail = () => null } = {}) {
   return {
     calls,
     isConfigured: () => true,
-    async evaluate(state, questions) {
+    async evaluate(state, questions, options) {
       const keys = Object.keys(questions);
-      calls.push({ state, questions, keys });
+      calls.push({ state, questions, keys, options });
       const error = fail(calls.length - 1, keys);
       if (error) throw error;
       return {
@@ -65,8 +65,11 @@ describe('ProposeLearnSegments', () => {
         expect(call.state[key]).toMatchObject({ kind: 'image', mediaType: 'image/png', width: 400, height: 300 });
         expect(call.questions[key]).toMatchObject({ type: 'yesNo' });
         expect(call.questions[key].instructions).toContain(`\`${key}\``);
+        expect(call.state[`${key}_features`]).toEqual({
+          tailGapQuarters: 1, tailGapRatio: 0.25, sectionStart: false, densityChange: 0, restBar: false,
+        });
       }
-      expect(call.state.features).toHaveLength(call.keys.length);
+      expect(call.options).toEqual({ timeout: CALL_TIMEOUT_MS });
     }
     expect(log.logs.map((l) => l.event)).toEqual(['piano.sheetmusic.propose.start', 'piano.sheetmusic.propose.done']);
     expect(log.logs[1].data).toMatchObject({ calls: 2, failures: 0, model: 'jev-test-1' });
@@ -157,9 +160,54 @@ describe('ProposeLearnSegments', () => {
     const log = logger();
     const result = await new ProposeLearnSegments({ gateway, logger: log })
       .execute({ ...input(8), reference: [{ start: 0, end: 3 }, { start: 4, end: 7 }] });
-    expect(result.comparison.jev).toMatchObject({ tp: 1, fp: 0, fn: 0, precision: 1, recall: 1 });
+    expect(result.comparison.jev).toMatchObject({ tp: 1, fp: 0, fn: 0, precision: 1, recall: 1, tolerant: { recall: 1 } });
+    expect(result.comparison.heuristicSegments.length).toBeGreaterThan(0);
     expect(result.comparison.heuristic).toHaveProperty('recall');
     expect(log.logs.find((l) => l.event === 'piano.sheetmusic.propose.compared')?.data).toMatchObject({ jevRecall: 1 });
+  });
+
+  it('a rate limit longer than 15 s fails the batch without waiting', async () => {
+    const waits = [];
+    const gateway = fakeGateway({ fail: (i) => (i === 0 ? Object.assign(new Error('Rate limit'), { retryAfter: 60 }) : null) });
+    await expect(new ProposeLearnSegments({ gateway, scheduler: { wait: async (ms) => { waits.push(ms); } } }).execute(input(5)))
+      .rejects.toMatchObject({ code: 'proposal-failed' });
+    expect(waits).toEqual([]);
+    expect(gateway.calls).toHaveLength(1);
+  });
+
+  it('an error without retryAfter is not retried', async () => {
+    const gateway = fakeGateway({ fail: (i) => (i === 0 ? Object.assign(new Error('boom'), { retryAfter: null }) : null) });
+    await expect(new ProposeLearnSegments({ gateway, scheduler: { wait: async () => {} } }).execute(input(5)))
+      .rejects.toMatchObject({ code: 'proposal-failed' });
+    expect(gateway.calls).toHaveLength(1);
+  });
+
+  it('starts no batch after the deadline', async () => {
+    let t = 0;
+    const gateway = fakeGateway();
+    const original = gateway.evaluate.bind(gateway);
+    gateway.evaluate = async (...args) => { t += 50_000; return original(...args); };
+    const log = logger();
+    // 31 barlines → 4 batches; each call "takes" 50 s, deadline 75 s.
+    await expect(new ProposeLearnSegments({ gateway, logger: log, nowMs: () => t }).execute(input(32)))
+      .rejects.toMatchObject({ code: 'proposal-failed' });
+    expect(gateway.calls.length).toBeLessThan(4);
+    expect(log.logs.find((l) => l.event === 'piano.sheetmusic.propose.failed').data.skippedCalls).toBeGreaterThan(0);
+  });
+
+  it('stops spending once the request is aborted', async () => {
+    const controller = new AbortController();
+    const gateway = fakeGateway();
+    const original = gateway.evaluate.bind(gateway);
+    gateway.evaluate = async (...args) => { controller.abort(); return original(...args); };
+    await expect(new ProposeLearnSegments({ gateway }).execute({ ...input(51), signal: controller.signal }))
+      .rejects.toMatchObject({ code: 'aborted' });
+    expect(gateway.calls.length).toBeLessThanOrEqual(2);
+  });
+
+  it('measurements keep only known finite fields', () => {
+    expect(measurementsOf({ after: 3, tailGapRatio: 0.5, bassMotion: null, densityChange: NaN, restBar: true, extra: 9 }))
+      .toEqual({ tailGapRatio: 0.5, restBar: true });
   });
 
   it('reads PNG dimensions', () => {

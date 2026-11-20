@@ -4,16 +4,19 @@
  * Learn segments a grown-up cut by hand (spec §5, calibration gate).
  *
  * Reads the household's Learn files (`<household>/piano/sheetmusic/*.yml`). A piece
- * counts when its approved segments came from a hand-made draft
- * (`approved.proposal.scorer: manual`, or a proposal whose cuts were changed by
- * hand, `edited: true`) and the approval kept the draft's barline features. The
+ * counts when its approved segments were cut by hand from scratch
+ * (`approved.proposal.scorer: manual`) and the approval kept the draft's barline
+ * features. Approvals of an edited scorer proposal (`edited: true`) started from a
+ * scorer's cuts, so they would favour it: they are reported on their own and kept
+ * out of the overall figures. The
  * heuristic is re-run offline from those features, through the same
  * partitionSegments, and its cuts are compared with the approved ones: boundary
  * precision and recall per piece and overall. No network, no AI spend.
  *
  * Jev needs score pictures, which are not stored, so it is not re-run here. Its
  * side of the comparison comes from the admin score page: on a piece with
- * hand-made approved cuts, Propose with Jev returns and shows both scorers'
+ * hand-cut approved segments (with `sheetmusic.admin.boundaryScorer: calibrate`),
+ * Compare with Jev shows both scorers'
  * precision/recall against them and logs `piano.sheetmusic.propose.compared`
  * (query the log store for that event to collect them). This CLI lists the
  * eligible pieces so they can be proposed there.
@@ -49,7 +52,7 @@ export function eligibility(file) {
   if (!segments.length) return 'not-approved';
   const proposal = isObject(file?.approved?.proposal) ? file.approved.proposal : null;
   if (!proposal) return 'no-provenance';
-  if (!(proposal.scorer === 'manual' || proposal.edited === true)) return 'scorer-cut';
+  if (proposal.scorer !== 'manual') return proposal.edited === true ? 'edited-proposal' : 'scorer-cut';
   if (!Array.isArray(proposal.features) || !proposal.features.length || !Array.isArray(proposal.featureKeys)) return 'no-features';
   if (typeof proposal.contentSha256 === 'string' && typeof file.contentSha256 === 'string' && proposal.contentSha256 !== file.contentSha256) {
     return 'features-from-another-version';
@@ -61,28 +64,60 @@ export function eligibility(file) {
 
 const round = (x) => (x == null ? null : Math.round(x * 1000) / 1000);
 
+function scorePiece(name, file, targetLen) {
+  const { featureKeys, features } = file.approved.proposal;
+  const records = recordsFromRows(featureKeys, features);
+  const measureCount = records.length + 1;
+  const reference = file.segments.map(({ start, end }) => ({ start, end }));
+  const heuristic = partitionSegments(measureCount, boundaryProbabilities(records), { ...LIMITS, targetLen });
+  const agreement = boundaryAgreement(heuristic, reference, measureCount);
+  return {
+    name, scoreId: file.scoreId ?? null, measureCount, tp: agreement.tp, fp: agreement.fp, fn: agreement.fn,
+    precision: agreement.precision, recall: agreement.recall,
+    nearPrecision: agreement.tolerant.precision, nearRecall: agreement.tolerant.recall, nearTp: agreement.tolerant.tp,
+  };
+}
+
+function totals(pieces) {
+  const sum = (key) => pieces.reduce((n, p) => n + p[key], 0);
+  const tp = sum('tp'); const fp = sum('fp'); const fn = sum('fn'); const near = sum('nearTp');
+  return {
+    tp, fp, fn,
+    precision: round(tp + fp ? tp / (tp + fp) : null),
+    recall: round(tp + fn ? tp / (tp + fn) : null),
+    nearPrecision: round(tp + fp ? near / (tp + fp) : null),
+    nearRecall: round(tp + fn ? near / (tp + fn) : null),
+  };
+}
+
+const rounded = (p) => ({
+  ...p, precision: round(p.precision), recall: round(p.recall), nearPrecision: round(p.nearPrecision), nearRecall: round(p.nearRecall),
+});
+
 /**
+ * Heuristic vs hand-cut segments. `pieces`/`overall` are the evidence; `edited`
+ * (approved edits of a scorer's proposal, with stored features) is shown apart.
+ * `near*` count a boundary one bar off as a match.
  * @param {Array<{ name: string, file: object }>} files
  * @param {{ targetLen?: number }} [opts]
  */
 export function calibrate(files, { targetLen = 4 } = {}) {
   const pieces = [];
+  const edited = [];
   const skipped = {};
   for (const { name, file } of files) {
     const why = eligibility(file);
-    if (why !== 'eligible') { skipped[why] = (skipped[why] || 0) + 1; continue; }
-    const { featureKeys, features } = file.approved.proposal;
-    const records = recordsFromRows(featureKeys, features);
-    const measureCount = records.length + 1;
-    const reference = file.segments.map(({ start, end }) => ({ start, end }));
-    const heuristic = partitionSegments(measureCount, boundaryProbabilities(records), { ...LIMITS, targetLen });
-    pieces.push({ name, scoreId: file.scoreId ?? null, measureCount, ...boundaryAgreement(heuristic, reference) });
+    if (why === 'eligible') { pieces.push(scorePiece(name, file, targetLen)); continue; }
+    skipped[why] = (skipped[why] || 0) + 1;
+    const proposal = file?.approved?.proposal;
+    if (why === 'edited-proposal' && Array.isArray(proposal?.features) && proposal.features.length && Array.isArray(proposal.featureKeys)) {
+      edited.push(scorePiece(name, file, targetLen));
+    }
   }
-  const sum = (key) => pieces.reduce((n, p) => n + p[key], 0);
-  const tp = sum('tp'); const fp = sum('fp'); const fn = sum('fn');
   return {
-    pieces: pieces.map((p) => ({ ...p, precision: round(p.precision), recall: round(p.recall) })),
-    overall: { tp, fp, fn, precision: round(tp + fp ? tp / (tp + fp) : null), recall: round(tp + fn ? tp / (tp + fn) : null) },
+    pieces: pieces.map(rounded),
+    overall: totals(pieces),
+    edited: edited.map(rounded),
     skipped,
   };
 }
@@ -123,13 +158,18 @@ export function readLearnFiles(dir) {
   }));
 }
 
+const HEADER = 'piece                                          bars  tp  fp  fn  precision  recall  ±1 prec  ±1 rec';
+const cell = (v, w) => String(v ?? 'n/a').padStart(w);
+const row = (name, p) => `${name.padEnd(46).slice(0, 46)} ${cell(p.measureCount ?? '', 4)} ${cell(p.tp, 3)} ${cell(p.fp, 3)} ${cell(p.fn, 3)}  ${cell(p.precision, 9)}  ${cell(p.recall, 6)}  ${cell(p.nearPrecision, 7)}  ${cell(p.nearRecall, 6)}`;
+
 function table(result) {
-  const lines = ['piece                                          bars  tp  fp  fn  precision  recall'];
-  for (const p of result.pieces) {
-    lines.push(`${p.name.padEnd(46).slice(0, 46)} ${String(p.measureCount).padStart(4)} ${String(p.tp).padStart(3)} ${String(p.fp).padStart(3)} ${String(p.fn).padStart(3)}  ${String(p.precision ?? 'n/a').padStart(9)}  ${String(p.recall ?? 'n/a').padStart(6)}`);
+  const lines = [HEADER];
+  for (const p of result.pieces) lines.push(row(p.name, p));
+  lines.push(row('overall', result.overall));
+  if (result.edited.length) {
+    lines.push('', 'edited scorer proposals (not counted above):', HEADER);
+    for (const p of result.edited) lines.push(row(p.name, p));
   }
-  const o = result.overall;
-  lines.push(`${'overall'.padEnd(46)} ${''.padStart(4)} ${String(o.tp).padStart(3)} ${String(o.fp).padStart(3)} ${String(o.fn).padStart(3)}  ${String(o.precision ?? 'n/a').padStart(9)}  ${String(o.recall ?? 'n/a').padStart(6)}`);
   const skips = Object.entries(result.skipped).map(([k, n]) => `${k} ${n}`).join(', ');
   if (skips) lines.push(`skipped: ${skips}`);
   return lines.join('\n');

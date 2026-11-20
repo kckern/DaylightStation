@@ -15,7 +15,7 @@ import ApproveDialog, { ADMIN_PATH, scoreQuery } from "./ApproveDialog.jsx";
 import {
   cutsKey, featureSnapshot, firstTimeSig, proposeSegments, proposalTargetLen, quartersPerMeasure, scoreFeatures,
 } from "./proposeSegments.js";
-import { cropBox, renderCrops, requestJevProposal } from "./jevCrops.js";
+import { cropPlan, renderCrops, requestJevProposal } from "./jevCrops.js";
 import { POSTER_ERROR_MESSAGES, posterFromEngraving, uploadPoster } from "./posterJob.js";
 import "./SheetMusicScore.scss";
 
@@ -37,6 +37,7 @@ export const SEGMENT_ERROR_MESSAGES = {
 export const PROPOSE_ERROR_MESSAGES = {
   'jev-disabled': 'Jev proposals are turned off for this household (sheetmusic.admin.boundaryScorer).',
   'jev-unavailable': 'No Jev connection is configured on the server.',
+  'no-reference': 'Jev is compared only on scores whose approved segments were cut by hand.',
   'proposal-failed': 'Jev could not judge enough of the barlines. Try again in a minute, or use the heuristic.',
   'bad-crop': 'The score pictures for Jev came out the wrong size. Reload the page and try again.',
   'crop-failed': 'The score could not be turned into pictures for Jev.',
@@ -49,8 +50,9 @@ const pct = (x) => (x == null ? 'n/a' : `${Math.round(x * 100)}%`);
 export function comparisonText(comparison) {
   if (!comparison?.jev || !comparison?.heuristic) return null;
   const { jev, heuristic } = comparison;
-  return `Against the approved cuts: Jev precision ${pct(jev.precision)}, recall ${pct(jev.recall)}; `
-    + `heuristic precision ${pct(heuristic.precision)}, recall ${pct(heuristic.recall)}.`;
+  const near = (a) => (a.tolerant ? ` (within a bar: ${pct(a.tolerant.precision)} / ${pct(a.tolerant.recall)})` : '');
+  return `Against the approved cuts: Jev precision ${pct(jev.precision)}, recall ${pct(jev.recall)}${near(jev)}; `
+    + `heuristic precision ${pct(heuristic.precision)}, recall ${pct(heuristic.recall)}${near(heuristic)}.`;
 }
 
 export const FORM_ERROR_MESSAGES = {
@@ -368,38 +370,77 @@ export default function SheetMusicScore() {
   };
 
   const stamp = (proposal) => ({ ...proposal, ...(learn?.currentSha256 ? { contentSha256: learn.currentSha256 } : {}) });
-  const useJev = scorer === 'jev' && learn?.boundaryScorer === 'jev';
+  // `jev` mode: Jev proposes drafts. `calibrate` mode: Jev is only compared with
+  // the hand-cut approved segments, and its cuts are never applied.
+  const jevMode = learn?.jevOffered ? learn.boundaryScorer : null;
+  const useJev = jevMode === 'jev' && scorer === 'jev';
+
+  /** Features, crops and the request; resolves the server result or null (notice shown). */
+  const askJev = async () => {
+    const features = scoreFeatures(score);
+    const plans = new Map();
+    for (const f of features) {
+      if (f.sectionStart) continue;
+      const plan = cropPlan(measures, engraved.bounds, f.after);
+      if (!plan) {
+        logger.warn('admin.sheetmusic.propose-failed', { id, scorer: 'jev', code: 'crop-failed', barline: f.after, reason: 'no-bounds' });
+        setNotice({ color: 'red', text: PROPOSE_ERROR_MESSAGES['crop-failed'] });
+        return null;
+      }
+      plans.set(f.after, plan);
+    }
+    let crops;
+    try {
+      crops = await renderCrops(hostRef.current?.querySelector('svg'), plans);
+    } catch (err) {
+      logger.warn('admin.sheetmusic.propose-failed', { id, scorer: 'jev', code: err?.code || 'crop-failed', barline: err?.barline ?? null, error: err?.message });
+      setNotice({ color: 'red', text: PROPOSE_ERROR_MESSAGES['crop-failed'] });
+      return null;
+    }
+    const outcome = await requestJevProposal({
+      id, features, crops, measureCount, targetLen: proposalTargetLen(pianoConfig),
+    });
+    if (!alive.current) return null;
+    if (!outcome.ok) {
+      logger.warn('admin.sheetmusic.propose-failed', { id, scorer: 'jev', code: outcome.code, status: outcome.status });
+      setNotice({ color: 'red', text: PROPOSE_ERROR_MESSAGES[outcome.code] || `Jev could not propose segments${outcome.code ? ` (${outcome.code})` : ''}.` });
+      return null;
+    }
+    return outcome.result;
+  };
+
+  const compareWithJev = async () => {
+    if (!engraved || !measureCount) return;
+    const t0 = performance.now();
+    setBusy('compare');
+    setNotice(null);
+    try {
+      const result = await askJev();
+      if (!result) return;
+      const text = comparisonText(result.comparison);
+      logger.info('admin.sheetmusic.propose-compared', {
+        id, ms: Math.round(performance.now() - t0), model: result.proposal?.model ?? null,
+        jevRecall: result.comparison?.jev?.recall ?? null, heuristicRecall: result.comparison?.heuristic?.recall ?? null,
+      });
+      setNotice({ color: 'blue', text: text || 'Jev answered, but there was nothing to compare against.' });
+    } finally {
+      if (alive.current) setBusy(null);
+    }
+  };
 
   const proposeWithJev = async () => {
     const t0 = performance.now();
     setBusy('propose');
     setNotice(null);
     try {
-      const features = scoreFeatures(score);
-      const boxes = new Map();
-      for (const f of features) {
-        if (f.sectionStart) continue;
-        const box = cropBox(measures, engraved.bounds, f.after);
-        if (box) boxes.set(f.after, box);
-      }
-      let crops;
-      try {
-        crops = await renderCrops(hostRef.current?.querySelector('svg'), boxes);
-      } catch (err) {
-        logger.warn('admin.sheetmusic.propose-failed', { id, scorer: 'jev', code: err?.code || 'crop-failed', error: err?.message });
-        setNotice({ color: 'red', text: PROPOSE_ERROR_MESSAGES['crop-failed'] });
+      const result = await askJev();
+      if (!result) return;
+      // A calibration answer is evidence, never a draft.
+      if (result.mode === 'calibrate') {
+        setNotice({ color: 'blue', text: comparisonText(result.comparison) || 'Jev answered in calibration mode.' });
         return;
       }
-      const outcome = await requestJevProposal({
-        id, features, crops, measureCount, targetLen: proposalTargetLen(pianoConfig),
-      });
-      if (!alive.current) return;
-      if (!outcome.ok) {
-        logger.warn('admin.sheetmusic.propose-failed', { id, scorer: 'jev', code: outcome.code, status: outcome.status });
-        setNotice({ color: 'red', text: PROPOSE_ERROR_MESSAGES[outcome.code] || `Jev could not propose segments${outcome.code ? ` (${outcome.code})` : ''}.` });
-        return;
-      }
-      const { segments: cut = [], proposal, comparison } = outcome.result;
+      const { segments: cut = [], proposal, comparison } = result;
       const segments = cut.map((seg, i) => ({ id: idForIndex(i), start: seg.start, end: seg.end }));
       offerProposal({
         segments, proposal: stamp(proposal), ms: Math.round(performance.now() - t0), comparison: comparison || null,
@@ -610,7 +651,7 @@ export default function SheetMusicScore() {
               Edit
             </Button>
           )}
-          {learn?.boundaryScorer === 'jev' ? (
+          {jevMode === 'jev' ? (
             <SegmentedControl
               size="xs"
               value={scorer}
@@ -630,6 +671,18 @@ export default function SheetMusicScore() {
           >
             Propose segments
           </Button>
+          {jevMode === 'calibrate' ? (
+            <Button
+              size="sm"
+              variant="default"
+              onClick={compareWithJev}
+              disabled={Boolean(busy) || !measureCount}
+              loading={busy === 'compare'}
+              title="Ask Jev where the phrases end, and compare its cuts and the heuristic's with the approved ones. Nothing changes."
+            >
+              Compare with Jev
+            </Button>
+          ) : null}
           <Button
             size="sm"
             variant="light"

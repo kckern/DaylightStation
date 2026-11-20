@@ -380,12 +380,28 @@ describe('recordsFromRows', () => {
 
 describe('boundaryAgreement', () => {
   const seg = (start, end) => ({ start, end });
-  it('counts shared cuts; the end of the piece is not a cut', () => {
-    const got = boundaryAgreement([seg(0, 3), seg(4, 7), seg(8, 11)], [seg(0, 3), seg(4, 5), seg(6, 11)]);
-    assert.deepEqual(got, { tp: 1, fp: 1, fn: 1, precision: 0.5, recall: 0.5 });
+  it('counts shared boundaries, exact and within one bar', () => {
+    const got = boundaryAgreement([seg(0, 3), seg(4, 7), seg(8, 11)], [seg(0, 3), seg(4, 6), seg(7, 11)], 12);
+    assert.deepEqual(got, {
+      tp: 1, fp: 1, fn: 1, precision: 0.5, recall: 0.5,
+      tolerant: { tp: 2, precision: 1, recall: 1 },
+    });
   });
-  it('is null-safe when one side has no cuts', () => {
-    assert.deepEqual(boundaryAgreement([seg(0, 7)], [seg(0, 7)]), { tp: 0, fp: 0, fn: 0, precision: null, recall: null });
-    assert.deepEqual(boundaryAgreement([seg(0, 7)], [seg(0, 3), seg(4, 7)]), { tp: 0, fp: 0, fn: 1, precision: null, recall: 0 });
+  it('a gap in the reference is two boundaries: before it and after it', () => {
+    // Reference skips bars 4-5: boundaries after bar 3 and after bar 5.
+    const got = boundaryAgreement([seg(0, 3), seg(4, 7)], [seg(0, 3), seg(6, 7)], 8);
+    assert.deepEqual({ tp: got.tp, fp: got.fp, fn: got.fn }, { tp: 1, fp: 0, fn: 1 });
+    // A reference that starts late or ends early counts those edges too.
+    assert.equal(boundaryAgreement([seg(0, 7)], [seg(2, 5)], 8).fn, 2);
+  });
+  it('is null-safe when one side has no boundaries', () => {
+    assert.deepEqual(boundaryAgreement([seg(0, 7)], [seg(0, 7)], 8),
+      { tp: 0, fp: 0, fn: 0, precision: null, recall: null, tolerant: { tp: 0, precision: null, recall: null } });
+    assert.equal(boundaryAgreement([seg(0, 7)], [seg(0, 3), seg(4, 7)], 8).recall, 0);
+  });
+  it('matches each reference boundary at most once when tolerant', () => {
+    const got = boundaryAgreement([seg(0, 2), seg(3, 3), seg(4, 7)], [seg(0, 3), seg(4, 7)], 8);
+    assert.equal(got.tolerant.tp, 1);
+    assert.equal(got.tolerant.precision, 0.5);
   });
 });
