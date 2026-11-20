@@ -115,3 +115,52 @@ test('direct setup and invite URLs open without a public auth context request', 
   await expect(page.getByRole('heading', { name: 'Welcome, Fixture', exact: true })).toBeVisible();
   expect(calls).toBe(0);
 });
+
+for (const firstTime of [true, false]) {
+  test(`Admin recovers an accepted ${firstTime ? 'claim' : 'sign-in'} when the browser cannot save the session`, async ({ page, baseURL }) => {
+    // Exercise the deployed hostname path. AuthGate skips login on localhost.
+    const origin = 'http://household.test';
+    await page.route(origin + '/**', async route => {
+      const { pathname, search } = new URL(route.request().url());
+      if (pathname.startsWith('/api/')) return route.fallback();
+      const response = await route.fetch({ url: new URL(pathname + search, baseURL).href });
+      return route.fulfill({ response });
+    });
+    await page.addInitScript(() => {
+      const original = Storage.prototype.setItem;
+      Storage.prototype.setItem = function (key, value) {
+        if (this === localStorage && key === 'ds_token' && !sessionStorage.getItem('allowTokenWrite')) {
+          throw new DOMException('Storage quota exceeded', 'QuotaExceededError');
+        }
+        return original.call(this, key, value);
+      };
+    });
+    const username = 'fixture-admin';
+    const token = 'fixture.' + Buffer.from(JSON.stringify({ sub: username })).toString('base64url') + '.fixture';
+    const commands = [];
+    await page.route(authContext, route => route.fulfill({ json: { needsSetup: firstTime, setupAdmin: firstTime ? username : null } }));
+    await page.route('**/api/v1/auth/{claim,token}', route => {
+      commands.push([route.request().method(), new URL(route.request().url()).pathname]);
+      return route.fulfill({ json: { token } });
+    });
+    await page.goto(origin + adminMenus);
+    if (!firstTime) await page.getByLabel('Username', { exact: true }).fill(username);
+    await page.getByLabel(firstTime ? 'Choose a Password' : 'Password', { exact: true }).fill('fixture-password');
+    await page.getByRole('button', { name: firstTime ? 'Set Password & Sign In' : 'Sign In', exact: true }).click();
+    const firstCommand = ['POST', firstTime ? '/api/v1/auth/claim' : '/api/v1/auth/token'];
+    const alert = page.getByRole('alert');
+    await expect(alert).toContainText(firstTime ? 'Your password was set.' : 'Your sign-in was accepted.');
+    await expect(alert).toContainText(/browser.*storage/i);
+    expect(commands).toEqual([firstCommand]);
+    await expect(page.getByLabel('Username', { exact: true })).toHaveValue(username);
+    await expect(page.getByLabel('Password', { exact: true })).toHaveValue('');
+    await expect(page.getByRole('button', { name: 'New Menu' })).toHaveCount(0);
+    await page.evaluate(() => sessionStorage.setItem('allowTokenWrite', '1'));
+    await page.getByLabel('Password', { exact: true }).fill('fixture-password');
+    await page.getByRole('button', { name: 'Sign In', exact: true }).click();
+    await expect(page.getByRole('button', { name: 'New Menu', exact: true })).toBeVisible();
+    await expect(page).toHaveURL(origin + adminMenus);
+    expect(commands).toEqual([firstCommand, ['POST', '/api/v1/auth/token']]);
+    expect(await page.evaluate(() => localStorage.getItem('ds_token'))).toBe(token);
+  });
+}

@@ -32,35 +32,40 @@ export default function LoginScreen({ onLogin }) {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    setLoading(true);
     setError(null);
+    if (step === 'setup-username') {
+      setStep('setup-password');
+      return;
+    }
 
+    const claiming = step === 'setup-password';
+    setLoading(true);
+    let result;
     try {
-      if (step === 'setup-username') {
-        // Just advance to password step — no API call needed
-        setStep('setup-password');
-        setLoading(false);
-        return;
-      }
-
-      const endpoint = step === 'setup-password'
-        ? '/api/v1/auth/claim'
-        : '/api/v1/auth/token';
-
-      const result = await DaylightAPI(endpoint, { username, password }, 'POST');
-      setToken(result.token);
-      onLogin?.();
-    } catch (err) {
-      if (step === 'setup-password') {
+      result = await DaylightAPI(claiming ? '/api/v1/auth/claim' : '/api/v1/auth/token', { username, password }, 'POST');
+    } catch {
+      if (claiming) {
         setError('Username not found. Check and try again.');
         setStep('setup-username');
         setPassword('');
       } else {
         setError('Invalid username or password');
       }
+      return;
     } finally {
       setLoading(false);
     }
+
+    try {
+      setToken(result.token);
+    } catch {
+      setStep('login');
+      setPassword('');
+      const accepted = claiming ? 'Your password was set.' : 'Your sign-in was accepted.';
+      setError(accepted + ' This browser could not save your session. Allow site storage or free up space, then sign in again.');
+      return;
+    }
+    onLogin?.();
   };
 
   const isSetup = step === 'setup-username' || step === 'setup-password';
