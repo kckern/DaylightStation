@@ -21,6 +21,7 @@ async function installTriage(page, { holdBen, requireOwner = false } = {}) {
   const reads = [];
   const commands = [];
   const signIns = [];
+  const authReads = [];
   const benSummary = Promise.withResolvers();
   await page.routeWebSocket('**/*', () => {});
   await page.route('**/api/**', async route => {
@@ -32,6 +33,10 @@ async function installTriage(page, { holdBen, requireOwner = false } = {}) {
     if (pathname.endsWith('/life/user')) return route.fulfill({ json: username === 'ben' ? ben : amy });
     if (pathname.endsWith('/life/plan/')) return route.fulfill({ json: { purpose: { statement: 'Fixture plan' } } });
     if (pathname.endsWith('/life/now')) return route.fulfill({ json: { priorities: [], dashboard: {} } });
+    if (pathname === '/api/v1/auth/context') {
+      authReads.push(request.method());
+      return route.fulfill({ json: { needsSetup: false } });
+    }
     if (pathname.endsWith('/auth/token') && requireOwner) {
       const { username: owner } = request.postDataJSON();
       signIns.push(owner);
@@ -57,7 +62,7 @@ async function installTriage(page, { holdBen, requireOwner = false } = {}) {
     if (operation === 'session') return route.fulfill({ json: { steps: [{ id: 'unsure', count: 1 }], cards: [username === 'ben' ? benCard : card], total: 1, done: 0 } });
     return route.fulfill({ json: { entries: [] } });
   });
-  return { reads, commands, signIns, benSummary };
+  return { reads, commands, signIns, authReads, benSummary };
 }
 
 for (const width of [390, 1440]) {
@@ -110,7 +115,7 @@ for (const width of [390, 1440]) {
 test('Life triage asks for the selected owner sign-in when another member is signed in', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 850 });
   await page.addInitScript(token => localStorage.setItem('ds_token', token), sessionToken(amy.username));
-  const { reads, commands, signIns } = await installTriage(page, { requireOwner: true });
+  const { reads, commands, signIns, authReads } = await installTriage(page, { requireOwner: true });
   const main = page.getByRole('main');
   await page.goto('/life/now/triage');
   await expect(main.getByText(card.display.title)).toBeVisible();
@@ -128,6 +133,7 @@ test('Life triage asks for the selected owner sign-in when another member is sig
   await main.getByRole('button', { name: 'Sign In', exact: true }).press('Enter');
   await expect(main.getByText(benCard.display.title)).toBeVisible();
   expect(signIns).toEqual([ben.username]);
+  expect(authReads).toEqual(['GET']);
   expect(reads.filter(([username]) => username === ben.username)).toEqual([
     [ben.username, 'summary'], [ben.username, 'session'], [ben.username, 'summary'], [ben.username, 'session'],
   ]);

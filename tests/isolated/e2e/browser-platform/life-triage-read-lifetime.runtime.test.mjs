@@ -30,6 +30,7 @@ async function installTriage(page, { hold, heldResult, chosenCard = card, signIn
     if (pathname.endsWith('/life/users')) return route.fulfill({ json: { users: [member] } });
     if (pathname.endsWith('/life/plan/')) return route.fulfill({ json: { purpose: { statement: 'Fixture plan' } } });
     if (pathname.endsWith('/life/now')) return route.fulfill({ json: { priorities: [], dashboard: {} } });
+    if (pathname === '/api/v1/auth/context') return route.fulfill({ json: { needsSetup: false } });
     if (pathname.endsWith('/auth/token')) return route.fulfill({ json: { token: 'fixture-token' } });
     if (!pathname.startsWith('/api/v1/triage/')) return route.fulfill({ json: {} });
     const operation = pathname.split('/').pop();

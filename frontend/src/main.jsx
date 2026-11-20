@@ -1,5 +1,5 @@
 import { usePortalPageHeartbeat } from '../../__app_modules/learning/school/browser/page-evidence.mjs';
-import React, { useCallback, useState, useEffect } from 'react';
+import React, { useEffect } from 'react';
 import {SupervisionHost} from '../../__app_modules/household/supervision/browser/index.js';
 import ReactDOM from 'react-dom/client';
 import { BrowserRouter, Routes, Route, Outlet, useParams, Navigate, useLocation, useNavigate } from 'react-router-dom';
@@ -13,7 +13,7 @@ import { createAppTheme } from './lib/theme/createAppTheme.js';
 import { OfficeRedirect, TVRedirect, SchoolDeepLinkRedirect, TeacherNextRedirect } from './routeRedirects.jsx';
 import { WebSocketProvider } from './contexts/WebSocketContext.jsx';
 import { useViewportContent } from './lib/hooks/useViewportContent.js';
-import { useRefreshableRead } from './lib/hooks/useRefreshableRead.js';
+import { SetupCheck } from './modules/Auth/PublicAuthContext.jsx';
 // Every route is its own chunk: a page downloads the app it shows, not all
 // of them (the single bundle had grown past 11 MB). A long-lived tab whose
 // chunk hashes rotate under it on a deploy is recovered by chunkReload.js.
@@ -146,49 +146,6 @@ const AppDirectRoute = () => {
     />
   );
 };
-
-// Wrapper that redirects to /setup when no users have been created yet
-function SetupCheck({ children }) {
-  const [checked, setChecked] = useState(false);
-  const [needsSetup, setNeedsSetup] = useState(false);
-  const { pathname } = useLocation();
-
-  const readSetup = useCallback(async (isCurrent, signal) => {
-    // Skip check on setup and invite pages
-    if (pathname === '/setup' || pathname.startsWith('/invite/')) {
-      setChecked(true);
-      return;
-    }
-
-    // Keep the deadline inside the read so a current timeout releases boot.
-    const deadline = AbortSignal.timeout(5000);
-    const request = new AbortController();
-    const abort = () => request.abort();
-    signal.addEventListener('abort', abort, { once: true });
-    deadline.addEventListener('abort', abort, { once: true });
-    try {
-      // This public host-context check uses the browser's same-origin cookies.
-      const response = await fetch('/api/v1/auth/context', { signal: request.signal });
-      const data = await response.json();
-      // A claimable profile is handled by LoginScreen.
-      if (isCurrent()) setNeedsSetup(data.needsSetup && !data.setupAdmin);
-    } catch {
-      // A failed check releases boot. The login and claim flows still enforce auth.
-    } finally {
-      signal.removeEventListener('abort', abort);
-      deadline.removeEventListener('abort', abort);
-      if (isCurrent()) setChecked(true);
-    }
-  }, [pathname]);
-  const { reload: checkSetup } = useRefreshableRead(readSetup);
-  useEffect(() => { void checkSetup(); }, [checkSetup]);
-
-  if (!checked) return null;
-  if (needsSetup && pathname !== '/setup') {
-    return <Navigate to="/setup" replace />;
-  }
-  return children;
-}
 
 /** One boundary covers nested app, screen, bank and native-game routes alike. */
 function SupervisedRoutes({children}) {

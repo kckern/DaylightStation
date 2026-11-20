@@ -1,34 +1,53 @@
 // frontend/src/modules/Auth/LoginScreen.jsx
-import { useState, useEffect } from 'react';
+import { useContext, useState } from 'react';
 import { Stack, TextInput, Button, Text, Title, Paper, Alert } from '@mantine/core';
 import { DaylightAPI } from '../../lib/api.mjs';
 import { setToken } from '../../lib/auth.js';
+import { ErrorState, LoadingState, useRetryRegion } from '../../lib/ui/index.js';
+import { PublicAuthContext } from './PublicAuthContext.jsx';
 import PasswordInput from './methods/PasswordInput.jsx';
 import './Auth.scss';
 
 export default function LoginScreen({ onLogin }) {
-  const [username, setUsername] = useState('');
+  const { data, error, pending, reload } = useContext(PublicAuthContext);
+  const [formContext, setFormContext] = useState(data);
+  // Keep the last accepted mode available while the next route check runs.
+  if (data && data !== formContext) setFormContext(data);
+  const { regionProps, retry } = useRetryRegion(reload, !formContext && pending);
+
+  return <div className="auth-container">
+    <Paper component="section" {...regionProps} aria-label="Sign-in setup" className="auth-card" p="xl" radius="md">
+      {formContext ? <LoginForm context={formContext} onLogin={onLogin} />
+        : error ? <ErrorState error={error} onRetry={retry} label="Sign-in setup" />
+        : <LoadingState label="Sign-in setup" rows={2} />}
+    </Paper>
+  </div>;
+}
+
+function stepFor(setupAdmin) {
+  if (setupAdmin === null) return 'login';
+  return setupAdmin ? 'setup-password' : 'setup-username';
+}
+
+function LoginForm({ context, onLogin }) {
+  const nextSetupAdmin = context.needsSetup ? context.setupAdmin ?? '' : null;
+  const [setupAdmin, setSetupAdmin] = useState(nextSetupAdmin);
+  const [username, setUsername] = useState(setupAdmin ?? '');
   const [password, setPassword] = useState('');
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(false);
-  const [context, setContext] = useState(null);
-  // 'login' = normal flow, 'setup-username' = enter username, 'setup-password' = set password
-  const [step, setStep] = useState('login');
+  const [step, setStep] = useState(() => stepFor(setupAdmin));
 
-  useEffect(() => {
-    DaylightAPI('/api/v1/auth/context')
-      .then((ctx) => {
-        setContext(ctx);
-        if (ctx.needsSetup && ctx.setupAdmin) {
-          // Sysadmin exists — autofill and skip to password step
-          setUsername(ctx.setupAdmin);
-          setStep('setup-password');
-        } else if (ctx.needsSetup) {
-          setStep('setup-username');
-        }
-      })
-      .catch(() => {});
-  }, []);
+  if (!loading && setupAdmin !== nextSetupAdmin) {
+    setSetupAdmin(nextSetupAdmin);
+    // An accepted claim with a storage failure already moved into sign-in.
+    if (nextSetupAdmin !== null || step !== 'login') {
+      setStep(stepFor(nextSetupAdmin));
+      setUsername(nextSetupAdmin ?? '');
+      setPassword('');
+      setError(null);
+    }
+  }
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -72,55 +91,51 @@ export default function LoginScreen({ onLogin }) {
   const subtitle = isSetup ? 'First-Time Setup' : 'DaylightStation';
 
   return (
-    <div className="auth-container">
-      <Paper className="auth-card" p="xl" radius="md">
-        <form onSubmit={handleSubmit}>
-          <Stack gap="md" align="center">
-            <Title order={3}>{context?.householdName || 'DaylightStation'}</Title>
-            <Text c="dimmed" size="sm">{subtitle}</Text>
+    <form onSubmit={handleSubmit}>
+      <Stack gap="md" align="center">
+        <Title order={3}>{context.householdName || 'DaylightStation'}</Title>
+        <Text c="dimmed" size="sm">{subtitle}</Text>
 
-            {step === 'setup-password' ? (
-              <Text size="sm" w="100%">
-                Setting password for <strong>{username}</strong>
-              </Text>
-            ) : (
-              <TextInput
-                label="Username"
-                value={username}
-                onChange={(e) => setUsername(e.currentTarget.value)}
-                w="100%"
-              />
-            )}
+        {step === 'setup-password' ? (
+          <Text size="sm" w="100%">
+            Setting password for <strong>{username}</strong>
+          </Text>
+        ) : (
+          <TextInput
+            label="Username"
+            value={username}
+            onChange={(e) => setUsername(e.currentTarget.value)}
+            w="100%"
+          />
+        )}
 
-            {step !== 'setup-username' && (
-              <div style={{ width: '100%' }}>
-                <PasswordInput
-                  value={password}
-                  onChange={setPassword}
-                  label={step === 'setup-password' ? 'Choose a Password' : undefined}
-                />
-              </div>
-            )}
+        {step !== 'setup-username' && (
+          <div style={{ width: '100%' }}>
+            <PasswordInput
+              value={password}
+              onChange={setPassword}
+              label={step === 'setup-password' ? 'Choose a Password' : undefined}
+            />
+          </div>
+        )}
 
-            {error && <Alert color="red" w="100%">{error}</Alert>}
+        {error && <Alert color="red" w="100%">{error}</Alert>}
 
-            <Button
-              type="submit"
-              loading={loading}
-              fullWidth
-              disabled={
-                step === 'setup-username' ? !username :
-                step === 'setup-password' ? !password :
-                !username || !password
-              }
-            >
-              {step === 'setup-username' ? 'Continue' :
-               step === 'setup-password' ? 'Set Password & Sign In' :
-               'Sign In'}
-            </Button>
-          </Stack>
-        </form>
-      </Paper>
-    </div>
+        <Button
+          type="submit"
+          loading={loading}
+          fullWidth
+          disabled={
+            step === 'setup-username' ? !username :
+            step === 'setup-password' ? !password :
+            !username || !password
+          }
+        >
+          {step === 'setup-username' ? 'Continue' :
+           step === 'setup-password' ? 'Set Password & Sign In' :
+           'Sign In'}
+        </Button>
+      </Stack>
+    </form>
   );
 }
