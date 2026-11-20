@@ -193,4 +193,22 @@ describe('MeasureStrip', () => {
       rect.mockRestore();
     }
   });
+
+  it('shows each proposed boundary p on its barline, weak ones marked', () => {
+    render(
+      <MantineProvider>
+        <MeasureStrip measures={MEASURES} segments={[{ id: 'a', start: 0, end: 3 }, { id: 'b', start: 4, end: 7 }]} boundaries={{ 0: 0.31, 3: 0.92, 5: 1 }} />
+      </MantineProvider>,
+    );
+    const marks = [...document.querySelectorAll('[data-boundary]')];
+    expect(marks.map((el) => [el.getAttribute('data-boundary'), el.textContent])).toEqual([['0', '.31'], ['3', '.92'], ['5', 'mark']]);
+    expect(marks[0].className).toContain('sm-strip__p--weak');
+    expect(marks[1].className).not.toContain('sm-strip__p--weak');
+    expect(marks[1].getAttribute('title')).toBe('Phrase end after bar 3: p 0.92');
+  });
+
+  it('draws no boundary row without a proposal', () => {
+    render(<MantineProvider><MeasureStrip measures={MEASURES} segments={[]} /></MantineProvider>);
+    expect(document.querySelectorAll('[data-boundary]')).toHaveLength(0);
+  });
 });

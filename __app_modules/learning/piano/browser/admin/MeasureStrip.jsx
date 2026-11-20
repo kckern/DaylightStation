@@ -21,6 +21,9 @@ export const barsLabel = (measures, start, end) => (start === end
  */
 export const segmentLabel = (segment, index) => segment?.name || `Segment ${index + 1}`;
 
+/** A proposed boundary below this p is drawn as weak. */
+export const WEAK_BOUNDARY_P = 0.6;
+
 /** Runs of consecutive measure positions no segment covers, as [start, end]. */
 export function uncoveredRuns(segments, measureCount) {
   const covered = new Array(Math.max(measureCount, 0)).fill(false);
@@ -57,6 +60,7 @@ export default function MeasureStrip({
   errorIds = [],
   selectedId = null,
   onSelect,
+  boundaries = null,
 }) {
   const gridRef = useRef(null);
   // { kind: 'boundary'|'end'|'start', id } while a handle is being dragged.
@@ -70,6 +74,12 @@ export default function MeasureStrip({
   const errorSet = new Set(errorIds);
   const position = (s) => segments.indexOf(s);
   const send = (action) => { if (editable && dispatch) dispatch(action); };
+  // Proposed p(phrase ends) per barline after measure k, drawn under the bands.
+  const pAt = (k) => {
+    const v = boundaries?.[k];
+    return Number.isFinite(v) ? v : null;
+  };
+  const showBoundaries = Boolean(boundaries) && measures.some((_, k) => pAt(k) != null);
 
   /** The action that puts the dragged/keyed edge at the barline after measure k. */
   const moveTo = (kind, id, k) => (kind === 'boundary'
@@ -206,7 +216,7 @@ export default function MeasureStrip({
       <div className="sm-strip__scroll">
         <div
           ref={gridRef}
-          className="sm-strip__grid"
+          className={`sm-strip__grid${showBoundaries ? ' sm-strip__grid--boundaries' : ''}`}
           style={{ gridTemplateColumns: `repeat(${Math.max(n, 1)}, minmax(34px, 1fr))` }}
           onPointerMove={onPointerMove}
         >
@@ -252,6 +262,22 @@ export default function MeasureStrip({
               </div>
             );
           })}
+          {showBoundaries ? measures.map((_, k) => {
+            const p = pAt(k);
+            if (p == null || k >= n - 1) return null;
+            const weak = p < WEAK_BOUNDARY_P;
+            return (
+              <span
+                key={`p-${k}`}
+                className={`sm-strip__p${weak ? ' sm-strip__p--weak' : ''}`}
+                style={{ gridColumn: k + 1, gridRow: 3 }}
+                data-boundary={k}
+                title={`Phrase end after bar ${printedNumber(measures, k)}: p ${p.toFixed(2)}${weak ? ' (weak)' : ''}`}
+              >
+                {p >= 1 ? 'mark' : p.toFixed(2).replace(/^0/, '')}
+              </span>
+            );
+          }) : null}
           {editable ? runs.map(([start, end]) => (
             <button
               key={`add-${start}`}

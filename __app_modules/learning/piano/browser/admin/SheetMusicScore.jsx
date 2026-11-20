@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useMemo, useReducer, useRef, useState } 
 import { Link, useParams } from 'react-router-dom';
 import { Alert, Anchor, Badge, Button, Group, List, Skeleton, Stack, Text, Title } from '@mantine/core';
 import {
-  IconAlertTriangle, IconArrowBackUp, IconCheck, IconChevronLeft, IconDeviceFloppy, IconPencil, IconRefresh, IconX,
+  IconAlertTriangle, IconArrowBackUp, IconCheck, IconChevronLeft, IconDeviceFloppy, IconPencil, IconRefresh, IconSparkles, IconX,
 } from '@tabler/icons-react';
 import getLogger from "../../../../../frontend/src/lib/logging/Logger.js";
 import { DaylightAPI, DaylightAPIText } from "../../../../../frontend/src/lib/api.mjs";
@@ -12,6 +12,7 @@ import { errors as editorErrors, idForIndex, initSegmentEditor, segmentEditorRed
 import { fillParts, generatedSegments, householdOverridesSegments } from "./scorePlan.js";
 import MeasureStrip, { SEGMENT_COLORS, barsLabel, segmentLabel } from "./MeasureStrip.jsx";
 import ApproveDialog, { ADMIN_PATH, scoreQuery } from "./ApproveDialog.jsx";
+import { proposeSegments, proposalTargetLen, quartersPerMeasure } from "./proposeSegments.js";
 import "./SheetMusicScore.scss";
 
 const LIBRARY_ROUTE = '/admin/content/sheet-music';
@@ -113,6 +114,9 @@ export default function SheetMusicScore() {
   const [busy, setBusy] = useState(null);
   const [dialog, setDialog] = useState(null);
   const [reloadKey, setReloadKey] = useState(0);
+  // The unsaved proposal behind the editor's segments: { proposal, key } where key is
+  // the segmentsKey it produced, so Save draft can tell an edited proposal apart.
+  const [pending, setPending] = useState(null);
   const hostRef = useRef(null);
   const alive = useRef(false);
   useEffect(() => {
@@ -182,6 +186,7 @@ export default function SheetMusicScore() {
         setEngraved({
           measures, bounds, steps: result.steps || [], sections: parsed?.sections || [],
           tempoMap: result.tempoEntries || [], tempo: parsed?.tempo, width: result.width, height: result.height,
+          beatsPerMeasure: quartersPerMeasure(parsed?.timeSig),
         });
         logger.info('admin.sheetmusic.engraved', { id, measures: measures.length });
       } catch (err) {
@@ -224,6 +229,7 @@ export default function SheetMusicScore() {
     }
     setSelectedId(null);
     setServerErrors(null);
+    setPending(null);
   }, [learn, engraved]);
 
   const approved = Array.isArray(learn?.segments) ? learn.segments : [];
@@ -262,7 +268,27 @@ export default function SheetMusicScore() {
     logger.info('admin.sheetmusic.edit-started', { id, from: hasApproved ? 'approved' : 'generated', segments: source.length });
   };
 
+  const onPropose = () => {
+    if (!engraved || !measureCount) return;
+    const t0 = performance.now();
+    const { segments, proposal } = proposeSegments(
+      { measures, steps: engraved.steps, sections: engraved.sections, beatsPerMeasure: engraved.beatsPerMeasure },
+      { targetLen: proposalTargetLen(pianoConfig) },
+    );
+    const ms = Math.round(performance.now() - t0);
+    if (editing) dispatch({ type: 'replace', segments });
+    else dispatch({ type: 'load', segments, measureCount });
+    if (!editing) setBaseline(null);
+    setEditing(true);
+    setSelectedId(null);
+    setNotice(null);
+    setServerErrors(null);
+    setPending({ proposal, key: segmentsKey(segments) });
+    logger.info('admin.sheetmusic.propose', { id, scorer: proposal.scorer, segments: segments.length, ms });
+  };
+
   const discard = () => {
+    setPending(null);
     setNotice(null);
     setServerErrors(null);
     if (hasDraft) {
@@ -293,7 +319,11 @@ export default function SheetMusicScore() {
   const saveDraft = async () => {
     if (!canWrite) return null;
     const keepProposal = !dirty && learn?.draft?.proposal;
-    const proposal = keepProposal ? learn.draft.proposal : { scorer: 'manual', at: new Date().toISOString() };
+    // A proposal saved as proposed keeps its scorer; one changed by hand says so, so
+    // calibration does not take it for the scorer's own cut or for a hand-made one.
+    const proposal = pending
+      ? (segmentsKey(editor.segments) === pending.key ? pending.proposal : { ...pending.proposal, edited: true })
+      : keepProposal ? learn.draft.proposal : { scorer: 'manual', at: new Date().toISOString() };
     setBusy('save');
     setServerErrors(null);
     setNotice(null);
@@ -352,6 +382,7 @@ export default function SheetMusicScore() {
   const viewTitle = !hasApproved ? 'Generated segments (what the kiosk plays now)'
     : learn?.stale ? 'Approved segments (stale: the kiosk ignores them)' : 'Approved segments (what the kiosk plays)';
   const errorIds = segmentErrors.map((e) => editor.segments[e.index]?.id).filter(Boolean);
+  const draftBoundaries = pending?.proposal?.boundaries ?? learn?.draft?.proposal?.boundaries ?? null;
 
   return (
     <Stack gap="sm" p="md" className="sm-score">
@@ -418,6 +449,9 @@ export default function SheetMusicScore() {
               Edit
             </Button>
           )}
+          <Button size="sm" variant="light" leftSection={<IconSparkles size={16} />} onClick={onPropose} disabled={Boolean(busy) || !measureCount}>
+            Propose segments
+          </Button>
           {hasApproved ? (
             <Button size="sm" variant="light" color="orange" leftSection={<IconArrowBackUp size={16} />} onClick={() => setDialog('revert')} disabled={Boolean(busy) || !hasGenerated}>
               Revert to generated
@@ -465,6 +499,7 @@ export default function SheetMusicScore() {
                 errorIds={errorIds}
                 selectedId={selectedId}
                 onSelect={setSelectedId}
+                boundaries={draftBoundaries}
               />
               {hasApproved ? <MeasureStrip measures={measures} segments={approved} variant="approved" title="Approved" /> : null}
             </>

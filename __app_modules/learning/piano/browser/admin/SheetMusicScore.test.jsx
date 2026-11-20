@@ -181,6 +181,55 @@ describe('SheetMusicScore', () => {
     expect(ids).toEqual(ids.map((_, i) => String.fromCharCode(97 + i)));
   });
 
+  it('proposes phrase segments into the draft and saves the proposal only on Save draft', async () => {
+    renderPage();
+    await engravedReady();
+    fireEvent.click(await screen.findByRole('button', { name: 'Propose segments' }));
+    const strip = await screen.findByTestId('measure-strip-draft');
+    expect(strip.querySelectorAll('[data-boundary]')).toHaveLength(7);
+    expect(putCalls()).toEqual([]);
+    const proposed = logged.find((l) => l.event === 'admin.sheetmusic.propose');
+    expect(proposed?.data).toMatchObject({ id: DEFAULT_ID, scorer: 'heuristic' });
+    expect(proposed.data.segments).toBeGreaterThan(0);
+    expect(typeof proposed.data.ms).toBe('number');
+    fireEvent.click(screen.getByRole('button', { name: 'Save draft' }));
+    await waitFor(() => expect(putCalls().length).toBe(1));
+    const body = putCalls()[0][1];
+    expect(body.segments.map((seg) => seg.id)).toEqual(body.segments.map((_, i) => String.fromCharCode(97 + i)));
+    expect(body.segments[0].start).toBe(0);
+    expect(body.segments[body.segments.length - 1].end).toBe(7);
+    expect(body.segments.every((seg) => Array.isArray(seg.parts) && seg.parts.length)).toBe(true);
+    expect(body.proposal).toMatchObject({ scorer: 'heuristic', model: null });
+    expect(Object.keys(body.proposal.boundaries)).toHaveLength(7);
+    expect(body.proposal.features).toHaveLength(7);
+    expect(body.proposal.edited).toBeUndefined();
+  });
+
+  it('marks a proposal edited when the grown-up changes it before saving', async () => {
+    renderPage();
+    await engravedReady();
+    fireEvent.click(await screen.findByRole('button', { name: 'Propose segments' }));
+    const strip = await screen.findByTestId('measure-strip-draft');
+    fireEvent.click(within(strip).getAllByRole('button', { name: /^Segment 1, / })[0]);
+    const name = within(strip).getByLabelText('Name');
+    fireEvent.change(name, { target: { value: 'Opening' } });
+    fireEvent.blur(name);
+    fireEvent.click(screen.getByRole('button', { name: 'Save draft' }));
+    await waitFor(() => expect(putCalls().length).toBe(1));
+    expect(putCalls()[0][1].proposal).toMatchObject({ scorer: 'heuristic', edited: true });
+  });
+
+  it('shows a saved proposal\'s boundaries on the draft strip', async () => {
+    learn = learnFile({
+      draft: { segments: [{ id: 'a', start: 0, end: 7 }], proposal: { scorer: 'heuristic', boundaries: { 3: 0.9, 4: 0.2 } } },
+      draftRevision: 'r',
+    });
+    renderPage();
+    await engravedReady();
+    const strip = await screen.findByTestId('measure-strip-draft');
+    expect([...strip.querySelectorAll('[data-boundary]')].map((el) => el.getAttribute('data-boundary'))).toEqual(['3', '4']);
+  });
+
   it('shows validation errors live and disables Save and Approve', async () => {
     learn = learnFile({ draft: { segments: [{ id: 'a', start: 0, end: 4 }, { id: 'b', start: 4, end: 7 }] }, draftRevision: 'r' });
     renderPage();
