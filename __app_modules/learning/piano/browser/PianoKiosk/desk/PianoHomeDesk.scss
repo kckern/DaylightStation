@@ -26,6 +26,9 @@
   // One layout for both kinds of card, 193x150: the poster with the badge,
   // title and next step beside it (90), and the progress pinned under it. A
   // piece with more than fourteen passages takes two coin rows and 170px.
+  // When any piece needs two coin rows, every card grows together so the row stays even.
+  &[data-tall] &__card { height: 170px; }
+
   &__card {
     flex: 0 1 auto;
     width: 193px;
@@ -44,7 +47,6 @@
     text-align: left;
     cursor: pointer;
     overflow: hidden;
-    &[data-rows='2'] { height: 170px; }
     &:active { background: var(--piano-surface-2); }
     &:disabled { cursor: default; color: var(--piano-muted); }
     &:disabled .piano-avatar, &:disabled img { filter: grayscale(1); }
@@ -58,8 +60,9 @@
     border-radius: 6px; overflow: hidden; background: var(--piano-surface-2);
     img { display: block; width: 100%; height: 100%; object-fit: cover; }
     &[data-stand-in] {
-      display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px;
-      padding: 6px 4px; box-sizing: border-box;
+      // The bottom 26px belong to the play disc, so the title stops above it.
+      display: flex; flex-direction: column; align-items: center; justify-content: flex-start; gap: 4px;
+      padding: 8px 4px 26px; box-sizing: border-box;
       background: color-mix(in srgb, var(--piano-accent) 18%, var(--piano-surface-2));
     }
   }
@@ -67,7 +70,7 @@
   &__stand-in {
     font-size: 11px; font-weight: 700; line-height: 1.15; text-align: center; color: var(--piano-muted);
     overflow-wrap: anywhere;
-    display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden;
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
   }
   // The resume cue: a small solid play disc in the poster's corner.
   &__play {

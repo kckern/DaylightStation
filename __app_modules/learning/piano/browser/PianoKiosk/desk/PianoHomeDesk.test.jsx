@@ -126,14 +126,16 @@ describe('PianoHomeDesk progress strip', () => {
     const card = await screen.findByRole('button', { name: 'Kid: 1 of 12 Silver' });
     expect(card.querySelector('.piano-desk__map').style.gridTemplateColumns).toBe('repeat(12, 12px)');
     expect(card.hasAttribute('data-rows')).toBe(false);
+    expect(document.querySelector('.piano-desk').hasAttribute('data-tall')).toBe(false);
   });
 
-  it('wraps a longer piece onto two rows and makes its card taller', async () => {
+  it('wraps a longer piece onto two rows and makes every card on the strip taller', async () => {
     h.desk.players[0].piece = { ...piece, total: 20, passages: Array.from({ length: 20 }, (_, index) => ({ id: `p${index}`, start: index * 4, end: index * 4 + 3, state: 'todo' })) };
     mount();
     const card = await screen.findByRole('button', { name: 'Kid: 1 of 20 Silver' });
     expect(card.querySelector('.piano-desk__map').style.gridTemplateColumns).toBe('repeat(10, 15px)');
     expect(card.getAttribute('data-rows')).toBe('2');
+    expect(document.querySelector('.piano-desk').hasAttribute('data-tall')).toBe(true);
   });
 
   it('shows only the children, never the parents', async () => {

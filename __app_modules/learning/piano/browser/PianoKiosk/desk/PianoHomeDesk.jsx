@@ -133,6 +133,7 @@ export default function PianoHomeDesk({ disabled, onOpenPassage, onOpenCourse })
   const loaded = pieces !== null && courses !== null;
   const groups = loaded ? stripGroups({ pieces, courses }).filter((group) => children.has(group.userId)) : [];
   const cards = groups.flatMap((group) => group.cards);
+  const tall = cards.some((card) => card.kind === 'piece' && mapRows(card.piece.passages.length) > 1);
   useEffect(() => {
     logger.debug('piano.desk.view', { cards: cards.map((card) => card.key) });
   }, [logger, cards.map((card) => card.key).join(',')]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -146,7 +147,7 @@ export default function PianoHomeDesk({ disabled, onOpenPassage, onOpenCourse })
     }
   };
   return (
-    <section className={`piano-desk${disabled ? ' is-disabled' : ''}`} aria-label="Recent progress">
+    <section className={`piano-desk${disabled ? ' is-disabled' : ''}`} data-tall={tall || undefined} aria-label="Recent progress">
       {groups.map((group) => (
         <div key={group.userId} className="piano-desk__child">
           <span className="piano-desk__who">
