@@ -49,6 +49,14 @@ async function preloadSiblings(contentId, contentInfo) {
   }
 }
 
+const SIBLING_PRELOAD_RADIUS = 2;
+
+function getNearbyItems(flatItems, sectionIndex, itemIndex) {
+  const index = flatItems.findIndex(item => item.sectionIndex === sectionIndex && item.itemIndex === itemIndex);
+  if (index < 0) return [];
+  return flatItems.slice(Math.max(0, index - SIBLING_PRELOAD_RADIUS), index + SIBLING_PRELOAD_RADIUS + 1);
+}
+
 function ListsItemRow({ item, onUpdate, onDelete, onToggleActive, onDuplicate, isWatchlist, onEdit, onSplit, sectionIndex, sectionCount, sections, itemCount, onMoveItem, activeContentDrag, swapFlashKey, dragId, allowSublistNavigation = true, allowNewSection = true }) {
   const log = useMemo(() => adminLog('ListsItemRow'), []);
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
@@ -65,7 +73,7 @@ function ListsItemRow({ item, onUpdate, onDelete, onToggleActive, onDuplicate, i
 
   const navigate = useNavigate();
   const { type: currentListType } = useParams();
-  const { getNearbyItems, setContentInfo, contentInfoMap, inUseImages } = useListsContext();
+  const { flatItems, setContentInfo, contentInfoMap, inUseImages } = useListsContext();
 
   const [imagePickerOpen, setImagePickerOpen] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
@@ -92,7 +100,7 @@ function ListsItemRow({ item, onUpdate, onDelete, onToggleActive, onDuplicate, i
   const handleRowHover = useCallback(() => {
     if (!item.input) return;
 
-    const nearbyItems = getNearbyItems(item.index, 2);
+    const nearbyItems = getNearbyItems(flatItems, sectionIndex, item.index);
     nearbyItems.forEach(nearbyItem => {
       if (!nearbyItem.input) return;
 
@@ -100,7 +108,7 @@ function ListsItemRow({ item, onUpdate, onDelete, onToggleActive, onDuplicate, i
         : getCachedCatalogContentInfo(nearbyItem.input, contentInfoMap.get(nearbyItem.input));
       preloadSiblings(nearbyItem.input, info);
     });
-  }, [item.input, item.index, getNearbyItems, contentInfo, contentInfoMap]);
+  }, [item.input, item.index, sectionIndex, flatItems, contentInfo, contentInfoMap]);
 
   const style = {
     transform: CSS.Transform.toString(transform),

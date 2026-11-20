@@ -1,7 +1,7 @@
 import React from 'react';
 import { MantineProvider } from '@mantine/core';
 import { MemoryRouter } from 'react-router-dom';
-import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { expect, it, vi } from 'vitest';
 import ListDraftEditor from './ListDraftEditor.jsx';
 import { applyListEdit } from '../../portable/list-structure.mjs';
@@ -11,6 +11,31 @@ vi.mock('./ImagePickerModal.jsx', () => ({default:({opened,onSave,onClose})=>ope
 vi.mock('./CapabilityWarning.jsx', () => ({CapabilityWarning:()=>null}));
 const list={sections:[{uid:'s1',title:'First',items:[{uid:'i1',title:'One',open:'games/one'},{uid:'i2',title:'Two',play:{contentId:'music:two'}}]}]};
 function setup(props={}) {const onEdit=vi.fn(); render(<MantineProvider><MemoryRouter future={{v7_startTransition:true,v7_relativeSplatPath:true}}><ListDraftEditor list={list} onEdit={onEdit} {...props}/></MemoryRouter></MantineProvider>); return onEdit;}
+
+it('warms only the hovered activity and its two neighbors on either side', async () => {
+  const makeItem = index => ({ uid: `draft-${index}`, title: `Draft activity ${index}`, play: { contentId: `plex:draft-${index}` } });
+  const source = { sections: [
+    { uid: 's1', items: [0, 1, 2, 3].map(makeItem) },
+    { uid: 's2', items: [4, 5, 6, 7, 8].map(makeItem) },
+  ] };
+  const siblingReads = [];
+  const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async url => {
+    const path = new URL(url, location.origin).pathname;
+    if (path.startsWith('/api/v1/info/plex/')) return Response.json({ title: path.split('/').at(-1) });
+    if (path.startsWith('/api/v1/siblings/')) siblingReads.push(path);
+    return Response.json({ items: [] });
+  });
+
+  try {
+    await act(async () => setup({ list: source }));
+    fireEvent.mouseEnter(screen.getByTestId('item-row-1-0'));
+
+    expect(siblingReads).toEqual([2, 3, 4, 5, 6].map(index => `/api/v1/siblings/plex/draft-${index}`));
+  } finally {
+    fetchMock.mockRestore();
+  }
+});
+
 it('emits stable UID commands for keyboard reorder, swap and delete',()=>{const edit=setup(); fireEvent.click(screen.getByRole('button',{name:'Move Two up'})); expect(edit).toHaveBeenCalledWith({type:'move-item',itemUid:'i2',beforeUid:'i1'}); fireEvent.click(screen.getByRole('textbox',{name:'Swap One with'})); fireEvent.click(screen.getByRole('option',{name:'Two'})); expect(edit).toHaveBeenCalledWith({type:'swap-items',firstUid:'i1',secondUid:'i2'}); fireEvent.click(screen.getByRole('button',{name:'Delete One'})); expect(edit).toHaveBeenCalledWith({type:'delete-item',itemUid:'i1'});});
 it('read only hides mutation controls',()=>{const edit=setup({readOnly:true}); expect(screen.queryByRole('button',{name:'Delete One'})).toBeNull(); expect(edit).not.toHaveBeenCalled();});
 

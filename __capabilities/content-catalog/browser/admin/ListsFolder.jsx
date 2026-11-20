@@ -169,15 +169,6 @@ function FolderEditor({ type, listName }) {
     });
   }, []);
 
-  const getNearbyItems = useCallback((index, radius = 2) => {
-    const start = Math.max(0, index - radius);
-    const end = Math.min(flatItems.length - 1, index + radius);
-    return flatItems.slice(start, end + 1).map((item, i) => ({
-      ...item,
-      index: start + i,
-    }));
-  }, [flatItems]);
-
   const sensors = useSensors(
     useSensor(PointerSensor),
     useSensor(KeyboardSensor)
@@ -410,9 +401,8 @@ function FolderEditor({ type, listName }) {
     flatItems,
     contentInfoMap,
     setContentInfo,
-    getNearbyItems,
     inUseImages,
-  }), [sections, flatItems, contentInfoMap, setContentInfo, getNearbyItems, inUseImages]);
+  }), [sections, flatItems, contentInfoMap, setContentInfo, inUseImages]);
 
   if (reading && !readError && !listMetadata) {
     return (

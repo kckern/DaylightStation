@@ -718,8 +718,14 @@ describe('useContentCombobox', () => {
     let newPagination;
     act(() => { newPagination = result.current.paginate('after'); });
     try {
-      expect(fetchMock.mock.calls.map(([url]) => url).filter(url => url.endsWith(pageQuery)))
-        .toEqual([firstWindow + pageQuery, nextWindow + pageQuery]);
+      const pages = fetchMock.mock.calls.filter(([url]) => url.endsWith(pageQuery));
+      expect(pages.map(([url]) => url)).toEqual([firstWindow + pageQuery, nextWindow + pageQuery]);
+      for (const [, request] of pages) {
+        expect(request).toMatchObject({ method: 'GET', signal: expect.any(AbortSignal) });
+        expect(request).not.toHaveProperty('body');
+      }
+      expect(pages[0][1].signal.aborted).toBe(true);
+      expect(pages[1][1].signal.aborted).toBe(false);
 
       await act(async () => {
         finishFirst(await jsonResponse({ items: [{ id: 'plex:12' }] }));

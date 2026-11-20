@@ -7,7 +7,8 @@ import { useCallback, useLayoutEffect, useRef } from 'react';
  * Cancel retires the current read and leaves the scope available for another.
  * Poll starts only when the scope is idle. An optional timeout retires a
  * stalled request, releases the polling slot, and calls the optional onTimeout.
- * Arguments supplied to reload or poll reach only that read and its timeout.
+ * A started reload or poll resolves with the read result. Arguments are
+ * forwarded to that read and its timeout.
  * Memoize onTimeout with the same lifetime as the read.
  */
 export function useRefreshableRead(read, { timeoutMs, onTimeout } = {}) {
@@ -45,7 +46,7 @@ export function useRefreshableRead(read, { timeoutMs, onTimeout } = {}) {
       }, timeoutMs);
     }
     try {
-      await read(isCurrent, controller.signal, ...args);
+      return await read(isCurrent, controller.signal, ...args);
     } finally {
       clearTimeout(deadline);
       if (isCurrent()) scope.pending = null;

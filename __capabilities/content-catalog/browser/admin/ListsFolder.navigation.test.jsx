@@ -13,6 +13,26 @@ const menus = '/admin/content/lists/menus';
 const api = '/api/v1' + menus;
 beforeEach(() => { DaylightAPI.mockReset(); });
 
+it('warms the filtered row and its neighbors in the original list order', async () => {
+  const makeItem = index => ({ label: `Folder item ${index}`, input: `plex:folder-${index}` });
+  const sections = [
+    { title: 'First section', items: [0, 1, 2, 3, 4].map(makeItem) },
+    { title: 'Second section', items: [5, 6, 7, 8].map(makeItem) },
+  ];
+  DaylightAPI.mockImplementation(async path => {
+    if (path === api + '/first') return { title: 'Folder', sections };
+    if (path.startsWith('/api/v1/info/plex/')) return { title: path.split('/').at(-1) };
+    return { items: [] };
+  });
+
+  await act(async () => openFolder());
+  fireEvent.change(screen.getByPlaceholderText('Search items...'), { target: { value: 'Folder item 5' } });
+  fireEvent.mouseEnter(await screen.findByTestId('item-row-1-0'));
+
+  const siblingReads = DaylightAPI.mock.calls.map(([path]) => path).filter(path => path.startsWith('/api/v1/siblings/'));
+  expect(siblingReads).toEqual([3, 4, 5, 6, 7].map(index => `/api/v1/siblings/plex/folder-${index}`));
+});
+
 function openFolder({ showIndex = false } = {}) {
   render(<MantineProvider env="test"><MemoryRouter initialEntries={[menus + '/first']}>
     <Link to={menus + '/second'}>Open another folder</Link>

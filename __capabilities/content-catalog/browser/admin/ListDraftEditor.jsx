@@ -36,9 +36,11 @@ export default function ListDraftEditor({list, onEdit, renderItemSettings, readO
   const [cache, setCache] = useState(new Map());
   const editingView = useMemo(() => editing?.item ? presentation(editing.item, 0) : null, [editing]);
   const sections = list.sections || [];
-  const flatItems = useMemo(() => sections.flatMap(s => s.items.map((item, index) => presentation(item,index))), [sections]);
+  const flatItems = useMemo(() => sections.flatMap((section, sectionIndex) =>
+    section.items.map((item, itemIndex) => ({ ...presentation(item, itemIndex), sectionIndex, itemIndex }))
+  ), [sections]);
   const setContentInfo = useCallback((id, info) => setCache(old => new Map(old).set(id,info)), []);
-  const context = useMemo(() => ({sections,flatItems,contentInfoMap:cache,setContentInfo,getNearbyItems:()=>flatItems,inUseImages:new Set()}),[sections,flatItems,cache,setContentInfo]);
+  const context = useMemo(() => ({sections,flatItems,contentInfoMap:cache,setContentInfo,inUseImages:new Set()}),[sections,flatItems,cache,setContentInfo]);
   const sensors = useSensors(useSensor(PointerSensor),useSensor(KeyboardSensor,{coordinateGetter:sortableKeyboardCoordinates}));
   const emit = edit => { if (!readOnly) onEdit(edit); };
   const move = (section,index,direction) => {

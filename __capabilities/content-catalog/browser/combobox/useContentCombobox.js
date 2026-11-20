@@ -123,10 +123,9 @@ export function useContentCombobox({
   const onChangeRef = useRef(onChange);
   onChangeRef.current = onChange;
 
-  // Monotonic token invalidating in-flight browse loads when the user types,
-  // the dropdown closes, or the committed value changes — a late response must
-  // not yank the machine back into BROWSE over newer intent.
-  const browseTokenRef = useRef(0);
+  // A shared sibling cache read may outlive this picker. Only the visit that
+  // requested its data can use it to open the sibling window.
+  const siblingsVisitRef = useRef(0);
   // Which committed value and request path own the live browse window. Only a
   // siblings load (BROWSE_LOADED) sets it — drilled/parent levels own their
   // own pagination, and paginate() must never fetch /siblings for those.
@@ -134,27 +133,45 @@ export function useContentCombobox({
   // no pagination today.
   const paginationOwnerRef = useRef(null);
   const readExpansion = useCallback(async (isCurrent, signal, request) => {
-    const { token, target, transition, referenceId, event, details, log } = request;
-    const stillWanted = () => isCurrent() && browseTokenRef.current === token;
+    const { target, transition, referenceId, event, details, log } = request;
     try {
       const data = await expandContainer(target.source, target.localId, signal);
-      if (!stillWanted()) return;
+      if (!isCurrent()) return;
       const items = (data.items || []).map(ensureId);
       const referenceIndex = referenceId == null ? 0 : Math.max(0, items.findIndex((item) => item.id === referenceId));
       log.info(`${event}.done`, { ...details, itemCount: items.length });
       dispatch({ ...transition, items, pagination: data.pagination ?? null, referenceIndex });
     } catch (err) {
-      if (!stillWanted()) return;
+      if (!isCurrent()) return;
       log.error(`${event}.error`, { ...details, error: err.message });
       dispatch({ type: 'BROWSE_LOADING', loading: false });
     }
   }, []);
   const { reload: reloadExpansion, cancel: cancelExpansion } = useRefreshableRead(readExpansion);
+  const readPage = useCallback(async (isCurrent, signal, { owner, direction, offset, limit, log }) => {
+    log.info('load_more_siblings', { direction, offset, limit, contentId: owner.contentId, path: owner.path });
+    try {
+      const data = await DaylightAPI(
+        `${owner.path}?offset=${offset}&limit=${limit}`,
+        {}, 'GET', { signal },
+      );
+      if (!isCurrent()) return false;
+      dispatch({ type: 'PAGINATED', direction, items: (data.items || []).map(toBrowseItem) });
+      return true;
+    } catch (err) {
+      if (isCurrent()) log.error('load_more_siblings.error', { direction, error: err.message });
+      return false;
+    }
+  }, []);
+  const { poll: readPageWhenIdle, cancel: cancelPage } = useRefreshableRead(readPage);
+
   const invalidateBrowseLoads = useCallback(() => {
-    browseTokenRef.current += 1;
+    siblingsVisitRef.current += 1;
     paginationOwnerRef.current = null;
     cancelExpansion();
-  }, [cancelExpansion]);
+    cancelPage();
+  }, [cancelExpansion, cancelPage]);
+  useLayoutEffect(() => invalidateBrowseLoads, [invalidateBrowseLoads]);
 
   // Warm the valid-prefix set for pickers that accept typed IDs. These reads
   // are shared across rows, and reopening can retry an incomplete lookup.
@@ -189,13 +206,27 @@ export function useContentCombobox({
 
   const [batchResults, setBatchResults] = useState([]);
   const [batchLoading, setBatchLoading] = useState(false);
-  const batchRequest = useRef(null);
-  const abortBatchRequest = useCallback(() => {
-    const previous = batchRequest.current;
-    batchRequest.current = null;
-    previous?.abort();
+  const readBatch = useCallback(async (isCurrent, signal, text, effectiveParams, log) => {
+    log.info('batch_search.start', { text, params: effectiveParams || null });
+    setBatchLoading(true);
+    try {
+      const data = await DaylightAPI(
+        `${SEARCH_BATCH_ENDPOINT}?text=${encodeURIComponent(text)}&take=${BATCH_TAKE}${effectiveParams ? '&' + effectiveParams : ''}`,
+        {}, 'GET', { signal },
+      );
+      if (!isCurrent()) return;
+      log.info('batch_search.done', { text, resultCount: (data.items || []).length });
+      setBatchResults(data.items || []);
+    } catch (err) {
+      if (!isCurrent()) return;
+      log.error('batch_search.error', { text, error: err.message });
+      setBatchResults([]);
+    } finally {
+      if (isCurrent()) setBatchLoading(false);
+    }
   }, []);
-  useEffect(() => abortBatchRequest, [abortBatchRequest]);
+  const { reload: reloadBatch, cancel: cancelBatch } = useRefreshableRead(readBatch);
+
   // `cancelStream()` deliberately drops the previous request synchronously,
   // before its 300ms replacement debounce opens. Keep that visible intent
   // distinct from transport activity: otherwise both consumers briefly claim
@@ -222,48 +253,26 @@ export function useContentCombobox({
   // survives onto a different query or a different scope.
   const [fellBackToAll, setFellBackToAll] = useState(false);
   const clearBatchSearch = useCallback(() => {
-    abortBatchRequest();
+    cancelBatch();
     queryRef.current = '';
     setBatchLoading(false);
     setBatchResults([]);
-  }, [abortBatchRequest]);
+  }, [cancelBatch]);
 
   // S5 fix: `searchParams` MUST be in the deps — the standalone version
   // omitted it, so prop changes never reached the batch URL (stale closure).
   // `overrideParams` mirrors useStreamingSearch's `search(query, overrideExtraQuery)` —
   // the D5 fallback effect uses it to re-run the same text with wider params without
   // waiting for the `searchParams` prop itself to change.
-  const doBatchSearch = useCallback(async (text, overrideParams) => {
+  const doBatchSearch = useCallback((text, overrideParams) => {
     if (!text || text.length < 2) {
       log.debug('batch_search.skip', { text, reason: 'too_short' });
       clearBatchSearch();
       return;
     }
-    abortBatchRequest();
-    const request = new AbortController();
-    batchRequest.current = request;
     const effectiveParams = overrideParams !== undefined ? overrideParams : searchParams;
-    log.info('batch_search.start', { text, params: effectiveParams || null });
-    setBatchLoading(true);
-    try {
-      const data = await DaylightAPI(
-        `${SEARCH_BATCH_ENDPOINT}?text=${encodeURIComponent(text)}&take=${BATCH_TAKE}${effectiveParams ? '&' + effectiveParams : ''}`,
-        {}, 'GET', { signal: request.signal },
-      );
-      if (batchRequest.current !== request) return;
-      log.info('batch_search.done', { text, resultCount: (data.items || []).length });
-      setBatchResults(data.items || []);
-    } catch (err) {
-      if (batchRequest.current !== request) return;
-      log.error('batch_search.error', { text, error: err.message });
-      setBatchResults([]);
-    } finally {
-      if (batchRequest.current === request) {
-        batchRequest.current = null;
-        setBatchLoading(false);
-      }
-    }
-  }, [abortBatchRequest, clearBatchSearch, searchParams, log]);
+    return reloadBatch(text, effectiveParams, log);
+  }, [clearBatchSearch, reloadBatch, searchParams, log]);
 
   const debouncedSearch = useDebouncedCallback((text) => {
     const mode = supportsSSE() ? 'sse' : 'batch';
@@ -437,8 +446,8 @@ export function useContentCombobox({
       log.debug('load_siblings.skip', { contentId, reason: contentId ? 'no_colon' : 'no_value' });
       return;
     }
-    const token = browseTokenRef.current;
-    const stillWanted = () => browseTokenRef.current === token;
+    const visit = siblingsVisitRef.current;
+    const stillWanted = () => siblingsVisitRef.current === visit;
 
     const cached = getCacheEntry(contentId);
     if (cached?.status === 'loaded' && cached.data) {
@@ -467,7 +476,7 @@ export function useContentCombobox({
   const startExpansion = useCallback((request) => {
     invalidateBrowseLoads();
     dispatch({ type: 'BROWSE_LOADING' });
-    return reloadExpansion({ ...request, token: browseTokenRef.current, log });
+    return reloadExpansion({ ...request, log });
   }, [invalidateBrowseLoads, reloadExpansion, log]);
 
   const drill = useCallback(async (item) => {
@@ -525,12 +534,11 @@ export function useContentCombobox({
   // ── 5. Pagination (in-flight guarded; the machine owns items/window math) ──
   // A skipped request returns false immediately. A started request resolves
   // true only after dispatching PAGINATED to its current window.
-  const paginationInFlightRef = useRef(null);
   const paginate = useCallback((direction) => {
     const current = stateRef.current;
     const pagination = current.browse.pagination;
     const owner = paginationOwnerRef.current;
-    if (!pagination || paginationInFlightRef.current === browseTokenRef.current) return false;
+    if (!pagination) return false;
     // Structural guard: only the siblings level paginates against /siblings.
     // After a drill/up, the visible pagination belongs to that level's /list
     // response — fetching value's siblings for it would corrupt the window.
@@ -552,23 +560,8 @@ export function useContentCombobox({
       if (limit <= 0) return false;
     }
 
-    log.info('load_more_siblings', { direction, offset, limit, contentId: owner.contentId, path: owner.path });
-    const token = ++browseTokenRef.current; // invalidate overlapping browse responses
-    paginationInFlightRef.current = token;
-    return DaylightAPI(`${owner.path}?offset=${offset}&limit=${limit}`)
-      .then(data => {
-        if (browseTokenRef.current !== token) return false;
-        dispatch({ type: 'PAGINATED', direction, items: (data.items || []).map(toBrowseItem) });
-        return true;
-      })
-      .catch(err => {
-        log.error('load_more_siblings.error', { direction, error: err.message });
-        return false;
-      })
-      .finally(() => {
-        if (paginationInFlightRef.current === token) paginationInFlightRef.current = null;
-      });
-  }, [log]);
+    return readPageWhenIdle({ owner, direction, offset, limit, log }) ?? false;
+  }, [log, readPageWhenIdle]);
 
   // ── Lifecycle: close-commit policy + selection ──
   const handleClose = useCallback((reason) => {
