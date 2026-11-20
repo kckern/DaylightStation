@@ -213,6 +213,15 @@ describe('row defaults and groups', () => {
       expect(validateRuleset({ rules: [piece] }).rules[0]).toMatchObject({ id: 'piano-piece', match: { activity: 'piano-piece' } });
     });
 
+    it('Polish gem and diamond milestones fold into the Piano row beside piano-piece and are valid rules', () => {
+      const piece = { id: 'piano-piece', label: 'Whole piece Silver or Gold', kind: 'milestone', match: { activity: 'piano-piece' }, cap: { count: 2 }, reward: { gems: 1 }, effective: { from: '2026-11-18' } };
+      const gem = { id: 'piano-polish-gem', label: 'Polished piece', kind: 'milestone', match: { activity: 'piano-polish-gem' }, cap: { count: 2 }, reward: { gems: 1 }, effective: { from: '2026-11-20' } };
+      const diamond = { id: 'piano-polish-diamond', label: 'Piece at tempo', kind: 'milestone', match: { activity: 'piano-polish-diamond' }, cap: { count: 2 }, reward: { gems: 1 }, effective: { from: '2026-11-20' } };
+      expect(shape([piece, gem, diamond])).toEqual([['piano', 'Piano', ['piano-piece', 'piano-polish-gem', 'piano-polish-diamond']]]);
+      expect(validateRuleset({ rules: [piece, gem, diamond] }).rules.map((r) => r.match.activity))
+        .toEqual(['piano-piece', 'piano-polish-gem', 'piano-polish-diamond']);
+    });
+
     it('an explicit gem.category is a literal id: it joins the row with that id', () => {
       const piano = { id: 'keys', label: 'Keys', kind: 'day-met', reward: 1, gem: { category: 'reading' } };
       expect(shape([stories, piano])).toEqual([['reading', 'Reading', ['reader-week', 'keys']]]);

@@ -217,6 +217,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
     persistent: practicePersistent,
     recordCycle,
     recordTierBest,
+    recordPolishRun,
     recordLearnRep,
     recordAssessmentAttempt,
     saveCustomRange,
@@ -294,6 +295,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
   // so it is deliberately not a ref: the ticks have to appear as the drag starts.
   const [draggingEdge, setDraggingEdge] = useState(null);
   const [clickOn, setClickOn] = useState(() => restored.clickOn !== false); // Polish metronome — on unless turned off
+  const clickOnRef = useRef(clickOn); clickOnRef.current = clickOn;
   // Learn free-running metronome — explicit opt-in per session, NEVER persisted:
   // a walk-up user must not inherit a ticking room (audit M2).
   const [learnClick, setLearnClick] = useState(false);
@@ -332,6 +334,9 @@ export default function ScorePlayer({ score: scoreMeta }) {
   //    still be on screen (Play does not dismiss it). Reading live would silently
   //    re-label a finished run's report as the new run's tier.
   const [summaryRun, setSummaryRun] = useState(null);
+  // The server's Polish reward verdict, tagged with the run it judged: the answer
+  // arrives after the panel opens, and must never land on a later run's panel.
+  const [polishReward, setPolishReward] = useState(null);
   // ── Polish tempo tiers (wave-3 H) ───────────────────────────────────────────
   // The tier is decided by the tempo the run STARTED at and frozen there: a best
   // is only comparable against other runs of the same piece at the same speed.
@@ -340,6 +345,11 @@ export default function ScorePlayer({ score: scoreMeta }) {
   // and must not bank a best — live grades keep flowing regardless (the user still
   // gets their feedback; only persistence is withheld).
   const runMixedRef = useRef(false);
+  // The tempo the run STARTED at, and whether the metronome sounded for all of
+  // it: the Polish reward facts the server judges (gem at 50%, diamond at 90%,
+  // metronome on). Armed with the tier; a click toggle mid-run clears the latter.
+  const runTempoRef = useRef(1);
+  const runClickRef = useRef(false);
   // Is the run in flight still a COMPLETED WHOLE-PIECE run in the making (design
   // §H)? `mixed` only catches a tempo move while the transport is actually running;
   // it does not catch a run that never started at the top, or one whose tempo/hands
@@ -628,6 +638,32 @@ export default function ScorePlayer({ score: scoreMeta }) {
         // of both rules) — calling only on 'banked' keeps this path from being a
         // second, drifting copy of them.
         if (reason === 'banked') recordTierBest({ bucket, tier: run.tier, score: run.score });
+        // Every completed whole-piece run is reported, not only a new best: the
+        // server judges it for the piece's Polish gem and diamond.
+        if (reason === 'banked' || reason === 'not-better') {
+          const polishRun = {
+            scoreId: scoreMeta.id,
+            tempoMult: runTempoRef.current,
+            metronome: runClickRef.current === true,
+            completed: true,
+            mixed: false,
+            parts: parts.map((p) => p.staff),
+            activeParts: parts.filter((p) => activeParts[p.staff]).map((p) => p.staff),
+            base: run.base,
+          };
+          Promise.resolve(recordPolishRun?.(polishRun))
+            .then((reward) => {
+              setPolishReward({ run, reward });
+              logger.info('score.polish.reward-shown', {
+                tempoPercent: Math.round(polishRun.tempoMult * 100),
+                metronome: polishRun.metronome,
+                base: run.base,
+                reason: reward?.reason ?? null,
+                newGem: reward?.newGem === true,
+                newDiamond: reward?.newDiamond === true,
+              });
+            });
+        }
         logger.info('score.polish.tier-best', {
           bucket,
           tier: run?.tier ?? null,
@@ -677,6 +713,8 @@ export default function ScorePlayer({ score: scoreMeta }) {
       // matching capture in toggleRun's play branch for the no-count-in modes.)
       runTierRef.current = tierOf(tempoMult);
       runMixedRef.current = false;
+      runTempoRef.current = tempoMult;
+      runClickRef.current = clickOnRef.current;
       // One-way arm (see runEligibleRef): a start from the top makes this a
       // whole-piece run; a start from anywhere else leaves an earlier arm — or an
       // earlier clear — standing, which is what keeps a mid-piece RESUME of the
@@ -1860,7 +1898,12 @@ export default function ScorePlayer({ score: scoreMeta }) {
   const onToggleClick = useCallback(() => {
     if (mode === 'learn') setLearnClick((v) => !v); // free-run, session-local
     else if (mode === 'listen') setListenClick((v) => !v); // free-run, session-local (wave-3 G)
-    else setClickOn((v) => !v); // Polish arm state, persisted
+    else {
+      // A click toggled while a Polish run is in flight or suspended means the
+      // metronome did not sound for the whole run: no gem or diamond for it.
+      if (runActiveRef.current || resumeAfterRef.current || Object.keys(gradesRef.current).length > 0) runClickRef.current = false;
+      setClickOn((v) => !v); // Polish arm state, persisted
+    }
   }, [mode]);
   // Flip looping on/off IN PLACE — the range stays defined (its brackets keep
   // showing) but wrap/clamp/home-step stop treating it as a boundary. In Learn
@@ -1924,6 +1967,8 @@ export default function ScorePlayer({ score: scoreMeta }) {
         if (startStep !== stepRef.current) setStep(startStep);
         runTierRef.current = tierOf(tempoMult); // the no-count-in start path (wave-3 H)
         runMixedRef.current = false;
+        runTempoRef.current = tempoMult;
+        runClickRef.current = clickOnRef.current;
         if (startStep === 0) runEligibleRef.current = true; // one-way arm — see runEligibleRef
         transport.seek((stepTimeline[startStep]?.t ?? 0) / tempoMult);
         setRunActive(true);
@@ -2622,6 +2667,7 @@ export default function ScorePlayer({ score: scoreMeta }) {
           tier={summaryRun?.tier || null}
           mixedTempo={!!summaryRun?.mixed}
           completed={!!summaryRun?.completed}
+          reward={summaryRun && polishReward?.run === summaryRun ? polishReward.reward : null}
           bucket={polishBucket}
           tierBests={practice?.polish?.[polishBucket] || {}}
         />

@@ -8,6 +8,8 @@ vi.mock('../../../../../../../frontend/src/lib/api.mjs', () => ({
     calls.push({ path, data, method });
     if (method === 'GET' && Object.keys(data).length === 0) return { ...store };
     // PUT: shallow-merge measures/polish (mirrors the backend's per-key merge)
+    const { polishRun, ...rest } = data;
+    data = rest;
     const next = { ...store, ...data };
     if (data.measures) next.measures = { ...(store.measures || {}), ...data.measures };
     if (data.polish) {
@@ -26,11 +28,12 @@ vi.mock('../../../../../../../frontend/src/lib/api.mjs', () => ({
       }
     }
     store = next;
-    return { ...store };
+    return polishRun ? { ...store, polishReward: mockReward } : { ...store };
   }),
 }));
 
 let mockUser = 'kc';
+let mockReward = null;
 vi.mock('../../PianoUserContext.jsx', () => ({
   usePianoUser: () => ({ currentUser: mockUser }),
 }));
@@ -39,7 +42,7 @@ import usePracticeRecord, { compatibleLearnPassages } from './usePracticeRecord.
 
 const FP = { version: 2, measureCount: 40, xmlBytes: 12345, contentSha256: 'a'.repeat(64) };
 
-beforeEach(() => { calls.length = 0; store = {}; mockUser = 'kc'; });
+beforeEach(() => { calls.length = 0; store = {}; mockUser = 'kc'; mockReward = null; });
 
 describe('usePracticeRecord', () => {
   it('retains only segments whose boundary/ladder fingerprint is still compatible', () => {
@@ -172,6 +175,29 @@ describe('usePracticeRecord', () => {
     const put = calls.find((c) => c.method === 'PUT');
     expect(put).toBeTruthy();
     expect(put.data).toEqual({ fingerprint: FP, polish: { rh: { full: 97 } } });
+  });
+
+  it('recordPolishRun reports the run with the fingerprint and answers the server reward', async () => {
+    store = { fingerprint: FP, polish: { both: { full: 98 } } };
+    mockReward = { gem: true, diamond: true, newGem: false, newDiamond: true, reason: 'qualified' };
+    const { result } = renderHook(() => usePracticeRecord({ scoreId: 'files:x.musicxml', fingerprint: FP }));
+    await waitFor(() => expect(result.current.loaded).toBe(true));
+    const run = { scoreId: 'files:x.musicxml', tempoMult: 1, metronome: true, completed: true, mixed: false, parts: [0, 1], activeParts: [0, 1], base: 96 };
+    let reward;
+    await act(async () => { reward = await result.current.recordPolishRun(run); });
+    expect(reward).toEqual(mockReward);
+    expect(calls.find((c) => c.method === 'PUT').data).toEqual({ fingerprint: FP, polishRun: run });
+    expect(result.current.record.polish.both.full).toBe(98); // bests stay recordTierBest's job
+  });
+
+  it('recordPolishRun writes nothing for a guest and answers no reward', async () => {
+    mockUser = 'guest';
+    const { result } = renderHook(() => usePracticeRecord({ scoreId: 'files:x.musicxml', fingerprint: FP }));
+    await waitFor(() => expect(result.current.loaded).toBe(true));
+    let reward = 'unset';
+    await act(async () => { reward = await result.current.recordPolishRun({}); });
+    expect(reward).toBeNull();
+    expect(calls.filter((c) => c.method === 'PUT')).toHaveLength(0);
   });
 
   it('recordLearnRep banks cumulative reps and completes a passage at the configured requirement', async () => {

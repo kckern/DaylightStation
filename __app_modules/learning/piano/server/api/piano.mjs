@@ -74,7 +74,10 @@ function attemptPolicyErrors(userId, body) {
  *   GET    /users/:userId/practice/:scoreKey → {} or the stored record
  *   PUT    /users/:userId/practice/:scoreKey → merged record (measures per-key,
  *          polish per-bucket, updatedAt server-stamped; a changed fingerprint
- *          replaces the record instead of merging — see route for detail)
+ *          replaces the record instead of merging — see route for detail).
+ *          An optional `polishRun` (one completed Polish run's facts) is judged
+ *          by PianoPolishReward after the save and answered as `polishReward`
+ *          ({gem, diamond, newGem, newDiamond, reason}); neither is stored.
  *
  *   Lesson progress / history:
  *   GET    /users/:userId/progress           → { collections: { [collection]: { [drillId]: {...} } } }
@@ -103,7 +106,7 @@ function attemptPolicyErrors(userId, body) {
  *   POST   /users/:userId/game-budget/session/:sessionId/close  → seal a session ({ok:true})
  *   POST   /users/:userId/game-budget/credits                   → idempotently mint earned time for a passed assessment
  */
-export function createPianoRouter({ pianoContainer, schoolLearnerDirectory = null, pianoAttemptStore = null, pianoLearnCoachService = null, pianoChallengePolicy = null, pianoChallengeProfileService = null, schoolPianoChallengeCompletionService = null, pianoLearningService = null, pianoGameBudgetService = null, pianoBoardGameDayService = null, exerciseBank = null, eventBus = null, idFactory, producerRecords, lessonSittingLog = null, judgeNoteBurst = null, logger = console }) {
+export function createPianoRouter({ pianoContainer, schoolLearnerDirectory = null, pianoAttemptStore = null, pianoLearnCoachService = null, pianoPolishReward = null, pianoChallengePolicy = null, pianoChallengeProfileService = null, schoolPianoChallengeCompletionService = null, pianoLearningService = null, pianoGameBudgetService = null, pianoBoardGameDayService = null, exerciseBank = null, eventBus = null, idFactory, producerRecords, lessonSittingLog = null, judgeNoteBurst = null, logger = console }) {
   if (!pianoContainer) throw new Error('createPianoRouter: pianoContainer required');
   if (typeof idFactory !== 'function') throw new Error('createPianoRouter: idFactory required');
   if (!producerRecords) throw new Error('createPianoRouter: producerRecords required');
@@ -1021,8 +1024,8 @@ export function createPianoRouter({ pianoContainer, schoolLearnerDirectory = nul
     const current = ds.getPractice(userId, scoreKey);
     if (current === null) return res.status(400).json({ error: 'Invalid user' });
     const incoming = req.body && typeof req.body === 'object' ? req.body : {};
-    const { learnCoach: ignoredCoach, learnCoachArchive: ignoredArchive, ...body } = incoming;
-    void ignoredCoach; void ignoredArchive;
+    const { learnCoach: ignoredCoach, learnCoachArchive: ignoredArchive, polishRun, polishReward: ignoredReward, ...body } = incoming;
+    void ignoredCoach; void ignoredArchive; void ignoredReward;
     // A different fingerprint means the score file changed shape — the old
     // per-measure record describes measures that no longer exist. Replace.
     const fpChanged = body.fingerprint && current.fingerprint
@@ -1043,6 +1046,11 @@ export function createPianoRouter({ pianoContainer, schoolLearnerDirectory = nul
       };
     ds.savePractice(userId, scoreKey, merged);
     logger.info?.('piano.practice.save', { userId, scoreKey });
+    // Judged only after the write it rides on is saved; the service never throws.
+    if (polishRun && typeof polishRun === 'object' && pianoPolishReward) {
+      const { gem, diamond, newGem, newDiamond, reason } = pianoPolishReward.evaluate({ userId, scoreKey, run: polishRun, record: merged });
+      return res.json({ ...merged, polishReward: { gem, diamond, newGem, newDiamond, reason } });
+    }
     res.json(merged);
   }));
 

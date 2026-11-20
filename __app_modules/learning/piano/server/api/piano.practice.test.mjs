@@ -32,12 +32,12 @@ const configService = {
   getMediaDir: () => '/data/media',
 };
 
-function app() {
+function app({ pianoPolishReward = null } = {}) {
   const studioDatastore = new YamlPianoStudioDatastore({ configService });
   const pianoContainer = new PianoContainer({ studioDatastore, configProjection: new PianoConfigProjection({ configService }) });
   const a = express();
   a.use(express.json());
-  a.use('/api/v1/piano', createPianoRouter(withPianoRouterServices({ pianoContainer, logger: { info() {}, error() {} } })));
+  a.use('/api/v1/piano', createPianoRouter(withPianoRouterServices({ pianoContainer, pianoPolishReward, logger: { info() {}, error() {} } })));
   return a;
 }
 
@@ -175,5 +175,37 @@ describe('piano practice endpoints', () => {
       .send({ fingerprint: { version: 2, measureCount: 8, xmlBytes: 100, contentSha256: 'b'.repeat(64) }, measures: { 2: { rh: { attempts: 1, passes: 0 } } } });
     expect(r.body.measures['0']).toBeUndefined();
     expect(r.body.measures['2']).toBeTruthy();
+  });
+
+  describe('a Polish run reported with the write', () => {
+    const polishRun = { scoreId: 'files:x', tempoMult: 1, metronome: true, completed: true, mixed: false, parts: [0, 1], activeParts: [0, 1], base: 97 };
+    const reward = () => {
+      const calls = [];
+      return { calls, evaluate: (args) => { calls.push(args); return { reason: 'qualified', gem: true, diamond: true, newGem: true, newDiamond: false }; } };
+    };
+
+    it('is judged by the reward service after the save, answered, and never stored', async () => {
+      const service = reward();
+      const r = await request(app({ pianoPolishReward: service })).put('/api/v1/piano/users/kc/practice/files-x')
+        .send({ fingerprint: { contentSha256: 'sha' }, polish: { both: { full: 97 } }, polishRun });
+      expect(r.status).toBe(200);
+      expect(r.body.polishReward).toEqual({ gem: true, diamond: true, newGem: true, newDiamond: false, reason: 'qualified' });
+      expect(service.calls[0]).toMatchObject({ userId: 'kc', scoreKey: 'files-x', run: polishRun });
+      expect(service.calls[0].record.polish.both.full).toBe(97);
+      const persisted = files['/data/users/kc/apps/piano/practice/files-x'];
+      expect(persisted.polishRun).toBeUndefined();
+      expect(persisted.polishReward).toBeUndefined();
+    });
+
+    it('a write without a run, or with no reward service wired, answers no reward', async () => {
+      const service = reward();
+      const plain = await request(app({ pianoPolishReward: service })).put('/api/v1/piano/users/kc/practice/files-x').send({ polish: { both: { full: 90 } } });
+      expect(plain.body.polishReward).toBeUndefined();
+      expect(service.calls).toHaveLength(0);
+      const unwired = await request(app()).put('/api/v1/piano/users/kc/practice/files-x').send({ polishRun });
+      expect(unwired.status).toBe(200);
+      expect(unwired.body.polishReward).toBeUndefined();
+      expect(files['/data/users/kc/apps/piano/practice/files-x'].polishRun).toBeUndefined();
+    });
   });
 });

@@ -503,7 +503,13 @@ the coach service appends to a dated log when a piece is finished:
 schema: piano.piece-log/v1
 entries:
   - { at: "2026-11-18T20:00:00.000Z", scoreId: "files:…", level: silver, passages: 12, fingerprint: "…" }
+  - { at: "2026-11-20T18:00:00.000Z", scoreId: "files:…", level: polish-gem, passages: null, fingerprint: "…", tempoPercent: 60, score: 96 }
 ```
+
+Levels are `silver`, `gold`, `polish-gem` and `polish-diamond`. The last two are
+written by [Polish rewards](#polish-rewards-the-piece-gem-and-the-diamond), not by
+the coach service, and are read only by their own milestones: `piano-piece` pays
+for `silver` and `gold` alone.
 
 - It is written only when **one saved take** moves the piece from "not all" to
   "all". Before and after are projected with the same plan and the same legacy
@@ -897,6 +903,68 @@ whole-piece run. Because a best only ever improves, an inflated one would be
 permanent, so the gate errs toward withholding — and every withheld bank names
 its reason in the log.
 
+### Polish rewards: the piece gem and the diamond
+
+Once a piece is **all Gold** for a player, Polish pays for playing it well at speed:
+
+| Reward | A qualifying run at | Milestone activity |
+|---|---|---|
+| Piece gem | 50% tempo or faster | `piano-polish-gem` |
+| Diamond | 90% tempo or faster | `piano-polish-diamond` |
+
+A run qualifies only when **all** of these hold:
+
+- it is a completed whole-piece run (started at the top, one tempo, one pair of
+  hands, not voided: the same rule that lets a run bank a tier best);
+- the metronome was on when the run started and was not toggled before it ended;
+- every staff was active (a one-hand run never qualifies; a single-staff piece
+  has one part, and playing it counts);
+- its **base** score is 95 or more (the plain run score, never the overclocked
+  display score);
+- the player is a real learner, not a guest.
+
+Tempo is the tempo at run start, as a whole percent (`round(tempoMult × 100)`):
+49% earns nothing, 50% earns the gem, 89% the gem only, 90% the diamond. A
+diamond run also earns the gem when the piece does not have one yet. Each is
+paid once per piece, ever. Before the piece is all Gold, Polish plays and scores
+as always and earns nothing.
+
+**How a run reaches the server.** Every completed whole-piece run that is not
+voided (banked or `not-better`) is reported with the practice record write,
+`PUT /users/:id/practice/:scoreKey`, as `polishRun`:
+
+```json
+{ "fingerprint": { "...": "..." },
+  "polishRun": { "scoreId": "files:…", "tempoMult": 0.9, "metronome": true,
+                 "completed": true, "mixed": false, "parts": [0, 1],
+                 "activeParts": [0, 1], "base": 97 } }
+```
+
+The client reports facts, never "I earned a gem". `PianoPolishReward` judges
+them after the record is saved and answers `polishReward:
+{gem, diamond, newGem, newDiamond, reason}` in the response; neither field is
+stored in the practice record. "All Gold" is read from the piece log's dated
+`gold` entry (the one the `piano-piece` milestone pays from) or, for a piece
+finished before the log existed, the saved coach summary showing every passage
+Gold. What was earned is appended to the [piece log](#piece-log-and-the-piece-gems)
+as `polish-gem` / `polish-diamond`, which is how the economy's milestones date it.
+`reason` names the verdict: `qualified`, `guest`, `invalid-run`, `wrong-score`,
+`incomplete`, `metronome-off`, `one-hand`, `low-score`, `slow-tempo`,
+`not-all-gold` or `log-unavailable`. The check never fails the write it rides on.
+
+**What the player sees.** The run summary announces **Diamond earned!** and/or
+**Gem earned!**, each led by a `GemIcon`, only when the server says it is new.
+The passage board and home strip show no gem or diamond badge: neither reads the
+piece log, and the board's goal counters come from the practice record.
+
+The rewards pay nothing until the household adds the two milestone rules (see
+[economy](../economy/economy.md#earn-rules)).
+
+Logs: `piano.polish.reward` (server, info: `userId, scoreId, tier, tempoPercent,
+score, reason, gem, diamond, newGem, newDiamond`), `piano.polish.reward-failed`
+(warn), `score.polish.reward-shown` (client, info: `tempoPercent, metronome, base,
+reason, newGem, newDiamond`).
+
 ## Perform
 
 Nothing on screen but the page and its turner: no transport bar, no cursor, no
@@ -986,6 +1054,7 @@ stamped to wall-clock by the framework. Math is in `scoreTelemetry.js`; collecti
 | `score.polish.measure` | info | `measure, grade, noteScore, timingScore` (per graded measure) |
 | `score.polish.silent-stop` | info | the run auto-stopped after N silent measures |
 | `score.polish.summary` | info | `greens, yellows, reds, overall` (at run end) |
+| `score.polish.reward-shown` | info | `tempoPercent, metronome, base, reason, newGem, newDiamond` — the server's Polish reward verdict for a reported run (see [Polish rewards](#polish-rewards-the-piece-gem-and-the-diamond)) |
 | `score.polish.tier-best` | info | `bucket, tier, score, banked, reason` — the bank decision for a completed run, named either way: `banked`, or withheld as `nothing-graded` / `mixed` (tempo moved mid-run) / `partial` (not a whole-piece run) / `guest` / `not-better` |
 | `piano.practice.save` | info | (backend) a practice record PUT was persisted |
 | `score.transpose` | info | `semitones` |
@@ -1191,7 +1260,8 @@ during an active run so the judge and falling highway cannot jump timelines.
 | `PassageRail.jsx` / `PassageBoard.jsx` / `PassageRail.scss` | the rail under the score and the board that slides over it |
 | `passageChime.js` | the chime for a passage or a whole piece turning Silver or Gold, played by the drill's ceremony |
 | `usePieceGemOffer.js` | asks the Gem Board whether a piece gem is on offer |
-| `server/application/PianoPieceLog.mjs` | dated whole-piece Silver and Gold, read by the `piano-piece` milestone |
+| `server/application/PianoPieceLog.mjs` | dated whole-piece Silver and Gold, and the Polish gem and diamond, read by the `piano-piece`, `piano-polish-gem` and `piano-polish-diamond` milestones |
+| `server/application/PianoPolishReward.mjs` | judges a reported Polish run for the piece gem and diamond and notes them in the piece log |
 | `usePracticeRecord.js` / `practiceKey.js` | per-user practice-history hook + score-key/hands-bucket helpers |
 | `assessmentProjections.js` | Sheet-only Polish tally and worst-range display projections |
 | `LearnInkLayer.jsx` | wrong-note wet ink drawn at the played pitch, on the score |

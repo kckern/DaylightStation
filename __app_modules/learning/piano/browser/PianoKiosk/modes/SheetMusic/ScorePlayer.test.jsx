@@ -47,6 +47,7 @@ const h = vi.hoisted(() => ({
   // the ones that care about the practice record.
   recordCycle: vi.fn(),
   recordTierBest: vi.fn(),
+  recordPolishRun: vi.fn(async () => null),
   recordAssessmentAttempt: vi.fn(),
   // usePianoPreferences (Task 15): a plain key→value bag a test can seed before
   // render to control getPref('learnHands', …) — empty by default, so every
@@ -166,6 +167,7 @@ vi.mock('./usePracticeRecord.js', () => ({
     persistent: h.practicePersistent,
     recordCycle: h.recordCycle,
     recordTierBest: h.recordTierBest,
+    recordPolishRun: h.recordPolishRun,
     recordAssessmentAttempt: h.recordAssessmentAttempt,
     recordLearnRep: vi.fn(),
   }),
@@ -291,6 +293,8 @@ beforeEach(() => {
   h.clickSched = { start: vi.fn(), stop: vi.fn(), setBpm: vi.fn() };
   h.recordCycle.mockClear();
   h.recordTierBest.mockClear();
+  h.recordPolishRun.mockReset();
+  h.recordPolishRun.mockImplementation(async () => null);
   h.recordAssessmentAttempt.mockClear();
   h.prefs = {};
   h.practice = {};
@@ -1942,6 +1946,56 @@ describe('ScorePlayer — Polish tempo tiers (wave-3 H)', () => {
     expect(screen.getByText(/right hand/i)).toBeInTheDocument();
   });
 
+  const playCleanRun = async () => {
+    await pressPlay();
+    act(() => vi.advanceTimersByTime(COUNT_IN_MS));
+    play(60);
+    act(() => vi.advanceTimersByTime(1000));
+    play(61);
+    act(() => vi.advanceTimersByTime(950));
+    play(62);
+    await act(async () => { vi.advanceTimersByTime(50); }); // → onDone, and the reward answer
+  };
+
+  it('a completed run is reported to the server for the Polish gem, and a new diamond is announced', async () => {
+    h.layoutExtras = tierFixture(3, 1);
+    h.practice = { polish: { both: { full: 100 } } }; // not a better best: still reported
+    h.recordPolishRun.mockImplementation(async () => ({ gem: true, diamond: true, newGem: false, newDiamond: true, reason: 'qualified' }));
+    renderPlayer();
+    pickMode('Polish');
+    await act(async () => {});
+    await playCleanRun();
+
+    expect(h.recordTierBest).not.toHaveBeenCalled();
+    expect(h.recordPolishRun).toHaveBeenCalledTimes(1);
+    expect(h.recordPolishRun.mock.calls[0][0]).toEqual({
+      scoreId: expect.any(String), tempoMult: 1, metronome: true, completed: true, mixed: false,
+      parts: [0], activeParts: [0], base: 100,
+    });
+    expect(screen.getByRole('status')).toHaveTextContent('Diamond earned!');
+    expect(screen.queryByText('Gem earned!')).toBeNull();
+  });
+
+  it('a run with the metronome turned off mid-run is reported as metronome off', async () => {
+    h.layoutExtras = tierFixture(3, 1);
+    renderPlayer();
+    pickMode('Polish');
+    await act(async () => {});
+    await pressPlay();
+    act(() => vi.advanceTimersByTime(COUNT_IN_MS));
+    play(60);
+    act(() => vi.advanceTimersByTime(1000));
+    act(() => { fireEvent.click(screen.getByRole('button', { name: /metronome/i })); }); // click off mid-run
+    play(61);
+    act(() => vi.advanceTimersByTime(950));
+    play(62);
+    await act(async () => { vi.advanceTimersByTime(50); });
+
+    expect(h.recordPolishRun).toHaveBeenCalledTimes(1);
+    expect(h.recordPolishRun.mock.calls[0][0].metronome).toBe(false);
+    expect(screen.queryByRole('status')).toBeNull();
+  });
+
   it('a mid-run tempo change voids the run: the summary says mixed tempo and NO best is written (spec 3)', async () => {
     h.layoutExtras = tierFixture(3, 0.8);
     renderPlayer();
@@ -1960,6 +2014,7 @@ describe('ScorePlayer — Polish tempo tiers (wave-3 H)', () => {
     expect(document.querySelector('.piano-score-run-summary')).not.toBeNull();
     expect(screen.getByText(/mixed tempo/i)).toBeInTheDocument();
     expect(h.recordTierBest).not.toHaveBeenCalled();
+    expect(h.recordPolishRun).not.toHaveBeenCalled();
     // Live grades still flow — voiding is about persistence, not feedback.
     expect(document.querySelector('.piano-score-run-score__value')).not.toBeNull();
   });

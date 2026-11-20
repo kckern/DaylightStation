@@ -99,6 +99,23 @@ export default function usePracticeRecord({ scoreId, fingerprint }) {
     put({ fingerprint: fpRef.current, polish: { [bucket]: { [tier]: score } } });
   }, [put]);
 
+  /**
+   * Report one completed whole-piece Polish run (`run`: scoreId, tempoMult,
+   * metronome, completed, mixed, parts, activeParts, base). The server judges
+   * it for the piece's Polish gem and diamond and answers `polishReward`
+   * ({gem, diamond, newGem, newDiamond, reason}). Resolves null for a guest or a
+   * failed write. The tier best is still recordTierBest's job.
+   */
+  const recordPolishRun = useCallback(async (run) => {
+    if (!isPersistentUser(currentUser)) return null;
+    try {
+      const res = await DaylightAPI(`api/v1/piano/users/${currentUser}/practice/${key}`, { fingerprint: fpRef.current, polishRun: run }, 'PUT');
+      return res?.polishReward ?? null;
+    } catch {
+      return null;
+    }
+  }, [currentUser, key]);
+
   /** Bank one complete passage take into the config-defined Learn ladder. */
   const recordLearnRep = useCallback(({
     revision, passageId, rungId, result, requiredPasses = 1, consecutive = false, completesPassage = false, completion = 'standard',
@@ -155,5 +172,5 @@ export default function usePracticeRecord({ scoreId, fingerprint }) {
   // wasn't an improvement are indistinguishable — both leave the record empty and
   // both no-op silently. It is NOT a gate callers should re-implement; recordCycle
   // and recordTierBest already refuse to write on their own.
-  return { record, loaded, persistent: isPersistentUser(currentUser), recordCycle, recordTierBest, recordLearnRep, saveCustomRange, recordAssessmentAttempt };
+  return { record, loaded, persistent: isPersistentUser(currentUser), recordCycle, recordTierBest, recordPolishRun, recordLearnRep, saveCustomRange, recordAssessmentAttempt };
 }

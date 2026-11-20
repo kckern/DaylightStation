@@ -13,6 +13,10 @@
  *   piano-piece      (milestone)     the first time a whole piece became all
  *                                    Silver, and all Gold, from the dated piece
  *                                    log. key `${level}:${scoreId}`.
+ *   piano-polish-gem     (milestone) a piece's first Polish gem (a near-perfect
+ *   piano-polish-diamond (milestone) whole-piece run at 50%+ / 90%+ tempo once
+ *                                    the piece is all Gold), from the same
+ *                                    dated piece log. key `${scoreId}`.
  *
  * Milestones are reported only when their day falls inside the week, and a
  * key is the achievement's identity forever: the same win or rung never
@@ -27,7 +31,7 @@
  * it is written only when one saved take finishes the piece, so legacy credit
  * and re-derived certification are never milestones.
  */
-export const PIANO_ACHIEVEMENT_ACTIVITIES = Object.freeze(['board-game-level', 'piano-practice', 'piano-rung', 'piano-piece']);
+export const PIANO_ACHIEVEMENT_ACTIVITIES = Object.freeze(['board-game-level', 'piano-practice', 'piano-rung', 'piano-piece', 'piano-polish-gem', 'piano-polish-diamond']);
 
 export const BOARD_GAME_LABELS = Object.freeze({
   chess: 'Chess',
@@ -151,11 +155,33 @@ export function createPianoAchievementProvider({
     return out;
   }
 
+  /** One piece-log level as a milestone keyed by the piece: Polish gem or diamond. */
+  const polishAwards = (level, noun) => ({ learnerIds, week, studyDay }) => {
+    if (!pieceLog) throw new Error('piece log unavailable');
+    const out = {};
+    for (const id of learnerIds) {
+      const first = new Map();
+      for (const entry of pieceLog.list(id)) {
+        const atMs = Date.parse(entry?.at ?? '');
+        if (!Number.isFinite(atMs) || !entry.scoreId || entry.level !== level) continue;
+        const candidate = { day: studyDay(atMs), atMs, key: entry.scoreId };
+        if (earlier(candidate, first.get(candidate.key))) first.set(candidate.key, candidate);
+      }
+      out[id] = [...first.values()]
+        .filter((award) => inWeek(award.day, week))
+        .sort((a, b) => a.day.localeCompare(b.day) || a.atMs - b.atMs || a.key.localeCompare(b.key))
+        .map((award) => ({ key: award.key, day: award.day, label: `${pieceTitle(award.key)} Polish ${noun}` }));
+    }
+    return out;
+  };
+
   const sources = [
     { activity: 'board-game-level', part: 'milestones', read: boardGameLevels },
     { activity: 'piano-practice', part: 'days', read: practiceDays },
     { activity: 'piano-rung', part: 'milestones', read: rungsReached },
     { activity: 'piano-piece', part: 'milestones', read: piecesFinished },
+    { activity: 'piano-polish-gem', part: 'milestones', read: polishAwards('polish-gem', 'gem') },
+    { activity: 'piano-polish-diamond', part: 'milestones', read: polishAwards('polish-diamond', 'diamond') },
   ];
 
   return {

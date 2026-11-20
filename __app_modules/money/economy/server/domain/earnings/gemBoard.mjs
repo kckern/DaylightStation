@@ -72,6 +72,7 @@ const RING_CONTESTS = defaultRow('ring-contests', 'Most Rings', 'move');
 /** Where a rule sits on the board when its `gem` block does not say. */
 const ROW_BY_ACTIVITY = Object.freeze({
   'piano-practice': PIANO, 'piano-rung': PIANO, 'piano-piece': PIANO,
+  'piano-polish-gem': PIANO, 'piano-polish-diamond': PIANO,
   'card-goal': FLASHCARDS, 'cards-mastered': FLASHCARDS,
   'story-read': READING, 'book-finished': READING,
   race: RACING, 'race-pb': RACING,
