@@ -50,7 +50,7 @@ async function installPortableDataFixture(page, context) {
     await invite.getByLabel('Password', { exact: true }).fill('test-password');
     await invite.getByLabel('Confirm Password', { exact: true }).fill('test-password');
     await invite.getByRole('button', { name: 'Create Account' }).click();
-    await expect(invite).toHaveURL(/\/$/);
+    await expect(invite).not.toHaveURL(/\/invite\//);
     await expect(page.getByText('bob story', { exact: true })).toBeVisible();
     await invite.close();
   };

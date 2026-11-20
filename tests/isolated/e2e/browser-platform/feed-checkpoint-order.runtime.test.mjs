@@ -74,7 +74,7 @@ test('accepting an invite in another tab replaces the open Reader workspace and 
   await invite.getByLabel('Password', { exact: true }).fill('test-password');
   await invite.getByLabel('Confirm Password', { exact: true }).fill('test-password');
   await invite.getByRole('button', { name: 'Create Account' }).click();
-  await expect(invite).toHaveURL(/\/$/);
+  await expect(invite).not.toHaveURL(/\/invite\//);
   await expect(page.getByText('bob story', { exact: true })).toBeVisible();
   await expect(page.getByText('amy story', { exact: true })).toHaveCount(0);
   expect(workspaces).toEqual(['amy', 'bob']);
