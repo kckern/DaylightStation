@@ -22,7 +22,7 @@ import { ActivePianoProvider } from '../../PianoConfig.jsx';
 import { __clearPianoListCache } from '../../usePianoList.js';
 import { getRecentEvents } from '../../../../../../../frontend/src/lib/logging/Logger.js';
 import { SheetMusic } from './SheetMusic.jsx';
-import { collectionListPath, isNotationId } from './sheetMusicModel.js';
+import { collectionListPath, isNotationId, scoreViewPath, encodeContentIdPath } from './sheetMusicModel.js';
 
 // The recent-events ring buffer tails every emitted event with its context, so
 // it is the cheapest way to assert BOTH what was emitted and which log file it
@@ -74,6 +74,17 @@ describe('isNotationId (H4)', () => {
   });
 });
 
+describe('scoreViewPath', () => {
+  it('keeps slashes and colons readable', () => {
+    expect(scoreViewPath('files:docs/sheet-music/fur-elise.musicxml'))
+      .toBe('view/files:docs/sheet-music/fur-elise.musicxml');
+  });
+  it('encodes characters a URL would otherwise swallow (# ? % space)', () => {
+    expect(encodeContentIdPath('files:docs/a b/#1?.musicxml')).toBe('files:docs/a%20b/%231%3F.musicxml');
+    expect(encodeContentIdPath('files:x/100%25.mxl')).toBe('files:x/100%2525.mxl');
+  });
+});
+
 describe('SheetMusic mode', () => {
   it('lists notation files from the configured folder (index route)', async () => {
     api.mockImplementation((path) => {
@@ -117,6 +128,25 @@ describe('SheetMusic mode', () => {
     expect(await screen.findByTestId('score-player')).toHaveTextContent('player:<score-partwise/>');
     expect(apiText).toHaveBeenCalledWith(
       'api/v1/proxy/media/stream/docs%2Fsheet-music%2Ffur-elise-super-easy.musicxml'
+    );
+  });
+
+  it('opens a score whose id contains # and ? (the id is encoded into the path)', async () => {
+    const id = 'files:docs/sheet-music/etude #3? 100%25.musicxml';
+    api.mockImplementation((path) => {
+      if (path === 'api/v1/list/files/docs/sheet-music') {
+        return Promise.resolve({ items: [{ id, title: 'odd-name-etude', type: 'notation' }] });
+      }
+      return Promise.resolve({});
+    });
+    apiText.mockResolvedValue('<score-partwise/>');
+
+    renderSheet({ collection: 'files:docs/sheet-music' });
+    fireEvent.click(await screen.findByTitle('Odd Name Etude'));
+
+    expect(await screen.findByTestId('score-player')).toHaveTextContent('player:<score-partwise/>');
+    expect(apiText).toHaveBeenCalledWith(
+      `api/v1/proxy/media/stream/${encodeURIComponent('docs/sheet-music/etude #3? 100%25.musicxml')}`
     );
   });
 

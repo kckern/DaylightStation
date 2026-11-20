@@ -9,7 +9,7 @@ import ScoreGrid from './ScoreGrid.jsx';
 import ScoreViewer from './ScoreViewer.jsx';
 import ScorePlayer from './ScorePlayer.jsx';
 import { resolveScoreGroups } from './scoreGroups.js';
-import { isNotationId, collectionListPath, useScoreImage } from './sheetMusicModel.js';
+import { isNotationId, collectionListPath, useScoreImage, scoreViewPath } from './sheetMusicModel.js';
 
 /**
  * Sheet Music mode — browse a folder of scores and view them.
@@ -58,8 +58,9 @@ function ScoreGridRoute({ groups }) {
       onSelect={(item) => {
         logger.info('piano.score-select', { id: item.id });
         // The id can contain slashes (a file path); they become real path
-        // segments under view/* and round-trip via the splat param.
-        navigate(`view/${item.id}`);
+        // segments under view/* and round-trip via the splat param. Other
+        // reserved characters (# ? %) are encoded so they stay in the path.
+        navigate(scoreViewPath(item.id));
       }}
     />
   );

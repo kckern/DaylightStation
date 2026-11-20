@@ -1,13 +1,14 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import {
-  Alert, Badge, Button, FileInput, Group, Modal, SegmentedControl, Select,
+  Alert, Anchor, Badge, Button, FileInput, Group, Modal, SegmentedControl, Select,
   Skeleton, Stack, Table, Text, TextInput, Title, Tooltip,
 } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
 import { IconAlertTriangle, IconRefresh, IconUpload } from '@tabler/icons-react';
 import getLogger from "../../../../../frontend/src/lib/logging/Logger.js";
 import { useSheetMusicLibrary, uploadScore } from "./useSheetMusicLibrary.js";
+import { scoreViewPath } from "../PianoKiosk/modes/SheetMusic/sheetMusicModel.js";
 
 /** Readable copy for every code POST /upload can answer with. */
 export const UPLOAD_ERROR_MESSAGES = {
@@ -46,8 +47,8 @@ const LEARN_BADGE = {
   stale: { label: 'stale', color: 'orange' },
 };
 
-/** Content ids keep their slashes as path segments; each segment is encoded. */
-export const scorePath = (id) => `view/${String(id).split('/').map(encodeURIComponent).join('/')}`;
+/** The relative score route; the same encoder the kiosk uses. */
+export const scorePath = scoreViewPath;
 
 function LearnBadge({ learn }) {
   const spec = learn == null ? { label: 'unreadable', color: 'red' } : (LEARN_BADGE[learn] || { label: String(learn), color: 'gray' });
@@ -63,8 +64,8 @@ function Learners({ learners }) {
     </Stack>
   );
   return (
-    <Tooltip label={label} withArrow>
-      <Text size="sm" style={{ cursor: 'help' }}>{list.length} {list.length === 1 ? 'learner' : 'learners'}</Text>
+    <Tooltip label={label} withArrow events={{ hover: true, focus: true, touch: true }}>
+      <Text size="sm" tabIndex={0} style={{ cursor: 'help' }}>{list.length} {list.length === 1 ? 'learner' : 'learners'}</Text>
     </Tooltip>
   );
 }
@@ -73,7 +74,15 @@ function ScoreRow({ score, onOpen }) {
   return (
     <Table.Tr onClick={() => onOpen(score)} style={{ cursor: 'pointer' }}>
       <Table.Td>
-        <Text size="sm" fw={500}>{score.title || score.file}</Text>
+        <Anchor
+          component={Link}
+          to={scorePath(score.id)}
+          size="sm"
+          fw={500}
+          onClick={(e) => e.stopPropagation()}
+        >
+          {score.title || score.file}
+        </Anchor>
         <Text size="xs" c="dimmed">{score.file}</Text>
       </Table.Td>
       <Table.Td><Text size="sm">{score.composer || ''}</Text></Table.Td>
@@ -135,7 +144,15 @@ function UploadModal({ opened, onClose, folders, logger, onUploaded }) {
   };
 
   return (
-    <Modal opened={opened} onClose={onClose} title="Upload a score" centered>
+    <Modal
+      opened={opened}
+      onClose={() => { if (!busy) onClose(); }}
+      title="Upload a score"
+      centered
+      closeOnEscape={!busy}
+      closeOnClickOutside={!busy}
+      withCloseButton={!busy}
+    >
       <form onSubmit={submit}>
         <Stack gap="sm">
           <FileInput
@@ -147,18 +164,24 @@ function UploadModal({ opened, onClose, folders, logger, onUploaded }) {
             required
             clearable
           />
-          <Select
-            label="Folder"
-            placeholder="Choose a folder"
-            data={folders}
-            value={folder}
-            onChange={setFolder}
-            required
-            comboboxProps={{ withinPortal: false }}
-          />
+          {folders.length > 0 ? (
+            <Select
+              label="Folder"
+              placeholder="Choose a folder"
+              data={folders}
+              value={folder}
+              onChange={setFolder}
+              required
+              comboboxProps={{ withinPortal: false }}
+            />
+          ) : (
+            <Alert color="yellow" icon={<IconAlertTriangle size={16} />} variant="light">
+              No upload folders are available. Close this, reload the library and try again.
+            </Alert>
+          )}
           <TextInput
             label="File name"
-            description="Optional. Lowercase letters, numbers and hyphens."
+            description="Optional. Lowercase letters, numbers and hyphens. The extension is added for you."
             placeholder="suggested from the score title"
             value={filename}
             onChange={(e) => setFilename(e.currentTarget.value.toLowerCase())}
@@ -179,7 +202,7 @@ function UploadModal({ opened, onClose, folders, logger, onUploaded }) {
 export default function SheetMusicLibrary() {
   const logger = useMemo(() => getLogger().child({ component: 'admin-sheet-music' }), []);
   const navigate = useNavigate();
-  const { scores, folders, loading, error, reload } = useSheetMusicLibrary();
+  const { scores, folders, loading, error, reload } = useSheetMusicLibrary(logger);
   const [filter, setFilter] = useState('all');
   const [uploadOpen, setUploadOpen] = useState(false);
 
@@ -214,9 +237,17 @@ export default function SheetMusicLibrary() {
     <Stack gap="md" p="md">
       <Group justify="space-between">
         <Title order={3}>Sheet music</Title>
-        <Button leftSection={<IconUpload size={16} />} onClick={() => setUploadOpen(true)} disabled={loading && !scores.length && !folders.length}>
-          Upload
-        </Button>
+        <Tooltip
+          label={loading ? 'Loading folders' : 'Folders could not be loaded. Retry first.'}
+          disabled={folders.length > 0}
+          withArrow
+        >
+          <span>
+            <Button leftSection={<IconUpload size={16} />} onClick={() => setUploadOpen(true)} disabled={folders.length === 0}>
+              Upload
+            </Button>
+          </span>
+        </Tooltip>
       </Group>
 
       <SegmentedControl
@@ -231,12 +262,15 @@ export default function SheetMusicLibrary() {
         <Alert color="red" icon={<IconAlertTriangle size={16} />} title="Could not load the library">
           <Stack gap="xs" align="flex-start">
             <Text size="sm">{error}</Text>
-            <Button size="xs" variant="light" leftSection={<IconRefresh size={14} />} onClick={reload}>Retry</Button>
+            <Button size="xs" variant="light" leftSection={<IconRefresh size={14} />} onClick={reload} loading={loading}>Retry</Button>
           </Stack>
         </Alert>
       ) : null}
 
-      {!loading && !error && groups.length === 0 ? (
+      {!loading && !error && scores.length === 0 ? (
+        <Text c="dimmed" size="sm">No scores in the library yet.</Text>
+      ) : null}
+      {!loading && !error && scores.length > 0 && groups.length === 0 ? (
         <Text c="dimmed" size="sm">No scores match this filter.</Text>
       ) : null}
 

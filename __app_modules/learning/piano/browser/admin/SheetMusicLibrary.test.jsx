@@ -2,12 +2,16 @@ import React from 'react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, waitFor, within, cleanup } from '@testing-library/react';
 import { MantineProvider } from '@mantine/core';
-import { MemoryRouter, Routes, Route, useParams } from 'react-router-dom';
+import { MemoryRouter, Routes, Route, useParams, useNavigate } from 'react-router-dom';
 
 const api = vi.fn();
 vi.mock("../../../../../frontend/src/lib/api.mjs", () => ({
   DaylightAPI: (...a) => api(...a),
-  buildHeaders: (token, withContentType) => ({ 'X-Test': 'headers', withContentType: String(withContentType) }),
+  buildHeaders: (token, withContentType) => ({
+    'X-Test': 'headers',
+    withContentType: String(withContentType),
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+  }),
 }));
 const logged = [];
 vi.mock("../../../../../frontend/src/lib/logging/Logger.js", () => {
@@ -18,6 +22,7 @@ const notify = vi.fn();
 vi.mock('@mantine/notifications', () => ({ notifications: { show: (...a) => notify(...a) } }));
 
 import { SheetMusicLibrary } from "./index.js";
+import { scorePath } from "./SheetMusicLibrary.jsx";
 
 const LIBRARY = {
   folders: ['classical', 'hymns'],
@@ -60,8 +65,9 @@ beforeEach(() => {
   logged.length = 0;
   api.mockResolvedValue(LIBRARY);
   global.fetch = vi.fn();
+  localStorage.removeItem('ds_token');
 });
-afterEach(() => cleanup());
+afterEach(() => { cleanup(); localStorage.removeItem('ds_token'); });
 
 const rowFor = (title) => screen.getByText(title).closest('tr');
 
@@ -136,6 +142,7 @@ describe('SheetMusicLibrary', () => {
   };
 
   it('upload posts FormData and navigates to the new score', async () => {
+    localStorage.setItem('ds_token', 'session-token-1');
     global.fetch.mockResolvedValue(jsonResponse(201, {
       id: 'files:docs/sheet-music/hymns/my-piece.musicxml', title: 'My Piece', composer: null, filename: 'my-piece.musicxml',
     }));
@@ -146,7 +153,7 @@ describe('SheetMusicLibrary', () => {
     const [url, init] = global.fetch.mock.calls[0];
     expect(url).toBe('/api/v1/admin/sheet-music/upload');
     expect(init.method).toBe('POST');
-    expect(init.headers).toEqual({ 'X-Test': 'headers', withContentType: 'false' });
+    expect(init.headers).toEqual({ 'X-Test': 'headers', withContentType: 'false', Authorization: 'Bearer session-token-1' });
     expect(init.body).toBeInstanceOf(FormData);
     expect(init.body.get('file').name).toBe(file.name);
     expect(init.body.get('folder')).toBe('hymns');
@@ -175,5 +182,113 @@ describe('SheetMusicLibrary', () => {
     fireEvent.click(retry);
     await waitFor(() => expect(screen.getByText('Fur Elise')).toBeTruthy());
     expect(api).toHaveBeenCalledTimes(2);
+  });
+
+  it('an unknown error code shows the generic message', async () => {
+    global.fetch.mockResolvedValue(jsonResponse(500, { error: 'something-new' }));
+    const { dialog } = await openUpload();
+    fireEvent.click(dialog.getByRole('button', { name: /^upload$/i }));
+    await waitFor(() => expect(dialog.getByText(/the upload failed/i)).toBeTruthy());
+    expect(screen.getByRole('dialog')).toBeTruthy();
+  });
+
+  it('a rejected fetch shows the network message', async () => {
+    global.fetch.mockRejectedValue(new TypeError('Failed to fetch'));
+    const { dialog } = await openUpload();
+    fireEvent.click(dialog.getByRole('button', { name: /^upload$/i }));
+    await waitFor(() => expect(dialog.getByText(/could not be reached/i)).toBeTruthy());
+    expect(logged.some((l) => l.event === 'admin.sheetmusic.upload-failed' && l.data.code === 'network')).toBe(true);
+  });
+
+  it('shows a loading skeleton until the list arrives', async () => {
+    let resolve;
+    api.mockReturnValue(new Promise((r) => { resolve = r; }));
+    renderLib();
+    expect(screen.getByTestId('sheet-music-loading')).toBeTruthy();
+    resolve(LIBRARY);
+    await waitFor(() => expect(screen.getByText('Fur Elise')).toBeTruthy());
+    expect(screen.queryByTestId('sheet-music-loading')).toBeNull();
+  });
+
+  it('No segments filter shows only learn: none rows', async () => {
+    renderLib();
+    await waitFor(() => expect(screen.getByText('Fur Elise')).toBeTruthy());
+    fireEvent.click(screen.getByText('No segments (1)'));
+    await waitFor(() => expect(screen.queryByText('Fur Elise')).toBeNull());
+    expect(screen.getByText('Minuet in G')).toBeTruthy();
+    expect(screen.queryByText('Broken Learn')).toBeNull();
+    expect(screen.queryByText('Old Segments')).toBeNull();
+  });
+
+  it('an empty library says so under All', async () => {
+    api.mockResolvedValue({ scores: [], folders: ['classical'] });
+    renderLib();
+    await waitFor(() => expect(screen.getByText('No scores in the library yet.')).toBeTruthy());
+  });
+
+  it('titles are real links to the score page', async () => {
+    renderLib();
+    await waitFor(() => expect(screen.getByText('Fur Elise')).toBeTruthy());
+    const link = screen.getByRole('link', { name: 'Fur Elise' });
+    expect(link.getAttribute('href'))
+      .toBe('/admin/content/sheet-music/view/files:docs/sheet-music/classical/fur-elise.musicxml');
+    fireEvent.click(link);
+    await waitFor(() => expect(screen.getByTestId('echo').textContent)
+      .toBe('files:docs/sheet-music/classical/fur-elise.musicxml'));
+  });
+
+  it('the learners count is keyboard-focusable', async () => {
+    renderLib();
+    await waitFor(() => expect(screen.getByText('2 learners')).toBeTruthy());
+    expect(screen.getByText('2 learners').getAttribute('tabindex')).toBe('0');
+  });
+
+  it('Upload is disabled when no folders loaded', async () => {
+    api.mockResolvedValue({ scores: LIBRARY.scores, folders: [] });
+    renderLib();
+    await waitFor(() => expect(screen.getByText('Fur Elise')).toBeTruthy());
+    expect(screen.getByRole('button', { name: /upload/i }).disabled).toBe(true);
+  });
+
+  it('Retry shows loading while the list reloads', async () => {
+    api.mockRejectedValueOnce(new Error('HTTP 500'));
+    renderLib();
+    const retry = await screen.findByRole('button', { name: /retry/i });
+    let resolve;
+    api.mockReturnValueOnce(new Promise((r) => { resolve = r; }));
+    fireEvent.click(retry);
+    await waitFor(() => expect(retry.getAttribute('data-loading')).toBe('true'));
+    resolve(LIBRARY);
+    await waitFor(() => expect(screen.getByText('Fur Elise')).toBeTruthy());
+  });
+});
+
+describe('scorePath', () => {
+  const ODD_IDS = [
+    'files:docs/sheet-music/classical/fur-elise.musicxml',
+    'files:docs/sheet-music/a b/two words.musicxml',
+    'files:docs/sheet-music/x/etude #3.musicxml',
+    'files:docs/sheet-music/x/what?.mxl',
+    'files:docs/sheet-music/x/100%.mxl',
+    'files:docs/sheet-music/x/already%25encoded.mxl',
+    'files:docs/sheet-music/x/colon:inside.musicxml',
+  ];
+
+  function Go({ id }) {
+    const navigate = useNavigate();
+    return <button type="button" onClick={() => navigate(scorePath(id))}>go</button>;
+  }
+
+  it.each(ODD_IDS)('round-trips %s through the view/* splat', async (id) => {
+    render(
+      <MemoryRouter initialEntries={['/admin/content/sheet-music']}>
+        <Routes>
+          <Route path="/admin/content/sheet-music" element={<Go id={id} />} />
+          <Route path="/admin/content/sheet-music/view/*" element={<Echo />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+    fireEvent.click(screen.getByText('go'));
+    await waitFor(() => expect(screen.getByTestId('echo').textContent).toBe(id));
   });
 });

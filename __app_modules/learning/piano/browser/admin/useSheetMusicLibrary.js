@@ -1,6 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { DaylightAPI, buildHeaders } from "../../../../../frontend/src/lib/api.mjs";
-import getLogger from "../../../../../frontend/src/lib/logging/Logger.js";
 
 export const LIBRARY_PATH = 'api/v1/admin/sheet-music';
 const UPLOAD_PATH = `/${LIBRARY_PATH}/upload`;
@@ -35,27 +34,39 @@ export async function uploadScore({ file, folder, filename }) {
   return { ok: false, code: typeof doc?.error === 'string' ? doc.error : null, status: response.status };
 }
 
-/** The sheet music library list (scores + upload folders) with reload. */
-export function useSheetMusicLibrary() {
-  const logger = useMemo(() => getLogger().child({ component: 'admin-sheet-music' }), []);
+/**
+ * The sheet music library list (scores + upload folders) with reload. Takes the
+ * page's logger so the page logs under one child. Results that arrive after
+ * unmount are dropped.
+ */
+export function useSheetMusicLibrary(logger) {
   const [scores, setScores] = useState([]);
   const [folders, setFolders] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const alive = useRef(true);
+
+  useEffect(() => {
+    alive.current = true;
+    return () => { alive.current = false; };
+  }, []);
 
   const load = useCallback(async () => {
+    // The previous error stays up during a retry so its button can show progress.
     setLoading(true);
-    setError(null);
     try {
       const res = await DaylightAPI(LIBRARY_PATH);
+      if (!alive.current) return;
+      setError(null);
       setScores(Array.isArray(res?.scores) ? res.scores : []);
       setFolders(Array.isArray(res?.folders) ? res.folders : []);
-      logger.info('admin.sheetmusic.loaded', { scores: res?.scores?.length ?? 0 });
+      logger?.info('admin.sheetmusic.loaded', { scores: res?.scores?.length ?? 0, folders: res?.folders?.length ?? 0 });
     } catch (err) {
+      if (!alive.current) return;
       setError(err?.message || 'Request failed');
-      logger.error('admin.sheetmusic.load-failed', { error: err?.message });
+      logger?.error('admin.sheetmusic.load-failed', { error: err?.message });
     } finally {
-      setLoading(false);
+      if (alive.current) setLoading(false);
     }
   }, [logger]);
 
