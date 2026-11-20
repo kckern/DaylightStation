@@ -28,7 +28,7 @@ import { useCardLadderKeys } from "./useCardLadderKeys.js";
 import { currentInput, noteInput, noteKeyEvent } from "./inputVia.js";
 import CardLadderStartCard, { dictationOffer } from "./CardLadderStartCard.jsx";
 import CardLadderHeader from "./CardLadderHeader.jsx";
-import { CARRY_FIRST_HINT, STEP_HINTS, stepTrail } from "./stepTrail.js";
+import { CARRY_FIRST_HINT, stepHint, stepTrail } from "./stepTrail.js";
 import "./CardLadder.scss";
 
 /** Items whose answer the server grades: the verdict stays on screen until Next. */
@@ -42,7 +42,9 @@ const HELD_DRILL_STEPS = new Set(['type', 'tiles', 'dictation']);
 /** Items with a text field: a letter shortcut there is a jamo (on 두벌식 M is ㅡ), never a command. */
 const TYPING_DRILL_STEPS = new Set(['copy', 'dictation', 'type']);
 const isTyping = (item) => item?.type === 'copy' || item?.type === 'typed' || (item?.type === 'drill' && TYPING_DRILL_STEPS.has(item.step));
-const holdsVerdict = (item) => GRADED.has(item.type) || (item.type === 'drill' && HELD_DRILL_STEPS.has(item.step));
+// A see-and-type quiz or review card is a copy item graded on the first try (task K.1).
+const isGradedCopy = (item) => item?.type === 'copy' && item.graded === true;
+const holdsVerdict = (item) => GRADED.has(item.type) || isGradedCopy(item) || (item.type === 'drill' && HELD_DRILL_STEPS.has(item.step));
 
 /**
  * Whether THIS device can offer a microphone, detected fresh for every open.
@@ -290,7 +292,7 @@ export default function CardLadderProgram({ descriptor, api: injected = null, re
     // A catch-up round held ahead of the day's new words says why it comes
     // first (2026-09-26: new words promised, a round with none, no word why).
     const heldCarry = step === 'sort' && progress?.round?.kind === 'carry' && progress?.newWordsHeld === true;
-    setHint({ step, text: heldCarry ? CARRY_FIRST_HINT : STEP_HINTS[step], leaving: false });
+    setHint({ step, text: heldCarry ? CARRY_FIRST_HINT : stepHint(step, progress), leaving: false });
     cardLadderLog.hintShown({ step });
   }, [trail.current]); // eslint-disable-line react-hooks/exhaustive-deps
   // A dictation notice (M5, M10) has its own slot: a step's hint must not
@@ -386,7 +388,7 @@ export default function CardLadderProgram({ descriptor, api: injected = null, re
     // sorted-to-notYet flashcard, or a graded quiz answer (choice/typed,
     // which only ever carry a task once they're in a round's quiz phase).
     if (response?.sort === 'notYet') roundRef.current.notYet += 1;
-    if ((item.type === 'choice' || item.type === 'typed') && item.task) roundRef.current.quizzed += 1;
+    if ((item.type === 'choice' || item.type === 'typed' || isGradedCopy(item)) && item.task) roundRef.current.quizzed += 1;
     setProgress(data?.progress ?? null);
     // A retry: the server kept the same item (copy / dictation / tiles miss) — stay on it, say so.
     const showResult = (held) => {
@@ -402,7 +404,7 @@ export default function CardLadderProgram({ descriptor, api: injected = null, re
       showResult(true);
       return;
     }
-    if (data?.result?.correct === false && (data?.item?.id === item.id || (item.type === 'copy' && !data?.item))) {
+    if (data?.result?.correct === false && !isGradedCopy(item) && (data?.item?.id === item.id || (item.type === 'copy' && !data?.item))) {
       setResult(data.result); setPendingItem(null);
       showResult(false); // a retry: the item stays, with its miss shown
       return;

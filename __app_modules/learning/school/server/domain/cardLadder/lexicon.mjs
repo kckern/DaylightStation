@@ -25,6 +25,7 @@
  */
 import { scriptFor } from "./targetScript.mjs";
 import { normalizeDictationWeek } from "./dictation.mjs";
+import { CARD_VARIETIES, SEE_AND_TYPE } from "./seeAndType.mjs";
 
 export const LEXICON_SCHEMA = 'school.word-lexicon/v2';
 /** Same content as v2 with side-neutral header names (`target:` / `anchor:` language blocks). */
@@ -90,8 +91,15 @@ function validateLanguage(value, at, errors) {
 function validateHeader(raw, errors) {
   if (!SLUG.test(raw.package ?? '')) errors.push('package: must be a lowercase slug');
   const v3 = raw.schema === LEXICON_SCHEMA_V3;
+  // `cards:` names the package's card variety (default standard). See-and-type
+  // has no anchor side, so its anchor language block is optional.
+  const cards = raw.cards ?? 'standard';
+  if (!CARD_VARIETIES.includes(cards)) errors.push(`cards: must be one of ${CARD_VARIETIES.join(', ')}`);
   const language = validateLanguage(v3 ? raw.target : raw.language, v3 ? 'target' : 'language', errors);
-  const gloss = validateLanguage(v3 ? raw.anchor : raw.gloss, v3 ? 'anchor' : 'gloss', errors);
+  const anchorBlock = v3 ? raw.anchor : raw.gloss;
+  const gloss = cards === SEE_AND_TYPE && anchorBlock === undefined
+    ? language
+    : validateLanguage(anchorBlock, v3 ? 'anchor' : 'gloss', errors);
   const title = raw.program?.title;
   if (!text(title)) errors.push('program.title: is required');
   const quiz = raw.quiz ?? {};
@@ -103,6 +111,7 @@ function validateHeader(raw, errors) {
   const programTitle = text(title) ? title.trim() : '';
   return {
     package: raw.package,
+    cards,
     language,
     gloss,
     targetLanguage: language,
@@ -193,12 +202,16 @@ export function validateLexicon(raw) {
     if (!SLUG.test(entry.group ?? '')) errors.push(`${at}.group: must be a lowercase slug (the course unit that introduced the word)`);
     if (!WORD_KINDS.includes(entry.kind)) errors.push(`${at}.kind: must be word or phrase`);
     if (!text(entry.term)) errors.push(`${at}.term: is required`);
-    if (!text(entry.gloss)) errors.push(`${at}.gloss: is required`);
+    const seeAndType = header.cards === SEE_AND_TYPE;
+    if (!seeAndType && !text(entry.gloss)) errors.push(`${at}.gloss: is required`);
+    else if (entry.gloss != null && !text(entry.gloss)) errors.push(`${at}.gloss: must be text or absent`);
     if (entry.kind === 'phrase' && !text(entry.pronunciation)) errors.push(`${at}.pronunciation: is required for a phrase`);
     else if (entry.pronunciation != null && !text(entry.pronunciation)) errors.push(`${at}.pronunciation: must be text or null`);
     const decoys = {};
     for (const side of DECOY_SIDES) {
       const list = entry.decoys?.[side];
+      // See-and-type asks no choice question, so decoys are optional there.
+      if (seeAndType && list === undefined) { decoys[side] = []; continue; }
       if (!Array.isArray(list) || list.length < 3 || !list.every(text)) {
         errors.push(`${at}.decoys.${side}: needs at least 3 non-empty entries`);
         decoys[side] = [];
@@ -226,7 +239,7 @@ export function validateLexicon(raw) {
   const owners = { term: new Map(), gloss: new Map() };
   for (const candidate of entries.values()) {
     owners.term.set(fold(candidate.term), candidate);
-    owners.gloss.set(fold(candidate.gloss), candidate);
+    if (candidate.gloss) owners.gloss.set(fold(candidate.gloss), candidate);
   }
   for (const candidate of entries.values()) {
     for (const side of DECOY_SIDES) {
@@ -308,7 +321,8 @@ export function expandLexiconDeck(raw, lexicon) {
       },
       back: {
         blocks: [
-          { type: 'text', text: entry.gloss },
+          // A see-and-type card has no anchor: its back repeats the target.
+          { type: 'text', text: entry.gloss || entry.term },
           ...(entry.kind === 'phrase' ? [{ type: 'text', text: entry.pronunciation }] : []),
         ],
       },

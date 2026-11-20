@@ -31,10 +31,28 @@ export const STEP_HINTS = Object.freeze({
   practice: 'Free practice — pick anything.',
 });
 
+/**
+ * See-and-type packages (`progress.cards`) have one card: Learn copies it,
+ * Quiz and Review type it with no second try. Their own wording.
+ */
+export const SEE_AND_TYPE_HINTS = Object.freeze({
+  ...STEP_HINTS,
+  review: 'Cards from before — type what you see.',
+  learn: 'Meet each new card — find it on the keyboard.',
+  quiz: 'Now type each one on the first try.',
+});
+
+/** The hint for a step, in the package's own wording. */
+export function stepHint(step, progress) {
+  return (progress?.cards === 'see-and-type' ? SEE_AND_TYPE_HINTS : STEP_HINTS)[step];
+}
+
 /** The Sort hint for a catch-up round the day's new words wait behind (`progress.newWordsHeld`). */
 export const CARRY_FIRST_HINT = 'These words first — let’s lock them in. Flip, then sort.';
 
 const ROUND_STEPS = ['learn', 'sort', 'quiz', 'match'];
+// See-and-type rounds are Learn › Quiz: no sort stream, no Match.
+const SEE_AND_TYPE_ROUND_STEPS = ['learn', 'quiz'];
 // The drill offer comes after the quiz and the Match: no round step is lit,
 // and every one of them reads done (the trail never steps backwards).
 const ROUND_PHASE_STEP = { intro: 'learn', stream: 'sort', quiz: 'quiz', match: 'match' };
@@ -87,9 +105,10 @@ export function stepTrail(progress, item = null) {
   const roundsDone = progress.roundsDone ?? 0;
   const hasRounds = inRound || roundsDone > 0 || !progress.doneToday;
   if (hasRounds) {
+    const roundSteps = progress.cards === 'see-and-type' ? SEE_AND_TYPE_ROUND_STEPS : ROUND_STEPS;
     const offer = inRound && progress.round.phase === 'offer';
-    const at = !inRound ? -1 : offer ? ROUND_STEPS.length
-      : ROUND_STEPS.indexOf(current === 'match' ? 'match' : ROUND_PHASE_STEP[progress.round.phase]);
+    const at = !inRound ? -1 : offer ? roundSteps.length
+      : roundSteps.indexOf(current === 'match' ? 'match' : ROUND_PHASE_STEP[progress.round.phase]);
     const afterRounds = !inRound && roundsDone > 0 && progress.phase !== 'rechecks';
     // Match: the round's own answer while one runs; with none running, a round
     // still to come plans one (so Review shows the same shape the round will),
@@ -97,7 +116,7 @@ export function stepTrail(progress, item = null) {
     let hasMatch = current === 'match';
     if (!hasMatch && inRound) hasMatch = progress.round.hasMatch === true;
     else if (!hasMatch) hasMatch = roundsDone > 0 || progress.doneToday ? progress.matchToday === true : true;
-    for (const [i, id] of ROUND_STEPS.entries()) {
+    for (const [i, id] of roundSteps.entries()) {
       if (id === 'learn' && progress.learnToday === false) continue;
       if (id === 'match' && !hasMatch) continue;
       let state = 'todo';

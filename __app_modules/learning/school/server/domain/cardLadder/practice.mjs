@@ -42,7 +42,7 @@ export function practiceWordIds({ filter = 'introduced', words = {}, chosen = []
   return introduced;
 }
 
-export function buildPractice({ mode, help = true, filter = 'introduced', chosen = [], words, entries, media, day, seed, capabilities = {}, frontSide = 'term' }) {
+export function buildPractice({ mode, help = true, filter = 'introduced', chosen = [], words, entries, media, day, seed, capabilities = {}, frontSide = 'term', verifyTasks = VERIFY_TASKS, writeFromMemory = true }) {
   const ids = seededShuffle(practiceWordIds({ filter, words, chosen }).filter((id) => entries.has(id)), hashString(`${seed}|practice`));
   let queue = [];
   if (mode === 'flashcards') queue = ids.map((wordId) => ({ kind: 'flashcard', wordId, front: frontSide }));
@@ -65,7 +65,9 @@ export function buildPractice({ mode, help = true, filter = 'introduced', chosen
   // (cue only, no reference to copy) — neither needs audio. Typing from memory
   // only over words ready for their typed sign-off (ruling 2026-09-23).
   else if (mode === 'write') {
+    // `writeFromMemory: false` (see-and-type): there is no cue to type from.
     queue = help ? ids.map((wordId) => ({ kind: 'copy', wordId }))
+      : !writeFromMemory ? []
       : ids.filter((id) => readyForSignOff(words[id])).map((wordId) => ({ kind: 'type-practice', wordId }));
   }
   else if (mode === 'listen') { const heard = ids.filter((id) => media[id]?.audio); queue = heard.length ? [{ kind: 'listen', wordIds: heard }] : []; }
@@ -75,7 +77,7 @@ export function buildPractice({ mode, help = true, filter = 'introduced', chosen
     // claimed, or notYetCarry — never new / introduced / notYet — and not
     // failed today. Recognition only, like verify (ruling 2026-09-23).
     const eligible = ids.filter((id) => (QUIZZABLE.has(words[id].state) || words[id].notYetCarry === true) && words[id].verifyFailedDay !== day);
-    queue = VERIFY_TASKS.flatMap((task) => eligible.map((wordId) => ({ kind: 'graded', task, wordId })));
+    queue = verifyTasks.flatMap((task) => eligible.map((wordId) => ({ kind: 'graded', task, wordId })));
   }
   return { mode, help, queue, index: 0, step: 0, passed: [], failed: [] };
 }
