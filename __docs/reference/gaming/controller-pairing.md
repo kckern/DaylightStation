@@ -240,7 +240,10 @@ so, and Add a new device still works.
   closed as it does after Feedback.
 
 Gamepad keys come from `useGamepadKeys`: D-pad, and the left stick (axes 0/1,
-past half deflection) as arrows; A = Enter, B = Escape. A button already held
+past half deflection) as arrows; A = Enter, B = Escape. A stick axis counts
+only after it has been seen within ±0.25 of centre in this activation (per pad),
+so a non-standard pad whose axis 0 or 1 rests at ±1 neither holds an arrow
+forever nor masks the D-pad's. A button already held
 when a screen's hook switches on needs a release and a new press before it
 fires, so the B that closed one screen does not also close the next.
 
