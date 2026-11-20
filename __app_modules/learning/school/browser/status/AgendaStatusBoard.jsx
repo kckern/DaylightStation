@@ -77,7 +77,7 @@ import { useSchoolRingGates } from './useSchoolRingGates.js';
 import { schoolLog } from "../schoolLog.js";
 import DayGrid from "../shared/dayGrid/DayGrid.jsx";
 import { weekStart, addDays } from "../shared/dayGrid/dayGridModel.js";
-import { dayOffTitle, dayStatus, makeupHint, summarize, ringProgressByLearner, triangleRows, earningsByLearner, figureInWeek } from "./agendaStatusModel.js";
+import { dayOffTitle, dayStatus, summarize, ringProgressByLearner, triangleRows, earningsByLearner, figureInWeek } from "./agendaStatusModel.js";
 import CoinIcon from "../../../../../frontend/src/lib/icons/CoinIcon.jsx";
 import { coinFigure } from "../../../../../frontend/src/lib/coins/coinFigure.js";
 import RewardsChest from '../rewards/RewardsChest.jsx';
@@ -687,19 +687,14 @@ export default function AgendaStatusBoard({ kids = NO_KIDS, day, onOpenSegment =
         try {
           const plan = await schoolApi.agendaPreview(kid.id, effectiveDay);
           if (!plan?.ok) return settleWithoutPlan();
-          const makeupLine = makeupHint(plan.data?.makeup);
           settle(kid.id, generation, {
             summary: {
               ...withServerVerdict(
                 summarize(plan.data?.sections, learner?.sessions ?? [], plan.data?.entries, readingActivity, fitnessActivity,
                   plan.data?.dayOff ?? null),
                 learner?.dayCompletion),
-              ...(makeupLine ? { makeupHint: makeupLine } : {}),
             },
           });
-          if (makeupLine) {
-            schoolLog.selfServiceDebug('status-board.makeup', { learnerId: kid.id, items: plan.data.makeup.items.length });
-          }
           if (plan.data?.dayOff) {
             schoolLog.selfServiceDebug('status-board.day-off', { learnerId: kid.id, tier: plan.data.dayOff.tier });
           }
@@ -978,14 +973,6 @@ export default function AgendaStatusBoard({ kids = NO_KIDS, day, onOpenSegment =
               ) : (
                 <span className="school-status-board__status school-status-board__status--none">No plan to show</span>
               )}
-              {/* MAKEUP WORK beside any of the above: earlier days this week
-                  still owed. A pinned day gets no hint, since the sheet
-                  prints from TODAY's agenda. */}
-              {!loading && summary?.makeupHint && !day ? (
-                <span className="school-status-board__status school-status-board__status--makeup" data-testid="board-makeup">
-                  {summary.makeupHint}
-                </span>
-              ) : null}
             </div>
             <div className="school-status-board__coins" data-testid="board-coins">
               {onOpenRewards ? (
