@@ -46,10 +46,10 @@ const wrap = () => render(<MantineProvider><MemoryRouter><TriageSessionView /></
 beforeEach(() => { navigate.mockReset(); api.mockReset(); triage = makeTriage(); });
 
 describe('TriageSessionView', () => {
-  it('renders the first card with the progress "1 / N"', () => {
+  it('renders the first card with the overall count left', () => {
     wrap();
     expect(screen.getByText('Volunteer slots')).toBeInTheDocument();
-    expect(screen.getByText('1 / 2')).toBeInTheDocument();
+    expect(screen.getByText('2 left')).toBeInTheDocument();
     expect(screen.queryByText('Bake sale')).not.toBeInTheDocument();
   });
 
@@ -66,7 +66,7 @@ describe('TriageSessionView', () => {
     fireEvent.click(screen.getByRole('button', { name: /Archive/ }));
     await waitFor(() => expect(screen.getByText('Bake sale')).toBeInTheDocument());
     expect(triage.answer).toHaveBeenCalledWith('c1', { choice: 'archive' });
-    expect(screen.getByText('2 / 2')).toBeInTheDocument();
+    expect(screen.getByText('1 left')).toBeInTheDocument();
   });
 
   it('a conflict shows the skipped line and advances', async () => {

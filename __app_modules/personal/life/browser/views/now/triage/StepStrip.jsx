@@ -6,7 +6,7 @@ export const stepLabel = (id) => STEP_LABELS[id] ?? id;
 /**
  * The session's steps in order with the overall progress bar under them.
  * `steps` is [{ id, count }] from /session; `currentStep`/`stepPos` place the open card;
- * `position`/`total` drive the bar and the "n / N" counter.
+ * `position`/`total` drive the bar and the "N left" counter.
  */
 export function StepStrip({ steps = [], currentStep = null, stepPos = 0, position = 0, total = 0 }) {
   const currentIdx = steps.findIndex((s) => s.id === currentStep);
@@ -37,7 +37,9 @@ export function StepStrip({ steps = [], currentStep = null, stepPos = 0, positio
         <div className="life-triage__bar" role="progressbar" aria-valuemin={0} aria-valuemax={total} aria-valuenow={Math.max(0, position - 1)}>
           <i style={{ width: `${pct}%` }} />
         </div>
-        <span className="life-triage__count">{finished ? `${total} / ${total}` : `${position} / ${total}`}</span>
+        {/* Remaining, not "n / N": beside the step's own "1/45" a second fraction read as a
+            contradiction (2026-11-20, "why two different denominators?"). */}
+        {!finished && <span className="life-triage__count">{total - position + 1} left</span>}
       </div>
     </div>
   );
