@@ -107,7 +107,8 @@ describe('useContentCombobox', () => {
     vi.useRealTimers();
   });
 
-  it('value-prop change dispatches VALUE_CHANGED and returns to DISPLAY', () => {
+  it('discards a queued edit when the committed value is replaced', async () => {
+    vi.useFakeTimers();
     const onChange = vi.fn();
     const { result, rerender } = setup({ value: 'plex:1', onChange });
 
@@ -119,6 +120,63 @@ describe('useContentCombobox', () => {
     expect(result.current.state.mode).toBe('display');
     expect(result.current.state.value).toBe('plex:2');
     expect(result.current.state.search).toBeNull();
+    expect(result.current.isSearching).toBe(false);
+
+    await act(async () => { vi.advanceTimersByTime(350); });
+    expect(fetchMock.mock.calls.filter(([path]) => path.startsWith('/api/v1/content/query/search?'))).toHaveLength(0);
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it('aborts an active batch when the committed value is replaced and ignores its response', async () => {
+    vi.useFakeTimers();
+    const older = Promise.withResolvers();
+    fetchMock.mockImplementation(path => path.includes('text=older')
+      ? older.promise
+      : jsonResponse({ items: path.includes('text=newer') ? [{ id: 'plex:4', title: 'New result' }] : [] }));
+    const onChange = vi.fn();
+    const { result, rerender } = setup({ value: 'plex:1', onChange });
+
+    act(() => { result.current.handleInput('older'); });
+    await act(async () => { vi.advanceTimersByTime(350); });
+    const searchRequest = fetchMock.mock.calls.find(([path]) => path.includes('text=older'));
+    expect(searchRequest?.[1].signal.aborted).toBe(false);
+
+    rerender({ value: 'plex:2', onChange });
+    expect(searchRequest[1].signal.aborted).toBe(true);
+    expect(result.current.isSearching).toBe(false);
+
+    act(() => { result.current.handleInput('newer'); });
+    await act(async () => { vi.advanceTimersByTime(350); });
+    await act(async () => older.resolve(await jsonResponse({ items: [{ id: 'plex:3', title: 'Old result' }] })));
+    expect(result.current.state.results.map(item => item.id)).toEqual(['plex:4']);
+    expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it('closes an active stream and clears partial results when the committed value is replaced', async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal('EventSource', MockEventSource);
+    const onChange = vi.fn();
+    const { result, rerender } = setup({ value: 'plex:1', onChange });
+
+    act(() => { result.current.handleInput('older'); });
+    await act(async () => { vi.advanceTimersByTime(350); });
+    const [oldStream] = MockEventSource.instances;
+    act(() => oldStream.simulateMessage({
+      event: 'results', source: 'plex', items: [{ id: 'plex:3', title: 'Old result' }], pending: ['files'],
+    }));
+    expect(result.current.state.results.map(item => item.id)).toEqual(['plex:3']);
+    expect(oldStream.readyState).not.toBe(2);
+
+    rerender({ value: 'plex:2', onChange });
+    expect(oldStream.readyState).toBe(2);
+    expect(result.current.state.results).toEqual([]);
+    expect(result.current.isSearching).toBe(false);
+
+    act(() => oldStream.simulateMessage({
+      event: 'results', source: 'files', items: [{ id: 'files:late', title: 'Late result' }], pending: [],
+    }));
+    expect(result.current.state.results).toEqual([]);
+    expect(onChange).not.toHaveBeenCalled();
   });
 
   it('recognizes recovered aliases when the same picker opens after an outage', async () => {

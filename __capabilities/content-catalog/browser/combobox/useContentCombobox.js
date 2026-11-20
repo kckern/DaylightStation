@@ -172,18 +172,6 @@ export function useContentCombobox({
     if (allowFreeform) loadKnownSources();
   }, [allowFreeform]);
 
-  // ── 1. Reducer wiring: VALUE_CHANGED on prop change (skip initial render) ──
-  const prevValueRef = useRef(value);
-  useLayoutEffect(() => {
-    if (prevValueRef.current === value) return;
-    const prevValue = prevValueRef.current;
-    prevValueRef.current = value;
-    invalidateBrowseLoads();
-    if (!value && prevValue) log.info('value.cleared', { prevValue });
-    else log.debug('props.value_changed', { value, prevValue });
-    dispatch({ type: 'VALUE_CHANGED', value: value ?? '' });
-  }, [value, log, invalidateBrowseLoads]);
-
   // ── 2. Search transport: SSE stream with batch fallback ──
   const {
     state: streamState,
@@ -375,6 +363,19 @@ export function useContentCombobox({
     setDebouncePending(false);
     debouncedSearch('');
   }, [debouncedSearch, retireSearch]);
+
+  // A controlled value replacement ends the current editing and browse visit.
+  const prevValueRef = useRef(value);
+  useLayoutEffect(() => {
+    if (prevValueRef.current === value) return;
+    const prevValue = prevValueRef.current;
+    prevValueRef.current = value;
+    invalidateBrowseLoads();
+    cancelPendingSearch();
+    if (!value && prevValue) log.info('value.cleared', { prevValue });
+    else log.debug('props.value_changed', { value, prevValue });
+    dispatch({ type: 'VALUE_CHANGED', value: value ?? '' });
+  }, [value, log, invalidateBrowseLoads, cancelPendingSearch]);
 
   // ── 3. Siblings browse (cache-aware) ──
   const applyBrowseData = useCallback((contentId, data) => {
