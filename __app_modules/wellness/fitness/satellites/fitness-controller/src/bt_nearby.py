@@ -61,6 +61,16 @@ class NearbyTracker:
         return rows
 
 
+RSSI_STEP_DB = 5
+
+
+def _rssi_step(rssi):
+    return None if rssi is None else int(round(rssi / RSSI_STEP_DB)) * RSSI_STEP_DB
+
+
 def snapshot_key(rows):
-    """What changed between two snapshots, ignoring how old each report is."""
-    return [(r["address"], r["name"], r["kind"], r["rssi"], r["paired"], r["connected"]) for r in rows]
+    """What changed between two snapshots, ignoring how old each report is,
+    signal wobble inside one RSSI_STEP_DB step, and the strongest-first order
+    (which reshuffles with that wobble). Each `nearby` the satellite sends
+    re-renders the browser's Bluetooth screen, so jitter alone sends nothing."""
+    return sorted((r["address"], r["name"], r["kind"], _rssi_step(r["rssi"]), r["paired"], r["connected"]) for r in rows)

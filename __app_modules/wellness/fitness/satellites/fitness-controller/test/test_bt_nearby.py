@@ -54,6 +54,16 @@ class Tracker(unittest.TestCase):
         t.update("/dev_ring", RING, now=0, live=True)
         self.assertEqual(snapshot_key(t.snapshot(1)), snapshot_key(t.snapshot(5)))
 
+    def test_snapshot_key_ignores_rssi_jitter_and_order(self):
+        # A signal wobbling inside one 5 dB step is not a change worth sending;
+        # neither is two devices swapping places in the strongest-first order.
+        a = [{"address": "A", "name": "a", "kind": None, "rssi": -61, "paired": False, "connected": False},
+             {"address": "B", "name": "b", "kind": None, "rssi": -62, "paired": False, "connected": False}]
+        b = [dict(a[1], rssi=-59), dict(a[0], rssi=-60)]
+        self.assertEqual(snapshot_key(a), snapshot_key(b))
+        self.assertNotEqual(snapshot_key(a), snapshot_key([dict(a[0], rssi=-70), a[1]]))
+        self.assertEqual(snapshot_key([dict(a[0], rssi=None)]), snapshot_key([dict(a[0], rssi=None)]))
+
 
 if __name__ == "__main__":
     unittest.main()
