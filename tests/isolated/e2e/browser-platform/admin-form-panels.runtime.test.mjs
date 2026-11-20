@@ -325,3 +325,108 @@ test('an Admin Party Games preview refreshes its active projection from the shar
   await expect.poll(() => reads).toBeGreaterThanOrEqual(3);
   await expect(notation).toHaveValue('2d20');
 });
+
+test('Admin Gratitude preview removes persisted events by selection ID and resolves older envelopes before display', async ({ page }) => {
+  await installFixtures(page);
+  await page.route('**/api/v1/admin/content/lists/menus/gratitude-fixture', route => route.fulfill({
+    json: {
+      name: 'gratitude-fixture',
+      sections: [{ items: [{ uid: 'gratitude-preview', label: 'Gratitude fixture', action: 'Open', input: 'app:gratitude' }] }],
+    },
+  }));
+
+  let bootstrapReads = 0;
+  let legacySelectionReads = 0;
+  const writes = [];
+  const deletes = [];
+  const backendSelections = [];
+  await page.route('**/api/v1/gratitude/**', async route => {
+    const request = route.request();
+    const { pathname } = new URL(request.url());
+    if (pathname.endsWith('/bootstrap')) {
+      bootstrapReads++;
+      return route.fulfill({ json: {
+        users: [{ id: 'alice', name: 'Alice' }],
+        options: { gratitude: [], hopes: [] },
+        selections: { gratitude: [...backendSelections], hopes: [] },
+      } });
+    }
+    if (pathname.endsWith('/selections/gratitude') && request.method() === 'GET') {
+      legacySelectionReads++;
+      return route.fulfill({ json: { items: [...backendSelections] } });
+    }
+    if (pathname.endsWith('/selections/gratitude') && request.method() === 'POST') {
+      writes.push(request.postDataJSON());
+      return route.fulfill({ status: 201, json: { selection: { id: 'unexpected-preview-write' } } });
+    }
+    if (pathname.startsWith('/api/v1/gratitude/selections/gratitude/')) {
+      const selectionId = pathname.split('/').at(-1);
+      deletes.push(selectionId);
+      const index = backendSelections.findIndex(selection => selection.id === selectionId);
+      const [removed] = index < 0 ? [] : backendSelections.splice(index, 1);
+      return route.fulfill({ status: removed ? 200 : 404, json: { removed } });
+    }
+    return route.fulfill({ json: {} });
+  });
+
+  let gratitudeSocket;
+  const subscriptionActions = [];
+  await page.routeWebSocket(url => url.pathname === '/ws', socket => {
+    gratitudeSocket = socket;
+    socket.onMessage(raw => {
+      const message = JSON.parse(raw);
+      if (message.type === 'bus_command' && message.topics?.includes('gratitude')) {
+        subscriptionActions.push(message.action);
+      }
+    });
+  });
+
+  await page.goto('/admin/content/lists/menus/gratitude-fixture');
+  const preview = page.getByTitle('Preview app', { exact: true });
+  await preview.click();
+  const dialog = page.getByRole('dialog', { name: 'Gratitude fixture' });
+  await expect(dialog).toBeVisible();
+  await expect.poll(() => Boolean(gratitudeSocket && subscriptionActions.includes('subscribe'))).toBe(true);
+
+  backendSelections.push({
+    id: 'saved-selection-uuid', userId: 'alice', userName: 'Alice',
+    item: { id: 'option-id', text: 'Committed from HomeBot' }, datetime: '2026-11-20T12:00:00.000Z',
+  });
+  gratitudeSocket.send(JSON.stringify({
+    topic: 'gratitude', action: 'item_added', userId: 'alice', userName: 'Alice', category: 'gratitude', source: 'homebot',
+    items: [{ id: 'option-id', selectionId: 'saved-selection-uuid', text: 'Committed from HomeBot' }],
+  }));
+  await expect(dialog.locator('.selected-column .item-text')).toHaveText(['Committed from HomeBot']);
+  expect(legacySelectionReads).toBe(0);
+
+  await page.keyboard.press('ArrowRight');
+  await page.keyboard.press('Enter');
+  await expect.poll(() => deletes).toEqual(['saved-selection-uuid']);
+  await expect(dialog.locator('.selected-column .item-text')).toHaveCount(0);
+  await page.keyboard.press('Escape');
+  await expect(dialog).toBeHidden();
+  await preview.click();
+  await expect(dialog).toBeVisible();
+  await expect(dialog.locator('.selected-column .item-text')).toHaveCount(0);
+  await expect.poll(() => subscriptionActions.filter(action => action === 'subscribe').length).toBe(2);
+
+  backendSelections.push({
+    id: 'legacy-saved-selection-uuid', userId: 'alice', userName: 'Alice',
+    item: { id: 'legacy-option-id', text: 'Older persisted event' }, datetime: '2026-11-20T12:00:00.000Z',
+  });
+  gratitudeSocket.send(JSON.stringify({
+    topic: 'gratitude', action: 'item_added', userId: 'alice', userName: 'Alice', category: 'gratitude', source: 'homebot',
+    items: [{ id: 'legacy-option-id', text: 'Older persisted event' }],
+  }));
+  await expect.poll(() => legacySelectionReads).toBe(1);
+  await expect(dialog.locator('.selected-column .item-text')).toHaveText(['Older persisted event']);
+  await page.keyboard.press('ArrowRight');
+  await page.keyboard.press('Enter');
+  await expect.poll(() => deletes).toEqual(['saved-selection-uuid', 'legacy-saved-selection-uuid']);
+  await expect(dialog.locator('.selected-column .item-text')).toHaveCount(0);
+  await page.keyboard.press('Escape');
+  await expect(dialog).toBeHidden();
+  await expect.poll(() => subscriptionActions.filter(action => action === 'unsubscribe').length).toBe(2);
+  expect(writes).toEqual([]);
+  expect(bootstrapReads).toBe(2);
+});

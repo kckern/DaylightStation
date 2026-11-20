@@ -100,13 +100,14 @@ export class AssignItemToUser {
       const householdId = this.#householdService.getHouseholdId();
 
       // 4. Save items to gratitude service
+      let selections;
       try {
         // Generate timestamp with optional timezone adjustment
         const timestamp = timezone
           ? new Date().toLocaleString('en-US', { timeZone: timezone })
           : nowTs24();
 
-        await this.#addSelections(
+        selections = await this.#addSelections(
           householdId,
           category || 'gratitude',
           username,
@@ -133,7 +134,11 @@ export class AssignItemToUser {
         this.#websocketBroadcast({
           topic: 'gratitude',
           action: 'item_added',
-          items: items.map(item => ({ id: item.id, text: item.text })),
+          items: items.map((item, index) => ({
+            id: item.id,
+            ...(selections?.[index]?.id ? { selectionId: selections[index].id } : {}),
+            text: item.text,
+          })),
           userId: username,
           userName: displayName,
           category: category || 'gratitude',

@@ -1,7 +1,7 @@
 import { mergeGratitudeItems,shouldPersistIncoming } from './gratitudeLiveItems.js';
 import { MantineProvider } from "@mantine/core";
 import React, { useState, useCallback, useEffect, useRef } from "react";
-import { WebSocketProvider, useWebSocket } from "../../../../frontend/src/contexts/WebSocketContext.jsx";
+import { useWebSocketSubscription } from "../../../../frontend/src/hooks/useWebSocket.js";
 import { getChildLogger } from '@/lib/logging/singleton.js';
 import { DaylightAPI, DaylightMediaPath } from '@/lib/api.mjs';
 import { isToday, format } from 'date-fns';
@@ -384,9 +384,6 @@ function GratitudeApp({
   const lastActionTimeRef = useRef(0); // Debounce protection
   const animatingRef = useRef(false); // Ref to track animation state for callbacks
   
-  // WebSocket integration
-  const { registerPayloadCallback, unregisterPayloadCallback } = useWebSocket();
-
   // Focus container on mount
   useEffect(() => {
     containerRef.current?.focus();
@@ -401,7 +398,7 @@ function GratitudeApp({
   // WebSocket Handler
   // =========================================================================
   
-  const handleWebSocketPayload = useCallback((payload) => {
+  const handleWebSocketPayload = useCallback(async (payload) => {
     if (payload.topic !== 'gratitude') return;
     if (payload.action !== 'item_added') return;
     
@@ -426,13 +423,41 @@ function GratitudeApp({
     
     // 3. Add items directly to selected with timestamps
     const now = new Date().toISOString();
-    const newItems = items.map(item => ({
-      id: item.id || crypto.randomUUID(),
-      text: item.text,
-      userId,
-      userName,
-      datetime: now,
-    }));
+    const persistIncoming = shouldPersistIncoming(payload);
+    let persistedSelections = [];
+    if (!persistIncoming && items.some(item => !item.selectionId)) {
+      try {
+        const response = await DaylightAPI(`/api/v1/gratitude/selections/${itemCategory}`);
+        persistedSelections = response?.items || [];
+      } catch (err) {
+        logger.error('gratitude.websocket.selection-read.failed', { error: err.message });
+        return;
+      }
+    }
+
+    const newItems = items.map(item => {
+      const optionId = item.id || crypto.randomUUID();
+      const persistedSelection = persistIncoming
+        ? null
+        : persistedSelections.find(selection => selection.item?.id === optionId && selection.userId === userId);
+      const selectionId = persistIncoming ? null : item.selectionId || persistedSelection?.id;
+      return {
+        id: persistIncoming ? crypto.randomUUID() : selectionId,
+        optionId,
+        text: item.text || persistedSelection?.item?.text,
+        userId,
+        userName,
+        datetime: persistedSelection?.datetime || now,
+      };
+    }).filter(item => item.id);
+
+    if (newItems.length < items.length) {
+      logger.error('gratitude.websocket.selection-id.missing', {
+        userId,
+        category: itemCategory,
+        count: items.length - newItems.length,
+      });
+    }
     
     setSelected(prev => ({
       ...prev,
@@ -453,23 +478,32 @@ function GratitudeApp({
     }, 4000);
     
     // 6. Persist to backend (only if NOT from homebot - homebot already persists)
-    if (shouldPersistIncoming(payload)) {
-      newItems.forEach(item => {
-        DaylightAPI(`/api/v1/gratitude/selections/${itemCategory}`, {
-          userId,
-          item: { id: item.id, text: item.text }
-        }, 'POST').catch(err => {
+    if (persistIncoming) {
+      newItems.forEach(async item => {
+        try {
+          const response = await DaylightAPI(`/api/v1/gratitude/selections/${itemCategory}`, {
+            userId,
+            item: { id: item.optionId, text: item.text }
+          }, 'POST');
+
+          const selectionId = response?.selection?.id;
+          if (selectionId) {
+            setSelected(prev => ({
+              ...prev,
+              [itemCategory]: (prev[itemCategory] || []).map(selection =>
+                selection.id === item.id ? { ...selection, id: selectionId } : selection
+              )
+            }));
+          }
+        } catch (err) {
           logger.error('gratitude.websocket.persist.failed', { error: err.message });
-        });
+        }
       });
     }
     
   }, [users]);
 
-  useEffect(() => {
-    registerPayloadCallback(handleWebSocketPayload);
-    return () => unregisterPayloadCallback();
-  }, [registerPayloadCallback, unregisterPayloadCallback, handleWebSocketPayload]);
+  useWebSocketSubscription('gratitude', handleWebSocketPayload, [handleWebSocketPayload]);
 
   // =========================================================================
   // Action Handlers
@@ -1010,7 +1044,7 @@ function GratitudeApp({
 }
 
 // ============================================================================
-// Main Gratitude Container (Bootstrap + WebSocket Provider)
+// Main Gratitude Container (Bootstrap + topic subscription)
 // ============================================================================
 
 export default function Gratitude({ clear }) {
@@ -1081,14 +1115,12 @@ export default function Gratitude({ clear }) {
   return (
     <MantineProvider>
       <div className="app gratitude-app">
-        <WebSocketProvider>
-          <GratitudeApp
-            users={users}
-            initialQueue={queue}
-            initialSelected={selected}
-            onExit={clear}
-          />
-        </WebSocketProvider>
+        <GratitudeApp
+          users={users}
+          initialQueue={queue}
+          initialSelected={selected}
+          onExit={clear}
+        />
       </div>
     </MantineProvider>
   );

@@ -7,6 +7,7 @@ describe('AssignItemToUser', () => {
   let mockStateStore;
   let mockGratitudeService;
   let mockHouseholdService;
+  let mockWebsocketBroadcast;
   let mockLogger;
 
   beforeEach(async () => {
@@ -50,6 +51,7 @@ describe('AssignItemToUser', () => {
         displayName: 'User One'
       })
     };
+    mockWebsocketBroadcast = vi.fn();
 
     mockLogger = {
       info: vi.fn(),
@@ -65,6 +67,7 @@ describe('AssignItemToUser', () => {
       conversationStateStore: mockStateStore,
       addSelections: (...args) => mockGratitudeService.addSelections(...args),
       householdService: mockHouseholdService,
+      websocketBroadcast: mockWebsocketBroadcast,
       logger: mockLogger
     });
   });
@@ -153,6 +156,24 @@ describe('AssignItemToUser', () => {
       expect(result.success).toBe(true);
       expect(result.itemCount).toBe(2);
       expect(result.username).toBe('user1');
+    });
+
+    it('broadcasts each committed selection ID alongside its option ID', async () => {
+      await useCase.execute({
+        conversationId: 'telegram:123',
+        messageId: 'msg123',
+        username: 'user1'
+      });
+
+      expect(mockWebsocketBroadcast).toHaveBeenCalledWith(expect.objectContaining({
+        topic: 'gratitude',
+        action: 'item_added',
+        source: 'homebot',
+        items: [
+          { id: 'item1', selectionId: 'sel1', text: 'Good health' },
+          { id: 'item2', selectionId: 'sel2', text: 'Family' }
+        ]
+      }));
     });
 
     it('should show error when no state exists', async () => {
