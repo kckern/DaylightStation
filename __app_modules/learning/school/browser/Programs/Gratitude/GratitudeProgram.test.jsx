@@ -118,3 +118,11 @@ it('ties the follow-up box to the "You said" line for screen readers',async()=>{
   expect(said.id).toBeTruthy();expect(box).toHaveAttribute('aria-describedby',said.id);
   expect(box).toHaveAccessibleDescription(/I'm grateful for my mom/);
 });
+it('shows whose Gratitude this is in the header',async()=>{
+  api.open.mockResolvedValue({ok:true,data:initial});
+  render(<GratitudeProgram learnerId="kid" learnerName="Kid" gratitudeGrant="grant" today="2026-11-16" onExit={()=>{}}/>);
+  await screen.findByRole('textbox');
+  const header=screen.getByRole('banner');
+  expect(header).toHaveTextContent('Kid');
+  expect(header.querySelector('img[src*="/img/users/kid"]')).toBeTruthy();
+});

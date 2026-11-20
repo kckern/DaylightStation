@@ -141,6 +141,11 @@ export function buildContextualLaunchCard({
   options = {},
 } = {}) {
   const { sentence, actions } = offeredCard(resolution, options);
+  // NO IDENTITY QUESTION ON A PROGRAM LAUNCH (2026-11-19). The code is already
+  // learner-scoped, and the program's own header shows the child's avatar and
+  // name. Asking turned a re-entered Gratitude code into three screens (code,
+  // "Is this you?", Start/Exit) for a preschooler coming back from a break.
+  const askIdentity = confirmIdentity && !singleProgram(actions);
   const subject = subjectId ? { id: subjectId, label: schoolSubjectLabel(subjectId) } : null;
   const normalizedLearner = learner?.id ? {
     id: learner.id,
@@ -207,7 +212,7 @@ export function buildContextualLaunchCard({
       // every other field on this envelope is additive. It is a speed bump and
       // not a lock; anyone can tap yes. At a keypad with a soft, self-declared
       // identity there is no stronger honest claim to make.
-      ...(confirmIdentity ? { confirmIdentity: true } : {}),
+      ...(askIdentity ? { confirmIdentity: true } : {}),
       // NOTHING TO DECIDE — so do not ask.
       //
       // A reading-shelf code resolves to a card whose entire content is one
@@ -231,7 +236,7 @@ export function buildContextualLaunchCard({
       // Never set alongside `confirmIdentity`: that flag exists to ask whose
       // paper this is before anything records against them, and skipping the
       // card would skip the question. The friction is the point there.
-      ...(openImmediately(actions, confirmIdentity) ? { openImmediately: true } : {}),
+      ...(openImmediately(actions, askIdentity) ? { openImmediately: true } : {}),
     },
     actions,
   };
@@ -246,6 +251,10 @@ export function buildContextualLaunchCard({
  */
 function openImmediately(actions, confirmIdentity) {
   if (confirmIdentity) return false;
+  return singleProgram(actions);
+}
+
+function singleProgram(actions) {
   const work = (Array.isArray(actions) ? actions : []).filter((a) => a?.kind !== 'exit');
   return work.length === 1 && work[0]?.kind === 'program';
 }

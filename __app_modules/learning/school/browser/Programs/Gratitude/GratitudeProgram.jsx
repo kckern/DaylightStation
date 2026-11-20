@@ -2,6 +2,7 @@ import { useCallback,useEffect,useMemo,useRef,useState } from 'react';
 import { TouchButton } from '../../../../../../frontend/src/lib/ui/index.js';
 import { SchoolButton } from '../../portal/SchoolButton.jsx';
 import Icon from '../../home/icons/Icon.jsx';
+import ProfileAvatar from '../../../../../../frontend/src/lib/identity/ProfileAvatar.jsx';
 import ReflectionResponse from '../shared/ReflectionResponse.jsx';
 import ProgramRetryButton from '../shared/ProgramRetryButton.jsx';
 import { useProgramKeys } from '../shared/useProgramKeys.js';
@@ -13,7 +14,7 @@ const IDLE_THRESHOLDS=[45_000,120_000,300_000];
 // Phases in which the answer box is open and a draft may be saved.
 const ANSWER_PHASES=new Set(['draft','not-started','retry','follow-up']);
 
-export default function GratitudeProgram({learnerId,gratitudeGrant,today,onExit}){
+export default function GratitudeProgram({learnerId,learnerName=null,gratitudeGrant,today,onExit}){
   const api=useGratitudeApi({learnerId,grant:gratitudeGrant});
   const [view,setView]=useState(null),[busy,setBusy]=useState(false),[error,setError]=useState(null),[now,setNow]=useState(Date.now());
   const live=useRef(true),sending=useRef(false),lastBody=useRef(null),clockOffset=useRef(0),expiryCheck=useRef(null);
@@ -60,7 +61,7 @@ export default function GratitudeProgram({learnerId,gratitudeGrant,today,onExit}
   useProgramKeys({arrowleft:close,...(view?.phase==='completed'?{enter:onExit}:{})});
   if(!gratitudeGrant||!learnerId)return <section className="gratitude-program"><p>Open Gratitude from your School agenda.</p><TouchButton onClick={onExit}>Back to School</TouchButton></section>;
   return <section className="gratitude-program">
-    <header className="gratitude-program__header"><h1>Gratitude</h1><SchoolButton variant="plain" type="button" className="gratitude-program__close" aria-label="Close" onClick={close}><Icon name="close"/></SchoolButton></header>
+    <header className="gratitude-program__header"><h1>Gratitude</h1><span className="gratitude-program__learner"><ProfileAvatar id={learnerId} name={learnerName??learnerId} size={160}/><span>{learnerName??learnerId}</span></span><SchoolButton variant="plain" type="button" className="gratitude-program__close" aria-label="Close" onClick={close}><Icon name="close"/></SchoolButton></header>
     {error&&<p role="alert">{error}</p>}
     {!view&&<>{!error&&<p role="status">Opening Gratitude…</p>}{error&&<ProgramRetryButton onRetry={open}/>}</>}
     {view&&['draft','not-started','retry'].includes(view.phase)&&<>

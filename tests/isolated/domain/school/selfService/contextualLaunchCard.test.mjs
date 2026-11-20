@@ -220,10 +220,23 @@ describe('a card with nothing to decide', () => {
     expect(card.presentation.openImmediately).toBe(true);
   });
 
-  it('never skips a card that is still asking whose paper this is', () => {
-    // `confirmIdentity` exists to ask before anything records against a child.
-    // Skipping the card would skip the question, so the two are exclusive.
+  it('asks no identity question on a program launch, and so opens it directly', () => {
+    // 2026-11-19 (gratitude preschool design): a re-entered program code asked
+    // "Is this you?" and then showed a Start/Exit card. The code is already
+    // learner-scoped and the program header shows the child's avatar and name.
     const card = programCard({ confirmIdentity: true });
+    expect(card.presentation.confirmIdentity).toBeUndefined();
+    expect(card.presentation.openImmediately).toBe(true);
+  });
+
+  it('still asks on a re-entered code whose card has something to choose', () => {
+    const card = buildContextualLaunchCard({
+      resolution: { kind: 'move', state: { state: 'created' }, unit: { unitId: 'u1', subject: 'math', bank: 'b1' } },
+      learner: { id: 'learner_a', displayName: 'Alpha' },
+      subjectId: 'math',
+      options: { bankPrintable: true },
+      confirmIdentity: true,
+    });
     expect(card.presentation.confirmIdentity).toBe(true);
     expect(card.presentation.openImmediately).toBeUndefined();
   });
