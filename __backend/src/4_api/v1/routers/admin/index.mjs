@@ -9,6 +9,7 @@ import { createAdminHouseholdRouter } from './household.mjs';
 import { createAdminIntegrationsRouter } from './integrations.mjs';
 import { createAdminAppsRouter } from './apps.mjs';
 import { createAdminArtRouter } from "../../../../../../__app_modules/media/art/server/api/admin/art.mjs";
+import { createAdminSheetMusicRouter } from "../../../../../../__app_modules/learning/piano/server/api/admin/sheetMusic.mjs";
 import { createAdminNotificationsRouter } from './notifications.mjs';
 import { createAdminStateGatesRouter } from "../../../../../../__capabilities/state-gates/server/api/admin/state-gates.mjs";
 import { createAdminDeviceRemoteRouter } from './device-remote.mjs';
@@ -26,6 +27,7 @@ import { createAdminDeviceRemoteRouter } from './device-remote.mjs';
  *   /images/*    - Image uploads
  *   /media/*     - Media operations (freshvideo metadata)
  *   /ws/*        - EventBus/WebSocket management
+ *   /sheet-music/* - Piano sheet music library + Learn files (optional, injected)
  *
  * All five admin app-services are constructed at the composition root (app.mjs,
  * which may import #apps freely) and injected here. This router and its
@@ -42,6 +44,7 @@ import { createAdminDeviceRemoteRouter } from './device-remote.mjs';
  * @param {Object} config.schedulerAdminService - Injected SchedulerAdminService
  * @param {Object} config.integrationsQueryService - Injected IntegrationsQueryService
  * @param {Object} config.adminArtService - Injected AdminArtService
+ * @param {Object} [config.sheetMusicAdminService] - Injected piano SheetMusicAdminService (optional)
  * @param {express.Router} [config.oauthRouter] - Prebuilt OAuth reconnect router (optional)
  * @param {Object} [config.logger=console] - Logger instance
  * @returns {express.Router}
@@ -64,6 +67,7 @@ export function createAdminRouter(config) {
     listManagementService,
     adminArtService,
     adminImageService,
+    sheetMusicAdminService,
     stateGatesAdministration,
     stateGatesActorFromRequest,
     deviceRemoteAdministrationService,
@@ -140,6 +144,14 @@ export function createAdminRouter(config) {
   });
   router.use('/art', artRouter);
 
+  // Mount sheet music router (piano library + Learn files; service built in the piano module).
+  if (sheetMusicAdminService) {
+    router.use('/sheet-music', createAdminSheetMusicRouter({
+      service: sheetMusicAdminService,
+      logger: logger.child?.({ submodule: 'sheet-music' }) || logger
+    }));
+  }
+
   // Mount images router
   const imagesRouter = createAdminImagesRouter({
     imageService: adminImageService,
@@ -181,7 +193,7 @@ export function createAdminRouter(config) {
     }));
   }
 
-  logger.info?.('admin.router.mounted', { subroutes: ['/content', '/config', '/scheduler', '/household', '/integrations', '/apps', '/art', '/images', '/media', '/ws', '/notifications', '/state-gates'] });
+  logger.info?.('admin.router.mounted', { subroutes: ['/content', '/config', '/scheduler', '/household', '/integrations', '/apps', '/art', ...(sheetMusicAdminService ? ['/sheet-music'] : []), '/images', '/media', '/ws', '/notifications', '/state-gates'] });
   return router;
 }
 
@@ -195,6 +207,7 @@ export { createAdminHouseholdRouter } from './household.mjs';
 export { createAdminIntegrationsRouter } from './integrations.mjs';
 export { createAdminAppsRouter } from './apps.mjs';
 export { createAdminArtRouter } from "../../../../../../__app_modules/media/art/server/api/admin/art.mjs";
+export { createAdminSheetMusicRouter } from "../../../../../../__app_modules/learning/piano/server/api/admin/sheetMusic.mjs";
 export { createAdminNotificationsRouter } from './notifications.mjs';
 export { createAdminStateGatesRouter } from "../../../../../../__capabilities/state-gates/server/api/admin/state-gates.mjs";
 export { createAdminDeviceRemoteRouter } from './device-remote.mjs';

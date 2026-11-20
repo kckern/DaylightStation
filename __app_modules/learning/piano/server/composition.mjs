@@ -21,6 +21,7 @@ import { PianoPolishReward } from './application/PianoPolishReward.mjs';
 import { YamlPianoLearnCoachStore } from './adapters/persistence/YamlPianoLearnCoachStore.mjs';
 import { JudgeNoteBurst } from './application/JudgeNoteBurst.mjs';
 import { NodeAsyncScheduler } from '#adapters/scheduling/NodeAsyncScheduler.mjs';
+import { createSheetMusicAdminService } from './composition/sheetMusicAdmin.mjs';
 
 /** Installed Piano assembly; callers supply cross-product contracts explicitly. */
 export async function createPianoModule({configService, userService, rootLogger, contentRegistry, householdId, contentPath, fitnessPlayableService, contentServices, eventBus, shortId, pianoBoardGameDayService, schoolLearnerDirectory, PianoConfigProjection, legitDecisionGateway = null}) {
@@ -233,5 +234,8 @@ export async function createPianoModule({configService, userService, rootLogger,
     logger: rootLogger.child({ module: 'piano-api' })
   });
 
-  return {router, pianoStudioDatastore, composerSongStore, pianoContainer, pianoGameBudgetService, pianoDayActivity, pianoChallengeProfileService, schoolPianoChallengeCompletionService, schoolTeacherGate};
+  const sheetMusicAdminService = createSheetMusicAdminService({ configService, pianoStudioDatastore, rootLogger });
+
+  return {router, sheetMusicAdminService, pianoStudioDatastore, composerSongStore, pianoContainer, pianoGameBudgetService, pianoDayActivity, pianoChallengeProfileService, schoolPianoChallengeCompletionService, schoolTeacherGate};
 }
+

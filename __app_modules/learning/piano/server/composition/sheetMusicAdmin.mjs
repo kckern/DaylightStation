@@ -1,0 +1,35 @@
+import { SheetMusicScoreReader } from '../adapters/SheetMusicScoreReader.mjs';
+import { SheetMusicAdminService } from '../application/SheetMusicAdminService.mjs';
+import { sheetMusicCollectionRefs } from '../../portable/music/musicXmlUpload.mjs';
+import { extractMusicXmlFromMxl, MAX_MXL_XML_BYTES } from '../../../../../__capabilities/music-notation/server/mxlArchive.mjs';
+
+/**
+ * The admin sheet music service (library rows, Learn draft/approve/revert,
+ * uploads). The reader's media dir is `configService.getMediaDir()`: the same
+ * value app.mjs passes as `mediaBasePath` to the files content adapter that
+ * `/api/v1/proxy/media/stream/<local>` reads through, so the admin hashes and
+ * writes the bytes the kiosk fetches.
+ */
+export function createSheetMusicAdminService({ configService, pianoStudioDatastore, rootLogger }) {
+  const mediaDir = configService.getMediaDir?.();
+  if (!mediaDir) return null;
+  const scoreReader = new SheetMusicScoreReader({ mediaDir });
+  const LIBRARY_PREFIX = 'files:docs/sheet-music/';
+  return new SheetMusicAdminService({
+    datastore: pianoStudioDatastore,
+    scoreReader,
+    // Not cached: the upload collision check needs the files on disk now.
+    listScores: () => pianoStudioDatastore.listSheetMusicIds().map((id) => {
+      const rest = id.slice(LIBRARY_PREFIX.length);
+      const cut = rest.lastIndexOf('/');
+      return { id, folder: cut >= 0 ? rest.slice(0, cut) : '', file: rest.slice(cut + 1) };
+    }),
+    listLearners: () => (pianoStudioDatastore.getRoster() || []).map((user) => String(user?.id ?? user)),
+    fileSignature: (id) => scoreReader.signature(id),
+    extractMxl: (buffer) => extractMusicXmlFromMxl(buffer, { maxXmlBytes: MAX_MXL_XML_BYTES }),
+    writeScoreExclusive: (id, buffer) => scoreReader.writeScoreExclusive(id, buffer),
+    // Re-read each call so a config reload changes the allowed folders.
+    collectionRefs: () => sheetMusicCollectionRefs(configService.getHouseholdAppConfig?.(null, 'piano')?.sheetmusic),
+    logger: rootLogger.child({ module: 'piano-sheetmusic-admin' }),
+  });
+}

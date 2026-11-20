@@ -264,6 +264,16 @@ const isFolderSegment = (folder) => typeof folder === 'string'
   && folder !== '' && folder !== '.' && folder !== '..'
   && !/[/\\]/.test(folder);
 
+/** The folders an upload may name: each configured single-segment library folder, once, in config order. */
+export function allowedUploadFolders(collectionRefs = []) {
+  const out = [];
+  for (const ref of collectionRefs || []) {
+    const folder = refFolder(ref);
+    if (folder != null && !out.includes(folder)) out.push(folder);
+  }
+  return out;
+}
+
 /** A single path segment naming one of the configured library folders. */
 export function isAllowedFolder(folder, collectionRefs = []) {
   if (!isFolderSegment(folder)) return false;

@@ -65,6 +65,22 @@ export class SheetMusicScoreReader {
     return path.join(this.#mediaDir, this.#local(scoreId));
   }
 
+  /**
+   * `${mtimeMs}:${size}` of the score file: a cheap change marker for caching
+   * the parsed header. Null when the id is not a library score or the path is
+   * not a readable file (the caller then reads the score and gets its coded error).
+   */
+  async signature(scoreId) {
+    const local = libraryScoreLocalPath(scoreId);
+    if (!local) return null;
+    try {
+      const stats = await getFileStatsAsync(path.join(this.#mediaDir, local));
+      return stats.isFile() ? `${stats.mtimeMs}:${stats.size}` : null;
+    } catch {
+      return null;
+    }
+  }
+
   /** @returns {Promise<{ xml: string, contentSha256: string }>} */
   async read(scoreId) {
     const local = this.#local(scoreId);

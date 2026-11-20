@@ -100,6 +100,7 @@ export const OWNER_ENTRY_POLICY = Object.freeze({
   '__app_modules/media/art/server/composition/screen-presets.mjs': 'composition',
   '__app_modules/media/art/server/composition/canvas-providers.mjs': 'composition',
   '__app_modules/media/art/server/api/admin/art.mjs': 'api',
+  '__app_modules/learning/piano/server/api/admin/sheetMusic.mjs': 'api',
   '__app_modules/media/art/browser/admin/index.js': null,
   '__app_modules/media/art/server/adapters/artmodeConfig.mjs': 'adapters',
   '__app_modules/media/art/server/api/canvas.mjs': 'api',

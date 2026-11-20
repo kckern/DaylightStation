@@ -679,3 +679,19 @@ describe('SheetMusicAdminService.upload ordering and logs', () => {
     expect(JSON.stringify(failed.data)).not.toContain('/secret');
   });
 });
+
+describe('SheetMusicAdminService.uploadFolders', () => {
+  const base = { datastore: {}, scoreReader: {}, listScores: () => [], listLearners: () => [] };
+
+  it('lists the configured upload folders, re-reading the refs each call', async () => {
+    let refs = ['files:docs/sheet-music/classical', 'plex:1'];
+    const service = new SheetMusicAdminService({ ...base, collectionRefs: async () => refs });
+    expect(await service.uploadFolders()).toEqual(['classical']);
+    refs = ['files:docs/sheet-music/folk'];
+    expect(await service.uploadFolders()).toEqual(['folk']);
+  });
+
+  it('is empty when no refs reader is wired', async () => {
+    expect(await new SheetMusicAdminService(base).uploadFolders()).toEqual([]);
+  });
+});

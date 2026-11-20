@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import {
+  allowedUploadFolders,
   checkCollision,
   checkFilename,
   checkUploadXml,
@@ -177,6 +178,25 @@ describe('isAllowedFolder', () => {
 
   it('accepts { ref } objects as well as strings', () => {
     assert.equal(isAllowedFolder('studies', [{ label: 'Studies', ref: 'files:docs/sheet-music/studies' }]), true);
+  });
+});
+
+describe('allowedUploadFolders', () => {
+  it('lists each configured single-segment library folder once, in config order', () => {
+    const refs = ['files:docs/sheet-music/classical', 'plex:999', 'files:docs/sheet-music/christmas/',
+      { ref: 'files:docs/sheet-music/studies' }, 'files:docs/sheet-music/classical/waltzes', 'files:docs/sheet-music/classical'];
+    assert.deepEqual(allowedUploadFolders(refs), ['classical', 'christmas', 'studies']);
+  });
+
+  it('is empty without refs', () => {
+    assert.deepEqual(allowedUploadFolders(), []);
+    assert.deepEqual(allowedUploadFolders(null), []);
+  });
+
+  it('agrees with isAllowedFolder', () => {
+    const refs = ['files:docs/sheet-music/a', 'files:docs/sheet-music/b/c', 'files:docs/sheet-music/..'];
+    for (const folder of allowedUploadFolders(refs)) assert.equal(isAllowedFolder(folder, refs), true);
+    assert.deepEqual(allowedUploadFolders(refs), ['a']);
   });
 });
 

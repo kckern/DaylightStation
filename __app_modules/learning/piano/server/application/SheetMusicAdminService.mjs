@@ -36,6 +36,7 @@ import { contentHash } from '../../portable/practice/lessonExpectation.mjs';
 import {
   MAX_UPLOAD_MUSICXML_BYTES,
   MAX_UPLOAD_MXL_BYTES,
+  allowedUploadFolders,
   checkCollision,
   checkFilename,
   checkUploadXml,
@@ -206,6 +207,12 @@ export class SheetMusicAdminService {
     }
     this.#logger?.info?.('piano.sheetmusic.upload', { id, bytes: buffer.byteLength, folder });
     return { id, title: checked.title ?? titleFromFile(name), composer: checked.composer, filename: name };
+  }
+
+  /** The library folders an upload may name, from the current config. */
+  async uploadFolders() {
+    if (typeof this.#collectionRefs !== 'function') return [];
+    return allowedUploadFolders(await this.#collectionRefs());
   }
 
   async library() {

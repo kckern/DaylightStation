@@ -222,3 +222,31 @@ describe('SheetMusicScoreReader.writeScoreExclusive and symlinks', () => {
     expect(fs.existsSync(path.join(tmp, 'missing-target'))).toBe(false);
   });
 });
+
+describe('SheetMusicScoreReader.signature', () => {
+  let tmp;
+  beforeAll(() => { tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'score-signature-')); });
+  afterAll(() => { fs.rmSync(tmp, { recursive: true, force: true }); });
+
+  it('is mtime and size of the score file, and changes when the file does', async () => {
+    const reader = new SheetMusicScoreReader({ mediaDir: tmp });
+    const id = 'files:docs/sheet-music/sig/tune.musicxml';
+    const file = path.join(tmp, 'docs/sheet-music/sig/tune.musicxml');
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, 'abc');
+    fs.utimesSync(file, new Date(1_700_000_000_000), new Date(1_700_000_000_000));
+    const first = await reader.signature(id);
+    expect(first).toBe(`${fs.statSync(file).mtimeMs}:3`);
+    fs.writeFileSync(file, 'abcdef');
+    fs.utimesSync(file, new Date(1_700_000_100_000), new Date(1_700_000_100_000));
+    expect(await reader.signature(id)).toBe(`${fs.statSync(file).mtimeMs}:6`);
+  });
+
+  it('is null for a missing file, a folder, or an id outside the library', async () => {
+    const reader = new SheetMusicScoreReader({ mediaDir: tmp });
+    fs.mkdirSync(path.join(tmp, 'docs/sheet-music/sig/dir.musicxml'), { recursive: true });
+    expect(await reader.signature('files:docs/sheet-music/sig/missing.musicxml')).toBeNull();
+    expect(await reader.signature('files:docs/sheet-music/sig/dir.musicxml')).toBeNull();
+    expect(await reader.signature('files:docs/other/x.musicxml')).toBeNull();
+  });
+});
