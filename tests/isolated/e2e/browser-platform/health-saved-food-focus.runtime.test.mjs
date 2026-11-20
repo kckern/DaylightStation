@@ -125,3 +125,39 @@ test('Health keeps keyboard focus in saved foods while editing, going back, and 
   expect(writes).toEqual([expect.objectContaining({ name: 'Rolled oats batch', grams: 80 })]);
   expect(fixture.unexpected).toEqual([]);
 });
+
+test('Health removes a saved food only after confirmation', async ({ page }) => {
+  await page.routeWebSocket('**/*', () => {});
+  const fixture = await installHealthFixtures(page, {
+    foods: [{ id: 'oats', name: 'Rolled oats', grams: 80, calories: 300 }],
+  });
+  await page.route('**/supervision/bootstrap', route => route.fulfill({ json: { enabled: false } }));
+  const writes = [];
+  await page.route('**/api/v1/health/nutrition/catalog/oats', route => {
+    const request = route.request();
+    if (request.method() === 'GET') return route.fallback();
+    writes.push([request.method(), request.postDataJSON()]);
+    fixture.foods.splice(0, 1);
+    return route.fulfill({ json: { ok: true } });
+  });
+
+  await page.goto('/health');
+  await page.getByRole('combobox', { name: 'Add to Lunch', exact: true }).click();
+  await page.getByRole('button', { name: /Manage saved foods/ }).press('Enter');
+  const sheet = page.getByRole('dialog', { name: 'Saved foods', exact: true });
+  const oats = sheet.getByRole('button', { name: /Rolled oats/ });
+  await oats.click();
+  const remove = sheet.getByRole('button', { name: 'Remove food', exact: true });
+  page.once('dialog', dialog => dialog.dismiss());
+  await remove.click();
+  await expect(sheet.getByRole('textbox', { name: 'Food name' })).toHaveValue('Rolled oats');
+  expect(writes).toEqual([]);
+
+  page.once('dialog', dialog => dialog.accept());
+  await remove.click();
+  await expect(sheet.getByRole('textbox', { name: 'Find a saved food' })).toBeFocused();
+  await expect(oats).toHaveCount(0);
+  expect(writes).toEqual([['DELETE', {}]]);
+  expect(fixture.requests.filter(request => request.method !== 'GET')).toEqual([]);
+  expect(fixture.unexpected).toEqual([]);
+});

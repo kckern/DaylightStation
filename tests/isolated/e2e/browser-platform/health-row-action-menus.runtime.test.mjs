@@ -82,6 +82,46 @@ test('Health row actions follow native Tab order and restore focus after Details
   expect(fixture.unexpected).toEqual([]);
 });
 
+test('Health entry details can save a food icon and a meal from the draft', async ({ page }) => {
+  const fixture = await openToday(page);
+  const commands = [];
+  await page.route('**/api/v1/health/nutrition/icons?*', route => {
+    expect(route.request().method()).toBe('GET');
+    return route.fulfill({ json: { icons: ['rice'] } });
+  });
+  await page.route('**/api/v1/health/nutrition/icons/rice', route => route.fulfill({
+    contentType: 'image/svg+xml', body: '<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1"/>',
+  }));
+  await page.route('**/api/v1/health/nutrition/{catalog/icon,templates}', route => {
+    const request = route.request();
+    commands.push([new URL(request.url()).pathname, request.method(), request.postDataJSON()]);
+    return route.fulfill({ json: {} });
+  });
+
+  await page.getByRole('button', { name: 'Actions for Rice' }).press('Enter');
+  await page.getByRole('menuitem', { name: 'Details', exact: true }).press('Enter');
+  const sheet = page.getByRole('dialog', { name: 'Rice', exact: true });
+  await sheet.getByText('Nutrition, date & evidence', { exact: true }).click();
+  await sheet.getByRole('textbox', { name: 'Name', exact: true }).fill('Rice bowl');
+  await sheet.getByRole('button', { name: 'Change food icon' }).click();
+  await sheet.getByRole('button', { name: 'rice', exact: true }).click();
+  await sheet.getByRole('button', { name: 'Use icon for this food' }).click();
+  await expect.poll(() => commands).toEqual([
+    ['/api/v1/health/nutrition/catalog/icon', 'PUT', { name: 'Rice', icon: 'rice' }],
+  ]);
+  await sheet.getByRole('button', { name: 'Save as meal' }).click();
+  await expect.poll(() => commands).toEqual([
+    ['/api/v1/health/nutrition/catalog/icon', 'PUT', { name: 'Rice', icon: 'rice' }],
+    ['/api/v1/health/nutrition/templates', 'POST', {
+      name: 'Rice bowl',
+      components: [expect.objectContaining({ name: 'Rice bowl', icon: 'rice', role: 'core', grams: 100, calories: 120 })],
+    }],
+  ]);
+  await expect(sheet.getByRole('button', { name: 'Save as meal' })).toBeEnabled();
+  expect(fixture.requests.filter(request => request.method !== 'GET')).toEqual([]);
+  expect(fixture.unexpected).toEqual([]);
+});
+
 test('Health selected meal picker preserves ticks on dismissal and commits only the chosen move', async ({ page }) => {
   const fixture = await openToday(page);
   const commands = [];

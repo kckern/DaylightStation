@@ -551,4 +551,23 @@ describe('useHubMutations', () => {
       expect(revalidate).not.toHaveBeenCalled();
     });
   });
+
+  describe('fixSlot', () => {
+    it('POSTs to /fix/:color and returns the hub outcome', async () => {
+      const outcome = { ok: false, code: 'absent', result: "Couldn't reach the speaker" };
+      global.fetch.mockReturnValueOnce(ok(outcome));
+      const { result } = renderHook(() => useHubMutations({ revalidate }));
+
+      let response;
+      await act(async () => {
+        response = await result.current.fixSlot('green');
+      });
+
+      expect(global.fetch).toHaveBeenCalledExactlyOnceWith(
+        `${location.origin}/api/v1/playback-hub/fix/green`,
+        expect.objectContaining({ method: 'POST' }),
+      );
+      expect(response).toEqual(outcome);
+    });
+  });
 });

@@ -62,15 +62,19 @@ for (const mode of ['membership', 'suggestion']) {
       { ...entry, uuid: 'beans', name: 'Beans' },
     ] });
     await page.route('**/supervision/bootstrap', route => route.fulfill({ json: { enabled: false } }));
-    await page.route('**/health/nutrition/meal-suggestions', route => route.fulfill({
-      json: { groups: [{ name: 'Fixture suggestion', selectedIds: ['rice'] }] },
-    }));
+    const suggestions = [];
+    await page.route('**/api/v1/health/nutrition/meal-suggestions', route => {
+      const request = route.request();
+      suggestions.push([request.method(), request.postDataJSON()]);
+      return route.fulfill({ json: { groups: [{ name: 'Fixture suggestion', selectedIds: ['rice'] }] } });
+    });
 
     await page.goto('/health?date=' + date);
     await page.getByRole('button', { name: mode === 'membership' ? 'Edit groups' : 'Suggest groups', exact: true }).press('Enter');
     const beans = page.getByRole('checkbox', { name: 'Beans', exact: true });
     await exerciseChoice(page, beans);
     await expect(page.getByRole('checkbox', { name: 'Rice', exact: true })).toBeChecked();
+    expect(suggestions).toEqual(mode === 'suggestion' ? [['POST', { date, bucket: 'evening', selectedIds: [] }]] : []);
     expect(fixture.unexpected).toEqual([]);
     expect(fixture.requests.filter(request => request.method !== 'GET')).toEqual([]);
   });

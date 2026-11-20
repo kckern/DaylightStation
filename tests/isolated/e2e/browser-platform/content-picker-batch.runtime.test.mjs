@@ -17,10 +17,14 @@ test.beforeEach(async ({ page, baseURL }) => {
 });
 
 test('Admin Content picker retires batch searches on typing and Escape', async ({ page }) => {
+  const expansionPath = '/api/v1/list/plex/series%2Fone%3Aseason/expand';
+  const expansionReads = [];
+  let expansionRoute;
   const held = new Map();
   const canceled = [];
   const reads = [];
   page.on('requestfailed', request => {
+    if (expansionRoute?.request() === request) canceled.push('container expansion');
     const text = new URL(request.url()).searchParams.get('text');
     if (held.get(text)?.request() === request) canceled.push(text);
   });
@@ -30,9 +34,19 @@ test('Admin Content picker retires batch searches on typing and Escape', async (
     if (url.pathname === listPath) return route.fulfill({ json: { name: 'source-fixture', sections: [
       { items: [{ uid: 'fixture', label: 'Catalog source', action: 'Play', input: 'plex:123' }] },
     ] } });
+    if (url.pathname === expansionPath) {
+      expansionReads.push([request.method(), request.postData()]);
+      expansionRoute = route;
+      return;
+    }
     if (url.pathname === searchPath) {
       const text = url.searchParams.get('text');
       reads.push([request.method(), text, url.searchParams.get('take')]);
+      if (text === 'Container query') {
+        return route.fulfill({ json: { items: [{
+          id: 'plex:series/one:season', title: 'Fixture series', source: 'plex', itemType: 'container', childCount: 1,
+        }] } });
+      }
       if (text !== 'New query') {
         held.set(text, route);
         return;
@@ -63,7 +77,17 @@ test('Admin Content picker retires batch searches on typing and Escape', async (
   await editor.press('Escape');
   await expect(page.getByRole('listbox')).toBeHidden();
   await expect.poll(() => canceled).toEqual(['Old query', 'Closing query']);
-  expect(reads).toEqual([['GET', 'Old query', '20'], ['GET', 'New query', '20'], ['GET', 'Closing query', '20']]);
+  await row.locator('.col-input .content-display').click();
+  await editor.fill('Container query');
+  await page.getByRole('button', { name: 'Browse into Fixture series', exact: true }).click();
+  await expect.poll(() => expansionReads).toEqual([['GET', null]]);
+  await editor.press('Escape');
+  await expect.poll(() => canceled).toEqual(['Old query', 'Closing query', 'container expansion']);
+  await expansionRoute.fulfill({ json: { items: [result('plex:stale', 'Stale child')] } }).catch(() => {});
+  await expect(page.getByRole('listbox')).toBeHidden();
+  expect(reads).toEqual([
+    ['GET', 'Old query', '20'], ['GET', 'New query', '20'], ['GET', 'Closing query', '20'], ['GET', 'Container query', '20'],
+  ]);
 });
 
 test('Media Content picker retires a prior scope and does not search again when Escape resets the scope', async ({ page }) => {

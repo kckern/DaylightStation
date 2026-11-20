@@ -4,6 +4,7 @@ import { useCallback, useLayoutEffect, useRef } from 'react';
  * Manage one mounted read scope for an existing transport. Memoize the read
  * callback by the scope it reads and pass its signal to the transport.
  * Check isCurrent() before publishing. Reload replaces the current read.
+ * Cancel retires the current read and leaves the scope available for another.
  * Poll starts only when the scope is idle. An optional timeout retires a
  * stalled request, releases the polling slot, and calls the optional onTimeout.
  * Arguments supplied to reload or poll reach only that read and its timeout.
@@ -55,5 +56,13 @@ export function useRefreshableRead(read, { timeoutMs, onTimeout } = {}) {
     if (!committed.current?.pending) return reload(...args);
   }, [reload]);
 
-  return { reload, poll };
+  const cancel = useCallback(() => {
+    const scope = committed.current;
+    if (!scope) return;
+    const pending = scope.pending;
+    scope.pending = null;
+    pending?.cancel();
+  }, []);
+
+  return { reload, poll, cancel };
 }

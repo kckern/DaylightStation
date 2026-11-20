@@ -9,6 +9,7 @@
 //        reaches the batch fallback URL (the standalone had a stale closure).
 import { useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { DaylightAPI } from '../../../../frontend/src/lib/api.mjs';
+import { useRefreshableRead } from '../../../../frontend/src/lib/hooks/useRefreshableRead.js';
 import { useDebouncedCallback } from '@mantine/hooks';
 import { useStreamingSearch } from "../../../../frontend/src/hooks/useStreamingSearch.js";
 import { getChildLogger } from "../../../../frontend/src/lib/logging/singleton.js";
@@ -21,8 +22,11 @@ import { loadKnownSources, isKnownSource } from "../lib/knownSources.js";
 
 import { rememberTitle, useContentTitle } from "../lib/useContentTitle.js";
 
-function expandContainer(source, localId) {
-  return DaylightAPI(`/api/v1/list/${encodeURIComponent(source)}/${encodeURIComponent(localId)}/expand`);
+function expandContainer(source, localId, signal) {
+  return DaylightAPI(
+    `/api/v1/list/${encodeURIComponent(source)}/${encodeURIComponent(localId)}/expand`,
+    {}, 'GET', { signal },
+  );
 }
 
 const SEARCH_STREAM_ENDPOINT = '/api/v1/content/query/search/stream';
@@ -129,10 +133,28 @@ export function useContentCombobox({
   // Structural guard: it does not rely on /list responses happening to carry
   // no pagination today.
   const paginationOwnerRef = useRef(null);
-  const invalidateBrowseLoads = () => {
+  const readExpansion = useCallback(async (isCurrent, signal, request) => {
+    const { token, target, transition, referenceId, event, details, log } = request;
+    const stillWanted = () => isCurrent() && browseTokenRef.current === token;
+    try {
+      const data = await expandContainer(target.source, target.localId, signal);
+      if (!stillWanted()) return;
+      const items = (data.items || []).map(ensureId);
+      const referenceIndex = referenceId == null ? 0 : Math.max(0, items.findIndex((item) => item.id === referenceId));
+      log.info(`${event}.done`, { ...details, itemCount: items.length });
+      dispatch({ ...transition, items, pagination: data.pagination ?? null, referenceIndex });
+    } catch (err) {
+      if (!stillWanted()) return;
+      log.error(`${event}.error`, { ...details, error: err.message });
+      dispatch({ type: 'BROWSE_LOADING', loading: false });
+    }
+  }, []);
+  const { reload: reloadExpansion, cancel: cancelExpansion } = useRefreshableRead(readExpansion);
+  const invalidateBrowseLoads = useCallback(() => {
     browseTokenRef.current += 1;
     paginationOwnerRef.current = null;
-  };
+    cancelExpansion();
+  }, [cancelExpansion]);
 
   // Warm the valid-prefix set for pickers that accept typed IDs. These reads
   // are shared across rows, and reopening can retry an incomplete lookup.
@@ -150,7 +172,7 @@ export function useContentCombobox({
     if (!value && prevValue) log.info('value.cleared', { prevValue });
     else log.debug('props.value_changed', { value, prevValue });
     dispatch({ type: 'VALUE_CHANGED', value: value ?? '' });
-  }, [value, log]);
+  }, [value, log, invalidateBrowseLoads]);
 
   // ── 2. Search transport: SSE stream with batch fallback ──
   const {
@@ -274,7 +296,7 @@ export function useContentCombobox({
     setDebouncePending(!isBareSourcePrefix(text) && text.trim().length >= 2);
     dispatch({ type: 'INPUT', text });
     debouncedSearch(text);
-  }, [cancelStream, clearBatchSearch, debouncedSearch]);
+  }, [cancelStream, clearBatchSearch, debouncedSearch, invalidateBrowseLoads]);
 
   // Scope chips change `searchParams`, and nothing re-ran the search: the chip
   // lit up (aria-pressed) directly above a result list that was still whatever
@@ -439,120 +461,66 @@ export function useContentCombobox({
       log.error('load_siblings.error', { contentId, error: err.message });
       if (stillWanted()) dispatch({ type: 'BROWSE_LOADING', loading: false });
     }
-  }, [allowFreeform, applyBrowseData, log]);
+  }, [allowFreeform, applyBrowseData, invalidateBrowseLoads, log]);
 
   // ── 4. Drill / up ──
+  const startExpansion = useCallback((request) => {
+    invalidateBrowseLoads();
+    dispatch({ type: 'BROWSE_LOADING' });
+    return reloadExpansion({ ...request, token: browseTokenRef.current, log });
+  }, [invalidateBrowseLoads, reloadExpansion, log]);
+
   const drill = useCallback(async (item) => {
     const source = normalizeListSource(item.source || item.id?.split(':')[0]);
     const localId = item.localId
       ?? (item.id?.includes(':') ? item.id.split(':').slice(1).join(':') : item.id);
-    // Bump the token so any overlapping browse response (siblings, another
-    // drill, pagination) started earlier cannot interleave with this one.
-    const token = ++browseTokenRef.current;
-    paginationOwnerRef.current = null; // the drilled level owns its pagination
+    const crumb = { id: item.id, title: item.title, source, localId };
+    const details = { contentId: item.id, source, localId };
     log.info('browse_container.start', {
-      contentId: item.id, title: item.title, source, localId,
-      prevBreadcrumbDepth: stateRef.current.browse.breadcrumbs.length,
+      ...details, title: item.title, prevBreadcrumbDepth: stateRef.current.browse.breadcrumbs.length,
     });
-    dispatch({ type: 'BROWSE_LOADING' });
-    try {
-      const data = await expandContainer(source, localId);
-      const crumb = { id: item.id, title: item.title, source, localId };
-      log.info('browse_container.done', { source, localId, itemCount: (data.items || []).length });
-      if (browseTokenRef.current !== token) return;
-      dispatch({
-        type: 'DRILL_LOADED',
-        crumb,
-        items: (data.items || []).map(ensureId),
-        pagination: data.pagination ?? null, // S1: drilled level owns its pagination
-      });
-    } catch (err) {
-      log.error('browse_container.error', { contentId: item.id, source, localId, error: err.message });
-      if (browseTokenRef.current === token) dispatch({ type: 'BROWSE_LOADING', loading: false });
-    }
-  }, [log]);
+    return startExpansion({ target: crumb, transition: { type: 'DRILL_LOADED', crumb }, event: 'browse_container', details });
+  }, [log, startExpansion]);
+
+  // Both parent and breadcrumb navigation restore the highlight on the
+  // child the user came from. The loaded level owns its own pagination.
+  const expandAncestor = useCallback((breadcrumbs, index, event, details) => {
+    return startExpansion({
+      target: breadcrumbs[index],
+      transition: { type: 'WENT_UP', breadcrumbs: breadcrumbs.slice(0, index + 1) },
+      referenceId: breadcrumbs[index + 1]?.id,
+      event,
+      details,
+    });
+  }, [startExpansion]);
 
   const goUp = useCallback(async () => {
     const { breadcrumbs } = stateRef.current.browse;
     log.info('go_back.start', { breadcrumbDepth: breadcrumbs.length });
     if (breadcrumbs.length <= 1) {
-      // At the siblings root — dismiss to DISPLAY keeping the committed value.
-      // OPEN seeded `search` with the committed id, so an INPUT here would turn
-      // Back into a keyword search of the raw id string (F8). CLOSE resets to
-      // initialState(value): DISPLAY mode, search=null, value preserved.
       log.info('go_back.dismiss_from_root', { reason: 'at_root_or_single_crumb' });
-      invalidateBrowseLoads(); // a late browse response must not yank us back
+      invalidateBrowseLoads();
       dispatch({ type: 'CLOSE' });
-      cancelPendingSearch(); // clear any debounced search timer/results
+      cancelPendingSearch();
       return;
     }
-    const nextBreadcrumbs = breadcrumbs.slice(0, -1);
-    const popped = breadcrumbs[breadcrumbs.length - 1];
-    const parent = nextBreadcrumbs[nextBreadcrumbs.length - 1];
-    const token = ++browseTokenRef.current; // invalidate overlapping browse responses
-    paginationOwnerRef.current = null; // the parent level owns its pagination
-    log.info('go_back.to_parent', {
-      parentId: parent.id, parentTitle: parent.title, newDepth: nextBreadcrumbs.length,
-    });
-    dispatch({ type: 'BROWSE_LOADING' });
-    try {
-      const data = await expandContainer(parent.source, parent.localId);
-      const items = (data.items || []).map(ensureId);
-      const referenceIndex = items.findIndex((i) => i.id === popped.id);
-      log.info('go_back.done', { parentId: parent.id, itemCount: items.length });
-      if (browseTokenRef.current !== token) return;
-      dispatch({
-        type: 'WENT_UP',
-        items,
-        breadcrumbs: nextBreadcrumbs,
-        pagination: data.pagination ?? null, // S1: parent level owns its pagination
-        referenceIndex: referenceIndex >= 0 ? referenceIndex : 0,
-      });
-    } catch (err) {
-      log.error('go_back.error', { parentId: parent.id, error: err.message });
-      if (browseTokenRef.current === token) dispatch({ type: 'BROWSE_LOADING', loading: false });
-    }
-  }, [cancelPendingSearch, log]);
+    const index = breadcrumbs.length - 2;
+    const parent = breadcrumbs[index];
+    log.info('go_back.to_parent', { parentId: parent.id, parentTitle: parent.title, newDepth: index + 1 });
+    return expandAncestor(breadcrumbs, index, 'go_back', { parentId: parent.id });
+  }, [cancelPendingSearch, expandAncestor, invalidateBrowseLoads, log]);
 
-  // Jump directly to an ancestor crumb: list its children, truncate the trail
-  // to 0..index inclusive, and highlight the child we came from. Follows goUp's
-  // token-guard / paginationOwner pattern exactly, and reuses the WENT_UP
-  // transition (it already sets items + breadcrumbs + referenceIndex — an
-  // arbitrary truncation, not just a single pop).
   const goToCrumb = useCallback(async (index) => {
     const { breadcrumbs } = stateRef.current.browse;
-    // Out of range, or clicking the LAST (current) crumb → nothing to do.
     if (index < 0 || index >= breadcrumbs.length - 1) {
       log.debug('go_to_crumb.skip', { index, depth: breadcrumbs.length });
       return;
     }
     const target = breadcrumbs[index];
-    const childCrumb = breadcrumbs[index + 1]; // the crumb below — the child we came from
-    const nextBreadcrumbs = breadcrumbs.slice(0, index + 1);
-    const token = ++browseTokenRef.current; // invalidate overlapping browse responses
-    paginationOwnerRef.current = null; // the jumped-to level owns its pagination
-    log.info('go_to_crumb.start', {
-      index, targetId: target.id, targetTitle: target.title, newDepth: nextBreadcrumbs.length,
-    });
-    dispatch({ type: 'BROWSE_LOADING' });
-    try {
-      const data = await expandContainer(target.source, target.localId);
-      const items = (data.items || []).map(ensureId);
-      const referenceIndex = childCrumb ? items.findIndex((i) => i.id === childCrumb.id) : -1;
-      log.info('go_to_crumb.done', { index, targetId: target.id, itemCount: items.length });
-      if (browseTokenRef.current !== token) return;
-      dispatch({
-        type: 'WENT_UP',
-        items,
-        breadcrumbs: nextBreadcrumbs,
-        pagination: data.pagination ?? null, // the jumped-to level owns its pagination
-        referenceIndex: referenceIndex >= 0 ? referenceIndex : 0,
-      });
-    } catch (err) {
-      log.error('go_to_crumb.error', { index, targetId: target.id, error: err.message });
-      if (browseTokenRef.current === token) dispatch({ type: 'BROWSE_LOADING', loading: false });
-    }
-  }, [log]);
+    const details = { index, targetId: target.id };
+    log.info('go_to_crumb.start', { ...details, targetTitle: target.title, newDepth: index + 1 });
+    return expandAncestor(breadcrumbs, index, 'go_to_crumb', details);
+  }, [expandAncestor, log]);
 
   // ── 5. Pagination (in-flight guarded; the machine owns items/window math) ──
   // A skipped request returns false immediately. A started request resolves
@@ -615,7 +583,7 @@ export function useContentCombobox({
     invalidateBrowseLoads();
     dispatch({ type: 'CLOSE', reason, retainSearch: reason === 'escape' && retainQueryOnEscape ? current.search : null });
     cancelPendingSearch();
-  }, [cancelPendingSearch, log, allowFreeform, retainQueryOnEscape]);
+  }, [cancelPendingSearch, invalidateBrowseLoads, log, allowFreeform, retainQueryOnEscape]);
 
   const select = useCallback((item) => {
     log.info('item_select', { contentId: item.id, title: item.title, prevValue: stateRef.current.value });
@@ -799,11 +767,11 @@ export function useContentCombobox({
         break;
       case 'none':
       default:
-        dispatch({ type: 'CLOSE' }); cancelPendingSearch();
+        invalidateBrowseLoads(); dispatch({ type: 'CLOSE' }); cancelPendingSearch();
         break;
     }
     return decision;
-  }, [selectContainers, select, drill, cancelPendingSearch, log, allowFreeform, retainQueryOnEscape]);
+  }, [selectContainers, select, drill, cancelPendingSearch, invalidateBrowseLoads, log, allowFreeform, retainQueryOnEscape]);
 
   // ── 6. Title resolution for the committed value ──
   const resolvedTitle = useContentTitle(isContentIdLike(value) ? value : null);

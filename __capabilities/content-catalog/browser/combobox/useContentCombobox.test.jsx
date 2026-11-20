@@ -241,6 +241,43 @@ describe('useContentCombobox', () => {
     expect(result.current.state.browse.breadcrumbs).toHaveLength(2);
   });
 
+  it.each(['typing', 'dismissal', 'another expansion', 'a changed value', 'unmount'])(
+    'aborts an encoded container GET on %s and ignores its late result', async change => {
+      const previous = '/api/v1/list/plex/series%2Fone%3Aseason/expand';
+      const next = '/api/v1/list/plex/series%2Ftwo/expand';
+      const held = Promise.withResolvers();
+      fetchMock.mockImplementation(url => {
+        if (url === previous) return held.promise;
+        if (url === next) return jsonResponse({ items: [{ id: 'plex:new-child', title: 'New child' }] });
+        return jsonResponse({ items: [] });
+      });
+      const { result, unmount, rerender } = setup({ value: 'plex:10' });
+      let opening;
+      act(() => {
+        opening = result.current.drill({ id: 'plex:series/one:season', title: 'Original container' });
+      });
+      const [, request] = fetchMock.mock.calls.find(([path]) => path === previous);
+      expect(request).toMatchObject({ method: 'GET', signal: expect.any(AbortSignal) });
+      expect(request).not.toHaveProperty('body');
+      if (change === 'typing') act(() => result.current.handleInput('new search'));
+      if (change === 'dismissal') act(() => result.current.handleClose('escape'));
+      if (change === 'another expansion') {
+        await act(async () => result.current.drill({ id: 'plex:series/two', title: 'Replacement container' }));
+      }
+      if (change === 'a changed value') rerender({ value: 'plex:20' });
+      if (change === 'unmount') unmount();
+      expect(request.signal.aborted).toBe(true);
+      await act(async () => {
+        held.resolve(await jsonResponse({ items: [{ id: 'plex:stale-child', title: 'Retired child' }] }));
+        await opening;
+      });
+      if (change === 'unmount') return;
+      const ids = result.current.state.browse.items.map(item => item.id);
+      expect(ids).not.toContain('plex:stale-child');
+      if (change === 'another expansion') expect(ids).toEqual(['plex:new-child']);
+    },
+  );
+
   it('committed value absent from the window highlights nothing (idx -1), not row 0 (F1)', async () => {
     fetchMock.mockImplementation((url) => {
       if (url.startsWith('/api/v1/siblings/plex/999')) {
