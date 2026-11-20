@@ -4,6 +4,7 @@ import { notifications } from '@mantine/notifications';
 import { SourcePanel } from "./SourcePanel.jsx";
 import { DaylightAPI } from "../../../../../frontend/src/lib/api.mjs";
 import { useRefreshableRead } from "../../../../../frontend/src/lib/hooks/useRefreshableRead.js";
+import { useRetryRegion } from "../../../../../frontend/src/lib/ui/useRetryRegion.js";
 import { useFeedWorkspace } from "../FeedWorkspaceContext.jsx";
 import { buildHeadlineGrid } from "./buildHeadlineGrid.js";
 import "./Headlines.scss";
@@ -77,12 +78,16 @@ export default function Headlines({ pageId }) {
     }
   };
 
-  const loading = readState?.edition !== edition || readState.loading || harvesting.has(pageId);
+  const reading = readState?.edition !== edition || readState.loading;
+  const loading = reading || harvesting.has(pageId);
   const error = failedHarvest === edition
     ? 'Sources could not be refreshed. Existing headlines are still available.'
     : readState?.edition === edition && readState.error;
-
-  if (loading && !data) return <div className="feed-placeholder" role="status">Loading headlines…</div>;
+  const { regionProps, retry } = useRetryRegion(() => {
+    setFailedHarvest(null);
+    reload();
+  }, reading);
+  const initialLoading = loading && !data;
 
   const sources = data?.sources || {};
   const grid = data?.grid;
@@ -116,8 +121,10 @@ export default function Headlines({ pageId }) {
     }),
   }).catch(() => {});
 
-  return (
-    <section className="headlines-view">
+  const content = initialLoading ? (
+    <div className="feed-placeholder" role="status">Loading headlines…</div>
+  ) : (
+    <>
       <header className="headlines-toolbar">
         <div>
           <div className="headlines-view-switcher" role="group" aria-label="Headline view">
@@ -128,7 +135,12 @@ export default function Headlines({ pageId }) {
         </div>
         <button className="headlines-harvest-btn" onClick={triggerHarvestAll} disabled={loading}>{loading ? 'Refreshing…' : 'Refresh all'}</button>
       </header>
-      {error && <div className="headlines-error" role="alert"><span>{error}</span><button onClick={() => { setFailedHarvest(null); reload(); }}>Retry</button></div>}
+      {error && (
+        <div className="headlines-error" role="alert">
+          <span>{error}</span>
+          <button type="button" disabled={loading} onClick={retry}>Retry</button>
+        </div>
+      )}
       {!!data?.configWarnings?.length && <div className="headlines-error" role="status">{data.configWarnings.length} source placement{data.configWarnings.length === 1 ? '' : 's'} need configuration attention.</div>}
 
       {view === 'briefing' ? (
@@ -160,6 +172,11 @@ export default function Headlines({ pageId }) {
           ))}
         </section>
       )}
+    </>
+  );
+  return (
+    <section {...regionProps} key={pageId} aria-label="Headlines" className={initialLoading ? undefined : 'headlines-view'}>
+      {content}
     </section>
   );
 }

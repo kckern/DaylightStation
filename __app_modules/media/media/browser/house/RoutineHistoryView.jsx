@@ -8,11 +8,14 @@ import { Button, Group, Stack, Text, Title } from '@mantine/core';
 import { IconRefresh } from '@tabler/icons-react';
 import Skeleton from '@/lib/ui/Skeleton.jsx';
 import { LoadingState, StateMessage } from '@/lib/ui/states.jsx';
+import { useRetryRegion } from '@/lib/ui/useRetryRegion.js';
 import { useRefreshableRead } from '@/lib/hooks/useRefreshableRead.js';
 import { houseApi as defaultApi } from "./houseApi.js";
 import { routineRunLine } from "./houseCopy.js";
 import houseLog from "./houseLog.js";
 import "./House.scss";
+
+const flagsTitle = 'Before they run';
 
 function useRoutineSection(read, section) {
   const [state, setState] = useState({ loading: true, items: [], error: null });
@@ -35,10 +38,10 @@ function useRoutineSection(read, section) {
   return { ...state, reload };
 }
 
-function RoutineReadError({ section, message, label, read }) {
+function RoutineReadError({ section, message, label, loading, onRetry }) {
   return (
     <StateMessage state="error" role="alert" title={message} data-testid={`routine-${section}-error`}>
-      <Button variant="subtle" size="compact-sm" loading={read.loading} onClick={read.reload} aria-label={label}>
+      <Button variant="subtle" size="compact-sm" loading={loading} onClick={onRetry} aria-label={label}>
         Retry
       </Button>
     </StateMessage>
@@ -50,6 +53,8 @@ export function RoutineHistoryView({ api = defaultApi }) {
   const readFlags = useCallback(signal => api.routineFlags({ signal }), [api]);
   const history = useRoutineSection(readHistory, 'history');
   const flags = useRoutineSection(readFlags, 'flags');
+  const { regionProps: historyRegion, retry: retryHistory } = useRetryRegion(history.reload, history.loading);
+  const { regionProps: flagsRegion, retry: retryFlags } = useRetryRegion(flags.reload, flags.loading);
   useEffect(() => { houseLog.viewOpened({ view: 'routines' }); }, []);
 
   const warnings = flags.items.filter((flag) => flag.severity === 'warn');
@@ -69,30 +74,34 @@ export function RoutineHistoryView({ api = defaultApi }) {
         </Button>
       </Group>
 
-      {(warnings.length > 0 || notes.length > 0) && (
-        <section className="house-section" aria-labelledby="routine-flags-title" data-testid="routine-flags">
-          <Title order={2} size="h4" id="routine-flags-title">Before they run</Title>
-          <ul className="house-list">
-            {[...warnings, ...notes].map((flag) => (
-              <li key={`${flag.routine?.id}|${flag.deviceId}|${flag.problem}`} className="house-item"
-                data-testid={`routine-flag-${flag.routine?.id}`} data-severity={flag.severity}>
-                <Text fw={600}>{flag.routine?.name ?? 'A routine'}</Text>
-                <Text size="sm" className={flag.severity === 'warn' ? 'house-tone--warn' : 'house-tone--muted'}>
-                  {flag.severity === 'warn' ? 'Needs attention: ' : ''}{flag.reason}
-                </Text>
-              </li>
-            ))}
-          </ul>
-        </section>
-      )}
-      {flags.error
-        ? <RoutineReadError section="flags" message="Couldn't check routines against the screens right now." label="Retry routine flags" read={flags} />
-        : flags.loading && !flags.items.length && <LoadingState label="routine flags" rows={1} />}
+      <section {...flagsRegion} aria-label={flagsTitle}>
+        {flags.items.length > 0 && (
+          <div className="house-section" data-testid="routine-flags">
+            <Title order={2} size="h4">{flagsTitle}</Title>
+            <ul className="house-list">
+              {[...warnings, ...notes].map((flag) => (
+                <li key={`${flag.routine?.id}|${flag.deviceId}|${flag.problem}`} className="house-item"
+                  data-testid={`routine-flag-${flag.routine?.id}`} data-severity={flag.severity}>
+                  <Text fw={600}>{flag.routine?.name ?? 'A routine'}</Text>
+                  <Text size="sm" className={flag.severity === 'warn' ? 'house-tone--warn' : 'house-tone--muted'}>
+                    {flag.severity === 'warn' ? 'Needs attention: ' : ''}{flag.reason}
+                  </Text>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+        {flags.error
+          ? <RoutineReadError section="flags" message="Couldn't check routines against the screens right now."
+              label="Retry routine flags" loading={flags.loading} onRetry={retryFlags} />
+          : flags.loading && !flags.items.length && <LoadingState label="routine flags" rows={1} />}
+      </section>
 
-      <section className="house-section" aria-labelledby="routine-history-title">
+      <section {...historyRegion} className="house-section" aria-labelledby="routine-history-title">
         <Title order={2} size="h4" id="routine-history-title">Recent starts</Title>
         {history.error && (
-          <RoutineReadError section="history" message="Couldn't load the routine history. Check the connection and try again." label="Retry routine history" read={history} />
+          <RoutineReadError section="history" message="Couldn't load the routine history. Check the connection and try again."
+            label="Retry routine history" loading={history.loading} onRetry={retryHistory} />
         )}
         {history.items.length ? (
           <ul className="house-list" data-testid="routine-history-list">

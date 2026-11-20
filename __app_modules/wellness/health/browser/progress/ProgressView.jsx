@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import HighchartsReact from 'highcharts-react-official';
 import Highcharts from 'highcharts';
 import { Button, NumberInput, SegmentedControl, Stack, Text } from '@mantine/core';
-import { SectionCard, StatCard, Sheet, LoadingState, ErrorState } from '@/lib/ui';
+import { SectionCard, StatCard, Sheet, LoadingState, ErrorState, useRetryRegion } from '@/lib/ui';
 import { invalidateApiResources, useApiResource } from "../../../../../frontend/src/lib/hooks/useApiResource.js";
 import { unavailableError } from "../healthResources.js";
 import { DaylightAPI } from "../../../../../frontend/src/lib/api.mjs";
@@ -46,6 +46,7 @@ export function ProgressView() {
   const weightRes = useApiResource('api/v1/health/weight', { label: 'weight', logger });
   const goalsRes = useApiResource(goalsPath, { label: 'goals', logger });
   const goalsError = unavailableError(goalsRes);
+  const { regionProps: goalsRegion, retry: retryGoals } = useRetryRegion(goalsRes.reload, goalsRes.loading || goalsRes.revalidating);
   const [form, setForm] = useState(null);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState(null);
@@ -108,12 +109,14 @@ export function ProgressView() {
   return (
     <div className="health-progress" ref={containerRef}>
       <SectionCard title="Goals">
-        {goalsError ? <ErrorState error={goalsError} onRetry={goalsRes.reload} label="Goals" />
-          : goalsRes.loading && !goalsRes.data ? <LoadingState label="goals" rows={1} />
-            : <div className="health-goals-summary"><Text size="sm">{goalsRes.data?.goals
-              ? `Target ${goalsRes.data.goals.targetWeightLbs ?? '—'} lb · ${goalsRes.data.goals.weeklyRateLbs ?? '—'} lb/week · Floor ${goalsRes.data.goals.budgetFloor ?? '—'} kcal${goalsRes.data.goals.maintenanceKcal ? ` · Break even ${goalsRes.data.goals.maintenanceKcal} kcal` : ''}`
-              : 'Set your goals to calculate a daily budget.'}</Text>
-              <Button variant="light" onClick={() => { setForm(goalsRes.data?.goals || emptyGoals()); setSaveError(null); setEditingGoals(true); }}>Edit goals</Button></div>}
+        <section {...goalsRegion} aria-label="Goals">
+          {goalsError ? <ErrorState error={goalsError} onRetry={retryGoals} label="Goals" />
+            : goalsRes.loading && !goalsRes.data ? <LoadingState label="goals" rows={1} />
+              : <div className="health-goals-summary"><Text size="sm">{goalsRes.data?.goals
+                ? `Target ${goalsRes.data.goals.targetWeightLbs ?? '—'} lb · ${goalsRes.data.goals.weeklyRateLbs ?? '—'} lb/week · Floor ${goalsRes.data.goals.budgetFloor ?? '—'} kcal${goalsRes.data.goals.maintenanceKcal ? ` · Break even ${goalsRes.data.goals.maintenanceKcal} kcal` : ''}`
+                : 'Set your goals to calculate a daily budget.'}</Text>
+                <Button variant="light" onClick={() => { setForm(goalsRes.data?.goals || emptyGoals()); setSaveError(null); setEditingGoals(true); }}>Edit goals</Button></div>}
+        </section>
       </SectionCard>
       {weightRes.loading ? <LoadingState label="weight history" rows={5} /> : null}
       {unavailableError(weightRes) ? <ErrorState error={weightRes.error} onRetry={weightRes.reload} label="Weight history" /> : null}

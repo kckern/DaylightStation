@@ -2,6 +2,50 @@ import { expect, test } from '@playwright/test';
 
 test.use({ serviceWorkers: 'block' });
 
+function editionResponse(edition, title) {
+  return {
+    grid: { rows: ['main'], cols: ['main'] },
+    sources: { daily: {
+      label: edition === 'local' ? 'Local source' : 'World source',
+      row: 0,
+      col: 0,
+      url: 'https://example.test/feed',
+      items: [{ id: edition, title, link: `https://example.test/${edition}` }],
+    } },
+  };
+}
+
+test('Feed keeps focus in Headlines while retrying an unavailable edition', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 850 });
+  const reads = [];
+  let retryRead;
+  await page.routeWebSocket('**/*', () => {});
+  await page.route('**/api/**', route => {
+    const { pathname, searchParams } = new URL(route.request().url());
+    if (pathname.endsWith('/headlines/pages')) return route.fulfill({ json: [{ id: 'local', label: 'Local news' }] });
+    if (pathname.endsWith('/headlines') && searchParams.has('page')) {
+      reads.push([route.request().method(), searchParams.get('page')]);
+      if (reads.length === 1) return route.fulfill({ status: 500, json: { message: 'Edition unavailable' } });
+      retryRead = route;
+      return;
+    }
+    return route.fulfill({ json: pathname.endsWith('/supervision/bootstrap') ? { enabled: false } : {} });
+  });
+
+  await page.goto('/feed/headlines/local');
+  await expect(page.getByRole('alert')).toContainText('This edition could not be refreshed.');
+  await page.getByRole('button', { name: 'Retry', exact: true }).press('Enter');
+  await expect.poll(() => reads).toEqual([['GET', 'local'], ['GET', 'local']]);
+  const section = page.getByRole('region', { name: 'Headlines', exact: true });
+  await expect(section).toBeFocused();
+  await expect(section).toHaveAttribute('aria-busy', 'true');
+  await expect(section.getByRole('status')).toHaveText('Loading headlines…');
+  await retryRead.fulfill({ json: editionResponse('local', 'Recovered local headline') });
+  await expect(section.getByRole('link', { name: 'Recovered local headline' })).toBeVisible();
+  await expect(section).toBeFocused();
+  await expect(section).not.toHaveAttribute('aria-busy', 'true');
+});
+
 test('Feed links to the first configured edition and keeps a usable default when the pages read fails', async ({ page }) => {
   let available = true;
   await page.routeWebSocket('**/*', () => {});
@@ -88,6 +132,7 @@ for (const refresh of [
     const releaseHarvest = Promise.withResolvers();
     const reads = [];
     let harvests = 0;
+    let retryRead;
     let harvested = false;
     await page.routeWebSocket('**/*', () => {});
     await page.route('**/api/**', async route => {
@@ -106,18 +151,13 @@ for (const refresh of [
       if (pathname.endsWith('/headlines') && searchParams.has('page')) {
         const edition = searchParams.get('page');
         reads.push(edition);
+        if (refresh.rejected && reads.length === 4) {
+          retryRead = route;
+          return;
+        }
         const local = edition === 'local';
         const title = local ? (harvested ? 'Updated local headline' : 'Local headline') : 'World headline';
-        return route.fulfill({ json: {
-          grid: { rows: ['main'], cols: ['main'] },
-          sources: { daily: {
-            label: local ? 'Local source' : 'World source',
-            row: 0,
-            col: 0,
-            url: 'https://example.test/feed',
-            items: [{ id: edition, title, link: `https://example.test/${edition}` }],
-          } },
-        } });
+        return route.fulfill({ json: editionResponse(edition, title) });
       }
       return route.fulfill({ json: pathname.endsWith('/supervision/bootstrap') ? { enabled: false } : {} });
     });
@@ -139,8 +179,20 @@ for (const refresh of [
       const alert = page.getByRole('alert').filter({ hasText: 'Sources could not be refreshed' });
       await expect(alert).toBeVisible();
       expect(reads).toEqual(['local', 'world', 'local']);
-      await alert.getByRole('button', { name: 'Retry' }).click();
+      await alert.getByRole('button', { name: 'Retry' }).press('Enter');
+      await expect.poll(() => reads).toEqual(['local', 'world', 'local', 'local']);
+      const section = page.getByRole('region', { name: 'Headlines', exact: true });
+      await expect(section).toBeFocused();
+      await expect(section).toHaveAttribute('aria-busy', 'true');
+      await expect(section.getByRole('link', { name: 'Local headline', exact: true })).toBeVisible();
+      await page.keyboard.press('Tab');
+      const outlets = section.getByRole('button', { name: 'Outlets', exact: true });
+      await expect(outlets).toBeFocused();
+      await retryRead.fulfill({ json: editionResponse('local', 'Recovered local headline') });
       await expect(alert).toBeHidden();
+      await expect(section.getByRole('link', { name: 'Recovered local headline', exact: true })).toBeVisible();
+      await expect(outlets).toBeFocused();
+      await expect(section).not.toHaveAttribute('aria-busy', 'true');
       await expect(page.getByRole('button', { name: 'Refresh all', exact: true })).toBeEnabled();
       expect(reads).toEqual(['local', 'world', 'local', 'local']);
       expect(harvests).toBe(1);

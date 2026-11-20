@@ -1255,20 +1255,29 @@ test('Health auditor refreshes its spend once when the latest run finishes', asy
 
 test('Health Progress recovers the saved goals from a GET-only retry', async ({ page }) => {
   let reads = 0;
+  let pendingGoals;
   const methods = [];
   await page.route('**/health/context', route => route.fulfill({ json: { userId: 'alice' } }));
   await page.route('**/api/v1/health/goals', route => {
     methods.push(route.request().method());
     if (++reads === 1) return route.fulfill({ status: 409, json: { error: 'Goals temporarily unavailable' } });
-    return route.fulfill({ json: { goals: { targetWeightLbs: 170, weeklyRateLbs: 0.5, budgetFloor: 1600 } } });
+    pendingGoals = route;
   });
 
   await page.goto('/health/progress');
   await expect(page.getByText('Goals failed to load', { exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Edit goals' })).toBeHidden();
-  await page.getByRole('button', { name: 'Retry', exact: true }).click();
-  await expect(page.getByText('Target 170 lb', { exact: false })).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Edit goals' })).toBeEnabled();
+  await page.getByRole('button', { name: 'Retry', exact: true }).press('Enter');
+  await expect.poll(() => reads).toBe(2);
+  const goals = page.getByRole('region', { name: 'Goals', exact: true });
+  await expect(goals).toBeFocused();
+  await expect(goals).toHaveAttribute('aria-busy', 'true');
+  await pendingGoals.fulfill({ json: { goals: { targetWeightLbs: 170, weeklyRateLbs: 0.5, budgetFloor: 1600 } } });
+  await expect(goals.getByText('Target 170 lb', { exact: false })).toBeVisible();
+  await expect(goals).toBeFocused();
+  await expect(goals).not.toHaveAttribute('aria-busy', 'true');
+  await page.keyboard.press('Tab');
+  await expect(goals.getByRole('button', { name: 'Edit goals' })).toBeFocused();
   expect(methods).toEqual(['GET', 'GET']);
 });
 
