@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest';
-import { SheetMusicAdminService } from './SheetMusicAdminService.mjs';
+import { SheetMusicAdminService, draftRevision } from './SheetMusicAdminService.mjs';
 import { practiceKeyOfScore } from '../../portable/music/practiceKey.mjs';
 
 const ID_A = 'files:docs/sheet-music/classical/fur-elise.musicxml';
@@ -18,7 +18,7 @@ class FakeReadError extends Error {
   constructor(code, scoreId) { super(`${code}: ${scoreId}`); this.name = 'ScoreReadError'; this.code = code; this.scoreId = scoreId; }
 }
 
-function fixture({ scores = {}, learn = {}, covers = {}, practice = {}, learners = ['learner1', 'learner2'] } = {}) {
+function fixture({ scores = {}, learn = {}, covers = {}, practice = {}, learners = ['learner1', 'learner2'], datastoreOverrides = {} } = {}) {
   const reads = [];
   const saved = [];
   const logs = [];
@@ -29,6 +29,7 @@ function fixture({ scores = {}, learn = {}, covers = {}, practice = {}, learners
     saveSheetMusicLearn: (id, data) => { saved.push({ id, data: structuredClone(data) }); learnFiles.set(id, structuredClone(data)); return true; },
     sheetMusicCover: (id) => covers[id] ?? null,
     getPractice: (userId, key) => practice[`${userId}/${key}`] ?? {},
+    ...datastoreOverrides,
   };
   const scoreReader = {
     read: async (id) => {
@@ -131,7 +132,7 @@ describe('SheetMusicAdminService.library', () => {
     expect(rows[0]).toMatchObject({ id: ID_A, error: 'SCORE_UNREADABLE', learn: 'approved', title: 'Fur Elise', composer: null });
     expect(rows[1]).toMatchObject({ id: ID_B, title: 'B', learn: 'none' });
     expect(rows[1].error).toBeUndefined();
-    expect(logs.find((l) => l.event === 'piano.sheetmusic.score-unreadable')).toMatchObject({ level: 'warn', data: { id: ID_A, code: 'SCORE_UNREADABLE' } });
+    expect(logs.find((l) => l.event === 'piano.sheetmusic.row-unreadable')).toMatchObject({ level: 'warn', data: { id: ID_A, code: 'SCORE_UNREADABLE' } });
   });
 
   it('reuses the cached read while the file signature holds and re-reads when it changes', async () => {
@@ -225,7 +226,7 @@ describe('SheetMusicAdminService.impact and approve', () => {
       learn: { [ID_A]: { version: 1, scoreId: ID_A, contentSha256: 'sha-old', segments: [seg('p1', 0, 3), seg('p2', 4, 7)], draft: { segments: draftSegments, proposal: { by: 'kiosk' } } } },
       practice,
     });
-    const { file, impact } = await service.approve(ID_A, { measureCount: 8 });
+    const { file, impact } = await service.approve(ID_A, { measureCount: 8, expectedDraftRevision: draftRevision(draftSegments) });
     expect(saved).toHaveLength(1);
     const written = saved[0].data;
     expect(written.segments).toEqual(draftSegments);
@@ -243,13 +244,13 @@ describe('SheetMusicAdminService.impact and approve', () => {
 
   it('approve without a draft fails with no-draft', async () => {
     const { service, saved } = fixture({ scores: { [ID_A]: { xml: xmlOf(), sha: '1' } }, learn: { [ID_A]: { scoreId: ID_A, segments: [seg('a', 0, 1)] } } });
-    await expect(service.approve(ID_A, { measureCount: 4 })).rejects.toMatchObject({ code: 'no-draft' });
+    await expect(service.approve(ID_A, { measureCount: 4, expectedDraftRevision: 'any' })).rejects.toMatchObject({ code: 'no-draft' });
     expect(saved).toHaveLength(0);
   });
 
   it('approve rejects a draft that does not fit the measure count', async () => {
     const { service, saved } = fixture({ scores: { [ID_A]: { xml: xmlOf(), sha: '1' } }, learn: { [ID_A]: { scoreId: ID_A, draft: { segments: draftSegments } } } });
-    const err = await service.approve(ID_A, { measureCount: 6 }).catch((e) => e);
+    const err = await service.approve(ID_A, { measureCount: 6, expectedDraftRevision: draftRevision(draftSegments) }).catch((e) => e);
     expect(err).toMatchObject({ code: 'invalid-segments' });
     expect(err.errors.map((e) => e.id)).toEqual(['c']);
     expect(saved).toHaveLength(0);
@@ -257,7 +258,7 @@ describe('SheetMusicAdminService.impact and approve', () => {
 
   it('approve propagates a score read failure without writing', async () => {
     const { service, saved } = fixture({ scores: { [ID_A]: { error: 'SCORE_NOT_FOUND' } }, learn: { [ID_A]: { scoreId: ID_A, draft: { segments: draftSegments } } } });
-    await expect(service.approve(ID_A, { measureCount: 8 })).rejects.toMatchObject({ code: 'SCORE_NOT_FOUND' });
+    await expect(service.approve(ID_A, { measureCount: 8, expectedDraftRevision: draftRevision(draftSegments) })).rejects.toMatchObject({ code: 'SCORE_NOT_FOUND' });
     expect(saved).toHaveLength(0);
   });
 });
@@ -278,5 +279,150 @@ describe('SheetMusicAdminService.revert', () => {
     expect(written.draft).toEqual(draft);
     expect(file).toMatchObject({ segments: [], approved: null, draft });
     expect(logs.find((l) => l.event === 'piano.sheetmusic.learn-saved')).toMatchObject({ data: { id: ID_A, status: 'reverted' } });
+  });
+});
+
+describe('review fixes: draft pinning, empty drafts, non-library ids, robust rows', () => {
+  const key = practiceKeyOfScore(ID_A);
+  const LONG_SHA = 'abcdef0123456789abcdef0123456789';
+  const draftSegments = [seg('a', 0, 3), seg('b', 4, 7)];
+  const practice = {
+    [`learner1/${key}`]: { learnCoach: { scoreId: ID_A, summary: { passages: [
+      { id: 'p1', start: 0, end: 3, silver: true }, { id: 'p2', start: 4, end: 5, gold: true },
+    ] } } },
+  };
+  const withDraft = (extra = {}) => fixture({
+    scores: { [ID_A]: { xml: xmlOf(), sha: LONG_SHA } },
+    learn: { [ID_A]: { scoreId: ID_A, draft: { segments: draftSegments } } },
+    practice,
+    ...extra,
+  });
+
+  it('getLearn and saveDraft return the draftRevision; null without a draft', async () => {
+    const { service } = withDraft();
+    expect((await service.getLearn(ID_A)).draftRevision).toBe(draftRevision(draftSegments));
+    const other = [seg('x', 0, 1)];
+    const saved = await service.saveDraft(ID_A, { segments: other, measureCount: 8 });
+    expect(saved.draftRevision).toBe(draftRevision(other));
+    expect(saved.draftRevision).not.toBe(draftRevision(draftSegments));
+    const { service: bare } = fixture({ scores: { [ID_A]: { xml: xmlOf(), sha: '1' } } });
+    expect((await bare.getLearn(ID_A)).draftRevision).toBeNull();
+  });
+
+  it('draftImpact gives the impact of the stored draft and its revision', async () => {
+    const { service } = withDraft();
+    const { draftRevision: rev, impact } = await service.draftImpact(ID_A);
+    expect(rev).toBe(draftRevision(draftSegments));
+    expect(impact).toHaveLength(1);
+    expect(impact[0].kept.map((p) => p.id)).toEqual(['p1']);
+    expect(impact[0].orphaned.map((p) => p.id)).toEqual(['p2']);
+  });
+
+  it('draftImpact without a draft fails with no-draft', async () => {
+    const { service } = fixture({ scores: { [ID_A]: { xml: xmlOf(), sha: '1' } } });
+    await expect(service.draftImpact(ID_A)).rejects.toMatchObject({ code: 'no-draft' });
+  });
+
+  it('approve requires expectedDraftRevision', async () => {
+    const { service, saved } = withDraft();
+    await expect(service.approve(ID_A, { measureCount: 8 })).rejects.toMatchObject({ code: 'invalid-request' });
+    expect(saved).toHaveLength(0);
+  });
+
+  it('approve refuses when the draft changed since it was reviewed', async () => {
+    const { service, saved } = withDraft();
+    const reviewed = (await service.draftImpact(ID_A)).draftRevision;
+    await service.saveDraft(ID_A, { segments: [seg('a', 0, 7)], measureCount: 8 });
+    saved.length = 0;
+    await expect(service.approve(ID_A, { measureCount: 8, expectedDraftRevision: reviewed })).rejects.toMatchObject({ code: 'draft-changed' });
+    expect(saved).toHaveLength(0);
+  });
+
+  it('approve reads the score even when the cache is warm, and logs a 12-char sha prefix', async () => {
+    const { service, reads, logs } = withDraft();
+    await service.library();
+    expect(reads).toEqual([ID_A]);
+    await service.approve(ID_A, { measureCount: 8, expectedDraftRevision: draftRevision(draftSegments) });
+    expect(reads).toEqual([ID_A, ID_A]);
+    const log = logs.find((l) => l.event === 'piano.sheetmusic.learn-saved' && l.data.status === 'approved');
+    expect(log.data.contentSha256).toBe(LONG_SHA.slice(0, 12));
+  });
+
+  it('saveDraft rejects an empty segment list', async () => {
+    const { service, saved } = withDraft();
+    await expect(service.saveDraft(ID_A, { segments: [], measureCount: 8 }))
+      .rejects.toMatchObject({ code: 'invalid-segments', errors: [{ code: 'empty', id: null, index: -1 }] });
+    expect(saved).toHaveLength(0);
+  });
+
+  it('approve rejects an empty draft', async () => {
+    const { service, saved } = fixture({ scores: { [ID_A]: { xml: xmlOf(), sha: '1' } }, learn: { [ID_A]: { scoreId: ID_A, draft: { segments: [] } } } });
+    await expect(service.approve(ID_A, { measureCount: 8, expectedDraftRevision: draftRevision([]) }))
+      .rejects.toMatchObject({ code: 'invalid-segments', errors: [{ code: 'empty', id: null, index: -1 }] });
+    expect(saved).toHaveLength(0);
+  });
+
+  it('saveDraft without measureCount fails with bad-measure-count', async () => {
+    const { service } = withDraft();
+    await expect(service.saveDraft(ID_A, { segments: draftSegments }))
+      .rejects.toMatchObject({ code: 'invalid-segments', errors: [{ code: 'bad-measure-count', id: null, index: -1 }] });
+  });
+
+  it('refuses non-library ids on every Learn method', async () => {
+    const { service, saved, reads } = withDraft();
+    const bad = 'files:docs/other/x.musicxml';
+    await expect(service.getLearn(bad)).rejects.toMatchObject({ code: 'NOT_LIBRARY_SCORE' });
+    await expect(service.saveDraft(bad, { segments: draftSegments, measureCount: 8 })).rejects.toMatchObject({ code: 'NOT_LIBRARY_SCORE' });
+    await expect(service.approve(bad, { measureCount: 8, expectedDraftRevision: 'x' })).rejects.toMatchObject({ code: 'NOT_LIBRARY_SCORE' });
+    await expect(service.revert(bad)).rejects.toMatchObject({ code: 'NOT_LIBRARY_SCORE' });
+    await expect(service.impact(bad, draftSegments)).rejects.toMatchObject({ code: 'NOT_LIBRARY_SCORE' });
+    await expect(service.draftImpact(bad)).rejects.toMatchObject({ code: 'NOT_LIBRARY_SCORE' });
+    expect(saved).toHaveLength(0);
+    expect(reads).toHaveLength(0);
+  });
+
+  it('saveDraft for a missing score fails with SCORE_NOT_FOUND and writes nothing', async () => {
+    const missing = 'files:docs/sheet-music/folk/gone.musicxml';
+    const { service, saved } = fixture({ scores: {} });
+    await expect(service.saveDraft(missing, { segments: [seg('a', 0, 1)], measureCount: 4 })).rejects.toMatchObject({ code: 'SCORE_NOT_FOUND' });
+    expect(saved).toHaveLength(0);
+  });
+
+  it('revert with nothing approved writes nothing and reports changed: false', async () => {
+    const { service, saved, logs } = withDraft();
+    const result = await service.revert(ID_A);
+    expect(result).toMatchObject({ impact: null, changed: false, file: { segments: [], draft: { segments: draftSegments } } });
+    expect(saved).toHaveLength(0);
+    expect(logs.filter((l) => l.event === 'piano.sheetmusic.learn-saved')).toHaveLength(0);
+  });
+
+  it('revert of an approved file reports changed: true', async () => {
+    const { service } = fixture({ scores: { [ID_A]: { xml: xmlOf(), sha: '1' } }, learn: { [ID_A]: { scoreId: ID_A, contentSha256: '1', segments: [seg('a', 0, 1)], approved: { at: 'x' } } } });
+    expect((await service.revert(ID_A)).changed).toBe(true);
+  });
+
+  it('unwraps CDATA in titles and composers', async () => {
+    const { service } = fixture({ scores: { [ID_A]: { xml: xmlOf({ work: '<![CDATA[Für <Elise> & Co]]>', composer: '<![CDATA[L. v. B.]]>' }), sha: '1' } } });
+    const [row] = await service.library();
+    expect(row).toMatchObject({ title: 'Für <Elise> & Co', composer: 'L. v. B.' });
+  });
+
+  it('a throwing Learn file, cover or practice read marks that row only', async () => {
+    const idC = 'files:docs/sheet-music/folk/c.musicxml';
+    const scores = { [ID_A]: { xml: xmlOf(), sha: '1' }, [ID_B]: { xml: xmlOf(), sha: '2' }, [idC]: { xml: xmlOf({ work: 'C' }), sha: '3' } };
+    const boom = () => { throw new Error('bad yaml'); };
+    const { service } = fixture({
+      scores,
+      datastoreOverrides: {
+        getSheetMusicLearn: (id) => (id === ID_A ? boom() : null),
+        sheetMusicCover: (id) => (id === ID_B ? boom() : null),
+        getPractice: (userId, k) => (k === practiceKeyOfScore(idC) && userId === 'learner1' ? boom() : {}),
+      },
+    });
+    const rows = await service.library();
+    const byId = Object.fromEntries(rows.map((r) => [r.id, r]));
+    expect(byId[ID_A]).toMatchObject({ error: 'LEARN_UNREADABLE', learn: null });
+    expect(byId[ID_B]).toMatchObject({ error: 'COVER_UNREADABLE', poster: 'none', learn: 'none' });
+    expect(byId[idC]).toMatchObject({ error: 'PRACTICE_UNREADABLE', title: 'C', learners: [] });
   });
 });
