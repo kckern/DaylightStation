@@ -1,7 +1,8 @@
 import { useMemo, useState, useEffect, useCallback, useRef } from 'react';
-import { DaylightAPI, DaylightMediaPath } from '@/lib/api.mjs';
+import { DaylightMediaPath } from '@/lib/api.mjs';
+import { useApiResource } from '@/lib/hooks/useApiResource.js';
+import { ErrorState, LoadingState } from '@/lib/ui/index.js';
 import './FamilySelector.scss';
-import getLogger from '@/lib/logging/Logger.js';
 
 /**
  * FamilySelector - Roulette wheel for selecting household members
@@ -430,61 +431,39 @@ useEffect(() => {
  * Main FamilySelector Container (Bootstrap + Loading)
  */
 export default function FamilySelector({ winner, title, exclude, autoSpin = false, members: suppliedMembers, onComplete, onResult, embedded = false, durationMs = SPIN_CONFIG.durationMs, resultDurationMs = SPIN_CONFIG.resultDurationMs }) {
-  const [members, setMembers] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
+  const { data, hasResult, loading, error, reload } = useApiResource('/api/v1/gratitude/users', {
+    enabled: !suppliedMembers,
+    retryTransient: false,
+    label: 'household roster',
+  });
+  const resourceError = error || (!suppliedMembers && hasResult && !Array.isArray(data?.users)
+    ? new Error('The household response did not include a valid roster.')
+    : null);
+  const members = suppliedMembers || (Array.isArray(data?.users) ? data.users : []).map(user => ({
+    id: user.id,
+    name: user.group_label || user.name || user.id,
+    avatar: getAvatarSrc(user.id),
+  }));
 
-  const loadMembers = useCallback(async () => {
-    setLoading(true);
-    try {
-      // Use the gratitude bootstrap endpoint which returns household users
-      const data = await DaylightAPI('/api/v1/gratitude/bootstrap');
-      
-      // Transform users to members with colors and avatars
-      const users = data.users || [];
-      const transformedMembers = users.map((user, index) => ({
-        id: user.id,
-        name: user.group_label || user.name || user.id,
-        color: SEGMENT_COLORS[index % SEGMENT_COLORS.length],
-        avatar: getAvatarSrc(user.id),
-      }));
-      
-      setMembers(transformedMembers);
-      setError(null);
-    } catch (e) {
-      getLogger().child({ component: 'FamilySelector' }).warn('family-selector.load-failed', { error: e.message });
-      setError(e);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    if (!suppliedMembers) loadMembers();
-  }, [loadMembers, suppliedMembers]);
-
-  if (loading && !suppliedMembers) {
+  if (!suppliedMembers && !resourceError && (loading || !hasResult)) {
     return (
       <div className="family-selector family-selector-loading">
-        <div className="loading-message">Loading...</div>
+        <LoadingState label="Household members" rows={2} />
       </div>
     );
   }
 
-  if (error) {
+  if (!suppliedMembers && resourceError) {
     return (
       <div className="family-selector family-selector-error">
-        <div className="error-message">
-          <h2>Error</h2>
-          <p>Failed to load household members.</p>
-        </div>
+        <ErrorState error={resourceError} label="Household members" onRetry={reload} />
       </div>
     );
   }
 
   return (
     <FamilySelectorInner
-      members={(suppliedMembers || members).map((member, index) => ({ color: SEGMENT_COLORS[index % SEGMENT_COLORS.length], ...member }))}
+      members={members.map((member, index) => ({ color: SEGMENT_COLORS[index % SEGMENT_COLORS.length], ...member }))}
       autoSpin={autoSpin} onComplete={onComplete} onResult={onResult} embedded={embedded} durationMs={durationMs} resultDurationMs={resultDurationMs}
       winner={winner}
       title={title}

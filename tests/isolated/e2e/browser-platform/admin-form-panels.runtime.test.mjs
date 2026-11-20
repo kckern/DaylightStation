@@ -431,6 +431,53 @@ test('Admin Gratitude preview removes persisted events by selection ID and resol
   expect(bootstrapReads).toBe(2);
 });
 
+test('Admin Gratitude preview retries bootstrap reads and retires them when closed', async ({ page }) => {
+  await installFixtures(page);
+  await page.route('**/api/v1/admin/content/lists/menus/gratitude-retry-fixture', route => route.fulfill({
+    json: {
+      name: 'gratitude-retry-fixture',
+      sections: [{ items: [{ uid: 'gratitude-retry', label: 'Gratitude retry fixture', action: 'Open', input: 'app:gratitude' }] }],
+    },
+  }));
+
+  let bootstrapReads = 0;
+  let pendingRead;
+  await page.route('**/api/v1/gratitude/bootstrap', async route => {
+    bootstrapReads++;
+    if (bootstrapReads === 1) return route.fulfill({ status: 204 });
+    if (bootstrapReads === 3) {
+      pendingRead = route;
+      return;
+    }
+    return route.fulfill({ json: {
+      users: [{ id: 'alice', name: 'Alice' }],
+      options: { gratitude: [], hopes: [] },
+      selections: { gratitude: [], hopes: [] },
+    } });
+  });
+
+  await page.goto('/admin/content/lists/menus/gratitude-retry-fixture');
+  const preview = page.getByTitle('Preview app', { exact: true });
+  await preview.click();
+  const dialog = page.getByRole('dialog', { name: 'Gratitude retry fixture' });
+  await expect.poll(() => bootstrapReads).toBe(1);
+  await expect(dialog.getByRole('alert')).toContainText('valid roster');
+  await page.keyboard.press('Tab');
+  await expect(dialog.getByRole('button', { name: 'Retry' })).toBeFocused();
+  await page.keyboard.press('Enter');
+  await expect(dialog.getByText('Alice')).toBeVisible();
+  expect(bootstrapReads).toBe(2);
+
+  await page.keyboard.press('Escape');
+  await expect(dialog).toBeHidden();
+  await preview.click();
+  await expect.poll(() => bootstrapReads).toBe(3);
+  await expect.poll(() => pendingRead).toBeTruthy();
+  await page.keyboard.press('Escape');
+  await expect(dialog).toBeHidden();
+  await expect.poll(() => pendingRead.request().failure()).toBeTruthy();
+});
+
 test('Admin list parameter lookup keeps the latest app, retries its read, and commits only an explicit choice', async ({ page }) => {
   await installFixtures(page);
   const listPath = '/api/v1/admin/content/lists/menus/app-param-fixture';

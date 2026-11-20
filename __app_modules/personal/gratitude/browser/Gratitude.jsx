@@ -4,6 +4,8 @@ import React, { useState, useCallback, useEffect, useRef } from "react";
 import { useWebSocketSubscription } from "../../../../frontend/src/hooks/useWebSocket.js";
 import { getChildLogger } from '@/lib/logging/singleton.js';
 import { DaylightAPI, DaylightMediaPath } from '@/lib/api.mjs';
+import { useApiResource } from '../../../../frontend/src/lib/hooks/useApiResource.js';
+import { ErrorState, LoadingState } from '@/lib/ui/index.js';
 import { isToday, format } from 'date-fns';
 import "./Gratitude.scss";
 import { useFitText } from "./fitText.js";
@@ -1048,68 +1050,46 @@ function GratitudeApp({
 // ============================================================================
 
 export default function Gratitude({ clear }) {
-  const [users, setUsers] = useState([]);
-  const [queue, setQueue] = useState({ gratitude: [], hopes: [] });
-  const [selected, setSelected] = useState({ gratitude: [], hopes: [] });
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
+  const { data, hasResult, loading, error, reload } = useApiResource('/api/v1/gratitude/bootstrap', {
+    retryTransient: false,
+    label: 'gratitude bootstrap',
+  });
+  const resourceError = error || (hasResult && !Array.isArray(data?.users)
+    ? new Error('The household response did not include a valid roster.')
+    : null);
 
-  const loadBootstrapData = useCallback(async () => {
-    setLoading(true);
-    try {
-      const data = await DaylightAPI('/api/v1/gratitude/bootstrap');
-      
-      setUsers(data.users || []);
-      setQueue(data.options || { gratitude: [], hopes: [] });
-      
-      // Transform selections: flatten item structure
-      const transformSelections = (selections) => {
-        const result = { gratitude: [], hopes: [] };
-        for (const cat of ['gratitude', 'hopes']) {
-          result[cat] = (selections?.[cat] || []).map(s => ({
-            id: s.id,
-            text: s.item?.text || s.text,
-            optionId: s.item?.id || s.optionId,
-            userId: s.userId,
-            userName: s.userName,
-            datetime: s.datetime,
-          }));
-        }
-        return result;
-      };
-      
-      setSelected(transformSelections(data.selections));
-      setError(null);
-    } catch (e) {
-      logger.error('gratitude.bootstrap.failed', { error: e.message });
-      setError(e);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    loadBootstrapData();
-  }, [loadBootstrapData]);
-
-  if (loading) {
+  if (!resourceError && (loading || !hasResult)) {
     return (
       <MantineProvider>
         <div className="app gratitude-app">
-          <div className="loading">Loading…</div>
+          <LoadingState label="Gratitude" rows={2} />
         </div>
       </MantineProvider>
     );
   }
 
-  if (error) {
+  if (resourceError) {
     return (
       <MantineProvider>
         <div className="app gratitude-app">
-          <div className="error">Failed to load. Please retry.</div>
+          <ErrorState error={resourceError} label="Gratitude" onRetry={reload} />
         </div>
       </MantineProvider>
     );
+  }
+
+  const users = data.users || [];
+  const queue = data.options || { gratitude: [], hopes: [] };
+  const selected = { gratitude: [], hopes: [] };
+  for (const category of ['gratitude', 'hopes']) {
+    selected[category] = (data.selections?.[category] || []).map(selection => ({
+      id: selection.id,
+      text: selection.item?.text || selection.text,
+      optionId: selection.item?.id || selection.optionId,
+      userId: selection.userId,
+      userName: selection.userName,
+      datetime: selection.datetime,
+    }));
   }
 
   return (

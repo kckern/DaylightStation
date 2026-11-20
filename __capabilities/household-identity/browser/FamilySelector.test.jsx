@@ -1,5 +1,5 @@
 import React from 'react';
-import { act, render, screen } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, expect, it, vi } from 'vitest';
 import FamilySelector from './FamilySelector.jsx';
 vi.mock('@/lib/api.mjs', () => ({ DaylightAPI: vi.fn(() => Promise.resolve({ users: [] })), DaylightMediaPath: x => x }));
@@ -31,4 +31,28 @@ it('announces the result hook only after the wheel has stopped',()=>{
  render(<FamilySelector members={[{id:'a',name:'Alice'},{id:'b',name:'Bob'}]} winner="b" autoSpin embedded durationMs={1000} onResult={onResult}/>);
  act(()=>vi.advanceTimersByTime(999));expect(onResult).not.toHaveBeenCalled();
  act(()=>vi.advanceTimersByTime(1));expect(onResult).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({id:'b'}));
+});
+
+it('keeps supplied members visible when an obsolete bootstrap read fails', async()=>{
+ let rejectBootstrap;
+ const { DaylightAPI } = await import('@/lib/api.mjs');
+ DaylightAPI.mockImplementationOnce(() => new Promise((_, reject) => { rejectBootstrap = reject; }));
+ const { rerender } = render(<FamilySelector embedded members={undefined}/>);
+ expect(screen.getByLabelText('Loading Household members')).toBeInTheDocument();
+ rerender(<FamilySelector embedded members={[{id:'a',name:'Alice'},{id:'b',name:'Bob'}]}/>);
+ expect(document.querySelector('.wheel-rotator')).not.toBeNull();
+ await act(async()=>rejectBootstrap(new Error('stale bootstrap failure')));
+ expect(document.querySelector('.wheel-rotator')).not.toBeNull();
+ expect(screen.queryByRole('alert')).toBeNull();
+});
+
+it('offers retry when the roster endpoint returns an empty successful response', async()=>{
+ const { DaylightAPI } = await import('@/lib/api.mjs');
+ DaylightAPI.mockImplementationOnce(() => Promise.resolve(null))
+  .mockImplementationOnce(() => Promise.resolve({ users: [{id:'a',name:'Alice'}] }));
+ const { findByRole, queryByRole, container } = render(<FamilySelector embedded/>);
+ const retry = await findByRole('button', { name:'Retry' });
+ await act(async()=>retry.click());
+ await waitFor(()=>expect(container.querySelector('.wheel-rotator')).not.toBeNull());
+ expect(queryByRole('alert')).toBeNull();
 });
