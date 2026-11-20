@@ -169,7 +169,7 @@ export function runPairingWindow({
       const helperTargets = helperMode === 'address' ? targets : sanitizeTargets(targets);
       child = spawnHelper(JSON.stringify({ targets: helperTargets, durationMs, mode: helperMode }));
     } catch (err) {
-      progress({ phase: 'scanning', durationMs });
+      progress({ phase: 'scanning', durationMs, mode });
       progress({ phase: 'error', code: 'unknown', message: `pairing helper failed to start: ${err?.message}` });
       logger?.error?.(`❌ bt.pair helper failed to start: ${err?.message}`);
       finish({ reason: 'helper-failed' });
@@ -202,7 +202,7 @@ export function runPairingWindow({
       if (s) logger?.warn?.(`⚠️  bt.pair helper stderr: ${s.slice(0, 500)}`);
     });
     child.on?.('error', (err) => {
-      if (!sawScanning) progress({ phase: 'scanning', durationMs });
+      if (!sawScanning) progress({ phase: 'scanning', durationMs, mode });
       progress({ phase: 'error', code: 'unknown', message: `pairing helper failed: ${err?.message}` });
       finish({ reason: 'helper-failed' });
     });
@@ -224,8 +224,8 @@ export function isPairingWindowOpen() {
 
 /**
  * Bus entry point the server calls when it receives a `bt.pair.request` topic.
- * A request that arrives while a window is open is ignored — the open window's
- * progress already drives the UI.
+ * A request that arrives while a window is open is answered `done`/`busy`,
+ * unless it repeats the open window's own requestId (then it is ignored).
  *
  * @param {object} message                 the parsed bus message.
  * @param {object} deps                    { spawnHelper, send, logger, onWindow, stopScan }.
@@ -253,8 +253,12 @@ export async function handleBtPairRequest(message, { spawnHelper, send, logger =
     targets = [addressTarget(message)];
   }
   if (activeWindow) {
-    logger?.warn?.(`⚠️  bt.pair.request ${requestId} ignored — window ${activeWindow} already open`);
-    return [];
+    logger?.warn?.(`⚠️  bt.pair.request ${requestId} refused — window ${activeWindow} already open`);
+    // A repeat of the open window's own request is ignored (its progress already
+    // drives the UI); a different request is answered so the browser does not
+    // read the silence as an offline satellite.
+    if (requestId != null && requestId === activeWindow) return [];
+    return refuse('busy');
   }
   logger?.info?.(`🎮 bt.pair.request received (requestId=${requestId}, durationMs=${durationMs}, targets=${targets.length}, mode=${mode}${mode === 'address' ? `, address=${targets[0].address}` : ''})`);
   activeWindow = requestId ?? 'anonymous';

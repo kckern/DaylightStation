@@ -135,7 +135,7 @@ test('runPairingWindow: helper fails to spawn → scanning, error, done', async 
 
 // ── handleBtPairRequest ───────────────────────────────────────────────────
 
-test('handleBtPairRequest: pauses the inventory for the window; a second request while open is ignored', async () => {
+test('handleBtPairRequest: pauses the inventory for the window; a second request while open is answered busy', async () => {
   const { spawnHelper, args } = fakeHelper([{ phase: 'scanning' }, { phase: 'done', paired: [] }]);
   const { send, calls } = makeSendSpy();
   const windows = [];
@@ -148,7 +148,28 @@ test('handleBtPairRequest: pauses the inventory for the window; a second request
   assert.equal(args.length, 1);
   assert.deepEqual(windows, [true, false]);
   assert.equal(isPairingWindowOpen(), false);
-  assert.ok(calls.every((c) => c.payload.requestId === 'r1'));
+  const r2 = calls.filter((c) => c.payload.requestId === 'r2').map((c) => c.payload);
+  assert.deepEqual(r2, [{ requestId: 'r2', phase: 'done', paired: [], reason: 'busy' }]);
+  assert.ok(calls.filter((c) => c.payload.requestId !== 'r2').every((c) => c.payload.requestId === 'r1'));
+});
+
+test('handleBtPairRequest: a repeat of the open window\'s own request is ignored', async () => {
+  const { spawnHelper, args } = fakeHelper([{ phase: 'scanning' }, { phase: 'done', paired: [] }]);
+  const { send, calls } = makeSendSpy();
+  const deps = { spawnHelper, send, logger: SILENT_LOGGER };
+  const first = handleBtPairRequest({ requestId: 'r1', targets: TARGETS }, deps);
+  await handleBtPairRequest({ requestId: 'r1', targets: TARGETS }, deps);
+  await first;
+  assert.equal(args.length, 1);
+  assert.equal(calls.filter((c) => c.payload.phase === 'done').length, 1);
+});
+
+test('runPairingWindow: the fallback scanning event carries the mode', async () => {
+  const spawnHelper = () => { throw new Error('ENOENT'); };
+  const { send, calls } = makeSendSpy();
+  await runPairingWindow({ spawnHelper, send, logger: SILENT_LOGGER, mode: 'address', targets: [] });
+  assert.equal(calls[0].payload.phase, 'scanning');
+  assert.equal(calls[0].payload.mode, 'address');
 });
 
 test('handleBtPairRequest: clamps durationMs to 5s–180s', async () => {
