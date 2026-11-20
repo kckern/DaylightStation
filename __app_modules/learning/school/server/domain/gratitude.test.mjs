@@ -44,3 +44,12 @@ describe('gratitude takes and retries (every child)',()=>{
     expect(deriveGratitudeState(events,{now:'2026-11-19T18:40:00Z'})).toMatchObject({phase:'retry',draft:null});
   });
 });
+import { isUnheardTranscript } from './gratitude.mjs';
+describe('unheard transcripts',()=>{
+  it('catches the hint echoed back whole, in part, or with a contraction',()=>{
+    for(const text of ['',null,'  ','A child saying what they are grateful for, in English or Korean.','a child saying what theyre grateful for','Saying what they\'re grateful for.','In English or Korean.','uh in english or korean','what they are grateful for in English']) expect(isUnheardTranscript(text)).toBe(true);
+  });
+  it('leaves a real answer alone, even one that borrows a few words',()=>{
+    for(const text of ['Making cookies','I am grateful for my mom','I\'m grateful for what they are doing for me at school today','my teacher speaks English or Korean to me and I like it']) expect(isUnheardTranscript(text)).toBe(false);
+  });
+});

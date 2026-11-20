@@ -9,11 +9,22 @@ export const GRATITUDE_TITLE = 'Gratitude';
 export const GRATITUDE_PROMPT = Object.freeze({ id: 'gratitude', text: 'What are you grateful for today?', required: true });
 /** The transcription prompt. On silence or noise the transcriber can hand this hint back as the "words". */
 export const GRATITUDE_TRANSCRIPTION_HINT = 'A child saying what they are grateful for, in English or Korean.';
-const hintWords = text => String(text ?? '').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
-/** True when a take carries no words of the child's: empty, or the prompt hint leaking out. */
+const hintWords = text => ` ${String(text ?? '').toLowerCase().replace(/[’']/g, '').replace(/[^\p{L}\p{N}]+/gu, ' ').trim()} `
+  .replace(/ (theyre|they re) /g, ' they are ').trim();
+// Pieces of the hint the transcriber hands back on silence, longest first.
+const HINT_ECHOES = [hintWords(GRATITUDE_TRANSCRIPTION_HINT), 'a child saying what they are grateful for', 'saying what they are grateful for', 'what they are grateful for', 'in english or korean', 'english or korean', 'in english', 'in korean'];
+/**
+ * True when a take carries no words of the child's: empty, or the prompt hint (whole or in pieces)
+ * echoed back with at most one other word around it.
+ */
 export function isUnheardTranscript(text) {
-  const words = hintWords(text);
-  return !words || words.includes(hintWords(GRATITUDE_TRANSCRIPTION_HINT)) || words.includes('a child saying what they are grateful for');
+  let words = hintWords(text);
+  if (!words) return true;
+  let echoed = false;
+  for (const echo of HINT_ECHOES) {
+    if (` ${words} `.includes(` ${echo} `)) { echoed = true; words = ` ${words} `.split(` ${echo} `).join(' ').trim(); }
+  }
+  return echoed && words.split(' ').filter(Boolean).length <= 1;
 }
 export function validateGratitudeEnrollment(raw = {}) {
   const subject = raw.subject ?? 'scripture';
