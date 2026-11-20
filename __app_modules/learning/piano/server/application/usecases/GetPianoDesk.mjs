@@ -9,10 +9,11 @@
  * dependency, so the home screen can paint quickly.
  */
 import { createCoachPlan, passageProgress, projectCoach } from '#shared/music/learnCoach.mjs';
+import { practiceKeyOfScore } from '../../../portable/music/practiceKey.mjs';
+
+export { practiceKeyOfScore };
 
 const DEFAULT_PARTS = ['rh', 'lh'];
-
-export const practiceKeyOfScore = (id) => String(id).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 120);
 
 function passageRanges(record) {
   const saved = record?.learnCoach?.summary?.passages;
