@@ -76,15 +76,23 @@ export default function MeasureStrip({
     ? { type: 'moveBoundary', leftId: id, newEnd: k }
     : { type: 'moveEdge', id, edge: kind, to: kind === 'end' ? k : k + 1 });
 
-  /** Nearest barline (the gap after measure k) to a pointer x, read from the cells. */
+  /**
+   * Nearest barline to a pointer x, as k = the measure it follows, read from the
+   * cells. The left edge of the first cell is k = -1 (before bar 0).
+   */
   const nearestBarline = useCallback((clientX) => {
     const cells = gridRef.current?.querySelectorAll('[data-measure-cell]') || [];
     let best = null;
     let bestDist = Infinity;
+    const consider = (k, x) => {
+      const dist = Math.abs(x - clientX);
+      if (dist < bestDist) { bestDist = dist; best = k; }
+    };
     cells.forEach((cell) => {
       const k = Number(cell.getAttribute('data-measure-cell'));
-      const dist = Math.abs(cell.getBoundingClientRect().right - clientX);
-      if (dist < bestDist) { bestDist = dist; best = k; }
+      const box = cell.getBoundingClientRect();
+      if (k === 0) consider(-1, box.left);
+      consider(k, box.right);
     });
     return best;
   }, []);
@@ -119,7 +127,7 @@ export default function MeasureStrip({
     gridRef.current?.querySelector(`[data-handle="${CSS.escape(key)}"]`)?.focus();
   });
 
-  const handle = (kind, seg, k, label) => {
+  const handle = (kind, seg, k, label, leading = false) => {
     const key = `${kind}:${seg.id}`;
     const onKeyDown = (event) => {
       const step = event.key === 'ArrowLeft' ? -1 : event.key === 'ArrowRight' ? 1 : 0;
@@ -132,7 +140,7 @@ export default function MeasureStrip({
       <Tooltip label="Drag, or use the arrow keys" withArrow openDelay={400}>
         <button
           type="button"
-          className={`sm-strip__handle${kind === 'boundary' ? '' : ' sm-strip__handle--edge'}`}
+          className={`sm-strip__handle${kind === 'boundary' ? '' : ' sm-strip__handle--edge'}${leading ? ' sm-strip__handle--leading' : ''}`}
           data-handle={key}
           aria-label={label}
           aria-keyshortcuts="ArrowLeft ArrowRight"
@@ -149,8 +157,23 @@ export default function MeasureStrip({
     );
   };
 
+  /** The first segment's start handle on the barline before bar 0. */
+  const leadingControl = () => {
+    if (!editable || !n) return null;
+    const first = segments.find((s) => s.start === 0);
+    return first
+      ? handle('start', first, -1, `Move start of segment ${position(first) + 1} before bar ${printedNumber(measures, 0)}`, true)
+      : null;
+  };
+
   const gapControl = (i) => {
-    if (!editable || i >= n - 1) return null;
+    if (!editable) return null;
+    if (i === n - 1) {
+      // After the last bar: only the final segment's end, to pull it in.
+      const last = segments.find((s) => s.end === i);
+      return last ? handle('end', last, i, `Move end of segment ${position(last) + 1} after bar ${printedNumber(measures, i)}`) : null;
+    }
+    if (i > n - 1) return null;
     const left = segments.find((s) => s.end === i);
     const right = segments.find((s) => s.start === i + 1);
     const bar = printedNumber(measures, i);
@@ -196,6 +219,7 @@ export default function MeasureStrip({
               title={uncoveredSet.has(i) ? 'Not in any segment' : undefined}
             >
               <span className="sm-strip__number">{printedNumber(measures, i)}</span>
+              {i === 0 ? leadingControl() : null}
               {gapControl(i)}
             </div>
           ))}

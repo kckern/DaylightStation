@@ -152,4 +152,45 @@ describe('MeasureStrip', () => {
     expect(onAction).toHaveBeenLastCalledWith({ type: 'moveEdge', id: 'b', edge: 'start', to: 5 });
     expect(state()).toEqual([['a', 0, 3, null], ['b', 5, 7, null]]);
   });
+
+  it('pulls a final segment\'s end in from after the last bar, and pushes a first start out', () => {
+    const onAction = renderStrip([{ id: 'a', start: 0, end: 3 }, { id: 'b', start: 4, end: 7 }]);
+    const end = screen.getByRole('button', { name: 'Move end of segment 2 after bar 7' });
+    expect(end.getAttribute('aria-keyshortcuts')).toBe('ArrowLeft ArrowRight');
+    fireEvent.keyDown(end, { key: 'ArrowRight' }); // already at the last bar: nothing to extend into
+    expect(state()).toEqual([['a', 0, 3, null], ['b', 4, 7, null]]);
+    fireEvent.keyDown(end, { key: 'ArrowLeft' });
+    expect(onAction).toHaveBeenLastCalledWith({ type: 'moveEdge', id: 'b', edge: 'end', to: 6 });
+    expect(state()).toEqual([['a', 0, 3, null], ['b', 4, 6, null]]);
+    expect(document.querySelector('[data-measure-cell="7"]').className).toContain('sm-strip__cell--uncovered');
+
+    const start = screen.getByRole('button', { name: 'Move start of segment 1 before bar 0' });
+    fireEvent.keyDown(start, { key: 'ArrowRight' });
+    expect(onAction).toHaveBeenLastCalledWith({ type: 'moveEdge', id: 'a', edge: 'start', to: 1 });
+    expect(state()).toEqual([['a', 1, 3, null], ['b', 4, 6, null]]);
+    // Bar 0 is now a gap; the start handle sits on the barline after it and focus followed.
+    const moved = screen.getByRole('button', { name: 'Move start of segment 1 before bar 1' });
+    expect(document.activeElement).toBe(moved);
+    fireEvent.keyDown(moved, { key: 'ArrowLeft' });
+    expect(state()).toEqual([['a', 0, 3, null], ['b', 4, 6, null]]);
+  });
+
+  it('drags a first segment\'s start to the barline before bar 0', () => {
+    const rect = vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function rectOf() {
+      const k = this.getAttribute?.('data-measure-cell');
+      const right = k == null ? 0 : (Number(k) + 1) * 40;
+      return { left: right - 40, right, top: 0, bottom: 20, width: 40, height: 20, x: right - 40, y: 0 };
+    });
+    try {
+      const onAction = renderStrip([{ id: 'a', start: 2, end: 7 }]);
+      const handle = screen.getByRole('button', { name: 'Move start of segment 1 before bar 2' });
+      fireEvent.pointerDown(handle, { pointerId: 1, clientX: 80 });
+      fireEvent.pointerMove(handle, { pointerId: 1, clientX: 3 }); // nearest barline: the left edge of bar 0
+      expect(onAction).toHaveBeenLastCalledWith({ type: 'moveEdge', id: 'a', edge: 'start', to: 0 });
+      fireEvent.pointerUp(window, { pointerId: 1 });
+      expect(state()).toEqual([['a', 0, 7, null]]);
+    } finally {
+      rect.mockRestore();
+    }
+  });
 });

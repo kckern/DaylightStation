@@ -39,6 +39,13 @@ const errorCode = (err) => (typeof err?.body?.error === 'string' ? err.body.erro
 /** Segment identity for "has this changed": ids, bars and names; parts are derived. */
 const segmentsKey = (segments) => JSON.stringify((segments || []).map(({ id, start, end, name }) => [id, start, end, name ?? null]));
 
+/** True when any stored segment's `parts` differ from the kiosk's for the same id. */
+export function partsDrift(stored, filled) {
+  if (!Array.isArray(filled)) return true;
+  const want = new Map(filled.map((s) => [s.id, JSON.stringify(s.parts || [])]));
+  return (stored || []).some((s) => want.get(s.id) !== JSON.stringify(s.parts || []));
+}
+
 function pageReducer(state, action) {
   if (action?.type === 'load') return initSegmentEditor({ segments: action.segments, measureCount: action.measureCount });
   return segmentEditorReducer(state, action);
@@ -310,10 +317,12 @@ export default function SheetMusicScore() {
     if (revision) setNotice({ color: 'teal', text: 'Draft saved. The kiosk still plays the approved segments until you approve.' });
   };
 
-  // Approve reviews what is on disk: an unchanged stored draft goes straight to the
-  // impact; edits are saved first.
+  // Approve reviews what is on disk: an unchanged stored draft whose hands match what
+  // the kiosk computes now goes straight to the impact. Edits, or parts that drifted
+  // (a draft written elsewhere, or the XML changed under the same bar count), are
+  // saved first so the server's strip and Polish agree with the kiosk.
   const onApprove = async () => {
-    if (hasDraft && !dirty) { setDialog('approve'); return; }
+    if (hasDraft && !dirty && !partsDrift(learn.draft.segments, parts?.segments)) { setDialog('approve'); return; }
     const revision = await saveDraft();
     if (revision) setDialog('approve');
   };

@@ -131,6 +131,32 @@ describe('SheetMusicScore', () => {
     expect(putCalls()).toEqual([]);
   });
 
+  it('approve re-saves an unchanged draft whose stored parts no longer match the score', async () => {
+    // Written elsewhere (or against older XML): segment b claims only the right hand.
+    learn = learnFile({
+      draft: { segments: [{ id: 'a', start: 0, end: 3, parts: ['rh'] }, { id: 'b', start: 4, end: 7, parts: ['rh'] }] },
+      draftRevision: 'rev-old',
+    });
+    renderPage();
+    await engravedReady();
+    fireEvent.click(await screen.findByRole('button', { name: 'Approve' }));
+    await waitFor(() => expect(screen.getByText('No learner has progress on this score.')).toBeTruthy());
+    expect(putCalls()).toHaveLength(1);
+    expect(putCalls()[0][1].segments).toEqual([
+      { id: 'a', start: 0, end: 3, parts: ['rh'] },
+      { id: 'b', start: 4, end: 7, parts: ['rh', 'lh'] },
+    ]);
+  });
+
+  it('approve re-saves an unchanged draft that has no parts at all', async () => {
+    learn = learnFile({ draft: { segments: [{ id: 'a', start: 0, end: 7 }] }, draftRevision: 'rev-old' });
+    renderPage();
+    await engravedReady();
+    fireEvent.click(await screen.findByRole('button', { name: 'Approve' }));
+    await waitFor(() => expect(screen.getByText('No learner has progress on this score.')).toBeTruthy());
+    expect(putCalls()[0][1].segments).toEqual([{ id: 'a', start: 0, end: 7, parts: ['rh', 'lh'] }]);
+  });
+
   it('approve after an edit saves the draft first, then reviews its impact', async () => {
     learn = learnFile({ draft: { segments: [{ id: 'a', start: 0, end: 7 }] }, draftRevision: 'rev-old' });
     renderPage();
@@ -180,7 +206,7 @@ describe('SheetMusicScore', () => {
   });
 
   it('reloads and says so when approval finds the draft changed in another tab', async () => {
-    learn = learnFile({ draft: { segments: [{ id: 'a', start: 0, end: 7 }] }, draftRevision: 'rev-seen' });
+    learn = learnFile({ draft: { segments: [{ id: 'a', start: 0, end: 7, parts: ['rh', 'lh'] }] }, draftRevision: 'rev-seen' });
     api.mockImplementation((path, data, method) => {
       if (method === 'PUT' && data.action === 'approve') {
         return Promise.reject(Object.assign(new Error('HTTP 409'), { status: 409, body: { error: 'draft-changed', draftRevision: 'rev-other' } }));

@@ -18,7 +18,8 @@ $sm-seg-hues: (blue, grape, teal, orange, cyan, lime);
 .sm-strip {
   &__scroll {
     overflow-x: auto;
-    padding-bottom: 4px;
+    // Room for the handles that straddle the outer barlines.
+    padding: 0 10px 4px;
   }
 
   &__grid {
@@ -136,6 +137,12 @@ $sm-seg-hues: (blue, grape, teal, orange, cyan, lime);
     overflow: hidden;
 
     &:hover, &:focus-visible { color: var(--ds-text-primary, inherit); border-style: solid; }
+  }
+
+  &__handle--leading {
+    right: auto;
+    left: 0;
+    transform: translate(-50%, -50%);
   }
 
   &__handle--edge {
