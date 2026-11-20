@@ -86,7 +86,7 @@ public class DaylightMediaService extends MediaLibraryService {
 
         MediaLibrarySession.Builder builder = new MediaLibrarySession.Builder(this, player,
                 new LibraryCallback(media, io, getPackageName(), new AndroidPackageFacts(getPackageManager()),
-                        () -> SurfaceCache.get(this, ControllerPins.KEY), this::stopPlayback));
+                        () -> SurfaceCache.get(this, ControllerPins.KEY), DaylightMediaService::stopPlayback));
         builder.setCustomLayout(Collections.singletonList(LibraryCallback.stopButton()));
         // A tap on the media notification opens this app's own window. Nothing from a
         // controller is in the intent.
@@ -145,8 +145,13 @@ public class DaylightMediaService extends MediaLibraryService {
         });
     }
 
-    private void stopPlayback() {
+    static void stopPlayback() {
         PlayActionService.cancelCurrentStart();
+        DaylightMediaService service = current;
+        if (service != null) service.stopPlayer();
+    }
+
+    private void stopPlayer() {
         player.pause();
         player.stop();
         player.clearMediaItems();
@@ -172,10 +177,7 @@ public class DaylightMediaService extends MediaLibraryService {
     static void stopShortcut(PlayStart.Attempt attempt) {
         DaylightMediaService service = current;
         if (service != null && service.ownsPlaylist(attempt)) {
-            service.player.pause();
-            service.player.stop();
-            service.player.clearMediaItems();
-            service.shortcutOwner = null;
+            service.stopPlayer();
         }
     }
 

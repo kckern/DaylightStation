@@ -419,14 +419,14 @@ export default function CallApp() {
               <div role="alert" className="call-app__stack">
                 <p className="call-app__notice call-app__notice--warn">{state.reason === 'boot_failed' ? mediaErrorCopy(media.errors) : state.error}</p>
                 {state.reason === 'boot_failed' && <button type="button" className="call-app__wide-btn" onClick={() => {
-                  controller.dispatch({ type: 'DISMISS' });
+                  controller.dismiss();
                   void media.retry();
                 }}>Retry media</button>}
-                <button type="button" ref={primaryActionRef} className="call-app__wide-btn" onClick={() => controller.dispatch({ type: 'DISMISS' })}>Back</button>
+                <button type="button" ref={primaryActionRef} className="call-app__wide-btn" onClick={() => controller.dismiss()}>Back</button>
               </div>
             )}
 
-            {['idle', 'ended'].includes(state.value) && (
+            {(['idle', 'ended'].includes(state.value) || (state.value === 'booting' && media.status === 'idle')) && (
               <div className="call-app__stack">
                 {devices.status === 'loading' && <p className="call-app__notice" role="status">Looking for screens…</p>}
                 {devices.status === 'failed' && (

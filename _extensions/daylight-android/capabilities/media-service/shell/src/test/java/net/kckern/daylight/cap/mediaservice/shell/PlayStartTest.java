@@ -58,6 +58,21 @@ public class PlayStartTest {
         assertEquals(Arrays.asList("c:plex:first", "c:plex:second"), resolved);
     }
 
+    @Test public void stopFromStartingNoticeStopsThePreviousQueueAndCancelsThePendingQueue() {
+        PlayStart.Attempt first = new PlayStart.Attempt("c:plex:first", 100);
+        first.recordPlaying(110);
+        PlayStart.Attempt second = new PlayStart.Attempt("c:plex:second", 120);
+        PlayStart.Attempt[] audible = { first };
+
+        PlayActionService.stopFromNotification(second::cancel, () -> {
+            assertFalse("the pending queue is invalidated before clearing the player", second.canApply(130));
+            audible[0] = null;
+        });
+
+        if (second.canApply(150)) audible[0] = second;
+        assertNull("the previous queue is silent and the pending queue cannot replace it", audible[0]);
+    }
+
     @Test public void theMediaIdIsTakenFromThePayloadsAnswerOnlyWhenItIsAnItemId() {
         assertEquals("p:plex:12345", PlayStart.mediaId("{\"ok\":true,\"mediaId\":\"p:plex:12345\"}"));
         for (String bad : new String[] { null, "", "not json", "{\"ok\":false,\"error\":\"unknown_action\"}",

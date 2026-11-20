@@ -84,8 +84,7 @@ public class PlayActionService extends Service {
             return START_NOT_STICKY;
         }
         if (intent != null && STOP.equals(intent.getAction())) {
-            if (attempt != null) DaylightMediaService.stopShortcut(attempt);
-            finish(null, startId);
+            stopFromNotification(() -> finish(null, startId), DaylightMediaService::stopPlayback);
             return START_NOT_STICKY;
         }
         final String actionId = DirectPlay.actionFrom(intent == null ? null : intent.getStringExtra(DirectPlay.EXTRA_ACTION));
@@ -183,6 +182,11 @@ public class PlayActionService extends Service {
             case RELEASE: finish(null, currentStartId); return;
             default: main.postDelayed(poll, attempt.played() ? POLL_MS : Math.min(POLL_MS, PlayStart.GIVE_UP_MS - elapsed));
         }
+    }
+
+    static void stopFromNotification(Runnable finishStart, Runnable stopPlayback) {
+        finishStart.run();
+        stopPlayback.run();
     }
 
     private void finish(String message, int startId) {
