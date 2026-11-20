@@ -134,7 +134,7 @@ function latestOfKind(observations, kind) {
  * twice inside one entry tree (330 -> 778 in the reproduced case), under a "measured"
  * badge. So a group is refused, not written to.
  *
- * Gated on `kind === 'group'` — the SAME field `EntryEditSheet`'s group mode and
+ * Gated on `kind === 'group'` — the SAME field `EntryEditor`'s group mode and
  * `HealthOperations#cascadeMealTimeToChildren` gate on. If that ever stops being how a
  * group is identified, change it here too.
  */

@@ -1360,7 +1360,7 @@ on success it just reloads — no confirmation step of its own.
 
 A captured entry appears in the day's log (`GET /nutrilist/:date` returns every status,
 unfiltered) and counts toward the budget immediately, carrying `settled: false`. It
-renders like any other row: tapping it opens `EntryEditSheet` to edit or delete, and its
+renders like any other row: tapping it opens `EntryEditor` to edit or delete, and its
 "Unconfirmed" badge carries the one-tap settle button (see
 [Unsettled vs. settled](#unsettled-vs-settled) below). Photo and voice captures
 (`PhotoCapture`/`VoiceCapture` → `TodayView`) and a known-barcode hit (`BarcodeCapture` →
@@ -1778,7 +1778,7 @@ null — see [Food icons](#food-icons). `usageByBucket` is per-meal-bucket histo
 see [the quick-add ranking](#the-ranking) — and defaults to `{}`, never null. `source` is `'manual' | 'nutritionix' | 'custom'`
 depending on origin; entries created via `createCustom` (the barcode-mapping flow, or any
 direct `POST /nutrition/catalog`) are always `source: 'custom'`. `favorite` is a persisted
-boolean, toggled from `EntryEditSheet`'s star button via `PUT /nutrition/catalog/favorite {
+boolean, toggled from `EntryEditor`'s star button via `PUT /nutrition/catalog/favorite {
 id?, name?, favorite }` (resolves by id or by normalized name), and is the top sort key in
 `suggest()`. Entries carrying `foodId` read current state with
 `GET /nutrition/catalog/:id` and always toggle by ID. Name fallback is for legacy

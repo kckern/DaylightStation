@@ -254,16 +254,8 @@ for (const fromDetail of [false, true]) {
   });
 }
 
-test('Health opens after the first confirmed context while its background revalidation waits', async ({ page }) => {
-  let contextReads = 0;
-  await page.route('**/health/context', route => {
-    if (++contextReads === 1) return route.fulfill({ json: { userId: 'alice' } });
-  });
-  await page.goto('/health');
-  await expect(page.getByRole('main')).toBeVisible();
-  await expect(page.getByRole('link', { name: 'Today', exact: true })).toHaveAttribute('aria-current', 'page');
-  await expect.poll(() => contextReads).toBe(2);
-  await expect.poll(() => page.evaluate(async () => {
+async function healthCacheValue(page, path) {
+  return page.evaluate(async path => {
     const db = await new Promise((resolve, reject) => {
       const request = indexedDB.open('daylight-health-cache');
       request.onsuccess = () => resolve(request.result);
@@ -271,16 +263,124 @@ test('Health opens after the first confirmed context while its background revali
     });
     try {
       return await new Promise((resolve, reject) => {
-        const request = db.transaction('resources').objectStore('resources').get('api/v1/health/context');
-        request.onsuccess = () => resolve(request.result?.value?.userId ?? null);
+        const request = db.transaction('resources').objectStore('resources').get(path);
+        request.onsuccess = () => resolve(request.result?.value ?? null);
         request.onerror = () => reject(request.error);
       });
     } finally {
       db.close();
     }
-  })).toBe('alice');
+  }, path);
+}
+
+test('Health preserves the first confirmed shell and draft while its background revalidation waits', async ({ page }) => {
+  const draft = 'Food draft entered as soon as Today appears';
+  await page.addInitScript(draft => {
+    const selector = 'input[aria-label="Log food or change this day"]';
+    const observer = new MutationObserver(() => {
+      const field = document.querySelector(selector);
+      if (!field) return;
+      observer.disconnect();
+      window.firstHealthDraftField = field;
+      field.focus();
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(field, draft);
+      field.dispatchEvent(new Event('input', { bubbles: true }));
+      window.firstHealthDraft = field.value;
+    });
+    observer.observe(document, { childList: true, subtree: true });
+  }, draft);
+  let contextReads = 0;
+  let warmContextRoute;
+  await page.route('**/health/context', route => {
+    if (++contextReads === 1) return route.fulfill({ json: { userId: 'alice' } });
+    if (contextReads === 3) warmContextRoute = route;
+  });
+  await page.goto('/health');
+  await expect(page.getByRole('main')).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Today', exact: true })).toHaveAttribute('aria-current', 'page');
+  await expect.poll(() => contextReads).toBe(2);
+  const field = page.getByRole('textbox', { name: 'Log food or change this day' });
+  expect(await field.evaluate(input => ({
+    sameField: input === window.firstHealthDraftField,
+    firstDraft: window.firstHealthDraft,
+    currentDraft: input.value,
+    focused: input === document.activeElement,
+  }))).toEqual({ sameField: true, firstDraft: draft, currentDraft: draft, focused: true });
+  await expect.poll(() => healthCacheValue(page, 'api/v1/health/context')).toMatchObject({ userId: 'alice' });
   await page.reload();
   await expect(page.getByRole('main')).toBeVisible();
+  await expect.poll(() => contextReads).toBe(3);
+  await warmContextRoute.fulfill({ json: { userId: 'alice', densityRevision: 'fixture-r2' } });
+  await expect.poll(() => healthCacheValue(page, 'api/v1/health/context'))
+    .toMatchObject({ userId: 'alice', densityRevision: 'fixture-r2' });
+  expect(contextReads).toBe(3);
+});
+
+test('Health drops the warm food and draft when a different owner is confirmed', async ({ page }) => {
+  const date = '2026-11-16';
+  const url = `/health?date=${date}`;
+  const dayPath = `api/v1/health/day?date=${date}`;
+  const contextReady = Promise.withResolvers();
+  const aliceDayHeld = Promise.withResolvers();
+  const aliceDayReady = Promise.withResolvers();
+  const bobDayHeld = Promise.withResolvers();
+  const bobDayReady = Promise.withResolvers();
+  let warm = false;
+  let owner = 'alice';
+  let warmContextReads = 0;
+  await page.route('**/health/context', async route => {
+    if (warm && ++warmContextReads === 1) {
+      await contextReady.promise;
+      owner = 'bob';
+    }
+    return route.fulfill({ json: { userId: owner } });
+  });
+  await page.route(`**/${dayPath}`, async route => {
+    const requestOwner = owner;
+    if (warm) {
+      if (requestOwner === 'alice') {
+        aliceDayHeld.resolve();
+        await aliceDayReady.promise;
+      } else {
+        bobDayHeld.resolve();
+        await bobDayReady.promise;
+      }
+    }
+    const row = { uuid: `${requestOwner}-fixture`, name: `${requestOwner} breakfast fixture`, mealTime: 'morning', date, calories: 120, grams: 100 };
+    return route.fulfill({ json: { date, items: [row], budget: { budget: 2000, remaining: 1880 } }, headers: { 'x-fixture-owner': requestOwner } });
+  });
+  const aliceFood = page.getByText('alice breakfast fixture', { exact: true });
+  const bobFood = page.getByText('bob breakfast fixture', { exact: true });
+  const field = page.getByRole('textbox', { name: 'Log food or change this day' });
+  try {
+    await page.goto(url);
+    await expect(aliceFood).toBeVisible();
+    await expect.poll(() => healthCacheValue(page, dayPath)).toMatchObject({ items: [{ uuid: 'alice-fixture' }] });
+    warm = true;
+    await page.reload();
+    await aliceDayHeld.promise;
+    await expect(aliceFood).toBeVisible();
+    await field.fill('Alice draft');
+
+    contextReady.resolve();
+    await bobDayHeld.promise;
+    await expect(aliceFood).toHaveCount(0);
+    await expect(field).toHaveValue('');
+    bobDayReady.resolve();
+    await expect(bobFood).toBeVisible();
+
+    const lateAlice = page.waitForResponse(response => response.url().endsWith(dayPath) && response.headers()['x-fixture-owner'] === 'alice');
+    aliceDayReady.resolve();
+    await lateAlice;
+    await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+    await expect(bobFood).toBeVisible();
+    await expect(aliceFood).toHaveCount(0);
+    expect(warmContextReads).toBe(2);
+  } finally {
+    contextReady.resolve();
+    aliceDayReady.resolve();
+    bobDayReady.resolve();
+  }
 });
 
 test('Health resets food log display after another tab clears local storage', async ({ page, context }) => {
@@ -733,7 +833,7 @@ test('Health activates one coach shortcut across tab and household changes', asy
     }
     expect(await shortcutMatches()).toBe(1);
     await navigate('/home');
-    await expect(page.getByRole('button', { name: 'Rooms', exact: true })).toBeVisible();
+    await expect(page.getByRole('main').getByText('No timeline lanes', { exact: true })).toBeVisible();
     expect(await shortcutMatches()).toBe(0);
   }
 });

@@ -164,7 +164,7 @@ function Section({
         // kind:'group' rows carry children. Gating on kind here would
         // silently drop the children from the screen.
         //
-        // CROSS-REFERENCE: EntryEditSheet.jsx's group mode and the backend
+        // CROSS-REFERENCE: EntryEditor.jsx's group mode and the backend
         // cascade (HealthOperations#cascadeMealTimeToChildren) gate the
         // OPPOSITE way — strictly on `row.kind === 'group'`, never on "has
         // children" — because they must never act on a row nothing marked
@@ -189,7 +189,7 @@ function Section({
             {/* `children` is attached to the row object here — not read
                 by EntryRow's own rendering (which uses rollupKcal/isGroup
                 for display) — purely so the tap handler forwards them to
-                whatever opens next (EntryEditSheet's group mode needs the
+                whatever opens next (EntryEditor's group mode needs the
                 full child list to scale/move/delete them together). */}
             {renderRow({ row:{...row,children},densityRow:{kind:'group',children},onTap:onRowTap,onConfirm,onRequestDelete,onChanged,measured,kcalShare:entryShares[entryIndex],
               isGroup:true,expanded:isOpen,onToggle:()=>toggle(key, isOpen),rollupKcal:rollup.calories })}

@@ -156,7 +156,7 @@ describe('TemplatePicker', () => {
 //
 // The sheet's WRITE paths were checked too, because a surface can be replaced
 // and still strand the things that fed it: `TodayView`'s "Save as meal" and
-// `EntryEditSheet`'s "Save as meal" both wrote saved meals, which nothing would
+// `EntryEditor`'s "Save as meal" both wrote saved meals, which nothing would
 // list any more. Both now write templates, pinned in their own test files.
 // Copy-day-to-today still uses the meals endpoints as ephemeral transport
 // (create → log → delete), which nothing ever lists.

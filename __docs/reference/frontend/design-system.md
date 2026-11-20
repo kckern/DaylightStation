@@ -372,6 +372,7 @@ entry count and total bytes.
 - **Restored entries are stale by definition.** Every reader revalidates
   them, and the prefetcher does not treat them as fresh.
 - **The disk copy belongs to one person.** Call the handle's `setOwner(id)` after server confirmation, including when the restored owner matches. A first claim or a change of owner retires matching cached data, pending writes and prefetches, and revalidates mounted readers. IndexedDB checks the persisted owner inside each write transaction.
+- **Publish the confirmed context when a claim clears it.** Health uses `patchApiResource` to publish the exact context response immediately after its cache owner changes. The mounted shell can keep the current draft and focus during revalidation. A matching owner only needs `primeApiResource` to seed persistence. [Health cache owner](../../../__app_modules/wellness/health/browser/healthCache.js)
 - **Dispose the registration** to release its listeners, discard its pending
   work and clear memory for just its prefixes.
 - **Failures degrade to a normal network load.** No IndexedDB, a blocked

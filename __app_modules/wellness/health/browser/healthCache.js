@@ -5,7 +5,7 @@
 // a spinner until the slowest request answers. See
 // registerResourcePersistence in lib/hooks/useApiResource.js.
 import { useEffect, useState } from 'react';
-import { primeApiResource, registerResourcePersistence } from "../../../../frontend/src/lib/hooks/useApiResource.js";
+import { patchApiResource, primeApiResource, registerResourcePersistence } from "../../../../frontend/src/lib/hooks/useApiResource.js";
 import { createIdbResourceStore } from "../../../../frontend/src/lib/hooks/persistentResourceStore.js";
 import { createAppLogger } from "../../../../frontend/src/lib/ui/createAppLogger.js";
 
@@ -51,10 +51,16 @@ export function useHealthCacheHydrated() {
  * the previous person's snapshots and refetches.
  */
 export function claimHealthCacheOwner(context) {
+  const previousOwner = registration?.owner;
   if (registration?.setOwner(context.userId)) logger.info('cache.owner-changed', { userId: context.userId });
-  // Owner changes clear the namespace, including the context reader. Only
-  // the server-confirmed context can seed the new scope before revalidation.
-  primeApiResource(HEALTH_CONTEXT_PATH, context);
+  if (previousOwner !== registration?.owner) {
+    // Publish the confirmed context to the reader in the same claim that
+    // clears the namespace, so the current shell survives revalidation.
+    patchApiResource(HEALTH_CONTEXT_PATH, () => context, { create: true });
+  } else {
+    // A same-owner confirmation seeds persistence without another revalidation.
+    primeApiResource(HEALTH_CONTEXT_PATH, context);
+  }
 }
 
 /**

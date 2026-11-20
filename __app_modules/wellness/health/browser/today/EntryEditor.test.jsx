@@ -2,14 +2,14 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { MantineProvider } from '@mantine/core';
 import { DismissStackProvider } from '@/lib/ui';
-import { EntryEditSheet } from "./EntryEditSheet.jsx";
+import { EntryEditor } from "./EntryEditor.jsx";
 
 const apiMock = vi.fn();
 vi.mock("../../../../../frontend/src/lib/api.mjs", () => ({ DaylightAPI: (...args) => apiMock(...args) }));
 const row = { uuid: 'r1', foodId: 'f1', name: 'Eggs', date: '2026-09-04', version: 3,
   calories: 140, protein: 12, carbs: 1, fat: 10, fiber: 5, sodium: 300, grams: 100, mealTime: 'morning' };
 const wrap = ui => <MantineProvider><DismissStackProvider>{ui}</DismissStackProvider></MantineProvider>;
-const mount = (props = {}) => render(wrap(<EntryEditSheet row={row} open onClose={() => {}} onChanged={() => {}} {...props} />));
+const mount = (props = {}) => render(wrap(<EntryEditor row={row} open onClose={() => {}} onChanged={() => {}} {...props} />));
 const writes = () => apiMock.mock.calls.filter(([, , method]) => method === 'PUT');
 beforeEach(() => apiMock.mockReset().mockResolvedValue({ items: [] }));
 
@@ -102,7 +102,7 @@ describe('entry correction dialog', () => {
   it('changes to another row start a new draft, without leaked icon or errors', () => {
     const view = mount();
     fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'Unsaved' } });
-    view.rerender(wrap(<EntryEditSheet row={{ ...row, uuid: 'r2', name: 'Toast' }} open onClose={() => {}} onChanged={() => {}} />));
+    view.rerender(wrap(<EntryEditor row={{ ...row, uuid: 'r2', name: 'Toast' }} open onClose={() => {}} onChanged={() => {}} />));
     expect(screen.getByLabelText('Name').value).toBe('Toast');
   });
 
