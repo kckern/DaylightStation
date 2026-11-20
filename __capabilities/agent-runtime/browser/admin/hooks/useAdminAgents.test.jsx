@@ -18,7 +18,7 @@ describe('useAdminAgents resource read', () => {
       { id: 'coach', description: 'Daily coach' },
     ]), { timeout: 1000 });
     expect(api).toHaveBeenCalledTimes(1);
-    expect(api).toHaveBeenCalledWith('/api/v1/agents');
+    expect(api).toHaveBeenCalledWith('/api/v1/agents', {}, 'GET', { signal: expect.any(AbortSignal) });
   });
 
 });

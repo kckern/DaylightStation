@@ -43,7 +43,9 @@ it('preserves the agent assignment read across member switches and retires late 
   expect(screen.queryByText('digest: Completed')).toBeNull();
   const calls = DaylightAPI.mock.calls;
   expect(calls.filter(([path]) => path.endsWith('/assignments'))).toHaveLength(1);
-  expect(calls.filter(([path, , method]) => path.endsWith('/memory/alice') && !method)).toHaveLength(1);
+  expect(calls.filter(([path, , method]) => path.endsWith('/memory/alice') && method === 'GET')).toEqual([
+    ['/api/v1/agents/coach/memory/alice', {}, 'GET', { signal: expect.any(AbortSignal) }],
+  ]);
 });
 
 it('ignores late memory and assignment reads from a departed agent', async () => {

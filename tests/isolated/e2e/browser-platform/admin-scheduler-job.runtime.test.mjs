@@ -103,6 +103,145 @@ for (const [action, destination] of [['edit', 'roster'], ['edit', 'job'], ['dele
   });
 }
 
+async function installHeldJobWrite(page, method) {
+  const started = Promise.withResolvers();
+  const release = Promise.withResolvers();
+  const calls = [];
+  const payloads = [];
+  const endpoint = '/api/v1/admin/scheduler/jobs';
+  let job = { id: 'a', name: 'Original job', module: 'fixture', schedule: '0 * * * *', dependencies: ['first'], window: 10, runtime: null };
+  await page.routeWebSocket('**/*', () => {});
+  await page.route('**/api/**', async route => {
+    const request = route.request();
+    const { pathname } = new URL(request.url());
+    if (pathname === endpoint) return route.fulfill({ json: job ? [job] : [] });
+    if (pathname === `${endpoint}/a`) {
+      calls.push(request.method());
+      if (request.method() === 'GET') return route.fulfill({ json: job });
+      if (request.method() === method) {
+        payloads.push(request.postDataJSON());
+        if (payloads.length === 1) {
+          started.resolve();
+          await release.promise;
+          return route.fulfill({ status: 409, json: { error: 'Change refused' } });
+        }
+        job = method === 'DELETE' ? null : { ...job, ...request.postDataJSON() };
+        return route.fulfill({ json: { ok: true } });
+      }
+    }
+    return route.fulfill({ json: pathname.endsWith('/supervision/bootstrap') ? { enabled: false } : {} });
+  });
+  await page.goto('/admin/system/scheduler/a');
+  return { started, release, calls, payloads };
+}
+
+test('Scheduler Edit keeps keyboard focus and freezes the submitted draft until a refused save can be retried', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 850 });
+  const { started, release, calls, payloads } = await installHeldJobWrite(page, 'PUT');
+  const opener = page.getByRole('button', { name: 'Edit', exact: true });
+  await opener.press('Enter');
+  const dialog = page.getByRole('dialog', { name: 'Edit Job' });
+  const name = dialog.getByRole('textbox', { name: 'Name' });
+  const save = dialog.getByRole('button', { name: 'Save', exact: true });
+  await name.fill('Submitted job');
+  await save.press('Enter');
+  await started.promise;
+  try {
+    await expect(save).toBeFocused();
+    await expect(save).toHaveAttribute('aria-busy', 'true');
+    await page.keyboard.press('Enter');
+    await name.press('End');
+    await page.keyboard.insertText(' discarded edit');
+    await expect(name).toHaveValue('Submitted job');
+    await expect(dialog.getByRole('textbox', { name: 'Window (minutes)' })).toHaveAttribute('readonly', '');
+    await save.focus();
+    await page.keyboard.press('Escape');
+    await expect(dialog).toBeVisible();
+    expect(calls).toEqual(['GET', 'PUT']);
+  } finally {
+    release.resolve();
+  }
+  await expect(dialog.getByRole('alert', { name: 'Save Error' })).toContainText('Change refused');
+  await expect(save).toBeFocused();
+  await expect(name).toHaveValue('Submitted job');
+  await name.fill('Corrected job');
+  await name.press('Enter');
+  await expect(dialog).toBeHidden();
+  await expect(page.getByText('Corrected job', { exact: true })).toBeVisible();
+  await expect(opener).toBeFocused();
+  expect(calls).toEqual(['GET', 'PUT', 'PUT', 'GET']);
+  expect(payloads).toEqual([
+    { name: 'Submitted job', module: 'fixture', schedule: '0 * * * *', dependencies: ['first'], window: 10 },
+    { name: 'Corrected job', module: 'fixture', schedule: '0 * * * *', dependencies: ['first'], window: 10 },
+  ]);
+});
+
+test('Scheduler Delete keeps the pending confirmation focused and restores the opener after refusal', async ({ page }) => {
+  const { started, release, calls } = await installHeldJobWrite(page, 'DELETE');
+  const opener = page.getByRole('button', { name: 'Delete', exact: true });
+  await opener.press('Enter');
+  const dialog = page.getByRole('dialog', { name: 'Delete Job' });
+  const remove = dialog.getByRole('button', { name: 'Delete', exact: true });
+  await remove.press('Enter');
+  await started.promise;
+  try {
+    await expect(remove).toBeFocused();
+    await expect(remove).toHaveAttribute('aria-busy', 'true');
+    await page.keyboard.press('Enter');
+    await page.keyboard.press('Escape');
+    await expect(dialog).toBeVisible();
+    expect(calls).toEqual(['GET', 'DELETE']);
+  } finally {
+    release.resolve();
+  }
+  await expect(dialog).toBeHidden();
+  await expect(page.getByRole('alert', { name: 'Error' })).toContainText('Change refused');
+  await expect(opener).toBeFocused();
+  await opener.press('Enter');
+  await expect(dialog).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(dialog).toBeHidden();
+  await expect(opener).toBeFocused();
+  expect(calls).toEqual(['GET', 'DELETE']);
+});
+
+test('Scheduler Enter from Window respects the minimum without changing the pending field on blur', async ({ page }) => {
+  const { started, release, payloads } = await installHeldJobWrite(page, 'PUT');
+  await page.getByRole('button', { name: 'Edit', exact: true }).press('Enter');
+  const dialog = page.getByRole('dialog', { name: 'Edit Job' });
+  const windowInput = dialog.getByRole('textbox', { name: 'Window (minutes)' });
+  await windowInput.fill('-7');
+  await windowInput.press('Enter');
+  await started.promise;
+  try {
+    await expect(windowInput).toHaveAttribute('readonly', '');
+    await page.keyboard.press('Tab');
+    await expect(windowInput).toHaveValue('-7');
+    expect(payloads[0].window).toBe(0);
+  } finally {
+    release.resolve();
+  }
+  await expect(dialog.getByRole('alert', { name: 'Save Error' })).toContainText('Change refused');
+  await expect(windowInput).toHaveValue('-7');
+});
+
+test('Scheduler focuses the roster when a successful deletion removes the dialog opener', async ({ page }) => {
+  const { started, release } = await installHeldJobWrite(page, 'DELETE');
+  const opener = page.getByRole('button', { name: 'Delete', exact: true });
+  const dialog = page.getByRole('dialog', { name: 'Delete Job' });
+  const remove = dialog.getByRole('button', { name: 'Delete', exact: true });
+  await opener.press('Enter');
+  await remove.press('Enter');
+  await started.promise;
+  release.resolve();
+  await expect(dialog).toBeHidden();
+  await opener.press('Enter');
+  await remove.press('Enter');
+  await expect(page).toHaveURL(/\/admin\/system\/scheduler$/);
+  await expect(page.getByRole('region', { name: 'Scheduler jobs' })).toBeFocused();
+  await expect(page.getByText('No scheduler jobs found. Create one to get started.')).toBeVisible();
+});
+
 for (const detail of [false, true]) {
   test(`Scheduler ${detail ? 'job detail' : 'roster'} keeps Run focused through refetch and GET-only Retry`, async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 850 });

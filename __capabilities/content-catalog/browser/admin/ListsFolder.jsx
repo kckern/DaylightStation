@@ -18,7 +18,7 @@ import {
 import { useAdminLists } from "../../../../frontend/src/hooks/admin/useAdminLists.js";
 import { getChildLogger } from "../../../../frontend/src/lib/logging/singleton.js";
 import { runWithFeedback, showUndoToast } from "../../../../frontend/src/modules/Admin/shared/feedback.js";
-import ConfirmModal from "../../../../frontend/src/modules/Admin/shared/ConfirmModal.jsx";
+import { ConfirmModal } from "../../../../frontend/src/lib/ui/ConfirmModal.jsx";
 import ListsItemRow from "./ListsItemRow.jsx";
 import { useRetryRegion } from '../../../../frontend/src/lib/ui/useRetryRegion.js';
 import { ListReadError } from './ListReadError.jsx';

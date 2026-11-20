@@ -20,6 +20,8 @@ function renderIndex() {
   );
 }
 
+const rosterRead = ['/api/v1/agents', {}, 'GET', { signal: expect.any(AbortSignal) }];
+
 describe('AgentsIndex', () => {
   beforeEach(() => { apiState.calls = []; apiState.resolve = null; });
 
@@ -30,7 +32,7 @@ describe('AgentsIndex', () => {
 
     expect(await screen.findByRole('link', { name: /coach/ })).toHaveAttribute('href', '/admin/agents/coach');
     expect(screen.getByText('Daily coach')).toBeInTheDocument();
-    expect(apiState.calls).toEqual([['/api/v1/agents']]);
+    expect(apiState.calls).toEqual([rosterRead]);
   });
 
   it('offers a retry for an unavailable directory and shows empty only after a successful read', async () => {
@@ -44,6 +46,6 @@ describe('AgentsIndex', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Retry' }));
     expect(await screen.findByText('No agents registered')).toBeInTheDocument();
     expect(screen.queryByRole('alert')).toBeNull();
-    expect(apiState.calls).toEqual([['/api/v1/agents'], ['/api/v1/agents']]);
+    expect(apiState.calls).toEqual([rosterRead, rosterRead]);
   });
 });

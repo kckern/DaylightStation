@@ -4,6 +4,7 @@ export { AppThemeProvider } from './AppThemeProvider.jsx';
 export { AppChrome } from './AppChrome.jsx';
 export { Sheet } from './Sheet.jsx';
 export { ActionMenu } from './ActionMenu.jsx';
+export { ConfirmModal } from './ConfirmModal.jsx';
 export { useOverlayScrollLock } from './useOverlayScrollLock.js';
 export { useSheetSubmission } from './useSheetSubmission.js';
 export { useFocusAfterRemoval, useFocusRegion, useRetryRegion } from './useRetryRegion.js';

@@ -16,7 +16,7 @@ The admin panel is built from a small set of reusable primitives that handle con
 | `CrudTable` | `frontend/src/modules/Admin/shared/CrudTable.jsx` |
 | `YamlEditor` | `frontend/src/modules/Admin/shared/YamlEditor.jsx` |
 | `TagInput` | `frontend/src/modules/Admin/shared/TagInput.jsx` |
-| `ConfirmModal` | `frontend/src/modules/Admin/shared/ConfirmModal.jsx` |
+| `ConfirmModal` | `frontend/src/lib/ui/ConfirmModal.jsx` |
 | `useAdminConfig` | `frontend/src/hooks/admin/useAdminConfig.js` |
 | Config API router | `__backend/src/4_api/v1/routers/admin/config.mjs` |
 
@@ -151,7 +151,7 @@ Multi-value tag input for email lists, keywords, labels, and similar collections
 
 ### ConfirmModal
 
-Confirmation dialog for destructive actions.
+Shared confirmation dialog for destructive actions. The caller controls whether it is open and how the command outcome is presented.
 
 **Props:**
 
@@ -164,7 +164,8 @@ Confirmation dialog for destructive actions.
 | `message` | `string` | -- | Body text explaining the action |
 | `impact` | `string` | -- | Optional yellow warning text (e.g. "2 screens reference this device.") |
 | `confirmLabel` | `string` | `"Delete"` | Confirm button text |
-| `loading` | `boolean` | `false` | Show loading state on confirm button |
+| `loading` | `boolean` | `false` | While the command is pending, keep Confirm focusable and block repeat activation and dismissal from the dialog |
+| `closeOnEscape` | `boolean` | `true` | Allow Escape to dismiss an idle dialog |
 
 ---
 

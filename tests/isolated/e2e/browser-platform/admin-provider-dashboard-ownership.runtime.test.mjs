@@ -129,6 +129,7 @@ for (const change of ['member', 'date']) {
   test('Agent Dashboard keeps briefing and delete target with selected ' + change, async ({ page }) => {
     const oldRead = deferred();
     const started = deferred();
+    const releaseDelete = deferred();
     const writes = [];
     let firstPath;
     await page.routeWebSocket('**/*', () => {});
@@ -144,6 +145,7 @@ for (const change of ['member', 'date']) {
       if (path.includes('/health-dashboard/')) {
         if (request.method() === 'DELETE') {
           writes.push(path);
+          await releaseDelete.promise;
           return route.fulfill({ json: { ok: true } });
         }
         if (!firstPath) {
@@ -176,8 +178,19 @@ for (const change of ['member', 'date']) {
     await page.getByRole('button', { name: 'Delete', exact: true }).click();
     const dialog = page.getByRole('dialog');
     await expect(dialog).toContainText(change === 'member' ? 'bob' : '2026-10-01');
-    await dialog.getByRole('button', { name: 'Delete', exact: true }).click();
-    await expect.poll(() => writes.length).toBe(1);
-    expect(writes[0]).toContain(selectedPath.replace('/api/v1', ''));
+    const remove = dialog.getByRole('button', { name: 'Delete', exact: true });
+    await remove.press('Enter');
+    try {
+      await expect.poll(() => writes).toEqual([selectedPath]);
+      await expect(remove).toBeFocused();
+      await expect(remove).toHaveAttribute('aria-busy', 'true');
+      await page.keyboard.press('Enter');
+      await page.keyboard.press('Escape');
+      await expect(dialog).toBeVisible();
+    } finally {
+      releaseDelete.resolve();
+    }
+    await expect(dialog).toBeHidden();
+    expect(writes).toEqual([selectedPath]);
   });
 }

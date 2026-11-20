@@ -12,11 +12,12 @@ test('Admin Agent Clear All retires an older working-memory read', async ({ page
   let reads = 0;
   let cleared = false;
   let assignments = 0;
+  const releaseClear = Promise.withResolvers();
   await page.context().route('**/*', route => (
     new URL(route.request().url()).origin === origin ? route.fallback() : route.abort()
   ));
   await page.routeWebSocket('**/*', () => {});
-  await page.route('**/api/**', route => {
+  await page.route('**/api/**', async route => {
     const request = route.request();
     const path = new URL(request.url()).pathname;
     if (path === '/api/v1/admin/household') return route.fulfill({ json: { members: [{ username: 'alice' }] } });
@@ -28,7 +29,10 @@ test('Admin Agent Clear All retires an older working-memory read', async ({ page
       const method = request.method();
       calls.push([method, path]);
       if (method === 'DELETE') {
-        if (path === memoryPath) cleared = true;
+        if (path === memoryPath) {
+          await releaseClear.promise;
+          cleared = true;
+        }
         return route.fulfill({ json: {} });
       }
       if (method === 'GET' && path === memoryPath) {
@@ -47,7 +51,19 @@ test('Admin Agent Clear All retires an older working-memory read', async ({ page
   await page.getByRole('button', { name: 'Delete memory entry note' }).click();
   await expect.poll(() => Boolean(held)).toBe(true);
   await page.getByRole('button', { name: 'Clear All', exact: true }).click();
-  await page.getByRole('dialog', { name: 'Clear All Memory' }).getByRole('button', { name: 'Clear All', exact: true }).click();
+  const dialog = page.getByRole('dialog', { name: 'Clear All Memory' });
+  const clear = dialog.getByRole('button', { name: 'Clear All', exact: true });
+  await clear.press('Enter');
+  try {
+    await expect.poll(() => calls.filter(([method, path]) => method === 'DELETE' && path === memoryPath)).toHaveLength(1);
+    await expect(clear).toBeFocused();
+    await expect(clear).toHaveAttribute('aria-busy', 'true');
+    await page.keyboard.press('Enter');
+    await page.keyboard.press('Escape');
+    await expect(dialog).toBeVisible();
+  } finally {
+    releaseClear.resolve();
+  }
   await expect.poll(() => cleared).toBe(true);
   await expect(page.getByText('No memory entries')).toBeVisible();
   await expect.poll(() => held.request().failure()).not.toBeNull();

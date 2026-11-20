@@ -5,7 +5,7 @@ import {
 import { IconPlus, IconTrash } from '@tabler/icons-react';
 import { SectionCard } from '../../../../../frontend/src/lib/ui/cards.jsx';
 import ConfigFormWrapper from "../../../../../frontend/src/modules/Admin/shared/ConfigFormWrapper.jsx";
-import ConfirmModal from "../../../../../frontend/src/modules/Admin/shared/ConfirmModal.jsx";
+import { ConfirmModal } from "../../../../../frontend/src/lib/ui/ConfirmModal.jsx";
 import { configPath } from "../../../../../frontend/src/modules/Admin/utils/adminConfigPaths.js";
 
 const US_TIMEZONES = [

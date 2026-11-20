@@ -10,7 +10,8 @@ import { useApiResource } from '../../../../frontend/src/lib/hooks/useApiResourc
 import getLogger from "../../../../frontend/src/lib/logging/Logger.js";
 import { triggerAssignment } from "./hooks/useAdminAgents.js";
 import { useAgentMemory } from "./hooks/useAgentMemory.js";
-import { ConfirmModal } from "../../../../frontend/src/modules/Admin/shared/index.js";
+import { ConfirmModal } from "../../../../frontend/src/lib/ui/ConfirmModal.jsx";
+import { useSheetSubmission } from '../../../../frontend/src/lib/ui/useSheetSubmission.js';
 
 function OverviewTab({ agentId, userId }) {
   const assignments = useApiResource(agentId ? `/api/v1/agents/${encodeURIComponent(agentId)}/assignments` : null, {
@@ -33,6 +34,7 @@ function MemberOverview({ agentId, userId, assignmentRead }) {
   const [runningId, setRunningId] = useState(null);
   const [runResult, setRunResult] = useState(null);
   const [clearConfirmOpen, setClearConfirmOpen] = useState(false);
+  const { run: submitClear, saving: clearing } = useSheetSubmission(() => setClearConfirmOpen(false), setActionError);
 
   const handleRunAssignment = useCallback(async (assignmentId) => {
     setRunningId(assignmentId);
@@ -53,13 +55,10 @@ function MemberOverview({ agentId, userId, assignmentRead }) {
     catch (error) { setActionError(error); }
   };
 
-  const handleClearAll = async () => {
+  const handleClearAll = () => submitClear(() => {
     setActionError(null);
-    try {
-      await clearAll();
-      setClearConfirmOpen(false);
-    } catch (error) { setActionError(error); }
-  };
+    return clearAll();
+  });
 
   const readError = assignmentError || memError;
   const error = actionError || (readError !== dismissedError && readError);
@@ -232,6 +231,7 @@ function MemberOverview({ agentId, userId, assignmentRead }) {
         title="Clear All Memory"
         message={`This will delete all working memory entries for ${agentId} / ${userId}. The agent will start fresh on its next run.`}
         confirmLabel="Clear All"
+        loading={clearing}
       />
     </Stack>
   );

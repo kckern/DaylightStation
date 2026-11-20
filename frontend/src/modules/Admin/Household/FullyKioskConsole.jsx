@@ -41,7 +41,7 @@ import {
   IconSettings,
   IconVolume,
 } from '@tabler/icons-react';
-import ConfirmModal from '../shared/ConfirmModal.jsx';
+import { ConfirmModal } from '@/lib/ui/ConfirmModal.jsx';
 import { notifyFailure, notifySuccess } from '../shared/feedback.js';
 import fullyKioskAdminApi from './fullyKioskAdminApi.js';
 import './FullyKioskConsole.scss';

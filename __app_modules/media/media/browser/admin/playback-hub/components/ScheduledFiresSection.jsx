@@ -18,7 +18,7 @@ import {
   IconChevronUp,
 } from '@tabler/icons-react';
 import { LabeledContentPicker } from "./LabeledContentPicker.jsx";
-import ConfirmModal from "../../../../../../../frontend/src/modules/Admin/shared/ConfirmModal.jsx";
+import { ConfirmModal } from "../../../../../../../frontend/src/lib/ui/ConfirmModal.jsx";
 import { ScheduledFireSummary } from "./ScheduledFireSummary.jsx";
 
 const DAY_PRESETS = ['all', 'weekdays', 'weekends'];

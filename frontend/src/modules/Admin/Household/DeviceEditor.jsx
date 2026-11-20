@@ -7,7 +7,7 @@ import {
 } from '@tabler/icons-react';
 import { useApiResource } from '../../../lib/hooks/useApiResource.js';
 import { DaylightAPI } from '../../../lib/api.mjs';
-import ConfirmModal from '../shared/ConfirmModal.jsx';
+import { ConfirmModal } from '@/lib/ui/ConfirmModal.jsx';
 import SaveBar from '../shared/SaveBar.jsx';
 import EditorReadRegion from '../shared/EditorReadRegion.jsx';
 import { useUnsavedGuard } from '../shared/useUnsavedGuard.js';

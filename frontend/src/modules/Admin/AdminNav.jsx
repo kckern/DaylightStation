@@ -3,7 +3,7 @@ import { NavLink as RouterNavLink, useLocation, useNavigate } from 'react-router
 import { NavLink, Stack, Text, Box } from '@mantine/core';
 import { useUnsavedGuardRegistry } from './shared/useUnsavedGuardRegistry.js';
 import { useDismissLayer } from '../../lib/ui/dismiss/useDismissLayer.js';
-import ConfirmModal from './shared/ConfirmModal.jsx';
+import { ConfirmModal } from '@/lib/ui/ConfirmModal.jsx';
 import getLogger from '../../lib/logging/Logger.js';
 import {
   IconMenu2, IconPlayerRecord, IconCalendarEvent,

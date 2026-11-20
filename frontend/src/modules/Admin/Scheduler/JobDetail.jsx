@@ -1,6 +1,6 @@
-import React, { useLayoutEffect, useRef, useState, useCallback } from 'react';
+import React, { useLayoutEffect, useRef, useState } from 'react';
 import { FormDialog } from '@/lib/ui/FormDialog.jsx';
-import { EmptyState, ErrorState, LoadingState, SubmitButton, useRetryRegion, useSheetSubmission } from '@/lib/ui';
+import { ConfirmModal, EmptyState, ErrorState, LoadingState, SubmitButton, useRetryRegion, useSheetSubmission } from '@/lib/ui';
 import { Link, useParams, useNavigate } from 'react-router-dom';
 import {
   Stack, Group, Text, Badge, Button, Paper, Alert,
@@ -12,7 +12,6 @@ import {
 import { DaylightAPI } from '../../../lib/api.mjs';
 import { ADMIN_SCHEDULER_JOBS_PATH, schedulerJobPath, triggerSchedulerJob } from '../../../hooks/admin/useAdminScheduler.js';
 import { invalidateApiResources, useApiResource } from '../../../lib/hooks/useApiResource.js';
-import ConfirmModal from '../shared/ConfirmModal.jsx';
 import { notifySuccess, notifyFailure } from '../shared/feedback.js';
 
 function cronToHuman(expr) {
@@ -95,12 +94,24 @@ function JobDetailView({ jobId }) {
   // Edit modal state
   const [editOpen, setEditOpen] = useState(false);
   const [editForm, setEditForm] = useState({ name: '', module: '', schedule: '', dependencies: '', window: 0 });
-  const [editSaving, setEditSaving] = useState(false);
-  const [editError, setEditError] = useState(null);
+  const closeEdit = () => setEditOpen(false);
+  const { submit: submitEdit, saving: editSaving, failure: editFailure, clearFailure: clearEditFailure } = useSheetSubmission(() => {
+    closeEdit();
+    setActionError(null);
+  });
 
   // Delete modal state
   const [deleteOpen, setDeleteOpen] = useState(false);
-  const [deleteLoading, setDeleteLoading] = useState(false);
+  const { run: submitDelete, saving: deleteLoading } = useSheetSubmission(() => {
+    notifySuccess({ title: 'Job deleted', message: jobId });
+    navigate('/admin/system/scheduler', { state: { focusJobs: true } });
+  }, error => {
+    if (!mounted.current) return;
+    const message = error.message || 'Failed to delete job';
+    setActionError(message);
+    notifyFailure({ title: 'Delete failed', message });
+    setDeleteOpen(false);
+  });
 
   const handleRunNow = () => submitRun(async () => {
     setActionError(null);
@@ -124,7 +135,7 @@ function JobDetailView({ jobId }) {
     }
   }, { valid: !loading && !readError, onSuccess: null });
 
-  const openEditModal = useCallback(() => {
+  const openEditModal = () => {
     if (!job) return;
     setEditForm({
       name: job.name || '',
@@ -133,52 +144,26 @@ function JobDetailView({ jobId }) {
       dependencies: Array.isArray(job.dependencies) ? job.dependencies.join(', ') : (job.dependencies || ''),
       window: job.window || 0
     });
-    setEditError(null);
+    clearEditFailure();
     setEditOpen(true);
-  }, [job]);
+  };
 
-  const handleEditSave = useCallback(async () => {
-    setEditSaving(true);
-    setEditError(null);
-    try {
-      const deps = editForm.dependencies
-        ? editForm.dependencies.split(',').map(d => d.trim()).filter(Boolean)
-        : [];
-      await DaylightAPI(path, {
-        name: editForm.name,
-        module: editForm.module,
-        schedule: editForm.schedule,
-        dependencies: deps,
-        window: editForm.window
-      }, 'PUT');
-      refreshJobConfiguration(path);
-      if (!mounted.current) return;
-      setEditOpen(false);
-      setActionError(null);
-    } catch (err) {
-      if (mounted.current) setEditError(err.message || 'Failed to save changes');
-    } finally {
-      if (mounted.current) setEditSaving(false);
-    }
-  }, [path, editForm]);
+  const setEditField = (field, value) => {
+    if (!editSaving) setEditForm(previous => ({ ...previous, [field]: value }));
+  };
 
-  const handleDelete = useCallback(async () => {
-    setDeleteLoading(true);
-    try {
-      await DaylightAPI(path, {}, 'DELETE');
-      refreshJobConfiguration(path);
-      if (!mounted.current) return;
-      notifySuccess({ title: 'Job deleted', message: jobId });
-      navigate('/admin/system/scheduler');
-    } catch (err) {
-      if (!mounted.current) return;
-      const msg = err.message || 'Failed to delete job';
-      setActionError(msg);
-      notifyFailure({ title: 'Delete failed', message: msg });
-      setDeleteLoading(false);
-      setDeleteOpen(false);
-    }
-  }, [path, jobId, navigate]);
+  const handleEditSave = event => submitEdit(event, async () => {
+    const dependencies = editForm.dependencies.split(',').map(dependency => dependency.trim()).filter(Boolean);
+    const minutes = Number(editForm.window);
+    const window = Number.isFinite(minutes) ? Math.max(0, minutes) : 0;
+    await DaylightAPI(path, { ...editForm, dependencies, window }, 'PUT');
+    refreshJobConfiguration(path);
+  });
+
+  const handleDelete = () => submitDelete(async () => {
+    await DaylightAPI(path, {}, 'DELETE');
+    refreshJobConfiguration(path);
+  });
 
   const runtime = job?.runtime || null;
   const details = job && (
@@ -293,52 +278,60 @@ function JobDetailView({ jobId }) {
       {/* Edit Modal */}
       <FormDialog
         opened={editOpen}
-        onClose={() => setEditOpen(false)}
+        onClose={closeEdit}
+        closeOnEscape={!editSaving}
+        closeOnClickOutside={!editSaving}
+        closeButtonProps={{ disabled: editSaving }}
         title="Edit Job"
         centered
         size="md"
       >
-        <Stack gap="sm">
-          {editError && (
+        <Stack component="form" gap="sm" onSubmit={handleEditSave}>
+          {editFailure && (
             <Alert icon={<IconAlertCircle size={16} />} color="red" title="Save Error">
-              {editError}
+              {editFailure.message || 'Failed to save changes'}
             </Alert>
           )}
           <TextInput
             label="Name"
             value={editForm.name}
-            onChange={(e) => setEditForm(prev => ({ ...prev, name: e.currentTarget.value }))}
+            readOnly={editSaving}
+            onChange={event => setEditField('name', event.currentTarget.value)}
           />
           <TextInput
             label="Module"
             value={editForm.module}
-            onChange={(e) => setEditForm(prev => ({ ...prev, module: e.currentTarget.value }))}
+            readOnly={editSaving}
+            onChange={event => setEditField('module', event.currentTarget.value)}
           />
           <TextInput
             label="Schedule (cron)"
             description="Standard 5-field cron expression"
             value={editForm.schedule}
-            onChange={(e) => setEditForm(prev => ({ ...prev, schedule: e.currentTarget.value }))}
+            readOnly={editSaving}
+            onChange={event => setEditField('schedule', event.currentTarget.value)}
           />
           <TextInput
             label="Dependencies"
             description="Comma-separated list of job IDs"
             value={editForm.dependencies}
-            onChange={(e) => setEditForm(prev => ({ ...prev, dependencies: e.currentTarget.value }))}
+            readOnly={editSaving}
+            onChange={event => setEditField('dependencies', event.currentTarget.value)}
           />
           <NumberInput
             label="Window (minutes)"
             value={editForm.window}
-            onChange={(val) => setEditForm(prev => ({ ...prev, window: val || 0 }))}
+            readOnly={editSaving}
+            onChange={value => setEditField('window', value || 0)}
             min={0}
           />
           <Group justify="flex-end" gap="sm" mt="md">
-            <Button variant="subtle" onClick={() => setEditOpen(false)} disabled={editSaving}>
+            <Button type="button" variant="subtle" onClick={closeEdit} disabled={editSaving}>
               Cancel
             </Button>
-            <Button onClick={handleEditSave} loading={editSaving}>
+            <SubmitButton as={Button} pending={editSaving}>
               Save
-            </Button>
+            </SubmitButton>
           </Group>
         </Stack>
       </FormDialog>

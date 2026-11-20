@@ -377,9 +377,10 @@ for (const [fixture, removing] of [...adminCases.map(fixture => [fixture, false]
     await link.click();
     const item = page.getByText(fixture.row, { exact: true });
     const dialog = page.getByRole('dialog');
+    const remove = dialog.getByRole('button', { name: 'Remove', exact: true });
     if (removing) {
       await page.getByRole('row').filter({ hasText: fixture.row }).getByRole('button', { name: 'Remove' }).click();
-      await dialog.getByRole('button', { name: 'Remove', exact: true }).click();
+      await remove.press('Enter');
     } else {
       await page.getByRole('button', { name: fixture.open, exact: true }).click();
       for (const [label, value] of Object.entries(fixture.fields)) await dialog.getByLabel(label).fill(value);
@@ -388,6 +389,13 @@ for (const [fixture, removing] of [...adminCases.map(fixture => [fixture, false]
     const draftField = dialog.getByLabel(Object.keys(fixture.fields)[0]);
     try {
       await expect.poll(() => requests).toEqual(['GET', method]);
+      if (removing) {
+        await expect(remove).toBeFocused();
+        await expect(remove).toHaveAttribute('aria-busy', 'true');
+        await page.keyboard.press('Enter');
+        await page.keyboard.press('Escape');
+        await expect(dialog).toBeVisible();
+      }
       await page.goBack();
       await link.click();
       await expect.poll(() => requests).toEqual(['GET', method, 'GET']);

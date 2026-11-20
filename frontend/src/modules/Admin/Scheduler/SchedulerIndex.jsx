@@ -1,7 +1,7 @@
-import React, { useState, useMemo, useRef } from 'react';
+import React, { useLayoutEffect, useState, useMemo, useRef } from 'react';
 import { FormDialog } from '@/lib/ui/FormDialog.jsx';
 import { SubmitButton } from '@/lib/ui/SubmitButton.jsx';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useLocation, useNavigate, useNavigationType } from 'react-router-dom';
 import { Stack, Text, Table, Badge, Button, Group, TextInput, Center, Alert, Anchor }  from '@mantine/core';
 import { IconPlus, IconPlayerPlay, IconAlertCircle, IconClock } from '@tabler/icons-react';
 import { ADMIN_SCHEDULER_JOBS_PATH, useAdminScheduler } from '../../../hooks/admin/useAdminScheduler.js';
@@ -65,11 +65,18 @@ const BAND_LABELS = {
 
 function SchedulerIndex() {
   const navigate = useNavigate();
+  const { key: visit, state } = useLocation();
+  const navigationType = useNavigationType();
   const { error, createJob, triggerJob, clearError } = useAdminScheduler();
   const { data, loading, error: readError, refresh, invalidateAfterWrite, refreshAfterWrite } = useAdminRoster(ADMIN_SCHEDULER_JOBS_PATH);
   const [retrying, setRetrying] = useState(false);
   const { regionProps, focus, retry } = useRetryRegion(retryRoster, loading || retrying);
+  const rosterRef = regionProps.ref;
   const focusHandlers = useFocusAfterRemoval(focus);
+  const focusJobs = state?.focusJobs;
+  useLayoutEffect(() => {
+    if (navigationType === 'PUSH' && focusJobs) rosterRef.current?.focus({ preventScroll: true });
+  }, [visit, navigationType, focusJobs, rosterRef]);
   const jobs = Array.isArray(data) ? data : (data?.jobs ?? EMPTY_JOBS);
   const [createModalOpen, setCreateModalOpen] = useState(false);
   const [createForm, setCreateForm] = useState({ id: '', name: '', module: '', schedule: '' });

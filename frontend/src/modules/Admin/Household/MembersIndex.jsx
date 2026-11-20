@@ -7,7 +7,7 @@ import { ADMIN_HOUSEHOLD_PATH, useAdminHousehold } from '../../../hooks/admin/us
 import { useAdminRoster } from '../shared/useAdminRoster.js';
 import { ErrorState, LoadingState } from '../../../lib/ui/states.jsx';
 import { useRetryRegion } from '../../../lib/ui/useRetryRegion.js';
-import ConfirmModal from '../shared/ConfirmModal.jsx';
+import { ConfirmModal } from '@/lib/ui/ConfirmModal.jsx';
 
 const TYPE_OPTIONS = [
   { value: 'owner', label: 'Owner' },
