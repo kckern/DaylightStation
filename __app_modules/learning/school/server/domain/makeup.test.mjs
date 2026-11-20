@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   readMakeupPolicy, makeupDeadline, makeupOpen, foldMakeup, openMakeupWork, DEFAULT_MAKEUP_POLICY,
+  honouredMakeupClaim,
 } from './makeup.mjs';
 
 // Week: Mon 2026-11-16 … Sat 2026-11-21, Sun 2026-11-22.
@@ -147,5 +148,22 @@ describe('openMakeupWork', () => {
       { day: WED, subject: 'english', deadline: SAT },
     ]);
     expect(openMakeupWork(rows, { policy: ON, today: SUN })).toEqual([]);
+  });
+});
+
+describe('honouredMakeupClaim', () => {
+  const claimed = { makeupFor: WED, makeupDeadline: SAT };
+  it('names the claimed day when the pass falls after it, by the deadline, same week', () => {
+    expect(honouredMakeupClaim(claimed, THU)).toBe(WED);
+    expect(honouredMakeupClaim(claimed, SAT)).toBe(WED);
+  });
+  it('is null on the claimed day itself, past the deadline, or for an unclaimed session', () => {
+    expect(honouredMakeupClaim(claimed, WED)).toBeNull();
+    expect(honouredMakeupClaim(claimed, SUN)).toBeNull();
+    expect(honouredMakeupClaim({ makeupFor: null }, THU)).toBeNull();
+    expect(honouredMakeupClaim(null, THU)).toBeNull();
+  });
+  it('is null across a week boundary even with a lax deadline', () => {
+    expect(honouredMakeupClaim({ makeupFor: WED, makeupDeadline: '2026-11-24' }, '2026-11-23')).toBeNull();
   });
 });

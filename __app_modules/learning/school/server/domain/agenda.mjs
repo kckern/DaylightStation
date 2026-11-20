@@ -21,6 +21,7 @@ import { isSameStudyDay, studyDayForInstant } from "./studyDay.mjs";
 import { dayOffTier, isoWeekday, scheduleVerdict } from "./schoolCalendar.mjs";
 import { DEFAULT_DAY_OFF_POLICY, keepsEntry } from "./dayOffPolicy.mjs";
 import { missedWeekdays } from "./saturdayCatchUp.mjs";
+import { honouredMakeupClaim } from "./makeup.mjs";
 
 const isNonEmptyString = (v) => typeof v === 'string' && v.trim().length > 0;
 
@@ -306,9 +307,16 @@ export function planDailyAgenda({
   // so this cannot dedupe across builds — it only stops one unit reported by
   // two entries from being reported twice in the same answer.
   const latestBySessionUnit = latestGradedPerUnit(sessions);
-  const passedToday = sessions
+  const passedTodayAll = sessions
     .filter((s) => s?.outcome?.result === 'passed'
       && isSameStudyDay(Date.parse(s.outcome?.at ?? s.updatedAt ?? ''), nowMs, { timezone, boundaryHour }));
+  // MAKEUP CLAIMS (2026-11-19). A pass opened from a makeup-sheet code is
+  // the missed day's lesson, not today's: it neither serves today's section
+  // nor suppresses today's next lesson. It stays in the ledger as a claim
+  // for `foldMakeup` to credit to the day it names. A Wednesday worksheet,
+  // finished Thursday, used to serve Thursday and leave Wednesday open.
+  const passedToday = passedTodayAll.filter((s) => !honouredMakeupClaim(s, today));
+  const claimedToday = passedTodayAll.filter((s) => honouredMakeupClaim(s, today));
   const passedTodayIds = new Set(passedToday.map((s) => s.unitId));
   const isWeekend = typeof today === 'string' && isoWeekday(today) >= 6;
   const latestPassAt = new Map();
@@ -805,6 +813,12 @@ export function planDailyAgenda({
         }).map(programStatusKey),
         needsLesson: hasRequiredCurriculum,
         needsPrograms: requiredPrograms.map(programStatusKey),
+        // Required lessons passed today that a makeup sheet claimed for an
+        // earlier day, one entry per pass, naming that day.
+        makeupClaims: claimedToday
+          .filter((s) => nonElectiveList.some((e) => !e.program && e.unitId === s.unitId))
+          .map((s) => honouredMakeupClaim(s, today))
+          .sort(),
       },
       _subjectPosition: subjectPosition,
       // Internal, like _subjectPosition: the focus pass below needs to know

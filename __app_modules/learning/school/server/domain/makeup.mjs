@@ -93,6 +93,25 @@ export function makeupOpen({ day, today, policy = DEFAULT_MAKEUP_POLICY }) {
   return day < deadline && today <= deadline;
 }
 
+/**
+ * The earlier day a passed session counts for, or null when it counts for
+ * the day it was done. A session carries a claim only when a makeup-sheet
+ * code opened or reprinted it (`makeup_claimed`). The claim holds while the
+ * pass falls after the claimed day, no later than the claim's deadline, and
+ * in the same week; outside that the lesson is ordinary work again.
+ * @param {{makeupFor?: string|null, makeupDeadline?: string|null}|null} session
+ * @param {string} today the study day the pass is judged on
+ * @returns {string|null}
+ */
+export function honouredMakeupClaim(session, today) {
+  const forDay = session?.makeupFor;
+  const deadline = session?.makeupDeadline;
+  if (typeof forDay !== 'string' || typeof deadline !== 'string' || typeof today !== 'string') return null;
+  if (!(forDay < today) || today > deadline) return null;
+  if (weekIdFor(forDay) !== weekIdFor(today)) return null;
+  return forDay;
+}
+
 const subjectAllowed = (policy, subject) => !policy.subjects || policy.subjects.includes(subject);
 const asked = (section) => section?.state === 'served' || section?.state === 'obligated';
 
