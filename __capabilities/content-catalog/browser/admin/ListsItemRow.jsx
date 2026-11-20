@@ -22,7 +22,8 @@ import { ShimmerAvatar } from "./ShimmerAvatar.jsx";
 import { ContentValueCard, contentInfoFromPick } from './ContentDisplays.jsx';
 import { getCachedCatalogContentInfo, useCatalogContentInfo } from './catalogContentInfo.js';
 import { ItemDetailsDrawer } from "./ItemDetailsDrawer.jsx";
-import { AppParamPicker } from "./AppParamPicker.jsx";
+import { AppParamPicker, AppParamResolutionNotice } from "./AppParamPicker.jsx";
+import { useAppParamOptions } from "./useAppParamOptions.js";
 import { ActionChipSelect } from "./ActionChipSelect.jsx";
 import { CapabilityWarning } from "./CapabilityWarning.jsx";
 import { ActionMenu } from "../../../../frontend/src/lib/ui/ActionMenu.jsx";
@@ -181,8 +182,7 @@ function ListsItemRow({ item, onUpdate, onDelete, onToggleActive, onDuplicate, i
   };
 
   // ── Content input (unified ContentCombobox wiring) ──
-  // App-param picker state: {appId, param, options} while waiting for a param.
-  const [pendingApp, setPendingApp] = useState(null);
+  const { resolution: pendingApp, select: selectAppParam, retry: retryAppParam, clear: clearAppParam } = useAppParamOptions();
 
   // Autosave the committed content id (twin parity: ignore empty/unchanged).
   const commitInput = (value) => {
@@ -207,18 +207,10 @@ function ListsItemRow({ item, onUpdate, onDelete, onToggleActive, onDuplicate, i
     // App that needs a parameter → show the param picker instead of saving.
     if (selectedItem?.isApp && selectedItem.hasParam) {
       log.info('app_param.prompt', { index: item.index, appId: selectedItem.appId, paramName: selectedItem.param?.name });
-      import("../../../../frontend/src/lib/appRegistry.js")
-        .then(({ resolveParamOptions }) => resolveParamOptions(selectedItem.param))
-        .then((options) => {
-          setPendingApp({
-            appId: selectedItem.appId,
-            param: selectedItem.param,
-            // Prepend "Random" option for dropdown-style params (twin parity)
-            options: options ? [{ value: 'random', label: 'Random' }, ...options] : null,
-          });
-        });
+      selectAppParam({ appId: selectedItem.appId, param: selectedItem.param });
       return;
     }
+    clearAppParam();
     // Seed the shared content-info cache from the picked item so the display
     // card renders instantly instead of flashing "Resolving...".
     if (value && selectedItem?.title) {
@@ -471,28 +463,31 @@ function ListsItemRow({ item, onUpdate, onDelete, onToggleActive, onDuplicate, i
       </div>
 
       <div className="col-input">
-        {pendingApp ? (
+        {pendingApp?.phase === 'ready' ? (
           <AppParamPicker
             appId={pendingApp.appId}
             param={pendingApp.param}
             options={pendingApp.options}
-            onCommit={(fullId) => { setPendingApp(null); commitInput(fullId); }}
-            onCancel={() => setPendingApp(null)}
+            onCommit={(fullId) => { clearAppParam(); commitInput(fullId); }}
+            onCancel={clearAppParam}
           />
         ) : (
-          <ContentCombobox
-            value={item.input}
-            onChange={handleRowInputChange}
-            appResults
-            selectContainers
-            renderValue={({ onStartEdit }) => (
-              <ContentValueCard
-                value={item.input}
-                contentInfo={contentInfo}
-                onStartEdit={() => { cancelAutoResolve(); onStartEdit(); }}
-              />
-            )}
-          />
+          <>
+            <AppParamResolutionNotice resolution={pendingApp} onRetry={retryAppParam} onCancel={clearAppParam} />
+            <ContentCombobox
+              value={item.input}
+              onChange={handleRowInputChange}
+              appResults
+              selectContainers
+              renderValue={({ onStartEdit }) => (
+                <ContentValueCard
+                  value={item.input}
+                  contentInfo={contentInfo}
+                  onStartEdit={() => { cancelAutoResolve(); onStartEdit(); }}
+                />
+              )}
+            />
+          </>
         )}
         {/* Catches an action pointed at a source that can't perform it — the
             failure mode that rendered `action: Display` on a files: image as a

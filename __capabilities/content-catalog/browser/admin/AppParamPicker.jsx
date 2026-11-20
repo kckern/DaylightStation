@@ -2,7 +2,7 @@
 // after selecting an app that requires a parameter (e.g. `app:hymn` needs a
 // number). Extracted verbatim from ListsItemRow.jsx (Task 14).
 import React, { useState, useRef, useMemo } from 'react';
-import { Text, TextInput, Combobox, useCombobox, InputBase, ScrollArea } from '@mantine/core';
+import { Button, Group, Loader, Text, TextInput, Combobox, useCombobox, InputBase, ScrollArea } from '@mantine/core';
 import { getChildLogger } from "../../../../frontend/src/lib/logging/singleton.js";
 
 // Lazy admin logger with session logging enabled
@@ -110,6 +110,30 @@ export function AppParamPicker({ appId, param, options, onCommit, onCancel }) {
       styles={{ input: { minHeight: 24, height: 24, fontSize: 12 } }}
     />
   );
+}
+
+export function AppParamResolutionNotice({ resolution, onRetry, onCancel }) {
+  if (resolution?.phase === 'loading') {
+    return (
+      <Group gap="xs" wrap="nowrap" role="status" className="app-param-resolution">
+        <Loader size={12} />
+        <Text size="xs">Loading options for {resolution.appId}…</Text>
+        <Button size="compact-xs" variant="subtle" onClick={onCancel}>Cancel</Button>
+      </Group>
+    );
+  }
+
+  if (resolution?.phase === 'error') {
+    return (
+      <Group gap="xs" wrap="nowrap" role="alert" className="app-param-resolution">
+        <Text size="xs">Could not load options for {resolution.appId}: {resolution.error}</Text>
+        <Button size="compact-xs" onClick={onRetry}>Retry</Button>
+        <Button size="compact-xs" variant="subtle" onClick={onCancel}>Cancel</Button>
+      </Group>
+    );
+  }
+
+  return null;
 }
 
 export default AppParamPicker;

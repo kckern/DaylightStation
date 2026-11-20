@@ -85,8 +85,8 @@ export function resolveAppDisplay(input) {
 }
 
 const OPTION_RESOLVERS = {
-  household: async () => {
-    const data = await DaylightAPI('/api/v1/gratitude/bootstrap');
+  household: async ({ signal } = {}) => {
+    const data = await DaylightAPI('/api/v1/gratitude/bootstrap', {}, 'GET', { signal });
     return (data.users || []).map(u => ({
       value: u.id,
       label: u.group_label || u.name || u.id,
@@ -100,11 +100,11 @@ const OPTION_RESOLVERS = {
  * @param {object|null} param - The param descriptor from a registry entry
  * @returns {Promise<Array<{value: string, label: string}>|null>}
  */
-export async function resolveParamOptions(param) {
+export async function resolveParamOptions(param, { signal } = {}) {
   if (!param?.options) return null;
   if (param.options.includes(',')) {
     return param.options.split(',').map(v => ({ value: v.trim(), label: v.trim() }));
   }
   const resolver = OPTION_RESOLVERS[param.options];
-  return resolver ? resolver() : null;
+  return resolver ? resolver({ signal }) : null;
 }

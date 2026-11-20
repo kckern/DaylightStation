@@ -11,7 +11,8 @@ import ContentCombobox from "../combobox/ContentCombobox.jsx";
 import { useAutoResolve } from "../combobox/useAutoResolve.js";
 import { ContentValueCard, contentInfoFromPick } from './ContentDisplays.jsx';
 import { getCachedCatalogContentInfo, useCatalogContentInfo } from './catalogContentInfo.js';
-import { AppParamPicker } from "./AppParamPicker.jsx";
+import { AppParamPicker, AppParamResolutionNotice } from "./AppParamPicker.jsx";
+import { useAppParamOptions } from "./useAppParamOptions.js";
 import { ActionChipSelect } from "./ActionChipSelect.jsx";
 
 // Lazy admin logger with session logging enabled
@@ -29,7 +30,7 @@ export function EmptyItemRow({ onAdd, nextIndex, isWatchlist }) {
   const [action, setAction] = useState('Play');
   const [input, setInput] = useState('');
   const contentInfo = useCatalogContentInfo(input, contentInfoMap.get(input));
-  const [pendingApp, setPendingApp] = useState(null); // {appId, param, options}
+  const { resolution: pendingApp, select: selectAppParam, retry: retryAppParam, clear: clearAppParam } = useAppParamOptions();
   const addedRef = useRef(false); // prevent double-add from rapid state changes
   const labelInputRef = useRef(null);
 
@@ -49,17 +50,10 @@ export function EmptyItemRow({ onAdd, nextIndex, isWatchlist }) {
     // App that needs a parameter → show the param picker instead of staging.
     if (selectedItem?.isApp && selectedItem.hasParam) {
       log.info('app_param.prompt', { nextIndex, appId: selectedItem.appId, paramName: selectedItem.param?.name });
-      import("../../../../frontend/src/lib/appRegistry.js")
-        .then(({ resolveParamOptions }) => resolveParamOptions(selectedItem.param))
-        .then((options) => {
-          setPendingApp({
-            appId: selectedItem.appId,
-            param: selectedItem.param,
-            options: options ? [{ value: 'random', label: 'Random' }, ...options] : null,
-          });
-        });
+      selectAppParam({ appId: selectedItem.appId, param: selectedItem.param });
       return;
     }
+    clearAppParam();
     // Seed the cache from picks so the staged card (and derived label on add)
     // uses the resolved title immediately.
     if (value && selectedItem?.title) {
@@ -143,28 +137,31 @@ export function EmptyItemRow({ onAdd, nextIndex, isWatchlist }) {
       </div>
       <div className="col-preview"></div>
       <div className="col-input">
-        {pendingApp ? (
+        {pendingApp?.phase === 'ready' ? (
           <AppParamPicker
             appId={pendingApp.appId}
             param={pendingApp.param}
             options={pendingApp.options}
-            onCommit={(fullId) => { setPendingApp(null); setInput(fullId); }}
-            onCancel={() => setPendingApp(null)}
+            onCommit={(fullId) => { clearAppParam(); setInput(fullId); }}
+            onCancel={clearAppParam}
           />
         ) : (
-          <ContentCombobox
-            value={input}
-            onChange={handleComboboxChange}
-            appResults
-            selectContainers
-            renderValue={({ onStartEdit }) => (
-              <ContentValueCard
-                value={input}
-                contentInfo={contentInfo}
-                onStartEdit={() => { cancelAutoResolve(); onStartEdit(); }}
-              />
-            )}
-          />
+          <>
+            <AppParamResolutionNotice resolution={pendingApp} onRetry={retryAppParam} onCancel={clearAppParam} />
+            <ContentCombobox
+              value={input}
+              onChange={handleComboboxChange}
+              appResults
+              selectContainers
+              renderValue={({ onStartEdit }) => (
+                <ContentValueCard
+                  value={input}
+                  contentInfo={contentInfo}
+                  onStartEdit={() => { cancelAutoResolve(); onStartEdit(); }}
+                />
+              )}
+            />
+          </>
         )}
       </div>
       {isWatchlist && (

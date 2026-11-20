@@ -430,3 +430,79 @@ test('Admin Gratitude preview removes persisted events by selection ID and resol
   expect(writes).toEqual([]);
   expect(bootstrapReads).toBe(2);
 });
+
+test('Admin list parameter lookup keeps the latest app, retries its read, and commits only an explicit choice', async ({ page }) => {
+  await installFixtures(page);
+  const listPath = '/api/v1/admin/content/lists/menus/app-param-fixture';
+  const familyRoutes = [];
+  const writes = [];
+  let familyReads = 0;
+  await page.route('**/api/**', async route => {
+    const request = route.request();
+    const { pathname } = new URL(request.url());
+    if (pathname === listPath) return route.fulfill({ json: {
+      name: 'app-param-fixture', sections: [{ title: 'Apps', items: [
+        { uid: 'existing-app', label: 'Existing app', action: 'Open', input: 'plex:existing' },
+      ] }],
+    } });
+    if (pathname === '/api/v1/gratitude/bootstrap' && request.method() === 'GET') {
+      familyReads++;
+      if (familyReads === 1) {
+        familyRoutes.push(route);
+        return;
+      }
+      if (familyReads === 2) return route.fulfill({ status: 503, json: { error: 'Household temporarily unavailable' } });
+      return route.fulfill({ json: { users: [{ id: 'alice', name: 'Alice' }, { id: 'bob', name: 'Bob' }] } });
+    }
+    if (pathname === '/api/v1/content/query/search') return route.fulfill({ json: { items: [] } });
+    if (pathname.startsWith(listPath + '/items/') && request.method() === 'PUT') {
+      writes.push({ method: request.method(), body: request.postDataJSON() });
+      return route.fulfill({ json: {} });
+    }
+    if (pathname === listPath + '/items' && request.method() === 'POST') {
+      writes.push({ method: request.method(), body: request.postDataJSON() });
+      return route.fulfill({ json: {} });
+    }
+    return route.fulfill({ json: pathname.endsWith('/supervision/bootstrap') ? { enabled: false } : {} });
+  });
+
+  await page.goto('/admin/content/lists/menus/app-param-fixture');
+  const existingRow = page.getByTestId('item-row-0-0');
+  await existingRow.locator('.col-input .content-display').click();
+  let editor = existingRow.getByRole('textbox', { name: 'Search content...' });
+  await editor.fill('Family Selector');
+  await page.getByTestId('combobox-option-app:family-selector').click();
+  await expect.poll(() => familyRoutes.length).toBe(1);
+
+  await existingRow.locator('.col-input .content-display').click();
+  editor = existingRow.getByRole('textbox', { name: 'Search content...' });
+  await editor.fill('Video Call');
+  await page.getByTestId('combobox-option-app:videocall').click();
+  const deviceInput = existingRow.getByPlaceholder('Type device...');
+  await expect(deviceInput).toBeVisible();
+  await familyRoutes[0].fulfill({ json: { users: [{ id: 'stale-member', name: 'Stale member' }] } }).catch(() => {});
+  await expect(deviceInput).toBeVisible();
+  await expect(existingRow.getByPlaceholder('Choose or type winner...')).toHaveCount(0);
+  expect(writes).toEqual([]);
+
+  const emptyRow = page.locator('.item-row.empty-row');
+  await emptyRow.locator('.col-input .content-display').click();
+  editor = emptyRow.getByRole('textbox', { name: 'Search content...' });
+  await editor.fill('Family Selector');
+  await page.getByTestId('combobox-option-app:family-selector').click();
+  await expect(page.getByRole('alert')).toContainText('Household temporarily unavailable');
+  expect(writes).toEqual([]);
+
+  await page.getByRole('button', { name: 'Retry', exact: true }).click();
+  const memberPicker = emptyRow.getByPlaceholder('Choose or type winner...');
+  await expect(memberPicker).toBeVisible();
+  expect(familyReads).toBe(3);
+  expect(writes).toEqual([]);
+  await memberPicker.click();
+  await page.getByRole('option', { name: 'Alice', exact: true }).click();
+  await expect.poll(() => writes).toEqual([{
+    method: 'POST',
+    body: expect.objectContaining({ input: 'app:family-selector/alice' }),
+  }]);
+  await expect.poll(() => familyReads).toBe(3);
+});
