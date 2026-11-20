@@ -1,6 +1,6 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useCallback } from 'react';
 import ContentScroller from './ContentScroller.jsx';
-import { DaylightAPI } from '../../../../../frontend/src/lib/api.mjs';
+import { useScrollerContent } from '../hooks/useScrollerContent.js';
 import { getReadalongRenderer } from "../../../../content-catalog/browser/providers/contentRenderers.jsx";
 
 /**
@@ -9,7 +9,7 @@ import { getReadalongRenderer } from "../../../../content-catalog/browser/provid
  * Wraps ContentScroller for readalong content (scripture, talks, poetry).
  *
  * Features:
- *  - Fetches data from /api/v1/item/readalong/{path}
+ *  - Uses the supplied descriptor or reads it from the content info endpoint
  *  - Supports verses content type (scripture-style with verse numbers)
  *  - Supports paragraphs content type (talks, poetry)
  *  - Video mode (if data.videoUrl exists)
@@ -34,24 +34,8 @@ export function ReadalongScroller({
   remountDiagnostics,
   listId
 }) {
-  const [data, setData] = useState(initialData || null);
+  const data = useScrollerContent(contentId, initialData);
   const renderer = getReadalongRenderer();
-
-  useEffect(() => {
-    // Skip fetch if data was provided by parent (e.g., SinglePlayer already fetched it)
-    if (initialData) { setData(initialData); return; }
-    if (!contentId) return;
-
-    // Convert contentId to URL path segments for the info endpoint.
-    // Handles any prefix: readalong:scripture/..., talk:ldsgc/..., scripture:alma-32, etc.
-    const path = contentId.includes(':')
-      ? contentId.replace(':', '/')
-      : contentId;
-
-    DaylightAPI(`api/v1/info/${path}`).then(response => {
-      setData(response);
-    });
-  }, [contentId, initialData]);
 
   // Determine wrapper class: match CSS selectors for each content type
   const contentCssType = data?.type || data?.metadata?.cssType;

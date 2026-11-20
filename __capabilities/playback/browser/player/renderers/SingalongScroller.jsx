@@ -1,6 +1,6 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useCallback, useRef } from 'react';
 import ContentScroller from './ContentScroller.jsx';
-import { DaylightAPI } from '../../../../../frontend/src/lib/api.mjs';
+import { useScrollerContent } from '../hooks/useScrollerContent.js';
 import { useCenterByWidest } from "../../player-support/useCenterByWidest.js";
 import { getSingalongRenderer } from "../../../../content-catalog/browser/providers/contentRenderers.jsx";
 
@@ -10,7 +10,7 @@ import { getSingalongRenderer } from "../../../../content-catalog/browser/provid
  * Wraps ContentScroller for singalong content (hymns, primary songs).
  *
  * Features:
- *  - Fetches data from /api/v1/item/singalong/{path}
+ *  - Uses the supplied descriptor or reads it from the content info endpoint
  *  - Parses stanza content (array of stanzas, each an array of lines)
  *  - Applies style via CSS variables
  *  - Uses useCenterByWidest hook for horizontal placement (left-biased, see below)
@@ -33,27 +33,11 @@ export function SingalongScroller({
   remountDiagnostics,
   listId
 }) {
-  const [data, setData] = useState(initialData || null);
+  const data = useScrollerContent(contentId, initialData);
   const textRef = useRef(null);
   const renderer = getSingalongRenderer();
   const cssType = renderer.cssType;
   const wrapperClass = renderer.wrapperClass;
-
-  useEffect(() => {
-    // Skip fetch if data was provided by parent (e.g., SinglePlayer already fetched it)
-    if (initialData) { setData(initialData); return; }
-    if (!contentId) return;
-
-    // Convert contentId to URL path segments for the info endpoint.
-    // Handles any prefix: singalong:hymn/123, hymn:166, primary:42, etc.
-    const path = contentId.includes(':')
-      ? contentId.replace(':', '/')
-      : contentId;
-
-    DaylightAPI(`api/v1/info/${path}`).then(response => {
-      setData(response);
-    });
-  }, [contentId, initialData]);
 
   // Place the lyric block by its widest line, biased LEFT of true centre. The
   // lines are left-aligned and ragged right (and only each stanza's first line is
