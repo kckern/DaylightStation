@@ -117,6 +117,17 @@ describe('session order', () => {
     expect(out.cards[0].choices.map((c) => c.key)).toEqual(['send', 'archive', 'task', 'keep']);
   });
 
+  it('serves a "would have done" recap in dry run from the pass-marked cards', async () => {
+    const cards = [emailCard('d1', { dryRunAction: 'archive' }), emailCard('d2', { dryRunAction: 'archive' }), todoCard('d3', { dryRunAction: 'close' })];
+    const store = memoryStore({ passId: 'p', builtAt: NOW - 1000, cards });
+    const s = make({ store, resolvePolicy: () => ({ ...policy, mode: 'dryRun' }) });
+    const out = await s.session({ username: 'sample' });
+    const recap = out.cards.find((c) => c.cardId === 'recap');
+    expect(recap).toMatchObject({ kind: 'recap', wouldHave: { archived: 2, closed: 1 }, entries: [] });
+    await s.answer({ username: 'sample', cardId: 'recap', choice: 'ok', auth: AUTH });
+    expect((await s.session({ username: 'sample' })).cards.find((c) => c.cardId === 'recap')).toBeUndefined();
+  });
+
   it('leaves out a step with no cards (no recap without system actions, no todo)', async () => {
     const store = memoryStore({ passId: 'p', builtAt: NOW, cards: [emailCard('u1')] });
     const out = await make({ store }).session({ username: 'sample' });

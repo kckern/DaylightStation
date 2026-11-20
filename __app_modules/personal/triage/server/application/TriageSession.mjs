@@ -489,7 +489,21 @@ export function createTriageSession({
         todo: open.filter((c) => c.step === 'todo'),
       };
       const state = await readState(username);
-      const recap = await recapCard(username, asOf, state);
+      let recap = await recapCard(username, asOf, state);
+      // Dry run did nothing on its own, so the recap carries "what I would have done" counts instead.
+      if (!recap && (resolvePolicy(username) ?? {}).mode === 'dryRun') {
+        const seen = Number.isFinite(state.recapSeenAt) ? state.recapSeenAt : -1;
+        const would = {
+          archived: q.cards.filter((c) => c.status === 'open' && c.dryRunAction === 'archive').length,
+          closed: q.cards.filter((c) => c.status === 'open' && c.dryRunAction === 'close').length,
+        };
+        if (seen < (q.builtAt ?? 0) && would.archived + would.closed > 0) {
+          recap = {
+            cardId: 'recap', kind: 'recap', step: 'recap', status: 'open', choices: RECAP_CHOICES.map((c) => ({ ...c })),
+            suggested: 'ok', why: 'What I would have done', source: null, counts: { archived: 0, closed: 0 }, wouldHave: would, entries: [],
+          };
+        }
+      }
       const cards = [];
       const steps = [];
       for (const id of STEP_ORDER) {

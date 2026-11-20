@@ -59,3 +59,8 @@ it('registers work only at its explicit colocated config path',()=>{
  expect(registry.appConfigRelPath('work')).toBe('work/config');
  expect(registry.COLOCATED_ONLY_HOUSEHOLD_APPS).toContain('work');
 });
+
+it('registers triage only at its explicit colocated config path',()=>{
+ expect(registry.appConfigRelPath('triage')).toBe('triage/config');
+ expect(registry.COLOCATED_ONLY_HOUSEHOLD_APPS).toContain('triage');
+});
