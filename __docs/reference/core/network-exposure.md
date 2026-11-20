@@ -436,13 +436,36 @@ absolute http(s) URLs, at ingest and again at render, and the iframe also
 refuses any URL on the app's own origin, where that sandbox pair would let the
 framed page drive the app. A refused link shows as plain text.
 
-**Not covered yet:**
+**Feed images** are other people's data too, and an `<img>` on the app's own
+origin is a same-origin GET that the cross-site guard never sees. At ingest
+(`externalImageLink`: the feed HTML sanitizer, the FreshRSS hero image, RSS
+headline images) only absolute http(s) URLs outside `/api` and `/admin`, on
+any host, are kept. At render (`feedImageSrc`, through `safeImage` in the
+feed's `cards/utils.js`) a URL on the app's origin loads only if it is one of
+the read-only image endpoints the app's own sources use (`/api/v1/proxy/...`
+for Immich assets, Plex library metadata and photos, Komga, Reddit, ABS items,
+Libby covers and media; `/api/v1/static`; `/api/v1/feed/icon` and `/image`);
+an external URL whose path is under `/api` or `/admin` goes through the image
+proxy, whose SSRF guard refuses private targets.
 
-- Action `GET`s (HA script runner, device on/off/volume, prints, TTS) are
-  still `GET`s. Resource isolation stops other sites from firing them, but a
-  plain-http LAN page, an older WebView without `Sec-Fetch-*`, or a top-level
-  navigation (a link someone clicks) can still trigger one. Converting them
-  to `POST` is the full fix.
+**Path spelling.** Express routes paths case-insensitively, so every
+path-prefix security decision (the read isolation above, `permissionGate`'s
+`app_routes`) compares `canonicalRoutePath` (`shared/contracts/http/routePath.mjs`):
+lower-case, percent-decoded, single slashes, no trailing slash or dots. It
+matches at least every spelling Express routes the same way.
+
+**Not covered yet** (both pending the conversion of action `GET`s, such as
+the HA script runner, device on/off/volume, prints and TTS, to `POST`):
+
+- A page on any site can aim an `<img>` at the app's **plain-http LAN address**
+  (`http://<lan-ip>:<port>/api/...`). Browsers send no `Sec-Fetch-*` to an
+  insecure origin, so read isolation cannot see it; Chrome blocks such
+  requests to private addresses from public pages (Private Network Access),
+  but Firefox and Safari send them. The same applies to an older WebView that
+  sends no fetch metadata.
+- A **top-level cross-site navigation** still reaches `/api` `GET`s, by
+  design: Telegram buttons and OAuth callbacks need it. A link someone clicks,
+  or a page that navigates itself, can fire an action `GET` that way.
 - DNS rebinding: the app accepts any `Host`. A rebinding attacker's page is
   same-origin with itself, so these checks pass it. Closing that needs a
   `Host` allow-list.
