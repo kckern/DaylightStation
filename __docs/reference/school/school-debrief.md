@@ -266,7 +266,9 @@ unrelated work can change the same weekly projection.
 ## Screens and keys
 
 `browser/Programs/SchoolDebrief/`. Readable at 1280x800 (the Portal). Esc is
-never bound (FKB captures it). One key map per screen:
+never bound (FKB captures it). The header shows the child's avatar and name
+(`learnerName` from SchoolApp's claimed learner), which is why a re-entered
+Debrief code opens without asking "Is this you?". One key map per screen:
 
 | Screen | Keys |
 |---|---|

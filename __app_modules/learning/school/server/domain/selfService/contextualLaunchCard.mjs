@@ -141,11 +141,12 @@ export function buildContextualLaunchCard({
   options = {},
 } = {}) {
   const { sentence, actions } = offeredCard(resolution, options);
-  // NO IDENTITY QUESTION ON A PROGRAM LAUNCH (2026-11-19). The code is already
-  // learner-scoped, and the program's own header shows the child's avatar and
-  // name. Asking turned a re-entered Gratitude code into three screens (code,
-  // "Is this you?", Start/Exit) for a preschooler coming back from a break.
-  const askIdentity = confirmIdentity && !singleProgram(actions);
+  // NO IDENTITY QUESTION FOR A NAMING PROGRAM (2026-11-19). The code is already
+  // learner-scoped, and these programs show the child's avatar and name in
+  // their own header. Asking turned a re-entered Gratitude code into three
+  // screens (code, "Is this you?", Start/Exit) for a preschooler coming back
+  // from a break. Every other program keeps the question.
+  const askIdentity = confirmIdentity && !singleProgram(actions, IDENTITY_NAMING_PROGRAMS);
   const subject = subjectId ? { id: subjectId, label: schoolSubjectLabel(subjectId) } : null;
   const normalizedLearner = learner?.id ? {
     id: learner.id,
@@ -254,9 +255,12 @@ function openImmediately(actions, confirmIdentity) {
   return singleProgram(actions);
 }
 
-function singleProgram(actions) {
+function singleProgram(actions, only = null) {
   const work = (Array.isArray(actions) ? actions : []).filter((a) => a?.kind !== 'exit');
-  return work.length === 1 && work[0]?.kind === 'program';
+  return work.length === 1 && work[0]?.kind === 'program' && (!only || only.has(work[0].target));
 }
+
+/** Programs whose own header names the child, so a re-entered code need not ask. */
+export const IDENTITY_NAMING_PROGRAMS = Object.freeze(new Set(['gratitude', 'school-debrief', 'book-log']));
 
 export default buildContextualLaunchCard;

@@ -93,7 +93,7 @@ enrolled; the other three had no route to a reading log at all, silently.
 **What changed.** Lesson codes are spent after three opens, counted when a button
 opens something rather than on a lookup. Wrong codes are throttled per device —
 not per IP, because every screen here reaches the backend through one reverse
-proxy. A re-entered code asks "Is this you?" before it claims anyone, except a code whose only action is a program, which opens it directly (2026-11-19). Backdating
+proxy. A re-entered code asks "Is this you?" before it claims anyone, except a code whose only action is Gratitude, the Debrief or the reading shelf, which opens it directly and names the child in its header (2026-11-19). Backdating
 is bounded to a fortnight on both write doors, and an implausible page is
 refused while a merely-past-the-end one is still kept. The reading log is open to
 every learner with its own daily code, and is deliberately uncapped — its own

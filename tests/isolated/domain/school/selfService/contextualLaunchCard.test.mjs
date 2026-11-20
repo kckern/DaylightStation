@@ -220,13 +220,23 @@ describe('a card with nothing to decide', () => {
     expect(card.presentation.openImmediately).toBe(true);
   });
 
-  it('asks no identity question on a program launch, and so opens it directly', () => {
+  it('asks no identity question for Gratitude, Debrief or the reading shelf, and so opens them directly', () => {
     // 2026-11-19 (gratitude preschool design): a re-entered program code asked
-    // "Is this you?" and then showed a Start/Exit card. The code is already
-    // learner-scoped and the program header shows the child's avatar and name.
-    const card = programCard({ confirmIdentity: true });
-    expect(card.presentation.confirmIdentity).toBeUndefined();
-    expect(card.presentation.openImmediately).toBe(true);
+    // "Is this you?" and then showed a Start/Exit card. These three programs
+    // name the child (avatar and name) in their own header instead.
+    for (const programId of ['gratitude', 'school-debrief', 'book-log']) {
+      const card = programCard({ confirmIdentity: true, resolution: { kind: 'program', programId, unit: { title: programId } } });
+      expect(card.presentation.confirmIdentity).toBeUndefined();
+      expect(card.presentation.openImmediately).toBe(true);
+    }
+  });
+
+  it('still asks on a re-entered code for any other program', () => {
+    for (const programId of ['flashcards', 'card-ladder', 'sentence-ladder', 'language-reels', 'rubiks-cube']) {
+      const card = programCard({ confirmIdentity: true, resolution: { kind: 'program', programId, unit: { title: programId } } });
+      expect(card.presentation.confirmIdentity).toBe(true);
+      expect(card.presentation.openImmediately).toBeUndefined();
+    }
   });
 
   it('still asks on a re-entered code whose card has something to choose', () => {

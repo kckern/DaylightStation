@@ -5,6 +5,8 @@
   &__title { font-weight: 700; color: var(--ds-text-high); }
   &__late { padding: 0.1rem 0.6rem; border-radius: 999px; background: var(--ds-warning); color: var(--ds-background); font-weight: 700; }
   &__step { margin-left: auto; } }
+.sd-header__learner { display: inline-flex; align-items: center; gap: 0.75rem; align-self: center; font-size: 1.5rem; font-weight: 600; color: var(--ds-text-high); }
+.sd-header__learner .piano-avatar { inline-size: 3.5rem; block-size: 3.5rem; }
 .sd-item { display: flex; flex-direction: column; gap: 1.25rem; max-width: 60rem; margin: 1.5rem auto 0; width: 100%; }
 .sd-prompt__text { font-size: 2.2rem; line-height: 1.25; margin: 0; }
 .sd-prompt__field { font-size: 1.6rem; line-height: 1.4; padding: 0.9rem 1rem; border-radius: 12px; border: 2px solid var(--ds-border); background: var(--ds-surface); color: var(--ds-text-high); resize: none; }

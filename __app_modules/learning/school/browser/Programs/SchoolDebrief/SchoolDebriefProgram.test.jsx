@@ -1,6 +1,7 @@
 import { render, screen, waitFor, fireEvent, act } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import SchoolDebriefProgram from "./SchoolDebriefProgram.jsx";
+import SchoolDebriefHeaderForIdentity from "./SchoolDebriefHeader.jsx";
 const api = vi.hoisted(() => ({}));
 vi.mock("./schoolDebriefApi.js", () => ({ createSchoolDebriefApi: () => api }));
 vi.mock("./schoolDebriefLog.js", () => ({ schoolDebriefLog: new Proxy({}, { get: () => vi.fn() }) }));
@@ -364,4 +365,11 @@ describe('SchoolDebriefProgram start card', () => {
       expect(onExit).toHaveBeenCalledTimes(1);
     });
   });
+});
+
+it('shows whose debrief this is in the header', () => {
+  render(<SchoolDebriefHeaderForIdentity learnerId="kid" learnerName="Kid" view={null} promptIdx={0} promptCount={0} />);
+  const header = screen.getByRole('banner');
+  expect(header).toHaveTextContent('Kid');
+  expect(header.querySelector('img[src*="/img/users/kid"]')).toBeTruthy();
 });
