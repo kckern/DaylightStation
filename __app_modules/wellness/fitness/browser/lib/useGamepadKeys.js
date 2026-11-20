@@ -6,14 +6,28 @@ import getLogger from '@/lib/logging/Logger.js';
 // also navigates: past half deflection it reads as an arrow. Only axes 0/1,
 // because a stick rests at 0 on every pad; triggers and hats differ by pad and
 // browser, and one resting at -1 would hold an arrow down forever.
-// While active, the hook logs `gamepad-shape` (id, mapping, button and axis
-// counts) once per pad, so an unfamiliar pad's layout is measured, not guessed.
+// The hook logs `gamepad-shape` (id, mapping, button and axis counts, resting
+// axis values, held buttons) once per pad per page load, so an unfamiliar
+// pad's layout is measured, not guessed.
 // A button held when the hook turns on does not fire until it is pressed again.
 const BUTTON_KEYS = { 12: 'ArrowUp', 13: 'ArrowDown', 14: 'ArrowLeft', 15: 'ArrowRight', 0: 'Enter', 1: 'Escape' };
 const STICK_THRESHOLD = 0.5;
 
+// `axisValues` (first four, rounded) and `pressedButtons` show a resting
+// off-centre axis or a stuck button at the moment the pad is first seen.
 export function padShape(pad) {
-  return { id: pad?.id || '', mapping: pad?.mapping || '', buttons: pad?.buttons?.length || 0, axes: pad?.axes?.length || 0 };
+  const buttons = pad?.buttons || [];
+  const axes = pad?.axes || [];
+  const pressedButtons = [];
+  for (let i = 0; i < buttons.length; i++) if (buttons[i]?.pressed) pressedButtons.push(i);
+  return {
+    id: pad?.id || '',
+    mapping: pad?.mapping || '',
+    buttons: buttons.length,
+    axes: axes.length,
+    axisValues: [...axes].slice(0, 4).map((v) => Math.round(v * 100) / 100),
+    pressedButtons,
+  };
 }
 
 export function gamepadKeyEdges(previous, pads) {
@@ -42,6 +56,10 @@ export function gamepadKeyEdges(previous, pads) {
 let _logger;
 const logger = () => (_logger ||= getLogger().child({ component: 'fitness-gamepad-keys' }));
 
+// Pads whose shape was logged this page load (`id|index`). Module-level, because
+// screens such as FitnessShow switch the hook on and off with every video.
+const shapesLogged = new Set();
+
 // Polls the Gamepad API only while `active`, one rAF loop, and hands each new
 // press to onKey. No gamepad connected = one cheap getGamepads() per frame.
 export function useGamepadKeys(active, onKey) {
@@ -50,12 +68,13 @@ export function useGamepadKeys(active, onKey) {
   useEffect(() => {
     if (!active || typeof navigator === 'undefined' || typeof navigator.getGamepads !== 'function') return undefined;
     let raf = null;
+    let stopped = false;
     // null until the first poll: a button already held when the hook turns on
     // (B that just closed another screen, A that just opened this one) is
     // treated as held, and fires only after a release and a new press.
     let previous = null;
-    const shapesLogged = new Set();
     const poll = () => {
+      if (stopped) return;
       let pads = [];
       try { pads = [...navigator.getGamepads()].filter(Boolean); } catch (_) { pads = []; }
       for (const pad of pads) {
@@ -70,9 +89,10 @@ export function useGamepadKeys(active, onKey) {
         logger().debug('gamepad-key', { key });
         onKeyRef.current?.(key);
       }
+      if (stopped) return; // onKey may unmount this screen
       raf = requestAnimationFrame(poll);
     };
     raf = requestAnimationFrame(poll);
-    return () => { if (raf !== null) cancelAnimationFrame(raf); };
+    return () => { stopped = true; if (raf !== null) cancelAnimationFrame(raf); };
   }, [active]);
 }
