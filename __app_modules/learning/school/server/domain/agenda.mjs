@@ -318,6 +318,10 @@ export function planDailyAgenda({
   const passedToday = passedTodayAll.filter((s) => !honouredMakeupClaim(s, today));
   const claimedToday = passedTodayAll.filter((s) => honouredMakeupClaim(s, today));
   const passedTodayIds = new Set(passedToday.map((s) => s.unitId));
+  // A claimed pass is still work finished today: the day-off filters below
+  // must keep its entry, or its claim vanishes from the ledger while the day
+  // it was done on has already given the lesson up.
+  const claimedTodayIds = new Set(claimedToday.map((s) => s.unitId));
   const isWeekend = typeof today === 'string' && isoWeekday(today) >= 6;
   const latestPassAt = new Map();
   sessions.forEach((s) => {
@@ -358,7 +362,7 @@ export function planDailyAgenda({
     const scheduled = live.length ? live : all;
     // Work already done today survives every filter below: a filter decides
     // what is still ASKED, and must never erase what a child finished.
-    const doneToday = (e) => passedTodayIds.has(e.unitId)
+    const doneToday = (e) => passedTodayIds.has(e.unitId) || claimedTodayIds.has(e.unitId)
       || (e.program && programStatusFor(programStatuses, e)?.doneToday === true);
     // THE SWAP. A date-bound entry is in the plan only on its own day, and on
     // that day it takes its subject's slot: the holiday lesson replaces the
@@ -814,9 +818,11 @@ export function planDailyAgenda({
         needsLesson: hasRequiredCurriculum,
         needsPrograms: requiredPrograms.map(programStatusKey),
         // Required lessons passed today that a makeup sheet claimed for an
-        // earlier day, one entry per pass, naming that day.
+        // earlier day, one entry per pass, naming that day. Read against the
+        // subject's whole curriculum (`all`), not the filtered list: a swap
+        // or keep-list deciding what today asks must not erase a claim.
         makeupClaims: claimedToday
-          .filter((s) => nonElectiveList.some((e) => !e.program && e.unitId === s.unitId))
+          .filter((s) => all.some((e) => !e.program && !e.elective && e.unitId === s.unitId))
           .map((s) => honouredMakeupClaim(s, today))
           .sort(),
       },

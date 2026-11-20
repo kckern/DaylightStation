@@ -213,3 +213,90 @@ describe('foldMakeup with claims', () => {
     expect(out[MON].makeup.map((m) => m.subject).sort()).toEqual(['math', 'science']);
   });
 });
+
+// Review, 2026-11-19: the agenda always takes a claimed pass away from the day
+// it was done on, so a claim the fold cannot spend must pay that day back.
+// Otherwise a real lesson counts for no day at all.
+describe('foldMakeup restitution: no claimed lesson is lost', () => {
+  const claimLedger = (lessons, claims, over = {}) => ({ ...lessonLedger(lessons), makeupClaims: claims, ...over });
+  const claimedWeek = () => ({
+    [WED]: row([section('math', 'obligated', lessonLedger(0))]),
+    [THU]: row([section('math', 'obligated', claimLedger(0, [WED]))]),
+  });
+  const restituted = (out, day) => {
+    expect(out[day].sections[0]).toMatchObject({ state: 'served', makeup: { servedOn: day, restituted: true } });
+    expect(out[day].state).toBe('met');
+    expect(out[day].timeliness).toBeUndefined();
+  };
+
+  it('policy off: the claim counts for the day it was done', () => {
+    const { rows: out, credits } = foldMakeup(claimedWeek(), { policy: { ...ON, enabled: false }, today: THU });
+    restituted(out, THU);
+    expect(out[WED].sections[0].state).toBe('obligated');
+    expect(credits).toEqual([]);
+  });
+
+  it('a subject the policy leaves out: the claim counts for the day it was done', () => {
+    const { rows: out, credits } = foldMakeup(claimedWeek(), { policy: { ...ON, subjects: ['english'] }, today: THU });
+    restituted(out, THU);
+    expect(credits).toEqual([]);
+  });
+
+  it('a deadline moved before the pass day: the claim counts for the day it was done', () => {
+    const { rows: out } = foldMakeup(claimedWeek(), { policy: { ...ON, deadlineWeekday: 3 }, today: THU });
+    restituted(out, THU);
+    expect(out[WED].sections[0].state).toBe('obligated');
+  });
+
+  it('the missed day still lacks a program: the claim counts for the day it was done', () => {
+    const rows = {
+      [WED]: row([section('math', 'obligated', { ...lessonLedger(0), needsPrograms: ['flashcards::'] })]),
+      [THU]: row([section('math', 'obligated', claimLedger(0, [WED]))]),
+    };
+    const { rows: out, credits } = foldMakeup(rows, { policy: ON, today: THU });
+    restituted(out, THU);
+    expect(out[WED].sections[0].state).toBe('obligated');
+    expect(credits).toEqual([]);
+  });
+
+  it('a claim no pass looked at still pays its own day back (pools built before pass 2)', () => {
+    // Monday's search stops at Tuesday's claim, so Thursday's pool is never
+    // opened in pass 1; Wednesday was served, so nothing else opens it.
+    const rows = {
+      [MON]: row([section('math', 'obligated', { ...lessonLedger(0), needsPrograms: ['flashcards::'] })]),
+      [TUE]: row([section('math', 'obligated', claimLedger(0, [MON]))]),
+      [WED]: row([section('math', 'served', lessonLedger(1))]),
+      [THU]: row([section('math', 'obligated', claimLedger(0, [WED]))]),
+    };
+    const { rows: out } = foldMakeup(rows, { policy: ON, today: THU });
+    expect(out[MON].sections[0].state).toBe('obligated');
+    restituted(out, TUE);
+    restituted(out, THU);
+  });
+
+  it('a claim spent on its day is not also paid back', () => {
+    const { rows: out } = foldMakeup(claimedWeek(), { policy: ON, today: THU });
+    expect(out[THU].sections[0].state).toBe('obligated');
+    expect(out[THU].sections[0].makeup).toBeUndefined();
+  });
+
+  it('a claim spent as ordinary spare on another missed day is not also paid back', () => {
+    const rows = {
+      [MON]: row([section('math', 'obligated', lessonLedger(0))]),
+      [WED]: row([section('math', 'served', lessonLedger(1))]),
+      [THU]: row([section('math', 'obligated', claimLedger(0, [WED]))]),
+    };
+    const { rows: out } = foldMakeup(rows, { policy: ON, today: THU });
+    expect(out[MON].sections[0]).toMatchObject({ state: 'served', makeup: { servedOn: THU } });
+    expect(out[THU].sections[0].state).toBe('obligated');
+  });
+
+  it('a pass day still lacking a program of its own is not restituted', () => {
+    const rows = {
+      [WED]: row([section('math', 'served', lessonLedger(1))]),
+      [THU]: row([section('math', 'obligated', claimLedger(0, [WED], { needsPrograms: ['flashcards::'] }))]),
+    };
+    const { rows: out } = foldMakeup(rows, { policy: ON, today: THU });
+    expect(out[THU].sections[0].state).toBe('obligated');
+  });
+});

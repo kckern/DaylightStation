@@ -44,6 +44,19 @@ describe('SchoolEarningEvidence.schoolWeek', () => {
     expect(out.week).toEqual({ weekId: '2026-09-21', state: 'partial', reason: null, open: true, excusedDays: [], weekendSubjects: ['language'] });
   });
 
+  // School makeup restitution (2026-11-19): a section paid back by a claimed
+  // lesson done that same day carries `makeup.restituted` and is on time; a
+  // section made up from a later day is makeup.
+  it('a restituted section is on time; a made-up section is makeup', async () => {
+    const term = { ...TERM, days: [{ studyDay: '2026-09-22', state: 'met', reason: null, sections: [
+      { subject: 'language', state: 'served', reason: null, makeup: { servedOn: '2026-09-22', restituted: true } },
+      { subject: 'scripture', state: 'served', reason: null, makeup: { servedOn: '2026-09-23' } },
+    ] }] };
+    const evidence = new SchoolEarningEvidence({ termVerdicts: termVerdicts(term), sessions: sessions([]), logger: silent });
+    const out = await evidence.schoolWeek({ learnerId: 'learner-a', week: WEEK });
+    expect(out.sectionDays.map((s) => [s.subject, s.timeliness])).toEqual([['language', 'on-time'], ['scripture', 'makeup']]);
+  });
+
   it('marks weekend and tier days off out of Green Week, future weekdays included', async () => {
     const evidence = new SchoolEarningEvidence({
       termVerdicts: termVerdicts(TERM), sessions: sessions([]), logger: silent,

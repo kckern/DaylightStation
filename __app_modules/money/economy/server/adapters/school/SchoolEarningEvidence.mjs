@@ -85,7 +85,9 @@ export class SchoolEarningEvidence extends ISchoolEarningEvidence {
     const excusedDays = weekdays.filter((day) => !this.#greenWeekDay(day));
     const sectionDays = rows.flatMap((d) => (d.sections ?? []).map((s) => ({
       day: d.studyDay, subject: s.subject, state: s.state, reason: s.reason ?? null,
-      timeliness: s.makeup ? 'makeup' : ON_TIME,
+      // A restituted section (School makeup: a claimed lesson paid back to
+      // the day it was done on) carries `makeup` too, but it is on time.
+      timeliness: s.makeup && s.makeup.restituted !== true ? 'makeup' : ON_TIME,
       makeupOpen: d.makeupOpen === true && s.state === 'obligated',
     })));
     const row = (term?.weeks ?? []).find((w) => w.weekId === week.from) ?? null;

@@ -67,3 +67,42 @@ describe('agenda section makeup ledger', () => {
     expect(section(entries, THURSDAY, [late]).obligation.state).toBe('served');
   });
 });
+
+// Review, 2026-11-19: a claimed pass must survive every filter that decides
+// what the day still asks for, or its claim vanishes with it while the day
+// it was done on has already given the lesson up.
+describe('a claimed pass survives the day-off filters', () => {
+  const base = { elective: false, status: 'completed', program: null, timingPriority: 3, timingRank: 0 };
+  const WEDNESDAY = '2026-11-11';
+  const claimedPass = (unitId) => ({
+    ...pass(unitId, `${WEDNESDAY}T17:00:00.000Z`), makeupFor: '2026-11-10', makeupDeadline: '2026-11-14',
+  });
+  const build = (entries, span, sessions) => planDailyAgenda({
+    plan: { entries }, sessions, now: `${WEDNESDAY}T18:00:00.000Z`,
+    programStatuses: { 'book-log::shelf': { doneToday: false } },
+    householdSchedule: { except: [{ from: WEDNESDAY, to: WEDNESDAY, label: 'Veterans Day', ...span }] },
+  });
+
+  it('an enrichment swap keeps the claimed lesson in the ledger', () => {
+    const civ = { ...base, unitId: 'civ-1', title: 'States', subject: 'civilization', courseId: 'civ' };
+    const hol = {
+      ...base, status: 'available', unitId: 'hol', title: 'Veterans Day', subject: 'civilization', courseId: 'civ',
+      dateBound: { onDays: [{ from: WEDNESDAY, to: WEDNESDAY }] },
+    };
+    const agenda = build([civ, hol], { tier: 'enrichment', replaces: 'civilization', assignment: 'hol' }, [claimedPass('civ-1')]);
+    const s = agenda.sections.find((x) => x.subject === 'civilization');
+    expect(s.ledger.makeupClaims).toEqual(['2026-11-10']);
+    expect(s.next?.unitId).toBe('hol');
+  });
+
+  it('a keeping tier keeps the claimed lesson in the ledger', () => {
+    const lesson = { ...base, unitId: 'eng-1', title: 'Nouns', subject: 'english', courseId: 'eng' };
+    const shelf = {
+      ...base, status: 'available', unitId: 'book-log:shelf', subject: 'english', program: 'book-log',
+      programInstance: 'shelf', cadence: 'daily',
+    };
+    const agenda = build([lesson, shelf], { tier: 'stay-home' }, [claimedPass('eng-1')]);
+    const s = agenda.sections.find((x) => x.subject === 'english');
+    expect(s.ledger.makeupClaims).toEqual(['2026-11-10']);
+  });
+});
