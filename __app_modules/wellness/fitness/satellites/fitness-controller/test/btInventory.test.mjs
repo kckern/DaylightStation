@@ -4,6 +4,7 @@ import {
   parseConnectedDevices,
   parseBattery,
   pollBtInventory,
+  parseDeviceKind,
   startBtInventoryBroadcast,
   hasInputDevice,
   nextReconnectDelay,
@@ -77,6 +78,15 @@ test('parseBattery: empty/nullish → not connected, null battery', () => {
   assert.deepEqual(parseBattery(null), { connected: false, battery: null });
 });
 
+test('parseDeviceKind: maps the bluetoothctl Icon line to a kind', () => {
+  assert.equal(parseDeviceKind('\tIcon: input-gaming'), 'gamepad');
+  assert.equal(parseDeviceKind('\tIcon: input-keyboard'), 'keyboard');
+  assert.equal(parseDeviceKind('\tIcon: input-mouse'), 'mouse');
+  assert.equal(parseDeviceKind('\tIcon: input-tablet'), 'tablet');
+  assert.equal(parseDeviceKind('\tIcon: audio-card'), null);
+  assert.equal(parseDeviceKind(''), null);
+});
+
 // ── pollBtInventory ───────────────────────────────────────────────────────
 
 const NO_INPUT = async () => "";
@@ -101,8 +111,8 @@ test('pollBtInventory: merges connected list with per-device battery info', asyn
   });
   const devices = await pollBtInventory({ exec, readInputDevices: NO_INPUT });
   assert.deepEqual(devices, [
-    { address: 'AA:BB:CC:DD:EE:FF', name: '8BitDo SN30 Pro', connected: true, battery: 75, paired: true, trusted: false, gamepad: false, input: false },
-    { address: '11:22:33:44:55:66', name: 'Xbox', connected: true, battery: null, paired: true, trusted: false, gamepad: false, input: false },
+    { address: 'AA:BB:CC:DD:EE:FF', name: '8BitDo SN30 Pro', connected: true, battery: 75, paired: true, trusted: false, gamepad: false, kind: null, input: false },
+    { address: '11:22:33:44:55:66', name: 'Xbox', connected: true, battery: null, paired: true, trusted: false, gamepad: false, kind: null, input: false },
   ]);
 });
 
@@ -116,8 +126,8 @@ test('pollBtInventory: a failing info call does not sink the whole poll', async 
   });
   const devices = await pollBtInventory({ exec, readInputDevices: NO_INPUT });
   assert.deepEqual(devices, [
-    { address: 'AA:BB:CC:DD:EE:FF', name: 'Good', connected: true, battery: 100, paired: true, trusted: false, gamepad: false, input: false },
-    { address: '11:22:33:44:55:66', name: 'Bad', connected: false, battery: null, paired: true, trusted: false, gamepad: false, input: false },
+    { address: 'AA:BB:CC:DD:EE:FF', name: 'Good', connected: true, battery: 100, paired: true, trusted: false, gamepad: false, kind: null, input: false },
+    { address: '11:22:33:44:55:66', name: 'Bad', connected: false, battery: null, paired: true, trusted: false, gamepad: false, kind: null, input: false },
   ]);
 });
 
@@ -127,7 +137,7 @@ test('pollBtInventory: a paired pad that is asleep reports connected:false (trus
     'bluetoothctl --agent off info E4:17:D8:C6:54:F0': '\tPaired: yes\n\tTrusted: yes\n\tIcon: input-gaming\n\tConnected: no',
   });
   assert.deepEqual(await pollBtInventory({ exec, readInputDevices: NO_INPUT }), [
-    { address: 'E4:17:D8:C6:54:F0', name: '8Bitdo SFC30 GamePad', connected: false, battery: null, paired: true, trusted: true, gamepad: true, input: false },
+    { address: 'E4:17:D8:C6:54:F0', name: '8Bitdo SFC30 GamePad', connected: false, battery: null, paired: true, trusted: true, gamepad: true, kind: 'gamepad', input: false },
   ]);
 });
 

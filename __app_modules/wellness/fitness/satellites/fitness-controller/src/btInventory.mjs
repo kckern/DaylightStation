@@ -85,6 +85,14 @@ export function parseIsGamepad(infoOutput) {
   return /^\s*Icon:\s*input-gaming\s*$/im.test(String(infoOutput || ''));
 }
 
+const ICON_KIND = { 'input-gaming': 'gamepad', 'input-keyboard': 'keyboard', 'input-mouse': 'mouse', 'input-tablet': 'tablet' };
+
+/** `Icon: input-*` in a `bluetoothctl info` blob → 'gamepad'|'keyboard'|'mouse'|'tablet', else null. */
+export function parseDeviceKind(infoOutput) {
+  const m = /^\s*Icon:\s*(\S+)\s*$/im.exec(String(infoOutput || ''));
+  return m ? (ICON_KIND[m[1]] || null) : null;
+}
+
 /** True when the kernel input table (/proc/bus/input/devices) lists this MAC. */
 export function hasInputDevice(inputDevicesText, mac) {
   const want = String(mac || '').toLowerCase();
@@ -109,9 +117,10 @@ async function defaultReadInputDevices() {
  * @param {object} [opts]
  * @param {Function} [opts.exec] - injected promisified exec ({stdout,stderr}).
  * @param {Function} [opts.readInputDevices] - async () => /proc/bus/input/devices text.
- * @returns {Promise<Array<{ address, name, connected, battery, paired, trusted, gamepad, input }>>}
+ * @returns {Promise<Array<{ address, name, connected, battery, paired, trusted, gamepad, kind, input }>>}
  *   Bonded devices (paired:true) plus any device connected right now WITHOUT a
  *   bond (paired:false — a pad dialing in on a bond this host dropped).
+ *   `kind` is 'gamepad'|'keyboard'|'mouse'|'tablet' from the Icon line, else null.
  */
 export async function pollBtInventory({ exec = defaultExec, readInputDevices = defaultReadInputDevices } = {}) {
   let listOut;
@@ -156,6 +165,7 @@ export async function pollBtInventory({ exec = defaultExec, readInputDevices = d
       paired: dev.paired,
       trusted: parseTrusted(info),
       gamepad: parseIsGamepad(info),
+      kind: parseDeviceKind(info),
       input: hasInputDevice(inputTable, dev.address),
     });
   }
