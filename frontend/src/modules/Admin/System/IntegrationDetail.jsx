@@ -1,11 +1,12 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { Link, useParams } from 'react-router-dom';
 import { Stack, Group, Text, Badge, Button, Paper, Alert, Center, Loader, Anchor }  from '@mantine/core';
 import {
   IconArrowBack, IconPlugConnected, IconAlertCircle, IconCheck, IconX, IconRefresh
 } from '@tabler/icons-react';
 import { useAdminIntegrations } from '../../../hooks/admin/useAdminIntegrations.js';
 import { useApiResource } from '../../../lib/hooks/useApiResource.js';
+import { useRetryRegion } from '../../../lib/ui/useRetryRegion.js';
 import { notifySuccess, notifyFailure } from '../shared/feedback.js';
 
 const CATEGORY_LABELS = {
@@ -59,13 +60,13 @@ function InfoRow({ label, children }) {
 
 function IntegrationDetail() {
   const { provider } = useParams();
-  const navigate = useNavigate();
-  return <ProviderDetail key={provider} provider={provider} navigate={navigate} />;
+  return <ProviderDetail key={provider} provider={provider} />;
 }
 
-function ProviderDetail({ provider, navigate }) {
+function ProviderDetail({ provider }) {
   const { testConnection, error, clearError } = useAdminIntegrations();
   const { data, loading, error: loadError, reload } = useApiResource(`/api/v1/admin/integrations/${provider}`);
+  const { regionProps, retry } = useRetryRegion(reload, loading);
   const integration = data?.integration;
   const [testResult, setTestResult] = useState(null);
   const [testing, setTesting] = useState(false);
@@ -107,164 +108,156 @@ function ProviderDetail({ provider, navigate }) {
     }
   }, [provider, testConnection]);
 
-  // Loading state
+  let body;
   if (loading && !integration) {
-    return (
+    body = (
       <Center h="60vh">
         <Loader size="lg" />
       </Center>
     );
-  }
-
-  // Error / 404 state
-  if (loadError && !integration) {
-    return (
-      <Stack gap="md">
-        <Anchor
-          size="sm"
-          onClick={() => navigate('/admin/system/integrations')}
-          style={{ cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 4 }}
-        >
-          <IconArrowBack size={14} /> Back to Integrations
-        </Anchor>
+  } else if (loadError && !integration) {
+    body = (
+      <>
         <Alert icon={<IconAlertCircle size={16} />} color="red" title="Error">
           {loadError.message || 'Failed to load integration details'}
         </Alert>
-        <Button onClick={reload}>Retry</Button>
+        <Button onClick={retry}>Retry</Button>
         {/* Harvester-only providers (e.g. Withings) may not be listed in
             integrations.yml; keep the reconnect reachable anyway. */}
         <Group><ReconnectButton provider={provider} /></Group>
-      </Stack>
+      </>
+    );
+  } else if (integration) {
+    const categoryLabel = CATEGORY_LABELS[integration.category] || integration.category;
+    body = (
+      <>
+        <Group gap="sm">
+          <IconPlugConnected size={24} stroke={1.5} />
+          <Text size="xl" fw={700}>{capitalize(provider)}</Text>
+          <Badge variant="light">{categoryLabel}</Badge>
+        </Group>
+
+        {error && (
+          <Alert
+            icon={<IconAlertCircle size={16} />}
+            color="red"
+            title="Error"
+            withCloseButton
+            onClose={clearError}
+          >
+            {error.message || 'An error occurred'}
+          </Alert>
+        )}
+
+        {/* Service Info */}
+        <Paper withBorder p="md">
+          <Text size="sm" fw={600} mb="sm">Service Info</Text>
+          <Stack gap="xs">
+            <InfoRow label="Provider">
+              <Text size="sm">{capitalize(integration.provider)}</Text>
+            </InfoRow>
+            <InfoRow label="Category">
+              <Text size="sm">{categoryLabel}</Text>
+            </InfoRow>
+            <InfoRow label="URL">
+              {integration.url ? (
+                <Anchor href={integration.url} target="_blank" rel="noopener noreferrer" size="sm">
+                  {integration.url}
+                </Anchor>
+              ) : (
+                <Text size="sm" c="dimmed">Not configured</Text>
+              )}
+            </InfoRow>
+          </Stack>
+        </Paper>
+
+        {/* Auth Status */}
+        <Paper withBorder p="md">
+          <Text size="sm" fw={600} mb="sm">Auth Status</Text>
+          <Stack gap="xs">
+            <InfoRow label="Configured">
+              <Badge
+                color={integration.hasAuth ? 'green' : 'yellow'}
+                variant="light"
+              >
+                {integration.hasAuth ? 'Configured' : 'No Auth'}
+              </Badge>
+            </InfoRow>
+            {integration.authLocations && (
+              <>
+                <InfoRow label="Household">
+                  <Group gap="xs">
+                    {integration.authLocations.household ? (
+                      <><IconCheck size={14} color="green" /><Text size="sm" c="green">Present</Text></>
+                    ) : (
+                      <><IconX size={14} color="red" /><Text size="sm" c="red">Missing</Text></>
+                    )}
+                  </Group>
+                </InfoRow>
+                <InfoRow label="System">
+                  <Group gap="xs">
+                    {integration.authLocations.system ? (
+                      <><IconCheck size={14} color="green" /><Text size="sm" c="green">Present</Text></>
+                    ) : (
+                      <><IconX size={14} color="red" /><Text size="sm" c="red">Missing</Text></>
+                    )}
+                  </Group>
+                </InfoRow>
+              </>
+            )}
+          </Stack>
+        </Paper>
+
+        {/* Test Connection */}
+        <Paper withBorder p="md">
+          <Text size="sm" fw={600} mb="sm">Test Connection</Text>
+          <Group gap="sm">
+            <Button
+              leftSection={<IconRefresh size={16} />}
+              variant="light"
+              onClick={handleTestConnection}
+              loading={testing}
+            >
+              Test Connection
+            </Button>
+            <ReconnectButton provider={provider} />
+          </Group>
+
+          {testResult && (
+            <Paper withBorder p="md" mt="md">
+              <Group gap="sm">
+                <Badge
+                  color={
+                    testResult.status === 'success' ? 'green'
+                      : testResult.status === 'failed' ? 'red'
+                        : 'gray'
+                  }
+                >
+                  {testResult.status}
+                </Badge>
+                <Text size="sm">{testResult.message}</Text>
+              </Group>
+              {testResult.timestamp && (
+                <Text size="xs" c="dimmed" mt="xs">{testResult.timestamp}</Text>
+              )}
+            </Paper>
+          )}
+        </Paper>
+      </>
     );
   }
 
-  if (!integration) return null;
-
-  const categoryLabel = CATEGORY_LABELS[integration.category] || integration.category;
-
   return (
-    <Stack gap="md">
-      {/* Header */}
+    <Stack component="section" gap="md" aria-label="Integration details" {...regionProps}>
       <Anchor
+        component={Link}
+        to="/admin/system/integrations"
         size="sm"
-        onClick={() => navigate('/admin/system/integrations')}
-        style={{ cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 4 }}
+        style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}
       >
-        <IconArrowBack size={14} /> Back to Integrations
+        <IconArrowBack size={14} aria-hidden="true" /> Back to Integrations
       </Anchor>
-
-      <Group gap="sm">
-        <IconPlugConnected size={24} stroke={1.5} />
-        <Text size="xl" fw={700}>{capitalize(provider)}</Text>
-        <Badge variant="light">{categoryLabel}</Badge>
-      </Group>
-
-      {error && (
-        <Alert
-          icon={<IconAlertCircle size={16} />}
-          color="red"
-          title="Error"
-          withCloseButton
-          onClose={clearError}
-        >
-          {error.message || 'An error occurred'}
-        </Alert>
-      )}
-
-      {/* Service Info */}
-      <Paper withBorder p="md">
-        <Text size="sm" fw={600} mb="sm">Service Info</Text>
-        <Stack gap="xs">
-          <InfoRow label="Provider">
-            <Text size="sm">{capitalize(integration.provider)}</Text>
-          </InfoRow>
-          <InfoRow label="Category">
-            <Text size="sm">{categoryLabel}</Text>
-          </InfoRow>
-          <InfoRow label="URL">
-            {integration.url ? (
-              <Anchor href={integration.url} target="_blank" rel="noopener noreferrer" size="sm">
-                {integration.url}
-              </Anchor>
-            ) : (
-              <Text size="sm" c="dimmed">Not configured</Text>
-            )}
-          </InfoRow>
-        </Stack>
-      </Paper>
-
-      {/* Auth Status */}
-      <Paper withBorder p="md">
-        <Text size="sm" fw={600} mb="sm">Auth Status</Text>
-        <Stack gap="xs">
-          <InfoRow label="Configured">
-            <Badge
-              color={integration.hasAuth ? 'green' : 'yellow'}
-              variant="light"
-            >
-              {integration.hasAuth ? 'Configured' : 'No Auth'}
-            </Badge>
-          </InfoRow>
-          {integration.authLocations && (
-            <>
-              <InfoRow label="Household">
-                <Group gap="xs">
-                  {integration.authLocations.household ? (
-                    <><IconCheck size={14} color="green" /><Text size="sm" c="green">Present</Text></>
-                  ) : (
-                    <><IconX size={14} color="red" /><Text size="sm" c="red">Missing</Text></>
-                  )}
-                </Group>
-              </InfoRow>
-              <InfoRow label="System">
-                <Group gap="xs">
-                  {integration.authLocations.system ? (
-                    <><IconCheck size={14} color="green" /><Text size="sm" c="green">Present</Text></>
-                  ) : (
-                    <><IconX size={14} color="red" /><Text size="sm" c="red">Missing</Text></>
-                  )}
-                </Group>
-              </InfoRow>
-            </>
-          )}
-        </Stack>
-      </Paper>
-
-      {/* Test Connection */}
-      <Paper withBorder p="md">
-        <Text size="sm" fw={600} mb="sm">Test Connection</Text>
-        <Group gap="sm">
-          <Button
-            leftSection={<IconRefresh size={16} />}
-            variant="light"
-            onClick={handleTestConnection}
-            loading={testing}
-          >
-            Test Connection
-          </Button>
-          <ReconnectButton provider={provider} />
-        </Group>
-
-        {testResult && (
-          <Paper withBorder p="md" mt="md">
-            <Group gap="sm">
-              <Badge
-                color={
-                  testResult.status === 'success' ? 'green'
-                    : testResult.status === 'failed' ? 'red'
-                      : 'gray'
-                }
-              >
-                {testResult.status}
-              </Badge>
-              <Text size="sm">{testResult.message}</Text>
-            </Group>
-            {testResult.timestamp && (
-              <Text size="xs" c="dimmed" mt="xs">{testResult.timestamp}</Text>
-            )}
-          </Paper>
-        )}
-      </Paper>
+      {body}
     </Stack>
   );
 }

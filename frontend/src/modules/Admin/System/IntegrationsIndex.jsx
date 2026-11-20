@@ -5,7 +5,7 @@ import {
 } from '@mantine/core';
 import { IconPlugConnected } from '@tabler/icons-react';
 import { useApiResource } from '../../../lib/hooks/useApiResource.js';
-import { EmptyState, ErrorState, LoadingState } from '../../../lib/ui/index.js';
+import { EmptyState, ErrorState, LoadingState, useRetryRegion } from '../../../lib/ui/index.js';
 
 const CATEGORY_LABELS = {
   media: 'Media',
@@ -42,6 +42,7 @@ function truncateUrl(url, maxLen = 40) {
 
 function IntegrationsIndex() {
   const { data, loading, error, reload } = useApiResource('/api/v1/admin/integrations', { label: 'Integrations' });
+  const { regionProps, retry } = useRetryRegion(reload, loading);
   const integrations = data?.integrations || [];
   const ready = !loading && !error;
 
@@ -70,13 +71,13 @@ function IntegrationsIndex() {
   }, [integrations]);
 
   return (
-    <Stack gap="lg">
+    <Stack component="section" gap="lg" aria-label="Integrations" {...regionProps}>
       <Group justify="space-between" className="ds-page-header">
         <Text component="h1" className="ds-page-title">Integrations</Text>
       </Group>
 
       {loading && <LoadingState label="integrations" />}
-      {!loading && error && <ErrorState error={error} onRetry={reload} label="Integrations" />}
+      {!loading && error && <ErrorState error={error} onRetry={retry} label="Integrations" />}
       {ready && integrations.length === 0 && <EmptyState title="No integrations found." />}
 
       {ready && groupedIntegrations.map(group => (

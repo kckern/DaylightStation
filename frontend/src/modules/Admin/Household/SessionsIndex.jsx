@@ -3,7 +3,7 @@ import { Badge, Button, Group, Stack, Table, Text } from '@mantine/core';
 import { DaylightAPI } from '../../../lib/api.mjs';
 import { subscribeToken } from '../../../lib/auth.js';
 import { invalidateApiResources, useApiResource } from '../../../lib/hooks/useApiResource.js';
-import { LoadingState, ErrorState, EmptyState, SectionCard, StateMessage, createAppLogger } from '@/lib/ui';
+import { LoadingState, ErrorState, EmptyState, SectionCard, StateMessage, createAppLogger, useRetryRegion } from '@/lib/ui';
 
 const sessionsPath = 'api/v1/auth/sessions';
 const logger = createAppLogger('admin').child('sessions');
@@ -96,6 +96,7 @@ export default function SessionsIndex() {
 function SessionRoster({ busy, startRevocation }) {
   // The current-device flag belongs to the reader's authentication.
   const { data, loading, error, reload } = useApiResource(sessionsPath, { dedupe: false, label: 'sessions', logger });
+  const { regionProps, retry } = useRetryRegion(reload, loading);
   const [notice, setNotice] = useState(null);
 
   const sessions = data?.sessions ?? [];
@@ -114,10 +115,10 @@ function SessionRoster({ busy, startRevocation }) {
     }
   };
 
-  if (loading) return <LoadingState label="sessions" rows={3} />;
-  if (error) return <ErrorState error={error} onRetry={reload} label="Sessions" />;
-
-  return (
+  let body;
+  if (loading) body = <LoadingState label="sessions" rows={3} />;
+  else if (error) body = <ErrorState error={error} onRetry={retry} label="Sessions" />;
+  else body = (
     <SectionCard
       title="Signed-in devices"
       actions={revocable && others > 0 ? (
@@ -174,4 +175,6 @@ function SessionRoster({ busy, startRevocation }) {
       </Stack>
     </SectionCard>
   );
+
+  return <section aria-label="Sessions" {...regionProps}>{body}</section>;
 }

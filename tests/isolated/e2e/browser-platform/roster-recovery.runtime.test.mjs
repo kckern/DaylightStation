@@ -150,6 +150,7 @@ for (const width of [390, 1440]) {
         const opener = page.getByRole('button', { name: fixture.open, exact: true });
         await opener.press('Enter');
         const dialog = page.getByRole('dialog');
+        const close = dialog.locator('.mantine-Modal-close');
         for (const [label, value] of Object.entries(fixture.fields)) {
           await dialog.getByLabel(label).fill(value);
         }
@@ -160,6 +161,10 @@ for (const width of [390, 1440]) {
           await expect(opener).toBeFocused();
           await opener.press('Enter');
           const nextDraft = dialog.getByLabel(Object.keys(fixture.fields)[0]);
+          // Let the dialog claim its initial focus before moving into the draft.
+          await expect(close).toBeFocused();
+          await page.keyboard.press('Tab');
+          await expect(nextDraft).toBeFocused();
           await expect(nextDraft).toHaveValue('');
           await nextDraft.fill('next-draft');
           const failedRead = page.waitForResponse(response => new URL(response.url()).pathname === fixture.roster
@@ -194,6 +199,9 @@ for (const width of [390, 1440]) {
         if (startWithRows) {
           await opener.press('Enter');
           const draft = dialog.getByLabel(Object.keys(fixture.fields)[0]);
+          await expect(close).toBeFocused();
+          await page.keyboard.press('Tab');
+          await expect(draft).toBeFocused();
           await draft.fill('while-retrying');
           await pendingRetry.fulfill({ json: fixture.updated });
           await expect(page.getByText(fixture.row, { exact: true })).toBeVisible();
