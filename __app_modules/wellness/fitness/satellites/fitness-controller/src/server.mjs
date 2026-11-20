@@ -11,7 +11,8 @@ import { selectSimCandidate } from "./unlockSim.mjs";
 import { createReaderArbiter } from "./readerArbiter.mjs";
 import { createContinuousScanLoop, IDENTIFY_WINDOW_S } from "./continuousScanLoop.mjs";
 import { startBtInventoryBroadcast } from "./btInventory.mjs";
-import { handleBtPairRequest, handleBtRemoveRequest } from "./btPairing.mjs";
+import { handleBtPairRequest, handleBtRemoveRequest, isPairingWindowOpen } from "./btPairing.mjs";
+import { handleBtScanRequest, stopScanWindow } from "./btScan.mjs";
 import { createDataPathHealth, createFitnessDataBroadcaster } from "./dataPathHealth.mjs";
 import { buildBridgeHealth, createWebSocketSupervisor } from "./webSocketSupervisor.mjs";
 import { exec as nodeExec } from 'child_process';
@@ -229,6 +230,9 @@ async function handleWebSocketMessage(data) {
           // Nothing else talks to BlueZ while a pairing window is open: the
           // inventory poll + reconnect loop pause, then resume and re-send.
           onWindow: (open) => (open ? btInventoryBroadcast?.pause() : btInventoryBroadcast?.resume()),
+          // A running nearby search is stopped first, so only one BlueZ
+          // client drives discovery.
+          stopScan: stopScanWindow,
         });
         return;
       }
@@ -242,6 +246,27 @@ async function handleWebSocketMessage(data) {
           send: (topic, payload) => sendBus(topic, payload),
           logger: console,
         });
+        return;
+      }
+
+      // Bluetooth screen search: list nearby devices, never pair. Progress
+      // streams back as `bt.scan.progress`. The reconnect loop pauses while
+      // it runs; the inventory poll keeps going.
+      if (message.topic === 'bt.scan.request') {
+        await handleBtScanRequest(message, {
+          send: (topic, payload) => sendBus(topic, payload),
+          logger: console,
+          isPairingOpen: isPairingWindowOpen,
+          onWindow: (open) => (open ? btInventoryBroadcast?.pause({ reconnectOnly: true }) : btInventoryBroadcast?.resume()),
+        });
+        return;
+      }
+
+      // A page that just loaded asks for the inventory: bt_inventory is
+      // otherwise sent only when it changes.
+      if (message.topic === 'bt.inventory.request') {
+        console.log(`🎮 bt.inventory.request (requestId=${message.requestId ?? '-'}) — re-sending`);
+        btInventoryBroadcast?.resend();
         return;
       }
 
@@ -408,10 +433,10 @@ const websocketSupervisor = createWebSocketSupervisor({
   onOpen: (ws) => {
     websocketClient = ws;
     logToStore('info', 'fitness.transport.connected', { ...serviceIdentity, bootId: dataPathHealth.snapshot().bootId });
-    for (const topic of ['fitness.unlock.request', 'fitness.enroll.request', 'fitness.fingerprint.delete.request', 'bt.pair.request', 'bt.remove']) {
+    for (const topic of ['fitness.unlock.request', 'fitness.enroll.request', 'fitness.fingerprint.delete.request', 'bt.pair.request', 'bt.remove', 'bt.scan.request', 'bt.inventory.request']) {
       ws.send(JSON.stringify({ type: 'bus_command', action: 'subscribe', topic }));
     }
-    console.log('🔐 Subscribed to unlock / enroll / delete / bt.pair / bt.remove request topics');
+    console.log('🔐 Subscribed to unlock / enroll / delete / bt.pair / bt.remove / bt.scan / bt.inventory request topics');
     btInventoryBroadcast?.resend();
   },
   logger: {
