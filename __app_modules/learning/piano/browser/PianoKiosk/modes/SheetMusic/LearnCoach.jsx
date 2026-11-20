@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { coachFeedback, isGoldWork, passageProgress } from '../../../../../../../shared/music/learnCoach.mjs';
+import { coachFeedback, entryShiftBeats, isGoldWork, passageProgress } from '../../../../../../../shared/music/learnCoach.mjs';
 import { currentStep, passageAccess, resolveSkipMode } from '../../../../../../../shared/music/learnSkipping.mjs';
 import getLogger from '../../../../../../../frontend/src/lib/logging/Logger.js';
 import { roundScore } from '../../../performance/timedVerdicts.js';
@@ -177,7 +177,9 @@ function CoachSession({ score, title, plan, segment, coach, skipping = null, pol
       // The wider full-credit share a below-score-tempo take is judged with
       // (LearnLab `learnPracticeRequirement`), or null for the strict curve.
       placementShare,
-      placement: roundScore(raw.criteria?.placement), completeness: roundScore(raw.criteria?.completeness), cleanliness: roundScore(raw.criteria?.cleanliness) });
+      placement: roundScore(raw.criteria?.placement), completeness: roundScore(raw.criteria?.completeness), cleanliness: roundScore(raw.criteria?.cleanliness),
+      // A whole-beat shifted entry the run tested for: ±k, 0 none named, null not tested.
+      entryShiftBeats: entryShiftBeats(raw) });
     setLane(isGoldWork(played) ? 'gold' : null);
     coach.record(played, raw);
     if (passed) { setMoment({ id: raw.assessmentId, task: played, raw, was: { silver: Boolean(certification.silver), gold: Boolean(certification.gold), flower: Boolean(projected?.flower) } }); setResult(null); }

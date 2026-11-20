@@ -707,7 +707,53 @@ household-local day, alongside continuing the unfinished work.
 Each deliberate start installs one take in the existing LearnLab/ExerciseRun.
 Free practice waits for and counts the first expected note. Timed practice starts
 its visible, audible count-in without a sacrificial arming note. During the
-count-in, input is excluded from grading. Timed assessment receives individual
+count-in, input is excluded from grading.
+
+**A clear start (cued Learn passages).** Any key **arms** the take; it is never
+graded. The count-in starts when every key held at arming is released, or 1 s
+after arming (`ARM_RELEASE_MS`), whichever is first, and then waits
+`min(one click, 600 ms)` (`START_GAP_MAX_MS`, never less than the click pre-roll)
+before the first click — so the first click is not hidden under the arming key
+press. Keys pressed while armed are ignored and do not re-arm
+(`piano.exercise-input-ignored`, `reason: 'armed'`). The count band appears in its
+armed form the moment the key lands (`data-start-armed` on the run), and the
+standing line reads "Listen for the clicks." `piano.exercise-armed` records the
+arming; `piano.exercise-countdown-started` carries `reason` (`armed-released` or
+`armed-timeout`), `prerollMs`, `armedAt` and `waitedMs`. A pause or a new take
+drops the arming and its onsets. Other cued callers (exercises, gates) still start their
+count-in on the arming key itself; `startOnReady` (no live caller) starts with no
+arming key and no armed state.
+
+**Shifted entry (cued Learn passages).** ExerciseRun keeps a raw onset log of the
+take (`{ midi, t, phase }`, MIDI timestamps, from the arming key until the result,
+count-in onsets included and flagged `armed` / `countdown` / `running` / `after`).
+A failed take is tested against the expectation shifted by k ∈ {−2, −1, +1, +2}
+clicks (`performance/entryShift.js`): a shift is named when it matches ≥ 75% of
+the notes the log could hold at that shift (and at least N − |k|), the unshifted
+take matches less than that, the shift does strictly better than no shift, and
+the shift explains the **entry**: the first note was played at its shifted target,
+with no onset of it on time before that. (On repeated pitches such as Jingle
+Bells' E E E, a steady rush or drag from an on-time start would otherwise line up
+with a whole-beat shift.)
+"One beat" is one count-in click: at a tempo where the count-in coarsens to half
+notes, a quarter late is not a whole-beat shift. When the take's first two onsets
+already sit a click or two late (onset i against note i), the result waits for the last note (until its
+shifted window closes, at most two clicks after the last target); otherwise
+timing is unchanged. The card then reads "You started one beat late — start on
+the click after the count" or "… early — wait for the click after the count"
+("two beats" for |k| = 2) in place of the timing line, and the coached title is
+**Start on the click** / **Wait for the click** (`coachFeedback` reasons
+`entry-late` / `entry-early`). Pass/fail and every score are unchanged. The result
+carries `entryShift: { beats, matched, possible }` into the saved attempt, and a
+named shift never triggers the smaller-task recovery: the coach offers the same
+step again. `piano.exercise-timing-summary`, `piano.learn.coach.take` and
+`piano.learn.terminal` gain `entryShiftBeats`: ±k for a named shift, `0` when the
+take was tested and none was named, `null` when it was not tested (a passed take,
+or a run outside cued Learn). A tested take's result carries `entryShift`
+(`{ beats: 0 }` when none was named); `entryShiftBeats(result)` in
+`shared/music/learnCoach.mjs` reads it the same way. The click keeps sounding
+while a late entry's last note is awaited, and `piano.exercise-onset-log`
+records the test and the onsets as `[midi, ms from the first click, phase]`. Timed assessment receives individual
 fresh MIDI attacks with original timestamps; held-set observations remain
 limited to the cursor/held contracts. Malformed timed input is an operational
 failure, never an extra wrong note.
@@ -773,6 +819,15 @@ level is stored under `piano.learn.click-level`; unavailable browser storage
 still permits a selection for the current lab visit. Changing loudness updates
 future scheduled clicks without recreating the scheduler, restarting the take,
 or moving its anchored beat grid. Callers outside Learn keep the default gain.
+
+On a **cued Learn passage** the count-in counts **up** with the clicks: a band
+across the top of the stage (`CountUpOverlay`, `countUpPresentation`) holds one
+numbered pip per click, lit as each click sounds, the first accented; during the
+last click it says **next click: play**, so the cue arrives before the first beat
+rather than on it. Nothing is shown on the first beat (no PLAY), and the music is
+not greyed (`data-count-style="up"`), because the child is about to read the first
+notes. The clicks are the plan's (`exerciseCountInPlan`, ≤ 4), whatever the meter.
+Everything below about the countdown describes every other timed run.
 
 The timed run counts at most four pulses on the ask's selected musical grid,
 then displays a brief **PLAY** cue at the first graded beat. The stage-bounded
@@ -1434,6 +1489,7 @@ during an active run so the judge and falling highway cannot jump timelines.
 | `NoteHighlightLayer.jsx` / `MeasureGradeLayer.jsx` | per-notehead chips / per-measure R/Y/G washes |
 | `FocusRangeLayer.jsx` | loop range's per-system tint band |
 | `countIn.js` / `useCountIn.js` | count-in beats before a run |
+| `CountUpOverlay.jsx` | Learn passage count-in band: pips 1..N, "next click: play" on the last click, armed form |
 | `clickScheduler.js` | look-ahead scheduling for the metronome click; anchored grid (`anchorEpochMs`/`leadMs`) + `epochToContextMap` |
 | `clickLead.js` | `resolveClickLead` (config › browser › none) and the `piano.click.anchored` log helper |
 | `RunSummary.jsx` | Polish end-of-run summary, extended with run score/tier + tier-best strip |

@@ -417,8 +417,8 @@ describe('LearnLab', () => {
 
   it('records the placement share on an uncoached take\'s terminal log', () => {
     render(<LearnLab {...base} rung={{ ...base.rung, mode: 'cued', tempoPercent: 60, reps: 3, required: 6 }} />);
-    act(() => { exercise.props.onFailed({ status: 'completed', verdict: { passed: false } }); });
-    expect(log.info).toHaveBeenCalledWith('piano.learn.terminal', expect.objectContaining({ status: 'failed', tempoPercent: 60, placementShare: 0.6 }));
+    act(() => { exercise.props.onFailed({ status: 'completed', verdict: { passed: false }, entryShift: { beats: 1, matched: 4, possible: 4 } }); });
+    expect(log.info).toHaveBeenCalledWith('piano.learn.terminal', expect.objectContaining({ status: 'failed', tempoPercent: 60, placementShare: 0.6, entryShiftBeats: 1 }));
     fireEvent.click(screen.getByRole('button', { name: 'Finish take' }));
     expect(log.info).toHaveBeenCalledWith('piano.learn.terminal', expect.objectContaining({ status: 'passed', placementShare: 0.6 }));
   });

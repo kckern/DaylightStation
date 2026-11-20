@@ -1535,7 +1535,6 @@ describe('timed practice groove at 1920x1200 in real Chromium', () => {
   const overlaps = (a, b) => a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top;
   const stageSelector = '.piano-exercise-run__stage';
   const beatSelector = '.piano-exercise-run__beat';
-  const numeralSelector = '.piano-score-countin__beat';
   const canvas = { top: 0, left: 0, right: 1920, bottom: 1200 };
   const geometry = (label, measurements) => {
     if (process.env.PIANO_MEASURE_GEOMETRY) process.stdout.write(`${label}: ${JSON.stringify(measurements)}\n`);
@@ -1640,44 +1639,41 @@ describe('timed practice groove at 1920x1200 in real Chromium', () => {
     expectNoPageErrors();
   }, 30000);
 
-  // Removing the overlay/drain or moving PLAY into engraved staff ink must fail.
-  it('counts down 4 3 2 1 with a draining bar and hands off to PLAY above the notation', async () => {
+  // A Learn passage counts UP with the clicks in a band above the music, cues
+  // "next click: play" on the last click and shows no PLAY on the beat; the
+  // notes stay in colour. Moving the band onto the ink, greying the stage, or
+  // bringing PLAY back must fail.
+  it('counts up 1 2 3 4 above the notation, cues the last click, and shows no PLAY', async () => {
     await lab();
     await chooseFullSpeed();
-    await probe.press(84);
-    await page.waitForSelector('.piano-exercise-run.is-countdown');
+    // The arming key is heard at once: while it is held the run is armed and
+    // the band shows its armed form; the count-in waits for the release.
+    await page.evaluate(() => window.__stage.hold([84]));
+    await page.waitForSelector('.piano-exercise-run.is-ready[data-start-armed="true"] .piano-learn-countin[data-armed="true"]');
+    await page.evaluate(() => window.__stage.hold([]));
+    await page.waitForSelector('.piano-exercise-run.is-countdown .piano-learn-countin[data-count="1"]');
     const { stage, rail, keys } = await assertRunGeometry();
-    const overlay = await probe.one('.piano-score-countin');
+    const overlay = await probe.one('.piano-learn-countin');
     expect(inside(overlay, stage)).toBe(true);
     expect(overlaps(overlay, rail)).toBe(false);
     expect(overlaps(overlay, keys)).toBe(false);
-    expect(overlay.reachable, 'countdown must let taps reach the score').toBe(false);
-    expect((await probe.one(numeralSelector)).text).toBe('4');
-    const drain = () => page.$eval('.piano-score-countin__bar', (bar) => {
-      const style = getComputedStyle(bar, '::after');
-      return { width: bar.getBoundingClientRect().width, scale: new DOMMatrix(style.transform).a };
-    });
-    const start = await drain();
-    await page.waitForTimeout(200);
-    const later = await drain();
-    expect(later.scale).toBeLessThan(start.scale);
-    expect(later.scale).toBeGreaterThan(0);
-    expect(start.width).toBeLessThanOrEqual(stage.width * 0.6);
-    geometry('countdown drain', { overlay, start, later });
-    await page.screenshot({ path: '/tmp/piano-groove-countdown.png' });
-    for (const numeral of ['3', '2', '1', 'PLAY']) {
-      await page.waitForFunction((text) => document.querySelector('.piano-score-countin__beat')?.textContent === text, numeral);
-    }
-    expect(await probe.count('.piano-score-countin__bar')).toBe(0);
-    const play = await probe.one(numeralSelector);
-    expect(inside(play, stage)).toBe(true);
+    expect(overlay.reachable, 'the count band must let taps reach the score').toBe(false);
     const ink = await probe.all('.piano-score-passage g.staffline, .piano-score-passage g.vf-notehead');
     expect(ink.length).toBeGreaterThan(0);
-    for (const box of ink) expect(overlaps(play, box), `PLAY ${say(play)} overlaps notation ink ${say(box)}`).toBe(false);
-    geometry('PLAY cue', { play, stage });
-    await page.screenshot({ path: '/tmp/piano-groove-play.png' });
-    expect(await page.locator('.piano-exercise-run').getAttribute('data-beat-pulse')).toBe('1');
-    await page.waitForFunction(() => document.querySelector('.piano-exercise-run')?.dataset.beatPulse === '2');
+    for (const box of ink) expect(overlaps(overlay, box), `count band ${say(overlay)} overlaps notation ink ${say(box)}`).toBe(false);
+    // The child is about to read the first notes: no greying on a Learn passage.
+    expect(await probe.prop('.piano-score-passage', 'filter')).toBe('none');
+    expect(await probe.prop('.piano-exercise-run__keys', 'filter')).toBe('none');
+    geometry('count-up band', { overlay, stage });
+    await page.screenshot({ path: '/tmp/piano-groove-countup.png' });
+    for (const count of ['2', '3', '4']) {
+      await page.waitForFunction((text) => document.querySelector('.piano-learn-countin')?.dataset.count === text, count);
+    }
+    expect((await probe.one('.piano-learn-countin__cue')).text).toBe('next click: play');
+    expect((await probe.one('.piano-learn-countin__pip.is-current')).text).toBe('4');
+    await page.screenshot({ path: '/tmp/piano-groove-next-click.png' });
+    await page.waitForFunction(() => document.querySelector('.piano-exercise-run')?.dataset.beatPulse === '1');
+    expect(await probe.count('.piano-learn-countin')).toBe(0);
     expect(await probe.count('.piano-score-countin')).toBe(0);
     await assertRunGeometry();
     expectNoPageErrors();
@@ -1751,8 +1747,8 @@ describe('timed practice groove at 1920x1200 in real Chromium', () => {
     await lab({ reducedMotion: 'reduce' });
     await chooseFullSpeed();
     await probe.press(84);
-    await page.waitForSelector('.piano-exercise-run.is-countdown');
-    expect(await probe.prop(numeralSelector, 'animation-name')).toBe('none');
+    await page.waitForSelector('.piano-exercise-run.is-countdown .piano-learn-countin__pip.is-current');
+    expect(await probe.prop('.piano-learn-countin__pip.is-current', 'animation-name')).toBe('none');
     await page.waitForSelector('.piano-exercise-run.is-running');
     expect(await probe.prop(beatSelector, 'animation-name')).toBe('none');
     expect(await probe.prop(beatSelector, 'box-shadow')).toBe('none');

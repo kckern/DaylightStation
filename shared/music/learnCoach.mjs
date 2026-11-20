@@ -345,6 +345,18 @@ export function coachSummary(projection, { now, state = projection.state }) {
     updatedAt: now };
 }
 
+/**
+ * A whole-beat shifted entry the run tested for on a failed cued take
+ * (`result.entryShift`, browser performance/entryShift.js): +k beats late, −k
+ * early, 0 when tested and none was named, null when the take was not tested.
+ */
+export function entryShiftBeats(result) {
+  if (!result?.entryShift) return null;
+  const beats = result.entryShift.beats;
+  return Number.isInteger(beats) && Math.abs(beats) <= 2 ? beats : 0;
+}
+const SHIFT_WORDS = Object.freeze({ 1: 'one beat', 2: 'two beats' });
+
 function recovery(plan, task, result) {
   if ((task.depth ?? 0) >= 2) return null;
   let range = { ...task.range };
@@ -419,7 +431,11 @@ export function applyCoachEvent(state, event, { plan, now, dayKey, legacy = {} }
   const equivalent = next.evidence.filter((item) => item.task.key === task.key);
   const successful = equivalent.slice(-3).filter((item) => item.passedCredits.includes(task.key)).length >= 2;
   if (task.parent && successful) next[slot] = task.parent;
-  else if (equivalent.slice(-2).length === 2 && equivalent.slice(-2).every((item) => !item.passedCredits.includes(task.key))) next[slot] = recovery(plan, task, result) ?? task;
+  // A named shifted entry is a start that missed the count, not a passage too
+  // hard to play: the same task again, never the smaller-task recovery.
+  else if (equivalent.slice(-2).length === 2 && equivalent.slice(-2).every((item) => !item.passedCredits.includes(task.key))) {
+    next[slot] = task.mode === 'cued' && entryShiftBeats(result) ? task : recovery(plan, task, result) ?? task;
+  }
   else if (ready(next, task)) next[slot] = null;
   return next;
 }
@@ -441,6 +457,13 @@ export function coachFeedback(result, task) {
       return { title: `Bar ${bar} is the tricky spot`, detail: 'Practice that spot, then try again.', reason: 'stopped', bar };
     }
     return { title: 'Almost on your own', detail: 'Aim for fewer extra notes, then try again.', reason: 'notes' };
+  }
+  const shift = task.mode === 'cued' && !passedFor(result, task) ? entryShiftBeats(result) : 0;
+  if (shift) {
+    const words = SHIFT_WORDS[Math.abs(shift)];
+    return shift > 0
+      ? { title: 'Start on the click', detail: `You started ${words} late — start on the click after the count.`, reason: 'entry-late', entryShiftBeats: shift }
+      : { title: 'Wait for the click', detail: `You started ${words} early — wait for the click after the count.`, reason: 'entry-early', entryShiftBeats: shift };
   }
   if (passedFor(result, task)) return { title: 'Nice work!',
     detail: task.mode === 'cued' ? 'You played the passage with the beat.' : task.mode === 'metronome' ? 'You found the notes with the click playing.' : 'You found all the notes.', reason: 'passed' };
