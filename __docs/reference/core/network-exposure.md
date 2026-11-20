@@ -492,13 +492,13 @@ Telegram → Production Server → [Dev Proxy] → Your Local Machine
 3. **Toggle proxy:**
    ```bash
    # Enable (forwards webhooks to dev)
-   curl "https://app.example.com/api/v1/dev/proxy_toggle"
+   curl -X POST "https://app.example.com/api/v1/dev/proxy_toggle"
 
    # Check status
    curl "https://app.example.com/api/v1/dev/proxy_status"
 
    # Disable (back to production handling)
-   curl "https://app.example.com/api/v1/dev/proxy_toggle"
+   curl -X POST "https://app.example.com/api/v1/dev/proxy_toggle"
    ```
 
 #### Workflow
