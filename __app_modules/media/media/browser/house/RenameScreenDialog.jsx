@@ -5,8 +5,9 @@
 // screen routines use lists them first and needs "Rename anyway" (routines
 // follow the screen, so they keep working).
 import React, { useEffect, useRef, useState } from 'react';
-import { Button, Group, List, Modal, Stack, Text, TextInput } from '@mantine/core';
+import { Button, Group, List, Stack, Text, TextInput } from '@mantine/core';
 import { IconDeviceFloppy } from '@tabler/icons-react';
+import { FormDialog } from '@/lib/ui/FormDialog.jsx';
 import { useDismissLayer } from "@/lib/ui/dismiss/useDismissLayer.js";
 
 export function RenameScreenDialog({
@@ -54,7 +55,7 @@ export function RenameScreenDialog({
   };
 
   return (
-    <Modal opened={open} onClose={onClose} closeOnEscape={!usesDismissStack} title={title} centered>
+    <FormDialog opened={open} onClose={onClose} closeOnEscape={!usesDismissStack} title={title} centered>
       <Stack gap="sm" data-testid={`${testid}-dialog`}>
         <TextInput
           label={nameLabel}
@@ -116,7 +117,7 @@ export function RenameScreenDialog({
           </Button>
         </Group>
       </Stack>
-    </Modal>
+    </FormDialog>
   );
 }
 

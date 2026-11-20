@@ -14,6 +14,20 @@
 // the highlight `color: white` rules still override where intended.
 .content-combobox-dropdown {
   color: var(--ds-text-primary, #E8EAF0);
+  display: flex;
+  flex-direction: column;
+
+  // The positioning middleware caps the dropdown. Let the existing results
+  // viewport take the space left by breadcrumbs, scope and status controls.
+  > :not(.content-combobox-options) { flex-shrink: 0; }
+
+  .content-combobox-options {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+  }
+
+  .content-combobox-scroll { min-height: 0; }
 
   // ── Rows shrink to the dropdown, not to the widest row ──
   // Mantine 7's ScrollArea wraps the options in an inline `display: table;

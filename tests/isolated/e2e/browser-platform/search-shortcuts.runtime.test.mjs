@@ -78,14 +78,14 @@ test('Media Start fresh owns Escape before Browse Back and returns focus to Sett
 });
 
 
-async function installMediaSearchResult(page) {
+async function installMediaSearchResult(page, extraItems = []) {
   const item = {
     id: 'plex:43', source: 'plex', title: 'Queued track', itemType: 'leaf',
     metadata: { type: 'track', category: 'work' }, children: [], childCount: 0,
   };
   await page.route('**/api/v1/content/query/search/stream**', route => route.fulfill({
     contentType: 'text/event-stream',
-    body: [{ event: 'results', source: 'plex', items: [item], pending: [] }, { event: 'complete' }]
+    body: [{ event: 'results', source: 'plex', items: [item, ...extraItems], pending: [] }, { event: 'complete' }]
       .map(frame => 'data: ' + JSON.stringify(frame) + '\n\n').join(''),
   }));
   return item;
@@ -139,8 +139,7 @@ test('desktop Media closes results before Back when Escape restores input focus'
   await expect(home).toHaveAttribute('aria-current', 'page');
 });
 
-test('desktop Media closes slideshow music search and dialog before leaving Now Playing', async ({ page }) => {
-  await page.setViewportSize({ width: 1440, height: 850 });
+async function installSlideshow(page) {
   await page.addInitScript(() => {
     const photo = { contentId: 'plex:71', title: 'Slideshow photo', format: 'image', duration: 90 };
     const updatedAt = new Date().toISOString();
@@ -154,6 +153,11 @@ test('desktop Media closes slideshow music search and dialog before leaving Now 
       },
     }));
   });
+}
+
+test('desktop Media closes slideshow music search and dialog before leaving Now Playing', async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 850 });
+  await installSlideshow(page);
   const item = await installMediaSearchResult(page);
   await page.goto('/media?view=fleet');
   await page.getByTestId('mini-player-open-nowplaying').click();
@@ -190,6 +194,112 @@ test('desktop Media closes slideshow music search and dialog before leaving Now 
 
   await page.keyboard.press('Escape');
   await expect(page).toHaveURL(/view=fleet/);
+});
+
+test.describe('phone Media slideshow music', () => {
+  test.use({ viewport: { width: 390, height: 850 }, hasTouch: true });
+
+  for (const { options, offset } of [{ options: 1, offset: 0 }, { options: 12, offset: 30 }]) {
+    test(`keeps ${options} music ${options === 1 ? 'result' : 'results'} reachable above the keyboard`, async ({ page }) => {
+      await installSlideshow(page);
+      const extraItems = Array.from({ length: options - 1 }, (_, index) => ({
+        id: `plex:${101 + index}`, source: 'plex', title: `Queued track ${index + 2}`, itemType: 'leaf',
+        metadata: { type: 'track' }, children: [], childCount: 0,
+      }));
+      const first = await installMediaSearchResult(page, extraItems);
+      const picked = extraItems.at(-1) ?? first;
+      const queueRequests = [];
+      const media = { id: picked.id, contentId: picked.id, format: 'audio', mediaType: 'audio',
+        title: picked.title, mediaUrl: '/music-picker-fixture.wav', duration: 30 };
+      await page.route('**/api/**', route => {
+        const path = decodeURIComponent(new URL(route.request().url()).pathname);
+        if (path.endsWith(`/queue/${picked.id}`)) {
+          queueRequests.push(picked.id);
+          return route.fulfill({ json: { items: [media] } });
+        }
+        if (path.endsWith(`/play/${picked.id}`)) return route.fulfill({ json: media });
+        return route.fallback();
+      });
+
+      await page.goto('/media?view=fleet');
+      await page.getByTestId('mini-player-open-nowplaying').click();
+      await expect(page).toHaveURL(/view=nowPlaying/);
+      const opener = page.getByTestId('pf-music-add');
+      const dialog = page.getByRole('dialog', { name: 'Add music behind' });
+      const search = dialog.getByRole('textbox', { name: 'Search music…' });
+      const result = page.getByTestId(`combobox-option-${picked.id}`);
+      const setKeyboardViewport = (height, offsetTop) => page.evaluate(({ height, offsetTop }) => {
+        const viewport = window.visualViewport;
+        Object.defineProperties(viewport, {
+          height: { configurable: true, value: height },
+          offsetTop: { configurable: true, value: offsetTop },
+        });
+        viewport.dispatchEvent(new Event('resize'));
+      }, { height, offsetTop });
+      const openResults = async () => {
+        await opener.click();
+        await search.fill(first.title);
+        await expect(result).toBeVisible();
+        await expect(search).toBeFocused();
+        await setKeyboardViewport(300, offset);
+      };
+
+      await openResults();
+      await page.keyboard.press('Escape');
+      await expect(result).toBeHidden();
+      await expect(search).toBeFocused();
+      await page.keyboard.press('Escape');
+      await expect(dialog).toBeHidden();
+      await expect(opener).toBeFocused();
+      await expect(page).toHaveURL(/view=nowPlaying/);
+      expect(queueRequests).toEqual([]);
+
+      await setKeyboardViewport(850, 0);
+      await openResults();
+      await expect.poll(() => result.evaluate(element => {
+        const { top, bottom } = element.closest('[role="listbox"]').getBoundingClientRect();
+        const { offsetTop, height } = window.visualViewport;
+        return Math.max(offsetTop - top, bottom - offsetTop - height);
+      }), { message: 'the music results scrollport fits above the keyboard' }).toBeLessThanOrEqual(1);
+      if (options > 1) {
+        const scrollport = () => result.evaluate(element => {
+          const viewport = element.closest('.mantine-ScrollArea-viewport');
+          const box = viewport.getBoundingClientRect();
+          return { x: box.left + box.width / 2, y: box.top + box.height / 2,
+            scrollTop: viewport.scrollTop, range: viewport.scrollHeight - viewport.clientHeight };
+        });
+        const { x, y, range } = await scrollport();
+        expect(range).toBeGreaterThan(0);
+        await page.mouse.move(x, y);
+        await expect(async () => {
+          const { scrollTop } = await scrollport();
+          if (scrollTop < range - 1) await page.mouse.wheel(0, range);
+          expect(scrollTop).toBeGreaterThanOrEqual(range - 1);
+        }).toPass({ timeout: 5000 });
+      }
+      const resultBounds = () => result.evaluate(element => {
+        const box = element.getBoundingClientRect();
+        const { offsetTop, height } = window.visualViewport;
+        const x = (box.left + box.right) / 2;
+        const y = (box.top + box.bottom) / 2;
+        return { x, y, top: box.top, bottom: box.bottom, viewportBottom: offsetTop + height,
+          fits: box.top >= offsetTop - 1 && box.bottom <= offsetTop + height + 1,
+          hits: element.contains(document.elementFromPoint(x, y)) };
+      });
+      await expect.poll(resultBounds, { message: 'a scrolled music result fits above the keyboard and receives a hit' })
+        .toMatchObject({ fits: true, hits: true, viewportBottom: offset + 300 });
+      await expect.poll(() => search.evaluate(element => {
+        const { top, bottom } = element.getBoundingClientRect();
+        const { offsetTop, height } = window.visualViewport;
+        return top >= offsetTop - 1 && bottom <= offsetTop + height + 1;
+      })).toBe(true);
+      const { x, y } = await resultBounds();
+      await page.touchscreen.tap(x, y);
+      await expect(dialog).toBeHidden();
+      await expect.poll(() => queueRequests).toEqual([picked.id]);
+      await expect(page).toHaveURL(/view=nowPlaying/);
+    });
+  }
 });
 
 async function openSearchPlayOnWithKeyboard(page) {

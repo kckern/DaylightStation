@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
+import { FormDialog } from '../../../../frontend/src/lib/ui/FormDialog.jsx';
 import {
-  Modal,
   TextInput,
   Select,
   Switch,
@@ -300,7 +300,7 @@ function ListsItemEditor({ hideSection = false, preserveImageClear = false, open
   };
 
   return (
-    <Modal
+    <FormDialog
       opened={opened}
       onClose={onClose}
       title={item ? 'Edit Item' : 'Add Item'}
@@ -367,7 +367,7 @@ function ListsItemEditor({ hideSection = false, preserveImageClear = false, open
           </Group>
         </Stack>
       </form>
-    </Modal>
+    </FormDialog>
   );
 }
 

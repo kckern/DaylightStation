@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
+import { FormDialog } from '../../../../frontend/src/lib/ui/FormDialog.jsx';
 import {
-  Modal, TextInput, Switch, Chip, Group, Stack, Button,
+  TextInput, Switch, Chip, Group, Stack, Button,
   NumberInput, Box, Text
 } from '@mantine/core';
 import { DAYS_PRESETS, SECTION_DEFAULTS } from "./listConstants.js";
@@ -42,7 +43,7 @@ function SectionSettingsModal({ opened, onClose, section, sectionIndex, onSave, 
   };
 
   return (
-    <Modal opened={opened} onClose={onClose} title={`Section Settings${section?.title ? `: ${section.title}` : ''}`} centered size="md">
+    <FormDialog opened={opened} onClose={onClose} title={`Section Settings${section?.title ? `: ${section.title}` : ''}`} centered size="md">
       <form onSubmit={handleSubmit}>
         <Stack>
           <TextInput
@@ -98,7 +99,7 @@ function SectionSettingsModal({ opened, onClose, section, sectionIndex, onSave, 
           </Group>
         </Stack>
       </form>
-    </Modal>
+    </FormDialog>
   );
 }
 

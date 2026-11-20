@@ -22,6 +22,7 @@ import { useSessionController } from "../controller/useSessionController.js";
 import { getLocalPlayerFeatures } from "../session/localPlayerFeatures.js";
 import { ContentCombobox } from "../../../../../__capabilities/content-catalog/browser/picker.mjs";
 import { SearchContext } from "../search/SearchProvider.jsx";
+import { FormDialog } from '@/lib/ui/FormDialog.jsx';
 import { useDismissLayer } from "@/lib/ui/dismiss/useDismissLayer.js";
 import { ActionMenu } from '@/lib/ui/ActionMenu.jsx';
 import mediaLog from "../logging/mediaLog.js";
@@ -120,7 +121,7 @@ function MusicPicker({ open, onClose, onPick }) {
   const musicScope = search?.scopes?.find?.((s) => s.key === 'music')?.params ?? FALLBACK_MUSIC_SCOPE;
   const usesDismissStack = useDismissLayer(open, onClose);
   return (
-    <Modal opened={open} onClose={onClose} closeOnEscape={!usesDismissStack} title="Add music behind" centered size="md">
+    <FormDialog opened={open} onClose={onClose} closeOnEscape={!usesDismissStack} title="Add music behind" centered size="md">
       <div data-testid="pf-music-picker">
         <Text size="sm" mb="sm">Choose a song, album or playlist. It plays under the photos.</Text>
         {open && <ContentCombobox
@@ -136,7 +137,7 @@ function MusicPicker({ open, onClose, onPick }) {
           allowFreeform={false}
         />}
       </div>
-    </Modal>
+    </FormDialog>
   );
 }
 

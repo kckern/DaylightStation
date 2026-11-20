@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
+import { FormDialog } from '../../../../frontend/src/lib/ui/FormDialog.jsx';
 import {
-  Modal,
   TextInput,
   Textarea,
   Select,
@@ -137,7 +137,7 @@ function ListSettingsModal({
   };
 
   return (
-    <Modal
+    <FormDialog
       opened={opened}
       onClose={onClose}
       title="List Settings"
@@ -305,7 +305,7 @@ function ListSettingsModal({
           </Group>
         </Stack>
       </form>
-    </Modal>
+    </FormDialog>
   );
 }
 

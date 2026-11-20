@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { Modal, TextInput, Button, Group, Stack } from '@mantine/core';
+import { FormDialog } from '../../../../frontend/src/lib/ui/FormDialog.jsx';
+import { TextInput, Button, Group, Stack } from '@mantine/core';
 
 function ListCreate({ opened, onClose, onCreate, typeLabel = 'List' }) {
   const [name, setName] = useState('');
@@ -33,7 +34,7 @@ function ListCreate({ opened, onClose, onCreate, typeLabel = 'List' }) {
   };
 
   return (
-    <Modal
+    <FormDialog
       opened={opened}
       onClose={handleClose}
       title={`Create New ${typeLabel}`}
@@ -57,7 +58,7 @@ function ListCreate({ opened, onClose, onCreate, typeLabel = 'List' }) {
           </Group>
         </Stack>
       </form>
-    </Modal>
+    </FormDialog>
   );
 }
 

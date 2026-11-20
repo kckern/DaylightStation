@@ -685,7 +685,13 @@ export function ContentCombobox({
 
   return (
     <div onKeyDownCapture={handleMoreMenuEscapeCapture}>
-    <Combobox store={combobox} onOptionSubmit={handleOptionSubmit} withinPortal={withinPortal}>
+    <Combobox
+      store={combobox}
+      onOptionSubmit={handleOptionSubmit}
+      withinPortal={withinPortal}
+      floatingStrategy={withinPortal ? 'fixed' : 'absolute'}
+      middlewares={{ size: { padding: 5 } }}
+    >
       <Combobox.Target withKeyboardNavigation={false}>
         <TextInput
           ref={inputRef}
@@ -884,9 +890,11 @@ export function ContentCombobox({
             anymore, so a message gated on the empty branch would never be
             seen. Hidden while the widened search is still in flight
             (isSearching) so it doesn't flash "0 results" before they arrive. */}
-        <Combobox.Options>
+        <Combobox.Options className="content-combobox-options">
           <ScrollArea.Autosize
+            className="content-combobox-scroll"
             mah={300}
+            style={{ overflow: 'hidden' }}
             viewportRef={viewportRef}
             viewportProps={{ style: { overflowAnchor: 'none' } }}
             onScrollPositionChange={handleScrollPosition}

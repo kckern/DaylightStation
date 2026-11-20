@@ -1,7 +1,8 @@
 import { useApiResource, invalidateApiResources } from '../../../../frontend/src/lib/hooks/useApiResource.js';
+import { FormDialog } from '../../../../frontend/src/lib/ui/FormDialog.jsx';
 import { ErrorState } from '../../../../frontend/src/lib/ui/states.jsx';
 import React, { useState, useEffect, useCallback, useLayoutEffect, useRef } from 'react';
-import { Modal, Tabs, Image, Button, TextInput, Group, Stack, Text, Box, Loader } from '@mantine/core';
+import { Tabs, Image, Button, TextInput, Group, Stack, Text, Box, Loader } from '@mantine/core';
 import { Dropzone, IMAGE_MIME_TYPE } from '@mantine/dropzone';
 import { notifications } from '@mantine/notifications';
 import { IconUpload, IconPhoto, IconLink, IconX, IconTrash } from '@tabler/icons-react';
@@ -139,7 +140,7 @@ function ImagePickerModal({ opened, onClose, currentImage, inheritedImage, onSav
   }
 
   return (
-    <Modal opened={opened} onClose={onClose} title="Item Image" centered size="md">
+    <FormDialog opened={opened} onClose={onClose} title="Item Image" centered size="md">
       <Stack gap="md">
         {/* Current image preview */}
         <Box style={{ textAlign: 'center' }}>
@@ -242,7 +243,7 @@ function ImagePickerModal({ opened, onClose, currentImage, inheritedImage, onSav
           <Button variant="subtle" onClick={onClose}>Done</Button>
         </Group>
       </Stack>
-    </Modal>
+    </FormDialog>
   );
 }
 
