@@ -4,7 +4,8 @@ import { tabbable } from 'tabbable';
 
 const dialogSelector = 'dialog, [role="dialog"], [role="alertdialog"]';
 
-function keepTabInPanel(event, panel = event.currentTarget) {
+/** Wrap sequential focus within an active panel or compact navigation scope. */
+export function keepTabInPanel(event, panel = event.currentTarget) {
   if (event.key !== 'Tab' || event.defaultPrevented || event.altKey || event.ctrlKey || event.metaKey) return;
   // A menu can restore focus to its trigger before the Tab event reaches the panel.
   const focused = panel.ownerDocument.activeElement;

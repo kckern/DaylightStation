@@ -325,6 +325,9 @@ test('Escape dismisses a compact dirty-form confirmation before its navigation d
   await nav.getByRole('link', { name: 'Notifications' }).press('Enter');
   const dialog = page.getByRole('dialog', { name: 'Discard unsaved changes?' });
   await expect(dialog).toBeVisible();
+  await dialog.getByRole('button', { name: 'Discard', exact: true }).focus();
+  await page.keyboard.press('Tab');
+  expect(await dialog.evaluate(node => node.contains(document.activeElement))).toBe(true);
   await page.keyboard.press('Escape');
   await expect(dialog).toBeHidden();
   await expect(nav).toBeVisible();
@@ -338,7 +341,7 @@ test('Admin keeps navigation focus visible across the 767px and 768px boundary',
   await useCompactNavFixture(page);
   await page.setViewportSize({ width: 767, height: 850 });
   await page.goto(`${BASE_URL}/admin/household/devices`);
-  const toggle = page.getByRole('button', { name: 'Toggle admin navigation' });
+  const toggle = page.getByRole('button', { name: 'Toggle admin navigation', includeHidden: true });
   const nav = page.getByRole('navigation', { name: 'Primary' });
   const devices = nav.getByRole('link', { name: 'Devices', exact: true });
   await expect(nav).toBeHidden();
@@ -346,6 +349,7 @@ test('Admin keeps navigation focus visible across the 767px and 768px boundary',
   await expect(devices).toBeFocused();
   await page.setViewportSize({ width: 768, height: 850 });
   await expect(toggle).toBeHidden();
+  await expect(toggle).toHaveAttribute('aria-expanded', 'false');
   await expect(nav).toBeVisible();
   await expect(devices).toBeFocused();
   await page.setViewportSize({ width: 767, height: 850 });

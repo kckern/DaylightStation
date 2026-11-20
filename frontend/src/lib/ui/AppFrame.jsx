@@ -25,11 +25,11 @@ export function AppView({ active, suspendOverlays = false, children }) {
   );
 }
 
-export function AppFrame({ className = '', header, navigation, context, notices, footer, mainRef, expandedContext = false, children }) {
+export function AppFrame({ className = '', header, navigation, context, notices, footer, mainRef, expandedContext = false, onKeyDown, children }) {
   const scrollRef = useRef(null);
   const setMainRef = useMergedRef(scrollRef, mainRef);
   return (
-    <div className={['ds-chrome', expandedContext && 'ds-chrome--context', className].filter(Boolean).join(' ')}>
+    <div className={['ds-chrome', expandedContext && 'ds-chrome--context', className].filter(Boolean).join(' ')} onKeyDown={onKeyDown}>
       {header && <header className="ds-chrome__header">{header}</header>}
       {(navigation || context) && (
         <nav className="ds-chrome__nav" aria-label="Primary">

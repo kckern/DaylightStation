@@ -4,6 +4,7 @@ import { DS_TOKENS } from '../../lib/theme/tokens.mjs';
 import { AppFrame } from '../../lib/ui/AppFrame.jsx';
 import { useMediaQuery } from '@mantine/hooks';
 import { DismissStackProvider } from '../../lib/ui/dismiss/DismissStackProvider.jsx';
+import { keepTabInPanel } from '../../lib/ui/dismiss/useDialogFocus.js';
 import AdminNav from './AdminNav.jsx';
 import AdminHeader from './AdminHeader.jsx';
 import { UnsavedGuardProvider } from './shared/UnsavedGuardContext.jsx';
@@ -33,6 +34,7 @@ function AdminLayout() {
       <DismissStackProvider>
         <AppFrame
           className={opened ? 'admin-layout admin-layout--menu-open' : 'admin-layout'}
+          onKeyDown={opened ? keepTabInPanel : undefined}
           header={<AdminHeader opened={opened} opener={opener} toggle={() => opened ? dismiss() : setOpenAt(key)} />}
           navigation={<AdminNav opened={opened} onDismiss={dismiss} />}
         >

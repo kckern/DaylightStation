@@ -4,6 +4,7 @@ import { useMediaQuery } from '@mantine/hooks';
 import { DS_TOKENS } from '@/lib/theme/tokens.mjs';
 import { UiIcon } from '@/lib/ui/UiIcon.jsx';
 import { useRetryRegion } from '@/lib/ui/useRetryRegion.js';
+import { keepTabInPanel } from '@/lib/ui/dismiss/useDialogFocus.js';
 import { useDismissLayer } from '@/lib/ui/dismiss/useDismissLayer.js';
 import { useSearchParams } from 'react-router-dom';
 import { DaylightAPI } from "../../../../../frontend/src/lib/api.mjs";
@@ -180,7 +181,10 @@ export default function Reader() {
   const initialCheckpoint = useRef(checkpoints.reader ?? {});
   const previousVisit = useRef(getLastVisit('reader'));
   const visitStarted = useRef(new Date().toISOString());
-  const { data: feedsData, error: feedsReadError, reload: reloadFeeds } = useApiResource('/api/v1/feed/reader/feeds', { label: 'Feed subscriptions', dedupe: false });
+  const {
+    data: feedsData, error: feedsReadError, loading: feedsLoading, revalidating: feedsRevalidating, reload: reloadFeeds,
+  } = useApiResource('/api/v1/feed/reader/feeds', { label: 'Feed subscriptions', dedupe: false });
+  const { regionProps: feedsRegion, retry: retryFeeds } = useRetryRegion(reloadFeeds, feedsLoading || feedsRevalidating);
   const feeds = feedsData || [];
   const [articles, setArticles] = useState(() => applyPendingMutations(initialSnapshot.current?.articles || []));
   const [continuation, setContinuation] = useState(initialSnapshot.current?.continuation || null);
@@ -246,25 +250,12 @@ export default function Reader() {
       closeDrawer();
       return;
     }
-    if (event.key !== 'Tab') return;
-    const sidebar = event.currentTarget;
-    const focusable = [...sidebar.querySelectorAll('button:not([disabled]), a[href], input:not([disabled]), [tabindex]:not([tabindex="-1"])')]
-      .filter(node => node.getClientRects().length > 0 && getComputedStyle(node).visibility === 'visible');
-    const first = focusable[0];
-    const last = focusable[focusable.length - 1];
-    if (event.shiftKey && (event.target === first || event.target === sidebar)) {
-      event.preventDefault();
-      last?.focus();
-    } else if (!event.shiftKey && event.target === last) {
-      event.preventDefault();
-      first?.focus();
-    }
+    keepTabInPanel(event);
   };
 
   useFeedListShortcuts(listRef, '.article-row-header', !drawerActive);
 
   const feedsError = feedsReadError ? 'Subscriptions are unavailable. The inbox can still be used.' : null;
-  const loadFeeds = reloadFeeds;
 
   const readPage = useCallback(async (cursor, signal) => {
     if (HISTORY_VIEWS.has(activeView)) {
@@ -576,14 +567,16 @@ export default function Reader() {
         <button type="button" className="reader-drawer-close" onClick={closeDrawer} aria-label="Close subscriptions">
           <UiIcon name="close" size={22} />
         </button>
-        {feedsError && <div className="reader-inline-error" role="status">{feedsError}<button onClick={loadFeeds}>Retry</button></div>}
-        <ReaderSidebar
-          feeds={feeds}
-          activeFeeds={activeFeeds}
-          onToggleFeed={handleMobileToggleFeed}
-          onToggleCategory={handleMobileToggleCategory}
-          onClearFilters={handleMobileClearFilters}
-        />
+        <section className="reader-subscriptions-list" aria-label="Feed list" {...feedsRegion}>
+          {feedsError && <div className="reader-inline-error" role="status">{feedsError}<button onClick={retryFeeds}>Retry</button></div>}
+          <ReaderSidebar
+            feeds={feeds}
+            activeFeeds={activeFeeds}
+            onToggleFeed={handleMobileToggleFeed}
+            onToggleCategory={handleMobileToggleCategory}
+            onClearFilters={handleMobileClearFilters}
+          />
+        </section>
       </aside>
       <section className="reader-inbox" aria-label="Reader articles" {...inboxRegion} inert={drawerActive ? '' : undefined}>
         <div className="reader-mobile-toolbar">

@@ -36,6 +36,13 @@
 
 .reader-drawer-close { display: none; }
 
+.reader-subscriptions-list {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
 // ---- Sidebar ----
 
 .reader-sidebar {
