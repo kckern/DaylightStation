@@ -12,7 +12,10 @@ import { extractMusicXmlFromMxl, MAX_MXL_XML_BYTES } from '../../../../../__capa
  */
 export function createSheetMusicAdminService({ configService, pianoStudioDatastore, rootLogger }) {
   const mediaDir = configService.getMediaDir?.();
-  if (!mediaDir) return null;
+  if (!mediaDir) {
+    rootLogger.warn?.('piano.sheetmusic-admin.disabled', { reason: 'no-media-dir' });
+    return null;
+  }
   const scoreReader = new SheetMusicScoreReader({ mediaDir });
   const LIBRARY_PREFIX = 'files:docs/sheet-music/';
   return new SheetMusicAdminService({

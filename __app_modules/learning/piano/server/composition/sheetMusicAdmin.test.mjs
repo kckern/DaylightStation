@@ -35,8 +35,11 @@ describe('createSheetMusicAdminService (composition)', () => {
   });
   afterEach(() => { fs.rmSync(tmp, { recursive: true, force: true }); });
 
-  it('is null without a media dir', () => {
-    expect(createSheetMusicAdminService({ configService: { getMediaDir: () => null }, pianoStudioDatastore: datastore, rootLogger: logger })).toBeNull();
+  it('is null without a media dir, and says so at warn', () => {
+    const warnings = [];
+    const rootLogger = { ...logger, warn: (event, data) => warnings.push({ event, data }) };
+    expect(createSheetMusicAdminService({ configService: { getMediaDir: () => null }, pianoStudioDatastore: datastore, rootLogger })).toBeNull();
+    expect(warnings).toEqual([{ event: 'piano.sheetmusic-admin.disabled', data: { reason: 'no-media-dir' } }]);
   });
 
   it('lists the library from disk with folder and file, nested folders included', async () => {

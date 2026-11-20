@@ -14,8 +14,13 @@
  * Coded refusals from the injected SheetMusicAdminService become
  * `{ error: code }` (plus `errors` for invalid-segments, `draftRevision` for
  * draft-changed) with the status in STATUS_BY_CODE, logged at warn as
- * `admin.sheetmusic.request-rejected`. Anything else goes to the string-shape
- * error handler, which answers 500 without the message.
+ * `admin.sheetmusic.request-rejected` { route, code, id }. Anything else is logged
+ * as `admin.sheetmusic.request-failed` { route, code } and goes to the
+ * string-shape error handler, which answers 500 without the message.
+ *
+ * Malformed requests are refused before the service: an unparseable or
+ * truncated multipart body, `/impact` without a `segments` array, and more than
+ * MAX_SEGMENTS segments in a draft or impact request.
  */
 import express from 'express';
 import multer from 'multer';
@@ -23,6 +28,11 @@ import { asyncHandler, errorHandlerMiddleware } from '#system/http/middleware/in
 
 /** Multer's cap; the service applies the per-format limits (16 MB .mxl, 32 MB .musicxml). */
 export const MAX_UPLOAD_BYTES = 32 * 1024 * 1024;
+
+/** Most segments a draft or impact request may carry; a score has far fewer passages. */
+export const MAX_SEGMENTS = 500;
+
+const MAX_LOGGED_ID = 200;
 
 const STATUS_BY_CODE = {
   'invalid-request': 400,
@@ -62,14 +72,16 @@ export function createAdminSheetMusicRouter({ service, logger = console } = {}) 
   const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: MAX_UPLOAD_BYTES, files: 1 } });
 
   /** Answers a coded refusal; false when the error is not one (the caller rethrows). */
-  const sendRefusal = (res, route, error) => {
+  const loggedId = (req) => (typeof req.query.id === 'string' ? req.query.id.slice(0, MAX_LOGGED_ID) : null);
+
+  const sendRefusal = (req, res, route, error) => {
     const code = typeof error?.code === 'string' ? error.code : null;
     const status = code ? STATUS_BY_CODE[code] : undefined;
     if (!status) return false;
     const body = { error: code };
     if (code === 'invalid-segments' && Array.isArray(error.errors)) body.errors = error.errors;
     if (code === 'draft-changed' && error.draftRevision !== undefined) body.draftRevision = error.draftRevision;
-    logger.warn?.('admin.sheetmusic.request-rejected', { route, code });
+    logger.warn?.('admin.sheetmusic.request-rejected', { route, code, id: loggedId(req) });
     res.status(status).json(body);
     return true;
   };
@@ -79,7 +91,9 @@ export function createAdminSheetMusicRouter({ service, logger = console } = {}) 
     try {
       await fn(req, res);
     } catch (error) {
-      if (!sendRefusal(res, route, error)) throw error;
+      if (sendRefusal(req, res, route, error)) return;
+      logger.error?.('admin.sheetmusic.request-failed', { route, code: error?.code ?? null });
+      throw error;
     }
   });
 
@@ -89,13 +103,22 @@ export function createAdminSheetMusicRouter({ service, logger = console } = {}) 
     return id;
   };
 
-  /** multer as a promise, with its own failures turned into coded refusals. */
+  /** A segments list within the cap; anything else is refused. */
+  const checkSegments = (segments, { required }) => {
+    if (segments === undefined && !required) return;
+    if (!Array.isArray(segments) || segments.length > MAX_SEGMENTS) throw refusal('invalid-request');
+  };
+
+  /**
+   * multer as a promise. Every parser failure is the client's request: an
+   * oversized file is SCORE_TOO_LARGE, anything else (MulterError, busboy's
+   * "Boundary not found" / "Unexpected end of form", an aborted body) is
+   * invalid-request.
+   */
   const receiveFile = (req, res) => new Promise((resolve, reject) => {
     upload.single('file')(req, res, (error) => {
       if (!error) return resolve();
-      if (error?.code === 'LIMIT_FILE_SIZE') return reject(refusal('SCORE_TOO_LARGE'));
-      if (error instanceof multer.MulterError) return reject(refusal('invalid-request'));
-      return reject(error);
+      reject(refusal(error?.code === 'LIMIT_FILE_SIZE' ? 'SCORE_TOO_LARGE' : 'invalid-request'));
     });
   });
 
@@ -128,6 +151,7 @@ export function createAdminSheetMusicRouter({ service, logger = console } = {}) 
     if (typeof action !== 'string' || !ACTIONS.has(action)) throw refusal('invalid-request');
     if (action === 'draft') {
       const { segments, proposal, measureCount } = body;
+      checkSegments(segments, { required: false });
       return res.json(await service.saveDraft(id, { segments, proposal, measureCount }));
     }
     if (action === 'approve') {
@@ -143,7 +167,9 @@ export function createAdminSheetMusicRouter({ service, logger = console } = {}) 
 
   router.post('/impact', handle('POST /impact', async (req, res) => {
     const id = scoreId(req);
-    res.json({ impact: await service.impact(id, req.body?.segments) });
+    const segments = req.body?.segments;
+    checkSegments(segments, { required: true });
+    res.json({ impact: await service.impact(id, segments) });
   }));
 
   router.use(errorHandlerMiddleware({ shape: 'string' }));

@@ -2,7 +2,8 @@
 import { describe, expect, it } from 'vitest';
 import express from 'express';
 import request from 'supertest';
-import { createAdminSheetMusicRouter, MAX_UPLOAD_BYTES } from './sheetMusic.mjs';
+import http from 'node:http';
+import { createAdminSheetMusicRouter, MAX_SEGMENTS, MAX_UPLOAD_BYTES } from './sheetMusic.mjs';
 
 const ID = 'files:docs/sheet-music/classical/fur elise.musicxml';
 const coded = (code, extra = {}) => Object.assign(new Error(`secret detail for ${code}`), { code, ...extra });
@@ -199,7 +200,7 @@ describe('createAdminSheetMusicRouter: service error mapping', () => {
     expect(res.status).toBe(status);
     expect(res.body).toEqual({ error: code });
     expect(JSON.stringify(res.body)).not.toContain('secret');
-    expect(logs).toContainEqual({ level: 'warn', event: 'admin.sheetmusic.request-rejected', data: { route: 'GET /learn', code } });
+    expect(logs).toContainEqual({ level: 'warn', event: 'admin.sheetmusic.request-rejected', data: { route: 'GET /learn', code, id: ID } });
   });
 
   it('invalid-segments → 422 with the errors list', async () => {
@@ -238,5 +239,108 @@ describe('createAdminSheetMusicRouter: service error mapping', () => {
       .attach('file', Buffer.from('x'), 'a.mxl');
     expect(res.status).toBe(500);
     expect(JSON.stringify(res.body)).not.toContain('secret');
+  });
+});
+
+/** Sends a raw request body (supertest cannot send a truncated multipart form). */
+function rawRequest(app, { method = 'POST', path, headers, body }) {
+  return new Promise((resolve, reject) => {
+    const server = app.listen(0, () => {
+      const req = http.request({ host: '127.0.0.1', port: server.address().port, method, path, headers }, (res) => {
+        let text = '';
+        res.on('data', (chunk) => { text += chunk; });
+        res.on('end', () => { server.close(); resolve({ status: res.statusCode, body: text ? JSON.parse(text) : null }); });
+      });
+      req.on('error', (error) => { server.close(); reject(error); });
+      req.end(body);
+    });
+  });
+}
+
+describe('createAdminSheetMusicRouter: malformed requests', () => {
+  it('a multipart content type without a boundary is 400 invalid-request', async () => {
+    const { app, calls, logs } = harness();
+    const res = await request(app).post('/sheet-music/upload').set('Content-Type', 'multipart/form-data').send('garbage');
+    expect(res.status).toBe(400);
+    expect(res.body).toEqual({ error: 'invalid-request' });
+    expect(calls).toHaveLength(0);
+    expect(logs.some((l) => l.event === 'admin.sheetmusic.request-failed')).toBe(false);
+  });
+
+  it('a truncated multipart body is 400 invalid-request', async () => {
+    const { app, calls } = harness();
+    const boundary = 'XBOUNDARY';
+    const body = [
+      `--${boundary}`,
+      'Content-Disposition: form-data; name="folder"',
+      '',
+      'classical',
+      `--${boundary}`,
+      'Content-Disposition: form-data; name="file"; filename="a.mxl"',
+      'Content-Type: application/octet-stream',
+      '',
+      'partial bytes with no closing boundary',
+    ].join('\r\n');
+    const res = await rawRequest(app, {
+      path: '/sheet-music/upload',
+      headers: { 'Content-Type': `multipart/form-data; boundary=${boundary}`, 'Content-Length': Buffer.byteLength(body) },
+      body,
+    });
+    expect(res.status).toBe(400);
+    expect(res.body).toEqual({ error: 'invalid-request' });
+    expect(calls).toHaveLength(0);
+  });
+
+  it.each([
+    [{ segment: [] }],
+    [{ segments: 'x' }],
+    [{ segments: { start: 1 } }],
+    [{}],
+  ])('POST /impact with %j is 400 invalid-request', async (body) => {
+    const { app, calls } = harness();
+    const res = await request(app).post(`/sheet-music/impact?${q}`).send(body);
+    expect(res.status).toBe(400);
+    expect(res.body).toEqual({ error: 'invalid-request' });
+    expect(calls).toHaveLength(0);
+  });
+
+  it(`caps segments at ${500} for drafts and impact`, async () => {
+    expect(MAX_SEGMENTS).toBe(500);
+    const { app, calls } = harness();
+    const many = Array.from({ length: MAX_SEGMENTS + 1 }, (_, i) => ({ start: i + 1, end: i + 1 }));
+    const draft = await request(app).put(`/sheet-music/learn?${q}`).send({ action: 'draft', segments: many });
+    expect(draft.status).toBe(400);
+    expect(draft.body).toEqual({ error: 'invalid-request' });
+    const impact = await request(app).post(`/sheet-music/impact?${q}`).send({ segments: many });
+    expect(impact.status).toBe(400);
+    expect(calls).toHaveLength(0);
+    const atCap = await request(app).post(`/sheet-music/impact?${q}`).send({ segments: many.slice(0, MAX_SEGMENTS) });
+    expect(atCap.status).toBe(200);
+  });
+});
+
+describe('createAdminSheetMusicRouter: logs', () => {
+  it('request-rejected carries the query id, truncated to 200 characters', async () => {
+    const { app, logs } = harness({ getLearn: async () => { throw coded('SCORE_NOT_FOUND'); } });
+    await request(app).get(`/sheet-music/learn?${q}`);
+    expect(logs).toContainEqual({ level: 'warn', event: 'admin.sheetmusic.request-rejected', data: { route: 'GET /learn', code: 'SCORE_NOT_FOUND', id: ID } });
+    const longId = `files:docs/sheet-music/${'a'.repeat(400)}.mxl`;
+    await request(app).get(`/sheet-music/learn?id=${encodeURIComponent(longId)}`);
+    const last = logs.filter((l) => l.event === 'admin.sheetmusic.request-rejected').at(-1);
+    expect(last.data.id).toBe(longId.slice(0, 200));
+  });
+
+  it('request-rejected has a null id when none was given', async () => {
+    const { app, logs } = harness();
+    await request(app).get('/sheet-music/learn');
+    expect(logs.at(-1).data).toEqual({ route: 'GET /learn', code: 'invalid-request', id: null });
+  });
+
+  it('an unexpected error logs request-failed with its code and no message', async () => {
+    const { app, logs } = harness({ upload: async () => { throw coded('SCORE_UNWRITABLE'); } });
+    await request(app).post('/sheet-music/upload').field('folder', 'classical').attach('file', Buffer.from('x'), 'a.mxl');
+    const failed = logs.filter((l) => l.event === 'admin.sheetmusic.request-failed');
+    expect(failed).toEqual([{ level: 'error', event: 'admin.sheetmusic.request-failed', data: { route: 'POST /upload', code: 'SCORE_UNWRITABLE' } }]);
+    expect(JSON.stringify(failed)).not.toContain('secret');
   });
 });
