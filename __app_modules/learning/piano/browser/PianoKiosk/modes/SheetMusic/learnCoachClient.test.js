@@ -150,6 +150,62 @@ describe('profile-scoped coaching outbox', () => {
 
 });
 
+describe('permanently refused items', () => {
+  const refuse = (id, status) => async (path, options) => {
+    if (path.endsWith('/coach') && options.method === 'POST' && options.body.event.id === id) throw Object.assign(new Error(`HTTP ${status}`), { status });
+  };
+  const loggerOf = () => { const warn = [];return { warn, logger: { info() {}, warn: (name, data) => warn.push([name, data]) } }; };
+
+  it('quarantines a queued item the server refuses with a 403 and still saves the next Silver take', async () => {
+    const h = setup({ intercept: refuse('locked-one', 403) });const { warn, logger } = loggerOf();
+    const client = createLearnCoachClient({ request: h.request, storage: h.storage, logger, now: () => new Date('2026-10-26T18:00:00Z'), dayKey: () => '2026-10-26' });
+    await client.load(scope, h.f.plan);
+    await client.enqueue(scope, h.event('locked-one'), h.f.plan);
+    const silver = h.f.plan.tasks.find((task) => task.skill === 'silver');
+    await client.enqueue(scope, { ...h.event('silver-take'), task: silver }, h.f.plan);
+    expect(client.get(scope)).toMatchObject({ pendingCount: 0, saveStatus: 'saved' });
+    expect((await h.service.get('learner4', scope.scoreKey)).state.evidence.map((item) => item.id ?? item.attemptId)).toHaveLength(1);
+    const stored = JSON.parse(h.storage.getItem('piano.learn.coach.outbox.v1'))[coachScopeKey(scope)];
+    expect(stored.items).toEqual([]);
+    expect(stored.quarantined.map((item) => item.body.event.id)).toEqual(['locked-one']);
+    expect(warn).toContainEqual(['piano.learn.coach.quarantined', expect.objectContaining({ status: 403, type: 'outcome', eventId: 'locked-one', passageId: h.f.plan.tasks[0].passageId, skill: h.f.plan.tasks[0].skill })]);
+    client.dispose();
+  });
+
+  it('keeps an item refused with a 502, 408 or 429 at the head of the queue for retry', async () => {
+    for (const status of [502, 408, 429]) {
+      const h = setup({ intercept: refuse('flaky', status) });
+      await h.client.load(scope, h.f.plan);
+      await h.client.enqueue(scope, h.event('flaky'), h.f.plan);
+      expect(h.client.get(scope)).toMatchObject({ pendingCount: 1, saveStatus: 'error' });
+      const stored = JSON.parse(h.storage.getItem('piano.learn.coach.outbox.v1'))[coachScopeKey(scope)];
+      expect(stored.items.map((item) => item.body.event.id)).toEqual(['flaky']);
+      expect(stored.quarantined).toEqual([]);
+      h.client.dispose();
+    }
+  });
+
+  it('quarantines an assessment the server finds invalid, but retries a sign-in or write-role refusal', async () => {
+    const refuseAttempt = (status) => async (path, options) => { if (path.endsWith('/attempts') && options.body.attempt_id === 'take') throw Object.assign(new Error(`HTTP ${status}`), { status }); };
+    for (const [status, held] of [[400, 0], [401, 1], [403, 1]]) {
+      const h = setup({ intercept: refuseAttempt(status) });
+      await h.client.load(scope, h.f.plan);
+      await h.client.enqueue(scope, h.event('take'), h.f.plan);
+      expect(h.client.get(scope).pendingCount).toBe(held);
+      h.client.dispose();
+    }
+  });
+
+  it('keeps only the most recent 20 quarantined items', async () => {
+    const h = setup({ intercept: async (path, options) => { if (path.endsWith('/coach') && options.method === 'POST') throw Object.assign(new Error('HTTP 400'), { status: 400 }); } });
+    await h.client.load(scope, h.f.plan);
+    for (let i = 0; i < 25; i += 1) await h.client.enqueue(scope, h.event(`bad-${i}`), h.f.plan);
+    const stored = JSON.parse(h.storage.getItem('piano.learn.coach.outbox.v1'))[coachScopeKey(scope)];
+    expect(stored.quarantined.map((item) => item.body.event.id)).toEqual(Array.from({ length: 20 }, (_, i) => `bad-${i + 5}`));
+    h.client.dispose();
+  });
+});
+
 describe('set-aside events', () => {
   it('a queued set-aside survives an outbox reload', async () => {
     const { createCoachPlan } = await import('../../../../../../../shared/music/learnCoach.mjs');

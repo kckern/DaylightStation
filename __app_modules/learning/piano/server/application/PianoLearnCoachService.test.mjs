@@ -225,15 +225,21 @@ describe('acknowledged piano coaching', () => {
     const of = (f, skill) => f.plan.tasks.find((task) => task.skill === skill);
     const select = (f, id, task) => ({ plan: f.plan, event: { id, type: 'selection', profileId: 'learner4', task } });
 
-    it('rejects a Gold step before Silver by default, with a structured warning, and saves nothing', async () => {
+    it('accepts a Gold take before Silver by default and saves it, logging the locked step', async () => {
       const f = pianoCoachFixture(); const { service, warn } = logged(f, undefined);
-      await expect(service.record('learner4', SCORE, f.outcome('early-gold', { task: of(f, 'timed-75') }))).rejects.toMatchObject({ status: 403 });
-      await expect(service.record('learner4', SCORE, select(f, 'pick-gold', of(f, 'mastery')))).rejects.toMatchObject({ status: 403 });
-      expect(f.records.get(`learner4/${SCORE}`)?.learnCoach).toBeUndefined();
+      const saved = await service.record('learner4', SCORE, f.outcome('early-gold', { task: of(f, 'timed-75') }));
+      await service.record('learner4', SCORE, select(f, 'pick-gold', of(f, 'mastery')));
+      expect(saved.revision).toBeGreaterThan(0);
+      expect(f.records.get(`learner4/${SCORE}`).learnCoach.evidence).toHaveLength(1);
       expect(warn).toEqual([
         ['piano.learn.coach.locked', { userId: 'learner4', scoreId: 'files:test.musicxml', passageId: 'opening', skill: 'timed-75', type: 'outcome', mode: 'open-to-silver' }],
         ['piano.learn.coach.locked', expect.objectContaining({ skill: 'mastery', type: 'selection' })],
       ]);
+    });
+
+    it('still rejects a task that is not part of the plan', async () => {
+      const f = pianoCoachFixture(); const { service } = logged(f, undefined);
+      await expect(service.record('learner4', SCORE, select(f, 'pick-bad', { ...of(f, 'mastery'), passageId: 'nowhere' }))).rejects.toMatchObject({ status: 400 });
     });
 
     it('accepts a skip to a later note step, and Gold once the passage has Silver', async () => {
@@ -245,12 +251,14 @@ describe('acknowledged piano coaching', () => {
       expect(warn).toEqual([]);
     });
 
-    it('holds a strict learner to the current step, but lets a drill of it through', async () => {
-      const f = pianoCoachFixture(); const { service } = logged(f, { learners: { learner4: 'strict' } });
-      await expect(service.record('learner4', SCORE, select(f, 'pick-left', of(f, 'left')))).rejects.toMatchObject({ status: 403 });
+    it('logs a strict learner leaving the current step, but not a drill of it', async () => {
+      const f = pianoCoachFixture(); const { service, warn } = logged(f, { learners: { learner4: 'strict' } });
+      await service.record('learner4', SCORE, select(f, 'pick-left', of(f, 'left')));
+      expect(warn).toEqual([['piano.learn.coach.locked', expect.objectContaining({ skill: 'left', type: 'selection', mode: 'strict' })]]);
       const right = of(f, 'right');
       await service.record('learner4', SCORE, select(f, 'pick-right', right));
       await service.record('learner4', SCORE, select(f, 'pick-drill', { ...right, key: 'drill', range: { start: 0, end: 1 }, depth: 1, parent: right }));
+      expect(warn).toHaveLength(1);
     });
 
     it('lets an open learner start score tempo from nothing', async () => {

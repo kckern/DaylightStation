@@ -469,12 +469,29 @@ it. Authored ladders do not carry over.
 Recovery drills (slower beat, one hand, focus bars) work as before on whichever step
 was chosen.
 
-**Server check.** `PianoLearnCoachService` refuses a `selection` or `outcome` for a
-step the child's mode locks, judged on the progress before the event, with HTTP 403
-and a warn `piano.learn.coach.locked` (`userId`, `scoreId`, `passageId`, `skill`,
-`type`, `mode`). A recovery drill is judged by the step it came from, and a review
-of a mastered passage is always allowed. A task that is no step of the plan (an old
-saved tempo) only has to respect the Silver gate on Gold work.
+**The kiosk enforces locks; the server records and reports.** The kiosk never offers a
+locked step. `PianoLearnCoachService` still accepts a `selection` or `outcome` for a
+step the child's mode locks, applies it as normal, and logs a warn
+`piano.learn.coach.locked` (`userId`, `scoreId`, `passageId`, `skill`, `type`,
+`mode`), judged on the progress before the event. It does not refuse it, for two
+reasons: the server reads `skipping` live while an open kiosk read it when the piece
+opened (or a queued take came from an older bundle), so the two can disagree; and the
+kiosk's save queue sends takes strictly in order, so one refused item would hold every
+later take for that child and piece behind it. A recovery drill is judged by the step
+it came from, and a review of a mastered passage is never locked. A task that is no
+step of the plan (an old saved tempo) only meets the Silver gate on Gold work. Every
+other check (task identity, plan, assessment) still refuses with a 4xx.
+
+**Save-queue quarantine.** When the server refuses a queued item with a 4xx that will
+fail the same way on retry, the kiosk outbox (`learnCoachClient.js`) moves it out of
+the queue into a `quarantined` list in the same localStorage entry
+(`piano.learn.coach.outbox.v1`, last 20 kept), logs a warn
+`piano.learn.coach.quarantined` (`learnerId`, `scoreId`, `eventId`, `write`
+(`attempt` or `coach`), `status`, `type`, `passageId`, `skill`, `error`) and keeps
+draining the takes behind it. Network errors, 5xx, 408, 429 and 401 stay at the head
+and retry as before; on the assessment write a 403 (the kiosk's write role) retries
+too. Quarantined items show the recovery notice and can be exported like unreadable
+queued items.
 
 **Log.** `piano.learn.coach.skip` (info, kiosk) when a child starts a step that is
 not the current one and is not already ready: `{ userId, scoreId, passageId, from,

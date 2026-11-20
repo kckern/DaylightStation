@@ -19,12 +19,14 @@ export class PianoLearnCoachService {
     this.skipping = typeof skipping === 'function' ? skipping : () => skipping;
   }
   /**
-   * A chosen or played step must be one the child's skipping mode allows, judged on the
-   * projection before this event. A recovery drill is judged by the step it came from, and
-   * a review of a mastered passage is always allowed. A task that is no plan step (an old
-   * saved tempo) only has to respect the Silver gate on Gold work.
+   * Notes a chosen or played step that the child's skipping mode locks, judged on the
+   * projection before this event. The kiosk enforces the lock; the server records the
+   * take anyway and reports it, because the policy can change while a kiosk is open and a
+   * refused item would block every later take in the kiosk's save queue. A recovery drill
+   * is judged by the step it came from, and a review of a mastered passage is never locked.
+   * A task that is no plan step (an old saved tempo) only meets the Silver gate on Gold work.
    */
-  #allowed({ userId, plan, event, before }) {
+  #noteLocked({ userId, plan, event, before }) {
     if (event.type !== 'selection' && event.type !== 'outcome') return;
     let root = event.task;
     while (root?.parent) root = root.parent;
@@ -40,7 +42,6 @@ export class PianoLearnCoachService {
       : mode === 'open' || !isGoldWork(root) || Boolean(segment.certification.silver);
     if (open) return;
     this.logger?.warn?.('piano.learn.coach.locked', { userId, scoreId: plan.scoreId, passageId: segment.id, skill: root.skill ?? null, type: event.type, mode });
-    fail('This step is locked until an earlier step is done', 403);
   }
   /**
    * The whole piece became all Silver or all Gold because of this one saved take.
@@ -172,7 +173,7 @@ export class PianoLearnCoachService {
       const now = at.toISOString();
       const previous = this.#state(record, plan);
       const before = projectCoach({ plan, state: previous, legacy: record, dayKey });
-      this.#allowed({ userId, plan, event, before });
+      this.#noteLocked({ userId, plan, event, before });
       const applied = applyCoachEvent(previous, { ...event, result }, { plan, now, dayKey, legacy: record });
       const after = projectCoach({ plan, state: applied, legacy: record, dayKey });
       const state = { ...applied, summary: coachSummary(after, { now, state: applied }) };

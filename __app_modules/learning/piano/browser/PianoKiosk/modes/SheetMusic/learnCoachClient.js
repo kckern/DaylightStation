@@ -3,6 +3,15 @@ import { buildPianoAttemptEvidence } from '../../../performance/attemptEvidence.
 
 const OUTBOX = 'piano.learn.coach.outbox.v1';
 const LIMIT = 128;
+const QUARANTINE_LIMIT = 20;
+/**
+ * A 4xx will fail the same way on every retry, except a timeout (408), a rate limit (429)
+ * or missing sign-in (401). On the assessment write a 403 is the kiosk's write role, which
+ * a grown-up can restore, so it is retried there too.
+ */
+const RETRIED = { coach: new Set([401, 408, 429]), attempt: new Set([401, 403, 408, 429]) };
+export const isPermanentRefusal = (error, write = 'coach') => Number.isInteger(error?.status) && error.status >= 400 && error.status < 500 && !RETRIED[write].has(error.status);
+const distinctRecent = (items) => [...new Map(items.map((item) => [JSON.stringify(item), item])).values()].slice(-QUARANTINE_LIMIT);
 export const coachScopeKey = (scope) => JSON.stringify([scope.profileId, scope.scoreId, scope.fingerprint]);
 const persistent = (scope) => Boolean(scope.profileId && scope.profileId !== 'guest');
 
@@ -45,7 +54,7 @@ export function createLearnCoachClient({ request, storage = null, onChange = () 
         items.push(item);
       } catch { quarantined.push(item); }
     }
-    return { items, quarantined: [...new Map(quarantined.map((item) => [JSON.stringify(item), item])).values()] };
+    return { items, quarantined: distinctRecent(quarantined) };
   };
   const ensure = (scope, plan) => {
     const key = coachScopeKey(scope);
@@ -71,7 +80,7 @@ export function createLearnCoachClient({ request, storage = null, onChange = () 
       if (!storage) throw new Error('Browser storage is unavailable');
       const data = read();const key = coachScopeKey(entry.scope);
       const restored = restoreItems(entry.scope, data[key]);
-      entry.quarantined = [...new Map([...entry.quarantined, ...restored.quarantined].map((item) => [JSON.stringify(item), item])).values()];
+      entry.quarantined = distinctRecent([...restored.quarantined, ...entry.quarantined]);
       const merged = new Map(restored.items.map((item) => [item.body.event.id, item]));
       for (const item of entry.items) merged.set(item.body.event.id, item);
       for (const id of entry.acknowledged) merged.delete(id);
@@ -97,12 +106,28 @@ export function createLearnCoachClient({ request, storage = null, onChange = () 
       try {
         while (entry.items.length && !disposed) {
           const item = entry.items[0];
-          if (item.evidence && !item.assessmentSaved) {
-            await request(`api/v1/piano/users/${encodeURIComponent(entry.scope.profileId)}/attempts`, { method: 'POST', body: item.evidence });
-            item.assessmentSaved = true;persist(entry);
-            if (disposed) break;
+          let response;let write = 'attempt';
+          try {
+            if (item.evidence && !item.assessmentSaved) {
+              await request(`api/v1/piano/users/${encodeURIComponent(entry.scope.profileId)}/attempts`, { method: 'POST', body: item.evidence });
+              item.assessmentSaved = true;persist(entry);
+              if (disposed) break;
+            }
+            write = 'coach';
+            response = await request(url(entry.scope), { method: 'POST', body: item.body });
+          } catch (error) {
+            if (!isPermanentRefusal(error, write)) throw error;
+            // Retrying would fail the same way and hold every later take behind it.
+            const { event } = item.body;
+            entry.quarantined = distinctRecent([...entry.quarantined, item]);
+            entry.acknowledged.add(event.id);
+            entry.items = entry.items.filter((pending) => pending.body.event.id !== event.id);
+            persist(entry);
+            logger?.warn?.('piano.learn.coach.quarantined', { learnerId: entry.scope.profileId, scoreId: entry.scope.scoreId, eventId: event.id,
+              write, status: error.status, type: event.type, passageId: event.task?.passageId ?? null, skill: event.task?.skill ?? null, error: error.message });
+            emit(entry);
+            continue;
           }
-          const response = await request(url(entry.scope), { method: 'POST', body: item.body });
           accept(entry, response);
           entry.acknowledged.add(item.body.event.id);
           entry.items = entry.items.filter((pending) => pending.body.event.id !== item.body.event.id);
